@@ -22,163 +22,16 @@ const SEMESTERS = ['上学期', '下学期'];
 
 const dbService = (): any => (window as any).dbService;
 
-/**
- * 在 treeData 中构建带按钮的标题 ReactNode。
- * 把添加、编辑、删除按钮直接放进 title 字段，避免依赖 titleRender。
- */
-function buildNodeTitle(
-  nodeName: string,
-  nodeId: string,
-  addingChildParentId: string | null | '__ROOT__',
-  addingChildName: string,
-  editingNodeId: string | null,
-  editingNodeName: string,
-  onAddChild: (parentId: string) => void,
-  onEdit: (id: string, name: string) => void,
-  onRename: (id: string, name: string) => void,
-  onDelete: (id: string, name: string) => void,
-  onCreateChild: (name: string, parentId: string) => void,
-  onCancelChild: () => void,
-  onSetEditingName: (name: string) => void,
-  onSetAddingName: (name: string) => void,
-  onCancelEdit: () => void,
-): React.ReactNode {
-  const isEditing = editingNodeId === nodeId;
-  const isAdding = addingChildParentId === nodeId;
-
-  return (
-    <div style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 2, padding: '1px 0' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-        {isEditing ? (
-          <Input
-            size="small"
-            value={editingNodeName}
-            onChange={e => onSetEditingName(e.target.value)}
-            onBlur={(e) => {
-              const v = (e.target as HTMLInputElement).value;
-              if (v.trim()) onRename(nodeId, v.trim());
-              onCancelEdit();
-            }}
-            onPressEnter={(e) => {
-              const v = (e.target as HTMLInputElement).value;
-              if (v.trim()) onRename(nodeId, v.trim());
-              onCancelEdit();
-            }}
-            style={{ width: 120 }}
-            autoFocus
-            onClick={e => e.stopPropagation()}
-          />
-        ) : (
-          <>
-            <span style={{ flex: 1, userSelect: 'none', fontSize: 13 }}>{nodeName}</span>
-            <Button
-              type="link"
-              size="small"
-              icon={<PlusOutlined />}
-              onClick={e => { e.stopPropagation(); onAddChild(nodeId); }}
-              style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }}
-            />
-            <Button
-              type="link"
-              size="small"
-              icon={<EditOutlined />}
-              onClick={e => { e.stopPropagation(); onEdit(nodeId, nodeName); }}
-              style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }}
-            />
-            <Popconfirm
-              title={`确定删除知识点「${nodeName}」及其所有子节点？`}
-              onConfirm={() => onDelete(nodeId, nodeName)}
-              onCancel={() => {}}
-              okText="删除"
-              cancelText="取消"
-              okButtonProps={{ danger: true }}
-            >
-              <Button
-                type="link"
-                size="small"
-                danger
-                icon={<DeleteOutlined />}
-                onClick={e => e.stopPropagation()}
-                style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px', color: '#ff4d4f' }}
-              />
-            </Popconfirm>
-          </>
-        )}
-      </div>
-      {isAdding && (
-        <div style={{ paddingLeft: 20, marginTop: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Input
-              size="small"
-              placeholder="子知识点名称"
-              value={addingChildName}
-              onChange={e => onSetAddingName(e.target.value)}
-              onBlur={(e) => {
-                const v = (e.target as HTMLInputElement).value;
-                if (v.trim()) onCreateChild(v.trim(), nodeId);
-                onCancelChild();
-              }}
-              onPressEnter={(e) => {
-                const v = (e.target as HTMLInputElement).value;
-                if (v.trim()) onCreateChild(v.trim(), nodeId);
-                onCancelChild();
-              }}
-              style={{ width: 140 }}
-              autoFocus
-              onClick={e => e.stopPropagation()}
-            />
-            <Button
-              type="link"
-              size="small"
-              icon={<CloseCircleOutlined />}
-              onClick={e => { e.stopPropagation(); onCancelChild(); }}
-              style={{ padding: 0, minWidth: 16, height: 16, fontSize: 11, color: '#999' }}
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Build tree data for Ant Design Tree — title 字段直接包含按钮组件
-function buildTreeData(
-  nodes: KnowledgeNode[],
-  parentId: string | undefined,
-  state: {
-    addingChildParentId: string | null | '__ROOT__';
-    addingChildName: string;
-    editingNodeId: string | null;
-    editingNodeName: string;
-  },
-  handlers: {
-    onAddChild: (parentId: string) => void;
-    onEdit: (id: string, name: string) => void;
-    onRename: (id: string, name: string) => void;
-    onDelete: (id: string, name: string) => void;
-    onCreateChild: (name: string, parentId: string) => void;
-    onCancelChild: () => void;
-    onSetEditingName: (name: string) => void;
-    onSetAddingName: (name: string) => void;
-    onCancelEdit: () => void;
-  },
-): any[] {
+// Build simple tree data (title is string, not ReactNode)
+function buildTreeData(nodes: KnowledgeNode[], parentId: string | undefined): any[] {
   return nodes
     .filter(n => n.parent_id === parentId || (!parentId && !n.parent_id))
     .sort((a, b) => a.order - b.order)
     .map(n => ({
       key: n.id,
-      title: buildNodeTitle(
-        n.name, n.id,
-        state.addingChildParentId, state.addingChildName,
-        state.editingNodeId, state.editingNodeName,
-        handlers.onAddChild, handlers.onEdit,
-        handlers.onRename, handlers.onDelete,
-        handlers.onCreateChild, handlers.onCancelChild,
-        handlers.onSetEditingName, handlers.onSetAddingName, handlers.onCancelEdit,
-      ),
-      children: buildTreeData(nodes, n.id, state, handlers),
-      icon: <FolderOpenOutlined />,
+      title: n.name,
+      children: buildTreeData(nodes, n.id),
+      isLeaf: false,
     }));
 }
 
@@ -565,21 +418,110 @@ const QuestionBank: React.FC = () => {
     });
   };
 
-  // 组装 treeData，每个节点的 title 直接包含按钮
-  const treeData = buildTreeData(knowledgeNodes, undefined, {
-    addingChildParentId, addingChildName,
-    editingNodeId, editingNodeName,
-  }, {
-    onAddChild: (pid: string) => { setAddingChildParentId(pid); setAddingChildName(''); },
-    onEdit: (id: string, name: string) => { setEditingNodeId(id); setEditingNodeName(name); },
-    onRename: handleRenameKnowledgeNode,
-    onDelete: handleDeleteKnowledgeNode,
-    onCreateChild: handleCreateKnowledgeNode,
-    onCancelChild: () => { setAddingChildParentId(null); setAddingChildName(''); },
-    onSetEditingName: setEditingNodeName,
-    onSetAddingName: setAddingChildName,
-    onCancelEdit: () => { setEditingNodeId(null); setEditingNodeName(''); },
-  });
+  // 组装 treeData（title 为纯字符串，按钮通过 titleRender 渲染）
+  const treeData = buildTreeData(knowledgeNodes, undefined);
+
+  // titleRender：在节点名称右侧渲染 +/编辑/删除按钮
+  const nodeTitleRender = useCallback((nodeData: any) => {
+    const nodeId = nodeData.key as string;
+    const nodeName = nodeData.title as string;
+    const isEditing = editingNodeId === nodeId;
+    const isAdding = addingChildParentId === nodeId;
+
+    return (
+      <div style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 2, padding: '1px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {isEditing ? (
+            <Input
+              size="small"
+              value={editingNodeName}
+              onChange={e => setEditingNodeName(e.target.value)}
+              onBlur={(e) => {
+                const v = (e.target as HTMLInputElement).value;
+                if (v.trim()) handleRenameKnowledgeNode(nodeId, v.trim());
+                setEditingNodeId(null); setEditingNodeName('');
+              }}
+              onPressEnter={(e) => {
+                const v = (e.target as HTMLInputElement).value;
+                if (v.trim()) handleRenameKnowledgeNode(nodeId, v.trim());
+                setEditingNodeId(null); setEditingNodeName('');
+              }}
+              style={{ width: 120 }}
+              autoFocus
+              onClick={e => e.stopPropagation()}
+            />
+          ) : (
+            <>
+              <span style={{ flex: 1, userSelect: 'none', fontSize: 13 }}>{nodeName}</span>
+              <Button
+                type="link"
+                size="small"
+                icon={<PlusOutlined />}
+                onClick={e => { e.stopPropagation(); setAddingChildParentId(nodeId); setAddingChildName(''); }}
+                style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }}
+              />
+              <Button
+                type="link"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={e => { e.stopPropagation(); setEditingNodeId(nodeId); setEditingNodeName(nodeName); }}
+                style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }}
+              />
+              <Popconfirm
+                title={`确定删除知识点「${nodeName}」及其所有子节点？`}
+                onConfirm={() => handleDeleteKnowledgeNode(nodeId)}
+                onCancel={() => {}}
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+              >
+                <Button
+                  type="link"
+                  size="small"
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={e => e.stopPropagation()}
+                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px', color: '#ff4d4f' }}
+                />
+              </Popconfirm>
+            </>
+          )}
+        </div>
+        {isAdding && (
+          <div style={{ paddingLeft: 20, marginTop: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Input
+                size="small"
+                placeholder="子知识点名称"
+                value={addingChildName}
+                onChange={e => setAddingChildName(e.target.value)}
+                onBlur={(e) => {
+                  const v = (e.target as HTMLInputElement).value;
+                  if (v.trim()) handleCreateKnowledgeNode(v.trim(), nodeId);
+                  setAddingChildParentId(null); setAddingChildName('');
+                }}
+                onPressEnter={(e) => {
+                  const v = (e.target as HTMLInputElement).value;
+                  if (v.trim()) handleCreateKnowledgeNode(v.trim(), nodeId);
+                  setAddingChildParentId(null); setAddingChildName('');
+                }}
+                style={{ width: 140 }}
+                autoFocus
+                onClick={e => e.stopPropagation()}
+              />
+              <Button
+                type="link"
+                size="small"
+                icon={<CloseCircleOutlined />}
+                onClick={e => { e.stopPropagation(); setAddingChildParentId(null); setAddingChildName(''); }}
+                style={{ padding: 0, minWidth: 16, height: 16, fontSize: 11, color: '#999' }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }, [editingNodeId, editingNodeName, addingChildParentId, addingChildName, handleRenameKnowledgeNode, handleDeleteKnowledgeNode, handleCreateKnowledgeNode]);
 
   return (
     <Row gutter={16}>
@@ -698,6 +640,7 @@ const QuestionBank: React.FC = () => {
             <Tree
               showIcon
               treeData={treeData}
+              titleRender={nodeTitleRender}
               defaultExpandAll
               draggable
               onDrop={handleTreeDrop}

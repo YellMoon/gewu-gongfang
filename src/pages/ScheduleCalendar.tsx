@@ -14,7 +14,6 @@ import { holidays2026, getUpcomingHolidays } from '../utils/helpers';
 dayjs.extend(weekOfYear);
 dayjs.extend(isoWeek);
 
-const COURSE_TYPE_LABELS: Record<number, string> = { [CourseType.ONE_ON_ONE]: '一对一', [CourseType.ONE_ON_TWO]: '一对二', [CourseType.GROUP]: '小组课', [CourseType.LARGE_CLASS]: '大班课' };
 
 const { Option } = Select;
 
@@ -624,7 +623,6 @@ const DailyView: React.FC<DailyViewProps> = ({
                       marginTop: 1
                     }}>
                       {schedule.room && `${schedule.room} `}
-                      {COURSE_TYPE_LABELS[schedule.course_type] && `${COURSE_TYPE_LABELS[schedule.course_type]} `}
                       {isDragging ? (() => {
                         const cs = pos.startSlot;
                         const ce = pos.endSlot;
@@ -1035,7 +1033,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
             {course.type !== undefined && (
               <div style={{ fontSize: 11, color: '#666', marginTop: 1 }}>
-                {course.type === CourseType.ONE_ON_ONE ? '一对一' : course.type === CourseType.ONE_ON_TWO ? '一对二' : '班课'}
+                {course.room_name && `${course.room_name} `}{course.type === CourseType.ONE_ON_ONE ? '一对一' : course.type === CourseType.ONE_ON_TWO ? '一对二' : '班课'}
               </div>
             )}
           </div>
