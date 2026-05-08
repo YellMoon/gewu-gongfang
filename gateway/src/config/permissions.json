@@ -1,0 +1,36 @@
+{
+  "scheduling": {
+    "name": "排课管理",
+    "permissions": [
+      { "sub_module": null, "action": "view", "description": "查看排课数据", "allowed_types": ["admin", "teacher", "student", "invited"] },
+      { "sub_module": null, "action": "edit", "description": "编辑排课数据", "allowed_types": ["admin", "teacher", "invited"] },
+      { "sub_module": null, "action": "delete", "description": "删除排课数据", "allowed_types": ["admin"] },
+      { "sub_module": null, "action": "admin", "description": "排课模块管理", "allowed_types": ["admin"] },
+      { "sub_module": null, "action": "view_all", "description": "查看所有课程排课", "allowed_types": ["admin"] }
+    ]
+  },
+  "question-bank": {
+    "name": "题库系统",
+    "permissions": [
+      { "sub_module": null, "action": "view", "description": "做题/查看/手动组卷/导出/批改", "allowed_types": ["admin", "teacher", "student", "invited"] },
+      { "sub_module": null, "action": "edit", "description": "创建/编辑/删除题目+批量导入+管理知识点", "allowed_types": ["admin", "teacher", "invited"] },
+      { "sub_module": null, "action": "delete", "description": "删除题目", "allowed_types": ["admin"] },
+      { "sub_module": null, "action": "admin", "description": "题库全部管理权限", "allowed_types": ["admin"] }
+    ]
+  },
+  "teaching-tools": {
+    "name": "教学工具",
+    "permissions": [
+      { "sub_module": null, "action": "view", "description": "使用教学工具", "allowed_types": ["admin", "teacher", "student", "invited"] },
+      { "sub_module": null, "action": "admin", "description": "管理教学工具", "allowed_types": ["admin"] }
+    ]
+  },
+  "assets": {
+    "name": "资产统计",
+    "permissions": [
+      { "sub_module": null, "action": "view", "description": "查看资产数据", "allowed_types": ["admin", "invited"] },
+      { "sub_module": null, "action": "edit", "description": "编辑资产数据", "allowed_types": ["admin", "invited"] },
+      { "sub_module": null, "action": "admin", "description": "资产管理", "allowed_types": ["admin"] }
+    ]
+  }
+}

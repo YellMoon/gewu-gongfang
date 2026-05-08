@@ -116,6 +116,7 @@ const CourseList: React.FC = () => {
     setEditingCourse(null);
     setBillingUnit(BillingUnit.PER_HOUR);
     form.resetFields();
+    form.setFieldsValue({ year: new Date().getFullYear() });
     setModalVisible(true);
   };
 
@@ -144,13 +145,19 @@ const CourseList: React.FC = () => {
     setEditingCourse(course);
     setBillingUnit(course.billing_unit || BillingUnit.PER_HOUR);
     form.resetFields();
-    form.setFieldsValue(course);
+    // 显式处理年份：InputNumber 的 defaultValue 会干扰 form.setFieldsValue
+    form.setFieldsValue({
+      ...course,
+      year: course.year !== undefined ? Number(course.year) : undefined,
+    });
     setModalVisible(true);
   };
 
   const handleDelete = async (id: string) => {
+    const deletedCourse = courses.find(c => c.id === id);
     dbService.deleteCourse(id);
     message.success('删除成功');
+    (window as any).operateLogger?.log('删除', `删除课程「${deletedCourse?.display_name || deletedCourse?.name || id}」`, '课程管理');
     loadData();
   };
 
@@ -162,12 +169,8 @@ const CourseList: React.FC = () => {
         const teacher = teachers.find(t => t.id === values.teacher_id);
         values.teacher_name = teacher?.name;
       }
-      // 自动拼接完整名称：年份 学期 课程名 -> name，display_name 保留纯课程名
-      if (values.year && values.semester && values.display_name) {
-        values.name = `${values.year} ${values.semester} ${values.display_name}`;
-      } else {
-        values.name = values.display_name;
-      }
+      // 课程名称直接使用 display_name，不拼接年份和学期
+      values.name = values.display_name;
       // 处理 room_id 字段（兼容旧数据可能为数组）
       if (Array.isArray(values.room_id)) {
         values.room_id = values.room_id.filter(Boolean).join(', ');
@@ -193,13 +196,19 @@ const CourseList: React.FC = () => {
         values.active = true;
       }
       if (editingCourse) {
+        // 确保年份被保留：防止 antd InputNumber defaultValue 导致 year 丢失
+        if (values.year === undefined || values.year === null) {
+          values.year = editingCourse.year !== undefined ? Number(editingCourse.year) : new Date().getFullYear();
+        }
         dbService.updateCourse(editingCourse.id, values);
         message.success('更新成功');
+        (window as any).operateLogger?.log('修改', `修改课程「${values.display_name || values.name}」`, '课程管理');
         // 自动同步 localStorage 排课数据中的上课地址
         syncSchedulesRoomName(values);
       } else {
         dbService.createCourse(values);
         message.success('添加成功');
+        (window as any).operateLogger?.log('创建', `创建课程「${values.display_name || values.name}」`, '课程管理');
         syncSchedulesRoomName(values);
       }
       setModalVisible(false);
@@ -211,6 +220,9 @@ const CourseList: React.FC = () => {
   };
 
   const columns: ColumnsType<Course> = [
+    { title: '序号', key: 'index', width: 70, render: (_, __, index) => index + 1 },
+    { title: '年份', dataIndex: 'year', key: 'year', width: 80 },
+    { title: '学期', dataIndex: 'semester', key: 'semester', width: 80 },
     { title: '课程名称', dataIndex: 'name', key: 'name', width: 180 },
     { 
       title: '课程类型', 
@@ -246,9 +258,8 @@ const CourseList: React.FC = () => {
       key: 'price_teacher',
       width: 100,
       render: (price: number, record: Course) => {
-        const mode = teacherFeeModeMap[record.teacher_fee_mode];
         const unit = billingUnitMap[record.billing_unit];
-        return `¥${price}${unit} (${mode})`;
+        return `¥${price}${unit}`;
       }
     },
     { 
@@ -261,6 +272,13 @@ const CourseList: React.FC = () => {
           {active ? '未结课' : '已结课'}
         </Tag>
       )
+    },
+    { 
+      title: '默认时长', 
+      dataIndex: 'default_duration_minutes', 
+      key: 'default_duration_minutes',
+      width: 90,
+      render: (v: number) => v ? `${(v / 60).toFixed(1)}小时` : '-'
     },
     { title: '上课地址', dataIndex: 'room_name', key: 'room_name', width: 100 },
     { title: '老师', dataIndex: 'teacher_name', key: 'teacher_name', width: 100 },
@@ -386,7 +404,7 @@ const CourseList: React.FC = () => {
           <Row gutter={16}>
             <Col span={6}>
               <Form.Item name="year" label="年份">
-                <InputNumber min={2020} max={2100} defaultValue={new Date().getFullYear()} style={{ width: '100%' }} />
+                <InputNumber min={2020} max={2100} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col span={6}>
@@ -404,7 +422,7 @@ const CourseList: React.FC = () => {
           </Row>
 
           <Row gutter={16}>
-            <Col span={12}>
+            <Col span={8}>
               <Form.Item name="type" label="课程类型" rules={[{ required: true, message: '请选择课程类型' }]}>
                 <Select placeholder="请选择">
                   <Option value={CourseType.ONE_ON_ONE}>一对一</Option>
@@ -414,12 +432,20 @@ const CourseList: React.FC = () => {
                 </Select>
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col span={8}>
               <Form.Item name="source_type" label="课程来源" rules={[{ required: true, message: '请选择课程来源' }]}>
                 <Select placeholder="请选择">
                   <Option value={CourseSourceType.SELF}>自有课程</Option>
                   <Option value={CourseSourceType.INSTITUTION}>机构排课</Option>
                   <Option value={CourseSourceType.MIXED}>混合班</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="active" label="课程状态" initialValue={true}>
+                <Select>
+                  <Option value={true}>未结课（出现在排课选择中）</Option>
+                  <Option value={false}>已结课（不会出现在排课中）</Option>
                 </Select>
               </Form.Item>
             </Col>
@@ -436,15 +462,7 @@ const CourseList: React.FC = () => {
           )}
 
           <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="active" label="课程状态" initialValue={true}>
-                <Select>
-                  <Option value={true}>未结课（出现在排课选择中）</Option>
-                  <Option value={false}>已结课（不会出现在排课中）</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
+            <Col span={8}>
               <Form.Item name="teacher_id" label="选择老师" 
                 initialValue={teachers.length > 0 ? teachers[0].id : undefined}
               >
@@ -457,10 +475,16 @@ const CourseList: React.FC = () => {
                 </Select>
               </Form.Item>
             </Col>
-          </Row>
-
-          <Row gutter={16}>
-            <Col span={24}>
+            <Col span={8}>
+              <Form.Item name="default_duration_minutes" label="默认时长" initialValue={120}>
+                <Select style={{ width: '100%' }} placeholder="拖拽排课时默认使用">
+                  {[0.5,1,1.5,2,2.5,3,3.5,4].map(h => (
+                    <Option key={h} value={h * 60}>{h}小时</Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={8}>
               <Form.Item name="room_id" label="上课地址">
                 <Select
                   mode="tags"

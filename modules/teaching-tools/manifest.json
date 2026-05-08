@@ -1,0 +1,10 @@
+{
+  "id": "teaching-tools",
+  "name": "教学工具",
+  "route_prefix": "/teaching-tools",
+  "entry": "src/index.js",
+  "permission": {
+    "module": "teaching-tools",
+    "action": "view"
+  }
+}

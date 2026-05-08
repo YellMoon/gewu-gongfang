@@ -1,0 +1,28 @@
+{
+  "name": "scheduling-system-backend",
+  "version": "3.1.0-0504",
+  "description": "教务管理系统后端API — 阿里云ECS部署",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "pm2:start": "pm2 start pm2.config.js",
+    "pm2:stop": "pm2 stop scheduling-backend",
+    "pm2:restart": "pm2 restart scheduling-backend",
+    "pm2:logs": "pm2 logs scheduling-backend"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "imap": "^0.8.19",
+    "jsonwebtoken": "^9.0.2",
+    "mailparser": "^3.9.8",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.7"
+  },
+  "license": "MIT"
+}

@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Table, Button, Modal, Form, Input, InputNumber, Select, AutoComplete,
-  Space, message, Popconfirm, Tag, Card, Row, Col, Alert, Divider, Statistic
+  Table, Button, Modal, Form, Input, InputNumber, Select,
+  Space, message, Popconfirm, Tag, Card, Row, Col, Divider, Statistic
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, WarningOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { Student, StudentSource, Institution, Payment, Consumption, PaymentType } from '../types';
-import { holidays2026, calculateGrade } from '../utils/helpers';
+import { calculateGrade } from '../utils/helpers';
 
 const { Option } = Select;
 
@@ -62,8 +62,10 @@ const StudentList: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
+    const deletedStudent = students.find(s => s.id === id);
     dbService.deleteStudent(id);
     message.success('删除成功');
+    (window as any).operateLogger?.log('删除', `删除学生「${deletedStudent?.name || id}」`, '学生管理');
     loadData();
   };
 
@@ -81,9 +83,11 @@ const StudentList: React.FC = () => {
       if (editingStudent) {
         dbService.updateStudent(editingStudent.id, values);
         message.success('更新成功');
+        (window as any).operateLogger?.log('修改', `修改学生「${values.name}」`, '学生管理');
       } else {
         dbService.createStudent(values);
         message.success('添加成功');
+        (window as any).operateLogger?.log('创建', `创建学生「${values.name}」`, '学生管理');
       }
       setModalVisible(false);
       loadData();
@@ -122,6 +126,7 @@ const StudentList: React.FC = () => {
   });
 
   const columns: ColumnsType<Student> = [
+    { title: '序号', key: 'index', width: 70, render: (_, __, index) => index + 1 },
     { title: '姓名', dataIndex: 'name', key: 'name', width: 100 },
     { title: '联系电话', dataIndex: 'phone', key: 'phone', width: 130 },
     { title: '学校', dataIndex: 'school', key: 'school', width: 150 },
@@ -186,24 +191,6 @@ const StudentList: React.FC = () => {
 
   return (
     <div>
-      <Alert
-        message="📅 近期法定节假日提醒"
-        description={
-          <div style={{ lineHeight: '1.8' }}>
-            {holidays2026.slice(0, 4).map((h, idx) => (
-              <span key={h.name} style={{ marginRight: 16 }}>
-                {h.name}：{h.start} ~ {h.end}
-                {idx < 3 && ' | '}
-              </span>
-            ))}
-          </div>
-        }
-        type="info"
-        showIcon
-        icon={<WarningOutlined />}
-        style={{ marginBottom: 16 }}
-      />
-
       <Card style={{ marginBottom: 16 }}>
         <Row gutter={16}>
           <Col span={6}>
@@ -255,6 +242,7 @@ const StudentList: React.FC = () => {
         onOk={handleSubmit}
         onCancel={() => setModalVisible(false)}
         width={700}
+        destroyOnClose
       >
         <Form form={form} layout="vertical">
           <Row gutter={16}>
@@ -273,14 +261,7 @@ const StudentList: React.FC = () => {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="school" label="学校">
-                <AutoComplete
-                  options={(schools || []).map(s => ({ value: s }))}
-                  placeholder="请选择或输入学校"
-                  filterOption={(input, option) =>
-                    (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                  allowClear
-                />
+                <Input placeholder="请输入学校名称" />
               </Form.Item>
             </Col>
             <Col span={12}>

@@ -1,0 +1,147 @@
+.home-page {
+  min-height: 100vh;
+  background: #f5f5f5;
+  padding-bottom: 40rpx;
+}
+
+.user-header {
+  display: flex;
+  align-items: center;
+  padding: 40rpx 30rpx;
+  background: linear-gradient(135deg, #1890ff, #36cfc9);
+}
+
+.user-avatar {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 24rpx;
+}
+
+.avatar-text {
+  font-size: 40rpx;
+  color: #fff;
+  font-weight: bold;
+}
+
+.user-info {
+  flex: 1;
+}
+
+.user-name {
+  display: block;
+  font-size: 34rpx;
+  color: #fff;
+  font-weight: bold;
+}
+
+.user-type {
+  display: block;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 4rpx;
+}
+
+.logout-btn {
+  padding: 12rpx 24rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.6);
+  border-radius: 30rpx;
+}
+
+.logout-text {
+  font-size: 24rpx;
+  color: #fff;
+}
+
+.section {
+  margin: 24rpx 24rpx 0;
+}
+
+.section-title {
+  display: block;
+  font-size: 30rpx;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 20rpx;
+}
+
+.loading {
+  text-align: center;
+  padding: 60rpx;
+  color: #999;
+}
+
+.module-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20rpx;
+}
+
+.module-card {
+  width: calc(50% - 10rpx);
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 30rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
+}
+
+.module-icon {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16rpx;
+}
+
+.icon-text {
+  font-size: 40rpx;
+}
+
+.module-name {
+  display: block;
+  font-size: 30rpx;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 8rpx;
+}
+
+.module-desc {
+  display: block;
+  font-size: 22rpx;
+  color: #999;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.quick-item {
+  width: calc(25% - 12rpx);
+  background: #fff;
+  border-radius: 12rpx;
+  padding: 24rpx 0;
+  text-align: center;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+}
+
+.quick-icon {
+  display: block;
+  font-size: 44rpx;
+  margin-bottom: 8rpx;
+}
+
+.quick-item text:last-child {
+  font-size: 22rpx;
+  color: #666;
+}

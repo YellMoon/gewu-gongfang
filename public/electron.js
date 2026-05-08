@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -24,17 +24,25 @@ function createWindow() {
   // ⑥ 去掉菜单栏和灰色区域
   Menu.setApplicationMenu(null);
 
+  const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
+
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width: screenWidth,
+    height: screenHeight,
+    minWidth: 1200,
+    minHeight: 800,
     frame: true,
     backgroundColor: '#ffffff',
     show: false,
+    title: '格物工坊',
     webPreferences: { 
       nodeIntegration: true, 
       contextIsolation: false 
     }
   });
+
+  // 打开时最大化
+  mainWindow.maximize();
 
   const isDev = process.env.NODE_ENV === 'development';
   if (isDev) {

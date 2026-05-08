@@ -1,0 +1,10 @@
+{
+  "id": "asset-statistics",
+  "name": "资产统计",
+  "route_prefix": "/asset-statistics",
+  "entry": "src/index.js",
+  "permission": {
+    "module": "asset-statistics",
+    "action": "view"
+  }
+}

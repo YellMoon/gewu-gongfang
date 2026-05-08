@@ -81,13 +81,6 @@ const RoomManager: React.FC = () => {
       render: (text: string) => <><EnvironmentOutlined style={{ color: '#1890ff', marginRight: 6 }} />{text}</>,
     },
     {
-      title: '详细地址',
-      dataIndex: 'address',
-      key: 'address',
-      width: 250,
-      render: (address?: string) => address || '-',
-    },
-    {
       title: '关联课程数',
       dataIndex: 'count',
       key: 'count',

@@ -1,0 +1,17 @@
+{
+  "id": "knowledge-distribution",
+  "name": "知识点分布统计",
+  "version": "1.0.0",
+  "type": "react-component",
+  "entry": "./index.tsx",
+  "icon": "AimOutlined",
+  "description": "统计题库中各科目的题型分布、难度分布及知识点覆盖情况",
+  "author": "格物工坊",
+  "permissions": ["read:questions"],
+  "dataDependencies": ["questions"],
+  "platform": {
+    "desktop": true,
+    "miniprogram": "readonly",
+    "mobile": true
+  }
+}

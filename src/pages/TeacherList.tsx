@@ -42,8 +42,10 @@ const TeacherList: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
+    const deletedTeacher = teachers.find(t => t.id === id);
     dbService.deleteTeacher(id);
     message.success('删除成功');
+    (window as any).operateLogger?.log('删除', `删除老师「${deletedTeacher?.name || id}」`, '老师管理');
     loadData();
   };
 
@@ -53,9 +55,11 @@ const TeacherList: React.FC = () => {
       if (editingTeacher) {
         dbService.updateTeacher(editingTeacher.id, values);
         message.success('更新成功');
+        (window as any).operateLogger?.log('修改', `修改老师「${values.name}」`, '老师管理');
       } else {
         dbService.createTeacher(values);
         message.success('添加成功');
+        (window as any).operateLogger?.log('创建', `创建老师「${values.name}」`, '老师管理');
       }
       setModalVisible(false);
       loadData();
@@ -65,6 +69,7 @@ const TeacherList: React.FC = () => {
   };
 
   const columns: ColumnsType<Teacher> = [
+    { title: '序号', key: 'index', width: 70, render: (_, __, index) => index + 1 },
     { title: '姓名', dataIndex: 'name', key: 'name', width: 120 },
     { title: '联系电话', dataIndex: 'phone', key: 'phone', width: 140 },
     { title: '科目', dataIndex: 'subject', key: 'subject', width: 120 },

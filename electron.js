@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -21,13 +21,27 @@ function createWindow() {
   log('__dirname=' + __dirname);
   log('app.getAppPath=' + app.getAppPath());
 
+  // ⑥ 去掉菜单栏和灰色区域
+  Menu.setApplicationMenu(null);
+
+  const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
+
   mainWindow = new BrowserWindow({
-    width: 1400, height: 900,
-    webPreferences: { nodeIntegration: true, contextIsolation: false },
-    frame: true, backgroundColor: '#fff', show: false
+    width: screenWidth,
+    height: screenHeight,
+    minWidth: 1200,
+    minHeight: 800,
+    frame: true,
+    backgroundColor: '#ffffff',
+    show: false,
+    webPreferences: { 
+      nodeIntegration: true, 
+      contextIsolation: false 
+    }
   });
 
-  Menu.setApplicationMenu(null);
+  // 打开时最大化
+  mainWindow.maximize();
 
   const isDev = process.env.NODE_ENV === 'development';
   if (isDev) {

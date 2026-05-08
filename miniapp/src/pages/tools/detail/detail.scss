@@ -1,0 +1,35 @@
+/* 工具详情 v2 */
+.dp { min-height: 100vh; background: #f5f5f5; padding-bottom: 40rpx; }
+.ld { text-align: center; padding: 120rpx 0; color: #999; font-size: 28rpx; }
+.em { text-align: center; padding: 120rpx 0; color: #999; }
+.ei { font-size: 64rpx; display: block; margin-bottom: 16rpx; }
+.th { background: linear-gradient(135deg, #1890ff, #36cfc9); padding: 40rpx 30rpx; }
+.tt { display: block; font-size: 36rpx; font-weight: bold; color: #fff; margin-bottom: 8rpx; }
+.td { display: block; font-size: 26rpx; color: rgba(255,255,255,0.8); margin-bottom: 8rpx; }
+.tm { display: block; font-size: 24rpx; color: rgba(255,255,255,0.6); }
+.ps { background: #fff; margin: 16rpx; border-radius: 16rpx; padding: 24rpx; }
+.st { display: block; font-size: 28rpx; font-weight: 600; color: #333; margin-bottom: 20rpx; }
+.pg { margin-bottom: 24rpx; }
+.pl { display: block; font-size: 26rpx; color: #666; margin-bottom: 8rpx; }
+.pv { display: flex; align-items: center; justify-content: space-between; height: 72rpx; background: #f5f5f5; border-radius: 12rpx; padding: 0 20rpx; font-size: 26rpx; color: #333; }
+.pa { font-size: 20rpx; color: #999; }
+.pi { height: 72rpx; background: #f5f5f5; border-radius: 12rpx; padding: 0 20rpx; font-size: 26rpx; }
+.sg { display: flex; align-items: center; gap: 16rpx; }
+.sv { font-size: 28rpx; color: #1890ff; font-weight: bold; width: 60rpx; text-align: center; }
+.un { font-size: 22rpx; color: #ff4d4f; }
+.sb { width: 100%; height: 80rpx; line-height: 80rpx; background: #1890ff; color: #fff; border-radius: 40rpx; font-size: 30rpx; margin-top: 16rpx; }
+.sb::after { border: none; }
+.rs { background: #fff; margin: 0 16rpx 16rpx; border-radius: 16rpx; padding: 24rpx; }
+.rd { background: #f5f5f5; border-radius: 8rpx; padding: 16rpx; font-size: 22rpx; color: #666; font-family: monospace; word-break: break-all; }
+
+/* 波形渲染 */
+.wave-result { }
+.wave-meta { display: flex; flex-wrap: wrap; gap: 12rpx; margin-bottom: 20rpx; }
+.wm-item { background: #f5f5f5; border-radius: 8rpx; padding: 8rpx 16rpx; display: flex; gap: 8rpx; }
+.wm-label { font-size: 22rpx; color: #999; }
+.wm-value { font-size: 22rpx; color: #333; font-weight: 600; }
+.wave-chart-text { background: #1a1a2e; border-radius: 12rpx; padding: 16rpx 24rpy; margin-bottom: 16rpx; overflow-x: auto; }
+.wave-chart-text text { font-size: 10rpx; font-family: monospace; color: #00ff88; line-height: 1.2; white-space: pre; }
+.wave-summary { background: #f5f5f5; border-radius: 8rpx; padding: 16rpx; }
+.ws-title { display: block; font-size: 24rpx; color: #666; margin-bottom: 8rpx; }
+.ws-text { font-size: 22rpx; color: #999; font-family: monospace; }

@@ -1,0 +1,10 @@
+{
+  "name": "scheduling-module",
+  "version": "4.0.0",
+  "description": "排课管理模块",
+  "main": "src/index.js",
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "uuid": "^10.0.0"
+  }
+}

@@ -1,0 +1,38 @@
+[
+  {
+    "id": "scheduling",
+    "name": "排课管理",
+    "description": "学生/课程/排课/收费管理",
+    "icon": "📅",
+    "route_prefix": "/scheduling",
+    "sort_order": 1,
+    "status": 1
+  },
+  {
+    "id": "question-bank",
+    "name": "题库系统",
+    "description": "知识点管理/组卷/练习/批改",
+    "icon": "📝",
+    "route_prefix": "/question-bank",
+    "sort_order": 2,
+    "status": 1
+  },
+  {
+    "id": "teaching-tools",
+    "name": "教学工具",
+    "description": "可插拔工具平台",
+    "icon": "🔧",
+    "route_prefix": "/api/tools",
+    "sort_order": 3,
+    "status": 0
+  },
+  {
+    "id": "assets",
+    "name": "资产统计",
+    "description": "收入支出/学员课时/财务报表",
+    "icon": "💰",
+    "route_prefix": "/api/assets",
+    "sort_order": 4,
+    "status": 0
+  }
+]

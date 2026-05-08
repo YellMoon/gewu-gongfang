@@ -8,6 +8,7 @@ interface School {
   id: string;
   name: string;
   count: number;
+  notes?: string;
   created_at: string;
   updated_at: string;
 }
@@ -39,7 +40,7 @@ const SchoolManager: React.FC = () => {
 
   const handleEdit = (record: School) => {
     setEditingSchool(record);
-    form.setFieldsValue({ name: record.name });
+    form.setFieldsValue({ name: record.name, notes: record.notes });
     setModalVisible(true);
   };
 
@@ -87,6 +88,13 @@ const SchoolManager: React.FC = () => {
       key: 'count',
       width: 120,
       render: (count: number) => <Tag color="blue">{count} 人</Tag>,
+    },
+    {
+      title: '备注',
+      dataIndex: 'notes',
+      key: 'notes',
+      width: 200,
+      render: (text?: string) => text || '-',
     },
     {
       title: '创建时间',
@@ -152,6 +160,11 @@ const SchoolManager: React.FC = () => {
           >
             <Input placeholder="请输入学校名称" autoFocus />
           </Form.Item>
+          {editingSchool && (
+            <Form.Item name="notes" label="备注">
+              <Input.TextArea rows={3} placeholder="可选：添加备注信息" />
+            </Form.Item>
+          )}
         </Form>
       </Modal>
     </div>

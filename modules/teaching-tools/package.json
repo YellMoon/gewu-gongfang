@@ -1,0 +1,9 @@
+{
+  "name": "module-teaching-tools",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "better-sqlite3": "^12.9.0",
+    "express": "^5.2.1"
+  }
+}

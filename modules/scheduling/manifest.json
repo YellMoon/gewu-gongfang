@@ -1,0 +1,10 @@
+{
+  "id": "scheduling",
+  "name": "排课管理",
+  "route_prefix": "/scheduling",
+  "entry": "src/index.js",
+  "permission": {
+    "module": "scheduling",
+    "action": "view"
+  }
+}

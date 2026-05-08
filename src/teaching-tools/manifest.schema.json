@@ -1,0 +1,140 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "教学工具插件清单",
+  "description": "格物工坊教学工具插件的 manifest.json 规范",
+  "type": "object",
+  "required": ["id", "name", "version", "type", "entry"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "插件唯一标识符，如 'wave-demo'",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "name": {
+      "type": "string",
+      "description": "插件显示名称",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "version": {
+      "type": "string",
+      "description": "插件版本号，遵循 semver",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "type": {
+      "type": "string",
+      "description": "插件类型",
+      "enum": ["react-component", "python", "wasm", "iframe"]
+    },
+    "entry": {
+      "type": "string",
+      "description": "插件入口文件路径（相对于 manifest.json）或完整 URL",
+      "minLength": 1
+    },
+    "icon": {
+      "type": "string",
+      "description": "插件图标（base64 数据 URI 或 Ant Design 图标名）",
+      "default": "ToolOutlined"
+    },
+    "description": {
+      "type": "string",
+      "description": "插件描述",
+      "maxLength": 500
+    },
+    "author": {
+      "type": "string",
+      "description": "插件作者"
+    },
+    "parameters": {
+      "type": "object",
+      "description": "插件参数 schema（JSON Schema 格式），宿主根据此 schema 渲染参数配置表单",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "object"
+        },
+        "properties": {
+          "type": "object",
+          "description": "参数字段定义"
+        },
+        "required": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "permissions": {
+      "type": "array",
+      "description": "插件所需的权限声明",
+      "items": {
+        "type": "string",
+        "enum": [
+          "read:students",
+          "write:students",
+          "read:grades",
+          "write:grades",
+          "read:questions",
+          "write:questions",
+          "read:schedules",
+          "write:schedules",
+          "read:payments",
+          "write:payments",
+          "notify",
+          "export:excel",
+          "file:r+w",
+          "network"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "dataDependencies": {
+      "type": "array",
+      "description": "插件所需的数据依赖",
+      "items": {
+        "type": "string",
+        "enum": [
+          "students",
+          "grades",
+          "courses",
+          "schedules",
+          "questions",
+          "knowledgeTree",
+          "payments",
+          "consumptions",
+          "institutions",
+          "teachers",
+          "rooms"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "platform": {
+      "type": "object",
+      "description": "平台兼容性声明",
+      "properties": {
+        "desktop": {
+          "type": "boolean",
+          "description": "是否兼容桌面端",
+          "default": true
+        },
+        "miniprogram": {
+          "type": "string",
+          "description": "小程序兼容模式：'full'（完整）、'readonly'（只读）、'none'（不支持）",
+          "enum": ["full", "readonly", "none"],
+          "default": "none"
+        },
+        "mobile": {
+          "type": "boolean",
+          "description": "是否兼容移动端",
+          "default": false
+        }
+      }
+    },
+    "registryUrl": {
+      "type": "string",
+      "format": "uri",
+      "description": "插件注册/更新源 URL"
+    }
+  },
+  "additionalProperties": false
+}

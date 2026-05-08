@@ -46,8 +46,10 @@ const PaymentList: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
+    const deletedPayment = payments.find(p => p.id === id);
     dbService.deletePayment(id);
     message.success('删除成功');
+    (window as any).operateLogger?.log('删除', `删除缴费记录「¥${deletedPayment?.amount || 0}」`, '缴费管理');
     loadData();
   };
 
@@ -61,9 +63,11 @@ const PaymentList: React.FC = () => {
       if (editingPayment) {
         dbService.updatePayment(editingPayment.id, submitValues);
         message.success('更新成功');
+        (window as any).operateLogger?.log('修改', `修改缴费记录「¥${submitValues.amount}」- ${getStudentName(submitValues.student_id)}`, '缴费管理');
       } else {
         dbService.createPayment(submitValues);
         message.success('添加成功');
+        (window as any).operateLogger?.log('创建', `创建缴费记录「¥${submitValues.amount}」- ${getStudentName(submitValues.student_id)}`, '缴费管理');
       }
       setModalVisible(false);
       loadData();
@@ -77,6 +81,7 @@ const PaymentList: React.FC = () => {
   };
 
   const columns: ColumnsType<Payment> = [
+    { title: '序号', key: 'index', width: 70, render: (_, __, index) => index + 1 },
     { 
       title: '学生', 
       dataIndex: 'student_id', 

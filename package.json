@@ -1,13 +1,13 @@
 {
-  "name": "scheduling-system",
-  "version": "2.2.3-0428",
-  "description": "教务管理系统",
+  "name": "gewu-gongfang",
+  "version": "2.2.0",
+  "description": "格物工坊（综合教育平台）",
   "main": "public/electron.js",
   "homepage": ".",
   "scripts": {
     "dev": "concurrently \"npm run dev:react\" \"wait-on http://localhost:3000 && electron .\"",
     "dev:react": "react-scripts start",
-    "build": "react-scripts build",
+    "build": "node scripts/update-version.js && react-scripts build",
     "start": "electron .",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
@@ -17,14 +17,20 @@
   "license": "MIT",
   "dependencies": {
     "antd": "^5.12.0",
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^12.9.0",
     "chart.js": "^4.4.0",
+    "cors": "^2.8.6",
     "dayjs": "^1.11.10",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.8.3",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
     "react": "^18.2.0",
     "react-chartjs-2": "^5.2.0",
     "react-dom": "^18.2.0",
     "react-scripts": "5.0.1",
+    "recharts": "^3.8.1",
     "sql.js": "^1.10.3",
     "uuid": "^9.0.1",
     "xlsx": "^0.18.5"
@@ -41,8 +47,8 @@
     "wait-on": "^7.2.0"
   },
   "build": {
-    "appId": "com.jvsclaw.scheduling",
-    "productName": "教务管理系统",
+    "appId": "com.jvsclaw.gewugongfang",
+    "productName": "格物工坊",
     "directories": {
       "output": "dist"
     },
@@ -64,9 +70,10 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "教务管理系统"
+      "shortcutName": "格物工坊"
     },
-    "publish": null
+    "publish": null,
+    "npmRebuild": false
   },
   "browserslist": {
     "production": [

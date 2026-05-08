@@ -20,10 +20,6 @@ const FinanceStats: React.FC = () => {
   const dbService = (window as any).dbService;
 
   const loadStats = async () => {
-    if (!dbService) {
-      console.warn('dbService not available yet');
-      return;
-    }
     const startDate = dateRange[0].format('YYYY-MM-DD');
     const endDate = dateRange[1].format('YYYY-MM-DD');
     

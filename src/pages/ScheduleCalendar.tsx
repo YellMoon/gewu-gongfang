@@ -1,11 +1,11 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Modal, Form, Input, InputNumber, Select, DatePicker, TimePicker, Calendar, Divider, Card, Row, Col, Button, message, Space, Dropdown, Alert
 } from 'antd';
 import type { MenuProps } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
-import { CourseType, ScheduleStatus, Course, Teacher, Student } from '../types';
-import useBatchSelection, { BatchVisuals, BatchState } from './BatchSelection';
+import { CourseType, ScheduleStatus, Course, Teacher, Student, BillingUnit } from '../types';
+import useBatchSelection from './useBatchSelection';
 import { v4 as uuidv4 } from 'uuid';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import isoWeek from 'dayjs/plugin/isoWeek';
@@ -23,6 +23,10 @@ const SLOT_HEIGHT = 2.5; // 每5分钟2.5px高，保持原总高度不变
 const COLUMN_WIDTH = 140;
 const SIDEBAR_WIDTH = 220;
 const DEFAULT_DURATION_HOURS = 2;
+const WEEK_GRID_BODY_HEIGHT = ((MAX_END_HOUR - MIN_START_HOUR) * 60 / SLOT_DURATION) * SLOT_HEIGHT;
+const WEEK_GRID_TITLE_HEIGHT = 30;
+const WEEK_GRID_DEFAULT_HEIGHT = WEEK_GRID_BODY_HEIGHT + WEEK_GRID_TITLE_HEIGHT;
+const GLOBAL_MAX_SLOT = ((24 - MIN_START_HOUR) * 60) / SLOT_DURATION; // 192 = 24:00
 
 function calculateTotalSlots() {
   return ((MAX_END_HOUR - MIN_START_HOUR) * 60) / SLOT_DURATION;
@@ -54,6 +58,8 @@ export interface ScheduleEvent {
   status: ScheduleStatus;
   room?: string;
   notes?: string;
+  course_year?: string;
+  course_semester?: string;
 }
 
 interface DailyViewProps {
@@ -62,6 +68,11 @@ interface DailyViewProps {
   schedules: ScheduleEvent[];
   minHour?: number;
   maxHour?: number;
+  selectedCourseIds?: string[];
+  batchPhase?: 'idle' | 'drawing' | 'selected' | 'dragging';
+  batchIsCopy?: boolean;
+  flashingIds?: string[];
+  flashToggle?: boolean;
   onDoubleClickDate: (day: Dayjs) => void;
   onDoubleClickSchedule: (schedule: ScheduleEvent) => void;
   onScheduleStatusChange: (id: string, status: ScheduleStatus) => void;
@@ -78,6 +89,11 @@ const DailyView: React.FC<DailyViewProps> = ({
   schedules,
   minHour = 8,
   maxHour = 23,
+  selectedCourseIds = [],
+  batchPhase = 'idle',
+  batchIsCopy = false,
+  flashingIds = [],
+  flashToggle = false,
   onDoubleClickDate,
   onDoubleClickSchedule,
   onScheduleStatusChange,
@@ -160,11 +176,11 @@ const DailyView: React.FC<DailyViewProps> = ({
     let endSlot = timeToSlot(endH, endM);
     
     if (dragState && dragState.schedule.id === schedule.id) {
-      // ② Ctrl+拖拽（复制）：原课程框位置固定不动，只有虚影跟随鼠标
+      // Ctrl+拖拽（复制）：原课程框位置固定不动，只有虚影跟随鼠标
       if (dragState.type === 'move' && dragState.ctrlKey) {
         return { top: startSlot * SLOT_HEIGHT, height: (endSlot - startSlot) * SLOT_HEIGHT, startSlot, endSlot };
       }
-      // ④ 统一：虚影上边沿对应slot = (mouseY - ghostHeight/2 - bodyRect.top) / SLOT_HEIGHT
+      // 统一：虚影上边沿对应slot = (mouseY - ghostHeight/2 - bodyRect.top) / SLOT_HEIGHT
       if (dragState.type === 'move' && dayBodyRef.current) {
         const durationSlots = endSlot - startSlot;
         const dragGhostHeight = Math.max(24, durationSlots * SLOT_HEIGHT);
@@ -172,6 +188,11 @@ const DailyView: React.FC<DailyViewProps> = ({
         const ghostTopY = dragState.currentY - dragGhostHeight / 2;
         startSlot = Math.max(0, Math.round((ghostTopY - bodyRect.top) / SLOT_HEIGHT));
         endSlot = startSlot + durationSlots;
+        // 结束时间不超过24:00
+        if (endSlot > GLOBAL_MAX_SLOT) {
+          startSlot = Math.max(0, GLOBAL_MAX_SLOT - durationSlots);
+          endSlot = startSlot + durationSlots;
+        }
         return { top: startSlot * SLOT_HEIGHT, height: (endSlot - startSlot) * SLOT_HEIGHT, startSlot, endSlot };
       }
       // resize：使用原有偏移计算
@@ -187,7 +208,7 @@ const DailyView: React.FC<DailyViewProps> = ({
       }
       
       startSlot = Math.max(0, startSlot);
-      endSlot = Math.max(startSlot + 1, endSlot);
+      endSlot = Math.max(startSlot + 1, Math.min(endSlot, GLOBAL_MAX_SLOT));
     }
     
     return { top: startSlot * SLOT_HEIGHT, height: (endSlot - startSlot) * SLOT_HEIGHT, startSlot, endSlot };
@@ -296,19 +317,25 @@ const DailyView: React.FC<DailyViewProps> = ({
         }
         
         // ③ 放宽slot边界检查，用全局范围
-        const globalMaxSlot = ((24 - MIN_START_HOUR) * 60) / SLOT_DURATION;
+        // const globalMaxSlot = ((24 - MIN_START_HOUR) * 60) / SLOT_DURATION;
         
         if (dragState.type === 'move') {
-          if (targetSlot >= 0 && targetSlot < globalMaxSlot) {
-            onDragSchedule?.(dragState.schedule, targetDay, targetSlot, upEvent.ctrlKey);
+          if (targetSlot >= 0) {
+            // 结束时间不超过24:00：startSlot + duration <= GLOBAL_MAX_SLOT
+            const durationSlots = dragState.endSlot - dragState.startSlot;
+            const maxStartSlot = GLOBAL_MAX_SLOT - durationSlots;
+            const adjustedSlot = Math.max(0, Math.min(targetSlot, maxStartSlot));
+            onDragSchedule?.(dragState.schedule, targetDay, adjustedSlot, upEvent.ctrlKey);
           }
         } else if (dragState.type === 'resize-top') {
-          if (targetSlot >= 0 && targetSlot < maxEndSlot) {
+          if (targetSlot >= 0 && targetSlot < GLOBAL_MAX_SLOT) {
             onResizeSchedule?.(dragState.schedule, targetSlot, null);
           }
         } else if (dragState.type === 'resize-bottom') {
-          if (targetSlot >= 0 && targetSlot < maxEndSlot) {
-            onResizeSchedule?.(dragState.schedule, null, targetSlot);
+          if (targetSlot >= 0) {
+            // 结束时间不超过24:00
+            const adjustedSlot = Math.min(targetSlot, GLOBAL_MAX_SLOT);
+            onResizeSchedule?.(dragState.schedule, null, adjustedSlot);
           }
         }
       }
@@ -400,7 +427,7 @@ const DailyView: React.FC<DailyViewProps> = ({
           userSelect: 'none'
         }}
       >
-        <div>{weekDays[dayIndex]}{isHoliday ? `（${holidayName}）` : ''}{isToday && ' 今天'}</div>
+        <div>{weekDays[dayIndex]}{isHoliday ? `（${holidayName}）` : ''}</div>
         <div style={{ fontSize: 12, fontWeight: 'normal', marginTop: 2 }}>
           {day.format('M月D日')}
         </div>
@@ -414,52 +441,106 @@ const DailyView: React.FC<DailyViewProps> = ({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
       >
-        {/* 时间格子线条 - 60分钟间隔，半透明 */}
-        {Array.from({ length: Math.floor(maxEndSlot / 12) }).map((_, slotIdx) => (
-          <div
-            key={slotIdx}
-            style={{
-              position: 'absolute',
-              top: slotIdx * 12 * SLOT_HEIGHT,
-              left: 0,
-              right: 0,
-              height: 1,
-              borderBottom: '1px solid rgba(0,0,0,0.08)'
-            }}
-          />
-        ))}
+        {/* 早于8点的时间格子线（自动在padding区域内偏移） */}
+        {earlyOffset > 0 && Array.from({ length: Math.floor((MIN_START_HOUR - minHour) * 60 / SLOT_DURATION / 12) }).filter((_, si) => {
+          const earlyHour = MIN_START_HOUR - (si + 1);
+          const top = (earlyHour - MIN_START_HOUR) * 12 * SLOT_HEIGHT;
+          return top >= -(earlyOffset);
+        }).map((_, si) => {
+          const earlyHour = MIN_START_HOUR - (si + 1);
+          const top = (earlyHour - MIN_START_HOUR) * 12 * SLOT_HEIGHT;
+          return (
+            <div
+              key={`early-${si}`}
+              style={{
+                position: 'absolute',
+                top: top,
+                left: 0,
+                right: 0,
+                height: 1,
+                borderBottom: '1px solid rgba(0,0,0,0.08)'
+              }}
+            />
+          );
+        })}
+        {/* 8点及之后的时间格子线条 - 60分钟间隔，半透明（自动延伸至maxEndSlot） */}
+        {Array.from({ length: Math.ceil(maxEndSlot / 12) }).map((_, slotIdx) => {
+          const lineTop = slotIdx * 12 * SLOT_HEIGHT;
+          // 只渲染在maxEndSlot范围内的线条，避免无限延伸
+          if (lineTop >= maxEndSlot * SLOT_HEIGHT) return null;
+          return (
+            <div
+              key={slotIdx}
+              style={{
+                position: 'absolute',
+                top: lineTop,
+                left: 0,
+                right: 0,
+                height: 1,
+                borderBottom: '1px solid rgba(0,0,0,0.08)'
+              }}
+            />
+          );
+        })}
+        {/* 结束时间底线：确保超出最后一格时仍有底边线 */}
+        <div style={{
+          position: 'absolute',
+          top: maxEndSlot * SLOT_HEIGHT - 1,
+          left: 0, right: 0,
+          height: 1,
+          borderBottom: '1px solid rgba(0,0,0,0.08)'
+        }} />
 
-        {/* ② 拖入课程虚影时间提示 + ④ 课程框拖拽/边沿拖动时间提示 */}
+        {/* 拖入课程预览 */}
         {dragOverSlot !== null && (() => {
           const { hour, minute } = slotToTime(dragOverSlot);
+          const dragCourse = (window as any).courseDragData as Course | undefined;
+          const startStr = formatTime(hour, minute);
+          const durMin = dragCourse?.default_duration_minutes || 120;
+          const endSlot = dragOverSlot + Math.floor(durMin / 5);
+          const endH = MIN_START_HOUR + Math.floor(endSlot * 5 / 60);
+          const endM = (endSlot * 5) % 60;
+          const endStr = formatTime(endH, endM);
+          const roomInfo = dragCourse?.room_name || dragCourse?.room_id || '';
           return (
             <div style={{
               position: 'absolute',
               top: dragOverSlot * SLOT_HEIGHT,
-              left: 0,
-              right: 0,
-              height: SLOT_HEIGHT * 2,
-              background: 'rgba(24,144,255,0.15)',
-              border: '1px dashed #1890ff',
-              borderRadius: 4,
-              zIndex: 5,
+              left: 4,
+              right: 4,
+              height: Math.max(24, Math.floor(durMin / 5) * SLOT_HEIGHT),
+              background: 'rgba(24,144,255,0.25)',
+              border: '2px dashed #1890ff',
+              borderRadius: 6,
+              zIndex: 50,
               pointerEvents: 'none',
               display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
               alignItems: 'center',
-              justifyContent: 'center'
+              boxShadow: '0 4px 20px rgba(24,144,255,0.3)'
             }}>
-              <span style={{ fontSize: 10, color: '#1890ff', fontWeight: 'bold' }}>
-                {formatTime(hour, minute)}开始
-              </span>
+              <div style={{ fontSize: 12, fontWeight: 'bold', color: '#1890ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
+                {dragCourse ? (dragCourse.display_name || dragCourse.name.replace(/^\d{4}\s+\S+学期\s+/, '')) : '课程'}
+              </div>
+              <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
+                {roomInfo && <span>{roomInfo} </span>}
+                <span style={{ color: '#ff4d4f', fontWeight: 'bold', background: 'rgba(255,77,79,0.15)', padding: '0 2px', borderRadius: 2 }}>{startStr}</span>
+                <span> - </span>
+                <span style={{ color: '#ff4d4f', fontWeight: 'bold', background: 'rgba(255,77,79,0.15)', padding: '0 2px', borderRadius: 2 }}>{endStr}</span>
+              </div>
             </div>
           );
         })()}
 
         {daySchedules.map(schedule => {
+          // 批量 Ctrl+拖拽（复制）时原课程框不动，普通拖拽时才隐藏
+          if (batchPhase === 'dragging' && !batchIsCopy && selectedCourseIds.includes(schedule.id)) return null;
           const pos = dragState && dragState.schedule.id === schedule.id 
             ? getCurrentDragPosition(schedule) 
             : getCoursePosition(schedule);
           const isDragging = dragState && dragState.schedule.id === schedule.id;
+          const isFlashing = flashingIds.includes(schedule.id);
 
           return (
             <React.Fragment key={schedule.id}>
@@ -468,6 +549,8 @@ const DailyView: React.FC<DailyViewProps> = ({
                 trigger={['contextMenu']}
               >
                 <div
+                  data-course-card="true"
+                  data-course-id={schedule.id}
                   style={{
                     position: 'absolute',
                     top: pos.top,
@@ -484,7 +567,9 @@ const DailyView: React.FC<DailyViewProps> = ({
                     boxShadow: isDragging && dragState.ghostVisible && dragState.type === 'move' && !dragState.ctrlKey ? 'none' : (isDragging && dragState.ghostVisible ? '0 4px 16px rgba(24,144,255,0.4)' : 'none'),
                     transition: (isDragging && dragState.ghostVisible) ? 'none' : 'all 0.1s',
                     // ② Ctrl+拖拽时原框保持完整不透明，仅绿色虚线边框高亮
-                    border: isDragging && dragState.ghostVisible && dragState.ctrlKey ? '3px dashed #52c41a' : undefined
+                    border: isDragging && dragState.ghostVisible && dragState.ctrlKey ? '3px dashed #52c41a' : undefined,
+                    // 批量删除闪烁动画
+                    animation: isFlashing ? 'batchFlash 0.6s ease-in-out infinite' : undefined,
                   }}
                   onClick={(e) => handleScheduleClick(e, schedule)}
                   onDoubleClick={(e) => handleScheduleDoubleClick(e, schedule)}
@@ -523,6 +608,7 @@ const DailyView: React.FC<DailyViewProps> = ({
                     }}>
                       {schedule.course_name}
                     </div>
+
                     <div style={{
                       fontSize: 10,
                       color: '#666',
@@ -533,7 +619,7 @@ const DailyView: React.FC<DailyViewProps> = ({
                       textAlign: 'center',
                       maxWidth: '100%',
                       flexShrink: 0,
-                      marginTop: 2
+                      marginTop: 1
                     }}>
                       {schedule.room && `${schedule.room} `}
                       {isDragging ? (() => {
@@ -616,10 +702,15 @@ const DailyView: React.FC<DailyViewProps> = ({
         } catch(e) {}
         
         const ghostEndSlot = ghostStartSlot + durationSlots;
+        // 结束时间不超过24:00
+        if (ghostEndSlot > GLOBAL_MAX_SLOT) {
+          ghostStartSlot = Math.max(0, GLOBAL_MAX_SLOT - durationSlots);
+        }
+        const ghostEndSlotClamped = Math.min(ghostEndSlot, GLOBAL_MAX_SLOT);
         const sh = Math.floor(ghostStartSlot / 12) + 8;
         const sm = (ghostStartSlot % 12) * 5;
-        const eh = Math.floor(ghostEndSlot / 12) + 8;
-        const em = (ghostEndSlot % 12) * 5;
+        const eh = Math.floor(ghostEndSlotClamped / 12) + 8;
+        const em = (ghostEndSlotClamped % 12) * 5;
         const startTimeStr = String(sh).padStart(2,'0') + ':' + String(sm).padStart(2,'0');
         const endTimeStr = String(eh).padStart(2,'0') + ':' + String(em).padStart(2,'0');
         let ghostX = (dragState.currentX || 0) - ghostWidth / 2;
@@ -665,6 +756,11 @@ interface TwoWeeksViewProps {
   currentMonday: Dayjs;
   selectedTeacherId: string | undefined;
   courses: Course[];
+  selectedCourseIds?: string[];
+  batchPhase?: 'idle' | 'drawing' | 'selected' | 'dragging';
+  batchIsCopy?: boolean;
+  flashingIds?: string[];
+  flashToggle?: boolean;
   onDoubleClickDate: (day: Dayjs) => void;
   onDoubleClickSchedule: (schedule: ScheduleEvent) => void;
   onScheduleStatusChange: (id: string, status: ScheduleStatus) => void;
@@ -679,6 +775,11 @@ const OneWeekRow: React.FC<{
   startMonday: Dayjs;
   weekLabel: string;
   schedules: ScheduleEvent[];
+  selectedCourseIds?: string[];
+  batchPhase?: 'idle' | 'drawing' | 'selected' | 'dragging';
+  batchIsCopy?: boolean;
+  flashingIds?: string[];
+  flashToggle?: boolean;
   onDoubleClickDate: (day: Dayjs) => void;
   onDoubleClickSchedule: (schedule: ScheduleEvent) => void;
   onScheduleStatusChange: (id: string, status: ScheduleStatus) => void;
@@ -691,6 +792,11 @@ const OneWeekRow: React.FC<{
   startMonday,
   weekLabel,
   schedules,
+  selectedCourseIds = [],
+  batchPhase = 'idle',
+  batchIsCopy = false,
+  flashingIds = [],
+  flashToggle = false,
   onDoubleClickDate,
   onDoubleClickSchedule,
   onScheduleStatusChange,
@@ -740,6 +846,11 @@ const OneWeekRow: React.FC<{
             schedules={schedules}
             minHour={dynMinHour}
             maxHour={dynMaxHour}
+            selectedCourseIds={selectedCourseIds}
+            batchPhase={batchPhase}
+            batchIsCopy={batchIsCopy}
+            flashingIds={flashingIds}
+            flashToggle={flashToggle}
             onDoubleClickDate={onDoubleClickDate}
             onDoubleClickSchedule={onDoubleClickSchedule}
             onScheduleStatusChange={onScheduleStatusChange}
@@ -760,6 +871,11 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
   currentMonday,
   selectedTeacherId,
   courses,
+  selectedCourseIds = [],
+  batchPhase = 'idle',
+  batchIsCopy = false,
+  flashingIds = [],
+  flashToggle = false,
   onDoubleClickDate,
   onDoubleClickSchedule,
   onScheduleStatusChange,
@@ -778,11 +894,16 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
   });
 
   return (
-    <div style={{ overflowY: 'auto', flex: 1, paddingRight: 8 }}>
+    <div style={{ minHeight: '100%', paddingRight: 8 }}>
       <OneWeekRow
         startMonday={currentMonday}
         weekLabel="本周"
         schedules={filteredSchedules}
+        selectedCourseIds={selectedCourseIds}
+        batchPhase={batchPhase}
+        batchIsCopy={batchIsCopy}
+        flashingIds={flashingIds}
+        flashToggle={flashToggle}
         onDoubleClickDate={onDoubleClickDate}
         onDoubleClickSchedule={onDoubleClickSchedule}
         onScheduleStatusChange={onScheduleStatusChange}
@@ -796,6 +917,11 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
         startMonday={currentMonday.add(1, 'week')}
         weekLabel="下周"
         schedules={filteredSchedules}
+        selectedCourseIds={selectedCourseIds}
+        batchPhase={batchPhase}
+        batchIsCopy={batchIsCopy}
+        flashingIds={flashingIds}
+        flashToggle={flashToggle}
         onDoubleClickDate={onDoubleClickDate}
         onDoubleClickSchedule={onDoubleClickSchedule}
         onScheduleStatusChange={onScheduleStatusChange}
@@ -830,6 +956,10 @@ const Sidebar: React.FC<SidebarProps> = ({
     e.dataTransfer.setData('courseId', course.id);
     (window as any).courseDragData = course;
     e.dataTransfer.effectAllowed = 'copy';
+    // 隐藏浏览器默认拖拽虚影
+    const img = new Image();
+    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    e.dataTransfer.setDragImage(img, 0, 0);
   }
 
   return (
@@ -837,39 +967,50 @@ const Sidebar: React.FC<SidebarProps> = ({
       width: SIDEBAR_WIDTH,
       borderRight: '1px solid #d9d9d9',
       padding: 16,
-      height: 'calc(100vh - 200px)',
-      overflowY: 'auto',
-      background: '#fafafa'
+      background: '#fafafa',
+      display: 'flex',
+      flexDirection: 'column',
+      flexShrink: 0,
+      overflow: 'hidden'
     }}>
-      <h4>👨‍🏫 选择老师</h4>
-      <Select
-        style={{ width: '100%', marginBottom: 16 }}
-        placeholder="选择老师"
-        allowClear
-        showSearch
-        value={selectedTeacherId}
-        onChange={onTeacherChange}
-        options={teachers.map(t => ({ label: t.name, value: t.id }))}
-        filterOption={(input, option) =>
-          (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-        }
-      />
-      <Divider style={{ margin: '8px 0 16px 0' }} />
-      <h4>📚 未结课程 ({filteredCourses.length})</h4>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {teachers.length > 0 && (
+        <div style={{ flexShrink: 0 }}>
+          <h4 style={{ margin: '0 0 8px 0' }}>👨‍🏫 选择老师</h4>
+          <Select
+            style={{ width: '100%', marginBottom: 8 }}
+            placeholder="选择老师"
+            allowClear
+            showSearch
+            value={selectedTeacherId}
+            onChange={onTeacherChange}
+            options={teachers.map(t => ({ label: t.name, value: t.id }))}
+            filterOption={(input, option) =>
+              (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+            }
+          />
+          <Divider style={{ margin: '8px 0' }} />
+        </div>
+      )}
+      {selectedTeacherId && (
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+          <h4 style={{ margin: '0 0 8px 0', flexShrink: 0 }}>
+            📚 未结课程 ({filteredCourses.length})
+          </h4>
+          <div style={{ overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6, paddingRight: 4 }}>
         {filteredCourses.map(course => (
           <div
             key={course.id}
             draggable={course.active}
             onDragStart={e => handleDragStart(e, course)}
             style={{
-              padding: '8px 12px',
+              padding: '6px 10px',
               background: course.active ? 'white' : '#f5f5f5',
               border: '1px solid ' + (course.active ? '#d9d9d9' : '#ccc'),
               borderRadius: 6,
               cursor: course.active ? 'grab' : 'not-allowed',
               transition: 'all 0.3s',
-              opacity: course.active ? 1 : 0.6
+              opacity: course.active ? 1 : 0.6,
+              flexShrink: 0
             }}
             onMouseEnter={e => {
               if (!course.active) return;
@@ -882,12 +1023,16 @@ const Sidebar: React.FC<SidebarProps> = ({
               e.currentTarget.style.boxShadow = 'none';
             }}
           >
-            <div style={{ fontWeight: 'bold', fontSize: 14, color: '#1890ff' }}>
-              {course.name}
+            <div style={{ fontWeight: 'bold', fontSize: 13, color: '#1890ff' }}>
+              {course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '')}
+            </div>
+            <div style={{ fontSize: 11, color: '#666', marginTop: 1 }}>
+              {course.year || course.name?.match(/^(\d{4})/)?.[1] || '-'}年{' '}
+              {course.semester || course.name?.match(/^\d{4}\s+(\S+学期)/)?.[1] || '-'}
             </div>
             {course.type !== undefined && (
-              <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
-                类型: {course.type === CourseType.ONE_ON_ONE ? '一对一' : '班课'}
+              <div style={{ fontSize: 11, color: '#666', marginTop: 1 }}>
+                {course.type === CourseType.ONE_ON_ONE ? '一对一' : course.type === CourseType.ONE_ON_TWO ? '一对二' : '班课'}
               </div>
             )}
           </div>
@@ -897,7 +1042,14 @@ const Sidebar: React.FC<SidebarProps> = ({
             暂无未结课程
           </div>
         )}
-      </div>
+          </div>
+        </div>
+      )}
+      {!selectedTeacherId && teachers.length > 0 && (
+        <div style={{ textAlign: 'center', color: '#999', padding: '40px 0', fontSize: 14 }}>
+          请先选择老师
+        </div>
+      )}
     </div>
   );
 };
@@ -929,8 +1081,84 @@ const ScheduleCalendar: React.FC = () => {
   const [refreshModalVisible, setRefreshModalVisible] = useState(false);
   const [refreshDateRange, setRefreshDateRange] = useState<[Dayjs, Dayjs] | null>(null);
 
-  // 批量选择拖拽
-  const { batchState, handleMouseDown: handleBatchMouseDown, handleMouseMove: handleBatchMouseMove, handleMouseUp: handleBatchMouseUp, handleContextMenu: handleBatchContextMenu } = useBatchSelection(containerRef, schedules, courses, currentMonday, setSchedules);
+  // ⑤ 操作回退/前进（undo/redo）
+  const MAX_HISTORY = 10;
+  const [history, setHistory] = useState<{ past: ScheduleEvent[][]; future: ScheduleEvent[][] }>({ past: [], future: [] });
+  const pastRef = useRef(history.past);
+  const futureRef = useRef(history.future);
+  useEffect(() => { pastRef.current = history.past; }, [history.past]);
+  useEffect(() => { futureRef.current = history.future; }, [history.future]);
+
+  // ⑤ 带历史记录的 setSchedules 包装
+  const setSchedulesWithHistory = useCallback((newSchedulesOrUpdater: ScheduleEvent[] | ((prev: ScheduleEvent[]) => ScheduleEvent[])) => {
+    setSchedules(prev => {
+      const newSchedules = typeof newSchedulesOrUpdater === 'function'
+        ? newSchedulesOrUpdater(prev)
+        : newSchedulesOrUpdater;
+      // 只在数据实际变化时记录历史
+      const isChanged = JSON.stringify(newSchedules) !== JSON.stringify(prev);
+      if (isChanged) {
+        setHistory(h => ({
+          past: [...h.past.slice(-(MAX_HISTORY - 1)), [...prev]], // 保存变更前状态
+          future: [], // 新操作清空重做栈
+        }));
+      }
+      return newSchedules;
+    });
+  }, []);
+
+  // 批量选择拖拽（使用历史包装回调）
+  const { batchVisuals, phase: batchPhase, selectedCourseIds, isCopy: batchIsCopy, flashingIds, flashToggle, setSchedules: setBatchSchedules, setCourses: setBatchCourses } = useBatchSelection(containerRef, currentMonday, setSchedulesWithHistory, (ids: string[]) => {
+    // 批量删除回调：从schedules中移除指定ID的课程，并记入历史
+    setSchedulesWithHistory(prev => prev.filter(s => !ids.includes(s.id)));
+    message.success(`已删除 ${ids.length} 节课程`);
+  });
+
+  // ⑤ 撤销 Ctrl+Z
+  const undo = useCallback(() => {
+    const past = pastRef.current;
+    if (past.length === 0) return;
+    const prevState = past[past.length - 1];
+    setSchedules(cur => {
+      setHistory(h => ({
+        past: h.past.slice(0, -1),
+        future: [...h.future, [...cur]],
+      }));
+      return prevState;
+    });
+    setBatchSchedules(prevState);
+  }, [setBatchSchedules]);
+
+  // ⑤ 重做 Ctrl+Y
+  const redo = useCallback(() => {
+    const future = futureRef.current;
+    if (future.length === 0) return;
+    const nextState = future[future.length - 1];
+    setSchedules(cur => {
+      setHistory(h => ({
+        past: [...h.past, [...cur]],
+        future: h.future.slice(0, -1),
+      }));
+      return nextState;
+    });
+    setBatchSchedules(nextState);
+  }, [setBatchSchedules]);
+
+  // ⑤ Ctrl+Z / Ctrl+Y 快捷键
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        undo();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [undo, redo]);
 
   React.useEffect(() => {
     const loadData = () => {
@@ -941,15 +1169,40 @@ const ScheduleCalendar: React.FC = () => {
           return;
         }
         const savedSchedules = localStorage.getItem('schedules');
-        if (savedSchedules) setSchedules(JSON.parse(savedSchedules));
+        if (savedSchedules) {
+          const parsed = JSON.parse(savedSchedules);
+          setSchedules(parsed);
+          setBatchSchedules(parsed);
+        }
         if (db.getAllCourses) {
           const coursesData = db.getAllCourses();
           setCourses([...coursesData]);
-          // 自动同步时间表的 room 与课程最新 room_name
+          setBatchCourses([...coursesData]);
+          // 自动同步时间表的 room 与课程最新 room_name，以及 course_name（包含年份学期）
           setSchedules(prev => prev.map(s => {
             const course = coursesData.find((c: Course) => c.id === s.course_id);
-            if (course && course.room_name && s.room !== course.room_name) {
-              return { ...s, room: course.room_name };
+            if (course) {
+              const updated: Partial<ScheduleEvent> = {};
+              if (course.room_name && s.room !== course.room_name) {
+                updated.room = course.room_name;
+              }
+              // 同步课程名称（只显示纯课程名，不含年份学期）
+              const displayCourseName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
+              if (displayCourseName && s.course_name !== displayCourseName) {
+                updated.course_name = displayCourseName;
+              }
+              // 同步课程年份和学期
+              const courseYear = course.year !== undefined ? String(course.year) : undefined;
+              const courseSemester = course.semester || undefined;
+              if (s.course_year !== courseYear) {
+                updated.course_year = courseYear;
+              }
+              if (s.course_semester !== courseSemester) {
+                updated.course_semester = courseSemester;
+              }
+              if (Object.keys(updated).length > 0) {
+                return { ...s, ...updated };
+              }
             }
             return s;
           }));
@@ -984,10 +1237,11 @@ const ScheduleCalendar: React.FC = () => {
   React.useEffect(() => {
     try {
       localStorage.setItem('schedules', JSON.stringify(schedules));
+      setBatchSchedules(schedules);
     } catch (e) {
       console.error('保存数据失败', e);
     }
-  }, [schedules]);
+  }, [schedules, setBatchSchedules]);
 
   function handleDoubleClickDate(day: Dayjs) {
     setEditingSchedule(null);
@@ -1046,6 +1300,20 @@ const ScheduleCalendar: React.FC = () => {
     return course?.student_pricings || [];
   })();
 
+  // 当前课程的计费单位
+  const billingCourse = studentEditModal.schedule
+    ? courses.find(c => c.id === (studentEditModal.schedule as any).course_id)
+    : null;
+  const billingUnitLabel = (() => {
+    const buRaw = (billingCourse as any)?.billing_unit;
+    // 兼容数字/字符串/undefined
+    const bu = buRaw !== undefined && buRaw !== null ? Number(buRaw) : null;
+    if (bu === BillingUnit.PER_HOUR) return '/小时';
+    if (bu === BillingUnit.PER_SESSION) return '/次';
+    // 未设置时默认按次课（常见场景）
+    return '/次';
+  })();
+
   function handleSaveStudentEdit() {
     const values = studentEditForm.getFieldsValue();
     if (studentEditModal.schedule) {
@@ -1071,13 +1339,53 @@ const ScheduleCalendar: React.FC = () => {
   }
 
   function handleScheduleStatusChange(id: string, status: ScheduleStatus) {
-    setSchedules(prev => prev.map(s => s.id === id ? { ...s, status } : s));
+    const changedSchedule = schedules.find(s => s.id === id);
+    setSchedulesWithHistory(prev => prev.map(s => s.id === id ? { ...s, status } : s));
     message.success('状态已更新');
+    if (changedSchedule) {
+      const statusLabels: Record<string, string> = {
+        [ScheduleStatus.PLANNED]: '正常',
+        [ScheduleStatus.COMPLETED]: '已完成',
+        [ScheduleStatus.LEAVE]: '请假',
+        [ScheduleStatus.CANCELLED]: '取消',
+      };
+      (window as any).operateLogger?.log('修改', `修改排课「${changedSchedule.course_name}」状态为「${statusLabels[status] || status}」`, '课程表');
+    }
   }
 
   function handleDropCourse(course: Course, day: Dayjs, slot: number) {
+    // 课程表只显示纯课程名
+    const displayCourseName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
     const { hour: startH, minute: startM } = slotToTime(slot);
     const startTime = dayjs(day).hour(startH).minute(startM).second(0);
+    // 有默认时长：直接创建课程框，不弹窗
+    if (course.default_duration_minutes) {
+      const endTime = startTime.add(course.default_duration_minutes, 'minute');
+      const overlap = checkOverlap('', startTime.format('YYYY-MM-DD HH:mm'), endTime.format('YYYY-MM-DD HH:mm'));
+      if (overlap) {
+        message.warning(`与「${overlap.course_name}」时间冲突，请调整位置`);
+        return;
+      }
+      const newSchedule: ScheduleEvent = {
+        id: uuidv4(),
+        course_id: course.id,
+        course_name: displayCourseName,
+        course_type: course.type,
+        start_time: startTime.format('YYYY-MM-DD HH:mm'),
+        end_time: endTime.format('YYYY-MM-DD HH:mm'),
+        status: ScheduleStatus.PLANNED,
+        room: course.room_id || course.room_name || '',
+        course_year: course.year !== undefined ? String(course.year) : undefined,
+        course_semester: course.semester || undefined,
+      };
+      const newSchedules = [...schedules, newSchedule];
+      setSchedulesWithHistory(newSchedules);
+      setBatchSchedules(newSchedules);
+      message.success(`已添加「${displayCourseName}」(${startTime.format('HH:mm')}-${endTime.format('HH:mm')})`);
+      (window as any).operateLogger?.log('创建', `创建排课「${displayCourseName}」(${startTime.format('YYYY-MM-DD HH:mm')}-${endTime.format('YYYY-MM-DD HH:mm')})`, '课程表');
+      return;
+    }
+    // 无默认时长：弹窗手动设置
     const endTime = startTime.add(DEFAULT_DURATION_HOURS, 'hour');
     setEditingSchedule(null);
     form.resetFields();
@@ -1086,7 +1394,7 @@ const ScheduleCalendar: React.FC = () => {
       startTime: startTime,
       endTime: endTime,
       courseId: course.id,
-      courseName: course.name,
+      courseName: displayCourseName,
       teacherId: course.teacher_id,
       room: course.room_id || course.room_name,
       status: ScheduleStatus.PLANNED,
@@ -1112,7 +1420,11 @@ const ScheduleCalendar: React.FC = () => {
     const durationMinutes = oldEndDayjs.diff(oldStartDayjs, 'minute');
     
     const newStartTime = dayjs(newDay).hour(startH).minute(startM).second(0);
-    const newEndTime = newStartTime.add(durationMinutes, 'minute');
+    let newEndTime = newStartTime.add(durationMinutes, 'minute');
+    // 结束时间不超过24:00：跨午夜时限制到23:55
+    if (newEndTime.format('YYYY-MM-DD') !== newStartTime.format('YYYY-MM-DD')) {
+      newEndTime = newStartTime.hour(23).minute(55);
+    }
     const newStartTimeStr = newStartTime.format('YYYY-MM-DD HH:mm');
     const newEndTimeStr = newEndTime.format('YYYY-MM-DD HH:mm');
     
@@ -1132,15 +1444,17 @@ const ScheduleCalendar: React.FC = () => {
         start_time: newStartTimeStr,
         end_time: newEndTimeStr
       };
-      setSchedules(prev => [...prev, newSchedule]);
+      setSchedulesWithHistory(prev => [...prev, newSchedule]);
       message.success('课程已复制');
+      (window as any).operateLogger?.log('复制', `复制排课「${schedule.course_name}」到${newStartTimeStr.substring(0,10)} ${newStartTimeStr.substring(11,16)}-${newEndTimeStr.substring(11,16)}`, '课程表');
     } else {
-      setSchedules(prev => prev.map(s => 
+      setSchedulesWithHistory(prev => prev.map(s => 
         s.id === schedule.id 
           ? { ...s, start_time: newStartTimeStr, end_time: newEndTimeStr }
           : s
       ));
       message.success('课程已移动');
+      (window as any).operateLogger?.log('移动', `移动排课「${schedule.course_name}」到${newStartTimeStr.substring(0,10)} ${newStartTimeStr.substring(11,16)}-${newEndTimeStr.substring(11,16)}`, '课程表');
     }
   }
 
@@ -1156,7 +1470,8 @@ const ScheduleCalendar: React.FC = () => {
       startM = minute;
     }
     if (newEndSlot !== null) {
-      const { hour, minute } = slotToTime(newEndSlot);
+      const adjustedSlot = Math.min(newEndSlot, GLOBAL_MAX_SLOT);
+      const { hour, minute } = slotToTime(adjustedSlot);
       endH = hour;
       endM = minute;
     }
@@ -1172,7 +1487,7 @@ const ScheduleCalendar: React.FC = () => {
       return;
     }
     
-    setSchedules(prev => prev.map(s => 
+    setSchedulesWithHistory(prev => prev.map(s => 
       s.id === schedule.id 
         ? { ...s, start_time: newStartTime, end_time: newEndTime }
         : s
@@ -1182,8 +1497,12 @@ const ScheduleCalendar: React.FC = () => {
 
   function handleDeleteSchedule(id: string) {
     if (window.confirm('确定要删除这节课程吗？')) {
-      setSchedules(prev => prev.filter(s => s.id !== id));
+      const deletedSchedule = schedules.find(s => s.id === id);
+      setSchedulesWithHistory(prev => prev.filter(s => s.id !== id));
       message.success('课程已删除');
+      if (deletedSchedule) {
+        (window as any).operateLogger?.log('删除', `删除排课「${deletedSchedule.course_name}」`, '课程表');
+      }
     }
   }
 
@@ -1213,7 +1532,7 @@ const ScheduleCalendar: React.FC = () => {
         }
         
         if (editingSchedule && index === 0) {
-          setSchedules(prev => prev.map(s =>
+          setSchedulesWithHistory(prev => prev.map(s =>
             s.id === editingSchedule.id
               ? {
                   ...s,
@@ -1224,10 +1543,14 @@ const ScheduleCalendar: React.FC = () => {
                   status: values.status || ScheduleStatus.PLANNED,
                   room: rooms.find(r => r.id === values.room)?.name || courses.find(c => c.id === values.courseId)?.room_name || values.room,
                   notes: values.notes,
+                  course_year: course?.year !== undefined ? String(course?.year) : undefined,
+                  course_semester: course?.semester || undefined,
                 }
               : s
           ));
+          (window as any).operateLogger?.log('修改', `修改排课「${courseName}」时间=${startTimeStr.substring(11,16)}-${endTimeStr.substring(11,16)}`, '课程表');
         } else {
+          const courseObj = courses.find(c => c.id === values.courseId);
           const newSchedule: ScheduleEvent = {
             id: uuidv4(),
             course_id: values.courseId,
@@ -1236,15 +1559,19 @@ const ScheduleCalendar: React.FC = () => {
             start_time: startTimeStr,
             end_time: endTimeStr,
             status: values.status || ScheduleStatus.PLANNED,
-            room: rooms.find(r => r.id === values.room)?.name || courses.find(c => c.id === values.courseId)?.room_name || values.room,
+            room: rooms.find(r => r.id === values.room)?.name || courseObj?.room_name || values.room,
             notes: values.notes,
+            course_year: courseObj && courseObj.year !== undefined ? String(courseObj.year) : undefined,
+            course_semester: courseObj?.semester || undefined,
           };
           newSchedules.push(newSchedule);
         }
       });
       
       if (newSchedules.length > 0) {
-        setSchedules(prev => [...prev, ...newSchedules]);
+        setSchedulesWithHistory(prev => [...prev, ...newSchedules]);
+        const logDetail = `批量创建排课（${datesToSave.length}节）- ${newSchedules.map(s => s.course_name.split(' ')[0]).filter(Boolean).join(', ')}`;
+        (window as any).operateLogger?.log('创建', logDetail, '课程表');
       }
       
       const msg = datesToSave.length > 1 ? `已添加${datesToSave.length}节课程` : '课程已保存';
@@ -1288,15 +1615,18 @@ const ScheduleCalendar: React.FC = () => {
       if (sDate.isBefore(startDate) || sDate.isAfter(endDate)) return s;
       const course = db?.getAllCourses?.()?.find((c: any) => c.id === s.course_id);
       if (!course) return s;
+      const displayCName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
       count++;
       return { 
         ...s, 
-        course_name: course.name || s.course_name, 
+        course_name: displayCName || s.course_name, 
         room: course.room_name || s.room,
-        course_type: course.type || s.course_type
+        course_type: course.type || s.course_type,
+        course_year: course.year !== undefined ? String(course.year) : undefined,
+        course_semester: course.semester || undefined,
       };
     });
-    setSchedules(updated);
+    setSchedulesWithHistory(updated);
     message.success(`已更新 ${count} 条课程信息`);
     setRefreshModalVisible(false);
     setRefreshDateRange(null);
@@ -1305,46 +1635,17 @@ const ScheduleCalendar: React.FC = () => {
   const upcomingHolidays = getUpcomingHolidays();
 
   return (
-    <div style={{ padding: 16, height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {upcomingHolidays.length > 0 && (
-        <Alert
-          message="📅 近期节假日提醒"
-          description={
-            <div style={{ lineHeight: '1.8' }}>
-              {upcomingHolidays.map((h, idx) => (
-                <span key={h.name} style={{ marginRight: 16 }}>
-                  {h.name}：{h.start} ~ {h.end}
-                  {idx < upcomingHolidays.length - 1 && ' | '}
-                </span>
-              ))}
-            </div>
-          }
-          type="info"
-          showIcon
-          closable
-          style={{ marginBottom: 16 }}
-        />
-      )}
-      <Card size="small" style={{ marginBottom: 16 }}>
+    <div style={{ padding: 16, height: 'calc(100vh - 80px)', display: 'flex', flexDirection: 'column' }}>
+      <Card size="small" style={{ marginBottom: 8, flexShrink: 0 }}>
         <Space wrap>
           <Button onClick={goPrevWeek}>← 上周</Button>
           <Button onClick={goToday}>本周</Button>
           <Button onClick={goNextWeek}>下周 →</Button>
-          <Divider type="vertical" />
           <Button 
             onClick={() => setCalendarOpen(!calendarOpen)}
             title="点击跳转到选定日期的课程表"
           >
             📅 选择日期
-          </Button>
-          <Button 
-            onClick={() => {
-              setRefreshDateRange([currentMonday, currentMonday.add(13, 'day')]);
-              setRefreshModalVisible(true);
-            }}
-            title="刷新日期范围内所有排课的课程信息"
-          >
-            🔄 刷新课程信息
           </Button>
           {calendarOpen && (
             <div style={{ 
@@ -1367,11 +1668,32 @@ const ScheduleCalendar: React.FC = () => {
             </div>
           )}
           <Divider type="vertical" />
+          <Button 
+            onClick={undo} 
+            disabled={history.past.length === 0}
+            title="撤销 (Ctrl+Z)"
+          >↩️ 撤销</Button>
+          <Button 
+            onClick={redo} 
+            disabled={history.future.length === 0}
+            title="重做 (Ctrl+Y)"
+          >↪️ 重做</Button>
+          <Divider type="vertical" />
+          <Button 
+            onClick={() => {
+              setRefreshDateRange([currentMonday, currentMonday.add(13, 'day')]);
+              setRefreshModalVisible(true);
+            }}
+            title="刷新日期范围内所有排课的课程信息"
+          >
+            🔄 刷新课程信息
+          </Button>
+          <Divider type="vertical" />
           <Button type="primary" onClick={handleAddSchedule}>➕ 排课</Button>
         </Space>
       </Card>
 
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', gap: 0 }}>
         <Sidebar
           teachers={teachers}
           selectedTeacherId={selectedTeacherId}
@@ -1379,29 +1701,29 @@ const ScheduleCalendar: React.FC = () => {
           onTeacherChange={setSelectedTeacherId}
         />
 
-        <div
-          style={{ flex: 1, paddingLeft: 16, overflow: 'auto', position: 'relative' }}
-          ref={containerRef}
-          onMouseDown={handleBatchMouseDown}
-          onMouseMove={handleBatchMouseMove}
-          onMouseUp={handleBatchMouseUp}
-          onContextMenu={handleBatchContextMenu}
-        >
-          <TwoWeeksView
-            schedules={schedules}
-            currentMonday={currentMonday}
-            selectedTeacherId={selectedTeacherId}
-            courses={courses}
-            onDoubleClickDate={handleDoubleClickDate}
-            onDoubleClickSchedule={handleDoubleClickSchedule}
-            onScheduleStatusChange={handleScheduleStatusChange}
-            onDropCourse={handleDropCourse}
-            onDragSchedule={handleDragSchedule}
-            onResizeSchedule={handleResizeSchedule}
-            onDeleteSchedule={handleDeleteSchedule}
-            onOpenStudentEdit={handleOpenStudentEdit}
-          />
-          <BatchVisuals state={batchState} />
+        <div style={{ overflowY: 'auto', overflowX: 'auto', flex: 1, height: '100%' }} ref={containerRef}>
+          <div data-anchor="true" style={{ position: 'relative', minHeight: '100%' }}>
+            <TwoWeeksView
+              schedules={schedules}
+              currentMonday={currentMonday}
+              selectedTeacherId={selectedTeacherId}
+              courses={courses}
+              selectedCourseIds={selectedCourseIds}
+              batchPhase={batchPhase}
+              batchIsCopy={batchIsCopy}
+              flashingIds={flashingIds}
+              flashToggle={flashToggle}
+              onDoubleClickDate={handleDoubleClickDate}
+              onDoubleClickSchedule={handleDoubleClickSchedule}
+              onScheduleStatusChange={handleScheduleStatusChange}
+              onDropCourse={handleDropCourse}
+              onDragSchedule={handleDragSchedule}
+              onResizeSchedule={handleResizeSchedule}
+              onDeleteSchedule={handleDeleteSchedule}
+              onOpenStudentEdit={handleOpenStudentEdit}
+            />
+            {batchVisuals}
+          </div>
         </div>
       </div>
 
@@ -1525,8 +1847,14 @@ const ScheduleCalendar: React.FC = () => {
                   onChange={(courseId) => {
                     const course = courses.find(c => c.id === courseId);
                     if (course) {
-                      form.setFieldValue('courseName', course.display_name || course.name);
+                      const displayCName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
+                      form.setFieldValue('courseName', displayCName);
                       const roomId = (course.room_id && course.room_id.split(',')[0].trim()) || (rooms.find(r => r.name === course.room_name)?.id) || course.room_name || ''; form.setFieldValue('room', roomId);
+                      // 有默认时长：自动更新结束时间
+                      if (course.default_duration_minutes) {
+                        const sTime = form.getFieldValue('startTime');
+                        if (sTime) { form.setFieldValue('endTime', dayjs(sTime).add(course.default_duration_minutes, 'minute')); }
+                      }
                     }
                   }}
                 />
@@ -1596,7 +1924,7 @@ const ScheduleCalendar: React.FC = () => {
                     <Col span={8}>
                       <Form.Item
                         name={['students', idx, 'tuition']}
-                        label="学费/小时"
+                        label={`学费${billingUnitLabel}`}
                         initialValue={sp.tuition}
                       >
                         <InputNumber min={0} prefix="¥" style={{ width: '100%' }} />
@@ -1605,7 +1933,7 @@ const ScheduleCalendar: React.FC = () => {
                     <Col span={8}>
                       <Form.Item
                         name={['students', idx, 'teacher_fee']}
-                        label="课时费/小时"
+                        label={`课时费${billingUnitLabel}`}
                         initialValue={sp.teacher_fee || sp.tuition}
                       >
                         <InputNumber min={0} prefix="¥" style={{ width: '100%' }} />

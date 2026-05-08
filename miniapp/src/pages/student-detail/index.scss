@@ -1,0 +1,93 @@
+// 学生详情样式
+
+.student-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 24px;
+}
+
+.student-avatar {
+  width: 120px;
+  height: 120px;
+  background: linear-gradient(135deg, #1890ff, #096dd9);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.avatar-text {
+  font-size: 52px;
+  color: #fff;
+  font-weight: 700;
+}
+
+.student-name {
+  font-size: 38px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 8px;
+}
+
+.student-info {
+  font-size: 26px;
+  color: #999;
+  margin-bottom: 24px;
+}
+
+.balance-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  justify-content: center;
+  gap: 48px;
+}
+
+.balance-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.balance-value {
+  font-size: 40px;
+  font-weight: 700;
+  color: #1890ff;
+}
+
+.balance-label {
+  font-size: 24px;
+  color: #999;
+  margin-top: 4px;
+}
+
+.balance-divider {
+  width: 2px;
+  height: 48px;
+  background: #f0f0f0;
+}
+
+.info-row {
+  display: flex;
+  padding: 20px 0;
+  border-bottom: 1px solid #f5f5f5;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.info-label {
+  font-size: 28px;
+  color: #999;
+  width: 160px;
+  flex-shrink: 0;
+}
+
+.info-value {
+  font-size: 28px;
+  color: #333;
+  flex: 1;
+}

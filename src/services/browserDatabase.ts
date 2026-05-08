@@ -2,7 +2,8 @@
 import { 
   Student, Grade, Course, Schedule, Enrollment, Payment, Consumption, Institution, SchoolInfo, Teacher, Room,
   ScheduleStatus, PaymentType, BillingUnit, TeacherFeeMode, ServiceType, StudentSource,
-  RevenueStats, StudentTuitionStats, StudentCoursePricing
+  RevenueStats, StudentTuitionStats, StudentCoursePricing,
+  AssetRecord, AssetCategory, AssetStats, Question, KnowledgeNode
 } from '../types';
 import { calculateGrade, calculateFees, calculateDurationHours, groupByMonth, calculatePercentage } from '../utils/helpers';
 
@@ -18,6 +19,10 @@ interface Database {
   schools: SchoolInfo[];
   rooms: Room[];
   teachers: Teacher[];
+  assetRecords: AssetRecord[];
+  assetCategories: AssetCategory[];
+  questions: Question[];
+  knowledgeTree: KnowledgeNode[];
 }
 
 class BrowserDatabaseService {
@@ -30,6 +35,10 @@ class BrowserDatabaseService {
     enrollments: [],
     payments: [],
     consumptions: [],
+    assetRecords: [],
+    assetCategories: [],
+    questions: [],
+    knowledgeTree: [],
     institutions: [],
     schools: [],
     rooms: [],
@@ -57,9 +66,40 @@ class BrowserDatabaseService {
         schools: [],
         rooms: [],
         teachers: [],
+        assetRecords: [],
+        assetCategories: [
+          {id:'builtin-tuition',name:'课时费',type:'income',color:'#3f8600',created_at:'2026-01-01T00:00:00.000Z',updated_at:'2026-01-01T00:00:00.000Z'},
+          {id:'builtin-payment',name:'学费',type:'income',color:'#1890ff',created_at:'2026-01-01T00:00:00.000Z',updated_at:'2026-01-01T00:00:00.000Z'},
+          {id:'builtin-salary',name:'工资支出',type:'expense',color:'#cf1322',created_at:'2026-01-01T00:00:00.000Z',updated_at:'2026-01-01T00:00:00.000Z'},
+          {id:'builtin-rent',name:'房租',type:'expense',color:'#fa8c16',created_at:'2026-01-01T00:00:00.000Z',updated_at:'2026-01-01T00:00:00.000Z'},
+          {id:'builtin-material',name:'教材费',type:'expense',color:'#722ed1',created_at:'2026-01-01T00:00:00.000Z',updated_at:'2026-01-01T00:00:00.000Z'},
+          {id:'builtin-other-income',name:'其他收入',type:'income',color:'#13c2c2',created_at:'2026-01-01T00:00:00.000Z',updated_at:'2026-01-01T00:00:00.000Z'},
+          {id:'builtin-other-expense',name:'其他支出',type:'expense',color:'#eb2f96',created_at:'2026-01-01T00:00:00.000Z',updated_at:'2026-01-01T00:00:00.000Z'},
+        ],
+        questions: [],
+        knowledgeTree: loadedData?.knowledgeTree ?? [],
         ...loadedData
       };
     }
+    // 自动清理：修复课程时间 > 24:00 的坏数据
+    this.data.schedules = (this.data.schedules || []).map(s => {
+      if (!s) return s;
+      const fixTime = (t: string): string => {
+        const [datePart, timePart] = t.split(' ');
+        if (!timePart) return t;
+        const [h, m] = timePart.split(':').map(Number);
+        if (h >= 24) {
+          return `${datePart} 23:${String(m).padStart(2, '0')}`;
+        } else if (h < 0) {
+          return `${datePart} 00:${String(m).padStart(2, '0')}`;
+        }
+        return t;
+      };
+      if (s.start_time) s.start_time = fixTime(s.start_time);
+      if (s.end_time) s.end_time = fixTime(s.end_time);
+      return s;
+    });
+
     // 自动更新学生年级
     this.data.students = (this.data.students || []).map(s => ({
       ...s,
@@ -385,6 +425,7 @@ class BrowserDatabaseService {
 
     return {
       total,
+      totalSchedules: schedules.length,
       byCourseType: Array.from(byCourseType.entries()).map(([type, amount]) => ({
         type: type as any,
         typeName: courseTypeNames[type as keyof typeof courseTypeNames] || '未知',
@@ -618,9 +659,312 @@ class BrowserDatabaseService {
       institutions: data.institutions || [],
       schools: data.schools || [],
       rooms: data.rooms || [],
-      teachers: data.teachers || []
+      teachers: data.teachers || [],
+      assetRecords: data.assetRecords || [],
+      assetCategories: data.assetCategories || [],
+      questions: data.questions || [],
+      knowledgeTree: data.knowledgeTree || []
     };
     this.saveData();
+  }
+
+  // ========== 资产统计管理 ==========
+
+  getAllAssetRecords(): AssetRecord[] {
+    return this.data.assetRecords;
+  }
+
+  getAssetRecordsByDateRange(startDate: string, endDate: string): AssetRecord[] {
+    return this.data.assetRecords.filter(r => r.date >= startDate && r.date <= endDate);
+  }
+
+  createAssetRecord(record: Omit<AssetRecord, 'id' | 'created_at' | 'updated_at'>): AssetRecord {
+    const now = new Date().toISOString();
+    const newRecord: AssetRecord = {
+      ...record,
+      id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2),
+      created_at: now,
+      updated_at: now
+    };
+    this.data.assetRecords.push(newRecord);
+    this.saveData();
+    return newRecord;
+  }
+
+  updateAssetRecord(id: string, updates: Partial<Omit<AssetRecord, 'id' | 'created_at'>>): boolean {
+    const idx = this.data.assetRecords.findIndex(r => r.id === id);
+    if (idx === -1) return false;
+    this.data.assetRecords[idx] = { ...this.data.assetRecords[idx], ...updates, updated_at: new Date().toISOString() };
+    this.saveData();
+    return true;
+  }
+
+  deleteAssetRecord(id: string): boolean {
+    const idx = this.data.assetRecords.findIndex(r => r.id === id);
+    if (idx === -1) return false;
+    this.data.assetRecords.splice(idx, 1);
+    this.saveData();
+    return true;
+  }
+
+  // ========== 资产分类管理 ==========
+
+  getAllAssetCategories(): AssetCategory[] {
+    return this.data.assetCategories;
+  }
+
+  getAssetCategoriesByType(type: 'income' | 'expense'): AssetCategory[] {
+    return this.data.assetCategories.filter(c => c.type === type);
+  }
+
+  createAssetCategory(cat: Omit<AssetCategory, 'id' | 'created_at' | 'updated_at'>): AssetCategory {
+    const now = new Date().toISOString();
+    const newCat: AssetCategory = {
+      ...cat,
+      id: 'cat-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)),
+      created_at: now,
+      updated_at: now
+    };
+    this.data.assetCategories.push(newCat);
+    this.saveData();
+    return newCat;
+  }
+
+  deleteAssetCategory(id: string): boolean {
+    if (id.startsWith('builtin-')) return false; // 内置分类不可删除
+    const idx = this.data.assetCategories.findIndex(c => c.id === id);
+    if (idx === -1) return false;
+    this.data.assetCategories.splice(idx, 1);
+    this.saveData();
+    return true;
+  }
+
+  // ========== 资产统计 ==========
+
+  getAssetStats(startDate: string, endDate: string): AssetStats {
+    const records = this.data.assetRecords.filter(r => r.date >= startDate && r.date <= endDate);
+    const income = records.filter(r => r.type === 'income');
+    const expense = records.filter(r => r.type === 'expense');
+    const totalIncome = income.reduce((s, r) => s + r.amount, 0);
+    const totalExpense = expense.reduce((s, r) => s + r.amount, 0);
+
+    // 按分类汇总
+    const incomeByCat = new Map<string, { amount: number; count: number }>();
+    const expenseByCat = new Map<string, { amount: number; count: number }>();
+    for (const r of income) {
+      const prev = incomeByCat.get(r.category_name) || { amount: 0, count: 0 };
+      incomeByCat.set(r.category_name, { amount: prev.amount + r.amount, count: prev.count + 1 });
+    }
+    for (const r of expense) {
+      const prev = expenseByCat.get(r.category_name) || { amount: 0, count: 0 };
+      expenseByCat.set(r.category_name, { amount: prev.amount + r.amount, count: prev.count + 1 });
+    }
+
+    // 月度趋势
+    const monthlyMap = new Map<string, { income: number; expense: number }>();
+    for (const r of records) {
+      const month = r.date.substring(0, 7);
+      const prev = monthlyMap.get(month) || { income: 0, expense: 0 };
+      if (r.type === 'income') prev.income += r.amount;
+      else prev.expense += r.amount;
+      monthlyMap.set(month, prev);
+    }
+
+    return {
+      totalIncome,
+      totalExpense,
+      netAmount: totalIncome - totalExpense,
+      incomeByCategory: Array.from(incomeByCat.entries()).map(([k, v]) => ({ category: k, ...v })),
+      expenseByCategory: Array.from(expenseByCat.entries()).map(([k, v]) => ({ category: k, ...v })),
+      monthlyTrend: Array.from(monthlyMap.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => ({ month: k, ...v }))
+    };
+  }
+
+  // ========== 成绩管理 ==========
+
+  getAllGrades(): Grade[] {
+    return this.data.grades;
+  }
+
+  getGradesByStudentId(studentId: string): Grade[] {
+    return this.data.grades.filter(g => g.student_id === studentId);
+  }
+
+  createGrade(grade: Omit<Grade, 'id' | 'created_at'>): Grade {
+    const now = new Date().toISOString();
+    const id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+    const newGrade: Grade = { ...grade, id, created_at: now };
+    this.data.grades.push(newGrade);
+    this.saveData();
+    return newGrade;
+  }
+
+  deleteGrade(id: string): boolean {
+    const idx = this.data.grades.findIndex(g => g.id === id);
+    if (idx === -1) return false;
+    this.data.grades.splice(idx, 1);
+    this.saveData();
+    return true;
+  }
+
+  getPerformanceStats(): { subjectStats: { subject: string; avgScore: number; max: number; min: number; count: number }[]; totalExams: number } {
+    const grades = this.data.grades;
+    const bySubject = new Map<string, { sum: number; max: number; min: number; count: number }>();
+    for (const g of grades) {
+      const prev = bySubject.get(g.subject) || { sum: 0, max: -Infinity, min: Infinity, count: 0 };
+      prev.sum += g.score;
+      prev.max = Math.max(prev.max, g.score);
+      prev.min = Math.min(prev.min, g.score);
+      prev.count++;
+      bySubject.set(g.subject, prev);
+    }
+    return {
+      subjectStats: Array.from(bySubject.entries()).map(([k, v]) => ({
+        subject: k,
+        avgScore: Math.round(v.sum / v.count * 10) / 10,
+        max: v.max,
+        min: v.min,
+        count: v.count
+      })),
+      totalExams: grades.length
+    };
+  }
+
+  // ========== 题库管理 ==========
+
+  getAllQuestions(): Question[] {
+    return this.data.questions;
+  }
+
+  getQuestionsBySubject(subject: string): Question[] {
+    return this.data.questions.filter(q => q.subject === subject);
+  }
+
+  createQuestion(question: Omit<Question, 'id' | 'created_at' | 'updated_at'>): Question {
+    const now = new Date().toISOString();
+    const id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+    const newQuestion: Question = {
+      ...question,
+      id,
+      created_at: now,
+      updated_at: now
+    };
+    this.data.questions.push(newQuestion);
+    this.saveData();
+    return newQuestion;
+  }
+
+  updateQuestion(id: string, updates: Partial<Omit<Question, 'id' | 'created_at'>>): boolean {
+    const idx = this.data.questions.findIndex(q => q.id === id);
+    if (idx === -1) return false;
+    this.data.questions[idx] = { ...this.data.questions[idx], ...updates, updated_at: new Date().toISOString() };
+    this.saveData();
+    return true;
+  }
+
+  deleteQuestion(id: string): boolean {
+    const idx = this.data.questions.findIndex(q => q.id === id);
+    if (idx === -1) return false;
+    this.data.questions.splice(idx, 1);
+    this.saveData();
+    return true;
+  }
+
+  // ========== 知识树管理 ==========
+
+  getKnowledgeTree(): KnowledgeNode[] {
+    return this.data.knowledgeTree;
+  }
+
+  getFlatKnowledgeNodes(): { id: string; name: string; path: string }[] {
+    const result: { id: string; name: string; path: string }[] = [];
+    const buildPath = (nodes: KnowledgeNode[], parentPath: string) => {
+      for (const n of nodes) {
+        const currentPath = parentPath ? `${parentPath} > ${n.name}` : n.name;
+        result.push({ id: n.id, name: n.name, path: currentPath });
+        const children = this.data.knowledgeTree.filter(c => c.parent_id === n.id);
+        if (children.length > 0) buildPath(children, currentPath);
+      }
+    };
+    const roots = this.data.knowledgeTree.filter(n => !n.parent_id);
+    buildPath(roots, '');
+    return result;
+  }
+
+  initDefaultKnowledgeTree(): void {
+    if (this.data.knowledgeTree.length > 0) return;
+    const now = new Date().toISOString();
+    this.data.knowledgeTree = [
+      {id:'phy-1',name:'力学',children:[],order:1,created_at:now,updated_at:now},
+      {id:'phy-1-1',name:'运动学',parent_id:'phy-1',children:[],order:1,created_at:now,updated_at:now},
+      {id:'phy-1-1-1',name:'匀速直线运动',parent_id:'phy-1-1',children:[],order:1,created_at:now,updated_at:now},
+      {id:'phy-1-1-2',name:'变速直线运动',parent_id:'phy-1-1',children:[],order:2,created_at:now,updated_at:now},
+      {id:'phy-1-1-3',name:'曲线运动',parent_id:'phy-1-1',children:[],order:3,created_at:now,updated_at:now},
+      {id:'phy-1-1-4',name:'相对运动',parent_id:'phy-1-1',children:[],order:4,created_at:now,updated_at:now},
+      {id:'phy-1-2',name:'动力学',parent_id:'phy-1',children:[],order:2,created_at:now,updated_at:now},
+      {id:'phy-1-2-1',name:'牛顿运动定律',parent_id:'phy-1-2',children:[],order:1,created_at:now,updated_at:now},
+      {id:'phy-1-2-2',name:'受力分析',parent_id:'phy-1-2',children:[],order:2,created_at:now,updated_at:now},
+      {id:'phy-1-2-3',name:'连接体问题',parent_id:'phy-1-2',children:[],order:3,created_at:now,updated_at:now},
+      {id:'phy-1-3',name:'功和能',parent_id:'phy-1',children:[],order:3,created_at:now,updated_at:now},
+      {id:'phy-1-4',name:'动量',parent_id:'phy-1',children:[],order:4,created_at:now,updated_at:now},
+      {id:'phy-2',name:'电磁学',children:[],order:2,created_at:now,updated_at:now},
+      {id:'phy-2-1',name:'静电场',parent_id:'phy-2',children:[],order:1,created_at:now,updated_at:now},
+      {id:'phy-2-2',name:'恒定电流',parent_id:'phy-2',children:[],order:2,created_at:now,updated_at:now},
+      {id:'phy-2-3',name:'磁场',parent_id:'phy-2',children:[],order:3,created_at:now,updated_at:now},
+      {id:'phy-2-4',name:'电磁感应',parent_id:'phy-2',children:[],order:4,created_at:now,updated_at:now},
+      {id:'phy-2-5',name:'交变电流',parent_id:'phy-2',children:[],order:5,created_at:now,updated_at:now},
+      {id:'phy-3',name:'热学',children:[],order:3,created_at:now,updated_at:now},
+      {id:'phy-4',name:'光学',children:[],order:4,created_at:now,updated_at:now},
+      {id:'phy-5',name:'原子物理',children:[],order:5,created_at:now,updated_at:now},
+      {id:'phy-6',name:'实验',children:[],order:6,created_at:now,updated_at:now},
+    ];
+    // 更新children数组
+    this._rebuildKnowledgeChildren();
+    this.saveData();
+  }
+
+  private _rebuildKnowledgeChildren(): void {
+    for (const n of this.data.knowledgeTree) {
+      n.children = this.data.knowledgeTree.filter(c => c.parent_id === n.id).map(c => c.id);
+    }
+  }
+
+  createKnowledgeNode(node: Omit<KnowledgeNode, 'id' | 'created_at' | 'updated_at'>): KnowledgeNode {
+    const now = new Date().toISOString();
+    const newNode: KnowledgeNode = {
+      ...node,
+      id: 'kn-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)),
+      created_at: now,
+      updated_at: now
+    };
+    this.data.knowledgeTree.push(newNode);
+    this._rebuildKnowledgeChildren();
+    this.saveData();
+    return newNode;
+  }
+
+  updateKnowledgeNode(id: string, updates: Partial<Omit<KnowledgeNode, 'id'>>): boolean {
+    const idx = this.data.knowledgeTree.findIndex(n => n.id === id);
+    if (idx === -1) return false;
+    this.data.knowledgeTree[idx] = { ...this.data.knowledgeTree[idx], ...updates, updated_at: new Date().toISOString() };
+    this._rebuildKnowledgeChildren();
+    this.saveData();
+    return true;
+  }
+
+  deleteKnowledgeNode(id: string): boolean {
+    const children = this.data.knowledgeTree.filter(n => n.parent_id === id);
+    for (const c of children) this.deleteKnowledgeNode(c.id);
+    const idx = this.data.knowledgeTree.findIndex(n => n.id === id);
+    if (idx === -1) return false;
+    this.data.knowledgeTree.splice(idx, 1);
+    this._rebuildKnowledgeChildren();
+    this.saveData();
+    return true;
+  }
+
+  getKnowledgeChildren(parentId: string): KnowledgeNode[] {
+    return this.data.knowledgeTree.filter(n => n.parent_id === parentId).sort((a, b) => a.order - b.order);
   }
 }
 

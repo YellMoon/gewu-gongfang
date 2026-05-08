@@ -1,8 +1,8 @@
-# 排课与学生管理系统
+# 教务管理系统（云平台版）
 
 ## 📚 项目简介
 
-一个功能完整的培训机构排课与学生管理桌面应用，支持学生管理、课程管理、排课系统、财务管理等功能。
+全平台教务管理系统，支持桌面端（Electron）、微信小程序、Web浏览器。核心特性：离线优先，本地操作后在线自动同步到云端。
 
 ## ✨ 核心功能
 
@@ -10,134 +10,210 @@
 - **课程管理**: 4 种课程类型（一对一/一对二/小组课/大班课），3 种课程来源（自有/机构/混合班）
 - **排课系统**: 日历视图、冲突检测、周期性排课
 - **财务管理**: 学费缴纳、课时消耗、收入统计
-- **数据导出**: Excel/PDF/JSON 格式，支持跨电脑转移
+- **数据导出**: Excel/PDF/JSON 格式
+- **☁️ 云端同步**: 离线操作 → 在线确认 → 自动同步到阿里云服务器
+- **📱 小程序**: 微信小程序随时随地查看和管理
+
+## 🏗️ 系统架构
+
+```
+┌─────────────────────────────────────────────┐
+│         阿里云 ECS 服务器                     │
+│  ┌─────────────────────────────────────────┐│
+│  │  Node.js API Server (Express)           ││
+│  │  SQLite / MySQL 数据库                   ││
+│  │  REST API + 同步端点                     ││
+│  └─────────────────────────────────────────┘│
+└─────────────────────────────────────────────┘
+         ↑              ↑              ↑
+    ┌────────┐    ┌──────────┐   ┌────────────┐
+    │Electron│    │微信小程序  │   │ Web浏览器   │
+    │(桌面端) │    │(移动端)   │   │ (备用)      │
+    └────────┘    └──────────┘   └────────────┘
+```
 
 ## 🛠️ 技术栈
 
+### 桌面端 (Electron)
 - **框架**: Electron + React + TypeScript
 - **UI**: Ant Design
-- **数据库**: SQLite (better-sqlite3)
-- **导出**: xlsx (Excel), pdfmake (PDF)
+- **数据库**: sql.js (SQLite)
+- **同步**: 离线优先架构，自动检测网络状态
+
+### 后端 (Alibaba Cloud)
+- **框架**: Express.js
+- **数据库**: SQLite (better-sqlite3) / 可迁移MySQL
+- **部署**: Docker / PM2
+- **认证**: JWT + 微信登录
+
+### 微信小程序
+- **框架**: Taro (React 语法)
+- **UI**: 自定义组件
+- **同步**: 离线队列 + 在线确认
 
 ## 🚀 快速开始
 
-### 1. 环境要求
-
-- Node.js v18+ (https://nodejs.org/)
-- npm 或 yarn
-
-### 2. 安装依赖
+### 1. 桌面端开发
 
 ```bash
 cd scheduling-system
 npm install
-```
-
-### 3. 开发模式运行
-
-```bash
 npm run dev
 ```
 
-这将同时启动 React 开发服务器和 Electron 应用。
-
-### 4. 构建生产版本
+### 2. 后端服务
 
 ```bash
-npm run build
-npm run dist
+cd scheduling-system/backend
+npm install
+npm start          # 生产模式
+npm run dev        # 开发模式（nodemon热重载）
 ```
 
-打包后的文件在 `dist/` 目录：
-- Windows: `.exe` 安装包
-- Mac: `.dmg` 安装包
-- Linux: `.AppImage`
+### 3. 微信小程序
+
+```bash
+cd scheduling-system/miniapp
+npm install
+npm run dev:weapp  # 微信开发者工具
+```
 
 ## 📁 项目结构
 
 ```
 scheduling-system/
-├── src/
-│   ├── main/          # Electron 主进程
-│   ├── db/            # 数据库 Schema
-│   ├── services/      # 数据库服务层
-│   ├── types/         # TypeScript 类型定义
-│   ├── pages/         # React 页面组件
-│   ├── components/    # 可复用组件
-│   └── App.tsx        # 主应用入口
-├── public/            # 静态资源
-├── package.json
-└── tsconfig.json
+├── src/                    # 桌面端源码
+│   ├── main/               # Electron 主进程
+│   ├── db/                 # 数据库 Schema
+│   ├── services/           # 服务层
+│   │   ├── browserDatabase.ts   # 本地数据库
+│   │   ├── cloudSync.ts         # 云端同步服务
+│   │   └── syncAwareDatabase.ts # 同步感知数据库
+│   ├── components/         # 组件
+│   │   └── SyncStatusBar.tsx    # 同步状态栏
+│   ├── pages/              # 页面
+│   └── types/              # 类型定义
+├── backend/                # 后端API服务
+│   ├── server.js           # 入口
+│   ├── src/
+│   │   ├── app.js          # Express 应用
+│   │   ├── database.js     # 数据库
+│   │   ├── routes/         # API 路由
+│   │   └── middleware/     # 中间件
+│   ├── Dockerfile          # Docker 配置
+│   ├── docker-compose.yml  # 编排配置
+│   └── pm2.config.js       # PM2 配置
+├── miniapp/                # 微信小程序
+│   ├── src/
+│   │   ├── pages/          # 页面（9个）
+│   │   ├── utils/
+│   │   │   ├── api.ts      # API 封装
+│   │   │   ├── storage.ts  # 本地存储
+│   │   │   └── sync.ts     # 同步管理
+│   │   └── types/          # 类型定义
+│   └── config/             # Taro 配置
+└── package.json
 ```
 
-## 💾 数据存储
+## ☁️ 云端同步机制
 
-- 数据库文件：`scheduling.db` (SQLite)
-- 位置：应用安装目录
-- 备份方式：系统设置 → 导出全部数据 (JSON 格式)
+### 工作流程
 
-## 📤 数据迁移
+```
+离线操作 → 记录到本地队列 → 网络恢复 → 弹窗提醒 → 用户确认 → 推送到云端
+```
 
-### 导出备份
-1. 打开应用 → 系统设置
-2. 点击「导出全部数据」
-3. 保存 JSON 文件
+### 同步策略
 
-### 导入恢复
-1. 新电脑安装应用
-2. 系统设置 → 导入数据
-3. 选择之前导出的 JSON 文件
+1. **离线优先**: 所有操作先写入本地，无网络时也能正常使用
+2. **变更记录**: 每次增删改自动记录到 pendingChanges 队列
+3. **网络检测**: 自动检测网络状态，恢复时触发同步
+4. **用户确认**: 同步前弹窗列出待同步项，由用户确认
+5. **冲突解决**: 基于时间戳的最后写入优先
 
-## 📝 使用说明
+### API 端点
 
-### 添加学生
-1. 进入「学生管理」
-2. 点击「添加学生」
-3. 填写信息（姓名、电话、学校、年级等）
-4. 可设置初始课时余额和账户余额
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/health` | GET | 健康检查 |
+| `/api/sync/pull` | POST | 拉取云端变更 |
+| `/api/sync/push` | POST | 推送本地变更 |
+| `/api/sync/status` | GET | 同步状态 |
+| `/api/students` | CRUD | 学生管理 |
+| `/api/courses` | CRUD | 课程管理 |
+| `/api/schedules` | CRUD | 排课管理 |
+| `/api/payments` | CRUD | 缴费管理 |
+| `/api/consumptions` | CRUD | 课时消耗 |
+| `/api/teachers` | CRUD | 老师管理 |
+| `/api/rooms` | CRUD | 教室管理 |
+| `/api/schools` | CRUD | 学校管理 |
+| `/api/institutions` | CRUD | 机构管理 |
+| `/api/stats/revenue` | GET | 收入统计 |
+| `/api/stats/consumption` | GET | 课时统计 |
+| `/api/export` | GET | 数据导出 |
+| `/api/import` | POST | 数据导入 |
 
-### 创建课程
-1. 进入「课程管理」
-2. 点击「添加课程」
-3. 选择课程类型（一对一/一对二/小组课/大班课）
-4. 选择课程来源（自有/机构/混合班）
-5. 设置课时费和教室信息
+## 🐳 部署到阿里云
 
-### 排课
-1. 进入「排课系统」
-2. 点击「添加课程」
-3. 选择课程、日期、时间
-4. 系统自动检测时间冲突
+### Docker 部署（推荐）
 
-### 记录缴费
-1. 进入「财务管理」
-2. 选择学生
-3. 记录缴费金额和类型（学费/课时）
+```bash
+cd backend
+docker-compose up -d
+```
 
-### 课时消耗
-1. 课程完成后
-2. 在排课系统中标记为「已完成」
-3. 系统自动扣除学生课时和费用
+### PM2 部署
+
+```bash
+cd backend
+npm install
+pm2 start pm2.config.js
+pm2 save
+pm2 startup
+```
+
+### 环境变量
+
+复制 `.env.example` 为 `.env`，修改配置：
+
+```bash
+PORT=3001
+DB_PATH=./data/scheduling.db
+JWT_SECRET=your-secret-key
+```
+
+## 📱 微信小程序发布
+
+1. 在微信开发者工具中导入 `miniapp/` 目录
+2. 修改 `app.config.ts` 中的 appid
+3. 在 `utils/api.ts` 中配置后端地址
+4. 上传代码并提交审核
+
+## 📝 数据迁移
+
+### 导出
+桌面端 → 系统设置 → 导出全部数据 (JSON)
+
+### 导入
+桌面端 → 系统设置 → 导入数据 → 选择 JSON 文件
 
 ## 🔧 开发说明
 
-### IPC 通信
+### 同步层集成
 
-Electron 主进程与渲染进程通过 IPC 通信：
+桌面端使用 `syncAwareDatabase` 替代 `browserDatabase`，自动记录变更：
 
 ```typescript
-// 渲染进程调用
-const result = await ipcRenderer.invoke('student:getAll');
-
-// 主进程处理
-ipcMain.handle('student:getAll', () => {
-  return { success: true, data: dbService.getAllStudents() };
-});
+// App.tsx 中动态导入
+const dbModule = await import('./services/syncAwareDatabase');
+dbService = dbModule.default;
 ```
 
-### 数据库操作
+### 新增页面
 
-所有数据库操作在 `src/services/database.ts` 中封装。
+1. 在 `src/pages/` 创建页面组件
+2. 在 `App.tsx` 的 `PAGE_META` 中注册
+3. 同步端点自动通过 `syncAwareDatabase` 工作
 
 ## 📄 许可证
 
@@ -149,5 +225,6 @@ MIT
 
 ---
 
-**版本**: v1.0.0  
-**更新日期**: 2026-04-10
+**版本**: v3.1.0-0504
+**更新日期**: 2026-05-04
+**更新内容**: 新增云端同步、微信小程序、阿里云部署

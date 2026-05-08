@@ -120,6 +120,7 @@ export interface Course {
   teacher_id?: string;
   teacher_name?: string;
   active: boolean; // 存续状态：true-未结课，false-已结课
+  default_duration_minutes?: number; // 默认单次课时长（分钟），拖拽排课时自动使用
   notes?: string;
   created_at: string;
   updated_at: string;
@@ -197,6 +198,7 @@ export interface Consumption {
 // 统计数据
 export interface RevenueStats {
   total: number;
+  totalSchedules: number;
   byDate?: { date: string; amount: number }[];
   byMonth?: { month: string; amount: number }[];
   byYear?: { year: number; amount: number }[];
@@ -230,6 +232,75 @@ export interface SchoolInfo {
   id: string;
   name: string;
   count: number;  // 使用次数
+  created_at: string;
+  updated_at: string;
+}
+
+// ===== 资产统计类型定义 =====
+export interface AssetCategory {
+  id: string;
+  name: string;
+  type: 'income' | 'expense';
+  color?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssetRecord {
+  id: string;
+  date: string;           // YYYY-MM-DD
+  type: 'income' | 'expense';
+  category_id: string;
+  category_name: string;
+  amount: number;
+  student_id?: string;
+  student_name?: string;
+  note?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssetStats {
+  totalIncome: number;
+  totalExpense: number;
+  netAmount: number;
+  incomeByCategory: { category: string; amount: number; count: number }[];
+  expenseByCategory: { category: string; amount: number; count: number }[];
+  monthlyTrend: { month: string; income: number; expense: number }[];
+}
+
+export interface KnowledgeNode {
+  id: string;
+  name: string;
+  parent_id?: string;
+  children: string[];
+  order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Question {
+  id: string;
+  subject: string;
+  chapter?: string;
+  knowledge_point?: string;
+  knowledge_ids?: string[];        // 关联知识点ID
+  type: string;
+  difficulty: number;
+  content: string;
+  options?: string[];
+  answer: string;
+  analysis?: string;
+  formulas?: string[];             // 公式
+  tags?: string[];                 // 标签
+  source?: string;                 // 来源
+  year?: string;                   // 年份
+  grade?: string;                  // 年级
+  semester?: string;               // 学期
+  exam_type?: string;              // 考试类型
+  region?: string;                 // 地区
+  sub_questions?: any[];           // 子题（大题包含小题）
+  variant_ids?: string[];          // 变式题ID列表
   created_at: string;
   updated_at: string;
 }

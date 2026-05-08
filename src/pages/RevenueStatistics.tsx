@@ -198,6 +198,7 @@ const RevenueStatistics: React.FC = () => {
       // 构建结果
       const result: RevenueStats = {
         total,
+        totalSchedules: validSchedules.length,
         byCourseType: Array.from(byCourseType.entries()).map(([type, amount]) => ({
           type: type as CourseType,
           typeName: courseTypeNames[type] || '未知',
@@ -483,7 +484,7 @@ const RevenueStatistics: React.FC = () => {
               <Card>
                 <Statistic 
                   title="排课数量" 
-                  value={stats.byMonth?.reduce((sum, m) => sum + 1, 0) || 0}
+                  value={stats.totalSchedules || 0}
                   suffix="节"
                 />
               </Card>

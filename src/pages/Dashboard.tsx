@@ -12,10 +12,6 @@ const Dashboard: React.FC = () => {
   const dbService = (window as any).dbService;
 
   const loadOverview = async () => {
-    if (!dbService) {
-      console.warn('dbService not available yet');
-      return;
-    }
     const students = dbService.getAllStudents();
     const courses = dbService.getAllCourses();
     const schedules = dbService.getAllSchedules();

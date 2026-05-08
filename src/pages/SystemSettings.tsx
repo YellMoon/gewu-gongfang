@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button, message, Space, Divider, Popconfirm, Typography } from 'antd';
 import { ExportOutlined, ImportOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
+import { APP_VERSION } from '../generated/version';
 
 const { Text } = Typography;
 
@@ -149,10 +151,10 @@ const SystemSettings: React.FC = () => {
 
       <Card title="系统信息">
         <div style={{ color: '#666', lineHeight: '1.8' }}>
-          <p>• 版本：v2.1.0-0428</p>
+          <p>• 版本：v{APP_VERSION}</p>
           <p>• 数据库：浏览器本地存储 (IndexedDB/LocalStorage)</p>
           <p>• 数据位置：浏览器 localStorage key: scheduling_system_db_v3</p>
-          <p>• 更新日期：2026-04-27</p>
+          <p>• 更新日期：{dayjs().format('YYYY-MM-DD')}</p>
           <p>• 软件作者：小龙虾</p>
         </div>
       </Card>

@@ -36,3 +36,36 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
+
+# Backup / temp directories
+*-backup-*/
+src-backup-*/
+
+# Root-level scripts (one-off tools)
+check_ports.py
+fix_nginx*.py
+setup_ip_nginx.py
+upload_*.py
+electron-backup-*.js
+
+# Build toolchain artifacts
+src/bootstrap
+src/compat get default export
+src/create fake namespace object
+src/define property getters
+src/hasOwnProperty shorthand
+src/make namespace object
+src/main/main/
+src/db/db/
+
+# SWC compiler cache
+miniapp/.swc/
+
+# Python venv
+.venv/
+venv/
