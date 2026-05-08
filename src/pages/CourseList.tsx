@@ -519,11 +519,6 @@ const CourseList: React.FC = () => {
               </Form.Item>
             </Col>
           </Row>
-          
-          <Form.Item name="notes" label="备注">
-            <Input.TextArea rows={3} placeholder="其他备注信息" />
-          </Form.Item>
-
           <Divider>学生绑定</Divider>
           <div style={{ marginBottom: 8, fontSize: 12, color: '#666' }}>
             根据课程类型自动限制学生人数：一对一=1，一对二=2，小组课=最多10，大班课无限制

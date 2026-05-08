@@ -14,6 +14,8 @@ import { holidays2026, getUpcomingHolidays } from '../utils/helpers';
 dayjs.extend(weekOfYear);
 dayjs.extend(isoWeek);
 
+const COURSE_TYPE_LABELS: Record<number, string> = { [CourseType.ONE_ON_ONE]: '一对一', [CourseType.ONE_ON_TWO]: '一对二', [CourseType.GROUP]: '小组课', [CourseType.LARGE_CLASS]: '大班课' };
+
 const { Option } = Select;
 
 const MIN_START_HOUR = 8;
@@ -622,6 +624,7 @@ const DailyView: React.FC<DailyViewProps> = ({
                       marginTop: 1
                     }}>
                       {schedule.room && `${schedule.room} `}
+                      {COURSE_TYPE_LABELS[schedule.course_type] && `${COURSE_TYPE_LABELS[schedule.course_type]} `}
                       {isDragging ? (() => {
                         const cs = pos.startSlot;
                         const ce = pos.endSlot;

@@ -54,12 +54,14 @@ function buildNodeTitle(
             size="small"
             value={editingNodeName}
             onChange={e => onSetEditingName(e.target.value)}
-            onBlur={() => {
-              if (editingNodeName.trim()) onRename(nodeId, editingNodeName.trim());
+            onBlur={(e) => {
+              const v = (e.target as HTMLInputElement).value;
+              if (v.trim()) onRename(nodeId, v.trim());
               onCancelEdit();
             }}
-            onPressEnter={() => {
-              if (editingNodeName.trim()) onRename(nodeId, editingNodeName.trim());
+            onPressEnter={(e) => {
+              const v = (e.target as HTMLInputElement).value;
+              if (v.trim()) onRename(nodeId, v.trim());
               onCancelEdit();
             }}
             style={{ width: 120 }}
@@ -111,12 +113,14 @@ function buildNodeTitle(
               placeholder="子知识点名称"
               value={addingChildName}
               onChange={e => onSetAddingName(e.target.value)}
-              onBlur={() => {
-                if (addingChildName.trim()) onCreateChild(addingChildName.trim(), nodeId);
+              onBlur={(e) => {
+                const v = (e.target as HTMLInputElement).value;
+                if (v.trim()) onCreateChild(v.trim(), nodeId);
                 onCancelChild();
               }}
-              onPressEnter={() => {
-                if (addingChildName.trim()) onCreateChild(addingChildName.trim(), nodeId);
+              onPressEnter={(e) => {
+                const v = (e.target as HTMLInputElement).value;
+                if (v.trim()) onCreateChild(v.trim(), nodeId);
                 onCancelChild();
               }}
               style={{ width: 140 }}
@@ -596,16 +600,18 @@ const QuestionBank: React.FC = () => {
                   placeholder="根节点名称"
                   value={addingChildName}
                   onChange={e => setAddingChildName(e.target.value)}
-                  onBlur={() => {
-                    if (addingChildName.trim()) {
-                      handleCreateKnowledgeNode(addingChildName.trim(), null);
+                  onBlur={(e) => {
+                    const v = (e.target as HTMLInputElement).value;
+                    if (v.trim()) {
+                      handleCreateKnowledgeNode(v.trim(), null);
                     }
                     setAddingChildParentId(null);
                     setAddingChildName('');
                   }}
-                  onPressEnter={() => {
-                    if (addingChildName.trim()) {
-                      handleCreateKnowledgeNode(addingChildName.trim(), null);
+                  onPressEnter={(e) => {
+                    const v = (e.target as HTMLInputElement).value;
+                    if (v.trim()) {
+                      handleCreateKnowledgeNode(v.trim(), null);
                     }
                     setAddingChildParentId(null);
                     setAddingChildName('');
