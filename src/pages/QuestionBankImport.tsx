@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card, Button, Modal, Form, Input, InputNumber, Select, Space, Tag, message,
-  Tree, Divider, Checkbox, Empty, Row, Col, Typography, Table
+  Tree, Divider, Checkbox, Empty, Row, Col, Typography, Table, Tooltip
 } from 'antd';
 import {
   PlusOutlined, FileWordOutlined, BookOutlined, FormOutlined,
   FileAddOutlined, CheckCircleOutlined, BranchesOutlined, FolderOpenOutlined,
-  DeleteOutlined, EditOutlined
+  DeleteOutlined, EditOutlined, CloseCircleOutlined
 } from '@ant-design/icons';
 import type { Question, KnowledgeNode } from '../types';
 
@@ -35,6 +35,12 @@ function buildTreeData(nodes: KnowledgeNode[], parentId?: string): any[] {
 const QuestionBankImport: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [editingNodeName, setEditingNodeName] = useState('');
+  const [addingChildParentId, setAddingChildParentId] = useState<string | null | '__ROOT__'>(null);
+  const [addingChildName, setAddingChildName] = useState('');
+  const [contextMenuNode, setContextMenuNode] = useState<{ id: string; name: string; x: number; y: number } | null>(null);
+  const [deleteConfirmNode, setDeleteConfirmNode] = useState<{ id: string; name: string } | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<Question | null>(null);
   const [treeVisible, setTreeVisible] = useState(true);
@@ -65,7 +71,137 @@ const QuestionBankImport: React.FC = () => {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  useEffect(() => {
+    if (!contextMenuNode) return;
+    const close = () => setContextMenuNode(null);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [contextMenuNode]);
+
+  // Tree CRUD handlers
+  const handleCreateKnowledgeNode = useCallback((name: string, parentId?: string | null) => {
+    const db = (window as any).dbService;
+    if (!db) return;
+    db.createKnowledgeNode({ name, parent_id: parentId || null });
+    const kn = db.getKnowledgeTree?.() || [];
+    setKnowledgeNodes([...kn]);
+  }, []);
+
+  const handleRenameKnowledgeNode = useCallback((id: string, name: string) => {
+    const db = (window as any).dbService;
+    if (!db) return;
+    db.updateKnowledgeNode(id, { name });
+    const kn = db.getKnowledgeTree?.() || [];
+    setKnowledgeNodes([...kn]);
+  }, []);
+
+  const handleDeleteKnowledgeNode = useCallback((id: string) => {
+    const db = (window as any).dbService;
+    if (!db) return;
+    db.deleteKnowledgeNode(id);
+    const kn = db.getKnowledgeTree?.() || [];
+    setKnowledgeNodes([...kn]);
+  }, []);
+
+  const handleTreeDrop = (info: any) => {
+    const dragKey = info.dragNode.key as string;
+    const dropKey = info.node.key as string;
+    const dropToGap = info.dropToGap as boolean;
+    if (dragKey === dropKey) return;
+    let newParentId: string | null;
+    if (dropToGap) {
+      const dropNode = knowledgeNodes.find(n => n.id === dropKey);
+      newParentId = dropNode?.parent_id || null;
+    } else {
+      newParentId = dropKey;
+    }
+    const isDescendant = (nodeId: string, ancestorId: string): boolean => {
+      const node = knowledgeNodes.find(n => n.id === nodeId);
+      if (!node || !node.parent_id) return false;
+      if (node.parent_id === ancestorId) return true;
+      return isDescendant(node.parent_id, ancestorId);
+    };
+    if (isDescendant(dropKey, dragKey)) { message.warning('不能将知识点移动到其子节点下'); return; }
+    Modal.confirm({
+      title: '确认移动', content: '确定将选中知识点及其所有子节点移动到此位置？',
+      okText: '移动', cancelText: '取消',
+      onOk: () => {
+        const db = (window as any).dbService;
+        if (!db) return;
+        db.updateKnowledgeNode(dragKey, { parent_id: newParentId });
+        setKnowledgeNodes([...(db.getKnowledgeTree?.() || [])]);
+        message.success('知识点已移动');
+      },
+    });
+  };
+
   const treeData = buildTreeData(knowledgeNodes);
+
+  const nodeTitleRender = useCallback((nodeData: any) => {
+    const nodeId = nodeData.key as string;
+    const nodeName = nodeData.title as string;
+    const isEditing = editingNodeId === nodeId;
+    const isAdding = addingChildParentId === nodeId;
+    return (
+      <div style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 2, padding: '1px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {isEditing ? (
+            <Input
+              size="small" value={editingNodeName}
+              onChange={e => setEditingNodeName(e.target.value)}
+              onBlur={(e) => {
+                const v = (e.target as HTMLInputElement).value;
+                if (v.trim()) handleRenameKnowledgeNode(nodeId, v.trim());
+                setEditingNodeId(null); setEditingNodeName('');
+              }}
+              onPressEnter={(e) => {
+                const v = (e.target as HTMLInputElement).value;
+                if (v.trim()) handleRenameKnowledgeNode(nodeId, v.trim());
+                setEditingNodeId(null); setEditingNodeName('');
+              }}
+              style={{ width: 120 }} autoFocus onClick={e => e.stopPropagation()}
+            />
+          ) : (
+            <>
+              <span style={{ flex: 1, userSelect: 'none', fontSize: 13 }}>{nodeName}</span>
+              <Tooltip title="添加子知识点">
+                <Button type="link" size="small" icon={<PlusOutlined />}
+                  onClick={e => { e.stopPropagation(); setAddingChildParentId(nodeId); setAddingChildName(''); }}
+                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }} />
+              </Tooltip>
+              <Tooltip title="编辑知识点">
+                <Button type="link" size="small" icon={<EditOutlined />}
+                  onClick={e => { e.stopPropagation(); setEditingNodeId(nodeId); setEditingNodeName(nodeName); }}
+                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }} />
+              </Tooltip>
+            </>
+          )}
+        </div>
+        {isAdding && (
+          <div style={{ paddingLeft: 20, marginTop: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Input size="small" placeholder="子知识点名称" value={addingChildName}
+                onChange={e => setAddingChildName(e.target.value)}
+                onBlur={(e) => {
+                  const v = (e.target as HTMLInputElement).value;
+                  if (v.trim()) handleCreateKnowledgeNode(v.trim(), nodeId);
+                  setAddingChildParentId(null); setAddingChildName('');
+                }}
+                onPressEnter={(e) => {
+                  const v = (e.target as HTMLInputElement).value;
+                  if (v.trim()) handleCreateKnowledgeNode(v.trim(), nodeId);
+                  setAddingChildParentId(null); setAddingChildName('');
+                }}
+                style={{ width: 140 }} autoFocus onClick={e => e.stopPropagation()} />
+              <Button type="link" size="small" icon={<CloseCircleOutlined />}
+                onClick={e => { e.stopPropagation(); setAddingChildParentId(null); setAddingChildName(''); }}
+                style={{ padding: 0, minWidth: 16, height: 16, fontSize: 11, color: '#999' }} />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }, [editingNodeId, editingNodeName, addingChildParentId, addingChildName, handleRenameKnowledgeNode, handleCreateKnowledgeNode]);
 
   // Knowledge tree checkbox renderer in modal
   const renderKnowledgeCheckboxes = (nodes: KnowledgeNode[], parentId?: string, depth = 0) => {
@@ -213,12 +349,97 @@ const QuestionBankImport: React.FC = () => {
             extra={<Button type="link" size="small" onClick={() => setTreeVisible(false)}>收起</Button>}
             style={{ height: '100%' }}
           >
+            {/* Root-level inline add */}
+            {addingChildParentId === '__ROOT__' ? (
+              <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Input size="small" placeholder="根节点名称" value={addingChildName}
+                  onChange={e => setAddingChildName(e.target.value)}
+                  onBlur={(e) => {
+                    const v = (e.target as HTMLInputElement).value;
+                    if (v.trim()) handleCreateKnowledgeNode(v.trim(), null);
+                    setAddingChildParentId(null); setAddingChildName('');
+                  }}
+                  onPressEnter={(e) => {
+                    const v = (e.target as HTMLInputElement).value;
+                    if (v.trim()) handleCreateKnowledgeNode(v.trim(), null);
+                    setAddingChildParentId(null); setAddingChildName('');
+                  }}
+                  style={{ flex: 1 }} autoFocus />
+                <Button type="link" size="small" icon={<CloseCircleOutlined />}
+                  onClick={() => { setAddingChildParentId(null); setAddingChildName(''); }}
+                  style={{ padding: 0, minWidth: 16, height: 16, color: '#999' }} />
+              </div>
+            ) : (
+              <Button type="dashed" size="small" icon={<PlusOutlined />}
+                onClick={() => { setAddingChildParentId('__ROOT__'); setAddingChildName(''); }}
+                style={{ marginBottom: 8, width: '100%' }}>新建根节点</Button>
+            )}
+
+            {/* Right-click context menu */}
+            {contextMenuNode && (
+              <div style={{
+                position: 'fixed', left: Math.min(contextMenuNode.x, window.innerWidth - 160),
+                top: Math.min(contextMenuNode.y, window.innerHeight - 160),
+                zIndex: 1050, background: '#fff', borderRadius: 6,
+                boxShadow: '0 3px 12px rgba(0,0,0,0.15)', padding: '4px 0',
+                minWidth: 150, border: '1px solid #e8e8e8',
+              }}>
+                <div style={{ padding: '6px 12px', color: '#666', fontSize: 12, borderBottom: '1px solid #f0f0f0' }}>
+                  <FolderOpenOutlined style={{ marginRight: 6 }} />{contextMenuNode.name}
+                </div>
+                <div style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}
+                  onClick={() => { setAddingChildParentId(contextMenuNode.id); setAddingChildName(''); setContextMenuNode(null); }}>
+                  <PlusOutlined /> 添加子知识点
+                </div>
+                <div style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}
+                  onClick={() => { setEditingNodeId(contextMenuNode.id); setEditingNodeName(contextMenuNode.name); setContextMenuNode(null); }}>
+                  <EditOutlined /> 重命名
+                </div>
+                <div style={{ borderTop: '1px solid #f0f0f0', margin: '4px 0' }} />
+                <div style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, color: '#ff4d4f' }}
+                  onClick={() => { setDeleteConfirmNode({ id: contextMenuNode.id, name: contextMenuNode.name }); setContextMenuNode(null); }}>
+                  <DeleteOutlined /> 删除知识点
+                </div>
+              </div>
+            )}
+
+            {/* Delete confirmation modal */}
+            <Modal
+              open={!!deleteConfirmNode} title="确认删除"
+              onCancel={() => setDeleteConfirmNode(null)}
+              onOk={() => {
+                if (deleteConfirmNode) {
+                  handleDeleteKnowledgeNode(deleteConfirmNode.id);
+                  message.success(`已删除知识点「${deleteConfirmNode.name}」及其所有子节点，关联题目已同步清理`);
+                  setDeleteConfirmNode(null);
+                }
+              }}
+              okText="确定删除" cancelText="取消"
+              okButtonProps={{ danger: true }} width={420}
+            >
+              {deleteConfirmNode && (
+                <div>
+                  <p style={{ fontSize: 14, marginBottom: 8 }}>
+                    确定要删除知识点 <Tag color="red">{deleteConfirmNode.name}</Tag> 吗？
+                  </p>
+                  <p style={{ color: '#ff4d4f', fontSize: 13 }}>
+                    <DeleteOutlined /> 此操作将同时删除该知识点下的所有次级知识点，不可恢复。
+                  </p>
+                </div>
+              )}
+            </Modal>
+
             <Tree
-              showIcon
-              treeData={treeData}
-              defaultExpandAll
-              style={{ fontSize: 13 }}
-            />
+              showIcon treeData={treeData} titleRender={nodeTitleRender}
+              defaultExpandAll draggable onDrop={handleTreeDrop}
+              onRightClick={({ event, node }: any) => {
+                event.preventDefault();
+                const targetNode = knowledgeNodes.find(n => n.id === node.key);
+                if (targetNode) {
+                  setContextMenuNode({ id: targetNode.id, name: targetNode.name, x: event.clientX, y: event.clientY });
+                }
+              }}
+              style={{ fontSize: 13 }} />
             <Divider />
             <div style={{ color: '#666', fontSize: 12 }}>
               <div>题目总数：{questions.length}</div>

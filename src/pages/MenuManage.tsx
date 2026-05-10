@@ -37,7 +37,7 @@ const DEFAULT_MENU_TREE: MenuTreeNode[] = [
   {
     id: '4', name: '题库管理', icon: 'UploadOutlined', routeKey: '', visible: true,
     children: [
-      { id: '4-1', name: '题目导入', icon: 'UploadOutlined', routeKey: 'question-bank-import', visible: true, children: [] },
+      { id: '4-1', name: '试题导入', icon: 'UploadOutlined', routeKey: 'question-bank-import', visible: true, children: [] },
       { id: '4-2', name: '试题预览', icon: 'FileTextOutlined', routeKey: 'question-bank-preview', visible: true, children: [] },
     ],
   },
