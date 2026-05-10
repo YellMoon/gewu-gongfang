@@ -28,7 +28,7 @@ function buildTreeData(nodes: KnowledgeNode[], parentId?: string): any[] {
       key: n.id,
       title: n.name,
       children: buildTreeData(nodes, n.id),
-      icon: <FolderOpenOutlined />,
+      isLeaf: false,
     }));
 }
 
@@ -129,7 +129,9 @@ const QuestionBankImport: React.FC = () => {
         const db = (window as any).dbService;
         if (!db) return;
         db.updateKnowledgeNode(dragKey, { parent_id: newParentId });
-        setKnowledgeNodes([...(db.getKnowledgeTree?.() || [])]);
+        // Deep clone to force React re-render
+        const fresh = (db.getKnowledgeTree?.() || []).map((n: any) => ({...n}));
+        setKnowledgeNodes(fresh);
         message.success('知识点已移动');
       },
     });
@@ -429,9 +431,25 @@ const QuestionBankImport: React.FC = () => {
               )}
             </Modal>
 
+            <style>{`
+              .ant-tree .ant-tree-indent-unit { width: 14px !important; }
+              .ant-tree-treenode {
+                padding-bottom: 4px !important;
+              }
+              .ant-tree .ant-tree-treenode::before {
+                border-left: 3px dashed #d9d9d9 !important;
+                left: 7px !important;
+                top: 20px !important;
+                bottom: 0 !important;
+              }
+              .ant-tree .ant-tree-treenode:last-child::before {
+                display: none;
+              }
+            `}</style>
             <Tree
-              showIcon treeData={treeData} titleRender={nodeTitleRender}
+              treeData={treeData} titleRender={nodeTitleRender}
               defaultExpandAll draggable onDrop={handleTreeDrop}
+              showLine={false} blockNode allowDrop={() => true}
               onRightClick={({ event, node }: any) => {
                 event.preventDefault();
                 const targetNode = knowledgeNodes.find(n => n.id === node.key);
