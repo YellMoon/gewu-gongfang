@@ -60,6 +60,8 @@ const QuestionBank: React.FC = () => {
   const [addingChildName, setAddingChildName] = useState('');
   // 右键菜单
   const [contextMenuNode, setContextMenuNode] = useState<{ id: string; name: string; x: number; y: number } | null>(null);
+  // 删除确认弹窗
+  const [deleteConfirmNode, setDeleteConfirmNode] = useState<{ id: string; name: string } | null>(null);
   // 知识点多选过滤
   const [filterKnowledgeIds, setFilterKnowledgeIds] = useState<string[]>([]);
 
@@ -79,6 +81,13 @@ const QuestionBank: React.FC = () => {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    if (!contextMenuNode) return;
+    const close = () => setContextMenuNode(null);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [contextMenuNode]);
 
   // Filters
   const filtered = questions.filter(q => {
@@ -421,7 +430,7 @@ const QuestionBank: React.FC = () => {
   // 组装 treeData（title 为纯字符串，按钮通过 titleRender 渲染）
   const treeData = buildTreeData(knowledgeNodes, undefined);
 
-  // titleRender：在节点名称右侧渲染 +/编辑/删除按钮
+  // titleRender：在节点名称右侧渲染 +/编辑按钮
   const nodeTitleRender = useCallback((nodeData: any) => {
     const nodeId = nodeData.key as string;
     const nodeName = nodeData.title as string;
@@ -453,37 +462,24 @@ const QuestionBank: React.FC = () => {
           ) : (
             <>
               <span style={{ flex: 1, userSelect: 'none', fontSize: 13 }}>{nodeName}</span>
-              <Button
-                type="link"
-                size="small"
-                icon={<PlusOutlined />}
-                onClick={e => { e.stopPropagation(); setAddingChildParentId(nodeId); setAddingChildName(''); }}
-                style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }}
-              />
-              <Button
-                type="link"
-                size="small"
-                icon={<EditOutlined />}
-                onClick={e => { e.stopPropagation(); setEditingNodeId(nodeId); setEditingNodeName(nodeName); }}
-                style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }}
-              />
-              <Popconfirm
-                title={`确定删除知识点「${nodeName}」及其所有子节点？`}
-                onConfirm={() => handleDeleteKnowledgeNode(nodeId)}
-                onCancel={() => {}}
-                okText="删除"
-                cancelText="取消"
-                okButtonProps={{ danger: true }}
-              >
+              <Tooltip title="添加子知识点">
                 <Button
                   type="link"
                   size="small"
-                  danger
-                  icon={<DeleteOutlined />}
-                  onClick={e => e.stopPropagation()}
-                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px', color: '#ff4d4f' }}
+                  icon={<PlusOutlined />}
+                  onClick={e => { e.stopPropagation(); setAddingChildParentId(nodeId); setAddingChildName(''); }}
+                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }}
                 />
-              </Popconfirm>
+              </Tooltip>
+              <Tooltip title="编辑知识点">
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<EditOutlined />}
+                  onClick={e => { e.stopPropagation(); setEditingNodeId(nodeId); setEditingNodeName(nodeName); }}
+                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }}
+                />
+              </Tooltip>
             </>
           )}
         </div>
@@ -521,7 +517,7 @@ const QuestionBank: React.FC = () => {
         )}
       </div>
     );
-  }, [editingNodeId, editingNodeName, addingChildParentId, addingChildName, handleRenameKnowledgeNode, handleDeleteKnowledgeNode, handleCreateKnowledgeNode]);
+  }, [editingNodeId, editingNodeName, addingChildParentId, addingChildName, handleRenameKnowledgeNode, handleCreateKnowledgeNode]);
 
   return (
     <Row gutter={16}>
@@ -587,52 +583,89 @@ const QuestionBank: React.FC = () => {
               </Button>
             )}
 
-            {/* 右键菜单：删除确认 */}
+            {/* 右键菜单 */}
+            {contextMenuNode && (
+              <div
+                style={{
+                  position: 'fixed',
+                  left: Math.min(contextMenuNode.x, window.innerWidth - 160),
+                  top: Math.min(contextMenuNode.y, window.innerHeight - 160),
+                  zIndex: 1050,
+                  background: '#fff',
+                  borderRadius: 6,
+                  boxShadow: '0 3px 12px rgba(0,0,0,0.15)',
+                  padding: '4px 0',
+                  minWidth: 150,
+                  border: '1px solid #e8e8e8',
+                }}
+              >
+                <div style={{ padding: '6px 12px', color: '#666', fontSize: 12, borderBottom: '1px solid #f0f0f0' }}>
+                  <FolderOpenOutlined style={{ marginRight: 6 }} />{contextMenuNode.name}
+                </div>
+                <div
+                  style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}
+                  onClick={() => {
+                    setAddingChildParentId(contextMenuNode.id);
+                    setAddingChildName('');
+                    setContextMenuNode(null);
+                  }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#f5f5f5'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+                >
+                  <PlusOutlined /> 添加子知识点
+                </div>
+                <div
+                  style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}
+                  onClick={() => {
+                    setEditingNodeId(contextMenuNode.id);
+                    setEditingNodeName(contextMenuNode.name);
+                    setContextMenuNode(null);
+                  }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#f5f5f5'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+                >
+                  <EditOutlined /> 重命名
+                </div>
+                <div style={{ borderTop: '1px solid #f0f0f0', margin: '4px 0' }} />
+                <div
+                  style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, color: '#ff4d4f' }}
+                  onClick={() => {
+                    setDeleteConfirmNode({ id: contextMenuNode.id, name: contextMenuNode.name });
+                    setContextMenuNode(null);
+                  }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#fff1f0'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+                >
+                  <DeleteOutlined /> 删除知识点
+                </div>
+              </div>
+            )}
+
+            {/* 删除确认弹窗 */}
             <Modal
-              open={!!contextMenuNode}
-              title="操作知识点"
-              onCancel={() => setContextMenuNode(null)}
-              footer={null}
-              width={240}
+              open={!!deleteConfirmNode}
+              title="确认删除"
+              onCancel={() => setDeleteConfirmNode(null)}
+              onOk={() => {
+                if (deleteConfirmNode) {
+                  handleDeleteKnowledgeNode(deleteConfirmNode.id);
+                  message.success(`已删除知识点「${deleteConfirmNode.name}」及其所有子节点，关联题目已同步清理`);
+                  setDeleteConfirmNode(null);
+                }
+              }}
+              okText="确定删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+              width={420}
             >
-              {contextMenuNode && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ padding: '4px 0', color: '#666', fontSize: 13 }}>
-                    <FolderOpenOutlined style={{ marginRight: 6 }} />{contextMenuNode.name}
-                  </div>
-                  <Button
-                    icon={<PlusOutlined />}
-                    onClick={() => {
-                      setAddingChildParentId(contextMenuNode.id);
-                      setAddingChildName('');
-                      setContextMenuNode(null);
-                    }}
-                  >
-                    添加子知识点
-                  </Button>
-                  <Button
-                    icon={<EditOutlined />}
-                    onClick={() => {
-                      setEditingNodeId(contextMenuNode.id);
-                      setEditingNodeName(contextMenuNode.name);
-                      setContextMenuNode(null);
-                    }}
-                  >
-                    重命名
-                  </Button>
-                  <Popconfirm
-                    title={`确定删除知识点「${contextMenuNode.name}」及其所有子节点？`}
-                    onConfirm={() => {
-                      handleDeleteKnowledgeNode(contextMenuNode.id);
-                      setContextMenuNode(null);
-                    }}
-                    onCancel={() => setContextMenuNode(null)}
-                    okText="删除"
-                    cancelText="取消"
-                    okButtonProps={{ danger: true }}
-                  >
-                    <Button danger icon={<DeleteOutlined />}>删除知识点</Button>
-                  </Popconfirm>
+              {deleteConfirmNode && (
+                <div>
+                  <p style={{ fontSize: 14, marginBottom: 8 }}>
+                    确定要删除知识点 <Tag color="red">{deleteConfirmNode.name}</Tag> 吗？
+                  </p>
+                  <p style={{ color: '#ff4d4f', fontSize: 13 }}>
+                    <DeleteOutlined /> 此操作将同时删除该知识点下的<b>所有次级知识点</b>，不可恢复。
+                  </p>
                 </div>
               )}
             </Modal>

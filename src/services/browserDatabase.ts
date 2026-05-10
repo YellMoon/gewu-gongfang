@@ -946,21 +946,52 @@ class BrowserDatabaseService {
   updateKnowledgeNode(id: string, updates: Partial<Omit<KnowledgeNode, 'id'>>): boolean {
     const idx = this.data.knowledgeTree.findIndex(n => n.id === id);
     if (idx === -1) return false;
+    const oldName = this.data.knowledgeTree[idx].name;
     this.data.knowledgeTree[idx] = { ...this.data.knowledgeTree[idx], ...updates, updated_at: new Date().toISOString() };
     this._rebuildKnowledgeChildren();
+
+    // If name changed, sync knowledge_point in questions referencing this node
+    const newName = updates.name;
+    if (newName !== undefined && newName !== oldName) {
+      for (const q of this.data.questions) {
+        if (q.knowledge_ids && q.knowledge_ids.includes(id)) {
+          if (q.knowledge_point === oldName) {
+            q.knowledge_point = newName;
+          }
+        }
+      }
+    }
+
     this.saveData();
     return true;
   }
 
   deleteKnowledgeNode(id: string): boolean {
-    const children = this.data.knowledgeTree.filter(n => n.parent_id === id);
-    for (const c of children) this.deleteKnowledgeNode(c.id);
-    const idx = this.data.knowledgeTree.findIndex(n => n.id === id);
-    if (idx === -1) return false;
-    this.data.knowledgeTree.splice(idx, 1);
+    const idsToDelete = this.collectDescendantIds(id);
+    if (idsToDelete.length === 0) return false;
+
+    this.data.knowledgeTree = this.data.knowledgeTree.filter(n => !idsToDelete.includes(n.id));
+
+    // Clean up question references: remove deleted knowledge IDs from all questions
+    for (const q of this.data.questions) {
+      if (q.knowledge_ids && q.knowledge_ids.length > 0) {
+        q.knowledge_ids = q.knowledge_ids.filter(kid => !idsToDelete.includes(kid));
+      }
+    }
+
     this._rebuildKnowledgeChildren();
     this.saveData();
     return true;
+  }
+
+  private collectDescendantIds(id: string): string[] {
+    const result: string[] = [id];
+    const children = this.data.knowledgeTree.filter(n => n.parent_id === id);
+    for (const child of children) {
+      const childIds = this.collectDescendantIds(child.id);
+      result.push(...childIds);
+    }
+    return result;
   }
 
   getKnowledgeChildren(parentId: string): KnowledgeNode[] {
