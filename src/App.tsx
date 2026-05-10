@@ -29,6 +29,7 @@ import SchoolManager from './pages/SchoolManager';
 import RoomManager from './pages/RoomManager';
 import QuestionBankImport from './pages/QuestionBankImport';
 import QuestionBankPreview from './pages/QuestionBankPreview';
+import QuestionBank from './pages/QuestionBank';
 import TeachingTools from './pages/TeachingTools';
 import PersonalAssets from './pages/PersonalAssets';
 import PermissionManager from './pages/PermissionManager';
@@ -45,7 +46,7 @@ const { Header, Content } = Layout;
 type PageKey =
   | 'course-calendar' | 'schedule-list' | 'course-info'
   | 'school' | 'address' | 'institution'
-  | 'question-bank-import' | 'question-bank-preview' | 'teaching-tool'
+  | 'question-bank-import' | 'question-bank-preview' | 'question-bank' | 'teaching-tool'
   | 'payment' | 'revenue-statistics' | 'personal-assets'
   | 'admin' | 'teacher' | 'student' | 'invitee' | 'permission'
   | 'menu-manage'  | 'system-params' | 'operate-log'
@@ -81,7 +82,8 @@ const MENU_GROUPS: MenuGroup[] = [
     icon: <DatabaseOutlined />,
     items: [
       { key: 'question-bank-import', label: '题目导入', icon: <UploadOutlined /> },
-      { key: 'question-bank-preview', label: '试题预览', icon: <FileTextOutlined /> }
+      { key: 'question-bank-preview', label: '试题预览', icon: <FileTextOutlined /> },
+      { key: 'question-bank', label: '题库管理', icon: <DatabaseOutlined /> }
     ]
   },
   {
@@ -220,6 +222,7 @@ const App: React.FC = () => {
       case 'revenue-statistics': return <RevenueStatistics />;
       case 'question-bank-import': return <QuestionBankImport />;
       case 'question-bank-preview': return <QuestionBankPreview />;
+      case 'question-bank': return <QuestionBank />;
       case 'teaching-tool': return <TeachingTools />;
       case 'personal-assets': return <PersonalAssets />;
       case 'permission': return <PermissionManager />;
