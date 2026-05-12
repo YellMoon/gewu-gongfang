@@ -111,6 +111,7 @@ async function createAndRenameFolder(page, name) {
       console.log(`进入: ${f}`);
       await page.waitForTimeout(1500);
       await dblClickName(page, f);
+      console.log('  当前URL: ' + page.url());
       console.log('  OK'); await page.waitForTimeout(2500);
     }
 
@@ -165,11 +166,17 @@ async function createAndRenameFolder(page, name) {
       if (list.some(n => n.includes(base))) {
         await page.waitForTimeout(5000);
         console.log('  ✓ 上传完成');
+        console.log('  当前目录文件列表: ' + list.join(', '));
         done = true;
         break;
       }
     }
     if (!done) { console.log('  ! 超时'); }
+
+    // 截图确认
+    const screenshotPath = path.join(process.env.TEMP || '/tmp', 'quark-upload-screenshot.png');
+    await page.screenshot({ path: screenshotPath, fullPage: false });
+    console.log(`  截图已保存: ${screenshotPath}`);
 
     console.log('\n===== 完成 =====');
     await page.waitForTimeout(5000);
