@@ -1081,6 +1081,7 @@ const ScheduleCalendar: React.FC = () => {
   const [batchDates, setBatchDates] = useState<Dayjs[]>([dayjs()]);
   const [refreshModalVisible, setRefreshModalVisible] = useState(false);
   const [refreshDateRange, setRefreshDateRange] = useState<[Dayjs, Dayjs] | null>(null);
+  const [modalTeacherId, setModalTeacherId] = useState<string | undefined>(undefined);
 
   // ⑤ 操作回退/前进（undo/redo）
   const MAX_HISTORY = 10;
@@ -1247,6 +1248,7 @@ const ScheduleCalendar: React.FC = () => {
   function handleDoubleClickDate(day: Dayjs) {
     setEditingSchedule(null);
     form.resetFields();
+    setModalTeacherId(undefined);
     form.setFieldValue('date', day);
     setBatchDates([day]);
     setModalVisible(true);
@@ -1263,6 +1265,7 @@ const ScheduleCalendar: React.FC = () => {
     const course = courses.find(c => c.id === schedule.course_id);
     
     form.resetFields();
+    setModalTeacherId(course?.teacher_id);
     form.setFieldsValue({
       date: dayjs(dateStr),
       startTime: startTimeDayjs,
@@ -1390,6 +1393,7 @@ const ScheduleCalendar: React.FC = () => {
     const endTime = startTime.add(DEFAULT_DURATION_HOURS, 'hour');
     setEditingSchedule(null);
     form.resetFields();
+    setModalTeacherId(course.teacher_id);
     form.setFieldsValue({
       date: day,
       startTime: startTime,
@@ -1598,6 +1602,7 @@ const ScheduleCalendar: React.FC = () => {
   function handleAddSchedule() {
     setEditingSchedule(null);
     form.resetFields();
+    setModalTeacherId(undefined);
     form.setFieldValue('date', dayjs());
     setBatchDates([dayjs()]);
     setModalVisible(true);
@@ -1825,15 +1830,19 @@ const ScheduleCalendar: React.FC = () => {
             <Col span={12}>
               <Form.Item name="teacherId" label="老师">
                 <Select
-                  mode="tags"
                   placeholder="选择老师"
                   showSearch
                   allowClear
-                  maxTagCount={1}
                   options={teachers.map(t => ({ label: t.name, value: t.id }))}
                   filterOption={(input, option) =>
                     (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                   }
+                  onChange={(val: string | undefined) => {
+                    setModalTeacherId(val);
+                    if (val) {
+                      form.setFieldValue('courseId', undefined);
+                    }
+                  }}
                 />
               </Form.Item>
             </Col>
@@ -1842,7 +1851,7 @@ const ScheduleCalendar: React.FC = () => {
                 <Select
                   placeholder="选择课程"
                   options={courses
-                    .filter(c => c.active && (!form.getFieldValue('teacherId') || c.teacher_id === form.getFieldValue('teacherId')))
+                    .filter(c => c.active && (!modalTeacherId || c.teacher_id === modalTeacherId))
                     .map(c => ({ label: c.display_name || c.name, value: c.id }))
                   }
                   onChange={(courseId) => {

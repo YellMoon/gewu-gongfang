@@ -335,15 +335,17 @@ export default function useBatchSelection(
     if (!el) return;
 
     const onDown = (e: MouseEvent) => {
-      // 右键：选中状态下，在矩形框内让 Dropdown 接管菜单，在矩形框外取消选中
       if (e.button === 2) {
         if (phaseRef.current === 'selected' && rbRef.current) {
-          const mx = e.clientX;
-          const my = e.clientY;
-          const r = rbRef.current;
-          // 检查右键位置是否在矩形框范围内
-          if (mx >= r.l && mx <= r.l + r.w && my >= r.t && my <= r.t + r.h) {
-            return; // 在矩形框内 → 让 Dropdown 接管
+          const anchor = el.querySelector('[data-anchor="true"]') as HTMLElement;
+          if (anchor) {
+            const ar = anchor.getBoundingClientRect();
+            const mx = e.clientX - ar.left;
+            const my = e.clientY - ar.top;
+            const r = rbRef.current;
+            if (mx >= r.l && mx <= r.l + r.w && my >= r.t && my <= r.t + r.h) {
+              return;
+            }
           }
         }
         // 矩形框外右键 → 取消选中
@@ -664,8 +666,11 @@ export default function useBatchSelection(
 
     const onCtx = (e: MouseEvent) => {
       const isInRb = phaseRef.current === 'selected' && rbRef.current && (() => {
-        const mx = e.clientX;
-        const my = e.clientY;
+        const anchor = el.querySelector('[data-anchor="true"]') as HTMLElement;
+        if (!anchor) return false;
+        const ar = anchor.getBoundingClientRect();
+        const mx = e.clientX - ar.left;
+        const my = e.clientY - ar.top;
         const r = rbRef.current!;
         return mx >= r.l && mx <= r.l + r.w && my >= r.t && my <= r.t + r.h;
       })();
