@@ -107,10 +107,58 @@ td,
 }
 
 /* ── 知识树样式 ── */
+/* 缩进与 switcher 同宽，确保连接线对齐 switcher 中心 */
+.knowledge-tree .ant-tree-indent-unit { width: 16px !important; }
+
+/* 圆形加减号：圆角 + 1字符间距紧贴文字 */
 .knowledge-tree .ant-tree-switcher {
-  width: 14px !important;
+  width: 16px !important;
+  height: 16px !important;
+  line-height: 16px !important;
+  border-radius: 50% !important;
+  margin: 0 4px 0 0 !important;
+  flex-shrink: 0;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
 }
 
+/* 展开（减号）：蓝底白字 */
+.knowledge-tree .ant-tree-switcher_open {
+  background: #1890ff !important;
+  color: #fff !important;
+}
+.knowledge-tree .ant-tree-switcher_open .anticon,
+.knowledge-tree .ant-tree-switcher_open .ant-tree-switcher-icon svg {
+  color: #fff !important;
+  fill: #fff !important;
+}
+
+/* 收起（加号）：灰底 */
+.knowledge-tree .ant-tree-switcher_close {
+  background: #f0f0f0 !important;
+  color: #666 !important;
+}
+.knowledge-tree .ant-tree-switcher_close .anticon,
+.knowledge-tree .ant-tree-switcher_close .ant-tree-switcher-icon svg {
+  color: #666 !important;
+}
+
+/* 叶子节点：无圆框 */
+.knowledge-tree .ant-tree-switcher-noop {
+  background: transparent !important;
+}
+
+/* 连接线：灰色虚线，连在 switcher 垂直中心 */
 .knowledge-tree .ant-tree-show-line .ant-tree-indent-unit::before {
   border-right: 1px dashed #d9d9d9 !important;
+}
+
+/* 删除图标列残留元素 */
+.knowledge-tree .ant-tree-iconEle,
+.knowledge-tree .ant-tree-icon__customize {
+  display: none !important;
+}
+.knowledge-tree .ant-tree-node-content-wrapper {
+  padding-left: 0 !important;
 }

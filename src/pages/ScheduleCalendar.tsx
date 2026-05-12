@@ -1741,7 +1741,7 @@ const ScheduleCalendar: React.FC = () => {
           <Button key="cancel" onClick={() => setModalVisible(false)}>取消</Button>,
           <Button key="save" type="primary" onClick={handleSave}>保存</Button>,
         ]}
-        width={700}
+        width={600}
       >
         <Form form={form} layout="vertical">
           <Form.Item label="日期">
@@ -1783,8 +1783,8 @@ const ScheduleCalendar: React.FC = () => {
               </div>
             </Space>
           </Form.Item>
-          
-          <Row gutter={16}>
+           
+          <Row gutter={12}>
             <Col span={8}>
               <Form.Item name="startTime" label="开始时间" rules={[{ required: true }]}>
                 <TimePicker
@@ -1799,7 +1799,7 @@ const ScheduleCalendar: React.FC = () => {
                 />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col span={7}>
               <Form.Item name="duration" label="课程时长">
                 <Select
                   style={{ width: '100%' }}
@@ -1819,15 +1819,15 @@ const ScheduleCalendar: React.FC = () => {
                 </Select>
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col span={9}>
               <Form.Item name="endTime" label="结束时间" rules={[{ required: true }]}>
                 <TimePicker format="HH:mm" style={{ width: '100%' }} disabled />
               </Form.Item>
             </Col>
           </Row>
-          
-          <Row gutter={16}>
-            <Col span={12}>
+           
+          <Row gutter={12}>
+            <Col span={8}>
               <Form.Item name="teacherId" label="老师">
                 <Select
                   placeholder="选择老师"
@@ -1846,7 +1846,7 @@ const ScheduleCalendar: React.FC = () => {
                 />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col span={8}>
               <Form.Item name="courseId" label="课程" rules={[{ required: true }]}>
                 <Select
                   placeholder="选择课程"
@@ -1860,8 +1860,11 @@ const ScheduleCalendar: React.FC = () => {
                       const displayCName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
                       form.setFieldValue('courseName', displayCName);
                       const roomId = (course.room_id && course.room_id.split(',')[0].trim()) || (rooms.find(r => r.name === course.room_name)?.id) || course.room_name || ''; form.setFieldValue('room', roomId);
-                      // 有默认时长：自动更新结束时间
                       if (course.default_duration_minutes) {
+                        const durHours = course.default_duration_minutes / 60;
+                        const durOptions = [0.5, 1, 1.5, 2, 2.5, 3];
+                        const closest = durOptions.reduce((prev, curr) => Math.abs(curr - durHours) < Math.abs(prev - durHours) ? curr : prev);
+                        form.setFieldValue('duration', closest);
                         const sTime = form.getFieldValue('startTime');
                         if (sTime) { form.setFieldValue('endTime', dayjs(sTime).add(course.default_duration_minutes, 'minute')); }
                       }
@@ -1870,20 +1873,21 @@ const ScheduleCalendar: React.FC = () => {
                 />
               </Form.Item>
             </Col>
+            <Col span={8}>
+              <Form.Item name="status" label="课程状态" initialValue={ScheduleStatus.PLANNED}>
+                <Select>
+                  <Option value={ScheduleStatus.PLANNED}>✅ 正常</Option>
+                  <Option value={ScheduleStatus.LEAVE}>🏠 请假</Option>
+                  <Option value={ScheduleStatus.CANCELLED}>❌ 取消</Option>
+                </Select>
+              </Form.Item>
+            </Col>
           </Row>
-          
+           
           <Form.Item name="courseName" rules={[{ required: true }]} style={{ display: 'none' }}>
             <Input />
           </Form.Item>
-          
-          <Form.Item name="status" label="课程状态" initialValue={ScheduleStatus.PLANNED}>
-            <Select>
-              <Option value={ScheduleStatus.PLANNED}>✅ 正常</Option>
-              <Option value={ScheduleStatus.LEAVE}>🏠 请假</Option>
-              <Option value={ScheduleStatus.CANCELLED}>❌ 取消</Option>
-            </Select>
-          </Form.Item>
-          
+           
           <Form.Item name="room" label="上课地址">
             <Select
               placeholder="选择上课地址"
@@ -1891,10 +1895,6 @@ const ScheduleCalendar: React.FC = () => {
               allowClear
               options={rooms.map(r => ({ label: r.address ? `${r.name} (${r.address})` : r.name, value: r.id }))}
             />
-          </Form.Item>
-          
-          <Form.Item name="notes" label="备注">
-            <Input.TextArea placeholder="输入备注" rows={2} />
           </Form.Item>
         </Form>
       </Modal>

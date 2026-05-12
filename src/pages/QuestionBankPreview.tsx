@@ -148,14 +148,13 @@ const QuestionBankPreview: React.FC = () => {
     const dragKey = info.dragNode.key as string;
     const dropKey = info.node.key as string;
     const dropToGap = info.dropToGap as boolean;
+    const dropPosition = info.dropPosition as number;
     if (dragKey === dropKey) return;
     let newParentId: string | null;
     if (dropToGap) {
       const dropNode = knowledgeNodes.find(n => n.id === dropKey);
       newParentId = dropNode?.parent_id || null;
-    } else {
-      newParentId = dropKey;
-    }
+    } else { newParentId = dropKey; }
     const isDescendant = (nodeId: string, ancestorId: string): boolean => {
       const node = knowledgeNodes.find(n => n.id === nodeId);
       if (!node || !node.parent_id) return false;
@@ -164,17 +163,44 @@ const QuestionBankPreview: React.FC = () => {
     };
     if (isDescendant(dropKey, dragKey)) { message.warning('不能将知识点移动到其子节点下'); return; }
     const draggedNode = knowledgeNodes.find(n => n.id === dragKey);
-    const prevParentId = draggedNode?.parent_id || null;
+    if (!draggedNode) return;
+    const prevParentId = draggedNode.parent_id || null;
+    const prevOrder = draggedNode.order;
     const db = (window as any).dbService;
     if (!db) return;
-    db.updateKnowledgeNode(dragKey, { parent_id: newParentId });
+    const isSameLevel = dropToGap && draggedNode.parent_id === newParentId;
+    if (isSameLevel) {
+      const allNodes = db.getKnowledgeTree?.() || knowledgeNodes;
+      const siblings = allNodes
+        .filter((n: KnowledgeNode) => n.parent_id === newParentId || (!newParentId && !n.parent_id))
+        .sort((a: KnowledgeNode, b: KnowledgeNode) => a.order - b.order);
+      const dragIdx = siblings.findIndex((n: KnowledgeNode) => n.id === dragKey);
+      let dropIdx = siblings.findIndex((n: KnowledgeNode) => n.id === dropKey);
+      if (dragIdx >= 0 && dropIdx >= 0 && dragIdx !== dropIdx) {
+        siblings.splice(dragIdx, 1);
+        dropIdx = siblings.findIndex((n: KnowledgeNode) => n.id === dropKey);
+        siblings.splice(dropPosition > 0 ? dropIdx + 1 : dropIdx, 0, draggedNode);
+        siblings.forEach((n: KnowledgeNode, i: number) => db.updateKnowledgeNode(n.id, { order: i }));
+      }
+    } else { db.updateKnowledgeNode(dragKey, { parent_id: newParentId }); }
     setKnowledgeNodes((db.getKnowledgeTree?.() || []).map((n: any) => ({...n})));
     Modal.confirm({
-      title: '确认移动', content: '确定将选中知识点及其所有子节点移动到此位置？',
+      title: '确认移动', content: isSameLevel ? '确定调整该知识点的排序位置？' : '确定将选中知识点及其所有子节点移动到此位置？',
       okText: '移动', cancelText: '取消',
-      onOk: () => { message.success('知识点已移动'); },
+      onOk: () => { message.success(isSameLevel ? '顺序已调整' : '知识点已移动'); },
       onCancel: () => {
-        db.updateKnowledgeNode(dragKey, { parent_id: prevParentId });
+        if (isSameLevel) {
+          const allNodes = db.getKnowledgeTree?.() || knowledgeNodes;
+          const siblings = allNodes
+            .filter((n: KnowledgeNode) => n.parent_id === prevParentId || (!prevParentId && !n.parent_id))
+            .sort((a: KnowledgeNode, b: KnowledgeNode) => a.order - b.order);
+          const dragIdx = siblings.findIndex((n: KnowledgeNode) => n.id === dragKey);
+          if (dragIdx >= 0) {
+            siblings.splice(dragIdx, 1);
+            siblings.splice(Math.min(prevOrder, siblings.length), 0, draggedNode);
+            siblings.forEach((n: KnowledgeNode, i: number) => db.updateKnowledgeNode(n.id, { order: i }));
+          }
+        } else { db.updateKnowledgeNode(dragKey, { parent_id: prevParentId }); }
         setKnowledgeNodes((db.getKnowledgeTree?.() || []).map((n: any) => ({...n})));
         message.info('已取消移动');
       },
@@ -645,14 +671,13 @@ const QuestionBankPreview: React.FC = () => {
             </Modal>
 
             <style>{`
-              .knowledge-tree .ant-tree-switcher { width: 14px !important; }
-              .knowledge-tree .ant-tree-indent-unit { width: 14px !important; }
-              .knowledge-tree .ant-tree-treenode {
-                padding-bottom: 4px !important;
-              }
-              .knowledge-tree .ant-tree-show-line .ant-tree-indent-unit::before {
-                border-right: 1px dashed #d9d9d9 !important;
-              }
+              .knowledge-tree .ant-tree-indent-unit { width: 16px !important; }
+              .knowledge-tree .ant-tree-switcher { width: 16px !important; height: 16px !important; border-radius: 50% !important; }
+              .knowledge-tree .ant-tree-switcher_open { background: #1890ff !important; color: #fff !important; }
+              .knowledge-tree .ant-tree-switcher_close { background: #f0f0f0 !important; }
+              .knowledge-tree .ant-tree-treenode { padding-bottom: 4px !important; }
+              .knowledge-tree .ant-tree-show-line .ant-tree-indent-unit::before { border-right: 1px dashed #d9d9d9 !important; }
+              .knowledge-tree .ant-tree-iconEle, .knowledge-tree .ant-tree-icon__customize { display: none !important; }
             `}</style>
             <div className="knowledge-tree">
             <Tree

@@ -388,6 +388,7 @@ const QuestionBank: React.FC = () => {
     const dragKey = info.dragNode.key as string;
     const dropKey = info.node.key as string;
     const dropToGap = info.dropToGap as boolean;
+    const dropPosition = info.dropPosition as number;
 
     if (dragKey === dropKey) return;
 
@@ -413,24 +414,59 @@ const QuestionBank: React.FC = () => {
     }
 
     const draggedNode = knowledgeNodes.find(n => n.id === dragKey);
-    const prevParentId = draggedNode?.parent_id || null;
+    if (!draggedNode) return;
+    const prevParentId = draggedNode.parent_id || null;
+    const prevOrder = draggedNode.order;
 
     // 先同步更新状态，否则 Tree 会自动还原拖拽位置
     const db = (window as any).dbService;
     if (!db) return;
-    db.updateKnowledgeNode(dragKey, { parent_id: newParentId });
+
+    const isSameLevel = dropToGap && draggedNode.parent_id === newParentId;
+    if (isSameLevel) {
+      // 同层级挪移：调整排序
+      const allNodes = db.getKnowledgeTree?.() || knowledgeNodes;
+      const siblings = allNodes
+        .filter((n: KnowledgeNode) => n.parent_id === newParentId || (!newParentId && !n.parent_id))
+        .sort((a: KnowledgeNode, b: KnowledgeNode) => a.order - b.order);
+      const dragIdx = siblings.findIndex((n: KnowledgeNode) => n.id === dragKey);
+      let dropIdx = siblings.findIndex((n: KnowledgeNode) => n.id === dropKey);
+      if (dragIdx >= 0 && dropIdx >= 0 && dragIdx !== dropIdx) {
+        siblings.splice(dragIdx, 1);
+        dropIdx = siblings.findIndex((n: KnowledgeNode) => n.id === dropKey);
+        const insertAt = dropPosition > 0 ? dropIdx + 1 : dropIdx;
+        siblings.splice(insertAt, 0, draggedNode);
+        siblings.forEach((n: KnowledgeNode, i: number) => db.updateKnowledgeNode(n.id, { order: i }));
+      }
+    } else {
+      db.updateKnowledgeNode(dragKey, { parent_id: newParentId });
+    }
     setKnowledgeNodes([...(db.getKnowledgeTree?.() || [])]);
 
     Modal.confirm({
       title: '确认移动',
-      content: '确定将选中知识点及其所有子节点移动到此位置？',
+      content: isSameLevel ? '确定调整该知识点的排序位置？' : '确定将选中知识点及其所有子节点移动到此位置？',
       okText: '移动',
       cancelText: '取消',
       onOk: () => {
-        message.success('知识点已移动');
+        message.success(isSameLevel ? '顺序已调整' : '知识点已移动');
       },
       onCancel: () => {
-        db.updateKnowledgeNode(dragKey, { parent_id: prevParentId });
+        if (isSameLevel) {
+          const allNodes = db.getKnowledgeTree?.() || knowledgeNodes;
+          const siblings = allNodes
+            .filter((n: KnowledgeNode) => n.parent_id === prevParentId || (!prevParentId && !n.parent_id))
+            .sort((a: KnowledgeNode, b: KnowledgeNode) => a.order - b.order);
+          const dragIdx = siblings.findIndex((n: KnowledgeNode) => n.id === dragKey);
+          if (dragIdx >= 0) {
+            siblings.splice(dragIdx, 1);
+            let insertAt = Math.min(prevOrder, siblings.length);
+            siblings.splice(insertAt, 0, draggedNode);
+            siblings.forEach((n: KnowledgeNode, i: number) => db.updateKnowledgeNode(n.id, { order: i }));
+          }
+        } else {
+          db.updateKnowledgeNode(dragKey, { parent_id: prevParentId });
+        }
         setKnowledgeNodes([...(db.getKnowledgeTree?.() || [])]);
         message.info('已取消移动');
       },
