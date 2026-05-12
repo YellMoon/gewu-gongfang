@@ -1512,6 +1512,11 @@ const ScheduleCalendar: React.FC = () => {
   }
 
   function handleSave() {
+    const values = form.getFieldsValue();
+    if (!values.startTime) { message.warning('请选择开始时间'); return; }
+    if (!values.duration) { message.warning('请选择课程时长'); return; }
+    if (!values.teacherId) { message.warning('请选择老师'); return; }
+    if (!values.courseId) { message.warning('请选择课程'); return; }
     form.validateFields().then(values => {
       const startDayjs = values.startTime;
       const durationHours = values.duration || DEFAULT_DURATION_HOURS;
@@ -1745,9 +1750,9 @@ const ScheduleCalendar: React.FC = () => {
       >
         <Form form={form} layout="vertical">
           <Form.Item label="日期">
-            <Space direction="vertical" style={{ width: '100%' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {batchDates.map((d, idx) => (
-                <Space key={idx} style={{ width: '100%' }}>
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4, width: 'calc(33.33% - 8px)' }}>
                   <DatePicker
                     style={{ flex: 1 }}
                     value={d}
@@ -1760,10 +1765,7 @@ const ScheduleCalendar: React.FC = () => {
                     }}
                   />
                   {batchDates.length > 1 && (
-                    <Button
-                      type="text"
-                      danger
-                      icon="❌"
+                    <Button type="text" danger icon="❌" size="small"
                       onClick={() => {
                         const newDates = [...batchDates];
                         newDates.splice(idx, 1);
@@ -1771,22 +1773,20 @@ const ScheduleCalendar: React.FC = () => {
                       }}
                     />
                   )}
-                </Space>
+                </div>
               ))}
-              <Button
-                type="dashed"
-                style={{ width: '100%' }}
+              <Button type="dashed" style={{ width: '100%' }}
                 onClick={() => setBatchDates([...batchDates, batchDates[batchDates.length - 1] || dayjs()])}
               >➕ 添加日期</Button>
-              <div style={{ fontSize: 12, color: '#666' }}>
+              <div style={{ fontSize: 12, color: '#666', width: '100%' }}>
                 共 {batchDates.length} 节课程
               </div>
-            </Space>
+            </div>
           </Form.Item>
            
           <Row gutter={12}>
             <Col span={8}>
-              <Form.Item name="startTime" label="开始时间" rules={[{ required: true }]}>
+              <Form.Item name="startTime" label="开始时间">
                 <TimePicker
                   format="HH:mm"
                   style={{ width: '100%' }}
@@ -1799,7 +1799,7 @@ const ScheduleCalendar: React.FC = () => {
                 />
               </Form.Item>
             </Col>
-            <Col span={7}>
+            <Col span={8}>
               <Form.Item name="duration" label="课程时长">
                 <Select
                   style={{ width: '100%' }}
@@ -1819,8 +1819,8 @@ const ScheduleCalendar: React.FC = () => {
                 </Select>
               </Form.Item>
             </Col>
-            <Col span={9}>
-              <Form.Item name="endTime" label="结束时间" rules={[{ required: true }]}>
+            <Col span={8}>
+              <Form.Item name="endTime" label="结束时间">
                 <TimePicker format="HH:mm" style={{ width: '100%' }} disabled />
               </Form.Item>
             </Col>
@@ -1847,7 +1847,7 @@ const ScheduleCalendar: React.FC = () => {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="courseId" label="课程" rules={[{ required: true }]}>
+              <Form.Item name="courseId" label="课程">
                 <Select
                   placeholder="选择课程"
                   options={courses

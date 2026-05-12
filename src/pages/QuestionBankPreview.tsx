@@ -47,12 +47,25 @@ const QuestionBankPreview: React.FC = () => {
   const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
 
   // Multi-select filter state
-  const [filterSubjects, setFilterSubjects] = useState<string[]>([]); // empty = show all
+  const [filterSubjects, setFilterSubjects] = useState<string[]>(['物理']); // default: 物理
   const [filterTypes, setFilterTypes] = useState<string[]>(['不限']); // default: 不限
   const [filterExamTypes, setFilterExamTypes] = useState<string[]>([...EXAM_TYPES]); // default all
   const [filterGrades, setFilterGrades] = useState<string[]>(['不限']); // default: 不限
   const [filterSemesters, setFilterSemesters] = useState<string[]>(['不限']); // default: 不限
   const [filterYear, setFilterYear] = useState<string | undefined>(undefined);
+
+  // 排除知识点
+  const [filterExcludeKnowledgeIds, setFilterExcludeKnowledgeIds] = useState<string[]>([]);
+
+  // 获取某节点及其所有后代 ID
+  const getDescendantIds = (nodes: KnowledgeNode[], parentId: string): string[] => {
+    const result: string[] = [parentId];
+    const children = nodes.filter(n => n.parent_id === parentId);
+    for (const child of children) {
+      result.push(...getDescendantIds(nodes, child.id));
+    }
+    return result;
+  };
 
   const [searchText, setSearchText] = useState<string>('');
   const [appliedSearchText, setAppliedSearchText] = useState<string>('');
@@ -96,26 +109,31 @@ const QuestionBankPreview: React.FC = () => {
 
   const activeKnowledgeIds = knowledgeSelectedIds.filter((id): id is string => !!id);
 
+  // 将知识点 ID 展开为所有底层后代（用于筛选）
+  const expandedIncludeIds = activeKnowledgeIds
+    .filter(id => !!id)
+    .flatMap(id => getDescendantIds(knowledgeNodes, id));
+  const expandedExcludeIds = filterExcludeKnowledgeIds
+    .filter(id => !!id)
+    .flatMap(id => getDescendantIds(knowledgeNodes, id));
+
   // Filters
   const filtered = questions.filter(q => {
-    // 科目
     if (filterSubjects.length > 0 && !filterSubjects.includes(q.subject)) return false;
-    // 题型（不限表示不过滤）
     if (!filterTypes.includes('不限') && filterTypes.length > 0 && !filterTypes.includes(q.type)) return false;
-    // 考试类型
     if (filterExamTypes.length > 0 && !filterExamTypes.includes(q.exam_type || '')) return false;
-    // 年级（不限表示不过滤）
     if (!filterGrades.includes('不限') && filterGrades.length > 0 && !filterGrades.includes(q.grade || '')) return false;
-    // 学期（不限表示不过滤）
     if (!filterSemesters.includes('不限') && filterSemesters.length > 0 && !filterSemesters.includes(q.semester || '')) return false;
-    // 学年精确匹配
     if (filterYear && q.year !== filterYear) return false;
-    // 题干搜索（点击搜索按钮后生效）
     if (appliedSearchText && !q.content.includes(appliedSearchText)) return false;
-    // 知识点 AND 逻辑
-    if (activeKnowledgeIds.length > 0) {
-      const qKnowledgeIds = q.knowledge_ids || [];
-      if (!activeKnowledgeIds.every(kid => qKnowledgeIds.includes(kid))) return false;
+    const qKnowledgeIds = q.knowledge_ids || [];
+    // 知识点 AND 逻辑（展开为后代）
+    if (expandedIncludeIds.length > 0) {
+      if (!expandedIncludeIds.every(kid => qKnowledgeIds.includes(kid))) return false;
+    }
+    // 排除知识点（展开为后代，任一匹配则排除）
+    if (expandedExcludeIds.length > 0) {
+      if (expandedExcludeIds.some(kid => qKnowledgeIds.includes(kid))) return false;
     }
     return true;
   }).sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
@@ -516,68 +534,36 @@ const QuestionBankPreview: React.FC = () => {
   const nodeTitleRender = useCallback((nodeData: any) => {
     const nodeId = nodeData.key as string;
     const nodeName = nodeData.title as string;
-    const isEditing = editingNodeId === nodeId;
-    const isAdding = addingChildParentId === nodeId;
+    const isIncluded = knowledgeSelectedIds.filter(id => !!id).includes(nodeId);
+    const isExcluded = filterExcludeKnowledgeIds.includes(nodeId);
     return (
-      <div style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 2, padding: '1px 0' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          {isEditing ? (
-            <Input
-              size="small" value={editingNodeName}
-              onChange={e => setEditingNodeName(e.target.value)}
-              onBlur={(e) => {
-                const v = (e.target as HTMLInputElement).value;
-                if (v.trim()) handleRenameKnowledgeNode(nodeId, v.trim());
-                setEditingNodeId(null); setEditingNodeName('');
-              }}
-              onPressEnter={(e) => {
-                const v = (e.target as HTMLInputElement).value;
-                if (v.trim()) handleRenameKnowledgeNode(nodeId, v.trim());
-                setEditingNodeId(null); setEditingNodeName('');
-              }}
-              style={{ width: 120 }} autoFocus onClick={e => e.stopPropagation()}
-            />
-          ) : (
-            <>
-              <span style={{ flex: 1, userSelect: 'none', fontSize: 13 }}>{nodeName}</span>
-              <Tooltip title="添加子知识点">
-                <Button type="link" size="small" icon={<PlusOutlined />}
-                  onClick={e => { e.stopPropagation(); setAddingChildParentId(nodeId); setAddingChildName(''); }}
-                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }} />
-              </Tooltip>
-              <Tooltip title="编辑知识点">
-                <Button type="link" size="small" icon={<EditOutlined />}
-                  onClick={e => { e.stopPropagation(); setEditingNodeId(nodeId); setEditingNodeName(nodeName); }}
-                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }} />
-              </Tooltip>
-            </>
-          )}
-        </div>
-        {isAdding && (
-          <div style={{ paddingLeft: 20, marginTop: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Input size="small" placeholder="子知识点名称" value={addingChildName}
-                onChange={e => setAddingChildName(e.target.value)}
-                onBlur={(e) => {
-                  const v = (e.target as HTMLInputElement).value;
-                  if (v.trim()) handleCreateKnowledgeNode(v.trim(), nodeId);
-                  setAddingChildParentId(null); setAddingChildName('');
-                }}
-                onPressEnter={(e) => {
-                  const v = (e.target as HTMLInputElement).value;
-                  if (v.trim()) handleCreateKnowledgeNode(v.trim(), nodeId);
-                  setAddingChildParentId(null); setAddingChildName('');
-                }}
-                style={{ width: 140 }} autoFocus onClick={e => e.stopPropagation()} />
-              <Button type="link" size="small" icon={<CloseCircleOutlined />}
-                onClick={e => { e.stopPropagation(); setAddingChildParentId(null); setAddingChildName(''); }}
-                style={{ padding: 0, minWidth: 16, height: 16, fontSize: 11, color: '#999' }} />
-            </div>
-          </div>
-        )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '1px 0' }}>
+        <span style={{ flex: 1, userSelect: 'none', fontSize: 13 }}>{nodeName}</span>
+        <Button type="link" size="small"
+          style={{ color: isIncluded ? '#1890ff' : '#999', fontSize: 11, padding: '0 2px', minWidth: 'auto', height: 18 }}
+          onClick={e => {
+            e.stopPropagation();
+            if (isIncluded) {
+              setKnowledgeSelectedIds(prev => prev.filter(id => id !== nodeId));
+            } else {
+              setKnowledgeSelectedIds(prev => [...prev.filter(id => !!id), nodeId]);
+            }
+          }}
+        >{isIncluded ? '✓已选' : '包含'}</Button>
+        <Button type="link" size="small" danger={isExcluded}
+          style={{ color: isExcluded ? '#ff4d4f' : '#999', fontSize: 11, padding: '0 2px', minWidth: 'auto', height: 18 }}
+          onClick={e => {
+            e.stopPropagation();
+            if (isExcluded) {
+              setFilterExcludeKnowledgeIds(prev => prev.filter(id => id !== nodeId));
+            } else {
+              setFilterExcludeKnowledgeIds(prev => [...prev, nodeId]);
+            }
+          }}
+        >{isExcluded ? '✗已排' : '不含'}</Button>
       </div>
     );
-  }, [editingNodeId, editingNodeName, addingChildParentId, addingChildName, handleRenameKnowledgeNode, handleCreateKnowledgeNode]);
+  }, [knowledgeSelectedIds, filterExcludeKnowledgeIds]);
 
   return (
     <Row gutter={16}>
@@ -590,86 +576,6 @@ const QuestionBankPreview: React.FC = () => {
             extra={<Button type="link" size="small" onClick={() => setTreeVisible(false)}>收起</Button>}
             style={{ height: '100%' }}
           >
-            {/* Root-level inline add */}
-            {addingChildParentId === '__ROOT__' ? (
-              <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Input size="small" placeholder="根节点名称" value={addingChildName}
-                  onChange={e => setAddingChildName(e.target.value)}
-                  onBlur={(e) => {
-                    const v = (e.target as HTMLInputElement).value;
-                    if (v.trim()) handleCreateKnowledgeNode(v.trim(), null);
-                    setAddingChildParentId(null); setAddingChildName('');
-                  }}
-                  onPressEnter={(e) => {
-                    const v = (e.target as HTMLInputElement).value;
-                    if (v.trim()) handleCreateKnowledgeNode(v.trim(), null);
-                    setAddingChildParentId(null); setAddingChildName('');
-                  }}
-                  style={{ flex: 1 }} autoFocus />
-                <Button type="link" size="small" icon={<CloseCircleOutlined />}
-                  onClick={() => { setAddingChildParentId(null); setAddingChildName(''); }}
-                  style={{ padding: 0, minWidth: 16, height: 16, color: '#999' }} />
-              </div>
-            ) : (
-              <Button type="dashed" size="small" icon={<PlusOutlined />}
-                onClick={() => { setAddingChildParentId('__ROOT__'); setAddingChildName(''); }}
-                style={{ marginBottom: 8, width: '100%' }}>新建根节点</Button>
-            )}
-
-            {/* Right-click context menu */}
-            {contextMenuNode && (
-              <div style={{
-                position: 'fixed', left: Math.min(contextMenuNode.x, window.innerWidth - 160),
-                top: Math.min(contextMenuNode.y, window.innerHeight - 160),
-                zIndex: 1050, background: '#fff', borderRadius: 6,
-                boxShadow: '0 3px 12px rgba(0,0,0,0.15)', padding: '4px 0',
-                minWidth: 150, border: '1px solid #e8e8e8',
-              }}>
-                <div style={{ padding: '6px 12px', color: '#666', fontSize: 12, borderBottom: '1px solid #f0f0f0' }}>
-                  <FolderOpenOutlined style={{ marginRight: 6 }} />{contextMenuNode.name}
-                </div>
-                <div style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}
-                  onClick={() => { setAddingChildParentId(contextMenuNode.id); setAddingChildName(''); setContextMenuNode(null); }}>
-                  <PlusOutlined /> 添加子知识点
-                </div>
-                <div style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}
-                  onClick={() => { setEditingNodeId(contextMenuNode.id); setEditingNodeName(contextMenuNode.name); setContextMenuNode(null); }}>
-                  <EditOutlined /> 重命名
-                </div>
-                <div style={{ borderTop: '1px solid #f0f0f0', margin: '4px 0' }} />
-                <div style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, color: '#ff4d4f' }}
-                  onClick={() => { setDeleteConfirmNode({ id: contextMenuNode.id, name: contextMenuNode.name }); setContextMenuNode(null); }}>
-                  <DeleteOutlined /> 删除知识点
-                </div>
-              </div>
-            )}
-
-            {/* Delete confirmation modal */}
-            <Modal
-              open={!!deleteConfirmNode} title="确认删除"
-              onCancel={() => setDeleteConfirmNode(null)}
-              onOk={() => {
-                if (deleteConfirmNode) {
-                  handleDeleteKnowledgeNode(deleteConfirmNode.id);
-                  message.success(`已删除知识点「${deleteConfirmNode.name}」及其所有子节点，关联题目已同步清理`);
-                  setDeleteConfirmNode(null);
-                }
-              }}
-              okText="确定删除" cancelText="取消"
-              okButtonProps={{ danger: true }} width={420}
-            >
-              {deleteConfirmNode && (
-                <div>
-                  <p style={{ fontSize: 14, marginBottom: 8 }}>
-                    确定要删除知识点 <Tag color="red">{deleteConfirmNode.name}</Tag> 吗？
-                  </p>
-                  <p style={{ color: '#ff4d4f', fontSize: 13 }}>
-                    <DeleteOutlined /> 此操作将同时删除该知识点下的所有次级知识点，不可恢复。
-                  </p>
-                </div>
-              )}
-            </Modal>
-
             <style>{`
               .knowledge-tree .ant-tree-indent-unit { width: 16px !important; }
               .knowledge-tree .ant-tree-switcher { width: 16px !important; height: 16px !important; min-width: 16px !important; min-height: 16px !important; border-radius: 50% !important; margin-right: 2px !important; }
@@ -686,17 +592,10 @@ const QuestionBankPreview: React.FC = () => {
             <div className="knowledge-tree">
             <Tree
               treeData={treeData} titleRender={nodeTitleRender}
-              defaultExpandAll draggable onDrop={handleTreeDrop}
+              defaultExpandAll
               showIcon={false}
               showLine={{ showLeafIcon: false }}
-              blockNode allowDrop={() => true}
-              onRightClick={({ event, node }: any) => {
-                event.preventDefault();
-                const targetNode = knowledgeNodes.find(n => n.id === node.key);
-                if (targetNode) {
-                  setContextMenuNode({ id: targetNode.id, name: targetNode.name, x: event.clientX, y: event.clientY });
-                }
-              }}
+              blockNode allowDrop={() => false}
               onSelect={(keys) => {
                 if (keys.length > 0) {
                   setKnowledgeSelectedIds(keys as string[]);
@@ -820,7 +719,7 @@ const QuestionBankPreview: React.FC = () => {
               </div>
             </div>
 
-            {/* Row 5: 学年（左）| 搜索题干（右）*/}
+            {/* Row 5: 学年（右）| 搜索题干（右）*/}
             <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>学年：</span>
@@ -846,7 +745,7 @@ const QuestionBankPreview: React.FC = () => {
               </div>
             </div>
 
-            {/* Row 6: 知识点多选模糊搜索 */}
+            {/* Row 6: 知识点多选 */}
             <div>
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                 <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>知识点：</span>
@@ -896,9 +795,28 @@ const QuestionBankPreview: React.FC = () => {
               </div>
               {activeKnowledgeIds.length > 0 && (
                 <div style={{ marginTop: 4, color: '#888', fontSize: 12 }}>
-                  已选 {activeKnowledgeIds.length} 个知识点（AND 筛选）
+                  已选 {activeKnowledgeIds.length} 个知识点（AND 筛选），共覆盖 {expandedIncludeIds.length} 个后代节点
                 </div>
               )}
+            </div>
+
+            {/* Row 7: 排除知识点 */}
+            <div style={{ marginTop: 8 }}>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: '#ff4d4f', whiteSpace: 'nowrap' }}>排除：</span>
+                {filterExcludeKnowledgeIds.length === 0 ? (
+                  <span style={{ color: '#999', fontSize: 13 }}>无</span>
+                ) : (
+                  filterExcludeKnowledgeIds.map((eid, idx) => {
+                    const node = knowledgeNodes.find(n => n.id === eid);
+                    return (
+                      <Tag key={idx} closable color="error"
+                        onClose={() => setFilterExcludeKnowledgeIds(prev => prev.filter(id => id !== eid))}
+                      >{node?.name || eid}</Tag>
+                    );
+                  })
+                )}
+              </div>
             </div>
           </div>
 
