@@ -163,17 +163,20 @@ const QuestionBankPreview: React.FC = () => {
       return isDescendant(node.parent_id, ancestorId);
     };
     if (isDescendant(dropKey, dragKey)) { message.warning('不能将知识点移动到其子节点下'); return; }
+    const draggedNode = knowledgeNodes.find(n => n.id === dragKey);
+    const prevParentId = draggedNode?.parent_id || null;
+    const db = (window as any).dbService;
+    if (!db) return;
+    db.updateKnowledgeNode(dragKey, { parent_id: newParentId });
+    setKnowledgeNodes((db.getKnowledgeTree?.() || []).map((n: any) => ({...n})));
     Modal.confirm({
       title: '确认移动', content: '确定将选中知识点及其所有子节点移动到此位置？',
       okText: '移动', cancelText: '取消',
-      onOk: () => {
-        const db = (window as any).dbService;
-        if (!db) return;
-        db.updateKnowledgeNode(dragKey, { parent_id: newParentId });
-        // Deep clone to force React re-render
-        const fresh = (db.getKnowledgeTree?.() || []).map((n: any) => ({...n}));
-        setKnowledgeNodes(fresh);
-        message.success('知识点已移动');
+      onOk: () => { message.success('知识点已移动'); },
+      onCancel: () => {
+        db.updateKnowledgeNode(dragKey, { parent_id: prevParentId });
+        setKnowledgeNodes((db.getKnowledgeTree?.() || []).map((n: any) => ({...n})));
+        message.info('已取消移动');
       },
     });
   };
@@ -642,24 +645,22 @@ const QuestionBankPreview: React.FC = () => {
             </Modal>
 
             <style>{`
-              .ant-tree .ant-tree-indent-unit { width: 14px !important; }
-              .ant-tree-treenode {
+              .knowledge-tree .ant-tree-switcher { width: 14px !important; }
+              .knowledge-tree .ant-tree-indent-unit { width: 14px !important; }
+              .knowledge-tree .ant-tree-treenode {
                 padding-bottom: 4px !important;
               }
-              .ant-tree .ant-tree-treenode::before {
-                border-left: 3px dashed #d9d9d9 !important;
-                left: 7px !important;
-                top: 20px !important;
-                bottom: 0 !important;
-              }
-              .ant-tree .ant-tree-treenode:last-child::before {
-                display: none;
+              .knowledge-tree .ant-tree-show-line .ant-tree-indent-unit::before {
+                border-right: 1px dashed #d9d9d9 !important;
               }
             `}</style>
+            <div className="knowledge-tree">
             <Tree
               treeData={treeData} titleRender={nodeTitleRender}
               defaultExpandAll draggable onDrop={handleTreeDrop}
-              showLine={false} blockNode allowDrop={() => true}
+              showIcon={false}
+              showLine={{ showLeafIcon: false }}
+              blockNode allowDrop={() => true}
               onRightClick={({ event, node }: any) => {
                 event.preventDefault();
                 const targetNode = knowledgeNodes.find(n => n.id === node.key);
@@ -673,6 +674,7 @@ const QuestionBankPreview: React.FC = () => {
                 }
               }}
               style={{ fontSize: 13 }} />
+            </div>
             <Divider />
             <div style={{ color: '#666', fontSize: 12 }}>
               <div>题目总数：{questions.length}</div>

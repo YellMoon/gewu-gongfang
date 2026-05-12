@@ -105,3 +105,12 @@ td,
 .ant-table-tbody > tr > td {
   text-align: center !important;
 }
+
+/* ── 知识树样式 ── */
+.knowledge-tree .ant-tree-switcher {
+  width: 14px !important;
+}
+
+.knowledge-tree .ant-tree-show-line .ant-tree-indent-unit::before {
+  border-right: 1px dashed #d9d9d9 !important;
+}

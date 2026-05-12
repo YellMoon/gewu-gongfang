@@ -399,7 +399,7 @@ const QuestionBank: React.FC = () => {
       newParentId = dropKey;
     }
 
-    // Check for circular reference (prevent dropping a node onto its own descendant)
+    // Check for circular reference
     const isDescendant = (nodeId: string, ancestorId: string): boolean => {
       const node = knowledgeNodes.find(n => n.id === nodeId);
       if (!node || !node.parent_id) return false;
@@ -412,17 +412,27 @@ const QuestionBank: React.FC = () => {
       return;
     }
 
+    const draggedNode = knowledgeNodes.find(n => n.id === dragKey);
+    const prevParentId = draggedNode?.parent_id || null;
+
+    // 先同步更新状态，否则 Tree 会自动还原拖拽位置
+    const db = (window as any).dbService;
+    if (!db) return;
+    db.updateKnowledgeNode(dragKey, { parent_id: newParentId });
+    setKnowledgeNodes([...(db.getKnowledgeTree?.() || [])]);
+
     Modal.confirm({
       title: '确认移动',
       content: '确定将选中知识点及其所有子节点移动到此位置？',
       okText: '移动',
       cancelText: '取消',
       onOk: () => {
-        const db = (window as any).dbService;
-        if (!db) return;
-        db.updateKnowledgeNode(dragKey, { parent_id: newParentId });
-        setKnowledgeNodes([...(db.getKnowledgeTree?.() || [])]);
         message.success('知识点已移动');
+      },
+      onCancel: () => {
+        db.updateKnowledgeNode(dragKey, { parent_id: prevParentId });
+        setKnowledgeNodes([...(db.getKnowledgeTree?.() || [])]);
+        message.info('已取消移动');
       },
     });
   };
@@ -670,8 +680,10 @@ const QuestionBank: React.FC = () => {
               )}
             </Modal>
 
+            <div className="knowledge-tree">
             <Tree
-              showIcon
+              showIcon={false}
+              showLine={{ showLeafIcon: false }}
               treeData={treeData}
               titleRender={nodeTitleRender}
               defaultExpandAll
@@ -694,6 +706,7 @@ const QuestionBank: React.FC = () => {
               }}
               style={{ fontSize: 13 }}
             />
+            </div>
             {filterKnowledge && (
               <Button type="link" size="small" onClick={() => setFilterKnowledge(undefined)} style={{ marginTop: 8 }}>
                 清除筛选

@@ -5,7 +5,7 @@ import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import './index.css';
 
-document.addEventListener('mousedown', (e) => {
+document.addEventListener('click', (e) => {
   const target = e.target as HTMLElement;
   if (target.closest('.ant-select-item-option') && !target.closest('.ant-time-picker-panel') && !target.closest('.ant-picker-time-panel')) {
     setTimeout(() => {
@@ -16,7 +16,7 @@ document.addEventListener('mousedown', (e) => {
           if (input) input.blur();
         }
       });
-    }, 50);
+    }, 200);
   }
 });
 
