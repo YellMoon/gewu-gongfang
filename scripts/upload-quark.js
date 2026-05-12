@@ -67,7 +67,7 @@ async function createAndRenameFolder(page, name) {
 (async () => {
   const context = await chromium.launchPersistentContext(
     path.join(process.env.LOCALAPPDATA, 'opencode-quark-profile'),
-    { headless: false, args: ['--start-maximized'], viewport: null }
+    { channel: 'msedge', headless: false, args: ['--start-maximized'], viewport: null }
   );
 
   if (fs.existsSync(COOKIE_FILE)) {
@@ -96,13 +96,22 @@ async function createAndRenameFolder(page, name) {
     await page.waitForTimeout(2000);
 
     console.log('\n=== 2. 进入 opencode项目 ===');
+    let names = await getNames(page);
+    if (!names.includes('opencode项目')) {
+      console.log('"opencode项目" 不存在，创建...');
+      await createAndRenameFolder(page, 'opencode项目');
+      await page.waitForTimeout(3000);
+      names = await getNames(page);
+      if (!names.includes('opencode项目')) {
+        console.log('  ! 创建失败，手动等30秒...');
+        await page.waitForTimeout(30000);
+      } else { console.log('  ✓ 已创建'); }
+    }
     for (const f of ['opencode项目']) {
       console.log(`进入: ${f}`);
       await page.waitForTimeout(1500);
-      if (!(await dblClickName(page, f))) {
-        console.log(`  ! 未找到"${f}"，手动等30秒...`);
-        await page.waitForTimeout(30000);
-      } else { console.log('  OK'); await page.waitForTimeout(2500); }
+      await dblClickName(page, f);
+      console.log('  OK'); await page.waitForTimeout(2500);
     }
 
     console.log(`\n=== 3. 检查 "${TODAY}" ===`);
