@@ -116,7 +116,7 @@ async function createAndRenameFolder(page, name) {
 
     console.log(`\n=== 3. 检查 "${TODAY}" ===`);
     await page.waitForTimeout(2000);
-    let names = await getNames(page);
+    names = await getNames(page);
     const folders = names.filter(n => /^\d{4}-\d{1,2}-\d{1,2}$/.test(n));
     console.log(`${folders.length} 个日期文件夹: ${folders.join(', ')}`);
 
