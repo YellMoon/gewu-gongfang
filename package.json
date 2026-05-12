@@ -11,7 +11,7 @@
     "start": "electron .",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
-    "dist:win": "npm run build && electron-builder --win"
+    "dist:win": "node scripts/update-version.js --bump && npm run build && electron-builder --win"
   },
   "author": "小龙虾",
   "license": "MIT",
