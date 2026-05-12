@@ -464,12 +464,16 @@ const QuestionBankImport: React.FC = () => {
 
             <style>{`
               .knowledge-tree .ant-tree-indent-unit { width: 16px !important; }
-              .knowledge-tree .ant-tree-switcher { width: 16px !important; height: 16px !important; border-radius: 50% !important; }
-              .knowledge-tree .ant-tree-switcher_open { background: #1890ff !important; color: #fff !important; }
+              .knowledge-tree .ant-tree-switcher { width: 16px !important; height: 16px !important; min-width: 16px !important; min-height: 16px !important; border-radius: 50% !important; margin-right: 2px !important; }
+              .knowledge-tree .ant-tree-switcher_open { background: #1890ff !important; }
+              .knowledge-tree .ant-tree-switcher_open::after { background: #fff !important; border-color: #fff !important; }
               .knowledge-tree .ant-tree-switcher_close { background: #f0f0f0 !important; }
-              .knowledge-tree .ant-tree-treenode { padding-bottom: 4px !important; }
+              .knowledge-tree .ant-tree-switcher_close::after, .knowledge-tree .ant-tree-switcher_close::before { background: #666 !important; }
+              .knowledge-tree .ant-tree-switcher-noop { background: transparent !important; width: 16px !important; }
+              .knowledge-tree .ant-tree-treenode { gap: 0 !important; padding-bottom: 3px !important; }
               .knowledge-tree .ant-tree-show-line .ant-tree-indent-unit::before { border-right: 1px dashed #d9d9d9 !important; }
-              .knowledge-tree .ant-tree-iconEle, .knowledge-tree .ant-tree-icon__customize { display: none !important; }
+              .knowledge-tree .ant-tree-iconEle,.knowledge-tree .ant-tree-icon__customize,.knowledge-tree .ant-tree-leaf-icon,.knowledge-tree .ant-tree-leaf-line{display:none!important;}
+              .knowledge-tree .ant-tree-node-content-wrapper { padding: 0 2px !important; margin-left: 0 !important; }
             `}</style>
             <div className="knowledge-tree">
             <Tree
