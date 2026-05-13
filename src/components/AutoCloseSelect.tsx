@@ -4,7 +4,7 @@ import { Select } from "antd";
 /**
  * 统一下拉行为：除时间选择外，选中即收起
  */
-export default function AutoCloseSelect(props: any) {
+function AutoCloseSelect(props: any) {
   const [open, setOpen] = React.useState<boolean>(false);
   return (
     <Select
@@ -19,3 +19,8 @@ export default function AutoCloseSelect(props: any) {
     />
   );
 }
+
+(AutoCloseSelect as any).Option = Select.Option;
+(AutoCloseSelect as any).OptGroup = Select.OptGroup;
+
+export default AutoCloseSelect as any;
