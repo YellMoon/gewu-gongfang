@@ -463,21 +463,6 @@ const QuestionBankImport: React.FC = () => {
                 </div>
               )}
             </Modal>
-
-            <style>{`
-              .knowledge-tree .ant-tree-treenode { align-items: center !important; padding-bottom: 3px !important; }
-              .knowledge-tree .ant-tree-indent-unit { width: 16px !important; }
-              .knowledge-tree .ant-tree-switcher { width: 16px !important; height: 16px !important; line-height: 16px !important; border-radius: 50% !important; margin-right: 2px !important; padding: 0 !important; box-sizing: border-box !important; z-index: 1 !important; overflow: hidden !important; border: none !important; outline: none !important; align-self: center !important; flex-shrink: 0; }
-              .knowledge-tree .ant-tree-switcher *,.knowledge-tree .ant-tree-switcher::after,.knowledge-tree .ant-tree-switcher::before { border: none !important; outline: none !important; box-shadow: none !important; }
-              .knowledge-tree .ant-tree-switcher_close { background: #fff !important; box-shadow: inset 0 0 0 1px #000 !important; }
-              .knowledge-tree .ant-tree-switcher_close::after,.knowledge-tree .ant-tree-switcher_close::before { background: #000 !important; }
-              .knowledge-tree .ant-tree-switcher_open { background: #40a9ff !important; box-shadow: inset 0 0 0 1px #40a9ff !important; }
-              .knowledge-tree .ant-tree-switcher_open::after,.knowledge-tree .ant-tree-switcher_open::before { background: #fff !important; }
-              .knowledge-tree .ant-tree-switcher-noop { background: transparent !important; box-shadow: none !important; }
-              .knowledge-tree .ant-tree-iconEle,.knowledge-tree .ant-tree-icon__customize,.knowledge-tree .ant-tree-leaf-icon,.knowledge-tree .ant-tree-leaf-line,.knowledge-tree .ant-tree-draggable-icon,.knowledge-tree .ant-tree-treenode-draggable::before{display:none!important;}
-              .knowledge-tree .ant-tree-show-line .ant-tree-indent-unit::before { top: -4px !important; bottom: -4px !important; left: 50% !important; transform: translateX(-50%) !important; width: 2px !important; border: none !important; background: repeating-linear-gradient(to bottom,#d9d9d9 0,#d9d9d9 2px,transparent 2px,transparent 5px) !important; background-size: 2px 5px !important; }
-              .knowledge-tree .ant-tree-node-content-wrapper { padding: 0 2px !important; margin-left: 0 !important; }
-            `}</style>
             <div className="knowledge-tree">
             <Tree
               treeData={treeData} titleRender={nodeTitleRender}

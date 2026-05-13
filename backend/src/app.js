@@ -1,5 +1,5 @@
-/**
- * Express 应用配置
+﻿/**
+ * Express 搴旂敤閰嶇疆
  */
 const express = require('express');
 const cors = require('cors');
@@ -20,6 +20,8 @@ const dataRouter = require('./routes/export');
 const billImportRouter = require('./routes/billImport');
 const syncRouter = require('./routes/sync');
 const authRouter = require('./routes/auth');
+const questionBankRouter = require('./routes/questionBank');
+const opsRouter = require('./routes/ops');
 
 function createApp() {
   const app = express();
@@ -34,9 +36,29 @@ function createApp() {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true }));
 
-  // 请求日志
-  app.use((req, _res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  // 璇锋眰鏃ュ織
+  app.use((req, res, next) => {
+    const traceId = req.headers['x-trace-id'] || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    const startedAt = Date.now();
+    req.traceId = traceId;
+    res.setHeader('x-trace-id', traceId);
+    res.on('finish', () => {
+      console.log(JSON.stringify({
+        time: new Date().toISOString(),
+        traceId,
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        durationMs: Date.now() - startedAt,
+      }));
+    });
+    next();
+  });
+
+  app.use((req, res, next) => {
+    if (process.env.REQUIRE_NONCE === 'true' && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && !req.headers['x-request-nonce']) {
+      return res.status(400).json({ error: '缂哄皯璇锋眰 nonce', traceId: req.traceId });
+    }
     next();
   });
 
@@ -49,7 +71,7 @@ function createApp() {
   app.use('/api/auth', authRouter);
   app.use('/api/sync', syncRouter);
 
-  // 半公开路由（可选认证）
+  // 鍗婂叕寮€璺敱锛堝彲閫夎璇侊級
   app.use('/api/students', optionalAuth, studentsRouter);
   app.use('/api/courses', optionalAuth, coursesRouter);
   app.use('/api/schedules', optionalAuth, schedulesRouter);
@@ -60,13 +82,16 @@ function createApp() {
   app.use('/api/schools', optionalAuth, schoolsRouter);
   app.use('/api/institutions', optionalAuth, institutionsRouter);
   app.use('/api/stats', optionalAuth, statsRouter);
+  app.use('/api/question-bank', optionalAuth, questionBankRouter);
+  app.use('/api/ops', optionalAuth, opsRouter);
   app.use('/api', dataRouter);
   app.use('/api/bill-import', billImportRouter);
 
-  // 错误处理
+  // 閿欒澶勭悊
   app.use(errorHandler);
 
   return app;
 }
 
 module.exports = { createApp };
+

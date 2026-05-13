@@ -1,6 +1,13 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog, screen } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, screen, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+let autoUpdater = null;
+try {
+  autoUpdater = require('electron-updater').autoUpdater;
+  autoUpdater.autoDownload = false;
+} catch (err) {
+  autoUpdater = null;
+}
 
 const logDir = path.join(app.getPath('userData'), 'logs');
 if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
@@ -35,9 +42,13 @@ function createWindow() {
     backgroundColor: '#ffffff',
     show: false,
     title: '格物工坊',
-    webPreferences: { 
-      nodeIntegration: true, 
-      contextIsolation: false 
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+      enableRemoteModule: false,
+      webSecurity: true,
     }
   });
 
@@ -90,6 +101,17 @@ function createWindow() {
   }
 
   mainWindow.on('closed', () => { mainWindow = null; });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const currentUrl = mainWindow.webContents.getURL();
+    if (url !== currentUrl && /^https?:\/\//.test(url) && !url.startsWith('http://localhost:3000')) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
   mainWindow.webContents.on('did-fail-load', (e, code, desc) => {
     log('did-fail-load: ' + code + ' ' + desc);
   });
@@ -127,3 +149,39 @@ app.on('window-all-closed', () => {
 
 ipcMain.handle('get-app-version', () => app.getVersion());
 ipcMain.handle('get-user-data-path', () => app.getPath('userData'));
+ipcMain.handle('open-external', (_event, url) => {
+  if (typeof url !== 'string' || !/^https?:\/\//.test(url)) {
+    throw new Error('Invalid external URL');
+  }
+  return shell.openExternal(url);
+});
+ipcMain.handle('check-for-updates', async () => {
+  if (!autoUpdater) return { success: false, error: 'autoUpdater unavailable' };
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return { success: true, updateInfo: result?.updateInfo || null };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+ipcMain.handle('download-update', async () => {
+  if (!autoUpdater) return { success: false, error: 'autoUpdater unavailable' };
+  try {
+    await autoUpdater.downloadUpdate();
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+ipcMain.handle('install-update', () => {
+  if (!autoUpdater) return { success: false, error: 'autoUpdater unavailable' };
+  autoUpdater.quitAndInstall(false, true);
+  return { success: true };
+});
+
+if (autoUpdater) {
+  autoUpdater.on('update-available', info => mainWindow?.webContents.send('update-available', info));
+  autoUpdater.on('update-downloaded', info => mainWindow?.webContents.send('update-downloaded', info));
+  autoUpdater.on('download-progress', info => mainWindow?.webContents.send('download-progress', info));
+  autoUpdater.on('error', err => mainWindow?.webContents.send('update-error', err.message));
+}

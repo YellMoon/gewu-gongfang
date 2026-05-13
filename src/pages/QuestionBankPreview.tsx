@@ -580,18 +580,6 @@ const QuestionBankPreview: React.FC = () => {
             extra={<Button type="link" size="small" onClick={() => setTreeVisible(false)}>收起</Button>}
             style={{ height: '100%' }}
           >
-            <style>{`
-              .knowledge-tree .ant-tree-indent-unit { width: 16px !important; }
-              .knowledge-tree .ant-tree-switcher { width: 16px !important; height: 16px !important; min-width: 16px !important; min-height: 16px !important; border-radius: 50% !important; margin-right: 2px !important; padding: 0 !important; box-sizing: border-box !important; overflow: hidden !important; border: none !important; outline: none !important; }
-              .knowledge-tree .ant-tree-switcher_close { background: #fff !important; box-shadow: inset 0 0 0 1px #d9d9d9 !important; }
-              .knowledge-tree .ant-tree-switcher_close::after, .knowledge-tree .ant-tree-switcher_close::before { background: #333 !important; }
-              .knowledge-tree .ant-tree-switcher_open { background: #1890ff !important; box-shadow: none !important; }
-              .knowledge-tree .ant-tree-switcher_open::after { background: #fff !important; }
-              .knowledge-tree .ant-tree-switcher-noop { background: transparent !important; box-shadow: none !important; }
-              .knowledge-tree .ant-tree-treenode { padding-bottom: 3px !important; }
-              .knowledge-tree .ant-tree-iconEle,.knowledge-tree .ant-tree-icon__customize,.knowledge-tree .ant-tree-leaf-icon,.knowledge-tree .ant-tree-leaf-line{display:none!important;}
-              .knowledge-tree .ant-tree-node-content-wrapper { padding: 0 2px !important; margin-left: 0 !important; }
-            `}</style>
             <div className="knowledge-tree">
             <Tree
               treeData={treeData} titleRender={nodeTitleRender}

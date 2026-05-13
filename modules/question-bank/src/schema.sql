@@ -55,6 +55,65 @@ CREATE TABLE IF NOT EXISTS questions (
   FOREIGN KEY (chapter_id) REFERENCES chapters(id)
 );
 
+-- ===================== 题干/答案内容拆分 =====================
+CREATE TABLE IF NOT EXISTS question_contents (
+  id TEXT PRIMARY KEY,
+  question_id TEXT NOT NULL,
+  stem TEXT NOT NULL,
+  answer TEXT,
+  explanation TEXT,
+  options_json TEXT,
+  content_hash TEXT,
+  version INTEGER DEFAULT 1,
+  oss_key TEXT,
+  oss_url TEXT,
+  deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (question_id) REFERENCES questions(id)
+);
+
+-- ===================== 题目资产 OSS 引用 =====================
+CREATE TABLE IF NOT EXISTS question_assets (
+  id TEXT PRIMARY KEY,
+  question_id TEXT NOT NULL,
+  asset_type TEXT NOT NULL,
+  file_name TEXT,
+  mime_type TEXT,
+  size_bytes INTEGER DEFAULT 0,
+  oss_key TEXT NOT NULL,
+  oss_url TEXT,
+  content_hash TEXT,
+  deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (question_id) REFERENCES questions(id)
+);
+
+-- ===================== 题目知识点多对多关系 =====================
+CREATE TABLE IF NOT EXISTS question_knowledge_points (
+  question_id TEXT NOT NULL,
+  knowledge_point_id TEXT NOT NULL,
+  weight REAL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (question_id, knowledge_point_id),
+  FOREIGN KEY (question_id) REFERENCES questions(id),
+  FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id)
+);
+
+-- ===================== 知识树计数上卷缓存 =====================
+CREATE TABLE IF NOT EXISTS knowledge_point_rollups (
+  knowledge_point_id TEXT PRIMARY KEY,
+  direct_question_count INTEGER DEFAULT 0,
+  total_question_count INTEGER DEFAULT 0,
+  easy_count INTEGER DEFAULT 0,
+  medium_count INTEGER DEFAULT 0,
+  hard_count INTEGER DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id)
+);
+
 -- ===================== 试卷/题集表 =====================
 CREATE TABLE IF NOT EXISTS question_sets (
   id TEXT PRIMARY KEY,
@@ -112,6 +171,11 @@ CREATE INDEX IF NOT EXISTS idx_questions_chapter ON questions(chapter_id);
 CREATE INDEX IF NOT EXISTS idx_questions_type ON questions(type);
 CREATE INDEX IF NOT EXISTS idx_questions_difficulty ON questions(difficulty);
 CREATE INDEX IF NOT EXISTS idx_questions_deleted ON questions(deleted);
+CREATE INDEX IF NOT EXISTS idx_question_contents_question ON question_contents(question_id);
+CREATE INDEX IF NOT EXISTS idx_question_contents_hash ON question_contents(content_hash);
+CREATE INDEX IF NOT EXISTS idx_question_assets_question ON question_assets(question_id);
+CREATE INDEX IF NOT EXISTS idx_question_assets_hash ON question_assets(content_hash);
+CREATE INDEX IF NOT EXISTS idx_qkp_knowledge ON question_knowledge_points(knowledge_point_id);
 CREATE INDEX IF NOT EXISTS idx_qs_subject ON question_sets(subject_id);
 CREATE INDEX IF NOT EXISTS idx_qs_deleted ON question_sets(deleted);
 CREATE INDEX IF NOT EXISTS idx_qsi_set ON question_set_items(question_set_id);

@@ -1,6 +1,6 @@
-/**
- * SQLite 数据库层 v3.1
- * 使用 better-sqlite3 同步API，匹配 browserDatabase.ts 的业务逻辑
+﻿/**
+ * SQLite 鏁版嵁搴撳眰 v3.1
+ * 浣跨敤 better-sqlite3 鍚屾API锛屽尮閰?browserDatabase.ts 鐨勪笟鍔￠€昏緫
  */
 const Database = require('better-sqlite3');
 const path = require('path');
@@ -10,7 +10,9 @@ const { v4: uuidv4 } = require('uuid');
 class DatabaseService {
   constructor() {
     this.db = null;
+    this.readDb = null;
     this.dbPath = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'scheduling.db');
+    this.readDbPath = process.env.READ_DB_PATH || this.dbPath;
     this._init();
   }
 
@@ -21,23 +23,31 @@ class DatabaseService {
     this.db = new Database(this.dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
+    if (this.readDbPath !== this.dbPath) {
+      this.readDb = new Database(this.readDbPath, { readonly: true, fileMustExist: true });
+      this.readDb.pragma('foreign_keys = ON');
+    } else {
+      this.readDb = this.db;
+    }
 
     const schemaPath = path.join(__dirname, 'schema.sql');
     const schema = fs.readFileSync(schemaPath, 'utf-8');
     this.db.exec(schema);
-    console.log(`[DB] 初始化完成: ${this.dbPath}`);
+    console.log(`[DB] 鍒濆鍖栧畬鎴? ${this.dbPath}`);
   }
 
-  // ==================== 通用CRUD辅助 ====================
+  // ==================== 閫氱敤CRUD杈呭姪 ====================
 
   _now() { return new Date().toISOString(); }
 
+  _reader() { return this.readDb || this.db; }
+
   _get(table, id) {
-    return this.db.prepare(`SELECT * FROM ${table} WHERE id = ? AND deleted = 0`).get(id);
+    return this._reader().prepare(`SELECT * FROM ${table} WHERE id = ? AND deleted = 0`).get(id);
   }
 
   _list(table, orderBy = 'created_at DESC') {
-    return this.db.prepare(`SELECT * FROM ${table} WHERE deleted = 0 ORDER BY ${orderBy}`).all();
+    return this._reader().prepare(`SELECT * FROM ${table} WHERE deleted = 0 ORDER BY ${orderBy}`).all();
   }
 
   _insert(table, data) {
@@ -67,11 +77,46 @@ class DatabaseService {
   }
 
   _count(table, where = '1=1', params = []) {
-    const row = this.db.prepare(`SELECT COUNT(*) as cnt FROM ${table} WHERE ${where}`).get(...params);
+    const row = this._reader().prepare(`SELECT COUNT(*) as cnt FROM ${table} WHERE ${where}`).get(...params);
     return row.cnt;
   }
 
-  // ==================== 学生管理 ====================
+  _syncTables() {
+    return ['students', 'grades', 'courses', 'schedules', 'enrollments',
+      'payments', 'consumptions', 'institutions', 'schools', 'rooms', 'teachers',
+      'subjects', 'chapters', 'knowledge_points', 'questions', 'question_contents',
+      'question_assets'];
+  }
+
+  _tableColumns(table) {
+    return this._reader().prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+  }
+
+  _auditSync(event) {
+    const now = this._now();
+    this.db.prepare(
+      `INSERT INTO sync_audit_log
+       (id, tenant_id, client_id, protocol_version, action, table_name, record_id,
+        local_updated_at, server_updated_at, resolution, status, detail, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      uuidv4(),
+      event.tenant_id || 'default',
+      event.client_id || 'unknown',
+      event.protocol_version || 'v1-lww',
+      event.action,
+      event.table_name || null,
+      event.record_id || null,
+      event.local_updated_at || null,
+      event.server_updated_at || null,
+      event.resolution || 'lww',
+      event.status,
+      event.detail ? JSON.stringify(event.detail) : null,
+      now
+    );
+  }
+
+  // ==================== 瀛︾敓绠＄悊 ====================
 
   getAllStudents() {
     return this._list('students', 'created_at DESC');
@@ -115,7 +160,7 @@ class DatabaseService {
     return this._softDelete('students', id);
   }
 
-  // 获取成绩
+  // 鑾峰彇鎴愮哗
   getGrades(studentId) {
     return this.db.prepare(
       'SELECT * FROM grades WHERE student_id = ? AND deleted = 0 ORDER BY exam_date DESC'
@@ -130,7 +175,7 @@ class DatabaseService {
     });
   }
 
-  // ==================== 课程管理 ====================
+  // ==================== 璇剧▼绠＄悊 ====================
 
   getAllCourses() {
     return this._list('courses', 'created_at DESC');
@@ -174,7 +219,7 @@ class DatabaseService {
 
   deleteCourse(id) { return this._softDelete('courses', id); }
 
-  // ==================== 排课管理 ====================
+  // ==================== 鎺掕绠＄悊 ====================
 
   getAllSchedules() {
     return this._list('schedules', 'start_time DESC');
@@ -229,7 +274,7 @@ class DatabaseService {
     return this.db.prepare(sql).all(...params);
   }
 
-  // ==================== 选课关联 ====================
+  // ==================== 閫夎鍏宠仈 ====================
 
   getEnrollmentsBySchedule(scheduleId) {
     return this.db.prepare('SELECT * FROM enrollments WHERE schedule_id = ? AND deleted = 0').all(scheduleId);
@@ -259,7 +304,7 @@ class DatabaseService {
 
   deleteEnrollment(id) { return this._softDelete('enrollments', id); }
 
-  // ==================== 缴费管理 ====================
+  // ==================== 缂磋垂绠＄悊 ====================
 
   getAllPayments() { return this._list('payments', 'payment_date DESC'); }
 
@@ -276,19 +321,19 @@ class DatabaseService {
       payment_type: data.payment_type, payment_date: data.payment_date,
       payment_method: data.payment_method || null, notes: data.notes || null
     });
-    // 更新学生余额
+    // 鏇存柊瀛︾敓浣欓
     const student = this._get('students', data.student_id);
     if (student) {
-      if (data.payment_type === 1) {  // 学费
+      if (data.payment_type === 1) {  // 瀛﹁垂
         this._update('students', data.student_id, { balance_money: student.balance_money + data.amount });
-      } else if (data.payment_type === 2) {  // 课时
+      } else if (data.payment_type === 2) {  // 璇炬椂
         this._update('students', data.student_id, { balance_hours: student.balance_hours + data.amount });
       }
     }
     return payment;
   }
 
-  // ==================== 课时消耗 ====================
+  // ==================== 璇炬椂娑堣€?====================
 
   getAllConsumptions() { return this._list('consumptions', 'consumption_date DESC'); }
 
@@ -305,7 +350,7 @@ class DatabaseService {
       hours: data.hours, amount: data.amount, consumption_date: data.consumption_date,
       notes: data.notes || null
     });
-    // 更新学生余额
+    // 鏇存柊瀛︾敓浣欓
     const student = this._get('students', data.student_id);
     if (student) {
       this._update('students', data.student_id, {
@@ -316,7 +361,7 @@ class DatabaseService {
     return consumption;
   }
 
-  // ==================== 老师管理 ====================
+  // ==================== 鑰佸笀绠＄悊 ====================
 
   getAllTeachers() { return this._list('teachers', 'created_at DESC'); }
   getTeacherById(id) { return this._get('teachers', id); }
@@ -340,7 +385,7 @@ class DatabaseService {
 
   deleteTeacher(id) { return this._softDelete('teachers', id); }
 
-  // ==================== 教室管理 ====================
+  // ==================== 鏁欏绠＄悊 ====================
 
   getAllRooms() { return this._list('rooms', 'created_at DESC'); }
   getRoomById(id) { return this._get('rooms', id); }
@@ -362,7 +407,7 @@ class DatabaseService {
 
   deleteRoom(id) { return this._softDelete('rooms', id); }
 
-  // ==================== 学校管理 ====================
+  // ==================== 瀛︽牎绠＄悊 ====================
 
   getAllSchools() { return this._list('schools', 'name ASC'); }
 
@@ -375,7 +420,7 @@ class DatabaseService {
     return this._insert('schools', { id, name, count: 1 });
   }
 
-  // ==================== 机构管理 ====================
+  // ==================== 鏈烘瀯绠＄悊 ====================
 
   getAllInstitutions() { return this._list('institutions', 'created_at DESC'); }
   getInstitutionById(id) { return this._get('institutions', id); }
@@ -399,7 +444,7 @@ class DatabaseService {
 
   deleteInstitution(id) { return this._softDelete('institutions', id); }
 
-  // ==================== 统计数据 ====================
+  // ==================== 缁熻鏁版嵁 ====================
 
   getRevenueStats(startDate, endDate) {
     const schedules = this.db.prepare(
@@ -456,7 +501,7 @@ class DatabaseService {
     return { total_hours: row.total_hours || 0, total_amount: row.total_amount || 0, count: row.count || 0 };
   }
 
-  // ==================== 数据导出/导入 ====================
+  // ==================== 鏁版嵁瀵煎嚭/瀵煎叆 ====================
 
   exportAll() {
     return {
@@ -496,23 +541,23 @@ class DatabaseService {
     return { imported: true };
   }
 
-  // ==================== 同步支持 ====================
+  // ==================== 鍚屾鏀寔 ====================
 
   /**
-   * 获取指定时间后的所有变更（包括软删除记录）
+   * 鑾峰彇鎸囧畾鏃堕棿鍚庣殑鎵€鏈夊彉鏇达紙鍖呮嫭杞垹闄よ褰曪級
    */
   getChangesSince(table, sinceTime) {
-    return this.db.prepare(
+    const columns = this._tableColumns(table);
+    if (!columns.includes('updated_at')) return [];
+    return this._reader().prepare(
       `SELECT * FROM ${table} WHERE updated_at > ? ORDER BY updated_at ASC`
     ).all(sinceTime);
   }
 
   /**
-   * 获取所有表的变更
-   */
+   * 鑾峰彇鎵€鏈夎〃鐨勫彉鏇?   */
   getChangesSinceAll(sinceTime) {
-    const tables = ['students', 'grades', 'courses', 'schedules', 'enrollments',
-      'payments', 'consumptions', 'institutions', 'schools', 'rooms', 'teachers'];
+    const tables = this._syncTables();
     const result = {};
     for (const table of tables) {
       result[table] = this.getChangesSince(table, sinceTime);
@@ -522,42 +567,56 @@ class DatabaseService {
   }
 
   /**
-   * 应用客户端推送的变更
+   * 搴旂敤瀹㈡埛绔帹閫佺殑鍙樻洿
    */
   applyPushChanges(clientId, changes) {
     const transaction = this.db.transaction((changes) => {
-      const tables = ['students', 'grades', 'courses', 'schedules', 'enrollments',
-        'payments', 'consumptions', 'institutions', 'schools', 'rooms', 'teachers'];
+      const tables = this._syncTables();
       const now = this._now();
       const results = { applied: 0, conflicts: 0, errors: [] };
 
       for (const table of tables) {
         const records = changes[table] || [];
+        const columns = this._tableColumns(table);
         for (const record of records) {
           try {
             const existing = this.db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(record.id);
             if (existing && existing.updated_at >= record.updated_at) {
-              // 服务端数据更新，冲突
               results.conflicts++;
+              this._auditSync({
+                client_id: clientId, action: 'push', table_name: table, record_id: record.id,
+                local_updated_at: record.updated_at, server_updated_at: existing.updated_at,
+                resolution: 'server-wins', status: 'conflict'
+              });
               this.db.prepare(
                 `INSERT INTO sync_log (client_id, action, table_name, record_id, sync_time, status) VALUES (?, 'push', ?, ?, ?, 'conflict')`
               ).run(clientId, table, record.id, now);
               continue;
             }
-            // INSERT OR REPLACE
-            const keys = Object.keys(record);
-            const vals = Object.values(record);
-            record.updated_at = now;  // 更新时间戳
+
+            record.updated_at = now;
+            if (columns.includes('created_at') && !record.created_at) record.created_at = now;
+            const keys = Object.keys(record).filter(k => columns.includes(k));
             const newVals = keys.map(k => record[k]);
             const placeholders = keys.map(() => '?').join(', ');
             this.db.prepare(
               `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`
             ).run(...newVals);
             results.applied++;
+            this._auditSync({
+              client_id: clientId, action: 'push', table_name: table, record_id: record.id,
+              local_updated_at: record.updated_at, server_updated_at: now,
+              resolution: 'local-wins', status: 'success'
+            });
             this.db.prepare(
               `INSERT INTO sync_log (client_id, action, table_name, record_id, sync_time, status) VALUES (?, 'push', ?, ?, ?, 'success')`
             ).run(clientId, table, record.id, now);
           } catch (e) {
+            this._auditSync({
+              client_id: clientId, action: 'push', table_name: table, record_id: record.id,
+              local_updated_at: record.updated_at, server_updated_at: now,
+              resolution: 'error', status: 'error', detail: { error: e.message }
+            });
             results.errors.push({ table, id: record.id, error: e.message });
           }
         }
@@ -566,26 +625,25 @@ class DatabaseService {
     });
     return transaction(changes);
   }
-
   /**
-   * 获取同步状态
-   */
+   * 鑾峰彇鍚屾鐘舵€?   */
   getSyncStatus() {
-    const tables = ['students', 'grades', 'courses', 'schedules', 'enrollments',
-      'payments', 'consumptions', 'institutions', 'schools', 'rooms', 'teachers'];
+    const tables = this._syncTables();
     const status = {};
     for (const table of tables) {
-      const total = this.db.prepare(`SELECT COUNT(*) as cnt FROM ${table} WHERE deleted = 0`).get();
-      const lastUpdate = this.db.prepare(
-        `SELECT MAX(updated_at) as ts FROM ${table}`
-      ).get();
+      const columns = this._tableColumns(table);
+      const where = columns.includes('deleted') ? 'WHERE deleted = 0' : '';
+      const total = this.db.prepare(`SELECT COUNT(*) as cnt FROM ${table} ${where}`).get();
+      const lastUpdate = columns.includes('updated_at')
+        ? this.db.prepare(`SELECT MAX(updated_at) as ts FROM ${table}`).get()
+        : { ts: null };
       status[table] = { count: total.cnt, last_updated: lastUpdate.ts };
     }
     status.server_time = this._now();
     return status;
   }
 
-  // ==================== 认证 ====================
+  // ==================== 璁よ瘉 ====================
 
   findOrCreateUserByWechat(openid, unionid, nickname, avatarUrl) {
     let user = this.db.prepare('SELECT * FROM users WHERE wechat_openid = ? AND deleted = 0').get(openid);
@@ -600,6 +658,10 @@ class DatabaseService {
   }
 
   close() {
+    if (this.readDb && this.readDb !== this.db) {
+      this.readDb.close();
+      this.readDb = null;
+    }
     if (this.db) {
       this.db.close();
       this.db = null;
@@ -607,7 +669,7 @@ class DatabaseService {
   }
 }
 
-// 单例
+// 鍗曚緥
 let instance = null;
 
 function getInstance() {
@@ -616,3 +678,4 @@ function getInstance() {
 }
 
 module.exports = { DatabaseService, getInstance };
+

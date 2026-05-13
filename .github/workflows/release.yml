@@ -1,0 +1,51 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 发布通道
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - stable
+
+jobs:
+  desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - run: npm run build
+      - run: npx electron-builder --win --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gewu-desktop-${{ github.event.inputs.channel }}
+          path: dist/*.exe
+
+  backend-smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: node -e "process.env.DB_PATH='/tmp/scheduling.db'; const { createApp } = require('./src/app'); const { getInstance } = require('./src/database'); createApp(); getInstance(); console.log('backend smoke ok')"
+
+  miniapp-placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "微信小程序 CI 预留：配置 WECHAT_APPID 与上传密钥后启用正式上传"

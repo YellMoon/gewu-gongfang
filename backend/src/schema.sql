@@ -203,6 +203,212 @@ CREATE TABLE IF NOT EXISTS sync_log (
   status TEXT                            -- success | conflict | error
 );
 
+-- ===================== S1-S3 扩展能力：租户、审计、题库拆分、事件、搜索、归档 =====================
+CREATE TABLE IF NOT EXISTS tenants (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  status TEXT DEFAULT 'active',
+  plan TEXT DEFAULT 'standard',
+  archive_before TEXT,
+  deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sync_audit_log (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
+  client_id TEXT NOT NULL,
+  protocol_version TEXT DEFAULT 'v1-lww',
+  action TEXT NOT NULL,
+  table_name TEXT,
+  record_id TEXT,
+  local_updated_at TEXT,
+  server_updated_at TEXT,
+  resolution TEXT DEFAULT 'lww',
+  status TEXT NOT NULL,
+  detail TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS outbox_events (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
+  topic TEXT NOT NULL,
+  aggregate_type TEXT NOT NULL,
+  aggregate_id TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  retry_count INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  published_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS subjects (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
+  name TEXT NOT NULL,
+  grade_level TEXT,
+  deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS chapters (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
+  subject_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  sort_order INTEGER DEFAULT 0,
+  deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_points (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
+  chapter_id TEXT,
+  parent_id TEXT,
+  name TEXT NOT NULL,
+  description TEXT,
+  sort_order INTEGER DEFAULT 0,
+  deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS questions (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
+  subject_id TEXT,
+  chapter_id TEXT,
+  type TEXT NOT NULL,
+  difficulty INTEGER DEFAULT 3,
+  source TEXT,
+  status TEXT DEFAULT 'active',
+  deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS question_contents (
+  id TEXT PRIMARY KEY,
+  question_id TEXT NOT NULL,
+  stem TEXT NOT NULL,
+  answer TEXT,
+  explanation TEXT,
+  options_json TEXT,
+  content_hash TEXT,
+  version INTEGER DEFAULT 1,
+  oss_key TEXT,
+  oss_url TEXT,
+  deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS question_assets (
+  id TEXT PRIMARY KEY,
+  question_id TEXT NOT NULL,
+  asset_type TEXT NOT NULL,
+  file_name TEXT,
+  mime_type TEXT,
+  size_bytes INTEGER DEFAULT 0,
+  oss_key TEXT NOT NULL,
+  oss_url TEXT,
+  content_hash TEXT,
+  deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS question_knowledge_points (
+  question_id TEXT NOT NULL,
+  knowledge_point_id TEXT NOT NULL,
+  weight REAL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (question_id, knowledge_point_id)
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_point_rollups (
+  knowledge_point_id TEXT PRIMARY KEY,
+  direct_question_count INTEGER DEFAULT 0,
+  total_question_count INTEGER DEFAULT 0,
+  easy_count INTEGER DEFAULT 0,
+  medium_count INTEGER DEFAULT 0,
+  hard_count INTEGER DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS import_batches (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
+  source_type TEXT NOT NULL,
+  file_name TEXT,
+  file_hash TEXT,
+  status TEXT DEFAULT 'pending',
+  total_items INTEGER DEFAULT 0,
+  accepted_items INTEGER DEFAULT 0,
+  duplicate_items INTEGER DEFAULT 0,
+  rejected_items INTEGER DEFAULT 0,
+  quality_report TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS import_items (
+  id TEXT PRIMARY KEY,
+  batch_id TEXT NOT NULL,
+  item_index INTEGER NOT NULL,
+  content_hash TEXT,
+  status TEXT DEFAULT 'pending',
+  quality_score REAL DEFAULT 0,
+  error_message TEXT,
+  payload TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS search_index_jobs (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  error_message TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  processed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS vector_embeddings (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  model TEXT NOT NULL,
+  vector_json TEXT NOT NULL,
+  content_hash TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS data_archive_jobs (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
+  target_table TEXT NOT NULL,
+  archive_before TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  affected_rows INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  finished_at TEXT
+);
+
 -- ===================== 索引 =====================
 CREATE INDEX IF NOT EXISTS idx_students_name ON students(name);
 CREATE INDEX IF NOT EXISTS idx_students_updated ON students(updated_at);
@@ -226,3 +432,22 @@ CREATE INDEX IF NOT EXISTS idx_consumptions_updated ON consumptions(updated_at);
 CREATE INDEX IF NOT EXISTS idx_institutions_updated ON institutions(updated_at);
 CREATE INDEX IF NOT EXISTS idx_rooms_updated ON rooms(updated_at);
 CREATE INDEX IF NOT EXISTS idx_teachers_updated ON teachers(updated_at);
+CREATE INDEX IF NOT EXISTS idx_tenants_status ON tenants(status);
+CREATE INDEX IF NOT EXISTS idx_sync_audit_client ON sync_audit_log(client_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_sync_audit_record ON sync_audit_log(table_name, record_id);
+CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox_events(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_subjects_tenant ON subjects(tenant_id, deleted);
+CREATE INDEX IF NOT EXISTS idx_chapters_subject ON chapters(subject_id, deleted);
+CREATE INDEX IF NOT EXISTS idx_kp_parent ON knowledge_points(parent_id, deleted);
+CREATE INDEX IF NOT EXISTS idx_questions_tenant ON questions(tenant_id, deleted);
+CREATE INDEX IF NOT EXISTS idx_questions_subject_type ON questions(subject_id, type, difficulty);
+CREATE INDEX IF NOT EXISTS idx_question_contents_question ON question_contents(question_id);
+CREATE INDEX IF NOT EXISTS idx_question_contents_hash ON question_contents(content_hash);
+CREATE INDEX IF NOT EXISTS idx_question_assets_question ON question_assets(question_id);
+CREATE INDEX IF NOT EXISTS idx_question_assets_hash ON question_assets(content_hash);
+CREATE INDEX IF NOT EXISTS idx_qkp_knowledge ON question_knowledge_points(knowledge_point_id);
+CREATE INDEX IF NOT EXISTS idx_import_batches_status ON import_batches(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_import_items_batch ON import_items(batch_id, item_index);
+CREATE INDEX IF NOT EXISTS idx_search_jobs_status ON search_index_jobs(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_vector_entity ON vector_embeddings(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_archive_jobs_status ON data_archive_jobs(status, created_at);
