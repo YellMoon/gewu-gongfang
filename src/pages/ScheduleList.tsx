@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import {
   Table, Button, Card, Row, Col, Select, DatePicker, Tag, Space, message
 } from 'antd';
@@ -7,12 +7,12 @@ import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { Schedule, ScheduleStatus, Student, Teacher, Course } from '../types';
 import * as XLSX from 'xlsx';
+import AutoCloseSelect from '../components/AutoCloseSelect';
 
-const { Option } = Select;
 const { RangePicker } = DatePicker;
 
-// 一周的天数列表
-const WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+// 涓€鍛ㄧ殑澶╂暟鍒楄〃
+const WEEK_DAYS = ['鍛ㄤ竴', '鍛ㄤ簩', '鍛ㄤ笁', '鍛ㄥ洓', '鍛ㄤ簲', '鍛ㄥ叚', '鍛ㄦ棩'];
 
 const ScheduleList: React.FC = () => {
   const [schedules, setSchedules] = useState<any[]>([]);
@@ -31,12 +31,12 @@ const ScheduleList: React.FC = () => {
       console.warn('dbService not available yet');
       return;
     }
-    // 从课程表组件保存的 localStorage 读取排课数据
+    // 浠庤绋嬭〃缁勪欢淇濆瓨鐨?localStorage 璇诲彇鎺掕鏁版嵁
     let scheduleData: any[] = [];
     try {
-      // 主要数据源：ScheduleCalendar 保存到 'schedules' key
+      // 涓昏鏁版嵁婧愶細ScheduleCalendar 淇濆瓨鍒?'schedules' key
       const stored1 = localStorage.getItem('schedules');
-      // 备选数据源：之前可能的 key
+      // 澶囬€夋暟鎹簮锛氫箣鍓嶅彲鑳界殑 key
       const stored2 = localStorage.getItem('scheduleCalendar');
       
       if (stored1) {
@@ -50,10 +50,9 @@ const ScheduleList: React.FC = () => {
       console.warn('Failed to parse schedule data:', e);
     }
 
-    // 过滤掉已删除的排课
-    scheduleData = scheduleData.filter((s: any) => s.status !== 'DELETED');
+    // 杩囨护鎺夊凡鍒犻櫎鐨勬帓璇?    scheduleData = scheduleData.filter((s: any) => s.status !== 'DELETED');
 
-    // 按时间排序（最新在前）
+    // 鎸夋椂闂存帓搴忥紙鏈€鏂板湪鍓嶏級
     scheduleData.sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
 
     setSchedules(scheduleData);
@@ -69,21 +68,19 @@ const ScheduleList: React.FC = () => {
 
   useEffect(() => {
     loadData();
-    // 定期刷新数据
+    // 瀹氭湡鍒锋柊鏁版嵁
     const timer = setInterval(loadData, 10000);
     return () => clearInterval(timer);
   }, [loadData]);
 
-  // 初始显示所有排课（不自动筛选）
+  // 鍒濆鏄剧ず鎵€鏈夋帓璇撅紙涓嶈嚜鍔ㄧ瓫閫夛級
   useEffect(() => {
     setFilteredSchedules(schedules);
   }, [schedules]);
 
-  // "查询"按钮 - 点击后根据筛选条件过滤
   const handleQuery = () => {
     let result = [...schedules];
 
-    // 老师筛选
     if (filterTeacher) {
       result = result.filter((s) => {
         const course = courses.find(c => c.id === s.course_id);
@@ -91,7 +88,6 @@ const ScheduleList: React.FC = () => {
       });
     }
 
-    // 学生筛选
     if (filterStudent) {
       result = result.filter((s) => {
         const course = courses.find(c => c.id === s.course_id);
@@ -100,7 +96,6 @@ const ScheduleList: React.FC = () => {
       });
     }
 
-    // 日期范围筛选
     if (filterDateRange) {
       const [start, end] = filterDateRange;
       result = result.filter((s) => {
@@ -109,32 +104,30 @@ const ScheduleList: React.FC = () => {
       });
     }
 
-    // 按时间排序（倒序）
     result.sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
 
     setFilteredSchedules(result);
     message.success(`查询完成，共 ${result.length} 条记录`);
   };
 
-  // 导出为 Excel
+  // 瀵煎嚭涓?Excel
   const handleExport = () => {
     if (filteredSchedules.length === 0) {
       message.warning('没有数据可导出');
       return;
     }
 
-    // 按周分组
+    // 鎸夊懆鍒嗙粍
     const weekGroups: Record<string, any[]> = {};
     
     filteredSchedules.forEach(s => {
       const date = dayjs(s.start_time);
-      // 获取周一日期作为周标识
       const monday = date.startOf('isoWeek').format('YYYY-MM-DD');
       if (!weekGroups[monday]) weekGroups[monday] = [];
       weekGroups[monday].push(s);
     });
 
-    // 生成 Excel 数据（每周一行表头 + 数据行）
+    // 鐢熸垚 Excel 鏁版嵁锛堟瘡鍛ㄤ竴琛岃〃澶?+ 鏁版嵁琛岋級
     const excelData: any[] = [];
     const wscols: Array<{ wch: number }> = [];
 
@@ -143,10 +136,9 @@ const ScheduleList: React.FC = () => {
       const sunday = monday.add(6, 'day');
       const weekLabel = `${monday.format('M月D日')} - ${sunday.format('M月D日')}`;
       
-      // 周表头行
-      excelData.push({ '课程表': `📅 ${weekLabel}`, '_a': '', '_b': '', '_c': '', '_d': '', '_e': '', '_f': '' });
+      // 鍛ㄨ〃澶磋
+      excelData.push({ '课程表': weekLabel, '_a': '', '_b': '', '_c': '', '_d': '', '_e': '', '_f': '' });
 
-      // 按日期分组
       const dayGroups: Record<string, any[]> = {};
       weekGroups[weekMonday].forEach(s => {
         const dayStr = dayjs(s.start_time).format('YYYY-MM-DD');
@@ -186,7 +178,6 @@ const ScheduleList: React.FC = () => {
         });
       });
 
-      // 空行分隔周
       excelData.push({});
     });
 
@@ -194,17 +185,17 @@ const ScheduleList: React.FC = () => {
     const ws = XLSX.utils.json_to_sheet(excelData);
     XLSX.utils.book_append_sheet(wb, ws, '排课列表');
 
-    // 自动列宽
+    // 鑷姩鍒楀
     ws['!cols'] = [
-      { wch: 12 }, // 日期
-      { wch: 10 }, // 星期
-      { wch: 14 }, // 时间
-      { wch: 30 }, // 课程名称
-      { wch: 12 }, // 老师
-      { wch: 25 }, // 学生
-      { wch: 18 }, // 上课地址
-      { wch: 10 }, // 状态
-      { wch: 20 }, // 备注
+      { wch: 12 }, // 鏃ユ湡
+      { wch: 10 }, // 鏄熸湡
+      { wch: 14 }, // 鏃堕棿
+      { wch: 30 }, // 璇剧▼鍚嶇О
+      { wch: 12 }, // 鑰佸笀
+      { wch: 25 }, // 瀛︾敓
+      { wch: 18 }, // 涓婅鍦板潃
+      { wch: 10 },
+      { wch: 20 },
     ];
 
     const fileName = `排课列表_${dayjs().format('YYYYMMDD_HHmmss')}.xlsx`;
@@ -233,21 +224,21 @@ const ScheduleList: React.FC = () => {
   };
 
   const getTeacherName = (teacherId: string) => {
-    return teachers.find(t => t.id === teacherId)?.name || '未知老师';
+    return teachers.find(t => t.id === teacherId)?.name || '鏈煡鑰佸笀';
   };
 
   const getStudentName = (studentId: string) => {
-    return students.find(s => s.id === studentId)?.name || '未知学生';
+    return students.find(s => s.id === studentId)?.name || '鏈煡瀛︾敓';
   };
 
   const getCourseName = (courseId: string) => {
-    return courses.find(c => c.id === courseId)?.name || '未知课程';
+    return courses.find(c => c.id === courseId)?.name || '鏈煡璇剧▼';
   };
 
   const columns: ColumnsType<any> = [
     { title: '#', key: 'index', width: 50, render: (_, __, index) => index + 1 },
-    { title: '日期', key: 'date', width: 100, render: (_, record) => dayjs(record.start_time).format('YYYY-MM-DD') },
-    { title: '时间', key: 'time', width: 120, render: (_, record) => {
+    { title: '鏃ユ湡', key: 'date', width: 100, render: (_, record) => dayjs(record.start_time).format('YYYY-MM-DD') },
+    { title: '鏃堕棿', key: 'time', width: 120, render: (_, record) => {
       const s = dayjs(record.start_time);
       const e = dayjs(record.end_time);
       return `${s.format('HH:mm')} - ${e.format('HH:mm')}`;
@@ -272,34 +263,32 @@ const ScheduleList: React.FC = () => {
       <Card style={{ marginBottom: 16 }}>
         <Row gutter={12} align="middle">
           <Col>
-            <Select
+            <AutoCloseSelect
               placeholder="老师"
               allowClear
               showSearch
               style={{ width: 130 }}
               value={filterTeacher}
-              onChange={(val) => setFilterTeacher(val)}
-              filterOption={(input, option) =>
-                (typeof option?.children === 'string' ? option.children : '').toLowerCase().includes(input.toLowerCase())
+              onChange={(val: string | undefined) => setFilterTeacher(val)}
+              options={teachers.map(t => ({ label: t.name, value: t.id }))}
+              filterOption={(input: string, option: any) =>
+                String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
               }
-            >
-              {teachers.map(t => <Option key={t.id} value={t.id}>{t.name}</Option>)}
-            </Select>
-          </Col>
+            />
           <Col>
-            <Select
+            <AutoCloseSelect
               placeholder="学生"
               allowClear
               showSearch
               style={{ width: 130 }}
               value={filterStudent}
-              onChange={(val) => setFilterStudent(val)}
-              filterOption={(input, option) =>
-                (typeof option?.children === 'string' ? option.children : '').toLowerCase().includes(input.toLowerCase())
+              onChange={(val: string | undefined) => setFilterStudent(val)}
+              options={students.map(s => ({ label: s.name, value: s.id }))}
+              filterOption={(input: string, option: any) =>
+                String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
               }
-            >
-              {students.map(s => <Option key={s.id} value={s.id}>{s.name}</Option>)}
-            </Select>
+            />
+          </Col>
           </Col>
           <Col>
             <RangePicker

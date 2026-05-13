@@ -6,6 +6,7 @@ import type { MenuProps } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import { CourseType, ScheduleStatus, Course, Teacher, Student, BillingUnit } from '../types';
 import useBatchSelection from './useBatchSelection';
+import AutoCloseSelect from '../components/AutoCloseSelect';
 import { v4 as uuidv4 } from 'uuid';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import isoWeek from 'dayjs/plugin/isoWeek';
@@ -1781,22 +1782,23 @@ const ScheduleCalendar: React.FC = () => {
             </Col>
             <Col span={8}>
               <Form.Item name="duration" label="课程时长">
-                <Select
+                <AutoCloseSelect
                   style={{ width: '100%' }}
-                  onChange={(val) => {
+                  onChange={(val: number) => {
                     const startTime = form.getFieldValue('startTime');
                     if (startTime) {
                       form.setFieldValue('endTime', startTime.add(val, 'hour'));
                     }
                   }}
-                >
-                  <Option value={0.5}>30分钟</Option>
-                  <Option value={1}>1小时</Option>
-                  <Option value={1.5}>1.5小时</Option>
-                  <Option value={2}>2小时</Option>
-                  <Option value={2.5}>2.5小时</Option>
-                  <Option value={3}>3小时</Option>
-                </Select>
+                  options={[
+                    { value: 0.5, label: '30分钟' },
+                    { value: 1, label: '1小时' },
+                    { value: 1.5, label: '1.5小时' },
+                    { value: 2, label: '2小时' },
+                    { value: 2.5, label: '2.5小时' },
+                    { value: 3, label: '3小时' },
+                  ]}
+                />
               </Form.Item>
             </Col>
             <Col span={8}>
@@ -1808,33 +1810,38 @@ const ScheduleCalendar: React.FC = () => {
            
           <Row gutter={12}>
             <Col span={8}>
-              <Form.Item name="teacherId" label="鑰佸笀">
-                <Select
-                  placeholder="閫夋嫨鑰佸笀"
+              <Form.Item name="teacherId" label="老师">
+                <AutoCloseSelect
+                  placeholder="选择老师"
                   showSearch
                   allowClear
                   options={teachers.map(t => ({ label: t.name, value: t.id }))}
-                  filterOption={(input, option) =>
-                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                  filterOption={(input: string, option: any) =>
+                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                   }
                   onChange={(val: string | undefined) => {
                     setModalTeacherId(val);
-                    if (val) {
-                      form.setFieldValue('courseId', undefined);
-                    }
+                    form.setFieldValue('courseId', undefined);
+                    form.setFieldValue('courseName', undefined);
+                    form.setFieldValue('room', undefined);
                   }}
                 />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="courseId" label="璇剧▼">
-                <Select
-                  placeholder="閫夋嫨璇剧▼"
+              <Form.Item name="courseId" label="课程">
+                <AutoCloseSelect
+                  placeholder={modalTeacherId ? '选择课程' : '请先选择老师'}
+                  disabled={!modalTeacherId}
+                  showSearch
                   options={courses
-                    .filter(c => c.active && (!modalTeacherId || c.teacher_id === modalTeacherId))
+                    .filter(c => c.active && !!modalTeacherId && String(c.teacher_id) === String(modalTeacherId))
                     .map(c => ({ label: c.display_name || c.name, value: c.id }))
                   }
-                  onChange={(courseId) => {
+                  filterOption={(input: string, option: any) =>
+                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                  onChange={(courseId: string) => {
                     const course = courses.find(c => c.id === courseId);
                     if (course) {
                       const displayCName = course.display_name || course.name.replace(/^\d{4}\s+\S+瀛︽湡\s+/, '');
@@ -1855,11 +1862,13 @@ const ScheduleCalendar: React.FC = () => {
             </Col>
             <Col span={8}>
               <Form.Item name="status" label="课程状态" initialValue={ScheduleStatus.PLANNED}>
-                <Select>
-                  <Option value={ScheduleStatus.PLANNED}>正常</Option>
-                  <Option value={ScheduleStatus.LEAVE}>请假</Option>
-                  <Option value={ScheduleStatus.CANCELLED}>取消</Option>
-                </Select>
+                <AutoCloseSelect
+                  options={[
+                    { value: ScheduleStatus.PLANNED, label: '正常' },
+                    { value: ScheduleStatus.LEAVE, label: '请假' },
+                    { value: ScheduleStatus.CANCELLED, label: '取消' },
+                  ]}
+                />
               </Form.Item>
             </Col>
           </Row>
@@ -1869,7 +1878,7 @@ const ScheduleCalendar: React.FC = () => {
           </Form.Item>
            
           <Form.Item name="room" label="上课地址">
-            <Select
+            <AutoCloseSelect
               placeholder="选择上课地址"
               showSearch
               allowClear
