@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useEffect, useState } from 'react';
+﻿import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { message, Modal, Dropdown } from 'antd';
 import { ScheduleStatus, Course } from '../types';
 import dayjs, { Dayjs } from 'dayjs';
@@ -14,7 +14,7 @@ const CW = 140; const SH = 2.5; const GAP = 8; const MIN_H = 8; const MAX_H = 23
 const slot = (h: number, m: number) => Math.floor(((h - MIN_H) * 60 + m) / 5);
 const fmt = (h: number, m: number) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 
-// 从鼠标事件获取 day/slot，同时检查 X 和 Y 坐标以区分两周行
+// 浠庨紶鏍囦簨浠惰幏鍙?day/slot锛屽悓鏃舵鏌?X 鍜?Y 鍧愭爣浠ュ尯鍒嗕袱鍛ㄨ
 function getDaySlotFromEvent(
   e: MouseEvent,
   containerEl: HTMLDivElement
@@ -25,7 +25,7 @@ function getDaySlotFromEvent(
   const x = e.clientX - ar.left;
   const y = e.clientY;
 
-  // 查找所有 day 列和它们的 rect
+  // 鏌ユ壘鎵€鏈?day 鍒楀拰瀹冧滑鐨?rect
   const dayEls = containerEl.querySelectorAll('[data-date]');
 
   for (let i = 0; i < dayEls.length; i++) {
@@ -34,15 +34,13 @@ function getDaySlotFromEvent(
     const leftInContainer = dr.left - ar.left;
     const rightInContainer = dr.right - ar.left;
 
-    // 同时检查 X 和 Y：鼠标必须在天列的水平范围内，且在天列的垂直范围内
-    if (x >= leftInContainer && x <= rightInContainer && y >= dr.top && y <= dr.bottom) {
+    // 鍚屾椂妫€鏌?X 鍜?Y锛氶紶鏍囧繀椤诲湪澶╁垪鐨勬按骞宠寖鍥村唴锛屼笖鍦ㄥぉ鍒楃殑鍨傜洿鑼冨洿鍐?    if (x >= leftInContainer && x <= rightInContainer && y >= dr.top && y <= dr.bottom) {
       const dateStr = el.getAttribute('data-date');
       if (dateStr) {
         const body = el.querySelector('[data-day-body="true"]') as HTMLElement;
         if (body) {
           const br = body.getBoundingClientRect();
-          // 扣除paddingTop，使slot=0始终对应minHour（8:00）
-          const computedStyle = window.getComputedStyle(body);
+          // 鎵ｉ櫎paddingTop锛屼娇slot=0濮嬬粓瀵瑰簲minHour锛?:00锛?          const computedStyle = window.getComputedStyle(body);
           const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
           const relY = e.clientY - br.top - paddingTop;
           const sl = Math.floor(relY / SH);
@@ -59,7 +57,7 @@ export default function useBatchSelection(
   containerRef: React.RefObject<HTMLDivElement>,
   currentMonday: Dayjs,
   onSchedulesUpdated: (s: any[]) => void,
-  onBatchDelete?: (ids: string[]) => void
+  onBatchDelete: (ids: string[]) => void
 ) {
   const [phase, setPhase] = useState<'idle' | 'drawing' | 'selected' | 'dragging'>('idle');
   const [sel, setSel] = useState<{ ds: number; de: number; ss: number; se: number; ids: string[] } | null>(null);
@@ -69,16 +67,14 @@ export default function useBatchSelection(
   const [rb, setRb] = useState<{ l: number; t: number; w: number; h: number } | null>(null);
   const [ghost, setGhost] = useState<{ l: number; t: number; w: number; h: number } | null>(null);
   const [previews, setPreviews] = useState<any[]>([]);
-  // 像素精确绘制矩形（鼠标跟随）
+  // 鍍忕礌绮剧‘缁樺埗鐭╁舰锛堥紶鏍囪窡闅忥級
   const [drawRect, setDrawRect] = useState<{ l: number; t: number; w: number; h: number } | null>(null);
-  // 批量删除确认框
-  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  // 鎵归噺鍒犻櫎纭妗?  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
   const [flashingIds, setFlashingIds] = useState<string[]>([]);
   const [flashToggle, setFlashToggle] = useState(false);
-  // 滚动位置计数器：滚动时强制重算矩形位置
-  const [scrollTick, setScrollTick] = useState(0);
+  // 婊氬姩浣嶇疆璁℃暟鍣細婊氬姩鏃跺己鍒堕噸绠楃煩褰綅缃?  const [scrollTick, setScrollTick] = useState(0);
 
-  // refs 避免闭包过期
+  // refs 閬垮厤闂寘杩囨湡
   const phaseRef = useRef(phase);
   const selRef = useRef(sel);
   const oobRef = useRef(oob);
@@ -90,14 +86,14 @@ export default function useBatchSelection(
   const twoWeeksRef = useRef<Dayjs[]>([]);
   const onUpdateRef = useRef(onSchedulesUpdated);
 
-  // 同步 refs
+  // 鍚屾 refs
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { selRef.current = sel; }, [sel]);
   useEffect(() => { oobRef.current = oob; }, [oob]);
   useEffect(() => { rbRef.current = rb; }, [rb]);
   useEffect(() => { onUpdateRef.current = onSchedulesUpdated; }, [onSchedulesUpdated]);
 
-  // 滚动监听：容器滚动时重算矩形位置
+  // 婊氬姩鐩戝惉锛氬鍣ㄦ粴鍔ㄦ椂閲嶇畻鐭╁舰浣嶇疆
   useEffect(() => {
     const c = containerRef.current;
     if (!c || phase === 'idle') return;
@@ -106,25 +102,22 @@ export default function useBatchSelection(
     return () => c.removeEventListener('scroll', onScroll);
   }, [containerRef, phase]);
 
-  // 当离开drawing/selected阶段时，清除精确绘制矩形和引用
-  useEffect(() => {
+  // 褰撶寮€drawing/selected闃舵鏃讹紝娓呴櫎绮剧‘缁樺埗鐭╁舰鍜屽紩鐢?  useEffect(() => {
     if (phase !== 'drawing' && phase !== 'selected') {
       setDrawRect(null);
       drawPixelStartRef.current = null;
     }
   }, [phase]);
 
-  // 闪烁计时器：批量删除确认时交替边框颜色
-  useEffect(() => {
+  // 闂儊璁℃椂鍣細鎵归噺鍒犻櫎纭鏃朵氦鏇胯竟妗嗛鑹?  useEffect(() => {
     if (flashingIds.length === 0) { setFlashToggle(false); return; }
     const timer = setInterval(() => setFlashToggle(t => !t), 300);
     return () => clearInterval(timer);
   }, [flashingIds]);
 
-  // 暴露更新函数+数据清理
+  // 鏆撮湶鏇存柊鍑芥暟+鏁版嵁娓呯悊
   const setSchedules = useCallback((s: any[]) => {
-    // 清理坏数据：修复时间 > 24:00 的课程
-    schedRef.current = s.map((sc: any) => {
+    // 娓呯悊鍧忔暟鎹細淇鏃堕棿 > 24:00 鐨勮绋?    schedRef.current = s.map((sc: any) => {
       if (!sc) return sc;
       let fixed = false;
       const fixTime = (t: string) => {
@@ -151,9 +144,8 @@ export default function useBatchSelection(
   }, []);
   const setCourses = useCallback((c: Course[]) => { coursesRef.current = c; }, []);
 
-  // 获取目标day列在container中的实际位置（跨周换行正确）
-  // 返回容器相对坐标（用于 position:absolute）
-  function getTargetDayPosition(targetDayIdx: number, container: HTMLElement): { left: number; bodyTop: number } | null {
+  // 鑾峰彇鐩爣day鍒楀湪container涓殑瀹為檯浣嶇疆锛堣法鍛ㄦ崲琛屾纭級
+  // 杩斿洖瀹瑰櫒鐩稿鍧愭爣锛堢敤浜?position:absolute锛?  function getTargetDayPosition(targetDayIdx: number, container: HTMLElement): { left: number; bodyTop: number } | null {
     if (!twoWeeksRef.current[targetDayIdx]) return null;
     const targetDate = twoWeeksRef.current[targetDayIdx];
     const dateStr = targetDate.format('YYYY-MM-DD');
@@ -168,18 +160,14 @@ export default function useBatchSelection(
     return { left: dr.left - ar.left, bodyTop };
   }
 
-  // 计算两周日期
+  // 璁＄畻涓ゅ懆鏃ユ湡
   useEffect(() => {
     const days: Dayjs[] = [];
     for (let i = 0; i < 14; i++) days.push(currentMonday.add(i, 'day'));
     twoWeeksRef.current = days;
   }, [currentMonday]);
 
-  // 更新矩形像素位置（容器相对坐标，用于 position:absolute）
-  // 注意：position:absolute 相对于 containerRef 且 containerRef 有 overflow/scroll，
-  // 因此使用 getBoundingClientRect 的差值（视口坐标差）不需要加 scrollLeft/scrollTop，
-  // 因为 absolute 定位已经相对于容器本身的第一帧位置。
-  useEffect(() => {
+  // 鏇存柊鐭╁舰鍍忕礌浣嶇疆锛堝鍣ㄧ浉瀵瑰潗鏍囷紝鐢ㄤ簬 position:absolute锛?  // 娉ㄦ剰锛歱osition:absolute 鐩稿浜?containerRef 涓?containerRef 鏈?overflow/scroll锛?  // 鍥犳浣跨敤 getBoundingClientRect 鐨勫樊鍊硷紙瑙嗗彛鍧愭爣宸級涓嶉渶瑕佸姞 scrollLeft/scrollTop锛?  // 鍥犱负 absolute 瀹氫綅宸茬粡鐩稿浜庡鍣ㄦ湰韬殑绗竴甯т綅缃€?  useEffect(() => {
     if (!sel || !containerRef.current) { setRb(null); return; }
     const c = containerRef.current;
     const anchor = c.querySelector('[data-anchor="true"]') as HTMLElement;
@@ -188,7 +176,7 @@ export default function useBatchSelection(
     const dayEls = c.querySelectorAll('[data-date]');
     let l = 0, r = 0;
 
-    // 找到 dayStart 列的 body top
+    // 鎵惧埌 dayStart 鍒楃殑 body top
     let bodyTopOff = 0;
     for (let i = 0; i < dayEls.length; i++) {
       const el = dayEls[i] as HTMLElement;
@@ -215,25 +203,23 @@ export default function useBatchSelection(
     });
   }, [sel, containerRef, scrollTick]);
 
-  // 搞影位置（跨周换行修正）
+  // 鎼炲奖浣嶇疆锛堣法鍛ㄦ崲琛屼慨姝ｏ級
   useEffect(() => {
     if (!rb || phase !== 'dragging' || !sel) { setGhost(null); return; }
     const container = containerRef.current;
     if (!container) { setGhost(null); return; }
-    // 获取目标起始日期的实际DOM位置
+    // 鑾峰彇鐩爣璧峰鏃ユ湡鐨勫疄闄匘OM浣嶇疆
     const targetDayIdx = sel.ds + dragOff.d;
     const targetPos = getTargetDayPosition(targetDayIdx, container);
     if (targetPos) {
-      // getTargetDayPosition 已返回容器相对坐标
-      setGhost({
+      // getTargetDayPosition 宸茶繑鍥炲鍣ㄧ浉瀵瑰潗鏍?      setGhost({
         l: targetPos.left,
         t: targetPos.bodyTop + (sel.ss + dragOff.s) * SH,
         w: rb.w,
         h: rb.h,
       });
     } else {
-      // 回退：线性计算
-      setGhost({
+      // 鍥為€€锛氱嚎鎬ц绠?      setGhost({
         l: rb.l + dragOff.d * (CW + GAP),
         t: rb.t + dragOff.s * SH,
         w: rb.w,
@@ -242,13 +228,13 @@ export default function useBatchSelection(
     }
   }, [rb, phase, dragOff, sel, containerRef, scrollTick]);
 
-  // 更新预览（跨周换行修正位置）
+  // 鏇存柊棰勮锛堣法鍛ㄦ崲琛屼慨姝ｄ綅缃級
   useEffect(() => {
     if (phase !== 'dragging' || !sel) { setPreviews([]); return; }
     const ds = dragOff.s;
     const dd = dragOff.d;
     const container = containerRef.current;
-    console.log('[BatchDrag] 预览计算: dd=', dd, 'ds=', ds, 'sel=', JSON.stringify({ds:sel.ds,de:sel.de,ss:sel.ss,se:sel.se,ids:sel.ids.length}));
+    console.log('[BatchDrag] 棰勮璁＄畻: dd=', dd, 'ds=', ds, 'sel=', JSON.stringify({ds:sel.ds,de:sel.de,ss:sel.ss,se:sel.se,ids:sel.ids.length}));
     const pv = sel.ids.map(cid => {
       const s = schedRef.current.find((x: any) => x.id === cid);
       if (!s) return null;
@@ -269,33 +255,30 @@ export default function useBatchSelection(
       const neh = MIN_H + Math.floor(totalEndMins / 60);
       const nem = ((totalEndMins % 60) + 60) % 60;
 
-      // 计算目标day的实际DOM位置（支持跨周换行）
+      // 璁＄畻鐩爣day鐨勫疄闄匘OM浣嶇疆锛堟敮鎸佽法鍛ㄦ崲琛岋級
       let absLeft = (od - sel.ds) * (CW + GAP) + 4; // fallback
       let absTop = (origStartSlot - sel.ss) * SH;
       if (container) {
         const targetDayIdx = od + dd;
         const tPos = getTargetDayPosition(targetDayIdx, container);
-        // 获取矩形框起始列的目标位置（作为参考锚点）
+        // 鑾峰彇鐭╁舰妗嗚捣濮嬪垪鐨勭洰鏍囦綅缃紙浣滀负鍙傝€冮敋鐐癸級
         const anchorDayIdx = sel.ds + dd;
         const anchorPos = getTargetDayPosition(anchorDayIdx, container);
         if (tPos && anchorPos) {
-          // 预览框相对于ghost容器的位置
-          //   left: 课程所在目标列left - ghost容器left + 4px内边距
-          absLeft = tPos.left - anchorPos.left + 4;
-          //   top: 课程所在行bodyTop + 课程时间偏移 - 矩形框起始bodyTop - 矩形框时间偏移
-          //        = (origStartSlot - sel.ss) * SH + (tPos.bodyTop - anchorPos.bodyTop)
+          // 棰勮妗嗙浉瀵逛簬ghost瀹瑰櫒鐨勪綅缃?          //   left: 璇剧▼鎵€鍦ㄧ洰鏍囧垪left - ghost瀹瑰櫒left + 4px鍐呰竟璺?          absLeft = tPos.left - anchorPos.left + 4;
+          //   top: 璇剧▼鎵€鍦ㄨbodyTop + 璇剧▼鏃堕棿鍋忕Щ - 鐭╁舰妗嗚捣濮媌odyTop - 鐭╁舰妗嗘椂闂村亸绉?          //        = (origStartSlot - sel.ss) * SH + (tPos.bodyTop - anchorPos.bodyTop)
           absTop = (origStartSlot - sel.ss) * SH + (tPos.bodyTop - anchorPos.bodyTop);
         }
       }
-      console.log('[BatchDrag] 课程:', s.course_name||cid, '原时间=',fmt(sh,sm)+'-'+fmt(eh,em),
-        'origSlot=',origStartSlot, 'ds=',ds, 'newSlot=',newStartSlot, '新时间=',fmt(nsh,nsm)+'-'+fmt(neh,nem));
+      console.log('[BatchDrag] 璇剧▼:', s.course_name||cid, '鍘熸椂闂?',fmt(sh,sm)+'-'+fmt(eh,em),
+        'origSlot=',origStartSlot, 'ds=',ds, 'newSlot=',newStartSlot, '鏂版椂闂?',fmt(nsh,nsm)+'-'+fmt(neh,nem));
       return {
         id: cid,
         rd: od - sel.ds,
         rt: absTop,
         rh: Math.max(20, (origEndSlot - origStartSlot) * SH),
         left: absLeft,
-        name: s.course_name || coursesRef.current.find(c => c.id === s.course_id)?.name || '课',
+        name: s.course_name || coursesRef.current.find(c => c.id === s.course_id)?.name || '璇?,
         room: s.room || coursesRef.current.find(c => c.id === s.course_id)?.room_name || '',
         sh: nsh, sm: nsm, eh: neh, em: nem,
       };
@@ -303,8 +286,7 @@ export default function useBatchSelection(
     setPreviews(pv);
   }, [phase, sel, dragOff, ghost, containerRef]);
 
-  // 核心：矩形内的课程
-  const getCoursesInRect = useCallback((ds: number, de: number, ss: number, se: number): string[] => {
+  // 鏍稿績锛氱煩褰㈠唴鐨勮绋?  const getCoursesInRect = useCallback((ds: number, de: number, ss: number, se: number): string[] => {
     const ids: string[] = [];
     schedRef.current.forEach((s: any) => {
       if (s.status !== ScheduleStatus.PLANNED) return;
@@ -322,15 +304,14 @@ export default function useBatchSelection(
     return ids;
   }, []);
 
-  // 判断鼠标是否在课程卡片上
+  // 鍒ゆ柇榧犳爣鏄惁鍦ㄨ绋嬪崱鐗囦笂
   const isOnCard = useCallback((e: MouseEvent): boolean => {
     const t = e.target as HTMLElement;
-    // 检测课程卡片（data-course-card）或拖拽课程卡片
+    // 妫€娴嬭绋嬪崱鐗囷紙data-course-card锛夋垨鎷栨嫿璇剧▼鍗＄墖
     return !!(t.closest('[data-course-card="true"]') || t.closest('[draggable="true"]'));
   }, []);
 
-  // 事件处理器
-  useEffect(() => {
+  // 浜嬩欢澶勭悊鍣?  useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
@@ -348,7 +329,7 @@ export default function useBatchSelection(
             }
           }
         }
-        // 矩形框外右键 → 取消选中
+        // 鐭╁舰妗嗗鍙抽敭 鈫?鍙栨秷閫変腑
         if (phaseRef.current !== 'idle') {
           setPhase('idle'); setSel(null); setDrawRect(null); drawPixelStartRef.current = null;
         }
@@ -362,7 +343,7 @@ export default function useBatchSelection(
       const currentPhase = phaseRef.current;
       const currentSel = selRef.current;
 
-      // 优先处理矩形区域内的点击：点击在已选中的矩形内，不管是不是在课程卡片上，都进入批量拖拽
+      // 浼樺厛澶勭悊鐭╁舰鍖哄煙鍐呯殑鐐瑰嚮锛氱偣鍑诲湪宸查€変腑鐨勭煩褰㈠唴锛屼笉绠℃槸涓嶆槸鍦ㄨ绋嬪崱鐗囦笂锛岄兘杩涘叆鎵归噺鎷栨嫿
       if (currentPhase === 'selected' && currentSel) {
         const inR = pos.day >= currentSel.ds && pos.day <= currentSel.de &&
                     pos.slot >= currentSel.ss && pos.slot <= currentSel.se;
@@ -371,17 +352,17 @@ export default function useBatchSelection(
           setIsCopy(e.ctrlKey || e.metaKey);
           dragStartRef.current = { d: pos.day, s: pos.slot };
           setDragOff({ d: 0, s: 0 });
-          console.log('[BatchDrag] 开始拖拽: clickDay=', pos.day, 'clickSlot=', pos.slot, 'sel=', JSON.stringify({ds:currentSel.ds,de:currentSel.de,ss:currentSel.ss,se:currentSel.se}));
+          console.log('[BatchDrag] 寮€濮嬫嫋鎷? clickDay=', pos.day, 'clickSlot=', pos.slot, 'sel=', JSON.stringify({ds:currentSel.ds,de:currentSel.de,ss:currentSel.ss,se:currentSel.se}));
           e.preventDefault();
           e.stopPropagation();
           return;
         }
       }
 
-      // 不在矩形内，且点击在课程卡片上？交给 DailyView 处理单个课程拖拽
+      // 涓嶅湪鐭╁舰鍐咃紝涓旂偣鍑诲湪璇剧▼鍗＄墖涓婏紵浜ょ粰 DailyView 澶勭悊鍗曚釜璇剧▼鎷栨嫿
       if (isOnCard(e)) return;
 
-      // 选中状态下点击矩形外：先解锁，不立即开始新矩形（下次点击再画）
+      // 閫変腑鐘舵€佷笅鐐瑰嚮鐭╁舰澶栵細鍏堣В閿侊紝涓嶇珛鍗冲紑濮嬫柊鐭╁舰锛堜笅娆＄偣鍑诲啀鐢伙級
       if (currentPhase === 'selected') {
         setPhase('idle');
         setSel(null);
@@ -391,7 +372,7 @@ export default function useBatchSelection(
         return;
       }
 
-      // 开始新矩形（记录鼠标精确像素位置）
+      // 寮€濮嬫柊鐭╁舰锛堣褰曢紶鏍囩簿纭儚绱犱綅缃級
       setSel(null);
       setPhase('drawing');
       setDrawRect(null);
@@ -417,8 +398,7 @@ export default function useBatchSelection(
         const ids = getCoursesInRect(ds, de, ss, se);
         setSel({ ds, de, ss, se, ids });
 
-        // 像素精确绘制矩形：跟随鼠标位置（容器相对坐标，用于 position:absolute）
-        const sp = drawPixelStartRef.current;
+        // 鍍忕礌绮剧‘缁樺埗鐭╁舰锛氳窡闅忛紶鏍囦綅缃紙瀹瑰櫒鐩稿鍧愭爣锛岀敤浜?position:absolute锛?        const sp = drawPixelStartRef.current;
         if (sp) {
           const c = containerRef.current;
           if (c) {
@@ -442,21 +422,20 @@ export default function useBatchSelection(
 
         const currentSel = selRef.current;
         if (currentSel) {
-          // ② 逐课程检查OOB，三条规则：
-          //   1. 开始时间<0:00 或 结束时间>24:00 → 超限
-          //   2. 课程移动后横跨两周 → 超限
-          //   3. 矩形框左右边界超出课程表 → 超限
-          const minSlot = slot(0, 0);   // 0:00 对应的 slot = -96
-          const maxSlot = slot(24, 0);  // 24:00 对应的 slot = 192
+          // 鈶?閫愯绋嬫鏌OB锛屼笁鏉¤鍒欙細
+          //   1. 寮€濮嬫椂闂?0:00 鎴?缁撴潫鏃堕棿>24:00 鈫?瓒呴檺
+          //   2. 璇剧▼绉诲姩鍚庢í璺ㄤ袱鍛?鈫?瓒呴檺
+          //   3. 鐭╁舰妗嗗乏鍙宠竟鐣岃秴鍑鸿绋嬭〃 鈫?瓒呴檺
+          const minSlot = slot(0, 0);   // 0:00 瀵瑰簲鐨?slot = -96
+          const maxSlot = slot(24, 0);  // 24:00 瀵瑰簲鐨?slot = 192
           let anyOob = false;
-          let weekSet = new Set<number>(); // 记录课程移动后所在的周
-          // 规则3：矩形框左右边界
+          let weekSet = new Set<number>(); // 璁板綍璇剧▼绉诲姩鍚庢墍鍦ㄧ殑鍛?          // 瑙勫垯3锛氱煩褰㈡宸﹀彸杈圭晫
           const nds = currentSel.ds + dd;
           const nde = currentSel.de + dd;
           if (nds < 0 || nde > 13) anyOob = true;
 
           currentSel.ids.forEach(cid => {
-            if (anyOob) return; // 已超限则跳过
+            if (anyOob) return; // 宸茶秴闄愬垯璺宠繃
             const s = schedRef.current.find((x: any) => x.id === cid);
             if (!s) return;
             const [date, st] = s.start_time.split(' ');
@@ -471,14 +450,13 @@ export default function useBatchSelection(
             const oe = slot(eh, em);
             const ns = os + dss;
             const ne = oe + dss;
-            // 规则1：时间超限（开始<0:00，结束>24:00）
-            if (ns < minSlot || ne > maxSlot) anyOob = true;
-            // 规则2：记录课程所在周（day0-6→第1周，day7-13→第2周）
+            // 瑙勫垯1锛氭椂闂磋秴闄愶紙寮€濮?0:00锛岀粨鏉?24:00锛?            if (ns < minSlot || ne > maxSlot) anyOob = true;
+            // 瑙勫垯2锛氳褰曡绋嬫墍鍦ㄥ懆锛坉ay0-6鈫掔1鍛紝day7-13鈫掔2鍛級
             if (nd >= 0 && nd <= 13) {
               weekSet.add(nd < 7 ? 1 : 2);
             }
           });
-          // 规则2：课程横跨两周则超限
+          // 瑙勫垯2锛氳绋嬫í璺ㄤ袱鍛ㄥ垯瓒呴檺
           if (weekSet.size > 1) anyOob = true;
 
           setOob(anyOob);
@@ -494,7 +472,7 @@ export default function useBatchSelection(
         const currentSel = selRef.current;
         if (currentSel && currentSel.ids.length > 0) {
           setPhase('selected');
-          // Step 1: 先将rb设为像素精确的drawRect位置
+          // Step 1: 鍏堝皢rb璁句负鍍忕礌绮剧‘鐨刣rawRect浣嶇疆
           const sp = drawPixelStartRef.current;
           if (sp && containerRef.current) {
             const anchorEl = containerRef.current.querySelector('[data-anchor="true"]') as HTMLElement;
@@ -507,8 +485,7 @@ export default function useBatchSelection(
             const r = Math.max(sp.x, cx);
             const b = Math.max(sp.y, cy);
             setRb({ l, t, w: r - l, h: b - t });
-            // Step 2: 下一帧过渡到列对齐位置（让CSS transition动画生效）
-            requestAnimationFrame(() => {
+            // Step 2: 涓嬩竴甯ц繃娓″埌鍒楀榻愪綅缃紙璁〤SS transition鍔ㄧ敾鐢熸晥锛?            requestAnimationFrame(() => {
               if (!containerRef.current || !selRef.current) return;
               const c = containerRef.current;
               const anchorEl = c.querySelector('[data-anchor="true"]') as HTMLElement;
@@ -552,9 +529,8 @@ export default function useBatchSelection(
             return;
           }
 
-          // 3）独立的 OnUp OOB 双重验证：防止闭包过期导致坏数据被写入
-          const minSlot = slot(0, 0);   // 0:00 对应的 slot = -96
-          const maxSlot = slot(24, 0);  // 24:00 对应的 slot = 192
+          // 3锛夌嫭绔嬬殑 OnUp OOB 鍙岄噸楠岃瘉锛氶槻姝㈤棴鍖呰繃鏈熷鑷村潖鏁版嵁琚啓鍏?          const minSlot = slot(0, 0);   // 0:00 瀵瑰簲鐨?slot = -96
+          const maxSlot = slot(24, 0);  // 24:00 瀵瑰簲鐨?slot = 192
           let hasOobOnUp = false;
 
           const newS = [...schedRef.current];
@@ -594,11 +570,10 @@ export default function useBatchSelection(
             const nd_ = od_ + dd;
             const ns = os + dss;
             const ne = ns + dur;
-            // ① 天数边界：0~13（两周范围）
+            // 鈶?澶╂暟杈圭晫锛?~13锛堜袱鍛ㄨ寖鍥达級
             if (nd_ < 0 || nd_ > 13) return;
             const nd = twoWeeksRef.current[0].add(nd_, 'day');
-            // ① 统一使用与预览相同的时间计算，处理负数取模
-            const totalStartMins = ns * 5;
+            // 鈶?缁熶竴浣跨敤涓庨瑙堢浉鍚岀殑鏃堕棿璁＄畻锛屽鐞嗚礋鏁板彇妯?            const totalStartMins = ns * 5;
             const totalEndMins = ne * 5;
             const nsh = MIN_H + Math.floor(totalStartMins / 60);
             const nsm = ((totalStartMins % 60) + 60) % 60;
@@ -624,9 +599,8 @@ export default function useBatchSelection(
             }
           });
 
-          // ④ 时间冲突检测：批量操作松开后检查所有移动/复制课程的时间重叠
-          const checkSchedules = newS.filter((x: any) => {
-            // 仅检查被操作过的课程（移动的原始课 或 新复制的课）
+          // 鈶?鏃堕棿鍐茬獊妫€娴嬶細鎵归噺鎿嶄綔鏉惧紑鍚庢鏌ユ墍鏈夌Щ鍔?澶嶅埗璇剧▼鐨勬椂闂撮噸鍙?          const checkSchedules = newS.filter((x: any) => {
+            // 浠呮鏌ヨ鎿嶄綔杩囩殑璇剧▼锛堢Щ鍔ㄧ殑鍘熷璇?鎴?鏂板鍒剁殑璇撅級
             if (!x) return false;
             if (isCopy) {
               return x.id.includes('_cpy_');
@@ -638,17 +612,17 @@ export default function useBatchSelection(
             if (conflictFound) break;
             for (const other of newS) {
               if (other.id === checkItem.id) continue;
-              // 跳过取消/请假状态（它们不占时间槽）
+              // 璺宠繃鍙栨秷/璇峰亣鐘舵€侊紙瀹冧滑涓嶅崰鏃堕棿妲斤級
               if (other.status === ScheduleStatus.CANCELLED || other.status === ScheduleStatus.LEAVE) continue;
               if (other.status === ScheduleStatus.COMPLETED) continue;
               if (checkItem.start_time < other.end_time && checkItem.end_time > other.start_time) {
-                conflictFound = other.course_name || '其他课程';
+                conflictFound = other.course_name || '鍏朵粬璇剧▼';
                 break;
               }
             }
           }
           if (conflictFound) {
-            message.warning(`时间冲突：与「${conflictFound}」时间段重叠，批量操作已撤销`);
+            message.warning(`鏃堕棿鍐茬獊锛氫笌銆?{conflictFound}銆嶆椂闂存閲嶅彔锛屾壒閲忔搷浣滃凡鎾ら攢`);
             setPhase('idle');
             setSel(null);
             setDragOff({ d: 0, s: 0 });
@@ -675,7 +649,7 @@ export default function useBatchSelection(
         return mx >= r.l && mx <= r.l + r.w && my >= r.t && my <= r.t + r.h;
       })();
       if (isInRb) {
-        // 矩形框内右键 → 阻止浏览器菜单，让 Dropdown 接管
+        // 鐭╁舰妗嗗唴鍙抽敭 鈫?闃绘娴忚鍣ㄨ彍鍗曪紝璁?Dropdown 鎺ョ
         e.preventDefault();
         return;
       }
@@ -705,11 +679,11 @@ export default function useBatchSelection(
     isCopy,
     batchVisuals: phase === 'idle' ? null : (
       <>
-        {/* 绘制中：像素精确矩形跟随鼠标（容器相对坐标，position:absolute） */}
+        {/* 缁樺埗涓細鍍忕礌绮剧‘鐭╁舰璺熼殢榧犳爣锛堝鍣ㄧ浉瀵瑰潗鏍囷紝position:absolute锛?*/}
         {phase === 'drawing' && drawRect && (
           <div style={{ position: 'absolute', left: drawRect.l, top: drawRect.t, width: drawRect.w, height: Math.max(20, drawRect.h), border: '2px dashed #1890ff', background: 'rgba(24,144,255,0.06)', borderRadius: 4, zIndex: 101, pointerEvents: 'none' }} />
         )}
-        {/* 选中后：柱状对齐矩形带过渡动画 + 右键菜单（位置:absolute 相对容器，随滚动移动） */}
+        {/* 閫変腑鍚庯細鏌辩姸瀵归綈鐭╁舰甯﹁繃娓″姩鐢?+ 鍙抽敭鑿滃崟锛堜綅缃?absolute 鐩稿瀹瑰櫒锛岄殢婊氬姩绉诲姩锛?*/}
         {phase === 'selected' && rb && (
           <Dropdown
             trigger={['contextMenu']}
@@ -717,7 +691,7 @@ export default function useBatchSelection(
               items: [
                 {
                   key: 'batch-delete',
-                  label: '🗑️ 全部删除',
+                  label: '馃棏锔?鍏ㄩ儴鍒犻櫎',
                   danger: true,
                   onClick: () => {
                     if (!sel || sel.ids.length === 0) return;
@@ -731,7 +705,7 @@ export default function useBatchSelection(
             <div style={{ position: 'absolute', left: rb.l, top: rb.t, width: rb.w, height: Math.max(20, rb.h), border: '2px dashed #1890ff', background: 'rgba(24,144,255,0.10)', borderRadius: 4, zIndex: 101, cursor: 'default' }}>
               {sel && (
                 <div style={{ position: 'absolute', top: -24, left: 4, background: '#1890ff', color: '#fff', padding: '1px 8px', borderRadius: 10, fontSize: 11, whiteSpace: 'nowrap' }}>
-                  已选 {sel.ids.length} 课 · 拖拽移动 · Ctrl+拖拽复制 · 右键更多
+                  宸查€?{sel.ids.length} 璇?路 鎷栨嫿绉诲姩 路 Ctrl+鎷栨嫿澶嶅埗 路 鍙抽敭鏇村
                 </div>
               )}
             </div>
@@ -740,11 +714,11 @@ export default function useBatchSelection(
         {phase === 'dragging' && ghost && (
           <div style={{ position: 'absolute', left: ghost.l, top: ghost.t, width: ghost.w, height: ghost.h, border: '2px dashed #faad14', background: 'rgba(250,173,20,0.12)', borderRadius: 4, zIndex: 102, pointerEvents: 'none' }}>
             <div style={{ position: 'absolute', top: oob ? -28 : -24, left: 4, background: oob ? '#ff4d4f' : '#faad14', color: '#fff', padding: '1px 8px', borderRadius: 10, fontSize: 11, whiteSpace: 'nowrap', fontWeight: oob ? 'bold' : 'normal' }}>
-              {oob ? '⚠️ 超出范围' : `${isCopy ? '复制中' : '移动中'} · 松开确认`}
+              {oob ? '鈿狅笍 瓒呭嚭鑼冨洿' : `${isCopy ? '澶嶅埗涓? : '绉诲姩涓?} 路 鏉惧紑纭`}
             </div>
             {previews.map((p: any) => (
               <div key={p.id} style={{ position: 'absolute', left: p.left ?? (p.rd * (CW + GAP) + 4), top: p.rt, width: CW - 8, height: p.rh, background: isCopy ? 'rgba(82,196,26,0.25)' : 'rgba(24,144,255,0.25)', border: isCopy ? '2px dashed #52c41a' : '2px dashed #1890ff', borderRadius: 6, padding: 2, fontSize: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: isCopy ? '0 4px 20px rgba(82,196,26,0.3)' : '0 4px 20px rgba(24,144,255,0.3)' }}>
-                <div style={{ fontWeight: 'bold', lineHeight: 1.2, color: isCopy ? '#52c41a' : '#1890ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: CW - 16, textAlign: 'center' }}>{isCopy ? '📋 ' : ''}{p.name}</div>
+                <div style={{ fontWeight: 'bold', lineHeight: 1.2, color: isCopy ? '#52c41a' : '#1890ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: CW - 16, textAlign: 'center' }}>{isCopy ? '馃搵 ' : ''}{p.name}</div>
                 <div style={{ fontSize: 10, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: CW - 16, textAlign: 'center', marginTop: 2 }}>
                   {p.room && <span>{p.room} </span>}
                   <span style={{ color: '#ff4d4f', fontWeight: 'bold', background: 'rgba(255,77,79,0.15)', padding: '0 2px', borderRadius: 2 }}>{fmt(p.sh, p.sm)}</span>
@@ -755,12 +729,12 @@ export default function useBatchSelection(
             ))}
           </div>
         )}
-        {/* 批量删除确认框 */}
+        {/* 鎵归噺鍒犻櫎纭妗?*/}
         <Modal
           open={deleteConfirmVisible}
-          title="确认批量删除"
-          okText="确认删除"
-          cancelText="取消"
+          title="纭鎵归噺鍒犻櫎"
+          okText="纭鍒犻櫎"
+          cancelText="鍙栨秷"
           okButtonProps={{ danger: true }}
           onCancel={() => { setDeleteConfirmVisible(false); setFlashingIds([]); }}
           onOk={() => {
@@ -768,8 +742,7 @@ export default function useBatchSelection(
               if (onBatchDelete) {
                 onBatchDelete(flashingIds);
               } else {
-                // 默认从 schedRef 中删除
-                const newS = schedRef.current.filter((s: any) => !flashingIds.includes(s.id));
+                // 榛樿浠?schedRef 涓垹闄?                const newS = schedRef.current.filter((s: any) => !flashingIds.includes(s.id));
                 schedRef.current = newS;
                 onUpdateRef.current(newS);
               }
@@ -780,9 +753,9 @@ export default function useBatchSelection(
             setSel(null);
           }}
         >
-          <p>确定要删除选中的 <b style={{ color: '#ff4d4f' }}>{flashingIds.length}</b> 节课程吗？</p>
+          <p>纭畾瑕佸垹闄ら€変腑鐨?<b style={{ color: '#ff4d4f' }}>{flashingIds.length}</b> 鑺傝绋嬪悧锛?/p>
         </Modal>
-        {/* 闪烁高亮动画样式 - 仅定义keyframes，由inline animation属性触发 */}
+        {/* 闂儊楂樹寒鍔ㄧ敾鏍峰紡 - 浠呭畾涔塳eyframes锛岀敱inline animation灞炴€цЕ鍙?*/}
         {flashingIds.length > 0 && (
           <style>{`
             @keyframes batchFlash {
@@ -799,3 +772,4 @@ export default function useBatchSelection(
     setCourses
   };
 }
+

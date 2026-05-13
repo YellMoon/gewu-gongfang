@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+﻿const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -8,15 +8,14 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
+    webPreferences: { preload: require("path").join(__dirname, "preload.js"), 
+      nodeIntegration: false,
+      contextIsolation: true
     },
     icon: path.join(__dirname, '../public/icon.png')
   });
 
-  // 开发环境加载本地服务器，生产环境加载构建文件
-  const isDev = process.env.NODE_ENV !== 'production';
+  // 寮€鍙戠幆澧冨姞杞芥湰鍦版湇鍔″櫒锛岀敓浜х幆澧冨姞杞芥瀯寤烘枃浠?  const isDev = process.env.NODE_ENV !== 'production';
   
   if (isDev) {
     mainWindow.loadURL('http://localhost:3000');
@@ -46,20 +45,19 @@ app.on('window-all-closed', () => {
   }
 });
 
-// ========== IPC 处理 - 数据库操作 ==========
-// 注意：数据库实际在渲染进程中初始化，这里只转发请求
-
-// 初始化数据库（在渲染进程中执行）
+// ========== IPC 澶勭悊 - 鏁版嵁搴撴搷浣?==========
+// 娉ㄦ剰锛氭暟鎹簱瀹為檯鍦ㄦ覆鏌撹繘绋嬩腑鍒濆鍖栵紝杩欓噷鍙浆鍙戣姹?
+// 鍒濆鍖栨暟鎹簱锛堝湪娓叉煋杩涚▼涓墽琛岋級
 ipcMain.handle('db:init', async () => {
   try {
     return { success: true };
   } catch (error) {
-    console.error('数据库初始化失败:', error);
+    console.error('鏁版嵁搴撳垵濮嬪寲澶辫触:', error);
     return { success: false, error: error.message };
   }
 });
 
-// 学生管理
+// 瀛︾敓绠＄悊
 ipcMain.handle('student:getAll', async (event) => {
   try {
     return { success: true, data: [] };
@@ -92,7 +90,7 @@ ipcMain.handle('student:delete', async (event, id) => {
   }
 });
 
-// 课程管理
+// 璇剧▼绠＄悊
 ipcMain.handle('course:getAll', async (event) => {
   try {
     return { success: true, data: [] };
@@ -125,7 +123,7 @@ ipcMain.handle('course:delete', async (event, id) => {
   }
 });
 
-// 排课管理
+// 鎺掕绠＄悊
 ipcMain.handle('schedule:getAll', async (event) => {
   try {
     return { success: true, data: [] };
@@ -158,7 +156,7 @@ ipcMain.handle('schedule:delete', async (event, id) => {
   }
 });
 
-// 财务管理
+// 璐㈠姟绠＄悊
 ipcMain.handle('payment:create', async (event, payment) => {
   try {
     return { success: true, data: { ...payment, id: Date.now().toString() } };
@@ -175,7 +173,7 @@ ipcMain.handle('consumption:create', async (event, consumption) => {
   }
 });
 
-// 数据统计
+// 鏁版嵁缁熻
 ipcMain.handle('data:getRevenueStats', async (event, startDate, endDate) => {
   try {
     return { success: true, data: { total_revenue: 0, payment_count: 0 } };
@@ -192,7 +190,7 @@ ipcMain.handle('data:getConsumptionStats', async (event, startDate, endDate) => 
   }
 });
 
-// 数据导出
+// 鏁版嵁瀵煎嚭
 ipcMain.handle('data:export', async (event) => {
   try {
     return { success: true, data: {} };
@@ -201,7 +199,7 @@ ipcMain.handle('data:export', async (event) => {
   }
 });
 
-// 数据导入
+// 鏁版嵁瀵煎叆
 ipcMain.handle('data:import', async (event, data) => {
   try {
     return { success: true };
@@ -209,3 +207,4 @@ ipcMain.handle('data:import', async (event, data) => {
     return { success: false, error: error.message };
   }
 });
+

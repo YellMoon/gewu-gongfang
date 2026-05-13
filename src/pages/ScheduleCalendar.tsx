@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+﻿import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Modal, Form, Input, InputNumber, Select, DatePicker, TimePicker, Calendar, Divider, Card, Row, Col, Button, message, Space, Dropdown, Alert
 } from 'antd';
@@ -19,9 +19,8 @@ const { Option } = Select;
 
 const MIN_START_HOUR = 8;
 const MAX_END_HOUR = 23;
-const SLOT_DURATION = 5; // ③ 最小5分钟调整
-const SLOT_HEIGHT = 2.5; // 每5分钟2.5px高，保持原总高度不变
-const COLUMN_WIDTH = 140;
+const SLOT_DURATION = 5; // 鈶?鏈€灏?鍒嗛挓璋冩暣
+const SLOT_HEIGHT = 2.5; // 姣?鍒嗛挓2.5px楂橈紝淇濇寔鍘熸€婚珮搴︿笉鍙?const COLUMN_WIDTH = 140;
 const SIDEBAR_WIDTH = 220;
 const DEFAULT_DURATION_HOURS = 2;
 const WEEK_GRID_BODY_HEIGHT = ((MAX_END_HOUR - MIN_START_HOUR) * 60 / SLOT_DURATION) * SLOT_HEIGHT;
@@ -131,10 +130,8 @@ const DailyView: React.FC<DailyViewProps> = ({
   const isHoliday = !!holiday;
   const holidayName = holiday?.name || '';
 
-  // ⑤ 动态计算总slot数（基于课程实际时间范围）
-  const effectiveMaxEndSlot = ((maxHour - MIN_START_HOUR) * 60) / SLOT_DURATION;
-  // ④ 早于8点的课程需要向下整体位移
-  const earlyOffset = minHour < MIN_START_HOUR ? ((MIN_START_HOUR - minHour) * 60 / SLOT_DURATION * SLOT_HEIGHT) : 0;
+  // 鈶?鍔ㄦ€佽绠楁€籹lot鏁帮紙鍩轰簬璇剧▼瀹為檯鏃堕棿鑼冨洿锛?  const effectiveMaxEndSlot = ((maxHour - MIN_START_HOUR) * 60) / SLOT_DURATION;
+  // 鈶?鏃╀簬8鐐圭殑璇剧▼闇€瑕佸悜涓嬫暣浣撲綅绉?  const earlyOffset = minHour < MIN_START_HOUR ? ((MIN_START_HOUR - minHour) * 60 / SLOT_DURATION * SLOT_HEIGHT) : 0;
   let maxEndSlot = effectiveMaxEndSlot;
   daySchedules.forEach(s => {
     const [, timeStr] = s.end_time.split(' ');
@@ -177,11 +174,11 @@ const DailyView: React.FC<DailyViewProps> = ({
     let endSlot = timeToSlot(endH, endM);
     
     if (dragState && dragState.schedule.id === schedule.id) {
-      // Ctrl+拖拽（复制）：原课程框位置固定不动，只有虚影跟随鼠标
+      // Ctrl+鎷栨嫿锛堝鍒讹級锛氬師璇剧▼妗嗕綅缃浐瀹氫笉鍔紝鍙湁铏氬奖璺熼殢榧犳爣
       if (dragState.type === 'move' && dragState.ctrlKey) {
         return { top: startSlot * SLOT_HEIGHT, height: (endSlot - startSlot) * SLOT_HEIGHT, startSlot, endSlot };
       }
-      // 统一：虚影上边沿对应slot = (mouseY - ghostHeight/2 - bodyRect.top) / SLOT_HEIGHT
+      // 缁熶竴锛氳櫄褰变笂杈规部瀵瑰簲slot = (mouseY - ghostHeight/2 - bodyRect.top) / SLOT_HEIGHT
       if (dragState.type === 'move' && dayBodyRef.current) {
         const durationSlots = endSlot - startSlot;
         const dragGhostHeight = Math.max(24, durationSlots * SLOT_HEIGHT);
@@ -189,15 +186,14 @@ const DailyView: React.FC<DailyViewProps> = ({
         const ghostTopY = dragState.currentY - dragGhostHeight / 2;
         startSlot = Math.max(0, Math.round((ghostTopY - bodyRect.top) / SLOT_HEIGHT));
         endSlot = startSlot + durationSlots;
-        // 结束时间不超过24:00
+        // 缁撴潫鏃堕棿涓嶈秴杩?4:00
         if (endSlot > GLOBAL_MAX_SLOT) {
           startSlot = Math.max(0, GLOBAL_MAX_SLOT - durationSlots);
           endSlot = startSlot + durationSlots;
         }
         return { top: startSlot * SLOT_HEIGHT, height: (endSlot - startSlot) * SLOT_HEIGHT, startSlot, endSlot };
       }
-      // resize：使用原有偏移计算
-      const slotDiff = Math.round((dragState.currentY - dragState.startY) / SLOT_HEIGHT);
+      // resize锛氫娇鐢ㄥ師鏈夊亸绉昏绠?      const slotDiff = Math.round((dragState.currentY - dragState.startY) / SLOT_HEIGHT);
         
       if (dragState.type === 'move') {
         startSlot += slotDiff;
@@ -255,7 +251,7 @@ const DailyView: React.FC<DailyViewProps> = ({
     const startSlot = timeToSlot(startH, startM);
     const endSlot = timeToSlot(endH, endM);
     
-    // ⑤ 单击时不显示虚影，ghostVisible=false，等鼠标移动超过阈值才显示
+    // 鈶?鍗曞嚮鏃朵笉鏄剧ず铏氬奖锛実hostVisible=false锛岀瓑榧犳爣绉诲姩瓒呰繃闃堝€兼墠鏄剧ず
     if (hitZone === 'top') {
       setDragState({ type: 'resize-top', schedule, startSlot, endSlot, startY: e.clientY, currentY: e.clientY, currentX: e.clientX, ctrlKey: e.ctrlKey, ghostVisible: false });
     } else if (hitZone === 'bottom') {
@@ -286,7 +282,7 @@ const DailyView: React.FC<DailyViewProps> = ({
     const handleMouseUp = (upEvent: MouseEvent) => {
       if (hasDraggedRef.current && dragState && dayBodyRef.current) {
         
-        // ① 检测鼠标所在日期列（支持跨日期、跨周拖拽）
+        // 鈶?妫€娴嬮紶鏍囨墍鍦ㄦ棩鏈熷垪锛堟敮鎸佽法鏃ユ湡銆佽法鍛ㄦ嫋鎷斤級
         let targetDay = day;
         const elem = document.elementFromPoint(upEvent.clientX, upEvent.clientY);
         let targetDayCol: HTMLElement | null = null;
@@ -300,7 +296,7 @@ const DailyView: React.FC<DailyViewProps> = ({
           }
         }
         
-        // ④ 统一slot计算：虚影上边沿对应时间 = (mouseY - ghostHeight/2 - bodyRect.top) / SLOT_HEIGHT
+        // 鈶?缁熶竴slot璁＄畻锛氳櫄褰变笂杈规部瀵瑰簲鏃堕棿 = (mouseY - ghostHeight/2 - bodyRect.top) / SLOT_HEIGHT
         const durationSlots = dragState.endSlot - dragState.startSlot;
         const dragGhostHeight = Math.max(24, durationSlots * SLOT_HEIGHT);
         let targetSlot = 0;
@@ -312,17 +308,17 @@ const DailyView: React.FC<DailyViewProps> = ({
             targetSlot = Math.max(0, Math.round((ghostTopY - bodyRect.top) / SLOT_HEIGHT));
           }
         } else {
-          // resize: 使用原有偏移计算
+          // resize: 浣跨敤鍘熸湁鍋忕Щ璁＄畻
           const slotDiff = Math.round((upEvent.clientY - dragState.startY) / SLOT_HEIGHT);
           targetSlot = dragState.startSlot + slotDiff;
         }
         
-        // ③ 放宽slot边界检查，用全局范围
+        // 鈶?鏀惧slot杈圭晫妫€鏌ワ紝鐢ㄥ叏灞€鑼冨洿
         // const globalMaxSlot = ((24 - MIN_START_HOUR) * 60) / SLOT_DURATION;
         
         if (dragState.type === 'move') {
           if (targetSlot >= 0) {
-            // 结束时间不超过24:00：startSlot + duration <= GLOBAL_MAX_SLOT
+            // 缁撴潫鏃堕棿涓嶈秴杩?4:00锛歴tartSlot + duration <= GLOBAL_MAX_SLOT
             const durationSlots = dragState.endSlot - dragState.startSlot;
             const maxStartSlot = GLOBAL_MAX_SLOT - durationSlots;
             const adjustedSlot = Math.max(0, Math.min(targetSlot, maxStartSlot));
@@ -334,7 +330,7 @@ const DailyView: React.FC<DailyViewProps> = ({
           }
         } else if (dragState.type === 'resize-bottom') {
           if (targetSlot >= 0) {
-            // 结束时间不超过24:00
+            // 缁撴潫鏃堕棿涓嶈秴杩?4:00
             const adjustedSlot = Math.min(targetSlot, GLOBAL_MAX_SLOT);
             onResizeSchedule?.(dragState.schedule, null, adjustedSlot);
           }
@@ -372,7 +368,7 @@ const DailyView: React.FC<DailyViewProps> = ({
   const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
     {
       key: 'delete',
-      label: '🗑️ 删除课程',
+      label: '馃棏锔?鍒犻櫎璇剧▼',
       danger: true,
       onClick: () => {
         onDeleteSchedule?.(schedule.id);
@@ -381,31 +377,31 @@ const DailyView: React.FC<DailyViewProps> = ({
     { type: 'divider' },
     {
       key: 'normal',
-      label: '✅ 设为正常',
+      label: '鉁?璁句负姝ｅ父',
       disabled: schedule.status === ScheduleStatus.PLANNED,
       onClick: () => onScheduleStatusChange(schedule.id, ScheduleStatus.PLANNED)
     },
     {
       key: 'leave',
-      label: '🏠 设为请假',
+      label: '馃彔 璁句负璇峰亣',
       disabled: schedule.status === ScheduleStatus.LEAVE,
       onClick: () => onScheduleStatusChange(schedule.id, ScheduleStatus.LEAVE)
     },
     {
       key: 'cancelled',
-      label: '❌ 设为取消',
+      label: '鉂?璁句负鍙栨秷',
       disabled: schedule.status === ScheduleStatus.CANCELLED,
       onClick: () => onScheduleStatusChange(schedule.id, ScheduleStatus.CANCELLED)
     },
     { type: 'divider' },
     {
       key: 'student-edit',
-      label: '👥 学生出勤和费用',
+      label: '馃懃 瀛︾敓鍑哄嫟鍜岃垂鐢?,
       onClick: () => onOpenStudentEdit?.(schedule)
     }
   ];
 
-  const weekDays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+  const weekDays = ['鍛ㄤ竴', '鍛ㄤ簩', '鍛ㄤ笁', '鍛ㄥ洓', '鍛ㄤ簲', '鍛ㄥ叚', '鍛ㄦ棩'];
 
   return (
     <div style={{
@@ -428,9 +424,9 @@ const DailyView: React.FC<DailyViewProps> = ({
           userSelect: 'none'
         }}
       >
-        <div>{weekDays[dayIndex]}{isHoliday ? `（${holidayName}）` : ''}</div>
+        <div>{weekDays[dayIndex]}{isHoliday ? `锛?{holidayName}锛塦 : ''}</div>
         <div style={{ fontSize: 12, fontWeight: 'normal', marginTop: 2 }}>
-          {day.format('M月D日')}
+          {day.format('M鏈圖鏃?)}
         </div>
       </div>
 
@@ -442,7 +438,7 @@ const DailyView: React.FC<DailyViewProps> = ({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
       >
-        {/* 早于8点的时间格子线（自动在padding区域内偏移） */}
+        {/* 鏃╀簬8鐐圭殑鏃堕棿鏍煎瓙绾匡紙鑷姩鍦╬adding鍖哄煙鍐呭亸绉伙級 */}
         {earlyOffset > 0 && Array.from({ length: Math.floor((MIN_START_HOUR - minHour) * 60 / SLOT_DURATION / 12) }).filter((_, si) => {
           const earlyHour = MIN_START_HOUR - (si + 1);
           const top = (earlyHour - MIN_START_HOUR) * 12 * SLOT_HEIGHT;
@@ -464,11 +460,10 @@ const DailyView: React.FC<DailyViewProps> = ({
             />
           );
         })}
-        {/* 8点及之后的时间格子线条 - 60分钟间隔，半透明（自动延伸至maxEndSlot） */}
+        {/* 8鐐瑰強涔嬪悗鐨勬椂闂存牸瀛愮嚎鏉?- 60鍒嗛挓闂撮殧锛屽崐閫忔槑锛堣嚜鍔ㄥ欢浼歌嚦maxEndSlot锛?*/}
         {Array.from({ length: Math.ceil(maxEndSlot / 12) }).map((_, slotIdx) => {
           const lineTop = slotIdx * 12 * SLOT_HEIGHT;
-          // 只渲染在maxEndSlot范围内的线条，避免无限延伸
-          if (lineTop >= maxEndSlot * SLOT_HEIGHT) return null;
+          // 鍙覆鏌撳湪maxEndSlot鑼冨洿鍐呯殑绾挎潯锛岄伩鍏嶆棤闄愬欢浼?          if (lineTop >= maxEndSlot * SLOT_HEIGHT) return null;
           return (
             <div
               key={slotIdx}
@@ -483,7 +478,7 @@ const DailyView: React.FC<DailyViewProps> = ({
             />
           );
         })}
-        {/* 结束时间底线：确保超出最后一格时仍有底边线 */}
+        {/* 缁撴潫鏃堕棿搴曠嚎锛氱‘淇濊秴鍑烘渶鍚庝竴鏍兼椂浠嶆湁搴曡竟绾?*/}
         <div style={{
           position: 'absolute',
           top: maxEndSlot * SLOT_HEIGHT - 1,
@@ -492,7 +487,7 @@ const DailyView: React.FC<DailyViewProps> = ({
           borderBottom: '1px solid rgba(0,0,0,0.08)'
         }} />
 
-        {/* 拖入课程预览 */}
+        {/* 鎷栧叆璇剧▼棰勮 */}
         {dragOverSlot !== null && (() => {
           const { hour, minute } = slotToTime(dragOverSlot);
           const dragCourse = (window as any).courseDragData as Course | undefined;
@@ -522,7 +517,7 @@ const DailyView: React.FC<DailyViewProps> = ({
               boxShadow: '0 4px 20px rgba(24,144,255,0.3)'
             }}>
               <div style={{ fontSize: 12, fontWeight: 'bold', color: '#1890ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
-                {dragCourse ? (dragCourse.display_name || dragCourse.name.replace(/^\d{4}\s+\S+学期\s+/, '')) : '课程'}
+                {dragCourse ? (dragCourse.display_name || dragCourse.name.replace(/^\d{4}\s+\S+瀛︽湡\s+/, '')) : '璇剧▼'}
               </div>
               <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
                 {roomInfo && <span>{roomInfo} </span>}
@@ -535,8 +530,7 @@ const DailyView: React.FC<DailyViewProps> = ({
         })()}
 
         {daySchedules.map(schedule => {
-          // 批量 Ctrl+拖拽（复制）时原课程框不动，普通拖拽时才隐藏
-          if (batchPhase === 'dragging' && !batchIsCopy && selectedCourseIds.includes(schedule.id)) return null;
+          // 鎵归噺 Ctrl+鎷栨嫿锛堝鍒讹級鏃跺師璇剧▼妗嗕笉鍔紝鏅€氭嫋鎷芥椂鎵嶉殣钘?          if (batchPhase === 'dragging' && !batchIsCopy && selectedCourseIds.includes(schedule.id)) return null;
           const pos = dragState && dragState.schedule.id === schedule.id 
             ? getCurrentDragPosition(schedule) 
             : getCoursePosition(schedule);
@@ -567,9 +561,9 @@ const DailyView: React.FC<DailyViewProps> = ({
                     opacity: isDragging && dragState.ghostVisible && dragState.type === 'move' && !dragState.ctrlKey ? 0 : 1,
                     boxShadow: isDragging && dragState.ghostVisible && dragState.type === 'move' && !dragState.ctrlKey ? 'none' : (isDragging && dragState.ghostVisible ? '0 4px 16px rgba(24,144,255,0.4)' : 'none'),
                     transition: (isDragging && dragState.ghostVisible) ? 'none' : 'all 0.1s',
-                    // ② Ctrl+拖拽时原框保持完整不透明，仅绿色虚线边框高亮
+                    // 鈶?Ctrl+鎷栨嫿鏃跺師妗嗕繚鎸佸畬鏁翠笉閫忔槑锛屼粎缁胯壊铏氱嚎杈规楂樹寒
                     border: isDragging && dragState.ghostVisible && dragState.ctrlKey ? '3px dashed #52c41a' : undefined,
-                    // 批量删除闪烁动画
+                    // 鎵归噺鍒犻櫎闂儊鍔ㄧ敾
                     animation: isFlashing ? 'batchFlash 0.6s ease-in-out infinite' : undefined,
                   }}
                   onClick={(e) => handleScheduleClick(e, schedule)}
@@ -586,7 +580,7 @@ const DailyView: React.FC<DailyViewProps> = ({
                     }
                   }}
                 >
-                  {/* 课程框内容自适应居中 */}
+                  {/* 璇剧▼妗嗗唴瀹硅嚜閫傚簲灞呬腑 */}
                   <div style={{
                     display: 'flex',
                     flexDirection: 'column',
@@ -632,8 +626,7 @@ const DailyView: React.FC<DailyViewProps> = ({
                         const em = (ce % 12) * 5;
                         const st = `${String(sh).padStart(2,'0')}:${String(sm).padStart(2,'0')}`;
                         const et = `${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}`;
-                        // ② Ctrl+拖拽时原框时间不高亮，仅在普通拖拽/resize时高亮
-                        const isCtrlDrag = dragState.ctrlKey;
+                        // 鈶?Ctrl+鎷栨嫿鏃跺師妗嗘椂闂翠笉楂樹寒锛屼粎鍦ㄦ櫘閫氭嫋鎷?resize鏃堕珮浜?                        const isCtrlDrag = dragState.ctrlKey;
                         const highlightStart = (dragState.type === 'move' && !isCtrlDrag) || dragState.type === 'resize-top';
                         const highlightEnd = (dragState.type === 'move' && !isCtrlDrag) || dragState.type === 'resize-bottom';
                         return <>
@@ -648,7 +641,7 @@ const DailyView: React.FC<DailyViewProps> = ({
                       )}
                     </div>
                   </div>
-                  {/* 边沿resize区域 */}
+                  {/* 杈规部resize鍖哄煙 */}
                   <div style={{
                     position: 'absolute',
                     top: -2,
@@ -673,20 +666,20 @@ const DailyView: React.FC<DailyViewProps> = ({
           );
         })}
       </div>
-      {/* ①② 跨日期/跨周拖拽浮动虚影 - 尺寸与真实课程框一致，⑤仅移动超过阈值显示 */}
+      {/* 鈶犫憽 璺ㄦ棩鏈?璺ㄥ懆鎷栨嫿娴姩铏氬奖 - 灏哄涓庣湡瀹炶绋嬫涓€鑷达紝鈶や粎绉诲姩瓒呰繃闃堝€兼樉绀?*/}
       {dragState && dragState.type === 'move' && dragState.ghostVisible && (() => {
         const durationSlots = dragState.endSlot - dragState.startSlot;
         const ghostHeight = Math.max(24, durationSlots * SLOT_HEIGHT);
         const ghostWidth = COLUMN_WIDTH - 8;
         
-        // ④ 虚影时间基于上边沿(ghostY=currentY-ghostHeight/2)计算，而非鼠标中心
+        // 鈶?铏氬奖鏃堕棿鍩轰簬涓婅竟娌?ghostY=currentY-ghostHeight/2)璁＄畻锛岃€岄潪榧犳爣涓績
         let ghostStartSlot = 0;
         if (dayBodyRef.current) {
           const bodyRect = dayBodyRef.current.getBoundingClientRect();
           const ghostTopY = dragState.currentY - ghostHeight / 2;
           ghostStartSlot = Math.max(0, Math.round((ghostTopY - bodyRect.top) / SLOT_HEIGHT));
         }
-        // ② 检测是否跨日/跨周，用目标day body重算
+        // 鈶?妫€娴嬫槸鍚﹁法鏃?璺ㄥ懆锛岀敤鐩爣day body閲嶇畻
         try {
           const elem = document.elementFromPoint(dragState.currentX, dragState.currentY);
           if (elem) {
@@ -703,7 +696,7 @@ const DailyView: React.FC<DailyViewProps> = ({
         } catch(e) {}
         
         const ghostEndSlot = ghostStartSlot + durationSlots;
-        // 结束时间不超过24:00
+        // 缁撴潫鏃堕棿涓嶈秴杩?4:00
         if (ghostEndSlot > GLOBAL_MAX_SLOT) {
           ghostStartSlot = Math.max(0, GLOBAL_MAX_SLOT - durationSlots);
         }
@@ -735,9 +728,9 @@ const DailyView: React.FC<DailyViewProps> = ({
           alignItems: 'center',
           boxShadow: isCopy ? '0 4px 20px rgba(82,196,26,0.3)' : '0 4px 20px rgba(24,144,255,0.3)'
         }}>
-          {/* ③ 两行布局，和真实课程框完全一致：课程名 + 上课地址&起止时间 */}
+          {/* 鈶?涓よ甯冨眬锛屽拰鐪熷疄璇剧▼妗嗗畬鍏ㄤ竴鑷达細璇剧▼鍚?+ 涓婅鍦板潃&璧锋鏃堕棿 */}
           <div style={{ fontSize: 12, fontWeight: 'bold', color: isCopy ? '#52c41a' : '#1890ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2, textAlign: 'center', maxWidth: ghostWidth - 8, flexShrink: 0 }}>
-            {isCopy ? '📋 ' : ''}{dragState.schedule.course_name}
+            {isCopy ? '馃搵 ' : ''}{dragState.schedule.course_name}
           </div>
           <div style={{ fontSize: 10, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2, textAlign: 'center', maxWidth: ghostWidth - 8, flexShrink: 0, marginTop: 2 }}>
             {dragState.schedule.room && `${dragState.schedule.room} `}
@@ -812,8 +805,7 @@ const OneWeekRow: React.FC<{
     weekDays.push(startMonday.add(i, 'day'));
   }
 
-  // ⑤ 计算本周的动态时间范围
-  const weekDateStr = startMonday.format('YYYY-MM-DD');
+  // 鈶?璁＄畻鏈懆鐨勫姩鎬佹椂闂磋寖鍥?  const weekDateStr = startMonday.format('YYYY-MM-DD');
   const nextMondayStr = startMonday.add(7, 'day').format('YYYY-MM-DD');
   const visibleSchedules = schedules.filter(s => {
     if (s.status === ScheduleStatus.CANCELLED || s.status === ScheduleStatus.LEAVE) return false;
@@ -836,7 +828,7 @@ const OneWeekRow: React.FC<{
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 8, color: '#666' }}>
-        {weekLabel}: {startMonday.format('M月D日')} ~ {startMonday.add(6, 'day').format('M月D日')}
+        {weekLabel}: {startMonday.format('M鏈圖鏃?)} ~ {startMonday.add(6, 'day').format('M鏈圖鏃?)}
       </div>
       <div style={{ overflowX: 'auto', display: 'flex', gap: 8 }}>
         {weekDays.map((day, idx) => (
@@ -889,7 +881,7 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
   const containerRef = React.useRef<HTMLDivElement>(null);
 
   const filteredSchedules = schedules.filter(schedule => {
-    if (!selectedTeacherId) return false; // ⑥ 没有选中老师时不显示任何课程
+    if (!selectedTeacherId) return false; // 鈶?娌℃湁閫変腑鑰佸笀鏃朵笉鏄剧ず浠讳綍璇剧▼
     const course = courses.find(c => c.id === schedule.course_id);
     return !course || course.teacher_id === selectedTeacherId;
   });
@@ -898,7 +890,7 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
     <div style={{ minHeight: '100%', paddingRight: 8 }}>
       <OneWeekRow
         startMonday={currentMonday}
-        weekLabel="本周"
+        weekLabel="鏈懆"
         schedules={filteredSchedules}
         selectedCourseIds={selectedCourseIds}
         batchPhase={batchPhase}
@@ -916,7 +908,7 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
       />
       <OneWeekRow
         startMonday={currentMonday.add(1, 'week')}
-        weekLabel="下周"
+        weekLabel="涓嬪懆"
         schedules={filteredSchedules}
         selectedCourseIds={selectedCourseIds}
         batchPhase={batchPhase}
@@ -957,8 +949,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     e.dataTransfer.setData('courseId', course.id);
     (window as any).courseDragData = course;
     e.dataTransfer.effectAllowed = 'copy';
-    // 隐藏浏览器默认拖拽虚影
-    const img = new Image();
+    // 闅愯棌娴忚鍣ㄩ粯璁ゆ嫋鎷借櫄褰?    const img = new Image();
     img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
     e.dataTransfer.setDragImage(img, 0, 0);
   }
@@ -976,10 +967,10 @@ const Sidebar: React.FC<SidebarProps> = ({
     }}>
       {teachers.length > 0 && (
         <div style={{ flexShrink: 0 }}>
-          <h4 style={{ margin: '0 0 8px 0' }}>👨‍🏫 选择老师</h4>
+          <h4 style={{ margin: '0 0 8px 0' }}>馃懆鈥嶐煆?閫夋嫨鑰佸笀</h4>
           <Select
             style={{ width: '100%', marginBottom: 8 }}
-            placeholder="选择老师"
+            placeholder="閫夋嫨鑰佸笀"
             allowClear
             showSearch
             value={selectedTeacherId}
@@ -995,7 +986,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       {selectedTeacherId && (
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minHeight: 0 }}>
           <h4 style={{ margin: '0 0 8px 0', flexShrink: 0 }}>
-            📚 未结课程 ({filteredCourses.length})
+            馃摎 鏈粨璇剧▼ ({filteredCourses.length})
           </h4>
           <div style={{ overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6, paddingRight: 4 }}>
         {filteredCourses.map(course => (
@@ -1025,22 +1016,22 @@ const Sidebar: React.FC<SidebarProps> = ({
             }}
           >
             <div style={{ fontWeight: 'bold', fontSize: 13, color: '#1890ff' }}>
-              {course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '')}
+              {course.display_name || course.name.replace(/^\d{4}\s+\S+瀛︽湡\s+/, '')}
             </div>
             <div style={{ fontSize: 11, color: '#666', marginTop: 1 }}>
-              {course.year || course.name?.match(/^(\d{4})/)?.[1] || '-'}年{' '}
-              {course.semester || course.name?.match(/^\d{4}\s+(\S+学期)/)?.[1] || '-'}
+              {course.year || course.name?.match(/^(\d{4})/)?.[1] || '-'}骞磠' '}
+              {course.semester || course.name?.match(/^\d{4}\s+(\S+瀛︽湡)/)?.[1] || '-'}
             </div>
             {course.type !== undefined && (
               <div style={{ fontSize: 11, color: '#666', marginTop: 1 }}>
-                {course.room_name && `${course.room_name} `}{course.type === CourseType.ONE_ON_ONE ? '一对一' : course.type === CourseType.ONE_ON_TWO ? '一对二' : '班课'}
+                {course.room_name && `${course.room_name} `}{course.type === CourseType.ONE_ON_ONE ? '涓€瀵逛竴' : course.type === CourseType.ONE_ON_TWO ? '涓€瀵逛簩' : '鐝'}
               </div>
             )}
           </div>
         ))}
         {filteredCourses.length === 0 && (
           <div style={{ textAlign: 'center', color: '#999', padding: '20px 0', fontSize: 14 }}>
-            暂无未结课程
+            鏆傛棤鏈粨璇剧▼
           </div>
         )}
           </div>
@@ -1048,7 +1039,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       )}
       {!selectedTeacherId && teachers.length > 0 && (
         <div style={{ textAlign: 'center', color: '#999', padding: '40px 0', fontSize: 14 }}>
-          请先选择老师
+          璇峰厛閫夋嫨鑰佸笀
         </div>
       )}
     </div>
@@ -1059,8 +1050,7 @@ const ScheduleCalendar: React.FC = () => {
   const [schedules, setSchedules] = useState<ScheduleEvent[]>([]);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const today = dayjs();
-  let initialMonday = today.startOf('isoWeek'); // 周一为一周起点
-  const [currentMonday, setCurrentMonday] = useState<Dayjs>(initialMonday);
+  let initialMonday = today.startOf('isoWeek'); // 鍛ㄤ竴涓轰竴鍛ㄨ捣鐐?  const [currentMonday, setCurrentMonday] = useState<Dayjs>(initialMonday);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<ScheduleEvent | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -1083,40 +1073,36 @@ const ScheduleCalendar: React.FC = () => {
   const [refreshDateRange, setRefreshDateRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [modalTeacherId, setModalTeacherId] = useState<string | undefined>(undefined);
 
-  // ⑤ 操作回退/前进（undo/redo）
-  const MAX_HISTORY = 10;
+  // 鈶?鎿嶄綔鍥為€€/鍓嶈繘锛坲ndo/redo锛?  const MAX_HISTORY = 10;
   const [history, setHistory] = useState<{ past: ScheduleEvent[][]; future: ScheduleEvent[][] }>({ past: [], future: [] });
   const pastRef = useRef(history.past);
   const futureRef = useRef(history.future);
   useEffect(() => { pastRef.current = history.past; }, [history.past]);
   useEffect(() => { futureRef.current = history.future; }, [history.future]);
 
-  // ⑤ 带历史记录的 setSchedules 包装
+  // 鈶?甯﹀巻鍙茶褰曠殑 setSchedules 鍖呰
   const setSchedulesWithHistory = useCallback((newSchedulesOrUpdater: ScheduleEvent[] | ((prev: ScheduleEvent[]) => ScheduleEvent[])) => {
     setSchedules(prev => {
       const newSchedules = typeof newSchedulesOrUpdater === 'function'
         ? newSchedulesOrUpdater(prev)
         : newSchedulesOrUpdater;
-      // 只在数据实际变化时记录历史
-      const isChanged = JSON.stringify(newSchedules) !== JSON.stringify(prev);
+      // 鍙湪鏁版嵁瀹為檯鍙樺寲鏃惰褰曞巻鍙?      const isChanged = JSON.stringify(newSchedules) !== JSON.stringify(prev);
       if (isChanged) {
         setHistory(h => ({
-          past: [...h.past.slice(-(MAX_HISTORY - 1)), [...prev]], // 保存变更前状态
-          future: [], // 新操作清空重做栈
+          past: [...h.past.slice(-(MAX_HISTORY - 1)), [...prev]], // 淇濆瓨鍙樻洿鍓嶇姸鎬?          future: [], // 鏂版搷浣滄竻绌洪噸鍋氭爤
         }));
       }
       return newSchedules;
     });
   }, []);
 
-  // 批量选择拖拽（使用历史包装回调）
+  // 鎵归噺閫夋嫨鎷栨嫿锛堜娇鐢ㄥ巻鍙插寘瑁呭洖璋冿級
   const { batchVisuals, phase: batchPhase, selectedCourseIds, isCopy: batchIsCopy, flashingIds, flashToggle, setSchedules: setBatchSchedules, setCourses: setBatchCourses } = useBatchSelection(containerRef, currentMonday, setSchedulesWithHistory, (ids: string[]) => {
-    // 批量删除回调：从schedules中移除指定ID的课程，并记入历史
-    setSchedulesWithHistory(prev => prev.filter(s => !ids.includes(s.id)));
-    message.success(`已删除 ${ids.length} 节课程`);
+    // 鎵归噺鍒犻櫎鍥炶皟锛氫粠schedules涓Щ闄ゆ寚瀹欼D鐨勮绋嬶紝骞惰鍏ュ巻鍙?    setSchedulesWithHistory(prev => prev.filter(s => !ids.includes(s.id)));
+    message.success(`宸插垹闄?${ids.length} 鑺傝绋媊);
   });
 
-  // ⑤ 撤销 Ctrl+Z
+  // 鈶?鎾ら攢 Ctrl+Z
   const undo = useCallback(() => {
     const past = pastRef.current;
     if (past.length === 0) return;
@@ -1131,7 +1117,7 @@ const ScheduleCalendar: React.FC = () => {
     setBatchSchedules(prevState);
   }, [setBatchSchedules]);
 
-  // ⑤ 重做 Ctrl+Y
+  // 鈶?閲嶅仛 Ctrl+Y
   const redo = useCallback(() => {
     const future = futureRef.current;
     if (future.length === 0) return;
@@ -1146,8 +1132,7 @@ const ScheduleCalendar: React.FC = () => {
     setBatchSchedules(nextState);
   }, [setBatchSchedules]);
 
-  // ⑤ Ctrl+Z / Ctrl+Y 快捷键
-  useEffect(() => {
+  // 鈶?Ctrl+Z / Ctrl+Y 蹇嵎閿?  useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault();
@@ -1180,7 +1165,7 @@ const ScheduleCalendar: React.FC = () => {
           const coursesData = db.getAllCourses();
           setCourses([...coursesData]);
           setBatchCourses([...coursesData]);
-          // 自动同步时间表的 room 与课程最新 room_name，以及 course_name（包含年份学期）
+          // 鑷姩鍚屾鏃堕棿琛ㄧ殑 room 涓庤绋嬫渶鏂?room_name锛屼互鍙?course_name锛堝寘鍚勾浠藉鏈燂級
           setSchedules(prev => prev.map(s => {
             const course = coursesData.find((c: Course) => c.id === s.course_id);
             if (course) {
@@ -1188,13 +1173,12 @@ const ScheduleCalendar: React.FC = () => {
               if (course.room_name && s.room !== course.room_name) {
                 updated.room = course.room_name;
               }
-              // 同步课程名称（只显示纯课程名，不含年份学期）
-              const displayCourseName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
+              // 鍚屾璇剧▼鍚嶇О锛堝彧鏄剧ず绾绋嬪悕锛屼笉鍚勾浠藉鏈燂級
+              const displayCourseName = course.display_name || course.name.replace(/^\d{4}\s+\S+瀛︽湡\s+/, '');
               if (displayCourseName && s.course_name !== displayCourseName) {
                 updated.course_name = displayCourseName;
               }
-              // 同步课程年份和学期
-              const courseYear = course.year !== undefined ? String(course.year) : undefined;
+              // 鍚屾璇剧▼骞翠唤鍜屽鏈?              const courseYear = course.year !== undefined ? String(course.year) : undefined;
               const courseSemester = course.semester || undefined;
               if (s.course_year !== courseYear) {
                 updated.course_year = courseYear;
@@ -1220,7 +1204,7 @@ const ScheduleCalendar: React.FC = () => {
           setRooms(db.getAllRooms());
         }
       } catch (e) {
-        console.error('加载数据失败', e);
+        console.error('鍔犺浇鏁版嵁澶辫触', e);
       }
     };
     loadData();
@@ -1228,7 +1212,7 @@ const ScheduleCalendar: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // ⑥ 自动选择第一位老师
+  // 鈶?鑷姩閫夋嫨绗竴浣嶈€佸笀
   React.useEffect(() => {
     if (!teacherInitialized && teachers.length > 0) {
       setSelectedTeacherId(teachers[0].id);
@@ -1241,7 +1225,7 @@ const ScheduleCalendar: React.FC = () => {
       localStorage.setItem('schedules', JSON.stringify(schedules));
       setBatchSchedules(schedules);
     } catch (e) {
-      console.error('保存数据失败', e);
+      console.error('淇濆瓨鏁版嵁澶辫触', e);
     }
   }, [schedules, setBatchSchedules]);
 
@@ -1290,7 +1274,7 @@ const ScheduleCalendar: React.FC = () => {
           student_id: sp.student_id,
           tuition: sp.tuition,
           teacher_fee: sp.teacher_fee || sp.tuition,
-          status: sp.status || ScheduleStatus.PLANNED  // ① 读取已保存的出勤状态，不再强制重置
+          status: sp.status || ScheduleStatus.PLANNED  // 鈶?璇诲彇宸蹭繚瀛樼殑鍑哄嫟鐘舵€侊紝涓嶅啀寮哄埗閲嶇疆
         }))
       };
       studentEditForm.setFieldsValue(initialValues);
@@ -1304,18 +1288,16 @@ const ScheduleCalendar: React.FC = () => {
     return course?.student_pricings || [];
   })();
 
-  // 当前课程的计费单位
-  const billingCourse = studentEditModal.schedule
+  // 褰撳墠璇剧▼鐨勮璐瑰崟浣?  const billingCourse = studentEditModal.schedule
     ? courses.find(c => c.id === (studentEditModal.schedule as any).course_id)
     : null;
   const billingUnitLabel = (() => {
     const buRaw = (billingCourse as any)?.billing_unit;
-    // 兼容数字/字符串/undefined
+    // 鍏煎鏁板瓧/瀛楃涓?undefined
     const bu = buRaw !== undefined && buRaw !== null ? Number(buRaw) : null;
-    if (bu === BillingUnit.PER_HOUR) return '/小时';
-    if (bu === BillingUnit.PER_SESSION) return '/次';
-    // 未设置时默认按次课（常见场景）
-    return '/次';
+    if (bu === BillingUnit.PER_HOUR) return '/灏忔椂';
+    if (bu === BillingUnit.PER_SESSION) return '/娆?;
+    // 鏈缃椂榛樿鎸夋璇撅紙甯歌鍦烘櫙锛?    return '/娆?;
   })();
 
   function handleSaveStudentEdit() {
@@ -1331,12 +1313,11 @@ const ScheduleCalendar: React.FC = () => {
           c.id === course.id ? { ...c, student_pricings: updatedPricings } : c
         );
         setCourses(updatedCourses);
-        // ① 通过 dbService.updateCourse 写入 browserDatabase（存到 scheduling_system_db_v3）
-        const db = (window as any).dbService;
+        // 鈶?閫氳繃 dbService.updateCourse 鍐欏叆 browserDatabase锛堝瓨鍒?scheduling_system_db_v3锛?        const db = (window as any).dbService;
         if (db?.updateCourse) {
           db.updateCourse(course.id, { student_pricings: updatedPricings });
         }
-        message.success('学生信息修改成功');
+        message.success('瀛︾敓淇℃伅淇敼鎴愬姛');
         setStudentEditModal({ open: false, schedule: null });
       }
     }
@@ -1345,29 +1326,28 @@ const ScheduleCalendar: React.FC = () => {
   function handleScheduleStatusChange(id: string, status: ScheduleStatus) {
     const changedSchedule = schedules.find(s => s.id === id);
     setSchedulesWithHistory(prev => prev.map(s => s.id === id ? { ...s, status } : s));
-    message.success('状态已更新');
+    message.success('鐘舵€佸凡鏇存柊');
     if (changedSchedule) {
       const statusLabels: Record<string, string> = {
-        [ScheduleStatus.PLANNED]: '正常',
-        [ScheduleStatus.COMPLETED]: '已完成',
-        [ScheduleStatus.LEAVE]: '请假',
-        [ScheduleStatus.CANCELLED]: '取消',
+        [ScheduleStatus.PLANNED]: '姝ｅ父',
+        [ScheduleStatus.COMPLETED]: '宸插畬鎴?,
+        [ScheduleStatus.LEAVE]: '璇峰亣',
+        [ScheduleStatus.CANCELLED]: '鍙栨秷',
       };
-      (window as any).operateLogger?.log('修改', `修改排课「${changedSchedule.course_name}」状态为「${statusLabels[status] || status}」`, '课程表');
+      (window as any).operateLogger?.log('淇敼', `淇敼鎺掕銆?{changedSchedule.course_name}銆嶇姸鎬佷负銆?{statusLabels[status] || status}銆峘, '璇剧▼琛?);
     }
   }
 
   function handleDropCourse(course: Course, day: Dayjs, slot: number) {
-    // 课程表只显示纯课程名
-    const displayCourseName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
+    // 璇剧▼琛ㄥ彧鏄剧ず绾绋嬪悕
+    const displayCourseName = course.display_name || course.name.replace(/^\d{4}\s+\S+瀛︽湡\s+/, '');
     const { hour: startH, minute: startM } = slotToTime(slot);
     const startTime = dayjs(day).hour(startH).minute(startM).second(0);
-    // 有默认时长：直接创建课程框，不弹窗
-    if (course.default_duration_minutes) {
+    // 鏈夐粯璁ゆ椂闀匡細鐩存帴鍒涘缓璇剧▼妗嗭紝涓嶅脊绐?    if (course.default_duration_minutes) {
       const endTime = startTime.add(course.default_duration_minutes, 'minute');
       const overlap = checkOverlap('', startTime.format('YYYY-MM-DD HH:mm'), endTime.format('YYYY-MM-DD HH:mm'));
       if (overlap) {
-        message.warning(`与「${overlap.course_name}」时间冲突，请调整位置`);
+        message.warning(`涓庛€?{overlap.course_name}銆嶆椂闂村啿绐侊紝璇疯皟鏁翠綅缃甡);
         return;
       }
       const newSchedule: ScheduleEvent = {
@@ -1385,11 +1365,11 @@ const ScheduleCalendar: React.FC = () => {
       const newSchedules = [...schedules, newSchedule];
       setSchedulesWithHistory(newSchedules);
       setBatchSchedules(newSchedules);
-      message.success(`已添加「${displayCourseName}」(${startTime.format('HH:mm')}-${endTime.format('HH:mm')})`);
-      (window as any).operateLogger?.log('创建', `创建排课「${displayCourseName}」(${startTime.format('YYYY-MM-DD HH:mm')}-${endTime.format('YYYY-MM-DD HH:mm')})`, '课程表');
+      message.success(`宸叉坊鍔犮€?{displayCourseName}銆?${startTime.format('HH:mm')}-${endTime.format('HH:mm')})`);
+      (window as any).operateLogger?.log('鍒涘缓', `鍒涘缓鎺掕銆?{displayCourseName}銆?${startTime.format('YYYY-MM-DD HH:mm')}-${endTime.format('YYYY-MM-DD HH:mm')})`, '璇剧▼琛?);
       return;
     }
-    // 无默认时长：弹窗手动设置
+    // 鏃犻粯璁ゆ椂闀匡細寮圭獥鎵嬪姩璁剧疆
     const endTime = startTime.add(DEFAULT_DURATION_HOURS, 'hour');
     setEditingSchedule(null);
     form.resetFields();
@@ -1426,18 +1406,17 @@ const ScheduleCalendar: React.FC = () => {
     
     const newStartTime = dayjs(newDay).hour(startH).minute(startM).second(0);
     let newEndTime = newStartTime.add(durationMinutes, 'minute');
-    // 结束时间不超过24:00：跨午夜时限制到23:55
+    // 缁撴潫鏃堕棿涓嶈秴杩?4:00锛氳法鍗堝鏃堕檺鍒跺埌23:55
     if (newEndTime.format('YYYY-MM-DD') !== newStartTime.format('YYYY-MM-DD')) {
       newEndTime = newStartTime.hour(23).minute(55);
     }
     const newStartTimeStr = newStartTime.format('YYYY-MM-DD HH:mm');
     const newEndTimeStr = newEndTime.format('YYYY-MM-DD HH:mm');
     
-    // ③ 时间互斥检测
-    if (!ctrlKey) {
+    // 鈶?鏃堕棿浜掓枼妫€娴?    if (!ctrlKey) {
       const overlap = checkOverlap(schedule.id, newStartTimeStr, newEndTimeStr);
       if (overlap) {
-        message.warning(`时间重叠：与「${overlap.course_name}」(${overlap.start_time.substring(11,16)}-${overlap.end_time.substring(11,16)})冲突，已恢复`);
+        message.warning(`鏃堕棿閲嶅彔锛氫笌銆?{overlap.course_name}銆?${overlap.start_time.substring(11,16)}-${overlap.end_time.substring(11,16)})鍐茬獊锛屽凡鎭㈠`);
         return;
       }
     }
@@ -1450,16 +1429,16 @@ const ScheduleCalendar: React.FC = () => {
         end_time: newEndTimeStr
       };
       setSchedulesWithHistory(prev => [...prev, newSchedule]);
-      message.success('课程已复制');
-      (window as any).operateLogger?.log('复制', `复制排课「${schedule.course_name}」到${newStartTimeStr.substring(0,10)} ${newStartTimeStr.substring(11,16)}-${newEndTimeStr.substring(11,16)}`, '课程表');
+      message.success('璇剧▼宸插鍒?);
+      (window as any).operateLogger?.log('澶嶅埗', `澶嶅埗鎺掕銆?{schedule.course_name}銆嶅埌${newStartTimeStr.substring(0,10)} ${newStartTimeStr.substring(11,16)}-${newEndTimeStr.substring(11,16)}`, '璇剧▼琛?);
     } else {
       setSchedulesWithHistory(prev => prev.map(s => 
         s.id === schedule.id 
           ? { ...s, start_time: newStartTimeStr, end_time: newEndTimeStr }
           : s
       ));
-      message.success('课程已移动');
-      (window as any).operateLogger?.log('移动', `移动排课「${schedule.course_name}」到${newStartTimeStr.substring(0,10)} ${newStartTimeStr.substring(11,16)}-${newEndTimeStr.substring(11,16)}`, '课程表');
+      message.success('璇剧▼宸茬Щ鍔?);
+      (window as any).operateLogger?.log('绉诲姩', `绉诲姩鎺掕銆?{schedule.course_name}銆嶅埌${newStartTimeStr.substring(0,10)} ${newStartTimeStr.substring(11,16)}-${newEndTimeStr.substring(11,16)}`, '璇剧▼琛?);
     }
   }
 
@@ -1485,10 +1464,9 @@ const ScheduleCalendar: React.FC = () => {
     const newStartTime = `${dateStr} ${formatTime(startH, startM)}`;
     const newEndTime = `${dateStr} ${formatTime(endH, endM)}`;
     
-    // ③ 时间互斥检测
-    const overlap = checkOverlap(schedule.id, newStartTime, newEndTime);
+    // 鈶?鏃堕棿浜掓枼妫€娴?    const overlap = checkOverlap(schedule.id, newStartTime, newEndTime);
     if (overlap) {
-      message.warning(`时间重叠：与「${overlap.course_name}」(${overlap.start_time.substring(11,16)}-${overlap.end_time.substring(11,16)})冲突，已恢复`);
+      message.warning(`鏃堕棿閲嶅彔锛氫笌銆?{overlap.course_name}銆?${overlap.start_time.substring(11,16)}-${overlap.end_time.substring(11,16)})鍐茬獊锛屽凡鎭㈠`);
       return;
     }
     
@@ -1497,26 +1475,26 @@ const ScheduleCalendar: React.FC = () => {
         ? { ...s, start_time: newStartTime, end_time: newEndTime }
         : s
     ));
-    message.success('课程时间已调整');
+    message.success('璇剧▼鏃堕棿宸茶皟鏁?);
   }
 
   function handleDeleteSchedule(id: string) {
-    if (window.confirm('确定要删除这节课程吗？')) {
+    if (window.confirm('纭畾瑕佸垹闄よ繖鑺傝绋嬪悧锛?)) {
       const deletedSchedule = schedules.find(s => s.id === id);
       setSchedulesWithHistory(prev => prev.filter(s => s.id !== id));
-      message.success('课程已删除');
+      message.success('璇剧▼宸插垹闄?);
       if (deletedSchedule) {
-        (window as any).operateLogger?.log('删除', `删除排课「${deletedSchedule.course_name}」`, '课程表');
+        (window as any).operateLogger?.log('鍒犻櫎', `鍒犻櫎鎺掕銆?{deletedSchedule.course_name}銆峘, '璇剧▼琛?);
       }
     }
   }
 
   function handleSave() {
     const values = form.getFieldsValue();
-    if (!values.startTime) { message.warning('请选择开始时间'); return; }
-    if (!values.duration) { message.warning('请选择课程时长'); return; }
-    if (!values.teacherId) { message.warning('请选择老师'); return; }
-    if (!values.courseId) { message.warning('请选择课程'); return; }
+    if (!values.startTime) { message.warning('璇烽€夋嫨寮€濮嬫椂闂?); return; }
+    if (!values.duration) { message.warning('璇烽€夋嫨璇剧▼鏃堕暱'); return; }
+    if (!values.teacherId) { message.warning('璇烽€夋嫨鑰佸笀'); return; }
+    if (!values.courseId) { message.warning('璇烽€夋嫨璇剧▼'); return; }
     form.validateFields().then(values => {
       const startDayjs = values.startTime;
       const durationHours = values.duration || DEFAULT_DURATION_HOURS;
@@ -1533,11 +1511,10 @@ const ScheduleCalendar: React.FC = () => {
         const startTimeStr = `${dateStr} ${startDayjs.format('HH:mm')}`;
         const endTimeStr = `${dateStr} ${endDayjs.format('HH:mm')}`;
         
-        // ③ 时间互斥检测（排课窗口）
-        const eId = editingSchedule?.id || '';
+        // 鈶?鏃堕棿浜掓枼妫€娴嬶紙鎺掕绐楀彛锛?        const eId = editingSchedule?.id || '';
         const overlap = checkOverlap(eId, startTimeStr, endTimeStr);
         if (overlap) {
-          message.warning(`时间重叠：${dateStr}与「${overlap.course_name}」(${overlap.start_time.substring(11,16)}-${overlap.end_time.substring(11,16)})冲突，已恢复`);
+          message.warning(`鏃堕棿閲嶅彔锛?{dateStr}涓庛€?{overlap.course_name}銆?${overlap.start_time.substring(11,16)}-${overlap.end_time.substring(11,16)})鍐茬獊锛屽凡鎭㈠`);
           return;
         }
         
@@ -1558,7 +1535,7 @@ const ScheduleCalendar: React.FC = () => {
                 }
               : s
           ));
-          (window as any).operateLogger?.log('修改', `修改排课「${courseName}」时间=${startTimeStr.substring(11,16)}-${endTimeStr.substring(11,16)}`, '课程表');
+          (window as any).operateLogger?.log('淇敼', `淇敼鎺掕銆?{courseName}銆嶆椂闂?${startTimeStr.substring(11,16)}-${endTimeStr.substring(11,16)}`, '璇剧▼琛?);
         } else {
           const courseObj = courses.find(c => c.id === values.courseId);
           const newSchedule: ScheduleEvent = {
@@ -1580,11 +1557,11 @@ const ScheduleCalendar: React.FC = () => {
       
       if (newSchedules.length > 0) {
         setSchedulesWithHistory(prev => [...prev, ...newSchedules]);
-        const logDetail = `批量创建排课（${datesToSave.length}节）- ${newSchedules.map(s => s.course_name.split(' ')[0]).filter(Boolean).join(', ')}`;
-        (window as any).operateLogger?.log('创建', logDetail, '课程表');
+        const logDetail = `鎵归噺鍒涘缓鎺掕锛?{datesToSave.length}鑺傦級- ${newSchedules.map(s => s.course_name.split(' ')[0]).filter(Boolean).join(', ')}`;
+        (window as any).operateLogger?.log('鍒涘缓', logDetail, '璇剧▼琛?);
       }
       
-      const msg = datesToSave.length > 1 ? `已添加${datesToSave.length}节课程` : '课程已保存';
+      const msg = datesToSave.length > 1 ? `宸叉坊鍔?{datesToSave.length}鑺傝绋媊 : '璇剧▼宸蹭繚瀛?;
       message.success(msg);
       setModalVisible(false);
     }).catch(err => {
@@ -1615,7 +1592,7 @@ const ScheduleCalendar: React.FC = () => {
 
   function handleRefreshCourseInfo() {
     if (!refreshDateRange) {
-      message.warning('请选择日期范围');
+      message.warning('璇烽€夋嫨鏃ユ湡鑼冨洿');
       return;
     }
     const [startDate, endDate] = refreshDateRange;
@@ -1626,7 +1603,7 @@ const ScheduleCalendar: React.FC = () => {
       if (sDate.isBefore(startDate) || sDate.isAfter(endDate)) return s;
       const course = db?.getAllCourses?.()?.find((c: any) => c.id === s.course_id);
       if (!course) return s;
-      const displayCName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
+      const displayCName = course.display_name || course.name.replace(/^\d{4}\s+\S+瀛︽湡\s+/, '');
       count++;
       return { 
         ...s, 
@@ -1638,7 +1615,7 @@ const ScheduleCalendar: React.FC = () => {
       };
     });
     setSchedulesWithHistory(updated);
-    message.success(`已更新 ${count} 条课程信息`);
+    message.success(`宸叉洿鏂?${count} 鏉¤绋嬩俊鎭痐);
     setRefreshModalVisible(false);
     setRefreshDateRange(null);
   }
@@ -1649,14 +1626,14 @@ const ScheduleCalendar: React.FC = () => {
     <div style={{ padding: 16, height: 'calc(100vh - 80px)', display: 'flex', flexDirection: 'column' }}>
       <Card size="small" style={{ marginBottom: 8, flexShrink: 0 }}>
         <Space wrap>
-          <Button onClick={goPrevWeek}>← 上周</Button>
-          <Button onClick={goToday}>本周</Button>
-          <Button onClick={goNextWeek}>下周 →</Button>
+          <Button onClick={goPrevWeek}>鈫?涓婂懆</Button>
+          <Button onClick={goToday}>鏈懆</Button>
+          <Button onClick={goNextWeek}>涓嬪懆 鈫?/Button>
           <Button 
             onClick={() => setCalendarOpen(!calendarOpen)}
-            title="点击跳转到选定日期的课程表"
+            title="鐐瑰嚮璺宠浆鍒伴€夊畾鏃ユ湡鐨勮绋嬭〃"
           >
-            📅 选择日期
+            馃搮 閫夋嫨鏃ユ湡
           </Button>
           {calendarOpen && (
             <div style={{ 
@@ -1682,25 +1659,25 @@ const ScheduleCalendar: React.FC = () => {
           <Button 
             onClick={undo} 
             disabled={history.past.length === 0}
-            title="撤销 (Ctrl+Z)"
-          >↩️ 撤销</Button>
+            title="鎾ら攢 (Ctrl+Z)"
+          >鈫╋笍 鎾ら攢</Button>
           <Button 
             onClick={redo} 
             disabled={history.future.length === 0}
-            title="重做 (Ctrl+Y)"
-          >↪️ 重做</Button>
+            title="閲嶅仛 (Ctrl+Y)"
+          >鈫笍 閲嶅仛</Button>
           <Divider type="vertical" />
           <Button 
             onClick={() => {
               setRefreshDateRange([currentMonday, currentMonday.add(13, 'day')]);
               setRefreshModalVisible(true);
             }}
-            title="刷新日期范围内所有排课的课程信息"
+            title="鍒锋柊鏃ユ湡鑼冨洿鍐呮墍鏈夋帓璇剧殑璇剧▼淇℃伅"
           >
-            🔄 刷新课程信息
+            馃攧 鍒锋柊璇剧▼淇℃伅
           </Button>
           <Divider type="vertical" />
-          <Button type="primary" onClick={handleAddSchedule}>➕ 排课</Button>
+          <Button type="primary" onClick={handleAddSchedule}>鉃?鎺掕</Button>
         </Space>
       </Card>
 
@@ -1739,17 +1716,17 @@ const ScheduleCalendar: React.FC = () => {
       </div>
 
       <Modal
-        title="排课窗口"
+        title="鎺掕绐楀彛"
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         footer={[
-          <Button key="cancel" onClick={() => setModalVisible(false)}>取消</Button>,
-          <Button key="save" type="primary" onClick={handleSave}>保存</Button>,
+          <Button key="cancel" onClick={() => setModalVisible(false)}>鍙栨秷</Button>,
+          <Button key="save" type="primary" onClick={handleSave}>淇濆瓨</Button>,
         ]}
         width={600}
       >
         <Form form={form} layout="vertical">
-          <Form.Item label="日期">
+          <Form.Item label="鏃ユ湡">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {batchDates.map((d, idx) => (
                 <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4, width: 'calc(33.33% - 8px)' }}>
@@ -1765,7 +1742,7 @@ const ScheduleCalendar: React.FC = () => {
                     }}
                   />
                   {batchDates.length > 1 && (
-                    <Button type="text" danger icon="❌" size="small"
+                    <Button type="text" danger icon="鉂? size="small"
                       onClick={() => {
                         const newDates = [...batchDates];
                         newDates.splice(idx, 1);
@@ -1777,16 +1754,15 @@ const ScheduleCalendar: React.FC = () => {
               ))}
               <Button type="dashed" style={{ width: '100%' }}
                 onClick={() => setBatchDates([...batchDates, batchDates[batchDates.length - 1] || dayjs()])}
-              >➕ 添加日期</Button>
+              >鉃?娣诲姞鏃ユ湡</Button>
               <div style={{ fontSize: 12, color: '#666', width: '100%' }}>
-                共 {batchDates.length} 节课程
-              </div>
+                鍏?{batchDates.length} 鑺傝绋?              </div>
             </div>
           </Form.Item>
            
           <Row gutter={12}>
             <Col span={8}>
-              <Form.Item name="startTime" label="开始时间">
+              <Form.Item name="startTime" label="寮€濮嬫椂闂?>
                 <TimePicker
                   format="HH:mm"
                   style={{ width: '100%' }}
@@ -1800,7 +1776,7 @@ const ScheduleCalendar: React.FC = () => {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="duration" label="课程时长">
+              <Form.Item name="duration" label="璇剧▼鏃堕暱">
                 <Select
                   style={{ width: '100%' }}
                   onChange={(val) => {
@@ -1810,17 +1786,17 @@ const ScheduleCalendar: React.FC = () => {
                     }
                   }}
                 >
-                  <Option value={0.5}>30分钟</Option>
-                  <Option value={1}>1小时</Option>
-                  <Option value={1.5}>1.5小时</Option>
-                  <Option value={2}>2小时</Option>
-                  <Option value={2.5}>2.5小时</Option>
-                  <Option value={3}>3小时</Option>
+                  <Option value={0.5}>30鍒嗛挓</Option>
+                  <Option value={1}>1灏忔椂</Option>
+                  <Option value={1.5}>1.5灏忔椂</Option>
+                  <Option value={2}>2灏忔椂</Option>
+                  <Option value={2.5}>2.5灏忔椂</Option>
+                  <Option value={3}>3灏忔椂</Option>
                 </Select>
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="endTime" label="结束时间">
+              <Form.Item name="endTime" label="缁撴潫鏃堕棿">
                 <TimePicker format="HH:mm" style={{ width: '100%' }} disabled />
               </Form.Item>
             </Col>
@@ -1828,9 +1804,9 @@ const ScheduleCalendar: React.FC = () => {
            
           <Row gutter={12}>
             <Col span={8}>
-              <Form.Item name="teacherId" label="老师">
+              <Form.Item name="teacherId" label="鑰佸笀">
                 <Select
-                  placeholder="选择老师"
+                  placeholder="閫夋嫨鑰佸笀"
                   showSearch
                   allowClear
                   options={teachers.map(t => ({ label: t.name, value: t.id }))}
@@ -1847,9 +1823,9 @@ const ScheduleCalendar: React.FC = () => {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="courseId" label="课程">
+              <Form.Item name="courseId" label="璇剧▼">
                 <Select
-                  placeholder="选择课程"
+                  placeholder="閫夋嫨璇剧▼"
                   options={courses
                     .filter(c => c.active && (!modalTeacherId || c.teacher_id === modalTeacherId))
                     .map(c => ({ label: c.display_name || c.name, value: c.id }))
@@ -1857,7 +1833,7 @@ const ScheduleCalendar: React.FC = () => {
                   onChange={(courseId) => {
                     const course = courses.find(c => c.id === courseId);
                     if (course) {
-                      const displayCName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
+                      const displayCName = course.display_name || course.name.replace(/^\d{4}\s+\S+瀛︽湡\s+/, '');
                       form.setFieldValue('courseName', displayCName);
                       const roomId = (course.room_id && course.room_id.split(',')[0].trim()) || (rooms.find(r => r.name === course.room_name)?.id) || course.room_name || ''; form.setFieldValue('room', roomId);
                       if (course.default_duration_minutes) {
@@ -1874,11 +1850,11 @@ const ScheduleCalendar: React.FC = () => {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="status" label="课程状态" initialValue={ScheduleStatus.PLANNED}>
+              <Form.Item name="status" label="璇剧▼鐘舵€? initialValue={ScheduleStatus.PLANNED}>
                 <Select>
-                  <Option value={ScheduleStatus.PLANNED}>✅ 正常</Option>
-                  <Option value={ScheduleStatus.LEAVE}>🏠 请假</Option>
-                  <Option value={ScheduleStatus.CANCELLED}>❌ 取消</Option>
+                  <Option value={ScheduleStatus.PLANNED}>鉁?姝ｅ父</Option>
+                  <Option value={ScheduleStatus.LEAVE}>馃彔 璇峰亣</Option>
+                  <Option value={ScheduleStatus.CANCELLED}>鉂?鍙栨秷</Option>
                 </Select>
               </Form.Item>
             </Col>
@@ -1888,9 +1864,9 @@ const ScheduleCalendar: React.FC = () => {
             <Input />
           </Form.Item>
            
-          <Form.Item name="room" label="上课地址">
+          <Form.Item name="room" label="涓婅鍦板潃">
             <Select
-              placeholder="选择上课地址"
+              placeholder="閫夋嫨涓婅鍦板潃"
               showSearch
               allowClear
               options={rooms.map(r => ({ label: r.address ? `${r.name} (${r.address})` : r.name, value: r.id }))}
@@ -1900,7 +1876,7 @@ const ScheduleCalendar: React.FC = () => {
       </Modal>
 
       <Modal
-        title={`学生出勤和费用 - ${studentEditModal.schedule?.course_name || ''}`}
+        title={`瀛︾敓鍑哄嫟鍜岃垂鐢?- ${studentEditModal.schedule?.course_name || ''}`}
         open={studentEditModal.open}
         onCancel={() => setStudentEditModal({ open: false, schedule: null })}
         onOk={() => handleSaveStudentEdit()}
@@ -1914,39 +1890,39 @@ const ScheduleCalendar: React.FC = () => {
                 <Card
                   size="small"
                   key={sp.student_id}
-                  title={`${idx+1}. ${student?.name || '未知学生'}`}
+                  title={`${idx+1}. ${student?.name || '鏈煡瀛︾敓'}`}
                   style={{ marginBottom: 12 }}
                 >
                   <Row gutter={16}>
                     <Col span={8}>
                       <Form.Item
                         name={['students', idx, 'status']}
-                        label="出勤状态"
+                        label="鍑哄嫟鐘舵€?
                         initialValue={sp.status || ScheduleStatus.PLANNED}
                       >
                         <Select>
-                          <Option value={ScheduleStatus.PLANNED}>正常出勤</Option>
-                          <Option value={ScheduleStatus.LEAVE}>请假</Option>
-                          <Option value={ScheduleStatus.CANCELLED}>取消</Option>
+                          <Option value={ScheduleStatus.PLANNED}>姝ｅ父鍑哄嫟</Option>
+                          <Option value={ScheduleStatus.LEAVE}>璇峰亣</Option>
+                          <Option value={ScheduleStatus.CANCELLED}>鍙栨秷</Option>
                         </Select>
                       </Form.Item>
                     </Col>
                     <Col span={8}>
                       <Form.Item
                         name={['students', idx, 'tuition']}
-                        label={`学费${billingUnitLabel}`}
+                        label={`瀛﹁垂${billingUnitLabel}`}
                         initialValue={sp.tuition}
                       >
-                        <InputNumber min={0} prefix="¥" style={{ width: '100%' }} />
+                        <InputNumber min={0} prefix="楼" style={{ width: '100%' }} />
                       </Form.Item>
                     </Col>
                     <Col span={8}>
                       <Form.Item
                         name={['students', idx, 'teacher_fee']}
-                        label={`课时费${billingUnitLabel}`}
+                        label={`璇炬椂璐?{billingUnitLabel}`}
                         initialValue={sp.teacher_fee || sp.tuition}
                       >
-                        <InputNumber min={0} prefix="¥" style={{ width: '100%' }} />
+                        <InputNumber min={0} prefix="楼" style={{ width: '100%' }} />
                       </Form.Item>
                     </Col>
                   </Row>
@@ -1955,7 +1931,7 @@ const ScheduleCalendar: React.FC = () => {
             })}
             {(!courseStudentPricings || courseStudentPricings.length === 0) && (
               <div style={{ textAlign: 'center', color: '#999', padding: 20 }}>
-                该课程未绑定学生信息
+                璇ヨ绋嬫湭缁戝畾瀛︾敓淇℃伅
               </div>
             )}
           </Form>
@@ -1963,19 +1939,19 @@ const ScheduleCalendar: React.FC = () => {
       </Modal>
 
       <Modal
-        title="刷新课程信息"
+        title="鍒锋柊璇剧▼淇℃伅"
         open={refreshModalVisible}
         onCancel={() => { setRefreshModalVisible(false); setRefreshDateRange(null); }}
         onOk={handleRefreshCourseInfo}
-        okText="开始刷新"
-        cancelText="取消"
+        okText="寮€濮嬪埛鏂?
+        cancelText="鍙栨秷"
       >
         <div style={{ marginBottom: 16 }}>
-          <p>选择日期范围，系统将遍历该范围内的所有排课，重新从课程数据库读取最新信息并更新排课记录。</p>
-          <p style={{ color: '#999', fontSize: 12 }}>更新字段：课程名称、上课地址、老师名称、学生学费/课时费</p>
+          <p>閫夋嫨鏃ユ湡鑼冨洿锛岀郴缁熷皢閬嶅巻璇ヨ寖鍥村唴鐨勬墍鏈夋帓璇撅紝閲嶆柊浠庤绋嬫暟鎹簱璇诲彇鏈€鏂颁俊鎭苟鏇存柊鎺掕璁板綍銆?/p>
+          <p style={{ color: '#999', fontSize: 12 }}>鏇存柊瀛楁锛氳绋嬪悕绉般€佷笂璇惧湴鍧€銆佽€佸笀鍚嶇О銆佸鐢熷璐?璇炬椂璐?/p>
         </div>
         <Form layout="vertical">
-          <Form.Item label="日期范围" required>
+          <Form.Item label="鏃ユ湡鑼冨洿" required>
             <DatePicker.RangePicker
               value={refreshDateRange as any}
               onChange={(dates) => setRefreshDateRange(dates as [Dayjs, Dayjs])}
@@ -1990,3 +1966,4 @@ const ScheduleCalendar: React.FC = () => {
 };
 
 export default ScheduleCalendar;
+
