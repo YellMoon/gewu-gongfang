@@ -1,4 +1,4 @@
-body {
+﻿body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
@@ -11,25 +11,25 @@ body {
   box-sizing: border-box;
 }
 
-/* 菜单栏固定高度 */
+/* 鑿滃崟鏍忓浐瀹氶珮搴?*/
 .ant-layout-header {
   height: 44px !important;
   line-height: 44px !important;
 }
 
-/* 下拉菜单项样式 */
+/* 涓嬫媺鑿滃崟椤规牱寮?*/
 .dropdown-menu-item {
   font-size: 14px;
 }
 
-/* 课程表固定尺寸 */
+/* 璇剧▼琛ㄥ浐瀹氬昂瀵?*/
 .schedule-container {
   width: 100%;
   height: calc(100vh - 88px);
   overflow: auto;
 }
 
-/* 下拉菜单动画 */
+/* 涓嬫媺鑿滃崟鍔ㄧ敾 */
 @keyframes dropdownIn {
   from {
     opacity: 0;
@@ -51,7 +51,7 @@ body {
   }
 }
 
-/* 导航栏固定 */
+/* 瀵艰埅鏍忓浐瀹?*/
 .week-nav-sticky {
   position: sticky;
   top: 0;
@@ -59,7 +59,7 @@ body {
   background: inherit;
 }
 
-/* 侧边栏固定 */
+/* 渚ц竟鏍忓浐瀹?*/
 .schedule-sidebar {
   position: sticky;
   top: 0;
@@ -67,7 +67,7 @@ body {
   align-self: flex-start;
 }
 
-/* 紧凑表格行 - 缩小行间距 */
+/* 绱у噾琛ㄦ牸琛?- 缂╁皬琛岄棿璺?*/
 .ant-table-tbody > tr > td {
   padding: 4px 8px !important;
   line-height: 1.3 !important;
@@ -76,18 +76,18 @@ body {
   margin: 1px 2px;
 }
 
-/* 紧凑Card内部间距 */
+/* 绱у噾Card鍐呴儴闂磋窛 */
 .ant-card-body {
   padding: 12px 16px !important;
 }
 
-/* 下拉菜单项紧凑 */
+/* 涓嬫媺鑿滃崟椤圭揣鍑?*/
 .ant-dropdown-menu-item {
   padding: 4px 12px !important;
   line-height: 1.5 !important;
 }
 
-/* 所有表格内容居中对齐 */
+/* 鎵€鏈夎〃鏍煎唴瀹瑰眳涓榻?*/
 table,
 th,
 td,
@@ -100,20 +100,20 @@ td,
   text-align: center;
 }
 
-/* 表格内容居中（显式覆盖） */
+/* 琛ㄦ牸鍐呭灞呬腑锛堟樉寮忚鐩栵級 */
 .ant-table-thead > tr > th,
 .ant-table-tbody > tr > td {
   text-align: center !important;
 }
 
-/* ── 知识树样式 ── */
+/* 鈹€鈹€ 鐭ヨ瘑鏍戞牱寮?鈹€鈹€ */
 .knowledge-tree .ant-tree-treenode {
   align-items: center !important;
   padding-bottom: 3px !important;
 }
 .knowledge-tree .ant-tree-indent-unit { width: 16px !important; }
 
-/* 圆形按钮：overflow 消除正方边框；align-self 竖直居中；z-index 置顶 */
+/* 鍦嗗舰鎸夐挳锛歰verflow 娑堥櫎姝ｆ柟杈规锛沘lign-self 绔栫洿灞呬腑锛泎-index 缃《 */
 .knowledge-tree .ant-tree-switcher {
   width: 16px !important;
   height: 16px !important;
@@ -145,7 +145,7 @@ td,
   box-shadow: none !important;
 }
 
-/* 收起（加号）：白底黑圈黑+号 */
+/* 鏀惰捣锛堝姞鍙凤級锛氱櫧搴曢粦鍦堥粦+鍙?*/
 .knowledge-tree .ant-tree-switcher_close {
   background: #fff !important;
   box-shadow: inset 0 0 0 1px #000 !important;
@@ -155,7 +155,7 @@ td,
   background: #000 !important;
 }
 
-/* 展开（减号）：天蓝底天蓝圈白-号 */
+/* 灞曞紑锛堝噺鍙凤級锛氬ぉ钃濆簳澶╄摑鍦堢櫧-鍙?*/
 .knowledge-tree .ant-tree-switcher_open {
   background: #40a9ff !important;
   box-shadow: inset 0 0 0 1px #40a9ff !important;
@@ -165,13 +165,13 @@ td,
   background: #fff !important;
 }
 
-/* 无子节点 */
+/* 鏃犲瓙鑺傜偣 */
 .knowledge-tree .ant-tree-switcher-noop {
   background: transparent !important;
   box-shadow: none !important;
 }
 
-/* 删除图标 */
+/* 鍒犻櫎鍥炬爣 */
 .knowledge-tree .ant-tree-iconEle,
 .knowledge-tree .ant-tree-icon__customize,
 .knowledge-tree .ant-tree-leaf-icon,
@@ -182,7 +182,7 @@ td,
   display: none !important;
 }
 
-/* 竖线：同心圆对齐 + 短虚线段 + 全程连续 */
+/* 绔栫嚎锛氬悓蹇冨渾瀵归綈 + 鐭櫄绾挎 + 鍏ㄧ▼杩炵画 */
 .knowledge-tree .ant-tree-show-line .ant-tree-indent-unit::before {
   position: absolute;
   top: -4px !important;
@@ -202,8 +202,44 @@ td,
   background-size: 2px 5px !important;
 }
 
-/* 标题贴紧 */
+/* 鏍囬璐寸揣 */
 .knowledge-tree .ant-tree-node-content-wrapper {
   padding: 0 2px !important;
   margin-left: 0 !important;
 }
+
+
+/* 知识树：圆形加减号绘制与配色 */
+.knowledge-tree .ant-tree-switcher {
+  background-image: none !important; /* 避免出现方形底图 */
+}
+/* 使用伪元素绘制加/减号（横线+竖线） */
+.knowledge-tree .ant-tree-switcher::before,
+.knowledge-tree .ant-tree-switcher::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  border-radius: 1px;
+}
+/* 横线 */
+.knowledge-tree .ant-tree-switcher::before { width: 8px; height: 2px; background: #000; }
+/* 竖线（组成加号） */
+.knowledge-tree .ant-tree-switcher::after  { width: 2px; height: 8px; background: #000; }
+
+/* 收起：白底 + 黑色描边 + 黑色加号 */
+.knowledge-tree .ant-tree-switcher_close { background: #fff !important; box-shadow: inset 0 0 0 1px #000 !important; }
+.knowledge-tree .ant-tree-switcher_close::before,
+.knowledge-tree .ant-tree-switcher_close::after { background: #000 !important; opacity: 1 !important; }
+
+/* 展开：天蓝底 + 蓝色描边 + 白色减号 */
+.knowledge-tree .ant-tree-switcher_open  { background: #40a9ff !important; box-shadow: inset 0 0 0 1px #40a9ff !important; }
+.knowledge-tree .ant-tree-switcher_open::before { background: #fff !important; }
+.knowledge-tree .ant-tree-switcher_open::after  { background: #fff !important; opacity: 0 !important; }
+
+/* 移除任何内置切换图标，避免方形/箭头干扰 */
+.knowledge-tree .ant-tree-switcher .ant-tree-switcher-icon,
+.knowledge-tree .ant-tree-switcher .anticon,
+.knowledge-tree .ant-tree-switcher svg { display: none !important; }
