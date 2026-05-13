@@ -117,6 +117,10 @@ td,
 .knowledge-tree .ant-tree-switcher {
   width: 16px !important;
   height: 16px !important;
+  min-width: 16px !important;
+  min-height: 16px !important;
+  max-width: 16px !important;
+  max-height: 16px !important;
   line-height: 16px !important;
   border-radius: 50% !important;
   margin-right: 2px !important;
@@ -126,9 +130,12 @@ td,
   overflow: hidden !important;
   border: none !important;
   outline: none !important;
+  box-shadow: none !important;
   position: relative;
   align-self: center !important;
   flex-shrink: 0;
+  transition: none !important;
+  background-clip: border-box !important;
 }
 .knowledge-tree .ant-tree-switcher *,
 .knowledge-tree .ant-tree-switcher::after,
@@ -153,7 +160,8 @@ td,
   background: #1890ff !important;
   box-shadow: none !important;
 }
-.knowledge-tree .ant-tree-switcher_open::after {
+.knowledge-tree .ant-tree-switcher_open::after,
+.knowledge-tree .ant-tree-switcher_open::before {
   background: #fff !important;
 }
 

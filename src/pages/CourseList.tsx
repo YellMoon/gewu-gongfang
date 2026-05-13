@@ -56,6 +56,7 @@ const CourseList: React.FC = () => {
   const [filterTeacher, setFilterTeacher] = useState<string | undefined>();
   const [form] = Form.useForm();
   const billingUnit = Form.useWatch('billing_unit', form) ?? BillingUnit.PER_HOUR;
+  const sourceType = Form.useWatch('source_type', form) as CourseSourceType | undefined;
   const dbService = (window as any).dbService;
 
   const loadData = async () => {
@@ -440,6 +441,21 @@ const CourseList: React.FC = () => {
               </Form.Item>
             </Col>
             <Col span={8}>
+              <Form.Item name="institution_id" label="所属机构">
+                <Select placeholder={sourceType === CourseSourceType.INSTITUTION || sourceType === CourseSourceType.MIXED ? '请选择机构' : '选择机构排课或混合班后可编辑'}
+                  allowClear
+                  disabled={sourceType !== CourseSourceType.INSTITUTION && sourceType !== CourseSourceType.MIXED}
+                >
+                  {institutions.map(inst => (
+                    <Option key={inst.id} value={inst.id}>{inst.name}</Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={8}>
               <Form.Item name="active" label="课程状态" initialValue={true}>
                 <Select>
                   <Option value={true}>未结课（出现在排课选择中）</Option>
@@ -447,19 +463,6 @@ const CourseList: React.FC = () => {
                 </Select>
               </Form.Item>
             </Col>
-          </Row>
-          
-          {form.getFieldValue('source_type') === CourseSourceType.INSTITUTION && (
-            <Form.Item name="institution_id" label="所属机构">
-              <Select placeholder="请选择机构" allowClear>
-                {institutions.map(inst => (
-                  <Option key={inst.id} value={inst.id}>{inst.name}</Option>
-                ))}
-              </Select>
-            </Form.Item>
-          )}
-
-          <Row gutter={16}>
             <Col span={8}>
               <Form.Item name="teacher_id" label="选择老师" 
                 initialValue={teachers.length > 0 ? teachers[0].id : undefined}
@@ -485,6 +488,9 @@ const CourseList: React.FC = () => {
                 </Select>
               </Form.Item>
             </Col>
+          </Row>
+
+          <Row gutter={16}>
             <Col span={8}>
               <Form.Item name="room_id" label="上课地址">
                 <Select
