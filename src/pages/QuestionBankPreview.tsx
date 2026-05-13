@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Card, Table, Button, Modal, Form, Input, InputNumber, Select, Space, Tag, message,
+  Card, Table, Button, Modal, Form, Input, InputNumber, Select as AntSelect, Space, Tag, message,
   Popconfirm, Tooltip, Tree, Divider, Badge, Checkbox, Dropdown, Menu, Empty, Row, Col, Typography
 } from 'antd';
 import {
@@ -9,8 +9,10 @@ import {
   CheckCircleOutlined, DownloadOutlined, FileWordOutlined, CloseCircleOutlined
 } from '@ant-design/icons';
 import type { Question, KnowledgeNode } from '../types';
+import AutoCloseSelect from '../components/AutoCloseSelect';
 
 const { TextArea } = Input;
+const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
 
 const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'];

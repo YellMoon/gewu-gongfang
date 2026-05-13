@@ -7,14 +7,16 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  Card, Table, Button, Modal, Select, Input, Radio, DatePicker, 
+  Card, Table, Button, Modal, Select as AntSelect, Input, Radio, DatePicker,
   Space, message, Popconfirm, Tag 
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, LinkOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
+import AutoCloseSelect from '../components/AutoCloseSelect';
 
 const { RangePicker } = DatePicker;
+const Select = AutoCloseSelect as typeof AntSelect;
 const { Option } = Select;
 
 // ====== 系统功能模块定义 ======

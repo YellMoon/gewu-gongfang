@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Card, Row, Col, Statistic, Table, DatePicker, Button, Space, Modal, Form,
-  Input, InputNumber, Select, message, Tag, Divider, Tabs, Popconfirm, Tooltip
+  Input, InputNumber, Select as AntSelect, message, Tag, Divider, Tabs, Popconfirm, Tooltip
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, EditOutlined, DownloadOutlined, SettingOutlined,
@@ -11,8 +11,10 @@ import {
 import dayjs from 'dayjs';
 import type { AssetRecord, AssetCategory, AssetStats } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, Legend, ResponsiveContainer } from 'recharts';
+import AutoCloseSelect from '../components/AutoCloseSelect';
 
 const { RangePicker } = DatePicker;
+const Select = AutoCloseSelect as typeof AntSelect;
 const { Option } = Select;
 
 const dbService = () => (window as any).dbService;

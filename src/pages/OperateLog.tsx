@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Table, Button, DatePicker, Space, Tag, Card, message, Modal, Empty, Input, Select } from 'antd';
+import { Table, Button, DatePicker, Space, Tag, Card, message, Modal, Empty, Input, Select as AntSelect } from 'antd';
 import { FileTextOutlined, DeleteOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import logger, { OperateLogEntry } from '../services/operateLogger';
+import AutoCloseSelect from '../components/AutoCloseSelect';
+
+const Select = AutoCloseSelect as typeof AntSelect;
 
 const ACTION_TYPE_COLORS: Record<string, string> = {
   '创建': 'green',

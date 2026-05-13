@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Card, DatePicker, Select, Button, Table, Statistic, Row, Col, 
+  Card, DatePicker, Select as AntSelect, Button, Table, Statistic, Row, Col,
   Divider, Typography, Tag, Empty, Space, Radio, message
 } from 'antd';
 import { BarChartOutlined, PieChartOutlined, LineChartOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -8,8 +8,10 @@ import dayjs from 'dayjs';
 import { RevenueStats, StudentTuitionStats, CourseType, CourseSourceType, ServiceType, ScheduleStatus, Course, Payment, Consumption, PaymentType, BillingUnit, TeacherFeeMode } from '../types';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 import { Bar, Pie, Line } from 'react-chartjs-2';
+import AutoCloseSelect from '../components/AutoCloseSelect';
 
 const { RangePicker } = DatePicker;
+const Select = AutoCloseSelect as typeof AntSelect;
 const { Title: TitleText } = Typography;
 
 // 注册 Chart.js

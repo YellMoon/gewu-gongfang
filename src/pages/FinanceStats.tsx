@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Statistic, Row, Col, DatePicker, Button, Select, Space } from 'antd';
+import { Card, Table, Statistic, Row, Col, DatePicker, Button, Select as AntSelect, Space } from 'antd';
 import { MoneyCollectOutlined, BookOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { RangePickerProps } from 'antd/es/date-picker';
+import AutoCloseSelect from '../components/AutoCloseSelect';
 
 const { RangePicker } = DatePicker;
+const Select = AutoCloseSelect as typeof AntSelect;
 
 const FinanceStats: React.FC = () => {
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
