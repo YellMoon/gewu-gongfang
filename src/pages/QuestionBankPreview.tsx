@@ -55,7 +55,7 @@ const QuestionBankPreview: React.FC = () => {
   const [filterYear, setFilterYear] = useState<string | undefined>(undefined);
 
   // 排除知识点
-  const [filterExcludeKnowledgeIds, setFilterExcludeKnowledgeIds] = useState<string[]>([]);
+  const [filterExcludeKnowledgeIds, setFilterExcludeKnowledgeIds] = useState<(string | undefined)[]>([undefined]);
 
   // 获取某节点及其所有后代 ID
   const getDescendantIds = (nodes: KnowledgeNode[], parentId: string): string[] => {
@@ -114,7 +114,7 @@ const QuestionBankPreview: React.FC = () => {
     .filter(id => !!id)
     .flatMap(id => getDescendantIds(knowledgeNodes, id));
   const expandedExcludeIds = filterExcludeKnowledgeIds
-    .filter(id => !!id)
+    .filter((id): id is string => !!id)
     .flatMap(id => getDescendantIds(knowledgeNodes, id));
 
   // Filters
@@ -547,6 +547,7 @@ const QuestionBankPreview: React.FC = () => {
               setKnowledgeSelectedIds(prev => prev.filter(id => id !== nodeId));
             } else {
               setKnowledgeSelectedIds(prev => [...prev.filter(id => !!id), nodeId]);
+              setFilterExcludeKnowledgeIds(prev => prev.filter(id => id !== nodeId));
             }
           }}
         >{isIncluded ? '✓已选' : '包含'}</Button>
@@ -558,6 +559,7 @@ const QuestionBankPreview: React.FC = () => {
               setFilterExcludeKnowledgeIds(prev => prev.filter(id => id !== nodeId));
             } else {
               setFilterExcludeKnowledgeIds(prev => [...prev, nodeId]);
+              setKnowledgeSelectedIds(prev => prev.filter(id => id !== nodeId));
             }
           }}
         >{isExcluded ? '✗已排' : '不含'}</Button>
@@ -578,14 +580,13 @@ const QuestionBankPreview: React.FC = () => {
           >
             <style>{`
               .knowledge-tree .ant-tree-indent-unit { width: 16px !important; }
-              .knowledge-tree .ant-tree-switcher { width: 16px !important; height: 16px !important; min-width: 16px !important; min-height: 16px !important; border-radius: 50% !important; margin-right: 2px !important; }
-              .knowledge-tree .ant-tree-switcher_open { background: #1890ff !important; }
-              .knowledge-tree .ant-tree-switcher_open::after { background: #fff !important; border-color: #fff !important; }
-              .knowledge-tree .ant-tree-switcher_close { background: #f0f0f0 !important; }
-              .knowledge-tree .ant-tree-switcher_close::after, .knowledge-tree .ant-tree-switcher_close::before { background: #666 !important; }
-              .knowledge-tree .ant-tree-switcher-noop { background: transparent !important; width: 16px !important; }
-              .knowledge-tree .ant-tree-treenode { gap: 0 !important; padding-bottom: 3px !important; }
-              .knowledge-tree .ant-tree-show-line .ant-tree-indent-unit::before { border-right: 1px dashed #d9d9d9 !important; }
+              .knowledge-tree .ant-tree-switcher { width: 16px !important; height: 16px !important; min-width: 16px !important; min-height: 16px !important; border-radius: 50% !important; margin-right: 2px !important; padding: 0 !important; box-sizing: border-box !important; }
+              .knowledge-tree .ant-tree-switcher_close { background: #fff !important; box-shadow: inset 0 0 0 1px #d9d9d9 !important; }
+              .knowledge-tree .ant-tree-switcher_close::after, .knowledge-tree .ant-tree-switcher_close::before { background: #333 !important; }
+              .knowledge-tree .ant-tree-switcher_open { background: #1890ff !important; box-shadow: none !important; }
+              .knowledge-tree .ant-tree-switcher_open::after { background: #fff !important; }
+              .knowledge-tree .ant-tree-switcher-noop { background: transparent !important; box-shadow: none !important; }
+              .knowledge-tree .ant-tree-treenode { padding-bottom: 3px !important; }
               .knowledge-tree .ant-tree-iconEle,.knowledge-tree .ant-tree-icon__customize,.knowledge-tree .ant-tree-leaf-icon,.knowledge-tree .ant-tree-leaf-line{display:none!important;}
               .knowledge-tree .ant-tree-node-content-wrapper { padding: 0 2px !important; margin-left: 0 !important; }
             `}</style>
@@ -681,22 +682,35 @@ const QuestionBankPreview: React.FC = () => {
               />
             </div>
 
-            {/* Row 3: 学期（单独一行）*/}
-            <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>学期：</span>
-              <Checkbox.Group
-                options={LIMIT_SEMESTERS}
-                value={filterSemesters}
-                onChange={(vals) => {
-                  if (vals.includes('不限') && vals.length > 1) {
-                    setFilterSemesters(vals.filter(v => v !== '不限'));
-                  } else if (vals.length === 0) {
-                    setFilterSemesters(['不限']);
-                  } else {
-                    setFilterSemesters(vals as string[]);
-                  }
-                }}
-              />
+            {/* Row 3: 学期（右）+ 学年 */}
+            <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>学期：</span>
+                <Checkbox.Group
+                  options={LIMIT_SEMESTERS}
+                  value={filterSemesters}
+                  onChange={(vals) => {
+                    if (vals.includes('不限') && vals.length > 1) {
+                      setFilterSemesters(vals.filter(v => v !== '不限'));
+                    } else if (vals.length === 0) {
+                      setFilterSemesters(['不限']);
+                    } else {
+                      setFilterSemesters(vals as string[]);
+                    }
+                  }}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>学年：</span>
+                <Select
+                  allowClear
+                  style={{ width: 160 }}
+                  placeholder="选择学年"
+                  value={filterYear}
+                  onChange={setFilterYear}
+                  options={YEAR_OPTIONS}
+                />
+              </div>
             </div>
 
             {/* Row 4: 科目 | 考试类型 */}
@@ -719,30 +733,17 @@ const QuestionBankPreview: React.FC = () => {
               </div>
             </div>
 
-            {/* Row 5: 学年（右）| 搜索题干（右）*/}
-            <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>学年：</span>
-                <Select
-                  allowClear
-                  style={{ width: 160 }}
-                  placeholder="选择学年"
-                  value={filterYear}
-                  onChange={setFilterYear}
-                  options={YEAR_OPTIONS}
-                />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <Input
-                  placeholder="搜索题干..."
-                  allowClear
-                  style={{ width: 280 }}
-                  value={searchText}
-                  onChange={e => setSearchText(e.target.value)}
-                  onPressEnter={handleSearch}
-                />
-                <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>搜索</Button>
-              </div>
+            {/* Row 5: 搜索题干 */}
+            <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Input
+                placeholder="搜索题干..."
+                allowClear
+                style={{ width: 280 }}
+                value={searchText}
+                onChange={e => setSearchText(e.target.value)}
+                onPressEnter={handleSearch}
+              />
+              <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>搜索</Button>
             </div>
 
             {/* Row 6: 知识点多选 */}
@@ -804,18 +805,45 @@ const QuestionBankPreview: React.FC = () => {
             <div style={{ marginTop: 8 }}>
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                 <span style={{ fontSize: 13, color: '#ff4d4f', whiteSpace: 'nowrap' }}>排除：</span>
-                {filterExcludeKnowledgeIds.length === 0 ? (
-                  <span style={{ color: '#999', fontSize: 13 }}>无</span>
-                ) : (
-                  filterExcludeKnowledgeIds.map((eid, idx) => {
-                    const node = knowledgeNodes.find(n => n.id === eid);
-                    return (
-                      <Tag key={idx} closable color="error"
-                        onClose={() => setFilterExcludeKnowledgeIds(prev => prev.filter(id => id !== eid))}
-                      >{node?.name || eid}</Tag>
-                    );
-                  })
-                )}
+                {filterExcludeKnowledgeIds.map((eid, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Select
+                      showSearch
+                      allowClear
+                      placeholder="排除知识点..."
+                      style={{ width: 200 }}
+                      value={eid}
+                      onChange={(value) => {
+                        const newIds = [...filterExcludeKnowledgeIds];
+                        newIds[idx] = value;
+                        const filtered = newIds.filter(id => !!id);
+                        setFilterExcludeKnowledgeIds(filtered.length === 0 ? [undefined] : filtered);
+                        if (value) {
+                          setKnowledgeSelectedIds(prev => prev.filter(id => id !== value));
+                        }
+                      }}
+                      filterOption={(input, option) =>
+                        (option?.label as string || '').toLowerCase().includes(input.toLowerCase())
+                      }
+                      options={knowledgeNodes.map(n => ({ label: n.name, value: n.id }))}
+                    />
+                    {idx === filterExcludeKnowledgeIds.length - 1 && (
+                      <Button type="link" size="small" icon={<PlusOutlined />}
+                        onClick={() => setFilterExcludeKnowledgeIds([...filterExcludeKnowledgeIds.filter(id => !!id), undefined])}
+                        style={{ padding: '0 4px', minWidth: 20, height: 22 }}
+                      />
+                    )}
+                    {filterExcludeKnowledgeIds.length > 1 && (
+                      <Button type="link" size="small" danger icon={<CloseCircleOutlined />}
+                        onClick={() => {
+                          const newIds = filterExcludeKnowledgeIds.filter((_, i) => i !== idx);
+                          setFilterExcludeKnowledgeIds(newIds.length === 0 ? [undefined] : newIds);
+                        }}
+                        style={{ padding: '0 4px', minWidth: 20, height: 22 }}
+                      />
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           </div>

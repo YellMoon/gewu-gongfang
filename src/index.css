@@ -107,72 +107,66 @@ td,
 }
 
 /* ── 知识树样式 ── */
-/* treenode 去除多余间隙 */
-.knowledge-tree .ant-tree-treenode {
-  padding-bottom: 3px !important;
-}
-
-/* 缩进与 switcher 同宽 (16px) */
+.knowledge-tree .ant-tree-treenode { padding-bottom: 3px !important; }
 .knowledge-tree .ant-tree-indent-unit { width: 16px !important; }
 
-/* 圆形 +/- 按钮 */
+/* 圆形按钮 */
 .knowledge-tree .ant-tree-switcher {
   width: 16px !important;
   height: 16px !important;
-  line-height: 16px !important;
+  line-height: 14px !important;
   border-radius: 50% !important;
   margin-right: 2px !important;
-}
-.knowledge-tree .ant-tree-switcher::after,
-.knowledge-tree .ant-tree-switcher::before {
-  border-radius: 0 !important;
-}
-
-/* 展开（减号）：蓝底白杠 */
-.knowledge-tree .ant-tree-switcher_open {
-  background: #1890ff !important;
-}
-.knowledge-tree .ant-tree-switcher_open::after {
-  background: #fff !important;
-  border-color: #fff !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+  text-align: center;
+  position: relative;
 }
 
-/* 收起（加号）：灰底灰杠 */
+/* 收起（加号）：白底黑加号，灰色圆环 */
 .knowledge-tree .ant-tree-switcher_close {
-  background: #f0f0f0 !important;
+  background: #fff !important;
+  box-shadow: inset 0 0 0 1px #d9d9d9 !important;
 }
 .knowledge-tree .ant-tree-switcher_close::after,
 .knowledge-tree .ant-tree-switcher_close::before {
-  background: #666 !important;
-  border-color: #666 !important;
+  background: #333 !important;
+}
+
+/* 展开（减号）：蓝底白减号 */
+.knowledge-tree .ant-tree-switcher_open {
+  background: #1890ff !important;
+  box-shadow: none !important;
+}
+.knowledge-tree .ant-tree-switcher_open::after {
+  background: #fff !important;
 }
 
 /* 无子节点 */
 .knowledge-tree .ant-tree-switcher-noop {
   background: transparent !important;
+  box-shadow: none !important;
   width: 16px !important;
   min-width: 16px !important;
 }
 
-/* 连接线：灰色虚线 + T形横向连接 */
-.knowledge-tree .ant-tree-show-line .ant-tree-indent-unit::before {
-  border-right: 1px dashed #d9d9d9 !important;
-}
-
-/* 链接 switcher 到子节点的竖线 */
-.knowledge-tree .ant-tree-show-line .ant-tree-switcher::before {
-  border-left: 1px dashed #d9d9d9 !important;
-}
-
-/* 删除点状图标和拖拽把手 (6 点) */
+/* 删除一切图标和拖拽把手 */
 .knowledge-tree .ant-tree-iconEle,
 .knowledge-tree .ant-tree-icon__customize,
 .knowledge-tree .ant-tree-leaf-icon,
 .knowledge-tree .ant-tree-leaf-line,
 .knowledge-tree .ant-tree-switcher-leaf-line,
-.knowledge-tree .ant-tree-treenode-draggable::before,
-.knowledge-tree .ant-tree-node-content-wrapper::before {
+.knowledge-tree .ant-tree-draggable-icon,
+.knowledge-tree .ant-tree-treenode-draggable::before {
   display: none !important;
+}
+
+/* 竖线：从圆框圆心正下方边缘向下延伸 */
+.knowledge-tree .ant-tree-show-line .ant-tree-switcher::before {
+  position: absolute !important;
+  left: 7px !important;
+  width: 1px !important;
+  border-left: 1px dashed #d9d9d9 !important;
 }
 
 /* 标题贴紧 switcher */
