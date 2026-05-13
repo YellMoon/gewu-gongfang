@@ -162,6 +162,17 @@ const CourseList: React.FC = () => {
 
   const handleSubmit = async () => {
     try {
+      const fv = form.getFieldsValue();
+      if (!fv.display_name) { message.warning('请输入课程名称'); return; }
+      if (fv.type === undefined) { message.warning('请选择课程类型'); return; }
+      if (fv.source_type === undefined) { message.warning('请选择课程来源'); return; }
+      if (!fv.teacher_id) { message.warning('请选择老师'); return; }
+      if (fv.year === undefined || fv.year === null) { message.warning('请选择年份'); return; }
+      if (!fv.semester) { message.warning('请选择学期'); return; }
+      if (!fv.room_id || (Array.isArray(fv.room_id) && fv.room_id.length === 0)) { message.warning('请选择上课地址'); return; }
+      if ((fv.source_type === CourseSourceType.INSTITUTION || fv.source_type === CourseSourceType.MIXED) && !fv.institution_id) {
+        message.warning('请选择所属机构'); return;
+      }
       let values = await form.validateFields();
       // 自动设置 teacher_name
       if (values.teacher_id) {
@@ -402,19 +413,35 @@ const CourseList: React.FC = () => {
 
           <Row gutter={16}>
             <Col span={6}>
+              <Form.Item name="teacher_id" label="选择老师" 
+                initialValue={teachers.length > 0 ? teachers[0].id : undefined}
+              >
+                <Select placeholder="选择老师" showSearch allowClear
+                  filterOption={(input, option) =>
+                    String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
+                  }>
+                  {teachers.map(teacher => (
+                    <Option key={teacher.id} value={teacher.id}>
+                      {teacher.name} {teacher.subject && `(${teacher.subject})`}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={4}>
               <Form.Item name="year" label="年份">
                 <InputNumber min={2020} max={2100} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col span={4}>
               <Form.Item name="semester" label="学期">
                 <Select placeholder="请选择学期">
                   {semesterOptions.map(s => <Option key={s} value={s}>{s}</Option>)}
                 </Select>
               </Form.Item>
             </Col>
-            <Col span={12}>
-              <Form.Item name="display_name" label="课程名称" rules={[{ required: true, message: '请输入课程名称' }]}>
+            <Col span={10}>
+              <Form.Item name="display_name" label="课程名称">
                 <Input placeholder="请输入课程名称" />
               </Form.Item>
             </Col>
@@ -422,17 +449,7 @@ const CourseList: React.FC = () => {
 
           <Row gutter={16}>
             <Col span={8}>
-              <Form.Item name="type" label="课程类型" rules={[{ required: true, message: '请选择课程类型' }]}>
-                <Select placeholder="请选择">
-                  <Option value={CourseType.ONE_ON_ONE}>一对一</Option>
-                  <Option value={CourseType.ONE_ON_TWO}>一对二</Option>
-                  <Option value={CourseType.GROUP}>小组课</Option>
-                  <Option value={CourseType.LARGE_CLASS}>大班课</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="source_type" label="课程来源" rules={[{ required: true, message: '请选择课程来源' }]}>
+              <Form.Item name="source_type" label="课程来源">
                 <Select placeholder="请选择">
                   <Option value={CourseSourceType.SELF}>自有课程</Option>
                   <Option value={CourseSourceType.INSTITUTION}>机构排课</Option>
@@ -452,45 +469,6 @@ const CourseList: React.FC = () => {
                 </Select>
               </Form.Item>
             </Col>
-          </Row>
-
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item name="active" label="课程状态" initialValue={true}>
-                <Select>
-                  <Option value={true}>未结课（出现在排课选择中）</Option>
-                  <Option value={false}>已结课（不会出现在排课中）</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="teacher_id" label="选择老师" 
-                initialValue={teachers.length > 0 ? teachers[0].id : undefined}
-              >
-                <Select placeholder="选择老师" showSearch allowClear
-                  filterOption={(input, option) =>
-                    String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
-                  }>
-                  {teachers.map(teacher => (
-                    <Option key={teacher.id} value={teacher.id}>
-                      {teacher.name} {teacher.subject && `(${teacher.subject})`}
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="default_duration_minutes" label="默认时长" initialValue={120}>
-                <Select style={{ width: '100%' }} placeholder="拖拽排课时默认使用">
-                  {[0.5,1,1.5,2,2.5,3,3.5,4].map(h => (
-                    <Option key={h} value={h * 60}>{h}小时</Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Row gutter={16}>
             <Col span={8}>
               <Form.Item name="room_id" label="上课地址">
                 <Select
@@ -500,12 +478,10 @@ const CourseList: React.FC = () => {
                   allowClear
                   placeholder="选择或输入上课地址"
                   onChange={(values: string[]) => {
-                    // 单选：保留最后一个值
                     if (values.length > 1) {
                       const lastVal = values[values.length - 1];
                       form.setFieldsValue({ room_id: [lastVal] });
                     }
-                    // 新地址自动录入教室表
                     const lastVal = values[values.length - 1];
                     if (lastVal && !rooms.find(r => r.id === lastVal || r.name === lastVal)) {
                       if (dbService.addOrUpdateRoom) {
@@ -519,10 +495,39 @@ const CourseList: React.FC = () => {
                   }
                   options={[
                     ...rooms.map(r => ({ label: r.name, value: r.id })),
-                    // 已有地址用名字也作为值，兼容直接输入名称匹配的场景
                     ...rooms.map(r => ({ label: r.name, value: r.name })),
                   ]}
                 />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={8}>
+              <Form.Item name="type" label="课程类型">
+                <Select placeholder="请选择">
+                  <Option value={CourseType.ONE_ON_ONE}>一对一</Option>
+                  <Option value={CourseType.ONE_ON_TWO}>一对二</Option>
+                  <Option value={CourseType.GROUP}>小组课</Option>
+                  <Option value={CourseType.LARGE_CLASS}>大班课</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="default_duration_minutes" label="默认时长" initialValue={120}>
+                <Select style={{ width: '100%' }} placeholder="拖拽排课时默认使用">
+                  {[0.5,1,1.5,2,2.5,3,3.5,4].map(h => (
+                    <Option key={h} value={h * 60}>{h}小时</Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="active" label="课程状态" initialValue={true}>
+                <Select>
+                  <Option value={true}>未结课（出现在排课选择中）</Option>
+                  <Option value={false}>已结课（不会出现在排课中）</Option>
+                </Select>
               </Form.Item>
             </Col>
           </Row>

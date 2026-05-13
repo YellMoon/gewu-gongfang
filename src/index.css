@@ -145,20 +145,20 @@ td,
   box-shadow: none !important;
 }
 
-/* 收起（加号）：白底黑+，灰圆环 */
+/* 收起（加号）：白底黑圈黑+号 */
 .knowledge-tree .ant-tree-switcher_close {
   background: #fff !important;
-  box-shadow: inset 0 0 0 1px #d9d9d9 !important;
+  box-shadow: inset 0 0 0 1px #000 !important;
 }
 .knowledge-tree .ant-tree-switcher_close::after,
 .knowledge-tree .ant-tree-switcher_close::before {
-  background: #333 !important;
+  background: #000 !important;
 }
 
-/* 展开（减号）：蓝底白- */
+/* 展开（减号）：天蓝底天蓝圈白-号 */
 .knowledge-tree .ant-tree-switcher_open {
-  background: #1890ff !important;
-  box-shadow: none !important;
+  background: #40a9ff !important;
+  box-shadow: inset 0 0 0 1px #40a9ff !important;
 }
 .knowledge-tree .ant-tree-switcher_open::after,
 .knowledge-tree .ant-tree-switcher_open::before {
