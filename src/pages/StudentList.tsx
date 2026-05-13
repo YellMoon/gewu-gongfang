@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Table, Button, Modal, Form, Input, InputNumber, Select,
+  Table, Button, Modal, Form, Input, InputNumber, Select as AntSelect,
   Space, message, Popconfirm, Tag, Card, Row, Col, Divider, Statistic
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { Student, StudentSource, Institution, Payment, Consumption, PaymentType } from '../types';
 import { calculateGrade } from '../utils/helpers';
+import AutoCloseSelect from '../components/AutoCloseSelect';
 
+const Select = AutoCloseSelect as typeof AntSelect;
 const { Option } = Select;
 
 const StudentList: React.FC = () => {
