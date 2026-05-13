@@ -110,7 +110,7 @@ td,
 .knowledge-tree .ant-tree-treenode { padding-bottom: 3px !important; }
 .knowledge-tree .ant-tree-indent-unit { width: 16px !important; }
 
-/* 圆形按钮 */
+/* 圆形按钮：overflow 隐藏伪元素溢出 → 消除正方边框；z-index 置顶遮盖竖线 */
 .knowledge-tree .ant-tree-switcher {
   width: 16px !important;
   height: 16px !important;
@@ -121,6 +121,10 @@ td,
   box-sizing: border-box !important;
   text-align: center;
   position: relative;
+  z-index: 1 !important;
+  overflow: hidden !important;
+  border: none !important;
+  outline: none !important;
 }
 
 /* 收起（加号）：白底黑加号，灰色圆环 */
@@ -161,12 +165,17 @@ td,
   display: none !important;
 }
 
-/* 竖线：从圆框圆心正下方边缘向下延伸 */
+/* 竖线：从圆框圆心正下方边缘 → 下一个圆框圆心正上方边缘；置顶圆框遮盖线头 */
 .knowledge-tree .ant-tree-show-line .ant-tree-switcher::before {
   position: absolute !important;
-  left: 7px !important;
+  left: calc(50% - 0.5px) !important;
+  top: 16px !important;
+  bottom: 0 !important;
   width: 1px !important;
+  margin: 0 !important;
   border-left: 1px dashed #d9d9d9 !important;
+  content: '' !important;
+  z-index: 0 !important;
 }
 
 /* 标题贴紧 switcher */
