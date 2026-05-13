@@ -54,8 +54,8 @@ const CourseList: React.FC = () => {
   const [filterSource, setFilterSource] = useState<CourseSourceType | undefined>();
   const [filterActive, setFilterActive] = useState<boolean | undefined>(true);
   const [filterTeacher, setFilterTeacher] = useState<string | undefined>();
-  const [billingUnit, setBillingUnit] = useState<BillingUnit>(BillingUnit.PER_HOUR);
   const [form] = Form.useForm();
+  const billingUnit = Form.useWatch('billing_unit', form) ?? BillingUnit.PER_HOUR;
   const dbService = (window as any).dbService;
 
   const loadData = async () => {
@@ -114,7 +114,6 @@ const CourseList: React.FC = () => {
 
   const handleAdd = () => {
     setEditingCourse(null);
-    setBillingUnit(BillingUnit.PER_HOUR);
     form.resetFields();
     form.setFieldsValue({ year: new Date().getFullYear() });
     setModalVisible(true);
@@ -143,7 +142,6 @@ const CourseList: React.FC = () => {
 
   const handleEdit = (course: Course) => {
     setEditingCourse(course);
-    setBillingUnit(course.billing_unit || BillingUnit.PER_HOUR);
     form.resetFields();
     // 显式处理年份：InputNumber 的 defaultValue 会干扰 form.setFieldsValue
     form.setFieldsValue({
@@ -466,7 +464,10 @@ const CourseList: React.FC = () => {
               <Form.Item name="teacher_id" label="选择老师" 
                 initialValue={teachers.length > 0 ? teachers[0].id : undefined}
               >
-                <Select placeholder="选择老师" showSearch allowClear>
+                <Select placeholder="选择老师" showSearch allowClear
+                  filterOption={(input, option) =>
+                    String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
+                  }>
                   {teachers.map(teacher => (
                     <Option key={teacher.id} value={teacher.id}>
                       {teacher.name} {teacher.subject && `(${teacher.subject})`}
@@ -535,7 +536,10 @@ const CourseList: React.FC = () => {
                         name={[name, 'student_id']}
                         rules={[{ required: true, message: '请选择学生' }]}
                       >
-                        <Select placeholder="选择学生" showSearch allowClear>
+                        <Select placeholder="选择学生" showSearch allowClear
+                          filterOption={(input, option) =>
+                            String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
+                          }>
                           {students.map(s => (
                             <Option key={s.id} value={s.id}>{s.name}</Option>
                           ))}
@@ -611,7 +615,7 @@ const CourseList: React.FC = () => {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="billing_unit" label="计费单位" initialValue={BillingUnit.PER_HOUR}>
-                <Select placeholder="请选择" onChange={(val) => setBillingUnit(val)}>
+                <Select placeholder="请选择">
                   <Option value={BillingUnit.PER_HOUR}>按小时计费</Option>
                   <Option value={BillingUnit.PER_SESSION}>按次课计费</Option>
                 </Select>

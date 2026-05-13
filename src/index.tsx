@@ -24,7 +24,11 @@ const rootElement = document.getElementById('root');
 if (rootElement) {
   const root = ReactDOM.createRoot(rootElement);
   root.render(
-    <ConfigProvider locale={zhCN} theme={{ token: { colorPrimary: '#1890ff' } }}>
+    <ConfigProvider
+      locale={zhCN}
+      theme={{ token: { colorPrimary: '#1890ff' } }}
+      select={{ showSearch: true }}
+    >
       <App />
     </ConfigProvider>
   );

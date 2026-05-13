@@ -261,7 +261,12 @@ const StudentList: React.FC = () => {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="school" label="学校">
-                <Input placeholder="请输入学校名称" />
+                <Select
+                  mode="tags"
+                  maxTagCount={1}
+                  placeholder="搜索或输入学校名称"
+                  options={schools.map(s => ({ label: s, value: s }))}
+                />
               </Form.Item>
             </Col>
             <Col span={12}>

@@ -107,27 +107,38 @@ td,
 }
 
 /* ── 知识树样式 ── */
-.knowledge-tree .ant-tree-treenode { padding-bottom: 3px !important; }
+.knowledge-tree .ant-tree-treenode {
+  align-items: center !important;
+  padding-bottom: 3px !important;
+}
 .knowledge-tree .ant-tree-indent-unit { width: 16px !important; }
 
-/* 圆形按钮：overflow 隐藏伪元素溢出 → 消除正方边框；z-index 置顶遮盖竖线 */
+/* 圆形按钮：overflow 消除正方边框；align-self 竖直居中；z-index 置顶 */
 .knowledge-tree .ant-tree-switcher {
   width: 16px !important;
   height: 16px !important;
-  line-height: 14px !important;
+  line-height: 16px !important;
   border-radius: 50% !important;
   margin-right: 2px !important;
   padding: 0 !important;
   box-sizing: border-box !important;
-  text-align: center;
-  position: relative;
   z-index: 1 !important;
   overflow: hidden !important;
   border: none !important;
   outline: none !important;
+  position: relative;
+  align-self: center !important;
+  flex-shrink: 0;
+}
+.knowledge-tree .ant-tree-switcher *,
+.knowledge-tree .ant-tree-switcher::after,
+.knowledge-tree .ant-tree-switcher::before {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
-/* 收起（加号）：白底黑加号，灰色圆环 */
+/* 收起（加号）：白底黑+，灰圆环 */
 .knowledge-tree .ant-tree-switcher_close {
   background: #fff !important;
   box-shadow: inset 0 0 0 1px #d9d9d9 !important;
@@ -137,7 +148,7 @@ td,
   background: #333 !important;
 }
 
-/* 展开（减号）：蓝底白减号 */
+/* 展开（减号）：蓝底白- */
 .knowledge-tree .ant-tree-switcher_open {
   background: #1890ff !important;
   box-shadow: none !important;
@@ -150,11 +161,9 @@ td,
 .knowledge-tree .ant-tree-switcher-noop {
   background: transparent !important;
   box-shadow: none !important;
-  width: 16px !important;
-  min-width: 16px !important;
 }
 
-/* 删除一切图标和拖拽把手 */
+/* 删除图标 */
 .knowledge-tree .ant-tree-iconEle,
 .knowledge-tree .ant-tree-icon__customize,
 .knowledge-tree .ant-tree-leaf-icon,
@@ -165,20 +174,27 @@ td,
   display: none !important;
 }
 
-/* 竖线：从圆框圆心正下方边缘 → 下一个圆框圆心正上方边缘；置顶圆框遮盖线头 */
-.knowledge-tree .ant-tree-show-line .ant-tree-switcher::before {
-  position: absolute !important;
-  left: calc(50% - 0.5px) !important;
-  top: 16px !important;
-  bottom: 0 !important;
-  width: 1px !important;
-  margin: 0 !important;
-  border-left: 1px dashed #d9d9d9 !important;
-  content: '' !important;
-  z-index: 0 !important;
+/* 竖线：同心圆对齐 + 短虚线段 + 全程连续 */
+.knowledge-tree .ant-tree-show-line .ant-tree-indent-unit::before {
+  position: absolute;
+  top: -4px !important;
+  bottom: -4px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 2px !important;
+  border: none !important;
+  background: repeating-linear-gradient(
+    to bottom,
+    #d9d9d9 0px,
+    #d9d9d9 2px,
+    transparent 2px,
+    transparent 5px
+  ) !important;
+  background-repeat: repeat-y !important;
+  background-size: 2px 5px !important;
 }
 
-/* 标题贴紧 switcher */
+/* 标题贴紧 */
 .knowledge-tree .ant-tree-node-content-wrapper {
   padding: 0 2px !important;
   margin-left: 0 !important;
