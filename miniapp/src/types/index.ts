@@ -205,7 +205,10 @@ export interface RevenueStats {
 
 // 同步协议类型
 export type SyncAction = 'create' | 'update' | 'delete';
-export type SyncTable = 'students' | 'courses' | 'schedules' | 'payments' | 'consumptions' | 'teachers' | 'grades';
+export type SyncTable =
+  | 'students' | 'courses' | 'schedules' | 'payments' | 'consumptions'
+  | 'teachers' | 'grades' | 'rooms' | 'institutions'
+  | 'assetRecords' | 'assetCategories' | 'questions';
 
 export interface PendingChange {
   id: string;

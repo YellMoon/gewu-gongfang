@@ -16,7 +16,8 @@ export default function AdminInvitationsPage() {
     try {
       const res = await invitationApi.list();
       if (res.success && res.data) {
-        setInvitations(res.data.invitations);
+        const payload = res.data as any;
+        setInvitations(Array.isArray(payload) ? payload : (payload.invitations || []));
       }
     } catch (err) {
       console.error('加载邀请码失败', err);
