@@ -4,13 +4,21 @@ on:
   workflow_dispatch:
     inputs:
       channel:
-        description: 发布通道
+        description: Release channel
         required: true
         default: staging
         type: choice
         options:
           - staging
           - stable
+      miniapp_version:
+        description: Miniapp version used by stable upload
+        required: false
+        default: 1.0.0
+      miniapp_desc:
+        description: Miniapp upload description
+        required: false
+        default: GitHub Actions upload
 
 jobs:
   desktop:
@@ -62,8 +70,89 @@ jobs:
       - run: npm ci
       - run: node -e "process.env.DB_PATH='/tmp/scheduling.db'; const { createApp } = require('./src/app'); const { getInstance } = require('./src/database'); createApp(); getInstance(); console.log('backend smoke ok')"
 
-  miniapp-placeholder:
+  miniapp:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: miniapp
+    env:
+      WECHAT_APPID: ${{ secrets.WECHAT_APPID || 'wx3d570539bbe6ba1b' }}
+      WECHAT_PRIVATE_KEY: ${{ secrets.WECHAT_PRIVATE_KEY }}
+      MINIAPP_CHANNEL: ${{ github.event.inputs.channel }}
+      MINIAPP_VERSION: ${{ github.event.inputs.miniapp_version }}
+      MINIAPP_DESC: ${{ github.event.inputs.miniapp_desc }}
     steps:
       - uses: actions/checkout@v4
-      - run: echo "微信小程序 CI 预留：配置 WECHAT_APPID 与上传密钥后启用正式上传"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install
+      - run: npm run ci:weapp
+      - name: Validate WeChat upload secrets
+        run: |
+          if [ -z "$WECHAT_APPID" ] || [ -z "$WECHAT_PRIVATE_KEY" ]; then
+            echo "WECHAT_APPID and WECHAT_PRIVATE_KEY are required for miniapp upload."
+            exit 1
+          fi
+      - name: Write WeChat private key
+        run: |
+          umask 077
+          printf '%s' "$WECHAT_PRIVATE_KEY" > private.key
+      - name: Upload WeChat miniapp
+        run: |
+          node <<'NODE'
+          const ci = require('miniprogram-ci');
+          (async () => {
+            const channel = process.env.MINIAPP_CHANNEL || 'staging';
+            const appid = process.env.WECHAT_APPID;
+            const version = process.env.MINIAPP_VERSION || require('./package.json').version;
+            const desc = process.env.MINIAPP_DESC || `GitHub Actions ${channel}`;
+            const project = new ci.Project({
+              appid,
+              type: 'miniProgram',
+              projectPath: process.cwd(),
+              privateKeyPath: './private.key',
+              ignores: ['node_modules/**/*']
+            });
+
+            if (channel === 'stable') {
+              await ci.upload({
+                project,
+                version,
+                desc,
+                setting: {
+                  es6: true,
+                  minify: true,
+                  codeProtect: true,
+                  minifyJS: true,
+                  minifyWXML: true,
+                  minifyWXSS: true,
+                  autoPrefixWXSS: true
+                },
+                onProgressUpdate: console.log
+              });
+              return;
+            }
+
+            await ci.preview({
+              project,
+              desc,
+              setting: {
+                es6: true,
+                minify: false
+              },
+              qrcodeFormat: 'image',
+              qrcodeOutputDest: './preview-qrcode.jpg',
+              onProgressUpdate: console.log
+            });
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: ${{ github.event.inputs.channel == 'staging' }}
+        with:
+          name: miniapp-preview-qrcode
+          path: miniapp/preview-qrcode.jpg
