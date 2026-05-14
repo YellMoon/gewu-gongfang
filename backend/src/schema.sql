@@ -391,7 +391,12 @@ CREATE TABLE IF NOT EXISTS search_index_jobs (
   entity_id TEXT NOT NULL,
   operation TEXT NOT NULL,
   status TEXT DEFAULT 'pending',
+  retry_count INTEGER DEFAULT 0,
+  max_attempts INTEGER DEFAULT 5,
   error_message TEXT,
+  next_attempt_at TEXT,
+  locked_at TEXT,
+  last_attempt_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   processed_at TEXT

@@ -22,8 +22,12 @@ router.get('/questions/search', async (req, res) => {
   try {
     const db = getInstance().db;
     const { q, subject_id, type, difficulty, tenant_id } = req.query;
-    const remote = await searchService.searchQuestions(q, { subject_id, type, difficulty });
-    if (remote) return res.json({ success: true, engine: 'opensearch', result: remote });
+    try {
+      const remote = await searchService.searchQuestions(q, { subject_id, type, difficulty });
+      if (remote) return res.json({ success: true, engine: 'opensearch', result: remote });
+    } catch (err) {
+      console.warn(`[QuestionBank] OpenSearch search fallback: ${err.message}`);
+    }
 
     const rows = questionBank.searchQuestionsFallback(db, req.query, tenant_id || 'default');
     res.json({ success: true, engine: 'sqlite', result: rows });
@@ -49,6 +53,7 @@ router.post('/questions', (req, res) => {
     const db = getInstance().db;
     const tenantId = req.body.tenant_id || 'default';
     const result = questionBank.createQuestion(db, req.body, tenantId);
+    searchService.schedulePendingJobs(db);
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -61,6 +66,7 @@ router.put('/questions/:id', (req, res) => {
     const tenantId = req.body.tenant_id || req.query.tenant_id || 'default';
     const result = questionBank.updateQuestion(db, req.params.id, req.body, tenantId);
     if (!result) return res.status(404).json({ success: false, error: 'question not found' });
+    searchService.schedulePendingJobs(db);
     res.json({ success: true, data: result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -73,6 +79,7 @@ router.delete('/questions/:id', (req, res) => {
     const tenantId = req.body?.tenant_id || req.query.tenant_id || 'default';
     const deleted = questionBank.deleteQuestion(db, req.params.id, tenantId);
     if (!deleted) return res.status(404).json({ success: false, error: 'question not found' });
+    searchService.schedulePendingJobs(db);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -181,21 +188,34 @@ router.get('/rollups', async (_req, res) => {
   }
 });
 
+router.get('/search/jobs', (req, res) => {
+  try {
+    const db = getInstance().db;
+    const jobs = searchService.listJobs(db, req.query);
+    res.json({ success: true, jobs });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/search/jobs/run', async (req, res) => {
+  try {
+    const db = getInstance().db;
+    const result = await searchService.processPendingJobs(db, { limit: req.body?.limit });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 router.post('/events/publish-pending', async (_req, res) => {
   try {
     const db = getInstance().db;
     const events = eventBus.listPending(db, 100);
     for (const event of events) {
-      if (event.topic === 'question.changed') {
-        const question = db.prepare(
-          `SELECT q.*, qc.stem, qc.answer, qc.explanation
-           FROM questions q LEFT JOIN question_contents qc ON qc.question_id = q.id AND qc.deleted = 0
-           WHERE q.id = ?`
-        ).get(event.aggregate_id);
-        if (question) await searchService.indexQuestion(question);
-      }
       eventBus.markPublished(db, event.id);
     }
+    searchService.schedulePendingJobs(db);
     res.json({ success: true, published: events.length });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
