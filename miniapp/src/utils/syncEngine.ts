@@ -79,20 +79,30 @@ class TaroSyncStorage {
   }
 }
 
-function toIsoTime(value: number | string | undefined): string {
-  if (!value) return new Date().toISOString();
-  if (typeof value === 'number') return new Date(value).toISOString();
+function toIsoTime(value: number | string | undefined, fallbackNow = true): string {
+  if (!value) return fallbackNow ? new Date().toISOString() : '1970-01-01T00:00:00.000Z';
+  if (typeof value === 'number') return value > 0 ? new Date(value).toISOString() : '1970-01-01T00:00:00.000Z';
   const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? new Date().toISOString() : new Date(parsed).toISOString();
+  return Number.isNaN(parsed) ? (fallbackNow ? new Date().toISOString() : '1970-01-01T00:00:00.000Z') : new Date(parsed).toISOString();
+}
+
+function toTimestamp(value: unknown): number {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return Date.now();
 }
 
 function normalizeChange(change: any, fallbackDeviceId: string, fallbackTenantId = 'default'): SyncChange {
   const data = { ...(change.data || change.fields || {}) };
   const recordId = data.id || change.recordId || change.record_id || change.id;
-  const updatedAt = change.updatedAt
+  const updatedAt = toIsoTime(change.updatedAt
     || change.updated_at
     || data.updated_at
-    || (change.timestamp ? new Date(change.timestamp).toISOString() : new Date().toISOString());
+    || change.timestamp
+    || Date.now());
   return {
     id: change.id || `${change.table}:${recordId}:${updatedAt}`,
     table: change.table,
@@ -193,7 +203,6 @@ export class MiniSyncEngine {
       if (res.statusCode === 200 && (res.data as any)?.success) {
         this.pendingChanges = [];
         this.savePendingChanges();
-        this.storage.set('sync_last_ts', (res.data as any).serverTimestamp || Date.now());
         this.storage.set('sync_last_result', 'success');
         return { pushed: changes.length, success: true };
       }
@@ -211,7 +220,7 @@ export class MiniSyncEngine {
 
     try {
       const res = await Taro.request({
-        url: `${baseUrl}/api/sync?since=${encodeURIComponent(toIsoTime(lastSyncTs))}&deviceId=${encodeURIComponent(this.deviceId)}`,
+        url: `${baseUrl}/api/sync?since=${encodeURIComponent(toIsoTime(lastSyncTs, false))}&deviceId=${encodeURIComponent(this.deviceId)}`,
         method: 'GET',
         header: {
           'Authorization': token ? `Bearer ${token}` : '',
@@ -221,7 +230,7 @@ export class MiniSyncEngine {
 
       if (res.statusCode === 200 && (res.data as any)?.success) {
         const changes = (((res.data as any).changes || []) as any[]).map(change => normalizeChange(change, 'server'));
-        this.storage.set('sync_last_ts', (res.data as any).serverTimestamp || Date.now());
+        this.storage.set('sync_last_ts', toTimestamp((res.data as any).serverTime || (res.data as any).server_time || (res.data as any).serverTimestamp));
         this.storage.set('sync_last_result', 'success');
         return { operations: changes, changes, success: true };
       }

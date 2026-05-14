@@ -1,49 +1,85 @@
 /**
- * JWT 认证中间件
- * 预留微信小程序登录流程，当前默认允许所有请求
+ * JWT authentication and lightweight authorization helpers.
  */
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 
-// 必须认证中间件（预留）
+function sendAuthError(res, status, message, code) {
+  return res.status(status).json({
+    success: false,
+    error: message,
+    code,
+    message,
+    traceId: res.req?.traceId,
+  });
+}
+
+function isDevAuthBypassed() {
+  return process.env.NODE_ENV === 'development' || !process.env.JWT_SECRET;
+}
+
+function getBearerToken(req) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  return authHeader.split(' ')[1];
+}
+
 function authMiddleware(req, res, next) {
-  // 开发阶段跳过认证
-  if (process.env.NODE_ENV === 'development' || !process.env.JWT_SECRET) {
+  if (isDevAuthBypassed()) {
     req.user = { id: 'dev-user', role: 'admin' };
     return next();
   }
 
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: '未提供认证令牌' });
+  const token = getBearerToken(req);
+  if (!token) {
+    return sendAuthError(res, 401, '未提供认证令牌', 'UNAUTHORIZED');
   }
 
   try {
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    return res.status(401).json({ error: '认证令牌无效或已过期' });
+    req.user = jwt.verify(token, JWT_SECRET);
+    return next();
+  } catch (_err) {
+    return sendAuthError(res, 401, '认证令牌无效或已过期', 'TOKEN_INVALID');
   }
 }
 
-// 可选认证（不存在token也放行）
-function optionalAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
+function optionalAuth(req, _res, next) {
+  if (isDevAuthBypassed()) {
+    req.user = { id: 'dev-user', role: 'admin' };
+    return next();
+  }
+
+  const token = getBearerToken(req);
+  if (token) {
     try {
-      const token = authHeader.split(' ')[1];
       req.user = jwt.verify(token, JWT_SECRET);
-    } catch (err) {
-      // token无效也放行
+    } catch (_err) {
+      // Optional auth keeps old behavior: invalid tokens do not block reads.
     }
   }
-  next();
+  return next();
 }
 
-// 生成JWT
+function requireWriteAccess(req, res, next) {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
+  if (isDevAuthBypassed()) {
+    req.user = req.user || { id: 'dev-user', role: 'admin' };
+    return next();
+  }
+  if (!req.user) return sendAuthError(res, 401, '未登录', 'UNAUTHORIZED');
+
+  const allowedRoles = (process.env.WRITE_ROLES || 'admin,operator')
+    .split(',')
+    .map(role => role.trim())
+    .filter(Boolean);
+
+  if (!allowedRoles.includes(req.user.role)) {
+    return sendAuthError(res, 403, '无写入权限', 'FORBIDDEN');
+  }
+  return next();
+}
+
 function generateToken(user) {
   return jwt.sign(
     { id: user.id, openid: user.wechat_openid, nickname: user.nickname, role: user.role },
@@ -52,4 +88,10 @@ function generateToken(user) {
   );
 }
 
-module.exports = { authMiddleware, optionalAuth, generateToken, JWT_SECRET };
+module.exports = {
+  authMiddleware,
+  optionalAuth,
+  requireWriteAccess,
+  generateToken,
+  JWT_SECRET,
+};

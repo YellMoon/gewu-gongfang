@@ -5,6 +5,7 @@ import {
   RevenueStats, StudentTuitionStats, StudentCoursePricing,
   AssetRecord, AssetCategory, AssetStats, Question, KnowledgeNode
 } from '../types';
+import type { SyncTable } from './syncEngine';
 import { calculateGrade, calculateFees, calculateDurationHours, groupByMonth, calculatePercentage } from '../utils/helpers';
 
 interface Database {
@@ -24,6 +25,23 @@ interface Database {
   questions: Question[];
   knowledgeTree: KnowledgeNode[];
 }
+
+type SyncLocalDataMaps = Partial<Record<SyncTable, Map<string, any>>>;
+
+const SYNC_TABLES: SyncTable[] = [
+  'students',
+  'courses',
+  'schedules',
+  'payments',
+  'consumptions',
+  'teachers',
+  'grades',
+  'rooms',
+  'institutions',
+  'assetRecords',
+  'questions',
+  'assetCategories',
+];
 
 class BrowserDatabaseService {
   private storageKey = 'scheduling_system_db_v3';
@@ -665,6 +683,29 @@ class BrowserDatabaseService {
       questions: data.questions || [],
       knowledgeTree: data.knowledgeTree || []
     };
+    this.saveData();
+  }
+
+  buildSyncLocalDataMaps(): SyncLocalDataMaps {
+    return SYNC_TABLES.reduce<SyncLocalDataMaps>((maps, table) => {
+      const records = (this.data[table] || []) as Array<{ id?: string; [key: string]: any }>;
+      const syncableRecords = records.filter((record): record is { id: string; [key: string]: any } => Boolean(record?.id));
+      maps[table] = new Map(
+        syncableRecords.map(record => [record.id, { ...record }])
+      );
+      return maps;
+    }, {});
+  }
+
+  applySyncLocalDataMaps(localData: SyncLocalDataMaps): void {
+    for (const table of SYNC_TABLES) {
+      const map = localData[table];
+      if (!map) continue;
+      this.data[table] = Array.from(map.values()).map(record => {
+        const { _synced, ...cleanRecord } = record || {};
+        return cleanRecord;
+      });
+    }
     this.saveData();
   }
 

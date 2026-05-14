@@ -6,6 +6,38 @@ const { getInstance } = require('../database');
 
 const router = Router();
 
+function badRequest(res, message, details) {
+  return res.status(400).json({ error: message, details });
+}
+
+function requireFields(body, fields) {
+  return fields.filter(field => body[field] === undefined || body[field] === null || body[field] === '');
+}
+
+function validateStudent(req, res, next) {
+  if (req.method === 'POST') {
+    const missing = requireFields(req.body, ['name']);
+    if (missing.length > 0) return badRequest(res, '参数校验失败', { missing });
+  }
+  if (req.body.balance_hours !== undefined && Number(req.body.balance_hours) < 0) {
+    return badRequest(res, '参数校验失败', { field: 'balance_hours', reason: '不能小于 0' });
+  }
+  if (req.body.balance_money !== undefined && Number(req.body.balance_money) < 0) {
+    return badRequest(res, '参数校验失败', { field: 'balance_money', reason: '不能小于 0' });
+  }
+  return next();
+}
+
+function validateGrade(req, res, next) {
+  const missing = requireFields(req.body, ['subject', 'score']);
+  if (missing.length > 0) return badRequest(res, '参数校验失败', { missing });
+  const score = Number(req.body.score);
+  if (!Number.isFinite(score) || score < 0) {
+    return badRequest(res, '参数校验失败', { field: 'score', reason: '必须是非负数字' });
+  }
+  return next();
+}
+
 // GET /api/students — 获取所有学生
 router.get('/', (req, res) => {
   try {
@@ -41,7 +73,7 @@ router.get('/:id', (req, res) => {
 });
 
 // POST /api/students — 创建学生
-router.post('/', (req, res) => {
+router.post('/', validateStudent, (req, res) => {
   try {
     const db = getInstance();
     const student = db.createStudent(req.body);
@@ -52,7 +84,7 @@ router.post('/', (req, res) => {
 });
 
 // PUT /api/students/:id — 更新学生
-router.put('/:id', (req, res) => {
+router.put('/:id', validateStudent, (req, res) => {
   try {
     const db = getInstance();
     const student = db.updateStudent(req.params.id, req.body);
@@ -81,7 +113,7 @@ router.get('/:id/grades', (req, res) => {
 });
 
 // POST /api/students/:id/grades — 添加成绩
-router.post('/:id/grades', (req, res) => {
+router.post('/:id/grades', validateGrade, (req, res) => {
   try {
     const db = getInstance();
     const grade = db.createGrade({ ...req.body, student_id: req.params.id });

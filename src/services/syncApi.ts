@@ -3,8 +3,12 @@ import type { SyncBatch, SyncChange } from './syncEngine';
 const BASE_URL = (process.env.REACT_APP_API_BASE || '').replace(/\/$/, '');
 const SYNC_URL = BASE_URL.endsWith('/api') ? `${BASE_URL}/sync` : `${BASE_URL}/api/sync`;
 
-function toIsoTime(timestamp: number): string {
-  return timestamp > 0 ? new Date(timestamp).toISOString() : '1970-01-01T00:00:00.000Z';
+function toIsoTime(value: number | string | Date | undefined): string {
+  if (!value) return '1970-01-01T00:00:00.000Z';
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'number') return value > 0 ? new Date(value).toISOString() : '1970-01-01T00:00:00.000Z';
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? '1970-01-01T00:00:00.000Z' : new Date(parsed).toISOString();
 }
 
 function toTimestamp(value: unknown): number {
@@ -19,10 +23,11 @@ function toTimestamp(value: unknown): number {
 function normalizeChange(change: any, fallbackDeviceId = 'desktop'): SyncChange {
   const data = { ...(change.data || change.fields || {}) };
   const recordId = data.id || change.recordId || change.record_id || change.id;
-  const updatedAt = change.updatedAt
+  const updatedAt = toIsoTime(change.updatedAt
     || change.updated_at
     || data.updated_at
-    || (change.timestamp ? new Date(change.timestamp).toISOString() : new Date().toISOString());
+    || change.timestamp
+    || Date.now());
   return {
     id: change.id || `${change.table}:${recordId}:${updatedAt}`,
     table: change.table,

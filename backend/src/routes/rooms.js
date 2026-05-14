@@ -6,6 +6,13 @@ const { getInstance } = require('../database');
 
 const router = Router();
 
+function validateRoom(req, res, next) {
+  if (req.method === 'POST' && !req.body.name) {
+    return res.status(400).json({ error: '参数校验失败', details: { missing: ['name'] } });
+  }
+  return next();
+}
+
 router.get('/', (req, res) => {
   try { res.json({ success: true, data: getInstance().getAllRooms() }); }
   catch (err) { res.status(500).json({ error: err.message }); }
@@ -19,12 +26,12 @@ router.get('/:id', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/', (req, res) => {
+router.post('/', validateRoom, (req, res) => {
   try { res.status(201).json({ success: true, data: getInstance().createRoom(req.body) }); }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.put('/:id', (req, res) => {
+router.put('/:id', validateRoom, (req, res) => {
   try {
     const room = getInstance().updateRoom(req.params.id, req.body);
     if (!room) return res.status(404).json({ error: '教室不存在' });

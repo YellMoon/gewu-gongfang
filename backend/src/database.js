@@ -546,8 +546,13 @@ class DatabaseService {
   _normalizeSyncTime(value) {
     if (!value) return '1970-01-01T00:00:00.000Z';
     if (typeof value === 'number') return new Date(value).toISOString();
+    if (typeof value === 'string' && /^\d+$/.test(value.trim())) return new Date(Number(value)).toISOString();
     const parsed = Date.parse(value);
     return Number.isNaN(parsed) ? '1970-01-01T00:00:00.000Z' : new Date(parsed).toISOString();
+  }
+
+  _syncTimeMs(value) {
+    return Date.parse(this._normalizeSyncTime(value));
   }
 
   _changeId(table, recordId, updatedAt, action, deviceId = 'server') {
@@ -557,12 +562,15 @@ class DatabaseService {
   _toSyncChange(table, record, deviceId = 'server', tenantId = 'default') {
     const updatedAt = this._normalizeSyncTime(record.updated_at || record.created_at || this._now());
     const deleted = Number(record.deleted || 0) === 1;
-    const action = deleted ? 'delete' : (record.created_at && record.created_at === record.updated_at ? 'create' : 'update');
+    const createdAt = record.created_at ? this._normalizeSyncTime(record.created_at) : null;
+    const action = deleted ? 'delete' : (createdAt && createdAt === updatedAt ? 'create' : 'update');
+    const data = { ...record, updated_at: updatedAt };
+    if (createdAt) data.created_at = createdAt;
     return {
       id: record._sync_operation_id || this._changeId(table, record.id, updatedAt, action, deviceId),
       table,
       action,
-      data: { ...record },
+      data,
       version: updatedAt,
       updatedAt,
       tenantId: record.tenant_id || tenantId,
@@ -610,13 +618,19 @@ class DatabaseService {
     return queue;
   }
 
-  getChangesSince(table, sinceTime) {
+  getChangesSince(table, sinceTime, options = {}) {
     const columns = this._tableColumns(table);
     if (!columns.includes('updated_at')) return [];
     const sinceIso = this._normalizeSyncTime(sinceTime);
+    const where = ['updated_at > ?'];
+    const params = [sinceIso];
+    if (options.tenantId && options.tenantId !== 'default' && columns.includes('tenant_id')) {
+      where.push('(tenant_id = ? OR tenant_id IS NULL)');
+      params.push(options.tenantId);
+    }
     return this._reader().prepare(
-      `SELECT * FROM ${table} WHERE updated_at > ? ORDER BY updated_at ASC`
-    ).all(sinceIso);
+      `SELECT * FROM ${table} WHERE ${where.join(' AND ')} ORDER BY updated_at ASC`
+    ).all(...params);
   }
 
   getChangesSinceAll(sinceTime) {
@@ -632,14 +646,19 @@ class DatabaseService {
   getChangeQueueSince(sinceTime, options = {}) {
     const tenantId = options.tenantId || 'default';
     const deviceId = options.deviceId || 'server';
+    const clientId = options.clientId || deviceId;
     const queue = [];
     for (const table of this._syncTables()) {
-      for (const record of this.getChangesSince(table, sinceTime)) {
+      for (const record of this.getChangesSince(table, sinceTime, { tenantId })) {
         queue.push(this._toSyncChange(table, record, deviceId, tenantId));
       }
     }
-    queue.sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
-    return { changes: queue, serverTime: this._now() };
+    queue.sort((a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.id.localeCompare(b.id));
+    const serverTime = this._now();
+    this.db.prepare(
+      `INSERT INTO sync_log (client_id, action, table_name, record_id, sync_time, status) VALUES (?, 'pull', NULL, NULL, ?, 'success')`
+    ).run(clientId, serverTime);
+    return { changes: queue, serverTime, since: this._normalizeSyncTime(sinceTime) };
   }
 
   applySyncChanges(changes, options = {}) {
@@ -664,7 +683,7 @@ class DatabaseService {
         }
         try {
           const existing = this.db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(recordId);
-          if (existing && existing.updated_at > change.updatedAt) {
+          if (existing && this._syncTimeMs(existing.updated_at) > this._syncTimeMs(change.updatedAt)) {
             results.conflicts++;
             this._auditSync({
               tenant_id: change.tenantId,
@@ -685,18 +704,23 @@ class DatabaseService {
             continue;
           }
 
-          const incoming = { ...record };
-          incoming.updated_at = now;
+          const incoming = { ...record, updated_at: now };
           if (columns.includes('created_at') && !incoming.created_at) incoming.created_at = existing?.created_at || now;
           if (columns.includes('deleted')) incoming.deleted = change.action === 'delete' ? 1 : (incoming.deleted || 0);
           if (columns.includes('tenant_id') && !incoming.tenant_id) incoming.tenant_id = change.tenantId;
 
-          const keys = Object.keys(incoming).filter(k => columns.includes(k));
-          const vals = keys.map(k => incoming[k]);
-          const placeholders = keys.map(() => '?').join(', ');
-          this.db.prepare(
-            `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`
-          ).run(...vals);
+          const keys = Object.keys(incoming).filter(k => columns.includes(k) && k !== 'id');
+          if (existing) {
+            const setClause = keys.map(k => `${k} = ?`).join(', ');
+            this.db.prepare(`UPDATE ${table} SET ${setClause} WHERE id = ?`).run(...keys.map(k => incoming[k]), recordId);
+          } else {
+            const insertRecord = { ...incoming, id: recordId };
+            const insertKeys = Object.keys(insertRecord).filter(k => columns.includes(k));
+            const placeholders = insertKeys.map(() => '?').join(', ');
+            this.db.prepare(
+              `INSERT INTO ${table} (${insertKeys.join(', ')}) VALUES (${placeholders})`
+            ).run(...insertKeys.map(k => insertRecord[k]));
+          }
           results.applied++;
           this._auditSync({
             tenant_id: change.tenantId,

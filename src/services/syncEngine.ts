@@ -57,12 +57,16 @@ export const SYNC_TABLES: SyncTable[] = [
   'questions', 'assetCategories',
 ];
 
-function toIsoTime(value: number | string | Date | undefined): string {
-  if (!value) return new Date().toISOString();
+function toIsoTime(value: number | string | Date | undefined, fallbackNow = true): string {
+  if (!value) return fallbackNow ? new Date().toISOString() : '1970-01-01T00:00:00.000Z';
   if (value instanceof Date) return value.toISOString();
-  if (typeof value === 'number') return new Date(value).toISOString();
+  if (typeof value === 'number') return value > 0 ? new Date(value).toISOString() : '1970-01-01T00:00:00.000Z';
   const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? new Date().toISOString() : new Date(parsed).toISOString();
+  return Number.isNaN(parsed) ? (fallbackNow ? new Date().toISOString() : '1970-01-01T00:00:00.000Z') : new Date(parsed).toISOString();
+}
+
+function toTimeMs(value: number | string | Date | undefined): number {
+  return Date.parse(toIsoTime(value, false));
 }
 
 export class SyncEngine {
@@ -182,7 +186,6 @@ export class SyncEngine {
       if (result.success) {
         this.pendingChanges = [];
         this.savePendingChanges();
-        this.storage.set('sync_last_ts', result.serverTimestamp);
         this.storage.set('sync_last_result', 'success');
         return { pushed: changes.length, success: true };
       }
@@ -243,8 +246,8 @@ export class SyncEngine {
       };
     }
     if (!localRecord) return { apply: true };
-    const localUpdatedAt = toIsoTime(localRecord.updated_at || localRecord.updatedAt || 0);
-    return { apply: change.updatedAt >= localUpdatedAt };
+    const localUpdatedAt = toTimeMs(localRecord.updated_at || localRecord.updatedAt || 0);
+    return { apply: toTimeMs(change.updatedAt) >= localUpdatedAt };
   }
 
   private applyChangeToLocal(change: SyncChange, localMap: Map<string, any>): void {

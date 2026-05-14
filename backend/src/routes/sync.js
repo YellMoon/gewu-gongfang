@@ -23,6 +23,17 @@ function readSince(req) {
     || 0;
 }
 
+function requireValidSince(req, res) {
+  const raw = readSince(req);
+  const normalized = getInstance()._normalizeSyncTime(raw);
+  const isNumericString = typeof raw === 'string' && /^\d+$/.test(raw.trim());
+  if (raw && Date.parse(String(raw)) !== Date.parse(normalized) && typeof raw !== 'number' && !isNumericString) {
+    res.status(400).json({ success: false, error: 'since must be a valid ISO8601 timestamp' });
+    return null;
+  }
+  return normalized;
+}
+
 function readDeviceId(req) {
   return req.query.deviceId
     || req.query.device_id
@@ -64,6 +75,7 @@ function sendQueueResponse(res, payload, extra = {}) {
     serverTime: payload.serverTime,
     serverTimestamp: Date.parse(payload.serverTime),
     server_time: payload.serverTime,
+    since: payload.since,
     ...extra,
   });
 }
@@ -71,11 +83,15 @@ function sendQueueResponse(res, payload, extra = {}) {
 router.get('/', (req, res) => {
   try {
     const db = getInstance();
-    const payload = db.getChangeQueueSince(readSince(req), {
+    const since = requireValidSince(req, res);
+    if (!since) return;
+    const deviceId = readDeviceId(req);
+    const payload = db.getChangeQueueSince(since, {
       tenantId: readTenantId(req),
       deviceId: 'server',
+      clientId: deviceId,
     });
-    console.log(`[Sync:Queue] device=${readDeviceId(req)} since=${db._normalizeSyncTime(readSince(req)).slice(0, 19)} changes=${payload.changes.length}`);
+    console.log(`[Sync:Queue] device=${deviceId} since=${since.slice(0, 19)} changes=${payload.changes.length}`);
     sendQueueResponse(res, payload);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -85,11 +101,15 @@ router.get('/', (req, res) => {
 router.post('/pull', (req, res) => {
   try {
     const db = getInstance();
-    const payload = db.getChangeQueueSince(readSince(req), {
+    const since = requireValidSince(req, res);
+    if (!since) return;
+    const deviceId = readDeviceId(req);
+    const payload = db.getChangeQueueSince(since, {
       tenantId: readTenantId(req),
       deviceId: 'server',
+      clientId: deviceId,
     });
-    console.log(`[Sync:Pull] device=${readDeviceId(req)} since=${db._normalizeSyncTime(readSince(req)).slice(0, 19)} changes=${payload.changes.length}`);
+    console.log(`[Sync:Pull] device=${deviceId} since=${since.slice(0, 19)} changes=${payload.changes.length}`);
     sendQueueResponse(res, payload, {
       legacyChanges: groupedChangesFromQueue(payload.changes),
     });
@@ -101,11 +121,15 @@ router.post('/pull', (req, res) => {
 router.get('/pull', (req, res) => {
   try {
     const db = getInstance();
-    const payload = db.getChangeQueueSince(readSince(req), {
+    const since = requireValidSince(req, res);
+    if (!since) return;
+    const deviceId = readDeviceId(req);
+    const payload = db.getChangeQueueSince(since, {
       tenantId: readTenantId(req),
       deviceId: 'server',
+      clientId: deviceId,
     });
-    console.log(`[Sync:Pull] device=${readDeviceId(req)} since=${db._normalizeSyncTime(readSince(req)).slice(0, 19)} changes=${payload.changes.length}`);
+    console.log(`[Sync:Pull] device=${deviceId} since=${since.slice(0, 19)} changes=${payload.changes.length}`);
     sendQueueResponse(res, payload, {
       legacyChanges: groupedChangesFromQueue(payload.changes),
     });

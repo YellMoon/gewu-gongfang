@@ -44,11 +44,11 @@ function getDeviceId(): string {
   return id;
 }
 
-function toIsoTime(value: number | string | undefined): string {
-  if (!value) return new Date().toISOString();
-  if (typeof value === 'number') return new Date(value).toISOString();
+function toIsoTime(value: number | string | undefined, fallbackNow = true): string {
+  if (!value) return fallbackNow ? new Date().toISOString() : '1970-01-01T00:00:00.000Z';
+  if (typeof value === 'number') return value > 0 ? new Date(value).toISOString() : '1970-01-01T00:00:00.000Z';
   const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? new Date().toISOString() : new Date(parsed).toISOString();
+  return Number.isNaN(parsed) ? (fallbackNow ? new Date().toISOString() : '1970-01-01T00:00:00.000Z') : new Date(parsed).toISOString();
 }
 
 function toTimestamp(value: unknown): number {
@@ -76,7 +76,7 @@ function toSyncChange(change: PendingChange): SyncChange {
 
 function normalizeServerChange(change: any): SyncChange {
   const data = { ...(change.data || {}) };
-  const updatedAt = change.updatedAt || change.updated_at || data.updated_at || new Date().toISOString();
+  const updatedAt = toIsoTime(change.updatedAt || change.updated_at || data.updated_at || Date.now());
   return {
     id: change.id || `${change.table}:${data.id}:${updatedAt}`,
     table: change.table,
@@ -98,9 +98,9 @@ export function initSyncManager(): void {
   onNetworkChange((res) => {
     if (res.isConnected) {
       console.log('[Sync] 网络已恢复，检查待同步项...');
-      const pending = getPendingChanges();
-      if (pending.length > 0) {
-        notifyUser(pending);
+      const pendingNow = getPendingChanges();
+      if (pendingNow.length > 0) {
+        notifyUser(pendingNow);
       } else {
         pullFromServer();
       }
@@ -209,7 +209,7 @@ async function pushToServer(): Promise<boolean> {
 async function pullFromServer(): Promise<boolean> {
   const lastTs = getLastSyncTimestamp();
   try {
-    const data = await requestSync(`/api/sync?since=${encodeURIComponent(toIsoTime(lastTs))}&deviceId=${encodeURIComponent(getDeviceId())}`, {
+    const data = await requestSync(`/api/sync?since=${encodeURIComponent(toIsoTime(lastTs, false))}&deviceId=${encodeURIComponent(getDeviceId())}`, {
       method: 'GET',
     });
     if (data.success) {
