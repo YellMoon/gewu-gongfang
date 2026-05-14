@@ -1,6 +1,8 @@
 const { Router } = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getInstance } = require('../database');
+const cache = require('../services/cacheService');
+const searchService = require('../services/searchService');
 
 const router = Router();
 
@@ -24,19 +26,47 @@ router.get('/audit', (req, res) => {
   }
 });
 
-router.get('/health/deep', (_req, res) => {
+router.get('/health/deep', async (req, res) => {
+  const checks = {};
   try {
     const db = getInstance().db;
-    const dbOk = db.prepare('SELECT 1 AS ok').get().ok === 1;
+    checks.sqlite = db.prepare('SELECT 1 AS ok').get().ok === 1;
     const pendingEvents = db.prepare("SELECT COUNT(*) AS cnt FROM outbox_events WHERE status = 'pending'").get().cnt;
     const pendingIndexJobs = db.prepare("SELECT COUNT(*) AS cnt FROM search_index_jobs WHERE status = 'pending'").get().cnt;
-    res.json({
-      ok: dbOk,
+    const failedEvents = db.prepare("SELECT COUNT(*) AS cnt FROM outbox_events WHERE status = 'failed'").get().cnt;
+    const failedIndexJobs = db.prepare("SELECT COUNT(*) AS cnt FROM search_index_jobs WHERE status = 'failed'").get().cnt;
+
+    try {
+      await cache.set('__healthcheck__', { ok: true, at: new Date().toISOString() }, 5);
+      checks.cache = !!(await cache.get('__healthcheck__'));
+      checks.cacheMode = cache.usingRedis ? 'redis' : 'memory';
+    } catch (err) {
+      checks.cache = false;
+      checks.cacheError = err.message;
+    }
+
+    checks.search = {
+      enabled: searchService.enabled(),
+      endpointConfigured: !!process.env.OPENSEARCH_ENDPOINT,
+      pendingJobs: pendingIndexJobs,
+      failedJobs: failedIndexJobs,
+    };
+    checks.outbox = { pendingEvents, failedEvents };
+
+    const ok = Boolean(checks.sqlite && checks.cache);
+    res.status(ok ? 200 : 503).json({
+      ok,
       time: new Date().toISOString(),
-      checks: { sqlite: dbOk, pendingEvents, pendingIndexJobs },
+      traceId: req.traceId,
+      checks,
+      monitoring: {
+        provider: process.env.MONITORING_PROVIDER || null,
+        slsProject: process.env.SLS_PROJECT || null,
+        armsAppName: process.env.ARMS_APP_NAME || null,
+      },
     });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, traceId: req.traceId, checks, error: err.message });
   }
 });
 

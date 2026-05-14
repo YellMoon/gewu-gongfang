@@ -162,6 +162,32 @@ function normalizeErrorResponses(req, res, next) {
   next();
 }
 
+function requestLogger(req, res, next) {
+  const traceId = req.headers['x-trace-id'] || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const startedAt = Date.now();
+  req.traceId = traceId;
+  res.setHeader('x-trace-id', traceId);
+
+  res.on('finish', () => {
+    const durationMs = Date.now() - startedAt;
+    const payload = {
+      time: new Date().toISOString(),
+      level: res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
+      traceId,
+      method: req.method,
+      path: req.originalUrl || req.path,
+      status: res.statusCode,
+      durationMs,
+      ip: req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress,
+      userAgent: req.headers['user-agent'],
+      monitorProvider: process.env.MONITORING_PROVIDER || null,
+    };
+    if (durationMs >= Number(process.env.SLOW_REQUEST_MS || 1000)) payload.slow = true;
+    console.log(JSON.stringify(payload));
+  });
+  next();
+}
+
 function createApp() {
   const app = express();
 
@@ -176,31 +202,15 @@ function createApp() {
   app.use(express.urlencoded({ extended: true }));
 
   // 璇锋眰鏃ュ織
-  app.use((req, res, next) => {
-    const traceId = req.headers['x-trace-id'] || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-    const startedAt = Date.now();
-    req.traceId = traceId;
-    res.setHeader('x-trace-id', traceId);
-    res.on('finish', () => {
-      console.log(JSON.stringify({
-        time: new Date().toISOString(),
-        traceId,
-        method: req.method,
-        path: req.path,
-        status: res.statusCode,
-        durationMs: Date.now() - startedAt,
-      }));
-    });
-    next();
-  });
+  app.use(requestLogger);
 
   app.use(normalizeErrorResponses);
   app.use(createWriteRateLimiter());
   app.use(writeSafetyMiddleware);
 
   // 健康检查
-  app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, time: new Date().toISOString(), version: '3.1.0-0504' });
+  app.get('/api/health', (req, res) => {
+    res.json({ ok: true, time: new Date().toISOString(), version: '3.1.0-0504', traceId: req.traceId });
   });
 
   // 公开路由（无需认证）
