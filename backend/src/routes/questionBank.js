@@ -169,6 +169,50 @@ router.post('/imports/check', (req, res) => {
   }
 });
 
+router.get('/imports', (req, res) => {
+  try {
+    const db = getInstance().db;
+    const tenantId = req.query.tenant_id || 'default';
+    const rows = questionBank.listImportBatches(db, req.query, tenantId);
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get('/imports/:id', (req, res) => {
+  try {
+    const db = getInstance().db;
+    const tenantId = req.query.tenant_id || 'default';
+    const row = questionBank.getImportBatch(db, req.params.id, tenantId);
+    if (!row) return res.status(404).json({ success: false, error: 'import batch not found' });
+    res.json({ success: true, data: row });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/imports/:id/commit', (req, res) => {
+  try {
+    const dbService = getInstance();
+    const db = dbService.db;
+    const tenantId = req.body.tenant_id || req.query.tenant_id || 'default';
+    const result = questionBank.commitImportBatch(db, req.params.id, tenantId);
+    if (!result) return res.status(404).json({ success: false, error: 'import batch not found' });
+    dbService._auditOperation({
+      tenant_id: tenantId,
+      action: 'import_commit',
+      table_name: 'import_batches',
+      record_id: req.params.id,
+      status: result.commit_result.failed_items > 0 ? 'partial' : 'success',
+      detail: result.commit_result,
+    });
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 router.post('/rollups/refresh', async (_req, res) => {
   try {
     const db = getInstance().db;

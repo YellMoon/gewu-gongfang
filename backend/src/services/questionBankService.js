@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const cache = require('./cacheService');
 const eventBus = require('./eventBus');
@@ -67,6 +67,68 @@ function normalizeQuestionAssets(payload = {}) {
   return assets;
 }
 
+function normalizeOptions(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map(option => {
+      if (typeof option === 'string') return option.trim();
+      if (!option) return '';
+      const label = option.label ? `${option.label}. ` : '';
+      return `${label}${option.content || option.text || ''}`.trim();
+    }).filter(Boolean);
+  }
+  return parseJsonArray(value);
+}
+
+function normalizeImportItem(item = {}, defaults = {}) {
+  const questionTypes = Array.isArray(item.question_types) ? item.question_types : [];
+  const type = item.type ||
+    (questionTypes.includes('single') ? 'single' :
+      questionTypes.includes('multi') ? 'multi' :
+        questionTypes.includes('experiment') ? 'experiment' :
+          questionTypes.includes('calculation') || questionTypes.includes('problem') ? 'problem' :
+            questionTypes[0]) ||
+    defaults.type ||
+    'fill';
+  return {
+    ...item,
+    subject_id: item.subject_id || defaults.subject_id || null,
+    chapter_id: item.chapter_id || defaults.chapter_id || null,
+    type,
+    difficulty: Number(item.difficulty || defaults.difficulty || 3),
+    stem: String(item.stem || item.content || '').trim(),
+    answer: item.answer !== undefined ? String(item.answer || '').trim() : '',
+    explanation: item.explanation !== undefined ? item.explanation : item.analysis,
+    options: normalizeOptions(item.options),
+    source: item.source || defaults.source || null,
+    knowledge_point_ids: normalizeKnowledgePointIds(item).length > 0
+      ? normalizeKnowledgePointIds(item)
+      : normalizeKnowledgePointIds(defaults),
+  };
+}
+
+function contentHashForQuestion(item) {
+  return hashText([
+    item.stem || item.content || '',
+    item.answer || '',
+    item.explanation !== undefined ? item.explanation : item.analysis || '',
+    JSON.stringify(normalizeOptions(item.options)),
+  ].join('|'));
+}
+
+function validateImportItem(item) {
+  const errors = [];
+  const warnings = [];
+  if (!item.stem) errors.push('missing_stem');
+  if (!item.type) errors.push('missing_type');
+  if (item.stem && item.stem.length < 4) warnings.push('short_stem');
+  if (item.options.length > 0 && item.options.length < 2) warnings.push('few_options');
+  if (!item.answer) warnings.push('missing_answer');
+  if (item.difficulty < 1 || item.difficulty > 5) warnings.push('difficulty_out_of_range');
+  const score = Math.max(0, Math.round((1 - errors.length * 0.45 - warnings.length * 0.12) * 100) / 100);
+  return { errors, warnings, score };
+}
+
 class QuestionBankService {
   ensureTenant(db, tenantId = 'default') {
     const existing = db.prepare('SELECT id FROM tenants WHERE id = ?').get(tenantId);
@@ -75,7 +137,7 @@ class QuestionBankService {
       db.prepare(
         `INSERT INTO tenants (id, name, status, plan, deleted, created_at, updated_at)
          VALUES (?, ?, 'active', 'standard', 0, ?, ?)`
-      ).run(tenantId, tenantId === 'default' ? '默认租户' : tenantId, ts, ts);
+      ).run(tenantId, tenantId === 'default' ? '榛樿绉熸埛' : tenantId, ts, ts);
     }
   }
 
@@ -311,14 +373,51 @@ class QuestionBankService {
     ).run(uuidv4(), tenantId, questionId, operation, ts, ts);
   }
 
+
+  getImportBatch(db, batchId, tenantId = 'default') {
+    const batch = db.prepare(
+      'SELECT * FROM import_batches WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)'
+    ).get(batchId, tenantId);
+    if (!batch) return null;
+    const items = db.prepare(
+      'SELECT * FROM import_items WHERE batch_id = ? ORDER BY item_index ASC'
+    ).all(batchId).map(row => ({
+      ...row,
+      payload: row.payload ? JSON.parse(row.payload) : null,
+    }));
+    return {
+      ...batch,
+      quality_report: batch.quality_report ? JSON.parse(batch.quality_report) : null,
+      items,
+    };
+  }
+
+  listImportBatches(db, filters = {}, tenantId = 'default') {
+    const limit = Math.min(Math.max(Number(filters.limit) || 20, 1), 100);
+    return db.prepare(
+      `SELECT * FROM import_batches
+       WHERE tenant_id = ? OR tenant_id IS NULL
+       ORDER BY created_at DESC
+       LIMIT ?`
+    ).all(tenantId, limit).map(row => ({
+      ...row,
+      quality_report: row.quality_report ? JSON.parse(row.quality_report) : null,
+    }));
+  }
+
   createImportBatch(db, payload, tenantId = 'default') {
     this.ensureTenant(db, tenantId);
     const ts = now();
     const batchId = uuidv4();
-    const items = payload.items || [];
+    const items = Array.isArray(payload.items) ? payload.items : [];
     const seen = new Set();
     let duplicateItems = 0;
     let rejectedItems = 0;
+    let acceptedItems = 0;
+    const duplicateSources = { in_batch: 0, existing_bank: 0 };
+    const qualityBuckets = { high: 0, medium: 0, low: 0 };
+    const errors = {};
+    const warnings = {};
 
     const transaction = db.transaction(() => {
       db.prepare(
@@ -328,31 +427,102 @@ class QuestionBankService {
       ).run(batchId, tenantId, payload.source_type || 'manual', payload.file_name || null, payload.file_hash || null, items.length, ts, ts);
 
       items.forEach((item, index) => {
-        const contentHash = hashText(JSON.stringify(item));
-        const duplicate = seen.has(contentHash) || !!db.prepare(
+        const normalized = normalizeImportItem(item, payload.defaults || {});
+        const contentHash = contentHashForQuestion(normalized);
+        const inBatchDuplicate = seen.has(contentHash);
+        const existingDuplicate = !!db.prepare(
           'SELECT 1 FROM question_contents WHERE content_hash = ? AND deleted = 0'
         ).get(contentHash);
+        const duplicate = inBatchDuplicate || existingDuplicate;
         seen.add(contentHash);
-        const valid = !!(item.stem || item.content) && !!item.type;
+        const quality = validateImportItem(normalized);
+        const valid = quality.errors.length === 0;
         const status = !valid ? 'rejected' : duplicate ? 'duplicate' : 'accepted';
-        if (duplicate) duplicateItems++;
-        if (!valid) rejectedItems++;
+        if (duplicate) {
+          duplicateItems++;
+          if (inBatchDuplicate) duplicateSources.in_batch++;
+          if (existingDuplicate) duplicateSources.existing_bank++;
+        } else if (!valid) {
+          rejectedItems++;
+        } else {
+          acceptedItems++;
+        }
+        const bucket = quality.score >= 0.8 ? 'high' : quality.score >= 0.5 ? 'medium' : 'low';
+        qualityBuckets[bucket]++;
+        for (const code of quality.errors) errors[code] = (errors[code] || 0) + 1;
+        for (const code of quality.warnings) warnings[code] = (warnings[code] || 0) + 1;
         db.prepare(
           `INSERT INTO import_items
            (id, batch_id, item_index, content_hash, status, quality_score, error_message, payload, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        ).run(uuidv4(), batchId, index, contentHash, status, valid ? 1 : 0, valid ? null : '缺少题干或题型', JSON.stringify(item), ts, ts);
+        ).run(
+          uuidv4(),
+          batchId,
+          index,
+          contentHash,
+          status,
+          quality.score,
+          quality.errors.length ? quality.errors.join(',') : null,
+          JSON.stringify({ ...normalized, content_hash: contentHash, quality_warnings: quality.warnings }),
+          ts,
+          ts
+        );
       });
 
+      const qualityReport = {
+        status: rejectedItems > 0 ? 'needs_review' : duplicateItems > 0 ? 'has_duplicates' : 'ready',
+        total_items: items.length,
+        accepted_items: acceptedItems,
+        duplicate_items: duplicateItems,
+        rejected_items: rejectedItems,
+        duplicate_sources: duplicateSources,
+        quality_buckets: qualityBuckets,
+        errors,
+        warnings,
+      };
       db.prepare(
         `UPDATE import_batches
          SET status = 'checked', accepted_items = ?, duplicate_items = ?, rejected_items = ?, quality_report = ?, updated_at = ?
          WHERE id = ?`
-      ).run(items.length - duplicateItems - rejectedItems, duplicateItems, rejectedItems, JSON.stringify({ duplicateItems, rejectedItems }), ts, batchId);
+      ).run(acceptedItems, duplicateItems, rejectedItems, JSON.stringify(qualityReport), ts, batchId);
     });
 
     transaction();
-    return { id: batchId, total_items: items.length, duplicate_items: duplicateItems, rejected_items: rejectedItems };
+    return this.getImportBatch(db, batchId, tenantId);
+  }
+
+  commitImportBatch(db, batchId, tenantId = 'default') {
+    const batch = this.getImportBatch(db, batchId, tenantId);
+    if (!batch) return null;
+    if (!['checked', 'partial_failed'].includes(batch.status)) {
+      throw new Error(`import batch status ${batch.status} cannot be committed`);
+    }
+    const ts = now();
+    const accepted = batch.items.filter(item => item.status === 'accepted');
+    const result = { imported_items: 0, failed_items: 0, question_ids: [], errors: [] };
+
+    const transaction = db.transaction(() => {
+      db.prepare('UPDATE import_batches SET status = ?, updated_at = ? WHERE id = ?').run('importing', ts, batchId);
+      for (const item of accepted) {
+        try {
+          const payload = item.payload || {};
+          const created = this.createQuestion(db, { ...payload, content_hash: item.content_hash }, tenantId);
+          db.prepare('UPDATE import_items SET status = ?, updated_at = ? WHERE id = ?').run('imported', now(), item.id);
+          result.imported_items++;
+          result.question_ids.push(created.id);
+        } catch (err) {
+          result.failed_items++;
+          result.errors.push({ item_index: item.item_index, error: err.message });
+          db.prepare('UPDATE import_items SET status = ?, error_message = ?, updated_at = ? WHERE id = ?')
+            .run('failed', err.message, now(), item.id);
+        }
+      }
+      const finalStatus = result.failed_items > 0 ? 'partial_failed' : 'imported';
+      db.prepare('UPDATE import_batches SET status = ?, updated_at = ? WHERE id = ?').run(finalStatus, now(), batchId);
+    });
+
+    transaction();
+    return { ...this.getImportBatch(db, batchId, tenantId), commit_result: result };
   }
 
   async refreshKnowledgeRollups(db) {

@@ -21,6 +21,19 @@ const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试',
 const GRADES = ['高一', '高二', '高三', '复习'];
 const SEMESTERS = ['上学期', '下学期'];
 
+const API_BASE = '/api/question-bank';
+
+type ImportBatch = {
+  id: string;
+  status: string;
+  total_items: number;
+  accepted_items: number;
+  duplicate_items: number;
+  rejected_items: number;
+  quality_report?: any;
+  commit_result?: any;
+};
+
 // Build tree data for Ant Design Tree
 function buildTreeData(nodes: KnowledgeNode[], parentId?: string): any[] {
   return nodes
@@ -51,6 +64,30 @@ function normalizeQuestion(row: any): Question {
   } as Question;
 }
 
+function toServerQuestion(q: any, meta: any = {}) {
+  const questionTypes = q.question_types || ['fill'];
+  return {
+    subject_id: q.subject_id || null,
+    chapter_id: q.chapter_id || null,
+    type: questionTypes.includes('single') ? 'single' :
+      questionTypes.includes('multi') ? 'multi' :
+        questionTypes.includes('experiment') ? 'experiment' :
+          questionTypes.includes('calculation') || questionTypes.includes('problem') ? 'problem' : 'fill',
+    difficulty: q.difficulty || 3,
+    stem: q.stem || q.content || '',
+    options: q.options || [],
+    answer: q.answer || '',
+    explanation: q.explanation || q.analysis || '',
+    source: q.source || '',
+    year: q.year || meta.year || '',
+    grade: q.grade || meta.grade || '',
+    semester: q.semester || meta.semester || '',
+    exam_type: q.exam_type || meta.exam_type || '',
+    region: q.region || '',
+    knowledge_point_ids: q.knowledge_point_ids || q.knowledge_ids || [],
+  };
+}
+
 const QuestionBankImport: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
@@ -66,6 +103,8 @@ const QuestionBankImport: React.FC = () => {
   const [wordModalVisible, setWordModalVisible] = useState(false);
   const [wordImporting, setWordImporting] = useState(false);
   const [wordResult, setWordResult] = useState<any>(null);
+  const [importBatch, setImportBatch] = useState<ImportBatch | null>(null);
+  const [committingBatch, setCommittingBatch] = useState(false);
   const [wordSourceType, setWordSourceType] = useState<'lecture' | 'exam'>('lecture');
   const [wordModalOpen, setWordModalOpen] = useState(false);
   const [examForm] = Form.useForm();
@@ -343,6 +382,26 @@ const QuestionBankImport: React.FC = () => {
         message.error(data.error);
       } else {
         setWordResult(data);
+        setImportBatch(null);
+        try {
+          const checkRes = await fetch(`${API_BASE}/imports/check`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              source_type: wordSourceType,
+              file_name: file.name,
+              items: (data.questions || []).map((q: any) => toServerQuestion(q, examMeta || {})),
+            }),
+          });
+          const batchData = await checkRes.json();
+          if (batchData.success) {
+            setImportBatch(batchData.data || batchData);
+          } else {
+            message.warning(batchData.error || '导入批次校验未完成');
+          }
+        } catch (checkError: any) {
+          message.warning('导入批次校验失败: ' + (checkError.message || 'unknown error'));
+        }
         message.success(`成功解析 ${data.count || 0} 道题目`);
       }
     } catch (e: any) {
@@ -351,7 +410,31 @@ const QuestionBankImport: React.FC = () => {
     setWordImporting(false);
   };
 
+  const commitImportBatch = async () => {
+    if (!importBatch) return;
+    setCommittingBatch(true);
+    try {
+      const res = await fetch(`${API_BASE}/imports/${importBatch.id}/commit`, { method: 'POST' });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'commit failed');
+      const nextBatch = data.data || data;
+      setImportBatch(nextBatch);
+      setWordModalVisible(false);
+      setWordResult(null);
+      loadData();
+      message.success(`已入库 ${nextBatch.commit_result?.imported_items || 0} 道题，索引任务已创建`);
+    } catch (e: any) {
+      message.error('提交导入批次失败: ' + (e.message || 'unknown error'));
+    } finally {
+      setCommittingBatch(false);
+    }
+  };
+
   const importWordResults = (result: any) => {
+    if (importBatch) {
+      commitImportBatch();
+      return;
+    }
     const db = (window as any).dbService;
     if (!db) { message.error('数据库未就绪'); return; }
     // Read stored examMeta for auto-labeling
@@ -713,11 +796,24 @@ const QuestionBankImport: React.FC = () => {
               size="small"
               scroll={{ y: 200 }}
             />
+            {importBatch && (
+              <div style={{ marginTop: 12, background: '#fff7e6', padding: '8px 12px', borderRadius: 6 }}>
+                <Space wrap>
+                  <Tag color="blue">批次 {importBatch.status}</Tag>
+                  <Tag color="green">可入库 {importBatch.accepted_items}</Tag>
+                  <Tag color="orange">重复 {importBatch.duplicate_items}</Tag>
+                  <Tag color="red">拒绝 {importBatch.rejected_items}</Tag>
+                  <Text type="secondary">
+                    质量：高 {importBatch.quality_report?.quality_buckets?.high || 0} / 中 {importBatch.quality_report?.quality_buckets?.medium || 0} / 低 {importBatch.quality_report?.quality_buckets?.low || 0}
+                  </Text>
+                </Space>
+              </div>
+            )}
             <Space style={{ marginTop: 16 }}>
-              <Button type="primary" icon={<FileAddOutlined />} onClick={() => importWordResults(wordResult)}>
-                导入 {wordResult.count} 道题目到题库
+              <Button type="primary" icon={<FileAddOutlined />} loading={committingBatch} onClick={() => importWordResults(wordResult)}>
+                入库 {importBatch ? importBatch.accepted_items : wordResult.count} 道题
               </Button>
-              <Button onClick={() => { setWordResult(null); }}>重新选择文件</Button>
+              <Button onClick={() => { setWordResult(null); setImportBatch(null); }}>重新选择文件</Button>
             </Space>
           </div>
         )}
