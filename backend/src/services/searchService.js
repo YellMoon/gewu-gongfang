@@ -406,7 +406,7 @@ class SearchService {
       if (job.operation === 'delete') {
         await this.deleteQuestion(job.entity_id);
       } else {
-        const document = this.buildQuestionDocument(db, job.entity_id);
+        const document = this.buildQuestionDocument(db, job.entity_id, job.tenant_id || 'default');
         if (!document) {
           await this.deleteQuestion(job.entity_id);
         } else {
