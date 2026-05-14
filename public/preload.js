@@ -11,6 +11,7 @@ const invokeAllowList = new Set([
 
 const eventAllowList = new Set([
   'update-available',
+  'update-not-available',
   'update-downloaded',
   'update-error',
   'download-progress',

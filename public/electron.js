@@ -2,9 +2,12 @@ const { app, BrowserWindow, Menu, ipcMain, dialog, screen, shell } = require('el
 const path = require('path');
 const fs = require('fs');
 let autoUpdater = null;
+const updateFeedUrl = (process.env.UPDATE_FEED_URL || 'https://gewugongfang.oss-cn-hangzhou.aliyuncs.com/desktop/').replace(/\/?$/, '/');
 try {
   autoUpdater = require('electron-updater').autoUpdater;
   autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.setFeedURL({ provider: 'generic', url: updateFeedUrl });
 } catch (err) {
   autoUpdater = null;
 }
@@ -158,9 +161,15 @@ ipcMain.handle('open-external', (_event, url) => {
 ipcMain.handle('check-for-updates', async () => {
   if (!autoUpdater) return { success: false, error: 'autoUpdater unavailable' };
   try {
+    log('check-for-updates feed=' + updateFeedUrl + ' version=' + app.getVersion());
     const result = await autoUpdater.checkForUpdates();
-    return { success: true, updateInfo: result?.updateInfo || null };
+    return {
+      success: true,
+      updateInfo: result?.updateInfo || null,
+      feedUrl: updateFeedUrl,
+    };
   } catch (err) {
+    log('check-for-updates failed: ' + err.message);
     return { success: false, error: err.message };
   }
 });
@@ -180,8 +189,22 @@ ipcMain.handle('install-update', () => {
 });
 
 if (autoUpdater) {
-  autoUpdater.on('update-available', info => mainWindow?.webContents.send('update-available', info));
-  autoUpdater.on('update-downloaded', info => mainWindow?.webContents.send('update-downloaded', info));
+  autoUpdater.on('checking-for-update', () => log('checking-for-update'));
+  autoUpdater.on('update-not-available', info => {
+    log('update-not-available ' + JSON.stringify(info || {}));
+    mainWindow?.webContents.send('update-not-available', info);
+  });
+  autoUpdater.on('update-available', info => {
+    log('update-available ' + JSON.stringify(info || {}));
+    mainWindow?.webContents.send('update-available', info);
+  });
+  autoUpdater.on('update-downloaded', info => {
+    log('update-downloaded ' + JSON.stringify(info || {}));
+    mainWindow?.webContents.send('update-downloaded', info);
+  });
   autoUpdater.on('download-progress', info => mainWindow?.webContents.send('download-progress', info));
-  autoUpdater.on('error', err => mainWindow?.webContents.send('update-error', err.message));
+  autoUpdater.on('error', err => {
+    log('update-error ' + err.message);
+    mainWindow?.webContents.send('update-error', err.message);
+  });
 }

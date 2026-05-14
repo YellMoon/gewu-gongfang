@@ -24,10 +24,28 @@ jobs:
       - run: npm ci --legacy-peer-deps
       - run: npm run build
       - run: npx electron-builder --win --publish never
+      - name: Publish OSS updater feed
+        if: ${{ github.event.inputs.channel == 'stable' }}
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: ${{ secrets.OSS_BUCKET }}
+          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+          OSS_CDN_BASE_URL: ${{ vars.OSS_CDN_BASE_URL }}
+          OSS_OBJECT_PREFIX: ${{ vars.OSS_OBJECT_PREFIX }}
+        run: npm run publish:oss-feed
+      - name: Validate updater feed
+        if: ${{ github.event.inputs.channel != 'stable' }}
+        env:
+          DRY_RUN: "1"
+          WRITE_FEED: "1"
+        run: npm run publish:oss-feed
       - uses: actions/upload-artifact@v4
         with:
           name: gewu-desktop-${{ github.event.inputs.channel }}
-          path: dist/*.exe
+          path: |
+            dist/*.exe
+            dist/latest.yml
 
   backend-smoke:
     runs-on: ubuntu-latest
