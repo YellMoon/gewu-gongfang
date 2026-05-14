@@ -1,4 +1,4 @@
-import type { SyncBatch, SyncOperation, SyncTable } from './syncEngine';
+import type { SyncBatch, SyncChange } from './syncEngine';
 
 const BASE_URL = (process.env.REACT_APP_API_BASE || '').replace(/\/$/, '');
 const SYNC_URL = BASE_URL.endsWith('/api') ? `${BASE_URL}/sync` : `${BASE_URL}/api/sync`;
@@ -16,61 +16,54 @@ function toTimestamp(value: unknown): number {
   return Date.now();
 }
 
-function batchToChanges(batch: SyncBatch): Record<string, any[]> {
-  return batch.operations.reduce<Record<string, any[]>>((changes, op) => {
-    const tableChanges = changes[op.table] || [];
-    const baseRecord = op.action === 'create' ? { ...(op.data || {}) } : { ...(op.fields || {}) };
-    tableChanges.push({
-      ...baseRecord,
-      id: op.recordId,
-      deleted: op.action === 'delete' ? 1 : (baseRecord as any).deleted || 0,
-      updated_at: new Date(op.timestamp).toISOString(),
-      _sync_operation_id: op.id,
-      _sync_action: op.action,
-      _sync_client_id: op.clientId,
-    });
-    changes[op.table] = tableChanges;
-    return changes;
-  }, {});
+function normalizeChange(change: any, fallbackDeviceId = 'desktop'): SyncChange {
+  const data = { ...(change.data || change.fields || {}) };
+  const recordId = data.id || change.recordId || change.record_id || change.id;
+  const updatedAt = change.updatedAt
+    || change.updated_at
+    || data.updated_at
+    || (change.timestamp ? new Date(change.timestamp).toISOString() : new Date().toISOString());
+  return {
+    id: change.id || `${change.table}:${recordId}:${updatedAt}`,
+    table: change.table,
+    action: change.action || (data.deleted ? 'delete' : 'update'),
+    data: { ...data, id: recordId },
+    version: change.version || updatedAt,
+    updatedAt,
+    tenantId: change.tenantId || change.tenant_id || data.tenant_id || 'default',
+    deviceId: change.deviceId || change.device_id || change.clientId || change.client_id || fallbackDeviceId,
+  };
 }
 
-function changesToOperations(changes: Record<string, any[]> = {}, serverTimestamp: number): SyncOperation[] {
-  return Object.entries(changes)
-    .filter(([, records]) => Array.isArray(records))
-    .flatMap(([table, records]) =>
-      records.map((record: any) => {
-        const timestamp = toTimestamp(record.updated_at || record.created_at || serverTimestamp);
-        return {
-          id: record._sync_operation_id || `server_${table}_${record.id}_${timestamp}`,
-          table: table as SyncTable,
-          recordId: String(record.id),
-          action: record.deleted ? 'delete' : 'create',
-          data: record.deleted ? undefined : record,
-          fields: undefined,
-          timestamp,
-          clientId: record._sync_client_id || 'server',
-          vectorClock: record.vector_clock || { server: timestamp },
-        } as SyncOperation;
-      }),
-    );
+function getDeviceId(): string {
+  try {
+    return localStorage.getItem('sync_engine_sync_device_id')
+      ? JSON.parse(localStorage.getItem('sync_engine_sync_device_id') || '"desktop"')
+      : 'desktop';
+  } catch {
+    return 'desktop';
+  }
 }
 
 export async function pushSyncBatch(batch: SyncBatch): Promise<{ success: boolean; serverTimestamp: number }> {
+  const changes = (batch.changes || batch.operations || []).map(change => normalizeChange(change, batch.deviceId || batch.clientId));
   try {
     const res = await fetch(`${SYNC_URL}/push`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        client_id: batch.clientId,
-        last_sync_time: toIsoTime(batch.lastSyncTimestamp),
-        changes: batchToChanges(batch),
+        deviceId: batch.deviceId || batch.clientId,
+        client_id: batch.clientId || batch.deviceId,
+        tenantId: batch.tenantId || 'default',
+        since: toIsoTime(batch.lastSyncTimestamp),
+        changes,
       }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return {
       success: !!data.success,
-      serverTimestamp: toTimestamp(data.server_time || data.serverTimestamp),
+      serverTimestamp: toTimestamp(data.serverTime || data.server_time || data.serverTimestamp),
     };
   } catch (e) {
     console.error('[syncApi] push error:', e);
@@ -80,26 +73,27 @@ export async function pushSyncBatch(batch: SyncBatch): Promise<{ success: boolea
 
 export async function pullSyncOps(
   sinceTs: number,
-): Promise<{ success: boolean; operations: SyncOperation[]; serverTimestamp: number }> {
+): Promise<{ success: boolean; changes: SyncChange[]; operations: SyncChange[]; serverTimestamp: number }> {
   try {
-    const res = await fetch(`${SYNC_URL}/pull`, {
-      method: 'POST',
+    const url = new URL(SYNC_URL || '/api/sync', window.location.origin);
+    url.searchParams.set('since', toIsoTime(sinceTs));
+    url.searchParams.set('deviceId', getDeviceId());
+    const res = await fetch(url.toString(), {
+      method: 'GET',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        last_sync_time: toIsoTime(sinceTs),
-        client_id: localStorage.getItem('sync_client_id') || 'electron',
-      }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    const serverTimestamp = toTimestamp(data.server_time || data.serverTimestamp);
+    const serverTimestamp = toTimestamp(data.serverTime || data.server_time || data.serverTimestamp);
+    const changes = (data.changes || []).map((change: any) => normalizeChange(change, 'server'));
     return {
       success: !!data.success,
-      operations: changesToOperations(data.changes, serverTimestamp),
+      changes,
+      operations: changes,
       serverTimestamp,
     };
   } catch (e) {
     console.error('[syncApi] pull error:', e);
-    return { success: false, operations: [], serverTimestamp: Date.now() };
+    return { success: false, changes: [], operations: [], serverTimestamp: Date.now() };
   }
 }

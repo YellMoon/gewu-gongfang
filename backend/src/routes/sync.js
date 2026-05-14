@@ -1,92 +1,152 @@
 /**
  * 数据同步路由（核心）
- * 
- * 同步协议 v1.0:
- * - Pull: 客户端发送 last_sync_time，服务器返回该时间后的所有变更
- * - Push: 客户端发送本地变更列表，服务器应用（时间戳冲突检测）
- * - Status: 检查各表的同步状态
- * 
- * 每条记录带 updated_at 和 deleted（软删除）标记
+ *
+ * Sync v2 change queue:
+ * { id, table, action, data, version, updatedAt, tenantId, deviceId }
+ *
+ * 保留 /pull 和 /push 兼容旧客户端；新客户端优先使用：
+ * - GET  /api/sync?since=ISO8601
+ * - POST /api/sync/push { changes: SyncChange[] }
  */
 const { Router } = require('express');
 const { getInstance } = require('../database');
 
 const router = Router();
 
-/**
- * POST /api/sync/pull
- * 客户端发送上次同步时间，服务器返回该时间后的所有变更
- * 
- * Body: { last_sync_time: "2024-01-01T00:00:00.000Z", client_id: "electron-xxx" }
- * Response: { changes: { students: [...], courses: [...], ... }, server_time: "..." }
- */
+function readSince(req) {
+  return req.query.since
+    || req.query.lastSyncTime
+    || req.query.lastSyncTs
+    || req.body?.since
+    || req.body?.last_sync_time
+    || req.body?.lastSyncTimestamp
+    || 0;
+}
+
+function readDeviceId(req) {
+  return req.query.deviceId
+    || req.query.device_id
+    || req.query.client_id
+    || req.body?.deviceId
+    || req.body?.device_id
+    || req.body?.client_id
+    || req.body?.clientId
+    || 'unknown';
+}
+
+function readTenantId(req) {
+  return req.query.tenantId
+    || req.query.tenant_id
+    || req.body?.tenantId
+    || req.body?.tenant_id
+    || 'default';
+}
+
+function groupedChangesFromQueue(changes) {
+  return changes.reduce((grouped, change) => {
+    const rows = grouped[change.table] || [];
+    rows.push({
+      ...change.data,
+      _sync_operation_id: change.id,
+      _sync_action: change.action,
+      _sync_client_id: change.deviceId,
+      _sync_version: change.version,
+    });
+    grouped[change.table] = rows;
+    return grouped;
+  }, {});
+}
+
+function sendQueueResponse(res, payload, extra = {}) {
+  res.json({
+    success: true,
+    changes: payload.changes,
+    serverTime: payload.serverTime,
+    serverTimestamp: Date.parse(payload.serverTime),
+    server_time: payload.serverTime,
+    ...extra,
+  });
+}
+
+router.get('/', (req, res) => {
+  try {
+    const db = getInstance();
+    const payload = db.getChangeQueueSince(readSince(req), {
+      tenantId: readTenantId(req),
+      deviceId: 'server',
+    });
+    console.log(`[Sync:Queue] device=${readDeviceId(req)} since=${db._normalizeSyncTime(readSince(req)).slice(0, 19)} changes=${payload.changes.length}`);
+    sendQueueResponse(res, payload);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 router.post('/pull', (req, res) => {
   try {
     const db = getInstance();
-    const { last_sync_time, client_id } = req.body;
-    
-    if (!last_sync_time) {
-      return res.status(400).json({ error: '缺少 last_sync_time' });
-    }
-
-    const changes = db.getChangesSinceAll(last_sync_time);
-    
-    console.log(`[Sync:Pull] client=${client_id || 'unknown'} since=${last_sync_time.slice(0,19)} changes=${Object.values(changes).filter(Array.isArray).reduce((s,a)=>s+a.length,0)}`);
-    
-    res.json({ success: true, changes, server_time: changes.server_time });
+    const payload = db.getChangeQueueSince(readSince(req), {
+      tenantId: readTenantId(req),
+      deviceId: 'server',
+    });
+    console.log(`[Sync:Pull] device=${readDeviceId(req)} since=${db._normalizeSyncTime(readSince(req)).slice(0, 19)} changes=${payload.changes.length}`);
+    sendQueueResponse(res, payload, {
+      legacyChanges: groupedChangesFromQueue(payload.changes),
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-/**
- * POST /api/sync/push
- * 客户端发送本地变更列表，服务器应用
- * 
- * Body: {
- *   client_id: "electron-xxx",
- *   changes: {
- *     students: [{ id, ...fields, updated_at, deleted }],
- *     courses: [...],
- *     ...
- *   }
- * }
- * 
- * Response: { applied: N, conflicts: N, errors: [...], server_time: "..." }
- */
+router.get('/pull', (req, res) => {
+  try {
+    const db = getInstance();
+    const payload = db.getChangeQueueSince(readSince(req), {
+      tenantId: readTenantId(req),
+      deviceId: 'server',
+    });
+    console.log(`[Sync:Pull] device=${readDeviceId(req)} since=${db._normalizeSyncTime(readSince(req)).slice(0, 19)} changes=${payload.changes.length}`);
+    sendQueueResponse(res, payload, {
+      legacyChanges: groupedChangesFromQueue(payload.changes),
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 router.post('/push', (req, res) => {
   try {
     const db = getInstance();
-    const { client_id, changes } = req.body;
-    
+    const deviceId = readDeviceId(req);
+    const changes = req.body?.changes || req.body?.operations;
+
     if (!changes) {
-      return res.status(400).json({ error: '缺少 changes' });
+      return res.status(400).json({ success: false, error: '缺少 changes' });
     }
 
-    const result = db.applyPushChanges(client_id || 'unknown', changes);
-    
-    console.log(`[Sync:Push] client=${client_id || 'unknown'} applied=${result.applied} conflicts=${result.conflicts} errors=${result.errors.length}`);
-    
-    res.json({ success: true, ...result, server_time: db._now() });
+    const result = db.applySyncChanges(changes, { deviceId });
+    const serverTime = db._now();
+    console.log(`[Sync:Push] device=${deviceId} applied=${result.applied} conflicts=${result.conflicts} errors=${result.errors.length}`);
+
+    res.json({
+      success: true,
+      ...result,
+      serverTime,
+      serverTimestamp: Date.parse(serverTime),
+      server_time: serverTime,
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-/**
- * POST /api/sync/status
- * 获取同步状态（各表记录数和最后更新时间）
- * 
- * Body: { client_id: "electron-xxx" }
- * Response: { tables: { students: { count, last_updated }, ... }, server_time }
- */
-router.post('/status', (req, res) => {
+router.post('/status', (_req, res) => {
   try {
     const db = getInstance();
     const status = db.getSyncStatus();
     res.json({ success: true, ...status });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

@@ -541,21 +541,84 @@ class DatabaseService {
     return { imported: true };
   }
 
-  // ==================== 鍚屾鏀寔 ====================
+  // ==================== 同步支持 ====================
 
-  /**
-   * 鑾峰彇鎸囧畾鏃堕棿鍚庣殑鎵€鏈夊彉鏇达紙鍖呮嫭杞垹闄よ褰曪級
-   */
+  _normalizeSyncTime(value) {
+    if (!value) return '1970-01-01T00:00:00.000Z';
+    if (typeof value === 'number') return new Date(value).toISOString();
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? '1970-01-01T00:00:00.000Z' : new Date(parsed).toISOString();
+  }
+
+  _changeId(table, recordId, updatedAt, action, deviceId = 'server') {
+    return `${table}:${recordId}:${updatedAt}:${action}:${deviceId}`;
+  }
+
+  _toSyncChange(table, record, deviceId = 'server', tenantId = 'default') {
+    const updatedAt = this._normalizeSyncTime(record.updated_at || record.created_at || this._now());
+    const deleted = Number(record.deleted || 0) === 1;
+    const action = deleted ? 'delete' : (record.created_at && record.created_at === record.updated_at ? 'create' : 'update');
+    return {
+      id: record._sync_operation_id || this._changeId(table, record.id, updatedAt, action, deviceId),
+      table,
+      action,
+      data: { ...record },
+      version: updatedAt,
+      updatedAt,
+      tenantId: record.tenant_id || tenantId,
+      deviceId: record._sync_client_id || deviceId,
+    };
+  }
+
+  _normalizeClientChange(change, fallbackDeviceId = 'unknown') {
+    const data = { ...(change.data || change.fields || {}) };
+    const table = change.table;
+    const recordId = data.id || change.recordId || change.record_id || change.id;
+    const action = change.action || (data.deleted ? 'delete' : 'update');
+    const updatedAt = this._normalizeSyncTime(change.updatedAt || change.updated_at || change.timestamp || data.updated_at || this._now());
+    return {
+      id: change.id || this._changeId(table, recordId, updatedAt, action, fallbackDeviceId),
+      table,
+      action,
+      data: { ...data, id: recordId },
+      version: change.version || updatedAt,
+      updatedAt,
+      tenantId: change.tenantId || change.tenant_id || data.tenant_id || 'default',
+      deviceId: change.deviceId || change.device_id || change.clientId || change.client_id || fallbackDeviceId,
+    };
+  }
+
+  _legacyChangesToQueue(changes, fallbackDeviceId = 'unknown') {
+    if (Array.isArray(changes)) {
+      return changes.map(change => this._normalizeClientChange(change, fallbackDeviceId));
+    }
+    const queue = [];
+    for (const [table, records] of Object.entries(changes || {})) {
+      if (!Array.isArray(records)) continue;
+      for (const record of records) {
+        queue.push(this._normalizeClientChange({
+          id: record._sync_operation_id,
+          table,
+          action: record._sync_action || (record.deleted ? 'delete' : 'update'),
+          data: record,
+          updatedAt: record.updated_at,
+          deviceId: record._sync_client_id || fallbackDeviceId,
+          tenantId: record.tenant_id || 'default',
+        }, fallbackDeviceId));
+      }
+    }
+    return queue;
+  }
+
   getChangesSince(table, sinceTime) {
     const columns = this._tableColumns(table);
     if (!columns.includes('updated_at')) return [];
+    const sinceIso = this._normalizeSyncTime(sinceTime);
     return this._reader().prepare(
       `SELECT * FROM ${table} WHERE updated_at > ? ORDER BY updated_at ASC`
-    ).all(sinceTime);
+    ).all(sinceIso);
   }
 
-  /**
-   * 鑾峰彇鎵€鏈夎〃鐨勫彉鏇?   */
   getChangesSinceAll(sinceTime) {
     const tables = this._syncTables();
     const result = {};
@@ -566,64 +629,115 @@ class DatabaseService {
     return result;
   }
 
-  /**
-   * 搴旂敤瀹㈡埛绔帹閫佺殑鍙樻洿
-   */
-  applyPushChanges(clientId, changes) {
-    const transaction = this.db.transaction((changes) => {
-      const tables = this._syncTables();
+  getChangeQueueSince(sinceTime, options = {}) {
+    const tenantId = options.tenantId || 'default';
+    const deviceId = options.deviceId || 'server';
+    const queue = [];
+    for (const table of this._syncTables()) {
+      for (const record of this.getChangesSince(table, sinceTime)) {
+        queue.push(this._toSyncChange(table, record, deviceId, tenantId));
+      }
+    }
+    queue.sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
+    return { changes: queue, serverTime: this._now() };
+  }
+
+  applySyncChanges(changes, options = {}) {
+    const deviceId = options.deviceId || 'unknown';
+    const queue = this._legacyChangesToQueue(changes, deviceId);
+    const transaction = this.db.transaction((normalizedChanges) => {
       const now = this._now();
       const results = { applied: 0, conflicts: 0, errors: [] };
 
-      for (const table of tables) {
-        const records = changes[table] || [];
+      for (const change of normalizedChanges) {
+        const table = change.table;
+        if (!this._syncTables().includes(table)) {
+          results.errors.push({ table, id: change.id, error: 'table is not syncable' });
+          continue;
+        }
         const columns = this._tableColumns(table);
-        for (const record of records) {
-          try {
-            const existing = this.db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(record.id);
-            if (existing && existing.updated_at >= record.updated_at) {
-              results.conflicts++;
-              this._auditSync({
-                client_id: clientId, action: 'push', table_name: table, record_id: record.id,
-                local_updated_at: record.updated_at, server_updated_at: existing.updated_at,
-                resolution: 'server-wins', status: 'conflict'
-              });
-              this.db.prepare(
-                `INSERT INTO sync_log (client_id, action, table_name, record_id, sync_time, status) VALUES (?, 'push', ?, ?, ?, 'conflict')`
-              ).run(clientId, table, record.id, now);
-              continue;
-            }
-
-            record.updated_at = now;
-            if (columns.includes('created_at') && !record.created_at) record.created_at = now;
-            const keys = Object.keys(record).filter(k => columns.includes(k));
-            const newVals = keys.map(k => record[k]);
-            const placeholders = keys.map(() => '?').join(', ');
-            this.db.prepare(
-              `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`
-            ).run(...newVals);
-            results.applied++;
+        const record = { ...(change.data || {}) };
+        const recordId = record.id;
+        if (!recordId) {
+          results.errors.push({ table, id: change.id, error: 'missing record id' });
+          continue;
+        }
+        try {
+          const existing = this.db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(recordId);
+          if (existing && existing.updated_at > change.updatedAt) {
+            results.conflicts++;
             this._auditSync({
-              client_id: clientId, action: 'push', table_name: table, record_id: record.id,
-              local_updated_at: record.updated_at, server_updated_at: now,
-              resolution: 'local-wins', status: 'success'
+              tenant_id: change.tenantId,
+              client_id: change.deviceId,
+              protocol_version: 'v2-change-queue',
+              action: change.action,
+              table_name: table,
+              record_id: recordId,
+              local_updated_at: change.updatedAt,
+              server_updated_at: existing.updated_at,
+              resolution: 'server-wins',
+              status: 'conflict',
+              detail: { changeId: change.id },
             });
             this.db.prepare(
-              `INSERT INTO sync_log (client_id, action, table_name, record_id, sync_time, status) VALUES (?, 'push', ?, ?, ?, 'success')`
-            ).run(clientId, table, record.id, now);
-          } catch (e) {
-            this._auditSync({
-              client_id: clientId, action: 'push', table_name: table, record_id: record.id,
-              local_updated_at: record.updated_at, server_updated_at: now,
-              resolution: 'error', status: 'error', detail: { error: e.message }
-            });
-            results.errors.push({ table, id: record.id, error: e.message });
+              `INSERT INTO sync_log (client_id, action, table_name, record_id, sync_time, status) VALUES (?, 'push', ?, ?, ?, 'conflict')`
+            ).run(change.deviceId, table, recordId, now);
+            continue;
           }
+
+          const incoming = { ...record };
+          incoming.updated_at = now;
+          if (columns.includes('created_at') && !incoming.created_at) incoming.created_at = existing?.created_at || now;
+          if (columns.includes('deleted')) incoming.deleted = change.action === 'delete' ? 1 : (incoming.deleted || 0);
+          if (columns.includes('tenant_id') && !incoming.tenant_id) incoming.tenant_id = change.tenantId;
+
+          const keys = Object.keys(incoming).filter(k => columns.includes(k));
+          const vals = keys.map(k => incoming[k]);
+          const placeholders = keys.map(() => '?').join(', ');
+          this.db.prepare(
+            `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`
+          ).run(...vals);
+          results.applied++;
+          this._auditSync({
+            tenant_id: change.tenantId,
+            client_id: change.deviceId,
+            protocol_version: 'v2-change-queue',
+            action: change.action,
+            table_name: table,
+            record_id: recordId,
+            local_updated_at: change.updatedAt,
+            server_updated_at: now,
+            resolution: 'lww-client-wins',
+            status: 'success',
+            detail: { changeId: change.id },
+          });
+          this.db.prepare(
+            `INSERT INTO sync_log (client_id, action, table_name, record_id, sync_time, status) VALUES (?, 'push', ?, ?, ?, 'success')`
+          ).run(change.deviceId, table, recordId, now);
+        } catch (e) {
+          this._auditSync({
+            tenant_id: change.tenantId,
+            client_id: change.deviceId,
+            protocol_version: 'v2-change-queue',
+            action: change.action,
+            table_name: table,
+            record_id: recordId,
+            local_updated_at: change.updatedAt,
+            server_updated_at: now,
+            resolution: 'error',
+            status: 'error',
+            detail: { changeId: change.id, error: e.message },
+          });
+          results.errors.push({ table, id: recordId, error: e.message });
         }
       }
       return results;
     });
-    return transaction(changes);
+    return transaction(queue);
+  }
+
+  applyPushChanges(clientId, changes) {
+    return this.applySyncChanges(changes, { deviceId: clientId || 'unknown' });
   }
   /**
    * 鑾峰彇鍚屾鐘舵€?   */
