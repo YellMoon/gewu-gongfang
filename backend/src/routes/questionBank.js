@@ -7,6 +7,43 @@ const cache = require('../services/cacheService');
 
 const router = Router();
 
+router.get('/questions', (req, res) => {
+  try {
+    const db = getInstance().db;
+    const tenantId = req.query.tenant_id || 'default';
+    const rows = questionBank.listQuestions(db, req.query, tenantId);
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get('/questions/search', async (req, res) => {
+  try {
+    const db = getInstance().db;
+    const { q, subject_id, type, difficulty, tenant_id } = req.query;
+    const remote = await searchService.searchQuestions(q, { subject_id, type, difficulty });
+    if (remote) return res.json({ success: true, engine: 'opensearch', result: remote });
+
+    const rows = questionBank.searchQuestionsFallback(db, req.query, tenant_id || 'default');
+    res.json({ success: true, engine: 'sqlite', result: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get('/questions/:id', (req, res) => {
+  try {
+    const db = getInstance().db;
+    const tenantId = req.query.tenant_id || 'default';
+    const row = questionBank.getQuestion(db, req.params.id, tenantId);
+    if (!row) return res.status(404).json({ success: false, error: 'question not found' });
+    res.json({ success: true, data: row });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 router.post('/questions', (req, res) => {
   try {
     const db = getInstance().db;
@@ -18,24 +55,25 @@ router.post('/questions', (req, res) => {
   }
 });
 
-router.get('/questions/search', async (req, res) => {
+router.put('/questions/:id', (req, res) => {
   try {
     const db = getInstance().db;
-    const { q, subject_id, type, difficulty } = req.query;
-    const remote = await searchService.searchQuestions(q, { subject_id, type, difficulty });
-    if (remote) return res.json({ success: true, engine: 'opensearch', result: remote });
+    const tenantId = req.body.tenant_id || req.query.tenant_id || 'default';
+    const result = questionBank.updateQuestion(db, req.params.id, req.body, tenantId);
+    if (!result) return res.status(404).json({ success: false, error: 'question not found' });
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
-    const keyword = `%${q || ''}%`;
-    const rows = db.prepare(
-      `SELECT q.*, qc.stem, qc.answer, qc.explanation, qc.options_json
-       FROM questions q
-       JOIN question_contents qc ON qc.question_id = q.id AND qc.deleted = 0
-       WHERE q.deleted = 0
-         AND (? = '%%' OR qc.stem LIKE ? OR qc.answer LIKE ? OR qc.explanation LIKE ?)
-       ORDER BY q.updated_at DESC
-       LIMIT 50`
-    ).all(keyword, keyword, keyword, keyword);
-    res.json({ success: true, engine: 'sqlite', result: rows });
+router.delete('/questions/:id', (req, res) => {
+  try {
+    const db = getInstance().db;
+    const tenantId = req.body?.tenant_id || req.query.tenant_id || 'default';
+    const deleted = questionBank.deleteQuestion(db, req.params.id, tenantId);
+    if (!deleted) return res.status(404).json({ success: false, error: 'question not found' });
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -95,8 +133,25 @@ router.post('/questions/similar', (req, res) => {
 
 router.post('/imports/check', (req, res) => {
   try {
-    const db = getInstance().db;
-    const result = questionBank.createImportBatch(db, req.body, req.body.tenant_id || 'default');
+    const dbService = getInstance();
+    const db = dbService.db;
+    const tenantId = req.body.tenant_id || 'default';
+    const result = questionBank.createImportBatch(db, req.body, tenantId);
+    dbService._auditOperation({
+      tenant_id: tenantId,
+      action: 'import',
+      table_name: 'import_batches',
+      record_id: result.batchId || result.id || null,
+      status: result.rejected_items > 0 ? 'partial' : 'success',
+      detail: {
+        source: 'question-bank',
+        fileName: req.body.file_name || null,
+        totalItems: result.total_items,
+        acceptedItems: result.total_items - result.duplicate_items - result.rejected_items,
+        duplicateItems: result.duplicate_items,
+        rejectedItems: result.rejected_items,
+      },
+    });
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -115,11 +170,11 @@ router.post('/rollups/refresh', async (_req, res) => {
 
 router.get('/rollups', async (_req, res) => {
   try {
-    const cached = await cache.get('knowledge_point_rollups');
+    const cached = await cache.getKnowledgeRollups();
     if (cached) return res.json({ success: true, source: 'cache', data: cached });
     const db = getInstance().db;
     const rows = db.prepare('SELECT * FROM knowledge_point_rollups').all();
-    await cache.set('knowledge_point_rollups', rows, 600);
+    await cache.setKnowledgeRollups(rows);
     res.json({ success: true, source: 'db', data: rows });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

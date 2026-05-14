@@ -1,6 +1,6 @@
 {
   "name": "gewu-gongfang",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "description": "格物工坊（综合教育平台）",
   "main": "public/electron.js",
   "homepage": ".",

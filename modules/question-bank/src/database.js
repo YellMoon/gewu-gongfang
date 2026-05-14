@@ -6,6 +6,22 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
+
+function hashText(value) {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex');
+}
+
+function parseJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_err) {
+    return [];
+  }
+}
 
 class DatabaseService {
   constructor() {
@@ -195,36 +211,70 @@ class DatabaseService {
 
   // ==================== 题目管理 ====================
 
+  _questionRow(row) {
+    if (!row) return null;
+    const knowledgePointIds = row.knowledge_point_ids ? String(row.knowledge_point_ids).split(',').filter(Boolean) : [];
+    const options = parseJsonArray(row.options_json);
+    return {
+      ...row,
+      content: row.stem || '',
+      options,
+      knowledge_point_ids: knowledgePointIds,
+      analysis: row.explanation || ''
+    };
+  }
+
+  _questionSelect(whereSql) {
+    return `SELECT q.*,
+                   qc.stem,
+                   qc.answer,
+                   qc.explanation,
+                   qc.options_json,
+                   qc.content_hash,
+                   qc.version,
+                   GROUP_CONCAT(qkp.knowledge_point_id) AS knowledge_point_ids
+            FROM questions q
+            LEFT JOIN question_contents qc ON qc.question_id = q.id AND qc.deleted = 0
+            LEFT JOIN question_knowledge_points qkp ON qkp.question_id = q.id
+            ${whereSql}
+            GROUP BY q.id
+            ORDER BY q.created_at DESC`;
+  }
+
   getQuestions(filters = {}) {
-    let where = 'deleted = 0';
+    const where = ['q.deleted = 0'];
     const params = [];
 
-    if (filters.subject_id) { where += ' AND subject_id = ?'; params.push(filters.subject_id); }
-    if (filters.chapter_id) { where += ' AND chapter_id = ?'; params.push(filters.chapter_id); }
-    if (filters.type) { where += ' AND type = ?'; params.push(filters.type); }
-    if (filters.difficulty) { where += ' AND difficulty = ?'; params.push(filters.difficulty); }
-    if (filters.keyword) { where += ' AND content LIKE ?'; params.push(`%${filters.keyword}%`); }
+    if (filters.subject_id) { where.push('q.subject_id = ?'); params.push(filters.subject_id); }
+    if (filters.chapter_id) { where.push('q.chapter_id = ?'); params.push(filters.chapter_id); }
+    if (filters.type) { where.push('q.type = ?'); params.push(filters.type); }
+    if (filters.difficulty) { where.push('q.difficulty = ?'); params.push(filters.difficulty); }
+    if (filters.keyword) {
+      where.push('(qc.stem LIKE ? OR qc.answer LIKE ? OR qc.explanation LIKE ?)');
+      params.push(`%${filters.keyword}%`, `%${filters.keyword}%`, `%${filters.keyword}%`);
+    }
     // 按知识点筛选: knowledge_point_ids JSON数组中包含指定ID
     if (filters.knowledge_point_id) {
-      where += ' AND knowledge_point_ids LIKE ?';
-      params.push(`%${filters.knowledge_point_id}%`);
+      where.push('EXISTS (SELECT 1 FROM question_knowledge_points x WHERE x.question_id = q.id AND x.knowledge_point_id = ?)');
+      params.push(filters.knowledge_point_id);
     }
 
-    return this._paginate('questions', {
-      where, params,
-      orderBy: 'created_at DESC',
-      page: parseInt(filters.page) || 1,
-      limit: parseInt(filters.limit) || 20
-    });
+    const page = parseInt(filters.page) || 1;
+    const limit = parseInt(filters.limit) || 20;
+    const offset = (page - 1) * limit;
+    const countSql = `SELECT COUNT(DISTINCT q.id) AS cnt
+      FROM questions q
+      LEFT JOIN question_contents qc ON qc.question_id = q.id AND qc.deleted = 0
+      WHERE ${where.join(' AND ')}`;
+    const total = this.db.prepare(countSql).get(...params).cnt;
+    const items = this.db.prepare(`${this._questionSelect(`WHERE ${where.join(' AND ')}`)} LIMIT ? OFFSET ?`)
+      .all(...params, limit, offset)
+      .map(row => this._questionRow(row));
+    return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   getQuestionById(id) {
-    const q = this._get('questions', id);
-    if (q) {
-      if (q.options) q.options = JSON.parse(q.options);
-      if (q.knowledge_point_ids) q.knowledge_point_ids = JSON.parse(q.knowledge_point_ids);
-    }
-    return q;
+    return this._questionRow(this.db.prepare(this._questionSelect('WHERE q.id = ? AND q.deleted = 0')).get(id));
   }
 
   createQuestion(data) {
@@ -236,60 +286,87 @@ class DatabaseService {
     const difficulty = data.difficulty || 3;
     if (difficulty < 1 || difficulty > 5) throw new Error('难度必须在 1-5 之间');
 
-    return this._insert('questions', {
-      id,
-      subject_id: data.subject_id,
-      chapter_id: data.chapter_id || null,
-      type: data.type,
-      difficulty,
-      content: data.content,
-      answer: data.answer || null,
-      explanation: data.explanation || null,
-      options: data.options ? JSON.stringify(data.options) : null,
-      knowledge_point_ids: data.knowledge_point_ids ? JSON.stringify(data.knowledge_point_ids) : null,
-      source: data.source || null
+    const now = this._now();
+    const stem = data.stem || data.content || '';
+    const options = parseJsonArray(data.options);
+    const explanation = data.explanation !== undefined ? data.explanation : data.analysis;
+    const contentHash = hashText([stem, data.answer, explanation, JSON.stringify(options)].join('|'));
+    const transaction = this.db.transaction(() => {
+      this.db.prepare(
+        `INSERT INTO questions (id, subject_id, chapter_id, type, difficulty, source, status, deleted, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'active', 0, ?, ?)`
+      ).run(id, data.subject_id || null, data.chapter_id || null, data.type, difficulty, data.source || null, now, now);
+      this.db.prepare(
+        `INSERT INTO question_contents (id, question_id, stem, answer, explanation, options_json, content_hash, version, deleted, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)`
+      ).run(uuidv4(), id, stem, data.answer || null, explanation || null, JSON.stringify(options), contentHash, now, now);
+      for (const knowledgePointId of data.knowledge_point_ids || []) {
+        this.db.prepare(
+          `INSERT OR REPLACE INTO question_knowledge_points (question_id, knowledge_point_id, weight, created_at, updated_at)
+           VALUES (?, ?, 1, ?, ?)`
+        ).run(id, knowledgePointId, now, now);
+      }
     });
+    transaction();
+    return this.getQuestionById(id);
   }
 
   updateQuestion(id, updates) {
-    const allowed = ['subject_id', 'chapter_id', 'type', 'difficulty', 'content', 'answer', 'explanation', 'source'];
-    const filtered = {};
-    for (const k of allowed) if (updates[k] !== undefined) filtered[k] = updates[k];
-    if (updates.options !== undefined) filtered.options = JSON.stringify(updates.options);
-    if (updates.knowledge_point_ids !== undefined) filtered.knowledge_point_ids = JSON.stringify(updates.knowledge_point_ids);
+    const existing = this.getQuestionById(id);
+    if (!existing) return null;
     if (updates.difficulty !== undefined && (updates.difficulty < 1 || updates.difficulty > 5)) {
       throw new Error('难度必须在 1-5 之间');
     }
-    if (Object.keys(filtered).length === 0) return this._get('questions', id);
-    return this._update('questions', id, filtered);
+    const now = this._now();
+    const stem = updates.stem !== undefined ? updates.stem : (updates.content !== undefined ? updates.content : existing.content);
+    const answer = updates.answer !== undefined ? updates.answer : existing.answer;
+    const explanation = updates.explanation !== undefined ? updates.explanation : (updates.analysis !== undefined ? updates.analysis : existing.explanation);
+    const options = updates.options !== undefined ? parseJsonArray(updates.options) : existing.options;
+    const contentHash = hashText([stem, answer, explanation, JSON.stringify(options)].join('|'));
+    const transaction = this.db.transaction(() => {
+      const allowed = ['subject_id', 'chapter_id', 'type', 'difficulty', 'source', 'status'];
+      const filtered = {};
+      for (const k of allowed) if (updates[k] !== undefined) filtered[k] = updates[k];
+      if (Object.keys(filtered).length > 0) {
+        const keys = Object.keys(filtered);
+        this.db.prepare(`UPDATE questions SET ${keys.map(k => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ? AND deleted = 0`)
+          .run(...keys.map(k => filtered[k]), now, id);
+      } else {
+        this.db.prepare('UPDATE questions SET updated_at = ? WHERE id = ? AND deleted = 0').run(now, id);
+      }
+      this.db.prepare('UPDATE question_contents SET deleted = 1, updated_at = ? WHERE question_id = ? AND deleted = 0').run(now, id);
+      this.db.prepare(
+        `INSERT INTO question_contents (id, question_id, stem, answer, explanation, options_json, content_hash, version, deleted, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+      ).run(uuidv4(), id, stem, answer || null, explanation || null, JSON.stringify(options), contentHash, (existing.version || 1) + 1, now, now);
+      if (updates.knowledge_point_ids !== undefined) {
+        this.db.prepare('DELETE FROM question_knowledge_points WHERE question_id = ?').run(id);
+        for (const knowledgePointId of updates.knowledge_point_ids || []) {
+          this.db.prepare(
+            `INSERT OR REPLACE INTO question_knowledge_points (question_id, knowledge_point_id, weight, created_at, updated_at)
+             VALUES (?, ?, 1, ?, ?)`
+          ).run(id, knowledgePointId, now, now);
+        }
+      }
+    });
+    transaction();
+    return this.getQuestionById(id);
   }
 
   deleteQuestion(id) {
-    return this._softDelete('questions', id);
+    const now = this._now();
+    const transaction = this.db.transaction(() => {
+      this.db.prepare('UPDATE questions SET deleted = 1, updated_at = ? WHERE id = ?').run(now, id);
+      this.db.prepare('UPDATE question_contents SET deleted = 1, updated_at = ? WHERE question_id = ?').run(now, id);
+      this.db.prepare('UPDATE question_assets SET deleted = 1, updated_at = ? WHERE question_id = ?').run(now, id);
+      this.db.prepare('DELETE FROM question_knowledge_points WHERE question_id = ?').run(id);
+    });
+    transaction();
+    return true;
   }
 
   batchCreateQuestions(questions) {
-    const insert = this.db.prepare(`
-      INSERT INTO questions (id, subject_id, chapter_id, type, difficulty, content, answer, explanation, options, knowledge_point_ids, source, deleted, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-    `);
-    const now = this._now();
-    const transaction = this.db.transaction((items) => {
-      const results = [];
-      for (const data of items) {
-        const id = uuidv4();
-        insert.run(
-          id, data.subject_id, data.chapter_id || null, data.type, data.difficulty || 3,
-          data.content, data.answer || null, data.explanation || null,
-          data.options ? JSON.stringify(data.options) : null,
-          data.knowledge_point_ids ? JSON.stringify(data.knowledge_point_ids) : null,
-          data.source || null, now, now
-        );
-        results.push({ id, content: data.content });
-      }
-      return results;
-    });
-    return transaction(questions);
+    return questions.map(data => this.createQuestion(data));
   }
 
   // ==================== 试卷/题集管理 ====================

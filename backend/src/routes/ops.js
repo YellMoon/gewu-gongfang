@@ -4,6 +4,26 @@ const { getInstance } = require('../database');
 
 const router = Router();
 
+router.get('/audit', (req, res) => {
+  try {
+    const db = getInstance();
+    const logs = db.getAuditLogs({
+      tenantId: req.query.tenant_id || req.query.tenantId,
+      action: req.query.action,
+      status: req.query.status,
+      tableName: req.query.table_name || req.query.tableName,
+      recordId: req.query.record_id || req.query.recordId,
+      startTime: req.query.start_time || req.query.startTime,
+      endTime: req.query.end_time || req.query.endTime,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+    res.json({ success: true, logs });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 router.get('/health/deep', (_req, res) => {
   try {
     const db = getInstance().db;

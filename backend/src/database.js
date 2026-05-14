@@ -72,7 +72,14 @@ class DatabaseService {
 
   _softDelete(table, id) {
     const now = this._now();
-    this.db.prepare(`UPDATE ${table} SET deleted = 1, updated_at = ? WHERE id = ?`).run(now, id);
+    const result = this.db.prepare(`UPDATE ${table} SET deleted = 1, updated_at = ? WHERE id = ?`).run(now, id);
+    this._auditOperation({
+      action: 'delete',
+      table_name: table,
+      record_id: id,
+      status: result.changes > 0 ? 'success' : 'not_found',
+      detail: { affectedRows: result.changes },
+    });
     return true;
   }
 
@@ -114,6 +121,78 @@ class DatabaseService {
       event.detail ? JSON.stringify(event.detail) : null,
       now
     );
+  }
+
+  _auditOperation(event) {
+    const now = this._now();
+    this.db.prepare(
+      `INSERT INTO operation_audit_log
+       (id, tenant_id, actor, action, table_name, record_id, status, detail, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      uuidv4(),
+      event.tenant_id || 'default',
+      event.actor || 'system',
+      event.action,
+      event.table_name || null,
+      event.record_id || null,
+      event.status || 'success',
+      event.detail ? JSON.stringify(event.detail) : null,
+      now
+    );
+  }
+
+  getAuditLogs(filters = {}) {
+    const limit = Math.min(Math.max(Number(filters.limit) || 100, 1), 500);
+    const offset = Math.max(Number(filters.offset) || 0, 0);
+    const where = [];
+    const params = [];
+
+    if (filters.tenantId) {
+      where.push('tenant_id = ?');
+      params.push(filters.tenantId);
+    }
+    if (filters.action) {
+      where.push('action = ?');
+      params.push(filters.action);
+    }
+    if (filters.status) {
+      where.push('status = ?');
+      params.push(filters.status);
+    }
+    if (filters.tableName) {
+      where.push('table_name = ?');
+      params.push(filters.tableName);
+    }
+    if (filters.recordId) {
+      where.push('record_id = ?');
+      params.push(filters.recordId);
+    }
+    if (filters.startTime) {
+      where.push('created_at >= ?');
+      params.push(this._normalizeSyncTime(filters.startTime));
+    }
+    if (filters.endTime) {
+      where.push('created_at <= ?');
+      params.push(this._normalizeSyncTime(filters.endTime));
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    return this._reader().prepare(
+      `SELECT * FROM (
+         SELECT id, tenant_id, actor, 'operation' AS audit_type, action, table_name, record_id,
+                NULL AS client_id, NULL AS protocol_version, NULL AS resolution,
+                NULL AS local_updated_at, NULL AS server_updated_at, status, detail, created_at
+         FROM operation_audit_log
+         UNION ALL
+         SELECT id, tenant_id, client_id AS actor, 'sync' AS audit_type, action, table_name, record_id,
+                client_id, protocol_version, resolution, local_updated_at, server_updated_at,
+                status, detail, created_at
+         FROM sync_audit_log
+       ) ${whereSql}
+       ORDER BY created_at DESC
+       LIMIT ? OFFSET ?`
+    ).all(...params, limit, offset);
   }
 
   // ==================== 瀛︾敓绠＄悊 ====================
@@ -524,8 +603,10 @@ class DatabaseService {
     const transaction = this.db.transaction((data) => {
       const tables = ['students', 'grades', 'courses', 'schedules', 'enrollments',
         'payments', 'consumptions', 'institutions', 'schools', 'rooms', 'teachers'];
+      const counts = {};
       for (const table of tables) {
         if (data[table] && Array.isArray(data[table])) {
+          counts[table] = 0;
           for (const row of data[table]) {
             const keys = Object.keys(row);
             const vals = Object.values(row);
@@ -533,12 +614,22 @@ class DatabaseService {
             this.db.prepare(
               `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`
             ).run(...vals);
+            counts[table]++;
           }
         }
       }
+      const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
+      this._auditOperation({
+        action: 'import',
+        table_name: null,
+        record_id: null,
+        status: 'success',
+        detail: { source: 'backup', total, tables: counts },
+      });
+      return { total, tables: counts };
     });
-    transaction(data);
-    return { imported: true };
+    const summary = transaction(data);
+    return { imported: true, ...summary };
   }
 
   // ==================== 同步支持 ====================
