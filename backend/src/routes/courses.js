@@ -6,6 +6,10 @@ const { getInstance } = require('../database');
 
 const router = Router();
 
+function tenantOptions(req) {
+  return { tenantId: req.tenantId || req.query.tenant_id || req.body?.tenant_id || 'default' };
+}
+
 function badRequest(res, message, details) {
   return res.status(400).json({ error: message, details });
 }
@@ -30,7 +34,7 @@ function validateCourse(req, res, next) {
 router.get('/', (req, res) => {
   try {
     const db = getInstance();
-    const courses = db.getAllCourses();
+    const courses = db.getAllCourses(tenantOptions(req));
     res.json({ success: true, data: courses, count: courses.length });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -38,7 +42,7 @@ router.get('/', (req, res) => {
 router.get('/:id', (req, res) => {
   try {
     const db = getInstance();
-    const course = db.getCourseById(req.params.id);
+    const course = db.getCourseById(req.params.id, tenantOptions(req));
     if (!course) return res.status(404).json({ error: '课程不存在' });
     res.json({ success: true, data: course });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -47,7 +51,7 @@ router.get('/:id', (req, res) => {
 router.post('/', validateCourse, (req, res) => {
   try {
     const db = getInstance();
-    const course = db.createCourse(req.body);
+    const course = db.createCourse(req.body, tenantOptions(req));
     res.status(201).json({ success: true, data: course });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -55,7 +59,7 @@ router.post('/', validateCourse, (req, res) => {
 router.put('/:id', validateCourse, (req, res) => {
   try {
     const db = getInstance();
-    const course = db.updateCourse(req.params.id, req.body);
+    const course = db.updateCourse(req.params.id, req.body, tenantOptions(req));
     if (!course) return res.status(404).json({ error: '课程不存在' });
     res.json({ success: true, data: course });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -64,7 +68,8 @@ router.put('/:id', validateCourse, (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const db = getInstance();
-    db.deleteCourse(req.params.id);
+    const deleted = db.deleteCourse(req.params.id, tenantOptions(req));
+    if (!deleted) return res.status(404).json({ error: '璇剧▼涓嶅瓨鍦?' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

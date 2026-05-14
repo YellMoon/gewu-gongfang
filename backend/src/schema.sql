@@ -5,6 +5,7 @@
 -- ===================== 学生表 =====================
 CREATE TABLE IF NOT EXISTS students (
   id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
   name TEXT NOT NULL,
   phone TEXT,
   school TEXT,
@@ -26,6 +27,7 @@ CREATE TABLE IF NOT EXISTS students (
 -- ===================== 成绩表 =====================
 CREATE TABLE IF NOT EXISTS grades (
   id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
   student_id TEXT NOT NULL,
   subject TEXT NOT NULL,
   score REAL NOT NULL,
@@ -40,6 +42,7 @@ CREATE TABLE IF NOT EXISTS grades (
 -- ===================== 课程表 =====================
 CREATE TABLE IF NOT EXISTS courses (
   id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
   name TEXT NOT NULL,
   year INTEGER,
   semester TEXT,
@@ -67,6 +70,7 @@ CREATE TABLE IF NOT EXISTS courses (
 -- ===================== 排课表 =====================
 CREATE TABLE IF NOT EXISTS schedules (
   id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
   course_id TEXT NOT NULL,
   start_time TEXT NOT NULL,
   end_time TEXT NOT NULL,
@@ -88,6 +92,7 @@ CREATE TABLE IF NOT EXISTS schedules (
 -- ===================== 选课关联表 =====================
 CREATE TABLE IF NOT EXISTS enrollments (
   id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
   schedule_id TEXT NOT NULL,
   student_id TEXT NOT NULL,
   custom_price REAL,
@@ -104,6 +109,7 @@ CREATE TABLE IF NOT EXISTS enrollments (
 -- ===================== 缴费记录表 =====================
 CREATE TABLE IF NOT EXISTS payments (
   id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
   student_id TEXT NOT NULL,
   amount REAL NOT NULL,
   payment_type INTEGER NOT NULL,         -- 1:学费 2:课时
@@ -119,6 +125,7 @@ CREATE TABLE IF NOT EXISTS payments (
 -- ===================== 课时消耗表 =====================
 CREATE TABLE IF NOT EXISTS consumptions (
   id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
   schedule_id TEXT NOT NULL,
   student_id TEXT NOT NULL,
   hours REAL NOT NULL,
@@ -135,6 +142,7 @@ CREATE TABLE IF NOT EXISTS consumptions (
 -- ===================== 机构表 =====================
 CREATE TABLE IF NOT EXISTS institutions (
   id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
   name TEXT NOT NULL,
   contact_person TEXT,
   contact_phone TEXT,
@@ -148,7 +156,8 @@ CREATE TABLE IF NOT EXISTS institutions (
 -- ===================== 学校表（自动收集） =====================
 CREATE TABLE IF NOT EXISTS schools (
   id TEXT PRIMARY KEY,
-  name TEXT NOT NULL UNIQUE,
+  tenant_id TEXT DEFAULT 'default',
+  name TEXT NOT NULL,
   count INTEGER DEFAULT 1,
   deleted INTEGER DEFAULT 0,
   created_at TEXT NOT NULL,
@@ -158,6 +167,7 @@ CREATE TABLE IF NOT EXISTS schools (
 -- ===================== 教室/地址表 =====================
 CREATE TABLE IF NOT EXISTS rooms (
   id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
   name TEXT NOT NULL,
   address TEXT,
   count INTEGER DEFAULT 1,
@@ -169,6 +179,7 @@ CREATE TABLE IF NOT EXISTS rooms (
 -- ===================== 老师表 =====================
 CREATE TABLE IF NOT EXISTS teachers (
   id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
   name TEXT NOT NULL,
   phone TEXT,
   subject TEXT,
@@ -422,38 +433,58 @@ CREATE TABLE IF NOT EXISTS vector_embeddings (
 CREATE TABLE IF NOT EXISTS data_archive_jobs (
   id TEXT PRIMARY KEY,
   tenant_id TEXT DEFAULT 'default',
+  job_type TEXT DEFAULT 'archive',
   target_table TEXT NOT NULL,
   archive_before TEXT NOT NULL,
   status TEXT DEFAULT 'pending',
   affected_rows INTEGER DEFAULT 0,
+  artifact_path TEXT,
+  artifact_format TEXT,
+  oss_key TEXT,
+  oss_url TEXT,
+  schedule_cron TEXT,
+  retention_days INTEGER DEFAULT 30,
+  error_message TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  finished_at TEXT
+  finished_at TEXT,
+  restored_at TEXT
 );
 
 -- ===================== 索引 =====================
 CREATE INDEX IF NOT EXISTS idx_students_name ON students(name);
+CREATE INDEX IF NOT EXISTS idx_students_tenant_deleted ON students(tenant_id, deleted);
 CREATE INDEX IF NOT EXISTS idx_students_updated ON students(updated_at);
 CREATE INDEX IF NOT EXISTS idx_students_deleted ON students(deleted);
 CREATE INDEX IF NOT EXISTS idx_grades_student ON grades(student_id);
+CREATE INDEX IF NOT EXISTS idx_grades_tenant_deleted ON grades(tenant_id, deleted);
 CREATE INDEX IF NOT EXISTS idx_grades_updated ON grades(updated_at);
 CREATE INDEX IF NOT EXISTS idx_courses_updated ON courses(updated_at);
+CREATE INDEX IF NOT EXISTS idx_courses_tenant_deleted ON courses(tenant_id, deleted);
 CREATE INDEX IF NOT EXISTS idx_courses_deleted ON courses(deleted);
 CREATE INDEX IF NOT EXISTS idx_schedules_course ON schedules(course_id);
+CREATE INDEX IF NOT EXISTS idx_schedules_tenant_deleted ON schedules(tenant_id, deleted);
 CREATE INDEX IF NOT EXISTS idx_schedules_time ON schedules(start_time, end_time);
 CREATE INDEX IF NOT EXISTS idx_schedules_updated ON schedules(updated_at);
 CREATE INDEX IF NOT EXISTS idx_schedules_deleted ON schedules(deleted);
 CREATE INDEX IF NOT EXISTS idx_enrollments_schedule ON enrollments(schedule_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_tenant_deleted ON enrollments(tenant_id, deleted);
 CREATE INDEX IF NOT EXISTS idx_enrollments_student ON enrollments(student_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_updated ON enrollments(updated_at);
 CREATE INDEX IF NOT EXISTS idx_payments_student ON payments(student_id);
+CREATE INDEX IF NOT EXISTS idx_payments_tenant_deleted ON payments(tenant_id, deleted);
 CREATE INDEX IF NOT EXISTS idx_payments_updated ON payments(updated_at);
 CREATE INDEX IF NOT EXISTS idx_payments_deleted ON payments(deleted);
 CREATE INDEX IF NOT EXISTS idx_consumptions_student ON consumptions(student_id);
+CREATE INDEX IF NOT EXISTS idx_consumptions_tenant_deleted ON consumptions(tenant_id, deleted);
 CREATE INDEX IF NOT EXISTS idx_consumptions_updated ON consumptions(updated_at);
 CREATE INDEX IF NOT EXISTS idx_institutions_updated ON institutions(updated_at);
+CREATE INDEX IF NOT EXISTS idx_institutions_tenant_deleted ON institutions(tenant_id, deleted);
 CREATE INDEX IF NOT EXISTS idx_rooms_updated ON rooms(updated_at);
+CREATE INDEX IF NOT EXISTS idx_rooms_tenant_deleted ON rooms(tenant_id, deleted);
 CREATE INDEX IF NOT EXISTS idx_teachers_updated ON teachers(updated_at);
+CREATE INDEX IF NOT EXISTS idx_teachers_tenant_deleted ON teachers(tenant_id, deleted);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_schools_tenant_name ON schools(tenant_id, name);
 CREATE INDEX IF NOT EXISTS idx_tenants_status ON tenants(status);
 CREATE INDEX IF NOT EXISTS idx_sync_audit_client ON sync_audit_log(client_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_sync_audit_record ON sync_audit_log(table_name, record_id);
@@ -475,4 +506,21 @@ CREATE INDEX IF NOT EXISTS idx_import_batches_status ON import_batches(status, c
 CREATE INDEX IF NOT EXISTS idx_import_items_batch ON import_items(batch_id, item_index);
 CREATE INDEX IF NOT EXISTS idx_search_jobs_status ON search_index_jobs(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_vector_entity ON vector_embeddings(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_vector_question_lookup ON vector_embeddings(tenant_id, entity_type, model, updated_at);
 CREATE INDEX IF NOT EXISTS idx_archive_jobs_status ON data_archive_jobs(status, created_at);
+
+-- S3 environment/migration baseline. Keep idempotent because schema.sql is still the bootstrap source.
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  checksum TEXT NOT NULL,
+  applied_at TEXT NOT NULL,
+  app_env TEXT NOT NULL DEFAULT 'dev',
+  rollback_notes TEXT NOT NULL
+);
+
+INSERT OR IGNORE INTO schema_migrations
+  (version, name, checksum, applied_at, app_env, rollback_notes)
+VALUES
+  (3101, 'baseline-single-schema', 'schema.sql', datetime('now'), 'dev',
+   'Rollback is snapshot based for the single-file schema: stop service, restore the pre-migration DB backup, then restart with the same APP_ENV/DB_PATH.');

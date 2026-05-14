@@ -5,6 +5,36 @@
  */
 const { getDb } = require('../db/database');
 
+function readTenant(req) {
+  return req.headers['x-tenant-id']
+    || req.headers['x-tenantid']
+    || req.query?.tenantId
+    || req.query?.tenant_id
+    || req.body?.tenantId
+    || req.body?.tenant_id
+    || null;
+}
+
+function enforceTenantScope(req, res, next) {
+  const userTenant = req.user?.tenantId || req.user?.tenant_id || null;
+  const requestedTenant = readTenant(req);
+  const tenantId = userTenant || requestedTenant || 'default';
+
+  if (userTenant && requestedTenant && requestedTenant !== userTenant) {
+    return res.status(403).json({
+      error: 'TENANT_FORBIDDEN',
+      message: 'tenant scope mismatch',
+    });
+  }
+
+  req.tenantId = tenantId;
+  if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
+    req.body.tenant_id = tenantId;
+    req.body.tenantId = tenantId;
+  }
+  return next();
+}
+
 /**
  * 检查用户是否有指定模块的操作权限
  * @param {string} module - 模块 ID (如 'scheduling', 'question-bank')
@@ -87,7 +117,7 @@ function requireType(types) {
   };
 }
 
-module.exports = { requirePermission, requireType };
+module.exports = { requirePermission, requireType, enforceTenantScope };
 
 /**
  * 加载用户权限到 req.userPerms
@@ -117,4 +147,4 @@ function loadUserPermissions(req, res, next) {
   next();
 }
 
-module.exports = { requirePermission, requireType, loadUserPermissions };
+module.exports = { requirePermission, requireType, loadUserPermissions, enforceTenantScope };

@@ -7,11 +7,34 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
+const SCHEMA_VERSION = 3101;
+const ENVIRONMENTS = {
+  dev: { dbFile: 'scheduling.dev.db' },
+  staging: { dbFile: 'scheduling.staging.db' },
+  prod: { dbFile: 'scheduling.db' },
+};
+
+function resolveEnvironment() {
+  const raw = process.env.APP_ENV || process.env.SCHEDULE_ENV || process.env.NODE_ENV || 'dev';
+  if (raw === 'production') return 'prod';
+  if (raw === 'development') return 'dev';
+  return ENVIRONMENTS[raw] ? raw : 'dev';
+}
+
+function resolveDefaultDbPath(environment) {
+  const envConfig = ENVIRONMENTS[environment] || ENVIRONMENTS.dev;
+  return path.join(__dirname, '..', 'data', envConfig.dbFile);
+}
+
 class DatabaseService {
   constructor() {
     this.db = null;
     this.readDb = null;
-    this.dbPath = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'scheduling.db');
+    this.readDbMode = 'writer';
+    this.readDbError = null;
+    this.environment = resolveEnvironment();
+    this.schemaVersion = Number(process.env.SCHEMA_VERSION || SCHEMA_VERSION);
+    this.dbPath = process.env.DB_PATH || resolveDefaultDbPath(this.environment);
     this.readDbPath = process.env.READ_DB_PATH || this.dbPath;
     this._init();
   }
@@ -24,16 +47,28 @@ class DatabaseService {
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
     if (this.readDbPath !== this.dbPath) {
-      this.readDb = new Database(this.readDbPath, { readonly: true, fileMustExist: true });
-      this.readDb.pragma('foreign_keys = ON');
+      try {
+        this.readDb = new Database(this.readDbPath, { readonly: true, fileMustExist: true });
+        this.readDb.pragma('foreign_keys = ON');
+        this.readDbMode = 'readonly';
+      } catch (error) {
+        this.readDb = this.db;
+        this.readDbMode = 'fallback';
+        this.readDbError = error.message;
+        console.warn(`[DB] READ_DB_PATH unavailable, fallback to writer: ${error.message}`);
+      }
     } else {
       this.readDb = this.db;
+      this.readDbMode = 'writer';
     }
 
     const schemaPath = path.join(__dirname, 'schema.sql');
     const schema = fs.readFileSync(schemaPath, 'utf-8');
     this.db.exec(schema);
-    console.log(`[DB] 鍒濆鍖栧畬鎴? ${this.dbPath}`);
+    this._recordSchemaVersion(schemaPath);
+    this._ensureTenantColumns();
+    this._ensureArchiveJobColumns();
+    console.log(`[DB] initialized env=${this.environment} schema=${this.schemaVersion} path=${this.dbPath}`);
   }
 
   // ==================== 閫氱敤CRUD杈呭姪 ====================
@@ -42,17 +77,157 @@ class DatabaseService {
 
   _reader() { return this.readDb || this.db; }
 
-  _get(table, id) {
-    return this._reader().prepare(`SELECT * FROM ${table} WHERE id = ? AND deleted = 0`).get(id);
+  _recordSchemaVersion(schemaPath) {
+    const now = this._now();
+    const checksum = fs.readFileSync(schemaPath, 'utf-8').length.toString();
+    this.db.pragma(`user_version = ${this.schemaVersion}`);
+    this.db.prepare(
+      `INSERT INTO schema_migrations
+       (version, name, checksum, applied_at, app_env, rollback_notes)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(version) DO UPDATE SET
+         checksum = excluded.checksum,
+         app_env = excluded.app_env,
+         rollback_notes = excluded.rollback_notes`
+    ).run(
+      this.schemaVersion,
+      'baseline-single-schema',
+      checksum,
+      now,
+      this.environment,
+      'Rollback is snapshot based for the single-file schema: stop service, restore the pre-migration DB backup, then restart with the same APP_ENV/DB_PATH.'
+    );
   }
 
-  _list(table, orderBy = 'created_at DESC') {
-    return this._reader().prepare(`SELECT * FROM ${table} WHERE deleted = 0 ORDER BY ${orderBy}`).all();
+  getSchemaStatus() {
+    return {
+      environment: this.environment,
+      dbPath: this.dbPath,
+      readDbPath: this.readDbPath,
+      readDbMode: this.readDbMode,
+      readDbError: this.readDbError,
+      schemaVersion: this.schemaVersion,
+      sqliteUserVersion: this.db.pragma('user_version', { simple: true }),
+      migrations: this.db.prepare(
+        'SELECT version, name, checksum, applied_at, app_env, rollback_notes FROM schema_migrations ORDER BY version DESC'
+      ).all(),
+    };
   }
 
-  _insert(table, data) {
+  _tenantScopedTables() {
+    return ['students', 'grades', 'courses', 'schedules', 'enrollments',
+      'payments', 'consumptions', 'institutions', 'schools', 'rooms', 'teachers',
+      'subjects', 'chapters', 'knowledge_points', 'questions', 'question_contents',
+      'question_assets', 'import_batches', 'search_index_jobs', 'vector_embeddings',
+      'data_archive_jobs', 'outbox_events'];
+  }
+
+  _ensureTenantColumns() {
+    const now = this._now();
+    this.db.prepare(
+      `INSERT OR IGNORE INTO tenants (id, name, status, plan, deleted, created_at, updated_at)
+       VALUES ('default', 'default', 'active', 'standard', 0, ?, ?)`
+    ).run(now, now);
+
+    for (const table of this._tenantScopedTables()) {
+      const exists = this.db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?"
+      ).get(table);
+      if (!exists) continue;
+      const columns = this.db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+      if (!columns.includes('tenant_id')) {
+        this.db.prepare(`ALTER TABLE ${table} ADD COLUMN tenant_id TEXT DEFAULT 'default'`).run();
+      }
+      this.db.prepare(`UPDATE ${table} SET tenant_id = 'default' WHERE tenant_id IS NULL OR tenant_id = ''`).run();
+      if (columns.includes('deleted')) {
+        this.db.prepare(`CREATE INDEX IF NOT EXISTS idx_${table}_tenant_deleted ON ${table}(tenant_id, deleted)`).run();
+      } else {
+        this.db.prepare(`CREATE INDEX IF NOT EXISTS idx_${table}_tenant ON ${table}(tenant_id)`).run();
+      }
+    }
+  }
+
+  _ensureArchiveJobColumns() {
+    const exists = this.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'data_archive_jobs'"
+    ).get();
+    if (!exists) return;
+
+    const columns = new Set(this.db.prepare('PRAGMA table_info(data_archive_jobs)').all().map(c => c.name));
+    const addColumn = (name, ddl) => {
+      if (!columns.has(name)) {
+        this.db.prepare(`ALTER TABLE data_archive_jobs ADD COLUMN ${name} ${ddl}`).run();
+      }
+    };
+
+    addColumn('job_type', "TEXT DEFAULT 'archive'");
+    addColumn('artifact_path', 'TEXT');
+    addColumn('artifact_format', 'TEXT');
+    addColumn('oss_key', 'TEXT');
+    addColumn('oss_url', 'TEXT');
+    addColumn('schedule_cron', 'TEXT');
+    addColumn('retention_days', 'INTEGER DEFAULT 30');
+    addColumn('error_message', 'TEXT');
+    addColumn('restored_at', 'TEXT');
+  }
+
+  _tenantId(options = {}) {
+    return options.tenantId || options.tenant_id || process.env.DEFAULT_TENANT_ID || 'default';
+  }
+
+  _tenantWhere(table, options = {}, alias = null) {
+    const columns = this._tableColumns(table);
+    if (!columns.includes('tenant_id')) return { sql: '', params: [] };
+    const prefix = alias ? `${alias}.` : '';
+    return { sql: `${prefix}tenant_id = ?`, params: [this._tenantId(options)] };
+  }
+
+  _getFrom(db, table, id, options = {}) {
+    const tenant = this._tenantWhere(table, options);
+    const where = ['id = ?', 'deleted = 0'];
+    const params = [id];
+    if (tenant.sql) {
+      where.push(tenant.sql);
+      params.push(...tenant.params);
+    }
+    return db.prepare(`SELECT * FROM ${table} WHERE ${where.join(' AND ')}`).get(...params);
+  }
+
+  _get(table, id, options = {}) {
+    return this._getFrom(this._reader(), table, id, options);
+  }
+
+  _getWriter(table, id, options = {}) {
+    return this._getFrom(this.db, table, id, options);
+  }
+
+  _getWriterByField(table, field, value, options = {}) {
+    const tenant = this._tenantWhere(table, options);
+    const where = [`${field} = ?`, 'deleted = 0'];
+    const params = [value];
+    if (tenant.sql) {
+      where.push(tenant.sql);
+      params.push(...tenant.params);
+    }
+    return this.db.prepare(`SELECT * FROM ${table} WHERE ${where.join(' AND ')}`).get(...params);
+  }
+
+  _list(table, orderBy = 'created_at DESC', options = {}) {
+    const tenant = this._tenantWhere(table, options);
+    const where = ['deleted = 0'];
+    const params = [];
+    if (tenant.sql) {
+      where.push(tenant.sql);
+      params.push(...tenant.params);
+    }
+    return this._reader().prepare(`SELECT * FROM ${table} WHERE ${where.join(' AND ')} ORDER BY ${orderBy}`).all(...params);
+  }
+
+  _insert(table, data, options = {}) {
     const now = this._now();
     const record = { ...data, created_at: now, updated_at: now };
+    const columns = this._tableColumns(table);
+    if (columns.includes('tenant_id') && !record.tenant_id) record.tenant_id = this._tenantId(options);
     const keys = Object.keys(record);
     const vals = Object.values(record);
     const placeholders = keys.map(() => '?').join(', ');
@@ -60,31 +235,53 @@ class DatabaseService {
     return record;
   }
 
-  _update(table, id, updates) {
+  _update(table, id, updates, options = {}) {
     const now = this._now();
     updates.updated_at = now;
     const keys = Object.keys(updates);
     const vals = Object.values(updates);
     const setClause = keys.map(k => `${k} = ?`).join(', ');
-    this.db.prepare(`UPDATE ${table} SET ${setClause} WHERE id = ? AND deleted = 0`).run(...vals, id);
-    return this._get(table, id);
+    const tenant = this._tenantWhere(table, options);
+    const where = ['id = ?', 'deleted = 0'];
+    const params = [...vals, id];
+    if (tenant.sql) {
+      where.push(tenant.sql);
+      params.push(...tenant.params);
+    }
+    this.db.prepare(`UPDATE ${table} SET ${setClause} WHERE ${where.join(' AND ')}`).run(...params);
+    return this._getWriter(table, id, options);
   }
 
-  _softDelete(table, id) {
+  _softDelete(table, id, options = {}) {
     const now = this._now();
-    const result = this.db.prepare(`UPDATE ${table} SET deleted = 1, updated_at = ? WHERE id = ?`).run(now, id);
+    const tenant = this._tenantWhere(table, options);
+    const where = ['id = ?'];
+    const params = [now, id];
+    if (tenant.sql) {
+      where.push(tenant.sql);
+      params.push(...tenant.params);
+    }
+    const result = this.db.prepare(`UPDATE ${table} SET deleted = 1, updated_at = ? WHERE ${where.join(' AND ')}`).run(...params);
     this._auditOperation({
+      tenant_id: this._tenantId(options),
       action: 'delete',
       table_name: table,
       record_id: id,
       status: result.changes > 0 ? 'success' : 'not_found',
       detail: { affectedRows: result.changes },
-    });
-    return true;
+    }, options);
+    return result.changes > 0;
   }
 
-  _count(table, where = '1=1', params = []) {
-    const row = this._reader().prepare(`SELECT COUNT(*) as cnt FROM ${table} WHERE ${where}`).get(...params);
+  _count(table, where = '1=1', params = [], options = {}) {
+    const tenant = this._tenantWhere(table, options);
+    const clauses = [where];
+    const allParams = [...params];
+    if (tenant.sql) {
+      clauses.push(tenant.sql);
+      allParams.push(...tenant.params);
+    }
+    const row = this._reader().prepare(`SELECT COUNT(*) as cnt FROM ${table} WHERE ${clauses.join(' AND ')}`).get(...allParams);
     return row.cnt;
   }
 
@@ -197,15 +394,15 @@ class DatabaseService {
 
   // ==================== 瀛︾敓绠＄悊 ====================
 
-  getAllStudents() {
-    return this._list('students', 'created_at DESC');
+  getAllStudents(options = {}) {
+    return this._list('students', 'created_at DESC', options);
   }
 
-  getStudentById(id) {
-    return this._get('students', id);
+  getStudentById(id, options = {}) {
+    return this._get('students', id, options);
   }
 
-  createStudent(data) {
+  createStudent(data, options = {}) {
     const id = uuidv4();
     return this._insert('students', {
       id,
@@ -222,49 +419,49 @@ class DatabaseService {
       balance_hours: data.balance_hours || 0,
       balance_money: data.balance_money || 0,
       notes: data.notes || null
-    });
+    }, options);
   }
 
-  updateStudent(id, updates) {
+  updateStudent(id, updates, options = {}) {
     const allowed = ['name', 'phone', 'school', 'grade_year', 'grade_current', 'source_type',
       'institution_id', 'parent_name', 'parent_wechat', 'student_source',
       'balance_hours', 'balance_money', 'notes'];
     const filtered = {};
     for (const k of allowed) if (updates[k] !== undefined) filtered[k] = updates[k];
-    if (Object.keys(filtered).length === 0) return this._get('students', id);
-    return this._update('students', id, filtered);
+    if (Object.keys(filtered).length === 0) return this._get('students', id, options);
+    return this._update('students', id, filtered, options);
   }
 
-  deleteStudent(id) {
-    return this._softDelete('students', id);
+  deleteStudent(id, options = {}) {
+    return this._softDelete('students', id, options);
   }
 
   // 鑾峰彇鎴愮哗
-  getGrades(studentId) {
-    return this.db.prepare(
-      'SELECT * FROM grades WHERE student_id = ? AND deleted = 0 ORDER BY exam_date DESC'
-    ).all(studentId);
+  getGrades(studentId, options = {}) {
+    return this._reader().prepare(
+      'SELECT * FROM grades WHERE student_id = ? AND deleted = 0 AND tenant_id = ? ORDER BY exam_date DESC'
+    ).all(studentId, this._tenantId(options));
   }
 
-  createGrade(data) {
+  createGrade(data, options = {}) {
     const id = uuidv4();
     return this._insert('grades', {
       id, student_id: data.student_id, subject: data.subject,
       score: data.score, exam_date: data.exam_date || null, notes: data.notes || null
-    });
+    }, options);
   }
 
   // ==================== 璇剧▼绠＄悊 ====================
 
-  getAllCourses() {
-    return this._list('courses', 'created_at DESC');
+  getAllCourses(options = {}) {
+    return this._list('courses', 'created_at DESC', options);
   }
 
-  getCourseById(id) {
-    return this._get('courses', id);
+  getCourseById(id, options = {}) {
+    return this._get('courses', id, options);
   }
 
-  createCourse(data) {
+  createCourse(data, options = {}) {
     const id = uuidv4();
     return this._insert('courses', {
       id, name: data.name, year: data.year || null, semester: data.semester || null,
@@ -278,10 +475,10 @@ class DatabaseService {
       active: data.active !== undefined ? (data.active ? 1 : 0) : 1,
       default_duration_minutes: data.default_duration_minutes || null,
       notes: data.notes || null
-    });
+    }, options);
   }
 
-  updateCourse(id, updates) {
+  updateCourse(id, updates, options = {}) {
     const allowed = ['name', 'year', 'semester', 'display_name', 'type', 'source_type',
       'institution_id', 'price_tuition', 'price_teacher', 'billing_unit', 'teacher_fee_mode',
       'room_id', 'room_name', 'teacher_id', 'teacher_name', 'active',
@@ -292,29 +489,29 @@ class DatabaseService {
       else if (k === 'active') filtered[k] = updates[k] ? 1 : 0;
       else filtered[k] = updates[k];
     }
-    if (Object.keys(filtered).length === 0) return this._get('courses', id);
-    return this._update('courses', id, filtered);
+    if (Object.keys(filtered).length === 0) return this._get('courses', id, options);
+    return this._update('courses', id, filtered, options);
   }
 
-  deleteCourse(id) { return this._softDelete('courses', id); }
+  deleteCourse(id, options = {}) { return this._softDelete('courses', id, options); }
 
   // ==================== 鎺掕绠＄悊 ====================
 
-  getAllSchedules() {
-    return this._list('schedules', 'start_time DESC');
+  getAllSchedules(options = {}) {
+    return this._list('schedules', 'start_time DESC', options);
   }
 
-  getSchedulesByDateRange(start, end) {
-    return this.db.prepare(
-      `SELECT * FROM schedules WHERE deleted = 0 AND start_time >= ? AND end_time <= ? ORDER BY start_time`
-    ).all(start, end);
+  getSchedulesByDateRange(start, end, options = {}) {
+    return this._reader().prepare(
+      `SELECT * FROM schedules WHERE deleted = 0 AND tenant_id = ? AND start_time >= ? AND end_time <= ? ORDER BY start_time`
+    ).all(this._tenantId(options), start, end);
   }
 
-  getScheduleById(id) {
-    return this._get('schedules', id);
+  getScheduleById(id, options = {}) {
+    return this._get('schedules', id, options);
   }
 
-  createSchedule(data) {
+  createSchedule(data, options = {}) {
     const id = uuidv4();
     return this._insert('schedules', {
       id, course_id: data.course_id, start_time: data.start_time, end_time: data.end_time,
@@ -326,10 +523,10 @@ class DatabaseService {
       calculated_tuition: data.calculated_tuition || 0,
       calculated_teacher_fee: data.calculated_teacher_fee || 0,
       notes: data.notes || null
-    });
+    }, options);
   }
 
-  updateSchedule(id, updates) {
+  updateSchedule(id, updates, options = {}) {
     const allowed = ['course_id', 'start_time', 'end_time', 'recurring_rule', 'status',
       'room', 'service_type', 'student_ids', 'student_pricings',
       'calculated_tuition', 'calculated_teacher_fee', 'notes'];
@@ -340,60 +537,60 @@ class DatabaseService {
         else filtered[k] = updates[k];
       }
     }
-    if (Object.keys(filtered).length === 0) return this._get('schedules', id);
-    return this._update('schedules', id, filtered);
+    if (Object.keys(filtered).length === 0) return this._get('schedules', id, options);
+    return this._update('schedules', id, filtered, options);
   }
 
-  deleteSchedule(id) { return this._softDelete('schedules', id); }
+  deleteSchedule(id, options = {}) { return this._softDelete('schedules', id, options); }
 
-  checkTimeConflict(startTime, endTime, excludeScheduleId) {
-    let sql = `SELECT * FROM schedules WHERE deleted = 0 AND status NOT IN (3) AND NOT (end_time <= ? OR start_time >= ?)`;
-    const params = [startTime, endTime];
+  checkTimeConflict(startTime, endTime, excludeScheduleId, options = {}) {
+    let sql = `SELECT * FROM schedules WHERE deleted = 0 AND tenant_id = ? AND status NOT IN (3) AND NOT (end_time <= ? OR start_time >= ?)`;
+    const params = [this._tenantId(options), startTime, endTime];
     if (excludeScheduleId) { sql += ' AND id != ?'; params.push(excludeScheduleId); }
-    return this.db.prepare(sql).all(...params);
+    return this._reader().prepare(sql).all(...params);
   }
 
   // ==================== 閫夎鍏宠仈 ====================
 
-  getEnrollmentsBySchedule(scheduleId) {
-    return this.db.prepare('SELECT * FROM enrollments WHERE schedule_id = ? AND deleted = 0').all(scheduleId);
+  getEnrollmentsBySchedule(scheduleId, options = {}) {
+    return this._reader().prepare('SELECT * FROM enrollments WHERE schedule_id = ? AND deleted = 0 AND tenant_id = ?').all(scheduleId, this._tenantId(options));
   }
 
-  getEnrollmentsByStudent(studentId) {
-    return this.db.prepare('SELECT * FROM enrollments WHERE student_id = ? AND deleted = 0').all(studentId);
+  getEnrollmentsByStudent(studentId, options = {}) {
+    return this._reader().prepare('SELECT * FROM enrollments WHERE student_id = ? AND deleted = 0 AND tenant_id = ?').all(studentId, this._tenantId(options));
   }
 
-  createEnrollment(data) {
+  createEnrollment(data, options = {}) {
     const id = uuidv4();
     return this._insert('enrollments', {
       id, schedule_id: data.schedule_id, student_id: data.student_id,
       custom_price: data.custom_price || null,
       hours_consumed: data.hours_consumed || 0,
       status: data.status || 1, notes: data.notes || null
-    });
+    }, options);
   }
 
-  updateEnrollment(id, updates) {
+  updateEnrollment(id, updates, options = {}) {
     const allowed = ['custom_price', 'hours_consumed', 'status', 'notes'];
     const filtered = {};
     for (const k of allowed) if (updates[k] !== undefined) filtered[k] = updates[k];
-    if (Object.keys(filtered).length === 0) return this._get('enrollments', id);
-    return this._update('enrollments', id, filtered);
+    if (Object.keys(filtered).length === 0) return this._get('enrollments', id, options);
+    return this._update('enrollments', id, filtered, options);
   }
 
-  deleteEnrollment(id) { return this._softDelete('enrollments', id); }
+  deleteEnrollment(id, options = {}) { return this._softDelete('enrollments', id, options); }
 
   // ==================== 缂磋垂绠＄悊 ====================
 
-  getAllPayments() { return this._list('payments', 'payment_date DESC'); }
+  getAllPayments(options = {}) { return this._list('payments', 'payment_date DESC', options); }
 
-  getPaymentsByStudent(studentId) {
-    return this.db.prepare(
-      'SELECT * FROM payments WHERE student_id = ? AND deleted = 0 ORDER BY payment_date DESC'
-    ).all(studentId);
+  getPaymentsByStudent(studentId, options = {}) {
+    return this._reader().prepare(
+      'SELECT * FROM payments WHERE student_id = ? AND deleted = 0 AND tenant_id = ? ORDER BY payment_date DESC'
+    ).all(studentId, this._tenantId(options));
   }
 
-  createPayment(data) {
+  createPayment(data, options = {}) {
     const id = uuidv4();
     const payment = this._insert('payments', {
       id, student_id: data.student_id, amount: data.amount,
@@ -401,12 +598,12 @@ class DatabaseService {
       payment_method: data.payment_method || null, notes: data.notes || null
     });
     // 鏇存柊瀛︾敓浣欓
-    const student = this._get('students', data.student_id);
+    const student = this._get('students', data.student_id, options);
     if (student) {
       if (data.payment_type === 1) {  // 瀛﹁垂
-        this._update('students', data.student_id, { balance_money: student.balance_money + data.amount });
+        this._update('students', data.student_id, { balance_money: student.balance_money + data.amount }, options);
       } else if (data.payment_type === 2) {  // 璇炬椂
-        this._update('students', data.student_id, { balance_hours: student.balance_hours + data.amount });
+        this._update('students', data.student_id, { balance_hours: student.balance_hours + data.amount }, options);
       }
     }
     return payment;
@@ -414,121 +611,123 @@ class DatabaseService {
 
   // ==================== 璇炬椂娑堣€?====================
 
-  getAllConsumptions() { return this._list('consumptions', 'consumption_date DESC'); }
+  getAllConsumptions(options = {}) { return this._list('consumptions', 'consumption_date DESC', options); }
 
-  getConsumptionsByStudent(studentId) {
-    return this.db.prepare(
-      'SELECT * FROM consumptions WHERE student_id = ? AND deleted = 0 ORDER BY consumption_date DESC'
-    ).all(studentId);
+  getConsumptionsByStudent(studentId, options = {}) {
+    return this._reader().prepare(
+      'SELECT * FROM consumptions WHERE student_id = ? AND deleted = 0 AND tenant_id = ? ORDER BY consumption_date DESC'
+    ).all(studentId, this._tenantId(options));
   }
 
-  createConsumption(data) {
+  createConsumption(data, options = {}) {
     const id = uuidv4();
     const consumption = this._insert('consumptions', {
       id, schedule_id: data.schedule_id, student_id: data.student_id,
       hours: data.hours, amount: data.amount, consumption_date: data.consumption_date,
       notes: data.notes || null
-    });
+    }, options);
     // 鏇存柊瀛︾敓浣欓
-    const student = this._get('students', data.student_id);
+    const student = this._get('students', data.student_id, options);
     if (student) {
       this._update('students', data.student_id, {
         balance_hours: student.balance_hours - data.hours,
         balance_money: student.balance_money - data.amount
-      });
+      }, options);
     }
     return consumption;
   }
 
   // ==================== 鑰佸笀绠＄悊 ====================
 
-  getAllTeachers() { return this._list('teachers', 'created_at DESC'); }
-  getTeacherById(id) { return this._get('teachers', id); }
+  getAllTeachers(options = {}) { return this._list('teachers', 'created_at DESC', options); }
+  getTeacherById(id, options = {}) { return this._get('teachers', id, options); }
 
-  createTeacher(data) {
+  createTeacher(data, options = {}) {
     const id = uuidv4();
     return this._insert('teachers', {
       id, name: data.name, phone: data.phone || null,
       subject: data.subject || null, hourly_rate: data.hourly_rate || null,
       notes: data.notes || null
-    });
+    }, options);
   }
 
-  updateTeacher(id, updates) {
+  updateTeacher(id, updates, options = {}) {
     const allowed = ['name', 'phone', 'subject', 'hourly_rate', 'notes'];
     const filtered = {};
     for (const k of allowed) if (updates[k] !== undefined) filtered[k] = updates[k];
-    if (Object.keys(filtered).length === 0) return this._get('teachers', id);
-    return this._update('teachers', id, filtered);
+    if (Object.keys(filtered).length === 0) return this._get('teachers', id, options);
+    return this._update('teachers', id, filtered, options);
   }
 
-  deleteTeacher(id) { return this._softDelete('teachers', id); }
+  deleteTeacher(id, options = {}) { return this._softDelete('teachers', id, options); }
 
   // ==================== 鏁欏绠＄悊 ====================
 
-  getAllRooms() { return this._list('rooms', 'created_at DESC'); }
-  getRoomById(id) { return this._get('rooms', id); }
+  getAllRooms(options = {}) { return this._list('rooms', 'created_at DESC', options); }
+  getRoomById(id, options = {}) { return this._get('rooms', id, options); }
 
-  createRoom(data) {
+  createRoom(data, options = {}) {
     const id = uuidv4();
     return this._insert('rooms', {
       id, name: data.name, address: data.address || '', count: 1
-    });
+    }, options);
   }
 
-  updateRoom(id, updates) {
+  updateRoom(id, updates, options = {}) {
     const allowed = ['name', 'address'];
     const filtered = {};
     for (const k of allowed) if (updates[k] !== undefined) filtered[k] = updates[k];
-    if (Object.keys(filtered).length === 0) return this._get('rooms', id);
-    return this._update('rooms', id, filtered);
+    if (Object.keys(filtered).length === 0) return this._get('rooms', id, options);
+    return this._update('rooms', id, filtered, options);
   }
 
-  deleteRoom(id) { return this._softDelete('rooms', id); }
+  deleteRoom(id, options = {}) { return this._softDelete('rooms', id, options); }
 
   // ==================== 瀛︽牎绠＄悊 ====================
 
-  getAllSchools() { return this._list('schools', 'name ASC'); }
+  getAllSchools(options = {}) { return this._list('schools', 'name ASC', options); }
 
-  addOrUpdateSchool(name) {
-    const existing = this.db.prepare('SELECT * FROM schools WHERE name = ? AND deleted = 0').get(name);
+  addOrUpdateSchool(name, options = {}) {
+    const existing = this._getWriterByField('schools', 'name', name, options);
     if (existing) {
-      return this._update('schools', existing.id, { count: existing.count + 1 });
+      return this._update('schools', existing.id, { count: existing.count + 1 }, options);
     }
     const id = uuidv4();
-    return this._insert('schools', { id, name, count: 1 });
+    return this._insert('schools', { id, name, count: 1 }, options);
   }
 
   // ==================== 鏈烘瀯绠＄悊 ====================
 
-  getAllInstitutions() { return this._list('institutions', 'created_at DESC'); }
-  getInstitutionById(id) { return this._get('institutions', id); }
+  getAllInstitutions(options = {}) { return this._list('institutions', 'created_at DESC', options); }
+  getInstitutionById(id, options = {}) { return this._get('institutions', id, options); }
 
-  createInstitution(data) {
+  createInstitution(data, options = {}) {
     const id = uuidv4();
     return this._insert('institutions', {
       id, name: data.name, contact_person: data.contact_person || null,
       contact_phone: data.contact_phone || null, revenue_share: data.revenue_share || null,
       notes: data.notes || null
-    });
+    }, options);
   }
 
-  updateInstitution(id, updates) {
+  updateInstitution(id, updates, options = {}) {
     const allowed = ['name', 'contact_person', 'contact_phone', 'revenue_share', 'notes'];
     const filtered = {};
     for (const k of allowed) if (updates[k] !== undefined) filtered[k] = updates[k];
-    if (Object.keys(filtered).length === 0) return this._get('institutions', id);
-    return this._update('institutions', id, filtered);
+    if (Object.keys(filtered).length === 0) return this._get('institutions', id, options);
+    return this._update('institutions', id, filtered, options);
   }
 
-  deleteInstitution(id) { return this._softDelete('institutions', id); }
+  deleteInstitution(id, options = {}) { return this._softDelete('institutions', id, options); }
 
   // ==================== 缁熻鏁版嵁 ====================
 
-  getRevenueStats(startDate, endDate) {
-    const schedules = this.db.prepare(
-      `SELECT * FROM schedules WHERE deleted = 0 AND status = 2 AND start_time >= ? AND start_time <= ?`
-    ).all(startDate, endDate);
+  getRevenueStats(startDate, endDate, options = {}) {
+    const reader = this._reader();
+    const tenantId = this._tenantId(options);
+    const schedules = reader.prepare(
+      `SELECT * FROM schedules WHERE deleted = 0 AND tenant_id = ? AND status = 2 AND start_time >= ? AND start_time <= ?`
+    ).all(tenantId, startDate, endDate);
 
     let total = 0;
     const byCourseType = {};
@@ -539,7 +738,7 @@ class DatabaseService {
     schedules.forEach(s => {
       const tuition = s.calculated_tuition || 0;
       total += tuition;
-      const course = this.db.prepare('SELECT * FROM courses WHERE id = ?').get(s.course_id);
+      const course = reader.prepare('SELECT * FROM courses WHERE id = ? AND tenant_id = ?').get(s.course_id, tenantId);
       if (course) {
         byCourseType[course.type] = (byCourseType[course.type] || 0) + tuition;
         bySourceType[course.source_type] = (bySourceType[course.source_type] || 0) + tuition;
@@ -565,41 +764,42 @@ class DatabaseService {
         sourceType: Number(st), sourceName: srcNames[st] || '未知', amount, percentage: pct(amount)
       })),
       byInstitution: Object.entries(byInstitution).map(([instId, amount]) => {
-        const inst = this.db.prepare('SELECT name FROM institutions WHERE id = ?').get(instId);
+        const inst = reader.prepare('SELECT name FROM institutions WHERE id = ? AND tenant_id = ?').get(instId, tenantId);
         return { institutionId: instId, institutionName: inst?.name || '未知机构', amount, percentage: pct(amount) };
       }),
       byMonth: Object.entries(byMonth).map(([month, amount]) => ({ month, amount }))
     };
   }
 
-  getConsumptionStats(startDate, endDate) {
-    const row = this.db.prepare(
+  getConsumptionStats(startDate, endDate, options = {}) {
+    const row = this._reader().prepare(
       `SELECT SUM(hours) as total_hours, SUM(amount) as total_amount, COUNT(*) as count
-       FROM consumptions WHERE deleted = 0 AND consumption_date >= ? AND consumption_date <= ?`
-    ).get(startDate, endDate);
+       FROM consumptions WHERE deleted = 0 AND tenant_id = ? AND consumption_date >= ? AND consumption_date <= ?`
+    ).get(this._tenantId(options), startDate, endDate);
     return { total_hours: row.total_hours || 0, total_amount: row.total_amount || 0, count: row.count || 0 };
   }
 
   // ==================== 鏁版嵁瀵煎嚭/瀵煎叆 ====================
 
-  exportAll() {
+  exportAll(options = {}) {
     return {
-      students: this._list('students'),
-      grades: this._list('grades'),
-      courses: this._list('courses'),
-      schedules: this._list('schedules'),
-      enrollments: this._list('enrollments'),
-      payments: this._list('payments'),
-      consumptions: this._list('consumptions'),
-      institutions: this._list('institutions'),
-      schools: this._list('schools'),
-      rooms: this._list('rooms'),
-      teachers: this._list('teachers'),
+      tenant_id: this._tenantId(options),
+      students: this._list('students', 'created_at DESC', options),
+      grades: this._list('grades', 'created_at DESC', options),
+      courses: this._list('courses', 'created_at DESC', options),
+      schedules: this._list('schedules', 'created_at DESC', options),
+      enrollments: this._list('enrollments', 'created_at DESC', options),
+      payments: this._list('payments', 'created_at DESC', options),
+      consumptions: this._list('consumptions', 'created_at DESC', options),
+      institutions: this._list('institutions', 'created_at DESC', options),
+      schools: this._list('schools', 'created_at DESC', options),
+      rooms: this._list('rooms', 'created_at DESC', options),
+      teachers: this._list('teachers', 'created_at DESC', options),
       exported_at: this._now()
     };
   }
 
-  importAll(data) {
+  importAll(data, options = {}) {
     const transaction = this.db.transaction((data) => {
       const tables = ['students', 'grades', 'courses', 'schedules', 'enrollments',
         'payments', 'consumptions', 'institutions', 'schools', 'rooms', 'teachers'];
@@ -608,8 +808,9 @@ class DatabaseService {
         if (data[table] && Array.isArray(data[table])) {
           counts[table] = 0;
           for (const row of data[table]) {
-            const keys = Object.keys(row);
-            const vals = Object.values(row);
+            const normalized = { ...row, tenant_id: this._tenantId(options) };
+            const keys = Object.keys(normalized);
+            const vals = Object.values(normalized);
             const placeholders = keys.map(() => '?').join(', ');
             this.db.prepare(
               `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`
@@ -620,6 +821,7 @@ class DatabaseService {
       }
       const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
       this._auditOperation({
+        tenant_id: this._tenantId(options),
         action: 'import',
         table_name: null,
         record_id: null,
@@ -627,7 +829,7 @@ class DatabaseService {
         detail: { source: 'backup', total, tables: counts },
       });
       return { total, tables: counts };
-    });
+    }, options);
     const summary = transaction(data);
     return { imported: true, ...summary };
   }
@@ -717,9 +919,9 @@ class DatabaseService {
     // a client resumes from the serverTime returned by the previous pull.
     const where = ['updated_at >= ?'];
     const params = [sinceIso];
-    if (options.tenantId && options.tenantId !== 'default' && columns.includes('tenant_id')) {
-      where.push('(tenant_id = ? OR tenant_id IS NULL)');
-      params.push(options.tenantId);
+    if (columns.includes('tenant_id')) {
+      where.push('tenant_id = ?');
+      params.push(this._tenantId(options));
     }
     return this._reader().prepare(
       `SELECT * FROM ${table} WHERE ${where.join(' AND ')} ORDER BY updated_at ASC`
@@ -756,7 +958,12 @@ class DatabaseService {
 
   applySyncChanges(changes, options = {}) {
     const deviceId = options.deviceId || 'unknown';
-    const queue = this._legacyChangesToQueue(changes, deviceId);
+    const scopeTenantId = this._tenantId(options);
+    const queue = this._legacyChangesToQueue(changes, deviceId).map(change => ({
+      ...change,
+      tenantId: change.tenantId && change.tenantId !== 'default' ? change.tenantId : scopeTenantId,
+      data: { ...change.data, tenant_id: scopeTenantId },
+    }));
     const transaction = this.db.transaction((normalizedChanges) => {
       const now = this._now();
       const results = { applied: 0, conflicts: 0, errors: [] };
@@ -775,7 +982,9 @@ class DatabaseService {
           continue;
         }
         try {
-          const existing = this.db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(recordId);
+          const existing = columns.includes('tenant_id')
+            ? this.db.prepare(`SELECT * FROM ${table} WHERE id = ? AND tenant_id = ?`).get(recordId, change.tenantId)
+            : this.db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(recordId);
           if (existing && this._syncTimeMs(existing.updated_at) > this._syncTimeMs(change.updatedAt)) {
             results.conflicts++;
             this._auditSync({
@@ -805,7 +1014,9 @@ class DatabaseService {
           const keys = Object.keys(incoming).filter(k => columns.includes(k) && k !== 'id');
           if (existing) {
             const setClause = keys.map(k => `${k} = ?`).join(', ');
-            this.db.prepare(`UPDATE ${table} SET ${setClause} WHERE id = ?`).run(...keys.map(k => incoming[k]), recordId);
+            const updateWhere = columns.includes('tenant_id') ? 'id = ? AND tenant_id = ?' : 'id = ?';
+            const updateParams = columns.includes('tenant_id') ? [recordId, change.tenantId] : [recordId];
+            this.db.prepare(`UPDATE ${table} SET ${setClause} WHERE ${updateWhere}`).run(...keys.map(k => incoming[k]), ...updateParams);
           } else {
             const insertRecord = { ...incoming, id: recordId };
             const insertKeys = Object.keys(insertRecord).filter(k => columns.includes(k));
@@ -864,9 +1075,9 @@ class DatabaseService {
     for (const table of tables) {
       const columns = this._tableColumns(table);
       const where = columns.includes('deleted') ? 'WHERE deleted = 0' : '';
-      const total = this.db.prepare(`SELECT COUNT(*) as cnt FROM ${table} ${where}`).get();
+      const total = this._reader().prepare(`SELECT COUNT(*) as cnt FROM ${table} ${where}`).get();
       const lastUpdate = columns.includes('updated_at')
-        ? this.db.prepare(`SELECT MAX(updated_at) as ts FROM ${table}`).get()
+        ? this._reader().prepare(`SELECT MAX(updated_at) as ts FROM ${table}`).get()
         : { ts: null };
       status[table] = { count: total.cnt, last_updated: lastUpdate.ts };
     }

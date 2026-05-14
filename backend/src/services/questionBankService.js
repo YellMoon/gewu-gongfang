@@ -163,9 +163,9 @@ class QuestionBankService {
 
       db.prepare(
         `INSERT INTO question_contents
-         (id, question_id, stem, answer, explanation, options_json, content_hash, version, oss_key, oss_url, deleted, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?)`
-      ).run(contentId, questionId, stem, payload.answer || null, explanation || null, JSON.stringify(options), contentHash, contentRef?.oss_key || null, contentRef?.oss_url || null, ts, ts);
+         (id, tenant_id, question_id, stem, answer, explanation, options_json, content_hash, version, oss_key, oss_url, deleted, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?)`
+      ).run(contentId, tenantId, questionId, stem, payload.answer || null, explanation || null, JSON.stringify(options), contentHash, contentRef?.oss_key || null, contentRef?.oss_url || null, ts, ts);
 
       for (const knowledgePointId of knowledgePointIds) {
         db.prepare(
@@ -177,9 +177,9 @@ class QuestionBankService {
       for (const asset of assets) {
         db.prepare(
           `INSERT INTO question_assets
-           (id, question_id, asset_type, file_name, mime_type, size_bytes, oss_key, oss_url, content_hash, deleted, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
-        ).run(uuidv4(), questionId, asset.asset_type, asset.file_name || null, asset.mime_type || null, asset.size_bytes || 0, asset.oss_key, asset.oss_url || null, asset.content_hash || null, ts, ts);
+           (id, tenant_id, question_id, asset_type, file_name, mime_type, size_bytes, oss_key, oss_url, content_hash, deleted, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+        ).run(uuidv4(), tenantId, questionId, asset.asset_type, asset.file_name || null, asset.mime_type || null, asset.size_bytes || 0, asset.oss_key, asset.oss_url || null, asset.content_hash || null, ts, ts);
       }
 
       this.enqueueSearchJob(db, questionId, 'upsert', tenantId);
@@ -243,7 +243,7 @@ class QuestionBankService {
   }
 
   listQuestions(db, filters = {}, tenantId = 'default') {
-    const where = ['q.deleted = 0', '(q.tenant_id = ? OR q.tenant_id IS NULL)'];
+    const where = ['q.deleted = 0', 'q.tenant_id = ?'];
     const params = [tenantId];
     if (filters.subject_id) {
       where.push('q.subject_id = ?');
@@ -275,7 +275,7 @@ class QuestionBankService {
 
   getQuestion(db, id, tenantId = 'default') {
     const row = db.prepare(
-      this._questionSelectSql('WHERE q.id = ? AND q.deleted = 0 AND (q.tenant_id = ? OR q.tenant_id IS NULL)')
+      this._questionSelectSql('WHERE q.id = ? AND q.deleted = 0 AND q.tenant_id = ?')
     ).get(id, tenantId);
     return this._mapQuestion(row, row ? this._getAssets(db, id) : []);
   }
@@ -311,9 +311,9 @@ class QuestionBankService {
       db.prepare('UPDATE question_contents SET deleted = 1, updated_at = ? WHERE question_id = ? AND deleted = 0').run(ts, id);
       db.prepare(
         `INSERT INTO question_contents
-         (id, question_id, stem, answer, explanation, options_json, content_hash, version, oss_key, oss_url, deleted, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
-      ).run(uuidv4(), id, stem, answer || null, explanation || null, JSON.stringify(options), contentHash, (existing.content_version || 1) + 1, contentRef.oss_key || null, contentRef.oss_url || null, ts, ts);
+         (id, tenant_id, question_id, stem, answer, explanation, options_json, content_hash, version, oss_key, oss_url, deleted, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+      ).run(uuidv4(), tenantId, id, stem, answer || null, explanation || null, JSON.stringify(options), contentHash, (existing.content_version || 1) + 1, contentRef.oss_key || null, contentRef.oss_url || null, ts, ts);
 
       if (payload.knowledge_point_ids !== undefined || payload.knowledge_ids !== undefined) {
         db.prepare('DELETE FROM question_knowledge_points WHERE question_id = ?').run(id);
@@ -330,9 +330,9 @@ class QuestionBankService {
         for (const asset of normalizeQuestionAssets(payload)) {
           db.prepare(
             `INSERT INTO question_assets
-             (id, question_id, asset_type, file_name, mime_type, size_bytes, oss_key, oss_url, content_hash, deleted, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
-          ).run(uuidv4(), id, asset.asset_type, asset.file_name || null, asset.mime_type || null, asset.size_bytes || 0, asset.oss_key, asset.oss_url || null, asset.content_hash || null, ts, ts);
+             (id, tenant_id, question_id, asset_type, file_name, mime_type, size_bytes, oss_key, oss_url, content_hash, deleted, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+          ).run(uuidv4(), tenantId, id, asset.asset_type, asset.file_name || null, asset.mime_type || null, asset.size_bytes || 0, asset.oss_key, asset.oss_url || null, asset.content_hash || null, ts, ts);
         }
       }
 
@@ -376,7 +376,7 @@ class QuestionBankService {
 
   getImportBatch(db, batchId, tenantId = 'default') {
     const batch = db.prepare(
-      'SELECT * FROM import_batches WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)'
+      'SELECT * FROM import_batches WHERE id = ? AND tenant_id = ?'
     ).get(batchId, tenantId);
     if (!batch) return null;
     const items = db.prepare(
@@ -396,7 +396,7 @@ class QuestionBankService {
     const limit = Math.min(Math.max(Number(filters.limit) || 20, 1), 100);
     return db.prepare(
       `SELECT * FROM import_batches
-       WHERE tenant_id = ? OR tenant_id IS NULL
+       WHERE tenant_id = ?
        ORDER BY created_at DESC
        LIMIT ?`
     ).all(tenantId, limit).map(row => ({

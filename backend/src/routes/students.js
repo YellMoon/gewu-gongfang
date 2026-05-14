@@ -6,6 +6,10 @@ const { getInstance } = require('../database');
 
 const router = Router();
 
+function tenantOptions(req) {
+  return { tenantId: req.tenantId || req.query.tenant_id || req.body?.tenant_id || 'default' };
+}
+
 function badRequest(res, message, details) {
   return res.status(400).json({ error: message, details });
 }
@@ -42,11 +46,11 @@ function validateGrade(req, res, next) {
 router.get('/', (req, res) => {
   try {
     const db = getInstance();
-    const students = db.getAllStudents();
+    const students = db.getAllStudents(tenantOptions(req));
     // 解析成绩
     if (req.query.withGrades === 'true') {
       for (const s of students) {
-        s.grades = db.getGrades(s.id);
+        s.grades = db.getGrades(s.id, tenantOptions(req));
       }
     }
     res.json({ success: true, data: students, count: students.length });
@@ -57,16 +61,16 @@ router.get('/', (req, res) => {
 router.get('/:id', (req, res) => {
   try {
     const db = getInstance();
-    const student = db.getStudentById(req.params.id);
+    const student = db.getStudentById(req.params.id, tenantOptions(req));
     if (!student) return res.status(404).json({ error: '学生不存在' });
     if (req.query.withGrades === 'true') {
-      student.grades = db.getGrades(req.params.id);
+      student.grades = db.getGrades(req.params.id, tenantOptions(req));
     }
     if (req.query.withPayments === 'true') {
-      student.payments = db.getPaymentsByStudent(req.params.id);
+      student.payments = db.getPaymentsByStudent(req.params.id, tenantOptions(req));
     }
     if (req.query.withConsumptions === 'true') {
-      student.consumptions = db.getConsumptionsByStudent(req.params.id);
+      student.consumptions = db.getConsumptionsByStudent(req.params.id, tenantOptions(req));
     }
     res.json({ success: true, data: student });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -76,9 +80,9 @@ router.get('/:id', (req, res) => {
 router.post('/', validateStudent, (req, res) => {
   try {
     const db = getInstance();
-    const student = db.createStudent(req.body);
+    const student = db.createStudent(req.body, tenantOptions(req));
     // 自动添加学校
-    if (req.body.school) db.addOrUpdateSchool(req.body.school);
+    if (req.body.school) db.addOrUpdateSchool(req.body.school, tenantOptions(req));
     res.status(201).json({ success: true, data: student });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -87,9 +91,9 @@ router.post('/', validateStudent, (req, res) => {
 router.put('/:id', validateStudent, (req, res) => {
   try {
     const db = getInstance();
-    const student = db.updateStudent(req.params.id, req.body);
+    const student = db.updateStudent(req.params.id, req.body, tenantOptions(req));
     if (!student) return res.status(404).json({ error: '学生不存在' });
-    if (req.body.school) db.addOrUpdateSchool(req.body.school);
+    if (req.body.school) db.addOrUpdateSchool(req.body.school, tenantOptions(req));
     res.json({ success: true, data: student });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -98,7 +102,8 @@ router.put('/:id', validateStudent, (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const db = getInstance();
-    db.deleteStudent(req.params.id);
+    const deleted = db.deleteStudent(req.params.id, tenantOptions(req));
+    if (!deleted) return res.status(404).json({ error: '瀛︾敓涓嶅瓨鍦?' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -107,7 +112,7 @@ router.delete('/:id', (req, res) => {
 router.get('/:id/grades', (req, res) => {
   try {
     const db = getInstance();
-    const grades = db.getGrades(req.params.id);
+    const grades = db.getGrades(req.params.id, tenantOptions(req));
     res.json({ success: true, data: grades });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -116,7 +121,9 @@ router.get('/:id/grades', (req, res) => {
 router.post('/:id/grades', validateGrade, (req, res) => {
   try {
     const db = getInstance();
-    const grade = db.createGrade({ ...req.body, student_id: req.params.id });
+    const student = db.getStudentById(req.params.id, tenantOptions(req));
+    if (!student) return res.status(404).json({ error: '瀛︾敓涓嶅瓨鍦?' });
+    const grade = db.createGrade({ ...req.body, student_id: req.params.id }, tenantOptions(req));
     res.status(201).json({ success: true, data: grade });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

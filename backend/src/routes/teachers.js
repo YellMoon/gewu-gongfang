@@ -6,6 +6,10 @@ const { getInstance } = require('../database');
 
 const router = Router();
 
+function tenantOptions(req) {
+  return { tenantId: req.tenantId || req.query.tenant_id || req.body?.tenant_id || 'default' };
+}
+
 function validateTeacher(req, res, next) {
   if (req.method === 'POST' && !req.body.name) {
     return res.status(400).json({ error: '参数校验失败', details: { missing: ['name'] } });
@@ -17,33 +21,37 @@ function validateTeacher(req, res, next) {
 }
 
 router.get('/', (req, res) => {
-  try { res.json({ success: true, data: getInstance().getAllTeachers() }); }
+  try { res.json({ success: true, data: getInstance().getAllTeachers(tenantOptions(req)) }); }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.get('/:id', (req, res) => {
   try {
-    const teacher = getInstance().getTeacherById(req.params.id);
+    const teacher = getInstance().getTeacherById(req.params.id, tenantOptions(req));
     if (!teacher) return res.status(404).json({ error: '老师不存在' });
     res.json({ success: true, data: teacher });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.post('/', validateTeacher, (req, res) => {
-  try { res.status(201).json({ success: true, data: getInstance().createTeacher(req.body) }); }
+  try { res.status(201).json({ success: true, data: getInstance().createTeacher(req.body, tenantOptions(req)) }); }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.put('/:id', validateTeacher, (req, res) => {
   try {
-    const teacher = getInstance().updateTeacher(req.params.id, req.body);
+    const teacher = getInstance().updateTeacher(req.params.id, req.body, tenantOptions(req));
     if (!teacher) return res.status(404).json({ error: '老师不存在' });
     res.json({ success: true, data: teacher });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.delete('/:id', (req, res) => {
-  try { getInstance().deleteTeacher(req.params.id); res.json({ success: true }); }
+  try {
+    const deleted = getInstance().deleteTeacher(req.params.id, tenantOptions(req));
+    if (!deleted) return res.status(404).json({ error: '鑰佸笀涓嶅瓨鍦?' });
+    res.json({ success: true });
+  }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 

@@ -1,5 +1,8 @@
 import { defineConfig } from '@tarojs/cli';
 
+const appEnv = process.env.MINIAPP_APP_ENV || process.env.APP_ENV || 'dev';
+const apiBaseUrl = process.env.MINIAPP_API_BASE_URL || 'http://localhost:3001/api';
+
 const config = defineConfig({
   projectName: 'scheduling-miniapp',
   date: '2026-5-4',
@@ -15,7 +18,10 @@ const config = defineConfig({
   plugins: [
     '@tarojs/plugin-framework-react'
   ],
-  defineConstants: {},
+  defineConstants: {
+    __APP_ENV__: JSON.stringify(appEnv),
+    __API_BASE_URL__: JSON.stringify(apiBaseUrl)
+  },
   copy: {
     patterns: [],
     options: {}

@@ -6,6 +6,10 @@ const { getInstance } = require('../database');
 
 const router = Router();
 
+function tenantOptions(req) {
+  return { tenantId: req.tenantId || req.query.tenant_id || req.body?.tenant_id || 'default' };
+}
+
 function badRequest(res, message, details) {
   return res.status(400).json({ error: message, details });
 }
@@ -51,15 +55,15 @@ router.get('/', (req, res) => {
     const db = getInstance();
     let schedules;
     if (req.query.start && req.query.end) {
-      schedules = db.getSchedulesByDateRange(req.query.start, req.query.end);
+      schedules = db.getSchedulesByDateRange(req.query.start, req.query.end, tenantOptions(req));
     } else {
-      schedules = db.getAllSchedules();
+      schedules = db.getAllSchedules(tenantOptions(req));
     }
     // 填充课程信息
     if (req.query.withCourse === 'true') {
       for (const s of schedules) {
-        s.course = db.getCourseById(s.course_id);
-        s.enrollments = db.getEnrollmentsBySchedule(s.id);
+        s.course = db.getCourseById(s.course_id, tenantOptions(req));
+        s.enrollments = db.getEnrollmentsBySchedule(s.id, tenantOptions(req));
       }
     }
     res.json({ success: true, data: schedules, count: schedules.length });
@@ -69,11 +73,11 @@ router.get('/', (req, res) => {
 router.get('/:id', (req, res) => {
   try {
     const db = getInstance();
-    const schedule = db.getScheduleById(req.params.id);
+    const schedule = db.getScheduleById(req.params.id, tenantOptions(req));
     if (!schedule) return res.status(404).json({ error: '排课不存在' });
     if (req.query.withCourse === 'true') {
-      schedule.course = db.getCourseById(schedule.course_id);
-      schedule.enrollments = db.getEnrollmentsBySchedule(schedule.id);
+      schedule.course = db.getCourseById(schedule.course_id, tenantOptions(req));
+      schedule.enrollments = db.getEnrollmentsBySchedule(schedule.id, tenantOptions(req));
     }
     res.json({ success: true, data: schedule });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -84,12 +88,14 @@ router.post('/', validateSchedule, (req, res) => {
     const db = getInstance();
     // 冲突检测
     if (req.body.start_time && req.body.end_time) {
-      const conflicts = db.checkTimeConflict(req.body.start_time, req.body.end_time);
+      const course = db.getCourseById(req.body.course_id, tenantOptions(req));
+      if (!course) return res.status(404).json({ error: '璇剧▼涓嶅瓨鍦?' });
+      const conflicts = db.checkTimeConflict(req.body.start_time, req.body.end_time, null, tenantOptions(req));
       if (conflicts.length > 0) {
         return res.status(409).json({ error: '时间冲突', conflicts });
       }
     }
-    const schedule = db.createSchedule(req.body);
+    const schedule = db.createSchedule(req.body, tenantOptions(req));
     res.status(201).json({ success: true, data: schedule });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -98,12 +104,12 @@ router.put('/:id', validateSchedule, (req, res) => {
   try {
     const db = getInstance();
     if (req.body.start_time && req.body.end_time) {
-      const conflicts = db.checkTimeConflict(req.body.start_time, req.body.end_time, req.params.id);
+      const conflicts = db.checkTimeConflict(req.body.start_time, req.body.end_time, req.params.id, tenantOptions(req));
       if (conflicts.length > 0) {
         return res.status(409).json({ error: '时间冲突', conflicts });
       }
     }
-    const schedule = db.updateSchedule(req.params.id, req.body);
+    const schedule = db.updateSchedule(req.params.id, req.body, tenantOptions(req));
     if (!schedule) return res.status(404).json({ error: '排课不存在' });
     res.json({ success: true, data: schedule });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -112,7 +118,8 @@ router.put('/:id', validateSchedule, (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const db = getInstance();
-    db.deleteSchedule(req.params.id);
+    const deleted = db.deleteSchedule(req.params.id, tenantOptions(req));
+    if (!deleted) return res.status(404).json({ error: '鎺掕涓嶅瓨鍦?' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -121,7 +128,7 @@ router.delete('/:id', (req, res) => {
 router.get('/:id/enrollments', (req, res) => {
   try {
     const db = getInstance();
-    const enrollments = db.getEnrollmentsBySchedule(req.params.id);
+    const enrollments = db.getEnrollmentsBySchedule(req.params.id, tenantOptions(req));
     res.json({ success: true, data: enrollments });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -129,7 +136,10 @@ router.get('/:id/enrollments', (req, res) => {
 router.post('/:id/enrollments', validateEnrollment, (req, res) => {
   try {
     const db = getInstance();
-    const enrollment = db.createEnrollment({ ...req.body, schedule_id: req.params.id });
+    const schedule = db.getScheduleById(req.params.id, tenantOptions(req));
+    const student = db.getStudentById(req.body.student_id, tenantOptions(req));
+    if (!schedule || !student) return res.status(404).json({ error: '鎺掕鎴栧鐢熶笉瀛樺湪' });
+    const enrollment = db.createEnrollment({ ...req.body, schedule_id: req.params.id }, tenantOptions(req));
     res.status(201).json({ success: true, data: enrollment });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -137,7 +147,7 @@ router.post('/:id/enrollments', validateEnrollment, (req, res) => {
 router.put('/:id/enrollments/:enrollmentId', validateEnrollment, (req, res) => {
   try {
     const db = getInstance();
-    const enrollment = db.updateEnrollment(req.params.enrollmentId, req.body);
+    const enrollment = db.updateEnrollment(req.params.enrollmentId, req.body, tenantOptions(req));
     if (!enrollment) return res.status(404).json({ error: '选课关联不存在' });
     res.json({ success: true, data: enrollment });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -146,7 +156,8 @@ router.put('/:id/enrollments/:enrollmentId', validateEnrollment, (req, res) => {
 router.delete('/:id/enrollments/:enrollmentId', (req, res) => {
   try {
     const db = getInstance();
-    db.deleteEnrollment(req.params.enrollmentId);
+    const deleted = db.deleteEnrollment(req.params.enrollmentId, tenantOptions(req));
+    if (!deleted) return res.status(404).json({ error: '閫夎鍏宠仈涓嶅瓨鍦?' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

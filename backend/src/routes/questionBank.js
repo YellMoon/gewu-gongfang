@@ -11,11 +11,14 @@ function errorStatus(err) {
   return /oss_key is required/.test(err.message) ? 400 : 500;
 }
 
+function tenantId(req) {
+  return req.tenantId || req.query.tenant_id || req.query.tenantId || req.body?.tenant_id || req.body?.tenantId || 'default';
+}
+
 router.get('/questions', (req, res) => {
   try {
     const db = getInstance().db;
-    const tenantId = req.query.tenant_id || 'default';
-    const rows = questionBank.listQuestions(db, req.query, tenantId);
+    const rows = questionBank.listQuestions(db, req.query, tenantId(req));
     res.json({ success: true, data: rows });
   } catch (err) {
     res.status(errorStatus(err)).json({ success: false, error: err.message });
@@ -25,7 +28,7 @@ router.get('/questions', (req, res) => {
 router.get('/questions/search', async (req, res) => {
   try {
     const db = getInstance().db;
-    const { q, subject_id, type, difficulty, tenant_id } = req.query;
+    const { q, subject_id, type, difficulty } = req.query;
     try {
       const remote = await searchService.searchQuestions(q, { subject_id, type, difficulty });
       if (remote) return res.json({ success: true, engine: 'opensearch', result: remote });
@@ -33,7 +36,7 @@ router.get('/questions/search', async (req, res) => {
       console.warn(`[QuestionBank] OpenSearch search fallback: ${err.message}`);
     }
 
-    const rows = questionBank.searchQuestionsFallback(db, req.query, tenant_id || 'default');
+    const rows = questionBank.searchQuestionsFallback(db, req.query, tenantId(req));
     res.json({ success: true, engine: 'sqlite', result: rows });
   } catch (err) {
     res.status(errorStatus(err)).json({ success: false, error: err.message });
@@ -43,8 +46,7 @@ router.get('/questions/search', async (req, res) => {
 router.get('/questions/:id', (req, res) => {
   try {
     const db = getInstance().db;
-    const tenantId = req.query.tenant_id || 'default';
-    const row = questionBank.getQuestion(db, req.params.id, tenantId);
+    const row = questionBank.getQuestion(db, req.params.id, tenantId(req));
     if (!row) return res.status(404).json({ success: false, error: 'question not found' });
     res.json({ success: true, data: row });
   } catch (err) {
@@ -55,10 +57,11 @@ router.get('/questions/:id', (req, res) => {
 router.post('/questions', (req, res) => {
   try {
     const db = getInstance().db;
-    const tenantId = req.body.tenant_id || 'default';
-    const result = questionBank.createQuestion(db, req.body, tenantId);
+    const tId = tenantId(req);
+    const result = questionBank.createQuestion(db, req.body, tId);
+    const embedding = searchService.upsertQuestionEmbedding(db, result.id, { tenantId: tId });
     searchService.schedulePendingJobs(db);
-    res.json({ success: true, ...result });
+    res.json({ success: true, ...result, embedding });
   } catch (err) {
     res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
@@ -67,11 +70,12 @@ router.post('/questions', (req, res) => {
 router.put('/questions/:id', (req, res) => {
   try {
     const db = getInstance().db;
-    const tenantId = req.body.tenant_id || req.query.tenant_id || 'default';
-    const result = questionBank.updateQuestion(db, req.params.id, req.body, tenantId);
+    const tId = tenantId(req);
+    const result = questionBank.updateQuestion(db, req.params.id, req.body, tId);
     if (!result) return res.status(404).json({ success: false, error: 'question not found' });
+    const embedding = searchService.upsertQuestionEmbedding(db, req.params.id, { tenantId: tId });
     searchService.schedulePendingJobs(db);
-    res.json({ success: true, data: result });
+    res.json({ success: true, data: result, embedding });
   } catch (err) {
     res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
@@ -80,8 +84,7 @@ router.put('/questions/:id', (req, res) => {
 router.delete('/questions/:id', (req, res) => {
   try {
     const db = getInstance().db;
-    const tenantId = req.body?.tenant_id || req.query.tenant_id || 'default';
-    const deleted = questionBank.deleteQuestion(db, req.params.id, tenantId);
+    const deleted = questionBank.deleteQuestion(db, req.params.id, tenantId(req));
     if (!deleted) return res.status(404).json({ success: false, error: 'question not found' });
     searchService.schedulePendingJobs(db);
     res.json({ success: true });
@@ -93,24 +96,8 @@ router.delete('/questions/:id', (req, res) => {
 router.post('/vectors', (req, res) => {
   try {
     const db = getInstance().db;
-    const now = new Date().toISOString();
-    const id = req.body.id || require('uuid').v4();
-    db.prepare(
-      `INSERT OR REPLACE INTO vector_embeddings
-       (id, tenant_id, entity_type, entity_id, model, vector_json, content_hash, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      id,
-      req.body.tenant_id || 'default',
-      req.body.entity_type || 'question',
-      req.body.entity_id,
-      req.body.model || 'reserved',
-      JSON.stringify(req.body.vector || []),
-      req.body.content_hash || null,
-      req.body.created_at || now,
-      now
-    );
-    res.json({ success: true, id });
+    const result = searchService.upsertVector(db, { ...(req.body || {}), tenant_id: tenantId(req), tenantId: tenantId(req) });
+    res.json({ success: true, ...result });
   } catch (err) {
     res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
@@ -119,24 +106,8 @@ router.post('/vectors', (req, res) => {
 router.post('/questions/similar', (req, res) => {
   try {
     const db = getInstance().db;
-    const source = db.prepare(
-      "SELECT * FROM vector_embeddings WHERE entity_type = 'question' AND entity_id = ? ORDER BY updated_at DESC LIMIT 1"
-    ).get(req.body.question_id);
-    if (!source) return res.json({ success: true, engine: 'reserved', result: [] });
-    const sourceVector = JSON.parse(source.vector_json || '[]');
-    const rows = db.prepare(
-      "SELECT * FROM vector_embeddings WHERE entity_type = 'question' AND entity_id != ? LIMIT 200"
-    ).all(req.body.question_id);
-    const dot = (a, b) => a.reduce((sum, value, index) => sum + value * (b[index] || 0), 0);
-    const norm = (a) => Math.sqrt(a.reduce((sum, value) => sum + value * value, 0)) || 1;
-    const result = rows
-      .map(row => {
-        const vector = JSON.parse(row.vector_json || '[]');
-        return { entity_id: row.entity_id, score: dot(sourceVector, vector) / (norm(sourceVector) * norm(vector)) };
-      })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, req.body.limit || 20);
-    res.json({ success: true, engine: 'sqlite-vector-reserved', result });
+    const result = searchService.findSimilarQuestions(db, { ...(req.body || {}), tenant_id: tenantId(req), tenantId: tenantId(req) });
+    res.json({ success: true, ...result });
   } catch (err) {
     res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
@@ -146,10 +117,10 @@ router.post('/imports/check', (req, res) => {
   try {
     const dbService = getInstance();
     const db = dbService.db;
-    const tenantId = req.body.tenant_id || 'default';
-    const result = questionBank.createImportBatch(db, req.body, tenantId);
+    const tId = tenantId(req);
+    const result = questionBank.createImportBatch(db, req.body, tId);
     dbService._auditOperation({
-      tenant_id: tenantId,
+      tenant_id: tId,
       action: 'import',
       table_name: 'import_batches',
       record_id: result.batchId || result.id || null,
@@ -172,8 +143,7 @@ router.post('/imports/check', (req, res) => {
 router.get('/imports', (req, res) => {
   try {
     const db = getInstance().db;
-    const tenantId = req.query.tenant_id || 'default';
-    const rows = questionBank.listImportBatches(db, req.query, tenantId);
+    const rows = questionBank.listImportBatches(db, req.query, tenantId(req));
     res.json({ success: true, data: rows });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -183,8 +153,7 @@ router.get('/imports', (req, res) => {
 router.get('/imports/:id', (req, res) => {
   try {
     const db = getInstance().db;
-    const tenantId = req.query.tenant_id || 'default';
-    const row = questionBank.getImportBatch(db, req.params.id, tenantId);
+    const row = questionBank.getImportBatch(db, req.params.id, tenantId(req));
     if (!row) return res.status(404).json({ success: false, error: 'import batch not found' });
     res.json({ success: true, data: row });
   } catch (err) {
@@ -196,11 +165,11 @@ router.post('/imports/:id/commit', (req, res) => {
   try {
     const dbService = getInstance();
     const db = dbService.db;
-    const tenantId = req.body.tenant_id || req.query.tenant_id || 'default';
-    const result = questionBank.commitImportBatch(db, req.params.id, tenantId);
+    const tId = tenantId(req);
+    const result = questionBank.commitImportBatch(db, req.params.id, tId);
     if (!result) return res.status(404).json({ success: false, error: 'import batch not found' });
     dbService._auditOperation({
-      tenant_id: tenantId,
+      tenant_id: tId,
       action: 'import_commit',
       table_name: 'import_batches',
       record_id: req.params.id,

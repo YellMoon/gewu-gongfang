@@ -46,7 +46,8 @@ function readDeviceId(req) {
 }
 
 function readTenantId(req) {
-  return req.query.tenantId
+  return req.tenantId
+    || req.query.tenantId
     || req.query.tenant_id
     || req.body?.tenantId
     || req.body?.tenant_id
@@ -148,7 +149,7 @@ router.post('/push', (req, res) => {
       return res.status(400).json({ success: false, error: '缺少 changes' });
     }
 
-    const result = db.applySyncChanges(changes, { deviceId });
+    const result = db.applySyncChanges(changes, { deviceId, tenantId: readTenantId(req) });
     const serverTime = db._now();
     console.log(`[Sync:Push] device=${deviceId} applied=${result.applied} conflicts=${result.conflicts} errors=${result.errors.length}`);
 

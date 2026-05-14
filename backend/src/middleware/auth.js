@@ -25,9 +25,24 @@ function getBearerToken(req) {
   return authHeader.split(' ')[1];
 }
 
+function enforceAuthenticatedTenant(req, res) {
+  const userTenant = req.user?.tenantId || req.user?.tenant_id || null;
+  if (!userTenant) return true;
+  if (req.tenantId && req.tenantId !== userTenant) {
+    sendAuthError(res, 403, '租户不匹配', 'TENANT_FORBIDDEN');
+    return false;
+  }
+  req.tenantId = userTenant;
+  if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
+    req.body.tenant_id = userTenant;
+    req.body.tenantId = userTenant;
+  }
+  return true;
+}
+
 function authMiddleware(req, res, next) {
   if (isDevAuthBypassed()) {
-    req.user = { id: 'dev-user', role: 'admin' };
+    req.user = { id: 'dev-user', role: 'admin', tenantId: req.tenantId || process.env.DEFAULT_TENANT_ID || 'default' };
     return next();
   }
 
@@ -38,6 +53,7 @@ function authMiddleware(req, res, next) {
 
   try {
     req.user = jwt.verify(token, JWT_SECRET);
+    if (!enforceAuthenticatedTenant(req, res)) return;
     return next();
   } catch (_err) {
     return sendAuthError(res, 401, '认证令牌无效或已过期', 'TOKEN_INVALID');
@@ -46,7 +62,7 @@ function authMiddleware(req, res, next) {
 
 function optionalAuth(req, _res, next) {
   if (isDevAuthBypassed()) {
-    req.user = { id: 'dev-user', role: 'admin' };
+    req.user = { id: 'dev-user', role: 'admin', tenantId: req.tenantId || process.env.DEFAULT_TENANT_ID || 'default' };
     return next();
   }
 
@@ -54,6 +70,7 @@ function optionalAuth(req, _res, next) {
   if (token) {
     try {
       req.user = jwt.verify(token, JWT_SECRET);
+      if (!enforceAuthenticatedTenant(req, _res)) return;
     } catch (_err) {
       // Optional auth keeps old behavior: invalid tokens do not block reads.
     }
@@ -64,7 +81,7 @@ function optionalAuth(req, _res, next) {
 function requireWriteAccess(req, res, next) {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
   if (isDevAuthBypassed()) {
-    req.user = req.user || { id: 'dev-user', role: 'admin' };
+    req.user = req.user || { id: 'dev-user', role: 'admin', tenantId: req.tenantId || process.env.DEFAULT_TENANT_ID || 'default' };
     return next();
   }
   if (!req.user) return sendAuthError(res, 401, '未登录', 'UNAUTHORIZED');
@@ -82,7 +99,7 @@ function requireWriteAccess(req, res, next) {
 
 function generateToken(user) {
   return jwt.sign(
-    { id: user.id, openid: user.wechat_openid, nickname: user.nickname, role: user.role },
+    { id: user.id, openid: user.wechat_openid, nickname: user.nickname, role: user.role, tenantId: user.tenant_id || user.tenantId || 'default' },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
