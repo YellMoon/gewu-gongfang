@@ -259,12 +259,30 @@ router.post('/search/jobs/run', async (req, res) => {
 router.post('/events/publish-pending', async (_req, res) => {
   try {
     const db = getInstance().db;
-    const events = eventBus.listPending(db, 100);
-    for (const event of events) {
-      eventBus.markPublished(db, event.id);
-    }
+    const result = await eventBus.processPending(db, { limit: 100 });
     searchService.schedulePendingJobs(db);
-    res.json({ success: true, published: events.length });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
+  }
+});
+
+router.get('/events', (req, res) => {
+  try {
+    const db = getInstance().db;
+    const events = eventBus.listEvents(db, req.query);
+    res.json({ success: true, events });
+  } catch (err) {
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/events/:id/retry', (req, res) => {
+  try {
+    const db = getInstance().db;
+    const retried = eventBus.retryFailed(db, req.params.id);
+    if (!retried) return res.status(404).json({ success: false, error: 'failed event not found' });
+    res.json({ success: true, id: req.params.id, status: 'pending' });
   } catch (err) {
     res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
