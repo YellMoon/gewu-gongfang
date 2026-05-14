@@ -713,7 +713,9 @@ class DatabaseService {
     const columns = this._tableColumns(table);
     if (!columns.includes('updated_at')) return [];
     const sinceIso = this._normalizeSyncTime(sinceTime);
-    const where = ['updated_at > ?'];
+    // Use an inclusive boundary to avoid losing same-millisecond changes when
+    // a client resumes from the serverTime returned by the previous pull.
+    const where = ['updated_at >= ?'];
     const params = [sinceIso];
     if (options.tenantId && options.tenantId !== 'default' && columns.includes('tenant_id')) {
       where.push('(tenant_id = ? OR tenant_id IS NULL)');

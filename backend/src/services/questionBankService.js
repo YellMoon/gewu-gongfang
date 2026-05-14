@@ -429,24 +429,24 @@ class QuestionBankService {
       items.forEach((item, index) => {
         const normalized = normalizeImportItem(item, payload.defaults || {});
         const contentHash = contentHashForQuestion(normalized);
-        const inBatchDuplicate = seen.has(contentHash);
-        const existingDuplicate = !!db.prepare(
+        const quality = validateImportItem(normalized);
+        const valid = quality.errors.length === 0;
+        const inBatchDuplicate = valid && seen.has(contentHash);
+        const existingDuplicate = valid && !!db.prepare(
           'SELECT 1 FROM question_contents WHERE content_hash = ? AND deleted = 0'
         ).get(contentHash);
         const duplicate = inBatchDuplicate || existingDuplicate;
-        seen.add(contentHash);
-        const quality = validateImportItem(normalized);
-        const valid = quality.errors.length === 0;
         const status = !valid ? 'rejected' : duplicate ? 'duplicate' : 'accepted';
-        if (duplicate) {
+        if (!valid) {
+          rejectedItems++;
+        } else if (duplicate) {
           duplicateItems++;
           if (inBatchDuplicate) duplicateSources.in_batch++;
           if (existingDuplicate) duplicateSources.existing_bank++;
-        } else if (!valid) {
-          rejectedItems++;
         } else {
           acceptedItems++;
         }
+        if (valid) seen.add(contentHash);
         const bucket = quality.score >= 0.8 ? 'high' : quality.score >= 0.5 ? 'medium' : 'low';
         qualityBuckets[bucket]++;
         for (const code of quality.errors) errors[code] = (errors[code] || 0) + 1;
