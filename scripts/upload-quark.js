@@ -2,6 +2,10 @@ const { chromium } = require('playwright');
 const path = require('path');
 const fs = require('fs');
 
+const dryRun = process.argv.includes('--dry-run') || process.env.DRY_RUN === '1';
+const ossBaseUrl = (process.env.OSS_CDN_BASE_URL || 'https://gewugongfang.oss-cn-hangzhou.aliyuncs.com/desktop').replace(/\/+$/, '');
+const ossObjectPrefix = (process.env.OSS_OBJECT_PREFIX || 'desktop').replace(/^\/+|\/+$/g, '');
+
 const distDir = path.join(__dirname, '..', 'dist');
 if (!fs.existsSync(distDir)) {
   console.error('找不到 dist 目录: ' + distDir);
@@ -19,6 +23,20 @@ if (setupFiles.length === 0) {
 }
 
 const SETUP_FILE = path.join(distDir, setupFiles[0].name);
+if (dryRun) {
+  const fileName = path.basename(SETUP_FILE);
+  const objectKey = [ossObjectPrefix, fileName].filter(Boolean).join('/');
+  console.log(JSON.stringify({
+    dry_run: true,
+    target: 'quark',
+    file: fileName,
+    size: fs.statSync(SETUP_FILE).size,
+    oss_key: objectKey,
+    oss_url: `${ossBaseUrl}/${encodeURIComponent(fileName)}`,
+  }, null, 2));
+  process.exit(0);
+}
+
 const COOKIE_FILE = path.join(process.env.LOCALAPPDATA || process.env.TEMP || '.', 'opencode-quark-cookies.json');
 const PROFILE_DIR = path.join(process.env.LOCALAPPDATA || process.env.TEMP || '.', 'opencode-quark-profile');
 const now = new Date();

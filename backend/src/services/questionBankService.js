@@ -27,6 +27,46 @@ function normalizeKnowledgePointIds(payload = {}) {
   return Array.isArray(ids) ? ids.filter(Boolean) : [];
 }
 
+function normalizeOssRef(value = {}) {
+  if (!value || typeof value !== 'object') return null;
+  const ossKey = value.oss_key || value.ossKey || value.key || null;
+  const ossUrl = value.oss_url || value.ossUrl || value.url || null;
+  if (!ossKey && !ossUrl) return null;
+  return { oss_key: ossKey, oss_url: ossUrl };
+}
+
+function normalizeAsset(asset = {}, fallbackType = 'attachment') {
+  const ref = normalizeOssRef(asset);
+  if (!ref?.oss_key) throw new Error('question asset oss_key is required');
+  return {
+    asset_type: asset.asset_type || asset.assetType || asset.type || fallbackType,
+    file_name: asset.file_name || asset.fileName || asset.name || null,
+    mime_type: asset.mime_type || asset.mimeType || null,
+    size_bytes: Number(asset.size_bytes ?? asset.sizeBytes ?? asset.size ?? 0) || 0,
+    oss_key: ref.oss_key,
+    oss_url: ref.oss_url || null,
+    content_hash: asset.content_hash || asset.contentHash || null,
+  };
+}
+
+function normalizeQuestionAssets(payload = {}) {
+  const assets = [];
+  for (const asset of payload.assets || []) {
+    assets.push(normalizeAsset(asset));
+  }
+
+  const coverPayload = payload.cover || payload.cover_image || payload.title_image;
+  if (normalizeOssRef(coverPayload)) {
+    assets.push(normalizeAsset(coverPayload, 'cover'));
+  }
+
+  for (const attachment of payload.attachments || []) {
+    assets.push(normalizeAsset(attachment, 'attachment'));
+  }
+
+  return assets;
+}
+
 class QuestionBankService {
   ensureTenant(db, tenantId = 'default') {
     const existing = db.prepare('SELECT id FROM tenants WHERE id = ?').get(tenantId);
@@ -49,6 +89,8 @@ class QuestionBankService {
     const options = parseJsonArray(payload.options);
     const knowledgePointIds = normalizeKnowledgePointIds(payload);
     const contentHash = payload.content_hash || hashText([stem, payload.answer, explanation, JSON.stringify(options)].join('|'));
+    const contentRef = normalizeOssRef(payload);
+    const assets = normalizeQuestionAssets(payload);
 
     const transaction = db.transaction(() => {
       db.prepare(
@@ -61,7 +103,7 @@ class QuestionBankService {
         `INSERT INTO question_contents
          (id, question_id, stem, answer, explanation, options_json, content_hash, version, oss_key, oss_url, deleted, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?)`
-      ).run(contentId, questionId, stem, payload.answer || null, explanation || null, JSON.stringify(options), contentHash, payload.oss_key || null, payload.oss_url || null, ts, ts);
+      ).run(contentId, questionId, stem, payload.answer || null, explanation || null, JSON.stringify(options), contentHash, contentRef?.oss_key || null, contentRef?.oss_url || null, ts, ts);
 
       for (const knowledgePointId of knowledgePointIds) {
         db.prepare(
@@ -70,8 +112,7 @@ class QuestionBankService {
         ).run(questionId, knowledgePointId, 1, ts, ts);
       }
 
-      for (const asset of payload.assets || []) {
-        if (!asset.oss_key) throw new Error('question asset oss_key is required');
+      for (const asset of assets) {
         db.prepare(
           `INSERT INTO question_assets
            (id, question_id, asset_type, file_name, mime_type, size_bytes, oss_key, oss_url, content_hash, deleted, created_at, updated_at)
@@ -99,9 +140,17 @@ class QuestionBankService {
       answer: row.answer || '',
       explanation: row.explanation || '',
       analysis: row.explanation || '',
+      oss_key: row.content_oss_key || null,
+      oss_url: row.content_oss_url || null,
+      oss: row.content_oss_key || row.content_oss_url ? {
+        oss_key: row.content_oss_key || null,
+        oss_url: row.content_oss_url || null,
+      } : null,
       knowledge_point_ids: knowledgeIds,
       knowledge_ids: knowledgeIds,
       assets,
+      cover: assets.find(asset => asset.asset_type === 'cover') || null,
+      attachments: assets.filter(asset => asset.asset_type !== 'cover'),
     };
   }
 
@@ -179,6 +228,10 @@ class QuestionBankService {
     const explanation = payload.explanation !== undefined ? payload.explanation : (payload.analysis !== undefined ? payload.analysis : existing.explanation);
     const options = payload.options !== undefined ? parseJsonArray(payload.options) : existing.options;
     const contentHash = payload.content_hash || hashText([stem, answer, explanation, JSON.stringify(options)].join('|'));
+    const contentRef = normalizeOssRef(payload) || {
+      oss_key: existing.content_oss_key || existing.oss_key || null,
+      oss_url: existing.content_oss_url || existing.oss_url || null,
+    };
 
     const transaction = db.transaction(() => {
       const questionUpdates = {};
@@ -198,7 +251,7 @@ class QuestionBankService {
         `INSERT INTO question_contents
          (id, question_id, stem, answer, explanation, options_json, content_hash, version, oss_key, oss_url, deleted, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
-      ).run(uuidv4(), id, stem, answer || null, explanation || null, JSON.stringify(options), contentHash, (existing.content_version || 1) + 1, payload.oss_key || existing.content_oss_key || null, payload.oss_url || existing.content_oss_url || null, ts, ts);
+      ).run(uuidv4(), id, stem, answer || null, explanation || null, JSON.stringify(options), contentHash, (existing.content_version || 1) + 1, contentRef.oss_key || null, contentRef.oss_url || null, ts, ts);
 
       if (payload.knowledge_point_ids !== undefined || payload.knowledge_ids !== undefined) {
         db.prepare('DELETE FROM question_knowledge_points WHERE question_id = ?').run(id);
@@ -210,10 +263,9 @@ class QuestionBankService {
         }
       }
 
-      if (payload.assets !== undefined) {
+      if (payload.assets !== undefined || payload.cover !== undefined || payload.cover_image !== undefined || payload.title_image !== undefined || payload.attachments !== undefined) {
         db.prepare('UPDATE question_assets SET deleted = 1, updated_at = ? WHERE question_id = ? AND deleted = 0').run(ts, id);
-        for (const asset of payload.assets || []) {
-          if (!asset.oss_key) throw new Error('question asset oss_key is required');
+        for (const asset of normalizeQuestionAssets(payload)) {
           db.prepare(
             `INSERT INTO question_assets
              (id, question_id, asset_type, file_name, mime_type, size_bytes, oss_key, oss_url, content_hash, deleted, created_at, updated_at)

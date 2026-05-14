@@ -7,6 +7,10 @@ const cache = require('../services/cacheService');
 
 const router = Router();
 
+function errorStatus(err) {
+  return /oss_key is required/.test(err.message) ? 400 : 500;
+}
+
 router.get('/questions', (req, res) => {
   try {
     const db = getInstance().db;
@@ -14,7 +18,7 @@ router.get('/questions', (req, res) => {
     const rows = questionBank.listQuestions(db, req.query, tenantId);
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
 });
 
@@ -32,7 +36,7 @@ router.get('/questions/search', async (req, res) => {
     const rows = questionBank.searchQuestionsFallback(db, req.query, tenant_id || 'default');
     res.json({ success: true, engine: 'sqlite', result: rows });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
 });
 
@@ -44,7 +48,7 @@ router.get('/questions/:id', (req, res) => {
     if (!row) return res.status(404).json({ success: false, error: 'question not found' });
     res.json({ success: true, data: row });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
 });
 
@@ -56,7 +60,7 @@ router.post('/questions', (req, res) => {
     searchService.schedulePendingJobs(db);
     res.json({ success: true, ...result });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
 });
 
@@ -69,7 +73,7 @@ router.put('/questions/:id', (req, res) => {
     searchService.schedulePendingJobs(db);
     res.json({ success: true, data: result });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
 });
 
@@ -82,7 +86,7 @@ router.delete('/questions/:id', (req, res) => {
     searchService.schedulePendingJobs(db);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
 });
 
@@ -108,7 +112,7 @@ router.post('/vectors', (req, res) => {
     );
     res.json({ success: true, id });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
 });
 
@@ -134,7 +138,7 @@ router.post('/questions/similar', (req, res) => {
       .slice(0, req.body.limit || 20);
     res.json({ success: true, engine: 'sqlite-vector-reserved', result });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
 });
 
@@ -161,7 +165,7 @@ router.post('/imports/check', (req, res) => {
     });
     res.json({ success: true, ...result });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
 });
 
@@ -171,7 +175,7 @@ router.post('/rollups/refresh', async (_req, res) => {
     const rows = await questionBank.refreshKnowledgeRollups(db);
     res.json({ success: true, count: rows.length });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
 });
 
@@ -184,7 +188,7 @@ router.get('/rollups', async (_req, res) => {
     await cache.setKnowledgeRollups(rows);
     res.json({ success: true, source: 'db', data: rows });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
 });
 
@@ -194,7 +198,7 @@ router.get('/search/jobs', (req, res) => {
     const jobs = searchService.listJobs(db, req.query);
     res.json({ success: true, jobs });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
 });
 
@@ -204,7 +208,7 @@ router.post('/search/jobs/run', async (req, res) => {
     const result = await searchService.processPendingJobs(db, { limit: req.body?.limit });
     res.json({ success: true, ...result });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
 });
 
@@ -218,7 +222,7 @@ router.post('/events/publish-pending', async (_req, res) => {
     searchService.schedulePendingJobs(db);
     res.json({ success: true, published: events.length });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
 });
 
