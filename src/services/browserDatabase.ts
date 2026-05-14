@@ -913,6 +913,39 @@ class BrowserDatabaseService {
 
   // ========== 知识树管理 ==========
 
+  getQuestionKnowledgePoints(questionId: string): KnowledgeNode[] | null {
+    const question = this.data.questions.find(q => q.id === questionId);
+    if (!question) return null;
+    const ids = new Set(question.knowledge_ids || []);
+    return this.data.knowledgeTree.filter(node => ids.has(node.id));
+  }
+
+  setQuestionKnowledgePoints(questionId: string, knowledgeIds: string[]): Question | null {
+    const question = this.data.questions.find(q => q.id === questionId);
+    if (!question) return null;
+    const validIds = new Set(this.data.knowledgeTree.map(node => node.id));
+    const nextIds = [...new Set((knowledgeIds || []).filter(id => validIds.has(id)))];
+    const primary = nextIds.length > 0 ? this.data.knowledgeTree.find(node => node.id === nextIds[0]) : null;
+    question.knowledge_ids = nextIds;
+    question.knowledge_point = primary?.name || '';
+    question.updated_at = new Date().toISOString();
+    this.saveData();
+    return question;
+  }
+
+  addQuestionKnowledgePoints(questionId: string, knowledgeIds: string[]): Question | null {
+    const question = this.data.questions.find(q => q.id === questionId);
+    if (!question) return null;
+    return this.setQuestionKnowledgePoints(questionId, [...(question.knowledge_ids || []), ...(knowledgeIds || [])]);
+  }
+
+  removeQuestionKnowledgePoints(questionId: string, knowledgeIds: string[]): Question | null {
+    const question = this.data.questions.find(q => q.id === questionId);
+    if (!question) return null;
+    const removeSet = new Set(knowledgeIds || []);
+    return this.setQuestionKnowledgePoints(questionId, (question.knowledge_ids || []).filter(id => !removeSet.has(id)));
+  }
+
   getKnowledgeTree(): KnowledgeNode[] {
     return this.data.knowledgeTree;
   }

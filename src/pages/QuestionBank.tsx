@@ -54,6 +54,23 @@ function normalizeQuestion(row: any): Question {
   } as Question;
 }
 
+function normalizeImportedKnowledgeIds(db: any, parsedQuestion: any): string[] {
+  const names = parsedQuestion.knowledge_points || (parsedQuestion.knowledge_point ? [parsedQuestion.knowledge_point] : []);
+  const knowledgeTree = db.getKnowledgeTree?.() || [];
+  const ids = new Set<string>((parsedQuestion.knowledge_ids || parsedQuestion.knowledge_point_ids || []).filter(Boolean));
+  for (const name of names || []) {
+    const text = String(name || '').trim();
+    if (!text) continue;
+    let node = knowledgeTree.find((n: any) => n.name === text);
+    if (!node && db.createKnowledgeNode) {
+      node = db.createKnowledgeNode({ name: text, parent_id: null });
+      knowledgeTree.push(node);
+    }
+    if (node?.id) ids.add(node.id);
+  }
+  return [...ids];
+}
+
 const QuestionBank: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
@@ -218,8 +235,12 @@ const QuestionBank: React.FC = () => {
     selectedRowKeys.forEach(id => {
       const q = questions.find(x => x.id === id);
       if (q) {
-        const ids = [...new Set([...(q.knowledge_ids || []), knowledgeId])];
-        db.updateQuestion(id, { knowledge_ids: ids });
+        if (db.addQuestionKnowledgePoints) {
+          db.addQuestionKnowledgePoints(id, [knowledgeId]);
+        } else {
+          const ids = [...new Set([...(q.knowledge_ids || []), knowledgeId])];
+          db.updateQuestion(id, { knowledge_ids: ids });
+        }
       }
     });
     loadData();
@@ -351,6 +372,7 @@ const QuestionBank: React.FC = () => {
     let added = 0;
     for (const q of (result.questions || [])) {
       try {
+        const knowledge_ids = normalizeImportedKnowledgeIds(db, q);
         db.createQuestion({
           subject: '物理',
           type: (q.question_types || ['fill']).includes('single') ? '选择题' :
@@ -370,7 +392,8 @@ const QuestionBank: React.FC = () => {
           region: q.region || '',
           tags: [],
           formulas: [],
-          knowledge_point: '',
+          knowledge_point: q.knowledge_point || '',
+          knowledge_ids,
         });
         added++;
       } catch (e) { /* skip bad ones */ }

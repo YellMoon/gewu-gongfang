@@ -8,7 +8,7 @@ const cache = require('../services/cacheService');
 const router = Router();
 
 function errorStatus(err) {
-  return /oss_key is required/.test(err.message) ? 400 : 500;
+  return /oss_key is required|knowledge point not found/.test(err.message) ? 400 : 500;
 }
 
 function tenantId(req) {
@@ -88,6 +88,84 @@ router.delete('/questions/:id', (req, res) => {
     if (!deleted) return res.status(404).json({ success: false, error: 'question not found' });
     searchService.schedulePendingJobs(db);
     res.json({ success: true });
+  } catch (err) {
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
+  }
+});
+
+router.get('/questions/:id/knowledge-points', (req, res) => {
+  try {
+    const db = getInstance().db;
+    const rows = questionBank.listQuestionKnowledgePoints(db, req.params.id, tenantId(req));
+    if (!rows) return res.status(404).json({ success: false, error: 'question not found' });
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
+  }
+});
+
+router.put('/questions/:id/knowledge-points', (req, res) => {
+  try {
+    const dbService = getInstance();
+    const db = dbService.db;
+    const tId = tenantId(req);
+    const result = questionBank.setQuestionKnowledgePoints(db, req.params.id, req.body || {}, tId);
+    if (!result) return res.status(404).json({ success: false, error: 'question not found' });
+    dbService._auditOperation({
+      tenant_id: tId,
+      action: 'question_knowledge_replace',
+      table_name: 'question_knowledge_points',
+      record_id: req.params.id,
+      status: 'success',
+      detail: { knowledge_point_ids: req.body?.knowledge_point_ids || req.body?.knowledge_ids || [] },
+    });
+    searchService.schedulePendingJobs(db);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/questions/:id/knowledge-points', (req, res) => {
+  try {
+    const dbService = getInstance();
+    const db = dbService.db;
+    const tId = tenantId(req);
+    const result = questionBank.addQuestionKnowledgePoints(db, req.params.id, req.body || {}, tId);
+    if (!result) return res.status(404).json({ success: false, error: 'question not found' });
+    dbService._auditOperation({
+      tenant_id: tId,
+      action: 'question_knowledge_add',
+      table_name: 'question_knowledge_points',
+      record_id: req.params.id,
+      status: 'success',
+      detail: { knowledge_point_ids: req.body?.knowledge_point_ids || req.body?.knowledge_ids || [] },
+    });
+    searchService.schedulePendingJobs(db);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
+  }
+});
+
+router.delete('/questions/:id/knowledge-points', (req, res) => {
+  try {
+    const dbService = getInstance();
+    const db = dbService.db;
+    const tId = tenantId(req);
+    const payload = { ...(req.query || {}), ...(req.body || {}) };
+    const result = questionBank.removeQuestionKnowledgePoints(db, req.params.id, payload, tId);
+    if (!result) return res.status(404).json({ success: false, error: 'question not found' });
+    dbService._auditOperation({
+      tenant_id: tId,
+      action: 'question_knowledge_remove',
+      table_name: 'question_knowledge_points',
+      record_id: req.params.id,
+      status: 'success',
+      detail: { knowledge_point_ids: payload.knowledge_point_ids || payload.knowledge_ids || [] },
+    });
+    searchService.schedulePendingJobs(db);
+    res.json({ success: true, data: result });
   } catch (err) {
     res.status(errorStatus(err)).json({ success: false, error: err.message });
   }

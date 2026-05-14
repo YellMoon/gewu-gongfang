@@ -85,7 +85,25 @@ function toServerQuestion(q: any, meta: any = {}) {
     exam_type: q.exam_type || meta.exam_type || '',
     region: q.region || '',
     knowledge_point_ids: q.knowledge_point_ids || q.knowledge_ids || [],
+    knowledge_points: q.knowledge_points || (q.knowledge_point ? [q.knowledge_point] : []),
   };
+}
+
+function normalizeImportedKnowledgeIds(db: any, parsedQuestion: any): string[] {
+  const names = parsedQuestion.knowledge_points || (parsedQuestion.knowledge_point ? [parsedQuestion.knowledge_point] : []);
+  const knowledgeTree = db.getKnowledgeTree?.() || [];
+  const ids = new Set<string>((parsedQuestion.knowledge_ids || parsedQuestion.knowledge_point_ids || []).filter(Boolean));
+  for (const name of names || []) {
+    const text = String(name || '').trim();
+    if (!text) continue;
+    let node = knowledgeTree.find((n: any) => n.name === text);
+    if (!node && db.createKnowledgeNode) {
+      node = db.createKnowledgeNode({ name: text, parent_id: null });
+      knowledgeTree.push(node);
+    }
+    if (node?.id) ids.add(node.id);
+  }
+  return [...ids];
 }
 
 const QuestionBankImport: React.FC = () => {
@@ -442,6 +460,7 @@ const QuestionBankImport: React.FC = () => {
     let added = 0;
     for (const q of (result.questions || [])) {
       try {
+        const knowledge_ids = normalizeImportedKnowledgeIds(db, q);
         db.createQuestion({
           subject: '物理',
           type: (q.question_types || ['fill']).includes('single') ? '选择题' :
@@ -462,7 +481,8 @@ const QuestionBankImport: React.FC = () => {
           region: q.region || '',
           tags: [],
           formulas: [],
-          knowledge_point: '',
+          knowledge_point: q.knowledge_point || '',
+          knowledge_ids,
         });
         added++;
       } catch (e) { /* skip bad ones */ }

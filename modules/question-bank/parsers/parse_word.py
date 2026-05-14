@@ -59,7 +59,7 @@ def extract_meta(text):
             break
     if "高考" in text:
         meta["exam_type"] = "高考真题"
-    elif "模拟" in text or "联考" in text:
+    elif "模拟" in text or "联考" in text or "适应性" in text:
         meta["exam_type"] = "模拟题"
     elif "期中" in text:
         meta["exam_type"] = "期中考试"
@@ -89,7 +89,37 @@ def extract_types_from_text(text, options=None):
     return types or ["fill"]
 
 
-def new_question(stem, index=None):
+def derive_topic_from_filename(file_path):
+    base = os.path.splitext(os.path.basename(file_path))[0]
+    patterns = [
+        r"专题\d+[-：:](.+)$",
+        r"实验专题\d+[-：:](.+)$",
+        r"解答题专题\d+[-：:](.+)$",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, base)
+        if match:
+            return match.group(1).strip()
+    return ""
+
+
+def is_topic_heading(text):
+    if not text:
+        return False
+    generic = ["选择题", "非选择题", "填空题", "实验题", "计算题", "解答题", "答案", "解析", "参考答案"]
+    if any(word in text for word in generic):
+        return False
+    return bool(re.match(r"^(专题\d+|实验专题\d+|解答题专题\d+|[一二三四五六七八九十]+[、.．])", text))
+
+
+def clean_topic_heading(text):
+    text = re.sub(r"^(专题\d+|实验专题\d+|解答题专题\d+)[-：:、.\s]*", "", text).strip()
+    text = re.sub(r"^[一二三四五六七八九十]+[、.．]\s*", "", text).strip()
+    return text[:80]
+
+
+def new_question(stem, index=None, knowledge_point=None):
+    knowledge_points = [knowledge_point] if knowledge_point else []
     return {
         "id": str(uuid.uuid4()),
         "index": index,
@@ -98,6 +128,8 @@ def new_question(stem, index=None):
         "sub_questions": [],
         "answer": "",
         "analysis": "",
+        "knowledge_point": knowledge_point or "",
+        "knowledge_points": knowledge_points,
         "question_types": extract_types_from_text(stem),
         **extract_meta(stem),
     }
@@ -110,19 +142,25 @@ def append_text(question, text):
         question["stem"] = (question["stem"] + "\n" + text).strip()
 
 
-def parse_question_block(paragraphs):
+def parse_question_block(paragraphs, default_topic=None):
     questions = []
     current = None
+    current_topic = default_topic or ""
     for paragraph in paragraphs:
         text = paragraph.strip()
         if not text:
+            continue
+        if is_topic_heading(text):
+            topic = clean_topic_heading(text)
+            if topic:
+                current_topic = topic
             continue
         number, content = extract_question_number(text)
         if number is not None:
             if current:
                 current["question_types"] = extract_types_from_text(current["stem"], current["options"])
                 questions.append(current)
-            current = new_question(content, len(questions))
+            current = new_question(content, len(questions), current_topic)
             continue
         if not current:
             continue
@@ -170,13 +208,13 @@ def parse_answers(paragraphs):
     return answers
 
 
-def parse_lecture_questions(paragraphs):
-    return parse_question_block(paragraphs)
+def parse_lecture_questions(paragraphs, default_topic=None):
+    return parse_question_block(paragraphs, default_topic)
 
 
-def parse_exam_questions(paragraphs):
+def parse_exam_questions(paragraphs, default_topic=None):
     question_part, answer_part = split_answer_section(paragraphs)
-    questions = parse_question_block(question_part)
+    questions = parse_question_block(question_part, default_topic)
     answers = parse_answers(answer_part)
     by_index = {idx: answer for idx, answer in enumerate(answers)}
     by_number = {answer["number"]: answer for answer in answers}
@@ -206,11 +244,12 @@ def extract_comments(file_path):
 
 def extract_topics(paragraphs):
     topics = []
-    heading_re = re.compile(r"^(专题[一二三四五六七八九十\d]+|[一二三四五六七八九十]+[\u3001.])")
     for paragraph in paragraphs:
         text = paragraph.strip()
-        if text and heading_re.match(text):
-            topics.append(text)
+        if text and is_topic_heading(text):
+            topic = clean_topic_heading(text)
+            if topic and topic not in topics:
+                topics.append(topic)
     return topics
 
 
@@ -251,20 +290,21 @@ def main():
     if source_type == "auto":
         source_type = "exam" if any("参考答案" in paragraph or "答案" in paragraph for paragraph in paragraphs) else "lecture"
 
-    questions = parse_exam_questions(paragraphs) if source_type == "exam" else parse_lecture_questions(paragraphs)
+    default_topic = derive_topic_from_filename(file_path) if source_type == "lecture" else ""
+    questions = parse_exam_questions(paragraphs, default_topic) if source_type == "exam" else parse_lecture_questions(paragraphs, default_topic)
     if source_type == "lecture":
         comments = extract_comments(file_path)
         for index, answer in enumerate(comments[: len(questions)]):
-          if answer:
-              questions[index]["answer"] = answer
+            if answer:
+                questions[index]["answer"] = answer
 
     result = {
         "success": True,
         "source_type": source_type,
         "count": len(questions),
         "questions": questions,
-        "topics": extract_topics(paragraphs),
-        "knowledge_points": [],
+        "topics": extract_topics(paragraphs) or ([default_topic] if default_topic else []),
+        "knowledge_points": sorted({kp for question in questions for kp in question.get("knowledge_points", []) if kp}),
         "quality_report": quality_report(questions),
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))

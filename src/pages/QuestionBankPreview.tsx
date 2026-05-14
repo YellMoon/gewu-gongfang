@@ -338,8 +338,12 @@ const QuestionBankPreview: React.FC = () => {
     selectedRowKeys.forEach(id => {
       const q = questions.find(x => x.id === id);
       if (q) {
-        const ids = [...new Set([...(q.knowledge_ids || []), knowledgeId])];
-        db.updateQuestion(id, { knowledge_ids: ids });
+        if (db.addQuestionKnowledgePoints) {
+          db.addQuestionKnowledgePoints(id, [knowledgeId]);
+        } else {
+          const ids = [...new Set([...(q.knowledge_ids || []), knowledgeId])];
+          db.updateQuestion(id, { knowledge_ids: ids });
+        }
       }
     });
     loadData();

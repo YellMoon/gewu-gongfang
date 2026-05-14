@@ -24,7 +24,16 @@ function parseJsonArray(value) {
 
 function normalizeKnowledgePointIds(payload = {}) {
   const ids = payload.knowledge_point_ids || payload.knowledge_ids || [];
-  return Array.isArray(ids) ? ids.filter(Boolean) : [];
+  if (Array.isArray(ids)) return ids.filter(Boolean);
+  if (typeof ids === 'string') return ids.split(',').map(id => id.trim()).filter(Boolean);
+  return [];
+}
+
+function normalizeKnowledgePointNames(payload = {}) {
+  const names = payload.knowledge_points || payload.knowledge_point_names || [];
+  const values = Array.isArray(names) ? names : typeof names === 'string' ? names.split(',') : [];
+  if (payload.knowledge_point) values.push(payload.knowledge_point);
+  return [...new Set(values.map(name => String(name || '').trim()).filter(Boolean))];
 }
 
 function normalizeOssRef(value = {}) {
@@ -141,6 +150,28 @@ class QuestionBankService {
     }
   }
 
+  resolveKnowledgePointIds(db, payload = {}, tenantId = 'default') {
+    this.ensureTenant(db, tenantId);
+    const ids = normalizeKnowledgePointIds(payload);
+    const names = normalizeKnowledgePointNames(payload);
+    const ts = now();
+    for (const name of names) {
+      let row = db.prepare(
+        'SELECT id FROM knowledge_points WHERE tenant_id = ? AND name = ? AND deleted = 0 ORDER BY created_at ASC LIMIT 1'
+      ).get(tenantId, name);
+      if (!row) {
+        row = { id: `kp_${hashText(`${tenantId}:${name}`).slice(0, 24)}` };
+        db.prepare(
+          `INSERT INTO knowledge_points
+           (id, tenant_id, chapter_id, parent_id, name, description, sort_order, deleted, created_at, updated_at)
+           VALUES (?, ?, NULL, NULL, ?, NULL, 0, 0, ?, ?)`
+        ).run(row.id, tenantId, name, ts, ts);
+      }
+      ids.push(row.id);
+    }
+    return [...new Set(ids.filter(Boolean))];
+  }
+
   createQuestion(db, payload, tenantId = 'default') {
     this.ensureTenant(db, tenantId);
     const ts = now();
@@ -149,7 +180,7 @@ class QuestionBankService {
     const stem = payload.stem || payload.content || '';
     const explanation = payload.explanation !== undefined ? payload.explanation : payload.analysis;
     const options = parseJsonArray(payload.options);
-    const knowledgePointIds = normalizeKnowledgePointIds(payload);
+    const knowledgePointIds = this.resolveKnowledgePointIds(db, payload, tenantId);
     const contentHash = payload.content_hash || hashText([stem, payload.answer, explanation, JSON.stringify(options)].join('|'));
     const contentRef = normalizeOssRef(payload);
     const assets = normalizeQuestionAssets(payload);
@@ -315,9 +346,9 @@ class QuestionBankService {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
       ).run(uuidv4(), tenantId, id, stem, answer || null, explanation || null, JSON.stringify(options), contentHash, (existing.content_version || 1) + 1, contentRef.oss_key || null, contentRef.oss_url || null, ts, ts);
 
-      if (payload.knowledge_point_ids !== undefined || payload.knowledge_ids !== undefined) {
+      if (payload.knowledge_point_ids !== undefined || payload.knowledge_ids !== undefined || payload.knowledge_points !== undefined || payload.knowledge_point_names !== undefined || payload.knowledge_point !== undefined) {
         db.prepare('DELETE FROM question_knowledge_points WHERE question_id = ?').run(id);
-        for (const knowledgePointId of normalizeKnowledgePointIds(payload)) {
+        for (const knowledgePointId of this.resolveKnowledgePointIds(db, payload, tenantId)) {
           db.prepare(
             `INSERT OR REPLACE INTO question_knowledge_points (question_id, knowledge_point_id, weight, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?)`
@@ -358,6 +389,106 @@ class QuestionBankService {
     });
     transaction();
     return true;
+  }
+
+  listQuestionKnowledgePoints(db, id, tenantId = 'default') {
+    const question = this.getQuestion(db, id, tenantId);
+    if (!question) return null;
+    return db.prepare(
+      `SELECT qkp.question_id,
+              qkp.knowledge_point_id,
+              qkp.weight,
+              qkp.created_at,
+              qkp.updated_at,
+              kp.name,
+              kp.parent_id,
+              kp.description
+       FROM question_knowledge_points qkp
+       LEFT JOIN knowledge_points kp ON kp.id = qkp.knowledge_point_id AND kp.deleted = 0
+       WHERE qkp.question_id = ?
+       ORDER BY qkp.created_at ASC`
+    ).all(id);
+  }
+
+  _validateKnowledgePoints(db, knowledgePointIds, tenantId = 'default') {
+    const uniqueIds = [...new Set((knowledgePointIds || []).filter(Boolean))];
+    const missing = [];
+    for (const knowledgePointId of uniqueIds) {
+      const row = db.prepare(
+        'SELECT id FROM knowledge_points WHERE id = ? AND tenant_id = ? AND deleted = 0'
+      ).get(knowledgePointId, tenantId);
+      if (!row) missing.push(knowledgePointId);
+    }
+    if (missing.length > 0) {
+      throw new Error(`knowledge point not found: ${missing.join(',')}`);
+    }
+    return uniqueIds;
+  }
+
+  setQuestionKnowledgePoints(db, id, payload = {}, tenantId = 'default') {
+    const existing = this.getQuestion(db, id, tenantId);
+    if (!existing) return null;
+    const ts = now();
+    const knowledgePointIds = this._validateKnowledgePoints(db, normalizeKnowledgePointIds(payload), tenantId);
+    const transaction = db.transaction(() => {
+      db.prepare('DELETE FROM question_knowledge_points WHERE question_id = ?').run(id);
+      for (const knowledgePointId of knowledgePointIds) {
+        db.prepare(
+          `INSERT OR REPLACE INTO question_knowledge_points (question_id, knowledge_point_id, weight, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?)`
+        ).run(id, knowledgePointId, 1, ts, ts);
+      }
+      db.prepare('UPDATE questions SET updated_at = ? WHERE id = ? AND deleted = 0').run(ts, id);
+      this.enqueueSearchJob(db, id, 'upsert', tenantId);
+      eventBus.publish(db, 'question.changed', 'question', id, { action: 'knowledge_update', knowledge_point_ids: knowledgePointIds }, tenantId);
+    });
+    transaction();
+    return this.getQuestion(db, id, tenantId);
+  }
+
+  addQuestionKnowledgePoints(db, id, payload = {}, tenantId = 'default') {
+    const existing = this.getQuestion(db, id, tenantId);
+    if (!existing) return null;
+    const current = new Set(existing.knowledge_point_ids || []);
+    const additions = this._validateKnowledgePoints(db, normalizeKnowledgePointIds(payload), tenantId);
+    if (additions.length === 0) return existing;
+    const ts = now();
+    const transaction = db.transaction(() => {
+      for (const knowledgePointId of additions) {
+        if (current.has(knowledgePointId)) continue;
+        db.prepare(
+          `INSERT OR REPLACE INTO question_knowledge_points (question_id, knowledge_point_id, weight, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?)`
+        ).run(id, knowledgePointId, 1, ts, ts);
+      }
+      db.prepare('UPDATE questions SET updated_at = ? WHERE id = ? AND deleted = 0').run(ts, id);
+      this.enqueueSearchJob(db, id, 'upsert', tenantId);
+      eventBus.publish(db, 'question.changed', 'question', id, { action: 'knowledge_add', knowledge_point_ids: additions }, tenantId);
+    });
+    transaction();
+    return this.getQuestion(db, id, tenantId);
+  }
+
+  removeQuestionKnowledgePoints(db, id, payload = {}, tenantId = 'default') {
+    const existing = this.getQuestion(db, id, tenantId);
+    if (!existing) return null;
+    const removalIds = [...new Set(normalizeKnowledgePointIds(payload).filter(Boolean))];
+    if (removalIds.length === 0) return existing;
+    const ts = now();
+    const transaction = db.transaction(() => {
+      for (const knowledgePointId of removalIds) {
+        db.prepare('DELETE FROM question_knowledge_points WHERE question_id = ? AND knowledge_point_id = ?').run(id, knowledgePointId);
+      }
+      db.prepare('UPDATE questions SET updated_at = ? WHERE id = ? AND deleted = 0').run(ts, id);
+      this.enqueueSearchJob(db, id, 'upsert', tenantId);
+      eventBus.publish(db, 'question.changed', 'question', id, { action: 'knowledge_remove', knowledge_point_ids: removalIds }, tenantId);
+    });
+    transaction();
+    return this.getQuestion(db, id, tenantId);
+  }
+
+  replaceQuestionKnowledgePoint(db, id, payload = {}, tenantId = 'default') {
+    return this.setQuestionKnowledgePoints(db, id, payload, tenantId);
   }
 
   searchQuestionsFallback(db, filters = {}, tenantId = 'default') {
