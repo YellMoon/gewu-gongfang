@@ -32,6 +32,8 @@ class DeployContext:
     user: str
     port: int
     remote_path: str
+    dockerfile: str
+    build_context: str
     image_repo: str
     container: str
     network: str
@@ -104,13 +106,14 @@ def build_image(ctx: DeployContext, version: str, channel: str, revision: str) -
     command = (
         f"cd {quote(ctx.remote_path)} && "
         "docker build "
+        f"-f {quote(ctx.dockerfile)} "
         f"--build-arg APP_VERSION={quote(version)} "
         f"--build-arg APP_REVISION={quote(revision)} "
         f"--build-arg BUILD_DATE={quote(build_date)} "
         f"--label app.gewu.version={quote(version)} "
         f"--label app.gewu.channel={quote(channel)} "
         f"--label app.gewu.revision={quote(revision)} "
-        f"-t {quote(image)} -t {quote(channel_image)} ."
+        f"-t {quote(image)} -t {quote(channel_image)} {quote(ctx.build_context)}"
     )
     run_remote(ctx, command)
     return image
@@ -167,7 +170,7 @@ def assert_healthy(ctx: DeployContext, timeout: int) -> None:
 
 def deploy(args: argparse.Namespace) -> None:
     ctx = make_context(args)
-    previous = current_image(ctx) or ""
+    previous = args.previous_image or current_image(ctx) or ""
     image = build_image(ctx, args.version, args.channel, args.revision or args.version)
     state = {
         "channel": args.channel,
@@ -229,6 +232,8 @@ def make_context(args: argparse.Namespace) -> DeployContext:
         user=args.user,
         port=args.ssh_port,
         remote_path=args.remote_path,
+        dockerfile=args.dockerfile,
+        build_context=args.build_context,
         image_repo=args.image_repo,
         container=args.container,
         network=args.network,
@@ -249,6 +254,8 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--user", default="", help="SSH user. Empty means use the host as-is.")
         p.add_argument("--ssh-port", type=int, default=22)
         p.add_argument("--remote-path", default="/root/scheduling-backend")
+        p.add_argument("--dockerfile", default="backend/Dockerfile")
+        p.add_argument("--build-context", default="backend")
         p.add_argument("--image-repo", default="scheduling-api")
         p.add_argument("--container", default="scheduling-backend")
         p.add_argument("--network", default="app_default")
@@ -264,6 +271,7 @@ def build_parser() -> argparse.ArgumentParser:
     deploy_p = sub.add_parser("deploy", help="Build and deploy a specific image version.")
     common(deploy_p)
     deploy_p.add_argument("--version", required=True, help="Immutable image tag to deploy.")
+    deploy_p.add_argument("--previous-image", default="", help="Override detected previous image for dry-run or CI drills.")
     deploy_p.set_defaults(func=deploy)
 
     rollback_p = sub.add_parser("rollback", help="Rollback to the previous or specified image.")

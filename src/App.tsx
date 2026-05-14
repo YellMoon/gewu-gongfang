@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, useState, useEffect } from 'react';
 import { Layout, Button, Card, Table, Tag, Empty } from 'antd';
 import {
   CalendarOutlined,
@@ -16,7 +16,6 @@ import {
   UploadOutlined,
   LinkOutlined
 } from '@ant-design/icons';
-import ScheduleCalendar from './pages/ScheduleCalendar';
 import ScheduleList from './pages/ScheduleList';
 import StudentList from './pages/StudentList';
 import TeacherList from './pages/TeacherList';
@@ -27,9 +26,6 @@ import RevenueStatistics from './pages/RevenueStatistics';
 import SystemSettings from './pages/SystemSettings';
 import SchoolManager from './pages/SchoolManager';
 import RoomManager from './pages/RoomManager';
-import QuestionBankImport from './pages/QuestionBankImport';
-import QuestionBankPreview from './pages/QuestionBankPreview';
-import TeachingTools from './pages/TeachingTools';
 import PersonalAssets from './pages/PersonalAssets';
 import PermissionManager from './pages/PermissionManager';
 import SyncSettings from './pages/SyncSettings';
@@ -41,6 +37,25 @@ import Admin from './pages/Admin';
 
 
 const { Header, Content } = Layout;
+
+const ScheduleCalendar = React.lazy(() => import('./pages/ScheduleCalendar'));
+const QuestionBankImport = React.lazy(() => import('./pages/QuestionBankImport'));
+const QuestionBankPreview = React.lazy(() => import('./pages/QuestionBankPreview'));
+const TeachingTools = React.lazy(() => import('./pages/TeachingTools'));
+
+const PageLoading: React.FC = () => (
+  <div style={{ padding: 50, textAlign: 'center', fontSize: 16 }}>
+    页面加载中...
+  </div>
+);
+
+const LazyPage: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <ErrorBoundary>
+    <Suspense fallback={<PageLoading />}>
+      {children}
+    </Suspense>
+  </ErrorBoundary>
+);
 
 type PageKey =
   | 'course-calendar' | 'schedule-list' | 'course-info'
@@ -208,7 +223,7 @@ const App: React.FC = () => {
     }
 
     switch (currentPage) {
-      case 'course-calendar': return <ScheduleCalendar />;
+      case 'course-calendar': return <LazyPage><ScheduleCalendar /></LazyPage>;
       case 'schedule-list': return <ScheduleList />;
       case 'course-info': return <CourseList />;
       case 'student': return <StudentList />;
@@ -218,9 +233,9 @@ const App: React.FC = () => {
       case 'institution': return <InstitutionManager />;
       case 'payment': return <PaymentList />;
       case 'revenue-statistics': return <RevenueStatistics />;
-      case 'question-bank-import': return <QuestionBankImport />;
-      case 'question-bank-preview': return <QuestionBankPreview />;
-      case 'teaching-tool': return <TeachingTools />;
+      case 'question-bank-import': return <LazyPage><QuestionBankImport /></LazyPage>;
+      case 'question-bank-preview': return <LazyPage><QuestionBankPreview /></LazyPage>;
+      case 'teaching-tool': return <LazyPage><TeachingTools /></LazyPage>;
       case 'personal-assets': return <PersonalAssets />;
       case 'permission': return <PermissionManager />;
       case 'cloud-sync': return <ErrorBoundary><SyncSettings /></ErrorBoundary>;

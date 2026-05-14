@@ -152,13 +152,14 @@ router.post('/import', (req, res) => {
 router.get('/backups', (req, res) => {
   try {
     const db = getInstance().db;
+    const { tenantId } = tenantOptions(req);
     const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
     const jobs = db.prepare(
       `SELECT * FROM data_archive_jobs
-       WHERE job_type = 'backup'
+       WHERE job_type = 'backup' AND tenant_id = ?
        ORDER BY created_at DESC
        LIMIT ?`
-    ).all(limit).map(safeJob);
+    ).all(tenantId, limit).map(safeJob);
     res.json({ success: true, jobs });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -167,8 +168,9 @@ router.get('/backups', (req, res) => {
 
 router.post('/backups', (req, res) => {
   try {
+    const { tenantId } = tenantOptions(req);
     const job = createBackupJob({
-      tenantId: req.body.tenant_id || req.body.tenantId || 'default',
+      tenantId,
       scheduleCron: req.body.schedule_cron || req.body.scheduleCron || null,
       retentionDays: Number(req.body.retention_days || req.body.retentionDays || 30),
     });
@@ -181,7 +183,10 @@ router.post('/backups', (req, res) => {
 router.get('/backups/:id/download', (req, res) => {
   try {
     const db = getInstance().db;
-    const job = db.prepare('SELECT * FROM data_archive_jobs WHERE id = ? AND job_type = ?').get(req.params.id, 'backup');
+    const { tenantId } = tenantOptions(req);
+    const job = db.prepare(
+      'SELECT * FROM data_archive_jobs WHERE id = ? AND job_type = ? AND tenant_id = ?'
+    ).get(req.params.id, 'backup', tenantId);
     if (!job) return res.status(404).json({ success: false, error: 'backup job not found' });
     if (!job.artifact_path || !fs.existsSync(job.artifact_path)) {
       return res.status(404).json({ success: false, error: 'backup artifact not found' });
@@ -196,10 +201,13 @@ router.post('/backups/:id/restore', (req, res) => {
   try {
     const service = getInstance();
     const db = service.db;
-    const job = db.prepare('SELECT * FROM data_archive_jobs WHERE id = ? AND job_type = ?').get(req.params.id, 'backup');
+    const { tenantId } = tenantOptions(req);
+    const job = db.prepare(
+      'SELECT * FROM data_archive_jobs WHERE id = ? AND job_type = ? AND tenant_id = ?'
+    ).get(req.params.id, 'backup', tenantId);
     if (!job) return res.status(404).json({ success: false, error: 'backup job not found' });
     const data = readBackupPayload(job);
-    const result = service.importAll(data);
+    const result = service.importAll(data, { tenantId });
     const now = new Date().toISOString();
     db.prepare(
       `UPDATE data_archive_jobs

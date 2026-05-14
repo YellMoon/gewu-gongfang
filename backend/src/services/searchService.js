@@ -142,7 +142,9 @@ class SearchService {
     addColumn('last_attempt_at', 'last_attempt_at TEXT');
   }
 
-  buildQuestionDocument(db, questionId) {
+  buildQuestionDocument(db, questionId, tenantId = null) {
+    const params = tenantId ? [questionId, tenantId] : [questionId];
+    const tenantWhere = tenantId ? 'AND q.tenant_id = ?' : '';
     const row = db.prepare(
       `SELECT q.*,
               qc.stem,
@@ -155,8 +157,9 @@ class SearchService {
        LEFT JOIN question_contents qc ON qc.question_id = q.id AND qc.deleted = 0
        LEFT JOIN question_knowledge_points qkp ON qkp.question_id = q.id
        WHERE q.id = ?
+         ${tenantWhere}
        GROUP BY q.id`
-    ).get(questionId);
+    ).get(...params);
     if (!row || Number(row.deleted || 0) === 1) return null;
 
     const assets = db.prepare(
@@ -227,7 +230,7 @@ class SearchService {
     this.ensureVectorSchema(db);
     const tenantId = options.tenantId || options.tenant_id || 'default';
     const model = options.model || this.embeddingModel;
-    const document = this.buildQuestionDocument(db, questionId);
+    const document = this.buildQuestionDocument(db, questionId, tenantId);
     if (!document) return null;
 
     const text = this.buildQuestionEmbeddingText(document);

@@ -6,11 +6,15 @@ const searchService = require('../services/searchService');
 
 const router = Router();
 
+function tenantId(req) {
+  return req.tenantId || req.query.tenant_id || req.query.tenantId || req.body?.tenant_id || req.body?.tenantId || 'default';
+}
+
 router.get('/audit', (req, res) => {
   try {
     const db = getInstance();
     const logs = db.getAuditLogs({
-      tenantId: req.query.tenant_id || req.query.tenantId,
+      tenantId: tenantId(req),
       action: req.query.action,
       status: req.query.status,
       tableName: req.query.table_name || req.query.tableName,
@@ -79,7 +83,7 @@ router.post('/archive/jobs', (req, res) => {
       `INSERT INTO data_archive_jobs
        (id, tenant_id, target_table, archive_before, status, affected_rows, created_at, updated_at)
        VALUES (?, ?, ?, ?, 'pending', 0, ?, ?)`
-    ).run(id, req.body.tenant_id || 'default', req.body.target_table, req.body.archive_before, now, now);
+    ).run(id, tenantId(req), req.body.target_table, req.body.archive_before, now, now);
     res.json({ success: true, id });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -89,7 +93,7 @@ router.post('/archive/jobs', (req, res) => {
 router.post('/archive/jobs/:id/run', (req, res) => {
   try {
     const db = getInstance().db;
-    const job = db.prepare('SELECT * FROM data_archive_jobs WHERE id = ?').get(req.params.id);
+    const job = db.prepare('SELECT * FROM data_archive_jobs WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId(req));
     if (!job) return res.status(404).json({ success: false, error: 'archive job not found' });
     const allowedTables = ['schedules', 'payments', 'consumptions', 'sync_log', 'sync_audit_log'];
     if (!allowedTables.includes(job.target_table)) {
@@ -98,13 +102,15 @@ router.post('/archive/jobs/:id/run', (req, res) => {
     const now = new Date().toISOString();
     const columns = db.prepare(`PRAGMA table_info(${job.target_table})`).all().map(c => c.name);
     const timeColumn = columns.includes('updated_at') ? 'updated_at' : columns.includes('sync_time') ? 'sync_time' : 'created_at';
+    const tenantClause = columns.includes('tenant_id') ? ' AND tenant_id = ?' : '';
     let result;
     if (columns.includes('deleted')) {
       result = db.prepare(
-        `UPDATE ${job.target_table} SET deleted = 1, updated_at = ? WHERE ${timeColumn} < ? AND deleted = 0`
-      ).run(now, job.archive_before);
+        `UPDATE ${job.target_table} SET deleted = 1, updated_at = ? WHERE ${timeColumn} < ? AND deleted = 0${tenantClause}`
+      ).run(...(columns.includes('tenant_id') ? [now, job.archive_before, job.tenant_id] : [now, job.archive_before]));
     } else {
-      result = db.prepare(`DELETE FROM ${job.target_table} WHERE ${timeColumn} < ?`).run(job.archive_before);
+      result = db.prepare(`DELETE FROM ${job.target_table} WHERE ${timeColumn} < ?${tenantClause}`)
+        .run(...(columns.includes('tenant_id') ? [job.archive_before, job.tenant_id] : [job.archive_before]));
     }
     db.prepare(
       `UPDATE data_archive_jobs SET status = 'finished', affected_rows = ?, updated_at = ?, finished_at = ? WHERE id = ?`

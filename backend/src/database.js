@@ -961,7 +961,7 @@ class DatabaseService {
     const scopeTenantId = this._tenantId(options);
     const queue = this._legacyChangesToQueue(changes, deviceId).map(change => ({
       ...change,
-      tenantId: change.tenantId && change.tenantId !== 'default' ? change.tenantId : scopeTenantId,
+      tenantId: scopeTenantId,
       data: { ...change.data, tenant_id: scopeTenantId },
     }));
     const transaction = this.db.transaction((normalizedChanges) => {

@@ -104,6 +104,8 @@ jobs:
       BACKEND_DEPLOY_HOST: ${{ secrets.BACKEND_DEPLOY_HOST }}
       BACKEND_DEPLOY_PORT: ${{ vars.BACKEND_DEPLOY_PORT || '22' }}
       BACKEND_REMOTE_PATH: ${{ vars.BACKEND_REMOTE_PATH || '/root/scheduling-backend' }}
+      BACKEND_DOCKERFILE: ${{ vars.BACKEND_DOCKERFILE || 'backend/Dockerfile' }}
+      BACKEND_BUILD_CONTEXT: ${{ vars.BACKEND_BUILD_CONTEXT || 'backend' }}
       BACKEND_DOCKER_NETWORK: ${{ vars.BACKEND_DOCKER_NETWORK || 'app_default' }}
       BACKEND_DOCKER_VOLUME: ${{ vars.BACKEND_DOCKER_VOLUME || 'scheduling_data' }}
       BACKEND_HEALTH_URL: ${{ vars.BACKEND_HEALTH_URL || 'http://localhost:3001/api/health' }}
@@ -142,6 +144,8 @@ jobs:
             --user "$BACKEND_DEPLOY_USER" \
             --ssh-port "$BACKEND_DEPLOY_PORT" \
             --remote-path "$BACKEND_REMOTE_PATH" \
+            --dockerfile "$BACKEND_DOCKERFILE" \
+            --build-context "$BACKEND_BUILD_CONTEXT" \
             --network "$BACKEND_DOCKER_NETWORK" \
             --volume "$BACKEND_DOCKER_VOLUME" \
             --health-url "$BACKEND_HEALTH_URL" \

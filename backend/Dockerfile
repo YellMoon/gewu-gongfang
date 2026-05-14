@@ -13,7 +13,9 @@ LABEL org.opencontainers.image.title="gewu-scheduling-backend" \
   org.opencontainers.image.created="${BUILD_DATE}"
 
 ENV APP_VERSION=${APP_VERSION} \
-  APP_REVISION=${APP_REVISION}
+  APP_REVISION=${APP_REVISION} \
+  DB_PATH=/app/data/scheduling.db \
+  READ_DB_PATH=/app/data/scheduling.db
 
 # Build dependencies for better-sqlite3.
 RUN apk add --no-cache python3 make g++ sqlite

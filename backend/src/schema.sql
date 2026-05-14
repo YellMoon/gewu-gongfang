@@ -323,6 +323,7 @@ CREATE TABLE IF NOT EXISTS questions (
 
 CREATE TABLE IF NOT EXISTS question_contents (
   id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
   question_id TEXT NOT NULL,
   stem TEXT NOT NULL,
   answer TEXT,

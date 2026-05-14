@@ -51,7 +51,7 @@ const SystemSettings: React.FC = () => {
       });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || '创建备份失败');
-      message.success('服务端备份已完成');
+      message.success('服务端快照已完成');
       await loadBackupJobs();
     } catch (error: any) {
       message.error(error.message || '创建备份失败');
@@ -97,7 +97,7 @@ const SystemSettings: React.FC = () => {
       dbService.importAllData(defaultData);
       message.success('数据重置成功');
     } catch (error: any) {
-      message.error('重置失败：' + error.message);
+      message.error(`重置失败：${error.message}`);
     }
   };
 
@@ -117,7 +117,7 @@ const SystemSettings: React.FC = () => {
       URL.revokeObjectURL(url);
       message.success('本地数据导出成功');
     } catch (error: any) {
-      message.error('导出失败：' + error.message);
+      message.error(`导出失败：${error.message}`);
     }
   };
 
@@ -135,7 +135,7 @@ const SystemSettings: React.FC = () => {
           dbService.importAllData(data);
           message.success('本地数据导入成功');
         } catch (error: any) {
-          message.error('导入失败：' + error.message);
+          message.error(`导入失败：${error.message}`);
         }
       };
       reader.readAsText(file);
