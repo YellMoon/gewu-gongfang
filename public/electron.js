@@ -52,6 +52,9 @@ function startBackendService() {
   try {
     process.env.NODE_ENV = process.env.NODE_ENV || 'production';
     process.env.PORT = process.env.PORT || '3001';
+    const appDataDir = app.getPath('userData');
+    process.env.GEWU_DATA_DIR = process.env.GEWU_DATA_DIR || appDataDir;
+    process.env.QUESTION_BANK_UPLOAD_DIR = process.env.QUESTION_BANK_UPLOAD_DIR || path.join(appDataDir, 'uploads', 'question-bank');
     const nodePath = path.join(app.getAppPath(), 'node_modules');
     process.env.NODE_PATH = process.env.NODE_PATH ? `${process.env.NODE_PATH}${path.delimiter}${nodePath}` : nodePath;
     require('module').Module._initPaths();

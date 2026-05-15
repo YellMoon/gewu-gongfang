@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const multer = require('multer');
@@ -10,7 +11,8 @@ const eventBus = require('../services/eventBus');
 const cache = require('../services/cacheService');
 
 const router = Router();
-const uploadDir = path.join(__dirname, '..', '..', 'uploads', 'question-bank');
+const dataDir = process.env.GEWU_DATA_DIR || process.env.LOCALAPPDATA || process.env.APPDATA || os.tmpdir();
+const uploadDir = process.env.QUESTION_BANK_UPLOAD_DIR || path.join(dataDir, 'gewu-gongfang', 'uploads', 'question-bank');
 const parserScript = path.join(__dirname, '..', '..', '..', 'modules', 'question-bank', 'parsers', 'parse_word.py');
 
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
