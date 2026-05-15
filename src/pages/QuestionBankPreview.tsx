@@ -47,6 +47,7 @@ function buildTreeData(nodes: KnowledgeNode[], parentId?: string): any[] {
 const QuestionBankPreview: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
+  const [modelNodes, setModelNodes] = useState<KnowledgeNode[]>([]);
 
   // Multi-select filter state
   const [filterSubjects, setFilterSubjects] = useState<string[]>(['物理']); // default: 物理
@@ -58,6 +59,7 @@ const QuestionBankPreview: React.FC = () => {
 
   // 排除知识点
   const [filterExcludeKnowledgeIds, setFilterExcludeKnowledgeIds] = useState<(string | undefined)[]>([undefined]);
+  const [modelSelectedIds, setModelSelectedIds] = useState<(string | undefined)[]>([undefined]);
 
   // 获取某节点及其所有后代 ID
   const getDescendantIds = (nodes: KnowledgeNode[], parentId: string): string[] => {
@@ -95,6 +97,12 @@ const QuestionBankPreview: React.FC = () => {
       setQuestions(db.getAllQuestions?.() || []);
       const kn = db.getKnowledgeTree?.() || [];
       setKnowledgeNodes(kn);
+      const models = db.getModelTree?.() || [];
+      setModelNodes(models);
+      if (models.length === 0) {
+        db.initDefaultModelTree?.();
+        setModelNodes(db.getModelTree?.() || []);
+      }
     } catch (e) {
       console.error('QuestionBankPreview loadData error:', e);
     }
@@ -110,6 +118,7 @@ const QuestionBankPreview: React.FC = () => {
   }, [contextMenuNode]);
 
   const activeKnowledgeIds = knowledgeSelectedIds.filter((id): id is string => !!id);
+  const activeModelIds = modelSelectedIds.filter((id): id is string => !!id);
 
   // 将知识点 ID 展开为所有底层后代（用于筛选）
   const expandedIncludeIds = activeKnowledgeIds
@@ -118,6 +127,9 @@ const QuestionBankPreview: React.FC = () => {
   const expandedExcludeIds = filterExcludeKnowledgeIds
     .filter((id): id is string => !!id)
     .flatMap(id => getDescendantIds(knowledgeNodes, id));
+  const expandedModelIds = activeModelIds
+    .filter(id => !!id)
+    .flatMap(id => getDescendantIds(modelNodes, id));
 
   // Filters
   const filtered = questions.filter(q => {
@@ -136,6 +148,10 @@ const QuestionBankPreview: React.FC = () => {
     // 排除知识点（展开为后代，任一匹配则排除）
     if (expandedExcludeIds.length > 0) {
       if (expandedExcludeIds.some(kid => qKnowledgeIds.includes(kid))) return false;
+    }
+    const qModelIds = q.model_ids || [];
+    if (expandedModelIds.length > 0) {
+      if (!expandedModelIds.every(mid => qModelIds.includes(mid))) return false;
     }
     return true;
   }).sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
@@ -228,6 +244,7 @@ const QuestionBankPreview: React.FC = () => {
   };
 
   const treeData = buildTreeData(knowledgeNodes);
+  const modelTreeData = buildTreeData(modelNodes);
 
   // Knowledge tree checkbox renderer in modal
   const renderKnowledgeCheckboxes = (nodes: KnowledgeNode[], parentId?: string, depth = 0) => {
@@ -250,6 +267,26 @@ const QuestionBankPreview: React.FC = () => {
     );
   };
 
+  const renderModelCheckboxes = (nodes: KnowledgeNode[], parentId?: string, depth = 0) => {
+    const children = nodes.filter(n => n.parent_id === parentId || (!parentId && !n.parent_id)).sort((a, b) => a.order - b.order);
+    if (children.length === 0) return null;
+    return (
+      <div style={{ marginLeft: depth * 20 }}>
+        {children.map(n => (
+          <div key={n.id}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
+              <Form.Item name={['model_ids', n.id]} valuePropName="checked" noStyle>
+                <Checkbox />
+              </Form.Item>
+              <span style={{ fontWeight: n.parent_id ? 'normal' : 600 }}>{n.name}</span>
+            </div>
+            {renderModelCheckboxes(nodes, n.id, depth + 1)}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const handleSave = async () => {
     const values = await form.validateFields();
     const db = (window as any).dbService;
@@ -258,6 +295,12 @@ const QuestionBankPreview: React.FC = () => {
     if (values.knowledge_ids) {
       Object.entries(values.knowledge_ids).forEach(([id, checked]) => {
         if (checked) knowledge_ids.push(id);
+      });
+    }
+    const model_ids: string[] = [];
+    if (values.model_ids) {
+      Object.entries(values.model_ids).forEach(([id, checked]) => {
+        if (checked) model_ids.push(id);
       });
     }
 
@@ -271,6 +314,8 @@ const QuestionBankPreview: React.FC = () => {
       analysis: values.analysis,
       knowledge_ids,
       knowledge_point: values.knowledge_point || '',
+      model_ids,
+      model_point: model_ids.length > 0 ? modelNodes.find(n => n.id === model_ids[0])?.name || '' : '',
       formulas: values.formulas ? values.formulas.split('\n').filter((s: string) => s.trim()) : [],
       tags: values.tags ? values.tags.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
       source: values.source || '',
@@ -343,6 +388,22 @@ const QuestionBankPreview: React.FC = () => {
         } else {
           const ids = [...new Set([...(q.knowledge_ids || []), knowledgeId])];
           db.updateQuestion(id, { knowledge_ids: ids });
+        }
+      }
+    });
+    loadData();
+  };
+
+  const handleBatchModel = (modelId: string) => {
+    const db = (window as any).dbService;
+    selectedRowKeys.forEach(id => {
+      const q = questions.find(x => x.id === id);
+      if (q) {
+        if (db.addQuestionModelPoints) {
+          db.addQuestionModelPoints(id, [modelId]);
+        } else {
+          const ids = [...new Set([...(q.model_ids || []), modelId])];
+          db.updateQuestion(id, { model_ids: ids, model_point: modelNodes.find(n => n.id === modelId)?.name || q.model_point || '' });
         }
       }
     });
@@ -464,6 +525,11 @@ const QuestionBankPreview: React.FC = () => {
     return n ? n.name : id;
   };
 
+  const getModelName = (id: string) => {
+    const n = modelNodes.find(x => x.id === id);
+    return n ? n.name : id;
+  };
+
   const columns: any[] = [
     {
       title: '题干', dataIndex: 'content', key: 'content', ellipsis: true,
@@ -493,6 +559,14 @@ const QuestionBankPreview: React.FC = () => {
       )
     },
     {
+      title: '模型', key: 'model', width: 120, ellipsis: true,
+      render: (_: any, r: Question) => (
+        <span style={{ fontSize: 12, color: '#666' }}>
+          {(r.model_ids || []).map(id => getModelName(id)).join('、') || r.model_point || '-'}
+        </span>
+      )
+    },
+    {
       title: '来源', key: 'source', width: 80,
       render: (_: any, r: Question) => r.exam_type ? <Tag>{r.exam_type}</Tag> : '-'
     },
@@ -507,12 +581,16 @@ const QuestionBankPreview: React.FC = () => {
             setEditing(r);
             const knForm: Record<string, boolean> = {};
             (r.knowledge_ids || []).forEach(id => { knForm[id] = true; });
+            const modelForm: Record<string, boolean> = {};
+            (r.model_ids || []).forEach(id => { modelForm[id] = true; });
             form.setFieldsValue({
               subject: r.subject, type: r.type, difficulty: r.difficulty,
               content: r.content, options: (r.options || []).join('\n'),
               answer: r.answer, analysis: r.analysis,
               knowledge_point: r.knowledge_point,
               knowledge_ids: knForm,
+              model_point: r.model_point,
+              model_ids: modelForm,
               formulas: (r.formulas || []).join('\n'),
               tags: (r.tags || []).join(','),
               source: r.source, year: r.year, grade: r.grade,
@@ -532,6 +610,14 @@ const QuestionBankPreview: React.FC = () => {
   const menu = (
     <Menu onClick={({ key }) => handleBatchKnowledge(key)}>
       {knowledgeNodes.map(n => (
+        <Menu.Item key={n.id}>{n.name}</Menu.Item>
+      ))}
+    </Menu>
+  );
+
+  const modelMenu = (
+    <Menu onClick={({ key }) => handleBatchModel(key)}>
+      {modelNodes.map(n => (
         <Menu.Item key={n.id}>{n.name}</Menu.Item>
       ))}
     </Menu>
@@ -580,7 +666,7 @@ const QuestionBankPreview: React.FC = () => {
         <Col span={5}>
           <Card
             size="small"
-            title={<span><BranchesOutlined /> 知识树</span>}
+            title={<span><BranchesOutlined /> 知识点</span>}
             extra={<Button type="link" size="small" onClick={() => setTreeVisible(false)}>收起</Button>}
             style={{ height: '100%' }}
           >
@@ -602,11 +688,29 @@ const QuestionBankPreview: React.FC = () => {
             <div style={{ color: '#666', fontSize: 12 }}>
               <div>题目总数：{questions.length}</div>
               <div>知识点：{knowledgeNodes.length}</div>
+              <div>模型：{modelNodes.length}</div>
               {selectedRowKeys.length > 0 && (
                 <div style={{ color: '#1890ff', fontWeight: 'bold', marginTop: 8 }}>
                   已选 {selectedRowKeys.length} 题
                 </div>
               )}
+            </div>
+            <Divider orientation="left" style={{ fontSize: 12 }}>模型</Divider>
+            <div className="knowledge-tree">
+              <Tree
+                treeData={modelTreeData}
+                defaultExpandAll
+                showIcon={false}
+                showLine={{ showLeafIcon: false }}
+                blockNode
+                allowDrop={() => false}
+                onSelect={(keys) => {
+                  if (keys.length > 0) {
+                    setModelSelectedIds(keys as string[]);
+                  }
+                }}
+                style={{ fontSize: 13 }}
+              />
             </div>
           </Card>
         </Col>
@@ -619,7 +723,7 @@ const QuestionBankPreview: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <Space>
               {!treeVisible && (
-                <Button type="link" icon={<BranchesOutlined />} onClick={() => setTreeVisible(true)}>展开知识树</Button>
+                <Button type="link" icon={<BranchesOutlined />} onClick={() => setTreeVisible(true)}>展开知识点/模型</Button>
               )}
               <Badge count={filtered.length} style={{ backgroundColor: '#1890ff' }} overflowCount={9999} />
             </Space>
@@ -840,6 +944,60 @@ const QuestionBankPreview: React.FC = () => {
                 ))}
               </div>
             </div>
+
+            {/* Row 8: 模型多选 */}
+            <div style={{ marginTop: 8 }}>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>模型：</span>
+                {modelSelectedIds.map((selectedId, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Select
+                      showSearch
+                      allowClear
+                      placeholder="搜索模型..."
+                      style={{ width: 200 }}
+                      value={selectedId}
+                      onChange={(value) => {
+                        const newIds = [...modelSelectedIds];
+                        newIds[idx] = value;
+                        setModelSelectedIds(newIds);
+                      }}
+                      filterOption={(input, option) =>
+                        (option?.label as string || '').toLowerCase().includes(input.toLowerCase())
+                      }
+                      options={modelNodes.map(n => ({ label: n.name, value: n.id }))}
+                    />
+                    {idx === modelSelectedIds.length - 1 && (
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<PlusOutlined />}
+                        onClick={() => setModelSelectedIds([...modelSelectedIds, undefined])}
+                        style={{ padding: '0 4px', minWidth: 20, height: 22 }}
+                      />
+                    )}
+                    {modelSelectedIds.length > 1 && (
+                      <Button
+                        type="link"
+                        size="small"
+                        danger
+                        icon={<CloseCircleOutlined />}
+                        onClick={() => {
+                          const newIds = modelSelectedIds.filter((_, i) => i !== idx);
+                          setModelSelectedIds(newIds.length === 0 ? [undefined] : newIds);
+                        }}
+                        style={{ padding: '0 4px', minWidth: 20, height: 22 }}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+              {activeModelIds.length > 0 && (
+                <div style={{ marginTop: 4, color: '#888', fontSize: 12 }}>
+                  已选 {activeModelIds.length} 个模型（AND 筛选），共覆盖 {expandedModelIds.length} 个后代节点
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Batch Operations */}
@@ -851,6 +1009,9 @@ const QuestionBankPreview: React.FC = () => {
                 <Button size="small" onClick={handleBatchTag}><TagsOutlined /> 批量打标签</Button>
                 <Dropdown overlay={menu}>
                   <Button size="small"><AimOutlined /> 批量关联知识点</Button>
+                </Dropdown>
+                <Dropdown overlay={modelMenu}>
+                  <Button size="small"><BranchesOutlined /> 批量关联模型</Button>
                 </Dropdown>
                 <Popconfirm title={`确定删除选中的 ${selectedRowKeys.length} 题？`} onConfirm={handleBatchDelete}>
                   <Button size="small" danger><DeleteOutlined /> 批量删除</Button>
@@ -966,7 +1127,12 @@ const QuestionBankPreview: React.FC = () => {
 
           <Form.Item label="关联知识点">
             <div style={{ maxHeight: 200, overflow: 'auto', background: '#fafafa', padding: 12, borderRadius: 6 }}>
-              {knowledgeNodes.length > 0 ? renderKnowledgeCheckboxes(knowledgeNodes) : <Empty description="暂无知识树数据" />}
+              {knowledgeNodes.length > 0 ? renderKnowledgeCheckboxes(knowledgeNodes) : <Empty description="暂无知识点数据" />}
+            </div>
+          </Form.Item>
+          <Form.Item label="关联模型">
+            <div style={{ maxHeight: 200, overflow: 'auto', background: '#fafafa', padding: 12, borderRadius: 6 }}>
+              {modelNodes.length > 0 ? renderModelCheckboxes(modelNodes) : <Empty description="暂无模型数据" />}
             </div>
           </Form.Item>
         </Form>

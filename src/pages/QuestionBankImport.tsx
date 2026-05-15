@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons';
 import type { Question, KnowledgeNode } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
+import { getApiBase } from '../utils/apiBase';
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -21,7 +22,7 @@ const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试',
 const GRADES = ['高一', '高二', '高三', '复习'];
 const SEMESTERS = ['上学期', '下学期'];
 
-const API_BASE = '/api/question-bank';
+const API_BASE = getApiBase('/api/question-bank');
 const PARSE_WORD_ENDPOINT = `${API_BASE}/parse-word`;
 
 type ImportBatch = {
@@ -162,6 +163,7 @@ function normalizeImportedKnowledgeIds(db: any, parsedQuestion: any): string[] {
 const QuestionBankImport: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
+  const [modelNodes, setModelNodes] = useState<KnowledgeNode[]>([]);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingNodeName, setEditingNodeName] = useState('');
   const [addingChildParentId, setAddingChildParentId] = useState<string | null | '__ROOT__'>(null);
@@ -192,6 +194,12 @@ const QuestionBankImport: React.FC = () => {
         db.initDefaultKnowledgeTree?.();
         setKnowledgeNodes(db.getKnowledgeTree?.() || []);
       }
+      const models = db.getModelTree?.() || [];
+      setModelNodes(models);
+      if (models.length === 0) {
+        db.initDefaultModelTree?.();
+        setModelNodes(db.getModelTree?.() || []);
+      }
     } catch (e) {
       console.error('QuestionBankImport loadData error:', e);
     }
@@ -213,6 +221,27 @@ const QuestionBankImport: React.FC = () => {
     db.createKnowledgeNode({ name, parent_id: parentId || null });
     const kn = db.getKnowledgeTree?.() || [];
     setKnowledgeNodes([...kn]);
+  }, []);
+
+  const handleCreateModelNode = useCallback((name: string, parentId?: string | null) => {
+    const db = (window as any).dbService;
+    if (!db) return;
+    db.createModelNode?.({ name, parent_id: parentId || null });
+    setModelNodes([...(db.getModelTree?.() || [])]);
+  }, []);
+
+  const handleRenameModelNode = useCallback((id: string, name: string) => {
+    const db = (window as any).dbService;
+    if (!db) return;
+    db.updateModelNode?.(id, { name });
+    setModelNodes([...(db.getModelTree?.() || [])]);
+  }, []);
+
+  const handleDeleteModelNode = useCallback((id: string) => {
+    const db = (window as any).dbService;
+    if (!db) return;
+    db.deleteModelNode?.(id);
+    setModelNodes([...(db.getModelTree?.() || [])]);
   }, []);
 
   const handleRenameKnowledgeNode = useCallback((id: string, name: string) => {
@@ -297,6 +326,7 @@ const QuestionBankImport: React.FC = () => {
   };
 
   const treeData = buildTreeData(knowledgeNodes);
+  const modelTreeData = buildTreeData(modelNodes);
 
   const nodeTitleRender = useCallback((nodeData: any) => {
     const nodeId = nodeData.key as string;
@@ -364,6 +394,77 @@ const QuestionBankImport: React.FC = () => {
     );
   }, [editingNodeId, editingNodeName, addingChildParentId, addingChildName, handleRenameKnowledgeNode, handleCreateKnowledgeNode]);
 
+  const modelNodeTitleRender = useCallback((nodeData: any) => {
+    const nodeId = nodeData.key as string;
+    const nodeName = nodeData.title as string;
+    const isEditing = editingNodeId === `model:${nodeId}`;
+    const isAdding = addingChildParentId === `model:${nodeId}`;
+    return (
+      <div style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 2, padding: '1px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {isEditing ? (
+            <Input
+              size="small" value={editingNodeName}
+              onChange={e => setEditingNodeName(e.target.value)}
+              onBlur={(e) => {
+                const v = (e.target as HTMLInputElement).value;
+                if (v.trim()) handleRenameModelNode(nodeId, v.trim());
+                setEditingNodeId(null); setEditingNodeName('');
+              }}
+              onPressEnter={(e) => {
+                const v = (e.target as HTMLInputElement).value;
+                if (v.trim()) handleRenameModelNode(nodeId, v.trim());
+                setEditingNodeId(null); setEditingNodeName('');
+              }}
+              style={{ width: 120 }} autoFocus onClick={e => e.stopPropagation()}
+            />
+          ) : (
+            <>
+              <span style={{ flex: 1, userSelect: 'none', fontSize: 13 }}>{nodeName}</span>
+              <Tooltip title="添加子模型">
+                <Button type="link" size="small" icon={<PlusOutlined />}
+                  onClick={e => { e.stopPropagation(); setAddingChildParentId(`model:${nodeId}`); setAddingChildName(''); }}
+                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }} />
+              </Tooltip>
+              <Tooltip title="编辑模型">
+                <Button type="link" size="small" icon={<EditOutlined />}
+                  onClick={e => { e.stopPropagation(); setEditingNodeId(`model:${nodeId}`); setEditingNodeName(nodeName); }}
+                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }} />
+              </Tooltip>
+              <Tooltip title="删除模型">
+                <Button type="link" size="small" danger icon={<DeleteOutlined />}
+                  onClick={e => { e.stopPropagation(); Modal.confirm({ title: '确认删除', content: `确定删除模型「${nodeName}」及其子模型吗？`, okText: '删除', cancelText: '取消', okButtonProps: { danger: true }, onOk: () => handleDeleteModelNode(nodeId) }); }}
+                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }} />
+              </Tooltip>
+            </>
+          )}
+        </div>
+        {isAdding && (
+          <div style={{ paddingLeft: 20, marginTop: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Input size="small" placeholder="子模型名称" value={addingChildName}
+                onChange={e => setAddingChildName(e.target.value)}
+                onBlur={(e) => {
+                  const v = (e.target as HTMLInputElement).value;
+                  if (v.trim()) handleCreateModelNode(v.trim(), nodeId);
+                  setAddingChildParentId(null); setAddingChildName('');
+                }}
+                onPressEnter={(e) => {
+                  const v = (e.target as HTMLInputElement).value;
+                  if (v.trim()) handleCreateModelNode(v.trim(), nodeId);
+                  setAddingChildParentId(null); setAddingChildName('');
+                }}
+                style={{ width: 140 }} autoFocus onClick={e => e.stopPropagation()} />
+              <Button type="link" size="small" icon={<CloseCircleOutlined />}
+                onClick={e => { e.stopPropagation(); setAddingChildParentId(null); setAddingChildName(''); }}
+                style={{ padding: 0, minWidth: 16, height: 16, fontSize: 11, color: '#999' }} />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }, [editingNodeId, editingNodeName, addingChildParentId, addingChildName, handleRenameModelNode, handleCreateModelNode, handleDeleteModelNode]);
+
   // Knowledge tree checkbox renderer in modal
   const renderKnowledgeCheckboxes = (nodes: KnowledgeNode[], parentId?: string, depth = 0) => {
     const children = nodes.filter(n => n.parent_id === parentId || (!parentId && !n.parent_id)).sort((a, b) => a.order - b.order);
@@ -385,6 +486,26 @@ const QuestionBankImport: React.FC = () => {
     );
   };
 
+  const renderModelCheckboxes = (nodes: KnowledgeNode[], parentId?: string, depth = 0) => {
+    const children = nodes.filter(n => n.parent_id === parentId || (!parentId && !n.parent_id)).sort((a, b) => a.order - b.order);
+    if (children.length === 0) return null;
+    return (
+      <div style={{ marginLeft: depth * 20 }}>
+        {children.map(n => (
+          <div key={n.id}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
+              <Form.Item name={['model_ids', n.id]} valuePropName="checked" noStyle>
+                <Checkbox />
+              </Form.Item>
+              <span style={{ fontWeight: n.parent_id ? 'normal' : 600 }}>{n.name}</span>
+            </div>
+            {renderModelCheckboxes(nodes, n.id, depth + 1)}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const handleSave = async () => {
     const values = await form.validateFields();
     const db = (window as any).dbService;
@@ -393,6 +514,12 @@ const QuestionBankImport: React.FC = () => {
     if (values.knowledge_ids) {
       Object.entries(values.knowledge_ids).forEach(([id, checked]) => {
         if (checked) knowledge_ids.push(id);
+      });
+    }
+    const model_ids: string[] = [];
+    if (values.model_ids) {
+      Object.entries(values.model_ids).forEach(([id, checked]) => {
+        if (checked) model_ids.push(id);
       });
     }
 
@@ -406,6 +533,8 @@ const QuestionBankImport: React.FC = () => {
       analysis: values.analysis,
       knowledge_ids,
       knowledge_point: values.knowledge_point || '',
+      model_ids,
+      model_point: model_ids.length > 0 ? modelNodes.find(n => n.id === model_ids[0])?.name || '' : '',
       formulas: values.formulas ? values.formulas.split('\n').filter((s: string) => s.trim()) : [],
       tags: values.tags ? values.tags.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
       source: values.source || '',
@@ -567,6 +696,7 @@ const QuestionBankImport: React.FC = () => {
           formulas: [],
           knowledge_point: q.knowledge_point || '',
           knowledge_ids,
+          model_ids: [],
         });
         added++;
       } catch (e) { /* skip bad ones */ }
@@ -583,7 +713,7 @@ const QuestionBankImport: React.FC = () => {
         <Col span={5}>
           <Card
             size="small"
-            title={<span><BranchesOutlined /> 知识树</span>}
+            title={<span><BranchesOutlined /> 知识点</span>}
             extra={<Button type="link" size="small" onClick={() => setTreeVisible(false)}>收起</Button>}
             style={{ height: '100%' }}
           >
@@ -686,6 +816,44 @@ const QuestionBankImport: React.FC = () => {
             <div style={{ color: '#666', fontSize: 12 }}>
               <div>题目总数：{questions.length}</div>
               <div>知识点：{knowledgeNodes.length}</div>
+              <div>模型：{modelNodes.length}</div>
+            </div>
+            <Divider orientation="left" style={{ fontSize: 12 }}>模型</Divider>
+            {addingChildParentId === 'model:__ROOT__' ? (
+              <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Input size="small" placeholder="根模型名称" value={addingChildName}
+                  onChange={e => setAddingChildName(e.target.value)}
+                  onBlur={(e) => {
+                    const v = (e.target as HTMLInputElement).value;
+                    if (v.trim()) handleCreateModelNode(v.trim(), null);
+                    setAddingChildParentId(null); setAddingChildName('');
+                  }}
+                  onPressEnter={(e) => {
+                    const v = (e.target as HTMLInputElement).value;
+                    if (v.trim()) handleCreateModelNode(v.trim(), null);
+                    setAddingChildParentId(null); setAddingChildName('');
+                  }}
+                  style={{ flex: 1 }} autoFocus />
+                <Button type="link" size="small" icon={<CloseCircleOutlined />}
+                  onClick={() => { setAddingChildParentId(null); setAddingChildName(''); }}
+                  style={{ padding: 0, minWidth: 16, height: 16, color: '#999' }} />
+              </div>
+            ) : (
+              <Button type="dashed" size="small" icon={<PlusOutlined />}
+                onClick={() => { setAddingChildParentId('model:__ROOT__'); setAddingChildName(''); }}
+                style={{ marginBottom: 8, width: '100%' }}>新建根模型</Button>
+            )}
+            <div className="knowledge-tree">
+              <Tree
+                treeData={modelTreeData}
+                titleRender={modelNodeTitleRender}
+                defaultExpandAll
+                showIcon={false}
+                showLine={{ showLeafIcon: false }}
+                blockNode
+                draggable={false}
+                style={{ fontSize: 13 }}
+              />
             </div>
           </Card>
         </Col>
@@ -695,7 +863,7 @@ const QuestionBankImport: React.FC = () => {
         <Card style={{ margin: 0 }}>
           {!treeVisible && (
             <div style={{ marginBottom: 12 }}>
-              <Button type="link" icon={<BranchesOutlined />} onClick={() => setTreeVisible(true)}>展开知识树</Button>
+              <Button type="link" icon={<BranchesOutlined />} onClick={() => setTreeVisible(true)}>展开知识点/模型</Button>
             </div>
           )}
 
@@ -872,7 +1040,12 @@ const QuestionBankImport: React.FC = () => {
 
           <Form.Item label="关联知识点">
             <div style={{ maxHeight: 200, overflow: 'auto', background: '#fafafa', padding: 12, borderRadius: 6 }}>
-              {knowledgeNodes.length > 0 ? renderKnowledgeCheckboxes(knowledgeNodes) : <Empty description="暂无知识树数据" />}
+              {knowledgeNodes.length > 0 ? renderKnowledgeCheckboxes(knowledgeNodes) : <Empty description="暂无知识点数据" />}
+            </div>
+          </Form.Item>
+          <Form.Item label="关联模型">
+            <div style={{ maxHeight: 200, overflow: 'auto', background: '#fafafa', padding: 12, borderRadius: 6 }}>
+              {modelNodes.length > 0 ? renderModelCheckboxes(modelNodes) : <Empty description="暂无模型数据" />}
             </div>
           </Form.Item>
         </Form>

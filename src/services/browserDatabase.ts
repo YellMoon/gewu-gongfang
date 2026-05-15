@@ -24,6 +24,7 @@ interface Database {
   assetCategories: AssetCategory[];
   questions: Question[];
   knowledgeTree: KnowledgeNode[];
+  modelTree: KnowledgeNode[];
 }
 
 type SyncLocalDataMaps = Partial<Record<SyncTable, Map<string, any>>>;
@@ -57,6 +58,7 @@ class BrowserDatabaseService {
     assetCategories: [],
     questions: [],
     knowledgeTree: [],
+    modelTree: [],
     institutions: [],
     schools: [],
     rooms: [],
@@ -96,6 +98,7 @@ class BrowserDatabaseService {
         ],
         questions: [],
         knowledgeTree: loadedData?.knowledgeTree ?? [],
+        modelTree: loadedData?.modelTree ?? [],
         ...loadedData
       };
     }
@@ -681,7 +684,8 @@ class BrowserDatabaseService {
       assetRecords: data.assetRecords || [],
       assetCategories: data.assetCategories || [],
       questions: data.questions || [],
-      knowledgeTree: data.knowledgeTree || []
+      knowledgeTree: data.knowledgeTree || [],
+      modelTree: data.modelTree || []
     };
     this.saveData();
   }
@@ -1070,6 +1074,114 @@ class BrowserDatabaseService {
 
   getKnowledgeChildren(parentId: string): KnowledgeNode[] {
     return this.data.knowledgeTree.filter(n => n.parent_id === parentId).sort((a, b) => a.order - b.order);
+  }
+
+  // ========== 模型树管理 ==========
+
+  getModelTree(): KnowledgeNode[] {
+    return this.data.modelTree || [];
+  }
+
+  initDefaultModelTree(): void {
+    if ((this.data.modelTree || []).length > 0) return;
+    const now = new Date().toISOString();
+    this.data.modelTree = [
+      { id: 'model-1', name: '运动模型', children: [], order: 1, created_at: now, updated_at: now },
+      { id: 'model-1-1', name: '匀变速直线运动模型', parent_id: 'model-1', children: [], order: 1, created_at: now, updated_at: now },
+      { id: 'model-1-2', name: '平抛运动模型', parent_id: 'model-1', children: [], order: 2, created_at: now, updated_at: now },
+      { id: 'model-2', name: '受力模型', children: [], order: 2, created_at: now, updated_at: now },
+      { id: 'model-2-1', name: '连接体模型', parent_id: 'model-2', children: [], order: 1, created_at: now, updated_at: now },
+      { id: 'model-2-2', name: '临界极值模型', parent_id: 'model-2', children: [], order: 2, created_at: now, updated_at: now },
+      { id: 'model-3', name: '能量模型', children: [], order: 3, created_at: now, updated_at: now },
+      { id: 'model-4', name: '电磁模型', children: [], order: 4, created_at: now, updated_at: now },
+    ];
+    this._rebuildModelChildren();
+    this.saveData();
+  }
+
+  private _rebuildModelChildren(): void {
+    this.data.modelTree = this.data.modelTree || [];
+    for (const n of this.data.modelTree) {
+      n.children = this.data.modelTree.filter(c => c.parent_id === n.id).map(c => c.id);
+    }
+  }
+
+  createModelNode(node: Omit<KnowledgeNode, 'id' | 'created_at' | 'updated_at'>): KnowledgeNode {
+    const now = new Date().toISOString();
+    const newNode: KnowledgeNode = {
+      ...node,
+      id: 'model-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)),
+      created_at: now,
+      updated_at: now,
+    };
+    this.data.modelTree = this.data.modelTree || [];
+    this.data.modelTree.push(newNode);
+    this._rebuildModelChildren();
+    this.saveData();
+    return newNode;
+  }
+
+  updateModelNode(id: string, updates: Partial<Omit<KnowledgeNode, 'id'>>): boolean {
+    this.data.modelTree = this.data.modelTree || [];
+    const idx = this.data.modelTree.findIndex(n => n.id === id);
+    if (idx === -1) return false;
+    const oldName = this.data.modelTree[idx].name;
+    this.data.modelTree[idx] = { ...this.data.modelTree[idx], ...updates, updated_at: new Date().toISOString() };
+    this._rebuildModelChildren();
+    const newName = updates.name;
+    if (newName !== undefined && newName !== oldName) {
+      for (const q of this.data.questions) {
+        if (q.model_ids && q.model_ids.includes(id) && q.model_point === oldName) {
+          q.model_point = newName;
+        }
+      }
+    }
+    this.saveData();
+    return true;
+  }
+
+  deleteModelNode(id: string): boolean {
+    const idsToDelete = this.collectModelDescendantIds(id);
+    if (idsToDelete.length === 0) return false;
+    this.data.modelTree = (this.data.modelTree || []).filter(n => !idsToDelete.includes(n.id));
+    for (const q of this.data.questions) {
+      if (q.model_ids && q.model_ids.length > 0) {
+        q.model_ids = q.model_ids.filter(mid => !idsToDelete.includes(mid));
+        const primary = q.model_ids.length > 0 ? this.data.modelTree.find(node => node.id === q.model_ids![0]) : null;
+        q.model_point = primary?.name || '';
+      }
+    }
+    this._rebuildModelChildren();
+    this.saveData();
+    return true;
+  }
+
+  private collectModelDescendantIds(id: string): string[] {
+    const result: string[] = [id];
+    const children = (this.data.modelTree || []).filter(n => n.parent_id === id);
+    for (const child of children) {
+      result.push(...this.collectModelDescendantIds(child.id));
+    }
+    return result;
+  }
+
+  setQuestionModelPoints(questionId: string, modelIds: string[]): Question | null {
+    const question = this.data.questions.find(q => q.id === questionId);
+    if (!question) return null;
+    const validIds = new Set((this.data.modelTree || []).map(node => node.id));
+    const nextIds = [...new Set((modelIds || []).filter(id => validIds.has(id)))];
+    const primary = nextIds.length > 0 ? this.data.modelTree.find(node => node.id === nextIds[0]) : null;
+    question.model_ids = nextIds;
+    question.model_point = primary?.name || '';
+    question.updated_at = new Date().toISOString();
+    this.saveData();
+    return question;
+  }
+
+  addQuestionModelPoints(questionId: string, modelIds: string[]): Question | null {
+    const question = this.data.questions.find(q => q.id === questionId);
+    if (!question) return null;
+    return this.setQuestionModelPoints(questionId, [...(question.model_ids || []), ...(modelIds || [])]);
   }
 }
 

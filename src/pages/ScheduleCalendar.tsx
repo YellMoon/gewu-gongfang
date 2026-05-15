@@ -890,7 +890,7 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
     <div style={{ minHeight: '100%', paddingRight: 8 }}>
       <OneWeekRow
         startMonday={currentMonday}
-        weekLabel="鏈懆"
+        weekLabel="本周"
         schedules={filteredSchedules}
         selectedCourseIds={selectedCourseIds}
         batchPhase={batchPhase}
@@ -908,7 +908,7 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
       />
       <OneWeekRow
         startMonday={currentMonday.add(1, 'week')}
-        weekLabel="涓嬪懆"
+        weekLabel="下周"
         schedules={filteredSchedules}
         selectedCourseIds={selectedCourseIds}
         batchPhase={batchPhase}

@@ -285,6 +285,8 @@ export interface Question {
   chapter?: string;
   knowledge_point?: string;
   knowledge_ids?: string[];        // 关联知识点ID
+  model_point?: string;
+  model_ids?: string[];            // 关联模型ID
   type: string;
   difficulty: number;
   content: string;
