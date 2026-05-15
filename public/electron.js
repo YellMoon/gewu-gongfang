@@ -25,6 +25,46 @@ process.on('uncaughtException', (err) => {
 });
 
 let mainWindow;
+let backendServer = null;
+
+function findBackendApp() {
+  const candidates = [
+    path.join(process.resourcesPath || '', 'backend', 'src', 'app.js'),
+    path.join(process.resourcesPath || '', 'app.asar.unpacked', 'backend', 'src', 'app.js'),
+    path.join(app.getAppPath(), 'backend', 'src', 'app.js'),
+    path.join(__dirname, '..', 'backend', 'src', 'app.js'),
+    path.join(process.cwd(), 'backend', 'src', 'app.js'),
+  ];
+  for (const p of candidates) {
+    log('Backend app candidate: ' + p + ' exists=' + fs.existsSync(p));
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+function startBackendService() {
+  if (process.env.DISABLE_EMBEDDED_BACKEND === '1') return;
+  const appPath = findBackendApp();
+  if (!appPath) {
+    log('Backend app.js not found, embedded backend disabled');
+    return;
+  }
+  try {
+    process.env.NODE_ENV = process.env.NODE_ENV || 'production';
+    process.env.PORT = process.env.PORT || '3001';
+    const nodePath = path.join(app.getAppPath(), 'node_modules');
+    process.env.NODE_PATH = process.env.NODE_PATH ? `${process.env.NODE_PATH}${path.delimiter}${nodePath}` : nodePath;
+    require('module').Module._initPaths();
+    const { createApp } = require(appPath);
+    const backendApp = createApp();
+    backendServer = backendApp.listen(Number(process.env.PORT), '127.0.0.1', () => {
+      log(`Embedded backend listening on http://127.0.0.1:${process.env.PORT}`);
+    });
+    backendServer.on('error', err => log('Embedded backend error: ' + err.message));
+  } catch (err) {
+    log('Embedded backend start failed: ' + err.message + '\n' + err.stack);
+  }
+}
 
 function createWindow() {
   log('createWindow, cwd=' + process.cwd());
@@ -140,6 +180,7 @@ function showErrorPage(msg) {
 
 app.whenReady().then(() => {
   log('whenReady');
+  startBackendService();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -147,7 +188,18 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  if (backendServer) {
+    backendServer.close();
+    backendServer = null;
+  }
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  if (backendServer) {
+    backendServer.close();
+    backendServer = null;
+  }
 });
 
 ipcMain.handle('get-app-version', () => app.getVersion());

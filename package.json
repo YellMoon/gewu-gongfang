@@ -1,6 +1,6 @@
 {
   "name": "gewu-gongfang",
-  "version": "3.0.8",
+  "version": "3.0.9",
   "description": "格物工坊（综合教育平台）",
   "main": "public/electron.js",
   "homepage": ".",
@@ -26,16 +26,20 @@
     "chart.js": "^4.4.0",
     "cors": "^2.8.6",
     "dayjs": "^1.11.10",
+    "dotenv": "^16.6.1",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.8.3",
     "express": "^5.2.1",
+    "imap": "^0.8.19",
     "jsonwebtoken": "^9.0.3",
+    "mailparser": "^3.9.8",
     "multer": "^1.4.5-lts.1",
     "react": "^18.2.0",
     "react-chartjs-2": "^5.2.0",
     "react-dom": "^18.2.0",
     "react-scripts": "5.0.1",
     "recharts": "^3.8.1",
+    "redis": "^4.7.1",
     "sql.js": "^1.10.3",
     "uuid": "^9.0.1",
     "xlsx": "^0.18.5"
@@ -63,7 +67,13 @@
       "public/electron.js",
       "public/preload.js",
       "package.json",
-      "public/icon.ico"
+      "public/icon.ico",
+      "backend/**/*",
+      "modules/question-bank/**/*"
+    ],
+    "asarUnpack": [
+      "backend/**/*",
+      "modules/question-bank/**/*"
     ],
     "win": {
       "target": "nsis",
