@@ -69,6 +69,7 @@ function startBackendService() {
     process.env.PORT = process.env.PORT || '3001';
     const appDataDir = app.getPath('userData');
     process.env.GEWU_DATA_DIR = process.env.GEWU_DATA_DIR || appDataDir;
+    process.env.DB_PATH = process.env.DB_PATH || path.join(appDataDir, 'data', 'scheduling.db');
     process.env.QUESTION_BANK_UPLOAD_DIR = process.env.QUESTION_BANK_UPLOAD_DIR || path.join(appDataDir, 'uploads', 'question-bank');
     const bundledPython = findBundledPython();
     if (bundledPython) process.env.PYTHON_BIN = process.env.PYTHON_BIN || bundledPython;

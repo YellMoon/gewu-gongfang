@@ -1,6 +1,6 @@
 {
   "name": "gewu-gongfang",
-  "version": "3.0.11",
+  "version": "3.0.12",
   "description": "格物工坊（综合教育平台）",
   "main": "public/electron.js",
   "homepage": ".",
@@ -10,9 +10,11 @@
     "build": "node scripts/update-version.js && react-scripts build",
     "start": "electron .",
     "prepare:python": "node scripts/prepare-python-runtime.js",
-    "dist": "npm run build && npm run prepare:python && electron-builder",
-    "pack": "npm run build && npm run prepare:python && electron-builder --dir",
-    "dist:win": "node scripts/update-version.js --bump && npm run build && npm run prepare:python && electron-builder --win",
+    "rebuild:node": "npm rebuild better-sqlite3",
+    "rebuild:electron": "electron-builder install-app-deps",
+    "dist": "npm run build && npm run prepare:python && npm run rebuild:electron && electron-builder && npm run rebuild:node",
+    "pack": "npm run build && npm run prepare:python && npm run rebuild:electron && electron-builder --dir && npm run rebuild:node",
+    "dist:win": "node scripts/update-version.js --bump && npm run build && npm run prepare:python && npm run rebuild:electron && electron-builder --win && npm run rebuild:node",
     "test": "npm run test:backend",
     "test:backend": "node backend/src/services/questionBankService.test.js && node backend/src/services/syncIncremental.test.js && node backend/src/services/eventBus.test.js && node --check backend/src/routes/questionBank.js",
     "publish:oss-feed": "node scripts/publish-oss-feed.js",
@@ -100,7 +102,7 @@
         "url": "https://gewugongfang.oss-cn-hangzhou.aliyuncs.com/desktop/"
       }
     ],
-    "npmRebuild": false
+    "npmRebuild": true
   },
   "browserslist": {
     "production": [

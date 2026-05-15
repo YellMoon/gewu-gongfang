@@ -118,8 +118,26 @@ class DatabaseService {
     return ['students', 'grades', 'courses', 'schedules', 'enrollments',
       'payments', 'consumptions', 'institutions', 'schools', 'rooms', 'teachers',
       'subjects', 'chapters', 'knowledge_points', 'questions', 'question_contents',
-      'question_assets', 'import_batches', 'search_index_jobs', 'vector_embeddings',
+      'question_assets', 'import_batches', 'import_items', 'search_index_jobs', 'vector_embeddings',
       'data_archive_jobs', 'outbox_events'];
+  }
+
+  _questionBankTenantScopedTables() {
+    return ['subjects', 'chapters', 'knowledge_points', 'questions', 'question_contents',
+      'question_assets', 'import_batches', 'import_items', 'search_index_jobs', 'vector_embeddings',
+      'data_archive_jobs', 'outbox_events'];
+  }
+
+  _ensureTenantColumnForTable(table) {
+    const exists = this.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?"
+    ).get(table);
+    if (!exists) return;
+    const columns = this.db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+    if (!columns.includes('tenant_id')) {
+      this.db.prepare(`ALTER TABLE ${table} ADD COLUMN tenant_id TEXT DEFAULT 'default'`).run();
+    }
+    this.db.prepare(`UPDATE ${table} SET tenant_id = 'default' WHERE tenant_id IS NULL OR tenant_id = ''`).run();
   }
 
   _ensureTenantColumns() {
@@ -130,15 +148,21 @@ class DatabaseService {
     ).run(now, now);
 
     for (const table of this._tenantScopedTables()) {
+      this._ensureTenantColumnForTable(table);
+      const columns = this.db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+      if (columns.includes('deleted')) {
+        this.db.prepare(`CREATE INDEX IF NOT EXISTS idx_${table}_tenant_deleted ON ${table}(tenant_id, deleted)`).run();
+      } else {
+        this.db.prepare(`CREATE INDEX IF NOT EXISTS idx_${table}_tenant ON ${table}(tenant_id)`).run();
+      }
+    }
+    for (const table of this._questionBankTenantScopedTables()) {
       const exists = this.db.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?"
       ).get(table);
       if (!exists) continue;
+      this._ensureTenantColumnForTable(table);
       const columns = this.db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
-      if (!columns.includes('tenant_id')) {
-        this.db.prepare(`ALTER TABLE ${table} ADD COLUMN tenant_id TEXT DEFAULT 'default'`).run();
-      }
-      this.db.prepare(`UPDATE ${table} SET tenant_id = 'default' WHERE tenant_id IS NULL OR tenant_id = ''`).run();
       if (columns.includes('deleted')) {
         this.db.prepare(`CREATE INDEX IF NOT EXISTS idx_${table}_tenant_deleted ON ${table}(tenant_id, deleted)`).run();
       } else {

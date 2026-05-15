@@ -11,6 +11,7 @@ import {
 } from '@ant-design/icons';
 import type { Question, KnowledgeNode } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
+import { getApiBase } from '../utils/apiBase';
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -23,6 +24,7 @@ const GRADES = ['高一', '高二', '高三', '复习'];
 const SEMESTERS = ['上学期', '下学期'];
 
 const dbService = (): any => (window as any).dbService;
+const API_BASE = getApiBase('/api/question-bank');
 
 // Build simple tree data (title is string, not ReactNode)
 function buildTreeData(nodes: KnowledgeNode[], parentId: string | undefined): any[] {
@@ -101,11 +103,25 @@ const QuestionBank: React.FC = () => {
   // 知识点多选过滤
   const [filterKnowledgeIds, setFilterKnowledgeIds] = useState<string[]>([]);
 
-  const loadData = useCallback(() => {
+  const loadData = useCallback(async () => {
     try {
       const db = (window as any).dbService;
+      let localQuestions: Question[] = [];
+      if (db) {
+        localQuestions = (db.getAllQuestions?.() || []).map(normalizeQuestion);
+      }
+      try {
+        const res = await fetch(`${API_BASE}/questions?limit=200`);
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) {
+          setQuestions(data.data.map(normalizeQuestion));
+        } else {
+          setQuestions(localQuestions);
+        }
+      } catch (_err) {
+        setQuestions(localQuestions);
+      }
       if (!db) return;
-      setQuestions((db.getAllQuestions?.() || []).map(normalizeQuestion));
       setKnowledgeNodes([...(db.getKnowledgeTree?.() || [])]);
       if (db.getKnowledgeTree?.().length === 0) {
         db.initDefaultKnowledgeTree?.();
@@ -148,7 +164,7 @@ const QuestionBank: React.FC = () => {
       if (!match) return false;
     }
     return true;
-  }).sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+  }).sort((a, b) => (b.created_at || b.updated_at || '').localeCompare(a.created_at || a.updated_at || ''));
 
   const handleSave = async () => {
     const values = await form.validateFields();

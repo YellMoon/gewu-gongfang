@@ -264,7 +264,7 @@ class QuestionBankService {
             LEFT JOIN question_knowledge_points qkp ON qkp.question_id = q.id
             ${whereSql}
             GROUP BY q.id
-            ORDER BY q.updated_at DESC`;
+            ORDER BY q.created_at DESC, q.updated_at DESC`;
   }
 
   _getAssets(db, questionId) {

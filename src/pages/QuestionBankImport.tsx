@@ -183,11 +183,25 @@ const QuestionBankImport: React.FC = () => {
   const [form] = Form.useForm();
   const examMetaRef = useRef<any>(null);
 
-  const loadData = useCallback(() => {
+  const loadData = useCallback(async () => {
     try {
       const db = (window as any).dbService;
+      let localQuestions: Question[] = [];
+      if (db) {
+        localQuestions = (db.getAllQuestions?.() || []).map(normalizeQuestion);
+      }
+      try {
+        const res = await fetch(`${API_BASE}/questions?limit=200`);
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) {
+          setQuestions(data.data.map(normalizeQuestion));
+        } else {
+          setQuestions(localQuestions);
+        }
+      } catch (_err) {
+        setQuestions(localQuestions);
+      }
       if (!db) return;
-      setQuestions((db.getAllQuestions?.() || []).map(normalizeQuestion));
       const kn = db.getKnowledgeTree?.() || [];
       setKnowledgeNodes(kn);
       if (kn.length === 0) {
