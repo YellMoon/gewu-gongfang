@@ -69,3 +69,6 @@ miniapp/.swc/
 # Python venv
 .venv/
 venv/
+
+# Bundled runtime generated during packaging
+runtime/

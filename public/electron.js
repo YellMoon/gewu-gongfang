@@ -42,6 +42,21 @@ function findBackendApp() {
   return null;
 }
 
+function findBundledPython() {
+  const candidates = [
+    path.join(process.resourcesPath || '', 'runtime', 'python', 'python.exe'),
+    path.join(process.resourcesPath || '', 'app.asar.unpacked', 'runtime', 'python', 'python.exe'),
+    path.join(app.getAppPath(), 'runtime', 'python', 'python.exe'),
+    path.join(__dirname, '..', 'runtime', 'python', 'python.exe'),
+    path.join(process.cwd(), 'runtime', 'python', 'python.exe'),
+  ];
+  for (const p of candidates) {
+    log('Python runtime candidate: ' + p + ' exists=' + fs.existsSync(p));
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
 function startBackendService() {
   if (process.env.DISABLE_EMBEDDED_BACKEND === '1') return;
   const appPath = findBackendApp();
@@ -55,6 +70,8 @@ function startBackendService() {
     const appDataDir = app.getPath('userData');
     process.env.GEWU_DATA_DIR = process.env.GEWU_DATA_DIR || appDataDir;
     process.env.QUESTION_BANK_UPLOAD_DIR = process.env.QUESTION_BANK_UPLOAD_DIR || path.join(appDataDir, 'uploads', 'question-bank');
+    const bundledPython = findBundledPython();
+    if (bundledPython) process.env.PYTHON_BIN = process.env.PYTHON_BIN || bundledPython;
     const nodePath = path.join(app.getAppPath(), 'node_modules');
     process.env.NODE_PATH = process.env.NODE_PATH ? `${process.env.NODE_PATH}${path.delimiter}${nodePath}` : nodePath;
     require('module').Module._initPaths();

@@ -34,6 +34,21 @@ function pythonCommand() {
   return process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
 }
 
+function cleanupUpload(filePath, parsePath) {
+  try { fs.unlinkSync(filePath); } catch (_cleanupErr) {}
+  if (parsePath && parsePath !== filePath) {
+    try { fs.unlinkSync(parsePath); } catch (_cleanupErr) {}
+  }
+}
+
+function parsePythonError(stdout = '', stderr = '') {
+  try {
+    const parsed = JSON.parse(stdout);
+    if (parsed?.error) return parsed.error;
+  } catch (_err) {}
+  return (stderr || stdout || '').trim();
+}
+
 function decodeUploadName(value = '') {
   if (!value) return '';
   const utf8 = Buffer.from(value, 'latin1').toString('utf8');
@@ -103,6 +118,16 @@ router.post('/parse-word', upload.single('file'), (req, res) => {
   if (!file) return res.status(400).json({ success: false, error: '未上传 Word 文件' });
 
   const sourceType = req.body?.source_type || 'lecture';
+  const uploadedName = path.basename(decodeUploadName(file.originalname || ''));
+  const uploadedExt = path.extname(uploadedName || file.originalname || '').toLowerCase();
+  if (/^~\$/.test(uploadedName)) {
+    cleanupUpload(file.path);
+    return res.status(400).json({ success: false, error: '不能解析 Word 临时文件，请选择正常的 .docx 文档' });
+  }
+  if (uploadedExt === '.doc') {
+    cleanupUpload(file.path);
+    return res.status(400).json({ success: false, error: '暂不支持旧版 .doc，请先用 Word 另存为 .docx 后再导入' });
+  }
   const ext = path.extname(file.originalname || '').toLowerCase();
   if (!['.doc', '.docx'].includes(ext)) {
     try { fs.unlinkSync(file.path); } catch (_err) {}
@@ -127,15 +152,14 @@ router.post('/parse-word', upload.single('file'), (req, res) => {
   proc.stdout.on('data', data => { stdout += data.toString('utf8'); });
   proc.stderr.on('data', data => { stderr += data.toString('utf8'); });
   proc.on('error', err => {
-    try { fs.unlinkSync(file.path); } catch (_cleanupErr) {}
-    if (parsePath !== file.path) { try { fs.unlinkSync(parsePath); } catch (_cleanupErr) {} }
+    cleanupUpload(file.path, parsePath);
     res.status(500).json({ success: false, error: `Python 解析进程启动失败: ${err.message}` });
   });
   proc.on('close', code => {
-    try { fs.unlinkSync(file.path); } catch (_cleanupErr) {}
-    if (parsePath !== file.path) { try { fs.unlinkSync(parsePath); } catch (_cleanupErr) {} }
+    cleanupUpload(file.path, parsePath);
     if (code !== 0) {
-      return res.status(500).json({ success: false, error: 'Word 解析失败', detail: stderr.slice(0, 1000) });
+      const detail = parsePythonError(stdout, stderr);
+      return res.status(500).json({ success: false, error: detail || 'Word 解析失败', detail: detail.slice(0, 1000) });
     }
     try {
       const parsed = JSON.parse(stdout);

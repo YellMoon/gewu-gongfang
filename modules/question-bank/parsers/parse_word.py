@@ -242,6 +242,21 @@ def extract_comments(file_path):
         return []
 
 
+def extract_paragraphs_from_docx(file_path):
+    namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    paragraphs = []
+    with zipfile.ZipFile(file_path, "r") as archive:
+        if "word/document.xml" not in archive.namelist():
+            raise ValueError("word/document.xml not found")
+        root = ET.fromstring(archive.read("word/document.xml"))
+        for paragraph in root.findall(".//w:p", namespace):
+            texts = [node.text or "" for node in paragraph.findall(".//w:t", namespace)]
+            text = "".join(texts).strip()
+            if text:
+                paragraphs.append(text)
+    return paragraphs
+
+
 def extract_topics(paragraphs):
     topics = []
     for paragraph in paragraphs:
@@ -277,16 +292,23 @@ def main():
         sys.exit(1)
 
     try:
+        if os.environ.get("GEWU_FORCE_DOCX_XML_FALLBACK") == "1":
+            raise ImportError("forced docx xml fallback")
         from docx import Document
         doc = Document(file_path)
+        paragraphs = [paragraph.text for paragraph in doc.paragraphs]
     except ImportError:
-        print(json.dumps({"error": "python-docx is required: pip install python-docx"}, ensure_ascii=False))
-        sys.exit(1)
+        try:
+            paragraphs = extract_paragraphs_from_docx(file_path)
+        except Exception as exc:
+            print(json.dumps({"error": f"cannot open Word document without python-docx: {exc}"}, ensure_ascii=False))
+            sys.exit(1)
     except Exception as exc:
-        print(json.dumps({"error": f"cannot open Word document: {exc}"}, ensure_ascii=False))
-        sys.exit(1)
-
-    paragraphs = [paragraph.text for paragraph in doc.paragraphs]
+        try:
+            paragraphs = extract_paragraphs_from_docx(file_path)
+        except Exception:
+            print(json.dumps({"error": f"cannot open Word document: {exc}"}, ensure_ascii=False))
+            sys.exit(1)
     if source_type == "auto":
         source_type = "exam" if any("参考答案" in paragraph or "答案" in paragraph for paragraph in paragraphs) else "lecture"
 
