@@ -45,6 +45,48 @@ type ExamMeta = {
   paper_name?: string;
 };
 
+function stripFileExtension(fileName: string): string {
+  return fileName.replace(/\.[^.]+$/, '').trim();
+}
+
+function extractExamMetaFromFileName(fileName: string): ExamMeta {
+  const name = stripFileExtension(fileName);
+  const meta: ExamMeta = { paper_name: name };
+  const yearMatch = name.match(/(19\d{2}|20\d{2})/);
+  if (yearMatch) meta.year = yearMatch[1];
+
+  const gradeMatch = name.match(/(高一|高二|高三|复习|初一|初二|初三)/);
+  if (gradeMatch) meta.grade = gradeMatch[1];
+
+  if (/上学期|上册|第一学期/.test(name)) meta.semester = '上学期';
+  if (/下学期|下册|第二学期/.test(name)) meta.semester = '下学期';
+
+  if (/高考真题|真题/.test(name)) meta.exam_type = '高考真题';
+  else if (/期中/.test(name)) meta.exam_type = '期中考试';
+  else if (/期末/.test(name)) meta.exam_type = '期末考试';
+  else if (/月考/.test(name)) meta.exam_type = '月考';
+  else if (/开学考/.test(name)) meta.exam_type = '开学考';
+  else if (/单元测试|单元/.test(name)) meta.exam_type = '单元测试';
+  else if (/模拟|一模|二模|三模|联考|适应性|质量检测|调研|教学测试/.test(name)) meta.exam_type = '模拟题';
+
+  const regionMatch = name.match(/(北京|天津|上海|重庆|河北|山西|辽宁|吉林|黑龙江|江苏|浙江|安徽|福建|江西|山东|河南|湖北|湖南|广东|海南|四川|贵州|云南|陕西|甘肃|青海|台湾|内蒙古|广西|西藏|宁夏|新疆|香港|澳门|杭州|宁波|温州|绍兴|嘉兴|湖州|金华|台州|丽水|衢州|南京|苏州|无锡|常州|扬州|南通|徐州|成都|深圳|广州)/);
+  if (regionMatch) meta.region = regionMatch[1];
+
+  const schoolMatch = name.match(/([\u4e00-\u9fa5]{2,24}(?:中学|高中|学校|外国语|实验学校|教育集团|十校联盟|联盟))/);
+  if (schoolMatch) meta.school = schoolMatch[1];
+
+  return meta;
+}
+
+function mergeDefinedMeta(current: ExamMeta, incoming: ExamMeta): ExamMeta {
+  const next = { ...current };
+  (Object.keys(incoming) as Array<keyof ExamMeta>).forEach(key => {
+    const value = incoming[key];
+    if (value && value !== current[key]) next[key] = value;
+  });
+  return next;
+}
+
 // Build tree data for Ant Design Tree
 function buildTreeData(nodes: KnowledgeNode[], parentId?: string): any[] {
   return nodes
@@ -134,6 +176,7 @@ const QuestionBankImport: React.FC = () => {
   const [importBatch, setImportBatch] = useState<ImportBatch | null>(null);
   const [committingBatch, setCommittingBatch] = useState(false);
   const [wordSourceType, setWordSourceType] = useState<'lecture' | 'exam'>('lecture');
+  const [selectedWordFile, setSelectedWordFile] = useState<File | null>(null);
   const [examForm] = Form.useForm();
   const [form] = Form.useForm();
   const examMetaRef = useRef<any>(null);
@@ -436,6 +479,40 @@ const QuestionBankImport: React.FC = () => {
     setWordImporting(false);
   };
 
+  const handleSelectWordFile = (file: File) => {
+    setSelectedWordFile(file);
+    setWordResult(null);
+    setImportBatch(null);
+    if (wordSourceType === 'exam') {
+      const current = examForm.getFieldsValue();
+      const next = mergeDefinedMeta(current, extractExamMetaFromFileName(file.name));
+      examForm.setFieldsValue(next);
+      message.success('已选择文件，并尝试从文件名补全试卷信息');
+    } else {
+      message.success('已选择文件，请点击开始解析');
+    }
+  };
+
+  const openWordFilePicker = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.doc,.docx';
+    input.onchange = (e: any) => {
+      const file = e.target.files?.[0];
+      if (file) handleSelectWordFile(file);
+    };
+    input.click();
+  };
+
+  const handleStartParse = () => {
+    if (!selectedWordFile) {
+      message.warning('请先选择 Word 文件');
+      return;
+    }
+    const meta = wordSourceType === 'exam' ? examForm.getFieldsValue() : undefined;
+    handleWordFileUpload(selectedWordFile, meta);
+  };
+
   const commitImportBatch = async () => {
     if (!importBatch) return;
     setCommittingBatch(true);
@@ -613,62 +690,52 @@ const QuestionBankImport: React.FC = () => {
           </Card>
         </Col>
       )}
-
       {/* Main Content */}
       <Col span={treeVisible ? 19 : 24}>
         <Card style={{ margin: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <Space>
-              <h2 style={{ margin: 0 }}>📥 题目导入</h2>
-              {!treeVisible && (
-                <Button type="link" icon={<BranchesOutlined />} onClick={() => setTreeVisible(true)}>展开知识树</Button>
-              )}
-            </Space>
-            <Space>
-              <Button type={wordSourceType === 'lecture' ? 'primary' : 'default'} icon={<BookOutlined />} onClick={() => setWordSourceType('lecture')}>讲义导入</Button>
-              <Button type={wordSourceType === 'exam' ? 'primary' : 'default'} icon={<FormOutlined />} onClick={() => setWordSourceType('exam')}>试卷导入</Button>
-            </Space>
-          </div>
+          {!treeVisible && (
+            <div style={{ marginBottom: 12 }}>
+              <Button type="link" icon={<BranchesOutlined />} onClick={() => setTreeVisible(true)}>展开知识树</Button>
+            </div>
+          )}
 
-          <div style={{ background: '#f0f5ff', padding: '16px 20px', borderRadius: 8, marginBottom: 16 }}>
-            <h4 style={{ margin: '0 0 8px 0' }}>导入说明</h4>
-            <ul style={{ margin: 0, paddingLeft: 20, color: '#666', lineHeight: 1.8 }}>
-              <li><b>讲义格式</b>：适合题号、题干、选项和批注式答案的讲义文件。</li>
-              <li><b>试卷格式</b>：适合前半部分是题目、后半部分是参考答案或解析的整卷文件。</li>
-              <li>试卷格式选中后，可编辑年份、考试类型、年级、学期、地区、学校和试卷名，解析后会自动标注到所有试题。</li>
-            </ul>
-          </div>
-
-          <div style={{ background: '#fafafa', border: '1px solid #e8e8e8', borderRadius: 8, padding: 20, marginBottom: 16 }}>
-            <Row gutter={16} align="middle">
-              <Col span={12}>
-                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <div style={{ background: '#f7f9fc', border: '1px solid #e8edf3', borderRadius: 8, padding: 20, marginBottom: 16 }}>
+            <Row gutter={[20, 16]} align="top">
+              <Col xs={24} lg={9}>
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <FileWordOutlined style={{ fontSize: 22, color: '#1890ff' }} />
-                    <Text strong>导入格式</Text>
+                    <Text strong>导入格式与说明</Text>
                   </div>
                   <Radio.Group value={wordSourceType} onChange={e => setWordSourceType(e.target.value)} buttonStyle="solid">
-                    <Radio.Button value="lecture">讲义导入</Radio.Button>
-                    <Radio.Button value="exam">试卷导入</Radio.Button>
+                    <Radio.Button value="lecture">讲义格式</Radio.Button>
+                    <Radio.Button value="exam">试卷格式</Radio.Button>
                   </Radio.Group>
-                  <div style={{ color: '#666', fontSize: 12 }}>
-                    当前选择：{wordSourceType === 'lecture' ? '讲义格式，按专题和批注答案解析' : '试卷格式，解析后统一写入右侧元信息'}
-                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 18, color: '#666', lineHeight: 1.8 }}>
+                    <li><b>讲义格式</b>：适合按专题、题号、题干、选项和批注答案解析整理的讲义文件。</li>
+                    <li><b>试卷格式</b>：适合整卷导入，选择文件后会尝试从文件名补全年份、考试类型、年级、学期、地区、学校和试卷名。</li>
+                    <li>选择文件只会读取文件名信息，点击开始解析后才会上传并解析内容。</li>
+                  </ul>
+                  {selectedWordFile && (
+                    <Tag color="blue" style={{ whiteSpace: 'normal', lineHeight: 1.6 }}>
+                      已选择：{selectedWordFile.name}
+                    </Tag>
+                  )}
                 </Space>
               </Col>
-              <Col span={12}>
+              <Col xs={24} lg={15}>
                 <Form form={examForm} layout="vertical" disabled={wordSourceType !== 'exam'} initialValues={{ year: new Date().getFullYear().toString() }}>
                   <Row gutter={12}>
-                    <Col span={8}><Form.Item name="year" label="年份" rules={[{ required: wordSourceType === 'exam', message: '请选择年份' }]}><Select options={Array.from({ length: 6 }, (_, i) => (new Date().getFullYear() - 5 + i).toString()).map(y => ({ value: y, label: y + '年' }))} /></Form.Item></Col>
-                    <Col span={8}><Form.Item name="exam_type" label="考试类型" rules={[{ required: wordSourceType === 'exam', message: '请选择考试类型' }]}><Select options={EXAM_TYPES.map(v => ({ value: v, label: v }))} /></Form.Item></Col>
-                    <Col span={8}><Form.Item name="grade" label="年级" rules={[{ required: wordSourceType === 'exam', message: '请选择年级' }]}><Select options={GRADES.map(v => ({ value: v, label: v }))} /></Form.Item></Col>
+                    <Col span={8}><Form.Item name="year" label="年份"><Select options={Array.from({ length: 10 }, (_, i) => (new Date().getFullYear() - 7 + i).toString()).map(y => ({ value: y, label: y + '年' }))} /></Form.Item></Col>
+                    <Col span={8}><Form.Item name="exam_type" label="考试类型"><Select options={EXAM_TYPES.map(v => ({ value: v, label: v }))} /></Form.Item></Col>
+                    <Col span={8}><Form.Item name="grade" label="年级"><Select options={GRADES.map(v => ({ value: v, label: v }))} /></Form.Item></Col>
                   </Row>
                   <Row gutter={12}>
-                    <Col span={8}><Form.Item name="semester" label="学期" rules={[{ required: wordSourceType === 'exam', message: '请选择学期' }]}><Select options={SEMESTERS.map(v => ({ value: v, label: v }))} /></Form.Item></Col>
-                    <Col span={8}><Form.Item name="region" label="地区"><Input placeholder="如 浙江" /></Form.Item></Col>
-                    <Col span={8}><Form.Item name="school" label="学校"><Input placeholder="如 杭州市某中学" /></Form.Item></Col>
+                    <Col span={8}><Form.Item name="semester" label="学期"><Select options={SEMESTERS.map(v => ({ value: v, label: v }))} /></Form.Item></Col>
+                    <Col span={8}><Form.Item name="region" label="地区"><Input placeholder="如：浙江" /></Form.Item></Col>
+                    <Col span={8}><Form.Item name="school" label="学校"><Input placeholder="如：杭州某中学" /></Form.Item></Col>
                   </Row>
-                  <Form.Item name="paper_name" label="试卷名"><Input placeholder="如 2026届浙江省杭州市高三二模物理试题" /></Form.Item>
+                  <Form.Item name="paper_name" label="试卷名"><Input placeholder="选择文件后自动填入文件名，也可手动修改" /></Form.Item>
                 </Form>
               </Col>
             </Row>
@@ -677,34 +744,31 @@ const QuestionBankImport: React.FC = () => {
           <div
             style={{ textAlign: 'center', padding: '42px 20px', border: '2px dashed #d9d9d9', borderRadius: 8, background: '#fafafa' }}
             onDragOver={e => e.preventDefault()}
-            onDrop={async e => {
+            onDrop={e => {
               e.preventDefault();
               const file = e.dataTransfer.files?.[0];
               if (!file) return;
-              const meta = wordSourceType === 'exam' ? await examForm.validateFields() : undefined;
-              handleWordFileUpload(file, meta);
+              handleSelectWordFile(file);
             }}
           >
             <FileWordOutlined style={{ fontSize: 64, color: '#1890ff' }} />
-            <h3 style={{ marginTop: 16 }}>拖拽或选择 Word 文档</h3>
+            <h3 style={{ marginTop: 16 }}>拖拽或选择 Word 文件</h3>
             <p style={{ color: '#999' }}>支持 .doc / .docx，当前模式：{wordSourceType === 'lecture' ? '讲义格式' : '试卷格式'}</p>
-            <Button
-              type="primary"
-              size="large"
-              icon={<FileWordOutlined />}
-              loading={wordImporting}
-              onClick={async () => {
-                const meta = wordSourceType === 'exam' ? await examForm.validateFields() : undefined;
-                const input = document.createElement('input');
-                input.type = 'file'; input.accept = '.doc,.docx';
-                input.onchange = (e: any) => {
-                  if (e.target.files?.[0]) handleWordFileUpload(e.target.files[0], meta);
-                };
-                input.click();
-              }}
-            >
-              选择文件并解析
-            </Button>
+            <Space>
+              <Button size="large" icon={<FileWordOutlined />} onClick={openWordFilePicker}>
+                选择文件
+              </Button>
+              <Button
+                type="primary"
+                size="large"
+                icon={<CheckCircleOutlined />}
+                loading={wordImporting}
+                disabled={!selectedWordFile}
+                onClick={handleStartParse}
+              >
+                开始解析
+              </Button>
+            </Space>
           </div>
 
           {/* 最近导入记录 */}

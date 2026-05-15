@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Table, Button, Card, Row, Col, Select, DatePicker, Tag, Space, message
+  Table, Button, Card, DatePicker, Tag, Space, message
 } from 'antd';
 import { CalendarOutlined, SearchOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -11,8 +11,7 @@ import AutoCloseSelect from '../components/AutoCloseSelect';
 
 const { RangePicker } = DatePicker;
 
-// 涓€鍛ㄧ殑澶╂暟鍒楄〃
-const WEEK_DAYS = ['鍛ㄤ竴', '鍛ㄤ簩', '鍛ㄤ笁', '鍛ㄥ洓', '鍛ㄤ簲', '鍛ㄥ叚', '鍛ㄦ棩'];
+const WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
 const ScheduleList: React.FC = () => {
   const [schedules, setSchedules] = useState<any[]>([]);
@@ -224,21 +223,21 @@ const ScheduleList: React.FC = () => {
   };
 
   const getTeacherName = (teacherId: string) => {
-    return teachers.find(t => t.id === teacherId)?.name || '鏈煡鑰佸笀';
+    return teachers.find(t => t.id === teacherId)?.name || '未知老师';
   };
 
   const getStudentName = (studentId: string) => {
-    return students.find(s => s.id === studentId)?.name || '鏈煡瀛︾敓';
+    return students.find(s => s.id === studentId)?.name || '未知学生';
   };
 
   const getCourseName = (courseId: string) => {
-    return courses.find(c => c.id === courseId)?.name || '鏈煡璇剧▼';
+    return courses.find(c => c.id === courseId)?.name || '未知课程';
   };
 
   const columns: ColumnsType<any> = [
     { title: '#', key: 'index', width: 50, render: (_, __, index) => index + 1 },
-    { title: '鏃ユ湡', key: 'date', width: 100, render: (_, record) => dayjs(record.start_time).format('YYYY-MM-DD') },
-    { title: '鏃堕棿', key: 'time', width: 120, render: (_, record) => {
+    { title: '日期', key: 'date', width: 100, render: (_, record) => dayjs(record.start_time).format('YYYY-MM-DD') },
+    { title: '时间', key: 'time', width: 120, render: (_, record) => {
       const s = dayjs(record.start_time);
       const e = dayjs(record.end_time);
       return `${s.format('HH:mm')} - ${e.format('HH:mm')}`;
@@ -261,8 +260,7 @@ const ScheduleList: React.FC = () => {
   return (
     <div style={{ padding: 0 }}>
       <Card style={{ marginBottom: 16 }}>
-        <Row gutter={12} align="middle">
-          <Col>
+        <Space wrap size={12} align="center" style={{ width: '100%' }}>
             <AutoCloseSelect
               placeholder="老师"
               allowClear
@@ -275,7 +273,6 @@ const ScheduleList: React.FC = () => {
                 String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
               }
             />
-          <Col>
             <AutoCloseSelect
               placeholder="学生"
               allowClear
@@ -288,26 +285,19 @@ const ScheduleList: React.FC = () => {
                 String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
               }
             />
-          </Col>
-          </Col>
-          <Col>
             <RangePicker
               style={{ width: 240 }}
+              placeholder={['开始日期', '结束日期']}
               value={filterDateRange as any}
               onChange={(val) => setFilterDateRange(val as [dayjs.Dayjs, dayjs.Dayjs])}
             />
-          </Col>
-          <Col>
             <Button type="primary" icon={<SearchOutlined />} onClick={handleQuery}>
               查询
             </Button>
-          </Col>
-          <Col>
             <Button icon={<DownloadOutlined />} onClick={handleExport}>
               导出
             </Button>
-          </Col>
-        </Row>
+        </Space>
       </Card>
 
       <Card>

@@ -176,7 +176,7 @@ const DailyView: React.FC<DailyViewProps> = ({
     let endSlot = timeToSlot(endH, endM);
     
     if (dragState && dragState.schedule.id === schedule.id) {
-      // Ctrl+鎷栨嫿锛堝鍒讹級锛氬師璇剧▼妗嗕綅缃浐瀹氫笉鍔紝鍙湁铏氬奖璺熼殢榧犳爣
+      // Ctrl+鎷栨嫿锛堝鍒讹級锛氬師课程妗嗕綅缃浐瀹氫笉鍔紝鍙湁铏氬奖璺熼殢榧犳爣
       if (dragState.type === 'move' && dragState.ctrlKey) {
         return { top: startSlot * SLOT_HEIGHT, height: (endSlot - startSlot) * SLOT_HEIGHT, startSlot, endSlot };
       }
@@ -487,7 +487,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
           borderBottom: '1px solid rgba(0,0,0,0.08)'
         }} />
 
-        {/* 鎷栧叆璇剧▼棰勮 */}
+        {/* 鎷栧叆课程棰勮 */}
         {dragOverSlot !== null && (() => {
           const { hour, minute } = slotToTime(dragOverSlot);
           const dragCourse = (window as any).courseDragData as Course | undefined;
@@ -517,7 +517,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
               boxShadow: '0 4px 20px rgba(24,144,255,0.3)'
             }}>
               <div style={{ fontSize: 12, fontWeight: 'bold', color: '#1890ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
-                {dragCourse ? (dragCourse.display_name || dragCourse.name.replace(/^\d{4}\s+\S+瀛︽湡\s+/, '')) : '璇剧▼'}
+                {dragCourse ? (dragCourse.display_name || dragCourse.name.replace(/^\d{4}\s+\S+学期\s+/, '')) : '课程'}
               </div>
               <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
                 {roomInfo && <span>{roomInfo} </span>}
@@ -580,7 +580,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
                     }
                   }}
                 >
-                  {/* 璇剧▼妗嗗唴瀹硅嚜閫傚簲灞呬腑 */}
+                  {/* 课程妗嗗唴瀹硅嚜閫傚簲灞呬腑 */}
                   <div style={{
                     display: 'flex',
                     flexDirection: 'column',
@@ -728,7 +728,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
           alignItems: 'center',
           boxShadow: isCopy ? '0 4px 20px rgba(82,196,26,0.3)' : '0 4px 20px rgba(24,144,255,0.3)'
         }}>
-          {/* 鈶?涓よ甯冨眬锛屽拰鐪熷疄璇剧▼妗嗗畬鍏ㄤ竴鑷达細璇剧▼鍚?+ 涓婅鍦板潃&璧锋鏃堕棿 */}
+          {/* 鈶?涓よ甯冨眬锛屽拰鐪熷疄课程妗嗗畬鍏ㄤ竴鑷达細课程鍚?+ 涓婅鍦板潃&璧锋鏃堕棿 */}
           <div style={{ fontSize: 12, fontWeight: 'bold', color: isCopy ? '#52c41a' : '#1890ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2, textAlign: 'center', maxWidth: ghostWidth - 8, flexShrink: 0 }}>
             {isCopy ? '馃搵 ' : ''}{dragState.schedule.course_name}
           </div>
@@ -881,7 +881,7 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
   const containerRef = React.useRef<HTMLDivElement>(null);
 
   const filteredSchedules = schedules.filter(schedule => {
-    if (!selectedTeacherId) return false; // 鈶?娌℃湁閫変腑鑰佸笀鏃朵笉鏄剧ず浠讳綍璇剧▼
+    if (!selectedTeacherId) return false; // 鈶?娌℃湁閫変腑鑰佸笀鏃朵笉鏄剧ず浠讳綍课程
     const course = courses.find(c => c.id === schedule.course_id);
     return !course || course.teacher_id === selectedTeacherId;
   });
@@ -967,10 +967,10 @@ const Sidebar: React.FC<SidebarProps> = ({
     }}>
       {teachers.length > 0 && (
         <div style={{ flexShrink: 0 }}>
-          <h4 style={{ margin: '0 0 8px 0' }}>馃懆鈥嶐煆?閫夋嫨鑰佸笀</h4>
+          <h4 style={{ margin: '0 0 8px 0' }}>选择老师</h4>
           <Select
             style={{ width: '100%', marginBottom: 8 }}
-            placeholder="閫夋嫨鑰佸笀"
+            placeholder="选择老师"
             allowClear
             showSearch
             value={selectedTeacherId}
@@ -986,7 +986,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       {selectedTeacherId && (
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minHeight: 0 }}>
           <h4 style={{ margin: '0 0 8px 0', flexShrink: 0 }}>
-            馃摎 鏈粨璇剧▼ ({filteredCourses.length})
+            未结课程 ({filteredCourses.length})
           </h4>
           <div style={{ overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6, paddingRight: 4 }}>
         {filteredCourses.map(course => (
@@ -1016,7 +1016,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             }}
           >
             <div style={{ fontWeight: 'bold', fontSize: 13, color: '#1890ff' }}>
-              {course.display_name || course.name.replace(/^\d{4}\s+\S+瀛︽湡\s+/, '')}
+              {course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '')}
             </div>
             <div style={{ fontSize: 11, color: '#666', marginTop: 1 }}>
               {course.year || course.name?.match(/^(\d{4})/)?.[1] || '-'} 年{' '}
@@ -1031,7 +1031,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         ))}
         {filteredCourses.length === 0 && (
           <div style={{ textAlign: 'center', color: '#999', padding: '20px 0', fontSize: 14 }}>
-            鏆傛棤鏈粨璇剧▼
+            暂无未结课程
           </div>
         )}
           </div>
@@ -1039,7 +1039,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       )}
       {!selectedTeacherId && teachers.length > 0 && (
         <div style={{ textAlign: 'center', color: '#999', padding: '40px 0', fontSize: 14 }}>
-          璇峰厛閫夋嫨鑰佸笀
+          请先选择老师
         </div>
       )}
     </div>
@@ -1176,8 +1176,8 @@ const ScheduleCalendar: React.FC = () => {
               if (course.room_name && s.room !== course.room_name) {
                 updated.room = course.room_name;
               }
-              // 鍚屾璇剧▼鍚嶇О锛堝彧鏄剧ず绾绋嬪悕锛屼笉鍚勾浠藉鏈燂級
-              const displayCourseName = course.display_name || course.name.replace(/^\d{4}\s+\S+瀛︽湡\s+/, '');
+              // 鍚屾课程鍚嶇О锛堝彧鏄剧ず绾绋嬪悕锛屼笉鍚勾浠藉鏈燂級
+              const displayCourseName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
               if (displayCourseName && s.course_name !== displayCourseName) {
                 updated.course_name = displayCourseName;
               }
@@ -1320,7 +1320,7 @@ const ScheduleCalendar: React.FC = () => {
         if (db?.updateCourse) {
           db.updateCourse(course.id, { student_pricings: updatedPricings });
         }
-        message.success('瀛︾敓淇℃伅淇敼鎴愬姛');
+        message.success('学生信息修改成功');
         setStudentEditModal({ open: false, schedule: null });
       }
     }
@@ -1342,8 +1342,8 @@ const ScheduleCalendar: React.FC = () => {
   }
 
   function handleDropCourse(course: Course, day: Dayjs, slot: number) {
-    // 璇剧▼琛ㄥ彧鏄剧ず绾绋嬪悕
-    const displayCourseName = course.display_name || course.name.replace(/^\d{4}\s+\S+瀛︽湡\s+/, '');
+    // 课程琛ㄥ彧鏄剧ず绾绋嬪悕
+    const displayCourseName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
     const { hour: startH, minute: startM } = slotToTime(slot);
     const startTime = dayjs(day).hour(startH).minute(startM).second(0);
     // 有默认时长：直接创建课程框，不弹窗
@@ -1596,7 +1596,7 @@ const ScheduleCalendar: React.FC = () => {
 
   function handleRefreshCourseInfo() {
     if (!refreshDateRange) {
-      message.warning('璇烽€夋嫨鏃ユ湡鑼冨洿');
+      message.warning('请选择日期范围');
       return;
     }
     const [startDate, endDate] = refreshDateRange;
@@ -1607,7 +1607,7 @@ const ScheduleCalendar: React.FC = () => {
       if (sDate.isBefore(startDate) || sDate.isAfter(endDate)) return s;
       const course = db?.getAllCourses?.()?.find((c: any) => c.id === s.course_id);
       if (!course) return s;
-      const displayCName = course.display_name || course.name.replace(/^\d{4}\s+\S+瀛︽湡\s+/, '');
+      const displayCName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
       count++;
       return { 
         ...s, 
@@ -1720,17 +1720,17 @@ const ScheduleCalendar: React.FC = () => {
       </div>
 
       <Modal
-        title="鎺掕绐楀彛"
+        title="排课窗口"
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         footer={[
-          <Button key="cancel" onClick={() => setModalVisible(false)}>鍙栨秷</Button>,
-          <Button key="save" type="primary" onClick={handleSave}>淇濆瓨</Button>,
+          <Button key="cancel" onClick={() => setModalVisible(false)}>取消</Button>,
+          <Button key="save" type="primary" onClick={handleSave}>保存</Button>,
         ]}
         width={600}
       >
         <Form form={form} layout="vertical">
-          <Form.Item label="鏃ユ湡">
+          <Form.Item label="日期">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {batchDates.map((d, idx) => (
                 <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4, width: 'calc(33.33% - 8px)' }}>
@@ -1844,7 +1844,7 @@ const ScheduleCalendar: React.FC = () => {
                   onChange={(courseId: string) => {
                     const course = courses.find(c => c.id === courseId);
                     if (course) {
-                      const displayCName = course.display_name || course.name.replace(/^\d{4}\s+\S+瀛︽湡\s+/, '');
+                      const displayCName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
                       form.setFieldValue('courseName', displayCName);
                       const roomId = (course.room_id && course.room_id.split(',')[0].trim()) || (rooms.find(r => r.name === course.room_name)?.id) || course.room_name || ''; form.setFieldValue('room', roomId);
                       if (course.default_duration_minutes) {
@@ -1889,7 +1889,7 @@ const ScheduleCalendar: React.FC = () => {
       </Modal>
 
       <Modal
-        title={`瀛︾敓鍑哄嫟鍜岃垂鐢?- ${studentEditModal.schedule?.course_name || ''}`}
+        title={`学生出勤和费用 - ${studentEditModal.schedule?.course_name || ''}`}
         open={studentEditModal.open}
         onCancel={() => setStudentEditModal({ open: false, schedule: null })}
         onOk={() => handleSaveStudentEdit()}
@@ -1944,7 +1944,7 @@ const ScheduleCalendar: React.FC = () => {
             })}
             {(!courseStudentPricings || courseStudentPricings.length === 0) && (
               <div style={{ textAlign: 'center', color: '#999', padding: 20 }}>
-                璇ヨ绋嬫湭缁戝畾瀛︾敓淇℃伅
+                该课程未绑定学生信息
               </div>
             )}
           </Form>
@@ -1979,5 +1979,6 @@ const ScheduleCalendar: React.FC = () => {
 };
 
 export default ScheduleCalendar;
+
 
 
