@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card, Button, Modal, Form, Input, InputNumber, Select as AntSelect, Space, Tag, message,
-  Tree, Divider, Checkbox, Empty, Row, Col, Typography, Table, Tooltip
+  Tree, Divider, Checkbox, Empty, Row, Col, Typography, Table, Tooltip, Radio
 } from 'antd';
 import {
   PlusOutlined, FileWordOutlined, BookOutlined, FormOutlined,
@@ -22,6 +22,7 @@ const GRADES = ['高一', '高二', '高三', '复习'];
 const SEMESTERS = ['上学期', '下学期'];
 
 const API_BASE = '/api/question-bank';
+const PARSE_WORD_ENDPOINT = `${API_BASE}/parse-word`;
 
 type ImportBatch = {
   id: string;
@@ -32,6 +33,16 @@ type ImportBatch = {
   rejected_items: number;
   quality_report?: any;
   commit_result?: any;
+};
+
+type ExamMeta = {
+  year?: string;
+  exam_type?: string;
+  grade?: string;
+  semester?: string;
+  region?: string;
+  school?: string;
+  paper_name?: string;
 };
 
 // Build tree data for Ant Design Tree
@@ -118,13 +129,11 @@ const QuestionBankImport: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<Question | null>(null);
   const [treeVisible, setTreeVisible] = useState(true);
-  const [wordModalVisible, setWordModalVisible] = useState(false);
   const [wordImporting, setWordImporting] = useState(false);
   const [wordResult, setWordResult] = useState<any>(null);
   const [importBatch, setImportBatch] = useState<ImportBatch | null>(null);
   const [committingBatch, setCommittingBatch] = useState(false);
   const [wordSourceType, setWordSourceType] = useState<'lecture' | 'exam'>('lecture');
-  const [wordModalOpen, setWordModalOpen] = useState(false);
   const [examForm] = Form.useForm();
   const [form] = Form.useForm();
   const examMetaRef = useRef<any>(null);
@@ -375,7 +384,7 @@ const QuestionBankImport: React.FC = () => {
     message.success('题目已保存');
   };
 
-  const handleWordFileUpload = async (file: File, examMeta?: { year: string; exam_type: string; grade: string; semester: string }) => {
+  const handleWordFileUpload = async (file: File, examMeta?: ExamMeta) => {
     // Store examMeta for later use in importWordResults
     examMetaRef.current = examMeta || null;
     setWordImporting(true);
@@ -385,13 +394,12 @@ const QuestionBankImport: React.FC = () => {
       formData.append('file', file);
       formData.append('source_type', wordSourceType);
       if (examMeta) {
-        formData.append('year', examMeta.year);
-        formData.append('exam_type', examMeta.exam_type);
-        formData.append('grade', examMeta.grade);
-        formData.append('semester', examMeta.semester);
+        Object.entries(examMeta).forEach(([key, value]) => {
+          if (value) formData.append(key, String(value));
+        });
       }
 
-      const res = await fetch('https://physicsedu.xyz/question-bank/parse-word', {
+      const res = await fetch(PARSE_WORD_ENDPOINT, {
         method: 'POST',
         body: formData,
       });
@@ -437,7 +445,6 @@ const QuestionBankImport: React.FC = () => {
       if (!data.success) throw new Error(data.error || 'commit failed');
       const nextBatch = data.data || data;
       setImportBatch(nextBatch);
-      setWordModalVisible(false);
       setWordResult(null);
       loadData();
       message.success(`已入库 ${nextBatch.commit_result?.imported_items || 0} 道题，索引任务已创建`);
@@ -487,7 +494,6 @@ const QuestionBankImport: React.FC = () => {
         added++;
       } catch (e) { /* skip bad ones */ }
     }
-    setWordModalVisible(false);
     setWordResult(null);
     loadData();
     message.success(`成功导入 ${added}/${result.count} 道题目到本地题库`);
@@ -619,69 +625,85 @@ const QuestionBankImport: React.FC = () => {
               )}
             </Space>
             <Space>
-              <Button type="primary" icon={<BookOutlined />} onClick={() => {
-                setWordSourceType('lecture');
-                setWordModalVisible(true);
-              }}>
-                讲义格式导入
-              </Button>
-              <Button icon={<FormOutlined />} onClick={() => {
-                setWordSourceType('exam');
-                setWordModalOpen(true);
-              }}>
-                试卷格式导入
-              </Button>
-              <Button icon={<PlusOutlined />} onClick={() => {
-                setEditing(null); form.resetFields();
-                form.setFieldsValue({ subject: '物理', type: '选择题', difficulty: 3 });
-                setModalVisible(true);
-              }}>
-                手动添加
-              </Button>
+              <Button type={wordSourceType === 'lecture' ? 'primary' : 'default'} icon={<BookOutlined />} onClick={() => setWordSourceType('lecture')}>讲义导入</Button>
+              <Button type={wordSourceType === 'exam' ? 'primary' : 'default'} icon={<FormOutlined />} onClick={() => setWordSourceType('exam')}>试卷导入</Button>
             </Space>
           </div>
 
           <div style={{ background: '#f0f5ff', padding: '16px 20px', borderRadius: 8, marginBottom: 16 }}>
-            <h4 style={{ margin: '0 0 8px 0' }}>📖 导入说明</h4>
+            <h4 style={{ margin: '0 0 8px 0' }}>导入说明</h4>
             <ul style={{ margin: 0, paddingLeft: 20, color: '#666', lineHeight: 1.8 }}>
-              <li><b>讲义格式</b>：题目包含题号+题干+选项，批注式答案在题号旁标注（如【答案】B）</li>
-              <li><b>试卷格式</b>：前半部分为题目区域（不含答案），后半部分为参考答案区域</li>
-              <li>支持 <b>.doc / .docx</b> 格式的 Word 文档</li>
-              <li>导入后可在「<b>试题预览</b>」页面查看和管理</li>
+              <li><b>讲义格式</b>：适合题号、题干、选项和批注式答案的讲义文件。</li>
+              <li><b>试卷格式</b>：适合前半部分是题目、后半部分是参考答案或解析的整卷文件。</li>
+              <li>试卷格式选中后，可编辑年份、考试类型、年级、学期、地区、学校和试卷名，解析后会自动标注到所有试题。</li>
             </ul>
           </div>
 
-          <div style={{ textAlign: 'center', padding: '60px 20px', border: '2px dashed #d9d9d9', borderRadius: 8, background: '#fafafa' }}>
+          <div style={{ background: '#fafafa', border: '1px solid #e8e8e8', borderRadius: 8, padding: 20, marginBottom: 16 }}>
+            <Row gutter={16} align="middle">
+              <Col span={12}>
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <FileWordOutlined style={{ fontSize: 22, color: '#1890ff' }} />
+                    <Text strong>导入格式</Text>
+                  </div>
+                  <Radio.Group value={wordSourceType} onChange={e => setWordSourceType(e.target.value)} buttonStyle="solid">
+                    <Radio.Button value="lecture">讲义导入</Radio.Button>
+                    <Radio.Button value="exam">试卷导入</Radio.Button>
+                  </Radio.Group>
+                  <div style={{ color: '#666', fontSize: 12 }}>
+                    当前选择：{wordSourceType === 'lecture' ? '讲义格式，按专题和批注答案解析' : '试卷格式，解析后统一写入右侧元信息'}
+                  </div>
+                </Space>
+              </Col>
+              <Col span={12}>
+                <Form form={examForm} layout="vertical" disabled={wordSourceType !== 'exam'} initialValues={{ year: new Date().getFullYear().toString() }}>
+                  <Row gutter={12}>
+                    <Col span={8}><Form.Item name="year" label="年份" rules={[{ required: wordSourceType === 'exam', message: '请选择年份' }]}><Select options={Array.from({ length: 6 }, (_, i) => (new Date().getFullYear() - 5 + i).toString()).map(y => ({ value: y, label: y + '年' }))} /></Form.Item></Col>
+                    <Col span={8}><Form.Item name="exam_type" label="考试类型" rules={[{ required: wordSourceType === 'exam', message: '请选择考试类型' }]}><Select options={EXAM_TYPES.map(v => ({ value: v, label: v }))} /></Form.Item></Col>
+                    <Col span={8}><Form.Item name="grade" label="年级" rules={[{ required: wordSourceType === 'exam', message: '请选择年级' }]}><Select options={GRADES.map(v => ({ value: v, label: v }))} /></Form.Item></Col>
+                  </Row>
+                  <Row gutter={12}>
+                    <Col span={8}><Form.Item name="semester" label="学期" rules={[{ required: wordSourceType === 'exam', message: '请选择学期' }]}><Select options={SEMESTERS.map(v => ({ value: v, label: v }))} /></Form.Item></Col>
+                    <Col span={8}><Form.Item name="region" label="地区"><Input placeholder="如 浙江" /></Form.Item></Col>
+                    <Col span={8}><Form.Item name="school" label="学校"><Input placeholder="如 杭州市某中学" /></Form.Item></Col>
+                  </Row>
+                  <Form.Item name="paper_name" label="试卷名"><Input placeholder="如 2026届浙江省杭州市高三二模物理试题" /></Form.Item>
+                </Form>
+              </Col>
+            </Row>
+          </div>
+
+          <div
+            style={{ textAlign: 'center', padding: '42px 20px', border: '2px dashed #d9d9d9', borderRadius: 8, background: '#fafafa' }}
+            onDragOver={e => e.preventDefault()}
+            onDrop={async e => {
+              e.preventDefault();
+              const file = e.dataTransfer.files?.[0];
+              if (!file) return;
+              const meta = wordSourceType === 'exam' ? await examForm.validateFields() : undefined;
+              handleWordFileUpload(file, meta);
+            }}
+          >
             <FileWordOutlined style={{ fontSize: 64, color: '#1890ff' }} />
-            <h3 style={{ marginTop: 16 }}>拖拽或点击选择 Word 文档</h3>
-            <p style={{ color: '#999' }}>支持 .doc / .docx 讲义和试卷格式</p>
+            <h3 style={{ marginTop: 16 }}>拖拽或选择 Word 文档</h3>
+            <p style={{ color: '#999' }}>支持 .doc / .docx，当前模式：{wordSourceType === 'lecture' ? '讲义格式' : '试卷格式'}</p>
             <Button
               type="primary"
               size="large"
               icon={<FileWordOutlined />}
-              onClick={() => {
+              loading={wordImporting}
+              onClick={async () => {
+                const meta = wordSourceType === 'exam' ? await examForm.validateFields() : undefined;
                 const input = document.createElement('input');
                 input.type = 'file'; input.accept = '.doc,.docx';
                 input.onchange = (e: any) => {
-                  if (e.target.files?.[0]) {
-                    const file = e.target.files[0];
-                    // 先选择源类型
-                    Modal.confirm({
-                      title: '选择文档格式',
-                      content: (
-                        <Select value={wordSourceType} onChange={setWordSourceType} style={{ width: '100%', marginTop: 8 }}>
-                          <Select.Option value="lecture"><BookOutlined /> 讲义（批注式答案）</Select.Option>
-                          <Select.Option value="exam"><FormOutlined /> 试卷（参考答案分离式）</Select.Option>
-                        </Select>
-                      ),
-                      onOk: () => handleWordFileUpload(file),
-                    });
-                  }
+                  if (e.target.files?.[0]) handleWordFileUpload(e.target.files[0], meta);
                 };
                 input.click();
               }}
             >
-              选择文件
+              选择文件并解析
             </Button>
           </div>
 
@@ -691,7 +713,6 @@ const QuestionBankImport: React.FC = () => {
               <Divider orientation="left">最近导入</Divider>
               <div style={{ color: '#666', fontSize: 13 }}>
                 题库中共有 <b>{questions.length}</b> 道题目，来自多次导入操作。
-                <Button type="link" onClick={() => setWordModalVisible(true)}>继续导入</Button>
               </div>
             </div>
           )}
@@ -699,145 +720,6 @@ const QuestionBankImport: React.FC = () => {
       </Col>
 
       {/* 试卷格式导入 — 需填写试卷元信息 */}
-      <Modal
-        title={<span><FormOutlined /> 试卷格式导入 — 填写试卷信息</span>}
-        open={wordModalOpen}
-        onCancel={() => { setWordModalOpen(false); examForm.resetFields(); }}
-        onOk={async () => {
-          const values = await examForm.validateFields();
-          const input = document.createElement('input');
-          input.type = 'file'; input.accept = '.doc,.docx';
-          input.onchange = (e: any) => {
-            if (e.target.files?.[0]) {
-              setWordModalOpen(false);
-              setWordSourceType('exam');
-              handleWordFileUpload(e.target.files[0], {
-                year: values.year,
-                exam_type: values.exam_type,
-                grade: values.grade,
-                semester: values.semester
-              });
-            }
-          };
-          input.click();
-        }}
-        okText="选择 Word 文件"
-        width={500}
-        destroyOnClose
-      >
-        <p style={{ color: '#666', marginBottom: 16 }}>试卷格式文档需要填写以下试卷元信息，将自动关联到导入的题目。</p>
-        <Form form={examForm} layout="vertical" initialValues={{ year: new Date().getFullYear().toString() }}>
-          <Form.Item name="year" label="年份" rules={[{ required: true, message: '请选择年份' }]}>
-            <Select>
-              {Array.from({ length: 6 }, (_, i) => (new Date().getFullYear() - 5 + i).toString()).map(y => (
-                <Select.Option key={y} value={y}>{y}年</Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-          <Form.Item name="exam_type" label="试卷类型" rules={[{ required: true, message: '请选择试卷类型' }]}>
-            <Select options={EXAM_TYPES.map(t => ({ label: t, value: t }))} />
-          </Form.Item>
-          <Form.Item name="grade" label="年级" rules={[{ required: true, message: '请选择年级' }]}>
-            <Select options={GRADES.map(g => ({ label: g, value: g }))} />
-          </Form.Item>
-          <Form.Item name="semester" label="学期" rules={[{ required: true, message: '请选择学期' }]}>
-            <Select options={SEMESTERS.map(s => ({ label: s, value: s }))} />
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      {/* Word Import Modal */}
-      <Modal
-        title={<span><FileWordOutlined /> 从Word文档批量导入题目</span>}
-        open={wordModalVisible}
-        onCancel={() => { setWordModalVisible(false); setWordResult(null); }}
-        footer={null}
-        width={700}
-        destroyOnClose
-      >
-        <p style={{ color: '#666', marginBottom: 16 }}>
-          支持自动识别 Word 文档中的题目，兼容<b>讲义</b>（批注式答案）和<b>试卷</b>（参考答案分离式）两种格式。
-        </p>
-
-        <div style={{ marginBottom: 16 }}>
-          <Space>
-            <span>文档格式：</span>
-            <Select value={wordSourceType} onChange={setWordSourceType} style={{ width: 150 }}>
-              <Select.Option value="lecture"><BookOutlined /> 讲义（批注式答案）</Select.Option>
-              <Select.Option value="exam"><FormOutlined /> 试卷（参考答案分离式）</Select.Option>
-            </Select>
-            <Tag>{wordSourceType === 'lecture' ? '题号+选项+批注答案' : '前半部分题目+后半部分答案'}</Tag>
-          </Space>
-        </div>
-
-        <div
-          style={{
-            border: '2px dashed #d9d9d9', borderRadius: 8, padding: 40, textAlign: 'center',
-            cursor: 'pointer', background: '#fafafa', marginBottom: 16
-          }}
-          onDragOver={e => e.preventDefault()}
-          onDrop={e => {
-            e.preventDefault();
-            const file = e.dataTransfer.files?.[0];
-            if (file) handleWordFileUpload(file);
-          }}
-          onClick={() => {
-            const input = document.createElement('input');
-            input.type = 'file'; input.accept = '.doc,.docx'; input.onchange = (e: any) => {
-              if (e.target.files?.[0]) handleWordFileUpload(e.target.files[0]);
-            };
-            input.click();
-          }}
-        >
-          <FileWordOutlined style={{ fontSize: 48, color: '#1890ff' }} />
-          <p style={{ marginTop: 12, color: '#666' }}>点击或拖拽 Word 文档到此处</p>
-          <p style={{ fontSize: 12, color: '#999' }}>支持 .doc / .docx 格式</p>
-        </div>
-
-        {wordImporting && <div style={{ textAlign: 'center', padding: 20 }}>解析中...</div>}
-
-        {wordResult && (
-          <div>
-            <div style={{ marginBottom: 12, background: '#f6ffed', padding: '8px 12px', borderRadius: 6 }}>
-              <CheckCircleOutlined style={{ color: '#52c41a' }} />{' '}
-              成功解析 <b>{wordResult.count}</b> 道题目
-              {wordResult.topics?.length > 0 && `，${wordResult.topics.length} 个专题`}
-            </div>
-            <Table
-              columns={[
-                { title: '#', dataIndex: 'id', key: 'id', width: 60, render: (_: any, __: any, i: number) => i + 1 },
-                { title: '题干', dataIndex: 'stem', key: 'stem', ellipsis: true },
-                { title: '题型', dataIndex: 'question_types', key: 'types', width: 100, render: (ts: string[]) => (ts || []).join(', ') },
-                { title: '答案', dataIndex: 'answer', key: 'answer', width: 100, ellipsis: true },
-              ]}
-              dataSource={wordResult.questions || []}
-              rowKey="id"
-              pagination={false}
-              size="small"
-              scroll={{ y: 200 }}
-            />
-            {importBatch && (
-              <div style={{ marginTop: 12, background: '#fff7e6', padding: '8px 12px', borderRadius: 6 }}>
-                <Space wrap>
-                  <Tag color="blue">批次 {importBatch.status}</Tag>
-                  <Tag color="green">可入库 {importBatch.accepted_items}</Tag>
-                  <Tag color="orange">重复 {importBatch.duplicate_items}</Tag>
-                  <Tag color="red">拒绝 {importBatch.rejected_items}</Tag>
-                  <Text type="secondary">
-                    质量：高 {importBatch.quality_report?.quality_buckets?.high || 0} / 中 {importBatch.quality_report?.quality_buckets?.medium || 0} / 低 {importBatch.quality_report?.quality_buckets?.low || 0}
-                  </Text>
-                </Space>
-              </div>
-            )}
-            <Space style={{ marginTop: 16 }}>
-              <Button type="primary" icon={<FileAddOutlined />} loading={committingBatch} onClick={() => importWordResults(wordResult)}>
-                入库 {importBatch ? importBatch.accepted_items : wordResult.count} 道题
-              </Button>
-              <Button onClick={() => { setWordResult(null); setImportBatch(null); }}>重新选择文件</Button>
-            </Space>
-          </div>
-        )}
-      </Modal>
 
       {/* Add/Edit Modal */}
       <Modal

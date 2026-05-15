@@ -1,4 +1,8 @@
 const { Router } = require('express');
+const fs = require('fs');
+const path = require('path');
+const { spawn } = require('child_process');
+const multer = require('multer');
 const { getInstance } = require('../database');
 const questionBank = require('../services/questionBankService');
 const searchService = require('../services/searchService');
@@ -6,6 +10,15 @@ const eventBus = require('../services/eventBus');
 const cache = require('../services/cacheService');
 
 const router = Router();
+const uploadDir = path.join(__dirname, '..', '..', 'uploads', 'question-bank');
+const parserScript = path.join(__dirname, '..', '..', '..', 'modules', 'question-bank', 'parsers', 'parse_word.py');
+
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+const upload = multer({
+  dest: uploadDir,
+  limits: { fileSize: Number(process.env.QUESTION_WORD_MAX_BYTES || 120 * 1024 * 1024) },
+});
 
 function errorStatus(err) {
   return /oss_key is required|knowledge point not found/.test(err.message) ? 400 : 500;
@@ -14,6 +27,124 @@ function errorStatus(err) {
 function tenantId(req) {
   return req.tenantId || req.query.tenant_id || req.query.tenantId || req.body?.tenant_id || req.body?.tenantId || 'default';
 }
+
+function pythonCommand() {
+  return process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
+}
+
+function decodeUploadName(value = '') {
+  if (!value) return '';
+  const utf8 = Buffer.from(value, 'latin1').toString('utf8');
+  return utf8.includes('�') ? value : utf8;
+}
+
+function applyImportMeta(result, body = {}) {
+  const meta = {
+    year: body.year || '',
+    exam_type: body.exam_type || '',
+    grade: body.grade || '',
+    semester: body.semester || '',
+    region: body.region || '',
+    school: body.school || '',
+    paper_name: body.paper_name || body.paperName || '',
+  };
+  const sourceParts = [meta.region, meta.school, meta.paper_name].filter(Boolean);
+  const questions = Array.isArray(result.questions) ? result.questions : [];
+  for (const question of questions) {
+    for (const [key, value] of Object.entries(meta)) {
+      if (value && !question[key]) question[key] = value;
+    }
+    if (sourceParts.length > 0 && !question.source) question.source = sourceParts.join(' / ');
+    const tags = new Set(Array.isArray(question.tags) ? question.tags : []);
+    for (const value of Object.values(meta)) {
+      if (value) tags.add(String(value));
+    }
+    question.tags = [...tags];
+  }
+  return { ...result, questions, import_meta: meta };
+}
+
+function deriveTopicFromFileName(fileName = '') {
+  const base = path.basename(fileName, path.extname(fileName));
+  const patterns = [
+    /专题\d+[-：:](.+)$/,
+    /实验专题\d+[-：:](.+)$/,
+    /解答题专题\d+[-：:](.+)$/,
+  ];
+  for (const pattern of patterns) {
+    const match = base.match(pattern);
+    if (match?.[1]) return match[1].trim();
+  }
+  return '';
+}
+
+function applyFileTopic(result, fileName = '', sourceType = 'lecture') {
+  if (sourceType !== 'lecture') return result;
+  const topic = deriveTopicFromFileName(fileName);
+  if (!topic) return result;
+  const questions = Array.isArray(result.questions) ? result.questions : [];
+  for (const question of questions) {
+    const points = new Set(Array.isArray(question.knowledge_points) ? question.knowledge_points : []);
+    if (points.size === 0) {
+      points.add(topic);
+      question.knowledge_point = question.knowledge_point || topic;
+    }
+    question.knowledge_points = [...points];
+  }
+  const topics = new Set(Array.isArray(result.topics) ? result.topics : []);
+  topics.add(topic);
+  return { ...result, questions, topics: [...topics], knowledge_points: [...new Set([...(result.knowledge_points || []), topic])] };
+}
+
+router.post('/parse-word', upload.single('file'), (req, res) => {
+  const file = req.file;
+  if (!file) return res.status(400).json({ success: false, error: '未上传 Word 文件' });
+
+  const sourceType = req.body?.source_type || 'lecture';
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  if (!['.doc', '.docx'].includes(ext)) {
+    try { fs.unlinkSync(file.path); } catch (_err) {}
+    return res.status(400).json({ success: false, error: '仅支持 .doc / .docx 格式' });
+  }
+
+  const originalName = path.basename(decodeUploadName(file.originalname || ''));
+  const parsePath = originalName && /\.docx?$/i.test(originalName)
+    ? path.join(path.dirname(file.path), originalName)
+    : file.path;
+  if (parsePath !== file.path) {
+    try { fs.copyFileSync(file.path, parsePath); } catch (_err) {}
+  }
+
+  const proc = spawn(pythonCommand(), [parserScript, fs.existsSync(parsePath) ? parsePath : file.path, sourceType], {
+    windowsHide: true,
+    timeout: Number(process.env.QUESTION_WORD_PARSE_TIMEOUT_MS || 180000),
+  });
+  let stdout = '';
+  let stderr = '';
+
+  proc.stdout.on('data', data => { stdout += data.toString('utf8'); });
+  proc.stderr.on('data', data => { stderr += data.toString('utf8'); });
+  proc.on('error', err => {
+    try { fs.unlinkSync(file.path); } catch (_cleanupErr) {}
+    if (parsePath !== file.path) { try { fs.unlinkSync(parsePath); } catch (_cleanupErr) {} }
+    res.status(500).json({ success: false, error: `Python 解析进程启动失败: ${err.message}` });
+  });
+  proc.on('close', code => {
+    try { fs.unlinkSync(file.path); } catch (_cleanupErr) {}
+    if (parsePath !== file.path) { try { fs.unlinkSync(parsePath); } catch (_cleanupErr) {} }
+    if (code !== 0) {
+      return res.status(500).json({ success: false, error: 'Word 解析失败', detail: stderr.slice(0, 1000) });
+    }
+    try {
+      const parsed = JSON.parse(stdout);
+      if (parsed.error) return res.status(400).json({ success: false, error: parsed.error });
+      const withTopic = applyFileTopic({ success: true, ...parsed }, originalName, sourceType);
+      return res.json(applyImportMeta(withTopic, req.body || {}));
+    } catch (err) {
+      return res.status(500).json({ success: false, error: '解析结果格式错误', detail: stdout.slice(0, 1000) });
+    }
+  });
+});
 
 router.get('/questions', (req, res) => {
   try {
