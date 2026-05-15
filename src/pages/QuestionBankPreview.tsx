@@ -10,10 +10,12 @@ import {
 } from '@ant-design/icons';
 import type { Question, KnowledgeNode } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
+import { getApiBase } from '../utils/apiBase';
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
+const API_BASE = getApiBase('/api/question-bank');
 
 const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'];
 const QUESTION_TYPES = ['选择题', '填空题', '解答题', '判断题', '简答题', '实验题', '多选题', '作图题'];
@@ -50,7 +52,7 @@ const QuestionBankPreview: React.FC = () => {
   const [modelNodes, setModelNodes] = useState<KnowledgeNode[]>([]);
 
   // Multi-select filter state
-  const [filterSubjects, setFilterSubjects] = useState<string[]>(['物理']); // default: 物理
+  const [filterSubjects, setFilterSubjects] = useState<string[]>([]); // default: 全部
   const [filterTypes, setFilterTypes] = useState<string[]>(['不限']); // default: 不限
   const [filterExamTypes, setFilterExamTypes] = useState<string[]>([...EXAM_TYPES]); // default all
   const [filterGrades, setFilterGrades] = useState<string[]>(['不限']); // default: 不限
@@ -90,11 +92,31 @@ const QuestionBankPreview: React.FC = () => {
 
   const dbService = (window as any).dbService;
 
-  const loadData = useCallback(() => {
+  const normalizeQuestion = (row: any): Question => ({
+    ...row,
+    content: row.content ?? row.stem ?? '',
+    analysis: row.analysis ?? row.explanation ?? '',
+    knowledge_ids: row.knowledge_ids ?? row.knowledge_point_ids ?? [],
+    model_ids: row.model_ids ?? row.model_point_ids ?? [],
+  } as Question);
+
+  const loadData = useCallback(async () => {
     try {
       const db = (window as any).dbService;
+      let localQuestions: Question[] = [];
+      if (db) localQuestions = (db.getAllQuestions?.() || []).map(normalizeQuestion);
+      try {
+        const res = await fetch(`${API_BASE}/questions?limit=200`);
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) {
+          setQuestions(data.data.map(normalizeQuestion));
+        } else {
+          setQuestions(localQuestions);
+        }
+      } catch (_err) {
+        setQuestions(localQuestions);
+      }
       if (!db) return;
-      setQuestions(db.getAllQuestions?.() || []);
       const kn = db.getKnowledgeTree?.() || [];
       setKnowledgeNodes(kn);
       const models = db.getModelTree?.() || [];
@@ -133,7 +155,8 @@ const QuestionBankPreview: React.FC = () => {
 
   // Filters
   const filtered = questions.filter(q => {
-    if (filterSubjects.length > 0 && !filterSubjects.includes(q.subject)) return false;
+    const row = q as Question & { subject_id?: string };
+    if (filterSubjects.length > 0 && !filterSubjects.includes(row.subject || row.subject_id || '')) return false;
     if (!filterTypes.includes('不限') && filterTypes.length > 0 && !filterTypes.includes(q.type)) return false;
     if (filterExamTypes.length > 0 && !filterExamTypes.includes(q.exam_type || '')) return false;
     if (!filterGrades.includes('不限') && filterGrades.length > 0 && !filterGrades.includes(q.grade || '')) return false;
@@ -154,7 +177,7 @@ const QuestionBankPreview: React.FC = () => {
       if (!expandedModelIds.every(mid => qModelIds.includes(mid))) return false;
     }
     return true;
-  }).sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+  }).sort((a, b) => (b.created_at || b.updated_at || '').localeCompare(a.created_at || a.updated_at || ''));
 
   const handleCreateKnowledgeNode = useCallback((name: string, parentId?: string | null) => {
     const db = (window as any).dbService;

@@ -30,6 +30,131 @@ def extract_question_number(text):
     return None, text
 
 
+def read_numbering_definitions(file_path):
+    namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    try:
+        with zipfile.ZipFile(file_path, "r") as archive:
+            if "word/numbering.xml" not in archive.namelist():
+                return {}
+            root = ET.fromstring(archive.read("word/numbering.xml"))
+            num_to_abstract = {}
+            for num in root.findall("w:num", namespace):
+                num_id = num.attrib.get(f"{{{namespace['w']}}}numId")
+                abstract = num.find("w:abstractNumId", namespace)
+                if num_id and abstract is not None:
+                    num_to_abstract[num_id] = abstract.attrib.get(f"{{{namespace['w']}}}val")
+
+            abstract_levels = {}
+            for abstract in root.findall("w:abstractNum", namespace):
+                abstract_id = abstract.attrib.get(f"{{{namespace['w']}}}abstractNumId")
+                levels = {}
+                for level in abstract.findall("w:lvl", namespace):
+                    ilvl = level.attrib.get(f"{{{namespace['w']}}}ilvl", "0")
+                    lvl_text = level.find("w:lvlText", namespace)
+                    num_fmt = level.find("w:numFmt", namespace)
+                    start = level.find("w:start", namespace)
+                    levels[ilvl] = {
+                        "text": lvl_text.attrib.get(f"{{{namespace['w']}}}val", "") if lvl_text is not None else "",
+                        "format": num_fmt.attrib.get(f"{{{namespace['w']}}}val", "") if num_fmt is not None else "",
+                        "start": int(start.attrib.get(f"{{{namespace['w']}}}val", "1")) if start is not None else 1,
+                    }
+                abstract_levels[abstract_id] = levels
+
+            definitions = {}
+            for num_id, abstract_id in num_to_abstract.items():
+                definitions[num_id] = abstract_levels.get(abstract_id, {})
+            return definitions
+    except Exception:
+        return {}
+
+
+def paragraph_numbering(paragraph):
+    try:
+        num_pr = paragraph._p.pPr.numPr if paragraph._p.pPr is not None else None
+        if num_pr is None or num_pr.numId is None:
+            return None
+        num_id = str(num_pr.numId.val)
+        ilvl = str(num_pr.ilvl.val) if num_pr.ilvl is not None else "0"
+        return num_id, ilvl
+    except Exception:
+        return None
+
+
+def read_docx_comments(file_path):
+    namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    try:
+        with zipfile.ZipFile(file_path, "r") as archive:
+            if "word/comments.xml" not in archive.namelist():
+                return {}
+            root = ET.fromstring(archive.read("word/comments.xml"))
+            comments = {}
+            for comment in root.findall(".//w:comment", namespace):
+                comment_id = comment.attrib.get(f"{{{namespace['w']}}}id")
+                texts = [node.text or "" for node in comment.findall(".//w:t", namespace)]
+                if comment_id:
+                    comments[comment_id] = "".join(texts).strip()
+            return comments
+    except Exception:
+        return {}
+
+
+def read_paragraph_comment_refs(file_path):
+    namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    try:
+        with zipfile.ZipFile(file_path, "r") as archive:
+            if "word/document.xml" not in archive.namelist():
+                return []
+            root = ET.fromstring(archive.read("word/document.xml"))
+            refs_by_paragraph = []
+            for paragraph in root.findall(".//w:p", namespace):
+                refs = []
+                for node in paragraph.findall(".//w:commentReference", namespace):
+                    comment_id = node.attrib.get(f"{{{namespace['w']}}}id")
+                    if comment_id:
+                        refs.append(comment_id)
+                refs_by_paragraph.append(refs)
+            return refs_by_paragraph
+    except Exception:
+        return []
+
+
+def extract_numbered_items(doc, file_path):
+    definitions = read_numbering_definitions(file_path)
+    comments = read_docx_comments(file_path)
+    comment_refs = read_paragraph_comment_refs(file_path)
+    counters = {}
+    items = []
+    for index, paragraph in enumerate(doc.paragraphs):
+        text = paragraph.text.strip()
+        numbering = paragraph_numbering(paragraph)
+        number_label = ""
+        number_kind = ""
+        if numbering:
+            num_id, ilvl = numbering
+            level = definitions.get(num_id, {}).get(ilvl, {})
+            lvl_text = level.get("text", "")
+            if level.get("format") == "decimal" and "%1" in lvl_text and ilvl == "0":
+                key = (num_id, ilvl)
+                counters[key] = counters.get(key, level.get("start", 1) - 1) + 1
+                number_label = lvl_text.replace("%1", str(counters[key]))
+                if lvl_text.startswith("例"):
+                    number_kind = "example"
+                elif lvl_text in ("%1", "%1.", "%1．"):
+                    number_kind = "practice"
+        paragraph_comments = [
+            comments[comment_id]
+            for comment_id in (comment_refs[index] if index < len(comment_refs) else [])
+            if comments.get(comment_id)
+        ]
+        items.append({
+            "text": text,
+            "number_label": number_label,
+            "number_kind": number_kind,
+            "comments": paragraph_comments,
+        })
+    return items
+
+
 def extract_option(text):
     match = OPTION_RE.match(text)
     if match:
@@ -212,6 +337,59 @@ def parse_lecture_questions(paragraphs, default_topic=None):
     return parse_question_block(paragraphs, default_topic)
 
 
+def parse_lecture_numbered_items(items, default_topic=None):
+    questions = []
+    current = None
+    current_topic = default_topic or ""
+
+    def finish_current():
+        nonlocal current
+        if current:
+            comments = [comment for comment in current.pop("_comments", []) if comment]
+            if comments and not current.get("answer"):
+                current["answer"] = "\n".join(comments)
+            current["question_types"] = extract_types_from_text(current["stem"], current["options"])
+            questions.append(current)
+            current = None
+
+    for item in items:
+        text = item.get("text", "").strip()
+        number_kind = item.get("number_kind", "")
+        number_label = item.get("number_label", "")
+        if not text and not number_kind:
+            continue
+        if text and is_topic_heading(text):
+            finish_current()
+            topic = clean_topic_heading(text)
+            if topic:
+                current_topic = topic
+            continue
+        if number_kind in ("example", "practice"):
+            finish_current()
+            stem = f"{number_label} {text}".strip()
+            current = new_question(stem, len(questions), current_topic)
+            current["source_type"] = number_kind
+            current["_comments"] = list(item.get("comments", []))
+            continue
+        if not current or not text:
+            if current:
+                current.setdefault("_comments", []).extend(item.get("comments", []))
+            continue
+        current.setdefault("_comments", []).extend(item.get("comments", []))
+        option, option_content = extract_option(text)
+        if option:
+            current["options"].append({"label": option, "content": option_content, "is_correct": False})
+            continue
+        sub_number, sub_content = extract_sub_question(text)
+        if sub_number:
+            current["sub_questions"].append({"title": f"({sub_number})", "content": sub_content, "answer": ""})
+            continue
+        append_text(current, text)
+
+    finish_current()
+    return questions
+
+
 def parse_exam_questions(paragraphs, default_topic=None):
     question_part, answer_part = split_answer_section(paragraphs)
     questions = parse_question_block(question_part, default_topic)
@@ -297,15 +475,18 @@ def main():
         from docx import Document
         doc = Document(file_path)
         paragraphs = [paragraph.text for paragraph in doc.paragraphs]
+        numbered_items = extract_numbered_items(doc, file_path)
     except ImportError:
         try:
             paragraphs = extract_paragraphs_from_docx(file_path)
+            numbered_items = []
         except Exception as exc:
             print(json.dumps({"error": f"cannot open Word document without python-docx: {exc}"}, ensure_ascii=False))
             sys.exit(1)
     except Exception as exc:
         try:
             paragraphs = extract_paragraphs_from_docx(file_path)
+            numbered_items = []
         except Exception:
             print(json.dumps({"error": f"cannot open Word document: {exc}"}, ensure_ascii=False))
             sys.exit(1)
@@ -313,7 +494,12 @@ def main():
         source_type = "exam" if any("参考答案" in paragraph or "答案" in paragraph for paragraph in paragraphs) else "lecture"
 
     default_topic = derive_topic_from_filename(file_path) if source_type == "lecture" else ""
-    questions = parse_exam_questions(paragraphs, default_topic) if source_type == "exam" else parse_lecture_questions(paragraphs, default_topic)
+    if source_type == "exam":
+        questions = parse_exam_questions(paragraphs, default_topic)
+    elif numbered_items:
+        questions = parse_lecture_numbered_items(numbered_items, default_topic)
+    else:
+        questions = parse_lecture_questions(paragraphs, default_topic)
     if source_type == "lecture":
         comments = extract_comments(file_path)
         for index, answer in enumerate(comments[: len(questions)]):
