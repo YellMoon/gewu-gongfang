@@ -118,13 +118,13 @@ class DatabaseService {
     return ['students', 'grades', 'courses', 'schedules', 'enrollments',
       'payments', 'consumptions', 'institutions', 'schools', 'rooms', 'teachers',
       'subjects', 'chapters', 'knowledge_points', 'questions', 'question_contents',
-      'question_assets', 'import_batches', 'import_items', 'search_index_jobs', 'vector_embeddings',
+      'question_assets', 'model_points', 'import_batches', 'import_items', 'search_index_jobs', 'vector_embeddings',
       'data_archive_jobs', 'outbox_events'];
   }
 
   _questionBankTenantScopedTables() {
     return ['subjects', 'chapters', 'knowledge_points', 'questions', 'question_contents',
-      'question_assets', 'import_batches', 'import_items', 'search_index_jobs', 'vector_embeddings',
+      'question_assets', 'model_points', 'import_batches', 'import_items', 'search_index_jobs', 'vector_embeddings',
       'data_archive_jobs', 'outbox_events'];
   }
 

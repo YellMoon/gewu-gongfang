@@ -362,6 +362,27 @@ CREATE TABLE IF NOT EXISTS question_knowledge_points (
   PRIMARY KEY (question_id, knowledge_point_id)
 );
 
+CREATE TABLE IF NOT EXISTS model_points (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
+  parent_id TEXT,
+  name TEXT NOT NULL,
+  description TEXT,
+  sort_order INTEGER DEFAULT 0,
+  deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS question_model_points (
+  question_id TEXT NOT NULL,
+  model_point_id TEXT NOT NULL,
+  weight REAL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (question_id, model_point_id)
+);
+
 CREATE TABLE IF NOT EXISTS knowledge_point_rollups (
   knowledge_point_id TEXT PRIMARY KEY,
   direct_question_count INTEGER DEFAULT 0,
@@ -503,6 +524,10 @@ CREATE INDEX IF NOT EXISTS idx_question_contents_hash ON question_contents(conte
 CREATE INDEX IF NOT EXISTS idx_question_assets_question ON question_assets(question_id);
 CREATE INDEX IF NOT EXISTS idx_question_assets_hash ON question_assets(content_hash);
 CREATE INDEX IF NOT EXISTS idx_qkp_knowledge ON question_knowledge_points(knowledge_point_id);
+CREATE INDEX IF NOT EXISTS idx_model_points_tenant ON model_points(tenant_id, deleted);
+CREATE INDEX IF NOT EXISTS idx_model_points_parent ON model_points(parent_id, deleted);
+CREATE INDEX IF NOT EXISTS idx_qmp_question ON question_model_points(question_id);
+CREATE INDEX IF NOT EXISTS idx_qmp_model ON question_model_points(model_point_id);
 CREATE INDEX IF NOT EXISTS idx_import_batches_status ON import_batches(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_import_items_batch ON import_items(batch_id, item_index);
 CREATE INDEX IF NOT EXISTS idx_search_jobs_status ON search_index_jobs(status, created_at);

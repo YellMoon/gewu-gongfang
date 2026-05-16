@@ -301,6 +301,11 @@ export interface Question {
   semester?: string;               // 学期
   exam_type?: string;              // 考试类型
   region?: string;                 // 地区
+  school?: string;                 // 学校
+  explanation?: string;            // 后端解析字段
+  stem?: string;                   // 后端题干字段
+  knowledge_point_ids?: string[];  // 后端知识点ID
+  model_point_ids?: string[];      // 后端模型ID
   sub_questions?: any[];           // 子题（大题包含小题）
   variant_ids?: string[];          // 变式题ID列表
   created_at: string;

@@ -54,7 +54,7 @@ const QuestionBankPreview: React.FC = () => {
   // Multi-select filter state
   const [filterSubjects, setFilterSubjects] = useState<string[]>([]); // default: 全部
   const [filterTypes, setFilterTypes] = useState<string[]>(['不限']); // default: 不限
-  const [filterExamTypes, setFilterExamTypes] = useState<string[]>([...EXAM_TYPES]); // default all
+  const [filterExamTypes, setFilterExamTypes] = useState<string[]>([]); // default: 全部
   const [filterGrades, setFilterGrades] = useState<string[]>(['不限']); // default: 不限
   const [filterSemesters, setFilterSemesters] = useState<string[]>(['不限']); // default: 不限
   const [filterYear, setFilterYear] = useState<string | undefined>(undefined);

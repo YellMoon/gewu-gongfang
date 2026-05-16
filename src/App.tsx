@@ -14,7 +14,8 @@ import {
   LockOutlined,
   MenuOutlined,
   UploadOutlined,
-  LinkOutlined
+  LinkOutlined,
+  EditOutlined
 } from '@ant-design/icons';
 import ScheduleList from './pages/ScheduleList';
 import StudentList from './pages/StudentList';
@@ -41,6 +42,7 @@ const { Header, Content } = Layout;
 const ScheduleCalendar = React.lazy(() => import('./pages/ScheduleCalendar'));
 const QuestionBankImport = React.lazy(() => import('./pages/QuestionBankImport'));
 const QuestionBankPreview = React.lazy(() => import('./pages/QuestionBankPreview'));
+const QuestionBankEdit = React.lazy(() => import('./pages/QuestionBankEdit'));
 const TeachingTools = React.lazy(() => import('./pages/TeachingTools'));
 
 const PageLoading: React.FC = () => (
@@ -60,7 +62,7 @@ const LazyPage: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 type PageKey =
   | 'course-calendar' | 'schedule-list' | 'course-info'
   | 'school' | 'address' | 'institution'
-  | 'question-bank-import' | 'question-bank-preview' | 'teaching-tool'
+  | 'question-bank-import' | 'question-bank-preview' | 'question-bank-edit' | 'teaching-tool'
   | 'payment' | 'revenue-statistics' | 'personal-assets'
   | 'admin' | 'teacher' | 'student' | 'invitee' | 'permission'
   | 'menu-manage'  | 'system-params' | 'operate-log'
@@ -96,7 +98,8 @@ const MENU_GROUPS: MenuGroup[] = [
     icon: <DatabaseOutlined />,
     items: [
       { key: 'question-bank-import', label: '试题导入', icon: <UploadOutlined /> },
-      { key: 'question-bank-preview', label: '试题预览', icon: <FileTextOutlined /> }
+      { key: 'question-bank-preview', label: '试题预览', icon: <FileTextOutlined /> },
+      { key: 'question-bank-edit', label: '试题编辑', icon: <EditOutlined /> }
     ]
   },
   {
@@ -235,6 +238,7 @@ const App: React.FC = () => {
       case 'revenue-statistics': return <RevenueStatistics />;
       case 'question-bank-import': return <LazyPage><QuestionBankImport /></LazyPage>;
       case 'question-bank-preview': return <LazyPage><QuestionBankPreview /></LazyPage>;
+      case 'question-bank-edit': return <LazyPage><QuestionBankEdit /></LazyPage>;
       case 'teaching-tool': return <LazyPage><TeachingTools /></LazyPage>;
       case 'personal-assets': return <PersonalAssets />;
       case 'permission': return <PermissionManager />;

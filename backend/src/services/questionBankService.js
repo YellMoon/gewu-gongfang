@@ -36,6 +36,20 @@ function normalizeKnowledgePointNames(payload = {}) {
   return [...new Set(values.map(name => String(name || '').trim()).filter(Boolean))];
 }
 
+function normalizeModelPointIds(payload = {}) {
+  const ids = payload.model_point_ids || payload.model_ids || [];
+  if (Array.isArray(ids)) return ids.filter(Boolean);
+  if (typeof ids === 'string') return ids.split(',').map(id => id.trim()).filter(Boolean);
+  return [];
+}
+
+function normalizeModelPointNames(payload = {}) {
+  const names = payload.model_points || payload.model_point_names || [];
+  const values = Array.isArray(names) ? names : typeof names === 'string' ? names.split(',') : [];
+  if (payload.model_point) values.push(payload.model_point);
+  return [...new Set(values.map(name => String(name || '').trim()).filter(Boolean))];
+}
+
 function normalizeOssRef(value = {}) {
   if (!value || typeof value !== 'object') return null;
   const ossKey = value.oss_key || value.ossKey || value.key || null;
@@ -113,6 +127,9 @@ function normalizeImportItem(item = {}, defaults = {}) {
     knowledge_point_ids: normalizeKnowledgePointIds(item).length > 0
       ? normalizeKnowledgePointIds(item)
       : normalizeKnowledgePointIds(defaults),
+    model_point_ids: normalizeModelPointIds(item).length > 0
+      ? normalizeModelPointIds(item)
+      : normalizeModelPointIds(defaults),
   };
 }
 
@@ -172,6 +189,28 @@ class QuestionBankService {
     return [...new Set(ids.filter(Boolean))];
   }
 
+  resolveModelPointIds(db, payload = {}, tenantId = 'default') {
+    this.ensureTenant(db, tenantId);
+    const ids = normalizeModelPointIds(payload);
+    const names = normalizeModelPointNames(payload);
+    const ts = now();
+    for (const name of names) {
+      let row = db.prepare(
+        'SELECT id FROM model_points WHERE tenant_id = ? AND name = ? AND deleted = 0 ORDER BY created_at ASC LIMIT 1'
+      ).get(tenantId, name);
+      if (!row) {
+        row = { id: `mp_${hashText(`${tenantId}:${name}`).slice(0, 24)}` };
+        db.prepare(
+          `INSERT INTO model_points
+           (id, tenant_id, parent_id, name, description, sort_order, deleted, created_at, updated_at)
+           VALUES (?, ?, NULL, ?, NULL, 0, 0, ?, ?)`
+        ).run(row.id, tenantId, name, ts, ts);
+      }
+      ids.push(row.id);
+    }
+    return [...new Set(ids.filter(Boolean))];
+  }
+
   createQuestion(db, payload, tenantId = 'default') {
     this.ensureTenant(db, tenantId);
     const ts = now();
@@ -181,6 +220,7 @@ class QuestionBankService {
     const explanation = payload.explanation !== undefined ? payload.explanation : payload.analysis;
     const options = parseJsonArray(payload.options);
     const knowledgePointIds = this.resolveKnowledgePointIds(db, payload, tenantId);
+    const modelPointIds = this.resolveModelPointIds(db, payload, tenantId);
     const contentHash = payload.content_hash || hashText([stem, payload.answer, explanation, JSON.stringify(options)].join('|'));
     const contentRef = normalizeOssRef(payload);
     const assets = normalizeQuestionAssets(payload);
@@ -205,6 +245,13 @@ class QuestionBankService {
         ).run(questionId, knowledgePointId, 1, ts, ts);
       }
 
+      for (const modelPointId of modelPointIds) {
+        db.prepare(
+          `INSERT OR REPLACE INTO question_model_points (question_id, model_point_id, weight, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?)`
+        ).run(questionId, modelPointId, 1, ts, ts);
+      }
+
       for (const asset of assets) {
         db.prepare(
           `INSERT INTO question_assets
@@ -224,6 +271,7 @@ class QuestionBankService {
   _mapQuestion(row, assets = []) {
     if (!row) return null;
     const knowledgeIds = row.knowledge_point_ids ? String(row.knowledge_point_ids).split(',').filter(Boolean) : [];
+    const modelIds = row.model_point_ids ? String(row.model_point_ids).split(',').filter(Boolean) : [];
     const options = parseJsonArray(row.options_json);
     return {
       ...row,
@@ -241,6 +289,8 @@ class QuestionBankService {
       } : null,
       knowledge_point_ids: knowledgeIds,
       knowledge_ids: knowledgeIds,
+      model_point_ids: modelIds,
+      model_ids: modelIds,
       assets,
       cover: assets.find(asset => asset.asset_type === 'cover') || null,
       attachments: assets.filter(asset => asset.asset_type !== 'cover'),
@@ -258,10 +308,12 @@ class QuestionBankService {
                    qc.version AS content_version,
                    qc.oss_key AS content_oss_key,
                    qc.oss_url AS content_oss_url,
-                   GROUP_CONCAT(qkp.knowledge_point_id) AS knowledge_point_ids
+                   GROUP_CONCAT(DISTINCT qkp.knowledge_point_id) AS knowledge_point_ids,
+                   GROUP_CONCAT(DISTINCT qmp.model_point_id) AS model_point_ids
             FROM questions q
             LEFT JOIN question_contents qc ON qc.question_id = q.id AND qc.deleted = 0
             LEFT JOIN question_knowledge_points qkp ON qkp.question_id = q.id
+            LEFT JOIN question_model_points qmp ON qmp.question_id = q.id
             ${whereSql}
             GROUP BY q.id
             ORDER BY q.created_at DESC, q.updated_at DESC`;
@@ -356,6 +408,16 @@ class QuestionBankService {
         }
       }
 
+      if (payload.model_point_ids !== undefined || payload.model_ids !== undefined || payload.model_points !== undefined || payload.model_point_names !== undefined || payload.model_point !== undefined) {
+        db.prepare('DELETE FROM question_model_points WHERE question_id = ?').run(id);
+        for (const modelPointId of this.resolveModelPointIds(db, payload, tenantId)) {
+          db.prepare(
+            `INSERT OR REPLACE INTO question_model_points (question_id, model_point_id, weight, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?)`
+          ).run(id, modelPointId, 1, ts, ts);
+        }
+      }
+
       if (payload.assets !== undefined || payload.cover !== undefined || payload.cover_image !== undefined || payload.title_image !== undefined || payload.attachments !== undefined) {
         db.prepare('UPDATE question_assets SET deleted = 1, updated_at = ? WHERE question_id = ? AND deleted = 0').run(ts, id);
         for (const asset of normalizeQuestionAssets(payload)) {
@@ -384,6 +446,7 @@ class QuestionBankService {
       db.prepare('UPDATE question_contents SET deleted = 1, updated_at = ? WHERE question_id = ? AND deleted = 0').run(ts, id);
       db.prepare('UPDATE question_assets SET deleted = 1, updated_at = ? WHERE question_id = ? AND deleted = 0').run(ts, id);
       db.prepare('DELETE FROM question_knowledge_points WHERE question_id = ?').run(id);
+      db.prepare('DELETE FROM question_model_points WHERE question_id = ?').run(id);
       this.enqueueSearchJob(db, id, 'delete', tenantId);
       eventBus.publish(db, 'question.changed', 'question', id, { action: 'delete' }, tenantId);
     });

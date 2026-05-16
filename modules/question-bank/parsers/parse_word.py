@@ -21,6 +21,9 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 QUESTION_RE = re.compile(r"^(\d+)[\.\u3001\uff0e]\s*(.*)")
 OPTION_RE = re.compile(r"^([A-F])[\.\u3001\uff0e]\s*(.*)", re.I)
 SUB_QUESTION_RE = re.compile(r"^[\(\uff08](\d+)[\)\uff09]\s*(.*)")
+EXAM_SECTION_RE = re.compile(r"^[一二三四五六七八九十]+[、.．]\s*(单选题|多选题|选择题|实验题|解答题|综合题)")
+ANSWER_TITLE_RE = re.compile(r"^《.+》\s*参考答案")
+ANALYSIS_MARK_RE = re.compile(r"【(?:详解|解析)】")
 
 
 def extract_question_number(text):
@@ -108,9 +111,9 @@ def read_paragraph_comment_refs(file_path):
             refs_by_paragraph = []
             for paragraph in root.findall(".//w:p", namespace):
                 refs = []
-                for node in paragraph.findall(".//w:commentReference", namespace):
+                for node in paragraph.findall(".//w:commentReference", namespace) + paragraph.findall(".//w:commentRangeStart", namespace) + paragraph.findall(".//w:commentRangeEnd", namespace):
                     comment_id = node.attrib.get(f"{{{namespace['w']}}}id")
-                    if comment_id:
+                    if comment_id and comment_id not in refs:
                         refs.append(comment_id)
                 refs_by_paragraph.append(refs)
             return refs_by_paragraph
@@ -121,11 +124,15 @@ def read_paragraph_comment_refs(file_path):
 def extract_numbered_items(doc, file_path):
     definitions = read_numbering_definitions(file_path)
     comments = read_docx_comments(file_path)
-    comment_refs = read_paragraph_comment_refs(file_path)
     counters = {}
     items = []
+    xml_items = extract_numbered_items_from_xml(file_path, definitions, comments, counters)
+    if xml_items:
+        return xml_items
+
+    comment_refs = read_paragraph_comment_refs(file_path)
     for index, paragraph in enumerate(doc.paragraphs):
-        text = paragraph.text.strip()
+        text = clean_word_text(paragraph.text)
         numbering = paragraph_numbering(paragraph)
         number_label = ""
         number_kind = ""
@@ -153,6 +160,56 @@ def extract_numbered_items(doc, file_path):
             "comments": paragraph_comments,
         })
     return items
+
+
+def clean_word_text(text):
+    return re.sub(r"[\f\v]+", "", text or "").strip()
+
+
+def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
+    namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    try:
+        with zipfile.ZipFile(file_path, "r") as archive:
+            if "word/document.xml" not in archive.namelist():
+                return []
+            root = ET.fromstring(archive.read("word/document.xml"))
+            items = []
+            for paragraph in root.findall(".//w:p", namespace):
+                texts = [node.text or "" for node in paragraph.findall(".//w:t", namespace)]
+                text = clean_word_text("".join(texts))
+                refs = []
+                for node in paragraph.findall(".//w:commentReference", namespace) + paragraph.findall(".//w:commentRangeStart", namespace) + paragraph.findall(".//w:commentRangeEnd", namespace):
+                    comment_id = node.attrib.get(f"{{{namespace['w']}}}id")
+                    if comment_id and comment_id not in refs:
+                        refs.append(comment_id)
+                num_pr = paragraph.find("./w:pPr/w:numPr", namespace)
+                number_label = ""
+                number_kind = ""
+                if num_pr is not None:
+                    num_id_node = num_pr.find("w:numId", namespace)
+                    ilvl_node = num_pr.find("w:ilvl", namespace)
+                    num_id = num_id_node.attrib.get(f"{{{namespace['w']}}}val") if num_id_node is not None else None
+                    ilvl = ilvl_node.attrib.get(f"{{{namespace['w']}}}val") if ilvl_node is not None else "0"
+                    level = definitions.get(num_id, {}).get(ilvl, {}) if num_id else {}
+                    lvl_text = level.get("text", "")
+                    if level.get("format") == "decimal" and "%1" in lvl_text and ilvl == "0":
+                        key = (num_id, ilvl)
+                        counters[key] = counters.get(key, level.get("start", 1) - 1) + 1
+                        number_label = lvl_text.replace("%1", str(counters[key]))
+                        if lvl_text.startswith("例"):
+                            number_kind = "example"
+                        elif lvl_text in ("%1", "%1.", "%1．"):
+                            number_kind = "practice"
+                paragraph_comments = [comments[comment_id] for comment_id in refs if comments.get(comment_id)]
+                items.append({
+                    "text": text,
+                    "number_label": number_label,
+                    "number_kind": number_kind,
+                    "comments": paragraph_comments,
+                })
+            return items
+    except Exception:
+        return []
 
 
 def extract_option(text):
@@ -214,6 +271,27 @@ def extract_types_from_text(text, options=None):
     return types or ["fill"]
 
 
+def answer_letters(answer):
+    text = re.sub(r"【.*?】", "", str(answer or "")).upper()
+    return re.findall(r"[A-G]", text)
+
+
+def classify_question(stem, options=None, answer=""):
+    letters = answer_letters(answer)
+    if options or re.search(r"[（(]\s*[　\s]{2,}[）)]", stem or ""):
+        return ["multi" if len(set(letters)) >= 2 else "single"]
+    if re.search(r"实验", stem or ""):
+        return ["experiment"]
+    if re.search(r"解答|计算|综合", stem or ""):
+        return ["problem"]
+    return extract_types_from_text(stem or "", options)
+
+
+def finalize_question_type(question):
+    question["question_types"] = classify_question(question.get("stem", ""), question.get("options", []), question.get("answer", ""))
+    return question
+
+
 def derive_topic_from_filename(file_path):
     base = os.path.splitext(os.path.basename(file_path))[0]
     patterns = [
@@ -235,6 +313,10 @@ def is_topic_heading(text):
     if any(word in text for word in generic):
         return False
     return bool(re.match(r"^(专题\d+|实验专题\d+|解答题专题\d+|[一二三四五六七八九十]+[、.．])", text))
+
+
+def is_exam_section_heading(text):
+    return bool(EXAM_SECTION_RE.match(text or ""))
 
 
 def clean_topic_heading(text):
@@ -283,8 +365,7 @@ def parse_question_block(paragraphs, default_topic=None):
         number, content = extract_question_number(text)
         if number is not None:
             if current:
-                current["question_types"] = extract_types_from_text(current["stem"], current["options"])
-                questions.append(current)
+                questions.append(finalize_question_type(current))
             current = new_question(content, len(questions), current_topic)
             continue
         if not current:
@@ -299,14 +380,14 @@ def parse_question_block(paragraphs, default_topic=None):
             continue
         append_text(current, text)
     if current:
-        current["question_types"] = extract_types_from_text(current["stem"], current["options"])
-        questions.append(current)
+        questions.append(finalize_question_type(current))
     return questions
 
 
 def split_answer_section(paragraphs):
     for index, paragraph in enumerate(paragraphs):
-        if any(keyword in paragraph for keyword in ["参考答案", "答案", "解析"]):
+        text = paragraph.strip()
+        if ANSWER_TITLE_RE.match(text) or (text.endswith("参考答案") and "《" in text):
             return paragraphs[:index], paragraphs[index + 1 :]
     return paragraphs, []
 
@@ -333,6 +414,89 @@ def parse_answers(paragraphs):
     return answers
 
 
+def parse_exam_answer_blocks(paragraphs):
+    answers = []
+    current = None
+    mode = "answer"
+    for paragraph in paragraphs:
+        text = paragraph.strip()
+        if not text:
+            continue
+        if ANSWER_TITLE_RE.match(text):
+            continue
+        number, content = extract_question_number(text)
+        if number is not None:
+            if current:
+                answers.append(current)
+            current = {"number": number, "answer": "", "explanation": ""}
+            mode = "answer"
+            marker = ANALYSIS_MARK_RE.search(content)
+            if marker:
+                current["answer"] = content[: marker.start()].strip()
+                current["explanation"] = content[marker.end() :].strip()
+                mode = "analysis"
+            else:
+                current["answer"] = content.strip()
+            continue
+        if not current:
+            continue
+        marker = ANALYSIS_MARK_RE.search(text)
+        if marker:
+            before = text[: marker.start()].strip()
+            after = text[marker.end() :].strip()
+            if before:
+                current["answer"] = (current["answer"] + "\n" + before).strip()
+            if after:
+                current["explanation"] = (current["explanation"] + "\n" + after).strip()
+            mode = "analysis"
+            continue
+        if mode == "answer":
+            current["answer"] = (current["answer"] + "\n" + text).strip()
+        else:
+            current["explanation"] = (current["explanation"] + "\n" + text).strip()
+    if current:
+        answers.append(current)
+    return answers
+
+
+def parse_exam_question_block(paragraphs):
+    questions = []
+    current = None
+    expected_number = None
+    for paragraph in paragraphs:
+        text = paragraph.strip()
+        if not text:
+            continue
+        if is_exam_section_heading(text):
+            if current:
+                questions.append(finalize_question_type(current))
+                current = None
+            expected_number = None
+            continue
+        number, content = extract_question_number(text)
+        if number is not None and (expected_number is None or number == expected_number):
+            if current:
+                questions.append(finalize_question_type(current))
+            current = new_question(content, len(questions), "")
+            current["number"] = number
+            expected_number = number + 1
+            continue
+        if not current:
+            continue
+        option, option_content = extract_option(text)
+        if option:
+            current["options"].append({"label": option, "content": option_content, "is_correct": False})
+            continue
+        sub_number, sub_content = extract_sub_question(text)
+        if sub_number:
+            current["sub_questions"].append({"title": f"({sub_number})", "content": sub_content, "answer": ""})
+            continue
+        append_text(current, text)
+    if current:
+        questions.append(finalize_question_type(current))
+    return questions
+
+
 def parse_lecture_questions(paragraphs, default_topic=None):
     return parse_question_block(paragraphs, default_topic)
 
@@ -348,8 +512,7 @@ def parse_lecture_numbered_items(items, default_topic=None):
             comments = [comment for comment in current.pop("_comments", []) if comment]
             if comments and not current.get("answer"):
                 current["answer"] = "\n".join(comments)
-            current["question_types"] = extract_types_from_text(current["stem"], current["options"])
-            questions.append(current)
+            questions.append(finalize_question_type(current))
             current = None
 
     for item in items:
@@ -392,15 +555,16 @@ def parse_lecture_numbered_items(items, default_topic=None):
 
 def parse_exam_questions(paragraphs, default_topic=None):
     question_part, answer_part = split_answer_section(paragraphs)
-    questions = parse_question_block(question_part, default_topic)
-    answers = parse_answers(answer_part)
+    questions = parse_exam_question_block(question_part)
+    answers = parse_exam_answer_blocks(answer_part)
     by_index = {idx: answer for idx, answer in enumerate(answers)}
     by_number = {answer["number"]: answer for answer in answers}
     for idx, question in enumerate(questions):
-        answer = by_number.get(idx + 1) or by_index.get(idx)
+        answer = by_number.get(question.get("number") or idx + 1) or by_index.get(idx)
         if answer:
             question["answer"] = answer.get("answer", "")
             question["analysis"] = answer.get("explanation", "")
+            finalize_question_type(question)
     return questions
 
 
@@ -499,12 +663,7 @@ def main():
     elif numbered_items:
         questions = parse_lecture_numbered_items(numbered_items, default_topic)
     else:
-        questions = parse_lecture_questions(paragraphs, default_topic)
-    if source_type == "lecture":
-        comments = extract_comments(file_path)
-        for index, answer in enumerate(comments[: len(questions)]):
-            if answer:
-                questions[index]["answer"] = answer
+        questions = []
 
     result = {
         "success": True,

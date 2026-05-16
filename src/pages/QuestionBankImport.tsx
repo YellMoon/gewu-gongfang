@@ -137,9 +137,13 @@ function toServerQuestion(q: any, meta: any = {}) {
     grade: q.grade || meta.grade || '',
     semester: q.semester || meta.semester || '',
     exam_type: q.exam_type || meta.exam_type || '',
-    region: q.region || '',
+    region: q.region || meta.region || '',
+    school: q.school || meta.school || '',
+    paper_name: q.paper_name || meta.paper_name || '',
     knowledge_point_ids: q.knowledge_point_ids || q.knowledge_ids || [],
     knowledge_points: q.knowledge_points || (q.knowledge_point ? [q.knowledge_point] : []),
+    model_point_ids: q.model_point_ids || q.model_ids || [],
+    model_points: q.model_points || (q.model_point ? [q.model_point] : []),
   };
 }
 
