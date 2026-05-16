@@ -890,6 +890,9 @@ class BrowserDatabaseService {
     const id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
     const newQuestion: Question = {
       ...question,
+      subject: question.subject || '物理',
+      exam_type: question.exam_type || '其他',
+      edit_status: question.edit_status || '未编辑',
       id,
       created_at: now,
       updated_at: now
@@ -903,6 +906,8 @@ class BrowserDatabaseService {
     const idx = this.data.questions.findIndex(q => q.id === id);
     if (idx === -1) return false;
     this.data.questions[idx] = { ...this.data.questions[idx], ...updates, updated_at: new Date().toISOString() };
+    if (!this.data.questions[idx].subject) this.data.questions[idx].subject = '物理';
+    if (!this.data.questions[idx].exam_type) this.data.questions[idx].exam_type = '其他';
     this.saveData();
     return true;
   }

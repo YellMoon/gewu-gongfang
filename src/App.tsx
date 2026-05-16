@@ -10,6 +10,7 @@ import {
   ToolOutlined,
   UserOutlined,
   FileTextOutlined,
+  FileWordOutlined,
   BarChartOutlined,
   LockOutlined,
   MenuOutlined,
@@ -43,6 +44,7 @@ const ScheduleCalendar = React.lazy(() => import('./pages/ScheduleCalendar'));
 const QuestionBankImport = React.lazy(() => import('./pages/QuestionBankImport'));
 const QuestionBankPreview = React.lazy(() => import('./pages/QuestionBankPreview'));
 const QuestionBankEdit = React.lazy(() => import('./pages/QuestionBankEdit'));
+const QuestionBankPaper = React.lazy(() => import('./pages/QuestionBankPaper'));
 const TeachingTools = React.lazy(() => import('./pages/TeachingTools'));
 
 const PageLoading: React.FC = () => (
@@ -62,7 +64,7 @@ const LazyPage: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 type PageKey =
   | 'course-calendar' | 'schedule-list' | 'course-info'
   | 'school' | 'address' | 'institution'
-  | 'question-bank-import' | 'question-bank-preview' | 'question-bank-edit' | 'teaching-tool'
+  | 'question-bank-import' | 'question-bank-preview' | 'question-bank-edit' | 'question-bank-paper' | 'teaching-tool'
   | 'payment' | 'revenue-statistics' | 'personal-assets'
   | 'admin' | 'teacher' | 'student' | 'invitee' | 'permission'
   | 'menu-manage'  | 'system-params' | 'operate-log'
@@ -99,7 +101,8 @@ const MENU_GROUPS: MenuGroup[] = [
     items: [
       { key: 'question-bank-import', label: '试题导入', icon: <UploadOutlined /> },
       { key: 'question-bank-preview', label: '试题预览', icon: <FileTextOutlined /> },
-      { key: 'question-bank-edit', label: '试题编辑', icon: <EditOutlined /> }
+      { key: 'question-bank-edit', label: '试题编辑', icon: <EditOutlined /> },
+      { key: 'question-bank-paper', label: '组卷', icon: <FileWordOutlined /> }
     ]
   },
   {
@@ -166,6 +169,18 @@ const App: React.FC = () => {
     };
     window.addEventListener('error', handleError);
     return () => window.removeEventListener('error', handleError);
+  }, []);
+
+  useEffect(() => {
+    const onNavigate = (event: Event) => {
+      const page = (event as CustomEvent<PageKey>).detail;
+      if (page) {
+        setCurrentPage(page);
+        setOpenDropdown(null);
+      }
+    };
+    window.addEventListener('navigate-page', onNavigate as EventListener);
+    return () => window.removeEventListener('navigate-page', onNavigate as EventListener);
   }, []);
 
   useEffect(() => {
@@ -239,6 +254,7 @@ const App: React.FC = () => {
       case 'question-bank-import': return <LazyPage><QuestionBankImport /></LazyPage>;
       case 'question-bank-preview': return <LazyPage><QuestionBankPreview /></LazyPage>;
       case 'question-bank-edit': return <LazyPage><QuestionBankEdit /></LazyPage>;
+      case 'question-bank-paper': return <LazyPage><QuestionBankPaper /></LazyPage>;
       case 'teaching-tool': return <LazyPage><TeachingTools /></LazyPage>;
       case 'personal-assets': return <PersonalAssets />;
       case 'permission': return <PermissionManager />;

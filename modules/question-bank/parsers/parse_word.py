@@ -338,7 +338,6 @@ def new_question(stem, index=None, knowledge_point=None):
         "knowledge_point": knowledge_point or "",
         "knowledge_points": knowledge_points,
         "question_types": extract_types_from_text(stem),
-        **extract_meta(stem),
     }
 
 

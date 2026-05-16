@@ -5,7 +5,7 @@ import {
 } from 'antd';
 import type { UploadFile } from 'antd/es/upload/interface';
 import {
-  EditOutlined, FileImageOutlined, FunctionOutlined, SaveOutlined, TagsOutlined
+  EditOutlined, FileImageOutlined, FunctionOutlined, TagsOutlined
 } from '@ant-design/icons';
 import type { KnowledgeNode, Question } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
@@ -17,7 +17,7 @@ const Select = AutoCloseSelect as typeof AntSelect;
 const API_BASE = getApiBase('/api/question-bank');
 
 const QUESTION_TYPES = ['单选题', '多选题', '实验题', '解答题', '判断题'];
-const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试'];
+const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试', '竞赛', '强基计划', '其他'];
 const GRADES = ['高一', '高二', '高三', '复习'];
 const SEMESTERS = ['上学期', '下学期'];
 
@@ -28,10 +28,13 @@ function normalizeQuestion(row: any): Question {
   }
   return {
     ...row,
+    subject: row.subject || '物理',
     content: row.content ?? row.stem ?? '',
     options: Array.isArray(options) ? options : [],
     answer: row.answer ?? '',
     analysis: row.analysis ?? row.explanation ?? '',
+    exam_type: row.exam_type || '其他',
+    edit_status: row.edit_status || '未编辑',
     knowledge_ids: row.knowledge_ids ?? row.knowledge_point_ids ?? [],
     model_ids: row.model_ids ?? row.model_point_ids ?? [],
   } as Question;
@@ -67,9 +70,10 @@ const QuestionBankEdit: React.FC = () => {
     try {
       const res = await fetch(`${API_BASE}/questions?limit=200`);
       const data = await res.json();
-      setQuestions(data.success && Array.isArray(data.data) ? data.data.map(normalizeQuestion) : localQuestions);
+      const rows = data.success && Array.isArray(data.data) ? data.data.map(normalizeQuestion) : localQuestions;
+      setQuestions(rows.filter((q: Question) => (q.edit_status || '未编辑') === '未编辑'));
     } catch (_err) {
-      setQuestions(localQuestions);
+      setQuestions(localQuestions.filter((q: Question) => (q.edit_status || '未编辑') === '未编辑'));
     }
     const kn = db?.getKnowledgeTree?.() || [];
     const models = db?.getModelTree?.() || [];
@@ -97,6 +101,7 @@ const QuestionBankEdit: React.FC = () => {
       exam_type: question.exam_type,
       region: (question as any).region,
       school: (question as any).school,
+      subject: question.subject || '物理',
       knowledge_ids: question.knowledge_ids || [],
       model_ids: question.model_ids || [],
       formulas: (question.formulas || []).join('\n'),
@@ -109,6 +114,7 @@ const QuestionBankEdit: React.FC = () => {
     const values = await form.validateFields();
     const payload: any = {
       stem: values.content,
+      subject: values.subject || '物理',
       content: values.content,
       answer: values.answer,
       explanation: values.analysis,
@@ -120,13 +126,14 @@ const QuestionBankEdit: React.FC = () => {
       year: values.year || '',
       grade: values.grade || '',
       semester: values.semester || '',
-      exam_type: values.exam_type || '',
+      exam_type: values.exam_type || '其他',
       region: values.region || '',
       school: values.school || '',
       knowledge_point_ids: values.knowledge_ids || [],
       knowledge_ids: values.knowledge_ids || [],
       model_point_ids: values.model_ids || [],
       model_ids: values.model_ids || [],
+      edit_status: '已编辑',
       formulas: values.formulas ? values.formulas.split('\n').map((s: string) => s.trim()).filter(Boolean) : [],
       tags: values.tags ? values.tags.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
       assets: imageFiles.map(file => ({
@@ -197,6 +204,7 @@ const QuestionBankEdit: React.FC = () => {
 
   const columns = [
     { title: '题干', dataIndex: 'content', ellipsis: true, render: (text: string) => <Text>{text}</Text> },
+    { title: '科目', dataIndex: 'subject', width: 70, render: (v: string) => v || '物理' },
     { title: '题型', dataIndex: 'type', width: 90 },
     { title: '年份', dataIndex: 'year', width: 80, render: (v: string) => v || '-' },
     { title: '年级', dataIndex: 'grade', width: 80, render: (v: string) => v || '-' },
@@ -280,9 +288,10 @@ const QuestionBankEdit: React.FC = () => {
             <Col span={6}><Form.Item name="semester" label="学期"><Select allowClear options={SEMESTERS.map(v => ({ label: v, value: v }))} /></Form.Item></Col>
           </Row>
           <Row gutter={12}>
-            <Col span={8}><Form.Item name="exam_type" label="考试类型"><Select allowClear options={EXAM_TYPES.map(v => ({ label: v, value: v }))} /></Form.Item></Col>
-            <Col span={8}><Form.Item name="region" label="地区"><Input /></Form.Item></Col>
-            <Col span={8}><Form.Item name="school" label="学校"><Input /></Form.Item></Col>
+            <Col span={6}><Form.Item name="subject" label="科目"><Input placeholder="物理" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="exam_type" label="考试类型"><Select allowClear options={EXAM_TYPES.map(v => ({ label: v, value: v }))} /></Form.Item></Col>
+            <Col span={6}><Form.Item name="region" label="地区"><Input /></Form.Item></Col>
+            <Col span={6}><Form.Item name="school" label="学校"><Input /></Form.Item></Col>
           </Row>
           <Form.Item name="knowledge_ids" label="知识点">
             <Select mode="multiple" allowClear options={knowledgeOptions} placeholder="可多选，无数量上限" />

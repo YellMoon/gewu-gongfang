@@ -302,6 +302,7 @@ export interface Question {
   exam_type?: string;              // 考试类型
   region?: string;                 // 地区
   school?: string;                 // 学校
+  edit_status?: string;            // 编辑状态
   explanation?: string;            // 后端解析字段
   stem?: string;                   // 后端题干字段
   knowledge_point_ids?: string[];  // 后端知识点ID

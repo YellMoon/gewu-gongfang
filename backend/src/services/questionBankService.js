@@ -115,6 +115,7 @@ function normalizeImportItem(item = {}, defaults = {}) {
     'fill';
   return {
     ...item,
+    subject: item.subject || defaults.subject || '物理',
     subject_id: item.subject_id || defaults.subject_id || null,
     chapter_id: item.chapter_id || defaults.chapter_id || null,
     type,
@@ -124,6 +125,13 @@ function normalizeImportItem(item = {}, defaults = {}) {
     explanation: item.explanation !== undefined ? item.explanation : item.analysis,
     options: normalizeOptions(item.options),
     source: item.source || defaults.source || null,
+    year: item.year || defaults.year || '',
+    grade: item.grade || defaults.grade || '',
+    semester: item.semester || defaults.semester || '',
+    exam_type: item.exam_type || defaults.exam_type || '其他',
+    region: item.region || defaults.region || '',
+    school: item.school || defaults.school || '',
+    edit_status: item.edit_status || defaults.edit_status || '未编辑',
     knowledge_point_ids: normalizeKnowledgePointIds(item).length > 0
       ? normalizeKnowledgePointIds(item)
       : normalizeKnowledgePointIds(defaults),
@@ -228,9 +236,27 @@ class QuestionBankService {
     const transaction = db.transaction(() => {
       db.prepare(
         `INSERT INTO questions
-         (id, tenant_id, subject_id, chapter_id, type, difficulty, source, status, deleted, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 0, ?, ?)`
-      ).run(questionId, tenantId, payload.subject_id || null, payload.chapter_id || null, payload.type, payload.difficulty || 3, payload.source || null, ts, ts);
+         (id, tenant_id, subject, subject_id, chapter_id, type, difficulty, source, year, grade, semester, exam_type, region, school, edit_status, status, deleted, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 0, ?, ?)`
+      ).run(
+        questionId,
+        tenantId,
+        payload.subject || '物理',
+        payload.subject_id || null,
+        payload.chapter_id || null,
+        payload.type,
+        payload.difficulty || 3,
+        payload.source || null,
+        payload.year || '',
+        payload.grade || '',
+        payload.semester || '',
+        payload.exam_type || '其他',
+        payload.region || '',
+        payload.school || '',
+        payload.edit_status || '未编辑',
+        ts,
+        ts
+      );
 
       db.prepare(
         `INSERT INTO question_contents
@@ -380,9 +406,11 @@ class QuestionBankService {
 
     const transaction = db.transaction(() => {
       const questionUpdates = {};
-      for (const key of ['subject_id', 'chapter_id', 'type', 'difficulty', 'source', 'status']) {
+      for (const key of ['subject', 'subject_id', 'chapter_id', 'type', 'difficulty', 'source', 'year', 'grade', 'semester', 'exam_type', 'region', 'school', 'edit_status', 'status']) {
         if (payload[key] !== undefined) questionUpdates[key] = payload[key];
       }
+      if (payload.exam_type === '') questionUpdates.exam_type = '其他';
+      if (payload.subject === '') questionUpdates.subject = '物理';
       if (Object.keys(questionUpdates).length > 0) {
         const keys = Object.keys(questionUpdates);
         db.prepare(`UPDATE questions SET ${keys.map(key => `${key} = ?`).join(', ')}, updated_at = ? WHERE id = ? AND deleted = 0`)

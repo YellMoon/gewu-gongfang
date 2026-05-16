@@ -18,7 +18,7 @@ const { Text } = Typography;
 
 const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'];
 const QUESTION_TYPES = ['选择题', '填空题', '解答题', '判断题', '简答题', '实验题', '多选题', '作图题'];
-const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试'];
+const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试', '竞赛', '强基计划', '其他'];
 const GRADES = ['高一', '高二', '高三', '复习'];
 const SEMESTERS = ['上学期', '下学期'];
 
@@ -121,6 +121,7 @@ function normalizeQuestion(row: any): Question {
 function toServerQuestion(q: any, meta: any = {}) {
   const questionTypes = q.question_types || ['fill'];
   return {
+    subject: q.subject || '物理',
     subject_id: q.subject_id || null,
     chapter_id: q.chapter_id || null,
     type: questionTypes.includes('single') ? 'single' :
@@ -136,7 +137,7 @@ function toServerQuestion(q: any, meta: any = {}) {
     year: q.year || meta.year || '',
     grade: q.grade || meta.grade || '',
     semester: q.semester || meta.semester || '',
-    exam_type: q.exam_type || meta.exam_type || '',
+    exam_type: q.exam_type || meta.exam_type || '其他',
     region: q.region || meta.region || '',
     school: q.school || meta.school || '',
     paper_name: q.paper_name || meta.paper_name || '',
@@ -708,8 +709,10 @@ const QuestionBankImport: React.FC = () => {
           year: q.year || meta.year || '',
           grade: q.grade || meta.grade || '',
           semester: q.semester || meta.semester || '',
-          exam_type: q.exam_type || meta.exam_type || '',
-          region: q.region || '',
+          exam_type: q.exam_type || meta.exam_type || '其他',
+          region: q.region || meta.region || '',
+          school: q.school || meta.school || '',
+          edit_status: '未编辑',
           tags: [],
           formulas: [],
           knowledge_point: q.knowledge_point || '',

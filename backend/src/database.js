@@ -67,6 +67,7 @@ class DatabaseService {
     this.db.exec(schema);
     this._recordSchemaVersion(schemaPath);
     this._ensureTenantColumns();
+    this._ensureQuestionMetaColumns();
     this._ensureArchiveJobColumns();
     console.log(`[DB] initialized env=${this.environment} schema=${this.schemaVersion} path=${this.dbPath}`);
   }
@@ -193,6 +194,28 @@ class DatabaseService {
     addColumn('retention_days', 'INTEGER DEFAULT 30');
     addColumn('error_message', 'TEXT');
     addColumn('restored_at', 'TEXT');
+  }
+
+  _ensureQuestionMetaColumns() {
+    const exists = this.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'questions'"
+    ).get();
+    if (!exists) return;
+    const columns = new Set(this.db.prepare('PRAGMA table_info(questions)').all().map(c => c.name));
+    const addColumn = (name, ddl) => {
+      if (!columns.has(name)) this.db.prepare(`ALTER TABLE questions ADD COLUMN ${name} ${ddl}`).run();
+    };
+    addColumn('subject', "TEXT DEFAULT '物理'");
+    addColumn('year', 'TEXT');
+    addColumn('grade', 'TEXT');
+    addColumn('semester', 'TEXT');
+    addColumn('exam_type', "TEXT DEFAULT '其他'");
+    addColumn('region', 'TEXT');
+    addColumn('school', 'TEXT');
+    addColumn('edit_status', "TEXT DEFAULT '未编辑'");
+    this.db.prepare("UPDATE questions SET subject = '物理' WHERE subject IS NULL OR subject = ''").run();
+    this.db.prepare("UPDATE questions SET exam_type = '其他' WHERE exam_type IS NULL OR exam_type = ''").run();
+    this.db.prepare("UPDATE questions SET edit_status = '未编辑' WHERE edit_status IS NULL OR edit_status = ''").run();
   }
 
   _tenantId(options = {}) {
