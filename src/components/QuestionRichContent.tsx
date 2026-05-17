@@ -19,7 +19,7 @@ function decodeDataUrlJson(value?: string): any | null {
 function formulaText(formula: any): string {
   if (!formula) return '';
   if (typeof formula === 'string') return formula;
-  return formula.text || formula.field_code || formula.latex || formula.mathml || formula.format || '公式';
+  return formula.text || formula.field_code || formula.latex || formula.mathml || '';
 }
 
 function formulaFromAsset(asset: any): any {
@@ -35,8 +35,10 @@ const QuestionRichContent: React.FC<{ question: any; terms?: string[] }> = ({ qu
   const formulaAssets = assets.filter((asset: any) => String(asset.asset_type || '').startsWith('formula_'));
   const formulas = [
     ...(Array.isArray(question?.formulas) ? question.formulas : []),
-    ...formulaAssets.map(formulaFromAsset),
-  ];
+    ...formulaAssets.filter((asset: any) => asset.asset_type !== 'formula_preview').map(formulaFromAsset),
+  ]
+    .map(formula => ({ raw: formula, text: formulaText(formula) }))
+    .filter(item => item.text && !/^[a-zA-Z0-9_]+omml$/.test(item.text));
 
   if (imageAssets.length === 0 && formulas.length === 0) return null;
 
@@ -61,10 +63,10 @@ const QuestionRichContent: React.FC<{ question: any; terms?: string[] }> = ({ qu
       )}
       {formulas.length > 0 && (
         <Space direction="vertical" size={4}>
-          {formulas.map((formula: any, index: number) => (
+          {formulas.map((item: any, index: number) => (
             <Text key={index} code style={{ whiteSpace: 'pre-wrap' }}>
-              <QuestionRichText terms={terms}>{formulaText(formula)}</QuestionRichText>
-              {formula?.format && <Tag color="purple" style={{ marginLeft: 8 }}>{formula.format}</Tag>}
+              <QuestionRichText terms={terms}>{item.text}</QuestionRichText>
+              {item.raw?.format && item.raw.format !== 'omml' && <Tag color="purple" style={{ marginLeft: 8 }}>{item.raw.format}</Tag>}
             </Text>
           ))}
           {formulaAssets.filter((asset: any) => asset.asset_type === 'formula_preview').map((asset: any, index: number) => {

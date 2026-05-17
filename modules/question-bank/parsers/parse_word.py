@@ -175,6 +175,63 @@ def _xml_bytes(node):
     except Exception:
         return ""
 
+def _local_name(node):
+    return node.tag.rsplit("}", 1)[-1]
+
+def _first_child(node, name):
+    for child in list(node):
+        if _local_name(child) == name:
+            return child
+    return None
+
+def _math_text(node):
+    if node is None:
+        return ""
+    tag = _local_name(node)
+    if tag == "t":
+        return node.text or ""
+    if tag == "r":
+        return "".join(_math_text(child) for child in list(node))
+    if tag in ("oMath", "oMathPara", "e", "num", "den", "deg", "sub", "sup", "fName"):
+        return "".join(_math_text(child) for child in list(node))
+    if tag == "f":
+        num = _math_text(_first_child(node, "num"))
+        den = _math_text(_first_child(node, "den"))
+        return "(%s)/(%s)" % (num, den)
+    if tag == "sSub":
+        base = _math_text(_first_child(node, "e"))
+        sub = _math_text(_first_child(node, "sub"))
+        return "%s<sub>%s</sub>" % (base, sub)
+    if tag == "sSup":
+        base = _math_text(_first_child(node, "e"))
+        sup = _math_text(_first_child(node, "sup"))
+        return "%s<sup>%s</sup>" % (base, sup)
+    if tag == "sSubSup":
+        base = _math_text(_first_child(node, "e"))
+        sub = _math_text(_first_child(node, "sub"))
+        sup = _math_text(_first_child(node, "sup"))
+        return "%s<sub>%s</sub><sup>%s</sup>" % (base, sub, sup)
+    if tag == "rad":
+        deg = _math_text(_first_child(node, "deg"))
+        body = _math_text(_first_child(node, "e"))
+        return "√(%s)" % body if not deg else "<sup>%s</sup>√(%s)" % (deg, body)
+    if tag == "nary":
+        symbol = "".join(child.attrib.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val", "") for child in node.iter() if _local_name(child) == "chr") or "∑"
+        sub = _math_text(_first_child(node, "sub"))
+        sup = _math_text(_first_child(node, "sup"))
+        body = _math_text(_first_child(node, "e"))
+        return "%s%s%s%s" % (symbol, "<sub>%s</sub>" % sub if sub else "", "<sup>%s</sup>" % sup if sup else "", body)
+    if tag == "d":
+        body = _math_text(_first_child(node, "e"))
+        return "(%s)" % body
+    if tag == "bar":
+        return "¯(%s)" % _math_text(_first_child(node, "e"))
+    if tag == "groupChr":
+        return _math_text(_first_child(node, "e"))
+    if tag == "func":
+        return "%s(%s)" % (_math_text(_first_child(node, "fName")), _math_text(_first_child(node, "e")))
+    return "".join(_math_text(child) for child in list(node))
+
 def _paragraph_text_with_markup(paragraph, ns):
     parts = []
     for child in list(paragraph):
@@ -194,7 +251,7 @@ def _paragraph_text_with_markup(paragraph, ns):
             else:
                 parts.append(text)
         elif tag in ("oMath", "oMathPara"):
-            math_text = "".join(node.text or "" for node in child.findall(".//m:t", ns)).strip()
+            math_text = _math_text(child).strip()
             if math_text:
                 parts.append(math_text)
     return clean_word_text("".join(parts))
@@ -295,7 +352,7 @@ def read_docx_rich_paragraphs(file_path):
                         })
 
                 for math_node in paragraph.findall(".//m:oMath", ns) + paragraph.findall(".//m:oMathPara", ns):
-                    math_text = "".join(node.text or "" for node in math_node.findall(".//m:t", ns)).strip()
+                    math_text = _math_text(math_node).strip()
                     omml = _xml_bytes(math_node)
                     formulas.append({
                         "format": "omml",
