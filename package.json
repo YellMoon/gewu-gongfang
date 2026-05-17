@@ -1,6 +1,6 @@
 {
   "name": "gewu-gongfang",
-  "version": "3.0.26",
+  "version": "3.0.27",
   "description": "格物工坊（综合教育平台）",
   "main": "public/electron.js",
   "homepage": ".",
@@ -36,6 +36,7 @@
     "express": "^5.2.1",
     "imap": "^0.8.19",
     "jsonwebtoken": "^9.0.3",
+    "katex": "^0.16.47",
     "mailparser": "^3.9.8",
     "multer": "^1.4.5-lts.1",
     "react": "^18.2.0",
@@ -49,6 +50,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@types/katex": "^0.16.8",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
     "@types/sql.js": "^1.4.9",

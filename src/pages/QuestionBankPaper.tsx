@@ -26,7 +26,7 @@ import { getApiBase } from '../utils/apiBase';
 import { normalizeQuestionType } from '../constants/questionTypes';
 import { QUESTION_BASKET_SELECTED_STORAGE_KEY, QUESTION_BASKET_STORAGE_KEY } from '../components/QuestionBasket';
 import QuestionRichContent from '../components/QuestionRichContent';
-import QuestionOptionsView from '../components/QuestionOptionsView';
+import QuestionRenderer from '../components/QuestionRenderer';
 import { downloadPaperDocx } from '../services/docxExporter';
 
 const API_BASE = getApiBase('/api/question-bank');
@@ -292,8 +292,11 @@ const QuestionBankPaper: React.FC = () => {
                       <Tag>难度{row.question.difficulty || 1}</Tag>
                       <Tag>{renderSource(row.question)}</Tag>
                     </Space>
-                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{row.question.content || '未填写题干'}</div>
-                    <QuestionOptionsView options={row.question.options as any[]} />
+                    <QuestionRenderer
+                      content={row.question.content || '未填写题干'}
+                      options={row.question.options as any[]}
+                      questionType={row.question.type}
+                    />
                     <QuestionRichContent question={row.question} />
                     {answerPosition === 'after-question' && (
                       <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed #d9d9d9', color: '#455a64' }}>

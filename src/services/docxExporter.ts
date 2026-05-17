@@ -8,6 +8,7 @@ import {
   TextRun,
 } from 'docx';
 import type { Question } from '../types';
+import { PROPERTY_SUBSCRIPTS, CHEMICAL_SUBSCRIPTS, UNIT_SYMBOLS, MATH_FUNCTIONS } from '../utils/physicsNotation';
 
 export type DocxAnswerPosition = 'separate' | 'after-question' | 'hidden';
 
@@ -38,7 +39,8 @@ export interface DocxExportRecord {
 }
 
 const EXPORT_RECORD_STORAGE_KEY = 'question_bank_docx_export_records';
-const DEFAULT_FONT = 'Microsoft YaHei';
+const DEFAULT_FONT = 'SimSun';
+const PHYSICS_FONT = 'Times New Roman';
 
 function safeText(value: unknown, fallback = ''): string {
   return String(value ?? fallback).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -67,18 +69,61 @@ function sourceText(question: Question): string {
   return parts.length > 0 ? parts.join(' / ') : '未填写来源';
 }
 
+function stripHtml(value: string): string {
+  return safeText(value)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, '');
+}
+
+function textRunsWithPhysicsNotation(text: string, options: { bold?: boolean; italics?: boolean; size?: number } = {}): TextRun[] {
+  const runs: TextRun[] = [];
+  const source = stripHtml(text);
+  const tokenRe = /([A-Za-zα-ωΑ-Ω])(?:<sub>([^<]+)<\/sub>|([0-9]+|[A-Za-z]{1,3}))?|([0-9]+(?:\.[0-9]+)?|[+\-−=×÷·/(),，。；：、\s]+|[\u4e00-\u9fa5]+)/g;
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = tokenRe.exec(source)) !== null) {
+    if (match.index > last) {
+      runs.push(new TextRun({ text: source.slice(last, match.index), font: DEFAULT_FONT, size: options.size ?? 22, bold: options.bold, italics: options.italics }));
+    }
+    const [raw, symbol, explicitSub, suffix, other] = match;
+    if (other !== undefined) {
+      runs.push(new TextRun({ text: other, font: /[A-Za-zα-ωΑ-Ω]/.test(other) ? PHYSICS_FONT : DEFAULT_FONT, size: options.size ?? 22, bold: options.bold, italics: options.italics }));
+    } else if (symbol) {
+      const isUnit = UNIT_SYMBOLS.has(raw);
+      const isFunction = MATH_FUNCTIONS.includes(raw);
+      const sub = explicitSub || suffix || '';
+      const hasSub = !!sub && raw !== symbol;
+      runs.push(new TextRun({
+        text: symbol,
+        font: PHYSICS_FONT,
+        size: options.size ?? 22,
+        bold: options.bold,
+        italics: !isUnit && !isFunction,
+      }));
+      if (hasSub) {
+        const subIsUpright = PROPERTY_SUBSCRIPTS.has(sub) || CHEMICAL_SUBSCRIPTS.has(sub) || /^[0-9]+$/.test(sub);
+        runs.push(new TextRun({
+          text: sub,
+          font: PHYSICS_FONT,
+          size: Math.max(14, (options.size ?? 22) - 4),
+          subScript: true,
+          italics: !subIsUpright,
+        }));
+      }
+    }
+    last = tokenRe.lastIndex;
+  }
+  if (last < source.length) {
+    runs.push(new TextRun({ text: source.slice(last), font: DEFAULT_FONT, size: options.size ?? 22, bold: options.bold, italics: options.italics }));
+  }
+  return runs.length > 0 ? runs : [new TextRun({ text: source, font: DEFAULT_FONT, size: options.size ?? 22, bold: options.bold, italics: options.italics })];
+}
+
 function textParagraph(text: string, options: { bold?: boolean; italics?: boolean; size?: number } = {}): Paragraph {
   return new Paragraph({
     spacing: { after: 100 },
-    children: [
-      new TextRun({
-        text,
-        bold: options.bold,
-        italics: options.italics,
-        size: options.size ?? 22,
-        font: DEFAULT_FONT,
-      }),
-    ],
+    children: textRunsWithPhysicsNotation(text, options),
   });
 }
 
@@ -106,6 +151,10 @@ function buildQuestionParagraphs(item: DocxPaperQuestion, input: DocxPaperExport
     textParagraph(`${item.number}.（${item.score}分）${safeText(question.type, '试题')} `, { bold: true }),
     ...lineParagraphs(splitLines(question.content, '未填写题干')),
   ];
+  const options = Array.isArray(question.options) ? question.options : [];
+  for (const option of normalizeExportOptions(options)) {
+    paragraphs.push(textParagraph(`${option.label}. ${option.content}`));
+  }
 
   if (input.includeSource !== false) {
     paragraphs.push(textParagraph(`来源：${sourceText(question)}`, { italics: true, size: 18 }));
@@ -125,6 +174,27 @@ function buildQuestionParagraphs(item: DocxPaperQuestion, input: DocxPaperExport
   }
 
   return paragraphs;
+}
+
+function normalizeExportOptions(options: any[]): Array<{ label: string; content: string }> {
+  const rows = (options || []).map((option, index) => {
+    if (typeof option === 'string') {
+      const match = option.trim().match(/^([A-G])[\.\u3001\uff0e\s]+([\s\S]*)$/i);
+      return {
+        label: (match?.[1] || String.fromCharCode(65 + index)).toUpperCase(),
+        content: (match?.[2] || option).trim(),
+      };
+    }
+    return {
+      label: String(option?.label || String.fromCharCode(65 + index)).toUpperCase(),
+      content: String(option?.content || option?.text || '').trim(),
+    };
+  }).filter(option => option.content);
+  if (rows.length !== 1) return rows;
+  const raw = `${rows[0].label}. ${rows[0].content}`;
+  const matches = Array.from(raw.matchAll(/(?:^|\s)([A-G])[\.\u3001\uff0e\s]+([\s\S]*?)(?=\s+[A-G][\.\u3001\uff0e\s]+|$)/g));
+  if (matches.length < 2) return rows;
+  return matches.map(match => ({ label: match[1].toUpperCase(), content: match[2].trim() })).filter(option => option.content);
 }
 
 function buildAnswerParagraphs(items: DocxPaperQuestion[]): Paragraph[] {

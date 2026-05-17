@@ -1,8 +1,6 @@
 import React from 'react';
-import { Space, Tag, Typography } from 'antd';
-import QuestionRichText from './QuestionRichText';
-
-const { Text } = Typography;
+import { Space, Tag } from 'antd';
+import QuestionRenderer from './QuestionRenderer';
 
 function decodeDataUrlJson(value?: string): any | null {
   if (!value || !value.startsWith('data:application/json;base64,')) return null;
@@ -64,10 +62,10 @@ const QuestionRichContent: React.FC<{ question: any; terms?: string[] }> = ({ qu
       {formulas.length > 0 && (
         <Space direction="vertical" size={4}>
           {formulas.map((item: any, index: number) => (
-            <Text key={index} code style={{ whiteSpace: 'pre-wrap' }}>
-              <QuestionRichText terms={terms}>{item.text}</QuestionRichText>
+            <div key={index} style={{ whiteSpace: 'pre-wrap' }}>
+              <QuestionRenderer content={item.text} terms={terms} />
               {item.raw?.format && item.raw.format !== 'omml' && <Tag color="purple" style={{ marginLeft: 8 }}>{item.raw.format}</Tag>}
-            </Text>
+            </div>
           ))}
           {formulaAssets.filter((asset: any) => asset.asset_type === 'formula_preview').map((asset: any, index: number) => {
             const src = asset.oss_url || asset.data_url || asset.url;

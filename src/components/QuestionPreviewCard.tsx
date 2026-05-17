@@ -2,9 +2,9 @@ import React from 'react';
 import { Button, Popconfirm, Space, Tag } from 'antd';
 import { DeleteOutlined, ShoppingCartOutlined } from '@ant-design/icons';
 import type { Question } from '../types';
-import QuestionOptionsView from './QuestionOptionsView';
 import QuestionRichContent from './QuestionRichContent';
 import QuestionRichText from './QuestionRichText';
+import QuestionRenderer from './QuestionRenderer';
 
 const STATUS_LABEL: Record<string, string> = {
   draft: '草稿',
@@ -57,20 +57,22 @@ const QuestionPreviewCard: React.FC<{
         {question.has_image && <Tag color="cyan">图片</Tag>}
         {question.has_formula && <Tag color="purple">公式</Tag>}
       </Space>
-      <div style={{ lineHeight: 1.7 }}>
-        {index !== undefined && <span>{index + 1}. </span>}
-        <QuestionRichText terms={terms}>{question.content || question.stem || '未填写题干'}</QuestionRichText>
-      </div>
-      <QuestionOptionsView options={question.options as any[]} terms={terms} />
+      {index !== undefined && <span style={{ fontWeight: 600, marginRight: 4 }}>{index + 1}.</span>}
+      <QuestionRenderer
+        content={question.content || question.stem || '未填写题干'}
+        options={question.options as any[]}
+        questionType={question.type}
+        terms={terms}
+      />
       <QuestionRichContent question={question} terms={terms} />
       {showAnswer && question.answer && (
         <div style={{ marginTop: 8, color: '#555' }}>
-          答案：<QuestionRichText terms={terms}>{question.answer}</QuestionRichText>
+          答案：<QuestionRenderer content={question.answer} terms={terms} />
         </div>
       )}
       {showAnswer && (question.analysis || question.explanation) && (
         <div style={{ marginTop: 8, color: '#666' }}>
-          解析：<QuestionRichText terms={terms}>{question.analysis || question.explanation}</QuestionRichText>
+          解析：<QuestionRenderer content={question.analysis || question.explanation || ''} terms={terms} />
         </div>
       )}
       <div style={{ marginTop: 8, color: '#888', fontSize: 12 }}>
