@@ -68,8 +68,7 @@ const QuestionBankPreview: React.FC = () => {
   const [filterGrades, setFilterGrades] = useState<string[]>(['全部']); // default: 全部
   const [filterSemesters, setFilterSemesters] = useState<string[]>(['全部']); // default: 全部
   const [filterYear, setFilterYear] = useState<string>('全部');
-  const [filterStatuses, setFilterStatuses] = useState<string[]>(['published']);
-  const [showDraftQuestions, setShowDraftQuestions] = useState(false);
+  const [filterStatuses, setFilterStatuses] = useState<string[]>(['全部']);
 
   // 排除知识点
   const [filterExcludeKnowledgeIds, setFilterExcludeKnowledgeIds] = useState<(string | undefined)[]>([undefined]);
@@ -131,7 +130,10 @@ const QuestionBankPreview: React.FC = () => {
         const res = await fetch(`${API_BASE}/questions?limit=200`);
         const data = await res.json();
         if (data.success && Array.isArray(data.data)) {
-          setQuestions(data.data.map(normalizeQuestion));
+          const merged = new Map<string, Question>();
+          for (const question of localQuestions) merged.set(question.id, question);
+          for (const question of data.data.map(normalizeQuestion)) merged.set(question.id, question);
+          setQuestions([...merged.values()]);
         } else {
           setQuestions(localQuestions);
         }
@@ -198,8 +200,7 @@ const QuestionBankPreview: React.FC = () => {
     if (filterSubjects.length > 0 && !filterSubjects.includes(row.subject || row.subject_id || '')) return false;
     if (!filterTypes.includes('全部') && filterTypes.length > 0 && !filterTypes.includes(normalizeQuestionType(q.type))) return false;
     if (!filterExamTypes.includes('全部') && filterExamTypes.length > 0 && !filterExamTypes.includes(q.exam_type || '其他')) return false;
-    const effectiveStatuses = showDraftQuestions ? filterStatuses : ['published'];
-    if (!effectiveStatuses.includes('全部') && effectiveStatuses.length > 0 && !effectiveStatuses.includes(q.status || 'draft')) return false;
+    if (!filterStatuses.includes('全部') && filterStatuses.length > 0 && !filterStatuses.includes(q.status || 'draft')) return false;
     if (!filterGrades.includes('全部') && filterGrades.length > 0 && !filterGrades.includes(q.grade || '')) return false;
     if (!filterSemesters.includes('全部') && filterSemesters.length > 0 && !filterSemesters.includes(q.semester || '')) return false;
     if (filterYear && filterYear !== '全部' && q.year !== filterYear) return false;
@@ -863,19 +864,8 @@ const QuestionBankPreview: React.FC = () => {
                 <Checkbox.Group
                   options={LIMIT_STATUSES}
                   value={filterStatuses}
-                  disabled={!showDraftQuestions}
                   onChange={(vals) => setFilterStatuses(normalizeCheckGroup(vals as string[]))}
                 />
-                <Checkbox
-                  checked={showDraftQuestions}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setShowDraftQuestions(checked);
-                    if (!checked) setFilterStatuses(['published']);
-                  }}
-                >
-                  显示草稿/待审核
-                </Checkbox>
               </div>
             </div>
 
