@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Button, Card, Checkbox, Col, Empty, Form, Input, Modal, Row, Select as AntSelect,
-  Space, Table, Tag, Tooltip, Typography, Upload, message
+  Space, Table, Tag, Tooltip, Typography, Upload, message, Divider
 } from 'antd';
 import type { UploadFile } from 'antd/es/upload/interface';
 import {
   EditOutlined, FileImageOutlined, FunctionOutlined, TagsOutlined
 } from '@ant-design/icons';
-import type { KnowledgeNode, Question } from '../types';
+import type { KnowledgeNode, Question, QuestionVersion } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
@@ -60,6 +60,7 @@ const QuestionBankEdit: React.FC = () => {
   const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
   const [modelNodes, setModelNodes] = useState<KnowledgeNode[]>([]);
   const [editing, setEditing] = useState<Question | null>(null);
+  const [versions, setVersions] = useState<QuestionVersion[]>([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
   const [imageFiles, setImageFiles] = useState<UploadFile[]>([]);
   const [loading, setLoading] = useState(false);
@@ -90,7 +91,9 @@ const QuestionBankEdit: React.FC = () => {
   useEffect(() => { loadData(); }, [loadData]);
 
   const openEditor = (question: Question) => {
+    const db = (window as any).dbService;
     setEditing(question);
+    setVersions(db?.getLatestQuestionVersions?.(question.id, 5) || []);
     setImageFiles([]);
     form.setFieldsValue({
       content: question.content,
@@ -112,6 +115,21 @@ const QuestionBankEdit: React.FC = () => {
       formulas: (question.formulas || []).join('\n'),
       tags: (question.tags || []).join(','),
     });
+  };
+
+  const restoreVersion = (version: QuestionVersion) => {
+    if (!editing) return;
+    const db = (window as any).dbService;
+    const restored = db?.restoreQuestionVersion?.(editing.id, version.id);
+    if (!restored) {
+      message.error('版本恢复失败');
+      return;
+    }
+    message.success(`已恢复到版本 ${version.version_no}`);
+    setEditing(null);
+    setVersions([]);
+    form.resetFields();
+    loadData();
   };
 
   const saveQuestion = async () => {
@@ -153,6 +171,7 @@ const QuestionBankEdit: React.FC = () => {
         oss_url: file.url || file.thumbUrl || '',
       })),
     };
+    const db = (window as any).dbService;
     try {
       const res = await fetch(`${API_BASE}/questions/${editing.id}`, {
         method: 'PUT',
@@ -162,14 +181,14 @@ const QuestionBankEdit: React.FC = () => {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || '后端保存失败');
     } catch (_err) {
-      const db = (window as any).dbService;
-      db?.updateQuestion?.(editing.id, {
-        ...payload,
-        content: payload.stem,
-        analysis: payload.explanation,
-        model_point: (values.model_ids || []).length > 0 ? modelNodes.find(n => n.id === values.model_ids[0])?.name || '' : '',
-      });
+      // 离线或后端失败时继续保留本地编辑和版本快照。
     }
+    db?.updateQuestion?.(editing.id, {
+      ...payload,
+      content: payload.stem,
+      analysis: payload.explanation,
+      model_point: (values.model_ids || []).length > 0 ? modelNodes.find(n => n.id === values.model_ids[0])?.name || '' : '',
+    });
     message.success('试题已保存');
     setEditing(null);
     form.resetFields();
@@ -274,7 +293,7 @@ const QuestionBankEdit: React.FC = () => {
         width={920}
         onOk={saveQuestion}
         okText="保存"
-        onCancel={() => { setEditing(null); form.resetFields(); }}
+        onCancel={() => { setEditing(null); setVersions([]); form.resetFields(); }}
         destroyOnClose
       >
         <Form form={form} layout="vertical">
@@ -323,6 +342,27 @@ const QuestionBankEdit: React.FC = () => {
           </Form.Item>
           <Form.Item name="tags" label="标签"><Input placeholder="逗号分隔" /></Form.Item>
         </Form>
+        <Divider orientation="left" style={{ fontSize: 12 }}>版本记录</Divider>
+        {versions.length === 0 ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无历史版本" />
+        ) : (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            {versions.map(version => (
+              <Card key={version.id} size="small" bodyStyle={{ padding: 10 }}>
+                <Row align="middle" gutter={12}>
+                  <Col flex="80px"><Tag color="blue">版本 {version.version_no}</Tag></Col>
+                  <Col flex="auto">
+                    <div style={{ fontSize: 12, color: '#666' }}>{new Date(version.created_at).toLocaleString()}</div>
+                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {version.snapshot.content || '空题干'}
+                    </div>
+                  </Col>
+                  <Col><Button size="small" onClick={() => restoreVersion(version)}>恢复</Button></Col>
+                </Row>
+              </Card>
+            ))}
+          </Space>
+        )}
         {questions.length === 0 && <Empty description="暂无试题" />}
       </Modal>
     </Row>

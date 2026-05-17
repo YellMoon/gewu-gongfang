@@ -4,7 +4,7 @@ import {
   ScheduleStatus, PaymentType, BillingUnit, TeacherFeeMode, ServiceType, StudentSource,
   RevenueStats, StudentTuitionStats, StudentCoursePricing,
   AssetRecord, AssetCategory, AssetStats, Question, KnowledgeNode, Tag, QuestionTagRel, TagType,
-  ImportTask, ImportTaskItem, ImportTaskStatus, ImportTaskItemStatus
+  QuestionVersion, ImportTask, ImportTaskItem, ImportTaskStatus, ImportTaskItemStatus
 } from '../types';
 import type { SyncTable } from './syncEngine';
 import { calculateGrade, calculateFees, calculateDurationHours, groupByMonth, calculatePercentage } from '../utils/helpers';
@@ -37,6 +37,7 @@ interface Database {
   tags: Tag[];
   questionTagRels: QuestionTagRel[];
   questionBasketIds: string[];
+  questionVersions: QuestionVersion[];
   importTasks: ImportTask[];
   importTaskItems: ImportTaskItem[];
 }
@@ -58,6 +59,8 @@ const SYNC_TABLES: SyncTable[] = [
   'assetCategories',
 ];
 
+const QUESTION_VERSION_LIMIT = 20;
+
 class BrowserDatabaseService {
   private storageKey = 'scheduling_system_db_v3';
   private data: Database = {
@@ -76,6 +79,7 @@ class BrowserDatabaseService {
     tags: [],
     questionTagRels: [],
     questionBasketIds: [],
+    questionVersions: [],
     importTasks: [],
     importTaskItems: [],
     institutions: [],
@@ -121,6 +125,7 @@ class BrowserDatabaseService {
         tags: loadedData?.tags ?? [],
         questionTagRels: loadedData?.questionTagRels ?? [],
         questionBasketIds: loadedData?.questionBasketIds ?? [],
+        questionVersions: loadedData?.questionVersions ?? [],
         importTasks: loadedData?.importTasks ?? [],
         importTaskItems: loadedData?.importTaskItems ?? [],
         ...loadedData
@@ -128,6 +133,7 @@ class BrowserDatabaseService {
     }
     this.migrateLegacyQuestionData();
     this.migrateLegacyTagData();
+    this.migrateQuestionVersionData();
     this.migrateImportTaskData();
     // 自动清理：修复课程时间 > 24:00 的坏数据
     this.data.schedules = (this.data.schedules || []).map(s => {
@@ -258,6 +264,40 @@ class BrowserDatabaseService {
 
   private migrateLegacyQuestionData(): void {
     this.data.questions = (this.data.questions || []).map(question => this.normalizeQuestionRecord(question));
+  }
+
+  private normalizeQuestionVersion(version: Partial<QuestionVersion>, fallbackIndex = 0): QuestionVersion | null {
+    if (!version.question_id || !version.snapshot) return null;
+    const now = new Date().toISOString();
+    return {
+      id: version.id || this.generateId(),
+      question_id: version.question_id,
+      version_no: Number(version.version_no || fallbackIndex + 1),
+      snapshot: this.normalizeQuestionRecord(version.snapshot as Question),
+      created_at: version.created_at || now,
+      created_by: version.created_by || '',
+      note: version.note || '',
+    };
+  }
+
+  private migrateQuestionVersionData(): void {
+    const grouped = new Map<string, QuestionVersion[]>();
+    (this.data.questionVersions || []).forEach((item, index) => {
+      const normalized = this.normalizeQuestionVersion(item, index);
+      if (!normalized) return;
+      const list = grouped.get(normalized.question_id) || [];
+      list.push(normalized);
+      grouped.set(normalized.question_id, list);
+    });
+    this.data.questionVersions = [];
+    grouped.forEach(list => {
+      list
+        .sort((a, b) => a.version_no - b.version_no || a.created_at.localeCompare(b.created_at))
+        .slice(-QUESTION_VERSION_LIMIT)
+        .forEach((item, index) => {
+          this.data.questionVersions.push({ ...item, version_no: index + 1 });
+        });
+    });
   }
 
   private migrateImportTaskData(): void {
@@ -895,10 +935,13 @@ class BrowserDatabaseService {
       tags: data.tags || [],
       questionTagRels: data.questionTagRels || [],
       questionBasketIds: data.questionBasketIds || [],
+      questionVersions: data.questionVersions || [],
       importTasks: data.importTasks || [],
       importTaskItems: data.importTaskItems || []
     };
+    this.migrateLegacyQuestionData();
     this.migrateLegacyTagData();
+    this.migrateQuestionVersionData();
     this.migrateImportTaskData();
     this.saveData();
   }
@@ -1092,6 +1135,23 @@ class BrowserDatabaseService {
 
   getAllQuestions(): Question[] {
     return this.data.questions;
+  }
+
+  getQuestionsByStatus(status: Question['status']): Question[] {
+    return this.data.questions.filter(q => (q.status || 'draft') === status);
+  }
+
+  updateQuestionStatus(id: string, status: Question['status']): Question | null {
+    const idx = this.data.questions.findIndex(q => q.id === id);
+    if (idx === -1) return null;
+    this.createQuestionVersionSnapshot(this.data.questions[idx], '状态变更前快照');
+    this.data.questions[idx] = this.normalizeQuestionRecord({
+      ...this.data.questions[idx],
+      status,
+      updated_at: new Date().toISOString()
+    });
+    this.saveData();
+    return this.data.questions[idx];
   }
 
   getQuestionBasketIds(): string[] {
@@ -1311,9 +1371,58 @@ class BrowserDatabaseService {
     return normalizedQuestion;
   }
 
+  private createQuestionVersionSnapshot(question: Question, note = '编辑前快照'): QuestionVersion {
+    const existing = (this.data.questionVersions || [])
+      .filter(version => version.question_id === question.id)
+      .sort((a, b) => a.version_no - b.version_no);
+    const version: QuestionVersion = {
+      id: this.generateId(),
+      question_id: question.id,
+      version_no: existing.length + 1,
+      snapshot: JSON.parse(JSON.stringify(question)),
+      created_at: new Date().toISOString(),
+      created_by: question.created_by || '',
+      note,
+    };
+    const next = [...existing, version].slice(-QUESTION_VERSION_LIMIT);
+    this.data.questionVersions = [
+      ...(this.data.questionVersions || []).filter(item => item.question_id !== question.id),
+      ...next.map((item, index) => ({ ...item, version_no: index + 1 })),
+    ];
+    return version;
+  }
+
+  getQuestionVersions(questionId: string): QuestionVersion[] {
+    return (this.data.questionVersions || [])
+      .filter(version => version.question_id === questionId)
+      .sort((a, b) => b.version_no - a.version_no || b.created_at.localeCompare(a.created_at));
+  }
+
+  getLatestQuestionVersions(questionId: string, limit = 5): QuestionVersion[] {
+    return this.getQuestionVersions(questionId).slice(0, Math.max(1, limit));
+  }
+
+  restoreQuestionVersion(questionId: string, versionId: string): Question | null {
+    const version = (this.data.questionVersions || []).find(item => item.question_id === questionId && item.id === versionId);
+    const idx = this.data.questions.findIndex(q => q.id === questionId);
+    if (!version || idx === -1) return null;
+    this.createQuestionVersionSnapshot(this.data.questions[idx], `恢复到版本 ${version.version_no} 前快照`);
+    const now = new Date().toISOString();
+    this.data.questions[idx] = this.normalizeQuestionRecord({
+      ...JSON.parse(JSON.stringify(version.snapshot)),
+      id: questionId,
+      created_at: this.data.questions[idx].created_at,
+      updated_at: now,
+    });
+    this.syncQuestionRelsFromLegacyFields(this.data.questions[idx]);
+    this.saveData();
+    return this.data.questions[idx];
+  }
+
   updateQuestion(id: string, updates: Partial<Omit<Question, 'id' | 'created_at'>>): boolean {
     const idx = this.data.questions.findIndex(q => q.id === id);
     if (idx === -1) return false;
+    this.createQuestionVersionSnapshot(this.data.questions[idx]);
     this.data.questions[idx] = this.normalizeQuestionRecord({
       ...this.data.questions[idx],
       ...updates,
@@ -1337,6 +1446,7 @@ class BrowserDatabaseService {
     this.data.questions.splice(idx, 1);
     this.data.questionTagRels = (this.data.questionTagRels || []).filter(rel => rel.question_id !== id);
     this.data.questionBasketIds = (this.data.questionBasketIds || []).filter(questionId => questionId !== id);
+    this.data.questionVersions = (this.data.questionVersions || []).filter(version => version.question_id !== id);
     this.saveData();
     return true;
   }

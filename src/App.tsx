@@ -16,7 +16,8 @@ import {
   MenuOutlined,
   UploadOutlined,
   LinkOutlined,
-  EditOutlined
+  EditOutlined,
+  SafetyCertificateOutlined
 } from '@ant-design/icons';
 import ScheduleList from './pages/ScheduleList';
 import StudentList from './pages/StudentList';
@@ -46,6 +47,7 @@ const QuestionBankImport = React.lazy(() => import('./pages/QuestionBankImport')
 const QuestionBankPreview = React.lazy(() => import('./pages/QuestionBankPreview'));
 const QuestionBankEdit = React.lazy(() => import('./pages/QuestionBankEdit'));
 const QuestionBankPaper = React.lazy(() => import('./pages/QuestionBankPaper'));
+const AuditCenter = React.lazy(() => import('./pages/AuditCenter'));
 const TeachingTools = React.lazy(() => import('./pages/TeachingTools'));
 
 const PageLoading: React.FC = () => (
@@ -67,12 +69,13 @@ const QUESTION_BANK_PAGES: PageKey[] = [
   'question-bank-preview',
   'question-bank-edit',
   'question-bank-paper',
+  'question-bank-audit',
 ];
 
 type PageKey =
   | 'course-calendar' | 'schedule-list' | 'course-info'
   | 'school' | 'address' | 'institution'
-  | 'question-bank-import' | 'question-bank-preview' | 'question-bank-edit' | 'question-bank-paper' | 'teaching-tool'
+  | 'question-bank-import' | 'question-bank-preview' | 'question-bank-edit' | 'question-bank-paper' | 'question-bank-audit' | 'teaching-tool'
   | 'payment' | 'revenue-statistics' | 'personal-assets'
   | 'admin' | 'teacher' | 'student' | 'invitee' | 'permission'
   | 'menu-manage'  | 'system-params' | 'operate-log'
@@ -110,6 +113,7 @@ const MENU_GROUPS: MenuGroup[] = [
       { key: 'question-bank-import', label: '试题导入', icon: <UploadOutlined /> },
       { key: 'question-bank-preview', label: '试题预览', icon: <FileTextOutlined /> },
       { key: 'question-bank-edit', label: '试题编辑', icon: <EditOutlined /> },
+      { key: 'question-bank-audit', label: '审核中心', icon: <SafetyCertificateOutlined /> },
       { key: 'question-bank-paper', label: '组卷', icon: <FileWordOutlined /> }
     ]
   },
@@ -262,6 +266,7 @@ const App: React.FC = () => {
       case 'question-bank-import': return <LazyPage><QuestionBankImport /></LazyPage>;
       case 'question-bank-preview': return <LazyPage><QuestionBankPreview /></LazyPage>;
       case 'question-bank-edit': return <LazyPage><QuestionBankEdit /></LazyPage>;
+      case 'question-bank-audit': return <LazyPage><AuditCenter /></LazyPage>;
       case 'question-bank-paper': return <LazyPage><QuestionBankPaper /></LazyPage>;
       case 'teaching-tool': return <LazyPage><TeachingTools /></LazyPage>;
       case 'personal-assets': return <PersonalAssets />;

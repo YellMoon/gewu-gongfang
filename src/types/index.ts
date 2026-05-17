@@ -302,6 +302,16 @@ export interface QuestionTagRel {
   created_at: string;
 }
 
+export interface QuestionVersion {
+  id: string;
+  question_id: string;
+  version_no: number;
+  snapshot: Question;
+  created_at: string;
+  created_by?: string;
+  note?: string;
+}
+
 export type ImportTaskStatus = 'pending' | 'checking' | 'checked' | 'importing' | 'imported' | 'partial_failed' | 'failed';
 export type ImportTaskItemStatus = 'pending' | 'success' | 'warning' | 'failed' | 'accepted' | 'duplicate' | 'rejected' | 'imported';
 

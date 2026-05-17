@@ -8,7 +8,7 @@ import {
   FolderOpenOutlined, TagsOutlined, AimOutlined, BranchesOutlined,
   CheckCircleOutlined, FileWordOutlined, CloseCircleOutlined, ShoppingCartOutlined
 } from '@ant-design/icons';
-import type { Question, KnowledgeNode } from '../types';
+import type { Question, KnowledgeNode, QuestionVersion } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
@@ -75,8 +75,9 @@ const QuestionBankPreview: React.FC = () => {
   const [filterSemesters, setFilterSemesters] = useState<string[]>(['全部']); // default: 全部
   const [filterYear, setFilterYear] = useState<string | undefined>(undefined);
   const [filterDifficulties, setFilterDifficulties] = useState<string[]>(['全部']);
-  const [filterStatuses, setFilterStatuses] = useState<string[]>(['全部']);
+  const [filterStatuses, setFilterStatuses] = useState<string[]>(['published']);
   const [filterMedia, setFilterMedia] = useState<string[]>(['全部']);
+  const [showDraftQuestions, setShowDraftQuestions] = useState(false);
 
   // 排除知识点
   const [filterExcludeKnowledgeIds, setFilterExcludeKnowledgeIds] = useState<(string | undefined)[]>([undefined]);
@@ -98,6 +99,7 @@ const QuestionBankPreview: React.FC = () => {
   const [basketIds] = useQuestionBasketIds();
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<Question | null>(null);
+  const [versions, setVersions] = useState<QuestionVersion[]>([]);
   const [treeVisible, setTreeVisible] = useState(true);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingNodeName, setEditingNodeName] = useState('');
@@ -205,7 +207,8 @@ const QuestionBankPreview: React.FC = () => {
     if (!filterTypes.includes('全部') && filterTypes.length > 0 && !filterTypes.includes(normalizeQuestionType(q.type))) return false;
     if (!filterExamTypes.includes('全部') && filterExamTypes.length > 0 && !filterExamTypes.includes(q.exam_type || '其他')) return false;
     if (!filterDifficulties.includes('全部') && filterDifficulties.length > 0 && !filterDifficulties.includes(String(q.difficulty || ''))) return false;
-    if (!filterStatuses.includes('全部') && filterStatuses.length > 0 && !filterStatuses.includes(q.status || 'draft')) return false;
+    const effectiveStatuses = showDraftQuestions ? filterStatuses : ['published'];
+    if (!effectiveStatuses.includes('全部') && effectiveStatuses.length > 0 && !effectiveStatuses.includes(q.status || 'draft')) return false;
     if (!filterMedia.includes('全部') && filterMedia.length > 0) {
       if (filterMedia.includes('image') && !q.has_image) return false;
       if (filterMedia.includes('formula') && !q.has_formula) return false;
@@ -436,6 +439,7 @@ const QuestionBankPreview: React.FC = () => {
     }
     setModalVisible(false);
     setEditing(null);
+    setVersions([]);
     form.resetFields();
     loadData();
   };
@@ -622,7 +626,9 @@ const QuestionBankPreview: React.FC = () => {
   };
 
   const openEditModal = (r: Question) => {
+    const db = (window as any).dbService;
     setEditing(r);
+    setVersions(db?.getLatestQuestionVersions?.(r.id, 5) || []);
     const knForm: Record<string, boolean> = {};
     (r.knowledge_ids || []).forEach(id => { knForm[id] = true; });
     const modelForm: Record<string, boolean> = {};
@@ -642,6 +648,22 @@ const QuestionBankPreview: React.FC = () => {
               region: r.region, school: r.school,
     });
     setModalVisible(true);
+  };
+
+  const restoreVersion = (version: QuestionVersion) => {
+    if (!editing) return;
+    const db = (window as any).dbService;
+    const restored = db?.restoreQuestionVersion?.(editing.id, version.id);
+    if (!restored) {
+      message.error('版本恢复失败');
+      return;
+    }
+    message.success(`已恢复到版本 ${version.version_no}`);
+    setModalVisible(false);
+    setEditing(null);
+    setVersions([]);
+    form.resetFields();
+    loadData();
   };
 
   const columns: any[] = [
@@ -862,8 +884,19 @@ const QuestionBankPreview: React.FC = () => {
                 <Checkbox.Group
                   options={LIMIT_STATUSES}
                   value={filterStatuses}
+                  disabled={!showDraftQuestions}
                   onChange={(vals) => setFilterStatuses(normalizeCheckGroup(vals as string[]))}
                 />
+                <Checkbox
+                  checked={showDraftQuestions}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setShowDraftQuestions(checked);
+                    if (!checked) setFilterStatuses(['published']);
+                  }}
+                >
+                  显示草稿/待审核
+                </Checkbox>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>媒介：</span>
@@ -1179,7 +1212,7 @@ const QuestionBankPreview: React.FC = () => {
         title={editing ? '编辑题目' : '添加题目'}
         open={modalVisible}
         onOk={handleSave}
-        onCancel={() => { setModalVisible(false); setEditing(null); form.resetFields(); }}
+        onCancel={() => { setModalVisible(false); setEditing(null); setVersions([]); form.resetFields(); }}
         width={720}
         destroyOnClose
       >
@@ -1278,6 +1311,31 @@ const QuestionBankPreview: React.FC = () => {
               {modelNodes.length > 0 ? renderModelCheckboxes(modelNodes) : <Empty description="暂无模型数据" />}
             </div>
           </Form.Item>
+          {editing && (
+            <>
+              <Divider orientation="left" style={{ fontSize: 12 }}>版本记录</Divider>
+              {versions.length === 0 ? (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无历史版本" />
+              ) : (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  {versions.map(version => (
+                    <Card key={version.id} size="small" bodyStyle={{ padding: 10 }}>
+                      <Row align="middle" gutter={12}>
+                        <Col flex="80px"><Tag color="blue">版本 {version.version_no}</Tag></Col>
+                        <Col flex="auto">
+                          <div style={{ fontSize: 12, color: '#666' }}>{new Date(version.created_at).toLocaleString()}</div>
+                          <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {version.snapshot.content || '空题干'}
+                          </div>
+                        </Col>
+                        <Col><Button size="small" onClick={() => restoreVersion(version)}>恢复</Button></Col>
+                      </Row>
+                    </Card>
+                  ))}
+                </Space>
+              )}
+            </>
+          )}
         </Form>
       </Modal>
     </Row>
