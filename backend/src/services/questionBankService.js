@@ -152,8 +152,11 @@ function normalizeOptions(value) {
     return value.map(option => {
       if (typeof option === 'string') return option.trim();
       if (!option) return '';
-      const label = option.label ? `${option.label}. ` : '';
-      return `${label}${option.content || option.text || ''}`.trim();
+      return {
+        label: option.label || '',
+        content: option.content || option.text || '',
+        is_correct: !!option.is_correct,
+      };
     }).filter(Boolean);
   }
   return parseJsonArray(value);
@@ -416,6 +419,7 @@ class QuestionBankService {
       has_image: boolValue(row.has_image, false),
       has_formula: boolValue(row.has_formula, false),
       created_by: row.created_by || '',
+      deleted_at: row.deleted_at || null,
       assets,
       cover: assets.find(asset => asset.asset_type === 'cover') || null,
       attachments: assets.filter(asset => asset.asset_type !== 'cover'),
@@ -448,6 +452,25 @@ class QuestionBankService {
     return db.prepare(
       'SELECT * FROM question_assets WHERE question_id = ? AND deleted = 0 ORDER BY created_at ASC'
     ).all(questionId);
+  }
+
+  purgeExpiredDeletedQuestions(db, tenantId = 'default', retentionDays = 7) {
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+    const rows = db.prepare(
+      'SELECT id FROM questions WHERE deleted = 1 AND tenant_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?'
+    ).all(tenantId, cutoff);
+    if (rows.length === 0) return 0;
+    const ts = now();
+    const transaction = db.transaction(() => {
+      for (const row of rows) {
+        db.prepare('UPDATE question_contents SET deleted = 1, updated_at = ? WHERE question_id = ? AND deleted = 0').run(ts, row.id);
+        db.prepare('UPDATE question_assets SET deleted = 1, updated_at = ? WHERE question_id = ? AND deleted = 0').run(ts, row.id);
+        db.prepare('DELETE FROM question_knowledge_points WHERE question_id = ?').run(row.id);
+        db.prepare('DELETE FROM question_model_points WHERE question_id = ?').run(row.id);
+      }
+    });
+    transaction();
+    return rows.length;
   }
 
   listQuestions(db, filters = {}, tenantId = 'default') {
@@ -589,16 +612,31 @@ class QuestionBankService {
     if (!existing) return false;
     const ts = now();
     const transaction = db.transaction(() => {
-      db.prepare('UPDATE questions SET deleted = 1, updated_at = ? WHERE id = ? AND deleted = 0').run(ts, id);
-      db.prepare('UPDATE question_contents SET deleted = 1, updated_at = ? WHERE question_id = ? AND deleted = 0').run(ts, id);
-      db.prepare('UPDATE question_assets SET deleted = 1, updated_at = ? WHERE question_id = ? AND deleted = 0').run(ts, id);
-      db.prepare('DELETE FROM question_knowledge_points WHERE question_id = ?').run(id);
-      db.prepare('DELETE FROM question_model_points WHERE question_id = ?').run(id);
+      db.prepare('UPDATE questions SET deleted = 1, deleted_at = ?, updated_at = ? WHERE id = ? AND deleted = 0').run(ts, ts, id);
       this.enqueueSearchJob(db, id, 'delete', tenantId);
-      eventBus.publish(db, 'question.changed', 'question', id, { action: 'delete' }, tenantId);
+      eventBus.publish(db, 'question.changed', 'question', id, { action: 'trash', deleted_at: ts }, tenantId);
     });
     transaction();
     return true;
+  }
+
+  listDeletedQuestions(db, tenantId = 'default') {
+    this.purgeExpiredDeletedQuestions(db, tenantId);
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const rows = db.prepare(
+      this._questionSelectSql('WHERE q.deleted = 1 AND q.tenant_id = ? AND q.deleted_at >= ?')
+    ).all(tenantId, cutoff);
+    return rows.map(row => this._mapQuestion(row, this._getAssets(db, row.id)));
+  }
+
+  restoreQuestion(db, id, tenantId = 'default') {
+    const row = db.prepare('SELECT id FROM questions WHERE id = ? AND tenant_id = ? AND deleted = 1').get(id, tenantId);
+    if (!row) return null;
+    const ts = now();
+    db.prepare('UPDATE questions SET deleted = 0, deleted_at = NULL, updated_at = ? WHERE id = ? AND tenant_id = ?').run(ts, id, tenantId);
+    this.enqueueSearchJob(db, id, 'upsert', tenantId);
+    eventBus.publish(db, 'question.changed', 'question', id, { action: 'restore' }, tenantId);
+    return this.getQuestion(db, id, tenantId);
   }
 
   listQuestionKnowledgePoints(db, id, tenantId = 'default') {

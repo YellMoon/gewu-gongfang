@@ -383,6 +383,8 @@ export interface Question {
   has_image: boolean;
   has_formula: boolean;
   created_by: string;
+  deleted?: boolean;
+  deleted_at?: string;
   created_at: string;
   updated_at: string;
 }

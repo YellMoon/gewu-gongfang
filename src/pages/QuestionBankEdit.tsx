@@ -1,20 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Form, Input, InputNumber, Modal, Select as AntSelect,
-  Space, Table, Tag, Typography, Upload, message
+  Button, Card, Empty, Form, Input, InputNumber, Modal, Select as AntSelect,
+  Space, Tag, Upload, message
 } from 'antd';
 import type { UploadFile } from 'antd/es/upload/interface';
-import {
-  EditOutlined, FileImageOutlined, FunctionOutlined, TagsOutlined
-} from '@ant-design/icons';
+import { FileImageOutlined, FunctionOutlined, TagsOutlined } from '@ant-design/icons';
 import type { KnowledgeNode, Question, QuestionVersion } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
+import QuestionPreviewCard from '../components/QuestionPreviewCard';
+import QuestionRichContent from '../components/QuestionRichContent';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
-import QuestionRichContent from '../components/QuestionRichContent';
 
 const { TextArea } = Input;
-const { Text } = Typography;
 const Select = AutoCloseSelect as typeof AntSelect;
 const API_BASE = getApiBase('/api/question-bank');
 
@@ -28,17 +26,26 @@ function isPendingEditQuestion(question: Question): boolean {
   return !['已编辑', 'edited', 'done', 'completed'].includes(status);
 }
 
-function normalizeQuestion(row: any): Question {
-  let options = row.options || [];
+function normalizeOptions(options: any): any[] {
+  if (Array.isArray(options)) return options;
   if (typeof options === 'string') {
-    try { options = JSON.parse(options); } catch { options = []; }
+    try {
+      const parsed = JSON.parse(options);
+      return Array.isArray(parsed) ? parsed : options.split('\n').filter(Boolean);
+    } catch (_err) {
+      return options.split('\n').filter(Boolean);
+    }
   }
+  return [];
+}
+
+function normalizeQuestion(row: any): Question {
   return {
     ...row,
     subject: row.subject || '物理',
     type: normalizeQuestionType(row.type),
     content: row.content ?? row.stem ?? '',
-    options: Array.isArray(options) ? options : [],
+    options: normalizeOptions(row.options || row.options_json),
     answer: row.answer ?? '',
     analysis: row.analysis ?? row.explanation ?? '',
     exam_type: row.exam_type || '其他',
@@ -66,6 +73,7 @@ function buildTreeOptions(nodes: KnowledgeNode[], parentId?: string, depth = 0):
 
 const QuestionBankEdit: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [trashQuestions, setTrashQuestions] = useState<Question[]>([]);
   const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
   const [modelNodes, setModelNodes] = useState<KnowledgeNode[]>([]);
   const [editing, setEditing] = useState<Question | null>(null);
@@ -73,6 +81,7 @@ const QuestionBankEdit: React.FC = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
   const [imageFiles, setImageFiles] = useState<UploadFile[]>([]);
   const [loading, setLoading] = useState(false);
+  const [trashVisible, setTrashVisible] = useState(false);
   const [form] = Form.useForm();
   const [batchForm] = Form.useForm();
 
@@ -95,11 +104,24 @@ const QuestionBankEdit: React.FC = () => {
     } catch (_err) {
       setQuestions(localQuestions.filter(isPendingEditQuestion));
     }
-    const kn = db?.getKnowledgeTree?.() || [];
-    const models = db?.getModelTree?.() || [];
-    setKnowledgeNodes(kn);
-    setModelNodes(models);
+    setKnowledgeNodes(db?.getKnowledgeTree?.() || []);
+    setModelNodes(db?.getModelTree?.() || []);
     setLoading(false);
+  }, []);
+
+  const loadTrash = useCallback(async () => {
+    const db = (window as any).dbService;
+    try {
+      const res = await fetch(`${API_BASE}/questions-trash`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        setTrashQuestions(data.data.map(normalizeQuestion));
+        return;
+      }
+    } catch (_err) {
+      // use local fallback below
+    }
+    setTrashQuestions(db?.getDeletedQuestions?.()?.map(normalizeQuestion) || []);
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -113,7 +135,7 @@ const QuestionBankEdit: React.FC = () => {
       content: question.content,
       answer: question.answer,
       analysis: question.analysis,
-      options: (question.options || []).join('\n'),
+      options: (question.options || []).map((item: any) => typeof item === 'string' ? item : `${item.label || ''}. ${item.content || item.text || ''}`).join('\n'),
       type: normalizeQuestionType(question.type),
       difficulty: question.difficulty || 3,
       source: question.source,
@@ -121,8 +143,8 @@ const QuestionBankEdit: React.FC = () => {
       grade: question.grade,
       semester: question.semester,
       exam_type: question.exam_type || '其他',
-      region: (question as any).region,
-      school: (question as any).school,
+      region: question.region,
+      school: question.school,
       subject: question.subject || '物理',
       knowledge_ids: question.knowledge_ids || [],
       model_ids: question.model_ids || [],
@@ -158,7 +180,7 @@ const QuestionBankEdit: React.FC = () => {
       edit_status: '已编辑',
       status: editing.status || 'draft',
       has_image: imageFiles.length > 0 || !!editing.has_image,
-      has_formula: !!editing.has_formula,
+      has_formula: !!editing.has_formula || !!values.formulas,
       created_by: editing.created_by || '',
       formulas: values.formulas ? values.formulas.split('\n').map((s: string) => s.trim()).filter(Boolean) : [],
       tags: values.tags ? values.tags.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
@@ -188,6 +210,33 @@ const QuestionBankEdit: React.FC = () => {
     loadData();
   };
 
+  const deleteQuestion = async (question: Question) => {
+    const db = (window as any).dbService;
+    try {
+      const res = await fetch(`${API_BASE}/questions/${question.id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || '删除失败');
+    } catch (_err) {
+      db?.deleteQuestion?.(question.id);
+    }
+    message.success('试题已放入回收站，7天内可撤回');
+    loadData();
+  };
+
+  const restoreQuestion = async (question: Question) => {
+    const db = (window as any).dbService;
+    try {
+      const res = await fetch(`${API_BASE}/questions/${question.id}/restore`, { method: 'POST' });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || '恢复失败');
+    } catch (_err) {
+      db?.restoreQuestion?.(question.id);
+    }
+    message.success('试题已恢复');
+    loadTrash();
+    loadData();
+  };
+
   const applyBatchTags = async () => {
     if (selectedRowKeys.length === 0) {
       message.warning('请先选择试题');
@@ -205,8 +254,8 @@ const QuestionBankEdit: React.FC = () => {
         grade: values.grade ?? q.grade ?? '',
         semester: values.semester ?? q.semester ?? '',
         exam_type: values.exam_type ?? q.exam_type ?? '',
-        region: values.region ?? (q as any).region ?? '',
-        school: values.school ?? (q as any).school ?? '',
+        region: values.region ?? q.region ?? '',
+        school: values.school ?? q.school ?? '',
       };
       try {
         await fetch(`${API_BASE}/questions/${id}`, {
@@ -223,22 +272,16 @@ const QuestionBankEdit: React.FC = () => {
     loadData();
   };
 
-  const columns = [
-    { title: '题干', dataIndex: 'content', ellipsis: true, render: (text: string) => <Text>{text}</Text> },
-    { title: '科目', dataIndex: 'subject', width: 70, render: (v: string) => v || '物理' },
-    { title: '题型', dataIndex: 'type', width: 90, render: (v: string) => normalizeQuestionType(v) },
-    { title: '学年', dataIndex: 'year', width: 110, render: (v: string) => v || '-' },
-    { title: '年级', dataIndex: 'grade', width: 80, render: (v: string) => v || '-' },
-    { title: '考试类型', dataIndex: 'exam_type', width: 100, render: (v: string) => v ? <Tag>{v}</Tag> : '-' },
-    {
-      title: '操作', width: 80, render: (_: any, record: Question) => (
-        <Button type="link" icon={<EditOutlined />} onClick={() => openEditor(record)}>编辑</Button>
-      )
-    },
-  ];
-
   return (
-    <Card title="试题编辑" extra={<Tag color="orange">待编辑 {questions.length} 题</Tag>}>
+    <Card
+      title="试题编辑"
+      extra={
+        <Space>
+          <Button onClick={() => { setTrashVisible(true); loadTrash(); }}>回收站</Button>
+          <Tag color="orange">待编辑 {questions.length} 题</Tag>
+        </Space>
+      }
+    >
       <Space direction="vertical" size={16} style={{ width: '100%' }}>
         <Card size="small" title="批量标注">
           <Form form={batchForm} layout="inline">
@@ -262,15 +305,49 @@ const QuestionBankEdit: React.FC = () => {
           </Form>
         </Card>
 
-        <Table
-          rowKey="id"
-          loading={loading}
-          dataSource={questions}
-          columns={columns}
-          rowSelection={{ selectedRowKeys, onChange: keys => setSelectedRowKeys(keys as string[]) }}
-          pagination={{ pageSize: 12, showSizeChanger: true }}
-        />
+        {loading ? <Card loading /> : questions.length === 0 ? (
+          <Empty description="暂无待编辑试题" />
+        ) : (
+          <Space direction="vertical" size={10} style={{ width: '100%' }}>
+            {questions.map((question, index) => (
+              <QuestionPreviewCard
+                key={question.id}
+                question={question}
+                index={index}
+                knowledgeNames={(question.knowledge_ids || []).map(id => knowledgeNodes.find(item => item.id === id)?.name || id)}
+                modelNames={(question.model_ids || []).map(id => modelNodes.find(item => item.id === id)?.name || id)}
+                onEdit={() => openEditor(question)}
+                onDelete={() => deleteQuestion(question)}
+              />
+            ))}
+          </Space>
+        )}
       </Space>
+
+      <Modal
+        open={trashVisible}
+        title="回收站"
+        footer={null}
+        width={920}
+        onCancel={() => setTrashVisible(false)}
+      >
+        {trashQuestions.length === 0 ? <Empty description="回收站暂无试题" /> : (
+          <Space direction="vertical" size={10} style={{ width: '100%' }}>
+            {trashQuestions.map((question, index) => (
+              <QuestionPreviewCard
+                key={question.id}
+                question={question}
+                index={index}
+                showAnswer={false}
+                knowledgeNames={(question.knowledge_ids || []).map(id => knowledgeNodes.find(item => item.id === id)?.name || id)}
+                modelNames={(question.model_ids || []).map(id => modelNodes.find(item => item.id === id)?.name || id)}
+                onEdit={() => restoreQuestion(question)}
+                editLabel="恢复"
+              />
+            ))}
+          </Space>
+        )}
+      </Modal>
 
       <Modal
         open={!!editing}
@@ -318,15 +395,9 @@ const QuestionBankEdit: React.FC = () => {
             </Form.Item>
           </Space>
           <Space wrap>
-            <Form.Item name="region" label="地区">
-              <Input />
-            </Form.Item>
-            <Form.Item name="school" label="学校">
-              <Input />
-            </Form.Item>
-            <Form.Item name="source" label="来源">
-              <Input />
-            </Form.Item>
+            <Form.Item name="region" label="地区"><Input /></Form.Item>
+            <Form.Item name="school" label="学校"><Input /></Form.Item>
+            <Form.Item name="source" label="来源"><Input /></Form.Item>
           </Space>
           <Form.Item name="knowledge_ids" label="知识点">
             <Select mode="multiple" options={knowledgeOptions} />

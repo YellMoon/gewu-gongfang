@@ -328,6 +328,7 @@ CREATE TABLE IF NOT EXISTS questions (
   has_formula INTEGER DEFAULT 0,
   created_by TEXT DEFAULT '',
   deleted INTEGER DEFAULT 0,
+  deleted_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

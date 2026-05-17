@@ -26,6 +26,7 @@ import { getApiBase } from '../utils/apiBase';
 import { normalizeQuestionType } from '../constants/questionTypes';
 import { QUESTION_BASKET_SELECTED_STORAGE_KEY, QUESTION_BASKET_STORAGE_KEY } from '../components/QuestionBasket';
 import QuestionRichContent from '../components/QuestionRichContent';
+import QuestionOptionsView from '../components/QuestionOptionsView';
 import { downloadPaperDocx } from '../services/docxExporter';
 
 const API_BASE = getApiBase('/api/question-bank');
@@ -292,6 +293,7 @@ const QuestionBankPaper: React.FC = () => {
                       <Tag>{renderSource(row.question)}</Tag>
                     </Space>
                     <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{row.question.content || '未填写题干'}</div>
+                    <QuestionOptionsView options={row.question.options as any[]} />
                     <QuestionRichContent question={row.question} />
                     {answerPosition === 'after-question' && (
                       <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed #d9d9d9', color: '#455a64' }}>

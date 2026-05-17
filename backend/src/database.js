@@ -218,6 +218,7 @@ class DatabaseService {
     addColumn('has_image', 'INTEGER DEFAULT 0');
     addColumn('has_formula', 'INTEGER DEFAULT 0');
     addColumn('created_by', "TEXT DEFAULT ''");
+    addColumn('deleted_at', 'TEXT');
     this.db.prepare("UPDATE questions SET subject = '物理' WHERE subject IS NULL OR subject = ''").run();
     this.db.prepare("UPDATE questions SET exam_type = '其他' WHERE exam_type IS NULL OR exam_type = ''").run();
     this.db.prepare("UPDATE questions SET edit_status = '未编辑' WHERE edit_status IS NULL OR edit_status = ''").run();

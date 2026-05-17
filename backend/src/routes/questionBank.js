@@ -250,6 +250,30 @@ router.delete('/questions/:id', (req, res) => {
   }
 });
 
+router.get('/questions-trash', (req, res) => {
+  try {
+    const db = getInstance().db;
+    const rows = questionBank.listDeletedQuestions(db, tenantId(req));
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/questions/:id/restore', (req, res) => {
+  try {
+    const db = getInstance().db;
+    const tId = tenantId(req);
+    const result = questionBank.restoreQuestion(db, req.params.id, tId);
+    if (!result) return res.status(404).json({ success: false, error: 'question not found' });
+    searchService.upsertQuestionEmbedding(db, req.params.id, { tenantId: tId });
+    searchService.schedulePendingJobs(db);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
+  }
+});
+
 router.get('/questions/:id/knowledge-points', (req, res) => {
   try {
     const db = getInstance().db;

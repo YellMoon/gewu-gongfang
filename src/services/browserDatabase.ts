@@ -1134,7 +1134,28 @@ class BrowserDatabaseService {
   // ========== 题库管理 ==========
 
   getAllQuestions(): Question[] {
-    return this.data.questions;
+    const now = Date.now();
+    const keepMs = 7 * 24 * 60 * 60 * 1000;
+    const before = this.data.questions.length;
+    this.data.questions = this.data.questions.filter(q => {
+      if (!(q as any).deleted) return true;
+      const deletedAt = Date.parse((q as any).deleted_at || '');
+      return Number.isFinite(deletedAt) && now - deletedAt <= keepMs;
+    });
+    if (this.data.questions.length !== before) this.saveData();
+    return this.data.questions.filter(q => !(q as any).deleted);
+  }
+
+  getDeletedQuestions(): Question[] {
+    const now = Date.now();
+    const keepMs = 7 * 24 * 60 * 60 * 1000;
+    return this.data.questions
+      .filter(q => {
+        if (!(q as any).deleted) return false;
+        const deletedAt = Date.parse((q as any).deleted_at || '');
+        return Number.isFinite(deletedAt) && now - deletedAt <= keepMs;
+      })
+      .sort((a, b) => String((b as any).deleted_at || '').localeCompare(String((a as any).deleted_at || '')));
   }
 
   getQuestionsByStatus(status: Question['status']): Question[] {
@@ -1443,10 +1464,26 @@ class BrowserDatabaseService {
   deleteQuestion(id: string): boolean {
     const idx = this.data.questions.findIndex(q => q.id === id);
     if (idx === -1) return false;
-    this.data.questions.splice(idx, 1);
-    this.data.questionTagRels = (this.data.questionTagRels || []).filter(rel => rel.question_id !== id);
+    this.data.questions[idx] = this.normalizeQuestionRecord({
+      ...this.data.questions[idx],
+      deleted: true,
+      deleted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    } as Question);
     this.data.questionBasketIds = (this.data.questionBasketIds || []).filter(questionId => questionId !== id);
-    this.data.questionVersions = (this.data.questionVersions || []).filter(version => version.question_id !== id);
+    this.saveData();
+    return true;
+  }
+
+  restoreQuestion(id: string): boolean {
+    const idx = this.data.questions.findIndex(q => q.id === id);
+    if (idx === -1) return false;
+    this.data.questions[idx] = this.normalizeQuestionRecord({
+      ...this.data.questions[idx],
+      deleted: false,
+      deleted_at: '',
+      updated_at: new Date().toISOString(),
+    } as Question);
     this.saveData();
     return true;
   }

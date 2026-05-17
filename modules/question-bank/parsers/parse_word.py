@@ -175,6 +175,30 @@ def _xml_bytes(node):
     except Exception:
         return ""
 
+def _paragraph_text_with_markup(paragraph, ns):
+    parts = []
+    for child in list(paragraph):
+        tag = child.tag.rsplit("}", 1)[-1]
+        if tag == "r":
+            run_text = "".join(node.text or "" for node in child.findall(".//w:t", ns))
+            instr_text = "".join(node.text or "" for node in child.findall(".//w:instrText", ns))
+            text = run_text or instr_text
+            if not text:
+                continue
+            vert = child.find("./w:rPr/w:vertAlign", ns)
+            val = vert.attrib.get("{%s}val" % ns["w"]) if vert is not None else ""
+            if val == "subscript":
+                parts.append("<sub>%s</sub>" % text)
+            elif val == "superscript":
+                parts.append("<sup>%s</sup>" % text)
+            else:
+                parts.append(text)
+        elif tag in ("oMath", "oMathPara"):
+            math_text = "".join(node.text or "" for node in child.findall(".//m:t", ns)).strip()
+            if math_text:
+                parts.append(math_text)
+    return clean_word_text("".join(parts))
+
 
 def _rels_for_document(archive):
     rels = {}
@@ -235,21 +259,22 @@ def read_docx_rich_paragraphs(file_path):
             rels = _rels_for_document(archive)
             root = ET.fromstring(archive.read("word/document.xml"))
             for paragraph in root.findall(".//w:p", ns):
-                texts = [node.text or "" for node in paragraph.findall(".//w:t", ns)]
                 assets = []
                 formulas = []
+
+                has_ole_object = bool(paragraph.findall(".//o:OLEObject", ns))
 
                 for blip in paragraph.findall(".//a:blip", ns):
                     rid = blip.attrib.get("{%s}embed" % ns["r"]) or blip.attrib.get("{%s}link" % ns["r"])
                     rel = rels.get(rid or "")
-                    asset = _asset_from_part(archive, rel.get("target") if rel else "", "image", rid, rel.get("type") if rel else "")
+                    asset = _asset_from_part(archive, rel.get("target") if rel else "", "formula_preview" if has_ole_object else "image", rid, rel.get("type") if rel else "")
                     if asset:
                         assets.append(asset)
 
                 for image in paragraph.findall(".//v:imagedata", ns):
                     rid = image.attrib.get("{%s}id" % ns["r"])
                     rel = rels.get(rid or "")
-                    asset = _asset_from_part(archive, rel.get("target") if rel else "", "image", rid, rel.get("type") if rel else "")
+                    asset = _asset_from_part(archive, rel.get("target") if rel else "", "formula_preview" if has_ole_object else "image", rid, rel.get("type") if rel else "")
                     if asset:
                         assets.append(asset)
 
@@ -287,7 +312,7 @@ def read_docx_rich_paragraphs(file_path):
                     })
 
                 rows.append({
-                    "text": clean_word_text("".join(texts)),
+                    "text": _paragraph_text_with_markup(paragraph, ns),
                     "assets": assets,
                     "formulas": formulas,
                 })
@@ -308,7 +333,7 @@ def attach_rich_content(question, rich):
         if formula and formula not in question["formulas"]:
             question["formulas"].append(formula)
     question["has_image"] = any(asset.get("asset_type") == "image" for asset in question["assets"])
-    question["has_formula"] = bool(question["formulas"]) or any(asset.get("asset_type") == "formula_ole" for asset in question["assets"])
+    question["has_formula"] = bool(question["formulas"]) or any(str(asset.get("asset_type", "")).startswith("formula_") for asset in question["assets"])
 
 
 def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
@@ -321,8 +346,11 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
             items = []
             rich_rows = read_docx_rich_paragraphs(file_path)
             for paragraph_index, paragraph in enumerate(root.findall(".//w:p", namespace)):
-                texts = [node.text or "" for node in paragraph.findall(".//w:t", namespace)]
-                text = clean_word_text("".join(texts))
+                rich = rich_rows[paragraph_index] if paragraph_index < len(rich_rows) else {}
+                text = rich.get("text") or _paragraph_text_with_markup(paragraph, {
+                    "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+                    "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
+                })
                 refs = []
                 for node in paragraph.findall(".//w:commentReference", namespace) + paragraph.findall(".//w:commentRangeStart", namespace) + paragraph.findall(".//w:commentRangeEnd", namespace):
                     comment_id = node.attrib.get(f"{{{namespace['w']}}}id")
@@ -352,7 +380,7 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
                     "number_label": number_label,
                     "number_kind": number_kind,
                     "comments": paragraph_comments,
-                    "rich": rich_rows[paragraph_index] if paragraph_index < len(rich_rows) else {},
+                    "rich": rich,
                 })
             return items
     except Exception:
@@ -671,6 +699,8 @@ def parse_lecture_numbered_items(items, default_topic=None):
         number_kind = item.get("number_kind", "")
         number_label = item.get("number_label", "")
         if not text and not number_kind:
+            if current and (rich.get("assets") or rich.get("formulas")):
+                attach_rich_content(current, rich)
             continue
         if text and is_topic_heading(text):
             finish_current()
@@ -689,6 +719,7 @@ def parse_lecture_numbered_items(items, default_topic=None):
         if not current or not text:
             if current:
                 current.setdefault("_comments", []).extend(item.get("comments", []))
+                attach_rich_content(current, rich)
             continue
         current.setdefault("_comments", []).extend(item.get("comments", []))
         attach_rich_content(current, rich)
@@ -708,15 +739,20 @@ def parse_lecture_numbered_items(items, default_topic=None):
 
 def parse_exam_questions(paragraphs, default_topic=None, rich_rows=None):
     question_part, answer_part = split_answer_section(paragraphs)
+    question_rich = rich_rows[: len(question_part)] if rich_rows else None
     questions = parse_exam_question_block(question_part)
-    if rich_rows:
+    if question_rich:
         current_index = -1
-        for paragraph_index, text in enumerate(paragraphs):
-            number, _content = extract_question_number((text or "").strip())
-            if number is not None:
+        expected_number = None
+        for paragraph_index, text in enumerate(question_part):
+            rich = question_rich[paragraph_index] if paragraph_index < len(question_rich) else {}
+            stripped = (text or "").strip()
+            number, _content = extract_question_number(stripped)
+            if number is not None and (expected_number is None or number == expected_number):
                 current_index += 1
-            if 0 <= current_index < len(questions) and paragraph_index < len(rich_rows):
-                attach_rich_content(questions[current_index], rich_rows[paragraph_index])
+                expected_number = number + 1
+            if 0 <= current_index < len(questions) and (rich.get("assets") or rich.get("formulas")):
+                attach_rich_content(questions[current_index], rich)
     answers = parse_exam_answer_blocks(answer_part)
     by_index = {idx: answer for idx, answer in enumerate(answers)}
     by_number = {answer["number"]: answer for answer in answers}
@@ -753,8 +789,10 @@ def extract_paragraphs_from_docx(file_path):
             raise ValueError("word/document.xml not found")
         root = ET.fromstring(archive.read("word/document.xml"))
         for paragraph in root.findall(".//w:p", namespace):
-            texts = [node.text or "" for node in paragraph.findall(".//w:t", namespace)]
-            text = "".join(texts).strip()
+            text = _paragraph_text_with_markup(paragraph, {
+                "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+                "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
+            })
             if text:
                 paragraphs.append(text)
     return paragraphs
@@ -799,8 +837,8 @@ def main():
             raise ImportError("forced docx xml fallback")
         from docx import Document
         doc = Document(file_path)
-        paragraphs = [paragraph.text for paragraph in doc.paragraphs]
         rich_rows = read_docx_rich_paragraphs(file_path)
+        paragraphs = [row.get("text", "") for row in rich_rows] or [paragraph.text for paragraph in doc.paragraphs]
         numbered_items = extract_numbered_items(doc, file_path)
     except ImportError:
         try:

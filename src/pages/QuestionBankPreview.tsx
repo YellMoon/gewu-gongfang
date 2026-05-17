@@ -6,15 +6,15 @@ import {
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, CopyOutlined,
   FolderOpenOutlined, TagsOutlined, AimOutlined, BranchesOutlined,
-  CheckCircleOutlined, FileWordOutlined, CloseCircleOutlined, ShoppingCartOutlined
+  CheckCircleOutlined, FileWordOutlined, CloseCircleOutlined
 } from '@ant-design/icons';
 import type { Question, KnowledgeNode, QuestionVersion } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
-import { highlightText, splitSearchTerms } from '../utils/highlightText';
+import { splitSearchTerms } from '../utils/highlightText';
 import { toggleQuestionBasket, useQuestionBasketIds } from '../components/QuestionBasket';
-import QuestionRichContent from '../components/QuestionRichContent';
+import QuestionPreviewCard from '../components/QuestionPreviewCard';
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -1127,44 +1127,18 @@ const QuestionBankPreview: React.FC = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {filtered.length === 0 ? <Empty description="暂无试题" /> : filtered.map((q, idx) => {
               const inBasket = basketIds.includes(q.id);
-              const sourceText = [q.source, q.year, q.region, q.school, q.exam_type].filter(Boolean).join(' / ') || '来源未标注';
               return (
-                <div key={q.id} style={{ border: '1px solid #edf0f5', borderRadius: 6, padding: 12, background: '#fff' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                    <div style={{ flex: 1 }}>
-                      <Space size={6} wrap style={{ marginBottom: 6 }}>
-                        <Tag color="blue">{q.subject || '物理'}</Tag>
-                        <Tag>{q.type || '题型未标注'}</Tag>
-                        <Tag>{q.exam_type || '其他'}</Tag>
-                        <Tag>{q.status || 'draft'}</Tag>
-                        {q.has_image && <Tag color="cyan">图片</Tag>}
-                        {q.has_formula && <Tag color="purple">公式</Tag>}
-                      </Space>
-                      <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{idx + 1}. {highlightText(q.content, searchTerms)}</div>
-                      <QuestionRichContent question={q} />
-                      {q.answer && <div style={{ marginTop: 8, color: '#555' }}>答案：{highlightText(q.answer, searchTerms)}</div>}
-                      {q.analysis && <div style={{ marginTop: 8, color: '#666' }}>解析：{highlightText(q.analysis, searchTerms)}</div>}
-                      <div style={{ marginTop: 8, color: '#888', fontSize: 12 }}>
-                        知识点：{highlightText((q.knowledge_ids || []).map(getNodeName).join('、') || q.knowledge_point || '未标注', searchTerms)}
-                      </div>
-                      <div style={{ marginTop: 4, color: '#888', fontSize: 12 }}>
-                        模型：{highlightText((q.model_ids || []).map(getModelName).join('、') || q.model_point || '未标注', searchTerms)}
-                      </div>
-                      <div style={{ marginTop: 4, color: '#888', fontSize: 12 }}>试题来源：{highlightText(sourceText, searchTerms)}</div>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginTop: 10 }}>
-                    <Button type="link" style={{ color: '#1677ff', padding: 0 }} onClick={() => openEditModal(q)}>编辑</Button>
-                    <Button
-                      type={inBasket ? 'default' : 'primary'}
-                      icon={<ShoppingCartOutlined />}
-                      style={inBasket ? { color: '#1677ff', borderColor: '#1677ff', background: '#fff' } : { background: '#1677ff', border: 'none' }}
-                      onClick={() => toggleQuestionBasket(q.id)}
-                    >
-                      {inBasket ? '移出试题篮' : '加入试题篮'}
-                    </Button>
-                  </div>
-                </div>
+                <QuestionPreviewCard
+                  key={q.id}
+                  question={q}
+                  index={idx}
+                  terms={searchTerms}
+                  knowledgeNames={(q.knowledge_ids || []).map(getNodeName)}
+                  modelNames={(q.model_ids || []).map(getModelName)}
+                  inBasket={inBasket}
+                  onEdit={() => openEditModal(q)}
+                  onToggleBasket={() => toggleQuestionBasket(q.id)}
+                />
               );
             })}
           </div>
