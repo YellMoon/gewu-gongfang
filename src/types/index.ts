@@ -279,6 +279,29 @@ export interface KnowledgeNode {
   updated_at: string;
 }
 
+export type TagType = 'knowledge' | 'model' | 'source';
+
+export interface Tag {
+  id: string;
+  tag_type: TagType;
+  tag_name: string;
+  tag_code: string;
+  parent_id?: string;
+  subject?: string;
+  sort_no: number;
+  status: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuestionTagRel {
+  id: string;
+  question_id: string;
+  tag_id: string;
+  tag_type: TagType;
+  created_at: string;
+}
+
 export interface Question {
   id: string;
   subject: string;
@@ -309,6 +332,10 @@ export interface Question {
   model_point_ids?: string[];      // 后端模型ID
   sub_questions?: any[];           // 子题（大题包含小题）
   variant_ids?: string[];          // 变式题ID列表
+  status: 'draft' | 'pending' | 'published' | 'offline' | 'deprecated';
+  has_image: boolean;
+  has_formula: boolean;
+  created_by: string;
   created_at: string;
   updated_at: string;
 }

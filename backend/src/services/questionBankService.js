@@ -90,6 +90,46 @@ function normalizeQuestionAssets(payload = {}) {
   return assets;
 }
 
+const QUESTION_STATUSES = new Set(['draft', 'pending', 'published', 'offline', 'deprecated']);
+
+function normalizeQuestionStatus(value) {
+  return QUESTION_STATUSES.has(value) ? value : 'draft';
+}
+
+function boolValue(value, fallback = false) {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'string') return ['1', 'true', 'yes'].includes(value.toLowerCase());
+  return Boolean(value);
+}
+
+function questionTextParts(payload = {}) {
+  const options = normalizeOptions(payload.options || payload.options_json);
+  return [
+    payload.stem,
+    payload.content,
+    payload.answer,
+    payload.explanation,
+    payload.analysis,
+    ...(Array.isArray(options) ? options : []),
+    ...(Array.isArray(payload.formulas) ? payload.formulas : []),
+  ].map(value => String(value || ''));
+}
+
+function detectHasFormula(payload = {}) {
+  if (payload.has_formula !== undefined) return boolValue(payload.has_formula);
+  return questionTextParts(payload).some(text =>
+    /\$\$[\s\S]+?\$\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\]|<math\b|data-formula|formula/i.test(text)
+  );
+}
+
+function detectHasImage(payload = {}, assets = normalizeQuestionAssets(payload)) {
+  if (payload.has_image !== undefined) return boolValue(payload.has_image);
+  if (assets.length > 0) return true;
+  return questionTextParts(payload).some(text =>
+    /<img\b|!\[[^\]]*\]\([^)]+\)|\.(png|jpe?g|gif|webp|svg)(\?|#|\s|$)/i.test(text)
+  );
+}
+
 function normalizeOptions(value) {
   if (!value) return [];
   if (Array.isArray(value)) {
@@ -132,6 +172,10 @@ function normalizeImportItem(item = {}, defaults = {}) {
     region: item.region || defaults.region || '',
     school: item.school || defaults.school || '',
     edit_status: item.edit_status || defaults.edit_status || '未编辑',
+    status: normalizeQuestionStatus(item.status || defaults.status),
+    has_image: boolValue(item.has_image, false),
+    has_formula: boolValue(item.has_formula, false),
+    created_by: item.created_by || defaults.created_by || '',
     knowledge_point_ids: normalizeKnowledgePointIds(item).length > 0
       ? normalizeKnowledgePointIds(item)
       : normalizeKnowledgePointIds(defaults),
@@ -232,12 +276,14 @@ class QuestionBankService {
     const contentHash = payload.content_hash || hashText([stem, payload.answer, explanation, JSON.stringify(options)].join('|'));
     const contentRef = normalizeOssRef(payload);
     const assets = normalizeQuestionAssets(payload);
+    const hasImage = detectHasImage(payload, assets);
+    const hasFormula = detectHasFormula(payload);
 
     const transaction = db.transaction(() => {
       db.prepare(
         `INSERT INTO questions
-         (id, tenant_id, subject, subject_id, chapter_id, type, difficulty, source, year, grade, semester, exam_type, region, school, edit_status, status, deleted, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 0, ?, ?)`
+         (id, tenant_id, subject, subject_id, chapter_id, type, difficulty, source, year, grade, semester, exam_type, region, school, edit_status, status, has_image, has_formula, created_by, deleted, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
       ).run(
         questionId,
         tenantId,
@@ -254,6 +300,10 @@ class QuestionBankService {
         payload.region || '',
         payload.school || '',
         payload.edit_status || '未编辑',
+        normalizeQuestionStatus(payload.status),
+        hasImage ? 1 : 0,
+        hasFormula ? 1 : 0,
+        payload.created_by || '',
         ts,
         ts
       );
@@ -291,7 +341,14 @@ class QuestionBankService {
     });
 
     transaction();
-    return { id: questionId, content_hash: contentHash };
+    return this.getQuestion(db, questionId, tenantId) || {
+      id: questionId,
+      content_hash: contentHash,
+      status: normalizeQuestionStatus(payload.status),
+      has_image: hasImage,
+      has_formula: hasFormula,
+      created_by: payload.created_by || '',
+    };
   }
 
   _mapQuestion(row, assets = []) {
@@ -317,6 +374,10 @@ class QuestionBankService {
       knowledge_ids: knowledgeIds,
       model_point_ids: modelIds,
       model_ids: modelIds,
+      status: normalizeQuestionStatus(row.status),
+      has_image: boolValue(row.has_image, false),
+      has_formula: boolValue(row.has_formula, false),
+      created_by: row.created_by || '',
       assets,
       cover: assets.find(asset => asset.asset_type === 'cover') || null,
       attachments: assets.filter(asset => asset.asset_type !== 'cover'),
@@ -366,6 +427,18 @@ class QuestionBankService {
       where.push('q.difficulty = ?');
       params.push(Number(filters.difficulty));
     }
+    if (filters.status) {
+      where.push('q.status = ?');
+      params.push(normalizeQuestionStatus(filters.status));
+    }
+    if (filters.has_image !== undefined) {
+      where.push('q.has_image = ?');
+      params.push(boolValue(filters.has_image) ? 1 : 0);
+    }
+    if (filters.has_formula !== undefined) {
+      where.push('q.has_formula = ?');
+      params.push(boolValue(filters.has_formula) ? 1 : 0);
+    }
     if (filters.knowledge_point_id) {
       where.push('EXISTS (SELECT 1 FROM question_knowledge_points x WHERE x.question_id = q.id AND x.knowledge_point_id = ?)');
       params.push(filters.knowledge_point_id);
@@ -403,12 +476,20 @@ class QuestionBankService {
       oss_key: existing.content_oss_key || existing.oss_key || null,
       oss_url: existing.content_oss_url || existing.oss_url || null,
     };
+    const replacingAssets = payload.assets !== undefined || payload.cover !== undefined || payload.cover_image !== undefined || payload.title_image !== undefined || payload.attachments !== undefined;
+    const nextAssets = replacingAssets ? normalizeQuestionAssets(payload) : existing.assets || [];
+    const mergedForDetection = { ...existing, ...payload, stem, content: stem, answer, explanation, options };
+    const hasImage = payload.has_image !== undefined ? boolValue(payload.has_image) : detectHasImage(mergedForDetection, nextAssets);
+    const hasFormula = payload.has_formula !== undefined ? boolValue(payload.has_formula) : detectHasFormula(mergedForDetection);
 
     const transaction = db.transaction(() => {
       const questionUpdates = {};
-      for (const key of ['subject', 'subject_id', 'chapter_id', 'type', 'difficulty', 'source', 'year', 'grade', 'semester', 'exam_type', 'region', 'school', 'edit_status', 'status']) {
+      for (const key of ['subject', 'subject_id', 'chapter_id', 'type', 'difficulty', 'source', 'year', 'grade', 'semester', 'exam_type', 'region', 'school', 'edit_status', 'created_by']) {
         if (payload[key] !== undefined) questionUpdates[key] = payload[key];
       }
+      if (payload.status !== undefined) questionUpdates.status = normalizeQuestionStatus(payload.status);
+      questionUpdates.has_image = hasImage ? 1 : 0;
+      questionUpdates.has_formula = hasFormula ? 1 : 0;
       if (payload.exam_type === '') questionUpdates.exam_type = '其他';
       if (payload.subject === '') questionUpdates.subject = '物理';
       if (Object.keys(questionUpdates).length > 0) {
@@ -446,9 +527,9 @@ class QuestionBankService {
         }
       }
 
-      if (payload.assets !== undefined || payload.cover !== undefined || payload.cover_image !== undefined || payload.title_image !== undefined || payload.attachments !== undefined) {
+      if (replacingAssets) {
         db.prepare('UPDATE question_assets SET deleted = 1, updated_at = ? WHERE question_id = ? AND deleted = 0').run(ts, id);
-        for (const asset of normalizeQuestionAssets(payload)) {
+        for (const asset of nextAssets) {
           db.prepare(
             `INSERT INTO question_assets
              (id, tenant_id, question_id, asset_type, file_name, mime_type, size_bytes, oss_key, oss_url, content_hash, deleted, created_at, updated_at)

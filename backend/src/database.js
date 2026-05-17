@@ -213,9 +213,17 @@ class DatabaseService {
     addColumn('region', 'TEXT');
     addColumn('school', 'TEXT');
     addColumn('edit_status', "TEXT DEFAULT '未编辑'");
+    addColumn('status', "TEXT DEFAULT 'draft'");
+    addColumn('has_image', 'INTEGER DEFAULT 0');
+    addColumn('has_formula', 'INTEGER DEFAULT 0');
+    addColumn('created_by', "TEXT DEFAULT ''");
     this.db.prepare("UPDATE questions SET subject = '物理' WHERE subject IS NULL OR subject = ''").run();
     this.db.prepare("UPDATE questions SET exam_type = '其他' WHERE exam_type IS NULL OR exam_type = ''").run();
     this.db.prepare("UPDATE questions SET edit_status = '未编辑' WHERE edit_status IS NULL OR edit_status = ''").run();
+    this.db.prepare("UPDATE questions SET status = 'draft' WHERE status IS NULL OR status = '' OR status = 'active'").run();
+    this.db.prepare("UPDATE questions SET has_image = 0 WHERE has_image IS NULL").run();
+    this.db.prepare("UPDATE questions SET has_formula = 0 WHERE has_formula IS NULL").run();
+    this.db.prepare("UPDATE questions SET created_by = '' WHERE created_by IS NULL").run();
   }
 
   _tenantId(options = {}) {

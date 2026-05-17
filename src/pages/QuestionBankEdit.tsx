@@ -10,13 +10,13 @@ import {
 import type { KnowledgeNode, Question } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
+import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
 
 const { TextArea } = Input;
 const { Text } = Typography;
 const Select = AutoCloseSelect as typeof AntSelect;
 const API_BASE = getApiBase('/api/question-bank');
 
-const QUESTION_TYPES = ['单选题', '多选题', '实验题', '解答题', '判断题'];
 const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试', '竞赛', '强基计划', '其他'];
 const GRADES = ['高一', '高二', '高三', '复习'];
 const SEMESTERS = ['上学期', '下学期'];
@@ -29,12 +29,17 @@ function normalizeQuestion(row: any): Question {
   return {
     ...row,
     subject: row.subject || '物理',
+    type: normalizeQuestionType(row.type),
     content: row.content ?? row.stem ?? '',
     options: Array.isArray(options) ? options : [],
     answer: row.answer ?? '',
     analysis: row.analysis ?? row.explanation ?? '',
     exam_type: row.exam_type || '其他',
     edit_status: row.edit_status || '未编辑',
+    status: row.status || 'draft',
+    has_image: !!row.has_image,
+    has_formula: !!row.has_formula,
+    created_by: row.created_by || '',
     knowledge_ids: row.knowledge_ids ?? row.knowledge_point_ids ?? [],
     model_ids: row.model_ids ?? row.model_point_ids ?? [],
   } as Question;
@@ -92,7 +97,7 @@ const QuestionBankEdit: React.FC = () => {
       answer: question.answer,
       analysis: question.analysis,
       options: (question.options || []).join('\n'),
-      type: question.type,
+      type: normalizeQuestionType(question.type),
       difficulty: question.difficulty,
       source: question.source,
       year: question.year,
@@ -120,7 +125,7 @@ const QuestionBankEdit: React.FC = () => {
       explanation: values.analysis,
       analysis: values.analysis,
       options: values.options ? values.options.split('\n').map((s: string) => s.trim()).filter(Boolean) : [],
-      type: values.type,
+      type: normalizeQuestionType(values.type),
       difficulty: values.difficulty || 3,
       source: values.source || '',
       year: values.year || '',
@@ -134,6 +139,10 @@ const QuestionBankEdit: React.FC = () => {
       model_point_ids: values.model_ids || [],
       model_ids: values.model_ids || [],
       edit_status: '已编辑',
+      status: editing.status || 'draft',
+      has_image: imageFiles.length > 0 || !!editing.has_image,
+      has_formula: !!editing.has_formula,
+      created_by: editing.created_by || '',
       formulas: values.formulas ? values.formulas.split('\n').map((s: string) => s.trim()).filter(Boolean) : [],
       tags: values.tags ? values.tags.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
       assets: imageFiles.map(file => ({

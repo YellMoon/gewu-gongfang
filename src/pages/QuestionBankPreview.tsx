@@ -11,6 +11,7 @@ import {
 import type { Question, KnowledgeNode } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
+import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -18,13 +19,11 @@ const { Text } = Typography;
 const API_BASE = getApiBase('/api/question-bank');
 
 const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'];
-const QUESTION_TYPES = ['选择题', '填空题', '解答题', '判断题', '简答题', '实验题', '多选题', '作图题'];
 const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试', '竞赛', '强基计划', '其他'];
 const GRADES = ['高一', '高二', '高三'];
 const LIMIT_GRADES = ['全部', ...GRADES];
 const LIMIT_SEMESTERS = ['全部', '上学期', '下学期'];
-const PREVIEW_QUESTION_TYPES = ['单选题', '多选题', '实验题', '解答题', '判断题'];
-const LIMIT_TYPES = ['全部', ...PREVIEW_QUESTION_TYPES];
+const LIMIT_TYPES = ['全部', ...QUESTION_TYPES];
 const SEMESTERS = ['上学期', '下学期'];
 const LIMIT_EXAM_TYPES = ['全部', ...EXAM_TYPES];
 
@@ -99,10 +98,15 @@ const QuestionBankPreview: React.FC = () => {
   const normalizeQuestion = (row: any): Question => ({
     ...row,
     subject: row.subject || '物理',
+    type: normalizeQuestionType(row.type),
     content: row.content ?? row.stem ?? '',
     analysis: row.analysis ?? row.explanation ?? '',
     exam_type: row.exam_type || '其他',
     edit_status: row.edit_status || '未编辑',
+    status: row.status || 'draft',
+    has_image: !!row.has_image,
+    has_formula: !!row.has_formula,
+    created_by: row.created_by || '',
     knowledge_ids: row.knowledge_ids ?? row.knowledge_point_ids ?? [],
     model_ids: row.model_ids ?? row.model_point_ids ?? [],
   } as Question);
@@ -164,7 +168,7 @@ const QuestionBankPreview: React.FC = () => {
   const filtered = questions.filter(q => {
     const row = q as Question & { subject_id?: string };
     if (filterSubjects.length > 0 && !filterSubjects.includes(row.subject || row.subject_id || '')) return false;
-    if (!filterTypes.includes('全部') && filterTypes.length > 0 && !filterTypes.includes(q.type)) return false;
+    if (!filterTypes.includes('全部') && filterTypes.length > 0 && !filterTypes.includes(normalizeQuestionType(q.type))) return false;
     if (!filterExamTypes.includes('全部') && filterExamTypes.length > 0 && !filterExamTypes.includes(q.exam_type || '其他')) return false;
     if (!filterGrades.includes('全部') && filterGrades.length > 0 && !filterGrades.includes(q.grade || '')) return false;
     if (!filterSemesters.includes('全部') && filterSemesters.length > 0 && !filterSemesters.includes(q.semester || '')) return false;
@@ -346,7 +350,7 @@ const QuestionBankPreview: React.FC = () => {
 
     const data: any = {
       subject: values.subject,
-      type: values.type,
+      type: normalizeQuestionType(values.type),
       difficulty: values.difficulty,
       content: values.content,
       options: values.options ? values.options.split('\n').filter((s: string) => s.trim()) : [],
@@ -366,6 +370,10 @@ const QuestionBankPreview: React.FC = () => {
       region: values.region || '',
       school: values.school || '',
       edit_status: '已编辑',
+      status: editing?.status || 'draft',
+      has_image: !!editing?.has_image,
+      has_formula: !!editing?.has_formula,
+      created_by: editing?.created_by || '',
     };
 
     if (editing) {
@@ -478,20 +486,17 @@ const QuestionBankPreview: React.FC = () => {
   // 生成试卷 Word HTML
   const generateExamWord = (items: Question[]): string => {
     const typeLabels: Record<string, string> = {
-      '选择题': '一、选择题',
+      '单选题': '一、单选题',
       '多选题': '二、多选题',
-      '填空题': '三、填空题',
-      '判断题': '四、判断题',
-      '简答题': '五、简答题',
-      '解答题': '六、解答题',
-      '实验题': '七、实验题',
-      '作图题': '八、作图题',
+      '实验题': '三、实验题',
+      '解答题': '四、解答题',
+      '判断题': '五、判断题',
     };
 
     // 按题型分组
     const groups: Record<string, Question[]> = {};
     items.forEach(q => {
-      const t = q.type || '其他';
+      const t = normalizeQuestionType(q.type);
       if (!groups[t]) groups[t] = [];
       groups[t].push(q);
     });
@@ -587,7 +592,7 @@ const QuestionBankPreview: React.FC = () => {
     const modelForm: Record<string, boolean> = {};
     (r.model_ids || []).forEach(id => { modelForm[id] = true; });
     form.setFieldsValue({
-      subject: r.subject || '物理', type: r.type, difficulty: r.difficulty,
+      subject: r.subject || '物理', type: normalizeQuestionType(r.type), difficulty: r.difficulty,
       content: r.content, options: (r.options || []).join('\n'),
       answer: r.answer, analysis: r.analysis,
       knowledge_point: r.knowledge_point,

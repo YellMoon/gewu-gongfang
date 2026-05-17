@@ -3,10 +3,18 @@ import {
   Student, Grade, Course, Schedule, Enrollment, Payment, Consumption, Institution, SchoolInfo, Teacher, Room,
   ScheduleStatus, PaymentType, BillingUnit, TeacherFeeMode, ServiceType, StudentSource,
   RevenueStats, StudentTuitionStats, StudentCoursePricing,
-  AssetRecord, AssetCategory, AssetStats, Question, KnowledgeNode
+  AssetRecord, AssetCategory, AssetStats, Question, KnowledgeNode, Tag, QuestionTagRel, TagType
 } from '../types';
 import type { SyncTable } from './syncEngine';
 import { calculateGrade, calculateFees, calculateDurationHours, groupByMonth, calculatePercentage } from '../utils/helpers';
+import {
+  makeQuestionTagRelId,
+  normalizeQuestionTagRels,
+  relsFromQuestionLegacyIds,
+  tagsToLegacyTree,
+  upsertLegacyTreeTags,
+} from './tagAdapter';
+import { normalizeQuestionType } from '../constants/questionTypes';
 
 interface Database {
   students: Student[];
@@ -25,6 +33,8 @@ interface Database {
   questions: Question[];
   knowledgeTree: KnowledgeNode[];
   modelTree: KnowledgeNode[];
+  tags: Tag[];
+  questionTagRels: QuestionTagRel[];
 }
 
 type SyncLocalDataMaps = Partial<Record<SyncTable, Map<string, any>>>;
@@ -59,6 +69,8 @@ class BrowserDatabaseService {
     questions: [],
     knowledgeTree: [],
     modelTree: [],
+    tags: [],
+    questionTagRels: [],
     institutions: [],
     schools: [],
     rooms: [],
@@ -99,9 +111,13 @@ class BrowserDatabaseService {
         questions: [],
         knowledgeTree: loadedData?.knowledgeTree ?? [],
         modelTree: loadedData?.modelTree ?? [],
+        tags: loadedData?.tags ?? [],
+        questionTagRels: loadedData?.questionTagRels ?? [],
         ...loadedData
       };
     }
+    this.migrateLegacyQuestionData();
+    this.migrateLegacyTagData();
     // 自动清理：修复课程时间 > 24:00 的坏数据
     this.data.schedules = (this.data.schedules || []).map(s => {
       if (!s) return s;
@@ -134,6 +150,127 @@ class BrowserDatabaseService {
 
   private generateId(): string {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
+  }
+
+  private detectQuestionHasFormula(question: Partial<Question>): boolean {
+    if (question.has_formula !== undefined) return !!question.has_formula;
+    const parts = [
+      question.content,
+      question.answer,
+      question.analysis,
+      ...(Array.isArray(question.options) ? question.options : []),
+      ...(Array.isArray(question.formulas) ? question.formulas : []),
+    ].map(value => String(value || ''));
+    return parts.some(text => /\$\$[\s\S]+?\$\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\]|<math\b|data-formula|formula/i.test(text));
+  }
+
+  private detectQuestionHasImage(question: Partial<Question>): boolean {
+    if (question.has_image !== undefined) return !!question.has_image;
+    const assets = Array.isArray((question as any).assets) ? (question as any).assets : [];
+    if (assets.length > 0) return true;
+    const parts = [
+      question.content,
+      question.answer,
+      question.analysis,
+      ...(Array.isArray(question.options) ? question.options : []),
+    ].map(value => String(value || ''));
+    return parts.some(text => /<img\b|!\[[^\]]*\]\([^)]+\)|\.(png|jpe?g|gif|webp|svg)(\?|#|\s|$)/i.test(text));
+  }
+
+  private normalizeQuestionRecord(question: Question): Question {
+    const normalized: Question = {
+      ...question,
+      subject: question.subject || '物理',
+      type: normalizeQuestionType(question.type),
+      exam_type: question.exam_type || '其他',
+      edit_status: question.edit_status || '未编辑',
+      status: question.status || 'draft',
+      has_image: this.detectQuestionHasImage(question),
+      has_formula: this.detectQuestionHasFormula(question),
+      created_by: question.created_by || '',
+      knowledge_ids: question.knowledge_ids || question.knowledge_point_ids || [],
+      model_ids: question.model_ids || question.model_point_ids || [],
+    };
+    return normalized;
+  }
+
+  private migrateLegacyQuestionData(): void {
+    this.data.questions = (this.data.questions || []).map(question => this.normalizeQuestionRecord(question));
+  }
+
+  private migrateLegacyTagData(): void {
+    this.data.tags = upsertLegacyTreeTags(this.data.tags || [], this.data.knowledgeTree || [], 'knowledge');
+    this.data.tags = upsertLegacyTreeTags(this.data.tags || [], this.data.modelTree || [], 'model');
+
+    const migratedRels = [
+      ...(this.data.questionTagRels || []),
+      ...(this.data.questions || []).flatMap(question => [
+        ...relsFromQuestionLegacyIds(question, 'knowledge'),
+        ...relsFromQuestionLegacyIds(question, 'model'),
+      ]),
+    ];
+    this.data.questionTagRels = normalizeQuestionTagRels(migratedRels);
+    this.syncLegacyTreesFromTags();
+    this.syncAllQuestionLegacyTagFields();
+  }
+
+  private syncLegacyTreesFromTags(): void {
+    this.data.knowledgeTree = tagsToLegacyTree(this.data.tags || [], 'knowledge', this.data.knowledgeTree || []);
+    this.data.modelTree = tagsToLegacyTree(this.data.tags || [], 'model', this.data.modelTree || []);
+  }
+
+  private syncAllQuestionLegacyTagFields(): void {
+    for (const question of this.data.questions || []) {
+      this.syncQuestionLegacyTagFields(question.id);
+    }
+  }
+
+  private syncQuestionLegacyTagFields(questionId: string): void {
+    const question = this.data.questions.find(q => q.id === questionId);
+    if (!question) return;
+    const rels = this.getQuestionTagRels(questionId);
+    const knowledgeIds = rels.filter(rel => rel.tag_type === 'knowledge').map(rel => rel.tag_id);
+    const modelIds = rels.filter(rel => rel.tag_type === 'model').map(rel => rel.tag_id);
+    question.knowledge_ids = [...new Set(knowledgeIds)];
+    question.model_ids = [...new Set(modelIds)];
+    const primaryKnowledge = question.knowledge_ids.length > 0
+      ? this.data.tags.find(tag => tag.id === question.knowledge_ids![0] && tag.tag_type === 'knowledge')
+      : null;
+    const primaryModel = question.model_ids.length > 0
+      ? this.data.tags.find(tag => tag.id === question.model_ids![0] && tag.tag_type === 'model')
+      : null;
+    question.knowledge_point = primaryKnowledge?.tag_name || '';
+    question.model_point = primaryModel?.tag_name || '';
+  }
+
+  private replaceQuestionTagRels(questionId: string, tagType: TagType, tagIds: string[]): void {
+    const tagsOfType = (this.data.tags || []).filter(tag => tag.tag_type === tagType && tag.status !== 0);
+    const validIds = new Set(tagsOfType.map(tag => tag.id));
+    const inputIds = [...new Set(tagIds || [])].filter(Boolean);
+    const nextIds = inputIds.filter(id => validIds.size === 0 || validIds.has(id));
+    const now = new Date().toISOString();
+    this.data.questionTagRels = normalizeQuestionTagRels([
+      ...(this.data.questionTagRels || []).filter(rel => !(rel.question_id === questionId && rel.tag_type === tagType)),
+      ...nextIds.map(tagId => ({
+        id: makeQuestionTagRelId(questionId, tagId, tagType),
+        question_id: questionId,
+        tag_id: tagId,
+        tag_type: tagType,
+        created_at: now,
+      })),
+    ]);
+    this.syncQuestionLegacyTagFields(questionId);
+  }
+
+  private syncQuestionRelsFromLegacyFields(question: Question): void {
+    this.replaceQuestionTagRels(question.id, 'knowledge', [
+      ...(question.knowledge_ids || []),
+      ...(question.knowledge_point_ids || []),
+    ]);
+    this.replaceQuestionTagRels(question.id, 'model', [
+      ...(question.model_ids || []),
+      ...(question.model_point_ids || []),
+    ]);
   }
 
   // ========== 学校信息管理 ==========
@@ -685,8 +822,11 @@ class BrowserDatabaseService {
       assetCategories: data.assetCategories || [],
       questions: data.questions || [],
       knowledgeTree: data.knowledgeTree || [],
-      modelTree: data.modelTree || []
+      modelTree: data.modelTree || [],
+      tags: data.tags || [],
+      questionTagRels: data.questionTagRels || []
     };
+    this.migrateLegacyTagData();
     this.saveData();
   }
 
@@ -885,29 +1025,124 @@ class BrowserDatabaseService {
     return this.data.questions.filter(q => q.subject === subject);
   }
 
+  getAllTags(tagType?: TagType): Tag[] {
+    const tags = (this.data.tags || []).filter(tag => tag.status !== 0);
+    return tagType ? tags.filter(tag => tag.tag_type === tagType) : tags;
+  }
+
+  createTag(tag: Omit<Tag, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Tag {
+    const now = new Date().toISOString();
+    const id = tag.id || this.generateId();
+    const newTag: Tag = {
+      ...tag,
+      id,
+      tag_code: tag.tag_code || id,
+      sort_no: tag.sort_no || 0,
+      status: tag.status ?? 1,
+      created_at: now,
+      updated_at: now,
+    };
+    this.data.tags = [...(this.data.tags || []).filter(item => !(item.id === newTag.id && item.tag_type === newTag.tag_type)), newTag];
+    this.syncLegacyTreesFromTags();
+    this.saveData();
+    return newTag;
+  }
+
+  updateTag(id: string, updates: Partial<Omit<Tag, 'id' | 'created_at'>>, tagType?: TagType): Tag | undefined {
+    const idx = (this.data.tags || []).findIndex(tag => tag.id === id && (!tagType || tag.tag_type === tagType));
+    if (idx === -1) return undefined;
+    this.data.tags[idx] = { ...this.data.tags[idx], ...updates, updated_at: new Date().toISOString() };
+    this.syncLegacyTreesFromTags();
+    this.syncAllQuestionLegacyTagFields();
+    this.saveData();
+    return this.data.tags[idx];
+  }
+
+  deleteTag(id: string, tagType?: TagType): boolean {
+    const toDelete = this.collectTagDescendantIds(id, tagType);
+    if (toDelete.length === 0) return false;
+    const deleteKeys = new Set(toDelete.map(item => `${item.tag_type}__${item.id}`));
+    this.data.tags = (this.data.tags || []).filter(tag => !deleteKeys.has(`${tag.tag_type}__${tag.id}`));
+    this.data.questionTagRels = (this.data.questionTagRels || []).filter(rel => !deleteKeys.has(`${rel.tag_type}__${rel.tag_id}`));
+    this.syncLegacyTreesFromTags();
+    this.syncAllQuestionLegacyTagFields();
+    this.saveData();
+    return true;
+  }
+
+  getQuestionTagRels(questionId?: string, tagType?: TagType): QuestionTagRel[] {
+    return (this.data.questionTagRels || []).filter(rel =>
+      (!questionId || rel.question_id === questionId) &&
+      (!tagType || rel.tag_type === tagType)
+    );
+  }
+
+  setQuestionTagRels(questionId: string, tagType: TagType, tagIds: string[]): Question | null {
+    const question = this.data.questions.find(q => q.id === questionId);
+    if (!question) return null;
+    this.replaceQuestionTagRels(questionId, tagType, tagIds);
+    question.updated_at = new Date().toISOString();
+    this.saveData();
+    return question;
+  }
+
+  addQuestionTagRels(questionId: string, tagType: TagType, tagIds: string[]): Question | null {
+    const existingIds = this.getQuestionTagRels(questionId, tagType).map(rel => rel.tag_id);
+    return this.setQuestionTagRels(questionId, tagType, [...existingIds, ...(tagIds || [])]);
+  }
+
+  removeQuestionTagRels(questionId: string, tagType: TagType, tagIds: string[]): Question | null {
+    const removeIds = new Set(tagIds || []);
+    const nextIds = this.getQuestionTagRels(questionId, tagType)
+      .map(rel => rel.tag_id)
+      .filter(tagId => !removeIds.has(tagId));
+    return this.setQuestionTagRels(questionId, tagType, nextIds);
+  }
+
+  private collectTagDescendantIds(id: string, tagType?: TagType): Array<{ id: string; tag_type: TagType }> {
+    const roots = (this.data.tags || []).filter(tag => tag.id === id && (!tagType || tag.tag_type === tagType));
+    const result: Array<{ id: string; tag_type: TagType }> = [];
+    const collect = (tag: Tag) => {
+      result.push({ id: tag.id, tag_type: tag.tag_type });
+      const children = (this.data.tags || []).filter(child => child.tag_type === tag.tag_type && child.parent_id === tag.id);
+      for (const child of children) collect(child);
+    };
+    for (const root of roots) collect(root);
+    return result;
+  }
+
   createQuestion(question: Omit<Question, 'id' | 'created_at' | 'updated_at'>): Question {
     const now = new Date().toISOString();
     const id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
     const newQuestion: Question = {
       ...question,
-      subject: question.subject || '物理',
-      exam_type: question.exam_type || '其他',
-      edit_status: question.edit_status || '未编辑',
       id,
       created_at: now,
       updated_at: now
     };
-    this.data.questions.push(newQuestion);
+    const normalizedQuestion = this.normalizeQuestionRecord(newQuestion);
+    this.data.questions.push(normalizedQuestion);
+    this.syncQuestionRelsFromLegacyFields(normalizedQuestion);
     this.saveData();
-    return newQuestion;
+    return normalizedQuestion;
   }
 
   updateQuestion(id: string, updates: Partial<Omit<Question, 'id' | 'created_at'>>): boolean {
     const idx = this.data.questions.findIndex(q => q.id === id);
     if (idx === -1) return false;
-    this.data.questions[idx] = { ...this.data.questions[idx], ...updates, updated_at: new Date().toISOString() };
-    if (!this.data.questions[idx].subject) this.data.questions[idx].subject = '物理';
-    if (!this.data.questions[idx].exam_type) this.data.questions[idx].exam_type = '其他';
+    this.data.questions[idx] = this.normalizeQuestionRecord({
+      ...this.data.questions[idx],
+      ...updates,
+      updated_at: new Date().toISOString()
+    });
+    if (
+      updates.knowledge_ids ||
+      updates.model_ids ||
+      updates.knowledge_point_ids ||
+      updates.model_point_ids
+    ) {
+      this.syncQuestionRelsFromLegacyFields(this.data.questions[idx]);
+    }
     this.saveData();
     return true;
   }
@@ -916,6 +1151,7 @@ class BrowserDatabaseService {
     const idx = this.data.questions.findIndex(q => q.id === id);
     if (idx === -1) return false;
     this.data.questions.splice(idx, 1);
+    this.data.questionTagRels = (this.data.questionTagRels || []).filter(rel => rel.question_id !== id);
     this.saveData();
     return true;
   }
@@ -925,19 +1161,24 @@ class BrowserDatabaseService {
   getQuestionKnowledgePoints(questionId: string): KnowledgeNode[] | null {
     const question = this.data.questions.find(q => q.id === questionId);
     if (!question) return null;
-    const ids = new Set(question.knowledge_ids || []);
-    return this.data.knowledgeTree.filter(node => ids.has(node.id));
+    const ids = new Set(this.getQuestionTagRels(questionId, 'knowledge').map(rel => rel.tag_id));
+    if (ids.size === 0) {
+      for (const id of question.knowledge_ids || []) ids.add(id);
+    }
+    return this.getKnowledgeTree().filter(node => ids.has(node.id));
   }
 
   setQuestionKnowledgePoints(questionId: string, knowledgeIds: string[]): Question | null {
     const question = this.data.questions.find(q => q.id === questionId);
     if (!question) return null;
-    const validIds = new Set(this.data.knowledgeTree.map(node => node.id));
+    const knowledgeTree = this.getKnowledgeTree();
+    const validIds = new Set(knowledgeTree.map(node => node.id));
     const nextIds = [...new Set((knowledgeIds || []).filter(id => validIds.has(id)))];
-    const primary = nextIds.length > 0 ? this.data.knowledgeTree.find(node => node.id === nextIds[0]) : null;
+    const primary = nextIds.length > 0 ? knowledgeTree.find(node => node.id === nextIds[0]) : null;
     question.knowledge_ids = nextIds;
     question.knowledge_point = primary?.name || '';
     question.updated_at = new Date().toISOString();
+    this.replaceQuestionTagRels(questionId, 'knowledge', nextIds);
     this.saveData();
     return question;
   }
@@ -956,7 +1197,7 @@ class BrowserDatabaseService {
   }
 
   getKnowledgeTree(): KnowledgeNode[] {
-    return this.data.knowledgeTree;
+    return tagsToLegacyTree(this.data.tags || [], 'knowledge', this.data.knowledgeTree || []);
   }
 
   getFlatKnowledgeNodes(): { id: string; name: string; path: string }[] {
@@ -965,11 +1206,11 @@ class BrowserDatabaseService {
       for (const n of nodes) {
         const currentPath = parentPath ? `${parentPath} > ${n.name}` : n.name;
         result.push({ id: n.id, name: n.name, path: currentPath });
-        const children = this.data.knowledgeTree.filter(c => c.parent_id === n.id);
+        const children = this.getKnowledgeTree().filter(c => c.parent_id === n.id);
         if (children.length > 0) buildPath(children, currentPath);
       }
     };
-    const roots = this.data.knowledgeTree.filter(n => !n.parent_id);
+    const roots = this.getKnowledgeTree().filter(n => !n.parent_id);
     buildPath(roots, '');
     return result;
   }
@@ -1010,6 +1251,7 @@ class BrowserDatabaseService {
     for (const n of this.data.knowledgeTree) {
       n.children = this.data.knowledgeTree.filter(c => c.parent_id === n.id).map(c => c.id);
     }
+    this.data.tags = upsertLegacyTreeTags(this.data.tags || [], this.data.knowledgeTree || [], 'knowledge');
   }
 
   createKnowledgeNode(node: Omit<KnowledgeNode, 'id' | 'created_at' | 'updated_at'>): KnowledgeNode {
@@ -1054,6 +1296,8 @@ class BrowserDatabaseService {
     if (idsToDelete.length === 0) return false;
 
     this.data.knowledgeTree = this.data.knowledgeTree.filter(n => !idsToDelete.includes(n.id));
+    this.data.tags = (this.data.tags || []).filter(tag => !(tag.tag_type === 'knowledge' && idsToDelete.includes(tag.id)));
+    this.data.questionTagRels = (this.data.questionTagRels || []).filter(rel => !(rel.tag_type === 'knowledge' && idsToDelete.includes(rel.tag_id)));
 
     // Clean up question references: remove deleted knowledge IDs from all questions
     for (const q of this.data.questions) {
@@ -1061,6 +1305,7 @@ class BrowserDatabaseService {
         q.knowledge_ids = q.knowledge_ids.filter(kid => !idsToDelete.includes(kid));
       }
     }
+    this.syncAllQuestionLegacyTagFields();
 
     this._rebuildKnowledgeChildren();
     this.saveData();
@@ -1078,13 +1323,13 @@ class BrowserDatabaseService {
   }
 
   getKnowledgeChildren(parentId: string): KnowledgeNode[] {
-    return this.data.knowledgeTree.filter(n => n.parent_id === parentId).sort((a, b) => a.order - b.order);
+    return this.getKnowledgeTree().filter(n => n.parent_id === parentId).sort((a, b) => a.order - b.order);
   }
 
   // ========== 模型树管理 ==========
 
   getModelTree(): KnowledgeNode[] {
-    return this.data.modelTree || [];
+    return tagsToLegacyTree(this.data.tags || [], 'model', this.data.modelTree || []);
   }
 
   initDefaultModelTree(): void {
@@ -1109,6 +1354,7 @@ class BrowserDatabaseService {
     for (const n of this.data.modelTree) {
       n.children = this.data.modelTree.filter(c => c.parent_id === n.id).map(c => c.id);
     }
+    this.data.tags = upsertLegacyTreeTags(this.data.tags || [], this.data.modelTree || [], 'model');
   }
 
   createModelNode(node: Omit<KnowledgeNode, 'id' | 'created_at' | 'updated_at'>): KnowledgeNode {
@@ -1149,13 +1395,16 @@ class BrowserDatabaseService {
     const idsToDelete = this.collectModelDescendantIds(id);
     if (idsToDelete.length === 0) return false;
     this.data.modelTree = (this.data.modelTree || []).filter(n => !idsToDelete.includes(n.id));
+    this.data.tags = (this.data.tags || []).filter(tag => !(tag.tag_type === 'model' && idsToDelete.includes(tag.id)));
+    this.data.questionTagRels = (this.data.questionTagRels || []).filter(rel => !(rel.tag_type === 'model' && idsToDelete.includes(rel.tag_id)));
     for (const q of this.data.questions) {
       if (q.model_ids && q.model_ids.length > 0) {
         q.model_ids = q.model_ids.filter(mid => !idsToDelete.includes(mid));
-        const primary = q.model_ids.length > 0 ? this.data.modelTree.find(node => node.id === q.model_ids![0]) : null;
+        const primary = q.model_ids.length > 0 ? this.getModelTree().find(node => node.id === q.model_ids![0]) : null;
         q.model_point = primary?.name || '';
       }
     }
+    this.syncAllQuestionLegacyTagFields();
     this._rebuildModelChildren();
     this.saveData();
     return true;
@@ -1173,12 +1422,14 @@ class BrowserDatabaseService {
   setQuestionModelPoints(questionId: string, modelIds: string[]): Question | null {
     const question = this.data.questions.find(q => q.id === questionId);
     if (!question) return null;
-    const validIds = new Set((this.data.modelTree || []).map(node => node.id));
+    const modelTree = this.getModelTree();
+    const validIds = new Set(modelTree.map(node => node.id));
     const nextIds = [...new Set((modelIds || []).filter(id => validIds.has(id)))];
-    const primary = nextIds.length > 0 ? this.data.modelTree.find(node => node.id === nextIds[0]) : null;
+    const primary = nextIds.length > 0 ? modelTree.find(node => node.id === nextIds[0]) : null;
     question.model_ids = nextIds;
     question.model_point = primary?.name || '';
     question.updated_at = new Date().toISOString();
+    this.replaceQuestionTagRels(questionId, 'model', nextIds);
     this.saveData();
     return question;
   }

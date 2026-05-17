@@ -323,7 +323,10 @@ CREATE TABLE IF NOT EXISTS questions (
   region TEXT,
   school TEXT,
   edit_status TEXT DEFAULT '未编辑',
-  status TEXT DEFAULT 'active',
+  status TEXT DEFAULT 'draft',
+  has_image INTEGER DEFAULT 0,
+  has_formula INTEGER DEFAULT 0,
+  created_by TEXT DEFAULT '',
   deleted INTEGER DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

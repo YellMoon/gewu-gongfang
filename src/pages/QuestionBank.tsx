@@ -12,13 +12,13 @@ import {
 import type { Question, KnowledgeNode } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
+import { QUESTION_TYPES, normalizeQuestionType, questionTypeFromParser } from '../constants/questionTypes';
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
 
 const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'];
-const QUESTION_TYPES = ['选择题', '填空题', '解答题', '判断题', '简答题', '实验题', '多选题', '作图题'];
 const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试'];
 const GRADES = ['高一', '高二', '高三', '复习'];
 const SEMESTERS = ['上学期', '下学期'];
@@ -49,6 +49,7 @@ function normalizeQuestion(row: any): Question {
   }
   return {
     ...row,
+    type: normalizeQuestionType(row.type),
     content: row.content ?? row.stem ?? '',
     options: Array.isArray(options) ? options : [],
     analysis: row.analysis ?? row.explanation ?? '',
@@ -144,7 +145,7 @@ const QuestionBank: React.FC = () => {
   // Filters
   const filtered = questions.filter(q => {
     if (filterSubject && q.subject !== filterSubject) return false;
-    if (filterType && q.type !== filterType) return false;
+    if (filterType && normalizeQuestionType(q.type) !== filterType) return false;
     if (filterExamType && q.exam_type !== filterExamType) return false;
     if (filterKnowledge && !(q.knowledge_ids || []).includes(filterKnowledge)) return false;
     if (filterKnowledgeIds.length > 0 && !(q.knowledge_ids || []).some(kid => filterKnowledgeIds.includes(kid))) return false;
@@ -180,7 +181,7 @@ const QuestionBank: React.FC = () => {
 
     const data: any = {
       subject: values.subject,
-      type: values.type,
+      type: normalizeQuestionType(values.type),
       difficulty: values.difficulty,
       content: values.content,
       options: values.options ? values.options.split('\n').filter((s: string) => s.trim()) : [],
@@ -315,7 +316,7 @@ const QuestionBank: React.FC = () => {
             const knForm: Record<string, boolean> = {};
             (r.knowledge_ids || []).forEach(id => { knForm[id] = true; });
             form.setFieldsValue({
-              subject: r.subject, type: r.type, difficulty: r.difficulty,
+              subject: r.subject, type: normalizeQuestionType(r.type), difficulty: r.difficulty,
               content: r.content, options: (r.options || []).join('\n'),
               answer: r.answer, analysis: r.analysis,
               knowledge_point: r.knowledge_point,
@@ -391,11 +392,7 @@ const QuestionBank: React.FC = () => {
         const knowledge_ids = normalizeImportedKnowledgeIds(db, q);
         db.createQuestion({
           subject: '物理',
-          type: (q.question_types || ['fill']).includes('single') ? '选择题' :
-                (q.question_types || ['fill']).includes('multi') ? '多选题' :
-                (q.question_types || ['fill']).includes('experiment') ? '实验题' :
-                (q.question_types || ['fill']).includes('calculation') ? '解答题' :
-                (q.question_types || ['fill']).includes('problem') ? '解答题' : '填空题',
+          type: questionTypeFromParser(q.question_types),
           difficulty: 3,
           content: q.stem || '',
           options: (q.options || []).map((o: any) => `${o.label}. ${o.content}`),
@@ -831,7 +828,7 @@ const QuestionBank: React.FC = () => {
               <Button icon={<FileWordOutlined />} onClick={() => setWordModalVisible(true)}>从Word导入</Button>
               <Button type="primary" icon={<PlusOutlined />} onClick={() => {
                 setEditing(null); form.resetFields();
-                form.setFieldsValue({ subject: '物理', type: '选择题', difficulty: 3 });
+                form.setFieldsValue({ subject: '物理', type: '单选题', difficulty: 3 });
                 setModalVisible(true);
               }}>添加题目</Button>
             </Space>

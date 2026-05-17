@@ -11,13 +11,13 @@ import {
 import type { Question, KnowledgeNode } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
+import { QUESTION_TYPES, normalizeQuestionType, questionTypeFromParser } from '../constants/questionTypes';
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
 
 const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'];
-const QUESTION_TYPES = ['选择题', '填空题', '解答题', '判断题', '简答题', '实验题', '多选题', '作图题'];
 const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试', '竞赛', '强基计划', '其他'];
 const GRADES = ['高一', '高二', '高三', '复习'];
 const SEMESTERS = ['上学期', '下学期'];
@@ -111,23 +111,24 @@ function normalizeQuestion(row: any): Question {
   }
   return {
     ...row,
+    type: normalizeQuestionType(row.type),
     content: row.content ?? row.stem ?? '',
     options: Array.isArray(options) ? options : [],
     analysis: row.analysis ?? row.explanation ?? '',
     knowledge_ids: row.knowledge_ids ?? row.knowledge_point_ids ?? [],
+    status: row.status || 'draft',
+    has_image: !!row.has_image,
+    has_formula: !!row.has_formula,
+    created_by: row.created_by || '',
   } as Question;
 }
 
 function toServerQuestion(q: any, meta: any = {}) {
-  const questionTypes = q.question_types || ['fill'];
   return {
     subject: q.subject || '物理',
     subject_id: q.subject_id || null,
     chapter_id: q.chapter_id || null,
-    type: questionTypes.includes('single') ? 'single' :
-      questionTypes.includes('multi') ? 'multi' :
-        questionTypes.includes('experiment') ? 'experiment' :
-          questionTypes.includes('calculation') || questionTypes.includes('problem') ? 'problem' : 'fill',
+    type: questionTypeFromParser(q.question_types),
     difficulty: q.difficulty || 3,
     stem: q.stem || q.content || '',
     options: q.options || [],
@@ -141,6 +142,10 @@ function toServerQuestion(q: any, meta: any = {}) {
     region: q.region || meta.region || '',
     school: q.school || meta.school || '',
     paper_name: q.paper_name || meta.paper_name || '',
+    status: q.status || 'draft',
+    has_image: !!q.has_image,
+    has_formula: !!q.has_formula,
+    created_by: q.created_by || '',
     knowledge_point_ids: q.knowledge_point_ids || q.knowledge_ids || [],
     knowledge_points: q.knowledge_points || (q.knowledge_point ? [q.knowledge_point] : []),
     model_point_ids: q.model_point_ids || q.model_ids || [],
@@ -544,7 +549,7 @@ const QuestionBankImport: React.FC = () => {
 
     const data: any = {
       subject: values.subject,
-      type: values.type,
+      type: normalizeQuestionType(values.type),
       difficulty: values.difficulty,
       content: values.content,
       options: values.options ? values.options.split('\n').filter((s: string) => s.trim()) : [],
@@ -561,6 +566,10 @@ const QuestionBankImport: React.FC = () => {
       grade: values.grade || '',
       semester: values.semester || '',
       exam_type: values.exam_type || '',
+      status: editing?.status || 'draft',
+      has_image: !!editing?.has_image,
+      has_formula: !!editing?.has_formula,
+      created_by: editing?.created_by || '',
     };
 
     if (editing) {
@@ -695,11 +704,7 @@ const QuestionBankImport: React.FC = () => {
         const knowledge_ids = normalizeImportedKnowledgeIds(db, q);
         db.createQuestion({
           subject: '物理',
-          type: (q.question_types || ['fill']).includes('single') ? '选择题' :
-                (q.question_types || ['fill']).includes('multi') ? '多选题' :
-                (q.question_types || ['fill']).includes('experiment') ? '实验题' :
-                (q.question_types || ['fill']).includes('calculation') ? '解答题' :
-                (q.question_types || ['fill']).includes('problem') ? '解答题' : '填空题',
+          type: questionTypeFromParser(q.question_types),
           difficulty: 3,
           content: q.stem || '',
           options: (q.options || []).map((o: any) => `${o.label}. ${o.content}`),
@@ -713,6 +718,10 @@ const QuestionBankImport: React.FC = () => {
           region: q.region || meta.region || '',
           school: q.school || meta.school || '',
           edit_status: '未编辑',
+          status: q.status || 'draft',
+          has_image: !!q.has_image,
+          has_formula: !!q.has_formula,
+          created_by: q.created_by || '',
           tags: [],
           formulas: [],
           knowledge_point: q.knowledge_point || '',
