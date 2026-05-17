@@ -14,6 +14,7 @@ import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
 import { highlightText, splitSearchTerms } from '../utils/highlightText';
 import { toggleQuestionBasket, useQuestionBasketIds } from '../components/QuestionBasket';
+import QuestionRichContent from '../components/QuestionRichContent';
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -117,6 +118,8 @@ const QuestionBankPreview: React.FC = () => {
     has_image: !!row.has_image,
     has_formula: !!row.has_formula,
     created_by: row.created_by || '',
+    assets: row.assets || [],
+    formulas: row.formulas || [],
     knowledge_ids: row.knowledge_ids ?? row.knowledge_point_ids ?? [],
     model_ids: row.model_ids ?? row.model_point_ids ?? [],
   } as Question);
@@ -1138,6 +1141,7 @@ const QuestionBankPreview: React.FC = () => {
                         {q.has_formula && <Tag color="purple">公式</Tag>}
                       </Space>
                       <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{idx + 1}. {highlightText(q.content, searchTerms)}</div>
+                      <QuestionRichContent question={q} />
                       {q.answer && <div style={{ marginTop: 8, color: '#555' }}>答案：{highlightText(q.answer, searchTerms)}</div>}
                       {q.analysis && <div style={{ marginTop: 8, color: '#666' }}>解析：{highlightText(q.analysis, searchTerms)}</div>}
                       <div style={{ marginTop: 8, color: '#888', fontSize: 12 }}>

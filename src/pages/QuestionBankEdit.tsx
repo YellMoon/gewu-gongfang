@@ -11,6 +11,7 @@ import type { KnowledgeNode, Question, QuestionVersion } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
+import QuestionRichContent from '../components/QuestionRichContent';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -46,6 +47,8 @@ function normalizeQuestion(row: any): Question {
     has_image: !!row.has_image,
     has_formula: !!row.has_formula,
     created_by: row.created_by || '',
+    assets: row.assets || [],
+    formulas: row.formulas || [],
     knowledge_ids: row.knowledge_ids ?? row.knowledge_point_ids ?? [],
     model_ids: row.model_ids ?? row.model_point_ids ?? [],
   } as Question;
@@ -123,7 +126,7 @@ const QuestionBankEdit: React.FC = () => {
       subject: question.subject || '物理',
       knowledge_ids: question.knowledge_ids || [],
       model_ids: question.model_ids || [],
-      formulas: (question.formulas || []).join('\n'),
+      formulas: (question.formulas || []).map((item: any) => typeof item === 'string' ? item : JSON.stringify(item)).join('\n'),
       tags: (question.tags || []).join(','),
     });
   };
@@ -334,6 +337,7 @@ const QuestionBankEdit: React.FC = () => {
           <Form.Item name="formulas" label={<span><FunctionOutlined /> 公式</span>}>
             <TextArea rows={2} placeholder="可录入 LaTeX 或公式说明" />
           </Form.Item>
+          {editing && <QuestionRichContent question={editing} />}
           <Form.Item label={<span><FileImageOutlined /> 图片</span>}>
             <Upload
               listType="picture"

@@ -362,7 +362,8 @@ export interface Question {
   options?: string[];
   answer: string;
   analysis?: string;
-  formulas?: string[];             // 公式
+  formulas?: Array<string | Record<string, any>>; // 公式
+  assets?: any[];
   tags?: string[];                 // 标签
   source?: string;                 // 来源
   year?: string;                   // 年份

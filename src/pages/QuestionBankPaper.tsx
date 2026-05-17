@@ -24,7 +24,8 @@ import {
 import type { Question } from '../types';
 import { getApiBase } from '../utils/apiBase';
 import { normalizeQuestionType } from '../constants/questionTypes';
-import { QUESTION_BASKET_SELECTED_STORAGE_KEY } from '../components/QuestionBasket';
+import { QUESTION_BASKET_SELECTED_STORAGE_KEY, QUESTION_BASKET_STORAGE_KEY } from '../components/QuestionBasket';
+import QuestionRichContent from '../components/QuestionRichContent';
 import { downloadPaperDocx } from '../services/docxExporter';
 
 const API_BASE = getApiBase('/api/question-bank');
@@ -66,6 +67,8 @@ function normalizeQuestion(row: any): Question {
     has_image: !!row.has_image,
     has_formula: !!row.has_formula,
     created_by: row.created_by || '',
+    assets: row.assets || [],
+    formulas: row.formulas || [],
   } as Question;
 }
 
@@ -117,12 +120,15 @@ const QuestionBankPaper: React.FC = () => {
   const [title, setTitle] = useState(todayTitle());
   const [items, setItems] = useState<PaperQuestion[]>([]);
   const [answerPosition, setAnswerPosition] = useState<AnswerPosition>('separate');
-  const [includeDraft, setIncludeDraft] = useState(false);
+  const [includeDraft, setIncludeDraft] = useState(true);
 
   useEffect(() => {
     let mounted = true;
     const selectedIds: string[] = JSON.parse(localStorage.getItem(QUESTION_BASKET_SELECTED_STORAGE_KEY) || '[]');
-    loadBasketQuestions(selectedIds).then(questions => {
+    const basketIds: string[] = JSON.parse(localStorage.getItem(QUESTION_BASKET_STORAGE_KEY) || '[]');
+    const dbIds: string[] = (window as any).dbService?.getQuestionBasketIds?.() || [];
+    const targetIds = selectedIds.length > 0 ? selectedIds : (dbIds.length > 0 ? dbIds : basketIds);
+    loadBasketQuestions(targetIds).then(questions => {
       const visibleQuestions = includeDraft
         ? questions
         : questions.filter(question => (question.status || 'draft') === 'published');
@@ -286,6 +292,7 @@ const QuestionBankPaper: React.FC = () => {
                       <Tag>{renderSource(row.question)}</Tag>
                     </Space>
                     <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{row.question.content || '未填写题干'}</div>
+                    <QuestionRichContent question={row.question} />
                     {answerPosition === 'after-question' && (
                       <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed #d9d9d9', color: '#455a64' }}>
                         <div><b>答案：</b>{row.question.answer || '未填写'}</div>

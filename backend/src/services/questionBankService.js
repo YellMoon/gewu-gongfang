@@ -60,14 +60,15 @@ function normalizeOssRef(value = {}) {
 
 function normalizeAsset(asset = {}, fallbackType = 'attachment') {
   const ref = normalizeOssRef(asset);
-  if (!ref?.oss_key) throw new Error('question asset oss_key is required');
+  const inlineData = asset.data_url || asset.dataUrl || asset.data || null;
+  if (!ref?.oss_key && !inlineData) throw new Error('question asset oss_key is required');
   return {
     asset_type: asset.asset_type || asset.assetType || asset.type || fallbackType,
     file_name: asset.file_name || asset.fileName || asset.name || null,
     mime_type: asset.mime_type || asset.mimeType || null,
     size_bytes: Number(asset.size_bytes ?? asset.sizeBytes ?? asset.size ?? 0) || 0,
-    oss_key: ref.oss_key,
-    oss_url: ref.oss_url || null,
+    oss_key: ref?.oss_key || `inline://${asset.file_name || asset.fileName || asset.name || uuidv4()}`,
+    oss_url: ref?.oss_url || inlineData,
     content_hash: asset.content_hash || asset.contentHash || null,
   };
 }
@@ -76,6 +77,21 @@ function normalizeQuestionAssets(payload = {}) {
   const assets = [];
   for (const asset of payload.assets || []) {
     assets.push(normalizeAsset(asset));
+  }
+
+  for (const formula of payload.formulas || []) {
+    if (formula && typeof formula === 'object') {
+      const format = formula.format || 'formula';
+      const raw = JSON.stringify(formula);
+      assets.push(normalizeAsset({
+        asset_type: `formula_${format}`,
+        file_name: `${format}-${hashText(raw).slice(0, 12)}.json`,
+        mime_type: 'application/json',
+        size_bytes: Buffer.byteLength(raw, 'utf8'),
+        data_url: `data:application/json;base64,${Buffer.from(raw, 'utf8').toString('base64')}`,
+        content_hash: hashText(raw),
+      }, `formula_${format}`));
+    }
   }
 
   const coverPayload = payload.cover || payload.cover_image || payload.title_image;

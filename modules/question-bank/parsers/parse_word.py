@@ -6,7 +6,10 @@ source_type: lecture | exam | auto
 """
 
 import io
+import base64
+import hashlib
 import json
+import mimetypes
 import os
 import re
 import sys
@@ -166,6 +169,148 @@ def clean_word_text(text):
     return re.sub(r"[\f\v]+", "", text or "").strip()
 
 
+def _xml_bytes(node):
+    try:
+        return ET.tostring(node, encoding="unicode")
+    except Exception:
+        return ""
+
+
+def _rels_for_document(archive):
+    rels = {}
+    rel_path = "word/_rels/document.xml.rels"
+    if rel_path not in archive.namelist():
+        return rels
+    root = ET.fromstring(archive.read(rel_path))
+    for rel in root:
+        rid = rel.attrib.get("Id")
+        target = rel.attrib.get("Target", "")
+        rel_type = rel.attrib.get("Type", "")
+        if not rid or not target:
+            continue
+        if target.startswith("/"):
+            full = target.lstrip("/")
+        elif target.startswith("word/"):
+            full = target
+        else:
+            full = "word/" + target
+        rels[rid] = {"target": full, "type": rel_type}
+    return rels
+
+
+def _asset_from_part(archive, part_name, asset_type, rel_id=None, rel_type=None):
+    if not part_name or part_name not in archive.namelist():
+        return None
+    data = archive.read(part_name)
+    mime = mimetypes.guess_type(part_name)[0] or "application/octet-stream"
+    digest = hashlib.sha256(data).hexdigest()
+    file_name = os.path.basename(part_name)
+    return {
+        "asset_type": asset_type,
+        "file_name": file_name,
+        "mime_type": mime,
+        "size_bytes": len(data),
+        "content_hash": digest,
+        "rel_id": rel_id or "",
+        "rel_type": rel_type or "",
+        "source_part": part_name,
+        "data_url": "data:%s;base64,%s" % (mime, base64.b64encode(data).decode("ascii")),
+    }
+
+
+def read_docx_rich_paragraphs(file_path):
+    ns = {
+        "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+        "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+        "v": "urn:schemas-microsoft-com:vml",
+        "o": "urn:schemas-microsoft-com:office:office",
+        "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
+    }
+    rows = []
+    try:
+        with zipfile.ZipFile(file_path, "r") as archive:
+            if "word/document.xml" not in archive.namelist():
+                return []
+            rels = _rels_for_document(archive)
+            root = ET.fromstring(archive.read("word/document.xml"))
+            for paragraph in root.findall(".//w:p", ns):
+                texts = [node.text or "" for node in paragraph.findall(".//w:t", ns)]
+                assets = []
+                formulas = []
+
+                for blip in paragraph.findall(".//a:blip", ns):
+                    rid = blip.attrib.get("{%s}embed" % ns["r"]) or blip.attrib.get("{%s}link" % ns["r"])
+                    rel = rels.get(rid or "")
+                    asset = _asset_from_part(archive, rel.get("target") if rel else "", "image", rid, rel.get("type") if rel else "")
+                    if asset:
+                        assets.append(asset)
+
+                for image in paragraph.findall(".//v:imagedata", ns):
+                    rid = image.attrib.get("{%s}id" % ns["r"])
+                    rel = rels.get(rid or "")
+                    asset = _asset_from_part(archive, rel.get("target") if rel else "", "image", rid, rel.get("type") if rel else "")
+                    if asset:
+                        assets.append(asset)
+
+                for obj in paragraph.findall(".//o:OLEObject", ns):
+                    rid = obj.attrib.get("{%s}id" % ns["r"])
+                    prog_id = obj.attrib.get("ProgID") or obj.attrib.get("Type") or "OLEObject"
+                    rel = rels.get(rid or "")
+                    asset = _asset_from_part(archive, rel.get("target") if rel else "", "formula_ole", rid, rel.get("type") if rel else "")
+                    if asset:
+                        asset["prog_id"] = prog_id
+                        assets.append(asset)
+                        formulas.append({
+                            "format": "mathtype_ole",
+                            "text": prog_id,
+                            "asset_hash": asset["content_hash"],
+                            "rel_id": rid or "",
+                            "source_part": asset["source_part"],
+                        })
+
+                for math_node in paragraph.findall(".//m:oMath", ns) + paragraph.findall(".//m:oMathPara", ns):
+                    math_text = "".join(node.text or "" for node in math_node.findall(".//m:t", ns)).strip()
+                    omml = _xml_bytes(math_node)
+                    formulas.append({
+                        "format": "omml",
+                        "text": math_text,
+                        "omml": omml,
+                    })
+
+                field_text = " ".join(node.text or "" for node in paragraph.findall(".//w:instrText", ns)).strip()
+                if field_text:
+                    formulas.append({
+                        "format": "field_code",
+                        "text": field_text,
+                        "field_code": field_text,
+                    })
+
+                rows.append({
+                    "text": clean_word_text("".join(texts)),
+                    "assets": assets,
+                    "formulas": formulas,
+                })
+    except Exception:
+        return []
+    return rows
+
+
+def attach_rich_content(question, rich):
+    if not question or not rich:
+        return
+    question.setdefault("assets", [])
+    question.setdefault("formulas", [])
+    for asset in rich.get("assets", []):
+        if asset and asset.get("content_hash") not in {item.get("content_hash") for item in question["assets"]}:
+            question["assets"].append(asset)
+    for formula in rich.get("formulas", []):
+        if formula and formula not in question["formulas"]:
+            question["formulas"].append(formula)
+    question["has_image"] = any(asset.get("asset_type") == "image" for asset in question["assets"])
+    question["has_formula"] = bool(question["formulas"]) or any(asset.get("asset_type") == "formula_ole" for asset in question["assets"])
+
+
 def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
     namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
     try:
@@ -174,7 +319,8 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
                 return []
             root = ET.fromstring(archive.read("word/document.xml"))
             items = []
-            for paragraph in root.findall(".//w:p", namespace):
+            rich_rows = read_docx_rich_paragraphs(file_path)
+            for paragraph_index, paragraph in enumerate(root.findall(".//w:p", namespace)):
                 texts = [node.text or "" for node in paragraph.findall(".//w:t", namespace)]
                 text = clean_word_text("".join(texts))
                 refs = []
@@ -206,6 +352,7 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
                     "number_label": number_label,
                     "number_kind": number_kind,
                     "comments": paragraph_comments,
+                    "rich": rich_rows[paragraph_index] if paragraph_index < len(rich_rows) else {},
                 })
             return items
     except Exception:
@@ -338,6 +485,10 @@ def new_question(stem, index=None, knowledge_point=None):
         "knowledge_point": knowledge_point or "",
         "knowledge_points": knowledge_points,
         "question_types": extract_types_from_text(stem),
+        "assets": [],
+        "formulas": [],
+        "has_image": False,
+        "has_formula": False,
     }
 
 
@@ -516,6 +667,7 @@ def parse_lecture_numbered_items(items, default_topic=None):
 
     for item in items:
         text = item.get("text", "").strip()
+        rich = item.get("rich", {})
         number_kind = item.get("number_kind", "")
         number_label = item.get("number_label", "")
         if not text and not number_kind:
@@ -532,12 +684,14 @@ def parse_lecture_numbered_items(items, default_topic=None):
             current = new_question(stem, len(questions), current_topic)
             current["source_type"] = number_kind
             current["_comments"] = list(item.get("comments", []))
+            attach_rich_content(current, rich)
             continue
         if not current or not text:
             if current:
                 current.setdefault("_comments", []).extend(item.get("comments", []))
             continue
         current.setdefault("_comments", []).extend(item.get("comments", []))
+        attach_rich_content(current, rich)
         option, option_content = extract_option(text)
         if option:
             current["options"].append({"label": option, "content": option_content, "is_correct": False})
@@ -552,9 +706,17 @@ def parse_lecture_numbered_items(items, default_topic=None):
     return questions
 
 
-def parse_exam_questions(paragraphs, default_topic=None):
+def parse_exam_questions(paragraphs, default_topic=None, rich_rows=None):
     question_part, answer_part = split_answer_section(paragraphs)
     questions = parse_exam_question_block(question_part)
+    if rich_rows:
+        current_index = -1
+        for paragraph_index, text in enumerate(paragraphs):
+            number, _content = extract_question_number((text or "").strip())
+            if number is not None:
+                current_index += 1
+            if 0 <= current_index < len(questions) and paragraph_index < len(rich_rows):
+                attach_rich_content(questions[current_index], rich_rows[paragraph_index])
     answers = parse_exam_answer_blocks(answer_part)
     by_index = {idx: answer for idx, answer in enumerate(answers)}
     by_number = {answer["number"]: answer for answer in answers}
@@ -638,10 +800,12 @@ def main():
         from docx import Document
         doc = Document(file_path)
         paragraphs = [paragraph.text for paragraph in doc.paragraphs]
+        rich_rows = read_docx_rich_paragraphs(file_path)
         numbered_items = extract_numbered_items(doc, file_path)
     except ImportError:
         try:
             paragraphs = extract_paragraphs_from_docx(file_path)
+            rich_rows = read_docx_rich_paragraphs(file_path)
             numbered_items = []
         except Exception as exc:
             print(json.dumps({"error": f"cannot open Word document without python-docx: {exc}"}, ensure_ascii=False))
@@ -649,6 +813,7 @@ def main():
     except Exception as exc:
         try:
             paragraphs = extract_paragraphs_from_docx(file_path)
+            rich_rows = read_docx_rich_paragraphs(file_path)
             numbered_items = []
         except Exception:
             print(json.dumps({"error": f"cannot open Word document: {exc}"}, ensure_ascii=False))
@@ -658,7 +823,7 @@ def main():
 
     default_topic = derive_topic_from_filename(file_path) if source_type == "lecture" else ""
     if source_type == "exam":
-        questions = parse_exam_questions(paragraphs, default_topic)
+        questions = parse_exam_questions(paragraphs, default_topic, rich_rows)
     elif numbered_items:
         questions = parse_lecture_numbered_items(numbered_items, default_topic)
     else:
