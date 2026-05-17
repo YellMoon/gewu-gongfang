@@ -12,7 +12,6 @@ import type { Question, KnowledgeNode, ImportTask, ImportTaskItem } from '../typ
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType, questionTypeFromParser } from '../constants/questionTypes';
-import { applyAutoTagsToQuestion } from '../services/autoTagService';
 import {
   downloadImportValidationReport,
   validateImportQuestions,
@@ -72,11 +71,27 @@ function stripFileExtension(fileName: string): string {
   return fileName.replace(/\.[^.]+$/, '').trim();
 }
 
+function toSchoolYear(year?: string): string {
+  const match = String(year || '').match(/(19\d{2}|20\d{2})/);
+  if (!match) return String(year || '');
+  const start = Number(match[1]);
+  return `${start}-${start + 1}`;
+}
+
+function getSchoolYearOptions() {
+  const current = new Date().getFullYear();
+  return Array.from({ length: 12 }, (_, i) => {
+    const start = current + 1 - i;
+    const value = `${start}-${start + 1}`;
+    return { value, label: `${value}学年` };
+  });
+}
+
 function extractExamMetaFromFileName(fileName: string): ExamMeta {
   const name = stripFileExtension(fileName);
   const meta: ExamMeta = { paper_name: name };
   const yearMatch = name.match(/(19\d{2}|20\d{2})/);
-  if (yearMatch) meta.year = yearMatch[1];
+  if (yearMatch) meta.year = toSchoolYear(yearMatch[1]);
 
   const gradeMatch = name.match(/(高一|高二|高三|复习|初一|初二|初三)/);
   if (gradeMatch) meta.grade = gradeMatch[1];
@@ -168,10 +183,9 @@ function toServerQuestion(q: any, meta: any = {}) {
     has_image: !!q.has_image,
     has_formula: !!q.has_formula,
     created_by: q.created_by || '',
+    allow_tag_name_create: false,
     knowledge_point_ids: q.knowledge_point_ids || q.knowledge_ids || [],
-    knowledge_points: q.knowledge_points || (q.knowledge_point ? [q.knowledge_point] : []),
     model_point_ids: q.model_point_ids || q.model_ids || [],
-    model_points: q.model_points || (q.model_point ? [q.model_point] : []),
   };
 }
 
@@ -182,11 +196,7 @@ function normalizeImportedKnowledgeIds(db: any, parsedQuestion: any): string[] {
   for (const name of names || []) {
     const text = String(name || '').trim();
     if (!text) continue;
-    let node = knowledgeTree.find((n: any) => n.name === text);
-    if (!node && db.createKnowledgeNode) {
-      node = db.createKnowledgeNode({ name: text, parent_id: null });
-      knowledgeTree.push(node);
-    }
+    const node = knowledgeTree.find((n: any) => n.name === text);
     if (node?.id) ids.add(node.id);
   }
   return [...ids];
@@ -200,7 +210,7 @@ function applyExamMetaToQuestion(q: any, meta: ExamMeta = {}, sourceType: 'lectu
   if (sourceType !== 'exam') return q;
   return {
     ...q,
-    year: q.year || meta.year || '',
+    year: toSchoolYear(q.year || meta.year || ''),
     grade: q.grade || meta.grade || '',
     semester: q.semester || meta.semester || '',
     exam_type: q.exam_type || meta.exam_type || '其他',
@@ -679,10 +689,7 @@ const QuestionBankImport: React.FC = () => {
       if (data.error) {
         message.error(data.error);
       } else {
-        const taggedQuestions = (data.questions || []).map((q: any) => {
-          const withMeta = applyExamMetaToQuestion(q, examMeta || {}, wordSourceType);
-          return applyAutoTagsToQuestion(withMeta, knowledgeNodes, modelNodes);
-        });
+        const taggedQuestions = (data.questions || []).map((q: any) => applyExamMetaToQuestion(q, examMeta || {}, wordSourceType));
         const nextResult = { ...data, questions: taggedQuestions, count: taggedQuestions.length };
         const validation = validateImportQuestions(taggedQuestions, questions);
         setWordResult(nextResult);
@@ -808,12 +815,19 @@ const QuestionBankImport: React.FC = () => {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'commit failed');
       const nextBatch = data.data || data;
+      const imported = Number(nextBatch.commit_result?.imported_items || nextBatch.accepted_items || 0);
+      if (imported <= 0 && (wordResult?.questions || []).length > 0) {
+        setImportBatch(null);
+        importWordResults(wordResult);
+        message.warning('服务端批次未写入题目，已自动改用本地题库导入');
+        return;
+      }
       setImportBatch(nextBatch);
       setWordResult(null);
       setImportStep(3);
       setCommitResult({
         id: nextBatch.id || importBatch.id,
-        imported: nextBatch.commit_result?.imported_items || nextBatch.accepted_items || 0,
+        imported,
         failed: validationSummary.failed,
         warning: validationSummary.warning,
         created_at: new Date().toISOString(),
@@ -824,12 +838,12 @@ const QuestionBankImport: React.FC = () => {
       db?.updateImportTask?.(nextBatch.id || importBatch.id, {
         status: nextBatch.status || 'imported',
         result_summary: nextBatch.commit_result || null,
-        success_items: nextBatch.commit_result?.imported_items || nextBatch.accepted_items || 0,
+        success_items: imported,
         failed_items: nextBatch.commit_result?.failed_items || validationSummary.failed,
       });
       setRecentImportTasks(db?.getRecentImportTasks?.(8) || []);
       loadData();
-      message.success(`已入库 ${nextBatch.commit_result?.imported_items || 0} 道题，索引任务已创建`);
+      message.success(`已入库 ${imported} 道题，索引任务已创建`);
     } catch (e: any) {
       message.error('提交导入批次失败: ' + (e.message || 'unknown error'));
     } finally {
@@ -864,7 +878,7 @@ const QuestionBankImport: React.FC = () => {
           answer: q.answer || '',
           analysis: q.analysis || '',
           source: q.source || '',
-          year: q.year || meta.year || '',
+          year: toSchoolYear(q.year || meta.year || ''),
           grade: q.grade || meta.grade || '',
           semester: q.semester || meta.semester || '',
           exam_type: q.exam_type || meta.exam_type || '其他',
@@ -1162,9 +1176,9 @@ const QuestionBankImport: React.FC = () => {
                 </Space>
               </Col>
               <Col xs={24} lg={15}>
-                <Form form={examForm} layout="vertical" disabled={wordSourceType !== 'exam'} initialValues={{ year: new Date().getFullYear().toString() }}>
+                <Form form={examForm} layout="vertical" disabled={wordSourceType !== 'exam'} initialValues={{ year: toSchoolYear(new Date().getFullYear().toString()) }}>
                   <Row gutter={12}>
-                    <Col span={8}><Form.Item name="year" label="年份"><Select options={Array.from({ length: 10 }, (_, i) => (new Date().getFullYear() - 7 + i).toString()).map(y => ({ value: y, label: y + '年' }))} /></Form.Item></Col>
+                    <Col span={8}><Form.Item name="year" label="学年"><Select options={getSchoolYearOptions()} /></Form.Item></Col>
                     <Col span={8}><Form.Item name="exam_type" label="考试类型"><Select options={EXAM_TYPES.map(v => ({ value: v, label: v }))} /></Form.Item></Col>
                     <Col span={8}><Form.Item name="grade" label="年级"><Select options={GRADES.map(v => ({ value: v, label: v }))} /></Form.Item></Col>
                   </Row>
@@ -1249,14 +1263,6 @@ const QuestionBankImport: React.FC = () => {
                             {row.issues.length === 0 ? <Tag color="green">通过</Tag> : row.issues.map((issue, idx) => (
                               <Tag key={idx} color={issue.level === 'failed' ? 'red' : 'orange'}>{issue.message}</Tag>
                             ))}
-                          </Space>
-                        ),
-                      },
-                      {
-                        title: '自动打标',
-                        render: (_: any, row: ImportValidationRow) => (
-                          <Space wrap size={4}>
-                            {(row.autoTags || []).length > 0 ? row.autoTags?.map(tag => <Tag key={tag} color="blue">{tag}</Tag>) : <Text type="secondary">无</Text>}
                           </Space>
                         ),
                       },
@@ -1427,7 +1433,7 @@ const QuestionBankImport: React.FC = () => {
               </Form.Item>
             </Col>
             <Col span={4}>
-              <Form.Item name="year" label="年份"><Input placeholder="2026" /></Form.Item>
+              <Form.Item name="year" label="学年"><Input placeholder="2025-2026" /></Form.Item>
             </Col>
             <Col span={4}>
               <Form.Item name="semester" label="学期">

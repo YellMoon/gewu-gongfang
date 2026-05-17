@@ -28,7 +28,6 @@ const LIMIT_SEMESTERS = ['全部', '上学期', '下学期'];
 const LIMIT_TYPES = ['全部', ...QUESTION_TYPES];
 const SEMESTERS = ['上学期', '下学期'];
 const LIMIT_EXAM_TYPES = ['全部', ...EXAM_TYPES];
-const LIMIT_DIFFICULTIES = ['全部', '1', '2', '3', '4', '5'];
 const LIMIT_STATUSES = [
   { label: '全部', value: '全部' },
   { label: '草稿', value: 'draft' },
@@ -37,14 +36,9 @@ const LIMIT_STATUSES = [
   { label: '已下线', value: 'offline' },
   { label: '已废弃', value: 'deprecated' },
 ];
-const MEDIA_FILTERS = [
-  { label: '全部', value: '全部' },
-  { label: '含图片', value: 'image' },
-  { label: '含公式', value: 'formula' },
-];
 
 const YEAR_OPTIONS = Array.from({ length: 18 }, (_, i) => {
-  const start = 2009 + i;
+  const start = 2026 - i;
   const end = start + 1;
   return { label: `${start}-${end}学年`, value: `${start}-${end}` };
 });
@@ -68,15 +62,13 @@ const QuestionBankPreview: React.FC = () => {
   const [modelNodes, setModelNodes] = useState<KnowledgeNode[]>([]);
 
   // Multi-select filter state
-  const [filterSubjects, setFilterSubjects] = useState<string[]>([]); // default: 全部
+  const [filterSubjects, setFilterSubjects] = useState<string[]>(['物理']);
   const [filterTypes, setFilterTypes] = useState<string[]>(['全部']); // default: 全部
   const [filterExamTypes, setFilterExamTypes] = useState<string[]>(['全部']); // default: 全部
   const [filterGrades, setFilterGrades] = useState<string[]>(['全部']); // default: 全部
   const [filterSemesters, setFilterSemesters] = useState<string[]>(['全部']); // default: 全部
-  const [filterYear, setFilterYear] = useState<string | undefined>(undefined);
-  const [filterDifficulties, setFilterDifficulties] = useState<string[]>(['全部']);
+  const [filterYear, setFilterYear] = useState<string>('全部');
   const [filterStatuses, setFilterStatuses] = useState<string[]>(['published']);
-  const [filterMedia, setFilterMedia] = useState<string[]>(['全部']);
   const [showDraftQuestions, setShowDraftQuestions] = useState(false);
 
   // 排除知识点
@@ -206,16 +198,11 @@ const QuestionBankPreview: React.FC = () => {
     if (filterSubjects.length > 0 && !filterSubjects.includes(row.subject || row.subject_id || '')) return false;
     if (!filterTypes.includes('全部') && filterTypes.length > 0 && !filterTypes.includes(normalizeQuestionType(q.type))) return false;
     if (!filterExamTypes.includes('全部') && filterExamTypes.length > 0 && !filterExamTypes.includes(q.exam_type || '其他')) return false;
-    if (!filterDifficulties.includes('全部') && filterDifficulties.length > 0 && !filterDifficulties.includes(String(q.difficulty || ''))) return false;
     const effectiveStatuses = showDraftQuestions ? filterStatuses : ['published'];
     if (!effectiveStatuses.includes('全部') && effectiveStatuses.length > 0 && !effectiveStatuses.includes(q.status || 'draft')) return false;
-    if (!filterMedia.includes('全部') && filterMedia.length > 0) {
-      if (filterMedia.includes('image') && !q.has_image) return false;
-      if (filterMedia.includes('formula') && !q.has_formula) return false;
-    }
     if (!filterGrades.includes('全部') && filterGrades.length > 0 && !filterGrades.includes(q.grade || '')) return false;
     if (!filterSemesters.includes('全部') && filterSemesters.length > 0 && !filterSemesters.includes(q.semester || '')) return false;
-    if (filterYear && q.year !== filterYear) return false;
+    if (filterYear && filterYear !== '全部' && q.year !== filterYear) return false;
     if (searchTerms.length > 0) {
       const knowledgeNames = (q.knowledge_ids || []).map(getNodeName).join(' ');
       const modelNames = (q.model_ids || []).map(getModelName).join(' ');
@@ -872,14 +859,6 @@ const QuestionBankPreview: React.FC = () => {
 
             <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>难度：</span>
-                <Checkbox.Group
-                  options={LIMIT_DIFFICULTIES}
-                  value={filterDifficulties}
-                  onChange={(vals) => setFilterDifficulties(normalizeCheckGroup(vals as string[]))}
-                />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>状态：</span>
                 <Checkbox.Group
                   options={LIMIT_STATUSES}
@@ -897,14 +876,6 @@ const QuestionBankPreview: React.FC = () => {
                 >
                   显示草稿/待审核
                 </Checkbox>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>媒介：</span>
-                <Checkbox.Group
-                  options={MEDIA_FILTERS}
-                  value={filterMedia}
-                  onChange={(vals) => setFilterMedia(normalizeCheckGroup(vals as string[]))}
-                />
               </div>
             </div>
 
@@ -935,12 +906,11 @@ const QuestionBankPreview: React.FC = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>学年：</span>
                 <Select
-                  allowClear
                   style={{ width: 160 }}
                   placeholder="选择学年"
                   value={filterYear}
                   onChange={setFilterYear}
-                  options={YEAR_OPTIONS}
+                  options={[{ label: '全部', value: '全部' }, ...YEAR_OPTIONS]}
                 />
               </div>
             </div>

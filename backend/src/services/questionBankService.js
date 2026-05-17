@@ -289,8 +289,12 @@ class QuestionBankService {
     const stem = payload.stem || payload.content || '';
     const explanation = payload.explanation !== undefined ? payload.explanation : payload.analysis;
     const options = parseJsonArray(payload.options);
-    const knowledgePointIds = this.resolveKnowledgePointIds(db, payload, tenantId);
-    const modelPointIds = this.resolveModelPointIds(db, payload, tenantId);
+    const knowledgePointIds = payload.allow_tag_name_create === false
+      ? normalizeKnowledgePointIds(payload)
+      : this.resolveKnowledgePointIds(db, payload, tenantId);
+    const modelPointIds = payload.allow_tag_name_create === false
+      ? normalizeModelPointIds(payload)
+      : this.resolveModelPointIds(db, payload, tenantId);
     const contentHash = payload.content_hash || hashText([stem, payload.answer, explanation, JSON.stringify(options)].join('|'));
     const contentRef = normalizeOssRef(payload);
     const assets = normalizeQuestionAssets(payload);
