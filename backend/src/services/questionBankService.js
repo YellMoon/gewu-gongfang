@@ -855,7 +855,14 @@ class QuestionBankService {
       throw new Error(`import batch status ${batch.status} cannot be committed`);
     }
     const ts = now();
-    const accepted = batch.items.filter(item => item.status === 'accepted');
+    const accepted = db.prepare(
+      'SELECT * FROM import_items WHERE batch_id = ? AND status = ? ORDER BY item_index ASC'
+    ).all(batchId, 'accepted').map(row => ({
+      ...row,
+      warnings: parseJsonArray(row.warnings),
+      errors: parseJsonArray(row.errors),
+      payload: parseJsonObject(row.payload),
+    }));
     const result = { imported_items: 0, failed_items: 0, question_ids: [], errors: [] };
 
     const transaction = db.transaction(() => {

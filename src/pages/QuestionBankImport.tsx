@@ -817,8 +817,7 @@ const QuestionBankImport: React.FC = () => {
       const nextBatch = data.data || data;
       const imported = Number(nextBatch.commit_result?.imported_items || nextBatch.accepted_items || 0);
       if (imported <= 0 && (wordResult?.questions || []).length > 0) {
-        setImportBatch(null);
-        importWordResults(wordResult);
+        importWordResults(wordResult, true);
         message.warning('服务端批次未写入题目，已自动改用本地题库导入');
         return;
       }
@@ -851,12 +850,12 @@ const QuestionBankImport: React.FC = () => {
     }
   };
 
-  const importWordResults = (result: any) => {
+  const importWordResults = (result: any, forceLocal = false) => {
     if (validationSummary.failed > 0) {
       message.warning('存在失败题目，请先处理或导出报告后再确认导入');
       return;
     }
-    if (importBatch) {
+    if (importBatch && !forceLocal) {
       commitImportBatch();
       return;
     }

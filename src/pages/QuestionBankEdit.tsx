@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Checkbox, Col, Empty, Form, Input, Modal, Row, Select as AntSelect,
-  Space, Table, Tag, Tooltip, Typography, Upload, message, Divider
+  Button, Card, Form, Input, InputNumber, Modal, Select as AntSelect,
+  Space, Table, Tag, Typography, Upload, message
 } from 'antd';
 import type { UploadFile } from 'antd/es/upload/interface';
 import {
@@ -17,9 +17,15 @@ const { Text } = Typography;
 const Select = AutoCloseSelect as typeof AntSelect;
 const API_BASE = getApiBase('/api/question-bank');
 
+const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'];
 const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试', '竞赛', '强基计划', '其他'];
 const GRADES = ['高一', '高二', '高三', '复习'];
 const SEMESTERS = ['上学期', '下学期'];
+
+function isPendingEditQuestion(question: Question): boolean {
+  const status = String(question.edit_status || '未编辑').trim().toLowerCase();
+  return !['已编辑', 'edited', 'done', 'completed'].includes(status);
+}
 
 function normalizeQuestion(row: any): Question {
   let options = row.options || [];
@@ -65,6 +71,7 @@ const QuestionBankEdit: React.FC = () => {
   const [imageFiles, setImageFiles] = useState<UploadFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [form] = Form.useForm();
+  const [batchForm] = Form.useForm();
 
   const knowledgeOptions = useMemo(() => buildTreeOptions(knowledgeNodes), [knowledgeNodes]);
   const modelOptions = useMemo(() => buildTreeOptions(modelNodes), [modelNodes]);
@@ -74,12 +81,16 @@ const QuestionBankEdit: React.FC = () => {
     const db = (window as any).dbService;
     const localQuestions = db?.getAllQuestions?.()?.map(normalizeQuestion) || [];
     try {
-      const res = await fetch(`${API_BASE}/questions?limit=200`);
+      const res = await fetch(`${API_BASE}/questions?limit=500`);
       const data = await res.json();
-      const rows = data.success && Array.isArray(data.data) ? data.data.map(normalizeQuestion) : localQuestions;
-      setQuestions(rows.filter((q: Question) => (q.edit_status || '未编辑') === '未编辑'));
+      const remoteQuestions = data.success && Array.isArray(data.data) ? data.data.map(normalizeQuestion) : [];
+      const merged = new Map<string, Question>();
+      for (const question of localQuestions) merged.set(question.id, question);
+      for (const question of remoteQuestions) merged.set(question.id, question);
+      const rows = merged.size > 0 ? [...merged.values()] : localQuestions;
+      setQuestions(rows.filter(isPendingEditQuestion));
     } catch (_err) {
-      setQuestions(localQuestions.filter((q: Question) => (q.edit_status || '未编辑') === '未编辑'));
+      setQuestions(localQuestions.filter(isPendingEditQuestion));
     }
     const kn = db?.getKnowledgeTree?.() || [];
     const models = db?.getModelTree?.() || [];
@@ -101,12 +112,12 @@ const QuestionBankEdit: React.FC = () => {
       analysis: question.analysis,
       options: (question.options || []).join('\n'),
       type: normalizeQuestionType(question.type),
-      difficulty: question.difficulty,
+      difficulty: question.difficulty || 3,
       source: question.source,
       year: question.year,
       grade: question.grade,
       semester: question.semester,
-      exam_type: question.exam_type,
+      exam_type: question.exam_type || '其他',
       region: (question as any).region,
       school: (question as any).school,
       subject: question.subject || '物理',
@@ -115,21 +126,6 @@ const QuestionBankEdit: React.FC = () => {
       formulas: (question.formulas || []).join('\n'),
       tags: (question.tags || []).join(','),
     });
-  };
-
-  const restoreVersion = (version: QuestionVersion) => {
-    if (!editing) return;
-    const db = (window as any).dbService;
-    const restored = db?.restoreQuestionVersion?.(editing.id, version.id);
-    if (!restored) {
-      message.error('版本恢复失败');
-      return;
-    }
-    message.success(`已恢复到版本 ${version.version_no}`);
-    setEditing(null);
-    setVersions([]);
-    form.resetFields();
-    loadData();
   };
 
   const saveQuestion = async () => {
@@ -181,14 +177,8 @@ const QuestionBankEdit: React.FC = () => {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || '后端保存失败');
     } catch (_err) {
-      // 离线或后端失败时继续保留本地编辑和版本快照。
+      db?.updateQuestion?.(editing.id, { ...payload, content: payload.stem, analysis: payload.explanation });
     }
-    db?.updateQuestion?.(editing.id, {
-      ...payload,
-      content: payload.stem,
-      analysis: payload.explanation,
-      model_point: (values.model_ids || []).length > 0 ? modelNodes.find(n => n.id === values.model_ids[0])?.name || '' : '',
-    });
     message.success('试题已保存');
     setEditing(null);
     form.resetFields();
@@ -200,7 +190,7 @@ const QuestionBankEdit: React.FC = () => {
       message.warning('请先选择试题');
       return;
     }
-    const values = await form.validateFields(['knowledge_ids', 'model_ids', 'year', 'grade', 'semester', 'exam_type', 'region', 'school']);
+    const values = await batchForm.validateFields();
     const db = (window as any).dbService;
     for (const id of selectedRowKeys) {
       const q = questions.find(item => item.id === id);
@@ -233,139 +223,137 @@ const QuestionBankEdit: React.FC = () => {
   const columns = [
     { title: '题干', dataIndex: 'content', ellipsis: true, render: (text: string) => <Text>{text}</Text> },
     { title: '科目', dataIndex: 'subject', width: 70, render: (v: string) => v || '物理' },
-    { title: '题型', dataIndex: 'type', width: 90 },
-    { title: '年份', dataIndex: 'year', width: 80, render: (v: string) => v || '-' },
+    { title: '题型', dataIndex: 'type', width: 90, render: (v: string) => normalizeQuestionType(v) },
+    { title: '学年', dataIndex: 'year', width: 110, render: (v: string) => v || '-' },
     { title: '年级', dataIndex: 'grade', width: 80, render: (v: string) => v || '-' },
     { title: '考试类型', dataIndex: 'exam_type', width: 100, render: (v: string) => v ? <Tag>{v}</Tag> : '-' },
     {
       title: '操作', width: 80, render: (_: any, record: Question) => (
-        <Tooltip title="编辑试题">
-          <Button type="link" icon={<EditOutlined />} onClick={() => openEditor(record)} />
-        </Tooltip>
+        <Button type="link" icon={<EditOutlined />} onClick={() => openEditor(record)}>编辑</Button>
       )
     },
   ];
 
   return (
-    <Row gutter={16}>
-      <Col span={17}>
-        <Card
-          title={<Space><EditOutlined />试题编辑</Space>}
-          extra={<Button icon={<TagsOutlined />} disabled={selectedRowKeys.length === 0} onClick={applyBatchTags}>批量应用标注</Button>}
-        >
-          <Table
-            loading={loading}
-            rowSelection={{ selectedRowKeys, onChange: keys => setSelectedRowKeys(keys as string[]) }}
-            columns={columns}
-            dataSource={questions}
-            rowKey="id"
-            size="small"
-            pagination={{ pageSize: 12, showTotal: t => `共 ${t} 题` }}
-          />
-        </Card>
-      </Col>
-      <Col span={7}>
-        <Card size="small" title="批量标注面板">
-          <Form form={form} layout="vertical">
+    <Card title="试题编辑" extra={<Tag color="orange">待编辑 {questions.length} 题</Tag>}>
+      <Space direction="vertical" size={16} style={{ width: '100%' }}>
+        <Card size="small" title="批量标注">
+          <Form form={batchForm} layout="inline">
             <Form.Item name="knowledge_ids" label="知识点">
-              <Select mode="multiple" allowClear options={knowledgeOptions} placeholder="可多选，无数量上限" />
+              <Select mode="multiple" style={{ minWidth: 220 }} options={knowledgeOptions} />
             </Form.Item>
             <Form.Item name="model_ids" label="模型">
-              <Select mode="multiple" allowClear options={modelOptions} placeholder="可多选，无数量上限" />
+              <Select mode="multiple" style={{ minWidth: 220 }} options={modelOptions} />
             </Form.Item>
-            <Row gutter={8}>
-              <Col span={12}><Form.Item name="year" label="年份"><Input /></Form.Item></Col>
-              <Col span={12}><Form.Item name="grade" label="年级"><Select allowClear options={GRADES.map(v => ({ label: v, value: v }))} /></Form.Item></Col>
-            </Row>
-            <Row gutter={8}>
-              <Col span={12}><Form.Item name="semester" label="学期"><Select allowClear options={SEMESTERS.map(v => ({ label: v, value: v }))} /></Form.Item></Col>
-              <Col span={12}><Form.Item name="exam_type" label="考试类型"><Select allowClear options={EXAM_TYPES.map(v => ({ label: v, value: v }))} /></Form.Item></Col>
-            </Row>
-            <Form.Item name="region" label="地区"><Input /></Form.Item>
-            <Form.Item name="school" label="学校"><Input /></Form.Item>
+            <Form.Item name="year" label="学年">
+              <Input style={{ width: 120 }} placeholder="2025-2026" />
+            </Form.Item>
+            <Form.Item name="exam_type" label="考试类型">
+              <Select style={{ width: 130 }} options={EXAM_TYPES.map(v => ({ value: v, label: v }))} />
+            </Form.Item>
+            <Form.Item>
+              <Button type="primary" icon={<TagsOutlined />} onClick={applyBatchTags} disabled={selectedRowKeys.length === 0}>
+                批量应用
+              </Button>
+            </Form.Item>
           </Form>
         </Card>
-      </Col>
+
+        <Table
+          rowKey="id"
+          loading={loading}
+          dataSource={questions}
+          columns={columns}
+          rowSelection={{ selectedRowKeys, onChange: keys => setSelectedRowKeys(keys as string[]) }}
+          pagination={{ pageSize: 12, showSizeChanger: true }}
+        />
+      </Space>
 
       <Modal
-        title="编辑试题内容与标注"
         open={!!editing}
-        width={920}
+        title="编辑试题"
+        onCancel={() => setEditing(null)}
         onOk={saveQuestion}
+        width={980}
         okText="保存"
-        onCancel={() => { setEditing(null); setVersions([]); form.resetFields(); }}
-        destroyOnClose
+        cancelText="取消"
       >
         <Form form={form} layout="vertical">
-          <Space style={{ marginBottom: 8 }}>
-            <Tag icon={<FunctionOutlined />}>公式可用 LaTeX 或 Word 转写文本</Tag>
-            <Tag icon={<FileImageOutlined />}>图片可上传替换附件</Tag>
-          </Space>
-          <Form.Item name="content" label="题干" rules={[{ required: true }]}>
-            <TextArea rows={6} placeholder="编辑题干文字、公式占位和图片说明" />
+          <Form.Item name="content" label="题干" rules={[{ required: true, message: '请输入题干' }]}>
+            <TextArea rows={5} />
           </Form.Item>
-          <Row gutter={12}>
-            <Col span={12}><Form.Item name="answer" label="答案" rules={[{ required: true }]}><TextArea rows={3} /></Form.Item></Col>
-            <Col span={12}><Form.Item name="analysis" label="解析"><TextArea rows={3} /></Form.Item></Col>
-          </Row>
-          <Form.Item name="options" label="选项"><TextArea rows={3} placeholder="每行一个选项" /></Form.Item>
-          <Row gutter={12}>
-            <Col span={6}><Form.Item name="type" label="题型"><Select options={QUESTION_TYPES.map(v => ({ label: v, value: v }))} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="year" label="年份"><Input /></Form.Item></Col>
-            <Col span={6}><Form.Item name="grade" label="年级"><Select allowClear options={GRADES.map(v => ({ label: v, value: v }))} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="semester" label="学期"><Select allowClear options={SEMESTERS.map(v => ({ label: v, value: v }))} /></Form.Item></Col>
-          </Row>
-          <Row gutter={12}>
-            <Col span={6}><Form.Item name="subject" label="科目"><Input placeholder="物理" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="exam_type" label="考试类型"><Select allowClear options={EXAM_TYPES.map(v => ({ label: v, value: v }))} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="region" label="地区"><Input /></Form.Item></Col>
-            <Col span={6}><Form.Item name="school" label="学校"><Input /></Form.Item></Col>
-          </Row>
+          <Form.Item name="answer" label="答案">
+            <TextArea rows={3} />
+          </Form.Item>
+          <Form.Item name="analysis" label="解析">
+            <TextArea rows={4} />
+          </Form.Item>
+          <Form.Item name="options" label="选项">
+            <TextArea rows={3} placeholder="每行一个选项" />
+          </Form.Item>
+          <Space wrap>
+            <Form.Item name="subject" label="科目" style={{ width: 120 }}>
+              <Select options={SUBJECTS.map(v => ({ value: v, label: v }))} />
+            </Form.Item>
+            <Form.Item name="type" label="题型" style={{ width: 130 }}>
+              <Select options={QUESTION_TYPES.map(v => ({ value: v, label: v }))} />
+            </Form.Item>
+            <Form.Item name="difficulty" label="难度" style={{ width: 110 }}>
+              <InputNumber min={1} max={5} />
+            </Form.Item>
+            <Form.Item name="year" label="学年" style={{ width: 130 }}>
+              <Input placeholder="2025-2026" />
+            </Form.Item>
+            <Form.Item name="grade" label="年级" style={{ width: 120 }}>
+              <Select options={GRADES.map(v => ({ value: v, label: v }))} />
+            </Form.Item>
+            <Form.Item name="semester" label="学期" style={{ width: 120 }}>
+              <Select options={SEMESTERS.map(v => ({ value: v, label: v }))} />
+            </Form.Item>
+            <Form.Item name="exam_type" label="考试类型" style={{ width: 130 }}>
+              <Select options={EXAM_TYPES.map(v => ({ value: v, label: v }))} />
+            </Form.Item>
+          </Space>
+          <Space wrap>
+            <Form.Item name="region" label="地区">
+              <Input />
+            </Form.Item>
+            <Form.Item name="school" label="学校">
+              <Input />
+            </Form.Item>
+            <Form.Item name="source" label="来源">
+              <Input />
+            </Form.Item>
+          </Space>
           <Form.Item name="knowledge_ids" label="知识点">
-            <Select mode="multiple" allowClear options={knowledgeOptions} placeholder="可多选，无数量上限" />
+            <Select mode="multiple" options={knowledgeOptions} />
           </Form.Item>
           <Form.Item name="model_ids" label="模型">
-            <Select mode="multiple" allowClear options={modelOptions} placeholder="可多选，无数量上限" />
+            <Select mode="multiple" options={modelOptions} />
           </Form.Item>
-          <Form.Item name="formulas" label="公式编辑">
-            <TextArea rows={3} placeholder="每行一个公式，可填写 LaTeX、Word 公式转写文本或 MathType 转写文本" />
+          <Form.Item name="formulas" label={<span><FunctionOutlined /> 公式</span>}>
+            <TextArea rows={2} placeholder="可录入 LaTeX 或公式说明" />
           </Form.Item>
-          <Form.Item label="上传/修改图片">
+          <Form.Item label={<span><FileImageOutlined /> 图片</span>}>
             <Upload
               listType="picture"
               fileList={imageFiles}
               beforeUpload={() => false}
               onChange={({ fileList }) => setImageFiles(fileList)}
             >
-              <Button icon={<FileImageOutlined />}>选择图片</Button>
+              <Button>上传图片</Button>
             </Upload>
           </Form.Item>
-          <Form.Item name="tags" label="标签"><Input placeholder="逗号分隔" /></Form.Item>
+          {versions.length > 0 && (
+            <Card size="small" title="最近版本">
+              <Space wrap>
+                {versions.map(version => <Tag key={version.id}>v{version.version_no} {new Date(version.created_at).toLocaleString()}</Tag>)}
+              </Space>
+            </Card>
+          )}
         </Form>
-        <Divider orientation="left" style={{ fontSize: 12 }}>版本记录</Divider>
-        {versions.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无历史版本" />
-        ) : (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            {versions.map(version => (
-              <Card key={version.id} size="small" bodyStyle={{ padding: 10 }}>
-                <Row align="middle" gutter={12}>
-                  <Col flex="80px"><Tag color="blue">版本 {version.version_no}</Tag></Col>
-                  <Col flex="auto">
-                    <div style={{ fontSize: 12, color: '#666' }}>{new Date(version.created_at).toLocaleString()}</div>
-                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {version.snapshot.content || '空题干'}
-                    </div>
-                  </Col>
-                  <Col><Button size="small" onClick={() => restoreVersion(version)}>恢复</Button></Col>
-                </Row>
-              </Card>
-            ))}
-          </Space>
-        )}
-        {questions.length === 0 && <Empty description="暂无试题" />}
       </Modal>
-    </Row>
+    </Card>
   );
 };
 

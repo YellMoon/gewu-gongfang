@@ -86,6 +86,27 @@ function testImportTaskRecordsAndDetails() {
   });
 }
 
+function testCommitImportBatchCreatesAcceptedQuestions() {
+  withTempDatabase((db) => {
+    const batch = questionBank.createImportBatch(db, {
+      source_type: 'lecture',
+      file_name: 'commit.docx',
+      items: [
+        { stem: 'committed question one', answer: 'A', type: 'single', subject: '物理' },
+        { stem: 'committed question two', answer: 'B', type: 'single', subject: '物理' },
+      ],
+    }, 'default');
+
+    assert.strictEqual(batch.accepted_items, 2);
+    assert.strictEqual(batch.items.filter(item => item.status === 'success').length, 2);
+
+    const committed = questionBank.commitImportBatch(db, batch.id, 'default');
+    assert.strictEqual(committed.commit_result.imported_items, 2);
+    assert.strictEqual(committed.items.filter(item => item.status === 'imported').length, 2);
+    assert.strictEqual(questionBank.listQuestions(db, { limit: 10 }, 'default').length, 2);
+  });
+}
+
 function insertKnowledgePoint(db, id, tenantId, name) {
   const ts = new Date().toISOString();
   db.prepare(
@@ -156,6 +177,7 @@ function testQuestionKnowledgePointCrud() {
 function main() {
   testImportValidationPrecedesDuplicateDetection();
   testImportTaskRecordsAndDetails();
+  testCommitImportBatchCreatesAcceptedQuestions();
   testQuestionKnowledgePointCrud();
   console.log('questionBankService tests passed');
 }
