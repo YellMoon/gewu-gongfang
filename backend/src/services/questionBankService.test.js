@@ -53,6 +53,39 @@ function testImportValidationPrecedesDuplicateDetection() {
   });
 }
 
+function testImportTaskRecordsAndDetails() {
+  withTempDatabase((db) => {
+    const first = questionBank.createImportTask(db, {
+      source_type: 'lecture',
+      file_name: 'first.docx',
+      items: [
+        { stem: 'first valid question', answer: 'A', type: 'single' },
+        { stem: '', answer: '', type: 'single' },
+      ],
+    }, 'default');
+    const second = questionBank.createImportTask(db, {
+      source_type: 'paper',
+      file_name: 'second.docx',
+      items: [
+        { stem: 'second valid question', answer: '', type: 'single' },
+      ],
+    }, 'default');
+
+    const recent = questionBank.listImportTasks(db, { limit: 2 }, 'default');
+    assert.strictEqual(recent.length, 2);
+    assert.strictEqual(recent[0].id, second.id);
+    assert.strictEqual(recent[1].id, first.id);
+    assert.strictEqual(first.total_items, 2);
+    assert.strictEqual(first.failed_items, 1);
+    assert.strictEqual(second.warning_items, 1);
+
+    const firstDetail = questionBank.getImportTask(db, first.id, 'default');
+    assert.strictEqual(firstDetail.items.length, 2);
+    assert.strictEqual(firstDetail.items.filter(item => item.status === 'failed').length, 1);
+    assert.ok(firstDetail.items.some(item => item.errors.includes('missing_stem')));
+  });
+}
+
 function insertKnowledgePoint(db, id, tenantId, name) {
   const ts = new Date().toISOString();
   db.prepare(
@@ -122,6 +155,7 @@ function testQuestionKnowledgePointCrud() {
 
 function main() {
   testImportValidationPrecedesDuplicateDetection();
+  testImportTaskRecordsAndDetails();
   testQuestionKnowledgePointCrud();
   console.log('questionBankService tests passed');
 }

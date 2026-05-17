@@ -1,17 +1,19 @@
 ﻿import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Card, Table, Button, Modal, Form, Input, Select as AntSelect, Space, Tag, message,
-  Popconfirm, Tooltip, Tree, Divider, Badge, Checkbox, Dropdown, Menu, Empty, Row, Col, Typography, Drawer
+  Card, Button, Modal, Form, Input, Select as AntSelect, Space, Tag, message,
+  Popconfirm, Tooltip, Tree, Divider, Badge, Checkbox, Dropdown, Menu, Empty, Row, Col, Typography
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, CopyOutlined,
   FolderOpenOutlined, TagsOutlined, AimOutlined, BranchesOutlined,
-  CheckCircleOutlined, DownloadOutlined, FileWordOutlined, CloseCircleOutlined, ShoppingCartOutlined
+  CheckCircleOutlined, FileWordOutlined, CloseCircleOutlined, ShoppingCartOutlined
 } from '@ant-design/icons';
 import type { Question, KnowledgeNode } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
+import { highlightText, splitSearchTerms } from '../utils/highlightText';
+import { toggleQuestionBasket, useQuestionBasketIds } from '../components/QuestionBasket';
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -26,6 +28,20 @@ const LIMIT_SEMESTERS = ['全部', '上学期', '下学期'];
 const LIMIT_TYPES = ['全部', ...QUESTION_TYPES];
 const SEMESTERS = ['上学期', '下学期'];
 const LIMIT_EXAM_TYPES = ['全部', ...EXAM_TYPES];
+const LIMIT_DIFFICULTIES = ['全部', '1', '2', '3', '4', '5'];
+const LIMIT_STATUSES = [
+  { label: '全部', value: '全部' },
+  { label: '草稿', value: 'draft' },
+  { label: '待审核', value: 'pending' },
+  { label: '已发布', value: 'published' },
+  { label: '已下线', value: 'offline' },
+  { label: '已废弃', value: 'deprecated' },
+];
+const MEDIA_FILTERS = [
+  { label: '全部', value: '全部' },
+  { label: '含图片', value: 'image' },
+  { label: '含公式', value: 'formula' },
+];
 
 const YEAR_OPTIONS = Array.from({ length: 18 }, (_, i) => {
   const start = 2009 + i;
@@ -58,6 +74,9 @@ const QuestionBankPreview: React.FC = () => {
   const [filterGrades, setFilterGrades] = useState<string[]>(['全部']); // default: 全部
   const [filterSemesters, setFilterSemesters] = useState<string[]>(['全部']); // default: 全部
   const [filterYear, setFilterYear] = useState<string | undefined>(undefined);
+  const [filterDifficulties, setFilterDifficulties] = useState<string[]>(['全部']);
+  const [filterStatuses, setFilterStatuses] = useState<string[]>(['全部']);
+  const [filterMedia, setFilterMedia] = useState<string[]>(['全部']);
 
   // 排除知识点
   const [filterExcludeKnowledgeIds, setFilterExcludeKnowledgeIds] = useState<(string | undefined)[]>([undefined]);
@@ -76,9 +95,7 @@ const QuestionBankPreview: React.FC = () => {
   const [searchText, setSearchText] = useState<string>('');
   const [appliedSearchText, setAppliedSearchText] = useState<string>('');
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
-  const [basketIds, setBasketIds] = useState<string[]>([]);
-  const [basketOpen, setBasketOpen] = useState(false);
-  const [basketSelectedIds, setBasketSelectedIds] = useState<string[]>([]);
+  const [basketIds] = useQuestionBasketIds();
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<Question | null>(null);
   const [treeVisible, setTreeVisible] = useState(true);
@@ -152,17 +169,34 @@ const QuestionBankPreview: React.FC = () => {
 
   const activeKnowledgeIds = knowledgeSelectedIds.filter((id): id is string => !!id);
   const activeModelIds = modelSelectedIds.filter((id): id is string => !!id);
+  const searchTerms = splitSearchTerms(appliedSearchText);
+  const normalizeCheckGroup = (vals: any[]): string[] => {
+    if (vals.includes('全部') && vals.length > 1) {
+      return vals.filter(v => v !== '全部') as string[];
+    }
+    return vals.length === 0 ? ['全部'] : vals as string[];
+  };
 
   // 将知识点 ID 展开为所有底层后代（用于筛选）
-  const expandedIncludeIds = activeKnowledgeIds
+  const expandedIncludeGroups = activeKnowledgeIds
     .filter(id => !!id)
-    .flatMap(id => getDescendantIds(knowledgeNodes, id));
+    .map(id => getDescendantIds(knowledgeNodes, id));
   const expandedExcludeIds = filterExcludeKnowledgeIds
     .filter((id): id is string => !!id)
     .flatMap(id => getDescendantIds(knowledgeNodes, id));
-  const expandedModelIds = activeModelIds
+  const expandedModelGroups = activeModelIds
     .filter(id => !!id)
-    .flatMap(id => getDescendantIds(modelNodes, id));
+    .map(id => getDescendantIds(modelNodes, id));
+
+  const getNodeName = (id: string) => {
+    const n = knowledgeNodes.find(x => x.id === id);
+    return n ? n.name : id;
+  };
+
+  const getModelName = (id: string) => {
+    const n = modelNodes.find(x => x.id === id);
+    return n ? n.name : id;
+  };
 
   // Filters
   const filtered = questions.filter(q => {
@@ -170,35 +204,47 @@ const QuestionBankPreview: React.FC = () => {
     if (filterSubjects.length > 0 && !filterSubjects.includes(row.subject || row.subject_id || '')) return false;
     if (!filterTypes.includes('全部') && filterTypes.length > 0 && !filterTypes.includes(normalizeQuestionType(q.type))) return false;
     if (!filterExamTypes.includes('全部') && filterExamTypes.length > 0 && !filterExamTypes.includes(q.exam_type || '其他')) return false;
+    if (!filterDifficulties.includes('全部') && filterDifficulties.length > 0 && !filterDifficulties.includes(String(q.difficulty || ''))) return false;
+    if (!filterStatuses.includes('全部') && filterStatuses.length > 0 && !filterStatuses.includes(q.status || 'draft')) return false;
+    if (!filterMedia.includes('全部') && filterMedia.length > 0) {
+      if (filterMedia.includes('image') && !q.has_image) return false;
+      if (filterMedia.includes('formula') && !q.has_formula) return false;
+    }
     if (!filterGrades.includes('全部') && filterGrades.length > 0 && !filterGrades.includes(q.grade || '')) return false;
     if (!filterSemesters.includes('全部') && filterSemesters.length > 0 && !filterSemesters.includes(q.semester || '')) return false;
     if (filterYear && q.year !== filterYear) return false;
-    const terms = appliedSearchText.split(/\s+/).map(s => s.trim()).filter(Boolean);
-    if (terms.length > 0 && !terms.every(term => `${q.content || ''}\n${q.answer || ''}\n${q.analysis || ''}`.includes(term))) return false;
+    if (searchTerms.length > 0) {
+      const knowledgeNames = (q.knowledge_ids || []).map(getNodeName).join(' ');
+      const modelNames = (q.model_ids || []).map(getModelName).join(' ');
+      const haystack = [
+        q.content,
+        q.answer,
+        q.analysis,
+        knowledgeNames,
+        modelNames,
+        q.source,
+        q.exam_type,
+        q.region,
+        q.school,
+        q.year,
+      ].join('\n').toLowerCase();
+      if (!searchTerms.every(term => haystack.includes(term.toLowerCase()))) return false;
+    }
     const qKnowledgeIds = q.knowledge_ids || [];
     // 知识点 AND 逻辑（展开为后代）
-    if (expandedIncludeIds.length > 0) {
-      if (!expandedIncludeIds.every(kid => qKnowledgeIds.includes(kid))) return false;
+    if (expandedIncludeGroups.length > 0) {
+      if (!expandedIncludeGroups.every(group => group.some(kid => qKnowledgeIds.includes(kid)))) return false;
     }
     // 排除知识点（展开为后代，任一匹配则排除）
     if (expandedExcludeIds.length > 0) {
       if (expandedExcludeIds.some(kid => qKnowledgeIds.includes(kid))) return false;
     }
     const qModelIds = q.model_ids || [];
-    if (expandedModelIds.length > 0) {
-      if (!expandedModelIds.every(mid => qModelIds.includes(mid))) return false;
+    if (expandedModelGroups.length > 0) {
+      if (!expandedModelGroups.every(group => group.some(mid => qModelIds.includes(mid)))) return false;
     }
     return true;
   }).sort((a, b) => (b.created_at || b.updated_at || '').localeCompare(a.created_at || a.updated_at || ''));
-
-  const basketQuestions = basketIds.map(id => questions.find(q => q.id === id)).filter((q): q is Question => !!q);
-  const toggleBasket = (id: string) => {
-    setBasketIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
-
-  useEffect(() => {
-    setBasketSelectedIds(basketIds);
-  }, [basketIds]);
 
   const handleCreateKnowledgeNode = useCallback((name: string, parentId?: string | null) => {
     const db = (window as any).dbService;
@@ -575,16 +621,6 @@ const QuestionBankPreview: React.FC = () => {
     return 'red';
   };
 
-  const getNodeName = (id: string) => {
-    const n = knowledgeNodes.find(x => x.id === id);
-    return n ? n.name : id;
-  };
-
-  const getModelName = (id: string) => {
-    const n = modelNodes.find(x => x.id === id);
-    return n ? n.name : id;
-  };
-
   const openEditModal = (r: Question) => {
     setEditing(r);
     const knForm: Record<string, boolean> = {};
@@ -808,16 +844,35 @@ const QuestionBankPreview: React.FC = () => {
               <Checkbox.Group
                 options={LIMIT_TYPES}
                 value={filterTypes}
-                onChange={(vals) => {
-                  if (vals.includes('全部') && vals.length > 1) {
-                    setFilterTypes(vals.filter(v => v !== '全部'));
-                  } else if (vals.length === 0) {
-                    setFilterTypes(['全部']);
-                  } else {
-                    setFilterTypes(vals as string[]);
-                  }
-                }}
+                onChange={(vals) => setFilterTypes(normalizeCheckGroup(vals as string[]))}
               />
+            </div>
+
+            <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>难度：</span>
+                <Checkbox.Group
+                  options={LIMIT_DIFFICULTIES}
+                  value={filterDifficulties}
+                  onChange={(vals) => setFilterDifficulties(normalizeCheckGroup(vals as string[]))}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>状态：</span>
+                <Checkbox.Group
+                  options={LIMIT_STATUSES}
+                  value={filterStatuses}
+                  onChange={(vals) => setFilterStatuses(normalizeCheckGroup(vals as string[]))}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>媒介：</span>
+                <Checkbox.Group
+                  options={MEDIA_FILTERS}
+                  value={filterMedia}
+                  onChange={(vals) => setFilterMedia(normalizeCheckGroup(vals as string[]))}
+                />
+              </div>
             </div>
 
             {/* Row 2: 年级（单独一行）*/}
@@ -827,13 +882,7 @@ const QuestionBankPreview: React.FC = () => {
                 options={LIMIT_GRADES}
                 value={filterGrades}
                 onChange={(vals) => {
-                  if (vals.includes('全部') && vals.length > 1) {
-                      setFilterGrades(vals.filter(v => v !== '全部'));
-                    } else if (vals.length === 0) {
-                      setFilterGrades(['全部']);
-                  } else {
-                    setFilterGrades(vals as string[]);
-                  }
+                  setFilterGrades(normalizeCheckGroup(vals as string[]));
                 }}
               />
             </div>
@@ -846,13 +895,7 @@ const QuestionBankPreview: React.FC = () => {
                   options={LIMIT_SEMESTERS}
                   value={filterSemesters}
                   onChange={(vals) => {
-                    if (vals.includes('全部') && vals.length > 1) {
-                      setFilterSemesters(vals.filter(v => v !== '全部'));
-                    } else if (vals.length === 0) {
-                      setFilterSemesters(['全部']);
-                    } else {
-                      setFilterSemesters(vals as string[]);
-                    }
+                    setFilterSemesters(normalizeCheckGroup(vals as string[]));
                   }}
                 />
               </div>
@@ -885,13 +928,7 @@ const QuestionBankPreview: React.FC = () => {
                   options={LIMIT_EXAM_TYPES}
                   value={filterExamTypes}
                   onChange={(vals) => {
-                    if (vals.includes('全部') && vals.length > 1) {
-                      setFilterExamTypes(vals.filter(v => v !== '全部') as string[]);
-                    } else if (vals.length === 0) {
-                      setFilterExamTypes(['全部']);
-                    } else {
-                      setFilterExamTypes(vals as string[]);
-                    }
+                    setFilterExamTypes(normalizeCheckGroup(vals as string[]));
                   }}
                 />
               </div>
@@ -900,7 +937,7 @@ const QuestionBankPreview: React.FC = () => {
             {/* Row 5: 搜索题干 */}
             <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
               <Input
-                placeholder="搜索题干..."
+                placeholder="搜索题干/答案/解析/知识点/模型/来源，空格分隔"
                 allowClear
                 style={{ width: 280 }}
                 value={searchText}
@@ -960,7 +997,7 @@ const QuestionBankPreview: React.FC = () => {
               </div>
               {activeKnowledgeIds.length > 0 && (
                 <div style={{ marginTop: 4, color: '#888', fontSize: 12 }}>
-                  已选 {activeKnowledgeIds.length} 个知识点（AND 筛选），共覆盖 {expandedIncludeIds.length} 个后代节点
+                  已选 {activeKnowledgeIds.length} 个知识点（AND 筛选），共覆盖 {expandedIncludeGroups.flat().length} 个后代节点
                 </div>
               )}
             </div>
@@ -1060,7 +1097,7 @@ const QuestionBankPreview: React.FC = () => {
               </div>
               {activeModelIds.length > 0 && (
                 <div style={{ marginTop: 4, color: '#888', fontSize: 12 }}>
-                  已选 {activeModelIds.length} 个模型（AND 筛选），共覆盖 {expandedModelIds.length} 个后代节点
+                  已选 {activeModelIds.length} 个模型（AND 筛选），共覆盖 {expandedModelGroups.flat().length} 个后代节点
                 </div>
               )}
             </div>
@@ -1103,10 +1140,20 @@ const QuestionBankPreview: React.FC = () => {
                         <Tag color="blue">{q.subject || '物理'}</Tag>
                         <Tag>{q.type || '题型未标注'}</Tag>
                         <Tag>{q.exam_type || '其他'}</Tag>
+                        <Tag>{q.status || 'draft'}</Tag>
+                        {q.has_image && <Tag color="cyan">图片</Tag>}
+                        {q.has_formula && <Tag color="purple">公式</Tag>}
                       </Space>
-                      <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{idx + 1}. {q.content}</div>
-                      {q.answer && <div style={{ marginTop: 8, color: '#555' }}>答案：{q.answer}</div>}
-                      <div style={{ marginTop: 8, color: '#888', fontSize: 12 }}>试题来源：{sourceText}</div>
+                      <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{idx + 1}. {highlightText(q.content, searchTerms)}</div>
+                      {q.answer && <div style={{ marginTop: 8, color: '#555' }}>答案：{highlightText(q.answer, searchTerms)}</div>}
+                      {q.analysis && <div style={{ marginTop: 8, color: '#666' }}>解析：{highlightText(q.analysis, searchTerms)}</div>}
+                      <div style={{ marginTop: 8, color: '#888', fontSize: 12 }}>
+                        知识点：{highlightText((q.knowledge_ids || []).map(getNodeName).join('、') || q.knowledge_point || '未标注', searchTerms)}
+                      </div>
+                      <div style={{ marginTop: 4, color: '#888', fontSize: 12 }}>
+                        模型：{highlightText((q.model_ids || []).map(getModelName).join('、') || q.model_point || '未标注', searchTerms)}
+                      </div>
+                      <div style={{ marginTop: 4, color: '#888', fontSize: 12 }}>试题来源：{highlightText(sourceText, searchTerms)}</div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginTop: 10 }}>
@@ -1115,7 +1162,7 @@ const QuestionBankPreview: React.FC = () => {
                       type={inBasket ? 'default' : 'primary'}
                       icon={<ShoppingCartOutlined />}
                       style={inBasket ? { color: '#1677ff', borderColor: '#1677ff', background: '#fff' } : { background: '#1677ff', border: 'none' }}
-                      onClick={() => toggleBasket(q.id)}
+                      onClick={() => toggleQuestionBasket(q.id)}
                     >
                       {inBasket ? '移出试题篮' : '加入试题篮'}
                     </Button>
@@ -1126,44 +1173,6 @@ const QuestionBankPreview: React.FC = () => {
           </div>
         </Card>
       </Col>
-
-      <div
-        onClick={() => setBasketOpen(true)}
-        style={{ position: 'fixed', right: 0, top: '45%', zIndex: 20, cursor: 'pointer', color: '#1677ff', background: '#fff', padding: '10px 6px', textAlign: 'center' }}
-      >
-        <Badge count={basketIds.length} size="small">
-          <ShoppingCartOutlined style={{ fontSize: 24, color: '#1677ff' }} />
-        </Badge>
-        <div style={{ fontSize: 12, marginTop: 4 }}>试题篮</div>
-      </div>
-
-      <Drawer
-        title="试题篮"
-        placement="right"
-        open={basketOpen}
-        onClose={() => setBasketOpen(false)}
-        width={420}
-        footer={
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Checkbox checked={basketSelectedIds.length === basketIds.length && basketIds.length > 0} onChange={e => setBasketSelectedIds(e.target.checked ? [...basketIds] : [])}>全选</Checkbox>
-            <span>已选{basketSelectedIds.length}题</span>
-            <Space>
-              <Button danger onClick={() => { setBasketIds(prev => prev.filter(id => !basketSelectedIds.includes(id))); setBasketSelectedIds([]); }}>删除</Button>
-              <Button type="primary" onClick={() => { localStorage.setItem('question_basket_selected', JSON.stringify(basketSelectedIds)); window.dispatchEvent(new CustomEvent('navigate-page', { detail: 'question-bank-paper' })); }}>去组卷</Button>
-            </Space>
-          </div>
-        }
-      >
-        <Checkbox.Group value={basketSelectedIds} onChange={vals => setBasketSelectedIds(vals as string[])} style={{ width: '100%' }}>
-          <Space direction="vertical" style={{ width: '100%' }}>
-            {basketQuestions.map(q => (
-              <Checkbox key={q.id} value={q.id} style={{ width: '100%' }}>
-                <div style={{ display: 'inline-block', width: 330, verticalAlign: 'top' }}>{q.content}</div>
-              </Checkbox>
-            ))}
-          </Space>
-        </Checkbox.Group>
-      </Drawer>
 
       {/* Add/Edit Modal */}
       <Modal

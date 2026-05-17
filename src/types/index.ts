@@ -302,6 +302,42 @@ export interface QuestionTagRel {
   created_at: string;
 }
 
+export type ImportTaskStatus = 'pending' | 'checking' | 'checked' | 'importing' | 'imported' | 'partial_failed' | 'failed';
+export type ImportTaskItemStatus = 'pending' | 'success' | 'warning' | 'failed' | 'accepted' | 'duplicate' | 'rejected' | 'imported';
+
+export interface ImportTask {
+  id: string;
+  source_type: string;
+  file_name?: string;
+  file_hash?: string;
+  status: ImportTaskStatus;
+  total_items: number;
+  success_items: number;
+  warning_items: number;
+  failed_items: number;
+  duplicate_items: number;
+  quality_report?: any;
+  result_summary?: any;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ImportTaskItem {
+  id: string;
+  task_id: string;
+  item_index: number;
+  question_id?: string;
+  content_hash?: string;
+  status: ImportTaskItemStatus;
+  quality_score: number;
+  warnings: string[];
+  errors: string[];
+  error_message?: string;
+  payload?: any;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Question {
   id: string;
   subject: string;

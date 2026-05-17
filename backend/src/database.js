@@ -68,6 +68,7 @@ class DatabaseService {
     this._recordSchemaVersion(schemaPath);
     this._ensureTenantColumns();
     this._ensureQuestionMetaColumns();
+    this._ensureImportTaskColumns();
     this._ensureArchiveJobColumns();
     console.log(`[DB] initialized env=${this.environment} schema=${this.schemaVersion} path=${this.dbPath}`);
   }
@@ -224,6 +225,34 @@ class DatabaseService {
     this.db.prepare("UPDATE questions SET has_image = 0 WHERE has_image IS NULL").run();
     this.db.prepare("UPDATE questions SET has_formula = 0 WHERE has_formula IS NULL").run();
     this.db.prepare("UPDATE questions SET created_by = '' WHERE created_by IS NULL").run();
+  }
+
+  _ensureImportTaskColumns() {
+    const batchExists = this.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'import_batches'"
+    ).get();
+    if (batchExists) {
+      const columns = this.db.prepare('PRAGMA table_info(import_batches)').all().map(c => c.name);
+      const addColumn = (name, sql) => {
+        if (!columns.includes(name)) this.db.prepare(`ALTER TABLE import_batches ADD COLUMN ${name} ${sql}`).run();
+      };
+      addColumn('warning_items', 'INTEGER DEFAULT 0');
+      addColumn('failed_items', 'INTEGER DEFAULT 0');
+      addColumn('result_summary', 'TEXT');
+    }
+
+    const itemExists = this.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'import_items'"
+    ).get();
+    if (itemExists) {
+      const columns = this.db.prepare('PRAGMA table_info(import_items)').all().map(c => c.name);
+      const addColumn = (name, sql) => {
+        if (!columns.includes(name)) this.db.prepare(`ALTER TABLE import_items ADD COLUMN ${name} ${sql}`).run();
+      };
+      addColumn('question_id', 'TEXT');
+      addColumn('warnings', 'TEXT');
+      addColumn('errors', 'TEXT');
+    }
   }
 
   _tenantId(options = {}) {

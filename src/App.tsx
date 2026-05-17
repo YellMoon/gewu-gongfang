@@ -36,6 +36,7 @@ import OperateLog from './pages/OperateLog';
 import ErrorBoundary from './components/ErrorBoundary';
 import AdminLogin from './pages/AdminLogin';
 import Admin from './pages/Admin';
+import QuestionBasket from './components/QuestionBasket';
 
 
 const { Header, Content } = Layout;
@@ -60,6 +61,13 @@ const LazyPage: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     </Suspense>
   </ErrorBoundary>
 );
+
+const QUESTION_BANK_PAGES: PageKey[] = [
+  'question-bank-import',
+  'question-bank-preview',
+  'question-bank-edit',
+  'question-bank-paper',
+];
 
 type PageKey =
   | 'course-calendar' | 'schedule-list' | 'course-info'
@@ -440,6 +448,7 @@ const App: React.FC = () => {
       <Content style={{ padding: 16, minHeight: 'calc(100vh - 48px)' }}>
         {renderPage()}
       </Content>
+      <QuestionBasket visible={QUESTION_BANK_PAGES.includes(currentPage)} />
     </Layout>
   );
 };

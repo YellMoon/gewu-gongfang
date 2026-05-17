@@ -1,17 +1,24 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card, Button, Modal, Form, Input, InputNumber, Select as AntSelect, Space, Tag, message,
-  Tree, Divider, Checkbox, Empty, Row, Col, Typography, Table, Tooltip, Radio
+  Tree, Divider, Checkbox, Empty, Row, Col, Typography, Table, Tooltip, Radio, Steps, Alert, Statistic, Drawer
 } from 'antd';
 import {
   PlusOutlined, FileWordOutlined, BookOutlined, FormOutlined,
   FileAddOutlined, CheckCircleOutlined, BranchesOutlined, FolderOpenOutlined,
-  DeleteOutlined, EditOutlined, CloseCircleOutlined
+  DeleteOutlined, EditOutlined, CloseCircleOutlined, DownloadOutlined
 } from '@ant-design/icons';
-import type { Question, KnowledgeNode } from '../types';
+import type { Question, KnowledgeNode, ImportTask, ImportTaskItem } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType, questionTypeFromParser } from '../constants/questionTypes';
+import { applyAutoTagsToQuestion } from '../services/autoTagService';
+import {
+  downloadImportValidationReport,
+  validateImportQuestions,
+  type ImportValidationRow,
+  type ImportValidationSummary,
+} from '../services/questionValidation';
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -30,10 +37,13 @@ type ImportBatch = {
   status: string;
   total_items: number;
   accepted_items: number;
+  warning_items?: number;
+  failed_items?: number;
   duplicate_items: number;
   rejected_items: number;
   quality_report?: any;
   commit_result?: any;
+  items?: any[];
 };
 
 type ExamMeta = {
@@ -44,6 +54,18 @@ type ExamMeta = {
   region?: string;
   school?: string;
   paper_name?: string;
+};
+
+type ImportStep = 0 | 1 | 2 | 3;
+
+type ImportCommitResult = {
+  id: string;
+  imported: number;
+  failed: number;
+  warning: number;
+  created_at: string;
+  source_type: 'lecture' | 'exam';
+  file_name?: string;
 };
 
 function stripFileExtension(fileName: string): string {
@@ -138,7 +160,7 @@ function toServerQuestion(q: any, meta: any = {}) {
     year: q.year || meta.year || '',
     grade: q.grade || meta.grade || '',
     semester: q.semester || meta.semester || '',
-    exam_type: q.exam_type || meta.exam_type || '其他',
+    exam_type: q.exam_type || meta.exam_type || '\u5176\u4ed6',
     region: q.region || meta.region || '',
     school: q.school || meta.school || '',
     paper_name: q.paper_name || meta.paper_name || '',
@@ -170,6 +192,45 @@ function normalizeImportedKnowledgeIds(db: any, parsedQuestion: any): string[] {
   return [...ids];
 }
 
+function getQuestionStem(q: any): string {
+  return q.stem || q.content || '';
+}
+
+function applyExamMetaToQuestion(q: any, meta: ExamMeta = {}, sourceType: 'lecture' | 'exam') {
+  if (sourceType !== 'exam') return q;
+  return {
+    ...q,
+    year: q.year || meta.year || '',
+    grade: q.grade || meta.grade || '',
+    semester: q.semester || meta.semester || '',
+    exam_type: q.exam_type || meta.exam_type || '其他',
+    region: q.region || meta.region || '',
+    school: q.school || meta.school || '',
+    paper_name: q.paper_name || meta.paper_name || '',
+    source: q.source || meta.paper_name || '',
+  };
+}
+
+function statusColor(status: string): string {
+  if (['success', 'accepted', 'imported'].includes(status)) return 'green';
+  if (['warning', 'duplicate'].includes(status)) return 'orange';
+  if (['failed', 'rejected'].includes(status)) return 'red';
+  return 'blue';
+}
+
+function importTaskStatusText(status: string): string {
+  const map: Record<string, string> = {
+    pending: '待处理',
+    checking: '校验中',
+    checked: '已校验',
+    importing: '导入中',
+    imported: '已导入',
+    partial_failed: '部分失败',
+    failed: '失败',
+  };
+  return map[status] || status;
+}
+
 const QuestionBankImport: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
@@ -189,6 +250,13 @@ const QuestionBankImport: React.FC = () => {
   const [committingBatch, setCommittingBatch] = useState(false);
   const [wordSourceType, setWordSourceType] = useState<'lecture' | 'exam'>('lecture');
   const [selectedWordFile, setSelectedWordFile] = useState<File | null>(null);
+  const [importStep, setImportStep] = useState<ImportStep>(0);
+  const [validationRows, setValidationRows] = useState<ImportValidationRow[]>([]);
+  const [validationSummary, setValidationSummary] = useState<ImportValidationSummary>({ success: 0, warning: 0, failed: 0, total: 0 });
+  const [commitResult, setCommitResult] = useState<ImportCommitResult | null>(null);
+  const [recentImportTasks, setRecentImportTasks] = useState<ImportTask[]>([]);
+  const [importTaskDetail, setImportTaskDetail] = useState<(ImportTask & { items: ImportTaskItem[] }) | null>(null);
+  const [importTaskDrawerOpen, setImportTaskDrawerOpen] = useState(false);
   const [examForm] = Form.useForm();
   const [form] = Form.useForm();
   const examMetaRef = useRef<any>(null);
@@ -224,6 +292,7 @@ const QuestionBankImport: React.FC = () => {
         db.initDefaultModelTree?.();
         setModelNodes(db.getModelTree?.() || []);
       }
+      setRecentImportTasks(db.getRecentImportTasks?.(8) || []);
     } catch (e) {
       console.error('QuestionBankImport loadData error:', e);
     }
@@ -589,6 +658,9 @@ const QuestionBankImport: React.FC = () => {
     examMetaRef.current = examMeta || null;
     setWordImporting(true);
     setWordResult(null);
+    setValidationRows([]);
+    setValidationSummary({ success: 0, warning: 0, failed: 0, total: 0 });
+    setCommitResult(null);
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -607,8 +679,18 @@ const QuestionBankImport: React.FC = () => {
       if (data.error) {
         message.error(data.error);
       } else {
-        setWordResult(data);
+        const taggedQuestions = (data.questions || []).map((q: any) => {
+          const withMeta = applyExamMetaToQuestion(q, examMeta || {}, wordSourceType);
+          return applyAutoTagsToQuestion(withMeta, knowledgeNodes, modelNodes);
+        });
+        const nextResult = { ...data, questions: taggedQuestions, count: taggedQuestions.length };
+        const validation = validateImportQuestions(taggedQuestions, questions);
+        setWordResult(nextResult);
+        setValidationRows(validation.rows);
+        setValidationSummary(validation.summary);
+        setImportStep(2);
         setImportBatch(null);
+        const db = (window as any).dbService;
         try {
           const checkRes = await fetch(`${API_BASE}/imports/check`, {
             method: 'POST',
@@ -616,19 +698,63 @@ const QuestionBankImport: React.FC = () => {
             body: JSON.stringify({
               source_type: wordSourceType,
               file_name: file.name,
-              items: (data.questions || []).map((q: any) => toServerQuestion(q, examMeta || {})),
+              items: taggedQuestions.map((q: any) => toServerQuestion(q, examMeta || {})),
             }),
           });
           const batchData = await checkRes.json();
           if (batchData.success) {
-            setImportBatch(batchData.data || batchData);
+            const nextBatch = batchData.data || batchData;
+            setImportBatch(nextBatch);
+            if (db?.createImportTask) {
+              db.createImportTask({
+                id: nextBatch.id,
+                source_type: wordSourceType,
+                file_name: file.name,
+                status: 'checked',
+                total_items: taggedQuestions.length,
+                success_items: validation.summary.success,
+                warning_items: validation.summary.warning,
+                failed_items: validation.summary.failed,
+                duplicate_items: nextBatch.duplicate_items || 0,
+                quality_report: nextBatch.quality_report || null,
+                items: validation.rows.map(row => ({
+                  item_index: row.index - 1,
+                  status: row.status,
+                  quality_score: row.status === 'success' ? 1 : row.status === 'warning' ? 0.7 : 0,
+                  warnings: row.issues.filter(issue => issue.level === 'warning').map(issue => issue.message),
+                  errors: row.issues.filter(issue => issue.level === 'failed').map(issue => issue.message),
+                  payload: row.question,
+                })),
+              });
+              setRecentImportTasks(db.getRecentImportTasks?.(8) || []);
+            }
           } else {
             message.warning(batchData.error || '导入批次校验未完成');
           }
         } catch (checkError: any) {
           message.warning('导入批次校验失败: ' + (checkError.message || 'unknown error'));
+          if (db?.createImportTask) {
+            db.createImportTask({
+              source_type: wordSourceType,
+              file_name: file.name,
+              status: 'checked',
+              total_items: taggedQuestions.length,
+              success_items: validation.summary.success,
+              warning_items: validation.summary.warning,
+              failed_items: validation.summary.failed,
+              duplicate_items: 0,
+              items: validation.rows.map(row => ({
+                item_index: row.index - 1,
+                status: row.status,
+                warnings: row.issues.filter(issue => issue.level === 'warning').map(issue => issue.message),
+                errors: row.issues.filter(issue => issue.level === 'failed').map(issue => issue.message),
+                payload: row.question,
+              })),
+            });
+            setRecentImportTasks(db.getRecentImportTasks?.(8) || []);
+          }
         }
-        message.success(`成功解析 ${data.count || 0} 道题目`);
+        message.success(`解析完成 ${taggedQuestions.length} 题，失败 ${validation.summary.failed} 题，警告 ${validation.summary.warning} 题`);
       }
     } catch (e: any) {
       message.error('导入失败: ' + (e.message || '网络请求失败'));
@@ -640,6 +766,10 @@ const QuestionBankImport: React.FC = () => {
     setSelectedWordFile(file);
     setWordResult(null);
     setImportBatch(null);
+    setValidationRows([]);
+    setValidationSummary({ success: 0, warning: 0, failed: 0, total: 0 });
+    setCommitResult(null);
+    setImportStep(1);
     if (wordSourceType === 'exam') {
       const current = examForm.getFieldsValue();
       const next = mergeDefinedMeta(current, extractExamMetaFromFileName(file.name));
@@ -680,6 +810,24 @@ const QuestionBankImport: React.FC = () => {
       const nextBatch = data.data || data;
       setImportBatch(nextBatch);
       setWordResult(null);
+      setImportStep(3);
+      setCommitResult({
+        id: nextBatch.id || importBatch.id,
+        imported: nextBatch.commit_result?.imported_items || nextBatch.accepted_items || 0,
+        failed: validationSummary.failed,
+        warning: validationSummary.warning,
+        created_at: new Date().toISOString(),
+        source_type: wordSourceType,
+        file_name: selectedWordFile?.name,
+      });
+      const db = (window as any).dbService;
+      db?.updateImportTask?.(nextBatch.id || importBatch.id, {
+        status: nextBatch.status || 'imported',
+        result_summary: nextBatch.commit_result || null,
+        success_items: nextBatch.commit_result?.imported_items || nextBatch.accepted_items || 0,
+        failed_items: nextBatch.commit_result?.failed_items || validationSummary.failed,
+      });
+      setRecentImportTasks(db?.getRecentImportTasks?.(8) || []);
       loadData();
       message.success(`已入库 ${nextBatch.commit_result?.imported_items || 0} 道题，索引任务已创建`);
     } catch (e: any) {
@@ -690,6 +838,10 @@ const QuestionBankImport: React.FC = () => {
   };
 
   const importWordResults = (result: any) => {
+    if (validationSummary.failed > 0) {
+      message.warning('存在失败题目，请先处理或导出报告后再确认导入');
+      return;
+    }
     if (importBatch) {
       commitImportBatch();
       return;
@@ -702,11 +854,12 @@ const QuestionBankImport: React.FC = () => {
     for (const q of (result.questions || [])) {
       try {
         const knowledge_ids = normalizeImportedKnowledgeIds(db, q);
+        const model_ids = [...new Set([...(q.model_ids || []), ...(q.model_point_ids || [])])];
         db.createQuestion({
-          subject: '物理',
+          subject: q.subject || '\u7269\u7406',
           type: questionTypeFromParser(q.question_types),
           difficulty: 3,
-          content: q.stem || '',
+          content: getQuestionStem(q),
           options: (q.options || []).map((o: any) => `${o.label}. ${o.content}`),
           answer: q.answer || '',
           analysis: q.analysis || '',
@@ -717,7 +870,8 @@ const QuestionBankImport: React.FC = () => {
           exam_type: q.exam_type || meta.exam_type || '其他',
           region: q.region || meta.region || '',
           school: q.school || meta.school || '',
-          edit_status: '未编辑',
+          paper_name: q.paper_name || meta.paper_name || '',
+          edit_status: '\u672a\u7f16\u8f91',
           status: q.status || 'draft',
           has_image: !!q.has_image,
           has_formula: !!q.has_formula,
@@ -726,14 +880,78 @@ const QuestionBankImport: React.FC = () => {
           formulas: [],
           knowledge_point: q.knowledge_point || '',
           knowledge_ids,
-          model_ids: [],
+          model_point: q.model_point || '',
+          model_ids,
         });
         added++;
       } catch (e) { /* skip bad ones */ }
     }
     setWordResult(null);
+    setImportStep(3);
+    setCommitResult({
+      id: `local-${Date.now()}`,
+      imported: added,
+      failed: validationSummary.failed,
+      warning: validationSummary.warning,
+      created_at: new Date().toISOString(),
+      source_type: wordSourceType,
+      file_name: selectedWordFile?.name,
+    });
+    const dbTask = db?.createImportTask?.({
+      source_type: wordSourceType,
+      file_name: selectedWordFile?.name,
+      status: 'imported',
+      total_items: result.count || added,
+      success_items: added,
+      warning_items: validationSummary.warning,
+      failed_items: validationSummary.failed,
+      duplicate_items: 0,
+      result_summary: { imported_items: added, failed_items: validationSummary.failed },
+      items: validationRows.map(row => ({
+        item_index: row.index - 1,
+        status: row.status === 'failed' ? 'failed' : 'imported',
+        warnings: row.issues.filter(issue => issue.level === 'warning').map(issue => issue.message),
+        errors: row.issues.filter(issue => issue.level === 'failed').map(issue => issue.message),
+        payload: row.question,
+      })),
+    });
+    if (dbTask) setRecentImportTasks(db.getRecentImportTasks?.(8) || []);
     loadData();
     message.success(`成功导入 ${added}/${result.count} 道题目到本地题库`);
+  };
+
+  const openImportTaskDetail = async (task: ImportTask) => {
+    const db = (window as any).dbService;
+    let detail = db?.getImportTaskDetail?.(task.id) || null;
+    if (!detail) {
+      try {
+        const res = await fetch(`${API_BASE}/imports/${task.id}`);
+        const data = await res.json();
+        if (data.success && data.data) {
+          detail = {
+            ...task,
+            ...data.data,
+            items: (data.data.items || []).map((item: any) => ({
+              id: item.id,
+              task_id: item.task_id || item.batch_id || task.id,
+              item_index: item.item_index || 0,
+              question_id: item.question_id || '',
+              content_hash: item.content_hash || '',
+              status: item.status || 'pending',
+              quality_score: Number(item.quality_score || 0),
+              warnings: Array.isArray(item.warnings) ? item.warnings : [],
+              errors: Array.isArray(item.errors) ? item.errors : [],
+              error_message: item.error_message || '',
+              payload: item.payload || null,
+              created_at: item.created_at || data.data.created_at,
+              updated_at: item.updated_at || data.data.updated_at,
+            })),
+          };
+        }
+      } catch (_err) {}
+    }
+    setImportTaskDetail(detail || { ...task, items: [] });
+    setImportTaskDrawerOpen(true);
   };
 
   return (
@@ -897,6 +1115,17 @@ const QuestionBankImport: React.FC = () => {
             </div>
           )}
 
+          <Steps
+            current={importStep}
+            style={{ marginBottom: 20 }}
+            items={[
+              { title: '上传文件' },
+              { title: '选择类型' },
+              { title: '预校验' },
+              { title: '确认导入' },
+            ]}
+          />
+
           <div style={{ background: '#f7f9fc', border: '1px solid #e8edf3', borderRadius: 8, padding: 20, marginBottom: 16 }}>
             <Row gutter={[20, 16]} align="top">
               <Col xs={24} lg={9}>
@@ -905,7 +1134,18 @@ const QuestionBankImport: React.FC = () => {
                     <FileWordOutlined style={{ fontSize: 22, color: '#1890ff' }} />
                     <Text strong>导入格式与说明</Text>
                   </div>
-                  <Radio.Group value={wordSourceType} onChange={e => setWordSourceType(e.target.value)} buttonStyle="solid">
+                  <Radio.Group
+                    value={wordSourceType}
+                    onChange={e => {
+                      setWordSourceType(e.target.value);
+                      setImportStep(selectedWordFile ? 1 : 0);
+                      setWordResult(null);
+                      setValidationRows([]);
+                      setValidationSummary({ success: 0, warning: 0, failed: 0, total: 0 });
+                      setCommitResult(null);
+                    }}
+                    buttonStyle="solid"
+                  >
                     <Radio.Button value="lecture">讲义格式</Radio.Button>
                     <Radio.Button value="exam">试卷格式</Radio.Button>
                   </Radio.Group>
@@ -961,7 +1201,7 @@ const QuestionBankImport: React.FC = () => {
                 size="large"
                 icon={<CheckCircleOutlined />}
                 loading={wordImporting}
-                disabled={!selectedWordFile}
+                disabled={!selectedWordFile || !wordSourceType}
                 onClick={handleStartParse}
               >
                 开始解析
@@ -969,19 +1209,160 @@ const QuestionBankImport: React.FC = () => {
             </Space>
           </div>
 
+          {(validationRows.length > 0 || commitResult) && (
+            <div style={{ marginTop: 16 }}>
+              <Divider orientation="left">预校验与确认导入</Divider>
+              <Row gutter={12} style={{ marginBottom: 12 }}>
+                <Col span={6}><Card size="small"><Statistic title="总题数" value={validationSummary.total} /></Card></Col>
+                <Col span={6}><Card size="small"><Statistic title="可导入" value={validationSummary.success} valueStyle={{ color: '#3f8600' }} /></Card></Col>
+                <Col span={6}><Card size="small"><Statistic title="警告" value={validationSummary.warning} valueStyle={{ color: '#fa8c16' }} /></Card></Col>
+                <Col span={6}><Card size="small"><Statistic title="失败" value={validationSummary.failed} valueStyle={{ color: '#cf1322' }} /></Card></Col>
+              </Row>
+              {validationSummary.failed > 0 ? (
+                <Alert showIcon type="error" message="存在失败题目，确认导入已禁用" description="请先处理空题干等失败项，或导出错误报告后重新整理文件。" style={{ marginBottom: 12 }} />
+              ) : validationRows.length > 0 ? (
+                <Alert showIcon type={validationSummary.warning > 0 ? 'warning' : 'success'} message={validationSummary.warning > 0 ? '存在警告项，可确认后继续导入' : '预校验通过，可以确认导入'} style={{ marginBottom: 12 }} />
+              ) : null}
+              {validationRows.length > 0 && (
+                <>
+                  <Table
+                    size="small"
+                    rowKey="key"
+                    dataSource={validationRows}
+                    pagination={{ pageSize: 8 }}
+                    columns={[
+                      { title: '序号', dataIndex: 'index', width: 70 },
+                      {
+                        title: '状态',
+                        dataIndex: 'status',
+                        width: 90,
+                        render: (status: string) => <Tag color={statusColor(status)}>{status === 'success' ? '成功' : status === 'warning' ? '警告' : '失败'}</Tag>,
+                      },
+                      {
+                        title: '题干',
+                        render: (_: any, row: ImportValidationRow) => <Text ellipsis style={{ maxWidth: 360 }}>{getQuestionStem(row.question) || '空题干'}</Text>,
+                      },
+                      {
+                        title: '问题',
+                        render: (_: any, row: ImportValidationRow) => (
+                          <Space wrap size={4}>
+                            {row.issues.length === 0 ? <Tag color="green">通过</Tag> : row.issues.map((issue, idx) => (
+                              <Tag key={idx} color={issue.level === 'failed' ? 'red' : 'orange'}>{issue.message}</Tag>
+                            ))}
+                          </Space>
+                        ),
+                      },
+                      {
+                        title: '自动打标',
+                        render: (_: any, row: ImportValidationRow) => (
+                          <Space wrap size={4}>
+                            {(row.autoTags || []).length > 0 ? row.autoTags?.map(tag => <Tag key={tag} color="blue">{tag}</Tag>) : <Text type="secondary">无</Text>}
+                          </Space>
+                        ),
+                      },
+                    ]}
+                  />
+                  <Space style={{ marginTop: 12 }}>
+                    <Button icon={<DownloadOutlined />} onClick={() => downloadImportValidationReport(validationRows)}>导出错误报告</Button>
+                    <Button type="primary" loading={committingBatch} disabled={!wordResult || validationSummary.failed > 0} onClick={() => wordResult && importWordResults(wordResult)}>
+                      确认导入
+                    </Button>
+                  </Space>
+                </>
+              )}
+              {commitResult && (
+                <Alert
+                  style={{ marginTop: 12 }}
+                  type="success"
+                  showIcon
+                  message={`导入完成：成功 ${commitResult.imported} 题，警告 ${commitResult.warning} 题，失败 ${commitResult.failed} 题`}
+                  description={commitResult.file_name ? `文件：${commitResult.file_name}` : undefined}
+                />
+              )}
+            </div>
+          )}
+
           {/* 最近导入记录 */}
-          {questions.length > 0 && (
+          {(recentImportTasks.length > 0 || questions.length > 0) && (
             <div style={{ marginTop: 16 }}>
               <Divider orientation="left">最近导入</Divider>
-              <div style={{ color: '#666', fontSize: 13 }}>
-                题库中共有 <b>{questions.length}</b> 道题目，来自多次导入操作。
-              </div>
+              {recentImportTasks.length > 0 ? (
+                <Table
+                  size="small"
+                  rowKey="id"
+                  dataSource={recentImportTasks}
+                  pagination={false}
+                  columns={[
+                    { title: '文件', dataIndex: 'file_name', render: (v: string) => v || '-' },
+                    { title: '类型', dataIndex: 'source_type', width: 90, render: (v: string) => v === 'exam' ? '试卷' : '讲义' },
+                    { title: '状态', dataIndex: 'status', width: 90, render: (v: string) => <Tag color={statusColor(v)}>{importTaskStatusText(v)}</Tag> },
+                    { title: '总数', dataIndex: 'total_items', width: 70 },
+                    { title: '警告', dataIndex: 'warning_items', width: 70 },
+                    { title: '失败', dataIndex: 'failed_items', width: 70 },
+                    { title: '时间', dataIndex: 'created_at', width: 170, render: (v: string) => v ? new Date(v).toLocaleString() : '-' },
+                    { title: '操作', width: 80, render: (_: any, record: ImportTask) => <Button type="link" onClick={() => openImportTaskDetail(record)}>详情</Button> },
+                  ]}
+                />
+              ) : (
+                <div style={{ color: '#666', fontSize: 13 }}>
+                  题库中共有 <b>{questions.length}</b> 道题目，来自多次导入操作。
+                </div>
+              )}
             </div>
           )}
         </Card>
       </Col>
 
       {/* 试卷格式导入 — 需填写试卷元信息 */}
+
+      <Drawer
+        title="导入任务详情"
+        placement="right"
+        width={620}
+        open={importTaskDrawerOpen}
+        onClose={() => setImportTaskDrawerOpen(false)}
+      >
+        {importTaskDetail ? (
+          <Space direction="vertical" style={{ width: '100%' }} size={12}>
+            <Card size="small">
+              <Space wrap>
+                <Tag color={statusColor(importTaskDetail.status)}>{importTaskStatusText(importTaskDetail.status)}</Tag>
+                <span>文件：{importTaskDetail.file_name || '-'}</span>
+                <span>总数：{importTaskDetail.total_items}</span>
+                <span>警告：{importTaskDetail.warning_items}</span>
+                <span>失败：{importTaskDetail.failed_items}</span>
+              </Space>
+            </Card>
+            <Table
+              size="small"
+              rowKey="id"
+              dataSource={importTaskDetail.items || []}
+              pagination={{ pageSize: 10 }}
+              columns={[
+                { title: '序号', dataIndex: 'item_index', width: 70, render: (v: number) => Number(v || 0) + 1 },
+                { title: '状态', dataIndex: 'status', width: 90, render: (v: string) => <Tag color={statusColor(v)}>{v}</Tag> },
+                {
+                  title: '题干',
+                  render: (_: any, row: ImportTaskItem) => (
+                    <Text ellipsis style={{ maxWidth: 260 }}>{getQuestionStem(row.payload || {}) || '-'}</Text>
+                  ),
+                },
+                {
+                  title: '问题',
+                  render: (_: any, row: ImportTaskItem) => (
+                    <Space wrap size={4}>
+                      {(row.errors || []).map(item => <Tag key={`e-${item}`} color="red">{item}</Tag>)}
+                      {(row.warnings || []).map(item => <Tag key={`w-${item}`} color="orange">{item}</Tag>)}
+                      {(!row.errors?.length && !row.warnings?.length && !row.error_message) ? <Tag color="green">通过</Tag> : null}
+                      {row.error_message ? <Tag color="red">{row.error_message}</Tag> : null}
+                    </Space>
+                  ),
+                },
+              ]}
+            />
+          </Space>
+        ) : <Empty description="暂无导入详情" />}
+      </Drawer>
 
       {/* Add/Edit Modal */}
       <Modal

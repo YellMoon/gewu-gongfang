@@ -1,0 +1,248 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Badge, Button, Checkbox, Drawer, Empty, Space, Tag, message } from 'antd';
+import {
+  ArrowDownOutlined,
+  ArrowUpOutlined,
+  DeleteOutlined,
+  FileWordOutlined,
+  ShoppingCartOutlined,
+} from '@ant-design/icons';
+import type { Question } from '../types';
+import { getApiBase } from '../utils/apiBase';
+import { normalizeQuestionType } from '../constants/questionTypes';
+
+const API_BASE = getApiBase('/api/question-bank');
+export const QUESTION_BASKET_STORAGE_KEY = 'question_basket_ids';
+export const QUESTION_BASKET_SELECTED_STORAGE_KEY = 'question_basket_selected';
+export const QUESTION_BASKET_EVENT = 'question-basket-changed';
+
+function readBasketIds(): string[] {
+  try {
+    const db = (window as any).dbService;
+    const ids = db?.getQuestionBasketIds?.();
+    if (Array.isArray(ids)) return ids;
+    return JSON.parse(localStorage.getItem(QUESTION_BASKET_STORAGE_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function writeBasketIds(ids: string[]): void {
+  const next = Array.from(new Set(ids.filter(Boolean)));
+  const db = (window as any).dbService;
+  if (db?.setQuestionBasketIds) {
+    db.setQuestionBasketIds(next);
+  } else {
+    localStorage.setItem(QUESTION_BASKET_STORAGE_KEY, JSON.stringify(next));
+  }
+  window.dispatchEvent(new CustomEvent(QUESTION_BASKET_EVENT, { detail: next }));
+}
+
+export function isQuestionInBasket(id: string): boolean {
+  return readBasketIds().includes(id);
+}
+
+export function setQuestionBasket(ids: string[]): void {
+  writeBasketIds(ids);
+}
+
+export function toggleQuestionBasket(id: string): string[] {
+  const current = readBasketIds();
+  const next = current.includes(id) ? current.filter(item => item !== id) : [...current, id];
+  writeBasketIds(next);
+  return next;
+}
+
+export function useQuestionBasketIds(): [string[], (ids: string[]) => void] {
+  const [ids, setIds] = useState<string[]>(() => readBasketIds());
+
+  useEffect(() => {
+    const sync = () => setIds(readBasketIds());
+    window.addEventListener(QUESTION_BASKET_EVENT, sync as EventListener);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener(QUESTION_BASKET_EVENT, sync as EventListener);
+      window.removeEventListener('storage', sync);
+    };
+  }, []);
+
+  const update = useCallback((nextIds: string[]) => {
+    writeBasketIds(nextIds);
+    setIds(readBasketIds());
+  }, []);
+
+  return [ids, update];
+}
+
+function normalizeQuestion(row: any): Question {
+  return {
+    ...row,
+    subject: row.subject || '物理',
+    type: normalizeQuestionType(row.type),
+    content: row.content ?? row.stem ?? '',
+    analysis: row.analysis ?? row.explanation ?? '',
+    exam_type: row.exam_type || '其他',
+    knowledge_ids: row.knowledge_ids ?? row.knowledge_point_ids ?? [],
+    model_ids: row.model_ids ?? row.model_point_ids ?? [],
+    status: row.status || 'draft',
+    has_image: !!row.has_image,
+    has_formula: !!row.has_formula,
+    created_by: row.created_by || '',
+  } as Question;
+}
+
+async function loadQuestionsByIds(ids: string[]): Promise<Question[]> {
+  const db = (window as any).dbService;
+  const localRows = (db?.getAllQuestions?.() || []).map(normalizeQuestion);
+  const localMap = new Map(localRows.map((q: Question) => [q.id, q]));
+
+  try {
+    const res = await fetch(`${API_BASE}/questions?limit=1000`);
+    const data = await res.json();
+    if (data.success && Array.isArray(data.data)) {
+      for (const item of data.data.map(normalizeQuestion)) {
+        localMap.set(item.id, item);
+      }
+    }
+  } catch (_err) {}
+
+  return ids.map(id => localMap.get(id)).filter((q): q is Question => !!q);
+}
+
+const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => {
+  const [ids, setIds] = useQuestionBasketIds();
+  const [open, setOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
+
+  useEffect(() => {
+    setSelectedIds(prev => prev.length === 0 ? [...ids] : prev.filter(id => ids.includes(id)));
+    loadQuestionsByIds(ids).then(setQuestions);
+  }, [ids]);
+
+  const typeStats = useMemo(() => {
+    const stats = new Map<string, number>();
+    questions.forEach(q => {
+      const type = normalizeQuestionType(q.type);
+      stats.set(type, (stats.get(type) || 0) + 1);
+    });
+    return Array.from(stats.entries());
+  }, [questions]);
+
+  const removeSelected = () => {
+    if (selectedIds.length === 0) return;
+    setIds(ids.filter(id => !selectedIds.includes(id)));
+    setSelectedIds([]);
+  };
+
+  const clearAll = () => {
+    setIds([]);
+    setSelectedIds([]);
+  };
+
+  const move = (index: number, offset: number) => {
+    const target = index + offset;
+    if (target < 0 || target >= ids.length) return;
+    const next = [...ids];
+    const [item] = next.splice(index, 1);
+    next.splice(target, 0, item);
+    setIds(next);
+  };
+
+  const goPaper = () => {
+    const targetIds = selectedIds.length > 0 ? selectedIds : ids;
+    localStorage.setItem(QUESTION_BASKET_SELECTED_STORAGE_KEY, JSON.stringify(targetIds));
+    window.dispatchEvent(new CustomEvent('navigate-page', { detail: 'question-bank-paper' }));
+    setOpen(false);
+  };
+
+  if (!visible) return null;
+
+  return (
+    <>
+      <div
+        onClick={() => setOpen(true)}
+        style={{
+          position: 'fixed',
+          right: 0,
+          top: '45%',
+          zIndex: 1200,
+          cursor: 'pointer',
+          color: '#1677ff',
+          background: '#fff',
+          padding: '10px 6px',
+          textAlign: 'center',
+          boxShadow: '0 2px 10px rgba(22,119,255,0.12)',
+        }}
+      >
+        <Badge count={ids.length} size="small">
+          <ShoppingCartOutlined style={{ fontSize: 24, color: '#1677ff' }} />
+        </Badge>
+        <div style={{ fontSize: 12, marginTop: 4 }}>试题篮</div>
+      </div>
+
+      <Drawer
+        title="试题篮"
+        placement="right"
+        open={open}
+        onClose={() => setOpen(false)}
+        width={460}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <Checkbox
+              checked={selectedIds.length === ids.length && ids.length > 0}
+              indeterminate={selectedIds.length > 0 && selectedIds.length < ids.length}
+              onChange={e => setSelectedIds(e.target.checked ? [...ids] : [])}
+            >
+              全选
+            </Checkbox>
+            <span>已选{selectedIds.length}题</span>
+            <Space>
+              <Button danger icon={<DeleteOutlined />} onClick={removeSelected} disabled={selectedIds.length === 0}>删除</Button>
+              <Button onClick={clearAll} disabled={ids.length === 0}>清空</Button>
+              <Button type="primary" icon={<FileWordOutlined />} onClick={goPaper} disabled={ids.length === 0}>去组卷</Button>
+            </Space>
+          </div>
+        }
+      >
+        <Space wrap style={{ marginBottom: 12 }}>
+          <Tag color="blue">共 {ids.length} 题</Tag>
+          {typeStats.map(([type, count]) => <Tag key={type}>{type} {count}</Tag>)}
+        </Space>
+        {questions.length === 0 ? (
+          <Empty description="试题篮中暂无试题" />
+        ) : (
+          <Checkbox.Group value={selectedIds} onChange={vals => setSelectedIds(vals as string[])} style={{ width: '100%' }}>
+            <Space direction="vertical" style={{ width: '100%' }} size={10}>
+              {questions.map((q, index) => (
+                <div key={q.id} style={{ display: 'flex', gap: 8, width: '100%', border: '1px solid #edf0f5', borderRadius: 6, padding: 8 }}>
+                  <Checkbox value={q.id} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <Space size={4} wrap style={{ marginBottom: 4 }}>
+                      <Tag>{index + 1}</Tag>
+                      <Tag>{q.subject || '物理'}</Tag>
+                      <Tag>{normalizeQuestionType(q.type)}</Tag>
+                    </Space>
+                    <div style={{ fontSize: 13, lineHeight: 1.6, maxHeight: 72, overflow: 'hidden', whiteSpace: 'pre-wrap' }}>
+                      {q.content || '未填写题干'}
+                    </div>
+                  </div>
+                  <Space direction="vertical" size={4}>
+                    <Button size="small" icon={<ArrowUpOutlined />} disabled={index === 0} onClick={() => move(index, -1)} />
+                    <Button size="small" icon={<ArrowDownOutlined />} disabled={index === ids.length - 1} onClick={() => move(index, 1)} />
+                    <Button size="small" danger icon={<DeleteOutlined />} onClick={() => {
+                      setIds(ids.filter(id => id !== q.id));
+                      message.success('已移出试题篮');
+                    }} />
+                  </Space>
+                </div>
+              ))}
+            </Space>
+          </Checkbox.Group>
+        )}
+      </Drawer>
+    </>
+  );
+};
+
+export default QuestionBasket;

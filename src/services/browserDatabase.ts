@@ -3,7 +3,8 @@ import {
   Student, Grade, Course, Schedule, Enrollment, Payment, Consumption, Institution, SchoolInfo, Teacher, Room,
   ScheduleStatus, PaymentType, BillingUnit, TeacherFeeMode, ServiceType, StudentSource,
   RevenueStats, StudentTuitionStats, StudentCoursePricing,
-  AssetRecord, AssetCategory, AssetStats, Question, KnowledgeNode, Tag, QuestionTagRel, TagType
+  AssetRecord, AssetCategory, AssetStats, Question, KnowledgeNode, Tag, QuestionTagRel, TagType,
+  ImportTask, ImportTaskItem, ImportTaskStatus, ImportTaskItemStatus
 } from '../types';
 import type { SyncTable } from './syncEngine';
 import { calculateGrade, calculateFees, calculateDurationHours, groupByMonth, calculatePercentage } from '../utils/helpers';
@@ -35,6 +36,9 @@ interface Database {
   modelTree: KnowledgeNode[];
   tags: Tag[];
   questionTagRels: QuestionTagRel[];
+  questionBasketIds: string[];
+  importTasks: ImportTask[];
+  importTaskItems: ImportTaskItem[];
 }
 
 type SyncLocalDataMaps = Partial<Record<SyncTable, Map<string, any>>>;
@@ -71,6 +75,9 @@ class BrowserDatabaseService {
     modelTree: [],
     tags: [],
     questionTagRels: [],
+    questionBasketIds: [],
+    importTasks: [],
+    importTaskItems: [],
     institutions: [],
     schools: [],
     rooms: [],
@@ -113,11 +120,15 @@ class BrowserDatabaseService {
         modelTree: loadedData?.modelTree ?? [],
         tags: loadedData?.tags ?? [],
         questionTagRels: loadedData?.questionTagRels ?? [],
+        questionBasketIds: loadedData?.questionBasketIds ?? [],
+        importTasks: loadedData?.importTasks ?? [],
+        importTaskItems: loadedData?.importTaskItems ?? [],
         ...loadedData
       };
     }
     this.migrateLegacyQuestionData();
     this.migrateLegacyTagData();
+    this.migrateImportTaskData();
     // 自动清理：修复课程时间 > 24:00 的坏数据
     this.data.schedules = (this.data.schedules || []).map(s => {
       if (!s) return s;
@@ -194,8 +205,66 @@ class BrowserDatabaseService {
     return normalized;
   }
 
+  private normalizeImportTask(task: Partial<ImportTask>): ImportTask {
+    const now = new Date().toISOString();
+    return {
+      id: task.id || this.generateId(),
+      source_type: task.source_type || 'manual',
+      file_name: task.file_name || '',
+      file_hash: task.file_hash || '',
+      status: (task.status || 'pending') as ImportTaskStatus,
+      total_items: Number(task.total_items || 0),
+      success_items: Number(task.success_items || 0),
+      warning_items: Number(task.warning_items || 0),
+      failed_items: Number(task.failed_items || 0),
+      duplicate_items: Number(task.duplicate_items || 0),
+      quality_report: task.quality_report || null,
+      result_summary: task.result_summary || null,
+      created_at: task.created_at || now,
+      updated_at: task.updated_at || task.created_at || now,
+    };
+  }
+
+  private normalizeImportTaskItem(item: Partial<ImportTaskItem>): ImportTaskItem {
+    const now = new Date().toISOString();
+    const rawWarnings = (item as any).warnings;
+    const rawErrors = (item as any).errors;
+    const warnings: string[] = Array.isArray(rawWarnings)
+      ? rawWarnings
+      : typeof rawWarnings === 'string' && rawWarnings
+        ? rawWarnings.split(',').map((value: string) => value.trim()).filter(Boolean)
+        : [];
+    const errors: string[] = Array.isArray(rawErrors)
+      ? rawErrors
+      : typeof rawErrors === 'string' && rawErrors
+        ? rawErrors.split(',').map((value: string) => value.trim()).filter(Boolean)
+        : [];
+    return {
+      id: item.id || this.generateId(),
+      task_id: item.task_id || '',
+      item_index: Number(item.item_index || 0),
+      question_id: item.question_id || '',
+      content_hash: item.content_hash || '',
+      status: (item.status || 'pending') as ImportTaskItemStatus,
+      quality_score: Number(item.quality_score || 0),
+      warnings,
+      errors,
+      error_message: item.error_message || '',
+      payload: item.payload || null,
+      created_at: item.created_at || now,
+      updated_at: item.updated_at || item.created_at || now,
+    };
+  }
+
   private migrateLegacyQuestionData(): void {
     this.data.questions = (this.data.questions || []).map(question => this.normalizeQuestionRecord(question));
+  }
+
+  private migrateImportTaskData(): void {
+    this.data.importTasks = (this.data.importTasks || []).map(task => this.normalizeImportTask(task));
+    this.data.importTaskItems = (this.data.importTaskItems || [])
+      .map(item => this.normalizeImportTaskItem(item))
+      .filter(item => Boolean(item.task_id));
   }
 
   private migrateLegacyTagData(): void {
@@ -824,9 +893,13 @@ class BrowserDatabaseService {
       knowledgeTree: data.knowledgeTree || [],
       modelTree: data.modelTree || [],
       tags: data.tags || [],
-      questionTagRels: data.questionTagRels || []
+      questionTagRels: data.questionTagRels || [],
+      questionBasketIds: data.questionBasketIds || [],
+      importTasks: data.importTasks || [],
+      importTaskItems: data.importTaskItems || []
     };
     this.migrateLegacyTagData();
+    this.migrateImportTaskData();
     this.saveData();
   }
 
@@ -1021,8 +1094,119 @@ class BrowserDatabaseService {
     return this.data.questions;
   }
 
+  getQuestionBasketIds(): string[] {
+    return Array.from(new Set((this.data.questionBasketIds || []).filter(Boolean)));
+  }
+
+  setQuestionBasketIds(ids: string[]): string[] {
+    const knownIds = new Set((this.data.questions || []).map(q => q.id));
+    const nextIds = Array.from(new Set((ids || []).filter(id => id && (knownIds.size === 0 || knownIds.has(id)))));
+    this.data.questionBasketIds = nextIds;
+    this.saveData();
+    return nextIds;
+  }
+
+  toggleQuestionBasket(id: string): string[] {
+    const current = this.getQuestionBasketIds();
+    const next = current.includes(id) ? current.filter(item => item !== id) : [...current, id];
+    return this.setQuestionBasketIds(next);
+  }
+
   getQuestionsBySubject(subject: string): Question[] {
     return this.data.questions.filter(q => q.subject === subject);
+  }
+
+  createImportTask(payload: Partial<ImportTask> & { items?: Array<Partial<ImportTaskItem>> }): ImportTask {
+    const now = new Date().toISOString();
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    const normalizedItems = items.map((item, index) => this.normalizeImportTaskItem({
+      ...item,
+      task_id: payload.id || item.task_id || '',
+      item_index: item.item_index ?? index,
+      created_at: item.created_at || now,
+      updated_at: item.updated_at || now,
+    }));
+    const taskId = payload.id || this.generateId();
+    const warningItems = normalizedItems.filter(item => item.status === 'warning' || item.warnings.length > 0).length;
+    const failedItems = normalizedItems.filter(item => item.status === 'failed' || item.status === 'rejected' || item.errors.length > 0).length;
+    const duplicateItems = normalizedItems.filter(item => item.status === 'duplicate').length;
+    const successItems = normalizedItems.filter(item =>
+      ['success', 'accepted', 'imported'].includes(item.status) && item.errors.length === 0
+    ).length;
+    const task = this.normalizeImportTask({
+      ...payload,
+      id: taskId,
+      status: payload.status || 'checked',
+      total_items: payload.total_items ?? normalizedItems.length,
+      success_items: payload.success_items ?? successItems,
+      warning_items: payload.warning_items ?? warningItems,
+      failed_items: payload.failed_items ?? failedItems,
+      duplicate_items: payload.duplicate_items ?? duplicateItems,
+      created_at: payload.created_at || now,
+      updated_at: payload.updated_at || now,
+    });
+    this.data.importTasks = [task, ...(this.data.importTasks || []).filter(item => item.id !== task.id)];
+    this.data.importTaskItems = [
+      ...(this.data.importTaskItems || []).filter(item => item.task_id !== task.id),
+      ...normalizedItems.map(item => ({ ...item, task_id: task.id })),
+    ];
+    this.saveData();
+    return task;
+  }
+
+  updateImportTask(id: string, updates: Partial<ImportTask>): ImportTask | undefined {
+    const idx = (this.data.importTasks || []).findIndex(task => task.id === id);
+    if (idx === -1) return undefined;
+    this.data.importTasks[idx] = this.normalizeImportTask({
+      ...this.data.importTasks[idx],
+      ...updates,
+      updated_at: new Date().toISOString(),
+    });
+    this.saveData();
+    return this.data.importTasks[idx];
+  }
+
+  addImportTaskItems(taskId: string, items: Array<Partial<ImportTaskItem>>): ImportTaskItem[] {
+    const now = new Date().toISOString();
+    const existingCount = (this.data.importTaskItems || []).filter(item => item.task_id === taskId).length;
+    const normalized = (items || []).map((item, index) => this.normalizeImportTaskItem({
+      ...item,
+      task_id: taskId,
+      item_index: item.item_index ?? existingCount + index,
+      created_at: item.created_at || now,
+      updated_at: item.updated_at || now,
+    }));
+    this.data.importTaskItems = [...(this.data.importTaskItems || []), ...normalized];
+    const task = this.data.importTasks.find(item => item.id === taskId);
+    if (task) {
+      const taskItems = this.getImportTaskItems(taskId);
+      task.total_items = taskItems.length;
+      task.success_items = taskItems.filter(item => ['success', 'accepted', 'imported'].includes(item.status) && item.errors.length === 0).length;
+      task.warning_items = taskItems.filter(item => item.status === 'warning' || item.warnings.length > 0).length;
+      task.failed_items = taskItems.filter(item => item.status === 'failed' || item.status === 'rejected' || item.errors.length > 0).length;
+      task.duplicate_items = taskItems.filter(item => item.status === 'duplicate').length;
+      task.updated_at = now;
+    }
+    this.saveData();
+    return normalized;
+  }
+
+  getRecentImportTasks(limit = 10): ImportTask[] {
+    return [...(this.data.importTasks || [])]
+      .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
+      .slice(0, Math.max(1, limit));
+  }
+
+  getImportTaskItems(taskId: string): ImportTaskItem[] {
+    return (this.data.importTaskItems || [])
+      .filter(item => item.task_id === taskId)
+      .sort((a, b) => a.item_index - b.item_index);
+  }
+
+  getImportTaskDetail(taskId: string): (ImportTask & { items: ImportTaskItem[] }) | null {
+    const task = (this.data.importTasks || []).find(item => item.id === taskId);
+    if (!task) return null;
+    return { ...task, items: this.getImportTaskItems(taskId) };
   }
 
   getAllTags(tagType?: TagType): Tag[] {
@@ -1152,6 +1336,7 @@ class BrowserDatabaseService {
     if (idx === -1) return false;
     this.data.questions.splice(idx, 1);
     this.data.questionTagRels = (this.data.questionTagRels || []).filter(rel => rel.question_id !== id);
+    this.data.questionBasketIds = (this.data.questionBasketIds || []).filter(questionId => questionId !== id);
     this.saveData();
     return true;
   }

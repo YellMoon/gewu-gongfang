@@ -207,6 +207,24 @@ function validateImportItem(item) {
   return { errors, warnings, score };
 }
 
+function parseJsonObject(value) {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch (_err) {
+    return null;
+  }
+}
+
+function importItemUiStatus(row) {
+  if (row.status === 'imported') return 'imported';
+  if (row.status === 'duplicate') return 'warning';
+  if (row.status === 'rejected' || row.status === 'failed') return 'failed';
+  const warnings = parseJsonArray(row.warnings);
+  return warnings.length > 0 ? 'warning' : 'success';
+}
+
 class QuestionBankService {
   ensureTenant(db, tenantId = 'default') {
     const existing = db.prepare('SELECT id FROM tenants WHERE id = ?').get(tenantId);
@@ -686,11 +704,20 @@ class QuestionBankService {
       'SELECT * FROM import_items WHERE batch_id = ? ORDER BY item_index ASC'
     ).all(batchId).map(row => ({
       ...row,
-      payload: row.payload ? JSON.parse(row.payload) : null,
+      task_id: row.batch_id,
+      status: importItemUiStatus(row),
+      warnings: parseJsonArray(row.warnings),
+      errors: parseJsonArray(row.errors),
+      payload: parseJsonObject(row.payload),
     }));
     return {
       ...batch,
-      quality_report: batch.quality_report ? JSON.parse(batch.quality_report) : null,
+      task_id: batch.id,
+      success_items: Number(batch.accepted_items || 0),
+      warning_items: Number(batch.warning_items || 0),
+      failed_items: Number(batch.failed_items || batch.rejected_items || 0),
+      quality_report: parseJsonObject(batch.quality_report),
+      result_summary: parseJsonObject(batch.result_summary),
       items,
     };
   }
@@ -700,12 +727,29 @@ class QuestionBankService {
     return db.prepare(
       `SELECT * FROM import_batches
        WHERE tenant_id = ?
-       ORDER BY created_at DESC
+       ORDER BY created_at DESC, rowid DESC
        LIMIT ?`
     ).all(tenantId, limit).map(row => ({
       ...row,
-      quality_report: row.quality_report ? JSON.parse(row.quality_report) : null,
+      task_id: row.id,
+      success_items: Number(row.accepted_items || 0),
+      warning_items: Number(row.warning_items || 0),
+      failed_items: Number(row.failed_items || row.rejected_items || 0),
+      quality_report: parseJsonObject(row.quality_report),
+      result_summary: parseJsonObject(row.result_summary),
     }));
+  }
+
+  listImportTasks(db, filters = {}, tenantId = 'default') {
+    return this.listImportBatches(db, filters, tenantId);
+  }
+
+  getImportTask(db, taskId, tenantId = 'default') {
+    return this.getImportBatch(db, taskId, tenantId);
+  }
+
+  createImportTask(db, payload, tenantId = 'default') {
+    return this.createImportBatch(db, payload, tenantId);
   }
 
   createImportBatch(db, payload, tenantId = 'default') {
@@ -717,6 +761,7 @@ class QuestionBankService {
     let duplicateItems = 0;
     let rejectedItems = 0;
     let acceptedItems = 0;
+    let warningItems = 0;
     const duplicateSources = { in_batch: 0, existing_bank: 0 };
     const qualityBuckets = { high: 0, medium: 0, low: 0 };
     const errors = {};
@@ -749,6 +794,7 @@ class QuestionBankService {
         } else {
           acceptedItems++;
         }
+        if (quality.warnings.length > 0 || duplicate) warningItems++;
         if (valid) seen.add(contentHash);
         const bucket = quality.score >= 0.8 ? 'high' : quality.score >= 0.5 ? 'medium' : 'low';
         qualityBuckets[bucket]++;
@@ -756,8 +802,8 @@ class QuestionBankService {
         for (const code of quality.warnings) warnings[code] = (warnings[code] || 0) + 1;
         db.prepare(
           `INSERT INTO import_items
-           (id, batch_id, item_index, content_hash, status, quality_score, error_message, payload, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           (id, batch_id, item_index, content_hash, status, quality_score, warnings, errors, error_message, payload, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).run(
           uuidv4(),
           batchId,
@@ -765,6 +811,8 @@ class QuestionBankService {
           contentHash,
           status,
           quality.score,
+          JSON.stringify(duplicate ? [...quality.warnings, 'duplicate'] : quality.warnings),
+          JSON.stringify(quality.errors),
           quality.errors.length ? quality.errors.join(',') : null,
           JSON.stringify({ ...normalized, content_hash: contentHash, quality_warnings: quality.warnings }),
           ts,
@@ -776,8 +824,10 @@ class QuestionBankService {
         status: rejectedItems > 0 ? 'needs_review' : duplicateItems > 0 ? 'has_duplicates' : 'ready',
         total_items: items.length,
         accepted_items: acceptedItems,
+        warning_items: warningItems,
         duplicate_items: duplicateItems,
         rejected_items: rejectedItems,
+        failed_items: rejectedItems,
         duplicate_sources: duplicateSources,
         quality_buckets: qualityBuckets,
         errors,
@@ -785,9 +835,9 @@ class QuestionBankService {
       };
       db.prepare(
         `UPDATE import_batches
-         SET status = 'checked', accepted_items = ?, duplicate_items = ?, rejected_items = ?, quality_report = ?, updated_at = ?
+         SET status = 'checked', accepted_items = ?, warning_items = ?, failed_items = ?, duplicate_items = ?, rejected_items = ?, quality_report = ?, updated_at = ?
          WHERE id = ?`
-      ).run(acceptedItems, duplicateItems, rejectedItems, JSON.stringify(qualityReport), ts, batchId);
+      ).run(acceptedItems, warningItems, rejectedItems, duplicateItems, rejectedItems, JSON.stringify(qualityReport), ts, batchId);
     });
 
     transaction();
@@ -810,7 +860,7 @@ class QuestionBankService {
         try {
           const payload = item.payload || {};
           const created = this.createQuestion(db, { ...payload, content_hash: item.content_hash }, tenantId);
-          db.prepare('UPDATE import_items SET status = ?, updated_at = ? WHERE id = ?').run('imported', now(), item.id);
+          db.prepare('UPDATE import_items SET status = ?, question_id = ?, updated_at = ? WHERE id = ?').run('imported', created.id, now(), item.id);
           result.imported_items++;
           result.question_ids.push(created.id);
         } catch (err) {
@@ -821,7 +871,8 @@ class QuestionBankService {
         }
       }
       const finalStatus = result.failed_items > 0 ? 'partial_failed' : 'imported';
-      db.prepare('UPDATE import_batches SET status = ?, updated_at = ? WHERE id = ?').run(finalStatus, now(), batchId);
+      db.prepare('UPDATE import_batches SET status = ?, failed_items = ?, result_summary = ?, updated_at = ? WHERE id = ?')
+        .run(finalStatus, result.failed_items, JSON.stringify(result), now(), batchId);
     });
 
     transaction();
