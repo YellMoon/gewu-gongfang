@@ -41,7 +41,8 @@ const COOKIE_FILE = path.join(process.env.LOCALAPPDATA || process.env.TEMP || '.
 const PROFILE_DIR = path.join(process.env.LOCALAPPDATA || process.env.TEMP || '.', 'opencode-quark-profile');
 const today = new Date();
 const DATE_FOLDER = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
-const ROOT_FOLDER = 'Codex项目';
+const ROOT_FOLDER = 'codex项目';
+const ROOT_FOLDER_ALIASES = ['codex项目', 'Codex项目'];
 
 async function getItemNames(page) {
   return await page.evaluate(() => {
@@ -101,16 +102,18 @@ async function createFolder(page, name) {
   return true;
 }
 
-async function ensureFolder(page, name) {
+async function ensureFolder(page, name, aliases = [name]) {
   const names = await getItemNames(page);
-  if (!names.includes(name)) {
+  const existing = aliases.find(alias => names.includes(alias));
+  const targetName = existing || name;
+  if (!existing) {
     console.log(`Creating folder: ${name}`);
     await createFolder(page, name);
     await page.waitForTimeout(1500);
   }
   // refresh names and enter
-  const ok = await dblClickByName(page, name);
-  if (!ok) throw new Error('Failed to enter folder: ' + name);
+  const ok = await dblClickByName(page, targetName);
+  if (!ok) throw new Error('Failed to enter folder: ' + targetName);
   await page.waitForTimeout(1200);
 }
 
@@ -147,7 +150,7 @@ async function ensureFolder(page, name) {
     console.log('[2/4] Enter folders...');
     // ensure root folder
     await page.waitForTimeout(1500);
-    await ensureFolder(page, ROOT_FOLDER);
+    await ensureFolder(page, ROOT_FOLDER, ROOT_FOLDER_ALIASES);
     // ensure date folder
     await ensureFolder(page, DATE_FOLDER);
 
