@@ -4,8 +4,8 @@
   top: 50%;
   z-index: 1200;
   width: 76px;
-  min-height: 88px;
-  padding: 10px 8px;
+  min-height: 102px;
+  padding: 12px 8px;
   border: 1px solid rgba(0, 122, 255, 0.16);
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.94);
@@ -17,8 +17,18 @@
 }
 
 .question-basket-float-icon {
-  font-size: 26px;
+  font-size: 38px !important;
   color: #007aff;
+}
+
+.question-basket-float-icon svg {
+  width: 38px;
+  height: 38px;
+}
+
+.question-basket-float.open {
+  border-color: rgba(0, 122, 255, 0.42);
+  box-shadow: 0 20px 54px rgba(0, 122, 255, 0.26);
 }
 
 .question-basket-float span {
@@ -33,6 +43,11 @@
 .question-basket-drawer .ant-drawer-content {
   border-radius: 22px 0 0 22px;
   box-shadow: -28px 0 70px rgba(15, 23, 42, 0.2);
+}
+
+.question-basket-drawer .ant-drawer-mask {
+  background: rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(2px);
 }
 
 .question-basket-footer {
@@ -62,6 +77,13 @@
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 14px;
   background: #fff;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.question-basket-item:hover {
+  border-color: rgba(0, 122, 255, 0.24);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);
 }
 
 .question-basket-item-body {

@@ -43,7 +43,7 @@ const QuestionPreviewCard: React.FC<{
   const modelText = modelNames.join('、') || question.model_point || '';
 
   return (
-    <article className="qb-question-card">
+    <article id={`question-card-${question.id}`} className="qb-question-card">
       <div className="qb-card-main">
         <div className="qb-card-index">{index !== undefined ? index + 1 : ''}</div>
         <div className="qb-card-body">

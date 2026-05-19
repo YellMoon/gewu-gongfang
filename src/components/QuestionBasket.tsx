@@ -1,5 +1,5 @@
 ﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Checkbox, Drawer, Empty, Space, Tag, message } from 'antd';
+import { Badge, Button, Checkbox, Drawer, Empty, Modal, Space, Tag, message } from 'antd';
 import {
   ArrowDownOutlined,
   ArrowUpOutlined,
@@ -10,6 +10,7 @@ import {
 import type { Question } from '../types';
 import { getApiBase } from '../utils/apiBase';
 import { normalizeQuestionType } from '../constants/questionTypes';
+import { downloadPaperDocx } from '../services/docxExporter';
 import './QuestionBasket.css';
 
 const API_BASE = getApiBase('/api/question-bank');
@@ -137,8 +138,17 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
   };
 
   const clearAll = () => {
-    setIds([]);
-    setSelectedIds([]);
+    Modal.confirm({
+      title: '清空试题篮',
+      content: `确定清空试题篮中的 ${ids.length} 道试题？`,
+      okText: '清空',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: () => {
+        setIds([]);
+        setSelectedIds([]);
+      },
+    });
   };
 
   const move = (index: number, offset: number) => {
@@ -148,6 +158,32 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
     const [item] = next.splice(index, 1);
     next.splice(target, 0, item);
     setIds(next);
+  };
+
+  const exportWord = async () => {
+    if (questions.length === 0) {
+      message.warning('请先加入试题');
+      return;
+    }
+    const targetIds = selectedIds.length > 0 ? selectedIds : ids;
+    const exportItems = targetIds
+      .map(id => questions.find(question => question.id === id))
+      .filter((question): question is Question => !!question)
+      .map((question, index) => ({
+        id: question.id,
+        number: index + 1,
+        sectionTitle: normalizeQuestionType(question.type),
+        score: Number((question as any).score || 5),
+        question,
+      }));
+    await downloadPaperDocx({
+      title: `试题篮组卷_${new Date().toISOString().slice(0, 10)}`,
+      questions: exportItems,
+      answerPosition: 'separate',
+      includeSource: true,
+      includeAnswerArea: true,
+    });
+    message.success(`已导出 ${exportItems.length} 题到 Word`);
   };
 
   const goPaper = () => {
@@ -161,8 +197,8 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
 
   return (
     <>
-      <button className="question-basket-float" onClick={() => setOpen(true)} aria-label="打开试题篮">
-        <Badge count={ids.length} size="small">
+      <button className={open ? 'question-basket-float open' : 'question-basket-float'} onClick={() => setOpen(prev => !prev)} aria-label="打开试题篮">
+        <Badge count={ids.length} size="small" offset={[-2, 4]}>
           <ShoppingCartOutlined className="question-basket-float-icon" />
         </Badge>
         <span>试题篮</span>
@@ -175,7 +211,8 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
         open={open}
         onClose={() => setOpen(false)}
         width={520}
-        mask={false}
+        mask
+        maskClosable
         footer={
           <div className="question-basket-footer">
             <Checkbox
@@ -189,7 +226,8 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
             <Space>
               <Button danger icon={<DeleteOutlined />} onClick={removeSelected} disabled={selectedIds.length === 0}>删除</Button>
               <Button onClick={clearAll} disabled={ids.length === 0}>清空</Button>
-              <Button type="primary" icon={<FileWordOutlined />} onClick={goPaper} disabled={ids.length === 0}>去组卷</Button>
+              <Button icon={<FileWordOutlined />} onClick={exportWord} disabled={ids.length === 0}>导出 Word</Button>
+              <Button type="primary" onClick={goPaper} disabled={ids.length === 0}>去组卷</Button>
             </Space>
           </div>
         }
@@ -203,7 +241,15 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
         ) : (
           <Checkbox.Group value={selectedIds} onChange={vals => setSelectedIds(vals as string[])} className="question-basket-list">
             {questions.map((q, index) => (
-              <div key={q.id} className="question-basket-item">
+                <div
+                  key={q.id}
+                  className="question-basket-item"
+                  onClick={(event) => {
+                    if ((event.target as HTMLElement).closest('button,.ant-checkbox-wrapper')) return;
+                    window.dispatchEvent(new CustomEvent('question-basket-focus', { detail: q.id }));
+                    setOpen(false);
+                  }}
+                >
                 <Checkbox value={q.id} />
                 <div className="question-basket-item-body">
                   <Space size={4} wrap className="question-basket-item-tags">

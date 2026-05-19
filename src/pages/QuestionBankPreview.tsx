@@ -1,12 +1,13 @@
 ﻿import React, { useState, useEffect, useCallback } from 'react';
 import {
   Card, Button, Modal, Form, Input, Select as AntSelect, Space, Tag, message,
-  Popconfirm, Tooltip, Tree, Divider, Badge, Checkbox, Dropdown, Menu, Empty, Row, Col, Typography
+  Popconfirm, Tooltip, Tree, Divider, Badge, Checkbox, Dropdown, Menu, Empty, Row, Col, Typography, Drawer
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, CopyOutlined,
   FolderOpenOutlined, TagsOutlined, AimOutlined, BranchesOutlined,
-  CheckCircleOutlined, FileWordOutlined, CloseCircleOutlined, EyeOutlined
+  CheckCircleOutlined, FileWordOutlined, CloseCircleOutlined, EyeOutlined,
+  FilterOutlined, ReloadOutlined
 } from '@ant-design/icons';
 import type { Question, KnowledgeNode, QuestionVersion } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
@@ -72,6 +73,12 @@ const LIMIT_SEMESTERS = ['全部', '上学期', '下学期'];
 const LIMIT_TYPES = ['全部', ...QUESTION_TYPES];
 const SEMESTERS = ['上学期', '下学期'];
 const LIMIT_EXAM_TYPES = ['全部', ...EXAM_TYPES];
+const LIMIT_DIFFICULTIES = [
+  { label: '全部', value: '全部' },
+  { label: '简单', value: '简单' },
+  { label: '中等', value: '中等' },
+  { label: '较难', value: '较难' },
+];
 const LIMIT_STATUSES = [
   { label: '全部', value: '全部' },
   { label: '草稿', value: 'draft' },
@@ -100,6 +107,18 @@ function buildTreeData(nodes: KnowledgeNode[], parentId?: string): any[] {
     }));
 }
 
+function filterTreeDataByText(treeData: any[], keyword: string): any[] {
+  const term = keyword.trim().toLowerCase();
+  if (!term) return treeData;
+  return treeData
+    .map(node => {
+      const children = filterTreeDataByText(node.children || [], term);
+      const matched = String(node.title || '').toLowerCase().includes(term);
+      return matched || children.length > 0 ? { ...node, children } : null;
+    })
+    .filter(Boolean);
+}
+
 const QuestionBankPreview: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
@@ -112,7 +131,12 @@ const QuestionBankPreview: React.FC = () => {
   const [filterGrades, setFilterGrades] = useState<string[]>(['全部']); // default: 全部
   const [filterSemesters, setFilterSemesters] = useState<string[]>(['全部']); // default: 全部
   const [filterYear, setFilterYear] = useState<string>('全部');
+  const [filterDifficulties, setFilterDifficulties] = useState<string[]>(['全部']);
   const [filterStatuses, setFilterStatuses] = useState<string[]>(['全部']);
+  const [basketOnly, setBasketOnly] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState('');
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const [treeSearchText, setTreeSearchText] = useState('');
 
   // 排除知识点
   const [filterExcludeKnowledgeIds, setFilterExcludeKnowledgeIds] = useState<(string | undefined)[]>([undefined]);
@@ -219,6 +243,32 @@ const QuestionBankPreview: React.FC = () => {
     }
     return vals.length === 0 ? ['全部'] : vals as string[];
   };
+  const singleValue = (values: string[]) => values.find(value => value !== '全部') || '全部';
+  const setSingleValue = (setter: React.Dispatch<React.SetStateAction<string[]>>, value: string) => {
+    setter([value || '全部']);
+  };
+  const difficultyBucket = (difficulty?: number) => {
+    const value = Number(difficulty || 1);
+    if (value <= 2) return '简单';
+    if (value === 3) return '中等';
+    return '较难';
+  };
+  const resetFilters = () => {
+    setFilterTypes(['全部']);
+    setFilterExamTypes(['全部']);
+    setFilterGrades(['全部']);
+    setFilterSemesters(['全部']);
+    setFilterYear('全部');
+    setFilterDifficulties(['全部']);
+    setFilterStatuses(['全部']);
+    setBasketOnly(false);
+    setSourceFilter('');
+    setKnowledgeSelectedIds([undefined]);
+    setFilterExcludeKnowledgeIds([undefined]);
+    setModelSelectedIds([undefined]);
+    setSearchText('');
+    setAppliedSearchText('');
+  };
 
   // 将知识点 ID 展开为所有底层后代（用于筛选）
   const expandedIncludeGroups = activeKnowledgeIds
@@ -250,7 +300,13 @@ const QuestionBankPreview: React.FC = () => {
     if (!filterStatuses.includes('全部') && filterStatuses.length > 0 && !filterStatuses.includes(q.status || 'draft')) return false;
     if (!filterGrades.includes('全部') && filterGrades.length > 0 && !filterGrades.includes(q.grade || '')) return false;
     if (!filterSemesters.includes('全部') && filterSemesters.length > 0 && !filterSemesters.includes(q.semester || '')) return false;
+    if (!filterDifficulties.includes('全部') && filterDifficulties.length > 0 && !filterDifficulties.includes(difficultyBucket(q.difficulty))) return false;
     if (filterYear && filterYear !== '全部' && q.year !== filterYear) return false;
+    if (basketOnly && !basketIds.includes(q.id)) return false;
+    if (sourceFilter.trim()) {
+      const sourceHaystack = [q.source, q.region, q.school, q.exam_type, q.year].filter(Boolean).join(' ').toLowerCase();
+      if (!sourceHaystack.includes(sourceFilter.trim().toLowerCase())) return false;
+    }
     if (searchTerms.length > 0) {
       const knowledgeNames = (q.knowledge_ids || []).map(getNodeName).join(' ');
       const modelNames = (q.model_ids || []).map(getModelName).join(' ');
@@ -376,6 +432,8 @@ const QuestionBankPreview: React.FC = () => {
   const subjectModelNodes = modelNodes.filter((node: any) => !node.subject || filterSubjects.includes(node.subject));
   const treeData = buildTreeData(subjectKnowledgeNodes);
   const modelTreeData = buildTreeData(subjectModelNodes);
+  const visibleTreeData = filterTreeDataByText(treeData, treeSearchText);
+  const visibleModelTreeData = filterTreeDataByText(modelTreeData, treeSearchText);
 
   // Knowledge tree checkbox renderer in modal
   const renderKnowledgeCheckboxes = (nodes: KnowledgeNode[], parentId?: string, depth = 0) => {
@@ -523,6 +581,26 @@ const QuestionBankPreview: React.FC = () => {
   const handleSearch = () => {
     setAppliedSearchText(searchText);
   };
+
+  useEffect(() => {
+    const focusQuestion = (event: Event) => {
+      const id = (event as CustomEvent<string>).detail;
+      if (!id) return;
+      const target = document.getElementById(`question-card-${id}`);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.classList.add('qb-question-card-focus');
+        window.setTimeout(() => target.classList.remove('qb-question-card-focus'), 1600);
+        return;
+      }
+      const exists = questions.some(question => question.id === id);
+      if (exists) {
+        message.info('该试题不在当前筛选结果中，可重置筛选后查看');
+      }
+    };
+    window.addEventListener('question-basket-focus', focusQuestion as EventListener);
+    return () => window.removeEventListener('question-basket-focus', focusQuestion as EventListener);
+  }, [questions]);
 
   const handleBatchKnowledge = (knowledgeId: string) => {
     const db = (window as any).dbService;
@@ -835,9 +913,17 @@ const QuestionBankPreview: React.FC = () => {
             extra={<Button type="link" size="small" onClick={() => setTreeVisible(false)}>收起</Button>}
             className="qb-preview-tree-card"
           >
+            <Input
+              allowClear
+              prefix={<SearchOutlined />}
+              placeholder="搜索知识点/模型"
+              value={treeSearchText}
+              onChange={event => setTreeSearchText(event.target.value)}
+              className="qb-tree-search"
+            />
             <div className="knowledge-tree">
             <Tree
-              treeData={treeData} titleRender={nodeTitleRender}
+              treeData={visibleTreeData} titleRender={nodeTitleRender}
               defaultExpandAll
               showIcon={false}
               showLine={{ showLeafIcon: false }}
@@ -863,7 +949,7 @@ const QuestionBankPreview: React.FC = () => {
             <Divider orientation="left" style={{ fontSize: 12 }}>模型</Divider>
             <div className="knowledge-tree">
               <Tree
-                treeData={modelTreeData}
+                treeData={visibleModelTreeData}
                 defaultExpandAll
                 showIcon={false}
                 showLine={{ showLeafIcon: false }}
@@ -919,248 +1005,166 @@ const QuestionBankPreview: React.FC = () => {
             </Space>
           </div>
 
-          {/* Filters - New layout */}
-          <div style={{ marginBottom: 16 }}>
-            {/* Row 1: 题型（单独一行）*/}
-            <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>题型：</span>
-              <Checkbox.Group
-                options={LIMIT_TYPES}
-                value={filterTypes}
-                onChange={(vals) => setFilterTypes(normalizeCheckGroup(vals as string[]))}
+          {/* Filters */}
+          <div className="qb-filter-panel">
+            <div className="qb-filter-row">
+              <Select
+                className="qb-filter-select"
+                value={singleValue(filterGrades)}
+                onChange={(value) => setSingleValue(setFilterGrades, value)}
+                options={LIMIT_GRADES.map(item => ({ label: item, value: item }))}
+                prefix="年级"
               />
-            </div>
-
-            <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>状态：</span>
-                <Checkbox.Group
-                  options={LIMIT_STATUSES}
-                  value={filterStatuses}
-                  onChange={(vals) => setFilterStatuses(normalizeCheckGroup(vals as string[]))}
-                />
-              </div>
-            </div>
-
-            {/* Row 2: 年级（单独一行）*/}
-            <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>年级：</span>
-              <Checkbox.Group
-                options={LIMIT_GRADES}
-                value={filterGrades}
-                onChange={(vals) => {
-                  setFilterGrades(normalizeCheckGroup(vals as string[]));
-                }}
+              <Select
+                className="qb-filter-select wide"
+                value={filterYear}
+                onChange={setFilterYear}
+                options={[{ label: '全部', value: '全部' }, ...YEAR_OPTIONS]}
+                prefix="学年"
               />
+              <Select
+                className="qb-filter-select"
+                value={singleValue(filterSemesters)}
+                onChange={(value) => setSingleValue(setFilterSemesters, value)}
+                options={LIMIT_SEMESTERS.map(item => ({ label: item, value: item }))}
+                prefix="学期"
+              />
+              <Select
+                className="qb-filter-select"
+                value={singleValue(filterTypes)}
+                onChange={(value) => setSingleValue(setFilterTypes, value)}
+                options={LIMIT_TYPES.map(item => ({ label: item, value: item }))}
+                prefix="题型"
+              />
+              <Select
+                className="qb-filter-select"
+                value={singleValue(filterDifficulties)}
+                onChange={(value) => setSingleValue(setFilterDifficulties, value)}
+                options={LIMIT_DIFFICULTIES}
+                prefix="难度"
+              />
+              <Button icon={<FilterOutlined />} onClick={() => setMoreFiltersOpen(true)}>更多筛选</Button>
+              <Button type="link" icon={<ReloadOutlined />} onClick={resetFilters}>重置</Button>
             </div>
 
-            {/* Row 3: 学期（右）+ 学年 */}
-            <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>学期：</span>
-                <Checkbox.Group
-                  options={LIMIT_SEMESTERS}
-                  value={filterSemesters}
-                  onChange={(vals) => {
-                    setFilterSemesters(normalizeCheckGroup(vals as string[]));
-                  }}
-                />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>学年：</span>
-                <Select
-                  style={{ width: 160 }}
-                  placeholder="选择学年"
-                  value={filterYear}
-                  onChange={setFilterYear}
-                  options={[{ label: '全部', value: '全部' }, ...YEAR_OPTIONS]}
-                />
-              </div>
-            </div>
-
-            {/* Row 4: 考试类型 */}
-            <div style={{ marginBottom: 8, display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>考试类型：</span>
-                <Checkbox.Group
-                  options={LIMIT_EXAM_TYPES}
-                  value={filterExamTypes}
-                  onChange={(vals) => {
-                    setFilterExamTypes(normalizeCheckGroup(vals as string[]));
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Row 5: 搜索题干 */}
-            <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div className="qb-search-row">
               <Input
-                placeholder="搜索题干/答案/解析/知识点/模型/来源，空格分隔"
+                placeholder="题干搜索（支持关键词、题号、选项、小题内容）"
                 allowClear
-                style={{ width: 280 }}
+                prefix={<SearchOutlined />}
                 value={searchText}
-                onChange={e => setSearchText(e.target.value)}
+                onChange={event => setSearchText(event.target.value)}
                 onPressEnter={handleSearch}
               />
               <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>搜索</Button>
             </div>
-
-            {/* Row 6: 知识点多选 */}
-            <div>
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>知识点：</span>
-                {knowledgeSelectedIds.map((selectedId, idx) => (
-                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Select
-                      showSearch
-                      allowClear
-                      placeholder="搜索知识点..."
-                      style={{ width: 200 }}
-                      value={selectedId}
-                      onChange={(value) => {
-                        const newIds = [...knowledgeSelectedIds];
-                        newIds[idx] = value;
-                        setKnowledgeSelectedIds(newIds);
-                      }}
-                      filterOption={(input, option) =>
-                        (option?.label as string || '').toLowerCase().includes(input.toLowerCase())
-                      }
-                      onSearch={() => {}}
-                      options={knowledgeNodes.map(n => ({ label: n.name, value: n.id }))}
-                    />
-                    {idx === knowledgeSelectedIds.length - 1 && (
-                      <Button
-                        type="link"
-                        size="small"
-                        icon={<PlusOutlined />}
-                        onClick={() => setKnowledgeSelectedIds([...knowledgeSelectedIds, undefined])}
-                        style={{ padding: '0 4px', minWidth: 20, height: 22 }}
-                      />
-                    )}
-                    {knowledgeSelectedIds.length > 1 && (
-                      <Button
-                        type="link"
-                        size="small"
-                        danger
-                        icon={<CloseCircleOutlined />}
-                        onClick={() => {
-                          const newIds = knowledgeSelectedIds.filter((_, i) => i !== idx);
-                          setKnowledgeSelectedIds(newIds);
-                        }}
-                        style={{ padding: '0 4px', minWidth: 20, height: 22 }}
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
-              {activeKnowledgeIds.length > 0 && (
-                <div style={{ marginTop: 4, color: '#888', fontSize: 12 }}>
-                  已选 {activeKnowledgeIds.length} 个知识点（AND 筛选），共覆盖 {expandedIncludeGroups.flat().length} 个后代节点
-                </div>
-              )}
-            </div>
-
-            {/* Row 7: 排除知识点 */}
-            <div style={{ marginTop: 8 }}>
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontSize: 13, color: '#ff4d4f', whiteSpace: 'nowrap' }}>排除：</span>
-                {filterExcludeKnowledgeIds.map((eid, idx) => (
-                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Select
-                      showSearch
-                      allowClear
-                      placeholder="排除知识点..."
-                      style={{ width: 200 }}
-                      value={eid}
-                      onChange={(value) => {
-                        const newIds = [...filterExcludeKnowledgeIds];
-                        newIds[idx] = value;
-                        const filtered = newIds.filter(id => !!id);
-                        setFilterExcludeKnowledgeIds(filtered.length === 0 ? [undefined] : filtered);
-                        if (value) {
-                          setKnowledgeSelectedIds(prev => prev.filter(id => id !== value));
-                        }
-                      }}
-                      filterOption={(input, option) =>
-                        (option?.label as string || '').toLowerCase().includes(input.toLowerCase())
-                      }
-                      options={knowledgeNodes.map(n => ({ label: n.name, value: n.id }))}
-                    />
-                    {idx === filterExcludeKnowledgeIds.length - 1 && (
-                      <Button type="link" size="small" icon={<PlusOutlined />}
-                        onClick={() => setFilterExcludeKnowledgeIds([...filterExcludeKnowledgeIds.filter(id => !!id), undefined])}
-                        style={{ padding: '0 4px', minWidth: 20, height: 22 }}
-                      />
-                    )}
-                    {filterExcludeKnowledgeIds.length > 1 && (
-                      <Button type="link" size="small" danger icon={<CloseCircleOutlined />}
-                        onClick={() => {
-                          const newIds = filterExcludeKnowledgeIds.filter((_, i) => i !== idx);
-                          setFilterExcludeKnowledgeIds(newIds.length === 0 ? [undefined] : newIds);
-                        }}
-                        style={{ padding: '0 4px', minWidth: 20, height: 22 }}
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Row 8: 模型多选 */}
-            <div style={{ marginTop: 8 }}>
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>模型：</span>
-                {modelSelectedIds.map((selectedId, idx) => (
-                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Select
-                      showSearch
-                      allowClear
-                      placeholder="搜索模型..."
-                      style={{ width: 200 }}
-                      value={selectedId}
-                      onChange={(value) => {
-                        const newIds = [...modelSelectedIds];
-                        newIds[idx] = value;
-                        setModelSelectedIds(newIds);
-                      }}
-                      filterOption={(input, option) =>
-                        (option?.label as string || '').toLowerCase().includes(input.toLowerCase())
-                      }
-                      options={modelNodes.map(n => ({ label: n.name, value: n.id }))}
-                    />
-                    {idx === modelSelectedIds.length - 1 && (
-                      <Button
-                        type="link"
-                        size="small"
-                        icon={<PlusOutlined />}
-                        onClick={() => setModelSelectedIds([...modelSelectedIds, undefined])}
-                        style={{ padding: '0 4px', minWidth: 20, height: 22 }}
-                      />
-                    )}
-                    {modelSelectedIds.length > 1 && (
-                      <Button
-                        type="link"
-                        size="small"
-                        danger
-                        icon={<CloseCircleOutlined />}
-                        onClick={() => {
-                          const newIds = modelSelectedIds.filter((_, i) => i !== idx);
-                          setModelSelectedIds(newIds.length === 0 ? [undefined] : newIds);
-                        }}
-                        style={{ padding: '0 4px', minWidth: 20, height: 22 }}
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
-              {activeModelIds.length > 0 && (
-                <div style={{ marginTop: 4, color: '#888', fontSize: 12 }}>
-                  已选 {activeModelIds.length} 个模型（AND 筛选），共覆盖 {expandedModelGroups.flat().length} 个后代节点
-                </div>
-              )}
-            </div>
           </div>
 
+          <Drawer
+            title="更多筛选"
+            open={moreFiltersOpen}
+            onClose={() => setMoreFiltersOpen(false)}
+            width={420}
+            className="qb-more-filter-drawer"
+            footer={
+              <div className="qb-more-filter-footer">
+                <Button onClick={resetFilters}>重置全部</Button>
+                <Button type="primary" onClick={() => setMoreFiltersOpen(false)}>完成</Button>
+              </div>
+            }
+          >
+            <div className="qb-more-filter-group">
+              <Text strong>考试类型</Text>
+              <Checkbox.Group
+                options={LIMIT_EXAM_TYPES}
+                value={filterExamTypes}
+                onChange={(vals) => setFilterExamTypes(normalizeCheckGroup(vals as string[]))}
+              />
+            </div>
+            <div className="qb-more-filter-group">
+              <Text strong>发布状态</Text>
+              <Checkbox.Group
+                options={LIMIT_STATUSES}
+                value={filterStatuses}
+                onChange={(vals) => setFilterStatuses(normalizeCheckGroup(vals as string[]))}
+              />
+            </div>
+            <div className="qb-more-filter-group">
+              <Text strong>来源</Text>
+              <Input allowClear placeholder="来源 / 地区 / 学校 / 年份" value={sourceFilter} onChange={event => setSourceFilter(event.target.value)} />
+            </div>
+            <div className="qb-more-filter-group">
+              <Checkbox checked={basketOnly} onChange={event => setBasketOnly(event.target.checked)}>只看已加入试题篮</Checkbox>
+            </div>
+            <div className="qb-more-filter-group">
+              <Text strong>包含知识点</Text>
+              {knowledgeSelectedIds.map((selectedId, idx) => (
+                <div key={idx} className="qb-filter-line">
+                  <Select
+                    showSearch
+                    allowClear
+                    placeholder="搜索知识点"
+                    value={selectedId}
+                    onChange={(value) => {
+                      const newIds = [...knowledgeSelectedIds];
+                      newIds[idx] = value;
+                      setKnowledgeSelectedIds(newIds.length === 0 ? [undefined] : newIds);
+                    }}
+                    filterOption={(input, option) => (option?.label as string || '').toLowerCase().includes(input.toLowerCase())}
+                    options={subjectKnowledgeNodes.map(n => ({ label: n.name, value: n.id }))}
+                  />
+                  {idx === knowledgeSelectedIds.length - 1 && <Button type="text" icon={<PlusOutlined />} onClick={() => setKnowledgeSelectedIds([...knowledgeSelectedIds, undefined])} />}
+                  {knowledgeSelectedIds.length > 1 && <Button type="text" danger icon={<CloseCircleOutlined />} onClick={() => setKnowledgeSelectedIds(knowledgeSelectedIds.filter((_, i) => i !== idx))} />}
+                </div>
+              ))}
+            </div>
+            <div className="qb-more-filter-group">
+              <Text strong>排除知识点</Text>
+              {filterExcludeKnowledgeIds.map((selectedId, idx) => (
+                <div key={idx} className="qb-filter-line">
+                  <Select
+                    showSearch
+                    allowClear
+                    placeholder="排除知识点"
+                    value={selectedId}
+                    onChange={(value) => {
+                      const newIds = [...filterExcludeKnowledgeIds];
+                      newIds[idx] = value;
+                      const filteredIds = newIds.filter(id => !!id);
+                      setFilterExcludeKnowledgeIds(filteredIds.length === 0 ? [undefined] : filteredIds);
+                      if (value) setKnowledgeSelectedIds(prev => prev.filter(id => id !== value));
+                    }}
+                    filterOption={(input, option) => (option?.label as string || '').toLowerCase().includes(input.toLowerCase())}
+                    options={subjectKnowledgeNodes.map(n => ({ label: n.name, value: n.id }))}
+                  />
+                  {idx === filterExcludeKnowledgeIds.length - 1 && <Button type="text" icon={<PlusOutlined />} onClick={() => setFilterExcludeKnowledgeIds([...filterExcludeKnowledgeIds.filter(id => !!id), undefined])} />}
+                  {filterExcludeKnowledgeIds.length > 1 && <Button type="text" danger icon={<CloseCircleOutlined />} onClick={() => setFilterExcludeKnowledgeIds(filterExcludeKnowledgeIds.filter((_, i) => i !== idx))} />}
+                </div>
+              ))}
+            </div>
+            <div className="qb-more-filter-group">
+              <Text strong>模型</Text>
+              {modelSelectedIds.map((selectedId, idx) => (
+                <div key={idx} className="qb-filter-line">
+                  <Select
+                    showSearch
+                    allowClear
+                    placeholder="搜索模型"
+                    value={selectedId}
+                    onChange={(value) => {
+                      const newIds = [...modelSelectedIds];
+                      newIds[idx] = value;
+                      setModelSelectedIds(newIds.length === 0 ? [undefined] : newIds);
+                    }}
+                    filterOption={(input, option) => (option?.label as string || '').toLowerCase().includes(input.toLowerCase())}
+                    options={subjectModelNodes.map(n => ({ label: n.name, value: n.id }))}
+                  />
+                  {idx === modelSelectedIds.length - 1 && <Button type="text" icon={<PlusOutlined />} onClick={() => setModelSelectedIds([...modelSelectedIds, undefined])} />}
+                  {modelSelectedIds.length > 1 && <Button type="text" danger icon={<CloseCircleOutlined />} onClick={() => setModelSelectedIds(modelSelectedIds.filter((_, i) => i !== idx))} />}
+                </div>
+              ))}
+            </div>
+          </Drawer>
           {/* Batch Operations */}
           {selectedRowKeys.length > 0 && (
             <div style={{ marginBottom: 12, padding: '8px 12px', background: '#e6f7ff', borderRadius: 6 }}>
@@ -1393,5 +1397,6 @@ const QuestionBankPreview: React.FC = () => {
 };
 
 export default QuestionBankPreview;
+
 
 
