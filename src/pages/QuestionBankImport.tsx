@@ -12,6 +12,7 @@ import type { Question, KnowledgeNode, ImportTask, ImportTaskItem } from '../typ
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType, questionTypeFromParser } from '../constants/questionTypes';
+import QuestionRenderer from '../components/QuestionRenderer';
 import {
   downloadImportValidationReport,
   validateImportQuestions,
@@ -1401,7 +1402,27 @@ const QuestionBankImport: React.FC = () => {
           </Row>
 
           <Form.Item name="content" label="题目内容" rules={[{ required: true }]}>
-            <TextArea rows={4} placeholder="支持公式显示（用 $$ 包裹）" />
+            <TextArea rows={4} placeholder={'支持公式（用 $$ 包裹），如 $$F=ma$$\n物理量用斜体 <i>F</i>、单位正体 m/s、数学常数正体 π\n下标属性用 \\mathrm：$$v_{\\mathrm{0}}$$\n向量用 \\boldsymbol：$$\\boldsymbol{F}$$'} />
+          </Form.Item>
+          <details style={{ marginBottom: 12, fontSize: 12, color: '#666', background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 4, padding: '6px 10px' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>物理学科正斜体规范</summary>
+            <div style={{ marginTop: 4, lineHeight: 1.8 }}>
+              <b>斜体</b>：物理量符号（<i>F</i>, <i>m</i>, <i>v</i>, <i>g</i>, <i>E</i>, <i>B</i>）、变量下标（<i>m<sub>i</sub></i>）<br/>
+              <b>正体</b>：单位（m, s, kg, N, A）、数学常数（π, e）、函数（sin, cos, log）、微分符号 d、化学元素下标（<i>m</i><sub>H</sub>）<br/>
+              <b>粗斜体</b>：向量（<b><i>F</i></b>, <b><i>v</i></b>）
+            </div>
+          </details>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.content !== cur.content}>
+            {({ getFieldValue }) => {
+              const content = getFieldValue('content');
+              if (!content) return null;
+              return (
+                <div style={{ marginBottom: 16, padding: 12, background: '#fafafa', borderRadius: 6, border: '1px solid #e8e8e8' }}>
+                  <div style={{ fontSize: 12, color: '#999', marginBottom: 6 }}>预览：</div>
+                  <QuestionRenderer content={content} />
+                </div>
+              );
+            }}
           </Form.Item>
 
           <Row gutter={16}>

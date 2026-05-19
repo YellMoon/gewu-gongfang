@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Checkbox, Drawer, Empty, Space, Tag, message } from 'antd';
 import {
   ArrowDownOutlined,
@@ -10,6 +10,7 @@ import {
 import type { Question } from '../types';
 import { getApiBase } from '../utils/apiBase';
 import { normalizeQuestionType } from '../constants/questionTypes';
+import './QuestionBasket.css';
 
 const API_BASE = getApiBase('/api/question-bank');
 export const QUESTION_BASKET_STORAGE_KEY = 'question_basket_ids';
@@ -160,35 +161,23 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
 
   return (
     <>
-      <div
-        onClick={() => setOpen(true)}
-        style={{
-          position: 'fixed',
-          right: 0,
-          top: '45%',
-          zIndex: 1200,
-          cursor: 'pointer',
-          color: '#1677ff',
-          background: '#fff',
-          padding: '10px 6px',
-          textAlign: 'center',
-          boxShadow: '0 2px 10px rgba(22,119,255,0.12)',
-        }}
-      >
+      <button className="question-basket-float" onClick={() => setOpen(true)} aria-label="打开试题篮">
         <Badge count={ids.length} size="small">
-          <ShoppingCartOutlined style={{ fontSize: 24, color: '#1677ff' }} />
+          <ShoppingCartOutlined className="question-basket-float-icon" />
         </Badge>
-        <div style={{ fontSize: 12, marginTop: 4 }}>试题篮</div>
-      </div>
+        <span>试题篮</span>
+      </button>
 
       <Drawer
+        className="question-basket-drawer"
         title="试题篮"
         placement="right"
         open={open}
         onClose={() => setOpen(false)}
-        width={460}
+        width={520}
+        mask={false}
         footer={
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <div className="question-basket-footer">
             <Checkbox
               checked={selectedIds.length === ids.length && ids.length > 0}
               indeterminate={selectedIds.length > 0 && selectedIds.length < ids.length}
@@ -196,7 +185,7 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
             >
               全选
             </Checkbox>
-            <span>已选{selectedIds.length}题</span>
+            <span>已选 {selectedIds.length} 题</span>
             <Space>
               <Button danger icon={<DeleteOutlined />} onClick={removeSelected} disabled={selectedIds.length === 0}>删除</Button>
               <Button onClick={clearAll} disabled={ids.length === 0}>清空</Button>
@@ -205,39 +194,35 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
           </div>
         }
       >
-        <Space wrap style={{ marginBottom: 12 }}>
+        <Space wrap className="question-basket-stats">
           <Tag color="blue">共 {ids.length} 题</Tag>
           {typeStats.map(([type, count]) => <Tag key={type}>{type} {count}</Tag>)}
         </Space>
         {questions.length === 0 ? (
           <Empty description="试题篮中暂无试题" />
         ) : (
-          <Checkbox.Group value={selectedIds} onChange={vals => setSelectedIds(vals as string[])} style={{ width: '100%' }}>
-            <Space direction="vertical" style={{ width: '100%' }} size={10}>
-              {questions.map((q, index) => (
-                <div key={q.id} style={{ display: 'flex', gap: 8, width: '100%', border: '1px solid #edf0f5', borderRadius: 6, padding: 8 }}>
-                  <Checkbox value={q.id} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <Space size={4} wrap style={{ marginBottom: 4 }}>
-                      <Tag>{index + 1}</Tag>
-                      <Tag>{q.subject || '物理'}</Tag>
-                      <Tag>{normalizeQuestionType(q.type)}</Tag>
-                    </Space>
-                    <div style={{ fontSize: 13, lineHeight: 1.6, maxHeight: 72, overflow: 'hidden', whiteSpace: 'pre-wrap' }}>
-                      {q.content || '未填写题干'}
-                    </div>
-                  </div>
-                  <Space direction="vertical" size={4}>
-                    <Button size="small" icon={<ArrowUpOutlined />} disabled={index === 0} onClick={() => move(index, -1)} />
-                    <Button size="small" icon={<ArrowDownOutlined />} disabled={index === ids.length - 1} onClick={() => move(index, 1)} />
-                    <Button size="small" danger icon={<DeleteOutlined />} onClick={() => {
-                      setIds(ids.filter(id => id !== q.id));
-                      message.success('已移出试题篮');
-                    }} />
+          <Checkbox.Group value={selectedIds} onChange={vals => setSelectedIds(vals as string[])} className="question-basket-list">
+            {questions.map((q, index) => (
+              <div key={q.id} className="question-basket-item">
+                <Checkbox value={q.id} />
+                <div className="question-basket-item-body">
+                  <Space size={4} wrap className="question-basket-item-tags">
+                    <Tag>{index + 1}</Tag>
+                    <Tag>{q.subject || '物理'}</Tag>
+                    <Tag>{normalizeQuestionType(q.type)}</Tag>
                   </Space>
+                  <div className="question-basket-item-content">{q.content || '未填写题干'}</div>
                 </div>
-              ))}
-            </Space>
+                <Space direction="vertical" size={4}>
+                  <Button size="small" icon={<ArrowUpOutlined />} disabled={index === 0} onClick={() => move(index, -1)} />
+                  <Button size="small" icon={<ArrowDownOutlined />} disabled={index === ids.length - 1} onClick={() => move(index, 1)} />
+                  <Button size="small" danger icon={<DeleteOutlined />} onClick={() => {
+                    setIds(ids.filter(id => id !== q.id));
+                    message.success('已移出试题篮');
+                  }} />
+                </Space>
+              </div>
+            ))}
           </Checkbox.Group>
         )}
       </Drawer>

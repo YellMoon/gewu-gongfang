@@ -9,6 +9,25 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* 确保 KaTeX MathML 原始文本隐藏（防御性规则） */
+.katex .katex-mathml {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  border: 0 !important;
+  padding: 0 !important;
+  white-space: nowrap !important;
+}
+
+/* 数学/物理学科内容使用衬线字体 */
+.question-content,
+.math-display,
+.math-inline {
+  font-family: 'Times New Roman', 'STIX Two Text', 'STIX', '宋体', SimSun, serif;
+}
+
 * {
   box-sizing: border-box;
 }

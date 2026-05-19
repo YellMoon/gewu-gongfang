@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+﻿import React, { useCallback, useMemo, useState } from 'react';
 import katex from 'katex';
 import './QuestionRenderer.css';
 import {
@@ -12,8 +12,8 @@ interface QuestionRendererProps {
   content: string;
   options?: any[];
   questionType?: string;
-  /** 表格单元格内联模式：截断纯文本 */
   inline?: boolean;
+  answer?: string;
   showAnalysis?: boolean;
   analysis?: string;
   terms?: string[];
@@ -88,7 +88,6 @@ function normalizePhysicsHtml(html: string): string {
     .replace(/([A-Za-z])([xyzXYZ])(?![0-9A-Za-z])/g, '$1<sub>$2</sub>');
 }
 
-/** 对非数学模式的 HTML 文本应用物理学科字体规范 */
 function processHtmlSegment(html: string): string {
   return normalizePhysicsHtml(applyPhysicsNotationToHTML(html));
 }
@@ -117,11 +116,14 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
   options,
   questionType,
   inline,
+  answer,
   showAnalysis,
   analysis,
   terms = [],
 }) => {
-  const isChoice = questionType === '单选题' || questionType === '多选题';
+  const isChoice = questionType === '单选题' || questionType === '多选题' || questionType === '鍗曢€夐' || questionType === '澶氶€夐';
+  const [expanded, setExpanded] = useState(false);
+  const hasDrawer = Boolean(answer || analysis);
 
   const { stemText, stemImages } = useMemo(() => {
     if (!isChoice) return { stemText: content || '', stemImages: [] as string[] };
@@ -169,34 +171,91 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
   const normalizedOptions = normalizeOptions(options || []);
   const optCount = normalizedOptions.length;
   const optCols = columnsForOptions(normalizedOptions);
+  const toggleDrawer = useCallback(() => {
+    if (hasDrawer && !showAnalysis) {
+      setExpanded(prev => !prev);
+    }
+  }, [hasDrawer, showAnalysis]);
+  const closeDrawer = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    setExpanded(false);
+  }, []);
+  const renderHtml = (value?: string) => (
+    <span dangerouslySetInnerHTML={{ __html: applySearchHighlight(processHtmlSegment(value || ''), terms) }} />
+  );
 
   return (
     <div className="question-content">
-      <div className="question-stem">{segments.map(renderSegment)}</div>
+      <div
+        className={`question-stem-wrapper${hasDrawer && !showAnalysis ? ' has-drawer' : ''}`}
+        onClick={toggleDrawer}
+        role={hasDrawer && !showAnalysis ? 'button' : undefined}
+        tabIndex={hasDrawer && !showAnalysis ? 0 : undefined}
+        onKeyDown={(event) => {
+          if ((event.key === 'Enter' || event.key === ' ') && hasDrawer && !showAnalysis) {
+            event.preventDefault();
+            setExpanded(prev => !prev);
+          }
+        }}
+      >
+        <div className="question-stem">{segments.map(renderSegment)}</div>
 
-      {isChoice && stemImages.length > 0 && (
-        <div className="question-images">
-          {stemImages.map((src, i) => (
-            <img key={i} src={src} alt={`题目图片 ${i + 1}`} />
-          ))}
-        </div>
-      )}
+        {isChoice && stemImages.length > 0 && (
+          <div className="question-images">
+            {stemImages.map((src, i) => (
+              <img key={i} src={src} alt={`题目图片 ${i + 1}`} />
+            ))}
+          </div>
+        )}
 
-      {options && optCount > 0 && (
-        <div className={`question-options cols-${optCols}`}>
-          {normalizedOptions.map((opt, i) => (
-            <div key={`${opt.label}-${i}`} className="question-option">
-              <span className="question-option-label">{opt.label}.</span>
-              <span dangerouslySetInnerHTML={{ __html: applySearchHighlight(processHtmlSegment(opt.content), terms) }} />
+        {options && optCount > 0 && (
+          <div className={`question-options cols-${optCols}`}>
+            {normalizedOptions.map((opt, i) => (
+              <div key={`${opt.label}-${i}`} className="question-option">
+                <span className="question-option-label">{opt.label}.</span>
+                <span dangerouslySetInnerHTML={{ __html: applySearchHighlight(processHtmlSegment(opt.content), terms) }} />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {hasDrawer && !showAnalysis && (
+          <div className={`question-answer-drawer${expanded ? ' open' : ''}`} onClick={closeDrawer}>
+            <div className="question-answer-drawer-inner">
+              {answer && (
+                <div className="question-answer-row">
+                  <strong>答案</strong>
+                  {renderHtml(answer)}
+                </div>
+              )}
+              {analysis && (
+                <div className="question-answer-row">
+                  <strong>解析</strong>
+                  {renderHtml(analysis)}
+                </div>
+              )}
+              <div className="question-answer-hint">点击解析区收起</div>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        )}
 
-      {showAnalysis && analysis && (
+        {hasDrawer && !showAnalysis && !expanded && (
+          <div className="question-expand-hint">点击题干展开答案与解析</div>
+        )}
+      </div>
+
+      {showAnalysis && (answer || analysis) && (
         <div className="question-analysis">
-          <strong>【解析】</strong>
-          <span dangerouslySetInnerHTML={{ __html: applySearchHighlight(processHtmlSegment(analysis), terms) }} />
+          {answer && (
+            <span className="question-analysis-answer">
+              <strong>答案：</strong>{renderHtml(answer)}
+            </span>
+          )}
+          {analysis && (
+            <span>
+              <strong>解析：</strong>{renderHtml(analysis)}
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -204,7 +263,6 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
 };
 
 export default QuestionRenderer;
-// 导出供 Word 导出等场景使用
 export { createKaTeXPhysicsOptions, PHYSICS_KATEX_GLOBAL_MACROS, PHYSICS_KATEX_MACROS };
 
 function normalizeOption(option: any, index: number): { label: string; content: string } {

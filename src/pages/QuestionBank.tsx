@@ -7,12 +7,13 @@ import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, CopyOutlined,
   FolderOpenOutlined, TagsOutlined, ExportOutlined, FileAddOutlined, BranchesOutlined,
   CheckCircleOutlined, CloseCircleOutlined, DownloadOutlined, UploadOutlined,
-  AimOutlined, FileWordOutlined, BookOutlined, FormOutlined, MoreOutlined
+  AimOutlined, FileWordOutlined, BookOutlined, FormOutlined, MoreOutlined, EyeOutlined
 } from '@ant-design/icons';
 import type { Question, KnowledgeNode } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType, questionTypeFromParser } from '../constants/questionTypes';
+import QuestionRenderer from '../components/QuestionRenderer';
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -85,6 +86,7 @@ const QuestionBank: React.FC = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<Question | null>(null);
+  const [previewQuestion, setPreviewQuestion] = useState<Question | null>(null);
   const [treeVisible, setTreeVisible] = useState(true);
   const [wordModalVisible, setWordModalVisible] = useState(false);
   const [wordImporting, setWordImporting] = useState(false);
@@ -279,7 +281,7 @@ const QuestionBank: React.FC = () => {
       title: '题干', dataIndex: 'content', key: 'content', ellipsis: true,
       render: (t: string, r: Question) => (
         <div>
-          <div style={{ maxWidth: 350, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t}</div>
+          <QuestionRenderer content={t} inline />
           {r.tags && r.tags.length > 0 && (
             <div style={{ marginTop: 4 }}>
               {r.tags.map(tag => <Tag key={tag} color="blue" style={{ fontSize: 10 }}>{tag}</Tag>)}
@@ -307,9 +309,10 @@ const QuestionBank: React.FC = () => {
       render: (_: any, r: Question) => r.exam_type ? <Tag>{r.exam_type}</Tag> : '-'
     },
     {
-      title: '操作', key: 'action', width: 140,
+      title: '操作', key: 'action', width: 170,
       render: (_: any, r: Question) => (
         <Space size={0}>
+          <Tooltip title="预览"><Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setPreviewQuestion(r)} /></Tooltip>
           <Tooltip title="编辑"><Button type="link" size="small" icon={<EditOutlined />} onClick={() => {
             setEditing(r);
             // Build knowledge_ids form values
@@ -988,6 +991,36 @@ const QuestionBank: React.FC = () => {
         )}
       </Modal>
 
+      {/* Preview Modal */}
+      <Modal
+        title={<span><EyeOutlined /> 题目预览</span>}
+        open={!!previewQuestion}
+        onCancel={() => setPreviewQuestion(null)}
+        footer={<Button onClick={() => setPreviewQuestion(null)}>关闭</Button>}
+        width={700}
+        destroyOnClose
+      >
+        {previewQuestion && (
+          <div style={{ padding: '8px 0' }}>
+            <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Tag color="blue">{previewQuestion.subject}</Tag>
+              <Tag color="purple">{previewQuestion.type}</Tag>
+              <Tag color={difficultyColor(previewQuestion.difficulty)}>{'★'.repeat(previewQuestion.difficulty)}</Tag>
+              {previewQuestion.exam_type && <Tag>{previewQuestion.exam_type}</Tag>}
+              {previewQuestion.grade && <Tag>{previewQuestion.grade}</Tag>}
+              {previewQuestion.year && <Tag>{previewQuestion.year}</Tag>}
+            </div>
+            <QuestionRenderer
+              content={previewQuestion.content}
+              options={previewQuestion.options}
+              questionType={previewQuestion.type}
+              answer={previewQuestion.answer}
+              analysis={previewQuestion.analysis}
+            />
+          </div>
+        )}
+      </Modal>
+
       {/* Add/Edit Modal */}
       <Modal
         title={editing ? '编辑题目' : '添加题目'}
@@ -1017,7 +1050,27 @@ const QuestionBank: React.FC = () => {
           </Row>
 
           <Form.Item name="content" label="题目内容" rules={[{ required: true }]}>
-            <TextArea rows={4} placeholder="支持公式显示（用 $$ 包裹）" />
+            <TextArea rows={4} placeholder={'支持公式（用 $$ 包裹），如 $$F=ma$$\n物理量用斜体 <i>F</i>、单位正体 m/s、数学常数正体 π\n下标属性用 \\mathrm：$$v_{\\mathrm{0}}$$\n向量用 \\boldsymbol：$$\\boldsymbol{F}$$'} />
+          </Form.Item>
+          <details style={{ marginBottom: 12, fontSize: 12, color: '#666', background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 4, padding: '6px 10px' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>物理学科正斜体规范</summary>
+            <div style={{ marginTop: 4, lineHeight: 1.8 }}>
+              <b>斜体</b>：物理量符号（<i>F</i>, <i>m</i>, <i>v</i>, <i>g</i>, <i>E</i>, <i>B</i>）、变量下标（<i>m<sub>i</sub></i>）<br/>
+              <b>正体</b>：单位（m, s, kg, N, A）、数学常数（π, e）、函数（sin, cos, log）、微分符号 d、化学元素下标（<i>m</i><sub>H</sub>）<br/>
+              <b>粗斜体</b>：向量（<b><i>F</i></b>, <b><i>v</i></b>）
+            </div>
+          </details>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.content !== cur.content}>
+            {({ getFieldValue }) => {
+              const content = getFieldValue('content');
+              if (!content) return null;
+              return (
+                <div style={{ marginBottom: 16, padding: 12, background: '#fafafa', borderRadius: 6, border: '1px solid #e8e8e8' }}>
+                  <div style={{ fontSize: 12, color: '#999', marginBottom: 6 }}>预览：</div>
+                  <QuestionRenderer content={content} />
+                </div>
+              );
+            }}
           </Form.Item>
 
           <Row gutter={16}>

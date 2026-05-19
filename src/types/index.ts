@@ -121,6 +121,7 @@ export interface Course {
   teacher_name?: string;
   active: boolean; // 存续状态：true-未结课，false-已结课
   default_duration_minutes?: number; // 默认单次课时长（分钟），拖拽排课时自动使用
+  color?: string;   // 课程背景色（根据上课地址自动分配，同地址同色）
   notes?: string;
   created_at: string;
   updated_at: string;

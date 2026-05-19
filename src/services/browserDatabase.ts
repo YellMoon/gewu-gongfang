@@ -8,6 +8,7 @@ import {
 } from '../types';
 import type { SyncTable } from './syncEngine';
 import { calculateGrade, calculateFees, calculateDurationHours, groupByMonth, calculatePercentage } from '../utils/helpers';
+import { getColorForRoom } from '../utils/courseColors';
 import {
   makeQuestionTagRelId,
   normalizeQuestionTagRels,
@@ -94,8 +95,9 @@ class BrowserDatabaseService {
 
   private loadData(): void {
     const stored = localStorage.getItem(this.storageKey);
+    let loadedData: any = null;
     if (stored) {
-      const loadedData = JSON.parse(stored);
+      loadedData = JSON.parse(stored);
       // 合并数据，确保所有数组字段都存在，旧版本数据缺失就用 []
       this.data = {
         students: [],
@@ -159,6 +161,85 @@ class BrowserDatabaseService {
       ...s,
       grade_current: calculateGrade(s.grade_year)
     }));
+
+    // 题型迁移：旧题型统一为5种
+    const typeMigrateMap: Record<string, string> = {
+      '选择题': '单选题',
+      '填空题': '解答题',
+      '简答题': '解答题',
+      '作图题': '解答题',
+    };
+    this.data.questions = (this.data.questions || []).map(q => {
+      if (!q) return q;
+      const migrated = { ...q };
+      if (typeMigrateMap[q.type]) {
+        migrated.type = typeMigrateMap[q.type] as Question['type'];
+      }
+      if (!migrated.status) migrated.status = 'draft';
+      if (migrated.has_image === undefined) migrated.has_image = /<img|!\[/.test(migrated.content || '');
+      if (migrated.has_formula === undefined) migrated.has_formula = /\$\$|\\\[|\\\(/.test(migrated.content || '');
+      if (migrated.created_by === undefined) migrated.created_by = '';
+      return migrated;
+    });
+
+    // 知识树迁移到 tag 表
+    this.data.tags = loadedData?.tags || [];
+    if (this.data.tags.length === 0 && this.data.knowledgeTree.length > 0) {
+      const now = new Date().toISOString();
+      this.data.tags = this.data.knowledgeTree.map((n: KnowledgeNode) => ({
+        id: n.id,
+        tag_type: 'knowledge' as const,
+        tag_name: n.name,
+        tag_code: n.id,
+        parent_id: n.parent_id || undefined,
+        subject: '物理',
+        sort_no: n.order,
+        status: 1,
+        created_at: n.created_at || now,
+        updated_at: n.updated_at || now,
+      }));
+    }
+
+    // 模型标签种子数据
+    const MODEL_TAGS = [
+      { id: 'model-process', tag_name: '过程模型', sort_no: 1 },
+      { id: 'model-em-induction', tag_name: '电磁感应模型', sort_no: 2 },
+      { id: 'model-em-field', tag_name: '电磁场模型', sort_no: 3 },
+      { id: 'model-plate', tag_name: '板块模型', sort_no: 4 },
+      { id: 'model-conveyor', tag_name: '传送带模型', sort_no: 5 },
+      { id: 'model-image', tag_name: '图像模型', sort_no: 6 },
+      { id: 'model-force', tag_name: '受力分析模型', sort_no: 7 },
+    ];
+    const now2 = new Date().toISOString();
+    for (const mt of MODEL_TAGS) {
+      if (!this.data.tags.find((t: Tag) => t.id === mt.id)) {
+        this.data.tags.push({
+          id: mt.id,
+          tag_type: 'model',
+          tag_name: mt.tag_name,
+          tag_code: mt.id,
+          parent_id: undefined,
+          subject: '物理',
+          sort_no: mt.sort_no,
+          status: 1,
+          created_at: now2,
+          updated_at: now2,
+        });
+      }
+    }
+
+    // 课程颜色自动分配（首次启动：扫描所有课程，根据上课地址分配背景色）
+    const coursesNeedColor = this.data.courses.some((c: any) => !c.color);
+    if (coursesNeedColor && this.data.courses.length > 0) {
+      let changed = false;
+      for (const c of this.data.courses) {
+        if (!c.color) {
+          c.color = getColorForRoom(c.room_id);
+          changed = true;
+        }
+      }
+      if (changed) this.saveData();
+    }
   }
 
   private saveData(): void {
@@ -1379,9 +1460,14 @@ class BrowserDatabaseService {
   createQuestion(question: Omit<Question, 'id' | 'created_at' | 'updated_at'>): Question {
     const now = new Date().toISOString();
     const id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+    const content = question.content || '';
     const newQuestion: Question = {
       ...question,
       id,
+      status: question.status || 'draft',
+      has_image: question.has_image !== undefined ? question.has_image : /<img|!\[/.test(content),
+      has_formula: question.has_formula !== undefined ? question.has_formula : /\$\$|\\\[|\\\(/.test(content),
+      created_by: question.created_by || '',
       created_at: now,
       updated_at: now
     };

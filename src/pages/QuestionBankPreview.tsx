@@ -6,7 +6,7 @@ import {
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, CopyOutlined,
   FolderOpenOutlined, TagsOutlined, AimOutlined, BranchesOutlined,
-  CheckCircleOutlined, FileWordOutlined, CloseCircleOutlined
+  CheckCircleOutlined, FileWordOutlined, CloseCircleOutlined, EyeOutlined
 } from '@ant-design/icons';
 import type { Question, KnowledgeNode, QuestionVersion } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
@@ -15,11 +15,54 @@ import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionType
 import { splitSearchTerms } from '../utils/highlightText';
 import { toggleQuestionBasket, useQuestionBasketIds } from '../components/QuestionBasket';
 import QuestionPreviewCard from '../components/QuestionPreviewCard';
+import QuestionRenderer, { createKaTeXPhysicsOptions } from '../components/QuestionRenderer';
+import katex from 'katex';
+import { applyPhysicsNotationToHTML } from '../utils/physicsNotation';
+import './QuestionBankPreview.css';
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
 const API_BASE = getApiBase('/api/question-bank');
+const KATEX_EXPORT_CSS = `
+.katex{font:normal 1.21em "KaTeX_Main","Times New Roman",serif;line-height:1.2;text-rendering:auto}
+.katex .base{position:relative;white-space:nowrap;width:min-content;display:inline-block}
+.katex .strut,.katex .mspace{display:inline-block}
+.katex .vlist-t{border-collapse:collapse;display:inline-table;table-layout:fixed}
+.katex .vlist-r{display:table-row}
+.katex .vlist{display:table-cell;position:relative;vertical-align:bottom}
+.katex .vlist>span{display:block;height:0;position:relative}
+.katex .vlist>span>span{display:inline-block}
+.katex .mfrac>span>span{text-align:center}
+.katex .mfrac .frac-line{border-bottom-style:solid;display:inline-block;width:100%;min-height:1px}
+.katex .sqrt>.root{margin-left:.2777777778em;margin-right:-.5555555556em}
+.katex .mathit,.katex .mathnormal{font-family:"KaTeX_Math","Times New Roman",serif;font-style:italic}
+.katex .mathrm,.katex .mainrm{font-family:"KaTeX_Main","Times New Roman",serif;font-style:normal}
+`;
+
+function renderContentForExport(content: string): string {
+  if (!content) return '';
+  const re = /\$\$([\s\S]*?)\$\$/g;
+  let result = '';
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    if (m.index > last) {
+      result += applyPhysicsNotationToHTML(content.slice(last, m.index));
+    }
+    try {
+      const rendered = katex.renderToString(m[1], createKaTeXPhysicsOptions(true));
+      result += `<div class="katex-display">${rendered}</div>`;
+    } catch {
+      result += `<div class="katex-display"><span class="katex"><span class="katex-html"><span class="base"><span class="mord">${m[1]}</span></span></span></span></div>`;
+    }
+    last = m.index + m[0].length;
+  }
+  if (last < content.length) {
+    result += applyPhysicsNotationToHTML(content.slice(last));
+  }
+  return result;
+}
 
 const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'];
 const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试', '竞赛', '强基计划', '其他'];
@@ -89,6 +132,7 @@ const QuestionBankPreview: React.FC = () => {
   const [appliedSearchText, setAppliedSearchText] = useState<string>('');
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
   const [basketIds] = useQuestionBasketIds();
+  const [previewQuestion, setPreviewQuestion] = useState<Question | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<Question | null>(null);
   const [versions, setVersions] = useState<QuestionVersion[]>([]);
@@ -327,8 +371,11 @@ const QuestionBankPreview: React.FC = () => {
     });
   };
 
-  const treeData = buildTreeData(knowledgeNodes);
-  const modelTreeData = buildTreeData(modelNodes);
+  const currentSubject = filterSubjects[0] || '物理';
+  const subjectKnowledgeNodes = knowledgeNodes.filter((node: any) => !node.subject || filterSubjects.includes(node.subject));
+  const subjectModelNodes = modelNodes.filter((node: any) => !node.subject || filterSubjects.includes(node.subject));
+  const treeData = buildTreeData(subjectKnowledgeNodes);
+  const modelTreeData = buildTreeData(subjectModelNodes);
 
   // Knowledge tree checkbox renderer in modal
   const renderKnowledgeCheckboxes = (nodes: KnowledgeNode[], parentId?: string, depth = 0) => {
@@ -544,18 +591,25 @@ const QuestionBankPreview: React.FC = () => {
 
     let html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word'>`;
     html += `<head><meta charset="UTF-8"><style>
-      body { font-family: '宋体', SimSun, serif; font-size: 12pt; padding: 40px; line-height: 1.8; }
+      body { font-family: 'Times New Roman', '宋体', SimSun, serif; font-size: 12pt; padding: 40px; line-height: 1.8; }
+      i, em { font-style: italic; }
+      .q-stem i, .q-opt i { font-family: 'Times New Roman', serif; font-style: italic; }
       h1 { text-align: center; font-size: 18pt; margin-bottom: 20px; }
       .section-title { font-weight: bold; font-size: 14pt; margin: 20px 0 10px 0; }
-      .question { margin-bottom: 16px; }
+      .question { margin-bottom: 20px; }
       .q-stem { margin-bottom: 4px; }
-      .q-options { margin-left: 20px; }
-      .q-answer { margin-top: 4px; color: #999; }
+      .q-stem img { max-width: 100%; max-height: 280px; margin: 6px 0; }
+      .q-options { display: flex; flex-wrap: wrap; gap: 4px 24px; margin: 8px 0 0 12px; }
+      .q-options.cols-4 .q-opt { width: calc(25% - 18px); }
+      .q-options.cols-2 .q-opt { width: calc(50% - 12px); }
+      .q-opt { min-width: 80px; }
+      .q-analysis { font-size: 10pt; color: #888; margin-top: 6px; }
       hr { border: none; border-top: 1px dashed #ccc; margin: 20px 0; }
       .answer-key { margin-top: 30px; border-top: 2px solid #000; padding-top: 10px; }
       .answer-key .section-title { font-size: 12pt; }
       table { border-collapse: collapse; width: 100%; }
       td { padding: 4px 8px; }
+      ${KATEX_EXPORT_CSS}
     </style></head><body>`;
 
     html += `<h1>物理试卷</h1>`;
@@ -570,19 +624,23 @@ const QuestionBankPreview: React.FC = () => {
       html += `<div class="section-title">${label}</div>`;
       groups[type].forEach(q => {
         html += `<div class="question">`;
-        html += `<div class="q-stem"><b>${qNum}.</b> ${q.content}</div>`;
+        // 图片嵌入在题干 HTML 中保持真实位置，不再单独提取
+        html += `<div class="q-stem"><b>${qNum}.</b> ${renderContentForExport(q.content || '')}</div>`;
+
         if (q.options && q.options.length > 0) {
-          html += `<div class="q-options">`;
+          const optCount = q.options.length;
+          const optCols = optCount === 4 ? 4 : optCount === 3 ? 3 : 2;
+          html += `<div class="q-options cols-${optCols}">`;
           q.options.forEach((opt: string) => {
-            html += `<div>${opt}</div>`;
+            html += `<div class="q-opt">${opt}</div>`;
           });
           html += `</div>`;
         }
         if (q.analysis) {
-          html += `<div style="font-size:10pt;color:#888;margin-top:4px">【解析】${q.analysis}</div>`;
+          html += `<div class="q-analysis">【解析】${q.analysis}</div>`;
         }
         html += `</div>`;
-        answerKeys.push({ num: qNum, content: q.content.substring(0, 40), answer: q.answer });
+        answerKeys.push({ num: qNum, content: (q.content || '').replace(/<[^>]+>/g, '').substring(0, 40), answer: q.answer });
         qNum++;
       });
     });
@@ -662,7 +720,7 @@ const QuestionBankPreview: React.FC = () => {
       title: '题干', dataIndex: 'content', key: 'content', ellipsis: true,
       render: (t: string, r: Question) => (
         <div>
-          <div style={{ maxWidth: 350, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t}</div>
+          <QuestionRenderer content={t} inline />
           {r.tags && r.tags.length > 0 && (
             <div style={{ marginTop: 4 }}>
               {r.tags.map(tag => <Tag key={tag} color="blue" style={{ fontSize: 10 }}>{tag}</Tag>)}
@@ -767,15 +825,15 @@ const QuestionBankPreview: React.FC = () => {
   }, [knowledgeSelectedIds, filterExcludeKnowledgeIds]);
 
   return (
-    <Row gutter={16}>
+    <Row gutter={16} className="qb-preview-page">
       {/* Knowledge Tree Sidebar */}
       {treeVisible && (
-        <Col span={5}>
+        <Col span={5} className="qb-preview-sidebar">
           <Card
             size="small"
-            title={<span><BranchesOutlined /> 知识点</span>}
+            title={<span><BranchesOutlined /> {currentSubject}知识树</span>}
             extra={<Button type="link" size="small" onClick={() => setTreeVisible(false)}>收起</Button>}
-            style={{ height: '100%' }}
+            className="qb-preview-tree-card"
           >
             <div className="knowledge-tree">
             <Tree
@@ -793,9 +851,9 @@ const QuestionBankPreview: React.FC = () => {
             </div>
             <Divider />
             <div style={{ color: '#666', fontSize: 12 }}>
-              <div>题目总数：{questions.length}</div>
-              <div>知识点：{knowledgeNodes.length}</div>
-              <div>模型：{modelNodes.length}</div>
+              <div>当前科目试题：{filtered.length}</div>
+              <div>知识点：{subjectKnowledgeNodes.length}</div>
+              <div>模型：{subjectModelNodes.length}</div>
               {selectedRowKeys.length > 0 && (
                 <div style={{ color: '#1890ff', fontWeight: 'bold', marginTop: 8 }}>
                   已选 {selectedRowKeys.length} 题
@@ -824,14 +882,26 @@ const QuestionBankPreview: React.FC = () => {
       )}
 
       {/* Main Content */}
-      <Col span={treeVisible ? 19 : 24}>
-        <Card style={{ margin: 0 }}>
+      <Col span={treeVisible ? 19 : 24} className="qb-preview-main">
+        <Card className="qb-preview-main-card">
           {/* Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <Space>
+          <div className="qb-preview-header">
+            <Space className="qb-preview-titlebar">
               {!treeVisible && (
                 <Button type="link" icon={<BranchesOutlined />} onClick={() => setTreeVisible(true)}>展开知识点/模型</Button>
               )}
+              <h2>试题预览</h2>
+              <Select
+                className="qb-subject-select"
+                value={currentSubject}
+                onChange={(value) => {
+                  setFilterSubjects([value]);
+                  setKnowledgeSelectedIds([undefined]);
+                  setFilterExcludeKnowledgeIds([undefined]);
+                  setModelSelectedIds([undefined]);
+                }}
+                options={SUBJECTS.map(subject => ({ label: subject, value: subject }))}
+              />
               <Badge count={filtered.length} style={{ backgroundColor: '#1890ff' }} overflowCount={9999} />
             </Space>
             <Space>
@@ -908,16 +978,8 @@ const QuestionBankPreview: React.FC = () => {
               </div>
             </div>
 
-            {/* Row 4: 科目 | 考试类型 */}
+            {/* Row 4: 考试类型 */}
             <div style={{ marginBottom: 8, display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>科目：</span>
-                <Checkbox.Group
-                  options={SUBJECTS}
-                  value={filterSubjects}
-                  onChange={(vals) => setFilterSubjects(vals as string[])}
-                />
-              </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>考试类型：</span>
                 <Checkbox.Group
@@ -1145,6 +1207,36 @@ const QuestionBankPreview: React.FC = () => {
         </Card>
       </Col>
 
+      {/* Preview Modal */}
+      <Modal
+        title={<span><EyeOutlined /> 题目预览</span>}
+        open={!!previewQuestion}
+        onCancel={() => setPreviewQuestion(null)}
+        footer={<Button onClick={() => setPreviewQuestion(null)}>关闭</Button>}
+        width={700}
+        destroyOnClose
+      >
+        {previewQuestion && (
+          <div style={{ padding: '8px 0' }}>
+            <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Tag color="blue">{previewQuestion.subject}</Tag>
+              <Tag color="purple">{previewQuestion.type}</Tag>
+              <Tag color={difficultyColor(previewQuestion.difficulty)}>{'★'.repeat(previewQuestion.difficulty)}</Tag>
+              {previewQuestion.exam_type && <Tag>{previewQuestion.exam_type}</Tag>}
+              {previewQuestion.grade && <Tag>{previewQuestion.grade}</Tag>}
+              {previewQuestion.year && <Tag>{previewQuestion.year}</Tag>}
+            </div>
+            <QuestionRenderer
+              content={previewQuestion.content}
+              options={previewQuestion.options}
+              questionType={previewQuestion.type}
+              answer={previewQuestion.answer}
+              analysis={previewQuestion.analysis}
+            />
+          </div>
+        )}
+      </Modal>
+
       {/* Add/Edit Modal */}
       <Modal
         title={editing ? '编辑题目' : '添加题目'}
@@ -1174,7 +1266,27 @@ const QuestionBankPreview: React.FC = () => {
           </Row>
 
           <Form.Item name="content" label="题目内容" rules={[{ required: true }]}>
-            <TextArea rows={4} placeholder="支持公式显示（用 $$ 包裹）" />
+            <TextArea rows={4} placeholder={'支持公式（用 $$ 包裹），如 $$F=ma$$\n物理量用斜体 <i>F</i>、单位正体 m/s、数学常数正体 π\n下标属性用 \\mathrm：$$v_{\\mathrm{0}}$$\n向量用 \\boldsymbol：$$\\boldsymbol{F}$$'} />
+          </Form.Item>
+          <details style={{ marginBottom: 12, fontSize: 12, color: '#666', background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 4, padding: '6px 10px' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>物理学科正斜体规范</summary>
+            <div style={{ marginTop: 4, lineHeight: 1.8 }}>
+              <b>斜体</b>：物理量符号（<i>F</i>, <i>m</i>, <i>v</i>, <i>g</i>, <i>E</i>, <i>B</i>）、变量下标（<i>m<sub>i</sub></i>）<br/>
+              <b>正体</b>：单位（m, s, kg, N, A）、数学常数（π, e）、函数（sin, cos, log）、微分符号 d、化学元素下标（<i>m</i><sub>H</sub>）<br/>
+              <b>粗斜体</b>：向量（<b><i>F</i></b>, <b><i>v</i></b>）
+            </div>
+          </details>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.content !== cur.content}>
+            {({ getFieldValue }) => {
+              const content = getFieldValue('content');
+              if (!content) return null;
+              return (
+                <div style={{ marginBottom: 16, padding: 12, background: '#fafafa', borderRadius: 6, border: '1px solid #e8e8e8' }}>
+                  <div style={{ fontSize: 12, color: '#999', marginBottom: 6 }}>预览：</div>
+                  <QuestionRenderer content={content} />
+                </div>
+              );
+            }}
           </Form.Item>
 
           <Row gutter={16}>
