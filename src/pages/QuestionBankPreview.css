@@ -171,10 +171,6 @@
   transition: transform 0.22s ease, color 0.18s ease;
 }
 
-.knowledge-tree .ant-tree-switcher_open {
-  transform: rotate(90deg);
-}
-
 .knowledge-tree .ant-tree-list-holder,
 .knowledge-tree .ant-tree-list-holder-inner {
   overflow: visible !important;

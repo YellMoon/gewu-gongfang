@@ -161,6 +161,7 @@ const QuestionBankPreview: React.FC = () => {
   const [editing, setEditing] = useState<Question | null>(null);
   const [versions, setVersions] = useState<QuestionVersion[]>([]);
   const [treeVisible, setTreeVisible] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(30);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingNodeName, setEditingNodeName] = useState('');
   const [addingChildParentId, setAddingChildParentId] = useState<string | null | '__ROOT__'>(null);
@@ -196,7 +197,18 @@ const QuestionBankPreview: React.FC = () => {
     try {
       const db = (window as any).dbService;
       let localQuestions: Question[] = [];
-      if (db) localQuestions = (db.getAllQuestions?.() || []).map(normalizeQuestion);
+      if (db) {
+        localQuestions = (db.getAllQuestions?.() || []).map(normalizeQuestion);
+        setQuestions(localQuestions);
+        const kn = db.getKnowledgeTree?.() || [];
+        setKnowledgeNodes(kn);
+        const models = db.getModelTree?.() || [];
+        setModelNodes(models);
+        if (models.length === 0) {
+          db.initDefaultModelTree?.();
+          setModelNodes(db.getModelTree?.() || []);
+        }
+      }
       try {
         const res = await fetch(`${API_BASE}/questions?limit=200`);
         const data = await res.json();
@@ -210,15 +222,6 @@ const QuestionBankPreview: React.FC = () => {
         }
       } catch (_err) {
         setQuestions(localQuestions);
-      }
-      if (!db) return;
-      const kn = db.getKnowledgeTree?.() || [];
-      setKnowledgeNodes(kn);
-      const models = db.getModelTree?.() || [];
-      setModelNodes(models);
-      if (models.length === 0) {
-        db.initDefaultModelTree?.();
-        setModelNodes(db.getModelTree?.() || []);
       }
     } catch (e) {
       console.error('QuestionBankPreview loadData error:', e);
@@ -339,6 +342,11 @@ const QuestionBankPreview: React.FC = () => {
     }
     return true;
   }).sort((a, b) => (b.created_at || b.updated_at || '').localeCompare(a.created_at || a.updated_at || ''));
+  const visibleFiltered = filtered.slice(0, visibleCount);
+
+  useEffect(() => {
+    setVisibleCount(30);
+  }, [appliedSearchText, filterSubjects, filterTypes, filterExamTypes, filterGrades, filterSemesters, filterYear, filterDifficulties, filterStatuses, basketOnly, sourceFilter, activeKnowledgeIds.join(','), activeModelIds.join(','), expandedExcludeIds.join(',')]);
 
   const handleCreateKnowledgeNode = useCallback((name: string, parentId?: string | null) => {
     const db = (window as any).dbService;
@@ -924,7 +932,6 @@ const QuestionBankPreview: React.FC = () => {
             <div className="knowledge-tree">
             <Tree
               treeData={visibleTreeData} titleRender={nodeTitleRender}
-              defaultExpandAll
               showIcon={false}
               showLine={{ showLeafIcon: false }}
               blockNode allowDrop={() => false}
@@ -940,7 +947,6 @@ const QuestionBankPreview: React.FC = () => {
             <div className="knowledge-tree">
               <Tree
                 treeData={visibleModelTreeData}
-                defaultExpandAll
                 showIcon={false}
                 showLine={{ showLeafIcon: false }}
                 blockNode
@@ -1181,7 +1187,7 @@ const QuestionBankPreview: React.FC = () => {
 
           {/* Table */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {filtered.length === 0 ? <Empty description="暂无试题" /> : filtered.map((q, idx) => {
+            {filtered.length === 0 ? <Empty description="暂无试题" /> : visibleFiltered.map((q, idx) => {
               const inBasket = basketIds.includes(q.id);
               return (
                 <QuestionPreviewCard
@@ -1197,6 +1203,11 @@ const QuestionBankPreview: React.FC = () => {
                 />
               );
             })}
+            {filtered.length > visibleFiltered.length && (
+              <Button block onClick={() => setVisibleCount(count => count + 30)}>
+                加载更多（已显示 {visibleFiltered.length}/{filtered.length}）
+              </Button>
+            )}
           </div>
         </Card>
       </Col>

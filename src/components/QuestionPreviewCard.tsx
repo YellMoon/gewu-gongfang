@@ -1,10 +1,12 @@
 ﻿import React from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Popconfirm, Space } from 'antd';
 import { DeleteOutlined, EditOutlined, ShoppingCartOutlined } from '@ant-design/icons';
 import type { Question } from '../types';
 import QuestionRichText from './QuestionRichText';
 import QuestionRenderer from './QuestionRenderer';
 import QuestionRichContent from './QuestionRichContent';
+import { getQuestionAssetDataUrl, isAssetRef } from '../services/questionAssetStore';
 import './QuestionPreviewCard.css';
 
 function contentWithInlineAssets(question: Question): string {
@@ -13,7 +15,7 @@ function contentWithInlineAssets(question: Question): string {
   assets
     .filter((asset: any) => asset?.asset_type === 'image')
     .forEach((asset: any) => {
-      const src = asset.oss_url || asset.data_url || asset.url;
+      const src = asset.resolved_url || asset.oss_url || asset.data_url || asset.url;
       const fileName = asset.file_name || '';
       if (!src || !fileName || content.includes(src)) return;
       const escaped = fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -54,7 +56,36 @@ const QuestionPreviewCard: React.FC<{
     .join(' / ') || '来源未标注';
   const knowledgeText = knowledgeNames.join('、') || question.knowledge_point || '知识点未标注';
   const modelText = modelNames.join('、') || question.model_point || '';
-  const displayContent = contentWithInlineAssets(question);
+  const [resolvedQuestion, setResolvedQuestion] = useState<Question>(question);
+
+  useEffect(() => {
+    let cancelled = false;
+    setResolvedQuestion(question);
+    async function resolveAssets() {
+      const copy: any = { ...question };
+      const assets = Array.isArray((question as any).assets) ? (question as any).assets : [];
+      copy.assets = await Promise.all(assets.map(async (asset: any) => {
+        const src = asset?.oss_url || asset?.data_url || asset?.url;
+        if (isAssetRef(src)) {
+          const resolved = await getQuestionAssetDataUrl(src);
+          return { ...asset, resolved_url: resolved || src };
+        }
+        return asset;
+      }));
+      for (const asset of copy.assets) {
+        const src = asset?.oss_url || asset?.data_url || asset?.url;
+        if (!isAssetRef(src) || !asset?.resolved_url) continue;
+        for (const field of ['content', 'stem', 'answer', 'analysis']) {
+          if (typeof copy[field] === 'string') copy[field] = copy[field].split(src).join(asset.resolved_url);
+        }
+      }
+      if (!cancelled) setResolvedQuestion(copy);
+    }
+    resolveAssets();
+    return () => { cancelled = true; };
+  }, [question]);
+
+  const displayContent = contentWithInlineAssets(resolvedQuestion);
 
   return (
     <article id={`question-card-${question.id}`} className="qb-question-card">
@@ -63,13 +94,13 @@ const QuestionPreviewCard: React.FC<{
         <div className="qb-card-body">
           <QuestionRenderer
             content={displayContent}
-            options={question.options as any[]}
-            questionType={question.type}
-            answer={question.answer}
-            analysis={question.analysis || question.explanation}
+            options={resolvedQuestion.options as any[]}
+            questionType={resolvedQuestion.type}
+            answer={resolvedQuestion.answer}
+            analysis={resolvedQuestion.analysis || resolvedQuestion.explanation}
             terms={terms}
           />
-          <QuestionRichContent question={question} terms={terms} />
+          <QuestionRichContent question={resolvedQuestion} terms={terms} />
         </div>
         {onDelete && (
           <Space className="qb-card-actions" size={6}>

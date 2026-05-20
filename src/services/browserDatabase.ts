@@ -243,7 +243,35 @@ class BrowserDatabaseService {
   }
 
   private saveData(): void {
-    localStorage.setItem(this.storageKey, JSON.stringify(this.data));
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify(this.data));
+    } catch (error) {
+      this.compactLargeQuestionPayloads();
+      localStorage.setItem(this.storageKey, JSON.stringify(this.data));
+    }
+  }
+
+  private compactLargeQuestionPayloads(): void {
+    const stripLargeValue = (value: any): any => {
+      if (typeof value === 'string') {
+        return value.length > 2000 ? value.replace(/data:[^"'\s>]+/g, '') : value;
+      }
+      if (Array.isArray(value)) return value.map(stripLargeValue);
+      if (value && typeof value === 'object') {
+        const next: any = { ...value };
+        if (typeof next.data_url === 'string' && next.data_url.startsWith('data:')) next.data_url = '';
+        if (typeof next.url === 'string' && next.url.startsWith('data:')) next.url = '';
+        if (typeof next.oss_url === 'string' && next.oss_url.startsWith('data:')) next.oss_url = '';
+        Object.keys(next).forEach(key => { next[key] = stripLargeValue(next[key]); });
+        return next;
+      }
+      return value;
+    };
+    this.data.questions = (this.data.questions || []).map(question => stripLargeValue(question));
+    this.data.importTaskItems = (this.data.importTaskItems || []).map(item => ({
+      ...item,
+      payload: item.payload ? stripLargeValue(item.payload) : item.payload,
+    }));
   }
 
   private generateId(): string {

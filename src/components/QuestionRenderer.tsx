@@ -2,7 +2,6 @@
 import katex from 'katex';
 import './QuestionRenderer.css';
 import {
-  applyPhysicsNotationToHTML,
   createKaTeXPhysicsOptions,
   PHYSICS_KATEX_GLOBAL_MACROS,
   PHYSICS_KATEX_MACROS,
@@ -92,7 +91,7 @@ function normalizePhysicsHtml(html: string): string {
 }
 
 function processHtmlSegment(html: string): string {
-  return normalizePhysicsHtml(applyPhysicsNotationToHTML(html));
+  return normalizePhysicsHtml(html);
 }
 
 const KaTeXMath: React.FC<{ latex: string; displayMode: boolean }> = ({ latex, displayMode }) => {
@@ -234,9 +233,6 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
           </div>
         )}
 
-        {hasDrawer && !showAnalysis && !expanded && (
-          <div className="question-expand-hint">点击题干展开答案与解析</div>
-        )}
       </div>
 
       {showAnalysis && (answer || analysis) && (

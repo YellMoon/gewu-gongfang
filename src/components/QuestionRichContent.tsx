@@ -32,7 +32,7 @@ const QuestionRichContent: React.FC<{ question: any; terms?: string[] }> = ({ qu
   const renderedContent = String(question?.content || question?.stem || '');
   const imageAssets = assets.filter((asset: any) => {
     if (asset.asset_type !== 'image') return false;
-    const src = asset.oss_url || asset.data_url || asset.url;
+    const src = asset.resolved_url || asset.oss_url || asset.data_url || asset.url;
     return !src || (!renderedContent.includes(src) && !renderedContent.includes(asset.file_name || ''));
   });
   const formulaAssets = assets.filter((asset: any) => String(asset.asset_type || '').startsWith('formula_'));
@@ -50,7 +50,7 @@ const QuestionRichContent: React.FC<{ question: any; terms?: string[] }> = ({ qu
       {imageAssets.length > 0 && (
         <Space wrap>
           {imageAssets.map((asset: any, index: number) => {
-            const src = asset.oss_url || asset.data_url || asset.url;
+            const src = asset.resolved_url || asset.oss_url || asset.data_url || asset.url;
             return src ? (
               <img
                 key={asset.content_hash || asset.id || index}
@@ -73,7 +73,7 @@ const QuestionRichContent: React.FC<{ question: any; terms?: string[] }> = ({ qu
             </div>
           ))}
           {formulaAssets.filter((asset: any) => asset.asset_type === 'formula_preview').map((asset: any, index: number) => {
-            const src = asset.oss_url || asset.data_url || asset.url;
+            const src = asset.resolved_url || asset.oss_url || asset.data_url || asset.url;
             return src ? (
               <img
                 key={asset.content_hash || asset.id || `formula-preview-${index}`}

@@ -13,6 +13,7 @@ import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType, questionTypeFromParser } from '../constants/questionTypes';
 import QuestionRenderer from '../components/QuestionRenderer';
+import { prepareQuestionAssetsForStorage, stripQuestionAssetPayload } from '../services/questionAssetStore';
 import {
   downloadImportValidationReport,
   validateImportQuestions,
@@ -743,7 +744,7 @@ const QuestionBankImport: React.FC = () => {
                   quality_score: row.status === 'success' ? 1 : row.status === 'warning' ? 0.7 : 0,
                   warnings: row.issues.filter(issue => issue.level === 'warning').map(issue => issue.message),
                   errors: row.issues.filter(issue => issue.level === 'failed').map(issue => issue.message),
-                  payload: row.question,
+                  payload: stripQuestionAssetPayload(row.question),
                 })),
               });
               setRecentImportTasks(db.getRecentImportTasks?.(8) || []);
@@ -768,7 +769,7 @@ const QuestionBankImport: React.FC = () => {
                 status: row.status,
                 warnings: row.issues.filter(issue => issue.level === 'warning').map(issue => issue.message),
                 errors: row.issues.filter(issue => issue.level === 'failed').map(issue => issue.message),
-                payload: row.question,
+                payload: stripQuestionAssetPayload(row.question),
               })),
             });
             setRecentImportTasks(db.getRecentImportTasks?.(8) || []);
@@ -830,7 +831,7 @@ const QuestionBankImport: React.FC = () => {
       const nextBatch = data.data || data;
       const imported = Number(nextBatch.commit_result?.imported_items || nextBatch.accepted_items || 0);
       if (imported <= 0 && (wordResult?.questions || []).length > 0) {
-        importWordResults(wordResult, true);
+        await importWordResults(wordResult, true);
         message.warning('服务端批次未写入题目，已自动改用本地题库导入');
         return;
       }
@@ -863,7 +864,7 @@ const QuestionBankImport: React.FC = () => {
     }
   };
 
-  const importWordResults = (result: any, forceLocal = false) => {
+  const importWordResults = async (result: any, forceLocal = false) => {
     if (validationSummary.failed > 0) {
       message.warning('存在失败题目，请先处理或导出报告后再确认导入');
       return;
@@ -881,7 +882,7 @@ const QuestionBankImport: React.FC = () => {
       try {
         const knowledge_ids = normalizeImportedKnowledgeIds(db, q);
         const model_ids = [...new Set([...(q.model_ids || []), ...(q.model_point_ids || [])])];
-        db.createQuestion({
+        const preparedQuestion = await prepareQuestionAssetsForStorage({
           subject: q.subject || '\u7269\u7406',
           type: questionTypeFromParser(q.question_types),
           difficulty: 3,
@@ -910,6 +911,7 @@ const QuestionBankImport: React.FC = () => {
           model_point: q.model_point || '',
           model_ids,
         });
+        db.createQuestion(preparedQuestion);
         added++;
       } catch (e) { /* skip bad ones */ }
     }
@@ -939,7 +941,7 @@ const QuestionBankImport: React.FC = () => {
         status: row.status === 'failed' ? 'failed' : 'imported',
         warnings: row.issues.filter(issue => issue.level === 'warning').map(issue => issue.message),
         errors: row.issues.filter(issue => issue.level === 'failed').map(issue => issue.message),
-        payload: row.question,
+        payload: stripQuestionAssetPayload(row.question),
       })),
     });
     if (dbTask) setRecentImportTasks(db.getRecentImportTasks?.(8) || []);
@@ -1074,7 +1076,7 @@ const QuestionBankImport: React.FC = () => {
             <div className="knowledge-tree">
             <Tree
               treeData={treeData} titleRender={nodeTitleRender}
-              defaultExpandAll draggable onDrop={handleTreeDrop}
+              draggable onDrop={handleTreeDrop}
               showIcon={false}
               showLine={{ showLeafIcon: false }}
               blockNode allowDrop={() => true}
@@ -1086,13 +1088,7 @@ const QuestionBankImport: React.FC = () => {
                 }
               }}
               style={{ fontSize: 13 }} />
-            </div>
-            <Divider />
-            <div style={{ color: '#666', fontSize: 12 }}>
-              <div>题目总数：{questions.length}</div>
-              <div>知识点：{knowledgeNodes.length}</div>
-              <div>模型：{modelNodes.length}</div>
-            </div>
+            </div>
             <Divider orientation="left" style={{ fontSize: 12 }}>模型</Divider>
             {addingChildParentId === 'model:__ROOT__' ? (
               <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -1122,7 +1118,6 @@ const QuestionBankImport: React.FC = () => {
               <Tree
                 treeData={modelTreeData}
                 titleRender={modelNodeTitleRender}
-                defaultExpandAll
                 showIcon={false}
                 showLine={{ showLeafIcon: false }}
                 blockNode

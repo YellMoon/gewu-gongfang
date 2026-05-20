@@ -271,10 +271,16 @@ def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_
                 continue
             vert = child.find("./w:rPr/w:vertAlign", ns)
             val = vert.attrib.get("{%s}val" % ns["w"]) if vert is not None else ""
+            italic = child.find("./w:rPr/w:i", ns) is not None
+            bold = child.find("./w:rPr/w:b", ns) is not None
             if val == "subscript":
                 parts.append("<sub>%s</sub>" % text)
             elif val == "superscript":
                 parts.append("<sup>%s</sup>" % text)
+            elif italic:
+                parts.append("<i>%s</i>" % text)
+            elif bold:
+                parts.append("<strong>%s</strong>" % text)
             else:
                 parts.append(text)
         elif tag in ("oMath", "oMathPara"):
