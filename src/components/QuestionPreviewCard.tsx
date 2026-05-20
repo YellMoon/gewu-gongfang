@@ -1,17 +1,11 @@
 ﻿import React from 'react';
-import { Button, Popconfirm, Space, Tag } from 'antd';
+import { Button, Popconfirm, Space } from 'antd';
 import { DeleteOutlined, EditOutlined, ShoppingCartOutlined } from '@ant-design/icons';
 import type { Question } from '../types';
 import QuestionRichText from './QuestionRichText';
 import QuestionRenderer from './QuestionRenderer';
 import QuestionRichContent from './QuestionRichContent';
 import './QuestionPreviewCard.css';
-
-const difficultyColor = (difficulty?: number) => {
-  if (!difficulty || difficulty <= 2) return 'green';
-  if (difficulty === 3) return 'gold';
-  return 'orange';
-};
 
 const QuestionPreviewCard: React.FC<{
   question: Question;
@@ -48,13 +42,6 @@ const QuestionPreviewCard: React.FC<{
       <div className="qb-card-main">
         <div className="qb-card-index">{index !== undefined ? index + 1 : ''}</div>
         <div className="qb-card-body">
-          <div className="qb-card-meta">
-            <Tag color="blue">{question.type || '题型未标注'}</Tag>
-            <Tag color={difficultyColor(question.difficulty)}>{'★'.repeat(question.difficulty || 1)}</Tag>
-            {question.exam_type && <Tag>{question.exam_type}</Tag>}
-            {question.has_image && <Tag color="cyan">图片</Tag>}
-            {question.has_formula && <Tag color="purple">公式</Tag>}
-          </div>
           <QuestionRenderer
             content={question.content || question.stem || '未填写题干'}
             options={question.options as any[]}
