@@ -196,14 +196,34 @@ td,
 .knowledge-tree .ant-tree-switcher-noop {
   background: transparent !important;
   box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.knowledge-tree .ant-tree-switcher-noop::before {
+  width: 10px !important;
+  height: 1px !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  background: repeating-linear-gradient(
+    to right,
+    #d9d9d9 0px,
+    #d9d9d9 2px,
+    transparent 2px,
+    transparent 4px
+  ) !important;
+  opacity: 1 !important;
+}
+
+.knowledge-tree .ant-tree-switcher-noop::after {
+  display: none !important;
+  opacity: 0 !important;
 }
 
 /* 鍒犻櫎鍥炬爣 */
 .knowledge-tree .ant-tree-iconEle,
 .knowledge-tree .ant-tree-icon__customize,
 .knowledge-tree .ant-tree-leaf-icon,
-.knowledge-tree .ant-tree-leaf-line,
-.knowledge-tree .ant-tree-switcher-leaf-line,
 .knowledge-tree .ant-tree-draggable-icon,
 .knowledge-tree .ant-tree-treenode-draggable::before {
   display: none !important;

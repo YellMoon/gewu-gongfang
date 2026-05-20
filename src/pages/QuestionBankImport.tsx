@@ -854,6 +854,9 @@ const QuestionBankImport: React.FC = () => {
         success_items: imported,
         failed_items: nextBatch.commit_result?.failed_items || validationSummary.failed,
       });
+      if ((wordResult?.questions || []).length > 0) {
+        await importWordResults(wordResult, true);
+      }
       setRecentImportTasks(db?.getRecentImportTasks?.(8) || []);
       loadData();
       message.success(`已入库 ${imported} 道题，索引任务已创建`);

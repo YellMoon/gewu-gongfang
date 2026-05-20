@@ -342,7 +342,22 @@ const QuestionBankPreview: React.FC = () => {
     }
     return true;
   }).sort((a, b) => (b.created_at || b.updated_at || '').localeCompare(a.created_at || a.updated_at || ''));
-  const visibleFiltered = filtered.slice(0, visibleCount);
+  const dedupedFiltered = filtered.reduce<Question[]>((rows, question) => {
+    const fingerprint = String(question.content || question.stem || '').replace(/\s+/g, '');
+    const existingIndex = rows.findIndex(item => String(item.content || item.stem || '').replace(/\s+/g, '') === fingerprint && fingerprint);
+    if (existingIndex === -1) return [...rows, question];
+    const existing = rows[existingIndex] as any;
+    const current = question as any;
+    const existingRich = (existing.assets || []).length + (existing.formulas || []).length;
+    const currentRich = (current.assets || []).length + (current.formulas || []).length;
+    if (currentRich > existingRich) {
+      const next = [...rows];
+      next[existingIndex] = question;
+      return next;
+    }
+    return rows;
+  }, []);
+  const visibleFiltered = dedupedFiltered.slice(0, visibleCount);
 
   useEffect(() => {
     setVisibleCount(30);
@@ -1187,7 +1202,7 @@ const QuestionBankPreview: React.FC = () => {
 
           {/* Table */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {filtered.length === 0 ? <Empty description="暂无试题" /> : visibleFiltered.map((q, idx) => {
+            {dedupedFiltered.length === 0 ? <Empty description="暂无试题" /> : visibleFiltered.map((q, idx) => {
               const inBasket = basketIds.includes(q.id);
               return (
                 <QuestionPreviewCard
@@ -1203,9 +1218,9 @@ const QuestionBankPreview: React.FC = () => {
                 />
               );
             })}
-            {filtered.length > visibleFiltered.length && (
+            {dedupedFiltered.length > visibleFiltered.length && (
               <Button block onClick={() => setVisibleCount(count => count + 30)}>
-                加载更多（已显示 {visibleFiltered.length}/{filtered.length}）
+                加载更多（已显示 {visibleFiltered.length}/{dedupedFiltered.length}）
               </Button>
             )}
           </div>

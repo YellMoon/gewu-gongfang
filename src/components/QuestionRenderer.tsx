@@ -82,6 +82,10 @@ function applySearchHighlight(html: string, terms: string[] = []): string {
 function normalizePhysicsHtml(html: string): string {
   return html
     .replace(/<i>([A-Za-zα-ωΑ-Ω])i>/g, '<i>$1</i>')
+    .replace(/<\/<sup>/g, '</sup>')
+    .replace(/<\/<sub>/g, '</sub>')
+    .replace(/<sup>([^<]*)$/g, '<sup>$1</sup>')
+    .replace(/<sub>([^<]*)$/g, '<sub>$1</sub>')
     .replace(/&lt;(\/?)(sub|sup|i|b|strong|em)&gt;/gi, '<$1$2>')
     .replace(/\r?\n/g, '<br />')
     .replace(/<sup>([^<]+)<\/sup>\s*<sub>([^<]+)<\/sub>\s*([A-Z][a-z]?)/g, '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$1</sup><sub>$2</sub></span><span class="nuclear-core">$3</span></span>')

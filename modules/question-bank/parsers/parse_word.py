@@ -24,9 +24,9 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 QUESTION_RE = re.compile(r"^(\d+)[\.\u3001\uff0e]\s*(.*)")
 OPTION_RE = re.compile(r"^([A-G])[\.\u3001\uff0e]\s*(.*)", re.I)
 SUB_QUESTION_RE = re.compile(r"^(?:[\(\uff08](\d+)[\)\uff09]|([\u2460\u2461\u2462\u2463\u2464\u2465\u2466\u2467\u2468\u2469]))\s*(.*)")
-EXAM_SECTION_RE = re.compile(r"^[一二三四五六七八九十]+[、.．]\s*(单选题|多选题|选择题|实验题|解答题|综合题)")
-ANSWER_TITLE_RE = re.compile(r"^(?:《.*?》\s*)?参考答案")
-ANALYSIS_MARK_RE = re.compile(r"【(?:详解|解析)】")
+EXAM_SECTION_RE = re.compile(r"^[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341]+[\u3001\uff0e\.\s]*(\u5355\u9009\u9898|\u591a\u9009\u9898|\u9009\u62e9\u9898|\u5b9e\u9a8c\u9898|\u89e3\u7b54\u9898|\u7efc\u5408\u9898|\u586b\u7a7a\u9898)")
+ANSWER_TITLE_RE = re.compile(r"^(?:\u300a.*?\u300b\s*)?(?:\u53c2\u8003\u7b54\u6848|\u7b54\u6848\u4e0e\u89e3\u6790|\u7b54\u6848\u53ca\u89e3\u6790|\u7b54\u6848)")
+ANALYSIS_MARK_RE = re.compile(r"\u3010(?:\u8be6\u89e3|\u89e3\u6790)\u3011")
 
 
 def extract_question_number(text):
@@ -184,15 +184,32 @@ def _first_child(node, name):
             return child
     return None
 
-def _math_text(node):
+def _format_math_token(text):
+    if not text:
+        return ""
+    if re.fullmatch(r"[A-Za-z]", text):
+        return "<i>%s</i>" % text
+    return re.sub(r"([A-Za-z])", r"<i>\1</i>", text)
+
+def _plain_math_text(node):
     if node is None:
         return ""
     tag = _local_name(node)
     if tag == "t":
         return node.text or ""
+    return "".join(_plain_math_text(child) for child in list(node))
+
+def _math_text(node):
+    if node is None:
+        return ""
+    tag = _local_name(node)
+    if tag == "t":
+        return _format_math_token(node.text or "")
     if tag == "r":
         return "".join(_math_text(child) for child in list(node))
-    if tag in ("oMath", "oMathPara", "e", "num", "den", "deg", "sub", "sup", "fName"):
+    if tag == "fName":
+        return _plain_math_text(node)
+    if tag in ("oMath", "oMathPara", "e", "num", "den", "deg", "sub", "sup"):
         return "".join(_math_text(child) for child in list(node))
     if tag == "f":
         num = _math_text(_first_child(node, "num"))
@@ -231,7 +248,7 @@ def _math_text(node):
     if tag == "groupChr":
         return _math_text(_first_child(node, "e"))
     if tag == "func":
-        return "%s(%s)" % (_math_text(_first_child(node, "fName")), _math_text(_first_child(node, "e")))
+        return "%s(%s)" % (_plain_math_text(_first_child(node, "fName")), _math_text(_first_child(node, "e")))
     return "".join(_math_text(child) for child in list(node))
 
 def _asset_from_run_rel(archive, rels, rid, has_ole_object=False):
@@ -588,7 +605,11 @@ def is_topic_heading(text):
 
 
 def is_exam_section_heading(text):
-    return bool(EXAM_SECTION_RE.match(text or ""))
+    text = (text or "").strip()
+    return bool(EXAM_SECTION_RE.match(text)) or bool(re.match(r"^\d+[\u3001\uff0e\.\s]*(\u5355\u9009\u9898|\u591a\u9009\u9898|\u9009\u62e9\u9898|\u5b9e\u9a8c\u9898|\u89e3\u7b54\u9898|\u7efc\u5408\u9898|\u586b\u7a7a\u9898)$", text))
+
+def is_pure_question_type_title(text):
+    return bool(re.match(r"^(?:\d+[\u3001\uff0e\.]|[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341]+[\u3001\uff0e\.])?\s*(\u5355\u9009\u9898|\u591a\u9009\u9898|\u9009\u62e9\u9898|\u5b9e\u9a8c\u9898|\u89e3\u7b54\u9898|\u7efc\u5408\u9898|\u586b\u7a7a\u9898)$", text or ""))
 
 
 def clean_topic_heading(text):
@@ -636,8 +657,12 @@ def parse_question_block(paragraphs, default_topic=None):
             if topic:
                 current_topic = topic
             continue
+        if is_pure_question_type_title(text):
+            continue
         number, content = extract_question_number(text)
         if number is not None:
+            if is_pure_question_type_title(content):
+                continue
             if current:
                 questions.append(finalize_question_type(current))
             current = new_question(content, len(questions), current_topic)
@@ -660,12 +685,12 @@ def parse_question_block(paragraphs, default_topic=None):
 
 
 def split_answer_section(paragraphs):
+    markers = ("\u53c2\u8003\u7b54\u6848", "\u7b54\u6848\u4e0e\u89e3\u6790", "\u7b54\u6848\u53ca\u89e3\u6790")
     for index, paragraph in enumerate(paragraphs):
         text = paragraph.strip()
-        if ANSWER_TITLE_RE.match(text) or (text.endswith("参考答案") and "《" in text):
+        if ANSWER_TITLE_RE.search(text) or any(marker in text for marker in markers):
             return paragraphs[:index], paragraphs[index + 1 :]
     return paragraphs, []
-
 
 def parse_answers(paragraphs):
     answers = []
@@ -738,6 +763,7 @@ def parse_exam_question_block(paragraphs):
     questions = []
     current = None
     expected_number = None
+    current_section = ""
     for paragraph in paragraphs:
         text = paragraph.strip()
         if not text:
@@ -747,20 +773,29 @@ def parse_exam_question_block(paragraphs):
                 questions.append(finalize_question_type(current))
                 current = None
             expected_number = None
+            current_section = text
             continue
         number, content = extract_question_number(text)
         if number is not None and (expected_number is None or number == expected_number):
+            if is_pure_question_type_title(content):
+                current_section = content
+                expected_number = None
+                continue
             if current:
                 questions.append(finalize_question_type(current))
             current = new_question(content, len(questions), "")
             current["number"] = number
+            current["section_title"] = current_section
             expected_number = number + 1
             continue
         if not current:
             continue
         option, option_content = extract_option(text)
         if option:
-            current["options"].append({"label": option, "content": option_content, "is_correct": False})
+            if any(word in current_section for word in ("\u5b9e\u9a8c\u9898", "\u89e3\u7b54\u9898", "\u7efc\u5408\u9898")) or current["sub_questions"]:
+                append_text(current, text)
+            else:
+                current["options"].append({"label": option, "content": option_content, "is_correct": False})
             continue
         sub_number, sub_content = extract_sub_question(text)
         if sub_number:
@@ -805,6 +840,9 @@ def parse_lecture_numbered_items(items, default_topic=None):
             topic = clean_topic_heading(text)
             if topic:
                 current_topic = topic
+            continue
+        if text and is_pure_question_type_title(text):
+            finish_current()
             continue
         if number_kind in ("example", "practice"):
             finish_current()
