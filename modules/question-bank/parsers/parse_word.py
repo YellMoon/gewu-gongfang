@@ -218,6 +218,14 @@ UNIT_PATTERN = r"(?:%s)(?:\s*(?:[·⋅*/\/]\s*|\^?-?\d+|<sup>-?\d+</sup>|\s+)(?:
 def normalize_physics_markup(text):
     if not text:
         return ""
+    protected_images = []
+
+    def protect_image(match):
+        token = "@@QUESTION_IMAGE_%d@@" % len(protected_images)
+        protected_images.append(match.group(0))
+        return token
+
+    text = re.sub(r"<img\b[^>]*>", protect_image, text, flags=re.I)
     text = re.sub(r"<i>k</i><i>g</i>", "kg", text)
     text = re.sub(r"<i>(N|Pa|J|W|C|V|F|T|H|A|K|Hz|Ω)</i>(?=(?:<sup>|[·⋅.*/\/]))", r"\1", text)
     text = re.sub(r"(?<=[·⋅.*/\/])<i>(m|s|g|A|K|mol|cd|rad|Hz|N|Pa|J|W|C|V|F|T|H|Ω)</i>", r"\1", text)
@@ -230,6 +238,7 @@ def normalize_physics_markup(text):
     italic_unit_token = r"(?:<i>[A-Za-zμΩ]+</i>|[·⋅*/\/\s]|\^?-?\d+|<sup>-?\d+</sup>)+"
     text = re.sub(r"(\d(?:[\d.,×xX\-+]*\d)?\s*)(" + italic_unit_token + r")(?=\s|[\u4e00-\u9fff]|[,，。；;、）)]|$)", restore_unit, text)
     text = re.sub(r"(?<=\d)\s*(%s)" % UNIT_PATTERN, lambda m: " " + m.group(1), text)
+    text = re.sub(r"@@QUESTION_IMAGE_(\d+)@@", lambda m: protected_images[int(m.group(1))] if int(m.group(1)) < len(protected_images) else "", text)
     return text
 
 def _plain_math_text(node):
