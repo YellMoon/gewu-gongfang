@@ -29,7 +29,12 @@ function formulaFromAsset(asset: any): any {
 
 const QuestionRichContent: React.FC<{ question: any; terms?: string[] }> = ({ question, terms = [] }) => {
   const assets = Array.isArray(question?.assets) ? question.assets : [];
-  const imageAssets = assets.filter((asset: any) => asset.asset_type === 'image');
+  const renderedContent = String(question?.content || question?.stem || '');
+  const imageAssets = assets.filter((asset: any) => {
+    if (asset.asset_type !== 'image') return false;
+    const src = asset.oss_url || asset.data_url || asset.url;
+    return !src || !renderedContent.includes(src);
+  });
   const formulaAssets = assets.filter((asset: any) => String(asset.asset_type || '').startsWith('formula_'));
   const formulas = [
     ...(Array.isArray(question?.formulas) ? question.formulas : []),

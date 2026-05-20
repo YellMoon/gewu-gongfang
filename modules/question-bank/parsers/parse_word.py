@@ -22,10 +22,10 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
 
 QUESTION_RE = re.compile(r"^(\d+)[\.\u3001\uff0e]\s*(.*)")
-OPTION_RE = re.compile(r"^([A-F])[\.\u3001\uff0e]\s*(.*)", re.I)
-SUB_QUESTION_RE = re.compile(r"^[\(\uff08](\d+)[\)\uff09]\s*(.*)")
+OPTION_RE = re.compile(r"^([A-G])[\.\u3001\uff0e]\s*(.*)", re.I)
+SUB_QUESTION_RE = re.compile(r"^(?:[\(\uff08](\d+)[\)\uff09]|([\u2460\u2461\u2462\u2463\u2464\u2465\u2466\u2467\u2468\u2469]))\s*(.*)")
 EXAM_SECTION_RE = re.compile(r"^[一二三四五六七八九十]+[、.．]\s*(单选题|多选题|选择题|实验题|解答题|综合题)")
-ANSWER_TITLE_RE = re.compile(r"^《.+》\s*参考答案")
+ANSWER_TITLE_RE = re.compile(r"^(?:《.*?》\s*)?参考答案")
 ANALYSIS_MARK_RE = re.compile(r"【(?:详解|解析)】")
 
 
@@ -197,7 +197,7 @@ def _math_text(node):
     if tag == "f":
         num = _math_text(_first_child(node, "num"))
         den = _math_text(_first_child(node, "den"))
-        return "(%s)/(%s)" % (num, den)
+        return r"$\frac{%s}{%s}$" % (num, den)
     if tag == "sSub":
         base = _math_text(_first_child(node, "e"))
         sub = _math_text(_first_child(node, "sub"))
@@ -210,11 +210,13 @@ def _math_text(node):
         base = _math_text(_first_child(node, "e"))
         sub = _math_text(_first_child(node, "sub"))
         sup = _math_text(_first_child(node, "sup"))
+        if not base:
+            return '<span class="nuclear-left"><sup>%s</sup><sub>%s</sub></span>' % (sup, sub)
         return "%s<sub>%s</sub><sup>%s</sup>" % (base, sub, sup)
     if tag == "rad":
         deg = _math_text(_first_child(node, "deg"))
         body = _math_text(_first_child(node, "e"))
-        return "√(%s)" % body if not deg else "<sup>%s</sup>√(%s)" % (deg, body)
+        return r"$\sqrt{%s}$" % body if not deg else r"$\sqrt[%s]{%s}$" % (deg, body)
     if tag == "nary":
         symbol = "".join(child.attrib.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val", "") for child in node.iter() if _local_name(child) == "chr") or "∑"
         sub = _math_text(_first_child(node, "sub"))
@@ -225,18 +227,43 @@ def _math_text(node):
         body = _math_text(_first_child(node, "e"))
         return "(%s)" % body
     if tag == "bar":
-        return "¯(%s)" % _math_text(_first_child(node, "e"))
+        return r"$\overline{%s}$" % _math_text(_first_child(node, "e"))
     if tag == "groupChr":
         return _math_text(_first_child(node, "e"))
     if tag == "func":
         return "%s(%s)" % (_math_text(_first_child(node, "fName")), _math_text(_first_child(node, "e")))
     return "".join(_math_text(child) for child in list(node))
 
-def _paragraph_text_with_markup(paragraph, ns):
+def _asset_from_run_rel(archive, rels, rid, has_ole_object=False):
+    if archive is None or not rid:
+        return None
+    rel = rels.get(rid or "") if rels else None
+    return _asset_from_part(archive, rel.get("target") if rel else "", "formula_preview" if has_ole_object else "image", rid, rel.get("type") if rel else "")
+
+
+def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_object=False, inline_assets=None):
     parts = []
+    inline_assets = inline_assets if inline_assets is not None else []
     for child in list(paragraph):
         tag = child.tag.rsplit("}", 1)[-1]
         if tag == "r":
+            if archive is not None and all(key in ns for key in ("a", "v", "r")):
+                for blip in child.findall(".//a:blip", ns):
+                    rid = blip.attrib.get("{%s}embed" % ns.get("r", "")) or blip.attrib.get("{%s}link" % ns.get("r", ""))
+                    asset = _asset_from_run_rel(archive, rels, rid, has_ole_object)
+                    if asset:
+                        inline_assets.append(asset)
+                        parts.append('<img src="%s" alt="%s" />' % (asset.get("data_url", ""), asset.get("file_name", "image")))
+                for image in child.findall(".//v:imagedata", ns):
+                    rid = image.attrib.get("{%s}id" % ns.get("r", ""))
+                    asset = _asset_from_run_rel(archive, rels, rid, has_ole_object)
+                    if asset:
+                        inline_assets.append(asset)
+                        parts.append('<img src="%s" alt="%s" />' % (asset.get("data_url", ""), asset.get("file_name", "image")))
+            for math_node in child.findall(".//m:oMath", ns) + child.findall(".//m:oMathPara", ns):
+                math_text = _math_text(math_node).strip()
+                if math_text:
+                    parts.append(math_text)
             run_text = "".join(node.text or "" for node in child.findall(".//w:t", ns))
             instr_text = "".join(node.text or "" for node in child.findall(".//w:instrText", ns))
             text = run_text or instr_text
@@ -320,19 +347,22 @@ def read_docx_rich_paragraphs(file_path):
                 formulas = []
 
                 has_ole_object = bool(paragraph.findall(".//o:OLEObject", ns))
+                inline_assets = []
+                paragraph_text = _paragraph_text_with_markup(paragraph, ns, archive, rels, has_ole_object, inline_assets)
+                assets.extend(inline_assets)
 
                 for blip in paragraph.findall(".//a:blip", ns):
                     rid = blip.attrib.get("{%s}embed" % ns["r"]) or blip.attrib.get("{%s}link" % ns["r"])
                     rel = rels.get(rid or "")
                     asset = _asset_from_part(archive, rel.get("target") if rel else "", "formula_preview" if has_ole_object else "image", rid, rel.get("type") if rel else "")
-                    if asset:
+                    if asset and asset.get("content_hash") not in {item.get("content_hash") for item in assets}:
                         assets.append(asset)
 
                 for image in paragraph.findall(".//v:imagedata", ns):
                     rid = image.attrib.get("{%s}id" % ns["r"])
                     rel = rels.get(rid or "")
                     asset = _asset_from_part(archive, rel.get("target") if rel else "", "formula_preview" if has_ole_object else "image", rid, rel.get("type") if rel else "")
-                    if asset:
+                    if asset and asset.get("content_hash") not in {item.get("content_hash") for item in assets}:
                         assets.append(asset)
 
                 for obj in paragraph.findall(".//o:OLEObject", ns):
@@ -369,7 +399,7 @@ def read_docx_rich_paragraphs(file_path):
                     })
 
                 rows.append({
-                    "text": _paragraph_text_with_markup(paragraph, ns),
+                    "text": paragraph_text,
                     "assets": assets,
                     "formulas": formulas,
                 })
@@ -454,7 +484,11 @@ def extract_option(text):
 def extract_sub_question(text):
     match = SUB_QUESTION_RE.match(text)
     if match:
-        return int(match.group(1)), match.group(2).strip()
+        if match.group(1):
+            return int(match.group(1)), match.group(3).strip()
+        circled = match.group(2)
+        number = "\u2460\u2461\u2462\u2463\u2464\u2465\u2466\u2467\u2468\u2469".find(circled) + 1
+        return number, match.group(3).strip()
     return None, text
 
 
@@ -578,10 +612,9 @@ def new_question(stem, index=None, knowledge_point=None):
 
 
 def append_text(question, text):
+    question["stem"] = (question["stem"] + "\n" + text).strip()
     if question["sub_questions"]:
         question["sub_questions"][-1]["content"] += "\n" + text
-    else:
-        question["stem"] = (question["stem"] + "\n" + text).strip()
 
 
 def parse_question_block(paragraphs, default_topic=None):
@@ -612,6 +645,7 @@ def parse_question_block(paragraphs, default_topic=None):
         sub_number, sub_content = extract_sub_question(text)
         if sub_number:
             current["sub_questions"].append({"title": f"({sub_number})", "content": sub_content, "answer": ""})
+            current["stem"] = (current["stem"] + "\n" + f"({sub_number}) {sub_content}").strip()
             continue
         append_text(current, text)
     if current:
@@ -725,6 +759,7 @@ def parse_exam_question_block(paragraphs):
         sub_number, sub_content = extract_sub_question(text)
         if sub_number:
             current["sub_questions"].append({"title": f"({sub_number})", "content": sub_content, "answer": ""})
+            current["stem"] = (current["stem"] + "\n" + f"({sub_number}) {sub_content}").strip()
             continue
         append_text(current, text)
     if current:
@@ -787,6 +822,7 @@ def parse_lecture_numbered_items(items, default_topic=None):
         sub_number, sub_content = extract_sub_question(text)
         if sub_number:
             current["sub_questions"].append({"title": f"({sub_number})", "content": sub_content, "answer": ""})
+            current["stem"] = (current["stem"] + "\n" + f"({sub_number}) {sub_content}").strip()
             continue
         append_text(current, text)
 

@@ -84,6 +84,8 @@ function normalizePhysicsHtml(html: string): string {
   return html
     .replace(/&lt;(\/?)(sub|sup|i|b|strong|em)&gt;/gi, '<$1$2>')
     .replace(/\r?\n/g, '<br />')
+    .replace(/<sup>([^<]+)<\/sup>\s*<sub>([^<]+)<\/sub>\s*([A-Z][a-z]?)/g, '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$1</sup><sub>$2</sub></span><span class="nuclear-core">$3</span></span>')
+    .replace(/<sub>([^<]+)<\/sub>\s*<sup>([^<]+)<\/sup>\s*([A-Z][a-z]?)/g, '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$2</sup><sub>$1</sub></span><span class="nuclear-core">$3</span></span>')
     .replace(/([A-Za-zα-ωΑ-Ω])([0-9]+)(?![0-9A-Za-z])/g, '$1<sub>$2</sub>')
     .replace(/([A-Za-z])([xyzXYZ])(?![0-9A-Za-z])/g, '$1<sub>$2</sub>');
 }
@@ -126,16 +128,8 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
   const hasDrawer = Boolean(answer || analysis);
 
   const { stemText, stemImages } = useMemo(() => {
-    if (!isChoice) return { stemText: content || '', stemImages: [] as string[] };
-
-    const allImages: string[] = [];
-    const re = /<img[^>]+src\s*=\s*["']([^"']+)["'][^>]*\/?>/gi;
-    const cleanText = (content || '').replace(re, (_m, src: string) => {
-      allImages.push(src);
-      return '';
-    });
-    return { stemText: cleanText, stemImages: allImages };
-  }, [content, isChoice]);
+    return { stemText: content || '', stemImages: [] as string[] };
+  }, [content]);
 
   const segments = useMemo(() => splitMixedContent(stemText), [stemText]);
 

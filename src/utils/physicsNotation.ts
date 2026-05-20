@@ -373,32 +373,37 @@ export function checkNotationWarnings(content: string): string[] {
  * 和 CSS（HTML 模式）控制。
  */
 export function applyPhysicsNotationToHTML(html: string): string {
-  // 对物理量拉丁字母符号做斜体包裹（仅当它们是独立单词时）
-  // 为避免破坏 HTML 标签，仅在 > ... < 的文本节点中进行替换
-  let result = html;
+  const latinSymbols = Array.from(PHYSICAL_QUANTITIES_LATIN).filter(sym => /^[A-Za-z]$/.test(sym));
+  const greekSymbols = ['\u03b1', '\u03b2', '\u03b3', '\u03b4', '\u03b5', '\u03b8', '\u03bb', '\u03bc', '\u03bd', '\u03c1', '\u03c3', '\u03c4', '\u03c6', '\u03c9', '\u03a6', '\u03a9', '\u0394', '\u03a0', '\u03a3'];
+  const unitCore = String.raw`(?:da|[YZEPTGMkhdcmu\u03bcnpfazy])?(?:kg|mol|rad|sr|Hz|Pa|Wb|eV|N|J|W|V|A|K|C|T|H|F|S|m|s|g|\u03a9|ohm)`;
+  const unitExpr = String.raw`${unitCore}(?:\s*(?:[\u00b7*\u00d7x/]|(?:\^|\u2212|-)?\d+)\s*${unitCore}?)*`;
+  const numberUnitRe = new RegExp(String.raw`(\d+(?:\.\d+)?)(\s|&nbsp;)*(${unitExpr})`, 'g');
 
-  // 数学模式块由 KaTeX 处理，此处只处理 HTML 文本节点
-  // 简化处理：对已知物理量做词边界匹配斜体包裹
-  for (const sym of PHYSICAL_QUANTITIES_LATIN) {
-    if (UNIT_SYMBOLS.has(sym)) continue; // 跳过既是物理量又是单位的符号
-    // 匹配独立单词（前后为非字母或行边界）
-    const regex = new RegExp(
-      `(?<![a-zA-Z\\d])(?<!<[^>]{0,50})${escapeRegex(sym)}(?![a-zA-Z\\d])(?!>)`,
-      'g'
-    );
-    result = result.replace(regex, `<i>${sym}</i>`);
-  }
+  const processText = (text: string) => {
+    const protectedUnits: string[] = [];
+    let next = text.replace(numberUnitRe, (_match, number: string, space: string = '', unit: string) => {
+      const token = `@@PHYSICS_UNIT_${protectedUnits.length}@@`;
+      protectedUnits.push(`<span class="physics-unit">${unit}</span>`);
+      return `${number}${space || ''}${token}`;
+    });
 
-  // 希腊字母物理量斜体包裹
-  for (const sym of PHYSICAL_QUANTITIES_GREEK) {
-    if (UNIT_SYMBOLS_GREEK.has(sym)) continue;
-    const regex = new RegExp(`(?<![\\w<>])${escapeRegex(sym)}(?![\\w<>])`, 'g');
-    result = result.replace(regex, `<i>${sym}</i>`);
-  }
+    for (const sym of latinSymbols) {
+      const regex = new RegExp(`(^|[^A-Za-z\\d_>])(${escapeRegex(sym)})(?![A-Za-z\\d_<])`, 'g');
+      next = next.replace(regex, `$1<i>$2</i>`);
+    }
+    for (const sym of greekSymbols) {
+      const regex = new RegExp(`(^|[^\\w>])(${escapeRegex(sym)})(?![\\w<])`, 'g');
+      next = next.replace(regex, `$1<i>$2</i>`);
+    }
 
-  return result;
+    return next.replace(/@@PHYSICS_UNIT_(\d+)@@/g, (_token, index) => protectedUnits[Number(index)] || '');
+  };
+
+  return html
+    .split(/(<[^>]+>)/g)
+    .map(part => part.startsWith('<') ? part : processText(part))
+    .join('');
 }
-
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

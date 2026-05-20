@@ -16,6 +16,25 @@
   backdrop-filter: blur(18px);
 }
 
+.qb-preview-sidebar {
+  position: sticky;
+  top: 76px;
+  align-self: flex-start;
+  max-height: calc(100vh - 96px);
+  transition: flex-basis 0.24s ease, max-width 0.24s ease, opacity 0.2s ease, transform 0.24s ease;
+}
+
+.qb-preview-sidebar .ant-card-body {
+  max-height: calc(100vh - 164px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.qb-preview-main {
+  transition: flex-basis 0.24s ease, max-width 0.24s ease;
+}
+
 .qb-preview-main-card {
   margin: 0;
   border: 1px solid rgba(15, 23, 42, 0.08);
@@ -51,6 +70,7 @@
 
 .qb-tree-search {
   margin-bottom: 14px;
+  flex: 0 0 auto;
 }
 
 .qb-filter-panel {
@@ -132,6 +152,31 @@
 
 .knowledge-tree .ant-tree {
   background: transparent;
+}
+
+.knowledge-tree {
+  min-height: 0;
+  max-height: 36vh;
+  overflow: auto;
+  padding-right: 4px;
+  transition: max-height 0.24s ease, opacity 0.2s ease;
+}
+
+.qb-tree-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.qb-model-tree-title {
+  margin-bottom: 10px;
+}
+
+.qb-tree-divider {
+  margin: 14px 0;
 }
 
 .qb-question-card-focus {

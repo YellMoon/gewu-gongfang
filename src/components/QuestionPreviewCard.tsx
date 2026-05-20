@@ -4,6 +4,7 @@ import { DeleteOutlined, EditOutlined, ShoppingCartOutlined } from '@ant-design/
 import type { Question } from '../types';
 import QuestionRichText from './QuestionRichText';
 import QuestionRenderer from './QuestionRenderer';
+import QuestionRichContent from './QuestionRichContent';
 import './QuestionPreviewCard.css';
 
 const difficultyColor = (difficulty?: number) => {
@@ -62,6 +63,7 @@ const QuestionPreviewCard: React.FC<{
             analysis={question.analysis || question.explanation}
             terms={terms}
           />
+          <QuestionRichContent question={question} terms={terms} />
         </div>
         {(onEdit || onDelete) && (
           <Space className="qb-card-actions" size={6}>

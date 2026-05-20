@@ -10,6 +10,15 @@
   margin-bottom: 4px;
 }
 
+.question-stem img {
+  display: inline-block;
+  max-width: 100%;
+  max-height: 320px;
+  margin: 6px 4px;
+  vertical-align: middle;
+  object-fit: contain;
+}
+
 /* ── KaTeX 公式 ── */
 .math-display {
   margin: 8px 0;
@@ -27,7 +36,8 @@
 /* ── 选择题选项网格 ── */
 .question-options {
   display: grid;
-  gap: 4px 20px;
+  column-gap: 0;
+  row-gap: 4px;
   margin-top: 10px;
 }
 
@@ -48,7 +58,7 @@
 }
 
 .question-option {
-  padding: 3px 0;
+  padding: 3px 18px 3px 0;
   min-width: 0;
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
@@ -165,4 +175,34 @@
 .question-analysis-answer {
   display: block;
   margin-bottom: 6px;
+}
+
+.physics-unit {
+  font-style: normal;
+}
+
+.nuclear-symbol {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.nuclear-left {
+  display: inline-grid;
+  grid-template-rows: 0.82em 0.82em;
+  align-items: center;
+  justify-items: end;
+  min-width: 1.15em;
+  margin-right: 1px;
+  line-height: 1;
+}
+
+.nuclear-left sup,
+.nuclear-left sub {
+  position: static;
+  display: block;
+  height: 0.82em;
+  font-size: 0.68em;
+  line-height: 0.82em;
 }

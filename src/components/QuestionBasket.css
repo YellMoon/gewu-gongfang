@@ -6,14 +6,32 @@
   width: 76px;
   min-height: 102px;
   padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border: 1px solid rgba(0, 122, 255, 0.16);
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 18px 44px rgba(15, 23, 42, 0.16);
   color: #007aff;
-  cursor: pointer;
+  cursor: grab;
   transform: translateY(-50%);
   backdrop-filter: blur(18px);
+  text-align: center;
+  touch-action: none;
+  user-select: none;
+}
+
+.question-basket-float:active {
+  cursor: grabbing;
+}
+
+.question-basket-float .ant-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .question-basket-float-icon {
@@ -31,13 +49,14 @@
   box-shadow: 0 20px 54px rgba(0, 122, 255, 0.26);
 }
 
-.question-basket-float span {
+.question-basket-float > span {
   display: block;
-  margin-top: 6px;
+  margin-top: 0;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0;
   white-space: nowrap;
+  line-height: 1.1;
 }
 
 .question-basket-drawer .ant-drawer-content {

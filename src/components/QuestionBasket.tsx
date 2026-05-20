@@ -1,5 +1,6 @@
 ﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Checkbox, Drawer, Empty, Modal, Space, Tag, message } from 'antd';
+import { useRef } from 'react';
 import {
   ArrowDownOutlined,
   ArrowUpOutlined,
@@ -17,6 +18,7 @@ const API_BASE = getApiBase('/api/question-bank');
 export const QUESTION_BASKET_STORAGE_KEY = 'question_basket_ids';
 export const QUESTION_BASKET_SELECTED_STORAGE_KEY = 'question_basket_selected';
 export const QUESTION_BASKET_EVENT = 'question-basket-changed';
+const QUESTION_BASKET_DOCK_TOP_KEY = 'question_basket_dock_top';
 
 function readBasketIds(): string[] {
   try {
@@ -116,6 +118,16 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
   const [open, setOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [dockTop, setDockTop] = useState(() => {
+    const saved = Number(localStorage.getItem(QUESTION_BASKET_DOCK_TOP_KEY));
+    return Number.isFinite(saved) && saved >= 12 && saved <= 88 ? saved : 50;
+  });
+  const dragRef = useRef<{ startY: number; startTop: number; dragging: boolean; moved: boolean }>({
+    startY: 0,
+    startTop: 50,
+    dragging: false,
+    moved: false,
+  });
 
   useEffect(() => {
     setSelectedIds(prev => prev.length === 0 ? [...ids] : prev.filter(id => ids.includes(id)));
@@ -193,11 +205,55 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
     setOpen(false);
   };
 
+  const handlePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return;
+    dragRef.current = { startY: event.clientY, startTop: dockTop, dragging: true, moved: false };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+    if (!drag.dragging) return;
+    const deltaPercent = ((event.clientY - drag.startY) / window.innerHeight) * 100;
+    if (Math.abs(event.clientY - drag.startY) > 3) drag.moved = true;
+    setDockTop(Math.min(88, Math.max(12, drag.startTop + deltaPercent)));
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+    if (!drag.dragging) return;
+    drag.dragging = false;
+    const nextTop = Math.min(88, Math.max(12, dockTop));
+    if (drag.moved) {
+      localStorage.setItem(QUESTION_BASKET_DOCK_TOP_KEY, String(nextTop));
+    }
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch (_err) {}
+  };
+
+  const handleFloatClick = () => {
+    if (dragRef.current.moved) {
+      dragRef.current.moved = false;
+      return;
+    }
+    setOpen(prev => !prev);
+  };
+
   if (!visible) return null;
 
   return (
     <>
-      <button className={open ? 'question-basket-float open' : 'question-basket-float'} onClick={() => setOpen(prev => !prev)} aria-label="打开试题篮">
+      <button
+        className={open ? 'question-basket-float open' : 'question-basket-float'}
+        style={{ top: `${dockTop}%` }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onClick={handleFloatClick}
+        aria-label="打开试题篮"
+      >
         <Badge count={ids.length} size="small" offset={[-2, 4]}>
           <ShoppingCartOutlined className="question-basket-float-icon" />
         </Badge>

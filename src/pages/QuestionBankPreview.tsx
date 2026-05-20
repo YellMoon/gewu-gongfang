@@ -909,7 +909,7 @@ const QuestionBankPreview: React.FC = () => {
         <Col span={5} className="qb-preview-sidebar">
           <Card
             size="small"
-            title={<span><BranchesOutlined /> {currentSubject}知识树</span>}
+            title={<span className="qb-tree-section-title"><BranchesOutlined /> 知识树</span>}
             extra={<Button type="link" size="small" onClick={() => setTreeVisible(false)}>收起</Button>}
             className="qb-preview-tree-card"
           >
@@ -935,18 +935,8 @@ const QuestionBankPreview: React.FC = () => {
               }}
               style={{ fontSize: 13 }} />
             </div>
-            <Divider />
-            <div style={{ color: '#666', fontSize: 12 }}>
-              <div>当前科目试题：{filtered.length}</div>
-              <div>知识点：{subjectKnowledgeNodes.length}</div>
-              <div>模型：{subjectModelNodes.length}</div>
-              {selectedRowKeys.length > 0 && (
-                <div style={{ color: '#1890ff', fontWeight: 'bold', marginTop: 8 }}>
-                  已选 {selectedRowKeys.length} 题
-                </div>
-              )}
-            </div>
-            <Divider orientation="left" style={{ fontSize: 12 }}>模型</Divider>
+            <Divider className="qb-tree-divider" />
+            <div className="qb-tree-section-title qb-model-tree-title"><BranchesOutlined /> 模型树</div>
             <div className="knowledge-tree">
               <Tree
                 treeData={visibleModelTreeData}
