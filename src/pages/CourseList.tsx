@@ -8,6 +8,7 @@ import { Statistic } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { Course, CourseType, CourseSourceType, Institution, BillingUnit, TeacherFeeMode, ServiceType, Teacher, StudentCoursePricing, Student } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
+import { getColorForRoom } from '../utils/courseColors';
 
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Option } = Select;
@@ -202,6 +203,10 @@ const CourseList: React.FC = () => {
         }
       } else {
         values.room_name = '';
+      }
+      // 自动根据上课地址分配课程颜色（如果用户未手动指定）
+      if (!values.color) {
+        values.color = getColorForRoom(values.room_id || '');
       }
       // 默认 active = true
       if (values.active === undefined) {
@@ -491,6 +496,9 @@ const CourseList: React.FC = () => {
                         setTimeout(() => setRooms([...(dbService.getAllRooms?.() || [])]), 100);
                       }
                     }
+                    // 自动分配课程颜色
+                    const color = getColorForRoom(lastVal);
+                    form.setFieldsValue({ color });
                   }}
                   filterOption={(input, option) =>
                     (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())
@@ -500,6 +508,22 @@ const CourseList: React.FC = () => {
                     ...rooms.map(r => ({ label: r.name, value: r.name })),
                   ]}
                 />
+              </Form.Item>
+              <Form.Item noStyle shouldUpdate={(prev, cur) => prev.room_id !== cur.room_id || prev.color !== cur.color}>
+                {({ getFieldValue }) => {
+                  const rid = getFieldValue('room_id');
+                  const color = getFieldValue('color') || getColorForRoom(Array.isArray(rid) ? rid[0] : rid);
+                  return (
+                    <div style={{ marginTop: -4, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{
+                        width: 16, height: 16, borderRadius: 4,
+                        backgroundColor: color, border: '1px solid #d9d9d9',
+                        display: 'inline-block', flexShrink: 0
+                      }} />
+                      <span style={{ fontSize: 11, color: '#999' }}>{color} — 课程表背景色（同地址同色）</span>
+                    </div>
+                  );
+                }}
               </Form.Item>
             </Col>
           </Row>

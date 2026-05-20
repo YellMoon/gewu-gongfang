@@ -121,6 +121,7 @@ export interface Course {
   teacher_name?: string;
   active: boolean; // 存续状态：true-未结课，false-已结课
   default_duration_minutes?: number; // 默认单次课时长（分钟），拖拽排课时自动使用
+  color?: string;   // 课程背景色（根据上课地址自动分配，同地址同色）
   notes?: string;
   created_at: string;
   updated_at: string;
@@ -279,13 +280,26 @@ export interface KnowledgeNode {
   updated_at: string;
 }
 
+export interface Tag {
+  id: string;
+  tag_type: 'knowledge' | 'model' | 'source';
+  tag_name: string;
+  tag_code: string;
+  parent_id: string | null;
+  subject: string;
+  sort_no: number;
+  status: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Question {
   id: string;
   subject: string;
   chapter?: string;
   knowledge_point?: string;
   knowledge_ids?: string[];        // 关联知识点ID
-  type: string;
+  type: '单选题' | '多选题' | '实验题' | '解答题' | '判断题';
   difficulty: number;
   content: string;
   options?: string[];
@@ -294,13 +308,17 @@ export interface Question {
   formulas?: string[];             // 公式
   tags?: string[];                 // 标签
   source?: string;                 // 来源
-  year?: string;                   // 年份
+  year?: string;                   // 学年 (如 2025-2026)
   grade?: string;                  // 年级
   semester?: string;               // 学期
   exam_type?: string;              // 考试类型
   region?: string;                 // 地区
   sub_questions?: any[];           // 子题（大题包含小题）
   variant_ids?: string[];          // 变式题ID列表
+  status?: 'draft' | 'pending' | 'published' | 'offline' | 'deprecated';
+  has_image?: boolean;
+  has_formula?: boolean;
+  created_by?: string;
   created_at: string;
   updated_at: string;
 }

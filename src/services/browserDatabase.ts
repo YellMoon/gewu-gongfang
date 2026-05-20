@@ -3,9 +3,10 @@ import {
   Student, Grade, Course, Schedule, Enrollment, Payment, Consumption, Institution, SchoolInfo, Teacher, Room,
   ScheduleStatus, PaymentType, BillingUnit, TeacherFeeMode, ServiceType, StudentSource,
   RevenueStats, StudentTuitionStats, StudentCoursePricing,
-  AssetRecord, AssetCategory, AssetStats, Question, KnowledgeNode
+  AssetRecord, AssetCategory, AssetStats, Question, KnowledgeNode, Tag
 } from '../types';
 import { calculateGrade, calculateFees, calculateDurationHours, groupByMonth, calculatePercentage } from '../utils/helpers';
+import { getColorForRoom, DEFAULT_COURSE_COLOR } from '../utils/courseColors';
 
 interface Database {
   students: Student[];
@@ -23,6 +24,7 @@ interface Database {
   assetCategories: AssetCategory[];
   questions: Question[];
   knowledgeTree: KnowledgeNode[];
+  tags: Tag[];
 }
 
 class BrowserDatabaseService {
@@ -42,7 +44,8 @@ class BrowserDatabaseService {
     institutions: [],
     schools: [],
     rooms: [],
-    teachers: []
+    teachers: [],
+    tags: []
   };
 
   constructor() {
@@ -51,8 +54,9 @@ class BrowserDatabaseService {
 
   private loadData(): void {
     const stored = localStorage.getItem(this.storageKey);
+    let loadedData: any = null;
     if (stored) {
-      const loadedData = JSON.parse(stored);
+      loadedData = JSON.parse(stored);
       // 合并数据，确保所有数组字段都存在，旧版本数据缺失就用 []
       this.data = {
         students: [],
@@ -78,6 +82,7 @@ class BrowserDatabaseService {
         ],
         questions: [],
         knowledgeTree: loadedData?.knowledgeTree ?? [],
+        tags: loadedData?.tags ?? [],
         ...loadedData
       };
     }
@@ -105,6 +110,85 @@ class BrowserDatabaseService {
       ...s,
       grade_current: calculateGrade(s.grade_year)
     }));
+
+    // 题型迁移：旧题型统一为5种
+    const typeMigrateMap: Record<string, string> = {
+      '选择题': '单选题',
+      '填空题': '解答题',
+      '简答题': '解答题',
+      '作图题': '解答题',
+    };
+    this.data.questions = (this.data.questions || []).map(q => {
+      if (!q) return q;
+      const migrated = { ...q };
+      if (typeMigrateMap[q.type]) {
+        migrated.type = typeMigrateMap[q.type] as Question['type'];
+      }
+      if (!migrated.status) migrated.status = 'draft';
+      if (migrated.has_image === undefined) migrated.has_image = /<img|!\[/.test(migrated.content || '');
+      if (migrated.has_formula === undefined) migrated.has_formula = /\$\$|\\\[|\\\(/.test(migrated.content || '');
+      if (migrated.created_by === undefined) migrated.created_by = '';
+      return migrated;
+    });
+
+    // 知识树迁移到 tag 表
+    this.data.tags = loadedData?.tags || [];
+    if (this.data.tags.length === 0 && this.data.knowledgeTree.length > 0) {
+      const now = new Date().toISOString();
+      this.data.tags = this.data.knowledgeTree.map((n: KnowledgeNode) => ({
+        id: n.id,
+        tag_type: 'knowledge' as const,
+        tag_name: n.name,
+        tag_code: n.id,
+        parent_id: n.parent_id || null,
+        subject: '物理',
+        sort_no: n.order,
+        status: 1,
+        created_at: n.created_at || now,
+        updated_at: n.updated_at || now,
+      }));
+    }
+
+    // 模型标签种子数据
+    const MODEL_TAGS = [
+      { id: 'model-process', tag_name: '过程模型', sort_no: 1 },
+      { id: 'model-em-induction', tag_name: '电磁感应模型', sort_no: 2 },
+      { id: 'model-em-field', tag_name: '电磁场模型', sort_no: 3 },
+      { id: 'model-plate', tag_name: '板块模型', sort_no: 4 },
+      { id: 'model-conveyor', tag_name: '传送带模型', sort_no: 5 },
+      { id: 'model-image', tag_name: '图像模型', sort_no: 6 },
+      { id: 'model-force', tag_name: '受力分析模型', sort_no: 7 },
+    ];
+    const now2 = new Date().toISOString();
+    for (const mt of MODEL_TAGS) {
+      if (!this.data.tags.find((t: Tag) => t.id === mt.id)) {
+        this.data.tags.push({
+          id: mt.id,
+          tag_type: 'model',
+          tag_name: mt.tag_name,
+          tag_code: mt.id,
+          parent_id: null,
+          subject: '物理',
+          sort_no: mt.sort_no,
+          status: 1,
+          created_at: now2,
+          updated_at: now2,
+        });
+      }
+    }
+
+    // 课程颜色自动分配（首次启动：扫描所有课程，根据上课地址分配背景色）
+    const coursesNeedColor = this.data.courses.some((c: any) => !c.color);
+    if (coursesNeedColor && this.data.courses.length > 0) {
+      let changed = false;
+      for (const c of this.data.courses) {
+        if (!c.color) {
+          c.color = getColorForRoom(c.room_id);
+          changed = true;
+        }
+      }
+      if (changed) this.saveData();
+    }
   }
 
   private saveData(): void {
@@ -663,7 +747,8 @@ class BrowserDatabaseService {
       assetRecords: data.assetRecords || [],
       assetCategories: data.assetCategories || [],
       questions: data.questions || [],
-      knowledgeTree: data.knowledgeTree || []
+      knowledgeTree: data.knowledgeTree || [],
+      tags: data.tags || []
     };
     this.saveData();
   }
@@ -843,9 +928,14 @@ class BrowserDatabaseService {
   createQuestion(question: Omit<Question, 'id' | 'created_at' | 'updated_at'>): Question {
     const now = new Date().toISOString();
     const id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+    const content = question.content || '';
     const newQuestion: Question = {
       ...question,
       id,
+      status: question.status || 'draft',
+      has_image: question.has_image !== undefined ? question.has_image : /<img|!\[/.test(content),
+      has_formula: question.has_formula !== undefined ? question.has_formula : /\$\$|\\\[|\\\(/.test(content),
+      created_by: question.created_by || '',
       created_at: now,
       updated_at: now
     };
@@ -870,132 +960,185 @@ class BrowserDatabaseService {
     return true;
   }
 
+  updateQuestionStatus(id: string, status: Question['status']): boolean {
+    return this.updateQuestion(id, { status } as any);
+  }
+
   // ========== 知识树管理 ==========
 
   getKnowledgeTree(): KnowledgeNode[] {
-    return this.data.knowledgeTree;
+    return this.data.tags
+      .filter(t => t.tag_type === 'knowledge')
+      .map(t => ({
+        id: t.id,
+        name: t.tag_name,
+        parent_id: t.parent_id || undefined,
+        children: this.data.tags.filter(c => c.tag_type === 'knowledge' && c.parent_id === t.id).map(c => c.id),
+        order: t.sort_no,
+        created_at: t.created_at,
+        updated_at: t.updated_at,
+      }));
   }
 
   getFlatKnowledgeNodes(): { id: string; name: string; path: string }[] {
+    const knodes = this.getKnowledgeTree();
     const result: { id: string; name: string; path: string }[] = [];
     const buildPath = (nodes: KnowledgeNode[], parentPath: string) => {
       for (const n of nodes) {
         const currentPath = parentPath ? `${parentPath} > ${n.name}` : n.name;
         result.push({ id: n.id, name: n.name, path: currentPath });
-        const children = this.data.knowledgeTree.filter(c => c.parent_id === n.id);
+        const children = knodes.filter(c => c.parent_id === n.id);
         if (children.length > 0) buildPath(children, currentPath);
       }
     };
-    const roots = this.data.knowledgeTree.filter(n => !n.parent_id);
+    const roots = knodes.filter(n => !n.parent_id);
     buildPath(roots, '');
     return result;
   }
 
   initDefaultKnowledgeTree(): void {
-    if (this.data.knowledgeTree.length > 0) return;
+    const existing = this.data.tags.filter(t => t.tag_type === 'knowledge');
+    if (existing.length > 0) return;
     const now = new Date().toISOString();
-    this.data.knowledgeTree = [
-      {id:'phy-1',name:'力学',children:[],order:1,created_at:now,updated_at:now},
-      {id:'phy-1-1',name:'运动学',parent_id:'phy-1',children:[],order:1,created_at:now,updated_at:now},
-      {id:'phy-1-1-1',name:'匀速直线运动',parent_id:'phy-1-1',children:[],order:1,created_at:now,updated_at:now},
-      {id:'phy-1-1-2',name:'变速直线运动',parent_id:'phy-1-1',children:[],order:2,created_at:now,updated_at:now},
-      {id:'phy-1-1-3',name:'曲线运动',parent_id:'phy-1-1',children:[],order:3,created_at:now,updated_at:now},
-      {id:'phy-1-1-4',name:'相对运动',parent_id:'phy-1-1',children:[],order:4,created_at:now,updated_at:now},
-      {id:'phy-1-2',name:'动力学',parent_id:'phy-1',children:[],order:2,created_at:now,updated_at:now},
-      {id:'phy-1-2-1',name:'牛顿运动定律',parent_id:'phy-1-2',children:[],order:1,created_at:now,updated_at:now},
-      {id:'phy-1-2-2',name:'受力分析',parent_id:'phy-1-2',children:[],order:2,created_at:now,updated_at:now},
-      {id:'phy-1-2-3',name:'连接体问题',parent_id:'phy-1-2',children:[],order:3,created_at:now,updated_at:now},
-      {id:'phy-1-3',name:'功和能',parent_id:'phy-1',children:[],order:3,created_at:now,updated_at:now},
-      {id:'phy-1-4',name:'动量',parent_id:'phy-1',children:[],order:4,created_at:now,updated_at:now},
-      {id:'phy-2',name:'电磁学',children:[],order:2,created_at:now,updated_at:now},
-      {id:'phy-2-1',name:'静电场',parent_id:'phy-2',children:[],order:1,created_at:now,updated_at:now},
-      {id:'phy-2-2',name:'恒定电流',parent_id:'phy-2',children:[],order:2,created_at:now,updated_at:now},
-      {id:'phy-2-3',name:'磁场',parent_id:'phy-2',children:[],order:3,created_at:now,updated_at:now},
-      {id:'phy-2-4',name:'电磁感应',parent_id:'phy-2',children:[],order:4,created_at:now,updated_at:now},
-      {id:'phy-2-5',name:'交变电流',parent_id:'phy-2',children:[],order:5,created_at:now,updated_at:now},
-      {id:'phy-3',name:'热学',children:[],order:3,created_at:now,updated_at:now},
-      {id:'phy-4',name:'光学',children:[],order:4,created_at:now,updated_at:now},
-      {id:'phy-5',name:'原子物理',children:[],order:5,created_at:now,updated_at:now},
-      {id:'phy-6',name:'实验',children:[],order:6,created_at:now,updated_at:now},
+    const defaultNodes = [
+      {id:'phy-1',name:'力学',parent_id:null,order:1},
+      {id:'phy-1-1',name:'运动学',parent_id:'phy-1',order:1},
+      {id:'phy-1-1-1',name:'匀速直线运动',parent_id:'phy-1-1',order:1},
+      {id:'phy-1-1-2',name:'变速直线运动',parent_id:'phy-1-1',order:2},
+      {id:'phy-1-1-3',name:'曲线运动',parent_id:'phy-1-1',order:3},
+      {id:'phy-1-1-4',name:'相对运动',parent_id:'phy-1-1',order:4},
+      {id:'phy-1-2',name:'动力学',parent_id:'phy-1',order:2},
+      {id:'phy-1-2-1',name:'牛顿运动定律',parent_id:'phy-1-2',order:1},
+      {id:'phy-1-2-2',name:'受力分析',parent_id:'phy-1-2',order:2},
+      {id:'phy-1-2-3',name:'连接体问题',parent_id:'phy-1-2',order:3},
+      {id:'phy-1-3',name:'功和能',parent_id:'phy-1',order:3},
+      {id:'phy-1-4',name:'动量',parent_id:'phy-1',order:4},
+      {id:'phy-2',name:'电磁学',parent_id:null,order:2},
+      {id:'phy-2-1',name:'静电场',parent_id:'phy-2',order:1},
+      {id:'phy-2-2',name:'恒定电流',parent_id:'phy-2',order:2},
+      {id:'phy-2-3',name:'磁场',parent_id:'phy-2',order:3},
+      {id:'phy-2-4',name:'电磁感应',parent_id:'phy-2',order:4},
+      {id:'phy-2-5',name:'交变电流',parent_id:'phy-2',order:5},
+      {id:'phy-3',name:'热学',parent_id:null,order:3},
+      {id:'phy-4',name:'光学',parent_id:null,order:4},
+      {id:'phy-5',name:'原子物理',parent_id:null,order:5},
+      {id:'phy-6',name:'实验',parent_id:null,order:6},
     ];
-    // 更新children数组
-    this._rebuildKnowledgeChildren();
-    this.saveData();
-  }
-
-  private _rebuildKnowledgeChildren(): void {
-    for (const n of this.data.knowledgeTree) {
-      n.children = this.data.knowledgeTree.filter(c => c.parent_id === n.id).map(c => c.id);
+    for (const n of defaultNodes) {
+      this.data.tags.push({
+        id: n.id, tag_type: 'knowledge', tag_name: n.name, tag_code: n.id,
+        parent_id: n.parent_id, subject: '物理', sort_no: n.order, status: 1,
+        created_at: now, updated_at: now,
+      });
     }
+    this.data.knowledgeTree = this.getKnowledgeTree();
+    this.saveData();
   }
 
   createKnowledgeNode(node: Omit<KnowledgeNode, 'id' | 'created_at' | 'updated_at'>): KnowledgeNode {
     const now = new Date().toISOString();
-    const newNode: KnowledgeNode = {
-      ...node,
-      id: 'kn-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)),
-      created_at: now,
-      updated_at: now
-    };
-    this.data.knowledgeTree.push(newNode);
-    this._rebuildKnowledgeChildren();
+    const id = 'kn-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36));
+    this.data.tags.push({
+      id, tag_type: 'knowledge', tag_name: node.name, tag_code: id,
+      parent_id: node.parent_id || null, subject: '物理',
+      sort_no: (node as any).order || 0, status: 1,
+      created_at: now, updated_at: now,
+    });
+    this.data.knowledgeTree = this.getKnowledgeTree();
     this.saveData();
-    return newNode;
+    return { id, name: node.name, parent_id: node.parent_id, children: [], order: (node as any).order || 0, created_at: now, updated_at: now };
   }
 
   updateKnowledgeNode(id: string, updates: Partial<Omit<KnowledgeNode, 'id'>>): boolean {
-    const idx = this.data.knowledgeTree.findIndex(n => n.id === id);
+    const idx = this.data.tags.findIndex(t => t.id === id && t.tag_type === 'knowledge');
     if (idx === -1) return false;
-    const oldName = this.data.knowledgeTree[idx].name;
-    this.data.knowledgeTree[idx] = { ...this.data.knowledgeTree[idx], ...updates, updated_at: new Date().toISOString() };
-    this._rebuildKnowledgeChildren();
-
-    // If name changed, sync knowledge_point in questions referencing this node
+    const oldName = this.data.tags[idx].tag_name;
+    if (updates.name !== undefined) this.data.tags[idx].tag_name = updates.name;
+    if ((updates as any).order !== undefined) this.data.tags[idx].sort_no = (updates as any).order;
+    if (updates.parent_id !== undefined) this.data.tags[idx].parent_id = updates.parent_id || null;
+    this.data.tags[idx].updated_at = new Date().toISOString();
     const newName = updates.name;
     if (newName !== undefined && newName !== oldName) {
       for (const q of this.data.questions) {
         if (q.knowledge_ids && q.knowledge_ids.includes(id)) {
-          if (q.knowledge_point === oldName) {
-            q.knowledge_point = newName;
-          }
+          if (q.knowledge_point === oldName) q.knowledge_point = newName;
         }
       }
     }
-
+    this.data.knowledgeTree = this.getKnowledgeTree();
     this.saveData();
     return true;
   }
 
   deleteKnowledgeNode(id: string): boolean {
-    const idsToDelete = this.collectDescendantIds(id);
+    const idsToDelete = this._collectTagDescendantIds(id, 'knowledge');
     if (idsToDelete.length === 0) return false;
-
-    this.data.knowledgeTree = this.data.knowledgeTree.filter(n => !idsToDelete.includes(n.id));
-
-    // Clean up question references: remove deleted knowledge IDs from all questions
+    this.data.tags = this.data.tags.filter(t => !idsToDelete.includes(t.id));
     for (const q of this.data.questions) {
       if (q.knowledge_ids && q.knowledge_ids.length > 0) {
         q.knowledge_ids = q.knowledge_ids.filter(kid => !idsToDelete.includes(kid));
       }
     }
-
-    this._rebuildKnowledgeChildren();
+    this.data.knowledgeTree = this.getKnowledgeTree();
     this.saveData();
     return true;
   }
 
-  private collectDescendantIds(id: string): string[] {
+  private _collectTagDescendantIds(id: string, tagType: string): string[] {
     const result: string[] = [id];
-    const children = this.data.knowledgeTree.filter(n => n.parent_id === id);
+    const children = this.data.tags.filter(t => t.tag_type === tagType && t.parent_id === id);
     for (const child of children) {
-      const childIds = this.collectDescendantIds(child.id);
+      const childIds = this._collectTagDescendantIds(child.id, tagType);
       result.push(...childIds);
     }
     return result;
   }
 
+  private collectDescendantIds(id: string): string[] {
+    return this._collectTagDescendantIds(id, 'knowledge');
+  }
+
   getKnowledgeChildren(parentId: string): KnowledgeNode[] {
-    return this.data.knowledgeTree.filter(n => n.parent_id === parentId).sort((a, b) => a.order - b.order);
+    return this.getKnowledgeTree().filter(n => n.parent_id === parentId).sort((a, b) => a.order - b.order);
+  }
+
+  // ========== 标签管理 ==========
+
+  getAllTags(): Tag[] {
+    return this.data.tags;
+  }
+
+  getTagsByType(tagType: Tag['tag_type']): Tag[] {
+    return this.data.tags.filter(t => t.tag_type === tagType);
+  }
+
+  createTag(tag: Omit<Tag, 'id' | 'created_at' | 'updated_at'>): Tag {
+    const now = new Date().toISOString();
+    const id = 'tag-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36));
+    const newTag: Tag = { ...tag, id, created_at: now, updated_at: now };
+    this.data.tags.push(newTag);
+    if (tag.tag_type === 'knowledge') this.data.knowledgeTree = this.getKnowledgeTree();
+    this.saveData();
+    return newTag;
+  }
+
+  updateTag(id: string, updates: Partial<Omit<Tag, 'id' | 'created_at'>>): boolean {
+    const idx = this.data.tags.findIndex(t => t.id === id);
+    if (idx === -1) return false;
+    this.data.tags[idx] = { ...this.data.tags[idx], ...updates, updated_at: new Date().toISOString() };
+    if (this.data.tags[idx].tag_type === 'knowledge') this.data.knowledgeTree = this.getKnowledgeTree();
+    this.saveData();
+    return true;
+  }
+
+  deleteTag(id: string): boolean {
+    const tag = this.data.tags.find(t => t.id === id);
+    const idx = this.data.tags.findIndex(t => t.id === id);
+    if (idx === -1) return false;
+    this.data.tags.splice(idx, 1);
+    if (tag?.tag_type === 'knowledge') this.data.knowledgeTree = this.getKnowledgeTree();
+    this.saveData();
+    return true;
   }
 }
 

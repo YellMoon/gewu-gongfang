@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npx react-scripts *)",
+      "Read(//mnt/c/Users/83423/Desktop/**)",
+      "Read(//c/Users/83423/Desktop/**)",
+      "Bash(npx mammoth *)",
+      "Bash(iconv -f utf-8 -t utf-8)",
+      "Bash(node scripts/update-version.js)",
+      "Bash(npm run *)",
+      "Bash(npx electron-builder *)",
+      "WebSearch",
+      "Bash(npx playwright *)",
+      "Bash(node -c scripts/upload-quark.js)",
+      "Bash(sed -i \"s/'已宸插垱寤? : '已鍒涘缓澶辫触'/'OK' : 'FAILED'/g\" upload-quark.js)",
+      "Bash(node -c upload-quark.js)",
+      "Bash(node scripts/upload-quark-claude.js)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
+    ]
+  }
+}

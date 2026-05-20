@@ -6,20 +6,33 @@ import {
 import {
   PlusOutlined, FileWordOutlined, BookOutlined, FormOutlined,
   FileAddOutlined, CheckCircleOutlined, BranchesOutlined, FolderOpenOutlined,
-  DeleteOutlined, EditOutlined, CloseCircleOutlined
+  DeleteOutlined, EditOutlined, CloseCircleOutlined, EyeOutlined
 } from '@ant-design/icons';
 import type { Question, KnowledgeNode } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
+import QuestionRenderer from '../components/QuestionRenderer';
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
 
 const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'];
-const QUESTION_TYPES = ['选择题', '填空题', '解答题', '判断题', '简答题', '实验题', '多选题', '作图题'];
+const QUESTION_TYPES = ['单选题', '多选题', '实验题', '解答题', '判断题'];
 const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试'];
 const GRADES = ['高一', '高二', '高三', '复习'];
 const SEMESTERS = ['上学期', '下学期'];
+
+// 从文件名自动检测学年
+function detectAcademicYear(filename: string): string {
+  const m1 = filename.match(/(\d{4})-(\d{4})/);
+  if (m1) return m1[0];
+  const m2 = filename.match(/(\d{4})届/);
+  if (m2) {
+    const year = parseInt(m2[1], 10);
+    return `${year - 1}-${year}`;
+  }
+  return '';
+}
 
 // Build tree data for Ant Design Tree
 function buildTreeData(nodes: KnowledgeNode[], parentId?: string): any[] {
@@ -342,20 +355,33 @@ const QuestionBankImport: React.FC = () => {
     let added = 0;
     for (const q of (result.questions || [])) {
       try {
+        const rawAnswer = (q.answer || '').trim().toUpperCase();
+        const answerLetters = rawAnswer.replace(/[^A-F]/g, '');
+        const qType = answerLetters.length === 1 ? '单选题' :
+          answerLetters.length >= 2 ? '多选题' :
+          (() => {
+            const types = q.question_types || ['fill'];
+            if (types.includes('single')) return '单选题';
+            if (types.includes('multi')) return '多选题';
+            if (types.includes('experiment')) return '实验题';
+            if (/^(对|错|[√×]|正确|错误|是|否)$/i.test(rawAnswer)) return '判断题';
+            return '解答题';
+          })();
+
+        const rawYear = q.year || meta.year || '';
+        const year = /^\d{4}-\d{4}$/.test(rawYear) ? rawYear :
+          (() => { const m = rawYear.match(/(\d{4})/); return m ? `${m[1]}-${parseInt(m[1], 10) + 1}` : ''; })();
+
         db.createQuestion({
           subject: '物理',
-          type: (q.question_types || ['fill']).includes('single') ? '选择题' :
-                (q.question_types || ['fill']).includes('multi') ? '多选题' :
-                (q.question_types || ['fill']).includes('experiment') ? '实验题' :
-                (q.question_types || ['fill']).includes('calculation') ? '解答题' :
-                (q.question_types || ['fill']).includes('problem') ? '解答题' : '填空题',
+          type: qType,
           difficulty: 3,
           content: q.stem || '',
           options: (q.options || []).map((o: any) => `${o.label}. ${o.content}`),
           answer: q.answer || '',
           analysis: q.analysis || '',
           source: q.source || '',
-          year: q.year || meta.year || '',
+          year,
           grade: q.grade || meta.grade || '',
           semester: q.semester || meta.semester || '',
           exam_type: q.exam_type || meta.exam_type || '',
@@ -363,6 +389,7 @@ const QuestionBankImport: React.FC = () => {
           tags: [],
           formulas: [],
           knowledge_point: '',
+          status: 'draft',
         });
         added++;
       } catch (e) { /* skip bad ones */ }
@@ -513,7 +540,7 @@ const QuestionBankImport: React.FC = () => {
               </Button>
               <Button icon={<PlusOutlined />} onClick={() => {
                 setEditing(null); form.resetFields();
-                form.setFieldsValue({ subject: '物理', type: '选择题', difficulty: 3 });
+                form.setFieldsValue({ subject: '物理', type: '单选题', difficulty: 3 });
                 setModalVisible(true);
               }}>
                 手动添加
@@ -589,10 +616,12 @@ const QuestionBankImport: React.FC = () => {
           input.type = 'file'; input.accept = '.doc,.docx';
           input.onchange = (e: any) => {
             if (e.target.files?.[0]) {
+              const fileName = e.target.files[0].name;
+              const detectedYear = detectAcademicYear(fileName);
               setWordModalOpen(false);
               setWordSourceType('exam');
               handleWordFileUpload(e.target.files[0], {
-                year: values.year,
+                year: detectedYear || values.year,
                 exam_type: values.exam_type,
                 grade: values.grade,
                 semester: values.semester
@@ -606,13 +635,9 @@ const QuestionBankImport: React.FC = () => {
         destroyOnClose
       >
         <p style={{ color: '#666', marginBottom: 16 }}>试卷格式文档需要填写以下试卷元信息，将自动关联到导入的题目。</p>
-        <Form form={examForm} layout="vertical" initialValues={{ year: new Date().getFullYear().toString() }}>
-          <Form.Item name="year" label="年份" rules={[{ required: true, message: '请选择年份' }]}>
-            <Select>
-              {Array.from({ length: 6 }, (_, i) => (new Date().getFullYear() - 5 + i).toString()).map(y => (
-                <Select.Option key={y} value={y}>{y}年</Select.Option>
-              ))}
-            </Select>
+        <Form form={examForm} layout="vertical" initialValues={{ year: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}` }}>
+          <Form.Item name="year" label="学年" rules={[{ required: true, message: '请输入学年' }]}>
+            <Input placeholder="如 2025-2026" addonAfter="学年" />
           </Form.Item>
           <Form.Item name="exam_type" label="试卷类型" rules={[{ required: true, message: '请选择试卷类型' }]}>
             <Select options={EXAM_TYPES.map(t => ({ label: t, value: t }))} />
@@ -735,7 +760,27 @@ const QuestionBankImport: React.FC = () => {
           </Row>
 
           <Form.Item name="content" label="题目内容" rules={[{ required: true }]}>
-            <TextArea rows={4} placeholder="支持公式显示（用 $$ 包裹）" />
+            <TextArea rows={4} placeholder={'支持公式（用 $$ 包裹），如 $$F=ma$$\n物理量用斜体 <i>F</i>、单位正体 m/s、数学常数正体 π\n下标属性用 \\mathrm：$$v_{\\mathrm{0}}$$\n向量用 \\boldsymbol：$$\\boldsymbol{F}$$'} />
+          </Form.Item>
+          <details style={{ marginBottom: 12, fontSize: 12, color: '#666', background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 4, padding: '6px 10px' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>物理学科正斜体规范</summary>
+            <div style={{ marginTop: 4, lineHeight: 1.8 }}>
+              <b>斜体</b>：物理量符号（<i>F</i>, <i>m</i>, <i>v</i>, <i>g</i>, <i>E</i>, <i>B</i>）、变量下标（<i>m<sub>i</sub></i>）<br/>
+              <b>正体</b>：单位（m, s, kg, N, A）、数学常数（π, e）、函数（sin, cos, log）、微分符号 d、化学元素下标（<i>m</i><sub>H</sub>）<br/>
+              <b>粗斜体</b>：向量（<b><i>F</i></b>, <b><i>v</i></b>）
+            </div>
+          </details>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.content !== cur.content}>
+            {({ getFieldValue }) => {
+              const content = getFieldValue('content');
+              if (!content) return null;
+              return (
+                <div style={{ marginBottom: 16, padding: 12, background: '#fafafa', borderRadius: 6, border: '1px solid #e8e8e8' }}>
+                  <div style={{ fontSize: 12, color: '#999', marginBottom: 6 }}>预览：</div>
+                  <QuestionRenderer content={content} />
+                </div>
+              );
+            }}
           </Form.Item>
 
           <Row gutter={16}>

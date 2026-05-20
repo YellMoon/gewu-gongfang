@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useCallback, useEffect } from 'react';
+﻿import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   Modal, Form, Input, InputNumber, Select, DatePicker, TimePicker, Calendar, Divider, Card, Row, Col, Button, message, Space, Dropdown, Alert
 } from 'antd';
@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import { holidays2026, getUpcomingHolidays } from '../utils/helpers';
+import { getTextColorForBackground, DEFAULT_COURSE_COLOR } from '../utils/courseColors';
 
 dayjs.extend(weekOfYear);
 dayjs.extend(isoWeek);
@@ -75,6 +76,7 @@ interface DailyViewProps {
   batchIsCopy?: boolean;
   flashingIds?: string[];
   flashToggle?: boolean;
+  courseColorMap?: Record<string, string>;
   onDoubleClickDate: (day: Dayjs) => void;
   onDoubleClickSchedule: (schedule: ScheduleEvent) => void;
   onScheduleStatusChange: (id: string, status: ScheduleStatus) => void;
@@ -96,6 +98,7 @@ const DailyView: React.FC<DailyViewProps> = ({
   batchIsCopy = false,
   flashingIds = [],
   flashToggle = false,
+  courseColorMap = {},
   onDoubleClickDate,
   onDoubleClickSchedule,
   onScheduleStatusChange,
@@ -142,18 +145,19 @@ const DailyView: React.FC<DailyViewProps> = ({
     if (endSlot > maxEndSlot) maxEndSlot = endSlot;
   });
 
-  function getStatusStyle(status: ScheduleStatus) {
+  function getStatusStyle(status: ScheduleStatus, courseColor?: string) {
+    const bg = courseColor || DEFAULT_COURSE_COLOR;
     switch (status) {
       case ScheduleStatus.PLANNED:
-        return { background: '#e6f7ff', border: '2px solid #1890ff', opacity: 1 };
+        return { background: bg, border: '2px solid #1890ff', opacity: 1 };
       case ScheduleStatus.COMPLETED:
-        return { background: '#f6ffed', border: '2px solid #52c41a', opacity: 0.8 };
+        return { background: bg, border: '2px solid #52c41a', opacity: 0.75 };
       case ScheduleStatus.LEAVE:
-        return { background: '#fff7e6', border: '2px solid #faad14', opacity: 1 };
+        return { background: bg, border: '2px solid #faad14', opacity: 1 };
       case ScheduleStatus.CANCELLED:
-        return { background: '#fff1f0', border: '2px solid #f5222d', opacity: 0.6 };
+        return { background: bg, border: '2px solid #f5222d', opacity: 0.55 };
       default:
-        return { background: '#e6f7ff', border: '2px solid #1890ff', opacity: 1 };
+        return { background: bg, border: '2px solid #1890ff', opacity: 1 };
     }
   }
 
@@ -537,6 +541,9 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
           const isDragging = dragState && dragState.schedule.id === schedule.id;
           const isFlashing = flashingIds.includes(schedule.id);
 
+          const courseColor = courseColorMap[schedule.course_id] || DEFAULT_COURSE_COLOR;
+          const textColor = getTextColorForBackground(courseColor);
+
           return (
             <React.Fragment key={schedule.id}>
               <Dropdown
@@ -556,7 +563,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
                     borderRadius: 6,
                     padding: '2px 4px',
                     cursor: isDragging ? 'grabbing' : 'move',
-                    ...getStatusStyle(schedule.status),
+                    ...getStatusStyle(schedule.status, courseColor),
                     zIndex: isDragging ? 100 : 10,
                     opacity: isDragging && dragState.ghostVisible && dragState.type === 'move' && !dragState.ctrlKey ? 0 : 1,
                     boxShadow: isDragging && dragState.ghostVisible && dragState.type === 'move' && !dragState.ctrlKey ? 'none' : (isDragging && dragState.ghostVisible ? '0 4px 16px rgba(24,144,255,0.4)' : 'none'),
@@ -592,7 +599,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
                     <div style={{
                       fontSize: 12,
                       fontWeight: 'bold',
-                      color: '#1890ff',
+                      color: textColor,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
@@ -606,7 +613,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
 
                     <div style={{
                       fontSize: 10,
-                      color: '#666',
+                      color: textColor,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
@@ -630,9 +637,9 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
                         const highlightStart = (dragState.type === 'move' && !isCtrlDrag) || dragState.type === 'resize-top';
                         const highlightEnd = (dragState.type === 'move' && !isCtrlDrag) || dragState.type === 'resize-bottom';
                         return <>
-                          <span style={{ color: highlightStart ? '#ff4d4f' : '#666', fontWeight: highlightStart ? 'bold' : 'normal', background: highlightStart ? 'rgba(255,77,79,0.15)' : 'none', padding: '0 2px', borderRadius: 2 }}>{st}</span>
-                          <span style={{ color: '#666' }}>-</span>
-                          <span style={{ color: highlightEnd ? '#ff4d4f' : '#666', fontWeight: highlightEnd ? 'bold' : 'normal', background: highlightEnd ? 'rgba(255,77,79,0.15)' : 'none', padding: '0 2px', borderRadius: 2 }}>{et}</span>
+                          <span style={{ color: highlightStart ? '#ff4d4f' : textColor, fontWeight: highlightStart ? 'bold' : 'normal', background: highlightStart ? 'rgba(255,77,79,0.15)' : 'none', padding: '0 2px', borderRadius: 2 }}>{st}</span>
+                          <span style={{ color: textColor }}>-</span>
+                          <span style={{ color: highlightEnd ? '#ff4d4f' : textColor, fontWeight: highlightEnd ? 'bold' : 'normal', background: highlightEnd ? 'rgba(255,77,79,0.15)' : 'none', padding: '0 2px', borderRadius: 2 }}>{et}</span>
                         </>;
                       })() : (
                         <>
@@ -763,6 +770,7 @@ interface TwoWeeksViewProps {
   onResizeSchedule?: (schedule: ScheduleEvent, newStartSlot: number | null, newEndSlot: number | null) => void;
   onDeleteSchedule?: (id: string) => void;
   onOpenStudentEdit?: (schedule: ScheduleEvent) => void;
+  courseColorMap?: Record<string, string>;
 }
 
 const OneWeekRow: React.FC<{
@@ -782,6 +790,7 @@ const OneWeekRow: React.FC<{
   onResizeSchedule?: (schedule: ScheduleEvent, newStartSlot: number | null, newEndSlot: number | null) => void;
   onDeleteSchedule?: (id: string) => void;
   onOpenStudentEdit?: (schedule: ScheduleEvent) => void;
+  courseColorMap?: Record<string, string>;
 }> = ({
   startMonday,
   weekLabel,
@@ -791,6 +800,7 @@ const OneWeekRow: React.FC<{
   batchIsCopy = false,
   flashingIds = [],
   flashToggle = false,
+  courseColorMap = {},
   onDoubleClickDate,
   onDoubleClickSchedule,
   onScheduleStatusChange,
@@ -852,6 +862,7 @@ const OneWeekRow: React.FC<{
             onResizeSchedule={onResizeSchedule}
             onDeleteSchedule={onDeleteSchedule}
             onOpenStudentEdit={onOpenStudentEdit}
+            courseColorMap={courseColorMap}
           />
         ))}
       </div>
@@ -869,6 +880,7 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
   batchIsCopy = false,
   flashingIds = [],
   flashToggle = false,
+  courseColorMap = {},
   onDoubleClickDate,
   onDoubleClickSchedule,
   onScheduleStatusChange,
@@ -897,6 +909,7 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
         batchIsCopy={batchIsCopy}
         flashingIds={flashingIds}
         flashToggle={flashToggle}
+        courseColorMap={courseColorMap}
         onDoubleClickDate={onDoubleClickDate}
         onDoubleClickSchedule={onDoubleClickSchedule}
         onScheduleStatusChange={onScheduleStatusChange}
@@ -915,6 +928,7 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
         batchIsCopy={batchIsCopy}
         flashingIds={flashingIds}
         flashToggle={flashToggle}
+        courseColorMap={courseColorMap}
         onDoubleClickDate={onDoubleClickDate}
         onDoubleClickSchedule={onDoubleClickSchedule}
         onScheduleStatusChange={onScheduleStatusChange}
@@ -1057,7 +1071,16 @@ const ScheduleCalendar: React.FC = () => {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [form] = Form.useForm();
   const [courses, setCourses] = useState<Course[]>([]);
-  
+
+  // 课程颜色映射（course_id → 背景色），根据上课地址自动分配
+  const courseColorMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const c of courses) {
+      if (c.id && c.color) map[c.id] = c.color;
+    }
+    return map;
+  }, [courses]);
+
   const [studentEditModal, setStudentEditModal] = useState({
     open: false,
     schedule: null as ScheduleEvent | null
@@ -1705,6 +1728,7 @@ const ScheduleCalendar: React.FC = () => {
               batchIsCopy={batchIsCopy}
               flashingIds={flashingIds}
               flashToggle={flashToggle}
+              courseColorMap={courseColorMap}
               onDoubleClickDate={handleDoubleClickDate}
               onDoubleClickSchedule={handleDoubleClickSchedule}
               onScheduleStatusChange={handleScheduleStatusChange}

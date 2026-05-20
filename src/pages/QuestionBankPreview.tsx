@@ -6,17 +6,21 @@ import {
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, CopyOutlined,
   FolderOpenOutlined, TagsOutlined, AimOutlined, BranchesOutlined,
-  CheckCircleOutlined, DownloadOutlined, FileWordOutlined, CloseCircleOutlined
+  CheckCircleOutlined, DownloadOutlined, FileWordOutlined, CloseCircleOutlined,
+  EyeOutlined
 } from '@ant-design/icons';
 import type { Question, KnowledgeNode } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
+import QuestionRenderer, { createKaTeXPhysicsOptions } from '../components/QuestionRenderer';
+import katex from 'katex';
+import { applyPhysicsNotationToHTML } from '../utils/physicsNotation';
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
 
 const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'];
-const QUESTION_TYPES = ['选择题', '填空题', '解答题', '判断题', '简答题', '实验题', '多选题', '作图题'];
+const QUESTION_TYPES = ['单选题', '多选题', '实验题', '解答题', '判断题'];
 const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试'];
 const GRADES = ['高一', '高二', '高三'];
 const LIMIT_GRADES = ['不限', ...GRADES];
@@ -24,6 +28,135 @@ const LIMIT_SEMESTERS = ['不限', '上学期', '下学期'];
 const PREVIEW_QUESTION_TYPES = ['单选题', '多选题', '实验题', '解答题', '判断题'];
 const LIMIT_TYPES = ['不限', ...PREVIEW_QUESTION_TYPES];
 const SEMESTERS = ['上学期', '下学期'];
+
+// 用于 Word 导出的最小 KaTeX CSS 子集（覆盖物理公式常用构造）
+const KATEX_EXPORT_CSS = `
+.katex{font:normal 1.21em "KaTeX_Main","Times New Roman",serif;line-height:1.2;text-indent:0;text-rendering:auto}
+.katex *{border-color:currentColor}
+.katex .katex-html>.newline{display:block}
+.katex .base{position:relative;white-space:nowrap;width:min-content;display:inline-block}
+.katex .strut{display:inline-block}
+.katex .textbf{font-weight:700}
+.katex .textit{font-style:italic}
+.katex .textrm{font-family:"KaTeX_Main","Times New Roman",serif}
+.katex .mathrm{font-style:normal}
+.katex .mathbf{font-family:"KaTeX_Main","Times New Roman",serif;font-weight:700}
+.katex .mathit{font-family:"KaTeX_Main","Times New Roman",serif;font-style:italic}
+.katex .mathnormal{font-family:"KaTeX_Math","Times New Roman",serif;font-style:italic}
+.katex .boldsymbol{font-family:"KaTeX_Math","Times New Roman",serif;font-style:italic;font-weight:700}
+.katex .amsrm{font-family:"KaTeX_AMS","Times New Roman",serif}
+.katex .mathcal{font-family:"KaTeX_Caligraphic","Times New Roman",serif}
+.katex .mainrm{font-family:"KaTeX_Main","Times New Roman",serif;font-style:normal}
+.katex .vlist-t{border-collapse:collapse;display:inline-table;table-layout:fixed}
+.katex .vlist-r{display:table-row}
+.katex .vlist{display:table-cell;position:relative;vertical-align:bottom}
+.katex .vlist>span{display:block;height:0;position:relative}
+.katex .vlist>span>span{display:inline-block}
+.katex .vlist>span>.pstrut{overflow:hidden;width:0}
+.katex .vlist-t2{margin-right:-2px}
+.katex .vlist-s{display:table-cell;font-size:1px;min-width:2px;vertical-align:bottom;width:2px}
+.katex .vbox{display:inline-flex;flex-direction:column;align-items:baseline}
+.katex .hbox{width:100%;display:inline-flex;flex-direction:row}
+.katex .thinbox{width:0;max-width:0;display:inline-flex;flex-direction:row}
+.katex .msupsub{text-align:left}
+.katex .mfrac>span>span{text-align:center}
+.katex .mfrac .frac-line{border-bottom-style:solid;display:inline-block;width:100%;min-height:1px}
+.katex .mspace{display:inline-block}
+.katex .llap,.katex .rlap,.katex .clap{width:0;position:relative}
+.katex .llap>.inner,.katex .rlap>.inner,.katex .clap>.inner{position:absolute}
+.katex .llap>.fix,.katex .rlap>.fix,.katex .clap>.fix{display:inline-block}
+.katex .llap>.inner{right:0}
+.katex .rlap>.inner,.katex .clap>.inner{left:0}
+.katex .clap>.inner>span{margin-left:-50%;margin-right:50%}
+.katex .rule{border:0 solid;display:inline-block;position:relative;min-height:1px}
+.katex .hline,.katex .overline .overline-line,.katex .underline .underline-line{border-bottom-style:solid;display:inline-block;width:100%;min-height:1px}
+.katex .sqrt>.root{margin-left:.2777777778em;margin-right:-.5555555556em}
+.katex .op-symbol{position:relative}
+.katex .op-symbol.small-op{font-family:"KaTeX_Size1","Times New Roman",serif}
+.katex .op-symbol.large-op{font-family:"KaTeX_Size2","Times New Roman",serif}
+.katex .accent>.vlist-t,.katex .op-limits>.vlist-t{text-align:center}
+.katex .accent .accent-body{position:relative;width:0}
+.katex .accent .accent-body:not(.accent-full){width:0}
+.katex .overlay{display:block}
+.katex .mtable .vertical-separator{display:inline-block;min-width:1px}
+.katex .mtable .arraycolsep{display:inline-block}
+.katex .mtable .col-align-c>.vlist-t{text-align:center}
+.katex .mtable .col-align-l>.vlist-t{text-align:left}
+.katex .mtable .col-align-r>.vlist-t{text-align:right}
+.katex .stretchy{display:block;overflow:hidden;position:relative;width:100%}
+.katex .hide-tail{overflow:hidden;position:relative;width:100%}
+.katex .halfarrow-left{position:absolute;left:0;overflow:hidden;width:50.2%}
+.katex .halfarrow-right{position:absolute;right:0;overflow:hidden;width:50.2%}
+.katex .brace-left{position:absolute;left:0;overflow:hidden;width:25.1%}
+.katex .brace-center{position:absolute;left:25%;overflow:hidden;width:50%}
+.katex .brace-right{position:absolute;right:0;overflow:hidden;width:25.1%}
+.katex .x-arrow-pad{padding:0 .5em}
+.katex .mover,.katex .munder,.katex .x-arrow{text-align:center}
+.katex .boxpad{padding:0 .3em}
+.katex .fbox,.katex .fcolorbox{box-sizing:border-box;border:.04em solid}
+.katex .cancel-pad{padding:0 .2em}
+.katex .cancel-lap{margin-left:-.2em;margin-right:-.2em}
+.katex .sout{border-bottom-style:solid;border-bottom-width:.08em}
+.katex .angl{box-sizing:border-box;border-right:.049em solid;border-top:.049em solid;margin-right:.03889em}
+.katex .anglpad{padding:0 .03889em}
+.katex .nulldelimiter{display:inline-block;width:.12em}
+.katex .delimcenter{position:relative}
+.katex .sizing.reset-size1.size1{font-size:1em}
+.katex .sizing.reset-size1.size2{font-size:1.2em}
+.katex .sizing.reset-size1.size3{font-size:1.4em}
+.katex .sizing.reset-size1.size4{font-size:1.6em}
+.katex .sizing.reset-size1.size5{font-size:1.8em}
+.katex .sizing.reset-size1.size6{font-size:2em}
+.katex .sizing.reset-size1.size7{font-size:2.4em}
+.katex .sizing.reset-size1.size8{font-size:2.88em}
+.katex .sizing.reset-size2.size2{font-size:1em}
+.katex .sizing.reset-size3.size3{font-size:1em}
+.katex .sizing.reset-size4.size4{font-size:1em}
+.katex .sizing.reset-size5.size5{font-size:1em}
+.katex .sizing.reset-size6.size6{font-size:1em}
+.katex .sizing.reset-size7.size7{font-size:1em}
+.katex .sizing.reset-size8.size8{font-size:1em}
+.katex .sizing.reset-size9.size9{font-size:1em}
+.katex .sizing.reset-size10.size10{font-size:1em}
+.katex .sizing.reset-size11.size11{font-size:1em}
+.katex .delimsizing.size1{font-family:"KaTeX_Size1","Times New Roman",serif}
+.katex .delimsizing.size2{font-family:"KaTeX_Size2","Times New Roman",serif}
+.katex .delimsizing.size3{font-family:"KaTeX_Size3","Times New Roman",serif}
+.katex .delimsizing.size4{font-family:"KaTeX_Size4","Times New Roman",serif}
+.katex-display{display:block;margin:.5em 0;text-align:center}
+.katex-display>.katex{display:block;text-align:center;white-space:nowrap}
+.katex-display>.katex>.katex-html{display:block;position:relative}
+.katex .katex-mathml{position:absolute;width:1px;height:1px;overflow:hidden;padding:0;border:0;clip:rect(0,0,0,0)}
+.katex svg{display:block;position:absolute;width:100%;height:inherit;fill:currentColor;stroke:currentColor}
+.katex svg path{stroke:none}
+.katex img{border-style:none;min-width:0;min-height:0;max-width:none;max-height:none}
+`;
+
+// 将内容中的 $$...$$ 公式渲染为 KaTeX HTML（用于 Word 导出），并应用物理学科正斜体规范
+function renderContentForExport(content: string): string {
+  if (!content) return '';
+  const re = /\$\$([\s\S]*?)\$\$/g;
+  let result = '';
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    if (m.index > last) {
+      // 非数学段落：应用物理学科字体规范
+      result += applyPhysicsNotationToHTML(content.slice(last, m.index));
+    }
+    try {
+      const rendered = katex.renderToString(m[1], createKaTeXPhysicsOptions(true));
+      result += `<div class="katex-display">${rendered}</div>`;
+    } catch {
+      result += `<div class="katex-display"><span class="katex"><span class="katex-html"><span class="base"><span class="mord">${m[1]}</span></span></span></span></div>`;
+    }
+    last = m.index + m[0].length;
+  }
+  if (last < content.length) {
+    result += applyPhysicsNotationToHTML(content.slice(last));
+  }
+  return result;
+}
 
 const YEAR_OPTIONS = Array.from({ length: 18 }, (_, i) => {
   const start = 2009 + i;
@@ -74,6 +207,7 @@ const QuestionBankPreview: React.FC = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<Question | null>(null);
+  const [previewQuestion, setPreviewQuestion] = useState<Question | null>(null);
   const [treeVisible, setTreeVisible] = useState(true);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingNodeName, setEditingNodeName] = useState('');
@@ -123,7 +257,7 @@ const QuestionBankPreview: React.FC = () => {
   const filtered = questions.filter(q => {
     if (filterSubjects.length > 0 && !filterSubjects.includes(q.subject)) return false;
     if (!filterTypes.includes('不限') && filterTypes.length > 0 && !filterTypes.includes(q.type)) return false;
-    if (filterExamTypes.length > 0 && !filterExamTypes.includes(q.exam_type || '')) return false;
+    if (filterExamTypes.length > 0 && q.exam_type && !filterExamTypes.includes(q.exam_type)) return false;
     if (!filterGrades.includes('不限') && filterGrades.length > 0 && !filterGrades.includes(q.grade || '')) return false;
     if (!filterSemesters.includes('不限') && filterSemesters.length > 0 && !filterSemesters.includes(q.semester || '')) return false;
     if (filterYear && q.year !== filterYear) return false;
@@ -363,14 +497,11 @@ const QuestionBankPreview: React.FC = () => {
   // 生成试卷 Word HTML
   const generateExamWord = (items: Question[]): string => {
     const typeLabels: Record<string, string> = {
-      '选择题': '一、选择题',
+      '单选题': '一、单选题',
       '多选题': '二、多选题',
-      '填空题': '三、填空题',
+      '实验题': '三、实验题',
       '判断题': '四、判断题',
-      '简答题': '五、简答题',
-      '解答题': '六、解答题',
-      '实验题': '七、实验题',
-      '作图题': '八、作图题',
+      '解答题': '五、解答题',
     };
 
     // 按题型分组
@@ -383,18 +514,25 @@ const QuestionBankPreview: React.FC = () => {
 
     let html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word'>`;
     html += `<head><meta charset="UTF-8"><style>
-      body { font-family: '宋体', SimSun, serif; font-size: 12pt; padding: 40px; line-height: 1.8; }
+      body { font-family: 'Times New Roman', '宋体', SimSun, serif; font-size: 12pt; padding: 40px; line-height: 1.8; }
+      i, em { font-style: italic; }
+      .q-stem i, .q-opt i { font-family: 'Times New Roman', serif; font-style: italic; }
       h1 { text-align: center; font-size: 18pt; margin-bottom: 20px; }
       .section-title { font-weight: bold; font-size: 14pt; margin: 20px 0 10px 0; }
-      .question { margin-bottom: 16px; }
+      .question { margin-bottom: 20px; }
       .q-stem { margin-bottom: 4px; }
-      .q-options { margin-left: 20px; }
-      .q-answer { margin-top: 4px; color: #999; }
+      .q-stem img { max-width: 100%; max-height: 280px; margin: 6px 0; }
+      .q-options { display: flex; flex-wrap: wrap; gap: 4px 24px; margin: 8px 0 0 12px; }
+      .q-options.cols-4 .q-opt { width: calc(25% - 18px); }
+      .q-options.cols-2 .q-opt { width: calc(50% - 12px); }
+      .q-opt { min-width: 80px; }
+      .q-analysis { font-size: 10pt; color: #888; margin-top: 6px; }
       hr { border: none; border-top: 1px dashed #ccc; margin: 20px 0; }
       .answer-key { margin-top: 30px; border-top: 2px solid #000; padding-top: 10px; }
       .answer-key .section-title { font-size: 12pt; }
       table { border-collapse: collapse; width: 100%; }
       td { padding: 4px 8px; }
+      ${KATEX_EXPORT_CSS}
     </style></head><body>`;
 
     html += `<h1>物理试卷</h1>`;
@@ -409,19 +547,23 @@ const QuestionBankPreview: React.FC = () => {
       html += `<div class="section-title">${label}</div>`;
       groups[type].forEach(q => {
         html += `<div class="question">`;
-        html += `<div class="q-stem"><b>${qNum}.</b> ${q.content}</div>`;
+        // 图片嵌入在题干 HTML 中保持真实位置，不再单独提取
+        html += `<div class="q-stem"><b>${qNum}.</b> ${renderContentForExport(q.content || '')}</div>`;
+
         if (q.options && q.options.length > 0) {
-          html += `<div class="q-options">`;
+          const optCount = q.options.length;
+          const optCols = optCount === 4 ? 4 : optCount === 3 ? 3 : 2;
+          html += `<div class="q-options cols-${optCols}">`;
           q.options.forEach((opt: string) => {
-            html += `<div>${opt}</div>`;
+            html += `<div class="q-opt">${opt}</div>`;
           });
           html += `</div>`;
         }
         if (q.analysis) {
-          html += `<div style="font-size:10pt;color:#888;margin-top:4px">【解析】${q.analysis}</div>`;
+          html += `<div class="q-analysis">【解析】${q.analysis}</div>`;
         }
         html += `</div>`;
-        answerKeys.push({ num: qNum, content: q.content.substring(0, 40), answer: q.answer });
+        answerKeys.push({ num: qNum, content: (q.content || '').replace(/<[^>]+>/g, '').substring(0, 40), answer: q.answer });
         qNum++;
       });
     });
@@ -465,7 +607,7 @@ const QuestionBankPreview: React.FC = () => {
       title: '题干', dataIndex: 'content', key: 'content', ellipsis: true,
       render: (t: string, r: Question) => (
         <div>
-          <div style={{ maxWidth: 350, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t}</div>
+          <QuestionRenderer content={t} inline />
           {r.tags && r.tags.length > 0 && (
             <div style={{ marginTop: 4 }}>
               {r.tags.map(tag => <Tag key={tag} color="blue" style={{ fontSize: 10 }}>{tag}</Tag>)}
@@ -496,9 +638,10 @@ const QuestionBankPreview: React.FC = () => {
     { title: '学年', dataIndex: 'year', key: 'year', width: 70, render: (y: string) => y || '-' },
     { title: '学期', dataIndex: 'semester', key: 'semester', width: 70, render: (s: string) => s || '-' },
     {
-      title: '操作', key: 'action', width: 130,
+      title: '操作', key: 'action', width: 160,
       render: (_: any, r: Question) => (
         <Space size={0}>
+          <Tooltip title="预览"><Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setPreviewQuestion(r)} /></Tooltip>
           <Tooltip title="编辑"><Button type="link" size="small" icon={<EditOutlined />} onClick={() => {
             setEditing(r);
             const knForm: Record<string, boolean> = {};
@@ -875,6 +1018,36 @@ const QuestionBankPreview: React.FC = () => {
         </Card>
       </Col>
 
+      {/* Preview Modal */}
+      <Modal
+        title={<span><EyeOutlined /> 题目预览</span>}
+        open={!!previewQuestion}
+        onCancel={() => setPreviewQuestion(null)}
+        footer={<Button onClick={() => setPreviewQuestion(null)}>关闭</Button>}
+        width={700}
+        destroyOnClose
+      >
+        {previewQuestion && (
+          <div style={{ padding: '8px 0' }}>
+            <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Tag color="blue">{previewQuestion.subject}</Tag>
+              <Tag color="purple">{previewQuestion.type}</Tag>
+              <Tag color={difficultyColor(previewQuestion.difficulty)}>{'★'.repeat(previewQuestion.difficulty)}</Tag>
+              {previewQuestion.exam_type && <Tag>{previewQuestion.exam_type}</Tag>}
+              {previewQuestion.grade && <Tag>{previewQuestion.grade}</Tag>}
+              {previewQuestion.year && <Tag>{previewQuestion.year}</Tag>}
+            </div>
+            <QuestionRenderer
+              content={previewQuestion.content}
+              options={previewQuestion.options}
+              questionType={previewQuestion.type}
+              answer={previewQuestion.answer}
+              analysis={previewQuestion.analysis}
+            />
+          </div>
+        )}
+      </Modal>
+
       {/* Add/Edit Modal */}
       <Modal
         title={editing ? '编辑题目' : '添加题目'}
@@ -904,7 +1077,27 @@ const QuestionBankPreview: React.FC = () => {
           </Row>
 
           <Form.Item name="content" label="题目内容" rules={[{ required: true }]}>
-            <TextArea rows={4} placeholder="支持公式显示（用 $$ 包裹）" />
+            <TextArea rows={4} placeholder={'支持公式（用 $$ 包裹），如 $$F=ma$$\n物理量用斜体 <i>F</i>、单位正体 m/s、数学常数正体 π\n下标属性用 \\mathrm：$$v_{\\mathrm{0}}$$\n向量用 \\boldsymbol：$$\\boldsymbol{F}$$'} />
+          </Form.Item>
+          <details style={{ marginBottom: 12, fontSize: 12, color: '#666', background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 4, padding: '6px 10px' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>物理学科正斜体规范</summary>
+            <div style={{ marginTop: 4, lineHeight: 1.8 }}>
+              <b>斜体</b>：物理量符号（<i>F</i>, <i>m</i>, <i>v</i>, <i>g</i>, <i>E</i>, <i>B</i>）、变量下标（<i>m<sub>i</sub></i>）<br/>
+              <b>正体</b>：单位（m, s, kg, N, A）、数学常数（π, e）、函数（sin, cos, log）、微分符号 d、化学元素下标（<i>m</i><sub>H</sub>）<br/>
+              <b>粗斜体</b>：向量（<b><i>F</i></b>, <b><i>v</i></b>）
+            </div>
+          </details>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.content !== cur.content}>
+            {({ getFieldValue }) => {
+              const content = getFieldValue('content');
+              if (!content) return null;
+              return (
+                <div style={{ marginBottom: 16, padding: 12, background: '#fafafa', borderRadius: 6, border: '1px solid #e8e8e8' }}>
+                  <div style={{ fontSize: 12, color: '#999', marginBottom: 6 }}>预览：</div>
+                  <QuestionRenderer content={content} />
+                </div>
+              );
+            }}
           </Form.Item>
 
           <Row gutter={16}>

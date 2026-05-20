@@ -1,0 +1,178 @@
+/* ── 题干内容 ── */
+.question-content {
+  font-family: 'Times New Roman', 'STIX Two Text', 'STIX', '宋体', SimSun, serif;
+  font-size: 14px;
+  line-height: 1.9;
+  color: #1a1a1a;
+}
+
+.question-stem {
+  margin-bottom: 4px;
+}
+
+/* ── 题干区（可点击） ── */
+.question-stem-wrapper {
+  position: relative;
+  padding: 10px 12px;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.question-stem-wrapper.has-drawer {
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.question-stem-wrapper.has-drawer:hover {
+  background: #fafafa;
+  border-color: #e8e8e8;
+}
+
+.question-stem-wrapper.has-drawer.expanded {
+  border-color: #d9d9d9;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: #fafafa;
+}
+
+/* ── KaTeX 公式 ── */
+.math-display {
+  margin: 8px 0;
+  text-align: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.math-inline {
+  padding: 0 1px;
+}
+
+/* 防御性：强制隐藏 KaTeX MathML（原始 LaTeX 源码） */
+.math-display .katex-mathml,
+.math-inline .katex-mathml {
+  display: none !important;
+}
+
+/* ── 选择题选项网格 ── */
+.question-options {
+  display: grid;
+  gap: 4px 20px;
+  margin-top: 10px;
+}
+
+.question-options.cols-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.question-options.cols-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.question-options.cols-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.question-option {
+  padding: 3px 0;
+  white-space: nowrap;
+}
+
+/* ── 题干图片（嵌入在 HTML 中保持真实位置） ── */
+.question-stem img {
+  max-width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  margin: 6px 0;
+  vertical-align: middle;
+}
+
+/* ── 单位标记（正体） ── */
+.question-content u {
+  text-decoration: none;
+  font-style: normal;
+}
+
+/* ── 选项标签（正体 + 全角点号） ── */
+.opt-label {
+  font-style: normal;
+  font-weight: 600;
+}
+
+/* ── 抽屉提示 ── */
+.drawer-hint {
+  text-align: center;
+  padding: 4px 0 0;
+  opacity: 0.4;
+  transition: opacity 0.2s;
+}
+
+.question-stem-wrapper.has-drawer:hover .drawer-hint {
+  opacity: 0.7;
+}
+
+.drawer-hint-icon {
+  font-size: 12px;
+  color: #999;
+  letter-spacing: 2px;
+  user-select: none;
+}
+
+/* ── 抽屉（答案与解析） ── */
+.question-drawer {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.35s ease;
+  cursor: pointer;
+}
+
+.question-drawer.open {
+  max-height: 2000px;
+}
+
+.question-drawer-inner {
+  padding: 10px 12px 12px;
+  background: #fafafa;
+  border: 1px solid #d9d9d9;
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+}
+
+/* ── 答案 ── */
+.question-answer {
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+/* ── 解析 ── */
+.question-analysis {
+  padding: 8px 12px;
+  background: #fff;
+  border-left: 3px solid #1890ff;
+  border-radius: 0 4px 4px 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* ── 收起提示 ── */
+.collapse-hint {
+  padding: 8px 0 2px;
+  opacity: 0.35;
+  transition: opacity 0.2s;
+}
+
+.question-drawer:hover .collapse-hint {
+  opacity: 0.7;
+}
+
+/* ── 表格内联模式 ── */
+.question-inline {
+  max-width: 350px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
