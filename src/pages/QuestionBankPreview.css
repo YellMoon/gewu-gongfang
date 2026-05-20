@@ -83,12 +83,22 @@
   margin-bottom: 12px;
 }
 
+.qb-filter-row-secondary {
+  gap: 10px;
+  align-items: stretch;
+}
+
 .qb-filter-select {
   min-width: 128px;
 }
 
 .qb-filter-select.wide {
   min-width: 166px;
+}
+
+.qb-filter-multi {
+  min-width: 210px;
+  flex: 1 1 220px;
 }
 
 .qb-search-row {

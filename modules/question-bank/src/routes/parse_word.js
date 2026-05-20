@@ -38,7 +38,8 @@ router.post('/', upload.single('file'), (req, res) => {
   const args = [PARSER_SCRIPT, file.path, sourceType];
   if (fs.existsSync(KNOWLEDGE_TREE)) args.push(KNOWLEDGE_TREE);
 
-  const proc = spawn('python3', args, { timeout: 60000 });
+  const pythonBin = process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
+  const proc = spawn(pythonBin, args, { timeout: 60000, windowsHide: true });
   let stdout = '', stderr = '';
 
   proc.stdout.on('data', (data) => { stdout += data.toString(); });

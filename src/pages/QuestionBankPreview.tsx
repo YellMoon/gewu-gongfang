@@ -239,6 +239,7 @@ const QuestionBankPreview: React.FC = () => {
 
   const activeKnowledgeIds = knowledgeSelectedIds.filter((id): id is string => !!id);
   const activeModelIds = modelSelectedIds.filter((id): id is string => !!id);
+  const activeExcludeKnowledgeIds = filterExcludeKnowledgeIds.filter((id): id is string => !!id);
   const searchTerms = splitSearchTerms(appliedSearchText);
   const normalizeCheckGroup = (vals: any[]): string[] => {
     if (vals.includes('全部') && vals.length > 1) {
@@ -1049,13 +1050,46 @@ const QuestionBankPreview: React.FC = () => {
               />
               <Select
                 className="qb-filter-select"
-                value={singleValue(filterDifficulties)}
-                onChange={(value) => setSingleValue(setFilterDifficulties, value)}
-                options={LIMIT_DIFFICULTIES}
-                prefix="难度"
+                value={singleValue(filterExamTypes)}
+                onChange={(value) => setSingleValue(setFilterExamTypes, value)}
+                options={LIMIT_EXAM_TYPES.map(item => ({ label: item, value: item }))}
+                prefix="考试类型"
               />
               <Button icon={<FilterOutlined />} onClick={() => setMoreFiltersOpen(true)}>更多筛选</Button>
               <Button type="link" icon={<ReloadOutlined />} onClick={resetFilters}>重置</Button>
+            </div>
+
+            <div className="qb-filter-row qb-filter-row-secondary">
+              <AntSelect
+                mode="multiple"
+                allowClear
+                className="qb-filter-multi"
+                placeholder="包含知识点"
+                value={activeKnowledgeIds}
+                onChange={(values) => setKnowledgeSelectedIds(values.length ? values : [undefined])}
+                filterOption={(input, option) => (option?.label as string || '').toLowerCase().includes(input.toLowerCase())}
+                options={subjectKnowledgeNodes.map(n => ({ label: n.name, value: n.id }))}
+              />
+              <AntSelect
+                mode="multiple"
+                allowClear
+                className="qb-filter-multi"
+                placeholder="排除知识点"
+                value={activeExcludeKnowledgeIds}
+                onChange={(values) => setFilterExcludeKnowledgeIds(values.length ? values : [undefined])}
+                filterOption={(input, option) => (option?.label as string || '').toLowerCase().includes(input.toLowerCase())}
+                options={subjectKnowledgeNodes.map(n => ({ label: n.name, value: n.id }))}
+              />
+              <AntSelect
+                mode="multiple"
+                allowClear
+                className="qb-filter-multi"
+                placeholder="模型"
+                value={activeModelIds}
+                onChange={(values) => setModelSelectedIds(values.length ? values : [undefined])}
+                filterOption={(input, option) => (option?.label as string || '').toLowerCase().includes(input.toLowerCase())}
+                options={subjectModelNodes.map(n => ({ label: n.name, value: n.id }))}
+              />
             </div>
 
             <div className="qb-search-row">
@@ -1085,11 +1119,11 @@ const QuestionBankPreview: React.FC = () => {
             }
           >
             <div className="qb-more-filter-group">
-              <Text strong>考试类型</Text>
+              <Text strong>难度</Text>
               <Checkbox.Group
-                options={LIMIT_EXAM_TYPES}
-                value={filterExamTypes}
-                onChange={(vals) => setFilterExamTypes(normalizeCheckGroup(vals as string[]))}
+                options={LIMIT_DIFFICULTIES}
+                value={filterDifficulties}
+                onChange={(vals) => setFilterDifficulties(normalizeCheckGroup(vals as string[]))}
               />
             </div>
             <div className="qb-more-filter-group">
@@ -1106,74 +1140,6 @@ const QuestionBankPreview: React.FC = () => {
             </div>
             <div className="qb-more-filter-group">
               <Checkbox checked={basketOnly} onChange={event => setBasketOnly(event.target.checked)}>只看已加入试题篮</Checkbox>
-            </div>
-            <div className="qb-more-filter-group">
-              <Text strong>包含知识点</Text>
-              {knowledgeSelectedIds.map((selectedId, idx) => (
-                <div key={idx} className="qb-filter-line">
-                  <Select
-                    showSearch
-                    allowClear
-                    placeholder="搜索知识点"
-                    value={selectedId}
-                    onChange={(value) => {
-                      const newIds = [...knowledgeSelectedIds];
-                      newIds[idx] = value;
-                      setKnowledgeSelectedIds(newIds.length === 0 ? [undefined] : newIds);
-                    }}
-                    filterOption={(input, option) => (option?.label as string || '').toLowerCase().includes(input.toLowerCase())}
-                    options={subjectKnowledgeNodes.map(n => ({ label: n.name, value: n.id }))}
-                  />
-                  {idx === knowledgeSelectedIds.length - 1 && <Button type="text" icon={<PlusOutlined />} onClick={() => setKnowledgeSelectedIds([...knowledgeSelectedIds, undefined])} />}
-                  {knowledgeSelectedIds.length > 1 && <Button type="text" danger icon={<CloseCircleOutlined />} onClick={() => setKnowledgeSelectedIds(knowledgeSelectedIds.filter((_, i) => i !== idx))} />}
-                </div>
-              ))}
-            </div>
-            <div className="qb-more-filter-group">
-              <Text strong>排除知识点</Text>
-              {filterExcludeKnowledgeIds.map((selectedId, idx) => (
-                <div key={idx} className="qb-filter-line">
-                  <Select
-                    showSearch
-                    allowClear
-                    placeholder="排除知识点"
-                    value={selectedId}
-                    onChange={(value) => {
-                      const newIds = [...filterExcludeKnowledgeIds];
-                      newIds[idx] = value;
-                      const filteredIds = newIds.filter(id => !!id);
-                      setFilterExcludeKnowledgeIds(filteredIds.length === 0 ? [undefined] : filteredIds);
-                      if (value) setKnowledgeSelectedIds(prev => prev.filter(id => id !== value));
-                    }}
-                    filterOption={(input, option) => (option?.label as string || '').toLowerCase().includes(input.toLowerCase())}
-                    options={subjectKnowledgeNodes.map(n => ({ label: n.name, value: n.id }))}
-                  />
-                  {idx === filterExcludeKnowledgeIds.length - 1 && <Button type="text" icon={<PlusOutlined />} onClick={() => setFilterExcludeKnowledgeIds([...filterExcludeKnowledgeIds.filter(id => !!id), undefined])} />}
-                  {filterExcludeKnowledgeIds.length > 1 && <Button type="text" danger icon={<CloseCircleOutlined />} onClick={() => setFilterExcludeKnowledgeIds(filterExcludeKnowledgeIds.filter((_, i) => i !== idx))} />}
-                </div>
-              ))}
-            </div>
-            <div className="qb-more-filter-group">
-              <Text strong>模型</Text>
-              {modelSelectedIds.map((selectedId, idx) => (
-                <div key={idx} className="qb-filter-line">
-                  <Select
-                    showSearch
-                    allowClear
-                    placeholder="搜索模型"
-                    value={selectedId}
-                    onChange={(value) => {
-                      const newIds = [...modelSelectedIds];
-                      newIds[idx] = value;
-                      setModelSelectedIds(newIds.length === 0 ? [undefined] : newIds);
-                    }}
-                    filterOption={(input, option) => (option?.label as string || '').toLowerCase().includes(input.toLowerCase())}
-                    options={subjectModelNodes.map(n => ({ label: n.name, value: n.id }))}
-                  />
-                  {idx === modelSelectedIds.length - 1 && <Button type="text" icon={<PlusOutlined />} onClick={() => setModelSelectedIds([...modelSelectedIds, undefined])} />}
-                  {modelSelectedIds.length > 1 && <Button type="text" danger icon={<CloseCircleOutlined />} onClick={() => setModelSelectedIds(modelSelectedIds.filter((_, i) => i !== idx))} />}
-                </div>
-              ))}
             </div>
           </Drawer>
           {/* Batch Operations */}

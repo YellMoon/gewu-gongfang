@@ -207,17 +207,7 @@ function normalizeImportedKnowledgeIds(db: any, parsedQuestion: any): string[] {
 }
 
 function getQuestionStem(q: any): string {
-  const stem = q.stem || q.content || '';
-  const subQuestions = Array.isArray(q.sub_questions) ? q.sub_questions : [];
-  const subText = subQuestions
-    .map((sub: any, index: number) => {
-      const title = sub?.title || `(${index + 1})`;
-      const content = sub?.content || '';
-      return `${title} ${content}`.trim();
-    })
-    .filter(Boolean)
-    .join('\n');
-  return [stem, subText].filter(Boolean).join('\n');
+  return q.stem || q.content || '';
 }
 
 function applyExamMetaToQuestion(q: any, meta: ExamMeta = {}, sourceType: 'lecture' | 'exam') {

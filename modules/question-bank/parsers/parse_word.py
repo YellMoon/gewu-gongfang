@@ -191,6 +191,47 @@ def _format_math_token(text):
         return "<i>%s</i>" % text
     return re.sub(r"([A-Za-z])", r"<i>\1</i>", text)
 
+
+UNIT_SYMBOLS = [
+    "kg", "mol", "cd", "rad", "sr", "Hz", "Pa", "J", "W", "C", "V", "F", "Ω", "S", "Wb", "T", "H", "lm", "lx", "Bq", "Gy", "Sv", "kat",
+    "m", "s", "A", "K", "N", "Pa", "J", "W", "C", "V", "F", "T", "H", "L", "eV", "MeV", "GeV", "min", "h",
+]
+UNIT_PREFIXES = ["Y", "Z", "E", "P", "T", "G", "M", "k", "h", "da", "d", "c", "m", "μ", "u", "n", "p", "f", "a", "z", "y"]
+
+
+def _unit_tokens():
+    tokens = set(UNIT_SYMBOLS)
+    for prefix in UNIT_PREFIXES:
+        for unit in UNIT_SYMBOLS:
+            if unit in ("kg", "min", "mol", "rad", "sr"):
+                continue
+            tokens.add(prefix + unit)
+    return sorted(tokens, key=len, reverse=True)
+
+
+UNIT_PATTERN = r"(?:%s)(?:\s*(?:[·⋅*/\/]\s*|\^?-?\d+|<sup>-?\d+</sup>|\s+)(?:%s))*" % (
+    "|".join(re.escape(token) for token in _unit_tokens()),
+    "|".join(re.escape(token) for token in _unit_tokens()),
+)
+
+
+def normalize_physics_markup(text):
+    if not text:
+        return ""
+    text = re.sub(r"<i>k</i><i>g</i>", "kg", text)
+    text = re.sub(r"<i>(N|Pa|J|W|C|V|F|T|H|A|K|Hz|Ω)</i>(?=(?:<sup>|[·⋅.*/\/]))", r"\1", text)
+    text = re.sub(r"(?<=[·⋅.*/\/])<i>(m|s|g|A|K|mol|cd|rad|Hz|N|Pa|J|W|C|V|F|T|H|Ω)</i>", r"\1", text)
+    text = re.sub(r"<i>(m|s|g|A|K|mol|cd|rad|Hz|N|Pa|J|W|C|V|F|T|H|Ω)</i>(?=<sup>-?\d+</sup>)", r"\1", text)
+    def restore_unit(match):
+        prefix = match.group(1)
+        body = match.group(2)
+        return prefix + re.sub(r"</?i>", "", body)
+
+    italic_unit_token = r"(?:<i>[A-Za-zμΩ]+</i>|[·⋅*/\/\s]|\^?-?\d+|<sup>-?\d+</sup>)+"
+    text = re.sub(r"(\d(?:[\d.,×xX\-+]*\d)?\s*)(" + italic_unit_token + r")(?=\s|[\u4e00-\u9fff]|[,，。；;、）)]|$)", restore_unit, text)
+    text = re.sub(r"(?<=\d)\s*(%s)" % UNIT_PATTERN, lambda m: " " + m.group(1), text)
+    return text
+
 def _plain_math_text(node):
     if node is None:
         return ""
@@ -206,7 +247,14 @@ def _math_text(node):
     if tag == "t":
         return _format_math_token(node.text or "")
     if tag == "r":
-        return "".join(_math_text(child) for child in list(node))
+        plain_style = False
+        rpr = _first_child(node, "rPr")
+        if rpr is not None:
+            plain_style = any(_local_name(child) in ("nor", "lit") for child in list(rpr))
+            plain_style = plain_style or any(_local_name(child) == "sty" and child.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/math}val") in ("p", "plain") for child in list(rpr))
+        if plain_style:
+            return _plain_math_text(node)
+        return "".join(_math_text(child) for child in list(node) if _local_name(child) != "rPr")
     if tag == "fName":
         return _plain_math_text(node)
     if tag in ("oMath", "oMathPara", "e", "num", "den", "deg", "sub", "sup"):
@@ -214,7 +262,7 @@ def _math_text(node):
     if tag == "f":
         num = _math_text(_first_child(node, "num"))
         den = _math_text(_first_child(node, "den"))
-        return r"$\frac{%s}{%s}$" % (num, den)
+        return '<span class="omml-frac"><span class="omml-frac-num">%s</span><span class="omml-frac-den">%s</span></span>' % (num, den)
     if tag == "sSub":
         base = _math_text(_first_child(node, "e"))
         sub = _math_text(_first_child(node, "sub"))
@@ -304,7 +352,7 @@ def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_
             math_text = _math_text(child).strip()
             if math_text:
                 parts.append(math_text)
-    return clean_word_text("".join(parts))
+    return clean_word_text(normalize_physics_markup("".join(parts)))
 
 
 def _rels_for_document(archive):
@@ -604,12 +652,21 @@ def is_topic_heading(text):
     return bool(re.match(r"^(专题\d+|实验专题\d+|解答题专题\d+|[一二三四五六七八九十]+[、.．])", text))
 
 
-def is_exam_section_heading(text):
-    text = (text or "").strip()
-    return bool(EXAM_SECTION_RE.match(text)) or bool(re.match(r"^\d+[\u3001\uff0e\.\s]*(\u5355\u9009\u9898|\u591a\u9009\u9898|\u9009\u62e9\u9898|\u5b9e\u9a8c\u9898|\u89e3\u7b54\u9898|\u7efc\u5408\u9898|\u586b\u7a7a\u9898)$", text))
+def normalize_heading_text(text):
+    text = re.sub(r"<[^>]+>", "", text or "")
+    text = text.replace("\u3000", " ")
+    text = re.sub(r"\s+", "", text)
+    text = re.sub(r"[:：]+$", "", text)
+    return text
 
 def is_pure_question_type_title(text):
-    return bool(re.match(r"^(?:\d+[\u3001\uff0e\.]|[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341]+[\u3001\uff0e\.])?\s*(\u5355\u9009\u9898|\u591a\u9009\u9898|\u9009\u62e9\u9898|\u5b9e\u9a8c\u9898|\u89e3\u7b54\u9898|\u7efc\u5408\u9898|\u586b\u7a7a\u9898)$", text or ""))
+    text = normalize_heading_text(text)
+    return bool(re.match(r"^(?:\d+[\u3001\uff0e\.、]?|[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341]+[\u3001\uff0e\.、]?)?(\u5355\u9009\u9898|\u591a\u9009\u9898|\u9009\u62e9\u9898|\u5b9e\u9a8c\u9898|\u89e3\u7b54\u9898|\u7efc\u5408\u9898|\u586b\u7a7a\u9898)$", text))
+
+
+def is_exam_section_heading(text):
+    text = normalize_heading_text(text)
+    return is_pure_question_type_title(text) or bool(EXAM_SECTION_RE.match(text)) or bool(re.match(r"^\d+[\u3001\uff0e\.\s]*(\u5355\u9009\u9898|\u591a\u9009\u9898|\u9009\u62e9\u9898|\u5b9e\u9a8c\u9898|\u89e3\u7b54\u9898|\u7efc\u5408\u9898|\u586b\u7a7a\u9898)$", text))
 
 
 def clean_topic_heading(text):

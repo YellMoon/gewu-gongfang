@@ -59,6 +59,17 @@ function splitMixedContent(content: string): ContentSegment[] {
   return segments.length > 0 ? segments : [{ type: 'html', value: content }];
 }
 
+function convertHtmlLatexFractions(content: string): string {
+  return (content || '').replace(
+    /\$\\frac\{([^{}]*)\}\{([^{}]*)\}\$/g,
+    (match, num, den) => (
+      String(num + den).includes('<')
+        ? `<span class="omml-frac"><span class="omml-frac-num">${num}</span><span class="omml-frac-den">${den}</span></span>`
+        : match
+    )
+  );
+}
+
 export function stripHtmlAndMath(html: string): string {
   return html
     .replace(/<[^>]+>/g, '')
@@ -80,18 +91,43 @@ function applySearchHighlight(html: string, terms: string[] = []): string {
 }
 
 function normalizePhysicsHtml(html: string): string {
-  return html
+  const protectedImages: string[] = [];
+  const imageSafeHtml = (html || '').replace(/<img\b[^>]*>/gi, match => {
+    const token = `@@QUESTION_IMAGE_${protectedImages.length}@@`;
+    protectedImages.push(match);
+    return token;
+  });
+  const unitCore = '(?:kg|mol|cd|rad|sr|Hz|Pa|J|Wb|W|C|V|F|T|H|N|A|K|m|s|L|eV|MeV|GeV|min|h|Ω)';
+  const unitToken = `(?:[YZEPTGMkhdcmμunpfa]?${unitCore})`;
+  const unitExpr = `${unitToken}(?:\\s*(?:[·⋅*/\\\\/]|<sup>-?\\d+</sup>|\\^?-?\\d+)\\s*${unitToken})*`;
+  const restoreUnits = (value: string) => value.replace(
+    new RegExp(`(\\d(?:[\\d.,×xX+\\-]*\\d)?\\s*)((?:<i>[A-Za-zμΩ]+<\\/i>|[·⋅*/\\\\/\\s]|<sup>-?\\d+<\\/sup>|\\^?-?\\d+)+)(?=\\s|[\\u4e00-\\u9fff]|[,，。；;、）)]|$)`, 'g'),
+    (_match, prefix, body) => prefix + body.replace(/<\/?i>/g, '')
+  );
+
+  return restoreUnits(imageSafeHtml)
+    .replace(/<i>k<\/i><i>g<\/i>/g, 'kg')
+    .replace(/<i>(N|Pa|J|W|C|V|F|T|H|A|K|Hz|Ω)<\/i>(?=(?:<sup>|[·⋅.*/\/]))/g, '$1')
+    .replace(/(?<=[·⋅.*/\/])<i>(m|s|g|A|K|mol|cd|rad|Hz|N|Pa|J|W|C|V|F|T|H|Ω)<\/i>/g, '$1')
+    .replace(/<i>(m|s|g|A|K|mol|cd|rad|Hz|N|Pa|J|W|C|V|F|T|H|Ω)<\/i>(?=<sup>-?\d+<\/sup>)/g, '$1')
     .replace(/<i>([A-Za-zα-ωΑ-Ω])i>/g, '<i>$1</i>')
     .replace(/<\/<sup>/g, '</sup>')
     .replace(/<\/<sub>/g, '</sub>')
+    .replace(/<\/sup><\/sup>/g, '</sup>')
+    .replace(/<\/sub><\/sub>/g, '</sub>')
+    .replace(/<sup>([^<]+)<\/<sup>/g, '<sup>$1</sup>')
+    .replace(/<sub>([^<]+)<\/<sub>/g, '<sub>$1</sub>')
     .replace(/<sup>([^<]*)$/g, '<sup>$1</sup>')
     .replace(/<sub>([^<]*)$/g, '<sub>$1</sub>')
     .replace(/&lt;(\/?)(sub|sup|i|b|strong|em)&gt;/gi, '<$1$2>')
     .replace(/\r?\n/g, '<br />')
-    .replace(/<sup>([^<]+)<\/sup>\s*<sub>([^<]+)<\/sub>\s*([A-Z][a-z]?)/g, '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$1</sup><sub>$2</sub></span><span class="nuclear-core">$3</span></span>')
-    .replace(/<sub>([^<]+)<\/sub>\s*<sup>([^<]+)<\/sup>\s*([A-Z][a-z]?)/g, '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$2</sup><sub>$1</sub></span><span class="nuclear-core">$3</span></span>')
-    .replace(/(?<![A-Za-z])([A-Za-zα-ωΑ-Ω])([0-9]+)(?![0-9A-Za-z])/g, '$1<sub>$2</sub>')
-    .replace(/(?<![A-Za-z])([A-Za-z])([xyzXYZ])(?![0-9A-Za-z])/g, '$1<sub>$2</sub>');
+    .replace(/<span class="nuclear-left">([\s\S]*?)<\/span>\s*(?:<i>)?([A-Z][a-z]?)(?:<\/i>)?/g, '<span class="nuclear-symbol"><span class="nuclear-left">$1</span><span class="nuclear-core">$2</span></span>')
+    .replace(/<sup>([^<]+)<\/sup>\s*<sub>([^<]+)<\/sub>\s*(?:<i>)?([A-Z][a-z]?)(?:<\/i>)?/g, '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$1</sup><sub>$2</sub></span><span class="nuclear-core">$3</span></span>')
+    .replace(/<sub>([^<]+)<\/sub>\s*<sup>([^<]+)<\/sup>\s*(?:<i>)?([A-Z][a-z]?)(?:<\/i>)?/g, '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$2</sup><sub>$1</sub></span><span class="nuclear-core">$3</span></span>')
+    .replace(new RegExp(`(?<=\\d)\\s*(${unitExpr})`, 'g'), '<span class="physics-unit"> $1</span>')
+    .replace(/(?<![A-Za-z])([A-Za-zα-ωΑ-Ω])([0-9]+)(?![0-9A-Za-z]|\.(?:png|jpe?g|gif|webp|svg))/gi, '$1<sub>$2</sub>')
+    .replace(/(?<![A-Za-z])([A-Za-z])([xyzXYZ])(?![0-9A-Za-z])/g, '$1<sub>$2</sub>')
+    .replace(/@@QUESTION_IMAGE_(\d+)@@/g, (_match, index) => protectedImages[Number(index)] || '');
 }
 
 function processHtmlSegment(html: string): string {
@@ -132,7 +168,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
   const hasDrawer = Boolean(answer || analysis);
 
   const { stemText, stemImages } = useMemo(() => {
-    return { stemText: content || '', stemImages: [] as string[] };
+    return { stemText: convertHtmlLatexFractions(content || ''), stemImages: [] as string[] };
   }, [content]);
 
   const segments = useMemo(() => splitMixedContent(stemText), [stemText]);
@@ -232,7 +268,6 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
                   {renderHtml(analysis)}
                 </div>
               )}
-              <div className="question-answer-hint">点击解析区收起</div>
             </div>
           </div>
         )}
@@ -277,7 +312,7 @@ function normalizeOption(option: any, index: number): { label: string; content: 
 function splitPackedOptions(options: Array<{ label: string; content: string }>): Array<{ label: string; content: string }> {
   if (options.length !== 1) return options;
   const raw = `${options[0].label}. ${options[0].content}`;
-  const matches = Array.from(raw.matchAll(/(?:^|\s)([A-G])[\.\u3001\uff0e\s]+([\s\S]*?)(?=\s+[A-G][\.\u3001\uff0e\s]+|$)/g));
+  const matches = Array.from(raw.matchAll(/(?:^|\s*)([A-G])[\.\u3001\uff0e\s]+([\s\S]*?)(?=\s*[A-G][\.\u3001\uff0e\s]+|$)/g));
   if (matches.length < 2) return options;
   return matches.map(match => ({
     label: match[1].toUpperCase(),
@@ -294,9 +329,9 @@ function normalizeOptions(options: any[]): Array<{ label: string; content: strin
 
 function columnsForOptions(options: Array<{ label: string; content: string }>): number {
   if (options.length >= 5) return 1;
-  if (options.length !== 4) return 1;
+  if (options.length < 2) return 1;
   const maxLen = Math.max(...options.map(option => option.content.replace(/<[^>]+>/g, '').length));
-  if (maxLen <= 12) return 4;
+  if (maxLen <= 12) return Math.min(options.length, 4);
   if (maxLen <= 28) return 2;
   return 1;
 }

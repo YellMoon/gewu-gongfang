@@ -18,7 +18,7 @@ function normalizeOption(option: any, index: number): { label: string; content: 
 function splitPackedOptions(options: Array<{ label: string; content: string }>): Array<{ label: string; content: string }> {
   if (options.length !== 1) return options;
   const raw = `${options[0].label}. ${options[0].content}`;
-  const matches = Array.from(raw.matchAll(/(?:^|\s)([A-G])[\.\u3001\uff0e\s]+([\s\S]*?)(?=\s+[A-G][\.\u3001\uff0e\s]+|$)/g));
+  const matches = Array.from(raw.matchAll(/(?:^|\s*)([A-G])[\.\u3001\uff0e\s]+([\s\S]*?)(?=\s*[A-G][\.\u3001\uff0e\s]+|$)/g));
   if (matches.length < 2) return options;
   return matches.map(match => ({
     label: match[1].toUpperCase(),
@@ -28,9 +28,9 @@ function splitPackedOptions(options: Array<{ label: string; content: string }>):
 
 function columnsForOptions(options: Array<{ label: string; content: string }>): number {
   if (options.length >= 5) return 1;
-  if (options.length !== 4) return 1;
+  if (options.length < 2) return 1;
   const maxLen = Math.max(...options.map(option => option.content.replace(/<[^>]+>/g, '').length));
-  if (maxLen <= 12) return 4;
+  if (maxLen <= 12) return Math.min(options.length, 4);
   if (maxLen <= 28) return 2;
   return 1;
 }
