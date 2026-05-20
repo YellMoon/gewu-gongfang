@@ -234,7 +234,7 @@ class BrowserDatabaseService {
       let changed = false;
       for (const c of this.data.courses) {
         if (!c.color) {
-          c.color = getColorForRoom(c.room_id);
+          c.color = getColorForRoom(c.room_id || c.room_name, this.data.rooms);
           changed = true;
         }
       }

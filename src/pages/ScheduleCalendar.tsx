@@ -11,7 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import { holidays2026, getUpcomingHolidays } from '../utils/helpers';
-import { getTextColorForBackground, DEFAULT_COURSE_COLOR } from '../utils/courseColors';
+import { buildCourseColorMap, getTextColorForBackground, DEFAULT_COURSE_COLOR } from '../utils/courseColors';
 
 dayjs.extend(weekOfYear);
 dayjs.extend(isoWeek);
@@ -1071,15 +1071,12 @@ const ScheduleCalendar: React.FC = () => {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [form] = Form.useForm();
   const [courses, setCourses] = useState<Course[]>([]);
+  const [rooms, setRooms] = useState<any[]>([]);
 
-  // 课程颜色映射（course_id → 背景色），根据上课地址自动分配
+  // 课程颜色映射（course_id → 背景色），严格根据上课地址分配：同地址同色，不同地址尽量不同色
   const courseColorMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const c of courses) {
-      if (c.id && c.color) map[c.id] = c.color;
-    }
-    return map;
-  }, [courses]);
+    return buildCourseColorMap(courses, rooms);
+  }, [courses, rooms]);
 
   const [studentEditModal, setStudentEditModal] = useState({
     open: false,
@@ -1088,7 +1085,6 @@ const ScheduleCalendar: React.FC = () => {
   const [studentEditForm] = Form.useForm();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [allStudents, setAllStudents] = useState<Student[]>([]);
-  const [rooms, setRooms] = useState<any[]>([]);
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | undefined>(undefined);
   const [teacherInitialized, setTeacherInitialized] = useState(false);
 

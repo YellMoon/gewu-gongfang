@@ -206,7 +206,7 @@ const CourseList: React.FC = () => {
       }
       // 自动根据上课地址分配课程颜色（如果用户未手动指定）
       if (!values.color) {
-        values.color = getColorForRoom(values.room_id || '');
+        values.color = getColorForRoom(values.room_id || values.room_name || '', rooms);
       }
       // 默认 active = true
       if (values.active === undefined) {
@@ -497,7 +497,7 @@ const CourseList: React.FC = () => {
                       }
                     }
                     // 自动分配课程颜色
-                    const color = getColorForRoom(lastVal);
+                    const color = getColorForRoom(lastVal, rooms);
                     form.setFieldsValue({ color });
                   }}
                   filterOption={(input, option) =>
@@ -512,7 +512,7 @@ const CourseList: React.FC = () => {
               <Form.Item noStyle shouldUpdate={(prev, cur) => prev.room_id !== cur.room_id || prev.color !== cur.color}>
                 {({ getFieldValue }) => {
                   const rid = getFieldValue('room_id');
-                  const color = getFieldValue('color') || getColorForRoom(Array.isArray(rid) ? rid[0] : rid);
+                  const color = getFieldValue('color') || getColorForRoom(Array.isArray(rid) ? rid[0] : rid, rooms);
                   return (
                     <div style={{ marginTop: -4, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                       <div style={{

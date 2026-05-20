@@ -13,6 +13,15 @@ function run(file, args, options = {}) {
   execFileSync(file, args, { stdio: 'inherit', ...options });
 }
 
+function canRun(file, args) {
+  try {
+    execFileSync(file, args, { stdio: 'ignore' });
+    return true;
+  } catch (_err) {
+    return false;
+  }
+}
+
 function ensureRuntime() {
   if (fs.existsSync(PYTHON_EXE)) return;
   fs.mkdirSync(RUNTIME_DIR, { recursive: true });
@@ -37,6 +46,7 @@ function enableSitePackages() {
 }
 
 function ensurePip() {
+  if (canRun(PYTHON_EXE, ['-m', 'pip', '--version'])) return;
   const getPip = path.join(os.tmpdir(), 'get-pip.py');
   if (!fs.existsSync(getPip)) {
     run('powershell', [
@@ -50,6 +60,10 @@ function ensurePip() {
 }
 
 function ensurePackages() {
+  if (canRun(PYTHON_EXE, ['-c', 'from docx import Document'])) {
+    console.log('[python-runtime] python-docx ok');
+    return;
+  }
   run(PYTHON_EXE, ['-m', 'pip', 'install', '--upgrade', '--no-warn-script-location', 'pip']);
   run(PYTHON_EXE, ['-m', 'pip', 'install', '--upgrade', '--no-warn-script-location', 'python-docx']);
   run(PYTHON_EXE, ['-c', 'from docx import Document; print("python-docx ok")']);
