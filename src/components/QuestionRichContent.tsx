@@ -33,7 +33,7 @@ const QuestionRichContent: React.FC<{ question: any; terms?: string[] }> = ({ qu
   const imageAssets = assets.filter((asset: any) => {
     if (asset.asset_type !== 'image') return false;
     const src = asset.oss_url || asset.data_url || asset.url;
-    return !src || !renderedContent.includes(src);
+    return !src || (!renderedContent.includes(src) && !renderedContent.includes(asset.file_name || ''));
   });
   const formulaAssets = assets.filter((asset: any) => String(asset.asset_type || '').startsWith('formula_'));
   const formulas = [
@@ -41,7 +41,7 @@ const QuestionRichContent: React.FC<{ question: any; terms?: string[] }> = ({ qu
     ...formulaAssets.filter((asset: any) => asset.asset_type !== 'formula_preview').map(formulaFromAsset),
   ]
     .map(formula => ({ raw: formula, text: formulaText(formula) }))
-    .filter(item => item.text && !/^[a-zA-Z0-9_]+omml$/.test(item.text));
+    .filter(item => item.text && item.raw?.format !== 'omml' && !/^[a-zA-Z0-9_]+omml$/.test(item.text));
 
   if (imageAssets.length === 0 && formulas.length === 0) return null;
 

@@ -60,6 +60,15 @@
   line-height: 1.8;
 }
 
+.qb-card-footer-actions {
+  flex: 0 0 auto;
+}
+
+.qb-edit-button {
+  border-radius: 999px;
+  height: 34px;
+}
+
 .qb-basket-button {
   flex: 0 0 auto;
   border-radius: 999px;

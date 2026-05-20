@@ -381,22 +381,30 @@ export function applyPhysicsNotationToHTML(html: string): string {
 
   const processText = (text: string) => {
     const protectedUnits: string[] = [];
+    const italicTokens: string[] = [];
     let next = text.replace(numberUnitRe, (_match, number: string, space: string = '', unit: string) => {
       const token = `@@PHYSICS_UNIT_${protectedUnits.length}@@`;
       protectedUnits.push(`<span class="physics-unit">${unit}</span>`);
       return `${number}${space || ''}${token}`;
     });
 
-    for (const sym of latinSymbols) {
-      const regex = new RegExp(`(^|[^A-Za-z\\d_>])(${escapeRegex(sym)})(?![A-Za-z\\d_<])`, 'g');
-      next = next.replace(regex, `$1<i>$2</i>`);
-    }
-    for (const sym of greekSymbols) {
-      const regex = new RegExp(`(^|[^\\w>])(${escapeRegex(sym)})(?![\\w<])`, 'g');
-      next = next.replace(regex, `$1<i>$2</i>`);
-    }
+    next = next.replace(/(^|[^A-Za-z\d_])([A-Za-z])(?![A-Za-z\d_])/g, (match, prefix: string, sym: string) => {
+      if (!latinSymbols.includes(sym)) return match;
+      const token = `@@PHYSICS_ITALIC_${italicTokens.length}@@`;
+      italicTokens.push(`<i>${sym}</i>`);
+      return `${prefix}${token}`;
+    });
 
-    return next.replace(/@@PHYSICS_UNIT_(\d+)@@/g, (_token, index) => protectedUnits[Number(index)] || '');
+    const greekPattern = greekSymbols.map(escapeRegex).join('|');
+    next = next.replace(new RegExp(`(^|[^\\w])(${greekPattern})(?![\\w])`, 'g'), (match, prefix: string, sym: string) => {
+      const token = `@@PHYSICS_ITALIC_${italicTokens.length}@@`;
+      italicTokens.push(`<i>${sym}</i>`);
+      return `${prefix}${token}`;
+    });
+
+    return next
+      .replace(/@@PHYSICS_ITALIC_(\d+)@@/g, (_token, index) => italicTokens[Number(index)] || '')
+      .replace(/@@PHYSICS_UNIT_(\d+)@@/g, (_token, index) => protectedUnits[Number(index)] || '');
   };
 
   return html

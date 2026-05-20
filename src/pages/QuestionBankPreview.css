@@ -8,27 +8,25 @@
 
 .qb-preview-sidebar .ant-card,
 .qb-preview-tree-card {
-  height: 100%;
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.88);
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
   backdrop-filter: blur(18px);
+  transition: border-color 0.22s ease, box-shadow 0.22s ease, transform 0.22s ease;
 }
 
 .qb-preview-sidebar {
   position: sticky;
-  top: 76px;
+  top: 62px;
   align-self: flex-start;
-  max-height: calc(100vh - 96px);
   transition: flex-basis 0.24s ease, max-width 0.24s ease, opacity 0.2s ease, transform 0.24s ease;
 }
 
 .qb-preview-sidebar .ant-card-body {
-  max-height: calc(100vh - 164px);
-  overflow: hidden;
   display: flex;
   flex-direction: column;
+  overflow: visible;
 }
 
 .qb-preview-main {
@@ -155,11 +153,31 @@
 }
 
 .knowledge-tree {
-  min-height: 0;
-  max-height: 36vh;
-  overflow: auto;
   padding-right: 4px;
-  transition: max-height 0.24s ease, opacity 0.2s ease;
+  overflow: visible;
+  transition: opacity 0.24s ease, transform 0.24s ease;
+}
+
+.knowledge-tree .ant-tree-treenode {
+  transition: background-color 0.18s ease, transform 0.18s ease, opacity 0.18s ease;
+}
+
+.knowledge-tree .ant-tree-treenode-motion {
+  overflow: hidden;
+  transition: height 0.32s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.24s ease !important;
+}
+
+.knowledge-tree .ant-tree-switcher {
+  transition: transform 0.22s ease, color 0.18s ease;
+}
+
+.knowledge-tree .ant-tree-switcher_open {
+  transform: rotate(90deg);
+}
+
+.knowledge-tree .ant-tree-list-holder,
+.knowledge-tree .ant-tree-list-holder-inner {
+  overflow: visible !important;
 }
 
 .qb-tree-section-title {
