@@ -355,6 +355,26 @@ def _image_tag(asset):
 def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_object=False, inline_assets=None):
     parts = []
     inline_assets = inline_assets if inline_assets is not None else []
+
+    def direct_text_outside_graphics(run, tag_name):
+        try:
+            safe_run = ET.fromstring(_xml_bytes(run))
+        except Exception:
+            safe_run = run
+
+        def remove_graphic_children(node):
+            for child in list(node):
+                if _local_name(child) in ("drawing", "pict", "object"):
+                    node.remove(child)
+                else:
+                    remove_graphic_children(child)
+
+        remove_graphic_children(safe_run)
+        values = []
+        for node in safe_run.findall(".//w:%s" % tag_name, ns):
+            values.append(node.text or "")
+        return "".join(values)
+
     for child in list(paragraph):
         tag = child.tag.rsplit("}", 1)[-1]
         if tag == "r":
@@ -377,8 +397,8 @@ def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_
                 math_text = _math_text(math_node).strip()
                 if math_text:
                     parts.append(math_text)
-            run_text = "".join(node.text or "" for node in child.findall(".//w:t", ns))
-            instr_text = "".join(node.text or "" for node in child.findall(".//w:instrText", ns))
+            run_text = direct_text_outside_graphics(child, "t")
+            instr_text = direct_text_outside_graphics(child, "instrText")
             text = run_text or instr_text
             if not text:
                 continue

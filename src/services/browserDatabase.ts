@@ -64,6 +64,7 @@ const QUESTION_VERSION_LIMIT = 20;
 
 class BrowserDatabaseService {
   private storageKey = 'scheduling_system_db_v3';
+  private questionSearchIndex = new Map<string, string>();
   private data: Database = {
     students: [],
     grades: [],
@@ -137,6 +138,7 @@ class BrowserDatabaseService {
     this.migrateLegacyTagData();
     this.migrateQuestionVersionData();
     this.migrateImportTaskData();
+    this.rebuildQuestionIndexes();
     // 自动清理：修复课程时间 > 24:00 的坏数据
     this.data.schedules = (this.data.schedules || []).map(s => {
       if (!s) return s;
@@ -243,6 +245,7 @@ class BrowserDatabaseService {
   }
 
   private saveData(): void {
+    this.rebuildQuestionIndexes();
     try {
       localStorage.setItem(this.storageKey, JSON.stringify(this.data));
     } catch (error) {
@@ -276,6 +279,36 @@ class BrowserDatabaseService {
 
   private generateId(): string {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
+  }
+
+  private questionIndexText(question: Partial<Question>): string {
+    const plain = (value: any) => String(value || '')
+      .replace(/<img\b[^>]*>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\$\$[\s\S]*?\$\$|\$[^$]*?\$/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return [
+      question.content,
+      question.answer,
+      question.analysis,
+      question.source,
+      question.exam_type,
+      question.region,
+      question.school,
+      question.year,
+      ...(Array.isArray(question.options) ? question.options : []),
+      ...(Array.isArray(question.knowledge_ids) ? question.knowledge_ids : []),
+      ...(Array.isArray(question.model_ids) ? question.model_ids : []),
+    ].map(plain).filter(Boolean).join('\n').toLowerCase();
+  }
+
+  private rebuildQuestionIndexes(): void {
+    const next = new Map<string, string>();
+    for (const question of this.data.questions || []) {
+      if (question?.id) next.set(question.id, this.questionIndexText(question));
+    }
+    this.questionSearchIndex = next;
   }
 
   private detectQuestionHasFormula(question: Partial<Question>): boolean {
@@ -1253,6 +1286,13 @@ class BrowserDatabaseService {
     });
     if (this.data.questions.length !== before) this.saveData();
     return this.data.questions.filter(q => !(q as any).deleted);
+  }
+
+  getQuestionSearchText(id: string): string {
+    const cached = this.questionSearchIndex.get(id);
+    if (cached !== undefined) return cached;
+    const question = this.data.questions.find(item => item.id === id);
+    return question ? this.questionIndexText(question) : '';
   }
 
   getDeletedQuestions(): Question[] {

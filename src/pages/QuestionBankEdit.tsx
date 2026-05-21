@@ -105,6 +105,10 @@ const QuestionBankEdit: React.FC = () => {
     setLoading(true);
     const db = (window as any).dbService;
     const localQuestions = db?.getAllQuestions?.()?.map(normalizeQuestion) || [];
+    setQuestions(localQuestions.filter(isPendingEditQuestion));
+    setKnowledgeNodes(db?.getKnowledgeTree?.() || []);
+    setModelNodes(db?.getModelTree?.() || []);
+    setLoading(false);
     try {
       const res = await fetch(`${API_BASE}/questions?limit=500`);
       const data = await res.json();
@@ -117,9 +121,6 @@ const QuestionBankEdit: React.FC = () => {
     } catch (_err) {
       setQuestions(localQuestions.filter(isPendingEditQuestion));
     }
-    setKnowledgeNodes(db?.getKnowledgeTree?.() || []);
-    setModelNodes(db?.getModelTree?.() || []);
-    setLoading(false);
   }, []);
 
   const loadTrash = useCallback(async () => {

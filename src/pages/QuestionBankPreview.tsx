@@ -317,8 +317,9 @@ const QuestionBankPreview: React.FC = () => {
     if (searchTerms.length > 0) {
       const knowledgeNames = (q.knowledge_ids || []).map(getNodeName).join(' ');
       const modelNames = (q.model_ids || []).map(getModelName).join(' ');
+      const indexedText = dbService?.getQuestionSearchText?.(q.id);
       const haystack = [
-        q.content,
+        indexedText || q.content,
         q.answer,
         q.analysis,
         knowledgeNames,

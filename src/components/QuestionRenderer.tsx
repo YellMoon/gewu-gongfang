@@ -199,6 +199,12 @@ function normalizePhysicsHtml(html: string): string {
     protectedImages.push(match);
     return token;
   });
+  const stripGraphicPathNoise = (value: string) => value
+    .replace(/\bM\s*-?\d+(?:\.\d+)?(?:[\s,]*[hlvcsmqtazHLVCSMQTAZ]?-?\d+(?:\.\d+)?){4,}\s*z?\b/g, '')
+    .replace(/\b-?\d+(?:\.\d+)?(?:\s*[,，]\s*-?\d+(?:\.\d+)?){5,}\b/g, '')
+    .replace(/\b(?:[mMlLhHvVcCsSqQtTaAzZ]\s*-?\d+(?:\.\d+)?(?:\s+|-|,)){4,}[mMlLhHvVcCsSqQtTaAzZ]?\b/g, '')
+    .replace(/\b\d+(?:\.\d+)?\s+\d+h\d+v\d+h-\d+z\b/gi, '')
+    .replace(/[ \t]{2,}/g, ' ');
   const unitCore = '(?:kg|mol|cd|rad|sr|Hz|Pa|J|Wb|W|C|V|F|T|H|N|A|K|m|s|L|eV|MeV|GeV|min|h|Ω)';
   const unitToken = `(?:[YZEPTGMkhdcmμunpfa]?${unitCore})`;
   const unitExpr = `${unitToken}(?:\\s*(?:[·⋅*/\\\\/]|<sup>-?\\d+</sup>|\\^?-?\\d+)\\s*${unitToken})*`;
@@ -217,7 +223,7 @@ function normalizePhysicsHtml(html: string): string {
     (_match, prefix, body) => prefix + body.replace(/<\/?i>/g, '')
   );
 
-  return restoreUnits(imageSafeHtml)
+  return restoreUnits(stripGraphicPathNoise(imageSafeHtml))
     .replace(/<i>k<\/i><i>g<\/i>/g, 'kg')
     .replace(/<i>(N|Pa|J|W|C|V|F|T|H|A|K|Hz|Ω)<\/i>(?=(?:<sup>|[·⋅.*/\/]))/g, '$1')
     .replace(/(?<=[·⋅.*/\/])<i>(m|s|g|A|K|mol|cd|rad|Hz|N|Pa|J|W|C|V|F|T|H|Ω)<\/i>/g, '$1')
