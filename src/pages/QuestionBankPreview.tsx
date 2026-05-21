@@ -2,7 +2,7 @@
 import {
   Card, Button, Modal, Form, Input, Select as AntSelect, Space, Tag, message,
   Popconfirm, Tooltip, Tree, Divider, Badge, Checkbox, Dropdown, Menu, Empty, Row, Col, Typography, Drawer,
-  Pagination, InputNumber
+  Pagination
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, CopyOutlined,
@@ -174,7 +174,6 @@ const QuestionBankPreview: React.FC = () => {
   const [versions, setVersions] = useState<QuestionVersion[]>([]);
   const [treeVisible, setTreeVisible] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
-  const [questionZoom, setQuestionZoom] = useState(1);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingNodeName, setEditingNodeName] = useState('');
   const [addingChildParentId, setAddingChildParentId] = useState<string | null | '__ROOT__'>(null);
@@ -352,6 +351,11 @@ const QuestionBankPreview: React.FC = () => {
   useEffect(() => {
     setCurrentPage(1);
   }, [appliedSearchText, filterSubjects, filterTypes, filterExamTypes, filterGrades, filterSemesters, filterYear, filterDifficulties, filterStatuses, basketOnly, sourceFilter, activeKnowledgeIds.join(','), activeModelIds.join(','), expandedExcludeIds.join(',')]);
+
+  const jumpToQuestionPage = useCallback((page: number) => {
+    setCurrentPage(page);
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  }, []);
 
   const handleCreateKnowledgeNode = useCallback((name: string, parentId?: string | null) => {
     const db = (window as any).dbService;
@@ -1158,24 +1162,9 @@ const QuestionBankPreview: React.FC = () => {
           {/* Table */}
           <div className="qb-question-display-toolbar">
             <Text type="secondary">共 {questionTotal} 题，第 {safeCurrentPage}/{totalPages} 页</Text>
-            <Space>
-              <Button onClick={() => setQuestionZoom(zoom => Math.max(0.75, Number((zoom - 0.1).toFixed(2))))}>缩小</Button>
-              <InputNumber
-                min={75}
-                max={160}
-                step={5}
-                value={Math.round(questionZoom * 100)}
-                formatter={value => `${value}%`}
-                parser={value => Number(String(value || '').replace('%', ''))}
-                onChange={value => setQuestionZoom(Math.min(1.6, Math.max(0.75, Number(value || 100) / 100)))}
-                style={{ width: 90 }}
-              />
-              <Button onClick={() => setQuestionZoom(1)}>100%</Button>
-              <Button onClick={() => setQuestionZoom(zoom => Math.min(1.6, Number((zoom + 0.1).toFixed(2))))}>放大</Button>
-            </Space>
           </div>
           <div className="qb-question-display-viewport">
-            <div className="qb-question-display-stage" style={{ zoom: questionZoom } as React.CSSProperties}>
+            <div className="qb-question-display-stage">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {questionTotal === 0 && !pageLoading ? <Empty description="暂无试题" /> : visibleFiltered.map((q, idx) => {
               const inBasket = basketIds.includes(q.id);
@@ -1205,7 +1194,7 @@ const QuestionBankPreview: React.FC = () => {
                 showSizeChanger={false}
                 showQuickJumper
                 showTotal={total => `共 ${total} 题`}
-                onChange={page => setCurrentPage(page)}
+                onChange={jumpToQuestionPage}
               />
             </div>
           )}

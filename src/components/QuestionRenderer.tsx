@@ -80,6 +80,8 @@ function cleanLatexInput(latex: string): string {
     .replace(/&lt;(\/?)(i|sub|sup|b|strong|em)&gt;/gi, '')
     .replace(/&nbsp;/gi, ' ')
     .replace(/−/g, '-')
+    .replace(/－/g, '-')
+    .replace(/＋/g, '+')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -100,12 +102,31 @@ function renderInlineLatex(latex: string): string {
   }
 }
 
+function legacyLatexPlaceholder(latex: string): string {
+  return `<span class="legacy-latex" data-latex="${encodeURIComponent(latex)}"></span>`;
+}
+
 function findBalancedGroup(input: string, openIndex: number): { value: string; end: number } | null {
   if (input[openIndex] !== '{') return null;
   let depth = 0;
   for (let i = openIndex; i < input.length; i++) {
     if (input[i] === '{') depth++;
     if (input[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        return { value: input.slice(openIndex + 1, i), end: i + 1 };
+      }
+    }
+  }
+  return null;
+}
+
+function findBalancedParen(input: string, openIndex: number): { value: string; end: number } | null {
+  if (input[openIndex] !== '(') return null;
+  let depth = 0;
+  for (let i = openIndex; i < input.length; i++) {
+    if (input[i] === '(') depth++;
+    if (input[i] === ')') {
       depth--;
       if (depth === 0) {
         return { value: input.slice(openIndex + 1, i), end: i + 1 };
@@ -128,13 +149,13 @@ function convertLegacyLatexFragments(content: string): string {
     const nameStart = hasSlash ? commandStart + 1 : commandStart;
     const name = source.startsWith('dfrac', nameStart) ? 'dfrac' : source.startsWith('frac', nameStart) ? 'frac' : source.startsWith('sqrt', nameStart) ? 'sqrt' : '';
 
-    if (name && canStartCommand(commandStart)) {
+    if (name && (canStartCommand(commandStart) || (name === 'sqrt' && commandStart > 0 && /\d/.test(source[commandStart - 1])))) {
       const afterName = nameStart + name.length;
       const first = findBalancedGroup(source, afterName);
       if (first) {
         if (name === 'sqrt') {
           const end = source[first.end] === '$' && hasDollar ? first.end + 1 : first.end;
-          output += renderInlineLatex(`\\sqrt{${first.value}}`);
+          output += legacyLatexPlaceholder(`\\sqrt{${first.value}}`);
           i = end;
           continue;
         }
@@ -142,6 +163,15 @@ function convertLegacyLatexFragments(content: string): string {
         if (second) {
           const end = source[second.end] === '$' && hasDollar ? second.end + 1 : second.end;
           output += `<span class="omml-frac"><span class="omml-frac-num">${convertLegacyLatexFragments(first.value)}</span><span class="omml-frac-den">${convertLegacyLatexFragments(second.value)}</span></span>`;
+          i = end;
+          continue;
+        }
+      }
+      if (name === 'sqrt') {
+        const paren = findBalancedParen(source, afterName);
+        if (paren) {
+          const end = source[paren.end] === '$' && hasDollar ? paren.end + 1 : paren.end;
+          output += legacyLatexPlaceholder(`\\sqrt{${paren.value}}`);
           i = end;
           continue;
         }
@@ -199,6 +229,12 @@ function normalizePhysicsHtml(html: string): string {
     protectedImages.push(match);
     return token;
   });
+  const protectedLegacyLatex: string[] = [];
+  const safeHtml = imageSafeHtml.replace(/<span class="legacy-latex" data-latex="[^"]*"><\/span>/gi, match => {
+    const token = `@@QUESTION_LEGACY_LATEX_${protectedLegacyLatex.length}@@`;
+    protectedLegacyLatex.push(match);
+    return token;
+  });
   const stripGraphicPathNoise = (value: string) => value
     .replace(/\bM\s*-?\d+(?:\.\d+)?(?:[\s,]*[hlvcsmqtazHLVCSMQTAZ]?-?\d+(?:\.\d+)?){4,}\s*z?\b/g, '')
     .replace(/\b-?\d+(?:\.\d+)?(?:\s*[,，]\s*-?\d+(?:\.\d+)?){5,}\b/g, '')
@@ -223,7 +259,7 @@ function normalizePhysicsHtml(html: string): string {
     (_match, prefix, body) => prefix + body.replace(/<\/?i>/g, '')
   );
 
-  return restoreUnits(stripGraphicPathNoise(imageSafeHtml))
+  return restoreUnits(stripGraphicPathNoise(safeHtml))
     .replace(/<i>k<\/i><i>g<\/i>/g, 'kg')
     .replace(/<i>(N|Pa|J|W|C|V|F|T|H|A|K|Hz|Ω)<\/i>(?=(?:<sup>|[·⋅.*/\/]))/g, '$1')
     .replace(/(?<=[·⋅.*/\/])<i>(m|s|g|A|K|mol|cd|rad|Hz|N|Pa|J|W|C|V|F|T|H|Ω)<\/i>/g, '$1')
@@ -247,12 +283,19 @@ function normalizePhysicsHtml(html: string): string {
     .replace(new RegExp(`<sub>(\\d+)<\\/sub>\\s*<sup>(\\d+)<\\/sup>\\s*(?:<i>)?(${elementPattern})(?:<\\/i>)?`, 'g'), '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$2</sup><sub>$1</sub></span><span class="nuclear-core">$3</span></span>')
     .replace(new RegExp(`(?<=\\d)\\s*(${unitExpr})`, 'g'), '<span class="physics-unit"> $1</span>')
     .replace(/(?<![A-Za-z])([A-Za-zα-ωΑ-Ω])([0-9]+)(?![0-9A-Za-z]|\.(?:png|jpe?g|gif|webp|svg))/gi, '$1<sub>$2</sub>')
-    .replace(/(?<![A-Za-z])([A-Za-z])([xyzXYZ])(?![0-9A-Za-z])/g, '$1<sub>$2</sub>')
+    .replace(/(?<![A-Za-z])(?!H[zZ](?![0-9A-Za-z]))([A-Za-z])([xyzXYZ])(?![0-9A-Za-z])/g, '$1<sub>$2</sub>')
+    .replace(/@@QUESTION_LEGACY_LATEX_(\d+)@@/g, (_match, index) => protectedLegacyLatex[Number(index)] || '')
     .replace(/@@QUESTION_IMAGE_(\d+)@@/g, (_match, index) => protectedImages[Number(index)] || '');
 }
 
 function processHtmlSegment(html: string): string {
-  return normalizePhysicsHtml(html).replace(/\$([^$]+?)\$/g, (_match, latex) => {
+  return normalizePhysicsHtml(html).replace(/<span class="legacy-latex" data-latex="([^"]*)"><\/span>/g, (_match, latex) => {
+    try {
+      return renderInlineLatex(decodeURIComponent(latex));
+    } catch {
+      return renderInlineLatex(latex);
+    }
+  }).replace(/\$([^$]+?)\$/g, (_match, latex) => {
     const normalizedLatex = cleanLatexInput(latex);
     try {
       return katex.renderToString(normalizedLatex, createKaTeXPhysicsOptions(false));

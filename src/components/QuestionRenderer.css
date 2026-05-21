@@ -190,6 +190,22 @@
   transition: opacity 0.18s ease, transform 0.18s ease;
 }
 
+.question-content,
+.question-answer-row strong,
+.question-answer-hint,
+.question-expand-hint {
+  font-family: var(--app-font-family, 'Alibaba PuHuiTi 3.0', 'Alibaba PuHuiTi', 'PingFang SC', 'Microsoft YaHei', sans-serif);
+}
+
+.question-option-label {
+  font-weight: 400;
+}
+
+.question-answer-drawer.open {
+  max-height: none;
+  overflow: visible;
+}
+
 .question-stem-wrapper.has-drawer:hover .question-expand-hint {
   opacity: 1;
   transform: translateY(0);

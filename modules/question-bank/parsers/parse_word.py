@@ -26,7 +26,7 @@ OPTION_RE = re.compile(r"^([A-G])[\.\u3001\uff0e]\s*(.*)", re.I)
 SUB_QUESTION_RE = re.compile(r"^(?:[\(\uff08](\d+)[\)\uff09]|([\u2460\u2461\u2462\u2463\u2464\u2465\u2466\u2467\u2468\u2469]))\s*(.*)")
 EXAM_SECTION_RE = re.compile(r"^[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341]+[\u3001\uff0e\.\s]*(\u5355\u9009\u9898|\u591a\u9009\u9898|\u9009\u62e9\u9898|\u5b9e\u9a8c\u9898|\u89e3\u7b54\u9898|\u7efc\u5408\u9898|\u586b\u7a7a\u9898)")
 ANSWER_TITLE_RE = re.compile(r"^(?:\u300a.*?\u300b\s*)?(?:\u53c2\u8003\u7b54\u6848|\u7b54\u6848\u4e0e\u89e3\u6790|\u7b54\u6848\u53ca\u89e3\u6790|\u7b54\u6848)")
-ANALYSIS_MARK_RE = re.compile(r"\u3010(?:\u8be6\u89e3|\u89e3\u6790)\u3011")
+ANALYSIS_MARK_RE = re.compile(r"\u3010(?!\u7b54\u6848)[^】]+\u3011")
 
 
 def extract_question_number(text):
@@ -165,8 +165,27 @@ def extract_numbered_items(doc, file_path):
     return items
 
 
+def normalize_operator_symbols(text):
+    if not text:
+        return ""
+    protected_tags = []
+
+    def protect_tag(match):
+        token = "@@HTML_TAG_%d@@" % len(protected_tags)
+        protected_tags.append(match.group(0))
+        return token
+
+    value = re.sub(r"<[^>]+>", protect_tag, text)
+    value = value.replace("\u2212", "\uff0d").replace("+", "\uff0b").replace("-", "\uff0d")
+    return re.sub(
+        r"@@HTML_TAG_(\d+)@@",
+        lambda m: protected_tags[int(m.group(1))] if int(m.group(1)) < len(protected_tags) else "",
+        value,
+    )
+
+
 def clean_word_text(text):
-    return re.sub(r"[\f\v]+", "", text or "").strip()
+    return normalize_operator_symbols(re.sub(r"[\f\v]+", "", text or "").strip())
 
 
 def _xml_bytes(node):
@@ -627,10 +646,9 @@ def extract_sub_question(text):
     match = SUB_QUESTION_RE.match(text)
     if match:
         if match.group(1):
-            return int(match.group(1)), match.group(3).strip()
+            return "(%s)" % int(match.group(1)), match.group(3).strip()
         circled = match.group(2)
-        number = "\u2460\u2461\u2462\u2463\u2464\u2465\u2466\u2467\u2468\u2469".find(circled) + 1
-        return number, match.group(3).strip()
+        return circled, match.group(3).strip()
     return None, text
 
 
@@ -820,10 +838,10 @@ def parse_question_block(paragraphs, default_topic=None):
             else:
                 current["options"].append({"label": option, "content": option_content, "is_correct": False})
             continue
-        sub_number, sub_content = extract_sub_question(text)
-        if sub_number:
-            current["sub_questions"].append({"title": f"({sub_number})", "content": sub_content, "answer": ""})
-            current["stem"] = (current["stem"] + "\n" + f"({sub_number}) {sub_content}").strip()
+        sub_label, sub_content = extract_sub_question(text)
+        if sub_label:
+            current["sub_questions"].append({"title": sub_label, "content": sub_content, "answer": ""})
+            current["stem"] = (current["stem"] + "\n" + f"{sub_label} {sub_content}").strip()
             continue
         append_text(current, text)
     if current:
@@ -944,10 +962,10 @@ def parse_exam_question_block(paragraphs):
             else:
                 current["options"].append({"label": option, "content": option_content, "is_correct": False})
             continue
-        sub_number, sub_content = extract_sub_question(text)
-        if sub_number:
-            current["sub_questions"].append({"title": f"({sub_number})", "content": sub_content, "answer": ""})
-            current["stem"] = (current["stem"] + "\n" + f"({sub_number}) {sub_content}").strip()
+        sub_label, sub_content = extract_sub_question(text)
+        if sub_label:
+            current["sub_questions"].append({"title": sub_label, "content": sub_content, "answer": ""})
+            current["stem"] = (current["stem"] + "\n" + f"{sub_label} {sub_content}").strip()
             continue
         append_text(current, text)
     if current:
@@ -1013,10 +1031,10 @@ def parse_lecture_numbered_items(items, default_topic=None):
             else:
                 current["options"].append({"label": option, "content": option_content, "is_correct": False})
             continue
-        sub_number, sub_content = extract_sub_question(text)
-        if sub_number:
-            current["sub_questions"].append({"title": f"({sub_number})", "content": sub_content, "answer": ""})
-            current["stem"] = (current["stem"] + "\n" + f"({sub_number}) {sub_content}").strip()
+        sub_label, sub_content = extract_sub_question(text)
+        if sub_label:
+            current["sub_questions"].append({"title": sub_label, "content": sub_content, "answer": ""})
+            current["stem"] = (current["stem"] + "\n" + f"{sub_label} {sub_content}").strip()
             continue
         append_text(current, text)
 

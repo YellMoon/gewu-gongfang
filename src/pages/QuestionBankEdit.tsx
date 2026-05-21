@@ -92,7 +92,6 @@ const QuestionBankEdit: React.FC = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [trashPage, setTrashPage] = useState(1);
-  const [questionZoom, setQuestionZoom] = useState(1);
   const [imageFiles, setImageFiles] = useState<UploadFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [trashVisible, setTrashVisible] = useState(false);
@@ -159,6 +158,11 @@ const QuestionBankEdit: React.FC = () => {
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
+
+  const jumpToQuestionPage = useCallback((page: number) => {
+    setCurrentPage(page);
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  }, []);
 
   const refreshQuestionPage = useCallback(async () => {
     if (!localStoreReady) return;
@@ -425,19 +429,6 @@ const QuestionBankEdit: React.FC = () => {
           </Space>
           <Space wrap>
             <Text type="secondary">共 {questionTotal} 题，第 {safeCurrentPage}/{totalPages} 页</Text>
-            <Button onClick={() => setQuestionZoom(zoom => Math.max(0.75, Number((zoom - 0.1).toFixed(2))))}>缩小</Button>
-            <InputNumber
-              min={75}
-              max={160}
-              step={5}
-              value={Math.round(questionZoom * 100)}
-              formatter={value => `${value}%`}
-              parser={value => Number(String(value || '').replace('%', ''))}
-              onChange={value => setQuestionZoom(Math.min(1.6, Math.max(0.75, Number(value || 100) / 100)))}
-              style={{ width: 90 }}
-            />
-            <Button onClick={() => setQuestionZoom(1)}>100%</Button>
-            <Button onClick={() => setQuestionZoom(zoom => Math.min(1.6, Number((zoom + 0.1).toFixed(2))))}>放大</Button>
           </Space>
           </div>
         </Card>
@@ -447,7 +438,7 @@ const QuestionBankEdit: React.FC = () => {
         ) : (
           <Space direction="vertical" size={10} style={{ width: '100%' }}>
             <div style={{ width: '100%', overflowX: 'auto', paddingBottom: 6 }}>
-              <div style={{ minWidth: '100%', zoom: questionZoom } as React.CSSProperties}>
+              <div style={{ minWidth: '100%' }}>
                 <Space direction="vertical" size={10} style={{ width: '100%' }}>
             {visibleQuestions.map((question, index) => (
               <QuestionPreviewCard
@@ -474,7 +465,7 @@ const QuestionBankEdit: React.FC = () => {
                 showSizeChanger={false}
                 showQuickJumper
                 showTotal={total => `共 ${total} 题`}
-                onChange={page => setCurrentPage(page)}
+                onChange={jumpToQuestionPage}
               />
             </div>
             {false && (

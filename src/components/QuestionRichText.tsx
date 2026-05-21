@@ -21,7 +21,7 @@ function sanitizeRichText(value: React.ReactNode, terms: string[] = []): string 
 
   html = html
     .replace(/([A-Za-zα-ωΑ-Ω])([0-9]+)(?![0-9A-Za-z])/g, '$1<sub>$2</sub>')
-    .replace(/([A-Za-z])([xyzXYZ])(?![0-9A-Za-z])/g, '$1<sub>$2</sub>');
+    .replace(/(?!H[zZ](?![0-9A-Za-z]))([A-Za-z])([xyzXYZ])(?![0-9A-Za-z])/g, '$1<sub>$2</sub>');
 
   const activeTerms = Array.from(new Set((terms || []).map(item => String(item || '').trim()).filter(Boolean)));
   if (activeTerms.length > 0) {
