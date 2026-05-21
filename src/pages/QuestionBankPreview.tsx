@@ -1,7 +1,8 @@
 ﻿import React, { useState, useEffect, useCallback } from 'react';
 import {
   Card, Button, Modal, Form, Input, Select as AntSelect, Space, Tag, message,
-  Popconfirm, Tooltip, Tree, Divider, Badge, Checkbox, Dropdown, Menu, Empty, Row, Col, Typography, Drawer
+  Popconfirm, Tooltip, Tree, Divider, Badge, Checkbox, Dropdown, Menu, Empty, Row, Col, Typography, Drawer,
+  Pagination, InputNumber
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, CopyOutlined,
@@ -25,6 +26,7 @@ const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
 const API_BASE = getApiBase('/api/question-bank');
+const QUESTION_PAGE_SIZE = 10;
 const KATEX_EXPORT_CSS = `
 .katex{font:normal 1.21em "KaTeX_Main","Times New Roman",serif;line-height:1.2;text-rendering:auto}
 .katex .base{position:relative;white-space:nowrap;width:min-content;display:inline-block}
@@ -161,7 +163,8 @@ const QuestionBankPreview: React.FC = () => {
   const [editing, setEditing] = useState<Question | null>(null);
   const [versions, setVersions] = useState<QuestionVersion[]>([]);
   const [treeVisible, setTreeVisible] = useState(true);
-  const [visibleCount, setVisibleCount] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [questionZoom, setQuestionZoom] = useState(1);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingNodeName, setEditingNodeName] = useState('');
   const [addingChildParentId, setAddingChildParentId] = useState<string | null | '__ROOT__'>(null);
@@ -358,10 +361,12 @@ const QuestionBankPreview: React.FC = () => {
     }
     return rows;
   }, []);
-  const visibleFiltered = dedupedFiltered.slice(0, visibleCount);
+  const totalPages = Math.max(1, Math.ceil(dedupedFiltered.length / QUESTION_PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const visibleFiltered = dedupedFiltered.slice((safeCurrentPage - 1) * QUESTION_PAGE_SIZE, safeCurrentPage * QUESTION_PAGE_SIZE);
 
   useEffect(() => {
-    setVisibleCount(10);
+    setCurrentPage(1);
   }, [appliedSearchText, filterSubjects, filterTypes, filterExamTypes, filterGrades, filterSemesters, filterYear, filterDifficulties, filterStatuses, basketOnly, sourceFilter, activeKnowledgeIds.join(','), activeModelIds.join(','), expandedExcludeIds.join(',')]);
 
   const handleCreateKnowledgeNode = useCallback((name: string, parentId?: string | null) => {
@@ -1167,14 +1172,34 @@ const QuestionBankPreview: React.FC = () => {
           )}
 
           {/* Table */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="qb-question-display-toolbar">
+            <Text type="secondary">共 {dedupedFiltered.length} 题，第 {safeCurrentPage}/{totalPages} 页</Text>
+            <Space>
+              <Button onClick={() => setQuestionZoom(zoom => Math.max(0.75, Number((zoom - 0.1).toFixed(2))))}>缩小</Button>
+              <InputNumber
+                min={75}
+                max={160}
+                step={5}
+                value={Math.round(questionZoom * 100)}
+                formatter={value => `${value}%`}
+                parser={value => Number(String(value || '').replace('%', ''))}
+                onChange={value => setQuestionZoom(Math.min(1.6, Math.max(0.75, Number(value || 100) / 100)))}
+                style={{ width: 90 }}
+              />
+              <Button onClick={() => setQuestionZoom(1)}>100%</Button>
+              <Button onClick={() => setQuestionZoom(zoom => Math.min(1.6, Number((zoom + 0.1).toFixed(2))))}>放大</Button>
+            </Space>
+          </div>
+          <div className="qb-question-display-viewport">
+            <div className="qb-question-display-stage" style={{ zoom: questionZoom } as React.CSSProperties}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {dedupedFiltered.length === 0 ? <Empty description="暂无试题" /> : visibleFiltered.map((q, idx) => {
               const inBasket = basketIds.includes(q.id);
               return (
                 <QuestionPreviewCard
                   key={q.id}
                   question={q}
-                  index={idx}
+                  index={(safeCurrentPage - 1) * QUESTION_PAGE_SIZE + idx}
                   terms={searchTerms}
                   knowledgeNames={(q.knowledge_ids || []).map(getNodeName)}
                   modelNames={(q.model_ids || []).map(getModelName)}
@@ -1184,12 +1209,22 @@ const QuestionBankPreview: React.FC = () => {
                 />
               );
             })}
-            {dedupedFiltered.length > visibleFiltered.length && (
-              <Button block onClick={() => setVisibleCount(count => count + 10)}>
-                加载更多（已显示 {visibleFiltered.length}/{dedupedFiltered.length}）
-              </Button>
-            )}
+              </div>
+            </div>
           </div>
+          {dedupedFiltered.length > 0 && (
+            <div className="qb-question-pagination">
+              <Pagination
+                current={safeCurrentPage}
+                total={dedupedFiltered.length}
+                pageSize={QUESTION_PAGE_SIZE}
+                showSizeChanger={false}
+                showQuickJumper
+                showTotal={total => `共 ${total} 题`}
+                onChange={page => setCurrentPage(page)}
+              />
+            </div>
+          )}
         </Card>
       </Col>
 

@@ -315,6 +315,43 @@ def _asset_from_run_rel(archive, rels, rid, has_ole_object=False):
     return _asset_from_part(archive, rel.get("target") if rel else "", "formula_preview" if has_ole_object else "image", rid, rel.get("type") if rel else "")
 
 
+EMU_PER_PIXEL = 9525
+
+
+def _display_size_from_container(container, ns):
+    extent = container.find(".//wp:extent", ns) if "wp" in ns else None
+    if extent is not None:
+        try:
+            width = round(int(extent.attrib.get("cx", "0")) / EMU_PER_PIXEL)
+            height = round(int(extent.attrib.get("cy", "0")) / EMU_PER_PIXEL)
+            if width > 0 and height > 0:
+                return {"display_width": width, "display_height": height}
+        except Exception:
+            pass
+    shape = container.find(".//v:shape", ns) if "v" in ns else None
+    style = shape.attrib.get("style", "") if shape is not None else ""
+    if style:
+        width_match = re.search(r"width\s*:\s*([\d.]+)pt", style)
+        height_match = re.search(r"height\s*:\s*([\d.]+)pt", style)
+        if width_match and height_match:
+            return {
+                "display_width": round(float(width_match.group(1)) * 96 / 72),
+                "display_height": round(float(height_match.group(1)) * 96 / 72),
+            }
+    return {}
+
+
+def _image_tag(asset):
+    src = asset.get("data_url", "")
+    alt = asset.get("file_name", "image")
+    width = asset.get("display_width")
+    height = asset.get("display_height")
+    size_attrs = ""
+    if width and height:
+        size_attrs = ' width="%s" height="%s" style="width:%spx;height:%spx;"' % (width, height, width, height)
+    return '<img src="%s" alt="%s"%s />' % (src, alt, size_attrs)
+
+
 def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_object=False, inline_assets=None):
     parts = []
     inline_assets = inline_assets if inline_assets is not None else []
@@ -326,14 +363,16 @@ def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_
                     rid = blip.attrib.get("{%s}embed" % ns.get("r", "")) or blip.attrib.get("{%s}link" % ns.get("r", ""))
                     asset = _asset_from_run_rel(archive, rels, rid, has_ole_object)
                     if asset:
+                        asset.update(_display_size_from_container(child, ns))
                         inline_assets.append(asset)
-                        parts.append('<img src="%s" alt="%s" />' % (asset.get("data_url", ""), asset.get("file_name", "image")))
+                        parts.append(_image_tag(asset))
                 for image in child.findall(".//v:imagedata", ns):
                     rid = image.attrib.get("{%s}id" % ns.get("r", ""))
                     asset = _asset_from_run_rel(archive, rels, rid, has_ole_object)
                     if asset:
+                        asset.update(_display_size_from_container(child, ns))
                         inline_assets.append(asset)
-                        parts.append('<img src="%s" alt="%s" />' % (asset.get("data_url", ""), asset.get("file_name", "image")))
+                        parts.append(_image_tag(asset))
             for math_node in child.findall(".//m:oMath", ns) + child.findall(".//m:oMathPara", ns):
                 math_text = _math_text(math_node).strip()
                 if math_text:
@@ -412,6 +451,7 @@ def read_docx_rich_paragraphs(file_path):
         "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
         "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
         "v": "urn:schemas-microsoft-com:vml",
+        "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
         "o": "urn:schemas-microsoft-com:office:office",
         "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
     }
@@ -436,6 +476,7 @@ def read_docx_rich_paragraphs(file_path):
                     rel = rels.get(rid or "")
                     asset = _asset_from_part(archive, rel.get("target") if rel else "", "formula_preview" if has_ole_object else "image", rid, rel.get("type") if rel else "")
                     if asset and asset.get("content_hash") not in {item.get("content_hash") for item in assets}:
+                        asset.update(_display_size_from_container(paragraph, ns))
                         assets.append(asset)
 
                 for image in paragraph.findall(".//v:imagedata", ns):
@@ -443,6 +484,7 @@ def read_docx_rich_paragraphs(file_path):
                     rel = rels.get(rid or "")
                     asset = _asset_from_part(archive, rel.get("target") if rel else "", "formula_preview" if has_ole_object else "image", rid, rel.get("type") if rel else "")
                     if asset and asset.get("content_hash") not in {item.get("content_hash") for item in assets}:
+                        asset.update(_display_size_from_container(paragraph, ns))
                         assets.append(asset)
 
                 for obj in paragraph.findall(".//o:OLEObject", ns):
@@ -678,6 +720,22 @@ def is_exam_section_heading(text):
     return is_pure_question_type_title(text) or bool(EXAM_SECTION_RE.match(text)) or bool(re.match(r"^\d+[\u3001\uff0e\.\s]*(\u5355\u9009\u9898|\u591a\u9009\u9898|\u9009\u62e9\u9898|\u5b9e\u9a8c\u9898|\u89e3\u7b54\u9898|\u7efc\u5408\u9898|\u586b\u7a7a\u9898)$", text))
 
 
+def is_section_heading_like(text):
+    text = normalize_heading_text(text)
+    return bool(re.match(r"^(?:\d+|[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341]+)[\u3001\uff0e\.]?(?:\u5355\u9009\u9898|\u591a\u9009\u9898|\u9009\u62e9\u9898|\u5b9e\u9a8c\u9898|\u89e3\u7b54\u9898|\u7efc\u5408\u9898|\u586b\u7a7a\u9898)(?:[\uff08(].*)?$", text))
+
+
+def should_inline_option(question):
+    if not question:
+        return False
+    text = "".join([
+        str(question.get("stem", "")),
+        str(question.get("knowledge_point", "")),
+        str(question.get("section_title", "")),
+    ])
+    return bool(question.get("sub_questions")) or any(token in text for token in ("\u5b9e\u9a8c", "\u89e3\u7b54", "\u7efc\u5408"))
+
+
 def clean_topic_heading(text):
     text = re.sub(r"^(专题\d+|实验专题\d+|解答题专题\d+)[-：:、.\s]*", "", text).strip()
     text = re.sub(r"^[一二三四五六七八九十]+[、.．]\s*", "", text).strip()
@@ -718,12 +776,12 @@ def parse_question_block(paragraphs, default_topic=None):
         text = paragraph.strip()
         if not text:
             continue
+        if is_section_heading_like(text) or is_pure_question_type_title(text):
+            continue
         if is_topic_heading(text):
             topic = clean_topic_heading(text)
             if topic:
                 current_topic = topic
-            continue
-        if is_pure_question_type_title(text):
             continue
         number, content = extract_question_number(text)
         if number is not None:
@@ -737,7 +795,10 @@ def parse_question_block(paragraphs, default_topic=None):
             continue
         option, option_content = extract_option(text)
         if option:
-            current["options"].append({"label": option, "content": option_content, "is_correct": False})
+            if should_inline_option(current):
+                append_text(current, text)
+            else:
+                current["options"].append({"label": option, "content": option_content, "is_correct": False})
             continue
         sub_number, sub_content = extract_sub_question(text)
         if sub_number:
@@ -901,14 +962,14 @@ def parse_lecture_numbered_items(items, default_topic=None):
             if current and (rich.get("assets") or rich.get("formulas")):
                 attach_rich_content(current, rich)
             continue
+        if text and (is_section_heading_like(text) or is_pure_question_type_title(text)):
+            finish_current()
+            continue
         if text and is_topic_heading(text):
             finish_current()
             topic = clean_topic_heading(text)
             if topic:
                 current_topic = topic
-            continue
-        if text and is_pure_question_type_title(text):
-            finish_current()
             continue
         if number_kind in ("example", "practice"):
             finish_current()
@@ -927,7 +988,10 @@ def parse_lecture_numbered_items(items, default_topic=None):
         attach_rich_content(current, rich)
         option, option_content = extract_option(text)
         if option:
-            current["options"].append({"label": option, "content": option_content, "is_correct": False})
+            if should_inline_option(current):
+                append_text(current, text)
+            else:
+                current["options"].append({"label": option, "content": option_content, "is_correct": False})
             continue
         sub_number, sub_content = extract_sub_question(text)
         if sub_number:

@@ -19,9 +19,14 @@ function contentWithInlineAssets(question: Question): string {
       const fileName = asset.file_name || '';
       if (!src || !fileName || content.includes(src)) return;
       const escaped = fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const width = Number(asset.display_width || asset.width || 0);
+      const height = Number(asset.display_height || asset.height || 0);
+      const sizeAttrs = width > 0 && height > 0
+        ? ` width="${width}" height="${height}" style="width:${width}px;height:${height}px;"`
+        : '';
       content = content.replace(new RegExp(`(?:^|\\s)${escaped}(?=\\s|$)`, 'g'), match => {
         const prefix = match.startsWith(fileName) ? '' : match.slice(0, match.indexOf(fileName));
-        return `${prefix}<img src="${src}" alt="${fileName}" />`;
+        return `${prefix}<img src="${src}" alt="${fileName}"${sizeAttrs} />`;
       });
     });
   return content;

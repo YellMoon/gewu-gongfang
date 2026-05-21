@@ -84,6 +84,77 @@ function cleanLatexInput(latex: string): string {
     .trim();
 }
 
+function renderInlineLatex(latex: string): string {
+  const normalizedLatex = cleanLatexInput(latex);
+  if (!normalizedLatex) return '';
+  try {
+    return katex.renderToString(normalizedLatex, createKaTeXPhysicsOptions(false));
+  } catch {
+    return katex.renderToString(normalizedLatex, {
+      displayMode: false,
+      throwOnError: false,
+      strict: false,
+      trust: true,
+      macros: {},
+    });
+  }
+}
+
+function findBalancedGroup(input: string, openIndex: number): { value: string; end: number } | null {
+  if (input[openIndex] !== '{') return null;
+  let depth = 0;
+  for (let i = openIndex; i < input.length; i++) {
+    if (input[i] === '{') depth++;
+    if (input[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        return { value: input.slice(openIndex + 1, i), end: i + 1 };
+      }
+    }
+  }
+  return null;
+}
+
+function convertLegacyLatexFragments(content: string): string {
+  const source = String(content || '');
+  let output = '';
+  let i = 0;
+  const canStartCommand = (index: number) => index === 0 || !/[A-Za-z0-9_]/.test(source[index - 1]);
+
+  while (i < source.length) {
+    const hasDollar = source[i] === '$';
+    const commandStart = hasDollar ? i + 1 : i;
+    const hasSlash = source[commandStart] === '\\';
+    const nameStart = hasSlash ? commandStart + 1 : commandStart;
+    const name = source.startsWith('dfrac', nameStart) ? 'dfrac' : source.startsWith('frac', nameStart) ? 'frac' : source.startsWith('sqrt', nameStart) ? 'sqrt' : '';
+
+    if (name && canStartCommand(commandStart)) {
+      const afterName = nameStart + name.length;
+      const first = findBalancedGroup(source, afterName);
+      if (first) {
+        if (name === 'sqrt') {
+          const end = source[first.end] === '$' && hasDollar ? first.end + 1 : first.end;
+          output += renderInlineLatex(`\\sqrt{${first.value}}`);
+          i = end;
+          continue;
+        }
+        const second = findBalancedGroup(source, first.end);
+        if (second) {
+          const end = source[second.end] === '$' && hasDollar ? second.end + 1 : second.end;
+          output += `<span class="omml-frac"><span class="omml-frac-num">${convertLegacyLatexFragments(first.value)}</span><span class="omml-frac-den">${convertLegacyLatexFragments(second.value)}</span></span>`;
+          i = end;
+          continue;
+        }
+      }
+    }
+
+    output += source[i];
+    i++;
+  }
+
+  return output;
+}
+
 function removeDuplicatedSubQuestionLines(content: string): string {
   const lines = String(content || '').split(/\r?\n/);
   const normalizeLine = (line: string) => line.replace(/<[^>]+>/g, '').replace(/\s+/g, '');
@@ -226,7 +297,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
   const hasDrawer = Boolean(answer || analysis);
 
   const { stemText, stemImages } = useMemo(() => {
-    return { stemText: convertHtmlLatexFractions(removeDuplicatedSubQuestionLines(content || '')), stemImages: [] as string[] };
+    return { stemText: convertLegacyLatexFragments(convertHtmlLatexFractions(removeDuplicatedSubQuestionLines(content || ''))), stemImages: [] as string[] };
   }, [content]);
 
   const segments = useMemo(() => splitMixedContent(stemText), [stemText]);
@@ -273,7 +344,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
     setExpanded(false);
   }, []);
   const renderHtml = (value?: string) => (
-    <span dangerouslySetInnerHTML={{ __html: applySearchHighlight(processHtmlSegment(value || ''), terms) }} />
+    <span dangerouslySetInnerHTML={{ __html: applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(convertHtmlLatexFractions(value || ''))), terms) }} />
   );
 
   return (
@@ -305,7 +376,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
             {normalizedOptions.map((opt, i) => (
               <div key={`${opt.label}-${i}`} className="question-option">
                 <span className="question-option-label">{opt.label}.</span>
-                <span dangerouslySetInnerHTML={{ __html: applySearchHighlight(processHtmlSegment(opt.content), terms) }} />
+                <span dangerouslySetInnerHTML={{ __html: applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(convertHtmlLatexFractions(opt.content))), terms) }} />
               </div>
             ))}
           </div>

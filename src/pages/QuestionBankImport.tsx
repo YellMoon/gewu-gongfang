@@ -1361,7 +1361,7 @@ const QuestionBankImport: React.FC = () => {
               size="small"
               rowKey="id"
               dataSource={importTaskDetail.items || []}
-              pagination={{ pageSize: 10 }}
+              pagination={{ pageSize: 10, showSizeChanger: false, showQuickJumper: true, showTotal: total => `共 ${total} 题` }}
               columns={[
                 { title: '序号', dataIndex: 'item_index', width: 70, render: (v: number) => Number(v || 0) + 1 },
                 { title: '状态', dataIndex: 'status', width: 90, render: (v: string) => <Tag color={statusColor(v)}>{v}</Tag> },

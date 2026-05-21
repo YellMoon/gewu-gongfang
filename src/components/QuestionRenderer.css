@@ -13,7 +13,7 @@
 .question-stem img {
   display: inline-block;
   max-width: 100%;
-  max-height: 320px;
+  height: auto;
   margin: 6px 4px;
   vertical-align: middle;
   object-fit: contain;
@@ -100,7 +100,7 @@
 
 .question-images img {
   max-width: 100%;
-  max-height: 320px;
+  height: auto;
   object-fit: contain;
 }
 

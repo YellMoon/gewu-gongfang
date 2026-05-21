@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Button, Card, Checkbox, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select as AntSelect,
-  Space, Tag, Upload, message
+  Space, Tag, Upload, message, Pagination, Typography
 } from 'antd';
 import type { UploadFile } from 'antd/es/upload/interface';
 import { DeleteOutlined, FileImageOutlined, FunctionOutlined, TagsOutlined } from '@ant-design/icons';
@@ -15,6 +15,8 @@ import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionType
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
 const API_BASE = getApiBase('/api/question-bank');
+const QUESTION_PAGE_SIZE = 10;
+const { Text } = Typography;
 
 const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'];
 const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试', '竞赛', '强基计划', '其他'];
@@ -79,7 +81,9 @@ const QuestionBankEdit: React.FC = () => {
   const [editing, setEditing] = useState<Question | null>(null);
   const [versions, setVersions] = useState<QuestionVersion[]>([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
-  const [visibleCount, setVisibleCount] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [trashPage, setTrashPage] = useState(1);
+  const [questionZoom, setQuestionZoom] = useState(1);
   const [imageFiles, setImageFiles] = useState<UploadFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [trashVisible, setTrashVisible] = useState(false);
@@ -88,9 +92,14 @@ const QuestionBankEdit: React.FC = () => {
 
   const knowledgeOptions = useMemo(() => buildTreeOptions(knowledgeNodes), [knowledgeNodes]);
   const modelOptions = useMemo(() => buildTreeOptions(modelNodes), [modelNodes]);
-  const visibleQuestions = useMemo(() => questions.slice(0, visibleCount), [questions, visibleCount]);
+  const totalPages = Math.max(1, Math.ceil(questions.length / QUESTION_PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const visibleQuestions = useMemo(() => questions.slice((safeCurrentPage - 1) * QUESTION_PAGE_SIZE, safeCurrentPage * QUESTION_PAGE_SIZE), [questions, safeCurrentPage]);
   const visibleIds = useMemo(() => visibleQuestions.map(question => question.id), [visibleQuestions]);
   const selectedVisibleCount = visibleIds.filter(id => selectedRowKeys.includes(id)).length;
+  const trashTotalPages = Math.max(1, Math.ceil(trashQuestions.length / QUESTION_PAGE_SIZE));
+  const safeTrashPage = Math.min(trashPage, trashTotalPages);
+  const visibleTrashQuestions = useMemo(() => trashQuestions.slice((safeTrashPage - 1) * QUESTION_PAGE_SIZE, safeTrashPage * QUESTION_PAGE_SIZE), [trashQuestions, safeTrashPage]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -129,6 +138,8 @@ const QuestionBankEdit: React.FC = () => {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { setCurrentPage(1); }, [questions.length]);
+  useEffect(() => { setTrashPage(1); }, [trashQuestions.length]);
 
   const openEditor = (question: Question) => {
     const db = (window as any).dbService;
@@ -351,6 +362,7 @@ const QuestionBankEdit: React.FC = () => {
         </Card>
 
         <Card size="small">
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
           <Space wrap>
             <Checkbox
               checked={visibleIds.length > 0 && selectedVisibleCount === visibleIds.length}
@@ -372,17 +384,37 @@ const QuestionBankEdit: React.FC = () => {
               </Button>
             </Popconfirm>
           </Space>
+          <Space wrap>
+            <Text type="secondary">共 {questions.length} 题，第 {safeCurrentPage}/{totalPages} 页</Text>
+            <Button onClick={() => setQuestionZoom(zoom => Math.max(0.75, Number((zoom - 0.1).toFixed(2))))}>缩小</Button>
+            <InputNumber
+              min={75}
+              max={160}
+              step={5}
+              value={Math.round(questionZoom * 100)}
+              formatter={value => `${value}%`}
+              parser={value => Number(String(value || '').replace('%', ''))}
+              onChange={value => setQuestionZoom(Math.min(1.6, Math.max(0.75, Number(value || 100) / 100)))}
+              style={{ width: 90 }}
+            />
+            <Button onClick={() => setQuestionZoom(1)}>100%</Button>
+            <Button onClick={() => setQuestionZoom(zoom => Math.min(1.6, Number((zoom + 0.1).toFixed(2))))}>放大</Button>
+          </Space>
+          </div>
         </Card>
 
         {loading ? <Card loading /> : questions.length === 0 ? (
           <Empty description="暂无待编辑试题" />
         ) : (
           <Space direction="vertical" size={10} style={{ width: '100%' }}>
+            <div style={{ width: '100%', overflowX: 'auto', paddingBottom: 6 }}>
+              <div style={{ minWidth: '100%', zoom: questionZoom } as React.CSSProperties}>
+                <Space direction="vertical" size={10} style={{ width: '100%' }}>
             {visibleQuestions.map((question, index) => (
               <QuestionPreviewCard
                 key={question.id}
                 question={question}
-                index={index}
+                index={(safeCurrentPage - 1) * QUESTION_PAGE_SIZE + index}
                 selectable
                 checked={selectedRowKeys.includes(question.id)}
                 onCheckChange={checked => toggleQuestionSelection(question.id, checked)}
@@ -392,8 +424,22 @@ const QuestionBankEdit: React.FC = () => {
                 onDelete={() => deleteQuestion(question)}
               />
             ))}
-            {questions.length > visibleQuestions.length && (
-              <Button block onClick={() => setVisibleCount(count => count + 10)}>
+                </Space>
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+              <Pagination
+                current={safeCurrentPage}
+                total={questions.length}
+                pageSize={QUESTION_PAGE_SIZE}
+                showSizeChanger={false}
+                showQuickJumper
+                showTotal={total => `共 ${total} 题`}
+                onChange={page => setCurrentPage(page)}
+              />
+            </div>
+            {false && (
+              <Button block onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))}>
                 加载更多（已显示 {visibleQuestions.length}/{questions.length}）
               </Button>
             )}
@@ -410,11 +456,11 @@ const QuestionBankEdit: React.FC = () => {
       >
         {trashQuestions.length === 0 ? <Empty description="回收站暂无试题" /> : (
           <Space direction="vertical" size={10} style={{ width: '100%' }}>
-            {trashQuestions.map((question, index) => (
+            {visibleTrashQuestions.map((question, index) => (
               <QuestionPreviewCard
                 key={question.id}
                 question={question}
-                index={index}
+                index={(safeTrashPage - 1) * QUESTION_PAGE_SIZE + index}
                 showAnswer={false}
                 knowledgeNames={(question.knowledge_ids || []).map(id => knowledgeNodes.find(item => item.id === id)?.name || id)}
                 modelNames={(question.model_ids || []).map(id => modelNodes.find(item => item.id === id)?.name || id)}
@@ -422,6 +468,17 @@ const QuestionBankEdit: React.FC = () => {
                 editLabel="恢复"
               />
             ))}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+              <Pagination
+                current={safeTrashPage}
+                total={trashQuestions.length}
+                pageSize={QUESTION_PAGE_SIZE}
+                showSizeChanger={false}
+                showQuickJumper
+                showTotal={total => `共 ${total} 题`}
+                onChange={page => setTrashPage(page)}
+              />
+            </div>
           </Space>
         )}
       </Modal>

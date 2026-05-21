@@ -904,7 +904,7 @@ const QuestionBank: React.FC = () => {
             columns={columns}
             dataSource={filtered}
             rowKey="id"
-            pagination={{ pageSize: 15, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 题` }}
+            pagination={{ pageSize: 10, showSizeChanger: false, showQuickJumper: true, showTotal: (t: number) => `共 ${t} 题` }}
             size="small"
             scroll={{ x: 850 }}
           />
