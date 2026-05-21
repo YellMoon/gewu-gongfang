@@ -390,20 +390,22 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
 
         {hasDrawer && !showAnalysis && (
           <div className={`question-answer-drawer${expanded ? ' open' : ''}`} onClick={closeDrawer}>
-            <div className="question-answer-drawer-inner">
-              {answer && (
-                <div className="question-answer-row">
-                  <strong>答案</strong>
-                  {renderHtml(answer)}
-                </div>
+            {expanded && (
+              <div className="question-answer-drawer-inner">
+                {answer && (
+                  <div className="question-answer-row">
+                    <strong>答案</strong>
+                    {renderHtml(answer)}
+                  </div>
+                )}
+                {analysis && (
+                  <div className="question-answer-row">
+                    <strong>解析</strong>
+                    {renderHtml(analysis)}
+                  </div>
+                )}
+              </div>
               )}
-              {analysis && (
-                <div className="question-answer-row">
-                  <strong>解析</strong>
-                  {renderHtml(analysis)}
-                </div>
-              )}
-            </div>
           </div>
         )}
 

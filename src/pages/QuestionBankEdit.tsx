@@ -11,6 +11,12 @@ import QuestionPreviewCard from '../components/QuestionPreviewCard';
 import QuestionRichContent from '../components/QuestionRichContent';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
+import {
+  cacheQuestionTrees,
+  ensureQuestionLocalStoreSeeded,
+  getCachedQuestionTree,
+  queryQuestionPage,
+} from '../services/questionLocalStore';
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -75,6 +81,9 @@ function buildTreeOptions(nodes: KnowledgeNode[], parentId?: string, depth = 0):
 
 const QuestionBankEdit: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [questionTotal, setQuestionTotal] = useState(0);
+  const [localStoreReady, setLocalStoreReady] = useState(false);
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const [trashQuestions, setTrashQuestions] = useState<Question[]>([]);
   const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
   const [modelNodes, setModelNodes] = useState<KnowledgeNode[]>([]);
@@ -92,9 +101,9 @@ const QuestionBankEdit: React.FC = () => {
 
   const knowledgeOptions = useMemo(() => buildTreeOptions(knowledgeNodes), [knowledgeNodes]);
   const modelOptions = useMemo(() => buildTreeOptions(modelNodes), [modelNodes]);
-  const totalPages = Math.max(1, Math.ceil(questions.length / QUESTION_PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(questionTotal / QUESTION_PAGE_SIZE));
   const safeCurrentPage = Math.min(currentPage, totalPages);
-  const visibleQuestions = useMemo(() => questions.slice((safeCurrentPage - 1) * QUESTION_PAGE_SIZE, safeCurrentPage * QUESTION_PAGE_SIZE), [questions, safeCurrentPage]);
+  const visibleQuestions = questions;
   const visibleIds = useMemo(() => visibleQuestions.map(question => question.id), [visibleQuestions]);
   const selectedVisibleCount = visibleIds.filter(id => selectedRowKeys.includes(id)).length;
   const trashTotalPages = Math.max(1, Math.ceil(trashQuestions.length / QUESTION_PAGE_SIZE));
@@ -104,22 +113,28 @@ const QuestionBankEdit: React.FC = () => {
   const loadData = useCallback(async () => {
     setLoading(true);
     const db = (window as any).dbService;
-    const localQuestions = db?.getAllQuestions?.()?.map(normalizeQuestion) || [];
-    setQuestions(localQuestions.filter(isPendingEditQuestion));
-    setKnowledgeNodes(db?.getKnowledgeTree?.() || []);
-    setModelNodes(db?.getModelTree?.() || []);
+    const cachedKnowledge = await getCachedQuestionTree('knowledge');
+    const cachedModels = await getCachedQuestionTree('model');
+    if (cachedKnowledge.length > 0) setKnowledgeNodes(cachedKnowledge);
+    if (cachedModels.length > 0) setModelNodes(cachedModels);
+    const kn = db?.getKnowledgeTree?.() || [];
+    const models = db?.getModelTree?.() || [];
+    if (kn.length > 0) setKnowledgeNodes(kn);
+    if (models.length > 0) setModelNodes(models);
+    cacheQuestionTrees(kn, models).catch(() => undefined);
+    await ensureQuestionLocalStoreSeeded(() => db?.getAllQuestions?.()?.map(normalizeQuestion) || []);
+    setLocalStoreReady(true);
+    setRefreshNonce(value => value + 1);
     setLoading(false);
     try {
       const res = await fetch(`${API_BASE}/questions?limit=500`);
       const data = await res.json();
-      const remoteQuestions = data.success && Array.isArray(data.data) ? data.data.map(normalizeQuestion) : [];
-      const merged = new Map<string, Question>();
-      for (const question of localQuestions) merged.set(question.id, question);
-      for (const question of remoteQuestions) merged.set(question.id, question);
-      const rows = merged.size > 0 ? [...merged.values()] : localQuestions;
-      setQuestions(rows.filter(isPendingEditQuestion));
+      if (data.success && Array.isArray(data.data)) {
+        // 服务端同步仅后台预热本地索引，首屏不等待接口结果。
+        setRefreshNonce(value => value + 1);
+      }
     } catch (_err) {
-      setQuestions(localQuestions.filter(isPendingEditQuestion));
+      // 本地优先，接口失败不影响编辑页打开。
     }
   }, []);
 
@@ -139,8 +154,29 @@ const QuestionBankEdit: React.FC = () => {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
-  useEffect(() => { setCurrentPage(1); }, [questions.length]);
+  useEffect(() => { setCurrentPage(1); }, [questionTotal]);
   useEffect(() => { setTrashPage(1); }, [trashQuestions.length]);
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
+  const refreshQuestionPage = useCallback(async () => {
+    if (!localStoreReady) return;
+    setLoading(true);
+    try {
+      const result = await queryQuestionPage({
+        page: currentPage,
+        pageSize: QUESTION_PAGE_SIZE,
+        pendingEditOnly: true,
+      });
+      setQuestionTotal(result.total);
+      setQuestions(result.rows.map(normalizeQuestion).filter(isPendingEditQuestion));
+    } finally {
+      setLoading(false);
+    }
+  }, [localStoreReady, refreshNonce, currentPage]);
+
+  useEffect(() => { refreshQuestionPage(); }, [refreshQuestionPage]);
 
   const openEditor = (question: Question) => {
     const db = (window as any).dbService;
@@ -237,6 +273,7 @@ const QuestionBankEdit: React.FC = () => {
     }
     message.success('试题已放入回收站，7天内可撤回');
     setQuestions(prev => prev.filter(item => item.id !== question.id));
+    setQuestionTotal(prev => Math.max(0, prev - 1));
     setSelectedRowKeys(prev => prev.filter(id => id !== question.id));
   };
 
@@ -276,6 +313,7 @@ const QuestionBankEdit: React.FC = () => {
       }
     }
     setQuestions(prev => prev.filter(item => !ids.includes(item.id)));
+    setQuestionTotal(prev => Math.max(0, prev - ids.length));
     setSelectedRowKeys([]);
     message.success(`已删除 ${ids.length} 道试题`);
   };
@@ -335,7 +373,7 @@ const QuestionBankEdit: React.FC = () => {
       extra={
         <Space>
           <Button onClick={() => { setTrashVisible(true); loadTrash(); }}>回收站</Button>
-          <Tag color="orange">待编辑 {questions.length} 题</Tag>
+          <Tag color="orange">待编辑 {questionTotal} 题</Tag>
         </Space>
       }
     >
@@ -386,7 +424,7 @@ const QuestionBankEdit: React.FC = () => {
             </Popconfirm>
           </Space>
           <Space wrap>
-            <Text type="secondary">共 {questions.length} 题，第 {safeCurrentPage}/{totalPages} 页</Text>
+            <Text type="secondary">共 {questionTotal} 题，第 {safeCurrentPage}/{totalPages} 页</Text>
             <Button onClick={() => setQuestionZoom(zoom => Math.max(0.75, Number((zoom - 0.1).toFixed(2))))}>缩小</Button>
             <InputNumber
               min={75}
@@ -404,7 +442,7 @@ const QuestionBankEdit: React.FC = () => {
           </div>
         </Card>
 
-        {loading ? <Card loading /> : questions.length === 0 ? (
+        {loading ? <Card loading /> : questionTotal === 0 ? (
           <Empty description="暂无待编辑试题" />
         ) : (
           <Space direction="vertical" size={10} style={{ width: '100%' }}>
@@ -431,7 +469,7 @@ const QuestionBankEdit: React.FC = () => {
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
               <Pagination
                 current={safeCurrentPage}
-                total={questions.length}
+                total={questionTotal}
                 pageSize={QUESTION_PAGE_SIZE}
                 showSizeChanger={false}
                 showQuickJumper
@@ -441,7 +479,7 @@ const QuestionBankEdit: React.FC = () => {
             </div>
             {false && (
               <Button block onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))}>
-                加载更多（已显示 {visibleQuestions.length}/{questions.length}）
+                加载更多（已显示 {visibleQuestions.length}/{questionTotal}）
               </Button>
             )}
           </Space>

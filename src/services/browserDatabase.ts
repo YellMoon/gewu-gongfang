@@ -17,6 +17,7 @@ import {
   upsertLegacyTreeTags,
 } from './tagAdapter';
 import { normalizeQuestionType } from '../constants/questionTypes';
+import { cacheQuestionTrees, removeQuestionLocalRecord, upsertQuestionLocalRecord } from './questionLocalStore';
 
 interface Database {
   students: Student[];
@@ -309,6 +310,18 @@ class BrowserDatabaseService {
       if (question?.id) next.set(question.id, this.questionIndexText(question));
     }
     this.questionSearchIndex = next;
+  }
+
+  private syncQuestionLocalRecord(question: Question): void {
+    upsertQuestionLocalRecord(question).catch(() => undefined);
+  }
+
+  private removeQuestionLocalIndex(id: string): void {
+    removeQuestionLocalRecord(id).catch(() => undefined);
+  }
+
+  private syncTreeCache(): void {
+    cacheQuestionTrees(this.getKnowledgeTree(), this.getModelTree()).catch(() => undefined);
   }
 
   private detectQuestionHasFormula(question: Partial<Question>): boolean {
@@ -1542,6 +1555,7 @@ class BrowserDatabaseService {
     const normalizedQuestion = this.normalizeQuestionRecord(newQuestion);
     this.data.questions.push(normalizedQuestion);
     this.syncQuestionRelsFromLegacyFields(normalizedQuestion);
+    this.syncQuestionLocalRecord(normalizedQuestion);
     this.saveData();
     return normalizedQuestion;
   }
@@ -1590,6 +1604,7 @@ class BrowserDatabaseService {
       updated_at: now,
     });
     this.syncQuestionRelsFromLegacyFields(this.data.questions[idx]);
+    this.syncQuestionLocalRecord(this.data.questions[idx]);
     this.saveData();
     return this.data.questions[idx];
   }
@@ -1611,6 +1626,7 @@ class BrowserDatabaseService {
     ) {
       this.syncQuestionRelsFromLegacyFields(this.data.questions[idx]);
     }
+    this.syncQuestionLocalRecord(this.data.questions[idx]);
     this.saveData();
     return true;
   }
@@ -1625,6 +1641,8 @@ class BrowserDatabaseService {
       updated_at: new Date().toISOString(),
     } as Question);
     this.data.questionBasketIds = (this.data.questionBasketIds || []).filter(questionId => questionId !== id);
+    this.syncQuestionLocalRecord(this.data.questions[idx]);
+    this.syncTreeCache();
     this.saveData();
     return true;
   }
@@ -1638,6 +1656,7 @@ class BrowserDatabaseService {
       deleted_at: '',
       updated_at: new Date().toISOString(),
     } as Question);
+    this.syncQuestionLocalRecord(this.data.questions[idx]);
     this.saveData();
     return true;
   }
@@ -1665,6 +1684,7 @@ class BrowserDatabaseService {
     question.knowledge_point = primary?.name || '';
     question.updated_at = new Date().toISOString();
     this.replaceQuestionTagRels(questionId, 'knowledge', nextIds);
+    this.syncQuestionLocalRecord(question);
     this.saveData();
     return question;
   }
@@ -1730,6 +1750,7 @@ class BrowserDatabaseService {
     ];
     // 更新children数组
     this._rebuildKnowledgeChildren();
+    this.syncTreeCache();
     this.saveData();
   }
 
@@ -1750,6 +1771,7 @@ class BrowserDatabaseService {
     };
     this.data.knowledgeTree.push(newNode);
     this._rebuildKnowledgeChildren();
+    this.syncTreeCache();
     this.saveData();
     return newNode;
   }
@@ -1794,6 +1816,7 @@ class BrowserDatabaseService {
     this.syncAllQuestionLegacyTagFields();
 
     this._rebuildKnowledgeChildren();
+    this.syncTreeCache();
     this.saveData();
     return true;
   }
@@ -1832,6 +1855,7 @@ class BrowserDatabaseService {
       { id: 'model-4', name: '电磁模型', children: [], order: 4, created_at: now, updated_at: now },
     ];
     this._rebuildModelChildren();
+    this.syncTreeCache();
     this.saveData();
   }
 
@@ -1854,6 +1878,7 @@ class BrowserDatabaseService {
     this.data.modelTree = this.data.modelTree || [];
     this.data.modelTree.push(newNode);
     this._rebuildModelChildren();
+    this.syncTreeCache();
     this.saveData();
     return newNode;
   }
@@ -1873,6 +1898,7 @@ class BrowserDatabaseService {
         }
       }
     }
+    this.syncTreeCache();
     this.saveData();
     return true;
   }
@@ -1892,6 +1918,7 @@ class BrowserDatabaseService {
     }
     this.syncAllQuestionLegacyTagFields();
     this._rebuildModelChildren();
+    this.syncTreeCache();
     this.saveData();
     return true;
   }
@@ -1916,6 +1943,7 @@ class BrowserDatabaseService {
     question.model_point = primary?.name || '';
     question.updated_at = new Date().toISOString();
     this.replaceQuestionTagRels(questionId, 'model', nextIds);
+    this.syncQuestionLocalRecord(question);
     this.saveData();
     return question;
   }

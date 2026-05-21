@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Card, Button, Modal, Form, Input, Select as AntSelect, Space, Tag, message,
   Popconfirm, Tooltip, Tree, Divider, Badge, Checkbox, Dropdown, Menu, Empty, Row, Col, Typography, Drawer,
@@ -18,6 +18,12 @@ import { splitSearchTerms } from '../utils/highlightText';
 import { toggleQuestionBasket, useQuestionBasketIds } from '../components/QuestionBasket';
 import QuestionPreviewCard from '../components/QuestionPreviewCard';
 import QuestionRenderer, { createKaTeXPhysicsOptions } from '../components/QuestionRenderer';
+import {
+  cacheQuestionTrees,
+  ensureQuestionLocalStoreSeeded,
+  getCachedQuestionTree,
+  queryQuestionPage,
+} from '../services/questionLocalStore';
 import katex from 'katex';
 import { applyPhysicsNotationToHTML } from '../utils/physicsNotation';
 import './QuestionBankPreview.css';
@@ -123,6 +129,10 @@ function filterTreeDataByText(treeData: any[], keyword: string): any[] {
 
 const QuestionBankPreview: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [questionTotal, setQuestionTotal] = useState(0);
+  const [localStoreReady, setLocalStoreReady] = useState(false);
+  const [pageLoading, setPageLoading] = useState(false);
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
   const [modelNodes, setModelNodes] = useState<KnowledgeNode[]>([]);
 
@@ -199,32 +209,26 @@ const QuestionBankPreview: React.FC = () => {
   const loadData = useCallback(async () => {
     try {
       const db = (window as any).dbService;
-      let localQuestions: Question[] = [];
+      const cachedKnowledge = await getCachedQuestionTree('knowledge');
+      const cachedModels = await getCachedQuestionTree('model');
+      if (cachedKnowledge.length > 0) setKnowledgeNodes(cachedKnowledge);
+      if (cachedModels.length > 0) setModelNodes(cachedModels);
       if (db) {
-        localQuestions = (db.getAllQuestions?.() || []).map(normalizeQuestion);
-        setQuestions(localQuestions);
         const kn = db.getKnowledgeTree?.() || [];
-        setKnowledgeNodes(kn);
         const models = db.getModelTree?.() || [];
-        setModelNodes(models);
+        if (kn.length > 0) setKnowledgeNodes(kn);
         if (models.length === 0) {
           db.initDefaultModelTree?.();
-          setModelNodes(db.getModelTree?.() || []);
-        }
-      }
-      try {
-        const res = await fetch(`${API_BASE}/questions?limit=200`);
-        const data = await res.json();
-        if (data.success && Array.isArray(data.data)) {
-          const merged = new Map<string, Question>();
-          for (const question of localQuestions) merged.set(question.id, question);
-          for (const question of data.data.map(normalizeQuestion)) merged.set(question.id, question);
-          setQuestions([...merged.values()]);
+          const nextModels = db.getModelTree?.() || [];
+          setModelNodes(nextModels);
+          cacheQuestionTrees(kn, nextModels).catch(() => undefined);
         } else {
-          setQuestions(localQuestions);
+          setModelNodes(models);
+          cacheQuestionTrees(kn, models).catch(() => undefined);
         }
-      } catch (_err) {
-        setQuestions(localQuestions);
+        await ensureQuestionLocalStoreSeeded(() => (db.getAllQuestions?.() || []).map(normalizeQuestion));
+        setLocalStoreReady(true);
+        setRefreshNonce(value => value + 1);
       }
     } catch (e) {
       console.error('QuestionBankPreview loadData error:', e);
@@ -243,7 +247,7 @@ const QuestionBankPreview: React.FC = () => {
   const activeKnowledgeIds = knowledgeSelectedIds.filter((id): id is string => !!id);
   const activeModelIds = modelSelectedIds.filter((id): id is string => !!id);
   const activeExcludeKnowledgeIds = filterExcludeKnowledgeIds.filter((id): id is string => !!id);
-  const searchTerms = splitSearchTerms(appliedSearchText);
+  const searchTerms = useMemo(() => splitSearchTerms(appliedSearchText), [appliedSearchText]);
   const normalizeCheckGroup = (vals: any[]): string[] => {
     if (vals.includes('全部') && vals.length > 1) {
       return vals.filter(v => v !== '全部') as string[];
@@ -278,15 +282,15 @@ const QuestionBankPreview: React.FC = () => {
   };
 
   // 将知识点 ID 展开为所有底层后代（用于筛选）
-  const expandedIncludeGroups = activeKnowledgeIds
+  const expandedIncludeGroups = useMemo(() => activeKnowledgeIds
     .filter(id => !!id)
-    .map(id => getDescendantIds(knowledgeNodes, id));
-  const expandedExcludeIds = filterExcludeKnowledgeIds
+    .map(id => getDescendantIds(knowledgeNodes, id)), [activeKnowledgeIds.join(','), knowledgeNodes]);
+  const expandedExcludeIds = useMemo(() => filterExcludeKnowledgeIds
     .filter((id): id is string => !!id)
-    .flatMap(id => getDescendantIds(knowledgeNodes, id));
-  const expandedModelGroups = activeModelIds
+    .flatMap(id => getDescendantIds(knowledgeNodes, id)), [filterExcludeKnowledgeIds.join(','), knowledgeNodes]);
+  const expandedModelGroups = useMemo(() => activeModelIds
     .filter(id => !!id)
-    .map(id => getDescendantIds(modelNodes, id));
+    .map(id => getDescendantIds(modelNodes, id)), [activeModelIds.join(','), modelNodes]);
 
   const getNodeName = (id: string) => {
     const n = knowledgeNodes.find(x => x.id === id);
@@ -298,73 +302,52 @@ const QuestionBankPreview: React.FC = () => {
     return n ? n.name : id;
   };
 
-  // Filters
-  const filtered = questions.filter(q => {
-    const row = q as Question & { subject_id?: string };
-    if (filterSubjects.length > 0 && !filterSubjects.includes(row.subject || row.subject_id || '')) return false;
-    if (!filterTypes.includes('全部') && filterTypes.length > 0 && !filterTypes.includes(normalizeQuestionType(q.type))) return false;
-    if (!filterExamTypes.includes('全部') && filterExamTypes.length > 0 && !filterExamTypes.includes(q.exam_type || '其他')) return false;
-    if (!filterStatuses.includes('全部') && filterStatuses.length > 0 && !filterStatuses.includes(q.status || 'draft')) return false;
-    if (!filterGrades.includes('全部') && filterGrades.length > 0 && !filterGrades.includes(q.grade || '')) return false;
-    if (!filterSemesters.includes('全部') && filterSemesters.length > 0 && !filterSemesters.includes(q.semester || '')) return false;
-    if (!filterDifficulties.includes('全部') && filterDifficulties.length > 0 && !filterDifficulties.includes(difficultyBucket(q.difficulty))) return false;
-    if (filterYear && filterYear !== '全部' && q.year !== filterYear) return false;
-    if (basketOnly && !basketIds.includes(q.id)) return false;
-    if (sourceFilter.trim()) {
-      const sourceHaystack = [q.source, q.region, q.school, q.exam_type, q.year].filter(Boolean).join(' ').toLowerCase();
-      if (!sourceHaystack.includes(sourceFilter.trim().toLowerCase())) return false;
+  const refreshQuestionPage = useCallback(async () => {
+    if (!localStoreReady) return;
+    setPageLoading(true);
+    try {
+      const result = await queryQuestionPage({
+        page: currentPage,
+        pageSize: QUESTION_PAGE_SIZE,
+        subjectIds: filterSubjects,
+        types: filterTypes,
+        examTypes: filterExamTypes,
+        statuses: filterStatuses,
+        grades: filterGrades,
+        semesters: filterSemesters,
+        difficulties: filterDifficulties,
+        year: filterYear,
+        basketIds,
+        basketOnly,
+        source: sourceFilter,
+        searchTerms,
+        includeKnowledgeGroups: expandedIncludeGroups,
+        excludeKnowledgeIds: expandedExcludeIds,
+        includeModelGroups: expandedModelGroups,
+        dedupe: true,
+      });
+      setQuestionTotal(result.total);
+      setQuestions(result.rows.map(normalizeQuestion));
+    } finally {
+      setPageLoading(false);
     }
-    if (searchTerms.length > 0) {
-      const knowledgeNames = (q.knowledge_ids || []).map(getNodeName).join(' ');
-      const modelNames = (q.model_ids || []).map(getModelName).join(' ');
-      const indexedText = dbService?.getQuestionSearchText?.(q.id);
-      const haystack = [
-        indexedText || q.content,
-        q.answer,
-        q.analysis,
-        knowledgeNames,
-        modelNames,
-        q.source,
-        q.exam_type,
-        q.region,
-        q.school,
-        q.year,
-      ].join('\n').toLowerCase();
-      if (!searchTerms.every(term => haystack.includes(term.toLowerCase()))) return false;
-    }
-    const qKnowledgeIds = q.knowledge_ids || [];
-    // 知识点 AND 逻辑（展开为后代）
-    if (expandedIncludeGroups.length > 0) {
-      if (!expandedIncludeGroups.every(group => group.some(kid => qKnowledgeIds.includes(kid)))) return false;
-    }
-    // 排除知识点（展开为后代，任一匹配则排除）
-    if (expandedExcludeIds.length > 0) {
-      if (expandedExcludeIds.some(kid => qKnowledgeIds.includes(kid))) return false;
-    }
-    const qModelIds = q.model_ids || [];
-    if (expandedModelGroups.length > 0) {
-      if (!expandedModelGroups.every(group => group.some(mid => qModelIds.includes(mid)))) return false;
-    }
-    return true;
-  }).sort((a, b) => (b.created_at || b.updated_at || '').localeCompare(a.created_at || a.updated_at || ''));
-  const dedupedFiltered = filtered.reduce<Question[]>((rows, question) => {
-    const fingerprint = String(question.content || question.stem || '').replace(/\s+/g, '');
-    const existingIndex = rows.findIndex(item => String(item.content || item.stem || '').replace(/\s+/g, '') === fingerprint && fingerprint);
-    if (existingIndex === -1) return [...rows, question];
-    const existing = rows[existingIndex] as any;
-    const current = question as any;
-    const existingRich = (existing.assets || []).length + (existing.formulas || []).length;
-    const currentRich = (current.assets || []).length + (current.formulas || []).length;
-    if (currentRich > existingRich) {
-      const next = [...rows];
-      next[existingIndex] = question;
-      return next;
-    }
-    return rows;
-  }, []);
-  const totalPages = Math.max(1, Math.ceil(dedupedFiltered.length / QUESTION_PAGE_SIZE));
+  }, [
+    localStoreReady, refreshNonce, currentPage, filterSubjects, filterTypes, filterExamTypes, filterStatuses,
+    filterGrades, filterSemesters, filterDifficulties, filterYear, basketIds, basketOnly,
+    sourceFilter, searchTerms, expandedIncludeGroups, expandedExcludeIds, expandedModelGroups,
+  ]);
+
+  useEffect(() => { refreshQuestionPage(); }, [refreshQuestionPage]);
+
+  const dedupedFiltered = questions;
+  const filtered = questions;
+  const totalPages = Math.max(1, Math.ceil(questionTotal / QUESTION_PAGE_SIZE));
   const safeCurrentPage = Math.min(currentPage, totalPages);
-  const visibleFiltered = dedupedFiltered.slice((safeCurrentPage - 1) * QUESTION_PAGE_SIZE, safeCurrentPage * QUESTION_PAGE_SIZE);
+  const visibleFiltered = questions;
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -1006,7 +989,7 @@ const QuestionBankPreview: React.FC = () => {
                 }}
                 options={SUBJECTS.map(subject => ({ label: subject, value: subject }))}
               />
-              <Badge count={filtered.length} style={{ backgroundColor: '#1890ff' }} overflowCount={9999} />
+              <Badge count={questionTotal} style={{ backgroundColor: '#1890ff' }} overflowCount={9999} />
             </Space>
             <Space>
               {selectedRowKeys.length > 0 && (
@@ -1174,7 +1157,7 @@ const QuestionBankPreview: React.FC = () => {
 
           {/* Table */}
           <div className="qb-question-display-toolbar">
-            <Text type="secondary">共 {dedupedFiltered.length} 题，第 {safeCurrentPage}/{totalPages} 页</Text>
+            <Text type="secondary">共 {questionTotal} 题，第 {safeCurrentPage}/{totalPages} 页</Text>
             <Space>
               <Button onClick={() => setQuestionZoom(zoom => Math.max(0.75, Number((zoom - 0.1).toFixed(2))))}>缩小</Button>
               <InputNumber
@@ -1194,7 +1177,7 @@ const QuestionBankPreview: React.FC = () => {
           <div className="qb-question-display-viewport">
             <div className="qb-question-display-stage" style={{ zoom: questionZoom } as React.CSSProperties}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {dedupedFiltered.length === 0 ? <Empty description="暂无试题" /> : visibleFiltered.map((q, idx) => {
+            {questionTotal === 0 && !pageLoading ? <Empty description="暂无试题" /> : visibleFiltered.map((q, idx) => {
               const inBasket = basketIds.includes(q.id);
               return (
                 <QuestionPreviewCard
@@ -1213,11 +1196,11 @@ const QuestionBankPreview: React.FC = () => {
               </div>
             </div>
           </div>
-          {dedupedFiltered.length > 0 && (
+          {questionTotal > 0 && (
             <div className="qb-question-pagination">
               <Pagination
                 current={safeCurrentPage}
-                total={dedupedFiltered.length}
+                total={questionTotal}
                 pageSize={QUESTION_PAGE_SIZE}
                 showSizeChanger={false}
                 showQuickJumper
@@ -1415,6 +1398,7 @@ const QuestionBankPreview: React.FC = () => {
 };
 
 export default QuestionBankPreview;
+
 
 
 
