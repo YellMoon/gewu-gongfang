@@ -23,7 +23,7 @@
 .math-display {
   margin: 8px 0;
   text-align: center;
-  overflow-x: auto;
+  overflow-x: visible;
   overflow-y: hidden;
 }
 
@@ -32,10 +32,9 @@
 }
 
 .omml-frac {
-  display: inline-grid;
-  grid-template-rows: auto auto;
-  align-items: center;
-  justify-items: center;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
   vertical-align: middle;
   line-height: 1.15;
   margin: 0 2px;
@@ -47,10 +46,38 @@
   padding: 0 3px;
   text-align: center;
   white-space: nowrap;
+  min-width: 100%;
 }
 
 .omml-frac-den {
   border-top: 1px solid currentColor;
+}
+
+.omml-rad {
+  display: inline-flex;
+  align-items: flex-start;
+  vertical-align: middle;
+  line-height: 1.2;
+  margin: 0 2px;
+}
+
+.omml-rad-index {
+  align-self: flex-start;
+  margin-right: -2px;
+  font-size: 0.65em;
+  line-height: 1;
+}
+
+.omml-rad-sign {
+  font-size: 1.15em;
+  line-height: 1.05;
+}
+
+.omml-rad-body {
+  display: inline-block;
+  border-top: 1px solid currentColor;
+  padding: 1px 3px 0 2px;
+  line-height: 1.15;
 }
 
 /* KaTeX 正斜体：物理量默认斜体，\mathrm/\text 为正体（KaTeX 已内置此规范） */
@@ -58,9 +85,10 @@
 /* ── 选择题选项网格 ── */
 .question-options {
   display: grid;
-  column-gap: 0;
+  column-gap: 12px;
   row-gap: 4px;
   margin-top: 10px;
+  width: 100%;
 }
 
 .question-options.cols-1 {
@@ -80,16 +108,33 @@
 }
 
 .question-option {
-  padding: 3px 18px 3px 0;
+  padding: 3px 8px 3px 0;
   width: 100%;
   min-width: 0;
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
+  align-items: baseline;
   white-space: normal;
 }
 
 .question-option-label {
   font-weight: 600;
+  line-height: 1.4;
+}
+
+.question-option.image-only {
+  align-items: end;
+}
+
+.question-option.image-only .question-option-label {
+  align-self: end;
+  padding-bottom: 4px;
+}
+
+.question-option img {
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
 }
 
 /* ── 题干图片区域 ── */
@@ -127,11 +172,11 @@
 .question-stem-wrapper.has-drawer {
   cursor: pointer;
   border-radius: 12px;
-  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  transition: none;
 }
 
 .question-stem-wrapper.has-drawer:hover {
-  background: rgba(0, 122, 255, 0.035);
+  background: transparent;
 }
 
 .question-answer-drawer {
@@ -191,9 +236,12 @@
 }
 
 .question-content,
-.question-answer-row strong,
 .question-answer-hint,
 .question-expand-hint {
+  font-family: 'Latin Modern Math', 'KaTeX_Main', 'Times New Roman', var(--app-font-family, 'Alibaba PuHuiTi 3.0', 'Alibaba PuHuiTi', 'PingFang SC', 'Microsoft YaHei', sans-serif);
+}
+
+.question-answer-row strong {
   font-family: var(--app-font-family, 'Alibaba PuHuiTi 3.0', 'Alibaba PuHuiTi', 'PingFang SC', 'Microsoft YaHei', sans-serif);
 }
 

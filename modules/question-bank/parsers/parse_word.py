@@ -86,19 +86,54 @@ def paragraph_numbering(paragraph):
         return None
 
 
+def _rels_for_part(archive, rel_path, base_prefix="word/"):
+    rels = {}
+    if rel_path not in archive.namelist():
+        return rels
+    root = ET.fromstring(archive.read(rel_path))
+    for rel in root:
+        rid = rel.attrib.get("Id")
+        target = rel.attrib.get("Target", "")
+        rel_type = rel.attrib.get("Type", "")
+        if not rid or not target:
+            continue
+        if target.startswith("/"):
+            full = target.lstrip("/")
+        elif target.startswith("word/"):
+            full = target
+        else:
+            full = os.path.normpath(base_prefix + target).replace("\\", "/")
+        rels[rid] = {"target": full, "type": rel_type}
+    return rels
+
+
 def read_docx_comments(file_path):
-    namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    namespace = {
+        "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+        "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+        "v": "urn:schemas-microsoft-com:vml",
+        "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+        "o": "urn:schemas-microsoft-com:office:office",
+        "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
+    }
     try:
         with zipfile.ZipFile(file_path, "r") as archive:
             if "word/comments.xml" not in archive.namelist():
                 return {}
             root = ET.fromstring(archive.read("word/comments.xml"))
+            rels = _rels_for_part(archive, "word/_rels/comments.xml.rels")
             comments = {}
             for comment in root.findall(".//w:comment", namespace):
                 comment_id = comment.attrib.get(f"{{{namespace['w']}}}id")
-                texts = [node.text or "" for node in comment.findall(".//w:t", namespace)]
+                texts = []
+                for paragraph in comment.findall(".//w:p", namespace):
+                    inline_assets = []
+                    text = _paragraph_text_with_markup(paragraph, namespace, archive, rels, bool(paragraph.findall(".//o:OLEObject", namespace)), inline_assets)
+                    if text:
+                        texts.append(text)
                 if comment_id:
-                    comments[comment_id] = "".join(texts).strip()
+                    comments[comment_id] = "\n".join(texts).strip()
             return comments
     except Exception:
         return {}
@@ -156,11 +191,13 @@ def extract_numbered_items(doc, file_path):
             for comment_id in (comment_refs[index] if index < len(comment_refs) else [])
             if comments.get(comment_id)
         ]
+        style_name = getattr(getattr(paragraph, "style", None), "name", "") or ""
         items.append({
             "text": text,
             "number_label": number_label,
             "number_kind": number_kind,
             "comments": paragraph_comments,
+            "is_heading": style_name.lower().startswith("heading") or "\u6807\u9898" in style_name,
         })
     return items
 
@@ -186,6 +223,12 @@ def normalize_operator_symbols(text):
 
 def clean_word_text(text):
     return normalize_operator_symbols(re.sub(r"[\f\v]+", "", text or "").strip())
+
+
+def visible_space_text(text):
+    if not text:
+        return ""
+    return re.sub(r" {2,}", lambda m: "&nbsp;" * len(m.group(0)), text.replace("\u3000", " "))
 
 
 def _xml_bytes(node):
@@ -309,7 +352,9 @@ def _math_text(node):
     if tag == "rad":
         deg = _math_text(_first_child(node, "deg"))
         body = _math_text(_first_child(node, "e"))
-        return r"$\sqrt{%s}$" % body if not deg else r"$\sqrt[%s]{%s}$" % (deg, body)
+        if not deg:
+            return '<span class="omml-rad"><span class="omml-rad-sign">√</span><span class="omml-rad-body">%s</span></span>' % body
+        return '<span class="omml-rad"><span class="omml-rad-index">%s</span><span class="omml-rad-sign">√</span><span class="omml-rad-body">%s</span></span>' % (deg, body)
     if tag == "nary":
         symbol = "".join(child.attrib.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val", "") for child in node.iter() if _local_name(child) == "chr") or "∑"
         sub = _math_text(_first_child(node, "sub"))
@@ -433,8 +478,10 @@ def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_
                 parts.append("<i>%s</i>" % text)
             elif bold:
                 parts.append("<strong>%s</strong>" % text)
+            elif child.find("./w:rPr/w:u", ns) is not None and not text.strip():
+                parts.append("_" * max(4, len(text)))
             else:
-                parts.append(text)
+                parts.append(visible_space_text(text))
         elif tag in ("oMath", "oMathPara"):
             math_text = _math_text(child).strip()
             if math_text:
@@ -443,25 +490,7 @@ def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_
 
 
 def _rels_for_document(archive):
-    rels = {}
-    rel_path = "word/_rels/document.xml.rels"
-    if rel_path not in archive.namelist():
-        return rels
-    root = ET.fromstring(archive.read(rel_path))
-    for rel in root:
-        rid = rel.attrib.get("Id")
-        target = rel.attrib.get("Target", "")
-        rel_type = rel.attrib.get("Type", "")
-        if not rid or not target:
-            continue
-        if target.startswith("/"):
-            full = target.lstrip("/")
-        elif target.startswith("word/"):
-            full = target
-        else:
-            full = "word/" + target
-        rels[rid] = {"target": full, "type": rel_type}
-    return rels
+    return _rels_for_part(archive, "word/_rels/document.xml.rels")
 
 
 def _asset_from_part(archive, part_name, asset_type, rel_id=None, rel_type=None):
@@ -622,6 +651,8 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
                             number_kind = "example"
                         elif lvl_text in ("%1", "%1.", "%1．"):
                             number_kind = "practice"
+                p_style = paragraph.find("./w:pPr/w:pStyle", namespace)
+                style_val = p_style.attrib.get(f"{{{namespace['w']}}}val", "") if p_style is not None else ""
                 paragraph_comments = [comments[comment_id] for comment_id in refs if comments.get(comment_id)]
                 items.append({
                     "text": text,
@@ -629,6 +660,7 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
                     "number_kind": number_kind,
                     "comments": paragraph_comments,
                     "rich": rich,
+                    "is_heading": bool(re.search(r"heading|title|\u6807\u9898", style_val, re.I)),
                 })
             return items
     except Exception:
@@ -713,7 +745,29 @@ def classify_question(stem, options=None, answer=""):
     return extract_types_from_text(stem or "", options)
 
 
+def split_image_only_options(question):
+    options = question.get("options") or []
+    if len(options) != 2:
+        return
+    labels = [str(option.get("label", "")).upper() for option in options]
+    if labels != ["A", "C"]:
+        return
+    next_options = []
+    target_labels = [["A", "B"], ["C", "D"]]
+    for option, pair_labels in zip(options, target_labels):
+        content = option.get("content", "")
+        images = re.findall(r"<img\b[^>]*>", content, flags=re.I)
+        remainder = re.sub(r"<img\b[^>]*>", "", content, flags=re.I)
+        remainder = re.sub(r"[A-G][\.\u3001\uff0e\uff0c\uff1a:;；\s]*", "", remainder, flags=re.I).strip()
+        if len(images) != 2 or remainder:
+            return
+        for label, image in zip(pair_labels, images):
+            next_options.append({"label": label, "content": image, "is_correct": False})
+    question["options"] = next_options
+
+
 def finalize_question_type(question):
+    split_image_only_options(question)
     question["question_types"] = classify_question(question.get("stem", ""), question.get("options", []), question.get("answer", ""))
     return question
 
@@ -995,10 +1049,16 @@ def parse_lecture_numbered_items(items, default_topic=None):
         text = item.get("text", "").strip()
         rich = item.get("rich", {})
         number_kind = item.get("number_kind", "")
-        number_label = item.get("number_label", "")
+        is_heading = bool(item.get("is_heading"))
         if not text and not number_kind:
             if current and (rich.get("assets") or rich.get("formulas")):
                 attach_rich_content(current, rich)
+            continue
+        if is_heading and number_kind != "example":
+            finish_current()
+            topic = clean_topic_heading(text)
+            if topic:
+                current_topic = topic
             continue
         if text and (is_section_heading_like(text) or is_pure_question_type_title(text)):
             finish_current()
@@ -1011,7 +1071,7 @@ def parse_lecture_numbered_items(items, default_topic=None):
             continue
         if number_kind in ("example", "practice"):
             finish_current()
-            stem = f"{number_label} {text}".strip()
+            stem = text.strip()
             current = new_question(stem, len(questions), current_topic)
             current["source_type"] = number_kind
             current["_comments"] = list(item.get("comments", []))

@@ -219,7 +219,7 @@
 
 .qb-question-display-viewport {
   width: 100%;
-  overflow-x: auto;
+  overflow-x: visible;
   overflow-y: visible;
   padding-bottom: 6px;
 }

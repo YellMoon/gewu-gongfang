@@ -89,6 +89,18 @@ const QuestionPreviewCard: React.FC<{
         for (const field of ['content', 'stem', 'answer', 'analysis']) {
           if (typeof copy[field] === 'string') copy[field] = copy[field].split(src).join(asset.resolved_url);
         }
+        if (Array.isArray(copy.options)) {
+          copy.options = copy.options.map((option: any) => {
+            if (typeof option === 'string') return option.split(src).join(asset.resolved_url);
+            if (option && typeof option === 'object') {
+              const next = { ...option };
+              if (typeof next.content === 'string') next.content = next.content.split(src).join(asset.resolved_url);
+              if (typeof next.text === 'string') next.text = next.text.split(src).join(asset.resolved_url);
+              return next;
+            }
+            return option;
+          });
+        }
       }
       if (!cancelled) setResolvedQuestion(copy);
     }

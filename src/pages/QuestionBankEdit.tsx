@@ -437,7 +437,7 @@ const QuestionBankEdit: React.FC = () => {
           <Empty description="暂无待编辑试题" />
         ) : (
           <Space direction="vertical" size={10} style={{ width: '100%' }}>
-            <div style={{ width: '100%', overflowX: 'auto', paddingBottom: 6 }}>
+            <div style={{ width: '100%', overflowX: 'visible', paddingBottom: 6 }}>
               <div style={{ minWidth: '100%' }}>
                 <Space direction="vertical" size={10} style={{ width: '100%' }}>
             {visibleQuestions.map((question, index) => (

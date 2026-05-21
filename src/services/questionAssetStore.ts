@@ -65,6 +65,40 @@ export async function getQuestionAssetDataUrl(keyOrRef: string): Promise<string>
 export async function prepareQuestionAssetsForStorage<T extends Record<string, any>>(question: T): Promise<T> {
   const next: any = JSON.parse(JSON.stringify(question || {}));
   const assets = Array.isArray(next.assets) ? next.assets : [];
+  const hashText = (value: string): string => {
+    let hash = 2166136261;
+    for (let i = 0; i < value.length; i++) {
+      hash ^= value.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return `inline-${(hash >>> 0).toString(16)}-${value.length}`;
+  };
+  const inlineDataUrls = new Set<string>();
+  const collectInlineAssets = (value: any) => {
+    if (typeof value === 'string') {
+      for (const match of value.matchAll(/<img\b[^>]*\bsrc=["'](data:[^"']+)["'][^>]*>/gi)) {
+        inlineDataUrls.add(match[1]);
+      }
+    } else if (Array.isArray(value)) {
+      value.forEach(item => {
+        if (typeof item === 'string') collectInlineAssets(item);
+        else if (item && typeof item === 'object') collectInlineAssets(item.content || item.text || '');
+      });
+    }
+  };
+  ['content', 'stem', 'answer', 'analysis'].forEach(field => collectInlineAssets(next[field]));
+  collectInlineAssets(next.options);
+  inlineDataUrls.forEach(dataUrl => {
+    if (!assets.some((asset: any) => [asset?.data_url, asset?.url, asset?.oss_url].includes(dataUrl))) {
+      assets.push({
+        asset_type: 'image',
+        file_name: `${hashText(dataUrl)}.png`,
+        content_hash: hashText(dataUrl),
+        data_url: dataUrl,
+      });
+    }
+  });
+  next.assets = assets;
   for (const asset of assets) {
     const dataUrl = asset?.data_url || asset?.url || asset?.oss_url;
     const key = asset?.content_hash || asset?.id || asset?.file_name;
@@ -72,6 +106,18 @@ export async function prepareQuestionAssetsForStorage<T extends Record<string, a
       const ref = await storeQuestionAsset(key, dataUrl);
       for (const field of ['content', 'stem', 'answer', 'analysis']) {
         if (typeof next[field] === 'string') next[field] = next[field].split(dataUrl).join(ref);
+      }
+      if (Array.isArray(next.options)) {
+        next.options = next.options.map((option: any) => {
+          if (typeof option === 'string') return option.split(dataUrl).join(ref);
+          if (option && typeof option === 'object') {
+            const copy = { ...option };
+            if (typeof copy.content === 'string') copy.content = copy.content.split(dataUrl).join(ref);
+            if (typeof copy.text === 'string') copy.text = copy.text.split(dataUrl).join(ref);
+            return copy;
+          }
+          return option;
+        });
       }
       asset.data_url = ref;
       if (asset.url === dataUrl) asset.url = ref;
@@ -91,6 +137,18 @@ export function stripQuestionAssetPayload<T extends Record<string, any>>(questio
   }
   for (const field of ['content', 'stem', 'answer', 'analysis']) {
     if (typeof next[field] === 'string') next[field] = next[field].replace(/data:[^"'\s>]+/g, '');
+  }
+  if (Array.isArray(next.options)) {
+    next.options = next.options.map((option: any) => {
+      if (typeof option === 'string') return option.replace(/data:[^"'\s>]+/g, '');
+      if (option && typeof option === 'object') {
+        const copy = { ...option };
+        if (typeof copy.content === 'string') copy.content = copy.content.replace(/data:[^"'\s>]+/g, '');
+        if (typeof copy.text === 'string') copy.text = copy.text.replace(/data:[^"'\s>]+/g, '');
+        return copy;
+      }
+      return option;
+    });
   }
   return next;
 }

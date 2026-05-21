@@ -276,9 +276,16 @@ export async function seedQuestionLocalStore(questions: Question[]): Promise<voi
   });
 }
 
+export async function reconcileQuestionLocalStore(questions: Question[]): Promise<void> {
+  const rows = (questions || []).filter(question => question?.id);
+  if (rows.length === 0) return;
+  await seedQuestionLocalStore(rows);
+}
+
 export async function ensureQuestionLocalStoreSeeded(loadQuestions: () => Question[]): Promise<void> {
-  if (seedPromise) return seedPromise;
+  if (seedPromise) await seedPromise;
   seedPromise = (async () => {
+    const sourceQuestions = loadQuestions();
     let count = fallbackMeta.size;
     try {
       const db = await openDb();
@@ -286,11 +293,15 @@ export async function ensureQuestionLocalStoreSeeded(loadQuestions: () => Questi
     } catch (_err) {
       count = fallbackMeta.size;
     }
-    if (count === 0) {
-      await seedQuestionLocalStore(loadQuestions());
+    if (count === 0 || sourceQuestions.length > count) {
+      await seedQuestionLocalStore(sourceQuestions);
     }
   })();
-  return seedPromise;
+  try {
+    await seedPromise;
+  } finally {
+    seedPromise = null;
+  }
 }
 
 export async function cacheQuestionTrees(knowledgeTree: KnowledgeNode[], modelTree: KnowledgeNode[]): Promise<void> {

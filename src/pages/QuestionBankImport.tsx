@@ -14,6 +14,7 @@ import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType, questionTypeFromParser } from '../constants/questionTypes';
 import QuestionRenderer from '../components/QuestionRenderer';
 import { prepareQuestionAssetsForStorage, stripQuestionAssetPayload } from '../services/questionAssetStore';
+import { reconcileQuestionLocalStore } from '../services/questionLocalStore';
 import {
   downloadImportValidationReport,
   validateImportQuestions,
@@ -876,7 +877,12 @@ const QuestionBankImport: React.FC = () => {
     const meta = examMetaRef.current || {};
     let added = 0;
     let skippedDuplicates = 0;
-    const exactStem = (value: unknown) => String(value || '').trim();
+    const exactStem = (value: unknown) => String(value || '')
+      .replace(/−/g, '－')
+      .replace(/\+/g, '＋')
+      .replace(/-/g, '－')
+      .replace(/\s+/g, '')
+      .trim();
     const existingStems = new Set((questions || []).map(q => exactStem(q.content || q.stem)).filter(Boolean));
     const seenStems = new Set<string>();
     for (const q of (result.questions || [])) {
@@ -955,6 +961,7 @@ const QuestionBankImport: React.FC = () => {
       })),
     });
     if (dbTask) setRecentImportTasks(db.getRecentImportTasks?.(8) || []);
+    await reconcileQuestionLocalStore((db.getAllQuestions?.() || []).map(normalizeQuestion));
     loadData();
     message.success(`成功导入 ${added}/${result.count} 道题目到本地题库`);
   };

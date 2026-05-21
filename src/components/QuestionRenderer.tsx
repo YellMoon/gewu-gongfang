@@ -68,6 +68,19 @@ function convertHtmlLatexFractions(content: string): string {
   );
 }
 
+function normalizeDisplayOperators(value: string): string {
+  const tags: string[] = [];
+  const text = String(value || '').replace(/<[^>]+>/g, match => {
+    const token = `@@HTML_TAG_${tags.length}@@`;
+    tags.push(match);
+    return token;
+  });
+  return text
+    .replace(/−/g, '－')
+    .replace(/-/g, '－')
+    .replace(/@@HTML_TAG_(\d+)@@/g, (_match, index) => tags[Number(index)] || '');
+}
+
 function cleanLatexInput(latex: string): string {
   return String(latex || '')
     .replace(/<br\s*\/?>/gi, ' ')
@@ -260,6 +273,7 @@ function normalizePhysicsHtml(html: string): string {
   );
 
   return restoreUnits(stripGraphicPathNoise(safeHtml))
+    .replace(/<span class="omml-frac">\s*<span class="omml-frac-num">\s*(m|cm|mm|km)\s*<\/span>\s*<span class="omml-frac-den">\s*(s(?:<sup>2<\/sup>|<sub>2<\/sub>|2)?)\s*<\/span>\s*<\/span>/gi, '$1/$2')
     .replace(/<i>k<\/i><i>g<\/i>/g, 'kg')
     .replace(/<i>(N|Pa|J|W|C|V|F|T|H|A|K|Hz|Ω)<\/i>(?=(?:<sup>|[·⋅.*/\/]))/g, '$1')
     .replace(/(?<=[·⋅.*/\/])<i>(m|s|g|A|K|mol|cd|rad|Hz|N|Pa|J|W|C|V|F|T|H|Ω)<\/i>/g, '$1')
@@ -289,7 +303,7 @@ function normalizePhysicsHtml(html: string): string {
 }
 
 function processHtmlSegment(html: string): string {
-  return normalizePhysicsHtml(html).replace(/<span class="legacy-latex" data-latex="([^"]*)"><\/span>/g, (_match, latex) => {
+  return normalizeDisplayOperators(normalizePhysicsHtml(html)).replace(/<span class="legacy-latex" data-latex="([^"]*)"><\/span>/g, (_match, latex) => {
     try {
       return renderInlineLatex(decodeURIComponent(latex));
     } catch {
@@ -344,10 +358,12 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
   const isChoice = questionType === '单选题' || questionType === '多选题' || questionType === '鍗曢€夐' || questionType === '澶氶€夐';
   const [expanded, setExpanded] = useState(false);
   const hasDrawer = Boolean(answer || analysis);
+  const normalizedOptions = useMemo(() => normalizeOptions(options || []), [options]);
 
   const { stemText, stemImages } = useMemo(() => {
-    return { stemText: convertLegacyLatexFragments(convertHtmlLatexFractions(removeDuplicatedSubQuestionLines(content || ''))), stemImages: [] as string[] };
-  }, [content]);
+    const cleaned = removeOptionImageDuplicates(removeDuplicatedSubQuestionLines(content || ''), normalizedOptions);
+    return { stemText: convertLegacyLatexFragments(convertHtmlLatexFractions(cleaned)), stemImages: [] as string[] };
+  }, [content, normalizedOptions]);
 
   const segments = useMemo(() => splitMixedContent(stemText), [stemText]);
 
@@ -380,7 +396,6 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
     return <span key={idx} dangerouslySetInnerHTML={{ __html: processed }} />;
   };
 
-  const normalizedOptions = normalizeOptions(options || []);
   const optCount = normalizedOptions.length;
   const optCols = columnsForOptions(normalizedOptions);
   const toggleDrawer = useCallback(() => {
@@ -423,7 +438,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
         {options && optCount > 0 && (
           <div className={`question-options cols-${optCols}`}>
             {normalizedOptions.map((opt, i) => (
-              <div key={`${opt.label}-${i}`} className="question-option">
+              <div key={`${opt.label}-${i}`} className={`question-option${isImageOnlyOption(opt.content) ? ' image-only' : ''}`}>
                 <span className="question-option-label">{opt.label}.</span>
                 <span dangerouslySetInnerHTML={{ __html: applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(convertHtmlLatexFractions(opt.content))), terms) }} />
               </div>
@@ -507,9 +522,28 @@ function normalizeOptions(options: any[]): Array<{ label: string; content: strin
   return splitPackedOptions(rows);
 }
 
+function imageSourcesFromHtml(value: string): string[] {
+  return Array.from(String(value || '').matchAll(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi)).map(match => match[1]);
+}
+
+function isImageOnlyOption(value: string): boolean {
+  const html = String(value || '').trim();
+  if (!/<img\b/i.test(html)) return false;
+  return html.replace(/<img\b[^>]*>/gi, '').replace(/<br\s*\/?>/gi, '').replace(/&nbsp;/gi, '').trim() === '';
+}
+
+function removeOptionImageDuplicates(content: string, options: Array<{ label: string; content: string }>): string {
+  let next = String(content || '');
+  const optionSrcs = new Set(options.flatMap(option => imageSourcesFromHtml(option.content)));
+  if (optionSrcs.size === 0) return next;
+  next = next.replace(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>\s*/gi, (match, src) => optionSrcs.has(src) ? '' : match);
+  return next;
+}
+
 function columnsForOptions(options: Array<{ label: string; content: string }>): number {
   if (options.length >= 5) return 1;
   if (options.length < 2) return 1;
+  if (options.every(option => isImageOnlyOption(option.content))) return Math.min(options.length, 4);
   const maxLen = Math.max(...options.map(option => option.content.replace(/<[^>]+>/g, '').length));
   if (maxLen <= 12) return Math.min(options.length, 4);
   if (maxLen <= 28) return 2;
