@@ -63,11 +63,42 @@ function convertHtmlLatexFractions(content: string): string {
   return (content || '').replace(
     /\$\\frac\{([^{}]*)\}\{([^{}]*)\}\$/g,
     (match, num, den) => (
-      String(num + den).includes('<')
-        ? `<span class="omml-frac"><span class="omml-frac-num">${num}</span><span class="omml-frac-den">${den}</span></span>`
-        : match
+      `<span class="omml-frac"><span class="omml-frac-num">${num}</span><span class="omml-frac-den">${den}</span></span>`
     )
   );
+}
+
+function cleanLatexInput(latex: string): string {
+  return String(latex || '')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<i>([\s\S]*?)<\/i>/gi, '$1')
+    .replace(/<em>([\s\S]*?)<\/em>/gi, '$1')
+    .replace(/<strong>([\s\S]*?)<\/strong>/gi, '$1')
+    .replace(/<b>([\s\S]*?)<\/b>/gi, '$1')
+    .replace(/<sup>([\s\S]*?)<\/sup>/gi, '^{$1}')
+    .replace(/<sub>([\s\S]*?)<\/sub>/gi, '_{$1}')
+    .replace(/&lt;(\/?)(i|sub|sup|b|strong|em)&gt;/gi, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/−/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function removeDuplicatedSubQuestionLines(content: string): string {
+  const lines = String(content || '').split(/\r?\n/);
+  const normalizeLine = (line: string) => line.replace(/<[^>]+>/g, '').replace(/\s+/g, '');
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\s*\(1\)/.test(lines[i])) continue;
+    for (let len = 2; len <= 8 && i + len * 2 <= lines.length; len++) {
+      const first = lines.slice(i, i + len).map(normalizeLine);
+      const second = lines.slice(i + len, i + len * 2).map(normalizeLine);
+      if (first.length > 0 && first.every((line, index) => line && line === second[index])) {
+        lines.splice(i + len, len);
+        return removeDuplicatedSubQuestionLines(lines.join('\n'));
+      }
+    }
+  }
+  return lines.join('\n');
 }
 
 export function stripHtmlAndMath(html: string): string {
@@ -100,6 +131,16 @@ function normalizePhysicsHtml(html: string): string {
   const unitCore = '(?:kg|mol|cd|rad|sr|Hz|Pa|J|Wb|W|C|V|F|T|H|N|A|K|m|s|L|eV|MeV|GeV|min|h|Ω)';
   const unitToken = `(?:[YZEPTGMkhdcmμunpfa]?${unitCore})`;
   const unitExpr = `${unitToken}(?:\\s*(?:[·⋅*/\\\\/]|<sup>-?\\d+</sup>|\\^?-?\\d+)\\s*${unitToken})*`;
+  const elementPattern = [
+    'Og', 'Ts', 'Lv', 'Mc', 'Fl', 'Nh', 'Cn', 'Rg', 'Ds', 'Mt', 'Hs', 'Bh', 'Sg', 'Db', 'Rf',
+    'Ac', 'Ag', 'Al', 'Am', 'Ar', 'As', 'At', 'Au', 'Ba', 'Be', 'Bi', 'Bk', 'Br', 'Ca', 'Cd',
+    'Ce', 'Cf', 'Cl', 'Cm', 'Co', 'Cr', 'Cs', 'Cu', 'Dy', 'Er', 'Es', 'Eu', 'Fe', 'Fm', 'Fr',
+    'Ga', 'Gd', 'Ge', 'He', 'Hf', 'Hg', 'Ho', 'In', 'Ir', 'Kr', 'La', 'Li', 'Lr', 'Lu', 'Md',
+    'Mg', 'Mn', 'Mo', 'Na', 'Nb', 'Nd', 'Ne', 'Ni', 'No', 'Np', 'Os', 'Pa', 'Pb', 'Pd', 'Pm',
+    'Po', 'Pr', 'Pt', 'Pu', 'Ra', 'Rb', 'Re', 'Rh', 'Rn', 'Ru', 'Sb', 'Sc', 'Se', 'Si', 'Sm',
+    'Sn', 'Sr', 'Ta', 'Tb', 'Tc', 'Te', 'Th', 'Ti', 'Tl', 'Tm', 'Xe', 'Yb', 'Zn', 'Zr',
+    'B', 'C', 'F', 'H', 'I', 'K', 'N', 'O', 'P', 'S', 'U', 'V', 'W', 'Y', 'n',
+  ].join('|');
   const restoreUnits = (value: string) => value.replace(
     new RegExp(`(\\d(?:[\\d.,×xX+\\-]*\\d)?\\s*)((?:<i>[A-Za-zμΩ]+<\\/i>|[·⋅*/\\\\/\\s]|<sup>-?\\d+<\\/sup>|\\^?-?\\d+)+)(?=\\s|[\\u4e00-\\u9fff]|[,，。；;、）)]|$)`, 'g'),
     (_match, prefix, body) => prefix + body.replace(/<\/?i>/g, '')
@@ -121,9 +162,12 @@ function normalizePhysicsHtml(html: string): string {
     .replace(/<sub>([^<]*)$/g, '<sub>$1</sub>')
     .replace(/&lt;(\/?)(sub|sup|i|b|strong|em)&gt;/gi, '<$1$2>')
     .replace(/\r?\n/g, '<br />')
-    .replace(/<span class="nuclear-left">([\s\S]*?)<\/span>\s*(?:<i>)?([A-Z][a-z]?)(?:<\/i>)?/g, '<span class="nuclear-symbol"><span class="nuclear-left">$1</span><span class="nuclear-core">$2</span></span>')
-    .replace(/<sup>([^<]+)<\/sup>\s*<sub>([^<]+)<\/sub>\s*(?:<i>)?([A-Z][a-z]?)(?:<\/i>)?/g, '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$1</sup><sub>$2</sub></span><span class="nuclear-core">$3</span></span>')
-    .replace(/<sub>([^<]+)<\/sub>\s*<sup>([^<]+)<\/sup>\s*(?:<i>)?([A-Z][a-z]?)(?:<\/i>)?/g, '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$2</sup><sub>$1</sub></span><span class="nuclear-core">$3</span></span>')
+    .replace(/<span class="nuclear-left">\s*(<sup>\d+<\/sup>\s*<sub>\d+<\/sub>|<sub>\d+<\/sub>\s*<sup>\d+<\/sup>)\s*<\/span>\s*(?:<i>)?(H|B|K)(?:<\/i>)?(?:\s*(?:<i>)?(e|a|r)(?:<\/i>)?)?/g, '<span class="nuclear-symbol"><span class="nuclear-left">$1</span><span class="nuclear-core">$2$3</span></span>')
+    .replace(new RegExp(`<span class="nuclear-left">\\s*(<sup>\\d+<\\/sup>\\s*<sub>\\d+<\\/sub>|<sub>\\d+<\\/sub>\\s*<sup>\\d+<\\/sup>)\\s*<\\/span>\\s*(?:<i>)?(${elementPattern})(?:<\\/i>)?`, 'g'), '<span class="nuclear-symbol"><span class="nuclear-left">$1</span><span class="nuclear-core">$2</span></span>')
+    .replace(/<sup>(\d+)<\/sup>\s*<sub>(\d+)<\/sub>\s*<i>(H|B|K)<\/i>\s*(?:<i>)?(e|a|r)(?:<\/i>)?/g, '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$1</sup><sub>$2</sub></span><span class="nuclear-core">$3$4</span></span>')
+    .replace(/<sub>(\d+)<\/sub>\s*<sup>(\d+)<\/sup>\s*<i>(H|B|K)<\/i>\s*(?:<i>)?(e|a|r)(?:<\/i>)?/g, '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$2</sup><sub>$1</sub></span><span class="nuclear-core">$3$4</span></span>')
+    .replace(new RegExp(`<sup>(\\d+)<\\/sup>\\s*<sub>(\\d+)<\\/sub>\\s*(?:<i>)?(${elementPattern})(?:<\\/i>)?`, 'g'), '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$1</sup><sub>$2</sub></span><span class="nuclear-core">$3</span></span>')
+    .replace(new RegExp(`<sub>(\\d+)<\\/sub>\\s*<sup>(\\d+)<\\/sup>\\s*(?:<i>)?(${elementPattern})(?:<\\/i>)?`, 'g'), '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$2</sup><sub>$1</sub></span><span class="nuclear-core">$3</span></span>')
     .replace(new RegExp(`(?<=\\d)\\s*(${unitExpr})`, 'g'), '<span class="physics-unit"> $1</span>')
     .replace(/(?<![A-Za-z])([A-Za-zα-ωΑ-Ω])([0-9]+)(?![0-9A-Za-z]|\.(?:png|jpe?g|gif|webp|svg))/gi, '$1<sub>$2</sub>')
     .replace(/(?<![A-Za-z])([A-Za-z])([xyzXYZ])(?![0-9A-Za-z])/g, '$1<sub>$2</sub>')
@@ -131,15 +175,29 @@ function normalizePhysicsHtml(html: string): string {
 }
 
 function processHtmlSegment(html: string): string {
-  return normalizePhysicsHtml(html);
+  return normalizePhysicsHtml(html).replace(/\$([^$]+?)\$/g, (_match, latex) => {
+    const normalizedLatex = cleanLatexInput(latex);
+    try {
+      return katex.renderToString(normalizedLatex, createKaTeXPhysicsOptions(false));
+    } catch {
+      return katex.renderToString(normalizedLatex, {
+        displayMode: false,
+        throwOnError: false,
+        strict: false,
+        trust: true,
+        macros: {},
+      });
+    }
+  });
 }
 
 const KaTeXMath: React.FC<{ latex: string; displayMode: boolean }> = ({ latex, displayMode }) => {
   let rendered: string;
+  const normalizedLatex = cleanLatexInput(latex);
   try {
-    rendered = katex.renderToString(latex, createKaTeXPhysicsOptions(displayMode));
+    rendered = katex.renderToString(normalizedLatex, createKaTeXPhysicsOptions(displayMode));
   } catch {
-    rendered = katex.renderToString(latex, {
+    rendered = katex.renderToString(normalizedLatex, {
       displayMode,
       throwOnError: false,
       strict: false,
@@ -168,7 +226,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
   const hasDrawer = Boolean(answer || analysis);
 
   const { stemText, stemImages } = useMemo(() => {
-    return { stemText: convertHtmlLatexFractions(content || ''), stemImages: [] as string[] };
+    return { stemText: convertHtmlLatexFractions(removeDuplicatedSubQuestionLines(content || '')), stemImages: [] as string[] };
   }, [content]);
 
   const segments = useMemo(() => splitMixedContent(stemText), [stemText]);
@@ -292,7 +350,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
   );
 };
 
-export default QuestionRenderer;
+export default React.memo(QuestionRenderer);
 export { createKaTeXPhysicsOptions, PHYSICS_KATEX_GLOBAL_MACROS, PHYSICS_KATEX_MACROS };
 
 function normalizeOption(option: any, index: number): { label: string; content: string } {

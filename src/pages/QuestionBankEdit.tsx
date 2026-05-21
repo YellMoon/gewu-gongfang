@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Empty, Form, Input, InputNumber, Modal, Select as AntSelect,
+  Button, Card, Checkbox, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select as AntSelect,
   Space, Tag, Upload, message
 } from 'antd';
 import type { UploadFile } from 'antd/es/upload/interface';
-import { FileImageOutlined, FunctionOutlined, TagsOutlined } from '@ant-design/icons';
+import { DeleteOutlined, FileImageOutlined, FunctionOutlined, TagsOutlined } from '@ant-design/icons';
 import type { KnowledgeNode, Question, QuestionVersion } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import QuestionPreviewCard from '../components/QuestionPreviewCard';
@@ -79,6 +79,7 @@ const QuestionBankEdit: React.FC = () => {
   const [editing, setEditing] = useState<Question | null>(null);
   const [versions, setVersions] = useState<QuestionVersion[]>([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
+  const [visibleCount, setVisibleCount] = useState(10);
   const [imageFiles, setImageFiles] = useState<UploadFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [trashVisible, setTrashVisible] = useState(false);
@@ -87,6 +88,9 @@ const QuestionBankEdit: React.FC = () => {
 
   const knowledgeOptions = useMemo(() => buildTreeOptions(knowledgeNodes), [knowledgeNodes]);
   const modelOptions = useMemo(() => buildTreeOptions(modelNodes), [modelNodes]);
+  const visibleQuestions = useMemo(() => questions.slice(0, visibleCount), [questions, visibleCount]);
+  const visibleIds = useMemo(() => visibleQuestions.map(question => question.id), [visibleQuestions]);
+  const selectedVisibleCount = visibleIds.filter(id => selectedRowKeys.includes(id)).length;
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -220,7 +224,48 @@ const QuestionBankEdit: React.FC = () => {
       db?.deleteQuestion?.(question.id);
     }
     message.success('试题已放入回收站，7天内可撤回');
-    loadData();
+    setQuestions(prev => prev.filter(item => item.id !== question.id));
+    setSelectedRowKeys(prev => prev.filter(id => id !== question.id));
+  };
+
+  const toggleQuestionSelection = useCallback((id: string, checked: boolean) => {
+    setSelectedRowKeys(prev => {
+      if (checked) return prev.includes(id) ? prev : [...prev, id];
+      return prev.filter(item => item !== id);
+    });
+  }, []);
+
+  const toggleVisibleSelection = useCallback((checked: boolean) => {
+    setSelectedRowKeys(prev => {
+      const set = new Set(prev);
+      if (checked) {
+        visibleIds.forEach(id => set.add(id));
+      } else {
+        visibleIds.forEach(id => set.delete(id));
+      }
+      return [...set];
+    });
+  }, [visibleIds]);
+
+  const batchDeleteQuestions = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先选择试题');
+      return;
+    }
+    const ids = [...selectedRowKeys];
+    const db = (window as any).dbService;
+    for (const id of ids) {
+      try {
+        const res = await fetch(`${API_BASE}/questions/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'delete failed');
+      } catch (_err) {
+        db?.deleteQuestion?.(id);
+      }
+    }
+    setQuestions(prev => prev.filter(item => !ids.includes(item.id)));
+    setSelectedRowKeys([]);
+    message.success(`已删除 ${ids.length} 道试题`);
   };
 
   const restoreQuestion = async (question: Question) => {
@@ -305,21 +350,53 @@ const QuestionBankEdit: React.FC = () => {
           </Form>
         </Card>
 
+        <Card size="small">
+          <Space wrap>
+            <Checkbox
+              checked={visibleIds.length > 0 && selectedVisibleCount === visibleIds.length}
+              indeterminate={selectedVisibleCount > 0 && selectedVisibleCount < visibleIds.length}
+              onChange={event => toggleVisibleSelection(event.target.checked)}
+            >
+              全选本页
+            </Checkbox>
+            <Tag color={selectedRowKeys.length > 0 ? 'blue' : 'default'}>已选 {selectedRowKeys.length} 题</Tag>
+            <Popconfirm
+              title={`确定删除选中的 ${selectedRowKeys.length} 道试题？`}
+              okText="删除"
+              cancelText="取消"
+              onConfirm={batchDeleteQuestions}
+              disabled={selectedRowKeys.length === 0}
+            >
+              <Button danger icon={<DeleteOutlined />} disabled={selectedRowKeys.length === 0}>
+                批量删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        </Card>
+
         {loading ? <Card loading /> : questions.length === 0 ? (
           <Empty description="暂无待编辑试题" />
         ) : (
           <Space direction="vertical" size={10} style={{ width: '100%' }}>
-            {questions.map((question, index) => (
+            {visibleQuestions.map((question, index) => (
               <QuestionPreviewCard
                 key={question.id}
                 question={question}
                 index={index}
+                selectable
+                checked={selectedRowKeys.includes(question.id)}
+                onCheckChange={checked => toggleQuestionSelection(question.id, checked)}
                 knowledgeNames={(question.knowledge_ids || []).map(id => knowledgeNodes.find(item => item.id === id)?.name || id)}
                 modelNames={(question.model_ids || []).map(id => modelNodes.find(item => item.id === id)?.name || id)}
                 onEdit={() => openEditor(question)}
                 onDelete={() => deleteQuestion(question)}
               />
             ))}
+            {questions.length > visibleQuestions.length && (
+              <Button block onClick={() => setVisibleCount(count => count + 10)}>
+                加载更多（已显示 {visibleQuestions.length}/{questions.length}）
+              </Button>
+            )}
           </Space>
         )}
       </Space>

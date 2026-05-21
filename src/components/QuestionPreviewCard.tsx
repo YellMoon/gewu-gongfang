@@ -1,6 +1,6 @@
 ﻿import React from 'react';
 import { useEffect, useState } from 'react';
-import { Button, Popconfirm, Space } from 'antd';
+import { Button, Checkbox, Popconfirm, Space } from 'antd';
 import { DeleteOutlined, EditOutlined, ShoppingCartOutlined } from '@ant-design/icons';
 import type { Question } from '../types';
 import QuestionRichText from './QuestionRichText';
@@ -34,7 +34,10 @@ const QuestionPreviewCard: React.FC<{
   knowledgeNames?: string[];
   modelNames?: string[];
   inBasket?: boolean;
+  selectable?: boolean;
+  checked?: boolean;
   showAnswer?: boolean;
+  onCheckChange?: (checked: boolean) => void;
   onEdit?: () => void;
   editLabel?: string;
   onToggleBasket?: () => void;
@@ -46,6 +49,9 @@ const QuestionPreviewCard: React.FC<{
   knowledgeNames = [],
   modelNames = [],
   inBasket = false,
+  selectable = false,
+  checked = false,
+  onCheckChange,
   onEdit,
   editLabel = '编辑',
   onToggleBasket,
@@ -90,6 +96,14 @@ const QuestionPreviewCard: React.FC<{
   return (
     <article id={`question-card-${question.id}`} className="qb-question-card">
       <div className="qb-card-main">
+        {selectable && (
+          <Checkbox
+            className="qb-card-checkbox"
+            checked={checked}
+            onChange={event => onCheckChange?.(event.target.checked)}
+            onClick={event => event.stopPropagation()}
+          />
+        )}
         <div className="qb-card-index">{index !== undefined ? index + 1 : ''}</div>
         <div className="qb-card-body">
           <QuestionRenderer
@@ -102,19 +116,6 @@ const QuestionPreviewCard: React.FC<{
           />
           <QuestionRichContent question={resolvedQuestion} terms={terms} />
         </div>
-        {onDelete && (
-          <Space className="qb-card-actions" size={6}>
-            <Popconfirm
-              title="确定删除这道题？"
-              description="删除后会进入回收站，7天内可撤回。"
-              okText="删除"
-              cancelText="取消"
-              onConfirm={onDelete}
-            >
-              <Button type="text" danger icon={<DeleteOutlined />}>删除</Button>
-            </Popconfirm>
-          </Space>
-        )}
       </div>
 
       <div className="qb-card-footer">
@@ -124,6 +125,17 @@ const QuestionPreviewCard: React.FC<{
           {modelText && <span>模型：<QuestionRichText terms={terms}>{modelText}</QuestionRichText></span>}
         </div>
         <Space className="qb-card-footer-actions" size={8}>
+          {onDelete && (
+            <Popconfirm
+              title="确定删除这道题？"
+              description="删除后会进入回收站，7天内可撤回。"
+              okText="删除"
+              cancelText="取消"
+              onConfirm={onDelete}
+            >
+              <Button className="qb-delete-button" danger icon={<DeleteOutlined />}>删除</Button>
+            </Popconfirm>
+          )}
           {onEdit && <Button className="qb-edit-button" icon={<EditOutlined />} onClick={onEdit}>{editLabel}</Button>}
           {onToggleBasket && (
             <Button
@@ -141,4 +153,4 @@ const QuestionPreviewCard: React.FC<{
   );
 };
 
-export default QuestionPreviewCard;
+export default React.memo(QuestionPreviewCard);

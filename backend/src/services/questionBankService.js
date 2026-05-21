@@ -213,6 +213,10 @@ function contentHashForQuestion(item) {
   ].join('|'));
 }
 
+function exactStemForDuplicate(item) {
+  return String(item.stem || item.content || '').trim();
+}
+
 function validateImportItem(item) {
   const errors = [];
   const warnings = [];
@@ -816,6 +820,7 @@ class QuestionBankService {
     const batchId = uuidv4();
     const items = Array.isArray(payload.items) ? payload.items : [];
     const seen = new Set();
+    const seenExactStems = new Set();
     let duplicateItems = 0;
     let rejectedItems = 0;
     let acceptedItems = 0;
@@ -835,25 +840,33 @@ class QuestionBankService {
       items.forEach((item, index) => {
         const normalized = normalizeImportItem(item, payload.defaults || {});
         const contentHash = contentHashForQuestion(normalized);
+        const exactStem = exactStemForDuplicate(normalized);
         const quality = validateImportItem(normalized);
         const valid = quality.errors.length === 0;
         const inBatchDuplicate = valid && seen.has(contentHash);
+        const inBatchExactDuplicate = valid && exactStem && seenExactStems.has(exactStem);
         const existingDuplicate = valid && !!db.prepare(
           'SELECT 1 FROM question_contents WHERE content_hash = ? AND deleted = 0'
         ).get(contentHash);
-        const duplicate = inBatchDuplicate || existingDuplicate;
+        const existingExactDuplicate = valid && exactStem && !!db.prepare(
+          'SELECT 1 FROM question_contents WHERE TRIM(stem) = ? AND deleted = 0'
+        ).get(exactStem);
+        const duplicate = inBatchDuplicate || inBatchExactDuplicate || existingDuplicate || existingExactDuplicate;
         const status = !valid ? 'rejected' : duplicate ? 'duplicate' : 'accepted';
         if (!valid) {
           rejectedItems++;
         } else if (duplicate) {
           duplicateItems++;
-          if (inBatchDuplicate) duplicateSources.in_batch++;
-          if (existingDuplicate) duplicateSources.existing_bank++;
+          if (inBatchDuplicate || inBatchExactDuplicate) duplicateSources.in_batch++;
+          if (existingDuplicate || existingExactDuplicate) duplicateSources.existing_bank++;
         } else {
           acceptedItems++;
         }
         if (quality.warnings.length > 0 || duplicate) warningItems++;
-        if (valid) seen.add(contentHash);
+        if (valid) {
+          seen.add(contentHash);
+          if (exactStem) seenExactStems.add(exactStem);
+        }
         const bucket = quality.score >= 0.8 ? 'high' : quality.score >= 0.5 ? 'medium' : 'low';
         qualityBuckets[bucket]++;
         for (const code of quality.errors) errors[code] = (errors[code] || 0) + 1;

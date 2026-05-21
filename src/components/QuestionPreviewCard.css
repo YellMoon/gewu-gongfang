@@ -16,9 +16,17 @@
 
 .qb-card-main {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
+  grid-template-columns: auto 34px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
+}
+
+.qb-card-main:not(:has(.qb-card-checkbox)) {
+  grid-template-columns: 34px minmax(0, 1fr);
+}
+
+.qb-card-checkbox {
+  margin-top: 5px;
 }
 
 .qb-card-index {
@@ -69,6 +77,11 @@
   height: 34px;
 }
 
+.qb-delete-button {
+  border-radius: 999px;
+  height: 34px;
+}
+
 .qb-basket-button {
   flex: 0 0 auto;
   border-radius: 999px;
@@ -86,11 +99,15 @@
 
 @media (max-width: 900px) {
   .qb-card-main {
+    grid-template-columns: auto 30px minmax(0, 1fr);
+  }
+
+  .qb-card-main:not(:has(.qb-card-checkbox)) {
     grid-template-columns: 30px minmax(0, 1fr);
   }
 
   .qb-card-actions {
-    grid-column: 2;
+    grid-column: 3;
   }
 
   .qb-card-footer {

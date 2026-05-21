@@ -208,8 +208,9 @@
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
-  vertical-align: -0.18em;
+  vertical-align: middle;
   font-style: normal;
+  line-height: 1;
 }
 
 .nuclear-left {
@@ -239,4 +240,5 @@
 .nuclear-core {
   font-style: normal;
   display: inline-block;
+  line-height: 1;
 }

@@ -716,6 +716,10 @@ const QuestionBankImport: React.FC = () => {
           if (batchData.success) {
             const nextBatch = batchData.data || batchData;
             setImportBatch(nextBatch);
+            const duplicateCount = Number(nextBatch.duplicate_items || nextBatch.quality_report?.duplicate_items || 0);
+            if (duplicateCount > 0) {
+              message.warning(`检测到 ${duplicateCount} 道完全重复试题，已自动过滤，提交导入时不会写入题库`);
+            }
             if (db?.createImportTask) {
               db.createImportTask({
                 id: nextBatch.id,
@@ -871,15 +875,25 @@ const QuestionBankImport: React.FC = () => {
     // Read stored examMeta for auto-labeling
     const meta = examMetaRef.current || {};
     let added = 0;
+    let skippedDuplicates = 0;
+    const exactStem = (value: unknown) => String(value || '').trim();
+    const existingStems = new Set((questions || []).map(q => exactStem(q.content || q.stem)).filter(Boolean));
+    const seenStems = new Set<string>();
     for (const q of (result.questions || [])) {
       try {
+        const stem = exactStem(getQuestionStem(q));
+        if (stem && (existingStems.has(stem) || seenStems.has(stem))) {
+          skippedDuplicates++;
+          continue;
+        }
+        if (stem) seenStems.add(stem);
         const knowledge_ids = normalizeImportedKnowledgeIds(db, q);
         const model_ids = [...new Set([...(q.model_ids || []), ...(q.model_point_ids || [])])];
         const preparedQuestion = await prepareQuestionAssetsForStorage({
           subject: q.subject || '\u7269\u7406',
           type: questionTypeFromParser(q.question_types),
           difficulty: 3,
-          content: getQuestionStem(q),
+          content: stem,
           options: (q.options || []).map((o: any) => `${o.label}. ${o.content}`),
           answer: q.answer || '',
           analysis: q.analysis || '',
@@ -908,6 +922,9 @@ const QuestionBankImport: React.FC = () => {
         added++;
       } catch (e) { /* skip bad ones */ }
     }
+    if (skippedDuplicates > 0) {
+      message.warning(`检测到 ${skippedDuplicates} 道完全重复试题，已自动过滤`);
+    }
     setWordResult(null);
     setImportStep(3);
     setCommitResult({
@@ -927,7 +944,7 @@ const QuestionBankImport: React.FC = () => {
       success_items: added,
       warning_items: validationSummary.warning,
       failed_items: validationSummary.failed,
-      duplicate_items: 0,
+      duplicate_items: skippedDuplicates,
       result_summary: { imported_items: added, failed_items: validationSummary.failed },
       items: validationRows.map(row => ({
         item_index: row.index - 1,

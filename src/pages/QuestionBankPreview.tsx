@@ -161,7 +161,7 @@ const QuestionBankPreview: React.FC = () => {
   const [editing, setEditing] = useState<Question | null>(null);
   const [versions, setVersions] = useState<QuestionVersion[]>([]);
   const [treeVisible, setTreeVisible] = useState(true);
-  const [visibleCount, setVisibleCount] = useState(30);
+  const [visibleCount, setVisibleCount] = useState(10);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingNodeName, setEditingNodeName] = useState('');
   const [addingChildParentId, setAddingChildParentId] = useState<string | null | '__ROOT__'>(null);
@@ -361,7 +361,7 @@ const QuestionBankPreview: React.FC = () => {
   const visibleFiltered = dedupedFiltered.slice(0, visibleCount);
 
   useEffect(() => {
-    setVisibleCount(30);
+    setVisibleCount(10);
   }, [appliedSearchText, filterSubjects, filterTypes, filterExamTypes, filterGrades, filterSemesters, filterYear, filterDifficulties, filterStatuses, basketOnly, sourceFilter, activeKnowledgeIds.join(','), activeModelIds.join(','), expandedExcludeIds.join(',')]);
 
   const handleCreateKnowledgeNode = useCallback((name: string, parentId?: string | null) => {
@@ -1185,7 +1185,7 @@ const QuestionBankPreview: React.FC = () => {
               );
             })}
             {dedupedFiltered.length > visibleFiltered.length && (
-              <Button block onClick={() => setVisibleCount(count => count + 30)}>
+              <Button block onClick={() => setVisibleCount(count => count + 10)}>
                 加载更多（已显示 {visibleFiltered.length}/{dedupedFiltered.length}）
               </Button>
             )}
