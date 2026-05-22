@@ -3,9 +3,7 @@
  * 根据用户权限控制子元素的显示/隐藏
  */
 
-import { View } from '@tarojs/components';
-import { getCurrentUser, hasModuleAccess, hasPermission } from '../../utils/permission';
-import type { UserInfo } from '../../utils/permission';
+import { getCurrentUser, hasModuleAccess, hasPermission } from '../utils/permission';
 
 interface Props {
   moduleId?: string;

@@ -6,6 +6,27 @@ const { getInstance } = require('../database');
 
 const router = Router();
 
+function badRequest(res, message, details) {
+  return res.status(400).json({ error: message, details });
+}
+
+function requireFields(body, fields) {
+  return fields.filter(field => body[field] === undefined || body[field] === null || body[field] === '');
+}
+
+function validateCourse(req, res, next) {
+  if (req.method === 'POST') {
+    const missing = requireFields(req.body, ['name']);
+    if (missing.length > 0) return badRequest(res, '参数校验失败', { missing });
+  }
+  for (const field of ['price_tuition', 'price_teacher', 'default_duration_minutes']) {
+    if (req.body[field] !== undefined && Number(req.body[field]) < 0) {
+      return badRequest(res, '参数校验失败', { field, reason: '不能小于 0' });
+    }
+  }
+  return next();
+}
+
 router.get('/', (req, res) => {
   try {
     const db = getInstance();
@@ -23,7 +44,7 @@ router.get('/:id', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/', (req, res) => {
+router.post('/', validateCourse, (req, res) => {
   try {
     const db = getInstance();
     const course = db.createCourse(req.body);
@@ -31,7 +52,7 @@ router.post('/', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.put('/:id', (req, res) => {
+router.put('/:id', validateCourse, (req, res) => {
   try {
     const db = getInstance();
     const course = db.updateCourse(req.params.id, req.body);

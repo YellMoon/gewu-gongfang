@@ -83,7 +83,8 @@ export default function AdminUsersPage() {
     setShowGrantPanel(false);
     const res = await adminApi.getUserPermissions(user.id);
     if (res.success && res.data) {
-      setUserPermissions(res.data.permissions || []);
+      const payload = res.data as any;
+      setUserPermissions(Array.isArray(payload) ? payload : (payload.permissions || []));
     }
   };
 
@@ -105,7 +106,8 @@ export default function AdminUsersPage() {
       Taro.showToast({ title: expiresAt ? `已授予（有效期至 ${expiresAt.slice(0,10)}）` : '已授予（永久）', icon: 'success' });
       const permRes = await adminApi.getUserPermissions(selectedUser.id);
       if (permRes.success && permRes.data) {
-        setUserPermissions(permRes.data.permissions || []);
+        const payload = permRes.data as any;
+        setUserPermissions(Array.isArray(payload) ? payload : (payload.permissions || []));
       }
     } else {
       Taro.showToast({ title: res.error || '操作失败', icon: 'error' });
@@ -120,7 +122,8 @@ export default function AdminUsersPage() {
       // 刷新权限列表
       const permRes = await adminApi.getUserPermissions(selectedUser.id);
       if (permRes.success && permRes.data) {
-        setUserPermissions(permRes.data.permissions || []);
+        const payload = permRes.data as any;
+        setUserPermissions(Array.isArray(payload) ? payload : (payload.permissions || []));
       }
     } else {
       Taro.showToast({ title: res.error || '操作失败', icon: 'error' });

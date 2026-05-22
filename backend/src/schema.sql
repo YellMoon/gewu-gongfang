@@ -231,6 +231,18 @@ CREATE TABLE IF NOT EXISTS sync_audit_log (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS operation_audit_log (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
+  actor TEXT DEFAULT 'system',
+  action TEXT NOT NULL,
+  table_name TEXT,
+  record_id TEXT,
+  status TEXT DEFAULT 'success',
+  detail TEXT,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS outbox_events (
   id TEXT PRIMARY KEY,
   tenant_id TEXT DEFAULT 'default',
@@ -240,6 +252,11 @@ CREATE TABLE IF NOT EXISTS outbox_events (
   payload TEXT NOT NULL,
   status TEXT DEFAULT 'pending',
   retry_count INTEGER DEFAULT 0,
+  max_attempts INTEGER DEFAULT 5,
+  next_attempt_at TEXT,
+  locked_at TEXT,
+  last_attempt_at TEXT,
+  error_message TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   published_at TEXT
@@ -379,7 +396,12 @@ CREATE TABLE IF NOT EXISTS search_index_jobs (
   entity_id TEXT NOT NULL,
   operation TEXT NOT NULL,
   status TEXT DEFAULT 'pending',
+  retry_count INTEGER DEFAULT 0,
+  max_attempts INTEGER DEFAULT 5,
   error_message TEXT,
+  next_attempt_at TEXT,
+  locked_at TEXT,
+  last_attempt_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   processed_at TEXT
@@ -435,6 +457,9 @@ CREATE INDEX IF NOT EXISTS idx_teachers_updated ON teachers(updated_at);
 CREATE INDEX IF NOT EXISTS idx_tenants_status ON tenants(status);
 CREATE INDEX IF NOT EXISTS idx_sync_audit_client ON sync_audit_log(client_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_sync_audit_record ON sync_audit_log(table_name, record_id);
+CREATE INDEX IF NOT EXISTS idx_operation_audit_created ON operation_audit_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_operation_audit_action ON operation_audit_log(action, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_operation_audit_record ON operation_audit_log(table_name, record_id);
 CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox_events(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_subjects_tenant ON subjects(tenant_id, deleted);
 CREATE INDEX IF NOT EXISTS idx_chapters_subject ON chapters(subject_id, deleted);

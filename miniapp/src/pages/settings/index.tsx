@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { View, Text } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import { getNetworkType, onNetworkStatusChange } from '@tarojs/taro'
+import { onNetworkStatusChange, offNetworkStatusChange } from '@tarojs/taro'
 import { getApiBaseUrl, setApiBaseUrl } from '../../utils/api'
 import { isOnline, getPendingChanges, clearPendingChanges, getLastSyncTimestamp } from '../../utils/storage'
 import { clearPermissionCache } from '../../utils/permission'
@@ -23,7 +23,7 @@ export default function Settings() {
       setOnline(res.isConnected)
       refreshStatus()
     })
-    return () => unsub && unsub()
+    return () => offNetworkStatusChange()
   }, [])
 
   const refreshStatus = () => {
@@ -211,7 +211,7 @@ export default function Settings() {
       {/* 退出登录 */}
       <View style={{ padding: '40rpx 30rpx' }}>
         <button
-          style='width:100%;height:88rpx;line-height:88rpx;background:#ff4d4f;color:#fff;border-radius:44rpx;font-size:30rpx;border:none;'
+          style={{ width: '100%', height: '88rpx', lineHeight: '88rpx', background: '#ff4d4f', color: '#fff', borderRadius: '44rpx', fontSize: '30rpx', border: 'none' }}
           onClick={handleLogout}
         >
           退出登录

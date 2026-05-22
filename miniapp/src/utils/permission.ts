@@ -93,7 +93,7 @@ export async function fetchPermissions(): Promise<PermissionData> {
   // 请求 API
   const res = await moduleApi.myPermissions();
   if (res.success && res.data) {
-    const data = res.data as PermissionData;
+    const data = res.data as unknown as PermissionData;
     _permissionCache = data;
     try {
       Taro.setStorageSync(CACHE_KEY, data);

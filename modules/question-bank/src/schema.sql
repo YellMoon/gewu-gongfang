@@ -38,16 +38,12 @@ CREATE TABLE IF NOT EXISTS knowledge_points (
 -- ===================== 题目表 =====================
 CREATE TABLE IF NOT EXISTS questions (
   id TEXT PRIMARY KEY,
-  subject_id TEXT NOT NULL,
+  subject_id TEXT,
   chapter_id TEXT,
   type TEXT NOT NULL,                     -- single_choice/multiple_choice/true_false/fill_blank/short_answer/computation
   difficulty INTEGER DEFAULT 3,           -- 1-5
-  content TEXT NOT NULL,
-  answer TEXT,
-  explanation TEXT,
-  options TEXT,                           -- JSON array for choice types
-  knowledge_point_ids TEXT,               -- JSON array
   source TEXT,
+  status TEXT DEFAULT 'active',
   deleted INTEGER DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,

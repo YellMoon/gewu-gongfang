@@ -5,6 +5,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, Button, Tag, Descriptions, Divider, message, Alert, Row, Col, Statistic } from 'antd';
 import { SyncOutlined, CloudSyncOutlined, CloudServerOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
 import { SyncEngine, SyncStatus } from '../services/syncEngine';
+import { pushSyncBatch, pullSyncOps } from '../services/syncApi';
+import browserDatabase from '../services/browserDatabase';
 
 const CloudSync: React.FC = () => {
   const [engine, setEngine] = useState<SyncEngine | null>(null);
@@ -44,18 +46,48 @@ const CloudSync: React.FC = () => {
       message.info('没有待同步的变更');
       return;
     }
-    eng.clearPending();
+
+    message.loading({ content: '正在推送同步...', key: 'sync' });
+
+    const result = await eng.push(pushSyncBatch);
     refreshStatus();
-    message.success(`已清除 ${pending.length} 条待同步变更（演示模式）`);
-    (window as any).operateLogger?.log('同步', `手动推送 ${pending.length} 条变更`, '云同步');
+
+    if (result.success) {
+      message.success({ content: `已推送 ${result.pushed} 条待同步变更`, key: 'sync' });
+      (window as any).operateLogger?.log('同步', `手动推送 ${result.pushed} 条变更`, '云同步');
+      return true;
+    }
+
+    message.error({ content: `推送失败，${pending.length} 条待同步变更已保留`, key: 'sync' });
+    return false;
   };
 
   const handlePull = async () => {
+    const eng = engineRef.current;
+    if (!eng) return false;
+
     message.loading({ content: '正在拉取云端变更...', key: 'pull' });
-    setTimeout(() => {
-      message.success({ content: '拉取完成（演示模式）', key: 'pull' });
-      (window as any).operateLogger?.log('同步', '手动拉取云端变更', '云同步');
-    }, 1000);
+
+    const localData = browserDatabase.buildSyncLocalDataMaps();
+    const result = await eng.pull(pullSyncOps, localData);
+    if (result.success) {
+      browserDatabase.applySyncLocalDataMaps(localData);
+      refreshStatus();
+      const conflictText = result.conflicts.length > 0 ? `，${result.conflicts.length} 条冲突保留本地` : '';
+      message.success({ content: `已拉取并应用 ${result.applied} 条云端变更${conflictText}`, key: 'pull' });
+      (window as any).operateLogger?.log('同步', `手动拉取 ${result.applied} 条云端变更`, '云同步');
+      return true;
+    }
+
+    refreshStatus();
+    message.error({ content: '拉取失败，本地数据和待同步队列未变更', key: 'pull' });
+    return false;
+  };
+
+  const handleSyncBoth = async () => {
+    const pushed = await handlePush();
+    if (pushed === false) return;
+    await handlePull();
   };
 
   const handleReset = () => {
@@ -154,7 +186,7 @@ const CloudSync: React.FC = () => {
         <Button icon={<ReloadOutlined />} onClick={handlePull}>
           拉取云端变更
         </Button>
-        <Button icon={<SyncOutlined />} onClick={() => { handlePush(); handlePull(); }}>
+        <Button icon={<SyncOutlined />} onClick={handleSyncBoth}>
           双向同步
         </Button>
         <Button danger icon={<DeleteOutlined />} onClick={handleReset} style={{ marginLeft: 'auto' }}>

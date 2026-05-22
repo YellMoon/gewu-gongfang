@@ -38,6 +38,23 @@ function buildTreeData(nodes: KnowledgeNode[], parentId: string | undefined): an
     }));
 }
 
+function normalizeQuestion(row: any): Question {
+  let options = row.options || [];
+  if (typeof options === 'string') {
+    try { options = JSON.parse(options); } catch { options = []; }
+  }
+  if ((!options || options.length === 0) && row.options_json) {
+    try { options = JSON.parse(row.options_json); } catch { options = []; }
+  }
+  return {
+    ...row,
+    content: row.content ?? row.stem ?? '',
+    options: Array.isArray(options) ? options : [],
+    analysis: row.analysis ?? row.explanation ?? '',
+    knowledge_ids: row.knowledge_ids ?? row.knowledge_point_ids ?? [],
+  } as Question;
+}
+
 const QuestionBank: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
@@ -73,7 +90,7 @@ const QuestionBank: React.FC = () => {
     try {
       const db = (window as any).dbService;
       if (!db) return;
-      setQuestions(db.getAllQuestions?.() || []);
+      setQuestions((db.getAllQuestions?.() || []).map(normalizeQuestion));
       setKnowledgeNodes([...(db.getKnowledgeTree?.() || [])]);
       if (db.getKnowledgeTree?.().length === 0) {
         db.initDefaultKnowledgeTree?.();

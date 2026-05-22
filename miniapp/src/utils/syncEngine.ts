@@ -1,11 +1,4 @@
-/**
- * CRDT 同步引擎 — 小程序适配版
- * 与桌面端 src/services/syncEngine.ts 共享相同的同步协议
- * 使用 Taro 存储替代 localStorage
- */
 import Taro from '@tarojs/taro';
-
-// ========== 核心类型（与桌面端一致） ==========
 
 export type SyncTable =
   | 'students' | 'courses' | 'schedules' | 'payments' | 'consumptions'
@@ -14,36 +7,40 @@ export type SyncTable =
 
 export type SyncAction = 'create' | 'update' | 'delete';
 
-export interface SyncOperation {
+export interface SyncChange {
   id: string;
   table: SyncTable;
-  recordId: string;
   action: SyncAction;
-  fields?: Record<string, any>;
-  data?: any;
-  timestamp: number;
-  clientId: string;
-  vectorClock: Record<string, number>;
+  data: any;
+  version: string;
+  updatedAt: string;
+  tenantId: string;
+  deviceId: string;
 }
 
+export type SyncOperation = SyncChange;
+
 export interface SyncBatch {
-  operations: SyncOperation[];
+  changes: SyncChange[];
+  operations: SyncChange[];
   lastSyncTimestamp: number;
+  deviceId: string;
   clientId: string;
+  tenantId: string;
+}
+
+export interface SyncConflict {
+  change: SyncChange;
+  serverData: any;
+  resolution: 'local-wins' | 'server-wins' | 'manual';
 }
 
 export interface SyncResult {
   success: boolean;
   applied: number;
   conflicts: SyncConflict[];
-  serverOperations: SyncOperation[];
+  serverChanges: SyncChange[];
   serverTimestamp: number;
-}
-
-export interface SyncConflict {
-  operation: SyncOperation;
-  serverData: any;
-  resolution: 'local-wins' | 'server-wins' | 'manual';
 }
 
 export interface SyncStatus {
@@ -52,8 +49,6 @@ export interface SyncStatus {
   lastSyncTime: number | null;
   lastSyncResult: 'success' | 'partial' | 'error' | null;
 }
-
-// ========== 小程序专用存储适配 ==========
 
 class TaroSyncStorage {
   private prefix = 'sync_engine_';
@@ -71,7 +66,7 @@ class TaroSyncStorage {
     try {
       Taro.setStorageSync(this.prefix + key, value);
     } catch (e) {
-      console.error('[SyncEngine/Storage] 写入失败:', key, e);
+      console.error('[SyncEngine/Storage] write failed:', key, e);
     }
   }
 
@@ -84,81 +79,108 @@ class TaroSyncStorage {
   }
 }
 
-// ========== 小程序同步引擎 ==========
+function toIsoTime(value: number | string | undefined, fallbackNow = true): string {
+  if (!value) return fallbackNow ? new Date().toISOString() : '1970-01-01T00:00:00.000Z';
+  if (typeof value === 'number') return value > 0 ? new Date(value).toISOString() : '1970-01-01T00:00:00.000Z';
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? (fallbackNow ? new Date().toISOString() : '1970-01-01T00:00:00.000Z') : new Date(parsed).toISOString();
+}
+
+function toTimestamp(value: unknown): number {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return Date.now();
+}
+
+function normalizeChange(change: any, fallbackDeviceId: string, fallbackTenantId = 'default'): SyncChange {
+  const data = { ...(change.data || change.fields || {}) };
+  const recordId = data.id || change.recordId || change.record_id || change.id;
+  const updatedAt = toIsoTime(change.updatedAt
+    || change.updated_at
+    || data.updated_at
+    || change.timestamp
+    || Date.now());
+  return {
+    id: change.id || `${change.table}:${recordId}:${updatedAt}`,
+    table: change.table,
+    action: change.action || (data.deleted ? 'delete' : 'update'),
+    data: { ...data, id: recordId },
+    version: change.version || updatedAt,
+    updatedAt,
+    tenantId: change.tenantId || change.tenant_id || data.tenant_id || fallbackTenantId,
+    deviceId: change.deviceId || change.device_id || change.clientId || change.client_id || fallbackDeviceId,
+  };
+}
 
 export class MiniSyncEngine {
-  private clientId: string;
+  private deviceId: string;
+  private tenantId = 'default';
   private storage: TaroSyncStorage;
-  private vectorClock: Record<string, number>;
-  private pendingOps: SyncOperation[];
+  private pendingChanges: SyncChange[];
 
   constructor() {
     this.storage = new TaroSyncStorage();
-    this.clientId = this.loadClientId();
-    this.vectorClock = this.loadVectorClock();
-    this.pendingOps = this.loadPendingOps();
+    this.deviceId = this.loadDeviceId();
+    this.pendingChanges = this.loadPendingChanges();
   }
 
-  private generateClientId(): string {
-    return `miniapp_${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 9)}`;
+  private generateDeviceId(): string {
+    return `miniapp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 11)}`;
   }
 
-  private loadClientId(): string {
-    const stored = this.storage.get<string>('sync_client_id');
+  private loadDeviceId(): string {
+    const stored = this.storage.get<string>('sync_device_id') || this.storage.get<string>('sync_client_id');
     if (stored) return stored;
-    const id = this.generateClientId();
+    const id = this.generateDeviceId();
+    this.storage.set('sync_device_id', id);
     this.storage.set('sync_client_id', id);
     return id;
   }
 
-  getClientId(): string { return this.clientId; }
+  getClientId(): string { return this.deviceId; }
+  getDeviceId(): string { return this.deviceId; }
 
-  private loadVectorClock(): Record<string, number> {
-    return this.storage.get<Record<string, number>>('sync_vector_clock') || {};
+  private loadPendingChanges(): SyncChange[] {
+    const current = this.storage.get<SyncChange[]>('sync_pending_changes');
+    if (current) return current;
+    const legacy = this.storage.get<any[]>('sync_pending_ops') || [];
+    return legacy.map(change => normalizeChange(change, this.deviceId, this.tenantId));
   }
 
-  private saveVectorClock(): void {
-    this.storage.set('sync_vector_clock', this.vectorClock);
+  private savePendingChanges(): void {
+    this.storage.set('sync_pending_changes', this.pendingChanges);
+    this.storage.set('sync_pending_ops', this.pendingChanges);
   }
 
-  private tick(): number {
-    this.vectorClock[this.clientId] = (this.vectorClock[this.clientId] || 0) + 1;
-    this.saveVectorClock();
-    return this.vectorClock[this.clientId];
-  }
+  getPendingCount(): number { return this.pendingChanges.length; }
+  getPendingChanges(): SyncChange[] { return [...this.pendingChanges]; }
 
-  getVectorClock(): Record<string, number> { return { ...this.vectorClock }; }
-
-  private loadPendingOps(): SyncOperation[] {
-    return this.storage.get<SyncOperation[]>('sync_pending_ops') || [];
-  }
-
-  private savePendingOps(): void {
-    this.storage.set('sync_pending_ops', this.pendingOps);
-  }
-
-  getPendingCount(): number { return this.pendingOps.length; }
-
-  createOperation(table: SyncTable, recordId: string, action: SyncAction, data?: any, fields?: Record<string, any>): SyncOperation {
-    const op: SyncOperation = {
-      id: `op_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`,
+  createOperation(table: SyncTable, recordId: string, action: SyncAction, data?: any, fields?: Record<string, any>): SyncChange {
+    const payload = action === 'update'
+      ? { ...(fields || {}), id: recordId }
+      : { ...(data || {}), id: recordId };
+    const updatedAt = toIsoTime(payload.updated_at || Date.now());
+    const change: SyncChange = {
+      id: `chg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
       table,
-      recordId,
       action,
-      data: action === 'create' ? data : undefined,
-      fields: action === 'update' ? fields : undefined,
-      timestamp: Date.now(),
-      clientId: this.clientId,
-      vectorClock: this.getVectorClock(),
+      data: payload,
+      version: updatedAt,
+      updatedAt,
+      tenantId: payload.tenant_id || this.tenantId,
+      deviceId: this.deviceId,
     };
-    this.tick();
-    this.pendingOps.push(op);
-    this.savePendingOps();
-    return op;
+    this.pendingChanges.push(change);
+    this.savePendingChanges();
+    return change;
   }
 
   async push(baseUrl: string, token: string): Promise<{ pushed: number; success: boolean }> {
-    if (this.pendingOps.length === 0) return { pushed: 0, success: true };
+    if (this.pendingChanges.length === 0) return { pushed: 0, success: true };
+    const changes = [...this.pendingChanges];
 
     try {
       const res = await Taro.request({
@@ -169,33 +191,36 @@ export class MiniSyncEngine {
           'Authorization': token ? `Bearer ${token}` : '',
         },
         data: {
-          operations: this.pendingOps,
-          clientId: this.clientId,
+          changes,
+          deviceId: this.deviceId,
+          client_id: this.deviceId,
+          tenantId: this.tenantId,
           lastSyncTimestamp: this.storage.get<number>('sync_last_ts') || 0,
-        } as SyncBatch,
+        },
         timeout: 30000,
       });
 
-      if (res.statusCode === 200 && res.data?.success) {
-        this.pendingOps = [];
-        this.savePendingOps();
-        this.storage.set('sync_last_ts', res.data.serverTimestamp || Date.now());
-        return { pushed: this.pendingOps.length, success: true };
+      if (res.statusCode === 200 && (res.data as any)?.success) {
+        this.pendingChanges = [];
+        this.savePendingChanges();
+        this.storage.set('sync_last_result', 'success');
+        return { pushed: changes.length, success: true };
       }
-
+      this.storage.set('sync_last_result', 'error');
       return { pushed: 0, success: false };
     } catch (err) {
-      console.error('[MiniSyncEngine] 推送失败:', err);
+      console.error('[MiniSyncEngine] push failed:', err);
+      this.storage.set('sync_last_result', 'error');
       return { pushed: 0, success: false };
     }
   }
 
-  async pull(baseUrl: string, token: string): Promise<{ operations: SyncOperation[]; success: boolean }> {
+  async pull(baseUrl: string, token: string): Promise<{ operations: SyncChange[]; changes: SyncChange[]; success: boolean }> {
     const lastSyncTs = this.storage.get<number>('sync_last_ts') || 0;
 
     try {
       const res = await Taro.request({
-        url: `${baseUrl}/api/sync/pull?lastSyncTs=${lastSyncTs}`,
+        url: `${baseUrl}/api/sync?since=${encodeURIComponent(toIsoTime(lastSyncTs, false))}&deviceId=${encodeURIComponent(this.deviceId)}`,
         method: 'GET',
         header: {
           'Authorization': token ? `Bearer ${token}` : '',
@@ -203,40 +228,30 @@ export class MiniSyncEngine {
         timeout: 30000,
       });
 
-      if (res.statusCode === 200 && res.data?.success) {
-        const ops = res.data.operations || [];
-
-        // 合并向量时钟
-        for (const op of ops) {
-          if (op.vectorClock) {
-            for (const [client, clock] of Object.entries(op.vectorClock)) {
-              this.vectorClock[client] = Math.max(this.vectorClock[client] || 0, clock as number);
-            }
-          }
-        }
-        this.saveVectorClock();
-        this.storage.set('sync_last_ts', res.data.serverTimestamp || Date.now());
-
-        return { operations: ops, success: true };
+      if (res.statusCode === 200 && (res.data as any)?.success) {
+        const changes = (((res.data as any).changes || []) as any[]).map(change => normalizeChange(change, 'server'));
+        this.storage.set('sync_last_ts', toTimestamp((res.data as any).serverTime || (res.data as any).server_time || (res.data as any).serverTimestamp));
+        this.storage.set('sync_last_result', 'success');
+        return { operations: changes, changes, success: true };
       }
 
-      return { operations: [], success: false };
+      this.storage.set('sync_last_result', 'error');
+      return { operations: [], changes: [], success: false };
     } catch (err) {
-      console.error('[MiniSyncEngine] 拉取失败:', err);
-      return { operations: [], success: false };
+      console.error('[MiniSyncEngine] pull failed:', err);
+      this.storage.set('sync_last_result', 'error');
+      return { operations: [], changes: [], success: false };
     }
   }
 
   clearPending(): void {
-    this.pendingOps = [];
-    this.savePendingOps();
+    this.pendingChanges = [];
+    this.savePendingChanges();
   }
 
   reset(): void {
-    this.pendingOps = [];
-    this.vectorClock = {};
-    this.savePendingOps();
-    this.saveVectorClock();
+    this.pendingChanges = [];
+    this.savePendingChanges();
     this.storage.remove('sync_last_ts');
     this.storage.remove('sync_last_result');
   }
@@ -244,7 +259,7 @@ export class MiniSyncEngine {
   getStatus(): SyncStatus {
     return {
       online: true,
-      pendingCount: this.pendingOps.length,
+      pendingCount: this.pendingChanges.length,
       lastSyncTime: this.storage.get<number>('sync_last_ts') || null,
       lastSyncResult: this.storage.get<SyncStatus['lastSyncResult']>('sync_last_result') || null,
     };

@@ -4,18 +4,24 @@
 
 每次修改代码后，自动执行以下流程：
 
-1. **Git 提交推送**
+1. **版本号更新**
+   - 每次生成并上传安装包前，必须递增 `package.json` 版本号。
+   - 不允许重复上传同版本同文件名安装包，避免夸克网盘判定为重复或风险文件。
+
+2. **Git 提交推送**
    - `git add -A && git commit -m "自动发布 YYYY-MM-DD"`
    - 推送到所有远程仓库（origin、gewu 等）
 
-2. **打包安装包**
-   - 执行项目对应的构建命令（如 `npm run dist:win`、`npm run build` 等）
-   - 找到生成的安装包/构建产物
+3. **打包安装包**
+   - 执行项目对应的构建命令。
+   - 当前项目优先使用：`npm run build && npx electron-builder --win`
+   - 找到生成的安装包/构建产物。
 
-3. **上传夸克网盘**
-   - 上传到夸克网盘 `opencode项目/当日日期/` 文件夹
-   - 如文件夹不存在则自动创建
-   - 使用项目内的 upload 脚本（如 `node scripts/upload-quark.js`）
+4. **上传夸克网盘**
+   - 上传到夸克网盘 `codex项目/当日日期/` 文件夹。
+   - 如文件夹不存在则自动创建。
+   - 当前项目必须使用：`node scripts/upload-quark-clean.js`
+   - 不要使用旧脚本 `node scripts/upload-quark.js`。
 
 ## 适用范围
 

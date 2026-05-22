@@ -1,7 +1,29 @@
+function now() {
+  return new Date().toISOString();
+}
+
+function addMinutes(date, minutes) {
+  return new Date(date.getTime() + minutes * 60 * 1000).toISOString();
+}
+
+function parseJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_err) {
+    return [];
+  }
+}
+
 class SearchService {
   constructor() {
     this.endpoint = (process.env.OPENSEARCH_ENDPOINT || '').replace(/\/$/, '');
     this.index = process.env.OPENSEARCH_QUESTION_INDEX || 'questions';
+    this.maxAttempts = Math.max(1, Number(process.env.SEARCH_INDEX_MAX_ATTEMPTS) || 5);
+    this.batchSize = Math.max(1, Number(process.env.SEARCH_INDEX_BATCH_SIZE) || 20);
+    this._draining = false;
   }
 
   enabled() {
@@ -17,6 +39,15 @@ class SearchService {
     });
     if (!res.ok) throw new Error(`OpenSearch index failed: HTTP ${res.status}`);
     return res.json();
+  }
+
+  async deleteQuestion(questionId) {
+    if (!this.enabled()) return { queued: true, reason: 'opensearch-disabled' };
+    const res = await fetch(`${this.endpoint}/${this.index}/_doc/${encodeURIComponent(questionId)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok && res.status !== 404) throw new Error(`OpenSearch delete failed: HTTP ${res.status}`);
+    return res.status === 404 ? { deleted: false, reason: 'not-found' } : res.json();
   }
 
   async searchQuestions(keyword, filters = {}) {
@@ -42,6 +73,173 @@ class SearchService {
     });
     if (!res.ok) throw new Error(`OpenSearch search failed: HTTP ${res.status}`);
     return res.json();
+  }
+
+  ensureJobSchema(db) {
+    const columns = db.prepare('PRAGMA table_info(search_index_jobs)').all().map(row => row.name);
+    const addColumn = (name, sql) => {
+      if (!columns.includes(name)) db.prepare(`ALTER TABLE search_index_jobs ADD COLUMN ${sql}`).run();
+    };
+    addColumn('retry_count', 'retry_count INTEGER DEFAULT 0');
+    addColumn('max_attempts', `max_attempts INTEGER DEFAULT ${this.maxAttempts}`);
+    addColumn('next_attempt_at', 'next_attempt_at TEXT');
+    addColumn('locked_at', 'locked_at TEXT');
+    addColumn('last_attempt_at', 'last_attempt_at TEXT');
+  }
+
+  buildQuestionDocument(db, questionId) {
+    const row = db.prepare(
+      `SELECT q.*,
+              qc.stem,
+              qc.answer,
+              qc.explanation,
+              qc.options_json,
+              qc.content_hash,
+              GROUP_CONCAT(qkp.knowledge_point_id) AS knowledge_point_ids
+       FROM questions q
+       LEFT JOIN question_contents qc ON qc.question_id = q.id AND qc.deleted = 0
+       LEFT JOIN question_knowledge_points qkp ON qkp.question_id = q.id
+       WHERE q.id = ?
+       GROUP BY q.id`
+    ).get(questionId);
+    if (!row || Number(row.deleted || 0) === 1) return null;
+
+    const assets = db.prepare(
+      `SELECT asset_type, file_name, mime_type, size_bytes, oss_key, oss_url, content_hash
+       FROM question_assets
+       WHERE question_id = ? AND deleted = 0
+       ORDER BY created_at ASC`
+    ).all(questionId);
+    const knowledgePointIds = row.knowledge_point_ids ? String(row.knowledge_point_ids).split(',').filter(Boolean) : [];
+
+    return {
+      id: row.id,
+      tenant_id: row.tenant_id || 'default',
+      subject_id: row.subject_id,
+      chapter_id: row.chapter_id,
+      type: row.type,
+      difficulty: row.difficulty,
+      source: row.source,
+      status: row.status,
+      stem: row.stem || '',
+      answer: row.answer || '',
+      explanation: row.explanation || '',
+      options: parseJsonArray(row.options_json),
+      content_hash: row.content_hash,
+      knowledge_point_ids: knowledgePointIds,
+      assets,
+      updated_at: row.updated_at,
+    };
+  }
+
+  listRunnableJobs(db, limit = this.batchSize) {
+    this.ensureJobSchema(db);
+    const ts = now();
+    return db.prepare(
+      `SELECT *
+       FROM search_index_jobs
+       WHERE status IN ('pending', 'retry')
+         AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+       ORDER BY created_at ASC
+       LIMIT ?`
+    ).all(ts, Math.min(Math.max(Number(limit) || this.batchSize, 1), 100));
+  }
+
+  listJobs(db, filters = {}) {
+    this.ensureJobSchema(db);
+    const params = [];
+    const where = [];
+    if (filters.status) {
+      where.push('status = ?');
+      params.push(filters.status);
+    }
+    if (filters.entity_id) {
+      where.push('entity_id = ?');
+      params.push(filters.entity_id);
+    }
+    const limit = Math.min(Math.max(Number(filters.limit) || 50, 1), 200);
+    const offset = Math.max(Number(filters.offset) || 0, 0);
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    return db.prepare(
+      `SELECT *
+       FROM search_index_jobs
+       ${whereSql}
+       ORDER BY created_at DESC
+       LIMIT ? OFFSET ?`
+    ).all(...params, limit, offset);
+  }
+
+  async processJob(db, job) {
+    this.ensureJobSchema(db);
+    const startedAt = now();
+    db.prepare(
+      `UPDATE search_index_jobs
+       SET status = 'running', locked_at = ?, last_attempt_at = ?, updated_at = ?
+       WHERE id = ?`
+    ).run(startedAt, startedAt, startedAt, job.id);
+
+    try {
+      if (job.entity_type !== 'question') throw new Error(`unsupported search entity: ${job.entity_type}`);
+      if (job.operation === 'delete') {
+        await this.deleteQuestion(job.entity_id);
+      } else {
+        const document = this.buildQuestionDocument(db, job.entity_id);
+        if (!document) {
+          await this.deleteQuestion(job.entity_id);
+        } else {
+          await this.indexQuestion(document);
+        }
+      }
+
+      const finishedAt = now();
+      db.prepare(
+        `UPDATE search_index_jobs
+         SET status = 'done', error_message = NULL, locked_at = NULL, processed_at = ?, updated_at = ?
+         WHERE id = ?`
+      ).run(finishedAt, finishedAt, job.id);
+      return { id: job.id, status: 'done' };
+    } catch (err) {
+      const retryCount = Number(job.retry_count || 0) + 1;
+      const maxAttempts = Number(job.max_attempts || this.maxAttempts);
+      const retryable = retryCount < maxAttempts;
+      const ts = now();
+      const nextAttemptAt = retryable ? addMinutes(new Date(), Math.min(30, 2 ** Math.min(retryCount, 5))) : null;
+      db.prepare(
+        `UPDATE search_index_jobs
+         SET status = ?, retry_count = ?, max_attempts = ?, error_message = ?, next_attempt_at = ?,
+             locked_at = NULL, updated_at = ?
+         WHERE id = ?`
+      ).run(retryable ? 'retry' : 'failed', retryCount, maxAttempts, err.message, nextAttemptAt, ts, job.id);
+      return { id: job.id, status: retryable ? 'retry' : 'failed', error: err.message };
+    }
+  }
+
+  async processPendingJobs(db, options = {}) {
+    this.ensureJobSchema(db);
+    if (!this.enabled()) {
+      return { processed: 0, skipped: true, reason: 'opensearch-disabled' };
+    }
+
+    const jobs = this.listRunnableJobs(db, options.limit || this.batchSize);
+    const results = [];
+    for (const job of jobs) {
+      results.push(await this.processJob(db, job));
+    }
+    return { processed: results.length, results };
+  }
+
+  schedulePendingJobs(db) {
+    if (this._draining || !this.enabled()) return;
+    this._draining = true;
+    setImmediate(async () => {
+      try {
+        await this.processPendingJobs(db);
+      } catch (err) {
+        console.warn(`[SearchIndex] drain failed: ${err.message}`);
+      } finally {
+        this._draining = false;
+      }
+    });
   }
 }
 

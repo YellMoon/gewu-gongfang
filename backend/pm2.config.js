@@ -11,7 +11,12 @@ module.exports = {
     exec_mode: 'fork',
     env: {
       NODE_ENV: 'production',
-      PORT: 3001
+      PORT: 3001,
+      LOG_FORMAT: 'json',
+      SLOW_REQUEST_MS: 1000,
+      MONITORING_PROVIDER: process.env.MONITORING_PROVIDER || '',
+      SLS_PROJECT: process.env.SLS_PROJECT || '',
+      ARMS_APP_NAME: process.env.ARMS_APP_NAME || ''
     },
     // 日志
     log_date_format: 'YYYY-MM-DD HH:mm:ss Z',

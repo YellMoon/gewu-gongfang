@@ -17,7 +17,9 @@
       "Bash(node -c upload-quark.js)",
       "Bash(node scripts/upload-quark-claude.js)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(git pull *)",
+      "Bash(git rm *)"
     ]
   }
 }
