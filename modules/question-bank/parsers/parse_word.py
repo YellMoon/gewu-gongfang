@@ -406,7 +406,7 @@ def _display_size_from_container(container, ns):
 
 
 def _image_tag(asset):
-    src = asset.get("data_url", "")
+    src = "question-asset://%s" % asset.get("content_hash", "") if asset.get("content_hash") else asset.get("data_url", "")
     alt = asset.get("file_name", "image")
     width = asset.get("display_width")
     height = asset.get("display_height")
