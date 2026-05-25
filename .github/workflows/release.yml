@@ -128,11 +128,14 @@ jobs:
           chmod 700 ~/.ssh
           ssh-keyscan -p "$BACKEND_DEPLOY_PORT" "$BACKEND_DEPLOY_HOST" >> ~/.ssh/known_hosts
           if [ -n "$BACKEND_DEPLOY_KEY" ]; then
-            umask 077
-            printf '%s' "$BACKEND_DEPLOY_KEY" > ~/.ssh/backend_deploy_key
+            eval "$(ssh-agent -a "$RUNNER_TEMP/backend-ssh-agent.sock")"
+            ssh-add - <<< "$BACKEND_DEPLOY_KEY"
+            {
+              echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK"
+              echo "SSH_AGENT_PID=$SSH_AGENT_PID"
+            } >> "$GITHUB_ENV"
             {
               echo "Host $BACKEND_DEPLOY_HOST"
-              echo "  IdentityFile ~/.ssh/backend_deploy_key"
               echo "  StrictHostKeyChecking yes"
             } >> ~/.ssh/config
           fi

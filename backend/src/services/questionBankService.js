@@ -22,6 +22,53 @@ function parseJsonArray(value) {
   }
 }
 
+const ALLOWED_HTML_TAGS = new Set([
+  'br', 'span', 'div', 'table', 'tbody', 'thead', 'tr', 'td', 'th',
+  'sub', 'sup', 'i', 'b', 'strong', 'em', 'mark', 'img',
+]);
+
+const ALLOWED_HTML_ATTRS = new Set([
+  'class', 'style', 'src', 'alt', 'width', 'height', 'data-inline-options', 'data-latex', 'aria-hidden',
+]);
+
+function sanitizeHtmlContent(value) {
+  let html = String(value || '');
+  html = html.replace(/<!--[\s\S]*?-->/g, '');
+  html = html.replace(/<(script|style|iframe|object|embed|link|meta)\b[\s\S]*?<\/\1>/gi, '');
+  html = html.replace(/<([a-zA-Z][\w:-]*)([^>]*)>/g, (match, tagName, attrs) => {
+    const tag = String(tagName || '').toLowerCase();
+    if (!ALLOWED_HTML_TAGS.has(tag)) return '';
+    const safeAttrs = [];
+    String(attrs || '').replace(/([:\w-]+)(?:\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g, (_attrMatch, rawName, _rawValue, dq, sq, bare) => {
+      const name = String(rawName || '').toLowerCase();
+      const value = dq ?? sq ?? bare ?? '';
+      if (name.startsWith('on') || !ALLOWED_HTML_ATTRS.has(name)) return '';
+      if ((name === 'src' || name === 'href') && !/^(data:image\/|question-asset:\/\/|blob:|https?:\/\/|\/|\.\/|\.\.\/)/i.test(value)) return '';
+      if (name === 'style' && /expression\s*\(|javascript\s*:|url\s*\(/i.test(value)) return '';
+      safeAttrs.push(value === '' ? name : `${name}="${String(value).replace(/"/g, '&quot;')}"`);
+      return '';
+    });
+    return `<${tag}${safeAttrs.length ? ` ${safeAttrs.join(' ')}` : ''}>`;
+  });
+  html = html.replace(/<\/([a-zA-Z][\w:-]*)>/g, (match, tagName) => {
+    const tag = String(tagName || '').toLowerCase();
+    return ALLOWED_HTML_TAGS.has(tag) ? `</${tag}>` : '';
+  });
+  return html;
+}
+
+function sanitizeOptionContent(option) {
+  if (typeof option === 'string') return sanitizeHtmlContent(option.trim());
+  if (!option) return '';
+  return {
+    ...option,
+    label: option.label || '',
+    content: sanitizeHtmlContent(option.content || option.text || ''),
+    text: option.text !== undefined ? sanitizeHtmlContent(option.text || '') : option.text,
+    is_correct: !!option.is_correct,
+  };
+}
+
 function normalizeKnowledgePointIds(payload = {}) {
   const ids = payload.knowledge_point_ids || payload.knowledge_ids || [];
   if (Array.isArray(ids)) return ids.filter(Boolean);
@@ -150,16 +197,10 @@ function normalizeOptions(value) {
   if (!value) return [];
   if (Array.isArray(value)) {
     return value.map(option => {
-      if (typeof option === 'string') return option.trim();
-      if (!option) return '';
-      return {
-        label: option.label || '',
-        content: option.content || option.text || '',
-        is_correct: !!option.is_correct,
-      };
+      return sanitizeOptionContent(option);
     }).filter(Boolean);
   }
-  return parseJsonArray(value);
+  return parseJsonArray(value).map(sanitizeOptionContent).filter(Boolean);
 }
 
 function normalizeImportItem(item = {}, defaults = {}) {
@@ -179,9 +220,9 @@ function normalizeImportItem(item = {}, defaults = {}) {
     chapter_id: item.chapter_id || defaults.chapter_id || null,
     type,
     difficulty: Number(item.difficulty || defaults.difficulty || 3),
-    stem: String(item.stem || item.content || '').trim(),
-    answer: item.answer !== undefined ? String(item.answer || '').trim() : '',
-    explanation: item.explanation !== undefined ? item.explanation : item.analysis,
+    stem: sanitizeHtmlContent(String(item.stem || item.content || '').trim()),
+    answer: item.answer !== undefined ? sanitizeHtmlContent(String(item.answer || '').trim()) : '',
+    explanation: sanitizeHtmlContent(item.explanation !== undefined ? item.explanation : item.analysis),
     options: normalizeOptions(item.options),
     source: item.source || defaults.source || null,
     year: item.year || defaults.year || '',
@@ -309,8 +350,9 @@ class QuestionBankService {
     const ts = now();
     const questionId = payload.id || uuidv4();
     const contentId = uuidv4();
-    const stem = payload.stem || payload.content || '';
-    const explanation = payload.explanation !== undefined ? payload.explanation : payload.analysis;
+    const stem = sanitizeHtmlContent(payload.stem || payload.content || '');
+    const answer = sanitizeHtmlContent(payload.answer || '');
+    const explanation = sanitizeHtmlContent(payload.explanation !== undefined ? payload.explanation : payload.analysis);
     const options = parseJsonArray(payload.options);
     const knowledgePointIds = payload.allow_tag_name_create === false
       ? normalizeKnowledgePointIds(payload)
@@ -318,7 +360,7 @@ class QuestionBankService {
     const modelPointIds = payload.allow_tag_name_create === false
       ? normalizeModelPointIds(payload)
       : this.resolveModelPointIds(db, payload, tenantId);
-    const contentHash = payload.content_hash || hashText([stem, payload.answer, explanation, JSON.stringify(options)].join('|'));
+    const contentHash = payload.content_hash || hashText([stem, answer, explanation, JSON.stringify(options)].join('|'));
     const contentRef = normalizeOssRef(payload);
     const assets = normalizeQuestionAssets(payload);
     const hasImage = detectHasImage(payload, assets);
@@ -357,7 +399,7 @@ class QuestionBankService {
         `INSERT INTO question_contents
          (id, tenant_id, question_id, stem, answer, explanation, options_json, content_hash, version, oss_key, oss_url, deleted, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?)`
-      ).run(contentId, tenantId, questionId, stem, payload.answer || null, explanation || null, JSON.stringify(options), contentHash, contentRef?.oss_key || null, contentRef?.oss_url || null, ts, ts);
+      ).run(contentId, tenantId, questionId, stem, answer || null, explanation || null, JSON.stringify(options), contentHash, contentRef?.oss_key || null, contentRef?.oss_url || null, ts, ts);
 
       for (const knowledgePointId of knowledgePointIds) {
         db.prepare(
@@ -532,9 +574,9 @@ class QuestionBankService {
     if (!existing) return null;
 
     const ts = now();
-    const stem = payload.stem !== undefined ? payload.stem : (payload.content !== undefined ? payload.content : existing.stem);
-    const answer = payload.answer !== undefined ? payload.answer : existing.answer;
-    const explanation = payload.explanation !== undefined ? payload.explanation : (payload.analysis !== undefined ? payload.analysis : existing.explanation);
+    const stem = sanitizeHtmlContent(payload.stem !== undefined ? payload.stem : (payload.content !== undefined ? payload.content : existing.stem));
+    const answer = sanitizeHtmlContent(payload.answer !== undefined ? payload.answer : existing.answer);
+    const explanation = sanitizeHtmlContent(payload.explanation !== undefined ? payload.explanation : (payload.analysis !== undefined ? payload.analysis : existing.explanation));
     const options = payload.options !== undefined ? parseJsonArray(payload.options) : existing.options;
     const contentHash = payload.content_hash || hashText([stem, answer, explanation, JSON.stringify(options)].join('|'));
     const contentRef = normalizeOssRef(payload) || {

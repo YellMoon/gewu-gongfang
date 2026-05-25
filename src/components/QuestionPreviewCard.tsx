@@ -9,6 +9,8 @@ import QuestionRichContent from './QuestionRichContent';
 import { getQuestionAssetDataUrl, isAssetRef } from '../services/questionAssetStore';
 import './QuestionPreviewCard.css';
 
+const resolvedQuestionCache = new Map<string, Question>();
+
 function contentWithInlineAssets(question: Question): string {
   let content = question.content || question.stem || '未填写题干';
   const assets = Array.isArray((question as any).assets) ? (question as any).assets : [];
@@ -71,10 +73,22 @@ const QuestionPreviewCard: React.FC<{
 
   useEffect(() => {
     let cancelled = false;
-    setResolvedQuestion(question);
     async function resolveAssets() {
-      const copy: any = { ...question };
       const assets = Array.isArray((question as any).assets) ? (question as any).assets : [];
+      const cacheKey = [
+        question.id,
+        question.updated_at,
+        question.content,
+        question.stem,
+        assets.map((asset: any) => asset?.content_hash || asset?.data_url || asset?.url || asset?.oss_url || asset?.file_name).join('|'),
+      ].join('::');
+      const cached = resolvedQuestionCache.get(cacheKey);
+      if (cached) {
+        if (!cancelled) setResolvedQuestion(cached);
+        return;
+      }
+      setResolvedQuestion(question);
+      const copy: any = { ...question };
       copy.assets = await Promise.all(assets.map(async (asset: any) => {
         const src = asset?.oss_url || asset?.data_url || asset?.url;
         if (isAssetRef(src)) {
@@ -101,6 +115,11 @@ const QuestionPreviewCard: React.FC<{
             return option;
           });
         }
+      }
+      resolvedQuestionCache.set(cacheKey, copy);
+      if (resolvedQuestionCache.size > 200) {
+        const firstKey = resolvedQuestionCache.keys().next().value;
+        if (firstKey) resolvedQuestionCache.delete(firstKey);
       }
       if (!cancelled) setResolvedQuestion(copy);
     }

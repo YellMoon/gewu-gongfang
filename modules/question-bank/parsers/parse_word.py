@@ -972,51 +972,17 @@ def split_packed_options(question):
     matches = list(re.finditer(r"(^|(?:</[^>]+>)*\s*)([A-G])[\.\u3001\uff0e]\s*", raw, flags=re.I))
     if len(matches) < 2:
         return
-    parsed_options = []
+    next_options = []
     for index, match in enumerate(matches):
         prefix = match.group(1) or ""
         label_start = match.start() + len(prefix)
         content_start = match.end()
         content_end = (matches[index + 1].start() + len(matches[index + 1].group(1) or "")) if index + 1 < len(matches) else len(raw)
         content = raw[content_start:content_end].strip()
-        parsed_options.append({"label": match.group(2).upper(), "content": content, "is_correct": False})
-    next_options = distribute_trailing_images_to_empty_options(parsed_options)
+        if content:
+            next_options.append({"label": match.group(2).upper(), "content": content, "is_correct": False})
     if len(next_options) >= 2:
         question["options"] = next_options
-
-
-def distribute_trailing_images_to_empty_options(options):
-    next_options = []
-    index = 0
-    while index < len(options):
-        current = options[index]
-        if current.get("content", "").strip():
-            next_options.append(current)
-            index += 1
-            continue
-        run = [current]
-        probe = index + 1
-        while probe < len(options) and not options[probe].get("content", "").strip():
-            run.append(options[probe])
-            probe += 1
-        if probe >= len(options):
-            index = probe
-            continue
-        terminal = options[probe]
-        images = re.findall(r"<img\b[^>]*>", terminal.get("content", ""), flags=re.I)
-        remainder = re.sub(r"<img\b[^>]*>", "", terminal.get("content", ""), flags=re.I)
-        remainder = re.sub(r"<br\s*/?>|&nbsp;", "", remainder, flags=re.I).strip()
-        labels = run + [terminal]
-        if images and len(images) >= len(labels) and not remainder:
-            for label_option, image in zip(labels, images):
-                next_options.append({**label_option, "content": image})
-            if len(images) > len(labels):
-                next_options[-1]["content"] += "".join(images[len(labels):])
-        elif terminal.get("content", "").strip():
-            next_options.extend([item for item in run if item.get("content", "").strip()])
-            next_options.append(terminal)
-        index = probe + 1
-    return [item for item in next_options if item.get("content", "").strip()]
 
 
 def normalize_subquestion_image_positions(question):

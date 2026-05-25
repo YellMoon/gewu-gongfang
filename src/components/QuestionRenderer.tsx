@@ -6,6 +6,7 @@ import {
   PHYSICS_KATEX_GLOBAL_MACROS,
   PHYSICS_KATEX_MACROS,
 } from '../utils/physicsNotation';
+import { sanitizeHtml } from '../utils/sanitizeHtml';
 
 interface QuestionRendererProps {
   content: string;
@@ -394,8 +395,10 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
       return <KaTeXMath key={idx} latex={seg.value} displayMode={false} />;
     }
     if (!seg.value.trim()) return null;
-    const processed = applySearchHighlight(processHtmlSegment(seg.value), terms);
-    return <span key={idx} dangerouslySetInnerHTML={{ __html: processed }} />;
+    const processed = sanitizeHtml(applySearchHighlight(processHtmlSegment(seg.value), terms));
+    const hasBlockHtml = /<(?:div|table|img)\b/i.test(processed);
+    const Tag = hasBlockHtml ? 'div' : 'span';
+    return <Tag key={idx} dangerouslySetInnerHTML={{ __html: processed }} />;
   };
 
   const optCount = normalizedOptions.length;
@@ -410,7 +413,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
     setExpanded(false);
   }, []);
   const renderHtml = (value?: string) => (
-    <span dangerouslySetInnerHTML={{ __html: applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(convertHtmlLatexFractions(value || ''))), terms) }} />
+    <span dangerouslySetInnerHTML={{ __html: sanitizeHtml(applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(convertHtmlLatexFractions(value || ''))), terms)) }} />
   );
 
   return (
@@ -442,7 +445,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
             {normalizedOptions.map((opt, i) => (
               <div key={`${opt.label}-${i}`} className={`question-option${isImageOnlyOption(opt.content) ? ' image-only' : ''}`}>
                 <span className="question-option-label">{opt.label}.</span>
-                <span dangerouslySetInnerHTML={{ __html: applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(convertHtmlLatexFractions(opt.content))), terms) }} />
+                <span dangerouslySetInnerHTML={{ __html: sanitizeHtml(applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(convertHtmlLatexFractions(opt.content))), terms)) }} />
               </div>
             ))}
           </div>
@@ -528,7 +531,7 @@ function splitPackedOptions(options: Array<{ label: string; content: string }>):
     };
   });
   if (matches.length < 2) return options;
-  return distributeTrailingImagesToEmptyOptions(matches);
+  return matches.filter(item => item.content);
 }
 
 function normalizeOptions(options: any[]): Array<{ label: string; content: string }> {
@@ -576,56 +579,13 @@ function formatInlineOptionsInPlace(content: string): string {
       contentStart: (match.index || 0) + match[0].length,
     }));
     if (labels.length < 2) return block;
-    const parsedOptions = labels.map((label, index) => {
+    const options = labels.map((label, index) => {
       const nextLabel = labels[index + 1];
       const value = normalized.slice(label.contentStart, nextLabel?.start ?? normalized.length).trim();
       return { label: label.label, content: value };
-    });
-    const options = distributeTrailingImagesToEmptyOptions(parsedOptions);
+    }).filter(option => option.content);
     return options.length >= 2 ? `\n${formatOptionGrid(options)}\n` : block;
   });
-}
-
-function distributeTrailingImagesToEmptyOptions(options: Array<{ label: string; content: string }>): Array<{ label: string; content: string }> {
-  const result: Array<{ label: string; content: string }> = [];
-  let index = 0;
-  while (index < options.length) {
-    const current = options[index];
-    if (current.content.trim()) {
-      result.push(current);
-      index += 1;
-      continue;
-    }
-    const run: Array<{ label: string; content: string }> = [current];
-    let probe = index + 1;
-    while (probe < options.length && !options[probe].content.trim()) {
-      run.push(options[probe]);
-      probe += 1;
-    }
-    if (probe >= options.length) {
-      index = probe;
-      continue;
-    }
-    const terminal = options[probe];
-    const images = Array.from(terminal.content.matchAll(/<img\b[^>]*>/gi)).map(match => match[0]);
-    const remainder = terminal.content
-      .replace(/<img\b[^>]*>/gi, '')
-      .replace(/<br\s*\/?>|&nbsp;/gi, '')
-      .trim();
-    const labels = [...run, terminal];
-    if (images.length >= labels.length && !remainder) {
-      labels.forEach((option, optionIndex) => {
-        result.push({ label: option.label, content: images[optionIndex] });
-      });
-      if (images.length > labels.length) {
-        result[result.length - 1].content += images.slice(labels.length).join('');
-      }
-    } else if (terminal.content.trim()) {
-      result.push(terminal);
-    }
-    index = probe + 1;
-  }
-  return result.filter(option => option.content.trim());
 }
 
 function columnsForOptions(options: Array<{ label: string; content: string }>): number {
