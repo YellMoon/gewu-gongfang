@@ -878,28 +878,31 @@ const QuestionBankImport: React.FC = () => {
     let added = 0;
     let skippedDuplicates = 0;
     const exactStem = (value: unknown) => String(value || '')
-      .replace(/−/g, '－')
-      .replace(/\+/g, '＋')
-      .replace(/-/g, '－')
+      .replace(/<img\b[^>]*>/gi, '[image]')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/[−－]/g, '-')
+      .replace(/[＋]/g, '+')
       .replace(/\s+/g, '')
       .trim();
     const existingStems = new Set((questions || []).map(q => exactStem(q.content || q.stem)).filter(Boolean));
     const seenStems = new Set<string>();
     for (const q of (result.questions || [])) {
       try {
-        const stem = exactStem(getQuestionStem(q));
-        if (stem && (existingStems.has(stem) || seenStems.has(stem))) {
+        const rawStem = getQuestionStem(q);
+        const stemKey = exactStem(rawStem);
+        if (stemKey && (existingStems.has(stemKey) || seenStems.has(stemKey))) {
           skippedDuplicates++;
           continue;
         }
-        if (stem) seenStems.add(stem);
+        if (stemKey) seenStems.add(stemKey);
         const knowledge_ids = normalizeImportedKnowledgeIds(db, q);
         const model_ids = [...new Set([...(q.model_ids || []), ...(q.model_point_ids || [])])];
         const preparedQuestion = await prepareQuestionAssetsForStorage({
           subject: q.subject || '\u7269\u7406',
           type: questionTypeFromParser(q.question_types),
           difficulty: 3,
-          content: stem,
+          content: rawStem,
+          stem: rawStem,
           options: (q.options || []).map((o: any) => `${o.label}. ${o.content}`),
           answer: q.answer || '',
           analysis: q.analysis || '',
