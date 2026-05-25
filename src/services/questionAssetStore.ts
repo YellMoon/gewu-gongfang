@@ -8,8 +8,12 @@ type StoredAsset = {
   updatedAt: string;
 };
 
+let dbPromise: Promise<IDBDatabase> | null = null;
+const dataUrlCache = new Map<string, string>();
+
 function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -18,8 +22,12 @@ function openDb(): Promise<IDBDatabase> {
       }
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => {
+      dbPromise = null;
+      reject(request.error);
+    };
   });
+  return dbPromise;
 }
 
 export function assetRef(key?: string): string {
@@ -44,13 +52,15 @@ export async function storeQuestionAsset(key: string, dataUrl: string): Promise<
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
-  db.close();
+  dataUrlCache.set(key, dataUrl);
   return assetRef(key);
 }
 
 export async function getQuestionAssetDataUrl(keyOrRef: string): Promise<string> {
   const key = assetKeyFromRef(keyOrRef);
   if (!key) return '';
+  const cached = dataUrlCache.get(key);
+  if (cached) return cached;
   const db = await openDb();
   const result = await new Promise<StoredAsset | undefined>((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readonly');
@@ -58,7 +68,7 @@ export async function getQuestionAssetDataUrl(keyOrRef: string): Promise<string>
     request.onsuccess = () => resolve(request.result as StoredAsset | undefined);
     request.onerror = () => reject(request.error);
   });
-  db.close();
+  if (result?.dataUrl) dataUrlCache.set(key, result.dataUrl);
   return result?.dataUrl || '';
 }
 

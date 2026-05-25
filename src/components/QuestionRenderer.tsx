@@ -168,7 +168,7 @@ function convertLegacyLatexFragments(content: string): string {
       if (first) {
         if (name === 'sqrt') {
           const end = source[first.end] === '$' && hasDollar ? first.end + 1 : first.end;
-          output += legacyLatexPlaceholder(`\\sqrt{${first.value}}`);
+          output += `<span class="omml-rad"><span class="omml-rad-sign">√</span><span class="omml-rad-body">${convertLegacyLatexFragments(first.value)}</span></span>`;
           i = end;
           continue;
         }
@@ -184,7 +184,7 @@ function convertLegacyLatexFragments(content: string): string {
         const paren = findBalancedParen(source, afterName);
         if (paren) {
           const end = source[paren.end] === '$' && hasDollar ? paren.end + 1 : paren.end;
-          output += legacyLatexPlaceholder(`\\sqrt{${paren.value}}`);
+          output += `<span class="omml-rad"><span class="omml-rad-sign">√</span><span class="omml-rad-body">${convertLegacyLatexFragments(paren.value)}</span></span>`;
           i = end;
           continue;
         }
@@ -365,7 +365,9 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
     return { stemText: convertLegacyLatexFragments(convertHtmlLatexFractions(cleaned)), stemImages: [] as string[] };
   }, [content, normalizedOptions]);
 
-  const segments = useMemo(() => splitMixedContent(stemText), [stemText]);
+  const stemWithInlineOptionGrids = useMemo(() => formatInlineOptionsInPlace(stemText), [stemText]);
+
+  const segments = useMemo(() => splitMixedContent(stemWithInlineOptionGrids), [stemWithInlineOptionGrids]);
 
   if (inline) {
     const plain = stripHtmlAndMath(content || '');
@@ -435,7 +437,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
           </div>
         )}
 
-        {options && optCount > 0 && (
+        {optCount > 0 && (
           <div className={`question-options cols-${optCols}`}>
             {normalizedOptions.map((opt, i) => (
               <div key={`${opt.label}-${i}`} className={`question-option${isImageOnlyOption(opt.content) ? ' image-only' : ''}`}>
@@ -507,12 +509,26 @@ function normalizeOption(option: any, index: number): { label: string; content: 
 function splitPackedOptions(options: Array<{ label: string; content: string }>): Array<{ label: string; content: string }> {
   if (options.length !== 1) return options;
   const raw = `${options[0].label}. ${options[0].content}`;
-  const matches = Array.from(raw.matchAll(/(?:^|\s*)([A-G])[\.\u3001\uff0e\s]+([\s\S]*?)(?=\s*[A-G][\.\u3001\uff0e\s]+|$)/g));
+  const labelPattern = /(^|(?:<\/[^>]+>)*\s*)([A-G])[\.\u3001\uff0e]\s*/g;
+  const labels = Array.from(raw.matchAll(labelPattern)).map(match => {
+    const prefix = match[1] || '';
+    const labelStart = (match.index || 0) + prefix.length;
+    return {
+      label: match[2].toUpperCase(),
+      labelStart,
+      contentStart: labelStart + match[2].length + match[0].slice(prefix.length + match[2].length).length,
+    };
+  });
+  if (labels.length < 2) return options;
+  const matches = labels.map((match, index) => {
+    const next = labels[index + 1];
+    return {
+      label: match.label,
+      content: raw.slice(match.contentStart, next?.labelStart ?? raw.length).trim(),
+    };
+  });
   if (matches.length < 2) return options;
-  return matches.map(match => ({
-    label: match[1].toUpperCase(),
-    content: match[2].trim(),
-  })).filter(item => item.content);
+  return distributeTrailingImagesToEmptyOptions(matches);
 }
 
 function normalizeOptions(options: any[]): Array<{ label: string; content: string }> {
@@ -538,6 +554,78 @@ function removeOptionImageDuplicates(content: string, options: Array<{ label: st
   if (optionSrcs.size === 0) return next;
   next = next.replace(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>\s*/gi, (match, src) => optionSrcs.has(src) ? '' : match);
   return next;
+}
+
+function formatOptionGrid(options: Array<{ label: string; content: string }>): string {
+  const columns = columnsForOptions(options);
+  const rows = options.map((option, index) => (
+    `<div class="question-option${isImageOnlyOption(option.content) ? ' image-only' : ''}">` +
+    `<span class="question-option-label">${option.label}.</span>` +
+    `<span>${option.content}</span>` +
+    `</div>`
+  )).join('');
+  return `<div class="question-options cols-${columns}" data-inline-options="true">${rows}</div>`;
+}
+
+function formatInlineOptionsInPlace(content: string): string {
+  return String(content || '').replace(/((?:^|\n)\s*[A-G][\.\u3001\uff0e][\s\S]*?)(?=\n\s*(?:[\(\uff08]\d+[\)\uff09]|[\u2460-\u2469]|\d+[\.\u3001\uff0e])|$)/g, (block) => {
+    const normalized = block.replace(/\n+/g, ' ').trim();
+    const labels = Array.from(normalized.matchAll(/(^|(?:<img\b[^>]*\/>|<\/[^>]+>)*\s*)([A-G])[\.\u3001\uff0e]\s*/g)).map(match => ({
+      label: match[2].toUpperCase(),
+      start: (match.index || 0) + (match[1] || '').length,
+      contentStart: (match.index || 0) + match[0].length,
+    }));
+    if (labels.length < 2) return block;
+    const parsedOptions = labels.map((label, index) => {
+      const nextLabel = labels[index + 1];
+      const value = normalized.slice(label.contentStart, nextLabel?.start ?? normalized.length).trim();
+      return { label: label.label, content: value };
+    });
+    const options = distributeTrailingImagesToEmptyOptions(parsedOptions);
+    return options.length >= 2 ? `\n${formatOptionGrid(options)}\n` : block;
+  });
+}
+
+function distributeTrailingImagesToEmptyOptions(options: Array<{ label: string; content: string }>): Array<{ label: string; content: string }> {
+  const result: Array<{ label: string; content: string }> = [];
+  let index = 0;
+  while (index < options.length) {
+    const current = options[index];
+    if (current.content.trim()) {
+      result.push(current);
+      index += 1;
+      continue;
+    }
+    const run: Array<{ label: string; content: string }> = [current];
+    let probe = index + 1;
+    while (probe < options.length && !options[probe].content.trim()) {
+      run.push(options[probe]);
+      probe += 1;
+    }
+    if (probe >= options.length) {
+      index = probe;
+      continue;
+    }
+    const terminal = options[probe];
+    const images = Array.from(terminal.content.matchAll(/<img\b[^>]*>/gi)).map(match => match[0]);
+    const remainder = terminal.content
+      .replace(/<img\b[^>]*>/gi, '')
+      .replace(/<br\s*\/?>|&nbsp;/gi, '')
+      .trim();
+    const labels = [...run, terminal];
+    if (images.length >= labels.length && !remainder) {
+      labels.forEach((option, optionIndex) => {
+        result.push({ label: option.label, content: images[optionIndex] });
+      });
+      if (images.length > labels.length) {
+        result[result.length - 1].content += images.slice(labels.length).join('');
+      }
+    } else if (terminal.content.trim()) {
+      result.push(terminal);
+    }
+    index = probe + 1;
+  }
+  return result.filter(option => option.content.trim());
 }
 
 function columnsForOptions(options: Array<{ label: string; content: string }>): number {

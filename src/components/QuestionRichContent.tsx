@@ -29,11 +29,21 @@ function formulaFromAsset(asset: any): any {
 
 const QuestionRichContent: React.FC<{ question: any; terms?: string[] }> = ({ question, terms = [] }) => {
   const assets = Array.isArray(question?.assets) ? question.assets : [];
-  const renderedContent = String(question?.content || question?.stem || '');
+  const optionContent = Array.isArray(question?.options)
+    ? question.options.map((option: any) => typeof option === 'string' ? option : `${option?.content || ''} ${option?.text || ''}`).join('\n')
+    : '';
+  const renderedContent = [
+    question?.content || question?.stem || '',
+    optionContent,
+    question?.answer || '',
+    question?.analysis || question?.explanation || '',
+  ].map(value => String(value || '')).join('\n');
+  const renderedKeys = new Set(Array.from(renderedContent.matchAll(/question-asset:\/\/([A-Za-z0-9_-]+)/g)).map(match => match[1]));
   const imageAssets = assets.filter((asset: any) => {
     if (asset.asset_type !== 'image') return false;
     const src = asset.resolved_url || asset.oss_url || asset.data_url || asset.url;
-    return !src || (!renderedContent.includes(src) && !renderedContent.includes(asset.file_name || ''));
+    const key = asset.content_hash || asset.id || asset.file_name || '';
+    return !src || (!renderedKeys.has(key) && !renderedContent.includes(src) && !renderedContent.includes(asset.file_name || ''));
   });
   const formulaAssets = assets.filter((asset: any) => String(asset.asset_type || '').startsWith('formula_'));
   const formulas = [
@@ -41,7 +51,13 @@ const QuestionRichContent: React.FC<{ question: any; terms?: string[] }> = ({ qu
     ...formulaAssets.filter((asset: any) => asset.asset_type !== 'formula_preview').map(formulaFromAsset),
   ]
     .map(formula => ({ raw: formula, text: formulaText(formula) }))
-    .filter(item => item.text && item.raw?.format !== 'omml' && !/^[a-zA-Z0-9_]+omml$/.test(item.text));
+    .filter(item => (
+      item.text &&
+      item.raw?.format !== 'omml' &&
+      item.raw?.format !== 'field_code' &&
+      !/^[a-zA-Z0-9_]+omml$/.test(item.text) &&
+      !/^eq\s+/i.test(item.text.trim())
+    ));
 
   if (imageAssets.length === 0 && formulas.length === 0) return null;
 

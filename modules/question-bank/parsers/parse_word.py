@@ -12,7 +12,9 @@ import json
 import mimetypes
 import os
 import re
+import subprocess
 import sys
+import tempfile
 import uuid
 import zipfile
 import xml.etree.ElementTree as ET
@@ -24,6 +26,15 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 QUESTION_RE = re.compile(r"^(\d+)[\.\u3001\uff0e]\s*(.*)")
 OPTION_RE = re.compile(r"^([A-G])[\.\u3001\uff0e]\s*(.*)", re.I)
 SUB_QUESTION_RE = re.compile(r"^(?:[\(\uff08](\d+)[\)\uff09]|([\u2460\u2461\u2462\u2463\u2464\u2465\u2466\u2467\u2468\u2469]))\s*(.*)")
+SYMBOL_FONT_MAP = str.maketrans({
+    "a": "α", "b": "β", "c": "χ", "d": "δ", "e": "ε", "f": "φ", "g": "γ", "h": "η",
+    "i": "ι", "j": "ϕ", "k": "κ", "l": "λ", "m": "μ", "n": "ν", "o": "ο", "p": "π",
+    "q": "θ", "r": "ρ", "s": "σ", "t": "τ", "u": "υ", "v": "ϖ", "w": "ω", "x": "ξ",
+    "y": "ψ", "z": "ζ", "A": "Α", "B": "Β", "C": "Χ", "D": "Δ", "E": "Ε", "F": "Φ",
+    "G": "Γ", "H": "Η", "I": "Ι", "J": "ϑ", "K": "Κ", "L": "Λ", "M": "Μ", "N": "Ν",
+    "O": "Ο", "P": "Π", "Q": "Θ", "R": "Ρ", "S": "Σ", "T": "Τ", "U": "Υ", "V": "ς",
+    "W": "Ω", "X": "Ξ", "Y": "Ψ", "Z": "Ζ",
+})
 EXAM_SECTION_RE = re.compile(r"^[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341]+[\u3001\uff0e\.\s]*(\u5355\u9009\u9898|\u591a\u9009\u9898|\u9009\u62e9\u9898|\u5b9e\u9a8c\u9898|\u89e3\u7b54\u9898|\u7efc\u5408\u9898|\u586b\u7a7a\u9898)")
 ANSWER_TITLE_RE = re.compile(r"^(?:\u300a.*?\u300b\s*)?(?:\u53c2\u8003\u7b54\u6848|\u7b54\u6848\u4e0e\u89e3\u6790|\u7b54\u6848\u53ca\u89e3\u6790|\u7b54\u6848)")
 ANALYSIS_MARK_RE = re.compile(r"\u3010(?!\u7b54\u6848)[^】]+\u3011")
@@ -105,6 +116,24 @@ def _rels_for_part(archive, rel_path, base_prefix="word/"):
             full = os.path.normpath(base_prefix + target).replace("\\", "/")
         rels[rid] = {"target": full, "type": rel_type}
     return rels
+
+
+def read_style_names_from_archive(archive):
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    if "word/styles.xml" not in archive.namelist():
+        return {}
+    try:
+        root = ET.fromstring(archive.read("word/styles.xml"))
+        styles = {}
+        for style in root.findall(".//w:style", ns):
+            style_id = style.attrib.get("{%s}styleId" % ns["w"], "")
+            name_node = style.find("./w:name", ns)
+            name = name_node.attrib.get("{%s}val" % ns["w"], "") if name_node is not None else ""
+            if style_id:
+                styles[style_id] = name or style_id
+        return styles
+    except Exception:
+        return {}
 
 
 def read_docx_comments(file_path):
@@ -420,6 +449,17 @@ def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_
     parts = []
     inline_assets = inline_assets if inline_assets is not None else []
 
+    def has_symbol_font(run):
+        fonts = run.findall("./w:rPr/w:rFonts", ns)
+        for font in fonts:
+            values = [
+                font.attrib.get("{%s}%s" % (ns.get("w", ""), key), "")
+                for key in ("ascii", "hAnsi", "eastAsia", "cs")
+            ]
+            if any(str(value).lower() == "symbol" for value in values):
+                return True
+        return False
+
     def direct_text_outside_graphics(run, tag_name):
         try:
             safe_run = ET.fromstring(_xml_bytes(run))
@@ -461,11 +501,11 @@ def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_
                 math_text = _math_text(math_node).strip()
                 if math_text:
                     parts.append(math_text)
-            run_text = direct_text_outside_graphics(child, "t")
-            instr_text = direct_text_outside_graphics(child, "instrText")
-            text = run_text or instr_text
+            text = direct_text_outside_graphics(child, "t")
             if not text:
                 continue
+            if has_symbol_font(child):
+                text = text.translate(SYMBOL_FONT_MAP)
             vert = child.find("./w:rPr/w:vertAlign", ns)
             val = vert.attrib.get("{%s}val" % ns["w"]) if vert is not None else ""
             italic = child.find("./w:rPr/w:i", ns) is not None
@@ -486,7 +526,32 @@ def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_
             math_text = _math_text(child).strip()
             if math_text:
                 parts.append(math_text)
-    return clean_word_text(normalize_physics_markup("".join(parts)))
+    text = clean_word_text(normalize_physics_markup("".join(parts)))
+    text = re.sub(r"(<img\b[^>]*\/>)\s*(?=(?:[\(\uff08]\d+[\)\uff09]|[\u2460-\u2469]))", r"\n\1\n", text)
+    return text
+
+
+def _table_text_with_markup(table, ns, archive=None, rels=None):
+    rows = []
+    for tr in table.findall("./w:tr", ns):
+        cells = []
+        for tc in tr.findall("./w:tc", ns):
+            parts = []
+            for child in list(tc):
+                tag = _local_name(child)
+                if tag == "p":
+                    inline_assets = []
+                    text = _paragraph_text_with_markup(child, ns, archive, rels, bool(child.findall(".//o:OLEObject", ns)), inline_assets)
+                    if text:
+                        parts.append(text)
+                elif tag == "tbl":
+                    nested = _table_text_with_markup(child, ns, archive, rels)
+                    if nested:
+                        parts.append(nested)
+            cells.append("<td>%s</td>" % "<br />".join(parts))
+        if cells:
+            rows.append("<tr>%s</tr>" % "".join(cells))
+    return '<table class="question-table">%s</table>' % "".join(rows) if rows else ""
 
 
 def _rels_for_document(archive):
@@ -498,9 +563,16 @@ def _asset_from_part(archive, part_name, asset_type, rel_id=None, rel_type=None)
         return None
     data = archive.read(part_name)
     mime = mimetypes.guess_type(part_name)[0] or "application/octet-stream"
+    original_file_name = os.path.basename(part_name)
+    converted = _convert_windows_metafile_to_png(data, original_file_name)
+    if converted:
+        data = converted
+        mime = "image/png"
+        file_name = re.sub(r"\.(?:emf|wmf)$", ".png", original_file_name, flags=re.I)
+    else:
+        file_name = original_file_name
     digest = hashlib.sha256(data).hexdigest()
-    file_name = os.path.basename(part_name)
-    return {
+    asset = {
         "asset_type": asset_type,
         "file_name": file_name,
         "mime_type": mime,
@@ -511,6 +583,64 @@ def _asset_from_part(archive, part_name, asset_type, rel_id=None, rel_type=None)
         "source_part": part_name,
         "data_url": "data:%s;base64,%s" % (mime, base64.b64encode(data).decode("ascii")),
     }
+    if converted:
+        asset["original_file_name"] = original_file_name
+        asset["original_mime_type"] = mimetypes.guess_type(part_name)[0] or "application/octet-stream"
+    return asset
+
+
+def _convert_windows_metafile_to_png(data, file_name):
+    if not re.search(r"\.(?:emf|wmf)$", file_name or "", re.I):
+        return None
+    if os.name != "nt":
+        return None
+
+    def ps_quote(value):
+        return "'" + value.replace("'", "''") + "'"
+
+    suffix = os.path.splitext(file_name)[1].lower() or ".emf"
+    src_path = ""
+    out_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as src_file:
+            src_file.write(data)
+            src_path = src_file.name
+        out_path = src_path + ".png"
+        script = """
+Add-Type -AssemblyName System.Drawing
+$src = %s
+$out = %s
+$meta = [System.Drawing.Imaging.Metafile]::new($src)
+$w = [Math]::Max(1, [Math]::Round($meta.Width))
+$h = [Math]::Max(1, [Math]::Round($meta.Height))
+$bmp = [System.Drawing.Bitmap]::new($w, $h)
+$g = [System.Drawing.Graphics]::FromImage($bmp)
+$g.Clear([System.Drawing.Color]::Transparent)
+$g.DrawImage($meta, 0, 0, $w, $h)
+$bmp.Save($out, [System.Drawing.Imaging.ImageFormat]::Png)
+$g.Dispose()
+$bmp.Dispose()
+$meta.Dispose()
+""" % (ps_quote(src_path), ps_quote(out_path))
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=20,
+        )
+        if result.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            with open(out_path, "rb") as output:
+                return output.read()
+    except Exception:
+        return None
+    finally:
+        for path in (src_path, out_path):
+            if path:
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+    return None
 
 
 def read_docx_rich_paragraphs(file_path):
@@ -598,6 +728,45 @@ def read_docx_rich_paragraphs(file_path):
     return rows
 
 
+def read_docx_rich_blocks(file_path):
+    ns = {
+        "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+        "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+        "v": "urn:schemas-microsoft-com:vml",
+        "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+        "o": "urn:schemas-microsoft-com:office:office",
+        "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
+    }
+    try:
+        with zipfile.ZipFile(file_path, "r") as archive:
+            if "word/document.xml" not in archive.namelist():
+                return []
+            rels = _rels_for_document(archive)
+            root = ET.fromstring(archive.read("word/document.xml"))
+            body = root.find(".//w:body", ns)
+            if body is None:
+                return []
+            rows = []
+            for child in list(body):
+                tag = _local_name(child)
+                if tag == "p":
+                    inline_assets = []
+                    text = _paragraph_text_with_markup(child, ns, archive, rels, bool(child.findall(".//o:OLEObject", ns)), inline_assets)
+                    formulas = []
+                    for math_node in child.findall(".//m:oMath", ns) + child.findall(".//m:oMathPara", ns):
+                        math_text = _math_text(math_node).strip()
+                        formulas.append({"format": "omml", "text": math_text, "omml": _xml_bytes(math_node)})
+                    rows.append({"text": text, "assets": inline_assets, "formulas": formulas, "block_type": "paragraph"})
+                elif tag == "tbl":
+                    text = _table_text_with_markup(child, ns, archive, rels)
+                    if text:
+                        rows.append({"text": text, "assets": [], "formulas": [], "block_type": "table"})
+            return rows
+    except Exception:
+        return []
+
+
 def attach_rich_content(question, rich):
     if not question or not rich:
         return
@@ -607,6 +776,8 @@ def attach_rich_content(question, rich):
         if asset and asset.get("content_hash") not in {item.get("content_hash") for item in question["assets"]}:
             question["assets"].append(asset)
     for formula in rich.get("formulas", []):
+        if formula.get("format") == "field_code":
+            continue
         if formula and formula not in question["formulas"]:
             question["formulas"].append(formula)
     question["has_image"] = any(asset.get("asset_type") == "image" for asset in question["assets"])
@@ -614,20 +785,45 @@ def attach_rich_content(question, rich):
 
 
 def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
-    namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    namespace = {
+        "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+        "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+        "v": "urn:schemas-microsoft-com:vml",
+        "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+        "o": "urn:schemas-microsoft-com:office:office",
+        "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
+    }
     try:
         with zipfile.ZipFile(file_path, "r") as archive:
             if "word/document.xml" not in archive.namelist():
                 return []
+            rels = _rels_for_document(archive)
             root = ET.fromstring(archive.read("word/document.xml"))
+            style_names = read_style_names_from_archive(archive)
             items = []
-            rich_rows = read_docx_rich_paragraphs(file_path)
-            for paragraph_index, paragraph in enumerate(root.findall(".//w:p", namespace)):
-                rich = rich_rows[paragraph_index] if paragraph_index < len(rich_rows) else {}
-                text = rich.get("text") or _paragraph_text_with_markup(paragraph, {
-                    "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
-                    "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
-                })
+            body = root.find(".//w:body", namespace)
+            if body is None:
+                return []
+            for child in list(body):
+                if _local_name(child) == "tbl":
+                    text = _table_text_with_markup(child, namespace, archive, rels)
+                    if text:
+                        items.append({
+                            "text": text,
+                            "number_label": "",
+                            "number_kind": "",
+                            "comments": [],
+                            "rich": {"text": text, "assets": [], "formulas": []},
+                            "is_heading": False,
+                        })
+                    continue
+                if _local_name(child) != "p":
+                    continue
+                paragraph = child
+                inline_assets = []
+                text = _paragraph_text_with_markup(paragraph, namespace, archive, rels, bool(paragraph.findall(".//o:OLEObject", namespace)), inline_assets)
+                rich = {"text": text, "assets": inline_assets, "formulas": []}
                 refs = []
                 for node in paragraph.findall(".//w:commentReference", namespace) + paragraph.findall(".//w:commentRangeStart", namespace) + paragraph.findall(".//w:commentRangeEnd", namespace):
                     comment_id = node.attrib.get(f"{{{namespace['w']}}}id")
@@ -653,6 +849,7 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
                             number_kind = "practice"
                 p_style = paragraph.find("./w:pPr/w:pStyle", namespace)
                 style_val = p_style.attrib.get(f"{{{namespace['w']}}}val", "") if p_style is not None else ""
+                style_name = style_names.get(style_val, "")
                 paragraph_comments = [comments[comment_id] for comment_id in refs if comments.get(comment_id)]
                 items.append({
                     "text": text,
@@ -660,7 +857,7 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
                     "number_kind": number_kind,
                     "comments": paragraph_comments,
                     "rich": rich,
-                    "is_heading": bool(re.search(r"heading|title|\u6807\u9898", style_val, re.I)),
+                    "is_heading": bool(re.search(r"heading|title|\u6807\u9898", "%s %s" % (style_val, style_name), re.I)),
                 })
             return items
     except Exception:
@@ -766,8 +963,96 @@ def split_image_only_options(question):
     question["options"] = next_options
 
 
+def split_packed_options(question):
+    options = question.get("options") or []
+    if len(options) != 1:
+        return
+    first = options[0]
+    raw = "%s. %s" % (first.get("label", "A"), first.get("content", ""))
+    matches = list(re.finditer(r"(^|(?:</[^>]+>)*\s*)([A-G])[\.\u3001\uff0e]\s*", raw, flags=re.I))
+    if len(matches) < 2:
+        return
+    parsed_options = []
+    for index, match in enumerate(matches):
+        prefix = match.group(1) or ""
+        label_start = match.start() + len(prefix)
+        content_start = match.end()
+        content_end = (matches[index + 1].start() + len(matches[index + 1].group(1) or "")) if index + 1 < len(matches) else len(raw)
+        content = raw[content_start:content_end].strip()
+        parsed_options.append({"label": match.group(2).upper(), "content": content, "is_correct": False})
+    next_options = distribute_trailing_images_to_empty_options(parsed_options)
+    if len(next_options) >= 2:
+        question["options"] = next_options
+
+
+def distribute_trailing_images_to_empty_options(options):
+    next_options = []
+    index = 0
+    while index < len(options):
+        current = options[index]
+        if current.get("content", "").strip():
+            next_options.append(current)
+            index += 1
+            continue
+        run = [current]
+        probe = index + 1
+        while probe < len(options) and not options[probe].get("content", "").strip():
+            run.append(options[probe])
+            probe += 1
+        if probe >= len(options):
+            index = probe
+            continue
+        terminal = options[probe]
+        images = re.findall(r"<img\b[^>]*>", terminal.get("content", ""), flags=re.I)
+        remainder = re.sub(r"<img\b[^>]*>", "", terminal.get("content", ""), flags=re.I)
+        remainder = re.sub(r"<br\s*/?>|&nbsp;", "", remainder, flags=re.I).strip()
+        labels = run + [terminal]
+        if images and len(images) >= len(labels) and not remainder:
+            for label_option, image in zip(labels, images):
+                next_options.append({**label_option, "content": image})
+            if len(images) > len(labels):
+                next_options[-1]["content"] += "".join(images[len(labels):])
+        elif terminal.get("content", "").strip():
+            next_options.extend([item for item in run if item.get("content", "").strip()])
+            next_options.append(terminal)
+        index = probe + 1
+    return [item for item in next_options if item.get("content", "").strip()]
+
+
+def normalize_subquestion_image_positions(question):
+    stem = question.get("stem", "")
+    if not stem or "<img" not in stem:
+        return
+    sub_re = r"(?:[\(\uff08]\d+[\)\uff09]|[\u2460-\u2469])"
+    first_sub = re.search(r"(^|\n)\s*%s" % sub_re, stem)
+    if not first_sub:
+        return
+    moved = []
+
+    def pull_image(match):
+        moved.append(match.group(2))
+        return "\n" + match.group(3)
+
+    next_stem = re.sub(
+        r"(^|\n)\s*(<img\b[^>]*\/>)\s*\n\s*(%s)" % sub_re,
+        pull_image,
+        stem,
+    )
+    if not moved:
+        return
+    first_sub = re.search(r"(^|\n)\s*%s" % sub_re, next_stem)
+    if not first_sub:
+        question["stem"] = next_stem.strip()
+        return
+    insert_at = first_sub.start()
+    image_block = "\n".join(moved)
+    question["stem"] = (next_stem[:insert_at].rstrip() + "\n" + image_block + "\n" + next_stem[insert_at:].lstrip()).strip()
+
+
 def finalize_question_type(question):
+    split_packed_options(question)
     split_image_only_options(question)
+    normalize_subquestion_image_positions(question)
     question["question_types"] = classify_question(question.get("stem", ""), question.get("options", []), question.get("answer", ""))
     return question
 
@@ -1202,13 +1487,13 @@ def main():
             raise ImportError("forced docx xml fallback")
         from docx import Document
         doc = Document(file_path)
-        rich_rows = read_docx_rich_paragraphs(file_path)
+        rich_rows = read_docx_rich_blocks(file_path) or read_docx_rich_paragraphs(file_path)
         paragraphs = [row.get("text", "") for row in rich_rows] or [paragraph.text for paragraph in doc.paragraphs]
         numbered_items = extract_numbered_items(doc, file_path)
     except ImportError:
         try:
             paragraphs = extract_paragraphs_from_docx(file_path)
-            rich_rows = read_docx_rich_paragraphs(file_path)
+            rich_rows = read_docx_rich_blocks(file_path) or read_docx_rich_paragraphs(file_path)
             numbered_items = []
         except Exception as exc:
             print(json.dumps({"error": f"cannot open Word document without python-docx: {exc}"}, ensure_ascii=False))
@@ -1216,7 +1501,7 @@ def main():
     except Exception as exc:
         try:
             paragraphs = extract_paragraphs_from_docx(file_path)
-            rich_rows = read_docx_rich_paragraphs(file_path)
+            rich_rows = read_docx_rich_blocks(file_path) or read_docx_rich_paragraphs(file_path)
             numbered_items = []
         except Exception:
             print(json.dumps({"error": f"cannot open Word document: {exc}"}, ensure_ascii=False))
