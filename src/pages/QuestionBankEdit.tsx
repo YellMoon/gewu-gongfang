@@ -13,9 +13,11 @@ import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
 import {
   cacheQuestionTrees,
+  clearQuestionLocalStore,
   ensureQuestionLocalStoreSeeded,
   getCachedQuestionTree,
   queryQuestionPage,
+  removeQuestionLocalRecord,
 } from '../services/questionLocalStore';
 
 const { TextArea } = Input;
@@ -268,12 +270,18 @@ const QuestionBankEdit: React.FC = () => {
 
   const deleteQuestion = async (question: Question) => {
     const db = (window as any).dbService;
+    let remoteDeleted = false;
     try {
       const res = await fetch(`${API_BASE}/questions/${question.id}`, { method: 'DELETE' });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || '删除失败');
-    } catch (_err) {
-      db?.deleteQuestion?.(question.id);
+      remoteDeleted = true;
+    } catch (_err) {}
+    const localDeleted = db?.deleteQuestion?.(question.id);
+    await removeQuestionLocalRecord(question.id);
+    if (!remoteDeleted && !localDeleted) {
+      message.error('删除失败');
+      return;
     }
     message.success('试题已放入回收站，7天内可撤回');
     setQuestions(prev => prev.filter(item => item.id !== question.id));
@@ -312,14 +320,31 @@ const QuestionBankEdit: React.FC = () => {
         const res = await fetch(`${API_BASE}/questions/${id}`, { method: 'DELETE' });
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'delete failed');
-      } catch (_err) {
-        db?.deleteQuestion?.(id);
-      }
+      } catch (_err) {}
+      db?.deleteQuestion?.(id);
+      await removeQuestionLocalRecord(id);
     }
     setQuestions(prev => prev.filter(item => !ids.includes(item.id)));
     setQuestionTotal(prev => Math.max(0, prev - ids.length));
     setSelectedRowKeys([]);
     message.success(`已删除 ${ids.length} 道试题`);
+  };
+
+  const clearAllQuestionData = async () => {
+    const db = (window as any).dbService;
+    try {
+      const res = await fetch(`${API_BASE}/debug/clear-question-bank`, { method: 'POST' });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'clear failed');
+    } catch (_err) {}
+    db?.clearQuestionBankData?.();
+    await clearQuestionLocalStore();
+    setQuestions([]);
+    setQuestionTotal(0);
+    setSelectedRowKeys([]);
+    setTrashQuestions([]);
+    setRefreshNonce(value => value + 1);
+    message.success('已清空试题、试卷和导入测试数据');
   };
 
   const restoreQuestion = async (question: Question) => {
@@ -377,6 +402,15 @@ const QuestionBankEdit: React.FC = () => {
       extra={
         <Space>
           <Button onClick={() => { setTrashVisible(true); loadTrash(); }}>回收站</Button>
+          <Popconfirm
+            title="确定清空试题和试卷测试数据？"
+            description="调试用操作，会删除试题、试题篮、导入批次和试卷组卷信息。"
+            okText="清空"
+            cancelText="取消"
+            onConfirm={clearAllQuestionData}
+          >
+            <Button danger icon={<DeleteOutlined />}>清空调试数据</Button>
+          </Popconfirm>
           <Tag color="orange">待编辑 {questionTotal} 题</Tag>
         </Space>
       }

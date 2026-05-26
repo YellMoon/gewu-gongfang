@@ -250,6 +250,24 @@ export async function removeQuestionLocalRecord(id: string): Promise<void> {
   });
 }
 
+export async function clearQuestionLocalStore(): Promise<void> {
+  fallbackMeta.clear();
+  fallbackContent.clear();
+  let db: IDBDatabase;
+  try {
+    db = await openDb();
+  } catch (_err) {
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction([META_STORE, CONTENT_STORE], 'readwrite');
+    tx.objectStore(META_STORE).clear();
+    tx.objectStore(CONTENT_STORE).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 export async function seedQuestionLocalStore(questions: Question[]): Promise<void> {
   let db: IDBDatabase;
   try {

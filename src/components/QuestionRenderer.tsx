@@ -175,16 +175,14 @@ function convertLegacyLatexFragments(content: string): string {
       if (first) {
         if (name === 'sqrt') {
           const end = source[first.end] === '$' && hasDollar ? first.end + 1 : first.end;
-          const body = convertLegacyLatexFragments(first.value);
-          const radClass = body.includes('omml-frac') ? 'omml-rad has-frac' : 'omml-rad';
-          output += `<span class="${radClass}"><span class="omml-rad-sign">√</span><span class="omml-rad-body">${body}</span></span>`;
+          output += legacyLatexPlaceholder(`\\sqrt{${first.value}}`);
           i = end;
           continue;
         }
         const second = findBalancedGroup(source, first.end);
         if (second) {
           const end = source[second.end] === '$' && hasDollar ? second.end + 1 : second.end;
-          output += `<span class="omml-frac"><span class="omml-frac-num">${convertLegacyLatexFragments(first.value)}</span><span class="omml-frac-den">${convertLegacyLatexFragments(second.value)}</span></span>`;
+          output += legacyLatexPlaceholder(`\\frac{${first.value}}{${second.value}}`);
           i = end;
           continue;
         }
@@ -193,9 +191,7 @@ function convertLegacyLatexFragments(content: string): string {
         const paren = findBalancedParen(source, afterName);
         if (paren) {
           const end = source[paren.end] === '$' && hasDollar ? paren.end + 1 : paren.end;
-          const body = convertLegacyLatexFragments(paren.value);
-          const radClass = body.includes('omml-frac') ? 'omml-rad has-frac' : 'omml-rad';
-          output += `<span class="${radClass}"><span class="omml-rad-sign">√</span><span class="omml-rad-body">${body}</span></span>`;
+          output += legacyLatexPlaceholder(`\\sqrt{${paren.value}}`);
           i = end;
           continue;
         }
@@ -224,6 +220,33 @@ function removeDuplicatedSubQuestionLines(content: string): string {
     }
   }
   return lines.join('\n');
+}
+
+function normalizeStemImagePlacement(content: string, hasSeparateOptions: boolean, questionType?: string): string {
+  const source = String(content || '');
+  if (!/<img\b/i.test(source)) return source;
+  const leadingInline = source.match(/^\s*((?:<img\b[^>]*>\s*)+)([\s\S]*)$/i);
+  const normalizedSource = leadingInline && leadingInline[2].trim()
+    ? `${leadingInline[1].trim()}\n${leadingInline[2].trimStart()}`
+    : source;
+  const imageLinePattern = /^\s*(?:<img\b[^>]*>\s*)+\s*$/i;
+  const lines = normalizedSource.split(/\r?\n/);
+  const leadingImages: string[] = [];
+  while (lines.length > 0 && imageLinePattern.test(lines[0])) {
+    leadingImages.push(lines.shift() || '');
+  }
+  if (leadingImages.length === 0) return source;
+
+  const subQuestionPattern = /^\s*(?:[\(\uff08]\d+[\)\uff09]|[\u2460-\u2469])/;
+  const optionPattern = /^\s*[A-G][\.\u3001\uff0e]\s*/i;
+  const boundaryIndex = lines.findIndex(line => (
+    subQuestionPattern.test(line) ||
+    optionPattern.test(line) ||
+    /<div class="question-options\b/i.test(line)
+  ));
+  const insertIndex = boundaryIndex >= 0 ? boundaryIndex : Math.min(lines.length, 1);
+  lines.splice(insertIndex, 0, ...leadingImages);
+  return lines.join('\n').trim();
 }
 
 export function stripHtmlAndMath(html: string): string {
@@ -372,7 +395,8 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
   const normalizedOptions = useMemo(() => normalizeOptions(options || []), [options]);
 
   const { stemText, stemImages } = useMemo(() => {
-    const cleaned = removeOptionImageDuplicates(removeDuplicatedSubQuestionLines(content || ''), normalizedOptions);
+    const deduped = removeOptionImageDuplicates(removeDuplicatedSubQuestionLines(content || ''), normalizedOptions);
+    const cleaned = normalizeStemImagePlacement(deduped, normalizedOptions.length > 0, questionType);
     return { stemText: convertLegacyLatexFragments(convertHtmlLatexFractions(cleaned)), stemImages: [] as string[] };
   }, [content, normalizedOptions]);
 
@@ -527,7 +551,11 @@ function formatOptionGrid(options: Array<{ label: string; content: string }>): s
 function formatInlineOptionsInPlace(content: string): string {
   return String(content || '').replace(/((?:^|\n)\s*[A-G][\.\u3001\uff0e][\s\S]*?)(?=\n\s*(?:[\(\uff08]\d+[\)\uff09]|[\u2460-\u2469]|\d+[\.\u3001\uff0e])|$)/g, (block) => {
     const normalized = block.replace(/\n+/g, ' ').trim();
-    const labels = Array.from(normalized.matchAll(/(^|(?:<img\b[^>]*\/>|<\/[^>]+>)*\s*)([A-G])[\.\u3001\uff0e]\s*/g)).map(match => ({
+    const labels = Array.from(normalized.matchAll(/(^|(?:<img\b[^>]*\/>|<\/[^>]+>)*\s*)([A-G])([\.\u3001\uff0e])\s*/g)).filter(match => {
+      if (match[3] !== '\u3001') return true;
+      const next = normalized.slice((match.index || 0) + match[0].length).trimStart()[0] || '';
+      return !/[A-G]/i.test(next);
+    }).map(match => ({
       label: match[2].toUpperCase(),
       start: (match.index || 0) + (match[1] || '').length,
       contentStart: (match.index || 0) + match[0].length,

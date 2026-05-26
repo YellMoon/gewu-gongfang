@@ -250,6 +250,17 @@ router.delete('/questions/:id', (req, res) => {
   }
 });
 
+router.post('/debug/clear-question-bank', (req, res) => {
+  try {
+    const db = getInstance().db;
+    const result = questionBank.clearQuestionBankData(db, tenantId(req));
+    searchService.schedulePendingJobs(db);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(errorStatus(err)).json({ success: false, error: err.message });
+  }
+});
+
 router.get('/questions-trash', (req, res) => {
   try {
     const db = getInstance().db;

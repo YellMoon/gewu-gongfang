@@ -18,10 +18,18 @@ export function normalizeOption(option: any, index: number): NormalizedQuestionO
 }
 
 export function splitPackedOptions(options: NormalizedQuestionOption[]): NormalizedQuestionOption[] {
-  if (options.length !== 1) return options;
-  const raw = `${options[0].label}. ${options[0].content}`;
-  const labelPattern = /(^|(?:<\/[^>]+>)*\s*)([A-G])[\.\u3001\uff0e]\s*/g;
-  const labels = Array.from(raw.matchAll(labelPattern)).map(match => {
+  const expanded = options.flatMap(option => splitPackedOption(option));
+  return expanded.length >= options.length ? expanded : options;
+}
+
+function splitPackedOption(option: NormalizedQuestionOption): NormalizedQuestionOption[] {
+  const raw = `${option.label}. ${option.content}`;
+  const labelPattern = /(^|(?:<\/[^>]+>)*\s*)([A-G])([\.\u3001\uff0e])\s*/g;
+  const labels = Array.from(raw.matchAll(labelPattern)).filter(match => {
+    if (match[3] !== '\u3001') return true;
+    const next = raw.slice((match.index || 0) + match[0].length).trimStart()[0] || '';
+    return !/[A-G]/i.test(next);
+  }).map(match => {
     const prefix = match[1] || '';
     const labelStart = (match.index || 0) + prefix.length;
     return {
@@ -30,7 +38,7 @@ export function splitPackedOptions(options: NormalizedQuestionOption[]): Normali
       contentStart: labelStart + match[2].length + match[0].slice(prefix.length + match[2].length).length,
     };
   });
-  if (labels.length < 2) return options;
+  if (labels.length < 2) return [option];
   const matches = labels.map((match, index) => {
     const next = labels[index + 1];
     return {
@@ -38,8 +46,8 @@ export function splitPackedOptions(options: NormalizedQuestionOption[]): Normali
       content: raw.slice(match.contentStart, next?.labelStart ?? raw.length).trim(),
     };
   });
-  if (matches.length < 2) return options;
-  return matches.filter(item => item.content);
+  const filtered = matches.filter(item => item.content);
+  return filtered.length >= 2 ? filtered : [option];
 }
 
 export function normalizeOptions(options: any[]): NormalizedQuestionOption[] {
@@ -60,11 +68,16 @@ export function isImageOnlyOption(value: string): boolean {
 }
 
 export function columnsForOptions(options: NormalizedQuestionOption[]): number {
-  if (options.length >= 5) return 1;
+  if (options.length > 4) return 1;
   if (options.length < 2) return 1;
-  if (options.every(option => isImageOnlyOption(option.content))) return Math.min(options.length, 4);
+  if (options.length === 3) return 1;
+  if (options.length === 4 && options.every(option => isImageOnlyOption(option.content))) return 4;
   const maxLen = Math.max(...options.map(option => option.content.replace(/<[^>]+>/g, '').length));
-  if (maxLen <= 12) return Math.min(options.length, 4);
-  if (maxLen <= 28) return 2;
+  if (options.length === 4) {
+    if (maxLen <= 12) return 4;
+    if (maxLen <= 28) return 2;
+    return 1;
+  }
+  if (options.length === 2 && maxLen <= 28) return 2;
   return 1;
 }

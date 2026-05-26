@@ -135,6 +135,33 @@ function testQuestionHtmlSanitization() {
   });
 }
 
+function testClearQuestionBankData() {
+  withTempDatabase((db) => {
+    const created = questionBank.createQuestion(db, {
+      type: 'single',
+      difficulty: 3,
+      stem: 'temporary debug question',
+      answer: 'A',
+      options: [{ label: 'A', content: 'alpha' }],
+    }, 'default');
+    const batch = questionBank.createImportBatch(db, {
+      source_type: 'exam',
+      file_name: 'debug.docx',
+      items: [{ stem: 'batch question', answer: 'B', type: 'single' }],
+    }, 'default');
+    assert.ok(created.id);
+    assert.ok(batch.id);
+
+    const result = questionBank.clearQuestionBankData(db, 'default');
+    assert.strictEqual(result.questions, 1);
+    assert.strictEqual(result.import_batches, 1);
+    assert.strictEqual(questionBank.listQuestions(db, { limit: 10 }, 'default').length, 0);
+    assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM question_contents').get().count, 0);
+    assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM import_batches').get().count, 0);
+    assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM import_items').get().count, 0);
+  });
+}
+
 function insertKnowledgePoint(db, id, tenantId, name) {
   const ts = new Date().toISOString();
   db.prepare(
@@ -207,6 +234,7 @@ function main() {
   testImportTaskRecordsAndDetails();
   testCommitImportBatchCreatesAcceptedQuestions();
   testQuestionHtmlSanitization();
+  testClearQuestionBankData();
   testQuestionKnowledgePointCrud();
   console.log('questionBankService tests passed');
 }

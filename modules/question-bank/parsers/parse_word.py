@@ -8,6 +8,7 @@ source_type: lecture | exam | auto
 import io
 import base64
 import hashlib
+import html
 import json
 import mimetypes
 import os
@@ -429,7 +430,10 @@ def _math_text(node):
     if tag == "rad":
         deg = _math_text(_first_child(node, "deg"))
         body = _math_text(_first_child(node, "e"))
-        rad_class = "omml-rad has-frac" if "omml-frac" in body else "omml-rad"
+        latex = _math_latex(node)
+        if latex:
+            return _legacy_latex_span(latex)
+        rad_class = "omml-rad"
         if not deg:
             return '<span class="%s"><span class="omml-rad-sign">&#8730;</span><span class="omml-rad-body">%s</span></span>' % (rad_class, body)
         return '<span class="%s"><span class="omml-rad-index">%s</span><span class="omml-rad-sign">&#8730;</span><span class="omml-rad-body">%s</span></span>' % (rad_class, deg, body)
@@ -449,6 +453,65 @@ def _math_text(node):
     if tag == "func":
         return "%s(%s)" % (_plain_math_text(_first_child(node, "fName")), _math_text(_first_child(node, "e")))
     return "".join(_math_text(child) for child in list(node))
+
+
+def _legacy_latex_span(latex):
+    if not latex:
+        return ""
+    return '<span class="legacy-latex" data-latex="%s"></span>' % html.escape(latex, quote=True)
+
+
+def _math_latex(node):
+    if node is None:
+        return ""
+    tag = _local_name(node)
+    if tag == "t":
+        return node.text or ""
+    if tag == "r":
+        plain_style = False
+        rpr = _first_child(node, "rPr")
+        if rpr is not None:
+            plain_style = any(_local_name(child) in ("nor", "lit") for child in list(rpr))
+            plain_style = plain_style or any(_local_name(child) == "sty" and child.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/math}val") in ("p", "plain") for child in list(rpr))
+        if plain_style:
+            return _plain_math_text(node)
+        return "".join(_math_latex(child) for child in list(node) if _local_name(child) != "rPr")
+    if tag == "fName":
+        return _plain_math_text(node)
+    if tag in ("oMath", "oMathPara", "e", "num", "den", "deg", "sub", "sup"):
+        return "".join(_math_latex(child) for child in list(node))
+    if tag == "f":
+        num = _math_latex(_first_child(node, "num"))
+        den = _math_latex(_first_child(node, "den"))
+        if _omml_fraction_type(node) in ("lin", "skw"):
+            return "%s/%s" % (num, den)
+        return r"\frac{%s}{%s}" % (num, den)
+    if tag == "sSub":
+        base = _math_latex(_first_child(node, "e"))
+        sub = _math_latex(_first_child(node, "sub"))
+        return "%s_{%s}" % (base, sub)
+    if tag == "sSup":
+        base = _math_latex(_first_child(node, "e"))
+        sup = _math_latex(_first_child(node, "sup"))
+        return "%s^{%s}" % (base, sup)
+    if tag == "sSubSup":
+        base = _math_latex(_first_child(node, "e"))
+        sub = _math_latex(_first_child(node, "sub"))
+        sup = _math_latex(_first_child(node, "sup"))
+        return "%s_{%s}^{%s}" % (base, sub, sup) if base else "{}_{%s}^{%s}" % (sub, sup)
+    if tag == "rad":
+        deg = _math_latex(_first_child(node, "deg"))
+        body = _math_latex(_first_child(node, "e"))
+        return r"\sqrt[%s]{%s}" % (deg, body) if deg else r"\sqrt{%s}" % body
+    if tag == "d":
+        return r"\left(%s\right)" % _math_latex(_first_child(node, "e"))
+    if tag == "bar":
+        return r"\overline{%s}" % _math_latex(_first_child(node, "e"))
+    if tag == "groupChr":
+        return _math_latex(_first_child(node, "e"))
+    if tag == "func":
+        return "%s(%s)" % (_plain_math_text(_first_child(node, "fName")), _math_latex(_first_child(node, "e")))
+    return "".join(_math_latex(child) for child in list(node))
 
 def _asset_from_run_rel(archive, rels, rid, has_ole_object=False):
     if archive is None or not rid:
@@ -1069,23 +1132,31 @@ def split_image_only_options(question):
 
 def split_packed_options(question):
     options = question.get("options") or []
-    if len(options) != 1:
-        return
-    first = options[0]
-    raw = "%s. %s" % (first.get("label", "A"), first.get("content", ""))
-    matches = list(re.finditer(r"(^|(?:</[^>]+>)*\s*)([A-G])[\.\u3001\uff0e]\s*", raw, flags=re.I))
-    if len(matches) < 2:
-        return
     next_options = []
-    for index, match in enumerate(matches):
-        prefix = match.group(1) or ""
-        label_start = match.start() + len(prefix)
-        content_start = match.end()
-        content_end = (matches[index + 1].start() + len(matches[index + 1].group(1) or "")) if index + 1 < len(matches) else len(raw)
-        content = raw[content_start:content_end].strip()
-        if content:
-            next_options.append({"label": match.group(2).upper(), "content": content, "is_correct": False})
-    if len(next_options) >= 2:
+    changed = False
+    for option in options:
+        raw = "%s. %s" % (option.get("label", "A"), option.get("content", ""))
+        matches = [
+            match for match in re.finditer(r"(^|(?:</[^>]+>)*\s*)([A-G])([\.\u3001\uff0e])\s*", raw, flags=re.I)
+            if not (match.group(3) == "\u3001" and re.match(r"[A-G]", raw[match.end():].lstrip(), flags=re.I))
+        ]
+        if len(matches) < 2:
+            next_options.append(option)
+            continue
+        expanded = []
+        for index, match in enumerate(matches):
+            prefix = match.group(1) or ""
+            content_start = match.end()
+            content_end = (matches[index + 1].start() + len(matches[index + 1].group(1) or "")) if index + 1 < len(matches) else len(raw)
+            content = raw[content_start:content_end].strip()
+            if content:
+                expanded.append({"label": match.group(2).upper(), "content": content, "is_correct": False})
+        if len(expanded) >= 2:
+            next_options.extend(expanded)
+            changed = True
+        else:
+            next_options.append(option)
+    if changed:
         question["options"] = next_options
 
 
@@ -1119,9 +1190,28 @@ def normalize_subquestion_image_positions(question):
     question["stem"] = (next_stem[:insert_at].rstrip() + "\n" + image_block + "\n" + next_stem[insert_at:].lstrip()).strip()
 
 
+def normalize_leading_image_positions(question):
+    stem = question.get("stem", "")
+    if not stem or "<img" not in stem:
+        return
+    inline_match = re.match(r"^\s*((?:<img\b[^>]*>\s*)+)([\s\S]*)$", stem, flags=re.I)
+    if inline_match and inline_match.group(2).strip():
+        stem = inline_match.group(1).strip() + "\n" + inline_match.group(2).lstrip()
+    lines = stem.splitlines()
+    leading = []
+    while lines and re.match(r"^\s*(?:<img\b[^>]*>\s*)+\s*$", lines[0], flags=re.I):
+        leading.append(lines.pop(0).strip())
+    if not leading:
+        return
+    boundary_re = r"^\s*(?:[A-G][\.\u3001\uff0e]|[\(\uff08]\d+[\)\uff09]|[\u2460-\u2469])"
+    insert_at = next((index for index, line in enumerate(lines) if re.match(boundary_re, line, flags=re.I)), min(len(lines), 1))
+    lines[insert_at:insert_at] = leading
+    question["stem"] = "\n".join(lines).strip()
+
+
 def finalize_question_type(question):
     split_packed_options(question)
-    split_image_only_options(question)
+    normalize_leading_image_positions(question)
     normalize_subquestion_image_positions(question)
     question["question_types"] = classify_question(question.get("stem", ""), question.get("options", []), question.get("answer", ""))
     return question

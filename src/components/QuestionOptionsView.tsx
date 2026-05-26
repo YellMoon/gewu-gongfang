@@ -30,7 +30,7 @@ const QuestionOptionsView: React.FC<{
             minWidth: 0,
           }}
         >
-          <span style={{ fontWeight: 600 }}>{option.label}.</span>
+          <span style={{ fontWeight: 400 }}>{option.label}.</span>
           <QuestionRichText terms={terms}>{option.content}</QuestionRichText>
         </div>
       ))}

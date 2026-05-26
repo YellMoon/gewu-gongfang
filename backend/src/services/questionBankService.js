@@ -694,6 +694,29 @@ class QuestionBankService {
     return this.getQuestion(db, id, tenantId);
   }
 
+  clearQuestionBankData(db, tenantId = 'default') {
+    const questionIds = db.prepare('SELECT id FROM questions WHERE tenant_id = ?').all(tenantId).map(row => row.id);
+    const batchIds = db.prepare('SELECT id FROM import_batches WHERE tenant_id = ?').all(tenantId).map(row => row.id);
+    const result = { questions: questionIds.length, import_batches: batchIds.length };
+    const transaction = db.transaction(() => {
+      for (const questionId of questionIds) {
+        db.prepare('DELETE FROM question_knowledge_points WHERE question_id = ?').run(questionId);
+        db.prepare('DELETE FROM question_model_points WHERE question_id = ?').run(questionId);
+        db.prepare('DELETE FROM question_assets WHERE question_id = ?').run(questionId);
+        db.prepare('DELETE FROM question_contents WHERE question_id = ?').run(questionId);
+        db.prepare("DELETE FROM vector_embeddings WHERE tenant_id = ? AND entity_type = 'question' AND entity_id = ?").run(tenantId, questionId);
+        db.prepare("DELETE FROM search_index_jobs WHERE tenant_id = ? AND entity_type = 'question' AND entity_id = ?").run(tenantId, questionId);
+      }
+      for (const batchId of batchIds) {
+        db.prepare('DELETE FROM import_items WHERE batch_id = ?').run(batchId);
+      }
+      db.prepare('DELETE FROM import_batches WHERE tenant_id = ?').run(tenantId);
+      db.prepare('DELETE FROM questions WHERE tenant_id = ?').run(tenantId);
+    });
+    transaction();
+    return result;
+  }
+
   listQuestionKnowledgePoints(db, id, tenantId = 'default') {
     const question = this.getQuestion(db, id, tenantId);
     if (!question) return null;

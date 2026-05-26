@@ -17,7 +17,7 @@ import {
   upsertLegacyTreeTags,
 } from './tagAdapter';
 import { normalizeQuestionType } from '../constants/questionTypes';
-import { cacheQuestionTrees, removeQuestionLocalRecord, upsertQuestionLocalRecord } from './questionLocalStore';
+import { cacheQuestionTrees, clearQuestionLocalStore, removeQuestionLocalRecord, upsertQuestionLocalRecord } from './questionLocalStore';
 
 interface Database {
   students: Student[];
@@ -1347,6 +1347,18 @@ class BrowserDatabaseService {
     this.data.questionBasketIds = nextIds;
     this.saveData();
     return nextIds;
+  }
+
+  clearQuestionBankData(): void {
+    this.data.questions = [];
+    this.data.questionVersions = [];
+    this.data.questionBasketIds = [];
+    this.data.importTasks = [];
+    this.data.importTaskItems = [];
+    this.questionSearchIndex.clear();
+    clearQuestionLocalStore().catch(() => undefined);
+    this.syncTreeCache();
+    this.saveData();
   }
 
   toggleQuestionBasket(id: string): string[] {
