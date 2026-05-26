@@ -29,8 +29,17 @@ function cleanStyle(value: string): string {
     .join('; ');
 }
 
+function escapeHtml(value: string): string {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export function sanitizeHtml(html: string): string {
-  if (typeof DOMParser === 'undefined') return String(html || '');
+  if (typeof DOMParser === 'undefined') return escapeHtml(String(html || ''));
   const doc = new DOMParser().parseFromString(`<div>${html || ''}</div>`, 'text/html');
   const root = doc.body.firstElementChild;
   if (!root) return '';

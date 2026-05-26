@@ -1,5 +1,6 @@
 ﻿const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
+const sanitizeHtml = require('sanitize-html');
 const cache = require('./cacheService');
 const eventBus = require('./eventBus');
 
@@ -27,34 +28,40 @@ const ALLOWED_HTML_TAGS = new Set([
   'sub', 'sup', 'i', 'b', 'strong', 'em', 'mark', 'img',
 ]);
 
-const ALLOWED_HTML_ATTRS = new Set([
-  'class', 'style', 'src', 'alt', 'width', 'height', 'data-inline-options', 'data-latex', 'aria-hidden',
-]);
+const SAFE_STYLE_VALUE = [/^(?!.*(?:expression\s*\(|javascript\s*:|url\s*\())[^{};]*$/i];
+const SAFE_STYLE_PROPERTIES = [
+  'width', 'height', 'max-width', 'max-height', 'min-width', 'min-height',
+  'display', 'vertical-align', 'text-align', 'margin', 'margin-left', 'margin-right',
+  'margin-top', 'margin-bottom', 'padding', 'padding-left', 'padding-right',
+  'padding-top', 'padding-bottom', 'border', 'border-collapse', 'border-spacing',
+  'font-style', 'font-weight', 'font-size', 'line-height', 'color',
+  'background', 'background-color', 'white-space',
+];
+
+const SANITIZE_HTML_OPTIONS = {
+  allowedTags: Array.from(ALLOWED_HTML_TAGS),
+  allowedAttributes: {
+    '*': ['class', 'style', 'aria-hidden'],
+    span: ['class', 'style', 'data-inline-options', 'data-latex', 'aria-hidden'],
+    img: ['class', 'style', 'src', 'alt', 'width', 'height'],
+    table: ['class', 'style'],
+    tbody: ['class', 'style'],
+    thead: ['class', 'style'],
+    tr: ['class', 'style'],
+    td: ['class', 'style', 'colspan', 'rowspan'],
+    th: ['class', 'style', 'colspan', 'rowspan'],
+  },
+  allowedSchemes: ['http', 'https', 'data', 'blob', 'question-asset'],
+  allowedSchemesAppliedToAttributes: ['src'],
+  allowProtocolRelative: false,
+  parseStyleAttributes: true,
+  allowedStyles: {
+    '*': Object.fromEntries(SAFE_STYLE_PROPERTIES.map(property => [property, SAFE_STYLE_VALUE])),
+  },
+};
 
 function sanitizeHtmlContent(value) {
-  let html = String(value || '');
-  html = html.replace(/<!--[\s\S]*?-->/g, '');
-  html = html.replace(/<(script|style|iframe|object|embed|link|meta)\b[\s\S]*?<\/\1>/gi, '');
-  html = html.replace(/<([a-zA-Z][\w:-]*)([^>]*)>/g, (match, tagName, attrs) => {
-    const tag = String(tagName || '').toLowerCase();
-    if (!ALLOWED_HTML_TAGS.has(tag)) return '';
-    const safeAttrs = [];
-    String(attrs || '').replace(/([:\w-]+)(?:\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g, (_attrMatch, rawName, _rawValue, dq, sq, bare) => {
-      const name = String(rawName || '').toLowerCase();
-      const value = dq ?? sq ?? bare ?? '';
-      if (name.startsWith('on') || !ALLOWED_HTML_ATTRS.has(name)) return '';
-      if ((name === 'src' || name === 'href') && !/^(data:image\/|question-asset:\/\/|blob:|https?:\/\/|\/|\.\/|\.\.\/)/i.test(value)) return '';
-      if (name === 'style' && /expression\s*\(|javascript\s*:|url\s*\(/i.test(value)) return '';
-      safeAttrs.push(value === '' ? name : `${name}="${String(value).replace(/"/g, '&quot;')}"`);
-      return '';
-    });
-    return `<${tag}${safeAttrs.length ? ` ${safeAttrs.join(' ')}` : ''}>`;
-  });
-  html = html.replace(/<\/([a-zA-Z][\w:-]*)>/g, (match, tagName) => {
-    const tag = String(tagName || '').toLowerCase();
-    return ALLOWED_HTML_TAGS.has(tag) ? `</${tag}>` : '';
-  });
-  return html;
+  return sanitizeHtml(String(value || ''), SANITIZE_HTML_OPTIONS);
 }
 
 function sanitizeOptionContent(option) {
@@ -353,7 +360,7 @@ class QuestionBankService {
     const stem = sanitizeHtmlContent(payload.stem || payload.content || '');
     const answer = sanitizeHtmlContent(payload.answer || '');
     const explanation = sanitizeHtmlContent(payload.explanation !== undefined ? payload.explanation : payload.analysis);
-    const options = parseJsonArray(payload.options);
+    const options = normalizeOptions(payload.options || payload.options_json);
     const knowledgePointIds = payload.allow_tag_name_create === false
       ? normalizeKnowledgePointIds(payload)
       : this.resolveKnowledgePointIds(db, payload, tenantId);
@@ -577,7 +584,9 @@ class QuestionBankService {
     const stem = sanitizeHtmlContent(payload.stem !== undefined ? payload.stem : (payload.content !== undefined ? payload.content : existing.stem));
     const answer = sanitizeHtmlContent(payload.answer !== undefined ? payload.answer : existing.answer);
     const explanation = sanitizeHtmlContent(payload.explanation !== undefined ? payload.explanation : (payload.analysis !== undefined ? payload.analysis : existing.explanation));
-    const options = payload.options !== undefined ? parseJsonArray(payload.options) : existing.options;
+    const options = payload.options !== undefined || payload.options_json !== undefined
+      ? normalizeOptions(payload.options !== undefined ? payload.options : payload.options_json)
+      : existing.options;
     const contentHash = payload.content_hash || hashText([stem, answer, explanation, JSON.stringify(options)].join('|'));
     const contentRef = normalizeOssRef(payload) || {
       oss_key: existing.content_oss_key || existing.oss_key || null,

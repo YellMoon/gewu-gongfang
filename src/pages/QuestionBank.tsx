@@ -369,7 +369,7 @@ const QuestionBank: React.FC = () => {
       formData.append('file', file);
       formData.append('source_type', wordSourceType);
 
-      const res = await fetch('/api/question-bank/parse-word', {
+      const res = await fetch(`${API_BASE}/parse-word`, {
         method: 'POST',
         body: formData,
       });

@@ -7,6 +7,12 @@ import {
   PHYSICS_KATEX_MACROS,
 } from '../utils/physicsNotation';
 import { sanitizeHtml } from '../utils/sanitizeHtml';
+import {
+  columnsForOptions,
+  imageSourcesFromHtml,
+  isImageOnlyOption,
+  normalizeOptions,
+} from '../utils/questionOptions';
 
 interface QuestionRendererProps {
   content: string;
@@ -499,62 +505,6 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
 export default React.memo(QuestionRenderer);
 export { createKaTeXPhysicsOptions, PHYSICS_KATEX_GLOBAL_MACROS, PHYSICS_KATEX_MACROS };
 
-function normalizeOption(option: any, index: number): { label: string; content: string } {
-  if (typeof option === 'string') {
-    const match = option.trim().match(/^([A-G])[\.\u3001\uff0e\s]+([\s\S]*)$/i);
-    return {
-      label: (match?.[1] || String.fromCharCode(65 + index)).toUpperCase(),
-      content: (match?.[2] || option).trim(),
-    };
-  }
-  return {
-    label: String(option?.label || String.fromCharCode(65 + index)).toUpperCase(),
-    content: String(option?.content || option?.text || '').trim(),
-  };
-}
-
-function splitPackedOptions(options: Array<{ label: string; content: string }>): Array<{ label: string; content: string }> {
-  if (options.length !== 1) return options;
-  const raw = `${options[0].label}. ${options[0].content}`;
-  const labelPattern = /(^|(?:<\/[^>]+>)*\s*)([A-G])[\.\u3001\uff0e]\s*/g;
-  const labels = Array.from(raw.matchAll(labelPattern)).map(match => {
-    const prefix = match[1] || '';
-    const labelStart = (match.index || 0) + prefix.length;
-    return {
-      label: match[2].toUpperCase(),
-      labelStart,
-      contentStart: labelStart + match[2].length + match[0].slice(prefix.length + match[2].length).length,
-    };
-  });
-  if (labels.length < 2) return options;
-  const matches = labels.map((match, index) => {
-    const next = labels[index + 1];
-    return {
-      label: match.label,
-      content: raw.slice(match.contentStart, next?.labelStart ?? raw.length).trim(),
-    };
-  });
-  if (matches.length < 2) return options;
-  return matches.filter(item => item.content);
-}
-
-function normalizeOptions(options: any[]): Array<{ label: string; content: string }> {
-  const rows = (Array.isArray(options) ? options : [])
-    .map(normalizeOption)
-    .filter(option => option.content);
-  return splitPackedOptions(rows);
-}
-
-function imageSourcesFromHtml(value: string): string[] {
-  return Array.from(String(value || '').matchAll(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi)).map(match => match[1]);
-}
-
-function isImageOnlyOption(value: string): boolean {
-  const html = String(value || '').trim();
-  if (!/<img\b/i.test(html)) return false;
-  return html.replace(/<img\b[^>]*>/gi, '').replace(/<br\s*\/?>/gi, '').replace(/&nbsp;/gi, '').trim() === '';
-}
-
 function removeOptionImageDuplicates(content: string, options: Array<{ label: string; content: string }>): string {
   let next = String(content || '');
   const optionSrcs = new Set(options.flatMap(option => imageSourcesFromHtml(option.content)));
@@ -590,14 +540,4 @@ function formatInlineOptionsInPlace(content: string): string {
     }).filter(option => option.content);
     return options.length >= 2 ? `\n${formatOptionGrid(options)}\n` : block;
   });
-}
-
-function columnsForOptions(options: Array<{ label: string; content: string }>): number {
-  if (options.length >= 5) return 1;
-  if (options.length < 2) return 1;
-  if (options.every(option => isImageOnlyOption(option.content))) return Math.min(options.length, 4);
-  const maxLen = Math.max(...options.map(option => option.content.replace(/<[^>]+>/g, '').length));
-  if (maxLen <= 12) return Math.min(options.length, 4);
-  if (maxLen <= 28) return 2;
-  return 1;
 }

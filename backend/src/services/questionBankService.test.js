@@ -107,6 +107,34 @@ function testCommitImportBatchCreatesAcceptedQuestions() {
   });
 }
 
+function testQuestionHtmlSanitization() {
+  withTempDatabase((db) => {
+    const created = questionBank.createQuestion(db, {
+      type: 'single',
+      difficulty: 3,
+      stem: '<script>alert(1)</script><span class="keep" onclick="evil()" style="color:red;background-image:url(javascript:evil)">题干</span><img src="question-asset://asset-1" onerror="evil()" style="width:120px;height:60px" /><img src="javascript:evil" />',
+      options: [
+        {
+          label: 'A',
+          content: '<img src="data:image/png;base64,abc" onload="evil()" /><b>保留</b><iframe>drop</iframe>',
+        },
+      ],
+      answer: '<span data-latex="x^2" onclick="evil()">A</span>',
+    }, 'default');
+
+    const question = questionBank.getQuestion(db, created.id, 'default');
+    assert.ok(question.stem.includes('class="keep"'));
+    assert.ok(question.stem.includes('question-asset://asset-1'));
+    assert.ok(question.stem.includes('width:120px'));
+    assert.ok(!/script|onclick|onerror|javascript:|background-image/i.test(question.stem));
+    assert.ok(question.options[0].content.includes('data:image/png'));
+    assert.ok(question.options[0].content.includes('<b>保留</b>'));
+    assert.ok(!/onload|iframe|javascript:/i.test(question.options[0].content));
+    assert.ok(question.answer.includes('data-latex="x^2"'));
+    assert.ok(!/onclick/i.test(question.answer));
+  });
+}
+
 function insertKnowledgePoint(db, id, tenantId, name) {
   const ts = new Date().toISOString();
   db.prepare(
@@ -178,6 +206,7 @@ function main() {
   testImportValidationPrecedesDuplicateDetection();
   testImportTaskRecordsAndDetails();
   testCommitImportBatchCreatesAcceptedQuestions();
+  testQuestionHtmlSanitization();
   testQuestionKnowledgePointCrud();
   console.log('questionBankService tests passed');
 }
