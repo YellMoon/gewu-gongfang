@@ -73,11 +73,28 @@
   line-height: 1.05;
 }
 
+.omml-rad.has-frac {
+  align-items: stretch;
+}
+
+.omml-rad.has-frac .omml-rad-sign {
+  font-size: 2.2em;
+  line-height: 0.86;
+  align-self: stretch;
+  display: inline-flex;
+  align-items: flex-start;
+}
+
 .omml-rad-body {
   display: inline-block;
   border-top: 1px solid currentColor;
   padding: 1px 3px 0 2px;
   line-height: 1.15;
+}
+
+.omml-rad.has-frac .omml-rad-body {
+  display: inline-flex;
+  align-items: center;
 }
 
 /* KaTeX 正斜体：物理量默认斜体，\mathrm/\text 为正体（KaTeX 已内置此规范） */

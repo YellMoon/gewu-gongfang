@@ -168,6 +168,37 @@ def read_docx_comments(file_path):
         return {}
 
 
+def read_docx_comment_assets(file_path):
+    namespace = {
+        "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+        "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+        "v": "urn:schemas-microsoft-com:vml",
+        "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+        "o": "urn:schemas-microsoft-com:office:office",
+        "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
+    }
+    assets = []
+    seen = set()
+    try:
+        with zipfile.ZipFile(file_path, "r") as archive:
+            if "word/comments.xml" not in archive.namelist():
+                return []
+            root = ET.fromstring(archive.read("word/comments.xml"))
+            rels = _rels_for_part(archive, "word/_rels/comments.xml.rels")
+            for paragraph in root.findall(".//w:p", namespace):
+                inline_assets = []
+                _paragraph_text_with_markup(paragraph, namespace, archive, rels, bool(paragraph.findall(".//o:OLEObject", namespace)), inline_assets)
+                for asset in inline_assets:
+                    key = asset.get("content_hash")
+                    if key and key not in seen:
+                        assets.append(asset)
+                        seen.add(key)
+    except Exception:
+        return []
+    return assets
+
+
 def read_paragraph_comment_refs(file_path):
     namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
     try:
@@ -275,6 +306,21 @@ def _first_child(node, name):
             return child
     return None
 
+
+def _omml_val(node, child_name, default=""):
+    child = _first_child(node, child_name) if node is not None else None
+    if child is None:
+        return default
+    for key, value in child.attrib.items():
+        if key.endswith("}val") or key == "val":
+            return value
+    return default
+
+
+def _omml_fraction_type(node):
+    fpr = _first_child(node, "fPr")
+    return _omml_val(fpr, "type", "bar") if fpr is not None else "bar"
+
 def _format_math_token(text):
     if not text:
         return ""
@@ -362,6 +408,8 @@ def _math_text(node):
     if tag == "f":
         num = _math_text(_first_child(node, "num"))
         den = _math_text(_first_child(node, "den"))
+        if _omml_fraction_type(node) in ("lin", "skw"):
+            return "%s/%s" % (num, den)
         return '<span class="omml-frac"><span class="omml-frac-num">%s</span><span class="omml-frac-den">%s</span></span>' % (num, den)
     if tag == "sSub":
         base = _math_text(_first_child(node, "e"))
@@ -381,9 +429,10 @@ def _math_text(node):
     if tag == "rad":
         deg = _math_text(_first_child(node, "deg"))
         body = _math_text(_first_child(node, "e"))
+        rad_class = "omml-rad has-frac" if "omml-frac" in body else "omml-rad"
         if not deg:
-            return '<span class="omml-rad"><span class="omml-rad-sign">√</span><span class="omml-rad-body">%s</span></span>' % body
-        return '<span class="omml-rad"><span class="omml-rad-index">%s</span><span class="omml-rad-sign">√</span><span class="omml-rad-body">%s</span></span>' % (deg, body)
+            return '<span class="%s"><span class="omml-rad-sign">&#8730;</span><span class="omml-rad-body">%s</span></span>' % (rad_class, body)
+        return '<span class="%s"><span class="omml-rad-index">%s</span><span class="omml-rad-sign">&#8730;</span><span class="omml-rad-body">%s</span></span>' % (rad_class, deg, body)
     if tag == "nary":
         symbol = "".join(child.attrib.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val", "") for child in node.iter() if _local_name(child) == "chr") or "∑"
         sub = _math_text(_first_child(node, "sub"))
@@ -531,7 +580,8 @@ def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_
     return text
 
 
-def _table_text_with_markup(table, ns, archive=None, rels=None):
+def _table_text_with_markup(table, ns, archive=None, rels=None, inline_assets=None):
+    inline_assets = inline_assets if inline_assets is not None else []
     rows = []
     for tr in table.findall("./w:tr", ns):
         cells = []
@@ -540,12 +590,11 @@ def _table_text_with_markup(table, ns, archive=None, rels=None):
             for child in list(tc):
                 tag = _local_name(child)
                 if tag == "p":
-                    inline_assets = []
                     text = _paragraph_text_with_markup(child, ns, archive, rels, bool(child.findall(".//o:OLEObject", ns)), inline_assets)
                     if text:
                         parts.append(text)
                 elif tag == "tbl":
-                    nested = _table_text_with_markup(child, ns, archive, rels)
+                    nested = _table_text_with_markup(child, ns, archive, rels, inline_assets)
                     if nested:
                         parts.append(nested)
             cells.append("<td>%s</td>" % "<br />".join(parts))
@@ -759,9 +808,10 @@ def read_docx_rich_blocks(file_path):
                         formulas.append({"format": "omml", "text": math_text, "omml": _xml_bytes(math_node)})
                     rows.append({"text": text, "assets": inline_assets, "formulas": formulas, "block_type": "paragraph"})
                 elif tag == "tbl":
-                    text = _table_text_with_markup(child, ns, archive, rels)
+                    inline_assets = []
+                    text = _table_text_with_markup(child, ns, archive, rels, inline_assets)
                     if text:
-                        rows.append({"text": text, "assets": [], "formulas": [], "block_type": "table"})
+                        rows.append({"text": text, "assets": inline_assets, "formulas": [], "block_type": "table"})
             return rows
     except Exception:
         return []
@@ -782,6 +832,59 @@ def attach_rich_content(question, rich):
             question["formulas"].append(formula)
     question["has_image"] = any(asset.get("asset_type") == "image" for asset in question["assets"])
     question["has_formula"] = bool(question["formulas"]) or any(str(asset.get("asset_type", "")).startswith("formula_") for asset in question["assets"])
+
+
+def _question_rich_text(question):
+    parts = [
+        question.get("stem", ""),
+        question.get("content", ""),
+        question.get("answer", ""),
+        question.get("analysis", ""),
+        question.get("explanation", ""),
+    ]
+    for option in question.get("options", []) or []:
+        if isinstance(option, dict):
+            parts.extend([option.get("content", ""), option.get("text", "")])
+        else:
+            parts.append(str(option))
+    for sub_question in question.get("sub_questions", []) or []:
+        if isinstance(sub_question, dict):
+            parts.extend([sub_question.get("title", ""), sub_question.get("content", ""), sub_question.get("answer", "")])
+    return "\n".join(str(part or "") for part in parts)
+
+
+def attach_referenced_assets_from_rich_rows(questions, rich_rows):
+    if not questions or not rich_rows:
+        return
+    assets_by_key = {}
+    for row in rich_rows:
+        for asset in row.get("assets", []) or []:
+            if not asset:
+                continue
+            for key in (asset.get("content_hash"), asset.get("id"), asset.get("file_name")):
+                if key:
+                    assets_by_key[str(key)] = asset
+    if not assets_by_key:
+        return
+    for question in questions:
+        text = _question_rich_text(question)
+        refs = set(re.findall(r"question-asset://([A-Za-z0-9_-]+)", text))
+        for img_match in re.finditer(r"<img\b[^>]*\b(?:alt|src)=[\"']([^\"']+)[\"'][^>]*>", text, flags=re.I):
+            value = img_match.group(1)
+            if value.startswith("question-asset://"):
+                refs.add(value.split("question-asset://", 1)[1])
+            elif value:
+                refs.add(value)
+        if not refs:
+            continue
+        question.setdefault("assets", [])
+        existing = {item.get("content_hash") for item in question["assets"] if item}
+        for ref in refs:
+            asset = assets_by_key.get(ref)
+            if asset and asset.get("content_hash") not in existing:
+                question["assets"].append(asset)
+                existing.add(asset.get("content_hash"))
+        question["has_image"] = any(asset.get("asset_type") == "image" for asset in question["assets"])
 
 
 def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
@@ -807,14 +910,15 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
                 return []
             for child in list(body):
                 if _local_name(child) == "tbl":
-                    text = _table_text_with_markup(child, namespace, archive, rels)
+                    inline_assets = []
+                    text = _table_text_with_markup(child, namespace, archive, rels, inline_assets)
                     if text:
                         items.append({
                             "text": text,
                             "number_label": "",
                             "number_kind": "",
                             "comments": [],
-                            "rich": {"text": text, "assets": [], "formulas": []},
+                            "rich": {"text": text, "assets": inline_assets, "formulas": []},
                             "is_heading": False,
                         })
                     continue
@@ -1454,12 +1558,14 @@ def main():
         from docx import Document
         doc = Document(file_path)
         rich_rows = read_docx_rich_blocks(file_path) or read_docx_rich_paragraphs(file_path)
+        comment_assets = read_docx_comment_assets(file_path)
         paragraphs = [row.get("text", "") for row in rich_rows] or [paragraph.text for paragraph in doc.paragraphs]
         numbered_items = extract_numbered_items(doc, file_path)
     except ImportError:
         try:
             paragraphs = extract_paragraphs_from_docx(file_path)
             rich_rows = read_docx_rich_blocks(file_path) or read_docx_rich_paragraphs(file_path)
+            comment_assets = read_docx_comment_assets(file_path)
             numbered_items = []
         except Exception as exc:
             print(json.dumps({"error": f"cannot open Word document without python-docx: {exc}"}, ensure_ascii=False))
@@ -1468,6 +1574,7 @@ def main():
         try:
             paragraphs = extract_paragraphs_from_docx(file_path)
             rich_rows = read_docx_rich_blocks(file_path) or read_docx_rich_paragraphs(file_path)
+            comment_assets = read_docx_comment_assets(file_path)
             numbered_items = []
         except Exception:
             print(json.dumps({"error": f"cannot open Word document: {exc}"}, ensure_ascii=False))
@@ -1482,6 +1589,10 @@ def main():
         questions = parse_lecture_numbered_items(numbered_items, default_topic)
     else:
         questions = []
+    asset_rows = list(rich_rows or [])
+    if comment_assets:
+        asset_rows.append({"assets": comment_assets})
+    attach_referenced_assets_from_rich_rows(questions, asset_rows)
 
     result = {
         "success": True,

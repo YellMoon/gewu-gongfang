@@ -6,7 +6,7 @@ import type { Question } from '../types';
 import QuestionRichText from './QuestionRichText';
 import QuestionRenderer from './QuestionRenderer';
 import QuestionRichContent from './QuestionRichContent';
-import { getQuestionAssetDataUrl, isAssetRef } from '../services/questionAssetStore';
+import { assetRef, getQuestionAssetDataUrl, isAssetRef } from '../services/questionAssetStore';
 import './QuestionPreviewCard.css';
 
 const resolvedQuestionCache = new Map<string, Question>();
@@ -91,6 +91,9 @@ const QuestionPreviewCard: React.FC<{
       const copy: any = { ...question };
       copy.assets = await Promise.all(assets.map(async (asset: any) => {
         const src = asset?.oss_url || asset?.data_url || asset?.url;
+        if (typeof src === 'string' && src.startsWith('data:')) {
+          return { ...asset, resolved_url: src };
+        }
         if (isAssetRef(src)) {
           const resolved = await getQuestionAssetDataUrl(src);
           return { ...asset, resolved_url: resolved || src };
@@ -99,17 +102,33 @@ const QuestionPreviewCard: React.FC<{
       }));
       for (const asset of copy.assets) {
         const src = asset?.oss_url || asset?.data_url || asset?.url;
-        if (!isAssetRef(src) || !asset?.resolved_url) continue;
+        const key = asset?.content_hash || asset?.id || asset?.file_name;
+        const ref = key ? assetRef(String(key)) : '';
+        const resolved = asset?.resolved_url || src;
+        if (!resolved) continue;
         for (const field of ['content', 'stem', 'answer', 'analysis']) {
-          if (typeof copy[field] === 'string') copy[field] = copy[field].split(src).join(asset.resolved_url);
+          if (typeof copy[field] === 'string') {
+            if (src) copy[field] = copy[field].split(src).join(resolved);
+            if (ref) copy[field] = copy[field].split(ref).join(resolved);
+          }
         }
         if (Array.isArray(copy.options)) {
           copy.options = copy.options.map((option: any) => {
-            if (typeof option === 'string') return option.split(src).join(asset.resolved_url);
+            if (typeof option === 'string') {
+              let nextOption = src ? option.split(src).join(resolved) : option;
+              if (ref) nextOption = nextOption.split(ref).join(resolved);
+              return nextOption;
+            }
             if (option && typeof option === 'object') {
               const next = { ...option };
-              if (typeof next.content === 'string') next.content = next.content.split(src).join(asset.resolved_url);
-              if (typeof next.text === 'string') next.text = next.text.split(src).join(asset.resolved_url);
+              if (typeof next.content === 'string') {
+                if (src) next.content = next.content.split(src).join(resolved);
+                if (ref) next.content = next.content.split(ref).join(resolved);
+              }
+              if (typeof next.text === 'string') {
+                if (src) next.text = next.text.split(src).join(resolved);
+                if (ref) next.text = next.text.split(ref).join(resolved);
+              }
               return next;
             }
             return option;

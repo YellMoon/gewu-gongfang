@@ -169,7 +169,9 @@ function convertLegacyLatexFragments(content: string): string {
       if (first) {
         if (name === 'sqrt') {
           const end = source[first.end] === '$' && hasDollar ? first.end + 1 : first.end;
-          output += `<span class="omml-rad"><span class="omml-rad-sign">√</span><span class="omml-rad-body">${convertLegacyLatexFragments(first.value)}</span></span>`;
+          const body = convertLegacyLatexFragments(first.value);
+          const radClass = body.includes('omml-frac') ? 'omml-rad has-frac' : 'omml-rad';
+          output += `<span class="${radClass}"><span class="omml-rad-sign">√</span><span class="omml-rad-body">${body}</span></span>`;
           i = end;
           continue;
         }
@@ -185,7 +187,9 @@ function convertLegacyLatexFragments(content: string): string {
         const paren = findBalancedParen(source, afterName);
         if (paren) {
           const end = source[paren.end] === '$' && hasDollar ? paren.end + 1 : paren.end;
-          output += `<span class="omml-rad"><span class="omml-rad-sign">√</span><span class="omml-rad-body">${convertLegacyLatexFragments(paren.value)}</span></span>`;
+          const body = convertLegacyLatexFragments(paren.value);
+          const radClass = body.includes('omml-frac') ? 'omml-rad has-frac' : 'omml-rad';
+          output += `<span class="${radClass}"><span class="omml-rad-sign">√</span><span class="omml-rad-body">${body}</span></span>`;
           i = end;
           continue;
         }
