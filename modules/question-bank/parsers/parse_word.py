@@ -25,7 +25,7 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
 
 QUESTION_RE = re.compile(r"^(\d+)[\.\u3001\uff0e]\s*(.*)")
-OPTION_RE = re.compile(r"^([A-G])[\.\u3001\uff0e]\s*(.*)", re.I)
+OPTION_RE = re.compile(r"^([A-G])[\.\uff0e]\s*(.*)", re.I)
 SUB_QUESTION_RE = re.compile(r"^(?:[\(\uff08](\d+)[\)\uff09]|([\u2460\u2461\u2462\u2463\u2464\u2465\u2466\u2467\u2468\u2469]))\s*(.*)")
 SYMBOL_FONT_MAP = str.maketrans({
     "a": "α", "b": "β", "c": "χ", "d": "δ", "e": "ε", "f": "φ", "g": "γ", "h": "η",
@@ -283,7 +283,7 @@ def normalize_operator_symbols(text):
 
 
 def clean_word_text(text):
-    return normalize_operator_symbols(re.sub(r"[\f\v]+", "", text or "").strip())
+    return normalize_operator_symbols(re.sub(r"\v+", "", (text or "").replace("\f", "\n")).strip())
 
 
 def visible_space_text(text):
@@ -503,6 +503,14 @@ def _math_latex(node):
         deg = _math_latex(_first_child(node, "deg"))
         body = _math_latex(_first_child(node, "e"))
         return r"\sqrt[%s]{%s}" % (deg, body) if deg else r"\sqrt{%s}" % body
+    if tag == "nary":
+        symbol = "".join(child.attrib.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val", "") for child in node.iter() if _local_name(child) == "chr")
+        command = {"∑": r"\sum", "Σ": r"\sum", "∫": r"\int", "∏": r"\prod"}.get(symbol, symbol or r"\sum")
+        sub = _math_latex(_first_child(node, "sub"))
+        sup = _math_latex(_first_child(node, "sup"))
+        body = _math_latex(_first_child(node, "e"))
+        limits = ("%s%s" % ("_{%s}" % sub if sub else "", "^{%s}" % sup if sup else ""))
+        return "%s%s %s" % (command, limits, body)
     if tag == "d":
         return r"\left(%s\right)" % _math_latex(_first_child(node, "e"))
     if tag == "bar":
@@ -580,15 +588,22 @@ def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_
 
         def remove_graphic_children(node):
             for child in list(node):
-                if _local_name(child) in ("drawing", "pict", "object"):
+                if _local_name(child) in ("drawing", "pict", "object", "oMath", "oMathPara"):
                     node.remove(child)
                 else:
                     remove_graphic_children(child)
 
         remove_graphic_children(safe_run)
         values = []
-        for node in safe_run.findall(".//w:%s" % tag_name, ns):
-            values.append(node.text or "")
+        for node in safe_run.iter():
+            local = _local_name(node)
+            if local == tag_name:
+                values.append(node.text or "")
+            elif local == "tab":
+                values.append("\t")
+            elif local == "br":
+                br_type = node.attrib.get("{%s}type" % ns.get("w", ""))
+                values.append("\f" if br_type == "page" else "\n")
         return "".join(values)
 
     for child in list(paragraph):
@@ -610,9 +625,9 @@ def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_
                         inline_assets.append(asset)
                         parts.append(_image_tag(asset))
             for math_node in child.findall(".//m:oMath", ns) + child.findall(".//m:oMathPara", ns):
-                math_text = _math_text(math_node).strip()
-                if math_text:
-                    parts.append(math_text)
+                math_latex = _math_latex(math_node).strip()
+                if math_latex:
+                    parts.append(_legacy_latex_span(math_latex))
             text = direct_text_outside_graphics(child, "t")
             if not text:
                 continue
@@ -623,9 +638,11 @@ def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_
             italic = child.find("./w:rPr/w:i", ns) is not None
             bold = child.find("./w:rPr/w:b", ns) is not None
             if val == "subscript":
-                parts.append("<sub>%s</sub>" % text)
+                script_text = "<i>%s</i>" % text if italic else visible_space_text(text)
+                parts.append("<sub>%s</sub>" % script_text)
             elif val == "superscript":
-                parts.append("<sup>%s</sup>" % text)
+                script_text = "<i>%s</i>" % text if italic else visible_space_text(text)
+                parts.append("<sup>%s</sup>" % script_text)
             elif italic:
                 parts.append("<i>%s</i>" % text)
             elif bold:
@@ -635,9 +652,9 @@ def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_
             else:
                 parts.append(visible_space_text(text))
         elif tag in ("oMath", "oMathPara"):
-            math_text = _math_text(child).strip()
-            if math_text:
-                parts.append(math_text)
+            math_latex = _math_latex(child).strip()
+            if math_latex:
+                parts.append(_legacy_latex_span(math_latex))
     text = clean_word_text(normalize_physics_markup("".join(parts)))
     text = re.sub(r"(<img\b[^>]*\/>)\s*(?=(?:[\(\uff08]\d+[\)\uff09]|[\u2460-\u2469]))", r"\n\1\n", text)
     return text
@@ -1136,10 +1153,7 @@ def split_packed_options(question):
     changed = False
     for option in options:
         raw = "%s. %s" % (option.get("label", "A"), option.get("content", ""))
-        matches = [
-            match for match in re.finditer(r"(^|(?:</[^>]+>)*\s*)([A-G])([\.\u3001\uff0e])\s*", raw, flags=re.I)
-            if not (match.group(3) == "\u3001" and re.match(r"[A-G]", raw[match.end():].lstrip(), flags=re.I))
-        ]
+        matches = list(re.finditer(r"(^|[\r\n\t\f])\s*([A-G])[\.\uff0e]\s*", raw, flags=re.I))
         if len(matches) < 2:
             next_options.append(option)
             continue
@@ -1186,6 +1200,9 @@ def normalize_subquestion_image_positions(question):
         question["stem"] = next_stem.strip()
         return
     insert_at = first_sub.start()
+    if insert_at == 0:
+        line_end = next_stem.find("\n", first_sub.end())
+        insert_at = len(next_stem) if line_end < 0 else line_end
     image_block = "\n".join(moved)
     question["stem"] = (next_stem[:insert_at].rstrip() + "\n" + image_block + "\n" + next_stem[insert_at:].lstrip()).strip()
 
@@ -1203,8 +1220,10 @@ def normalize_leading_image_positions(question):
         leading.append(lines.pop(0).strip())
     if not leading:
         return
-    boundary_re = r"^\s*(?:[A-G][\.\u3001\uff0e]|[\(\uff08]\d+[\)\uff09]|[\u2460-\u2469])"
+    boundary_re = r"^\s*(?:[A-G][\.\uff0e]|[\(\uff08]\d+[\)\uff09]|[\u2460-\u2469])"
     insert_at = next((index for index, line in enumerate(lines) if re.match(boundary_re, line, flags=re.I)), min(len(lines), 1))
+    if insert_at == 0 and lines:
+        insert_at = 1
     lines[insert_at:insert_at] = leading
     question["stem"] = "\n".join(lines).strip()
 

@@ -69,9 +69,7 @@ function splitMixedContent(content: string): ContentSegment[] {
 function convertHtmlLatexFractions(content: string): string {
   return (content || '').replace(
     /\$\\frac\{([^{}]*)\}\{([^{}]*)\}\$/g,
-    (match, num, den) => (
-      `<span class="omml-frac"><span class="omml-frac-num">${num}</span><span class="omml-frac-den">${den}</span></span>`
-    )
+    (_match, num, den) => legacyLatexPlaceholder(`\\frac{${num}}{${den}}`)
   );
 }
 
@@ -106,6 +104,85 @@ function cleanLatexInput(latex: string): string {
     .trim();
 }
 
+function decodeHtmlEntities(value: string): string {
+  return String(value || '')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ');
+}
+
+function readLatexAttribute(value: string): string {
+  const decoded = decodeHtmlEntities(value);
+  if (!/%[0-9A-Fa-f]{2}/.test(decoded)) return decoded;
+  try {
+    return decodeURIComponent(decoded);
+  } catch {
+    return decoded;
+  }
+}
+
+function escapeLatexText(value: string): string {
+  return decodeHtmlEntities(String(value || '').replace(/<br\s*\/?>/gi, ' '))
+    .replace(/\\/g, '\\backslash{}')
+    .replace(/([{}_$#%&])/g, '\\$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function stripSimpleHtml(value: string): string {
+  return decodeHtmlEntities(String(value || '')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim());
+}
+
+const ROMAN_LATEX_TOKENS = new Set([
+  'kg', 'mol', 'cd', 'rad', 'sr', 'Hz', 'Pa', 'J', 'Wb', 'W', 'C', 'V', 'F', 'T', 'H', 'N', 'A', 'K',
+  'm', 's', 'g', 'L', 'eV', 'MeV', 'GeV', 'min', 'h', 'Ω',
+  'max', 'min', 'av', 'rms', 'th', 'c', 'eff', 'tot', 'ext', 'int', 'rev', 'abs', 'rel', 'sat',
+]);
+
+const CHEMICAL_ELEMENTS = [
+  'Og', 'Ts', 'Lv', 'Mc', 'Fl', 'Nh', 'Cn', 'Rg', 'Ds', 'Mt', 'Hs', 'Bh', 'Sg', 'Db', 'Rf',
+  'Ac', 'Ag', 'Al', 'Am', 'Ar', 'As', 'At', 'Au', 'Ba', 'Be', 'Bi', 'Bk', 'Br', 'Ca', 'Cd',
+  'Ce', 'Cf', 'Cl', 'Cm', 'Co', 'Cr', 'Cs', 'Cu', 'Dy', 'Er', 'Es', 'Eu', 'Fe', 'Fm', 'Fr',
+  'Ga', 'Gd', 'Ge', 'He', 'Hf', 'Hg', 'Ho', 'In', 'Ir', 'Kr', 'La', 'Li', 'Lr', 'Lu', 'Md',
+  'Mg', 'Mn', 'Mo', 'Na', 'Nb', 'Nd', 'Ne', 'Ni', 'No', 'Np', 'Os', 'Pa', 'Pb', 'Pd', 'Pm',
+  'Po', 'Pr', 'Pt', 'Pu', 'Ra', 'Rb', 'Re', 'Rh', 'Rn', 'Ru', 'Sb', 'Sc', 'Se', 'Si', 'Sm',
+  'Sn', 'Sr', 'Ta', 'Tb', 'Tc', 'Te', 'Th', 'Ti', 'Tl', 'Tm', 'Xe', 'Yb', 'Zn', 'Zr',
+  'B', 'C', 'F', 'H', 'I', 'K', 'N', 'O', 'P', 'S', 'U', 'V', 'W', 'Y', 'n',
+];
+
+const CHEMICAL_ELEMENT_PATTERN = CHEMICAL_ELEMENTS.join('|');
+
+function simpleTokenToLatex(value: string, options: { italicWhenMarked?: boolean; preferRoman?: boolean } = {}): string {
+  const raw = String(value || '').trim();
+  const plain = stripSimpleHtml(raw);
+  if (!plain) return '';
+  const markedItalic = /<(?:i|em)\b/i.test(raw);
+  if (markedItalic && options.italicWhenMarked !== false) return escapeLatexText(plain);
+  if (options.preferRoman || (CHEMICAL_ELEMENTS.includes(plain) && plain.length > 1) || /^[A-Za-z]{2,}$/.test(plain)) {
+    return `\\mathrm{${escapeLatexText(plain)}}`;
+  }
+  return escapeLatexText(plain);
+}
+
+function scriptToLatex(value: string): string {
+  const raw = String(value || '').trim();
+  const plain = stripSimpleHtml(raw);
+  if (!plain) return '';
+  if (/<(?:i|em)\b/i.test(raw)) return escapeLatexText(plain);
+  if (/^\d+$/.test(plain)) return plain;
+  if (ROMAN_LATEX_TOKENS.has(plain) || CHEMICAL_ELEMENTS.includes(plain) || /^[A-Za-z]{2,}$/.test(plain)) {
+    return `\\mathrm{${escapeLatexText(plain)}}`;
+  }
+  return escapeLatexText(plain);
+}
+
 function renderInlineLatex(latex: string): string {
   const normalizedLatex = cleanLatexInput(latex);
   if (!normalizedLatex) return '';
@@ -117,6 +194,7 @@ function renderInlineLatex(latex: string): string {
       throwOnError: false,
       strict: false,
       trust: true,
+      output: 'html',
       macros: {},
     });
   }
@@ -124,6 +202,47 @@ function renderInlineLatex(latex: string): string {
 
 function legacyLatexPlaceholder(latex: string): string {
   return `<span class="legacy-latex" data-latex="${encodeURIComponent(latex)}"></span>`;
+}
+
+function convertHtmlScriptsToLatex(content: string): string {
+  const basePattern = String.raw`(?:<i>[^<]+<\/i>|<em>[^<]+<\/em>|[A-Za-zα-ωΑ-ΩμΩ]+|\d+(?:\.\d+)?|[)\]])`;
+  let next = String(content || '');
+
+  next = next
+    .replace(
+      new RegExp(`<span class="nuclear-symbol">\\s*<span class="nuclear-left">\\s*<sup>([\\s\\S]*?)<\\/sup>\\s*<sub>([\\s\\S]*?)<\\/sub>\\s*<\\/span>\\s*<span class="nuclear-core">\\s*([A-Za-z]{1,2}|n)\\s*<\\/span>\\s*<\\/span>`, 'gi'),
+      (_match, mass, charge, element) => legacyLatexPlaceholder(`{}^{${scriptToLatex(mass)}}_{${scriptToLatex(charge)}}\\mathrm{${escapeLatexText(stripSimpleHtml(element))}}`)
+    )
+    .replace(
+      new RegExp(`<sup>(\\d+)<\\/sup>\\s*<sub>(\\d+)<\\/sub>\\s*(?:<i>)?(${CHEMICAL_ELEMENT_PATTERN})(?:<\\/i>)?`, 'g'),
+      (_match, mass, charge, element) => legacyLatexPlaceholder(`{}^{${mass}}_{${charge}}\\mathrm{${element}}`)
+    )
+    .replace(
+      new RegExp(`<sub>(\\d+)<\\/sub>\\s*<sup>(\\d+)<\\/sup>\\s*(?:<i>)?(${CHEMICAL_ELEMENT_PATTERN})(?:<\\/i>)?`, 'g'),
+      (_match, charge, mass, element) => legacyLatexPlaceholder(`{}^{${mass}}_{${charge}}\\mathrm{${element}}`)
+    );
+
+  next = next
+    .replace(
+      new RegExp(`(${basePattern})\\s*<sub>([\\s\\S]*?)<\\/sub>\\s*<sup>([\\s\\S]*?)<\\/sup>`, 'gi'),
+      (_match, base, sub, sup) => legacyLatexPlaceholder(`${simpleTokenToLatex(base)}_{${scriptToLatex(sub)}}^{${scriptToLatex(sup)}}`)
+    )
+    .replace(
+      new RegExp(`(${basePattern})\\s*<sup>([\\s\\S]*?)<\\/sup>\\s*<sub>([\\s\\S]*?)<\\/sub>`, 'gi'),
+      (_match, base, sup, sub) => legacyLatexPlaceholder(`${simpleTokenToLatex(base)}_{${scriptToLatex(sub)}}^{${scriptToLatex(sup)}}`)
+    )
+    .replace(
+      new RegExp(`(${basePattern})\\s*<sub>([\\s\\S]*?)<\\/sub>`, 'gi'),
+      (_match, base, sub) => legacyLatexPlaceholder(`${simpleTokenToLatex(base)}_{${scriptToLatex(sub)}}`)
+    )
+    .replace(
+      new RegExp(`(${basePattern})\\s*<sup>([\\s\\S]*?)<\\/sup>`, 'gi'),
+      (_match, base, sup) => legacyLatexPlaceholder(`${simpleTokenToLatex(base)}^{${scriptToLatex(sup)}}`)
+    )
+    .replace(/<sub>([\s\S]*?)<\/sub>/gi, (_match, sub) => legacyLatexPlaceholder(`{}_{${scriptToLatex(sub)}}`))
+    .replace(/<sup>([\s\S]*?)<\/sup>/gi, (_match, sup) => legacyLatexPlaceholder(`{}^{${scriptToLatex(sup)}}`));
+
+  return next;
 }
 
 function findBalancedGroup(input: string, openIndex: number): { value: string; end: number } | null {
@@ -238,13 +357,13 @@ function normalizeStemImagePlacement(content: string, hasSeparateOptions: boolea
   if (leadingImages.length === 0) return source;
 
   const subQuestionPattern = /^\s*(?:[\(\uff08]\d+[\)\uff09]|[\u2460-\u2469])/;
-  const optionPattern = /^\s*[A-G][\.\u3001\uff0e]\s*/i;
+  const optionPattern = /^\s*[A-G][\.\uff0e]\s*/i;
   const boundaryIndex = lines.findIndex(line => (
     subQuestionPattern.test(line) ||
     optionPattern.test(line) ||
     /<div class="question-options\b/i.test(line)
   ));
-  const insertIndex = boundaryIndex >= 0 ? boundaryIndex : Math.min(lines.length, 1);
+  const insertIndex = boundaryIndex === 0 ? 1 : boundaryIndex >= 0 ? boundaryIndex : Math.min(lines.length, 1);
   lines.splice(insertIndex, 0, ...leadingImages);
   return lines.join('\n').trim();
 }
@@ -291,16 +410,6 @@ function normalizePhysicsHtml(html: string): string {
   const unitCore = '(?:kg|mol|cd|rad|sr|Hz|Pa|J|Wb|W|C|V|F|T|H|N|A|K|m|s|L|eV|MeV|GeV|min|h|Ω)';
   const unitToken = `(?:[YZEPTGMkhdcmμunpfa]?${unitCore})`;
   const unitExpr = `${unitToken}(?:\\s*(?:[·⋅*/\\\\/]|<sup>-?\\d+</sup>|\\^?-?\\d+)\\s*${unitToken})*`;
-  const elementPattern = [
-    'Og', 'Ts', 'Lv', 'Mc', 'Fl', 'Nh', 'Cn', 'Rg', 'Ds', 'Mt', 'Hs', 'Bh', 'Sg', 'Db', 'Rf',
-    'Ac', 'Ag', 'Al', 'Am', 'Ar', 'As', 'At', 'Au', 'Ba', 'Be', 'Bi', 'Bk', 'Br', 'Ca', 'Cd',
-    'Ce', 'Cf', 'Cl', 'Cm', 'Co', 'Cr', 'Cs', 'Cu', 'Dy', 'Er', 'Es', 'Eu', 'Fe', 'Fm', 'Fr',
-    'Ga', 'Gd', 'Ge', 'He', 'Hf', 'Hg', 'Ho', 'In', 'Ir', 'Kr', 'La', 'Li', 'Lr', 'Lu', 'Md',
-    'Mg', 'Mn', 'Mo', 'Na', 'Nb', 'Nd', 'Ne', 'Ni', 'No', 'Np', 'Os', 'Pa', 'Pb', 'Pd', 'Pm',
-    'Po', 'Pr', 'Pt', 'Pu', 'Ra', 'Rb', 'Re', 'Rh', 'Rn', 'Ru', 'Sb', 'Sc', 'Se', 'Si', 'Sm',
-    'Sn', 'Sr', 'Ta', 'Tb', 'Tc', 'Te', 'Th', 'Ti', 'Tl', 'Tm', 'Xe', 'Yb', 'Zn', 'Zr',
-    'B', 'C', 'F', 'H', 'I', 'K', 'N', 'O', 'P', 'S', 'U', 'V', 'W', 'Y', 'n',
-  ].join('|');
   const restoreUnits = (value: string) => value.replace(
     new RegExp(`(\\d(?:[\\d.,×xX+\\-]*\\d)?\\s*)((?:<i>[A-Za-zμΩ]+<\\/i>|[·⋅*/\\\\/\\s]|<sup>-?\\d+<\\/sup>|\\^?-?\\d+)+)(?=\\s|[\\u4e00-\\u9fff]|[,，。；;、）)]|$)`, 'g'),
     (_match, prefix, body) => prefix + body.replace(/<\/?i>/g, '')
@@ -324,25 +433,19 @@ function normalizePhysicsHtml(html: string): string {
     .replace(/&lt;(\/?)(sub|sup|i|b|strong|em)&gt;/gi, '<$1$2>')
     .replace(/\r?\n/g, '<br />')
     .replace(/<span class="nuclear-left">\s*(<sup>\d+<\/sup>\s*<sub>\d+<\/sub>|<sub>\d+<\/sub>\s*<sup>\d+<\/sup>)\s*<\/span>\s*(?:<i>)?(H|B|K)(?:<\/i>)?(?:\s*(?:<i>)?(e|a|r)(?:<\/i>)?)?/g, '<span class="nuclear-symbol"><span class="nuclear-left">$1</span><span class="nuclear-core">$2$3</span></span>')
-    .replace(new RegExp(`<span class="nuclear-left">\\s*(<sup>\\d+<\\/sup>\\s*<sub>\\d+<\\/sub>|<sub>\\d+<\\/sub>\\s*<sup>\\d+<\\/sup>)\\s*<\\/span>\\s*(?:<i>)?(${elementPattern})(?:<\\/i>)?`, 'g'), '<span class="nuclear-symbol"><span class="nuclear-left">$1</span><span class="nuclear-core">$2</span></span>')
+    .replace(new RegExp(`<span class="nuclear-left">\\s*(<sup>\\d+<\\/sup>\\s*<sub>\\d+<\\/sub>|<sub>\\d+<\\/sub>\\s*<sup>\\d+<\\/sup>)\\s*<\\/span>\\s*(?:<i>)?(${CHEMICAL_ELEMENT_PATTERN})(?:<\\/i>)?`, 'g'), '<span class="nuclear-symbol"><span class="nuclear-left">$1</span><span class="nuclear-core">$2</span></span>')
     .replace(/<sup>(\d+)<\/sup>\s*<sub>(\d+)<\/sub>\s*<i>(H|B|K)<\/i>\s*(?:<i>)?(e|a|r)(?:<\/i>)?/g, '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$1</sup><sub>$2</sub></span><span class="nuclear-core">$3$4</span></span>')
     .replace(/<sub>(\d+)<\/sub>\s*<sup>(\d+)<\/sup>\s*<i>(H|B|K)<\/i>\s*(?:<i>)?(e|a|r)(?:<\/i>)?/g, '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$2</sup><sub>$1</sub></span><span class="nuclear-core">$3$4</span></span>')
-    .replace(new RegExp(`<sup>(\\d+)<\\/sup>\\s*<sub>(\\d+)<\\/sub>\\s*(?:<i>)?(${elementPattern})(?:<\\/i>)?`, 'g'), '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$1</sup><sub>$2</sub></span><span class="nuclear-core">$3</span></span>')
-    .replace(new RegExp(`<sub>(\\d+)<\\/sub>\\s*<sup>(\\d+)<\\/sup>\\s*(?:<i>)?(${elementPattern})(?:<\\/i>)?`, 'g'), '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$2</sup><sub>$1</sub></span><span class="nuclear-core">$3</span></span>')
+    .replace(new RegExp(`<sup>(\\d+)<\\/sup>\\s*<sub>(\\d+)<\\/sub>\\s*(?:<i>)?(${CHEMICAL_ELEMENT_PATTERN})(?:<\\/i>)?`, 'g'), '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$1</sup><sub>$2</sub></span><span class="nuclear-core">$3</span></span>')
+    .replace(new RegExp(`<sub>(\\d+)<\\/sub>\\s*<sup>(\\d+)<\\/sup>\\s*(?:<i>)?(${CHEMICAL_ELEMENT_PATTERN})(?:<\\/i>)?`, 'g'), '<span class="nuclear-symbol"><span class="nuclear-left"><sup>$2</sup><sub>$1</sub></span><span class="nuclear-core">$3</span></span>')
     .replace(new RegExp(`(?<=\\d)\\s*(${unitExpr})`, 'g'), '<span class="physics-unit"> $1</span>')
-    .replace(/(?<![A-Za-z])([A-Za-zα-ωΑ-Ω])([0-9]+)(?![0-9A-Za-z]|\.(?:png|jpe?g|gif|webp|svg))/gi, '$1<sub>$2</sub>')
-    .replace(/(?<![A-Za-z])(?!H[zZ](?![0-9A-Za-z]))([A-Za-z])([xyzXYZ])(?![0-9A-Za-z])/g, '$1<sub>$2</sub>')
     .replace(/@@QUESTION_LEGACY_LATEX_(\d+)@@/g, (_match, index) => protectedLegacyLatex[Number(index)] || '')
     .replace(/@@QUESTION_IMAGE_(\d+)@@/g, (_match, index) => protectedImages[Number(index)] || '');
 }
 
 function processHtmlSegment(html: string): string {
-  return normalizeDisplayOperators(normalizePhysicsHtml(html)).replace(/<span class="legacy-latex" data-latex="([^"]*)"><\/span>/g, (_match, latex) => {
-    try {
-      return renderInlineLatex(decodeURIComponent(latex));
-    } catch {
-      return renderInlineLatex(latex);
-    }
+  return normalizeDisplayOperators(convertHtmlScriptsToLatex(normalizePhysicsHtml(html))).replace(/<span class="legacy-latex" data-latex="([^"]*)"><\/span>/g, (_match, latex) => {
+    return renderInlineLatex(readLatexAttribute(latex));
   }).replace(/\$([^$]+?)\$/g, (_match, latex) => {
     const normalizedLatex = cleanLatexInput(latex);
     try {
@@ -353,6 +456,7 @@ function processHtmlSegment(html: string): string {
         throwOnError: false,
         strict: false,
         trust: true,
+        output: 'html',
         macros: {},
       });
     }
@@ -370,6 +474,7 @@ const KaTeXMath: React.FC<{ latex: string; displayMode: boolean }> = ({ latex, d
       throwOnError: false,
       strict: false,
       trust: true,
+      output: 'html',
       macros: {},
     });
   }
@@ -549,13 +654,9 @@ function formatOptionGrid(options: Array<{ label: string; content: string }>): s
 }
 
 function formatInlineOptionsInPlace(content: string): string {
-  return String(content || '').replace(/((?:^|\n)\s*[A-G][\.\u3001\uff0e][\s\S]*?)(?=\n\s*(?:[\(\uff08]\d+[\)\uff09]|[\u2460-\u2469]|\d+[\.\u3001\uff0e])|$)/g, (block) => {
-    const normalized = block.replace(/\n+/g, ' ').trim();
-    const labels = Array.from(normalized.matchAll(/(^|(?:<img\b[^>]*\/>|<\/[^>]+>)*\s*)([A-G])([\.\u3001\uff0e])\s*/g)).filter(match => {
-      if (match[3] !== '\u3001') return true;
-      const next = normalized.slice((match.index || 0) + match[0].length).trimStart()[0] || '';
-      return !/[A-G]/i.test(next);
-    }).map(match => ({
+  return String(content || '').replace(/((?:^|[\n\t\f])\s*[A-G][\.\uff0e][\s\S]*?)(?=[\n\t\f]\s*(?:[\(\uff08]\d+[\)\uff09]|[\u2460-\u2469]|\d+[\.\u3001\uff0e])|$)/g, (block) => {
+    const normalized = block.replace(/\n+/g, '\n').trim();
+    const labels = Array.from(normalized.matchAll(/(^|[\r\n\t\f])\s*([A-G])[\.\uff0e]\s*/g)).map(match => ({
       label: match[2].toUpperCase(),
       start: (match.index || 0) + (match[1] || '').length,
       contentStart: (match.index || 0) + match[0].length,

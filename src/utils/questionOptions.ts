@@ -5,7 +5,7 @@ export interface NormalizedQuestionOption {
 
 export function normalizeOption(option: any, index: number): NormalizedQuestionOption {
   if (typeof option === 'string') {
-    const match = option.trim().match(/^([A-G])[\.\u3001\uff0e\s]+([\s\S]*)$/i);
+    const match = option.trim().match(/^([A-G])[\.\uff0e]\s*([\s\S]*)$/i);
     return {
       label: (match?.[1] || String.fromCharCode(65 + index)).toUpperCase(),
       content: (match?.[2] || option).trim(),
@@ -24,12 +24,8 @@ export function splitPackedOptions(options: NormalizedQuestionOption[]): Normali
 
 function splitPackedOption(option: NormalizedQuestionOption): NormalizedQuestionOption[] {
   const raw = `${option.label}. ${option.content}`;
-  const labelPattern = /(^|(?:<\/[^>]+>)*\s*)([A-G])([\.\u3001\uff0e])\s*/g;
-  const labels = Array.from(raw.matchAll(labelPattern)).filter(match => {
-    if (match[3] !== '\u3001') return true;
-    const next = raw.slice((match.index || 0) + match[0].length).trimStart()[0] || '';
-    return !/[A-G]/i.test(next);
-  }).map(match => {
+  const labelPattern = /(^|[\r\n\t\f])\s*([A-G])[\.\uff0e]\s*/g;
+  const labels = Array.from(raw.matchAll(labelPattern)).map(match => {
     const prefix = match[1] || '';
     const labelStart = (match.index || 0) + prefix.length;
     return {
