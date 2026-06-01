@@ -18,10 +18,10 @@
    - 找到生成的安装包/构建产物。
 
 4. **上传夸克网盘**
-   - 上传到夸克网盘 `codex项目/当日日期/` 文件夹。
+   - 上传到夸克网盘 `Qoder项目/当日日期/` 文件夹。
    - 如文件夹不存在则自动创建。
-   - 当前项目必须使用：`node scripts/upload-quark-clean.js`
-   - 不要使用旧脚本 `node scripts/upload-quark.js`。
+   - 当前项目必须使用：`node scripts/upload-quark-qoder.js`
+   - 不要使用旧脚本 `node scripts/upload-quark.js` 或 `node scripts/upload-quark-clean.js`。
 
 ## 适用范围
 
