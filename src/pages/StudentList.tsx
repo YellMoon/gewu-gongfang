@@ -58,6 +58,7 @@ const StudentList: React.FC = () => {
     setEditingStudent(student);
     form.setFieldsValue({
       ...student,
+      school: student.school ? [student.school] : [],
       grade_year: student.grade_year || new Date().getFullYear()
     });
     setModalVisible(true);
@@ -263,11 +264,25 @@ const StudentList: React.FC = () => {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="school" label="学校">
-                <Select
+                <AntSelect
                   mode="tags"
+                  maxCount={1}
                   maxTagCount={1}
                   placeholder="搜索或输入学校名称"
                   options={schools.map(s => ({ label: s, value: s }))}
+                  optionFilterProp="label"
+                  tagRender={({ label, closable, onClose }) => (
+                    <Tag
+                      closable={closable}
+                      onClose={onClose}
+                      onMouseDown={event => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }}
+                    >
+                      {label}
+                    </Tag>
+                  )}
                 />
               </Form.Item>
             </Col>

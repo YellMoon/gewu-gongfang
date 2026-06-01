@@ -140,12 +140,6 @@ function stripSimpleHtml(value: string): string {
     .trim());
 }
 
-const ROMAN_LATEX_TOKENS = new Set([
-  'kg', 'mol', 'cd', 'rad', 'sr', 'Hz', 'Pa', 'J', 'Wb', 'W', 'C', 'V', 'F', 'T', 'H', 'N', 'A', 'K',
-  'm', 's', 'g', 'L', 'eV', 'MeV', 'GeV', 'min', 'h', 'Ω',
-  'max', 'min', 'av', 'rms', 'th', 'c', 'eff', 'tot', 'ext', 'int', 'rev', 'abs', 'rel', 'sat',
-]);
-
 const CHEMICAL_ELEMENTS = [
   'Og', 'Ts', 'Lv', 'Mc', 'Fl', 'Nh', 'Cn', 'Rg', 'Ds', 'Mt', 'Hs', 'Bh', 'Sg', 'Db', 'Rf',
   'Ac', 'Ag', 'Al', 'Am', 'Ar', 'As', 'At', 'Au', 'Ba', 'Be', 'Bi', 'Bk', 'Br', 'Ca', 'Cd',
@@ -159,16 +153,12 @@ const CHEMICAL_ELEMENTS = [
 
 const CHEMICAL_ELEMENT_PATTERN = CHEMICAL_ELEMENTS.join('|');
 
-function simpleTokenToLatex(value: string, options: { italicWhenMarked?: boolean; preferRoman?: boolean } = {}): string {
+function simpleTokenToLatex(value: string): string {
   const raw = String(value || '').trim();
   const plain = stripSimpleHtml(raw);
   if (!plain) return '';
-  const markedItalic = /<(?:i|em)\b/i.test(raw);
-  if (markedItalic && options.italicWhenMarked !== false) return escapeLatexText(plain);
-  if (options.preferRoman || (CHEMICAL_ELEMENTS.includes(plain) && plain.length > 1) || /^[A-Za-z]{2,}$/.test(plain)) {
-    return `\\mathrm{${escapeLatexText(plain)}}`;
-  }
-  return escapeLatexText(plain);
+  if (/<(?:i|em)\b/i.test(raw)) return escapeLatexText(plain);
+  return `\\mathrm{${escapeLatexText(plain)}}`;
 }
 
 function scriptToLatex(value: string): string {
@@ -177,10 +167,7 @@ function scriptToLatex(value: string): string {
   if (!plain) return '';
   if (/<(?:i|em)\b/i.test(raw)) return escapeLatexText(plain);
   if (/^\d+$/.test(plain)) return plain;
-  if (ROMAN_LATEX_TOKENS.has(plain) || CHEMICAL_ELEMENTS.includes(plain) || /^[A-Za-z]{2,}$/.test(plain)) {
-    return `\\mathrm{${escapeLatexText(plain)}}`;
-  }
-  return escapeLatexText(plain);
+  return `\\mathrm{${escapeLatexText(plain)}}`;
 }
 
 function renderInlineLatex(latex: string): string {
@@ -410,17 +397,8 @@ function normalizePhysicsHtml(html: string): string {
   const unitCore = '(?:kg|mol|cd|rad|sr|Hz|Pa|J|Wb|W|C|V|F|T|H|N|A|K|m|s|L|eV|MeV|GeV|min|h|Ω)';
   const unitToken = `(?:[YZEPTGMkhdcmμunpfa]?${unitCore})`;
   const unitExpr = `${unitToken}(?:\\s*(?:[·⋅*/\\\\/]|<sup>-?\\d+</sup>|\\^?-?\\d+)\\s*${unitToken})*`;
-  const restoreUnits = (value: string) => value.replace(
-    new RegExp(`(\\d(?:[\\d.,×xX+\\-]*\\d)?\\s*)((?:<i>[A-Za-zμΩ]+<\\/i>|[·⋅*/\\\\/\\s]|<sup>-?\\d+<\\/sup>|\\^?-?\\d+)+)(?=\\s|[\\u4e00-\\u9fff]|[,，。；;、）)]|$)`, 'g'),
-    (_match, prefix, body) => prefix + body.replace(/<\/?i>/g, '')
-  );
-
-  return restoreUnits(stripGraphicPathNoise(safeHtml))
+  return stripGraphicPathNoise(safeHtml)
     .replace(/<span class="omml-frac">\s*<span class="omml-frac-num">\s*(m|cm|mm|km)\s*<\/span>\s*<span class="omml-frac-den">\s*(s(?:<sup>2<\/sup>|<sub>2<\/sub>|2)?)\s*<\/span>\s*<\/span>/gi, '$1/$2')
-    .replace(/<i>k<\/i><i>g<\/i>/g, 'kg')
-    .replace(/<i>(N|Pa|J|W|C|V|F|T|H|A|K|Hz|Ω)<\/i>(?=(?:<sup>|[·⋅.*/\/]))/g, '$1')
-    .replace(/(?<=[·⋅.*/\/])<i>(m|s|g|A|K|mol|cd|rad|Hz|N|Pa|J|W|C|V|F|T|H|Ω)<\/i>/g, '$1')
-    .replace(/<i>(m|s|g|A|K|mol|cd|rad|Hz|N|Pa|J|W|C|V|F|T|H|Ω)<\/i>(?=<sup>-?\d+<\/sup>)/g, '$1')
     .replace(/<i>([A-Za-zα-ωΑ-Ω])i>/g, '<i>$1</i>')
     .replace(/<\/<sup>/g, '</sup>')
     .replace(/<\/<sub>/g, '</sub>')

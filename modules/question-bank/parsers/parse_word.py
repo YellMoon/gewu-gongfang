@@ -364,17 +364,6 @@ def normalize_physics_markup(text):
         return token
 
     text = re.sub(r"<img\b[^>]*>", protect_image, text, flags=re.I)
-    text = re.sub(r"<i>k</i><i>g</i>", "kg", text)
-    text = re.sub(r"<i>(N|Pa|J|W|C|V|F|T|H|A|K|Hz|Ω)</i>(?=(?:<sup>|[·⋅.*/\/]))", r"\1", text)
-    text = re.sub(r"(?<=[·⋅.*/\/])<i>(m|s|g|A|K|mol|cd|rad|Hz|N|Pa|J|W|C|V|F|T|H|Ω)</i>", r"\1", text)
-    text = re.sub(r"<i>(m|s|g|A|K|mol|cd|rad|Hz|N|Pa|J|W|C|V|F|T|H|Ω)</i>(?=<sup>-?\d+</sup>)", r"\1", text)
-    def restore_unit(match):
-        prefix = match.group(1)
-        body = match.group(2)
-        return prefix + re.sub(r"</?i>", "", body)
-
-    italic_unit_token = r"(?:<i>[A-Za-zμΩ]+</i>|[·⋅*/\/\s]|\^?-?\d+|<sup>-?\d+</sup>)+"
-    text = re.sub(r"(\d(?:[\d.,×xX\-+]*\d)?\s*)(" + italic_unit_token + r")(?=\s|[\u4e00-\u9fff]|[,，。；;、）)]|$)", restore_unit, text)
     text = re.sub(r"(?<=\d)\s*(%s)" % UNIT_PATTERN, lambda m: " " + m.group(1), text)
     text = re.sub(r"@@QUESTION_IMAGE_(\d+)@@", lambda m: protected_images[int(m.group(1))] if int(m.group(1)) < len(protected_images) else "", text)
     return text
@@ -474,7 +463,7 @@ def _math_latex(node):
             plain_style = any(_local_name(child) in ("nor", "lit") for child in list(rpr))
             plain_style = plain_style or any(_local_name(child) == "sty" and child.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/math}val") in ("p", "plain") for child in list(rpr))
         if plain_style:
-            return _plain_math_text(node)
+            return r"\mathrm{%s}" % _plain_math_text(node)
         return "".join(_math_latex(child) for child in list(node) if _local_name(child) != "rPr")
     if tag == "fName":
         return _plain_math_text(node)
@@ -565,6 +554,14 @@ def _image_tag(asset):
     return '<img src="%s" alt="%s"%s />' % (src, alt, size_attrs)
 
 
+def _word_toggle_enabled(run, property_name, ns):
+    node = run.find("./w:rPr/w:%s" % property_name, ns)
+    if node is None:
+        return False
+    value = node.attrib.get("{%s}val" % ns["w"], "true")
+    return str(value).strip().lower() not in ("0", "false", "off", "no")
+
+
 def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_object=False, inline_assets=None):
     parts = []
     inline_assets = inline_assets if inline_assets is not None else []
@@ -635,8 +632,9 @@ def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_
                 text = text.translate(SYMBOL_FONT_MAP)
             vert = child.find("./w:rPr/w:vertAlign", ns)
             val = vert.attrib.get("{%s}val" % ns["w"]) if vert is not None else ""
-            italic = child.find("./w:rPr/w:i", ns) is not None
-            bold = child.find("./w:rPr/w:b", ns) is not None
+            italic = _word_toggle_enabled(child, "i", ns)
+            bold = _word_toggle_enabled(child, "b", ns)
+            underline = _word_toggle_enabled(child, "u", ns)
             if val == "subscript":
                 script_text = "<i>%s</i>" % text if italic else visible_space_text(text)
                 parts.append("<sub>%s</sub>" % script_text)
@@ -647,7 +645,7 @@ def _paragraph_text_with_markup(paragraph, ns, archive=None, rels=None, has_ole_
                 parts.append("<i>%s</i>" % text)
             elif bold:
                 parts.append("<strong>%s</strong>" % text)
-            elif child.find("./w:rPr/w:u", ns) is not None and not text.strip():
+            elif underline and not text.strip():
                 parts.append("_" * max(4, len(text)))
             else:
                 parts.append(visible_space_text(text))
@@ -931,6 +929,38 @@ def _question_rich_text(question):
         if isinstance(sub_question, dict):
             parts.extend([sub_question.get("title", ""), sub_question.get("content", ""), sub_question.get("answer", "")])
     return "\n".join(str(part or "") for part in parts)
+
+
+def annotate_format_warnings(question):
+    rich_text = _question_rich_text(question)
+    if not rich_text:
+        return
+    review_text = re.sub(r'<span class="legacy-latex"[^>]*></span>', "", rich_text, flags=re.I)
+    review_text = re.sub(r"<img\b[^>]*>", "", review_text, flags=re.I)
+    warnings = []
+    italic_unit_re = re.compile(
+        r"(?<=\d)\s*(?:<i>)?(%s)(?:</i>)?"
+        % "|".join(re.escape(token) for token in _unit_tokens()),
+        re.I,
+    )
+    for match in italic_unit_re.finditer(review_text):
+        token = match.group(0)
+        if "<i>" not in token.lower():
+            continue
+        unit = re.sub(r"</?i>", "", token, flags=re.I).strip()
+        message = "原文中的单位“%s”使用斜体，规范建议使用正体，请人工校准" % unit
+        if message not in warnings:
+            warnings.append(message)
+
+    plain_quantity_re = re.compile(r"(?<![A-Za-z>])([A-Za-zα-ωΑ-Ω])\s*=")
+    for match in plain_quantity_re.finditer(review_text):
+        symbol = match.group(1)
+        message = "原文等号左侧的物理量“%s”使用正体，规范建议使用斜体，请人工校准" % symbol
+        if message not in warnings:
+            warnings.append(message)
+
+    if warnings:
+        question["format_warnings"] = warnings
 
 
 def attach_referenced_assets_from_rich_rows(questions, rich_rows):
@@ -1232,6 +1262,7 @@ def finalize_question_type(question):
     split_packed_options(question)
     normalize_leading_image_positions(question)
     normalize_subquestion_image_positions(question)
+    annotate_format_warnings(question)
     question["question_types"] = classify_question(question.get("stem", ""), question.get("options", []), question.get("answer", ""))
     return question
 

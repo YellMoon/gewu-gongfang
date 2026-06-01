@@ -64,6 +64,12 @@ export function validateImportQuestions(
     if (!content) issues.push({ level: 'failed', message: '题干为空' });
     if (!answer) issues.push({ level: 'warning', message: '答案为空' });
     if (!hasKnowledgeMatch(question)) issues.push({ level: 'warning', message: '知识点未匹配' });
+    if (Array.isArray(question.format_warnings)) {
+      question.format_warnings.forEach((warning: unknown) => {
+        const message = textOf(warning);
+        if (message) issues.push({ level: 'warning', message });
+      });
+    }
     if (fingerprint && (existingContent.has(fingerprint) || seenInBatch.has(fingerprint))) {
       issues.push({ level: 'warning', message: '疑似重复题目' });
     }
