@@ -1,7 +1,7 @@
 /* ── 题干内容 ── */
 .question-content {
-  font-family: 'Times New Roman', 'STIX Two Text', 'STIX', '宋体', SimSun, serif;
-  font-size: 14px;
+  font-family: 'Latin Modern Math', 'KaTeX_Main', 'Times New Roman', 'STIX Two Text', 'STIX', '宋体', SimSun, serif;
+  font-size: 16px;
   line-height: 1.9;
   color: #1a1a1a;
 }
@@ -153,7 +153,7 @@
   display: block;
   max-width: 100%;
   height: auto;
-  margin: 8px 0;
+  margin: 0;
   object-fit: contain;
 }
 
@@ -192,8 +192,8 @@
   background: #f9f9f9;
   border-left: 3px solid #1890ff;
   border-radius: 0 4px 4px 0;
-  font-size: 13px;
-  line-height: 1.7;
+  font-size: 16px;
+  line-height: 1.9;
 }
 
 /* ── 表格内联模式 ── */
@@ -253,32 +253,22 @@
 
 .question-answer-row strong {
   color: #007aff;
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', sans-serif;
-  font-size: 13px;
+  font-family: inherit;
+  font-size: 16px;
 }
 
 .question-answer-hint,
 .question-expand-hint {
   margin-top: 8px;
   color: #8a94a6;
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', sans-serif;
-  font-size: 12px;
+  font-family: inherit;
+  font-size: 14px;
 }
 
 .question-expand-hint {
   opacity: 0;
   transform: translateY(-2px);
   transition: opacity 0.18s ease, transform 0.18s ease;
-}
-
-.question-content,
-.question-answer-hint,
-.question-expand-hint {
-  font-family: 'Latin Modern Math', 'KaTeX_Main', 'Times New Roman', var(--app-font-family, 'Alibaba PuHuiTi 3.0', 'Alibaba PuHuiTi', 'PingFang SC', 'Microsoft YaHei', sans-serif);
-}
-
-.question-answer-row strong {
-  font-family: var(--app-font-family, 'Alibaba PuHuiTi 3.0', 'Alibaba PuHuiTi', 'PingFang SC', 'Microsoft YaHei', sans-serif);
 }
 
 .question-option-label {

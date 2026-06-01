@@ -17,15 +17,7 @@
     "sort_order": 2,
     "status": 1
   },
-  {
-    "id": "teaching-tools",
-    "name": "教学工具",
-    "description": "可插拔工具平台",
-    "icon": "🔧",
-    "route_prefix": "/api/tools",
-    "sort_order": 3,
-    "status": 0
-  },
+
   {
     "id": "assets",
     "name": "资产统计",

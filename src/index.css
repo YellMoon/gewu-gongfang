@@ -32,13 +32,7 @@ body {
   box-sizing: border-box;
 }
 
-.question-content,
-.math-display,
-.math-inline {
-  font-family: 'Times New Roman', 'STIX Two Text', 'STIX', '宋体', SimSun, serif;
-}
-
-/* 鑿滃崟鏍忓浐瀹氶珮搴?*/
+/* 下拉菜单项样式 */
 .ant-layout-header {
   height: 44px !important;
   line-height: 44px !important;

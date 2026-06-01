@@ -7,7 +7,7 @@ import {
   DollarOutlined,
   SettingOutlined,
   DatabaseOutlined,
-  ToolOutlined,
+
   UserOutlined,
   FileTextOutlined,
   FileWordOutlined,
@@ -48,7 +48,7 @@ const QuestionBankPreview = React.lazy(() => import('./pages/QuestionBankPreview
 const QuestionBankEdit = React.lazy(() => import('./pages/QuestionBankEdit'));
 const QuestionBankPaper = React.lazy(() => import('./pages/QuestionBankPaper'));
 const AuditCenter = React.lazy(() => import('./pages/AuditCenter'));
-const TeachingTools = React.lazy(() => import('./pages/TeachingTools'));
+
 
 const PageLoading: React.FC = () => (
   <div style={{ padding: 50, textAlign: 'center', fontSize: 16 }}>
@@ -75,7 +75,7 @@ const QUESTION_BANK_PAGES: PageKey[] = [
 type PageKey =
   | 'course-calendar' | 'schedule-list' | 'course-info'
   | 'school' | 'address' | 'institution'
-  | 'question-bank-import' | 'question-bank-preview' | 'question-bank-edit' | 'question-bank-paper' | 'question-bank-audit' | 'teaching-tool'
+  | 'question-bank-import' | 'question-bank-preview' | 'question-bank-edit' | 'question-bank-paper' | 'question-bank-audit'
   | 'payment' | 'revenue-statistics' | 'personal-assets'
   | 'admin' | 'teacher' | 'student' | 'invitee' | 'permission'
   | 'menu-manage'  | 'system-params' | 'operate-log'
@@ -115,13 +115,6 @@ const MENU_GROUPS: MenuGroup[] = [
       { key: 'question-bank-edit', label: '试题编辑', icon: <EditOutlined /> },
       { key: 'question-bank-audit', label: '审核中心', icon: <SafetyCertificateOutlined /> },
       { key: 'question-bank-paper', label: '组卷', icon: <FileWordOutlined /> }
-    ]
-  },
-  {
-    label: '教学工具',
-    icon: <ToolOutlined />,
-    items: [
-      { key: 'teaching-tool', label: '教学工具', icon: <ToolOutlined /> }
     ]
   },
   {
@@ -268,7 +261,7 @@ const App: React.FC = () => {
       case 'question-bank-edit': return <LazyPage><QuestionBankEdit /></LazyPage>;
       case 'question-bank-audit': return <LazyPage><AuditCenter /></LazyPage>;
       case 'question-bank-paper': return <LazyPage><QuestionBankPaper /></LazyPage>;
-      case 'teaching-tool': return <LazyPage><TeachingTools /></LazyPage>;
+
       case 'personal-assets': return <PersonalAssets />;
       case 'permission': return <PermissionManager />;
       case 'cloud-sync': return <ErrorBoundary><SyncSettings /></ErrorBoundary>;

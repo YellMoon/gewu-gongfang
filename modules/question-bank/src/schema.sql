@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS questions (
   type TEXT NOT NULL,                     -- single_choice/multiple_choice/true_false/fill_blank/short_answer/computation
   difficulty INTEGER DEFAULT 3,           -- 1-5
   source TEXT,
+  paper_id TEXT,
+  question_number INTEGER,
   status TEXT DEFAULT 'active',
   deleted INTEGER DEFAULT 0,
   created_at TEXT NOT NULL,
@@ -155,6 +157,27 @@ CREATE TABLE IF NOT EXISTS student_records (
   FOREIGN KEY (question_set_id) REFERENCES question_sets(id),
   FOREIGN KEY (question_id) REFERENCES questions(id)
 );
+
+-- ===================== 试卷信息表 =====================
+CREATE TABLE IF NOT EXISTS exam_papers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  year TEXT,
+  school_year TEXT,
+  region TEXT,
+  alliance TEXT,
+  school TEXT,
+  grade TEXT,
+  semester TEXT,
+  exam_type TEXT,
+  subject TEXT DEFAULT '物理',
+  deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_exam_papers_year ON exam_papers(year);
+CREATE INDEX IF NOT EXISTS idx_exam_papers_exam_type ON exam_papers(exam_type);
+CREATE INDEX IF NOT EXISTS idx_exam_papers_deleted ON exam_papers(deleted);
 
 -- ===================== 索引 =====================
 CREATE INDEX IF NOT EXISTS idx_subjects_deleted ON subjects(deleted);

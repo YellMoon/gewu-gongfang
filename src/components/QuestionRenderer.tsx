@@ -100,6 +100,9 @@ function cleanLatexInput(latex: string): string {
     .replace(/−/g, '-')
     .replace(/－/g, '-')
     .replace(/＋/g, '+')
+    .replace(/[\u00B7\u22C5]/g, '\\cdot ')
+    .replace(/\u00D7/g, '\\times ')
+    .replace(/\u0394/g, '\\Delta ')
     .replace(/\s+/g, ' ')
     .trim();
 }

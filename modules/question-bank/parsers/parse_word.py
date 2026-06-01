@@ -1526,6 +1526,31 @@ def parse_lecture_questions(paragraphs, default_topic=None):
     return parse_question_block(paragraphs, default_topic)
 
 
+def parse_source_from_comment(comments):
+    """从批注中解析试题来源信息"""
+    if not comments:
+        return {}
+    for comment in comments:
+        comment = comment.strip()
+        if not comment:
+            continue
+        # Pattern: 20XX + 地区/描述 + 卷
+        match = re.search(r'(20\d{2})\s*[\u4e00-\u9fa5]*卷', comment)
+        if match:
+            year = match.group(1)
+            year_end = match.end()
+            full_name = comment[:year_end].strip()
+            region_match = re.search(r'(北京|天津|上海|重庆|河北|山西|辽宁|吉林|黑龙江|江苏|浙江|安徽|福建|江西|山东|河南|湖北|湖南|广东|海南|四川|贵州|云南|陕西|甘肃|青海|内蒙古|广西|西藏|宁夏|新疆|全国)', full_name)
+            return {
+                'year': year,
+                'exam_type': '高考真题',
+                'paper_name': full_name,
+                'region': region_match.group(1) if region_match else '',
+                'source': full_name
+            }
+    return {}
+
+
 def parse_lecture_numbered_items(items, default_topic=None):
     questions = []
     current = None
@@ -1537,6 +1562,9 @@ def parse_lecture_numbered_items(items, default_topic=None):
             comments = [comment for comment in current.pop("_comments", []) if comment]
             if comments and not current.get("answer"):
                 current["answer"] = "\n".join(comments)
+            source_info = parse_source_from_comment(comments)
+            if source_info:
+                current['source_info'] = source_info
             questions.append(finalize_question_type(current))
             current = None
 

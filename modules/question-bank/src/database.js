@@ -293,9 +293,9 @@ class DatabaseService {
     const contentHash = hashText([stem, data.answer, explanation, JSON.stringify(options)].join('|'));
     const transaction = this.db.transaction(() => {
       this.db.prepare(
-        `INSERT INTO questions (id, subject_id, chapter_id, type, difficulty, source, status, deleted, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'active', 0, ?, ?)`
-      ).run(id, data.subject_id || null, data.chapter_id || null, data.type, difficulty, data.source || null, now, now);
+        `INSERT INTO questions (id, subject_id, chapter_id, type, difficulty, source, paper_id, question_number, status, deleted, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 0, ?, ?)`
+      ).run(id, data.subject_id || null, data.chapter_id || null, data.type, difficulty, data.source || null, data.paper_id || null, data.question_number || null, now, now);
       this.db.prepare(
         `INSERT INTO question_contents (id, question_id, stem, answer, explanation, options_json, content_hash, version, deleted, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)`
@@ -473,6 +473,46 @@ class DatabaseService {
       `SELECT * FROM questions WHERE ${where} ORDER BY RANDOM() LIMIT ?`
     ).all(...params, count);
     return questions;
+  }
+
+  // ==================== 试卷信息 CRUD ====================
+
+  createExamPaper(data) {
+    const id = uuidv4();
+    const now = this._now();
+    this.db.prepare(
+      `INSERT INTO exam_papers (id, name, year, school_year, region, alliance, school, grade, semester, exam_type, subject, deleted, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+    ).run(id, data.name, data.year || null, data.school_year || null, data.region || null, data.alliance || null, data.school || null, data.grade || null, data.semester || null, data.exam_type || null, data.subject || '物理', now, now);
+    return this._get('exam_papers', id);
+  }
+
+  getExamPapers(filters = {}) {
+    const where = ['deleted = 0'];
+    const params = [];
+    if (filters.year) { where.push('year = ?'); params.push(filters.year); }
+    if (filters.grade) { where.push('grade = ?'); params.push(filters.grade); }
+    if (filters.semester) { where.push('semester = ?'); params.push(filters.semester); }
+    if (filters.exam_type) { where.push('exam_type = ?'); params.push(filters.exam_type); }
+    if (filters.subject) { where.push('subject = ?'); params.push(filters.subject); }
+    if (filters.keyword) { where.push('name LIKE ?'); params.push(`%${filters.keyword}%`); }
+    return this._list('exam_papers', where.join(' AND '), params, 'year DESC, created_at DESC');
+  }
+
+  getExamPaperById(id) {
+    return this._get('exam_papers', id);
+  }
+
+  findExamPaperByName(name) {
+    return this.db.prepare('SELECT * FROM exam_papers WHERE name = ? AND deleted = 0').get(name);
+  }
+
+  updateExamPaper(id, data) {
+    return this._update('exam_papers', id, data);
+  }
+
+  deleteExamPaper(id) {
+    return this._softDelete('exam_papers', id);
   }
 
   // ==================== 学生做题记录 ====================

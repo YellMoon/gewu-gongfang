@@ -55,6 +55,7 @@ type ExamMeta = {
   semester?: string;
   region?: string;
   school?: string;
+  alliance?: string;
   paper_name?: string;
 };
 
@@ -113,8 +114,11 @@ function extractExamMetaFromFileName(fileName: string): ExamMeta {
   const regionMatch = name.match(/(北京|天津|上海|重庆|河北|山西|辽宁|吉林|黑龙江|江苏|浙江|安徽|福建|江西|山东|河南|湖北|湖南|广东|海南|四川|贵州|云南|陕西|甘肃|青海|台湾|内蒙古|广西|西藏|宁夏|新疆|香港|澳门|杭州|宁波|温州|绍兴|嘉兴|湖州|金华|台州|丽水|衢州|南京|苏州|无锡|常州|扬州|南通|徐州|成都|深圳|广州)/);
   if (regionMatch) meta.region = regionMatch[1];
 
-  const schoolMatch = name.match(/([\u4e00-\u9fa5]{2,24}(?:中学|高中|学校|外国语|实验学校|教育集团|十校联盟|联盟))/);
+  const schoolMatch = name.match(/([\u4e00-\u9fa5]{2,24}(?:中学|高中|学校|外国语|实验学校|教育集团))/);
   if (schoolMatch) meta.school = schoolMatch[1];
+
+  const allianceMatch = name.match(/([\u4e00-\u9fa5]{2,20}(?:十校联盟|联盟|联考))/);
+  if (allianceMatch) meta.alliance = allianceMatch[1];
 
   return meta;
 }
@@ -181,7 +185,10 @@ function toServerQuestion(q: any, meta: any = {}) {
     exam_type: q.exam_type || meta.exam_type || '\u5176\u4ed6',
     region: q.region || meta.region || '',
     school: q.school || meta.school || '',
+    alliance: q.alliance || meta.alliance || '',
     paper_name: q.paper_name || meta.paper_name || '',
+    paper_id: q.paper_id || meta.paper_id || '',
+    question_number: q.question_number || q.number || null,
     status: q.status || 'draft',
     has_image: !!q.has_image,
     has_formula: !!q.has_formula,
@@ -221,7 +228,9 @@ function applyExamMetaToQuestion(q: any, meta: ExamMeta = {}, sourceType: 'lectu
     exam_type: q.exam_type || meta.exam_type || '其他',
     region: q.region || meta.region || '',
     school: q.school || meta.school || '',
+    alliance: q.alliance || meta.alliance || '',
     paper_name: q.paper_name || meta.paper_name || '',
+    question_number: q.question_number || q.number || null,
     source: q.source || meta.paper_name || '',
   };
 }
@@ -272,6 +281,7 @@ const QuestionBankImport: React.FC = () => {
   const [recentImportTasks, setRecentImportTasks] = useState<ImportTask[]>([]);
   const [importTaskDetail, setImportTaskDetail] = useState<(ImportTask & { items: ImportTaskItem[] }) | null>(null);
   const [importTaskDrawerOpen, setImportTaskDrawerOpen] = useState(false);
+  const [examPapers, setExamPapers] = useState<any[]>([]);
   const [examForm] = Form.useForm();
   const [form] = Form.useForm();
   const examMetaRef = useRef<any>(null);
@@ -314,6 +324,24 @@ const QuestionBankImport: React.FC = () => {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  const loadExamPapers = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/exam-papers`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        setExamPapers(data.data);
+      }
+    } catch (_err) {
+      // fallback to empty array on error
+    }
+  }, []);
+
+  useEffect(() => {
+    if (wordSourceType === 'exam') {
+      loadExamPapers();
+    }
+  }, [wordSourceType, loadExamPapers]);
 
   useEffect(() => {
     if (!contextMenuNode) return;
@@ -888,6 +916,15 @@ const QuestionBankImport: React.FC = () => {
     const seenStems = new Set<string>();
     for (const q of (result.questions || [])) {
       try {
+        // Handle source_info from parser (lecture format annotations)
+        if (q.source_info && wordSourceType === 'lecture') {
+          const si = q.source_info;
+          if (si.year && !q.year) q.year = si.year;
+          if (si.exam_type && !q.exam_type) q.exam_type = si.exam_type;
+          if (si.paper_name && !q.paper_name) q.paper_name = si.paper_name;
+          if (si.region && !q.region) q.region = si.region;
+          if (si.source && !q.source) q.source = si.source;
+        }
         const rawStem = getQuestionStem(q);
         const stemKey = exactStem(rawStem);
         if (stemKey && (existingStems.has(stemKey) || seenStems.has(stemKey))) {
@@ -913,7 +950,10 @@ const QuestionBankImport: React.FC = () => {
           exam_type: q.exam_type || meta.exam_type || '其他',
           region: q.region || meta.region || '',
           school: q.school || meta.school || '',
+          alliance: q.alliance || meta.alliance || '',
           paper_name: q.paper_name || meta.paper_name || '',
+          paper_id: q.paper_id || meta.paper_id || '',
+          question_number: q.question_number || q.number || null,
           edit_status: '\u672a\u7f16\u8f91',
           status: q.status || 'draft',
           has_image: !!q.has_image,
@@ -1108,7 +1148,8 @@ const QuestionBankImport: React.FC = () => {
                 }
               }}
               style={{ fontSize: 13 }} />
-            </div>
+            </div>
+
             <Divider orientation="left" style={{ fontSize: 12 }}>模型</Divider>
             {addingChildParentId === 'model:__ROOT__' ? (
               <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -1213,13 +1254,64 @@ const QuestionBankImport: React.FC = () => {
                   <Row gutter={12}>
                     <Col span={8}><Form.Item name="semester" label="学期"><Select options={SEMESTERS.map(v => ({ value: v, label: v }))} /></Form.Item></Col>
                     <Col span={8}><Form.Item name="region" label="地区"><Input placeholder="如：浙江" /></Form.Item></Col>
-                    <Col span={8}><Form.Item name="school" label="学校"><Input placeholder="如：杭州某中学" /></Form.Item></Col>
+                    <Col span={8}><Form.Item name="alliance" label="联盟"><Input placeholder="如：十校联盟" /></Form.Item></Col>
                   </Row>
-                  <Form.Item name="paper_name" label="试卷名"><Input placeholder="选择文件后自动填入文件名，也可手动修改" /></Form.Item>
+                  <Row gutter={12}>
+                    <Col span={12}><Form.Item name="school" label="学校"><Input placeholder="如：杭州某中学" /></Form.Item></Col>
+                    <Col span={12}><Form.Item name="paper_name" label="试卷名"><Input placeholder="选择文件后自动填入文件名，也可手动修改" /></Form.Item></Col>
+                  </Row>
                 </Form>
               </Col>
             </Row>
           </div>
+
+          {/* 已有试卷列表 */}
+          {wordSourceType === 'exam' && examPapers.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <Divider orientation="left">已有试卷</Divider>
+              <Table
+                size="small"
+                rowKey="id"
+                dataSource={examPapers.slice(0, 10)}
+                pagination={false}
+                scroll={{ y: 200 }}
+                columns={[
+                  { title: '试卷名', dataIndex: 'name', ellipsis: true },
+                  { title: '学年', dataIndex: 'year', width: 90 },
+                  { title: '年级', dataIndex: 'grade', width: 70 },
+                  { title: '考试类型', dataIndex: 'exam_type', width: 90 },
+                  { title: '地区', dataIndex: 'region', width: 70 },
+                  { title: '联盟', dataIndex: 'alliance', width: 90 },
+                  { title: '学校', dataIndex: 'school', width: 100 },
+                  {
+                    title: '操作',
+                    width: 80,
+                    render: (_: any, record: any) => (
+                      <Button
+                        type="link"
+                        size="small"
+                        onClick={() => {
+                          examForm.setFieldsValue({
+                            year: record.year || '',
+                            exam_type: record.exam_type || '',
+                            grade: record.grade || '',
+                            semester: record.semester || '',
+                            region: record.region || '',
+                            school: record.school || '',
+                            alliance: record.alliance || '',
+                            paper_name: record.name || '',
+                          });
+                          message.success('已自动填充试卷信息');
+                        }}
+                      >
+                        填充
+                      </Button>
+                    ),
+                  },
+                ]}
+              />
+            </div>
+          )}
 
           <div
             style={{ textAlign: 'center', padding: '42px 20px', border: '2px dashed #d9d9d9', borderRadius: 8, background: '#fafafa' }}

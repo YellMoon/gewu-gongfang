@@ -18,13 +18,7 @@
       { "sub_module": null, "action": "admin", "description": "题库全部管理权限", "allowed_types": ["admin"] }
     ]
   },
-  "teaching-tools": {
-    "name": "教学工具",
-    "permissions": [
-      { "sub_module": null, "action": "view", "description": "使用教学工具", "allowed_types": ["admin", "teacher", "student", "invited"] },
-      { "sub_module": null, "action": "admin", "description": "管理教学工具", "allowed_types": ["admin"] }
-    ]
-  },
+
   "assets": {
     "name": "资产统计",
     "permissions": [

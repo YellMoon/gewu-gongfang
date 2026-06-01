@@ -42,33 +42,30 @@ const DEFAULT_MENU_TREE: MenuTreeNode[] = [
     ],
   },
   {
-    id: '5', name: '教学工具', icon: 'ToolOutlined', routeKey: 'teaching-tool', visible: true, children: [],
-  },
-  {
-    id: '6', name: '缴费统计', icon: 'DollarOutlined', routeKey: '', visible: true,
+    id: '5', name: '缴费统计', icon: 'DollarOutlined', routeKey: '', visible: true,
     children: [
-      { id: '6-1', name: '缴费', icon: 'DollarOutlined', routeKey: 'payment', visible: true, children: [] },
-      { id: '6-2', name: '费用统计', icon: 'BarChartOutlined', routeKey: 'revenue-statistics', visible: true, children: [] },
-      { id: '6-3', name: '个人资产统计', icon: 'DatabaseOutlined', routeKey: 'personal-assets', visible: true, children: [] },
+      { id: '5-1', name: '缴费', icon: 'DollarOutlined', routeKey: 'payment', visible: true, children: [] },
+      { id: '5-2', name: '费用统计', icon: 'BarChartOutlined', routeKey: 'revenue-statistics', visible: true, children: [] },
+      { id: '5-3', name: '个人资产统计', icon: 'DatabaseOutlined', routeKey: 'personal-assets', visible: true, children: [] },
     ],
   },
   {
-    id: '7', name: '用户管理', icon: 'UserOutlined', routeKey: '', visible: true,
+    id: '6', name: '用户管理', icon: 'UserOutlined', routeKey: '', visible: true,
     children: [
-      { id: '7-1', name: '管理员', icon: 'UserOutlined', routeKey: 'admin', visible: true, children: [] },
-      { id: '7-2', name: '老师', icon: 'TeamOutlined', routeKey: 'teacher', visible: true, children: [] },
-      { id: '7-3', name: '学生', icon: 'UserOutlined', routeKey: 'student', visible: true, children: [] },
-      { id: '7-4', name: '被邀请者', icon: 'UserOutlined', routeKey: 'invitee', visible: true, children: [] },
+      { id: '6-1', name: '管理员', icon: 'UserOutlined', routeKey: 'admin', visible: true, children: [] },
+      { id: '6-2', name: '老师', icon: 'TeamOutlined', routeKey: 'teacher', visible: true, children: [] },
+      { id: '6-3', name: '学生', icon: 'UserOutlined', routeKey: 'student', visible: true, children: [] },
+      { id: '6-4', name: '被邀请者', icon: 'UserOutlined', routeKey: 'invitee', visible: true, children: [] },
     ],
   },
   {
-    id: '8', name: '系统设置', icon: 'SettingOutlined', routeKey: '', visible: true,
+    id: '7', name: '系统设置', icon: 'SettingOutlined', routeKey: '', visible: true,
     children: [
-      { id: '8-1', name: '权限管理', icon: 'LockOutlined', routeKey: 'permission', visible: true, children: [] },
-      { id: '8-2', name: '云同步', icon: 'DatabaseOutlined', routeKey: 'cloud-sync', visible: true, children: [] },
-      { id: '8-3', name: '菜单结构管理', icon: 'MenuOutlined', routeKey: 'menu-manage', visible: true, children: [] },
-      { id: '8-4', name: '系统参数', icon: 'SettingOutlined', routeKey: 'system-params', visible: true, children: [] },
-      { id: '8-5', name: '操作日志', icon: 'FileTextOutlined', routeKey: 'operate-log', visible: true, children: [] },
+      { id: '7-1', name: '权限管理', icon: 'LockOutlined', routeKey: 'permission', visible: true, children: [] },
+      { id: '7-2', name: '云同步', icon: 'DatabaseOutlined', routeKey: 'cloud-sync', visible: true, children: [] },
+      { id: '7-3', name: '菜单结构管理', icon: 'MenuOutlined', routeKey: 'menu-manage', visible: true, children: [] },
+      { id: '7-4', name: '系统参数', icon: 'SettingOutlined', routeKey: 'system-params', visible: true, children: [] },
+      { id: '7-5', name: '操作日志', icon: 'FileTextOutlined', routeKey: 'operate-log', visible: true, children: [] },
     ],
   },
 ];

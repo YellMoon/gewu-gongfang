@@ -527,4 +527,63 @@ router.post('/events/:id/retry', (req, res) => {
   }
 });
 
+// ==================== 试卷信息 API ====================
+
+router.get('/exam-papers', (req, res) => {
+  try {
+    const dbService = getInstance();
+    const papers = dbService.getExamPapers(req.query || {});
+    res.json({ success: true, data: papers });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get('/exam-papers/:id', (req, res) => {
+  try {
+    const dbService = getInstance();
+    const paper = dbService.getExamPaperById(req.params.id);
+    if (!paper) return res.status(404).json({ success: false, error: 'exam paper not found' });
+    res.json({ success: true, data: paper });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/exam-papers', (req, res) => {
+  try {
+    const dbService = getInstance();
+    const existing = dbService.findExamPaperByName(req.body.name);
+    if (existing) {
+      return res.json({ success: true, data: existing, exists: true });
+    }
+    const paper = dbService.createExamPaper(req.body);
+    res.json({ success: true, data: paper, exists: false });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.put('/exam-papers/:id', (req, res) => {
+  try {
+    const dbService = getInstance();
+    const paper = dbService.updateExamPaper(req.params.id, req.body);
+    if (!paper) return res.status(404).json({ success: false, error: 'exam paper not found' });
+    res.json({ success: true, data: paper });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.delete('/exam-papers/:id', (req, res) => {
+  try {
+    const dbService = getInstance();
+    const deleted = dbService.deleteExamPaper(req.params.id);
+    if (!deleted) return res.status(404).json({ success: false, error: 'exam paper not found' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
