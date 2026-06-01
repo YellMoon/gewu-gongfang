@@ -6,8 +6,8 @@
   "homepage": ".",
   "scripts": {
     "dev": "concurrently \"npm run dev:react\" \"wait-on http://localhost:3000 && electron .\"",
-    "dev:react": "react-scripts start",
-    "build": "node scripts/prepare-python-runtime.js && node scripts/update-version.js && react-scripts build",
+    "dev:react": "craco start",
+    "build": "node scripts/prepare-python-runtime.js && node scripts/update-version.js && craco build",
     "start": "electron .",
     "prepare:python": "node scripts/prepare-python-runtime.js",
     "rebuild:node": "npm rebuild better-sqlite3",
@@ -32,7 +32,7 @@
     "chart.js": "^4.4.0",
     "cors": "^2.8.6",
     "dayjs": "^1.11.10",
-    "docx": "^9.6.1",
+    "docx": "9.6.1",
     "dotenv": "^16.6.1",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.8.3",
@@ -54,6 +54,8 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@babel/plugin-transform-classes": "^7.29.7",
+    "@craco/craco": "^7.1.0",
     "@types/katex": "^0.16.8",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
