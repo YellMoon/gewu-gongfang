@@ -19,6 +19,23 @@ on:
         description: Miniapp upload description
         required: false
         default: GitHub Actions upload
+      backend_action:
+        description: Optional backend deploy action
+        required: false
+        default: none
+        type: choice
+        options:
+          - none
+          - deploy
+          - rollback
+      backend_version:
+        description: Backend image version tag for deploy, for example 5.0.2-staging
+        required: false
+        default: ""
+      backend_rollback_image:
+        description: Explicit rollback image, for example scheduling-api:5.0.1
+        required: false
+        default: ""
 
 jobs:
   desktop:
@@ -69,6 +86,87 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
       - run: node -e "process.env.DB_PATH='/tmp/scheduling.db'; const { createApp } = require('./src/app'); const { getInstance } = require('./src/database'); createApp(); getInstance(); console.log('backend smoke ok')"
+
+  backend-gray-deploy:
+    runs-on: ubuntu-latest
+    needs: backend-smoke
+    if: ${{ github.event.inputs.backend_action != 'none' }}
+    environment: ${{ github.event.inputs.channel }}
+    env:
+      BACKEND_DEPLOY_USER: ${{ secrets.BACKEND_DEPLOY_USER || 'root' }}
+      BACKEND_DEPLOY_HOST: ${{ secrets.BACKEND_DEPLOY_HOST }}
+      BACKEND_DEPLOY_PORT: ${{ vars.BACKEND_DEPLOY_PORT || '22' }}
+      BACKEND_REMOTE_PATH: ${{ vars.BACKEND_REMOTE_PATH || '/root/scheduling-backend' }}
+      BACKEND_DOCKERFILE: ${{ vars.BACKEND_DOCKERFILE || 'backend/Dockerfile' }}
+      BACKEND_BUILD_CONTEXT: ${{ vars.BACKEND_BUILD_CONTEXT || 'backend' }}
+      BACKEND_DOCKER_NETWORK: ${{ vars.BACKEND_DOCKER_NETWORK || 'app_default' }}
+      BACKEND_DOCKER_VOLUME: ${{ vars.BACKEND_DOCKER_VOLUME || 'scheduling_data' }}
+      BACKEND_HEALTH_URL: ${{ vars.BACKEND_HEALTH_URL || 'http://localhost:3001/api/health' }}
+      BACKEND_JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      BACKEND_DEPLOY_KEY: ${{ secrets.BACKEND_DEPLOY_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate backend deployment inputs
+        run: |
+          if [ -z "$BACKEND_DEPLOY_HOST" ]; then
+            echo "BACKEND_DEPLOY_HOST is required."
+            exit 1
+          fi
+          if [ -z "$BACKEND_JWT_SECRET" ]; then
+            echo "JWT_SECRET is required for backend deploy or rollback."
+            exit 1
+          fi
+          if [ "${{ github.event.inputs.backend_action }}" = "deploy" ] && [ -z "${{ github.event.inputs.backend_version }}" ]; then
+            echo "backend_version is required for backend deploy."
+            exit 1
+          fi
+          if [ "${{ github.event.inputs.backend_action }}" = "rollback" ] && [ -z "${{ github.event.inputs.backend_rollback_image }}" ]; then
+            echo "backend_rollback_image is required for rollback."
+            exit 1
+          fi
+      - name: Configure SSH key
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -p "$BACKEND_DEPLOY_PORT" "$BACKEND_DEPLOY_HOST" >> ~/.ssh/known_hosts
+          if [ -n "$BACKEND_DEPLOY_KEY" ]; then
+            eval "$(ssh-agent -a "$RUNNER_TEMP/backend-ssh-agent.sock")"
+            ssh-add - <<< "$BACKEND_DEPLOY_KEY"
+            {
+              echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK"
+              echo "SSH_AGENT_PID=$SSH_AGENT_PID"
+            } >> "$GITHUB_ENV"
+          fi
+      - name: Deploy selected backend version
+        if: ${{ github.event.inputs.backend_action == 'deploy' }}
+        run: |
+          python scripts/docker_deploy_gray.py deploy \
+            --host "$BACKEND_DEPLOY_HOST" \
+            --user "$BACKEND_DEPLOY_USER" \
+            --ssh-port "$BACKEND_DEPLOY_PORT" \
+            --remote-path "$BACKEND_REMOTE_PATH" \
+            --dockerfile "$BACKEND_DOCKERFILE" \
+            --build-context "$BACKEND_BUILD_CONTEXT" \
+            --network "$BACKEND_DOCKER_NETWORK" \
+            --volume "$BACKEND_DOCKER_VOLUME" \
+            --health-url "$BACKEND_HEALTH_URL" \
+            --channel "${{ github.event.inputs.channel == 'stable' && 'prod' || github.event.inputs.channel }}" \
+            --revision "${{ github.sha }}" \
+            --version "${{ github.event.inputs.backend_version }}"
+      - name: Rollback backend
+        if: ${{ github.event.inputs.backend_action == 'rollback' }}
+        run: |
+          python scripts/docker_deploy_gray.py rollback \
+            --host "$BACKEND_DEPLOY_HOST" \
+            --user "$BACKEND_DEPLOY_USER" \
+            --ssh-port "$BACKEND_DEPLOY_PORT" \
+            --remote-path "$BACKEND_REMOTE_PATH" \
+            --network "$BACKEND_DOCKER_NETWORK" \
+            --volume "$BACKEND_DOCKER_VOLUME" \
+            --health-url "$BACKEND_HEALTH_URL" \
+            --channel "${{ github.event.inputs.channel == 'stable' && 'prod' || github.event.inputs.channel }}" \
+            --revision "${{ github.sha }}" \
+            --image "${{ github.event.inputs.backend_rollback_image }}"
 
   miniapp:
     runs-on: ubuntu-latest

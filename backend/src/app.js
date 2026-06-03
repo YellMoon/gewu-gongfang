@@ -3,7 +3,7 @@
  */
 const express = require('express');
 const cors = require('cors');
-const { authMiddleware, optionalAuth, requireWriteAccess } = require('./middleware/auth');
+const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireWriteAccess } = require('./middleware/auth');
 const { buildErrorPayload, errorHandler } = require('./middleware/errorHandler');
 
 const studentsRouter = require('./routes/students');
@@ -205,6 +205,7 @@ function createApp() {
   app.use(requestLogger);
 
   app.use(normalizeErrorResponses);
+  app.use(tenantScopeMiddleware);
   app.use(createWriteRateLimiter());
   app.use(writeSafetyMiddleware);
 

@@ -25,9 +25,48 @@ function getBearerToken(req) {
   return authHeader.split(' ')[1];
 }
 
+function readTenantFromRequest(req) {
+  return req.headers['x-tenant-id']
+    || req.headers['x-tenantid']
+    || req.query?.tenantId
+    || req.query?.tenant_id
+    || req.body?.tenantId
+    || req.body?.tenant_id
+    || null;
+}
+
+function tenantScopeMiddleware(req, _res, next) {
+  req.requestedTenantId = readTenantFromRequest(req);
+  if (!req.tenantId && req.requestedTenantId) req.tenantId = req.requestedTenantId;
+  return next();
+}
+
+function applyAuthenticatedTenant(req, res) {
+  const userTenant = req.user?.tenantId || req.user?.tenant_id || null;
+  const requestedTenant = req.requestedTenantId || readTenantFromRequest(req);
+
+  if (userTenant && requestedTenant && requestedTenant !== userTenant) {
+    sendAuthError(res, 403, '租户不匹配', 'TENANT_FORBIDDEN');
+    return false;
+  }
+
+  const tenantId = userTenant || requestedTenant || process.env.DEFAULT_TENANT_ID || 'default';
+  req.tenantId = tenantId;
+  if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
+    req.body.tenant_id = tenantId;
+    req.body.tenantId = tenantId;
+  }
+  return true;
+}
+
 function authMiddleware(req, res, next) {
   if (isDevAuthBypassed()) {
-    req.user = { id: 'dev-user', role: 'admin' };
+    req.user = {
+      id: 'dev-user',
+      role: 'admin',
+      tenantId: req.requestedTenantId || process.env.DEFAULT_TENANT_ID || 'default',
+    };
+    applyAuthenticatedTenant(req, res);
     return next();
   }
 
@@ -38,15 +77,21 @@ function authMiddleware(req, res, next) {
 
   try {
     req.user = jwt.verify(token, JWT_SECRET);
+    if (!applyAuthenticatedTenant(req, res)) return undefined;
     return next();
   } catch (_err) {
     return sendAuthError(res, 401, '认证令牌无效或已过期', 'TOKEN_INVALID');
   }
 }
 
-function optionalAuth(req, _res, next) {
+function optionalAuth(req, res, next) {
   if (isDevAuthBypassed()) {
-    req.user = { id: 'dev-user', role: 'admin' };
+    req.user = {
+      id: 'dev-user',
+      role: 'admin',
+      tenantId: req.requestedTenantId || process.env.DEFAULT_TENANT_ID || 'default',
+    };
+    applyAuthenticatedTenant(req, res);
     return next();
   }
 
@@ -54,17 +99,23 @@ function optionalAuth(req, _res, next) {
   if (token) {
     try {
       req.user = jwt.verify(token, JWT_SECRET);
+      if (!applyAuthenticatedTenant(req, res)) return undefined;
     } catch (_err) {
       // Optional auth keeps old behavior: invalid tokens do not block reads.
     }
   }
+  if (!req.tenantId) req.tenantId = req.requestedTenantId || process.env.DEFAULT_TENANT_ID || 'default';
   return next();
 }
 
 function requireWriteAccess(req, res, next) {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
   if (isDevAuthBypassed()) {
-    req.user = req.user || { id: 'dev-user', role: 'admin' };
+    req.user = req.user || {
+      id: 'dev-user',
+      role: 'admin',
+      tenantId: req.tenantId || process.env.DEFAULT_TENANT_ID || 'default',
+    };
     return next();
   }
   if (!req.user) return sendAuthError(res, 401, '未登录', 'UNAUTHORIZED');
@@ -82,7 +133,13 @@ function requireWriteAccess(req, res, next) {
 
 function generateToken(user) {
   return jwt.sign(
-    { id: user.id, openid: user.wechat_openid, nickname: user.nickname, role: user.role },
+    {
+      id: user.id,
+      openid: user.wechat_openid,
+      nickname: user.nickname,
+      role: user.role,
+      tenantId: user.tenantId || user.tenant_id || process.env.DEFAULT_TENANT_ID || 'default',
+    },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -91,6 +148,7 @@ function generateToken(user) {
 module.exports = {
   authMiddleware,
   optionalAuth,
+  tenantScopeMiddleware,
   requireWriteAccess,
   generateToken,
   JWT_SECRET,

@@ -33,6 +33,7 @@ class DatabaseService {
     const schemaPath = path.join(__dirname, 'schema.sql');
     const schema = fs.readFileSync(schemaPath, 'utf-8');
     this.db.exec(schema);
+    this._ensureTenantColumns();
     console.log(`[DB] 鍒濆鍖栧畬鎴? ${this.dbPath}`);
   }
 
@@ -42,17 +43,60 @@ class DatabaseService {
 
   _reader() { return this.readDb || this.db; }
 
-  _get(table, id) {
-    return this._reader().prepare(`SELECT * FROM ${table} WHERE id = ? AND deleted = 0`).get(id);
+  _tenantId(options = {}) {
+    return options.tenantId || options.tenant_id || 'default';
   }
 
-  _list(table, orderBy = 'created_at DESC') {
-    return this._reader().prepare(`SELECT * FROM ${table} WHERE deleted = 0 ORDER BY ${orderBy}`).all();
+  _tenantWhere(table, options = {}, alias = '') {
+    const columns = this._tableColumns(table);
+    if (!columns.includes('tenant_id')) return { sql: '', params: [] };
+    const tenantId = this._tenantId(options);
+    const prefix = alias ? `${alias}.` : '';
+    return {
+      sql: ` AND (${prefix}tenant_id = ? OR ${prefix}tenant_id IS NULL)`,
+      params: [tenantId],
+    };
   }
 
-  _insert(table, data) {
+  _ensureTenantColumns() {
+    const tenantTables = ['students', 'grades', 'courses', 'schedules', 'enrollments',
+      'payments', 'consumptions', 'institutions', 'schools', 'rooms', 'teachers'];
+    const now = this._now();
+    this.db.prepare(
+      `INSERT OR IGNORE INTO tenants (id, name, status, plan, deleted, created_at, updated_at)
+       VALUES ('default', 'default', 'active', 'standard', 0, ?, ?)`
+    ).run(now, now);
+
+    for (const table of tenantTables) {
+      const exists = this.db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?"
+      ).get(table);
+      if (!exists) continue;
+      const columns = this._tableColumns(table);
+      if (!columns.includes('tenant_id')) {
+        this.db.prepare(`ALTER TABLE ${table} ADD COLUMN tenant_id TEXT DEFAULT 'default'`).run();
+      }
+      this.db.prepare(`UPDATE ${table} SET tenant_id = 'default' WHERE tenant_id IS NULL OR tenant_id = ''`).run();
+      this.db.prepare(`CREATE INDEX IF NOT EXISTS idx_${table}_tenant_deleted ON ${table}(tenant_id, deleted)`).run();
+    }
+  }
+
+  _get(table, id, options = {}) {
+    const tenant = this._tenantWhere(table, options);
+    return this._reader().prepare(`SELECT * FROM ${table} WHERE id = ? AND deleted = 0${tenant.sql}`).get(id, ...tenant.params);
+  }
+
+  _list(table, orderBy = 'created_at DESC', options = {}) {
+    const tenant = this._tenantWhere(table, options);
+    return this._reader().prepare(`SELECT * FROM ${table} WHERE deleted = 0${tenant.sql} ORDER BY ${orderBy}`).all(...tenant.params);
+  }
+
+  _insert(table, data, options = {}) {
     const now = this._now();
     const record = { ...data, created_at: now, updated_at: now };
+    if (this._tableColumns(table).includes('tenant_id') && !record.tenant_id) {
+      record.tenant_id = this._tenantId(options);
+    }
     const keys = Object.keys(record);
     const vals = Object.values(record);
     const placeholders = keys.map(() => '?').join(', ');
@@ -60,20 +104,23 @@ class DatabaseService {
     return record;
   }
 
-  _update(table, id, updates) {
+  _update(table, id, updates, options = {}) {
     const now = this._now();
     updates.updated_at = now;
     const keys = Object.keys(updates);
     const vals = Object.values(updates);
     const setClause = keys.map(k => `${k} = ?`).join(', ');
-    this.db.prepare(`UPDATE ${table} SET ${setClause} WHERE id = ? AND deleted = 0`).run(...vals, id);
-    return this._get(table, id);
+    const tenant = this._tenantWhere(table, options);
+    this.db.prepare(`UPDATE ${table} SET ${setClause} WHERE id = ? AND deleted = 0${tenant.sql}`).run(...vals, id, ...tenant.params);
+    return this._get(table, id, options);
   }
 
-  _softDelete(table, id) {
+  _softDelete(table, id, options = {}) {
     const now = this._now();
-    const result = this.db.prepare(`UPDATE ${table} SET deleted = 1, updated_at = ? WHERE id = ?`).run(now, id);
+    const tenant = this._tenantWhere(table, options);
+    const result = this.db.prepare(`UPDATE ${table} SET deleted = 1, updated_at = ? WHERE id = ?${tenant.sql}`).run(now, id, ...tenant.params);
     this._auditOperation({
+      tenant_id: this._tenantId(options),
       action: 'delete',
       table_name: table,
       record_id: id,
@@ -385,28 +432,29 @@ class DatabaseService {
 
   // ==================== 缂磋垂绠＄悊 ====================
 
-  getAllPayments() { return this._list('payments', 'payment_date DESC'); }
+  getAllPayments(options = {}) { return this._list('payments', 'payment_date DESC', options); }
 
-  getPaymentsByStudent(studentId) {
+  getPaymentsByStudent(studentId, options = {}) {
+    const tenant = this._tenantWhere('payments', options);
     return this.db.prepare(
-      'SELECT * FROM payments WHERE student_id = ? AND deleted = 0 ORDER BY payment_date DESC'
-    ).all(studentId);
+      `SELECT * FROM payments WHERE student_id = ? AND deleted = 0${tenant.sql} ORDER BY payment_date DESC`
+    ).all(studentId, ...tenant.params);
   }
 
-  createPayment(data) {
+  createPayment(data, options = {}) {
     const id = uuidv4();
     const payment = this._insert('payments', {
       id, student_id: data.student_id, amount: data.amount,
       payment_type: data.payment_type, payment_date: data.payment_date,
       payment_method: data.payment_method || null, notes: data.notes || null
-    });
+    }, options);
     // 鏇存柊瀛︾敓浣欓
-    const student = this._get('students', data.student_id);
+    const student = this._get('students', data.student_id, options);
     if (student) {
       if (data.payment_type === 1) {  // 瀛﹁垂
-        this._update('students', data.student_id, { balance_money: student.balance_money + data.amount });
+        this._update('students', data.student_id, { balance_money: student.balance_money + data.amount }, options);
       } else if (data.payment_type === 2) {  // 璇炬椂
-        this._update('students', data.student_id, { balance_hours: student.balance_hours + data.amount });
+        this._update('students', data.student_id, { balance_hours: student.balance_hours + data.amount }, options);
       }
     }
     return payment;

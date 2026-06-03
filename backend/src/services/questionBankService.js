@@ -71,6 +71,50 @@ function normalizeQuestionAssets(payload = {}) {
   return assets;
 }
 
+function questionTextParts(payload = {}) {
+  return [
+    payload.stem,
+    payload.content,
+    payload.answer,
+    payload.explanation,
+    payload.analysis,
+    ...(Array.isArray(payload.options) ? payload.options : []),
+    ...(Array.isArray(payload.formulas) ? payload.formulas : []),
+  ].map(value => String(value || ''));
+}
+
+function isImageAsset(asset = {}) {
+  const type = String(asset.asset_type || asset.assetType || asset.type || '').toLowerCase();
+  const mime = String(asset.mime_type || asset.mimeType || '').toLowerCase();
+  const name = String(asset.file_name || asset.fileName || asset.name || asset.oss_key || asset.oss_url || '').toLowerCase();
+  return type === 'image'
+    || type === 'cover'
+    || mime.startsWith('image/')
+    || /\.(png|jpe?g|gif|webp|svg)(\?|#|$)/i.test(name);
+}
+
+function boolValue(value) {
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (typeof value === 'number') return value ? 1 : 0;
+  if (typeof value === 'string') return ['1', 'true', 'yes'].includes(value.toLowerCase()) ? 1 : 0;
+  return value ? 1 : 0;
+}
+
+function detectHasFormula(payload = {}) {
+  if (payload.has_formula !== undefined) return boolValue(payload.has_formula);
+  return questionTextParts(payload).some(text =>
+    /\$\$[\s\S]+?\$\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\]|<math\b|data-formula|formula/i.test(text)
+  ) ? 1 : 0;
+}
+
+function detectHasImage(payload = {}, assets = normalizeQuestionAssets(payload)) {
+  if (payload.has_image !== undefined) return boolValue(payload.has_image);
+  if (assets.some(isImageAsset)) return 1;
+  return questionTextParts(payload).some(text =>
+    /<img\b|!\[[^\]]*\]\([^)]+\)|\.(png|jpe?g|gif|webp|svg)(\?|#|\s|$)/i.test(text)
+  ) ? 1 : 0;
+}
+
 function normalizeOptions(value) {
   if (!value) return [];
   if (Array.isArray(value)) {
@@ -134,6 +178,21 @@ function validateImportItem(item) {
 }
 
 class QuestionBankService {
+  _questionColumns(db) {
+    return db.prepare('PRAGMA table_info(questions)').all().map(column => column.name);
+  }
+
+  _updateQuestionFlags(db, questionId, payload, assets, ts) {
+    const columns = this._questionColumns(db);
+    const updates = {};
+    if (columns.includes('has_image')) updates.has_image = detectHasImage(payload, assets);
+    if (columns.includes('has_formula')) updates.has_formula = detectHasFormula(payload);
+    if (Object.keys(updates).length === 0) return;
+    const keys = Object.keys(updates);
+    db.prepare(`UPDATE questions SET ${keys.map(key => `${key} = ?`).join(', ')}, updated_at = ? WHERE id = ?`)
+      .run(...keys.map(key => updates[key]), ts, questionId);
+  }
+
   ensureTenant(db, tenantId = 'default') {
     const existing = db.prepare('SELECT id FROM tenants WHERE id = ?').get(tenantId);
     if (!existing) {
@@ -186,6 +245,7 @@ class QuestionBankService {
         ).run(uuidv4(), questionId, asset.asset_type, asset.file_name || null, asset.mime_type || null, asset.size_bytes || 0, asset.oss_key, asset.oss_url || null, asset.content_hash || null, ts, ts);
       }
 
+      this._updateQuestionFlags(db, questionId, payload, assets, ts);
       this.enqueueSearchJob(db, questionId, 'upsert', tenantId);
       eventBus.publish(db, 'question.changed', 'question', questionId, { action: 'create' }, tenantId);
     });
@@ -340,6 +400,10 @@ class QuestionBankService {
         }
       }
 
+      const nextAssets = payload.assets !== undefined || payload.cover !== undefined || payload.cover_image !== undefined || payload.title_image !== undefined || payload.attachments !== undefined
+        ? normalizeQuestionAssets(payload)
+        : this._getAssets(db, id);
+      this._updateQuestionFlags(db, id, { ...existing, ...payload, stem, answer, explanation, options }, nextAssets, ts);
       this.enqueueSearchJob(db, id, 'upsert', tenantId);
       eventBus.publish(db, 'question.changed', 'question', id, { action: 'update' }, tenantId);
     });

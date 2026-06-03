@@ -6,6 +6,10 @@ const { getInstance } = require('../database');
 
 const router = Router();
 
+function tenantOptions(req) {
+  return { tenantId: req.tenantId || req.query.tenant_id || req.body?.tenant_id || 'default' };
+}
+
 function badRequest(res, message, details) {
   return res.status(400).json({ error: message, details });
 }
@@ -29,9 +33,9 @@ router.get('/', (req, res) => {
     const db = getInstance();
     let payments;
     if (req.query.student_id) {
-      payments = db.getPaymentsByStudent(req.query.student_id);
+      payments = db.getPaymentsByStudent(req.query.student_id, tenantOptions(req));
     } else {
-      payments = db.getAllPayments();
+      payments = db.getAllPayments(tenantOptions(req));
     }
     res.json({ success: true, data: payments, count: payments.length });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -40,7 +44,7 @@ router.get('/', (req, res) => {
 router.get('/:id', (req, res) => {
   try {
     const db = getInstance();
-    const payment = db.db.prepare('SELECT * FROM payments WHERE id = ? AND deleted = 0').get(req.params.id);
+    const payment = db._get('payments', req.params.id, tenantOptions(req));
     if (!payment) return res.status(404).json({ error: '缴费记录不存在' });
     res.json({ success: true, data: payment });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -49,7 +53,7 @@ router.get('/:id', (req, res) => {
 router.post('/', validatePayment, (req, res) => {
   try {
     const db = getInstance();
-    const payment = db.createPayment(req.body);
+    const payment = db.createPayment(req.body, tenantOptions(req));
     res.status(201).json({ success: true, data: payment });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
