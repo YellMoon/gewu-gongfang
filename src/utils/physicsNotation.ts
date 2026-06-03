@@ -542,6 +542,7 @@ export function createKaTeXPhysicsOptions(displayMode: boolean) {
     displayMode,
     throwOnError: false,
     strict: false as const,
+    trust: false,
     macros: PHYSICS_KATEX_GLOBAL_MACROS,
   };
 }

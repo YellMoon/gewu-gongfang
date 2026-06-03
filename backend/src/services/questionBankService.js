@@ -11,6 +11,10 @@ function hashText(value) {
   return crypto.createHash('sha256').update(String(value || '')).digest('hex');
 }
 
+function escapeLikePattern(value) {
+  return String(value || '').replace(/[\\%_]/g, match => `\\${match}`);
+}
+
 function parseJsonArray(value) {
   if (Array.isArray(value)) return value;
   if (!value) return [];
@@ -262,8 +266,8 @@ class QuestionBankService {
       params.push(filters.knowledge_point_id);
     }
     if (filters.q) {
-      const keyword = `%${filters.q}%`;
-      where.push('(qc.stem LIKE ? OR qc.answer LIKE ? OR qc.explanation LIKE ? OR q.source LIKE ?)');
+      const keyword = `%${escapeLikePattern(filters.q)}%`;
+      where.push("(qc.stem LIKE ? ESCAPE '\\' OR qc.answer LIKE ? ESCAPE '\\' OR qc.explanation LIKE ? ESCAPE '\\' OR q.source LIKE ? ESCAPE '\\')");
       params.push(keyword, keyword, keyword, keyword);
     }
 
@@ -431,8 +435,14 @@ class QuestionBankService {
         const contentHash = contentHashForQuestion(normalized);
         const inBatchDuplicate = seen.has(contentHash);
         const existingDuplicate = !!db.prepare(
-          'SELECT 1 FROM question_contents WHERE content_hash = ? AND deleted = 0'
-        ).get(contentHash);
+          `SELECT 1
+           FROM question_contents qc
+           JOIN questions q ON q.id = qc.question_id
+           WHERE qc.content_hash = ?
+             AND qc.deleted = 0
+             AND q.deleted = 0
+             AND (q.tenant_id = ? OR q.tenant_id IS NULL)`
+        ).get(contentHash, tenantId);
         const duplicate = inBatchDuplicate || existingDuplicate;
         seen.add(contentHash);
         const quality = validateImportItem(normalized);

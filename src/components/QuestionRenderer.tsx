@@ -10,6 +10,7 @@ import {
   PHYSICS_KATEX_GLOBAL_MACROS,
   PHYSICS_KATEX_MACROS,
 } from '../utils/physicsNotation';
+import { sanitizeHtml } from '../utils/sanitizeHtml';
 
 interface QuestionRendererProps {
   content: string;
@@ -90,14 +91,15 @@ const KaTeXMath: React.FC<{ latex: string; displayMode: boolean }> = ({ latex, d
       displayMode,
       throwOnError: false,
       strict: false,
-      trust: true,
+      trust: false,
       macros: {},
     });
   }
+  const safeHtml = sanitizeHtml(rendered);
   if (displayMode) {
-    return <div className="math-display" dangerouslySetInnerHTML={{ __html: rendered }} />;
+    return <div className="math-display" dangerouslySetInnerHTML={{ __html: safeHtml }} />;
   }
-  return <span className="math-inline" dangerouslySetInnerHTML={{ __html: rendered }} />;
+  return <span className="math-inline" dangerouslySetInnerHTML={{ __html: safeHtml }} />;
 };
 
 const QuestionRenderer: React.FC<QuestionRendererProps> = ({
@@ -155,7 +157,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
       return <KaTeXMath key={idx} latex={seg.value} displayMode={false} />;
     }
     if (!seg.value.trim()) return null;
-    const processed = processHtmlSegment(seg.value);
+    const processed = sanitizeHtml(processHtmlSegment(seg.value));
     return <span key={idx} dangerouslySetInnerHTML={{ __html: processed }} />;
   };
 
@@ -175,7 +177,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
         {formattedOptions && optCount > 0 && (
           <div className={`question-options cols-${optCols}`}>
             {formattedOptions.map((opt, i) => (
-              <div key={i} className="question-option" dangerouslySetInnerHTML={{ __html: opt }} />
+              <div key={i} className="question-option" dangerouslySetInnerHTML={{ __html: sanitizeHtml(opt) }} />
             ))}
           </div>
         )}
@@ -197,13 +199,13 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
             {answer && (
               <div className="question-answer">
                 <strong>答案：</strong>
-                <span dangerouslySetInnerHTML={{ __html: answer }} />
+                <span dangerouslySetInnerHTML={{ __html: sanitizeHtml(answer) }} />
               </div>
             )}
             {analysis && (
               <div className="question-analysis">
                 <strong>【解析】</strong>
-                <span dangerouslySetInnerHTML={{ __html: analysis }} />
+                <span dangerouslySetInnerHTML={{ __html: sanitizeHtml(analysis) }} />
               </div>
             )}
             <div className="drawer-hint collapse-hint">
