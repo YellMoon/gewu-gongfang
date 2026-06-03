@@ -100,9 +100,9 @@ function cleanLatexInput(latex: string): string {
     .replace(/−/g, '-')
     .replace(/－/g, '-')
     .replace(/＋/g, '+')
-    .replace(/[\u00B7\u22C5]/g, '\\cdot ')
-    .replace(/\u00D7/g, '\\times ')
-    .replace(/\u0394/g, '\\Delta ')
+    .replace(/[\u00B7\u22C5]/g, '\\cdot')
+    .replace(/\u00D7/g, '\\times')
+    .replace(/\u0394/g, '\\Delta')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -156,21 +156,248 @@ const CHEMICAL_ELEMENTS = [
 
 const CHEMICAL_ELEMENT_PATTERN = CHEMICAL_ELEMENTS.join('|');
 
-function simpleTokenToLatex(value: string): string {
+// ============================================================================
+// 完整单位库 & 正斜体判断核心逻辑
+// ============================================================================
+//
+// 设计原则：
+//   1. 单位库优先：先查预构建的单位库（覆盖所有 SI 前缀组合），匹配到即强制正体
+//   2. 上下文启发：对单字母 token，分析前后文证据（数字、运算符、斜杠等）
+//   3. Word 信号兜底：无强证据时，Word 的格式化作为有用信号（大概率正确）
+//
+// 判断层级：
+//   Layer 1: 单位库匹配 → 强制正体（覆盖 Word 的错误标记）
+//   Layer 2: 化学元素（多字母）→ 强制正体
+//   Layer 3: 单字母 token → 上下文综合判断（见下方详细规则）
+//   Layer 4: 默认 → 斜体（数学惯例：变量用斜体）
+//
+// Layer 3 详细规则（单字母 token 的上下文判断）：
+//   上下文证据类型：
+//     A. 前方信号：前一个 token 是数字/已知单位 → 强烈暗示当前是单位
+//     B. 后方信号：后一个 token 是 "/" → 强烈暗示当前是单位
+//     C. 前方信号：前一个 token 是运算符 → 暗示当前是变量
+//     D. 后方信号：后一个 token 是 "=" → 暗示当前是变量
+//     E. Word 的格式化标签（<i> 或无标签）
+//
+//   判断流程：
+//     if 强上下文暗示单位 (A or B) → 强制正体
+//     elif 强上下文暗示变量 (C or D) → 强制斜体
+//     elif Word 标记了 <i> → 斜体（无反证，Word 信号有效）
+//     else → 正体（默认）
+// ============================================================================
+
+// ---- SI 前缀 ----
+const SI_PREFIXES = ['Y', 'Z', 'E', 'P', 'T', 'G', 'M', 'k', 'h', 'da', 'd', 'c', 'm', 'μ', 'u', 'n', 'p', 'f', 'a', 'z', 'y'];
+
+// ---- SI 基本单位 ----
+const SI_BASE_UNITS = ['m', 's', 'kg', 'A', 'K', 'mol', 'cd'];
+
+// ---- SI 导出单位（可加前缀的）----
+const SI_DERIVED_UNITS = ['Hz', 'N', 'Pa', 'J', 'W', 'C', 'V', 'F', 'Ω', 'S', 'H', 'T', 'Wb', 'lm', 'lx', 'Bq', 'Gy', 'Sv', 'kat'];
+
+// ---- 不可加前缀的单位 ----
+const NON_PREFIXED_UNITS = [
+  '°', '°C', '°F', '%', '°R',
+  'eV', 'keV', 'MeV', 'GeV', 'TeV', 'PeV',
+  'L', 'mL', 'μL',
+  'min', 'h', 'd', 'au', 'ly',
+  'u', 'Da', 'Np', 'B', 'dB',
+  'r', 'gon',
+];
+
+// ---- 常用组合单位（前缀加在整个单位前，多为 dot 连接以保持为单 token）----
+// 注意：含 "/" 的组合单位（如 V/m, N/C）在 HTML 中会被拆分为多个 token，
+// 不会作为整体出现在单位库中，需要通过上下文启发式判断。
+const COMPOUND_UNITS = [
+  // === 力学 ===
+  'N·m', 'N·s', 'N/m',
+  'kg·m/s²', 'kg·m²/s²', 'kg·m²', 'kg/m³', 'kg/m²', 'kg/(m·s²)',
+  'm/s', 'm/s²', 'm²/s', 'm³/s', 'm²/s²', 'm³/s²', 'm⁴/s',
+  'Pa·s', 'Pa·m', 'Pa/m', 'Pa·m²',
+  // === 电磁学 ===
+  'V·s', 'V/m', 'V²',
+  'A·s', 'A·m', 'A/m', 'A/m²', 'A·m²',
+  'C·m', 'C/m', 'C/m²', 'C/m³', 'C²',
+  'F/m', 'F·m',
+  'H/m', 'H·m',
+  'Ω·m', 'Ω/m', 'Ω·m²',
+  'S/m', 'S·m',
+  'Wb/m', 'Wb·m',
+  'T·m', 'T·m²', 'T/m',
+  'J·m', 'J/m³', 'J/m²', 'J·m²',
+  'W·m', 'W/m²', 'W/m³',
+  // === 热学 ===
+  'W/(m·K)', 'J/(kg·K)', 'J/(kg·m²)', 'K/m', 'K·m²/W',
+  'J/K', 'J/(mol·K)', 'J/mol',
+  'Pa/K', 'm²/(V·s)',
+  // === 光学 ===
+  'cd/m²', 'lm·s', 'lx·s', 'lx/m', 'cd·sr',
+  // === 流体力学 ===
+  'Pa·s/m', 'm²/s³',
+  // === 原子/核物理 ===
+  'kg/mol', 'eV/atom', 'eV·m', 'J·s',
+  // === 通用导出 ===
+  'kg·m', 'kg/s', 'kg/s²', 'kg·m/s',
+  'm·K', 'mol/m³', 'mol/(m²·s)',
+];
+
+// ---- 数学函数（永远正体）----
+const MATH_FUNCTIONS = new Set([
+  'sin', 'cos', 'tan', 'cot', 'sec', 'csc',
+  'arcsin', 'arccos', 'arctan', 'arccot', 'arcsec', 'arccsc',
+  'sinh', 'cosh', 'tanh', 'coth',
+  'arsinh', 'arcosh', 'artanh', 'arcoth',
+  'log', 'ln', 'lg', 'exp',
+  'max', 'min', 'sup', 'inf', 'lim',
+  'det', 'dim', 'gcd', 'ker', 'hom',
+]);
+
+// ---- 描述性缩写（永远正体）----
+const DESCRIPTIVE_ABBREVS = new Set([
+  'avg', 'rms', 'eff', 'tot', 'ext', 'int', 'rev', 'abs', 'rel', 'sat',
+  'std', 'STP', 'NTP', 'eq', 'fig', 'ref', 'ch', 'sec', 'vol', 'ed',
+]);
+
+// ---- 生成完整单位库 ----
+// 核心原则：只收录**无歧义**的多字母单位（如 MeV, km, MHz, sin, log）。
+// 单字母单位（m, s, T, V 等）不收录——它们既可能是单位也可能是物理量，
+// 需要通过上下文启发式来判断（见 simpleTokenToLatex 的 Layer 3）。
+function buildUnitLibrary(): Set<string> {
+  const units = new Set<string>();
+
+  // 1. 不可加前缀的单位（多字母的直接加入，单字母的不加入）
+  for (const u of NON_PREFIXED_UNITS) {
+    if (u.length > 1) units.add(u); // eV, MeV, min, h, ...
+  }
+
+  // 2. SI 基本单位（只加入多字母的：kg, mol, cd）
+  // 单字母基本单位（m, s, A, K）不加入——需要上下文判断
+  for (const base of SI_BASE_UNITS) {
+    if (base.length > 1) {
+      units.add(base); // kg, mol, cd
+    }
+    if (base !== 'kg') {
+      for (const prefix of SI_PREFIXES) {
+        units.add(prefix + base); // km, mm, cm, μm, nm, ... (都是多字母)
+      }
+    }
+  }
+
+  // 3. SI 导出单位
+  // 多字母导出单位（Hz, Pa, Wb, lm, lx, Bq, Gy, Sv, kat）直接加入
+  // 单字母导出单位（N, V, F, T, ...）不加入——需要上下文判断
+  // 加前缀后都是多字母，可以直接加入
+  for (const derived of SI_DERIVED_UNITS) {
+    if (derived.length > 1) {
+      units.add(derived); // Hz, Pa, Wb, lm, lx, Bq, Gy, Sv, kat
+    }
+    for (const prefix of SI_PREFIXES) {
+      units.add(prefix + derived); // kHz, MPa, GW, mV, μT, ... (都是多字母)
+    }
+  }
+
+  // 4. 组合单位（前缀加在整个单位前）
+  for (const compound of COMPOUND_UNITS) {
+    units.add(compound);
+    for (const prefix of SI_PREFIXES) {
+      units.add(prefix + compound);
+    }
+  }
+
+  // 5. 数学函数
+  for (const fn of MATH_FUNCTIONS) units.add(fn);
+
+  // 6. 描述性缩写
+  for (const abbr of DESCRIPTIVE_ABBREVS) units.add(abbr);
+
+  return units;
+}
+
+const UNIT_LIBRARY = buildUnitLibrary();
+
+function simpleTokenToLatex(value: string, prev = '', next = ''): string {
   const raw = String(value || '').trim();
   const plain = stripSimpleHtml(raw);
   if (!plain) return '';
-  if (/<(?:i|em)\b/i.test(raw)) return escapeLatexText(plain);
-  return `\\mathrm{${escapeLatexText(plain)}}`;
+
+  // Layer 1: 单位库匹配 → 强制正体（覆盖 Word 的错误标记）
+  // 单位库包含所有 SI 前缀组合（km, mm, MHz, GPa, ...）、数学函数、描述性缩写
+  if (UNIT_LIBRARY.has(plain)) return `\\mathrm{${escapeLatexText(plain)}}`;
+
+  // Layer 2: 化学元素（多字母）→ 强制正体
+  if (plain.length > 1 && CHEMICAL_ELEMENTS.includes(plain)) return `\\mathrm{${escapeLatexText(plain)}}`;
+
+  // Layer 3: 单字母 token → 上下文综合判断
+  if (plain.length === 1) {
+    const hasItalicTag = /<(?:i|em)\b/i.test(raw);
+
+    // --- 上下文证据收集 ---
+    // 前方信号
+    const prevIsDigit = /^\d/.test(prev);                                // 5 m → m 是单位
+    const prevIsKnownUnit = /^[a-zA-ZΩμ°%]$/.test(prev);                // kg·m → m 是单位
+    const prevIsDigitOrUnit = prevIsDigit || prevIsKnownUnit;
+    // 分数中的单位：5m/ 或 kg/ 或 eV/ 或 MeV/ → 后面的 token 是单位
+    // 匹配：数字+字母+/, 或多字母单位+/, 或单字母单位+/
+    const prevIsUnitFraction = /(?:\d[a-zA-Z0-9]*|[a-zA-ZΩμ°%]{2,}|[VsATNFHWCK])\//.test(prev);
+    // 斜杠前是已知单位库中的单位 → 斜杠后的 token 也是单位
+    const prevEndsAfterKnownUnit = /\/$/.test(prev) && UNIT_LIBRARY.has(prev.replace(/\/$/, ''));
+    // 后方信号
+    const nextIsChinese = /^[\u4e00-\u9fa5]/.test(next);                 // m/秒 → m 是单位
+    const nextIsEquals = /^[=]/.test(next);                               // F=ma → F 是变量
+    const nextIsOperator = /^[+\-×÷·<>≤≥≠^_]/.test(next);               // a+b → a 是变量
+
+    // --- 综合判断 ---
+    // 强上下文暗示单位：前置数字/已知单位，或前置斜杠（斜杠前是单位），或后置中文
+    // 注意：不使用 nextIsSlash——它会错误地将 s/t 中的 s 当作单位
+    // 分数中的单位识别完全依赖 prev 上下文（prevIsDigit, prevIsUnitFraction, prevEndsAfterKnownUnit）
+    const strongRomanContext =
+      prevIsDigitOrUnit || prevIsUnitFraction || prevEndsAfterKnownUnit ||
+      nextIsChinese;
+
+    // 强上下文暗示变量：前置运算符（=, +, -, × 等），或后置等号/运算符
+    const prevEndsWithNonSlashOp = /[+\-×÷·=<>≤≥≠]$/.test(prev);
+    const strongItalicContext =
+      prevEndsWithNonSlashOp || nextIsEquals || nextIsOperator;
+
+    if (strongRomanContext) {
+      // 上下文证据强 → 覆盖 Word 的格式化
+      return `\\mathrm{${escapeLatexText(plain)}}`;
+    }
+    if (strongItalicContext) {
+      // 上下文证据强 → 覆盖 Word 的格式化
+      return escapeLatexText(plain);
+    }
+
+    // 无强上下文证据 → Word 的格式化是有用信号（大概率正确）
+    if (hasItalicTag) return escapeLatexText(plain);      // Word 说是斜体，无反证 → 斜体
+    return `\\mathrm{${escapeLatexText(plain)}}`;          // Word 说是正体或无标记 → 正体
+  }
+
+  // Layer 5: 默认 → 斜体（数学惯例：变量用斜体）
+  return escapeLatexText(plain);
 }
 
 function scriptToLatex(value: string): string {
   const raw = String(value || '').trim();
   const plain = stripSimpleHtml(raw);
   if (!plain) return '';
-  if (/<(?:i|em)\b/i.test(raw)) return escapeLatexText(plain);
+
+  // 数字始终是 plain
   if (/^\d+$/.test(plain)) return plain;
+
+  // 单位库匹配 → 强制正体
+  if (UNIT_LIBRARY.has(plain)) return `\\mathrm{${escapeLatexText(plain)}}`;
+  // 化学元素 → 强制正体
+  if (plain.length > 1 && CHEMICAL_ELEMENTS.includes(plain)) return `\\mathrm{${escapeLatexText(plain)}}`;
+
+  // 下标中的 Word 格式化 → 作为有用信号（大概率正确），无强上下文可参考
+  if (/<(?:i|em)\b/i.test(raw)) return escapeLatexText(plain);
+
+  // 默认 → 正体（下标中的字母通常是单位或描述性文字）
   return `\\mathrm{${escapeLatexText(plain)}}`;
+
+  // 默认 → 斜体
+  return escapeLatexText(plain);
 }
 
 function renderInlineLatex(latex: string): string {
@@ -198,6 +425,77 @@ function convertHtmlScriptsToLatex(content: string): string {
   const basePattern = String.raw`(?:<i>[^<]+<\/i>|<em>[^<]+<\/em>|[A-Za-zα-ωΑ-ΩμΩ]+|\d+(?:\.\d+)?|[)\]])`;
   let next = String(content || '');
 
+  // --- 子题标签保护：防止 (1)(2)(3) 被错误渲染为斜体 ---
+  // Word 中的子题标签可能被标记为斜体（<i>(1)</i>），需要在处理前保护它们，
+  // 并统一规范化为半角括号格式。
+  // 保护被 <i> 包裹的子题标签（半角和全角括号）
+  next = next.replace(
+    /<i>\s*([\(\uff08]\s*\d+\s*[\)\uff09])\s*<\/i>/gi,
+    (_match, label: string) => {
+      const num = label.replace(/[^\d]/g, '');
+      return `@@SUB_LABEL_${num}@@`;
+    }
+  );
+  // 保护被 <i> 包裹的带圈数字子题标签
+  next = next.replace(
+    /<i>\s*([\u2460-\u2469])\s*<\/i>/gi,
+    (_match, circled: string) => {
+      const code = circled.charCodeAt(0);
+      const num = code - 0x2460 + 1;
+      return `@@SUB_LABEL_${num}@@`;
+    }
+  );
+  // 安全网：处理未被 <i> 包裹的全角括号子题标签
+  next = next.replace(
+    /[\uff08]\s*(\d+)\s*[\uff09]/g,
+    (_match, num: string) => `@@SUB_LABEL_${num}@@`
+  );
+
+  // --- 上下文提取：扫描 HTML，构建每个 token 的前后文本上下文 ---
+  // 用于 simpleTokenToLatex 的上下文判断（如 "5 m/s" 中 m 的前方是数字 "5"）
+  // 注意：不能用 Map，因为同一个文本可能多次出现（如 m 在 "5m" 和 "m·t" 中），
+  // 需要为每次出现保存独立的上下文。
+  const tokenContextArray: Array<{ text: string; prev: string; next: string }> = [];
+  {
+    const tagPattern = /<i>([^<]+)<\/i>|<em>([^<]+)<\/em>|<sub>[\s\S]*?<\/sub>|<sup>[\s\S]*?<\/sup>|<span[^>]*>[\s\S]*?<\/span>|<br\s*\/?>/gi;
+    const tokens: Array<{ text: string; gapBefore: string }> = [];
+    let m: RegExpExecArray | null;
+    let lastEnd = 0;
+    while ((m = tagPattern.exec(next)) !== null) {
+      const gap = stripSimpleHtml(next.slice(lastEnd, m.index));
+      const text = m[1] || m[2] || '';
+      if (text) {
+        tokens.push({ text, gapBefore: gap });
+      }
+      lastEnd = m.index + m[0].length;
+    }
+    for (let i = 0; i < tokens.length; i++) {
+      const prevText = i > 0 ? tokens[i - 1].text.slice(-3) : '';
+      const prevGap = i > 0 ? tokens[i].gapBefore : '';
+      const nextText = i < tokens.length - 1 ? tokens[i + 1].text.slice(0, 3) : '';
+      const nextGap = i < tokens.length - 1 ? tokens[i + 1].gapBefore : '';
+      tokenContextArray.push({
+        text: tokens[i].text,
+        prev: prevText + prevGap,
+        next: nextGap + nextText,
+      });
+    }
+  }
+  // --- 结束上下文提取 ---
+
+  // 构建按文本分组的上下文队列（处理重复 token，如多个 "m"）
+  const contextQueues = new Map<string, Array<{ prev: string; next: string }>>();
+  for (const entry of tokenContextArray) {
+    const q = contextQueues.get(entry.text) || [];
+    q.push({ prev: entry.prev, next: entry.next });
+    contextQueues.set(entry.text, q);
+  }
+  const popContext = (text: string) => {
+    const q = contextQueues.get(text);
+    if (q && q.length > 0) return q.shift()!;
+    return { prev: '', next: '' };
+  };
+
   next = next
     .replace(
       new RegExp(`<span class="nuclear-symbol">\\s*<span class="nuclear-left">\\s*<sup>([\\s\\S]*?)<\\/sup>\\s*<sub>([\\s\\S]*?)<\\/sub>\\s*<\\/span>\\s*<span class="nuclear-core">\\s*([A-Za-z]{1,2}|n)\\s*<\\/span>\\s*<\\/span>`, 'gi'),
@@ -215,22 +513,40 @@ function convertHtmlScriptsToLatex(content: string): string {
   next = next
     .replace(
       new RegExp(`(${basePattern})\\s*<sub>([\\s\\S]*?)<\\/sub>\\s*<sup>([\\s\\S]*?)<\\/sup>`, 'gi'),
-      (_match, base, sub, sup) => legacyLatexPlaceholder(`${simpleTokenToLatex(base)}_{${scriptToLatex(sub)}}^{${scriptToLatex(sup)}}`)
+      (_match, base, sub, sup) => {
+        const ctx = popContext(stripSimpleHtml(base));
+        return legacyLatexPlaceholder(`${simpleTokenToLatex(base, ctx.prev, ctx.next)}_{${scriptToLatex(sub)}}^{${scriptToLatex(sup)}}`);
+      }
     )
     .replace(
       new RegExp(`(${basePattern})\\s*<sup>([\\s\\S]*?)<\\/sup>\\s*<sub>([\\s\\S]*?)<\\/sub>`, 'gi'),
-      (_match, base, sup, sub) => legacyLatexPlaceholder(`${simpleTokenToLatex(base)}_{${scriptToLatex(sub)}}^{${scriptToLatex(sup)}}`)
+      (_match, base, sup, sub) => {
+        const ctx = popContext(stripSimpleHtml(base));
+        return legacyLatexPlaceholder(`${simpleTokenToLatex(base, ctx.prev, ctx.next)}_{${scriptToLatex(sub)}}^{${scriptToLatex(sup)}}`);
+      }
     )
     .replace(
       new RegExp(`(${basePattern})\\s*<sub>([\\s\\S]*?)<\\/sub>`, 'gi'),
-      (_match, base, sub) => legacyLatexPlaceholder(`${simpleTokenToLatex(base)}_{${scriptToLatex(sub)}}`)
+      (_match, base, sub) => {
+        const ctx = popContext(stripSimpleHtml(base));
+        return legacyLatexPlaceholder(`${simpleTokenToLatex(base, ctx.prev, ctx.next)}_{${scriptToLatex(sub)}}`);
+      }
     )
     .replace(
       new RegExp(`(${basePattern})\\s*<sup>([\\s\\S]*?)<\\/sup>`, 'gi'),
-      (_match, base, sup) => legacyLatexPlaceholder(`${simpleTokenToLatex(base)}^{${scriptToLatex(sup)}}`)
+      (_match, base, sup) => {
+        const ctx = popContext(stripSimpleHtml(base));
+        return legacyLatexPlaceholder(`${simpleTokenToLatex(base, ctx.prev, ctx.next)}^{${scriptToLatex(sup)}}`);
+      }
     )
     .replace(/<sub>([\s\S]*?)<\/sub>/gi, (_match, sub) => legacyLatexPlaceholder(`{}_{${scriptToLatex(sub)}}`))
     .replace(/<sup>([\s\S]*?)<\/sup>/gi, (_match, sup) => legacyLatexPlaceholder(`{}^{${scriptToLatex(sup)}}`));
+
+  // --- 恢复子题标签占位符 ---
+  // 统一渲染为半角括号 + 正体，确保 (1)(2)(3) 左对齐且不被斜体化
+  next = next.replace(/@@SUB_LABEL_(\d+)@@/g, (_match, num: string) => {
+    return `<span style="font-style:normal">(${num})</span>`;
+  });
 
   return next;
 }
@@ -317,8 +633,10 @@ function convertLegacyLatexFragments(content: string): string {
 function removeDuplicatedSubQuestionLines(content: string): string {
   const lines = String(content || '').split(/\r?\n/);
   const normalizeLine = (line: string) => line.replace(/<[^>]+>/g, '').replace(/\s+/g, '');
+  // 同时检测半角 (1) 和全角 （1）（带圈数字 ① 是更低一级编号，不参与重复检测）
+  const subLabelPattern = /^\s*[\(\uff08]1[\)\uff09]/;
   for (let i = 0; i < lines.length; i++) {
-    if (!/^\s*\(1\)/.test(lines[i])) continue;
+    if (!subLabelPattern.test(lines[i])) continue;
     for (let len = 2; len <= 8 && i + len * 2 <= lines.length; len++) {
       const first = lines.slice(i, i + len).map(normalizeLine);
       const second = lines.slice(i + len, i + len * 2).map(normalizeLine);
@@ -329,6 +647,18 @@ function removeDuplicatedSubQuestionLines(content: string): string {
     }
   }
   return lines.join('\n');
+}
+
+/** 统一子题标签格式：全角括号→半角，多余空白→单空格，带圈数字→(N) */
+function normalizeSubQuestionLabels(content: string): string {
+  let result = String(content || '');
+  // 全角括号 → 半角括号（带或不带 <i> 标签）
+  result = result.replace(/<i>\s*[\uff08]\s*(\d+)\s*[\uff09]\s*<\/i>/gi, '<i>($1)</i>');
+  result = result.replace(/[\uff08]\s*(\d+)\s*[\uff09]/g, '($1)');
+  // 注意：带圈数字 ①②③ 保持原样，不转换——它们是比括号数字更低一级的编号
+  // 规范化括号后多余空白：( 1 ) → (1)，（ 1 ）→ (1)
+  result = result.replace(/\(\s*(\d+)\s*\)/g, '($1)');
+  return result;
 }
 
 function normalizeStemImagePlacement(content: string, hasSeparateOptions: boolean, questionType?: string): string {
@@ -401,6 +731,17 @@ function normalizePhysicsHtml(html: string): string {
   const unitToken = `(?:[YZEPTGMkhdcmμunpfa]?${unitCore})`;
   const unitExpr = `${unitToken}(?:\\s*(?:[·⋅*/\\\\/]|<sup>-?\\d+</sup>|\\^?-?\\d+)\\s*${unitToken})*`;
   return stripGraphicPathNoise(safeHtml)
+    // Repair fragmented units: <i>k</i><i>g</i> → kg
+    .replace(/<i>k<\/i>\s*<i>g<\/i>/gi, 'kg')
+    .replace(/<i>m<\/i>\s*<i>o<\/i>\s*<i>l<\/i>/gi, 'mol')
+    .replace(/<i>c<\/i>\s*<i>d<\/i>/gi, 'cd')
+    .replace(/<i>r<\/i>\s*<i>a<\/i>\s*<i>d<\/i>/gi, 'rad')
+    .replace(/<i>s<\/i>\s*<i>r<\/i>/gi, 'sr')
+    .replace(/<i>H<\/i>\s*<i>z<\/i>/gi, 'Hz')
+    .replace(/<i>P<\/i>\s*<i>a<\/i>/gi, 'Pa')
+    .replace(/<i>W<\/i>\s*<i>b<\/i>/gi, 'Wb')
+    // Merge adjacent italic unit letters: <i>N</i><i>m</i> → Nm
+    .replace(/(<\/i>)\s*(<i>)/g, (_, close, open) => close + open)
     .replace(/<span class="omml-frac">\s*<span class="omml-frac-num">\s*(m|cm|mm|km)\s*<\/span>\s*<span class="omml-frac-den">\s*(s(?:<sup>2<\/sup>|<sub>2<\/sub>|2)?)\s*<\/span>\s*<\/span>/gi, '$1/$2')
     .replace(/<i>([A-Za-zα-ωΑ-Ω])i>/g, '<i>$1</i>')
     .replace(/<\/<sup>/g, '</sup>')
@@ -482,7 +823,8 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
 
   const { stemText, stemImages } = useMemo(() => {
     const deduped = removeOptionImageDuplicates(removeDuplicatedSubQuestionLines(content || ''), normalizedOptions);
-    const cleaned = normalizeStemImagePlacement(deduped, normalizedOptions.length > 0, questionType);
+    const normalized = normalizeSubQuestionLabels(deduped);
+    const cleaned = normalizeStemImagePlacement(normalized, normalizedOptions.length > 0, questionType);
     return { stemText: convertLegacyLatexFragments(convertHtmlLatexFractions(cleaned)), stemImages: [] as string[] };
   }, [content, normalizedOptions]);
 
@@ -533,7 +875,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
     setExpanded(false);
   }, []);
   const renderHtml = (value?: string) => (
-    <span dangerouslySetInnerHTML={{ __html: sanitizeHtml(applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(convertHtmlLatexFractions(value || ''))), terms)) }} />
+    <span dangerouslySetInnerHTML={{ __html: sanitizeHtml(applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(convertHtmlLatexFractions(normalizeSubQuestionLabels(value || '')))), terms)) }} />
   );
 
   return (
