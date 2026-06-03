@@ -552,12 +552,28 @@ router.get('/exam-papers/:id', (req, res) => {
 
 router.post('/exam-papers', (req, res) => {
   try {
+    const { name, year, school_year, region, alliance, school, grade, semester, exam_type, subject } = req.body || {};
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ success: false, error: '试卷名称不能为空' });
+    }
+    const data = {
+      name: name.trim().substring(0, 200),
+      year: year ? String(year).substring(0, 9) : null,
+      school_year: school_year ? String(school_year).substring(0, 20) : null,
+      region: region ? String(region).substring(0, 20) : null,
+      alliance: alliance ? String(alliance).substring(0, 40) : null,
+      school: school ? String(school).substring(0, 40) : null,
+      grade: grade ? String(grade).substring(0, 10) : null,
+      semester: semester ? String(semester).substring(0, 10) : null,
+      exam_type: exam_type ? String(exam_type).substring(0, 20) : null,
+      subject: subject ? String(subject).substring(0, 10) : '物理',
+    };
     const dbService = getInstance();
-    const existing = dbService.findExamPaperByName(req.body.name);
+    const existing = dbService.findExamPaperByName(data.name);
     if (existing) {
       return res.json({ success: true, data: existing, exists: true });
     }
-    const paper = dbService.createExamPaper(req.body);
+    const paper = dbService.createExamPaper(data);
     res.json({ success: true, data: paper, exists: false });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

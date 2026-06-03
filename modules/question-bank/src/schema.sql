@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS questions (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY (subject_id) REFERENCES subjects(id),
-  FOREIGN KEY (chapter_id) REFERENCES chapters(id)
+  FOREIGN KEY (chapter_id) REFERENCES chapters(id),
+  FOREIGN KEY (paper_id) REFERENCES exam_papers(id) ON DELETE SET NULL
 );
 
 -- ===================== 题干/答案内容拆分 =====================

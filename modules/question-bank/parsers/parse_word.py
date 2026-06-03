@@ -1534,13 +1534,15 @@ def parse_source_from_comment(comments):
         comment = comment.strip()
         if not comment:
             continue
-        # Pattern: 20XX + 地区/描述 + 卷
-        match = re.search(r'(20\d{2})\s*[\u4e00-\u9fa5]*卷', comment)
+        # Pattern: 19XX/20XX + 地区/描述 + 卷 + 可选后缀(I/II/A/B)
+        match = re.search(r'((?:19|20)\d{2})\s*([\u4e00-\u9fa5]*卷[A-Z甲乙丙丁IⅠⅡⅢ]?)', comment)
         if match:
             year = match.group(1)
-            year_end = match.end()
-            full_name = comment[:year_end].strip()
-            region_match = re.search(r'(北京|天津|上海|重庆|河北|山西|辽宁|吉林|黑龙江|江苏|浙江|安徽|福建|江西|山东|河南|湖北|湖南|广东|海南|四川|贵州|云南|陕西|甘肃|青海|内蒙古|广西|西藏|宁夏|新疆|全国)', full_name)
+            full_name = match.group(2).strip()
+            region_match = re.search(
+                r'(北京|天津|上海|重庆|河北|山西|辽宁|吉林|黑龙江|江苏|浙江|安徽|福建|江西|山东|河南|湖北|湖南|广东|海南|四川|贵州|云南|陕西|甘肃|青海|内蒙古|广西|西藏|宁夏|新疆|全国|新高考)',
+                full_name
+            )
             return {
                 'year': year,
                 'exam_type': '高考真题',
