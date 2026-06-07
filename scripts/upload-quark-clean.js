@@ -5,6 +5,8 @@ const fs = require('fs');
 const dryRun = process.argv.includes('--dry-run') || process.env.DRY_RUN === '1';
 const ossBaseUrl = (process.env.OSS_CDN_BASE_URL || 'https://gewugongfang.oss-cn-hangzhou.aliyuncs.com/desktop').replace(/\/+$/, '');
 const ossObjectPrefix = (process.env.OSS_OBJECT_PREFIX || 'desktop').replace(/^\/+|\/+$/g, '');
+const ROOT_FOLDER = process.env.QUARK_ROOT_FOLDER || 'codex项目';
+const ROOT_FOLDER_ALIASES = Array.from(new Set([ROOT_FOLDER, 'codex项目', 'Codex项目']));
 
 // Locate latest Windows installer in dist
 const distDir = path.join(__dirname, '..', 'dist');
@@ -29,6 +31,7 @@ if (dryRun) {
   console.log(JSON.stringify({
     dry_run: true,
     target: 'quark',
+    root_folder: ROOT_FOLDER,
     file: fileName,
     size: fs.statSync(SETUP_FILE).size,
     oss_key: objectKey,
@@ -41,8 +44,6 @@ const COOKIE_FILE = path.join(process.env.LOCALAPPDATA || process.env.TEMP || '.
 const PROFILE_DIR = path.join(process.env.LOCALAPPDATA || process.env.TEMP || '.', 'opencode-quark-profile');
 const today = new Date();
 const DATE_FOLDER = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
-const ROOT_FOLDER = 'codex项目';
-const ROOT_FOLDER_ALIASES = ['codex项目', 'Codex项目'];
 
 async function getItemNames(page) {
   return await page.evaluate(() => {

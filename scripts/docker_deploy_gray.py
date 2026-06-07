@@ -1,131 +1,179 @@
 #!/usr/bin/env python3
-"""
-Versioned Docker deploy and one-command rollback for the scheduling backend.
+"""Gray deploy helper for the backend Docker service.
 
-Local validation examples:
-  python scripts/docker_deploy_gray.py deploy --version 3.0.4-staging --dry-run
-  python scripts/docker_deploy_gray.py rollback --image scheduling-api:3.0.3 --dry-run
-
-For a real staging host, provide SSH target details. Authentication is delegated
-to the local ssh client, so use an ssh-agent, key file, or host config instead
-of committing credentials.
+The script is designed for GitHub Actions:
+- package the checked-out revision and upload it to the server;
+- build the Docker image from that uploaded source, not a stale remote folder;
+- inject runtime secrets through a chmod 600 env file;
+- start the selected image and verify health.
 """
 
 from __future__ import annotations
 
 import argparse
-import datetime as dt
-import json
+import os
 import shlex
 import subprocess
-import sys
+import tarfile
+import tempfile
+import time
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from pathlib import Path
 
 
-DEFAULT_STATE_FILE = "/root/scheduling-backend/deploy-state.json"
-
-
-@dataclass
-class DeployContext:
-    host: str
-    user: str
-    port: int
-    remote_path: str
-    dockerfile: str
-    build_context: str
-    image_repo: str
-    container: str
-    network: str
-    volume: str
-    port_mapping: str
-    health_url: str
-    state_file: str
-    dry_run: bool
-
-    @property
-    def ssh_target(self) -> str:
-        return f"{self.user}@{self.host}" if self.user else self.host
+EXCLUDES = {
+    ".git",
+    "node_modules",
+    "backend/node_modules",
+    "miniapp/node_modules",
+    "build",
+    "dist",
+    ".venv",
+    "venv",
+}
 
 
 def quote(value: str) -> str:
     return shlex.quote(str(value))
 
 
-def utc_now() -> str:
-    return dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def run_remote(ctx: DeployContext, command: str, *, check: bool = True) -> str:
-    if ctx.dry_run:
-        print(f"[dry-run] {command}")
-        return ""
-
-    ssh_command = ["ssh", "-p", str(ctx.port), ctx.ssh_target, command]
-    result = subprocess.run(ssh_command, text=True, capture_output=True)
-    if result.stdout:
-        print(result.stdout, end="")
-    if result.stderr:
-        print(result.stderr, end="", file=sys.stderr)
-    if check and result.returncode != 0:
-        raise SystemExit(result.returncode)
+def run(cmd: list[str], *, input_text: str | None = None) -> str:
+    result = subprocess.run(
+        cmd,
+        input=input_text,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"command failed ({result.returncode}): {' '.join(cmd)}\n{result.stdout}")
     return result.stdout.strip()
 
 
-def remote_json_write(ctx: DeployContext, payload: dict) -> None:
-    state_path = PurePosixPath(ctx.state_file)
-    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-    command = (
-        f"mkdir -p {quote(str(state_path.parent))} && "
-        f"cat > {quote(ctx.state_file)} <<'JSON'\n{encoded}\nJSON"
+@dataclass
+class DeployContext:
+    host: str
+    user: str
+    ssh_port: str
+    remote_path: str
+    dockerfile: str
+    build_context: str
+    network: str
+    volume: str
+    health_url: str
+    channel: str
+    revision: str
+    image_repo: str
+    container: str
+    port_mapping: str
+    jwt_secret: str | None = None
+
+    @property
+    def ssh_target(self) -> str:
+        return f"{self.user}@{self.host}"
+
+    @property
+    def source_path(self) -> str:
+        return f"{self.remote_path.rstrip('/')}/source"
+
+    @property
+    def runtime_env_path(self) -> str:
+        return f"{self.remote_path.rstrip('/')}/runtime.env"
+
+
+def ssh(ctx: DeployContext, command: str) -> str:
+    return run(["ssh", "-p", ctx.ssh_port, ctx.ssh_target, command])
+
+
+def scp(ctx: DeployContext, src: str, dest: str) -> str:
+    return run(["scp", "-P", ctx.ssh_port, src, f"{ctx.ssh_target}:{dest}"])
+
+
+def should_exclude(path: Path) -> bool:
+    text = path.as_posix()
+    return any(text == item or text.startswith(f"{item}/") for item in EXCLUDES)
+
+
+def create_source_archive(root: Path) -> str:
+    handle = tempfile.NamedTemporaryFile(prefix="scheduling-source-", suffix=".tar.gz", delete=False)
+    handle.close()
+    archive = handle.name
+    with tarfile.open(archive, "w:gz") as tar:
+      for path in root.rglob("*"):
+          rel = path.relative_to(root)
+          if should_exclude(rel):
+              continue
+          tar.add(path, arcname=rel)
+    return archive
+
+
+def sync_source(ctx: DeployContext) -> None:
+    archive = create_source_archive(Path.cwd())
+    remote_archive = f"{ctx.remote_path.rstrip('/')}/source.tar.gz"
+    try:
+        ssh(ctx, f"mkdir -p {quote(ctx.remote_path)} {quote(ctx.source_path)}")
+        scp(ctx, archive, remote_archive)
+        ssh(
+            ctx,
+            "set -e; "
+            f"rm -rf {quote(ctx.source_path)}; "
+            f"mkdir -p {quote(ctx.source_path)}; "
+            f"tar -xzf {quote(remote_archive)} -C {quote(ctx.source_path)}; "
+            f"rm -f {quote(remote_archive)}",
+        )
+    finally:
+        try:
+            os.unlink(archive)
+        except OSError:
+            pass
+
+
+def write_runtime_env(ctx: DeployContext) -> None:
+    if not ctx.jwt_secret:
+        raise ValueError("JWT secret is required for backend deploy")
+    content = "\n".join([
+        "NODE_ENV=production",
+        "PORT=3001",
+        "DB_PATH=/app/data/scheduling.db",
+        "READ_DB_PATH=/app/data/scheduling.db",
+        f"APP_VERSION={ctx.revision}",
+        f"DEPLOY_CHANNEL={ctx.channel}",
+        f"JWT_SECRET={ctx.jwt_secret}",
+        "",
+    ])
+    ssh(
+        ctx,
+        "set -e; "
+        f"umask 077; cat > {quote(ctx.runtime_env_path)} <<'EOF'\n{content}EOF\n"
+        f"chmod 600 {quote(ctx.runtime_env_path)}",
     )
-    run_remote(ctx, command)
 
 
-def remote_json_read_command(path: str, key: str, fallback: str = "") -> str:
-    return (
-        "python3 - <<'PY'\n"
-        "import json\n"
-        f"path = {path!r}\n"
-        f"key = {key!r}\n"
-        f"fallback = {fallback!r}\n"
-        "try:\n"
-        "    with open(path, 'r', encoding='utf-8') as f:\n"
-        "        data = json.load(f)\n"
-        "    print(data.get(key) or fallback)\n"
-        "except FileNotFoundError:\n"
-        "    print(fallback)\n"
-        "PY"
-    )
-
-
-def build_image(ctx: DeployContext, version: str, channel: str, revision: str) -> str:
+def build_image(ctx: DeployContext, version: str) -> str:
     image = f"{ctx.image_repo}:{version}"
-    channel_image = f"{ctx.image_repo}:{channel}"
-    build_date = utc_now()
+    channel_image = f"{ctx.image_repo}:{ctx.channel}"
+    build_date = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     command = (
-        f"cd {quote(ctx.remote_path)} && "
+        "set -e; "
+        f"cd {quote(ctx.source_path)}; "
         "docker build "
         f"-f {quote(ctx.dockerfile)} "
         f"--build-arg APP_VERSION={quote(version)} "
-        f"--build-arg APP_REVISION={quote(revision)} "
+        f"--build-arg APP_REVISION={quote(ctx.revision)} "
         f"--build-arg BUILD_DATE={quote(build_date)} "
         f"--label app.gewu.version={quote(version)} "
-        f"--label app.gewu.channel={quote(channel)} "
-        f"--label app.gewu.revision={quote(revision)} "
+        f"--label app.gewu.channel={quote(ctx.channel)} "
+        f"--label app.gewu.revision={quote(ctx.revision)} "
         f"-t {quote(image)} -t {quote(channel_image)} {quote(ctx.build_context)}"
     )
-    run_remote(ctx, command)
+    ssh(ctx, command)
     return image
 
 
-def current_image(ctx: DeployContext) -> str:
-    command = f"docker inspect -f '{{{{.Config.Image}}}}' {quote(ctx.container)} 2>/dev/null || true"
-    return run_remote(ctx, command, check=False)
-
-
-def start_container(ctx: DeployContext, image: str, version: str, channel: str) -> None:
+def start_container(ctx: DeployContext, image: str) -> None:
     command = (
+        "set -e; "
         f"docker rm -f {quote(ctx.container)} 2>/dev/null || true; "
         "docker run -d "
         f"--name {quote(ctx.container)} "
@@ -133,17 +181,13 @@ def start_container(ctx: DeployContext, image: str, version: str, channel: str) 
         "--restart unless-stopped "
         f"-p {quote(ctx.port_mapping)} "
         f"-v {quote(ctx.volume)}:/app/data "
-        "-e NODE_ENV=production "
-        "-e PORT=3001 "
-        "-e DB_PATH=/app/data/scheduling.db "
-        f"-e APP_VERSION={quote(version)} "
-        f"-e DEPLOY_CHANNEL={quote(channel)} "
+        f"--env-file {quote(ctx.runtime_env_path)} "
         f"{quote(image)}"
     )
-    run_remote(ctx, command)
+    ssh(ctx, command)
 
 
-def assert_healthy(ctx: DeployContext, timeout: int) -> None:
+def assert_healthy(ctx: DeployContext, timeout: int = 90) -> None:
     command = (
         "python3 - <<'PY'\n"
         "import sys, time, urllib.request\n"
@@ -153,142 +197,84 @@ def assert_healthy(ctx: DeployContext, timeout: int) -> None:
         "while time.time() < deadline:\n"
         "    try:\n"
         "        with urllib.request.urlopen(url, timeout=3) as resp:\n"
-        "            body = resp.read().decode('utf-8', 'replace')\n"
         "            if resp.status == 200:\n"
-        "                print(body[:500])\n"
+        "                print('backend healthy')\n"
         "                sys.exit(0)\n"
-        "            last = f'status={resp.status} body={body[:200]}'\n"
+        "            last = f'HTTP {resp.status}'\n"
         "    except Exception as exc:\n"
-        "        last = repr(exc)\n"
-        "    time.sleep(2)\n"
-        "print(last)\n"
+        "        last = str(exc)\n"
+        "    time.sleep(3)\n"
+        "print(f'health check failed for {url}: {last}', file=sys.stderr)\n"
         "sys.exit(1)\n"
         "PY"
     )
-    run_remote(ctx, command)
+    ssh(ctx, command)
 
 
-def deploy(args: argparse.Namespace) -> None:
-    ctx = make_context(args)
-    previous = args.previous_image or current_image(ctx) or ""
-    image = build_image(ctx, args.version, args.channel, args.revision or args.version)
-    state = {
-        "channel": args.channel,
-        "currentImage": image,
-        "previousImage": previous,
-        "version": args.version,
-        "revision": args.revision or args.version,
-        "status": "deploying",
-        "updatedAt": utc_now(),
-        "rollbackNote": "Database rollback is not automatic. Verify schema compatibility before rolling code back.",
-    }
-    remote_json_write(ctx, state)
-    start_container(ctx, image, args.version, args.channel)
-
-    try:
-        assert_healthy(ctx, args.health_timeout)
-    except SystemExit:
-        if previous:
-            print(f"Health check failed. Rolling back to {previous}.", file=sys.stderr)
-            start_container(ctx, previous, "rollback", args.channel)
-            remote_json_write(ctx, {**state, "status": "rolled_back", "failedImage": image, "currentImage": previous})
-        raise
-
-    remote_json_write(ctx, {**state, "status": "healthy"})
+def deploy(ctx: DeployContext, version: str) -> None:
+    sync_source(ctx)
+    write_runtime_env(ctx)
+    image = build_image(ctx, version)
+    start_container(ctx, image)
+    assert_healthy(ctx)
 
 
-def rollback(args: argparse.Namespace) -> None:
-    ctx = make_context(args)
-    image = args.image or run_remote(ctx, remote_json_read_command(ctx.state_file, "previousImage"), check=False)
-    image = image.strip()
+def rollback(ctx: DeployContext, image: str) -> None:
     if not image:
-        raise SystemExit("No rollback image was provided and previousImage is missing from deploy state.")
-    start_container(ctx, image, "rollback", args.channel)
-    assert_healthy(ctx, args.health_timeout)
-    remote_json_write(
-        ctx,
-        {
-            "channel": args.channel,
-            "currentImage": image,
-            "previousImage": "",
-            "version": "rollback",
-            "revision": args.revision or "manual-rollback",
-            "status": "healthy_after_rollback",
-            "updatedAt": utc_now(),
-            "rollbackNote": "Code rollback completed. Confirm database schema/data compatibility separately.",
-        },
-    )
+        raise ValueError("rollback image is required")
+    write_runtime_env(ctx)
+    start_container(ctx, image)
+    assert_healthy(ctx)
 
 
-def status(args: argparse.Namespace) -> None:
-    ctx = make_context(args)
-    run_remote(ctx, f"docker ps --filter name={quote(ctx.container)} --format '{{{{.Names}}}} {{{{.Image}}}} {{{{.Status}}}}'")
-    run_remote(ctx, f"cat {quote(ctx.state_file)} 2>/dev/null || true", check=False)
-
-
-def make_context(args: argparse.Namespace) -> DeployContext:
-    return DeployContext(
-        host=args.host,
-        user=args.user,
-        port=args.ssh_port,
-        remote_path=args.remote_path,
-        dockerfile=args.dockerfile,
-        build_context=args.build_context,
-        image_repo=args.image_repo,
-        container=args.container,
-        network=args.network,
-        volume=args.volume,
-        port_mapping=args.port_mapping,
-        health_url=args.health_url,
-        state_file=args.state_file,
-        dry_run=args.dry_run,
-    )
-
-
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Versioned gray deploy and rollback for Gewu backend.")
-    sub = parser.add_subparsers(dest="action", required=True)
-
-    def common(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--host", default="localhost", help="SSH host for staging/prod.")
-        p.add_argument("--user", default="", help="SSH user. Empty means use the host as-is.")
-        p.add_argument("--ssh-port", type=int, default=22)
-        p.add_argument("--remote-path", default="/root/scheduling-backend")
-        p.add_argument("--dockerfile", default="backend/Dockerfile")
-        p.add_argument("--build-context", default="backend")
-        p.add_argument("--image-repo", default="scheduling-api")
-        p.add_argument("--container", default="scheduling-backend")
-        p.add_argument("--network", default="app_default")
-        p.add_argument("--volume", default="scheduling_data")
-        p.add_argument("--port-mapping", default="3001:3001")
-        p.add_argument("--health-url", default="http://localhost:3001/api/health")
-        p.add_argument("--state-file", default=DEFAULT_STATE_FILE)
-        p.add_argument("--channel", default="staging", choices=["dev", "staging", "prod"])
-        p.add_argument("--revision", default="")
-        p.add_argument("--health-timeout", type=int, default=45)
-        p.add_argument("--dry-run", action="store_true", help="Print commands without opening SSH.")
-
-    deploy_p = sub.add_parser("deploy", help="Build and deploy a specific image version.")
-    common(deploy_p)
-    deploy_p.add_argument("--version", required=True, help="Immutable image tag to deploy.")
-    deploy_p.add_argument("--previous-image", default="", help="Override detected previous image for dry-run or CI drills.")
-    deploy_p.set_defaults(func=deploy)
-
-    rollback_p = sub.add_parser("rollback", help="Rollback to the previous or specified image.")
-    common(rollback_p)
-    rollback_p.add_argument("--image", default="", help="Explicit rollback image, e.g. scheduling-api:3.0.3.")
-    rollback_p.set_defaults(func=rollback)
-
-    status_p = sub.add_parser("status", help="Show container and deploy-state status.")
-    common(status_p)
-    status_p.set_defaults(func=status)
-    return parser
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("action", choices=["deploy", "rollback"])
+    parser.add_argument("--host", required=True)
+    parser.add_argument("--user", default="root")
+    parser.add_argument("--ssh-port", default="22")
+    parser.add_argument("--remote-path", default="/root/scheduling-backend")
+    parser.add_argument("--dockerfile", default="backend/Dockerfile")
+    parser.add_argument("--build-context", default="backend")
+    parser.add_argument("--network", default="app_default")
+    parser.add_argument("--volume", default="scheduling_data")
+    parser.add_argument("--health-url", default="http://localhost:3001/api/health")
+    parser.add_argument("--channel", default="staging")
+    parser.add_argument("--revision", required=True)
+    parser.add_argument("--version", default="")
+    parser.add_argument("--image", default="")
+    parser.add_argument("--image-repo", default="scheduling-api")
+    parser.add_argument("--container", default="scheduling-backend")
+    parser.add_argument("--port-mapping", default="3001:3001")
+    parser.add_argument("--jwt-secret", default=os.environ.get("BACKEND_JWT_SECRET", ""))
+    return parser.parse_args()
 
 
 def main() -> None:
-    parser = build_parser()
-    args = parser.parse_args()
-    args.func(args)
+    args = parse_args()
+    ctx = DeployContext(
+        host=args.host,
+        user=args.user,
+        ssh_port=args.ssh_port,
+        remote_path=args.remote_path,
+        dockerfile=args.dockerfile,
+        build_context=args.build_context,
+        network=args.network,
+        volume=args.volume,
+        health_url=args.health_url,
+        channel=args.channel,
+        revision=args.revision,
+        image_repo=args.image_repo,
+        container=args.container,
+        port_mapping=args.port_mapping,
+        jwt_secret=args.jwt_secret,
+    )
+    if args.action == "deploy":
+        if not args.version:
+            raise ValueError("version is required for deploy")
+        deploy(ctx, args.version)
+    else:
+        rollback(ctx, args.image)
 
 
 if __name__ == "__main__":

@@ -1,12 +1,16 @@
 const ALLOWED_TAGS = new Set([
-  'br', 'span', 'div', 'table', 'tbody', 'thead', 'tr', 'td', 'th',
+  'br', 'span', 'div', 'p', 'table', 'tbody', 'thead', 'tr', 'td', 'th',
   'sub', 'sup', 'i', 'b', 'strong', 'em', 'mark', 'img',
+  'math', 'annotation', 'semantics', 'mrow', 'mi', 'mn', 'mo', 'msup', 'msub',
+  'msubsup', 'mfrac', 'msqrt', 'mroot', 'mtext', 'mspace',
 ]);
 
-const URI_ATTRS = new Set(['src']);
+const URI_ATTRS = new Set(['src', 'href', 'xlink:href']);
+
 const ALLOWED_ATTRS = new Set([
-  'class', 'style', 'src', 'alt', 'width', 'height', 'data-inline-options',
-  'data-latex', 'aria-hidden',
+  'class', 'style', 'src', 'alt', 'width', 'height', 'title',
+  'aria-hidden', 'data-latex', 'data-inline-options', 'encoding',
+  'xmlns', 'display',
 ]);
 
 function isSafeUri(value: string): boolean {
@@ -40,6 +44,7 @@ function escapeHtml(value: string): string {
 
 export function sanitizeHtml(html: string): string {
   if (typeof DOMParser === 'undefined') return escapeHtml(String(html || ''));
+
   const doc = new DOMParser().parseFromString(`<div>${html || ''}</div>`, 'text/html');
   const root = doc.body.firstElementChild;
   if (!root) return '';
@@ -50,15 +55,15 @@ export function sanitizeHtml(html: string): string {
         child.parentNode?.removeChild(child);
         continue;
       }
-      if (child.nodeType !== Node.ELEMENT_NODE) {
-        continue;
-      }
+      if (child.nodeType !== Node.ELEMENT_NODE) continue;
+
       const element = child as HTMLElement;
       const tagName = element.tagName.toLowerCase();
       if (!ALLOWED_TAGS.has(tagName)) {
         element.replaceWith(...Array.from(element.childNodes));
         continue;
       }
+
       for (const attr of Array.from(element.attributes)) {
         const name = attr.name.toLowerCase();
         if (name.startsWith('on') || !ALLOWED_ATTRS.has(name)) {
@@ -75,6 +80,7 @@ export function sanitizeHtml(html: string): string {
           else element.removeAttribute('style');
         }
       }
+
       walk(element);
     }
   };

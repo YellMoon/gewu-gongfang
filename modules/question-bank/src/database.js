@@ -12,6 +12,10 @@ function hashText(value) {
   return crypto.createHash('sha256').update(String(value || '')).digest('hex');
 }
 
+function escapeLikePattern(value) {
+  return String(value || '').replace(/[\\%_]/g, match => `\\${match}`);
+}
+
 function parseJsonArray(value) {
   if (Array.isArray(value)) return value;
   if (!value) return [];
@@ -250,8 +254,9 @@ class DatabaseService {
     if (filters.type) { where.push('q.type = ?'); params.push(filters.type); }
     if (filters.difficulty) { where.push('q.difficulty = ?'); params.push(filters.difficulty); }
     if (filters.keyword) {
-      where.push('(qc.stem LIKE ? OR qc.answer LIKE ? OR qc.explanation LIKE ?)');
-      params.push(`%${filters.keyword}%`, `%${filters.keyword}%`, `%${filters.keyword}%`);
+      const keyword = `%${escapeLikePattern(filters.keyword)}%`;
+      where.push("(qc.stem LIKE ? ESCAPE '\\' OR qc.answer LIKE ? ESCAPE '\\' OR qc.explanation LIKE ? ESCAPE '\\')");
+      params.push(keyword, keyword, keyword);
     }
     // 按知识点筛选: knowledge_point_ids JSON数组中包含指定ID
     if (filters.knowledge_point_id) {

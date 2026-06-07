@@ -3,7 +3,7 @@
  */
 const express = require('express');
 const cors = require('cors');
-const { authMiddleware, optionalAuth, requireWriteAccess } = require('./middleware/auth');
+const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireWriteAccess } = require('./middleware/auth');
 const { buildErrorPayload, errorHandler } = require('./middleware/errorHandler');
 
 const studentsRouter = require('./routes/students');
@@ -160,36 +160,6 @@ function normalizeErrorResponses(req, res, next) {
     return originalJson(body);
   };
   next();
-}
-
-function readTenantFromRequest(req) {
-  return req.headers['x-tenant-id']
-    || req.headers['x-tenantid']
-    || req.query.tenantId
-    || req.query.tenant_id
-    || req.body?.tenantId
-    || req.body?.tenant_id
-    || null;
-}
-
-function tenantScopeMiddleware(req, res, next) {
-  const userTenant = req.user?.tenantId || req.user?.tenant_id || null;
-  const requestedTenant = readTenantFromRequest(req);
-  const tenantId = userTenant || requestedTenant || process.env.DEFAULT_TENANT_ID || 'default';
-
-  if (userTenant && requestedTenant && requestedTenant !== userTenant) {
-    return res.status(403).json(buildErrorPayload(req, 403, '租户不匹配', {
-      code: 'TENANT_FORBIDDEN',
-      tenantId: userTenant,
-    }));
-  }
-
-  req.tenantId = tenantId;
-  if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
-    req.body.tenant_id = tenantId;
-    req.body.tenantId = tenantId;
-  }
-  return next();
 }
 
 function requestLogger(req, res, next) {

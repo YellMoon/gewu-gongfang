@@ -1,5 +1,5 @@
 // Auto-generated - do not edit
-// Updated: 2026-06-01T16:15:02.422Z
-// Build: 20260602-0015
-export const APP_VERSION = "3.1.21";
-export const BUILD_TAG = "20260602-0015";
+// Updated: 2026-06-07T04:43:55.162Z
+// Build: 20260607-1243
+export const APP_VERSION = "5.0.2";
+export const BUILD_TAG = "20260607-1243";
