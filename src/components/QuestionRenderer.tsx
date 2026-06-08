@@ -87,7 +87,7 @@ function normalizeDisplayOperators(value: string): string {
 }
 
 function cleanLatexInput(latex: string): string {
-  return String(latex || '')
+  return decodeHtmlEntities(String(latex || ''))
     .replace(/<br\s*\/?>/gi, ' ')
     .replace(/<i>([\s\S]*?)<\/i>/gi, '$1')
     .replace(/<em>([\s\S]*?)<\/em>/gi, '$1')
@@ -103,6 +103,7 @@ function cleanLatexInput(latex: string): string {
     .replace(/[\u00B7\u22C5]/g, '\\cdot')
     .replace(/\u00D7/g, '\\times')
     .replace(/\u0394/g, '\\Delta')
+    .replace(/["']?\s*>\s*$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -111,6 +112,8 @@ function decodeHtmlEntities(value: string): string {
   return String(value || '')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_match, dec) => String.fromCodePoint(parseInt(dec, 10)))
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
@@ -125,6 +128,15 @@ function readLatexAttribute(value: string): string {
   } catch {
     return decoded;
   }
+}
+
+function escapeHtmlText(value: string): string {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function escapeLatexText(value: string): string {
@@ -404,18 +416,79 @@ function renderInlineLatex(latex: string): string {
   const normalizedLatex = cleanLatexInput(latex);
   if (!normalizedLatex) return '';
   try {
-    return katex.renderToString(normalizedLatex, createKaTeXPhysicsOptions(false));
-  } catch {
     return katex.renderToString(normalizedLatex, {
-      displayMode: false,
-      throwOnError: false,
-      strict: false,
-      trust: true,
+      ...createKaTeXPhysicsOptions(false),
+      throwOnError: true,
+      trust: false,
       output: 'html',
-      macros: {},
     });
+  } catch {
+    return `<span class="latex-fallback">${escapeHtmlText(normalizedLatex)}</span>`;
   }
 }
+
+function renderLatex(latex: string, displayMode: boolean): string {
+  const normalizedLatex = cleanLatexInput(latex);
+  if (!normalizedLatex) return '';
+  try {
+    return katex.renderToString(normalizedLatex, {
+      ...createKaTeXPhysicsOptions(displayMode),
+      displayMode,
+      throwOnError: true,
+      trust: false,
+      output: 'html',
+    });
+  } catch {
+    return `<span class="latex-fallback">${escapeHtmlText(normalizedLatex)}</span>`;
+  }
+}
+
+function convertBareLatexRuns(html: string): string {
+  const protectedParts: string[] = [];
+  const protect = (value: string) => {
+    const token = `@@QUESTION_PROTECTED_${protectedParts.length}@@`;
+    protectedParts.push(value);
+    return token;
+  };
+  const source = String(html || '')
+    .replace(/<img\b[^>]*>/gi, protect)
+    .replace(/<span\b[^>]*class=["'][^"']*katex[\s\S]*?<\/span>/gi, protect)
+    .replace(/<[^>]+>/g, protect);
+  const converted = source.replace(/[A-Za-z0-9\\{}_^+\-=()\/.,·×\s]+/g, match => {
+    const text = decodeHtmlEntities(match).trim();
+    if (!text || !/(\\[A-Za-z]+|[_^]\{|[{}])/.test(text)) return match;
+    if (text.length < 3 || !/[A-Za-z0-9]/.test(text)) return match;
+    return renderInlineLatex(text);
+  });
+  return converted.replace(/@@QUESTION_PROTECTED_(\d+)@@/g, (_match, index) => protectedParts[Number(index)] || '');
+}
+
+function collapseExcessBreaks(html: string): string {
+  return String(html || '')
+    .replace(/(?:<br\s*\/?>\s*){3,}/gi, '<br /><br />')
+    .replace(/(?:<br\s*\/?>\s*){2,}(?=\s*(?:<span[^>]*>\s*)?[\(\uff08]\d+[\)\uff09])/gi, '<br />')
+    .replace(/(?:<br\s*\/?>\s*){2,}(?=\s*[\u2460-\u2469])/gi, '<br />');
+}
+
+function replaceDollarLatex(html: string): string {
+  return String(html || '').replace(/\$([^$]+?)\$/g, (_match, latex) => renderInlineLatex(latex));
+}
+
+function processHtmlSegment(html: string): string {
+  const normalized = normalizeDisplayOperators(convertHtmlScriptsToLatex(normalizePhysicsHtml(html)));
+  const legacyRendered = normalized.replace(/<span class="legacy-latex" data-latex="([^"]*)"><\/span>/g, (_match, latex) => {
+    return renderInlineLatex(readLatexAttribute(latex));
+  });
+  return collapseExcessBreaks(convertBareLatexRuns(replaceDollarLatex(legacyRendered)));
+}
+
+const KaTeXMath: React.FC<{ latex: string; displayMode: boolean }> = ({ latex, displayMode }) => {
+  const rendered = renderLatex(latex, displayMode);
+  if (displayMode) {
+    return <div className="math-display" dangerouslySetInnerHTML={{ __html: rendered }} />;
+  }
+  return <span className="math-inline" dangerouslySetInnerHTML={{ __html: rendered }} />;
+};
 
 function legacyLatexPlaceholder(latex: string): string {
   return `<span class="legacy-latex" data-latex="${encodeURIComponent(latex)}"></span>`;
@@ -582,7 +655,12 @@ function findBalancedParen(input: string, openIndex: number): { value: string; e
 }
 
 function convertLegacyLatexFragments(content: string): string {
-  const source = String(content || '');
+  const protectedLegacyLatex: string[] = [];
+  const source = String(content || '').replace(/<span class="legacy-latex" data-latex="[^"]*"><\/span>/gi, match => {
+    const token = `@@QUESTION_EXISTING_LEGACY_LATEX_${protectedLegacyLatex.length}@@`;
+    protectedLegacyLatex.push(match);
+    return token;
+  });
   let output = '';
   let i = 0;
   const canStartCommand = (index: number) => index === 0 || !/[A-Za-z0-9_]/.test(source[index - 1]);
@@ -627,7 +705,7 @@ function convertLegacyLatexFragments(content: string): string {
     i++;
   }
 
-  return output;
+  return output.replace(/@@QUESTION_EXISTING_LEGACY_LATEX_(\d+)@@/g, (_match, index) => protectedLegacyLatex[Number(index)] || '');
 }
 
 function removeDuplicatedSubQuestionLines(content: string): string {
@@ -764,47 +842,6 @@ function normalizePhysicsHtml(html: string): string {
     .replace(/@@QUESTION_LEGACY_LATEX_(\d+)@@/g, (_match, index) => protectedLegacyLatex[Number(index)] || '')
     .replace(/@@QUESTION_IMAGE_(\d+)@@/g, (_match, index) => protectedImages[Number(index)] || '');
 }
-
-function processHtmlSegment(html: string): string {
-  return normalizeDisplayOperators(convertHtmlScriptsToLatex(normalizePhysicsHtml(html))).replace(/<span class="legacy-latex" data-latex="([^"]*)"><\/span>/g, (_match, latex) => {
-    return renderInlineLatex(readLatexAttribute(latex));
-  }).replace(/\$([^$]+?)\$/g, (_match, latex) => {
-    const normalizedLatex = cleanLatexInput(latex);
-    try {
-      return katex.renderToString(normalizedLatex, createKaTeXPhysicsOptions(false));
-    } catch {
-      return katex.renderToString(normalizedLatex, {
-        displayMode: false,
-        throwOnError: false,
-        strict: false,
-        trust: true,
-        output: 'html',
-        macros: {},
-      });
-    }
-  });
-}
-
-const KaTeXMath: React.FC<{ latex: string; displayMode: boolean }> = ({ latex, displayMode }) => {
-  let rendered: string;
-  const normalizedLatex = cleanLatexInput(latex);
-  try {
-    rendered = katex.renderToString(normalizedLatex, createKaTeXPhysicsOptions(displayMode));
-  } catch {
-    rendered = katex.renderToString(normalizedLatex, {
-      displayMode,
-      throwOnError: false,
-      strict: false,
-      trust: true,
-      output: 'html',
-      macros: {},
-    });
-  }
-  if (displayMode) {
-    return <div className="math-display" dangerouslySetInnerHTML={{ __html: rendered }} />;
-  }
-  return <span className="math-inline" dangerouslySetInnerHTML={{ __html: rendered }} />;
-};
 
 const QuestionRenderer: React.FC<QuestionRendererProps> = ({
   content,

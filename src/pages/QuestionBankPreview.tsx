@@ -34,7 +34,7 @@ const { Text } = Typography;
 const API_BASE = getApiBase('/api/question-bank');
 const QUESTION_PAGE_SIZE = 10;
 const KATEX_EXPORT_CSS = `
-.katex{font:normal 1.21em "KaTeX_Main","Times New Roman",serif;line-height:1.2;text-rendering:auto}
+.katex{font:normal 1em "KaTeX_Main","Times New Roman",serif;line-height:1.08;text-rendering:auto}
 .katex .base{position:relative;white-space:nowrap;width:min-content;display:inline-block}
 .katex .strut,.katex .mspace{display:inline-block}
 .katex .vlist-t{border-collapse:collapse;display:inline-table;table-layout:fixed}

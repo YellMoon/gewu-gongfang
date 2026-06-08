@@ -2,7 +2,7 @@
 .question-content {
   font-family: 'Latin Modern Math', 'KaTeX_Main', 'Times New Roman', 'STIX Two Text', 'STIX', '宋体', SimSun, serif;
   font-size: 16px;
-  line-height: 1.9;
+  line-height: 1.62;
   color: #1a1a1a;
 }
 
@@ -21,7 +21,7 @@
 
 /* ── KaTeX 公式 ── */
 .math-display {
-  margin: 8px 0;
+  margin: 4px 0;
   text-align: center;
   overflow-x: visible;
   overflow-y: hidden;
@@ -29,6 +29,22 @@
 
 .math-inline {
   padding: 0 1px;
+}
+
+.question-content .katex {
+  font-size: 1em;
+  line-height: 1.08;
+}
+
+.question-content .katex-display {
+  margin: 0.25em 0;
+}
+
+.latex-fallback {
+  color: inherit;
+  font-family: inherit;
+  font-size: 1em;
+  white-space: normal;
 }
 
 .omml-frac {
@@ -96,7 +112,7 @@
   display: grid;
   column-gap: 12px;
   row-gap: 4px;
-  margin-top: 10px;
+  margin-top: 6px;
   width: 100%;
 }
 
@@ -187,13 +203,13 @@
 
 /* ── 解析 ── */
 .question-analysis {
-  margin-top: 10px;
+  margin-top: 6px;
   padding: 8px 12px;
   background: #f9f9f9;
   border-left: 3px solid #1890ff;
   border-radius: 0 4px 4px 0;
   font-size: 16px;
-  line-height: 1.9;
+  line-height: 1.62;
 }
 
 /* ── 表格内联模式 ── */
@@ -242,7 +258,7 @@
   gap: 8px;
   align-items: start;
   color: #1f2937;
-  line-height: 1.75;
+  line-height: 1.62;
 }
 
 .question-answer-row + .question-answer-row {
