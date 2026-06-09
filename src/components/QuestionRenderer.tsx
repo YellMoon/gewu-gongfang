@@ -87,7 +87,7 @@ function normalizeDisplayOperators(value: string): string {
 }
 
 function cleanLatexInput(latex: string): string {
-  return decodeHtmlEntities(String(latex || ''))
+  const cleaned = decodeHtmlEntities(String(latex || ''))
     .replace(/<br\s*\/?>/gi, ' ')
     .replace(/<i>([\s\S]*?)<\/i>/gi, '$1')
     .replace(/<em>([\s\S]*?)<\/em>/gi, '$1')
@@ -106,6 +106,56 @@ function cleanLatexInput(latex: string): string {
     .replace(/["']?\s*>\s*$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+  return balanceLatexBraces(normalizeLooseLatex(cleaned));
+}
+
+function normalizeLooseLatex(latex: string): string {
+  const greekCommandMap: Record<string, string> = {
+    π: '\\pi',
+    β: '\\beta',
+    μ: '\\mu',
+    ω: '\\omega',
+    θ: '\\theta',
+  };
+  return String(latex || '')
+    .replace(/&amp;(#x?[0-9a-fA-F]+;)/g, '&$1')
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);?/g, (_match, dec) => String.fromCodePoint(parseInt(dec, 10)))
+    .replace(/&apos;/g, "'")
+    .replace(/\^\{\s*['’′]\s*\}/g, "'")
+    .replace(/([A-Za-z])'(_\{[^}]+\})\^\{([^}]+)\}/g, "{$1'$2}^{$3}")
+    .replace(/\\mathrm\{([πβμωθ])\}/g, (_match, letter) => greekCommandMap[letter] || letter)
+    .replace(/\\mathrm\{arctan\}/g, '\\arctan')
+    .replace(/\\mathrm\{%\}/g, '\\%')
+    .replace(/\\mathrm\{_\}/g, '\\_')
+    .replace(/\\mathrm\{_{2,}\}/g, '\\underline{\\qquad}')
+    .replace(/\\mathrm\{\s*\\([A-Za-z]+)\s*\}/g, '\\$1')
+    .replace(/\\(cdot|times|Delta|theta|omega|mu|pi|alpha|beta|gamma|lambda)(?=[A-Za-zα-ωΑ-Ω])/g, '\\$1 ')
+    .replace(/\\([A-Za-z]+)(?=[\u4e00-\u9fff])/g, '\\$1 ');
+}
+
+function hasBalancedLatexBraces(latex: string): boolean {
+  let depth = 0;
+  for (const char of String(latex || '')) {
+    if (char === '{') depth += 1;
+    if (char === '}') depth -= 1;
+    if (depth < 0) return false;
+  }
+  return depth === 0;
+}
+
+function balanceLatexBraces(latex: string): string {
+  let depth = 0;
+  let next = '';
+  for (const char of String(latex || '')) {
+    if (char === '{') depth += 1;
+    if (char === '}') {
+      if (depth === 0) continue;
+      depth -= 1;
+    }
+    next += char;
+  }
+  return depth > 0 ? `${next}${'}'.repeat(depth)}` : next;
 }
 
 function decodeHtmlEntities(value: string): string {
@@ -453,8 +503,9 @@ function convertBareLatexRuns(html: string): string {
   const source = String(html || '')
     .replace(/<img\b[^>]*>/gi, protect)
     .replace(/<span\b[^>]*class=["'][^"']*katex[\s\S]*?<\/span>/gi, protect)
+    .replace(/<span\b[^>]*class=["'][^"']*latex-fallback[^"']*["'][\s\S]*?<\/span>/gi, protect)
     .replace(/<[^>]+>/g, protect);
-  const converted = source.replace(/[A-Za-z0-9\\{}_^+\-=()\/.,·×\s]+/g, match => {
+  const converted = source.replace(/[A-Za-z0-9α-ωΑ-Ω\\{}_^+\-=－＋()\/.,·×\s]+/g, match => {
     const text = decodeHtmlEntities(match).trim();
     if (!text || !/(\\[A-Za-z]+|[_^]\{|[{}])/.test(text)) return match;
     if (text.length < 3 || !/[A-Za-z0-9]/.test(text)) return match;
@@ -475,11 +526,11 @@ function replaceDollarLatex(html: string): string {
 }
 
 function processHtmlSegment(html: string): string {
-  const normalized = normalizeDisplayOperators(convertHtmlScriptsToLatex(normalizePhysicsHtml(html)));
+  const normalized = normalizeDisplayOperators(convertHtmlScriptsToLatex(normalizePhysicsHtml(html).replace(/##+/g, '、')));
   const legacyRendered = normalized.replace(/<span class="legacy-latex" data-latex="([^"]*)"><\/span>/g, (_match, latex) => {
     return renderInlineLatex(readLatexAttribute(latex));
   });
-  return collapseExcessBreaks(convertBareLatexRuns(replaceDollarLatex(legacyRendered)));
+  return collapseExcessBreaks(convertBareLatexRuns(replaceDollarLatex(legacyRendered)).replace(/\\(?=<span class="katex")/g, ''));
 }
 
 const KaTeXMath: React.FC<{ latex: string; displayMode: boolean }> = ({ latex, displayMode }) => {
