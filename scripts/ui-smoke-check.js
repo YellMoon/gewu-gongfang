@@ -5,8 +5,8 @@ const { chromium } = require('playwright');
 const baseUrl = process.env.UI_SMOKE_URL || 'http://localhost:3000';
 const screenshotDir = path.join(process.cwd(), 'tmp', 'ui-smoke');
 const routes = [
-  // Home intentionally renders the default course-calendar page today.
-  { path: '/', key: 'home', requiredText: ['选择老师', '排课'] },
+  // Home intentionally renders the default today workbench placeholder.
+  { path: '/', key: 'home', requiredText: ['今日工作台', '快速入口', '查看课程表'] },
   { path: '/?page=course-calendar', key: 'course-calendar', pageKey: 'course-calendar', requiredText: ['选择老师', '排课'] },
   { path: '/?page=question-bank-import', key: 'question-bank-import', pageKey: 'question-bank-import', requiredText: ['拖拽或选择 Word 文件', '讲义格式'] },
   { path: '/?page=question-bank-preview', key: 'question-bank-preview', pageKey: 'question-bank-preview', requiredText: ['试题预览', '题干搜索'] },

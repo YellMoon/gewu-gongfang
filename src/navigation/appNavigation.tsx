@@ -104,7 +104,6 @@ export const navGroups: NavGroup[] = [
       { key: 'institution', label: '机构', description: '维护合作机构资料', icon: <TeamOutlined /> },
       { key: 'teacher', label: '老师', description: '管理老师档案', icon: <TeamOutlined /> },
       { key: 'student', label: '学生', description: '管理学生档案', icon: <UserOutlined /> },
-      { key: 'invitee', label: '被邀请者', description: '查看被邀请者授权信息', icon: <UserOutlined /> },
     ],
   },
   {
@@ -113,6 +112,7 @@ export const navGroups: NavGroup[] = [
     icon: <SettingOutlined />,
     items: [
       { key: 'admin', label: '管理员', description: '管理员登录和账号管理', icon: <UserOutlined /> },
+      { key: 'invitee', label: '被邀请者', description: '查看被邀请者授权信息', icon: <UserOutlined /> },
       { key: 'permission', label: '权限管理', description: '配置模块访问权限', icon: <LockOutlined /> },
       { key: 'menu-manage', label: '菜单结构管理', description: '维护菜单配置', icon: <MenuOutlined /> },
       { key: 'system-params', label: '系统参数', description: '调整系统基础参数', icon: <SettingOutlined /> },

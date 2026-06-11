@@ -322,7 +322,7 @@ select,
   top: 0;
   height: 100vh;
   overflow: auto;
-  background: #102a43 !important;
+  background: var(--app-sidebar-bg, #102a43) !important;
   box-shadow: 2px 0 12px rgba(15, 23, 42, 0.12);
 }
 
@@ -346,8 +346,8 @@ select,
   color: #fff;
   font-size: 18px;
   font-weight: 700;
-  background: #1677ff;
-  box-shadow: 0 8px 18px rgba(22, 119, 255, 0.28);
+  background: var(--app-primary, #1677b8);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--app-primary, #1677b8) 28%, transparent);
 }
 
 .app-shell__brand-copy {
@@ -385,7 +385,7 @@ select,
 
 .app-shell__menu .ant-menu-submenu-selected > .ant-menu-submenu-title,
 .app-shell__menu .ant-menu-item-selected {
-  background: #1677ff !important;
+  background: var(--app-primary, #1677b8) !important;
   color: #fff !important;
 }
 
@@ -404,7 +404,7 @@ select,
   gap: 10px;
   padding: 10px 18px;
   background: rgba(255, 255, 255, 0.96);
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--app-border-color, #d8dee9);
   box-shadow: 0 1px 8px rgba(15, 23, 42, 0.05);
 }
 
