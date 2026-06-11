@@ -12,6 +12,7 @@ dist/
 dist-new/
 build/
 win-unpacked-test/
+.superpowers/
 
 # Executables and installers
 *.exe
