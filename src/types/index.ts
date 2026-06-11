@@ -147,6 +147,10 @@ export interface Schedule {
   service_type?: ServiceType;
   student_ids?: string[];
   student_pricings?: StudentCoursePricing[];
+  billing_unit?: BillingUnit;
+  teacher_fee_mode?: TeacherFeeMode;
+  teacher_id?: string;
+  teacher_name?: string;
   calculated_tuition?: number;
   calculated_teacher_fee?: number;
   notes?: string;

@@ -4,7 +4,7 @@ import {
 } from 'antd';
 import type { MenuProps } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
-import { CourseType, ScheduleStatus, Course, Teacher, Student, BillingUnit } from '../types';
+import { CourseType, ScheduleStatus, Course, Teacher, Student, BillingUnit, TeacherFeeMode, StudentCoursePricing } from '../types';
 import useBatchSelection from './useBatchSelection';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { v4 as uuidv4 } from 'uuid';
@@ -12,6 +12,7 @@ import weekOfYear from 'dayjs/plugin/weekOfYear';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import { holidays2026, getUpcomingHolidays } from '../utils/helpers';
 import { buildCourseColorMap, getTextColorForBackground, DEFAULT_COURSE_COLOR } from '../utils/courseColors';
+import { buildScheduleFinancialSnapshot } from '../utils/financialDetails';
 
 dayjs.extend(weekOfYear);
 dayjs.extend(isoWeek);
@@ -63,6 +64,14 @@ export interface ScheduleEvent {
   notes?: string;
   course_year?: string;
   course_semester?: string;
+  student_ids?: string[];
+  student_pricings?: StudentCoursePricing[];
+  billing_unit?: BillingUnit;
+  teacher_fee_mode?: TeacherFeeMode;
+  teacher_id?: string;
+  teacher_name?: string;
+  calculated_tuition?: number;
+  calculated_teacher_fee?: number;
 }
 
 interface DailyViewProps {
@@ -1291,11 +1300,12 @@ const ScheduleCalendar: React.FC = () => {
   function handleOpenStudentEdit(schedule: ScheduleEvent) {
     const course = courses.find(c => c.id === schedule.course_id);
     if (course) {
+      const editablePricings = getSchedulePricingsForEdit(schedule);
       const initialValues = {
-        students: (course.student_pricings || []).map(sp => ({
+        students: editablePricings.map(sp => ({
           student_id: sp.student_id,
           tuition: sp.tuition,
-          teacher_fee: sp.teacher_fee || sp.tuition,
+          teacher_fee: sp.teacher_fee ?? 0,
           status: sp.status || ScheduleStatus.PLANNED  // 鈶?璇诲彇宸蹭繚瀛樼殑鍑哄嫟鐘舵€侊紝涓嶅啀寮哄埗閲嶇疆
         }))
       };
@@ -1306,8 +1316,7 @@ const ScheduleCalendar: React.FC = () => {
 
   const courseStudentPricings = (() => {
     if (!studentEditModal.schedule) return [];
-    const course = courses.find(c => c.id === (studentEditModal.schedule as any).course_id);
-    return course?.student_pricings || [];
+    return getSchedulePricingsForEdit(studentEditModal.schedule as ScheduleEvent);
   })();
 
   // 当前课程的计费单位
@@ -1315,31 +1324,56 @@ const ScheduleCalendar: React.FC = () => {
     ? courses.find(c => c.id === (studentEditModal.schedule as any).course_id)
     : null;
   const billingUnitLabel = (() => {
-    const buRaw = (billingCourse as any)?.billing_unit;
+    const schedule = studentEditModal.schedule as ScheduleEvent | null;
+    const buRaw = schedule?.billing_unit || (billingCourse as any)?.billing_unit;
     const bu = buRaw !== undefined && buRaw !== null ? Number(buRaw) : null;
     if (bu === BillingUnit.PER_HOUR) return '/小时';
     if (bu === BillingUnit.PER_SESSION) return '/次';
     return '/次';
   })();
 
+  function getSchedulePricingsForEdit(schedule: ScheduleEvent): StudentCoursePricing[] {
+    if (schedule.student_pricings && schedule.student_pricings.length > 0) {
+      return schedule.student_pricings;
+    }
+    const course = courses.find(c => c.id === schedule.course_id);
+    return course?.student_pricings || [];
+  }
+
+  function buildFinancialFieldsForSchedule(
+    schedule: ScheduleEvent,
+    course?: Course,
+    overridePricings?: StudentCoursePricing[]
+  ) {
+    const teacherId = schedule.teacher_id || course?.teacher_id;
+    const teacher = teachers.find(t => t.id === teacherId);
+    return buildScheduleFinancialSnapshot({
+      ...schedule,
+      teacher_id: teacherId,
+      teacher_name: schedule.teacher_name || teacher?.name || course?.teacher_name,
+    }, course, overridePricings);
+  }
+
   function handleSaveStudentEdit() {
     const values = studentEditForm.getFieldsValue();
     if (studentEditModal.schedule) {
-      const course = courses.find(c => c.id === (studentEditModal.schedule as any).course_id);
-      if (course && course.student_pricings) {
-        const updatedPricings = course.student_pricings.map((sp, idx) => ({
+      const schedule = studentEditModal.schedule as ScheduleEvent;
+      const course = courses.find(c => c.id === schedule.course_id);
+      const basePricings = getSchedulePricingsForEdit(schedule);
+      if (course && basePricings.length > 0) {
+        const updatedPricings = basePricings.map((sp, idx) => ({
           ...sp,
-          ...values.students[idx]
+          ...values.students[idx],
+          teacher_fee: values.students[idx]?.teacher_fee ?? 0,
+          tuition: values.students[idx]?.tuition ?? 0,
         }));
-        const updatedCourses = courses.map(c => 
-          c.id === course.id ? { ...c, student_pricings: updatedPricings } : c
-        );
-        setCourses(updatedCourses);
-        const db = (window as any).dbService;
-        if (db?.updateCourse) {
-          db.updateCourse(course.id, { student_pricings: updatedPricings });
-        }
-        message.success('学生信息修改成功');
+        const financialFields = buildFinancialFieldsForSchedule(schedule, course, updatedPricings);
+        setSchedulesWithHistory(prev => prev.map(item =>
+          item.id === schedule.id
+            ? { ...item, ...financialFields }
+            : item
+        ));
+        message.success('本节课学生出勤和费用已保存');
         setStudentEditModal({ open: false, schedule: null });
       }
     }
@@ -1373,7 +1407,7 @@ const ScheduleCalendar: React.FC = () => {
         message.warning(`与「${overlap.course_name}」时间冲突，请调整位置`);
         return;
       }
-      const newSchedule: ScheduleEvent = {
+      const baseSchedule: ScheduleEvent = {
         id: uuidv4(),
         course_id: course.id,
         course_name: displayCourseName,
@@ -1384,6 +1418,10 @@ const ScheduleCalendar: React.FC = () => {
         room: course.room_id || course.room_name || '',
         course_year: course.year !== undefined ? String(course.year) : undefined,
         course_semester: course.semester || undefined,
+      };
+      const newSchedule: ScheduleEvent = {
+        ...baseSchedule,
+        ...buildFinancialFieldsForSchedule(baseSchedule, course),
       };
       const newSchedules = [...schedules, newSchedule];
       setSchedulesWithHistory(newSchedules);
@@ -1445,11 +1483,16 @@ const ScheduleCalendar: React.FC = () => {
     }
     
     if (ctrlKey) {
-      const newSchedule = {
+      const baseSchedule = {
         ...schedule,
         id: uuidv4(),
         start_time: newStartTimeStr,
         end_time: newEndTimeStr
+      };
+      const course = courses.find(c => c.id === baseSchedule.course_id);
+      const newSchedule = {
+        ...baseSchedule,
+        ...buildFinancialFieldsForSchedule(baseSchedule, course, schedule.student_pricings),
       };
       setSchedulesWithHistory(prev => [...prev, newSchedule]);
       message.success('课程已复制');
@@ -1457,7 +1500,11 @@ const ScheduleCalendar: React.FC = () => {
     } else {
       setSchedulesWithHistory(prev => prev.map(s => 
         s.id === schedule.id 
-          ? { ...s, start_time: newStartTimeStr, end_time: newEndTimeStr }
+          ? (() => {
+              const updated = { ...s, start_time: newStartTimeStr, end_time: newEndTimeStr };
+              const course = courses.find(c => c.id === updated.course_id);
+              return { ...updated, ...buildFinancialFieldsForSchedule(updated, course, updated.student_pricings) };
+            })()
           : s
       ));
       message.success('课程已移动');
@@ -1495,7 +1542,11 @@ const ScheduleCalendar: React.FC = () => {
     
     setSchedulesWithHistory(prev => prev.map(s => 
       s.id === schedule.id 
-        ? { ...s, start_time: newStartTime, end_time: newEndTime }
+        ? (() => {
+            const updated = { ...s, start_time: newStartTime, end_time: newEndTime };
+            const course = courses.find(c => c.id === updated.course_id);
+            return { ...updated, ...buildFinancialFieldsForSchedule(updated, course, updated.student_pricings) };
+          })()
         : s
     ));
     message.success('课程时间已调整');
@@ -1544,24 +1595,32 @@ const ScheduleCalendar: React.FC = () => {
         if (editingSchedule && index === 0) {
           setSchedulesWithHistory(prev => prev.map(s =>
             s.id === editingSchedule.id
-              ? {
-                  ...s,
-                  start_time: startTimeStr,
-                  end_time: endTimeStr,
-                  course_id: values.courseId,
-                  course_name: courseName,
-                  status: values.status || ScheduleStatus.PLANNED,
-                  room: rooms.find(r => r.id === values.room)?.name || courses.find(c => c.id === values.courseId)?.room_name || values.room,
-                  notes: values.notes,
-                  course_year: course?.year !== undefined ? String(course?.year) : undefined,
-                  course_semester: course?.semester || undefined,
-                }
+              ? (() => {
+                  const sameCourse = s.course_id === values.courseId;
+                  const updated: ScheduleEvent = {
+                    ...s,
+                    start_time: startTimeStr,
+                    end_time: endTimeStr,
+                    course_id: values.courseId,
+                    course_name: courseName,
+                    course_type: course?.type || s.course_type,
+                    status: values.status || ScheduleStatus.PLANNED,
+                    room: rooms.find(r => r.id === values.room)?.name || courses.find(c => c.id === values.courseId)?.room_name || values.room,
+                    notes: values.notes,
+                    course_year: course?.year !== undefined ? String(course?.year) : undefined,
+                    course_semester: course?.semester || undefined,
+                  };
+                  return {
+                    ...updated,
+                    ...buildFinancialFieldsForSchedule(updated, course, sameCourse ? s.student_pricings : undefined),
+                  };
+                })()
               : s
           ));
           (window as any).operateLogger?.log('修改', `修改排课「${courseName}」时间 ${startTimeStr.substring(11,16)}-${endTimeStr.substring(11,16)}`, '课程表');
         } else {
           const courseObj = courses.find(c => c.id === values.courseId);
-          const newSchedule: ScheduleEvent = {
+          const baseSchedule: ScheduleEvent = {
             id: uuidv4(),
             course_id: values.courseId,
             course_name: courseName,
@@ -1573,6 +1632,10 @@ const ScheduleCalendar: React.FC = () => {
             notes: values.notes,
             course_year: courseObj && courseObj.year !== undefined ? String(courseObj.year) : undefined,
             course_semester: courseObj?.semester || undefined,
+          };
+          const newSchedule: ScheduleEvent = {
+            ...baseSchedule,
+            ...buildFinancialFieldsForSchedule(baseSchedule, courseObj),
           };
           newSchedules.push(newSchedule);
         }
@@ -1953,7 +2016,7 @@ const ScheduleCalendar: React.FC = () => {
                       <Form.Item
                         name={['students', idx, 'teacher_fee']}
                         label={`课时费${billingUnitLabel}`}
-                        initialValue={sp.teacher_fee || sp.tuition}
+                        initialValue={sp.teacher_fee ?? 0}
                       >
                         <InputNumber min={0} prefix="¥" style={{ width: '100%' }} />
                       </Form.Item>
@@ -1981,7 +2044,7 @@ const ScheduleCalendar: React.FC = () => {
       >
         <div style={{ marginBottom: 16 }}>
           <p>选择日期范围，系统将遍历该范围内的所有排课，重新从课程数据库读取最新信息并更新排课记录。</p>
-          <p style={{ color: '#999', fontSize: 12 }}>更新字段：课程名称、上课地址、老师名称、学生学费、课时费</p>
+          <p style={{ color: '#999', fontSize: 12 }}>更新字段：课程名称、上课地址、班型等展示信息；不会覆盖本节课的出勤和费用明细。</p>
         </div>
         <Form layout="vertical">
           <Form.Item label="日期范围" required>
