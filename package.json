@@ -17,6 +17,7 @@
     "dist:win": "node scripts/update-version.js --bump && npm run build && npm run prepare:python && npm run rebuild:electron && electron-builder --win && npm run rebuild:node",
     "test": "npm run test:backend",
     "test:backend": "node backend/src/services/questionBankService.test.js && node backend/src/services/syncIncremental.test.js && node backend/src/services/eventBus.test.js && node --check backend/src/routes/questionBank.js",
+    "test:ui-smoke": "node scripts/ui-smoke-check.js",
     "qb:stats": "node scripts/question-bank-cli.js stats",
     "qb:clear": "node scripts/question-bank-cli.js clear",
     "qb:parse-word": "node scripts/question-bank-cli.js parse-word",
