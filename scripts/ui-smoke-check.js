@@ -6,24 +6,26 @@ const baseUrl = process.env.UI_SMOKE_URL || 'http://localhost:3000';
 const screenshotDir = path.join(process.cwd(), 'tmp', 'ui-smoke');
 const routes = [
   { path: '/', key: 'home' },
-  { path: '/?page=course-calendar', key: 'course-calendar' },
-  { path: '/?page=question-bank-import', key: 'question-bank-import' },
-  { path: '/?page=question-bank-preview', key: 'question-bank-preview' },
-  { path: '/?page=question-bank-paper', key: 'question-bank-paper' },
-  { path: '/?page=revenue-statistics', key: 'revenue-statistics' },
-  { path: '/?page=student', key: 'student' },
-  { path: '/?page=teacher', key: 'teacher' },
-  { path: '/?page=course-info', key: 'course-info' },
-  { path: '/?page=cloud-sync', key: 'cloud-sync' },
+  { path: '/?page=course-calendar', key: 'course-calendar', pageKey: 'course-calendar' },
+  { path: '/?page=question-bank-import', key: 'question-bank-import', pageKey: 'question-bank-import' },
+  { path: '/?page=question-bank-preview', key: 'question-bank-preview', pageKey: 'question-bank-preview' },
+  { path: '/?page=question-bank-paper', key: 'question-bank-paper', pageKey: 'question-bank-paper' },
+  { path: '/?page=revenue-statistics', key: 'revenue-statistics', pageKey: 'revenue-statistics' },
+  { path: '/?page=student', key: 'student', pageKey: 'student' },
+  { path: '/?page=teacher', key: 'teacher', pageKey: 'teacher' },
+  { path: '/?page=course-info', key: 'course-info', pageKey: 'course-info' },
+  { path: '/?page=cloud-sync', key: 'cloud-sync', pageKey: 'cloud-sync' },
 ];
 
-function routeUrl(routePath) {
-  return new URL(routePath, baseUrl).toString();
-}
-
 async function checkRoute(page, route) {
-  const url = routeUrl(route.path);
-  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+
+  if (route.pageKey) {
+    await page.evaluate((pageKey) => {
+      window.dispatchEvent(new CustomEvent('navigate-page', { detail: pageKey }));
+    }, route.pageKey);
+  }
+
   await page.waitForTimeout(700);
 
   const bodyTextLength = await page.locator('body').innerText().then((text) => text.trim().length);
