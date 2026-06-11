@@ -14,6 +14,7 @@ const { Content, Sider } = Layout;
 interface AppShellProps {
   currentPage: PageKey;
   onNavigate: (page: PageKey) => void;
+  onRefresh: () => void;
   children: React.ReactNode;
 }
 
@@ -24,7 +25,7 @@ const selectedKeyForPage = (page: PageKey): PageKey => {
   return page;
 };
 
-const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, children }) => {
+const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh, children }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [openKeys, setOpenKeys] = useState<string[]>([findOpenGroup(currentPage)]);
   const currentNavItem = findNavItem(currentPage);
@@ -97,7 +98,7 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, children }
                 type="text"
                 size="small"
                 icon={<ReloadOutlined />}
-                onClick={() => onNavigate(currentPage)}
+                onClick={onRefresh}
               >
                 刷新
               </Button>
