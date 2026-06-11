@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Table, Button, Modal, Form, Input, InputNumber, Select as AntSelect,
-  Space, message, Popconfirm, Tag, Card, Row, Col, Divider, Statistic
+  Table, Button, Form, Input, InputNumber, Select as AntSelect,
+  Space, message, Popconfirm, Tag, Row, Col, Divider, Statistic
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { Student, StudentSource, Institution, Payment, Consumption, PaymentType } from '../types';
 import { calculateGrade } from '../utils/helpers';
 import AutoCloseSelect from '../components/AutoCloseSelect';
+import DataPageLayout from '../layout/DataPageLayout';
 
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Option } = Select;
@@ -192,9 +193,17 @@ const StudentList: React.FC = () => {
   const currentYear = new Date().getFullYear();
   const gradeYears = Array.from({ length: 6 }, (_, i) => currentYear - i);
 
+  const drawerFooter = (
+    <div className="data-page-layout__drawer-footer">
+      <Button onClick={() => setModalVisible(false)}>取消</Button>
+      <Button type="primary" onClick={handleSubmit}>确定</Button>
+    </div>
+  );
+
   return (
-    <div>
-      <Card style={{ marginBottom: 16 }}>
+    <DataPageLayout
+      toolbar={
+        <>
         <Row gutter={16}>
           <Col span={6}>
             <Statistic title="学生总数" value={students.length} prefix="👨‍🎓" />
@@ -223,13 +232,12 @@ const StudentList: React.FC = () => {
             />
           </Col>
         </Row>
-      </Card>
-
-      <Card>
         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>添加学生</Button>
         </div>
-        
+        </>
+      }
+      table={
         <Table 
           columns={columns} 
           dataSource={studentsWithBalance} 
@@ -237,16 +245,14 @@ const StudentList: React.FC = () => {
           pagination={{ pageSize: 20 }}
           scroll={{ x: 1200 }}
         />
-      </Card>
-
-      <Modal
-        title={editingStudent ? '编辑学生' : '添加学生'}
-        open={modalVisible}
-        onOk={handleSubmit}
-        onCancel={() => setModalVisible(false)}
-        width={700}
-        destroyOnClose
-      >
+      }
+      drawerOpen={modalVisible}
+      drawerTitle={editingStudent ? '编辑学生' : '添加学生'}
+      onDrawerClose={() => setModalVisible(false)}
+      drawerWidth={560}
+      drawerFooter={drawerFooter}
+      destroyOnClose
+      drawerContent={
         <Form form={form} layout="vertical">
           <Row gutter={16}>
             <Col span={12}>
@@ -367,8 +373,8 @@ const StudentList: React.FC = () => {
             <Input.TextArea rows={3} placeholder="其他备注信息" />
           </Form.Item>
         </Form>
-      </Modal>
-    </div>
+      }
+    />
   );
 };
 

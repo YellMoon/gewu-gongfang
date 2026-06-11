@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Table, Button, Modal, Form, Input, InputNumber, Select as AntSelect,
-  Space, message, Popconfirm, Tag, Card, Row, Col, Divider
+  Table, Button, Form, Input, InputNumber, Select as AntSelect,
+  Space, message, Popconfirm, Tag, Row, Col, Divider
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, PlusCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { Statistic } from 'antd';
@@ -9,6 +9,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { Course, CourseType, CourseSourceType, Institution, BillingUnit, TeacherFeeMode, ServiceType, Teacher, StudentCoursePricing, Student } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getColorForRoom } from '../utils/courseColors';
+import DataPageLayout from '../layout/DataPageLayout';
 
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Option } = Select;
@@ -327,9 +328,17 @@ const CourseList: React.FC = () => {
     },
   ];
 
+  const drawerFooter = (
+    <div className="data-page-layout__drawer-footer">
+      <Button onClick={() => setModalVisible(false)}>取消</Button>
+      <Button type="primary" onClick={handleSubmit}>确定</Button>
+    </div>
+  );
+
   return (
-    <div>
-      <Card style={{ marginBottom: 16 }}>
+    <DataPageLayout
+      toolbar={
+        <>
         <Row gutter={16}>
           <Col span={6}>
             <Statistic title="课程总数" value={courses.length} prefix="📚" />
@@ -356,9 +365,6 @@ const CourseList: React.FC = () => {
             />
           </Col>
         </Row>
-      </Card>
-
-      <Card>
         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <Space wrap>
             <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>添加课程</Button>
@@ -411,7 +417,9 @@ const CourseList: React.FC = () => {
             </Select>
           </Space>
         </div>
-        
+        </>
+      }
+      table={
         <Table 
           columns={columns} 
           dataSource={filteredCourses} 
@@ -419,15 +427,13 @@ const CourseList: React.FC = () => {
           pagination={{ pageSize: 20 }}
           scroll={{ x: 1400 }}
         />
-      </Card>
-
-      <Modal
-        title={editingCourse ? '编辑课程' : '添加课程'}
-        open={modalVisible}
-        onOk={handleSubmit}
-        onCancel={() => setModalVisible(false)}
-        width={750}
-      >
+      }
+      drawerOpen={modalVisible}
+      drawerTitle={editingCourse ? '编辑课程' : '添加课程'}
+      onDrawerClose={() => setModalVisible(false)}
+      drawerWidth={620}
+      drawerFooter={drawerFooter}
+      drawerContent={
         <Form form={form} layout="vertical">
           <Divider>基本信息</Divider>
 
@@ -694,8 +700,8 @@ const CourseList: React.FC = () => {
             </Col>
           </Row>
         </Form>
-      </Modal>
-    </div>
+      }
+    />
   );
 };
 

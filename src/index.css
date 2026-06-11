@@ -456,6 +456,37 @@ select,
   line-height: 1.4;
 }
 
+.data-page-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.data-page-layout__toolbar,
+.data-page-layout__table {
+  border: 1px solid var(--app-border-color, #d8dee9);
+  border-radius: var(--app-radius, 6px);
+  box-shadow: var(--app-shadow-soft, 0 8px 24px rgba(23, 32, 51, 0.08));
+}
+
+.data-page-layout__toolbar .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.data-page-layout__table .ant-card-body {
+  min-width: 0;
+}
+
+.data-page-layout__drawer-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .page-header-bar__status,
 .page-header-bar__actions,
 .page-header-bar__secondary-actions,
