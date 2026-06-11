@@ -459,7 +459,7 @@ select,
 .data-page-layout {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-content-gap, 12px);
   width: 100%;
   min-width: 0;
 }
@@ -474,7 +474,7 @@ select,
 .data-page-layout__toolbar .ant-card-body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-content-gap, 12px);
 }
 
 .data-page-layout__table .ant-card-body {
@@ -484,7 +484,7 @@ select,
 .data-page-layout__drawer-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--app-control-gap, 8px);
 }
 
 .page-header-bar__status,
