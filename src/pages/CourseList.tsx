@@ -163,6 +163,14 @@ const CourseList: React.FC = () => {
     loadData();
   };
 
+  const handleToggleActive = async (course: Course) => {
+    const nextActive = !course.active;
+    dbService.updateCourse(course.id, { active: nextActive });
+    message.success(nextActive ? '已设为未结课' : '已设为已结课');
+    (window as any).operateLogger?.log('修改', `修改课程「${course.display_name || course.name}」状态为「${nextActive ? '未结课' : '已结课'}」`, '课程管理');
+    loadData();
+  };
+
   const handleSubmit = async () => {
     try {
       const fv = form.getFieldsValue();
@@ -283,11 +291,16 @@ const CourseList: React.FC = () => {
       title: '状态',
       dataIndex: 'active',
       key: 'active',
-      width: 80,
-      render: (active: boolean) => (
-        <Tag color={active ? 'green' : 'red'}>
+      width: 100,
+      render: (active: boolean, record: Course) => (
+        <Button
+          size="small"
+          type={active ? 'primary' : 'default'}
+          danger={!active}
+          onClick={() => handleToggleActive(record)}
+        >
           {active ? '未结课' : '已结课'}
-        </Tag>
+        </Button>
       )
     },
     { 

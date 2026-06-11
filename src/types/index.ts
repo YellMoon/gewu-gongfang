@@ -92,12 +92,19 @@ export enum TeacherFeeMode {
   PER_STUDENT = 2
 }
 
+// 学生单节课出勤状态
+export enum StudentAttendanceStatus {
+  NORMAL = 1,
+  CANCELLED = 3,
+  LEAVE = 4
+}
+
 // 学生课程定价
 export interface StudentCoursePricing {
   student_id: string;
   tuition: number;
   teacher_fee?: number;
-  status?: number;  // 出勤状态（用于本次课请假）
+  status?: StudentAttendanceStatus;  // 出勤状态（用于本次课请假）
 }
 
 // 课程
@@ -129,8 +136,7 @@ export interface Course {
 
 // 排课状态
 export enum ScheduleStatus {
-  PLANNED = 1,    // 计划中
-  COMPLETED = 2,  // 已完成
+  PLANNED = 1,    // 正常
   CANCELLED = 3,  // 已取消
   LEAVE = 4       // 请假
 }

@@ -7,6 +7,7 @@ import {
   Schedule,
   ScheduleStatus,
   Student,
+  StudentAttendanceStatus,
   StudentCoursePricing,
   Teacher,
   TeacherFeeMode,
@@ -97,7 +98,7 @@ export interface ScheduleFinancialSnapshot {
 const roundMoney = (value: number): number => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
 const activePricing = (pricing: StudentCoursePricing): boolean =>
-  pricing.status !== ScheduleStatus.LEAVE && pricing.status !== ScheduleStatus.CANCELLED;
+  pricing.status === undefined || pricing.status === StudentAttendanceStatus.NORMAL;
 
 const normalizeIds = (ids?: string[]): string[] =>
   Array.isArray(ids) ? ids.filter(Boolean) : [];
@@ -179,7 +180,7 @@ export function buildScheduleFinancialSnapshot(
     student_id: pricing.student_id,
     tuition: Number(pricing.tuition || 0),
     teacher_fee: pricing.teacher_fee === undefined || pricing.teacher_fee === null ? 0 : Number(pricing.teacher_fee),
-    status: pricing.status || ScheduleStatus.PLANNED,
+    status: pricing.status || StudentAttendanceStatus.NORMAL,
   }));
   const billingUnit = schedule.billing_unit || course?.billing_unit || BillingUnit.PER_HOUR;
   const teacherFeeMode = schedule.teacher_fee_mode || course?.teacher_fee_mode || TeacherFeeMode.PER_SESSION;
@@ -206,8 +207,9 @@ const getSchedulePricings = (
   schedule: ScheduleLike
 ): { pricings: StudentCoursePricing[]; pricingSource: StudentCourseFeeDetail['pricingSource'] } => {
   const scheduleIds = normalizeIds(schedule.student_ids);
-  const schedulePricings = (schedule.student_pricings || []).filter(activePricing);
-  if (schedulePricings.length > 0) {
+  const rawSchedulePricings = schedule.student_pricings || [];
+  const schedulePricings = rawSchedulePricings.filter(activePricing);
+  if (rawSchedulePricings.length > 0) {
     const filtered = scheduleIds.length > 0
       ? schedulePricings.filter(pricing => scheduleIds.includes(pricing.student_id))
       : schedulePricings;
@@ -298,10 +300,9 @@ export function buildFinancialDetails(
     const finalRows = scaleToSnapshot(tuitionRows, 'teacherFeeTotal', 'teacherFeeUnitPrice', schedule.calculated_teacher_fee);
     studentDetails.push(...finalRows);
 
-    const teacherFeeTotal = roundMoney(
-      Number(schedule.calculated_teacher_fee || 0) ||
-      finalRows.reduce((sum, row) => sum + row.teacherFeeTotal, 0)
-    );
+    const teacherFeeTotal = finalRows.length > 0
+      ? roundMoney(Number(schedule.calculated_teacher_fee || 0) || finalRows.reduce((sum, row) => sum + row.teacherFeeTotal, 0))
+      : 0;
 
     const feeUnitPrice = roundMoney(
       billingUnit === BillingUnit.PER_HOUR && durationHours > 0

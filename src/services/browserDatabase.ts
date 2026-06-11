@@ -812,7 +812,8 @@ class BrowserDatabaseService {
   
   getRevenueStats(startDate: string, endDate: string): RevenueStats {
     const schedules = this.data.schedules.filter(s => 
-      s.status === ScheduleStatus.COMPLETED &&
+      s.status !== ScheduleStatus.CANCELLED &&
+      s.status !== ScheduleStatus.LEAVE &&
       s.start_time >= startDate && s.start_time <= endDate
     );
 
@@ -884,7 +885,8 @@ class BrowserDatabaseService {
 
   getStudentTuitionStats(startDate: string, endDate: string): StudentTuitionStats[] {
     const schedules = this.data.schedules.filter(s => 
-      s.status === ScheduleStatus.COMPLETED &&
+      s.status !== ScheduleStatus.CANCELLED &&
+      s.status !== ScheduleStatus.LEAVE &&
       s.start_time >= startDate && s.start_time <= endDate
     );
 

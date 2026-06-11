@@ -614,7 +614,6 @@ export default function useBatchSelection(
               if (other.id === checkItem.id) continue;
               // 璺宠繃鍙栨秷/璇峰亣鐘舵€侊紙瀹冧滑涓嶅崰鏃堕棿妲斤級
               if (other.status === ScheduleStatus.CANCELLED || other.status === ScheduleStatus.LEAVE) continue;
-              if (other.status === ScheduleStatus.COMPLETED) continue;
               if (checkItem.start_time < other.end_time && checkItem.end_time > other.start_time) {
                 conflictFound = other.course_name || '鍏朵粬璇剧▼';
                 break;

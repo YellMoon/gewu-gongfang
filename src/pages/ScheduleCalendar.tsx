@@ -4,7 +4,7 @@ import {
 } from 'antd';
 import type { MenuProps } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
-import { CourseType, ScheduleStatus, Course, Teacher, Student, BillingUnit, TeacherFeeMode, StudentCoursePricing } from '../types';
+import { CourseType, ScheduleStatus, Course, Teacher, Student, BillingUnit, TeacherFeeMode, StudentCoursePricing, StudentAttendanceStatus } from '../types';
 import useBatchSelection from './useBatchSelection';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { v4 as uuidv4 } from 'uuid';
@@ -31,6 +31,18 @@ const WEEK_GRID_BODY_HEIGHT = ((MAX_END_HOUR - MIN_START_HOUR) * 60 / SLOT_DURAT
 const WEEK_GRID_TITLE_HEIGHT = 30;
 const WEEK_GRID_DEFAULT_HEIGHT = WEEK_GRID_BODY_HEIGHT + WEEK_GRID_TITLE_HEIGHT;
 const GLOBAL_MAX_SLOT = ((24 - MIN_START_HOUR) * 60) / SLOT_DURATION; // 192 = 24:00
+const LEGACY_COMPLETED_STATUS = 2;
+
+function normalizeScheduleEvent(schedule: ScheduleEvent): ScheduleEvent {
+  return {
+    ...schedule,
+    status: Number(schedule.status) === LEGACY_COMPLETED_STATUS ? ScheduleStatus.PLANNED : schedule.status,
+    student_pricings: schedule.student_pricings?.map(pricing => ({
+      ...pricing,
+      status: Number(pricing.status) === LEGACY_COMPLETED_STATUS ? StudentAttendanceStatus.NORMAL : pricing.status,
+    })),
+  };
+}
 
 function calculateTotalSlots() {
   return ((MAX_END_HOUR - MIN_START_HOUR) * 60) / SLOT_DURATION;
@@ -159,8 +171,6 @@ const DailyView: React.FC<DailyViewProps> = ({
     switch (status) {
       case ScheduleStatus.PLANNED:
         return { background: bg, border: '2px solid #1890ff', opacity: 1 };
-      case ScheduleStatus.COMPLETED:
-        return { background: bg, border: '2px solid #52c41a', opacity: 0.75 };
       case ScheduleStatus.LEAVE:
         return { background: bg, border: '2px solid #faad14', opacity: 1 };
       case ScheduleStatus.CANCELLED:
@@ -1188,7 +1198,7 @@ const ScheduleCalendar: React.FC = () => {
         }
         const savedSchedules = localStorage.getItem('schedules');
         if (savedSchedules) {
-          const parsed = JSON.parse(savedSchedules);
+          const parsed = JSON.parse(savedSchedules).map(normalizeScheduleEvent);
           setSchedules(parsed);
           setBatchSchedules(parsed);
         }
@@ -1306,7 +1316,7 @@ const ScheduleCalendar: React.FC = () => {
           student_id: sp.student_id,
           tuition: sp.tuition,
           teacher_fee: sp.teacher_fee ?? 0,
-          status: sp.status || ScheduleStatus.PLANNED  // 鈶?璇诲彇宸蹭繚瀛樼殑鍑哄嫟鐘舵€侊紝涓嶅啀寮哄埗閲嶇疆
+          status: sp.status || StudentAttendanceStatus.NORMAL
         }))
       };
       studentEditForm.setFieldsValue(initialValues);
@@ -1386,7 +1396,6 @@ const ScheduleCalendar: React.FC = () => {
     if (changedSchedule) {
       const statusLabels: Record<string, string> = {
         [ScheduleStatus.PLANNED]: '正常',
-        [ScheduleStatus.COMPLETED]: '已完成',
         [ScheduleStatus.LEAVE]: '请假',
         [ScheduleStatus.CANCELLED]: '取消',
       };
@@ -1681,6 +1690,10 @@ const ScheduleCalendar: React.FC = () => {
       message.warning('请选择日期范围');
       return;
     }
+    const ok = window.confirm(
+      '刷新课程信息会覆盖所选日期范围内所有排课的课程名称、上课地址、老师、学生名单、学费、老师课时费、出勤状态和费用合计。\n\n费用和出勤属于敏感信息，请确认日期范围无误后再继续。'
+    );
+    if (!ok) return;
     const [startDate, endDate] = refreshDateRange;
     const db = (window as any).dbService;
     let count = 0;
@@ -1691,13 +1704,19 @@ const ScheduleCalendar: React.FC = () => {
       if (!course) return s;
       const displayCName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
       count++;
-      return { 
+      const refreshed: ScheduleEvent = { 
         ...s, 
         course_name: displayCName || s.course_name, 
         room: course.room_name || s.room,
         course_type: course.type || s.course_type,
         course_year: course.year !== undefined ? String(course.year) : undefined,
         course_semester: course.semester || undefined,
+        teacher_id: course.teacher_id,
+        teacher_name: course.teacher_name,
+      };
+      return {
+        ...refreshed,
+        ...buildFinancialFieldsForSchedule(refreshed, course, course.student_pricings),
       };
     });
     setSchedulesWithHistory(updated);
@@ -1994,12 +2013,12 @@ const ScheduleCalendar: React.FC = () => {
                       <Form.Item
                         name={['students', idx, 'status']}
                         label="出勤状态"
-                        initialValue={sp.status || ScheduleStatus.PLANNED}
+                        initialValue={sp.status || StudentAttendanceStatus.NORMAL}
                       >
                         <Select>
-                          <Option value={ScheduleStatus.PLANNED}>正常出勤</Option>
-                          <Option value={ScheduleStatus.LEAVE}>请假</Option>
-                          <Option value={ScheduleStatus.CANCELLED}>取消</Option>
+                          <Option value={StudentAttendanceStatus.NORMAL}>正常出勤</Option>
+                          <Option value={StudentAttendanceStatus.LEAVE}>请假</Option>
+                          <Option value={StudentAttendanceStatus.CANCELLED}>取消</Option>
                         </Select>
                       </Form.Item>
                     </Col>
@@ -2044,7 +2063,9 @@ const ScheduleCalendar: React.FC = () => {
       >
         <div style={{ marginBottom: 16 }}>
           <p>选择日期范围，系统将遍历该范围内的所有排课，重新从课程数据库读取最新信息并更新排课记录。</p>
-          <p style={{ color: '#999', fontSize: 12 }}>更新字段：课程名称、上课地址、班型等展示信息；不会覆盖本节课的出勤和费用明细。</p>
+          <p style={{ color: '#cf1322', fontSize: 12 }}>
+            注意：本操作会覆盖该范围内排课的老师、学生名单、出勤状态、学费、老师课时费和费用合计。请谨慎选择日期范围。
+          </p>
         </div>
         <Form layout="vertical">
           <Form.Item label="日期范围" required>

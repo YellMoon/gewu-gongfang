@@ -205,7 +205,6 @@ const ScheduleList: React.FC = () => {
   const getStatusColor = (status: any) => {
     switch (status) {
       case ScheduleStatus.PLANNED: return 'blue';
-      case ScheduleStatus.COMPLETED: return 'green';
       case ScheduleStatus.LEAVE: return 'orange';
       case ScheduleStatus.CANCELLED: return 'red';
       default: return 'gray';
@@ -215,7 +214,6 @@ const ScheduleList: React.FC = () => {
   const getStatusText = (status: any) => {
     switch (status) {
       case ScheduleStatus.PLANNED: return '计划中';
-      case ScheduleStatus.COMPLETED: return '已完成';
       case ScheduleStatus.LEAVE: return '请假';
       case ScheduleStatus.CANCELLED: return '已取消';
       default: return '未知';
