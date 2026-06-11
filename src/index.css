@@ -469,14 +469,17 @@ select,
   flex-shrink: 0;
 }
 
-.today-placeholder {
-  max-width: 720px;
+.today-workbench {
+  width: 100%;
 }
 
-.today-placeholder__grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
-  gap: 10px;
+.today-workbench__metrics {
+  margin-bottom: 12px;
+}
+
+.today-workbench__card-body {
+  width: 100%;
+  min-height: 52px;
 }
 
 @media (max-width: 900px) {
@@ -495,8 +498,8 @@ select,
     justify-content: space-between;
   }
 
-  .today-placeholder__grid {
-    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  .today-workbench .ant-card-extra {
+    max-width: 48%;
   }
 }
 

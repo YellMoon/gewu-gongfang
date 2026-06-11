@@ -19,6 +19,7 @@ import OperateLog from './pages/OperateLog';
 import ErrorBoundary from './components/ErrorBoundary';
 import AdminLogin from './pages/AdminLogin';
 import Admin from './pages/Admin';
+import TodayWorkbench from './pages/TodayWorkbench';
 import QuestionBasket from './components/QuestionBasket';
 import AppShell from './layout/AppShell';
 import { PageKey, questionBankPages } from './navigation/appNavigation';
@@ -102,23 +103,6 @@ const App: React.FC = () => {
     setRefreshKey((key) => key + 1);
   };
 
-  const renderToday = () => (
-    <div className="today-placeholder">
-      <Card
-        title="今日工作台"
-        size="small"
-        extra={<Tag color="blue">快速入口</Tag>}
-      >
-        <div className="today-placeholder__grid">
-          <Button type="primary" onClick={() => navigateTo('course-calendar')}>查看课程表</Button>
-          <Button onClick={() => navigateTo('schedule-list')}>排课列表</Button>
-          <Button onClick={() => navigateTo('question-bank-tools')}>题库工具</Button>
-          <Button onClick={() => navigateTo('payment')}>缴费管理</Button>
-        </div>
-      </Card>
-    </div>
-  );
-
   const renderQuestionBankTools = () => (
     <div>
       <Card
@@ -159,7 +143,7 @@ const App: React.FC = () => {
     }
 
     switch (currentPage) {
-      case 'today': return renderToday();
+      case 'today': return <TodayWorkbench onNavigate={navigateTo} />;
       case 'course-calendar': return <LazyPage><ScheduleCalendar /></LazyPage>;
       case 'schedule-list': return <ScheduleList />;
       case 'course-info': return <CourseList />;
