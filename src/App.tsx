@@ -1,24 +1,6 @@
 import React, { Suspense, useState, useEffect } from 'react';
-import { Layout, Button, Card, Table, Tag, Empty } from 'antd';
-import {
-  CalendarOutlined,
-  TeamOutlined,
-  BookOutlined,
-  DollarOutlined,
-  SettingOutlined,
-  DatabaseOutlined,
-
-  UserOutlined,
-  FileTextOutlined,
-  FileWordOutlined,
-  BarChartOutlined,
-  LockOutlined,
-  MenuOutlined,
-  UploadOutlined,
-  LinkOutlined,
-  EditOutlined,
-  SafetyCertificateOutlined
-} from '@ant-design/icons';
+import { Button, Card, Table, Tag, Empty } from 'antd';
+import { LinkOutlined } from '@ant-design/icons';
 import ScheduleList from './pages/ScheduleList';
 import StudentList from './pages/StudentList';
 import TeacherList from './pages/TeacherList';
@@ -38,9 +20,8 @@ import ErrorBoundary from './components/ErrorBoundary';
 import AdminLogin from './pages/AdminLogin';
 import Admin from './pages/Admin';
 import QuestionBasket from './components/QuestionBasket';
-
-
-const { Header, Content } = Layout;
+import AppShell from './layout/AppShell';
+import { PageKey, questionBankPages } from './navigation/appNavigation';
 
 const ScheduleCalendar = React.lazy(() => import('./pages/ScheduleCalendar'));
 const QuestionBankImport = React.lazy(() => import('./pages/QuestionBankImport'));
@@ -64,98 +45,7 @@ const LazyPage: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   </ErrorBoundary>
 );
 
-const QUESTION_BANK_PAGES: PageKey[] = [
-  'question-bank-import',
-  'question-bank-preview',
-  'question-bank-edit',
-  'question-bank-paper',
-  'question-bank-audit',
-];
-
-type PageKey =
-  | 'course-calendar' | 'schedule-list' | 'course-info'
-  | 'school' | 'address' | 'institution'
-  | 'question-bank-import' | 'question-bank-preview' | 'question-bank-edit' | 'question-bank-paper' | 'question-bank-audit'
-  | 'payment' | 'revenue-statistics' | 'personal-assets'
-  | 'admin' | 'teacher' | 'student' | 'invitee' | 'permission'
-  | 'menu-manage'  | 'system-params' | 'operate-log'
-  | 'cloud-sync';
-
-interface MenuItem {
-  key: PageKey;
-  label: string;
-  icon: React.ReactNode;
-}
-
-interface MenuGroup {
-  label: string;
-  icon?: React.ReactNode;
-  items: MenuItem[];
-}
-
-const MENU_GROUPS: MenuGroup[] = [
-  {
-    label: '教务管理',
-    icon: <CalendarOutlined />,
-    items: [
-      { key: 'course-calendar', label: '课程表', icon: <CalendarOutlined /> },
-      { key: 'schedule-list', label: '排课列表', icon: <FileTextOutlined /> },
-      { key: 'course-info', label: '课程信息', icon: <BookOutlined /> },
-      { key: 'institution', label: '机构', icon: <TeamOutlined /> },
-      { key: 'school', label: '学校', icon: <TeamOutlined /> },
-      { key: 'address', label: '上课地址', icon: <TeamOutlined /> },
-    ],
-  },
-  {
-    label: '题库',
-    icon: <DatabaseOutlined />,
-    items: [
-      { key: 'question-bank-import', label: '试题导入', icon: <UploadOutlined /> },
-      { key: 'question-bank-preview', label: '试题预览', icon: <FileTextOutlined /> },
-      { key: 'question-bank-edit', label: '试题编辑', icon: <EditOutlined /> },
-      { key: 'question-bank-audit', label: '审核中心', icon: <SafetyCertificateOutlined /> },
-      { key: 'question-bank-paper', label: '组卷', icon: <FileWordOutlined /> }
-    ]
-  },
-  {
-    label: '财务',
-    icon: <DollarOutlined />,
-    items: [
-      { key: 'payment', label: '缴费', icon: <DollarOutlined /> },
-      { key: 'revenue-statistics', label: '费用统计', icon: <BarChartOutlined /> },
-      { key: 'personal-assets', label: '个人资产统计', icon: <DatabaseOutlined /> }
-    ],
-  },
-  {
-    label: '用户管理',
-    icon: <UserOutlined />,
-    items: [
-      { key: 'admin', label: '管理员', icon: <UserOutlined /> },
-      { key: 'teacher', label: '老师', icon: <TeamOutlined /> },
-      { key: 'student', label: '学生', icon: <UserOutlined /> },
-      { key: 'invitee', label: '被邀请者', icon: <UserOutlined /> },
-      { key: 'permission', label: '权限管理', icon: <LockOutlined /> }
-    ],
-  },
-  {
-    label: '云同步',
-    icon: <DatabaseOutlined />,
-    items: [
-      { key: 'cloud-sync', label: '云同步', icon: <DatabaseOutlined /> }
-    ]
-  },
-  {
-    label: '系统管理',
-    icon: <SettingOutlined />,
-    items: [
-      { key: 'menu-manage', label: '菜单结构管理', icon: <MenuOutlined /> },
-      { key: 'system-params', label: '系统参数', icon: <SettingOutlined /> },
-      { key: 'operate-log', label: '操作日志', icon: <FileTextOutlined /> },
-    ],
-  },
-];
-
-const DEFAULT_PAGE: PageKey = 'course-calendar';
+const DEFAULT_PAGE: PageKey = 'today';
 
 let dbService: any = null;
 
@@ -163,9 +53,7 @@ const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<PageKey>(DEFAULT_PAGE);
   const [dbLoaded, setDbLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [openDropdown, setOpenDropdown] = useState<number | null>(null);
   const [adminLoginKey, setAdminLoginKey] = useState(0);
-  const dropdownTimerRef = React.useRef<number | null>(null);
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
@@ -181,7 +69,6 @@ const App: React.FC = () => {
       const page = (event as CustomEvent<PageKey>).detail;
       if (page) {
         setCurrentPage(page);
-        setOpenDropdown(null);
       }
     };
     window.addEventListener('navigate-page', onNavigate as EventListener);
@@ -206,25 +93,26 @@ const App: React.FC = () => {
     loadDb();
   }, []);
 
-  const handleDropdownEnter = (idx: number, itemCount: number) => {
-    // 清空关闭定时器
-    if (dropdownTimerRef.current) {
-      clearTimeout(dropdownTimerRef.current);
-      dropdownTimerRef.current = null;
-    }
-    // 只有1个菜单项的组不需要下拉框，关闭其他已打开的下拉框
-    if (itemCount <= 1) {
-      setOpenDropdown(null);
-      return;
-    }
-    setOpenDropdown(idx);
+  const navigateTo = (page: PageKey) => {
+    setCurrentPage(page);
   };
 
-  const handleDropdownLeave = () => {
-    dropdownTimerRef.current = window.setTimeout(() => {
-      setOpenDropdown(null);
-    }, 200);
-  };
+  const renderToday = () => (
+    <div className="today-placeholder">
+      <Card
+        title="今日工作台"
+        size="small"
+        extra={<Tag color="blue">快速入口</Tag>}
+      >
+        <div className="today-placeholder__grid">
+          <Button type="primary" onClick={() => navigateTo('course-calendar')}>查看课程表</Button>
+          <Button onClick={() => navigateTo('schedule-list')}>排课列表</Button>
+          <Button onClick={() => navigateTo('question-bank-tools')}>题库工具</Button>
+          <Button onClick={() => navigateTo('payment')}>缴费管理</Button>
+        </div>
+      </Card>
+    </div>
+  );
 
   const renderPage = () => {
     if (error) {
@@ -246,6 +134,7 @@ const App: React.FC = () => {
     }
 
     switch (currentPage) {
+      case 'today': return renderToday();
       case 'course-calendar': return <LazyPage><ScheduleCalendar /></LazyPage>;
       case 'schedule-list': return <ScheduleList />;
       case 'course-info': return <CourseList />;
@@ -256,6 +145,7 @@ const App: React.FC = () => {
       case 'institution': return <InstitutionManager />;
       case 'payment': return <PaymentList />;
       case 'revenue-statistics': return <RevenueStatistics />;
+      case 'question-bank-tools': return <LazyPage><QuestionBankImport /></LazyPage>;
       case 'question-bank-import': return <LazyPage><QuestionBankImport /></LazyPage>;
       case 'question-bank-preview': return <LazyPage><QuestionBankPreview /></LazyPage>;
       case 'question-bank-edit': return <LazyPage><QuestionBankEdit /></LazyPage>;
@@ -279,7 +169,7 @@ const App: React.FC = () => {
         return <Admin />;
       }
       case 'invitee': return (
-        <InviteeManager onNavigate={(page) => { setCurrentPage(page); setOpenDropdown(null); }} />
+        <InviteeManager onNavigate={navigateTo} />
       );
       case 'menu-manage': return <MenuManage />;
       case 'operate-log': return <OperateLog />;
@@ -291,163 +181,11 @@ const App: React.FC = () => {
     }
   };
 
-  const getCurrentGroupLabel = (): string => {
-    for (const group of MENU_GROUPS) {
-      if (group.items.some(item => item.key === currentPage)) {
-        return group.label;
-      }
-    }
-    return '教务管理';
-  };
-
   return (
-    <Layout style={{ minHeight: '100vh', background: '#fff' }}>
-      <style>{`
-        @keyframes dropdownIn {
-          from { opacity: 0; transform: translateY(-8px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .menu-group-label:hover {
-          background: #f0f5ff !important;
-        }
-        .menu-group-label { transition: all 0.2s ease !important; }
-        .menu-dropdown-item:hover {
-          background: #e6f7ff !important;
-        }
-      `}</style>
-      <Header style={{
-        background: '#fff',
-        padding: '0 10px',
-        borderBottom: '1px solid #d9d9d9',
-        display: 'flex',
-        alignItems: 'center',
-        height: 44,
-        lineHeight: '44px',
-        position: 'sticky',
-        top: 0,
-        zIndex: 1000,
-        boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
-        overflow: 'visible',
-        flexWrap: 'nowrap',
-      }}>
-        <div style={{
-          fontSize: 14,
-          fontWeight: 700,
-          color: '#1890ff',
-          marginRight: 12,
-          whiteSpace: 'nowrap',
-          userSelect: 'none',
-          flexShrink: 0,
-        }}>
-          🏭 格物工坊
-        </div>
-
-        <div style={{ display: 'flex', gap: 2, flex: 1 }}>
-          {MENU_GROUPS.map((group, idx) => {
-            const isActive = group.items.some(item => item.key === currentPage);
-            const isOpen = openDropdown === idx;
-            const currentLabel = getCurrentGroupLabel();
-
-            return (
-              <div
-                key={group.label}
-                style={{ position: 'relative' }}
-                onMouseEnter={() => handleDropdownEnter(idx, group.items.length)}
-                onMouseLeave={handleDropdownLeave}
-              >
-                <div
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: 6,
-                    cursor: 'pointer',
-                    fontSize: 12,
-                    fontWeight: isActive ? 600 : 400,
-                    color: isActive ? '#1890ff' : '#333',
-                    background: isActive ? '#e6f7ff' : 'transparent',
-                    transition: 'all 0.2s',
-                    whiteSpace: 'nowrap',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                  }}
-                onClick={() => {
-                  if (group.items.length === 1) {
-                    // 单个菜单项直接跳转
-                    setCurrentPage(group.items[0].key);
-                    setOpenDropdown(null);
-                  } else {
-                    // 多个菜单项展开/收起下拉
-                    setOpenDropdown(openDropdown === idx ? null : idx);
-                  }
-                }}
-                >
-                  {group.icon}
-                  {group.label}
-                  {group.items.length > 1 && (
-                    <MenuOutlined style={{ fontSize: 10, opacity: 0.5 }} />
-                  )}
-                </div>
-
-                {isOpen && group.items.length > 1 && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    minWidth: 150,
-                    background: '#fff',
-                    borderRadius: 8,
-                    boxShadow: '0 6px 16px rgba(0,0,0,0.12)',
-                    border: '1px solid #d9d9d9',
-                    padding: '2px 0',
-                    zIndex: 1001,
-                    animation: 'dropdownIn 0.15s ease-out',
-                    transformOrigin: 'top center',
-                  }}>
-                    {group.items.map(item => (
-                      <div className="menu-dropdown-item"
-                        key={item.key}
-                        onClick={() => {
-                          setCurrentPage(item.key);
-                          setOpenDropdown(null);
-                        }}
-                        style={{
-                          padding: '4px 10px',
-                          fontSize: 12,
-                          cursor: 'pointer',
-                          color: currentPage === item.key ? '#1890ff' : '#333',
-                          background: currentPage === item.key ? '#e6f7ff' : 'transparent',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          transition: 'all 0.15s',
-                        }}
-                        onMouseEnter={(e) => {
-                          if (currentPage !== item.key) {
-                            e.currentTarget.style.background = '#f5f5f5';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (currentPage !== item.key) {
-                            e.currentTarget.style.background = 'transparent';
-                          }
-                        }}
-                      >
-                        {item.icon}
-                        {item.label}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </Header>
-      <Content style={{ padding: 16, minHeight: 'calc(100vh - 48px)' }}>
-        {renderPage()}
-      </Content>
-      <QuestionBasket visible={QUESTION_BANK_PAGES.includes(currentPage)} />
-    </Layout>
+    <AppShell currentPage={currentPage} onNavigate={navigateTo}>
+      {renderPage()}
+      <QuestionBasket visible={questionBankPages.includes(currentPage)} />
+    </AppShell>
   );
 };
 
