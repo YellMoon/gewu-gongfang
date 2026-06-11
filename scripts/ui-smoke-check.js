@@ -5,16 +5,17 @@ const { chromium } = require('playwright');
 const baseUrl = process.env.UI_SMOKE_URL || 'http://localhost:3000';
 const screenshotDir = path.join(process.cwd(), 'tmp', 'ui-smoke');
 const routes = [
-  { path: '/', key: 'home', expectedText: ['选择老师', '本周', '排课'] },
-  { path: '/?page=course-calendar', key: 'course-calendar', pageKey: 'course-calendar', expectedText: ['选择老师', '本周', '排课'] },
-  { path: '/?page=question-bank-import', key: 'question-bank-import', pageKey: 'question-bank-import', expectedText: ['拖拽或选择 Word 文件', '讲义格式', '试卷格式', '导入任务'] },
-  { path: '/?page=question-bank-preview', key: 'question-bank-preview', pageKey: 'question-bank-preview', expectedText: ['试题预览', '知识树', '题干搜索', '更多筛选'] },
-  { path: '/?page=question-bank-paper', key: 'question-bank-paper', pageKey: 'question-bank-paper', expectedText: ['题目数', '总分', '参考答案与解析', '答案单独附后'] },
-  { path: '/?page=revenue-statistics', key: 'revenue-statistics', pageKey: 'revenue-statistics', expectedText: ['应收学费', '老师课时费', '净收入估算', '排课数量'] },
-  { path: '/?page=student', key: 'student', pageKey: 'student', expectedText: ['学生总数', '添加学生', '总账户余额', '课时不足5的学生数'] },
-  { path: '/?page=teacher', key: 'teacher', pageKey: 'teacher', expectedText: ['老师总数', '添加老师', '请输入老师姓名', '请选择科目'] },
-  { path: '/?page=course-info', key: 'course-info', pageKey: 'course-info', expectedText: ['课程总数', '添加课程', '一对一课程', '自有课程'] },
-  { path: '/?page=cloud-sync', key: 'cloud-sync', pageKey: 'cloud-sync', expectedText: ['同步控制', '待同步操作', '客户端 ID', '同步协议说明'] },
+  // Home intentionally renders the default course-calendar page today.
+  { path: '/', key: 'home', requiredText: ['选择老师', '排课'] },
+  { path: '/?page=course-calendar', key: 'course-calendar', pageKey: 'course-calendar', requiredText: ['选择老师', '排课'] },
+  { path: '/?page=question-bank-import', key: 'question-bank-import', pageKey: 'question-bank-import', requiredText: ['拖拽或选择 Word 文件', '讲义格式'] },
+  { path: '/?page=question-bank-preview', key: 'question-bank-preview', pageKey: 'question-bank-preview', requiredText: ['试题预览', '题干搜索'] },
+  { path: '/?page=question-bank-paper', key: 'question-bank-paper', pageKey: 'question-bank-paper', requiredText: ['题目数', '总分'] },
+  { path: '/?page=revenue-statistics', key: 'revenue-statistics', pageKey: 'revenue-statistics', requiredText: ['应收学费', '老师课时费'] },
+  { path: '/?page=student', key: 'student', pageKey: 'student', requiredText: ['学生总数', '添加学生'] },
+  { path: '/?page=teacher', key: 'teacher', pageKey: 'teacher', requiredText: ['老师总数', '添加老师'] },
+  { path: '/?page=course-info', key: 'course-info', pageKey: 'course-info', requiredText: ['课程总数', '添加课程'] },
+  { path: '/?page=cloud-sync', key: 'cloud-sync', pageKey: 'cloud-sync', requiredText: ['同步控制', '待同步操作'] },
 ];
 
 async function getBodyText(page) {
@@ -27,17 +28,37 @@ async function waitForAppReady(page) {
   });
 }
 
-async function waitForExpectedText(page, route) {
-  const expectedTexts = Array.isArray(route.expectedText) ? route.expectedText : [route.expectedText];
+async function installNavigationProbe(page) {
+  await page.addInitScript(() => {
+    window.__uiSmokeNavigateReady = false;
+    const nativeAddEventListener = window.addEventListener;
+    window.addEventListener = function addEventListener(type, listener, options) {
+      if (type === 'navigate-page') {
+        window.__uiSmokeNavigateReady = true;
+      }
+      return nativeAddEventListener.call(this, type, listener, options);
+    };
+  });
+}
+
+async function waitForNavigationListener(page) {
+  await page.waitForFunction(() => window.__uiSmokeNavigateReady === true, null, {
+    timeout: 10000,
+  });
+}
+
+async function waitForRequiredText(page, route) {
+  const requiredTexts = route.requiredText;
   await page.waitForFunction((texts) => {
     const bodyText = document.body.innerText;
-    return texts.some((text) => text && bodyText.includes(text));
-  }, expectedTexts, {
+    return texts.every((text) => text && bodyText.includes(text));
+  }, requiredTexts, {
     timeout: 10000,
   }).catch(async () => {
     const bodyText = await getBodyText(page);
+    const missingTexts = requiredTexts.filter((text) => !bodyText.includes(text));
     throw new Error(
-      `${route.key}: expected page text not found. Expected one of: ${expectedTexts.join(', ')}. Body text length: ${bodyText.length}`
+      `${route.key}: required page text not found. Required: ${requiredTexts.join(', ')}. Missing: ${missingTexts.join(', ')}. Body text length: ${bodyText.length}`
     );
   });
 }
@@ -45,6 +66,7 @@ async function waitForExpectedText(page, route) {
 async function checkRoute(page, route) {
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
+  await waitForNavigationListener(page);
 
   if (route.pageKey) {
     await page.evaluate((pageKey) => {
@@ -53,7 +75,7 @@ async function checkRoute(page, route) {
   }
 
   await page.waitForTimeout(700);
-  await waitForExpectedText(page, route);
+  await waitForRequiredText(page, route);
 
   const bodyTextLength = await getBodyText(page).then((text) => text.length);
   if (bodyTextLength < 20) {
@@ -97,6 +119,7 @@ async function main() {
   try {
     browser = await chromium.launch();
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await installNavigationProbe(page);
 
     for (const route of routes) {
       try {
