@@ -9,6 +9,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { Course, CourseType, CourseSourceType, Institution, BillingUnit, TeacherFeeMode, ServiceType, Teacher, StudentCoursePricing, Student } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getColorForRoom } from '../utils/courseColors';
+import { filterCourses } from '../utils/courseFilters';
 import DataPageLayout from '../layout/DataPageLayout';
 
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -83,35 +84,8 @@ const CourseList: React.FC = () => {
 
   // 过滤：只显示未结课
   useEffect(() => {
-    let result = [...courses];
-    if (filterType) {
-      result = result.filter(c => c.type === filterType);
-    }
-    if (filterSource) {
-      result = result.filter(c => c.source_type === filterSource);
-    }
-    if (filterTeacher) {
-      result = result.filter(c => c.teacher_id === filterTeacher);
-    }
-    if (filterActive !== undefined) {
-      result = result.filter(c => c.active === filterActive);
-    }
-    setFilteredCourses(result);
+    setFilteredCourses(filterCourses(courses, { filterType, filterSource, filterTeacher, filterActive }));
   }, [courses, filterType, filterSource, filterTeacher, filterActive]);
-
-  useEffect(() => {
-    let result = [...courses];
-    if (filterType) {
-      result = result.filter(c => c.type === filterType);
-    }
-    if (filterSource) {
-      result = result.filter(c => c.source_type === filterSource);
-    }
-    if (filterTeacher) {
-      result = result.filter(c => c.teacher_id === filterTeacher);
-    }
-    setFilteredCourses(result);
-  }, [courses, filterType, filterSource, filterTeacher]);
 
   useEffect(() => {
     loadData();
