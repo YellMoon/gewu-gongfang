@@ -2,7 +2,8 @@
   --app-sidebar-width: 224px;
   --app-header-height: 44px;
   --app-content-padding: 16px;
-  --app-border: #d8dee9;
+  --app-border-color: #d8dee9;
+  --app-border: var(--app-border-color);
   --app-bg: #f5f7fb;
   --app-panel-bg: #ffffff;
   --app-title: #172033;
@@ -12,7 +13,8 @@
   --app-warning: #d97706;
   --app-danger: #c2413a;
   --app-radius: 6px;
-  --app-shadow: 0 8px 24px rgba(23, 32, 51, 0.08);
+  --app-shadow-soft: 0 8px 24px rgba(23, 32, 51, 0.08);
+  --app-shadow: var(--app-shadow-soft);
 }
 
 .app-page {
@@ -24,9 +26,9 @@
 
 .app-panel {
   background: var(--app-panel-bg);
-  border: 1px solid var(--app-border);
+  border: 1px solid var(--app-border-color);
   border-radius: var(--app-radius);
-  box-shadow: var(--app-shadow);
+  box-shadow: var(--app-shadow-soft);
 }
 
 .app-toolbar {
