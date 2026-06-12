@@ -14,6 +14,7 @@ import { holidays2026, getUpcomingHolidays } from '../utils/helpers';
 import { buildCourseColorMap, getTextColorForBackground, DEFAULT_COURSE_COLOR } from '../utils/courseColors';
 import { INSTITUTION_UNBOUND_STUDENT_ID, buildScheduleFinancialSnapshot } from '../utils/financialDetails';
 import WorkbenchLayout from '../layout/WorkbenchLayout';
+import type { CourseCalendarContext } from '../navigation/navigationContext';
 
 dayjs.extend(weekOfYear);
 dayjs.extend(isoWeek);
@@ -585,6 +586,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
                 <div
                   data-course-card="true"
                   data-course-id={schedule.id}
+                  data-schedule-id={schedule.id}
                   style={{
                     position: 'absolute',
                     top: pos.top,
@@ -1105,7 +1107,11 @@ const Sidebar: React.FC<SidebarProps> = ({
   );
 };
 
-const ScheduleCalendar: React.FC = () => {
+interface ScheduleCalendarProps {
+  context?: CourseCalendarContext;
+}
+
+const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
   const [schedules, setSchedules] = useState<ScheduleEvent[]>([]);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const today = dayjs();
@@ -1289,6 +1295,26 @@ const ScheduleCalendar: React.FC = () => {
   React.useEffect(() => {
     setRefreshDateRange([currentMonday, currentMonday.add(13, 'day')]);
   }, [currentMonday]);
+
+  React.useEffect(() => {
+    if (!context?.date && !context?.highlightToday) return;
+    const target = dayjs(context.date || dayjs());
+    if (!target.isValid()) return;
+    setHighlightedDate(target);
+    setCurrentMonday(target.startOf('isoWeek'));
+  }, [context?.date, context?.highlightToday]);
+
+  React.useEffect(() => {
+    if (!context?.scheduleId) return;
+    const timer = window.setTimeout(() => {
+      const card = containerRef.current?.querySelector(`[data-schedule-id="${context.scheduleId}"]`) as HTMLElement | null;
+      if (!card) return;
+      card.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+      card.classList.add('schedule-card--context-highlight');
+      window.setTimeout(() => card.classList.remove('schedule-card--context-highlight'), 2400);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [context?.scheduleId, schedules.length, currentMonday]);
 
   React.useEffect(() => {
     try {

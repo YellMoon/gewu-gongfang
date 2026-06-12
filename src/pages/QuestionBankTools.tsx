@@ -13,10 +13,12 @@ import QuestionBankImport from './QuestionBankImport';
 import QuestionIssueQueue, { QuestionIssue } from '../components/question-bank/QuestionIssueQueue';
 import type { ImportTask, Question } from '../types';
 import type { PageKey } from '../navigation/appNavigation';
+import type { NavigationInput, QuestionBankToolsContext } from '../navigation/navigationContext';
 import './QuestionBankTools.css';
 
 interface QuestionBankToolsProps {
-  onNavigate: (page: PageKey) => void;
+  onNavigate: (target: NavigationInput) => void;
+  context?: QuestionBankToolsContext;
 }
 
 type QuestionBankStats = {
@@ -90,8 +92,9 @@ function statusColor(status: string): string {
   return 'blue';
 }
 
-const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate }) => {
+const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate, context }) => {
   const [stats, setStats] = useState<QuestionBankStats>(EMPTY_STATS);
+  const [activeTab, setActiveTab] = useState(context?.mode === 'problem-questions' ? 'quality' : 'import');
 
   const loadStats = () => {
     try {
@@ -113,6 +116,12 @@ const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate }) => 
     window.addEventListener('question-basket-changed', loadStats as EventListener);
     return () => window.removeEventListener('question-basket-changed', loadStats as EventListener);
   }, []);
+
+  useEffect(() => {
+    if (context?.mode === 'problem-questions') {
+      setActiveTab('quality');
+    }
+  }, [context?.mode]);
 
   const subjectStats = useMemo(() => {
     const map = new Map<string, number>();
@@ -170,7 +179,8 @@ const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate }) => 
 
       <Tabs
         className="question-bank-tools-tabs"
-        defaultActiveKey="import"
+        activeKey={activeTab}
+        onChange={setActiveTab}
         items={[
           {
             key: 'import',

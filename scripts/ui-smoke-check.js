@@ -6,7 +6,7 @@ const baseUrl = process.env.UI_SMOKE_URL || 'http://localhost:3000';
 const screenshotDir = path.join(process.cwd(), 'tmp', 'ui-smoke');
 const routes = [
   // Home renders the default today workbench.
-  { path: '/', key: 'home', requiredText: ['今日工作台', '题库问题', '排课列表'] },
+  { path: '/', key: 'home', requiredText: ['今日工作台', '课程表', '学生费用欠缴'] },
   { path: '/?page=course-calendar', key: 'course-calendar', pageKey: 'course-calendar', requiredText: ['课程表', '刷新课程信息', '本周'] },
   { path: '/?page=schedule-list', key: 'schedule-list', pageKey: 'schedule-list', requiredText: ['排课列表', '查询', '导出'] },
   { path: '/?page=question-bank-tools', key: 'question-bank-tools', pageKey: 'question-bank-tools', requiredText: ['题库工具', '导入与知识树'] },

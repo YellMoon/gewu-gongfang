@@ -55,15 +55,14 @@ export const questionBankPages: PageKey[] = [
   'question-bank-audit',
 ];
 
+export const todayNavItem: NavItem = {
+  key: 'today',
+  label: '今日工作台',
+  description: '处理今日提醒和常用入口',
+  icon: <AppstoreOutlined />,
+};
+
 export const navGroups: NavGroup[] = [
-  {
-    key: 'today',
-    label: '今日',
-    icon: <HomeOutlined />,
-    items: [
-      { key: 'today', label: '今日工作台', description: '快速进入常用运营任务', icon: <AppstoreOutlined /> },
-    ],
-  },
   {
     key: 'academic',
     label: '教务',
@@ -126,7 +125,7 @@ const legacyQuestionBankItems: Record<PageKey, NavItem> = {
   'question-bank-import': { key: 'question-bank-import', label: '试题导入', description: '导入题库文档和试题', icon: <UploadOutlined /> },
   'question-bank-edit': { key: 'question-bank-edit', label: '试题编辑', description: '编辑已导入的试题', icon: <BookOutlined /> },
   'question-bank-audit': { key: 'question-bank-audit', label: '审核中心', description: '审核题库变更与内容', icon: <SafetyCertificateOutlined /> },
-  today: { key: 'today', label: '今日工作台', icon: <AppstoreOutlined /> },
+  today: todayNavItem,
   'course-calendar': { key: 'course-calendar', label: '课程表', icon: <CalendarOutlined /> },
   'schedule-list': { key: 'schedule-list', label: '排课列表', icon: <FileTextOutlined /> },
   'course-info': { key: 'course-info', label: '课程信息', icon: <BookOutlined /> },
@@ -151,6 +150,9 @@ const legacyQuestionBankItems: Record<PageKey, NavItem> = {
 };
 
 export const findNavItem = (pageKey: PageKey): NavItem => {
+  if (pageKey === 'today') {
+    return todayNavItem;
+  }
   for (const group of navGroups) {
     const item = group.items.find((navItem) => navItem.key === pageKey);
     if (item) {
@@ -161,9 +163,12 @@ export const findNavItem = (pageKey: PageKey): NavItem => {
 };
 
 export const findOpenGroup = (pageKey: PageKey): string => {
+  if (pageKey === 'today') {
+    return '';
+  }
   if (pageKey.startsWith('question-bank-')) {
     return 'question-bank';
   }
   const group = navGroups.find((navGroup) => navGroup.items.some((item) => item.key === pageKey));
-  return group?.key || 'today';
+  return group?.key || '';
 };

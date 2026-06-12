@@ -7,13 +7,14 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons';
 import PageHeaderBar from './PageHeaderBar';
-import { findNavItem, findOpenGroup, navGroups, PageKey } from '../navigation/appNavigation';
+import { findNavItem, findOpenGroup, navGroups, PageKey, todayNavItem } from '../navigation/appNavigation';
+import type { NavigationInput } from '../navigation/navigationContext';
 
 const { Content, Sider } = Layout;
 
 interface AppShellProps {
   currentPage: PageKey;
-  onNavigate: (page: PageKey) => void;
+  onNavigate: (page: NavigationInput) => void;
   onRefresh: () => void;
   children: React.ReactNode;
 }
@@ -28,14 +29,16 @@ const selectedKeyForPage = (page: PageKey): PageKey => {
 const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh, children }) => {
   const [navOpen, setNavOpen] = useState(false);
   const [navPinned, setNavPinned] = useState(false);
-  const [openKeys, setOpenKeys] = useState<string[]>([findOpenGroup(currentPage)]);
+  const initialOpenGroup = findOpenGroup(currentPage);
+  const [openKeys, setOpenKeys] = useState<string[]>(initialOpenGroup ? [initialOpenGroup] : []);
   const closeTimerRef = useRef<number | null>(null);
   const currentNavItem = findNavItem(currentPage);
   const navVisible = navOpen || navPinned;
 
   useEffect(() => {
     if (navVisible) {
-      setOpenKeys([findOpenGroup(currentPage)]);
+      const group = findOpenGroup(currentPage);
+      setOpenKeys(group ? [group] : []);
     }
   }, [navVisible, currentPage]);
 
@@ -80,16 +83,23 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
   };
 
   const menuItems = useMemo(
-    () => navGroups.map((group) => ({
-      key: group.key,
-      icon: group.icon,
-      label: group.label,
-      children: group.items.map((item) => ({
-        key: item.key,
-        icon: item.icon,
-        label: item.label,
+    () => [
+      {
+        key: todayNavItem.key,
+        icon: todayNavItem.icon,
+        label: todayNavItem.label,
+      },
+      ...navGroups.map((group) => ({
+        key: group.key,
+        icon: group.icon,
+        label: group.label,
+        children: group.items.map((item) => ({
+          key: item.key,
+          icon: item.icon,
+          label: item.label,
+        })),
       })),
-    })),
+    ],
     [],
   );
 

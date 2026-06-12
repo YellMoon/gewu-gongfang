@@ -23,6 +23,7 @@ import TodayWorkbench from './pages/TodayWorkbench';
 import QuestionBasket from './components/QuestionBasket';
 import AppShell from './layout/AppShell';
 import { PageKey, questionBankPages } from './navigation/appNavigation';
+import { NavigationContext, NavigationInput, normalizeNavigationTarget } from './navigation/navigationContext';
 
 const ScheduleCalendar = React.lazy(() => import('./pages/ScheduleCalendar'));
 const QuestionBankTools = React.lazy(() => import('./pages/QuestionBankTools'));
@@ -53,6 +54,7 @@ let dbService: any = null;
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<PageKey>(DEFAULT_PAGE);
+  const [pageContext, setPageContext] = useState<NavigationContext>(undefined);
   const [dbLoaded, setDbLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [adminLoginKey, setAdminLoginKey] = useState(0);
@@ -69,9 +71,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const onNavigate = (event: Event) => {
-      const page = (event as CustomEvent<PageKey>).detail;
-      if (page) {
-        setCurrentPage(page);
+      const target = normalizeNavigationTarget((event as CustomEvent<NavigationInput>).detail);
+      if (target.page) {
+        setCurrentPage(target.page);
+        setPageContext(target.context);
       }
     };
     window.addEventListener('navigate-page', onNavigate as EventListener);
@@ -96,8 +99,10 @@ const App: React.FC = () => {
     loadDb();
   }, []);
 
-  const navigateTo = (page: PageKey) => {
-    setCurrentPage(page);
+  const navigateTo = (input: NavigationInput) => {
+    const target = normalizeNavigationTarget(input);
+    setCurrentPage(target.page);
+    setPageContext(target.context);
   };
 
   const refreshCurrentPage = () => {
@@ -125,7 +130,7 @@ const App: React.FC = () => {
 
     switch (currentPage) {
       case 'today': return <TodayWorkbench onNavigate={navigateTo} />;
-      case 'course-calendar': return <LazyPage><ScheduleCalendar /></LazyPage>;
+      case 'course-calendar': return <LazyPage><ScheduleCalendar context={pageContext as any} /></LazyPage>;
       case 'schedule-list': return <ScheduleList />;
       case 'course-info': return <CourseList />;
       case 'student': return <StudentList />;
@@ -134,8 +139,8 @@ const App: React.FC = () => {
       case 'address': return <RoomManager />;
       case 'institution': return <InstitutionManager />;
       case 'payment': return <PaymentList />;
-      case 'revenue-statistics': return <RevenueStatistics />;
-      case 'question-bank-tools': return <LazyPage><QuestionBankTools onNavigate={navigateTo} /></LazyPage>;
+      case 'revenue-statistics': return <RevenueStatistics context={pageContext as any} />;
+      case 'question-bank-tools': return <LazyPage><QuestionBankTools onNavigate={navigateTo} context={pageContext as any} /></LazyPage>;
       case 'question-bank-import': return <LazyPage><QuestionBankImport /></LazyPage>;
       case 'question-bank-preview': return <LazyPage><QuestionBankPreview /></LazyPage>;
       case 'question-bank-edit': return <LazyPage><QuestionBankEdit /></LazyPage>;
@@ -144,7 +149,7 @@ const App: React.FC = () => {
 
       case 'personal-assets': return <PersonalAssets />;
       case 'permission': return <PermissionManager />;
-      case 'cloud-sync': return <ErrorBoundary><SyncSettings /></ErrorBoundary>;
+      case 'cloud-sync': return <ErrorBoundary><SyncSettings context={pageContext as any} /></ErrorBoundary>;
       case 'system-params': return <SystemSettings />;
       case 'admin': {
         const isLoggedIn = sessionStorage.getItem('admin_logged_in') === 'true';

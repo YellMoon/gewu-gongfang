@@ -47,6 +47,8 @@ import {
   courseTypeNames,
   sourceTypeNames,
 } from '../utils/financialDetails';
+import type { RevenueStatisticsContext } from '../navigation/navigationContext';
+import { StudentAlertRow, buildStudentFinancialAlerts } from '../utils/todayWorkbenchData';
 
 const { RangePicker } = DatePicker;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -83,7 +85,11 @@ const moneyText = (amount: number, color: string = 'green') => (
 
 const unitSuffix = (billingUnit: BillingUnit) => (billingUnit === BillingUnit.PER_HOUR ? '/小时' : '/次');
 
-const RevenueStatistics: React.FC = () => {
+interface RevenueStatisticsProps {
+  context?: RevenueStatisticsContext;
+}
+
+const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
     dayjs().startOf('month'),
     dayjs().endOf('month'),
@@ -132,6 +138,9 @@ const RevenueStatistics: React.FC = () => {
   ]);
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [allTeachers, setAllTeachers] = useState<Teacher[]>([]);
+  const [contextMode, setContextMode] = useState<RevenueStatisticsContext['mode']>(context?.mode);
+  const [arrearsRows, setArrearsRows] = useState<StudentAlertRow[]>([]);
+  const [closedBalanceRows, setClosedBalanceRows] = useState<StudentAlertRow[]>([]);
   const dbService = (window as any).dbService;
 
   const loadLocalSchedules = (): ScheduleItem[] => {
@@ -160,9 +169,12 @@ const RevenueStatistics: React.FC = () => {
       const payments: Payment[] = dbService.getAllPayments?.() || [];
       const consumptions: Consumption[] = dbService.getAllConsumptions?.() || [];
       const schedules = loadLocalSchedules();
+      const financialAlerts = buildStudentFinancialAlerts(schedules, courses, students, teachers, payments);
 
       setAllStudents(students);
       setAllTeachers(teachers);
+      setArrearsRows(financialAlerts.arrears);
+      setClosedBalanceRows(financialAlerts.closedBalances);
 
       const validSchedules = schedules.filter(schedule => {
         const dateStr = schedule.start_time.split(' ')[0];
@@ -310,6 +322,10 @@ const RevenueStatistics: React.FC = () => {
   useEffect(() => {
     loadStats();
   }, []);
+
+  useEffect(() => {
+    setContextMode(context?.mode);
+  }, [context?.mode]);
 
   const totalTeacherFee = roundMoney(teacherIncomeStats.reduce((sum, row) => sum + row.total, 0));
   const netIncome = roundMoney((stats?.total || 0) - totalTeacherFee);
@@ -460,6 +476,44 @@ const RevenueStatistics: React.FC = () => {
   );
 
   const tableScrollX = (columns: any[]) => Math.max(900, columns.reduce((sum, column) => sum + Number(column.width || 120), 0));
+
+  const contextAlertColumns = [
+    { title: '学生', dataIndex: 'studentName', key: 'studentName', width: 120 },
+    { title: '金额', dataIndex: 'amount', key: 'amount', width: 120, render: (value: number) => moneyText(value, contextMode === 'closed-balance' ? 'red' : 'orange') },
+    { title: '关联课程', dataIndex: 'courseNames', key: 'courseNames', render: (names: string[]) => (names || []).join('、') || '-' },
+    { title: '最近上课日期', dataIndex: 'lastDate', key: 'lastDate', width: 130, render: (value: string) => value || '-' },
+  ];
+
+  const contextRows = contextMode === 'arrears'
+    ? arrearsRows
+    : contextMode === 'closed-balance'
+      ? closedBalanceRows
+      : [];
+
+  const contextResultNode = contextMode ? (
+    <Card
+      size="small"
+      title={contextMode === 'arrears' ? '学生费用欠缴结果' : '结课学生学费剩余明细'}
+      extra={
+        <Button size="small" onClick={() => setContextMode(undefined)}>
+          返回常规统计
+        </Button>
+      }
+      style={{ border: '1px solid #d8dee9', borderRadius: 8 }}
+    >
+      {contextRows.length > 0 ? (
+        <Table
+          columns={contextAlertColumns}
+          dataSource={contextRows}
+          rowKey="studentId"
+          pagination={{ pageSize: 10 }}
+          size="small"
+        />
+      ) : (
+        <Empty description={contextMode === 'arrears' ? '暂无欠缴学生' : '暂无结课余额异常'} />
+      )}
+    </Card>
+  ) : null;
 
   const filtersNode = (
     <>
@@ -871,7 +925,7 @@ const RevenueStatistics: React.FC = () => {
     <StatsPageLayout
       filters={filtersNode}
       metrics={metricsNode}
-      summary={null}
+      summary={contextResultNode}
       details={detailsNode}
     />
   );

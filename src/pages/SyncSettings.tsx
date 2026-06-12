@@ -7,8 +7,13 @@ import { SyncOutlined, CloudSyncOutlined, CloudServerOutlined, WarningOutlined, 
 import { SyncEngine, SyncStatus } from '../services/syncEngine';
 import { pushSyncBatch, pullSyncOps } from '../services/syncApi';
 import browserDatabase from '../services/browserDatabase';
+import type { CloudSyncContext } from '../navigation/navigationContext';
 
-const SyncSettings: React.FC = () => {
+interface SyncSettingsProps {
+  context?: CloudSyncContext;
+}
+
+const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
   const [engine, setEngine] = useState<SyncEngine | null>(null);
   const [initError, setInitError] = useState<string | null>(null);
   const [status, setStatus] = useState<SyncStatus | null>(null);
@@ -188,9 +193,19 @@ const SyncSettings: React.FC = () => {
   }
 
   const eng = engineRef.current!;
+  const contextAlert = context?.mode ? (
+    <Alert
+      type={status.pendingCount > 0 || context.mode === 'issues' ? 'warning' : 'info'}
+      showIcon
+      message={context.mode === 'issues' ? '同步异常入口' : '待同步入口'}
+      description={status.pendingCount > 0 ? `当前有 ${status.pendingCount} 条待同步变更` : '当前同步正常，没有待处理项'}
+      style={{ marginBottom: 16 }}
+    />
+  ) : null;
 
   return (
     <div style={{ padding: 16 }}>
+      {contextAlert}
       {/* 同步状态卡片 */}
       <Card
         title={
