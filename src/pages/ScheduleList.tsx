@@ -1,13 +1,14 @@
 ﻿import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Table, Button, Card, DatePicker, Tag, Space, message
+  Table, Button, DatePicker, Tag, Space, message
 } from 'antd';
-import { CalendarOutlined, SearchOutlined, DownloadOutlined } from '@ant-design/icons';
+import { SearchOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { Schedule, ScheduleStatus, Student, Teacher, Course } from '../types';
 import * as XLSX from 'xlsx';
 import AutoCloseSelect from '../components/AutoCloseSelect';
+import DataPageLayout from '../layout/DataPageLayout';
 
 const { RangePicker } = DatePicker;
 
@@ -256,9 +257,10 @@ const ScheduleList: React.FC = () => {
   ];
 
   return (
-    <div style={{ padding: 0 }}>
-      <Card style={{ marginBottom: 16 }}>
-        <Space wrap size={12} align="center" style={{ width: '100%' }}>
+    <DataPageLayout
+      toolbar={(
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Space wrap size={12} align="center">
             <AutoCloseSelect
               placeholder="老师"
               allowClear
@@ -295,12 +297,7 @@ const ScheduleList: React.FC = () => {
             <Button icon={<DownloadOutlined />} onClick={handleExport}>
               导出
             </Button>
-        </Space>
-      </Card>
-
-      <Card>
-        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}><CalendarOutlined /> 排课列表</h3>
+          </Space>
           <Space>
             <span style={{ color: '#666' }}>共 {filteredSchedules.length} 条记录</span>
             <Button size="small" onClick={() => {
@@ -313,7 +310,8 @@ const ScheduleList: React.FC = () => {
             </Button>
           </Space>
         </div>
-
+      )}
+      table={(
         <Table
           columns={columns}
           dataSource={filteredSchedules}
@@ -322,8 +320,12 @@ const ScheduleList: React.FC = () => {
           scroll={{ x: 1100 }}
           size="small"
         />
-      </Card>
-    </div>
+      )}
+      drawerOpen={false}
+      drawerTitle=""
+      onDrawerClose={() => undefined}
+      drawerContent={null}
+    />
   );
 };
 

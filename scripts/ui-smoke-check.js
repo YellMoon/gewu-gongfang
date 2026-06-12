@@ -8,6 +8,7 @@ const routes = [
   // Home renders the default today workbench.
   { path: '/', key: 'home', requiredText: ['今日工作台', '题库问题', '排课列表'] },
   { path: '/?page=course-calendar', key: 'course-calendar', pageKey: 'course-calendar', requiredText: ['课程表', '刷新课程信息', '本周'] },
+  { path: '/?page=schedule-list', key: 'schedule-list', pageKey: 'schedule-list', requiredText: ['排课列表', '查询', '导出'] },
   { path: '/?page=question-bank-tools', key: 'question-bank-tools', pageKey: 'question-bank-tools', requiredText: ['题库工具', '导入与知识树'] },
   { path: '/?page=question-bank-import', key: 'question-bank-import', pageKey: 'question-bank-import', requiredText: ['拖拽或选择 Word 文件', '讲义格式'] },
   { path: '/?page=question-bank-preview', key: 'question-bank-preview', pageKey: 'question-bank-preview', requiredText: ['试题库', '更多筛选'] },
@@ -20,6 +21,7 @@ const routes = [
   { path: '/?page=school', key: 'school', pageKey: 'school', requiredText: ['学校总数', '添加学校'] },
   { path: '/?page=address', key: 'address', pageKey: 'address', requiredText: ['地址总数', '添加地址'] },
   { path: '/?page=institution', key: 'institution', pageKey: 'institution', requiredText: ['机构总数', '添加机构'] },
+  { path: '/?page=operate-log', key: 'operate-log', pageKey: 'operate-log', requiredText: ['操作审计', '刷新'] },
   { path: '/?page=cloud-sync', key: 'cloud-sync', pageKey: 'cloud-sync', requiredText: ['同步控制', '待同步操作'] },
 ];
 

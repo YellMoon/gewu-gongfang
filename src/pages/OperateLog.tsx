@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Table, Button, DatePicker, Space, Tag, Card, message, Empty, Input, Select as AntSelect } from 'antd';
-import { FileTextOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { Table, Button, DatePicker, Space, Tag, message, Empty, Input, Select as AntSelect } from 'antd';
+import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import logger, { OperateLogEntry } from '../services/operateLogger';
 import AutoCloseSelect from '../components/AutoCloseSelect';
+import DataPageLayout from '../layout/DataPageLayout';
 
 const Select = AutoCloseSelect as typeof AntSelect;
 
@@ -81,9 +82,9 @@ const OperateLog: React.FC = () => {
         throw new Error(payload.error || '审计日志加载失败');
       }
       setLogs(payload.logs || []);
-    } catch (err: any) {
+    } catch (_err: any) {
       setLogs(logger.getAll().map(localLogToAudit));
-      message.warning(err?.message || '后端审计不可用，已显示本地日志');
+      message.warning('后端审计不可用，已显示本地日志');
     } finally {
       setLoading(false);
     }
@@ -177,40 +178,39 @@ const OperateLog: React.FC = () => {
   ];
 
   return (
-    <div style={{ padding: 16 }}>
-      <Card
-        title={<span><FileTextOutlined style={{ marginRight: 8 }} />操作审计 <Tag color="blue">{logs.length}条</Tag></span>}
-        extra={
-          <Space>
+    <DataPageLayout
+      toolbar={(
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Space wrap>
+            <Tag color="blue">操作审计 {logs.length} 条</Tag>
             <DatePicker.RangePicker
               onChange={(dates) => setFilterDate(dates && dates[0] && dates[1] ? [dates[0], dates[1]] : [null, null])}
               placeholder={['开始日期', '结束日期']}
               size="small"
             />
-            <Button icon={<ReloadOutlined />} onClick={loadLogs} size="small">刷新</Button>
           </Space>
-        }
-      >
-        <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Select placeholder="操作" allowClear style={{ width: 130 }} value={filterAction} onChange={setFilterAction} size="small">
-            {allActions.map(t => <Select.Option key={t} value={t}>{t}</Select.Option>)}
-          </Select>
-          <Select placeholder="状态" allowClear style={{ width: 130 }} value={filterStatus} onChange={setFilterStatus} size="small">
-            {allStatuses.map(t => <Select.Option key={t} value={t}>{t}</Select.Option>)}
-          </Select>
-          <Input.Search
-            placeholder="搜索对象/详情"
-            allowClear
-            prefix={<SearchOutlined />}
-            style={{ width: 220 }}
-            value={searchText}
-            onChange={e => setSearchText(e.target.value)}
-            size="small"
-          />
+          <Space wrap>
+            <Select placeholder="操作" allowClear style={{ width: 130 }} value={filterAction} onChange={setFilterAction} size="small">
+              {allActions.map(t => <Select.Option key={t} value={t}>{t}</Select.Option>)}
+            </Select>
+            <Select placeholder="状态" allowClear style={{ width: 130 }} value={filterStatus} onChange={setFilterStatus} size="small">
+              {allStatuses.map(t => <Select.Option key={t} value={t}>{t}</Select.Option>)}
+            </Select>
+            <Input.Search
+              placeholder="搜索对象/详情"
+              allowClear
+              prefix={<SearchOutlined />}
+              style={{ width: 220 }}
+              value={searchText}
+              onChange={e => setSearchText(e.target.value)}
+              size="small"
+            />
+            <Button icon={<ReloadOutlined />} onClick={loadLogs} size="small">刷新</Button>
           {filteredLogs.length !== logs.length && <Tag color="processing">筛选结果 {filteredLogs.length} 条</Tag>}
+          </Space>
         </div>
-
-        {filteredLogs.length === 0 ? (
+      )}
+      table={filteredLogs.length === 0 ? (
           <Empty description={logs.length === 0 ? '暂无审计记录' : '没有匹配的审计记录'} />
         ) : (
           <Table
@@ -221,9 +221,13 @@ const OperateLog: React.FC = () => {
             pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条审计` }}
             size="middle"
           />
-        )}
-      </Card>
-    </div>
+        )
+      }
+      drawerOpen={false}
+      drawerTitle=""
+      onDrawerClose={() => undefined}
+      drawerContent={null}
+    />
   );
 };
 
