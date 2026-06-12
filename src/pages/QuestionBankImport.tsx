@@ -501,6 +501,21 @@ const QuestionBankImport: React.FC = () => {
                   onClick={e => { e.stopPropagation(); setEditingNodeId(nodeId); setEditingNodeName(nodeName); }}
                   style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }} />
               </Tooltip>
+              <Tooltip title="删除知识点">
+                <Button type="link" size="small" danger icon={<DeleteOutlined />}
+                  onClick={e => {
+                    e.stopPropagation();
+                    Modal.confirm({
+                      title: '确认删除',
+                      content: `确定删除知识点「${nodeName}」及其子知识点吗？`,
+                      okText: '删除',
+                      cancelText: '取消',
+                      okButtonProps: { danger: true },
+                      onOk: () => handleDeleteKnowledgeNode(nodeId),
+                    });
+                  }}
+                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }} />
+              </Tooltip>
             </>
           )}
         </div>
@@ -528,7 +543,7 @@ const QuestionBankImport: React.FC = () => {
         )}
       </div>
     );
-  }, [editingNodeId, editingNodeName, addingChildParentId, addingChildName, handleRenameKnowledgeNode, handleCreateKnowledgeNode]);
+  }, [editingNodeId, editingNodeName, addingChildParentId, addingChildName, handleRenameKnowledgeNode, handleCreateKnowledgeNode, handleDeleteKnowledgeNode]);
 
   const modelNodeTitleRender = useCallback((nodeData: any) => {
     const nodeId = nodeData.key as string;

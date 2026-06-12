@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Card,
@@ -329,6 +329,32 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
 
   const totalTeacherFee = roundMoney(teacherIncomeStats.reduce((sum, row) => sum + row.total, 0));
   const netIncome = roundMoney((stats?.total || 0) - totalTeacherFee);
+  const teacherFeeBySource = useMemo(() => {
+    const institutions = dbService?.getAllInstitutions?.() || [];
+    const sourceMap = new Map<string, { sourceName: string; amount: number; courseCount: number }>();
+
+    teacherDetails.forEach(row => {
+      const sourceKey = row.sourceType === CourseSourceType.INSTITUTION && row.institutionId
+        ? `institution:${row.institutionId}`
+        : row.sourceType === CourseSourceType.SELF
+          ? 'self'
+          : `source:${row.sourceType || 'unknown'}`;
+      const institution = row.institutionId
+        ? institutions.find((item: any) => item.id === row.institutionId)
+        : undefined;
+      const sourceName = row.sourceType === CourseSourceType.INSTITUTION
+        ? (institution?.name || row.sourceTypeName || '机构排课')
+        : row.sourceType === CourseSourceType.SELF
+          ? '自有课程'
+          : (row.sourceTypeName || '未设置来源');
+      const current = sourceMap.get(sourceKey) || { sourceName, amount: 0, courseCount: 0 };
+      current.amount = roundMoney(current.amount + row.teacherFeeTotal);
+      current.courseCount += 1;
+      sourceMap.set(sourceKey, current);
+    });
+
+    return Array.from(sourceMap.values()).sort((a, b) => b.amount - a.amount);
+  }, [teacherDetails, dbService]);
 
   const courseTypeChartData = stats?.byCourseType ? {
     labels: stats.byCourseType.map(item => item.typeName),
@@ -674,7 +700,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       <div style={{ ...sectionPanelStyle, marginTop: 0, borderLeft: '4px solid #faad14' }}>
         <div style={sectionHeaderStyle}>老师课时费{filterTeacherId ? '（已筛选）' : ''}</div>
         <div style={subPanelStyle}>
-          <div style={subPanelTitleStyle}>课时费汇总</div>
+          <div style={subPanelTitleStyle}>汇总</div>
           {teacherIncomeStats.length > 0 ? (
             <Table columns={teacherColumns} dataSource={teacherIncomeStats} rowKey="teacherId" pagination={{ pageSize: 10 }} size="small" />
           ) : (
@@ -683,7 +709,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         </div>
         <div style={{ ...subPanelStyle, marginTop: 12 }}>
           <div style={{ ...sectionHeaderStyle, marginBottom: 10 }}>
-            <span>课时费明细</span>
+            <span>明细</span>
             {renderColumnSettings(allTeacherDetailColumns, visibleTeacherDetailColumns, setVisibleTeacherDetailColumns)}
           </div>
           {teacherDetails.length > 0 ? (
@@ -704,7 +730,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       <div style={{ ...sectionPanelStyle, borderLeft: '4px solid #52c41a' }}>
         <div style={sectionHeaderStyle}>学生学费{filterStudentId ? '（已筛选）' : ''}</div>
         <div style={subPanelStyle}>
-          <div style={subPanelTitleStyle}>学费汇总</div>
+          <div style={subPanelTitleStyle}>汇总</div>
           {studentStats.length > 0 ? (
             <Table columns={studentColumns} dataSource={studentStats} rowKey="studentId" pagination={{ pageSize: 10 }} size="small" />
           ) : (
@@ -713,7 +739,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         </div>
         <div style={{ ...subPanelStyle, marginTop: 12 }}>
           <div style={{ ...sectionHeaderStyle, marginBottom: 10 }}>
-            <span>学费明细</span>
+            <span>明细</span>
             {renderColumnSettings(allStudentDetailColumns, visibleStudentDetailColumns, setVisibleStudentDetailColumns)}
           </div>
           {studentDetails.length > 0 ? (
@@ -736,15 +762,23 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   const renderGroupedFinancialTables = () => (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <div style={{ ...sectionPanelStyle, marginTop: 0, borderLeft: '4px solid #faad14' }}>
-        <div style={sectionHeaderStyle}>老师课时费</div>
+        <div style={sectionHeaderStyle}>
+          <span>老师课时费</span>
+          {renderColumnSettings(allTeacherDetailColumns, visibleTeacherDetailColumns, setVisibleTeacherDetailColumns)}
+        </div>
         {teacherGroups.length > 0 ? (
           <Row gutter={[16, 16]}>
             {teacherGroups.map(({ summary, details }) => (
               <Col span={24} key={summary.teacherId}>
                 <div style={subPanelStyle}>
                   <div style={sectionHeaderStyle}>
-                    <span>{summary.teacherName}</span>
-                    <Tag color="orange">合计 ¥{summary.total.toFixed(2)}</Tag>
+                    <Space wrap>
+                      <Text strong>{summary.teacherName}</Text>
+                      <Tag>{summary.courseCount} 节</Tag>
+                      <Tag>{roundMoney(summary.durationHours)} 小时</Tag>
+                      <Tag>{summary.studentCount} 人次</Tag>
+                      <Tag color="orange">¥{summary.total.toFixed(2)}</Tag>
+                    </Space>
                   </div>
                   <Table
                     columns={teacherDetailColumns}
@@ -753,19 +787,6 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
                     pagination={false}
                     size="small"
                     scroll={{ x: tableScrollX(teacherDetailColumns) }}
-                    summary={() => (
-                      <Table.Summary.Row>
-                        <Table.Summary.Cell index={0} colSpan={teacherDetailColumns.length}>
-                          <Space wrap>
-                            <Text strong>汇总</Text>
-                            <Tag>{summary.courseCount} 节</Tag>
-                            <Tag>{roundMoney(summary.durationHours)} 小时</Tag>
-                            <Tag>{summary.studentCount} 人次</Tag>
-                            <Tag color="orange">课时费 ¥{summary.total.toFixed(2)}</Tag>
-                          </Space>
-                        </Table.Summary.Cell>
-                      </Table.Summary.Row>
-                    )}
                   />
                 </div>
               </Col>
@@ -777,15 +798,23 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       </div>
 
       <div style={{ ...sectionPanelStyle, borderLeft: '4px solid #52c41a' }}>
-        <div style={sectionHeaderStyle}>学生学费</div>
+        <div style={sectionHeaderStyle}>
+          <span>学生学费</span>
+          {renderColumnSettings(allStudentDetailColumns, visibleStudentDetailColumns, setVisibleStudentDetailColumns)}
+        </div>
         {studentGroups.length > 0 ? (
           <Row gutter={[16, 16]}>
             {studentGroups.map(({ summary, details }) => (
               <Col span={24} key={summary.studentId}>
                 <div style={subPanelStyle}>
                   <div style={sectionHeaderStyle}>
-                    <span>{summary.studentName}</span>
-                    <Tag color="green">合计 ¥{summary.total.toFixed(2)}</Tag>
+                    <Space wrap>
+                      <Text strong>{summary.studentName}</Text>
+                      <Tag>{summary.courseCount} 次</Tag>
+                      <Tag>{roundMoney(summary.durationHours)} 小时</Tag>
+                      <Tag color="green">学费 ¥{summary.total.toFixed(2)}</Tag>
+                      <Tag color="orange">课时费 ¥{summary.teacherFeeTotal.toFixed(2)}</Tag>
+                    </Space>
                   </div>
                   <Table
                     columns={studentDetailColumns}
@@ -794,19 +823,6 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
                     pagination={false}
                     size="small"
                     scroll={{ x: tableScrollX(studentDetailColumns) }}
-                    summary={() => (
-                      <Table.Summary.Row>
-                        <Table.Summary.Cell index={0} colSpan={studentDetailColumns.length}>
-                          <Space wrap>
-                            <Text strong>汇总</Text>
-                            <Tag>{summary.courseCount} 次</Tag>
-                            <Tag>{roundMoney(summary.durationHours)} 小时</Tag>
-                            <Tag color="green">学费 ¥{summary.total.toFixed(2)}</Tag>
-                            <Tag color="orange">课时费 ¥{summary.teacherFeeTotal.toFixed(2)}</Tag>
-                          </Space>
-                        </Table.Summary.Cell>
-                      </Table.Summary.Row>
-                    )}
                   />
                 </div>
               </Col>
@@ -852,7 +868,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         </Card>
       )}
 
-      {stats && stats.total > 0 ? (
+      {stats ? (
         <Row gutter={16}>
           <Col span={12}>
             <Card title="按班型统计" size="small" style={{ marginBottom: 16 }}>
@@ -884,6 +900,21 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
               />
             </Card>
           </Col>
+          <Col span={24}>
+            <Card title="按来源/机构统计课时费收入" size="small" style={{ marginBottom: 16 }}>
+              <Table
+                columns={[
+                  { title: '来源/机构', dataIndex: 'sourceName', key: 'sourceName' },
+                  { title: '排课数量', dataIndex: 'courseCount', key: 'courseCount', width: 110, render: (value: number) => `${value} 节` },
+                  { title: '课时费收入', dataIndex: 'amount', key: 'amount', width: 140, render: (amount: number) => `¥${amount.toFixed(2)}` },
+                ]}
+                dataSource={teacherFeeBySource}
+                rowKey="sourceName"
+                pagination={false}
+                size="small"
+              />
+            </Card>
+          </Col>
         </Row>
       ) : (
         <Empty description="暂无费用构成数据" />
@@ -897,7 +928,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       items={[
         {
           key: 'financial-tables',
-          label: '老师和学生的明细与汇总表',
+          label: '费用明细与汇总',
           extra: (
             <Segmented
               size="small"

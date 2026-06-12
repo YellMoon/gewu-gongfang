@@ -16,12 +16,14 @@ const StatsPageLayout: React.FC<StatsPageLayoutProps> = ({
 }) => {
   return (
     <div className="stats-page-layout">
-      <Card className="stats-page-layout__filters" size="small">
-        {filters}
-      </Card>
+      <div className="stats-page-layout__sticky">
+        <Card className="stats-page-layout__filters" size="small">
+          {filters}
+        </Card>
 
-      <div className="stats-page-layout__metrics">
-        {metrics}
+        <div className="stats-page-layout__metrics">
+          {metrics}
+        </div>
       </div>
 
       <div className="stats-page-layout__summary">

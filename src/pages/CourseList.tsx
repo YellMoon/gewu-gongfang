@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Table, Button, Form, Input, InputNumber, Select as AntSelect,
+  Table, Button, Form, Input, InputNumber, Modal, Select as AntSelect,
   Space, message, Popconfirm, Tag, Row, Col, Divider
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, PlusCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
@@ -309,7 +309,7 @@ const CourseList: React.FC = () => {
     },
   ];
 
-  const drawerFooter = (
+  const modalFooter = (
     <div className="data-page-layout__drawer-footer">
       <Button onClick={() => setModalVisible(false)}>取消</Button>
       <Button type="primary" onClick={handleSubmit}>确定</Button>
@@ -317,6 +317,7 @@ const CourseList: React.FC = () => {
   );
 
   return (
+    <>
     <DataPageLayout
       toolbar={
         <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
@@ -379,12 +380,16 @@ const CourseList: React.FC = () => {
           scroll={{ x: 1580 }}
         />
       }
-      drawerOpen={modalVisible}
-      drawerTitle={editingCourse ? '编辑课程' : '添加课程'}
-      onDrawerClose={() => setModalVisible(false)}
-      drawerWidth={620}
-      drawerFooter={drawerFooter}
-      drawerContent={
+    />
+    <Modal
+      title={editingCourse ? '编辑课程' : '添加课程'}
+      open={modalVisible}
+      onCancel={() => setModalVisible(false)}
+      footer={modalFooter}
+      width={920}
+      destroyOnClose
+      centered
+    >
         <Form form={form} layout="vertical">
           <Divider>基本信息</Divider>
 
@@ -490,7 +495,6 @@ const CourseList: React.FC = () => {
                         backgroundColor: color, border: '1px solid #d9d9d9',
                         display: 'inline-block', flexShrink: 0
                       }} />
-                      <span style={{ fontSize: 11, color: '#999' }}>{color} — 课程表背景色（同地址同色）</span>
                     </div>
                   );
                 }}
@@ -651,8 +655,8 @@ const CourseList: React.FC = () => {
             </Col>
           </Row>
         </Form>
-      }
-    />
+    </Modal>
+    </>
   );
 };
 

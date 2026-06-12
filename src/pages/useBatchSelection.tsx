@@ -690,7 +690,7 @@ export default function useBatchSelection(
               items: [
                 {
                   key: 'batch-delete',
-                  label: '馃棏锔?鍏ㄩ儴鍒犻櫎',
+                  label: '全部删除',
                   danger: true,
                   onClick: () => {
                     if (!sel || sel.ids.length === 0) return;
@@ -704,7 +704,7 @@ export default function useBatchSelection(
             <div style={{ position: 'absolute', left: rb.l, top: rb.t, width: rb.w, height: Math.max(20, rb.h), border: '2px dashed #1890ff', background: 'rgba(24,144,255,0.10)', borderRadius: 4, zIndex: 101, cursor: 'default' }}>
               {sel && (
                 <div style={{ position: 'absolute', top: -24, left: 4, background: '#1890ff', color: '#fff', padding: '1px 8px', borderRadius: 10, fontSize: 11, whiteSpace: 'nowrap' }}>
-                  宸查€?{sel.ids.length} 璇?路 鎷栨嫿绉诲姩 路 Ctrl+鎷栨嫿澶嶅埗 路 鍙抽敭鏇村
+                  已选 {sel.ids.length} 节 · 拖拽移动 · Ctrl 拖拽复制 · 右键更多
                 </div>
               )}
             </div>
@@ -717,7 +717,7 @@ export default function useBatchSelection(
             </div>
             {previews.map((p: any) => (
               <div key={p.id} style={{ position: 'absolute', left: p.left ?? (p.rd * (CW + GAP) + 4), top: p.rt, width: CW - 8, height: p.rh, background: isCopy ? 'rgba(82,196,26,0.25)' : 'rgba(24,144,255,0.25)', border: isCopy ? '2px dashed #52c41a' : '2px dashed #1890ff', borderRadius: 6, padding: 2, fontSize: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: isCopy ? '0 4px 20px rgba(82,196,26,0.3)' : '0 4px 20px rgba(24,144,255,0.3)' }}>
-                <div style={{ fontWeight: 'bold', lineHeight: 1.2, color: isCopy ? '#52c41a' : '#1890ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: CW - 16, textAlign: 'center' }}>{isCopy ? '馃搵 ' : ''}{p.name}</div>
+                <div style={{ fontWeight: 'bold', lineHeight: 1.2, color: isCopy ? '#52c41a' : '#1890ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: CW - 16, textAlign: 'center' }}>{isCopy ? '复制 ' : ''}{p.name}</div>
                 <div style={{ fontSize: 10, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: CW - 16, textAlign: 'center', marginTop: 2 }}>
                   {p.room && <span>{p.room} </span>}
                   <span style={{ color: '#ff4d4f', fontWeight: 'bold', background: 'rgba(255,77,79,0.15)', padding: '0 2px', borderRadius: 2 }}>{fmt(p.sh, p.sm)}</span>

@@ -4,10 +4,10 @@ import { Card, Drawer } from 'antd';
 interface DataPageLayoutProps {
   toolbar: React.ReactNode;
   table: React.ReactNode;
-  drawerOpen: boolean;
-  drawerTitle: React.ReactNode;
-  drawerContent: React.ReactNode;
-  onDrawerClose: () => void;
+  drawerOpen?: boolean;
+  drawerTitle?: React.ReactNode;
+  drawerContent?: React.ReactNode;
+  onDrawerClose?: () => void;
   drawerWidth?: number | string;
   drawerExtra?: React.ReactNode;
   drawerFooter?: React.ReactNode;
@@ -39,17 +39,19 @@ const DataPageLayout: React.FC<DataPageLayoutProps> = ({
       <Card className="data-page-layout__table" size="small">
         {table}
       </Card>
-      <Drawer
-        title={drawerTitle}
-        open={drawerOpen}
-        onClose={onDrawerClose}
-        width={responsiveDrawerWidth}
-        extra={drawerExtra}
-        footer={drawerFooter}
-        destroyOnClose={destroyOnClose}
-      >
-        {drawerContent}
-      </Drawer>
+      {drawerContent && (
+        <Drawer
+          title={drawerTitle}
+          open={drawerOpen}
+          onClose={onDrawerClose}
+          width={responsiveDrawerWidth}
+          extra={drawerExtra}
+          footer={drawerFooter}
+          destroyOnClose={destroyOnClose}
+        >
+          {drawerContent}
+        </Drawer>
+      )}
     </div>
   );
 };

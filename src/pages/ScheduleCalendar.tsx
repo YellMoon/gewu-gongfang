@@ -777,7 +777,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
         }}>
           {/* 鈶?涓よ甯冨眬锛屽拰鐪熷疄课程妗嗗畬鍏ㄤ竴鑷达細课程鍚?+ 涓婅鍦板潃&璧锋鏃堕棿 */}
           <div style={{ fontSize: 12, fontWeight: 'bold', color: isCopy ? '#52c41a' : '#1890ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2, textAlign: 'center', maxWidth: ghostWidth - 8, flexShrink: 0 }}>
-            {isCopy ? '馃搵 ' : ''}{dragState.schedule.course_name}
+            {isCopy ? '复制 ' : ''}{dragState.schedule.course_name}
           </div>
           <div style={{ fontSize: 10, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2, textAlign: 'center', maxWidth: ghostWidth - 8, flexShrink: 0, marginTop: 2 }}>
             {dragState.schedule.room && `${dragState.schedule.room} `}

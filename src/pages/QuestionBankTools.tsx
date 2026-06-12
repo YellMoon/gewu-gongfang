@@ -1,12 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Card, Empty, Space, Statistic, Table, Tabs, Tag, Typography } from 'antd';
 import {
-  AuditOutlined,
-  DatabaseOutlined,
-  EditOutlined,
   FileSearchOutlined,
   FileWordOutlined,
-  ImportOutlined,
   ToolOutlined,
 } from '@ant-design/icons';
 import QuestionBankImport from './QuestionBankImport';
@@ -139,10 +135,7 @@ const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate, conte
   const imageCount = stats.questions.filter(question => question.has_image).length;
 
   const shortcuts = [
-    { key: 'question-bank-import' as PageKey, icon: <ImportOutlined />, label: '独立导入页', type: 'default' as const },
-    { key: 'question-bank-edit' as PageKey, icon: <EditOutlined />, label: '原试题编辑', type: 'default' as const },
-    { key: 'question-bank-audit' as PageKey, icon: <AuditOutlined />, label: '原审核中心', type: 'default' as const },
-    { key: 'question-bank-preview' as PageKey, icon: <FileSearchOutlined />, label: '进入试题库', type: 'primary' as const },
+    { key: 'question-bank-preview' as PageKey, icon: <FileSearchOutlined />, label: '试题库', type: 'primary' as const },
     { key: 'question-bank-paper' as PageKey, icon: <FileWordOutlined />, label: '去组卷', type: 'primary' as const },
   ];
 
@@ -152,11 +145,10 @@ const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate, conte
         <div className="question-bank-tools-hero__main">
           <Space size={8} align="center">
             <ToolOutlined />
-            <Typography.Title level={3}>题库工具</Typography.Title>
             <Tag color="blue">压缩工作台</Tag>
           </Space>
           <Typography.Text type="secondary">
-            知识树、模型树、试题导入、题库统计和问题提醒集中在这里；原导入、编辑、审核页面保留为兼容入口。
+            知识点、模型、试题导入、题库统计和问题提醒集中在这里。
           </Typography.Text>
         </div>
         <Space wrap>
@@ -193,14 +185,14 @@ const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate, conte
             children: (
               <div className="question-bank-tools-grid">
                 <Card title="问题试题" size="small">
-                  <QuestionIssueQueue issues={issues} onEdit={() => onNavigate('question-bank-edit')} />
+                  <QuestionIssueQueue issues={issues} onEdit={() => onNavigate('question-bank-preview')} />
                 </Card>
                 <Card title="处理建议" size="small">
                   <Alert
                     type="info"
                     showIcon
                     message="个人使用场景下，问题提醒优先于独立审核流程"
-                    description="导入时标注异常，试题库或原编辑页中修正；原审核中心仍可从上方兼容入口进入。"
+                    description="导入时标注异常后，在试题库中置顶处理，确认修改或删除即可。"
                   />
                 </Card>
               </div>

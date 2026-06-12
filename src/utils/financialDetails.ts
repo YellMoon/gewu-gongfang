@@ -70,6 +70,9 @@ export interface TeacherFeeDetail {
   courseName: string;
   courseType: CourseType;
   courseTypeName: string;
+  sourceType?: CourseSourceType;
+  sourceTypeName: string;
+  institutionId?: string;
   teacherId: string;
   teacherName: string;
   studentNames: string;
@@ -366,6 +369,9 @@ export function buildFinancialDetails(
       courseName: course?.display_name || schedule.course_name || course?.name || '未知课程',
       courseType: course?.type || schedule.course_type || CourseType.ONE_ON_ONE,
       courseTypeName: courseTypeNames[course?.type || schedule.course_type || CourseType.ONE_ON_ONE] || '未知',
+      sourceType: course?.source_type,
+      sourceTypeName: sourceTypeNames[course?.source_type || 0] || '未知',
+      institutionId: course?.institution_id,
       teacherId: teacherId || '__unassigned__',
       teacherName: teacher?.name || schedule.teacher_name || course?.teacher_name || '未设置老师',
       studentNames: finalRows.map(row => row.studentName).join('、'),

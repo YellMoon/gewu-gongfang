@@ -258,7 +258,7 @@ const QuestionBankPaper: React.FC = () => {
 
       {items.length === 0 ? (
         <Card>
-          <Empty description="试题篮中暂无已选试题，请先从试题预览加入试题篮后再组卷" />
+          <Empty description="试题篮中暂无已选试题，请先从试题库加入试题篮后再组卷" />
         </Card>
       ) : (
         groupedItems.map(group => (
