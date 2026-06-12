@@ -487,6 +487,35 @@ select,
   gap: var(--app-control-gap, 8px);
 }
 
+.stats-page-layout {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-content-gap, 12px);
+}
+
+.stats-page-layout__filters,
+.stats-page-layout__summary,
+.stats-page-layout__details {
+  border: 1px solid var(--app-border-color, #d8dee9);
+  border-radius: var(--app-radius, 6px);
+  box-shadow: var(--app-shadow-soft, 0 8px 24px rgba(23, 32, 51, 0.08));
+}
+
+.stats-page-layout__filters .ant-card-body {
+  padding: 10px 12px !important;
+}
+
+.stats-page-layout__metrics {
+  min-width: 0;
+}
+
+.stats-page-layout__summary .ant-card-body,
+.stats-page-layout__details .ant-card-body {
+  min-width: 0;
+}
+
 .workbench-layout {
   width: 100%;
   min-width: 0;

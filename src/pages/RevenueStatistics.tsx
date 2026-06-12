@@ -20,6 +20,7 @@ import dayjs from 'dayjs';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement, LineElement, PointElement, Filler } from 'chart.js';
 import { Bar, Line, Pie } from 'react-chartjs-2';
 import AutoCloseSelect from '../components/AutoCloseSelect';
+import StatsPageLayout from '../layout/StatsPageLayout';
 import {
   BillingUnit,
   Consumption,
@@ -391,9 +392,8 @@ const RevenueStatistics: React.FC = () => {
     { title: '总课时费', dataIndex: 'teacherFeeTotal', key: 'teacherFeeTotal', width: 120, render: (value: number) => moneyText(value, 'orange') },
   ];
 
-  return (
-    <div>
-      <Card style={{ marginBottom: 16 }}>
+  const filtersNode = (
+    <>
         <Row gutter={[16, 12]} align="middle">
           <Col>
             <Space>
@@ -480,7 +480,11 @@ const RevenueStatistics: React.FC = () => {
             </Space>
           </Col>
         </Row>
-      </Card>
+    </>
+  );
+
+  const metricsNode = (
+    <>
 
       {stats && (
         <Row gutter={16} style={{ marginBottom: 16 }}>
@@ -505,6 +509,11 @@ const RevenueStatistics: React.FC = () => {
         </Card>
       )}
 
+    </>
+  );
+
+  const summaryNode = (
+    <>
       {showChart && stats && stats.total > 0 && (
         <Card
           title={
@@ -565,6 +574,12 @@ const RevenueStatistics: React.FC = () => {
         </Row>
       )}
 
+    </>
+  );
+
+  const detailsNode = (
+    <>
+
       <Card title={`老师课时费汇总${filterTeacherId ? '（已筛选）' : ''}`} size="small" style={{ marginTop: 16 }}>
         {teacherIncomeStats.length > 0 ? (
           <Table columns={teacherColumns} dataSource={teacherIncomeStats} rowKey="teacherId" pagination={{ pageSize: 10 }} size="small" />
@@ -610,7 +625,16 @@ const RevenueStatistics: React.FC = () => {
           <Empty description="暂无学生课程费用明细" />
         )}
       </Card>
-    </div>
+    </>
+  );
+
+  return (
+    <StatsPageLayout
+      filters={filtersNode}
+      metrics={metricsNode}
+      summary={summaryNode}
+      details={detailsNode}
+    />
   );
 };
 
