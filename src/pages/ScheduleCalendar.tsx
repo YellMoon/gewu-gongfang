@@ -13,6 +13,7 @@ import isoWeek from 'dayjs/plugin/isoWeek';
 import { holidays2026, getUpcomingHolidays } from '../utils/helpers';
 import { buildCourseColorMap, getTextColorForBackground, DEFAULT_COURSE_COLOR } from '../utils/courseColors';
 import { buildScheduleFinancialSnapshot } from '../utils/financialDetails';
+import WorkbenchLayout from '../layout/WorkbenchLayout';
 
 dayjs.extend(weekOfYear);
 dayjs.extend(isoWeek);
@@ -1088,6 +1089,7 @@ const ScheduleCalendar: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<ScheduleEvent | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [coursePoolCollapsed, setCoursePoolCollapsed] = useState(false);
   const [form] = Form.useForm();
   const [courses, setCourses] = useState<Course[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
@@ -1691,7 +1693,7 @@ const ScheduleCalendar: React.FC = () => {
       return;
     }
     const ok = window.confirm(
-      '刷新课程信息会覆盖所选日期范围内所有排课的课程名称、上课地址、老师、学生名单、学费、老师课时费、出勤状态和费用合计。\n\n费用和出勤属于敏感信息，请确认日期范围无误后再继续。'
+      '刷新课程信息可能覆盖当前排课的学生学费、老师课时费、出勤状态和课程明细。请确认只刷新你当前选中的排课范围。\n\n费用和出勤属于敏感信息，请确认日期范围无误后再继续。'
     );
     if (!ok) return;
     const [startDate, endDate] = refreshDateRange;
@@ -1729,97 +1731,101 @@ const ScheduleCalendar: React.FC = () => {
 
   return (
     <div style={{ padding: 16, height: 'calc(100vh - 80px)', display: 'flex', flexDirection: 'column' }}>
-      <Card size="small" style={{ marginBottom: 8, flexShrink: 0 }}>
-        <Space wrap>
-          <Button onClick={goPrevWeek}>上一周</Button>
-          <Button onClick={goToday}>本周</Button>
-          <Button onClick={goNextWeek}>下一周</Button>
-          <Button 
-            onClick={() => setCalendarOpen(!calendarOpen)}
-            title="点击跳转到选定日期的课程表"
-          >
-            选择日期
-          </Button>
-          {calendarOpen && (
-            <div style={{ 
-              position: 'absolute', 
-              zIndex: 100, 
-              background: 'white', 
-              boxShadow: '0 4px 12px rgba(0,0,0,0.15)', 
-              borderRadius: 8, 
-              padding: 8, 
-              marginTop: 8 
-            }}>
-              <Calendar
-                fullscreen={false}
-                onSelect={(date) => {
-                  const monday = date.startOf('isoWeek');
-                  setCurrentMonday(monday);
-                  setCalendarOpen(false);
-                }}
+      <WorkbenchLayout
+        toolbar={
+          <Space wrap>
+            <Button onClick={goPrevWeek}>上一周</Button>
+            <Button onClick={goToday}>本周</Button>
+            <Button onClick={goNextWeek}>下一周</Button>
+            <Button
+              onClick={() => setCalendarOpen(!calendarOpen)}
+              title="点击跳转到选定日期的课程表"
+            >
+              选择日期
+            </Button>
+            {calendarOpen && (
+              <div style={{
+                position: 'absolute',
+                zIndex: 100,
+                background: 'white',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                borderRadius: 8,
+                padding: 8,
+                marginTop: 8
+              }}>
+                <Calendar
+                  fullscreen={false}
+                  onSelect={(date) => {
+                    const monday = date.startOf('isoWeek');
+                    setCurrentMonday(monday);
+                    setCalendarOpen(false);
+                  }}
+                />
+              </div>
+            )}
+            <Divider type="vertical" />
+            <Button
+              onClick={undo}
+              disabled={history.past.length === 0}
+              title="撤销 (Ctrl+Z)"
+            >撤销</Button>
+            <Button
+              onClick={redo}
+              disabled={history.future.length === 0}
+              title="重做 (Ctrl+Y)"
+            >重做</Button>
+            <Divider type="vertical" />
+            <Button
+              onClick={() => {
+                setRefreshDateRange([currentMonday, currentMonday.add(13, 'day')]);
+                setRefreshModalVisible(true);
+              }}
+              title="刷新日期范围内所有排课的课程信息"
+            >
+              刷新课程信息
+            </Button>
+            <Divider type="vertical" />
+            <Button type="primary" onClick={handleAddSchedule}>排课</Button>
+          </Space>
+        }
+        sidebar={
+          <Sidebar
+            teachers={teachers}
+            selectedTeacherId={selectedTeacherId}
+            courses={courses}
+            onTeacherChange={setSelectedTeacherId}
+          />
+        }
+        sidebarCollapsed={coursePoolCollapsed}
+        onToggleSidebar={() => setCoursePoolCollapsed(collapsed => !collapsed)}
+        canvas={
+          <div style={{ overflowY: 'auto', overflowX: 'auto', flex: 1, height: '100%' }} ref={containerRef}>
+            <div data-anchor="true" style={{ position: 'relative', minHeight: '100%' }}>
+              <TwoWeeksView
+                schedules={schedules}
+                currentMonday={currentMonday}
+                selectedTeacherId={selectedTeacherId}
+                courses={courses}
+                selectedCourseIds={selectedCourseIds}
+                batchPhase={batchPhase}
+                batchIsCopy={batchIsCopy}
+                flashingIds={flashingIds}
+                flashToggle={flashToggle}
+                courseColorMap={courseColorMap}
+                onDoubleClickDate={handleDoubleClickDate}
+                onDoubleClickSchedule={handleDoubleClickSchedule}
+                onScheduleStatusChange={handleScheduleStatusChange}
+                onDropCourse={handleDropCourse}
+                onDragSchedule={handleDragSchedule}
+                onResizeSchedule={handleResizeSchedule}
+                onDeleteSchedule={handleDeleteSchedule}
+                onOpenStudentEdit={handleOpenStudentEdit}
               />
+              {batchVisuals}
             </div>
-          )}
-          <Divider type="vertical" />
-          <Button 
-            onClick={undo} 
-            disabled={history.past.length === 0}
-            title="撤销 (Ctrl+Z)"
-          >撤销</Button>
-          <Button 
-            onClick={redo} 
-            disabled={history.future.length === 0}
-            title="重做 (Ctrl+Y)"
-          >重做</Button>
-          <Divider type="vertical" />
-          <Button 
-            onClick={() => {
-              setRefreshDateRange([currentMonday, currentMonday.add(13, 'day')]);
-              setRefreshModalVisible(true);
-            }}
-            title="刷新日期范围内所有排课的课程信息"
-          >
-            刷新课程信息
-          </Button>
-          <Divider type="vertical" />
-          <Button type="primary" onClick={handleAddSchedule}>排课</Button>
-        </Space>
-      </Card>
-
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', gap: 0 }}>
-        <Sidebar
-          teachers={teachers}
-          selectedTeacherId={selectedTeacherId}
-          courses={courses}
-          onTeacherChange={setSelectedTeacherId}
-        />
-
-        <div style={{ overflowY: 'auto', overflowX: 'auto', flex: 1, height: '100%' }} ref={containerRef}>
-          <div data-anchor="true" style={{ position: 'relative', minHeight: '100%' }}>
-            <TwoWeeksView
-              schedules={schedules}
-              currentMonday={currentMonday}
-              selectedTeacherId={selectedTeacherId}
-              courses={courses}
-              selectedCourseIds={selectedCourseIds}
-              batchPhase={batchPhase}
-              batchIsCopy={batchIsCopy}
-              flashingIds={flashingIds}
-              flashToggle={flashToggle}
-              courseColorMap={courseColorMap}
-              onDoubleClickDate={handleDoubleClickDate}
-              onDoubleClickSchedule={handleDoubleClickSchedule}
-              onScheduleStatusChange={handleScheduleStatusChange}
-              onDropCourse={handleDropCourse}
-              onDragSchedule={handleDragSchedule}
-              onResizeSchedule={handleResizeSchedule}
-              onDeleteSchedule={handleDeleteSchedule}
-              onOpenStudentEdit={handleOpenStudentEdit}
-            />
-            {batchVisuals}
           </div>
-        </div>
-      </div>
+        }
+      />
 
       <Modal
         title="排课窗口"
@@ -2064,7 +2070,7 @@ const ScheduleCalendar: React.FC = () => {
         <div style={{ marginBottom: 16 }}>
           <p>选择日期范围，系统将遍历该范围内的所有排课，重新从课程数据库读取最新信息并更新排课记录。</p>
           <p style={{ color: '#cf1322', fontSize: 12 }}>
-            注意：本操作会覆盖该范围内排课的老师、学生名单、出勤状态、学费、老师课时费和费用合计。请谨慎选择日期范围。
+            注意：刷新课程信息可能覆盖当前排课的学生学费、老师课时费、出勤状态和课程明细。请确认只刷新你当前选中的排课范围。
           </p>
         </div>
         <Form layout="vertical">
