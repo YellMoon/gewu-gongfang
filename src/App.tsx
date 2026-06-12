@@ -25,6 +25,7 @@ import AppShell from './layout/AppShell';
 import { PageKey, questionBankPages } from './navigation/appNavigation';
 
 const ScheduleCalendar = React.lazy(() => import('./pages/ScheduleCalendar'));
+const QuestionBankTools = React.lazy(() => import('./pages/QuestionBankTools'));
 const QuestionBankImport = React.lazy(() => import('./pages/QuestionBankImport'));
 const QuestionBankPreview = React.lazy(() => import('./pages/QuestionBankPreview'));
 const QuestionBankEdit = React.lazy(() => import('./pages/QuestionBankEdit'));
@@ -103,26 +104,6 @@ const App: React.FC = () => {
     setRefreshKey((key) => key + 1);
   };
 
-  const renderQuestionBankTools = () => (
-    <div>
-      <Card
-        title="题库工具"
-        size="small"
-        extra={<Tag color="blue">兼容入口</Tag>}
-        style={{ marginBottom: 12 }}
-      >
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
-          <Button type="primary" onClick={() => navigateTo('question-bank-import')}>试题导入</Button>
-          <Button onClick={() => navigateTo('question-bank-edit')}>试题编辑</Button>
-          <Button onClick={() => navigateTo('question-bank-audit')}>审核中心</Button>
-          <Button onClick={() => navigateTo('question-bank-preview')}>试题预览</Button>
-          <Button onClick={() => navigateTo('question-bank-paper')}>组卷</Button>
-        </div>
-      </Card>
-      <LazyPage><QuestionBankImport /></LazyPage>
-    </div>
-  );
-
   const renderPage = () => {
     if (error) {
       return (
@@ -154,7 +135,7 @@ const App: React.FC = () => {
       case 'institution': return <InstitutionManager />;
       case 'payment': return <PaymentList />;
       case 'revenue-statistics': return <RevenueStatistics />;
-      case 'question-bank-tools': return renderQuestionBankTools();
+      case 'question-bank-tools': return <LazyPage><QuestionBankTools onNavigate={navigateTo} /></LazyPage>;
       case 'question-bank-import': return <LazyPage><QuestionBankImport /></LazyPage>;
       case 'question-bank-preview': return <LazyPage><QuestionBankPreview /></LazyPage>;
       case 'question-bank-edit': return <LazyPage><QuestionBankEdit /></LazyPage>;

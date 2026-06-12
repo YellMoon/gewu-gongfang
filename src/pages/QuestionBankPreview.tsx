@@ -981,7 +981,7 @@ const QuestionBankPreview: React.FC = () => {
               {!treeVisible && (
                 <Button type="link" icon={<BranchesOutlined />} onClick={() => setTreeVisible(true)}>展开知识点/模型</Button>
               )}
-              <h2>试题预览</h2>
+              <h2>试题库</h2>
               <Select
                 className="qb-subject-select"
                 value={currentSubject}

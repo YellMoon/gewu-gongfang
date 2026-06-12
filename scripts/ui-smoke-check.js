@@ -7,9 +7,10 @@ const screenshotDir = path.join(process.cwd(), 'tmp', 'ui-smoke');
 const routes = [
   // Home renders the default today workbench.
   { path: '/', key: 'home', requiredText: ['今日工作台', '题库问题', '排课列表'] },
-  { path: '/?page=course-calendar', key: 'course-calendar', pageKey: 'course-calendar', requiredText: ['选择老师', '排课'] },
+  { path: '/?page=course-calendar', key: 'course-calendar', pageKey: 'course-calendar', requiredText: ['课程表', '刷新课程信息', '本周'] },
+  { path: '/?page=question-bank-tools', key: 'question-bank-tools', pageKey: 'question-bank-tools', requiredText: ['题库工具', '导入与知识树'] },
   { path: '/?page=question-bank-import', key: 'question-bank-import', pageKey: 'question-bank-import', requiredText: ['拖拽或选择 Word 文件', '讲义格式'] },
-  { path: '/?page=question-bank-preview', key: 'question-bank-preview', pageKey: 'question-bank-preview', requiredText: ['试题预览', '题干搜索'] },
+  { path: '/?page=question-bank-preview', key: 'question-bank-preview', pageKey: 'question-bank-preview', requiredText: ['试题库', '更多筛选'] },
   { path: '/?page=question-bank-paper', key: 'question-bank-paper', pageKey: 'question-bank-paper', requiredText: ['题目数', '总分'] },
   { path: '/?page=revenue-statistics', key: 'revenue-statistics', pageKey: 'revenue-statistics', requiredText: ['应收学费', '老师课时费'] },
   { path: '/?page=student', key: 'student', pageKey: 'student', requiredText: ['学生总数', '添加学生'] },
