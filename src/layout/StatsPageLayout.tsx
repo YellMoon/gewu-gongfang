@@ -24,13 +24,13 @@ const StatsPageLayout: React.FC<StatsPageLayoutProps> = ({
         {metrics}
       </div>
 
-      <Card className="stats-page-layout__summary" size="small">
+      <div className="stats-page-layout__summary">
         {summary}
-      </Card>
+      </div>
 
-      <Card className="stats-page-layout__details" size="small">
+      <div className="stats-page-layout__details">
         {details}
-      </Card>
+      </div>
     </div>
   );
 };

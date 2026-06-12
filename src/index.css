@@ -495,9 +495,7 @@ select,
   gap: var(--app-content-gap, 12px);
 }
 
-.stats-page-layout__filters,
-.stats-page-layout__summary,
-.stats-page-layout__details {
+.stats-page-layout__filters {
   border: 1px solid var(--app-border-color, #d8dee9);
   border-radius: var(--app-radius, 6px);
   box-shadow: var(--app-shadow-soft, 0 8px 24px rgba(23, 32, 51, 0.08));
@@ -511,8 +509,8 @@ select,
   min-width: 0;
 }
 
-.stats-page-layout__summary .ant-card-body,
-.stats-page-layout__details .ant-card-body {
+.stats-page-layout__summary,
+.stats-page-layout__details {
   min-width: 0;
 }
 
