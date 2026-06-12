@@ -55,9 +55,9 @@ function timeToSlot(hour: number, minute: number) {
 }
 
 function slotToTime(slot: number) {
-  const totalMins = slot * SLOT_DURATION;
-  const hour = MIN_START_HOUR + Math.floor(totalMins / 60);
-  const minute = totalMins % 60;
+  const totalMins = MIN_START_HOUR * 60 + slot * SLOT_DURATION;
+  const hour = Math.floor(totalMins / 60);
+  const minute = ((totalMins % 60) + 60) % 60;
   return { hour, minute };
 }
 
@@ -157,8 +157,8 @@ const DailyView: React.FC<DailyViewProps> = ({
   const isHoliday = !!holiday;
   const holidayName = holiday?.name || '';
 
-  const effectiveMaxEndSlot = ((maxHour - MIN_START_HOUR) * 60) / SLOT_DURATION;
-  const earlyOffset = minHour < MIN_START_HOUR ? ((MIN_START_HOUR - minHour) * 60 / SLOT_DURATION * SLOT_HEIGHT) : 0;
+  const minStartSlot = timeToSlot(minHour, 0);
+  const effectiveMaxEndSlot = timeToSlot(maxHour, 0);
   let maxEndSlot = effectiveMaxEndSlot;
   daySchedules.forEach(s => {
     const [, timeStr] = s.end_time.split(' ');
@@ -166,6 +166,27 @@ const DailyView: React.FC<DailyViewProps> = ({
     const endSlot = timeToSlot(endH, endM) + 1;
     if (endSlot > maxEndSlot) maxEndSlot = endSlot;
   });
+  const bodyHeight = Math.max(SLOT_HEIGHT, (maxEndSlot - minStartSlot) * SLOT_HEIGHT);
+
+  const getBodyMinStartSlot = (body: HTMLElement | null | undefined) => {
+    const value = Number(body?.dataset.minStartSlot);
+    return Number.isFinite(value) ? value : minStartSlot;
+  };
+
+  const slotToDisplayTop = (slot: number, bodyMinStartSlot = minStartSlot) => {
+    return (slot - bodyMinStartSlot) * SLOT_HEIGHT;
+  };
+
+  const pointerYToSlot = (y: number, mode: 'floor' | 'round' = 'floor', bodyMinStartSlot = minStartSlot) => {
+    const offsetSlots = mode === 'round'
+      ? Math.round(y / SLOT_HEIGHT)
+      : Math.floor(y / SLOT_HEIGHT);
+    return bodyMinStartSlot + offsetSlots;
+  };
+
+  const clampStartSlot = (slot: number, durationSlots = 0, bodyMinStartSlot = minStartSlot) => {
+    return Math.max(bodyMinStartSlot, Math.min(slot, GLOBAL_MAX_SLOT - durationSlots));
+  };
 
   function getStatusStyle(status: ScheduleStatus, courseColor?: string) {
     const bg = courseColor || DEFAULT_COURSE_COLOR;
@@ -188,7 +209,7 @@ const DailyView: React.FC<DailyViewProps> = ({
     const [endH, endM] = endTime.split(':').map(Number);
     const startSlot = timeToSlot(startH, startM);
     const endSlot = timeToSlot(endH, endM);
-    return { top: startSlot * SLOT_HEIGHT, height: (endSlot - startSlot) * SLOT_HEIGHT, startSlot, endSlot };
+    return { top: slotToDisplayTop(startSlot), height: (endSlot - startSlot) * SLOT_HEIGHT, startSlot, endSlot };
   }
 
   function getCurrentDragPosition(schedule: ScheduleEvent) {
@@ -202,7 +223,7 @@ const DailyView: React.FC<DailyViewProps> = ({
     if (dragState && dragState.schedule.id === schedule.id) {
       // Ctrl+鎷栨嫿锛堝鍒讹級锛氬師课程妗嗕綅缃浐瀹氫笉鍔紝鍙湁铏氬奖璺熼殢榧犳爣
       if (dragState.type === 'move' && dragState.ctrlKey) {
-        return { top: startSlot * SLOT_HEIGHT, height: (endSlot - startSlot) * SLOT_HEIGHT, startSlot, endSlot };
+        return { top: slotToDisplayTop(startSlot), height: (endSlot - startSlot) * SLOT_HEIGHT, startSlot, endSlot };
       }
       // 缁熶竴锛氳櫄褰变笂杈规部瀵瑰簲slot = (mouseY - ghostHeight/2 - bodyRect.top) / SLOT_HEIGHT
       if (dragState.type === 'move' && dayBodyRef.current) {
@@ -210,14 +231,14 @@ const DailyView: React.FC<DailyViewProps> = ({
         const dragGhostHeight = Math.max(24, durationSlots * SLOT_HEIGHT);
         const bodyRect = dayBodyRef.current.getBoundingClientRect();
         const ghostTopY = dragState.currentY - dragGhostHeight / 2;
-        startSlot = Math.max(0, Math.round((ghostTopY - bodyRect.top) / SLOT_HEIGHT));
+        startSlot = clampStartSlot(pointerYToSlot(ghostTopY - bodyRect.top, 'round'), durationSlots);
         endSlot = startSlot + durationSlots;
         // 缁撴潫鏃堕棿涓嶈秴杩?4:00
         if (endSlot > GLOBAL_MAX_SLOT) {
-          startSlot = Math.max(0, GLOBAL_MAX_SLOT - durationSlots);
+          startSlot = clampStartSlot(GLOBAL_MAX_SLOT - durationSlots, durationSlots);
           endSlot = startSlot + durationSlots;
         }
-        return { top: startSlot * SLOT_HEIGHT, height: (endSlot - startSlot) * SLOT_HEIGHT, startSlot, endSlot };
+        return { top: slotToDisplayTop(startSlot), height: (endSlot - startSlot) * SLOT_HEIGHT, startSlot, endSlot };
       }
       const slotDiff = Math.round((dragState.currentY - dragState.startY) / SLOT_HEIGHT);
         
@@ -230,11 +251,11 @@ const DailyView: React.FC<DailyViewProps> = ({
         endSlot += slotDiff;
       }
       
-      startSlot = Math.max(0, startSlot);
+      startSlot = Math.max(minStartSlot, startSlot);
       endSlot = Math.max(startSlot + 1, Math.min(endSlot, GLOBAL_MAX_SLOT));
     }
     
-    return { top: startSlot * SLOT_HEIGHT, height: (endSlot - startSlot) * SLOT_HEIGHT, startSlot, endSlot };
+    return { top: slotToDisplayTop(startSlot), height: (endSlot - startSlot) * SLOT_HEIGHT, startSlot, endSlot };
   }
 
   function handleDrop(e: React.DragEvent) {
@@ -242,7 +263,7 @@ const DailyView: React.FC<DailyViewProps> = ({
     setDragOverSlot(null);
     const rect = e.currentTarget.getBoundingClientRect();
     const y = e.clientY - rect.top;
-    const slot = Math.floor(y / SLOT_HEIGHT);
+    const slot = pointerYToSlot(y);
     const course = (window as any).courseDragData;
     if (course) {
       onDropCourse(course, day, slot);
@@ -253,7 +274,7 @@ const DailyView: React.FC<DailyViewProps> = ({
     e.preventDefault();
     const rect = e.currentTarget.getBoundingClientRect();
     const y = e.clientY - rect.top;
-    const slot = Math.floor(y / SLOT_HEIGHT);
+    const slot = pointerYToSlot(y);
     setDragOverSlot(slot);
   }
 
@@ -325,13 +346,20 @@ const DailyView: React.FC<DailyViewProps> = ({
         // 鈶?缁熶竴slot璁＄畻锛氳櫄褰变笂杈规部瀵瑰簲鏃堕棿 = (mouseY - ghostHeight/2 - bodyRect.top) / SLOT_HEIGHT
         const durationSlots = dragState.endSlot - dragState.startSlot;
         const dragGhostHeight = Math.max(24, durationSlots * SLOT_HEIGHT);
-        let targetSlot = 0;
+        let targetSlot = minStartSlot;
+        let targetMinStartSlot = minStartSlot;
         if (dragState.type === 'move' && targetDayCol) {
           const targetBody = targetDayCol.querySelector('[data-day-body="true"]') as HTMLElement;
           if (targetBody) {
             const bodyRect = targetBody.getBoundingClientRect();
+            const bodyMinStartSlot = getBodyMinStartSlot(targetBody);
+            targetMinStartSlot = bodyMinStartSlot;
             const ghostTopY = upEvent.clientY - dragGhostHeight / 2;
-            targetSlot = Math.max(0, Math.round((ghostTopY - bodyRect.top) / SLOT_HEIGHT));
+            targetSlot = clampStartSlot(
+              pointerYToSlot(ghostTopY - bodyRect.top, 'round', bodyMinStartSlot),
+              durationSlots,
+              bodyMinStartSlot
+            );
           }
         } else {
           // resize: 浣跨敤鍘熸湁鍋忕Щ璁＄畻
@@ -343,19 +371,19 @@ const DailyView: React.FC<DailyViewProps> = ({
         // const globalMaxSlot = ((24 - MIN_START_HOUR) * 60) / SLOT_DURATION;
         
         if (dragState.type === 'move') {
-          if (targetSlot >= 0) {
+          if (targetSlot >= targetMinStartSlot) {
             // 缁撴潫鏃堕棿涓嶈秴杩?4:00锛歴tartSlot + duration <= GLOBAL_MAX_SLOT
             const durationSlots = dragState.endSlot - dragState.startSlot;
             const maxStartSlot = GLOBAL_MAX_SLOT - durationSlots;
-            const adjustedSlot = Math.max(0, Math.min(targetSlot, maxStartSlot));
+            const adjustedSlot = Math.max(targetMinStartSlot, Math.min(targetSlot, maxStartSlot));
             onDragSchedule?.(dragState.schedule, targetDay, adjustedSlot, upEvent.ctrlKey);
           }
         } else if (dragState.type === 'resize-top') {
-          if (targetSlot >= 0 && targetSlot < GLOBAL_MAX_SLOT) {
+          if (targetSlot >= minStartSlot && targetSlot < GLOBAL_MAX_SLOT) {
             onResizeSchedule?.(dragState.schedule, targetSlot, null);
           }
         } else if (dragState.type === 'resize-bottom') {
-          if (targetSlot >= 0) {
+          if (targetSlot >= minStartSlot) {
             // 缁撴潫鏃堕棿涓嶈秴杩?4:00
             const adjustedSlot = Math.min(targetSlot, GLOBAL_MAX_SLOT);
             onResizeSchedule?.(dragState.schedule, null, adjustedSlot);
@@ -457,37 +485,17 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
       <div
         ref={dayBodyRef}
         data-day-body="true"
-        style={{ position: 'relative', height: maxEndSlot * SLOT_HEIGHT, background: 'white', paddingTop: earlyOffset }}
+        data-min-start-slot={minStartSlot}
+        style={{ position: 'relative', height: bodyHeight, background: 'white' }}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
       >
-        {/* 鏃╀簬8鐐圭殑鏃堕棿鏍煎瓙绾匡紙鑷姩鍦╬adding鍖哄煙鍐呭亸绉伙級 */}
-        {earlyOffset > 0 && Array.from({ length: Math.floor((MIN_START_HOUR - minHour) * 60 / SLOT_DURATION / 12) }).filter((_, si) => {
-          const earlyHour = MIN_START_HOUR - (si + 1);
-          const top = (earlyHour - MIN_START_HOUR) * 12 * SLOT_HEIGHT;
-          return top >= -(earlyOffset);
-        }).map((_, si) => {
-          const earlyHour = MIN_START_HOUR - (si + 1);
-          const top = (earlyHour - MIN_START_HOUR) * 12 * SLOT_HEIGHT;
-          return (
-            <div
-              key={`early-${si}`}
-              style={{
-                position: 'absolute',
-                top: top,
-                left: 0,
-                right: 0,
-                height: 1,
-                borderBottom: '1px solid rgba(0,0,0,0.08)'
-              }}
-            />
-          );
-        })}
-        {/* 8鐐瑰強涔嬪悗鐨勬椂闂存牸瀛愮嚎鏉?- 60鍒嗛挓闂撮殧锛屽崐閫忔槑锛堣嚜鍔ㄥ欢浼歌嚦maxEndSlot锛?*/}
-        {Array.from({ length: Math.ceil(maxEndSlot / 12) }).map((_, slotIdx) => {
-          const lineTop = slotIdx * 12 * SLOT_HEIGHT;
-          if (lineTop >= maxEndSlot * SLOT_HEIGHT) return null;
+        {/* 时间格子线：动态最早时间作为表格起点，避免早于 8 点的课程压进日期表头 */}
+        {Array.from({ length: Math.ceil((maxEndSlot - minStartSlot) / 12) + 1 }).map((_, slotIdx) => {
+          const lineSlot = minStartSlot + slotIdx * 12;
+          const lineTop = slotToDisplayTop(lineSlot);
+          if (lineTop > bodyHeight) return null;
           return (
             <div
               key={slotIdx}
@@ -505,7 +513,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
         {/* 缁撴潫鏃堕棿搴曠嚎锛氱‘淇濊秴鍑烘渶鍚庝竴鏍兼椂浠嶆湁搴曡竟绾?*/}
         <div style={{
           position: 'absolute',
-          top: maxEndSlot * SLOT_HEIGHT - 1,
+          top: bodyHeight - 1,
           left: 0, right: 0,
           height: 1,
           borderBottom: '1px solid rgba(0,0,0,0.08)'
@@ -518,14 +526,13 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
           const startStr = formatTime(hour, minute);
           const durMin = dragCourse?.default_duration_minutes || 120;
           const endSlot = dragOverSlot + Math.floor(durMin / 5);
-          const endH = MIN_START_HOUR + Math.floor(endSlot * 5 / 60);
-          const endM = (endSlot * 5) % 60;
+          const { hour: endH, minute: endM } = slotToTime(endSlot);
           const endStr = formatTime(endH, endM);
           const roomInfo = dragCourse?.room_name || dragCourse?.room_id || '';
           return (
             <div style={{
               position: 'absolute',
-              top: dragOverSlot * SLOT_HEIGHT,
+              top: slotToDisplayTop(dragOverSlot),
               left: 4,
               right: 4,
               height: Math.max(24, Math.floor(durMin / 5) * SLOT_HEIGHT),
@@ -647,10 +654,8 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
                       {isDragging ? (() => {
                         const cs = pos.startSlot;
                         const ce = pos.endSlot;
-                        const sh = Math.floor(cs / 12) + 8;
-                        const sm = (cs % 12) * 5;
-                        const eh = Math.floor(ce / 12) + 8;
-                        const em = (ce % 12) * 5;
+                        const { hour: sh, minute: sm } = slotToTime(cs);
+                        const { hour: eh, minute: em } = slotToTime(ce);
                         const st = `${String(sh).padStart(2,'0')}:${String(sm).padStart(2,'0')}`;
                         const et = `${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}`;
                         const isCtrlDrag = dragState.ctrlKey;
@@ -701,10 +706,15 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
         
         // 鈶?铏氬奖鏃堕棿鍩轰簬涓婅竟娌?ghostY=currentY-ghostHeight/2)璁＄畻锛岃€岄潪榧犳爣涓績
         let ghostStartSlot = 0;
+        let ghostMinStartSlot = minStartSlot;
         if (dayBodyRef.current) {
           const bodyRect = dayBodyRef.current.getBoundingClientRect();
           const ghostTopY = dragState.currentY - ghostHeight / 2;
-          ghostStartSlot = Math.max(0, Math.round((ghostTopY - bodyRect.top) / SLOT_HEIGHT));
+          ghostStartSlot = clampStartSlot(
+            pointerYToSlot(ghostTopY - bodyRect.top, 'round', ghostMinStartSlot),
+            durationSlots,
+            ghostMinStartSlot
+          );
         }
         // 鈶?妫€娴嬫槸鍚﹁法鏃?璺ㄥ懆锛岀敤鐩爣day body閲嶇畻
         try {
@@ -715,8 +725,13 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
               const targetBody = dayCol.querySelector('[data-day-body="true"]') as HTMLElement;
               if (targetBody) {
                 const bodyRect = targetBody.getBoundingClientRect();
+                ghostMinStartSlot = getBodyMinStartSlot(targetBody);
                 const ghostTopY = dragState.currentY - ghostHeight / 2;
-                ghostStartSlot = Math.max(0, Math.round((ghostTopY - bodyRect.top) / SLOT_HEIGHT));
+                ghostStartSlot = clampStartSlot(
+                  pointerYToSlot(ghostTopY - bodyRect.top, 'round', ghostMinStartSlot),
+                  durationSlots,
+                  ghostMinStartSlot
+                );
               }
             }
           }
@@ -725,13 +740,11 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
         const ghostEndSlot = ghostStartSlot + durationSlots;
         // 缁撴潫鏃堕棿涓嶈秴杩?4:00
         if (ghostEndSlot > GLOBAL_MAX_SLOT) {
-          ghostStartSlot = Math.max(0, GLOBAL_MAX_SLOT - durationSlots);
+          ghostStartSlot = clampStartSlot(GLOBAL_MAX_SLOT - durationSlots, durationSlots, ghostMinStartSlot);
         }
-        const ghostEndSlotClamped = Math.min(ghostEndSlot, GLOBAL_MAX_SLOT);
-        const sh = Math.floor(ghostStartSlot / 12) + 8;
-        const sm = (ghostStartSlot % 12) * 5;
-        const eh = Math.floor(ghostEndSlotClamped / 12) + 8;
-        const em = (ghostEndSlotClamped % 12) * 5;
+        const ghostEndSlotClamped = Math.min(ghostStartSlot + durationSlots, GLOBAL_MAX_SLOT);
+        const { hour: sh, minute: sm } = slotToTime(ghostStartSlot);
+        const { hour: eh, minute: em } = slotToTime(ghostEndSlotClamped);
         const startTimeStr = String(sh).padStart(2,'0') + ':' + String(sm).padStart(2,'0');
         const endTimeStr = String(eh).padStart(2,'0') + ':' + String(em).padStart(2,'0');
         let ghostX = (dragState.currentX || 0) - ghostWidth / 2;
