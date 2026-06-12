@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Table, Button, Modal, Form, Input, InputNumber,
-  Space, message, Popconfirm, Card, Row, Col, Statistic, Divider
+  Table, Button, Form, Input, InputNumber,
+  Space, message, Popconfirm, Row, Col, Statistic
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { Institution } from '../types';
+import DataPageLayout from '../layout/DataPageLayout';
 
 const InstitutionManager: React.FC = () => {
   const [institutions, setInstitutions] = useState<Institution[]>([]);
@@ -95,53 +96,45 @@ const InstitutionManager: React.FC = () => {
   ];
 
   return (
-    <div>
-      <Card style={{ marginBottom: 16 }}>
-        <Row gutter={16}>
-          <Col span={8}>
+    <DataPageLayout
+      toolbar={(
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Space size={18} wrap>
             <Statistic 
               title="机构总数" 
               value={institutions.length} 
-              prefix="🏢"
             />
-          </Col>
-          <Col span={8}>
             <Statistic 
               title="机构关联学生数" 
               value={students.filter((s: any) => s.institution_id).length} 
-              prefix="👨‍🎓"
             />
-          </Col>
-          <Col span={8}>
             <Statistic 
               title="机构关联课程数" 
               value={courses.filter((c: any) => c.institution_id).length} 
-              prefix="📚"
             />
-          </Col>
-        </Row>
-      </Card>
-      
-      <Card>
-        <div style={{ marginBottom: 16 }}>
+          </Space>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>添加机构</Button>
         </div>
-        
+      )}
+      table={(
         <Table 
           columns={columns} 
           dataSource={institutions} 
           rowKey="id"
           pagination={{ pageSize: 20 }}
         />
-      </Card>
-
-      <Modal
-        title={editingInst ? '编辑机构' : '添加机构'}
-        open={modalVisible}
-        onOk={handleSubmit}
-        onCancel={() => setModalVisible(false)}
-        width={600}
-      >
+      )}
+      drawerOpen={modalVisible}
+      drawerTitle={editingInst ? '编辑机构' : '添加机构'}
+      drawerWidth={600}
+      onDrawerClose={() => setModalVisible(false)}
+      drawerFooter={(
+        <div className="data-page-layout__drawer-footer">
+          <Button onClick={() => setModalVisible(false)}>取消</Button>
+          <Button type="primary" onClick={handleSubmit}>保存</Button>
+        </div>
+      )}
+      drawerContent={(
         <Form form={form} layout="vertical">
           <Form.Item name="name" label="机构名称" rules={[{ required: true, message: '请输入机构名称' }]}>
             <Input placeholder="请输入机构名称" />
@@ -168,8 +161,8 @@ const InstitutionManager: React.FC = () => {
             <Input.TextArea rows={3} placeholder="其他备注信息" />
           </Form.Item>
         </Form>
-      </Modal>
-    </div>
+      )}
+    />
   );
 };
 

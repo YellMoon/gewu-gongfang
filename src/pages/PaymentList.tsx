@@ -1,13 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  Table, Button, Modal, Form, Input, InputNumber, Select as AntSelect,
-  Space, message, Popconfirm, Tag, Card, Row, Col, DatePicker, Divider, Statistic
+  Table, Button, Form, Input, InputNumber, Select as AntSelect,
+  Space, message, Popconfirm, Tag, Row, Col, DatePicker, Statistic
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { Payment, Student, PaymentType } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
+import DataPageLayout from '../layout/DataPageLayout';
 
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Option } = Select;
@@ -140,61 +141,51 @@ const PaymentList: React.FC = () => {
   const paymentMethods = ['现金', '微信', '支付宝', '银行转账', '其他'];
 
   return (
-    <div>
-      <Card style={{ marginBottom: 16 }}>
-        <Row gutter={16}>
-          <Col span={6}>
+    <DataPageLayout
+      toolbar={(
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Space size={18} wrap>
             <Statistic 
               title="总缴费笔数" 
               value={payments.length} 
-              prefix="💰" 
             />
-          </Col>
-          <Col span={6}>
             <Statistic 
               title="总缴费金额" 
               value={payments.reduce((sum, p) => sum + p.amount, 0)} 
               prefix="¥"
               precision={2}
             />
-          </Col>
-          <Col span={6}>
             <Statistic 
               title="学费缴费笔数" 
               value={payments.filter(p => p.payment_type === PaymentType.TUITION).length} 
-              prefix="💵"
             />
-          </Col>
-          <Col span={6}>
             <Statistic 
               title="课时缴费笔数" 
               value={payments.filter(p => p.payment_type === PaymentType.HOURS).length} 
-              prefix="⏰"
             />
-          </Col>
-        </Row>
-      </Card>
-
-      <Card>
-        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
+          </Space>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>添加缴费记录</Button>
         </div>
-        
+      )}
+      table={(
         <Table 
           columns={columns} 
           dataSource={payments} 
           rowKey="id"
           pagination={{ pageSize: 20 }}
         />
-      </Card>
-
-      <Modal
-        title={editingPayment ? '编辑缴费记录' : '添加缴费记录'}
-        open={modalVisible}
-        onOk={handleSubmit}
-        onCancel={() => setModalVisible(false)}
-        width={600}
-      >
+      )}
+      drawerOpen={modalVisible}
+      drawerTitle={editingPayment ? '编辑缴费记录' : '添加缴费记录'}
+      drawerWidth={600}
+      onDrawerClose={() => setModalVisible(false)}
+      drawerFooter={(
+        <div className="data-page-layout__drawer-footer">
+          <Button onClick={() => setModalVisible(false)}>取消</Button>
+          <Button type="primary" onClick={handleSubmit}>保存</Button>
+        </div>
+      )}
+      drawerContent={(
         <Form form={form} layout="vertical">
           <Row gutter={16}>
             <Col span={12}>
@@ -260,8 +251,8 @@ const PaymentList: React.FC = () => {
             <Input.TextArea rows={3} placeholder="其他备注信息" />
           </Form.Item>
         </Form>
-      </Modal>
-    </div>
+      )}
+    />
   );
 };
 

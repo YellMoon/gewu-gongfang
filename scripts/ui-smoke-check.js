@@ -13,9 +13,13 @@ const routes = [
   { path: '/?page=question-bank-preview', key: 'question-bank-preview', pageKey: 'question-bank-preview', requiredText: ['试题库', '更多筛选'] },
   { path: '/?page=question-bank-paper', key: 'question-bank-paper', pageKey: 'question-bank-paper', requiredText: ['题目数', '总分'] },
   { path: '/?page=revenue-statistics', key: 'revenue-statistics', pageKey: 'revenue-statistics', requiredText: ['应收学费', '老师课时费'] },
+  { path: '/?page=payment', key: 'payment', pageKey: 'payment', requiredText: ['总缴费笔数', '添加缴费记录'] },
   { path: '/?page=student', key: 'student', pageKey: 'student', requiredText: ['学生总数', '添加学生'] },
   { path: '/?page=teacher', key: 'teacher', pageKey: 'teacher', requiredText: ['老师总数', '添加老师'] },
   { path: '/?page=course-info', key: 'course-info', pageKey: 'course-info', requiredText: ['课程总数', '添加课程'] },
+  { path: '/?page=school', key: 'school', pageKey: 'school', requiredText: ['学校总数', '添加学校'] },
+  { path: '/?page=address', key: 'address', pageKey: 'address', requiredText: ['地址总数', '添加地址'] },
+  { path: '/?page=institution', key: 'institution', pageKey: 'institution', requiredText: ['机构总数', '添加机构'] },
   { path: '/?page=cloud-sync', key: 'cloud-sync', pageKey: 'cloud-sync', requiredText: ['同步控制', '待同步操作'] },
 ];
 

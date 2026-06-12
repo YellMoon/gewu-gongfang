@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Table, Button, Modal, Form, Input,
-  Space, message, Popconfirm, Card, Row, Col, Statistic
+  Table, Button, Form, Input,
+  Space, message, Popconfirm, Statistic
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EnvironmentOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { Room } from '../types';
+import DataPageLayout from '../layout/DataPageLayout';
 
 const RoomManager: React.FC = () => {
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -121,48 +122,42 @@ const RoomManager: React.FC = () => {
   });
 
   return (
-    <div>
-      <Card style={{ marginBottom: 16 }}>
-        <Row gutter={16}>
-          <Col span={8}>
-            <Statistic title="地址总数" value={rooms.length} prefix="📍" />
-          </Col>
-          <Col span={8}>
+    <DataPageLayout
+      toolbar={(
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Space size={18} wrap>
+            <Statistic title="地址总数" value={rooms.length} />
             <Statistic
               title="关联课程数"
               value={courses.filter((c: any) => c.room_name || c.room_id).length}
-              prefix="📚"
             />
-          </Col>
-          <Col span={8}>
             <Statistic
               title="未关联课程数"
               value={courses.filter((c: any) => !c.room_name && !c.room_id).length}
-              prefix="⚠️"
             />
-          </Col>
-        </Row>
-      </Card>
-
-      <Card
-        title="上课地址管理"
-        extra={<Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>添加地址</Button>}
-      >
+          </Space>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>添加地址</Button>
+        </div>
+      )}
+      table={(
         <Table
           columns={columns}
           dataSource={roomWithCourseCount}
           rowKey="id"
           pagination={{ pageSize: 20, showSizeChanger: true }}
         />
-      </Card>
-
-      <Modal
-        title={editingRoom ? '编辑上课地址' : '添加上课地址'}
-        open={modalVisible}
-        onOk={handleSubmit}
-        onCancel={() => setModalVisible(false)}
-        destroyOnClose
-      >
+      )}
+      drawerOpen={modalVisible}
+      drawerTitle={editingRoom ? '编辑上课地址' : '添加上课地址'}
+      onDrawerClose={() => setModalVisible(false)}
+      destroyOnClose
+      drawerFooter={(
+        <div className="data-page-layout__drawer-footer">
+          <Button onClick={() => setModalVisible(false)}>取消</Button>
+          <Button type="primary" onClick={handleSubmit}>保存</Button>
+        </div>
+      )}
+      drawerContent={(
         <Form form={form} layout="vertical">
           <Form.Item
             name="name"
@@ -175,8 +170,8 @@ const RoomManager: React.FC = () => {
             <Input placeholder="如：教学楼3楼302室（可选）" />
           </Form.Item>
         </Form>
-      </Modal>
-    </div>
+      )}
+    />
   );
 };
 

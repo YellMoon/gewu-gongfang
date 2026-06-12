@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, Input, InputNumber, Space, Popconfirm, message, Tag } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined, BankOutlined } from '@ant-design/icons';
+import { Table, Button, Form, Input, Space, Popconfirm, message, Tag, Statistic } from 'antd';
+import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
+import DataPageLayout from '../layout/DataPageLayout';
 
 let dbService: any = null;
 
@@ -123,35 +124,37 @@ const SchoolManager: React.FC = () => {
   ];
 
   return (
-    <div>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h3 style={{ margin: 0 }}><BankOutlined /> 学校管理</h3>
-          <p style={{ margin: '4px 0 0', color: '#666', fontSize: 13 }}>
-            管理所有学校信息，录入学生时可直接选择
-          </p>
+    <DataPageLayout
+      toolbar={(
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Space size={18} wrap>
+            <Statistic title="学校总数" value={schools.length} />
+            <Statistic title="关联学生" value={schools.reduce((sum, school) => sum + Number(school.count || 0), 0)} suffix="人" />
+          </Space>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+            添加学校
+          </Button>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          添加学校
-        </Button>
-      </div>
-
-      <Table
-        columns={columns}
-        dataSource={schools}
-        rowKey="id"
-        pagination={{ pageSize: 20 }}
-        locale={{ emptyText: '暂无学校数据，点击上方按钮添加' }}
-      />
-
-      <Modal
-        title={editingSchool ? '编辑学校' : '添加学校'}
-        open={modalVisible}
-        onOk={handleSubmit}
-        onCancel={() => setModalVisible(false)}
-        okText="保存"
-        cancelText="取消"
-      >
+      )}
+      table={(
+        <Table
+          columns={columns}
+          dataSource={schools}
+          rowKey="id"
+          pagination={{ pageSize: 20 }}
+          locale={{ emptyText: '暂无学校数据，点击上方按钮添加' }}
+        />
+      )}
+      drawerOpen={modalVisible}
+      drawerTitle={editingSchool ? '编辑学校' : '添加学校'}
+      onDrawerClose={() => setModalVisible(false)}
+      drawerFooter={(
+        <div className="data-page-layout__drawer-footer">
+          <Button onClick={() => setModalVisible(false)}>取消</Button>
+          <Button type="primary" onClick={handleSubmit}>保存</Button>
+        </div>
+      )}
+      drawerContent={(
         <Form form={form} layout="vertical">
           <Form.Item 
             name="name" 
@@ -166,8 +169,8 @@ const SchoolManager: React.FC = () => {
             </Form.Item>
           )}
         </Form>
-      </Modal>
-    </div>
+      )}
+    />
   );
 };
 
