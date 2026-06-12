@@ -169,6 +169,8 @@ const ScheduleList: React.FC = () => {
             '星期': idx === 0 ? dayLabel : '',
             '时间': `${startTime}-${endTime}`,
             '课程名称': s.course_name || course?.name || '',
+            '年份': s.course_year || course?.year || '',
+            '学期': s.course_semester || course?.semester || '',
             '老师': teacherName,
             '学生': studentNames.join(', '),
             '上课地址': s.room || course?.room_name || '',
@@ -191,6 +193,8 @@ const ScheduleList: React.FC = () => {
       { wch: 10 }, // 鏄熸湡
       { wch: 14 }, // 鏃堕棿
       { wch: 30 }, // 璇剧▼鍚嶇О
+      { wch: 10 }, // 年份
+      { wch: 12 }, // 学期
       { wch: 12 }, // 鑰佸笀
       { wch: 25 }, // 瀛︾敓
       { wch: 18 }, // 涓婅鍦板潃
@@ -233,6 +237,14 @@ const ScheduleList: React.FC = () => {
     return courses.find(c => c.id === courseId)?.name || '未知课程';
   };
 
+  const getCourseMeta = (record: any) => {
+    const course = courses.find(c => c.id === record.course_id);
+    return {
+      year: record.course_year || course?.year || '-',
+      semester: record.course_semester || course?.semester || '-',
+    };
+  };
+
   const columns: ColumnsType<any> = [
     { title: '#', key: 'index', width: 50, render: (_, __, index) => index + 1 },
     { title: '日期', key: 'date', width: 100, render: (_, record) => dayjs(record.start_time).format('YYYY-MM-DD') },
@@ -242,6 +254,8 @@ const ScheduleList: React.FC = () => {
       return `${s.format('HH:mm')} - ${e.format('HH:mm')}`;
     } },
     { title: '课程', dataIndex: 'course_id', key: 'course_id', width: 160, render: (id: string) => getCourseName(id) },
+    { title: '年份', key: 'course_year', width: 80, render: (_, record) => getCourseMeta(record).year },
+    { title: '学期', key: 'course_semester', width: 90, render: (_, record) => getCourseMeta(record).semester },
     { title: '老师', key: 'teacher', width: 90, render: (_, record) => {
       const course = courses.find(c => c.id === record.course_id);
       return getTeacherName(course?.teacher_id || '');
@@ -317,7 +331,7 @@ const ScheduleList: React.FC = () => {
           dataSource={filteredSchedules}
           rowKey="id"
           pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` }}
-          scroll={{ x: 1100 }}
+          scroll={{ x: 1280 }}
           size="small"
         />
       )}

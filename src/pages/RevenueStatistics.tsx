@@ -4,10 +4,12 @@ import {
   Card,
   Checkbox,
   Col,
+  Collapse,
   DatePicker,
   Divider,
   Empty,
   Row,
+  Segmented,
   Select as AntSelect,
   Space,
   Statistic,
@@ -97,6 +99,7 @@ const RevenueStatistics: React.FC = () => {
   const [filterStudentId, setFilterStudentId] = useState<string | undefined>(undefined);
   const [filterTeacherId, setFilterTeacherId] = useState<string | undefined>(undefined);
   const [filterCourseTypes, setFilterCourseTypes] = useState<CourseType[]>([]);
+  const [detailDisplayMode, setDetailDisplayMode] = useState<'separate' | 'grouped'>('separate');
   const [visibleTeacherDetailColumns, setVisibleTeacherDetailColumns] = useState<string[]>([
     'date',
     'timeRange',
@@ -370,7 +373,7 @@ const RevenueStatistics: React.FC = () => {
     { title: '上课日期', dataIndex: 'date', key: 'date', width: 110, fixed: 'left' as const },
     { title: '时间段', dataIndex: 'timeRange', key: 'timeRange', width: 110 },
     { title: '学生', dataIndex: 'studentName', key: 'studentName', width: 120 },
-    { title: '科目/课程', dataIndex: 'courseName', key: 'courseName', width: 180 },
+    { title: '课程', dataIndex: 'courseName', key: 'courseName', width: 180 },
     { title: '课程类型', dataIndex: 'courseTypeName', key: 'courseTypeName', width: 100 },
     { title: '老师', dataIndex: 'teacherName', key: 'teacherName', width: 120 },
     { title: '时长', dataIndex: 'durationHours', key: 'durationHours', width: 90, render: (value: number) => `${roundMoney(value)} 小时` },
@@ -409,7 +412,7 @@ const RevenueStatistics: React.FC = () => {
     { title: '上课日期', dataIndex: 'date', key: 'date', width: 110, fixed: 'left' as const },
     { title: '时间段', dataIndex: 'timeRange', key: 'timeRange', width: 110 },
     { title: '老师', dataIndex: 'teacherName', key: 'teacherName', width: 120 },
-    { title: '科目/课程', dataIndex: 'courseName', key: 'courseName', width: 180 },
+    { title: '课程', dataIndex: 'courseName', key: 'courseName', width: 180 },
     { title: '课程类型', dataIndex: 'courseTypeName', key: 'courseTypeName', width: 100 },
     { title: '学生', dataIndex: 'studentNames', key: 'studentNames', width: 220 },
     { title: '学生人数', dataIndex: 'studentCount', key: 'studentCount', width: 90 },
@@ -483,13 +486,6 @@ const RevenueStatistics: React.FC = () => {
             </Col>
           )}
           <Col flex="auto" />
-          <Col>
-            <Space wrap>
-              <Button icon={<BarChartOutlined />} onClick={() => setShowChart(showChart === 'bar' ? null : 'bar')}>班型收入图</Button>
-              <Button icon={<PieChartOutlined />} onClick={() => setShowChart(showChart === 'pie' ? null : 'pie')}>来源占比图</Button>
-              <Button icon={<LineChartOutlined />} onClick={() => setShowChart(showChart === 'line' ? null : 'line')}>月度趋势图</Button>
-            </Space>
-          </Col>
         </Row>
 
         <Divider style={{ margin: '12px 0' }} />
@@ -578,8 +574,205 @@ const RevenueStatistics: React.FC = () => {
     </>
   );
 
-  const summaryNode = (
+  const panelCardStyle: React.CSSProperties = {
+    marginTop: 12,
+    border: '1px solid #d8dee9',
+    boxShadow: '0 1px 6px rgba(15, 23, 42, 0.04)',
+  };
+  const sectionPanelStyle: React.CSSProperties = {
+    ...panelCardStyle,
+    padding: 14,
+    borderRadius: 8,
+    background: '#fff',
+  };
+  const sectionHeaderStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 12,
+    fontWeight: 600,
+  };
+  const subPanelStyle: React.CSSProperties = {
+    padding: 12,
+    border: '1px solid #e5e7eb',
+    borderRadius: 6,
+    background: '#fff',
+  };
+  const subPanelTitleStyle: React.CSSProperties = {
+    marginBottom: 10,
+    fontWeight: 600,
+    color: '#374151',
+  };
+
+  const teacherGroups = teacherIncomeStats.map(summary => ({
+    summary,
+    details: teacherDetails.filter(detail => detail.teacherId === summary.teacherId),
+  }));
+
+  const studentGroups = studentStats.map(summary => ({
+    summary,
+    details: studentDetails.filter(detail => detail.studentId === summary.studentId),
+  }));
+
+  const renderSeparateFinancialTables = () => (
+    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      <div style={{ ...sectionPanelStyle, marginTop: 0, borderLeft: '4px solid #faad14' }}>
+        <div style={sectionHeaderStyle}>老师课时费{filterTeacherId ? '（已筛选）' : ''}</div>
+        <div style={subPanelStyle}>
+          <div style={subPanelTitleStyle}>课时费汇总</div>
+          {teacherIncomeStats.length > 0 ? (
+            <Table columns={teacherColumns} dataSource={teacherIncomeStats} rowKey="teacherId" pagination={{ pageSize: 10 }} size="small" />
+          ) : (
+            <Empty description="暂无老师课时费数据" />
+          )}
+        </div>
+        <div style={{ ...subPanelStyle, marginTop: 12 }}>
+          <div style={{ ...sectionHeaderStyle, marginBottom: 10 }}>
+            <span>课时费明细</span>
+            {renderColumnSettings(allTeacherDetailColumns, visibleTeacherDetailColumns, setVisibleTeacherDetailColumns)}
+          </div>
+          {teacherDetails.length > 0 ? (
+            <Table
+              columns={teacherDetailColumns}
+              dataSource={teacherDetails}
+              rowKey="key"
+              pagination={{ pageSize: 20 }}
+              size="small"
+              scroll={{ x: tableScrollX(teacherDetailColumns) }}
+            />
+          ) : (
+            <Empty description="暂无老师课时费明细" />
+          )}
+        </div>
+      </div>
+
+      <div style={{ ...sectionPanelStyle, borderLeft: '4px solid #52c41a' }}>
+        <div style={sectionHeaderStyle}>学生学费{filterStudentId ? '（已筛选）' : ''}</div>
+        <div style={subPanelStyle}>
+          <div style={subPanelTitleStyle}>学费汇总</div>
+          {studentStats.length > 0 ? (
+            <Table columns={studentColumns} dataSource={studentStats} rowKey="studentId" pagination={{ pageSize: 10 }} size="small" />
+          ) : (
+            <Empty description="暂无学生学费数据" />
+          )}
+        </div>
+        <div style={{ ...subPanelStyle, marginTop: 12 }}>
+          <div style={{ ...sectionHeaderStyle, marginBottom: 10 }}>
+            <span>学费明细</span>
+            {renderColumnSettings(allStudentDetailColumns, visibleStudentDetailColumns, setVisibleStudentDetailColumns)}
+          </div>
+          {studentDetails.length > 0 ? (
+            <Table
+              columns={studentDetailColumns}
+              dataSource={studentDetails}
+              rowKey="key"
+              pagination={{ pageSize: 20 }}
+              size="small"
+              scroll={{ x: tableScrollX(studentDetailColumns) }}
+            />
+          ) : (
+            <Empty description="暂无学生课程费用明细" />
+          )}
+        </div>
+      </div>
+    </Space>
+  );
+
+  const renderGroupedFinancialTables = () => (
+    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      <div style={{ ...sectionPanelStyle, marginTop: 0, borderLeft: '4px solid #faad14' }}>
+        <div style={sectionHeaderStyle}>老师课时费</div>
+        {teacherGroups.length > 0 ? (
+          <Row gutter={[16, 16]}>
+            {teacherGroups.map(({ summary, details }) => (
+              <Col span={24} key={summary.teacherId}>
+                <div style={subPanelStyle}>
+                  <div style={sectionHeaderStyle}>
+                    <span>{summary.teacherName}</span>
+                    <Tag color="orange">合计 ¥{summary.total.toFixed(2)}</Tag>
+                  </div>
+                  <Table
+                    columns={teacherDetailColumns}
+                    dataSource={details}
+                    rowKey="key"
+                    pagination={false}
+                    size="small"
+                    scroll={{ x: tableScrollX(teacherDetailColumns) }}
+                    summary={() => (
+                      <Table.Summary.Row>
+                        <Table.Summary.Cell index={0} colSpan={teacherDetailColumns.length}>
+                          <Space wrap>
+                            <Text strong>汇总</Text>
+                            <Tag>{summary.courseCount} 节</Tag>
+                            <Tag>{roundMoney(summary.durationHours)} 小时</Tag>
+                            <Tag>{summary.studentCount} 人次</Tag>
+                            <Tag color="orange">课时费 ¥{summary.total.toFixed(2)}</Tag>
+                          </Space>
+                        </Table.Summary.Cell>
+                      </Table.Summary.Row>
+                    )}
+                  />
+                </div>
+              </Col>
+            ))}
+          </Row>
+        ) : (
+          <Empty description="暂无老师课时费数据" />
+        )}
+      </div>
+
+      <div style={{ ...sectionPanelStyle, borderLeft: '4px solid #52c41a' }}>
+        <div style={sectionHeaderStyle}>学生学费</div>
+        {studentGroups.length > 0 ? (
+          <Row gutter={[16, 16]}>
+            {studentGroups.map(({ summary, details }) => (
+              <Col span={24} key={summary.studentId}>
+                <div style={subPanelStyle}>
+                  <div style={sectionHeaderStyle}>
+                    <span>{summary.studentName}</span>
+                    <Tag color="green">合计 ¥{summary.total.toFixed(2)}</Tag>
+                  </div>
+                  <Table
+                    columns={studentDetailColumns}
+                    dataSource={details}
+                    rowKey="key"
+                    pagination={false}
+                    size="small"
+                    scroll={{ x: tableScrollX(studentDetailColumns) }}
+                    summary={() => (
+                      <Table.Summary.Row>
+                        <Table.Summary.Cell index={0} colSpan={studentDetailColumns.length}>
+                          <Space wrap>
+                            <Text strong>汇总</Text>
+                            <Tag>{summary.courseCount} 次</Tag>
+                            <Tag>{roundMoney(summary.durationHours)} 小时</Tag>
+                            <Tag color="green">学费 ¥{summary.total.toFixed(2)}</Tag>
+                            <Tag color="orange">课时费 ¥{summary.teacherFeeTotal.toFixed(2)}</Tag>
+                          </Space>
+                        </Table.Summary.Cell>
+                      </Table.Summary.Row>
+                    )}
+                  />
+                </div>
+              </Col>
+            ))}
+          </Row>
+        ) : (
+          <Empty description="暂无学生学费数据" />
+        )}
+      </div>
+    </Space>
+  );
+
+  const analysisNode = (
     <>
+      <Space wrap style={{ marginBottom: 12 }}>
+        <Button icon={<BarChartOutlined />} onClick={() => setShowChart(showChart === 'bar' ? null : 'bar')}>班型收入图</Button>
+        <Button icon={<PieChartOutlined />} onClick={() => setShowChart(showChart === 'pie' ? null : 'pie')}>来源占比图</Button>
+        <Button icon={<LineChartOutlined />} onClick={() => setShowChart(showChart === 'line' ? null : 'line')}>月度趋势图</Button>
+      </Space>
+
       {showChart && stats && stats.total > 0 && (
         <Card
           title={
@@ -605,7 +798,7 @@ const RevenueStatistics: React.FC = () => {
         </Card>
       )}
 
-      {stats && stats.total > 0 && (
+      {stats && stats.total > 0 ? (
         <Row gutter={16}>
           <Col span={12}>
             <Card title="按班型统计" size="small" style={{ marginBottom: 16 }}>
@@ -638,77 +831,47 @@ const RevenueStatistics: React.FC = () => {
             </Card>
           </Col>
         </Row>
+      ) : (
+        <Empty description="暂无费用构成数据" />
       )}
-
     </>
   );
 
   const detailsNode = (
-    <>
-
-      <Card title={`老师课时费汇总${filterTeacherId ? '（已筛选）' : ''}`} size="small" style={{ marginTop: 16 }}>
-        {teacherIncomeStats.length > 0 ? (
-          <Table columns={teacherColumns} dataSource={teacherIncomeStats} rowKey="teacherId" pagination={{ pageSize: 10 }} size="small" />
-        ) : (
-          <Empty description="暂无老师课时费数据" />
-        )}
-      </Card>
-
-      <Card
-        title="老师课时费明细"
-        size="small"
-        style={{ marginTop: 16 }}
-        extra={renderColumnSettings(allTeacherDetailColumns, visibleTeacherDetailColumns, setVisibleTeacherDetailColumns)}
-      >
-        {teacherDetails.length > 0 ? (
-          <Table
-            columns={teacherDetailColumns}
-            dataSource={teacherDetails}
-            rowKey="key"
-            pagination={{ pageSize: 20 }}
-            size="small"
-            scroll={{ x: tableScrollX(teacherDetailColumns) }}
-          />
-        ) : (
-          <Empty description="暂无老师课时费明细" />
-        )}
-      </Card>
-
-      <Card title={`学生学费汇总${filterStudentId ? '（已筛选）' : ''}`} size="small" style={{ marginTop: 16 }}>
-        {studentStats.length > 0 ? (
-          <Table columns={studentColumns} dataSource={studentStats} rowKey="studentId" pagination={{ pageSize: 10 }} size="small" />
-        ) : (
-          <Empty description="暂无学生学费数据" />
-        )}
-      </Card>
-
-      <Card
-        title="学生课程费用明细"
-        size="small"
-        style={{ marginTop: 16 }}
-        extra={renderColumnSettings(allStudentDetailColumns, visibleStudentDetailColumns, setVisibleStudentDetailColumns)}
-      >
-        {studentDetails.length > 0 ? (
-          <Table
-            columns={studentDetailColumns}
-            dataSource={studentDetails}
-            rowKey="key"
-            pagination={{ pageSize: 20 }}
-            size="small"
-            scroll={{ x: tableScrollX(studentDetailColumns) }}
-          />
-        ) : (
-          <Empty description="暂无学生课程费用明细" />
-        )}
-      </Card>
-    </>
+    <Collapse
+      defaultActiveKey={['financial-tables', 'analysis']}
+      items={[
+        {
+          key: 'financial-tables',
+          label: '老师和学生的明细与汇总表',
+          extra: (
+            <Segmented
+              size="small"
+              value={detailDisplayMode}
+              onChange={(value) => setDetailDisplayMode(value as 'separate' | 'grouped')}
+              onClick={(event) => event.stopPropagation()}
+              options={[
+                { label: '分开显示', value: 'separate' },
+                { label: '按老师/学生显示', value: 'grouped' },
+              ]}
+            />
+          ),
+          children: detailDisplayMode === 'separate' ? renderSeparateFinancialTables() : renderGroupedFinancialTables(),
+        },
+        {
+          key: 'analysis',
+          label: '费用构成分析',
+          children: analysisNode,
+        },
+      ]}
+    />
   );
 
   return (
     <StatsPageLayout
       filters={filtersNode}
       metrics={metricsNode}
-      summary={summaryNode}
+      summary={null}
       details={detailsNode}
     />
   );

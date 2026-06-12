@@ -146,6 +146,13 @@ const CourseList: React.FC = () => {
     loadData();
   };
 
+  const getCourseStudentNames = (course: Course) => {
+    const names = (course.student_pricings || [])
+      .map(pricing => students.find(student => student.id === pricing.student_id)?.name)
+      .filter(Boolean);
+    return names.length > 0 ? names.join('、') : '-';
+  };
+
   const handleSubmit = async () => {
     try {
       const fv = form.getFieldsValue();
@@ -287,6 +294,7 @@ const CourseList: React.FC = () => {
     },
     { title: '上课地址', dataIndex: 'room_name', key: 'room_name', width: 100 },
     { title: '老师', dataIndex: 'teacher_name', key: 'teacher_name', width: 100 },
+    { title: '学生', key: 'students', width: 180, ellipsis: true, render: (_, record) => getCourseStudentNames(record) },
     {
       title: '操作',
       key: 'action',
@@ -399,7 +407,7 @@ const CourseList: React.FC = () => {
           dataSource={filteredCourses} 
           rowKey="id"
           pagination={{ pageSize: 20 }}
-          scroll={{ x: 1400 }}
+          scroll={{ x: 1580 }}
         />
       }
       drawerOpen={modalVisible}

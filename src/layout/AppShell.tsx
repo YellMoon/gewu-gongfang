@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Layout, Menu, Space, Tag, Tooltip } from 'antd';
 import {
   CloudSyncOutlined,
+  MenuFoldOutlined,
   MenuUnfoldOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
@@ -117,6 +118,17 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
             <div className="app-shell__brand-title">格物工坊</div>
             <div className="app-shell__brand-subtitle">运营工作台</div>
           </div>
+          {navPinned && (
+            <Tooltip title="释放隐藏导航">
+              <Button
+                className="app-shell__sider-unpin"
+                type="text"
+                size="small"
+                icon={<MenuFoldOutlined />}
+                onClick={togglePinnedNav}
+              />
+            </Tooltip>
+          )}
         </div>
         <Menu
           className="app-shell__menu"

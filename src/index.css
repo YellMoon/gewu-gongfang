@@ -380,6 +380,7 @@ select,
   align-items: center;
   gap: 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  position: relative;
 }
 
 .app-shell__brand-mark {
@@ -414,6 +415,20 @@ select,
   color: rgba(255, 255, 255, 0.64);
   font-size: 12px;
   white-space: nowrap;
+}
+
+.app-shell__sider-unpin {
+  position: absolute;
+  top: 16px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  color: rgba(255, 255, 255, 0.86) !important;
+}
+
+.app-shell__sider-unpin:hover {
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.12) !important;
 }
 
 .app-shell__menu {
