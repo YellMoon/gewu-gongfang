@@ -1,6 +1,6 @@
 ﻿import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
-  Modal, Form, Input, InputNumber, Select, DatePicker, TimePicker, Calendar, Divider, Card, Row, Col, Button, message, Space, Dropdown, Alert
+  Modal, Form, Input, InputNumber, Select, DatePicker, TimePicker, Divider, Card, Row, Col, Button, message, Space, Dropdown, Alert
 } from 'antd';
 import type { MenuProps } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
@@ -99,6 +99,7 @@ interface DailyViewProps {
   flashingIds?: string[];
   flashToggle?: boolean;
   courseColorMap?: Record<string, string>;
+  highlightedDate?: Dayjs | null;
   onDoubleClickDate: (day: Dayjs) => void;
   onDoubleClickSchedule: (schedule: ScheduleEvent) => void;
   onScheduleStatusChange: (id: string, status: ScheduleStatus) => void;
@@ -121,6 +122,7 @@ const DailyView: React.FC<DailyViewProps> = ({
   flashingIds = [],
   flashToggle = false,
   courseColorMap = {},
+  highlightedDate,
   onDoubleClickDate,
   onDoubleClickSchedule,
   onScheduleStatusChange,
@@ -134,6 +136,7 @@ const DailyView: React.FC<DailyViewProps> = ({
   const daySchedules = schedules.filter(s => s.start_time.startsWith(dateStr));
   const todayStr = dayjs().format('YYYY-MM-DD');
   const isToday = dateStr === todayStr;
+  const isHighlighted = !!highlightedDate && day.isSame(highlightedDate, 'day');
 
   const [dragOverSlot, setDragOverSlot] = useState<number | null>(null);
   const [dragState, setDragState] = useState<{
@@ -462,7 +465,9 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
       borderRadius: 8,
       overflow: 'hidden',
       background: isToday ? '#e6f7ff' : (isHoliday ? '#fff1f0' : 'white'),
-      borderColor: isToday ? '#1890ff' : '#d9d9d9'
+      borderColor: isHighlighted ? '#faad14' : (isToday ? '#1890ff' : '#d9d9d9'),
+      boxShadow: isHighlighted ? '0 0 0 3px rgba(250, 173, 20, 0.22)' : undefined,
+      transition: 'border-color 0.18s ease, box-shadow 0.18s ease'
     }} data-date={dateStr}>
       <div
         onDoubleClick={() => onDoubleClickDate(day)}
@@ -795,6 +800,7 @@ interface TwoWeeksViewProps {
   batchIsCopy?: boolean;
   flashingIds?: string[];
   flashToggle?: boolean;
+  highlightedDate?: Dayjs | null;
   onDoubleClickDate: (day: Dayjs) => void;
   onDoubleClickSchedule: (schedule: ScheduleEvent) => void;
   onScheduleStatusChange: (id: string, status: ScheduleStatus) => void;
@@ -815,6 +821,7 @@ const OneWeekRow: React.FC<{
   batchIsCopy?: boolean;
   flashingIds?: string[];
   flashToggle?: boolean;
+  highlightedDate?: Dayjs | null;
   onDoubleClickDate: (day: Dayjs) => void;
   onDoubleClickSchedule: (schedule: ScheduleEvent) => void;
   onScheduleStatusChange: (id: string, status: ScheduleStatus) => void;
@@ -833,6 +840,7 @@ const OneWeekRow: React.FC<{
   batchIsCopy = false,
   flashingIds = [],
   flashToggle = false,
+  highlightedDate,
   courseColorMap = {},
   onDoubleClickDate,
   onDoubleClickSchedule,
@@ -873,7 +881,7 @@ const OneWeekRow: React.FC<{
       <div style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 8, color: '#666' }}>
         {weekLabel}: {startMonday.format('M月D日')} ~ {startMonday.add(6, 'day').format('M月D日')}
       </div>
-      <div style={{ overflowX: 'auto', display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
         {weekDays.map((day, idx) => (
           <DailyView
             key={idx}
@@ -887,6 +895,7 @@ const OneWeekRow: React.FC<{
             batchIsCopy={batchIsCopy}
             flashingIds={flashingIds}
             flashToggle={flashToggle}
+            highlightedDate={highlightedDate}
             onDoubleClickDate={onDoubleClickDate}
             onDoubleClickSchedule={onDoubleClickSchedule}
             onScheduleStatusChange={onScheduleStatusChange}
@@ -913,6 +922,7 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
   batchIsCopy = false,
   flashingIds = [],
   flashToggle = false,
+  highlightedDate,
   courseColorMap = {},
   onDoubleClickDate,
   onDoubleClickSchedule,
@@ -942,6 +952,7 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
         batchIsCopy={batchIsCopy}
         flashingIds={flashingIds}
         flashToggle={flashToggle}
+        highlightedDate={highlightedDate}
         courseColorMap={courseColorMap}
         onDoubleClickDate={onDoubleClickDate}
         onDoubleClickSchedule={onDoubleClickSchedule}
@@ -961,6 +972,7 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
         batchIsCopy={batchIsCopy}
         flashingIds={flashingIds}
         flashToggle={flashToggle}
+        highlightedDate={highlightedDate}
         courseColorMap={courseColorMap}
         onDoubleClickDate={onDoubleClickDate}
         onDoubleClickSchedule={onDoubleClickSchedule}
@@ -1101,8 +1113,7 @@ const ScheduleCalendar: React.FC = () => {
   const [currentMonday, setCurrentMonday] = useState<Dayjs>(initialMonday);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<ScheduleEvent | null>(null);
-  const [calendarOpen, setCalendarOpen] = useState(false);
-  const [coursePoolCollapsed, setCoursePoolCollapsed] = useState(false);
+  const [highlightedDate, setHighlightedDate] = useState<Dayjs | null>(null);
   const [form] = Form.useForm();
   const [courses, setCourses] = useState<Course[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
@@ -1123,8 +1134,7 @@ const ScheduleCalendar: React.FC = () => {
   const [teacherInitialized, setTeacherInitialized] = useState(false);
 
   const [batchDates, setBatchDates] = useState<Dayjs[]>([dayjs()]);
-  const [refreshModalVisible, setRefreshModalVisible] = useState(false);
-  const [refreshDateRange, setRefreshDateRange] = useState<[Dayjs, Dayjs] | null>(null);
+  const [refreshDateRange, setRefreshDateRange] = useState<[Dayjs, Dayjs] | null>([initialMonday, initialMonday.add(13, 'day')]);
   const [modalTeacherId, setModalTeacherId] = useState<string | undefined>(undefined);
 
   const MAX_HISTORY = 10;
@@ -1275,6 +1285,10 @@ const ScheduleCalendar: React.FC = () => {
       setTeacherInitialized(true);
     }
   }, [teachers, teacherInitialized]);
+
+  React.useEffect(() => {
+    setRefreshDateRange([currentMonday, currentMonday.add(13, 'day')]);
+  }, [currentMonday]);
 
   React.useEffect(() => {
     try {
@@ -1784,71 +1798,13 @@ const ScheduleCalendar: React.FC = () => {
     });
     setSchedulesWithHistory(updated);
     message.success(`已更新 ${count} 条课程信息`);
-    setRefreshModalVisible(false);
-    setRefreshDateRange(null);
   }
 
   const upcomingHolidays = getUpcomingHolidays();
 
   return (
-    <div style={{ padding: 16, height: 'calc(100vh - 80px)', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <WorkbenchLayout
-        toolbar={
-          <Space wrap>
-            <Button onClick={goPrevWeek}>上一周</Button>
-            <Button onClick={goToday}>本周</Button>
-            <Button onClick={goNextWeek}>下一周</Button>
-            <Button
-              onClick={() => setCalendarOpen(!calendarOpen)}
-              title="点击跳转到选定日期的课程表"
-            >
-              选择日期
-            </Button>
-            {calendarOpen && (
-              <div style={{
-                position: 'absolute',
-                zIndex: 100,
-                background: 'white',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                borderRadius: 8,
-                padding: 8,
-                marginTop: 8
-              }}>
-                <Calendar
-                  fullscreen={false}
-                  onSelect={(date) => {
-                    const monday = date.startOf('isoWeek');
-                    setCurrentMonday(monday);
-                    setCalendarOpen(false);
-                  }}
-                />
-              </div>
-            )}
-            <Divider type="vertical" />
-            <Button
-              onClick={undo}
-              disabled={history.past.length === 0}
-              title="撤销 (Ctrl+Z)"
-            >撤销</Button>
-            <Button
-              onClick={redo}
-              disabled={history.future.length === 0}
-              title="重做 (Ctrl+Y)"
-            >重做</Button>
-            <Divider type="vertical" />
-            <Button
-              onClick={() => {
-                setRefreshDateRange([currentMonday, currentMonday.add(13, 'day')]);
-                setRefreshModalVisible(true);
-              }}
-              title="刷新日期范围内所有排课的课程信息"
-            >
-              刷新课程信息
-            </Button>
-            <Divider type="vertical" />
-            <Button type="primary" onClick={handleAddSchedule}>排课</Button>
-          </Space>
-        }
         sidebar={
           <Sidebar
             teachers={teachers}
@@ -1857,32 +1813,79 @@ const ScheduleCalendar: React.FC = () => {
             onTeacherChange={setSelectedTeacherId}
           />
         }
-        sidebarCollapsed={coursePoolCollapsed}
-        onToggleSidebar={() => setCoursePoolCollapsed(collapsed => !collapsed)}
         canvas={
-          <div style={{ overflowY: 'auto', overflowX: 'auto', flex: 1, height: '100%' }} ref={containerRef}>
-            <div data-anchor="true" style={{ position: 'relative', minHeight: '100%' }}>
-              <TwoWeeksView
-                schedules={schedules}
-                currentMonday={currentMonday}
-                selectedTeacherId={selectedTeacherId}
-                courses={courses}
-                selectedCourseIds={selectedCourseIds}
-                batchPhase={batchPhase}
-                batchIsCopy={batchIsCopy}
-                flashingIds={flashingIds}
-                flashToggle={flashToggle}
-                courseColorMap={courseColorMap}
-                onDoubleClickDate={handleDoubleClickDate}
-                onDoubleClickSchedule={handleDoubleClickSchedule}
-                onScheduleStatusChange={handleScheduleStatusChange}
-                onDropCourse={handleDropCourse}
-                onDragSchedule={handleDragSchedule}
-                onResizeSchedule={handleResizeSchedule}
-                onDeleteSchedule={handleDeleteSchedule}
-                onOpenStudentEdit={handleOpenStudentEdit}
-              />
-              {batchVisuals}
+          <div className="schedule-workspace">
+            <Card size="small" className="schedule-workspace__toolbar">
+              <Space wrap>
+                <Button onClick={goPrevWeek}>上一周</Button>
+                <Button onClick={goToday}>本周</Button>
+                <Button onClick={goNextWeek}>下一周</Button>
+                <DatePicker
+                  placeholder="选择日期"
+                  value={highlightedDate || undefined}
+                  onChange={(date) => {
+                    if (!date) return;
+                    setHighlightedDate(date);
+                    setCurrentMonday(date.startOf('isoWeek'));
+                  }}
+                  format="YYYY-MM-DD"
+                  allowClear={false}
+                  style={{ width: 140 }}
+                  title="选择后跳转到该日期所在周，并高亮该日"
+                />
+                <Divider type="vertical" />
+                <Button
+                  onClick={undo}
+                  disabled={history.past.length === 0}
+                  title="撤销 (Ctrl+Z)"
+                >撤销</Button>
+                <Button
+                  onClick={redo}
+                  disabled={history.future.length === 0}
+                  title="重做 (Ctrl+Y)"
+                >重做</Button>
+                <Divider type="vertical" />
+                <DatePicker.RangePicker
+                  value={refreshDateRange as any}
+                  onChange={(dates) => setRefreshDateRange(dates as [Dayjs, Dayjs])}
+                  format="YYYY-MM-DD"
+                  style={{ width: 240 }}
+                />
+                <Button
+                  onClick={handleRefreshCourseInfo}
+                  title="刷新日期范围内所有排课的课程信息"
+                >
+                  刷新课程信息
+                </Button>
+                <Divider type="vertical" />
+                <Button type="primary" onClick={handleAddSchedule}>排课</Button>
+              </Space>
+            </Card>
+            <div className="schedule-workspace__board" ref={containerRef}>
+              <div data-anchor="true" style={{ position: 'relative' }}>
+                <TwoWeeksView
+                  schedules={schedules}
+                  currentMonday={currentMonday}
+                  selectedTeacherId={selectedTeacherId}
+                  courses={courses}
+                  selectedCourseIds={selectedCourseIds}
+                  batchPhase={batchPhase}
+                  batchIsCopy={batchIsCopy}
+                  flashingIds={flashingIds}
+                  flashToggle={flashToggle}
+                  highlightedDate={highlightedDate}
+                  courseColorMap={courseColorMap}
+                  onDoubleClickDate={handleDoubleClickDate}
+                  onDoubleClickSchedule={handleDoubleClickSchedule}
+                  onScheduleStatusChange={handleScheduleStatusChange}
+                  onDropCourse={handleDropCourse}
+                  onDragSchedule={handleDragSchedule}
+                  onResizeSchedule={handleResizeSchedule}
+                  onDeleteSchedule={handleDeleteSchedule}
+                  onOpenStudentEdit={handleOpenStudentEdit}
+                />
+                {batchVisuals}
+              </div>
             </div>
           </div>
         }
@@ -2146,31 +2149,6 @@ const ScheduleCalendar: React.FC = () => {
         )}
       </Modal>
 
-      <Modal
-        title="刷新课程信息"
-        open={refreshModalVisible}
-        onCancel={() => { setRefreshModalVisible(false); setRefreshDateRange(null); }}
-        onOk={handleRefreshCourseInfo}
-        okText="开始刷新"
-        cancelText="取消"
-      >
-        <div style={{ marginBottom: 16 }}>
-          <p>选择日期范围，系统将遍历该范围内的所有排课，重新从课程数据库读取最新信息并更新排课记录。</p>
-          <p style={{ color: '#cf1322', fontSize: 12 }}>
-            注意：刷新课程信息可能覆盖当前排课的学生学费、老师课时费、出勤状态和课程明细。请确认只刷新你当前选中的排课范围。
-          </p>
-        </div>
-        <Form layout="vertical">
-          <Form.Item label="日期范围" required>
-            <DatePicker.RangePicker
-              value={refreshDateRange as any}
-              onChange={(dates) => setRefreshDateRange(dates as [Dayjs, Dayjs])}
-              style={{ width: '100%' }}
-              format="YYYY-MM-DD"
-            />
-          </Form.Item>
-        </Form>
-      </Modal>
     </div>
   );
 };

@@ -162,7 +162,7 @@ const ScheduleList: React.FC = () => {
               if (st) studentNames.push(st.name);
             });
           }
-          const statusText = getStatusText(s.status);
+          const statusText = getScheduleStatusText(s);
 
           excelData.push({
             '日期': idx === 0 ? dayjs(dayStr).format('M月D日') : '',
@@ -216,6 +216,20 @@ const ScheduleList: React.FC = () => {
     }
   };
 
+  const getScheduleStatusText = (record: any) => {
+    if (record.status === ScheduleStatus.PLANNED && dayjs(record.end_time).isBefore(dayjs())) {
+      return '已结束';
+    }
+    return getStatusText(record.status);
+  };
+
+  const getScheduleStatusColor = (record: any) => {
+    if (record.status === ScheduleStatus.PLANNED && dayjs(record.end_time).isBefore(dayjs())) {
+      return 'green';
+    }
+    return getStatusColor(record.status);
+  };
+
   const getStatusText = (status: any) => {
     switch (status) {
       case ScheduleStatus.PLANNED: return '计划中';
@@ -246,16 +260,16 @@ const ScheduleList: React.FC = () => {
   };
 
   const columns: ColumnsType<any> = [
-    { title: '#', key: 'index', width: 50, render: (_, __, index) => index + 1 },
+    { title: '序号', key: 'index', width: 60, render: (_, __, index) => index + 1 },
     { title: '日期', key: 'date', width: 100, render: (_, record) => dayjs(record.start_time).format('YYYY-MM-DD') },
     { title: '时间', key: 'time', width: 120, render: (_, record) => {
       const s = dayjs(record.start_time);
       const e = dayjs(record.end_time);
       return `${s.format('HH:mm')} - ${e.format('HH:mm')}`;
     } },
-    { title: '课程', dataIndex: 'course_id', key: 'course_id', width: 160, render: (id: string) => getCourseName(id) },
     { title: '年份', key: 'course_year', width: 80, render: (_, record) => getCourseMeta(record).year },
     { title: '学期', key: 'course_semester', width: 90, render: (_, record) => getCourseMeta(record).semester },
+    { title: '课程', dataIndex: 'course_id', key: 'course_id', width: 160, render: (id: string) => getCourseName(id) },
     { title: '老师', key: 'teacher', width: 90, render: (_, record) => {
       const course = courses.find(c => c.id === record.course_id);
       return getTeacherName(course?.teacher_id || '');
@@ -265,7 +279,7 @@ const ScheduleList: React.FC = () => {
       const studentIds: string[] = record.student_ids || course?.student_pricings?.map((p: any) => p.student_id) || [];
       return studentIds.map((id: string) => getStudentName(id)).join(', ');
     } },
-    { title: '状态', dataIndex: 'status', key: 'status', width: 80, render: (status: any) => <Tag color={getStatusColor(status)}>{getStatusText(status)}</Tag> },
+    { title: '状态', dataIndex: 'status', key: 'status', width: 80, render: (_: any, record) => <Tag color={getScheduleStatusColor(record)}>{getScheduleStatusText(record)}</Tag> },
     { title: '教室', dataIndex: 'room', key: 'room', width: 120 },
     { title: '备注', dataIndex: 'notes', key: 'notes', width: 160, ellipsis: true },
   ];
@@ -314,14 +328,6 @@ const ScheduleList: React.FC = () => {
           </Space>
           <Space>
             <span style={{ color: '#666' }}>共 {filteredSchedules.length} 条记录</span>
-            <Button size="small" onClick={() => {
-              setFilterTeacher(undefined);
-              setFilterStudent(undefined);
-              setFilterDateRange(null);
-              setFilteredSchedules(schedules);
-            }}>
-              重置
-            </Button>
           </Space>
         </div>
       )}

@@ -586,42 +586,28 @@ select,
   width: 100%;
   min-width: 0;
   min-height: 0;
-  flex: 1;
   display: flex;
   flex-direction: column;
   gap: var(--app-content-gap, 12px);
 }
 
-.workbench-layout__toolbar,
 .workbench-layout__sidebar {
   border: 1px solid var(--app-border-color, #d8dee9);
   border-radius: var(--app-radius, 6px);
   box-shadow: var(--app-shadow-soft, 0 8px 24px rgba(23, 32, 51, 0.08));
 }
 
-.workbench-layout__toolbar {
-  flex-shrink: 0;
-}
-
-.workbench-layout__toolbar .ant-card-body {
-  padding: 8px 12px !important;
-}
-
 .workbench-layout__body {
   min-height: 0;
-  flex: 1;
   display: grid;
   grid-template-columns: minmax(252px, 252px) minmax(0, 1fr);
   gap: var(--app-content-gap, 12px);
-}
-
-.workbench-layout--sidebar-collapsed .workbench-layout__body {
-  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: start;
 }
 
 .workbench-layout__sidebar {
   min-width: 0;
-  min-height: 0;
+  min-height: 620px;
   overflow: hidden;
 }
 
@@ -633,14 +619,6 @@ select,
   padding: 0 !important;
 }
 
-.workbench-layout__sidebar-toggle {
-  width: 36px;
-  height: 36px;
-  margin: 4px;
-  flex: 0 0 36px;
-  color: var(--app-muted, #6b7280);
-}
-
 .workbench-layout__sidebar-content {
   min-height: 0;
   flex: 1;
@@ -650,12 +628,42 @@ select,
 .workbench-layout__canvas {
   min-width: 0;
   min-height: 0;
+}
+
+.schedule-workspace {
+  min-width: 0;
   display: flex;
-  overflow: hidden;
-  background: var(--app-panel-bg, #fff);
+  flex-direction: column;
+  gap: 12px;
+}
+
+.schedule-workspace__toolbar,
+.schedule-workspace__board {
   border: 1px solid var(--app-border-color, #d8dee9);
   border-radius: var(--app-radius, 6px);
   box-shadow: var(--app-shadow-soft, 0 8px 24px rgba(23, 32, 51, 0.08));
+  background: var(--app-panel-bg, #fff);
+}
+
+.schedule-workspace__toolbar {
+  flex-shrink: 0;
+}
+
+.schedule-workspace__toolbar .ant-card-body {
+  padding: 8px 12px !important;
+}
+
+.schedule-workspace__board {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 14px 16px 16px;
+}
+
+.data-page-layout__toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
 }
 
 .page-header-bar__status,

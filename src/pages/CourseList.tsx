@@ -4,7 +4,6 @@ import {
   Space, message, Popconfirm, Tag, Row, Col, Divider
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, PlusCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
-import { Statistic } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { Course, CourseType, CourseSourceType, Institution, BillingUnit, TeacherFeeMode, ServiceType, Teacher, StudentCoursePricing, Student } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
@@ -320,38 +319,9 @@ const CourseList: React.FC = () => {
   return (
     <DataPageLayout
       toolbar={
-        <>
-        <Row gutter={16}>
-          <Col span={6}>
-            <Statistic title="课程总数" value={courses.length} prefix="📚" />
-          </Col>
-          <Col span={6}>
-            <Statistic 
-              title="一对一课程" 
-              value={courses.filter(c => c.type === CourseType.ONE_ON_ONE).length} 
-              prefix="👨‍🏫"
-            />
-          </Col>
-          <Col span={6}>
-            <Statistic 
-              title="有老师的课程" 
-              value={courses.filter(c => c.teacher_id).length} 
-              prefix="👨‍🏫"
-            />
-          </Col>
-          <Col span={6}>
-            <Statistic 
-              title="自有课程" 
-              value={courses.filter(c => c.source_type === CourseSourceType.SELF).length} 
-              prefix="🏠"
-            />
-          </Col>
-        </Row>
-        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          <Space wrap>
+        <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+          <Space wrap size={12}>
             <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>添加课程</Button>
-          </Space>
-          <Space wrap style={{ marginTop: 8 }}>
             <Select
               placeholder="筛选课程类型"
               allowClear
@@ -399,7 +369,6 @@ const CourseList: React.FC = () => {
             </Select>
           </Space>
         </div>
-        </>
       }
       table={
         <Table 
