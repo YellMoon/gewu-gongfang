@@ -315,15 +315,62 @@ select,
 .app-shell {
   min-height: 100vh;
   background: var(--app-bg, #f5f7fb);
+  position: relative;
+}
+
+.app-shell__edge-trigger {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 1100;
+  width: 12px;
+  cursor: pointer;
+}
+
+.app-shell__edge-trigger::after {
+  content: '';
+  position: absolute;
+  top: 84px;
+  left: 0;
+  width: 3px;
+  height: 96px;
+  border-radius: 0 999px 999px 0;
+  background: color-mix(in srgb, var(--app-primary, #1677b8) 70%, transparent);
+  opacity: 0.18;
+  transition: opacity 0.2s ease;
+}
+
+.app-shell__edge-trigger:hover::after {
+  opacity: 0.62;
 }
 
 .app-shell__sider {
-  position: sticky !important;
-  top: 0;
+  position: fixed !important;
+  inset: 0 auto 0 0;
+  z-index: 1200;
+  width: 236px !important;
+  min-width: 236px !important;
+  max-width: 236px !important;
+  flex: 0 0 236px !important;
   height: 100vh;
   overflow: auto;
   background: var(--app-sidebar-bg, #102a43) !important;
-  box-shadow: 2px 0 12px rgba(15, 23, 42, 0.12);
+  box-shadow: none;
+  transform: translateX(calc(-100% - 8px));
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+  will-change: transform;
+}
+
+.app-shell__sider--open {
+  box-shadow: 12px 0 30px rgba(15, 23, 42, 0.22);
+  transform: translateX(0);
+}
+
+.app-shell__sider--pinned {
+  box-shadow: 10px 0 26px rgba(15, 23, 42, 0.18);
+}
+
+.app-shell--nav-pinned .app-shell__edge-trigger {
+  display: none;
 }
 
 .app-shell__brand {
@@ -391,6 +438,7 @@ select,
 
 .app-shell__main {
   min-width: 0;
+  width: 100%;
   background: var(--app-bg, #f5f7fb);
 }
 
@@ -412,6 +460,11 @@ select,
   width: 34px;
   height: 34px;
   flex: 0 0 34px;
+}
+
+.app-shell--nav-pinned .app-shell__collapse-button {
+  color: var(--app-primary, #1677b8);
+  background: color-mix(in srgb, var(--app-primary, #1677b8) 10%, transparent);
 }
 
 .app-shell__content {

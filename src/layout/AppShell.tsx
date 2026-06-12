@@ -1,8 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Layout, Menu, Space, Tag, Tooltip } from 'antd';
 import {
   CloudSyncOutlined,
-  MenuFoldOutlined,
   MenuUnfoldOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
@@ -26,15 +25,58 @@ const selectedKeyForPage = (page: PageKey): PageKey => {
 };
 
 const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh, children }) => {
-  const [collapsed, setCollapsed] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
+  const [navPinned, setNavPinned] = useState(false);
   const [openKeys, setOpenKeys] = useState<string[]>([findOpenGroup(currentPage)]);
+  const closeTimerRef = useRef<number | null>(null);
   const currentNavItem = findNavItem(currentPage);
+  const navVisible = navOpen || navPinned;
 
   useEffect(() => {
-    if (!collapsed) {
+    if (navVisible) {
       setOpenKeys([findOpenGroup(currentPage)]);
     }
-  }, [collapsed, currentPage]);
+  }, [navVisible, currentPage]);
+
+  useEffect(() => () => {
+    if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
+  }, []);
+
+  const clearCloseTimer = () => {
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  };
+
+  const openNavTemporarily = () => {
+    clearCloseTimer();
+    setNavOpen(true);
+  };
+
+  const scheduleCloseNav = () => {
+    if (navPinned) return;
+    clearCloseTimer();
+    closeTimerRef.current = window.setTimeout(() => setNavOpen(false), 280);
+  };
+
+  const togglePinnedNav = () => {
+    clearCloseTimer();
+    if (navPinned) {
+      setNavPinned(false);
+      setNavOpen(false);
+      return;
+    }
+    setNavOpen(true);
+    setNavPinned(true);
+  };
+
+  const handleNavigate = (page: PageKey) => {
+    onNavigate(page);
+    if (!navPinned) {
+      setNavOpen(false);
+    }
+  };
 
   const menuItems = useMemo(
     () => navGroups.map((group) => ({
@@ -51,43 +93,50 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
   );
 
   return (
-    <Layout className="app-shell">
+    <Layout className={navPinned ? 'app-shell app-shell--nav-pinned' : 'app-shell'}>
+      <div
+        className="app-shell__edge-trigger"
+        onMouseEnter={openNavTemporarily}
+        aria-hidden="true"
+      />
       <Sider
-        className="app-shell__sider"
+        className={[
+          'app-shell__sider',
+          navVisible ? 'app-shell__sider--open' : '',
+          navPinned ? 'app-shell__sider--pinned' : '',
+        ].filter(Boolean).join(' ')}
         width={236}
-        collapsedWidth={72}
         collapsible
-        collapsed={collapsed}
         trigger={null}
+        onMouseEnter={openNavTemporarily}
+        onMouseLeave={scheduleCloseNav}
       >
         <div className="app-shell__brand">
           <div className="app-shell__brand-mark">格</div>
-          {!collapsed && (
-            <div className="app-shell__brand-copy">
-              <div className="app-shell__brand-title">格物工坊</div>
-              <div className="app-shell__brand-subtitle">运营工作台</div>
-            </div>
-          )}
+          <div className="app-shell__brand-copy">
+            <div className="app-shell__brand-title">格物工坊</div>
+            <div className="app-shell__brand-subtitle">运营工作台</div>
+          </div>
         </div>
         <Menu
           className="app-shell__menu"
           mode="inline"
           theme="dark"
           selectedKeys={[selectedKeyForPage(currentPage)]}
-          openKeys={collapsed ? [] : openKeys}
+          openKeys={openKeys}
           items={menuItems}
           onOpenChange={(keys) => setOpenKeys(keys.slice(-1))}
-          onClick={({ key }) => onNavigate(key as PageKey)}
+          onClick={({ key }) => handleNavigate(key as PageKey)}
         />
       </Sider>
       <Layout className="app-shell__main">
         <div className="app-shell__topbar">
-          <Tooltip title={collapsed ? '展开导航' : '收起导航'}>
+          <Tooltip title={navPinned ? '释放隐藏导航' : '锁定展开导航'}>
             <Button
               className="app-shell__collapse-button"
               type="text"
-              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-              onClick={() => setCollapsed((value) => !value)}
+              icon={<MenuUnfoldOutlined />}
+              onClick={togglePinnedNav}
             />
           </Tooltip>
           <PageHeaderBar
