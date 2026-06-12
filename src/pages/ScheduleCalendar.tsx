@@ -4,7 +4,7 @@ import {
 } from 'antd';
 import type { MenuProps } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
-import { CourseType, ScheduleStatus, Course, Teacher, Student, BillingUnit, TeacherFeeMode, StudentCoursePricing, StudentAttendanceStatus } from '../types';
+import { CourseType, CourseSourceType, ScheduleStatus, Course, Teacher, Student, BillingUnit, TeacherFeeMode, StudentCoursePricing, StudentAttendanceStatus } from '../types';
 import useBatchSelection from './useBatchSelection';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { v4 as uuidv4 } from 'uuid';
@@ -12,7 +12,7 @@ import weekOfYear from 'dayjs/plugin/weekOfYear';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import { holidays2026, getUpcomingHolidays } from '../utils/helpers';
 import { buildCourseColorMap, getTextColorForBackground, DEFAULT_COURSE_COLOR } from '../utils/courseColors';
-import { buildScheduleFinancialSnapshot } from '../utils/financialDetails';
+import { INSTITUTION_UNBOUND_STUDENT_ID, buildScheduleFinancialSnapshot } from '../utils/financialDetails';
 import WorkbenchLayout from '../layout/WorkbenchLayout';
 
 dayjs.extend(weekOfYear);
@@ -1312,6 +1312,15 @@ const ScheduleCalendar: React.FC = () => {
   function handleOpenStudentEdit(schedule: ScheduleEvent) {
     const course = courses.find(c => c.id === schedule.course_id);
     if (course) {
+      if (isPureInstitutionSchedule(schedule, course)) {
+        const pricing = getInstitutionSchedulePricing(schedule, course);
+        studentEditForm.setFieldsValue({
+          institutionTuition: pricing.tuition,
+          institutionTeacherFee: pricing.teacher_fee ?? 0,
+        });
+        setStudentEditModal({ open: true, schedule });
+        return;
+      }
       const editablePricings = getSchedulePricingsForEdit(schedule);
       const initialValues = {
         students: editablePricings.map(sp => ({
@@ -1324,6 +1333,27 @@ const ScheduleCalendar: React.FC = () => {
       studentEditForm.setFieldsValue(initialValues);
       setStudentEditModal({ open: true, schedule });
     }
+  }
+
+  function isPureInstitutionSchedule(schedule: ScheduleEvent, course?: Course | null): boolean {
+    const targetCourse = course || courses.find(c => c.id === schedule.course_id);
+    const coursePricings = targetCourse?.student_pricings || [];
+    const scheduleStudentIds = schedule.student_ids || [];
+    const schedulePricings = (schedule.student_pricings || []).filter(sp => sp.student_id !== INSTITUTION_UNBOUND_STUDENT_ID);
+    return targetCourse?.source_type === CourseSourceType.INSTITUTION
+      && coursePricings.length === 0
+      && scheduleStudentIds.length === 0
+      && schedulePricings.length === 0;
+  }
+
+  function getInstitutionSchedulePricing(schedule: ScheduleEvent, course?: Course | null): StudentCoursePricing {
+    const snapshotPricing = schedule.student_pricings?.find(sp => sp.student_id === INSTITUTION_UNBOUND_STUDENT_ID);
+    return {
+      student_id: INSTITUTION_UNBOUND_STUDENT_ID,
+      tuition: Number(snapshotPricing?.tuition ?? course?.price_tuition ?? 0),
+      teacher_fee: Number(snapshotPricing?.teacher_fee ?? course?.price_teacher ?? 0),
+      status: StudentAttendanceStatus.NORMAL,
+    };
   }
 
   const courseStudentPricings = (() => {
@@ -1371,6 +1401,24 @@ const ScheduleCalendar: React.FC = () => {
     if (studentEditModal.schedule) {
       const schedule = studentEditModal.schedule as ScheduleEvent;
       const course = courses.find(c => c.id === schedule.course_id);
+      if (course && isPureInstitutionSchedule(schedule, course)) {
+        const values = studentEditForm.getFieldsValue();
+        const updatedPricings: StudentCoursePricing[] = [{
+          student_id: INSTITUTION_UNBOUND_STUDENT_ID,
+          tuition: Number(values.institutionTuition || 0),
+          teacher_fee: Number(values.institutionTeacherFee || 0),
+          status: StudentAttendanceStatus.NORMAL,
+        }];
+        const financialFields = buildFinancialFieldsForSchedule(schedule, course, updatedPricings);
+        setSchedulesWithHistory(prev => prev.map(item =>
+          item.id === schedule.id
+            ? { ...item, ...financialFields }
+            : item
+        ));
+        message.success('本节机构排课费用已保存');
+        setStudentEditModal({ open: false, schedule: null });
+        return;
+      }
       const basePricings = getSchedulePricingsForEdit(schedule);
       if (course && basePricings.length > 0) {
         const updatedPricings = basePricings.map((sp, idx) => ({
@@ -1997,7 +2045,7 @@ const ScheduleCalendar: React.FC = () => {
       </Modal>
 
       <Modal
-        title={`学生出勤和费用 - ${studentEditModal.schedule?.course_name || ''}`}
+        title={`${studentEditModal.schedule && isPureInstitutionSchedule(studentEditModal.schedule) ? '机构排课费用' : '学生出勤和费用'} - ${studentEditModal.schedule?.course_name || ''}`}
         open={studentEditModal.open}
         onCancel={() => setStudentEditModal({ open: false, schedule: null })}
         onOk={() => handleSaveStudentEdit()}
@@ -2005,7 +2053,33 @@ const ScheduleCalendar: React.FC = () => {
       >
         {studentEditModal.schedule && (
           <Form form={studentEditForm} layout="vertical">
-            {(courseStudentPricings || []).map((sp, idx) => {
+            {isPureInstitutionSchedule(studentEditModal.schedule) ? (
+              <Card size="small" title="本节机构排课费用" style={{ marginBottom: 12 }}>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item
+                      name="institutionTuition"
+                      label={`学费${billingUnitLabel}`}
+                    >
+                      <InputNumber min={0} prefix="¥" style={{ width: '100%' }} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item
+                      name="institutionTeacherFee"
+                      label={`课时费${billingUnitLabel}`}
+                    >
+                      <InputNumber min={0} prefix="¥" style={{ width: '100%' }} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Alert
+                  type="info"
+                  showIcon
+                  message="这里的修改只保存到当前这一节排课明细，不会修改课程管理中的课程默认费用。"
+                />
+              </Card>
+            ) : (courseStudentPricings || []).map((sp, idx) => {
               const student = allStudents.find(s => s.id === sp.student_id);
               return (
                 <Card
@@ -2050,7 +2124,7 @@ const ScheduleCalendar: React.FC = () => {
                 </Card>
               );
             })}
-            {(!courseStudentPricings || courseStudentPricings.length === 0) && (
+            {!isPureInstitutionSchedule(studentEditModal.schedule) && (!courseStudentPricings || courseStudentPricings.length === 0) && (
               <div style={{ textAlign: 'center', color: '#999', padding: 20 }}>
                 该课程未绑定学生信息
               </div>

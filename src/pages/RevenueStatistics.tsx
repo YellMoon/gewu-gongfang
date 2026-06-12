@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Button,
   Card,
+  Checkbox,
   Col,
   DatePicker,
   Divider,
@@ -14,8 +15,9 @@ import {
   Tag,
   Typography,
   message,
+  Popover,
 } from 'antd';
-import { BarChartOutlined, LineChartOutlined, PieChartOutlined, ReloadOutlined } from '@ant-design/icons';
+import { BarChartOutlined, LineChartOutlined, PieChartOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement, LineElement, PointElement, Filler } from 'chart.js';
 import { Bar, Line, Pie } from 'react-chartjs-2';
@@ -95,6 +97,36 @@ const RevenueStatistics: React.FC = () => {
   const [filterStudentId, setFilterStudentId] = useState<string | undefined>(undefined);
   const [filterTeacherId, setFilterTeacherId] = useState<string | undefined>(undefined);
   const [filterCourseTypes, setFilterCourseTypes] = useState<CourseType[]>([]);
+  const [visibleTeacherDetailColumns, setVisibleTeacherDetailColumns] = useState<string[]>([
+    'date',
+    'timeRange',
+    'teacherName',
+    'courseName',
+    'courseTypeName',
+    'studentNames',
+    'studentCount',
+    'durationHours',
+    'billingUnitName',
+    'feeUnitPrice',
+    'teacherFeeModeName',
+    'teacherFeeTotal',
+  ]);
+  const [visibleStudentDetailColumns, setVisibleStudentDetailColumns] = useState<string[]>([
+    'date',
+    'timeRange',
+    'studentName',
+    'courseName',
+    'courseTypeName',
+    'teacherName',
+    'durationHours',
+    'billingUnitName',
+    'tuitionUnitPrice',
+    'tuitionTotal',
+    'teacherFeeUnitPrice',
+    'teacherFeeModeName',
+    'teacherFeeTotal',
+    'pricingSource',
+  ]);
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [allTeachers, setAllTeachers] = useState<Teacher[]>([]);
   const dbService = (window as any).dbService;
@@ -334,11 +366,12 @@ const RevenueStatistics: React.FC = () => {
     },
   ];
 
-  const studentDetailColumns = [
+  const allStudentDetailColumns = [
     { title: '上课日期', dataIndex: 'date', key: 'date', width: 110, fixed: 'left' as const },
     { title: '时间段', dataIndex: 'timeRange', key: 'timeRange', width: 110 },
     { title: '学生', dataIndex: 'studentName', key: 'studentName', width: 120 },
     { title: '科目/课程', dataIndex: 'courseName', key: 'courseName', width: 180 },
+    { title: '课程类型', dataIndex: 'courseTypeName', key: 'courseTypeName', width: 100 },
     { title: '老师', dataIndex: 'teacherName', key: 'teacherName', width: 120 },
     { title: '时长', dataIndex: 'durationHours', key: 'durationHours', width: 90, render: (value: number) => `${roundMoney(value)} 小时` },
     { title: '单位', dataIndex: 'billingUnitName', key: 'billingUnitName', width: 70 },
@@ -365,18 +398,19 @@ const RevenueStatistics: React.FC = () => {
       key: 'pricingSource',
       width: 100,
       render: (value: StudentCourseFeeDetail['pricingSource']) => {
-        const labels = { schedule: '排课快照', course: '课程定价', fallback: '兜底估算' };
-        const colors = { schedule: 'green', course: 'blue', fallback: 'volcano' };
+        const labels = { schedule: '排课快照', course: '课程定价', institution: '机构总价', fallback: '兜底估算' };
+        const colors = { schedule: 'green', course: 'blue', institution: 'purple', fallback: 'volcano' };
         return <Tag color={colors[value]}>{labels[value]}</Tag>;
       },
     },
   ];
 
-  const teacherDetailColumns = [
+  const allTeacherDetailColumns = [
     { title: '上课日期', dataIndex: 'date', key: 'date', width: 110, fixed: 'left' as const },
     { title: '时间段', dataIndex: 'timeRange', key: 'timeRange', width: 110 },
     { title: '老师', dataIndex: 'teacherName', key: 'teacherName', width: 120 },
     { title: '科目/课程', dataIndex: 'courseName', key: 'courseName', width: 180 },
+    { title: '课程类型', dataIndex: 'courseTypeName', key: 'courseTypeName', width: 100 },
     { title: '学生', dataIndex: 'studentNames', key: 'studentNames', width: 220 },
     { title: '学生人数', dataIndex: 'studentCount', key: 'studentCount', width: 90 },
     { title: '时长', dataIndex: 'durationHours', key: 'durationHours', width: 90, render: (value: number) => `${roundMoney(value)} 小时` },
@@ -391,6 +425,38 @@ const RevenueStatistics: React.FC = () => {
     { title: '计费口径', dataIndex: 'teacherFeeModeName', key: 'teacherFeeModeName', width: 90 },
     { title: '总课时费', dataIndex: 'teacherFeeTotal', key: 'teacherFeeTotal', width: 120, render: (value: number) => moneyText(value, 'orange') },
   ];
+
+  const getColumnKey = (column: any) => String(column.key || column.dataIndex);
+  const teacherDetailColumns = allTeacherDetailColumns.filter(column => visibleTeacherDetailColumns.includes(getColumnKey(column)));
+  const studentDetailColumns = allStudentDetailColumns.filter(column => visibleStudentDetailColumns.includes(getColumnKey(column)));
+
+  const renderColumnSettings = (
+    columns: any[],
+    value: string[],
+    onChange: (keys: string[]) => void
+  ) => (
+    <Popover
+      trigger="click"
+      placement="bottomRight"
+      content={(
+        <Checkbox.Group
+          value={value}
+          onChange={(keys) => onChange((keys as string[]).length > 0 ? keys as string[] : [getColumnKey(columns[0])])}
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(110px, 1fr))', gap: 8, maxWidth: 320 }}
+        >
+          {columns.map(column => (
+            <Checkbox key={getColumnKey(column)} value={getColumnKey(column)}>
+              {String(column.title)}
+            </Checkbox>
+          ))}
+        </Checkbox.Group>
+      )}
+    >
+      <Button size="small" icon={<SettingOutlined />}>列设置</Button>
+    </Popover>
+  );
+
+  const tableScrollX = (columns: any[]) => Math.max(900, columns.reduce((sum, column) => sum + Number(column.width || 120), 0));
 
   const filtersNode = (
     <>
@@ -588,7 +654,12 @@ const RevenueStatistics: React.FC = () => {
         )}
       </Card>
 
-      <Card title="老师课时费明细" size="small" style={{ marginTop: 16 }}>
+      <Card
+        title="老师课时费明细"
+        size="small"
+        style={{ marginTop: 16 }}
+        extra={renderColumnSettings(allTeacherDetailColumns, visibleTeacherDetailColumns, setVisibleTeacherDetailColumns)}
+      >
         {teacherDetails.length > 0 ? (
           <Table
             columns={teacherDetailColumns}
@@ -596,7 +667,7 @@ const RevenueStatistics: React.FC = () => {
             rowKey="key"
             pagination={{ pageSize: 20 }}
             size="small"
-            scroll={{ x: 1320 }}
+            scroll={{ x: tableScrollX(teacherDetailColumns) }}
           />
         ) : (
           <Empty description="暂无老师课时费明细" />
@@ -611,7 +682,12 @@ const RevenueStatistics: React.FC = () => {
         )}
       </Card>
 
-      <Card title="学生课程费用明细" size="small" style={{ marginTop: 16 }}>
+      <Card
+        title="学生课程费用明细"
+        size="small"
+        style={{ marginTop: 16 }}
+        extra={renderColumnSettings(allStudentDetailColumns, visibleStudentDetailColumns, setVisibleStudentDetailColumns)}
+      >
         {studentDetails.length > 0 ? (
           <Table
             columns={studentDetailColumns}
@@ -619,7 +695,7 @@ const RevenueStatistics: React.FC = () => {
             rowKey="key"
             pagination={{ pageSize: 20 }}
             size="small"
-            scroll={{ x: 1520 }}
+            scroll={{ x: tableScrollX(studentDetailColumns) }}
           />
         ) : (
           <Empty description="暂无学生课程费用明细" />

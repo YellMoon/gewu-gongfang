@@ -26,6 +26,9 @@ export const sourceTypeNames: Record<number, string> = {
   [CourseSourceType.MIXED]: '混合班',
 };
 
+export const UNBOUND_STUDENT_ID = '__unbound__';
+export const INSTITUTION_UNBOUND_STUDENT_ID = '__institution_unbound__';
+
 export interface StudentCourseFeeDetail {
   key: string;
   scheduleId: string;
@@ -53,7 +56,7 @@ export interface StudentCourseFeeDetail {
   teacherFeeTotal: number;
   teacherFeeMode: TeacherFeeMode;
   teacherFeeModeName: string;
-  pricingSource: 'schedule' | 'fallback';
+  pricingSource: 'schedule' | 'course' | 'institution' | 'fallback';
 }
 
 export interface TeacherFeeDetail {
@@ -65,6 +68,8 @@ export interface TeacherFeeDetail {
   endTime: string;
   courseId: string;
   courseName: string;
+  courseType: CourseType;
+  courseTypeName: string;
   teacherId: string;
   teacherName: string;
   studentNames: string;
@@ -102,6 +107,28 @@ const activePricing = (pricing: StudentCoursePricing): boolean =>
 
 const normalizeIds = (ids?: string[]): string[] =>
   Array.isArray(ids) ? ids.filter(Boolean) : [];
+
+const isPureInstitutionCourse = (course?: Course): boolean =>
+  course?.source_type === CourseSourceType.INSTITUTION && normalizeIds(course.student_pricings?.map(item => item.student_id)).length === 0;
+
+const buildInstitutionPricing = (course?: Course): StudentCoursePricing => ({
+  student_id: INSTITUTION_UNBOUND_STUDENT_ID,
+  tuition: Number(course?.price_tuition || 0),
+  teacher_fee: Number(course?.price_teacher || 0),
+  status: StudentAttendanceStatus.NORMAL,
+});
+
+const selectSnapshotPricings = (
+  schedule: Pick<ScheduleLike, 'start_time' | 'end_time'> & Partial<ScheduleLike>,
+  course?: Course,
+  overridePricings?: StudentCoursePricing[]
+): StudentCoursePricing[] => {
+  if (overridePricings !== undefined && overridePricings.length > 0) return overridePricings;
+  if (schedule.student_pricings !== undefined && schedule.student_pricings.length > 0) return schedule.student_pricings;
+  if (course?.student_pricings && course.student_pricings.length > 0) return course.student_pricings;
+  if (isPureInstitutionCourse(course)) return [buildInstitutionPricing(course)];
+  return [];
+};
 
 const amountByUnit = (unitPrice: number, billingUnit: BillingUnit, durationHours: number): number => {
   if (billingUnit === BillingUnit.PER_HOUR) return roundMoney(unitPrice * durationHours);
@@ -175,7 +202,7 @@ export function buildScheduleFinancialSnapshot(
   course?: Course,
   overridePricings?: StudentCoursePricing[]
 ): ScheduleFinancialSnapshot {
-  const sourcePricings = overridePricings || schedule.student_pricings || course?.student_pricings || [];
+  const sourcePricings = selectSnapshotPricings(schedule, course, overridePricings);
   const studentPricings = sourcePricings.map(pricing => ({
     student_id: pricing.student_id,
     tuition: Number(pricing.tuition || 0),
@@ -204,7 +231,8 @@ export function buildScheduleFinancialSnapshot(
 }
 
 const getSchedulePricings = (
-  schedule: ScheduleLike
+  schedule: ScheduleLike,
+  course?: Course
 ): { pricings: StudentCoursePricing[]; pricingSource: StudentCourseFeeDetail['pricingSource'] } => {
   const scheduleIds = normalizeIds(schedule.student_ids);
   const rawSchedulePricings = schedule.student_pricings || [];
@@ -216,21 +244,38 @@ const getSchedulePricings = (
     return { pricings: filtered, pricingSource: 'schedule' };
   }
 
+  const coursePricings = (course?.student_pricings || []).filter(activePricing);
   if (scheduleIds.length > 0) {
+    const matchedCoursePricings = coursePricings.filter(pricing => scheduleIds.includes(pricing.student_id));
+    if (matchedCoursePricings.length > 0) {
+      return { pricings: matchedCoursePricings, pricingSource: 'course' };
+    }
     return {
       pricings: scheduleIds.map(studentId => ({ student_id: studentId, tuition: 0, teacher_fee: 0 })),
       pricingSource: 'fallback',
     };
   }
 
+  if (coursePricings.length > 0) {
+    return { pricings: coursePricings, pricingSource: 'course' };
+  }
+
+  if (isPureInstitutionCourse(course)) {
+    return {
+      pricings: [buildInstitutionPricing(course)],
+      pricingSource: 'institution',
+    };
+  }
+
   return {
-    pricings: [{ student_id: '__unbound__', tuition: 0, teacher_fee: 0 }],
+    pricings: [{ student_id: UNBOUND_STUDENT_ID, tuition: 0, teacher_fee: 0 }],
     pricingSource: 'fallback',
   };
 };
 
 const findStudentName = (students: Student[], studentId: string): string => {
-  if (studentId === '__unbound__') return '未绑定学生';
+  if (studentId === INSTITUTION_UNBOUND_STUDENT_ID) return '机构排课';
+  if (studentId === UNBOUND_STUDENT_ID) return '未绑定学生';
   return students.find(student => student.id === studentId)?.name || '未知学生';
 };
 
@@ -254,7 +299,7 @@ export function buildFinancialDetails(
     const timeRange = `${startClock}-${endClock}`;
     const teacherId = schedule.teacher_id || course?.teacher_id;
     const teacher = teachers.find(item => item.id === teacherId);
-    const { pricings, pricingSource } = getSchedulePricings(schedule);
+    const { pricings, pricingSource } = getSchedulePricings(schedule, course);
     const studentCount = Math.max(1, pricings.length);
     const multiplier = billingUnit === BillingUnit.PER_HOUR ? durationHours : 1;
 
@@ -319,10 +364,12 @@ export function buildFinancialDetails(
       endTime: schedule.end_time,
       courseId: schedule.course_id,
       courseName: course?.display_name || schedule.course_name || course?.name || '未知课程',
+      courseType: course?.type || schedule.course_type || CourseType.ONE_ON_ONE,
+      courseTypeName: courseTypeNames[course?.type || schedule.course_type || CourseType.ONE_ON_ONE] || '未知',
       teacherId: teacherId || '__unassigned__',
       teacherName: teacher?.name || schedule.teacher_name || course?.teacher_name || '未设置老师',
       studentNames: finalRows.map(row => row.studentName).join('、'),
-      studentCount: finalRows.filter(row => row.studentId !== '__unbound__').length,
+      studentCount: finalRows.filter(row => row.studentId !== UNBOUND_STUDENT_ID && row.studentId !== INSTITUTION_UNBOUND_STUDENT_ID).length,
       durationHours,
       billingUnit,
       billingUnitName: billingUnit === BillingUnit.PER_HOUR ? '小时' : '次',
