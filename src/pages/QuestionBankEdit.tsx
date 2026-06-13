@@ -9,6 +9,7 @@ import type { KnowledgeNode, Question, QuestionVersion } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import QuestionPreviewCard from '../components/QuestionPreviewCard';
 import QuestionRichContent from '../components/QuestionRichContent';
+import RichQuestionEditor from '../components/RichQuestionEditor';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
 import {
@@ -558,13 +559,13 @@ const QuestionBankEdit: React.FC = () => {
       >
         <Form form={form} layout="vertical">
           <Form.Item name="content" label="题干" rules={[{ required: true, message: '请输入题干' }]}>
-            <TextArea rows={5} />
+            <RichQuestionEditor minHeight={180} placeholder="输入题干，可设置字体格式、插入公式和图片" />
           </Form.Item>
           <Form.Item name="answer" label="答案">
-            <TextArea rows={3} />
+            <RichQuestionEditor minHeight={120} placeholder="输入答案，可插入公式和图片" />
           </Form.Item>
           <Form.Item name="analysis" label="解析">
-            <TextArea rows={4} />
+            <RichQuestionEditor minHeight={140} placeholder="输入解析，可设置字体格式、插入公式和图片" />
           </Form.Item>
           <Form.Item name="options" label="选项">
             <TextArea rows={3} placeholder="每行一个选项" />

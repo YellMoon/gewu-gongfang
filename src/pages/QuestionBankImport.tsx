@@ -6,7 +6,7 @@ import {
 import {
   PlusOutlined, FileWordOutlined, BookOutlined, FormOutlined,
   FileAddOutlined, CheckCircleOutlined, BranchesOutlined, FolderOpenOutlined,
-  DeleteOutlined, EditOutlined, CloseCircleOutlined, DownloadOutlined
+  DeleteOutlined, EditOutlined, CloseCircleOutlined, DownloadOutlined, TagsOutlined, AimOutlined
 } from '@ant-design/icons';
 import type { Question, KnowledgeNode, ImportTask, ImportTaskItem } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
@@ -1069,7 +1069,7 @@ const QuestionBankImport: React.FC = () => {
             extra={<Button type="link" size="small" onClick={() => setTreeVisible(false)}>收起</Button>}
             style={{ height: '100%' }}
           >
-            <div className="qb-tree-section-title qb-knowledge-tree-title"><BranchesOutlined /> 知识点</div>
+            <div className="qb-tree-section-title qb-knowledge-tree-title"><TagsOutlined /> 知识点</div>
             {/* Root-level inline add */}
             {addingChildParentId === '__ROOT__' ? (
               <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -1166,7 +1166,7 @@ const QuestionBankImport: React.FC = () => {
               style={{ fontSize: 13 }} />
             </div>
 
-            <div className="qb-tree-section-title qb-model-tree-title"><BranchesOutlined /> 模型</div>
+            <div className="qb-tree-section-title qb-model-tree-title"><AimOutlined /> 模型</div>
             {addingChildParentId === 'model:__ROOT__' ? (
               <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Input size="small" placeholder="根模型名称" value={addingChildName}

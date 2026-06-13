@@ -18,6 +18,7 @@ import { splitSearchTerms } from '../utils/highlightText';
 import { toggleQuestionBasket, useQuestionBasketIds } from '../components/QuestionBasket';
 import QuestionPreviewCard from '../components/QuestionPreviewCard';
 import QuestionRenderer, { createKaTeXPhysicsOptions } from '../components/QuestionRenderer';
+import RichQuestionEditor from '../components/RichQuestionEditor';
 import {
   cacheQuestionTrees,
   ensureQuestionLocalStoreSeeded,
@@ -952,7 +953,7 @@ const QuestionBankPreview: React.FC = () => {
               style={{ fontSize: 13 }} />
             </div>
             <Divider className="qb-tree-divider" />
-            <div className="qb-tree-section-title qb-model-tree-title"><BranchesOutlined /> 模型树</div>
+            <div className="qb-tree-section-title qb-model-tree-title"><AimOutlined /> 模型树</div>
             <div className="knowledge-tree">
               <Tree
                 treeData={visibleModelTreeData}
@@ -1260,7 +1261,7 @@ const QuestionBankPreview: React.FC = () => {
           </Row>
 
           <Form.Item name="content" label="题目内容" rules={[{ required: true }]}>
-            <TextArea rows={4} placeholder={'支持公式（用 $$ 包裹），如 $$F=ma$$\n物理量用斜体 <i>F</i>、单位正体 m/s、数学常数正体 π\n下标属性用 \\mathrm：$$v_{\\mathrm{0}}$$\n向量用 \\boldsymbol：$$\\boldsymbol{F}$$'} />
+            <RichQuestionEditor minHeight={180} placeholder="输入题干，可设置字体格式、插入公式和图片" />
           </Form.Item>
           <details style={{ marginBottom: 12, fontSize: 12, color: '#666', background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 4, padding: '6px 10px' }}>
             <summary style={{ cursor: 'pointer', fontWeight: 600 }}>物理学科正斜体规范</summary>
@@ -1291,13 +1292,13 @@ const QuestionBankPreview: React.FC = () => {
             </Col>
             <Col span={12}>
               <Form.Item name="answer" label="答案" rules={[{ required: true }]}>
-                <Input placeholder="正确答案" />
+                <RichQuestionEditor minHeight={120} placeholder="输入答案，可插入公式和图片" />
               </Form.Item>
             </Col>
           </Row>
 
           <Form.Item name="analysis" label="解析">
-            <TextArea rows={2} placeholder="解题思路（可选）" />
+            <RichQuestionEditor minHeight={140} placeholder="输入解析，可设置字体格式、插入公式和图片" />
           </Form.Item>
 
           <Divider orientation="left" style={{ fontSize: 12 }}>扩展信息</Divider>

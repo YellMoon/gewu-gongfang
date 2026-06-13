@@ -13,11 +13,16 @@ const statsLayout = read('src/layout/StatsPageLayout.tsx');
 const courseList = read('src/pages/CourseList.tsx');
 const studentList = read('src/pages/StudentList.tsx');
 const questionBankImport = read('src/pages/QuestionBankImport.tsx');
+const questionBankPreview = read('src/pages/QuestionBankPreview.tsx');
+const questionBankEdit = read('src/pages/QuestionBankEdit.tsx');
 const appIndex = read('src/index.tsx');
 const appShell = read('src/layout/AppShell.tsx');
 const indexCss = read('src/index.css');
 const revenueStatistics = read('src/pages/RevenueStatistics.tsx');
 const revenueDetailFilters = read('src/utils/revenueDetailFilters.mjs');
+const questionRenderer = read('src/components/QuestionRenderer.tsx');
+const questionRendererCss = read('src/components/QuestionRenderer.css');
+const richQuestionEditor = read('src/components/RichQuestionEditor.tsx');
 
 assert(
   !scheduleCalendar.includes('馃搵') && !batchSelection.includes('馃搵'),
@@ -137,10 +142,11 @@ assert(
 
 assert(
   studentList.includes('buildSchoolOptions') &&
-  studentList.includes('onSearch={setSchoolSearchText}') &&
-  studentList.includes('onInputKeyDown') &&
-  !studentList.includes('mode="tags"'),
-  'student school field should be a single searchable input-select that does not render duplicate/blank tag options'
+  studentList.includes('schoolOptionMatches') &&
+  studentList.includes('listHeight={360}') &&
+  studentList.includes('maxCount={1}') &&
+  !studentList.includes('<AutoComplete'),
+  'student school field should use the same Select dropdown behavior as other inputs, with a taller list and fuzzy matching'
 );
 
 assert(
@@ -152,16 +158,35 @@ assert(
 assert(
   questionBankImport.includes('qb-tree-section-title qb-knowledge-tree-title') &&
   questionBankImport.includes('qb-tree-section-title qb-model-tree-title') &&
-  !questionBankImport.includes('<Divider orientation="left" style={{ fontSize: 12 }}>模型</Divider>') &&
-  !questionBankImport.includes('<Divider orientation="left" style={{ fontSize: 12 }}>妯'),
-  'knowledge and model tree section titles should use the same subtitle style'
+  questionBankImport.includes('<TagsOutlined /> \u77e5\u8bc6\u70b9') &&
+  questionBankImport.includes('<AimOutlined /> \u6a21\u578b'),
+  'knowledge and model tree section titles should share typography but use lower-level icons'
 );
 
 assert(
   indexCss.includes('.knowledge-tree .ant-tree-switcher-noop::after') &&
+  indexCss.includes('.knowledge-tree .ant-tree-switcher-noop .ant-tree-switcher-line-icon') &&
   indexCss.includes('repeating-linear-gradient') &&
-  indexCss.includes('align-self: flex-start'),
-  'knowledge tree leaf rows should draw connector dashes without plus circles and keep switchers aligned at the top'
+  indexCss.includes('margin-top: 5px'),
+  'knowledge tree leaf rows should draw connector dashes without plus circles and keep switchers aligned at the correct height'
 );
 
+assert(
+  !questionRendererCss.includes('.omml-frac') &&
+  !questionRendererCss.includes('.omml-rad') &&
+  questionRenderer.includes('convertOmmlHtmlToLatexFragments') &&
+  questionRenderer.includes('legacyLatexPlaceholder(`\\\\sqrt') &&
+  questionRenderer.includes('legacyLatexPlaceholder(`\\\\frac'),
+  'formula rendering should leave fractions and roots to KaTeX instead of custom OMML sizing'
+);
+
+assert(
+  richQuestionEditor.includes('contentEditable') &&
+  richQuestionEditor.includes('insertFormula') &&
+  richQuestionEditor.includes('insertImage') &&
+  richQuestionEditor.includes('applyImageAlignment') &&
+  questionBankPreview.includes('RichQuestionEditor') &&
+  questionBankEdit.includes('RichQuestionEditor'),
+  'question edit dialogs should use a WYSIWYG editor for rich text, formulas, and images'
+);
 console.log('ui regression checks passed');

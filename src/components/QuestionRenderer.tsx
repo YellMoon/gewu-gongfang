@@ -545,6 +545,33 @@ function legacyLatexPlaceholder(latex: string): string {
   return `<span class="legacy-latex" data-latex="${encodeURIComponent(latex)}"></span>`;
 }
 
+function htmlMathFragmentToLatex(value: string): string {
+  const legacy = String(value || '').match(/<span class="legacy-latex" data-latex="([^"]*)"><\/span>/i);
+  if (legacy) return readLatexAttribute(legacy[1]);
+  return escapeLatexText(stripSimpleHtml(value));
+}
+
+function convertOmmlHtmlToLatexFragments(content: string): string {
+  let next = String(content || '');
+  for (let i = 0; i < 4; i += 1) {
+    const before = next;
+    next = next.replace(
+      /<span class="omml-frac">\s*<span class="omml-frac-num">([\s\S]*?)<\/span>\s*<span class="omml-frac-den">([\s\S]*?)<\/span>\s*<\/span>/gi,
+      (_match, num, den) => legacyLatexPlaceholder(`\\frac{${htmlMathFragmentToLatex(num)}}{${htmlMathFragmentToLatex(den)}}`)
+    );
+    next = next.replace(
+      /<span class="omml-rad(?:\s+has-frac)?">\s*(?:<span class="omml-rad-index">([\s\S]*?)<\/span>\s*)?<span class="omml-rad-sign">[\s\S]*?<\/span>\s*<span class="omml-rad-body">([\s\S]*?)<\/span>\s*<\/span>/gi,
+      (_match, degree, body) => {
+        const bodyLatex = htmlMathFragmentToLatex(body);
+        const degreeLatex = htmlMathFragmentToLatex(degree || '');
+        return legacyLatexPlaceholder(degreeLatex ? `\\sqrt[${degreeLatex}]{${bodyLatex}}` : `\\sqrt{${bodyLatex}}`);
+      }
+    );
+    if (next === before) break;
+  }
+  return next;
+}
+
 function convertHtmlScriptsToLatex(content: string): string {
   const basePattern = String.raw`(?:<i>[^<]+<\/i>|<em>[^<]+<\/em>|[A-Za-zα-ωΑ-ΩμΩ]+|\d+(?:\.\d+)?|[)\]])`;
   let next = String(content || '');
@@ -913,7 +940,10 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
     const deduped = removeOptionImageDuplicates(removeDuplicatedSubQuestionLines(content || ''), normalizedOptions);
     const normalized = normalizeSubQuestionLabels(deduped);
     const cleaned = normalizeStemImagePlacement(normalized, normalizedOptions.length > 0, questionType);
-    return { stemText: convertLegacyLatexFragments(convertHtmlLatexFractions(cleaned)), stemImages: [] as string[] };
+    return {
+      stemText: convertOmmlHtmlToLatexFragments(convertLegacyLatexFragments(convertHtmlLatexFractions(cleaned))),
+      stemImages: [] as string[],
+    };
   }, [content, normalizedOptions]);
 
   const stemWithInlineOptionGrids = useMemo(() => formatInlineOptionsInPlace(stemText), [stemText]);

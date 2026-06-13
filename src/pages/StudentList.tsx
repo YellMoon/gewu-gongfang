@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Table, Button, Form, Input, InputNumber, Select as AntSelect,
-  Space, message, Popconfirm, Tag, Row, Col, Divider, Statistic, AutoComplete
+  Space, message, Popconfirm, Tag, Row, Col, Divider, Statistic
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -27,6 +27,20 @@ function buildSchoolOptions(values: any[], searchText = '') {
   return Array.from(unique.values())
     .sort((a, b) => a.localeCompare(b, 'zh-CN'))
     .map(name => ({ label: name, value: name }));
+}
+
+function schoolOptionMatches(inputValue: string, optionValue: any) {
+  const input = normalizeSchoolName(inputValue).toLocaleLowerCase('zh-CN');
+  const target = normalizeSchoolName(optionValue).toLocaleLowerCase('zh-CN');
+  if (!input) return true;
+  if (target.includes(input)) return true;
+  let cursor = 0;
+  for (const char of input) {
+    cursor = target.indexOf(char, cursor);
+    if (cursor < 0) return false;
+    cursor += 1;
+  }
+  return true;
 }
 
 const StudentList: React.FC = () => {
@@ -77,7 +91,7 @@ const StudentList: React.FC = () => {
     setEditingStudent(student);
     form.setFieldsValue({
       ...student,
-      school: student.school || undefined,
+      school: student.school ? [student.school] : [],
       grade_year: student.grade_year || new Date().getFullYear()
     });
     setModalVisible(true);
@@ -286,27 +300,32 @@ const StudentList: React.FC = () => {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="school" label="学校">
-                <AutoComplete
+                <AntSelect
+                  mode="tags"
+                  maxCount={1}
+                  maxTagCount={1}
                   placeholder="搜索或输入学校名称"
                   allowClear
+                  showSearch
+                  listHeight={360}
                   options={buildSchoolOptions(schools, schoolSearchText)}
                   filterOption={(inputValue, option) =>
-                    normalizeSchoolName(option?.value).toLocaleLowerCase('zh-CN').includes(inputValue.toLocaleLowerCase('zh-CN'))
+                    schoolOptionMatches(inputValue, option?.value ?? option?.label)
                   }
                   onSearch={setSchoolSearchText}
+                  onChange={(value) => {
+                    const selected = Array.isArray(value) ? value.slice(-1)[0] : value;
+                    form.setFieldValue('school', selected ? [normalizeSchoolName(selected)] : []);
+                  }}
                   onSelect={(value) => {
-                    form.setFieldValue('school', normalizeSchoolName(value));
+                    form.setFieldValue('school', [normalizeSchoolName(value)]);
                     setSchoolSearchText('');
                   }}
                   onBlur={() => {
-                    const typed = normalizeSchoolName(form.getFieldValue('school') || schoolSearchText);
-                    form.setFieldValue('school', typed || undefined);
+                    const raw = form.getFieldValue('school');
+                    const typed = normalizeSchoolName(Array.isArray(raw) ? raw.slice(-1)[0] : raw || schoolSearchText);
+                    form.setFieldValue('school', typed ? [typed] : []);
                     setSchoolSearchText('');
-                  }}
-                  onInputKeyDown={(event) => {
-                    if (event.key !== 'Enter' && event.key !== 'Tab') return;
-                    const typed = normalizeSchoolName(form.getFieldValue('school') || schoolSearchText);
-                    if (typed) form.setFieldValue('school', typed);
                   }}
                 />
               </Form.Item>

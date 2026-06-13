@@ -47,64 +47,6 @@
   white-space: normal;
 }
 
-.omml-frac {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: stretch;
-  vertical-align: middle;
-  line-height: 1.15;
-  margin: 0 2px;
-}
-
-.omml-frac-num,
-.omml-frac-den {
-  display: block;
-  padding: 0 3px;
-  text-align: center;
-  white-space: nowrap;
-  min-width: 100%;
-}
-
-.omml-frac-den {
-  border-top: 1px solid currentColor;
-}
-
-.omml-rad {
-  display: inline-flex;
-  align-items: flex-start;
-  vertical-align: middle;
-  line-height: 1.2;
-  margin: 0 2px;
-}
-
-.omml-rad-index {
-  align-self: flex-start;
-  margin-right: -2px;
-  font-size: 0.65em;
-  line-height: 1;
-}
-
-.omml-rad-sign {
-  font-size: 1.15em;
-  line-height: 1.05;
-}
-
-.omml-rad.has-frac {
-  align-items: stretch;
-}
-
-.omml-rad.has-frac .omml-rad-sign {
-  font-size: 1.15em;
-  line-height: 1.05;
-}
-
-.omml-rad-body {
-  display: inline-block;
-  border-top: 1px solid currentColor;
-  padding: 1px 3px 0 2px;
-  line-height: 1.15;
-}
-
 /* KaTeX 正斜体：物理量默认斜体，\mathrm/\text 为正体（KaTeX 已内置此规范） */
 
 /* ── 选择题选项网格 ── */

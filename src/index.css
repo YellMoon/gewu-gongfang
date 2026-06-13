@@ -163,7 +163,7 @@ td,
   box-shadow: none !important;
   position: relative;
   align-self: flex-start !important;
-  margin-top: 3px !important;
+  margin-top: 5px !important;
   flex-shrink: 0;
   transition: none !important;
   background-clip: border-box !important;
@@ -300,6 +300,14 @@ td,
   box-shadow: none !important;
   border-radius: 0 !important;
   overflow: visible !important;
+  margin-top: 5px !important;
+}
+
+.knowledge-tree .ant-tree-switcher-noop .ant-tree-switcher-line-icon,
+.knowledge-tree .ant-tree-switcher-noop .ant-tree-switcher-icon,
+.knowledge-tree .ant-tree-switcher-noop .anticon,
+.knowledge-tree .ant-tree-switcher-noop svg {
+  display: none !important;
 }
 
 .knowledge-tree .ant-tree-switcher-noop::before {
@@ -353,6 +361,37 @@ td,
 
 .qb-model-tree-title {
   margin-top: 16px;
+}
+
+.rich-question-editor {
+  border: 1px solid var(--app-border-color, #d8dee9);
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.rich-question-editor__toolbar {
+  width: 100%;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--app-border-color, #d8dee9);
+  background: #f8fafc;
+}
+
+.rich-question-editor__surface {
+  padding: 10px 12px;
+  outline: none;
+  line-height: 1.65;
+  text-align: left;
+  overflow-y: auto;
+}
+
+.rich-question-editor__surface:empty::before {
+  content: attr(data-placeholder);
+  color: #9ca3af;
+}
+
+.rich-question-editor__surface img {
+  cursor: pointer;
 }
 
 :root {
