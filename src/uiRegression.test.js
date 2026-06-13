@@ -11,6 +11,9 @@ const questionBankTools = read('src/pages/QuestionBankTools.tsx');
 const appNavigation = read('src/navigation/appNavigation.tsx');
 const statsLayout = read('src/layout/StatsPageLayout.tsx');
 const courseList = read('src/pages/CourseList.tsx');
+const studentList = read('src/pages/StudentList.tsx');
+const questionBankImport = read('src/pages/QuestionBankImport.tsx');
+const appIndex = read('src/index.tsx');
 const appShell = read('src/layout/AppShell.tsx');
 const indexCss = read('src/index.css');
 const revenueStatistics = read('src/pages/RevenueStatistics.tsx');
@@ -109,6 +112,56 @@ assert(
   revenueStatistics.includes('按来源统计') &&
   !revenueStatistics.includes('按课程来源统计'),
   'revenue page should use the new metric, section titles, and source analysis labels'
+);
+
+assert(
+  revenueDetailFilters.includes('COURSE_TYPE_ONE_ON_ONE') &&
+  revenueDetailFilters.includes('courseIsInstitutionOwned') &&
+  revenueDetailFilters.includes('studentIsFromSelectedInstitution'),
+  'institution filtering should distinguish one-on-one institution courses from multi-student course attribution'
+);
+
+assert(
+  appIndex.includes("import 'dayjs/locale/zh-cn'") &&
+  appIndex.includes("dayjs.locale('zh-cn')") &&
+  appIndex.includes('weekStart: 1'),
+  'all Ant Design date pickers should use Chinese dayjs locale and Monday week start'
+);
+
+assert(
+  scheduleCalendar.includes('getCourseDisplayName') &&
+  scheduleCalendar.includes('c.active || c.id === editingSchedule?.course_id') &&
+  !scheduleCalendar.includes('const courseName = course?.name || values.courseName'),
+  'editing ended courses should keep using the human display name and keep the inactive course selectable while editing'
+);
+
+assert(
+  studentList.includes('buildSchoolOptions') &&
+  studentList.includes('onSearch={setSchoolSearchText}') &&
+  studentList.includes('onInputKeyDown') &&
+  !studentList.includes('mode="tags"'),
+  'student school field should be a single searchable input-select that does not render duplicate/blank tag options'
+);
+
+assert(
+  !courseList.includes('prev.room_id !== cur.room_id || prev.color !== cur.color') &&
+  !courseList.includes('backgroundColor: color, border'),
+  'course address field should not leave the old course-color preview box below the address selector'
+);
+
+assert(
+  questionBankImport.includes('qb-tree-section-title qb-knowledge-tree-title') &&
+  questionBankImport.includes('qb-tree-section-title qb-model-tree-title') &&
+  !questionBankImport.includes('<Divider orientation="left" style={{ fontSize: 12 }}>模型</Divider>') &&
+  !questionBankImport.includes('<Divider orientation="left" style={{ fontSize: 12 }}>妯'),
+  'knowledge and model tree section titles should use the same subtitle style'
+);
+
+assert(
+  indexCss.includes('.knowledge-tree .ant-tree-switcher-noop::after') &&
+  indexCss.includes('repeating-linear-gradient') &&
+  indexCss.includes('align-self: flex-start'),
+  'knowledge tree leaf rows should draw connector dashes without plus circles and keep switchers aligned at the top'
 );
 
 console.log('ui regression checks passed');

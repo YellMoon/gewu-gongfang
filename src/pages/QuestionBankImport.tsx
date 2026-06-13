@@ -1065,10 +1065,11 @@ const QuestionBankImport: React.FC = () => {
         <Col span={5}>
           <Card
             size="small"
-            title={<span><BranchesOutlined /> 知识点</span>}
+            title={<span><BranchesOutlined /> 知识树</span>}
             extra={<Button type="link" size="small" onClick={() => setTreeVisible(false)}>收起</Button>}
             style={{ height: '100%' }}
           >
+            <div className="qb-tree-section-title qb-knowledge-tree-title"><BranchesOutlined /> 知识点</div>
             {/* Root-level inline add */}
             {addingChildParentId === '__ROOT__' ? (
               <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -1165,7 +1166,7 @@ const QuestionBankImport: React.FC = () => {
               style={{ fontSize: 13 }} />
             </div>
 
-            <Divider orientation="left" style={{ fontSize: 12 }}>模型</Divider>
+            <div className="qb-tree-section-title qb-model-tree-title"><BranchesOutlined /> 模型</div>
             {addingChildParentId === 'model:__ROOT__' ? (
               <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Input size="small" placeholder="根模型名称" value={addingChildName}

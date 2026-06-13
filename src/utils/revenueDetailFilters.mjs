@@ -1,4 +1,7 @@
 const STUDENT_SOURCE_INSTITUTION = 2;
+const COURSE_TYPE_ONE_ON_ONE = 1;
+const COURSE_SOURCE_INSTITUTION = 2;
+const COURSE_SOURCE_MIXED = 3;
 const INSTITUTION_UNBOUND_STUDENT_ID = '__institution_unbound__';
 const UNBOUND_STUDENT_ID = '__unbound__';
 
@@ -6,23 +9,35 @@ function roundMoney(value) {
   return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 }
 
-function isStudentFromInstitution(row, students, institutionId) {
-  if (!institutionId) return true;
+function courseIsInstitutionOwned(row, institutionId) {
+  return Number(row.sourceType) === COURSE_SOURCE_INSTITUTION && row.institutionId === institutionId;
+}
+
+function studentIsFromSelectedInstitution(row, students, institutionId) {
   const student = students.find(item => item && item.id === row.studentId);
-  if (student?.source_type === STUDENT_SOURCE_INSTITUTION) {
-    return student.institution_id === institutionId;
-  }
+  return student?.source_type === STUDENT_SOURCE_INSTITUTION && student.institution_id === institutionId;
+}
+
+function rowMatchesInstitution(row, students, institutionId) {
+  if (!institutionId) return true;
+
   if (row.studentId === INSTITUTION_UNBOUND_STUDENT_ID) {
-    return row.institutionId === institutionId;
+    return courseIsInstitutionOwned(row, institutionId);
   }
-  return false;
+
+  if (Number(row.courseType) === COURSE_TYPE_ONE_ON_ONE) {
+    return courseIsInstitutionOwned(row, institutionId);
+  }
+
+  if (Number(row.sourceType) !== COURSE_SOURCE_INSTITUTION && Number(row.sourceType) !== COURSE_SOURCE_MIXED) return false;
+  return studentIsFromSelectedInstitution(row, students, institutionId);
 }
 
 export function filterStudentDetailsForRevenue(rows = [], students = [], filters = {}) {
   return rows.filter(row => {
     if (filters.studentId && row.studentId !== filters.studentId) return false;
     if (filters.teacherId && row.teacherId !== filters.teacherId) return false;
-    if (filters.institutionId && !isStudentFromInstitution(row, students, filters.institutionId)) return false;
+    if (filters.institutionId && !rowMatchesInstitution(row, students, filters.institutionId)) return false;
     return true;
   });
 }

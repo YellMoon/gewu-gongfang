@@ -95,6 +95,64 @@ const rows = [
     pricingSource: 'schedule',
   },
   {
+    key: 'group-inst-self',
+    scheduleId: 'schedule-group-self',
+    studentId: 'student-self',
+    studentName: '自有学生',
+    teacherId: 'teacher-a',
+    teacherName: '张老师',
+    date: '2026-06-13',
+    timeRange: '11:00-13:00',
+    startTime: '2026-06-13 11:00',
+    endTime: '2026-06-13 13:00',
+    courseId: 'course-group-inst',
+    courseName: '机构小组课',
+    courseType: 3,
+    courseTypeName: '小组课',
+    sourceType: 2,
+    sourceTypeName: '机构排课',
+    institutionId: 'inst-a',
+    durationHours: 2,
+    billingUnit: 1,
+    billingUnitName: '小时',
+    tuitionUnitPrice: 300,
+    tuitionTotal: 600,
+    teacherFeeUnitPrice: 100,
+    teacherFeeTotal: 200,
+    teacherFeeMode: 2,
+    teacherFeeModeName: '按学生',
+    pricingSource: 'schedule',
+  },
+  {
+    key: 'one-on-one-inst-self',
+    scheduleId: 'schedule-one-on-one',
+    studentId: 'student-self',
+    studentName: '自有学生',
+    teacherId: 'teacher-a',
+    teacherName: '张老师',
+    date: '2026-06-13',
+    timeRange: '13:00-15:00',
+    startTime: '2026-06-13 13:00',
+    endTime: '2026-06-13 15:00',
+    courseId: 'course-one-on-one-inst',
+    courseName: '机构一对一',
+    courseType: 1,
+    courseTypeName: '一对一',
+    sourceType: 2,
+    sourceTypeName: '机构排课',
+    institutionId: 'inst-a',
+    durationHours: 2,
+    billingUnit: 1,
+    billingUnitName: '小时',
+    tuitionUnitPrice: 300,
+    tuitionTotal: 600,
+    teacherFeeUnitPrice: 120,
+    teacherFeeTotal: 240,
+    teacherFeeMode: 1,
+    teacherFeeModeName: '按课次',
+    pricingSource: 'schedule',
+  },
+  {
     key: 'pure-inst-a',
     scheduleId: 'schedule-pure',
     studentId: '__institution_unbound__',
@@ -133,12 +191,12 @@ const students = [
 
 const filtered = filterStudentDetailsForRevenue(rows, students, { institutionId: 'inst-a' });
 
-assert.deepStrictEqual(filtered.map(row => row.key), ['mixed-inst-a', 'pure-inst-a']);
-assert.strictEqual(filtered.reduce((sum, row) => sum + row.tuitionTotal, 0), 900);
-assert.strictEqual(filtered.reduce((sum, row) => sum + row.teacherFeeTotal, 0), 360);
+assert.deepStrictEqual(filtered.map(row => row.key), ['mixed-inst-a', 'one-on-one-inst-self', 'pure-inst-a']);
+assert.strictEqual(filtered.reduce((sum, row) => sum + row.tuitionTotal, 0), 1500);
+assert.strictEqual(filtered.reduce((sum, row) => sum + row.teacherFeeTotal, 0), 600);
 
 const teacherDetails = buildTeacherDetailsFromStudentDetails(filtered);
-assert.strictEqual(teacherDetails.length, 2);
+assert.strictEqual(teacherDetails.length, 3);
 assert.deepStrictEqual(
   teacherDetails.map(row => ({
     scheduleId: row.scheduleId,
@@ -154,6 +212,13 @@ assert.deepStrictEqual(
       studentCount: 1,
       durationHours: 2,
       teacherFeeTotal: 160,
+    },
+    {
+      scheduleId: 'schedule-one-on-one',
+      studentNames: '自有学生',
+      studentCount: 1,
+      durationHours: 2,
+      teacherFeeTotal: 240,
     },
     {
       scheduleId: 'schedule-pure',

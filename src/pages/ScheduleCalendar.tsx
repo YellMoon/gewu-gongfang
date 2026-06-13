@@ -35,6 +35,18 @@ const WEEK_GRID_DEFAULT_HEIGHT = WEEK_GRID_BODY_HEIGHT + WEEK_GRID_TITLE_HEIGHT;
 const GLOBAL_MAX_SLOT = ((24 - MIN_START_HOUR) * 60) / SLOT_DURATION; // 192 = 24:00
 const LEGACY_COMPLETED_STATUS = 2;
 
+function stripCourseSystemPrefix(name?: string) {
+  return String(name || '').replace(/^\d{4}\s+\S+学期\s+/, '').trim();
+}
+
+function getCourseDisplayName(course?: Partial<Course>, fallback?: string) {
+  const displayName = String(course?.display_name || '').trim();
+  if (displayName) return displayName;
+  const plainName = stripCourseSystemPrefix(course?.name);
+  if (plainName) return plainName;
+  return String(fallback || '').trim();
+}
+
 function normalizeScheduleEvent(schedule: ScheduleEvent): ScheduleEvent {
   return {
     ...schedule,
@@ -554,7 +566,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
               boxShadow: '0 4px 20px rgba(24,144,255,0.3)'
             }}>
               <div style={{ fontSize: 12, fontWeight: 'bold', color: '#1890ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
-                {dragCourse ? (dragCourse.display_name || dragCourse.name.replace(/^\d{4}\s+\S+学期\s+/, '')) : '课程'}
+                {dragCourse ? getCourseDisplayName(dragCourse, '课程') : '课程'}
               </div>
               <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
                 {roomInfo && <span>{roomInfo} </span>}
@@ -1077,7 +1089,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             }}
           >
             <div style={{ fontWeight: 'bold', fontSize: 13, color: '#1890ff' }}>
-              {course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '')}
+              {getCourseDisplayName(course)}
             </div>
             <div style={{ fontSize: 11, color: '#666', marginTop: 1 }}>
               {course.year || course.name?.match(/^(\d{4})/)?.[1] || '-'} 年{' '}
@@ -1246,7 +1258,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
                 updated.room = course.room_name;
               }
               // 鍚屾课程鍚嶇О锛堝彧鏄剧ず绾绋嬪悕锛屼笉鍚勾浠藉鏈燂級
-              const displayCourseName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
+              const displayCourseName = getCourseDisplayName(course);
               if (displayCourseName && s.course_name !== displayCourseName) {
                 updated.course_name = displayCourseName;
               }
@@ -1352,7 +1364,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
       endTime: endTimeDayjs,
       duration: durationHours,
       courseId: schedule.course_id,
-      courseName: schedule.course_name,
+      courseName: getCourseDisplayName(course, schedule.course_name),
       teacherId: course?.teacher_id,
       status: schedule.status,
       room: (course?.room_id && course.room_id.split(',')[0].trim()) || (rooms.find(r => r.name === schedule.room)?.id) || schedule.room,
@@ -1508,7 +1520,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
 
   function handleDropCourse(course: Course, day: Dayjs, slot: number) {
     // 课程琛ㄥ彧鏄剧ず绾绋嬪悕
-    const displayCourseName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
+    const displayCourseName = getCourseDisplayName(course);
     const { hour: startH, minute: startM } = slotToTime(slot);
     const startTime = dayjs(day).hour(startH).minute(startM).second(0);
     // 有默认时长：直接创建课程框，不弹窗
@@ -1687,7 +1699,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
       const endDayjs = startDayjs.add(durationHours * 60, 'minute');
       
       const course = courses.find(c => c.id === values.courseId);
-      const courseName = course?.name || values.courseName;
+      const courseName = getCourseDisplayName(course, values.courseName);
       
       const datesToSave = batchDates.length > 0 ? batchDates : [values.date];
       const newSchedules: ScheduleEvent[] = [];
@@ -1805,7 +1817,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
       if (sDate.isBefore(startDate) || sDate.isAfter(endDate)) return s;
       const course = db?.getAllCourses?.()?.find((c: any) => c.id === s.course_id);
       if (!course) return s;
-      const displayCName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
+      const displayCName = getCourseDisplayName(course);
       count++;
       const refreshed: ScheduleEvent = { 
         ...s, 
@@ -2033,8 +2045,8 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
                   disabled={!modalTeacherId}
                   showSearch
                   options={courses
-                    .filter(c => c.active && !!modalTeacherId && String(c.teacher_id) === String(modalTeacherId))
-                    .map(c => ({ label: c.display_name || c.name, value: c.id }))
+                    .filter(c => (c.active || c.id === editingSchedule?.course_id) && !!modalTeacherId && String(c.teacher_id) === String(modalTeacherId))
+                    .map(c => ({ label: getCourseDisplayName(c), value: c.id }))
                   }
                   filterOption={(input: string, option: any) =>
                     String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
@@ -2042,7 +2054,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
                   onChange={(courseId: string) => {
                     const course = courses.find(c => c.id === courseId);
                     if (course) {
-                      const displayCName = course.display_name || course.name.replace(/^\d{4}\s+\S+学期\s+/, '');
+                      const displayCName = getCourseDisplayName(course);
                       form.setFieldValue('courseName', displayCName);
                       const roomId = (course.room_id && course.room_id.split(',')[0].trim()) || (rooms.find(r => r.name === course.room_name)?.id) || course.room_name || ''; form.setFieldValue('room', roomId);
                       if (course.default_duration_minutes) {

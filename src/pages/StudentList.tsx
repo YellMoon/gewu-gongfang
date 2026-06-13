@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Table, Button, Form, Input, InputNumber, Select as AntSelect,
-  Space, message, Popconfirm, Tag, Row, Col, Divider, Statistic
+  Space, message, Popconfirm, Tag, Row, Col, Divider, Statistic, AutoComplete
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -13,10 +13,27 @@ import DataPageLayout from '../layout/DataPageLayout';
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Option } = Select;
 
+function normalizeSchoolName(value: any) {
+  return String(typeof value === 'string' ? value : value?.name || '').trim();
+}
+
+function buildSchoolOptions(values: any[], searchText = '') {
+  const names = [...values.map(normalizeSchoolName), normalizeSchoolName(searchText)].filter(Boolean);
+  const unique = new Map<string, string>();
+  names.forEach(name => {
+    const key = name.toLocaleLowerCase('zh-CN');
+    if (!unique.has(key)) unique.set(key, name);
+  });
+  return Array.from(unique.values())
+    .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+    .map(name => ({ label: name, value: name }));
+}
+
 const StudentList: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [schools, setSchools] = useState<string[]>([]);
+  const [schoolSearchText, setSchoolSearchText] = useState('');
   const [payments, setPayments] = useState<Payment[]>([]);
   const [consumptions, setConsumptions] = useState<Consumption[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
@@ -36,7 +53,8 @@ const StudentList: React.FC = () => {
     const consumptionsData = dbService.getAllConsumptions();
     
     // 从数据库学校表获取学校列表
-    const schoolsFromDb = dbService.getAllSchools ? dbService.getAllSchools().map((s: any) => s.name) : [];
+    const rawSchools = dbService.getSchoolNames ? dbService.getSchoolNames() : (dbService.getAllSchools?.() || []);
+    const schoolsFromDb = buildSchoolOptions(rawSchools).map(option => option.value);
     
     setStudents(studentsData);
     setInstitutions(institutionsData);
@@ -59,7 +77,7 @@ const StudentList: React.FC = () => {
     setEditingStudent(student);
     form.setFieldsValue({
       ...student,
-      school: student.school ? [student.school] : [],
+      school: student.school || undefined,
       grade_year: student.grade_year || new Date().getFullYear()
     });
     setModalVisible(true);
@@ -76,10 +94,8 @@ const StudentList: React.FC = () => {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
-      // 处理学校字段（mode="tags" 返回数组）
-      if (Array.isArray(values.school)) {
-        values.school = values.school.filter(Boolean).join(', ');
-      }
+      // 处理学校字段（AutoComplete 返回单个字符串）
+      values.school = normalizeSchoolName(Array.isArray(values.school) ? values.school[0] : values.school);
       // 自动保存学校信息
       if (values.school) {
         dbService.addOrUpdateSchool(values.school);
@@ -270,25 +286,28 @@ const StudentList: React.FC = () => {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="school" label="学校">
-                <AntSelect
-                  mode="tags"
-                  maxCount={1}
-                  maxTagCount={1}
+                <AutoComplete
                   placeholder="搜索或输入学校名称"
-                  options={schools.map(s => ({ label: s, value: s }))}
-                  optionFilterProp="label"
-                  tagRender={({ label, closable, onClose }) => (
-                    <Tag
-                      closable={closable}
-                      onClose={onClose}
-                      onMouseDown={event => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                      }}
-                    >
-                      {label}
-                    </Tag>
-                  )}
+                  allowClear
+                  options={buildSchoolOptions(schools, schoolSearchText)}
+                  filterOption={(inputValue, option) =>
+                    normalizeSchoolName(option?.value).toLocaleLowerCase('zh-CN').includes(inputValue.toLocaleLowerCase('zh-CN'))
+                  }
+                  onSearch={setSchoolSearchText}
+                  onSelect={(value) => {
+                    form.setFieldValue('school', normalizeSchoolName(value));
+                    setSchoolSearchText('');
+                  }}
+                  onBlur={() => {
+                    const typed = normalizeSchoolName(form.getFieldValue('school') || schoolSearchText);
+                    form.setFieldValue('school', typed || undefined);
+                    setSchoolSearchText('');
+                  }}
+                  onInputKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== 'Tab') return;
+                    const typed = normalizeSchoolName(form.getFieldValue('school') || schoolSearchText);
+                    if (typed) form.setFieldValue('school', typed);
+                  }}
                 />
               </Form.Item>
             </Col>

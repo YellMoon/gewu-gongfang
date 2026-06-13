@@ -484,21 +484,6 @@ const CourseList: React.FC = () => {
                   ]}
                 />
               </Form.Item>
-              <Form.Item noStyle shouldUpdate={(prev, cur) => prev.room_id !== cur.room_id || prev.color !== cur.color}>
-                {({ getFieldValue }) => {
-                  const rid = getFieldValue('room_id');
-                  const color = getFieldValue('color') || getColorForRoom(Array.isArray(rid) ? rid[0] : rid, rooms);
-                  return (
-                    <div style={{ marginTop: -4, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{
-                        width: 16, height: 16, borderRadius: 4,
-                        backgroundColor: color, border: '1px solid #d9d9d9',
-                        display: 'inline-block', flexShrink: 0
-                      }} />
-                    </div>
-                  );
-                }}
-              </Form.Item>
             </Col>
           </Row>
 
