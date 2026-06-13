@@ -14,7 +14,7 @@ const courseList = read('src/pages/CourseList.tsx');
 const appShell = read('src/layout/AppShell.tsx');
 const indexCss = read('src/index.css');
 const revenueStatistics = read('src/pages/RevenueStatistics.tsx');
-const revenueDetailFilters = read('src/utils/revenueDetailFilters.js');
+const revenueDetailFilters = read('src/utils/revenueDetailFilters.mjs');
 
 assert(
   !scheduleCalendar.includes('馃搵') && !batchSelection.includes('馃搵'),
@@ -97,7 +97,8 @@ assert(
   revenueStatistics.includes('filterStudentDetailsForRevenue') &&
   revenueStatistics.includes('buildTeacherDetailsFromStudentDetails') &&
   revenueDetailFilters.includes('STUDENT_SOURCE_INSTITUTION') &&
-  revenueDetailFilters.includes('INSTITUTION_UNBOUND_STUDENT_ID'),
+  revenueDetailFilters.includes('INSTITUTION_UNBOUND_STUDENT_ID') &&
+  !revenueDetailFilters.includes('module.exports'),
   'institution filtering should use student-level source rows and rebuild teacher details from filtered rows'
 );
 

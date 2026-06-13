@@ -1,8 +1,10 @@
 const assert = require('assert');
+
+(async () => {
 const {
   buildTeacherDetailsFromStudentDetails,
   filterStudentDetailsForRevenue,
-} = require('./revenueDetailFilters');
+} = await import('./revenueDetailFilters.mjs');
 
 const rows = [
   {
@@ -164,3 +166,7 @@ assert.deepStrictEqual(
 );
 
 console.log('revenueDetailFilters tests passed');
+})().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});

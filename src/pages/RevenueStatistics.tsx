@@ -51,10 +51,10 @@ import {
 import type { RevenueStatisticsContext } from '../navigation/navigationContext';
 import { StudentAlertRow, buildStudentFinancialAlerts } from '../utils/todayWorkbenchData';
 import { buildSourceStats } from '../utils/revenueSourceStats';
-const {
+import {
   buildTeacherDetailsFromStudentDetails,
   filterStudentDetailsForRevenue,
-} = require('../utils/revenueDetailFilters');
+} from '../utils/revenueDetailFilters.mjs';
 
 const { RangePicker } = DatePicker;
 const Select = AutoCloseSelect as typeof AntSelect;

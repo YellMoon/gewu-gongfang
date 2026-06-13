@@ -18,7 +18,7 @@ function isStudentFromInstitution(row, students, institutionId) {
   return false;
 }
 
-function filterStudentDetailsForRevenue(rows = [], students = [], filters = {}) {
+export function filterStudentDetailsForRevenue(rows = [], students = [], filters = {}) {
   return rows.filter(row => {
     if (filters.studentId && row.studentId !== filters.studentId) return false;
     if (filters.teacherId && row.teacherId !== filters.teacherId) return false;
@@ -27,7 +27,7 @@ function filterStudentDetailsForRevenue(rows = [], students = [], filters = {}) 
   });
 }
 
-function buildTeacherDetailsFromStudentDetails(rows = []) {
+export function buildTeacherDetailsFromStudentDetails(rows = []) {
   const groupMap = new Map();
 
   rows.forEach(row => {
@@ -79,8 +79,3 @@ function buildTeacherDetailsFromStudentDetails(rows = []) {
     }))
     .sort((a, b) => String(a.startTime || '').localeCompare(String(b.startTime || '')) || String(a.teacherName || '').localeCompare(String(b.teacherName || ''), 'zh-CN'));
 }
-
-module.exports = {
-  buildTeacherDetailsFromStudentDetails,
-  filterStudentDetailsForRevenue,
-};
