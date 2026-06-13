@@ -1,6 +1,6 @@
 {
   "name": "gewu-gongfang",
-  "version": "5.0.16",
+  "version": "5.0.17",
   "description": "格物工坊（综合教育平台）",
   "main": "public/electron.js",
   "homepage": ".",
@@ -16,7 +16,7 @@
     "pack": "npm run build && npm run prepare:python && npm run rebuild:electron && electron-builder --dir && npm run rebuild:node",
     "dist:win": "node scripts/update-version.js --bump && npm run build && npm run prepare:python && npm run rebuild:electron && electron-builder --win && npm run rebuild:node",
     "test": "npm run test:backend",
-    "test:backend": "node backend/src/services/questionBankService.test.js && node backend/src/services/syncIncremental.test.js && node backend/src/services/eventBus.test.js && node src/utils/courseFilters.test.js && node src/uiRegression.test.js && node --check backend/src/routes/questionBank.js",
+    "test:backend": "node backend/src/services/questionBankService.test.js && node backend/src/services/syncIncremental.test.js && node backend/src/services/eventBus.test.js && node src/utils/courseFilters.test.js && node src/utils/revenueSourceStats.test.js && node src/uiRegression.test.js && node --check backend/src/routes/questionBank.js",
     "test:ui-smoke": "node scripts/ui-smoke-check.js",
     "qb:stats": "node scripts/question-bank-cli.js stats",
     "qb:clear": "node scripts/question-bank-cli.js clear",

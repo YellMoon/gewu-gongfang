@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Button,
   Card,
@@ -49,6 +49,7 @@ import {
 } from '../utils/financialDetails';
 import type { RevenueStatisticsContext } from '../navigation/navigationContext';
 import { StudentAlertRow, buildStudentFinancialAlerts } from '../utils/todayWorkbenchData';
+import { buildSourceStats } from '../utils/revenueSourceStats';
 
 const { RangePicker } = DatePicker;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -99,13 +100,14 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   const [teacherIncomeStats, setTeacherIncomeStats] = useState<TeacherIncomeSummary[]>([]);
   const [studentDetails, setStudentDetails] = useState<StudentCourseFeeDetail[]>([]);
   const [teacherDetails, setTeacherDetails] = useState<TeacherFeeDetail[]>([]);
-  const [showChart, setShowChart] = useState<'bar' | 'pie' | 'line' | null>(null);
+  const [sourceStats, setSourceStats] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<string>('');
   const [filterStudentId, setFilterStudentId] = useState<string | undefined>(undefined);
   const [filterTeacherId, setFilterTeacherId] = useState<string | undefined>(undefined);
   const [filterCourseTypes, setFilterCourseTypes] = useState<CourseType[]>([]);
   const [detailDisplayMode, setDetailDisplayMode] = useState<'separate' | 'grouped'>('separate');
+  const [showGroupedStudentAmounts, setShowGroupedStudentAmounts] = useState(true);
   const [visibleTeacherDetailColumns, setVisibleTeacherDetailColumns] = useState<string[]>([
     'date',
     'timeRange',
@@ -166,6 +168,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       const courses: Course[] = dbService.getAllCourses?.() || [];
       const students: Student[] = dbService.getAllStudents?.() || [];
       const teachers: Teacher[] = dbService.getAllTeachers?.() || [];
+      const institutions = dbService.getAllInstitutions?.() || [];
       const payments: Payment[] = dbService.getAllPayments?.() || [];
       const consumptions: Consumption[] = dbService.getAllConsumptions?.() || [];
       const schedules = loadLocalSchedules();
@@ -193,18 +196,20 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         if (filterTeacherId && row.teacherId !== filterTeacherId) return false;
         return true;
       });
+      const displayedStudentScheduleIds = new Set(displayedStudentDetails.map(row => row.scheduleId));
       const displayedTeacherDetails = allTeacherDetails.filter(row => {
         if (filterTeacherId && row.teacherId !== filterTeacherId) return false;
+        if (filterStudentId && !displayedStudentScheduleIds.has(row.scheduleId)) return false;
         return true;
       });
 
-      const totalTuition = roundMoney(allStudentDetails.reduce((sum, row) => sum + row.tuitionTotal, 0));
+      const totalTuition = roundMoney(displayedStudentDetails.reduce((sum, row) => sum + row.tuitionTotal, 0));
       const byCourseType = new Map<CourseType, number>();
       const bySourceType = new Map<CourseSourceType, number>();
       const byMonth = new Map<string, number>();
       const byInstitution = new Map<string, number>();
 
-      allStudentDetails.forEach(row => {
+      displayedStudentDetails.forEach(row => {
         byCourseType.set(row.courseType, roundMoney((byCourseType.get(row.courseType) || 0) + row.tuitionTotal));
         if (row.sourceType) {
           bySourceType.set(row.sourceType, roundMoney((bySourceType.get(row.sourceType) || 0) + row.tuitionTotal));
@@ -218,7 +223,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
 
       const result: RevenueStats = {
         total: totalTuition,
-        totalSchedules: validSchedules.length,
+        totalSchedules: displayedTeacherDetails.length,
         byCourseType: Array.from(byCourseType.entries()).map(([type, amount]) => ({
           type,
           typeName: courseTypeNames[type] || '未知',
@@ -232,7 +237,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
           percentage: totalTuition > 0 ? roundMoney((amount / totalTuition) * 100) : 0,
         })),
         byInstitution: Array.from(byInstitution.entries()).map(([institutionId, amount]) => {
-          const institution = dbService.getAllInstitutions?.().find((item: any) => item.id === institutionId);
+          const institution = institutions.find((item: any) => item.id === institutionId);
           return {
             institutionId,
             institutionName: institution?.name || '未知机构',
@@ -300,6 +305,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       setStudentStats(studentResult);
       setStudentDetails(displayedStudentDetails);
       setTeacherDetails(displayedTeacherDetails);
+      setSourceStats(buildSourceStats(displayedStudentDetails, students, institutions));
 
       const validPayments = payments.filter(payment => payment.payment_date >= startDate && payment.payment_date <= endDate);
       const validConsumptions = consumptions.filter(item => item.consumption_date >= startDate && item.consumption_date <= endDate);
@@ -329,32 +335,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
 
   const totalTeacherFee = roundMoney(teacherIncomeStats.reduce((sum, row) => sum + row.total, 0));
   const netIncome = roundMoney((stats?.total || 0) - totalTeacherFee);
-  const teacherFeeBySource = useMemo(() => {
-    const institutions = dbService?.getAllInstitutions?.() || [];
-    const sourceMap = new Map<string, { sourceName: string; amount: number; courseCount: number }>();
-
-    teacherDetails.forEach(row => {
-      const sourceKey = row.sourceType === CourseSourceType.INSTITUTION && row.institutionId
-        ? `institution:${row.institutionId}`
-        : row.sourceType === CourseSourceType.SELF
-          ? 'self'
-          : `source:${row.sourceType || 'unknown'}`;
-      const institution = row.institutionId
-        ? institutions.find((item: any) => item.id === row.institutionId)
-        : undefined;
-      const sourceName = row.sourceType === CourseSourceType.INSTITUTION
-        ? (institution?.name || row.sourceTypeName || '机构排课')
-        : row.sourceType === CourseSourceType.SELF
-          ? '自有课程'
-          : (row.sourceTypeName || '未设置来源');
-      const current = sourceMap.get(sourceKey) || { sourceName, amount: 0, courseCount: 0 };
-      current.amount = roundMoney(current.amount + row.teacherFeeTotal);
-      current.courseCount += 1;
-      sourceMap.set(sourceKey, current);
-    });
-
-    return Array.from(sourceMap.values()).sort((a, b) => b.amount - a.amount);
-  }, [teacherDetails, dbService]);
+  const totalScheduleHours = roundMoney(teacherDetails.reduce((sum, row) => sum + row.durationHours, 0));
 
   const courseTypeChartData = stats?.byCourseType ? {
     labels: stats.byCourseType.map(item => item.typeName),
@@ -365,11 +346,11 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
     }],
   } : null;
 
-  const sourceTypeChartData = stats?.bySourceType ? {
-    labels: stats.bySourceType.map(item => item.sourceName),
+  const sourceChartData = sourceStats.length > 0 ? {
+    labels: sourceStats.map(item => item.sourceName),
     datasets: [{
-      data: stats.bySourceType.map(item => item.percentage),
-      backgroundColor: ['#1677ff', '#52c41a', '#faad14'],
+      data: sourceStats.map(item => item.teacherFeeAmount),
+      backgroundColor: ['#1677ff', '#52c41a', '#faad14', '#f5222d', '#722ed1'],
     }],
   } : null;
 
@@ -629,18 +610,21 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
     <>
 
       {stats && (
-        <Row gutter={16} style={{ marginBottom: 16 }}>
-          <Col span={6}>
+        <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+          <Col flex="1 1 160px">
             <Card><Statistic title="应收学费" value={stats.total} precision={2} prefix="¥" valueStyle={{ color: '#3f8600' }} /></Card>
           </Col>
-          <Col span={6}>
+          <Col flex="1 1 160px">
             <Card><Statistic title="老师课时费" value={totalTeacherFee} precision={2} prefix="¥" valueStyle={{ color: '#cf6b00' }} /></Card>
           </Col>
-          <Col span={6}>
+          <Col flex="1 1 160px">
             <Card><Statistic title="净收入估算" value={netIncome} precision={2} prefix="¥" valueStyle={{ color: netIncome >= 0 ? '#1677ff' : '#cf1322' }} /></Card>
           </Col>
-          <Col span={6}>
+          <Col flex="1 1 160px">
             <Card><Statistic title="排课数量" value={stats.totalSchedules || 0} suffix="节" /></Card>
+          </Col>
+          <Col flex="1 1 160px">
+            <Card><Statistic title="课时数" value={totalScheduleHours} precision={2} suffix="小时" valueStyle={{ color: '#595959' }} /></Card>
           </Col>
         </Row>
       )}
@@ -695,9 +679,9 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
     details: studentDetails.filter(detail => detail.studentId === summary.studentId),
   }));
 
-  const renderSeparateFinancialTables = () => (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <div style={{ ...sectionPanelStyle, marginTop: 0, borderLeft: '4px solid #faad14' }}>
+  const renderSeparateFinancialTables = () => {
+    const teacherPanel = (
+      <div key="teacher-panel" style={{ ...sectionPanelStyle, marginTop: 0, borderLeft: '4px solid #faad14' }}>
         <div style={sectionHeaderStyle}>老师课时费{filterTeacherId ? '（已筛选）' : ''}</div>
         <div style={subPanelStyle}>
           <div style={subPanelTitleStyle}>汇总</div>
@@ -707,7 +691,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
             <Empty description="暂无老师课时费数据" />
           )}
         </div>
-        <div style={{ ...subPanelStyle, marginTop: 12 }}>
+        <div style={{ ...subPanelStyle, marginTop: 8 }}>
           <div style={{ ...sectionHeaderStyle, marginBottom: 10 }}>
             <span>明细</span>
             {renderColumnSettings(allTeacherDetailColumns, visibleTeacherDetailColumns, setVisibleTeacherDetailColumns)}
@@ -726,8 +710,10 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
           )}
         </div>
       </div>
+    );
 
-      <div style={{ ...sectionPanelStyle, borderLeft: '4px solid #52c41a' }}>
+    const studentPanel = (
+      <div key="student-panel" style={{ ...sectionPanelStyle, borderLeft: '4px solid #52c41a' }}>
         <div style={sectionHeaderStyle}>学生学费{filterStudentId ? '（已筛选）' : ''}</div>
         <div style={subPanelStyle}>
           <div style={subPanelTitleStyle}>汇总</div>
@@ -737,7 +723,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
             <Empty description="暂无学生学费数据" />
           )}
         </div>
-        <div style={{ ...subPanelStyle, marginTop: 12 }}>
+        <div style={{ ...subPanelStyle, marginTop: 8 }}>
           <div style={{ ...sectionHeaderStyle, marginBottom: 10 }}>
             <span>明细</span>
             {renderColumnSettings(allStudentDetailColumns, visibleStudentDetailColumns, setVisibleStudentDetailColumns)}
@@ -756,11 +742,21 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
           )}
         </div>
       </div>
-    </Space>
-  );
+    );
+
+    const panels = filterStudentId && !filterTeacherId
+      ? [studentPanel, teacherPanel]
+      : [teacherPanel, studentPanel];
+
+    return (
+      <Space direction="vertical" size={10} style={{ width: '100%' }}>
+        {panels}
+      </Space>
+    );
+  };
 
   const renderGroupedFinancialTables = () => (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+    <Space direction="vertical" size={10} style={{ width: '100%' }}>
       <div style={{ ...sectionPanelStyle, marginTop: 0, borderLeft: '4px solid #faad14' }}>
         <div style={sectionHeaderStyle}>
           <span>老师课时费</span>
@@ -812,8 +808,14 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
                       <Text strong>{summary.studentName}</Text>
                       <Tag>{summary.courseCount} 次</Tag>
                       <Tag>{roundMoney(summary.durationHours)} 小时</Tag>
-                      <Tag color="green">学费 ¥{summary.total.toFixed(2)}</Tag>
-                      <Tag color="orange">课时费 ¥{summary.teacherFeeTotal.toFixed(2)}</Tag>
+                      {showGroupedStudentAmounts ? (
+                        <>
+                          <Tag color="green" style={{ cursor: 'pointer' }} onClick={() => setShowGroupedStudentAmounts(false)}>学费 ¥{summary.total.toFixed(2)}</Tag>
+                          <Tag color="orange" style={{ cursor: 'pointer' }} onClick={() => setShowGroupedStudentAmounts(false)}>课时费 ¥{summary.teacherFeeTotal.toFixed(2)}</Tag>
+                        </>
+                      ) : (
+                        <Tag style={{ cursor: 'pointer' }} onClick={() => setShowGroupedStudentAmounts(true)}>显示金额</Tag>
+                      )}
                     </Space>
                   </div>
                   <Table
@@ -836,42 +838,43 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   );
 
   const analysisNode = (
-    <>
-      <Space wrap style={{ marginBottom: 12 }}>
-        <Button icon={<BarChartOutlined />} onClick={() => setShowChart(showChart === 'bar' ? null : 'bar')}>班型收入图</Button>
-        <Button icon={<PieChartOutlined />} onClick={() => setShowChart(showChart === 'pie' ? null : 'pie')}>来源占比图</Button>
-        <Button icon={<LineChartOutlined />} onClick={() => setShowChart(showChart === 'line' ? null : 'line')}>月度趋势图</Button>
-      </Space>
-
-      {showChart && stats && stats.total > 0 && (
-        <Card
-          title={
-            <Space>
-              {showChart === 'bar' && <BarChartOutlined />}
-              {showChart === 'pie' && <PieChartOutlined />}
-              {showChart === 'line' && <LineChartOutlined />}
-              {showChart === 'bar' && '班型收入分布'}
-              {showChart === 'pie' && '课程来源占比'}
-              {showChart === 'line' && '月度收入趋势'}
-              <Button size="small" onClick={() => setShowChart(null)}>关闭</Button>
-            </Space>
-          }
-          style={{ marginBottom: 16 }}
-        >
-          {showChart === 'bar' && courseTypeChartData && <Bar data={courseTypeChartData} options={{ responsive: true, plugins: { legend: { display: false } } }} height={80} />}
-          {showChart === 'pie' && sourceTypeChartData && (
-            <div style={{ maxWidth: 420, margin: '0 auto' }}>
-              <Pie data={sourceTypeChartData} options={{ responsive: true, plugins: { legend: { position: 'bottom' } } }} />
+    stats ? (
+      <Row gutter={[12, 12]}>
+        <Col xs={24} lg={8}>
+          <Card size="small" title={<Space><BarChartOutlined />班型收入</Space>}>
+            <div style={{ height: 180 }}>
+              {courseTypeChartData ? (
+                <Bar data={courseTypeChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }} />
+              ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无班型数据" />
+              )}
             </div>
-          )}
-          {showChart === 'line' && monthTrendChartData && <Line data={monthTrendChartData} options={{ responsive: true, plugins: { legend: { display: false } } }} height={80} />}
-        </Card>
-      )}
-
-      {stats ? (
-        <Row gutter={16}>
-          <Col span={12}>
-            <Card title="按班型统计" size="small" style={{ marginBottom: 16 }}>
+          </Card>
+        </Col>
+        <Col xs={24} lg={8}>
+          <Card size="small" title={<Space><PieChartOutlined />来源课时费</Space>}>
+            <div style={{ height: 180 }}>
+              {sourceChartData ? (
+                <Pie data={sourceChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }} />
+              ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无来源数据" />
+              )}
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} lg={8}>
+          <Card size="small" title={<Space><LineChartOutlined />月度趋势</Space>}>
+            <div style={{ height: 180 }}>
+              {monthTrendChartData ? (
+                <Line data={monthTrendChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }} />
+              ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无月度数据" />
+              )}
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card title="按班型统计" size="small">
               <Table
                 columns={[
                   { title: '班型', dataIndex: 'typeName', key: 'typeName' },
@@ -884,31 +887,18 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
                 size="small"
               />
             </Card>
-          </Col>
-          <Col span={12}>
-            <Card title="按课程来源统计" size="small" style={{ marginBottom: 16 }}>
+        </Col>
+        <Col xs={24} lg={12}>
+            <Card title="按来源统计" size="small">
               <Table
                 columns={[
                   { title: '来源', dataIndex: 'sourceName', key: 'sourceName' },
-                  { title: '学费收入', dataIndex: 'amount', key: 'amount', render: (amount: number) => `¥${amount.toFixed(2)}` },
-                  { title: '占比', dataIndex: 'percentage', key: 'percentage', render: (pct: number) => `${pct}%` },
+                  { title: '明细数', dataIndex: 'courseCount', key: 'courseCount', width: 80 },
+                  { title: '学费', dataIndex: 'tuitionAmount', key: 'tuitionAmount', width: 110, render: (amount: number) => `¥${amount.toFixed(2)}` },
+                  { title: '课时费', dataIndex: 'teacherFeeAmount', key: 'teacherFeeAmount', width: 110, render: (amount: number) => `¥${amount.toFixed(2)}` },
+                  { title: '课时', dataIndex: 'durationHours', key: 'durationHours', width: 90, render: (value: number) => `${roundMoney(value)} 小时` },
                 ]}
-                dataSource={stats.bySourceType}
-                rowKey="sourceName"
-                pagination={false}
-                size="small"
-              />
-            </Card>
-          </Col>
-          <Col span={24}>
-            <Card title="按来源/机构统计课时费收入" size="small" style={{ marginBottom: 16 }}>
-              <Table
-                columns={[
-                  { title: '来源/机构', dataIndex: 'sourceName', key: 'sourceName' },
-                  { title: '排课数量', dataIndex: 'courseCount', key: 'courseCount', width: 110, render: (value: number) => `${value} 节` },
-                  { title: '课时费收入', dataIndex: 'amount', key: 'amount', width: 140, render: (amount: number) => `¥${amount.toFixed(2)}` },
-                ]}
-                dataSource={teacherFeeBySource}
+                dataSource={sourceStats}
                 rowKey="sourceName"
                 pagination={false}
                 size="small"
@@ -916,10 +906,9 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
             </Card>
           </Col>
         </Row>
-      ) : (
-        <Empty description="暂无费用构成数据" />
-      )}
-    </>
+    ) : (
+      <Empty description="暂无费用构成数据" />
+    )
   );
 
   const detailsNode = (
@@ -928,7 +917,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       items={[
         {
           key: 'financial-tables',
-          label: '费用明细与汇总',
+          label: '数据明细',
           extra: (
             <Segmented
               size="small"
@@ -945,7 +934,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         },
         {
           key: 'analysis',
-          label: '费用构成分析',
+          label: '数据分析',
           children: analysisNode,
         },
       ]}

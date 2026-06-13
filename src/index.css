@@ -356,7 +356,7 @@ select,
   background: var(--app-sidebar-bg, #102a43) !important;
   box-shadow: none;
   transform: translateX(calc(-100% - 8px));
-  transition: transform 0.22s ease, box-shadow 0.22s ease;
+  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.34s ease;
   will-change: transform;
 }
 
@@ -486,6 +486,12 @@ select,
   min-height: calc(100vh - 64px);
   padding: 18px;
   overflow: auto;
+}
+
+.app-shell__content--course-calendar {
+  height: calc(100vh - 64px);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .page-header-bar {

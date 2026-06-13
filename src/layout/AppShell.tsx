@@ -36,9 +36,13 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
   const navVisible = navOpen || navPinned;
 
   useEffect(() => {
-    if (navVisible) {
-      const group = findOpenGroup(currentPage);
-      setOpenKeys(group ? [group] : []);
+    if (!navVisible) {
+      setOpenKeys([]);
+      return;
+    }
+    const group = findOpenGroup(currentPage);
+    if (group) {
+      setOpenKeys(prev => prev.includes(group) ? prev : [...prev, group]);
     }
   }, [navVisible, currentPage]);
 
@@ -61,7 +65,7 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
   const scheduleCloseNav = () => {
     if (navPinned) return;
     clearCloseTimer();
-    closeTimerRef.current = window.setTimeout(() => setNavOpen(false), 280);
+    closeTimerRef.current = window.setTimeout(() => setNavOpen(false), 420);
   };
 
   const togglePinnedNav = () => {
@@ -147,7 +151,7 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
           selectedKeys={[selectedKeyForPage(currentPage)]}
           openKeys={openKeys}
           items={menuItems}
-          onOpenChange={(keys) => setOpenKeys(keys.slice(-1))}
+          onOpenChange={(keys) => setOpenKeys([...keys])}
           onClick={({ key }) => handleNavigate(key as PageKey)}
         />
       </Sider>
@@ -182,7 +186,7 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
             )}
           />
         </div>
-        <Content className="app-shell__content">
+        <Content className={`app-shell__content app-shell__content--${currentPage}`}>
           {children}
         </Content>
       </Layout>
