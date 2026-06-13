@@ -31,6 +31,7 @@ import {
   Course,
   CourseSourceType,
   CourseType,
+  Institution,
   Payment,
   RevenueStats,
   Schedule,
@@ -50,6 +51,10 @@ import {
 import type { RevenueStatisticsContext } from '../navigation/navigationContext';
 import { StudentAlertRow, buildStudentFinancialAlerts } from '../utils/todayWorkbenchData';
 import { buildSourceStats } from '../utils/revenueSourceStats';
+const {
+  buildTeacherDetailsFromStudentDetails,
+  filterStudentDetailsForRevenue,
+} = require('../utils/revenueDetailFilters');
 
 const { RangePicker } = DatePicker;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -95,6 +100,7 @@ interface RevenueFilterState {
   studentId?: string;
   teacherId?: string;
   courseTypes: CourseType[];
+  institutionId?: string;
 }
 
 const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
@@ -117,9 +123,11 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   const [appliedStudentId, setAppliedStudentId] = useState<string | undefined>(undefined);
   const [appliedTeacherId, setAppliedTeacherId] = useState<string | undefined>(undefined);
   const [appliedCourseTypes, setAppliedCourseTypes] = useState<CourseType[]>([]);
+  const [appliedInstitutionId, setAppliedInstitutionId] = useState<string | undefined>(undefined);
   const [draftStudentId, setDraftStudentId] = useState<string | undefined>(undefined);
   const [draftTeacherId, setDraftTeacherId] = useState<string | undefined>(undefined);
   const [draftCourseTypes, setDraftCourseTypes] = useState<CourseType[]>([]);
+  const [draftInstitutionId, setDraftInstitutionId] = useState<string | undefined>(undefined);
   const [detailDisplayMode, setDetailDisplayMode] = useState<'separate' | 'grouped'>('separate');
   const [showGroupedStudentAmounts, setShowGroupedStudentAmounts] = useState(true);
   const [visibleTeacherDetailColumns, setVisibleTeacherDetailColumns] = useState<string[]>([
@@ -154,6 +162,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   ]);
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [allTeachers, setAllTeachers] = useState<Teacher[]>([]);
+  const [allInstitutions, setAllInstitutions] = useState<Institution[]>([]);
   const [contextMode, setContextMode] = useState<RevenueStatisticsContext['mode']>(context?.mode);
   const [arrearsRows, setArrearsRows] = useState<StudentAlertRow[]>([]);
   const [closedBalanceRows, setClosedBalanceRows] = useState<StudentAlertRow[]>([]);
@@ -182,6 +191,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         studentId: appliedStudentId,
         teacherId: appliedTeacherId,
         courseTypes: appliedCourseTypes,
+        institutionId: appliedInstitutionId,
       };
       const startDate = activeFilters.dateRange[0].format('YYYY-MM-DD');
       const endDate = activeFilters.dateRange[1].format('YYYY-MM-DD');
@@ -196,6 +206,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
 
       setAllStudents(students);
       setAllTeachers(teachers);
+      setAllInstitutions(institutions);
       setArrearsRows(financialAlerts.arrears);
       setClosedBalanceRows(financialAlerts.closedBalances);
 
@@ -211,17 +222,18 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       const allStudentDetails = details.studentDetails;
       const allTeacherDetails = details.teacherDetails;
 
-      const displayedStudentDetails = allStudentDetails.filter(row => {
-        if (activeFilters.studentId && row.studentId !== activeFilters.studentId) return false;
-        if (activeFilters.teacherId && row.teacherId !== activeFilters.teacherId) return false;
-        return true;
+      const displayedStudentDetails: StudentCourseFeeDetail[] = filterStudentDetailsForRevenue(allStudentDetails, students, {
+        studentId: activeFilters.studentId,
+        teacherId: activeFilters.teacherId,
+        institutionId: activeFilters.institutionId,
       });
-      const displayedStudentScheduleIds = new Set(displayedStudentDetails.map(row => row.scheduleId));
-      const displayedTeacherDetails = allTeacherDetails.filter(row => {
-        if (activeFilters.teacherId && row.teacherId !== activeFilters.teacherId) return false;
-        if (activeFilters.studentId && !displayedStudentScheduleIds.has(row.scheduleId)) return false;
-        return true;
-      });
+      const shouldRebuildTeacherDetails = Boolean(activeFilters.studentId || activeFilters.institutionId);
+      const displayedTeacherDetails: TeacherFeeDetail[] = shouldRebuildTeacherDetails
+        ? buildTeacherDetailsFromStudentDetails(displayedStudentDetails)
+        : allTeacherDetails.filter(row => {
+          if (activeFilters.teacherId && row.teacherId !== activeFilters.teacherId) return false;
+          return true;
+        });
 
       const totalTuition = roundMoney(displayedStudentDetails.reduce((sum, row) => sum + row.tuitionTotal, 0));
       const byCourseType = new Map<CourseType, number>();
@@ -359,12 +371,14 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       studentId: draftStudentId,
       teacherId: draftTeacherId,
       courseTypes: draftCourseTypes,
+      institutionId: draftInstitutionId,
     };
 
     setAppliedDateRange(nextFilters.dateRange);
     setAppliedStudentId(nextFilters.studentId);
     setAppliedTeacherId(nextFilters.teacherId);
     setAppliedCourseTypes(nextFilters.courseTypes);
+    setAppliedInstitutionId(nextFilters.institutionId);
     loadStats(nextFilters);
   };
 
@@ -610,6 +624,21 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
             />
           </Space>
         </Col>
+        <Col>
+          <Space>
+            <span>机构：</span>
+            <Select
+              placeholder="全部机构"
+              allowClear
+              showSearch
+              style={{ width: 180 }}
+              value={draftInstitutionId}
+              onChange={setDraftInstitutionId}
+              filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+              options={allInstitutions.map(institution => ({ label: institution.name, value: institution.id }))}
+            />
+          </Space>
+        </Col>
       </Row>
 
       <Divider style={{ margin: '12px 0' }} />
@@ -777,7 +806,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       </div>
     );
 
-    const panels = appliedStudentId && !appliedTeacherId
+    const panels = (appliedStudentId || appliedInstitutionId) && !appliedTeacherId
       ? [studentPanel, teacherPanel]
       : [teacherPanel, studentPanel];
 

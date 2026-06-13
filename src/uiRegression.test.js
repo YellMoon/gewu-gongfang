@@ -14,6 +14,7 @@ const courseList = read('src/pages/CourseList.tsx');
 const appShell = read('src/layout/AppShell.tsx');
 const indexCss = read('src/index.css');
 const revenueStatistics = read('src/pages/RevenueStatistics.tsx');
+const revenueDetailFilters = read('src/utils/revenueDetailFilters.js');
 
 assert(
   !scheduleCalendar.includes('馃搵') && !batchSelection.includes('馃搵'),
@@ -74,6 +75,9 @@ assert(
 assert(
   revenueStatistics.includes('draftStudentId') &&
   revenueStatistics.includes('appliedStudentId') &&
+  revenueStatistics.includes('draftInstitutionId') &&
+  revenueStatistics.includes('appliedInstitutionId') &&
+  revenueStatistics.includes('allInstitutions') &&
   revenueStatistics.includes('const applyFilters') &&
   revenueStatistics.includes('onClick={applyFilters}') &&
   revenueStatistics.includes('>筛选</Button>') &&
@@ -85,6 +89,16 @@ assert(
   !revenueStatistics.includes('筛选学生') &&
   !revenueStatistics.includes('筛选老师'),
   'revenue filters should be staged until the user clicks the filter button'
+);
+
+assert(
+  revenueStatistics.includes('机构：') &&
+  revenueStatistics.includes('全部机构') &&
+  revenueStatistics.includes('filterStudentDetailsForRevenue') &&
+  revenueStatistics.includes('buildTeacherDetailsFromStudentDetails') &&
+  revenueDetailFilters.includes('STUDENT_SOURCE_INSTITUTION') &&
+  revenueDetailFilters.includes('INSTITUTION_UNBOUND_STUDENT_ID'),
+  'institution filtering should use student-level source rows and rebuild teacher details from filtered rows'
 );
 
 assert(
