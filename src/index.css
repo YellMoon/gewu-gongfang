@@ -314,8 +314,10 @@ select,
 
 .app-shell {
   min-height: 100vh;
+  height: 100vh;
   background: var(--app-bg, #f5f7fb);
   position: relative;
+  overflow: hidden;
 }
 
 .app-shell__edge-trigger {
@@ -352,21 +354,37 @@ select,
   max-width: 236px !important;
   flex: 0 0 236px !important;
   height: 100vh;
-  overflow: auto;
+  overflow: hidden;
   background: var(--app-sidebar-bg, #102a43) !important;
   box-shadow: none;
-  transform: translateX(calc(-100% - 8px));
-  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.34s ease;
+  transform: translate3d(calc(-100% - 10px), 0, 0);
+  transition: transform 260ms cubic-bezier(0.2, 0, 0, 1);
+  backface-visibility: hidden;
+  contain: paint;
   will-change: transform;
 }
 
+.app-shell__sider::after {
+  content: '';
+  position: absolute;
+  inset: 0 -30px 0 auto;
+  width: 30px;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.22), rgba(15, 23, 42, 0));
+  transition: opacity 180ms ease;
+}
+
 .app-shell__sider--open {
-  box-shadow: 12px 0 30px rgba(15, 23, 42, 0.22);
-  transform: translateX(0);
+  transform: translate3d(0, 0, 0);
+}
+
+.app-shell__sider--open::after {
+  opacity: 1;
 }
 
 .app-shell__sider--pinned {
-  box-shadow: 10px 0 26px rgba(15, 23, 42, 0.18);
+  box-shadow: none;
 }
 
 .app-shell--nav-pinned .app-shell__edge-trigger {
@@ -435,6 +453,9 @@ select,
   padding: 10px 8px 16px;
   background: transparent !important;
   border-inline-end: 0 !important;
+  max-height: calc(100vh - 68px);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .app-shell__menu .ant-menu-item,
@@ -454,6 +475,9 @@ select,
 .app-shell__main {
   min-width: 0;
   width: 100%;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
   background: var(--app-bg, #f5f7fb);
 }
 
@@ -483,9 +507,11 @@ select,
 }
 
 .app-shell__content {
-  min-height: calc(100vh - 64px);
+  height: calc(100vh - 64px);
+  min-height: 0;
   padding: 18px;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .app-shell__content--course-calendar {
@@ -564,6 +590,7 @@ select,
 .stats-page-layout {
   width: 100%;
   min-width: 0;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--app-content-gap, 12px);

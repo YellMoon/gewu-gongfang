@@ -65,7 +65,7 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
   const scheduleCloseNav = () => {
     if (navPinned) return;
     clearCloseTimer();
-    closeTimerRef.current = window.setTimeout(() => setNavOpen(false), 420);
+    closeTimerRef.current = window.setTimeout(() => setNavOpen(false), 280);
   };
 
   const togglePinnedNav = () => {

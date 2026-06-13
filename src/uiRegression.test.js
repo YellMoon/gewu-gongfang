@@ -51,13 +51,40 @@ assert(
 );
 
 assert(
-  appShell.includes('setOpenKeys([])') && indexCss.includes('transition: transform 0.34s'),
-  'side navigation should close expanded groups only after hiding and use a calmer animation'
+  appShell.includes('setOpenKeys([])') &&
+  appShell.includes('window.setTimeout(() => setNavOpen(false), 280)') &&
+  indexCss.includes('transform: translate3d') &&
+  indexCss.includes('transition: transform 260ms') &&
+  !indexCss.includes('box-shadow 0.34s'),
+  'side navigation should close expanded groups only after hiding and use compositor-friendly animation'
 );
 
 assert(
   indexCss.includes('app-shell__content--course-calendar') && indexCss.includes('overflow: hidden'),
   'course calendar should suppress the outer page scrollbar'
+);
+
+assert(
+  indexCss.includes('height: 100vh') &&
+  indexCss.includes('height: calc(100vh - 64px)') &&
+  indexCss.includes('overscroll-behavior: contain'),
+  'app content should be a bounded scroll container so sticky statistics headers actually stick'
+);
+
+assert(
+  revenueStatistics.includes('draftStudentId') &&
+  revenueStatistics.includes('appliedStudentId') &&
+  revenueStatistics.includes('const applyFilters') &&
+  revenueStatistics.includes('onClick={applyFilters}') &&
+  revenueStatistics.includes('>筛选</Button>') &&
+  revenueStatistics.includes('学生：') &&
+  revenueStatistics.includes('老师：') &&
+  revenueStatistics.includes('课程类型：') &&
+  revenueStatistics.includes('统计范围：') &&
+  !revenueStatistics.includes('???') &&
+  !revenueStatistics.includes('筛选学生') &&
+  !revenueStatistics.includes('筛选老师'),
+  'revenue filters should be staged until the user clicks the filter button'
 );
 
 assert(

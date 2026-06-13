@@ -90,8 +90,19 @@ interface RevenueStatisticsProps {
   context?: RevenueStatisticsContext;
 }
 
+interface RevenueFilterState {
+  dateRange: [dayjs.Dayjs, dayjs.Dayjs];
+  studentId?: string;
+  teacherId?: string;
+  courseTypes: CourseType[];
+}
+
 const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
-  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
+  const [appliedDateRange, setAppliedDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
+    dayjs().startOf('month'),
+    dayjs().endOf('month'),
+  ]);
+  const [draftDateRange, setDraftDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
     dayjs().startOf('month'),
     dayjs().endOf('month'),
   ]);
@@ -103,9 +114,12 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   const [sourceStats, setSourceStats] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<string>('');
-  const [filterStudentId, setFilterStudentId] = useState<string | undefined>(undefined);
-  const [filterTeacherId, setFilterTeacherId] = useState<string | undefined>(undefined);
-  const [filterCourseTypes, setFilterCourseTypes] = useState<CourseType[]>([]);
+  const [appliedStudentId, setAppliedStudentId] = useState<string | undefined>(undefined);
+  const [appliedTeacherId, setAppliedTeacherId] = useState<string | undefined>(undefined);
+  const [appliedCourseTypes, setAppliedCourseTypes] = useState<CourseType[]>([]);
+  const [draftStudentId, setDraftStudentId] = useState<string | undefined>(undefined);
+  const [draftTeacherId, setDraftTeacherId] = useState<string | undefined>(undefined);
+  const [draftCourseTypes, setDraftCourseTypes] = useState<CourseType[]>([]);
   const [detailDisplayMode, setDetailDisplayMode] = useState<'separate' | 'grouped'>('separate');
   const [showGroupedStudentAmounts, setShowGroupedStudentAmounts] = useState(true);
   const [visibleTeacherDetailColumns, setVisibleTeacherDetailColumns] = useState<string[]>([
@@ -155,7 +169,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
     }
   };
 
-  const loadStats = async () => {
+  const loadStats = async (filters?: RevenueFilterState) => {
     if (!dbService) {
       console.warn('dbService not available yet');
       return;
@@ -163,8 +177,14 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
 
     setLoading(true);
     try {
-      const startDate = dateRange[0].format('YYYY-MM-DD');
-      const endDate = dateRange[1].format('YYYY-MM-DD');
+      const activeFilters = filters || {
+        dateRange: appliedDateRange,
+        studentId: appliedStudentId,
+        teacherId: appliedTeacherId,
+        courseTypes: appliedCourseTypes,
+      };
+      const startDate = activeFilters.dateRange[0].format('YYYY-MM-DD');
+      const endDate = activeFilters.dateRange[1].format('YYYY-MM-DD');
       const courses: Course[] = dbService.getAllCourses?.() || [];
       const students: Student[] = dbService.getAllStudents?.() || [];
       const teachers: Teacher[] = dbService.getAllTeachers?.() || [];
@@ -183,7 +203,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         const dateStr = schedule.start_time.split(' ')[0];
         if (dateStr < startDate || dateStr > endDate) return false;
         if (schedule.status === ScheduleStatus.LEAVE || schedule.status === ScheduleStatus.CANCELLED) return false;
-        if (filterCourseTypes.length > 0 && !filterCourseTypes.includes(schedule.course_type || CourseType.ONE_ON_ONE)) return false;
+        if (activeFilters.courseTypes.length > 0 && !activeFilters.courseTypes.includes(schedule.course_type || CourseType.ONE_ON_ONE)) return false;
         return true;
       });
 
@@ -192,14 +212,14 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       const allTeacherDetails = details.teacherDetails;
 
       const displayedStudentDetails = allStudentDetails.filter(row => {
-        if (filterStudentId && row.studentId !== filterStudentId) return false;
-        if (filterTeacherId && row.teacherId !== filterTeacherId) return false;
+        if (activeFilters.studentId && row.studentId !== activeFilters.studentId) return false;
+        if (activeFilters.teacherId && row.teacherId !== activeFilters.teacherId) return false;
         return true;
       });
       const displayedStudentScheduleIds = new Set(displayedStudentDetails.map(row => row.scheduleId));
       const displayedTeacherDetails = allTeacherDetails.filter(row => {
-        if (filterTeacherId && row.teacherId !== filterTeacherId) return false;
-        if (filterStudentId && !displayedStudentScheduleIds.has(row.scheduleId)) return false;
+        if (activeFilters.teacherId && row.teacherId !== activeFilters.teacherId) return false;
+        if (activeFilters.studentId && !displayedStudentScheduleIds.has(row.scheduleId)) return false;
         return true;
       });
 
@@ -332,6 +352,21 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   useEffect(() => {
     setContextMode(context?.mode);
   }, [context?.mode]);
+
+  const applyFilters = () => {
+    const nextFilters: RevenueFilterState = {
+      dateRange: draftDateRange,
+      studentId: draftStudentId,
+      teacherId: draftTeacherId,
+      courseTypes: draftCourseTypes,
+    };
+
+    setAppliedDateRange(nextFilters.dateRange);
+    setAppliedStudentId(nextFilters.studentId);
+    setAppliedTeacherId(nextFilters.teacherId);
+    setAppliedCourseTypes(nextFilters.courseTypes);
+    loadStats(nextFilters);
+  };
 
   const totalTeacherFee = roundMoney(teacherIncomeStats.reduce((sum, row) => sum + row.total, 0));
   const netIncome = roundMoney((stats?.total || 0) - totalTeacherFee);
@@ -524,85 +559,83 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
 
   const filtersNode = (
     <>
-        <Row gutter={[16, 12]} align="middle">
-          <Col>
-            <Space>
-              <span>统计范围：</span>
-              <RangePicker
-                value={dateRange}
-                onChange={dates => {
-                  if (dates?.[0] && dates?.[1]) setDateRange([dates[0], dates[1]]);
-                }}
-              />
-            </Space>
-          </Col>
-          <Col>
-            <Button type="primary" icon={<ReloadOutlined />} onClick={loadStats} loading={loading}>
-              统计
-            </Button>
-          </Col>
-          {lastRefresh && (
-            <Col>
-              <Text type="secondary" style={{ fontSize: 12 }}>上次刷新：{lastRefresh}</Text>
-            </Col>
-          )}
-          <Col flex="auto" />
-        </Row>
+      <Row gutter={[16, 12]} align="middle">
+        <Col>
+          <Space>
+            <span>学生：</span>
+            <Select
+              placeholder="全部学生"
+              allowClear
+              showSearch
+              style={{ width: 180 }}
+              value={draftStudentId}
+              onChange={setDraftStudentId}
+              filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+              options={allStudents.map(student => ({ label: student.name, value: student.id }))}
+            />
+          </Space>
+        </Col>
+        <Col>
+          <Space>
+            <span>老师：</span>
+            <Select
+              placeholder="全部老师"
+              allowClear
+              showSearch
+              style={{ width: 180 }}
+              value={draftTeacherId}
+              onChange={setDraftTeacherId}
+              filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+              options={allTeachers.map(teacher => ({ label: teacher.name, value: teacher.id }))}
+            />
+          </Space>
+        </Col>
+        <Col>
+          <Space>
+            <span>课程类型：</span>
+            <Select
+              mode="multiple"
+              placeholder="全部类型"
+              allowClear
+              style={{ width: 240 }}
+              value={draftCourseTypes}
+              onChange={setDraftCourseTypes}
+              options={[
+                { label: '一对一', value: CourseType.ONE_ON_ONE },
+                { label: '一对二', value: CourseType.ONE_ON_TWO },
+                { label: '小组课', value: CourseType.GROUP },
+                { label: '大班课', value: CourseType.LARGE_CLASS },
+              ]}
+              maxTagCount={3}
+            />
+          </Space>
+        </Col>
+      </Row>
 
-        <Divider style={{ margin: '12px 0' }} />
+      <Divider style={{ margin: '12px 0' }} />
 
-        <Row gutter={[16, 12]} align="middle">
+      <Row gutter={[16, 12]} align="middle">
+        <Col>
+          <Space>
+            <span>统计范围：</span>
+            <RangePicker
+              value={draftDateRange}
+              onChange={dates => {
+                if (dates?.[0] && dates?.[1]) setDraftDateRange([dates[0], dates[1]]);
+              }}
+            />
+          </Space>
+        </Col>
+        <Col>
+          <Button type="primary" icon={<ReloadOutlined />} onClick={applyFilters} loading={loading}>筛选</Button>
+        </Col>
+        {lastRefresh && (
           <Col>
-            <Space>
-              <span>筛选学生：</span>
-              <Select
-                placeholder="全部学生"
-                allowClear
-                showSearch
-                style={{ width: 180 }}
-                value={filterStudentId}
-                onChange={setFilterStudentId}
-                filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-                options={allStudents.map(student => ({ label: student.name, value: student.id }))}
-              />
-            </Space>
+            <Text type="secondary" style={{ fontSize: 12 }}>上次刷新：{lastRefresh}</Text>
           </Col>
-          <Col>
-            <Space>
-              <span>筛选老师：</span>
-              <Select
-                placeholder="全部老师"
-                allowClear
-                showSearch
-                style={{ width: 180 }}
-                value={filterTeacherId}
-                onChange={setFilterTeacherId}
-                filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-                options={allTeachers.map(teacher => ({ label: teacher.name, value: teacher.id }))}
-              />
-            </Space>
-          </Col>
-          <Col>
-            <Space>
-              <span>课程类型：</span>
-              <Select
-                mode="multiple"
-                placeholder="全部类型"
-                allowClear
-                style={{ width: 240 }}
-                value={filterCourseTypes}
-                onChange={setFilterCourseTypes}
-                options={[
-                  { label: '一对一', value: CourseType.ONE_ON_ONE },
-                  { label: '一对二', value: CourseType.ONE_ON_TWO },
-                  { label: '小组课', value: CourseType.GROUP },
-                  { label: '大班课', value: CourseType.LARGE_CLASS },
-                ]}
-                maxTagCount={3}
-              />
-            </Space>
-          </Col>
-        </Row>
+        )}
+        <Col flex="auto" />
+      </Row>
     </>
   );
 
@@ -682,7 +715,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   const renderSeparateFinancialTables = () => {
     const teacherPanel = (
       <div key="teacher-panel" style={{ ...sectionPanelStyle, marginTop: 0, borderLeft: '4px solid #faad14' }}>
-        <div style={sectionHeaderStyle}>老师课时费{filterTeacherId ? '（已筛选）' : ''}</div>
+        <div style={sectionHeaderStyle}>老师课时费{appliedTeacherId ? '（已筛选）' : ''}</div>
         <div style={subPanelStyle}>
           <div style={subPanelTitleStyle}>汇总</div>
           {teacherIncomeStats.length > 0 ? (
@@ -714,7 +747,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
 
     const studentPanel = (
       <div key="student-panel" style={{ ...sectionPanelStyle, borderLeft: '4px solid #52c41a' }}>
-        <div style={sectionHeaderStyle}>学生学费{filterStudentId ? '（已筛选）' : ''}</div>
+        <div style={sectionHeaderStyle}>学生学费{appliedStudentId ? '（已筛选）' : ''}</div>
         <div style={subPanelStyle}>
           <div style={subPanelTitleStyle}>汇总</div>
           {studentStats.length > 0 ? (
@@ -744,7 +777,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       </div>
     );
 
-    const panels = filterStudentId && !filterTeacherId
+    const panels = appliedStudentId && !appliedTeacherId
       ? [studentPanel, teacherPanel]
       : [teacherPanel, studentPanel];
 
