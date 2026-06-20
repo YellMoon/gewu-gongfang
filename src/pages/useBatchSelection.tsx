@@ -2,6 +2,16 @@
 import { message, Modal, Dropdown } from 'antd';
 import { ScheduleStatus, Course } from '../types';
 import dayjs, { Dayjs } from 'dayjs';
+declare const require: any;
+const {
+  SLOT_HEIGHT,
+  timeToSlot,
+  slotToTime,
+  pointerYToAbsoluteSlot,
+  slotToDisplayTop,
+  selectionIntersectsSchedule,
+  moveTimeBySlots,
+} = require('../utils/batchSelectionGeometry');
 
 interface ScheduleEvent {
   id: string; course_id: string; course_name: string; course_type: any;
@@ -9,10 +19,14 @@ interface ScheduleEvent {
   course_year?: string; course_semester?: string;
 }
 
-const CW = 140; const SH = 2.5; const GAP = 8; const MIN_H = 8; const MAX_H = 23;
+const CW = 140; const SH = SLOT_HEIGHT; const GAP = 8; const MIN_H = 8; const MAX_H = 23;
 
-const slot = (h: number, m: number) => Math.floor(((h - MIN_H) * 60 + m) / 5);
+const slot = timeToSlot;
 const fmt = (h: number, m: number) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+const getBodyMinStartSlot = (body: HTMLElement | null | undefined) => {
+  const value = Number(body?.dataset.minStartSlot);
+  return Number.isFinite(value) ? value : slot(MIN_H, 0);
+};
 
 // 浠庨紶鏍囦簨浠惰幏鍙?day/slot锛屽悓鏃舵鏌?X 鍜?Y 鍧愭爣浠ュ尯鍒嗕袱鍛ㄨ
 function getDaySlotFromEvent(
@@ -40,11 +54,9 @@ function getDaySlotFromEvent(
         const body = el.querySelector('[data-day-body="true"]') as HTMLElement;
         if (body) {
           const br = body.getBoundingClientRect();
-          const computedStyle = window.getComputedStyle(body);
-          const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
-          const relY = e.clientY - br.top - paddingTop;
-          const sl = Math.floor(relY / SH);
-          return { day: i, slot: Math.max(0, sl) };
+          const relY = e.clientY - br.top;
+          const sl = pointerYToAbsoluteSlot(relY, getBodyMinStartSlot(body));
+          return { day: i, slot: sl };
         }
       }
     }
@@ -145,7 +157,7 @@ export default function useBatchSelection(
   const setCourses = useCallback((c: Course[]) => { coursesRef.current = c; }, []);
 
   // 鑾峰彇鐩爣day鍒楀湪container涓殑瀹為檯浣嶇疆锛堣法鍛ㄦ崲琛屾纭級
-  function getTargetDayPosition(targetDayIdx: number, container: HTMLElement): { left: number; bodyTop: number } | null {
+  function getTargetDayPosition(targetDayIdx: number, container: HTMLElement): { left: number; bodyTop: number; minStartSlot: number } | null {
     if (!twoWeeksRef.current[targetDayIdx]) return null;
     const targetDate = twoWeeksRef.current[targetDayIdx];
     const dateStr = targetDate.format('YYYY-MM-DD');
@@ -157,7 +169,7 @@ export default function useBatchSelection(
     const dr = dayEl.getBoundingClientRect();
     const body = dayEl.querySelector('[data-day-body="true"]') as HTMLElement;
     const bodyTop = body ? body.getBoundingClientRect().top - ar.top : 0;
-    return { left: dr.left - ar.left, bodyTop };
+    return { left: dr.left - ar.left, bodyTop, minStartSlot: getBodyMinStartSlot(body) };
   }
 
   // 璁＄畻涓ゅ懆鏃ユ湡
@@ -178,6 +190,7 @@ export default function useBatchSelection(
 
     // 鎵惧埌 dayStart 鍒楃殑 body top
     let bodyTopOff = 0;
+    let bodyMinStartSlot = slot(MIN_H, 0);
     for (let i = 0; i < dayEls.length; i++) {
       const el = dayEls[i] as HTMLElement;
       const dateStr = el.getAttribute('data-date');
@@ -187,7 +200,10 @@ export default function useBatchSelection(
         const dr = el.getBoundingClientRect();
         l = dr.left - ar.left;
         const body = el.querySelector('[data-day-body="true"]') as HTMLElement;
-        if (body) bodyTopOff = body.getBoundingClientRect().top - ar.top;
+        if (body) {
+          bodyTopOff = body.getBoundingClientRect().top - ar.top;
+          bodyMinStartSlot = getBodyMinStartSlot(body);
+        }
       }
       if (idx === sel.de) {
         const dr = el.getBoundingClientRect();
@@ -197,9 +213,9 @@ export default function useBatchSelection(
 
     setRb({
       l,
-      t: bodyTopOff + sel.ss * SH,
+      t: bodyTopOff + slotToDisplayTop(sel.ss, bodyMinStartSlot),
       w: r - l,
-      h: (sel.se - sel.ss + 1) * SH,
+      h: (sel.se - sel.ss) * SH,
     });
   }, [sel, containerRef, scrollTick]);
 
@@ -214,7 +230,7 @@ export default function useBatchSelection(
     if (targetPos) {
       setGhost({
         l: targetPos.left,
-        t: targetPos.bodyTop + (sel.ss + dragOff.s) * SH,
+        t: targetPos.bodyTop + slotToDisplayTop(sel.ss + dragOff.s, targetPos.minStartSlot),
         w: rb.w,
         h: rb.h,
       });
@@ -248,12 +264,8 @@ export default function useBatchSelection(
       const origEndSlot = slot(eh, em);
       const newStartSlot = origStartSlot + ds;
       const newEndSlot = origEndSlot + ds;
-      const totalStartMins = newStartSlot * 5;
-      const totalEndMins = newEndSlot * 5;
-      const nsh = MIN_H + Math.floor(totalStartMins / 60);
-      const nsm = ((totalStartMins % 60) + 60) % 60;
-      const neh = MIN_H + Math.floor(totalEndMins / 60);
-      const nem = ((totalEndMins % 60) + 60) % 60;
+      const { hour: nsh, minute: nsm } = slotToTime(newStartSlot);
+      const { hour: neh, minute: nem } = slotToTime(newEndSlot);
 
       // 璁＄畻鐩爣day鐨勫疄闄匘OM浣嶇疆锛堟敮鎸佽法鍛ㄦ崲琛岋級
       let absLeft = (od - sel.ds) * (CW + GAP) + 4; // fallback
@@ -267,7 +279,9 @@ export default function useBatchSelection(
         if (tPos && anchorPos) {
           // 棰勮妗嗙浉瀵逛簬ghost瀹瑰櫒鐨勪綅缃?          //   left: 璇剧▼鎵€鍦ㄧ洰鏍囧垪left - ghost瀹瑰櫒left + 4px鍐呰竟璺?          absLeft = tPos.left - anchorPos.left + 4;
           //   top: 璇剧▼鎵€鍦ㄨbodyTop + 璇剧▼鏃堕棿鍋忕Щ - 鐭╁舰妗嗚捣濮媌odyTop - 鐭╁舰妗嗘椂闂村亸绉?          //        = (origStartSlot - sel.ss) * SH + (tPos.bodyTop - anchorPos.bodyTop)
-          absTop = (origStartSlot - sel.ss) * SH + (tPos.bodyTop - anchorPos.bodyTop);
+          const ghostTop = anchorPos.bodyTop + slotToDisplayTop(sel.ss + ds, anchorPos.minStartSlot);
+          const courseTop = tPos.bodyTop + slotToDisplayTop(origStartSlot + ds, tPos.minStartSlot);
+          absTop = courseTop - ghostTop;
         }
       }
       console.log('[BatchDrag] 璇剧▼:', s.course_name||cid, '鍘熸椂闂?',fmt(sh,sm)+'-'+fmt(eh,em),
@@ -297,7 +311,12 @@ export default function useBatchSelection(
       const [sh, sm] = st.split(':').map(Number);
       const [eh, em] = et.split(':').map(Number);
       const cd = twoWeeksRef.current.findIndex(d => d.format('YYYY-MM-DD') === date);
-      if (cd >= ds && cd <= de && slot(eh, em) >= ss && slot(sh, sm) <= se) {
+      if (cd >= ds && cd <= de && selectionIntersectsSchedule({
+        selectionStartSlot: ss,
+        selectionEndSlotExclusive: se,
+        scheduleStartSlot: slot(sh, sm),
+        scheduleEndSlot: slot(eh, em),
+      })) {
         ids.push(s.id);
       }
     });
@@ -329,10 +348,6 @@ export default function useBatchSelection(
             }
           }
         }
-        // 鐭╁舰妗嗗鍙抽敭 鈫?鍙栨秷閫変腑
-        if (phaseRef.current !== 'idle') {
-          setPhase('idle'); setSel(null); setDrawRect(null); drawPixelStartRef.current = null;
-        }
         return;
       }
       if (e.button !== 0) return;
@@ -346,7 +361,7 @@ export default function useBatchSelection(
       // 浼樺厛澶勭悊鐭╁舰鍖哄煙鍐呯殑鐐瑰嚮锛氱偣鍑诲湪宸查€変腑鐨勭煩褰㈠唴锛屼笉绠℃槸涓嶆槸鍦ㄨ绋嬪崱鐗囦笂锛岄兘杩涘叆鎵归噺鎷栨嫿
       if (currentPhase === 'selected' && currentSel) {
         const inR = pos.day >= currentSel.ds && pos.day <= currentSel.de &&
-                    pos.slot >= currentSel.ss && pos.slot <= currentSel.se;
+                    pos.slot >= currentSel.ss && pos.slot < currentSel.se;
         if (inR) {
           setPhase('dragging');
           setIsCopy(e.ctrlKey || e.metaKey);
@@ -394,7 +409,7 @@ export default function useBatchSelection(
         const ds = Math.min(dragStartRef.current!.d, pos.day);
         const de = Math.max(dragStartRef.current!.d, pos.day);
         const ss = Math.min(dragStartRef.current!.s, pos.slot);
-        const se = Math.max(dragStartRef.current!.s, pos.slot);
+        const se = Math.max(dragStartRef.current!.s, pos.slot) + 1;
         const ids = getCoursesInRect(ds, de, ss, se);
         setSel({ ds, de, ss, se, ids });
 
@@ -494,6 +509,7 @@ export default function useBatchSelection(
               const dayEls = c.querySelectorAll('[data-date]');
               let nl = 0, nr = 0;
               let bodyTopOff2 = 0;
+              let bodyMinStartSlot2 = slot(MIN_H, 0);
               for (let i = 0; i < dayEls.length; i++) {
                 const dayEl = dayEls[i] as HTMLElement;
                 const ds = dayEl.getAttribute('data-date');
@@ -503,14 +519,17 @@ export default function useBatchSelection(
                   const dr = dayEl.getBoundingClientRect();
                   nl = dr.left - ar.left;
                   const body = dayEl.querySelector('[data-day-body="true"]') as HTMLElement;
-                  if (body) bodyTopOff2 = body.getBoundingClientRect().top - ar.top;
+                  if (body) {
+                    bodyTopOff2 = body.getBoundingClientRect().top - ar.top;
+                    bodyMinStartSlot2 = getBodyMinStartSlot(body);
+                  }
                 }
                 if (idx === selRef.current.de) {
                   const dr = dayEl.getBoundingClientRect();
                   nr = dr.right - ar.left;
                 }
               }
-              setRb({ l: nl, t: bodyTopOff2 + selRef.current.ss * SH, w: nr - nl, h: (selRef.current.se - selRef.current.ss + 1) * SH });
+              setRb({ l: nl, t: bodyTopOff2 + slotToDisplayTop(selRef.current.ss, bodyMinStartSlot2), w: nr - nl, h: (selRef.current.se - selRef.current.ss) * SH });
             });
           }
         } else {
@@ -573,12 +592,9 @@ export default function useBatchSelection(
             // 鈶?澶╂暟杈圭晫锛?~13锛堜袱鍛ㄨ寖鍥达級
             if (nd_ < 0 || nd_ > 13) return;
             const nd = twoWeeksRef.current[0].add(nd_, 'day');
-            const totalStartMins = ns * 5;
-            const totalEndMins = ne * 5;
-            const nsh = MIN_H + Math.floor(totalStartMins / 60);
-            const nsm = ((totalStartMins % 60) + 60) % 60;
-            const neh = MIN_H + Math.floor(totalEndMins / 60);
-            const nem = ((totalEndMins % 60) + 60) % 60;
+            const moved = moveTimeBySlots(ost, oet, dss);
+            const { hour: nsh, minute: nsm } = moved.start;
+            const { hour: neh, minute: nem } = moved.end;
 
             if (isCopy) {
               newS.push({
@@ -651,11 +667,6 @@ export default function useBatchSelection(
         // 鐭╁舰妗嗗唴鍙抽敭 鈫?闃绘娴忚鍣ㄨ彍鍗曪紝璁?Dropdown 鎺ョ
         e.preventDefault();
         return;
-      }
-      if (phaseRef.current !== 'idle') {
-        e.preventDefault();
-        setPhase('idle');
-        setSel(null);
       }
     };
 
