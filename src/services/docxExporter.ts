@@ -1,14 +1,19 @@
 import {
   AlignmentType,
   Document,
+  Footer,
   HeadingLevel,
   Packer,
+  PageNumber,
   PageBreak,
   Paragraph,
   TextRun,
 } from 'docx';
 import type { Question } from '../types';
 import { PROPERTY_SUBSCRIPTS, CHEMICAL_SUBSCRIPTS, UNIT_SYMBOLS, MATH_FUNCTIONS } from '../utils/physicsNotation';
+
+declare const require: any;
+const { QUESTION_PAPER_TEMPLATE } = require('./docxPaperTemplate');
 
 export type DocxAnswerPosition = 'separate' | 'after-question' | 'hidden';
 
@@ -39,8 +44,14 @@ export interface DocxExportRecord {
 }
 
 const EXPORT_RECORD_STORAGE_KEY = 'question_bank_docx_export_records';
-const DEFAULT_FONT = 'SimSun';
-const PHYSICS_FONT = 'Times New Roman';
+const DEFAULT_FONT = QUESTION_PAPER_TEMPLATE.font.chinese;
+const PHYSICS_FONT = QUESTION_PAPER_TEMPLATE.font.latin;
+const LABEL_SOURCE = String.fromCharCode(26469, 28304, 65306);
+const LABEL_HINT_PREFIX = String.fromCharCode(25552, 31034, 65306, 26412, 39064, 21253, 21547);
+const LABEL_HINT_SUFFIX = String.fromCharCode(65292, 68, 79, 67, 88, 32, 23548, 20986, 24050, 20445, 30041, 25991, 26412, 21344, 20301, 12290);
+const LABEL_ANSWER = String.fromCharCode(31572, 26696, 65306);
+const LABEL_ANALYSIS = String.fromCharCode(35299, 26512, 65306);
+const LABEL_UNFILLED_ANSWER = String.fromCharCode(26410, 22635, 20889, 31572, 26696);
 
 function safeText(value: unknown, fallback = ''): string {
   return String(value ?? fallback).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -122,8 +133,35 @@ function textRunsWithPhysicsNotation(text: string, options: { bold?: boolean; it
 
 function textParagraph(text: string, options: { bold?: boolean; italics?: boolean; size?: number } = {}): Paragraph {
   return new Paragraph({
-    spacing: { after: 100 },
+    spacing: {
+      after: QUESTION_PAPER_TEMPLATE.paragraph.after,
+      line: QUESTION_PAPER_TEMPLATE.paragraph.line,
+      lineRule: QUESTION_PAPER_TEMPLATE.paragraph.lineRule,
+    },
     children: textRunsWithPhysicsNotation(text, options),
+  });
+}
+
+function paperParagraph(
+  text: string,
+  options: { bold?: boolean; italics?: boolean; size?: number; alignment?: (typeof AlignmentType)[keyof typeof AlignmentType]; leftIndent?: number } = {}
+): Paragraph {
+  return new Paragraph({
+    alignment: options.alignment,
+    indent: options.leftIndent ? { left: options.leftIndent } : undefined,
+    spacing: {
+      after: QUESTION_PAPER_TEMPLATE.paragraph.after,
+      line: QUESTION_PAPER_TEMPLATE.paragraph.line,
+      lineRule: QUESTION_PAPER_TEMPLATE.paragraph.lineRule,
+    },
+    children: textRunsWithPhysicsNotation(text, options),
+  });
+}
+
+function optionParagraph(label: string, content: string): Paragraph {
+  return paperParagraph(label + '．' + content, {
+    leftIndent: QUESTION_PAPER_TEMPLATE.option.leftIndent,
+    size: QUESTION_PAPER_TEMPLATE.size.body,
   });
 }
 
@@ -146,12 +184,64 @@ function answerAreaParagraphs(): Paragraph[] {
 
 function buildQuestionParagraphs(item: DocxPaperQuestion, input: DocxPaperExportInput): Paragraph[] {
   const question = item.question;
+  const freshContentLines = splitLines(question.content, '');
+  const freshParagraphs: Paragraph[] = [];
+  const freshFirstLine = freshContentLines.shift() || '';
+  freshParagraphs.push(paperParagraph(String(item.number) + '．' + freshFirstLine, { size: QUESTION_PAPER_TEMPLATE.size.body }));
+  freshContentLines.filter(line => line.trim()).forEach(line => {
+    freshParagraphs.push(paperParagraph(line, { size: QUESTION_PAPER_TEMPLATE.size.body }));
+  });
+  const freshOptions: any[] = (question.options || []) as any[];
+  for (const option of normalizeExportOptions(freshOptions)) {
+    freshParagraphs.push(optionParagraph(option.label, option.content));
+  }
+  if (input.includeSource !== false) {
+    freshParagraphs.push(paperParagraph(LABEL_SOURCE + sourceText(question), { italics: true, size: QUESTION_PAPER_TEMPLATE.size.meta }));
+  }
+  const freshPlaceholders = containsRichPlaceholder(question);
+  if (freshPlaceholders.length > 0) {
+    freshParagraphs.push(paperParagraph(LABEL_HINT_PREFIX + freshPlaceholders.join(String.fromCharCode(12289)) + LABEL_HINT_SUFFIX, { italics: true, size: QUESTION_PAPER_TEMPLATE.size.meta }));
+  }
+  if (input.includeAnswerArea !== false) {
+    freshParagraphs.push(...answerAreaParagraphs());
+  }
+  if (input.answerPosition === 'after-question') {
+    freshParagraphs.push(...lineParagraphs(splitLines(question.answer, LABEL_UNFILLED_ANSWER), LABEL_ANSWER));
+    if (question.analysis) freshParagraphs.push(...lineParagraphs(splitLines(question.analysis), LABEL_ANALYSIS));
+  }
+  return freshParagraphs;
+  const contentLines = splitLines(question.content, '');
+  const nextParagraphs: Paragraph[] = [];
+  const firstLine = contentLines.shift() || '';
+  nextParagraphs.push(paperParagraph(String(item.number) + '．' + firstLine, { size: QUESTION_PAPER_TEMPLATE.size.body }));
+  contentLines.filter(line => line.trim()).forEach(line => {
+    nextParagraphs.push(paperParagraph(line, { size: QUESTION_PAPER_TEMPLATE.size.body }));
+  });
+  const nextOptions: any[] = (question.options || []) as any[];
+  for (const option of normalizeExportOptions(nextOptions)) {
+    nextParagraphs.push(optionParagraph(option.label, option.content));
+  }
+  if (input.includeSource !== false) {
+    nextParagraphs.push(paperParagraph('来源：' + sourceText(question), { italics: true, size: QUESTION_PAPER_TEMPLATE.size.meta }));
+  }
+  const richPlaceholders = containsRichPlaceholder(question);
+  if (richPlaceholders.length > 0) {
+    nextParagraphs.push(paperParagraph('提示：本题包含' + richPlaceholders.join('、') + '，DOCX 导出已保留文本占位。', { italics: true, size: QUESTION_PAPER_TEMPLATE.size.meta }));
+  }
+  if (input.includeAnswerArea !== false) {
+    nextParagraphs.push(...answerAreaParagraphs());
+  }
+  if (input.answerPosition === 'after-question') {
+    nextParagraphs.push(...lineParagraphs(splitLines(question.answer, '未填写答案'), '答案：'));
+    if (question.analysis) nextParagraphs.push(...lineParagraphs(splitLines(question.analysis), '解析：'));
+  }
+  return nextParagraphs;
   const placeholders = containsRichPlaceholder(question);
   const paragraphs: Paragraph[] = [
     textParagraph(`${item.number}.（${item.score}分）${safeText(question.type, '试题')} `, { bold: true }),
     ...lineParagraphs(splitLines(question.content, '未填写题干')),
   ];
-  const options = Array.isArray(question.options) ? question.options : [];
+  const options: any[] = (question.options || []) as any[];
   for (const option of normalizeExportOptions(options)) {
     paragraphs.push(textParagraph(`${option.label}. ${option.content}`));
   }
@@ -198,6 +288,14 @@ function normalizeExportOptions(options: any[]): Array<{ label: string; content:
 }
 
 function buildAnswerParagraphs(items: DocxPaperQuestion[]): Paragraph[] {
+  const answerChildren: Paragraph[] = [
+    paperParagraph('参考答案与解析', { bold: true, size: QUESTION_PAPER_TEMPLATE.size.body }),
+  ];
+  items.forEach(item => {
+    answerChildren.push(...lineParagraphs(splitLines(item.question.answer, '未填写答案'), String(item.number) + '．答案：'));
+    if (item.question.analysis) answerChildren.push(...lineParagraphs(splitLines(item.question.analysis), '解析：'));
+  });
+  return answerChildren;
   const children: Paragraph[] = [
     new Paragraph({
       heading: HeadingLevel.HEADING_1,
@@ -215,6 +313,67 @@ function buildAnswerParagraphs(items: DocxPaperQuestion[]): Paragraph[] {
 }
 
 export function createPaperDocxDocument(input: DocxPaperExportInput): Document {
+  const nextSortedQuestions = [...input.questions].sort((a, b) => a.number - b.number);
+  const nextSections = new Map<string, DocxPaperQuestion[]>();
+  nextSortedQuestions.forEach(item => {
+    const title = item.sectionTitle || '综合题';
+    nextSections.set(title, [...(nextSections.get(title) || []), item]);
+  });
+  const totalScore = nextSortedQuestions.reduce((sum, item) => sum + Number(item.score || 0), 0);
+  const nextChildren: Paragraph[] = [
+    paperParagraph(safeText(input.title, '试卷'), {
+      alignment: AlignmentType.CENTER,
+      bold: true,
+      size: QUESTION_PAPER_TEMPLATE.size.title,
+    }),
+    paperParagraph('学校:___________姓名：___________班级：___________考号：___________', {
+      alignment: AlignmentType.CENTER,
+      size: QUESTION_PAPER_TEMPLATE.size.meta,
+    }),
+    paperParagraph('题目数：' + nextSortedQuestions.length + '    总分：' + totalScore + '分', {
+      alignment: AlignmentType.CENTER,
+      size: QUESTION_PAPER_TEMPLATE.size.meta,
+    }),
+  ];
+  nextSections.forEach((items, sectionTitle) => {
+    nextChildren.push(paperParagraph(sectionTitle, { bold: true, size: QUESTION_PAPER_TEMPLATE.size.body }));
+    items.forEach(item => nextChildren.push(...buildQuestionParagraphs(item, input)));
+  });
+  if (input.answerPosition === 'separate') {
+    nextChildren.push(new Paragraph({ children: [new PageBreak()] }));
+    nextChildren.push(...buildAnswerParagraphs(nextSortedQuestions));
+  }
+  return new Document({
+    creator: '格物工坊',
+    title: safeText(input.title, '试卷'),
+    description: '格物工坊题库组卷导出',
+    sections: [{
+      properties: {
+        page: {
+          size: {
+            width: QUESTION_PAPER_TEMPLATE.page.width,
+            height: QUESTION_PAPER_TEMPLATE.page.height,
+          },
+          margin: QUESTION_PAPER_TEMPLATE.page.margin,
+        },
+      },
+      footers: {
+        default: new Footer({
+          children: [
+            new Paragraph({
+              alignment: AlignmentType.CENTER,
+              children: [
+                new TextRun({ text: QUESTION_PAPER_TEMPLATE.footer.leftText, font: DEFAULT_FONT, size: QUESTION_PAPER_TEMPLATE.size.meta }),
+                new TextRun({ children: [PageNumber.CURRENT], font: DEFAULT_FONT, size: QUESTION_PAPER_TEMPLATE.size.meta }),
+                new TextRun({ text: '页 | ' + QUESTION_PAPER_TEMPLATE.footer.rightText, font: DEFAULT_FONT, size: QUESTION_PAPER_TEMPLATE.size.meta }),
+              ],
+            }),
+          ],
+        }),
+      },
+      children: nextChildren,
+    }],
+  });
   const sortedQuestions = [...input.questions].sort((a, b) => a.number - b.number);
   const sections = new Map<string, DocxPaperQuestion[]>();
   sortedQuestions.forEach(item => {
