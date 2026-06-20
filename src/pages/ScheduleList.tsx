@@ -6,9 +6,16 @@ import { SearchOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { Schedule, ScheduleStatus, Student, Teacher, Course } from '../types';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import DataPageLayout from '../layout/DataPageLayout';
+import { buildCourseColorMap } from '../utils/courseColors';
+
+declare const require: any;
+const {
+  buildScheduleExportModel,
+  createScheduleWorkbook,
+} = require('../utils/scheduleExcelExport');
 
 const { RangePicker } = DatePicker;
 
@@ -116,6 +123,24 @@ const ScheduleList: React.FC = () => {
       message.warning('没有数据可导出');
       return;
     }
+
+    const exportModel = buildScheduleExportModel({
+      schedules: filteredSchedules,
+      courses,
+      teachers,
+      students,
+      filterTeacher,
+      filterStudent,
+      dateRange: filterDateRange ? [
+        filterDateRange[0].format('YYYY-MM-DD'),
+        filterDateRange[1].format('YYYY-MM-DD'),
+      ] : undefined,
+      courseColorMap: buildCourseColorMap(courses),
+    });
+    const workbook = createScheduleWorkbook(XLSX, exportModel);
+    XLSX.writeFile(workbook, exportModel.fileName);
+    message.success('已导出 ' + filteredSchedules.length + ' 条记录到 ' + exportModel.fileName);
+    return;
 
     // 鎸夊懆鍒嗙粍
     const weekGroups: Record<string, any[]> = {};
