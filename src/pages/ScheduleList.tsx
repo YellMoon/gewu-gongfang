@@ -14,6 +14,7 @@ import {
   buildScheduleExportModel,
   createScheduleWorkbook,
 } from '../utils/scheduleExcelExport.mjs';
+import { applyScheduleListFilters } from '../utils/scheduleListFilters.mjs';
 
 const { RangePicker } = DatePicker;
 
@@ -28,6 +29,15 @@ const ScheduleList: React.FC = () => {
   const [filterTeacher, setFilterTeacher] = useState<string | undefined>();
   const [filterStudent, setFilterStudent] = useState<string | undefined>();
   const [filterDateRange, setFilterDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+  const [appliedFilters, setAppliedFilters] = useState<{
+    filterTeacher?: string;
+    filterStudent?: string;
+    filterDateRange: [dayjs.Dayjs, dayjs.Dayjs] | null;
+  }>({
+    filterTeacher: undefined,
+    filterStudent: undefined,
+    filterDateRange: null,
+  });
 
   const dbService = (window as any).dbService;
 
@@ -78,39 +88,15 @@ const ScheduleList: React.FC = () => {
     return () => clearInterval(timer);
   }, [loadData]);
 
-  // 鍒濆鏄剧ず鎵€鏈夋帓璇撅紙涓嶈嚜鍔ㄧ瓫閫夛級
+  // 鏁版嵁鍒锋柊鏃朵繚鐣欏凡搴旂敤鐨勬煡璇㈡潯浠讹紝閬垮厤瀹氭椂鍒锋柊鍚庡洖鍒板叏閲?
   useEffect(() => {
-    setFilteredSchedules(schedules);
-  }, [schedules]);
+    setFilteredSchedules(applyScheduleListFilters(schedules, courses, appliedFilters));
+  }, [schedules, courses, appliedFilters]);
 
   const handleQuery = () => {
-    let result = [...schedules];
-
-    if (filterTeacher) {
-      result = result.filter((s) => {
-        const course = courses.find(c => c.id === s.course_id);
-        return course?.teacher_id === filterTeacher;
-      });
-    }
-
-    if (filterStudent) {
-      result = result.filter((s) => {
-        const course = courses.find(c => c.id === s.course_id);
-        return course?.student_pricings?.some((p: any) => p.student_id === filterStudent) ||
-          s.student_ids?.includes(filterStudent);
-      });
-    }
-
-    if (filterDateRange) {
-      const [start, end] = filterDateRange;
-      result = result.filter((s) => {
-        const sDate = dayjs(s.start_time).startOf('day');
-        return sDate.isAfter(start.startOf('day')) && sDate.isBefore(end.endOf('day'));
-      });
-    }
-
-    result.sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
-
+    const nextFilters = { filterTeacher, filterStudent, filterDateRange };
+    const result = applyScheduleListFilters(schedules, courses, nextFilters);
+    setAppliedFilters(nextFilters);
     setFilteredSchedules(result);
     message.success(`查询完成，共 ${result.length} 条记录`);
   };
