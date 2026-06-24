@@ -1,13 +1,14 @@
 const assert = require('assert');
 
-const {
-  SLOT_HEIGHT,
-  timeToSlot,
-  slotToTime,
-  pointerYToAbsoluteSlot,
-  selectionIntersectsSchedule,
-  moveTimeBySlots,
-} = require('./batchSelectionGeometry');
+(async () => {
+  const {
+    SLOT_HEIGHT,
+    timeToSlot,
+    slotToTime,
+    pointerYToAbsoluteSlot,
+    selectionIntersectsSchedule,
+    moveTimeBySlots,
+  } = await import('./batchSelectionGeometry.mjs');
 
 assert.strictEqual(timeToSlot(8, 0), 0);
 assert.deepStrictEqual(slotToTime(0), { hour: 8, minute: 0 });
@@ -36,4 +37,8 @@ assert.deepStrictEqual(moveTimeBySlots('10:00', '12:00', -12), {
   end: { hour: 11, minute: 0 },
 });
 
-console.log('batchSelectionGeometry tests passed');
+  console.log('batchSelectionGeometry tests passed');
+})().catch(error => {
+  console.error(error);
+  process.exit(1);
+});

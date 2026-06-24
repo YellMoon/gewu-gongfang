@@ -1,5 +1,5 @@
-const dayjs = require('dayjs');
-const isoWeek = require('dayjs/plugin/isoWeek');
+import dayjs from 'dayjs';
+import isoWeek from 'dayjs/plugin/isoWeek.js';
 
 dayjs.extend(isoWeek);
 
@@ -282,7 +282,7 @@ function createScheduleWorkbook(XLSX, model) {
   return wb;
 }
 
-module.exports = {
+export {
   WEEK_DAYS,
   DEFAULT_MIN_HOUR,
   DEFAULT_MAX_HOUR,

@@ -1,11 +1,13 @@
 const assert = require('assert');
 
-const {
-  buildScheduleExportModel,
-  createScheduleWorkbook,
-  sanitizeExcelSheetName,
-} = require('./scheduleExcelExport');
 const XLSX = require('xlsx-js-style');
+
+(async () => {
+  const {
+    buildScheduleExportModel,
+    createScheduleWorkbook,
+    sanitizeExcelSheetName,
+  } = await import('./scheduleExcelExport.mjs');
 
 const schedules = [
   {
@@ -87,4 +89,8 @@ assert.ok(courseCell, 'course cell should be written');
 assert.strictEqual(courseCell.s.alignment.wrapText, true);
 assert.strictEqual(courseCell.s.border.left.style, 'medium');
 
-console.log('scheduleExcelExport tests passed');
+  console.log('scheduleExcelExport tests passed');
+})().catch(error => {
+  console.error(error);
+  process.exit(1);
+});

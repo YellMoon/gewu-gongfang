@@ -42,7 +42,7 @@ function moveTimeBySlots(startTime, endTime, slotDelta) {
   };
 }
 
-module.exports = {
+export {
   MIN_START_HOUR,
   SLOT_DURATION_MINUTES,
   SLOT_HEIGHT,

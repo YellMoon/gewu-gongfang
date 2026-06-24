@@ -2,8 +2,7 @@
 import { message, Modal, Dropdown } from 'antd';
 import { ScheduleStatus, Course } from '../types';
 import dayjs, { Dayjs } from 'dayjs';
-declare const require: any;
-const {
+import {
   SLOT_HEIGHT,
   timeToSlot,
   slotToTime,
@@ -11,7 +10,7 @@ const {
   slotToDisplayTop,
   selectionIntersectsSchedule,
   moveTimeBySlots,
-} = require('../utils/batchSelectionGeometry');
+} from '../utils/batchSelectionGeometry.mjs';
 
 interface ScheduleEvent {
   id: string; course_id: string; course_name: string; course_type: any;

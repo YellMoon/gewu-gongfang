@@ -10,12 +10,10 @@ import * as XLSX from 'xlsx-js-style';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import DataPageLayout from '../layout/DataPageLayout';
 import { buildCourseColorMap } from '../utils/courseColors';
-
-declare const require: any;
-const {
+import {
   buildScheduleExportModel,
   createScheduleWorkbook,
-} = require('../utils/scheduleExcelExport');
+} from '../utils/scheduleExcelExport.mjs';
 
 const { RangePicker } = DatePicker;
 

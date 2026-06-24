@@ -6,7 +6,10 @@ const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
 const scheduleCalendar = read('src/pages/ScheduleCalendar.tsx');
+const scheduleList = read('src/pages/ScheduleList.tsx');
 const batchSelection = read('src/pages/useBatchSelection.tsx');
+const scheduleExcelExport = read('src/utils/scheduleExcelExport.mjs');
+const batchSelectionGeometry = read('src/utils/batchSelectionGeometry.mjs');
 const questionBankTools = read('src/pages/QuestionBankTools.tsx');
 const appNavigation = read('src/navigation/appNavigation.tsx');
 const statsLayout = read('src/layout/StatsPageLayout.tsx');
@@ -23,6 +26,16 @@ const revenueDetailFilters = read('src/utils/revenueDetailFilters.mjs');
 const questionRenderer = read('src/components/QuestionRenderer.tsx');
 const questionRendererCss = read('src/components/QuestionRenderer.css');
 const richQuestionEditor = read('src/components/RichQuestionEditor.tsx');
+
+assert(
+  !scheduleList.includes('require(') &&
+  !batchSelection.includes('require(') &&
+  !scheduleExcelExport.includes('module.exports') &&
+  !batchSelectionGeometry.includes('module.exports') &&
+  scheduleList.includes("from '../utils/scheduleExcelExport.mjs'") &&
+  batchSelection.includes("from '../utils/batchSelectionGeometry.mjs'"),
+  'browser-loaded schedule utilities should use ESM imports/exports instead of CommonJS'
+);
 
 assert(
   !scheduleCalendar.includes('馃搵') && !batchSelection.includes('馃搵'),
