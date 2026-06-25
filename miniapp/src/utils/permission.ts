@@ -23,6 +23,30 @@ export const allowedWriteTasks = [
   'paper-export-pdf',
 ];
 
+export const adminModules = [
+  'scheduling',
+  'question-bank',
+  'teaching-tools',
+  'assets',
+  'students',
+  'courses',
+  'teachers',
+  'payments',
+  'stats',
+  'admin',
+];
+
+export const studentModules = [
+  'scheduling',
+  'question-bank',
+];
+
+export const studentWriteTasks = [
+  'question-paper',
+  'paper-export-word',
+  'paper-export-pdf',
+];
+
 export function canMiniappWrite(target: string): boolean {
   return allowedWriteTasks.includes(target);
 }
@@ -38,6 +62,12 @@ export interface UserInfo {
   name: string;
   user_type: 'admin' | 'teacher' | 'student' | 'invited';
   avatar?: string;
+  student_id?: string;
+  studentId?: string;
+  linked_student_id?: string;
+  linkedStudentId?: string;
+  linked_student_ids?: string[];
+  linkedStudentIds?: string[];
 }
 
 export interface PermissionItem {
@@ -81,6 +111,55 @@ export function getUserType(): string {
  */
 export function isAdmin(): boolean {
   return getUserType() === 'admin';
+}
+
+export function isStudentUser(user: Partial<UserInfo> | null = getCurrentUser()): boolean {
+  return user?.user_type === 'student';
+}
+
+export function getLinkedStudentIds(user: Partial<UserInfo> | null = getCurrentUser()): string[] {
+  if (!user) return [];
+  const ids = [
+    user.student_id,
+    user.studentId,
+    user.linked_student_id,
+    user.linkedStudentId,
+    ...(user.linked_student_ids || []),
+    ...(user.linkedStudentIds || []),
+    user.user_type === 'student' ? user.id : undefined,
+  ];
+  return Array.from(new Set(ids.filter((id): id is string => Boolean(id))));
+}
+
+export function getMiniappRolePolicy(user: Partial<UserInfo> | null = getCurrentUser()) {
+  if (user?.user_type === 'admin') {
+    return {
+      role: 'admin',
+      modules: adminModules,
+      readonlyScope: 'all',
+      allowedWriteTasks,
+      canReadAllSnapshots: true,
+    };
+  }
+
+  if (user?.user_type === 'student') {
+    return {
+      role: 'student',
+      modules: studentModules,
+      readonlyScope: 'linked-student',
+      linkedStudentIds: getLinkedStudentIds(user),
+      allowedWriteTasks: studentWriteTasks,
+      canReadAllSnapshots: false,
+    };
+  }
+
+  return {
+    role: user?.user_type || 'guest',
+    modules: [],
+    readonlyScope: 'none',
+    allowedWriteTasks: [],
+    canReadAllSnapshots: false,
+  };
 }
 
 /**
@@ -150,6 +229,11 @@ export function hasModulePermission(moduleId: string, action: string = 'view'): 
   // 管理员全权限
   if (isAdmin()) return true;
 
+  const rolePolicy = getMiniappRolePolicy();
+  if (rolePolicy.role === 'student') {
+    return action === 'view' && rolePolicy.modules.includes(moduleId);
+  }
+
   if (!_permissionCache) {
     // 未加载权限时尝试同步读 storage
     try {
@@ -172,9 +256,8 @@ export function hasModulePermission(moduleId: string, action: string = 'view'): 
  * admin 返回所有已知模块
  */
 export function getPermittedModules(): string[] {
-  if (isAdmin()) {
-    return ['scheduling', 'question-bank', 'teaching-tools', 'assets'];
-  }
+  const rolePolicy = getMiniappRolePolicy();
+  if (rolePolicy.role === 'admin' || rolePolicy.role === 'student') return rolePolicy.modules;
 
   if (!_permissionCache) {
     try {

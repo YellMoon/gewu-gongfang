@@ -5,10 +5,17 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { api, readCloudSnapshot } from '../../utils/api';
-import { fetchPermissions, getPermittedModules, hasModulePermission, clearPermissionCache } from '../../utils/permission';
+import {
+  fetchPermissions,
+  getPermittedModules,
+  hasModulePermission,
+  clearPermissionCache,
+  getMiniappRolePolicy,
+  getLinkedStudentIds,
+} from '../../utils/permission';
 import { getLocalData } from '../../utils/sync';
 import { NetworkStatus, StatCard, LoadingSkeleton, EmptyState } from '../../components/shared';
-import { Schedule, ScheduleStatus, Student } from '../../types';
+import { Schedule, ScheduleStatus, Student, Course } from '../../types';
 import './index.scss';
 
 interface UserInfo {
@@ -99,19 +106,41 @@ const MODULE_CONFIG: Record<string, { icon: string; color: string; pages: string
     try {
       const students = getLocalData<Student>('students');
       const schedules = getLocalData<Schedule>('schedules');
+      const courses = getLocalData<Course>('courses');
+      const currentUser = Taro.getStorageSync('user_info') || user;
+      const rolePolicy = getMiniappRolePolicy(currentUser);
+      const linkedStudentIds = getLinkedStudentIds(currentUser);
+      const courseStudentIds = (course?: any) => [
+        ...(Array.isArray(course?.student_ids) ? course.student_ids : []),
+        ...(Array.isArray(course?.student_pricings) ? course.student_pricings.map((p: any) => p.student_id || p.studentId) : []),
+      ].filter(Boolean);
+      const courseById = new Map(courses.map((course: any) => [course.id, course]));
+      const scopedSchedules = rolePolicy.role === 'student'
+        ? schedules.filter((schedule: any) => {
+          const directStudentIds = [
+            ...(Array.isArray(schedule.student_ids) ? schedule.student_ids : []),
+            ...(Array.isArray(schedule.student_pricings) ? schedule.student_pricings.map((p: any) => p.student_id || p.studentId) : []),
+            ...courseStudentIds(courseById.get(schedule.course_id)),
+          ].filter(Boolean);
+          return directStudentIds.some((id: string) => linkedStudentIds.includes(id));
+        })
+        : schedules;
+      const scopedStudents = rolePolicy.role === 'student'
+        ? students.filter((student: any) => linkedStudentIds.includes(student.id))
+        : students;
 
       const today = new Date().toISOString().split('T')[0];
       const thisMonth = today.substring(0, 7);
 
-      const todayClasses = schedules.filter(s =>
+      const todayClasses = scopedSchedules.filter(s =>
         s.start_time?.startsWith(today) && s.status === ScheduleStatus.PLANNED
       ).length;
 
-      const todayRevenue = schedules
+      const todayRevenue = rolePolicy.role === 'student' ? 0 : scopedSchedules
         .filter(s => s.start_time?.startsWith(today) && s.status === ScheduleStatus.COMPLETED)
         .reduce((sum, s) => sum + (s.calculated_tuition || 0), 0);
 
-      const monthRevenue = schedules
+      const monthRevenue = rolePolicy.role === 'student' ? 0 : scopedSchedules
         .filter(s => s.start_time?.startsWith(thisMonth) && s.status === ScheduleStatus.COMPLETED)
         .reduce((sum, s) => sum + (s.calculated_tuition || 0), 0);
 
@@ -127,7 +156,7 @@ const MODULE_CONFIG: Record<string, { icon: string; color: string; pages: string
         todayClasses,
         todayRevenue,
         monthRevenue,
-        totalStudents: students.length,
+        totalStudents: scopedStudents.length,
         pendingSync: 0,
       });
     } catch (err) {
@@ -200,6 +229,9 @@ const MODULE_CONFIG: Record<string, { icon: string; color: string; pages: string
       {/* 仪表盘统计卡片 */}
       <View className="section">
         <Text className="section-title">今日概览</Text>
+        {user?.user_type === 'student' && (
+          <Text className="student-dashboard-scope">仅显示与你关联课程相关的数据</Text>
+        )}
         <View className="stat-grid">
           <StatCard label="今日课程" value={dashboard.todayClasses} suffix="节" color="#1890ff" icon="📅" />
           <StatCard label="今日收入" value={formatMoney(dashboard.todayRevenue)} color="#52c41a" icon="💰" />
@@ -234,7 +266,7 @@ const MODULE_CONFIG: Record<string, { icon: string; color: string; pages: string
       </View>
 
       {/* 快捷操作 */}
-      {loading ? null : modules.some(m => m.id === 'scheduling') && (
+      {loading ? null : modules.some(m => m.id === 'scheduling') && user?.user_type !== 'student' && (
         <View className="section">
           <Text className="section-title">排课管理</Text>
           <View className="quick-actions">
@@ -259,6 +291,22 @@ const MODULE_CONFIG: Record<string, { icon: string; color: string; pages: string
       )}
 
       {/* 管理员入口 */}
+      {loading ? null : user?.user_type === 'student' && (
+        <View className="section">
+          <Text className="section-title">我的学习</Text>
+          <View className="quick-actions">
+            <View className="quick-item" onClick={() => Taro.navigateTo({ url: '/pages/schedule/index' })}>
+              <Text className="quick-icon">📅</Text>
+              <Text>我的课表</Text>
+            </View>
+            <View className="quick-item" onClick={() => Taro.navigateTo({ url: '/pages/question-bank/index' })}>
+              <Text className="quick-icon">📘</Text>
+              <Text>题库组卷</Text>
+            </View>
+          </View>
+        </View>
+      )}
+
       {!loading && user?.user_type === 'admin' && (
         <View className="section">
           <Text className="section-title">管理</Text>

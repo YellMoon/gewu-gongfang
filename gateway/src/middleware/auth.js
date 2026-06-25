@@ -56,7 +56,9 @@ function generateToken(user) {
     {
       id: user.id,
       user_type: user.user_type,
-      name: user.name
+      name: user.name,
+      student_id: user.student_id || user.studentId || null,
+      linked_student_ids: user.linked_student_ids || user.linkedStudentIds || []
     },
     JWT_SECRET,
     { expiresIn: '7d' }
@@ -73,7 +75,13 @@ function refreshToken(token) {
     const decoded = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true });
     // 生成新 token
     return jwt.sign(
-      { id: decoded.id, user_type: decoded.user_type, name: decoded.name },
+      {
+        id: decoded.id,
+        user_type: decoded.user_type,
+        name: decoded.name,
+        student_id: decoded.student_id || null,
+        linked_student_ids: decoded.linked_student_ids || []
+      },
       JWT_SECRET,
       { expiresIn: '7d' }
     );

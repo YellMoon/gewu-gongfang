@@ -12,6 +12,106 @@ function id(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
 }
 
+function isStudentUser(user) {
+  return user?.user_type === 'student';
+}
+
+function getLinkedStudentIds(user = {}) {
+  const ids = [
+    user.student_id,
+    user.studentId,
+    user.linked_student_id,
+    user.linkedStudentId,
+    ...(user.linked_student_ids || []),
+    ...(user.linkedStudentIds || []),
+    user.user_type === 'student' ? user.id : undefined,
+  ];
+  return Array.from(new Set(ids.filter(Boolean)));
+}
+
+function parseArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_err) {
+      return value.split(',').map(item => item.trim()).filter(Boolean);
+    }
+  }
+  return [];
+}
+
+function courseStudentIds(course = {}) {
+  return [
+    ...parseArray(course.student_ids),
+    ...parseArray(course.student_pricings).map(pricing => pricing.student_id || pricing.studentId),
+  ].filter(Boolean);
+}
+
+function scheduleStudentIds(schedule = {}, courseById = new Map()) {
+  const directIds = [
+    ...parseArray(schedule.student_ids),
+    ...parseArray(schedule.student_pricings).map(pricing => pricing.student_id || pricing.studentId),
+  ].filter(Boolean);
+  const course = courseById.get(schedule.course_id);
+  return Array.from(new Set([...directIds, ...courseStudentIds(course)]));
+}
+
+function hasAnyStudentLink(candidateIds, allowedIds) {
+  const allowed = new Set(allowedIds);
+  return candidateIds.some(idValue => allowed.has(idValue));
+}
+
+function filterSnapshotForUser(snapshot, user) {
+  if (!snapshot || !isStudentUser(user)) return snapshot;
+
+  const linkedStudentIds = getLinkedStudentIds(user);
+  if (linkedStudentIds.length === 0) {
+    return {
+      ...snapshot,
+      payload: {
+        redactedForRole: 'student',
+        linkedStudentIds: [],
+        students: [],
+        courses: [],
+        schedules: [],
+        payments: [],
+      },
+    };
+  }
+
+  const payload = snapshot.payload || {};
+  const courseById = new Map((payload.courses || []).map(course => [course.id, course]));
+  const courses = (payload.courses || []).filter(course =>
+    hasAnyStudentLink(courseStudentIds(course), linkedStudentIds)
+  );
+  const allowedCourseIds = new Set(courses.map(course => course.id));
+  const schedules = (payload.schedules || []).filter(schedule =>
+    allowedCourseIds.has(schedule.course_id)
+    || hasAnyStudentLink(scheduleStudentIds(schedule, courseById), linkedStudentIds)
+  );
+  const students = (payload.students || []).filter(student => linkedStudentIds.includes(student.id));
+  const payments = (payload.payments || []).filter(payment => linkedStudentIds.includes(payment.student_id || payment.studentId));
+  const teachers = (payload.teachers || []).filter(teacher =>
+    courses.some(course => course.teacher_id === teacher.id || course.teacherId === teacher.id)
+  );
+
+  return {
+    ...snapshot,
+    payload: {
+      ...payload,
+      redactedForRole: 'student',
+      linkedStudentIds,
+      students,
+      courses,
+      schedules,
+      payments,
+      teachers,
+    },
+  };
+}
+
 router.post('/host/heartbeat', (req, res) => {
   const db = getDb();
   const time = now();
@@ -53,9 +153,10 @@ router.get('/snapshots/read', (req, res) => {
   const row = db.prepare(
     `SELECT * FROM readonly_snapshots WHERE snapshot_type = ? ORDER BY created_at DESC LIMIT 1`
   ).get(snapshotType);
+  const snapshot = row ? { ...row, payload: JSON.parse(row.payload || '{}') } : null;
   res.json({
     success: true,
-    snapshot: row ? { ...row, payload: JSON.parse(row.payload || '{}') } : null,
+    snapshot: filterSnapshotForUser(snapshot, req.user),
   });
 });
 
