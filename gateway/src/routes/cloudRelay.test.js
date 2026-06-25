@@ -12,6 +12,7 @@ assert.ok(route.includes('/host/heartbeat'), 'cloud relay should expose host hea
 assert.ok(route.includes('/snapshots/publish'), 'cloud relay should expose snapshot publish');
 assert.ok(route.includes('/snapshots/read'), 'cloud relay should expose snapshot read');
 assert.ok(route.includes('/tasks'), 'cloud relay should expose miniapp tasks');
+assert.ok(route.includes("router.get('/tasks'"), 'cloud relay should let host fetch pending miniapp tasks');
 assert.ok(app.includes("require('./routes/cloudRelay')"), 'gateway app should mount cloud relay');
 
 console.log('cloudRelay route checks passed');

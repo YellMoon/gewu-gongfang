@@ -72,6 +72,22 @@ router.post('/tasks', (req, res) => {
   res.json({ success: true, task: { id: taskId, status: 'pending_host' } });
 });
 
+router.get('/tasks', (req, res) => {
+  const db = getDb();
+  const status = req.query.status || 'pending_host';
+  const rows = db.prepare(
+    `SELECT * FROM miniapp_tasks WHERE status = ? ORDER BY created_at ASC LIMIT 100`
+  ).all(status);
+  res.json({
+    success: true,
+    tasks: rows.map(row => ({
+      ...row,
+      payload: JSON.parse(row.payload || '{}'),
+      result_payload: row.result_payload ? JSON.parse(row.result_payload) : null,
+    })),
+  });
+});
+
 router.get('/tasks/:id/result', (req, res) => {
   const db = getDb();
   const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(req.params.id);

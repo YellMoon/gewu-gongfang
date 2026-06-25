@@ -22,6 +22,7 @@ const syncRouter = require('./routes/sync');
 const authRouter = require('./routes/auth');
 const questionBankRouter = require('./routes/questionBank');
 const opsRouter = require('./routes/ops');
+const cloudRelayHostRouter = require('./routes/cloudRelayHost');
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const writeRateLimitStore = new Map();
@@ -217,6 +218,7 @@ function createApp() {
   // 公开路由（无需认证）
   app.use('/api/auth', authRouter);
   app.use('/api/sync', syncRouter);
+  app.use('/api/cloud-relay-host', optionalAuth, requireWriteAccess, cloudRelayHostRouter);
 
   // 鍗婂叕寮€璺敱锛堝彲閫夎璇侊級
   app.use('/api/students', optionalAuth, requireWriteAccess, studentsRouter);
