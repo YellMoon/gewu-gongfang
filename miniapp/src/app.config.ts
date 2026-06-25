@@ -26,6 +26,7 @@ export default defineAppConfig({
     backgroundColor: '#f5f5f5',
   },
   tabBar: {
+    custom: true,
     color: '#999',
     selectedColor: '#1890ff',
     backgroundColor: '#fff',
@@ -48,6 +49,12 @@ export default defineAppConfig({
         text: '学员',
         iconPath: 'assets/tab-students.png',
         selectedIconPath: 'assets/tab-students-active.png',
+      },
+      {
+        pagePath: 'pages/assets/index',
+        text: '财务',
+        iconPath: 'assets/tab-settings.png',
+        selectedIconPath: 'assets/tab-settings-active.png',
       },
       {
         pagePath: 'pages/settings/index',
