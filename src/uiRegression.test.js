@@ -26,6 +26,7 @@ const revenueDetailFilters = read('src/utils/revenueDetailFilters.mjs');
 const questionRenderer = read('src/components/QuestionRenderer.tsx');
 const questionRendererCss = read('src/components/QuestionRenderer.css');
 const richQuestionEditor = read('src/components/RichQuestionEditor.tsx');
+const systemSettings = read('src/pages/SystemSettings.tsx');
 
 assert(
   !scheduleList.includes('require(') &&
@@ -35,6 +36,15 @@ assert(
   scheduleList.includes("from '../utils/scheduleExcelExport.mjs'") &&
   batchSelection.includes("from '../utils/batchSelectionGeometry.mjs'"),
   'browser-loaded schedule utilities should use ESM imports/exports instead of CommonJS'
+);
+
+assert(
+  systemSettings.includes('数据主机与同步') &&
+  systemSettings.includes('本地数据主机') &&
+  systemSettings.includes('普通离线客户端') &&
+  systemSettings.includes('题库移动硬盘路径') &&
+  systemSettings.includes('主数据库路径'),
+  'system settings should expose local-first role and storage path controls'
 );
 
 assert(

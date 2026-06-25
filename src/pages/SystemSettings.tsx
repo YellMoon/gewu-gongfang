@@ -1,8 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Button, message, Space, Divider, Popconfirm, Typography, Table, Tag } from 'antd';
+import { Alert, Card, Button, message, Space, Divider, Popconfirm, Typography, Table, Tag, Form, Input, Select } from 'antd';
 import { CloudDownloadOutlined, CloudSyncOutlined, ExportOutlined, ImportOutlined, DeleteOutlined, ReloadOutlined, RollbackOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { APP_VERSION } from '../generated/version';
+import {
+  getRuntimeConfig,
+  saveRuntimeConfig,
+  selectFolder,
+  type RuntimeConfig,
+} from '../services/runtimeConfigClient';
 
 const { Text } = Typography;
 
@@ -23,6 +29,9 @@ const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:3001/api';
 
 const SystemSettings: React.FC = () => {
   const dbService = (window as any).dbService;
+  const [runtimeForm] = Form.useForm<RuntimeConfig>();
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
+  const [runtimeLoading, setRuntimeLoading] = useState(false);
   const [backupJobs, setBackupJobs] = useState<BackupJob[]>([]);
   const [backupLoading, setBackupLoading] = useState(false);
 
@@ -39,7 +48,46 @@ const SystemSettings: React.FC = () => {
 
   useEffect(() => {
     loadBackupJobs();
+    loadRuntimeConfig();
   }, []);
+
+  const loadRuntimeConfig = async () => {
+    try {
+      const config = await getRuntimeConfig();
+      setRuntimeConfig(config);
+      runtimeForm.setFieldsValue(config);
+    } catch (error: any) {
+      message.warning(error.message || '运行配置暂不可用');
+    }
+  };
+
+  const handleSaveRuntimeConfig = async () => {
+    setRuntimeLoading(true);
+    try {
+      const values = await runtimeForm.validateFields();
+      const saved = await saveRuntimeConfig(values);
+      setRuntimeConfig(saved);
+      runtimeForm.setFieldsValue(saved);
+      message.success('数据主机与同步配置已保存，重启软件后生效');
+    } catch (error: any) {
+      message.error(error.message || '保存运行配置失败');
+    } finally {
+      setRuntimeLoading(false);
+    }
+  };
+
+  const selectMainDbFolder = async () => {
+    const folder = await selectFolder();
+    if (folder) runtimeForm.setFieldValue('mainDbPath', `${folder}\\scheduling.db`);
+  };
+
+  const selectQuestionBankFolder = async () => {
+    const folder = await selectFolder();
+    if (folder) {
+      runtimeForm.setFieldValue('questionBankPath', folder);
+      runtimeForm.setFieldValue('questionAssetPath', `${folder}\\assets`);
+    }
+  };
 
   const handleCreateServerBackup = async () => {
     setBackupLoading(true);
@@ -145,6 +193,59 @@ const SystemSettings: React.FC = () => {
 
   return (
     <div>
+      <Card title="数据主机与同步" style={{ marginBottom: 16 }}>
+        <Alert
+          type={runtimeConfig?.nodeRole === 'primary-host' ? 'success' : 'info'}
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={runtimeConfig?.nodeRole === 'primary-host' ? '当前配置为本地数据主机' : '当前配置为普通离线客户端'}
+          description="本地数据主机保存权威数据和题库移动硬盘；普通离线客户端可断网修改，联网后经确认同步到主机。"
+        />
+        <Form form={runtimeForm} layout="vertical">
+          <Form.Item name="nodeRole" label="运行角色" rules={[{ required: true }]}>
+            <Select
+              options={[
+                { label: '本地数据主机', value: 'primary-host' },
+                { label: '普通离线客户端', value: 'desktop-client' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="deviceId" label="设备 ID" rules={[{ required: true }]}>
+            <Input disabled />
+          </Form.Item>
+          <Form.Item name="mainDbPath" label="主数据库路径" rules={[{ required: true }]}>
+            <Input
+              addonAfter={(
+                <Button size="small" onClick={selectMainDbFolder}>
+                  选择
+                </Button>
+              )}
+            />
+          </Form.Item>
+          <Form.Item name="questionBankPath" label="题库移动硬盘路径">
+            <Input
+              addonAfter={(
+                <Button size="small" onClick={selectQuestionBankFolder}>
+                  选择
+                </Button>
+              )}
+            />
+          </Form.Item>
+          <Form.Item name="questionAssetPath" label="题库附件路径">
+            <Input />
+          </Form.Item>
+          <Form.Item name="hostBaseUrl" label="本地数据主机地址">
+            <Input placeholder="http://192.168.1.10:3001" />
+          </Form.Item>
+          <Form.Item name="cloudBaseUrl" label="阿里云服务地址">
+            <Input placeholder="https://your-domain.example.com" />
+          </Form.Item>
+          <Button type="primary" loading={runtimeLoading} onClick={handleSaveRuntimeConfig}>
+            保存数据主机与同步配置
+          </Button>
+        </Form>
+      </Card>
+
       <Card title="数据管理" style={{ marginBottom: 16 }}>
         <Space size="large" wrap>
           <Button type="primary" icon={<ExportOutlined />} size="large" onClick={handleExport}>
