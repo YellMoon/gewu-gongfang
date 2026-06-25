@@ -1,4 +1,6 @@
 const { Router } = require('express');
+const fs = require('fs');
+const path = require('path');
 const { getInstance } = require('../database');
 const {
   publishHeartbeat,
@@ -7,11 +9,65 @@ const {
   completeMiniappTask,
 } = require('../services/cloudRelayClient');
 const questionBank = require('../services/questionBankService');
+const { initQuestionBankStore, resolveQuestionAssetPath } = require('../services/questionBankStorageService');
 
 const router = Router();
 
 function hostDeviceId() {
   return process.env.GEWU_DEVICE_ID || 'unknown';
+}
+
+function safeFileName(value) {
+  return String(value || 'paper')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\s+/g, '_')
+    .slice(0, 80) || 'paper';
+}
+
+function exportRoot() {
+  const root = process.env.QUESTION_BANK_ROOT || path.join(process.cwd(), 'data', 'GewuQuestionBank');
+  initQuestionBankStore(root, { deviceId: hostDeviceId() });
+  return root;
+}
+
+function artifactUrl(fileName) {
+  const base = (process.env.GEWU_HOST_BASE_URL || '').replace(/\/+$/, '');
+  const pathPart = `/api/cloud-relay-host/artifacts/${encodeURIComponent(fileName)}`;
+  return base ? `${base}${pathPart}` : pathPart;
+}
+
+function renderPaperText(input) {
+  const lines = [
+    input.title || '练习试卷',
+    input.subject ? `科目：${input.subject}` : '',
+    `题目数：${input.questions.length}`,
+    '',
+    ...input.questions.flatMap((question, index) => [
+      `${index + 1}. ${question.stem || question.content || question.id}`,
+      question.answer ? `答案：${question.answer}` : '',
+      question.explanation || question.analysis ? `解析：${question.explanation || question.analysis}` : '',
+      '',
+    ]),
+  ];
+  return lines.filter(line => line !== undefined).join('\n');
+}
+
+function writePaperArtifact(format, payload, questions) {
+  const extension = format === 'pdf' ? 'pdf' : 'docx';
+  const baseName = safeFileName(payload.title || '练习试卷');
+  const fileName = `${Date.now().toString(36)}_${baseName}.${extension}`;
+  const root = exportRoot();
+  const filePath = resolveQuestionAssetPath(root, 'exports', fileName);
+  fs.writeFileSync(filePath, renderPaperText({
+    title: payload.title || '练习试卷',
+    subject: payload.subject || '',
+    questions,
+  }), 'utf-8');
+  return {
+    fileName,
+    filePath,
+    fileUrl: artifactUrl(fileName),
+  };
 }
 
 function buildSnapshotPayload(db) {
@@ -62,26 +118,30 @@ function processMiniappTask(task, db) {
 
   if (task.task_type === 'paper-export-word') {
     const questions = selectQuestions(db, payload);
+    const artifact = writePaperArtifact('word', payload, questions);
     return {
       taskType: task.task_type,
       format: 'word',
       title: payload.title || '练习试卷',
       subject: payload.subject || '',
       questionCount: questions.length,
-      fileName: `${payload.title || '练习试卷'}.docx`,
+      fileName: artifact.fileName,
+      fileUrl: artifact.fileUrl,
       questions: questions.map(question => ({ id: question.id, stem: question.stem })),
     };
   }
 
   if (task.task_type === 'paper-export-pdf') {
     const questions = selectQuestions(db, payload);
+    const artifact = writePaperArtifact('pdf', payload, questions);
     return {
       taskType: task.task_type,
       format: 'pdf',
       title: payload.title || '练习试卷',
       subject: payload.subject || '',
       questionCount: questions.length,
-      fileName: `${payload.title || '练习试卷'}.pdf`,
+      fileName: artifact.fileName,
+      fileUrl: artifact.fileUrl,
       questions: questions.map(question => ({ id: question.id, stem: question.stem })),
     };
   }
@@ -129,6 +189,18 @@ router.get('/tasks/pending', async (_req, res, next) => {
   try {
     const result = await fetchPendingTasks();
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/artifacts/:fileName', (req, res, next) => {
+  try {
+    const root = exportRoot();
+    const fileName = path.basename(req.params.fileName);
+    const filePath = resolveQuestionAssetPath(root, 'exports', fileName);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, error: 'artifact not found' });
+    return res.download(filePath, fileName);
   } catch (err) {
     next(err);
   }

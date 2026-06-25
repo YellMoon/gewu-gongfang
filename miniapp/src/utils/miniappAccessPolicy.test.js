@@ -40,5 +40,7 @@ assert.ok(questionBankPage.includes("'paper-export-word'"), 'question bank page 
 assert.ok(questionBankPage.includes("'paper-export-pdf'"), 'question bank page should support PDF export');
 assert.ok(questionBankPage.includes('getMiniappTaskResult'), 'question bank page should check paper/export task results');
 assert.ok(questionBankPage.includes('lastTaskId'), 'question bank page should keep the last submitted task id');
+assert.ok(questionBankPage.includes('resultFileUrl'), 'question bank page should keep downloadable result URLs');
+assert.ok(questionBankPage.includes('Taro.downloadFile'), 'question bank page should download generated paper files');
 
 console.log('miniapp access policy checks passed');

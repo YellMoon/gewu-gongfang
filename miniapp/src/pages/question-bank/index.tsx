@@ -20,6 +20,7 @@ export default function QuestionBankPage() {
   const [lastTaskId, setLastTaskId] = useState('');
   const [taskStatus, setTaskStatus] = useState('');
   const [taskResultText, setTaskResultText] = useState('');
+  const [resultFileUrl, setResultFileUrl] = useState('');
 
   const normalizedCount = useMemo(() => {
     const count = Number.parseInt(questionCount, 10);
@@ -49,6 +50,7 @@ export default function QuestionBankPage() {
         setLastTaskId(taskId);
         setTaskStatus(res.task?.status || res.data?.task?.status || 'pending_host');
         setTaskResultText('');
+        setResultFileUrl('');
         Taro.showToast({ title: actionCopy[taskType].success, icon: 'success' });
       } else {
         Taro.showToast({ title: res.error || '操作失败', icon: 'none' });
@@ -79,8 +81,26 @@ export default function QuestionBankPage() {
       setTaskStatus(task.status || '');
       const result = task.result_payload || {};
       setTaskResultText(result.fileName || result.title || result.error || '');
+      setResultFileUrl(result.fileUrl || '');
     } catch {
       Taro.showToast({ title: '查询失败，请稍后重试', icon: 'none' });
+    }
+  };
+
+  const openResultFile = async () => {
+    if (!resultFileUrl) {
+      Taro.showToast({ title: '暂无可打开文件', icon: 'none' });
+      return;
+    }
+    try {
+      const downloaded = await Taro.downloadFile({ url: resultFileUrl });
+      if (downloaded.statusCode !== 200) throw new Error('download failed');
+      await Taro.openDocument({
+        filePath: downloaded.tempFilePath,
+        showMenu: true,
+      });
+    } catch {
+      Taro.showToast({ title: '文件打开失败', icon: 'none' });
     }
   };
 
@@ -158,6 +178,9 @@ export default function QuestionBankPage() {
             <Text className="result-text">{taskResultText}</Text>
           ) : null}
           <Button className="result-button" onClick={refreshTaskResult}>查看结果</Button>
+          {resultFileUrl ? (
+            <Button className="result-button result-open-button" onClick={openResultFile}>打开文件</Button>
+          ) : null}
         </View>
       ) : null}
     </View>
