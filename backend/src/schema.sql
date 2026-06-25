@@ -242,6 +242,44 @@ CREATE TABLE IF NOT EXISTS sync_audit_log (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS sync_devices (
+  id TEXT PRIMARY KEY,
+  device_name TEXT,
+  role TEXT NOT NULL DEFAULT 'desktop-client',
+  trusted INTEGER NOT NULL DEFAULT 0,
+  last_seen_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sync_authorizations (
+  id TEXT PRIMARY KEY,
+  device_id TEXT NOT NULL,
+  token_hash TEXT NOT NULL,
+  scope TEXT NOT NULL DEFAULT 'sync:push',
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (device_id) REFERENCES sync_devices(id)
+);
+
+CREATE TABLE IF NOT EXISTS sync_conflicts (
+  id TEXT PRIMARY KEY,
+  operation_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  table_name TEXT NOT NULL,
+  record_id TEXT NOT NULL,
+  base_version TEXT,
+  server_version TEXT,
+  client_payload TEXT NOT NULL,
+  server_payload TEXT,
+  risk_level TEXT NOT NULL DEFAULT 'medium',
+  status TEXT NOT NULL DEFAULT 'pending',
+  resolution TEXT,
+  created_at TEXT NOT NULL,
+  resolved_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS operation_audit_log (
   id TEXT PRIMARY KEY,
   tenant_id TEXT DEFAULT 'default',
@@ -528,6 +566,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_schools_tenant_name ON schools(tenant_id, 
 CREATE INDEX IF NOT EXISTS idx_tenants_status ON tenants(status);
 CREATE INDEX IF NOT EXISTS idx_sync_audit_client ON sync_audit_log(client_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_sync_audit_record ON sync_audit_log(table_name, record_id);
+CREATE INDEX IF NOT EXISTS idx_sync_devices_last_seen ON sync_devices(last_seen_at);
+CREATE INDEX IF NOT EXISTS idx_sync_authorizations_device ON sync_authorizations(device_id, expires_at);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_status ON sync_conflicts(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_operation_audit_created ON operation_audit_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_operation_audit_action ON operation_audit_log(action, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_operation_audit_record ON operation_audit_log(table_name, record_id);

@@ -996,6 +996,81 @@ class DatabaseService {
     return queue;
   }
 
+  registerSyncDevice(deviceId, payload = {}) {
+    const now = this._now();
+    const id = deviceId || 'unknown';
+    this.db.prepare(
+      `INSERT INTO sync_devices (id, device_name, role, trusted, last_seen_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         device_name = excluded.device_name,
+         role = excluded.role,
+         last_seen_at = excluded.last_seen_at,
+         updated_at = excluded.updated_at`
+    ).run(
+      id,
+      payload.deviceName || payload.device_name || id,
+      payload.role || 'desktop-client',
+      payload.trusted ? 1 : 0,
+      now,
+      now,
+      now
+    );
+    return this.db.prepare('SELECT * FROM sync_devices WHERE id = ?').get(id);
+  }
+
+  issueSyncAuthorization(deviceId, options = {}) {
+    const crypto = require('crypto');
+    const now = this._now();
+    const token = crypto.randomBytes(24).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const expiresAt = new Date(Date.now() + (options.ttlMs || 10 * 60 * 1000)).toISOString();
+    const id = uuidv4();
+    this.registerSyncDevice(deviceId, { role: options.role || 'desktop-client', deviceName: options.deviceName });
+    this.db.prepare(
+      `INSERT INTO sync_authorizations (id, device_id, token_hash, scope, expires_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(id, deviceId, tokenHash, options.scope || 'sync:push', expiresAt, now);
+    return { id, token, expiresAt, scope: options.scope || 'sync:push' };
+  }
+
+  verifySyncAuthorization(deviceId, token) {
+    const crypto = require('crypto');
+    const tokenHash = crypto.createHash('sha256').update(String(token || '')).digest('hex');
+    const row = this.db.prepare(
+      `SELECT * FROM sync_authorizations
+       WHERE device_id = ? AND token_hash = ? AND used_at IS NULL
+       ORDER BY created_at DESC LIMIT 1`
+    ).get(deviceId, tokenHash);
+    if (!row) return false;
+    if (Date.parse(row.expires_at) < Date.now()) return false;
+    this.db.prepare('UPDATE sync_authorizations SET used_at = ? WHERE id = ?').run(this._now(), row.id);
+    return true;
+  }
+
+  recordSyncConflict(change, existing, options = {}) {
+    const id = uuidv4();
+    this.db.prepare(
+      `INSERT INTO sync_conflicts
+       (id, operation_id, device_id, table_name, record_id, base_version, server_version,
+        client_payload, server_payload, risk_level, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`
+    ).run(
+      id,
+      change.id,
+      options.deviceId || change.deviceId || 'unknown',
+      change.table,
+      change.data?.id,
+      change.data?._base_version || change.baseVersion || null,
+      existing?.updated_at || null,
+      JSON.stringify(change.data || {}),
+      JSON.stringify(existing || {}),
+      change.data?._risk_level || change.riskLevel || 'medium',
+      this._now()
+    );
+    return id;
+  }
+
   getChangesSince(table, sinceTime, options = {}) {
     const columns = this._tableColumns(table);
     if (!columns.includes('updated_at')) return [];
@@ -1070,6 +1145,30 @@ class DatabaseService {
           const existing = columns.includes('tenant_id')
             ? this.db.prepare(`SELECT * FROM ${table} WHERE id = ? AND tenant_id = ?`).get(recordId, change.tenantId)
             : this.db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(recordId);
+          const baseVersion = record._base_version || change.baseVersion || null;
+          const riskLevel = record._risk_level || change.riskLevel || 'medium';
+          const existingVersion = existing?.updated_at || null;
+          if (existing && baseVersion && existingVersion && baseVersion !== existingVersion && riskLevel === 'high') {
+            results.conflicts++;
+            this.recordSyncConflict(change, existing, { deviceId, tenantId: change.tenantId });
+            this._auditSync({
+              tenant_id: change.tenantId,
+              client_id: change.deviceId,
+              protocol_version: 'v2-change-queue',
+              action: change.action,
+              table_name: table,
+              record_id: recordId,
+              local_updated_at: change.updatedAt,
+              server_updated_at: existingVersion,
+              resolution: 'manual-required',
+              status: 'conflict',
+              detail: { changeId: change.id, baseVersion, riskLevel },
+            });
+            this.db.prepare(
+              `INSERT INTO sync_log (client_id, action, table_name, record_id, sync_time, status) VALUES (?, 'push', ?, ?, ?, 'conflict')`
+            ).run(change.deviceId, table, recordId, now);
+            continue;
+          }
           if (existing && this._syncTimeMs(existing.updated_at) > this._syncTimeMs(change.updatedAt)) {
             results.conflicts++;
             this._auditSync({

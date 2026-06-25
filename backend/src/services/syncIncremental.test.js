@@ -45,8 +45,18 @@ function testSameMillisecondWaterlineIsNotSkipped() {
   });
 }
 
+function testSyncAuthorizationTablesExist() {
+  withTempService((service) => {
+    const tables = service.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row => row.name);
+    assert.ok(tables.includes('sync_devices'), 'sync_devices table should exist');
+    assert.ok(tables.includes('sync_authorizations'), 'sync_authorizations table should exist');
+    assert.ok(tables.includes('sync_conflicts'), 'sync_conflicts table should exist');
+  });
+}
+
 function main() {
   testSameMillisecondWaterlineIsNotSkipped();
+  testSyncAuthorizationTablesExist();
   console.log('syncIncremental tests passed');
 }
 

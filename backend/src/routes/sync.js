@@ -139,6 +139,34 @@ router.get('/pull', (req, res) => {
   }
 });
 
+router.post('/devices/register', (req, res) => {
+  try {
+    const db = getInstance();
+    const deviceId = readDeviceId(req);
+    const device = db.registerSyncDevice(deviceId, {
+      deviceName: req.body?.deviceName || req.body?.device_name,
+      role: req.body?.role || 'desktop-client',
+    });
+    res.json({ success: true, device });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/authorize', (req, res) => {
+  try {
+    const db = getInstance();
+    const deviceId = readDeviceId(req);
+    const authorization = db.issueSyncAuthorization(deviceId, {
+      role: req.body?.role || 'desktop-client',
+      deviceName: req.body?.deviceName || req.body?.device_name,
+    });
+    res.json({ success: true, authorization });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 router.post('/push', (req, res) => {
   try {
     const db = getInstance();
@@ -147,6 +175,11 @@ router.post('/push', (req, res) => {
 
     if (!changes) {
       return res.status(400).json({ success: false, error: '缺少 changes' });
+    }
+
+    const token = req.headers['x-sync-authorization'] || req.body?.syncAuthorizationToken;
+    if (process.env.GEWU_NODE_ROLE === 'primary-host' && !db.verifySyncAuthorization(deviceId, token)) {
+      return res.status(403).json({ success: false, error: 'sync authorization required' });
     }
 
     const result = db.applySyncChanges(changes, { deviceId, tenantId: readTenantId(req) });
