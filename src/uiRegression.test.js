@@ -53,6 +53,14 @@ assert(
 );
 
 assert(
+  questionBankImport.includes('questionBankStorageStatus') &&
+  questionBankImport.includes('题库移动硬盘未连接') &&
+  questionBankPreview.includes('questionBankStorageStatus') &&
+  questionBankPreview.includes('题库移动硬盘未连接'),
+  'question bank import and preview should warn when the removable question-bank drive is unavailable'
+);
+
+assert(
   !batchSelection.includes('馃棏'),
   'batch selection context menu should not include mojibake delete markers'
 );

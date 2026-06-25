@@ -2,7 +2,7 @@
 import {
   Card, Button, Modal, Form, Input, Select as AntSelect, Space, Tag, message,
   Popconfirm, Tooltip, Tree, Divider, Badge, Checkbox, Dropdown, Menu, Empty, Row, Col, Typography, Drawer,
-  Pagination
+  Pagination, Alert
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, CopyOutlined,
@@ -34,6 +34,16 @@ const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
 const API_BASE = getApiBase('/api/question-bank');
 const QUESTION_PAGE_SIZE = 10;
+
+type QuestionBankStorageStatus = {
+  configured?: boolean;
+  available?: boolean;
+  writable?: boolean;
+  root?: string;
+  reason?: string;
+  detail?: string;
+};
+
 const KATEX_EXPORT_CSS = `
 .katex{font:normal 1em "KaTeX_Main","Times New Roman",serif;line-height:1.08;text-rendering:auto}
 .katex .base{position:relative;white-space:nowrap;width:min-content;display:inline-block}
@@ -181,12 +191,26 @@ const QuestionBankPreview: React.FC = () => {
   const [addingChildName, setAddingChildName] = useState('');
   const [contextMenuNode, setContextMenuNode] = useState<{ id: string; name: string; x: number; y: number } | null>(null);
   const [deleteConfirmNode, setDeleteConfirmNode] = useState<{ id: string; name: string } | null>(null);
+  const [questionBankStorageStatus, setQuestionBankStorageStatus] = useState<QuestionBankStorageStatus | null>(null);
   const [form] = Form.useForm();
 
   // Knowledge multi-select search state
   const [knowledgeSelectedIds, setKnowledgeSelectedIds] = useState<(string | undefined)[]>([undefined]);
 
   const dbService = (window as any).dbService;
+  const questionBankStorageUnavailable = !!(
+    questionBankStorageStatus?.configured && questionBankStorageStatus.available === false
+  );
+
+  const fetchQuestionBankStorageStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/storage/status`);
+      const data = await res.json();
+      if (data.success) setQuestionBankStorageStatus(data.status || null);
+    } catch (_err) {
+      setQuestionBankStorageStatus(null);
+    }
+  }, []);
 
   const normalizeQuestion = (row: any): Question => ({
     ...row,
@@ -235,7 +259,10 @@ const QuestionBankPreview: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+    fetchQuestionBankStorageStatus();
+  }, [loadData, fetchQuestionBankStorageStatus]);
 
   useEffect(() => {
     if (!contextMenuNode) return;
@@ -976,6 +1003,16 @@ const QuestionBankPreview: React.FC = () => {
       {/* Main Content */}
       <Col span={treeVisible ? 19 : 24} className="qb-preview-main">
         <Card className="qb-preview-main-card">
+          {questionBankStorageUnavailable && (
+            <Alert
+              showIcon
+              type="warning"
+              message="题库移动硬盘未连接"
+              description={questionBankStorageStatus?.reason || questionBankStorageStatus?.detail || '请在系统设置中配置并连接题库移动硬盘。'}
+              style={{ marginBottom: 16 }}
+            />
+          )}
+
           {/* Header */}
           <div className="qb-preview-header">
             <Space className="qb-preview-titlebar">
@@ -1002,6 +1039,7 @@ const QuestionBankPreview: React.FC = () => {
                   <Button
                     type="primary"
                     icon={<FileWordOutlined />}
+                    disabled={questionBankStorageUnavailable}
                     onClick={handleBatchGroupExam}
                   >
                     批量组卷 ({selectedRowKeys.length})

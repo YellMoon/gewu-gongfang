@@ -9,13 +9,22 @@ const questionBank = require('../services/questionBankService');
 const searchService = require('../services/searchService');
 const eventBus = require('../services/eventBus');
 const cache = require('../services/cacheService');
+const {
+  initQuestionBankStore,
+  inspectQuestionBankStore,
+  assertQuestionBankWritable,
+} = require('../services/questionBankStorageService');
 
 const router = Router();
 const dataDir = process.env.GEWU_DATA_DIR || process.env.LOCALAPPDATA || process.env.APPDATA || os.tmpdir();
 const uploadDir = process.env.QUESTION_BANK_UPLOAD_DIR || path.join(dataDir, 'gewu-gongfang', 'uploads', 'question-bank');
 const parserScript = path.join(__dirname, '..', '..', '..', 'modules', 'question-bank', 'parsers', 'parse_word.py');
 
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+try {
+  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+} catch (err) {
+  console.warn('[question-bank] upload directory is not available:', err.message);
+}
 
 const upload = multer({
   dest: uploadDir,
@@ -112,6 +121,80 @@ function applyFileTopic(result, fileName = '', sourceType = 'lecture') {
   topics.add(topic);
   return { ...result, questions, topics: [...topics], knowledge_points: [...new Set([...(result.knowledge_points || []), topic])] };
 }
+
+function storageStatusPayload() {
+  const root = process.env.QUESTION_BANK_ROOT || '';
+  const nodeRole = process.env.GEWU_NODE_ROLE || 'desktop-client';
+  const deviceId = process.env.GEWU_DEVICE_ID || '';
+
+  if (!root) {
+    return {
+      configured: false,
+      available: true,
+      writable: true,
+      root: '',
+      nodeRole,
+      reason: '题库移动硬盘未配置，当前继续使用默认本地存储',
+    };
+  }
+
+  try {
+    const inspected = inspectQuestionBankStore(root);
+    let writable = true;
+    let reason = inspected.available ? '' : '题库移动硬盘未连接或目录结构不完整';
+    try {
+      assertQuestionBankWritable(root, { nodeRole, deviceId });
+    } catch (err) {
+      writable = false;
+      if (nodeRole !== 'primary-host') {
+        reason = '当前电脑不是本地数据主机，不直接写入题库移动硬盘';
+      } else {
+        reason = '题库移动硬盘未连接或当前设备无写入权限';
+      }
+    }
+    return {
+      configured: true,
+      available: inspected.available,
+      writable,
+      root,
+      nodeRole,
+      manifest: inspected.manifest,
+      missingDirs: inspected.missingDirs || [],
+      reason,
+    };
+  } catch (err) {
+    return {
+      configured: true,
+      available: false,
+      writable: false,
+      root,
+      nodeRole,
+      reason: '题库移动硬盘未连接',
+      detail: err.message,
+    };
+  }
+}
+
+router.get('/storage/status', (_req, res) => {
+  res.json({ success: true, status: storageStatusPayload() });
+});
+
+router.post('/storage/init', (_req, res) => {
+  const root = process.env.QUESTION_BANK_ROOT || '';
+  const nodeRole = process.env.GEWU_NODE_ROLE || 'desktop-client';
+  if (nodeRole !== 'primary-host') {
+    return res.status(403).json({ success: false, error: '只有本地数据主机可以初始化题库移动硬盘' });
+  }
+  if (!root) {
+    return res.status(400).json({ success: false, error: '题库移动硬盘路径未配置' });
+  }
+  try {
+    const manifest = initQuestionBankStore(root, { deviceId: process.env.GEWU_DEVICE_ID || '' });
+    res.json({ success: true, status: storageStatusPayload(), manifest });
+  } catch (err) {
+    res.status(409).json({ success: false, error: '题库移动硬盘未连接', detail: err.message });
+  }
+});
 
 router.post('/parse-word', upload.single('file'), (req, res) => {
   const file = req.file;

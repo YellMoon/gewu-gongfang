@@ -34,6 +34,15 @@ const SEMESTERS = ['上学期', '下学期'];
 const API_BASE = getApiBase('/api/question-bank');
 const PARSE_WORD_ENDPOINT = `${API_BASE}/parse-word`;
 
+type QuestionBankStorageStatus = {
+  configured?: boolean;
+  available?: boolean;
+  writable?: boolean;
+  root?: string;
+  reason?: string;
+  detail?: string;
+};
+
 type ImportBatch = {
   id: string;
   status: string;
@@ -282,9 +291,24 @@ const QuestionBankImport: React.FC = () => {
   const [importTaskDetail, setImportTaskDetail] = useState<(ImportTask & { items: ImportTaskItem[] }) | null>(null);
   const [importTaskDrawerOpen, setImportTaskDrawerOpen] = useState(false);
   const [examPapers, setExamPapers] = useState<any[]>([]);
+  const [questionBankStorageStatus, setQuestionBankStorageStatus] = useState<QuestionBankStorageStatus | null>(null);
   const [examForm] = Form.useForm();
   const [form] = Form.useForm();
   const examMetaRef = useRef<any>(null);
+
+  const questionBankStorageUnavailable = !!(
+    questionBankStorageStatus?.configured && questionBankStorageStatus.available === false
+  );
+
+  const fetchQuestionBankStorageStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/storage/status`);
+      const data = await res.json();
+      if (data.success) setQuestionBankStorageStatus(data.status || null);
+    } catch (_err) {
+      setQuestionBankStorageStatus(null);
+    }
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -323,7 +347,10 @@ const QuestionBankImport: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+    fetchQuestionBankStorageStatus();
+  }, [loadData, fetchQuestionBankStorageStatus]);
 
   const loadExamPapers = useCallback(async () => {
     try {
@@ -840,6 +867,10 @@ const QuestionBankImport: React.FC = () => {
   };
 
   const openWordFilePicker = () => {
+    if (questionBankStorageUnavailable) {
+      message.warning('题库移动硬盘未连接');
+      return;
+    }
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.doc,.docx';
@@ -851,6 +882,10 @@ const QuestionBankImport: React.FC = () => {
   };
 
   const handleStartParse = () => {
+    if (questionBankStorageUnavailable) {
+      message.warning('题库移动硬盘未连接');
+      return;
+    }
     if (!selectedWordFile) {
       message.warning('请先选择 Word 文件');
       return;
@@ -1225,6 +1260,16 @@ const QuestionBankImport: React.FC = () => {
             ]}
           />
 
+          {questionBankStorageUnavailable && (
+            <Alert
+              showIcon
+              type="warning"
+              message="题库移动硬盘未连接"
+              description={questionBankStorageStatus?.reason || questionBankStorageStatus?.detail || '请在系统设置中配置并连接题库移动硬盘。'}
+              style={{ marginBottom: 16 }}
+            />
+          )}
+
           <div style={{ background: '#f7f9fc', border: '1px solid #e8edf3', borderRadius: 8, padding: 20, marginBottom: 16 }}>
             <Row gutter={[20, 16]} align="top">
               <Col xs={24} lg={9}>
@@ -1334,6 +1379,7 @@ const QuestionBankImport: React.FC = () => {
             onDragOver={e => e.preventDefault()}
             onDrop={e => {
               e.preventDefault();
+              if (questionBankStorageUnavailable) return;
               const file = e.dataTransfer.files?.[0];
               if (!file) return;
               handleSelectWordFile(file);
@@ -1343,7 +1389,7 @@ const QuestionBankImport: React.FC = () => {
             <h3 style={{ marginTop: 16 }}>拖拽或选择 Word 文件</h3>
             <p style={{ color: '#999' }}>支持 .doc / .docx，当前模式：{wordSourceType === 'lecture' ? '讲义格式' : '试卷格式'}</p>
             <Space>
-              <Button size="large" icon={<FileWordOutlined />} onClick={openWordFilePicker}>
+              <Button size="large" icon={<FileWordOutlined />} disabled={questionBankStorageUnavailable} onClick={openWordFilePicker}>
                 选择文件
               </Button>
               <Button
@@ -1351,7 +1397,7 @@ const QuestionBankImport: React.FC = () => {
                 size="large"
                 icon={<CheckCircleOutlined />}
                 loading={wordImporting}
-                disabled={!selectedWordFile || !wordSourceType}
+                disabled={!selectedWordFile || !wordSourceType || questionBankStorageUnavailable}
                 onClick={handleStartParse}
               >
                 开始解析
@@ -1406,7 +1452,7 @@ const QuestionBankImport: React.FC = () => {
                   />
                   <Space style={{ marginTop: 12 }}>
                     <Button icon={<DownloadOutlined />} onClick={() => downloadImportValidationReport(validationRows)}>导出错误报告</Button>
-                    <Button type="primary" loading={committingBatch} disabled={!wordResult || validationSummary.failed > 0} onClick={() => wordResult && importWordResults(wordResult)}>
+                    <Button type="primary" loading={committingBatch} disabled={!wordResult || validationSummary.failed > 0 || questionBankStorageUnavailable} onClick={() => wordResult && importWordResults(wordResult)}>
                       确认导入
                     </Button>
                   </Space>
