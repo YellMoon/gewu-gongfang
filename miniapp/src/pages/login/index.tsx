@@ -160,7 +160,7 @@ export default function LoginPage() {
       )}
 
       <View className="login-footer">
-        <Text className="footer-text">教务管理 · 题库 · 教学工具</Text>
+        <Text className="footer-text">教务管理 · 题库 · 财务</Text>
       </View>
     </View>
   );

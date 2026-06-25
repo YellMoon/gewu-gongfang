@@ -46,10 +46,10 @@ export default function Assets() {
         source: 'miniapp-assets',
         requestedAt: new Date().toISOString(),
       });
-      if (!res.success) throw new Error(res.error || '提交任务失败');
-      Taro.showToast({ title: '已提交财务导入任务', icon: 'success' });
+      if (!res.success) throw new Error(res.error || '导入失败');
+      Taro.showToast({ title: '财务导入已开始', icon: 'success' });
     } catch (error: any) {
-      Taro.showToast({ title: error.message || '提交任务失败', icon: 'none' });
+      Taro.showToast({ title: error.message || '导入失败', icon: 'none' });
     }
   };
 
@@ -88,8 +88,8 @@ export default function Assets() {
       <NetworkStatus />
 
       <View className="task-card" onClick={submitAssetImportTask}>
-        <Text className="task-title">提交财务导入任务</Text>
-        <Text className="task-desc">小程序仅提交导入任务，由本地数据主机审核处理。</Text>
+        <Text className="task-title">导入财务数据</Text>
+        <Text className="task-desc">选择个人资产统计所需的数据文件并开始导入。</Text>
       </View>
 
       {/* 总览卡片 */}

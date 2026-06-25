@@ -8,6 +8,9 @@ const gatewayApp = fs.readFileSync('gateway/src/app.js', 'utf-8');
 const miniappHome = fs.readFileSync('miniapp/src/pages/index/index.tsx', 'utf-8');
 const appConfig = fs.readFileSync('miniapp/src/app.config.ts', 'utf-8');
 const questionBankPage = fs.readFileSync('miniapp/src/pages/question-bank/index.tsx', 'utf-8');
+const assetsPage = fs.readFileSync('miniapp/src/pages/assets/index.tsx', 'utf-8');
+const loginPage = fs.readFileSync('miniapp/src/pages/login/index.tsx', 'utf-8');
+const adminUsersPage = fs.readFileSync('miniapp/src/pages/admin/users/index.tsx', 'utf-8');
 
 assert.ok(permission.includes('readonlyModules'), 'miniapp permission should define readonlyModules');
 assert.ok(permission.includes('allowedWriteTasks'), 'miniapp permission should define allowedWriteTasks');
@@ -25,6 +28,9 @@ assert.ok(miniappHome.includes('getMiniappRolePolicy'), 'home page should use ro
 assert.ok(!permission.includes("'teaching-tools'"), 'miniapp permission should not expose removed teaching tools module');
 assert.ok(!miniappHome.includes("'teaching-tools'"), 'home page should not expose removed teaching tools module');
 assert.ok(!appConfig.includes("'pages/tools/index'"), 'app config should not register removed teaching tools page');
+assert.ok(!loginPage.includes('教学工具') && !loginPage.includes('teaching-tools'), 'login page should not mention removed teaching tools module');
+assert.ok(!adminUsersPage.includes('teaching-tools') && !adminUsersPage.includes('教学工具'), 'admin user permissions should not mention removed teaching tools module');
+assert.ok(!assetsPage.includes('提交任务') && !assetsPage.includes('主机处理') && !assetsPage.includes('本地数据主机'), 'asset page should not expose implementation wording');
 assert.ok(!miniappHome.includes('student-dashboard-scope'), 'home page should not show explanatory student scope copy');
 assert.ok(miniappHome.includes("user?.user_type !== 'student'"), 'home page should hide management shortcuts from students');
 assert.ok(appConfig.includes("'pages/question-bank/index'"), 'app config should register the question bank page');
@@ -32,5 +38,7 @@ assert.ok(questionBankPage.includes('createMiniappTask'), 'question bank page sh
 assert.ok(questionBankPage.includes("'question-paper'"), 'question bank page should support paper assembly');
 assert.ok(questionBankPage.includes("'paper-export-word'"), 'question bank page should support Word export');
 assert.ok(questionBankPage.includes("'paper-export-pdf'"), 'question bank page should support PDF export');
+assert.ok(questionBankPage.includes('getMiniappTaskResult'), 'question bank page should check paper/export task results');
+assert.ok(questionBankPage.includes('lastTaskId'), 'question bank page should keep the last submitted task id');
 
 console.log('miniapp access policy checks passed');

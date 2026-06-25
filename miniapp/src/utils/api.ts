@@ -231,6 +231,7 @@ export const cloudRelayApi = {
 
 export const readCloudSnapshot = cloudRelayApi.readCloudSnapshot;
 export const createMiniappTask = cloudRelayApi.createMiniappTask;
+export const getMiniappTaskResult = cloudRelayApi.getMiniappTaskResult;
 
 // ========== 业务 API ==========
 export const studentApi = {

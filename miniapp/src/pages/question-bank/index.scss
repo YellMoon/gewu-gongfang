@@ -97,3 +97,50 @@
 .paper-export-pdf {
   background: #f05a5a;
 }
+
+.result-card {
+  margin-top: 24rpx;
+  padding: 28rpx;
+  background: #fff;
+  border-radius: 24rpx;
+  box-shadow: 0 10rpx 28rpx rgba(25, 45, 90, 0.08);
+}
+
+.result-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18rpx;
+  margin-bottom: 14rpx;
+}
+
+.result-label {
+  color: #677183;
+  font-size: 25rpx;
+}
+
+.result-value {
+  flex: 1;
+  color: #172033;
+  font-size: 25rpx;
+  text-align: right;
+  word-break: break-all;
+}
+
+.result-text {
+  display: block;
+  margin: 18rpx 0;
+  color: #2b3340;
+  font-size: 26rpx;
+}
+
+.result-button {
+  margin-top: 18rpx;
+  border-radius: 16rpx;
+  background: #eef5ff;
+  color: #176de6;
+  font-size: 27rpx;
+}
+
+.result-button::after {
+  border: 0;
+}

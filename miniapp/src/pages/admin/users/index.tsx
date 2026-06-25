@@ -34,7 +34,6 @@ const ALL_PERMISSIONS = [
   { id: 'scheduling:view_all', module_id: 'scheduling', action: 'view_all', description: '查看所有课程排课' },
   { id: 'question-bank:view', module_id: 'question-bank', action: 'view', description: '做题/查看/组卷/导出/批改' },
   { id: 'question-bank:edit', module_id: 'question-bank', action: 'edit', description: '编辑题目/导入/管理知识点' },
-  { id: 'teaching-tools:view', module_id: 'teaching-tools', action: 'view', description: '使用教学工具' },
   { id: 'assets:view', module_id: 'assets', action: 'view', description: '查看资产' },
   { id: 'assets:edit', module_id: 'assets', action: 'edit', description: '编辑资产' },
 ];

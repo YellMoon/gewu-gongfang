@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { View, Text, Input, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { createMiniappTask } from '../../utils/api';
+import { createMiniappTask, getMiniappTaskResult } from '../../utils/api';
 import './index.scss';
 
 type PaperAction = 'question-paper' | 'paper-export-word' | 'paper-export-pdf';
@@ -17,6 +17,9 @@ export default function QuestionBankPage() {
   const [subject, setSubject] = useState('');
   const [questionCount, setQuestionCount] = useState('20');
   const [submittingAction, setSubmittingAction] = useState<PaperAction | null>(null);
+  const [lastTaskId, setLastTaskId] = useState('');
+  const [taskStatus, setTaskStatus] = useState('');
+  const [taskResultText, setTaskResultText] = useState('');
 
   const normalizedCount = useMemo(() => {
     const count = Number.parseInt(questionCount, 10);
@@ -42,6 +45,10 @@ export default function QuestionBankPage() {
       });
 
       if (res.success) {
+        const taskId = res.task?.id || res.data?.task?.id || '';
+        setLastTaskId(taskId);
+        setTaskStatus(res.task?.status || res.data?.task?.status || 'pending_host');
+        setTaskResultText('');
         Taro.showToast({ title: actionCopy[taskType].success, icon: 'success' });
       } else {
         Taro.showToast({ title: res.error || '操作失败', icon: 'none' });
@@ -57,6 +64,25 @@ export default function QuestionBankPage() {
   const createPaper = () => submit('question-paper');
   const exportWord = () => submit('paper-export-word');
   const exportPdf = () => submit('paper-export-pdf');
+  const refreshTaskResult = async () => {
+    if (!lastTaskId) {
+      Taro.showToast({ title: '暂无可查询记录', icon: 'none' });
+      return;
+    }
+    try {
+      const res = await getMiniappTaskResult(lastTaskId);
+      const task = res.task || res.data?.task;
+      if (!res.success || !task) {
+        Taro.showToast({ title: '未查询到结果', icon: 'none' });
+        return;
+      }
+      setTaskStatus(task.status || '');
+      const result = task.result_payload || {};
+      setTaskResultText(result.fileName || result.title || result.error || '');
+    } catch {
+      Taro.showToast({ title: '查询失败，请稍后重试', icon: 'none' });
+    }
+  };
 
   const actions: Array<{ taskType: PaperAction; onClick: () => void }> = [
     { taskType: 'question-paper', onClick: createPaper },
@@ -117,6 +143,23 @@ export default function QuestionBankPage() {
           </Button>
         ))}
       </View>
+
+      {lastTaskId ? (
+        <View className="result-card">
+          <View className="result-row">
+            <Text className="result-label">最近记录</Text>
+            <Text className="result-value">{lastTaskId}</Text>
+          </View>
+          <View className="result-row">
+            <Text className="result-label">状态</Text>
+            <Text className="result-value">{taskStatus || '处理中'}</Text>
+          </View>
+          {taskResultText ? (
+            <Text className="result-text">{taskResultText}</Text>
+          ) : null}
+          <Button className="result-button" onClick={refreshTaskResult}>查看结果</Button>
+        </View>
+      ) : null}
     </View>
   );
 }
