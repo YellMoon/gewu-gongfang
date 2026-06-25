@@ -7,6 +7,8 @@ const packageJson = fs.readFileSync('package.json', 'utf-8');
 assert.ok(source.includes('publishHeartbeat'), 'cloud relay client should publish heartbeat');
 assert.ok(source.includes('publishSnapshot'), 'cloud relay client should publish snapshot');
 assert.ok(source.includes('fetchPendingTasks'), 'cloud relay client should fetch pending tasks');
+assert.ok(source.includes('completeMiniappTask'), 'cloud relay client should complete miniapp tasks');
+assert.ok(source.includes('/api/cloud/tasks/${taskId}/complete'), 'cloud relay client should call task completion endpoint');
 assert.ok(packageJson.includes('backend/src/services/cloudRelayClient.test.js'), 'cloud relay client test should run in npm test');
 
 console.log('cloudRelayClient checks passed');

@@ -13,6 +13,8 @@ assert.ok(route.includes('/snapshots/publish'), 'cloud relay should expose snaps
 assert.ok(route.includes('/snapshots/read'), 'cloud relay should expose snapshot read');
 assert.ok(route.includes('/tasks'), 'cloud relay should expose miniapp tasks');
 assert.ok(route.includes("router.get('/tasks'"), 'cloud relay should let host fetch pending miniapp tasks');
+assert.ok(route.includes("router.post('/tasks/:id/complete'"), 'cloud relay should let host complete miniapp tasks');
+assert.ok(route.includes("status = req.body.success === false ? 'failed' : 'completed'"), 'cloud relay should store completed or failed task status');
 assert.ok(app.includes("require('./routes/cloudRelay')"), 'gateway app should mount cloud relay');
 
 console.log('cloudRelay route checks passed');

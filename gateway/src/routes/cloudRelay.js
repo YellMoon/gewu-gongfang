@@ -189,6 +189,32 @@ router.get('/tasks', (req, res) => {
   });
 });
 
+router.post('/tasks/:id/complete', (req, res) => {
+  const db = getDb();
+  const time = now();
+  const status = req.body.success === false ? 'failed' : 'completed';
+  const resultPayload = {
+    ...(req.body.result || req.body.resultPayload || {}),
+    completedBy: req.body.completedBy || req.body.hostDeviceId || 'primary-host',
+    completedAt: time,
+  };
+  const info = db.prepare(
+    `UPDATE miniapp_tasks
+     SET status = ?, result_payload = ?, updated_at = ?
+     WHERE id = ?`
+  ).run(status, JSON.stringify(resultPayload), time, req.params.id);
+  if (info.changes === 0) return res.status(404).json({ success: false, error: 'task not found' });
+  const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(req.params.id);
+  res.json({
+    success: true,
+    task: {
+      ...row,
+      payload: JSON.parse(row.payload || '{}'),
+      result_payload: row.result_payload ? JSON.parse(row.result_payload) : null,
+    },
+  });
+});
+
 router.get('/tasks/:id/result', (req, res) => {
   const db = getDb();
   const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(req.params.id);

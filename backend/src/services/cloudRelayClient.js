@@ -34,8 +34,15 @@ async function fetchPendingTasks() {
   return res.json();
 }
 
+async function completeMiniappTask(taskId, payload = {}) {
+  const base = baseUrl();
+  if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured');
+  return postJson(`${base}/api/cloud/tasks/${taskId}/complete`, payload);
+}
+
 module.exports = {
   publishHeartbeat,
   publishSnapshot,
   fetchPendingTasks,
+  completeMiniappTask,
 };
