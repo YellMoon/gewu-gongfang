@@ -28,6 +28,7 @@ const questionRendererCss = read('src/components/QuestionRenderer.css');
 const richQuestionEditor = read('src/components/RichQuestionEditor.tsx');
 const systemSettings = read('src/pages/SystemSettings.tsx');
 const syncSettings = read('src/pages/SyncSettings.tsx');
+const cloudSync = read('src/pages/CloudSync.tsx');
 
 assert(
   !scheduleList.includes('require(') &&
@@ -67,6 +68,15 @@ assert(
   syncSettings.includes('离线更改') &&
   syncSettings.includes('只拉取主机数据'),
   'sync settings should require user confirmation before pushing offline changes'
+);
+
+assert(
+  cloudSync.includes('requestSyncAuthorization') &&
+  cloudSync.includes('registerSyncDevice') &&
+  cloudSync.includes('Modal.confirm') &&
+  cloudSync.includes('authorizationToken') &&
+  cloudSync.includes('申请同步权限'),
+  'cloud sync dashboard should also require authorization confirmation before pushing offline changes'
 );
 
 assert(

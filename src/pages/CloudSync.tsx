@@ -2,16 +2,18 @@
  * 云同步仪表盘 — 同步状态监控 + 手动同步控制
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Card, Button, Tag, Descriptions, Divider, message, Alert, Row, Col, Statistic } from 'antd';
+import { Card, Button, Tag, Descriptions, Divider, message, Alert, Row, Col, Statistic, Modal } from 'antd';
 import { SyncOutlined, CloudSyncOutlined, CloudServerOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
 import { SyncEngine, SyncStatus } from '../services/syncEngine';
-import { pushSyncBatch, pullSyncOps } from '../services/syncApi';
+import { pushSyncBatch, pullSyncOps, registerSyncDevice, requestSyncAuthorization } from '../services/syncApi';
+import { getRuntimeConfig, RuntimeConfig } from '../services/runtimeConfigClient';
 import browserDatabase from '../services/browserDatabase';
 
 const CloudSync: React.FC = () => {
   const [engine, setEngine] = useState<SyncEngine | null>(null);
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [initError, setInitError] = useState<string | null>(null);
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const engineRef = useRef<SyncEngine | null>(null);
 
   useEffect(() => {
@@ -24,6 +26,12 @@ const CloudSync: React.FC = () => {
     } catch (err: any) {
       setInitError(err?.message || '同步引擎初始化失败');
     }
+  }, []);
+
+  useEffect(() => {
+    getRuntimeConfig()
+      .then(setRuntimeConfig)
+      .catch(() => setRuntimeConfig(null));
   }, []);
 
   const refreshStatus = useCallback(() => {
@@ -47,19 +55,50 @@ const CloudSync: React.FC = () => {
       return;
     }
 
-    message.loading({ content: '正在推送同步...', key: 'sync' });
+    return new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: `检测到 ${pending.length} 条离线更改`,
+        content: '是否申请同步权限并同步到本地数据主机？同步前不会静默覆盖主机数据。',
+        okText: '申请同步权限并推送',
+        cancelText: '稍后',
+        onCancel: () => resolve(false),
+        onOk: async () => {
+          try {
+            message.loading({ content: '正在申请同步权限...', key: 'sync' });
+            await registerSyncDevice({
+              deviceId: eng.getDeviceId(),
+              role: runtimeConfig?.nodeRole || 'desktop-client',
+              deviceName: runtimeConfig?.deviceId || eng.getDeviceId(),
+            });
+            const auth = await requestSyncAuthorization({
+              deviceId: eng.getDeviceId(),
+              role: runtimeConfig?.nodeRole || 'desktop-client',
+            });
+            if (!auth.success) throw new Error(auth.error || '申请同步权限失败');
 
-    const result = await eng.push(pushSyncBatch);
-    refreshStatus();
+            message.loading({ content: '正在推送离线更改...', key: 'sync' });
+            const result = await eng.push(batch => pushSyncBatch(batch, {
+              authorizationToken: auth.authorization.token,
+            }));
+            refreshStatus();
 
-    if (result.success) {
-      message.success({ content: `已推送 ${result.pushed} 条待同步变更`, key: 'sync' });
-      (window as any).operateLogger?.log('同步', `手动推送 ${result.pushed} 条变更`, '云同步');
-      return true;
-    }
+            if (result.success) {
+              message.success({ content: `已推送 ${result.pushed} 条离线更改`, key: 'sync' });
+              (window as any).operateLogger?.log('同步', `申请同步权限并推送 ${result.pushed} 条离线更改`, '云同步');
+              resolve(true);
+              return;
+            }
 
-    message.error({ content: `推送失败，${pending.length} 条待同步变更已保留`, key: 'sync' });
-    return false;
+            message.error({ content: `推送失败，${pending.length} 条离线更改已保留`, key: 'sync' });
+            resolve(false);
+          } catch (error: any) {
+            refreshStatus();
+            message.error({ content: error.message || '申请同步权限失败', key: 'sync' });
+            resolve(false);
+          }
+        },
+      });
+    });
   };
 
   const handlePull = async () => {
