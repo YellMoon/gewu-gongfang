@@ -66,3 +66,42 @@ CREATE TABLE IF NOT EXISTS invitations (
   created_at TEXT NOT NULL,
   FOREIGN KEY (invited_by) REFERENCES users(id)
 );
+
+CREATE TABLE IF NOT EXISTS host_heartbeats (
+  id TEXT PRIMARY KEY,
+  host_device_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'online',
+  base_url TEXT,
+  last_snapshot_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS readonly_snapshots (
+  id TEXT PRIMARY KEY,
+  snapshot_type TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  source_device_id TEXT NOT NULL,
+  version TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS miniapp_tasks (
+  id TEXT PRIMARY KEY,
+  task_type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending_host',
+  payload TEXT NOT NULL,
+  result_payload TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cloud_devices (
+  id TEXT PRIMARY KEY,
+  device_name TEXT,
+  role TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
