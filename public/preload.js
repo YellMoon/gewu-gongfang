@@ -3,6 +3,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 const invokeAllowList = new Set([
   'get-app-version',
   'get-user-data-path',
+  'runtime-config:get',
+  'runtime-config:set',
+  'dialog:select-folder',
   'open-external',
   'check-for-updates',
   'download-update',

@@ -1,6 +1,11 @@
 const { app, BrowserWindow, Menu, ipcMain, dialog, screen, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const {
+  readRuntimeConfig,
+  writeRuntimeConfig,
+  applyRuntimeConfigToEnv,
+} = require('./runtimeConfig');
 let autoUpdater = null;
 const updateFeedUrl = (process.env.UPDATE_FEED_URL || 'https://gewugongfang.oss-cn-hangzhou.aliyuncs.com/desktop/').replace(/\/?$/, '/');
 try {
@@ -26,6 +31,16 @@ process.on('uncaughtException', (err) => {
 
 let mainWindow;
 let backendServer = null;
+
+function getRuntimeConfigPath() {
+  return path.join(app.getPath('userData'), 'gewugongfang.config.json');
+}
+
+function loadAndApplyRuntimeConfig() {
+  const config = readRuntimeConfig(getRuntimeConfigPath(), { userDataPath: app.getPath('userData') });
+  applyRuntimeConfigToEnv(config, process.env);
+  return config;
+}
 
 function findBackendApp() {
   const candidates = [
@@ -65,12 +80,16 @@ function startBackendService() {
     return;
   }
   try {
+    const runtimeConfig = loadAndApplyRuntimeConfig();
+    log('Runtime config loaded: role=' + runtimeConfig.nodeRole + ' device=' + runtimeConfig.deviceId);
     process.env.NODE_ENV = process.env.NODE_ENV || 'production';
     process.env.PORT = process.env.PORT || '3001';
     const appDataDir = app.getPath('userData');
     process.env.GEWU_DATA_DIR = process.env.GEWU_DATA_DIR || appDataDir;
-    process.env.DB_PATH = process.env.DB_PATH || path.join(appDataDir, 'data', 'scheduling.db');
-    process.env.QUESTION_BANK_UPLOAD_DIR = process.env.QUESTION_BANK_UPLOAD_DIR || path.join(appDataDir, 'uploads', 'question-bank');
+    process.env.DB_PATH = process.env.DB_PATH || runtimeConfig.mainDbPath || path.join(appDataDir, 'data', 'scheduling.db');
+    process.env.QUESTION_BANK_UPLOAD_DIR = process.env.QUESTION_BANK_UPLOAD_DIR
+      || runtimeConfig.questionAssetPath
+      || path.join(appDataDir, 'uploads', 'question-bank');
     const bundledPython = findBundledPython();
     if (bundledPython) process.env.PYTHON_BIN = process.env.PYTHON_BIN || bundledPython;
     const nodePath = path.join(app.getAppPath(), 'node_modules');
@@ -225,6 +244,18 @@ app.on('before-quit', () => {
 
 ipcMain.handle('get-app-version', () => app.getVersion());
 ipcMain.handle('get-user-data-path', () => app.getPath('userData'));
+ipcMain.handle('runtime-config:get', async () => {
+  return readRuntimeConfig(getRuntimeConfigPath(), { userDataPath: app.getPath('userData') });
+});
+ipcMain.handle('runtime-config:set', async (_event, config) => {
+  return writeRuntimeConfig(getRuntimeConfigPath(), config, { userDataPath: app.getPath('userData') });
+});
+ipcMain.handle('dialog:select-folder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  return result.canceled ? '' : result.filePaths[0];
+});
 ipcMain.handle('open-external', (_event, url) => {
   if (typeof url !== 'string' || !/^https?:\/\//.test(url)) {
     throw new Error('Invalid external URL');
