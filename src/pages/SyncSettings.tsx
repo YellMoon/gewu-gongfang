@@ -2,13 +2,16 @@
  * 同步设置页面 v2 — CRDT 引擎同步状态 + 控制面板
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Card, Button, Tag, Descriptions, Divider, message, Modal, Statistic, Row, Col, Alert } from 'antd';
+import { Card, Button, Tag, Descriptions, Divider, message, Modal, Statistic, Row, Col, Alert, Table, Space } from 'antd';
 import { SyncOutlined, CloudSyncOutlined, CloudServerOutlined, WarningOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
 import { SyncEngine, SyncStatus } from '../services/syncEngine';
 import { pushSyncBatch, pullSyncOps, registerSyncDevice, requestSyncAuthorization } from '../services/syncApi';
 import { getRuntimeConfig, RuntimeConfig } from '../services/runtimeConfigClient';
 import browserDatabase from '../services/browserDatabase';
+import { getApiBase } from '../utils/apiBase';
 import type { CloudSyncContext } from '../navigation/navigationContext';
+
+const SYNC_BASE = getApiBase('/api/sync');
 
 interface SyncSettingsProps {
   context?: CloudSyncContext;
@@ -19,6 +22,8 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
   const [initError, setInitError] = useState<string | null>(null);
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
+  const [syncConflicts, setSyncConflicts] = useState<any[]>([]);
+  const [conflictsLoading, setConflictsLoading] = useState(false);
   const engineRef = useRef<SyncEngine | null>(null);
 
   // 延迟初始化 SyncEngine，捕获构造函数可能的异常
@@ -41,6 +46,40 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
       .then(setRuntimeConfig)
       .catch(() => setRuntimeConfig(null));
   }, []);
+
+  const loadSyncConflicts = useCallback(async () => {
+    setConflictsLoading(true);
+    try {
+      const res = await fetch(`${SYNC_BASE}/conflicts`);
+      const data = await res.json();
+      if (data.success) setSyncConflicts(data.conflicts || []);
+    } catch (_err) {
+      setSyncConflicts([]);
+    } finally {
+      setConflictsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSyncConflicts();
+  }, [loadSyncConflicts]);
+
+  const resolveConflict = async (id: string, strategy: 'host-wins' | 'client-wins' | 'reject') => {
+    const label = strategy === 'host-wins' ? '主机优先' : strategy === 'client-wins' ? '客户端优先' : '拒绝';
+    try {
+      const res = await fetch(`${SYNC_BASE}/conflicts/${id}/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ strategy, label }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || '处理冲突失败');
+      message.success(`已处理：${label}`);
+      loadSyncConflicts();
+    } catch (error: any) {
+      message.error(error.message || '处理冲突失败');
+    }
+  };
 
   // 刷新同步状态
   const refreshStatus = useCallback(() => {
@@ -354,6 +393,45 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
           <li><strong>增量同步</strong>：仅传输有变更的字段，减少带宽消耗</li>
           <li><strong>分布式兼容</strong>：向量时钟支持多客户端同时修改（桌面端 + 小程序 + 管理员）</li>
         </ul>
+      </Card>
+
+      <Card
+        title={<span><WarningOutlined style={{ marginRight: 8 }} />同步审核中心</span>}
+        style={{ marginTop: 16 }}
+        extra={<Button size="small" onClick={loadSyncConflicts}>刷新</Button>}
+      >
+        <Alert
+          showIcon
+          type={syncConflicts.length > 0 ? 'warning' : 'success'}
+          message={syncConflicts.length > 0 ? `待审核冲突 ${syncConflicts.length} 条` : '暂无待审核同步冲突'}
+          description="本地数据主机在这里审核高风险离线更改，避免客户端静默覆盖主机数据。"
+          style={{ marginBottom: 12 }}
+        />
+        <Table
+          size="small"
+          rowKey="id"
+          loading={conflictsLoading}
+          dataSource={syncConflicts}
+          pagination={{ pageSize: 5 }}
+          columns={[
+            { title: '表', dataIndex: 'table_name', width: 110 },
+            { title: '记录ID', dataIndex: 'record_id', ellipsis: true },
+            { title: '设备ID', dataIndex: 'device_id', ellipsis: true },
+            { title: '风险', dataIndex: 'risk_level', width: 90, render: (value: string) => <Tag color={value === 'high' ? 'red' : 'orange'}>{value || 'medium'}</Tag> },
+            { title: '时间', dataIndex: 'created_at', width: 170 },
+            {
+              title: '操作',
+              width: 230,
+              render: (_: any, record: any) => (
+                <Space size={4}>
+                  <Button size="small" onClick={() => resolveConflict(record.id, 'host-wins')}>主机优先</Button>
+                  <Button size="small" type="primary" onClick={() => resolveConflict(record.id, 'client-wins')}>客户端优先</Button>
+                  <Button size="small" danger onClick={() => resolveConflict(record.id, 'reject')}>拒绝</Button>
+                </Space>
+              ),
+            },
+          ]}
+        />
       </Card>
     </div>
   );

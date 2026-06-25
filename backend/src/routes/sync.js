@@ -198,6 +198,25 @@ router.post('/push', (req, res) => {
   }
 });
 
+router.get('/conflicts', (_req, res) => {
+  try {
+    const db = getInstance();
+    res.json({ success: true, conflicts: db.listSyncConflicts('pending') });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/conflicts/:id/resolve', (req, res) => {
+  try {
+    const db = getInstance();
+    const conflict = db.resolveSyncConflict(req.params.id, req.body || {});
+    res.json({ success: true, conflict });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 router.post('/status', (_req, res) => {
   try {
     const db = getInstance();

@@ -1071,6 +1071,26 @@ class DatabaseService {
     return id;
   }
 
+  listSyncConflicts(status = 'pending') {
+    return this.db.prepare(
+      `SELECT * FROM sync_conflicts WHERE status = ? ORDER BY created_at DESC LIMIT 200`
+    ).all(status).map(row => ({
+      ...row,
+      client_payload: JSON.parse(row.client_payload || '{}'),
+      server_payload: JSON.parse(row.server_payload || '{}'),
+    }));
+  }
+
+  resolveSyncConflict(id, resolution) {
+    const now = this._now();
+    this.db.prepare(
+      `UPDATE sync_conflicts
+       SET status = 'resolved', resolution = ?, resolved_at = ?
+       WHERE id = ?`
+    ).run(JSON.stringify(resolution), now, id);
+    return this.db.prepare('SELECT * FROM sync_conflicts WHERE id = ?').get(id);
+  }
+
   getChangesSince(table, sinceTime, options = {}) {
     const columns = this._tableColumns(table);
     if (!columns.includes('updated_at')) return [];

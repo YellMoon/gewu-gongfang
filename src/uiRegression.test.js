@@ -70,6 +70,14 @@ assert(
 );
 
 assert(
+  syncSettings.includes('同步审核中心') &&
+  syncSettings.includes('主机优先') &&
+  syncSettings.includes('客户端优先') &&
+  syncSettings.includes('拒绝'),
+  'sync settings should expose host conflict review actions'
+);
+
+assert(
   !batchSelection.includes('馃棏'),
   'batch selection context menu should not include mojibake delete markers'
 );
