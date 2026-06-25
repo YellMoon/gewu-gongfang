@@ -5,6 +5,34 @@
 import Taro from '@tarojs/taro';
 import { moduleApi } from './api';
 
+export const readonlyModules = [
+  'students',
+  'courses',
+  'schedule',
+  'teachers',
+  'payments',
+  'consumptions',
+  'question-bank',
+  'finance-stats',
+];
+
+export const allowedWriteTasks = [
+  'asset-import',
+  'question-paper',
+  'paper-export-word',
+  'paper-export-pdf',
+];
+
+export function canMiniappWrite(target: string): boolean {
+  return allowedWriteTasks.includes(target);
+}
+
+export function assertMiniappWriteAllowed(target: string): void {
+  if (!canMiniappWrite(target)) {
+    throw new Error('小程序仅允许提交财务导入、组卷和导出任务');
+  }
+}
+
 export interface UserInfo {
   id: string;
   name: string;

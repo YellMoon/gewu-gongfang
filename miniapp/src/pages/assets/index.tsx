@@ -5,6 +5,8 @@ import { useState, useMemo } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { getLocalData } from '../../utils/sync';
+import { createMiniappTask } from '../../utils/api';
+import { assertMiniappWriteAllowed } from '../../utils/permission';
 import { NetworkStatus, EmptyState, StatCard } from '../../components/shared';
 import './index.scss';
 
@@ -35,6 +37,20 @@ export default function Assets() {
   const loadData = () => {
     setRecords(getLocalData<AssetRecord>('assetRecords'));
     setCategories(getLocalData<AssetCategory>('assetCategories'));
+  };
+
+  const submitAssetImportTask = async () => {
+    try {
+      assertMiniappWriteAllowed('asset-import');
+      const res = await createMiniappTask('asset-import', {
+        source: 'miniapp-assets',
+        requestedAt: new Date().toISOString(),
+      });
+      if (!res.success) throw new Error(res.error || '提交任务失败');
+      Taro.showToast({ title: '已提交财务导入任务', icon: 'success' });
+    } catch (error: any) {
+      Taro.showToast({ title: error.message || '提交任务失败', icon: 'none' });
+    }
   };
 
   const now = new Date();
@@ -70,6 +86,11 @@ export default function Assets() {
   return (
     <View className="assets-page">
       <NetworkStatus />
+
+      <View className="task-card" onClick={submitAssetImportTask}>
+        <Text className="task-title">提交财务导入任务</Text>
+        <Text className="task-desc">小程序仅提交导入任务，由本地数据主机审核处理。</Text>
+      </View>
 
       {/* 总览卡片 */}
       <View className="overview-card">

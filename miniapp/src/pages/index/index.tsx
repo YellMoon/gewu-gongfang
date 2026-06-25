@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
-import { api } from '../../utils/api';
+import { api, readCloudSnapshot } from '../../utils/api';
 import { fetchPermissions, getPermittedModules, hasModulePermission, clearPermissionCache } from '../../utils/permission';
 import { getLocalData } from '../../utils/sync';
 import { NetworkStatus, StatCard, LoadingSkeleton, EmptyState } from '../../components/shared';
@@ -42,6 +42,7 @@ const MODULE_CONFIG: Record<string, { icon: string; color: string; pages: string
   const [user, setUser] = useState<UserInfo | null>(null);
   const [modules, setModules] = useState<ModuleInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [snapshot, setSnapshot] = useState<any>(null);
   const [dashboard, setDashboard] = useState<DashboardData>({
     todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0,
   });
@@ -60,7 +61,16 @@ const MODULE_CONFIG: Record<string, { icon: string; color: string; pages: string
     const savedUser = Taro.getStorageSync('user_info');
     if (savedUser) setUser(savedUser);
 
-    await Promise.all([loadModules(), loadDashboard()]);
+    await Promise.all([loadModules(), loadDashboard(), loadSnapshot()]);
+  };
+
+  const loadSnapshot = async () => {
+    try {
+      const res = await readCloudSnapshot('full');
+      if (res.success) setSnapshot(res.snapshot || res.data?.snapshot || null);
+    } catch {
+      setSnapshot(null);
+    }
   };
 
   const loadModules = async () => {
@@ -166,6 +176,10 @@ const MODULE_CONFIG: Record<string, { icon: string; color: string; pages: string
   return (
     <View className="home-page">
       <NetworkStatus onRetry={loadDashboard} />
+
+      <View className="snapshot-time">
+        <Text>数据快照：{snapshot?.created_at || '等待主机发布'}</Text>
+      </View>
 
       {/* 用户信息 */}
       {user && (

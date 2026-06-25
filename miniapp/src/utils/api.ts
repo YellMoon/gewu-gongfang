@@ -220,6 +220,18 @@ export const invitationApi = {
   revoke: (id: string) => api.delete(`/api/invitations/${id}`),
 };
 
+export const cloudRelayApi = {
+  readCloudSnapshot: (snapshotType = 'full') =>
+    api.get<any>(`/api/cloud/snapshots/read?snapshotType=${snapshotType}`),
+  createMiniappTask: (taskType: string, payload: any) =>
+    api.post<any>('/api/cloud/tasks', { taskType, payload }),
+  getMiniappTaskResult: (taskId: string) =>
+    api.get<any>(`/api/cloud/tasks/${taskId}/result`),
+};
+
+export const readCloudSnapshot = cloudRelayApi.readCloudSnapshot;
+export const createMiniappTask = cloudRelayApi.createMiniappTask;
+
 // ========== 业务 API ==========
 export const studentApi = {
   getAll: () => api.get<any[]>('/scheduling/students'),
