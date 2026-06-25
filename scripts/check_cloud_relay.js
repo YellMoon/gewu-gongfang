@@ -35,6 +35,43 @@ async function main() {
     .then(response => readJson(response, 'snapshot read'));
   if (!read.success || !read.snapshot) throw new Error('snapshot read failed');
 
+  const createdTask = await fetch(`${base}/api/cloud/tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      taskType: 'question-paper',
+      payload: { title: 'Smoke Test Paper', questionCount: 1 },
+      createdBy: 'smoke',
+    }),
+  }).then(response => readJson(response, 'task create'));
+  if (!createdTask.success || !createdTask.task?.id) throw new Error('task create failed');
+  const taskId = createdTask.task.id;
+
+  const pendingTasks = await fetch(`${base}/api/cloud/tasks?status=pending_host`)
+    .then(response => readJson(response, 'task list'));
+  if (!pendingTasks.success || !pendingTasks.tasks?.some(task => task.id === taskId)) {
+    throw new Error('task list failed');
+  }
+
+  const completedTask = await fetch(`${base}/api/cloud/tasks/${taskId}/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      success: true,
+      hostDeviceId: 'smoke_host',
+      result: { title: 'Smoke Test Paper', questionCount: 1 },
+    }),
+  }).then(response => readJson(response, 'task complete'));
+  if (!completedTask.success || completedTask.task?.status !== 'completed') {
+    throw new Error('task complete failed');
+  }
+
+  const taskResult = await fetch(`${base}/api/cloud/tasks/${taskId}/result`)
+    .then(response => readJson(response, 'task result'));
+  if (!taskResult.success || taskResult.task?.status !== 'completed') {
+    throw new Error('task result failed');
+  }
+
   console.log('cloud relay smoke passed');
 }
 

@@ -18,6 +18,9 @@ for (const env of [stagingEnv, backendEnv]) {
 assert.ok(script.includes('/api/cloud/host/heartbeat'), 'smoke should check host heartbeat');
 assert.ok(script.includes('/api/cloud/snapshots/publish'), 'smoke should publish a snapshot');
 assert.ok(script.includes('/api/cloud/snapshots/read?snapshotType=smoke'), 'smoke should read the snapshot back');
+assert.ok(script.includes('/api/cloud/tasks'), 'smoke should create and list miniapp tasks');
+assert.ok(script.includes('/api/cloud/tasks/${taskId}/complete'), 'smoke should complete a miniapp task');
+assert.ok(script.includes('/api/cloud/tasks/${taskId}/result'), 'smoke should read a miniapp task result');
 assert.ok(script.includes('GEWU_CLOUD_BASE_URL'), 'smoke should read cloud base url from env');
 assert.ok(packageJson.includes('scripts/check_cloud_relay.test.js'), 'cloud relay smoke test should run in npm test');
 
