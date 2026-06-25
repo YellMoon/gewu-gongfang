@@ -43,7 +43,6 @@ interface DashboardData {
 const MODULE_CONFIG: Record<string, { icon: string; color: string; pages: string }> = {
   scheduling: { icon: '📅', color: '#1890ff', pages: '/pages/schedule/index' },
   'question-bank': { icon: '📝', color: '#52c41a', pages: '/pages/question-bank/index' },
-  'teaching-tools': { icon: '🔧', color: '#fa8c16', pages: '/pages/tools/index' },
   assets: { icon: '💰', color: '#eb2f96', pages: '/pages/assets/index' },
 };export default function Index() {
   const [user, setUser] = useState<UserInfo | null>(null);
@@ -229,9 +228,6 @@ const MODULE_CONFIG: Record<string, { icon: string; color: string; pages: string
       {/* 仪表盘统计卡片 */}
       <View className="section">
         <Text className="section-title">今日概览</Text>
-        {user?.user_type === 'student' && (
-          <Text className="student-dashboard-scope">仅显示与你关联课程相关的数据</Text>
-        )}
         <View className="stat-grid">
           <StatCard label="今日课程" value={dashboard.todayClasses} suffix="节" color="#1890ff" icon="📅" />
           <StatCard label="今日收入" value={formatMoney(dashboard.todayRevenue)} color="#52c41a" icon="💰" />

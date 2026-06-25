@@ -26,7 +26,6 @@ export const allowedWriteTasks = [
 export const adminModules = [
   'scheduling',
   'question-bank',
-  'teaching-tools',
   'assets',
   'students',
   'courses',

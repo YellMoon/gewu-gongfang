@@ -1,0 +1,99 @@
+.question-bank-page {
+  min-height: 100vh;
+  padding: 28rpx 24rpx 48rpx;
+  background: #f5f7fb;
+  box-sizing: border-box;
+}
+
+.hero-card,
+.form-card,
+.action-card {
+  background: #fff;
+  border-radius: 24rpx;
+  box-shadow: 0 10rpx 28rpx rgba(25, 45, 90, 0.08);
+}
+
+.hero-card {
+  padding: 34rpx 30rpx;
+  background: linear-gradient(135deg, #1f7aff, #33c7a5);
+}
+
+.hero-title {
+  display: block;
+  color: #fff;
+  font-size: 38rpx;
+  font-weight: 700;
+}
+
+.hero-subtitle {
+  display: block;
+  margin-top: 12rpx;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 25rpx;
+  line-height: 1.6;
+}
+
+.form-card {
+  margin-top: 24rpx;
+  padding: 8rpx 28rpx;
+}
+
+.form-row {
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #eef1f6;
+}
+
+.form-row:last-child {
+  border-bottom: 0;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 14rpx;
+  color: #2b3340;
+  font-size: 27rpx;
+  font-weight: 600;
+}
+
+.field-input {
+  height: 72rpx;
+  padding: 0 22rpx;
+  border-radius: 16rpx;
+  background: #f6f8fb;
+  color: #172033;
+  font-size: 28rpx;
+  box-sizing: border-box;
+}
+
+.action-card {
+  margin-top: 24rpx;
+  padding: 28rpx;
+}
+
+.action-button {
+  margin: 0 0 18rpx;
+  border-radius: 18rpx;
+  color: #fff;
+  font-size: 29rpx;
+  font-weight: 600;
+}
+
+.action-button::after {
+  border: 0;
+}
+
+.action-button:last-child {
+  margin-bottom: 0;
+}
+
+.question-paper {
+  background: #1890ff;
+}
+
+.paper-export-word {
+  background: #2f66d0;
+}
+
+.paper-export-pdf {
+  background: #f05a5a;
+}
