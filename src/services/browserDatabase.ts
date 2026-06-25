@@ -6,7 +6,7 @@ import {
   AssetRecord, AssetCategory, AssetStats, Question, KnowledgeNode, Tag, QuestionTagRel, TagType,
   QuestionVersion, ImportTask, ImportTaskItem, ImportTaskStatus, ImportTaskItemStatus
 } from '../types';
-import type { SyncTable } from './syncEngine';
+import type { SyncAction, SyncTable } from './syncEngine';
 import { calculateGrade, calculateFees, calculateDurationHours, groupByMonth, calculatePercentage } from '../utils/helpers';
 import { getColorForRoom } from '../utils/courseColors';
 import {
@@ -252,6 +252,48 @@ class BrowserDatabaseService {
     } catch (error) {
       this.compactLargeQuestionPayloads();
       localStorage.setItem(this.storageKey, JSON.stringify(this.data));
+    }
+  }
+
+  private getSyncDeviceId(): string {
+    try {
+      const key = 'sync_engine_sync_device_id';
+      const existing = localStorage.getItem(key);
+      if (existing) return JSON.parse(existing);
+      const id = `desktop_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 11)}`;
+      localStorage.setItem(key, JSON.stringify(id));
+      localStorage.setItem('sync_engine_sync_client_id', JSON.stringify(id));
+      return id;
+    } catch {
+      return 'desktop';
+    }
+  }
+
+  private recordSyncChange(table: SyncTable, action: SyncAction, recordId: string, payload: Record<string, any> = {}, baseVersion: string | null = null): void {
+    try {
+      const key = 'sync_engine_sync_pending_changes';
+      const legacyKey = 'sync_engine_sync_pending_ops';
+      const now = new Date().toISOString();
+      const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      const change = {
+        id: `chg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`,
+        table,
+        action,
+        data: {
+          ...payload,
+          id: recordId,
+          _base_version: baseVersion,
+        },
+        version: payload.updated_at || now,
+        updatedAt: payload.updated_at || now,
+        tenantId: payload.tenant_id || 'default',
+        deviceId: this.getSyncDeviceId(),
+      };
+      const next = [...existing, change];
+      localStorage.setItem(key, JSON.stringify(next));
+      localStorage.setItem(legacyKey, JSON.stringify(next));
+    } catch (error) {
+      console.error('[browserDatabase] record sync change failed:', table, action, recordId, error);
     }
   }
 
@@ -555,15 +597,18 @@ class BrowserDatabaseService {
       existing.count++;
       existing.updated_at = new Date().toISOString();
       if (address) existing.address = address;
+      this.recordSyncChange('rooms', 'update', existing.id, existing);
     } else {
-      this.data.rooms.push({
+      const room = {
         id: this.generateId(),
         name: roomName,
         address: address || '',
         count: 1,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
-      });
+      };
+      this.data.rooms.push(room);
+      this.recordSyncChange('rooms', 'create', room.id, room);
     }
     this.saveData();
   }
@@ -573,6 +618,7 @@ class BrowserDatabaseService {
     if (index === -1) return undefined;
     this.data.rooms[index] = { ...this.data.rooms[index], ...updates, updated_at: new Date().toISOString() };
     this.saveData();
+    this.recordSyncChange('rooms', 'update', id, this.data.rooms[index]);
     return this.data.rooms[index];
   }
 
@@ -581,6 +627,7 @@ class BrowserDatabaseService {
     if (index === -1) return false;
     this.data.rooms.splice(index, 1);
     this.saveData();
+    this.recordSyncChange('rooms', 'delete', id, { id });
     return true;
   }
 
@@ -622,6 +669,7 @@ class BrowserDatabaseService {
     };
     this.data.institutions.push(newInstitution);
     this.saveData();
+    this.recordSyncChange('institutions', 'create', newInstitution.id, newInstitution);
     return newInstitution;
   }
 
@@ -630,6 +678,7 @@ class BrowserDatabaseService {
     if (index === -1) return undefined;
     this.data.institutions[index] = { ...this.data.institutions[index], ...updates };
     this.saveData();
+    this.recordSyncChange('institutions', 'update', id, this.data.institutions[index]);
     return this.data.institutions[index];
   }
 
@@ -638,6 +687,7 @@ class BrowserDatabaseService {
     if (index === -1) return false;
     this.data.institutions.splice(index, 1);
     this.saveData();
+    this.recordSyncChange('institutions', 'delete', id, { id });
     return true;
   }
 
@@ -668,6 +718,7 @@ class BrowserDatabaseService {
     
     this.data.students.push(newStudent);
     this.saveData();
+    this.recordSyncChange('students', 'create', newStudent.id, newStudent);
     return newStudent;
   }
 
@@ -693,6 +744,7 @@ class BrowserDatabaseService {
     
     this.data.students[index] = updated;
     this.saveData();
+    this.recordSyncChange('students', 'update', id, updated);
     return updated;
   }
 
@@ -701,6 +753,7 @@ class BrowserDatabaseService {
     if (index === -1) return false;
     this.data.students.splice(index, 1);
     this.saveData();
+    this.recordSyncChange('students', 'delete', id, { id });
     return true;
   }
 
@@ -728,6 +781,7 @@ class BrowserDatabaseService {
     }
     this.data.courses.push(newCourse);
     this.saveData();
+    this.recordSyncChange('courses', 'create', newCourse.id, newCourse);
     return newCourse;
   }
 
@@ -745,6 +799,7 @@ class BrowserDatabaseService {
       this.addOrUpdateRoom(updates.room_name);
     }
     this.saveData();
+    this.recordSyncChange('courses', 'update', id, this.data.courses[index]);
     return this.data.courses[index];
   }
 
@@ -753,6 +808,7 @@ class BrowserDatabaseService {
     if (index === -1) return false;
     this.data.courses.splice(index, 1);
     this.saveData();
+    this.recordSyncChange('courses', 'delete', id, { id });
     return true;
   }
 
@@ -776,6 +832,7 @@ class BrowserDatabaseService {
     };
     this.data.schedules.push(newSchedule);
     this.saveData();
+    this.recordSyncChange('schedules', 'create', newSchedule.id, newSchedule);
     return newSchedule;
   }
 
@@ -789,6 +846,7 @@ class BrowserDatabaseService {
       updated_at: new Date().toISOString()
     };
     this.saveData();
+    this.recordSyncChange('schedules', 'update', id, this.data.schedules[index]);
     return this.data.schedules[index];
   }
 
@@ -797,6 +855,7 @@ class BrowserDatabaseService {
     if (index === -1) return false;
     this.data.schedules.splice(index, 1);
     this.saveData();
+    this.recordSyncChange('schedules', 'delete', id, { id });
     return true;
   }
 
@@ -952,6 +1011,7 @@ class BrowserDatabaseService {
     };
     this.data.teachers.push(newTeacher);
     this.saveData();
+    this.recordSyncChange('teachers', 'create', newTeacher.id, newTeacher);
     return newTeacher;
   }
 
@@ -964,6 +1024,7 @@ class BrowserDatabaseService {
         updated_at: new Date().toISOString()
       };
       this.saveData();
+      this.recordSyncChange('teachers', 'update', id, this.data.teachers[index]);
       return this.data.teachers[index];
     }
     return undefined;
@@ -972,6 +1033,7 @@ class BrowserDatabaseService {
   deleteTeacher(id: string): void {
     this.data.teachers = this.data.teachers.filter(t => t.id !== id);
     this.saveData();
+    this.recordSyncChange('teachers', 'delete', id, { id });
   }
 
   // ========== 缴费记录管理 ==========
@@ -997,6 +1059,7 @@ class BrowserDatabaseService {
     };
     this.data.payments.push(newPayment);
     this.saveData();
+    this.recordSyncChange('payments', 'create', newPayment.id, newPayment);
     return newPayment;
   }
 
@@ -1008,6 +1071,7 @@ class BrowserDatabaseService {
         ...updates
       };
       this.saveData();
+      this.recordSyncChange('payments', 'update', id, this.data.payments[index]);
       return this.data.payments[index];
     }
     return undefined;
@@ -1016,6 +1080,7 @@ class BrowserDatabaseService {
   deletePayment(id: string): void {
     this.data.payments = this.data.payments.filter(p => p.id !== id);
     this.saveData();
+    this.recordSyncChange('payments', 'delete', id, { id });
   }
 
   // ========== 课时消耗记录管理 ==========
@@ -1041,6 +1106,7 @@ class BrowserDatabaseService {
     };
     this.data.consumptions.push(newConsumption);
     this.saveData();
+    this.recordSyncChange('consumptions', 'create', newConsumption.id, newConsumption);
     return newConsumption;
   }
 
@@ -1052,6 +1118,7 @@ class BrowserDatabaseService {
         ...updates
       };
       this.saveData();
+      this.recordSyncChange('consumptions', 'update', id, this.data.consumptions[index]);
       return this.data.consumptions[index];
     }
     return undefined;
@@ -1060,6 +1127,7 @@ class BrowserDatabaseService {
   deleteConsumption(id: string): void {
     this.data.consumptions = this.data.consumptions.filter(c => c.id !== id);
     this.saveData();
+    this.recordSyncChange('consumptions', 'delete', id, { id });
   }
 
   // ========== 数据导出/导入 ==========
@@ -1146,6 +1214,7 @@ class BrowserDatabaseService {
     };
     this.data.assetRecords.push(newRecord);
     this.saveData();
+    this.recordSyncChange('assetRecords', 'create', newRecord.id, newRecord);
     return newRecord;
   }
 
@@ -1154,6 +1223,7 @@ class BrowserDatabaseService {
     if (idx === -1) return false;
     this.data.assetRecords[idx] = { ...this.data.assetRecords[idx], ...updates, updated_at: new Date().toISOString() };
     this.saveData();
+    this.recordSyncChange('assetRecords', 'update', id, this.data.assetRecords[idx]);
     return true;
   }
 
@@ -1162,6 +1232,7 @@ class BrowserDatabaseService {
     if (idx === -1) return false;
     this.data.assetRecords.splice(idx, 1);
     this.saveData();
+    this.recordSyncChange('assetRecords', 'delete', id, { id });
     return true;
   }
 
@@ -1185,6 +1256,7 @@ class BrowserDatabaseService {
     };
     this.data.assetCategories.push(newCat);
     this.saveData();
+    this.recordSyncChange('assetCategories', 'create', newCat.id, newCat);
     return newCat;
   }
 
@@ -1194,6 +1266,7 @@ class BrowserDatabaseService {
     if (idx === -1) return false;
     this.data.assetCategories.splice(idx, 1);
     this.saveData();
+    this.recordSyncChange('assetCategories', 'delete', id, { id });
     return true;
   }
 
@@ -1254,6 +1327,7 @@ class BrowserDatabaseService {
     const newGrade: Grade = { ...grade, id, created_at: now };
     this.data.grades.push(newGrade);
     this.saveData();
+    this.recordSyncChange('grades', 'create', newGrade.id, newGrade);
     return newGrade;
   }
 
@@ -1262,6 +1336,7 @@ class BrowserDatabaseService {
     if (idx === -1) return false;
     this.data.grades.splice(idx, 1);
     this.saveData();
+    this.recordSyncChange('grades', 'delete', id, { id });
     return true;
   }
 
@@ -1336,6 +1411,7 @@ class BrowserDatabaseService {
       updated_at: new Date().toISOString()
     });
     this.saveData();
+    this.recordSyncChange('questions', 'update', id, this.data.questions[idx]);
     return this.data.questions[idx];
   }
 
@@ -1524,6 +1600,7 @@ class BrowserDatabaseService {
     this.replaceQuestionTagRels(questionId, tagType, tagIds);
     question.updated_at = new Date().toISOString();
     this.saveData();
+    this.recordSyncChange('questions', 'update', questionId, question);
     return question;
   }
 
@@ -1571,6 +1648,7 @@ class BrowserDatabaseService {
     this.syncQuestionRelsFromLegacyFields(normalizedQuestion);
     this.syncQuestionLocalRecord(normalizedQuestion);
     this.saveData();
+    this.recordSyncChange('questions', 'create', normalizedQuestion.id, normalizedQuestion);
     return normalizedQuestion;
   }
 
@@ -1620,6 +1698,7 @@ class BrowserDatabaseService {
     this.syncQuestionRelsFromLegacyFields(this.data.questions[idx]);
     this.syncQuestionLocalRecord(this.data.questions[idx]);
     this.saveData();
+    this.recordSyncChange('questions', 'update', questionId, this.data.questions[idx]);
     return this.data.questions[idx];
   }
 
@@ -1642,6 +1721,7 @@ class BrowserDatabaseService {
     }
     this.syncQuestionLocalRecord(this.data.questions[idx]);
     this.saveData();
+    this.recordSyncChange('questions', 'update', id, this.data.questions[idx]);
     return true;
   }
 
@@ -1658,6 +1738,7 @@ class BrowserDatabaseService {
     this.syncQuestionLocalRecord(this.data.questions[idx]);
     this.syncTreeCache();
     this.saveData();
+    this.recordSyncChange('questions', 'delete', id, this.data.questions[idx]);
     return true;
   }
 
@@ -1672,6 +1753,7 @@ class BrowserDatabaseService {
     } as Question);
     this.syncQuestionLocalRecord(this.data.questions[idx]);
     this.saveData();
+    this.recordSyncChange('questions', 'update', id, this.data.questions[idx]);
     return true;
   }
 
@@ -1700,6 +1782,7 @@ class BrowserDatabaseService {
     this.replaceQuestionTagRels(questionId, 'knowledge', nextIds);
     this.syncQuestionLocalRecord(question);
     this.saveData();
+    this.recordSyncChange('questions', 'update', questionId, question);
     return question;
   }
 
@@ -1959,6 +2042,7 @@ class BrowserDatabaseService {
     this.replaceQuestionTagRels(questionId, 'model', nextIds);
     this.syncQuestionLocalRecord(question);
     this.saveData();
+    this.recordSyncChange('questions', 'update', questionId, question);
     return question;
   }
 
