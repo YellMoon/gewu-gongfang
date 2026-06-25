@@ -50,18 +50,47 @@ function getDeviceId(): string {
   }
 }
 
-export async function pushSyncBatch(batch: SyncBatch): Promise<{ success: boolean; serverTimestamp: number }> {
+export async function registerSyncDevice(input: { deviceId: string; role: string; deviceName?: string }) {
+  const res = await fetch(`${SYNC_URL}/devices/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      deviceId: input.deviceId,
+      role: input.role,
+      deviceName: input.deviceName,
+    }),
+  });
+  return res.json();
+}
+
+export async function requestSyncAuthorization(input: { deviceId: string; role: string }) {
+  const res = await fetch(`${SYNC_URL}/authorize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId: input.deviceId, role: input.role }),
+  });
+  return res.json();
+}
+
+export async function pushSyncBatch(
+  batch: SyncBatch,
+  options: { authorizationToken?: string } = {},
+): Promise<{ success: boolean; serverTimestamp: number; applied?: number; conflicts?: number; errors?: any[] }> {
   const changes = (batch.changes || batch.operations || []).map(change => normalizeChange(change, batch.deviceId || batch.clientId));
   try {
     const res = await fetch(`${SYNC_URL}/push`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-sync-authorization': options.authorizationToken || '',
+      },
       body: JSON.stringify({
         deviceId: batch.deviceId || batch.clientId,
         client_id: batch.clientId || batch.deviceId,
         tenantId: batch.tenantId || 'default',
         since: toIsoTime(batch.lastSyncTimestamp),
         changes,
+        syncAuthorizationToken: options.authorizationToken,
       }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -69,6 +98,9 @@ export async function pushSyncBatch(batch: SyncBatch): Promise<{ success: boolea
     return {
       success: !!data.success,
       serverTimestamp: toTimestamp(data.serverTime || data.server_time || data.serverTimestamp),
+      applied: data.applied,
+      conflicts: data.conflicts,
+      errors: data.errors,
     };
   } catch (e) {
     console.error('[syncApi] push error:', e);

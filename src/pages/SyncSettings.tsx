@@ -5,7 +5,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, Button, Tag, Descriptions, Divider, message, Modal, Statistic, Row, Col, Alert } from 'antd';
 import { SyncOutlined, CloudSyncOutlined, CloudServerOutlined, WarningOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
 import { SyncEngine, SyncStatus } from '../services/syncEngine';
-import { pushSyncBatch, pullSyncOps } from '../services/syncApi';
+import { pushSyncBatch, pullSyncOps, registerSyncDevice, requestSyncAuthorization } from '../services/syncApi';
+import { getRuntimeConfig, RuntimeConfig } from '../services/runtimeConfigClient';
 import browserDatabase from '../services/browserDatabase';
 import type { CloudSyncContext } from '../navigation/navigationContext';
 
@@ -17,6 +18,7 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
   const [engine, setEngine] = useState<SyncEngine | null>(null);
   const [initError, setInitError] = useState<string | null>(null);
   const [status, setStatus] = useState<SyncStatus | null>(null);
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const engineRef = useRef<SyncEngine | null>(null);
 
   // 延迟初始化 SyncEngine，捕获构造函数可能的异常
@@ -34,6 +36,12 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
     }
   }, []);
 
+  useEffect(() => {
+    getRuntimeConfig()
+      .then(setRuntimeConfig)
+      .catch(() => setRuntimeConfig(null));
+  }, []);
+
   // 刷新同步状态
   const refreshStatus = useCallback(() => {
     if (engineRef.current) {
@@ -49,28 +57,56 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
   }, [refreshStatus]);
 
   // 手动推送
-  const handlePush = async () => {
+  const handleAuthorizedPush = async () => {
     const eng = engineRef.current;
     if (!eng) return;
-    const pending = eng.getPendingOps();
+    const pending = eng.getPendingChanges();
     if (pending.length === 0) {
-      message.info('没有待同步的变更');
+      message.info('没有待同步的离线更改');
       return;
     }
 
-    message.loading({ content: '正在推送同步...', key: 'sync' });
-
-    const result = await eng.push(pushSyncBatch);
-    refreshStatus();
-
-    if (result.success) {
-      message.success({ content: `已推送 ${result.pushed} 条待同步变更`, key: 'sync' });
-      (window as any).operateLogger?.log('同步', `手动推送 ${result.pushed} 条变更`, '云同步');
-      return true;
-    }
-
-    message.error({ content: `推送失败，${pending.length} 条待同步变更已保留`, key: 'sync' });
-    return false;
+    return new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: `检测到 ${pending.length} 条离线更改`,
+        content: '是否申请同步权限并同步到本地数据主机？同步前不会静默覆盖主机数据。',
+        okText: '申请同步权限并推送',
+        cancelText: '稍后',
+        onCancel: () => resolve(false),
+        onOk: async () => {
+          try {
+            message.loading({ content: '正在申请同步权限...', key: 'sync' });
+            await registerSyncDevice({
+              deviceId: eng.getDeviceId(),
+              role: runtimeConfig?.nodeRole || 'desktop-client',
+              deviceName: runtimeConfig?.deviceId || eng.getDeviceId(),
+            });
+            const auth = await requestSyncAuthorization({
+              deviceId: eng.getDeviceId(),
+              role: runtimeConfig?.nodeRole || 'desktop-client',
+            });
+            if (!auth.success) throw new Error(auth.error || '申请同步权限失败');
+            message.loading({ content: '正在推送离线更改...', key: 'sync' });
+            const result = await eng.push(batch => pushSyncBatch(batch, {
+              authorizationToken: auth.authorization.token,
+            }));
+            refreshStatus();
+            if (!result.success) {
+              message.error({ content: `推送失败，${pending.length} 条离线更改已保留`, key: 'sync' });
+              resolve(false);
+              return;
+            }
+            message.success({ content: `同步完成，已推送 ${result.pushed} 条离线更改`, key: 'sync' });
+            (window as any).operateLogger?.log('同步', `申请同步权限并推送 ${result.pushed} 条离线更改`, '云同步');
+            resolve(true);
+          } catch (error: any) {
+            refreshStatus();
+            message.error({ content: error.message || '申请同步权限失败', key: 'sync' });
+            resolve(false);
+          }
+        },
+      });
+    });
   };
 
   // 手动拉取
@@ -97,7 +133,7 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
   };
 
   const handleSyncBoth = async () => {
-    const pushed = await handlePush();
+    const pushed = await handleAuthorizedPush();
     if (pushed === false) return;
     await handlePull();
   };
@@ -277,16 +313,16 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
           <Button
             type="primary"
             icon={<CloudServerOutlined />}
-            onClick={handlePush}
+            onClick={handleAuthorizedPush}
             disabled={status.pendingCount === 0}
           >
-            推送变更 ({status.pendingCount})
+            申请同步权限并推送 ({status.pendingCount})
           </Button>
           <Button
             icon={<ReloadOutlined />}
             onClick={handlePull}
           >
-            拉取云端变更
+            只拉取主机数据
           </Button>
           <Button
             icon={<SyncOutlined />}

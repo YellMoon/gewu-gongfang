@@ -27,6 +27,7 @@ const questionRenderer = read('src/components/QuestionRenderer.tsx');
 const questionRendererCss = read('src/components/QuestionRenderer.css');
 const richQuestionEditor = read('src/components/RichQuestionEditor.tsx');
 const systemSettings = read('src/pages/SystemSettings.tsx');
+const syncSettings = read('src/pages/SyncSettings.tsx');
 
 assert(
   !scheduleList.includes('require(') &&
@@ -58,6 +59,14 @@ assert(
   questionBankPreview.includes('questionBankStorageStatus') &&
   questionBankPreview.includes('题库移动硬盘未连接'),
   'question bank import and preview should warn when the removable question-bank drive is unavailable'
+);
+
+assert(
+  syncSettings.includes('申请同步权限') &&
+  syncSettings.includes('检测到') &&
+  syncSettings.includes('离线更改') &&
+  syncSettings.includes('只拉取主机数据'),
+  'sync settings should require user confirmation before pushing offline changes'
 );
 
 assert(
