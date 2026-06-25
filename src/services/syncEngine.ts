@@ -1,4 +1,9 @@
 import { v4 as uuid } from 'uuid';
+import {
+  createSyncOperation,
+  operationToChange,
+  type SyncOperation as QueuedSyncOperation,
+} from './mutationQueue';
 
 export type SyncTable =
   | 'students' | 'courses' | 'schedules' | 'payments' | 'consumptions'
@@ -18,7 +23,7 @@ export interface SyncChange {
   deviceId: string;
 }
 
-export type SyncOperation = SyncChange;
+export type SyncOperation = QueuedSyncOperation | SyncChange;
 
 export interface SyncBatch {
   changes: SyncChange[];
@@ -144,21 +149,28 @@ export class SyncEngine {
     return [...this.pendingChanges];
   }
 
-  createOperation(table: SyncTable, recordId: string, action: SyncAction, data?: any, fields?: Record<string, any>): SyncChange {
+  createOperation(
+    table: SyncTable,
+    recordId: string,
+    action: SyncAction,
+    data?: any,
+    fields?: Record<string, any>,
+    baseVersion?: string | null,
+  ): SyncChange {
     const updatedAt = toIsoTime((data || fields)?.updated_at || Date.now());
     const payload = action === 'update'
       ? { ...(fields || {}), id: recordId }
       : { ...(data || {}), id: recordId };
-    const change: SyncChange = {
-      id: uuid(),
-      table,
-      action,
-      data: payload,
-      version: updatedAt,
-      updatedAt,
+    const operation = createSyncOperation({
       tenantId: payload.tenant_id || this.tenantId,
       deviceId: this.deviceId,
-    };
+      tableName: table,
+      recordId,
+      action,
+      baseVersion: baseVersion || data?._base_version || fields?._base_version || null,
+      payload: { ...payload, updated_at: payload.updated_at || updatedAt },
+    });
+    const change = operationToChange(operation);
     this.pendingChanges.push(change);
     this.savePendingChanges();
     return change;
