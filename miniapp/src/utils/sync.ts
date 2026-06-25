@@ -9,6 +9,7 @@ import {
   setCachedList,
   addCachedItem,
   removeCachedItem,
+  addPendingChange,
   onNetworkChange,
 } from './storage';
 import { getApiBaseUrl } from './api';
@@ -283,14 +284,35 @@ export function getLocalItem<T extends { id: string }>(table: SyncTable, id: str
 
 export function updateLocalItem<T extends { id: string }>(table: SyncTable, item: T): void {
   addCachedItem(table, item);
+  addPendingChange({
+    id: item.id,
+    table,
+    action: 'update',
+    data: item,
+    timestamp: Date.now(),
+  });
 }
 
 export function addLocalItem<T extends { id: string }>(table: SyncTable, item: T): void {
   addCachedItem(table, item);
+  addPendingChange({
+    id: item.id,
+    table,
+    action: 'create',
+    data: item,
+    timestamp: Date.now(),
+  });
 }
 
 export function removeLocalItem(table: SyncTable, id: string): void {
   removeCachedItem(table, id);
+  addPendingChange({
+    id,
+    table,
+    action: 'delete',
+    data: { id },
+    timestamp: Date.now(),
+  });
 }
 
 export async function triggerSync(): Promise<{ success: boolean; message: string }> {
