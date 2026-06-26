@@ -23,6 +23,8 @@ const authRouter = require('./routes/auth');
 const questionBankRouter = require('./routes/questionBank');
 const opsRouter = require('./routes/ops');
 const cloudRelayHostRouter = require('./routes/cloudRelayHost');
+const modulesRouter = require('./routes/modules');
+const cloudRelayRouter = require('./routes/cloudRelay');
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const writeRateLimitStore = new Map();
@@ -219,6 +221,8 @@ function createApp() {
   app.use('/api/auth', authRouter);
   app.use('/api/sync', syncRouter);
   app.use('/api/cloud-relay-host', optionalAuth, requireWriteAccess, cloudRelayHostRouter);
+  app.use('/api/modules', optionalAuth, modulesRouter);
+  app.use('/api/cloud', optionalAuth, requireWriteAccess, cloudRelayRouter);
 
   // 鍗婂叕寮€璺敱锛堝彲閫夎璇侊級
   app.use('/api/students', optionalAuth, requireWriteAccess, studentsRouter);

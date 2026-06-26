@@ -280,6 +280,37 @@ CREATE TABLE IF NOT EXISTS sync_conflicts (
   resolved_at TEXT
 );
 
+-- ===================== 小程序只读快照 / 云端任务 =====================
+CREATE TABLE IF NOT EXISTS readonly_snapshots (
+  id TEXT PRIMARY KEY,
+  snapshot_type TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  source_device_id TEXT NOT NULL,
+  version TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS miniapp_tasks (
+  id TEXT PRIMARY KEY,
+  task_type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending_host',
+  payload TEXT NOT NULL,
+  result_payload TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS host_heartbeats (
+  id TEXT PRIMARY KEY,
+  host_device_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'online',
+  base_url TEXT,
+  last_snapshot_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS operation_audit_log (
   id TEXT PRIMARY KEY,
   tenant_id TEXT DEFAULT 'default',
@@ -569,6 +600,9 @@ CREATE INDEX IF NOT EXISTS idx_sync_audit_record ON sync_audit_log(table_name, r
 CREATE INDEX IF NOT EXISTS idx_sync_devices_last_seen ON sync_devices(last_seen_at);
 CREATE INDEX IF NOT EXISTS idx_sync_authorizations_device ON sync_authorizations(device_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_sync_conflicts_status ON sync_conflicts(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_readonly_snapshots_type_created ON readonly_snapshots(snapshot_type, created_at);
+CREATE INDEX IF NOT EXISTS idx_miniapp_tasks_status_created ON miniapp_tasks(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_host_heartbeats_updated ON host_heartbeats(updated_at);
 CREATE INDEX IF NOT EXISTS idx_operation_audit_created ON operation_audit_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_operation_audit_action ON operation_audit_log(action, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_operation_audit_record ON operation_audit_log(table_name, record_id);
