@@ -172,7 +172,9 @@ export default function SchedulePage() {
             if (daySchedules.length === 0) return null;
             return (
               <View key={index} className="day-column">
-                {daySchedules.map(renderScheduleCard)}
+                <View className="day-column-inner">
+                  {daySchedules.map(renderScheduleCard)}
+                </View>
               </View>
             );
           })}
@@ -199,7 +201,9 @@ export default function SchedulePage() {
             <Text className="nav-today" onClick={() => setCurrentDate(new Date())}>今天</Text>
           </View>
 
-          {getSchedulesForDate(currentDate).map(renderScheduleCard)}
+          <View className="day-column-inner">
+            {getSchedulesForDate(currentDate).map(renderScheduleCard)}
+          </View>
 
           {getSchedulesForDate(currentDate).length === 0 && (
             <EmptyState icon="📅" text="当天没有课程" />

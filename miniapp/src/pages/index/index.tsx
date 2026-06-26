@@ -143,14 +143,6 @@ const MODULE_CONFIG: Record<string, { icon: string; color: string; pages: string
         .filter(s => s.start_time?.startsWith(thisMonth) && s.status === ScheduleStatus.COMPLETED)
         .reduce((sum, s) => sum + (s.calculated_tuition || 0), 0);
 
-      // 尝试从服务端拉取最新数据
-      try {
-        const statsRes = await api.get<any>(`/api/stats/revenue?start=${thisMonth}-01&end=${today}`);
-        if (statsRes.success && statsRes.data) {
-          // 服务端数据优先
-        }
-      } catch { /* 离线降级到本地 */ }
-
       setDashboard({
         todayClasses,
         todayRevenue,

@@ -17,6 +17,7 @@ const teachersPage = fs.readFileSync('miniapp/src/pages/teachers/index.tsx', 'ut
 const paymentsPage = fs.readFileSync('miniapp/src/pages/payments/index.tsx', 'utf-8');
 const schedulePage = fs.readFileSync('miniapp/src/pages/schedule/index.tsx', 'utf-8');
 const scheduleDetailPage = fs.readFileSync('miniapp/src/pages/schedule/detail/index.tsx', 'utf-8');
+const scheduleStyles = fs.readFileSync('miniapp/src/pages/schedule/index.scss', 'utf-8');
 
 assert.ok(permission.includes('readonlyModules'), 'miniapp permission should define readonlyModules');
 assert.ok(permission.includes('allowedWriteTasks'), 'miniapp permission should define allowedWriteTasks');
@@ -61,5 +62,8 @@ assert.ok(!teachersPage.includes('withOfflineSupport') && !teachersPage.includes
 assert.ok(!paymentsPage.includes('withOfflineSupport') && !paymentsPage.includes('addPendingChange'), 'payments page should not queue core writes');
 assert.ok(!schedulePage.includes('/pages/schedule/edit/index'), 'schedule page should not expose edit entry');
 assert.ok(!scheduleDetailPage.includes('addPendingChange') && !scheduleDetailPage.includes('updateLocalItem'), 'schedule detail should not update schedule status');
+assert.ok(!miniappHome.includes('/api/stats/revenue'), 'home page should not fire unused revenue stats requests on launch');
+assert.ok(schedulePage.includes('day-column-inner'), 'schedule page should put day column padding on an inner view instead of scroll-view descendants');
+assert.ok(scheduleStyles.includes('.day-column-inner'), 'schedule styles should define the inner day column spacing class');
 
 console.log('miniapp access policy checks passed');
