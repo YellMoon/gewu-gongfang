@@ -17,13 +17,7 @@ App = function App({ children }: PropsWithChildren<any>) {
     console.log('📚 教育综合服务平台 v1.6.0');
 
     const token = Taro.getStorageSync('auth_token');
-    if (!token) {
-      Taro.redirectTo({ url: '/pages/login/index' });
-      return;
-    }
-
-    // 登录后初始化
-    initApp();
+    if (token) initApp();
   });
 
   return children;
