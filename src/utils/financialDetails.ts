@@ -7,6 +7,7 @@ import {
   Schedule,
   ScheduleStatus,
   Student,
+  StudentSource,
   StudentAttendanceStatus,
   StudentCoursePricing,
   Teacher,
@@ -57,6 +58,18 @@ export interface StudentCourseFeeDetail {
   teacherFeeMode: TeacherFeeMode;
   teacherFeeModeName: string;
   pricingSource: 'schedule' | 'course' | 'institution' | 'fallback';
+}
+
+export function isStudentTuitionCollectible(detail: StudentCourseFeeDetail, students: Student[] = []): boolean {
+  if (detail.studentId.startsWith('__')) return false;
+  if (detail.sourceType === CourseSourceType.INSTITUTION) return false;
+
+  const student = students.find(item => item.id === detail.studentId);
+  if (detail.sourceType === CourseSourceType.MIXED && student?.source_type === StudentSource.INSTITUTION) {
+    return false;
+  }
+
+  return true;
 }
 
 export interface TeacherFeeDetail {

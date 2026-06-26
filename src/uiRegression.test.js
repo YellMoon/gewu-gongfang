@@ -23,6 +23,8 @@ const appShell = read('src/layout/AppShell.tsx');
 const indexCss = read('src/index.css');
 const revenueStatistics = read('src/pages/RevenueStatistics.tsx');
 const revenueDetailFilters = read('src/utils/revenueDetailFilters.mjs');
+const financialDetails = read('src/utils/financialDetails.ts');
+const todayWorkbenchData = read('src/utils/todayWorkbenchData.ts');
 const questionRenderer = read('src/components/QuestionRenderer.tsx');
 const questionRendererCss = read('src/components/QuestionRenderer.css');
 const richQuestionEditor = read('src/components/RichQuestionEditor.tsx');
@@ -222,6 +224,24 @@ assert(
   !courseList.includes('prev.room_id !== cur.room_id || prev.color !== cur.color') &&
   !courseList.includes('backgroundColor: color, border'),
   'course address field should not leave the old course-color preview box below the address selector'
+);
+
+assert(
+  courseList.includes('isPureInstitutionCourseDraft') &&
+  courseList.includes('canEditCourseTeacherFeeDirectly') &&
+  courseList.includes('readOnly={!canEditCourseTeacherFeeDirectly}') &&
+  courseList.includes('纯机构'),
+  'pure institution courses should allow entering teacher fee directly without adding student pricing rows'
+);
+
+assert(
+  financialDetails.includes('isStudentTuitionCollectible') &&
+  financialDetails.includes('CourseSourceType.INSTITUTION') &&
+  financialDetails.includes('CourseSourceType.MIXED') &&
+  financialDetails.includes('StudentSource.INSTITUTION') &&
+  todayWorkbenchData.includes('isStudentTuitionCollectible') &&
+  todayWorkbenchData.includes('if (!isStudentTuitionCollectible(detail, students)) return;'),
+  'arrears statistics should exclude pure institution tuition and mixed-class institution-student tuition while keeping raw financial details'
 );
 
 assert(

@@ -61,6 +61,9 @@ const CourseList: React.FC = () => {
   const [form] = Form.useForm();
   const billingUnit = Form.useWatch('billing_unit', form) ?? BillingUnit.PER_HOUR;
   const sourceType = Form.useWatch('source_type', form) as CourseSourceType | undefined;
+  const studentPricingsDraft = Form.useWatch('student_pricings', form) || [];
+  const isPureInstitutionCourseDraft = sourceType === CourseSourceType.INSTITUTION && studentPricingsDraft.length === 0;
+  const canEditCourseTeacherFeeDirectly = isPureInstitutionCourseDraft;
   const dbService = (window as any).dbService;
 
   const loadData = async () => {
@@ -634,8 +637,12 @@ const CourseList: React.FC = () => {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="price_teacher" label={`课时费/${billingUnit === BillingUnit.PER_HOUR ? '小时' : '次'}（自动汇总）`} initialValue={0}>
-                <InputNumber min={0} style={{ width: '100%' }} prefix="¥" readOnly />
+              <Form.Item
+                name="price_teacher"
+                label={`课时费/${billingUnit === BillingUnit.PER_HOUR ? '小时' : '次'}（自动汇总）${isPureInstitutionCourseDraft ? ' / 纯机构可手填' : ''}`}
+                initialValue={0}
+              >
+                <InputNumber min={0} style={{ width: '100%' }} prefix="¥" readOnly={!canEditCourseTeacherFeeDirectly} />
               </Form.Item>
             </Col>
           </Row>

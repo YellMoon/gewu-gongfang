@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Table, Button, DatePicker, Tag, Space, message
 } from 'antd';
@@ -14,7 +14,7 @@ import {
   buildScheduleExportModel,
   createScheduleWorkbook,
 } from '../utils/scheduleExcelExport.mjs';
-import { applyScheduleListFilters } from '../utils/scheduleListFilters.mjs';
+import { applyScheduleListFilters, buildScheduleListFilterOptions } from '../utils/scheduleListFilters.mjs';
 
 const { RangePicker } = DatePicker;
 
@@ -28,14 +28,23 @@ const ScheduleList: React.FC = () => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [filterTeacher, setFilterTeacher] = useState<string | undefined>();
   const [filterStudent, setFilterStudent] = useState<string | undefined>();
+  const [filterYear, setFilterYear] = useState<number | undefined>();
+  const [filterSemester, setFilterSemester] = useState<string | undefined>();
+  const [filterCourseName, setFilterCourseName] = useState<string | undefined>();
   const [filterDateRange, setFilterDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
   const [appliedFilters, setAppliedFilters] = useState<{
     filterTeacher?: string;
     filterStudent?: string;
+    filterYear?: number;
+    filterSemester?: string;
+    filterCourseName?: string;
     filterDateRange: [dayjs.Dayjs, dayjs.Dayjs] | null;
   }>({
     filterTeacher: undefined,
     filterStudent: undefined,
+    filterYear: undefined,
+    filterSemester: undefined,
+    filterCourseName: undefined,
     filterDateRange: null,
   });
 
@@ -93,8 +102,28 @@ const ScheduleList: React.FC = () => {
     setFilteredSchedules(applyScheduleListFilters(schedules, courses, appliedFilters));
   }, [schedules, courses, appliedFilters]);
 
+  const draftFilterOptions = useMemo(() => buildScheduleListFilterOptions(
+    schedules,
+    courses,
+    students,
+    teachers,
+    { filterTeacher, filterStudent, filterYear, filterSemester, filterCourseName }
+  ), [schedules, courses, students, teachers, filterTeacher, filterStudent, filterYear, filterSemester, filterCourseName]);
+
+  const optionExists = (options: Array<{ value: any }>, value: any) => (
+    value === undefined || value === null || options.some(option => String(option.value) === String(value))
+  );
+
+  useEffect(() => {
+    if (!optionExists(draftFilterOptions.teachers, filterTeacher)) setFilterTeacher(undefined);
+    if (!optionExists(draftFilterOptions.students, filterStudent)) setFilterStudent(undefined);
+    if (!optionExists(draftFilterOptions.years, filterYear)) setFilterYear(undefined);
+    if (!optionExists(draftFilterOptions.semesters, filterSemester)) setFilterSemester(undefined);
+    if (!optionExists(draftFilterOptions.courses, filterCourseName)) setFilterCourseName(undefined);
+  }, [draftFilterOptions, filterTeacher, filterStudent, filterYear, filterSemester, filterCourseName]);
+
   const handleQuery = () => {
-    const nextFilters = { filterTeacher, filterStudent, filterDateRange };
+    const nextFilters = { filterTeacher, filterStudent, filterYear, filterSemester, filterCourseName, filterDateRange };
     const result = applyScheduleListFilters(schedules, courses, nextFilters);
     setAppliedFilters(nextFilters);
     setFilteredSchedules(result);
@@ -113,11 +142,11 @@ const ScheduleList: React.FC = () => {
       courses,
       teachers,
       students,
-      filterTeacher,
-      filterStudent,
-      dateRange: filterDateRange ? [
-        filterDateRange[0].format('YYYY-MM-DD'),
-        filterDateRange[1].format('YYYY-MM-DD'),
+      filterTeacher: appliedFilters.filterTeacher,
+      filterStudent: appliedFilters.filterStudent,
+      dateRange: appliedFilters.filterDateRange ? [
+        appliedFilters.filterDateRange[0].format('YYYY-MM-DD'),
+        appliedFilters.filterDateRange[1].format('YYYY-MM-DD'),
       ] : undefined,
       courseColorMap: buildCourseColorMap(courses),
     });
@@ -305,7 +334,7 @@ const ScheduleList: React.FC = () => {
               style={{ width: 130 }}
               value={filterTeacher}
               onChange={(val: string | undefined) => setFilterTeacher(val)}
-              options={teachers.map(t => ({ label: t.name, value: t.id }))}
+              options={draftFilterOptions.teachers}
               filterOption={(input: string, option: any) =>
                 String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
               }
@@ -317,7 +346,43 @@ const ScheduleList: React.FC = () => {
               style={{ width: 130 }}
               value={filterStudent}
               onChange={(val: string | undefined) => setFilterStudent(val)}
-              options={students.map(s => ({ label: s.name, value: s.id }))}
+              options={draftFilterOptions.students}
+              filterOption={(input: string, option: any) =>
+                String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+            />
+            <AutoCloseSelect
+              placeholder="年份"
+              allowClear
+              showSearch
+              style={{ width: 110 }}
+              value={filterYear}
+              onChange={(val: number | undefined) => setFilterYear(val)}
+              options={draftFilterOptions.years}
+              filterOption={(input: string, option: any) =>
+                String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+            />
+            <AutoCloseSelect
+              placeholder="学期"
+              allowClear
+              showSearch
+              style={{ width: 110 }}
+              value={filterSemester}
+              onChange={(val: string | undefined) => setFilterSemester(val)}
+              options={draftFilterOptions.semesters}
+              filterOption={(input: string, option: any) =>
+                String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+            />
+            <AutoCloseSelect
+              placeholder="课程名"
+              allowClear
+              showSearch
+              style={{ width: 160 }}
+              value={filterCourseName}
+              onChange={(val: string | undefined) => setFilterCourseName(val)}
+              options={draftFilterOptions.courses}
               filterOption={(input: string, option: any) =>
                 String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
               }

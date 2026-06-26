@@ -1,6 +1,6 @@
 import dayjs, { Dayjs } from 'dayjs';
 import { Course, Payment, Question, Schedule, ScheduleStatus, Student, Teacher } from '../types';
-import { StudentCourseFeeDetail, buildFinancialDetails } from './financialDetails';
+import { StudentCourseFeeDetail, buildFinancialDetails, isStudentTuitionCollectible } from './financialDetails';
 
 export interface TodayCourseRow {
   scheduleId: string;
@@ -99,7 +99,7 @@ export function buildStudentFinancialAlerts(
   const expectedMap = new Map<string, StudentAlertRow>();
 
   studentDetails.forEach(detail => {
-    if (detail.studentId.startsWith('__')) return;
+    if (!isStudentTuitionCollectible(detail, students)) return;
     const current = expectedMap.get(detail.studentId) || {
       studentId: detail.studentId,
       studentName: detail.studentName,
