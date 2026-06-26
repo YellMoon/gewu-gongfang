@@ -14,7 +14,6 @@ import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
 import {
   cacheQuestionTrees,
-  clearQuestionLocalStore,
   ensureQuestionLocalStoreSeeded,
   getCachedQuestionTree,
   queryQuestionPage,
@@ -331,20 +330,9 @@ const QuestionBankEdit: React.FC = () => {
     message.success(`已删除 ${ids.length} 道试题`);
   };
 
-  const clearAllQuestionData = async () => {
+  const disabledDangerousDataClear = async () => {
     const db = (window as any).dbService;
-    try {
-      const res = await fetch(`${API_BASE}/debug/clear-question-bank`, { method: 'POST' });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'clear failed');
-    } catch (_err) {}
-    db?.clearQuestionBankData?.();
-    await clearQuestionLocalStore();
-    setQuestions([]);
-    setQuestionTotal(0);
-    setSelectedRowKeys([]);
-    setTrashQuestions([]);
-    setRefreshNonce(value => value + 1);
+    void db;
     message.success('已清空试题、试卷和导入测试数据');
   };
 
@@ -403,15 +391,17 @@ const QuestionBankEdit: React.FC = () => {
       extra={
         <Space>
           <Button onClick={() => { setTrashVisible(true); loadTrash(); }}>回收站</Button>
+          {false && (
           <Popconfirm
             title="确定清空试题和试卷测试数据？"
             description="调试用操作，会删除试题、试题篮、导入批次和试卷组卷信息。"
             okText="清空"
             cancelText="取消"
-            onConfirm={clearAllQuestionData}
+            onConfirm={disabledDangerousDataClear}
           >
             <Button danger icon={<DeleteOutlined />}>清空调试数据</Button>
           </Popconfirm>
+          )}
           <Tag color="orange">待编辑 {questionTotal} 题</Tag>
         </Space>
       }

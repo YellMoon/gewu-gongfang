@@ -256,4 +256,11 @@ assert(
   questionBankEdit.includes('RichQuestionEditor'),
   'question edit dialogs should use a WYSIWYG editor for rich text, formulas, and images'
 );
+
+assert(
+  !questionBankEdit.includes('/debug/clear-question-bank') &&
+  !questionBankEdit.includes('clearQuestionLocalStore') &&
+  !questionBankEdit.includes('clearAllQuestionData'),
+  'question bank edit page should not expose unsafe debug clear actions'
+);
 console.log('ui regression checks passed');
