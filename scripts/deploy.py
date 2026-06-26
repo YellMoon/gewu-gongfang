@@ -8,7 +8,7 @@ Modes:
   rollback-plan  Print the snapshot-based rollback steps for the selected env.
 
 Required env:
-  DEPLOY_HOST, DEPLOY_USER, DEPLOY_PASSWORD
+  DEPLOY_HOST, DEPLOY_USER, DEPLOY_PASSWORD or DEPLOY_KEY_PATH
 
 Optional env:
   DEPLOY_PORT, APP_ENV, DEPLOY_REMOTE_DIR, DEPLOY_LOCAL_DIR, DB_PATH, READ_DB_PATH
@@ -53,6 +53,7 @@ HOST = os.getenv("DEPLOY_HOST")
 PORT = int(os.getenv("DEPLOY_PORT", "22"))
 USER = os.getenv("DEPLOY_USER", "root")
 PASSWORD = os.getenv("DEPLOY_PASSWORD")
+KEY_PATH = os.getenv("DEPLOY_KEY_PATH")
 REMOTE_DIR = os.getenv("DEPLOY_REMOTE_DIR", DEFAULTS["remote_dir"])
 DB_PATH = os.getenv("DB_PATH", DEFAULTS["db_path"])
 READ_DB_PATH = os.getenv("READ_DB_PATH", DB_PATH)
@@ -62,8 +63,9 @@ LOCAL_DIR = Path(os.getenv("DEPLOY_LOCAL_DIR", Path(__file__).resolve().parents[
 def require_remote_env():
     missing = [name for name, value in {
         "DEPLOY_HOST": HOST,
-        "DEPLOY_PASSWORD": PASSWORD,
     }.items() if not value]
+    if not PASSWORD and not KEY_PATH:
+        missing.append("DEPLOY_PASSWORD or DEPLOY_KEY_PATH")
     if missing:
         raise SystemExit(f"Missing required environment variables: {', '.join(missing)}")
 
@@ -85,7 +87,7 @@ def connect():
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     print(f"Connecting {HOST}:{PORT} env={APP_ENV} remote={REMOTE_DIR}")
-    ssh.connect(HOST, port=PORT, username=USER, password=PASSWORD, timeout=10)
+    ssh.connect(HOST, port=PORT, username=USER, password=PASSWORD, key_filename=KEY_PATH, timeout=10)
     return ssh
 
 
@@ -118,6 +120,8 @@ def remote_env_prefix():
         "GEWU_CLOUD_BASE_URL": os.getenv("GEWU_CLOUD_BASE_URL", "https://your-domain.example.com"),
         "QUESTION_BANK_ROOT": os.getenv("QUESTION_BANK_ROOT", "/root/GewuQuestionBank"),
         "QUESTION_BANK_UPLOAD_DIR": os.getenv("QUESTION_BANK_UPLOAD_DIR", "/root/GewuQuestionBank/assets"),
+        "GEWU_LOCAL_CACHE_PATH": os.getenv("GEWU_LOCAL_CACHE_PATH", "/root/GewuQuestionBankCache"),
+        "GEWU_NAS_BACKUP_PATH": os.getenv("GEWU_NAS_BACKUP_PATH", ""),
     }
     return " ".join(f"{key}='{value}'" for key, value in env.items())
 

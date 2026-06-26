@@ -146,6 +146,8 @@ def write_runtime_env(ctx: DeployContext) -> None:
         f"GEWU_CLOUD_BASE_URL={os.getenv('GEWU_CLOUD_BASE_URL', 'https://your-domain.example.com')}",
         f"QUESTION_BANK_ROOT={os.getenv('QUESTION_BANK_ROOT', '/app/question-bank')}",
         f"QUESTION_BANK_UPLOAD_DIR={os.getenv('QUESTION_BANK_UPLOAD_DIR', '/app/question-bank/assets')}",
+        f"GEWU_LOCAL_CACHE_PATH={os.getenv('GEWU_LOCAL_CACHE_PATH', '/app/question-bank-cache')}",
+        f"GEWU_NAS_BACKUP_PATH={os.getenv('GEWU_NAS_BACKUP_PATH', '')}",
         "",
     ])
     ssh(

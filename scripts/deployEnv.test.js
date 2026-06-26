@@ -12,10 +12,15 @@ for (const name of [
   'GEWU_CLOUD_BASE_URL',
   'QUESTION_BANK_ROOT',
   'QUESTION_BANK_UPLOAD_DIR',
+  'GEWU_LOCAL_CACHE_PATH',
+  'GEWU_NAS_BACKUP_PATH',
 ]) {
   assert.ok(deployPy.includes(name), `pm2 deploy should pass ${name}`);
   assert.ok(grayDeployPy.includes(name), `docker gray deploy should pass ${name}`);
 }
+
+assert.ok(deployPy.includes('DEPLOY_KEY_PATH'), 'pm2 deploy should support SSH key authentication');
+assert.ok(deployPy.includes('key_filename'), 'pm2 deploy should pass SSH key path to paramiko');
 
 assert.ok(packageJson.includes('scripts/deployEnv.test.js'), 'deploy env test should run in npm test');
 
