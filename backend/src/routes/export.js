@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { getInstance } = require('../database');
+const { inspectBackupTargets } = require('../services/questionBankBackupTargetService');
 
 const router = Router();
 
@@ -175,6 +176,24 @@ router.post('/backups', (req, res) => {
       retentionDays: Number(req.body.retention_days || req.body.retentionDays || 30),
     });
     res.json({ success: true, job });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get('/backups/targets/status', (_req, res) => {
+  try {
+    const targets = inspectBackupTargets({
+      localCachePath: process.env.GEWU_LOCAL_CACHE_PATH,
+      nasBackupPath: process.env.GEWU_NAS_BACKUP_PATH,
+    });
+    res.json({
+      success: true,
+      targets: {
+        localCache: targets.localCache,
+        nasBackup: targets.nasBackup,
+      },
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

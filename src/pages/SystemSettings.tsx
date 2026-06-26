@@ -44,6 +44,21 @@ type QuestionBankStorageStatus = {
   candidateRoots?: string[];
 };
 
+type BackupTargetStatus = {
+  localCache?: {
+    available?: boolean;
+    status?: string;
+    path?: string;
+    reason?: string;
+  };
+  nasBackup?: {
+    available?: boolean;
+    status?: string;
+    path?: string;
+    reason?: string;
+  };
+};
+
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:3001/api';
 const QUESTION_BANK_STORAGE_STATUS_PATH = '/api/question-bank/storage/status';
 const apiOrigin = API_BASE.replace(/\/api\/?$/, '');
@@ -55,6 +70,7 @@ const SystemSettings: React.FC = () => {
   const [runtimeLoading, setRuntimeLoading] = useState(false);
   const [questionBankStorageStatus, setQuestionBankStorageStatus] = useState<QuestionBankStorageStatus | null>(null);
   const [questionBankStorageLoading, setQuestionBankStorageLoading] = useState(false);
+  const [backupTargetStatus, setBackupTargetStatus] = useState<BackupTargetStatus | null>(null);
   const [backupJobs, setBackupJobs] = useState<BackupJob[]>([]);
   const [backupLoading, setBackupLoading] = useState(false);
 
@@ -73,6 +89,7 @@ const SystemSettings: React.FC = () => {
     loadBackupJobs();
     loadRuntimeConfig();
     loadQuestionBankStorageStatus();
+    loadBackupTargetStatus();
   }, []);
 
   const loadRuntimeConfig = async () => {
@@ -142,6 +159,26 @@ const SystemSettings: React.FC = () => {
     } finally {
       setQuestionBankStorageLoading(false);
     }
+  };
+
+  const loadBackupTargetStatus = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/backups/targets/status`);
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || '备份目标状态加载失败');
+      setBackupTargetStatus(data.targets || null);
+    } catch (error: any) {
+      setBackupTargetStatus({
+        localCache: { available: false, status: 'offline', reason: error.message || '本机缓存状态不可用' },
+        nasBackup: { available: false, status: 'offline', reason: error.message || 'NAS 备份状态不可用' },
+      });
+    }
+  };
+
+  const renderBackupTargetTag = (target?: BackupTargetStatus['localCache']) => {
+    if (!target) return <Tag>未检测</Tag>;
+    if (target.status === 'not-configured') return <Tag>未配置</Tag>;
+    return <Tag color={target.available ? 'green' : 'red'}>{target.available ? '在线' : '离线'}</Tag>;
   };
 
   const handleCreateServerBackup = async () => {
@@ -275,6 +312,29 @@ const SystemSettings: React.FC = () => {
           action={(
             <Button size="small" loading={questionBankStorageLoading} onClick={loadQuestionBankStorageStatus}>
               检测题库盘
+            </Button>
+          )}
+        />
+        <Alert
+          type={backupTargetStatus?.nasBackup?.available ? 'success' : 'info'}
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="备份目标状态"
+          description={(
+            <Space direction="vertical" size={2}>
+              <span>
+                本机缓存：{renderBackupTargetTag(backupTargetStatus?.localCache)}
+                {backupTargetStatus?.localCache?.path || backupTargetStatus?.localCache?.reason || '-'}
+              </span>
+              <span>
+                NAS 备份：{renderBackupTargetTag(backupTargetStatus?.nasBackup)}
+                {backupTargetStatus?.nasBackup?.path || backupTargetStatus?.nasBackup?.reason || '未配置'}
+              </span>
+            </Space>
+          )}
+          action={(
+            <Button size="small" onClick={loadBackupTargetStatus}>
+              检测备份路径
             </Button>
           )}
         />

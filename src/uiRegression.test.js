@@ -35,8 +35,10 @@ assert(
   systemSettings.includes('questionBankCandidatePaths') &&
   systemSettings.includes('questionBankStoreId') &&
   systemSettings.includes('nasBackupPath') &&
-  systemSettings.includes('localCachePath'),
-  'system settings should expose hotplug question-bank status, store id, candidate paths, local cache, and NAS backup path'
+  systemSettings.includes('localCachePath') &&
+  systemSettings.includes('/backups/targets/status') &&
+  systemSettings.includes('backupTargetStatus'),
+  'system settings should expose hotplug question-bank status, store id, candidate paths, local cache, NAS backup path, and backup target status'
 );
 
 assert(
