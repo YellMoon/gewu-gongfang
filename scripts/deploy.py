@@ -14,6 +14,7 @@ Optional env:
   DEPLOY_PORT, APP_ENV, DEPLOY_REMOTE_DIR, DEPLOY_LOCAL_DIR, DB_PATH, READ_DB_PATH
 """
 import os
+import shlex
 import sys
 import time
 from pathlib import Path
@@ -54,6 +55,7 @@ PORT = int(os.getenv("DEPLOY_PORT", "22"))
 USER = os.getenv("DEPLOY_USER", "root")
 PASSWORD = os.getenv("DEPLOY_PASSWORD")
 KEY_PATH = os.getenv("DEPLOY_KEY_PATH")
+BACKEND_JWT_SECRET = os.getenv("BACKEND_JWT_SECRET")
 REMOTE_DIR = os.getenv("DEPLOY_REMOTE_DIR", DEFAULTS["remote_dir"])
 DB_PATH = os.getenv("DB_PATH", DEFAULTS["db_path"])
 READ_DB_PATH = os.getenv("READ_DB_PATH", DB_PATH)
@@ -70,15 +72,31 @@ def require_remote_env():
         raise SystemExit(f"Missing required environment variables: {', '.join(missing)}")
 
 
+def redact_command(cmd):
+    redacted = cmd
+    for secret in [PASSWORD, BACKEND_JWT_SECRET]:
+      if secret:
+        redacted = redacted.replace(secret, "<redacted>")
+    return redacted
+
+
+def safe_print(value=""):
+    try:
+        print(value)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+        print(str(value).encode(encoding, errors="replace").decode(encoding, errors="replace"))
+
+
 def run(ssh, cmd, timeout=30):
-    print(f">>> {cmd}")
+    safe_print(f">>> {redact_command(cmd)}")
     _, stdout, stderr = ssh.exec_command(cmd, timeout=timeout)
     out = stdout.read().decode("utf-8", errors="replace")
     err = stderr.read().decode("utf-8", errors="replace")
     if out.strip():
-        print(out)
+        safe_print(out)
     if err.strip():
-        print(f"STDERR: {err}")
+        safe_print(f"STDERR: {err}")
     return out, err
 
 
@@ -110,8 +128,11 @@ def upload_backend(ssh):
 
 def remote_env_prefix():
     env = {
+        "NODE_ENV": "production" if APP_ENV == "prod" else APP_ENV,
+        "PORT": os.getenv("PORT", "3001"),
         "APP_ENV": APP_ENV,
         "SCHEDULE_ENV": APP_ENV,
+        "JWT_SECRET": BACKEND_JWT_SECRET,
         "DB_PATH": DB_PATH,
         "READ_DB_PATH": READ_DB_PATH,
         "GEWU_NODE_ROLE": os.getenv("GEWU_NODE_ROLE", "primary-host"),
@@ -123,7 +144,7 @@ def remote_env_prefix():
         "GEWU_LOCAL_CACHE_PATH": os.getenv("GEWU_LOCAL_CACHE_PATH", "/root/GewuQuestionBankCache"),
         "GEWU_NAS_BACKUP_PATH": os.getenv("GEWU_NAS_BACKUP_PATH", ""),
     }
-    return " ".join(f"{key}='{value}'" for key, value in env.items())
+    return " ".join(f"{key}={shlex.quote(str(value or ''))}" for key, value in env.items())
 
 
 def migrate(ssh):
@@ -165,7 +186,7 @@ def main():
             run(ssh, f"mkdir -p '{REMOTE_DIR}' '{os.path.dirname(DB_PATH)}'")
             upload_backend(ssh)
             run(ssh, f"cd '{REMOTE_DIR}' && npm install --production 2>&1", timeout=300)
-            run(ssh, "npm install -g pm2 2>/dev/null || echo 'pm2 install skipped'")
+            run(ssh, "which pm2 || npm install -g pm2 2>/dev/null || echo 'pm2 install skipped'", timeout=120)
             migrate(ssh)
             service_name = f"scheduling-backend-{APP_ENV}"
             run(ssh, f"pm2 stop {service_name} 2>/dev/null || true")
@@ -178,7 +199,8 @@ def main():
             run(ssh, "pm2 save")
             time.sleep(2)
             run(ssh, "pm2 status")
-            run(ssh, "curl -s http://localhost:3001/api/health || echo 'health check failed'")
+            health_port = os.getenv("PORT", "3001")
+            run(ssh, f"curl -s http://localhost:{health_port}/api/health || echo 'health check failed'")
         elif mode == "status":
             run(ssh, "pm2 status")
             run(ssh, "curl -s http://localhost:3001/api/health")
