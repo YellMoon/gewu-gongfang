@@ -9,6 +9,7 @@ const miniappHome = fs.readFileSync('miniapp/src/pages/index/index.tsx', 'utf-8'
 const appConfig = fs.readFileSync('miniapp/src/app.config.ts', 'utf-8');
 const questionBankPage = fs.readFileSync('miniapp/src/pages/question-bank/index.tsx', 'utf-8');
 const assetsPage = fs.readFileSync('miniapp/src/pages/assets/index.tsx', 'utf-8');
+const assetsStyles = fs.readFileSync('miniapp/src/pages/assets/index.scss', 'utf-8');
 const loginPage = fs.readFileSync('miniapp/src/pages/login/index.tsx', 'utf-8');
 const adminUsersPage = fs.readFileSync('miniapp/src/pages/admin/users/index.tsx', 'utf-8');
 const studentsPage = fs.readFileSync('miniapp/src/pages/students/index.tsx', 'utf-8');
@@ -36,6 +37,8 @@ assert.ok(!appConfig.includes("'pages/tools/index'"), 'app config should not reg
 assert.ok(!loginPage.includes('教学工具') && !loginPage.includes('teaching-tools'), 'login page should not mention removed teaching tools module');
 assert.ok(!adminUsersPage.includes('teaching-tools') && !adminUsersPage.includes('教学工具'), 'admin user permissions should not mention removed teaching tools module');
 assert.ok(!assetsPage.includes('提交任务') && !assetsPage.includes('主机处理') && !assetsPage.includes('本地数据主机'), 'asset page should not expose implementation wording');
+assert.ok(assetsStyles.includes('.task-title') && assetsStyles.includes('font-size: 30rpx'), 'asset import title should have a controlled miniapp font size');
+assert.ok(assetsStyles.includes('.task-desc') && assetsStyles.includes('font-size: 24rpx'), 'asset import description should have a controlled miniapp font size');
 assert.ok(!miniappHome.includes('student-dashboard-scope'), 'home page should not show explanatory student scope copy');
 assert.ok(miniappHome.includes("user?.user_type !== 'student'"), 'home page should hide management shortcuts from students');
 assert.ok(appConfig.includes("'pages/question-bank/index'"), 'app config should register the question bank page');
