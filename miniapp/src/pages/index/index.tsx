@@ -206,7 +206,7 @@ const MODULE_CONFIG: Record<string, { icon: string; color: string; pages: string
       <NetworkStatus onRetry={loadDashboard} />
 
       <View className="snapshot-time">
-        <Text>数据快照：{snapshot?.created_at || '等待主机发布'}</Text>
+        <Text className="snapshot-time-text">数据快照：{snapshot?.created_at || '等待主机发布'}</Text>
       </View>
 
       {/* 用户信息 */}
