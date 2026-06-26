@@ -1,6 +1,3 @@
-/**
- * 排课日历 v2 — 下拉刷新 + 今日高亮 + 离线支持
- */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -62,22 +59,20 @@ export default function SchedulePage() {
     const monday = new Date(currentDate);
     monday.setDate(currentDate.getDate() - (day === 0 ? 6 : day - 1));
     monday.setHours(0, 0, 0, 0);
-
-    const days: Date[] = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(monday);
-      d.setDate(monday.getDate() + i);
-      days.push(d);
-    }
-    return days;
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(monday);
+      date.setDate(monday.getDate() + index);
+      return date;
+    });
   }, [currentDate, viewMode]);
 
-  const formatDate = (d: Date) => d.toISOString().split('T')[0];
-  const formatTime = (t: string) => t.substring(11, 16);
-
-  const isToday = (d: Date) => {
+  const formatDate = (date: Date) => date.toISOString().split('T')[0];
+  const formatTime = (time: string) => time.substring(11, 16);
+  const isToday = (date: Date) => {
     const today = new Date();
-    return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+    return date.getDate() === today.getDate()
+      && date.getMonth() === today.getMonth()
+      && date.getFullYear() === today.getFullYear();
   };
 
   const getCourseTypeLabel = (type?: number) => {
@@ -91,6 +86,7 @@ export default function SchedulePage() {
       case ScheduleStatus.COMPLETED: return 'status-completed';
       case ScheduleStatus.CANCELLED: return 'status-cancelled';
       case ScheduleStatus.LEAVE: return 'status-leave';
+      default: return 'status-planned';
     }
   };
 
@@ -100,21 +96,39 @@ export default function SchedulePage() {
   };
 
   const navigateWeek = (dir: number) => {
-    const d = new Date(currentDate);
-    d.setDate(d.getDate() + dir * 7);
-    setCurrentDate(d);
+    const date = new Date(currentDate);
+    date.setDate(date.getDate() + dir * 7);
+    setCurrentDate(date);
   };
 
   const getSchedulesForDate = (date: Date): ScheduleWithCourse[] => {
-    const ds = formatDate(date);
-    return schedules.filter((s) => s.start_time?.startsWith(ds));
+    const dateString = formatDate(date);
+    return schedules.filter((schedule) => schedule.start_time?.startsWith(dateString));
   };
+
+  const renderScheduleCard = (schedule: ScheduleWithCourse) => (
+    <View
+      key={schedule.id}
+      className={`schedule-card ${getStatusClass(schedule.status)}`}
+      onClick={() => Taro.navigateTo({ url: `/pages/schedule/detail/index?id=${schedule.id}` })}
+    >
+      <View className="schedule-time">
+        <Text className="time-text">{formatTime(schedule.start_time)}</Text>
+      </View>
+      <View className="schedule-body">
+        <Text className="schedule-course">{schedule.course_name}</Text>
+        <Text className="schedule-sub">
+          {getCourseTypeLabel(schedule.course_type)} · {getStatusLabel(schedule.status)}
+        </Text>
+        <Text className="schedule-note">{schedule.room || ''}</Text>
+      </View>
+    </View>
+  );
 
   return (
     <View className="schedule-page">
       <NetworkStatus onRetry={handleRefresh} />
 
-      {/* 视图切换 */}
       <View className="view-toggle">
         <View className={`toggle-btn ${viewMode === 'week' ? 'active' : ''}`} onClick={() => setViewMode('week')}>
           <Text>周视图</Text>
@@ -135,43 +149,30 @@ export default function SchedulePage() {
           onRefresherRefresh={handleRefresh}
           refresherBackground="#f5f5f5"
         >
-          {/* 周导航 */}
           <View className="week-nav">
             <Text className="nav-arrow" onClick={() => navigateWeek(-1)}>‹</Text>
-            <Text className="nav-title">{weekRange ? `${weekRange[0].getMonth()+1}月${weekRange[0].getDate()}日 - ${weekRange[6].getMonth()+1}月${weekRange[6].getDate()}日` : ''}</Text>
+            <Text className="nav-title">
+              {weekRange ? `${weekRange[0].getMonth() + 1}月${weekRange[0].getDate()}日 - ${weekRange[6].getMonth() + 1}月${weekRange[6].getDate()}日` : ''}
+            </Text>
             <Text className="nav-arrow" onClick={() => navigateWeek(1)}>›</Text>
             <Text className="nav-today" onClick={() => setCurrentDate(new Date())}>今天</Text>
           </View>
 
-          {/* 星期头 */}
           <View className="week-header">
-            {weekRange?.map((d, i) => (
-              <View key={i} className={`week-day ${isToday(d) ? 'today' : ''}`}>
-                <Text className="day-name">{WEEKDAYS[i]}</Text>
-                <Text className="day-num">{d.getDate()}</Text>
+            {weekRange?.map((date, index) => (
+              <View key={index} className={`week-day ${isToday(date) ? 'today' : ''}`}>
+                <Text className="day-name">{WEEKDAYS[index]}</Text>
+                <Text className="day-num">{date.getDate()}</Text>
               </View>
             ))}
           </View>
 
-          {weekRange?.map((date, wi) => {
+          {weekRange?.map((date, index) => {
             const daySchedules = getSchedulesForDate(date);
             if (daySchedules.length === 0) return null;
             return (
-              <View key={wi} className="day-column">
-                {daySchedules.map((s) => (
-                  <View key={s.id} className={`schedule-card ${getStatusClass(s.status)}`} onClick={() => Taro.navigateTo({ url: `/pages/schedule/detail/index?id=${s.id}` })}>
-                    <View className="schedule-time">
-                      <Text className="time-text">{formatTime(s.start_time)}</Text>
-                    </View>
-                    <View className="schedule-body">
-                      <Text className="schedule-course">{s.course_name}</Text>
-                      <Text className="schedule-sub">
-                        {getCourseTypeLabel(s.course_type)} · {getStatusLabel(s.status)}
-                      </Text>
-                      <Text className="schedule-note">{s.room || ''}</Text>
-                    </View>
-                  </View>
-                ))}
+              <View key={index} className="day-column">
+                {daySchedules.map(renderScheduleCard)}
               </View>
             );
           })}
@@ -188,43 +189,23 @@ export default function SchedulePage() {
           refresherBackground="#f5f5f5"
         >
           <View className="day-nav">
-            <Text className="nav-arrow" onClick={() => { const d = new Date(currentDate); d.setDate(d.getDate()-1); setCurrentDate(d); }}>‹</Text>
+            <Text className="nav-arrow" onClick={() => { const date = new Date(currentDate); date.setDate(date.getDate() - 1); setCurrentDate(date); }}>‹</Text>
             <View className="day-title-wrap">
               <Text className="day-title-text">
-                {currentDate.getMonth()+1}月{currentDate.getDate()}日
-                {isToday(currentDate) ? ' (今天)' : ''}
+                {currentDate.getMonth() + 1}月{currentDate.getDate()}日{isToday(currentDate) ? '（今天）' : ''}
               </Text>
             </View>
-            <Text className="nav-arrow" onClick={() => { const d = new Date(currentDate); d.setDate(d.getDate()+1); setCurrentDate(d); }}>›</Text>
+            <Text className="nav-arrow" onClick={() => { const date = new Date(currentDate); date.setDate(date.getDate() + 1); setCurrentDate(date); }}>›</Text>
             <Text className="nav-today" onClick={() => setCurrentDate(new Date())}>今天</Text>
           </View>
 
-          {getSchedulesForDate(currentDate).map((s) => (
-            <View key={s.id} className={`schedule-card ${getStatusClass(s.status)}`}>
-              <View className="schedule-time">
-                <Text className="time-text">{formatTime(s.start_time)}</Text>
-                <Text className="time-end">{formatTime(s.end_time)}</Text>
-              </View>
-              <View className="schedule-body">
-                <Text className="schedule-course">{s.course_name}</Text>
-                <View className="schedule-tags">
-                  <Text className="tag-type">{getCourseTypeLabel(s.course_type)}</Text>
-                  <Text className={`tag-status ${getStatusClass(s.status)}`}>{getStatusLabel(s.status)}</Text>
-                </View>
-                <Text className="schedule-note">{s.room || ''}</Text>
-              </View>
-            </View>
-          ))}
+          {getSchedulesForDate(currentDate).map(renderScheduleCard)}
 
           {getSchedulesForDate(currentDate).length === 0 && (
             <EmptyState icon="📅" text="当天没有课程" />
           )}
         </ScrollView>
       )}
-      {/* 新建排课浮动按钮 */}
-      <View className="fab-btn" onClick={() => Taro.navigateTo({ url: '/pages/schedule/edit/index' })}>
-        <Text className="fab-icon">+</Text>
-      </View>
     </View>
   );
 }

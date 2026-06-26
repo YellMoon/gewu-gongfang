@@ -240,17 +240,11 @@ export const getMiniappTaskResult = cloudRelayApi.getMiniappTaskResult;
 export const studentApi = {
   getAll: () => api.get<any[]>('/scheduling/students'),
   getById: (id: string) => api.get<any>(`/scheduling/students/${id}`),
-  create: (data: any) => api.post<any>('/scheduling/students', data),
-  update: (id: string, data: any) => api.put<any>(`/scheduling/students/${id}`, data),
-  delete: (id: string) => api.delete(`/scheduling/students/${id}`),
 };
 
 export const courseApi = {
   getAll: () => api.get<any[]>('/scheduling/courses'),
   getById: (id: string) => api.get<any>(`/scheduling/courses/${id}`),
-  create: (data: any) => api.post<any>('/scheduling/courses', data),
-  update: (id: string, data: any) => api.put<any>(`/scheduling/courses/${id}`, data),
-  delete: (id: string) => api.delete(`/scheduling/courses/${id}`),
 };
 
 export const scheduleApi = {
@@ -258,28 +252,20 @@ export const scheduleApi = {
   getByDateRange: (start: string, end: string) =>
     api.get<any[]>(`/scheduling/schedules?start=${start}&end=${end}`),
   getById: (id: string) => api.get<any>(`/scheduling/schedules/${id}`),
-  create: (data: any) => api.post<any>('/scheduling/schedules', data),
-  update: (id: string, data: any) => api.put<any>(`/scheduling/schedules/${id}`, data),
-  delete: (id: string) => api.delete(`/scheduling/schedules/${id}`),
 };
 
 export const teacherApi = {
   getAll: () => api.get<any[]>('/scheduling/teachers'),
   getById: (id: string) => api.get<any>(`/scheduling/teachers/${id}`),
-  create: (data: any) => api.post<any>('/scheduling/teachers', data),
-  update: (id: string, data: any) => api.put<any>(`/scheduling/teachers/${id}`, data),
-  delete: (id: string) => api.delete(`/scheduling/teachers/${id}`),
 };
 
 export const paymentApi = {
   getAll: () => api.get<any[]>('/scheduling/payments'),
   getByStudent: (studentId: string) => api.get<any[]>(`/scheduling/payments?student_id=${studentId}`),
-  create: (data: any) => api.post<any>('/scheduling/payments', data),
 };
 
 export const gradeApi = {
   getByStudent: (studentId: string) => api.get<any[]>(`/scheduling/grades?student_id=${studentId}`),
-  create: (data: any) => api.post<any>('/scheduling/grades', data),
 };
 
 export const statsApi = {

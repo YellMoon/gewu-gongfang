@@ -11,6 +11,11 @@ const questionBankPage = fs.readFileSync('miniapp/src/pages/question-bank/index.
 const assetsPage = fs.readFileSync('miniapp/src/pages/assets/index.tsx', 'utf-8');
 const loginPage = fs.readFileSync('miniapp/src/pages/login/index.tsx', 'utf-8');
 const adminUsersPage = fs.readFileSync('miniapp/src/pages/admin/users/index.tsx', 'utf-8');
+const studentsPage = fs.readFileSync('miniapp/src/pages/students/index.tsx', 'utf-8');
+const teachersPage = fs.readFileSync('miniapp/src/pages/teachers/index.tsx', 'utf-8');
+const paymentsPage = fs.readFileSync('miniapp/src/pages/payments/index.tsx', 'utf-8');
+const schedulePage = fs.readFileSync('miniapp/src/pages/schedule/index.tsx', 'utf-8');
+const scheduleDetailPage = fs.readFileSync('miniapp/src/pages/schedule/detail/index.tsx', 'utf-8');
 
 assert.ok(permission.includes('readonlyModules'), 'miniapp permission should define readonlyModules');
 assert.ok(permission.includes('allowedWriteTasks'), 'miniapp permission should define allowedWriteTasks');
@@ -42,5 +47,16 @@ assert.ok(questionBankPage.includes('getMiniappTaskResult'), 'question bank page
 assert.ok(questionBankPage.includes('lastTaskId'), 'question bank page should keep the last submitted task id');
 assert.ok(questionBankPage.includes('resultFileUrl'), 'question bank page should keep downloadable result URLs');
 assert.ok(questionBankPage.includes('Taro.downloadFile'), 'question bank page should download generated paper files');
+assert.ok(!api.includes('studentApi') || !api.includes("create: (data: any) => api.post<any>('/scheduling/students'"), 'miniapp API must not expose direct student create');
+assert.ok(!api.includes('studentApi') || !api.includes('update: (id: string, data: any) => api.put<any>(`/scheduling/students/${id}`'), 'miniapp API must not expose direct student update');
+assert.ok(!api.includes('courseApi') || !api.includes("create: (data: any) => api.post<any>('/scheduling/courses'"), 'miniapp API must not expose direct course create');
+assert.ok(!api.includes('scheduleApi') || !api.includes("create: (data: any) => api.post<any>('/scheduling/schedules'"), 'miniapp API must not expose direct schedule create');
+assert.ok(!api.includes('paymentApi') || !api.includes("create: (data: any) => api.post<any>('/scheduling/payments'"), 'miniapp API must not expose direct payment create');
+assert.ok(!api.includes('gradeApi') || !api.includes("create: (data: any) => api.post<any>('/scheduling/grades'"), 'miniapp API must not expose direct grade create');
+assert.ok(!studentsPage.includes('withOfflineSupport') && !studentsPage.includes('addPendingChange'), 'students page should not queue core writes');
+assert.ok(!teachersPage.includes('withOfflineSupport') && !teachersPage.includes('addPendingChange'), 'teachers page should not queue core writes');
+assert.ok(!paymentsPage.includes('withOfflineSupport') && !paymentsPage.includes('addPendingChange'), 'payments page should not queue core writes');
+assert.ok(!schedulePage.includes('/pages/schedule/edit/index'), 'schedule page should not expose edit entry');
+assert.ok(!scheduleDetailPage.includes('addPendingChange') && !scheduleDetailPage.includes('updateLocalItem'), 'schedule detail should not update schedule status');
 
 console.log('miniapp access policy checks passed');

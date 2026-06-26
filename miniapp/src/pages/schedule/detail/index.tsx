@@ -1,13 +1,8 @@
-/**
- * 排课详情 v1
- */
 import { useState, useEffect } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
-import { Schedule, ScheduleStatus, Course, Student, Teacher } from '../../../types';
-import { getLocalItem, getLocalData, updateLocalItem } from '../../../utils/sync';
-import { addPendingChange } from '../../../utils/storage';
-import { scheduleApi } from '../../../utils/api';
+import { Schedule, ScheduleStatus, Course, Student } from '../../../types';
+import { getLocalItem, getLocalData } from '../../../utils/sync';
 import './detail.scss';
 
 const STATUS_MAP: Record<number, { label: string; color: string }> = {
@@ -31,32 +26,16 @@ export default function ScheduleDetail() {
   }, [id]);
 
   const loadDetail = () => {
-    const s = getLocalItem<Schedule>('schedules', id);
-    if (!s) return;
+    const scheduleItem = getLocalItem<Schedule>('schedules', id);
+    if (!scheduleItem) return;
 
-    setSchedule(s);
+    setSchedule(scheduleItem);
     const allCourses = getLocalData<Course>('courses');
-    setCourse(allCourses.find(c => c.id === s.course_id) || null);
+    setCourse(allCourses.find(courseItem => courseItem.id === scheduleItem.course_id) || null);
 
     const allStudents = getLocalData<Student>('students');
-    const enrolled = allStudents.filter(st => s.student_ids?.includes(st.id));
+    const enrolled = allStudents.filter(student => scheduleItem.student_ids?.includes(student.id));
     setStudents(enrolled);
-  };
-
-  const changeStatus = (newStatus: ScheduleStatus) => {
-    if (!schedule) return;
-    Taro.showModal({
-      title: '确认操作',
-      content: `将课程状态改为「${STATUS_MAP[newStatus]?.label}」？`,
-      success: (res) => {
-        if (!res.confirm) return;
-        const updated: Schedule = { ...schedule, status: newStatus, updated_at: new Date().toISOString() };
-        updateLocalItem('schedules', updated);
-        addPendingChange({ id: updated.id, table: 'schedules', action: 'update', data: updated, timestamp: Date.now() });
-        setSchedule(updated);
-        Taro.showToast({ title: '状态已更新', icon: 'success' });
-      },
-    });
   };
 
   if (!schedule) {
@@ -71,19 +50,17 @@ export default function ScheduleDetail() {
   }
 
   const status = STATUS_MAP[schedule.status] || { label: '未知', color: '#999' };
-  const formatTime = (t: string) => {
-    const d = new Date(t);
-    return `${d.getMonth() + 1}月${d.getDate()}日 ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+  const formatTime = (time: string) => {
+    const date = new Date(time);
+    return `${date.getMonth() + 1}月${date.getDate()}日 ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
   };
 
   return (
     <View className="sd-container">
-      {/* 状态顶栏 */}
       <View className="sd-status-bar" style={{ background: status.color }}>
         <Text className="sd-status-label">{status.label}</Text>
       </View>
 
-      {/* 课程基本信息 */}
       <View className="card">
         <Text className="sd-course-name">{course?.display_name || course?.name || '未知课程'}</Text>
         <View className="sd-tags">
@@ -102,7 +79,6 @@ export default function ScheduleDetail() {
         </View>
       </View>
 
-      {/* 费用信息 */}
       <View className="card" style={{ marginTop: 16 }}>
         <Text className="sd-section-title">费用信息</Text>
         <View className="sd-cost-row">
@@ -115,18 +91,17 @@ export default function ScheduleDetail() {
         </View>
       </View>
 
-      {/* 学生列表 */}
       <View className="card" style={{ marginTop: 16 }}>
         <Text className="sd-section-title">参与学生 ({students.length})</Text>
         {students.length === 0 ? (
           <Text className="sd-empty-text">暂无</Text>
         ) : (
-          students.map(st => (
-            <View key={st.id} className="sd-student-row" onClick={() => Taro.navigateTo({ url: `/pages/student-detail/index?id=${st.id}` })}>
-              <View className="sd-student-avatar"><Text>{st.name.charAt(0)}</Text></View>
+          students.map(student => (
+            <View key={student.id} className="sd-student-row" onClick={() => Taro.navigateTo({ url: `/pages/student-detail/index?id=${student.id}` })}>
+              <View className="sd-student-avatar"><Text>{student.name.charAt(0)}</Text></View>
               <View className="sd-student-info">
-                <Text className="sd-student-name">{st.name}</Text>
-                <Text className="sd-student-detail">{st.school || ''} {st.grade_current || ''}</Text>
+                <Text className="sd-student-name">{student.name}</Text>
+                <Text className="sd-student-detail">{student.school || ''} {student.grade_current || ''}</Text>
               </View>
               <Text className="sd-arrow">›</Text>
             </View>
@@ -134,32 +109,12 @@ export default function ScheduleDetail() {
         )}
       </View>
 
-      {/* 备注 */}
       {schedule.notes && (
         <View className="card" style={{ marginTop: 16 }}>
           <Text className="sd-section-title">备注</Text>
           <Text className="sd-notes-text">{schedule.notes}</Text>
         </View>
       )}
-
-      {/* 操作按钮 */}
-      <View className="sd-actions">
-        {schedule.status === ScheduleStatus.PLANNED && (
-          <>
-            <View className="sd-action-btn complete" onClick={() => changeStatus(ScheduleStatus.COMPLETED)}>
-              <Text>标记完成</Text>
-            </View>
-            <View className="sd-action-btn cancel" onClick={() => changeStatus(ScheduleStatus.CANCELLED)}>
-              <Text>取消课程</Text>
-            </View>
-          </>
-        )}
-        {schedule.status === ScheduleStatus.COMPLETED && (
-          <View className="sd-action-btn reopen" onClick={() => changeStatus(ScheduleStatus.PLANNED)}>
-            <Text>重新打开</Text>
-          </View>
-        )}
-      </View>
     </View>
   );
 }
