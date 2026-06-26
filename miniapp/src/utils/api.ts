@@ -11,7 +11,10 @@
 import Taro from '@tarojs/taro';
 
 const STORAGE_KEY_BASE_URL = 'scheduling_api_base_url';
-const DEFAULT_BASE_URL = 'http://39.106.172.132';
+declare const __API_BASE_URL__: string | undefined;
+const DEFAULT_BASE_URL = (typeof __API_BASE_URL__ !== 'undefined' && __API_BASE_URL__)
+  ? __API_BASE_URL__.replace(/\/+$/, '')
+  : 'https://physicsedu.xyz/scheduling';
 const RETRY_COUNT = 1;
 const REQUEST_TIMEOUT = 30000;
 

@@ -4,7 +4,7 @@
   "description": "教务管理系统",
   "appid": "wx3d570539bbe6ba1b",
   "setting": {
-    "urlCheck": false,
+    "urlCheck": true,
     "es6": false,
     "enhance": true,
     "postcss": false,
@@ -18,7 +18,7 @@
     "scopeDataCheck": false,
     "checkInvalidKey": true,
     "checkSiteMap": true,
-    "uploadWithSourceMap": true,
+    "uploadWithSourceMap": false,
     "compileHotReLoad": false,
     "lazyloadPlaceholderEnable": false,
     "useMultiFrameRuntime": false,
