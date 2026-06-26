@@ -25,6 +25,7 @@ const opsRouter = require('./routes/ops');
 const cloudRelayHostRouter = require('./routes/cloudRelayHost');
 const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
+const permissionsRouter = require('./routes/permissions');
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const writeRateLimitStore = new Map();
@@ -223,6 +224,7 @@ function createApp() {
   app.use('/api/cloud-relay-host', optionalAuth, requireWriteAccess, cloudRelayHostRouter);
   app.use('/api/modules', optionalAuth, modulesRouter);
   app.use('/api/cloud', optionalAuth, requireWriteAccess, cloudRelayRouter);
+  app.use('/api/permissions', optionalAuth, permissionsRouter);
 
   // 鍗婂叕寮€璺敱锛堝彲閫夎璇侊級
   app.use('/api/students', optionalAuth, requireWriteAccess, studentsRouter);
