@@ -37,14 +37,24 @@ export default function LoginPage() {
         return;
       }
 
-      const res = await api.post<{ token: string; user: any }>('/api/auth/login', {
-        openid: code,
+      const res = await api.post<{ token: string; user?: any; userId?: string; nickname?: string; avatarUrl?: string; role?: string }>('/api/auth/wechat-login', {
+        code,
       });
 
       if (res.success && res.data) {
+        const loginUser = res.data.user || {
+          id: res.data.userId,
+          nickname: res.data.nickname,
+          avatarUrl: res.data.avatarUrl,
+          role: res.data.role || 'student',
+          user_type: res.data.role || 'student',
+        };
         clearPermissionCache();
         Taro.setStorageSync('auth_token', res.data.token);
-        Taro.setStorageSync('user_info', res.data.user);
+        Taro.setStorageSync('user_info', {
+          ...loginUser,
+          user_type: loginUser.role || loginUser.user_type || 'student',
+        });
         Taro.showToast({ title: '登录成功 🎉', icon: 'success' });
         setTimeout(() => {
           Taro.switchTab({ url: '/pages/index/index' });
