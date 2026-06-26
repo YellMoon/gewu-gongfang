@@ -16,6 +16,15 @@ function isStudentUser(user) {
   return user?.user_type === 'student';
 }
 
+const adminTaskTypes = new Set(['asset-import', 'question-paper', 'paper-export-word', 'paper-export-pdf']);
+const studentTaskTypes = new Set(['question-paper', 'paper-export-word', 'paper-export-pdf']);
+
+function allowedTasksForUser(user) {
+  if (user?.user_type === 'student') return studentTaskTypes;
+  if (user?.user_type === 'admin') return adminTaskTypes;
+  return new Set();
+}
+
 function getLinkedStudentIds(user = {}) {
   const ids = [
     user.student_id,
@@ -162,7 +171,7 @@ router.get('/snapshots/read', (req, res) => {
 
 router.post('/tasks', (req, res) => {
   const db = getDb();
-  const allowed = new Set(['asset-import', 'question-paper', 'paper-export-word', 'paper-export-pdf']);
+  const allowed = allowedTasksForUser(req.user);
   if (!allowed.has(req.body.taskType)) return res.status(403).json({ success: false, error: 'task type is not allowed' });
   const taskId = id('task');
   const time = now();

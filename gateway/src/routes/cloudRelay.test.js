@@ -15,6 +15,9 @@ assert.ok(route.includes('/tasks'), 'cloud relay should expose miniapp tasks');
 assert.ok(route.includes("router.get('/tasks'"), 'cloud relay should let host fetch pending miniapp tasks');
 assert.ok(route.includes("router.post('/tasks/:id/complete'"), 'cloud relay should let host complete miniapp tasks');
 assert.ok(route.includes("status = req.body.success === false ? 'failed' : 'completed'"), 'cloud relay should store completed or failed task status');
+assert.ok(route.includes('allowedTasksForUser'), 'cloud relay should apply role-specific task permissions');
+assert.ok(route.includes("user?.user_type === 'student'"), 'cloud relay should distinguish student task permissions');
+assert.ok(route.includes('adminTaskTypes'), 'asset import should be limited to administrator task permissions');
 assert.ok(app.includes("require('./routes/cloudRelay')"), 'gateway app should mount cloud relay');
 
 console.log('cloudRelay route checks passed');
