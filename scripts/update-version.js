@@ -23,12 +23,33 @@ console.log(`Generated version.ts: ${pkg.version} (build ${buildTag})`);
 
 // 如果命令行传了 --bump 参数，则自动递增版本号
 const args = process.argv.slice(2);
-if (args.includes('--bump')) {
+const VALID_BUMP_LEVELS = new Set(['major', 'minor', 'patch']);
+
+function resolveBumpLevel(argv, env = process.env) {
+  const explicitBump = argv.find(arg => arg.startsWith('--bump='));
+  const explicitLevel = explicitBump ? explicitBump.split('=')[1] : null;
+  const flagLevel = argv.includes('--major')
+    ? 'major'
+    : argv.includes('--minor')
+      ? 'minor'
+      : argv.includes('--patch')
+        ? 'patch'
+        : null;
+  const envLevel = env.VERSION_BUMP_LEVEL || env.VERSION_BUMP || env.RELEASE_BUMP;
+  const level = explicitLevel || flagLevel || envLevel || 'patch';
+  if (!VALID_BUMP_LEVELS.has(level)) {
+    throw new Error(`Invalid version bump level: ${level}. Use --bump=major, --bump=minor, --bump=patch, or VERSION_BUMP_LEVEL=major|minor|patch.`);
+  }
+  return level;
+}
+
+if (args.includes('--bump') || args.some(arg => arg.startsWith('--bump='))) {
+  const bumpLevel = resolveBumpLevel(args);
   const [major, minor, patch] = pkg.version.split('.').map(Number);
   let newVersion;
-  if (args.includes('--major')) {
+  if (bumpLevel === 'major') {
     newVersion = `${major + 1}.0.0`;
-  } else if (args.includes('--minor')) {
+  } else if (bumpLevel === 'minor') {
     newVersion = `${major}.${minor + 1}.0`;
   } else {
     newVersion = `${major}.${minor}.${patch + 1}`;
