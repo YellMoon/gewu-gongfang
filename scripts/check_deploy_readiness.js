@@ -3,13 +3,14 @@ const path = require('path');
 
 const REQUIRED_ENV = [
   'DEPLOY_HOST',
-  'DEPLOY_PASSWORD',
   'BACKEND_JWT_SECRET',
 ];
 
 const OPTIONAL_ENV = [
   'DEPLOY_USER',
   'DEPLOY_PORT',
+  'DEPLOY_PASSWORD',
+  'DEPLOY_KEY_PATH',
   'DEPLOY_REMOTE_DIR',
   'GEWU_NODE_ROLE',
   'GEWU_DEVICE_ID',
@@ -39,7 +40,13 @@ function envStatus(name) {
 }
 
 function checkRequiredEnv() {
-  return REQUIRED_ENV.map(name => ({ name, status: envStatus(name), required: true }));
+  const required = REQUIRED_ENV.map(name => ({ name, status: envStatus(name), required: true }));
+  required.push({
+    name: 'DEPLOY_PASSWORD or DEPLOY_KEY_PATH',
+    status: process.env.DEPLOY_PASSWORD || process.env.DEPLOY_KEY_PATH ? 'set' : 'missing',
+    required: true,
+  });
+  return required;
 }
 
 function checkOptionalEnv() {
