@@ -1,30 +1,35 @@
 # Agent 持久指令
 
-## 自动发布流程（所有项目通用）
+## 当前项目
 
-每次修改代码后，自动执行以下流程：
+- 项目：`scheduling-system`（格物工坊）
+- 正式远程仓库：`gewu`
+- 默认推送分支：`gewu/master`
 
-1. **版本号更新**
-   - 每次生成并上传安装包前，必须递增 `package.json` 版本号。
-   - 不允许重复上传同版本同文件名安装包，避免夸克网盘判定为重复或风险文件。
+## 每次修改代码后的默认流程
 
-2. **Git 提交推送**
-   - `git add -A && git commit -m "自动发布 YYYY-MM-DD"`
-   - 推送到所有远程仓库（origin、gewu 等）。
+1. 运行与改动相关的测试；风险较高时运行 `npm test`。
+2. 执行：
+   - `git add -A`
+   - `git commit -m "自动发布 YYYY-MM-DD"`
+   - `git push gewu master`
+3. 不再默认推送 `origin/master`。
+4. 不再默认打包安装包。
+5. 不再默认上传夸克网盘。
 
-3. **打包安装包**
-   - 执行项目对应的构建命令。
-   - 当前项目优先使用：`npm run build && npx electron-builder --win`
-   - 找到生成的安装包/构建产物。
+## 打包和上传
 
-4. **上传夸克网盘**
-   - 上传到夸克网盘对应 Agent 的项目文件夹：`项目文件夹/当日日期/`。
-   - 如文件夹不存在则自动创建。
-   - 如果当前执行者是 Codex：必须使用 `node scripts/upload-quark-clean.js`，上传到 `codex项目/当日日期/`。
-   - 如果当前执行者是 Qoder：必须使用 `node scripts/upload-quark-qoder.js`，上传到 `Qoder项目/当日日期/`。
-   - 不要使用旧脚本 `node scripts/upload-quark.js`。
+只有在用户明确要求“打包”“生成安装包”“上传夸克网盘”时，才执行打包和上传流程。
 
-## 适用范围
+如果用户明确要求打包：
 
-- 当前项目：`scheduling-system`（格物工坊）
-- 所有其他项目
+1. 递增 `package.json` 版本号。
+2. 执行项目构建命令，当前项目优先使用：
+   - `npm run build && npx electron-builder --win`
+3. 找到生成的安装包/构建产物。
+
+如果用户明确要求上传夸克网盘：
+
+- Codex 使用：`node scripts/upload-quark-clean.js`
+- Qoder 使用：`node scripts/upload-quark-qoder.js`
+- 不使用旧脚本：`node scripts/upload-quark.js`
