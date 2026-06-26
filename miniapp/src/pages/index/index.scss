@@ -4,6 +4,22 @@
   padding-bottom: 40rpx;
 }
 
+.snapshot-time {
+  margin: 16rpx 24rpx 0;
+  padding: 12rpx 18rpx;
+  border-radius: 14rpx;
+  background: rgba(24, 144, 255, 0.08);
+  border: 1rpx solid rgba(24, 144, 255, 0.16);
+}
+
+.snapshot-time-text {
+  display: block;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: #6b7280;
+  white-space: normal;
+}
+
 .user-header {
   display: flex;
   align-items: center;
