@@ -15,6 +15,12 @@ const {
   assertQuestionBankWritable,
   findQuestionBankStore,
 } = require('../services/questionBankStorageService');
+const {
+  createMaintenanceToken,
+  prepareDangerousAction,
+  commitDangerousAction,
+  auditSafetyEvent,
+} = require('../services/safetyGuardService');
 
 const router = Router();
 const dataDir = process.env.GEWU_DATA_DIR || process.env.LOCALAPPDATA || process.env.APPDATA || os.tmpdir();
@@ -38,6 +44,17 @@ function errorStatus(err) {
 
 function tenantId(req) {
   return req.tenantId || req.query.tenant_id || req.query.tenantId || req.body?.tenant_id || req.body?.tenantId || 'default';
+}
+
+function dangerousDebugEnabled() {
+  return process.env.GEWU_ENABLE_DANGEROUS_DEBUG === '1';
+}
+
+function rejectDangerousDebug(res) {
+  return res.status(403).json({
+    success: false,
+    error: 'dangerous debug actions are disabled',
+  });
 }
 
 function pythonCommand() {
@@ -344,11 +361,52 @@ router.delete('/questions/:id', (req, res) => {
   }
 });
 
-router.post('/debug/clear-question-bank', (req, res) => {
+router.post('/debug/clear-question-bank/prepare', (req, res) => {
+  if (!dangerousDebugEnabled()) return rejectDangerousDebug(res);
   try {
+    const tId = tenantId(req);
+    const token = createMaintenanceToken({
+      actor: req.body?.actor || req.get('x-device-id') || 'question-bank-debug',
+      ttlMs: Number(process.env.GEWU_MAINTENANCE_TOKEN_TTL_MS || 10 * 60 * 1000),
+    });
+    const challenge = prepareDangerousAction({
+      action: 'clear-question-bank-data',
+      target: { label: `tenant:${tId}` },
+      token: token.token,
+      ttlMs: Number(process.env.GEWU_DANGEROUS_CHALLENGE_TTL_MS || 5 * 60 * 1000),
+    });
+    auditSafetyEvent({
+      type: 'dangerous-action-prepared',
+      actor: token.actor,
+      action: challenge.action,
+      target: challenge.target,
+    });
+    res.json({ success: true, maintenanceToken: token, challenge });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/debug/clear-question-bank', (req, res) => {
+  if (!dangerousDebugEnabled()) return rejectDangerousDebug(res);
+  try {
+    const committed = commitDangerousAction({
+      challengeId: req.body?.challengeId,
+      response: req.body?.challengeResponse,
+      token: req.body?.maintenanceToken,
+    });
+    if (committed.action !== 'clear-question-bank-data') {
+      return res.status(400).json({ success: false, error: 'dangerous action does not match question bank clear' });
+    }
     const db = getInstance().db;
     const result = questionBank.clearQuestionBankData(db, tenantId(req));
     searchService.schedulePendingJobs(db);
+    auditSafetyEvent({
+      type: 'dangerous-action-committed',
+      actor: committed.actor,
+      action: committed.action,
+      target: committed.target,
+    });
     res.json({ success: true, data: result });
   } catch (err) {
     res.status(errorStatus(err)).json({ success: false, error: err.message });

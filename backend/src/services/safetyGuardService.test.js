@@ -25,13 +25,13 @@ assert.strictEqual(token.actor, 'codex');
 assert.ok(token.token.length >= 32);
 
 const prepared = prepareDangerousAction({
-  action: 'format-question-bank-disk',
+  action: 'clear-question-bank-data',
   target: { label: 'GEWU_QB_SSD I:' },
   token: token.token,
   nowMs: 1500,
   ttlMs: 5000,
 });
-assert.match(prepared.challenge, /format-question-bank-disk/);
+assert.match(prepared.challenge, /clear-question-bank-data/);
 assert.match(prepared.challenge, /GEWU_QB_SSD I:/);
 
 assert.throws(() => {
@@ -50,7 +50,7 @@ const committed = commitDangerousAction({
   nowMs: 2000,
 });
 assert.strictEqual(committed.ok, true);
-assert.strictEqual(committed.action, 'format-question-bank-disk');
+assert.strictEqual(committed.action, 'clear-question-bank-data');
 
 assert.throws(() => {
   commitDangerousAction({

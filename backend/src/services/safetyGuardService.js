@@ -8,6 +8,7 @@ const pendingChallenges = new Map();
 
 const ALLOWED_DANGEROUS_ACTIONS = new Set([
   'format-question-bank-disk',
+  'clear-question-bank-data',
   'clear-question-bank-cache',
   'delete-question-bank-backup',
   'reset-local-sync-queue',

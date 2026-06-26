@@ -19,5 +19,17 @@ assert.ok(
   source.includes('findQuestionBankStore') && source.includes('QUESTION_BANK_CANDIDATE_ROOTS'),
   'question bank routes should scan candidate roots for hotplug/path changes'
 );
+assert.ok(
+  source.includes("require('../services/safetyGuardService')"),
+  'question bank routes should use safetyGuardService for dangerous debug actions'
+);
+assert.ok(
+  source.includes("router.post('/debug/clear-question-bank/prepare'"),
+  'question bank routes should require a prepare step before clearing question bank data'
+);
+assert.ok(
+  source.includes('commitDangerousAction') && source.includes('clear-question-bank-data'),
+  'question bank clear route should commit a one-time dangerous action challenge'
+);
 
 console.log('question bank storage route checks passed');
