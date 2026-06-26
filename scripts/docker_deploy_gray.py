@@ -140,6 +140,12 @@ def write_runtime_env(ctx: DeployContext) -> None:
         f"APP_VERSION={ctx.revision}",
         f"DEPLOY_CHANNEL={ctx.channel}",
         f"JWT_SECRET={ctx.jwt_secret}",
+        f"GEWU_NODE_ROLE={os.getenv('GEWU_NODE_ROLE', 'primary-host')}",
+        f"GEWU_DEVICE_ID={os.getenv('GEWU_DEVICE_ID', 'desktop_host_001')}",
+        f"GEWU_HOST_BASE_URL={os.getenv('GEWU_HOST_BASE_URL', 'http://127.0.0.1:3001')}",
+        f"GEWU_CLOUD_BASE_URL={os.getenv('GEWU_CLOUD_BASE_URL', 'https://your-domain.example.com')}",
+        f"QUESTION_BANK_ROOT={os.getenv('QUESTION_BANK_ROOT', '/app/question-bank')}",
+        f"QUESTION_BANK_UPLOAD_DIR={os.getenv('QUESTION_BANK_UPLOAD_DIR', '/app/question-bank/assets')}",
         "",
     ])
     ssh(
@@ -181,6 +187,7 @@ def start_container(ctx: DeployContext, image: str) -> None:
         "--restart unless-stopped "
         f"-p {quote(ctx.port_mapping)} "
         f"-v {quote(ctx.volume)}:/app/data "
+        f"-v {quote(os.getenv('QUESTION_BANK_VOLUME', 'gewu_question_bank'))}:/app/question-bank "
         f"--env-file {quote(ctx.runtime_env_path)} "
         f"{quote(image)}"
     )

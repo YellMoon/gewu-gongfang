@@ -107,12 +107,19 @@ def upload_backend(ssh):
 
 
 def remote_env_prefix():
-    return (
-        f"APP_ENV='{APP_ENV}' "
-        f"SCHEDULE_ENV='{APP_ENV}' "
-        f"DB_PATH='{DB_PATH}' "
-        f"READ_DB_PATH='{READ_DB_PATH}'"
-    )
+    env = {
+        "APP_ENV": APP_ENV,
+        "SCHEDULE_ENV": APP_ENV,
+        "DB_PATH": DB_PATH,
+        "READ_DB_PATH": READ_DB_PATH,
+        "GEWU_NODE_ROLE": os.getenv("GEWU_NODE_ROLE", "primary-host"),
+        "GEWU_DEVICE_ID": os.getenv("GEWU_DEVICE_ID", "desktop_host_001"),
+        "GEWU_HOST_BASE_URL": os.getenv("GEWU_HOST_BASE_URL", "http://127.0.0.1:3001"),
+        "GEWU_CLOUD_BASE_URL": os.getenv("GEWU_CLOUD_BASE_URL", "https://your-domain.example.com"),
+        "QUESTION_BANK_ROOT": os.getenv("QUESTION_BANK_ROOT", "/root/GewuQuestionBank"),
+        "QUESTION_BANK_UPLOAD_DIR": os.getenv("QUESTION_BANK_UPLOAD_DIR", "/root/GewuQuestionBank/assets"),
+    }
+    return " ".join(f"{key}='{value}'" for key, value in env.items())
 
 
 def migrate(ssh):
