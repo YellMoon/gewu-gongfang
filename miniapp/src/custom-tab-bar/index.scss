@@ -28,6 +28,13 @@
 .role-tabbar-icon {
   width: 42rpx;
   height: 42rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16rpx;
+  font-size: 34rpx;
+  line-height: 42rpx;
+  font-weight: 700;
 }
 
 .role-tabbar-label {

@@ -1,4 +1,4 @@
-import { Image, View, Text } from '@tarojs/components';
+import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { useMemo, useState } from 'react';
 import './index.scss';
@@ -6,22 +6,21 @@ import './index.scss';
 type TabItem = {
   pagePath: string;
   label: string;
-  iconPath: string;
-  selectedIconPath: string;
+  iconText: string;
 };
 
 const ADMIN_TABS: TabItem[] = [
-  { pagePath: 'pages/index/index', label: '首页', iconPath: '/assets/tab-home.png', selectedIconPath: '/assets/tab-home-active.png' },
-  { pagePath: 'pages/schedule/index', label: '课程表', iconPath: '/assets/tab-calendar.png', selectedIconPath: '/assets/tab-calendar-active.png' },
-  { pagePath: 'pages/students/index', label: '学员', iconPath: '/assets/tab-students.png', selectedIconPath: '/assets/tab-students-active.png' },
-  { pagePath: 'pages/assets/index', label: '财务', iconPath: '/assets/tab-settings.png', selectedIconPath: '/assets/tab-settings-active.png' },
-  { pagePath: 'pages/settings/index', label: '我的', iconPath: '/assets/tab-settings.png', selectedIconPath: '/assets/tab-settings-active.png' },
+  { pagePath: 'pages/index/index', label: '首页', iconText: '⌂' },
+  { pagePath: 'pages/schedule/index', label: '课程表', iconText: '□' },
+  { pagePath: 'pages/students/index', label: '学员', iconText: '○' },
+  { pagePath: 'pages/assets/index', label: '财务', iconText: '¥' },
+  { pagePath: 'pages/settings/index', label: '我的', iconText: '⋯' },
 ];
 
 const STUDENT_TABS: TabItem[] = [
-  { pagePath: 'pages/index/index', label: '首页', iconPath: '/assets/tab-home.png', selectedIconPath: '/assets/tab-home-active.png' },
-  { pagePath: 'pages/schedule/index', label: '课程表', iconPath: '/assets/tab-calendar.png', selectedIconPath: '/assets/tab-calendar-active.png' },
-  { pagePath: 'pages/settings/index', label: '我的', iconPath: '/assets/tab-settings.png', selectedIconPath: '/assets/tab-settings-active.png' },
+  { pagePath: 'pages/index/index', label: '首页', iconText: '⌂' },
+  { pagePath: 'pages/schedule/index', label: '课程表', iconText: '□' },
+  { pagePath: 'pages/settings/index', label: '我的', iconText: '⋯' },
 ];
 
 function getCurrentRoute() {
@@ -66,11 +65,7 @@ export default function RoleTabBar() {
             className={`role-tabbar-item ${active ? 'active' : ''}`}
             onClick={() => handleSwitch(item)}
           >
-            <Image
-              className="role-tabbar-icon"
-              src={active ? item.selectedIconPath : item.iconPath}
-              mode="aspectFit"
-            />
+            <View className="role-tabbar-icon">{item.iconText}</View>
             <Text className="role-tabbar-label">{item.label}</Text>
           </View>
         );
