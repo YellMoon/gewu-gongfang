@@ -31,6 +31,15 @@ const syncSettings = read('src/pages/SyncSettings.tsx');
 const cloudSync = read('src/pages/CloudSync.tsx');
 
 assert(
+  systemSettings.includes('/api/question-bank/storage/status') &&
+  systemSettings.includes('questionBankCandidatePaths') &&
+  systemSettings.includes('questionBankStoreId') &&
+  systemSettings.includes('nasBackupPath') &&
+  systemSettings.includes('localCachePath'),
+  'system settings should expose hotplug question-bank status, store id, candidate paths, local cache, and NAS backup path'
+);
+
+assert(
   !scheduleList.includes('require(') &&
   !batchSelection.includes('require(') &&
   !scheduleExcelExport.includes('module.exports') &&

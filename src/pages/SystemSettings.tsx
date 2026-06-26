@@ -25,13 +25,36 @@ type BackupJob = {
   restoredAt?: string;
 };
 
+type QuestionBankStorageStatus = {
+  configured?: boolean;
+  available?: boolean;
+  writable?: boolean;
+  root?: string;
+  configuredRoot?: string;
+  pathChanged?: boolean;
+  nodeRole?: string;
+  reason?: string;
+  detail?: string;
+  manifest?: {
+    storeId?: string;
+    schemaVersion?: number;
+    lastMountedByDeviceId?: string;
+    lastVerifiedAt?: string;
+  };
+  candidateRoots?: string[];
+};
+
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:3001/api';
+const QUESTION_BANK_STORAGE_STATUS_PATH = '/api/question-bank/storage/status';
+const apiOrigin = API_BASE.replace(/\/api\/?$/, '');
 
 const SystemSettings: React.FC = () => {
   const dbService = (window as any).dbService;
   const [runtimeForm] = Form.useForm<RuntimeConfig>();
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
+  const [questionBankStorageStatus, setQuestionBankStorageStatus] = useState<QuestionBankStorageStatus | null>(null);
+  const [questionBankStorageLoading, setQuestionBankStorageLoading] = useState(false);
   const [backupJobs, setBackupJobs] = useState<BackupJob[]>([]);
   const [backupLoading, setBackupLoading] = useState(false);
 
@@ -49,6 +72,7 @@ const SystemSettings: React.FC = () => {
   useEffect(() => {
     loadBackupJobs();
     loadRuntimeConfig();
+    loadQuestionBankStorageStatus();
   }, []);
 
   const loadRuntimeConfig = async () => {
@@ -86,6 +110,37 @@ const SystemSettings: React.FC = () => {
     if (folder) {
       runtimeForm.setFieldValue('questionBankPath', folder);
       runtimeForm.setFieldValue('questionAssetPath', `${folder}\\assets`);
+      runtimeForm.setFieldValue('questionBankCandidatePaths', [folder]);
+    }
+  };
+
+  const selectLocalCacheFolder = async () => {
+    const folder = await selectFolder();
+    if (folder) runtimeForm.setFieldValue('localCachePath', folder);
+  };
+
+  const selectNasBackupFolder = async () => {
+    const folder = await selectFolder();
+    if (folder) runtimeForm.setFieldValue('nasBackupPath', folder);
+  };
+
+  const loadQuestionBankStorageStatus = async () => {
+    setQuestionBankStorageLoading(true);
+    try {
+      const res = await fetch(`${apiOrigin}${QUESTION_BANK_STORAGE_STATUS_PATH}`);
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || '加载题库盘状态失败');
+      setQuestionBankStorageStatus(data.status || null);
+      const storeId = data.status?.manifest?.storeId;
+      if (storeId) runtimeForm.setFieldValue('questionBankStoreId', storeId);
+    } catch (error: any) {
+      setQuestionBankStorageStatus({
+        available: false,
+        writable: false,
+        reason: error.message || '题库盘状态暂不可用',
+      });
+    } finally {
+      setQuestionBankStorageLoading(false);
     }
   };
 
@@ -201,6 +256,28 @@ const SystemSettings: React.FC = () => {
           message={runtimeConfig?.nodeRole === 'primary-host' ? '当前配置为本地数据主机' : '当前配置为普通离线客户端'}
           description="本地数据主机保存权威数据和题库移动硬盘；普通离线客户端可断网修改，联网后经确认同步到主机。"
         />
+        <Alert
+          type={questionBankStorageStatus?.available ? 'success' : 'warning'}
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={questionBankStorageStatus?.available ? '题库 SSD 在线' : '题库 SSD 未连接或不可用'}
+          description={(
+            <Space direction="vertical" size={2}>
+              <span>当前路径：{questionBankStorageStatus?.root || runtimeConfig?.questionBankPath || '-'}</span>
+              <span>storeId：{questionBankStorageStatus?.manifest?.storeId || runtimeConfig?.questionBankStoreId || '-'}</span>
+              <span>写入状态：{questionBankStorageStatus?.writable ? '可写' : '保护/不可写'}</span>
+              {questionBankStorageStatus?.pathChanged && <span>已通过 manifest 自动识别盘符变化。</span>}
+              {(questionBankStorageStatus?.reason || questionBankStorageStatus?.detail) && (
+                <span>{questionBankStorageStatus.reason || questionBankStorageStatus.detail}</span>
+              )}
+            </Space>
+          )}
+          action={(
+            <Button size="small" loading={questionBankStorageLoading} onClick={loadQuestionBankStorageStatus}>
+              检测题库盘
+            </Button>
+          )}
+        />
         <Form form={runtimeForm} layout="vertical">
           <Form.Item name="nodeRole" label="运行角色" rules={[{ required: true }]}>
             <Select
@@ -239,6 +316,31 @@ const SystemSettings: React.FC = () => {
           </Form.Item>
           <Form.Item name="cloudBaseUrl" label="阿里云服务地址">
             <Input placeholder="https://your-domain.example.com" />
+          </Form.Item>
+          <Form.Item name="questionBankCandidatePaths" label="题库盘候选路径（支持热插拔/盘符变化）">
+            <Select mode="tags" tokenSeparators={[';']} placeholder="例如 I:/GewuQuestionBank；换 Type-C 后可加入 J:/GewuQuestionBank" />
+          </Form.Item>
+          <Form.Item name="questionBankStoreId" label="题库盘 storeId">
+            <Input disabled placeholder="初始化题库盘后自动读取 manifest.storeId" />
+          </Form.Item>
+          <Form.Item name="localCachePath" label="本机题库缓存/最近备份路径">
+            <Input
+              addonAfter={(
+                <Button size="small" onClick={selectLocalCacheFolder}>
+                  选择
+                </Button>
+              )}
+            />
+          </Form.Item>
+          <Form.Item name="nasBackupPath" label="NAS 备份/归档路径">
+            <Input
+              placeholder="例如 \\\\NAS\\GewuQuestionBankBackup"
+              addonAfter={(
+                <Button size="small" onClick={selectNasBackupFolder}>
+                  选择
+                </Button>
+              )}
+            />
           </Form.Item>
           <Button type="primary" loading={runtimeLoading} onClick={handleSaveRuntimeConfig}>
             保存数据主机与同步配置

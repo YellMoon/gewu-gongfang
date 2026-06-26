@@ -23,6 +23,8 @@ function defaultConfig(userDataPath) {
     questionAssetPath: '',
     questionBankCandidatePaths: [],
     questionBankStoreId: '',
+    localCachePath: path.join(userDataPath, 'question-bank-cache'),
+    nasBackupPath: '',
   };
 }
 
@@ -46,6 +48,8 @@ function normalizeRuntimeConfig(input = {}, options = {}) {
     next.questionBankCandidatePaths.unshift(next.questionBankPath);
   }
   next.questionBankStoreId = String(next.questionBankStoreId || '').trim();
+  next.localCachePath = trimTrailingSlash(next.localCachePath || defaults.localCachePath);
+  next.nasBackupPath = trimTrailingSlash(next.nasBackupPath || '');
   next.questionAssetPath = trimTrailingSlash(
     next.questionAssetPath || (next.questionBankPath ? path.join(next.questionBankPath, 'assets') : '')
   );
@@ -80,6 +84,8 @@ function applyRuntimeConfigToEnv(config, env = process.env) {
     env.QUESTION_BANK_CANDIDATE_ROOTS = config.questionBankCandidatePaths.join(';');
   }
   if (config.questionBankStoreId) env.QUESTION_BANK_STORE_ID = config.questionBankStoreId;
+  if (config.localCachePath) env.GEWU_LOCAL_CACHE_PATH = config.localCachePath;
+  if (config.nasBackupPath) env.GEWU_NAS_BACKUP_PATH = config.nasBackupPath;
   return env;
 }
 

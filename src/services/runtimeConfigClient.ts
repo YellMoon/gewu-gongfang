@@ -10,6 +10,8 @@ export type RuntimeConfig = {
   questionAssetPath: string;
   questionBankCandidatePaths: string[];
   questionBankStoreId: string;
+  localCachePath: string;
+  nasBackupPath: string;
 };
 
 function requireApi() {

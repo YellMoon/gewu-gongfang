@@ -20,6 +20,8 @@ const normalized = normalizeRuntimeConfig({
   questionBankPath: 'E:/GewuQuestionBank',
   questionBankCandidatePaths: ['E:/GewuQuestionBank', 'J:/GewuQuestionBank/'],
   questionBankStoreId: 'qb_test_store',
+  localCachePath: 'D:/GewuQuestionBankCache/',
+  nasBackupPath: '//NAS/GewuQuestionBankBackup/',
   cloudBaseUrl: 'https://cloud.example.com/',
 });
 
@@ -31,6 +33,8 @@ assert.deepStrictEqual(
   ['E:/GewuQuestionBank', 'J:/GewuQuestionBank']
 );
 assert.strictEqual(normalized.questionBankStoreId, 'qb_test_store');
+assert.strictEqual(normalized.localCachePath.replace(/\\/g, '/'), 'D:/GewuQuestionBankCache');
+assert.strictEqual(normalized.nasBackupPath.replace(/\\/g, '/'), '//NAS/GewuQuestionBankBackup');
 assert.strictEqual(normalized.cloudBaseUrl, 'https://cloud.example.com');
 
 writeRuntimeConfig(configPath, normalized);
@@ -46,6 +50,8 @@ assert.strictEqual(env.QUESTION_BANK_ROOT.replace(/\\/g, '/'), 'E:/GewuQuestionB
 assert.strictEqual(env.QUESTION_BANK_UPLOAD_DIR.replace(/\\/g, '/'), 'E:/GewuQuestionBank/assets');
 assert.strictEqual(env.QUESTION_BANK_CANDIDATE_ROOTS.replace(/\\/g, '/'), 'E:/GewuQuestionBank;J:/GewuQuestionBank');
 assert.strictEqual(env.QUESTION_BANK_STORE_ID, 'qb_test_store');
+assert.strictEqual(env.GEWU_LOCAL_CACHE_PATH.replace(/\\/g, '/'), 'D:/GewuQuestionBankCache');
+assert.strictEqual(env.GEWU_NAS_BACKUP_PATH.replace(/\\/g, '/'), '//NAS/GewuQuestionBankBackup');
 
 const fallback = normalizeRuntimeConfig({}, { userDataPath: dir });
 assert.ok(fallback.deviceId.startsWith('desktop_'));
