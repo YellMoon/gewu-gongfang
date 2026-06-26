@@ -8,6 +8,8 @@ export type RuntimeConfig = {
   mainDbPath: string;
   questionBankPath: string;
   questionAssetPath: string;
+  questionBankCandidatePaths: string[];
+  questionBankStoreId: string;
 };
 
 function requireApi() {
