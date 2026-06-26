@@ -21,6 +21,8 @@ function defaultConfig(userDataPath) {
     mainDbPath: path.join(userDataPath, 'data', 'scheduling.db'),
     questionBankPath: '',
     questionAssetPath: '',
+    questionBankCandidatePaths: [],
+    questionBankStoreId: '',
   };
 }
 
@@ -35,6 +37,15 @@ function normalizeRuntimeConfig(input = {}, options = {}) {
   next.cloudBaseUrl = trimTrailingSlash(next.cloudBaseUrl || '');
   next.mainDbPath = next.mainDbPath || defaults.mainDbPath;
   next.questionBankPath = trimTrailingSlash(next.questionBankPath || '');
+  next.questionBankCandidatePaths = Array.from(new Set(
+    (Array.isArray(next.questionBankCandidatePaths) ? next.questionBankCandidatePaths : [])
+      .map(trimTrailingSlash)
+      .filter(Boolean)
+  ));
+  if (next.questionBankPath && !next.questionBankCandidatePaths.includes(next.questionBankPath)) {
+    next.questionBankCandidatePaths.unshift(next.questionBankPath);
+  }
+  next.questionBankStoreId = String(next.questionBankStoreId || '').trim();
   next.questionAssetPath = trimTrailingSlash(
     next.questionAssetPath || (next.questionBankPath ? path.join(next.questionBankPath, 'assets') : '')
   );
@@ -65,6 +76,10 @@ function applyRuntimeConfigToEnv(config, env = process.env) {
   env.DB_PATH = config.mainDbPath;
   if (config.questionBankPath) env.QUESTION_BANK_ROOT = config.questionBankPath;
   if (config.questionAssetPath) env.QUESTION_BANK_UPLOAD_DIR = config.questionAssetPath;
+  if (config.questionBankCandidatePaths?.length) {
+    env.QUESTION_BANK_CANDIDATE_ROOTS = config.questionBankCandidatePaths.join(';');
+  }
+  if (config.questionBankStoreId) env.QUESTION_BANK_STORE_ID = config.questionBankStoreId;
   return env;
 }
 

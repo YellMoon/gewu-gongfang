@@ -63,6 +63,54 @@ function inspectQuestionBankStore(root) {
   return { available: missingDirs.length === 0, root, manifest, missingDirs };
 }
 
+function offlineStore(root, error) {
+  return {
+    available: false,
+    status: 'offline',
+    root,
+    manifest: null,
+    missingDirs: [],
+    reason: error?.message || 'question bank store is offline',
+  };
+}
+
+function scanQuestionBankStores(candidateRoots = []) {
+  return Array.from(new Set(candidateRoots.filter(Boolean))).map(root => {
+    try {
+      const inspected = inspectQuestionBankStore(root);
+      return {
+        ...inspected,
+        status: inspected.available ? 'online' : 'incomplete',
+        reason: inspected.available ? '' : 'question bank store is incomplete',
+      };
+    } catch (error) {
+      return offlineStore(root, error);
+    }
+  });
+}
+
+function findQuestionBankStore(candidateRoots = [], options = {}) {
+  const scanned = scanQuestionBankStores(candidateRoots);
+  const online = scanned.filter(item => item.available);
+  const matched = options.storeId
+    ? online.find(item => item.manifest?.storeId === options.storeId)
+    : online[0];
+
+  if (matched) return matched;
+
+  return {
+    available: false,
+    status: 'offline',
+    root: '',
+    manifest: null,
+    missingDirs: [],
+    candidates: scanned,
+    reason: options.storeId
+      ? `question bank store ${options.storeId} is not connected`
+      : 'no question bank store is connected',
+  };
+}
+
 function assertQuestionBankWritable(root, options = {}) {
   const inspected = inspectQuestionBankStore(root);
   if (!inspected.available) throw new Error('question bank store is incomplete');
@@ -82,5 +130,7 @@ module.exports = {
   initQuestionBankStore,
   inspectQuestionBankStore,
   assertQuestionBankWritable,
+  scanQuestionBankStores,
+  findQuestionBankStore,
   resolveQuestionAssetPath,
 };

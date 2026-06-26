@@ -13,6 +13,7 @@ const {
   initQuestionBankStore,
   inspectQuestionBankStore,
   assertQuestionBankWritable,
+  findQuestionBankStore,
 } = require('../services/questionBankStorageService');
 
 const router = Router();
@@ -124,6 +125,11 @@ function applyFileTopic(result, fileName = '', sourceType = 'lecture') {
 
 function storageStatusPayload() {
   const root = process.env.QUESTION_BANK_ROOT || '';
+  const candidateRoots = (process.env.QUESTION_BANK_CANDIDATE_ROOTS || '')
+    .split(';')
+    .map(item => item.trim())
+    .filter(Boolean);
+  const expectedStoreId = process.env.QUESTION_BANK_STORE_ID || '';
   const nodeRole = process.env.GEWU_NODE_ROLE || 'desktop-client';
   const deviceId = process.env.GEWU_DEVICE_ID || '';
 
@@ -139,11 +145,13 @@ function storageStatusPayload() {
   }
 
   try {
-    const inspected = inspectQuestionBankStore(root);
+    const foundStore = findQuestionBankStore([root, ...candidateRoots], { storeId: expectedStoreId });
+    const effectiveRoot = foundStore.available ? foundStore.root : root;
+    const inspected = inspectQuestionBankStore(effectiveRoot);
     let writable = true;
     let reason = inspected.available ? '' : '题库移动硬盘未连接或目录结构不完整';
     try {
-      assertQuestionBankWritable(root, { nodeRole, deviceId });
+      assertQuestionBankWritable(effectiveRoot, { nodeRole, deviceId });
     } catch (err) {
       writable = false;
       if (nodeRole !== 'primary-host') {
@@ -156,7 +164,10 @@ function storageStatusPayload() {
       configured: true,
       available: inspected.available,
       writable,
-      root,
+      root: effectiveRoot,
+      configuredRoot: root,
+      candidateRoots,
+      pathChanged: effectiveRoot !== root,
       nodeRole,
       manifest: inspected.manifest,
       missingDirs: inspected.missingDirs || [],

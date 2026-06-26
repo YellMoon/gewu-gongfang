@@ -16,8 +16,8 @@ assert.ok(
   'question bank routes should expose primary-host storage initialization'
 );
 assert.ok(
-  source.includes('题库移动硬盘未连接'),
-  'question bank routes should return a clear removable-drive warning'
+  source.includes('findQuestionBankStore') && source.includes('QUESTION_BANK_CANDIDATE_ROOTS'),
+  'question bank routes should scan candidate roots for hotplug/path changes'
 );
 
 console.log('question bank storage route checks passed');

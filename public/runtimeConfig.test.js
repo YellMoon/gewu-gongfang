@@ -18,12 +18,19 @@ const normalized = normalizeRuntimeConfig({
   deviceId: 'desktop_test',
   mainDbPath: 'D:/GewuData/scheduling.db',
   questionBankPath: 'E:/GewuQuestionBank',
+  questionBankCandidatePaths: ['E:/GewuQuestionBank', 'J:/GewuQuestionBank/'],
+  questionBankStoreId: 'qb_test_store',
   cloudBaseUrl: 'https://cloud.example.com/',
 });
 
 assert.strictEqual(normalized.nodeRole, 'primary-host');
 assert.strictEqual(normalized.deviceId, 'desktop_test');
 assert.strictEqual(normalized.questionAssetPath.replace(/\\/g, '/'), 'E:/GewuQuestionBank/assets');
+assert.deepStrictEqual(
+  normalized.questionBankCandidatePaths.map(item => item.replace(/\\/g, '/')),
+  ['E:/GewuQuestionBank', 'J:/GewuQuestionBank']
+);
+assert.strictEqual(normalized.questionBankStoreId, 'qb_test_store');
 assert.strictEqual(normalized.cloudBaseUrl, 'https://cloud.example.com');
 
 writeRuntimeConfig(configPath, normalized);
@@ -37,6 +44,8 @@ assert.strictEqual(env.GEWU_DEVICE_ID, 'desktop_test');
 assert.strictEqual(env.DB_PATH.replace(/\\/g, '/'), 'D:/GewuData/scheduling.db');
 assert.strictEqual(env.QUESTION_BANK_ROOT.replace(/\\/g, '/'), 'E:/GewuQuestionBank');
 assert.strictEqual(env.QUESTION_BANK_UPLOAD_DIR.replace(/\\/g, '/'), 'E:/GewuQuestionBank/assets');
+assert.strictEqual(env.QUESTION_BANK_CANDIDATE_ROOTS.replace(/\\/g, '/'), 'E:/GewuQuestionBank;J:/GewuQuestionBank');
+assert.strictEqual(env.QUESTION_BANK_STORE_ID, 'qb_test_store');
 
 const fallback = normalizeRuntimeConfig({}, { userDataPath: dir });
 assert.ok(fallback.deviceId.startsWith('desktop_'));
