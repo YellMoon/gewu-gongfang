@@ -145,7 +145,7 @@ const MODULE_CONFIG: Record<string, { icon: string; color: string; pages: string
 
       // 尝试从服务端拉取最新数据
       try {
-        const statsRes = await api.get<any>(`/scheduling/stats/revenue?start=${thisMonth}-01&end=${today}`);
+        const statsRes = await api.get<any>(`/api/stats/revenue?start=${thisMonth}-01&end=${today}`);
         if (statsRes.success && statsRes.data) {
           // 服务端数据优先
         }
