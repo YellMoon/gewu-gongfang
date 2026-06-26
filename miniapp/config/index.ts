@@ -1,7 +1,7 @@
 import { defineConfig } from '@tarojs/cli';
 
-const appEnv = process.env.MINIAPP_APP_ENV || process.env.APP_ENV || 'dev';
-const apiBaseUrl = process.env.MINIAPP_API_BASE_URL || 'http://localhost:3001/api';
+const appEnv = process.env.MINIAPP_APP_ENV || process.env.APP_ENV || 'prod';
+const apiBaseUrl = process.env.MINIAPP_API_BASE_URL || 'https://physicsedu.xyz/scheduling';
 
 const config = defineConfig({
   projectName: 'scheduling-miniapp',

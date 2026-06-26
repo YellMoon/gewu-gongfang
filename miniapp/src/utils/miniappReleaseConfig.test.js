@@ -5,12 +5,15 @@ const api = fs.readFileSync('miniapp/src/utils/api.ts', 'utf-8');
 const appConfig = fs.readFileSync('miniapp/src/app.config.ts', 'utf-8');
 const loginPage = fs.readFileSync('miniapp/src/pages/login/index.tsx', 'utf-8');
 const projectConfig = fs.readFileSync('miniapp/project.config.json', 'utf-8');
+const indexConfig = fs.readFileSync('miniapp/config/index.ts', 'utf-8');
 const prodConfig = fs.readFileSync('miniapp/config/prod.ts', 'utf-8');
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 
 assert.ok(api.includes('__API_BASE_URL__'), 'miniapp API should use build-time API base URL');
 assert.ok(!api.includes("DEFAULT_BASE_URL = 'http://39.106.172.132'"), 'miniapp default API should not be bare HTTP IP');
 assert.ok(api.includes('https://physicsedu.xyz/scheduling'), 'miniapp default API should use HTTPS legal domain');
+assert.ok(indexConfig.includes('https://physicsedu.xyz/scheduling'), 'default Taro build config should use HTTPS legal domain unless overridden');
+assert.ok(!indexConfig.includes('http://localhost:3001/api'), 'default Taro build config should not produce localhost API in dist');
 assert.ok(prodConfig.includes('https://physicsedu.xyz/scheduling'), 'miniapp prod config should use HTTPS legal domain');
 assert.ok(!api.includes("api.get<any[]>('/scheduling/"), 'miniapp API paths should not duplicate the /scheduling reverse-proxy prefix');
 assert.ok(api.includes("api.get<any[]>('/api/students')"), 'miniapp business API should call backend /api routes under the /scheduling base URL');
