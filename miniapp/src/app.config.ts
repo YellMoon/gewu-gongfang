@@ -34,32 +34,22 @@ export default defineAppConfig({
       {
         pagePath: 'pages/index/index',
         text: '首页',
-        iconPath: 'assets/tab-home.png',
-        selectedIconPath: 'assets/tab-home-active.png',
       },
       {
         pagePath: 'pages/schedule/index',
         text: '课程表',
-        iconPath: 'assets/tab-calendar.png',
-        selectedIconPath: 'assets/tab-calendar-active.png',
       },
       {
         pagePath: 'pages/students/index',
         text: '学员',
-        iconPath: 'assets/tab-students.png',
-        selectedIconPath: 'assets/tab-students-active.png',
       },
       {
         pagePath: 'pages/assets/index',
         text: '财务',
-        iconPath: 'assets/tab-settings.png',
-        selectedIconPath: 'assets/tab-settings-active.png',
       },
       {
         pagePath: 'pages/settings/index',
         text: '设置',
-        iconPath: 'assets/tab-settings.png',
-        selectedIconPath: 'assets/tab-settings-active.png',
       },
     ],
   },

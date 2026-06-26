@@ -12,7 +12,9 @@ assert.ok(tabBar.includes('STUDENT_TABS'), 'custom tabBar should define student 
 assert.ok(tabBar.includes('pages/assets/index'), 'admin tabBar should include real assets page');
 assert.ok(tabBar.includes('pages/students/index'), 'admin tabBar should include real students page');
 assert.ok(tabBar.includes('pages/settings/index'), 'role tabBar should include real settings page');
-assert.ok(tabBar.includes('selectedIconPath'), 'custom tabBar should use real tab icon assets');
+assert.ok(tabBar.includes('iconText'), 'custom tabBar should use CSS/text icons without missing image assets');
+assert.ok(!tabBar.includes('selectedIconPath'), 'custom tabBar should not reference missing image assets');
+assert.ok(!appConfig.includes('iconPath'), 'app tabBar config should not reference missing image assets');
 assert.ok(tabBar.includes("userType === 'student'"), 'custom tabBar should switch by student role');
 assert.ok(tabBar.includes('switchTab'), 'custom tabBar should navigate with switchTab');
 assert.ok(tabBarStyle.includes('safe-area-inset-bottom'), 'custom tabBar should support bottom safe area');
