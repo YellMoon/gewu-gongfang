@@ -17,5 +17,12 @@ assert.ok(
   source.includes('nasBackup'),
   'backup target status should include local cache and NAS backup checks'
 );
+assert.ok(
+  source.includes("require('../services/backupArchiveService')") &&
+  source.includes('archiveBackupArtifact') &&
+  source.includes('GEWU_NAS_BACKUP_PATH') &&
+  source.includes('GEWU_LOCAL_CACHE_PATH'),
+  'backup creation should archive completed backup artifacts to configured local cache and NAS targets'
+);
 
 console.log('export backup target route checks passed');

@@ -4,6 +4,7 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { getInstance } = require('../database');
 const { inspectBackupTargets } = require('../services/questionBankBackupTargetService');
+const { archiveBackupArtifact } = require('../services/backupArchiveService');
 
 const router = Router();
 
@@ -81,6 +82,20 @@ function createBackupJob({ tenantId = 'default', scheduleCron = null, retentionD
       data: snapshot,
     };
     fs.writeFileSync(artifactPath, JSON.stringify(payload, null, 2), 'utf-8');
+    let archiveTargets = null;
+    try {
+      archiveTargets = archiveBackupArtifact(artifactPath, {
+        localCachePath: process.env.GEWU_LOCAL_CACHE_PATH,
+        nasBackupPath: process.env.GEWU_NAS_BACKUP_PATH,
+        fileName,
+        now: new Date(now),
+      });
+    } catch (archiveErr) {
+      archiveTargets = {
+        localCache: { available: false, status: 'failed', reason: archiveErr.message },
+        nasBackup: { available: false, status: 'failed', reason: archiveErr.message },
+      };
+    }
     const total = countExportedRows(snapshot);
     const doneAt = new Date().toISOString();
     db.prepare(
@@ -94,7 +109,7 @@ function createBackupJob({ tenantId = 'default', scheduleCron = null, retentionD
       table_name: 'data_archive_jobs',
       record_id: id,
       status: 'success',
-      detail: { total, artifactPath, retentionDays, scheduleCron },
+      detail: { total, artifactPath, retentionDays, scheduleCron, archiveTargets },
     });
   } catch (err) {
     db.prepare(
