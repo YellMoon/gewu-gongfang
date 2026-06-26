@@ -238,42 +238,42 @@ export const getMiniappTaskResult = cloudRelayApi.getMiniappTaskResult;
 
 // ========== 业务 API ==========
 export const studentApi = {
-  getAll: () => api.get<any[]>('/scheduling/students'),
-  getById: (id: string) => api.get<any>(`/scheduling/students/${id}`),
+  getAll: () => api.get<any[]>('/api/students'),
+  getById: (id: string) => api.get<any>(`/api/students/${id}`),
 };
 
 export const courseApi = {
-  getAll: () => api.get<any[]>('/scheduling/courses'),
-  getById: (id: string) => api.get<any>(`/scheduling/courses/${id}`),
+  getAll: () => api.get<any[]>('/api/courses'),
+  getById: (id: string) => api.get<any>(`/api/courses/${id}`),
 };
 
 export const scheduleApi = {
-  getAll: () => api.get<any[]>('/scheduling/schedules'),
+  getAll: () => api.get<any[]>('/api/schedules'),
   getByDateRange: (start: string, end: string) =>
-    api.get<any[]>(`/scheduling/schedules?start=${start}&end=${end}`),
-  getById: (id: string) => api.get<any>(`/scheduling/schedules/${id}`),
+    api.get<any[]>(`/api/schedules?start=${start}&end=${end}`),
+  getById: (id: string) => api.get<any>(`/api/schedules/${id}`),
 };
 
 export const teacherApi = {
-  getAll: () => api.get<any[]>('/scheduling/teachers'),
-  getById: (id: string) => api.get<any>(`/scheduling/teachers/${id}`),
+  getAll: () => api.get<any[]>('/api/teachers'),
+  getById: (id: string) => api.get<any>(`/api/teachers/${id}`),
 };
 
 export const paymentApi = {
-  getAll: () => api.get<any[]>('/scheduling/payments'),
-  getByStudent: (studentId: string) => api.get<any[]>(`/scheduling/payments?student_id=${studentId}`),
+  getAll: () => api.get<any[]>('/api/payments'),
+  getByStudent: (studentId: string) => api.get<any[]>(`/api/payments?student_id=${studentId}`),
 };
 
 export const gradeApi = {
-  getByStudent: (studentId: string) => api.get<any[]>(`/scheduling/grades?student_id=${studentId}`),
+  getByStudent: (studentId: string) => api.get<any[]>(`/api/grades?student_id=${studentId}`),
 };
 
 export const statsApi = {
   getRevenue: (start: string, end: string) =>
-    api.get<any>(`/scheduling/stats/revenue?start=${start}&end=${end}`),
+    api.get<any>(`/api/stats/revenue?start=${start}&end=${end}`),
 };
 
 export const syncApi = {
-  pull: (lastSyncTs: number) => api.post<any>('/scheduling/sync/pull', { lastSyncTimestamp: lastSyncTs }),
-  push: (changes: any[]) => api.post<any>('/scheduling/sync/push', { changes }),
+  pull: (lastSyncTs: number) => api.post<any>('/api/sync/pull', { lastSyncTimestamp: lastSyncTs }),
+  push: (changes: any[]) => api.post<any>('/api/sync/push', { changes }),
 };
