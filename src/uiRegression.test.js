@@ -106,6 +106,31 @@ assert(
 );
 
 assert(
+  (() => {
+    const modalStart = batchSelection.indexOf('open={deleteConfirmVisible}');
+    const modalEnd = batchSelection.indexOf('</Modal>', modalStart);
+    const modalSnippet = modalStart >= 0 && modalEnd > modalStart
+      ? batchSelection.slice(modalStart, modalEnd)
+      : '';
+    return modalSnippet.includes('title="确认批量删除"') &&
+      modalSnippet.includes('okText="确认删除"') &&
+      modalSnippet.includes('cancelText="取消"') &&
+      modalSnippet.includes('确定要删除选中的') &&
+      !modalSnippet.includes('纭') &&
+      !modalSnippet.includes('鍒犻櫎') &&
+      !modalSnippet.includes('鍙栨秷');
+  })(),
+  'batch delete confirmation modal should use readable Chinese title and buttons'
+);
+
+assert(
+  scheduleCalendar.includes('db.deleteSchedule') &&
+  scheduleCalendar.includes('failedDeletes') &&
+  scheduleCalendar.includes('批量删除排课'),
+  'batch delete should remove schedules from dbService before showing success'
+);
+
+assert(
   questionBankTools.includes('试题库') && !questionBankTools.includes('原试题编辑') && !questionBankTools.includes('原审核中心') && !questionBankTools.includes('独立导入页'),
   'question bank tools should expose the integrated question bank and hide legacy shortcuts'
 );
