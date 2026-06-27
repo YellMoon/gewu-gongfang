@@ -108,6 +108,44 @@ router.post('/tasks', (req, res) => {
   res.json({ success: true, task: { id: taskId, status: 'pending_host' } });
 });
 
+router.get('/tasks', (req, res) => {
+  const db = getInstance().db;
+  const status = req.query.status || 'pending_host';
+  const rows = db.prepare(
+    `SELECT * FROM miniapp_tasks WHERE status = ? ORDER BY created_at DESC LIMIT 200`
+  ).all(status);
+  const tasks = rows.map(row => ({
+    ...row,
+    payload: parseJson(row.payload, {}),
+    result_payload: parseJson(row.result_payload, null),
+  }));
+  res.json({ success: true, tasks });
+});
+
+router.post('/tasks/:id/complete', (req, res) => {
+  const db = getInstance().db;
+  const time = now();
+  const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ success: false, error: 'task not found' });
+
+  const status = req.body.success === false ? 'failed' : 'completed';
+  db.prepare(
+    `UPDATE miniapp_tasks
+     SET status = ?, result_payload = ?, updated_at = ?
+     WHERE id = ?`
+  ).run(status, JSON.stringify(req.body || {}), time, req.params.id);
+
+  const updated = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(req.params.id);
+  res.json({
+    success: true,
+    task: {
+      ...updated,
+      payload: parseJson(updated.payload, {}),
+      result_payload: parseJson(updated.result_payload, null),
+    },
+  });
+});
+
 router.get('/tasks/:id/result', (req, res) => {
   const db = getInstance().db;
   const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(req.params.id);

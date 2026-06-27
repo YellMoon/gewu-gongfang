@@ -1,8 +1,16 @@
 const base = (process.env.GEWU_CLOUD_BASE_URL || process.argv[2] || '').replace(/\/+$/, '');
+const smokeJwt = process.env.SMOKE_JWT || '';
 
 if (!base) {
   console.error('Missing GEWU_CLOUD_BASE_URL or URL argument');
   process.exit(1);
+}
+
+function headers(extra = {}) {
+  return {
+    ...extra,
+    ...(smokeJwt ? { Authorization: `Bearer ${smokeJwt}` } : {}),
+  };
 }
 
 async function readJson(response, label) {
@@ -15,14 +23,14 @@ async function readJson(response, label) {
 async function main() {
   const heartbeat = await fetch(`${base}/api/cloud/host/heartbeat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: headers({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ hostDeviceId: 'smoke_host', status: 'online' }),
   }).then(response => readJson(response, 'heartbeat'));
   if (!heartbeat.success) throw new Error('heartbeat failed');
 
   const snapshot = await fetch(`${base}/api/cloud/snapshots/publish`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: headers({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       snapshotType: 'smoke',
       payload: { ok: true },
@@ -37,7 +45,7 @@ async function main() {
 
   const createdTask = await fetch(`${base}/api/cloud/tasks`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: headers({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       taskType: 'question-paper',
       payload: { title: 'Smoke Test Paper', questionCount: 1 },
@@ -47,7 +55,9 @@ async function main() {
   if (!createdTask.success || !createdTask.task?.id) throw new Error('task create failed');
   const taskId = createdTask.task.id;
 
-  const pendingTasks = await fetch(`${base}/api/cloud/tasks?status=pending_host`)
+  const pendingTasks = await fetch(`${base}/api/cloud/tasks?status=pending_host`, {
+    headers: headers(),
+  })
     .then(response => readJson(response, 'task list'));
   if (!pendingTasks.success || !pendingTasks.tasks?.some(task => task.id === taskId)) {
     throw new Error('task list failed');
@@ -55,7 +65,7 @@ async function main() {
 
   const completedTask = await fetch(`${base}/api/cloud/tasks/${taskId}/complete`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: headers({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       success: true,
       hostDeviceId: 'smoke_host',
@@ -66,7 +76,9 @@ async function main() {
     throw new Error('task complete failed');
   }
 
-  const taskResult = await fetch(`${base}/api/cloud/tasks/${taskId}/result`)
+  const taskResult = await fetch(`${base}/api/cloud/tasks/${taskId}/result`, {
+    headers: headers(),
+  })
     .then(response => readJson(response, 'task result'));
   if (!taskResult.success || taskResult.task?.status !== 'completed') {
     throw new Error('task result failed');

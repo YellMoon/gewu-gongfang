@@ -1,4 +1,12 @@
 const base = (process.env.GEWU_HOST_BASE_URL || process.argv[2] || 'http://127.0.0.1:3001').replace(/\/+$/, '');
+const smokeJwt = process.env.SMOKE_JWT || '';
+
+function headers(extra = {}) {
+  return {
+    ...extra,
+    ...(smokeJwt ? { Authorization: `Bearer ${smokeJwt}` } : {}),
+  };
+}
 
 async function readJson(response, label) {
   if (!response.ok) {
@@ -10,12 +18,12 @@ async function readJson(response, label) {
 async function post(path) {
   return fetch(`${base}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: headers({ 'Content-Type': 'application/json' }),
   }).then(response => readJson(response, path));
 }
 
 async function get(path) {
-  return fetch(`${base}${path}`).then(response => readJson(response, path));
+  return fetch(`${base}${path}`, { headers: headers() }).then(response => readJson(response, path));
 }
 
 async function main() {
