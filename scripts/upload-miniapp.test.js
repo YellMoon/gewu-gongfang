@@ -3,6 +3,8 @@ const path = require('path');
 
 const {
   buildUploadArgs,
+  buildUploadCommand,
+  buildUploadExecOptions,
   resolveUploadVersion,
   resolveWechatCliPath,
 } = require('./upload-miniapp');
@@ -39,6 +41,38 @@ assert.ok(args.includes('--info-output'), 'upload should request machine-readabl
 assert.ok(
   /微信web开发者工具[\\/]+cli\.bat$/.test(resolveWechatCliPath({ platform: 'win32' })),
   'Windows default CLI path should point to WeChat DevTools cli.bat'
+);
+
+assert.strictEqual(
+  buildUploadExecOptions({ platform: 'win32' }).shell,
+  false,
+  'Windows upload should avoid implicit shell mode and use an explicit cmd.exe command'
+);
+
+assert.strictEqual(
+  buildUploadExecOptions({ platform: 'linux' }).shell,
+  false,
+  'non-Windows CLI upload should not force shell execution'
+);
+
+const winCommand = buildUploadCommand({
+  cliPath: 'C:\\Program Files (x86)\\Tencent\\微信web开发者工具\\cli.bat',
+  args: ['upload', '--desc', '含 空格'],
+  platform: 'win32',
+});
+assert.strictEqual(
+  winCommand.file,
+  'C:\\Program Files (x86)\\Tencent\\微信web开发者工具\\node.exe',
+  'Windows upload should call WeChat DevTools node.exe directly'
+);
+assert.strictEqual(
+  winCommand.args[0],
+  'C:\\Program Files (x86)\\Tencent\\微信web开发者工具\\cli.js',
+  'Windows upload should pass WeChat DevTools cli.js as the first argument'
+);
+assert.ok(
+  winCommand.args.includes('含 空格'),
+  'Windows direct node execution should preserve arguments with spaces'
 );
 
 console.log('upload-miniapp checks passed');

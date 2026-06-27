@@ -63,6 +63,30 @@ function buildUploadArgs(options) {
   ];
 }
 
+function buildUploadExecOptions(options = {}) {
+  const platform = options.platform || process.platform;
+  return {
+    cwd: options.cwd,
+    stdio: options.stdio || 'inherit',
+    shell: false,
+  };
+}
+
+function buildUploadCommand(options) {
+  const platform = options.platform || process.platform;
+  if (platform === 'win32') {
+    const cliDir = path.dirname(options.cliPath);
+    return {
+      file: path.join(cliDir, 'node.exe'),
+      args: [path.join(cliDir, 'cli.js'), ...(options.args || [])],
+    };
+  }
+  return {
+    file: options.cliPath,
+    args: options.args || [],
+  };
+}
+
 function main() {
   const argv = process.argv.slice(2);
   const rootDir = path.resolve(__dirname, '..');
@@ -85,10 +109,8 @@ function main() {
     fs.rmSync(infoOutput, { force: true });
   }
 
-  childProcess.execFileSync(cliPath, args, {
-    cwd: rootDir,
-    stdio: 'inherit',
-  });
+  const command = buildUploadCommand({ cliPath, args });
+  childProcess.execFileSync(command.file, command.args, buildUploadExecOptions({ cwd: rootDir }));
 
   if (fs.existsSync(infoOutput)) {
     console.log(fs.readFileSync(infoOutput, 'utf-8'));
@@ -101,6 +123,8 @@ if (require.main === module) {
 
 module.exports = {
   buildUploadArgs,
+  buildUploadCommand,
+  buildUploadExecOptions,
   resolveUploadVersion,
   resolveWechatCliPath,
 };
