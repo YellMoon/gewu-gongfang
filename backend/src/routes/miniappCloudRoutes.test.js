@@ -16,6 +16,8 @@ assert.ok(modulesRoute.includes("id: 'question-bank'"), 'modules route should in
 assert.ok(modulesRoute.includes("id: 'assets'"), 'modules route should include assets module');
 assert.ok(cloudRoute.includes("router.get('/snapshots/read'"), 'cloud route should expose snapshot read');
 assert.ok(cloudRoute.includes("router.post('/tasks'"), 'cloud route should expose miniapp task creation');
+assert.ok(cloudRoute.includes("router.get('/tasks'"), 'cloud route should expose pending task listing');
+assert.ok(cloudRoute.includes("router.post('/tasks/:id/complete'"), 'cloud route should expose task completion');
 assert.ok(cloudRoute.includes("router.get('/tasks/:id/result'"), 'cloud route should expose miniapp task result');
 assert.ok(permissionsRoute.includes("router.get('/my'"), 'permissions route should expose current user permissions');
 assert.ok(permissionsRoute.includes('studentModuleIds'), 'permissions route should return a student-specific module set');

@@ -9,6 +9,8 @@ assert.ok(script.includes('/api/cloud-relay-host/heartbeat'), 'host smoke should
 assert.ok(script.includes('/api/cloud-relay-host/snapshot'), 'host smoke should publish snapshot through host route');
 assert.ok(script.includes('/api/cloud-relay-host/tasks/pending'), 'host smoke should list pending cloud tasks through host route');
 assert.ok(script.includes('/api/cloud-relay-host/tasks/process'), 'host smoke should process pending cloud tasks through host route');
+assert.ok(script.includes('SMOKE_JWT'), 'host smoke should support authenticated production writes with SMOKE_JWT');
+assert.ok(script.includes('Authorization'), 'host smoke should send Authorization header when SMOKE_JWT is set');
 assert.ok(packageJson.includes('scripts/check_cloud_relay_host.test.js'), 'host cloud relay smoke test should run in npm test');
 
 console.log('cloud relay host smoke checks passed');
