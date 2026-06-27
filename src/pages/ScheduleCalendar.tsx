@@ -1182,14 +1182,29 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
   // 鎵归噺閫夋嫨鎷栨嫿锛堜娇鐢ㄥ巻鍙插寘瑁呭洖璋冿級
   const { batchVisuals, phase: batchPhase, selectedCourseIds, isCopy: batchIsCopy, flashingIds, flashToggle, setSchedules: setBatchSchedules, setCourses: setBatchCourses } = useBatchSelection(containerRef, currentMonday, setSchedulesWithHistory, (ids: string[]) => {
     const db = (window as any).dbService;
+    const stateVisibleIds = new Set(schedules.map(s => s.id));
+    const dbMissingIds: string[] = [];
+    const staleLocalIds: string[] = [];
     const failedDeletes: string[] = [];
     const deletedIds = ids.filter(id => {
       if (db?.deleteSchedule) {
         const deleted = db.deleteSchedule(id);
-        if (!deleted) failedDeletes.push(id);
+        if (!deleted) {
+          dbMissingIds.push(id);
+          if (stateVisibleIds.has(id)) {
+            staleLocalIds.push(id);
+            return true;
+          }
+          failedDeletes.push(id);
+          return false;
+        }
         return deleted;
       }
-      return true;
+      if (stateVisibleIds.has(id)) {
+        return true;
+      }
+      failedDeletes.push(id);
+      return false;
     });
 
     if (deletedIds.length > 0) {
@@ -1199,6 +1214,8 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
 
     if (failedDeletes.length > 0) {
       message.warning(`已删除 ${deletedIds.length} 节课程，${failedDeletes.length} 节未找到或删除失败`);
+    } else if (staleLocalIds.length > 0) {
+      message.success(`已删除 ${deletedIds.length} 节课程（含 ${staleLocalIds.length} 节本地残留记录）`);
     } else {
       message.success(`已删除 ${deletedIds.length} 节课程`);
     }
