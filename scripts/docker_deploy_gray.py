@@ -138,6 +138,7 @@ def write_runtime_env(ctx: DeployContext) -> None:
         "DB_PATH=/app/data/scheduling.db",
         "READ_DB_PATH=/app/data/scheduling.db",
         f"APP_VERSION={ctx.revision}",
+        f"GEWU_APP_VERSION={os.getenv('GEWU_APP_VERSION', ctx.revision)}",
         f"DEPLOY_CHANNEL={ctx.channel}",
         f"JWT_SECRET={ctx.jwt_secret}",
         f"GEWU_NODE_ROLE={os.getenv('GEWU_NODE_ROLE', 'primary-host')}",

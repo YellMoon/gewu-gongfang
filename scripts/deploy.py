@@ -14,6 +14,7 @@ Optional env:
   DEPLOY_PORT, APP_ENV, DEPLOY_REMOTE_DIR, DEPLOY_LOCAL_DIR, DB_PATH, READ_DB_PATH
 """
 import os
+import json
 import shlex
 import sys
 import time
@@ -60,6 +61,14 @@ REMOTE_DIR = os.getenv("DEPLOY_REMOTE_DIR", DEFAULTS["remote_dir"])
 DB_PATH = os.getenv("DB_PATH", DEFAULTS["db_path"])
 READ_DB_PATH = os.getenv("READ_DB_PATH", DB_PATH)
 LOCAL_DIR = Path(os.getenv("DEPLOY_LOCAL_DIR", Path(__file__).resolve().parents[1] / "backend"))
+
+
+def read_root_version():
+    try:
+        root_package = Path(__file__).resolve().parents[1] / "package.json"
+        return json.loads(root_package.read_text(encoding="utf-8")).get("version") or ""
+    except Exception:
+        return ""
 
 
 def require_remote_env():
@@ -139,6 +148,7 @@ def remote_env_prefix():
         "GEWU_DEVICE_ID": os.getenv("GEWU_DEVICE_ID", "desktop_host_001"),
         "GEWU_HOST_BASE_URL": os.getenv("GEWU_HOST_BASE_URL", "http://127.0.0.1:3001"),
         "GEWU_CLOUD_BASE_URL": os.getenv("GEWU_CLOUD_BASE_URL", "https://your-domain.example.com"),
+        "GEWU_APP_VERSION": os.getenv("GEWU_APP_VERSION", read_root_version()),
         "QUESTION_BANK_ROOT": os.getenv("QUESTION_BANK_ROOT", "/root/GewuQuestionBank"),
         "QUESTION_BANK_UPLOAD_DIR": os.getenv("QUESTION_BANK_UPLOAD_DIR", "/root/GewuQuestionBank/assets"),
         "GEWU_LOCAL_CACHE_PATH": os.getenv("GEWU_LOCAL_CACHE_PATH", "/root/GewuQuestionBankCache"),
