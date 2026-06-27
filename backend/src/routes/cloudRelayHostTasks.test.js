@@ -14,6 +14,8 @@ assert.ok(route.includes("router.get('/artifacts/:fileName'"), 'host should expo
 assert.ok(route.includes('res.download'), 'host artifact route should download generated files');
 assert.ok(route.includes('completeMiniappTask(task.id'), 'host should complete miniapp tasks back to cloud');
 assert.ok(route.includes("router.post('/tasks/process'"), 'host should expose a process pending tasks endpoint');
+assert.ok(route.includes('authOptionsFromRequest'), 'host route should forward authenticated maintenance requests to cloud relay');
+assert.ok(route.includes('req.headers.authorization'), 'host route should read Authorization from incoming requests');
 assert.ok(packageJson.includes('backend/src/routes/cloudRelayHostTasks.test.js'), 'host task processing test should run in npm test');
 
 console.log('cloudRelayHost task processing checks passed');

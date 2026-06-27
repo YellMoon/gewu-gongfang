@@ -1,7 +1,14 @@
-async function postJson(url, payload) {
+function buildHeaders(options = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  const authorization = options.authorization || options.Authorization || '';
+  if (authorization) headers.Authorization = authorization;
+  return headers;
+}
+
+async function postJson(url, payload, options = {}) {
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: buildHeaders(options),
     body: JSON.stringify(payload),
   });
   return res.json();
@@ -15,29 +22,31 @@ function skipped(reason, extra = {}) {
   return { success: false, skipped: true, reason, ...extra };
 }
 
-async function publishHeartbeat(payload) {
+async function publishHeartbeat(payload, options = {}) {
   const base = baseUrl();
   if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured');
-  return postJson(`${base}/api/cloud/host/heartbeat`, payload);
+  return postJson(`${base}/api/cloud/host/heartbeat`, payload, options);
 }
 
-async function publishSnapshot(payload) {
+async function publishSnapshot(payload, options = {}) {
   const base = baseUrl();
   if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured');
-  return postJson(`${base}/api/cloud/snapshots/publish`, payload);
+  return postJson(`${base}/api/cloud/snapshots/publish`, payload, options);
 }
 
-async function fetchPendingTasks() {
+async function fetchPendingTasks(options = {}) {
   const base = baseUrl();
   if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured', { tasks: [] });
-  const res = await fetch(`${base}/api/cloud/tasks?status=pending_host`);
+  const res = await fetch(`${base}/api/cloud/tasks?status=pending_host`, {
+    headers: buildHeaders(options),
+  });
   return res.json();
 }
 
-async function completeMiniappTask(taskId, payload = {}) {
+async function completeMiniappTask(taskId, payload = {}, options = {}) {
   const base = baseUrl();
   if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured');
-  return postJson(`${base}/api/cloud/tasks/${taskId}/complete`, payload);
+  return postJson(`${base}/api/cloud/tasks/${taskId}/complete`, payload, options);
 }
 
 module.exports = {
@@ -45,4 +54,5 @@ module.exports = {
   publishSnapshot,
   fetchPendingTasks,
   completeMiniappTask,
+  buildHeaders,
 };
