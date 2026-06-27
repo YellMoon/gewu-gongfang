@@ -3,6 +3,8 @@
  */
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireWriteAccess } = require('./middleware/auth');
 const { buildErrorPayload, errorHandler } = require('./middleware/errorHandler');
 
@@ -26,7 +28,6 @@ const cloudRelayHostRouter = require('./routes/cloudRelayHost');
 const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
 const permissionsRouter = require('./routes/permissions');
-const packageJson = require('../../package.json');
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const writeRateLimitStore = new Map();
@@ -193,8 +194,28 @@ function requestLogger(req, res, next) {
   next();
 }
 
+function resolvePackageVersion(options = {}) {
+  const candidates = options.candidates || [
+    path.join(__dirname, '..', 'package.json'),
+    path.join(__dirname, '..', '..', 'package.json'),
+    path.join(process.cwd(), 'package.json'),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      if (!fs.existsSync(candidate)) continue;
+      const pkg = JSON.parse(fs.readFileSync(candidate, 'utf-8'));
+      if (pkg.version) return pkg.version;
+    } catch {
+      // Try the next candidate. Health checks must stay available even if one
+      // manifest path is missing in a particular deployment layout.
+    }
+  }
+  return 'unknown';
+}
+
 function getAppVersion() {
-  return process.env.GEWU_APP_VERSION || process.env.APP_VERSION || packageJson.version;
+  return process.env.GEWU_APP_VERSION || process.env.APP_VERSION || resolvePackageVersion();
 }
 
 function createApp() {
@@ -253,5 +274,5 @@ function createApp() {
   return app;
 }
 
-module.exports = { createApp, getAppVersion };
+module.exports = { createApp, getAppVersion, resolvePackageVersion };
 

@@ -5,6 +5,8 @@ const deployPy = fs.readFileSync('scripts/deploy.py', 'utf-8');
 const grayDeployPy = fs.readFileSync('scripts/docker_deploy_gray.py', 'utf-8');
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 const backendPackage = fs.readFileSync('backend/package.json', 'utf-8');
+const rootPkg = JSON.parse(packageJson);
+const backendPkg = JSON.parse(backendPackage);
 
 for (const name of [
   'GEWU_NODE_ROLE',
@@ -15,6 +17,7 @@ for (const name of [
   'QUESTION_BANK_UPLOAD_DIR',
   'GEWU_LOCAL_CACHE_PATH',
   'GEWU_NAS_BACKUP_PATH',
+  'GEWU_APP_VERSION',
 ]) {
   assert.ok(deployPy.includes(name), `pm2 deploy should pass ${name}`);
   assert.ok(grayDeployPy.includes(name), `docker gray deploy should pass ${name}`);
@@ -26,11 +29,13 @@ assert.ok(deployPy.includes('BACKEND_JWT_SECRET'), 'pm2 deploy should read BACKE
 assert.ok(deployPy.includes('"JWT_SECRET": BACKEND_JWT_SECRET'), 'pm2 deploy should inject BACKEND_JWT_SECRET as remote JWT_SECRET');
 assert.ok(deployPy.includes('"PORT": os.getenv("PORT", "3001")'), 'pm2 deploy should support overriding the backend port');
 assert.ok(deployPy.includes('health_port = os.getenv("PORT", "3001")'), 'pm2 deploy health check should use the configured backend port');
+assert.ok(deployPy.includes('read_root_version'), 'pm2 deploy should derive GEWU_APP_VERSION from the root package version');
 assert.ok(deployPy.includes('redact_command'), 'pm2 deploy should redact sensitive values from printed commands');
 assert.ok(deployPy.includes('safe_print'), 'pm2 deploy should print remote Unicode output safely on Windows consoles');
 assert.ok(deployPy.includes('which pm2 || npm install -g pm2'), 'pm2 deploy should skip global pm2 installation when pm2 already exists');
 assert.ok(backendPackage.includes('"sanitize-html"'), 'backend production dependencies should include sanitize-html used by questionBankService');
 assert.ok(backendPackage.includes('"docx"'), 'backend production dependencies should include docx used by paperArtifactService');
+assert.strictEqual(backendPkg.version, rootPkg.version, 'backend package version should stay aligned with root package version');
 
 assert.ok(packageJson.includes('scripts/deployEnv.test.js'), 'deploy env test should run in npm test');
 

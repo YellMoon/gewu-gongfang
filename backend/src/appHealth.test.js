@@ -18,7 +18,18 @@ async function requestHealth(app) {
   delete process.env.APP_VERSION;
   delete process.env.GEWU_APP_VERSION;
   delete require.cache[require.resolve('./app')];
-  let { createApp } = require('./app');
+  let { createApp, resolvePackageVersion } = require('./app');
+  assert.strictEqual(
+    resolvePackageVersion({
+      candidates: [
+        'C:/missing/package.json',
+        require.resolve('../../package.json'),
+      ],
+    }),
+    pkg.version,
+    'version resolver should support deployed backend root fallback paths'
+  );
+
   let health = await requestHealth(createApp());
   assert.strictEqual(health.version, pkg.version, 'health version should default to package.json version');
   assert.strictEqual(health.traceId, 'health-test-trace', 'health should keep request trace id');
