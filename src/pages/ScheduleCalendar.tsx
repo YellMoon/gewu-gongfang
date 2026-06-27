@@ -15,6 +15,7 @@ import { buildCourseColorMap, getTextColorForBackground, DEFAULT_COURSE_COLOR } 
 import { INSTITUTION_UNBOUND_STUDENT_ID, buildScheduleFinancialSnapshot } from '../utils/financialDetails';
 import WorkbenchLayout from '../layout/WorkbenchLayout';
 import type { CourseCalendarContext } from '../navigation/navigationContext';
+import { readSchedulesFromPrimaryStore, replaceSchedulesInPrimaryStore } from '../utils/scheduleStorage.mjs';
 
 dayjs.extend(weekOfYear);
 dayjs.extend(isoWeek);
@@ -1126,6 +1127,7 @@ interface ScheduleCalendarProps {
 const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
   const [schedules, setSchedules] = useState<ScheduleEvent[]>([]);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const schedulesHydratedRef = useRef(false);
   const today = dayjs();
   let initialMonday = today.startOf('isoWeek');
   const [currentMonday, setCurrentMonday] = useState<Dayjs>(initialMonday);
@@ -1275,12 +1277,10 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
           setTimeout(loadData, 1000);
           return;
         }
-        const savedSchedules = localStorage.getItem('schedules');
-        if (savedSchedules) {
-          const parsed = JSON.parse(savedSchedules).map(normalizeScheduleEvent);
-          setSchedules(parsed);
-          setBatchSchedules(parsed);
-        }
+        const dbSchedules = readSchedulesFromPrimaryStore(db, localStorage).map(normalizeScheduleEvent);
+        schedulesHydratedRef.current = true;
+        setSchedules(dbSchedules);
+        setBatchSchedules(dbSchedules);
         if (db.getAllCourses) {
           const coursesData = db.getAllCourses();
           setCourses([...coursesData]);
@@ -1366,7 +1366,9 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
 
   React.useEffect(() => {
     try {
-      localStorage.setItem('schedules', JSON.stringify(schedules));
+      if (schedulesHydratedRef.current) {
+        replaceSchedulesInPrimaryStore((window as any).dbService, schedules, localStorage);
+      }
       setBatchSchedules(schedules);
     } catch (e) {
       console.error('淇濆瓨鏁版嵁澶辫触', e);

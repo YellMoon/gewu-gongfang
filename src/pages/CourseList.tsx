@@ -10,6 +10,7 @@ import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getColorForRoom } from '../utils/courseColors';
 import { filterCourses } from '../utils/courseFilters';
 import DataPageLayout from '../layout/DataPageLayout';
+import { readSchedulesFromPrimaryStore, replaceSchedulesInPrimaryStore } from '../utils/scheduleStorage.mjs';
 
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Option } = Select;
@@ -102,9 +103,7 @@ const CourseList: React.FC = () => {
 
   const syncSchedulesRoomName = (savedCourse?: any) => {
     try {
-      const saved = localStorage.getItem('schedules');
-      if (!saved) return;
-      const schedules = JSON.parse(saved);
+      const schedules = readSchedulesFromPrimaryStore(dbService, localStorage);
       const allCourses = dbService.getAllCourses();
       let updated = false;
       const newSchedules = schedules.map((s: any) => {
@@ -116,7 +115,7 @@ const CourseList: React.FC = () => {
         return s;
       });
       if (updated) {
-        localStorage.setItem('schedules', JSON.stringify(newSchedules));
+        replaceSchedulesInPrimaryStore(dbService, newSchedules, localStorage);
       }
     } catch (e) { /* ignore */ }
   };

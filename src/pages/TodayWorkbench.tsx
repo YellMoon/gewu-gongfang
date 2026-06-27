@@ -22,8 +22,8 @@ import {
   buildStudentFinancialAlerts,
   getTodayCourseRows,
   groupTodayRowsByFirstTeacher,
-  parseStoredSchedules,
 } from '../utils/todayWorkbenchData';
+import { readSchedulesFromPrimaryStore } from '../utils/scheduleStorage.mjs';
 
 interface TodayWorkbenchProps {
   onNavigate: (target: NavigationInput) => void;
@@ -77,7 +77,7 @@ const TodayWorkbench: React.FC<TodayWorkbenchProps> = ({ onNavigate }) => {
       }
 
       try {
-        const schedules = parseStoredSchedules(localStorage.getItem('schedules'));
+        const schedules = readSchedulesFromPrimaryStore(dbService, localStorage);
         const courses: Course[] = dbService.getAllCourses?.() || [];
         const students: Student[] = dbService.getAllStudents?.() || [];
         const teachers: Teacher[] = dbService.getAllTeachers?.() || [];

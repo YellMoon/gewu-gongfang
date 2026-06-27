@@ -25,6 +25,7 @@ const revenueStatistics = read('src/pages/RevenueStatistics.tsx');
 const revenueDetailFilters = read('src/utils/revenueDetailFilters.mjs');
 const financialDetails = read('src/utils/financialDetails.ts');
 const todayWorkbenchData = read('src/utils/todayWorkbenchData.ts');
+const todayWorkbench = read('src/pages/TodayWorkbench.tsx');
 const questionRenderer = read('src/components/QuestionRenderer.tsx');
 const questionRendererCss = read('src/components/QuestionRenderer.css');
 const richQuestionEditor = read('src/components/RichQuestionEditor.tsx');
@@ -136,6 +137,19 @@ assert(
   scheduleCalendar.includes('本地残留记录') &&
   scheduleCalendar.includes('dbMissingIds'),
   'batch delete should remove currently visible local stale schedules even when dbService no longer has them'
+);
+
+assert(
+  scheduleCalendar.includes('readSchedulesFromPrimaryStore') &&
+  scheduleCalendar.includes('replaceSchedulesInPrimaryStore') &&
+  scheduleList.includes('readSchedulesFromPrimaryStore') &&
+  revenueStatistics.includes('readSchedulesFromPrimaryStore') &&
+  todayWorkbench.includes('readSchedulesFromPrimaryStore') &&
+  todayWorkbenchData.includes('schedules: Schedule[]') &&
+  !scheduleList.includes("localStorage.getItem('schedules')") &&
+  !revenueStatistics.includes("localStorage.getItem('schedules')") &&
+  !todayWorkbench.includes("localStorage.getItem('schedules')"),
+  'schedule pages should use dbService as the primary schedule store instead of independent localStorage reads'
 );
 
 assert(
