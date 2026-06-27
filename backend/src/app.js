@@ -26,6 +26,7 @@ const cloudRelayHostRouter = require('./routes/cloudRelayHost');
 const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
 const permissionsRouter = require('./routes/permissions');
+const packageJson = require('../../package.json');
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const writeRateLimitStore = new Map();
@@ -192,6 +193,10 @@ function requestLogger(req, res, next) {
   next();
 }
 
+function getAppVersion() {
+  return process.env.GEWU_APP_VERSION || process.env.APP_VERSION || packageJson.version;
+}
+
 function createApp() {
   const app = express();
 
@@ -215,7 +220,7 @@ function createApp() {
 
   // 健康检查
   app.get('/api/health', (req, res) => {
-    res.json({ ok: true, time: new Date().toISOString(), version: '3.1.0-0504', traceId: req.traceId });
+    res.json({ ok: true, time: new Date().toISOString(), version: getAppVersion(), traceId: req.traceId });
   });
 
   // 公开路由（无需认证）
@@ -248,5 +253,5 @@ function createApp() {
   return app;
 }
 
-module.exports = { createApp };
+module.exports = { createApp, getAppVersion };
 
