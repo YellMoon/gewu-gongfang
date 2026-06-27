@@ -9,6 +9,8 @@ assert.ok(source.includes('publishSnapshot'), 'cloud relay client should publish
 assert.ok(source.includes('fetchPendingTasks'), 'cloud relay client should fetch pending tasks');
 assert.ok(source.includes('completeMiniappTask'), 'cloud relay client should complete miniapp tasks');
 assert.ok(source.includes('/api/cloud/tasks/${taskId}/complete'), 'cloud relay client should call task completion endpoint');
+assert.ok(source.includes('buildHeaders'), 'cloud relay client should build authenticated headers');
+assert.ok(source.includes('Authorization'), 'cloud relay client should forward Authorization when provided');
 assert.ok(packageJson.includes('backend/src/services/cloudRelayClient.test.js'), 'cloud relay client test should run in npm test');
 
 console.log('cloudRelayClient checks passed');

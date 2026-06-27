@@ -18,6 +18,10 @@ function hostDeviceId() {
   return process.env.GEWU_DEVICE_ID || 'unknown';
 }
 
+function authOptionsFromRequest(req) {
+  return { authorization: req.headers.authorization || '' };
+}
+
 function exportRoot() {
   const root = process.env.QUESTION_BANK_ROOT || path.join(process.cwd(), 'data', 'GewuQuestionBank');
   return root;
@@ -116,20 +120,20 @@ async function processMiniappTask(task, db) {
   throw new Error(`unsupported miniapp task type: ${task.task_type}`);
 }
 
-router.post('/heartbeat', async (_req, res, next) => {
+router.post('/heartbeat', async (req, res, next) => {
   try {
     const result = await publishHeartbeat({
       hostDeviceId: hostDeviceId(),
       status: 'online',
       baseUrl: process.env.GEWU_HOST_BASE_URL || '',
-    });
+    }, authOptionsFromRequest(req));
     res.json(result);
   } catch (err) {
     next(err);
   }
 });
 
-router.post('/snapshot', async (_req, res, next) => {
+router.post('/snapshot', async (req, res, next) => {
   try {
     const db = getInstance();
     const result = await publishSnapshot({
@@ -137,16 +141,16 @@ router.post('/snapshot', async (_req, res, next) => {
       payload: buildSnapshotPayload(db),
       sourceDeviceId: hostDeviceId(),
       version: new Date().toISOString(),
-    });
+    }, authOptionsFromRequest(req));
     res.json(result);
   } catch (err) {
     next(err);
   }
 });
 
-router.get('/tasks/pending', async (_req, res, next) => {
+router.get('/tasks/pending', async (req, res, next) => {
   try {
-    const result = await fetchPendingTasks();
+    const result = await fetchPendingTasks(authOptionsFromRequest(req));
     res.json(result);
   } catch (err) {
     next(err);
@@ -165,10 +169,11 @@ router.get('/artifacts/:fileName', (req, res, next) => {
   }
 });
 
-router.post('/tasks/process', async (_req, res, next) => {
+router.post('/tasks/process', async (req, res, next) => {
   try {
     const db = getInstance();
-    const pending = await fetchPendingTasks();
+    const authOptions = authOptionsFromRequest(req);
+    const pending = await fetchPendingTasks(authOptions);
     if (!pending.success) return res.json(pending);
     const tasks = pending.tasks || [];
     const results = [];
@@ -179,14 +184,14 @@ router.post('/tasks/process', async (_req, res, next) => {
           success: true,
           hostDeviceId: hostDeviceId(),
           result,
-        });
+        }, authOptions);
         results.push({ id: task.id, success: true, completed });
       } catch (err) {
         const completed = await completeMiniappTask(task.id, {
           success: false,
           hostDeviceId: hostDeviceId(),
           result: { error: err.message },
-        });
+        }, authOptions);
         results.push({ id: task.id, success: false, error: err.message, completed });
       }
     }
