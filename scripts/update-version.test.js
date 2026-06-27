@@ -12,6 +12,19 @@ assert.strictEqual(
   'bug/style fixes should auto bump patch'
 );
 assert.strictEqual(
+  version.analyzeVersionBump({ files: ['src/pages/ScheduleCalendar.tsx'], diff: '修复批量删除确认弹窗乱码，并确保删除后课程不再恢复' }),
+  'patch',
+  'page-level bug fixes should auto bump patch instead of minor'
+);
+assert.strictEqual(
+  version.analyzeVersionBump({
+    files: ['scripts/update-version.test.js'],
+    diff: "assert.ok(source.includes('--bump=major'), 'update-version should document --bump=major');\n修复自动版本分类误判",
+  }),
+  'patch',
+  'mentioning --bump=major in tests/docs should not force a major release'
+);
+assert.strictEqual(
   version.analyzeVersionBump({ files: ['backend/src/routes/permissions.js'], diff: '新增权限接口 router.get' }),
   'minor',
   'new routes/features should auto bump minor'
@@ -30,6 +43,7 @@ assert.ok(source.includes('--bump=major'), 'update-version should document --bum
 assert.ok(source.includes('--bump=minor'), 'update-version should document --bump=minor');
 assert.ok(source.includes('--bump=patch'), 'update-version should document --bump=patch');
 assert.ok(source.includes('VERSION_BUMP_LEVEL'), 'update-version should support env-driven bump level');
+assert.ok(source.includes('syncBackendPackageVersion'), 'update-version should sync backend/package.json with the root package version');
 assert.ok(packageJson.includes('version:bump:major'), 'package scripts should expose major version bump');
 assert.ok(packageJson.includes('version:bump:minor'), 'package scripts should expose minor version bump');
 assert.ok(packageJson.includes('version:bump:patch'), 'package scripts should expose patch version bump');

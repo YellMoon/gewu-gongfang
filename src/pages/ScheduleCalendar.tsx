@@ -1181,8 +1181,27 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
 
   // 鎵归噺閫夋嫨鎷栨嫿锛堜娇鐢ㄥ巻鍙插寘瑁呭洖璋冿級
   const { batchVisuals, phase: batchPhase, selectedCourseIds, isCopy: batchIsCopy, flashingIds, flashToggle, setSchedules: setBatchSchedules, setCourses: setBatchCourses } = useBatchSelection(containerRef, currentMonday, setSchedulesWithHistory, (ids: string[]) => {
-    // 鎵归噺鍒犻櫎鍥炶皟锛氫粠schedules涓Щ闄ゆ寚瀹欼D鐨勮绋嬶紝骞惰鍏ュ巻鍙?    setSchedulesWithHistory(prev => prev.filter(s => !ids.includes(s.id)));
-    message.success(`已删除 ${ids.length} 节课程`);
+    const db = (window as any).dbService;
+    const failedDeletes: string[] = [];
+    const deletedIds = ids.filter(id => {
+      if (db?.deleteSchedule) {
+        const deleted = db.deleteSchedule(id);
+        if (!deleted) failedDeletes.push(id);
+        return deleted;
+      }
+      return true;
+    });
+
+    if (deletedIds.length > 0) {
+      setSchedulesWithHistory(prev => prev.filter(s => !deletedIds.includes(s.id)));
+      (window as any).operateLogger?.log('删除', `批量删除排课：${deletedIds.length} 节`, '课程表');
+    }
+
+    if (failedDeletes.length > 0) {
+      message.warning(`已删除 ${deletedIds.length} 节课程，${failedDeletes.length} 节未找到或删除失败`);
+    } else {
+      message.success(`已删除 ${deletedIds.length} 节课程`);
+    }
   });
 
   // 鈶?鎾ら攢 Ctrl+Z

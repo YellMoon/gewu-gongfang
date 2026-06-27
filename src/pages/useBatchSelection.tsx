@@ -738,12 +738,12 @@ export default function useBatchSelection(
             ))}
           </div>
         )}
-        {/* 鎵归噺鍒犻櫎纭妗?*/}
+        {/* 批量删除确认弹窗 */}
         <Modal
           open={deleteConfirmVisible}
-          title="纭鎵归噺鍒犻櫎"
-          okText="纭鍒犻櫎"
-          cancelText="鍙栨秷"
+          title="确认批量删除"
+          okText="确认删除"
+          cancelText="取消"
           okButtonProps={{ danger: true }}
           onCancel={() => { setDeleteConfirmVisible(false); setFlashingIds([]); }}
           onOk={() => {

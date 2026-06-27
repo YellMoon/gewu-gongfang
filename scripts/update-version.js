@@ -49,13 +49,18 @@ function analyzeVersionBump(context = readChangeContext()) {
 
   const majorSignals = [
     /BREAKING[\s_-]?CHANGE/i,
-    /\bmajor\b/i,
+    /(?:^|\n)\s*(major|feat!)\s*:/i,
     /不兼容|破坏性|删除旧字段|删除表|重命名表|迁移必需|不可回滚/,
     /^\s*-\s*CREATE TABLE/im,
     /^\s*-\s*ALTER TABLE/im,
     /DROP\s+(TABLE|COLUMN|INDEX)/i,
   ];
   if (hasAny(corpus, majorSignals)) return 'major';
+
+  const patchSignals = [
+    /fix|fixed|bug|bugfix|hotfix|repair/i,
+    /修复|修正|乱码|错误|失败|异常|不生效|恢复|错位|崩溃|回归/,
+  ];
 
   const minorPathSignals = [
     /^backend\/src\/routes\/.+\.js$/,
@@ -70,7 +75,8 @@ function analyzeVersionBump(context = readChangeContext()) {
     /^\+\s*ALTER TABLE/im,
     /^\+\s*app\.use\('/m,
   ];
-  if (files.some(file => minorPathSignals.some(pattern => pattern.test(file)))) return 'minor';
+  if (hasAny(corpus, patchSignals) && !hasAny(corpus, minorContentSignals)) return 'patch';
+  if (files.some(file => minorPathSignals.some(pattern => pattern.test(file))) && hasAny(corpus, minorContentSignals)) return 'minor';
   if (hasAny(corpus, minorContentSignals)) return 'minor';
 
   return 'patch';
@@ -101,6 +107,19 @@ function nextVersion(currentVersion, bumpLevel) {
   return `${major}.${minor}.${patch + 1}`;
 }
 
+function writePackageVersion(pkgPath, version) {
+  const pkgContent = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+  pkgContent.version = version;
+  fs.writeFileSync(pkgPath, JSON.stringify(pkgContent, null, 2) + '\n');
+  return pkgContent;
+}
+
+function syncBackendPackageVersion(version) {
+  const backendPkgPath = path.join(__dirname, '..', 'backend', 'package.json');
+  if (!fs.existsSync(backendPkgPath)) return null;
+  return writePackageVersion(backendPkgPath, version);
+}
+
 function writeGeneratedVersion(pkg, now = new Date()) {
   const outDir = path.join(__dirname, '..', 'src', 'generated');
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
@@ -117,15 +136,16 @@ function main() {
   const pkg = require(pkgPath);
   const args = process.argv.slice(2);
 
-  writeGeneratedVersion(pkg);
-
   if (args.includes('--bump') || args.some(arg => arg.startsWith('--bump='))) {
     const bumpLevel = resolveBumpLevel(args);
     const newVersion = nextVersion(pkg.version, bumpLevel);
-    const pkgContent = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-    pkgContent.version = newVersion;
-    fs.writeFileSync(pkgPath, JSON.stringify(pkgContent, null, 2) + '\n');
+    const pkgContent = writePackageVersion(pkgPath, newVersion);
+    syncBackendPackageVersion(newVersion);
+    writeGeneratedVersion(pkgContent);
     console.log(`Version bumped (${bumpLevel}): ${pkg.version} → ${newVersion}`);
+  } else {
+    syncBackendPackageVersion(pkg.version);
+    writeGeneratedVersion(pkg);
   }
 }
 
@@ -138,4 +158,5 @@ module.exports = {
   nextVersion,
   readChangeContext,
   resolveBumpLevel,
+  syncBackendPackageVersion,
 };
