@@ -41,22 +41,14 @@ interface ApiResponse<T = any> {
   code?: number;
 }
 
-/** 检查是否在线 */
-async function checkOnline(): Promise<boolean> {
-  try {
-    const res = await Taro.getNetworkType();
-    return res.networkType !== 'none';
-  } catch {
-    return true; // 无法判断时默认在线
-  }
-}
-
 class ApiClient {
   private tokenRefreshPromise: Promise<boolean> | null = null;
 
   private getHeaders(): Record<string, string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
     };
     try {
       const token = Taro.getStorageSync('auth_token');
@@ -65,6 +57,13 @@ class ApiClient {
       }
     } catch { /* ignore */ }
     return headers;
+  }
+
+  private buildUrl(path: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE'): string {
+    const url = `${getBaseUrl()}${path}`;
+    if (method !== 'GET') return url;
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}_t=${Date.now()}`;
   }
 
   /** Token 刷新 */
@@ -103,20 +102,12 @@ class ApiClient {
     data?: any,
     retries = RETRY_COUNT,
   ): Promise<ApiResponse<T>> {
-    const baseUrl = getBaseUrl();
+    const url = this.buildUrl(path, method);
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        // 离线跳过多余尝试
-        if (attempt > 0) {
-          const online = await checkOnline();
-          if (!online) {
-            return { success: false, error: '当前无网络连接' };
-          }
-        }
-
         const res = await Taro.request({
-          url: `${baseUrl}${path}`,
+          url,
           method,
           header: this.getHeaders(),
           data: method !== 'GET' ? data : undefined,
@@ -156,7 +147,7 @@ class ApiClient {
           return { success: false, error: `服务器错误 (${res.statusCode})` };
         }
       } catch (err: any) {
-        console.error(`[API] 请求失败 (attempt ${attempt + 1}/${retries + 1}):`, err);
+        console.error(`[API] 请求失败 ${method} ${url} (attempt ${attempt + 1}/${retries + 1}):`, err);
         const lastAttempt = attempt >= retries;
         if (err.errMsg?.includes('timeout')) {
           if (lastAttempt) return { success: false, error: '请求超时，请稍后重试' };

@@ -88,27 +88,8 @@ export async function withOfflineSupport<T>(
   data: any,
   onlineFn: () => Promise<T>,
 ): Promise<{ success: boolean; data?: T; offline?: boolean; error?: string }> {
-  const networkType = await getNetworkType();
-
-  if (networkType === 'none') {
-    // 离线 → 入队
-    addPendingChange({
-      id: data.id || generateTempId(),
-      table,
-      action,
-      data,
-      timestamp: Date.now(),
-    });
-    // 离线也要更新本地缓存
-    if (action === 'create' || action === 'update') {
-      addCachedItem(table, { ...data, _local: true });
-    } else if (action === 'delete') {
-      removeCachedItem(table, data.id);
-    }
-    return { success: true, offline: true };
-  }
-
-  // 在线 → 直接调 API
+  // 优先直接调 API；如果当前离线或网络波动，请求失败后再入队。
+  // 避免在开发者工具中主动调用 getNetworkType 触发基础库内部 timeout。
   try {
     const result = await onlineFn();
     return { success: true, data: result };
@@ -132,17 +113,7 @@ type NetworkType = 'wifi' | '2g' | '3g' | '4g' | '5g' | 'unknown' | 'none';
 let currentNetworkType: NetworkType = 'unknown';
 
 export function getNetworkType(): Promise<NetworkType> {
-  return new Promise((resolve) => {
-    Taro.getNetworkType({
-      success: (res) => {
-        currentNetworkType = res.networkType as NetworkType;
-        resolve(currentNetworkType);
-      },
-      fail: () => {
-        resolve('unknown');
-      },
-    });
-  });
+  return Promise.resolve(currentNetworkType);
 }
 
 export function isOnline(): boolean {

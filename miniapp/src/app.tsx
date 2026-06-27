@@ -35,16 +35,10 @@ async function initApp() {
   if (pendingCount > 0) {
     console.log(`[Sync] 有 ${pendingCount} 条待同步变更`);
 
-    // 尝试自动推送
-    Taro.getNetworkType({
-      success: (res) => {
-        if (res.networkType !== 'none') {
-          const token = Taro.getStorageSync('auth_token');
-          syncEngine.push('', token).then((r) => {
-            if (r.success) console.log(`[Sync] 自动推送 ${r.pushed} 条成功`);
-          });
-        }
-      },
+    // 尝试自动推送；如果当前离线，请求会失败并保留待同步队列，等网络恢复监听再处理。
+    const token = Taro.getStorageSync('auth_token');
+    syncEngine.push('', token).then((r) => {
+      if (r.success) console.log(`[Sync] 自动推送 ${r.pushed} 条成功`);
     });
   }
 
