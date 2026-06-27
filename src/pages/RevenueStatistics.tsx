@@ -55,6 +55,7 @@ import {
   buildTeacherDetailsFromStudentDetails,
   filterStudentDetailsForRevenue,
 } from '../utils/revenueDetailFilters.mjs';
+import { readSchedulesFromPrimaryStore } from '../utils/scheduleStorage.mjs';
 
 const { RangePicker } = DatePicker;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -168,16 +169,6 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   const [closedBalanceRows, setClosedBalanceRows] = useState<StudentAlertRow[]>([]);
   const dbService = (window as any).dbService;
 
-  const loadLocalSchedules = (): ScheduleItem[] => {
-    try {
-      const saved = localStorage.getItem('schedules');
-      return saved ? JSON.parse(saved) : [];
-    } catch (error) {
-      console.error('读取排课数据失败', error);
-      return [];
-    }
-  };
-
   const loadStats = async (filters?: RevenueFilterState) => {
     if (!dbService) {
       console.warn('dbService not available yet');
@@ -201,7 +192,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       const institutions = dbService.getAllInstitutions?.() || [];
       const payments: Payment[] = dbService.getAllPayments?.() || [];
       const consumptions: Consumption[] = dbService.getAllConsumptions?.() || [];
-      const schedules = loadLocalSchedules();
+      const schedules = readSchedulesFromPrimaryStore(dbService, localStorage) as ScheduleItem[];
       const financialAlerts = buildStudentFinancialAlerts(schedules, courses, students, teachers, payments);
 
       setAllStudents(students);

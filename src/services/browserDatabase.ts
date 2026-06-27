@@ -850,6 +850,71 @@ class BrowserDatabaseService {
     return this.data.schedules[index];
   }
 
+  upsertSchedule(schedule: Partial<Schedule> & { id: string }): Schedule {
+    const now = new Date().toISOString();
+    const index = this.data.schedules.findIndex(s => s.id === schedule.id);
+    if (index === -1) {
+      const newSchedule = {
+        ...schedule,
+        created_at: schedule.created_at || now,
+        updated_at: schedule.updated_at || now
+      } as Schedule;
+      this.data.schedules.push(newSchedule);
+      this.saveData();
+      this.recordSyncChange('schedules', 'create', newSchedule.id, newSchedule);
+      return newSchedule;
+    }
+
+    const updated = {
+      ...this.data.schedules[index],
+      ...schedule,
+      updated_at: schedule.updated_at || now
+    } as Schedule;
+    this.data.schedules[index] = updated;
+    this.saveData();
+    this.recordSyncChange('schedules', 'update', updated.id, updated);
+    return updated;
+  }
+
+  replaceSchedules(schedules: Array<Partial<Schedule> & { id: string }>): Schedule[] {
+    const now = new Date().toISOString();
+    const previousById = new Map(this.data.schedules.map(s => [s.id, s]));
+    const nextSchedules = (schedules || [])
+      .filter(s => s?.id)
+      .map(s => ({
+        ...s,
+        created_at: s.created_at || previousById.get(s.id)?.created_at || now,
+        updated_at: s.updated_at || previousById.get(s.id)?.updated_at || now
+      } as Schedule));
+
+    const nextById = new Map(nextSchedules.map(s => [s.id, s]));
+    const changes: Array<{ action: SyncAction; id: string; payload: Record<string, any> }> = [];
+
+    previousById.forEach((previous, id) => {
+      if (!nextById.has(id)) {
+        changes.push({ action: 'delete', id, payload: { id } });
+      }
+    });
+
+    nextById.forEach((next, id) => {
+      const previous = previousById.get(id);
+      if (!previous) {
+        changes.push({ action: 'create', id, payload: next });
+      } else if (JSON.stringify(previous) !== JSON.stringify(next)) {
+        const updated = { ...next, updated_at: now };
+        nextById.set(id, updated);
+        changes.push({ action: 'update', id, payload: updated });
+      }
+    });
+
+    if (changes.length === 0) return this.data.schedules;
+
+    this.data.schedules = Array.from(nextById.values());
+    this.saveData();
+    changes.forEach(change => this.recordSyncChange('schedules', change.action, change.id, change.payload));
+    return this.data.schedules;
+  }
+
   deleteSchedule(id: string): boolean {
     const index = this.data.schedules.findIndex(s => s.id === id);
     if (index === -1) return false;

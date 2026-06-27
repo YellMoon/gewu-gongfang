@@ -15,6 +15,7 @@ import {
   createScheduleWorkbook,
 } from '../utils/scheduleExcelExport.mjs';
 import { applyScheduleListFilters, buildScheduleListFilterOptions } from '../utils/scheduleListFilters.mjs';
+import { readSchedulesFromPrimaryStore } from '../utils/scheduleStorage.mjs';
 
 const { RangePicker } = DatePicker;
 
@@ -55,24 +56,7 @@ const ScheduleList: React.FC = () => {
       console.warn('dbService not available yet');
       return;
     }
-    // 浠庤绋嬭〃缁勪欢淇濆瓨鐨?localStorage 璇诲彇鎺掕鏁版嵁
-    let scheduleData: any[] = [];
-    try {
-      // 涓昏鏁版嵁婧愶細ScheduleCalendar 淇濆瓨鍒?'schedules' key
-      const stored1 = localStorage.getItem('schedules');
-      // 澶囬€夋暟鎹簮锛氫箣鍓嶅彲鑳界殑 key
-      const stored2 = localStorage.getItem('scheduleCalendar');
-      
-      if (stored1) {
-        const parsed = JSON.parse(stored1);
-        if (Array.isArray(parsed)) scheduleData = parsed;
-      } else if (stored2) {
-        const parsed = JSON.parse(stored2);
-        if (Array.isArray(parsed)) scheduleData = parsed;
-      }
-    } catch (e) {
-      console.warn('Failed to parse schedule data:', e);
-    }
+    let scheduleData: any[] = readSchedulesFromPrimaryStore(dbService, localStorage);
 
     // 杩囨护鎺夊凡鍒犻櫎鐨勬帓璇?    scheduleData = scheduleData.filter((s: any) => s.status !== 'DELETED');
 
