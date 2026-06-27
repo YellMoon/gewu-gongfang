@@ -123,6 +123,7 @@ export default function Assets() {
         <EmptyState icon="💰" text="暂无资产记录" />
       ) : (
         <ScrollView scrollY className="stats-scroll">
+          <View className="stats-content">
           {/* 收入分类 */}
           {incomeStats.length > 0 && (
             <View className="cat-section">
@@ -173,6 +174,7 @@ export default function Assets() {
                 </View>
               );
             })}
+          </View>
           </View>
         </ScrollView>
       )}

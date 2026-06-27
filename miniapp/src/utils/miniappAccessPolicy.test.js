@@ -18,6 +18,9 @@ const paymentsPage = fs.readFileSync('miniapp/src/pages/payments/index.tsx', 'ut
 const schedulePage = fs.readFileSync('miniapp/src/pages/schedule/index.tsx', 'utf-8');
 const scheduleDetailPage = fs.readFileSync('miniapp/src/pages/schedule/detail/index.tsx', 'utf-8');
 const scheduleStyles = fs.readFileSync('miniapp/src/pages/schedule/index.scss', 'utf-8');
+const sharedComponents = fs.readFileSync('miniapp/src/components/shared.tsx', 'utf-8');
+const coursesPage = fs.readFileSync('miniapp/src/pages/courses/index.tsx', 'utf-8');
+const paymentsPageSource = fs.readFileSync('miniapp/src/pages/payments/index.tsx', 'utf-8');
 
 assert.ok(permission.includes('readonlyModules'), 'miniapp permission should define readonlyModules');
 assert.ok(permission.includes('allowedWriteTasks'), 'miniapp permission should define allowedWriteTasks');
@@ -27,6 +30,8 @@ assert.ok(permission.includes('isStudentUser'), 'miniapp permission should disti
 assert.ok(permission.includes('getLinkedStudentIds'), 'miniapp permission should expose linked student ids');
 assert.ok(api.includes('createMiniappTask'), 'miniapp API should create allowed cloud tasks');
 assert.ok(api.includes('readCloudSnapshot'), 'miniapp API should read cloud snapshots');
+assert.ok(api.includes('Cache-Control') && api.includes('no-cache'), 'miniapp API should bypass DevTools 304 caching for JSON endpoints');
+assert.ok(api.includes("_t=${Date.now()}"), 'miniapp GET requests should include cache-busting query to avoid empty 304 responses');
 assert.ok(cloudRelayRoute.includes('filterSnapshotForUser'), 'cloud relay should filter snapshots by user role');
 assert.ok(cloudRelayRoute.includes('isStudentUser'), 'cloud relay should distinguish student users');
 assert.ok(cloudRelayRoute.includes('student_pricings'), 'student snapshot filter should use course/schedule student links');
@@ -65,5 +70,10 @@ assert.ok(!scheduleDetailPage.includes('addPendingChange') && !scheduleDetailPag
 assert.ok(!miniappHome.includes('/api/stats/revenue'), 'home page should not fire unused revenue stats requests on launch');
 assert.ok(schedulePage.includes('day-column-inner'), 'schedule page should put day column padding on an inner view instead of scroll-view descendants');
 assert.ok(scheduleStyles.includes('.day-column-inner'), 'schedule styles should define the inner day column spacing class');
+assert.ok(sharedComponents.includes('className="pr-scroll"'), 'PullRefreshView should keep padding classes off the scroll-view');
+assert.ok(!sharedComponents.includes('className={`pr-scroll ${className || \'\'}'), 'PullRefreshView should not attach page padding classes to scroll-view');
+assert.ok(!sharedComponents.includes('Taro.getNetworkType'), 'NetworkStatus should not call getNetworkType on mount because WeChat DevTools can emit internal timeout errors');
+assert.ok(coursesPage.includes('className="course-scroll"') && coursesPage.includes('className="course-list"'), 'courses page should separate scroll container from padded list');
+assert.ok(paymentsPageSource.includes('className="pay-scroll"') && paymentsPageSource.includes('className="pay-list"'), 'payments page should separate scroll container from padded list');
 
 console.log('miniapp access policy checks passed');

@@ -60,54 +60,56 @@ export default function Courses() {
         <EmptyState icon="📚" text="暂无课程" />
       ) : (
         <ScrollView
-          className="course-list"
+          className="course-scroll"
           scrollY
           refresherEnabled
           refresherTriggered={refreshing}
           onRefresherRefresh={handleRefresh}
           refresherBackground="#f5f5f5"
         >
-          {/* 进行中 */}
-          {activeCourses.length > 0 && (
-            <View className="course-section">
-              <Text className="section-label">进行中 ({activeCourses.length})</Text>
-              {activeCourses.map(c => (
-                <View key={c.id} className="course-card">
-                  <View className="course-header">
-                    <Text className="course-name">{c.display_name || c.name}</Text>
-                    <Text className="course-type-tag">{TYPE_LABELS[c.type]}</Text>
+          <View className="course-list">
+            {/* 进行中 */}
+            {activeCourses.length > 0 && (
+              <View className="course-section">
+                <Text className="section-label">进行中 ({activeCourses.length})</Text>
+                {activeCourses.map(c => (
+                  <View key={c.id} className="course-card">
+                    <View className="course-header">
+                      <Text className="course-name">{c.display_name || c.name}</Text>
+                      <Text className="course-type-tag">{TYPE_LABELS[c.type]}</Text>
+                    </View>
+                    <View className="course-meta">
+                      <Text className="meta-item">来源: {SOURCE_LABELS[c.source_type] || '未知'}</Text>
+                      {c.teacher_name && <Text className="meta-item">老师: {c.teacher_name}</Text>}
+                      {c.room_name && <Text className="meta-item">教室: {c.room_name}</Text>}
+                    </View>
+                    <View className="course-price">
+                      <Text className="price-tuition">学费 ¥{c.price_tuition}/{c.billing_unit === 1 ? '时' : '次'}</Text>
+                      <Text className="price-teacher">师费 ¥{c.price_teacher}/{c.billing_unit === 1 ? '时' : '次'}</Text>
+                    </View>
                   </View>
-                  <View className="course-meta">
-                    <Text className="meta-item">来源: {SOURCE_LABELS[c.source_type] || '未知'}</Text>
-                    {c.teacher_name && <Text className="meta-item">老师: {c.teacher_name}</Text>}
-                    {c.room_name && <Text className="meta-item">教室: {c.room_name}</Text>}
-                  </View>
-                  <View className="course-price">
-                    <Text className="price-tuition">学费 ¥{c.price_tuition}/{c.billing_unit === 1 ? '时' : '次'}</Text>
-                    <Text className="price-teacher">师费 ¥{c.price_teacher}/{c.billing_unit === 1 ? '时' : '次'}</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
+                ))}
+              </View>
+            )}
 
-          {/* 已结课 */}
-          {inactiveCourses.length > 0 && (
-            <View className="course-section">
-              <Text className="section-label inactive">已结课 ({inactiveCourses.length})</Text>
-              {inactiveCourses.map(c => (
-                <View key={c.id} className="course-card inactive">
-                  <View className="course-header">
-                    <Text className="course-name">{c.display_name || c.name}</Text>
-                    <Text className="course-type-tag">{TYPE_LABELS[c.type]}</Text>
+            {/* 已结课 */}
+            {inactiveCourses.length > 0 && (
+              <View className="course-section">
+                <Text className="section-label inactive">已结课 ({inactiveCourses.length})</Text>
+                {inactiveCourses.map(c => (
+                  <View key={c.id} className="course-card inactive">
+                    <View className="course-header">
+                      <Text className="course-name">{c.display_name || c.name}</Text>
+                      <Text className="course-type-tag">{TYPE_LABELS[c.type]}</Text>
+                    </View>
+                    <View className="course-meta">
+                      <Text className="meta-item">{SOURCE_LABELS[c.source_type] || ''} {c.teacher_name ? `· ${c.teacher_name}` : ''}</Text>
+                    </View>
                   </View>
-                  <View className="course-meta">
-                    <Text className="meta-item">{SOURCE_LABELS[c.source_type] || ''} {c.teacher_name ? `· ${c.teacher_name}` : ''}</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
+                ))}
+              </View>
+            )}
+          </View>
         </ScrollView>
       )}
     </View>

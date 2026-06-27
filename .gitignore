@@ -72,6 +72,7 @@ src/db/db/
 
 # SWC compiler cache
 miniapp/.swc/
+miniapp/project.private.config.json
 
 # Python venv
 .venv/

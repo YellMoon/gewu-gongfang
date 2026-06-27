@@ -79,23 +79,25 @@ export default function Payments() {
         <EmptyState icon="💰" text="暂无缴费记录" />
       ) : (
         <ScrollView
-          className="pay-list"
+          className="pay-scroll"
           scrollY
           refresherEnabled
           refresherTriggered={refreshing}
           onRefresherRefresh={handleRefresh}
           refresherBackground="#f5f5f5"
         >
-          {filteredPayments.sort((a, b) => b.created_at.localeCompare(a.created_at)).map(p => (
-            <View key={p.id} className="pay-card">
-              <View className="pay-left">
-                <Text className="pay-student">{getStudentName(p.student_id)}</Text>
-                <Text className="pay-date">{p.payment_date} · {p.payment_type === PaymentType.TUITION ? '学费' : '课时'}</Text>
-                {p.notes && <Text className="pay-notes">{p.notes}</Text>}
+          <View className="pay-list">
+            {filteredPayments.sort((a, b) => b.created_at.localeCompare(a.created_at)).map(p => (
+              <View key={p.id} className="pay-card">
+                <View className="pay-left">
+                  <Text className="pay-student">{getStudentName(p.student_id)}</Text>
+                  <Text className="pay-date">{p.payment_date} · {p.payment_type === PaymentType.TUITION ? '学费' : '课时'}</Text>
+                  {p.notes && <Text className="pay-notes">{p.notes}</Text>}
+                </View>
+                <Text className="pay-amount">+¥{p.amount}</Text>
               </View>
-              <Text className="pay-amount">+¥{p.amount}</Text>
-            </View>
-          ))}
+            ))}
+          </View>
         </ScrollView>
       )}
     </View>

@@ -40,10 +40,6 @@ export function NetworkStatus({ onRetry }: NetworkStatusProps) {
   const [online, setOnline] = useState(true);
 
   useEffect(() => {
-    Taro.getNetworkType({
-      success: (res) => setOnline(res.networkType !== 'none'),
-    });
-
     const handler = (res: Taro.onNetworkStatusChange.CallbackResult) => {
       setOnline(res.isConnected);
     };
@@ -141,14 +137,16 @@ export function PullRefreshView({ onRefresh, children, className }: PullRefreshV
 
   return (
     <ScrollView
-      className={`pr-scroll ${className || ''}`}
+      className="pr-scroll"
       scrollY
       refresherEnabled
       refresherTriggered={refreshing}
       onRefresherRefresh={handleRefresh}
       refresherBackground="#f5f5f5"
     >
-      {children}
+      <View className={className || ''}>
+        {children}
+      </View>
     </ScrollView>
   );
 }
