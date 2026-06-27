@@ -131,6 +131,14 @@ assert(
 );
 
 assert(
+  scheduleCalendar.includes('stateVisibleIds') &&
+  scheduleCalendar.includes('staleLocalIds') &&
+  scheduleCalendar.includes('本地残留记录') &&
+  scheduleCalendar.includes('dbMissingIds'),
+  'batch delete should remove currently visible local stale schedules even when dbService no longer has them'
+);
+
+assert(
   questionBankTools.includes('试题库') && !questionBankTools.includes('原试题编辑') && !questionBankTools.includes('原审核中心') && !questionBankTools.includes('独立导入页'),
   'question bank tools should expose the integrated question bank and hide legacy shortcuts'
 );
