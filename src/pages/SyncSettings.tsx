@@ -5,13 +5,10 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, Button, Tag, Descriptions, Divider, message, Modal, Statistic, Row, Col, Alert, Table, Space } from 'antd';
 import { SyncOutlined, CloudSyncOutlined, CloudServerOutlined, WarningOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
 import { SyncEngine, SyncStatus } from '../services/syncEngine';
-import { pushSyncBatch, pullSyncOps, registerSyncDevice, requestSyncAuthorization } from '../services/syncApi';
+import { getSyncUrl, pushSyncBatch, pullSyncOps, registerSyncDevice, requestSyncAuthorization } from '../services/syncApi';
 import { getRuntimeConfig, RuntimeConfig } from '../services/runtimeConfigClient';
 import browserDatabase from '../services/browserDatabase';
-import { getApiBase } from '../utils/apiBase';
 import type { CloudSyncContext } from '../navigation/navigationContext';
-
-const SYNC_BASE = getApiBase('/api/sync');
 
 interface SyncSettingsProps {
   context?: CloudSyncContext;
@@ -50,7 +47,7 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
   const loadSyncConflicts = useCallback(async () => {
     setConflictsLoading(true);
     try {
-      const res = await fetch(`${SYNC_BASE}/conflicts`);
+      const res = await fetch(await getSyncUrl('/conflicts'));
       const data = await res.json();
       if (data.success) setSyncConflicts(data.conflicts || []);
     } catch (_err) {
@@ -67,7 +64,7 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
   const resolveConflict = async (id: string, strategy: 'host-wins' | 'client-wins' | 'reject') => {
     const label = strategy === 'host-wins' ? '主机优先' : strategy === 'client-wins' ? '客户端优先' : '拒绝';
     try {
-      const res = await fetch(`${SYNC_BASE}/conflicts/${id}/resolve`, {
+      const res = await fetch(await getSyncUrl(`/conflicts/${id}/resolve`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ strategy, label }),
