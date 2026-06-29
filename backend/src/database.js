@@ -889,13 +889,24 @@ class DatabaseService {
       const tables = ['students', 'grades', 'courses', 'schedules', 'enrollments',
         'payments', 'consumptions', 'institutions', 'schools', 'rooms', 'teachers'];
       const counts = {};
+      const scalar = (value) => {
+        if (value === undefined) return null;
+        if (value === true) return 1;
+        if (value === false) return 0;
+        if (value && typeof value === 'object') return JSON.stringify(value);
+        return value;
+      };
       for (const table of tables) {
         if (data[table] && Array.isArray(data[table])) {
           counts[table] = 0;
+          const columns = this._tableColumns(table);
           for (const row of data[table]) {
             const normalized = { ...row, tenant_id: this._tenantId(options) };
-            const keys = Object.keys(normalized);
-            const vals = Object.values(normalized);
+            if (columns.includes('deleted') && normalized.deleted === undefined) normalized.deleted = 0;
+            if (columns.includes('created_at') && !normalized.created_at) normalized.created_at = this._now();
+            if (columns.includes('updated_at') && !normalized.updated_at) normalized.updated_at = normalized.created_at || this._now();
+            const keys = Object.keys(normalized).filter(key => columns.includes(key));
+            const vals = keys.map(key => scalar(normalized[key]));
             const placeholders = keys.map(() => '?').join(', ');
             this.db.prepare(
               `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`
