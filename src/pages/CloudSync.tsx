@@ -8,12 +8,14 @@ import { SyncEngine, SyncStatus } from '../services/syncEngine';
 import { pushSyncBatch, pullSyncOps, registerSyncDevice, requestSyncAuthorization } from '../services/syncApi';
 import { getRuntimeConfig, RuntimeConfig } from '../services/runtimeConfigClient';
 import browserDatabase from '../services/browserDatabase';
+import { processMiniappCloudTasks, publishCloudHeartbeat, publishCloudSnapshot } from '../services/cloudRelayHostApi';
 
 const CloudSync: React.FC = () => {
   const [engine, setEngine] = useState<SyncEngine | null>(null);
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [initError, setInitError] = useState<string | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
+  const [cloudPublishLoading, setCloudPublishLoading] = useState(false);
   const engineRef = useRef<SyncEngine | null>(null);
 
   useEffect(() => {
@@ -129,6 +131,37 @@ const CloudSync: React.FC = () => {
     await handlePull();
   };
 
+  const handlePublishCloudSnapshot = async () => {
+    if (runtimeConfig?.nodeRole !== 'primary-host') {
+      message.warning('只有本地数据主机可以发布云端快照');
+      return;
+    }
+    setCloudPublishLoading(true);
+    try {
+      message.loading({ content: '正在发布云端快照...', key: 'cloud-snapshot' });
+      const heartbeat = await publishCloudHeartbeat();
+      const snapshot = await publishCloudSnapshot();
+      const tasks = await processMiniappCloudTasks();
+      if (snapshot.skipped) {
+        message.warning({ content: snapshot.reason || '阿里云服务地址未配置，已跳过发布', key: 'cloud-snapshot' });
+        return;
+      }
+      if (!snapshot.success) {
+        throw new Error(snapshot.error || '云端快照发布失败');
+      }
+      const taskText = tasks?.success ? `，处理小程序任务 ${tasks.processed || 0} 个` : '';
+      message.success({
+        content: `云端快照已发布${heartbeat?.success ? '' : '（心跳未更新）'}${taskText}`,
+        key: 'cloud-snapshot',
+      });
+      (window as any).operateLogger?.log('同步', '发布本地主机数据快照到阿里云', '云同步');
+    } catch (error: any) {
+      message.error({ content: error.message || '云端快照发布失败', key: 'cloud-snapshot' });
+    } finally {
+      setCloudPublishLoading(false);
+    }
+  };
+
   const handleReset = () => {
     const eng = engineRef.current;
     if (!eng) return;
@@ -228,10 +261,27 @@ const CloudSync: React.FC = () => {
         <Button icon={<SyncOutlined />} onClick={handleSyncBoth}>
           双向同步
         </Button>
+        <Button
+          icon={<CloudSyncOutlined />}
+          onClick={handlePublishCloudSnapshot}
+          loading={cloudPublishLoading}
+          disabled={runtimeConfig?.nodeRole !== 'primary-host'}
+        >
+          发布云端快照
+        </Button>
         <Button danger icon={<DeleteOutlined />} onClick={handleReset} style={{ marginLeft: 'auto' }}>
           重置引擎
         </Button>
       </div>
+      {runtimeConfig?.nodeRole !== 'primary-host' && (
+        <Alert
+          message="当前不是本地数据主机"
+          description="普通离线客户端请先同步到本地数据主机，再由主机发布云端快照，小程序会读取最近一次发布的数据。"
+          type="info"
+          showIcon
+          style={{ marginTop: 16 }}
+        />
+      )}
     </Card>
   );
 };
