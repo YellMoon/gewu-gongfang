@@ -10,6 +10,8 @@ import {
   slotToDisplayTop,
   selectionIntersectsSchedule,
   moveTimeBySlots,
+  applyBatchScheduleDrag,
+  formatBatchConflictMessage,
 } from '../utils/batchSelectionGeometry.mjs';
 
 interface ScheduleEvent {
@@ -89,6 +91,7 @@ export default function useBatchSelection(
   const phaseRef = useRef(phase);
   const selRef = useRef(sel);
   const oobRef = useRef(oob);
+  const isCopyRef = useRef(isCopy);
   const dragStartRef = useRef<{ d: number; s: number } | null>(null);
   const drawPixelStartRef = useRef<{ x: number; y: number } | null>(null);
   const rbRef = useRef<{ l: number; t: number; w: number; h: number } | null>(null);
@@ -101,6 +104,7 @@ export default function useBatchSelection(
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { selRef.current = sel; }, [sel]);
   useEffect(() => { oobRef.current = oob; }, [oob]);
+  useEffect(() => { isCopyRef.current = isCopy; }, [isCopy]);
   useEffect(() => { rbRef.current = rb; }, [rb]);
   useEffect(() => { onUpdateRef.current = onSchedulesUpdated; }, [onSchedulesUpdated]);
 
@@ -362,8 +366,10 @@ export default function useBatchSelection(
         const inR = pos.day >= currentSel.ds && pos.day <= currentSel.de &&
                     pos.slot >= currentSel.ss && pos.slot < currentSel.se;
         if (inR) {
+          const nextIsCopy = e.ctrlKey || e.metaKey;
           setPhase('dragging');
-          setIsCopy(e.ctrlKey || e.metaKey);
+          setIsCopy(nextIsCopy);
+          isCopyRef.current = nextIsCopy;
           dragStartRef.current = { d: pos.day, s: pos.slot };
           setDragOff({ d: 0, s: 0 });
           console.log('[BatchDrag] 寮€濮嬫嫋鎷? clickDay=', pos.day, 'clickSlot=', pos.slot, 'sel=', JSON.stringify({ds:currentSel.ds,de:currentSel.de,ss:currentSel.ss,se:currentSel.se}));
@@ -551,7 +557,6 @@ export default function useBatchSelection(
           const maxSlot = slot(24, 0);  // 24:00 瀵瑰簲鐨?slot = 192
           let hasOobOnUp = false;
 
-          const newS = [...schedRef.current];
           currentSel.ids.forEach(cid => {
             if (hasOobOnUp) return;
             const s = schedRef.current.find((x: any) => x.id === cid);
@@ -574,77 +579,28 @@ export default function useBatchSelection(
             setDragOff({ d: 0, s: 0 });
             return;
           }
-          currentSel.ids.forEach(cid => {
-            const s = schedRef.current.find((x: any) => x.id === cid);
-            if (!s) return;
-            const [od, ost] = s.start_time.split(' ');
-            const ep = s.end_time.split(' ');
-            const oet = ep.length >= 2 ? ep[1] : ep[0];
-            const [sh_, sm_] = ost.split(':').map(Number);
-            const [eh_, em_] = oet.split(':').map(Number);
-            const od_ = twoWeeksRef.current.findIndex(d => d.format('YYYY-MM-DD') === od);
-            const os = slot(sh_, sm_);
-            const dur = slot(eh_, em_) - os;
-            const nd_ = od_ + dd;
-            const ns = os + dss;
-            const ne = ns + dur;
-            // 鈶?澶╂暟杈圭晫锛?~13锛堜袱鍛ㄨ寖鍥达級
-            if (nd_ < 0 || nd_ > 13) return;
-            const nd = twoWeeksRef.current[0].add(nd_, 'day');
-            const moved = moveTimeBySlots(ost, oet, dss);
-            const { hour: nsh, minute: nsm } = moved.start;
-            const { hour: neh, minute: nem } = moved.end;
 
-            if (isCopy) {
-              newS.push({
-                ...s,
-                id: s.id + '_cpy_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-                start_time: `${nd.format('YYYY-MM-DD')} ${fmt(nsh, nsm)}`,
-                end_time: `${nd.format('YYYY-MM-DD')} ${fmt(neh, nem)}`,
-              });
-            } else {
-              const idx = newS.findIndex((x: any) => x.id === cid);
-              if (idx >= 0) {
-                newS[idx] = {
-                  ...s,
-                  start_time: `${nd.format('YYYY-MM-DD')} ${fmt(nsh, nsm)}`,
-                  end_time: `${nd.format('YYYY-MM-DD')} ${fmt(neh, nem)}`,
-                };
-              }
-            }
+          const copyMode = isCopyRef.current;
+          const result = applyBatchScheduleDrag({
+            schedules: schedRef.current,
+            selectedIds: currentSel.ids,
+            weekDates: twoWeeksRef.current.map(d => d.format('YYYY-MM-DD')),
+            dayDelta: dd,
+            slotDelta: dss,
+            isCopy: copyMode,
           });
 
-          const checkSchedules = newS.filter((x: any) => {
-            // 浠呮鏌ヨ鎿嶄綔杩囩殑璇剧▼锛堢Щ鍔ㄧ殑鍘熷璇?鎴?鏂板鍒剁殑璇撅級
-            if (!x) return false;
-            if (isCopy) {
-              return x.id.includes('_cpy_');
-            }
-            return currentSel.ids.includes(x.id) || x.id.includes('_cpy_');
-          });
-          let conflictFound: string | null = null;
-          for (const checkItem of checkSchedules) {
-            if (conflictFound) break;
-            for (const other of newS) {
-              if (other.id === checkItem.id) continue;
-              // 璺宠繃鍙栨秷/璇峰亣鐘舵€侊紙瀹冧滑涓嶅崰鏃堕棿妲斤級
-              if (other.status === ScheduleStatus.CANCELLED || other.status === ScheduleStatus.LEAVE) continue;
-              if (checkItem.start_time < other.end_time && checkItem.end_time > other.start_time) {
-                conflictFound = other.course_name || '鍏朵粬璇剧▼';
-                break;
-              }
-            }
-          }
-          if (conflictFound) {
-            message.warning(`鏃堕棿鍐茬獊锛氫笌銆?{conflictFound}銆嶆椂闂存閲嶅彔锛屾壒閲忔搷浣滃凡鎾ら攢`);
+          if (!result.success) {
+            message.warning(formatBatchConflictMessage(result.conflictName));
             setPhase('idle');
             setSel(null);
             setDragOff({ d: 0, s: 0 });
             return;
           }
 
-          onUpdateRef.current(newS);
-          schedRef.current = newS;
+          onUpdateRef.current(result.nextSchedules);
+          schedRef.current = result.nextSchedules;
+          message.success(`已批量${copyMode ? '复制' : '移动'} ${result.changedIds.length} 节课程`);
         }
         setPhase('idle');
         setSel(null);

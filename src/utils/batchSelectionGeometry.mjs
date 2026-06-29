@@ -42,6 +42,96 @@ function moveTimeBySlots(startTime, endTime, slotDelta) {
   };
 }
 
+function formatTime(hour, minute) {
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function splitScheduleTime(value) {
+  const [date, time] = String(value || '').split(' ');
+  return { date, time };
+}
+
+function isInactiveSchedule(schedule) {
+  return Number(schedule && schedule.status) === 3 || Number(schedule && schedule.status) === 4;
+}
+
+function formatBatchConflictMessage(conflictName) {
+  return `时间冲突：与「${conflictName || '其他课程'}」时间段重叠，批量操作已取消`;
+}
+
+function applyBatchScheduleDrag({
+  schedules,
+  selectedIds,
+  weekDates,
+  dayDelta,
+  slotDelta,
+  isCopy,
+  generateId = undefined,
+}) {
+  const selectedSet = new Set(selectedIds || []);
+  const nextSchedules = (schedules || []).map(schedule => ({ ...schedule }));
+  const changedIds = [];
+
+  for (const selectedId of selectedSet) {
+    const schedule = (schedules || []).find(item => item && item.id === selectedId);
+    if (!schedule) continue;
+
+    const { date: oldDate, time: oldStart } = splitScheduleTime(schedule.start_time);
+    const { time: oldEnd } = splitScheduleTime(schedule.end_time);
+    if (!oldDate || !oldStart || !oldEnd) continue;
+
+    const oldDayIndex = (weekDates || []).findIndex(date => date === oldDate);
+    const newDayIndex = oldDayIndex + dayDelta;
+    if (oldDayIndex < 0 || newDayIndex < 0 || newDayIndex >= (weekDates || []).length) continue;
+
+    const moved = moveTimeBySlots(oldStart, oldEnd, slotDelta);
+    const newDate = weekDates[newDayIndex];
+    const updated = {
+      ...schedule,
+      start_time: `${newDate} ${formatTime(moved.start.hour, moved.start.minute)}`,
+      end_time: `${newDate} ${formatTime(moved.end.hour, moved.end.minute)}`,
+    };
+
+    if (isCopy) {
+      const id = typeof generateId === 'function'
+        ? generateId(schedule)
+        : `${schedule.id}_copy_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      nextSchedules.push({ ...updated, id });
+      changedIds.push(id);
+    } else {
+      const index = nextSchedules.findIndex(item => item && item.id === selectedId);
+      if (index >= 0) {
+        nextSchedules[index] = updated;
+        changedIds.push(selectedId);
+      }
+    }
+  }
+
+  for (const changedId of changedIds) {
+    const checkItem = nextSchedules.find(item => item && item.id === changedId);
+    if (!checkItem || isInactiveSchedule(checkItem)) continue;
+
+    for (const other of nextSchedules) {
+      if (!other || other.id === checkItem.id || isInactiveSchedule(other)) continue;
+      if (checkItem.start_time < other.end_time && checkItem.end_time > other.start_time) {
+        return {
+          success: false,
+          nextSchedules: schedules || [],
+          changedIds: [],
+          conflictName: other.course_name || '其他课程',
+        };
+      }
+    }
+  }
+
+  return {
+    success: true,
+    nextSchedules,
+    changedIds,
+    conflictName: null,
+  };
+}
+
 export {
   MIN_START_HOUR,
   SLOT_DURATION_MINUTES,
@@ -52,4 +142,6 @@ export {
   slotToDisplayTop,
   selectionIntersectsSchedule,
   moveTimeBySlots,
+  applyBatchScheduleDrag,
+  formatBatchConflictMessage,
 };
