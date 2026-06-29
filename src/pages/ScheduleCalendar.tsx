@@ -17,6 +17,7 @@ import WorkbenchLayout from '../layout/WorkbenchLayout';
 import type { CourseCalendarContext } from '../navigation/navigationContext';
 import { readSchedulesFromPrimaryStore, replaceSchedulesInPrimaryStore } from '../utils/scheduleStorage.mjs';
 import { appendSteppedBatchDate, normalizeDateStepDays } from '../utils/scheduleBatchDates.mjs';
+import { resolveScheduleRoomDisplay } from '../utils/scheduleRoomDisplay.mjs';
 
 dayjs.extend(weekOfYear);
 dayjs.extend(isoWeek);
@@ -106,6 +107,8 @@ interface DailyViewProps {
   day: Dayjs;
   dayIndex: number;
   schedules: ScheduleEvent[];
+  courses: Course[];
+  rooms: any[];
   minHour?: number;
   maxHour?: number;
   selectedCourseIds?: string[];
@@ -129,6 +132,8 @@ const DailyView: React.FC<DailyViewProps> = ({
   day,
   dayIndex,
   schedules,
+  courses,
+  rooms,
   minHour = 8,
   maxHour = 23,
   selectedCourseIds = [],
@@ -548,7 +553,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
           const endSlot = dragOverSlot + Math.floor(durMin / 5);
           const { hour: endH, minute: endM } = slotToTime(endSlot);
           const endStr = formatTime(endH, endM);
-          const roomInfo = dragCourse?.room_name || dragCourse?.room_id || '';
+          const roomInfo = resolveScheduleRoomDisplay({}, dragCourse || {}, rooms);
           return (
             <div style={{
               position: 'absolute',
@@ -590,6 +595,8 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
 
           const courseColor = courseColorMap[schedule.course_id] || DEFAULT_COURSE_COLOR;
           const textColor = getTextColorForBackground(courseColor);
+          const course = courses.find(item => item.id === schedule.course_id);
+          const roomDisplay = resolveScheduleRoomDisplay(schedule, course || {}, rooms);
 
           return (
             <React.Fragment key={schedule.id}>
@@ -671,7 +678,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
                       flexShrink: 0,
                       marginTop: 1
                     }}>
-                      {schedule.room && `${schedule.room} `}
+                      {roomDisplay && `${roomDisplay} `}
                       {isDragging ? (() => {
                         const cs = pos.startSlot;
                         const ce = pos.endSlot;
@@ -771,6 +778,8 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
         let ghostX = (dragState.currentX || 0) - ghostWidth / 2;
         let ghostY = (dragState.currentY || 0) - ghostHeight / 2;
         const isCopy = dragState.ctrlKey;
+        const ghostCourse = courses.find(item => item.id === dragState.schedule.course_id);
+        const ghostRoomDisplay = resolveScheduleRoomDisplay(dragState.schedule, ghostCourse || {}, rooms);
         return (
         <div style={{
           position: 'fixed',
@@ -794,7 +803,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
             {isCopy ? '复制 ' : ''}{dragState.schedule.course_name}
           </div>
           <div style={{ fontSize: 10, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2, textAlign: 'center', maxWidth: ghostWidth - 8, flexShrink: 0, marginTop: 2 }}>
-            {dragState.schedule.room && `${dragState.schedule.room} `}
+            {ghostRoomDisplay && `${ghostRoomDisplay} `}
             <span style={{ color: '#ff4d4f', fontWeight: 'bold', background: 'rgba(255,77,79,0.15)', padding: '0 2px', borderRadius: 2 }}>{startTimeStr}</span>
             <span style={{ color: '#666' }}>-</span>
             <span style={{ color: '#ff4d4f', fontWeight: 'bold', background: 'rgba(255,77,79,0.15)', padding: '0 2px', borderRadius: 2 }}>{endTimeStr}</span>
@@ -811,6 +820,7 @@ interface TwoWeeksViewProps {
   currentMonday: Dayjs;
   selectedTeacherId: string | undefined;
   courses: Course[];
+  rooms: any[];
   selectedCourseIds?: string[];
   batchPhase?: 'idle' | 'drawing' | 'selected' | 'dragging';
   batchIsCopy?: boolean;
@@ -832,6 +842,8 @@ const OneWeekRow: React.FC<{
   startMonday: Dayjs;
   weekLabel: string;
   schedules: ScheduleEvent[];
+  courses: Course[];
+  rooms: any[];
   selectedCourseIds?: string[];
   batchPhase?: 'idle' | 'drawing' | 'selected' | 'dragging';
   batchIsCopy?: boolean;
@@ -851,6 +863,8 @@ const OneWeekRow: React.FC<{
   startMonday,
   weekLabel,
   schedules,
+  courses,
+  rooms,
   selectedCourseIds = [],
   batchPhase = 'idle',
   batchIsCopy = false,
@@ -904,6 +918,8 @@ const OneWeekRow: React.FC<{
             day={day}
             dayIndex={idx}
             schedules={schedules}
+            courses={courses}
+            rooms={rooms}
             minHour={dynMinHour}
             maxHour={dynMaxHour}
             selectedCourseIds={selectedCourseIds}
@@ -933,6 +949,7 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
   currentMonday,
   selectedTeacherId,
   courses,
+  rooms,
   selectedCourseIds = [],
   batchPhase = 'idle',
   batchIsCopy = false,
@@ -963,6 +980,8 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
         startMonday={currentMonday}
         weekLabel="本周"
         schedules={filteredSchedules}
+        courses={courses}
+        rooms={rooms}
         selectedCourseIds={selectedCourseIds}
         batchPhase={batchPhase}
         batchIsCopy={batchIsCopy}
@@ -983,6 +1002,8 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
         startMonday={currentMonday.add(1, 'week')}
         weekLabel="下周"
         schedules={filteredSchedules}
+        courses={courses}
+        rooms={rooms}
         selectedCourseIds={selectedCourseIds}
         batchPhase={batchPhase}
         batchIsCopy={batchIsCopy}
@@ -1187,7 +1208,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
   }, []);
 
   // 鎵归噺閫夋嫨鎷栨嫿锛堜娇鐢ㄥ巻鍙插寘瑁呭洖璋冿級
-  const { batchVisuals, phase: batchPhase, selectedCourseIds, isCopy: batchIsCopy, flashingIds, flashToggle, setSchedules: setBatchSchedules, setCourses: setBatchCourses } = useBatchSelection(containerRef, currentMonday, setSchedulesWithHistory, (ids: string[]) => {
+  const { batchVisuals, phase: batchPhase, selectedCourseIds, isCopy: batchIsCopy, flashingIds, flashToggle, setSchedules: setBatchSchedules, setCourses: setBatchCourses, setRooms: setBatchRooms } = useBatchSelection(containerRef, currentMonday, setSchedulesWithHistory, (ids: string[]) => {
     const db = (window as any).dbService;
     const stateVisibleIds = new Set(schedules.map(s => s.id));
     const dbMissingIds: string[] = [];
@@ -1333,7 +1354,9 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
           setAllStudents([...db.getAllStudents()]);
         }
         if (db.getAllRooms) {
-          setRooms(db.getAllRooms());
+          const roomsData = db.getAllRooms();
+          setRooms(roomsData);
+          setBatchRooms(roomsData);
         }
       } catch (e) {
         loadingSchedulesRef.current = false;
@@ -1384,10 +1407,11 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
         schedulesDirtyRef.current = false;
       }
       setBatchSchedules(schedules);
+      setBatchRooms(rooms);
     } catch (e) {
       console.error('淇濆瓨鏁版嵁澶辫触', e);
     }
-  }, [schedules, setBatchSchedules]);
+  }, [schedules, rooms, setBatchSchedules, setBatchRooms]);
 
   function handleDoubleClickDate(day: Dayjs) {
     setEditingSchedule(null);
@@ -1659,13 +1683,14 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     }
     
     if (ctrlKey) {
+      const course = courses.find(c => c.id === schedule.course_id);
       const baseSchedule = {
         ...schedule,
         id: uuidv4(),
+        room: resolveScheduleRoomDisplay(schedule, course, rooms) || schedule.room,
         start_time: newStartTimeStr,
         end_time: newEndTimeStr
       };
-      const course = courses.find(c => c.id === baseSchedule.course_id);
       const newSchedule = {
         ...baseSchedule,
         ...buildFinancialFieldsForSchedule(baseSchedule, course, schedule.student_pricings),
@@ -1958,6 +1983,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
                   currentMonday={currentMonday}
                   selectedTeacherId={selectedTeacherId}
                   courses={courses}
+                  rooms={rooms}
                   selectedCourseIds={selectedCourseIds}
                   batchPhase={batchPhase}
                   batchIsCopy={batchIsCopy}
