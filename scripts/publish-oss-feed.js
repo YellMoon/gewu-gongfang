@@ -4,17 +4,65 @@ const https = require('https');
 const path = require('path');
 const { URL } = require('url');
 
+try {
+  const dotenv = require('dotenv');
+  const envFiles = [
+    process.env.OSS_ENV_FILE,
+    path.join(__dirname, '..', '.env.local'),
+    path.join(__dirname, '..', '.env'),
+  ].filter(Boolean);
+
+  for (const envFile of envFiles) {
+    if (fs.existsSync(envFile)) {
+      dotenv.config({ path: envFile, override: false });
+    }
+  }
+} catch {
+  // dotenv is optional for this script; real environment variables still work.
+}
+
 const packageJson = require('../package.json');
 
 const distDir = path.resolve(process.env.DIST_DIR || path.join(__dirname, '..', 'dist'));
 const baseUrl = (process.env.OSS_CDN_BASE_URL || 'https://gewugongfang.oss-cn-hangzhou.aliyuncs.com/desktop').replace(/\/+$/, '');
 const objectPrefix = (process.env.OSS_OBJECT_PREFIX || 'desktop').replace(/^\/+|\/+$/g, '');
+const releasePrefix = (process.env.OSS_RELEASES_PREFIX || [objectPrefix, 'releases'].filter(Boolean).join('/')).replace(/^\/+|\/+$/g, '');
 const dryRun = process.argv.includes('--dry-run') || process.env.DRY_RUN === '1';
 const writeFeed = process.argv.includes('--write-feed') || process.env.WRITE_FEED === '1' || !dryRun;
 const skipUpload = process.argv.includes('--skip-upload') || process.env.SKIP_UPLOAD === '1' || dryRun;
 
+function getArgValue(name) {
+  const prefix = `--${name}=`;
+  const exact = `--${name}`;
+  for (let index = 2; index < process.argv.length; index += 1) {
+    const arg = process.argv[index];
+    if (arg.startsWith(prefix)) {
+      return arg.slice(prefix.length);
+    }
+    if (arg === exact) {
+      const next = process.argv[index + 1];
+      return next && !next.startsWith('--') ? next : '';
+    }
+  }
+  return '';
+}
+
 function encodeObjectPath(value) {
   return value.split('/').map(encodeURIComponent).join('/');
+}
+
+function objectKey(...parts) {
+  return parts.filter(Boolean).join('/');
+}
+
+function objectUrl(key) {
+  let relative = key;
+  if (objectPrefix && key.startsWith(`${objectPrefix}/`)) {
+    relative = key.slice(objectPrefix.length + 1);
+  } else if (objectPrefix && key === objectPrefix) {
+    relative = '';
+  }
+  return relative ? `${baseUrl}/${encodeObjectPath(relative)}` : baseUrl;
 }
 
 function sha512File(filePath) {
@@ -79,6 +127,23 @@ function signOssPut({ method, contentMd5, contentType, date, objectKey, bucket, 
   return `OSS ${accessKeyId}:${signature}`;
 }
 
+function getHttpsText(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, res => {
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve(text);
+        } else {
+          reject(new Error(`GET ${url} failed: ${res.statusCode} ${text}`));
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
 function putOssObject(objectKey, body, contentType) {
   const config = getOssConfig();
   const endpoint = new URL(config.endpoint);
@@ -126,58 +191,186 @@ function putOssObject(objectKey, body, contentType) {
   });
 }
 
-async function main() {
+function createUploadPlan(items) {
+  return items.map(item => ({
+    key: item.key,
+    content_type: item.contentType,
+    bytes: item.body.length,
+  }));
+}
+
+async function runUploadPlan(items) {
+  const upload = [];
+  if (skipUpload) {
+    return upload;
+  }
+
+  for (const item of items) {
+    upload.push({
+      key: item.key,
+      result: await putOssObject(item.key, item.body, item.contentType),
+    });
+  }
+  return upload;
+}
+
+async function publishRelease() {
   const installer = findInstaller();
   if (!installer) {
     throw new Error(`Windows installer for version ${packageJson.version} was not found in ${distDir}`);
   }
 
-  const installerObjectKey = [objectPrefix, installer.name].filter(Boolean).join('/');
-  const feedObjectKey = [objectPrefix, 'latest.yml'].filter(Boolean).join('/');
-  const installerUrl = `${baseUrl}/${encodeObjectPath(installer.name)}`;
-  const feedUrl = `${baseUrl}/latest.yml`;
+  const installerObjectKey = objectKey(objectPrefix, installer.name);
+  const feedObjectKey = objectKey(objectPrefix, 'latest.yml');
+  const archiveInstallerObjectKey = objectKey(releasePrefix, packageJson.version, installer.name);
+  const archiveFeedObjectKey = objectKey(releasePrefix, packageJson.version, 'latest.yml');
   const sha512 = process.env.INSTALLER_SHA512 || sha512File(installer.path);
   const size = fs.statSync(installer.path).size;
   const latest = buildLatestYml(installer, sha512, size);
   const latestPath = path.join(distDir, 'latest.yml');
+  const archiveLatestPath = path.join(distDir, 'releases', packageJson.version, 'latest.yml');
 
   if (writeFeed) {
+    fs.mkdirSync(path.dirname(archiveLatestPath), { recursive: true });
     fs.writeFileSync(latestPath, latest, 'utf8');
+    fs.writeFileSync(archiveLatestPath, latest, 'utf8');
   }
 
-  const upload = [];
-  if (!skipUpload) {
-    upload.push({
+  const installerBody = fs.readFileSync(installer.path);
+  const latestBody = Buffer.from(latest, 'utf8');
+  const uploadItems = [
+    {
       key: installerObjectKey,
-      result: await putOssObject(installerObjectKey, fs.readFileSync(installer.path), 'application/vnd.microsoft.portable-executable'),
-    });
-    upload.push({
+      body: installerBody,
+      contentType: 'application/vnd.microsoft.portable-executable',
+    },
+    {
+      key: archiveInstallerObjectKey,
+      body: installerBody,
+      contentType: 'application/vnd.microsoft.portable-executable',
+    },
+    {
+      key: archiveFeedObjectKey,
+      body: latestBody,
+      contentType: 'text/yaml; charset=utf-8',
+    },
+    {
       key: feedObjectKey,
-      result: await putOssObject(feedObjectKey, Buffer.from(latest, 'utf8'), 'text/yaml; charset=utf-8'),
-    });
-  }
+      body: latestBody,
+      contentType: 'text/yaml; charset=utf-8',
+    },
+  ];
+  const upload = await runUploadPlan(uploadItems);
 
   console.log(JSON.stringify({
+    mode: 'publish',
     version: packageJson.version,
     dry_run: dryRun,
     wrote_feed: writeFeed,
     skipped_upload: skipUpload,
+    planned_upload: createUploadPlan(uploadItems),
     installer: {
       file: installer.name,
       size,
       sha512,
       oss_key: installerObjectKey,
-      oss_url: installerUrl,
+      oss_url: objectUrl(installerObjectKey),
+    },
+    release_archive: {
+      installer: {
+        file: installer.name,
+        oss_key: archiveInstallerObjectKey,
+        oss_url: objectUrl(archiveInstallerObjectKey),
+      },
+      latest_yml: {
+        file: 'latest.yml',
+        path: archiveLatestPath,
+        oss_key: archiveFeedObjectKey,
+        oss_url: objectUrl(archiveFeedObjectKey),
+      },
     },
     latest_yml: {
       file: 'latest.yml',
       path: latestPath,
       oss_key: feedObjectKey,
-      oss_url: feedUrl,
+      oss_url: objectUrl(feedObjectKey),
       content: latest,
     },
     upload,
   }, null, 2));
+}
+
+async function rollbackRelease(version) {
+  if (!version) {
+    throw new Error('Missing rollback version. Use --rollback=5.0.38 or ROLLBACK_TO_VERSION=5.0.38');
+  }
+
+  const archiveFeedObjectKey = objectKey(releasePrefix, version, 'latest.yml');
+  const feedObjectKey = objectKey(objectPrefix, 'latest.yml');
+  const sourceUrl = objectUrl(archiveFeedObjectKey);
+  const localRollbackFeed = process.env.ROLLBACK_FEED_PATH;
+  const latest = localRollbackFeed
+    ? fs.readFileSync(localRollbackFeed, 'utf8')
+    : await getHttpsText(sourceUrl);
+  const versionPattern = new RegExp(`(^|\\n)version:\\s*${version.replace(/\./g, '\\.')}(\\s|\\n|$)`);
+
+  if (!versionPattern.test(latest)) {
+    throw new Error(`Archived feed does not look like version ${version}`);
+  }
+
+  const latestPath = path.join(distDir, 'latest.yml');
+  if (writeFeed) {
+    fs.mkdirSync(path.dirname(latestPath), { recursive: true });
+    fs.writeFileSync(latestPath, latest, 'utf8');
+  }
+
+  const uploadItems = [{
+    key: feedObjectKey,
+    body: Buffer.from(latest, 'utf8'),
+    contentType: 'text/yaml; charset=utf-8',
+  }];
+  const upload = await runUploadPlan(uploadItems);
+
+  console.log(JSON.stringify({
+    mode: 'rollback',
+    version: packageJson.version,
+    dry_run: dryRun,
+    wrote_feed: writeFeed,
+    skipped_upload: skipUpload,
+    planned_upload: createUploadPlan(uploadItems),
+    rollback: {
+      version,
+      source: {
+        file: 'latest.yml',
+        path: localRollbackFeed || null,
+        oss_key: archiveFeedObjectKey,
+        oss_url: sourceUrl,
+      },
+    },
+    latest_yml: {
+      file: 'latest.yml',
+      path: latestPath,
+      oss_key: feedObjectKey,
+      oss_url: objectUrl(feedObjectKey),
+      content: latest,
+    },
+    upload,
+  }, null, 2));
+}
+
+async function main() {
+  const rollbackArgPresent = process.argv.slice(2).some(arg => (
+    arg === '--rollback'
+    || arg.startsWith('--rollback=')
+    || arg === '--rollback-to'
+    || arg.startsWith('--rollback-to=')
+  ));
+  const rollbackVersion = getArgValue('rollback') || getArgValue('rollback-to') || process.env.ROLLBACK_TO_VERSION || process.env.ROLLBACK_VERSION;
+  if (rollbackArgPresent || process.env.ROLLBACK_TO_VERSION || process.env.ROLLBACK_VERSION) {
+    await rollbackRelease(rollbackVersion);
+    return;
+  }
+  await publishRelease();
 }
 
 main().catch(err => {
