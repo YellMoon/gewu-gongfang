@@ -13,6 +13,7 @@ import {
   applyBatchScheduleDrag,
   formatBatchConflictMessage,
 } from '../utils/batchSelectionGeometry.mjs';
+import { resolveScheduleRoomDisplay } from '../utils/scheduleRoomDisplay.mjs';
 
 interface ScheduleEvent {
   id: string; course_id: string; course_name: string; course_type: any;
@@ -97,6 +98,7 @@ export default function useBatchSelection(
   const rbRef = useRef<{ l: number; t: number; w: number; h: number } | null>(null);
   const schedRef = useRef<any[]>([]);
   const coursesRef = useRef<Course[]>([]);
+  const roomsRef = useRef<any[]>([]);
   const twoWeeksRef = useRef<Dayjs[]>([]);
   const onUpdateRef = useRef(onSchedulesUpdated);
 
@@ -158,6 +160,7 @@ export default function useBatchSelection(
     });
   }, []);
   const setCourses = useCallback((c: Course[]) => { coursesRef.current = c; }, []);
+  const setRooms = useCallback((r: any[]) => { roomsRef.current = r; }, []);
 
   // 鑾峰彇鐩爣day鍒楀湪container涓殑瀹為檯浣嶇疆锛堣法鍛ㄦ崲琛屾纭級
   function getTargetDayPosition(targetDayIdx: number, container: HTMLElement): { left: number; bodyTop: number; minStartSlot: number } | null {
@@ -296,7 +299,7 @@ export default function useBatchSelection(
         rh: Math.max(20, (origEndSlot - origStartSlot) * SH),
         left: absLeft,
         name: s.course_name || coursesRef.current.find(c => c.id === s.course_id)?.name || '课程',
-        room: s.room || coursesRef.current.find(c => c.id === s.course_id)?.room_name || '',
+        room: resolveScheduleRoomDisplay(s, coursesRef.current.find(c => c.id === s.course_id) || {}, roomsRef.current),
         sh: nsh, sm: nsm, eh: neh, em: nem,
       };
     }).filter(Boolean);
@@ -734,7 +737,8 @@ export default function useBatchSelection(
     flashingIds,
     flashToggle,
     setSchedules,
-    setCourses
+    setCourses,
+    setRooms
   };
 }
 
