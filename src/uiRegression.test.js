@@ -49,6 +49,15 @@ assert(
 );
 
 assert(
+  systemSettings.includes('软件更新') &&
+  systemSettings.includes('check-for-updates') &&
+  systemSettings.includes('download-update') &&
+  systemSettings.includes('install-update') &&
+  packageJson.includes('publish:desktop-update'),
+  'system settings should expose an in-app desktop updater and release script should publish the desktop update feed'
+);
+
+assert(
   !scheduleList.includes('require(') &&
   !batchSelection.includes('require(') &&
   !scheduleExcelExport.includes('module.exports') &&

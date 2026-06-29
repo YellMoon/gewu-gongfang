@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Card, Button, message, Space, Divider, Popconfirm, Typography, Table, Tag, Form, Input, Select } from 'antd';
+import { Alert, Card, Button, message, Space, Divider, Popconfirm, Typography, Table, Tag, Form, Input, Select, Progress } from 'antd';
 import { CloudDownloadOutlined, CloudSyncOutlined, ExportOutlined, ImportOutlined, DeleteOutlined, ReloadOutlined, RollbackOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { APP_VERSION } from '../generated/version';
@@ -59,6 +59,17 @@ type BackupTargetStatus = {
   };
 };
 
+type DesktopUpdateState = {
+  checking: boolean;
+  available: boolean;
+  downloading: boolean;
+  downloaded: boolean;
+  progress: number;
+  latestVersion?: string;
+  feedUrl?: string;
+  error?: string;
+};
+
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:3001/api';
 const QUESTION_BANK_STORAGE_STATUS_PATH = '/api/question-bank/storage/status';
 const apiOrigin = API_BASE.replace(/\/api\/?$/, '');
@@ -73,6 +84,13 @@ const SystemSettings: React.FC = () => {
   const [backupTargetStatus, setBackupTargetStatus] = useState<BackupTargetStatus | null>(null);
   const [backupJobs, setBackupJobs] = useState<BackupJob[]>([]);
   const [backupLoading, setBackupLoading] = useState(false);
+  const [desktopUpdate, setDesktopUpdate] = useState<DesktopUpdateState>({
+    checking: false,
+    available: false,
+    downloading: false,
+    downloaded: false,
+    progress: 0,
+  });
 
   const loadBackupJobs = async () => {
     try {
@@ -90,6 +108,63 @@ const SystemSettings: React.FC = () => {
     loadRuntimeConfig();
     loadQuestionBankStorageStatus();
     loadBackupTargetStatus();
+  }, []);
+
+  useEffect(() => {
+    const api = window.api;
+    if (!api?.on) return undefined;
+    const offAvailable = api.on('update-available', (info: any) => {
+      setDesktopUpdate(prev => ({
+        ...prev,
+        checking: false,
+        available: true,
+        latestVersion: info?.version || prev.latestVersion,
+        error: undefined,
+      }));
+    });
+    const offNotAvailable = api.on('update-not-available', () => {
+      setDesktopUpdate(prev => ({
+        ...prev,
+        checking: false,
+        available: false,
+        downloading: false,
+        downloaded: false,
+        progress: 0,
+        error: undefined,
+      }));
+      message.success('当前已经是最新版本');
+    });
+    const offProgress = api.on('download-progress', (progress: any) => {
+      setDesktopUpdate(prev => ({
+        ...prev,
+        downloading: true,
+        progress: Math.round(Number(progress?.percent || 0)),
+      }));
+    });
+    const offDownloaded = api.on('update-downloaded', () => {
+      setDesktopUpdate(prev => ({
+        ...prev,
+        downloading: false,
+        downloaded: true,
+        progress: 100,
+      }));
+      message.success('更新已下载完成，可重启安装');
+    });
+    const offError = api.on('update-error', (error: any) => {
+      setDesktopUpdate(prev => ({
+        ...prev,
+        checking: false,
+        downloading: false,
+        error: String(error || '更新失败'),
+      }));
+    });
+    return () => {
+      offAvailable();
+      offNotAvailable();
+      offProgress();
+      offDownloaded();
+      offError();
+    };
   }, []);
 
   const loadRuntimeConfig = async () => {
@@ -214,6 +289,47 @@ const SystemSettings: React.FC = () => {
     } catch (error: any) {
       message.error(error.message || '恢复失败');
     }
+  };
+
+  const handleCheckDesktopUpdate = async () => {
+    if (!window.api?.invoke) {
+      message.error('当前环境不支持软件内更新');
+      return;
+    }
+    setDesktopUpdate(prev => ({ ...prev, checking: true, error: undefined }));
+    try {
+      const result = await window.api.invoke('check-for-updates');
+      if (!result?.success) throw new Error(result?.error || '检查更新失败');
+      setDesktopUpdate(prev => ({
+        ...prev,
+        feedUrl: result.feedUrl || prev.feedUrl,
+        latestVersion: result.updateInfo?.version || prev.latestVersion,
+      }));
+    } catch (error: any) {
+      setDesktopUpdate(prev => ({
+        ...prev,
+        checking: false,
+        error: error.message || '检查更新失败',
+      }));
+      message.error(error.message || '检查更新失败');
+    }
+  };
+
+  const handleDownloadDesktopUpdate = async () => {
+    setDesktopUpdate(prev => ({ ...prev, downloading: true, error: undefined }));
+    const result = await window.api?.invoke('download-update');
+    if (!result?.success) {
+      setDesktopUpdate(prev => ({
+        ...prev,
+        downloading: false,
+        error: result?.error || '下载更新失败',
+      }));
+      message.error(result?.error || '下载更新失败');
+    }
+  };
+
+  const handleInstallDesktopUpdate = async () => {
+    await window.api?.invoke('install-update');
   };
 
   const handleResetData = () => {
@@ -503,6 +619,50 @@ const SystemSettings: React.FC = () => {
             },
           ]}
         />
+      </Card>
+
+      <Card title="软件更新" style={{ marginBottom: 16 }}>
+        <Alert
+          type={desktopUpdate.error ? 'error' : desktopUpdate.downloaded ? 'success' : desktopUpdate.available ? 'info' : 'success'}
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={
+            desktopUpdate.error
+              ? '更新检查失败'
+              : desktopUpdate.downloaded
+                ? '更新已下载完成'
+                : desktopUpdate.available
+                  ? `发现新版本 ${desktopUpdate.latestVersion || ''}`
+                  : '可在软件内检查和安装更新'
+          }
+          description={desktopUpdate.error || desktopUpdate.feedUrl || '以后优先使用内置更新；夸克安装包仅作为备用下载。'}
+        />
+        <Space wrap>
+          <Button
+            icon={<CloudDownloadOutlined />}
+            loading={desktopUpdate.checking}
+            onClick={handleCheckDesktopUpdate}
+          >
+            检查更新
+          </Button>
+          <Button
+            type="primary"
+            disabled={!desktopUpdate.available || desktopUpdate.downloaded}
+            loading={desktopUpdate.downloading}
+            onClick={handleDownloadDesktopUpdate}
+          >
+            下载更新
+          </Button>
+          <Button
+            disabled={!desktopUpdate.downloaded}
+            onClick={handleInstallDesktopUpdate}
+          >
+            重启并安装
+          </Button>
+        </Space>
+        {desktopUpdate.downloading && (
+          <Progress style={{ marginTop: 16 }} percent={desktopUpdate.progress} />
+        )}
       </Card>
 
       <Card title="系统信息">
