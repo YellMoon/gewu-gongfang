@@ -34,6 +34,8 @@ const syncSettings = read('src/pages/SyncSettings.tsx');
 const cloudSync = read('src/pages/CloudSync.tsx');
 const syncApi = read('src/services/syncApi.ts');
 const cloudRelayHostApi = read('src/services/cloudRelayHostApi.ts');
+const scheduleStorage = read('src/utils/scheduleStorage.mjs');
+const packageJson = read('package.json');
 
 assert(
   systemSettings.includes('/api/question-bank/storage/status') &&
@@ -165,6 +167,10 @@ assert(
 assert(
   scheduleCalendar.includes('readSchedulesFromPrimaryStore') &&
   scheduleCalendar.includes('replaceSchedulesInPrimaryStore') &&
+  scheduleCalendar.includes('schedulesDirtyRef') &&
+  scheduleCalendar.includes('loadingSchedulesRef') &&
+  scheduleCalendar.includes('setInterval(loadData, 30000)') &&
+  !scheduleCalendar.includes('setInterval(loadData, 5000)') &&
   scheduleList.includes('readSchedulesFromPrimaryStore') &&
   revenueStatistics.includes('readSchedulesFromPrimaryStore') &&
   todayWorkbench.includes('readSchedulesFromPrimaryStore') &&
@@ -173,6 +179,14 @@ assert(
   !revenueStatistics.includes("localStorage.getItem('schedules')") &&
   !todayWorkbench.includes("localStorage.getItem('schedules')"),
   'schedule pages should use dbService as the primary schedule store instead of independent localStorage reads'
+);
+
+assert(
+  scheduleStorage.includes('allowEmptyReplace') &&
+  scheduleStorage.includes('legacySchedules.length > 0') &&
+  scheduleStorage.includes('current.length > 0') &&
+  packageJson.includes('node src/utils/scheduleStorage.test.js'),
+  'schedule storage should protect non-empty schedule data from accidental empty snapshots and test the recovery path'
 );
 
 assert(

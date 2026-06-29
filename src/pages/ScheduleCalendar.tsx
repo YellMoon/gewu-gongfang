@@ -1128,6 +1128,8 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
   const [schedules, setSchedules] = useState<ScheduleEvent[]>([]);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const schedulesHydratedRef = useRef(false);
+  const schedulesDirtyRef = useRef(false);
+  const loadingSchedulesRef = useRef(false);
   const today = dayjs();
   let initialMonday = today.startOf('isoWeek');
   const [currentMonday, setCurrentMonday] = useState<Dayjs>(initialMonday);
@@ -1166,6 +1168,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
 
   // 鈶?甯﹀巻鍙茶褰曠殑 setSchedules 鍖呰
   const setSchedulesWithHistory = useCallback((newSchedulesOrUpdater: ScheduleEvent[] | ((prev: ScheduleEvent[]) => ScheduleEvent[])) => {
+    schedulesDirtyRef.current = true;
     setSchedules(prev => {
       const newSchedules = typeof newSchedulesOrUpdater === 'function'
         ? newSchedulesOrUpdater(prev)
@@ -1277,9 +1280,13 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
           setTimeout(loadData, 1000);
           return;
         }
+        loadingSchedulesRef.current = true;
         const dbSchedules = readSchedulesFromPrimaryStore(db, localStorage).map(normalizeScheduleEvent);
         schedulesHydratedRef.current = true;
-        setSchedules(dbSchedules);
+        setSchedules(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(dbSchedules)) return prev;
+          return dbSchedules;
+        });
         setBatchSchedules(dbSchedules);
         if (db.getAllCourses) {
           const coursesData = db.getAllCourses();
@@ -1313,6 +1320,9 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
             return s;
           }));
         }
+        window.setTimeout(() => {
+          loadingSchedulesRef.current = false;
+        }, 0);
         if (db.getAllTeachers) {
           const teachersData = db.getAllTeachers();
           setTeachers([...teachersData]);
@@ -1324,11 +1334,12 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
           setRooms(db.getAllRooms());
         }
       } catch (e) {
+        loadingSchedulesRef.current = false;
         console.error('鍔犺浇鏁版嵁澶辫触', e);
       }
     };
     loadData();
-    const interval = setInterval(loadData, 5000);
+    const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -1366,8 +1377,9 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
 
   React.useEffect(() => {
     try {
-      if (schedulesHydratedRef.current) {
-        replaceSchedulesInPrimaryStore((window as any).dbService, schedules, localStorage);
+      if (schedulesHydratedRef.current && schedulesDirtyRef.current && !loadingSchedulesRef.current) {
+        replaceSchedulesInPrimaryStore((window as any).dbService, schedules, localStorage, { allowEmptyReplace: true });
+        schedulesDirtyRef.current = false;
       }
       setBatchSchedules(schedules);
     } catch (e) {

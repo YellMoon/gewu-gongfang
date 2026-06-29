@@ -54,14 +54,21 @@ function upsertSchedule(db, schedule) {
 function migrateLegacySchedulesToDatabase(db, storage) {
   const store = getStorage(storage);
   if (!db?.getAllSchedules || !store) return db?.getAllSchedules?.() || [];
+  const legacySchedules = getLegacySchedules(store);
   if (store.getItem(MIGRATION_FLAG_KEY) === 'true') {
     const schedules = db.getAllSchedules() || [];
+    if (schedules.length === 0 && legacySchedules.length > 0) {
+      legacySchedules.forEach((schedule) => upsertSchedule(db, schedule));
+      const recovered = db.getAllSchedules() || legacySchedules;
+      mirrorSchedulesToLegacyCache(recovered, store);
+      return recovered;
+    }
     mirrorSchedulesToLegacyCache(schedules, store);
     return schedules;
   }
 
   const existingIds = new Set((db.getAllSchedules() || []).map((schedule) => schedule.id));
-  getLegacySchedules(store).forEach((schedule) => {
+  legacySchedules.forEach((schedule) => {
     if (!schedule?.id || existingIds.has(schedule.id)) return;
     upsertSchedule(db, schedule);
     existingIds.add(schedule.id);
@@ -78,15 +85,20 @@ function readSchedulesFromPrimaryStore(db, storage) {
   return migrateLegacySchedulesToDatabase(db, storage);
 }
 
-function replaceSchedulesInPrimaryStore(db, schedules, storage) {
+function replaceSchedulesInPrimaryStore(db, schedules, storage, options = {}) {
+  const current = db?.getAllSchedules?.() || [];
+  const next = schedules || [];
+  if (!options.allowEmptyReplace && next.length === 0 && current.length > 0) {
+    mirrorSchedulesToLegacyCache(current, storage);
+    return current;
+  }
+
   if (db?.replaceSchedules) {
-    const saved = db.replaceSchedules(schedules || []);
+    const saved = db.replaceSchedules(next);
     mirrorSchedulesToLegacyCache(saved, storage);
     return saved;
   }
 
-  const current = db?.getAllSchedules?.() || [];
-  const next = schedules || [];
   const nextIds = new Set(next.map((schedule) => schedule.id).filter(Boolean));
   current.forEach((schedule) => {
     if (schedule?.id && !nextIds.has(schedule.id)) {
