@@ -62,6 +62,8 @@ const SYNC_TABLES: SyncTable[] = [
 ];
 
 const QUESTION_VERSION_LIMIT = 20;
+const BUSINESS_DATA_SAFETY_BACKUP_KEY = 'business_data_safety_backups_v1';
+const BUSINESS_DATA_SAFETY_BACKUP_LIMIT = 20;
 
 class BrowserDatabaseService {
   private storageKey = 'scheduling_system_db_v3';
@@ -352,6 +354,40 @@ class BrowserDatabaseService {
       if (question?.id) next.set(question.id, this.questionIndexText(question));
     }
     this.questionSearchIndex = next;
+  }
+
+  private businessDataSnapshot(): Partial<Database> {
+    return {
+      students: this.data.students || [],
+      grades: this.data.grades || [],
+      courses: this.data.courses || [],
+      schedules: this.data.schedules || [],
+      enrollments: this.data.enrollments || [],
+      payments: this.data.payments || [],
+      consumptions: this.data.consumptions || [],
+      institutions: this.data.institutions || [],
+      schools: this.data.schools || [],
+      rooms: this.data.rooms || [],
+      teachers: this.data.teachers || [],
+      assetRecords: this.data.assetRecords || [],
+      assetCategories: this.data.assetCategories || [],
+    };
+  }
+
+  private createBusinessDataSafetyBackup(reason: string): void {
+    try {
+      const existing = JSON.parse(localStorage.getItem(BUSINESS_DATA_SAFETY_BACKUP_KEY) || '[]');
+      const backups = Array.isArray(existing) ? existing : [];
+      const next = [{
+        id: `business_backup_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+        reason,
+        created_at: new Date().toISOString(),
+        data: this.businessDataSnapshot(),
+      }, ...backups].slice(0, BUSINESS_DATA_SAFETY_BACKUP_LIMIT);
+      localStorage.setItem(BUSINESS_DATA_SAFETY_BACKUP_KEY, JSON.stringify(next));
+    } catch (error) {
+      console.warn('[browserDatabase] create business data safety backup failed:', error);
+    }
   }
 
   private syncQuestionLocalRecord(question: Question): void {
@@ -909,6 +945,7 @@ class BrowserDatabaseService {
 
     if (changes.length === 0) return this.data.schedules;
 
+    this.createBusinessDataSafetyBackup('before-replaceSchedules');
     this.data.schedules = Array.from(nextById.values());
     this.saveData();
     changes.forEach(change => this.recordSyncChange('schedules', change.action, change.id, change.payload));
@@ -918,6 +955,7 @@ class BrowserDatabaseService {
   deleteSchedule(id: string): boolean {
     const index = this.data.schedules.findIndex(s => s.id === id);
     if (index === -1) return false;
+    this.createBusinessDataSafetyBackup('before-deleteSchedule');
     this.data.schedules.splice(index, 1);
     this.saveData();
     this.recordSyncChange('schedules', 'delete', id, { id });
@@ -1205,6 +1243,7 @@ class BrowserDatabaseService {
   }
 
   importAllData(data: any): void {
+    this.createBusinessDataSafetyBackup('before-importAllData');
     this.data = {
       students: data.students || [],
       grades: data.grades || [],

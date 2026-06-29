@@ -5,6 +5,8 @@ const cache = require('../services/cacheService');
 const searchService = require('../services/searchService');
 
 const router = Router();
+const ARCHIVABLE_MAINTENANCE_TABLES = ['sync_log', 'sync_audit_log'];
+const BUSINESS_BASE_TABLES = ['schedules', 'payments', 'consumptions'];
 
 function tenantId(req) {
   return req.tenantId || req.query.tenant_id || req.query.tenantId || req.body?.tenant_id || req.body?.tenantId || 'default';
@@ -95,8 +97,10 @@ router.post('/archive/jobs/:id/run', (req, res) => {
     const db = getInstance().db;
     const job = db.prepare('SELECT * FROM data_archive_jobs WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId(req));
     if (!job) return res.status(404).json({ success: false, error: 'archive job not found' });
-    const allowedTables = ['schedules', 'payments', 'consumptions', 'sync_log', 'sync_audit_log'];
-    if (!allowedTables.includes(job.target_table)) {
+    if (BUSINESS_BASE_TABLES.includes(job.target_table)) {
+      return res.status(400).json({ success: false, error: 'business data cannot be archived from ops maintenance; create a backup and use explicit delete flows instead' });
+    }
+    if (!ARCHIVABLE_MAINTENANCE_TABLES.includes(job.target_table)) {
       return res.status(400).json({ success: false, error: 'target table not allowed' });
     }
     const now = new Date().toISOString();
