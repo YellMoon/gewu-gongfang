@@ -1,7 +1,41 @@
 import type { SyncBatch, SyncChange } from './syncEngine';
+import { getRuntimeConfig } from './runtimeConfigClient';
 
-const BASE_URL = (process.env.REACT_APP_API_BASE || '').replace(/\/$/, '');
-const SYNC_URL = BASE_URL.endsWith('/api') ? `${BASE_URL}/sync` : `${BASE_URL}/api/sync`;
+function normalizeSyncBaseUrl(baseUrl: string): string {
+  const base = String(baseUrl || '').replace(/\/$/, '');
+  if (!base) return '';
+  if (base.endsWith('/api/sync')) return base;
+  if (base.endsWith('/api')) return `${base}/sync`;
+  return `${base}/api/sync`;
+}
+
+async function getConfiguredHostBaseUrl(): Promise<string> {
+  try {
+    const runtimeConfig = await getRuntimeConfig();
+    if (runtimeConfig?.hostBaseUrl) return runtimeConfig.hostBaseUrl;
+  } catch {
+    // Browser preview or old builds may not expose Electron runtime config.
+  }
+  return process.env.REACT_APP_API_BASE || '';
+}
+
+export async function getSyncBaseUrl(): Promise<string> {
+  const configured = normalizeSyncBaseUrl(await getConfiguredHostBaseUrl());
+  if (configured) return configured;
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname, port } = window.location;
+    if (protocol === 'file:' || (hostname === 'localhost' && port === '3000')) {
+      return 'http://localhost:3001/api/sync';
+    }
+  }
+  return '/api/sync';
+}
+
+export async function getSyncUrl(path = ''): Promise<string> {
+  const base = await getSyncBaseUrl();
+  if (!path) return base;
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+}
 
 function toIsoTime(value: number | string | Date | undefined): string {
   if (!value) return '1970-01-01T00:00:00.000Z';
@@ -51,7 +85,7 @@ function getDeviceId(): string {
 }
 
 export async function registerSyncDevice(input: { deviceId: string; role: string; deviceName?: string }) {
-  const res = await fetch(`${SYNC_URL}/devices/register`, {
+  const res = await fetch(await getSyncUrl('/devices/register'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -64,7 +98,7 @@ export async function registerSyncDevice(input: { deviceId: string; role: string
 }
 
 export async function requestSyncAuthorization(input: { deviceId: string; role: string }) {
-  const res = await fetch(`${SYNC_URL}/authorize`, {
+  const res = await fetch(await getSyncUrl('/authorize'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ deviceId: input.deviceId, role: input.role }),
@@ -78,7 +112,7 @@ export async function pushSyncBatch(
 ): Promise<{ success: boolean; serverTimestamp: number; applied?: number; conflicts?: number; errors?: any[] }> {
   const changes = (batch.changes || batch.operations || []).map(change => normalizeChange(change, batch.deviceId || batch.clientId));
   try {
-    const res = await fetch(`${SYNC_URL}/push`, {
+    const res = await fetch(await getSyncUrl('/push'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -112,7 +146,7 @@ export async function pullSyncOps(
   sinceTs: number,
 ): Promise<{ success: boolean; changes: SyncChange[]; operations: SyncChange[]; serverTimestamp: number }> {
   try {
-    const url = new URL(SYNC_URL || '/api/sync', window.location.origin);
+    const url = new URL(await getSyncUrl(), window.location.origin);
     url.searchParams.set('since', toIsoTime(sinceTs));
     url.searchParams.set('deviceId', getDeviceId());
     const res = await fetch(url.toString(), {

@@ -32,6 +32,7 @@ const richQuestionEditor = read('src/components/RichQuestionEditor.tsx');
 const systemSettings = read('src/pages/SystemSettings.tsx');
 const syncSettings = read('src/pages/SyncSettings.tsx');
 const cloudSync = read('src/pages/CloudSync.tsx');
+const syncApi = read('src/services/syncApi.ts');
 
 assert(
   systemSettings.includes('/api/question-bank/storage/status') &&
@@ -91,6 +92,15 @@ assert(
   cloudSync.includes('authorizationToken') &&
   cloudSync.includes('申请同步权限'),
   'cloud sync dashboard should also require authorization confirmation before pushing offline changes'
+);
+
+assert(
+  syncApi.includes('getRuntimeConfig') &&
+  syncApi.includes('hostBaseUrl') &&
+  syncApi.includes('getSyncBaseUrl') &&
+  syncApi.includes('getSyncUrl') &&
+  !syncApi.includes('const SYNC_URL ='),
+  'desktop sync API should resolve the local data host address from runtime config instead of a build-time constant'
 );
 
 assert(
