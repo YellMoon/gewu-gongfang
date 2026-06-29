@@ -28,6 +28,7 @@
     "qb:clear": "node scripts/question-bank-cli.js clear",
     "qb:parse-word": "node scripts/question-bank-cli.js parse-word",
     "publish:oss-feed": "node scripts/publish-oss-feed.js",
+    "publish:desktop-update": "node scripts/publish-oss-feed.js",
     "publish:oss-feed:dry-run": "node scripts/publish-oss-feed.js --dry-run --write-feed"
   },
   "author": "格物工坊",
