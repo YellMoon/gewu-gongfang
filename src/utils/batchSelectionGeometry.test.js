@@ -8,6 +8,8 @@ const assert = require('assert');
     pointerYToAbsoluteSlot,
     selectionIntersectsSchedule,
     moveTimeBySlots,
+    applyBatchScheduleDrag,
+    formatBatchConflictMessage,
   } = await import('./batchSelectionGeometry.mjs');
 
 assert.strictEqual(timeToSlot(8, 0), 0);
@@ -36,6 +38,66 @@ assert.deepStrictEqual(moveTimeBySlots('10:00', '12:00', -12), {
   start: { hour: 9, minute: 0 },
   end: { hour: 11, minute: 0 },
 });
+
+const schedules = [
+  {
+    id: 'lesson-a',
+    course_name: '数学',
+    start_time: '2026-06-29 10:00',
+    end_time: '2026-06-29 11:00',
+    status: 1,
+  },
+  {
+    id: 'lesson-a_cpy_old',
+    course_name: '旧复制课',
+    start_time: '2026-06-30 14:00',
+    end_time: '2026-06-30 15:00',
+    status: 1,
+  },
+];
+
+const copied = applyBatchScheduleDrag({
+  schedules,
+  selectedIds: ['lesson-a'],
+  weekDates: ['2026-06-29', '2026-06-30'],
+  dayDelta: 1,
+  slotDelta: 0,
+  isCopy: true,
+  generateId: () => 'lesson-a-copy',
+});
+
+assert.strictEqual(copied.success, true);
+assert.strictEqual(copied.nextSchedules.length, 3);
+assert.ok(copied.nextSchedules.some(item => item.id === 'lesson-a-copy'));
+assert.strictEqual(copied.nextSchedules.find(item => item.id === 'lesson-a').start_time, '2026-06-29 10:00');
+assert.deepStrictEqual(copied.changedIds, ['lesson-a-copy']);
+
+const moved = applyBatchScheduleDrag({
+  schedules,
+  selectedIds: ['lesson-a'],
+  weekDates: ['2026-06-29', '2026-06-30'],
+  dayDelta: 1,
+  slotDelta: 12,
+  isCopy: false,
+});
+
+assert.strictEqual(moved.success, true);
+assert.strictEqual(moved.nextSchedules.find(item => item.id === 'lesson-a').start_time, '2026-06-30 11:00');
+assert.strictEqual(moved.nextSchedules.find(item => item.id === 'lesson-a').end_time, '2026-06-30 12:00');
+assert.deepStrictEqual(moved.changedIds, ['lesson-a']);
+
+const conflict = applyBatchScheduleDrag({
+  schedules,
+  selectedIds: ['lesson-a'],
+  weekDates: ['2026-06-29', '2026-06-30'],
+  dayDelta: 1,
+  slotDelta: 48,
+  isCopy: false,
+});
+
+assert.strictEqual(conflict.success, false);
+assert.strictEqual(conflict.conflictName, '旧复制课');
+assert.strictEqual(formatBatchConflictMessage('旧复制课'), '时间冲突：与「旧复制课」时间段重叠，批量操作已取消');
 
   console.log('batchSelectionGeometry tests passed');
 })().catch(error => {

@@ -16,6 +16,7 @@ import { INSTITUTION_UNBOUND_STUDENT_ID, buildScheduleFinancialSnapshot } from '
 import WorkbenchLayout from '../layout/WorkbenchLayout';
 import type { CourseCalendarContext } from '../navigation/navigationContext';
 import { readSchedulesFromPrimaryStore, replaceSchedulesInPrimaryStore } from '../utils/scheduleStorage.mjs';
+import { appendSteppedBatchDate, normalizeDateStepDays } from '../utils/scheduleBatchDates.mjs';
 
 dayjs.extend(weekOfYear);
 dayjs.extend(isoWeek);
@@ -1156,6 +1157,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
   const [teacherInitialized, setTeacherInitialized] = useState(false);
 
   const [batchDates, setBatchDates] = useState<Dayjs[]>([dayjs()]);
+  const [batchDateStepDays, setBatchDateStepDays] = useState(1);
   const [refreshDateRange, setRefreshDateRange] = useState<[Dayjs, Dayjs] | null>([initialMonday, initialMonday.add(13, 'day')]);
   const [modalTeacherId, setModalTeacherId] = useState<string | undefined>(undefined);
 
@@ -2016,9 +2018,25 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
                   )}
                 </div>
               ))}
-              <Button type="dashed" style={{ width: '100%' }}
-                onClick={() => setBatchDates([...batchDates, batchDates[batchDates.length - 1] || dayjs()])}
-              >添加日期</Button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', flexWrap: 'wrap' }}>
+                <Button
+                  type="dashed"
+                  style={{ flex: '1 1 240px' }}
+                  onClick={() => setBatchDates(appendSteppedBatchDate(batchDates, batchDateStepDays, dayjs()))}
+                >
+                  添加日期
+                </Button>
+                <Space size={4} style={{ flex: '0 0 auto' }}>
+                  <span style={{ fontSize: 12, color: '#666' }}>间隔天数</span>
+                  <InputNumber
+                    min={1}
+                    precision={0}
+                    value={batchDateStepDays}
+                    onChange={(value) => setBatchDateStepDays(normalizeDateStepDays(value))}
+                    style={{ width: 80 }}
+                  />
+                </Space>
+              </div>
               <div style={{ fontSize: 12, color: '#666', width: '100%' }}>
                 共 {batchDates.length} 节课程
               </div>
