@@ -33,6 +33,7 @@ const systemSettings = read('src/pages/SystemSettings.tsx');
 const syncSettings = read('src/pages/SyncSettings.tsx');
 const cloudSync = read('src/pages/CloudSync.tsx');
 const syncApi = read('src/services/syncApi.ts');
+const cloudRelayHostApi = read('src/services/cloudRelayHostApi.ts');
 
 assert(
   systemSettings.includes('/api/question-bank/storage/status') &&
@@ -92,6 +93,18 @@ assert(
   cloudSync.includes('authorizationToken') &&
   cloudSync.includes('申请同步权限'),
   'cloud sync dashboard should also require authorization confirmation before pushing offline changes'
+);
+
+assert(
+  cloudRelayHostApi.includes('publishCloudSnapshot') &&
+  cloudRelayHostApi.includes('/api/cloud-relay-host/snapshot') &&
+  cloudRelayHostApi.includes('getRuntimeConfig') &&
+  cloudRelayHostApi.includes('hostBaseUrl') &&
+  cloudRelayHostApi.includes('cloudBaseUrl') &&
+  cloudSync.includes('handlePublishCloudSnapshot') &&
+  cloudSync.includes('发布云端快照') &&
+  cloudSync.includes("runtimeConfig?.nodeRole !== 'primary-host'"),
+  'desktop primary host should expose a manual cloud snapshot publish action backed by runtime host/cloud config'
 );
 
 assert(
