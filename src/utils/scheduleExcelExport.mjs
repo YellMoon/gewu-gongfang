@@ -17,6 +17,10 @@ function sanitizeFilePart(value) {
   return cleanName(value, '未命名').replace(/[\\/:*?"<>|\s]+/g, '_').replace(/^_+|_+$/g, '');
 }
 
+function normalizeComparableName(value) {
+  return String(value || '').replace(/\s+/g, '').trim();
+}
+
 function sanitizeExcelSheetName(value) {
   const cleaned = cleanName(value, '课表').replace(/[\\/?*:[\]]/g, ' ').replace(/\s+/g, ' ').trim();
   return cleaned.slice(0, 31) || '课表';
@@ -72,6 +76,27 @@ function isCancelledOrLeave(schedule) {
   return schedule.status === 'CANCELLED' || schedule.status === 'LEAVE' || schedule.status === 2 || schedule.status === 3;
 }
 
+function buildScheduleFileNameParts(input, labels) {
+  const parts = [];
+  if (input.filterYear !== undefined && input.filterYear !== null && String(input.filterYear).trim() !== '') {
+    parts.push(String(input.filterYear).trim());
+  }
+  if (input.filterSemester) parts.push(input.filterSemester);
+  if (input.filterTeacher && labels.teacherName) parts.push(labels.teacherName);
+
+  const courseName = String(input.filterCourseName || '').trim();
+  const studentName = input.filterStudent ? labels.studentName : '';
+  if (
+    courseName
+    && normalizeComparableName(courseName) !== normalizeComparableName(studentName)
+  ) {
+    parts.push(courseName);
+  }
+  if (input.filterStudent && studentName) parts.push(studentName);
+  if (labels.dateLabel) parts.push(labels.dateLabel);
+  return parts;
+}
+
 function getScheduleSlots(schedule) {
   const start = dayjs(schedule.start_time);
   const end = dayjs(schedule.end_time);
@@ -118,8 +143,10 @@ function buildScheduleExportModel(input) {
   const teacherName = filterTeacher ? getTeacherName(filterTeacher, teachers) : '全部老师';
   const studentName = filterStudent ? getStudentName(filterStudent, students) : '全部学生';
   const dateLabel = rangeStart.format('YYYYMMDD') + '-' + rangeEnd.format('YYYYMMDD');
-  const fileName = sanitizeFilePart(teacherName) + '_' + sanitizeFilePart(studentName) + '_' + dateLabel + '_课表.xlsx';
-  const sheetName = sanitizeExcelSheetName(teacherName + ' ' + studentName + ' ' + dateLabel + '课表');
+  const fileNameParts = buildScheduleFileNameParts(input, { teacherName, studentName, dateLabel });
+  const fileBaseName = fileNameParts.length ? fileNameParts.map(sanitizeFilePart).join('_') : '课表';
+  const fileName = fileBaseName + '_课表.xlsx';
+  const sheetName = sanitizeExcelSheetName((fileNameParts.length ? fileNameParts.join(' ') : '课表') + ' 课表');
 
   const firstMonday = rangeStart.startOf('isoWeek');
   const lastMonday = rangeEnd.startOf('isoWeek');

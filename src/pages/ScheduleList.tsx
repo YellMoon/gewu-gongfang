@@ -128,6 +128,9 @@ const ScheduleList: React.FC = () => {
       students,
       filterTeacher: appliedFilters.filterTeacher,
       filterStudent: appliedFilters.filterStudent,
+      filterYear: appliedFilters.filterYear,
+      filterSemester: appliedFilters.filterSemester,
+      filterCourseName: appliedFilters.filterCourseName,
       dateRange: appliedFilters.filterDateRange ? [
         appliedFilters.filterDateRange[0].format('YYYY-MM-DD'),
         appliedFilters.filterDateRange[1].format('YYYY-MM-DD'),
