@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 
 const dryRun = process.argv.includes('--dry-run') || process.env.DRY_RUN === '1';
-const ossBaseUrl = (process.env.OSS_CDN_BASE_URL || 'https://gewugongfang.oss-cn-hangzhou.aliyuncs.com/desktop').replace(/\/+$/, '');
+const ossBaseUrl = (process.env.OSS_CDN_BASE_URL || 'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop').replace(/\/+$/, '');
 const ossObjectPrefix = (process.env.OSS_OBJECT_PREFIX || 'desktop').replace(/^\/+|\/+$/g, '');
 const ROOT_FOLDER = process.env.QUARK_ROOT_FOLDER || 'codex项目';
 const ROOT_FOLDER_ALIASES = Array.from(new Set([ROOT_FOLDER, 'codex项目', 'Codex项目']));

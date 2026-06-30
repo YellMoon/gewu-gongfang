@@ -24,7 +24,7 @@ try {
 const packageJson = require('../package.json');
 
 const distDir = path.resolve(process.env.DIST_DIR || path.join(__dirname, '..', 'dist'));
-const baseUrl = (process.env.OSS_CDN_BASE_URL || 'https://gewugongfang.oss-cn-hangzhou.aliyuncs.com/desktop').replace(/\/+$/, '');
+const baseUrl = (process.env.OSS_CDN_BASE_URL || 'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop').replace(/\/+$/, '');
 const objectPrefix = (process.env.OSS_OBJECT_PREFIX || 'desktop').replace(/^\/+|\/+$/g, '');
 const releasePrefix = (process.env.OSS_RELEASES_PREFIX || [objectPrefix, 'releases'].filter(Boolean).join('/')).replace(/^\/+|\/+$/g, '');
 const dryRun = process.argv.includes('--dry-run') || process.env.DRY_RUN === '1';

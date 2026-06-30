@@ -1,6 +1,6 @@
 {
   "name": "gewu-gongfang",
-  "version": "5.4.0",
+  "version": "5.4.1",
   "description": "格物工坊（综合教育平台）",
   "main": "public/electron.js",
   "homepage": ".",
@@ -120,7 +120,7 @@
     "publish": [
       {
         "provider": "generic",
-        "url": "https://gewugongfang.oss-cn-hangzhou.aliyuncs.com/desktop/"
+        "url": "https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop/"
       }
     ],
     "npmRebuild": true

@@ -5,10 +5,30 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const packageJson = require('../package.json');
+const publishScript = fs.readFileSync(path.join(__dirname, 'publish-oss-feed.js'), 'utf8');
+const electronMain = fs.readFileSync(path.join(__dirname, '..', 'public', 'electron.js'), 'utf8');
+const quarkUpload = fs.readFileSync(path.join(__dirname, 'upload-quark-clean.js'), 'utf8');
+const beijingUpdateBaseUrl = 'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop';
 
 assert.ok(
   packageJson.scripts['publish:desktop-rollback'],
   'package scripts should expose an OSS desktop rollback command'
+);
+assert.ok(
+  packageJson.build.publish.some(item => item.url === `${beijingUpdateBaseUrl}/`),
+  'electron-builder publish URL should point to the Beijing OSS desktop update bucket'
+);
+assert.ok(
+  electronMain.includes(`${beijingUpdateBaseUrl}/`),
+  'desktop auto-updater should default to the Beijing OSS update feed'
+);
+assert.ok(
+  publishScript.includes(beijingUpdateBaseUrl),
+  'OSS publish script should default to the Beijing OSS desktop update bucket'
+);
+assert.ok(
+  quarkUpload.includes(beijingUpdateBaseUrl),
+  'Quark upload metadata should reference the Beijing OSS desktop update bucket'
 );
 
 function runPublish(args, env) {
