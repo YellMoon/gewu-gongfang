@@ -54,9 +54,9 @@ const allModel = buildScheduleExportModel({
   dateRange: ['2026-06-01', '2026-06-14'],
 });
 
-assert.strictEqual(allModel.fileName, '张老师_全部学生_20260601-20260614_课表.xlsx');
+assert.strictEqual(allModel.fileName, '张老师_20260601-20260614_课表.xlsx');
 assert.ok(allModel.sheetName.includes('张老师'));
-assert.ok(allModel.sheetName.includes('全部学生'));
+assert.ok(!allModel.sheetName.includes('全部学生'));
 assert.strictEqual(allModel.weeks.length, 2);
 assert.deepStrictEqual(allModel.weeks.map(w => w.title), [
   '第1周：6月1日 ~ 6月7日',
@@ -72,12 +72,41 @@ const studentModel = buildScheduleExportModel({
   students,
   filterTeacher: 't1',
   filterStudent: 'stu1',
+  filterYear: 2026,
+  filterSemester: '春季',
+  filterCourseName: '数学提高',
   dateRange: ['2026-06-01', '2026-06-14'],
 });
 
-assert.strictEqual(studentModel.fileName, '张老师_李同学_20260601-20260614_课表.xlsx');
+assert.strictEqual(studentModel.fileName, '2026_春季_张老师_数学提高_李同学_20260601-20260614_课表.xlsx');
 assert.strictEqual(studentModel.weeks[0].courses[0].displayLines.join('\n'), '数学提高\n09:00-10:30');
 assert.ok(!studentModel.weeks[0].courses[0].displayLines.join('\n').includes('A101'));
+
+const oneToOneModel = buildScheduleExportModel({
+  schedules: [{
+    id: 'one-to-one',
+    course_id: 'c2',
+    course_name: '李同学',
+    start_time: '2026-06-03 09:00',
+    end_time: '2026-06-03 10:00',
+    status: 'PLANNED',
+  }],
+  courses: [{
+    id: 'c2',
+    name: '李同学',
+    teacher_id: 't1',
+    student_pricings: [{ student_id: 'stu1' }],
+  }],
+  teachers,
+  students,
+  filterTeacher: 't1',
+  filterStudent: 'stu1',
+  filterCourseName: '李同学',
+  dateRange: ['2026-06-03', '2026-06-03'],
+});
+
+assert.strictEqual(oneToOneModel.fileName, '张老师_李同学_20260603-20260603_课表.xlsx');
+assert.ok(!oneToOneModel.fileName.includes('李同学_李同学'));
 
 const compactMorningModel = buildScheduleExportModel({
   schedules: [
