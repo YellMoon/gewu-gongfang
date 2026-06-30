@@ -79,6 +79,35 @@ assert.strictEqual(studentModel.fileName, '张老师_李同学_20260601-20260614
 assert.strictEqual(studentModel.weeks[0].courses[0].displayLines.join('\n'), '数学提高\n09:00-10:30');
 assert.ok(!studentModel.weeks[0].courses[0].displayLines.join('\n').includes('A101'));
 
+const compactMorningModel = buildScheduleExportModel({
+  schedules: [
+    {
+      id: 'morning-only',
+      course_id: 'c1',
+      course_name: '上午短课',
+      start_time: '2026-06-01 08:00',
+      end_time: '2026-06-01 10:00',
+      room: 'A101',
+      status: 'PLANNED',
+    },
+  ],
+  courses,
+  teachers,
+  students,
+  filterTeacher: 't1',
+  dateRange: ['2026-06-01', '2026-06-07'],
+});
+
+assert.deepStrictEqual(compactMorningModel.weeks[0].timeLabels, ['08:00-10:00']);
+assert.strictEqual(compactMorningModel.weeks[0].courses[0].rowOffset, 0);
+assert.strictEqual(compactMorningModel.weeks[0].courses[0].rowSpan, 1);
+
+const compactWorkbook = createScheduleWorkbook(XLSX, compactMorningModel);
+const compactSheet = compactWorkbook.Sheets[compactMorningModel.sheetName];
+assert.strictEqual(compactSheet['!ref'], 'A1:H3');
+assert.ok(compactSheet['!rows'][2].hpt <= 34, 'single course row should stay close to content height');
+assert.ok(compactSheet['!cols'][1].wch <= 16, 'course day column should stay close to content width');
+
 const workbook = createScheduleWorkbook(XLSX, studentModel);
 assert.strictEqual(workbook.SheetNames[0], studentModel.sheetName);
 const sheet = workbook.Sheets[studentModel.sheetName];

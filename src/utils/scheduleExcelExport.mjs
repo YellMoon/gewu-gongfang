@@ -55,6 +55,10 @@ function slotToTimeLabel(slot) {
   return String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0');
 }
 
+function slotRangeLabel(startSlot, endSlot) {
+  return slotToTimeLabel(startSlot) + '-' + slotToTimeLabel(endSlot);
+}
+
 function dateRangeFromSchedules(schedules) {
   if (!schedules.length) return [dayjs(), dayjs()];
   const sorted = schedules
@@ -66,6 +70,37 @@ function dateRangeFromSchedules(schedules) {
 
 function isCancelledOrLeave(schedule) {
   return schedule.status === 'CANCELLED' || schedule.status === 'LEAVE' || schedule.status === 2 || schedule.status === 3;
+}
+
+function getScheduleSlots(schedule) {
+  const start = dayjs(schedule.start_time);
+  const end = dayjs(schedule.end_time);
+  if (!start.isValid() || !end.isValid()) return null;
+  const startSlot = timeToSlot(start.format('HH:mm'));
+  const endSlot = timeToSlot(end.format('HH:mm'));
+  if (!Number.isFinite(startSlot) || !Number.isFinite(endSlot) || endSlot <= startSlot) return null;
+  return { start, end, startSlot, endSlot };
+}
+
+function buildOccupiedTimeSegments(weekSchedules) {
+  const slotRanges = weekSchedules
+    .map(getScheduleSlots)
+    .filter(Boolean);
+  if (!slotRanges.length) return [];
+
+  const boundaries = Array.from(new Set(
+    slotRanges.flatMap(item => [item.startSlot, item.endSlot])
+  )).sort((a, b) => a - b);
+
+  return boundaries
+    .slice(0, -1)
+    .map((startSlot, index) => ({ startSlot, endSlot: boundaries[index + 1] }))
+    .filter(segment => slotRanges.some(item => item.startSlot < segment.endSlot && item.endSlot > segment.startSlot))
+    .map((segment, index) => ({
+      ...segment,
+      index,
+      label: slotRangeLabel(segment.startSlot, segment.endSlot),
+    }));
 }
 
 function buildScheduleExportModel(input) {
@@ -100,27 +135,19 @@ function buildScheduleExportModel(input) {
       })
       .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
-    let dynMinHour = DEFAULT_MIN_HOUR;
-    let dynMaxHour = DEFAULT_MAX_HOUR;
-    weekSchedules.filter(item => !isCancelledOrLeave(item)).forEach(schedule => {
-      const startTime = String(schedule.start_time).split(' ')[1] || '';
-      const endTime = String(schedule.end_time).split(' ')[1] || '';
-      const startParts = startTime.split(':').map(Number);
-      const endParts = endTime.split(':').map(Number);
-      const startHour = startParts[0] + (startParts[1] || 0) / 60;
-      const endHour = endParts[0] + (endParts[1] || 0) / 60;
-      if (Number.isFinite(startHour) && startHour < dynMinHour) dynMinHour = Math.floor(startHour);
-      if (Number.isFinite(endHour) && endHour > dynMaxHour) dynMaxHour = Math.ceil(endHour);
-    });
-
-    const minSlot = timeToSlot(String(dynMinHour).padStart(2, '0') + ':00');
-    const maxSlot = timeToSlot(String(dynMaxHour).padStart(2, '0') + ':00');
+    const timeSegments = buildOccupiedTimeSegments(weekSchedules);
+    const minSlot = timeSegments.length ? timeSegments[0].startSlot : timeToSlot(String(DEFAULT_MIN_HOUR).padStart(2, '0') + ':00');
+    const maxSlot = timeSegments.length ? timeSegments[timeSegments.length - 1].endSlot : timeToSlot(String(DEFAULT_MIN_HOUR + 1).padStart(2, '0') + ':00');
     const coursesForWeek = weekSchedules.map(schedule => {
       const course = getScheduleCourse(schedule, courses);
       const start = dayjs(schedule.start_time);
       const end = dayjs(schedule.end_time);
       const startLabel = start.format('HH:mm');
       const endLabel = end.format('HH:mm');
+      const startSlot = timeToSlot(startLabel);
+      const endSlot = timeToSlot(endLabel);
+      const startSegmentIndex = timeSegments.findIndex(segment => segment.startSlot === startSlot);
+      const coveredSegments = timeSegments.filter(segment => startSlot < segment.endSlot && endSlot > segment.startSlot);
       const title = schedule.course_name || (course && (course.display_name || course.name)) || '课程';
       const room = schedule.room || (course && course.room_name) || '';
       const lines = [title];
@@ -129,10 +156,10 @@ function buildScheduleExportModel(input) {
       return {
         id: schedule.id,
         dayIndex: Math.max(0, Math.min(6, start.isoWeekday() - 1)),
-        startSlot: timeToSlot(startLabel),
-        endSlot: timeToSlot(endLabel),
-        rowOffset: timeToSlot(startLabel) - minSlot,
-        rowSpan: Math.max(1, timeToSlot(endLabel) - timeToSlot(startLabel)),
+        startSlot,
+        endSlot,
+        rowOffset: Math.max(0, startSegmentIndex),
+        rowSpan: Math.max(1, coveredSegments.length),
         displayLines: lines,
         color: courseColorMap[schedule.course_id] || (course && course.color) || '#F5F7FA',
         textColor: '#1f1f1f',
@@ -140,7 +167,7 @@ function buildScheduleExportModel(input) {
         studentNames: getCourseStudents(course, students),
         status: schedule.status,
       };
-    });
+    }).filter(course => course.rowOffset >= 0);
 
     weeks.push({
       title: '第' + (weeks.length + 1) + '周：' + weekStart.format('M月D日') + ' ~ ' + weekEnd.format('M月D日'),
@@ -149,7 +176,7 @@ function buildScheduleExportModel(input) {
       dayHeaders: WEEK_DAYS.map((label, index) => label + '\n' + weekStart.add(index, 'day').format('M月D日')),
       minSlot,
       maxSlot,
-      timeLabels: Array.from({ length: Math.max(1, maxSlot - minSlot) }, (_, index) => slotToTimeLabel(minSlot + index)),
+      timeLabels: timeSegments.map(segment => segment.label),
       courses: coursesForWeek,
     });
     cursor = cursor.add(7, 'day');
@@ -199,7 +226,19 @@ function createScheduleWorkbook(XLSX, model) {
   const ws = {};
   const merges = [];
   const rows = [];
-  const cols = [{ wch: 8 }].concat(Array.from({ length: 7 }, () => ({ wch: 22 })));
+  const dayColumnWidths = Array.from({ length: 7 }, (_, dayIndex) => {
+    const maxTextLength = model.weeks.reduce((max, week) => {
+      const weekMax = week.courses
+        .filter(course => course.dayIndex === dayIndex)
+        .reduce((innerMax, course) => {
+          const longest = course.displayLines.reduce((lineMax, line) => Math.max(lineMax, String(line).length), 0);
+          return Math.max(innerMax, longest);
+        }, 0);
+      return Math.max(max, weekMax);
+    }, 0);
+    return { wch: Math.max(10, Math.min(16, maxTextLength + 2)) };
+  });
+  const cols = [{ wch: 13 }].concat(dayColumnWidths);
   let maxRow = 0;
   let currentRow = 0;
 
@@ -246,8 +285,11 @@ function createScheduleWorkbook(XLSX, model) {
     const bodyStartRow = currentRow;
     week.timeLabels.forEach((label, index) => {
       const row = bodyStartRow + index;
-      rows[row] = { hpt: 4 };
-      setCell(ws, row, 0, index % 12 === 0 ? label : '', timeStyle);
+      const maxLines = week.courses
+        .filter(course => course.rowOffset <= index && course.rowOffset + course.rowSpan > index)
+        .reduce((max, course) => Math.max(max, course.displayLines.length), 1);
+      rows[row] = { hpt: Math.min(34, Math.max(22, maxLines * 12 + 6)) };
+      setCell(ws, row, 0, label, timeStyle);
       for (let col = 1; col <= 7; col += 1) setCell(ws, row, col, '', gridStyle);
     });
 
