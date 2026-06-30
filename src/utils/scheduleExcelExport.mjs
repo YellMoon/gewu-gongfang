@@ -17,6 +17,10 @@ function sanitizeFilePart(value) {
   return cleanName(value, '未命名').replace(/[\\/:*?"<>|\s]+/g, '_').replace(/^_+|_+$/g, '');
 }
 
+function displayWidth(value) {
+  return Array.from(String(value || '')).reduce((sum, ch) => sum + (ch.charCodeAt(0) > 255 ? 2 : 1), 0);
+}
+
 function normalizeComparableName(value) {
   return String(value || '').replace(/\s+/g, '').trim();
 }
@@ -258,14 +262,14 @@ function createScheduleWorkbook(XLSX, model) {
       const weekMax = week.courses
         .filter(course => course.dayIndex === dayIndex)
         .reduce((innerMax, course) => {
-          const longest = course.displayLines.reduce((lineMax, line) => Math.max(lineMax, String(line).length), 0);
+          const longest = course.displayLines.reduce((lineMax, line) => Math.max(lineMax, displayWidth(line)), 0);
           return Math.max(innerMax, longest);
         }, 0);
       return Math.max(max, weekMax);
     }, 0);
-    return { wch: Math.max(10, Math.min(16, maxTextLength + 2)) };
+    return { wch: Math.max(24, Math.min(30, maxTextLength + 4)) };
   });
-  const cols = [{ wch: 13 }].concat(dayColumnWidths);
+  const cols = dayColumnWidths;
   let maxRow = 0;
   let currentRow = 0;
 
@@ -297,15 +301,28 @@ function createScheduleWorkbook(XLSX, model) {
       right: { style: 'hair', color: { rgb: 'FFEFEFEF' } },
     },
   };
+  const createCourseStyle = (course, includeText = true) => {
+    const borderColor = borderColorForStatus(course.status);
+    return {
+      font: includeText ? { bold: true, sz: 10, color: { rgb: 'FF1F1F1F' } } : { sz: 10, color: { rgb: 'FF1F1F1F' } },
+      alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+      fill: { patternType: 'solid', fgColor: { rgb: hexToArgb(course.color) } },
+      border: {
+        top: { style: 'medium', color: { rgb: borderColor } },
+        bottom: { style: 'medium', color: { rgb: borderColor } },
+        left: { style: 'medium', color: { rgb: borderColor } },
+        right: { style: 'medium', color: { rgb: borderColor } },
+      },
+    };
+  };
 
   model.weeks.forEach((week, weekIndex) => {
     setCell(ws, currentRow, 0, week.title, titleStyle);
-    merges.push({ s: { r: currentRow, c: 0 }, e: { r: currentRow, c: 7 } });
+    merges.push({ s: { r: currentRow, c: 0 }, e: { r: currentRow, c: 6 } });
     rows[currentRow] = { hpt: 24 };
     currentRow += 1;
 
-    setCell(ws, currentRow, 0, '时间', dayHeaderStyle);
-    week.dayHeaders.forEach((header, dayIndex) => setCell(ws, currentRow, dayIndex + 1, header, dayHeaderStyle));
+    week.dayHeaders.forEach((header, dayIndex) => setCell(ws, currentRow, dayIndex, header, dayHeaderStyle));
     rows[currentRow] = { hpt: 34 };
     currentRow += 1;
 
@@ -316,26 +333,16 @@ function createScheduleWorkbook(XLSX, model) {
         .filter(course => course.rowOffset <= index && course.rowOffset + course.rowSpan > index)
         .reduce((max, course) => Math.max(max, course.displayLines.length), 1);
       rows[row] = { hpt: Math.min(34, Math.max(22, maxLines * 12 + 6)) };
-      setCell(ws, row, 0, label, timeStyle);
-      for (let col = 1; col <= 7; col += 1) setCell(ws, row, col, '', gridStyle);
+      const rowCourse = week.courses.find(course => course.rowOffset <= index && course.rowOffset + course.rowSpan > index);
+      const emptyStyle = rowCourse ? createCourseStyle(rowCourse, false) : gridStyle;
+      for (let col = 0; col < 7; col += 1) setCell(ws, row, col, '', emptyStyle);
     });
 
     week.courses.forEach(course => {
       const row = bodyStartRow + course.rowOffset;
       const endRow = Math.max(row, row + course.rowSpan - 1);
-      const col = course.dayIndex + 1;
-      const borderColor = borderColorForStatus(course.status);
-      setCell(ws, row, col, course.displayLines.join('\n'), {
-        font: { bold: true, sz: 10, color: { rgb: 'FF1F1F1F' } },
-        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
-        fill: { patternType: 'solid', fgColor: { rgb: hexToArgb(course.color) } },
-        border: {
-          top: { style: 'medium', color: { rgb: borderColor } },
-          bottom: { style: 'medium', color: { rgb: borderColor } },
-          left: { style: 'medium', color: { rgb: borderColor } },
-          right: { style: 'medium', color: { rgb: borderColor } },
-        },
-      });
+      const col = course.dayIndex;
+      setCell(ws, row, col, course.displayLines.join('\n'), createCourseStyle(course));
       if (endRow > row) merges.push({ s: { r: row, c: col }, e: { r: endRow, c: col } });
     });
 
@@ -343,7 +350,7 @@ function createScheduleWorkbook(XLSX, model) {
     maxRow = Math.max(maxRow, currentRow);
   });
 
-  ws['!ref'] = 'A1:H' + Math.max(1, maxRow);
+  ws['!ref'] = 'A1:G' + Math.max(1, maxRow);
   ws['!cols'] = cols;
   ws['!rows'] = rows;
   ws['!merges'] = merges;

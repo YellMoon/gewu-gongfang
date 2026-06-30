@@ -133,19 +133,43 @@ assert.strictEqual(compactMorningModel.weeks[0].courses[0].rowSpan, 1);
 
 const compactWorkbook = createScheduleWorkbook(XLSX, compactMorningModel);
 const compactSheet = compactWorkbook.Sheets[compactMorningModel.sheetName];
-assert.strictEqual(compactSheet['!ref'], 'A1:H3');
+assert.strictEqual(compactSheet['!ref'], 'A1:G3');
 assert.ok(compactSheet['!rows'][2].hpt <= 34, 'single course row should stay close to content height');
-assert.ok(compactSheet['!cols'][1].wch <= 16, 'course day column should stay close to content width');
+assert.ok(compactSheet['!cols'][0].wch >= 20, 'course day column should be wide enough for course text');
 
 const workbook = createScheduleWorkbook(XLSX, studentModel);
 assert.strictEqual(workbook.SheetNames[0], studentModel.sheetName);
 const sheet = workbook.Sheets[studentModel.sheetName];
-assert.ok(sheet['!merges'].some(merge => merge.s.r === 0 && merge.e.c === 7));
-assert.strictEqual(sheet.B2.v, '周一\n6月1日');
+assert.ok(sheet['!merges'].some(merge => merge.s.r === 0 && merge.e.c === 6));
+assert.strictEqual(sheet.A2.v, '周一\n6月1日');
+assert.notStrictEqual(sheet.A2.v, '时间');
 const courseCell = Object.values(sheet).find(cell => cell && cell.v === '数学提高\n09:00-10:30');
 assert.ok(courseCell, 'course cell should be written');
 assert.strictEqual(courseCell.s.alignment.wrapText, true);
 assert.strictEqual(courseCell.s.border.left.style, 'medium');
+
+const rowStyleModel = buildScheduleExportModel({
+  schedules: [{
+    id: 'row-style',
+    course_id: 'c1',
+    course_name: '同人精华',
+    start_time: '2026-06-01 07:50',
+    end_time: '2026-06-01 09:50',
+    status: 'PLANNED',
+  }],
+  courses,
+  teachers,
+  students,
+  dateRange: ['2026-06-01', '2026-06-07'],
+});
+const rowStyleWorkbook = createScheduleWorkbook(XLSX, rowStyleModel);
+const rowStyleSheet = rowStyleWorkbook.Sheets[rowStyleModel.sheetName];
+assert.strictEqual(rowStyleSheet.A2.v, '周一\n6月1日');
+assert.ok(!Object.values(rowStyleSheet).some(cell => cell && cell.v === '07:50-09:50' && cell.s?.font?.color?.rgb === 'FF8C8C8C'));
+assert.strictEqual(rowStyleSheet.G3.v, '');
+assert.strictEqual(rowStyleSheet.G3.s.fill.fgColor.rgb, rowStyleSheet.A3.s.fill.fgColor.rgb);
+assert.strictEqual(rowStyleSheet.G3.s.border.left.style, rowStyleSheet.A3.s.border.left.style);
+assert.ok(rowStyleSheet['!cols'][0].wch >= 24, 'course columns should avoid wrapping common course text');
 
   console.log('scheduleExcelExport tests passed');
 })().catch(error => {
