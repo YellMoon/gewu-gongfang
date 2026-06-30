@@ -182,7 +182,7 @@ function buildScheduleExportModel(input) {
       const title = schedule.course_name || (course && (course.display_name || course.name)) || '课程';
       const room = schedule.room || (course && course.room_name) || '';
       const lines = [title];
-      const meta = filterStudent ? startLabel + '-' + endLabel : [room, startLabel + '-' + endLabel].filter(Boolean).join(' ');
+      const meta = filterStudent ? startLabel + '-' + endLabel : [room, startLabel + '-' + endLabel].filter(Boolean).join('  ');
       if (meta) lines.push(meta);
       return {
         id: schedule.id,
@@ -280,7 +280,7 @@ function createScheduleWorkbook(XLSX, model) {
     border: { bottom: { style: 'thin', color: { rgb: 'FF91D5FF' } } },
   };
   const dayHeaderStyle = {
-    font: { bold: true, color: { rgb: 'FFFFFFFF' } },
+    font: { bold: true, sz: 12, color: { rgb: 'FFFFFFFF' } },
     alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
     fill: { patternType: 'solid', fgColor: { rgb: 'FF1890FF' } },
     border: {
@@ -304,7 +304,7 @@ function createScheduleWorkbook(XLSX, model) {
   const createCourseStyle = (course, includeText = true) => {
     const borderColor = borderColorForStatus(course.status);
     return {
-      font: includeText ? { bold: true, sz: 10, color: { rgb: 'FF1F1F1F' } } : { sz: 10, color: { rgb: 'FF1F1F1F' } },
+      font: includeText ? { bold: true, sz: 9, color: { rgb: 'FF1F1F1F' } } : { sz: 9, color: { rgb: 'FF1F1F1F' } },
       alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
       fill: { patternType: 'solid', fgColor: { rgb: hexToArgb(course.color) } },
       border: {
