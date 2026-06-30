@@ -62,7 +62,7 @@ assert.deepStrictEqual(allModel.weeks.map(w => w.title), [
   '第1周：6月1日 ~ 6月7日',
   '第2周：6月8日 ~ 6月14日',
 ]);
-assert.strictEqual(allModel.weeks[0].courses[0].displayLines.join('\n'), '数学提高\nA101 09:00-10:30');
+assert.strictEqual(allModel.weeks[0].courses[0].displayLines.join('\n'), '数学提高\nA101  09:00-10:30');
 assert.strictEqual(allModel.weeks[1].courses[0].dayIndex, 0);
 
 const studentModel = buildScheduleExportModel({
@@ -147,6 +147,7 @@ const courseCell = Object.values(sheet).find(cell => cell && cell.v === '数学�
 assert.ok(courseCell, 'course cell should be written');
 assert.strictEqual(courseCell.s.alignment.wrapText, true);
 assert.strictEqual(courseCell.s.border.left.style, 'medium');
+assert.ok(sheet.A2.s.font.sz > courseCell.s.font.sz, 'day header font should be larger than course text');
 
 const rowStyleModel = buildScheduleExportModel({
   schedules: [{
