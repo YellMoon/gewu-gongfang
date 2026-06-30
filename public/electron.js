@@ -7,7 +7,7 @@ const {
   applyRuntimeConfigToEnv,
 } = require('./runtimeConfig');
 let autoUpdater = null;
-const updateFeedUrl = (process.env.UPDATE_FEED_URL || 'https://gewugongfang.oss-cn-hangzhou.aliyuncs.com/desktop/').replace(/\/?$/, '/');
+const updateFeedUrl = (process.env.UPDATE_FEED_URL || 'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop/').replace(/\/?$/, '/');
 try {
   autoUpdater = require('electron-updater').autoUpdater;
   autoUpdater.autoDownload = false;
