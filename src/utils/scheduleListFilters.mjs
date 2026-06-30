@@ -69,7 +69,7 @@ function scheduleMatchesFilters(schedule, courses, filters = {}) {
 export function applyScheduleListFilters(schedules = [], courses = [], filters = {}) {
   const result = schedules.filter(schedule => scheduleMatchesFilters(schedule, courses, filters));
 
-  return result.sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+  return result.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 }
 
 function withoutFilter(filters, key) {

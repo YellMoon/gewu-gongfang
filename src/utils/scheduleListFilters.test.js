@@ -12,6 +12,13 @@ const assert = require('assert');
       student_ids: ['student-a'],
     },
     {
+      id: 's-early-math',
+      course_id: 'course-math',
+      start_time: '2026-06-02T08:00:00.000Z',
+      end_time: '2026-06-02T09:00:00.000Z',
+      student_ids: ['student-a'],
+    },
+    {
       id: 's-physics',
       course_id: 'course-physics',
       start_time: '2026-06-03T09:00:00.000Z',
@@ -61,8 +68,8 @@ const assert = require('assert');
 
   assert.deepStrictEqual(
     filteredByTeacher.map(item => item.id),
-    ['s-new-math', 's-old-math'],
-    'teacher filter should still be applied after schedules refresh instead of returning the full list'
+    ['s-early-math', 's-old-math', 's-new-math'],
+    'teacher filter should sort schedules by date and start time ascending'
   );
 
   const filteredByStudent = applyScheduleListFilters(schedules, courses, {
@@ -85,8 +92,8 @@ const assert = require('assert');
 
   assert.deepStrictEqual(
     filteredByCourseFields.map(item => item.id),
-    ['s-new-math', 's-old-math'],
-    'teacher, student, year, semester, and course name filters should be applied together'
+    ['s-early-math', 's-old-math', 's-new-math'],
+    'teacher, student, year, semester, and course name filters should be applied together and sorted ascending'
   );
 
   const optionsAfterTeacher = buildScheduleListFilterOptions(schedules, courses, students, teachers, {
