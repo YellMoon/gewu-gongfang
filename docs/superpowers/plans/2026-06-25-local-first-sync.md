@@ -12,7 +12,7 @@
 
 ## Scope and sequencing
 
-This plan covers the whole confirmed design, but execution must be staged. Do not start miniapp UI redesign until Tasks 1-9 are implemented and verified. Do not deploy cloud or miniapp until Tasks 10-12 are implemented and verified.
+This plan covers the whole confirmed design, but execution must be staged. Do not start miniapp UI redesign until Tasks 1-9 are implemented and verified. Once miniapp UI work starts, it must cover every miniapp page instead of stopping at the home page, with per-page visual checks, interaction checks, screenshots, and records. Do not deploy cloud or miniapp until Tasks 10-12 are implemented and verified.
 
 Committed design source:
 
