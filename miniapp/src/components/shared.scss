@@ -49,9 +49,12 @@
 .ns-bar {
   display: flex;
   align-items: center;
-  padding: 16rpx 24rpx;
-  background: #fff7e6;
-  border-bottom: 2rpx solid #ffd591;
+  margin: 16rpx 24rpx 0;
+  padding: 16rpx 20rpx;
+  border-radius: 18rpx;
+  background: #fff7e8;
+  border: 1rpx solid rgba(180, 111, 58, 0.18);
+  box-shadow: 0 10rpx 26rpx rgba(180, 111, 58, 0.08);
 }
 
 .ns-icon {
@@ -62,13 +65,18 @@
 .ns-text {
   flex: 1;
   font-size: 24rpx;
-  color: #d46b08;
+  line-height: 32rpx;
+  color: #9a5a22;
 }
 
 .ns-retry {
-  padding: 8rpx 20rpx;
-  background: #fa8c16;
-  border-radius: 20rpx;
+  height: 44rpx;
+  padding: 0 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #b46f3a;
+  border-radius: 999rpx;
 }
 
 .ns-retry-text {
@@ -81,24 +89,42 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 120rpx 40rpx;
+  justify-content: center;
+  min-height: 260rpx;
+  padding: 72rpx 40rpx;
+  border-radius: 24rpx;
+  background: #fffdf8;
+  border: 1rpx solid rgba(23, 32, 51, 0.06);
 }
 
 .es-icon {
-  font-size: 80rpx;
-  margin-bottom: 24rpx;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 24rpx;
+  background: #f0f4f2;
+  color: #1f6f68;
+  font-size: 26rpx;
+  line-height: 72rpx;
+  font-weight: 800;
+  text-align: center;
+  margin-bottom: 20rpx;
 }
 
 .es-text {
   font-size: 28rpx;
-  color: #999;
+  line-height: 38rpx;
+  color: #7d8795;
   margin-bottom: 32rpx;
 }
 
 .es-action {
-  padding: 16rpx 48rpx;
-  background: #1890ff;
-  border-radius: 30rpx;
+  height: 68rpx;
+  padding: 0 42rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1f6f68;
+  border-radius: 999rpx;
 }
 
 .es-action-text {
@@ -111,16 +137,34 @@
   display: flex;
   flex-wrap: wrap;
   gap: 20rpx;
-  padding: 24rpx 24rpx 0;
+  padding: 0;
 }
 
 .st-card {
+  position: relative;
   width: calc(50% - 10rpx);
-  background: #fff;
-  border-radius: 16rpx;
-  border-top: 6rpx solid #1890ff;
+  min-height: 138rpx;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: #fffdf8;
+  border-radius: 24rpx;
+  border: 1rpx solid rgba(23, 32, 51, 0.06);
+  border-top: 0;
   padding: 24rpx;
-  box-shadow: 0 2rpx 12rpx rgba(0,0,0,0.06);
+  box-shadow: 0 14rpx 36rpx rgba(23, 32, 51, 0.08);
+  letter-spacing: 0;
+}
+
+.st-card::before {
+  content: '';
+  position: absolute;
+  top: 22rpx;
+  right: 22rpx;
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.18;
 }
 
 .st-header {
@@ -130,13 +174,20 @@
 }
 
 .st-icon {
-  font-size: 28rpx;
-  margin-right: 8rpx;
+  width: 42rpx;
+  height: 42rpx;
+  margin-right: 10rpx;
+  border-radius: 16rpx;
+  background: #f0f4f2;
+  font-size: 22rpx;
+  line-height: 42rpx;
+  text-align: center;
 }
 
 .st-label {
   font-size: 24rpx;
-  color: #999;
+  line-height: 32rpx;
+  color: #7d8795;
 }
 
 .st-value-row {
@@ -145,13 +196,15 @@
 }
 
 .st-value {
-  font-size: 44rpx;
+  font-size: 42rpx;
+  line-height: 50rpx;
   font-weight: bold;
 }
 
 .st-suffix {
   font-size: 24rpx;
-  color: #999;
+  line-height: 32rpx;
+  color: #7d8795;
   margin-left: 8rpx;
 }
 
