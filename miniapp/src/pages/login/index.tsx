@@ -48,7 +48,7 @@ export default function LoginPage() {
           ...loginUser,
           user_type: loginUser.role || loginUser.user_type || 'student',
         });
-        Taro.showToast({ title: '登录成功 🎉', icon: 'success' });
+        Taro.showToast({ title: '登录成功', icon: 'success' });
         setTimeout(() => {
           Taro.reLaunch({ url: '/pages/index/index' });
         }, 500);
@@ -80,7 +80,7 @@ export default function LoginPage() {
         clearPermissionCache();
         Taro.setStorageSync('auth_token', res.data.token);
         Taro.setStorageSync('user_info', res.data.user);
-        Taro.showToast({ title: '注册成功 🎉', icon: 'success' });
+        Taro.showToast({ title: '注册成功', icon: 'success' });
         setTimeout(() => {
           Taro.reLaunch({ url: '/pages/index/index' });
         }, 500);

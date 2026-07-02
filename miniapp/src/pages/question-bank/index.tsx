@@ -46,9 +46,11 @@ export default function QuestionBankPage() {
       });
 
       if (res.success) {
-        const taskId = res.task?.id || res.data?.task?.id || '';
+        const payload = res as any;
+        const task = payload.task || payload.data?.task;
+        const taskId = task?.id || '';
         setLastTaskId(taskId);
-        setTaskStatus(res.task?.status || res.data?.task?.status || 'pending_host');
+        setTaskStatus(task?.status || 'pending_host');
         setTaskResultText('');
         setResultFileUrl('');
         Taro.showToast({ title: actionCopy[taskType].success, icon: 'success' });
@@ -73,7 +75,8 @@ export default function QuestionBankPage() {
     }
     try {
       const res = await getMiniappTaskResult(lastTaskId);
-      const task = res.task || res.data?.task;
+      const payload = res as any;
+      const task = payload.task || payload.data?.task;
       if (!res.success || !task) {
         Taro.showToast({ title: '未查询到结果', icon: 'none' });
         return;

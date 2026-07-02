@@ -112,7 +112,7 @@ export default function Stats() {
 
       {stats.totalSchedules === 0 && (
         <View className='empty-state'>
-          <Text className='empty-state-icon'>📊</Text>
+          <Text className='empty-state-icon'>统</Text>
           <Text className='empty-state-text'>暂无完成课程数据</Text>
         </View>
       )}

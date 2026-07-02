@@ -30,7 +30,7 @@ export default function StudentDetail() {
     return (
       <View className='container'>
         <View className='empty-state'>
-          <Text className='empty-state-icon'>❓</Text>
+          <Text className='empty-state-icon'>生</Text>
           <Text className='empty-state-text'>未找到该学生信息</Text>
         </View>
       </View>
@@ -39,6 +39,11 @@ export default function StudentDetail() {
 
   const getPaymentTypeLabel = (t: PaymentType) => t === PaymentType.TUITION ? '学费' : '课时';
   const formatDate = (d: string) => d.split('T')[0];
+  const getScoreClass = (score: number) => {
+    if (score >= 90) return 'score-high';
+    if (score >= 60) return 'score-mid';
+    return 'score-low';
+  };
 
   return (
     <View className='container'>
@@ -89,7 +94,7 @@ export default function StudentDetail() {
         <View>
           {payments.length === 0 ? (
             <View className='empty-state'>
-              <Text className='empty-state-icon'>💰</Text>
+              <Text className='empty-state-icon'>账</Text>
               <Text className='empty-state-text'>暂无缴费记录</Text>
             </View>
           ) : (
@@ -100,7 +105,7 @@ export default function StudentDetail() {
                     <Text className='list-item-title'>{getPaymentTypeLabel(p.payment_type)}</Text>
                     <Text className='list-item-desc'>{formatDate(p.payment_date)} · {p.payment_method || '未记录'}</Text>
                   </View>
-                  <Text className='list-item-extra' style={{ color: '#52c41a', fontWeight: 600 }}>+¥{p.amount}</Text>
+                  <Text className='list-item-extra income'>+¥{p.amount}</Text>
                 </View>
               ))}
             </View>
@@ -113,7 +118,7 @@ export default function StudentDetail() {
         <View>
           {grades.length === 0 ? (
             <View className='empty-state'>
-              <Text className='empty-state-icon'>📝</Text>
+              <Text className='empty-state-icon'>绩</Text>
               <Text className='empty-state-text'>暂无成绩记录</Text>
             </View>
           ) : (
@@ -124,7 +129,7 @@ export default function StudentDetail() {
                     <Text className='list-item-title'>{g.subject}</Text>
                     <Text className='list-item-desc'>{g.exam_date ? formatDate(g.exam_date) : ''}</Text>
                   </View>
-                  <Text className='list-item-extra' style={{ fontWeight: 700, fontSize: 32, color: g.score >= 90 ? '#52c41a' : g.score >= 60 ? '#1890ff' : '#ff4d4f' }}>{g.score}</Text>
+                  <Text className={`list-item-extra score ${getScoreClass(g.score)}`}>{g.score}</Text>
                 </View>
               ))}
             </View>

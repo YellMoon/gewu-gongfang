@@ -42,7 +42,7 @@ export default function Teachers() {
       </View>
 
       {loading ? <LoadingSkeleton rows={4} avatar /> : teachers.length === 0 ? (
-        <EmptyState icon="👩‍🏫" text="暂无教师数据" />
+        <EmptyState icon="师" text="暂无教师数据" />
       ) : (
         <PullRefreshView onRefresh={handleRefresh} className="teacher-list">
           {teachers.map(t => (

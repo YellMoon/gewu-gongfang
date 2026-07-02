@@ -57,7 +57,7 @@ export default function Courses() {
       </ScrollView>
 
       {loading ? <LoadingSkeleton rows={4} /> : filteredCourses.length === 0 ? (
-        <EmptyState icon="📚" text="暂无课程" />
+        <EmptyState icon="课" text="暂无课程" />
       ) : (
         <ScrollView
           className="course-scroll"
@@ -65,7 +65,7 @@ export default function Courses() {
           refresherEnabled
           refresherTriggered={refreshing}
           onRefresherRefresh={handleRefresh}
-          refresherBackground="#f5f5f5"
+          refresherBackground="#f7f4ee"
         >
           <View className="course-list">
             {/* 进行中 */}

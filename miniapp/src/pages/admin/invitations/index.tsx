@@ -76,7 +76,7 @@ export default function AdminInvitationsPage() {
     0: '待使用', 1: '已使用', 2: '已过期'
   };
   const statusColors: Record<number, string> = {
-    0: '#1890ff', 1: '#52c41a', 2: '#999'
+    0: '#1f6f68', 1: '#28784f', 2: '#7d8795'
   };
 
   return (

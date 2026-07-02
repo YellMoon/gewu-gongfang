@@ -3,6 +3,8 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { useMemo, useState } from 'react';
 import './index.scss';
 
+declare const getCurrentPages: (() => Array<{ route?: string }>) | undefined;
+
 type TabItem = {
   pagePath: string;
   label: string;
@@ -10,20 +12,24 @@ type TabItem = {
 };
 
 const ADMIN_TABS: TabItem[] = [
-  { pagePath: 'pages/index/index', label: '首页', iconText: '⌂' },
-  { pagePath: 'pages/schedule/index', label: '课程表', iconText: '□' },
-  { pagePath: 'pages/students/index', label: '学员', iconText: '○' },
-  { pagePath: 'pages/assets/index', label: '财务', iconText: '¥' },
-  { pagePath: 'pages/settings/index', label: '我的', iconText: '⋯' },
+  { pagePath: 'pages/index/index', label: '首页', iconText: '首' },
+  { pagePath: 'pages/schedule/index', label: '课程表', iconText: '课' },
+  { pagePath: 'pages/students/index', label: '学员', iconText: '生' },
+  { pagePath: 'pages/assets/index', label: '财务', iconText: '账' },
+  { pagePath: 'pages/settings/index', label: '我的', iconText: '我' },
 ];
 
 const STUDENT_TABS: TabItem[] = [
-  { pagePath: 'pages/index/index', label: '首页', iconText: '⌂' },
-  { pagePath: 'pages/schedule/index', label: '课程表', iconText: '□' },
-  { pagePath: 'pages/settings/index', label: '我的', iconText: '⋯' },
+  { pagePath: 'pages/index/index', label: '首页', iconText: '首' },
+  { pagePath: 'pages/schedule/index', label: '课程表', iconText: '课' },
+  { pagePath: 'pages/settings/index', label: '我的', iconText: '我' },
 ];
 
 function getCurrentRoute() {
+  if (typeof window !== 'undefined') {
+    const hashRoute = window.location.hash.replace(/^#\/?/, '').split('?')[0];
+    if (hashRoute) return hashRoute;
+  }
   const pages = typeof getCurrentPages === 'function' ? getCurrentPages() : [];
   const current = pages[pages.length - 1];
   return current?.route || 'pages/index/index';
@@ -50,10 +56,14 @@ export default function RoleTabBar() {
     userType === 'student' ? STUDENT_TABS : ADMIN_TABS
   ), [userType]);
 
+  const isTabPage = tabs.some((item) => item.pagePath === currentRoute);
+
   const handleSwitch = (item: TabItem) => {
     if (item.pagePath === currentRoute) return;
     Taro.switchTab({ url: `/${item.pagePath}` });
   };
+
+  if (!isTabPage) return null;
 
   return (
     <View className="role-tabbar">

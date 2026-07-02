@@ -6,10 +6,10 @@ import { getLocalItem, getLocalData } from '../../../utils/sync';
 import './detail.scss';
 
 const STATUS_MAP: Record<number, { label: string; color: string }> = {
-  [ScheduleStatus.PLANNED]: { label: '待上课', color: '#1890ff' },
-  [ScheduleStatus.COMPLETED]: { label: '已完成', color: '#52c41a' },
-  [ScheduleStatus.CANCELLED]: { label: '已取消', color: '#ff4d4f' },
-  [ScheduleStatus.LEAVE]: { label: '请假', color: '#fa8c16' },
+  [ScheduleStatus.PLANNED]: { label: '待上课', color: '#1f6f68' },
+  [ScheduleStatus.COMPLETED]: { label: '已完成', color: '#28784f' },
+  [ScheduleStatus.CANCELLED]: { label: '已取消', color: '#c94f3d' },
+  [ScheduleStatus.LEAVE]: { label: '请假', color: '#b46f3a' },
 };
 
 const TYPE_LABELS: Record<number, string> = { 1: '一对一', 2: '一对二', 3: '小组课', 4: '大班课' };
@@ -42,7 +42,7 @@ export default function ScheduleDetail() {
     return (
       <View className="container">
         <View className="empty-state">
-          <Text className="empty-state-icon">📅</Text>
+          <Text className="empty-state-icon">课</Text>
           <Text className="empty-state-text">未找到排课记录</Text>
         </View>
       </View>
@@ -79,7 +79,7 @@ export default function ScheduleDetail() {
         </View>
       </View>
 
-      <View className="card" style={{ marginTop: 16 }}>
+      <View className="card sd-card-gap">
         <Text className="sd-section-title">费用信息</Text>
         <View className="sd-cost-row">
           <Text className="sd-cost-label">课时费</Text>
@@ -87,11 +87,11 @@ export default function ScheduleDetail() {
         </View>
         <View className="sd-cost-row">
           <Text className="sd-cost-label">教师费</Text>
-          <Text className="sd-cost-value" style={{ color: '#ff4d4f' }}>¥{schedule.calculated_teacher_fee || 0}</Text>
+          <Text className="sd-cost-value sd-cost-value--expense">¥{schedule.calculated_teacher_fee || 0}</Text>
         </View>
       </View>
 
-      <View className="card" style={{ marginTop: 16 }}>
+      <View className="card sd-card-gap">
         <Text className="sd-section-title">参与学生 ({students.length})</Text>
         {students.length === 0 ? (
           <Text className="sd-empty-text">暂无</Text>
@@ -110,7 +110,7 @@ export default function ScheduleDetail() {
       </View>
 
       {schedule.notes && (
-        <View className="card" style={{ marginTop: 16 }}>
+        <View className="card sd-card-gap">
           <Text className="sd-section-title">备注</Text>
           <Text className="sd-notes-text">{schedule.notes}</Text>
         </View>

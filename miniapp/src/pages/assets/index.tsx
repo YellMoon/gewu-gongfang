@@ -120,7 +120,7 @@ export default function Assets() {
       </View>
 
       {filteredRecords.length === 0 ? (
-        <EmptyState icon="💰" text="暂无资产记录" />
+        <EmptyState icon="账" text="暂无资产记录" />
       ) : (
         <ScrollView scrollY className="stats-scroll">
           <View className="stats-content">

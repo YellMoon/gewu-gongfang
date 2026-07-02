@@ -76,7 +76,7 @@ export default function Payments() {
       )}
 
       {loading ? <LoadingSkeleton rows={5} /> : filteredPayments.length === 0 ? (
-        <EmptyState icon="💰" text="暂无缴费记录" />
+        <EmptyState icon="缴" text="暂无缴费记录" />
       ) : (
         <ScrollView
           className="pay-scroll"
@@ -84,7 +84,7 @@ export default function Payments() {
           refresherEnabled
           refresherTriggered={refreshing}
           onRefresherRefresh={handleRefresh}
-          refresherBackground="#f5f5f5"
+          refresherBackground="#f7f4ee"
         >
           <View className="pay-list">
             {filteredPayments.sort((a, b) => b.created_at.localeCompare(a.created_at)).map(p => (

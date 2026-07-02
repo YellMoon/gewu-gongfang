@@ -147,7 +147,7 @@ export default function SchedulePage() {
           refresherEnabled
           refresherTriggered={refreshing}
           onRefresherRefresh={handleRefresh}
-          refresherBackground="#f5f5f5"
+          refresherBackground="#f7f4ee"
         >
           <View className="week-nav">
             <Text className="nav-arrow" onClick={() => navigateWeek(-1)}>‹</Text>
@@ -179,7 +179,7 @@ export default function SchedulePage() {
             );
           })}
 
-          {schedules.length === 0 && <EmptyState icon="📅" text="暂无排课数据" />}
+          {schedules.length === 0 && <EmptyState icon="课" text="暂无排课数据" />}
         </ScrollView>
       ) : (
         <ScrollView
@@ -188,7 +188,7 @@ export default function SchedulePage() {
           refresherEnabled
           refresherTriggered={refreshing}
           onRefresherRefresh={handleRefresh}
-          refresherBackground="#f5f5f5"
+          refresherBackground="#f7f4ee"
         >
           <View className="day-nav">
             <Text className="nav-arrow" onClick={() => { const date = new Date(currentDate); date.setDate(date.getDate() - 1); setCurrentDate(date); }}>‹</Text>
@@ -206,7 +206,7 @@ export default function SchedulePage() {
           </View>
 
           {getSchedulesForDate(currentDate).length === 0 && (
-            <EmptyState icon="📅" text="当天没有课程" />
+            <EmptyState icon="课" text="当天没有课程" />
           )}
         </ScrollView>
       )}

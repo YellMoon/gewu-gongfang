@@ -14,7 +14,7 @@ export default function ForbiddenPage() {
   return (
     <View className="forbidden-page">
       <View className="forbidden-icon">
-        <Text className="icon-emoji">🔒</Text>
+        <Text className="icon-mark">限</Text>
       </View>
       <Text className="forbidden-title">暂无权限访问此功能</Text>
       <Text className="forbidden-desc">请联系管理员获取权限</Text>

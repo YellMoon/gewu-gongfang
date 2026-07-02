@@ -1,19 +1,145 @@
-.courses-page { min-height: 100vh; background: #f5f5f5; }
-.filter-bar { display: flex; gap: 16rpx; padding: 16rpx 24rpx; background: #fff; white-space: nowrap; }
-.filter-tag { display: inline-block; padding: 12rpx 28rpx; border-radius: 24rpx; font-size: 26rpx; background: #f5f5f5; color: #666; flex-shrink: 0; }
-.filter-tag.active { background: #1890ff; color: #fff; font-weight: 500; }
-.course-scroll { height: calc(100vh - 100rpx); }
-.course-list { padding: 16rpx 24rpx; }
-.course-section { margin-bottom: 24rpx; }
-.section-label { display: block; font-size: 26rpx; font-weight: 600; color: #333; margin-bottom: 12rpx; }
-.section-label.inactive { color: #999; }
-.course-card { background: #fff; border-radius: 16rpx; padding: 24rpx; margin-bottom: 12rpx; box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.04); }
-.course-card.inactive { opacity: 0.6; }
-.course-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12rpx; }
-.course-name { font-size: 30rpx; font-weight: bold; color: #333; flex: 1; }
-.course-type-tag { font-size: 22rpx; padding: 4rpx 16rpx; background: #e6f7ff; color: #1890ff; border-radius: 8rpx; }
-.course-meta { display: flex; flex-wrap: wrap; gap: 12rpx; margin-bottom: 12rpx; }
-.meta-item { font-size: 24rpx; color: #999; }
-.course-price { display: flex; gap: 24rpx; }
-.price-tuition { font-size: 26rpx; color: #52c41a; font-weight: 600; }
-.price-teacher { font-size: 26rpx; color: #ff4d4f; }
+.courses-page {
+  min-height: 100vh;
+  padding-bottom: calc(148rpx + env(safe-area-inset-bottom));
+  background: #f7f4ee;
+}
+
+.filter-bar {
+  display: flex;
+  gap: 12rpx;
+  padding: 18rpx 24rpx 14rpx;
+  background: rgba(247, 244, 238, 0.96);
+  white-space: nowrap;
+  border-bottom: 1rpx solid rgba(23, 32, 51, 0.06);
+  box-sizing: border-box;
+}
+
+.filter-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 58rpx;
+  padding: 0 24rpx;
+  margin-right: 12rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  line-height: 32rpx;
+  font-weight: 700;
+  background: #fffdf8;
+  color: #6b7280;
+  border: 1rpx solid rgba(23, 32, 51, 0.06);
+}
+
+.filter-tag.active {
+  background: #1f6f68;
+  color: #fffaf1;
+  border-color: #1f6f68;
+}
+
+.course-scroll {
+  height: calc(100vh - 100rpx);
+}
+
+.course-list {
+  padding: 18rpx 24rpx 32rpx;
+}
+
+.course-section {
+  margin-bottom: 28rpx;
+}
+
+.section-label {
+  display: block;
+  font-size: 26rpx;
+  line-height: 34rpx;
+  font-weight: 900;
+  color: #172033;
+  margin: 8rpx 0 14rpx;
+}
+
+.section-label.inactive {
+  color: #7d8795;
+}
+
+.course-card {
+  padding: 24rpx;
+  margin-bottom: 14rpx;
+  border-radius: 24rpx;
+  background: #fffdf8;
+  border: 1rpx solid rgba(23, 32, 51, 0.06);
+  box-shadow: 0 10rpx 26rpx rgba(23, 32, 51, 0.05);
+}
+
+.course-card.inactive {
+  opacity: 0.72;
+}
+
+.course-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 14rpx;
+}
+
+.course-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 30rpx;
+  line-height: 40rpx;
+  font-weight: 900;
+  color: #172033;
+}
+
+.course-type-tag {
+  flex: 0 0 auto;
+  min-height: 38rpx;
+  padding: 0 16rpx;
+  border-radius: 999rpx;
+  background: #eef5f2;
+  color: #1f6f68;
+  font-size: 22rpx;
+  line-height: 38rpx;
+  font-weight: 800;
+}
+
+.course-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx 14rpx;
+  margin-bottom: 14rpx;
+}
+
+.meta-item {
+  font-size: 23rpx;
+  line-height: 32rpx;
+  color: #7d8795;
+}
+
+.course-price {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.price-tuition,
+.price-teacher {
+  min-height: 40rpx;
+  padding: 0 16rpx;
+  border-radius: 999rpx;
+  display: inline-flex;
+  align-items: center;
+  font-size: 24rpx;
+  line-height: 32rpx;
+  font-weight: 800;
+}
+
+.price-tuition {
+  background: #edf7ef;
+  color: #28784f;
+}
+
+.price-teacher {
+  background: #fff0ec;
+  color: #c94f3d;
+}
