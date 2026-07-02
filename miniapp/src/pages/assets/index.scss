@@ -1,52 +1,228 @@
-.assets-page { min-height: 100vh; background: #f5f5f5; }
-.task-card {
-  margin: 16rpx 24rpx;
-  padding: 22rpx 24rpx;
-  border-radius: 18rpx;
-  background: #fff;
-  box-shadow: 0 4rpx 16rpx rgba(15, 23, 42, 0.06);
+.assets-page {
+  min-height: 100vh;
+  padding-bottom: calc(148rpx + env(safe-area-inset-bottom));
+  background: #f7f4ee;
 }
+
+.task-card {
+  margin: 22rpx 24rpx 16rpx;
+  padding: 26rpx 28rpx;
+  border-radius: 26rpx;
+  background:
+    linear-gradient(135deg, rgba(31, 111, 104, 0.12), rgba(180, 111, 58, 0.1)),
+    #fffdf8;
+  border: 1rpx solid rgba(23, 32, 51, 0.06);
+  box-shadow: 0 14rpx 34rpx rgba(23, 32, 51, 0.08);
+}
+
 .task-title {
   display: block;
   font-size: 30rpx;
-  line-height: 42rpx;
-  font-weight: 600;
-  color: #1f2937;
+  line-height: 40rpx;
+  font-weight: 900;
+  color: #172033;
 }
+
 .task-desc {
   display: block;
   margin-top: 8rpx;
   font-size: 24rpx;
-  line-height: 34rpx;
+  line-height: 36rpx;
   color: #6b7280;
 }
-.overview-card { background: linear-gradient(135deg, #722ed1, #1890ff); padding: 32rpx 24rpx; }
-.overview-row { display: flex; }
-.overview-item { flex: 1; text-align: center; }
-.ov-label { display: block; font-size: 22rpx; color: rgba(255,255,255,0.7); margin-bottom: 8rpx; }
-.ov-value { display: block; font-size: 36rpx; font-weight: bold; color: #fff; }
-.ov-value.income { color: #b7eb8f; }
-.ov-value.expense { color: #ffa39e; }
-.period-bar { display: flex; gap: 16rpx; padding: 16rpx 24rpx; background: #fff; }
-.period-tag { padding: 10rpx 32rpx; border-radius: 20rpx; font-size: 26rpx; background: #f5f5f5; color: #666; }
-.period-tag.active { background: #1890ff; color: #fff; }
-.stats-scroll { height: calc(100vh - 260rpx); }
-.stats-content { padding: 16rpx 24rpx; }
-.cat-section { background: #fff; border-radius: 16rpx; padding: 24rpx; margin-bottom: 16rpx; }
-.cat-title { display: block; font-size: 28rpx; font-weight: 600; color: #333; margin-bottom: 16rpx; }
-.cat-row { display: flex; align-items: center; margin-bottom: 16rpx; }
-.cat-dot { width: 16rpx; height: 16rpx; border-radius: 50%; margin-right: 12rpx; flex-shrink: 0; }
-.cat-name { font-size: 26rpx; color: #333; width: 120rpx; flex-shrink: 0; }
-.cat-bar-wrap { flex: 1; height: 16rpx; background: #f5f5f5; border-radius: 8rpx; margin: 0 12rpx; overflow: hidden; }
-.cat-bar { height: 100%; border-radius: 8rpx; transition: width 0.3s; }
-.cat-amount { font-size: 26rpx; font-weight: 600; width: 140rpx; text-align: right; flex-shrink: 0; }
-.cat-amount.income { color: #52c41a; }
-.cat-amount.expense { color: #ff4d4f; }
-.record-row { display: flex; align-items: center; padding: 12rpx 0; border-bottom: 2rpx solid #f5f5f5; }
-.record-dot { width: 12rpx; height: 12rpx; border-radius: 50%; margin-right: 12rpx; flex-shrink: 0; }
-.record-info { flex: 1; }
-.record-name { display: block; font-size: 26rpx; color: #333; }
-.record-date { display: block; font-size: 22rpx; color: #999; }
-.record-amount { font-size: 28rpx; font-weight: 600; }
-.record-amount.income { color: #52c41a; }
-.record-amount.expense { color: #ff4d4f; }
+
+.overview-card {
+  margin: 0 24rpx 16rpx;
+  padding: 28rpx 18rpx;
+  border-radius: 28rpx;
+  background: #172033;
+  box-shadow: 0 16rpx 38rpx rgba(23, 32, 51, 0.14);
+}
+
+.overview-row {
+  display: flex;
+}
+
+.overview-item {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+.ov-label {
+  display: block;
+  font-size: 22rpx;
+  line-height: 30rpx;
+  color: rgba(255, 250, 241, 0.62);
+  margin-bottom: 8rpx;
+}
+
+.ov-value {
+  display: block;
+  font-size: 34rpx;
+  line-height: 42rpx;
+  font-weight: 900;
+  color: #fffaf1;
+}
+
+.ov-value.income {
+  color: #9fe1b2;
+}
+
+.ov-value.expense {
+  color: #ffb4a8;
+}
+
+.period-bar {
+  display: flex;
+  gap: 12rpx;
+  padding: 0 24rpx 16rpx;
+}
+
+.period-tag {
+  min-width: 112rpx;
+  height: 54rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  line-height: 32rpx;
+  font-weight: 800;
+  background: #fffdf8;
+  color: #6b7280;
+  border: 1rpx solid rgba(23, 32, 51, 0.06);
+}
+
+.period-tag.active {
+  background: #1f6f68;
+  color: #fffaf1;
+  border-color: #1f6f68;
+}
+
+.stats-scroll {
+  height: calc(100vh - 360rpx);
+}
+
+.stats-content {
+  padding: 0 24rpx 32rpx;
+}
+
+.cat-section {
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+  border-radius: 24rpx;
+  background: #fffdf8;
+  border: 1rpx solid rgba(23, 32, 51, 0.06);
+  box-shadow: 0 10rpx 26rpx rgba(23, 32, 51, 0.05);
+}
+
+.cat-title {
+  display: block;
+  font-size: 28rpx;
+  line-height: 36rpx;
+  font-weight: 900;
+  color: #172033;
+  margin-bottom: 18rpx;
+}
+
+.cat-row,
+.record-row {
+  display: flex;
+  align-items: center;
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid rgba(23, 32, 51, 0.06);
+}
+
+.cat-row:last-child,
+.record-row:last-child {
+  border-bottom: 0;
+}
+
+.cat-dot,
+.record-dot {
+  width: 16rpx;
+  height: 16rpx;
+  flex: 0 0 16rpx;
+  border-radius: 50%;
+  margin-right: 12rpx;
+}
+
+.record-dot {
+  width: 12rpx;
+  height: 12rpx;
+  flex-basis: 12rpx;
+}
+
+.cat-name {
+  width: 124rpx;
+  flex: 0 0 124rpx;
+  font-size: 25rpx;
+  line-height: 34rpx;
+  color: #4d5a6a;
+}
+
+.cat-bar-wrap {
+  flex: 1;
+  height: 14rpx;
+  margin: 0 12rpx;
+  border-radius: 999rpx;
+  background: #ebe5d9;
+  overflow: hidden;
+}
+
+.cat-bar {
+  height: 100%;
+  border-radius: 999rpx;
+  transition: width 0.3s;
+}
+
+.cat-amount {
+  width: 132rpx;
+  flex: 0 0 132rpx;
+  text-align: right;
+  font-size: 25rpx;
+  line-height: 34rpx;
+  font-weight: 900;
+}
+
+.cat-amount.income,
+.record-amount.income {
+  color: #28784f;
+}
+
+.cat-amount.expense,
+.record-amount.expense {
+  color: #c94f3d;
+}
+
+.record-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.record-name {
+  display: block;
+  font-size: 26rpx;
+  line-height: 34rpx;
+  color: #172033;
+  font-weight: 800;
+}
+
+.record-date {
+  display: block;
+  margin-top: 2rpx;
+  font-size: 22rpx;
+  line-height: 30rpx;
+  color: #8b96a8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.record-amount {
+  margin-left: 14rpx;
+  font-size: 27rpx;
+  line-height: 34rpx;
+  font-weight: 900;
+}

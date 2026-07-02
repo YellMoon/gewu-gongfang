@@ -1,7 +1,7 @@
 /**
  * 应用入口 v2 — 启动初始化 + 网络监听 + 自动同步
  */
-import { PropsWithChildren, useEffect } from 'react';
+import { PropsWithChildren } from 'react';
 import { useLaunch } from '@tarojs/taro';
 import Taro from '@tarojs/taro';
 import { fetchPermissions } from './utils/permission';
@@ -14,7 +14,7 @@ let App: React.FC<PropsWithChildren<any>>;
 
 App = function App({ children }: PropsWithChildren<any>) {
   useLaunch(() => {
-    console.log('📚 教育综合服务平台 v1.6.0');
+    console.log('教育综合服务平台 v1.6.0');
 
     const token = Taro.getStorageSync('auth_token');
     if (token) initApp();

@@ -110,7 +110,7 @@ export default function Settings() {
     <View className='settings-page'>
       {/* 网络状态 */}
       <View className={`sync-status ${online ? 'online' : 'offline'}`}>
-        <Text>{online ? '📶 在线' : '📴 离线'}</Text>
+        <Text>{online ? '在线' : '离线'}</Text>
         {pendingCount > 0 && <Text> · {pendingCount}条待同步</Text>}
       </View>
 
@@ -119,7 +119,7 @@ export default function Settings() {
         <View className='section-title'>服务器配置</View>
         <View className='setting-item' onClick={handleEditUrl}>
           <View className='item-left'>
-            <View className='item-icon' style={{background:'#e6f7ff'}}>☁️</View>
+            <View className='item-icon server'>云</View>
             <Text className='item-label'>API 服务器地址</Text>
           </View>
           <View className='item-right'>
@@ -129,7 +129,7 @@ export default function Settings() {
         </View>
         <View className='setting-item'>
           <View className='item-left'>
-            <View className='item-icon' style={{background:'#f6ffed'}}>🔄</View>
+            <View className='item-icon sync'>同</View>
             <Text className='item-label'>上次同步</Text>
           </View>
           <View className='item-right'>
@@ -143,7 +143,7 @@ export default function Settings() {
         <View className='section-title'>数据同步</View>
         <View className='setting-item'>
           <View className='item-left'>
-            <View className='item-icon' style={{background:'#fff7e6'}}>📋</View>
+            <View className='item-icon queue'>列</View>
             <Text className='item-label'>待同步数据</Text>
           </View>
           <View className='item-right'>
@@ -163,7 +163,7 @@ export default function Settings() {
           </View>
         )}
 
-        <View style={{ padding: '16rpx 32rpx' }}>
+        <View className='sync-button-wrap'>
           <button className='btn-sync' onClick={handleSyncNow} disabled={syncing || !online}>
             {syncing ? '同步中...' : '立即同步'}
           </button>
@@ -172,8 +172,8 @@ export default function Settings() {
         {pendingCount > 0 && (
           <View className='setting-item' onClick={handleClearPending}>
             <View className='item-left'>
-              <View className='item-icon' style={{background:'#fff2f0'}}>🗑️</View>
-              <Text className='item-label' style={{color:'#ff4d4f'}}>清空待同步</Text>
+              <View className='item-icon danger'>清</View>
+              <Text className='item-label danger-text'>清空待同步</Text>
             </View>
           </View>
         )}
@@ -184,7 +184,7 @@ export default function Settings() {
         <View className='section-title'>关于</View>
         <View className='setting-item'>
           <View className='item-left'>
-            <View className='item-icon' style={{background:'#f9f0ff'}}>ℹ️</View>
+            <View className='item-icon info'>版</View>
             <Text className='item-label'>版本号</Text>
           </View>
           <View className='item-right'>
@@ -193,7 +193,7 @@ export default function Settings() {
         </View>
         <View className='setting-item'>
           <View className='item-left'>
-            <View className='item-icon' style={{background:'#f9f0ff'}}>👨‍💻</View>
+            <View className='item-icon info'>开</View>
             <Text className='item-label'>开发者</Text>
           </View>
           <View className='item-right'>
@@ -204,14 +204,14 @@ export default function Settings() {
 
       {/* 版本信息 */}
       <View className='version-info'>
-        <Text className='app-name'>📚 教务管理系统</Text>
+        <Text className='app-name'>格物工坊教务管理系统</Text>
         <Text>云平台版 v3.1.0</Text>
       </View>
 
       {/* 退出登录 */}
-      <View style={{ padding: '40rpx 30rpx' }}>
+      <View className='logout-wrap'>
         <button
-          style={{ width: '100%', height: '88rpx', lineHeight: '88rpx', background: '#ff4d4f', color: '#fff', borderRadius: '44rpx', fontSize: '30rpx', border: 'none' }}
+          className='logout-btn'
           onClick={handleLogout}
         >
           退出登录

@@ -12,11 +12,16 @@ assert.ok(tabBar.includes('STUDENT_TABS'), 'custom tabBar should define student 
 assert.ok(tabBar.includes('pages/assets/index'), 'admin tabBar should include real assets page');
 assert.ok(tabBar.includes('pages/students/index'), 'admin tabBar should include real students page');
 assert.ok(tabBar.includes('pages/settings/index'), 'role tabBar should include real settings page');
-assert.ok(tabBar.includes('iconText'), 'custom tabBar should use CSS/text icons without missing image assets');
-assert.ok(!tabBar.includes('selectedIconPath'), 'custom tabBar should not reference missing image assets');
-assert.ok(!appConfig.includes('iconPath'), 'app tabBar config should not reference missing image assets');
+assert.ok(tabBar.includes('iconText'), 'custom tabBar should use CSS/text icons');
+const iconPaths = Array.from(appConfig.matchAll(/(?:selectedIconPath|iconPath): '([^']+)'/g), (match) => match[1]);
+assert.strictEqual(iconPaths.length, 10, 'static H5 tabBar should reference normal and selected icons for every tab');
+for (const iconPath of iconPaths) {
+  assert.ok(fs.existsSync(`miniapp/src/${iconPath}`), `tabBar icon asset should exist: ${iconPath}`);
+}
 assert.ok(tabBar.includes("userType === 'student'"), 'custom tabBar should switch by student role');
 assert.ok(tabBar.includes('switchTab'), 'custom tabBar should navigate with switchTab');
+assert.ok(tabBar.includes('isTabPage'), 'custom tabBar should render only on real tab pages');
+assert.ok(tabBar.includes('window.location.hash'), 'custom tabBar should use H5 hash route for visual QA');
 assert.ok(tabBarStyle.includes('safe-area-inset-bottom'), 'custom tabBar should support bottom safe area');
 assert.ok(tabBarStyle.includes('role-tabbar'), 'custom tabBar should have scoped styles');
 assert.ok(packageJson.includes('miniapp/src/custom-tab-bar/roleTabBar.test.js'), 'custom tabBar test should run in npm test');

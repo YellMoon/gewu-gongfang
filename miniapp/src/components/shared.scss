@@ -12,8 +12,8 @@
 .sk-avatar {
   width: 80rpx;
   height: 80rpx;
-  border-radius: 50%;
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  border-radius: 26rpx;
+  background: linear-gradient(90deg, #eee9dd 25%, #f7f2e8 50%, #eee9dd 75%);
   background-size: 200% 100%;
   animation: sk-shimmer 1.5s infinite;
   margin-right: 24rpx;
@@ -25,9 +25,9 @@
 
 .sk-line {
   height: 28rpx;
-  border-radius: 8rpx;
+  border-radius: 999rpx;
   margin-bottom: 16rpx;
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background: linear-gradient(90deg, #eee9dd 25%, #f7f2e8 50%, #eee9dd 75%);
   background-size: 200% 100%;
   animation: sk-shimmer 1.5s infinite;
 }
@@ -58,7 +58,16 @@
 }
 
 .ns-icon {
-  font-size: 28rpx;
+  width: 42rpx;
+  height: 42rpx;
+  flex: 0 0 42rpx;
+  border-radius: 16rpx;
+  background: rgba(180, 111, 58, 0.12);
+  font-size: 22rpx;
+  line-height: 42rpx;
+  font-weight: 800;
+  text-align: center;
+  color: #9a5a22;
   margin-right: 12rpx;
 }
 
@@ -179,8 +188,10 @@
   margin-right: 10rpx;
   border-radius: 16rpx;
   background: #f0f4f2;
+  color: #1f6f68;
   font-size: 22rpx;
   line-height: 42rpx;
+  font-weight: 800;
   text-align: center;
 }
 

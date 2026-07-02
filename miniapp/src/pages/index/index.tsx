@@ -87,7 +87,8 @@ export default function Index() {
   const loadSnapshot = async () => {
     try {
       const res = await readCloudSnapshot('full');
-      if (res.success) setSnapshot(res.snapshot || res.data?.snapshot || null);
+      const payload = res as any;
+      if (res.success) setSnapshot(payload.snapshot || payload.data?.snapshot || null);
     } catch {
       setSnapshot(null);
     }

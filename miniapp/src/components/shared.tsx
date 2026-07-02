@@ -51,7 +51,7 @@ export function NetworkStatus({ onRetry }: NetworkStatusProps) {
 
   return (
     <View className="ns-bar">
-      <Text className="ns-icon">⚠️</Text>
+      <Text className="ns-icon">离</Text>
       <Text className="ns-text">当前离线，数据来自本地缓存</Text>
       {onRetry && (
         <View className="ns-retry" onClick={onRetry}>
@@ -72,7 +72,7 @@ interface EmptyStateProps {
 }
 
 export function EmptyState({
-  icon = '📭',
+  icon = '空',
   text = '暂无数据',
   actionText,
   onAction,
@@ -100,7 +100,7 @@ interface StatCardProps {
   icon?: string;
 }
 
-export function StatCard({ label, value, suffix, color = '#1890ff', icon }: StatCardProps) {
+export function StatCard({ label, value, suffix, color = '#1f6f68', icon }: StatCardProps) {
   return (
     <View className="st-card" style={{ borderTopColor: color }}>
       <View className="st-header">
@@ -142,7 +142,7 @@ export function PullRefreshView({ onRefresh, children, className }: PullRefreshV
       refresherEnabled
       refresherTriggered={refreshing}
       onRefresherRefresh={handleRefresh}
-      refresherBackground="#f5f5f5"
+      refresherBackground="#f7f4ee"
     >
       <View className={className || ''}>
         {children}

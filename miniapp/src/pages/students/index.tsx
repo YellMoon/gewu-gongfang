@@ -59,7 +59,7 @@ export default function Students() {
         <LoadingSkeleton rows={5} avatar />
       ) : filteredStudents.length === 0 ? (
         <EmptyState
-          icon="👨‍🎓"
+          icon="生"
           text={searchText ? '没有匹配的学生' : '暂无学生数据'}
         />
       ) : (
