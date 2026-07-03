@@ -56,6 +56,24 @@ const config = defineConfig({
     publicPath: '/',
     staticDirectory: 'static',
     esnextModules: ['taro-ui'],
+    useHtmlComponents: true,
+    webpackChain(chain) {
+      chain.performance
+        .hints('warning')
+        .maxAssetSize(245 * 1024)
+        .maxEntrypointSize(360 * 1024);
+
+      chain.plugin('mainPlugin').tap((args) => {
+        const loaderMeta = args[0]?.loaderMeta;
+        if (loaderMeta?.extraImportForWeb) {
+          loaderMeta.extraImportForWeb = loaderMeta.extraImportForWeb.replace(
+            /import '.*@tarojs[\\/]components-react[\\/]dist[\\/]index\.css'\n/g,
+            "import '@tarojs/components-react/dist/index.css'\n"
+          );
+        }
+        return args;
+      });
+    },
     postcss: {
       autoprefixer: {
         enable: true,

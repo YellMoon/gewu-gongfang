@@ -4,11 +4,18 @@
 import { PropsWithChildren } from 'react';
 import { useLaunch } from '@tarojs/taro';
 import Taro from '@tarojs/taro';
-import { fetchPermissions } from './utils/permission';
-import { MiniSyncEngine } from './utils/syncEngine';
 import './app.scss';
 
-const syncEngine = new MiniSyncEngine();
+type SyncEngineInstance = import('./utils/syncEngine').MiniSyncEngine;
+
+let syncEnginePromise: Promise<SyncEngineInstance> | null = null;
+
+function getSyncEngine(): Promise<SyncEngineInstance> {
+  if (!syncEnginePromise) {
+    syncEnginePromise = import('./utils/syncEngine').then(({ MiniSyncEngine }) => new MiniSyncEngine());
+  }
+  return syncEnginePromise;
+}
 
 let App: React.FC<PropsWithChildren<any>>;
 
@@ -24,6 +31,11 @@ App = function App({ children }: PropsWithChildren<any>) {
 };
 
 async function initApp() {
+  const [{ fetchPermissions }, syncEngine] = await Promise.all([
+    import('./utils/permission'),
+    getSyncEngine(),
+  ]);
+
   try {
     await fetchPermissions();
   } catch (err) {
@@ -49,10 +61,12 @@ async function initApp() {
       // 自动拉取云端变更
       const token = Taro.getStorageSync('auth_token');
       if (token) {
-        syncEngine.pull('', token).then((r) => {
+        getSyncEngine().then((engine) => engine.pull('', token)).then((r) => {
           if (r.success && r.operations.length > 0) {
             console.log(`[Sync] 自动拉取 ${r.operations.length} 条变更`);
           }
+        }).catch((err) => {
+          console.warn('[Sync] 自动拉取失败:', err);
         });
       }
     } else {
@@ -61,5 +75,5 @@ async function initApp() {
   });
 }
 
-export { syncEngine };
+export { getSyncEngine };
 export default App;
