@@ -59,7 +59,7 @@
 - `npm test` 通过，覆盖小程序访问策略、角色 tabbar、首页视觉约束、全页面 UI 覆盖和既有后端/桌面回归测试。
 - `npm --prefix miniapp run typecheck` 通过。
 - `git diff --check` 通过，仅输出换行符转换提示。
-- `npm --prefix miniapp run build:h5` 通过，仅保留既有 Webpack 体积警告：`js/app.js` 约 261 KiB，入口约 410 KiB。
+- `npm run miniapp:h5-size-check` 通过，H5 构建无 Webpack 体积警告；`js/app.js` 约 222.4 KiB，入口约 352.8 KiB，最大异步 chunk 约 102.5 KiB。
 - `npm run miniapp:release-check` 通过，完成 WeApp 构建和小程序发布 smoke 检查。
 
 ## 设计约束落实
