@@ -246,6 +246,30 @@ export function buildScheduleFinancialSnapshot(
   };
 }
 
+export function buildCourseRefreshFinancialSnapshot(
+  schedule: Pick<ScheduleLike, 'start_time' | 'end_time'> & Partial<ScheduleLike>,
+  course?: Course
+): ScheduleFinancialSnapshot {
+  const coursePricings = course?.student_pricings || [];
+  const refreshPricings = coursePricings.length > 0
+    ? coursePricings
+    : (isPureInstitutionCourse(course) ? [buildInstitutionPricing(course)] : []);
+
+  return buildScheduleFinancialSnapshot(
+    {
+      ...schedule,
+      student_ids: [],
+      student_pricings: [],
+      billing_unit: course?.billing_unit || schedule.billing_unit,
+      teacher_fee_mode: course?.teacher_fee_mode || schedule.teacher_fee_mode,
+      teacher_id: course?.teacher_id || schedule.teacher_id,
+      teacher_name: course?.teacher_name || schedule.teacher_name,
+    },
+    course,
+    refreshPricings
+  );
+}
+
 const getSchedulePricings = (
   schedule: ScheduleLike,
   course?: Course

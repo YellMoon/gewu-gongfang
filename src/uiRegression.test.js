@@ -58,6 +58,11 @@ assert(
 );
 
 assert(
+  packageJson.includes('"asar": false'),
+  'desktop packaging should keep asar disabled because the embedded backend/runtime are loaded from resources/app'
+);
+
+assert(
   !scheduleList.includes('require(') &&
   !batchSelection.includes('require(') &&
   !scheduleExcelExport.includes('module.exports') &&
@@ -321,10 +326,10 @@ assert(
 
 assert(
   courseList.includes('isPureInstitutionCourseDraft') &&
-  courseList.includes('canEditCourseTeacherFeeDirectly') &&
-  courseList.includes('readOnly={!canEditCourseTeacherFeeDirectly}') &&
+  courseList.includes('canEditCourseFeeTotalsDirectly') &&
+  (courseList.match(/readOnly=\{!canEditCourseFeeTotalsDirectly\}/g) || []).length >= 2 &&
   courseList.includes('纯机构'),
-  'pure institution courses should allow entering teacher fee directly without adding student pricing rows'
+  'pure institution courses should allow entering total tuition and teacher fee directly without adding student pricing rows'
 );
 
 assert(
