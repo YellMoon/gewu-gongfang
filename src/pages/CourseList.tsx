@@ -11,6 +11,7 @@ import { getColorForRoom } from '../utils/courseColors';
 import { filterCourses } from '../utils/courseFilters';
 import DataPageLayout from '../layout/DataPageLayout';
 import { readSchedulesFromPrimaryStore, replaceSchedulesInPrimaryStore } from '../utils/scheduleStorage.mjs';
+import { isPureInstitutionCourseWithoutStudents } from '../utils/coursePricingRules.mjs';
 
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Option } = Select;
@@ -63,8 +64,8 @@ const CourseList: React.FC = () => {
   const billingUnit = Form.useWatch('billing_unit', form) ?? BillingUnit.PER_HOUR;
   const sourceType = Form.useWatch('source_type', form) as CourseSourceType | undefined;
   const studentPricingsDraft = Form.useWatch('student_pricings', form) || [];
-  const isPureInstitutionCourseDraft = sourceType === CourseSourceType.INSTITUTION && studentPricingsDraft.length === 0;
-  const canEditCourseTeacherFeeDirectly = isPureInstitutionCourseDraft;
+  const isPureInstitutionCourseDraft = isPureInstitutionCourseWithoutStudents(sourceType, studentPricingsDraft);
+  const canEditCourseFeeTotalsDirectly = isPureInstitutionCourseDraft;
   const dbService = (window as any).dbService;
 
   const loadData = async () => {
@@ -631,8 +632,12 @@ const CourseList: React.FC = () => {
           
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="price_tuition" label={`学费/${billingUnit === BillingUnit.PER_HOUR ? '小时' : '次'}（自动汇总）`} initialValue={0}>
-                <InputNumber min={0} style={{ width: '100%' }} prefix="¥" readOnly />
+              <Form.Item
+                name="price_tuition"
+                label={`学费/${billingUnit === BillingUnit.PER_HOUR ? '小时' : '次'}（自动汇总）${isPureInstitutionCourseDraft ? ' / 纯机构可手填' : ''}`}
+                initialValue={0}
+              >
+                <InputNumber min={0} style={{ width: '100%' }} prefix="¥" readOnly={!canEditCourseFeeTotalsDirectly} />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -641,7 +646,7 @@ const CourseList: React.FC = () => {
                 label={`课时费/${billingUnit === BillingUnit.PER_HOUR ? '小时' : '次'}（自动汇总）${isPureInstitutionCourseDraft ? ' / 纯机构可手填' : ''}`}
                 initialValue={0}
               >
-                <InputNumber min={0} style={{ width: '100%' }} prefix="¥" readOnly={!canEditCourseTeacherFeeDirectly} />
+                <InputNumber min={0} style={{ width: '100%' }} prefix="¥" readOnly={!canEditCourseFeeTotalsDirectly} />
               </Form.Item>
             </Col>
           </Row>

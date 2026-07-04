@@ -12,12 +12,13 @@ import weekOfYear from 'dayjs/plugin/weekOfYear';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import { holidays2026, getUpcomingHolidays } from '../utils/helpers';
 import { buildCourseColorMap, getTextColorForBackground, DEFAULT_COURSE_COLOR } from '../utils/courseColors';
-import { INSTITUTION_UNBOUND_STUDENT_ID, buildScheduleFinancialSnapshot } from '../utils/financialDetails';
+import { INSTITUTION_UNBOUND_STUDENT_ID, buildScheduleFinancialSnapshot, buildCourseRefreshFinancialSnapshot } from '../utils/financialDetails';
 import WorkbenchLayout from '../layout/WorkbenchLayout';
 import type { CourseCalendarContext } from '../navigation/navigationContext';
 import { readSchedulesFromPrimaryStore, replaceSchedulesInPrimaryStore } from '../utils/scheduleStorage.mjs';
 import { appendSteppedBatchDate, normalizeDateStepDays } from '../utils/scheduleBatchDates.mjs';
 import { resolveScheduleRoomDisplay } from '../utils/scheduleRoomDisplay.mjs';
+import { normalizeRefreshDateRange, updateRefreshDateRangeBoundary } from '../utils/scheduleRefreshRange.mjs';
 
 dayjs.extend(weekOfYear);
 dayjs.extend(isoWeek);
@@ -1886,7 +1887,12 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
       '刷新课程信息可能覆盖当前排课的学生学费、老师课时费、出勤状态和课程明细。请确认只刷新你当前选中的排课范围。\n\n费用和出勤属于敏感信息，请确认日期范围无误后再继续。'
     );
     if (!ok) return;
-    const [startDate, endDate] = refreshDateRange;
+    const normalizedRange = normalizeRefreshDateRange(refreshDateRange);
+    if (!normalizedRange) {
+      message.warning('请选择完整日期范围');
+      return;
+    }
+    const [startDate, endDate] = normalizedRange;
     const db = (window as any).dbService;
     let count = 0;
     const updated = schedules.map(s => {
@@ -1908,7 +1914,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
       };
       return {
         ...refreshed,
-        ...buildFinancialFieldsForSchedule(refreshed, course, course.student_pricings),
+        ...buildCourseRefreshFinancialSnapshot(refreshed, course),
       };
     });
     setSchedulesWithHistory(updated);
@@ -1960,11 +1966,21 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
                   title="重做 (Ctrl+Y)"
                 >重做</Button>
                 <Divider type="vertical" />
-                <DatePicker.RangePicker
-                  value={refreshDateRange as any}
-                  onChange={(dates) => setRefreshDateRange(dates as [Dayjs, Dayjs])}
+                <DatePicker
+                  placeholder="开始日期"
+                  value={refreshDateRange?.[0] || undefined}
+                  onChange={(date) => setRefreshDateRange(prev => updateRefreshDateRangeBoundary(prev, 'start', date) as [Dayjs, Dayjs])}
                   format="YYYY-MM-DD"
-                  style={{ width: 240 }}
+                  allowClear={false}
+                  style={{ width: 130 }}
+                />
+                <DatePicker
+                  placeholder="截止日期"
+                  value={refreshDateRange?.[1] || undefined}
+                  onChange={(date) => setRefreshDateRange(prev => updateRefreshDateRangeBoundary(prev, 'end', date) as [Dayjs, Dayjs])}
+                  format="YYYY-MM-DD"
+                  allowClear={false}
+                  style={{ width: 130 }}
                 />
                 <Button
                   onClick={handleRefreshCourseInfo}
