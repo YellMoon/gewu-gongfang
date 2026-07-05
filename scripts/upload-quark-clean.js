@@ -3,6 +3,10 @@ const path = require('path');
 const fs = require('fs');
 
 const dryRun = process.argv.includes('--dry-run') || process.env.DRY_RUN === '1';
+const browserModeArg = process.argv.find(arg => arg.startsWith('--browser-mode='));
+const requestedBrowserMode = (browserModeArg ? browserModeArg.split('=').slice(1).join('=') : process.env.QUARK_BROWSER_MODE || 'fast').toLowerCase();
+const normalizeBrowserMode = mode => (mode === 'fast-cookie' || mode === 'cookie') ? 'fast' : mode;
+const browserMode = process.argv.includes('--persistent') ? 'persistent' : normalizeBrowserMode(requestedBrowserMode);
 const ossBaseUrl = (process.env.OSS_CDN_BASE_URL || 'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop').replace(/\/+$/, '');
 const ossObjectPrefix = (process.env.OSS_OBJECT_PREFIX || 'desktop').replace(/^\/+|\/+$/g, '');
 const ROOT_FOLDER = process.env.QUARK_ROOT_FOLDER || 'codex项目';
@@ -34,6 +38,7 @@ if (dryRun) {
     root_folder: ROOT_FOLDER,
     file: fileName,
     size: fs.statSync(SETUP_FILE).size,
+    browser_mode: browserMode,
     oss_key: objectKey,
     oss_url: `${ossBaseUrl}/${encodeURIComponent(fileName)}`,
   }, null, 2));
@@ -44,6 +49,62 @@ const COOKIE_FILE = path.join(process.env.LOCALAPPDATA || process.env.TEMP || '.
 const PROFILE_DIR = path.join(process.env.LOCALAPPDATA || process.env.TEMP || '.', 'opencode-quark-profile');
 const today = new Date();
 const DATE_FOLDER = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
+function stamp(message) {
+  console.log(`[quark-upload ${new Date().toLocaleTimeString()}] ${message}`);
+}
+
+async function loadSavedCookies(context) {
+  if (!fs.existsSync(COOKIE_FILE)) return false;
+  try {
+    await context.addCookies(JSON.parse(fs.readFileSync(COOKIE_FILE, 'utf-8')));
+    return true;
+  } catch (err) {
+    console.warn('Saved cookies could not be loaded:', err.message);
+    return false;
+  }
+}
+
+async function saveCookies(context) {
+  try {
+    fs.writeFileSync(COOKIE_FILE, JSON.stringify(await context.cookies(), null, 2), 'utf-8');
+  } catch {}
+}
+
+async function createBrowserSession() {
+  const start = Date.now();
+  const commonArgs = [
+    '--start-maximized',
+    '--disable-extensions',
+    '--disable-background-networking',
+  ];
+
+  if (browserMode === 'persistent') {
+    stamp(`Launching Edge with persistent profile: ${PROFILE_DIR}`);
+    const context = await chromium.launchPersistentContext(PROFILE_DIR, {
+      channel: 'msedge',
+      headless: false,
+      viewport: null,
+      args: commonArgs,
+    });
+    stamp(`Persistent browser ready in ${Date.now() - start}ms`);
+    return { context, close: () => context.close(), mode: 'persistent' };
+  }
+
+  if (browserMode !== 'fast') {
+    throw new Error(`Unsupported QUARK_BROWSER_MODE: ${browserMode}. Use fast or persistent.`);
+  }
+
+  stamp('Launching Edge in fast cookie mode');
+  const browser = await chromium.launch({
+    channel: 'msedge',
+    headless: false,
+    args: commonArgs,
+  });
+  const context = await browser.newContext({ viewport: null });
+  stamp(`Fast browser ready in ${Date.now() - start}ms`);
+  return { context, close: () => browser.close(), mode: 'fast' };
+}
 
 async function getItemNames(page) {
   return await page.evaluate(() => {
@@ -119,22 +180,16 @@ async function ensureFolder(page, name, aliases = [name]) {
 }
 
 (async () => {
-  const context = await chromium.launchPersistentContext(PROFILE_DIR, {
-    channel: 'msedge',
-    headless: false,
-    viewport: null,
-    args: ['--start-maximized']
-  });
-
-  if (fs.existsSync(COOKIE_FILE)) {
-    try { await context.addCookies(JSON.parse(fs.readFileSync(COOKIE_FILE, 'utf-8'))); } catch {}
-  }
-
+  const session = await createBrowserSession();
+  const { context } = session;
+  await loadSavedCookies(context);
   const page = context.pages()[0] || await context.newPage();
 
   try {
-    console.log('\n[1/4] Open Quark...');
+    console.log(`\n[1/4] Open Quark... (${session.mode} mode)`);
+    const gotoStart = Date.now();
     await page.goto('https://pan.quark.cn/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    stamp(`Quark navigation started in ${Date.now() - gotoStart}ms`);
 
     // Wait up to 3 min for user to be logged in (URL contains /list)
     const t0 = Date.now();
@@ -146,7 +201,7 @@ async function ensureFolder(page, name, aliases = [name]) {
       await page.waitForURL('**/list**', { timeout: 60000 }).catch(() => {});
     }
     // Save cookies
-    try { fs.writeFileSync(COOKIE_FILE, JSON.stringify(await context.cookies(), null, 2)); } catch {}
+    await saveCookies(context);
 
     console.log('[2/4] Enter folders...');
     // ensure root folder
@@ -178,6 +233,6 @@ async function ensureFolder(page, name, aliases = [name]) {
     console.error('Uploader error:', e.message);
     process.exitCode = 1;
   } finally {
-    await context.close();
+    await session.close();
   }
 })();

@@ -30,6 +30,13 @@ assert.ok(
   quarkUpload.includes(beijingUpdateBaseUrl),
   'Quark upload metadata should reference the Beijing OSS desktop update bucket'
 );
+assert.ok(
+  quarkUpload.includes("process.env.QUARK_BROWSER_MODE || 'fast'") &&
+  quarkUpload.includes('Launching Edge in fast cookie mode') &&
+  quarkUpload.includes("browserMode === 'persistent'") &&
+  quarkUpload.includes('launchPersistentContext(PROFILE_DIR'),
+  'Quark upload should default to fast cookie mode and keep persistent Edge profile only as a fallback'
+);
 
 function runPublish(args, env) {
   const result = spawnSync(process.execPath, ['scripts/publish-oss-feed.js', ...args], {
