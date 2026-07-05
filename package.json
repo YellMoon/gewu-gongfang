@@ -1,6 +1,6 @@
 {
   "name": "gewu-gongfang",
-  "version": "5.4.2",
+  "version": "5.4.3",
   "description": "格物工坊（综合教育平台）",
   "main": "public/electron.js",
   "homepage": ".",
@@ -95,12 +95,25 @@
       "public/icon.ico",
       "backend/**/*",
       "modules/question-bank/**/*",
-      "runtime/python/**/*"
+      "runtime/python/**/*",
+      "!node_modules/better-sqlite3/build/*.vcxproj",
+      "!node_modules/better-sqlite3/build/*.vcxproj.filters",
+      "!node_modules/better-sqlite3/build/deps{,/**/*}",
+      "!node_modules/better-sqlite3/build/Release/obj{,/**/*}",
+      "!node_modules/better-sqlite3/build/Release/test_extension.*",
+      "!node_modules/better-sqlite3/build/Release/*.iobj",
+      "!node_modules/better-sqlite3/build/Release/*.ipdb",
+      "!node_modules/better-sqlite3/build/Release/*.lib",
+      "!node_modules/better-sqlite3/build/Release/*.exp",
+      "!node_modules/better-sqlite3/build/Release/*.ilk",
+      "!node_modules/better-sqlite3/src{,/**/*}",
+      "!node_modules/better-sqlite3/deps{,/**/*}"
     ],
     "asarUnpack": [
       "backend/**/*",
       "modules/question-bank/**/*",
-      "runtime/python/**/*"
+      "runtime/python/**/*",
+      "node_modules/better-sqlite3/build/Release/better_sqlite3.node"
     ],
     "asar": false,
     "win": {
