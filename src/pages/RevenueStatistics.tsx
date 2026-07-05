@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Card,
@@ -55,9 +55,12 @@ import {
   buildTeacherDetailsFromStudentDetails,
   filterStudentDetailsForRevenue,
 } from '../utils/revenueDetailFilters.mjs';
+import {
+  applyRevenueDateChange,
+  buildRevenueFacetOptions,
+} from '../utils/revenueStatisticsFilters.mjs';
 import { readSchedulesFromPrimaryStore } from '../utils/scheduleStorage.mjs';
 
-const { RangePicker } = DatePicker;
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
 
@@ -102,33 +105,69 @@ interface RevenueFilterState {
   teacherId?: string;
   courseTypes: CourseType[];
   institutionId?: string;
+  year?: number;
+  semester?: string;
+  courseName?: string;
 }
 
+interface RevenueStatisticsSnapshot {
+  filters: RevenueFilterState;
+  stats: RevenueStats | null;
+  studentStats: StudentTuitionSummary[];
+  teacherIncomeStats: TeacherIncomeSummary[];
+  studentDetails: StudentCourseFeeDetail[];
+  teacherDetails: TeacherFeeDetail[];
+  facetRows: StudentCourseFeeDetail[];
+  sourceStats: any[];
+  lastRefresh: string;
+  allStudents: Student[];
+  allTeachers: Teacher[];
+  allInstitutions: Institution[];
+  arrearsRows: StudentAlertRow[];
+  closedBalanceRows: StudentAlertRow[];
+}
+
+let revenueStatisticsSnapshot: RevenueStatisticsSnapshot | null = null;
+
+const createDefaultRevenueFilters = (): RevenueFilterState => ({
+  dateRange: [dayjs().startOf('month'), dayjs().endOf('month')],
+  courseTypes: [],
+});
+
+const restoreRevenueStatisticsSnapshot = (): RevenueStatisticsSnapshot | null => revenueStatisticsSnapshot;
+
+const saveRevenueStatisticsSnapshot = (snapshot: RevenueStatisticsSnapshot) => {
+  revenueStatisticsSnapshot = snapshot;
+};
+
 const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
-  const [appliedDateRange, setAppliedDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
-    dayjs().startOf('month'),
-    dayjs().endOf('month'),
-  ]);
-  const [draftDateRange, setDraftDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
-    dayjs().startOf('month'),
-    dayjs().endOf('month'),
-  ]);
-  const [stats, setStats] = useState<RevenueStats | null>(null);
-  const [studentStats, setStudentStats] = useState<StudentTuitionSummary[]>([]);
-  const [teacherIncomeStats, setTeacherIncomeStats] = useState<TeacherIncomeSummary[]>([]);
-  const [studentDetails, setStudentDetails] = useState<StudentCourseFeeDetail[]>([]);
-  const [teacherDetails, setTeacherDetails] = useState<TeacherFeeDetail[]>([]);
-  const [sourceStats, setSourceStats] = useState<any[]>([]);
+  const initialSnapshot = restoreRevenueStatisticsSnapshot();
+  const initialFilters = initialSnapshot?.filters || createDefaultRevenueFilters();
+  const [appliedDateRange, setAppliedDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>(initialFilters.dateRange);
+  const [draftDateRange, setDraftDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>(initialFilters.dateRange);
+  const [stats, setStats] = useState<RevenueStats | null>(initialSnapshot?.stats || null);
+  const [studentStats, setStudentStats] = useState<StudentTuitionSummary[]>(initialSnapshot?.studentStats || []);
+  const [teacherIncomeStats, setTeacherIncomeStats] = useState<TeacherIncomeSummary[]>(initialSnapshot?.teacherIncomeStats || []);
+  const [studentDetails, setStudentDetails] = useState<StudentCourseFeeDetail[]>(initialSnapshot?.studentDetails || []);
+  const [teacherDetails, setTeacherDetails] = useState<TeacherFeeDetail[]>(initialSnapshot?.teacherDetails || []);
+  const [facetRows, setFacetRows] = useState<StudentCourseFeeDetail[]>(initialSnapshot?.facetRows || []);
+  const [sourceStats, setSourceStats] = useState<any[]>(initialSnapshot?.sourceStats || []);
   const [loading, setLoading] = useState(false);
-  const [lastRefresh, setLastRefresh] = useState<string>('');
-  const [appliedStudentId, setAppliedStudentId] = useState<string | undefined>(undefined);
-  const [appliedTeacherId, setAppliedTeacherId] = useState<string | undefined>(undefined);
-  const [appliedCourseTypes, setAppliedCourseTypes] = useState<CourseType[]>([]);
-  const [appliedInstitutionId, setAppliedInstitutionId] = useState<string | undefined>(undefined);
-  const [draftStudentId, setDraftStudentId] = useState<string | undefined>(undefined);
-  const [draftTeacherId, setDraftTeacherId] = useState<string | undefined>(undefined);
-  const [draftCourseTypes, setDraftCourseTypes] = useState<CourseType[]>([]);
-  const [draftInstitutionId, setDraftInstitutionId] = useState<string | undefined>(undefined);
+  const [lastRefresh, setLastRefresh] = useState<string>(initialSnapshot?.lastRefresh || '');
+  const [appliedStudentId, setAppliedStudentId] = useState<string | undefined>(initialFilters.studentId);
+  const [appliedTeacherId, setAppliedTeacherId] = useState<string | undefined>(initialFilters.teacherId);
+  const [appliedCourseTypes, setAppliedCourseTypes] = useState<CourseType[]>(initialFilters.courseTypes);
+  const [appliedInstitutionId, setAppliedInstitutionId] = useState<string | undefined>(initialFilters.institutionId);
+  const [appliedYear, setAppliedYear] = useState<number | undefined>(initialFilters.year);
+  const [appliedSemester, setAppliedSemester] = useState<string | undefined>(initialFilters.semester);
+  const [appliedCourseName, setAppliedCourseName] = useState<string | undefined>(initialFilters.courseName);
+  const [draftStudentId, setDraftStudentId] = useState<string | undefined>(initialFilters.studentId);
+  const [draftTeacherId, setDraftTeacherId] = useState<string | undefined>(initialFilters.teacherId);
+  const [draftCourseTypes, setDraftCourseTypes] = useState<CourseType[]>(initialFilters.courseTypes);
+  const [draftInstitutionId, setDraftInstitutionId] = useState<string | undefined>(initialFilters.institutionId);
+  const [draftYear, setDraftYear] = useState<number | undefined>(initialFilters.year);
+  const [draftSemester, setDraftSemester] = useState<string | undefined>(initialFilters.semester);
+  const [draftCourseName, setDraftCourseName] = useState<string | undefined>(initialFilters.courseName);
   const [detailDisplayMode, setDetailDisplayMode] = useState<'separate' | 'grouped'>('separate');
   const [showGroupedStudentAmounts, setShowGroupedStudentAmounts] = useState(true);
   const [visibleTeacherDetailColumns, setVisibleTeacherDetailColumns] = useState<string[]>([
@@ -161,12 +200,12 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
     'teacherFeeTotal',
     'pricingSource',
   ]);
-  const [allStudents, setAllStudents] = useState<Student[]>([]);
-  const [allTeachers, setAllTeachers] = useState<Teacher[]>([]);
-  const [allInstitutions, setAllInstitutions] = useState<Institution[]>([]);
+  const [allStudents, setAllStudents] = useState<Student[]>(initialSnapshot?.allStudents || []);
+  const [allTeachers, setAllTeachers] = useState<Teacher[]>(initialSnapshot?.allTeachers || []);
+  const [allInstitutions, setAllInstitutions] = useState<Institution[]>(initialSnapshot?.allInstitutions || []);
   const [contextMode, setContextMode] = useState<RevenueStatisticsContext['mode']>(context?.mode);
-  const [arrearsRows, setArrearsRows] = useState<StudentAlertRow[]>([]);
-  const [closedBalanceRows, setClosedBalanceRows] = useState<StudentAlertRow[]>([]);
+  const [arrearsRows, setArrearsRows] = useState<StudentAlertRow[]>(initialSnapshot?.arrearsRows || []);
+  const [closedBalanceRows, setClosedBalanceRows] = useState<StudentAlertRow[]>(initialSnapshot?.closedBalanceRows || []);
   const dbService = (window as any).dbService;
 
   const loadStats = async (filters?: RevenueFilterState) => {
@@ -183,6 +222,9 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         teacherId: appliedTeacherId,
         courseTypes: appliedCourseTypes,
         institutionId: appliedInstitutionId,
+        year: appliedYear,
+        semester: appliedSemester,
+        courseName: appliedCourseName,
       };
       const startDate = activeFilters.dateRange[0].format('YYYY-MM-DD');
       const endDate = activeFilters.dateRange[1].format('YYYY-MM-DD');
@@ -201,11 +243,25 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       setArrearsRows(financialAlerts.arrears);
       setClosedBalanceRows(financialAlerts.closedBalances);
 
-      const validSchedules = schedules.filter(schedule => {
+      const courseMap = new Map(courses.map(course => [course.id, course]));
+      const dateScopedSchedules = schedules.filter(schedule => {
         const dateStr = schedule.start_time.split(' ')[0];
         if (dateStr < startDate || dateStr > endDate) return false;
         if (schedule.status === ScheduleStatus.LEAVE || schedule.status === ScheduleStatus.CANCELLED) return false;
-        if (activeFilters.courseTypes.length > 0 && !activeFilters.courseTypes.includes(schedule.course_type || CourseType.ONE_ON_ONE)) return false;
+        return true;
+      });
+      const dateScopedDetails = buildFinancialDetails(dateScopedSchedules, courses, students, teachers);
+      const nextFacetRows = dateScopedDetails.studentDetails;
+      setFacetRows(nextFacetRows);
+
+      const validSchedules = dateScopedSchedules.filter(schedule => {
+        const course = courseMap.get(schedule.course_id);
+        const courseType = course?.type || schedule.course_type || CourseType.ONE_ON_ONE;
+        const courseName = course?.display_name || schedule.course_name || course?.name || '未知课程';
+        if (activeFilters.courseTypes.length > 0 && !activeFilters.courseTypes.includes(courseType)) return false;
+        if (activeFilters.year && Number(course?.year) !== Number(activeFilters.year)) return false;
+        if (activeFilters.semester && course?.semester !== activeFilters.semester) return false;
+        if (activeFilters.courseName && courseName !== activeFilters.courseName) return false;
         return true;
       });
 
@@ -217,6 +273,9 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         studentId: activeFilters.studentId,
         teacherId: activeFilters.teacherId,
         institutionId: activeFilters.institutionId,
+        year: activeFilters.year,
+        semester: activeFilters.semester,
+        courseName: activeFilters.courseName,
       });
       const shouldRebuildTeacherDetails = Boolean(activeFilters.studentId || activeFilters.institutionId);
       const displayedTeacherDetails: TeacherFeeDetail[] = shouldRebuildTeacherDetails
@@ -328,7 +387,8 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       setStudentStats(studentResult);
       setStudentDetails(displayedStudentDetails);
       setTeacherDetails(displayedTeacherDetails);
-      setSourceStats(buildSourceStats(displayedStudentDetails, students, institutions));
+      const nextSourceStats = buildSourceStats(displayedStudentDetails, students, institutions);
+      setSourceStats(nextSourceStats);
 
       const validPayments = payments.filter(payment => payment.payment_date >= startDate && payment.payment_date <= endDate);
       const validConsumptions = consumptions.filter(item => item.consumption_date >= startDate && item.consumption_date <= endDate);
@@ -338,7 +398,24 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         totalConsumptionAmount: roundMoney(validConsumptions.reduce((sum, item) => sum + item.amount, 0)),
       });
 
-      setLastRefresh(new Date().toLocaleTimeString());
+      const nextLastRefresh = new Date().toLocaleTimeString();
+      setLastRefresh(nextLastRefresh);
+      saveRevenueStatisticsSnapshot({
+        filters: activeFilters,
+        stats: result,
+        studentStats: studentResult,
+        teacherIncomeStats: Array.from(teacherMap.values()).sort((a, b) => b.total - a.total),
+        studentDetails: displayedStudentDetails,
+        teacherDetails: displayedTeacherDetails,
+        facetRows: nextFacetRows,
+        sourceStats: nextSourceStats,
+        lastRefresh: nextLastRefresh,
+        allStudents: students,
+        allTeachers: teachers,
+        allInstitutions: institutions,
+        arrearsRows: financialAlerts.arrears,
+        closedBalanceRows: financialAlerts.closedBalances,
+      });
       message.success('统计数据已刷新');
     } catch (error) {
       console.error('统计加载失败', error);
@@ -349,7 +426,9 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   };
 
   useEffect(() => {
-    loadStats();
+    if (!initialSnapshot) {
+      loadStats(initialFilters);
+    }
   }, []);
 
   useEffect(() => {
@@ -357,12 +436,20 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   }, [context?.mode]);
 
   const applyFilters = () => {
+    if (draftDateRange[0].isAfter(draftDateRange[1], 'day')) {
+      message.warning('统计范围的起始日期不能晚于结束日期');
+      return;
+    }
+
     const nextFilters: RevenueFilterState = {
       dateRange: draftDateRange,
       studentId: draftStudentId,
       teacherId: draftTeacherId,
       courseTypes: draftCourseTypes,
       institutionId: draftInstitutionId,
+      year: draftYear,
+      semester: draftSemester,
+      courseName: draftCourseName,
     };
 
     setAppliedDateRange(nextFilters.dateRange);
@@ -370,8 +457,29 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
     setAppliedTeacherId(nextFilters.teacherId);
     setAppliedCourseTypes(nextFilters.courseTypes);
     setAppliedInstitutionId(nextFilters.institutionId);
+    setAppliedYear(nextFilters.year);
+    setAppliedSemester(nextFilters.semester);
+    setAppliedCourseName(nextFilters.courseName);
     loadStats(nextFilters);
   };
+
+  const draftFiltersForOptions = useMemo(() => ({
+    studentId: draftStudentId,
+    teacherId: draftTeacherId,
+    courseTypes: draftCourseTypes,
+    institutionId: draftInstitutionId,
+    year: draftYear,
+    semester: draftSemester,
+    courseName: draftCourseName,
+  }), [draftStudentId, draftTeacherId, draftCourseTypes, draftInstitutionId, draftYear, draftSemester, draftCourseName]);
+
+  const filterOptions = useMemo(() => buildRevenueFacetOptions(
+    facetRows,
+    allStudents,
+    allTeachers,
+    allInstitutions,
+    draftFiltersForOptions
+  ), [facetRows, allStudents, allTeachers, allInstitutions, draftFiltersForOptions]);
 
   const totalTeacherFee = roundMoney(teacherIncomeStats.reduce((sum, row) => sum + row.total, 0));
   const netIncome = roundMoney((stats?.total || 0) - totalTeacherFee);
@@ -567,6 +675,49 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       <Row gutter={[16, 12]} align="middle">
         <Col>
           <Space>
+            <span>年份：</span>
+            <Select
+              placeholder="全部年份"
+              allowClear
+              style={{ width: 140 }}
+              value={draftYear}
+              onChange={(value) => setDraftYear(value as number | undefined)}
+              options={filterOptions.years}
+            />
+          </Space>
+        </Col>
+        <Col>
+          <Space>
+            <span>学期：</span>
+            <Select
+              placeholder="全部学期"
+              allowClear
+              showSearch
+              style={{ width: 160 }}
+              value={draftSemester}
+              onChange={(value) => setDraftSemester(value as string | undefined)}
+              filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+              options={filterOptions.semesters}
+            />
+          </Space>
+        </Col>
+        <Col>
+          <Space>
+            <span>课程名：</span>
+            <Select
+              placeholder="全部课程"
+              allowClear
+              showSearch
+              style={{ width: 220 }}
+              value={draftCourseName}
+              onChange={(value) => setDraftCourseName(value as string | undefined)}
+              filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+              options={filterOptions.courseNames}
+            />
+          </Space>
+        </Col>
+        <Col>
+          <Space>
             <span>学生：</span>
             <Select
               placeholder="全部学生"
@@ -576,10 +727,13 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
               value={draftStudentId}
               onChange={setDraftStudentId}
               filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-              options={allStudents.map(student => ({ label: student.name, value: student.id }))}
+              options={filterOptions.students}
             />
           </Space>
         </Col>
+      </Row>
+
+      <Row gutter={[16, 12]} align="middle" style={{ marginTop: 12 }}>
         <Col>
           <Space>
             <span>老师：</span>
@@ -591,7 +745,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
               value={draftTeacherId}
               onChange={setDraftTeacherId}
               filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-              options={allTeachers.map(teacher => ({ label: teacher.name, value: teacher.id }))}
+              options={filterOptions.teachers}
             />
           </Space>
         </Col>
@@ -605,12 +759,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
               style={{ width: 240 }}
               value={draftCourseTypes}
               onChange={setDraftCourseTypes}
-              options={[
-                { label: '一对一', value: CourseType.ONE_ON_ONE },
-                { label: '一对二', value: CourseType.ONE_ON_TWO },
-                { label: '小组课', value: CourseType.GROUP },
-                { label: '大班课', value: CourseType.LARGE_CLASS },
-              ]}
+              options={filterOptions.courseTypes}
               maxTagCount={3}
             />
           </Space>
@@ -626,7 +775,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
               value={draftInstitutionId}
               onChange={setDraftInstitutionId}
               filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-              options={allInstitutions.map(institution => ({ label: institution.name, value: institution.id }))}
+              options={filterOptions.institutions}
             />
           </Space>
         </Col>
@@ -638,11 +787,16 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         <Col>
           <Space>
             <span>统计范围：</span>
-            <RangePicker
-              value={draftDateRange}
-              onChange={dates => {
-                if (dates?.[0] && dates?.[1]) setDraftDateRange([dates[0], dates[1]]);
-              }}
+            <DatePicker
+              value={draftDateRange[0]}
+              allowClear={false}
+              onChange={date => setDraftDateRange(current => applyRevenueDateChange(current, 'start', date) as [dayjs.Dayjs, dayjs.Dayjs])}
+            />
+            <span>至</span>
+            <DatePicker
+              value={draftDateRange[1]}
+              allowClear={false}
+              onChange={date => setDraftDateRange(current => applyRevenueDateChange(current, 'end', date) as [dayjs.Dayjs, dayjs.Dayjs])}
             />
           </Space>
         </Col>

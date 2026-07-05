@@ -38,6 +38,9 @@ export function filterStudentDetailsForRevenue(rows = [], students = [], filters
     if (filters.studentId && row.studentId !== filters.studentId) return false;
     if (filters.teacherId && row.teacherId !== filters.teacherId) return false;
     if (filters.institutionId && !rowMatchesInstitution(row, students, filters.institutionId)) return false;
+    if (filters.year && Number(row.courseYear) !== Number(filters.year)) return false;
+    if (filters.semester && row.semester !== filters.semester) return false;
+    if (filters.courseName && row.courseName !== filters.courseName) return false;
     return true;
   });
 }
@@ -56,6 +59,8 @@ export function buildTeacherDetailsFromStudentDetails(rows = []) {
       endTime: row.endTime,
       courseId: row.courseId,
       courseName: row.courseName,
+      courseYear: row.courseYear,
+      semester: row.semester,
       courseType: row.courseType,
       courseTypeName: row.courseTypeName,
       sourceType: row.sourceType,

@@ -286,10 +286,16 @@ assert(
   revenueStatistics.includes('appliedStudentId') &&
   revenueStatistics.includes('draftInstitutionId') &&
   revenueStatistics.includes('appliedInstitutionId') &&
+  revenueStatistics.includes('draftYear') &&
+  revenueStatistics.includes('draftSemester') &&
+  revenueStatistics.includes('draftCourseName') &&
   revenueStatistics.includes('allInstitutions') &&
   revenueStatistics.includes('const applyFilters') &&
   revenueStatistics.includes('onClick={applyFilters}') &&
   revenueStatistics.includes('>筛选</Button>') &&
+  revenueStatistics.includes('年份：') &&
+  revenueStatistics.includes('学期：') &&
+  revenueStatistics.includes('课程名：') &&
   revenueStatistics.includes('学生：') &&
   revenueStatistics.includes('老师：') &&
   revenueStatistics.includes('课程类型：') &&
@@ -301,9 +307,18 @@ assert(
 );
 
 assert(
+  revenueStatistics.includes('restoreRevenueStatisticsSnapshot') &&
+  revenueStatistics.includes('saveRevenueStatisticsSnapshot') &&
+  !revenueStatistics.includes('useEffect(() => {\n    loadStats();\n  }, []);'),
+  'revenue page should restore the previous filter/result snapshot instead of refreshing default filters on every entry'
+);
+
+assert(
   revenueStatistics.includes('机构：') &&
   revenueStatistics.includes('全部机构') &&
   revenueStatistics.includes('filterStudentDetailsForRevenue') &&
+  revenueStatistics.includes('buildRevenueFacetOptions') &&
+  revenueStatistics.includes('applyRevenueDateChange') &&
   revenueStatistics.includes('buildTeacherDetailsFromStudentDetails') &&
   revenueDetailFilters.includes('STUDENT_SOURCE_INSTITUTION') &&
   revenueDetailFilters.includes('INSTITUTION_UNBOUND_STUDENT_ID') &&
