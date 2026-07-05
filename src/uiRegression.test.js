@@ -32,6 +32,7 @@ const richQuestionEditor = read('src/components/RichQuestionEditor.tsx');
 const systemSettings = read('src/pages/SystemSettings.tsx');
 const syncSettings = read('src/pages/SyncSettings.tsx');
 const cloudSync = read('src/pages/CloudSync.tsx');
+const operateLog = read('src/pages/OperateLog.tsx');
 const syncApi = read('src/services/syncApi.ts');
 const cloudRelayHostApi = read('src/services/cloudRelayHostApi.ts');
 const scheduleStorage = read('src/utils/scheduleStorage.mjs');
@@ -61,6 +62,14 @@ assert(
 assert(
   packageJson.includes('"asar": false'),
   'desktop packaging should keep asar disabled because the embedded backend/runtime are loaded from resources/app'
+);
+
+assert(
+  operateLog.includes("import { getApiBase } from '../utils/apiBase'") &&
+  operateLog.includes("getApiBase('/api/ops/audit')") &&
+  !operateLog.includes("fetch('/api/ops/audit") &&
+  !operateLog.includes('fetch("/api/ops/audit'),
+  'packaged file:// UI should resolve operation audit API calls through getApiBase instead of direct /api fetches'
 );
 
 const desktopRuntimeOnlyDependencies = [

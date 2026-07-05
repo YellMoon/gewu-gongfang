@@ -6,6 +6,7 @@ import dayjs from 'dayjs';
 import logger, { OperateLogEntry } from '../services/operateLogger';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import DataPageLayout from '../layout/DataPageLayout';
+import { getApiBase } from '../utils/apiBase';
 
 const Select = AutoCloseSelect as typeof AntSelect;
 
@@ -76,7 +77,7 @@ const OperateLog: React.FC = () => {
   const loadLogs = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/ops/audit?limit=300');
+      const response = await fetch(`${getApiBase('/api/ops/audit')}?limit=300`);
       const payload = await response.json();
       if (!response.ok || !payload.success) {
         throw new Error(payload.error || '审计日志加载失败');
