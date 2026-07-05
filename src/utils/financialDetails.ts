@@ -39,6 +39,8 @@ export interface StudentCourseFeeDetail {
   endTime: string;
   courseId: string;
   courseName: string;
+  courseYear?: number;
+  semester?: string;
   courseType: CourseType;
   courseTypeName: string;
   sourceType?: CourseSourceType;
@@ -81,6 +83,8 @@ export interface TeacherFeeDetail {
   endTime: string;
   courseId: string;
   courseName: string;
+  courseYear?: number;
+  semester?: string;
   courseType: CourseType;
   courseTypeName: string;
   sourceType?: CourseSourceType;
@@ -359,6 +363,8 @@ export function buildFinancialDetails(
         endTime: schedule.end_time,
         courseId: schedule.course_id,
         courseName: course?.display_name || schedule.course_name || course?.name || '未知课程',
+        courseYear: course?.year,
+        semester: course?.semester,
         courseType: course?.type || schedule.course_type || CourseType.ONE_ON_ONE,
         courseTypeName: courseTypeNames[course?.type || schedule.course_type || CourseType.ONE_ON_ONE] || '未知',
         sourceType: course?.source_type,
@@ -404,6 +410,8 @@ export function buildFinancialDetails(
       endTime: schedule.end_time,
       courseId: schedule.course_id,
       courseName: course?.display_name || schedule.course_name || course?.name || '未知课程',
+      courseYear: course?.year,
+      semester: course?.semester,
       courseType: course?.type || schedule.course_type || CourseType.ONE_ON_ONE,
       courseTypeName: courseTypeNames[course?.type || schedule.course_type || CourseType.ONE_ON_ONE] || '未知',
       sourceType: course?.source_type,

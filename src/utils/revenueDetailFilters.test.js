@@ -230,6 +230,17 @@ assert.deepStrictEqual(
   ]
 );
 
+const academicFiltered = filterStudentDetailsForRevenue([
+  { key: 'spring-math', studentId: 'student-self', teacherId: 'teacher-a', courseYear: 2026, semester: '春学期', courseName: '数学提高' },
+  { key: 'autumn-math', studentId: 'student-self', teacherId: 'teacher-a', courseYear: 2026, semester: '秋学期', courseName: '数学提高' },
+  { key: 'spring-physics', studentId: 'student-self', teacherId: 'teacher-b', courseYear: 2027, semester: '春学期', courseName: '物理竞赛' },
+], students, {
+  year: 2026,
+  semester: '春学期',
+  courseName: '数学提高',
+});
+assert.deepStrictEqual(academicFiltered.map(row => row.key), ['spring-math']);
+
 console.log('revenueDetailFilters tests passed');
 })().catch(error => {
   console.error(error);

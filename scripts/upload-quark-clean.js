@@ -113,11 +113,38 @@ async function getItemNames(page) {
   });
 }
 
+function normalizeItemName(name) {
+  return String(name || '').normalize('NFKC').replace(/\s+/g, '');
+}
+
+function findMatchingName(names, targetName) {
+  const normalizedTarget = normalizeItemName(targetName);
+  return names.find(name => {
+    const normalizedName = normalizeItemName(name);
+    return normalizedName === normalizedTarget || normalizedName.includes(normalizedTarget);
+  });
+}
+
+async function waitForItemNames(page, aliases = [], timeoutMs = 20000) {
+  const start = Date.now();
+  let lastNames = [];
+  while (Date.now() - start < timeoutMs) {
+    lastNames = await getItemNames(page);
+    if (aliases.some(alias => findMatchingName(lastNames, alias))) return lastNames;
+    if (lastNames.length > 0 && aliases.length === 0) return lastNames;
+    await page.waitForTimeout(800);
+  }
+  return lastNames;
+}
+
 async function dblClickByName(page, name) {
   const pos = await page.evaluate((n) => {
+    const normalize = value => String(value || '').normalize('NFKC').replace(/\s+/g, '');
+    const target = normalize(n);
     const list = document.querySelectorAll('[class*="filename-text"], [data-node-name]');
     for (const el of list) {
-      if ((el.textContent || '').trim() === n) {
+      const text = normalize(el.textContent || '');
+      if (text === target || text.includes(target)) {
         const r = el.getBoundingClientRect();
         if (r.width > 0 && r.height > 0) return { x: r.x + r.width/2, y: r.y + r.height/2 };
       }
@@ -132,6 +159,8 @@ async function dblClickByName(page, name) {
 
 async function clickNewFolder(page) {
   const candidates = [
+    'button.btn-create-folder',
+    '[class*="btn-create-folder"]',
     '[class*="create-folder"]',
     'button:has-text("新建文件夹")',
     'div:has-text("新建文件夹")',
@@ -154,8 +183,13 @@ async function clickNewFolder(page) {
 
 async function createFolder(page, name) {
   if (!await clickNewFolder(page)) return false;
-  const input = page.locator('.ant-input.input-edit, input[class*="input-edit"]').first();
-  await input.waitFor({ state: 'visible', timeout: 5000 });
+  const input = page.locator([
+    '.ant-input.input-edit',
+    'input[class*="input-edit"]',
+    'input.ant-input:not(.fsearchbox-input)',
+    'input[type="text"]:not(.fsearchbox-input)',
+  ].join(', ')).first();
+  await input.waitFor({ state: 'visible', timeout: 8000 });
   await input.click();
   await page.keyboard.press('Control+A');
   await page.keyboard.type(name, { delay: 20 });
@@ -165,8 +199,8 @@ async function createFolder(page, name) {
 }
 
 async function ensureFolder(page, name, aliases = [name]) {
-  const names = await getItemNames(page);
-  const existing = aliases.find(alias => names.includes(alias));
+  const names = await waitForItemNames(page, aliases);
+  const existing = aliases.map(alias => findMatchingName(names, alias)).find(Boolean);
   const targetName = existing || name;
   if (!existing) {
     console.log(`Creating folder: ${name}`);
