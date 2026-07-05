@@ -36,6 +36,7 @@ const syncApi = read('src/services/syncApi.ts');
 const cloudRelayHostApi = read('src/services/cloudRelayHostApi.ts');
 const scheduleStorage = read('src/utils/scheduleStorage.mjs');
 const packageJson = read('package.json');
+const packageManifest = JSON.parse(packageJson);
 
 assert(
   systemSettings.includes('/api/question-bank/storage/status') &&
@@ -60,6 +61,28 @@ assert(
 assert(
   packageJson.includes('"asar": false'),
   'desktop packaging should keep asar disabled because the embedded backend/runtime are loaded from resources/app'
+);
+
+const desktopRuntimeOnlyDependencies = [
+  'antd',
+  'chart.js',
+  'dayjs',
+  'electron-store',
+  'katex',
+  'react',
+  'react-chartjs-2',
+  'react-dom',
+  'react-scripts',
+  'recharts',
+  'sql.js',
+];
+const desktopRuntimeDependencyLeaks = desktopRuntimeOnlyDependencies.filter(
+  dependency => packageManifest.dependencies?.[dependency]
+);
+assert.deepStrictEqual(
+  desktopRuntimeDependencyLeaks,
+  [],
+  'desktop packaging should keep frontend/build-only packages out of runtime dependencies'
 );
 
 assert(
