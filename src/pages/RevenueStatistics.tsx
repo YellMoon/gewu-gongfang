@@ -57,7 +57,9 @@ import {
 } from '../utils/revenueDetailFilters.mjs';
 import {
   applyRevenueDateChange,
+  clearRevenueDateRange,
   buildRevenueFacetOptions,
+  isDateWithinRevenueRange,
 } from '../utils/revenueStatisticsFilters.mjs';
 import { readSchedulesFromPrimaryStore } from '../utils/scheduleStorage.mjs';
 
@@ -65,6 +67,41 @@ const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement, LineElement, PointElement, Filler);
+
+type RevenueDateRange = [dayjs.Dayjs | null, dayjs.Dayjs | null];
+
+const filterColProps = { xs: 24, md: 12, xl: 6 };
+
+const filterFieldStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '76px minmax(0, 1fr)',
+  alignItems: 'center',
+  columnGap: 10,
+  minWidth: 0,
+};
+
+const filterLabelStyle: React.CSSProperties = {
+  color: '#1f2937',
+  fontWeight: 500,
+  textAlign: 'right',
+  whiteSpace: 'nowrap',
+};
+
+const filterControlStyle: React.CSSProperties = {
+  width: '100%',
+};
+
+const dateRangeControlsStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+  minWidth: 0,
+};
+
+const datePickerStyle: React.CSSProperties = {
+  width: 150,
+};
 
 type ScheduleItem = Schedule & {
   course_name?: string;
@@ -100,7 +137,7 @@ interface RevenueStatisticsProps {
 }
 
 interface RevenueFilterState {
-  dateRange: [dayjs.Dayjs, dayjs.Dayjs];
+  dateRange: RevenueDateRange;
   studentId?: string;
   teacherId?: string;
   courseTypes: CourseType[];
@@ -143,8 +180,8 @@ const saveRevenueStatisticsSnapshot = (snapshot: RevenueStatisticsSnapshot) => {
 const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   const initialSnapshot = restoreRevenueStatisticsSnapshot();
   const initialFilters = initialSnapshot?.filters || createDefaultRevenueFilters();
-  const [appliedDateRange, setAppliedDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>(initialFilters.dateRange);
-  const [draftDateRange, setDraftDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>(initialFilters.dateRange);
+  const [appliedDateRange, setAppliedDateRange] = useState<RevenueDateRange>(initialFilters.dateRange);
+  const [draftDateRange, setDraftDateRange] = useState<RevenueDateRange>(initialFilters.dateRange);
   const [stats, setStats] = useState<RevenueStats | null>(initialSnapshot?.stats || null);
   const [studentStats, setStudentStats] = useState<StudentTuitionSummary[]>(initialSnapshot?.studentStats || []);
   const [teacherIncomeStats, setTeacherIncomeStats] = useState<TeacherIncomeSummary[]>(initialSnapshot?.teacherIncomeStats || []);
@@ -226,8 +263,6 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         semester: appliedSemester,
         courseName: appliedCourseName,
       };
-      const startDate = activeFilters.dateRange[0].format('YYYY-MM-DD');
-      const endDate = activeFilters.dateRange[1].format('YYYY-MM-DD');
       const courses: Course[] = dbService.getAllCourses?.() || [];
       const students: Student[] = dbService.getAllStudents?.() || [];
       const teachers: Teacher[] = dbService.getAllTeachers?.() || [];
@@ -246,7 +281,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       const courseMap = new Map(courses.map(course => [course.id, course]));
       const dateScopedSchedules = schedules.filter(schedule => {
         const dateStr = schedule.start_time.split(' ')[0];
-        if (dateStr < startDate || dateStr > endDate) return false;
+        if (!isDateWithinRevenueRange(dateStr, activeFilters.dateRange)) return false;
         if (schedule.status === ScheduleStatus.LEAVE || schedule.status === ScheduleStatus.CANCELLED) return false;
         return true;
       });
@@ -390,8 +425,8 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       const nextSourceStats = buildSourceStats(displayedStudentDetails, students, institutions);
       setSourceStats(nextSourceStats);
 
-      const validPayments = payments.filter(payment => payment.payment_date >= startDate && payment.payment_date <= endDate);
-      const validConsumptions = consumptions.filter(item => item.consumption_date >= startDate && item.consumption_date <= endDate);
+      const validPayments = payments.filter(payment => isDateWithinRevenueRange(payment.payment_date, activeFilters.dateRange));
+      const validConsumptions = consumptions.filter(item => isDateWithinRevenueRange(item.consumption_date, activeFilters.dateRange));
       console.info('费用统计辅助数据', {
         totalPayment: roundMoney(validPayments.reduce((sum, payment) => sum + payment.amount, 0)),
         totalConsumptionHours: roundMoney(validConsumptions.reduce((sum, item) => sum + item.hours, 0)),
@@ -436,7 +471,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   }, [context?.mode]);
 
   const applyFilters = () => {
-    if (draftDateRange[0].isAfter(draftDateRange[1], 'day')) {
+    if (draftDateRange[0] && draftDateRange[1] && draftDateRange[0].isAfter(draftDateRange[1], 'day')) {
       message.warning('统计范围的起始日期不能晚于结束日期');
       return;
     }
@@ -672,135 +707,142 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
 
   const filtersNode = (
     <>
-      <Row gutter={[16, 12]} align="middle">
-        <Col>
-          <Space>
-            <span>年份：</span>
+      <Row gutter={[20, 14]} align="middle">
+        <Col {...filterColProps}>
+          <div style={filterFieldStyle}>
+            <span style={filterLabelStyle}>年份：</span>
             <Select
               placeholder="全部年份"
               allowClear
-              style={{ width: 140 }}
+              style={filterControlStyle}
               value={draftYear}
               onChange={(value) => setDraftYear(value as number | undefined)}
               options={filterOptions.years}
             />
-          </Space>
+          </div>
         </Col>
-        <Col>
-          <Space>
-            <span>学期：</span>
+        <Col {...filterColProps}>
+          <div style={filterFieldStyle}>
+            <span style={filterLabelStyle}>学期：</span>
             <Select
               placeholder="全部学期"
               allowClear
               showSearch
-              style={{ width: 160 }}
+              style={filterControlStyle}
               value={draftSemester}
               onChange={(value) => setDraftSemester(value as string | undefined)}
               filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
               options={filterOptions.semesters}
             />
-          </Space>
+          </div>
         </Col>
-        <Col>
-          <Space>
-            <span>课程名：</span>
+        <Col {...filterColProps}>
+          <div style={filterFieldStyle}>
+            <span style={filterLabelStyle}>课程名：</span>
             <Select
               placeholder="全部课程"
               allowClear
               showSearch
-              style={{ width: 220 }}
+              style={filterControlStyle}
               value={draftCourseName}
               onChange={(value) => setDraftCourseName(value as string | undefined)}
               filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
               options={filterOptions.courseNames}
             />
-          </Space>
+          </div>
         </Col>
-        <Col>
-          <Space>
-            <span>学生：</span>
+        <Col {...filterColProps}>
+          <div style={filterFieldStyle}>
+            <span style={filterLabelStyle}>学生：</span>
             <Select
               placeholder="全部学生"
               allowClear
               showSearch
-              style={{ width: 180 }}
+              style={filterControlStyle}
               value={draftStudentId}
               onChange={setDraftStudentId}
               filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
               options={filterOptions.students}
             />
-          </Space>
+          </div>
         </Col>
       </Row>
 
-      <Row gutter={[16, 12]} align="middle" style={{ marginTop: 12 }}>
-        <Col>
-          <Space>
-            <span>老师：</span>
+      <Row gutter={[20, 14]} align="middle" style={{ marginTop: 14 }}>
+        <Col {...filterColProps}>
+          <div style={filterFieldStyle}>
+            <span style={filterLabelStyle}>老师：</span>
             <Select
               placeholder="全部老师"
               allowClear
               showSearch
-              style={{ width: 180 }}
+              style={filterControlStyle}
               value={draftTeacherId}
               onChange={setDraftTeacherId}
               filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
               options={filterOptions.teachers}
             />
-          </Space>
+          </div>
         </Col>
-        <Col>
-          <Space>
-            <span>课程类型：</span>
+        <Col {...filterColProps}>
+          <div style={filterFieldStyle}>
+            <span style={filterLabelStyle}>课程类型：</span>
             <Select
               mode="multiple"
               placeholder="全部类型"
               allowClear
-              style={{ width: 240 }}
+              style={filterControlStyle}
               value={draftCourseTypes}
               onChange={setDraftCourseTypes}
               options={filterOptions.courseTypes}
-              maxTagCount={3}
+              maxTagCount={2}
             />
-          </Space>
+          </div>
         </Col>
-        <Col>
-          <Space>
-            <span>机构：</span>
+        <Col {...filterColProps}>
+          <div style={filterFieldStyle}>
+            <span style={filterLabelStyle}>机构：</span>
             <Select
               placeholder="全部机构"
               allowClear
               showSearch
-              style={{ width: 180 }}
+              style={filterControlStyle}
               value={draftInstitutionId}
               onChange={setDraftInstitutionId}
               filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
               options={filterOptions.institutions}
             />
-          </Space>
+          </div>
         </Col>
       </Row>
 
-      <Divider style={{ margin: '12px 0' }} />
+      <Divider style={{ margin: '14px 0' }} />
 
       <Row gutter={[16, 12]} align="middle">
-        <Col>
-          <Space>
-            <span>统计范围：</span>
-            <DatePicker
-              value={draftDateRange[0]}
-              allowClear={false}
-              onChange={date => setDraftDateRange(current => applyRevenueDateChange(current, 'start', date) as [dayjs.Dayjs, dayjs.Dayjs])}
-            />
-            <span>至</span>
-            <DatePicker
-              value={draftDateRange[1]}
-              allowClear={false}
-              onChange={date => setDraftDateRange(current => applyRevenueDateChange(current, 'end', date) as [dayjs.Dayjs, dayjs.Dayjs])}
-            />
-          </Space>
+        <Col xs={24} lg={14} xl={12}>
+          <div style={filterFieldStyle}>
+            <span style={filterLabelStyle}>统计范围：</span>
+            <div style={dateRangeControlsStyle}>
+              <DatePicker
+                value={draftDateRange[0]}
+                allowClear
+                placeholder="开始日期"
+                style={datePickerStyle}
+                onChange={date => setDraftDateRange(current => applyRevenueDateChange(current, 'start', date) as RevenueDateRange)}
+              />
+              <Text type="secondary">至</Text>
+              <DatePicker
+                value={draftDateRange[1]}
+                allowClear
+                placeholder="结束日期"
+                style={datePickerStyle}
+                onChange={date => setDraftDateRange(current => applyRevenueDateChange(current, 'end', date) as RevenueDateRange)}
+              />
+              <Button onClick={() => setDraftDateRange(clearRevenueDateRange() as RevenueDateRange)}>全部日期</Button>
+            </div>
+          </div>
         </Col>
-        <Col>
+        <Col flex="none">
           <Button type="primary" icon={<ReloadOutlined />} onClick={applyFilters} loading={loading}>筛选</Button>
         </Col>
         {lastRefresh && (
