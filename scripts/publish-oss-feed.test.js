@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const yaml = require('js-yaml');
 
 const packageJson = require('../package.json');
 const publishScript = fs.readFileSync(path.join(__dirname, 'publish-oss-feed.js'), 'utf8');
@@ -86,6 +87,21 @@ try {
       'desktop/latest.yml',
     ],
     'publish should upload immutable artifacts before flipping latest.yml'
+  );
+  assert.deepStrictEqual(
+    yaml.load(publish.latest_yml.content),
+    {
+      version: packageJson.version,
+      files: [{
+        url: installerName,
+        sha512: publish.installer.sha512,
+        size: publish.installer.size,
+      }],
+      path: installerName,
+      sha512: publish.installer.sha512,
+      releaseDate: yaml.load(publish.latest_yml.content).releaseDate,
+    },
+    'published latest.yml should be valid YAML and keep Chinese installer names parseable'
   );
 
   const archivedFeedPath = path.join(distDir, 'releases', packageJson.version, 'latest.yml');

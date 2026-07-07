@@ -69,6 +69,10 @@ function sha512File(filePath) {
   return crypto.createHash('sha512').update(fs.readFileSync(filePath)).digest('base64');
 }
 
+function yamlString(value) {
+  return JSON.stringify(String(value));
+}
+
 function md5Base64(buffer) {
   return crypto.createHash('md5').update(buffer).digest('base64');
 }
@@ -91,14 +95,13 @@ function findInstaller() {
 }
 
 function buildLatestYml(installer, sha512, size) {
-  const safeName = encodeURI(installer.name);
   return [
     `version: ${packageJson.version}`,
     'files:',
-    `  - url: ${safeName}`,
+    `  - url: ${yamlString(installer.name)}`,
     `    sha512: ${sha512}`,
     `    size: ${size}`,
-    `path: ${safeName}`,
+    `path: ${yamlString(installer.name)}`,
     `sha512: ${sha512}`,
     `releaseDate: '${new Date().toISOString()}'`,
     '',
