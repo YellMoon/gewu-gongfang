@@ -29,13 +29,14 @@
    - `git add -A`
    - `git commit -m "自动发布 YYYY-MM-DD"`
    - `git push gewu master`
-3. 不再默认推送 `origin/master`。
-4. 不再默认打包安装包。
-5. 不再默认上传夸克网盘。
+3. 每次优化更新完成并推送 `gewu/master` 后，默认更新 OSS 桌面更新包：自动判定并递增版本，执行 `npm run dist:win` 生成安装包，再执行 `npm run publish:desktop-update` 发布 OSS 更新 feed。
+4. Electron 打包或 OSS 发布后，必须确认已恢复 Node native 依赖环境（项目脚本通常已在 `npm run dist:win` 末尾执行 `npm run rebuild:node`），并运行相关验证。
+5. 不再默认推送 `origin/master`。
+6. 不再默认上传夸克网盘。
 
 ## 打包和上传
 
-只有在用户明确要求“打包”“生成安装包”“上传夸克网盘”时，才执行打包和上传流程。
+除“每次优化更新后默认更新 OSS 桌面更新包”外，只有在用户明确要求“打包”“生成安装包”“上传夸克网盘”时，才执行其他打包和上传流程。
 
 如果用户明确要求打包：
 
