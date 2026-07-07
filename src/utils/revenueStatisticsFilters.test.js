@@ -4,7 +4,9 @@ const dayjs = require('dayjs');
 (async () => {
   const {
     applyRevenueDateChange,
+    clearRevenueDateRange,
     buildRevenueFacetOptions,
+    isDateWithinRevenueRange,
   } = await import('./revenueStatisticsFilters.mjs');
 
   const initialRange = [dayjs('2026-06-01'), dayjs('2026-06-30')];
@@ -19,6 +21,23 @@ const dayjs = require('dayjs');
   const clampedStart = applyRevenueDateChange(endChanged, 'start', dayjs('2026-07-01'));
   assert.strictEqual(clampedStart[0].format('YYYY-MM-DD'), '2026-07-01');
   assert.strictEqual(clampedStart[1].format('YYYY-MM-DD'), '2026-07-01');
+
+  const clearedStart = applyRevenueDateChange(clampedStart, 'start', null);
+  assert.strictEqual(clearedStart[0], null);
+  assert.strictEqual(clearedStart[1].format('YYYY-MM-DD'), '2026-07-01');
+
+  const clearedEnd = applyRevenueDateChange(clearedStart, 'end', null);
+  assert.strictEqual(clearedEnd[0], null);
+  assert.strictEqual(clearedEnd[1], null);
+  assert.deepStrictEqual(clearRevenueDateRange(), [null, null]);
+
+  const openStartRange = [null, dayjs('2026-07-01')];
+  const openEndRange = [dayjs('2026-06-01'), null];
+  assert.strictEqual(isDateWithinRevenueRange('2025-01-01', [null, null]), true);
+  assert.strictEqual(isDateWithinRevenueRange('2026-07-01', openStartRange), true);
+  assert.strictEqual(isDateWithinRevenueRange('2026-07-02', openStartRange), false);
+  assert.strictEqual(isDateWithinRevenueRange('2026-05-31', openEndRange), false);
+  assert.strictEqual(isDateWithinRevenueRange('2027-01-01', openEndRange), true);
 
   const rows = [
     {

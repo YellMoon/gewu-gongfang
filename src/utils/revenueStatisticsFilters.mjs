@@ -28,18 +28,41 @@ function isBefore(left, right) {
 }
 
 export function applyRevenueDateChange(currentRange, part, nextDate) {
-  if (!nextDate || !Array.isArray(currentRange) || currentRange.length !== 2) return currentRange;
+  if (!Array.isArray(currentRange) || currentRange.length !== 2) return currentRange;
 
   const [currentStart, currentEnd] = currentRange;
   if (part === 'start') {
-    return isAfter(nextDate, currentEnd) ? [nextDate, nextDate] : [nextDate, currentEnd];
+    if (!nextDate) return [null, currentEnd || null];
+    return isAfter(nextDate, currentEnd) ? [nextDate, nextDate] : [nextDate, currentEnd || null];
   }
 
   if (part === 'end') {
-    return isBefore(nextDate, currentStart) ? [nextDate, nextDate] : [currentStart, nextDate];
+    if (!nextDate) return [currentStart || null, null];
+    return isBefore(nextDate, currentStart) ? [nextDate, nextDate] : [currentStart || null, nextDate];
   }
 
   return currentRange;
+}
+
+export function clearRevenueDateRange() {
+  return [null, null];
+}
+
+function formatDateBoundary(date) {
+  if (!date) return undefined;
+  if (typeof date.format === 'function') return date.format('YYYY-MM-DD');
+  return String(date).slice(0, 10);
+}
+
+export function isDateWithinRevenueRange(dateStr, dateRange = []) {
+  const startDate = formatDateBoundary(dateRange[0]);
+  const endDate = formatDateBoundary(dateRange[1]);
+  const comparableDate = String(dateStr || '').slice(0, 10);
+
+  if (!comparableDate) return false;
+  if (startDate && comparableDate < startDate) return false;
+  if (endDate && comparableDate > endDate) return false;
+  return true;
 }
 
 function rowMatchesFilters(row, filters = {}, ignoreFacet) {
