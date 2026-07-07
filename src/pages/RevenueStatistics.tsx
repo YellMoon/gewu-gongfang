@@ -70,11 +70,11 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend,
 
 type RevenueDateRange = [dayjs.Dayjs | null, dayjs.Dayjs | null];
 
-const filterColProps = { xs: 24, md: 12, xl: 6 };
+const filterColProps = { flex: 'none' };
 
 const filterFieldStyle: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: '76px minmax(0, 1fr)',
+  gridTemplateColumns: '76px auto',
   alignItems: 'center',
   columnGap: 10,
   minWidth: 0,
@@ -87,8 +87,14 @@ const filterLabelStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
-const filterControlStyle: React.CSSProperties = {
-  width: '100%',
+const filterControlStyles: Record<string, React.CSSProperties> = {
+  year: { width: 118 },
+  semester: { width: 128 },
+  teacher: { width: 150 },
+  courseName: { width: 210 },
+  student: { width: 150 },
+  courseTypes: { width: 176 },
+  institution: { width: 150 },
 };
 
 const dateRangeControlsStyle: React.CSSProperties = {
@@ -707,14 +713,14 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
 
   const filtersNode = (
     <>
-      <Row gutter={[20, 14]} align="middle">
+      <Row gutter={[18, 14]} align="middle">
         <Col {...filterColProps}>
           <div style={filterFieldStyle}>
             <span style={filterLabelStyle}>年份：</span>
             <Select
               placeholder="全部年份"
               allowClear
-              style={filterControlStyle}
+              style={filterControlStyles.year}
               value={draftYear}
               onChange={(value) => setDraftYear(value as number | undefined)}
               options={filterOptions.years}
@@ -728,11 +734,26 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
               placeholder="全部学期"
               allowClear
               showSearch
-              style={filterControlStyle}
+              style={filterControlStyles.semester}
               value={draftSemester}
               onChange={(value) => setDraftSemester(value as string | undefined)}
               filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
               options={filterOptions.semesters}
+            />
+          </div>
+        </Col>
+        <Col {...filterColProps}>
+          <div style={filterFieldStyle}>
+            <span style={filterLabelStyle}>老师：</span>
+            <Select
+              placeholder="全部老师"
+              allowClear
+              showSearch
+              style={filterControlStyles.teacher}
+              value={draftTeacherId}
+              onChange={setDraftTeacherId}
+              filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+              options={filterOptions.teachers}
             />
           </div>
         </Col>
@@ -743,7 +764,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
               placeholder="全部课程"
               allowClear
               showSearch
-              style={filterControlStyle}
+              style={filterControlStyles.courseName}
               value={draftCourseName}
               onChange={(value) => setDraftCourseName(value as string | undefined)}
               filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
@@ -751,6 +772,9 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
             />
           </div>
         </Col>
+      </Row>
+
+      <Row gutter={[18, 14]} align="middle" style={{ marginTop: 14 }}>
         <Col {...filterColProps}>
           <div style={filterFieldStyle}>
             <span style={filterLabelStyle}>学生：</span>
@@ -758,29 +782,11 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
               placeholder="全部学生"
               allowClear
               showSearch
-              style={filterControlStyle}
+              style={filterControlStyles.student}
               value={draftStudentId}
               onChange={setDraftStudentId}
               filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
               options={filterOptions.students}
-            />
-          </div>
-        </Col>
-      </Row>
-
-      <Row gutter={[20, 14]} align="middle" style={{ marginTop: 14 }}>
-        <Col {...filterColProps}>
-          <div style={filterFieldStyle}>
-            <span style={filterLabelStyle}>老师：</span>
-            <Select
-              placeholder="全部老师"
-              allowClear
-              showSearch
-              style={filterControlStyle}
-              value={draftTeacherId}
-              onChange={setDraftTeacherId}
-              filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-              options={filterOptions.teachers}
             />
           </div>
         </Col>
@@ -791,11 +797,11 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
               mode="multiple"
               placeholder="全部类型"
               allowClear
-              style={filterControlStyle}
+              style={filterControlStyles.courseTypes}
               value={draftCourseTypes}
               onChange={setDraftCourseTypes}
               options={filterOptions.courseTypes}
-              maxTagCount={2}
+              maxTagCount={1}
             />
           </div>
         </Col>
@@ -806,7 +812,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
               placeholder="全部机构"
               allowClear
               showSearch
-              style={filterControlStyle}
+              style={filterControlStyles.institution}
               value={draftInstitutionId}
               onChange={setDraftInstitutionId}
               filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}

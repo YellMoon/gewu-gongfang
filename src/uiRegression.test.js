@@ -313,6 +313,25 @@ assert(
   'revenue page should restore the previous filter/result snapshot instead of refreshing default filters on every entry'
 );
 
+const revenueFilterOrder = [
+  '\u5e74\u4efd\uff1a',
+  '\u5b66\u671f\uff1a',
+  '\u8001\u5e08\uff1a',
+  '\u8bfe\u7a0b\u540d\uff1a',
+  '\u5b66\u751f\uff1a',
+  '\u8bfe\u7a0b\u7c7b\u578b\uff1a',
+  '\u673a\u6784\uff1a',
+].map(label => revenueStatistics.indexOf(label));
+assert(
+  revenueFilterOrder.every(index => index >= 0) &&
+  revenueFilterOrder.every((index, order) => order === 0 || index > revenueFilterOrder[order - 1]) &&
+  revenueStatistics.includes('filterControlStyles') &&
+  revenueStatistics.includes('year: { width: 118 }') &&
+  revenueStatistics.includes('courseName: { width: 210 }') &&
+  !revenueStatistics.includes("const filterControlStyle: React.CSSProperties = {\n  width: '100%'"),
+  'revenue filter controls should use compact widths and the requested field order'
+);
+
 assert(
   revenueStatistics.includes('机构：') &&
   revenueStatistics.includes('全部机构') &&
