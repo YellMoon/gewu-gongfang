@@ -326,10 +326,24 @@ assert(
   revenueFilterOrder.every(index => index >= 0) &&
   revenueFilterOrder.every((index, order) => order === 0 || index > revenueFilterOrder[order - 1]) &&
   revenueStatistics.includes('filterControlStyles') &&
-  revenueStatistics.includes('year: { width: 118 }') &&
-  revenueStatistics.includes('courseName: { width: 210 }') &&
+  revenueStatistics.includes('filterActionBarStyle') &&
+  revenueStatistics.includes('filterDateFieldStyle') &&
+  revenueStatistics.includes('className="revenue-filter-grid"') &&
+  !revenueStatistics.includes('revenue-filter-grid--secondary') &&
+  indexCss.includes('.revenue-filter-grid') &&
+  indexCss.includes('grid-template-columns: repeat(4, max-content)') &&
+  indexCss.includes('@media (max-width: 520px)') &&
+  revenueStatistics.includes("gridTemplateColumns: 'max-content minmax(0, 1fr)'") &&
+  revenueStatistics.includes("width: 'min(100%, 500px)'") &&
+  revenueStatistics.includes('style={filterDateFieldStyle}') &&
+  revenueStatistics.includes('year: { width: 104 }') &&
+  revenueStatistics.includes('courseName: { width: 190 }') &&
+  revenueStatistics.includes('student: { width: 112 }') &&
+  revenueStatistics.includes('courseTypes: { width: 124 }') &&
+  !revenueStatistics.includes('student: { width: 136 }') &&
+  !revenueStatistics.includes('filterToolbarStyle') &&
   !revenueStatistics.includes("const filterControlStyle: React.CSSProperties = {\n  width: '100%'"),
-  'revenue filter controls should use compact widths and the requested field order'
+  'revenue filter controls should use compact field-aware widths and the requested field order'
 );
 
 assert(

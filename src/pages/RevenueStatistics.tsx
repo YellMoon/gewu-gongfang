@@ -6,7 +6,6 @@ import {
   Col,
   Collapse,
   DatePicker,
-  Divider,
   Empty,
   Row,
   Segmented,
@@ -72,41 +71,63 @@ type RevenueDateRange = [dayjs.Dayjs | null, dayjs.Dayjs | null];
 
 const filterColProps = { flex: 'none' };
 
-const filterFieldStyle: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '76px auto',
+const filterActionBarStyle: React.CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
   alignItems: 'center',
-  columnGap: 10,
+  gap: 10,
+  paddingTop: 12,
+  marginTop: 2,
+  borderTop: '1px solid #e5e7eb',
+};
+
+const filterFieldStyle: React.CSSProperties = {
+  display: 'inline-grid',
+  gridTemplateColumns: 'max-content max-content',
+  alignItems: 'center',
+  columnGap: 8,
   minWidth: 0,
+  padding: '5px 8px',
+  border: '1px solid #e5e7eb',
+  borderRadius: 6,
+  background: '#f8fafc',
+};
+
+const filterDateFieldStyle: React.CSSProperties = {
+  ...filterFieldStyle,
+  gridTemplateColumns: 'max-content minmax(0, 1fr)',
+  width: 'min(100%, 500px)',
 };
 
 const filterLabelStyle: React.CSSProperties = {
-  color: '#1f2937',
+  color: '#334155',
+  fontSize: 13,
   fontWeight: 500,
-  textAlign: 'right',
+  lineHeight: '32px',
   whiteSpace: 'nowrap',
 };
 
 const filterControlStyles: Record<string, React.CSSProperties> = {
-  year: { width: 118 },
-  semester: { width: 128 },
-  teacher: { width: 150 },
-  courseName: { width: 210 },
-  student: { width: 150 },
-  courseTypes: { width: 176 },
-  institution: { width: 150 },
+  year: { width: 104 },
+  semester: { width: 116 },
+  teacher: { width: 136 },
+  courseName: { width: 190 },
+  student: { width: 112 },
+  courseTypes: { width: 124 },
+  institution: { width: 136 },
 };
 
 const dateRangeControlsStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  gap: 8,
+  gap: 6,
   flexWrap: 'wrap',
   minWidth: 0,
+  maxWidth: '100%',
 };
 
 const datePickerStyle: React.CSSProperties = {
-  width: 150,
+  width: 132,
 };
 
 type ScheduleItem = Schedule & {
@@ -713,7 +734,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
 
   const filtersNode = (
     <>
-      <Row gutter={[18, 14]} align="middle">
+      <Row gutter={[0, 0]} align="middle" className="revenue-filter-grid">
         <Col {...filterColProps}>
           <div style={filterFieldStyle}>
             <span style={filterLabelStyle}>年份：</span>
@@ -772,9 +793,6 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
             />
           </div>
         </Col>
-      </Row>
-
-      <Row gutter={[18, 14]} align="middle" style={{ marginTop: 14 }}>
         <Col {...filterColProps}>
           <div style={filterFieldStyle}>
             <span style={filterLabelStyle}>学生：</span>
@@ -822,11 +840,9 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         </Col>
       </Row>
 
-      <Divider style={{ margin: '14px 0' }} />
-
-      <Row gutter={[16, 12]} align="middle">
+      <Row gutter={[0, 0]} align="middle" style={filterActionBarStyle}>
         <Col xs={24} lg={14} xl={12}>
-          <div style={filterFieldStyle}>
+          <div style={filterDateFieldStyle}>
             <span style={filterLabelStyle}>统计范围：</span>
             <div style={dateRangeControlsStyle}>
               <DatePicker
