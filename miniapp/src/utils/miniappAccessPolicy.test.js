@@ -37,6 +37,9 @@ assert.ok(cloudRelayRoute.includes('isStudentUser'), 'cloud relay should disting
 assert.ok(cloudRelayRoute.includes('student_pricings'), 'student snapshot filter should use course/schedule student links');
 assert.ok(gatewayApp.includes("app.use('/api/cloud', optionalAuth, cloudRelayRouter)"), 'gateway should mount cloud relay with optional auth on its own line');
 assert.ok(miniappHome.includes('getMiniappRolePolicy'), 'home page should use role-specific policy');
+assert.ok(miniappHome.includes("setCachedList('schedules'"), 'home page should cache filtered cloud schedules for student timetable pages');
+assert.ok(miniappHome.includes("setCachedList('courses'"), 'home page should cache filtered cloud courses for student timetable pages');
+assert.ok(miniappHome.includes("setCachedList('students'"), 'home page should cache filtered cloud students for role-scoped pages');
 assert.ok(!permission.includes("'teaching-tools'"), 'miniapp permission should not expose removed teaching tools module');
 assert.ok(!miniappHome.includes("'teaching-tools'"), 'home page should not expose removed teaching tools module');
 assert.ok(!appConfig.includes("'pages/tools/index'"), 'app config should not register removed teaching tools page');

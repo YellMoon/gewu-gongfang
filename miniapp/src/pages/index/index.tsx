@@ -14,6 +14,7 @@ import {
   getLinkedStudentIds,
 } from '../../utils/permission';
 import { getLocalData } from '../../utils/sync';
+import { setCachedList } from '../../utils/storage';
 import { NetworkStatus, LoadingSkeleton, EmptyState } from '../../components/shared';
 import { Schedule, ScheduleStatus, Student, Course } from '../../types';
 import './index.scss';
@@ -58,6 +59,16 @@ const STUDENT_SHORTCUTS = [
   { mark: '卷', label: '题库组卷', desc: '选题、组卷和导出', url: '/pages/question-bank/index' },
 ];
 
+function cacheSnapshotPayload(payload?: Record<string, any>) {
+  if (!payload) return;
+  if (Array.isArray(payload.students)) setCachedList('students', payload.students);
+  if (Array.isArray(payload.courses)) setCachedList('courses', payload.courses);
+  if (Array.isArray(payload.schedules)) setCachedList('schedules', payload.schedules);
+  if (Array.isArray(payload.teachers)) setCachedList('teachers', payload.teachers);
+  if (Array.isArray(payload.payments)) setCachedList('payments', payload.payments);
+  if (Array.isArray(payload.consumptions)) setCachedList('consumptions', payload.consumptions);
+}
+
 export default function Index() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [modules, setModules] = useState<ModuleInfo[]>([]);
@@ -88,7 +99,11 @@ export default function Index() {
     try {
       const res = await readCloudSnapshot('full');
       const payload = res as any;
-      if (res.success) setSnapshot(payload.snapshot || payload.data?.snapshot || null);
+      if (res.success) {
+        const nextSnapshot = payload.snapshot || payload.data?.snapshot || null;
+        cacheSnapshotPayload(nextSnapshot?.payload);
+        setSnapshot(nextSnapshot);
+      }
     } catch {
       setSnapshot(null);
     }
