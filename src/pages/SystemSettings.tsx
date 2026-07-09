@@ -493,6 +493,9 @@ const SystemSettings: React.FC = () => {
           <Form.Item name="cloudBaseUrl" label="阿里云服务地址">
             <Input placeholder="https://your-domain.example.com" />
           </Form.Item>
+          <Form.Item name="desktopSyncToken" label={'\u684c\u9762\u7aef\u540c\u6b65\u5bc6\u94a5'}>
+            <Input.Password placeholder="same token on host, clients, and cloud env GEWU_DESKTOP_SYNC_TOKEN" />
+          </Form.Item>
           <Form.Item name="questionBankCandidatePaths" label="题库盘候选路径（支持热插拔/盘符变化）">
             <Select mode="tags" tokenSeparators={[';']} placeholder="例如 I:/GewuQuestionBank；换 Type-C 后可加入 J:/GewuQuestionBank" />
           </Form.Item>

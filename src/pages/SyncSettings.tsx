@@ -9,6 +9,8 @@ import { getSyncUrl, pushSyncBatch, pullSyncOps, registerSyncDevice, requestSync
 import { getRuntimeConfig, RuntimeConfig } from '../services/runtimeConfigClient';
 import browserDatabase from '../services/browserDatabase';
 import type { CloudSyncContext } from '../navigation/navigationContext';
+import { runOneClickSync } from '../services/oneClickSyncService.mjs';
+import { createCloudRelaySyncTransport, createDirectSyncTransport } from '../services/oneClickSyncTransports.mjs';
 
 interface SyncSettingsProps {
   context?: CloudSyncContext;
@@ -21,6 +23,7 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const [syncConflicts, setSyncConflicts] = useState<any[]>([]);
   const [conflictsLoading, setConflictsLoading] = useState(false);
+  const [oneClickLoading, setOneClickLoading] = useState(false);
   const engineRef = useRef<SyncEngine | null>(null);
 
   // 延迟初始化 SyncEngine，捕获构造函数可能的异常
@@ -172,6 +175,122 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
     const pushed = await handleAuthorizedPush();
     if (pushed === false) return;
     await handlePull();
+  };
+
+  const oneClickText = {
+    oneClick: '\u4e00\u952e\u540c\u6b65',
+    confirmTitle: '\u786e\u8ba4\u4e00\u952e\u540c\u6b65',
+    direct: '\u5c40\u57df\u7f51\u76f4\u8fde',
+    cloud: '\u963f\u91cc\u4e91\u4e2d\u7ee7',
+    confirmIntro: '\u540c\u6b65\u3002\u8bf7\u786e\u8ba4\u4ee5\u4e0b\u53d8\u52a8\uff1a',
+    upload: '\u672c\u673a\u5c06\u4e0a\u4f20\uff1a',
+    download: '\u5c06\u4ece\u4e3b\u673a\u83b7\u53d6\uff1a',
+    risk: '\u9ad8\u98ce\u9669/\u5220\u9664\u9879\uff1a',
+    item: '\u6761',
+    create: '\u65b0\u589e',
+    update: '\u4fee\u6539',
+    delete: '\u5220\u9664',
+    noChange: '\u65e0\u53d8\u66f4',
+    relayHint: '\u4e91\u4e2d\u7ee7\u6a21\u5f0f\u4f1a\u5148\u63d0\u4ea4\u540c\u6b65\u8bf7\u6c42\uff1b\u5982\u679c\u4e3b\u673a\u7535\u8111\u6682\u672a\u5904\u7406\uff0c\u5f53\u524d\u672c\u673a\u961f\u5217\u4f1a\u7ee7\u7eed\u4fdd\u7559\u3002',
+    ok: '\u786e\u8ba4\u540c\u6b65',
+    cancel: '\u53d6\u6d88',
+    synced: '\u540c\u6b65\u5b8c\u6210',
+    waiting: '\u540c\u6b65\u8bf7\u6c42\u5df2\u63d0\u4ea4\uff0c\u7b49\u5f85\u4e3b\u673a\u7535\u8111\u4e0a\u7ebf\u5904\u7406',
+    cancelled: '\u5df2\u53d6\u6d88\u540c\u6b65\uff0c\u672c\u673a\u5f85\u540c\u6b65\u961f\u5217\u672a\u53d8\u66f4',
+    failed: '\u4e00\u952e\u540c\u6b65\u5931\u8d25\uff0c\u5f85\u540c\u6b65\u961f\u5217\u5df2\u4fdd\u7559',
+    logCategory: '\u4e91\u540c\u6b65',
+    logAction: '\u540c\u6b65',
+  };
+
+  const isLocalHostBase = (value?: string) => {
+    const text = String(value || '').toLowerCase();
+    return text.includes('127.0.0.1') || text.includes('localhost');
+  };
+
+  const formatActionSummary = (summary: any) => {
+    const parts = [
+      summary?.byAction?.create ? `${oneClickText.create} ${summary.byAction.create} ${oneClickText.item}` : '',
+      summary?.byAction?.update ? `${oneClickText.update} ${summary.byAction.update} ${oneClickText.item}` : '',
+      summary?.byAction?.delete ? `${oneClickText.delete} ${summary.byAction.delete} ${oneClickText.item}` : '',
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join('\uff0c') : oneClickText.noChange;
+  };
+
+  const confirmOneClickPreview = (preview: any) => new Promise<boolean>((resolve) => {
+    if (!preview.confirmationRequired) {
+      resolve(true);
+      return;
+    }
+    Modal.confirm({
+      title: oneClickText.confirmTitle,
+      width: 620,
+      content: (
+        <div style={{ lineHeight: 1.8 }}>
+          <p>{`${preview.channel === 'direct' ? oneClickText.direct : oneClickText.cloud}${oneClickText.confirmIntro}`}</p>
+          <p><strong>{oneClickText.upload}</strong>{`${preview.upload.total} ${oneClickText.item}\uff08${formatActionSummary(preview.upload)}\uff09`}</p>
+          <p><strong>{oneClickText.download}</strong>{`${preview.download.total} ${oneClickText.item}\uff08${formatActionSummary(preview.download)}\uff09`}</p>
+          <p><strong>{oneClickText.risk}</strong>{`${preview.risk.high} ${oneClickText.item}`}</p>
+          {preview.channel === 'cloud' && <p>{oneClickText.relayHint}</p>}
+        </div>
+      ),
+      okText: oneClickText.ok,
+      cancelText: oneClickText.cancel,
+      onOk: () => resolve(true),
+      onCancel: () => resolve(false),
+    });
+  });
+
+  const handleOneClickSync = async () => {
+    const eng = engineRef.current;
+    if (!eng || oneClickLoading) return;
+    setOneClickLoading(true);
+    try {
+      const config = runtimeConfig || await getRuntimeConfig();
+      const transports = [];
+      if (config?.hostBaseUrl && (config.nodeRole === 'primary-host' || !isLocalHostBase(config.hostBaseUrl))) {
+        transports.push(createDirectSyncTransport({
+          baseUrl: config.hostBaseUrl,
+          deviceId: eng.getDeviceId(),
+          role: config.nodeRole || 'desktop-client',
+          deviceName: config.deviceId || eng.getDeviceId(),
+        }));
+      }
+      if (config?.cloudBaseUrl) {
+        transports.push(createCloudRelaySyncTransport({
+          baseUrl: config.cloudBaseUrl,
+          deviceId: eng.getDeviceId(),
+          desktopSyncToken: config.desktopSyncToken || '',
+        }));
+      }
+      const result = await runOneClickSync({
+        engine: eng,
+        transports,
+        confirmPreview: confirmOneClickPreview,
+        buildLocalDataMaps: () => browserDatabase.buildSyncLocalDataMaps(),
+        applyLocalDataMaps: (localData: any) => browserDatabase.applySyncLocalDataMaps(localData),
+      });
+      refreshStatus();
+      if (result.status === 'synced') {
+        message.success(`${oneClickText.synced}\uff1a\u4e0a\u4f20 ${result.uploaded} \u6761\uff0c\u62c9\u53d6 ${result.downloaded} \u6761\uff0c\u51b2\u7a81 ${result.conflicts} \u6761`);
+        (window as any).operateLogger?.log(oneClickText.logAction, `${oneClickText.oneClick}: ${result.channel}`, oneClickText.logCategory);
+        return;
+      }
+      if (result.status === 'waiting-host') {
+        message.info(`${oneClickText.waiting}${result.requestId ? `\uff08${result.requestId}\uff09` : ''}`);
+        (window as any).operateLogger?.log(oneClickText.logAction, `${oneClickText.waiting}: ${result.requestId || ''}`, oneClickText.logCategory);
+        return;
+      }
+      if (result.status === 'cancelled') {
+        message.info(oneClickText.cancelled);
+        return;
+      }
+      message.error(result.error || oneClickText.failed);
+    } catch (error: any) {
+      refreshStatus();
+      message.error(error.message || oneClickText.failed);
+    } finally {
+      setOneClickLoading(false);
+    }
   };
 
   // 重置同步引擎
@@ -348,6 +467,14 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <Button
             type="primary"
+            size="large"
+            icon={<SyncOutlined />}
+            loading={oneClickLoading}
+            onClick={handleOneClickSync}
+          >
+            {oneClickText.oneClick}
+          </Button>
+          <Button
             icon={<CloudServerOutlined />}
             onClick={handleAuthorizedPush}
             disabled={status.pendingCount === 0}

@@ -18,6 +18,7 @@ function defaultConfig(userDataPath) {
     deviceId: makeDeviceId(),
     hostBaseUrl: 'http://127.0.0.1:3001',
     cloudBaseUrl: '',
+    desktopSyncToken: '',
     mainDbPath: path.join(userDataPath, 'data', 'scheduling.db'),
     questionBankPath: '',
     questionAssetPath: '',
@@ -37,6 +38,7 @@ function normalizeRuntimeConfig(input = {}, options = {}) {
   next.deviceId = next.deviceId || defaults.deviceId;
   next.hostBaseUrl = trimTrailingSlash(next.hostBaseUrl || defaults.hostBaseUrl);
   next.cloudBaseUrl = trimTrailingSlash(next.cloudBaseUrl || '');
+  next.desktopSyncToken = String(next.desktopSyncToken || '').trim();
   next.mainDbPath = next.mainDbPath || defaults.mainDbPath;
   next.questionBankPath = trimTrailingSlash(next.questionBankPath || '');
   next.questionBankCandidatePaths = Array.from(new Set(
@@ -77,6 +79,7 @@ function applyRuntimeConfigToEnv(config, env = process.env) {
   env.GEWU_DEVICE_ID = config.deviceId;
   env.GEWU_HOST_BASE_URL = config.hostBaseUrl || '';
   env.GEWU_CLOUD_BASE_URL = config.cloudBaseUrl || '';
+  if (config.desktopSyncToken) env.GEWU_DESKTOP_SYNC_TOKEN = config.desktopSyncToken;
   env.DB_PATH = config.mainDbPath;
   if (config.questionBankPath) env.QUESTION_BANK_ROOT = config.questionBankPath;
   if (config.questionAssetPath) env.QUESTION_BANK_UPLOAD_DIR = config.questionAssetPath;

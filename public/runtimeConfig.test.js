@@ -22,6 +22,7 @@ const normalized = normalizeRuntimeConfig({
   questionBankStoreId: 'qb_test_store',
   localCachePath: 'D:/GewuQuestionBankCache/',
   nasBackupPath: '//NAS/GewuQuestionBankBackup/',
+  desktopSyncToken: 'sync_secret_test',
   cloudBaseUrl: 'https://cloud.example.com/',
 });
 
@@ -35,6 +36,7 @@ assert.deepStrictEqual(
 assert.strictEqual(normalized.questionBankStoreId, 'qb_test_store');
 assert.strictEqual(normalized.localCachePath.replace(/\\/g, '/'), 'D:/GewuQuestionBankCache');
 assert.strictEqual(normalized.nasBackupPath.replace(/\\/g, '/'), '//NAS/GewuQuestionBankBackup');
+assert.strictEqual(normalized.desktopSyncToken, 'sync_secret_test');
 assert.strictEqual(normalized.cloudBaseUrl, 'https://cloud.example.com');
 
 writeRuntimeConfig(configPath, normalized);
@@ -52,6 +54,7 @@ assert.strictEqual(env.QUESTION_BANK_CANDIDATE_ROOTS.replace(/\\/g, '/'), 'E:/Ge
 assert.strictEqual(env.QUESTION_BANK_STORE_ID, 'qb_test_store');
 assert.strictEqual(env.GEWU_LOCAL_CACHE_PATH.replace(/\\/g, '/'), 'D:/GewuQuestionBankCache');
 assert.strictEqual(env.GEWU_NAS_BACKUP_PATH.replace(/\\/g, '/'), '//NAS/GewuQuestionBankBackup');
+assert.strictEqual(env.GEWU_DESKTOP_SYNC_TOKEN, 'sync_secret_test');
 
 const fallback = normalizeRuntimeConfig({}, { userDataPath: dir });
 assert.ok(fallback.deviceId.startsWith('desktop_'));
