@@ -1,11 +1,13 @@
 const { Router } = require('express');
 const crypto = require('crypto');
 const { getInstance } = require('../database');
+const {
+  filterSnapshotForUser,
+  isAdminUser,
+  isAllowedMiniappTaskForUser,
+} = require('../services/miniappAccessPolicy');
 
 const router = Router();
-
-const ADMIN_TASK_TYPES = new Set(['asset-import', 'question-paper', 'paper-export-word', 'paper-export-pdf']);
-const STUDENT_TASK_TYPES = new Set(['question-paper', 'paper-export-word', 'paper-export-pdf']);
 
 function now() {
   return new Date().toISOString();
@@ -13,17 +15,6 @@ function now() {
 
 function id(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
-}
-
-function roleOf(user = {}) {
-  return user.role || user.user_type || 'guest';
-}
-
-function allowedTasksForUser(user = {}) {
-  const role = roleOf(user);
-  if (role === 'student') return STUDENT_TASK_TYPES;
-  if (role === 'admin' || role === 'operator') return ADMIN_TASK_TYPES;
-  return new Set();
 }
 
 function parseJson(value, fallback) {
@@ -34,6 +25,53 @@ function parseJson(value, fallback) {
     return fallback;
   }
 }
+
+function sendForbidden(res, code, message = 'Forbidden') {
+  return res.status(code === 'UNAUTHORIZED' ? 401 : 403).json({ success: false, code, error: message });
+}
+
+function isHostTokenValid(req) {
+  const expected = process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '';
+  if (!expected) return false;
+  const provided = req.headers['x-gewu-host-token'] || req.headers['x-host-token'];
+  return provided === expected;
+}
+
+function isDevBypass() {
+  return process.env.NODE_ENV === 'development' || !process.env.JWT_SECRET;
+}
+
+function requireHostWrite(req, res, next) {
+  if (isDevBypass() || isAdminUser(req.user) || isHostTokenValid(req)) return next();
+  return sendForbidden(res, 'HOST_WRITE_FORBIDDEN', 'Host relay write is not allowed');
+}
+
+function requireSnapshotRead(req, res, next) {
+  if (isDevBypass() || req.user) return next();
+  return sendForbidden(res, 'UNAUTHORIZED', 'Authentication required');
+}
+
+function requireMiniappTaskAccess(req, res, next) {
+  if (!req.user && !isDevBypass()) return sendForbidden(res, 'UNAUTHORIZED', 'Authentication required');
+  if (!isAllowedMiniappTaskForUser(req.user, req.body.taskType)) {
+    return sendForbidden(res, 'TASK_TYPE_FORBIDDEN', 'Task type is not allowed');
+  }
+  return next();
+}
+
+function canReadTaskResult(task, user) {
+  if (!task) return true;
+  if (isDevBypass() || isAdminUser(user)) return true;
+  return user?.id && task.created_by === user.id;
+}
+
+router.use('/host', requireHostWrite);
+router.use('/snapshots/publish', requireHostWrite);
+router.use('/tasks', (req, res, next) => {
+  if (req.method === 'GET' && req.path === '/') return requireHostWrite(req, res, next);
+  if (req.method === 'POST' && /^\/[^/]+\/complete$/.test(req.path)) return requireHostWrite(req, res, next);
+  return next();
+});
 
 router.post('/host/heartbeat', (req, res) => {
   const db = getInstance().db;
@@ -82,22 +120,17 @@ router.post('/snapshots/publish', (req, res) => {
   res.json({ success: true, id: snapshotId, createdAt: time });
 });
 
-router.get('/snapshots/read', (req, res) => {
+router.get('/snapshots/read', requireSnapshotRead, (req, res) => {
   const db = getInstance().db;
   const snapshotType = req.query.snapshotType || 'full';
   const row = db.prepare(
     `SELECT * FROM readonly_snapshots WHERE snapshot_type = ? ORDER BY created_at DESC LIMIT 1`
   ).get(snapshotType);
   const snapshot = row ? { ...row, payload: parseJson(row.payload, {}) } : null;
-  res.json({ success: true, snapshot });
+  res.json({ success: true, snapshot: filterSnapshotForUser(snapshot, req.user) });
 });
 
-router.post('/tasks', (req, res) => {
-  const allowed = allowedTasksForUser(req.user);
-  if (!allowed.has(req.body.taskType)) {
-    return res.status(403).json({ success: false, error: 'task type is not allowed' });
-  }
-
+router.post('/tasks', requireMiniappTaskAccess, (req, res) => {
   const db = getInstance().db;
   const taskId = id('task');
   const time = now();
@@ -149,6 +182,9 @@ router.post('/tasks/:id/complete', (req, res) => {
 router.get('/tasks/:id/result', (req, res) => {
   const db = getInstance().db;
   const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(req.params.id);
+  if (!canReadTaskResult(row, req.user)) {
+    return sendForbidden(res, 'TASK_RESULT_FORBIDDEN', 'Task result is not allowed');
+  }
   res.json({
     success: true,
     task: row ? {
@@ -160,3 +196,5 @@ router.get('/tasks/:id/result', (req, res) => {
 });
 
 module.exports = router;
+module.exports.filterSnapshotForUser = filterSnapshotForUser;
+module.exports.requireMiniappTaskAccess = requireMiniappTaskAccess;

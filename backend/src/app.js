@@ -5,7 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireWriteAccess } = require('./middleware/auth');
+const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireCoreReadAccess, requireWriteAccess } = require('./middleware/auth');
 const { buildErrorPayload, errorHandler } = require('./middleware/errorHandler');
 
 const studentsRouter = require('./routes/students');
@@ -249,20 +249,20 @@ function createApp() {
   app.use('/api/sync', syncRouter);
   app.use('/api/cloud-relay-host', optionalAuth, requireWriteAccess, cloudRelayHostRouter);
   app.use('/api/modules', optionalAuth, modulesRouter);
-  app.use('/api/cloud', optionalAuth, requireWriteAccess, cloudRelayRouter);
+  app.use('/api/cloud', optionalAuth, cloudRelayRouter);
   app.use('/api/permissions', optionalAuth, permissionsRouter);
 
   // 鍗婂叕寮€璺敱锛堝彲閫夎璇侊級
-  app.use('/api/students', optionalAuth, requireWriteAccess, studentsRouter);
-  app.use('/api/courses', optionalAuth, requireWriteAccess, coursesRouter);
-  app.use('/api/schedules', optionalAuth, requireWriteAccess, schedulesRouter);
-  app.use('/api/payments', optionalAuth, requireWriteAccess, paymentsRouter);
-  app.use('/api/consumptions', optionalAuth, requireWriteAccess, consumptionsRouter);
-  app.use('/api/teachers', optionalAuth, requireWriteAccess, teachersRouter);
-  app.use('/api/rooms', optionalAuth, requireWriteAccess, roomsRouter);
-  app.use('/api/schools', optionalAuth, requireWriteAccess, schoolsRouter);
-  app.use('/api/institutions', optionalAuth, requireWriteAccess, institutionsRouter);
-  app.use('/api/stats', optionalAuth, requireWriteAccess, statsRouter);
+  app.use('/api/students', optionalAuth, requireCoreReadAccess, requireWriteAccess, studentsRouter);
+  app.use('/api/courses', optionalAuth, requireCoreReadAccess, requireWriteAccess, coursesRouter);
+  app.use('/api/schedules', optionalAuth, requireCoreReadAccess, requireWriteAccess, schedulesRouter);
+  app.use('/api/payments', optionalAuth, requireCoreReadAccess, requireWriteAccess, paymentsRouter);
+  app.use('/api/consumptions', optionalAuth, requireCoreReadAccess, requireWriteAccess, consumptionsRouter);
+  app.use('/api/teachers', optionalAuth, requireCoreReadAccess, requireWriteAccess, teachersRouter);
+  app.use('/api/rooms', optionalAuth, requireCoreReadAccess, requireWriteAccess, roomsRouter);
+  app.use('/api/schools', optionalAuth, requireCoreReadAccess, requireWriteAccess, schoolsRouter);
+  app.use('/api/institutions', optionalAuth, requireCoreReadAccess, requireWriteAccess, institutionsRouter);
+  app.use('/api/stats', optionalAuth, requireCoreReadAccess, requireWriteAccess, statsRouter);
   app.use('/api/question-bank', optionalAuth, requireWriteAccess, questionBankRouter);
   app.use('/api/ops', optionalAuth, requireWriteAccess, opsRouter);
   app.use('/api', optionalAuth, requireWriteAccess, dataRouter);

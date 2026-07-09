@@ -72,6 +72,30 @@ function hasAnyStudentLink(candidateIds, allowedIds) {
   return candidateIds.some(idValue => allowed.has(idValue));
 }
 
+function pick(record, keys) {
+  const result = {};
+  for (const key of keys) {
+    if (record && record[key] !== undefined) result[key] = record[key];
+  }
+  return result;
+}
+
+function redactStudentForStudent(student = {}) {
+  return pick(student, ['id', 'name', 'school', 'grade_year', 'grade_current', 'source_type']);
+}
+
+function redactCourseForStudent(course = {}) {
+  return pick(course, ['id', 'name', 'display_name', 'type', 'year', 'semester', 'teacher_id', 'teacher_name', 'room_id', 'room_name', 'active', 'default_duration_minutes', 'notes', 'created_at', 'updated_at']);
+}
+
+function redactScheduleForStudent(schedule = {}) {
+  return pick(schedule, ['id', 'course_id', 'start_time', 'end_time', 'recurring_rule', 'status', 'room', 'service_type', 'notes', 'created_at', 'updated_at']);
+}
+
+function redactTeacherForStudent(teacher = {}) {
+  return pick(teacher, ['id', 'name', 'subject']);
+}
+
 function filterSnapshotForUser(snapshot, user) {
   if (!snapshot || !isStudentUser(user)) return snapshot;
 
@@ -85,7 +109,11 @@ function filterSnapshotForUser(snapshot, user) {
         students: [],
         courses: [],
         schedules: [],
+        teachers: [],
         payments: [],
+        consumptions: [],
+        assetRecords: [],
+        assetCategories: [],
       },
     };
   }
@@ -101,22 +129,35 @@ function filterSnapshotForUser(snapshot, user) {
     || hasAnyStudentLink(scheduleStudentIds(schedule, courseById), linkedStudentIds)
   );
   const students = (payload.students || []).filter(student => linkedStudentIds.includes(student.id));
-  const payments = (payload.payments || []).filter(payment => linkedStudentIds.includes(payment.student_id || payment.studentId));
   const teachers = (payload.teachers || []).filter(teacher =>
     courses.some(course => course.teacher_id === teacher.id || course.teacherId === teacher.id)
   );
+  const {
+    payments: _payments,
+    consumptions: _consumptions,
+    assetRecords: _assetRecords,
+    assetCategories: _assetCategories,
+    stats: _stats,
+    revenueStats: _revenueStats,
+    financeStats: _financeStats,
+    studentTuitionStats: _studentTuitionStats,
+    ...rest
+  } = payload;
 
   return {
     ...snapshot,
     payload: {
-      ...payload,
+      ...rest,
       redactedForRole: 'student',
       linkedStudentIds,
-      students,
-      courses,
-      schedules,
-      payments,
-      teachers,
+      students: students.map(redactStudentForStudent),
+      courses: courses.map(redactCourseForStudent),
+      schedules: schedules.map(redactScheduleForStudent),
+      teachers: teachers.map(redactTeacherForStudent),
+      payments: [],
+      consumptions: [],
+      assetRecords: [],
+      assetCategories: [],
     },
   };
 }

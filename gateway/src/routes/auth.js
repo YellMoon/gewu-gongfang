@@ -1,169 +1,115 @@
-/**
- * 认证路由
- * POST /api/auth/login — 微信登录
- * POST /api/auth/register — 注册 (含邀请码)
- * POST /api/auth/refresh — Token 刷新
- */
 const express = require('express');
 const router = express.Router();
-const { v4: uuidv4 } = require('uuid');
 const { getDb } = require('../db/database');
 const { generateToken, refreshToken } = require('../middleware/auth');
 
-/**
- * POST /api/auth/login
- * 微信小程序登录
- * Body: { openid, name?, avatar? }
- */
-router.post('/login', (req, res) => {
-  const { openid, name, avatar } = req.body;
+function parseArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_err) {
+      return value.split(',').map(item => item.trim()).filter(Boolean);
+    }
+  }
+  return [];
+}
 
+function linkedStudentIds(user = {}) {
+  const ids = [
+    user.student_id,
+    ...parseArray(user.linked_student_ids),
+    user.user_type === 'student' ? user.id : undefined,
+  ];
+  return Array.from(new Set(ids.filter(Boolean).map(String)));
+}
+
+function loginDenialReason(user) {
+  if (!user) return 'MINIAPP_USER_NOT_PREAUTHORIZED';
+  if (user.status === 0 || user.login_enabled !== 1) return 'MINIAPP_LOGIN_DISABLED';
+  if (!['admin', 'student'].includes(user.user_type)) return 'MINIAPP_ROLE_NOT_ALLOWED';
+  if (user.user_type === 'student' && linkedStudentIds(user).length === 0) return 'MINIAPP_STUDENT_NOT_LINKED';
+  return '';
+}
+
+function loginUserPayload(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    avatar: user.avatar,
+    user_type: user.user_type,
+    phone: user.phone || null,
+    student_id: user.student_id || null,
+    linked_student_ids: linkedStudentIds(user),
+  };
+}
+
+function loginByOpenid(req, res, openid, profile = {}) {
   if (!openid) {
-    return res.status(400).json({ error: 'openid 不能为空' });
+    return res.status(400).json({ success: false, error: 'openid is required' });
   }
 
   const db = getDb();
-  let user = db.prepare('SELECT * FROM users WHERE openid = ?').get(openid);
-
-  if (!user) {
-    // 自动注册
-    const id = uuidv4();
-    const now = new Date().toISOString();
-    const userName = name || '微信用户';
-
-    db.prepare(`
-      INSERT INTO users (id, openid, name, avatar, user_type, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'student', 1, ?, ?)
-    `).run(id, openid, userName, avatar || null, now, now);
-
-    user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
-    console.log(`[Auth] 新用户注册: ${userName} (${id})`);
-
-    // 学生自动授予默认权限
-    const defaultPerms = db.prepare(
-      "SELECT id FROM permissions WHERE is_default = 1"
-    ).all();
-    for (const perm of defaultPerms) {
-      db.prepare(`
-        INSERT OR IGNORE INTO user_permissions (id, user_id, permission_id, granted_by, granted_at, status)
-        VALUES (?, ?, ?, 'system', ?, 1)
-      `).run(uuidv4(), id, perm.id, now);
-    }
-    if (defaultPerms.length > 0) {
-      console.log(`[Auth] 已为新学生授予 ${defaultPerms.length} 个默认权限`);
-    }
+  const user = db.prepare('SELECT * FROM users WHERE openid = ?').get(openid);
+  const denialReason = loginDenialReason(user);
+  if (denialReason) {
+    return res.status(403).json({
+      success: false,
+      code: denialReason,
+      error: 'Miniapp account is not authorized on the data host',
+    });
   }
 
-  if (user.status === 0) {
-    return res.status(403).json({ error: '账号已被禁用' });
+  if (profile.name || profile.avatar) {
+    db.prepare('UPDATE users SET name = COALESCE(?, name), avatar = COALESCE(?, avatar), updated_at = ? WHERE id = ?')
+      .run(profile.name || null, profile.avatar || null, new Date().toISOString(), user.id);
   }
 
-  const token = generateToken(user);
+  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+  const token = generateToken(updated);
+  return res.json({ success: true, token, user: loginUserPayload(updated) });
+}
 
-  res.json({
-    token,
-    user: {
-      id: user.id,
-      name: user.name,
-      avatar: user.avatar,
-      user_type: user.user_type
-    }
+router.post('/login', (req, res) => {
+  return loginByOpenid(req, res, req.body.openid, {
+    name: req.body.name,
+    avatar: req.body.avatar,
   });
 });
 
-/**
- * POST /api/auth/register
- * 邀请码注册
- * Body: { openid, invite_code, name?, avatar? }
- */
-router.post('/register', (req, res) => {
-  const { openid, invite_code, name, avatar } = req.body;
-
-  if (!openid || !invite_code) {
-    return res.status(400).json({ error: 'openid 和邀请码不能为空' });
-  }
-
-  const db = getDb();
-
-  // 查找邀请码
-  const invitation = db.prepare(`
-    SELECT * FROM invitations WHERE code = ? AND status = 0
-  `).get(invite_code);
-
-  if (!invitation) {
-    return res.status(400).json({ error: '邀请码无效或已使用' });
-  }
-
-  // 检查是否过期
-  if (new Date(invitation.expires_at) < new Date()) {
-    db.prepare('UPDATE invitations SET status = 2 WHERE id = ?').run(invitation.id);
-    return res.status(400).json({ error: '邀请码已过期' });
-  }
-
-  // 检查 openid 是否已注册
-  const existingUser = db.prepare('SELECT * FROM users WHERE openid = ?').get(openid);
-  if (existingUser) {
-    return res.status(400).json({ error: '该微信账号已注册' });
-  }
-
-  // 创建用户
-  const userId = uuidv4();
-  const now = new Date().toISOString();
-  const userName = name || invitation.target_name || '被邀请用户';
-
-  db.prepare(`
-    INSERT INTO users (id, openid, name, avatar, user_type, status, invited_by, invite_code, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'invited', 1, ?, ?, ?, ?)
-  `).run(userId, openid, userName, avatar || null, invitation.invited_by, invitation.code, now, now);
-
-  // 分配预设权限
-  const perms = JSON.parse(invitation.permissions || '[]');
-  for (const permId of perms) {
-    db.prepare(`
-      INSERT OR IGNORE INTO user_permissions (id, user_id, permission_id, granted_by, granted_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(uuidv4(), userId, permId, invitation.invited_by, now);
-  }
-
-  // 标记邀请码已使用
-  db.prepare(`
-    UPDATE invitations SET status = 1, used_by = ?, used_at = ? WHERE id = ?
-  `).run(userId, now, invitation.id);
-
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
-  const token = generateToken(user);
-
-  console.log(`[Auth] 被邀请者注册: ${userName} (${userId}) via ${invitation.code}`);
-
-  res.json({
-    token,
-    user: {
-      id: user.id,
-      name: user.name,
-      avatar: user.avatar,
-      user_type: user.user_type
-    }
+router.post('/wechat-login', (req, res) => {
+  const code = req.body.code || '';
+  const openid = req.body.openid
+    || (process.env.ALLOW_DEV_WECHAT_LOGIN === 'true' && code
+      ? `dev_${String(code).replace(/[^a-zA-Z0-9]/g, '').slice(0, 32)}`
+      : '');
+  return loginByOpenid(req, res, openid, {
+    name: req.body.name,
+    avatar: req.body.avatar,
   });
 });
 
-/**
- * POST /api/auth/refresh
- * Token 刷新
- * Body: { token }
- */
+router.post('/register', (_req, res) => {
+  return res.status(403).json({
+    success: false,
+    code: 'MINIAPP_SELF_REGISTER_DISABLED',
+    error: 'Miniapp self registration is disabled',
+  });
+});
+
 router.post('/refresh', (req, res) => {
   const { token } = req.body;
-
   if (!token) {
-    return res.status(400).json({ error: 'token 不能为空' });
+    return res.status(400).json({ success: false, error: 'token is required' });
   }
 
   const newToken = refreshToken(token);
   if (!newToken) {
-    return res.status(401).json({ error: '无法刷新 token' });
+    return res.status(401).json({ success: false, error: 'token cannot be refreshed' });
   }
 
-  res.json({ token: newToken });
+  return res.json({ success: true, token: newToken });
 });
 
 module.exports = router;

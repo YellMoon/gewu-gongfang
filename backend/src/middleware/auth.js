@@ -131,13 +131,35 @@ function requireWriteAccess(req, res, next) {
   return next();
 }
 
+function requireCoreReadAccess(req, res, next) {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
+  if (isDevAuthBypassed()) return next();
+  if (!req.user) return sendAuthError(res, 401, 'Authentication required', 'UNAUTHORIZED');
+
+  const role = req.user.role || req.user.user_type;
+  const allowedRoles = (process.env.CORE_READ_ROLES || 'admin,operator')
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean);
+
+  if (!allowedRoles.includes(role)) {
+    return sendAuthError(res, 403, 'Core business read forbidden', 'CORE_READ_FORBIDDEN');
+  }
+  return next();
+}
+
 function generateToken(user) {
   return jwt.sign(
     {
       id: user.id,
       openid: user.wechat_openid,
       nickname: user.nickname,
-      role: user.role,
+      name: user.name || user.nickname,
+      role: user.role || user.user_type,
+      user_type: user.user_type || user.role,
+      phone: user.phone || null,
+      student_id: user.student_id || user.studentId || null,
+      linked_student_ids: user.linked_student_ids || user.linkedStudentIds || [],
       tenantId: user.tenantId || user.tenant_id || process.env.DEFAULT_TENANT_ID || 'default',
     },
     JWT_SECRET,
@@ -149,6 +171,7 @@ module.exports = {
   authMiddleware,
   optionalAuth,
   tenantScopeMiddleware,
+  requireCoreReadAccess,
   requireWriteAccess,
   generateToken,
   JWT_SECRET,

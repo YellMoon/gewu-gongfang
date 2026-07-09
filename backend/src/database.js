@@ -6,6 +6,7 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
+const { getMiniappLoginDenialReason } = require('./services/miniappAuthPolicy');
 
 const SCHEMA_VERSION = 3101;
 const ENVIRONMENTS = {
@@ -70,6 +71,7 @@ class DatabaseService {
     this._ensureQuestionMetaColumns();
     this._ensureImportTaskColumns();
     this._ensureArchiveJobColumns();
+    this._ensureMiniappUserColumns();
     console.log(`[DB] initialized env=${this.environment} schema=${this.schemaVersion} path=${this.dbPath}`);
   }
 
@@ -254,6 +256,32 @@ class DatabaseService {
       addColumn('warnings', 'TEXT');
       addColumn('errors', 'TEXT');
     }
+  }
+
+  _ensureMiniappUserColumns() {
+    const exists = this.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'"
+    ).get();
+    if (!exists) return;
+
+    const columns = new Set(this.db.prepare('PRAGMA table_info(users)').all().map(c => c.name));
+    const addColumn = (name, ddl) => {
+      if (!columns.has(name)) {
+        this.db.prepare(`ALTER TABLE users ADD COLUMN ${name} ${ddl}`).run();
+        columns.add(name);
+      }
+    };
+
+    addColumn('phone', 'TEXT');
+    addColumn('name', 'TEXT');
+    addColumn('status', 'INTEGER DEFAULT 1');
+    addColumn('login_enabled', 'INTEGER DEFAULT 0');
+    addColumn('student_id', 'TEXT');
+    addColumn('linked_student_ids', 'TEXT');
+
+    this.db.prepare("UPDATE users SET status = 1 WHERE status IS NULL").run();
+    this.db.prepare("UPDATE users SET login_enabled = 0 WHERE login_enabled IS NULL").run();
+    this.db.prepare("UPDATE users SET name = nickname WHERE (name IS NULL OR name = '') AND nickname IS NOT NULL").run();
   }
 
   _tenantId(options = {}) {
@@ -1301,6 +1329,35 @@ class DatabaseService {
   }
 
   // ==================== 璁よ瘉 ====================
+
+  getMiniappUserByWechat(openid) {
+    return this.db.prepare('SELECT * FROM users WHERE wechat_openid = ? AND deleted = 0').get(openid);
+  }
+
+  findAuthorizedMiniappUserByWechat(openid) {
+    const user = this.getMiniappUserByWechat(openid);
+    return getMiniappLoginDenialReason(user) ? null : user;
+  }
+
+  recordMiniappLoginAttempt(input = {}) {
+    const now = this._now();
+    const id = uuidv4();
+    this.db.prepare(
+      `INSERT INTO miniapp_login_attempts
+       (id, wechat_openid, wechat_unionid, nickname, avatar_url, denial_reason, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      input.openid || '',
+      input.unionid || null,
+      input.nickname || null,
+      input.avatarUrl || input.avatar_url || null,
+      input.denialReason || input.denial_reason || '',
+      now,
+      now
+    );
+    return { id, created_at: now };
+  }
 
   findOrCreateUserByWechat(openid, unionid, nickname, avatarUrl) {
     let user = this.db.prepare('SELECT * FROM users WHERE wechat_openid = ? AND deleted = 0').get(openid);

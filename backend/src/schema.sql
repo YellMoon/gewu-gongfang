@@ -195,10 +195,27 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   wechat_openid TEXT UNIQUE,
   wechat_unionid TEXT,
+  phone TEXT,
+  name TEXT,
   nickname TEXT,
   avatar_url TEXT,
   role TEXT DEFAULT 'admin',
+  status INTEGER DEFAULT 1,
+  login_enabled INTEGER DEFAULT 0,
+  student_id TEXT,
+  linked_student_ids TEXT,
   deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS miniapp_login_attempts (
+  id TEXT PRIMARY KEY,
+  wechat_openid TEXT NOT NULL,
+  wechat_unionid TEXT,
+  nickname TEXT,
+  avatar_url TEXT,
+  denial_reason TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

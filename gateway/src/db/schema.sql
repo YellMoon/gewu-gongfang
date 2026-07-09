@@ -7,6 +7,9 @@ CREATE TABLE IF NOT EXISTS users (
   avatar TEXT,
   user_type TEXT NOT NULL DEFAULT 'student',  -- 'admin' | 'teacher' | 'student' | 'invited'
   status INTEGER DEFAULT 1,             -- 1:正常 0:禁用
+  login_enabled INTEGER DEFAULT 0,
+  student_id TEXT,
+  linked_student_ids TEXT,
   invited_by TEXT,                       -- 邀请人ID (仅 invited 类型)
   invite_code TEXT,                      -- 邀请码 (仅 invited 类型)
   created_at TEXT NOT NULL,
