@@ -100,6 +100,22 @@ router.post('/host/heartbeat', (req, res) => {
   res.json({ success: true, serverTime: time });
 });
 
+router.get('/host/status', (_req, res) => {
+  const db = getInstance().db;
+  const row = db.prepare(
+    `SELECT * FROM host_heartbeats ORDER BY updated_at DESC LIMIT 1`
+  ).get();
+  const updatedAt = row?.updated_at ? Date.parse(row.updated_at) : 0;
+  const heartbeatTtlMs = Number(process.env.GEWU_HOST_HEARTBEAT_TTL_MS || 5 * 60 * 1000);
+  const online = Boolean(row && row.status !== 'offline' && Date.now() - updatedAt <= heartbeatTtlMs);
+  res.json({
+    success: true,
+    online,
+    host: row || null,
+    serverTime: now(),
+  });
+});
+
 router.post('/snapshots/publish', (req, res) => {
   const db = getInstance().db;
   const snapshotId = id('snap');
@@ -128,6 +144,54 @@ router.get('/snapshots/read', requireSnapshotRead, (req, res) => {
   ).get(snapshotType);
   const snapshot = row ? { ...row, payload: parseJson(row.payload, {}) } : null;
   res.json({ success: true, snapshot: filterSnapshotForUser(snapshot, req.user) });
+});
+
+function requireDesktopSyncAccess(req, res, next) {
+  const expected = process.env.GEWU_DESKTOP_SYNC_TOKEN || '';
+  const provided = req.headers['x-gewu-desktop-sync-token'] || '';
+  if (expected && provided === expected) return next();
+  if (isDevBypass() || req.user) return next();
+  return sendForbidden(res, 'UNAUTHORIZED', 'Authentication required');
+}
+
+router.post('/desktop-sync/requests', requireDesktopSyncAccess, (req, res) => {
+  const db = getInstance().db;
+  const taskId = id('desktop_sync');
+  const time = now();
+  const payload = {
+    deviceId: req.body.deviceId || req.body.device_id || 'unknown',
+    tenantId: req.body.tenantId || req.body.tenant_id || 'default',
+    pendingChanges: req.body.pendingChanges || req.body.changes || [],
+    preview: req.body.preview || null,
+    submittedAt: time,
+  };
+  db.prepare(
+    `INSERT INTO miniapp_tasks (id, task_type, status, payload, created_by, created_at, updated_at)
+     VALUES (?, ?, 'pending_host', ?, ?, ?, ?)`
+  ).run(taskId, 'desktop-sync', JSON.stringify(payload), req.user?.id || payload.deviceId, time, time);
+  res.json({
+    success: true,
+    request: {
+      id: taskId,
+      taskType: 'desktop-sync',
+      status: 'pending_host',
+      acceptedChanges: payload.pendingChanges.length,
+    },
+  });
+});
+
+router.get('/desktop-sync/requests/:id/result', requireDesktopSyncAccess, (req, res) => {
+  const db = getInstance().db;
+  const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ? AND task_type = ?').get(req.params.id, 'desktop-sync');
+  if (!row) return res.status(404).json({ success: false, error: 'desktop sync request not found' });
+  res.json({
+    success: true,
+    request: {
+      ...row,
+      payload: parseJson(row.payload, {}),
+      result_payload: parseJson(row.result_payload, null),
+    },
+  });
 });
 
 router.post('/tasks', requireMiniappTaskAccess, (req, res) => {

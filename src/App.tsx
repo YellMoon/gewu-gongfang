@@ -24,6 +24,8 @@ import QuestionBasket from './components/QuestionBasket';
 import AppShell from './layout/AppShell';
 import { PageKey, questionBankPages } from './navigation/appNavigation';
 import { NavigationContext, NavigationInput, normalizeNavigationTarget } from './navigation/navigationContext';
+import { getRuntimeConfig } from './services/runtimeConfigClient';
+import { processMiniappCloudTasks, publishCloudHeartbeat } from './services/cloudRelayHostApi';
 
 const ScheduleCalendar = React.lazy(() => import('./pages/ScheduleCalendar'));
 const QuestionBankTools = React.lazy(() => import('./pages/QuestionBankTools'));
@@ -97,6 +99,29 @@ const App: React.FC = () => {
       }
     };
     loadDb();
+  }, []);
+
+  useEffect(() => {
+    let stopped = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const runHostCloudLoop = async () => {
+      try {
+        const config = await getRuntimeConfig();
+        if (config.nodeRole !== 'primary-host' || !config.cloudBaseUrl) return;
+        await publishCloudHeartbeat();
+        await processMiniappCloudTasks();
+      } catch (error) {
+        if (!stopped) console.warn('[cloud-relay-host] background poll skipped', error);
+      }
+    };
+
+    runHostCloudLoop();
+    timer = setInterval(runHostCloudLoop, 60 * 1000);
+    return () => {
+      stopped = true;
+      if (timer) clearInterval(timer);
+    };
   }, []);
 
   const navigateTo = (input: NavigationInput) => {

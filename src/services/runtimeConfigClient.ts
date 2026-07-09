@@ -5,6 +5,7 @@ export type RuntimeConfig = {
   deviceId: string;
   hostBaseUrl: string;
   cloudBaseUrl: string;
+  desktopSyncToken: string;
   mainDbPath: string;
   questionBankPath: string;
   questionAssetPath: string;
