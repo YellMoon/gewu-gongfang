@@ -2,9 +2,11 @@ const assert = require('assert');
 const path = require('path');
 
 const {
+  buildCiProjectOptions,
   buildUploadArgs,
   buildUploadCommand,
   buildUploadExecOptions,
+  resolveMiniappPrivateKeyPath,
   resolveUploadVersion,
   resolveWechatCliPath,
 } = require('./upload-miniapp');
@@ -74,5 +76,36 @@ assert.ok(
   winCommand.args.includes('含 空格'),
   'Windows direct node execution should preserve arguments with spaces'
 );
+
+assert.strictEqual(
+  resolveMiniappPrivateKeyPath({
+    appid: 'wx123',
+    homeDir: 'C:\\Users\\demo',
+    env: {},
+  }),
+  'C:\\Users\\demo\\.ssh\\private.wx123.key',
+  'miniapp upload should auto-discover the official upload key under .ssh'
+);
+
+assert.strictEqual(
+  resolveMiniappPrivateKeyPath({
+    appid: 'wx123',
+    homeDir: 'C:\\Users\\demo',
+    env: { WECHAT_MINIAPP_PRIVATE_KEY_PATH: 'D:\\keys\\wx.key' },
+  }),
+  'D:\\keys\\wx.key',
+  'miniapp upload should allow explicit private key path override'
+);
+
+const ciOptions = buildCiProjectOptions({
+  rootDir,
+  appid: 'wx123',
+  privateKeyPath: 'C:\\Users\\demo\\.ssh\\private.wx123.key',
+});
+assert.strictEqual(ciOptions.type, 'miniProgram', 'miniprogram-ci should use miniProgram project type');
+assert.strictEqual(ciOptions.appid, 'wx123', 'miniprogram-ci should receive the miniapp appid');
+assert.strictEqual(ciOptions.projectPath, path.join(rootDir, 'miniapp'), 'miniprogram-ci should upload the miniapp project');
+assert.strictEqual(ciOptions.privateKeyPath, 'C:\\Users\\demo\\.ssh\\private.wx123.key', 'miniprogram-ci should receive the private key path');
+assert.ok(ciOptions.ignores.includes('node_modules/**/*'), 'miniprogram-ci upload should ignore node_modules');
 
 console.log('upload-miniapp checks passed');

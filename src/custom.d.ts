@@ -12,6 +12,7 @@ declare module './services/oneClickSyncService.mjs' {
 declare module './services/oneClickSyncTransports.mjs' {
   export const createCloudRelaySyncTransport: any;
   export const createDirectSyncTransport: any;
+  export const discoverLanDirectSyncTransports: any;
   export const normalizeApiBaseUrl: any;
 }
 

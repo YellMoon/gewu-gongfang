@@ -83,7 +83,12 @@ def require_remote_env():
 
 def redact_command(cmd):
     redacted = cmd
-    for secret in [PASSWORD, BACKEND_JWT_SECRET]:
+    for secret in [
+        PASSWORD,
+        BACKEND_JWT_SECRET,
+        os.getenv("GEWU_DESKTOP_SYNC_TOKEN"),
+        os.getenv("GEWU_CLOUD_RELAY_HOST_TOKEN"),
+    ]:
       if secret:
         redacted = redacted.replace(secret, "<redacted>")
     return redacted
@@ -148,6 +153,8 @@ def remote_env_prefix():
         "GEWU_DEVICE_ID": os.getenv("GEWU_DEVICE_ID", "desktop_host_001"),
         "GEWU_HOST_BASE_URL": os.getenv("GEWU_HOST_BASE_URL", "http://127.0.0.1:3001"),
         "GEWU_CLOUD_BASE_URL": os.getenv("GEWU_CLOUD_BASE_URL", "https://your-domain.example.com"),
+        "GEWU_DESKTOP_SYNC_TOKEN": os.getenv("GEWU_DESKTOP_SYNC_TOKEN", ""),
+        "GEWU_CLOUD_RELAY_HOST_TOKEN": os.getenv("GEWU_CLOUD_RELAY_HOST_TOKEN", os.getenv("GEWU_DESKTOP_SYNC_TOKEN", "")),
         "GEWU_APP_VERSION": os.getenv("GEWU_APP_VERSION", read_root_version()),
         "QUESTION_BANK_ROOT": os.getenv("QUESTION_BANK_ROOT", "/root/GewuQuestionBank"),
         "QUESTION_BANK_UPLOAD_DIR": os.getenv("QUESTION_BANK_UPLOAD_DIR", "/root/GewuQuestionBank/assets"),
@@ -213,7 +220,8 @@ def main():
             run(ssh, f"curl -s http://localhost:{health_port}/api/health || echo 'health check failed'")
         elif mode == "status":
             run(ssh, "pm2 status")
-            run(ssh, "curl -s http://localhost:3001/api/health")
+            health_port = os.getenv("PORT", "3001")
+            run(ssh, f"curl -s http://localhost:{health_port}/api/health")
         else:
             raise SystemExit(f"Unknown mode: {mode}")
     finally:

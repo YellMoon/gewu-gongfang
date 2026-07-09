@@ -130,6 +130,44 @@
   padding: 4rpx 24rpx 28rpx;
 }
 
+.week-grid {
+  display: block;
+}
+
+.day-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 24rpx 12rpx;
+  padding: 0 4rpx;
+  color: #172033;
+  font-size: 26rpx;
+  line-height: 36rpx;
+  font-weight: 900;
+}
+
+.day-section-title.today {
+  color: #1f6f68;
+}
+
+.day-section-count {
+  flex: 0 0 auto;
+  color: #8b96a8;
+  font-size: 22rpx;
+  line-height: 30rpx;
+  font-weight: 700;
+}
+
+.empty-day-text {
+  display: block;
+  min-height: 68rpx;
+  padding: 18rpx 0 28rpx;
+  color: #a2abb8;
+  font-size: 24rpx;
+  line-height: 34rpx;
+  text-align: center;
+}
+
 .schedule-card {
   position: relative;
   display: flex;
@@ -223,4 +261,89 @@
 .day-view,
 .week-view {
   height: calc(100vh - 108rpx);
+}
+
+@media (orientation: landscape), (min-width: 700px) {
+  .week-view {
+    padding: 0 18rpx;
+    box-sizing: border-box;
+  }
+
+  .week-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 12rpx;
+    align-items: start;
+  }
+
+  .day-column {
+    min-width: 0;
+    border-radius: 22rpx;
+    background: rgba(255, 253, 248, 0.72);
+    border: 1rpx solid rgba(23, 32, 51, 0.05);
+    overflow: hidden;
+  }
+
+  .day-section-title {
+    min-height: 70rpx;
+    margin: 0;
+    padding: 12rpx 12rpx 8rpx;
+    box-sizing: border-box;
+    display: block;
+    font-size: 22rpx;
+    line-height: 30rpx;
+    text-align: center;
+  }
+
+  .day-section-count {
+    display: block;
+    margin-top: 2rpx;
+    font-size: 19rpx;
+    line-height: 26rpx;
+  }
+
+  .day-column-inner {
+    padding: 0 8rpx 12rpx;
+  }
+
+  .schedule-card {
+    display: block;
+    min-height: 132rpx;
+    margin-bottom: 10rpx;
+    padding: 18rpx 14rpx 16rpx;
+    border-radius: 18rpx;
+  }
+
+  .schedule-card::before {
+    top: 16rpx;
+    bottom: 16rpx;
+    width: 5rpx;
+  }
+
+  .schedule-time {
+    width: auto;
+    margin-right: 0;
+    margin-bottom: 6rpx;
+    justify-content: flex-start;
+  }
+
+  .time-text {
+    font-size: 24rpx;
+    line-height: 32rpx;
+  }
+
+  .schedule-course {
+    font-size: 23rpx;
+    line-height: 32rpx;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .schedule-sub,
+  .schedule-note {
+    font-size: 19rpx;
+    line-height: 28rpx;
+  }
 }

@@ -105,6 +105,9 @@ export default function SchedulePage() {
     const dateString = formatDate(date);
     return schedules.filter((schedule) => schedule.start_time?.startsWith(dateString));
   };
+  const getDayTitle = (date: Date, index: number) => (
+    `\u5468${WEEKDAYS[index]} ${date.getMonth() + 1}/${date.getDate()}`
+  );
 
   const renderScheduleCard = (schedule: ScheduleWithCourse) => (
     <View
@@ -167,17 +170,26 @@ export default function SchedulePage() {
             ))}
           </View>
 
-          {weekRange?.map((date, index) => {
-            const daySchedules = getSchedulesForDate(date);
-            if (daySchedules.length === 0) return null;
-            return (
-              <View key={index} className="day-column">
-                <View className="day-column-inner">
-                  {daySchedules.map(renderScheduleCard)}
+          <View className="week-grid">
+            {weekRange?.map((date, index) => {
+              const daySchedules = getSchedulesForDate(date);
+              return (
+                <View key={index} className={`day-column ${daySchedules.length === 0 ? 'is-empty' : ''}`}>
+                  <View className={`day-section-title ${isToday(date) ? 'today' : ''}`}>
+                    <Text>{getDayTitle(date, index)}</Text>
+                    <Text className="day-section-count">{daySchedules.length} {'\u8282'}</Text>
+                  </View>
+                  <View className="day-column-inner">
+                    {daySchedules.length > 0 ? (
+                      daySchedules.map(renderScheduleCard)
+                    ) : (
+                      <Text className="empty-day-text">{'\u6682\u65e0\u8bfe\u7a0b'}</Text>
+                    )}
+                  </View>
                 </View>
-              </View>
-            );
-          })}
+              );
+            })}
+          </View>
 
           {schedules.length === 0 && <EmptyState icon="课" text="暂无排课数据" />}
         </ScrollView>

@@ -13,6 +13,8 @@ for (const name of [
   'GEWU_DEVICE_ID',
   'GEWU_HOST_BASE_URL',
   'GEWU_CLOUD_BASE_URL',
+  'GEWU_DESKTOP_SYNC_TOKEN',
+  'GEWU_CLOUD_RELAY_HOST_TOKEN',
   'QUESTION_BANK_ROOT',
   'QUESTION_BANK_UPLOAD_DIR',
   'GEWU_LOCAL_CACHE_PATH',
@@ -29,8 +31,10 @@ assert.ok(deployPy.includes('BACKEND_JWT_SECRET'), 'pm2 deploy should read BACKE
 assert.ok(deployPy.includes('"JWT_SECRET": BACKEND_JWT_SECRET'), 'pm2 deploy should inject BACKEND_JWT_SECRET as remote JWT_SECRET');
 assert.ok(deployPy.includes('"PORT": os.getenv("PORT", "3001")'), 'pm2 deploy should support overriding the backend port');
 assert.ok(deployPy.includes('health_port = os.getenv("PORT", "3001")'), 'pm2 deploy health check should use the configured backend port');
+assert.ok(deployPy.includes("curl -s http://localhost:{health_port}/api/health"), 'pm2 status should use the configured backend port');
 assert.ok(deployPy.includes('read_root_version'), 'pm2 deploy should derive GEWU_APP_VERSION from the root package version');
 assert.ok(deployPy.includes('redact_command'), 'pm2 deploy should redact sensitive values from printed commands');
+assert.ok(deployPy.includes('GEWU_DESKTOP_SYNC_TOKEN') && deployPy.includes('GEWU_CLOUD_RELAY_HOST_TOKEN'), 'pm2 deploy should redact desktop sync secrets');
 assert.ok(deployPy.includes('safe_print'), 'pm2 deploy should print remote Unicode output safely on Windows consoles');
 assert.ok(deployPy.includes('which pm2 || npm install -g pm2'), 'pm2 deploy should skip global pm2 installation when pm2 already exists');
 assert.ok(backendPackage.includes('"sanitize-html"'), 'backend production dependencies should include sanitize-html used by questionBankService');

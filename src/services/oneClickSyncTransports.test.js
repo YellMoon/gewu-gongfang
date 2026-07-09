@@ -4,6 +4,7 @@ async function main() {
   const {
     createDirectSyncTransport,
     createCloudRelaySyncTransport,
+    discoverLanDirectSyncTransports,
     normalizeApiBaseUrl,
   } = await import('./oneClickSyncTransports.mjs');
 
@@ -67,6 +68,27 @@ async function main() {
   assert.strictEqual((await cloud.pollSyncRequest('desktop_sync_1')).status, 'pending_host');
   assert.ok(cloudCalls.some(call => String(call.url).includes('/api/cloud/desktop-sync/requests')), 'cloud should submit desktop sync requests');
   assert.ok(cloudCalls.every(call => call.options.headers['x-gewu-desktop-sync-token'] === 'sync_secret_test'), 'cloud requests should include desktop sync token');
+
+  const discovered = await discoverLanDirectSyncTransports({
+    baseUrl: 'https://cloud.example.com/scheduling',
+    deviceId: 'desktop_test',
+    desktopSyncToken: 'sync_secret_test',
+    fetchImpl: async (url) => {
+      if (String(url).includes('/api/cloud/host/status')) {
+        return jsonResponse({
+          success: true,
+          online: true,
+          host: {
+            base_url: 'http://127.0.0.1:3001',
+            lan_urls: JSON.stringify(['http://192.168.31.8:3001', 'http://192.168.31.8:3001/', 'http://127.0.0.1:3001']),
+          },
+        });
+      }
+      throw new Error(`unexpected discovery url ${url}`);
+    },
+  });
+  assert.strictEqual(discovered.length, 1, 'LAN discovery should ignore local/self URLs and de-duplicate candidates');
+  assert.strictEqual(discovered[0].baseUrl, 'http://192.168.31.8:3001');
 
   console.log('one-click sync transport checks passed');
 }

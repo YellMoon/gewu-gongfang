@@ -72,6 +72,7 @@ class DatabaseService {
     this._ensureImportTaskColumns();
     this._ensureArchiveJobColumns();
     this._ensureMiniappUserColumns();
+    this._ensureHostHeartbeatColumns();
     console.log(`[DB] initialized env=${this.environment} schema=${this.schemaVersion} path=${this.dbPath}`);
   }
 
@@ -282,6 +283,17 @@ class DatabaseService {
     this.db.prepare("UPDATE users SET status = 1 WHERE status IS NULL").run();
     this.db.prepare("UPDATE users SET login_enabled = 0 WHERE login_enabled IS NULL").run();
     this.db.prepare("UPDATE users SET name = nickname WHERE (name IS NULL OR name = '') AND nickname IS NOT NULL").run();
+  }
+
+  _ensureHostHeartbeatColumns() {
+    const exists = this.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'host_heartbeats'"
+    ).get();
+    if (!exists) return;
+    const columns = new Set(this.db.prepare('PRAGMA table_info(host_heartbeats)').all().map(c => c.name));
+    if (!columns.has('lan_urls')) {
+      this.db.prepare('ALTER TABLE host_heartbeats ADD COLUMN lan_urls TEXT').run();
+    }
   }
 
   _tenantId(options = {}) {
