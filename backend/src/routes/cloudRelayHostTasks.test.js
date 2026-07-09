@@ -2,6 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 
 const route = fs.readFileSync('backend/src/routes/cloudRelayHost.js', 'utf-8');
+const client = fs.readFileSync('backend/src/services/cloudRelayClient.js', 'utf-8');
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 
 assert.ok(route.includes('processMiniappTask'), 'host cloud relay route should process miniapp tasks');
@@ -15,6 +16,8 @@ assert.ok(route.includes('res.download'), 'host artifact route should download g
 assert.ok(route.includes('completeMiniappTask(task.id'), 'host should complete miniapp tasks back to cloud');
 assert.ok(route.includes("router.post('/tasks/process'"), 'host should expose a process pending tasks endpoint');
 assert.ok(route.includes('authOptionsFromRequest'), 'host route should forward authenticated maintenance requests to cloud relay');
+assert.ok(route.includes('hostToken'), 'host route should forward a host token to protected cloud relay routes');
+assert.ok(client.includes('x-gewu-host-token'), 'cloud relay client should send the host token header');
 assert.ok(route.includes('req.headers.authorization'), 'host route should read Authorization from incoming requests');
 assert.ok(packageJson.includes('backend/src/routes/cloudRelayHostTasks.test.js'), 'host task processing test should run in npm test');
 

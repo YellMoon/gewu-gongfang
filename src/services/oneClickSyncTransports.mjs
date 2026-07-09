@@ -44,6 +44,7 @@ export function createDirectSyncTransport(options = {}) {
   return {
     name: 'direct',
     label: 'LAN direct',
+    baseUrl,
     async check() {
       try {
         const res = await fetchImpl(`${baseUrl}/api/health`, { method: 'GET' });
@@ -177,4 +178,52 @@ export function createCloudRelaySyncTransport(options = {}) {
       return data.request || null;
     },
   };
+}
+
+function isLocalBaseUrl(value) {
+  const text = String(value || '').toLowerCase();
+  return text.includes('127.0.0.1') || text.includes('localhost') || text.includes('[::1]');
+}
+
+function parseLanUrls(value) {
+  const raw = Array.isArray(value) ? value : (() => {
+    try {
+      return JSON.parse(value || '[]');
+    } catch (_err) {
+      return [];
+    }
+  })();
+  if (!Array.isArray(raw)) return [];
+  return Array.from(new Set(
+    raw
+      .map(url => normalizeApiBaseUrl(url))
+      .filter(url => url && !isLocalBaseUrl(url))
+  ));
+}
+
+export async function discoverLanDirectSyncTransports(options = {}) {
+  const baseUrl = normalizeApiBaseUrl(options.baseUrl || '');
+  if (!baseUrl) return [];
+  const fetchImpl = options.fetchImpl || fetch;
+  const desktopSyncToken = options.desktopSyncToken || '';
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(desktopSyncToken ? { 'x-gewu-desktop-sync-token': desktopSyncToken } : {}),
+  };
+  const data = await readJsonResponse(await fetchImpl(`${baseUrl}/api/cloud/host/status`, {
+    method: 'GET',
+    headers,
+  }));
+  const host = data.host || {};
+  const candidates = [
+    ...parseLanUrls(host.lanUrls || host.lan_urls),
+    ...parseLanUrls([host.baseUrl || host.base_url]),
+  ];
+  return Array.from(new Set(candidates)).map(url => createDirectSyncTransport({
+    baseUrl: url,
+    deviceId: options.deviceId,
+    role: options.role,
+    deviceName: options.deviceName,
+    fetchImpl,
+  }));
 }

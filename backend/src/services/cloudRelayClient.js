@@ -2,6 +2,8 @@ function buildHeaders(options = {}) {
   const headers = { 'Content-Type': 'application/json' };
   const authorization = options.authorization || options.Authorization || '';
   if (authorization) headers.Authorization = authorization;
+  const hostToken = options.hostToken || options.host_token || '';
+  if (hostToken) headers['x-gewu-host-token'] = hostToken;
   return headers;
 }
 

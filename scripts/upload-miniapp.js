@@ -42,6 +42,60 @@ function resolveWechatCliPath(options = {}) {
   return 'wechat-devtools-cli';
 }
 
+function resolveMiniappPrivateKeyPath(options = {}) {
+  const env = options.env || process.env;
+  if (env.WECHAT_MINIAPP_PRIVATE_KEY_PATH) return env.WECHAT_MINIAPP_PRIVATE_KEY_PATH;
+  if (env.MINIAPP_PRIVATE_KEY_PATH) return env.MINIAPP_PRIVATE_KEY_PATH;
+  if (env.WX_PRIVATE_KEY_PATH) return env.WX_PRIVATE_KEY_PATH;
+
+  const appid = options.appid || readMiniappAppid(options);
+  const homeDir = options.homeDir || os.homedir();
+  return appid ? path.join(homeDir, '.ssh', `private.${appid}.key`) : '';
+}
+
+function readMiniappAppid(options = {}) {
+  const rootDir = options.rootDir || path.resolve(__dirname, '..');
+  const projectConfigPath = options.projectConfigPath || path.join(rootDir, 'miniapp', 'project.config.json');
+  const projectConfig = JSON.parse(fs.readFileSync(projectConfigPath, 'utf-8'));
+  return projectConfig.appid || '';
+}
+
+function buildCiProjectOptions(options = {}) {
+  const rootDir = options.rootDir || path.resolve(__dirname, '..');
+  const projectDir = options.projectDir || path.join(rootDir, 'miniapp');
+  const appid = options.appid || readMiniappAppid({ rootDir });
+  const privateKeyPath = options.privateKeyPath || resolveMiniappPrivateKeyPath({ ...options, rootDir, appid });
+  return {
+    appid,
+    type: 'miniProgram',
+    projectPath: projectDir,
+    privateKeyPath,
+    ignores: ['node_modules/**/*'],
+  };
+}
+
+async function uploadWithMiniprogramCi(options = {}) {
+  const rootDir = options.rootDir || path.resolve(__dirname, '..');
+  const ciPath = path.join(rootDir, 'miniapp', 'node_modules', 'miniprogram-ci');
+  const ci = require(ciPath);
+  const project = new ci.Project(buildCiProjectOptions(options));
+  return ci.upload({
+    project,
+    version: options.version,
+    desc: options.desc,
+    setting: {
+      useProjectConfig: true,
+    },
+    robot: Number(options.robot || process.env.WECHAT_MINIAPP_ROBOT || 1),
+    onProgressUpdate: options.onProgressUpdate || ((event) => {
+      if (event && typeof event === 'object') {
+        const status = event.message || event.status || event.percent;
+        if (status) console.log(`[miniapp-ci] ${status}`);
+      }
+    }),
+  });
+}
+
 function buildUploadArgs(options) {
   const rootDir = options.rootDir || path.resolve(__dirname, '..');
   const projectDir = options.projectDir || path.join(rootDir, 'miniapp');
@@ -87,12 +141,41 @@ function buildUploadCommand(options) {
   };
 }
 
-function main() {
+async function main() {
   const argv = process.argv.slice(2);
   const rootDir = path.resolve(__dirname, '..');
   const version = resolveUploadVersion({ argv });
   const desc = parseOption(argv, 'desc') || parseOption(argv, 'description') || `格物工坊小程序发布 ${new Date().toISOString().slice(0, 10)}`;
   const infoOutput = parseOption(argv, 'info-output') || path.join(os.tmpdir(), 'gewu-miniapp-upload-info.json');
+  const uploadMode = parseOption(argv, 'upload-mode') || process.env.MINIAPP_UPLOAD_MODE || 'auto';
+  const appid = readMiniappAppid({ rootDir });
+  const privateKeyPath = parseOption(argv, 'private-key') || resolveMiniappPrivateKeyPath({ rootDir, appid });
+
+  if (uploadMode !== 'devtools' && privateKeyPath && fs.existsSync(privateKeyPath)) {
+    if (argv.includes('--dry-run')) {
+      console.log(JSON.stringify({
+        uploadMode: 'miniprogram-ci',
+        appid,
+        projectPath: path.join(rootDir, 'miniapp'),
+        privateKeyPath,
+        version,
+        desc,
+      }, null, 2));
+      return;
+    }
+
+    const result = await uploadWithMiniprogramCi({
+      rootDir,
+      appid,
+      privateKeyPath,
+      version,
+      desc,
+      robot: parseOption(argv, 'robot'),
+    });
+    console.log(JSON.stringify({ success: true, uploadMode: 'miniprogram-ci', result }, null, 2));
+    return;
+  }
+
   const cliPath = resolveWechatCliPath();
   const args = buildUploadArgs({ rootDir, version, desc, infoOutput });
 
@@ -118,13 +201,20 @@ function main() {
 }
 
 if (require.main === module) {
-  main();
+  main().catch((err) => {
+    console.error(err && err.stack ? err.stack : err);
+    process.exit(1);
+  });
 }
 
 module.exports = {
+  buildCiProjectOptions,
   buildUploadArgs,
   buildUploadCommand,
   buildUploadExecOptions,
+  readMiniappAppid,
+  resolveMiniappPrivateKeyPath,
   resolveUploadVersion,
   resolveWechatCliPath,
+  uploadWithMiniprogramCi,
 };

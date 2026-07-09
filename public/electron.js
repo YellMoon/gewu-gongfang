@@ -6,6 +6,7 @@ const {
   writeRuntimeConfig,
   applyRuntimeConfigToEnv,
 } = require('./runtimeConfig');
+const { buildLanHostUrls } = require('./lanDiscovery');
 let autoUpdater = null;
 const updateFeedUrl = (process.env.UPDATE_FEED_URL || 'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop/').replace(/\/?$/, '/');
 try {
@@ -84,6 +85,11 @@ function startBackendService() {
     log('Runtime config loaded: role=' + runtimeConfig.nodeRole + ' device=' + runtimeConfig.deviceId);
     process.env.NODE_ENV = process.env.NODE_ENV || 'production';
     process.env.PORT = process.env.PORT || '3001';
+    if (runtimeConfig.nodeRole === 'primary-host') {
+      const lanUrls = buildLanHostUrls({ port: process.env.PORT });
+      process.env.GEWU_HOST_LAN_URLS = JSON.stringify(lanUrls);
+      log('Host LAN URLs: ' + lanUrls.join(','));
+    }
     const appDataDir = app.getPath('userData');
     process.env.GEWU_DATA_DIR = process.env.GEWU_DATA_DIR || appDataDir;
     process.env.DB_PATH = process.env.DB_PATH || runtimeConfig.mainDbPath || path.join(appDataDir, 'data', 'scheduling.db');
@@ -97,8 +103,9 @@ function startBackendService() {
     require('module').Module._initPaths();
     const { createApp } = require(appPath);
     const backendApp = createApp();
-    backendServer = backendApp.listen(Number(process.env.PORT), '127.0.0.1', () => {
-      log(`Embedded backend listening on http://127.0.0.1:${process.env.PORT}`);
+    const listenHost = runtimeConfig.nodeRole === 'primary-host' ? '0.0.0.0' : '127.0.0.1';
+    backendServer = backendApp.listen(Number(process.env.PORT), listenHost, () => {
+      log(`Embedded backend listening on ${listenHost}:${process.env.PORT}`);
     });
     backendServer.on('error', err => log('Embedded backend error: ' + err.message));
   } catch (err) {

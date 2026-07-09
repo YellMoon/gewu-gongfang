@@ -18,8 +18,24 @@ function hostDeviceId() {
   return process.env.GEWU_DEVICE_ID || 'unknown';
 }
 
+function hostLanUrls() {
+  const raw = process.env.GEWU_HOST_LAN_URLS || '';
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+  } catch (_err) {
+    return raw.split(/[;,]/).map(item => item.trim()).filter(Boolean);
+  }
+  return [];
+}
+
 function authOptionsFromRequest(req) {
-  return { authorization: req.headers.authorization || '' };
+  const hostToken = process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || process.env.GEWU_DESKTOP_SYNC_TOKEN || '';
+  return {
+    authorization: req.headers.authorization || '',
+    hostToken,
+  };
 }
 
 function exportRoot() {
@@ -142,6 +158,7 @@ router.post('/heartbeat', async (req, res, next) => {
       hostDeviceId: hostDeviceId(),
       status: 'online',
       baseUrl: process.env.GEWU_HOST_BASE_URL || '',
+      lanUrls: hostLanUrls(),
     }, authOptionsFromRequest(req));
     res.json(result);
   } catch (err) {

@@ -26,6 +26,12 @@ function parseJson(value, fallback) {
   }
 }
 
+function normalizeLanUrls(value) {
+  const raw = Array.isArray(value) ? value : parseJson(value, []);
+  if (!Array.isArray(raw)) return [];
+  return Array.from(new Set(raw.map(item => String(item || '').replace(/\/+$/, '')).filter(Boolean)));
+}
+
 function sendForbidden(res, code, message = 'Forbidden') {
   return res.status(code === 'UNAUTHORIZED' ? 401 : 403).json({ success: false, code, error: message });
 }
@@ -44,6 +50,14 @@ function isDevBypass() {
 function requireHostWrite(req, res, next) {
   if (isDevBypass() || isAdminUser(req.user) || isHostTokenValid(req)) return next();
   return sendForbidden(res, 'HOST_WRITE_FORBIDDEN', 'Host relay write is not allowed');
+}
+
+function requireDesktopSyncAccess(req, res, next) {
+  const expected = process.env.GEWU_DESKTOP_SYNC_TOKEN || '';
+  const provided = req.headers['x-gewu-desktop-sync-token'] || '';
+  if (expected && provided === expected) return next();
+  if (isDevBypass() || req.user) return next();
+  return sendForbidden(res, 'UNAUTHORIZED', 'Authentication required');
 }
 
 function requireSnapshotRead(req, res, next) {
@@ -65,7 +79,6 @@ function canReadTaskResult(task, user) {
   return user?.id && task.created_by === user.id;
 }
 
-router.use('/host', requireHostWrite);
 router.use('/snapshots/publish', requireHostWrite);
 router.use('/tasks', (req, res, next) => {
   if (req.method === 'GET' && req.path === '/') return requireHostWrite(req, res, next);
@@ -73,18 +86,19 @@ router.use('/tasks', (req, res, next) => {
   return next();
 });
 
-router.post('/host/heartbeat', (req, res) => {
+router.post('/host/heartbeat', requireHostWrite, (req, res) => {
   const db = getInstance().db;
   const time = now();
   const hostDeviceId = req.body.hostDeviceId || req.body.deviceId;
   if (!hostDeviceId) return res.status(400).json({ success: false, error: 'hostDeviceId is required' });
 
   db.prepare(
-    `INSERT INTO host_heartbeats (id, host_device_id, status, base_url, last_snapshot_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO host_heartbeats (id, host_device_id, status, base_url, lan_urls, last_snapshot_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        status = excluded.status,
        base_url = excluded.base_url,
+       lan_urls = excluded.lan_urls,
        last_snapshot_at = excluded.last_snapshot_at,
        updated_at = excluded.updated_at`
   ).run(
@@ -92,6 +106,7 @@ router.post('/host/heartbeat', (req, res) => {
     hostDeviceId,
     req.body.status || 'online',
     req.body.baseUrl || '',
+    JSON.stringify(normalizeLanUrls(req.body.lanUrls || req.body.lan_urls)),
     req.body.lastSnapshotAt || null,
     time,
     time
@@ -100,7 +115,7 @@ router.post('/host/heartbeat', (req, res) => {
   res.json({ success: true, serverTime: time });
 });
 
-router.get('/host/status', (_req, res) => {
+router.get('/host/status', requireDesktopSyncAccess, (_req, res) => {
   const db = getInstance().db;
   const row = db.prepare(
     `SELECT * FROM host_heartbeats ORDER BY updated_at DESC LIMIT 1`
@@ -108,10 +123,14 @@ router.get('/host/status', (_req, res) => {
   const updatedAt = row?.updated_at ? Date.parse(row.updated_at) : 0;
   const heartbeatTtlMs = Number(process.env.GEWU_HOST_HEARTBEAT_TTL_MS || 5 * 60 * 1000);
   const online = Boolean(row && row.status !== 'offline' && Date.now() - updatedAt <= heartbeatTtlMs);
+  const host = row ? {
+    ...row,
+    lanUrls: normalizeLanUrls(row.lan_urls),
+  } : null;
   res.json({
     success: true,
     online,
-    host: row || null,
+    host,
     serverTime: now(),
   });
 });
@@ -145,14 +164,6 @@ router.get('/snapshots/read', requireSnapshotRead, (req, res) => {
   const snapshot = row ? { ...row, payload: parseJson(row.payload, {}) } : null;
   res.json({ success: true, snapshot: filterSnapshotForUser(snapshot, req.user) });
 });
-
-function requireDesktopSyncAccess(req, res, next) {
-  const expected = process.env.GEWU_DESKTOP_SYNC_TOKEN || '';
-  const provided = req.headers['x-gewu-desktop-sync-token'] || '';
-  if (expected && provided === expected) return next();
-  if (isDevBypass() || req.user) return next();
-  return sendForbidden(res, 'UNAUTHORIZED', 'Authentication required');
-}
 
 router.post('/desktop-sync/requests', requireDesktopSyncAccess, (req, res) => {
   const db = getInstance().db;

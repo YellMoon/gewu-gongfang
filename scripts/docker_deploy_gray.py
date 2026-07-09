@@ -145,6 +145,8 @@ def write_runtime_env(ctx: DeployContext) -> None:
         f"GEWU_DEVICE_ID={os.getenv('GEWU_DEVICE_ID', 'desktop_host_001')}",
         f"GEWU_HOST_BASE_URL={os.getenv('GEWU_HOST_BASE_URL', 'http://127.0.0.1:3001')}",
         f"GEWU_CLOUD_BASE_URL={os.getenv('GEWU_CLOUD_BASE_URL', 'https://your-domain.example.com')}",
+        f"GEWU_DESKTOP_SYNC_TOKEN={os.getenv('GEWU_DESKTOP_SYNC_TOKEN', '')}",
+        f"GEWU_CLOUD_RELAY_HOST_TOKEN={os.getenv('GEWU_CLOUD_RELAY_HOST_TOKEN', os.getenv('GEWU_DESKTOP_SYNC_TOKEN', ''))}",
         f"QUESTION_BANK_ROOT={os.getenv('QUESTION_BANK_ROOT', '/app/question-bank')}",
         f"QUESTION_BANK_UPLOAD_DIR={os.getenv('QUESTION_BANK_UPLOAD_DIR', '/app/question-bank/assets')}",
         f"GEWU_LOCAL_CACHE_PATH={os.getenv('GEWU_LOCAL_CACHE_PATH', '/app/question-bank-cache')}",

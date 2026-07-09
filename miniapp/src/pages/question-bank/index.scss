@@ -97,6 +97,129 @@
   padding: 24rpx;
 }
 
+.preview-card {
+  margin-top: 22rpx;
+  padding: 26rpx;
+  background: #fffdf8;
+  border: 1rpx solid rgba(23, 32, 51, 0.06);
+  border-radius: 26rpx;
+  box-shadow: 0 12rpx 30rpx rgba(23, 32, 51, 0.06);
+}
+
+.preview-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.preview-title {
+  display: block;
+  color: #172033;
+  font-size: 30rpx;
+  line-height: 40rpx;
+  font-weight: 900;
+}
+
+.preview-subtitle {
+  display: block;
+  margin-top: 6rpx;
+  color: #7d8795;
+  font-size: 23rpx;
+  line-height: 32rpx;
+}
+
+.preview-refresh {
+  flex: 0 0 116rpx;
+  height: 60rpx;
+  line-height: 60rpx;
+  margin: 0;
+  border: 0;
+  border-radius: 18rpx;
+  background: #eef5f2;
+  color: #1f6f68;
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.preview-refresh::after {
+  border: 0;
+}
+
+.preview-search {
+  height: 74rpx;
+  margin-top: 20rpx;
+  padding: 0 22rpx;
+  border-radius: 18rpx;
+  background: #f3f0e9;
+  color: #172033;
+  font-size: 26rpx;
+  box-sizing: border-box;
+}
+
+.question-preview-list {
+  max-height: 680rpx;
+  margin-top: 18rpx;
+}
+
+.question-preview-item {
+  padding: 22rpx 0;
+  border-bottom: 1rpx solid rgba(23, 32, 51, 0.07);
+}
+
+.question-preview-item:last-child {
+  border-bottom: 0;
+}
+
+.question-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-bottom: 12rpx;
+}
+
+.question-preview-meta text {
+  padding: 4rpx 12rpx;
+  border-radius: 999rpx;
+  background: #eef5f2;
+  color: #1f6f68;
+  font-size: 21rpx;
+  line-height: 30rpx;
+  font-weight: 800;
+}
+
+.question-preview-stem {
+  display: block;
+  color: #172033;
+  font-size: 27rpx;
+  line-height: 40rpx;
+  word-break: break-word;
+}
+
+.question-preview-answer {
+  margin-top: 14rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 18rpx;
+  background: #f7f4ee;
+}
+
+.question-preview-answer text {
+  display: block;
+  color: #4d5a6a;
+  font-size: 24rpx;
+  line-height: 36rpx;
+  word-break: break-word;
+}
+
+.question-preview-empty {
+  min-height: 120rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #a2abb8;
+  font-size: 25rpx;
+}
+
 .action-button {
   height: 82rpx;
   line-height: 82rpx;

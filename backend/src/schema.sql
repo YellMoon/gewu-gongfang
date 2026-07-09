@@ -323,6 +323,7 @@ CREATE TABLE IF NOT EXISTS host_heartbeats (
   host_device_id TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'online',
   base_url TEXT,
+  lan_urls TEXT,
   last_snapshot_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

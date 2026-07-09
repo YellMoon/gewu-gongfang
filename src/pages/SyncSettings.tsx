@@ -10,7 +10,7 @@ import { getRuntimeConfig, RuntimeConfig } from '../services/runtimeConfigClient
 import browserDatabase from '../services/browserDatabase';
 import type { CloudSyncContext } from '../navigation/navigationContext';
 import { runOneClickSync } from '../services/oneClickSyncService.mjs';
-import { createCloudRelaySyncTransport, createDirectSyncTransport } from '../services/oneClickSyncTransports.mjs';
+import { createCloudRelaySyncTransport, createDirectSyncTransport, discoverLanDirectSyncTransports } from '../services/oneClickSyncTransports.mjs';
 
 interface SyncSettingsProps {
   context?: CloudSyncContext;
@@ -247,13 +247,24 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
     try {
       const config = runtimeConfig || await getRuntimeConfig();
       const transports = [];
+      if (config?.cloudBaseUrl) {
+        const discovered = await discoverLanDirectSyncTransports({
+          baseUrl: config.cloudBaseUrl,
+          deviceId: eng.getDeviceId(),
+          role: config.nodeRole || 'desktop-client',
+          deviceName: config.deviceId || eng.getDeviceId(),
+          desktopSyncToken: config.desktopSyncToken || '',
+        });
+        transports.push(...discovered);
+      }
       if (config?.hostBaseUrl && (config.nodeRole === 'primary-host' || !isLocalHostBase(config.hostBaseUrl))) {
-        transports.push(createDirectSyncTransport({
+        const manualDirect = createDirectSyncTransport({
           baseUrl: config.hostBaseUrl,
           deviceId: eng.getDeviceId(),
           role: config.nodeRole || 'desktop-client',
           deviceName: config.deviceId || eng.getDeviceId(),
-        }));
+        });
+        if (!transports.some((transport: any) => transport.baseUrl === manualDirect.baseUrl)) transports.push(manualDirect);
       }
       if (config?.cloudBaseUrl) {
         transports.push(createCloudRelaySyncTransport({

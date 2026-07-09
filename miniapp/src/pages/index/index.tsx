@@ -67,6 +67,7 @@ function cacheSnapshotPayload(payload?: Record<string, any>) {
   if (Array.isArray(payload.teachers)) setCachedList('teachers', payload.teachers);
   if (Array.isArray(payload.payments)) setCachedList('payments', payload.payments);
   if (Array.isArray(payload.consumptions)) setCachedList('consumptions', payload.consumptions);
+  if (Array.isArray(payload.questions)) setCachedList('questions', payload.questions);
 }
 
 export default function Index() {

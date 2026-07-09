@@ -10,6 +10,22 @@ assert.ok(
   'cloud relay should expose host status for one-click sync transport selection'
 );
 assert.ok(
+  !cloudRelay.includes("router.use('/host', requireHostWrite)"),
+  'host status should not be blocked by the host-write middleware used for heartbeat writes'
+);
+assert.ok(
+  cloudRelay.includes("router.get('/host/status', requireDesktopSyncAccess"),
+  'desktop clients should be able to read host status with the desktop sync token'
+);
+assert.ok(
+  cloudRelay.includes('lan_urls') && cloudRelay.includes('lanUrls'),
+  'cloud relay should save and return host LAN URLs for automatic direct sync discovery'
+);
+assert.ok(
+  hostRelay.includes('GEWU_HOST_LAN_URLS'),
+  'host heartbeat should publish LAN URLs discovered by the desktop host process'
+);
+assert.ok(
   cloudRelay.includes("router.post('/desktop-sync/requests'"),
   'cloud relay should accept desktop sync requests from remote clients'
 );
