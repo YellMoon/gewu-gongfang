@@ -30,8 +30,8 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 - [ ] Implement role migration, fixed super-admin enforcement, pending state, and unique teacher binding.
 - [ ] Add failing tests for teacher row/data scope and source attribution.
 - [ ] Implement authoritative read/write data scoping and filtered aggregation.
-- [ ] Add failing tests for scoped host download and validated client upload.
-- [ ] Implement sync scoping, source metadata, rejection, and review queue behavior.
+- [x] Add failing tests for scoped host download and validated client upload.
+- [x] Implement sync scoping, source metadata, rejection, and review queue behavior.
 - [ ] Add failing tests for question local-draft versus host-committed deletion rules.
 - [ ] Implement question storage-state and host-desktop-only committed deletion protection.
 - [ ] Add failing UI/navigation regression tests.
@@ -109,6 +109,19 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 - Selection order is fixed seed ID, then one persisted identity flag, then one unambiguous fixed-phone legacy row; multiple unflagged noncanonical candidates remain a conflict and are never arbitrarily promoted.
 - Index-order RED: a historical database containing two identity flags failed during startup with `UNIQUE constraint failed` before identity recovery could run.
 - Index-order GREEN: startup now performs additive schema work, migration, and atomic identity recovery before creating the partial unique index; canonical conflicts retain only the canonical flag, while ambiguous noncanonical conflicts clear all flags and disable every candidate.
+
+### Task 5 evidence: scoped synchronization and provenance
+
+- [x] Validate every direct and relay-host mutation inside `applySyncChanges` before the business write transaction commits.
+- [x] Persist rejection reasons and additive record provenance with the business write transaction.
+- [x] Scope incremental pulls for approved administrators and teachers; reject missing authorization context.
+- [x] Bind one-time sync authorization tokens to user, teacher, device, scope, and expiry.
+- [x] Preserve explicit preview confirmation and prove cancellation performs no push.
+- [x] Keep legacy queued operations readable while adding actor/device/operation candidate fields; server identity always overrides them.
+- Security default: the current desktop shell has no unified persisted login-session provider. Direct and relay upload therefore fail with `AUTHORIZATION_CONTEXT_REQUIRED` unless the caller injects a Bearer session and authenticated device context; local phone/role fields are never used as authority.
+- RED: `node backend/src/services/syncScopeService.test.js` initially exited 1 because `syncScopeService` did not exist.
+- GREEN: sync scope pure/integration, incremental sync, transports, mutation queue, one-click confirmation, and cloud relay path checks pass.
+- Typecheck note: standalone TypeScript 4.9 cannot parse the installed newer `@types/node/ffi.d.ts`; the production build is used as the project compilation check.
 
 ### Task 3 evidence: unified local and gateway review authorization
 

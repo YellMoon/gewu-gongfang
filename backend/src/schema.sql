@@ -306,6 +306,8 @@ CREATE TABLE IF NOT EXISTS sync_devices (
 CREATE TABLE IF NOT EXISTS sync_authorizations (
   id TEXT PRIMARY KEY,
   device_id TEXT NOT NULL,
+  actor_user_id TEXT,
+  actor_teacher_id TEXT,
   token_hash TEXT NOT NULL,
   scope TEXT NOT NULL DEFAULT 'sync:push',
   expires_at TEXT NOT NULL,

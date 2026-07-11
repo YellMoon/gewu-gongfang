@@ -12,5 +12,8 @@ assert.ok(source.includes('clearApplied'), 'queue should clear only applied oper
 assert.ok(source.includes("classifyRisk('students'") || source.includes('function classifyRisk'), 'should classify operation risk');
 assert.ok(source.includes('createSyncOperation'), 'should create sync operations');
 assert.ok(source.includes('operationToChange'), 'should convert operations to legacy SyncChange');
+for (const field of ['actorUserId', 'actorTeacherId', 'sourceDeviceId', 'sourceOperationId']) {
+  assert.ok(source.includes(field), `operations should include ${field}`);
+}
 
 console.log('mutationQueue source checks passed');

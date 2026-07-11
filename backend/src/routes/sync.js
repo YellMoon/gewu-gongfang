@@ -55,6 +55,13 @@ function readTenantId(req) {
     || 'default';
 }
 
+function requestAuthz(req) {
+  if (!req.user || !req.authz?.deviceId) return null;
+  const scope = scopeForUser(req.user);
+  return { kind: scope.kind === 'all' ? 'admin' : scope.kind, userId: req.authz.userId,
+    teacherId: scope.teacherId || null, studentId: scope.studentId || null, deviceId: req.authz.deviceId };
+}
+
 function groupedChangesFromQueue(changes) {
   return changes.reduce((grouped, change) => {
     const rows = grouped[change.table] || [];
@@ -88,10 +95,13 @@ router.get('/', (req, res) => {
     const since = requireValidSince(req, res);
     if (!since) return;
     const deviceId = readDeviceId(req);
-    const payload = db.getChangeQueueSince(since, {
+    const authz = requestAuthz(req);
+    if (!authz) return res.status(403).json({ success: false, code: 'AUTHORIZATION_CONTEXT_REQUIRED' });
+    const payload = db.getScopedChangeQueueSince(since, {
       tenantId: readTenantId(req),
       deviceId: 'server',
       clientId: deviceId,
+      authz,
     });
     console.log(`[Sync:Queue] device=${deviceId} since=${since.slice(0, 19)} changes=${payload.changes.length}`);
     sendQueueResponse(res, payload);
@@ -106,10 +116,13 @@ router.post('/pull', (req, res) => {
     const since = requireValidSince(req, res);
     if (!since) return;
     const deviceId = readDeviceId(req);
-    const payload = db.getChangeQueueSince(since, {
+    const authz = requestAuthz(req);
+    if (!authz) return res.status(403).json({ success: false, code: 'AUTHORIZATION_CONTEXT_REQUIRED' });
+    const payload = db.getScopedChangeQueueSince(since, {
       tenantId: readTenantId(req),
       deviceId: 'server',
       clientId: deviceId,
+      authz,
     });
     console.log(`[Sync:Pull] device=${deviceId} since=${since.slice(0, 19)} changes=${payload.changes.length}`);
     sendQueueResponse(res, payload, {
@@ -126,10 +139,13 @@ router.get('/pull', (req, res) => {
     const since = requireValidSince(req, res);
     if (!since) return;
     const deviceId = readDeviceId(req);
-    const payload = db.getChangeQueueSince(since, {
+    const authz = requestAuthz(req);
+    if (!authz) return res.status(403).json({ success: false, code: 'AUTHORIZATION_CONTEXT_REQUIRED' });
+    const payload = db.getScopedChangeQueueSince(since, {
       tenantId: readTenantId(req),
       deviceId: 'server',
       clientId: deviceId,
+      authz,
     });
     console.log(`[Sync:Pull] device=${deviceId} since=${since.slice(0, 19)} changes=${payload.changes.length}`);
     sendQueueResponse(res, payload, {
@@ -158,9 +174,12 @@ router.post('/authorize', (req, res) => {
   try {
     const db = getInstance();
     const deviceId = readDeviceId(req);
+    const authz = requestAuthz(req);
+    if (!authz || authz.deviceId !== deviceId) return res.status(403).json({ success: false, code: 'AUTHORIZATION_CONTEXT_REQUIRED' });
     const authorization = db.issueSyncAuthorization(deviceId, {
       role: req.body?.role || 'desktop-client',
       deviceName: req.body?.deviceName || req.body?.device_name,
+      actorUserId: authz.userId, actorTeacherId: authz.teacherId,
     });
     res.json({ success: true, authorization });
   } catch (err) {
@@ -179,16 +198,15 @@ router.post('/push', (req, res) => {
     }
 
     const token = req.headers['x-sync-authorization'] || req.body?.syncAuthorizationToken;
-    if (process.env.GEWU_NODE_ROLE === 'primary-host' && !db.verifySyncAuthorization(deviceId, token)) {
+    const authz = requestAuthz(req);
+    if (!authz) return res.status(403).json({ success: false, code: 'AUTHORIZATION_CONTEXT_REQUIRED' });
+    if (process.env.GEWU_NODE_ROLE === 'primary-host' && !db.verifySyncAuthorization(authz.deviceId, token, {
+      actorUserId: authz.userId, actorTeacherId: authz.teacherId, scope: 'sync:push',
+    })) {
       return res.status(403).json({ success: false, error: 'sync authorization required' });
     }
 
-    const scoped = req.authz ? scopeForUser(req.user) : null;
-    if (!scoped || !req.authz?.deviceId) {
-      return res.status(403).json({ success: false, code: 'AUTHORIZATION_CONTEXT_REQUIRED', error: 'authenticated user and registered device required' });
-    }
-    const result = db.applySyncChanges(changes, { deviceId: req.authz.deviceId, tenantId: readTenantId(req),
-      authz: { ...scoped, userId: req.authz.userId, deviceId: req.authz.deviceId } });
+    const result = db.applySyncChanges(changes, { deviceId: authz.deviceId, tenantId: readTenantId(req), authz });
     const serverTime = db._now();
     console.log(`[Sync:Push] device=${deviceId} applied=${result.applied} conflicts=${result.conflicts} errors=${result.errors.length}`);
 

@@ -277,8 +277,10 @@ class BrowserDatabaseService {
       const legacyKey = 'sync_engine_sync_pending_ops';
       const now = new Date().toISOString();
       const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      const sourceOperationId = `chg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+      const sourceDeviceId = this.getSyncDeviceId();
       const change = {
-        id: `chg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`,
+        id: sourceOperationId,
         table,
         action,
         data: {
@@ -289,7 +291,9 @@ class BrowserDatabaseService {
         version: payload.updated_at || now,
         updatedAt: payload.updated_at || now,
         tenantId: payload.tenant_id || 'default',
-        deviceId: this.getSyncDeviceId(),
+        deviceId: sourceDeviceId,
+        sourceDeviceId,
+        sourceOperationId,
       };
       const next = [...existing, change];
       localStorage.setItem(key, JSON.stringify(next));

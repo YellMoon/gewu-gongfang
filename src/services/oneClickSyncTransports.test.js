@@ -16,6 +16,8 @@ async function main() {
   const direct = createDirectSyncTransport({
     baseUrl: 'http://lan-host:3001',
     deviceId: 'desktop_test',
+    authorization: 'Bearer session-test',
+    authContext: { userId: 'u1', deviceId: 'desktop_test' },
     fetchImpl: async (url, options = {}) => {
       directCalls.push({ url, options });
       if (String(url).endsWith('/api/health')) return jsonResponse({ ok: true });
@@ -49,6 +51,8 @@ async function main() {
     baseUrl: 'https://cloud.example.com/scheduling',
     deviceId: 'desktop_test',
     desktopSyncToken: 'sync_secret_test',
+    authorization: 'Bearer session-test',
+    authContext: { userId: 'u1', deviceId: 'desktop_test' },
     fetchImpl: async (url, options = {}) => {
       cloudCalls.push({ url, options });
       if (String(url).includes('/api/cloud/host/status')) return jsonResponse({ success: true, online: true });
@@ -68,6 +72,8 @@ async function main() {
   assert.strictEqual((await cloud.pollSyncRequest('desktop_sync_1')).status, 'pending_host');
   assert.ok(cloudCalls.some(call => String(call.url).includes('/api/cloud/desktop-sync/requests')), 'cloud should submit desktop sync requests');
   assert.ok(cloudCalls.every(call => call.options.headers['x-gewu-desktop-sync-token'] === 'sync_secret_test'), 'cloud requests should include desktop sync token');
+  await assert.rejects(() => createCloudRelaySyncTransport({ baseUrl: 'https://cloud.example.com', fetchImpl: async () => jsonResponse({}) })
+    .submitSyncRequest({ pendingChanges: [{}] }), error => error.code === 'AUTHORIZATION_CONTEXT_REQUIRED');
 
   const discovered = await discoverLanDirectSyncTransports({
     baseUrl: 'https://cloud.example.com/scheduling',

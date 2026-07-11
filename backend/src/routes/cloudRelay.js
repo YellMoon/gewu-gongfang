@@ -177,6 +177,12 @@ router.post('/desktop-sync/requests', requireDesktopSyncAccess, (req, res) => {
     pendingChanges: req.body.pendingChanges || req.body.changes || [],
     preview: req.body.preview || null,
     submittedAt: time,
+    authorizationContext: req.user ? {
+      userId: req.user.id,
+      teacherId: req.user.teacher_id || null,
+      kind: ['super_admin', 'admin'].includes(roleForUser(req.user)) ? 'admin' : roleForUser(req.user),
+      deviceId: req.headers['x-device-id'] || null,
+    } : null,
   };
   db.prepare(
     `INSERT INTO miniapp_tasks (id, task_type, status, payload, created_by, created_at, updated_at)
