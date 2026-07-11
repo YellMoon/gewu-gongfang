@@ -4,14 +4,17 @@ const express = require('express');
 const rows = new Map([
   ['ordinary-admin', { id: 'ordinary-admin', user_type: 'admin' }],
   ['target', { id: 'target', user_type: 'pending' }],
+  ['miniapp-admin-13732250653', { id: 'miniapp-admin-13732250653', phone: '13732250653', user_type: 'super_admin', is_super_admin_identity: 1 }],
 ]);
 let permissionWrites = 0;
+let auditWrites = 0;
 const fakeDb = {
+  transaction(fn) { return fn; },
   prepare(sql) {
     return {
       get(id) { if (sql.includes('FROM users')) return rows.get(id); return { count: rows.size }; },
       all() { return [...rows.values()]; },
-      run() { if (sql.includes('user_permissions')) permissionWrites += 1; return { changes: 1 }; },
+      run() { if (sql.includes('user_permissions')) permissionWrites += 1; if (sql.includes('authorization_audit_log')) auditWrites += 1; return { changes: 1 }; },
     };
   },
 };
@@ -49,6 +52,10 @@ async function call(server, method, path, body, headers = {}) {
     assert.strictEqual(ordinaryReview.body.code, 'SUPER_ADMIN_REQUIRED');
     const superReview = await call(server, 'PATCH', '/api/admin/users/target/review', { role: 'admin' }, { 'x-test-super': 'true' });
     assert.strictEqual(superReview.status, 200, 'canonical super uses the review endpoint');
+    assert.strictEqual(auditWrites, 1, 'successful review writes one authorization audit row');
+    const immutable = await call(server, 'PATCH', '/api/admin/users/miniapp-admin-13732250653/review', { role: 'student' }, { 'x-test-super': 'true' });
+    assert.strictEqual(immutable.status, 400);
+    assert.strictEqual(immutable.body.code, 'SUPER_ADMIN_IMMUTABLE');
     const grant = await call(server, 'POST', '/api/admin/users/target/permissions', { permission_id: 'admin:all' });
     assert.strictEqual(grant.status, 410);
     assert.strictEqual(grant.body.code, 'LEGACY_PERMISSION_GRANTS_DISABLED');

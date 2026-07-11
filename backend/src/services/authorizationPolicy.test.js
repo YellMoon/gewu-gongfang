@@ -22,6 +22,10 @@ assert.strictEqual(
   'the fixed phone must always be promoted server-side'
 );
 assert.strictEqual(roleForUser({ user_type: 'teacher' }), 'teacher');
+for (const role of ['admin', 'teacher', 'student']) {
+  assert.strictEqual(roleForUser({ id: `persisted-${role}`, role, status: 1, login_enabled: 1, review_status: 'pending', deleted: 0 }), 'pending');
+  assert.strictEqual(roleForUser({ id: `disabled-${role}`, role, status: 0, login_enabled: 1, review_status: 'approved', deleted: 0 }), 'pending');
+}
 assert.strictEqual(roleForUser({ role: 'legacy_admin' }), 'pending');
 assert.strictEqual(
   roleForUser({ role: 'legacy_admin', user_type: 'admin' }),

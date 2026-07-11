@@ -127,6 +127,13 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 - Legacy endpoint closure: `PUT /users/:id/type` returns 410 `LEGACY_ROLE_ENDPOINT_DISABLED`; grant/revoke endpoints return 410 `LEGACY_PERMISSION_GRANTS_DISABLED` and tests prove zero writes to `user_permissions`.
 - Review regression: ordinary gateway admin receives 403 `SUPER_ADMIN_REQUIRED`, canonical super succeeds through `PATCH /api/admin/users/:id/review`, and approved ordinary admin retains read-only user-list access.
 - Closure verification: focused backend route, gateway policy, gateway legacy-endpoint, authorization/database/cloud-relay tests passed; `npm test` exited 0 in 13.4 seconds on 2026-07-11.
+- Quality-hardening RED: persisted pending/disabled local roles retained capabilities; compatibility permissions exceeded the capability contract; gateway legacy fixed-phone rows were not promoted; review wrote no audit record.
+- Quality-hardening GREEN: persisted local roles now require approved, active, login-enabled state; pure no-id policy fixtures remain compatible but cannot review; permissions are a direct capability projection.
+- Device replay closure: even a known trusted `sync_devices` host ID plus desktop header cannot produce `question-bank:delete-committed`; request host authorization remains hard-false until Task 6 introduces a non-replayable request credential.
+- User-list closure: backend and gateway select explicit management fields, omit OpenID/UnionID, validate filters, cap search/page size, and return `items/total/page/pageSize` with a `users` compatibility alias.
+- Gateway identity closure: additive startup migration normalizes the fixed phone, preserves one unambiguous legacy identity, refuses arbitrary conflict selection, restores active approved canonical state, and creates a single-identity partial unique index.
+- Gateway review closure: fixed/canonical identity is immutable; role update and `authorization_audit_log` insertion execute in one database transaction.
+- Quality verification: focused local policy/routes/database and gateway migration/hydration/policy/admin/cloud-relay tests passed; `npm test` exited 0 in 15.6 seconds on 2026-07-11.
 
 ---
 

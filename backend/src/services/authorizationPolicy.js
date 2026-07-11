@@ -30,6 +30,13 @@ function roleForUser(user) {
     return active ? 'super_admin' : 'pending';
   }
   if (role === 'super_admin') return 'pending';
+  if (hasPersistedId) {
+    const active = (user.deleted === 0 || user.deleted === false)
+      && (user.status === 1 || user.status === true)
+      && (user.login_enabled === 1 || user.login_enabled === true)
+      && user.review_status === 'approved';
+    if (!active) return 'pending';
+  }
   return ROLES.includes(role) ? role : 'pending';
 }
 

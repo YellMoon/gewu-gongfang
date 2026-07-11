@@ -17,6 +17,10 @@ db.db.prepare(`INSERT INTO users (id, phone, name, role, status, login_enabled, 
 db.db.prepare(`INSERT INTO users (id, phone, name, role, status, login_enabled, review_status, deleted, created_at, updated_at)
  VALUES (?, ?, ?, 'pending', 1, 1, 'pending', 0, ?, ?)`)
   .run('pending-user', '13800000000', 'Pending', now, now);
+db.db.prepare(`INSERT INTO users (id, phone, name, role, status, login_enabled, review_status, deleted, created_at, updated_at)
+ VALUES (?, ?, ?, 'teacher', 1, 1, 'approved', 0, ?, ?)`).run('approved-teacher', '13600000000', 'Teacher', now, now);
+db.db.prepare(`INSERT INTO users (id, phone, name, role, status, login_enabled, review_status, deleted, created_at, updated_at)
+ VALUES (?, ?, ?, 'admin', 0, 1, 'approved', 0, ?, ?)`).run('disabled-admin', '13500000000', 'Disabled', now, now);
 
 const databaseModule = require('../database');
 databaseModule.getInstance = () => db;
@@ -53,6 +57,11 @@ async function request(server, method, url, auth, body, headers = {}) {
     const pending = await request(base, 'GET', '/api/permissions/my', token('pending-user'));
     assert.deepStrictEqual(pending.body.capabilities, []);
     assert.strictEqual(pending.body.user_type, 'pending');
+    const disabled = await request(base, 'GET', '/api/permissions/my', token('disabled-admin'));
+    assert.deepStrictEqual(disabled.body.capabilities, []);
+    const teacher = await request(base, 'GET', '/api/permissions/my', token('approved-teacher'));
+    assert.deepStrictEqual(teacher.body.capabilities, ['business:teacher-scope', 'question-bank:view', 'question-bank:edit']);
+    assert.ok(teacher.body.permissions.every(item => teacher.body.capabilities.includes(item.id)), 'compat permissions must be a capability projection');
 
     const superToken = token('miniapp-admin-13732250653');
     const reviewed = await request(base, 'PATCH', '/api/admin/users/pending-user/review', superToken, { role: 'admin' });
@@ -62,6 +71,10 @@ async function request(server, method, url, auth, body, headers = {}) {
     assert.ok(permissions.body.capabilities.includes('business:all'));
     assert.ok(!permissions.body.capabilities.includes('users:review'));
     assert.ok(!permissions.body.capabilities.includes('question-bank:delete-committed'), 'a forged host header cannot elevate a desktop admin');
+    db.registerSyncDevice('known-trusted-host', { deviceName: 'Known host', trusted: true, role: 'host' });
+    const replayedDevice = await request(base, 'GET', '/api/permissions/my', token('ordinary-admin'), null, { 'x-device-id': 'known-trusted-host', 'x-client-type': 'desktop' });
+    assert.ok(!replayedDevice.body.capabilities.includes('question-bank:delete-committed'), 'knowing a trusted device id is not authentication');
+    assert.ok(list.body.users.every(user => !('wechat_openid' in user) && !('wechat_unionid' in user)), 'admin list must not leak identity provider secrets');
   } finally {
     await new Promise(resolve => listener.close(resolve));
     db.close();
