@@ -22,7 +22,7 @@ const snapshot = {
   assetRecords: [{ id: 'a1', owner_user_id: 'u1', amount: 10 }, { id: 'a2', owner_user_id: 'u2', amount: 999 }],
   assetCategories: [{ id: 'ac1' }],
   subjects: [{ id: 'sub1' }], questions: [{ id: 'q1' }, { id: 'q2' }], question_assets: [{ id: 'qa1' }],
-  question_answer_records: [{ id: 'ar1', user_id: 'u1' }, { id: 'ar2', user_id: 'u2' }],
+  revenueStats: { tuition: 999999 }, secretRows: [{ id: 'leak' }], secretObject: { leak: true }, version: 'v1',
 };
 
 const scoped = scopeBusinessSnapshot(snapshot, { kind: 'teacher', teacherId: 't1', userId: 'u1' });
@@ -37,7 +37,10 @@ assert.deepStrictEqual(scoped.rooms.map(x => x.id), ['r1']);
 assert.deepStrictEqual(scoped.schools.map(x => x.id), ['school1']);
 assert.deepStrictEqual(scoped.assetRecords.map(x => x.id), ['a1']);
 assert.strictEqual(scoped.questions.length, 2, 'public question bank remains complete');
-assert.deepStrictEqual(scoped.question_answer_records.map(x => x.id), ['ar1']);
+assert.strictEqual(scoped.revenueStats, undefined);
+assert.strictEqual(scoped.secretRows, undefined);
+assert.strictEqual(scoped.secretObject, undefined);
+assert.deepStrictEqual(scoped.scopedFinancials, { tuition: 500, teacherFees: 100, payments: 50, assets: 10 });
 assert.strictEqual(scoped.schedules.reduce((sum, row) => sum + row.calculated_teacher_fee, 0), 100, 'teacher totals consume scoped schedules only');
 assert.strictEqual(scoped.schedules.reduce((sum, row) => sum + row.calculated_tuition, 0), 500, 'tuition excludes other teachers');
 assert.strictEqual(scoped.assetRecords.reduce((sum, row) => sum + row.amount, 0), 10, 'assets exclude other owners');
@@ -46,13 +49,20 @@ assert.strictEqual(snapshot.courses.length, 2, 'input must not be mutated');
 
 assert.strictEqual(scopeBusinessSnapshot(snapshot, { kind: 'admin' }).courses.length, 2);
 assert.deepStrictEqual(scopeBusinessSnapshot(snapshot, { kind: 'pending' }), {});
-assert.deepStrictEqual(scopeBusinessSnapshot(snapshot, { kind: 'student', studentIds: [] }).courses, []);
+const emptyStudent = scopeBusinessSnapshot(snapshot, { kind: 'student', studentIds: [] });
+assert.deepStrictEqual(emptyStudent.courses, []);
+assert.strictEqual(emptyStudent.questions.length, 2);
+assert.strictEqual(emptyStudent.secretRows, undefined);
+assert.strictEqual(emptyStudent.revenueStats, undefined);
 
 assertRecordReadable('courses', snapshot.courses[0], { kind: 'teacher', teacherId: 't1' });
 assert.throws(() => assertRecordReadable('courses', snapshot.courses[1], { kind: 'teacher', teacherId: 't1' }), err => err.code === 'TEACHER_SCOPE_VIOLATION');
 assert.throws(() => assertRecordReadable('mystery', { id: 'z' }, { kind: 'teacher', teacherId: 't1' }), err => err.code === 'DATA_SCOPE_UNRESOLVED');
 assert.throws(() => assertRecordWritable('courses', { teacher_id: 't2' }, { kind: 'teacher', teacherId: 't1' }), err => err.code === 'TEACHER_SCOPE_VIOLATION');
 assertRecordWritable('schedules', { course_id: 'c1' }, { kind: 'teacher', teacherId: 't1' }, { courses: snapshot.courses });
+assertRecordReadable('payments', { schedule_id: 'sc1' }, { kind: 'teacher', teacherId: 't1' }, { courses: snapshot.courses, schedules: snapshot.schedules });
+assertRecordReadable('assetRecords', { owner_user_id: 'u1' }, { kind: 'teacher', teacherId: 't1', userId: 'u1' });
+assert.throws(() => assertRecordReadable('payments', { student_id: 's1' }, { kind: 'teacher', teacherId: 't1' }, { courses: snapshot.courses }), err => err.code === 'DATA_SCOPE_UNRESOLVED');
 assert.throws(() => assertRecordWritable('schedules', { course_id: 'c2' }, { kind: 'teacher', teacherId: 't1' }, { courses: snapshot.courses }), err => err.code === 'TEACHER_SCOPE_VIOLATION');
 
 console.log('dataScopeService tests passed');

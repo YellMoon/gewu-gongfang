@@ -6,6 +6,7 @@ const {
   isAdminUser,
   isAllowedMiniappTaskForUser,
 } = require('../services/miniappAccessPolicy');
+const { roleForUser } = require('../services/authorizationPolicy');
 
 const router = Router();
 
@@ -61,8 +62,9 @@ function requireDesktopSyncAccess(req, res, next) {
 }
 
 function requireSnapshotRead(req, res, next) {
-  if (isDevBypass() || req.user) return next();
-  return sendForbidden(res, 'UNAUTHORIZED', 'Authentication required');
+  if (!req.user) return sendForbidden(res, 'UNAUTHORIZED', 'Authentication required');
+  if (roleForUser(req.user) === 'pending') return sendForbidden(res, 'USER_NOT_APPROVED', 'Approved active user required');
+  return next();
 }
 
 function requireMiniappTaskAccess(req, res, next) {
