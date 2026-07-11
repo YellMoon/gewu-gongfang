@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { getMiniappLoginDenialReason } = require('./services/miniappAuthPolicy');
+const { validateSyncMutation } = require('./services/syncScopeService');
 const {
   SUPER_ADMIN_PHONE,
   CANONICAL_SUPER_ADMIN_ID,
@@ -350,6 +351,13 @@ class DatabaseService {
         id TEXT PRIMARY KEY, operation_id TEXT, actor_user_id TEXT, actor_teacher_id TEXT,
         source_device_id TEXT, table_name TEXT, record_id TEXT, reason_code TEXT NOT NULL,
         payload_json TEXT, created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS sync_record_provenance (
+        table_name TEXT NOT NULL, record_id TEXT NOT NULL,
+        created_by_user_id TEXT, updated_by_user_id TEXT, actor_teacher_id TEXT,
+        source_device_id TEXT, source_operation_id TEXT,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        PRIMARY KEY (table_name, record_id)
       );
       CREATE TABLE IF NOT EXISTS authorization_migrations (
         name TEXT PRIMARY KEY, applied_at TEXT NOT NULL
@@ -1371,6 +1379,26 @@ class DatabaseService {
           const existing = columns.includes('tenant_id')
             ? this.db.prepare(`SELECT * FROM ${table} WHERE id = ? AND tenant_id = ?`).get(recordId, change.tenantId)
             : this.db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(recordId);
+          let provenance = null;
+          if (options.authz) {
+            const read = name => this._tableColumns(name).length ? this.db.prepare(`SELECT * FROM ${name} WHERE tenant_id = ?`).all(change.tenantId) : [];
+            const validation = validateSyncMutation(change, { ...options.authz, deviceId: options.authz.deviceId || deviceId }, {
+              courses: read('courses'), schedules: read('schedules'), existing,
+            });
+            provenance = validation.provenance;
+            if (validation.decision === 'review') {
+              this.recordSyncRejection({ operationId: change.id, actorUserId: provenance.actorUserId,
+                actorTeacherId: provenance.actorTeacherId, sourceDeviceId: provenance.sourceDeviceId,
+                tableName: table, recordId, reasonCode: validation.code, payload: record });
+              results.errors.push({ table, id: recordId, error: validation.code, review: true });
+              continue;
+            }
+            if (validation.decision === 'conflict') {
+              results.conflicts++;
+              this.recordSyncConflict(change, existing, { deviceId });
+              continue;
+            }
+          }
           const baseVersion = record._base_version || change.baseVersion || null;
           const riskLevel = record._risk_level || change.riskLevel || 'medium';
           const existingVersion = existing?.updated_at || null;
@@ -1436,6 +1464,18 @@ class DatabaseService {
             ).run(...insertKeys.map(k => insertRecord[k]));
           }
           results.applied++;
+          if (provenance) {
+            this.db.prepare(`INSERT INTO sync_record_provenance
+              (table_name, record_id, created_by_user_id, updated_by_user_id, actor_teacher_id,
+               source_device_id, source_operation_id, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(table_name, record_id) DO UPDATE SET
+                updated_by_user_id=excluded.updated_by_user_id, actor_teacher_id=excluded.actor_teacher_id,
+                source_device_id=excluded.source_device_id, source_operation_id=excluded.source_operation_id,
+                updated_at=excluded.updated_at`).run(table, recordId, provenance.actorUserId,
+              provenance.actorUserId, provenance.actorTeacherId, provenance.sourceDeviceId,
+              provenance.sourceOperationId, now, now);
+          }
           this._auditSync({
             tenant_id: change.tenantId,
             client_id: change.deviceId,
@@ -1453,6 +1493,11 @@ class DatabaseService {
             `INSERT INTO sync_log (client_id, action, table_name, record_id, sync_time, status) VALUES (?, 'push', ?, ?, ?, 'success')`
           ).run(change.deviceId, table, recordId, now);
         } catch (e) {
+          if (options.authz && ['TEACHER_SCOPE_VIOLATION', 'SYNC_WRITE_FORBIDDEN', 'AUTHORIZATION_CONTEXT_REQUIRED'].includes(e.code)) {
+            this.recordSyncRejection({ operationId: change.id, actorUserId: options.authz.userId,
+              actorTeacherId: options.authz.teacherId, sourceDeviceId: options.authz.deviceId || deviceId,
+              tableName: table, recordId, reasonCode: e.code, payload: record });
+          }
           this._auditSync({
             tenant_id: change.tenantId,
             client_id: change.deviceId,
