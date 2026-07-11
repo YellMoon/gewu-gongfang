@@ -478,6 +478,8 @@ CREATE TABLE IF NOT EXISTS questions (
   storage_state TEXT NOT NULL DEFAULT 'local_draft' CHECK(storage_state IN ('local_draft', 'host_committed')),
   committed_at TEXT,
   committed_by_device_id TEXT,
+  source_device_id TEXT,
+  owner_user_id TEXT,
   deleted INTEGER DEFAULT 0,
   deleted_at TEXT,
   created_at TEXT NOT NULL,

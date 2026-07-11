@@ -159,12 +159,14 @@ function requireWriteAccess(req, res, next) {
   }
   if (!req.user) return sendAuthError(res, 401, '未登录', 'UNAUTHORIZED');
 
-  const allowedRoles = (process.env.WRITE_ROLES || 'admin,operator')
+  const allowedRoles = (process.env.WRITE_ROLES || 'super_admin,admin,operator,teacher')
     .split(',')
     .map(role => role.trim())
     .filter(Boolean);
 
-  if (!allowedRoles.includes(req.user.role)) {
+  const studentHostDeleteCandidate = req.user.role === 'student' && req.baseUrl === '/api/question-bank'
+    && req.method === 'DELETE' && /^\/questions\/[^/]+$/.test(req.path);
+  if (!allowedRoles.includes(req.user.role) && !studentHostDeleteCandidate) {
     return sendAuthError(res, 403, '无写入权限', 'FORBIDDEN');
   }
   return next();

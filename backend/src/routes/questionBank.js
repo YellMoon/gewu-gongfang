@@ -326,7 +326,7 @@ router.post('/questions', (req, res) => {
   try {
     const db = getInstance().db;
     const tId = tenantId(req);
-    const result = questionBank.createQuestion(db, req.body, tId);
+    const result = questionBank.createQuestion(db, req.body, tId, req.authz || {});
     const embedding = searchService.upsertQuestionEmbedding(db, result.id, { tenantId: tId });
     searchService.schedulePendingJobs(db);
     res.json({ success: true, ...result, embedding });

@@ -20,6 +20,7 @@ import {
   removeQuestionLocalRecord,
 } from '../services/questionLocalStore';
 const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
+const { deleteQuestionViaApi } = require('../services/questionDeleteApi');
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -336,6 +337,22 @@ const QuestionBankEdit: React.FC = () => {
     });
     if (ids.length === 0) { message.warning('No selected question can be deleted from this device'); return; }
     const db = (window as any).dbService;
+    const session = JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null') || {};
+    const settled = await Promise.allSettled(ids.map(async id => {
+      const question = questions.find(item => item.id === id);
+      const ok = question?.storage_state === 'host_committed'
+        ? (await deleteQuestionViaApi(fetch, `${API_BASE}/questions/${id}`, session)).ok
+        : Boolean(db?.deleteQuestion?.(id));
+      if (!ok) throw new Error('DELETE_FAILED');
+      if (question?.storage_state === 'local_draft') await removeQuestionLocalRecord(id, deleteContext);
+      return id;
+    }));
+    const succeeded = settled.filter((item): item is PromiseFulfilledResult<string> => item.status === 'fulfilled').map(item => item.value);
+    setQuestions(prev => prev.filter(item => !succeeded.includes(item.id)));
+    setQuestionTotal(prev => Math.max(0, prev - succeeded.length));
+    setSelectedRowKeys(prev => prev.filter(id => !succeeded.includes(id)));
+    message.info(`Deleted ${succeeded.length}; failed ${selectedRowKeys.length - succeeded.length}`);
+    return;
     for (const id of ids) {
       try {
         const res = await fetch(`${API_BASE}/questions/${id}`, { method: 'DELETE' });

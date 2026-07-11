@@ -50,8 +50,12 @@ async function remove(base, id, bearer, deviceId) {
   return { status: response.status, body: await response.json() };
 }
 function committed(id) {
-  return questionBank.createQuestion(service.db, { id, stem: id, type: 'fill', storage_state: 'host_committed',
+  const created = questionBank.createQuestion(service.db, { id, stem: id, type: 'fill', storage_state: 'host_committed',
     assets: [{ oss_key: `question-bank/assets/images/kept.png`, file_name: 'kept.png' }] });
+  return questionBank.markQuestionHostCommitted(service.db, created.id, {
+    runtimeNodeRole:'primary-host', tokenUse:'desktop-session', tokenDeviceId:'host-device',
+    deviceId:'host-device', deviceTrusted:true,
+  });
 }
 
 (async () => {

@@ -59,6 +59,8 @@ function inspectQuestionBankStore(root) {
   const file = manifestPath(root);
   if (!fs.existsSync(file)) throw new Error('question bank manifest is missing');
   const manifest = JSON.parse(fs.readFileSync(file, 'utf-8'));
+  if (!manifest.storeId || typeof manifest.storeId !== 'string') throw new Error('question bank manifest storeId is invalid');
+  if (!Number.isInteger(Number(manifest.schemaVersion)) || Number(manifest.schemaVersion) < 1) throw new Error('question bank manifest schemaVersion is invalid');
   const missingDirs = requiredDirs(root).filter(dir => !fs.existsSync(dir));
   return { available: missingDirs.length === 0, root, manifest, missingDirs };
 }

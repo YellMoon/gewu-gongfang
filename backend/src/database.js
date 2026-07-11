@@ -8,6 +8,7 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { getMiniappLoginDenialReason } = require('./services/miniappAuthPolicy');
 const { validateSyncMutation } = require('./services/syncScopeService');
+const { findQuestionBankStore } = require('./services/questionBankStorageService');
 const { scopeBusinessSnapshot } = require('./services/dataScopeService');
 const {
   SUPER_ADMIN_PHONE,
@@ -249,6 +250,8 @@ class DatabaseService {
     addColumn('storage_state', "TEXT NOT NULL DEFAULT 'local_draft'");
     addColumn('committed_at', 'TEXT');
     addColumn('committed_by_device_id', 'TEXT');
+    addColumn('source_device_id', 'TEXT');
+    addColumn('owner_user_id', 'TEXT');
     addColumn('deleted_at', 'TEXT');
     this.db.prepare("UPDATE questions SET subject = '物理' WHERE subject IS NULL OR subject = ''").run();
     this.db.prepare("UPDATE questions SET exam_type = '其他' WHERE exam_type IS NULL OR exam_type = ''").run();
@@ -259,7 +262,8 @@ class DatabaseService {
     this.db.prepare("UPDATE questions SET created_by = '' WHERE created_by IS NULL").run();
     this.db.prepare("UPDATE questions SET storage_state = 'local_draft' WHERE storage_state IS NULL OR storage_state NOT IN ('local_draft', 'host_committed')").run();
     const questionBankRoot = process.env.QUESTION_BANK_ROOT;
-    if (questionBankRoot && fs.existsSync(path.join(questionBankRoot, 'manifest.json'))) {
+    const verifiedStore = questionBankRoot ? findQuestionBankStore([questionBankRoot], { storeId: process.env.QUESTION_BANK_STORE_ID || undefined }) : null;
+    if (verifiedStore?.available && verifiedStore.manifest?.storeId && Number(verifiedStore.manifest.schemaVersion) >= 1) {
       const committedAt = this._now();
       this.db.prepare(`UPDATE questions
         SET storage_state = 'host_committed', committed_at = COALESCE(committed_at, ?),
