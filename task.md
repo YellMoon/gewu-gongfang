@@ -57,7 +57,7 @@ Complete the current release after WeChat upload whitelist is ready:
 
 # Task: 2026-07-11 Desktop Sync Page Simplification
 
-Status: design approved; specification pending user review
+Status: implemented, verified, packaged, published, and pushed
 
 ## Objective
 
@@ -68,13 +68,13 @@ Simplify the desktop data-sync page by adapting its default content to the confi
 - [x] Inspect the current sync page and underlying one-click sync behavior.
 - [x] Confirm role-aware information architecture.
 - [x] Confirm the client-side primary action and its data-direction wording.
-- [ ] Write and review the design specification.
-- [ ] Write an implementation plan.
-- [ ] Add focused tests before changing production behavior.
-- [ ] Implement the role-aware simplified page.
-- [ ] Verify unit tests, build, desktop and narrow rendered layouts, and primary interactions.
-- [ ] Commit and push to `gewu/master`.
-- [ ] Bump the desktop version, package Windows installer, publish the OSS update feed, rebuild Node native dependencies, and verify the release output.
+- [x] Write and review the design specification.
+- [x] Write an implementation plan.
+- [x] Add focused tests before changing production behavior.
+- [x] Implement the role-aware simplified page.
+- [x] Verify unit tests, build, desktop and narrow rendered layouts, and primary interactions.
+- [x] Commit and push to `gewu/master`.
+- [x] Bump the desktop version, package Windows installer, publish the OSS update feed, rebuild Node native dependencies, and verify the release output.
 
 ## Bottom-level logic
 
