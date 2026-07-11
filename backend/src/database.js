@@ -357,13 +357,13 @@ class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_authorization_users_review ON users(review_status, role);
       CREATE INDEX IF NOT EXISTS idx_authorization_audit_target ON authorization_audit_log(target_user_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_sync_rejections_operation ON sync_rejections(operation_id, created_at);
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_single_super_admin_identity
-        ON users(is_super_admin_identity) WHERE is_super_admin_identity = 1;
     `);
     const migrated = this.db.prepare('SELECT 1 FROM authorization_migrations WHERE name = ?')
       .get(AUTHORIZATION_MIGRATION_NAME);
     if (!migrated) this._migrateAuthorizationUsers();
     this._enforceCanonicalSuperAdmin();
+    this.db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_single_super_admin_identity
+      ON users(is_super_admin_identity) WHERE is_super_admin_identity = 1`).run();
   }
 
   _migrateAuthorizationUsers() {

@@ -277,6 +277,78 @@ try {
     'SELECT COUNT(*) AS count FROM users WHERE is_super_admin_identity = 1'
   ).get().count, 1);
   legacyRestarted.close();
+
+  function createFlagConflictDatabase(name, rows) {
+    const conflictWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), `${name}-`));
+    const conflictPath = path.join(conflictWorkspace, 'scheduling.db');
+    const conflictDb = new Database(conflictPath);
+    conflictDb.exec(`CREATE TABLE users (
+      id TEXT PRIMARY KEY, phone TEXT, name TEXT, nickname TEXT, role TEXT,
+      status INTEGER DEFAULT 1, login_enabled INTEGER DEFAULT 1, student_id TEXT,
+      linked_student_ids TEXT, teacher_id TEXT, review_status TEXT DEFAULT 'approved',
+      reviewed_by TEXT, reviewed_at TEXT, is_super_admin_identity INTEGER DEFAULT 0,
+      deleted INTEGER DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    )`);
+    const insert = conflictDb.prepare(`INSERT INTO users
+      (id, phone, name, role, status, login_enabled, review_status, is_super_admin_identity,
+       deleted, created_at, updated_at) VALUES (?, ?, ?, 'super_admin', 1, 1, 'approved', 1, 0, ?, ?)`);
+    rows.forEach(row => insert.run(row.id, row.phone, row.id, oldNow, oldNow));
+    conflictDb.close();
+    return conflictPath;
+  }
+
+  process.env.DB_PATH = createFlagConflictDatabase('gewu-canonical-flag-conflict', [
+    { id: 'miniapp-admin-13732250653', phone: '13732250653' },
+    { id: 'canonical-duplicate', phone: '137-3225-0653' },
+  ]);
+  process.env.READ_DB_PATH = process.env.DB_PATH;
+  const canonicalConflictService = new DatabaseService();
+  assert.deepStrictEqual(
+    canonicalConflictService.db.prepare(
+      'SELECT id FROM users WHERE is_super_admin_identity = 1 ORDER BY id'
+    ).all().map(row => row.id),
+    ['miniapp-admin-13732250653']
+  );
+  assert.throws(
+    () => canonicalConflictService.db.prepare(
+      'UPDATE users SET is_super_admin_identity = 1 WHERE id = ?'
+    ).run('canonical-duplicate'),
+    error => error && error.code === 'SQLITE_CONSTRAINT_UNIQUE'
+  );
+  canonicalConflictService.close();
+
+  process.env.DB_PATH = createFlagConflictDatabase('gewu-ambiguous-flag-conflict', [
+    { id: 'legacy-fixed-a', phone: '13732250653' },
+    { id: 'legacy-fixed-b', phone: '137 3225 0653' },
+  ]);
+  process.env.READ_DB_PATH = process.env.DB_PATH;
+  const ambiguousConflictService = new DatabaseService();
+  const ambiguousRows = ambiguousConflictService.db.prepare(
+    'SELECT role, review_status, login_enabled, is_super_admin_identity FROM users WHERE phone = ? ORDER BY id'
+  ).all('13732250653');
+  assert.strictEqual(ambiguousRows.length, 2);
+  ambiguousRows.forEach(row => {
+    assert.deepStrictEqual(
+      [row.role, row.review_status, row.login_enabled, row.is_super_admin_identity],
+      ['pending', 'pending', 0, 0]
+    );
+  });
+  assert.throws(
+    () => ambiguousConflictService.reviewUser({
+      actorPhone: '13732250653', userId: 'legacy-fixed-a', role: 'admin',
+    }),
+    error => error && error.code === 'SUPER_ADMIN_IDENTITY_CONFLICT'
+  );
+  ambiguousConflictService.db.prepare(
+    'UPDATE users SET is_super_admin_identity = 1 WHERE id = ?'
+  ).run('legacy-fixed-a');
+  assert.throws(
+    () => ambiguousConflictService.db.prepare(
+      'UPDATE users SET is_super_admin_identity = 1 WHERE id = ?'
+    ).run('legacy-fixed-b'),
+    error => error && error.code === 'SQLITE_CONSTRAINT_UNIQUE'
+  );
+  ambiguousConflictService.close();
   console.log('database authorization checks passed');
 } finally {
   if (previous.db === undefined) delete process.env.DB_PATH; else process.env.DB_PATH = previous.db;

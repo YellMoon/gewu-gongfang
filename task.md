@@ -107,6 +107,8 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 - Legacy identity compatibility RED: a single formatted fixed-phone row with a historical noncanonical ID was joined by the exact-phone seed and became locked in a conflict.
 - Legacy identity compatibility GREEN: `is_super_admin_identity` plus a partial unique index persists exactly one selected identity; normalized seeding reuses a single legacy fixed-phone row, which remains canonical across restart and can review users.
 - Selection order is fixed seed ID, then one persisted identity flag, then one unambiguous fixed-phone legacy row; multiple unflagged noncanonical candidates remain a conflict and are never arbitrarily promoted.
+- Index-order RED: a historical database containing two identity flags failed during startup with `UNIQUE constraint failed` before identity recovery could run.
+- Index-order GREEN: startup now performs additive schema work, migration, and atomic identity recovery before creating the partial unique index; canonical conflicts retain only the canonical flag, while ambiguous noncanonical conflicts clear all flags and disable every candidate.
 
 ---
 
