@@ -42,15 +42,22 @@ function attachAuthorizationContext(req, tokenUser) {
     return false;
   }
   req.user = user;
-  const deviceId = req.headers['x-device-id'] || null;
-  let isPrimaryHost = false;
-  // A device id is public/replayable. Until a non-consuming scoped credential
-  // verifier exists for request auth, committed deletion stays fail-closed.
-  isPrimaryHost = false;
+  const tokenDeviceId = tokenUser?.deviceId || null;
+  const headerDeviceId = req.headers['x-device-id'] || null;
+  const deviceId = tokenDeviceId && tokenDeviceId === headerDeviceId ? tokenDeviceId : null;
+  const device = deviceId ? getInstance().db.prepare('SELECT * FROM sync_devices WHERE id = ?').get(deviceId) : null;
+  const userApproved = user.review_status === 'approved' && user.status !== 'inactive' && user.status !== 0 && user.login_enabled !== 0;
+  const isPrimaryHost = process.env.GEWU_NODE_ROLE === 'primary-host'
+    && tokenUser?.token_use === 'desktop-session' && device?.trusted === 1 && device?.active === 1
+    && device?.owner_user_id === user.id && userApproved;
   req.authz = {
     userId: user?.id || null, phone: user?.phone || null, role: roleForUser(user),
     teacherId: user?.teacher_id || null, studentId: user?.student_id || null,
-    deviceId, clientType: req.headers['x-client-type'] || 'unknown', isPrimaryHost,
+    deviceId, tokenDeviceId, tokenUse: tokenUser?.token_use || null,
+    runtimeNodeRole: process.env.GEWU_NODE_ROLE || 'desktop-client',
+    deviceTrusted: device?.trusted === 1, deviceActive: device?.active === 1,
+    deviceOwnerUserId: device?.owner_user_id || null, userApproved,
+    clientType: req.headers['x-client-type'] || 'unknown', isPrimaryHost,
   };
   return true;
 }

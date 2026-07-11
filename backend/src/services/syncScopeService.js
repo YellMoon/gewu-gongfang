@@ -1,4 +1,5 @@
 const { assertRecordWritable } = require('./dataScopeService');
+const { canDeleteQuestion } = require('./questionDeletionPolicy');
 
 function error(code, message = code) {
   const err = new Error(message);
@@ -23,15 +24,20 @@ function validateSyncMutation(operation = {}, authz = {}, lookup = {}) {
   if (authz.kind === 'student' || authz.kind === 'pending') throw error('SYNC_WRITE_FORBIDDEN');
   if (!authz || !authz.kind || !authz.userId || !authz.deviceId) throw error('AUTHORIZATION_CONTEXT_REQUIRED');
   const provenance = buildSyncProvenance(operation, authz);
+  const table = normalizeTable(operation.table);
+  const existing = lookup.existing || null;
+  if (table === 'questions' && operation.action === 'delete' && existing?.storage_state === 'host_committed') {
+    if (!canDeleteQuestion({ ...authz, storageState: 'host_committed', gateway: authz.gateway !== false })) {
+      throw error('HOST_DESKTOP_REQUIRED_FOR_COMMITTED_DELETE');
+    }
+  }
   if (authz.kind === 'admin') return { decision: 'apply', provenance };
   if (authz.kind !== 'teacher' || !authz.teacherId) throw error('AUTHORIZATION_CONTEXT_REQUIRED');
 
-  const table = normalizeTable(operation.table);
   // Question-bank content is shared rather than teacher-owned. Task 6 adds the
   // committed-storage distinction; until then delete here represents a local draft.
   if (table === 'questions') return { decision: 'apply', provenance };
   const data = operation.data || operation.payload || {};
-  const existing = lookup.existing || null;
   try {
     if (existing) assertRecordWritable(table, existing, authz, lookup);
   } catch (err) {

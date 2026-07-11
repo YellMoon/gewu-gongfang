@@ -442,6 +442,7 @@ class BrowserDatabaseService {
       has_image: this.detectQuestionHasImage(question),
       has_formula: this.detectQuestionHasFormula(question),
       created_by: question.created_by || '',
+      storage_state: question.storage_state || 'local_draft',
       knowledge_ids: question.knowledge_ids || question.knowledge_point_ids || [],
       model_ids: question.model_ids || question.model_point_ids || [],
     };
@@ -1748,6 +1749,9 @@ class BrowserDatabaseService {
       has_image: question.has_image !== undefined ? question.has_image : /<img|!\[/.test(content),
       has_formula: question.has_formula !== undefined ? question.has_formula : /\$\$|\\\[|\\\(/.test(content),
       created_by: question.created_by || '',
+      storage_state: 'local_draft',
+      sourceDeviceId: this.getSyncDeviceId(),
+      ownerUserId: question.ownerUserId || question.created_by || '',
       created_at: now,
       updated_at: now
     };
