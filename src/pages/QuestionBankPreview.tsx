@@ -13,6 +13,7 @@ import {
 import type { Question, KnowledgeNode, QuestionVersion } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
+const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
 import { splitSearchTerms } from '../utils/highlightText';
 import { toggleQuestionBasket, useQuestionBasketIds } from '../components/QuestionBasket';
@@ -192,7 +193,21 @@ const QuestionBankPreview: React.FC = () => {
   const [contextMenuNode, setContextMenuNode] = useState<{ id: string; name: string; x: number; y: number } | null>(null);
   const [deleteConfirmNode, setDeleteConfirmNode] = useState<{ id: string; name: string } | null>(null);
   const [questionBankStorageStatus, setQuestionBankStorageStatus] = useState<QuestionBankStorageStatus | null>(null);
+  const [deleteContext, setDeleteContext] = useState<{ capabilities: string[]; deviceId?: string; userId?: string }>({ capabilities: [] });
   const [form] = Form.useForm();
+
+  useEffect(() => {
+    try {
+      const session = JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null');
+      const token = session?.token || session?.accessToken;
+      const deviceId = session?.deviceId;
+      const userId = session?.user?.id || session?.userId;
+      if (!token || !deviceId || !userId) return;
+      fetch('/api/permissions/my', { headers: { authorization: `Bearer ${token}`, 'x-device-id': deviceId } })
+        .then(response => response.json()).then(data => setDeleteContext({ capabilities: data.capabilities || [], deviceId, userId }))
+        .catch(() => undefined);
+    } catch (_error) {}
+  }, []);
 
   // Knowledge multi-select search state
   const [knowledgeSelectedIds, setKnowledgeSelectedIds] = useState<(string | undefined)[]>([undefined]);
@@ -586,6 +601,9 @@ const QuestionBankPreview: React.FC = () => {
   };
 
   const handleDelete = (id: string) => {
+    const question = questions.find(item => item.id === id);
+    const presentation = questionDeletePresentation(question, deleteContext);
+    if (!presentation.enabled) { message.warning(presentation.reason); return; }
     (window as any).dbService.deleteQuestion(id);
     loadData();
   };
@@ -602,7 +620,10 @@ const QuestionBankPreview: React.FC = () => {
 
   const handleBatchDelete = () => {
     const db = (window as any).dbService;
-    selectedRowKeys.forEach(id => db.deleteQuestion(id));
+    selectedRowKeys.filter(id => {
+      const question = questions.find(item => item.id === id);
+      return questionDeletePresentation(question, deleteContext).enabled;
+    }).forEach(id => db.deleteQuestion(id));
     setSelectedRowKeys([]);
     loadData();
     message.success(`已删除 ${selectedRowKeys.length} 题`);
@@ -884,7 +905,7 @@ const QuestionBankPreview: React.FC = () => {
     {
       title: '操作', key: 'action', width: 130,
       render: (_: any, r: Question) => (
-        <Space size={0}>
+        <Space size={0} className={questionDeletePresentation(r, deleteContext).visible ? '' : 'question-delete-hidden'}>
           <Tooltip title="编辑"><Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEditModal(r)} /></Tooltip>
           <Tooltip title="创建变式"><Button type="link" size="small" icon={<CopyOutlined />} onClick={() => handleCopy(r.id)} /></Tooltip>
           <Popconfirm title="确定删除？" onConfirm={() => handleDelete(r.id)}>
@@ -1426,7 +1447,3 @@ const QuestionBankPreview: React.FC = () => {
 };
 
 export default QuestionBankPreview;
-
-
-
-

@@ -19,6 +19,7 @@ import {
   queryQuestionPage,
   removeQuestionLocalRecord,
 } from '../services/questionLocalStore';
+const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -97,8 +98,22 @@ const QuestionBankEdit: React.FC = () => {
   const [imageFiles, setImageFiles] = useState<UploadFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [trashVisible, setTrashVisible] = useState(false);
+  const [deleteContext, setDeleteContext] = useState<{ capabilities: string[]; deviceId?: string; userId?: string }>({ capabilities: [] });
   const [form] = Form.useForm();
   const [batchForm] = Form.useForm();
+
+  useEffect(() => {
+    try {
+      const session = JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null');
+      const token = session?.token || session?.accessToken;
+      const deviceId = session?.deviceId;
+      const userId = session?.user?.id || session?.userId;
+      if (!token || !deviceId || !userId) return;
+      fetch('/api/permissions/my', { headers: { authorization: `Bearer ${token}`, 'x-device-id': deviceId } })
+        .then(response => response.json()).then(data => setDeleteContext({ capabilities: data.capabilities || [], deviceId, userId }))
+        .catch(() => undefined);
+    } catch (_error) {}
+  }, []);
 
   const knowledgeOptions = useMemo(() => buildTreeOptions(knowledgeNodes), [knowledgeNodes]);
   const modelOptions = useMemo(() => buildTreeOptions(modelNodes), [modelNodes]);
@@ -269,6 +284,8 @@ const QuestionBankEdit: React.FC = () => {
   };
 
   const deleteQuestion = async (question: Question) => {
+    const presentation = questionDeletePresentation(question, deleteContext);
+    if (!presentation.enabled) { message.warning(presentation.reason); return; }
     const db = (window as any).dbService;
     let remoteDeleted = false;
     try {
@@ -277,8 +294,8 @@ const QuestionBankEdit: React.FC = () => {
       if (!data.success) throw new Error(data.error || '删除失败');
       remoteDeleted = true;
     } catch (_err) {}
-    const localDeleted = db?.deleteQuestion?.(question.id);
-    await removeQuestionLocalRecord(question.id);
+    const localDeleted = question.storage_state === 'local_draft' ? db?.deleteQuestion?.(question.id) : false;
+    if (question.storage_state === 'local_draft') await removeQuestionLocalRecord(question.id, deleteContext);
     if (!remoteDeleted && !localDeleted) {
       message.error('删除失败');
       return;
@@ -313,7 +330,11 @@ const QuestionBankEdit: React.FC = () => {
       message.warning('请先选择试题');
       return;
     }
-    const ids = [...selectedRowKeys];
+    const ids = selectedRowKeys.filter(id => {
+      const question = questions.find(item => item.id === id);
+      return question && questionDeletePresentation(question, deleteContext).enabled;
+    });
+    if (ids.length === 0) { message.warning('No selected question can be deleted from this device'); return; }
     const db = (window as any).dbService;
     for (const id of ids) {
       try {
@@ -321,8 +342,11 @@ const QuestionBankEdit: React.FC = () => {
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'delete failed');
       } catch (_err) {}
-      db?.deleteQuestion?.(id);
-      await removeQuestionLocalRecord(id);
+      const question = questions.find(item => item.id === id);
+      if (question?.storage_state === 'local_draft') {
+        db?.deleteQuestion?.(id);
+        await removeQuestionLocalRecord(id, deleteContext);
+      }
     }
     setQuestions(prev => prev.filter(item => !ids.includes(item.id)));
     setQuestionTotal(prev => Math.max(0, prev - ids.length));
@@ -476,7 +500,7 @@ const QuestionBankEdit: React.FC = () => {
                 knowledgeNames={(question.knowledge_ids || []).map(id => knowledgeNodes.find(item => item.id === id)?.name || id)}
                 modelNames={(question.model_ids || []).map(id => modelNodes.find(item => item.id === id)?.name || id)}
                 onEdit={() => openEditor(question)}
-                onDelete={() => deleteQuestion(question)}
+                onDelete={questionDeletePresentation(question, deleteContext).visible ? () => deleteQuestion(question) : undefined}
               />
             ))}
                 </Space>
