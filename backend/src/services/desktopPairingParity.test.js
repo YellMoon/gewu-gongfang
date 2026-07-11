@@ -9,4 +9,7 @@ for (const file of ['backend/src/routes/desktopPairing.js', 'gateway/src/routes/
   assert.ok(source.includes('pairing_code AS pairingCode') && !source.includes('secret_hash AS'), 'pending API must expose safe explicit fields only');
 }
 assert.ok(!fs.readFileSync('gateway/src/services/desktopPairingService.js', 'utf8').includes('backend/src'));
+const gatewayRoute=fs.readFileSync('gateway/src/routes/desktopPairing.js','utf8');
+assert.ok(gatewayRoute.includes('DEVICE_OWNER_CONFLICT')&&gatewayRoute.includes('COALESCE(cloud_devices.owner_user_id'),
+  'gateway approval must reject cross-owner devices before its transaction and never overwrite owner');
 console.log('desktop pairing parity tests passed');

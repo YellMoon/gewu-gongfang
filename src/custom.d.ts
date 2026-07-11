@@ -18,6 +18,7 @@ declare module './services/oneClickSyncTransports.mjs' {
 declare module './services/desktopAuthorizationSession.mjs' {
   export const readDesktopAuthorizationSession: any;
 }
+declare module './services/pairingApiBase.mjs' { export const resolvePairingApiBase: any; }
 
 interface Window {
   api?: {
