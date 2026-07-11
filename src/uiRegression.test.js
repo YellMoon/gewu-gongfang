@@ -37,9 +37,30 @@ const cloudSync = read('src/pages/CloudSync.tsx');
 const operateLog = read('src/pages/OperateLog.tsx');
 const syncApi = read('src/services/syncApi.ts');
 const cloudRelayHostApi = read('src/services/cloudRelayHostApi.ts');
+const permissionManager = read('src/pages/PermissionManager.tsx');
+const permissionManagerCss = read('src/pages/PermissionManager.css');
+const authorizationApi = read('src/services/authorizationApi.ts');
 const scheduleStorage = read('src/utils/scheduleStorage.mjs');
 const packageJson = read('package.json');
 const packageManifest = JSON.parse(packageJson);
+
+assert(
+  permissionManager.includes("capabilities.includes('users:review')") &&
+  permissionManager.includes('authorization-review-actions') &&
+  permissionManager.includes('Modal.confirm') &&
+  permissionManager.includes('teacher-not-found') &&
+  permissionManager.includes('duplicate-teacher-phone') &&
+  permissionManager.includes('loading={loading || saving}') &&
+  permissionManagerCss.includes(':focus-visible'),
+  'desktop permission manager should expose an accessible capability-gated review workbench with binding and saving states'
+);
+assert(
+  authorizationApi.includes('export async function listUsers') &&
+  authorizationApi.includes('export async function reviewUser') &&
+  authorizationApi.includes('export async function disableUser') &&
+  authorizationApi.includes('export async function getMyCapabilities'),
+  'desktop authorization API should expose the unified user-review contract'
+);
 
 assert(
   systemSettings.includes('/api/question-bank/storage/status') &&
