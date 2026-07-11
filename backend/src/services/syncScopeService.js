@@ -27,6 +27,8 @@ function validateSyncMutation(operation = {}, authz = {}, lookup = {}) {
   if (authz.kind !== 'teacher' || !authz.teacherId) throw error('AUTHORIZATION_CONTEXT_REQUIRED');
 
   const table = normalizeTable(operation.table);
+  // Question-bank content is shared rather than teacher-owned. Task 6 adds the
+  // committed-storage distinction; until then delete here represents a local draft.
   if (table === 'questions' && operation.action !== 'delete') return { decision: 'apply', provenance };
   const data = operation.data || operation.payload || {};
   const existing = lookup.existing || null;

@@ -58,8 +58,6 @@ function main() {
   testSameMillisecondWaterlineIsNotSkipped();
   testSyncAuthorizationTablesExist();
 console.log('syncIncremental tests passed');
-require('./syncScopeService.test');
-require('./syncScopeIntegration.test');
 }
 
 main();

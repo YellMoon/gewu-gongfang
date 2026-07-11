@@ -45,9 +45,10 @@ assert.ok(
   hostRelay.includes('applySyncChanges'),
   'host task processor should apply desktop sync changes to the primary host database'
 );
-assert.ok(cloudRelay.includes('authorizationContext: req.user'), 'relay must derive actor from authenticated persisted user');
-assert.ok(!cloudRelay.includes('authorizationContext: req.body'), 'relay must not trust payload actor context');
+assert.ok(cloudRelay.includes('actorUserId: req.user'), 'relay may forward only an authenticated actor id hint');
+assert.ok(!cloudRelay.includes('authorizationContext'), 'relay must not forward trusted role or teacher context');
 assert.ok(hostRelay.includes('authz,'), 'host apply must use the shared transaction validator');
+assert.ok(hostRelay.includes('consumeSyncAuthorizationContext'), 'host must consume its own device/actor-bound token');
 assert.ok(
   packageJson.includes('backend/src/routes/desktopCloudSync.test.js'),
   'desktop cloud sync route test should run in npm test'

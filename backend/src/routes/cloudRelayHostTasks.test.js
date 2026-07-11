@@ -17,9 +17,10 @@ assert.ok(route.includes('completeMiniappTask(task.id'), 'host should complete m
 assert.ok(route.includes("router.post('/tasks/process'"), 'host should expose a process pending tasks endpoint');
 assert.ok(route.includes('authOptionsFromRequest'), 'host route should forward authenticated maintenance requests to cloud relay');
 assert.ok(route.includes('hostToken'), 'host route should forward a host token to protected cloud relay routes');
-assert.ok(route.includes('payload.authorizationContext'), 'desktop sync host apply must require relay-authenticated actor context');
+assert.ok(route.includes('consumeSyncAuthorizationContext'), 'desktop sync host must rebuild authz from host DB and a host-issued token');
 assert.ok(route.includes('authz,'), 'desktop sync host apply must pass actor context into the shared DB validator');
 assert.ok(route.includes('AUTHORIZATION_CONTEXT_REQUIRED'), 'desktop sync without authenticated actor/device must fail closed');
+assert.ok(!route.includes('payload.authorizationContext'), 'desktop sync host must not trust relay payload role or teacher context');
 assert.ok(client.includes('x-gewu-host-token'), 'cloud relay client should send the host token header');
 assert.ok(route.includes('req.headers.authorization'), 'host route should read Authorization from incoming requests');
 assert.ok(packageJson.includes('backend/src/routes/cloudRelayHostTasks.test.js'), 'host task processing test should run in npm test');

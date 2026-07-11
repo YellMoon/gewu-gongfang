@@ -24,6 +24,8 @@ assert.throws(() => validateSyncMutation(op('courses', { id: 'c1' }), { kind: 's
 assert.throws(() => validateSyncMutation(op('courses', { id: 'c1' }), { kind: 'pending', userId: 'p' }, lookup), e => e.code === 'SYNC_WRITE_FORBIDDEN');
 assert.strictEqual(validateSyncMutation(op('courses', { id: 'c2' }), { kind: 'admin', userId: 'admin', deviceId: 'd' }, lookup).decision, 'apply');
 assert.strictEqual(validateSyncMutation(op('questions', { id: 'q1' }), teacher, lookup).decision, 'apply');
+assert.strictEqual(validateSyncMutation({ ...op('questions', { id: 'local-draft' }), action: 'delete' }, teacher, lookup).decision, 'apply',
+  'question bank is shared; local draft deletion stays allowed until Task 6 distinguishes committed records');
 assert.strictEqual(validateSyncMutation(op('courses', { id: 'c1', _base_version: 'old' }), teacher, { ...lookup, existing: { updated_at: 'new' } }).decision, 'conflict');
 
 const provenance = buildSyncProvenance({ ...op('courses', { id: 'c1' }), actorUserId: 'evil', actorTeacherId: 't2', sourceDeviceId: 'evil', sourceOperationId: 'evil' }, teacher);

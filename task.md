@@ -122,6 +122,11 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 - RED: `node backend/src/services/syncScopeService.test.js` initially exited 1 because `syncScopeService` did not exist.
 - GREEN: sync scope pure/integration, incremental sync, transports, mutation queue, one-click confirmation, and cloud relay path checks pass.
 - Typecheck note: standalone TypeScript 4.9 cannot parse the installed newer `@types/node/ffi.d.ts`; the production build is used as the project compilation check.
+- Authorization closure: relay payload role/teacher claims are never trusted. The host reloads the approved active user and owned active device, verifies the current teacher binding, and atomically consumes a host-issued user/device/teacher/scope token. Queued work fails closed after revocation, rebinding, device spoofing, expiry, or token reuse.
+- Delivery-removal closure: additive `sync_delivery_scope` records only IDs actually delivered to each actor/device. Later pulls emit minimal delete tombstones for deleted or relationship-transferred records, including after process restart; records never visible to that recipient produce no tombstone.
+- Shared question-bank scope is intentional: teachers may create/update shared questions and delete unsynchronized local drafts. Task 6, not teacher ownership, distinguishes and protects host-committed deletion.
+- Review RED: the integration test exited 1 because unauthenticated `applySyncChanges` still wrote; tombstone and token-consumption assertions were then added before implementation.
+- Review GREEN: focused sync scope, relay-path, atomic token reuse, revocation/rebinding/device mismatch, provenance, and restart-persistent tombstone tests exit 0.
 
 ### Task 3 evidence: unified local and gateway review authorization
 
