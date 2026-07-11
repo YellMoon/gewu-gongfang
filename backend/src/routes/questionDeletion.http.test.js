@@ -50,7 +50,7 @@ databaseModule.getInstance = () => service;
 delete require.cache[require.resolve('../app')];
 const { createApp } = require('../app');
 const questionBank = require('../services/questionBankService');
-const { commitQuestionToBoundStore } = require('../services/questionBankStorageService');
+const { commitQuestionToBoundStore, updateCommittedQuestion } = require('../services/questionBankStorageService');
 
 function token(id, deviceId, tokenUse = 'desktop-session') {
   return jwt.sign({ id, deviceId, token_use: tokenUse }, process.env.JWT_SECRET,
@@ -79,6 +79,9 @@ function committed(id) {
   const listener = createApp().listen(0);
   const base = `http://127.0.0.1:${listener.address().port}`;
   try {
+    const introspection = await fetch(`${base}/api/auth/desktop-session`, { headers: { authorization: `Bearer ${token('host-admin','host-device')}`, 'x-device-id':'host-device' } });
+    assert.strictEqual(introspection.status, 200);
+    assert.deepStrictEqual((await introspection.json()).session, { userId:'host-admin', deviceId:'host-device', tokenUse:'desktop-session' });
     process.env.GEWU_NODE_ROLE = 'primary-host';
     const ordinaryBind = await jsonRequest(base, 'POST', '/api/question-bank/storage/bind', token('host-admin','host-device'), 'host-device', { root: qbRoot });
     assert.strictEqual(ordinaryBind.status, 403);
@@ -106,6 +109,15 @@ function committed(id) {
 
     process.env.GEWU_NODE_ROLE = 'primary-host';
     const success = committed('success');
+    const syncQuestion = committed('sync-update');
+    const syncAuthz = { kind:'admin', role:'admin', userId:'host-admin', deviceId:'host-device', runtimeNodeRole:'primary-host', tokenUse:'desktop-session', tokenDeviceId:'host-device', deviceTrusted:true, deviceActive:true, clientType:'desktop', userApproved:true, deviceOwnerUserId:'host-admin' };
+    const syncChange = { id:'sync-op', table:'questions', action:'update', tenantId:'default', data:{ id:'sync-update', stem:'synced committed update' }, updatedAt:new Date().toISOString() };
+    const withoutHook = service.applySyncChanges([syncChange], { deviceId:'host-device', authz:syncAuthz });
+    assert.strictEqual(withoutHook.applied, 0);
+    assert.strictEqual(withoutHook.errors[0].error, 'COMMITTED_QUESTION_STORAGE_UPDATE_REQUIRED');
+    const withHook = service.applySyncChanges([{ ...syncChange, id:'sync-op-hook' }], { deviceId:'host-device', authz:syncAuthz, storageHooks:{ updateCommittedQuestion:({change,tenantId})=>updateCommittedQuestion(change.data.id,{db:service.db,tenantId,authz:syncAuthz,runtime:syncAuthz,payload:change.data}) } });
+    assert.strictEqual(withHook.applied, 1);
+    assert.strictEqual(JSON.parse(fs.readFileSync(path.join(qbRoot,'questions','sync-update','question.json'),'utf8')).contents[0].stem,'synced committed update');
     process.env.GEWU_NODE_ROLE = 'desktop-client';
     const deniedCommittedUpdate = await jsonRequest(base, 'PUT', `/api/question-bank/questions/${success.id}`, token('approved-teacher','teacher-device'), 'teacher-device', { stem: 'forbidden update' });
     assert.strictEqual(deniedCommittedUpdate.status, 403);

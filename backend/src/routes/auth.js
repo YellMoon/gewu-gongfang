@@ -11,6 +11,14 @@ const {
 const { resolveWechatPhoneNumber } = require('../services/wechatMiniappService');
 
 const router = Router();
+const { authMiddleware } = require('../middleware/auth');
+
+router.get('/desktop-session', authMiddleware, (req, res) => {
+  if (req.authz?.tokenUse !== 'desktop-session' || req.authz?.clientType !== 'desktop' || !req.authz?.userApproved || !req.authz?.deviceId) {
+    return res.status(403).json({ success: false, code: 'TRUSTED_DESKTOP_SESSION_REQUIRED' });
+  }
+  res.json({ success: true, session: { userId: req.authz.userId, deviceId: req.authz.deviceId, tokenUse: req.authz.tokenUse } });
+});
 
 function isProductionRuntime() {
   return process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'prod';

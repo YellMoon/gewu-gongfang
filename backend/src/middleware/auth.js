@@ -19,7 +19,7 @@ function sendAuthError(res, status, message, code) {
 }
 
 function isDevAuthBypassed() {
-  return process.env.NODE_ENV === 'development' || !process.env.JWT_SECRET;
+  return process.env.NODE_ENV === 'test' && process.env.GEWU_TEST_AUTH_BYPASS === '1';
 }
 
 function getBearerToken(req) {

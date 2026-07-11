@@ -16,6 +16,7 @@ import { QUESTION_TYPES, normalizeQuestionType, questionTypeFromParser } from '.
 import QuestionRenderer from '../components/QuestionRenderer';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 const { verifyNativeQuestionDraft } = require('../services/desktopQuestionDeleteContext');
+const { createNativeQuestionDraft } = require('../services/nativeQuestionDraftCreate');
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -205,7 +206,7 @@ const QuestionBank: React.FC = () => {
     if (editing) {
       db.updateQuestion(editing.id, data);
     } else {
-      db.createQuestion(data);
+      await createNativeQuestionDraft(db, data);
     }
     setModalVisible(false);
     setEditing(null);
@@ -219,12 +220,12 @@ const QuestionBank: React.FC = () => {
     loadData();
   };
 
-  const handleCopy = (id: string) => {
+  const handleCopy = async (id: string) => {
     const q = questions.find(x => x.id === id);
     if (!q) return;
     const db = (window as any).dbService;
     const { id: oid, created_at, updated_at, ...rest } = q;
-    db.createQuestion({ ...rest });
+    await createNativeQuestionDraft(db, { ...rest });
     loadData();
     message.success('已创建变式题副本');
   };
@@ -390,14 +391,14 @@ const QuestionBank: React.FC = () => {
     setWordImporting(false);
   };
 
-  const importWordResults = (result: any) => {
+  const importWordResults = async (result: any) => {
     const db = (window as any).dbService;
     if (!db) { message.error('数据库未就绪'); return; }
     let added = 0;
     for (const q of (result.questions || [])) {
       try {
         const knowledge_ids = normalizeImportedKnowledgeIds(db, q);
-        db.createQuestion({
+        await createNativeQuestionDraft(db, {
           subject: '物理',
           type: questionTypeFromParser(q.question_types),
           difficulty: 3,

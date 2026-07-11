@@ -15,6 +15,7 @@ import { QUESTION_TYPES, normalizeQuestionType, questionTypeFromParser } from '.
 import QuestionRenderer from '../components/QuestionRenderer';
 import { prepareQuestionAssetsForStorage, stripQuestionAssetPayload } from '../services/questionAssetStore';
 import { reconcileQuestionLocalStore } from '../services/questionLocalStore';
+const { createNativeQuestionDraft } = require('../services/nativeQuestionDraftCreate');
 import {
   downloadImportValidationReport,
   validateImportQuestions,
@@ -729,7 +730,7 @@ const QuestionBankImport: React.FC = () => {
     if (editing) {
       db.updateQuestion(editing.id, data);
     } else {
-      db.createQuestion(data);
+      await createNativeQuestionDraft(db, data);
     }
     setModalVisible(false);
     setEditing(null);
@@ -1017,7 +1018,7 @@ const QuestionBankImport: React.FC = () => {
           model_point: q.model_point || '',
           model_ids,
         });
-        db.createQuestion(preparedQuestion);
+        await createNativeQuestionDraft(db, preparedQuestion);
         added++;
       } catch (e) { /* skip bad ones */ }
     }
