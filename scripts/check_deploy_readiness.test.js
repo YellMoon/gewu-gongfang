@@ -7,7 +7,7 @@ assert.ok(fs.existsSync(scriptPath), 'deploy readiness script should exist');
 
 const source = fs.readFileSync(scriptPath, 'utf-8');
 
-for (const name of ['DEPLOY_HOST', 'DEPLOY_PASSWORD', 'DEPLOY_KEY_PATH', 'BACKEND_JWT_SECRET']) {
+for (const name of ['DEPLOY_HOST', 'DEPLOY_PASSWORD', 'DEPLOY_KEY_PATH', 'BACKEND_JWT_SECRET', 'WECHAT_APPID', 'WECHAT_APPSECRET']) {
   assert.ok(source.includes(name), `deploy readiness should check ${name}`);
 }
 assert.ok(
@@ -18,5 +18,7 @@ assert.ok(
 assert.ok(source.includes('miniapp/project.config.json'), 'deploy readiness should check miniapp project config');
 assert.ok(source.includes('https://physicsedu.xyz/scheduling'), 'deploy readiness should check production miniapp API');
 assert.ok(source.includes('npm run miniapp:release-check'), 'deploy readiness should mention miniapp release check command');
+assert.ok(source.includes("require('dotenv')"), 'deploy readiness should load environment files itself');
+assert.ok(source.includes('.env.local'), 'deploy readiness should load the project .env.local file');
 
 console.log('deploy readiness checks passed');

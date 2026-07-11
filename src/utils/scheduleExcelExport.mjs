@@ -267,7 +267,7 @@ function createScheduleWorkbook(XLSX, model) {
         }, 0);
       return Math.max(max, weekMax);
     }, 0);
-    return { wch: Math.max(24, Math.min(30, maxTextLength + 4)) };
+    return { wch: Math.max(14, Math.min(24, maxTextLength + 4)) };
   });
   const cols = dayColumnWidths;
   let maxRow = 0;

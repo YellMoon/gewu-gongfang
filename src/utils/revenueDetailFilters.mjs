@@ -40,6 +40,7 @@ export function filterStudentDetailsForRevenue(rows = [], students = [], filters
     if (filters.institutionId && !rowMatchesInstitution(row, students, filters.institutionId)) return false;
     if (filters.year && Number(row.courseYear) !== Number(filters.year)) return false;
     if (filters.semester && row.semester !== filters.semester) return false;
+    if (filters.courseId && row.courseId !== filters.courseId) return false;
     if (filters.courseName && row.courseName !== filters.courseName) return false;
     return true;
   });

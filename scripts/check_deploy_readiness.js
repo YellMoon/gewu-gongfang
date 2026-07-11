@@ -1,9 +1,22 @@
 const fs = require('fs');
 const path = require('path');
+const dotenv = require('dotenv');
+
+for (const envFile of [
+  process.env.DOTENV_CONFIG_PATH,
+  path.join(__dirname, '..', '.env.local'),
+  path.join(__dirname, '..', '.env'),
+].filter(Boolean)) {
+  if (fs.existsSync(envFile)) {
+    dotenv.config({ path: envFile, override: false });
+  }
+}
 
 const REQUIRED_ENV = [
   'DEPLOY_HOST',
   'BACKEND_JWT_SECRET',
+  'WECHAT_APPID',
+  'WECHAT_APPSECRET',
 ];
 
 const OPTIONAL_ENV = [

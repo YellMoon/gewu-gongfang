@@ -9,6 +9,10 @@ const { v4: uuidv4 } = require('uuid');
 const { getMiniappLoginDenialReason } = require('./services/miniappAuthPolicy');
 
 const SCHEMA_VERSION = 3101;
+const MINIAPP_ADMIN_SEED_USERS = [
+  { id: 'miniapp-admin-13732250653', phone: '13732250653', name: 'Miniapp Admin 0653' },
+  { id: 'miniapp-admin-18257136756', phone: '18257136756', name: 'Miniapp Admin 6756' },
+];
 const ENVIRONMENTS = {
   dev: { dbFile: 'scheduling.dev.db' },
   staging: { dbFile: 'scheduling.staging.db' },
@@ -279,10 +283,29 @@ class DatabaseService {
     addColumn('login_enabled', 'INTEGER DEFAULT 0');
     addColumn('student_id', 'TEXT');
     addColumn('linked_student_ids', 'TEXT');
+    addColumn('deleted', 'INTEGER DEFAULT 0');
 
+    this.db.prepare("UPDATE users SET deleted = 0 WHERE deleted IS NULL").run();
     this.db.prepare("UPDATE users SET status = 1 WHERE status IS NULL").run();
     this.db.prepare("UPDATE users SET login_enabled = 0 WHERE login_enabled IS NULL").run();
     this.db.prepare("UPDATE users SET name = nickname WHERE (name IS NULL OR name = '') AND nickname IS NOT NULL").run();
+    this._seedMiniappAdminUsers();
+  }
+
+  _seedMiniappAdminUsers() {
+    const now = this._now();
+    const findByPhone = this.db.prepare('SELECT id FROM users WHERE phone = ?');
+    const insertSeed = this.db.prepare(
+      `INSERT INTO users
+       (id, phone, name, nickname, role, status, login_enabled, deleted, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'admin', 1, 1, 0, ?, ?)`
+    );
+
+    MINIAPP_ADMIN_SEED_USERS.forEach(seed => {
+      const existing = findByPhone.get(seed.phone);
+      if (existing) return;
+      insertSeed.run(seed.id, seed.phone, seed.name, seed.name, now, now);
+    });
   }
 
   _ensureHostHeartbeatColumns() {
@@ -1344,6 +1367,46 @@ class DatabaseService {
 
   getMiniappUserByWechat(openid) {
     return this.db.prepare('SELECT * FROM users WHERE wechat_openid = ? AND deleted = 0').get(openid);
+  }
+
+  getMiniappUserByPhone(phone) {
+    return this.db.prepare('SELECT * FROM users WHERE phone = ? AND deleted = 0 ORDER BY created_at ASC LIMIT 1').get(phone);
+  }
+
+  bindMiniappUserWechatByVerifiedPhone(phone, openid, unionid, profile = {}) {
+    const user = this.getMiniappUserByPhone(phone);
+    if (!user) return null;
+    if (user.wechat_openid && user.wechat_openid !== openid) {
+      const error = new Error('This phone number is already bound to another WeChat account');
+      error.code = 'MINIAPP_PHONE_ALREADY_BOUND';
+      throw error;
+    }
+
+    const openidOwner = this.getMiniappUserByWechat(openid);
+    if (openidOwner && openidOwner.id !== user.id) {
+      const error = new Error('This WeChat account is already bound to another miniapp user');
+      error.code = 'MINIAPP_WECHAT_ALREADY_BOUND';
+      throw error;
+    }
+
+    const now = this._now();
+    this.db.prepare(
+      `UPDATE users
+       SET wechat_openid = ?,
+           wechat_unionid = COALESCE(wechat_unionid, ?),
+           nickname = CASE WHEN nickname IS NULL OR nickname = '' THEN ? ELSE nickname END,
+           avatar_url = CASE WHEN avatar_url IS NULL OR avatar_url = '' THEN ? ELSE avatar_url END,
+           updated_at = ?
+       WHERE id = ?`
+    ).run(
+      openid,
+      unionid || null,
+      profile.nickname || null,
+      profile.avatarUrl || null,
+      now,
+      user.id
+    );
+    return this.db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
   }
 
   findAuthorizedMiniappUserByWechat(openid) {

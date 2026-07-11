@@ -57,7 +57,9 @@ import {
 import {
   applyRevenueDateChange,
   clearRevenueDateRange,
+  buildCourseCatalogOptionSources,
   buildRevenueFacetOptions,
+  filterRevenueSchedules,
   isDateWithinRevenueRange,
 } from '../utils/revenueStatisticsFilters.mjs';
 import { readSchedulesFromPrimaryStore } from '../utils/scheduleStorage.mjs';
@@ -171,6 +173,7 @@ interface RevenueFilterState {
   institutionId?: string;
   year?: number;
   semester?: string;
+  courseId?: string;
   courseName?: string;
 }
 
@@ -187,6 +190,7 @@ interface RevenueStatisticsSnapshot {
   allStudents: Student[];
   allTeachers: Teacher[];
   allInstitutions: Institution[];
+  courseCatalogOptions: Array<Partial<Course> & { name?: string; display_name?: string }>;
   arrearsRows: StudentAlertRow[];
   closedBalanceRows: StudentAlertRow[];
 }
@@ -224,6 +228,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   const [appliedInstitutionId, setAppliedInstitutionId] = useState<string | undefined>(initialFilters.institutionId);
   const [appliedYear, setAppliedYear] = useState<number | undefined>(initialFilters.year);
   const [appliedSemester, setAppliedSemester] = useState<string | undefined>(initialFilters.semester);
+  const [appliedCourseId, setAppliedCourseId] = useState<string | undefined>(initialFilters.courseId);
   const [appliedCourseName, setAppliedCourseName] = useState<string | undefined>(initialFilters.courseName);
   const [draftStudentId, setDraftStudentId] = useState<string | undefined>(initialFilters.studentId);
   const [draftTeacherId, setDraftTeacherId] = useState<string | undefined>(initialFilters.teacherId);
@@ -231,6 +236,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   const [draftInstitutionId, setDraftInstitutionId] = useState<string | undefined>(initialFilters.institutionId);
   const [draftYear, setDraftYear] = useState<number | undefined>(initialFilters.year);
   const [draftSemester, setDraftSemester] = useState<string | undefined>(initialFilters.semester);
+  const [draftCourseId, setDraftCourseId] = useState<string | undefined>(initialFilters.courseId);
   const [draftCourseName, setDraftCourseName] = useState<string | undefined>(initialFilters.courseName);
   const [detailDisplayMode, setDetailDisplayMode] = useState<'separate' | 'grouped'>('separate');
   const [showGroupedStudentAmounts, setShowGroupedStudentAmounts] = useState(true);
@@ -267,6 +273,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   const [allStudents, setAllStudents] = useState<Student[]>(initialSnapshot?.allStudents || []);
   const [allTeachers, setAllTeachers] = useState<Teacher[]>(initialSnapshot?.allTeachers || []);
   const [allInstitutions, setAllInstitutions] = useState<Institution[]>(initialSnapshot?.allInstitutions || []);
+  const [courseCatalogOptions, setCourseCatalogOptions] = useState<Array<Partial<Course> & { name?: string; display_name?: string }>>(initialSnapshot?.courseCatalogOptions || []);
   const [contextMode, setContextMode] = useState<RevenueStatisticsContext['mode']>(context?.mode);
   const [arrearsRows, setArrearsRows] = useState<StudentAlertRow[]>(initialSnapshot?.arrearsRows || []);
   const [closedBalanceRows, setClosedBalanceRows] = useState<StudentAlertRow[]>(initialSnapshot?.closedBalanceRows || []);
@@ -288,6 +295,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         institutionId: appliedInstitutionId,
         year: appliedYear,
         semester: appliedSemester,
+        courseId: appliedCourseId,
         courseName: appliedCourseName,
       };
       const courses: Course[] = dbService.getAllCourses?.() || [];
@@ -297,32 +305,32 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       const payments: Payment[] = dbService.getAllPayments?.() || [];
       const consumptions: Consumption[] = dbService.getAllConsumptions?.() || [];
       const schedules = readSchedulesFromPrimaryStore(dbService, localStorage) as ScheduleItem[];
+      const courseMap = new Map(courses.map(course => [course.id, course]));
+      const nextCourseCatalogOptions = buildCourseCatalogOptionSources(courses);
       const financialAlerts = buildStudentFinancialAlerts(schedules, courses, students, teachers, payments);
 
       setAllStudents(students);
       setAllTeachers(teachers);
       setAllInstitutions(institutions);
+      setCourseCatalogOptions(nextCourseCatalogOptions);
       setArrearsRows(financialAlerts.arrears);
       setClosedBalanceRows(financialAlerts.closedBalances);
 
-      const courseMap = new Map(courses.map(course => [course.id, course]));
-      const dateScopedSchedules = schedules.filter(schedule => {
-        const dateStr = schedule.start_time.split(' ')[0];
-        if (!isDateWithinRevenueRange(dateStr, activeFilters.dateRange)) return false;
-        if (schedule.status === ScheduleStatus.LEAVE || schedule.status === ScheduleStatus.CANCELLED) return false;
-        return true;
-      });
+      const dateScopedSchedules = filterRevenueSchedules(schedules, courses, {
+        dateRange: activeFilters.dateRange,
+      }, { excludedStatuses: [ScheduleStatus.LEAVE, ScheduleStatus.CANCELLED] });
       const dateScopedDetails = buildFinancialDetails(dateScopedSchedules, courses, students, teachers);
       const nextFacetRows = dateScopedDetails.studentDetails;
       setFacetRows(nextFacetRows);
 
-      const validSchedules = dateScopedSchedules.filter(schedule => {
+      const validSchedules = filterRevenueSchedules(dateScopedSchedules, courses, activeFilters).filter(schedule => {
         const course = courseMap.get(schedule.course_id);
         const courseType = course?.type || schedule.course_type || CourseType.ONE_ON_ONE;
         const courseName = course?.display_name || schedule.course_name || course?.name || '未知课程';
         if (activeFilters.courseTypes.length > 0 && !activeFilters.courseTypes.includes(courseType)) return false;
         if (activeFilters.year && Number(course?.year) !== Number(activeFilters.year)) return false;
         if (activeFilters.semester && course?.semester !== activeFilters.semester) return false;
+        if (activeFilters.courseId && schedule.course_id !== activeFilters.courseId) return false;
         if (activeFilters.courseName && courseName !== activeFilters.courseName) return false;
         return true;
       });
@@ -337,6 +345,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         institutionId: activeFilters.institutionId,
         year: activeFilters.year,
         semester: activeFilters.semester,
+        courseId: activeFilters.courseId,
         courseName: activeFilters.courseName,
       });
       const shouldRebuildTeacherDetails = Boolean(activeFilters.studentId || activeFilters.institutionId);
@@ -475,6 +484,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         allStudents: students,
         allTeachers: teachers,
         allInstitutions: institutions,
+        courseCatalogOptions: nextCourseCatalogOptions,
         arrearsRows: financialAlerts.arrears,
         closedBalanceRows: financialAlerts.closedBalances,
       });
@@ -511,6 +521,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       institutionId: draftInstitutionId,
       year: draftYear,
       semester: draftSemester,
+      courseId: draftCourseId,
       courseName: draftCourseName,
     };
 
@@ -521,6 +532,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
     setAppliedInstitutionId(nextFilters.institutionId);
     setAppliedYear(nextFilters.year);
     setAppliedSemester(nextFilters.semester);
+    setAppliedCourseId(nextFilters.courseId);
     setAppliedCourseName(nextFilters.courseName);
     loadStats(nextFilters);
   };
@@ -532,16 +544,18 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
     institutionId: draftInstitutionId,
     year: draftYear,
     semester: draftSemester,
+    courseId: draftCourseId,
     courseName: draftCourseName,
-  }), [draftStudentId, draftTeacherId, draftCourseTypes, draftInstitutionId, draftYear, draftSemester, draftCourseName]);
+  }), [draftStudentId, draftTeacherId, draftCourseTypes, draftInstitutionId, draftYear, draftSemester, draftCourseId, draftCourseName]);
 
   const filterOptions = useMemo(() => buildRevenueFacetOptions(
     facetRows,
     allStudents,
     allTeachers,
     allInstitutions,
-    draftFiltersForOptions
-  ), [facetRows, allStudents, allTeachers, allInstitutions, draftFiltersForOptions]);
+    draftFiltersForOptions,
+    courseCatalogOptions
+  ), [facetRows, allStudents, allTeachers, allInstitutions, draftFiltersForOptions, courseCatalogOptions]);
 
   const totalTeacherFee = roundMoney(teacherIncomeStats.reduce((sum, row) => sum + row.total, 0));
   const netIncome = roundMoney((stats?.total || 0) - totalTeacherFee);
@@ -786,10 +800,13 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
               allowClear
               showSearch
               style={filterControlStyles.courseName}
-              value={draftCourseName}
-              onChange={(value) => setDraftCourseName(value as string | undefined)}
               filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
               options={filterOptions.courseNames}
+              value={draftCourseId || draftCourseName}
+              onChange={(value) => {
+                setDraftCourseId(value as string | undefined);
+                setDraftCourseName(undefined);
+              }}
             />
           </div>
         </Col>

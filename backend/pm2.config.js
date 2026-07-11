@@ -1,3 +1,5 @@
+const { resolveBackendPort } = require('./src/runtimePort');
+
 /**
  * PM2 生产环境配置
  * 使用: pm2 start pm2.config.js
@@ -11,7 +13,7 @@ module.exports = {
     exec_mode: 'fork',
     env: {
       NODE_ENV: 'production',
-      PORT: 3001,
+      PORT: resolveBackendPort({ ...process.env, APP_ENV: 'prod', NODE_ENV: 'production' }),
       LOG_FORMAT: 'json',
       SLOW_REQUEST_MS: 1000,
       MONITORING_PROVIDER: process.env.MONITORING_PROVIDER || '',

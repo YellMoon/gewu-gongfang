@@ -8,6 +8,7 @@ const {
   buildMiniappLoginUser,
   getMiniappLoginDenialReason,
 } = require('../services/miniappAuthPolicy');
+const { resolveWechatPhoneNumber } = require('../services/wechatMiniappService');
 
 const router = Router();
 
@@ -59,7 +60,7 @@ async function resolveWechatIdentity(code) {
  */
 router.post('/wechat-login', async (req, res) => {
   try {
-    const { code, userInfo } = req.body;
+    const { code, phoneCode, userInfo } = req.body;
     
     if (!code) {
       return res.status(400).json({ error: '缺少登录code' });
@@ -70,7 +71,21 @@ router.post('/wechat-login', async (req, res) => {
     const avatarUrl = userInfo?.avatarUrl || null;
 
     const db = getInstance();
-    const rawUser = db.getMiniappUserByWechat(openid);
+    let rawUser = db.getMiniappUserByWechat(openid);
+    if (!rawUser && phoneCode) {
+      const verifiedPhone = await resolveWechatPhoneNumber(phoneCode);
+      const phoneUser = db.getMiniappUserByPhone(verifiedPhone);
+      const phoneDenialReason = getMiniappLoginDenialReason(phoneUser);
+      if (phoneDenialReason) {
+        db.recordMiniappLoginAttempt({ openid, unionid, nickname, avatarUrl, denialReason: phoneDenialReason });
+        return res.status(403).json({
+          success: false,
+          code: phoneDenialReason,
+          error: 'Miniapp account is not authorized on the data host',
+        });
+      }
+      rawUser = db.bindMiniappUserWechatByVerifiedPhone(verifiedPhone, openid, unionid, { nickname, avatarUrl });
+    }
     const denialReason = getMiniappLoginDenialReason(rawUser);
     if (denialReason) {
       db.recordMiniappLoginAttempt({ openid, unionid, nickname, avatarUrl, denialReason });
@@ -104,7 +119,9 @@ router.post('/wechat-login', async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const forbiddenCodes = new Set(['MINIAPP_PHONE_ALREADY_BOUND', 'MINIAPP_WECHAT_ALREADY_BOUND']);
+    const status = forbiddenCodes.has(err.code) ? 403 : 500;
+    res.status(status).json({ success: false, code: err.code || 'MINIAPP_LOGIN_FAILED', error: err.message });
   }
 });
 

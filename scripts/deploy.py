@@ -22,18 +22,35 @@ from pathlib import Path
 
 import paramiko
 
+try:
+    from dotenv import load_dotenv
+except ImportError as error:
+    raise SystemExit(
+        "Missing deploy dependency python-dotenv. "
+        "Run: python -m pip install -r scripts/requirements-deploy.txt"
+    ) from error
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+dotenv_path = Path(os.getenv("DOTENV_CONFIG_PATH") or PROJECT_ROOT / ".env.local")
+if dotenv_path.exists():
+    load_dotenv(dotenv_path=dotenv_path, override=False)
+
 ENV_CONFIG = {
     "dev": {
         "remote_dir": "/root/scheduling-backend-dev",
         "db_path": "/root/scheduling-data/dev/scheduling.db",
+        "app_port": "3001",
     },
     "staging": {
         "remote_dir": "/root/scheduling-backend-staging",
         "db_path": "/root/scheduling-data/staging/scheduling.db",
+        "app_port": "3001",
     },
     "prod": {
         "remote_dir": "/root/scheduling-backend",
         "db_path": "/root/scheduling-data/prod/scheduling.db",
+        "app_port": "3002",
     },
 }
 
@@ -51,12 +68,15 @@ def normalize_env(value):
 
 APP_ENV = normalize_env(os.getenv("APP_ENV") or os.getenv("SCHEDULE_ENV"))
 DEFAULTS = ENV_CONFIG[APP_ENV]
+APP_PORT = os.getenv("PORT", DEFAULTS["app_port"])
 HOST = os.getenv("DEPLOY_HOST")
 PORT = int(os.getenv("DEPLOY_PORT", "22"))
 USER = os.getenv("DEPLOY_USER", "root")
 PASSWORD = os.getenv("DEPLOY_PASSWORD")
 KEY_PATH = os.getenv("DEPLOY_KEY_PATH")
 BACKEND_JWT_SECRET = os.getenv("BACKEND_JWT_SECRET")
+WECHAT_APPID = os.getenv("WECHAT_APPID")
+WECHAT_APPSECRET = os.getenv("WECHAT_APPSECRET")
 REMOTE_DIR = os.getenv("DEPLOY_REMOTE_DIR", DEFAULTS["remote_dir"])
 DB_PATH = os.getenv("DB_PATH", DEFAULTS["db_path"])
 READ_DB_PATH = os.getenv("READ_DB_PATH", DB_PATH)
@@ -77,20 +97,30 @@ def require_remote_env():
     }.items() if not value]
     if not PASSWORD and not KEY_PATH:
         missing.append("DEPLOY_PASSWORD or DEPLOY_KEY_PATH")
+    if APP_ENV == "prod":
+        if not WECHAT_APPID:
+            missing.append("WECHAT_APPID")
+        if not WECHAT_APPSECRET:
+            missing.append("WECHAT_APPSECRET")
     if missing:
         raise SystemExit(f"Missing required environment variables: {', '.join(missing)}")
 
 
 def redact_command(cmd):
     redacted = cmd
+    redaction_candidates = []
     for secret in [
         PASSWORD,
         BACKEND_JWT_SECRET,
+        os.getenv("WECHAT_APPSECRET"),
         os.getenv("GEWU_DESKTOP_SYNC_TOKEN"),
         os.getenv("GEWU_CLOUD_RELAY_HOST_TOKEN"),
     ]:
-      if secret:
-        redacted = redacted.replace(secret, "<redacted>")
+        if secret:
+            value = str(secret)
+            redaction_candidates.extend([value, shlex.quote(value)])
+    for candidate in sorted(set(redaction_candidates), key=len, reverse=True):
+        redacted = redacted.replace(candidate, "<redacted>")
     return redacted
 
 
@@ -143,15 +173,17 @@ def upload_backend(ssh):
 def remote_env_prefix():
     env = {
         "NODE_ENV": "production" if APP_ENV == "prod" else APP_ENV,
-        "PORT": os.getenv("PORT", "3001"),
+        "PORT": APP_PORT,
         "APP_ENV": APP_ENV,
         "SCHEDULE_ENV": APP_ENV,
         "JWT_SECRET": BACKEND_JWT_SECRET,
+        "WECHAT_APPID": WECHAT_APPID,
+        "WECHAT_APPSECRET": WECHAT_APPSECRET,
         "DB_PATH": DB_PATH,
         "READ_DB_PATH": READ_DB_PATH,
         "GEWU_NODE_ROLE": os.getenv("GEWU_NODE_ROLE", "primary-host"),
         "GEWU_DEVICE_ID": os.getenv("GEWU_DEVICE_ID", "desktop_host_001"),
-        "GEWU_HOST_BASE_URL": os.getenv("GEWU_HOST_BASE_URL", "http://127.0.0.1:3001"),
+        "GEWU_HOST_BASE_URL": os.getenv("GEWU_HOST_BASE_URL", f"http://127.0.0.1:{APP_PORT}"),
         "GEWU_CLOUD_BASE_URL": os.getenv("GEWU_CLOUD_BASE_URL", "https://your-domain.example.com"),
         "GEWU_DESKTOP_SYNC_TOKEN": os.getenv("GEWU_DESKTOP_SYNC_TOKEN", ""),
         "GEWU_CLOUD_RELAY_HOST_TOKEN": os.getenv("GEWU_CLOUD_RELAY_HOST_TOKEN", os.getenv("GEWU_DESKTOP_SYNC_TOKEN", "")),
@@ -216,11 +248,11 @@ def main():
             run(ssh, "pm2 save")
             time.sleep(2)
             run(ssh, "pm2 status")
-            health_port = os.getenv("PORT", "3001")
+            health_port = APP_PORT
             run(ssh, f"curl -s http://localhost:{health_port}/api/health || echo 'health check failed'")
         elif mode == "status":
             run(ssh, "pm2 status")
-            health_port = os.getenv("PORT", "3001")
+            health_port = APP_PORT
             run(ssh, f"curl -s http://localhost:{health_port}/api/health")
         else:
             raise SystemExit(f"Unknown mode: {mode}")

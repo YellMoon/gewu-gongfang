@@ -3,8 +3,9 @@
  */
 require('dotenv').config();
 const { createApp } = require('./src/app');
+const { resolveBackendPort } = require('./src/runtimePort');
 
-const PORT = process.env.PORT || 3001;
+const PORT = resolveBackendPort();
 const app = createApp();
 
 app.listen(PORT, () => {
