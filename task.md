@@ -122,6 +122,11 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 - Host evidence: committed-question deletion defaults denied and is available locally only when server config explicitly enables trusted-host resolution and the registered `sync_devices` record is trusted host plus desktop client context.
 - Regression evidence: pure authorization, database authorization, miniapp auth/access, and gateway cloud-relay tests exited 0 on 2026-07-11.
 - Full regression: `npm test` exited 0 in 14.1 seconds on 2026-07-11 after updating the permissions-route security assertion from optional to required authentication.
+- Bypass-review RED: ghost canonical JWT returned 403 instead of 401, pending gateway roles still had capabilities, and legacy role/grant endpoints returned 200 and performed writes.
+- Bypass-review GREEN: required auth now rejects identities missing from persistent storage with 401; optional auth yields no identity/capabilities; gateway requires approved, active, login-enabled persisted state for every role.
+- Legacy endpoint closure: `PUT /users/:id/type` returns 410 `LEGACY_ROLE_ENDPOINT_DISABLED`; grant/revoke endpoints return 410 `LEGACY_PERMISSION_GRANTS_DISABLED` and tests prove zero writes to `user_permissions`.
+- Review regression: ordinary gateway admin receives 403 `SUPER_ADMIN_REQUIRED`, canonical super succeeds through `PATCH /api/admin/users/:id/review`, and approved ordinary admin retains read-only user-list access.
+- Closure verification: focused backend route, gateway policy, gateway legacy-endpoint, authorization/database/cloud-relay tests passed; `npm test` exited 0 in 13.4 seconds on 2026-07-11.
 
 ---
 

@@ -111,19 +111,16 @@ function requirePermission(module, action) {
  */
 function requireType(types) {
   return (req, res, next) => {
-    if (isAdminUser(req.user)) {
-      return next();
-    }
-
-    if (!req.user || !types.includes(req.user.user_type)) {
+    const role = req.authz?.role || 'pending';
+    if (role === 'super_admin' || types.includes(role)) return next();
+    if (!req.user) {
       return res.status(403).json({
         error: '用户类型无权访问',
         required: types,
-        current: req.user ? req.user.user_type : 'unknown'
+        current: role
       });
     }
-
-    next();
+    return res.status(403).json({ error: 'FORBIDDEN', required: types, current: role });
   };
 }
 
