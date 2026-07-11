@@ -27,9 +27,15 @@ const router = require('./cloudRelay');
   const approved = id => JSON.stringify({ id, user_type: 'student', student_id: id, review_status: 'approved', status: 1, login_enabled: 1 });
   const teacher = id => JSON.stringify({ id, user_type:'teacher', teacher_id:'t1', review_status:'approved', status:1, login_enabled:1 });
   assert.strictEqual((await call('/desktop-sync/devices/register',{method:'POST',headers:{'x-test-user':teacher('teacher1'),'x-device-id':'cloud-d1'},body:'{}'})).status,200);
+  getDb().prepare(`INSERT INTO desktop_device_pairings(id,device_id,device_name,phone,secret_hash,pairing_code,status,expires_at,user_id,created_at,updated_at)
+    VALUES('pair-cloud-d1','cloud-d1','PC','13000000000','hash','123456','approved',?,'teacher1',?,?)`).run(new Date(Date.now()+600000).toISOString(),now,now);
   assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:{'x-test-user':teacher('teacher1'),'x-device-id':'cloud-d1'},body:JSON.stringify({pendingChanges:[{id:'op1'}]})})).status,200);
   const desktopTask=getDb().prepare("SELECT * FROM miniapp_tasks WHERE task_type='desktop-sync'").get();
   assert.ok(JSON.parse(desktopTask.payload).relayAssertion.signature,'formal gateway must persist a server-signed relay assertion');
+  const pendingPoll=await call(`/desktop-sync/requests/${desktopTask.id}/result`,{headers:{'x-test-user':teacher('teacher1')}});assert.strictEqual(pendingPoll.status,200);assert.strictEqual((await pendingPoll.json()).request.status,'pending_host');
+  getDb().prepare("UPDATE miniapp_tasks SET status='completed',result_payload=? WHERE id=?").run(JSON.stringify({applied:1}),desktopTask.id);
+  const completedPoll=await call(`/desktop-sync/requests/${desktopTask.id}/result`,{headers:{'x-test-user':teacher('teacher1')}});assert.strictEqual((await completedPoll.json()).request.result_payload.applied,1);
+  assert.strictEqual((await call(`/desktop-sync/requests/${desktopTask.id}/result`,{headers:{'x-test-user':teacher('teacher2')}})).status,404);
   assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',body:JSON.stringify({deviceId:'cloud-d1'})})).status,401);
   assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:{'x-test-user':teacher('teacher2'),'x-device-id':'cloud-d1'},body:'{}'})).status,403);
   delete process.env.GEWU_CLOUD_RELAY_HOST_TOKEN;

@@ -6,4 +6,10 @@ assert.ok((source.match(/sessionResolver: \(\) => readDesktopAuthorizationSessio
   'discovered LAN, manual LAN, and cloud transports must resolve the current desktop session');
 assert.ok(source.includes('handleStartPairing') && source.includes('handleRefreshPairing') && source.includes('pollOrExchange'),
   'SyncSettings must expose the minimal pairing writer and manual refresh flow');
+const reviewPanel=fs.readFileSync('src/components/PairingReviewPanel.tsx','utf8');
+const permissionManager=fs.readFileSync('src/pages/PermissionManager.tsx','utf8');
+const miniappUsers=fs.readFileSync('miniapp/src/pages/admin/users/index.tsx','utf8');
+assert.ok(reviewPanel.includes('/pending?code=')&&reviewPanel.includes('/code/${pairingCode}/${action}'));
+assert.ok(permissionManager.includes('<PairingReviewPanel'));
+assert.ok(miniappUsers.includes('getPendingPairings')&&miniappUsers.includes('reviewPairingCode'));
 console.log('SyncSettings authorization wiring tests passed');

@@ -14,6 +14,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, LinkOutlined 
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import AutoCloseSelect from '../components/AutoCloseSelect';
+import PairingReviewPanel from '../components/PairingReviewPanel';
 
 const { RangePicker } = DatePicker;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -394,7 +395,7 @@ const PermissionManager: React.FC = () => {
   ];
 
   return (
-    <Card>
+    <><PairingReviewPanel /><Card>
       <div
         style={{
           marginBottom: 16,
@@ -524,7 +525,7 @@ const PermissionManager: React.FC = () => {
       </Modal>
       {/* ====== 邀请功能区域 ====== */}
       <InviteSection />
-    </Card>
+    </Card></>
   );
 };
 

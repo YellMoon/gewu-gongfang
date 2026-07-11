@@ -1322,6 +1322,19 @@ class DatabaseService {
       userId: user.id, teacherId, studentId: user.student_id || null, deviceId };
   }
 
+  resolveOrProvisionRelayActorContext(deviceId, actorUserId, pairingApprovalId) {
+    let device = this.db.prepare('SELECT * FROM sync_devices WHERE id = ?').get(deviceId);
+    if (device && device.owner_user_id && device.owner_user_id !== actorUserId) return false;
+    if (!device) {
+      const user = this.db.prepare('SELECT * FROM users WHERE id=? AND deleted=0').get(actorUserId);
+      if (!user || user.review_status !== 'approved' || user.login_enabled === 0 || !pairingApprovalId) return false;
+      this.registerSyncDevice(deviceId, { ownerUserId:actorUserId, deviceName:deviceId, role:'desktop-client', trusted:true });
+      this.recordAuthorizationAudit({ actorUserId, targetUserId:actorUserId, action:'relay-device:provision',
+        after:{ deviceId, pairingApprovalId } });
+    }
+    return this.resolveSyncActorContext(deviceId, actorUserId);
+  }
+
   consumeRelayAuthorizationNonce(claims) {
     try {
       return this.db.transaction(() => {

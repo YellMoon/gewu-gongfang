@@ -49,6 +49,9 @@ export default function AdminUsersPage() {
   const [userPermissions, setUserPermissions] = useState<any[]>([]);
   const [showGrantPanel, setShowGrantPanel] = useState(false);
   const [expiryOption, setExpiryOption] = useState('');
+  const [pendingPairings, setPendingPairings] = useState<any[]>([]);
+  const loadPairings = async () => { try { const res:any=await adminApi.getPendingPairings(); if(res.success)setPendingPairings(res.data?.items||res.items||[]); } catch(_error){ setPendingPairings([]); } };
+  const reviewPairing = async (code:string,action:'approve'|'reject') => { await adminApi.reviewPairingCode(code,action); await loadPairings(); };
 
   const loadUsers = async () => {
     setLoading(true);
@@ -70,6 +73,7 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     loadUsers();
+    loadPairings();
   }, [page, typeFilter]);
 
   const handleSearch = () => {
@@ -144,6 +148,7 @@ export default function AdminUsersPage() {
         <Text className="admin-title">用户管理</Text>
         <Text className="admin-total">共 {total} 人</Text>
       </View>
+      {pendingPairings.length > 0 && <View className="pairing-review-list"><Text>{'\u5f85\u5ba1\u6279\u8bbe\u5907'}</Text>{pendingPairings.map(item=><View key={item.id}><Text>{item.pairingCode} {item.deviceName} {item.phone}</Text><Button size="mini" onClick={()=>reviewPairing(item.pairingCode,'approve')}>{'\u6279\u51c6'}</Button><Button size="mini" onClick={()=>reviewPairing(item.pairingCode,'reject')}>{'\u62d2\u7edd'}</Button></View>)}</View>}
 
       {/* 搜索栏 */}
       <View className="search-bar">

@@ -48,7 +48,7 @@ assert.ok(
 assert.ok(cloudRelay.includes('actorUserId: user.id'), 'relay may forward only an authenticated actor id hint');
 assert.ok(!cloudRelay.includes('authorizationContext'), 'relay must not forward trusted role or teacher context');
 assert.ok(hostRelay.includes('authz,'), 'host apply must use the shared transaction validator');
-assert.ok(hostRelay.includes('verifyRelayAssertion') && hostRelay.includes('resolveSyncActorContext'),
+assert.ok(hostRelay.includes('verifyRelayAssertion') && hostRelay.includes('resolveOrProvisionRelayActorContext'),
   'host must verify cloud HMAC then rebuild actor context from its local DB');
 assert.ok(
   packageJson.includes('backend/src/routes/desktopCloudSync.test.js'),
