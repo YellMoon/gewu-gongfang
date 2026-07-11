@@ -148,6 +148,12 @@ class ApiClient {
             };
           }
           return { success: false, error: '无权限访问' };
+        } else if (res.statusCode >= 400 && res.statusCode < 500) {
+          return {
+            success: false,
+            error: res.data?.message || res.data?.error || `Request failed (${res.statusCode})`,
+            code: res.data?.code,
+          };
         } else if (res.statusCode >= 500 && attempt < retries) {
           continue; // 服务端错误，重试
         } else {
@@ -197,15 +203,17 @@ export const moduleApi = {
 export const adminApi = {
   getPendingPairings: () => api.get<any>('/api/desktop-pairing/pending'),
   reviewPairingCode: (code: string, action: 'approve' | 'reject') => api.post(`/api/desktop-pairing/code/${code}/${action}`, {}),
-  getUsers: (params?: { page?: number; search?: string; user_type?: string }) => {
+  getUsers: (params?: { page?: number; search?: string; role?: string; review_status?: string }) => {
     const qs = new URLSearchParams();
     if (params?.page) qs.set('page', String(params.page));
     if (params?.search) qs.set('search', params.search);
-    if (params?.user_type) qs.set('user_type', params.user_type);
+    if (params?.role) qs.set('role', params.role);
+    if (params?.review_status) qs.set('status', params.review_status);
     return api.get<{ users: any[]; total: number }>(`/api/admin/users?${qs}`);
   },
   reviewUser: (userId: string, role: string) =>
     api.patch(`/api/admin/users/${userId}/review`, { role }),
+  disableUser: (userId: string) => api.patch(`/api/admin/users/${userId}/disable`, {}),
 };
 
 export const cloudRelayApi = {
