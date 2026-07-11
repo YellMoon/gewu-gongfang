@@ -29,6 +29,7 @@ assert.throws(() => validateSyncMutation(op('courses', { id: 'c1' }), { kind: 's
 assert.throws(() => validateSyncMutation(op('courses', { id: 'c1' }), { kind: 'pending', userId: 'p' }, lookup), e => e.code === 'SYNC_WRITE_FORBIDDEN');
 assert.strictEqual(validateSyncMutation(op('courses', { id: 'c2' }), { kind: 'admin', userId: 'admin', deviceId: 'd' }, lookup).decision, 'apply');
 assert.strictEqual(validateSyncMutation(op('questions', { id: 'q1' }), teacher, lookup).decision, 'apply');
+assert.strictEqual(validateSyncMutation(op('questions', { id: 'committed' }), teacher, { ...lookup, existing: { id: 'committed', storage_state: 'host_committed' } }).code, 'COMMITTED_QUESTION_STORAGE_UPDATE_REQUIRED');
 assert.strictEqual(validateSyncMutation({ ...op('questions', { id: 'local-draft' }), action: 'delete' }, teacher, lookup).decision, 'apply',
   'question bank local draft deletion stays allowed for its source device');
 assert.throws(() => validateSyncMutation({ ...op('questions', { id: 'committed' }), action: 'delete' }, teacher,

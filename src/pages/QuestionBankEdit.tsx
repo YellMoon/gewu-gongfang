@@ -22,7 +22,7 @@ import {
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
 const { deleteQuestionViaApi } = require('../services/questionDeleteApi');
-const { normalizeDesktopQuestionDeleteContext } = require('../services/desktopQuestionDeleteContext');
+const { normalizeDesktopQuestionDeleteContext, verifyNativeQuestionDraft } = require('../services/desktopQuestionDeleteContext');
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -295,7 +295,8 @@ const QuestionBankEdit: React.FC = () => {
         })).ok;
       } catch (_error) { deleted = false; }
     } else {
-      deleted = Boolean(db?.deleteQuestion?.(question.id));
+      const session = readDesktopAuthorizationSession();
+      deleted = Boolean(db?.deleteQuestion?.(question.id, await verifyNativeQuestionDraft(question.id, session)));
       if (deleted) await removeQuestionLocalRecord(question.id, deleteContext);
     }
     if (!deleted) { message.error('Delete failed'); return; }
@@ -339,7 +340,7 @@ const QuestionBankEdit: React.FC = () => {
       const question = questions.find(item => item.id === id);
       const ok = question?.storage_state === 'host_committed'
         ? (await deleteQuestionViaApi(fetch, `${API_BASE}/questions/${id}`, session)).ok
-        : Boolean(db?.deleteQuestion?.(id));
+        : Boolean(db?.deleteQuestion?.(id, await verifyNativeQuestionDraft(id, readDesktopAuthorizationSession())));
       if (!ok) throw new Error('DELETE_FAILED');
       if (question?.storage_state === 'local_draft') await removeQuestionLocalRecord(id, deleteContext);
       return id;

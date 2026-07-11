@@ -77,8 +77,33 @@ function writeJsonAtomic(file, value) {
   fs.renameSync(temp, file);
 }
 
+function assertSafeStorePath(root, target) {
+  const absoluteRoot = path.resolve(root); const absoluteTarget = path.resolve(target);
+  const relative = path.relative(absoluteRoot, absoluteTarget);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw authorityError('path escapes question bank root', 'QUESTION_BANK_PATH_ESCAPE');
+  let cursor = absoluteRoot;
+  for (const segment of relative.split(path.sep).filter(Boolean)) {
+    if (fs.existsSync(cursor)) {
+      const stat = fs.lstatSync(cursor);
+      if (stat.isSymbolicLink()) throw authorityError('question bank path contains reparse link', 'QUESTION_BANK_REPARSE_POINT_REJECTED');
+    }
+    cursor = path.join(cursor, segment);
+  }
+  if (fs.existsSync(cursor) && fs.lstatSync(cursor).isSymbolicLink()) throw authorityError('question bank path contains reparse link', 'QUESTION_BANK_REPARSE_POINT_REJECTED');
+  const rootReal = fs.realpathSync.native(absoluteRoot);
+  let existing = absoluteTarget;
+  while (!fs.existsSync(existing)) existing = path.dirname(existing);
+  const existingReal = fs.realpathSync.native(existing);
+  const realRelative = path.relative(rootReal, existingReal);
+  if (realRelative === '..' || realRelative.startsWith(`..${path.sep}`) || path.isAbsolute(realRelative)) throw authorityError('resolved path escapes question bank root', 'QUESTION_BANK_PATH_ESCAPE');
+  return absoluteTarget;
+}
+
 function bindQuestionBankStoreToDatabase({ db, root, authz = {}, runtime = {} }) {
   assertTrustedHost(authz, runtime, { superAdminOnly: true });
+  assertSafeStorePath(root, root);
+  assertSafeStorePath(root, manifestPath(root));
+  for (const required of requiredDirs(root)) assertSafeStorePath(root, required);
   const inspected = assertQuestionBankWritable(root, runtime);
   const dbAuthorityId = getOrCreateDatabaseAuthorityId(db);
   const existingBinding = db.prepare("SELECT * FROM question_bank_store_bindings WHERE status='active' LIMIT 1").get();
@@ -116,6 +141,9 @@ function activeBinding(db) {
 
 function verifyBinding(db, binding) {
   if (!binding) throw authorityError('no bound question bank store', 'QUESTION_BANK_STORE_NOT_BOUND');
+  assertSafeStorePath(binding.root_path, binding.root_path);
+  assertSafeStorePath(binding.root_path, manifestPath(binding.root_path));
+  for (const required of requiredDirs(binding.root_path)) assertSafeStorePath(binding.root_path, required);
   const inspected = inspectQuestionBankStore(binding.root_path);
   if (inspected.manifest.storeId !== binding.store_id || inspected.manifest.authorityDatabaseId !== binding.db_authority_id) {
     throw authorityError('question bank store authority mismatch', 'QUESTION_BANK_AUTHORITY_MISMATCH');
@@ -145,22 +173,40 @@ function questionBundle(db, questionId, tenantId) {
   return { question, contents: db.prepare('SELECT * FROM question_contents WHERE question_id=? AND deleted=0').all(questionId), assets: db.prepare('SELECT * FROM question_assets WHERE question_id=? AND deleted=0').all(questionId) };
 }
 
+function deletionSnapshot(db, questionId, tenantId) {
+  const question = db.prepare('SELECT * FROM questions WHERE id=? AND tenant_id=?').get(questionId, tenantId);
+  return { question, contents: db.prepare('SELECT * FROM question_contents WHERE question_id=?').all(questionId), assets: db.prepare('SELECT * FROM question_assets WHERE question_id=?').all(questionId) };
+}
+
+function restoreDeletedFlagsFromSnapshot(db, snapshot, timestamp) {
+  db.prepare('UPDATE questions SET deleted=?,deleted_at=?,updated_at=? WHERE id=?').run(snapshot.question.deleted, snapshot.question.deleted_at || null, timestamp, snapshot.question.id);
+  for (const row of snapshot.contents) db.prepare('UPDATE question_contents SET deleted=?,updated_at=? WHERE id=?').run(row.deleted, timestamp, row.id);
+  for (const row of snapshot.assets) db.prepare('UPDATE question_assets SET deleted=?,updated_at=? WHERE id=?').run(row.deleted, timestamp, row.id);
+}
+
 function commitQuestionToBoundStore(questionId, context = {}) {
   const { db, authz = {}, runtime = {}, tenantId = 'default' } = context;
   const binding = activeBinding(db); verifyBinding(db, binding);
   assertTrustedHost(authz, runtime);
   const bundle = questionBundle(db, questionId, tenantId);
   const dir = path.join(binding.root_path, 'questions', path.basename(questionId));
+  assertSafeStorePath(binding.root_path, dir);
   const created = !fs.existsSync(dir);
   const manifestFile = manifestPath(binding.root_path);
   const originalManifest = fs.readFileSync(manifestFile);
   try {
     ensureDir(dir);
-    writeJsonAtomic(path.join(dir, 'question.json'), bundle);
+    assertSafeStorePath(binding.root_path, dir);
+    writeJsonAtomic(assertSafeStorePath(binding.root_path, path.join(dir, 'question.json')), bundle);
+    const assetNames = new Set();
     for (const asset of bundle.assets) {
       if (String(asset.oss_url || '').startsWith('data:')) {
         const match = asset.oss_url.match(/^data:[^;]+;base64,(.*)$/);
-        if (match) fs.writeFileSync(path.join(dir, path.basename(asset.file_name || `${asset.id}.bin`)), Buffer.from(match[1], 'base64'));
+        let name = path.basename(asset.file_name || `${asset.id}.bin`);
+        if (assetNames.has(name)) name = `${path.parse(name).name}-${asset.id}${path.extname(name)}`;
+        assetNames.add(name);
+        const assetPath = assertSafeStorePath(binding.root_path, path.join(dir, name));
+        if (match) fs.writeFileSync(assetPath, Buffer.from(match[1], 'base64'));
       }
     }
     const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf-8'));
@@ -181,10 +227,43 @@ function commitQuestionToBoundStore(questionId, context = {}) {
   }
 }
 
+function updateCommittedQuestion(questionId, context = {}) {
+  const { db, authz = {}, runtime = {}, tenantId = 'default', payload = {} } = context;
+  if (!canDeleteQuestion({ ...authz, ...runtime, runtimeNodeRole: runtime.runtimeNodeRole || runtime.nodeRole, storageState: 'host_committed' })) {
+    const error = new Error('committed question update requires trusted primary-host desktop'); error.code = 'HOST_DESKTOP_REQUIRED_FOR_COMMITTED_UPDATE'; error.status = 403; throw error;
+  }
+  assertTrustedHost(authz, runtime);
+  const binding = activeBinding(db); verifyBinding(db, binding);
+  const existing = deletionSnapshot(db, questionId, tenantId);
+  if (!existing.question || existing.question.storage_state !== 'host_committed') throw authorityError('committed question not found', 'QUESTION_NOT_COMMITTED');
+  const dir = safeInside(binding.root_path, path.join(binding.root_path, 'questions', path.basename(questionId)));
+  if (!fs.existsSync(dir)) throw authorityError('committed question files missing', 'QUESTION_FILES_MISSING');
+  const backup = safeInside(binding.root_path, path.join(binding.root_path, 'backups', `update-${crypto.randomUUID()}`));
+  const manifestFile = manifestPath(binding.root_path); const manifestBefore = fs.readFileSync(manifestFile);
+  fs.cpSync(dir, backup, { recursive: true, errorOnExist: true });
+  try {
+    let updated;
+    db.transaction(() => {
+      const questionBank = require('./questionBankService');
+      updated = questionBank.updateQuestion(db, questionId, payload, tenantId);
+      const bundle = questionBundle(db, questionId, tenantId);
+      writeJsonAtomic(assertSafeStorePath(binding.root_path, path.join(dir, 'question.json')), bundle);
+      const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf-8'));
+      manifest.questions = { ...(manifest.questions || {}), [questionId]: { ...(manifest.questions?.[questionId] || {}), path: `questions/${path.basename(questionId)}/question.json`, updatedAt: now() } };
+      writeJsonAtomic(manifestFile, manifest);
+    })();
+    fs.rmSync(backup, { recursive: true, force: true });
+    return updated;
+  } catch (error) {
+    fs.writeFileSync(manifestFile, manifestBefore);
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    fs.renameSync(backup, dir);
+    throw error;
+  }
+}
+
 function safeInside(root, target) {
-  const base = path.resolve(root) + path.sep; const resolved = path.resolve(target);
-  if (!resolved.startsWith(base)) throw authorityError('path escapes question bank root', 'QUESTION_BANK_PATH_ESCAPE');
-  return resolved;
+  return assertSafeStorePath(root, target);
 }
 
 function deleteCommittedQuestion(questionId, context = {}) {
@@ -193,6 +272,7 @@ function deleteCommittedQuestion(questionId, context = {}) {
   assertTrustedHost(authz, runtime);
   const binding = activeBinding(db); verifyBinding(db, binding);
   const bundle = questionBundle(db, questionId, tenantId);
+  const snapshot = deletionSnapshot(db, questionId, tenantId);
   if (bundle.question.storage_state !== 'host_committed') throw authorityError('question is not committed', 'QUESTION_NOT_COMMITTED');
   const operationId = String(context.operationId || crypto.randomUUID()).replace(/[^a-zA-Z0-9_-]/g, '');
   const source = safeInside(binding.root_path, path.join(binding.root_path, 'questions', path.basename(questionId)));
@@ -210,7 +290,7 @@ function deleteCommittedQuestion(questionId, context = {}) {
       db.prepare(`INSERT INTO question_bank_storage_audit (id,operation_id,actor_user_id,action,store_id,question_id,details_json,created_at) VALUES (?,?,?,?,?,?,?,?)`)
         .run(crypto.randomUUID(), operationId, authz.userId, 'delete_committed_question', binding.store_id, questionId, JSON.stringify({ trash }), ts);
       db.prepare(`INSERT INTO question_bank_delete_operations (operation_id,question_id,tenant_id,store_id,trash_relative_path,snapshot_json,manifest_before_json,status,created_at)
-        VALUES (?,?,?,?,?,?,?,'deleted',?)`).run(operationId, questionId, tenantId, binding.store_id, path.relative(binding.root_path, trash), JSON.stringify(bundle), manifestBefore, ts);
+        VALUES (?,?,?,?,?,?,?,'deleted',?)`).run(operationId, questionId, tenantId, binding.store_id, path.relative(binding.root_path, trash), JSON.stringify(snapshot), manifestBefore, ts);
     })();
     dbChanged = true;
     const manifestFile = manifestPath(binding.root_path);
@@ -223,9 +303,7 @@ function deleteCommittedQuestion(questionId, context = {}) {
     if (dbChanged) {
       const ts = now();
       db.transaction(() => {
-        db.prepare('UPDATE questions SET deleted=0,deleted_at=NULL,updated_at=? WHERE id=? AND tenant_id=?').run(ts, questionId, tenantId);
-        db.prepare('UPDATE question_contents SET deleted=0,updated_at=? WHERE question_id=?').run(ts, questionId);
-        db.prepare('UPDATE question_assets SET deleted=0,updated_at=? WHERE question_id=?').run(ts, questionId);
+        restoreDeletedFlagsFromSnapshot(db, snapshot, ts);
         db.prepare("DELETE FROM question_bank_storage_audit WHERE operation_id=? AND action='delete_committed_question'").run(operationId);
         db.prepare('DELETE FROM question_bank_delete_operations WHERE operation_id=?').run(operationId);
       })();
@@ -247,15 +325,14 @@ function restoreCommittedQuestion(questionId, context = {}) {
   const target = safeInside(binding.root_path, path.join(binding.root_path, 'questions', path.basename(questionId)));
   if (!fs.existsSync(trash) || fs.existsSync(target)) throw authorityError('question trash state invalid', 'QUESTION_TRASH_STATE_INVALID');
   const manifestFile = manifestPath(binding.root_path);
+  const snapshot = JSON.parse(operation.snapshot_json);
   const manifestCurrent = fs.readFileSync(manifestFile, 'utf-8');
   ensureDir(path.dirname(target)); fs.renameSync(trash, target);
   let dbChanged = false;
   try {
     const ts = now();
     db.transaction(() => {
-      db.prepare('UPDATE questions SET deleted=0,deleted_at=NULL,updated_at=? WHERE id=? AND tenant_id=? AND deleted=1').run(ts, questionId, tenantId);
-      db.prepare('UPDATE question_contents SET deleted=0,updated_at=? WHERE question_id=?').run(ts, questionId);
-      db.prepare('UPDATE question_assets SET deleted=0,updated_at=? WHERE question_id=?').run(ts, questionId);
+      restoreDeletedFlagsFromSnapshot(db, snapshot, ts);
       db.prepare("UPDATE question_bank_delete_operations SET status='restored',restored_at=? WHERE operation_id=?").run(ts, operation.operation_id);
       db.prepare(`INSERT INTO question_bank_storage_audit (id,operation_id,actor_user_id,action,store_id,question_id,details_json,created_at) VALUES (?,?,?,?,?,?,?,?)`)
         .run(crypto.randomUUID(), operation.operation_id, authz.userId, 'restore_committed_question', binding.store_id, questionId, '{}', ts);
@@ -272,8 +349,8 @@ function restoreCommittedQuestion(questionId, context = {}) {
     if (dbChanged) db.transaction(() => {
       const ts = now();
       db.prepare('UPDATE questions SET deleted=1,deleted_at=?,updated_at=? WHERE id=? AND tenant_id=?').run(operation.created_at, ts, questionId, tenantId);
-      db.prepare('UPDATE question_contents SET deleted=1,updated_at=? WHERE question_id=?').run(ts, questionId);
-      db.prepare('UPDATE question_assets SET deleted=1,updated_at=? WHERE question_id=?').run(ts, questionId);
+      for (const row of snapshot.contents) db.prepare('UPDATE question_contents SET deleted=1,updated_at=? WHERE id=?').run(ts, row.id);
+      for (const row of snapshot.assets) db.prepare('UPDATE question_assets SET deleted=1,updated_at=? WHERE id=?').run(ts, row.id);
       db.prepare("UPDATE question_bank_delete_operations SET status='deleted',restored_at=NULL WHERE operation_id=?").run(operation.operation_id);
       db.prepare("DELETE FROM question_bank_storage_audit WHERE operation_id=? AND action='restore_committed_question'").run(operation.operation_id);
     })();
@@ -396,4 +473,5 @@ module.exports = {
   deleteCommittedQuestion,
   migrateBoundLegacyQuestions,
   restoreCommittedQuestion,
+  updateCommittedQuestion,
 };

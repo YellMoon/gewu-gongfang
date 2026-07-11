@@ -8,6 +8,7 @@ import {
 } from '../types';
 import type { SyncAction, SyncTable } from './syncEngine';
 const { applyTrustedQuestionProvenance } = require('./questionProvenance');
+const { normalizeDesktopAuthorizationSession } = require('./desktopQuestionDeleteContext');
 import { calculateGrade, calculateFees, calculateDurationHours, groupByMonth, calculatePercentage } from '../utils/helpers';
 import { getColorForRoom } from '../utils/courseColors';
 import {
@@ -274,8 +275,8 @@ class BrowserDatabaseService {
 
   private getAuthorizationUserId(): string {
     try {
-      const session = JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null');
-      return session?.user?.id || session?.userId || '';
+      const session = normalizeDesktopAuthorizationSession(JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null'));
+      return session.authContext.userId;
     } catch { return ''; }
   }
 
@@ -1771,6 +1772,10 @@ class BrowserDatabaseService {
     this.syncQuestionLocalRecord(normalizedQuestion);
     this.saveData();
     this.recordSyncChange('questions', 'create', normalizedQuestion.id, normalizedQuestion);
+    try {
+      const session = normalizeDesktopAuthorizationSession(JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null'));
+      (window as any).questionDraftProvenance?.register?.(normalizedQuestion.id, session.authorization)?.catch?.(() => undefined);
+    } catch (_error) {}
     return normalizedQuestion;
   }
 
@@ -1849,14 +1854,15 @@ class BrowserDatabaseService {
     return true;
   }
 
-  deleteQuestion(id: string): boolean {
+  deleteQuestion(id: string, nativeVerified = false): boolean {
     const idx = this.data.questions.findIndex(q => q.id === id);
     if (idx === -1) return false;
     if (this.data.questions[idx].storage_state === 'host_committed') return false;
+    if (nativeVerified !== true) return false;
     let userId = '';
     try {
-      const session = JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null');
-      userId = session?.user?.id || session?.userId || '';
+      const session = normalizeDesktopAuthorizationSession(JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null'));
+      userId = session.authContext.userId;
     } catch (_error) {}
     if (this.data.questions[idx].sourceDeviceId !== this.getSyncDeviceId()
       || !userId || this.data.questions[idx].ownerUserId !== userId) return false;

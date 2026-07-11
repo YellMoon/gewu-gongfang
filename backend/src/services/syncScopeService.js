@@ -31,6 +31,9 @@ function validateSyncMutation(operation = {}, authz = {}, lookup = {}) {
       throw error('HOST_DESKTOP_REQUIRED_FOR_COMMITTED_DELETE');
     }
   }
+  if (table === 'questions' && operation.action === 'update' && existing?.storage_state === 'host_committed' && authz.storageHookVerified !== true) {
+    return { decision: 'review', code: 'COMMITTED_QUESTION_STORAGE_UPDATE_REQUIRED', provenance };
+  }
   if (authz.kind === 'admin') return { decision: 'apply', provenance };
   if (authz.kind !== 'teacher' || !authz.teacherId) throw error('AUTHORIZATION_CONTEXT_REQUIRED');
 

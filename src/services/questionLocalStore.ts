@@ -1,6 +1,7 @@
 import type { KnowledgeNode, Question } from '../types';
 const { canRemoveQuestionLocalRecord } = require('./questionLocalDeletionPolicy');
 const { applyTrustedQuestionProvenance } = require('./questionProvenance');
+const { normalizeDesktopAuthorizationSession } = require('./desktopQuestionDeleteContext');
 
 const DB_NAME = 'question_local_store_v1';
 const DB_VERSION = 1;
@@ -188,8 +189,8 @@ function trustedLocalQuestion(question: Question, existing?: Question): Question
   if (existing) return { ...question, storage_state: existing.storage_state, sourceDeviceId: existing.sourceDeviceId, ownerUserId: existing.ownerUserId };
   let deviceId = '', userId = '';
   try {
-    const session = JSON.parse(globalThis.sessionStorage?.getItem?.('gewu_desktop_authorization_session') || 'null');
-    deviceId = session?.deviceId || ''; userId = session?.user?.id || session?.userId || '';
+    const session = normalizeDesktopAuthorizationSession(JSON.parse(globalThis.sessionStorage?.getItem?.('gewu_desktop_authorization_session') || 'null'));
+    deviceId = session.authContext.deviceId; userId = session.authContext.userId;
   } catch (_error) {}
   return applyTrustedQuestionProvenance(question, { deviceId, userId }, existing) as Question;
 }
