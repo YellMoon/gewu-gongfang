@@ -421,7 +421,7 @@ class DatabaseService {
     this.db.transaction(() => {
       this.db.prepare('UPDATE users SET phone_normalized = NULL').run();
       for (const [phone, matches] of groups) {
-        if (matches.length > 1) this.db.prepare(`INSERT INTO authorization_audit_log
+        if (matches.length > 1 && !this.db.prepare("SELECT 1 FROM authorization_audit_log WHERE action='phone_identity_conflict' AND before_json=?").get(JSON.stringify(matches.map(row => row.id)))) this.db.prepare(`INSERT INTO authorization_audit_log
           (id, action, before_json, after_json, created_at) VALUES (?, 'phone_identity_conflict', ?, ?, ?)`)
           .run(uuidv4(), JSON.stringify(matches.map(row => row.id)), JSON.stringify({ phoneHash: require('crypto').createHash('sha256').update(phone).digest('hex') }), this._now());
         const canonical = phone === SUPER_ADMIN_PHONE ? matches.find(row => row.id === CANONICAL_SUPER_ADMIN_ID && row.is_super_admin_identity === 1) : null;
@@ -1784,6 +1784,29 @@ class DatabaseService {
       .run(id, phone, phone, profile.nickname || phone, profile.nickname || null, openid,
         unionid || null, profile.avatarUrl || null, now, now);
     return this.db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  }
+
+  bindOrCreateMiniappUserByVerifiedPhone({ phone, openid, unionid, profile = {} } = {}) {
+    const normalized = normalizePhone(phone);
+    if (!normalized || !openid) throw Object.assign(new Error('verified identity is required'), { code: 'PHONE_IDENTITY_CONFLICT' });
+    try {
+      return this.db.transaction(() => {
+        const phoneOwner = this.db.prepare('SELECT * FROM users WHERE phone_normalized = ? AND deleted = 0').get(normalized);
+        const openidOwner = this.getMiniappUserByWechat(openid);
+        if (openidOwner && (!phoneOwner || openidOwner.id !== phoneOwner.id)) throw Object.assign(new Error('openid conflict'), { code: 'OPENID_IDENTITY_CONFLICT' });
+        if (phoneOwner?.wechat_openid && phoneOwner.wechat_openid !== openid) throw Object.assign(new Error('phone conflict'), { code: 'PHONE_IDENTITY_CONFLICT' });
+        if (phoneOwner) {
+          const result = this.db.prepare(`UPDATE users SET wechat_openid=?, wechat_unionid=COALESCE(wechat_unionid,?), phone_normalized=?, updated_at=?
+            WHERE id=? AND (wechat_openid IS NULL OR wechat_openid=?)`).run(openid, unionid || null, normalized, this._now(), phoneOwner.id, openid);
+          if (result.changes !== 1) throw Object.assign(new Error('phone conflict'), { code: 'PHONE_IDENTITY_CONFLICT' });
+          return this.db.prepare('SELECT * FROM users WHERE id=?').get(phoneOwner.id);
+        }
+        return this.createPendingMiniappUserByVerifiedPhone(normalized, openid, unionid, profile);
+      }).immediate();
+    } catch (error) {
+      if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') throw Object.assign(new Error('identity conflict'), { code: 'PHONE_IDENTITY_CONFLICT' });
+      throw error;
+    }
   }
 
   findAuthorizedMiniappUserByWechat(openid) {

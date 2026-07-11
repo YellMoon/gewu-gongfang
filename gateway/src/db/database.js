@@ -71,7 +71,7 @@ function normalizeUniquePhones(database) {
   database.transaction(() => {
     database.prepare('UPDATE users SET phone_normalized = NULL').run();
     for (const [phone, rows] of groups) {
-      if (rows.length > 1) database.prepare(`INSERT INTO authorization_audit_log
+      if (rows.length > 1 && !database.prepare("SELECT 1 FROM authorization_audit_log WHERE action='phone_identity_conflict' AND before_json=?").get(JSON.stringify(rows.map(row => row.id)))) database.prepare(`INSERT INTO authorization_audit_log
         (id, action, before_json, after_json, created_at) VALUES (?, 'phone_identity_conflict', ?, ?, ?)`)
         .run(crypto.randomUUID(), JSON.stringify(rows.map(row => row.id)), JSON.stringify({ phoneHash: crypto.createHash('sha256').update(phone).digest('hex') }), new Date().toISOString());
       const canonical = phone === '13732250653' ? rows.find(row => row.is_super_admin_identity === 1) : null;

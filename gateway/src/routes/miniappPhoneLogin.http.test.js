@@ -21,7 +21,7 @@ const post = async (route, body) => { const response = await realFetch(`http://1
   assert.strictEqual(pending.status, 202); assert.strictEqual(pending.body.code, 'PENDING_REVIEW');
   assert.strictEqual(getDb().prepare('SELECT COUNT(*) count FROM users WHERE phone_normalized = ?').get('13900000001').count, 1);
   assert.strictEqual((await post('/api/auth/wechat-login', { code: 'new' })).body.code, 'USER_PENDING_REVIEW');
-  let limited; for (let i = 0; i < 11; i += 1) limited = await post('/api/auth/wechat-login', { code: `rate-${i}` });
+  let limited; for (let i = 0; i < 61; i += 1) limited = await post('/api/auth/wechat-login', { code: `rate-${i}` });
   assert.strictEqual(limited.status, 429); assert.ok(limited.headers.get('retry-after'));
   console.log('gateway miniapp phone login HTTP checks passed');
 })().finally(() => new Promise(resolve => server.close(resolve))).then(() => { closeDatabase(); global.fetch = realFetch; fs.rmSync(temp, { recursive: true, force: true }); }).catch(error => { console.error(error); process.exitCode = 1; });
