@@ -79,5 +79,20 @@ assertRecordReadable('payments', { schedule_id: 'sc1' }, { kind: 'teacher', teac
 assertRecordReadable('assetRecords', { owner_user_id: 'u1' }, { kind: 'teacher', teacherId: 't1', userId: 'u1' });
 assert.throws(() => assertRecordReadable('payments', { student_id: 's1' }, { kind: 'teacher', teacherId: 't1' }, { courses: snapshot.courses }), err => err.code === 'DATA_SCOPE_UNRESOLVED');
 assert.throws(() => assertRecordWritable('schedules', { course_id: 'c2' }, { kind: 'teacher', teacherId: 't1' }, { courses: snapshot.courses }), err => err.code === 'TEACHER_SCOPE_VIOLATION');
+assert.throws(() => assertRecordReadable('payments', { course_id: 'c1', schedule_id: 'sc2' }, { kind: 'teacher', teacherId: 't1' }, { courses: snapshot.courses, schedules: snapshot.schedules }), err => err.code === 'TEACHER_SCOPE_VIOLATION');
+const hostile = scopeBusinessSnapshot({ ...snapshot,
+  questions: [{ id: 'q1', tenant_id: 'secret', created_by: 'secret' }],
+  question_contents: [{ id: 'qc1', question_id: 'q1', stem: 'body', answer: 'answer', explanation: 'why', content_hash: 'secret', local_path: 'secret' }],
+  question_assets: [{ id: 'qa1', question_id: 'q1', asset_type: 'image', oss_key: 'secret', path: 'secret' }],
+}, { kind: 'teacher', teacherId: 't1', userId: 'u1' });
+assert.strictEqual(hostile.questions[0].tenant_id, undefined);
+assert.strictEqual(hostile.question_contents[0].content_hash, undefined);
+assert.strictEqual(hostile.question_contents[0].answer, 'answer');
+assert.strictEqual(hostile.question_assets[0].oss_key, undefined);
+const finite = require('./dataScopeService').buildScopedFinancialSnapshot({
+  schedules: [{ id: 'a', calculated_tuition: '10', calculated_teacher_fee: -2 }, { id: 'a', calculated_tuition: 10 }, { id: 'b', calculated_tuition: 'bad' }, { id: 'c', calculated_tuition: Infinity }],
+  payments: [{ id: 'p', amount: '' }, { id: 'p2', amount: -5 }], assetRecords: [],
+});
+assert.deepStrictEqual(finite, { tuition: 10, teacherFees: -2, payments: -5, assets: 0 });
 
 console.log('dataScopeService tests passed');

@@ -1,0 +1,32 @@
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const express = require('express');
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gateway-relay-auth-'));
+process.env.GATEWAY_DB_PATH = path.join(root, 'gateway.db');
+process.env.GEWU_CLOUD_RELAY_HOST_TOKEN = 'test-host-secret';
+const { initDatabase, closeDatabase, getDb } = require('../db/database');
+const router = require('./cloudRelay');
+
+(async () => {
+  initDatabase();
+  const app = express(); app.use(express.json());
+  app.use((req, _res, next) => { if (req.headers['x-test-user']) req.user = JSON.parse(req.headers['x-test-user']); next(); });
+  app.use('/api/cloud', router);
+  const server = app.listen(0); const base = `http://127.0.0.1:${server.address().port}/api/cloud`;
+  const call = (url, options = {}) => fetch(base + url, { ...options, headers: { 'content-type': 'application/json', ...(options.headers || {}) } });
+  assert.strictEqual((await call('/snapshots/publish', { method: 'POST', body: '{}' })).status, 403);
+  assert.strictEqual((await call('/tasks')).status, 403);
+  assert.strictEqual((await call('/tasks/x/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'wrong' }, body: '{}' })).status, 403);
+  assert.strictEqual((await call('/host/heartbeat', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ hostDeviceId: 'host1' }) })).status, 200);
+  const now = new Date().toISOString();
+  getDb().prepare("INSERT INTO miniapp_tasks (id,task_type,status,payload,created_by,created_at,updated_at) VALUES ('task1','question-paper','pending_host','{}','u1',?,?)").run(now, now);
+  assert.strictEqual((await call('/tasks', { headers: { 'x-gewu-host-token': 'test-host-secret' } })).status, 200);
+  assert.strictEqual((await call('/tasks/task1/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: '{}' })).status, 200);
+  const approved = id => JSON.stringify({ id, user_type: 'student', student_id: id, review_status: 'approved', status: 1, login_enabled: 1 });
+  assert.strictEqual((await call('/tasks/task1/result', { headers: { 'x-test-user': approved('u2') } })).status, 403);
+  assert.strictEqual((await call('/tasks/task1/result', { headers: { 'x-test-user': approved('u1') } })).status, 200);
+  server.close(); closeDatabase(); fs.rmSync(root, { recursive: true, force: true });
+  console.log('gateway cloud relay HTTP auth checks passed');
+})().catch(err => { console.error(err); process.exitCode = 1; });

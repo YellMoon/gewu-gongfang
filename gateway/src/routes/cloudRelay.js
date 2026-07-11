@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const { getDb } = require('../db/database');
-const { scopeBusinessSnapshot } = require('../../../backend/src/services/dataScopeService');
+const { scopeBusinessSnapshot } = require('../services/dataScopeService');
 const { isApprovedActive, roleForUser } = require('../services/authorizationPolicy');
 
 const router = express.Router();
@@ -12,6 +12,18 @@ function now() {
 
 function id(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
+}
+
+function secureEqual(left, right) {
+  const a = Buffer.from(String(left || ''));
+  const b = Buffer.from(String(right || ''));
+  return a.length === b.length && a.length > 0 && crypto.timingSafeEqual(a, b);
+}
+function requireHostToken(req, res, next) {
+  const expected = process.env.GEWU_CLOUD_RELAY_HOST_TOKEN;
+  const supplied = req.headers['x-gewu-host-token'] || req.headers['x-host-token'];
+  if (!expected || !secureEqual(supplied, expected)) return res.status(403).json({ success: false, code: 'HOST_TOKEN_INVALID' });
+  return next();
 }
 
 function isStudentUser(user) {
@@ -33,11 +45,11 @@ function getLinkedStudentIds(user = {}) {
     user.studentId,
     user.linked_student_id,
     user.linkedStudentId,
-    ...(user.linked_student_ids || []),
-    ...(user.linkedStudentIds || []),
+    ...parseArray(user.linked_student_ids),
+    ...parseArray(user.linkedStudentIds),
     user.user_type === 'student' ? user.id : undefined,
   ];
-  return Array.from(new Set(ids.filter(Boolean)));
+  return Array.from(new Set(ids.filter(Boolean).map(String)));
 }
 
 function parseArray(value) {
@@ -115,7 +127,7 @@ function filterSnapshotForUser(snapshot, user) {
   return { ...snapshot, payload: {} };
 }
 
-router.post('/host/heartbeat', (req, res) => {
+router.post('/host/heartbeat', requireHostToken, (req, res) => {
   const db = getDb();
   const time = now();
   const hostDeviceId = req.body.hostDeviceId || req.body.deviceId;
@@ -132,7 +144,7 @@ router.post('/host/heartbeat', (req, res) => {
   res.json({ success: true, serverTime: time });
 });
 
-router.post('/snapshots/publish', (req, res) => {
+router.post('/snapshots/publish', requireHostToken, (req, res) => {
   const db = getDb();
   const snapshotId = id('snap');
   const time = now();
@@ -171,7 +183,7 @@ router.get('/snapshots/read', requireApprovedSnapshotUser, (req, res) => {
   });
 });
 
-router.post('/tasks', (req, res) => {
+router.post('/tasks', requireApprovedSnapshotUser, (req, res) => {
   const db = getDb();
   const allowed = allowedTasksForUser(req.user);
   if (!allowed.has(req.body.taskType)) return res.status(403).json({ success: false, error: 'task type is not allowed' });
@@ -180,11 +192,11 @@ router.post('/tasks', (req, res) => {
   db.prepare(
     `INSERT INTO miniapp_tasks (id, task_type, status, payload, created_by, created_at, updated_at)
      VALUES (?, ?, 'pending_host', ?, ?, ?, ?)`
-  ).run(taskId, req.body.taskType, JSON.stringify(req.body.payload || {}), req.body.createdBy || 'miniapp', time, time);
+  ).run(taskId, req.body.taskType, JSON.stringify(req.body.payload || {}), req.user.id, time, time);
   res.json({ success: true, task: { id: taskId, status: 'pending_host' } });
 });
 
-router.get('/tasks', (req, res) => {
+router.get('/tasks', requireHostToken, (req, res) => {
   const db = getDb();
   const status = req.query.status || 'pending_host';
   const rows = db.prepare(
@@ -200,7 +212,7 @@ router.get('/tasks', (req, res) => {
   });
 });
 
-router.post('/tasks/:id/complete', (req, res) => {
+router.post('/tasks/:id/complete', requireHostToken, (req, res) => {
   const db = getDb();
   const time = now();
   const status = req.body.success === false ? 'failed' : 'completed';
@@ -226,9 +238,12 @@ router.post('/tasks/:id/complete', (req, res) => {
   });
 });
 
-router.get('/tasks/:id/result', (req, res) => {
+router.get('/tasks/:id/result', requireApprovedSnapshotUser, (req, res) => {
   const db = getDb();
   const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(req.params.id);
+  if (row && !['super_admin', 'admin'].includes(roleForUser(req.user)) && row.created_by !== req.user.id) {
+    return res.status(403).json({ success: false, code: 'TASK_SCOPE_VIOLATION' });
+  }
   res.json({
     success: true,
     task: row ? {
@@ -242,3 +257,4 @@ router.get('/tasks/:id/result', (req, res) => {
 module.exports = router;
 module.exports.filterSnapshotForUser = filterSnapshotForUser;
 module.exports.requireApprovedSnapshotUser = requireApprovedSnapshotUser;
+module.exports.requireHostToken = requireHostToken;

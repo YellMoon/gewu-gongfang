@@ -6,7 +6,7 @@ const route = fs.readFileSync('gateway/src/routes/cloudRelay.js', 'utf-8');
 const app = fs.readFileSync('gateway/src/app.js', 'utf-8');
 const authRoute = fs.readFileSync('gateway/src/routes/auth.js', 'utf-8');
 const permissionMiddleware = fs.readFileSync('gateway/src/middleware/permission.js', 'utf-8');
-const { filterSnapshotForUser, requireApprovedSnapshotUser } = require('./cloudRelay');
+const { filterSnapshotForUser, requireApprovedSnapshotUser, requireHostToken } = require('./cloudRelay');
 
 assert.ok(schema.includes('host_heartbeats'), 'schema should include host_heartbeats');
 assert.ok(schema.includes('readonly_snapshots'), 'schema should include readonly_snapshots');
@@ -64,5 +64,20 @@ assert.strictEqual(studentSnapshot.payload.schedules[0].calculated_tuition, unde
 assert.strictEqual(studentSnapshot.payload.teachers[0].hourly_rate, undefined);
 assert.deepStrictEqual(studentSnapshot.payload.payments, []);
 assert.strictEqual(studentSnapshot.payload.questions.length, 1);
+function hostStatus(token, configured = 'test-host-secret') {
+  const previous = process.env.GEWU_CLOUD_RELAY_HOST_TOKEN;
+  if (configured) process.env.GEWU_CLOUD_RELAY_HOST_TOKEN = configured; else delete process.env.GEWU_CLOUD_RELAY_HOST_TOKEN;
+  let status = 200; let nextCalled = false;
+  requireHostToken({ headers: token ? { 'x-gewu-host-token': token } : {} }, { status(code) { status = code; return this; }, json() {} }, () => { nextCalled = true; });
+  if (previous === undefined) delete process.env.GEWU_CLOUD_RELAY_HOST_TOKEN; else process.env.GEWU_CLOUD_RELAY_HOST_TOKEN = previous;
+  return { status, nextCalled };
+}
+assert.deepStrictEqual(hostStatus(), { status: 403, nextCalled: false });
+assert.deepStrictEqual(hostStatus('wrong'), { status: 403, nextCalled: false });
+assert.deepStrictEqual(hostStatus('test-host-secret'), { status: 200, nextCalled: true });
+assert.deepStrictEqual(hostStatus('anything', ''), { status: 403, nextCalled: false });
+assert.ok(route.includes("router.get('/tasks', requireHostToken"));
+assert.ok(route.includes("router.post('/tasks/:id/complete', requireHostToken"));
+assert.ok(route.includes("router.post('/tasks', requireApprovedSnapshotUser"));
 
 console.log('cloudRelay route checks passed');
