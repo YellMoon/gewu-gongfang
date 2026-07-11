@@ -6,10 +6,14 @@ const { createDesktopPairing, exchangeDesktopPairing, normalizePhone } = require
 const router = Router();
 const send = (res,error) => res.status(error.code === 'PAIRING_NOT_FOUND' ? 404 : 403).json({success:false,code:error.code||'PAIRING_FAILED'});
 router.post('/start',(req,res)=>{ try { res.json({success:true,pairing:createDesktopPairing(getInstance().db,{...req.body,deviceId:req.body.deviceId})}); } catch(e){send(res,e);} });
-router.post('/exchange',(req,res)=>{ try { const result=exchangeDesktopPairing(getInstance().db,req.body);
+router.post('/exchange',(req,res)=>{ try {
   if(!process.env.JWT_SECRET)throw Object.assign(new Error(),{code:'JWT_SECRET_REQUIRED'});
-  const user=getInstance().db.prepare('SELECT * FROM users WHERE id=? AND deleted=0').get(result.userId);
+  const database=getInstance().db;const pairing=database.prepare('SELECT * FROM desktop_device_pairings WHERE id=?').get(req.body.id);
+  if(!pairing)throw Object.assign(new Error(),{code:'PAIRING_NOT_FOUND'});
+  if(pairing.status!=='approved'||pairing.exchanged_at||Date.parse(pairing.expires_at)<Date.now())throw Object.assign(new Error(),{code:'PAIRING_NOT_APPROVED'});
+  const user=database.prepare('SELECT * FROM users WHERE id=? AND deleted=0').get(pairing.user_id);
   if(!user||user.review_status!=='approved'||user.login_enabled===0||user.status===0) throw Object.assign(new Error(),{code:'USER_NOT_APPROVED'});
+  const result=exchangeDesktopPairing(database,req.body);
   const token=jwt.sign({id:user.id,user_type:user.role,deviceId:result.deviceId,token_use:'desktop-session'},JWT_SECRET,{expiresIn:'30m',algorithm:'HS256',issuer:'gewu-auth',audience:'gewu-api'});
   res.json({success:true,token,userId:user.id,deviceId:result.deviceId,expiresIn:1800}); } catch(e){send(res,e);} });
 router.get('/pending',authMiddleware,(req,res)=>{if(req.authz?.role!=='super_admin')return res.status(403).json({success:false,code:'SUPER_ADMIN_REQUIRED'});const limit=Math.min(100,Math.max(1,Number(req.query.pageSize)||20)),offset=(Math.max(1,Number(req.query.page)||1)-1)*limit,search=String(req.query.code||'');const rows=getInstance().db.prepare(`SELECT id,device_id AS deviceId,device_name AS deviceName,phone,pairing_code AS pairingCode,status,expires_at AS expiresAt,created_at AS createdAt FROM desktop_device_pairings WHERE status='pending' AND pairing_code LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(`%${search}%`,limit,offset);res.json({success:true,items:rows});});
