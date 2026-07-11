@@ -1,6 +1,8 @@
 const assert = require('assert');
 const fs = require('fs');
 require('./miniappAuthorizationRuntime.test');
+require('./miniappAuthorizationSession.test');
+require('../pages/admin/users/adminReviewCoordinator.test');
 
 const permission = fs.readFileSync('miniapp/src/utils/permission.ts', 'utf-8');
 const api = fs.readFileSync('miniapp/src/utils/api.ts', 'utf-8');
@@ -65,7 +67,9 @@ assert.ok(adminUsersPage.includes('review_status'), 'review workbench should ren
 assert.ok(adminUsersPage.includes('teacher_id'), 'teacher review should display the unique teacher binding');
 assert.ok(adminUsersPage.includes('SUPER_ADMIN_PHONE'), 'review workbench should visibly protect the fixed super administrator');
 assert.ok(adminUsersPage.includes('loading') && adminUsersPage.includes('empty') && adminUsersPage.includes('error'), 'review workbench should cover loading, empty and error states');
-assert.ok(adminUsersPage.includes('savingUserId'), 'review workbench should prevent duplicate review or disable submissions');
+assert.ok(adminUsersPage.includes('lockedKeys'), 'review workbench should expose per-user and per-pairing saving state');
+assert.ok(adminUsersPage.includes('createLatestRequestCoordinator'), 'review workbench should reject stale load responses');
+assert.ok(adminUsersPage.includes('createOperationLocks'), 'review workbench should lock duplicate mutations by entity key');
 assert.ok(adminUsersPage.includes('read-only-notice'), 'ordinary administrators should receive an explicit read-only state');
 assert.ok(api.includes('disableUser:'), 'miniapp admin API should expose the real disable endpoint');
 assert.ok(api.includes('review_status'), 'miniapp user listing API should support review-status filtering');

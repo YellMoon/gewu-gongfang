@@ -102,7 +102,9 @@ export default function Index() {
     setUser(savedUser);
     setBusinessCacheIdentity(savedUser);
     const permissionResult = await fetchPermissions();
-    const nextAccess = getEffectiveMiniappAccess(savedUser);
+    const verifiedUser = Taro.getStorageSync('user_info');
+    setUser(verifiedUser);
+    const nextAccess = getEffectiveMiniappAccess(verifiedUser);
     setAccess(nextAccess);
     if (permissionResult.capabilities.length === 0 || nextAccess.modules.length === 0) {
       setModules([]);
@@ -111,7 +113,7 @@ export default function Index() {
       setLoading(false);
       return;
     }
-    await Promise.all([loadModules(nextAccess), loadDashboard(savedUser), loadSnapshot(savedUser)]);
+    await Promise.all([loadModules(nextAccess), loadDashboard(verifiedUser), loadSnapshot(verifiedUser)]);
   };
 
   const loadSnapshot = async (currentUser: UserInfo) => {

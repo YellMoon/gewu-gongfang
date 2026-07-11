@@ -5,6 +5,8 @@
 import Taro from '@tarojs/taro';
 import { moduleApi } from './api';
 import { deriveAccess, permissionIdentityKey } from './miniappAuthorizationRuntime';
+import { createAuthorizationSession } from './miniappAuthorizationSession';
+import { clearBusinessCache, setBusinessCacheIdentity } from './storage';
 
 export const readonlyModules = [
   'students',
@@ -104,6 +106,24 @@ export interface PermissionState {
 }
 let _permissionState: PermissionState = { status: 'idle', identityKey: '', capabilities: [] };
 const CACHE_KEY = 'user_permissions';
+const authorizationSession = createAuthorizationSession({
+  readCache: () => Taro.getStorageSync(CACHE_KEY) || null,
+  writeCache: (value: any) => value ? Taro.setStorageSync(CACHE_KEY, value) : Taro.removeStorageSync(CACHE_KEY),
+  clearPermissionCache: () => {
+    _permissionCache = null;
+    _permissionState = { status: 'idle', identityKey: '', capabilities: [] };
+    Taro.removeStorageSync(CACHE_KEY);
+  },
+  clearBusinessCache,
+  setBusinessCacheIdentity,
+  writeUser: (user: any) => Taro.setStorageSync('user_info', user),
+  fetchRemote: async () => {
+    const response = await moduleApi.myPermissions();
+    if (!response.success || !response.data) throw new Error(response.error || 'AUTHORIZATION_REFRESH_FAILED');
+    const payload = response.data as any;
+    return { identity: payload.identity, capabilities: payload.capabilities || [] };
+  },
+});
 
 export function getPermissionState(): PermissionState {
   return { ..._permissionState, capabilities: [..._permissionState.capabilities] };
@@ -206,76 +226,37 @@ export function getMiniappRolePolicy(user: Partial<UserInfo> | null = getCurrent
 
 
 /**
- * 从后端获取当前用户的权限列表
- * 优先从缓存读取，缓存未命中则请求 API
+ * Refresh permissions from the authenticated server. Persistent data is never authoritative.
  */
 export async function fetchPermissions(): Promise<PermissionData> {
-  const identityKey = permissionIdentityKey(getCurrentUser());
-  if (!identityKey) {
-    _permissionCache = null;
-    _permissionState = { status: 'error', identityKey: '', capabilities: [] };
-    return { permissions: [], capabilities: [], user_type: 'pending' };
-  }
-  // 先尝试内存缓存
-  if (_permissionCache && _permissionState.status === 'loaded' && _permissionState.identityKey === identityKey) {
-    return _permissionCache;
-  }
-
-  // 再尝试 storage 缓存
-  try {
-    const cached = Taro.getStorageSync(CACHE_KEY);
-    if (cached && cached.identityKey === identityKey && Array.isArray(cached.capabilities)) {
-      _permissionCache = cached as PermissionData;
-      _permissionState = { status: 'loaded', identityKey, capabilities: cached.capabilities };
-      return _permissionCache;
-    }
-    if (cached) Taro.removeStorageSync(CACHE_KEY);
-  } catch { /* ignore */ }
-
-  // 请求 API
-  let res;
-  try {
-    res = await moduleApi.myPermissions();
-  } catch {
-    _permissionCache = null;
-    _permissionState = { status: 'error', identityKey, capabilities: [] };
-    try { Taro.removeStorageSync(CACHE_KEY); } catch { /* ignore */ }
-    return { permissions: [], capabilities: [], user_type: getUserType() };
-  }
-  if (res.success && res.data) {
-    const raw = res.data as any;
-    const data = {
-      permissions: raw.permissions || [],
-      capabilities: raw.capabilities || [],
-      user_type: raw.user_type || getUserType(),
-    } as PermissionData;
-    _permissionCache = data;
-    _permissionState = { status: 'loaded', identityKey, capabilities: data.capabilities };
-    try {
-      Taro.setStorageSync(CACHE_KEY, { ...data, identityKey });
-    } catch { /* ignore */ }
-    return data;
-  }
-
-  // API 失败返回空权限
+  const localUser = getCurrentUser();
+  const localIdentityKey = permissionIdentityKey(localUser);
   _permissionCache = null;
-  _permissionState = { status: 'error', identityKey, capabilities: [] };
-  try { Taro.removeStorageSync(CACHE_KEY); } catch { /* ignore */ }
-  return { permissions: [], capabilities: [], user_type: getUserType() };
+  _permissionState = { status: 'idle', identityKey: localIdentityKey, capabilities: [] };
+  const result = await authorizationSession.refresh(localUser, { force: true });
+  if (result.status === 'stale') {
+    return _permissionCache || { permissions: [], capabilities: [], user_type: getCurrentUser()?.user_type || 'pending' };
+  }
+  const refreshedUser = getCurrentUser();
+  const identityKey = permissionIdentityKey(refreshedUser);
+  if (result.status !== 'loaded') {
+    _permissionState = { status: 'error', identityKey, capabilities: [] };
+    return { permissions: [], capabilities: [], user_type: refreshedUser?.user_type || 'pending' };
+  }
+  const capabilities = Array.isArray(result.capabilities) ? result.capabilities as MiniappCapability[] : [];
+  const data = {
+    permissions: capabilities.map(capability => ({ id: capability, module_id: capability.split(':')[0], action: capability.split(':')[1], description: capability, status: 1 })),
+    capabilities,
+    user_type: refreshedUser?.user_type || 'pending',
+  };
+  _permissionCache = data;
+  _permissionState = { status: 'loaded', identityKey, capabilities };
+  return data;
 }
 
 /**
- * 检查是否有指定模块的权限
- * admin 类型跳过检查，全部返回 true
- * @param moduleId 模块 ID
- * @param action 操作类型，默认 'view'
- *
- * 题库模块 (question-bank) 权限级别说明：
- *   view = 做题(POST /records) + 查看 + 手动组卷(POST /question-sets) + 导出 + 批改
- *   edit = view 全部 + 创建/编辑/删除题目(questions CRUD) + 批量导入(POST /questions/batch) + 管理学科/章节/知识点
- *   admin = 全部
- *
- * 学生默认拥有 question-bank:view，可满足做题/组卷/查看需求
+ * Server-verified capability checks only. The persistent record is a rendering hint
+ * and is never promoted into the in-memory verified state without a network refresh.
  */
 export function hasModulePermission(moduleId: string, action: string = 'view'): boolean {
   const access = getEffectiveMiniappAccess();

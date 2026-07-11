@@ -35,6 +35,16 @@ function permission(id, action) {
 router.get('/my', (req, res) => {
   const role = req.authz?.role || roleOf(req.user);
   const capabilities = effectiveCapabilities({ ...req.authz, role });
+  const identity = {
+    id: req.user?.id || req.authz?.userId || null,
+    role,
+    teacher_id: req.user?.teacher_id || req.authz?.teacherId || null,
+    student_id: req.user?.student_id || req.authz?.studentId || null,
+    review_status: req.user?.review_status || (req.authz?.userApproved ? 'approved' : 'pending'),
+    status: req.user?.status ?? 0,
+    login_enabled: req.user?.login_enabled ?? 0,
+    authorization_revision: req.user?.updated_at || req.user?.reviewed_at || null,
+  };
   const permissions = capabilities.map(id => {
     const separator = id.indexOf(':');
     return permission(id.slice(0, separator), id.slice(separator + 1));
@@ -43,11 +53,11 @@ router.get('/my', (req, res) => {
   res.json({
     success: true,
     data: {
-      permissions, capabilities,
+      permissions, capabilities, identity,
       user_type: role,
       is_admin: ['super_admin', 'admin'].includes(role),
     },
-    permissions, capabilities,
+    permissions, capabilities, identity,
     user_type: role,
     is_admin: ['super_admin', 'admin'].includes(role),
   });
