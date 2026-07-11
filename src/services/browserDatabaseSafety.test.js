@@ -13,6 +13,12 @@ assert.ok(source.includes("const { storage_state: _ignoredStorageState, sourceDe
 assert.ok(source.includes("const { storage_state: _ignoredStorageState, sourceDeviceId: _ignoredSourceDeviceId, ownerUserId: _ignoredOwnerUserId, ...safeUpdates } = updates"),
   'question updates must not overwrite trusted provenance');
 assert.ok(source.includes("require('./questionProvenance')"), 'browser database must use the tested trusted provenance adapter');
+assert.ok(source.includes('nativeVerified !== true') && source.includes('questionDraftProvenance?.register'),
+  'local draft authorization must fail closed and register through the native bridge');
+const preload = fs.readFileSync('public/preload.js', 'utf-8');
+const electronMain = fs.readFileSync('public/electron.js', 'utf-8');
+assert.ok(preload.includes("exposeInMainWorld('questionDraftProvenance'") && preload.includes('verify-question-draft-provenance'));
+assert.ok(electronMain.includes('QuestionDraftProvenanceRegistry') && electronMain.includes("algorithms: ['HS256']"));
 assert.ok(
   source.includes('business_data_safety_backups_v1'),
   'browser database should store non-question-bank safety backups in localStorage'

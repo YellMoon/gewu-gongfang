@@ -14,6 +14,8 @@ import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType, questionTypeFromParser } from '../constants/questionTypes';
 import QuestionRenderer from '../components/QuestionRenderer';
+import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
+const { verifyNativeQuestionDraft } = require('../services/desktopQuestionDeleteContext');
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -211,8 +213,9 @@ const QuestionBank: React.FC = () => {
     loadData();
   };
 
-  const handleDelete = (id: string) => {
-    (window as any).dbService.deleteQuestion(id);
+  const handleDelete = async (id: string) => {
+    const session = readDesktopAuthorizationSession();
+    (window as any).dbService.deleteQuestion(id, await verifyNativeQuestionDraft(id, session));
     loadData();
   };
 
@@ -226,9 +229,10 @@ const QuestionBank: React.FC = () => {
     message.success('已创建变式题副本');
   };
 
-  const handleBatchDelete = () => {
+  const handleBatchDelete = async () => {
     const db = (window as any).dbService;
-    selectedRowKeys.forEach(id => db.deleteQuestion(id));
+    const session = readDesktopAuthorizationSession();
+    for (const id of selectedRowKeys) db.deleteQuestion(id, await verifyNativeQuestionDraft(id, session));
     setSelectedRowKeys([]);
     loadData();
     message.success(`已删除 ${selectedRowKeys.length} 题`);

@@ -15,7 +15,7 @@ import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
 const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
 const { deleteQuestionViaApi } = require('../services/questionDeleteApi');
-const { normalizeDesktopQuestionDeleteContext } = require('../services/desktopQuestionDeleteContext');
+const { normalizeDesktopQuestionDeleteContext, verifyNativeQuestionDraft } = require('../services/desktopQuestionDeleteContext');
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
 import { splitSearchTerms } from '../utils/highlightText';
@@ -607,7 +607,7 @@ const QuestionBankPreview: React.FC = () => {
     if (question?.storage_state === 'host_committed') {
       const session = readDesktopAuthorizationSession();
       ok = (await deleteQuestionViaApi(fetch, `${API_BASE}/questions/${id}`, { token: session.authorization.replace(/^Bearer\s+/i, ''), deviceId: session.authContext.deviceId })).ok;
-    } else ok = Boolean((window as any).dbService.deleteQuestion(id));
+    } else { const session = readDesktopAuthorizationSession(); ok = Boolean((window as any).dbService.deleteQuestion(id, await verifyNativeQuestionDraft(id, session))); }
     if (!ok) { message.error('Delete failed'); return; }
     setQuestions(previous => previous.filter(item => item.id !== id));
     setQuestionTotal(previous => Math.max(0, previous - 1));
@@ -632,7 +632,7 @@ const QuestionBankPreview: React.FC = () => {
       const question = questions.find(item => item.id === id);
       const ok = question?.storage_state === 'host_committed'
         ? (await deleteQuestionViaApi(fetch, `${API_BASE}/questions/${id}`, session)).ok
-        : Boolean(db.deleteQuestion(id));
+        : Boolean(db.deleteQuestion(id, await verifyNativeQuestionDraft(id, readDesktopAuthorizationSession())));
       if (!ok) throw new Error('DELETE_FAILED'); return id;
     }));
     const succeeded = settled.filter((item): item is PromiseFulfilledResult<string> => item.status === 'fulfilled').map(item => item.value);

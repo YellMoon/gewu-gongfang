@@ -80,6 +80,8 @@ ensureQuestionBankAuthoritySchema(db);
 db.prepare("INSERT INTO questions VALUES ('q1','default','local_draft',NULL,NULL,0,NULL,'t')").run();
 db.prepare("INSERT INTO question_contents VALUES ('c1','q1','题干','答案','解析','[]','hash',0,'t')").run();
 db.prepare("INSERT INTO question_assets VALUES ('a1','q1','pic.txt','inline://pic.txt','data:text/plain;base64,aGVsbG8=',0,'t')").run();
+db.prepare("INSERT INTO question_contents VALUES ('c-old','q1','old','','','[]','old',1,'t')").run();
+db.prepare("INSERT INTO question_assets VALUES ('a-old','q1','old.txt','inline://old.txt','',1,'t')").run();
 const authz = { role: 'super_admin', userId: 'root', userApproved: true, deviceTrusted: true, deviceActive: true, deviceOwnerUserId: 'root' };
 const runtime = { nodeRole: 'primary-host', clientType: 'desktop', tokenUse: 'desktop-session', deviceId: 'host1', tokenDeviceId: 'host1' };
 const bound = bindQuestionBankStoreToDatabase({ db, root, authz, runtime });
@@ -104,6 +106,8 @@ assert.throws(() => restoreCommittedQuestion('q1', { db, tenantId: 'default', au
 assert.strictEqual(restoreCommittedQuestion('q1', { db, tenantId: 'default', authz, runtime }).restored, true);
 assert.strictEqual(db.prepare("SELECT deleted FROM questions WHERE id='q1'").get().deleted, 0);
 assert.strictEqual(db.prepare("SELECT deleted FROM question_contents WHERE id='c1'").get().deleted, 0);
+assert.strictEqual(db.prepare("SELECT deleted FROM question_contents WHERE id='c-old'").get().deleted, 1);
+assert.strictEqual(db.prepare("SELECT deleted FROM question_assets WHERE id='a-old'").get().deleted, 1);
 assert.ok(fs.existsSync(path.join(root, 'questions', 'q1', 'question.json')));
 
 db.prepare("INSERT INTO questions VALUES ('q2','default','host_committed','t','host1',0,NULL,'t')").run();
@@ -143,3 +147,20 @@ assert.deepStrictEqual(migrateBoundLegacyQuestions({ db: db2, root: secondRoot, 
 assert.deepStrictEqual(migrateBoundLegacyQuestions({ db: db2, root: secondRoot, authz, runtime }), { migrated: 0, alreadyApplied: true });
 assert.strictEqual(db2.prepare("SELECT storage_state FROM questions WHERE id='legacy-q'").get().storage_state, 'host_committed');
 db2.close();
+
+const linkRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-qb-link-'));
+const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-qb-outside-'));
+initQuestionBankStore(linkRoot, { deviceId });
+let linkCreated = false;
+try {
+  fs.rmSync(path.join(linkRoot, 'questions'), { recursive: true, force: true });
+  fs.symlinkSync(outsideRoot, path.join(linkRoot, 'questions'), process.platform === 'win32' ? 'junction' : 'dir');
+  linkCreated = true;
+} catch (error) { if (!['EPERM', 'EACCES'].includes(error.code)) throw error; }
+if (linkCreated) {
+  const linkDb = new Database(':memory:');
+  ensureQuestionBankAuthoritySchema(linkDb);
+  assert.throws(() => bindQuestionBankStoreToDatabase({ db: linkDb, root: linkRoot, authz, runtime }), error => error.code === 'QUESTION_BANK_REPARSE_POINT_REJECTED');
+  assert.strictEqual(fs.existsSync(path.join(outsideRoot, 'escape')), false);
+  linkDb.close();
+}

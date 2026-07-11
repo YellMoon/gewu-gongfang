@@ -19,6 +19,7 @@ const {
   deleteCommittedQuestion,
   bindQuestionBankStoreToDatabase,
   restoreCommittedQuestion,
+  updateCommittedQuestion,
 } = require('../services/questionBankStorageService');
 const {
   createMaintenanceToken,
@@ -375,13 +376,16 @@ router.put('/questions/:id', (req, res) => {
   try {
     const db = getInstance().db;
     const tId = tenantId(req);
-    const result = questionBank.updateQuestion(db, req.params.id, req.body, tId);
+    const existing = questionBank.getQuestion(db, req.params.id, tId);
+    const result = existing?.storage_state === 'host_committed'
+      ? updateCommittedQuestion(req.params.id, { db, tenantId: tId, authz: req.authz || {}, runtime: req.authz || {}, payload: req.body })
+      : questionBank.updateQuestion(db, req.params.id, req.body, tId);
     if (!result) return res.status(404).json({ success: false, error: 'question not found' });
     const embedding = searchService.upsertQuestionEmbedding(db, req.params.id, { tenantId: tId });
     searchService.schedulePendingJobs(db);
     res.json({ success: true, data: result, embedding });
   } catch (err) {
-    res.status(errorStatus(err)).json({ success: false, error: err.message });
+    res.status(err.status || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
   }
 });
 

@@ -106,6 +106,20 @@ function committed(id) {
 
     process.env.GEWU_NODE_ROLE = 'primary-host';
     const success = committed('success');
+    process.env.GEWU_NODE_ROLE = 'desktop-client';
+    const deniedCommittedUpdate = await jsonRequest(base, 'PUT', `/api/question-bank/questions/${success.id}`, token('approved-teacher','teacher-device'), 'teacher-device', { stem: 'forbidden update' });
+    assert.strictEqual(deniedCommittedUpdate.status, 403);
+    assert.strictEqual(deniedCommittedUpdate.body.code, 'HOST_DESKTOP_REQUIRED_FOR_COMMITTED_UPDATE');
+    process.env.GEWU_NODE_ROLE = 'primary-host';
+    const committedUpdate = await jsonRequest(base, 'PUT', `/api/question-bank/questions/${success.id}`, token('host-admin','host-device'), 'host-device', { stem: 'trusted committed update' });
+    assert.strictEqual(committedUpdate.status, 200);
+    assert.strictEqual(JSON.parse(fs.readFileSync(path.join(qbRoot, 'questions', success.id, 'question.json'), 'utf8')).contents[0].stem, 'trusted committed update');
+    service.db.exec("CREATE TRIGGER fail_committed_update BEFORE INSERT ON question_contents WHEN NEW.question_id='success' BEGIN SELECT RAISE(ABORT,'forced committed update rollback'); END;");
+    const failedCommittedUpdate = await jsonRequest(base, 'PUT', `/api/question-bank/questions/${success.id}`, token('host-admin','host-device'), 'host-device', { stem: 'must rollback' });
+    assert.strictEqual(failedCommittedUpdate.status, 500);
+    assert.strictEqual(questionBank.getQuestion(service.db, success.id, 'default').stem, 'trusted committed update');
+    assert.strictEqual(JSON.parse(fs.readFileSync(path.join(qbRoot, 'questions', success.id, 'question.json'), 'utf8')).contents[0].stem, 'trusted committed update');
+    service.db.exec('DROP TRIGGER fail_committed_update');
     const ok = await remove(base, success.id, token('host-admin', 'host-device'), 'host-device');
     assert.strictEqual(ok.status, 200);
     assert.strictEqual(service.db.prepare('SELECT deleted FROM questions WHERE id=?').get(success.id).deleted, 1);

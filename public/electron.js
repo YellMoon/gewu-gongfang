@@ -1,5 +1,7 @@
 const { app, BrowserWindow, Menu, ipcMain, dialog, screen, shell } = require('electron');
+const jwt = require('jsonwebtoken');
 const path = require('path');
+const { QuestionDraftProvenanceRegistry } = require('./questionDraftProvenanceRegistry');
 const fs = require('fs');
 const {
   readRuntimeConfig,
@@ -251,6 +253,17 @@ app.on('before-quit', () => {
 
 ipcMain.handle('get-app-version', () => app.getVersion());
 ipcMain.handle('get-user-data-path', () => app.getPath('userData'));
+const questionDraftRegistry = new QuestionDraftProvenanceRegistry({
+  filePath: path.join(app.getPath('userData'), 'question-draft-provenance.json'),
+  tokenVerifier: async rawToken => {
+    if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET_REQUIRED_FOR_DRAFT_PROVENANCE');
+    const token = String(rawToken || '').replace(/^Bearer\s+/i, '');
+    const claims = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'], issuer: 'gewu-auth', audience: 'gewu-api' });
+    return { userId: claims.id || claims.userId, deviceId: claims.deviceId, tokenUse: claims.token_use };
+  },
+});
+ipcMain.handle('register-question-draft-provenance', (_event, { questionId, authorization }) => questionDraftRegistry.register(questionId, authorization));
+ipcMain.handle('verify-question-draft-provenance', (_event, { questionId, authorization }) => questionDraftRegistry.verify(questionId, authorization));
 ipcMain.handle('runtime-config:get', async () => {
   return readRuntimeConfig(getRuntimeConfigPath(), { userDataPath: app.getPath('userData') });
 });
