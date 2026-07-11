@@ -31,6 +31,10 @@ export function createDirectSyncTransport(options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   const deviceId = options.deviceId || 'desktop';
   const role = options.role || 'desktop-client';
+  const authContext = options.authContext || null;
+  const authorization = options.authorization || '';
+  const authenticatedHeaders = () => ({ ...(authorization ? { Authorization: authorization } : {}),
+    ...(authContext?.deviceId ? { 'x-device-id': authContext.deviceId } : {}) });
 
   async function post(path, body, headers = {}) {
     const res = await fetchImpl(`${baseUrl}${path}`, {
@@ -61,7 +65,7 @@ export function createDirectSyncTransport(options = {}) {
         url.searchParams.set('deviceId', input.deviceId || deviceId);
         const data = await readJsonResponse(await fetchImpl(url.toString(), {
           method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authenticatedHeaders() },
         }));
         return {
           success: !!data.success,
@@ -74,16 +78,19 @@ export function createDirectSyncTransport(options = {}) {
       }
     },
     async pushSyncBatch(batch) {
+      if (!authContext?.userId || !authContext?.deviceId || !authorization) {
+        const error = new Error('AUTHORIZATION_CONTEXT_REQUIRED'); error.code = 'AUTHORIZATION_CONTEXT_REQUIRED'; throw error;
+      }
       const batchDeviceId = batch.deviceId || batch.clientId || deviceId;
       await post('/api/sync/devices/register', {
         deviceId: batchDeviceId,
         role,
         deviceName: options.deviceName || batchDeviceId,
-      });
+      }, authenticatedHeaders());
       const auth = await post('/api/sync/authorize', {
         deviceId: batchDeviceId,
         role,
-      });
+      }, authenticatedHeaders());
       const data = await post('/api/sync/push', {
         deviceId: batchDeviceId,
         tenantId: batch.tenantId || 'default',
@@ -91,6 +98,7 @@ export function createDirectSyncTransport(options = {}) {
         syncAuthorizationToken: auth?.authorization?.token,
       }, {
         'x-sync-authorization': auth?.authorization?.token || '',
+        ...authenticatedHeaders(),
       });
       return {
         success: !!data.success,
@@ -106,7 +114,7 @@ export function createDirectSyncTransport(options = {}) {
       url.searchParams.set('deviceId', deviceId);
       const data = await readJsonResponse(await fetchImpl(url.toString(), {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authenticatedHeaders() },
       }));
       const changes = data.changes || [];
       return {
@@ -124,9 +132,13 @@ export function createCloudRelaySyncTransport(options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   const deviceId = options.deviceId || 'desktop';
   const desktopSyncToken = options.desktopSyncToken || '';
+  const authContext = options.authContext || null;
+  const authorization = options.authorization || '';
   const headers = () => ({
     'Content-Type': 'application/json',
     ...(desktopSyncToken ? { 'x-gewu-desktop-sync-token': desktopSyncToken } : {}),
+    ...(authorization ? { Authorization: authorization } : {}),
+    ...(authContext?.deviceId ? { 'x-device-id': authContext.deviceId } : {}),
   });
   return {
     name: 'cloud',
@@ -153,6 +165,9 @@ export function createCloudRelaySyncTransport(options = {}) {
       };
     },
     async submitSyncRequest(input = {}) {
+      if (!authContext?.userId || !authContext?.deviceId || !authorization) {
+        const error = new Error('AUTHORIZATION_CONTEXT_REQUIRED'); error.code = 'AUTHORIZATION_CONTEXT_REQUIRED'; throw error;
+      }
       const data = await readJsonResponse(await fetchImpl(`${baseUrl}/api/cloud/desktop-sync/requests`, {
         method: 'POST',
         headers: headers(),
@@ -224,6 +239,8 @@ export async function discoverLanDirectSyncTransports(options = {}) {
     deviceId: options.deviceId,
     role: options.role,
     deviceName: options.deviceName,
+    authorization: options.authorization,
+    authContext: options.authContext,
     fetchImpl,
   }));
 }

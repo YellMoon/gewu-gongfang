@@ -119,6 +119,7 @@ async function main() {
     applyLocalDataMaps: () => {},
   });
   assert.strictEqual(cancelled.status, 'cancelled');
+  assert.strictEqual(cancelledEngine.state.pushed, 0, 'cancel must not invoke push');
   assert.strictEqual(cancelledEngine.state.pendingChanges.length, 1, 'cancel should keep pending queue');
 
   const confirmedEngine = makeEngine([{ table: 'students', action: 'update', data: { id: 'stu1' } }]);

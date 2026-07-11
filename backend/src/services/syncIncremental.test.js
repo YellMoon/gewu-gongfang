@@ -57,7 +57,9 @@ function testSyncAuthorizationTablesExist() {
 function main() {
   testSameMillisecondWaterlineIsNotSkipped();
   testSyncAuthorizationTablesExist();
-  console.log('syncIncremental tests passed');
+console.log('syncIncremental tests passed');
+require('./syncScopeService.test');
+require('./syncScopeIntegration.test');
 }
 
 main();

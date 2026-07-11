@@ -7,6 +7,10 @@ export type SyncOperation = {
   operationId: string;
   tenantId: string;
   deviceId: string;
+  actorUserId?: string;
+  actorTeacherId?: string;
+  sourceDeviceId: string;
+  sourceOperationId: string;
   tableName: SyncTable;
   recordId: string;
   action: SyncAction;
@@ -46,10 +50,13 @@ export function createSyncOperation(input: {
 }): SyncOperation {
   const createdAt = new Date().toISOString();
   const payload: Record<string, any> = { ...(input.payload || {}), id: input.recordId };
+  const operationId = uuid();
   return {
-    operationId: uuid(),
+    operationId,
     tenantId: input.tenantId || payload.tenant_id || 'default',
     deviceId: input.deviceId,
+    sourceDeviceId: input.deviceId,
+    sourceOperationId: operationId,
     tableName: input.tableName,
     recordId: input.recordId,
     action: input.action,
@@ -75,6 +82,10 @@ export function operationToChange(operation: SyncOperation): SyncChange {
     updatedAt: operation.newVersion,
     tenantId: operation.tenantId,
     deviceId: operation.deviceId,
+    actorUserId: operation.actorUserId,
+    actorTeacherId: operation.actorTeacherId,
+    sourceDeviceId: operation.sourceDeviceId || operation.deviceId,
+    sourceOperationId: operation.sourceOperationId || operation.operationId,
   };
 }
 

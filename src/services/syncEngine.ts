@@ -21,6 +21,10 @@ export interface SyncChange {
   updatedAt: string;
   tenantId: string;
   deviceId: string;
+  actorUserId?: string;
+  actorTeacherId?: string;
+  sourceDeviceId?: string;
+  sourceOperationId?: string;
 }
 
 export type SyncOperation = QueuedSyncOperation | SyncChange;
@@ -134,6 +138,10 @@ export class SyncEngine {
       updatedAt,
       tenantId: op.tenantId || this.tenantId,
       deviceId: op.deviceId || op.clientId || this.deviceId,
+      actorUserId: op.actorUserId,
+      actorTeacherId: op.actorTeacherId,
+      sourceDeviceId: op.sourceDeviceId || op.deviceId || op.clientId || this.deviceId,
+      sourceOperationId: op.sourceOperationId || op.id,
     };
   }
 

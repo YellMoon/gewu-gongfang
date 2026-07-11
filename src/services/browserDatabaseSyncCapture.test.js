@@ -6,6 +6,8 @@ const packageJson = fs.readFileSync('package.json', 'utf-8');
 
 assert.ok(source.includes('recordSyncChange'), 'browser database should define local sync change capture');
 assert.ok(source.includes('sync_engine_sync_pending_changes'), 'browser database should write to SyncEngine pending changes');
+assert.ok(source.includes('sourceDeviceId'), 'browser capture should retain a display-only source device candidate');
+assert.ok(source.includes('sourceOperationId'), 'browser capture should retain a display-only source operation candidate');
 
 for (const table of [
   'students',
