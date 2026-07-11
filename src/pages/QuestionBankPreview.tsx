@@ -14,6 +14,7 @@ import type { Question, KnowledgeNode, QuestionVersion } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
 const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
+const { deleteQuestionViaApi } = require('../services/questionDeleteApi');
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
 import { splitSearchTerms } from '../utils/highlightText';
 import { toggleQuestionBasket, useQuestionBasketIds } from '../components/QuestionBasket';
@@ -600,12 +601,18 @@ const QuestionBankPreview: React.FC = () => {
     loadData();
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     const question = questions.find(item => item.id === id);
     const presentation = questionDeletePresentation(question, deleteContext);
     if (!presentation.enabled) { message.warning(presentation.reason); return; }
-    (window as any).dbService.deleteQuestion(id);
-    loadData();
+    let ok = false;
+    if (question?.storage_state === 'host_committed') {
+      const session = JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null') || {};
+      ok = (await deleteQuestionViaApi(fetch, `${API_BASE}/questions/${id}`, session)).ok;
+    } else ok = Boolean((window as any).dbService.deleteQuestion(id));
+    if (!ok) { message.error('Delete failed'); return; }
+    setQuestions(previous => previous.filter(item => item.id !== id));
+    setQuestionTotal(previous => Math.max(0, previous - 1));
   };
 
   const handleCopy = (id: string) => {
@@ -618,8 +625,23 @@ const QuestionBankPreview: React.FC = () => {
     message.success('已创建变式题副本');
   };
 
-  const handleBatchDelete = () => {
+  const handleBatchDelete = async () => {
     const db = (window as any).dbService;
+    const allowed = selectedRowKeys.filter(id => questionDeletePresentation(questions.find(item => item.id === id), deleteContext).enabled);
+    const session = JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null') || {};
+    const settled = await Promise.allSettled(allowed.map(async id => {
+      const question = questions.find(item => item.id === id);
+      const ok = question?.storage_state === 'host_committed'
+        ? (await deleteQuestionViaApi(fetch, `${API_BASE}/questions/${id}`, session)).ok
+        : Boolean(db.deleteQuestion(id));
+      if (!ok) throw new Error('DELETE_FAILED'); return id;
+    }));
+    const succeeded = settled.filter((item): item is PromiseFulfilledResult<string> => item.status === 'fulfilled').map(item => item.value);
+    setQuestions(previous => previous.filter(item => !succeeded.includes(item.id)));
+    setQuestionTotal(previous => Math.max(0, previous - succeeded.length));
+    setSelectedRowKeys(previous => previous.filter(id => !succeeded.includes(id)));
+    message.info(`Deleted ${succeeded.length}; failed ${selectedRowKeys.length - succeeded.length}`);
+    return;
     selectedRowKeys.filter(id => {
       const question = questions.find(item => item.id === id);
       return questionDeletePresentation(question, deleteContext).enabled;

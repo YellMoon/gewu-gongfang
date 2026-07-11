@@ -357,7 +357,7 @@ class QuestionBankService {
     return [...new Set(ids.filter(Boolean))];
   }
 
-  createQuestion(db, payload, tenantId = 'default') {
+  createQuestion(db, payload, tenantId = 'default', context = {}) {
     this.ensureTenant(db, tenantId);
     const ts = now();
     const questionId = payload.id || uuidv4();
@@ -381,8 +381,8 @@ class QuestionBankService {
     const transaction = db.transaction(() => {
       db.prepare(
         `INSERT INTO questions
-         (id, tenant_id, subject, subject_id, chapter_id, type, difficulty, source, year, grade, semester, exam_type, region, school, edit_status, status, has_image, has_formula, created_by, storage_state, committed_at, committed_by_device_id, deleted, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+         (id, tenant_id, subject, subject_id, chapter_id, type, difficulty, source, year, grade, semester, exam_type, region, school, edit_status, status, has_image, has_formula, created_by, storage_state, committed_at, committed_by_device_id, source_device_id, owner_user_id, deleted, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
       ).run(
         questionId,
         tenantId,
@@ -403,9 +403,11 @@ class QuestionBankService {
         hasImage ? 1 : 0,
         hasFormula ? 1 : 0,
         payload.created_by || '',
-        payload.storage_state === 'host_committed' ? 'host_committed' : 'local_draft',
-        payload.storage_state === 'host_committed' ? (payload.committed_at || ts) : null,
-        payload.storage_state === 'host_committed' ? (payload.committed_by_device_id || null) : null,
+        'local_draft',
+        null,
+        null,
+        context.deviceId || null,
+        context.userId || null,
         ts,
         ts
       );
@@ -668,6 +670,17 @@ class QuestionBankService {
 
     transaction();
     return this.getQuestion(db, id, tenantId);
+  }
+
+  markQuestionHostCommitted(db, id, context = {}, tenantId = 'default') {
+    if (context.runtimeNodeRole !== 'primary-host' || context.tokenUse !== 'desktop-session'
+      || !context.deviceId || context.deviceId !== context.tokenDeviceId || context.deviceTrusted !== true) {
+      const error = new Error('trusted primary host context required'); error.code = 'TRUSTED_HOST_CONTEXT_REQUIRED'; throw error;
+    }
+    const ts = now();
+    const result = db.prepare(`UPDATE questions SET storage_state='host_committed', committed_at=?, committed_by_device_id=?, updated_at=?
+      WHERE id=? AND tenant_id=? AND deleted=0`).run(ts, context.deviceId, ts, id, tenantId);
+    return result.changes === 1 ? this.getQuestion(db, id, tenantId) : null;
   }
 
   deleteQuestion(db, id, tenantId = 'default', context = {}) {

@@ -6,7 +6,6 @@ function canDeleteQuestion(context = {}) {
       && context.userId === context.ownerUserId);
   }
   if (context.storageState !== 'host_committed' || context.gateway) return false;
-  if (!['teacher', 'admin', 'super_admin'].includes(context.role)) return false;
   return context.runtimeNodeRole === 'primary-host'
     && context.tokenUse === 'desktop-session'
     && Boolean(context.deviceId)
