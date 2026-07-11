@@ -16,19 +16,17 @@ function canReviewUsers(user) {
   return roleForUser(user) === 'super_admin';
 }
 
-function bindingError(code) {
-  const error = new Error(code);
-  error.code = code;
-  return error;
-}
-
 function resolveTeacherBinding(user = {}, teachers = []) {
   const phone = normalizePhone(user.phone);
-  const matches = teachers.filter(teacher => normalizePhone(teacher.phone) === phone);
+  const matches = teachers.filter(teacher => (
+    teacher.deleted !== true
+    && teacher.deleted !== 1
+    && normalizePhone(teacher.phone) === phone
+  ));
 
-  if (matches.length === 0) throw bindingError('TEACHER_NOT_FOUND');
-  if (matches.length > 1) throw bindingError('TEACHER_PHONE_NOT_UNIQUE');
-  return matches[0];
+  if (matches.length === 0) return { ok: false, code: 'TEACHER_NOT_FOUND' };
+  if (matches.length > 1) return { ok: false, code: 'TEACHER_PHONE_NOT_UNIQUE' };
+  return { ok: true, teacherId: matches[0].id };
 }
 
 function scopeForUser(user = {}) {

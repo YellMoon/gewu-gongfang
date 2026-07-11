@@ -79,6 +79,8 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 - RED: `node backend/src/services/authorizationPolicy.test.js` exited 1 with `Cannot find module './authorizationPolicy'` before implementation.
 - GREEN: `node backend/src/services/authorizationPolicy.test.js` exited 0 with `authorization policy checks passed`.
 - Full regression: `npm test` exited 0 on 2026-07-11.
+- Review RED: after requiring structured teacher-binding results and deleted-teacher exclusion, `node backend/src/services/authorizationPolicy.test.js` exited 1 because the implementation still returned the raw teacher record.
+- Review GREEN: the same focused command exited 0 after `resolveTeacherBinding` returned `{ ok, teacherId/code }` without throwing and ignored teachers with `deleted` set to `true` or `1`.
 
 ---
 
