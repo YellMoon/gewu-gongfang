@@ -116,7 +116,6 @@ export const navGroups: NavGroup[] = [
       { key: 'menu-manage', label: '菜单结构管理', description: '维护菜单配置', icon: <MenuOutlined /> },
       { key: 'system-params', label: '系统参数', description: '调整系统基础参数', icon: <SettingOutlined /> },
       { key: 'operate-log', label: '操作日志', description: '查看系统操作记录', icon: <FileProtectOutlined /> },
-      { key: 'cloud-sync', label: '云同步', description: '管理本地与云端数据同步', icon: <CloudSyncOutlined /> },
     ],
   },
 ];

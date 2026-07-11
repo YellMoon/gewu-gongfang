@@ -2,7 +2,7 @@
  * 同步设置页面 v2 — CRDT 引擎同步状态 + 控制面板
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Card, Button, Tag, Descriptions, Divider, message, Modal, Statistic, Row, Col, Alert, Table, Space } from 'antd';
+import { Card, Button, Tag, Descriptions, Divider, message, Modal, Statistic, Row, Col, Alert, Table, Space, Collapse } from 'antd';
 import { SyncOutlined, CloudSyncOutlined, CloudServerOutlined, WarningOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
 import { SyncEngine, SyncStatus } from '../services/syncEngine';
 import { getSyncUrl, pushSyncBatch, pullSyncOps, registerSyncDevice, requestSyncAuthorization } from '../services/syncApi';
@@ -11,12 +11,15 @@ import browserDatabase from '../services/browserDatabase';
 import type { CloudSyncContext } from '../navigation/navigationContext';
 import { runOneClickSync } from '../services/oneClickSyncService.mjs';
 import { createCloudRelaySyncTransport, createDirectSyncTransport, discoverLanDirectSyncTransports } from '../services/oneClickSyncTransports.mjs';
+import { getSyncPresentation } from '../services/syncPresentation.mjs';
 
 interface SyncSettingsProps {
   context?: CloudSyncContext;
+  variant?: 'quick' | 'advanced';
+  onNavigateToSettings?: (mode?: 'issues' | 'pending') => void;
 }
 
-const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
+const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advanced', onNavigateToSettings }) => {
   const [engine, setEngine] = useState<SyncEngine | null>(null);
   const [initError, setInitError] = useState<string | null>(null);
   const [status, setStatus] = useState<SyncStatus | null>(null);
@@ -178,8 +181,8 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
   };
 
   const oneClickText = {
-    oneClick: '\u4e00\u952e\u540c\u6b65',
-    confirmTitle: '\u786e\u8ba4\u4e00\u952e\u540c\u6b65',
+    oneClick: '\u4e0e\u6570\u636e\u4e3b\u673a\u53cc\u5411\u540c\u6b65',
+    confirmTitle: '\u786e\u8ba4\u53cc\u5411\u540c\u6b65',
     direct: '\u5c40\u57df\u7f51\u76f4\u8fde',
     cloud: '\u963f\u91cc\u4e91\u4e2d\u7ee7',
     confirmIntro: '\u540c\u6b65\u3002\u8bf7\u786e\u8ba4\u4ee5\u4e0b\u53d8\u52a8\uff1a',
@@ -192,7 +195,7 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
     delete: '\u5220\u9664',
     noChange: '\u65e0\u53d8\u66f4',
     relayHint: '\u4e91\u4e2d\u7ee7\u6a21\u5f0f\u4f1a\u5148\u63d0\u4ea4\u540c\u6b65\u8bf7\u6c42\uff1b\u5982\u679c\u4e3b\u673a\u7535\u8111\u6682\u672a\u5904\u7406\uff0c\u5f53\u524d\u672c\u673a\u961f\u5217\u4f1a\u7ee7\u7eed\u4fdd\u7559\u3002',
-    ok: '\u786e\u8ba4\u540c\u6b65',
+    ok: '\u786e\u8ba4\u53cc\u5411\u540c\u6b65',
     cancel: '\u53d6\u6d88',
     synced: '\u540c\u6b65\u5b8c\u6210',
     waiting: '\u540c\u6b65\u8bf7\u6c42\u5df2\u63d0\u4ea4\uff0c\u7b49\u5f85\u4e3b\u673a\u7535\u8111\u4e0a\u7ebf\u5904\u7406',
@@ -395,6 +398,50 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context }) => {
   }
 
   const eng = engineRef.current!;
+  const presentation = getSyncPresentation(runtimeConfig?.nodeRole || 'desktop-client', {
+    ...status,
+    conflictCount: syncConflicts.length,
+  });
+
+  if (variant === 'quick') {
+    return (
+      <div className="sync-quick-panel">
+        <div className="sync-quick-panel__heading">
+          <div>
+            <div className="sync-quick-panel__eyebrow">{presentation.isHost ? '\u6570\u636e\u4e3b\u673a' : '\u5f53\u524d\u7535\u8111'}</div>
+            <strong>{presentation.statusText}</strong>
+          </div>
+          <Tag color={status.online ? 'success' : 'warning'}>{status.online ? '\u5728\u7ebf' : '\u79bb\u7ebf'}</Tag>
+        </div>
+        {presentation.isHost ? (
+          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            <Button type="primary" block onClick={() => onNavigateToSettings?.('pending')}>
+              {'\u5904\u7406\u5f85\u540c\u6b65\u8bf7\u6c42'}
+            </Button>
+            <Button block onClick={() => onNavigateToSettings?.('issues')}>
+              {'\u67e5\u770b\u51b2\u7a81\u5ba1\u6838'}{syncConflicts.length > 0 ? ` (${syncConflicts.length})` : ''}
+            </Button>
+          </Space>
+        ) : (
+          <>
+            <Button type="primary" size="large" block icon={<SyncOutlined />} loading={oneClickLoading} onClick={handleOneClickSync}>
+              {'\u4e0e\u6570\u636e\u4e3b\u673a\u53cc\u5411\u540c\u6b65'}
+            </Button>
+            <div className="sync-quick-panel__helper">
+              {'\u540c\u6b65\u524d\u5148\u9884\u89c8\u5e76\u786e\u8ba4\uff1b\u968f\u540e\u4e0a\u4f20\u672c\u673a\u66f4\u6539\uff0c\u518d\u83b7\u53d6\u5e76\u5408\u5e76\u4e3b\u673a\u6700\u65b0\u6570\u636e\u3002'}
+            </div>
+          </>
+        )}
+        <div className="sync-quick-panel__footer">
+          {'\u4e0a\u6b21\u540c\u6b65\uff1a'}{formatTime(status.lastSyncTime)}
+          <Button type="link" size="small" onClick={() => onNavigateToSettings?.()}>
+            {'\u540c\u6b65\u8bbe\u7f6e'}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   const contextAlert = context?.mode ? (
     <Alert
       type={status.pendingCount > 0 || context.mode === 'issues' ? 'warning' : 'info'}

@@ -31,6 +31,7 @@ const questionRendererCss = read('src/components/QuestionRenderer.css');
 const richQuestionEditor = read('src/components/RichQuestionEditor.tsx');
 const systemSettings = read('src/pages/SystemSettings.tsx');
 const syncSettings = read('src/pages/SyncSettings.tsx');
+const syncQuickPanel = read('src/components/sync/SyncQuickPanel.tsx');
 const cloudSync = read('src/pages/CloudSync.tsx');
 const operateLog = read('src/pages/OperateLog.tsx');
 const syncApi = read('src/services/syncApi.ts');
@@ -170,6 +171,40 @@ assert(
   syncSettings.includes('客户端优先') &&
   syncSettings.includes('拒绝'),
   'sync settings should expose host conflict review actions'
+);
+
+assert(
+  appShell.includes('SyncQuickPanel') &&
+  systemSettings.includes('SyncSettings') &&
+  (appNavigation.match(/\{ key: 'cloud-sync', label:/g) || []).length === 1,
+  'desktop sync should use a top-bar quick panel, live inside system settings, and have no standalone visible navigation item'
+);
+
+assert(
+  syncQuickPanel.includes('onOpenChange={setOpen}') &&
+  syncQuickPanel.includes('setOpen(false)'),
+  'sync quick panel should close before navigating to system settings'
+);
+
+assert(
+  !todayWorkbench.includes('\u540c\u6b65\u63a7\u5236\u53f0') &&
+  todayWorkbench.includes("onNavigate('system-params')"),
+  'today workbench should point to consolidated system sync settings instead of the removed standalone console'
+);
+
+assert(
+  syncSettings.includes("variant?: 'quick' | 'advanced'") &&
+  syncSettings.includes('\\u4e0e\\u6570\\u636e\\u4e3b\\u673a\\u53cc\\u5411\\u540c\\u6b65') &&
+  syncSettings.includes('\\u5904\\u7406\\u5f85\\u540c\\u6b65\\u8bf7\\u6c42') &&
+  systemSettings.includes('id="sync-settings"') &&
+  systemSettings.includes('sync-advanced'),
+  'sync UI should expose explicit bidirectional client copy and role-aware advanced host management'
+);
+
+assert(
+  syncSettings.includes("confirmTitle: '\\u786e\\u8ba4\\u53cc\\u5411\\u540c\\u6b65'") &&
+  !syncSettings.includes("confirmTitle: '\\u786e\\u8ba4\\u4e00\\u952e\\u540c\\u6b65'"),
+  'sync confirmation dialog should describe bidirectional sync explicitly'
 );
 
 assert(

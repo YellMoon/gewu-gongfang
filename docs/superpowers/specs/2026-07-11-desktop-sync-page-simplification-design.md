@@ -1,7 +1,17 @@
-# Desktop Sync Page Simplification Design
+# Desktop Sync Entry and System Settings Consolidation Design
 
 Date: 2026-07-11
-Status: Approved in conversation; pending written-spec review
+Status: Approved by user
+
+## Approved consolidation amendment
+
+The standalone sync navigation page will be removed. Daily sync operation and sync configuration will be separated by frequency of use:
+
+- The top application bar shows a real sync status entry. Clicking it opens a compact role-aware sync panel without leaving the current work page.
+- Client devices see one explicitly bidirectional host-sync action plus plain-language explanation of preview, confirmation, upload, download, and merge.
+- The primary host sees request/conflict management status and review entry points instead of a client-style sync action.
+- System Settings contains sync configuration, diagnostics, directional operations, protocol details, and destructive maintenance controls.
+- Legacy navigation to `cloud-sync` redirects to the sync section of `system-params` for compatibility.
 
 ## Problem
 

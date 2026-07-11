@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Card, Button, message, Space, Divider, Popconfirm, Typography, Table, Tag, Form, Input, Select, Progress } from 'antd';
+import { Alert, Card, Button, message, Space, Divider, Popconfirm, Typography, Table, Tag, Form, Input, Select, Progress, Collapse } from 'antd';
 import { CloudDownloadOutlined, CloudSyncOutlined, ExportOutlined, ImportOutlined, DeleteOutlined, ReloadOutlined, RollbackOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { APP_VERSION } from '../generated/version';
@@ -9,6 +9,8 @@ import {
   selectFolder,
   type RuntimeConfig,
 } from '../services/runtimeConfigClient';
+import SyncSettings from './SyncSettings';
+import type { CloudSyncContext } from '../navigation/navigationContext';
 
 const { Text } = Typography;
 
@@ -74,7 +76,7 @@ const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:3001/api';
 const QUESTION_BANK_STORAGE_STATUS_PATH = '/api/question-bank/storage/status';
 const apiOrigin = API_BASE.replace(/\/api\/?$/, '');
 
-const SystemSettings: React.FC = () => {
+const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) => {
   const dbService = (window as any).dbService;
   const [runtimeForm] = Form.useForm<RuntimeConfig>();
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
@@ -109,6 +111,11 @@ const SystemSettings: React.FC = () => {
     loadQuestionBankStorageStatus();
     loadBackupTargetStatus();
   }, []);
+
+  useEffect(() => {
+    if (context?.section !== 'sync-settings') return;
+    window.setTimeout(() => document.getElementById('sync-settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  }, [context]);
 
   useEffect(() => {
     const api = window.api;
@@ -526,6 +533,16 @@ const SystemSettings: React.FC = () => {
           </Button>
         </Form>
       </Card>
+
+      <section id="sync-settings" style={{ marginBottom: 16 }}>
+        <Collapse
+          items={[{
+            key: 'sync-advanced',
+            label: String.fromCodePoint(25968, 25454, 21516, 27493, 65306, 39640, 32423, 25805, 20316, 19982, 31995, 32479, 35814, 24773),
+            children: <SyncSettings variant="advanced" />,
+          }]}
+        />
+      </section>
 
       <Card title="数据管理" style={{ marginBottom: 16 }}>
         <Space size="large" wrap>
