@@ -5,7 +5,8 @@ const jwt = require('jsonwebtoken');
 const { getInstance } = require('../database');
 const { roleForUser } = require('../services/authorizationPolicy');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || null;
+function verifyToken(token){if(!JWT_SECRET)throw new Error('JWT_SECRET_REQUIRED');const decoded=jwt.verify(token,JWT_SECRET,{algorithms:['HS256']});if(decoded.token_use==='desktop-session'&&(decoded.iss!=='gewu-auth'||decoded.aud!=='gewu-api'))throw new Error('TOKEN_AUDIENCE_INVALID');return decoded;}
 
 function sendAuthError(res, status, message, code) {
   return res.status(status).json({
@@ -105,7 +106,7 @@ function authMiddleware(req, res, next) {
   }
 
   try {
-    if (!attachAuthorizationContext(req, jwt.verify(token, JWT_SECRET))) {
+    if (!attachAuthorizationContext(req, verifyToken(token))) {
       return sendAuthError(res, 401, '认证用户不存在', 'AUTH_USER_NOT_FOUND');
     }
     if (!applyAuthenticatedTenant(req, res)) return undefined;
@@ -129,7 +130,7 @@ function optionalAuth(req, res, next) {
   const token = getBearerToken(req);
   if (token) {
     try {
-      attachAuthorizationContext(req, jwt.verify(token, JWT_SECRET));
+      attachAuthorizationContext(req, verifyToken(token));
       if (!applyAuthenticatedTenant(req, res)) return undefined;
     } catch (_err) {
       // Optional auth keeps old behavior: invalid tokens do not block reads.

@@ -29,9 +29,27 @@ function validateSyncMutation(operation = {}, authz = {}, lookup = {}) {
   const table = normalizeTable(operation.table);
   // Question-bank content is shared rather than teacher-owned. Task 6 adds the
   // committed-storage distinction; until then delete here represents a local draft.
-  if (table === 'questions' && operation.action !== 'delete') return { decision: 'apply', provenance };
+  if (table === 'questions') return { decision: 'apply', provenance };
   const data = operation.data || operation.payload || {};
   const existing = lookup.existing || null;
+  try {
+    if (existing) assertRecordWritable(table, existing, authz, lookup);
+  } catch (err) {
+    if (err.code === 'DATA_SCOPE_UNRESOLVED') return { decision:'review', code:err.code, provenance };
+    throw err;
+  }
+  if (existing && operation.action !== 'delete') {
+    const immutable = {
+      courses:['teacher_id','teacherId'], schedules:['course_id','courseId'], enrollments:['schedule_id','scheduleId','course_id','courseId','student_id','studentId'],
+      consumptions:['schedule_id','scheduleId','course_id','courseId','student_id','studentId'], payments:['schedule_id','scheduleId','course_id','courseId','student_id','studentId'],
+      assetRecords:['owner_user_id','ownerUserId'],
+    }[table] || [];
+    for (let index=0; index<immutable.length; index+=2) {
+      const keys=immutable.slice(index,index+2); const before=existing[keys[0]] ?? existing[keys[1]]; const after=data[keys[0]] ?? data[keys[1]];
+      if(after!==undefined&&String(after)!==String(before??'')) throw error('OWNERSHIP_FIELD_IMMUTABLE');
+    }
+  }
+  if (existing && operation.action === 'delete') return { decision:'apply', provenance };
   const baseVersion = data._base_version || operation.baseVersion;
   if (existing && baseVersion && existing.updated_at && baseVersion !== existing.updated_at) {
     return { decision: 'conflict', provenance };

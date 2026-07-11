@@ -37,6 +37,7 @@ function normalizeLanUrls(value) {
 function sendForbidden(res, code, message = 'Forbidden') {
   return res.status(code === 'UNAUTHORIZED' ? 401 : 403).json({ success: false, code, error: message });
 }
+function validateDesktopSyncInput(req,res){const deviceId=String(req.headers['x-device-id']||req.body.deviceId||'');const name=String(req.body.deviceName||'');if(!deviceId||deviceId.length>128||name.length>128)return res.status(400).json({success:false,code:'INVALID_SYNC_REQUEST'});const changes=req.body.pendingChanges;if(!Array.isArray(changes)||changes.length>500)return res.status(changes?.length>500?413:400).json({success:false,code:changes?.length>500?'SYNC_REQUEST_TOO_LARGE':'INVALID_SYNC_REQUEST'});if(Buffer.byteLength(JSON.stringify(req.body))>2*1024*1024)return res.status(413).json({success:false,code:'SYNC_REQUEST_TOO_LARGE'});for(const op of changes){if(!op||typeof op!=='object'||!op.id||!op.table||!['create','update','delete'].includes(op.action)||Buffer.byteLength(JSON.stringify(op))>128*1024)return res.status(400).json({success:false,code:'INVALID_SYNC_REQUEST'});}return null;}
 
 function isHostTokenValid(req) {
   const expected = process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '';
@@ -169,6 +170,7 @@ router.get('/snapshots/read', requireSnapshotRead, (req, res) => {
 });
 
 router.post('/desktop-sync/requests', requireDesktopSyncAccess, (req, res) => {
+  const invalid=validateDesktopSyncInput(req,res);if(invalid)return invalid;
   const db = getInstance().db;
   const taskId = id('desktop_sync');
   const time = now();
@@ -221,7 +223,11 @@ router.post('/desktop-sync/devices/register', requireDesktopSyncAccess, (req, re
 
 router.get('/desktop-sync/requests/:id/result', requireDesktopSyncAccess, (req, res) => {
   const db = getInstance().db;
-  const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ? AND task_type = ?').get(req.params.id, 'desktop-sync');
+  if (!req.user) return sendForbidden(res, 'UNAUTHORIZED');
+  const admin = ['super_admin','admin'].includes(roleForUser(req.user));
+  const row = admin
+    ? db.prepare('SELECT * FROM miniapp_tasks WHERE id = ? AND task_type = ?').get(req.params.id, 'desktop-sync')
+    : db.prepare('SELECT * FROM miniapp_tasks WHERE id = ? AND task_type = ? AND CAST(created_by AS TEXT)=?').get(req.params.id, 'desktop-sync', String(req.user.id));
   if (!row) return res.status(404).json({ success: false, error: 'desktop sync request not found' });
   res.json({
     success: true,
