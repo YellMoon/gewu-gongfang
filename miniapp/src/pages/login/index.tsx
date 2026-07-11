@@ -31,6 +31,10 @@ export default function LoginPage() {
       } else if (res.code === 'PHONE_VERIFICATION_REQUIRED' && !phoneCode) {
         setNeedsPhoneAuth(true);
         Taro.showToast({ title: '\u8bf7\u9a8c\u8bc1\u9884\u7559\u624b\u673a\u53f7', icon: 'none' });
+      } else if (res.code === 'PHONE_IDENTITY_CONFLICT') {
+        Taro.showToast({ title: '\u624b\u673a\u53f7\u6216\u5fae\u4fe1\u5df2\u7ed1\u5b9a\u5176\u4ed6\u8d26\u53f7', icon: 'none' });
+      } else if (res.code === 'AUTH_RATE_LIMITED') {
+        Taro.showToast({ title: '\u64cd\u4f5c\u9891\u7e41\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5', icon: 'none' });
       } else Taro.showToast({ title: res.error || '\u767b\u5f55\u5931\u8d25', icon: 'error' });
     } catch (_error) {
       Taro.showToast({ title: '\u767b\u5f55\u5931\u8d25', icon: 'error' });
