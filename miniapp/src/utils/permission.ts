@@ -46,6 +46,16 @@ export const studentWriteTasks = [
   'paper-export-pdf',
 ];
 
+export const teacherModules = adminModules.filter(moduleId => moduleId !== 'admin');
+
+export type MiniappRole = 'super_admin' | 'admin' | 'teacher' | 'student' | 'pending';
+export type MiniappCapability =
+  | 'users:review'
+  | 'business:all'
+  | 'business:teacher-scope'
+  | 'question-bank:view'
+  | 'question-bank:edit';
+
 export function canMiniappWrite(target: string): boolean {
   return allowedWriteTasks.includes(target);
 }
@@ -59,7 +69,7 @@ export function assertMiniappWriteAllowed(target: string): void {
 export interface UserInfo {
   id: string;
   name: string;
-  user_type: 'admin' | 'teacher' | 'student';
+  user_type: MiniappRole;
   avatar?: string;
   student_id?: string;
   studentId?: string;
@@ -79,6 +89,7 @@ export interface PermissionItem {
 
 export interface PermissionData {
   permissions: PermissionItem[];
+  capabilities: MiniappCapability[];
   user_type: string;
 }
 
@@ -102,14 +113,14 @@ export function getCurrentUser(): UserInfo | null {
  */
 export function getUserType(): string {
   const user = getCurrentUser();
-  return user?.user_type || 'student';
+  return user?.user_type || 'pending';
 }
 
 /**
  * 是否是管理员
  */
 export function isAdmin(): boolean {
-  return getUserType() === 'admin';
+  return ['super_admin', 'admin'].includes(getUserType());
 }
 
 export function isStudentUser(user: Partial<UserInfo> | null = getCurrentUser()): boolean {
@@ -131,15 +142,28 @@ export function getLinkedStudentIds(user: Partial<UserInfo> | null = getCurrentU
 }
 
 export function getMiniappRolePolicy(user: Partial<UserInfo> | null = getCurrentUser()) {
-  if (user?.user_type === 'admin') {
+  if (user?.user_type === 'super_admin') {
     return {
-      role: 'admin',
+      role: 'super_admin',
       modules: adminModules,
       readonlyScope: 'all',
       allowedWriteTasks,
       canReadAllSnapshots: true,
+      capabilities: ['users:review', 'business:all', 'question-bank:view', 'question-bank:edit'] as MiniappCapability[],
     };
   }
+
+  if (user?.user_type === 'admin') return {
+    role: 'admin', modules: adminModules, readonlyScope: 'all', allowedWriteTasks,
+    canReadAllSnapshots: true,
+    capabilities: ['business:all', 'question-bank:view', 'question-bank:edit'] as MiniappCapability[],
+  };
+
+  if (user?.user_type === 'teacher') return {
+    role: 'teacher', modules: teacherModules, readonlyScope: 'teacher', allowedWriteTasks,
+    canReadAllSnapshots: false,
+    capabilities: ['business:teacher-scope', 'question-bank:view', 'question-bank:edit'] as MiniappCapability[],
+  };
 
   if (user?.user_type === 'student') {
     return {
@@ -149,15 +173,17 @@ export function getMiniappRolePolicy(user: Partial<UserInfo> | null = getCurrent
       linkedStudentIds: getLinkedStudentIds(user),
       allowedWriteTasks: studentWriteTasks,
       canReadAllSnapshots: false,
+      capabilities: ['question-bank:view'] as MiniappCapability[],
     };
   }
 
   return {
-    role: user?.user_type || 'guest',
+    role: 'pending',
     modules: [],
     readonlyScope: 'none',
     allowedWriteTasks: [],
     canReadAllSnapshots: false,
+    capabilities: [] as MiniappCapability[],
   };
 }
 
@@ -176,7 +202,7 @@ export async function fetchPermissions(): Promise<PermissionData> {
   // 再尝试 storage 缓存
   try {
     const cached = Taro.getStorageSync(CACHE_KEY);
-    if (cached && cached.permissions) {
+    if (cached && Array.isArray(cached.capabilities)) {
       _permissionCache = cached as PermissionData;
       return _permissionCache;
     }
@@ -185,7 +211,12 @@ export async function fetchPermissions(): Promise<PermissionData> {
   // 请求 API
   const res = await moduleApi.myPermissions();
   if (res.success && res.data) {
-    const data = res.data as unknown as PermissionData;
+    const raw = res.data as any;
+    const data = {
+      permissions: raw.permissions || [],
+      capabilities: raw.capabilities || [],
+      user_type: raw.user_type || getUserType(),
+    } as PermissionData;
     _permissionCache = data;
     try {
       Taro.setStorageSync(CACHE_KEY, data);
@@ -194,7 +225,7 @@ export async function fetchPermissions(): Promise<PermissionData> {
   }
 
   // API 失败返回空权限
-  return { permissions: [], user_type: getUserType() };
+  return { permissions: [], capabilities: [], user_type: getUserType() };
 }
 
 /**
@@ -211,29 +242,25 @@ export async function fetchPermissions(): Promise<PermissionData> {
  * 学生默认拥有 question-bank:view，可满足做题/组卷/查看需求
  */
 export function hasModulePermission(moduleId: string, action: string = 'view'): boolean {
-  // 管理员全权限
-  if (isAdmin()) return true;
-
   const rolePolicy = getMiniappRolePolicy();
+  if (!_permissionCache) {
+    try {
+      const cached = Taro.getStorageSync(CACHE_KEY);
+      if (cached && Array.isArray(cached.capabilities)) _permissionCache = cached as PermissionData;
+    } catch { /* ignore */ }
+  }
+  const roleCapabilities = _permissionCache?.capabilities || rolePolicy.capabilities;
+  if (_permissionCache && roleCapabilities.length === 0) return false;
+  if (moduleId === 'question-bank') {
+    return roleCapabilities.includes(action === 'view' ? 'question-bank:view' : 'question-bank:edit');
+  }
+  if (roleCapabilities.includes('business:all') || roleCapabilities.includes('business:teacher-scope')) {
+    return rolePolicy.modules.includes(moduleId);
+  }
   if (rolePolicy.role === 'student') {
     return action === 'view' && rolePolicy.modules.includes(moduleId);
   }
-
-  if (!_permissionCache) {
-    // 未加载权限时尝试同步读 storage
-    try {
-      const cached = Taro.getStorageSync(CACHE_KEY);
-      if (cached && cached.permissions) {
-        _permissionCache = cached as PermissionData;
-      }
-    } catch { /* ignore */ }
-  }
-
-  if (!_permissionCache) return false;
-
-  return _permissionCache.permissions.some(
-    (p) => p.module_id === moduleId && p.action === action && p.status === 1
-  );
+  return false;
 }
 
 /**
@@ -242,25 +269,19 @@ export function hasModulePermission(moduleId: string, action: string = 'view'): 
  */
 export function getPermittedModules(): string[] {
   const rolePolicy = getMiniappRolePolicy();
-  if (rolePolicy.role === 'admin' || rolePolicy.role === 'student') return rolePolicy.modules;
 
   if (!_permissionCache) {
     try {
       const cached = Taro.getStorageSync(CACHE_KEY);
-      if (cached && cached.permissions) {
+      if (cached && Array.isArray(cached.capabilities)) {
         _permissionCache = cached as PermissionData;
       }
     } catch { /* ignore */ }
   }
 
-  if (!_permissionCache) return [];
-
-  const moduleIds = new Set<string>();
-  _permissionCache.permissions
-    .filter((p) => p.action === 'view' && p.status === 1)
-    .forEach((p) => moduleIds.add(p.module_id));
-
-  return Array.from(moduleIds);
+  const capabilities = _permissionCache?.capabilities || rolePolicy.capabilities;
+  if (capabilities.length === 0) return [];
+  return rolePolicy.modules;
 }
 
 /**
