@@ -23,8 +23,8 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 - [x] Inspect current desktop, miniapp, gateway, backend, database, and sync permission paths.
 - [x] Confirm roles, teacher identity binding, administrator boundary, teacher parity across clients, and question-bank exception.
 - [x] Write and self-review the design specification.
-- [ ] Obtain review of the written design specification.
-- [ ] Write a file-level TDD implementation plan.
+- [x] Obtain review of the written design specification.
+- [x] Write a file-level TDD implementation plan.
 - [ ] Create a database rollback snapshot before schema migration.
 - [ ] Add failing tests for the shared role and approval policy.
 - [ ] Implement role migration, fixed super-admin enforcement, pending state, and unique teacher binding.
