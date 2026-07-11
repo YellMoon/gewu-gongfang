@@ -1,6 +1,6 @@
 const { getLinkedStudentIds, parseArray, roleOf } = require('./miniappAccessPolicy');
 
-const ALLOWED_MINIAPP_ROLES = new Set(['admin', 'student']);
+const ALLOWED_MINIAPP_ROLES = new Set(['super_admin', 'admin', 'student']);
 
 function isEnabled(value) {
   return value === 1 || value === true || value === '1' || value === 'true';

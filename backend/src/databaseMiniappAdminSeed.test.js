@@ -26,7 +26,7 @@ try {
 
   assert.deepStrictEqual(rows.map(row => row.phone), ADMIN_PHONES.slice().sort());
   rows.forEach(row => {
-    assert.strictEqual(row.role, 'admin');
+    assert.strictEqual(row.role, row.phone === '13732250653' ? 'super_admin' : 'admin');
     assert.strictEqual(row.login_enabled, 1);
     assert.strictEqual(row.status, 1);
     assert.strictEqual(row.deleted, 0);
