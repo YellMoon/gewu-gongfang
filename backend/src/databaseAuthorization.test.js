@@ -23,7 +23,8 @@ const insertLegacy = legacy.prepare(`INSERT INTO users
   VALUES (?, ?, ?, ?, 1, 1, 0, ?, ?)`);
 const oldNow = '2026-01-01T00:00:00.000Z';
 [
-  ['super', '13732250653', 'fixed super admin', 'admin'],
+  ['miniapp-admin-13732250653', '13732250653', 'fixed super admin', 'admin'],
+  ['super-duplicate', '137-3225-0653', 'duplicate fixed phone', 'admin'],
   ['admin', '18257136756', 'regular admin', 'admin'],
   ['student', '13000000001', 'student', 'student'],
   ['teacher-unique', '13000000002', 'unique teacher', 'teacher'],
@@ -60,12 +61,25 @@ try {
   });
 
   const now = '2026-07-11T12:00:00.000Z';
-  service._migrateAuthorizationUsers();
+  assert.ok(service.db.prepare(
+    "SELECT 1 FROM authorization_migrations WHERE name = 'legacy-users-v1'"
+  ).get());
 
   const migrated = Object.fromEntries(service.db.prepare(
     'SELECT id, role, review_status, teacher_id FROM users'
   ).all().map(row => [row.id, row]));
-  assert.deepStrictEqual([migrated.super.role, migrated.super.review_status], ['super_admin', 'approved']);
+  assert.deepStrictEqual(
+    [migrated['miniapp-admin-13732250653'].role, migrated['miniapp-admin-13732250653'].review_status],
+    ['super_admin', 'approved']
+  );
+  assert.deepStrictEqual(
+    [migrated['super-duplicate'].role, migrated['super-duplicate'].review_status],
+    ['pending', 'pending']
+  );
+  assert.strictEqual(
+    service.db.prepare('SELECT phone FROM users WHERE id = ?').get('miniapp-admin-13732250653').phone,
+    '13732250653'
+  );
   assert.deepStrictEqual([migrated.admin.role, migrated.admin.review_status], ['admin', 'approved']);
   assert.deepStrictEqual([migrated.student.role, migrated.student.review_status], ['student', 'approved']);
   assert.deepStrictEqual(
@@ -104,9 +118,23 @@ try {
     assert.deepStrictEqual([pending.role, pending.review_status, pending.teacher_id], ['pending', 'pending', null]);
   }
   assert.throws(
-    () => service.reviewUser({ actorPhone: '13732250653', userId: 'super', role: 'student' }),
+    () => service.reviewUser({ actorPhone: '13732250653', userId: 'miniapp-admin-13732250653', role: 'student' }),
     error => error && error.code === 'SUPER_ADMIN_IMMUTABLE'
   );
+
+  for (const assignment of [
+    "status = 0",
+    "review_status = 'pending'",
+  ]) {
+    service.db.prepare(`UPDATE users SET ${assignment} WHERE id = ?`).run('miniapp-admin-13732250653');
+    assert.throws(
+      () => service.reviewUser({ actorPhone: '13732250653', userId: 'review-admin', role: 'admin' }),
+      error => error && error.code === 'SUPER_ADMIN_REQUIRED'
+    );
+    service.db.prepare(
+      "UPDATE users SET status = 1, login_enabled = 1, review_status = 'approved' WHERE id = ?"
+    ).run('miniapp-admin-13732250653');
+  }
 
   assert.deepStrictEqual(
     service.listAuthorizationUsers({ status: 'approved', role: 'admin', search: 'review' }).map(row => row.id),
@@ -116,13 +144,22 @@ try {
   assert.strictEqual(context.role, 'teacher');
   assert.strictEqual(context.teacherId, 't-review');
   assert.strictEqual(context.scope.kind, 'teacher');
-  assert.deepStrictEqual(context.device, { id: 'device-1', name: 'test device' });
+  assert.deepStrictEqual(context.device, { id: 'device-1', name: 'test device', trusted: false });
+  const untrustedContext = service.getAuthorizationContextByUserId('review-teacher', {
+    id: 'device-2', name: 'caller device', trusted: true, isPrimaryHost: true, role: 'host',
+  });
+  assert.deepStrictEqual(untrustedContext.device, { id: 'device-2', name: 'caller device', trusted: false });
 
   const audits = service.db.prepare(
     'SELECT actor_phone, target_user_id, before_json, after_json FROM authorization_audit_log'
   ).all();
   assert.ok(audits.some(row => row.actor_phone === '13732250653' && row.target_user_id === 'review-teacher'));
   assert.ok(audits.every(row => JSON.parse(row.before_json) && JSON.parse(row.after_json)));
+  const stringAudit = service.recordAuthorizationAudit({
+    id: 'audit-json-string', action: 'json_test', before_json: '{"state":"before"}', after_json: '{"state":"after"}',
+  });
+  assert.deepStrictEqual(JSON.parse(stringAudit.before_json), { state: 'before' });
+  assert.deepStrictEqual(JSON.parse(stringAudit.after_json), { state: 'after' });
 
   const rejection = service.recordSyncRejection({
     id: 'rejection-1', operationId: 'operation-1', actorUserId: 'review-teacher', actorTeacherId: 't-review',
@@ -137,7 +174,43 @@ try {
     ['operation-1', 'review-teacher', 't-review', 'device-1', 'schedules', 'schedule-1',
       'TEACHER_SCOPE_DENIED', { teacher_id: 'other-teacher' }, now]
   );
+  const stringRejection = service.recordSyncRejection({
+    id: 'rejection-json-string', reasonCode: 'JSON_TEST', payload_json: '{"safe":true}',
+  });
+  assert.deepStrictEqual(JSON.parse(stringRejection.payload_json), { safe: true });
+
+  service.db.prepare(
+    "UPDATE users SET role = 'pending', review_status = 'rejected', teacher_id = NULL WHERE id = 'review-admin'"
+  ).run();
+  service.db.prepare(
+    "UPDATE users SET role = 'teacher', review_status = 'rejected', teacher_id = 'manual-binding' WHERE id = 'review-teacher'"
+  ).run();
   service.close();
+  const restarted = new DatabaseService();
+  const preserved = restarted.db.prepare(
+    "SELECT role, review_status, teacher_id FROM users WHERE id = 'review-admin'"
+  ).get();
+  assert.deepStrictEqual(
+    [preserved.role, preserved.review_status, preserved.teacher_id],
+    ['pending', 'rejected', null],
+    'restart must not re-run legacy authorization migration'
+  );
+  const preservedTeacher = restarted.db.prepare(
+    "SELECT role, review_status, teacher_id FROM users WHERE id = 'review-teacher'"
+  ).get();
+  assert.deepStrictEqual(
+    [preservedTeacher.role, preservedTeacher.review_status, preservedTeacher.teacher_id],
+    ['teacher', 'rejected', 'manual-binding'],
+    'restart must preserve a post-migration review decision and teacher binding'
+  );
+  restarted.db.prepare("UPDATE users SET phone = '13000000999' WHERE id = ?")
+    .run('miniapp-admin-13732250653');
+  restarted.db.prepare("UPDATE users SET phone = ? WHERE id = 'admin'").run('13732250653');
+  assert.throws(
+    () => restarted.reviewUser({ actorPhone: '13732250653', userId: 'review-admin', role: 'admin' }),
+    error => error && error.code === 'SUPER_ADMIN_IDENTITY_CONFLICT'
+  );
+  restarted.close();
   console.log('database authorization checks passed');
 } finally {
   if (previous.db === undefined) delete process.env.DB_PATH; else process.env.DB_PATH = previous.db;

@@ -237,6 +237,11 @@ CREATE TABLE IF NOT EXISTS sync_rejections (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS authorization_migrations (
+  name TEXT PRIMARY KEY,
+  applied_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS miniapp_login_attempts (
   id TEXT PRIMARY KEY,
   wechat_openid TEXT NOT NULL,

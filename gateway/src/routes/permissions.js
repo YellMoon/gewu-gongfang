@@ -45,7 +45,7 @@ router.get('/definitions', (req, res) => {
 router.get('/my', (req, res) => {
   const db = getDb();
 
-  if (req.user.user_type === 'admin') {
+  if (['super_admin', 'admin'].includes(req.user.user_type)) {
     // 管理员拥有所有权限
     const allPerms = db.prepare(`
       SELECT p.id, p.module_id, p.sub_module, p.action, p.description

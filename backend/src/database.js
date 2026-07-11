@@ -26,6 +26,16 @@ const ENVIRONMENTS = {
   staging: { dbFile: 'scheduling.staging.db' },
   prod: { dbFile: 'scheduling.db' },
 };
+const AUTHORIZATION_MIGRATION_NAME = 'legacy-users-v1';
+const CANONICAL_SUPER_ADMIN_ID = 'miniapp-admin-13732250653';
+
+function normalizeJson(value) {
+  if (value === undefined || value === null || value === '') return 'null';
+  if (typeof value === 'string') {
+    try { return JSON.stringify(JSON.parse(value)); } catch (_error) { return JSON.stringify(value); }
+  }
+  return JSON.stringify(value);
+}
 
 function resolveEnvironment() {
   const raw = process.env.APP_ENV || process.env.SCHEDULE_ENV || process.env.NODE_ENV || 'dev';
@@ -339,11 +349,17 @@ class DatabaseService {
         source_device_id TEXT, table_name TEXT, record_id TEXT, reason_code TEXT NOT NULL,
         payload_json TEXT, created_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS authorization_migrations (
+        name TEXT PRIMARY KEY, applied_at TEXT NOT NULL
+      );
       CREATE INDEX IF NOT EXISTS idx_authorization_users_review ON users(review_status, role);
       CREATE INDEX IF NOT EXISTS idx_authorization_audit_target ON authorization_audit_log(target_user_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_sync_rejections_operation ON sync_rejections(operation_id, created_at);
     `);
-    this._migrateAuthorizationUsers();
+    const migrated = this.db.prepare('SELECT 1 FROM authorization_migrations WHERE name = ?')
+      .get(AUTHORIZATION_MIGRATION_NAME);
+    if (!migrated) this._migrateAuthorizationUsers();
+    this._enforceCanonicalSuperAdmin();
   }
 
   _migrateAuthorizationUsers() {
@@ -353,17 +369,15 @@ class DatabaseService {
     const teachers = this.db.prepare(
       'SELECT id, phone, deleted FROM teachers WHERE deleted = 0'
     ).all();
-    const update = this.db.prepare(
-      'UPDATE users SET role = ?, review_status = ?, teacher_id = ?, updated_at = ? WHERE id = ?'
-    );
     const migrate = this.db.transaction(() => {
       for (const user of users) {
+        const normalizedPhone = normalizePhone(user.phone);
         let role = user.role;
         let reviewStatus = user.review_status;
         let teacherId = null;
-        if (normalizePhone(user.phone) === SUPER_ADMIN_PHONE) {
-          role = 'super_admin';
-          reviewStatus = 'approved';
+        if (normalizedPhone === SUPER_ADMIN_PHONE) {
+          role = user.id === CANONICAL_SUPER_ADMIN_ID ? 'super_admin' : 'pending';
+          reviewStatus = user.id === CANONICAL_SUPER_ADMIN_ID ? 'approved' : 'pending';
         } else if (role === 'admin' || role === 'student') {
           reviewStatus = 'approved';
         } else if (role === 'teacher') {
@@ -381,10 +395,38 @@ class DatabaseService {
         } else {
           reviewStatus = 'pending';
         }
-        update.run(role, reviewStatus, teacherId, this._now(), user.id);
+        this.db.prepare(
+          'UPDATE users SET phone = ?, role = ?, review_status = ?, teacher_id = ?, updated_at = ? WHERE id = ?'
+        ).run(normalizedPhone || null, role, reviewStatus, teacherId, this._now(), user.id);
       }
+      this.db.prepare('INSERT INTO authorization_migrations (name, applied_at) VALUES (?, ?)')
+        .run(AUTHORIZATION_MIGRATION_NAME, this._now());
     });
     migrate();
+  }
+
+  _canonicalSuperAdmin() {
+    const fixedUsers = this.db.prepare('SELECT * FROM users ORDER BY created_at, id').all()
+      .filter(user => normalizePhone(user.phone) === SUPER_ADMIN_PHONE);
+    const seeded = fixedUsers.find(user => user.id === CANONICAL_SUPER_ADMIN_ID);
+    if (seeded) return { ok: true, user: seeded, duplicates: fixedUsers.filter(user => user.id !== seeded.id) };
+    if (fixedUsers.length === 1) return { ok: true, user: fixedUsers[0], duplicates: [] };
+    return { ok: false, code: 'SUPER_ADMIN_IDENTITY_CONFLICT', duplicates: fixedUsers };
+  }
+
+  _enforceCanonicalSuperAdmin() {
+    const identity = this._canonicalSuperAdmin();
+    const now = this._now();
+    const demote = this.db.prepare(
+      "UPDATE users SET phone = ?, role = 'pending', review_status = 'pending', login_enabled = 0, teacher_id = NULL, updated_at = ? WHERE id = ?"
+    );
+    for (const duplicate of identity.duplicates || []) {
+      demote.run(normalizePhone(duplicate.phone), now, duplicate.id);
+    }
+    if (!identity.ok) return;
+    this.db.prepare(`UPDATE users SET phone = ?, role = 'super_admin', review_status = 'approved',
+      status = 1, login_enabled = 1, deleted = 0, teacher_id = NULL, updated_at = ? WHERE id = ?`)
+      .run(SUPER_ADMIN_PHONE, now, identity.user.id);
   }
 
   _ensureHostHeartbeatColumns() {
@@ -1526,9 +1568,16 @@ class DatabaseService {
   }
 
   reviewUser({ actorPhone, userId, role } = {}) {
-    const actor = this.db.prepare('SELECT * FROM users WHERE phone = ? AND deleted = 0 ORDER BY created_at LIMIT 1')
-      .get(normalizePhone(actorPhone));
-    if (!actor || !canReviewUsers(actor)) {
+    const identity = this._canonicalSuperAdmin();
+    if (!identity.ok) {
+      const error = new Error('Super administrator identity is conflicting');
+      error.code = identity.code;
+      throw error;
+    }
+    const actor = identity.user;
+    const active = actor.deleted === 0 && actor.status === 1 && actor.login_enabled === 1
+      && actor.review_status === 'approved' && actor.role === 'super_admin';
+    if (normalizePhone(actorPhone) !== SUPER_ADMIN_PHONE || !active || !canReviewUsers(actor)) {
       const error = new Error('Super administrator approval is required');
       error.code = 'SUPER_ADMIN_REQUIRED';
       throw error;
@@ -1592,7 +1641,8 @@ class DatabaseService {
     const role = roleForUser(user);
     return { userId: user.id, role, reviewStatus: user.review_status,
       teacherId: user.teacher_id || null, studentId: user.student_id || null,
-      scope: scopeForUser({ ...user, role }), device: { ...device } };
+      scope: scopeForUser({ ...user, role }),
+      device: { id: device.id || null, name: device.name || null, trusted: false } };
   }
 
   recordAuthorizationAudit(entry = {}) {
@@ -1600,8 +1650,8 @@ class DatabaseService {
       actor_phone: entry.actorPhone || entry.actor_phone || null,
       target_user_id: entry.targetUserId || entry.target_user_id || null,
       action: entry.action || 'authorization_change',
-      before_json: JSON.stringify(entry.before === undefined ? entry.before_json || null : entry.before),
-      after_json: JSON.stringify(entry.after === undefined ? entry.after_json || null : entry.after),
+      before_json: normalizeJson(entry.before === undefined ? entry.before_json : entry.before),
+      after_json: normalizeJson(entry.after === undefined ? entry.after_json : entry.after),
       created_at: entry.createdAt || entry.created_at || this._now() };
     this.db.prepare(`INSERT INTO authorization_audit_log
       (id, actor_user_id, actor_phone, target_user_id, action, before_json, after_json, created_at)
@@ -1616,7 +1666,7 @@ class DatabaseService {
       source_device_id: entry.sourceDeviceId || entry.source_device_id || null,
       table_name: entry.tableName || entry.table_name || null, record_id: entry.recordId || entry.record_id || null,
       reason_code: entry.reasonCode || entry.reason_code || 'SYNC_REJECTED',
-      payload_json: JSON.stringify(entry.payload === undefined ? entry.payload_json || null : entry.payload),
+      payload_json: normalizeJson(entry.payload === undefined ? entry.payload_json : entry.payload),
       created_at: entry.createdAt || entry.created_at || this._now() };
     this.db.prepare(`INSERT INTO sync_rejections
       (id, operation_id, actor_user_id, actor_teacher_id, source_device_id, table_name, record_id, reason_code, payload_json, created_at)

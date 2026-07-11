@@ -93,10 +93,14 @@ assert.strictEqual(filtered.payload.teachers[0].hourly_rate, undefined, 'teacher
 const adminSnapshot = filterSnapshotForUser(snapshot, { id: 'admin-1', role: 'admin' });
 assert.strictEqual(adminSnapshot.payload.payments.length, 1, 'admin snapshot should keep finance data');
 assert.strictEqual(adminSnapshot.payload.courses.length, 2, 'admin snapshot should keep all courses');
+const superAdminSnapshot = filterSnapshotForUser(snapshot, { id: 'super-1', role: 'super_admin' });
+assert.deepStrictEqual(superAdminSnapshot, adminSnapshot, 'super admin should retain the existing admin snapshot scope');
 
 assert.strictEqual(isAllowedMiniappTaskForUser({ user_type: 'student' }, 'question-paper'), true);
 assert.strictEqual(isAllowedMiniappTaskForUser({ user_type: 'student' }, 'asset-import'), false);
 assert.strictEqual(isAllowedMiniappTaskForUser({ role: 'admin' }, 'asset-import'), true);
+assert.strictEqual(isAllowedMiniappTaskForUser({ role: 'super_admin' }, 'asset-import'), true);
+assert.strictEqual(isAllowedMiniappTaskForUser({ role: 'teacher' }, 'asset-import'), false);
 assert.strictEqual(isAllowedMiniappTaskForUser(null, 'question-paper'), false);
 
 console.log('miniapp access policy checks passed');

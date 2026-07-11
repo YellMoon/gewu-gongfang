@@ -5,6 +5,10 @@
  */
 const { getDb } = require('../db/database');
 
+function isAdminUser(user) {
+  return ['super_admin', 'admin'].includes(user?.user_type);
+}
+
 function readTenant(req) {
   return req.headers['x-tenant-id']
     || req.headers['x-tenantid']
@@ -43,7 +47,7 @@ function enforceTenantScope(req, res, next) {
 function requirePermission(module, action) {
   return (req, res, next) => {
     // 管理员跳过所有权限检查
-    if (req.user && req.user.user_type === 'admin') {
+    if (isAdminUser(req.user)) {
       return next();
     }
 
@@ -101,7 +105,7 @@ function requirePermission(module, action) {
  */
 function requireType(types) {
   return (req, res, next) => {
-    if (req.user && req.user.user_type === 'admin') {
+    if (isAdminUser(req.user)) {
       return next();
     }
 
@@ -130,7 +134,7 @@ function loadUserPermissions(req, res, next) {
   }
 
   // 管理员拥有全部权限
-  if (req.user.user_type === 'admin') {
+  if (isAdminUser(req.user)) {
     req.userPerms = ['*'];
     return next();
   }

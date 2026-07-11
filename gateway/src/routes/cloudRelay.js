@@ -21,7 +21,7 @@ const studentTaskTypes = new Set(['question-paper', 'paper-export-word', 'paper-
 
 function allowedTasksForUser(user) {
   if (user?.user_type === 'student') return studentTaskTypes;
-  if (user?.user_type === 'admin') return adminTaskTypes;
+  if (['super_admin', 'admin'].includes(user?.user_type)) return adminTaskTypes;
   return new Set();
 }
 
