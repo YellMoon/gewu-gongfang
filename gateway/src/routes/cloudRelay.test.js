@@ -6,6 +6,7 @@ const route = fs.readFileSync('gateway/src/routes/cloudRelay.js', 'utf-8');
 const app = fs.readFileSync('gateway/src/app.js', 'utf-8');
 const authRoute = fs.readFileSync('gateway/src/routes/auth.js', 'utf-8');
 const permissionMiddleware = fs.readFileSync('gateway/src/middleware/permission.js', 'utf-8');
+const { filterSnapshotForUser } = require('./cloudRelay');
 
 assert.ok(schema.includes('host_heartbeats'), 'schema should include host_heartbeats');
 assert.ok(schema.includes('readonly_snapshots'), 'schema should include readonly_snapshots');
@@ -24,5 +25,16 @@ assert.ok(route.includes('adminTaskTypes'), 'asset import should be limited to a
 assert.ok(authRoute.includes("['super_admin', 'admin', 'student']"), 'gateway login should accept super admin without widening student access');
 assert.ok(permissionMiddleware.includes("['super_admin', 'admin']"), 'gateway permissions should treat only super admin and admin as administrators');
 assert.ok(app.includes("require('./routes/cloudRelay')"), 'gateway app should mount cloud relay');
+
+const teacherSnapshot = filterSnapshotForUser({ payload: {
+  courses: [{ id: 'c1', teacher_id: 't1' }, { id: 'c2', teacher_id: 't2' }],
+  schedules: [{ id: 's1', course_id: 'c1', student_ids: ['stu1'] }, { id: 's2', course_id: 'c2', student_ids: ['stu2'] }],
+  students: [{ id: 'stu1' }, { id: 'stu2' }],
+  payments: [{ id: 'p1', course_id: 'c1' }, { id: 'p2', course_id: 'c2' }],
+  questions: [{ id: 'q1' }, { id: 'q2' }],
+} }, { user_type: 'teacher', teacher_id: 't1', id: 'u1' });
+assert.deepStrictEqual(teacherSnapshot.payload.courses.map(x => x.id), ['c1']);
+assert.deepStrictEqual(teacherSnapshot.payload.payments.map(x => x.id), ['p1']);
+assert.strictEqual(teacherSnapshot.payload.questions.length, 2, 'teacher snapshot keeps public question bank');
 
 console.log('cloudRelay route checks passed');

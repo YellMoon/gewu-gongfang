@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const { getDb } = require('../db/database');
+const { scopeBusinessSnapshot } = require('../../../backend/src/services/dataScopeService');
 
 const router = express.Router();
 
@@ -97,7 +98,13 @@ function redactTeacherForStudent(teacher = {}) {
 }
 
 function filterSnapshotForUser(snapshot, user) {
-  if (!snapshot || !isStudentUser(user)) return snapshot;
+  if (!snapshot) return snapshot;
+  if ((user?.user_type || user?.role) === 'teacher') {
+    return { ...snapshot, payload: scopeBusinessSnapshot(snapshot.payload || {}, {
+      kind: 'teacher', teacherId: user.teacher_id || user.teacherId, userId: user.id || user.user_id || user.userId,
+    }) };
+  }
+  if (!isStudentUser(user)) return snapshot;
 
   const linkedStudentIds = getLinkedStudentIds(user);
   if (linkedStudentIds.length === 0) {
@@ -279,3 +286,4 @@ router.get('/tasks/:id/result', (req, res) => {
 });
 
 module.exports = router;
+module.exports.filterSnapshotForUser = filterSnapshotForUser;

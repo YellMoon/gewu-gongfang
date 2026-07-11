@@ -1,5 +1,6 @@
 const ADMIN_TASK_TYPES = new Set(['asset-import', 'question-paper', 'paper-export-word', 'paper-export-pdf']);
 const STUDENT_TASK_TYPES = new Set(['question-paper', 'paper-export-word', 'paper-export-pdf']);
+const { scopeBusinessSnapshot } = require('./dataScopeService');
 
 function roleOf(user = {}) {
   return user?.role || user?.user_type || 'guest';
@@ -117,7 +118,13 @@ function redactTeacherForStudent(teacher = {}) {
 }
 
 function filterSnapshotForUser(snapshot, user) {
-  if (!snapshot || !isStudentUser(user)) return snapshot;
+  if (!snapshot) return snapshot;
+  if (roleOf(user) === 'teacher') {
+    return { ...snapshot, payload: scopeBusinessSnapshot(snapshot.payload || {}, {
+      kind: 'teacher', teacherId: user.teacher_id || user.teacherId, userId: user.id || user.user_id || user.userId,
+    }) };
+  }
+  if (!isStudentUser(user)) return snapshot;
 
   const linkedStudentIds = getLinkedStudentIds(user);
   const payload = snapshot.payload || {};
