@@ -18,8 +18,8 @@ const redactStudent = row => pick(row, ['id', 'name', 'school', 'grade_year', 'g
 const redactCourse = row => pick(row, ['id', 'name', 'display_name', 'type', 'year', 'semester', 'teacher_id', 'teacherId', 'teacher_name', 'room_id', 'room_name', 'active', 'default_duration_minutes', 'created_at', 'updated_at']);
 const redactSchedule = row => pick(row, ['id', 'course_id', 'courseId', 'start_time', 'end_time', 'recurring_rule', 'status', 'room', 'room_id', 'service_type', 'created_at', 'updated_at']);
 const redactTeacher = row => pick(row, ['id', 'name', 'subject']);
-const redactInstitution = row => pick(row, ['id', 'name', 'short_name']);
-const redactRoom = row => pick(row, ['id', 'name', 'capacity']);
+const redactInstitution = row => pick(row, ['id', 'name']);
+const redactRoom = row => pick(row, ['id', 'name', 'display_name', 'displayName']);
 const redactSchool = row => pick(row, ['id', 'name']);
 const studentLinks = row => [
   ...array(value(row, 'student_ids', 'studentIds')),
@@ -44,9 +44,9 @@ function scopeStudent(snapshot, context) {
     courses: courses.map(redactCourse), schedules: schedules.map(redactSchedule),
     students: scopedStudents.map(redactStudent),
     teachers: copyRows(snapshot.teachers).filter(row => inSet(teacherIds, id(row))).map(redactTeacher),
-    rooms: copyRows(snapshot.rooms).filter(row => inSet(roomIds, id(row))),
-    institutions: copyRows(snapshot.institutions).filter(row => inSet(institutionIds, id(row))),
-    schools: copyRows(snapshot.schools).filter(row => inSet(schoolIds, id(row))),
+    rooms: copyRows(snapshot.rooms).filter(row => inSet(roomIds, id(row))).map(redactRoom),
+    institutions: copyRows(snapshot.institutions).filter(row => inSet(institutionIds, id(row))).map(redactInstitution),
+    schools: copyRows(snapshot.schools).filter(row => inSet(schoolIds, id(row))).map(redactSchool),
     enrollments: copyRows(snapshot.enrollments).filter(row => (inSet(scheduleIds, value(row, 'schedule_id', 'scheduleId')) || inSet(courseIds, value(row, 'course_id', 'courseId'))) && inSet(allowedStudents, value(row, 'student_id', 'studentId'))),
     consumptions: [], payments: [], assetRecords: [], assetCategories: [],
   });
@@ -57,8 +57,8 @@ const PUBLIC_FIELDS = {
   subjects: ['id', 'name', 'code'], chapters: ['id', 'subject_id', 'name', 'sort_order'], knowledge_points: ['id', 'chapter_id', 'name', 'description'], knowledgePoints: ['id', 'chapterId', 'name', 'description'],
   questions: ['id', 'subject_id', 'chapter_id', 'type', 'difficulty', 'source', 'paper_id', 'question_number', 'status', 'created_at', 'updated_at'],
   question_contents: ['id', 'question_id', 'stem', 'answer', 'explanation', 'options_json', 'version'], questionContents: ['id', 'questionId', 'stem', 'answer', 'explanation', 'optionsJson', 'version'],
-  question_assets: ['id', 'question_id', 'asset_type', 'mime_type', 'width', 'height', 'sort_order'], questionAssets: ['id', 'questionId', 'assetType', 'mimeType', 'width', 'height', 'sortOrder'],
-  question_bank_assets: ['id', 'question_id', 'asset_type', 'mime_type'], questionBankAssets: ['id', 'questionId', 'assetType', 'mimeType'],
+  question_assets: ['id', 'question_id', 'asset_type', 'type', 'mime_type', 'oss_url', 'url', 'data_url', 'width', 'height', 'alt', 'sort_order'], questionAssets: ['id', 'questionId', 'assetType', 'type', 'mimeType', 'ossUrl', 'url', 'dataUrl', 'width', 'height', 'alt', 'sortOrder'],
+  question_bank_assets: ['id', 'question_id', 'asset_type', 'type', 'mime_type', 'oss_url', 'url', 'data_url', 'width', 'height', 'alt'], questionBankAssets: ['id', 'questionId', 'assetType', 'type', 'mimeType', 'ossUrl', 'url', 'dataUrl', 'width', 'height', 'alt'],
 };
 const SAFE_METADATA = new Set(['version', 'created_at', 'createdAt', 'updated_at', 'updatedAt', 'snapshotType', 'schemaVersion']);
 function withSafePublic(snapshot, business) {

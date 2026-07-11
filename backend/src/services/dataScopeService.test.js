@@ -83,12 +83,23 @@ assert.throws(() => assertRecordReadable('payments', { course_id: 'c1', schedule
 const hostile = scopeBusinessSnapshot({ ...snapshot,
   questions: [{ id: 'q1', tenant_id: 'secret', created_by: 'secret' }],
   question_contents: [{ id: 'qc1', question_id: 'q1', stem: 'body', answer: 'answer', explanation: 'why', content_hash: 'secret', local_path: 'secret' }],
-  question_assets: [{ id: 'qa1', question_id: 'q1', asset_type: 'image', oss_key: 'secret', path: 'secret' }],
+  question_assets: [{ id: 'qa1', question_id: 'q1', asset_type: 'image', oss_url: 'https://cdn/a.png', data_url: 'data:image/png;base64,AA', mime_type: 'image/png', width: 10, height: 20, alt: 'diagram', oss_key: 'secret', path: 'secret', file_path: 'secret' }],
 }, { kind: 'teacher', teacherId: 't1', userId: 'u1' });
 assert.strictEqual(hostile.questions[0].tenant_id, undefined);
 assert.strictEqual(hostile.question_contents[0].content_hash, undefined);
 assert.strictEqual(hostile.question_contents[0].answer, 'answer');
 assert.strictEqual(hostile.question_assets[0].oss_key, undefined);
+assert.deepStrictEqual(hostile.question_assets[0], { id: 'qa1', question_id: 'q1', asset_type: 'image', oss_url: 'https://cdn/a.png', data_url: 'data:image/png;base64,AA', mime_type: 'image/png', width: 10, height: 20, alt: 'diagram' });
+const studentBasics = scopeBusinessSnapshot({
+  courses: [{ id: 'c', student_ids: ['s'], room_id: 'r', institution_id: 'i' }], schedules: [],
+  students: [{ id: 's', name: 'S', school_id: 'school' }], teachers: [],
+  rooms: [{ id: 'r', name: 'Room', display_name: 'Room A', address: 'secret', notes: 'secret' }],
+  institutions: [{ id: 'i', name: 'Inst', contact_phone: 'secret', config: '{}' }],
+  schools: [{ id: 'school', name: 'School', address: 'secret' }],
+}, { kind: 'student', studentIds: ['s'], userId: 'u' });
+assert.deepStrictEqual(studentBasics.rooms, [{ id: 'r', name: 'Room', display_name: 'Room A' }]);
+assert.deepStrictEqual(studentBasics.institutions, [{ id: 'i', name: 'Inst' }]);
+assert.deepStrictEqual(studentBasics.schools, [{ id: 'school', name: 'School' }]);
 const finite = require('./dataScopeService').buildScopedFinancialSnapshot({
   schedules: [{ id: 'a', calculated_tuition: '10', calculated_teacher_fee: -2 }, { id: 'a', calculated_tuition: 10 }, { id: 'b', calculated_tuition: 'bad' }, { id: 'c', calculated_tuition: Infinity }],
   payments: [{ id: 'p', amount: '' }, { id: 'p2', amount: -5 }], assetRecords: [],
