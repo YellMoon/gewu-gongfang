@@ -80,6 +80,12 @@ try {
     service.db.prepare('SELECT phone FROM users WHERE id = ?').get('miniapp-admin-13732250653').phone,
     '13732250653'
   );
+  const duplicateContext = service.getAuthorizationContextByUserId('super-duplicate');
+  assert.strictEqual(duplicateContext.role, 'pending');
+  assert.deepStrictEqual(duplicateContext.scope, { kind: 'none' });
+  const canonicalContext = service.getAuthorizationContextByUserId('miniapp-admin-13732250653');
+  assert.strictEqual(canonicalContext.role, 'super_admin');
+  assert.deepStrictEqual(canonicalContext.scope, { kind: 'all' });
   assert.deepStrictEqual([migrated.admin.role, migrated.admin.review_status], ['admin', 'approved']);
   assert.deepStrictEqual([migrated.student.role, migrated.student.review_status], ['student', 'approved']);
   assert.deepStrictEqual(
@@ -185,6 +191,9 @@ try {
   service.db.prepare(
     "UPDATE users SET role = 'teacher', review_status = 'rejected', teacher_id = 'manual-binding' WHERE id = 'review-teacher'"
   ).run();
+  service.db.prepare(
+    "UPDATE users SET role = 'pending', review_status = 'pending', status = 0, login_enabled = 0 WHERE id = ?"
+  ).run('miniapp-admin-13732250653');
   service.close();
   const restarted = new DatabaseService();
   const preserved = restarted.db.prepare(
@@ -202,6 +211,15 @@ try {
     [preservedTeacher.role, preservedTeacher.review_status, preservedTeacher.teacher_id],
     ['teacher', 'rejected', 'manual-binding'],
     'restart must preserve a post-migration review decision and teacher binding'
+  );
+  const restoredCanonical = restarted.db.prepare(
+    'SELECT role, review_status, status, login_enabled, deleted FROM users WHERE id = ?'
+  ).get('miniapp-admin-13732250653');
+  assert.deepStrictEqual(
+    [restoredCanonical.role, restoredCanonical.review_status, restoredCanonical.status,
+      restoredCanonical.login_enabled, restoredCanonical.deleted],
+    ['super_admin', 'approved', 1, 1, 0],
+    'restart must restore the non-transferable canonical super-admin safety invariant'
   );
   restarted.db.prepare("UPDATE users SET phone = '13000000999' WHERE id = ?")
     .run('miniapp-admin-13732250653');

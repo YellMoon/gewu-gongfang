@@ -9,6 +9,7 @@ const { v4: uuidv4 } = require('uuid');
 const { getMiniappLoginDenialReason } = require('./services/miniappAuthPolicy');
 const {
   SUPER_ADMIN_PHONE,
+  CANONICAL_SUPER_ADMIN_ID,
   normalizePhone,
   roleForUser,
   canReviewUsers,
@@ -27,7 +28,6 @@ const ENVIRONMENTS = {
   prod: { dbFile: 'scheduling.db' },
 };
 const AUTHORIZATION_MIGRATION_NAME = 'legacy-users-v1';
-const CANONICAL_SUPER_ADMIN_ID = 'miniapp-admin-13732250653';
 
 function normalizeJson(value) {
   if (value === undefined || value === null || value === '') return 'null';
@@ -417,16 +417,18 @@ class DatabaseService {
   _enforceCanonicalSuperAdmin() {
     const identity = this._canonicalSuperAdmin();
     const now = this._now();
-    const demote = this.db.prepare(
-      "UPDATE users SET phone = ?, role = 'pending', review_status = 'pending', login_enabled = 0, teacher_id = NULL, updated_at = ? WHERE id = ?"
-    );
-    for (const duplicate of identity.duplicates || []) {
-      demote.run(normalizePhone(duplicate.phone), now, duplicate.id);
-    }
-    if (!identity.ok) return;
-    this.db.prepare(`UPDATE users SET phone = ?, role = 'super_admin', review_status = 'approved',
-      status = 1, login_enabled = 1, deleted = 0, teacher_id = NULL, updated_at = ? WHERE id = ?`)
-      .run(SUPER_ADMIN_PHONE, now, identity.user.id);
+    this.db.transaction(() => {
+      const demote = this.db.prepare(
+        "UPDATE users SET phone = ?, role = 'pending', review_status = 'pending', login_enabled = 0, teacher_id = NULL, updated_at = ? WHERE id = ?"
+      );
+      for (const duplicate of identity.duplicates || []) {
+        demote.run(normalizePhone(duplicate.phone), now, duplicate.id);
+      }
+      if (!identity.ok) return;
+      this.db.prepare(`UPDATE users SET phone = ?, role = 'super_admin', review_status = 'approved',
+        status = 1, login_enabled = 1, deleted = 0, teacher_id = NULL, updated_at = ? WHERE id = ?`)
+        .run(SUPER_ADMIN_PHONE, now, identity.user.id);
+    })();
   }
 
   _ensureHostHeartbeatColumns() {
