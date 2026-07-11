@@ -1,6 +1,7 @@
 import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { useMemo, useState } from 'react';
+import { fetchPermissions, getEffectiveMiniappAccess } from '../utils/permission';
 import './index.scss';
 
 declare const getCurrentPages: (() => Array<{ route?: string }>) | undefined;
@@ -25,6 +26,11 @@ const STUDENT_TABS: TabItem[] = [
   { pagePath: 'pages/settings/index', label: '我的', iconText: '我' },
 ];
 
+const LIMITED_TABS: TabItem[] = [
+  { pagePath: 'pages/index/index', label: '\u9996\u9875', iconText: '\u9996' },
+  { pagePath: 'pages/settings/index', label: '\u6211\u7684', iconText: '\u6211' },
+];
+
 function getCurrentRoute() {
   if (typeof window !== 'undefined') {
     const hashRoute = window.location.hash.replace(/^#\/?/, '').split('?')[0];
@@ -36,11 +42,7 @@ function getCurrentRoute() {
 }
 
 function getUserType() {
-  try {
-    return Taro.getStorageSync('user_info')?.user_type || 'student';
-  } catch {
-    return 'student';
-  }
+  return 'pending';
 }
 
 export default function RoleTabBar() {
@@ -49,11 +51,15 @@ export default function RoleTabBar() {
 
   useDidShow(() => {
     setCurrentRoute(getCurrentRoute());
-    setUserType(getUserType());
+    setUserType('pending');
+    void fetchPermissions().then(() => {
+      const access = getEffectiveMiniappAccess();
+      setUserType(access.modules.length > 0 ? access.role : 'pending');
+    }).catch(() => setUserType('pending'));
   });
 
   const tabs = useMemo(() => (
-    userType === 'student' ? STUDENT_TABS : ADMIN_TABS
+    userType === 'pending' ? LIMITED_TABS : (userType === 'student' ? STUDENT_TABS : ADMIN_TABS)
   ), [userType]);
 
   const isTabPage = tabs.some((item) => item.pagePath === currentRoute);

@@ -1,7 +1,11 @@
 import Taro from '@tarojs/taro';
 import { PendingChange, SyncTable } from '../types';
+import { businessCacheIdentityKey } from './miniappAuthorizationRuntime';
 
 const PREFIX = 'sch_';
+const CACHE_IDENTITY_KEY = 'cache_identity';
+const BUSINESS_TABLES: SyncTable[] = ['students', 'courses', 'schedules', 'teachers', 'payments', 'consumptions', 'questions', 'grades'];
+let activeCacheIdentity = '';
 
 // ========== 通用存储操作 ==========
 
@@ -36,11 +40,32 @@ export const storage = {
 // 每类数据缓存在独立的 key 下，用于离线查看
 
 export function getCachedList<T>(table: SyncTable): T[] {
-  return storage.get<T[]>(`cache_${table}`) || [];
+  if (!activeCacheIdentity) return [];
+  return storage.get<T[]>(`cache_${activeCacheIdentity}_${table}`) || [];
 }
 
 export function setCachedList<T>(table: SyncTable, data: T[]): void {
-  storage.set(`cache_${table}`, data);
+  if (!activeCacheIdentity) return;
+  storage.set(`cache_${activeCacheIdentity}_${table}`, data);
+}
+
+export function setBusinessCacheIdentity(user: any): string {
+  const nextIdentity = businessCacheIdentityKey(user);
+  const previousIdentity = storage.get<string>(CACHE_IDENTITY_KEY) || '';
+  if (previousIdentity && previousIdentity !== nextIdentity) {
+    BUSINESS_TABLES.forEach(table => storage.remove(`cache_${previousIdentity}_${table}`));
+  }
+  activeCacheIdentity = nextIdentity;
+  if (nextIdentity) storage.set(CACHE_IDENTITY_KEY, nextIdentity);
+  else storage.remove(CACHE_IDENTITY_KEY);
+  return nextIdentity;
+}
+
+export function clearBusinessCache(): void {
+  const identity = activeCacheIdentity || storage.get<string>(CACHE_IDENTITY_KEY) || '';
+  if (identity) BUSINESS_TABLES.forEach(table => storage.remove(`cache_${identity}_${table}`));
+  activeCacheIdentity = '';
+  storage.remove(CACHE_IDENTITY_KEY);
 }
 
 export function findCachedItem<T extends { id: string }>(table: SyncTable, id: string): T | undefined {

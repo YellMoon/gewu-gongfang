@@ -31,10 +31,13 @@ App = function App({ children }: PropsWithChildren<any>) {
 };
 
 async function initApp() {
-  const [{ fetchPermissions }, syncEngine] = await Promise.all([
+  const [{ fetchPermissions }, { setBusinessCacheIdentity }, syncEngine] = await Promise.all([
     import('./utils/permission'),
+    import('./utils/storage'),
     getSyncEngine(),
   ]);
+
+  setBusinessCacheIdentity(Taro.getStorageSync('user_info'));
 
   try {
     await fetchPermissions();

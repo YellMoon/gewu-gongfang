@@ -12,9 +12,12 @@ import {
   clearPermissionCache,
   getMiniappRolePolicy,
   getLinkedStudentIds,
+  getEffectiveMiniappAccess,
+  MiniappRole,
 } from '../../utils/permission';
 import { getLocalData } from '../../utils/sync';
-import { setCachedList } from '../../utils/storage';
+import { clearBusinessCache, setBusinessCacheIdentity, setCachedList } from '../../utils/storage';
+import { scopeDashboardCollections } from '../../utils/miniappAuthorizationRuntime';
 import { NetworkStatus, LoadingSkeleton, EmptyState } from '../../components/shared';
 import { Schedule, ScheduleStatus, Student, Course } from '../../types';
 import './index.scss';
@@ -22,7 +25,7 @@ import './index.scss';
 interface UserInfo {
   id: string;
   name: string;
-  user_type: string;
+  user_type: MiniappRole;
   avatar?: string;
 }
 
@@ -75,6 +78,7 @@ export default function Index() {
   const [modules, setModules] = useState<ModuleInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [snapshot, setSnapshot] = useState<any>(null);
+  const [access, setAccess] = useState<any>({ role: 'pending', modules: [], capabilities: [], canReadUsers: false, canReviewUsers: false });
   const [dashboard, setDashboard] = useState<DashboardData>({
     todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0,
   });
@@ -91,12 +95,27 @@ export default function Index() {
     }
 
     const savedUser = Taro.getStorageSync('user_info');
-    if (savedUser) setUser(savedUser);
-
-    await Promise.all([loadModules(), loadDashboard(), loadSnapshot()]);
+    if (!savedUser) {
+      Taro.redirectTo({ url: '/pages/login/index' });
+      return;
+    }
+    setUser(savedUser);
+    setBusinessCacheIdentity(savedUser);
+    const permissionResult = await fetchPermissions();
+    const nextAccess = getEffectiveMiniappAccess(savedUser);
+    setAccess(nextAccess);
+    if (permissionResult.capabilities.length === 0 || nextAccess.modules.length === 0) {
+      setModules([]);
+      setSnapshot(null);
+      setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
+      setLoading(false);
+      return;
+    }
+    await Promise.all([loadModules(nextAccess), loadDashboard(savedUser), loadSnapshot(savedUser)]);
   };
 
-  const loadSnapshot = async () => {
+  const loadSnapshot = async (currentUser: UserInfo) => {
+    if (currentUser.user_type === 'pending') return;
     try {
       const res = await readCloudSnapshot('full');
       const payload = res as any;
@@ -110,18 +129,12 @@ export default function Index() {
     }
   };
 
-  const loadModules = async () => {
+  const loadModules = async (currentAccess: any) => {
     try {
       const res = await api.get<{ modules: ModuleInfo[] }>('/api/modules');
       if (res.success && res.data) {
-        let allModules = res.data.modules;
-        try {
-          await fetchPermissions();
-          const permittedIds = getPermittedModules();
-          if (permittedIds.length > 0) {
-            allModules = allModules.filter((m) => permittedIds.includes(m.id));
-          }
-        } catch { /* fallback */ }
+        const permittedIds = currentAccess.modules || getPermittedModules();
+        const allModules = res.data.modules.filter((m) => permittedIds.includes(m.id));
         setModules(allModules);
       }
     } catch (err) {
@@ -132,21 +145,26 @@ export default function Index() {
   };
 
   /** 从本地数据计算仪表盘统计 */
-  const loadDashboard = async () => {
+  const loadDashboard = async (authenticatedUser?: UserInfo) => {
     try {
       const students = getLocalData<Student>('students');
       const schedules = getLocalData<Schedule>('schedules');
       const courses = getLocalData<Course>('courses');
-      const currentUser = Taro.getStorageSync('user_info') || user;
+      const currentUser = authenticatedUser || Taro.getStorageSync('user_info') || user;
+      if (!currentUser || currentUser.user_type === 'pending') {
+        setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
+        return;
+      }
       const rolePolicy = getMiniappRolePolicy(currentUser);
       const linkedStudentIds = getLinkedStudentIds(currentUser);
       const courseStudentIds = (course?: any) => [
         ...(Array.isArray(course?.student_ids) ? course.student_ids : []),
         ...(Array.isArray(course?.student_pricings) ? course.student_pricings.map((p: any) => p.student_id || p.studentId) : []),
       ].filter(Boolean);
-      const courseById = new Map(courses.map((course: any) => [course.id, course]));
+      const identityScoped = scopeDashboardCollections(currentUser, { students, courses, schedules });
+      const courseById = new Map(identityScoped.courses.map((course: any) => [course.id, course]));
       const scopedSchedules = rolePolicy.role === 'student'
-        ? schedules.filter((schedule: any) => {
+        ? identityScoped.schedules.filter((schedule: any) => {
           const directStudentIds = [
             ...(Array.isArray(schedule.student_ids) ? schedule.student_ids : []),
             ...(Array.isArray(schedule.student_pricings) ? schedule.student_pricings.map((p: any) => p.student_id || p.studentId) : []),
@@ -154,10 +172,10 @@ export default function Index() {
           ].filter(Boolean);
           return directStudentIds.some((id: string) => linkedStudentIds.includes(id));
         })
-        : schedules;
+        : identityScoped.schedules;
       const scopedStudents = rolePolicy.role === 'student'
-        ? students.filter((student: any) => linkedStudentIds.includes(student.id))
-        : students;
+        ? identityScoped.students.filter((student: any) => linkedStudentIds.includes(student.id))
+        : identityScoped.students;
 
       const today = new Date().toISOString().split('T')[0];
       const thisMonth = today.substring(0, 7);
@@ -222,6 +240,7 @@ export default function Index() {
       success: (res) => {
         if (res.confirm) {
           clearPermissionCache();
+          clearBusinessCache();
           Taro.removeStorageSync('auth_token');
           Taro.removeStorageSync('user_info');
           Taro.redirectTo({ url: '/pages/login/index' });
@@ -236,7 +255,7 @@ export default function Index() {
   };
 
   const isStudent = user?.user_type === 'student';
-  const showAdminShortcuts = user?.user_type !== 'student';
+  const showAdminShortcuts = access.modules.includes('scheduling') && !['student', 'pending'].includes(access.role);
   const roleLabel = user ? getUserTypeLabel(user.user_type) : '未登录';
   const greeting = isStudent ? '学习面板' : '运营面板';
   const snapshotLabel = formatSnapshotTime(snapshot?.created_at);
@@ -362,18 +381,18 @@ export default function Index() {
         </View>
       )}
 
-      {!loading && user?.user_type === 'admin' && (
+      {!loading && access.canReadUsers && (
         <View className="home-section">
           <View className="home-section__header">
             <Text className="home-section__title">权限管理</Text>
-            <Text className="home-section__meta">账号与邀请</Text>
+            <Text className="home-section__meta">{access.canReviewUsers ? '\u5ba1\u6838\u4e0e\u5206\u7c7b' : '\u53ea\u8bfb\u67e5\u770b'}</Text>
           </View>
           <View className="home-admin-list">
             <View className="home-admin-row" onClick={() => Taro.navigateTo({ url: '/pages/admin/users/index' })}>
               <Text className="home-admin-row__mark">员</Text>
               <View className="home-admin-row__body">
-                <Text className="home-admin-row__title">用户管理</Text>
-                <Text className="home-admin-row__desc">查看账号、角色与权限边界</Text>
+                <Text className="home-admin-row__title">{'\u7528\u6237\u6743\u9650'}</Text>
+                <Text className="home-admin-row__desc">{access.canReviewUsers ? '\u5ba1\u6838\u7528\u6237\u7c7b\u578b\u4e0e\u8001\u5e08\u7ed1\u5b9a' : '\u67e5\u770b\u7528\u6237\u7c7b\u578b\u4e0e\u72b6\u6001'}</Text>
               </View>
               <Text className="home-admin-row__arrow">›</Text>
             </View>
