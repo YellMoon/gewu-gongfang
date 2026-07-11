@@ -100,10 +100,12 @@ function testCommitImportBatchCreatesAcceptedQuestions() {
     assert.strictEqual(batch.accepted_items, 2);
     assert.strictEqual(batch.items.filter(item => item.status === 'success').length, 2);
 
-    const committed = questionBank.commitImportBatch(db, batch.id, 'default');
+    const committed = questionBank.commitImportBatch(db, batch.id, 'default', { userId:'test-user', deviceId:'test-device' });
     assert.strictEqual(committed.commit_result.imported_items, 2);
     assert.strictEqual(committed.items.filter(item => item.status === 'imported').length, 2);
     assert.strictEqual(questionBank.listQuestions(db, { limit: 10 }, 'default').length, 2);
+    const importedRows = questionBank.listQuestions(db, { limit: 10 }, 'default');
+    assert.ok(importedRows.every(row => row.source_device_id === 'test-device' && row.owner_user_id === 'test-user'));
   });
 }
 

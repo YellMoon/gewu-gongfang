@@ -1029,7 +1029,10 @@ class QuestionBankService {
     return this.getImportBatch(db, batchId, tenantId);
   }
 
-  commitImportBatch(db, batchId, tenantId = 'default') {
+  commitImportBatch(db, batchId, tenantId = 'default', context = {}) {
+    if (!context.userId || !context.deviceId) {
+      const error = new Error('authorization context required for import commit'); error.code = 'AUTHORIZATION_CONTEXT_REQUIRED'; throw error;
+    }
     const batch = this.getImportBatch(db, batchId, tenantId);
     if (!batch) return null;
     if (!['checked', 'partial_failed'].includes(batch.status)) {
@@ -1051,7 +1054,7 @@ class QuestionBankService {
       for (const item of accepted) {
         try {
           const payload = item.payload || {};
-          const created = this.createQuestion(db, { ...payload, content_hash: item.content_hash }, tenantId);
+          const created = this.createQuestion(db, { ...payload, content_hash: item.content_hash }, tenantId, context);
           db.prepare('UPDATE import_items SET status = ?, question_id = ?, updated_at = ? WHERE id = ?').run('imported', created.id, now(), item.id);
           result.imported_items++;
           result.question_ids.push(created.id);

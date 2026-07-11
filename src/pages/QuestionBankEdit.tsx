@@ -19,6 +19,7 @@ import {
   queryQuestionPage,
   removeQuestionLocalRecord,
 } from '../services/questionLocalStore';
+import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
 const { deleteQuestionViaApi } = require('../services/questionDeleteApi');
 
@@ -288,6 +289,23 @@ const QuestionBankEdit: React.FC = () => {
     const presentation = questionDeletePresentation(question, deleteContext);
     if (!presentation.enabled) { message.warning(presentation.reason); return; }
     const db = (window as any).dbService;
+    let deleted = false;
+    if (question.storage_state === 'host_committed') {
+      try {
+        const session = readDesktopAuthorizationSession();
+        deleted = (await deleteQuestionViaApi(fetch, `${API_BASE}/questions/${question.id}`, {
+          token: session.authorization.replace(/^Bearer\s+/i, ''), deviceId: session.authContext.deviceId,
+        })).ok;
+      } catch (_error) { deleted = false; }
+    } else {
+      deleted = Boolean(db?.deleteQuestion?.(question.id));
+      if (deleted) await removeQuestionLocalRecord(question.id, deleteContext);
+    }
+    if (!deleted) { message.error('Delete failed'); return; }
+    setQuestions(prev => prev.filter(item => item.id !== question.id));
+    setQuestionTotal(prev => Math.max(0, prev - 1));
+    setSelectedRowKeys(prev => prev.filter(id => id !== question.id));
+    return;
     let remoteDeleted = false;
     try {
       const res = await fetch(`${API_BASE}/questions/${question.id}`, { method: 'DELETE' });
