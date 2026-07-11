@@ -104,6 +104,9 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 - Identity closure RED: pure policy lacked the canonical ID export, and a persisted duplicate fixed-phone context incorrectly resolved to `super_admin/all`.
 - Identity closure GREEN: persisted-role classification now requires canonical ID plus active/enabled/approved state; duplicate context resolves to `pending/none`, while canonical context resolves to `super_admin/all`.
 - The canonical super-admin identity is non-transferable and non-revocable through application state: startup atomically demotes duplicate fixed-phone identities and restores the canonical account to active, enabled, approved `super_admin`; `reviewUser` still rejects downgrade attempts.
+- Legacy identity compatibility RED: a single formatted fixed-phone row with a historical noncanonical ID was joined by the exact-phone seed and became locked in a conflict.
+- Legacy identity compatibility GREEN: `is_super_admin_identity` plus a partial unique index persists exactly one selected identity; normalized seeding reuses a single legacy fixed-phone row, which remains canonical across restart and can review users.
+- Selection order is fixed seed ID, then one persisted identity flag, then one unambiguous fixed-phone legacy row; multiple unflagged noncanonical candidates remain a conflict and are never arbitrarily promoted.
 
 ---
 

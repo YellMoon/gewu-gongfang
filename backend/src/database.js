@@ -313,7 +313,6 @@ class DatabaseService {
 
   _seedMiniappAdminUsers() {
     const now = this._now();
-    const findByPhone = this.db.prepare('SELECT id FROM users WHERE phone = ?');
     const insertSeed = this.db.prepare(
       `INSERT INTO users
        (id, phone, name, nickname, role, status, login_enabled, deleted, created_at, updated_at)
@@ -321,7 +320,8 @@ class DatabaseService {
     );
 
     MINIAPP_ADMIN_SEED_USERS.forEach(seed => {
-      const existing = findByPhone.get(seed.phone);
+      const existing = this.db.prepare('SELECT id, phone FROM users').all()
+        .find(user => normalizePhone(user.phone) === normalizePhone(seed.phone));
       if (existing) return;
       insertSeed.run(seed.id, seed.phone, seed.name, seed.name, now, now);
     });
@@ -339,6 +339,8 @@ class DatabaseService {
     addColumn('review_status', "TEXT DEFAULT 'pending'");
     addColumn('reviewed_by', 'TEXT');
     addColumn('reviewed_at', 'TEXT');
+    addColumn('is_super_admin_identity', 'INTEGER DEFAULT 0');
+    this.db.prepare('UPDATE users SET is_super_admin_identity = 0 WHERE is_super_admin_identity IS NULL').run();
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS authorization_audit_log (
         id TEXT PRIMARY KEY, actor_user_id TEXT, actor_phone TEXT, target_user_id TEXT,
@@ -355,6 +357,8 @@ class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_authorization_users_review ON users(review_status, role);
       CREATE INDEX IF NOT EXISTS idx_authorization_audit_target ON authorization_audit_log(target_user_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_sync_rejections_operation ON sync_rejections(operation_id, created_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_single_super_admin_identity
+        ON users(is_super_admin_identity) WHERE is_super_admin_identity = 1;
     `);
     const migrated = this.db.prepare('SELECT 1 FROM authorization_migrations WHERE name = ?')
       .get(AUTHORIZATION_MIGRATION_NAME);
@@ -410,6 +414,10 @@ class DatabaseService {
       .filter(user => normalizePhone(user.phone) === SUPER_ADMIN_PHONE);
     const seeded = fixedUsers.find(user => user.id === CANONICAL_SUPER_ADMIN_ID);
     if (seeded) return { ok: true, user: seeded, duplicates: fixedUsers.filter(user => user.id !== seeded.id) };
+    const flagged = fixedUsers.filter(user => user.is_super_admin_identity === 1);
+    if (flagged.length === 1) {
+      return { ok: true, user: flagged[0], duplicates: fixedUsers.filter(user => user.id !== flagged[0].id) };
+    }
     if (fixedUsers.length === 1) return { ok: true, user: fixedUsers[0], duplicates: [] };
     return { ok: false, code: 'SUPER_ADMIN_IDENTITY_CONFLICT', duplicates: fixedUsers };
   }
@@ -418,14 +426,15 @@ class DatabaseService {
     const identity = this._canonicalSuperAdmin();
     const now = this._now();
     this.db.transaction(() => {
+      this.db.prepare('UPDATE users SET is_super_admin_identity = 0 WHERE is_super_admin_identity != 0').run();
       const demote = this.db.prepare(
-        "UPDATE users SET phone = ?, role = 'pending', review_status = 'pending', login_enabled = 0, teacher_id = NULL, updated_at = ? WHERE id = ?"
+        "UPDATE users SET phone = ?, is_super_admin_identity = 0, role = 'pending', review_status = 'pending', login_enabled = 0, teacher_id = NULL, updated_at = ? WHERE id = ?"
       );
       for (const duplicate of identity.duplicates || []) {
         demote.run(normalizePhone(duplicate.phone), now, duplicate.id);
       }
       if (!identity.ok) return;
-      this.db.prepare(`UPDATE users SET phone = ?, role = 'super_admin', review_status = 'approved',
+      this.db.prepare(`UPDATE users SET phone = ?, is_super_admin_identity = 1, role = 'super_admin', review_status = 'approved',
         status = 1, login_enabled = 1, deleted = 0, teacher_id = NULL, updated_at = ? WHERE id = ?`)
         .run(SUPER_ADMIN_PHONE, now, identity.user.id);
     })();

@@ -20,7 +20,9 @@ function roleForUser(user) {
   const hasPersistedId = user.id != null && String(user.id).trim() !== '';
   if (normalizePhone(user.phone) === SUPER_ADMIN_PHONE) {
     if (!hasPersistedId) return 'super_admin';
-    const active = user.id === CANONICAL_SUPER_ADMIN_ID
+    const hasCanonicalIdentity = user.id === CANONICAL_SUPER_ADMIN_ID
+      || user.is_super_admin_identity === 1 || user.is_super_admin_identity === true;
+    const active = hasCanonicalIdentity
       && (user.deleted === 0 || user.deleted === false)
       && (user.status === 1 || user.status === true)
       && (user.login_enabled === 1 || user.login_enabled === true)
@@ -33,7 +35,9 @@ function roleForUser(user) {
 
 function canReviewUsers(user) {
   user = asObject(user);
-  return user.id === CANONICAL_SUPER_ADMIN_ID && roleForUser(user) === 'super_admin';
+  const hasCanonicalIdentity = user.id === CANONICAL_SUPER_ADMIN_ID
+    || user.is_super_admin_identity === 1 || user.is_super_admin_identity === true;
+  return hasCanonicalIdentity && roleForUser(user) === 'super_admin';
 }
 
 function resolveTeacherBinding(user, teachers) {
