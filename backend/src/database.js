@@ -348,6 +348,7 @@ class DatabaseService {
     addColumn('reviewed_by', 'TEXT');
     addColumn('reviewed_at', 'TEXT');
     addColumn('is_super_admin_identity', 'INTEGER DEFAULT 0');
+    addColumn('phone_normalized', 'TEXT');
     const syncAuthColumns = new Set(this.db.prepare('PRAGMA table_info(sync_authorizations)').all().map(column => column.name));
     if (!syncAuthColumns.has('actor_user_id')) this.db.prepare('ALTER TABLE sync_authorizations ADD COLUMN actor_user_id TEXT').run();
     if (!syncAuthColumns.has('actor_teacher_id')) this.db.prepare('ALTER TABLE sync_authorizations ADD COLUMN actor_teacher_id TEXT').run();
@@ -405,8 +406,37 @@ class DatabaseService {
       .get(AUTHORIZATION_MIGRATION_NAME);
     if (!migrated) this._migrateAuthorizationUsers();
     this._enforceCanonicalSuperAdmin();
+    this._enforceUniqueNormalizedPhones();
     this.db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_single_super_admin_identity
       ON users(is_super_admin_identity) WHERE is_super_admin_identity = 1`).run();
+  }
+
+  _enforceUniqueNormalizedPhones() {
+    const rows = this.db.prepare('SELECT * FROM users WHERE deleted = 0').all();
+    const groups = new Map();
+    for (const row of rows) {
+      const phone = normalizePhone(row.phone);
+      if (phone) groups.set(phone, [...(groups.get(phone) || []), row]);
+    }
+    this.db.transaction(() => {
+      this.db.prepare('UPDATE users SET phone_normalized = NULL').run();
+      for (const [phone, matches] of groups) {
+        if (matches.length > 1) this.db.prepare(`INSERT INTO authorization_audit_log
+          (id, action, before_json, after_json, created_at) VALUES (?, 'phone_identity_conflict', ?, ?, ?)`)
+          .run(uuidv4(), JSON.stringify(matches.map(row => row.id)), JSON.stringify({ phoneHash: require('crypto').createHash('sha256').update(phone).digest('hex') }), this._now());
+        const canonical = phone === SUPER_ADMIN_PHONE ? matches.find(row => row.id === CANONICAL_SUPER_ADMIN_ID && row.is_super_admin_identity === 1) : null;
+        if (matches.length === 1 || canonical) {
+          const selected = canonical || matches[0];
+          this.db.prepare('UPDATE users SET phone_normalized = ? WHERE id = ?').run(phone, selected.id);
+          for (const conflict of matches.filter(row => row.id !== selected.id)) {
+            this.db.prepare("UPDATE users SET role = 'pending', review_status = 'pending', login_enabled = 0, phone_normalized = NULL WHERE id = ?").run(conflict.id);
+          }
+        } else {
+          for (const conflict of matches) this.db.prepare("UPDATE users SET role = 'pending', review_status = 'pending', login_enabled = 0, phone_normalized = NULL WHERE id = ?").run(conflict.id);
+        }
+      }
+    })();
+    this.db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_normalized_unique ON users(phone_normalized) WHERE phone_normalized IS NOT NULL').run();
   }
 
   _migrateAuthorizationUsers() {
@@ -1700,7 +1730,7 @@ class DatabaseService {
   }
 
   getMiniappUserByPhone(phone) {
-    return this.db.prepare('SELECT * FROM users WHERE phone = ? AND deleted = 0 ORDER BY created_at ASC LIMIT 1').get(phone);
+    return this.db.prepare('SELECT * FROM users WHERE phone_normalized = ? AND deleted = 0').get(normalizePhone(phone));
   }
 
   bindMiniappUserWechatByVerifiedPhone(phone, openid, unionid, profile = {}) {
@@ -1722,7 +1752,7 @@ class DatabaseService {
     const now = this._now();
     this.db.prepare(
       `UPDATE users
-       SET wechat_openid = ?,
+       SET wechat_openid = ?, phone_normalized = ?,
            wechat_unionid = COALESCE(wechat_unionid, ?),
            nickname = CASE WHEN nickname IS NULL OR nickname = '' THEN ? ELSE nickname END,
            avatar_url = CASE WHEN avatar_url IS NULL OR avatar_url = '' THEN ? ELSE avatar_url END,
@@ -1730,6 +1760,7 @@ class DatabaseService {
        WHERE id = ?`
     ).run(
       openid,
+      phone,
       unionid || null,
       profile.nickname || null,
       profile.avatarUrl || null,
@@ -1747,10 +1778,10 @@ class DatabaseService {
     const now = this._now();
     const id = uuidv4();
     this.db.prepare(`INSERT INTO users
-      (id, phone, name, nickname, wechat_openid, wechat_unionid, avatar_url, role,
+      (id, phone, phone_normalized, name, nickname, wechat_openid, wechat_unionid, avatar_url, role,
        status, login_enabled, review_status, deleted, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 1, 0, 'pending', 0, ?, ?)`)
-      .run(id, phone, profile.nickname || phone, profile.nickname || null, openid,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 1, 0, 'pending', 0, ?, ?)`)
+      .run(id, phone, phone, profile.nickname || phone, profile.nickname || null, openid,
         unionid || null, profile.avatarUrl || null, now, now);
     return this.db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   }

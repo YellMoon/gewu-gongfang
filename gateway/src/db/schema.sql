@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   openid TEXT UNIQUE,                    -- 微信 openid (教师/学生登录用)
   phone TEXT,
+  phone_normalized TEXT,
   name TEXT NOT NULL,
   avatar TEXT,
   user_type TEXT NOT NULL DEFAULT 'student',  -- 'admin' | 'teacher' | 'student' | 'invited'

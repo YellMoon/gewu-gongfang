@@ -5,6 +5,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const DB_DIR = path.join(__dirname, '../../data');
 const DB_PATH = process.env.GATEWAY_DB_PATH || path.join(DB_DIR, 'gateway.db');
@@ -54,8 +55,34 @@ function ensureUserColumns(database) {
   addColumn('reviewed_by', 'TEXT');
   addColumn('reviewed_at', 'TEXT');
   addColumn('is_super_admin_identity', 'INTEGER DEFAULT 0');
+  addColumn('phone_normalized', 'TEXT');
   database.prepare('UPDATE users SET login_enabled = 0 WHERE login_enabled IS NULL').run();
   recoverCanonicalSuperAdmin(database);
+  normalizeUniquePhones(database);
+}
+
+function normalizeUniquePhones(database) {
+  const normalize = value => String(value || '').replace(/\D/g, '');
+  const groups = new Map();
+  for (const row of database.prepare('SELECT * FROM users').all()) {
+    const phone = normalize(row.phone);
+    if (phone) groups.set(phone, [...(groups.get(phone) || []), row]);
+  }
+  database.transaction(() => {
+    database.prepare('UPDATE users SET phone_normalized = NULL').run();
+    for (const [phone, rows] of groups) {
+      if (rows.length > 1) database.prepare(`INSERT INTO authorization_audit_log
+        (id, action, before_json, after_json, created_at) VALUES (?, 'phone_identity_conflict', ?, ?, ?)`)
+        .run(crypto.randomUUID(), JSON.stringify(rows.map(row => row.id)), JSON.stringify({ phoneHash: crypto.createHash('sha256').update(phone).digest('hex') }), new Date().toISOString());
+      const canonical = phone === '13732250653' ? rows.find(row => row.is_super_admin_identity === 1) : null;
+      if (rows.length === 1 || canonical) {
+        const selected = canonical || rows[0];
+        database.prepare('UPDATE users SET phone_normalized = ? WHERE id = ?').run(phone, selected.id);
+        rows.filter(row => row.id !== selected.id).forEach(row => database.prepare("UPDATE users SET user_type='pending', review_status='pending', login_enabled=0 WHERE id=?").run(row.id));
+      } else rows.forEach(row => database.prepare("UPDATE users SET user_type='pending', review_status='pending', login_enabled=0 WHERE id=?").run(row.id));
+    }
+  })();
+  database.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_gateway_users_phone_normalized_unique ON users(phone_normalized) WHERE phone_normalized IS NOT NULL').run();
 }
 
 function recoverCanonicalSuperAdmin(database) {

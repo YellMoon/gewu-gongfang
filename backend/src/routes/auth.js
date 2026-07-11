@@ -86,7 +86,7 @@ router.post('/wechat-login', async (req, res) => {
     }
     if (!rawUser && phoneCode) {
       const verifiedPhone = await resolveWechatPhoneNumber(phoneCode);
-      const phoneMatches = db.db.prepare('SELECT * FROM users WHERE phone = ? AND deleted = 0').all(verifiedPhone);
+      const phoneMatches = db.db.prepare('SELECT * FROM users WHERE phone_normalized = ? AND deleted = 0').all(verifiedPhone);
       if (phoneMatches.length > 1) {
         return res.status(409).json({ success: false, code: 'MINIAPP_PHONE_IDENTITY_CONFLICT' });
       }
@@ -128,6 +128,9 @@ router.post('/wechat-login', async (req, res) => {
       }
     });
   } catch (err) {
+    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return res.status(409).json({ success: false, code: 'PHONE_IDENTITY_CONFLICT', error: 'Verified identity conflicts with an existing account' });
+    }
     const forbiddenCodes = new Set(['MINIAPP_PHONE_ALREADY_BOUND', 'MINIAPP_WECHAT_ALREADY_BOUND']);
     const status = forbiddenCodes.has(err.code) ? 409 : 502;
     res.status(status).json({ success: false, code: err.code || 'MINIAPP_LOGIN_FAILED', error: err.message });

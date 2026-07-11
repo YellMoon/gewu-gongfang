@@ -95,7 +95,7 @@ async function main() {
   });
 }
 
-main().catch(err => {
+if (require.main === module) main().catch(err => {
   console.error('[Gateway] 启动失败:', err);
   process.exit(1);
 });

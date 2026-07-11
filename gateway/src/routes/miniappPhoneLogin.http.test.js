@@ -1,0 +1,27 @@
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-gateway-phone-'));
+process.env.GATEWAY_DB_PATH = path.join(temp, 'gateway.db');
+process.env.JWT_SECRET = 'gateway-phone-test-secret';
+process.env.WECHAT_APPID = 'test-app';
+process.env.WECHAT_APPSECRET = 'test-secret';
+const realFetch = global.fetch;
+global.fetch = async input => { const url = String(input); if (url.includes('jscode2session')) return { ok: true, status: 200, json: async () => ({ openid: `openid-${new URL(url).searchParams.get('js_code')}` }) }; if (url.includes('/cgi-bin/token')) return { ok: true, status: 200, json: async () => ({ access_token: 'token', expires_in: 7200 }) }; if (url.includes('getuserphonenumber')) return { ok: true, status: 200, json: async () => ({ phone_info: { purePhoneNumber: '13900000001' } }) }; return realFetch(input); };
+const { initDatabase, closeDatabase, getDb } = require('../db/database');
+const createApp = require('../app');
+initDatabase();
+const server = createApp().listen(0);
+const post = async (route, body) => { const response = await realFetch(`http://127.0.0.1:${server.address().port}${route}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); return { status: response.status, headers: response.headers, body: await response.json() }; };
+(async () => {
+  assert.strictEqual((await post('/api/auth/login', { openid: 'raw' })).status, 410);
+  assert.strictEqual((await post('/api/auth/wechat-login', { code: 'new', phone: '13732250653' })).body.code, 'PHONE_VERIFICATION_REQUIRED');
+  const pending = await post('/api/auth/wechat-login', { code: 'new', phoneCode: 'verified' });
+  assert.strictEqual(pending.status, 202); assert.strictEqual(pending.body.code, 'PENDING_REVIEW');
+  assert.strictEqual(getDb().prepare('SELECT COUNT(*) count FROM users WHERE phone_normalized = ?').get('13900000001').count, 1);
+  assert.strictEqual((await post('/api/auth/wechat-login', { code: 'new' })).body.code, 'USER_PENDING_REVIEW');
+  let limited; for (let i = 0; i < 11; i += 1) limited = await post('/api/auth/wechat-login', { code: `rate-${i}` });
+  assert.strictEqual(limited.status, 429); assert.ok(limited.headers.get('retry-after'));
+  console.log('gateway miniapp phone login HTTP checks passed');
+})().finally(() => new Promise(resolve => server.close(resolve))).then(() => { closeDatabase(); global.fetch = realFetch; fs.rmSync(temp, { recursive: true, force: true }); }).catch(error => { console.error(error); process.exitCode = 1; });

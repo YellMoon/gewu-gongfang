@@ -4,6 +4,24 @@ const { getDb } = require('../db/database');
 const { generateToken, refreshToken } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 const { resolveWechatIdentity, resolveWechatPhoneNumber } = require('../services/wechatMiniappService');
+const crypto = require('crypto');
+
+const authWindows = new Map();
+function authRateLimit(req, res, next) {
+  const now = Date.now();
+  const identifier = crypto.createHash('sha256').update(String(req.body?.phoneCode || req.body?.code || '')).digest('hex');
+  const keys = [[`ip:${req.ip}`, 10], [`identity:${identifier}`, 5]];
+  for (const [key, limit] of keys) {
+    const recent = (authWindows.get(key) || []).filter(time => now - time < 60000);
+    if (recent.length >= limit) {
+      res.set('Retry-After', '60');
+      return res.status(429).json({ success: false, code: 'AUTH_RATE_LIMITED' });
+    }
+    recent.push(now);
+    authWindows.set(key, recent);
+  }
+  next();
+}
 
 function parseArray(value) {
   if (Array.isArray(value)) return value;
@@ -48,64 +66,35 @@ function loginUserPayload(user) {
   };
 }
 
-function loginByOpenid(req, res, openid, profile = {}) {
-  if (!openid) {
-    return res.status(400).json({ success: false, error: 'openid is required' });
-  }
+router.post('/login', (_req, res) => res.status(410).json({ success: false, code: 'LEGACY_OPENID_LOGIN_DISABLED' }));
 
-  const db = getDb();
-  const user = db.prepare('SELECT * FROM users WHERE openid = ?').get(openid);
-  const denialReason = loginDenialReason(user);
-  if (denialReason) {
-    return res.status(403).json({
-      success: false,
-      code: denialReason,
-      error: 'Miniapp account is not authorized on the data host',
-    });
-  }
-
-  if (profile.name || profile.avatar) {
-    db.prepare('UPDATE users SET name = COALESCE(?, name), avatar = COALESCE(?, avatar), updated_at = ? WHERE id = ?')
-      .run(profile.name || null, profile.avatar || null, new Date().toISOString(), user.id);
-  }
-
-  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
-  const token = generateToken(updated);
-  return res.json({ success: true, token, user: loginUserPayload(updated) });
-}
-
-router.post('/login', (req, res) => {
-  return loginByOpenid(req, res, req.body.openid, {
-    name: req.body.name,
-    avatar: req.body.avatar,
-  });
-});
-
-router.post('/wechat-login', async (req, res) => {
+router.post('/wechat-login', authRateLimit, async (req, res) => {
   try {
     const code = String(req.body.code || '');
-    if (!code) return res.status(400).json({ success: false, code: 'WECHAT_CODE_REQUIRED' });
+    const phoneCode = String(req.body.phoneCode || '');
+    if (!code || code.length > 256 || phoneCode.length > 256) return res.status(400).json({ success: false, code: 'WECHAT_CODE_INVALID' });
     const { openid } = await resolveWechatIdentity(code);
     const db = getDb();
     let user = db.prepare('SELECT * FROM users WHERE openid = ?').get(openid);
     if (!user && !req.body.phoneCode) return res.status(403).json({ success: false, code: 'PHONE_VERIFICATION_REQUIRED' });
     if (!user) {
       const phone = await resolveWechatPhoneNumber(req.body.phoneCode);
-      const phoneMatches = db.prepare('SELECT * FROM users WHERE phone = ?').all(phone);
-      if (phoneMatches.length > 1) return res.status(409).json({ success: false, code: 'PHONE_IDENTITY_CONFLICT' });
-      user = phoneMatches[0];
-      const openidOwner = db.prepare('SELECT * FROM users WHERE openid = ?').get(openid);
-      if (openidOwner && (!user || openidOwner.id !== user.id)) return res.status(409).json({ success: false, code: 'WECHAT_IDENTITY_CONFLICT' });
-      if (user && user.openid && user.openid !== openid) return res.status(409).json({ success: false, code: 'PHONE_ALREADY_BOUND' });
-      const now = new Date().toISOString();
-      if (user) db.prepare('UPDATE users SET openid = ?, updated_at = ? WHERE id = ?').run(openid, now, user.id);
-      else {
+      user = db.transaction(() => {
+        const phoneOwner = db.prepare('SELECT * FROM users WHERE phone_normalized = ?').get(phone);
+        const openidOwner = db.prepare('SELECT * FROM users WHERE openid = ?').get(openid);
+        if ((openidOwner && (!phoneOwner || openidOwner.id !== phoneOwner.id)) || (phoneOwner?.openid && phoneOwner.openid !== openid)) {
+          throw Object.assign(new Error('identity conflict'), { code: 'PHONE_IDENTITY_CONFLICT' });
+        }
+        const now = new Date().toISOString();
+        if (phoneOwner) {
+          db.prepare('UPDATE users SET openid = ?, updated_at = ? WHERE id = ? AND (openid IS NULL OR openid = ?)').run(openid, now, phoneOwner.id, openid);
+          return db.prepare('SELECT * FROM users WHERE id = ?').get(phoneOwner.id);
+        }
         const id = uuidv4();
-        db.prepare(`INSERT INTO users (id, openid, phone, name, user_type, status, login_enabled, review_status, created_at, updated_at)
-          VALUES (?, ?, ?, ?, 'pending', 1, 0, 'pending', ?, ?)`).run(id, openid, phone, phone, now, now);
-        user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
-      }
-      user = db.prepare('SELECT * FROM users WHERE openid = ?').get(openid);
+        db.prepare(`INSERT INTO users (id, openid, phone, phone_normalized, name, user_type, status, login_enabled, review_status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 'pending', 1, 0, 'pending', ?, ?)`).run(id, openid, phone, phone, phone, now, now);
+        return db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+      }).immediate();
     }
     const denial = loginDenialReason(user);
     if (denial) return res.status(denial === 'USER_PENDING_REVIEW' && req.body.phoneCode ? 202 : 403)
@@ -113,6 +102,9 @@ router.post('/wechat-login', async (req, res) => {
     const token = generateToken(user);
     return res.json({ success: true, data: { token, user: loginUserPayload(user), role: user.user_type } });
   } catch (error) {
+    if (error.code === 'PHONE_IDENTITY_CONFLICT' || error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return res.status(409).json({ success: false, code: 'PHONE_IDENTITY_CONFLICT' });
+    }
     return res.status(502).json({ success: false, code: error.code || 'WECHAT_LOGIN_FAILED' });
   }
 });
