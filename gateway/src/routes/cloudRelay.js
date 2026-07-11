@@ -14,7 +14,22 @@ function now() {
 function id(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
 }
-function validateDesktopSyncInput(req,res){const deviceId=String(req.headers['x-device-id']||req.body.deviceId||'');const name=String(req.body.deviceName||'');if(!deviceId||deviceId.length>128||name.length>128)return res.status(400).json({success:false,code:'INVALID_SYNC_REQUEST'});const changes=req.body.pendingChanges;if(!Array.isArray(changes)||changes.length>500)return res.status(changes?.length>500?413:400).json({success:false,code:changes?.length>500?'SYNC_REQUEST_TOO_LARGE':'INVALID_SYNC_REQUEST'});if(Buffer.byteLength(JSON.stringify(req.body))>2*1024*1024)return res.status(413).json({success:false,code:'SYNC_REQUEST_TOO_LARGE'});for(const op of changes){if(!op||typeof op!=='object'||!op.id||!op.table||!['create','update','delete'].includes(op.action)||Buffer.byteLength(JSON.stringify(op))>128*1024)return res.status(400).json({success:false,code:'INVALID_SYNC_REQUEST'});}return null;}
+function validateDesktopSyncInput(req, res) {
+  const deviceId = String(req.headers['x-device-id'] || req.body.deviceId || '');
+  const name = String(req.body.deviceName || '');
+  if (!deviceId || deviceId.length > 128 || name.length > 128) return res.status(400).json({ success: false, code: 'INVALID_SYNC_REQUEST' });
+  const changes = req.body.pendingChanges;
+  if (!Array.isArray(changes) || changes.length > 500) return res.status(changes?.length > 500 ? 413 : 400).json({ success: false, code: changes?.length > 500 ? 'SYNC_REQUEST_TOO_LARGE' : 'INVALID_SYNC_REQUEST' });
+  if (Buffer.byteLength(JSON.stringify(req.body)) > 2 * 1024 * 1024) return res.status(413).json({ success: false, code: 'SYNC_REQUEST_TOO_LARGE' });
+  for (const operation of changes) {
+    if (!operation || typeof operation !== 'object' || !operation.id || !operation.table
+      || !['create', 'update', 'delete'].includes(operation.action)
+      || Buffer.byteLength(JSON.stringify(operation)) > 128 * 1024) {
+      return res.status(400).json({ success: false, code: 'INVALID_SYNC_REQUEST' });
+    }
+  }
+  return null;
+}
 
 function secureEqual(left, right) {
   const a = Buffer.from(String(left || ''));
