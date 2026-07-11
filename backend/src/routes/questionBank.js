@@ -588,7 +588,7 @@ router.post('/imports/:id/commit', (req, res) => {
     const dbService = getInstance();
     const db = dbService.db;
     const tId = tenantId(req);
-    const result = questionBank.commitImportBatch(db, req.params.id, tId);
+    const result = questionBank.commitImportBatch(db, req.params.id, tId, req.authz || {});
     if (!result) return res.status(404).json({ success: false, error: 'import batch not found' });
     dbService._auditOperation({
       tenant_id: tId,
