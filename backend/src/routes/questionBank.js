@@ -352,12 +352,12 @@ router.put('/questions/:id', (req, res) => {
 router.delete('/questions/:id', (req, res) => {
   try {
     const db = getInstance().db;
-    const deleted = questionBank.deleteQuestion(db, req.params.id, tenantId(req));
+    const deleted = questionBank.deleteQuestion(db, req.params.id, tenantId(req), req.authz || {});
     if (!deleted) return res.status(404).json({ success: false, error: 'question not found' });
     searchService.schedulePendingJobs(db);
     res.json({ success: true });
   } catch (err) {
-    res.status(errorStatus(err)).json({ success: false, error: err.message });
+    res.status(err.status || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
   }
 });
 

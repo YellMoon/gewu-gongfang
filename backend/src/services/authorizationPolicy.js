@@ -91,8 +91,8 @@ function effectiveCapabilities(authz = {}, { gateway = false } = {}) {
   if (role === 'teacher') capabilities.push('business:teacher-scope');
   if (['super_admin', 'admin', 'teacher', 'student'].includes(role)) capabilities.push('question-bank:view');
   if (['super_admin', 'admin', 'teacher'].includes(role)) capabilities.push('question-bank:edit');
-  if (!gateway && ['super_admin', 'admin'].includes(role)
-    && authz.isPrimaryHost === true && authz.clientType === 'desktop') {
+  if (!gateway && authz.isPrimaryHost === true && authz.tokenUse === 'desktop-session'
+    && authz.deviceId && authz.deviceId === authz.tokenDeviceId && authz.userApproved === true) {
     capabilities.push('question-bank:delete-committed');
   }
   return capabilities;

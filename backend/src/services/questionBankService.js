@@ -3,6 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const sanitizeHtml = require('sanitize-html');
 const cache = require('./cacheService');
 const eventBus = require('./eventBus');
+const { canDeleteQuestion, committedDeleteError } = require('./questionDeletionPolicy');
 
 function now() {
   return new Date().toISOString();
@@ -380,8 +381,8 @@ class QuestionBankService {
     const transaction = db.transaction(() => {
       db.prepare(
         `INSERT INTO questions
-         (id, tenant_id, subject, subject_id, chapter_id, type, difficulty, source, year, grade, semester, exam_type, region, school, edit_status, status, has_image, has_formula, created_by, deleted, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+         (id, tenant_id, subject, subject_id, chapter_id, type, difficulty, source, year, grade, semester, exam_type, region, school, edit_status, status, has_image, has_formula, created_by, storage_state, committed_at, committed_by_device_id, deleted, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
       ).run(
         questionId,
         tenantId,
@@ -402,6 +403,9 @@ class QuestionBankService {
         hasImage ? 1 : 0,
         hasFormula ? 1 : 0,
         payload.created_by || '',
+        payload.storage_state === 'host_committed' ? 'host_committed' : 'local_draft',
+        payload.storage_state === 'host_committed' ? (payload.committed_at || ts) : null,
+        payload.storage_state === 'host_committed' ? (payload.committed_by_device_id || null) : null,
         ts,
         ts
       );
@@ -666,9 +670,16 @@ class QuestionBankService {
     return this.getQuestion(db, id, tenantId);
   }
 
-  deleteQuestion(db, id, tenantId = 'default') {
+  deleteQuestion(db, id, tenantId = 'default', context = {}) {
     const existing = this.getQuestion(db, id, tenantId);
     if (!existing) return false;
+    const deletionContext = {
+      ...context,
+      storageState: existing.storage_state || 'host_committed',
+      sourceDeviceId: existing.source_device_id || context.sourceDeviceId,
+      ownerUserId: existing.owner_user_id || context.ownerUserId,
+    };
+    if (!canDeleteQuestion(deletionContext)) throw committedDeleteError();
     const ts = now();
     const transaction = db.transaction(() => {
       db.prepare('UPDATE questions SET deleted = 1, deleted_at = ?, updated_at = ? WHERE id = ? AND deleted = 0').run(ts, ts, id);

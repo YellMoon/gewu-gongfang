@@ -394,6 +394,11 @@ export interface Question {
   has_image: boolean;
   has_formula: boolean;
   created_by: string;
+  storage_state?: 'local_draft' | 'host_committed';
+  committed_at?: string;
+  committed_by_device_id?: string;
+  sourceDeviceId?: string;
+  ownerUserId?: string;
   deleted?: boolean;
   deleted_at?: string;
   created_at: string;
