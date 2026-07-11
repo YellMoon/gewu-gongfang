@@ -43,6 +43,11 @@ function ensureUserColumns(database) {
   addColumn('login_enabled', 'INTEGER DEFAULT 0');
   addColumn('student_id', 'TEXT');
   addColumn('linked_student_ids', 'TEXT');
+  addColumn('teacher_id', 'TEXT');
+  addColumn('review_status', "TEXT NOT NULL DEFAULT 'pending'");
+  addColumn('reviewed_by', 'TEXT');
+  addColumn('reviewed_at', 'TEXT');
+  addColumn('is_super_admin_identity', 'INTEGER DEFAULT 0');
   database.prepare('UPDATE users SET login_enabled = 0 WHERE login_enabled IS NULL').run();
 }
 

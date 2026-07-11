@@ -6,6 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db/database');
+const { effectiveCapabilities } = require('../services/authorizationPolicy');
 
 /**
  * GET /api/permissions/definitions
@@ -43,6 +44,11 @@ router.get('/definitions', (req, res) => {
  * 查询当前用户权限
  */
 router.get('/my', (req, res) => {
+  const role = req.authz?.role || 'pending';
+  const capabilities = effectiveCapabilities({ ...req.authz, role });
+  const permissions = capabilities.map(id => ({ id, capability: id }));
+  return res.json({ permissions, capabilities, user_type: role, is_admin: ['super_admin', 'admin'].includes(role) });
+  /* legacy grant query retained below for rollback only
   const db = getDb();
 
   if (['super_admin', 'admin'].includes(req.user.user_type)) {
@@ -65,7 +71,7 @@ router.get('/my', (req, res) => {
       AND (up.expires_at IS NULL OR up.expires_at > datetime('now'))
   `).all(req.user.id);
 
-  res.json({ permissions, is_admin: false });
+  res.json({ permissions, is_admin: false }); */
 });
 
 module.exports = router;

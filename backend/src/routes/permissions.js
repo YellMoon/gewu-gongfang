@@ -1,6 +1,7 @@
 const { Router } = require('express');
 
 const router = Router();
+const { effectiveCapabilities } = require('../services/authorizationPolicy');
 
 const moduleIds = [
   'scheduling',
@@ -32,21 +33,22 @@ function permission(id, action) {
 }
 
 router.get('/my', (req, res) => {
-  const role = roleOf(req.user);
-  const permissions = role === 'student'
+  const role = req.authz?.role || roleOf(req.user);
+  const capabilities = effectiveCapabilities({ ...req.authz, role });
+  const permissions = role === 'pending' ? [] : role === 'student'
     ? studentModuleIds.map(id => permission(id, 'view'))
     : moduleIds.flatMap(id => actions.map(action => permission(id, action)));
 
   res.json({
     success: true,
     data: {
-      permissions,
-      user_type: role === 'student' ? 'student' : 'admin',
-      is_admin: role !== 'student',
+      permissions, capabilities,
+      user_type: role,
+      is_admin: ['super_admin', 'admin'].includes(role),
     },
-    permissions,
-    user_type: role === 'student' ? 'student' : 'admin',
-    is_admin: role !== 'student',
+    permissions, capabilities,
+    user_type: role,
+    is_admin: ['super_admin', 'admin'].includes(role),
   });
 });
 

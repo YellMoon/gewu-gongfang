@@ -10,7 +10,7 @@ const packageJson = fs.readFileSync('package.json', 'utf-8');
 
 assert.ok(app.includes("app.use('/api/modules', optionalAuth, modulesRouter)"), 'backend should expose miniapp modules route');
 assert.ok(app.includes("app.use('/api/cloud', optionalAuth, cloudRelayRouter)"), 'backend should expose miniapp cloud route');
-assert.ok(app.includes("app.use('/api/permissions', optionalAuth, permissionsRouter)"), 'backend should expose miniapp permissions route');
+assert.ok(app.includes("app.use('/api/permissions', authMiddleware, permissionsRouter)"), 'permissions must require an authenticated persisted identity');
 assert.ok(modulesRoute.includes("id: 'scheduling'"), 'modules route should include scheduling module');
 assert.ok(modulesRoute.includes("id: 'question-bank'"), 'modules route should include question bank module');
 assert.ok(modulesRoute.includes("id: 'assets'"), 'modules route should include assets module');

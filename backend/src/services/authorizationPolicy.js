@@ -75,6 +75,22 @@ function scopeForUser(user) {
   return { kind: 'none' };
 }
 
+function effectiveCapabilities(authz = {}, { gateway = false } = {}) {
+  const role = authz.role || roleForUser(authz);
+  if (role === 'pending') return [];
+  const capabilities = [];
+  if (role === 'super_admin') capabilities.push('users:review');
+  if (role === 'super_admin' || role === 'admin') capabilities.push('business:all');
+  if (role === 'teacher') capabilities.push('business:teacher-scope');
+  if (['super_admin', 'admin', 'teacher', 'student'].includes(role)) capabilities.push('question-bank:view');
+  if (['super_admin', 'admin', 'teacher'].includes(role)) capabilities.push('question-bank:edit');
+  if (!gateway && ['super_admin', 'admin'].includes(role)
+    && authz.isPrimaryHost === true && authz.clientType === 'desktop') {
+    capabilities.push('question-bank:delete-committed');
+  }
+  return capabilities;
+}
+
 module.exports = {
   SUPER_ADMIN_PHONE,
   CANONICAL_SUPER_ADMIN_ID,
@@ -84,4 +100,5 @@ module.exports = {
   canReviewUsers,
   resolveTeacherBinding,
   scopeForUser,
+  effectiveCapabilities,
 };
