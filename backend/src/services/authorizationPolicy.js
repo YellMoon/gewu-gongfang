@@ -1,4 +1,5 @@
 const SUPER_ADMIN_PHONE = '13732250653';
+const CANONICAL_SUPER_ADMIN_ID = 'miniapp-admin-13732250653';
 const ROLES = Object.freeze(['super_admin', 'admin', 'teacher', 'student', 'pending']);
 
 function normalizePhone(phone) {
@@ -15,14 +16,24 @@ function asObject(value) {
 
 function roleForUser(user) {
   user = asObject(user);
-  if (normalizePhone(user.phone) === SUPER_ADMIN_PHONE) return 'super_admin';
-
   const role = user.role || user.user_type;
+  const hasPersistedId = user.id != null && String(user.id).trim() !== '';
+  if (normalizePhone(user.phone) === SUPER_ADMIN_PHONE) {
+    if (!hasPersistedId) return 'super_admin';
+    const active = user.id === CANONICAL_SUPER_ADMIN_ID
+      && (user.deleted === 0 || user.deleted === false)
+      && (user.status === 1 || user.status === true)
+      && (user.login_enabled === 1 || user.login_enabled === true)
+      && user.review_status === 'approved';
+    return active ? 'super_admin' : 'pending';
+  }
+  if (role === 'super_admin') return 'pending';
   return ROLES.includes(role) ? role : 'pending';
 }
 
 function canReviewUsers(user) {
-  return roleForUser(user) === 'super_admin';
+  user = asObject(user);
+  return user.id === CANONICAL_SUPER_ADMIN_ID && roleForUser(user) === 'super_admin';
 }
 
 function resolveTeacherBinding(user, teachers) {
@@ -62,6 +73,7 @@ function scopeForUser(user) {
 
 module.exports = {
   SUPER_ADMIN_PHONE,
+  CANONICAL_SUPER_ADMIN_ID,
   ROLES,
   normalizePhone,
   roleForUser,

@@ -101,6 +101,9 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 - One-time migration evidence: `authorization_migrations` records `legacy-users-v1`; restart tests preserve post-migration rejected status, role, and manual teacher binding while reasserting only the fixed super-admin safety invariant.
 - Boundary evidence: caller device authorization flags are discarded with `trusted: false`; object and JSON-string audit/rejection inputs persist as single-layer valid JSON.
 - Quality full regression: `npm test` exited 0 in 14.6 seconds on 2026-07-11.
+- Identity closure RED: pure policy lacked the canonical ID export, and a persisted duplicate fixed-phone context incorrectly resolved to `super_admin/all`.
+- Identity closure GREEN: persisted-role classification now requires canonical ID plus active/enabled/approved state; duplicate context resolves to `pending/none`, while canonical context resolves to `super_admin/all`.
+- The canonical super-admin identity is non-transferable and non-revocable through application state: startup atomically demotes duplicate fixed-phone identities and restores the canonical account to active, enabled, approved `super_admin`; `reviewUser` still rejects downgrade attempts.
 
 ---
 

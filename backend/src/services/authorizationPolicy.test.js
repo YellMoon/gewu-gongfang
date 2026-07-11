@@ -2,6 +2,7 @@ const assert = require('assert');
 
 const {
   SUPER_ADMIN_PHONE,
+  CANONICAL_SUPER_ADMIN_ID,
   ROLES,
   normalizePhone,
   roleForUser,
@@ -11,6 +12,7 @@ const {
 } = require('./authorizationPolicy');
 
 assert.strictEqual(SUPER_ADMIN_PHONE, '13732250653');
+assert.strictEqual(CANONICAL_SUPER_ADMIN_ID, 'miniapp-admin-13732250653');
 assert.deepStrictEqual(ROLES, ['super_admin', 'admin', 'teacher', 'student', 'pending']);
 assert.strictEqual(normalizePhone('137 3225 0653'), '13732250653');
 
@@ -27,7 +29,23 @@ assert.strictEqual(
   'an explicit invalid role must not fall back to user_type'
 );
 assert.strictEqual(roleForUser(null), 'pending');
-assert.strictEqual(canReviewUsers({ phone: '137 3225 0653', role: 'admin' }), true);
+assert.strictEqual(canReviewUsers({ phone: '137 3225 0653', role: 'admin' }), false);
+assert.strictEqual(roleForUser({
+  id: 'duplicate-fixed-phone', phone: '13732250653', role: 'pending', status: 1,
+  login_enabled: 1, review_status: 'approved', deleted: 0,
+}), 'pending', 'a persisted duplicate fixed-phone user must not be promoted');
+assert.strictEqual(roleForUser({
+  id: CANONICAL_SUPER_ADMIN_ID, phone: '13732250653', role: 'super_admin', status: 1,
+  login_enabled: 1, review_status: 'approved', deleted: 0,
+}), 'super_admin');
+assert.strictEqual(canReviewUsers({
+  id: CANONICAL_SUPER_ADMIN_ID, phone: '13732250653', role: 'super_admin', status: 1,
+  login_enabled: 1, review_status: 'approved', deleted: 0,
+}), true);
+assert.strictEqual(canReviewUsers({
+  id: CANONICAL_SUPER_ADMIN_ID, phone: '13732250653', role: 'super_admin', status: 0,
+  login_enabled: 1, review_status: 'approved', deleted: 0,
+}), false);
 assert.strictEqual(canReviewUsers({ phone: '18257136756', role: 'admin' }), false);
 assert.strictEqual(canReviewUsers(null), false);
 
