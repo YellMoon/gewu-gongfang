@@ -9,6 +9,7 @@ const questionBank = require('../services/questionBankService');
 const searchService = require('../services/searchService');
 const eventBus = require('../services/eventBus');
 const cache = require('../services/cacheService');
+const { canDeleteQuestion, committedDeleteError } = require('../services/questionDeletionPolicy');
 const {
   initQuestionBankStore,
   inspectQuestionBankStore,
@@ -16,6 +17,8 @@ const {
   findQuestionBankStore,
   commitQuestionToBoundStore,
   deleteCommittedQuestion,
+  bindQuestionBankStoreToDatabase,
+  restoreCommittedQuestion,
 } = require('../services/questionBankStorageService');
 const {
   createMaintenanceToken,
@@ -42,6 +45,7 @@ const upload = multer({
 
 function errorStatus(err) {
   if (['AUTHORIZATION_CONTEXT_REQUIRED', 'TOKEN_REQUIRED'].includes(err.code)) return 401;
+  if (['QUESTION_BANK_STORE_ALREADY_BOUND', 'QUESTION_BANK_DATABASE_ALREADY_BOUND'].includes(err.code)) return 409;
   if (/_REQUIRED$|_MISMATCH$/.test(err.code || '')) return 403;
   return /oss_key is required|knowledge point not found/.test(err.message) ? 400 : 500;
 }
@@ -144,7 +148,7 @@ function applyFileTopic(result, fileName = '', sourceType = 'lecture') {
   return { ...result, questions, topics: [...topics], knowledge_points: [...new Set([...(result.knowledge_points || []), topic])] };
 }
 
-function storageStatusPayload() {
+function storageStatusPayload(db) {
   const root = process.env.QUESTION_BANK_ROOT || '';
   const candidateRoots = (process.env.QUESTION_BANK_CANDIDATE_ROOTS || '')
     .split(';')
@@ -153,6 +157,7 @@ function storageStatusPayload() {
   const expectedStoreId = process.env.QUESTION_BANK_STORE_ID || '';
   const nodeRole = process.env.GEWU_NODE_ROLE || 'desktop-client';
   const deviceId = process.env.GEWU_DEVICE_ID || '';
+  const binding = db?.prepare?.("SELECT store_id,db_authority_id,root_path,bound_by,bound_at,status FROM question_bank_store_bindings WHERE status='active' LIMIT 1").get();
 
   if (!root) {
     return {
@@ -193,6 +198,7 @@ function storageStatusPayload() {
       manifest: inspected.manifest,
       missingDirs: inspected.missingDirs || [],
       reason,
+      binding: binding || null,
     };
   } catch (err) {
     return {
@@ -208,7 +214,22 @@ function storageStatusPayload() {
 }
 
 router.get('/storage/status', (_req, res) => {
-  res.json({ success: true, status: storageStatusPayload() });
+  res.json({ success: true, status: storageStatusPayload(getInstance().db) });
+});
+
+router.post('/storage/bind', (req, res) => {
+  try {
+    if (req.authz?.role !== 'super_admin') return res.status(403).json({ success: false, code: 'SUPER_ADMIN_REQUIRED', error: 'super administrator required' });
+    const db = getInstance().db;
+    const status = storageStatusPayload(db);
+    if (!status.configured || !status.available) return res.status(409).json({ success: false, code: 'QUESTION_BANK_STORE_NOT_AVAILABLE', error: 'question bank store not available' });
+    const requestedRoot = req.body?.root ? path.resolve(req.body.root) : path.resolve(status.root);
+    if (requestedRoot !== path.resolve(status.root)) return res.status(403).json({ success: false, code: 'QUESTION_BANK_ROOT_NOT_ALLOWED', error: 'question bank root not allowed' });
+    const binding = bindQuestionBankStoreToDatabase({ db, root: status.root, authz: req.authz || {}, runtime: req.authz || {} });
+    res.json({ success: true, binding, status: storageStatusPayload(db) });
+  } catch (err) {
+    res.status(errorStatus(err)).json({ success: false, code: err.code, error: err.message });
+  }
 });
 
 router.post('/storage/init', (_req, res) => {
@@ -222,7 +243,7 @@ router.post('/storage/init', (_req, res) => {
   }
   try {
     const manifest = initQuestionBankStore(root, { deviceId: process.env.GEWU_DEVICE_ID || '' });
-    res.json({ success: true, status: storageStatusPayload(), manifest });
+    res.json({ success: true, status: storageStatusPayload(getInstance().db), manifest });
   } catch (err) {
     res.status(409).json({ success: false, error: '题库移动硬盘未连接', detail: err.message });
   }
@@ -293,7 +314,7 @@ router.get('/questions', (req, res) => {
     const rows = questionBank.listQuestions(db, req.query, tenantId(req));
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(errorStatus(err)).json({ success: false, error: err.message });
+    res.status(err.status || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
   }
 });
 
@@ -445,13 +466,23 @@ router.post('/questions/:id/restore', (req, res) => {
   try {
     const db = getInstance().db;
     const tId = tenantId(req);
-    const result = questionBank.restoreQuestion(db, req.params.id, tId);
+    const stored = db.prepare('SELECT storage_state,source_device_id,owner_user_id FROM questions WHERE id=? AND tenant_id=? AND deleted=1').get(req.params.id, tId);
+    if (!stored) return res.status(404).json({ success: false, error: 'question not found' });
+    let result;
+    if (stored.storage_state === 'host_committed') {
+      restoreCommittedQuestion(req.params.id, { db, tenantId: tId, authz: req.authz || {}, runtime: req.authz || {} });
+      result = questionBank.getQuestion(db, req.params.id, tId);
+    } else {
+      const allowed = canDeleteQuestion({ ...(req.authz || {}), storageState: 'local_draft', sourceDeviceId: stored.source_device_id, ownerUserId: stored.owner_user_id });
+      if (!allowed) throw committedDeleteError();
+      result = questionBank.restoreQuestion(db, req.params.id, tId);
+    }
     if (!result) return res.status(404).json({ success: false, error: 'question not found' });
     searchService.upsertQuestionEmbedding(db, req.params.id, { tenantId: tId });
     searchService.schedulePendingJobs(db);
     res.json({ success: true, data: result });
   } catch (err) {
-    res.status(errorStatus(err)).json({ success: false, error: err.message });
+    res.status(err.status || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
   }
 });
 

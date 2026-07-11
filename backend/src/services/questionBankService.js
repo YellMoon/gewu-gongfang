@@ -672,19 +672,6 @@ class QuestionBankService {
     return this.getQuestion(db, id, tenantId);
   }
 
-  markQuestionHostCommitted(db, id, context = {}, tenantId = 'default') {
-    if (context.runtimeNodeRole !== 'primary-host' || context.tokenUse !== 'desktop-session'
-      || context.clientType !== 'desktop' || !context.deviceId || context.deviceId !== context.tokenDeviceId
-      || context.deviceTrusted !== true || context.deviceActive !== true || context.userApproved !== true
-      || context.deviceOwnerUserId !== context.userId) {
-      const error = new Error('trusted primary host context required'); error.code = 'TRUSTED_HOST_CONTEXT_REQUIRED'; throw error;
-    }
-    const ts = now();
-    const result = db.prepare(`UPDATE questions SET storage_state='host_committed', committed_at=?, committed_by_device_id=?, updated_at=?
-      WHERE id=? AND tenant_id=? AND deleted=0`).run(ts, context.deviceId, ts, id, tenantId);
-    return result.changes === 1 ? this.getQuestion(db, id, tenantId) : null;
-  }
-
   deleteQuestion(db, id, tenantId = 'default', context = {}) {
     const existing = this.getQuestion(db, id, tenantId);
     if (!existing) return false;

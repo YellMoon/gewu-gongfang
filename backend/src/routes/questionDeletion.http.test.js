@@ -43,12 +43,14 @@ service.registerSyncDevice('host-device', { deviceName: 'Host', role: 'primary-h
 service.registerSyncDevice('client-device', { deviceName: 'Client', role: 'desktop-client', trusted: true, ownerUserId: 'client-super' });
 service.registerSyncDevice('student-device', { deviceName: 'Student host session', role: 'primary-host', trusted: true, ownerUserId: 'host-student' });
 service.registerSyncDevice('teacher-device', { deviceName: 'Teacher desktop', role: 'desktop-client', trusted: true, ownerUserId: 'approved-teacher' });
+service.registerSyncDevice('super-host-device', { deviceName: 'Super host', role: 'primary-host', trusted: true, ownerUserId: 'miniapp-admin-13732250653' });
 
 const databaseModule = require('../database');
 databaseModule.getInstance = () => service;
 delete require.cache[require.resolve('../app')];
 const { createApp } = require('../app');
 const questionBank = require('../services/questionBankService');
+const { commitQuestionToBoundStore } = require('../services/questionBankStorageService');
 
 function token(id, deviceId, tokenUse = 'desktop-session') {
   return jwt.sign({ id, deviceId, token_use: tokenUse }, process.env.JWT_SECRET,
@@ -67,20 +69,24 @@ async function jsonRequest(base, method, url, bearer, deviceId, body) {
 function committed(id) {
   const created = questionBank.createQuestion(service.db, { id, stem: id, type: 'fill', storage_state: 'host_committed',
     assets: [{ oss_key: `question-bank/assets/images/kept.png`, file_name: 'kept.png' }] });
-  const marked = questionBank.markQuestionHostCommitted(service.db, created.id, {
-    runtimeNodeRole:'primary-host', tokenUse:'desktop-session', tokenDeviceId:'host-device',
-    deviceId:'host-device', deviceTrusted:true, deviceActive:true, clientType:'desktop',
-    userApproved:true, userId:'host-admin', deviceOwnerUserId:'host-admin',
-  });
-  const dir = path.join(qbRoot, 'questions', id); fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'question.json'), JSON.stringify({ id }), 'utf8');
-  return marked;
+  commitQuestionToBoundStore(created.id, { db: service.db, tenantId: 'default', authz: {
+    role:'admin', deviceTrusted:true, deviceActive:true, userApproved:true, userId:'host-admin', deviceOwnerUserId:'host-admin',
+  }, runtime: { nodeRole:'primary-host', tokenUse:'desktop-session', tokenDeviceId:'host-device', deviceId:'host-device', clientType:'desktop' } });
+  return questionBank.getQuestion(service.db, created.id, 'default');
 }
 
 (async () => {
   const listener = createApp().listen(0);
   const base = `http://127.0.0.1:${listener.address().port}`;
   try {
+    process.env.GEWU_NODE_ROLE = 'primary-host';
+    const ordinaryBind = await jsonRequest(base, 'POST', '/api/question-bank/storage/bind', token('host-admin','host-device'), 'host-device', { root: qbRoot });
+    assert.strictEqual(ordinaryBind.status, 403);
+    const superBind = await jsonRequest(base, 'POST', '/api/question-bank/storage/bind', token('miniapp-admin-13732250653','super-host-device'), 'super-host-device', { root: qbRoot });
+    assert.strictEqual(superBind.status, 200, JSON.stringify(superBind.body));
+    assert.strictEqual(superBind.body.binding.idempotent, true);
+    const unsafeBind = await jsonRequest(base, 'POST', '/api/question-bank/storage/bind', token('miniapp-admin-13732250653','super-host-device'), 'super-host-device', { root: path.join(tempRoot, 'other') });
+    assert.strictEqual(unsafeBind.status, 403);
     process.env.GEWU_NODE_ROLE = 'desktop-client';
     const teacherCreate = await jsonRequest(base, 'POST', '/api/question-bank/questions', token('approved-teacher','teacher-device'), 'teacher-device', {
       stem:'teacher create', type:'fill', storage_state:'host_committed', committed_at:'forged', committed_by_device_id:'forged', source_device_id:'forged', owner_user_id:'forged',
@@ -104,6 +110,11 @@ function committed(id) {
     assert.strictEqual(ok.status, 200);
     assert.strictEqual(service.db.prepare('SELECT deleted FROM questions WHERE id=?').get(success.id).deleted, 1);
     assert.ok(fs.existsSync(assetFile), 'soft delete must retain physical asset');
+    const deniedRestore = await jsonRequest(base, 'POST', `/api/question-bank/questions/${success.id}/restore`, token('client-super','client-device'), 'client-device', {});
+    assert.strictEqual(deniedRestore.status, 403);
+    const restored = await jsonRequest(base, 'POST', `/api/question-bank/questions/${success.id}/restore`, token('host-admin','host-device'), 'host-device', {});
+    assert.strictEqual(restored.status, 200);
+    assert.strictEqual(service.db.prepare('SELECT deleted FROM questions WHERE id=?').get(success.id).deleted, 0);
 
     const studentQuestion = committed('student-success');
     service.db.prepare('UPDATE sync_devices SET owner_user_id=? WHERE id=?').run('host-student', 'student-device');

@@ -41,7 +41,7 @@ try {
   for (const name of ['storage_state', 'committed_at', 'committed_by_device_id']) assert.ok(columns.includes(name), `missing ${name}`);
   const created = questionBank.createQuestion(service.db, { stem: 'committed', type: 'fill', storage_state: 'host_committed' });
   assert.strictEqual(created.storage_state, 'local_draft', 'client payload cannot promote storage state');
-  questionBank.markQuestionHostCommitted(service.db, created.id, trustedHost);
+  service.db.prepare("UPDATE questions SET storage_state='host_committed',committed_at=?,committed_by_device_id=? WHERE id=?").run(new Date().toISOString(), trustedHost.deviceId, created.id);
   assert.throws(() => questionBank.deleteQuestion(service.db, created.id, 'default'), error => error.code === 'HOST_DESKTOP_REQUIRED_FOR_COMMITTED_DELETE');
   assert.ok(questionBank.getQuestion(service.db, created.id, 'default'), 'denied deletion must not mutate row');
   assert.strictEqual(questionBank.deleteQuestion(service.db, created.id, 'default', trustedHost), true);

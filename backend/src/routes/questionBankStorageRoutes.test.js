@@ -15,6 +15,8 @@ assert.ok(
   source.includes("router.post('/storage/init'"),
   'question bank routes should expose primary-host storage initialization'
 );
+assert.ok(source.includes("router.post('/storage/bind'") && source.includes('bindQuestionBankStoreToDatabase'),
+  'question bank routes should expose the trusted super-admin binding entry');
 assert.ok(
   source.includes('findQuestionBankStore') && source.includes('QUESTION_BANK_CANDIDATE_ROOTS'),
   'question bank routes should scan candidate roots for hotplug/path changes'
