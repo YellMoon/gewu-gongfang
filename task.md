@@ -26,7 +26,7 @@ Complete the current release after WeChat upload whitelist is ready:
 - [x] Run targeted tests, `npm test`, miniapp build/release check.
 - [x] Upload miniapp after whitelist confirmation.
 - [x] Bump/package if needed, deploy cloud/backend/desktop update feed, install local host.
-- [ ] Commit and push `gewu/master`.
+- [x] Commit and push `gewu/master`.
 
 ## Review Follow-up (2026-07-11)
 
@@ -35,9 +35,9 @@ Complete the current release after WeChat upload whitelist is ready:
 - [x] Align production backend port defaults and harden deploy env loading.
 - [x] Sync root/backend versions and build desktop version `5.12.0`.
 - [x] Re-run full tests, TypeScript checks, and miniapp release build.
-- [ ] Add `WECHAT_APPSECRET` to `.env.local` without sharing it in chat.
-- [ ] Deploy backend `5.12.0`, upload miniapp `5.12.0`, and publish/install the desktop update.
-- [ ] Commit and push the final release to `gewu/master`.
+- [x] Add `WECHAT_APPSECRET` to `.env.local` without sharing it in chat.
+- [x] Deploy backend `5.12.0`, upload miniapp `5.12.0`, and publish/install the desktop update.
+- [x] Commit and push the final release to `gewu/master`.
 
 ## Validation
 
