@@ -43,7 +43,7 @@ async function postJson(baseUrl, body) {
       const loginCode = new URL(url).searchParams.get('js_code');
       const openid = loginCode === 'login-code-repeat'
         ? 'openid-admin-0653'
-        : loginCode === 'login-code-unknown'
+        : loginCode === 'login-code-unknown' || loginCode === 'login-code-pending'
           ? 'openid-unknown-phone'
           : 'openid-admin-0653';
       return jsonResponse({ openid, unionid: null });
@@ -95,12 +95,30 @@ async function postJson(baseUrl, body) {
     assert.strictEqual(repeatLogin.body.success, true);
     assert.strictEqual(phoneApiCalls, 1, 'repeat login should not consume another phone code');
 
+    const missingVerification = await postJson(baseUrl, { code: 'login-code-unknown', phone: '13732250653' });
+    assert.strictEqual(missingVerification.status, 403);
+    assert.strictEqual(missingVerification.body.code, 'PHONE_VERIFICATION_REQUIRED', 'caller supplied phone must be ignored');
+
     const unknownPhone = await postJson(baseUrl, {
       code: 'login-code-unknown',
       phoneCode: 'phone-code-unknown',
     });
-    assert.strictEqual(unknownPhone.status, 403, 'unseeded verified phone should stay unauthorized');
-    assert.strictEqual(unknownPhone.body.code, 'MINIAPP_USER_NOT_PREAUTHORIZED');
+    assert.strictEqual(unknownPhone.status, 202, 'verified new phone should create a pending user');
+    assert.strictEqual(unknownPhone.body.code, 'PENDING_REVIEW');
+    assert.strictEqual(unknownPhone.body.data, undefined, 'pending response must not contain a business token');
+    const pending = getInstance().db.prepare('SELECT * FROM users WHERE phone = ?').get('13900000000');
+    assert.strictEqual(pending.review_status, 'pending');
+    assert.strictEqual(pending.login_enabled, 0);
+    assert.strictEqual(pending.wechat_openid, 'openid-unknown-phone');
+
+    const pendingRepeat = await postJson(baseUrl, { code: 'login-code-pending' });
+    assert.strictEqual(pendingRepeat.status, 403);
+    assert.strictEqual(pendingRepeat.body.code, 'USER_PENDING_REVIEW');
+
+    getInstance().reviewUser({ actorPhone: '13732250653', userId: pending.id, role: 'admin' });
+    const approved = await postJson(baseUrl, { code: 'login-code-pending' });
+    assert.strictEqual(approved.status, 200);
+    assert.ok(approved.body.data.token, 'reviewed user should receive a token');
 
     console.log('miniapp verified phone login checks passed');
   } finally {

@@ -41,7 +41,7 @@ async function resolveWechatIdentity(code) {
     url.searchParams.set('secret', secret);
     url.searchParams.set('js_code', code);
     url.searchParams.set('grant_type', 'authorization_code');
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
     const payload = await response.json();
     if (!response.ok || payload.errcode || !payload.openid) {
       const detail = payload.errmsg || `HTTP ${response.status}`;
@@ -80,26 +80,27 @@ router.post('/wechat-login', async (req, res) => {
 
     const db = getInstance();
     let rawUser = db.getMiniappUserByWechat(openid);
+    if (!rawUser && !phoneCode) {
+      db.recordMiniappLoginAttempt({ openid, unionid, nickname, avatarUrl, denialReason: 'PHONE_VERIFICATION_REQUIRED' });
+      return res.status(403).json({ success: false, code: 'PHONE_VERIFICATION_REQUIRED', error: 'Verified phone number is required' });
+    }
     if (!rawUser && phoneCode) {
       const verifiedPhone = await resolveWechatPhoneNumber(phoneCode);
-      const phoneUser = db.getMiniappUserByPhone(verifiedPhone);
-      const phoneDenialReason = getMiniappLoginDenialReason(phoneUser);
-      if (phoneDenialReason) {
-        db.recordMiniappLoginAttempt({ openid, unionid, nickname, avatarUrl, denialReason: phoneDenialReason });
-        return res.status(403).json({
-          success: false,
-          code: phoneDenialReason,
-          error: 'Miniapp account is not authorized on the data host',
-        });
+      const phoneMatches = db.db.prepare('SELECT * FROM users WHERE phone = ? AND deleted = 0').all(verifiedPhone);
+      if (phoneMatches.length > 1) {
+        return res.status(409).json({ success: false, code: 'MINIAPP_PHONE_IDENTITY_CONFLICT' });
       }
-      rawUser = db.bindMiniappUserWechatByVerifiedPhone(verifiedPhone, openid, unionid, { nickname, avatarUrl });
+      const phoneUser = db.getMiniappUserByPhone(verifiedPhone);
+      rawUser = phoneUser
+        ? db.bindMiniappUserWechatByVerifiedPhone(verifiedPhone, openid, unionid, { nickname, avatarUrl })
+        : db.createPendingMiniappUserByVerifiedPhone(verifiedPhone, openid, unionid, { nickname, avatarUrl });
     }
     const denialReason = getMiniappLoginDenialReason(rawUser);
     if (denialReason) {
       db.recordMiniappLoginAttempt({ openid, unionid, nickname, avatarUrl, denialReason });
-      return res.status(403).json({
+      return res.status(denialReason === 'USER_PENDING_REVIEW' && phoneCode ? 202 : 403).json({
         success: false,
-        code: denialReason,
+        code: denialReason === 'USER_PENDING_REVIEW' && phoneCode ? 'PENDING_REVIEW' : denialReason,
         error: 'Miniapp account is not authorized on the data host',
       });
     }
@@ -128,7 +129,7 @@ router.post('/wechat-login', async (req, res) => {
     });
   } catch (err) {
     const forbiddenCodes = new Set(['MINIAPP_PHONE_ALREADY_BOUND', 'MINIAPP_WECHAT_ALREADY_BOUND']);
-    const status = forbiddenCodes.has(err.code) ? 403 : 500;
+    const status = forbiddenCodes.has(err.code) ? 409 : 502;
     res.status(status).json({ success: false, code: err.code || 'MINIAPP_LOGIN_FAILED', error: err.message });
   }
 });

@@ -40,5 +40,7 @@ for (const file of files) {
 assert.deepStrictEqual(violations, [], `legacy authorization runtime references remain:\n${violations.join('\n')}`);
 assert(!fs.existsSync(path.join(root, 'src/pages/MenuManage.tsx')), 'desktop menu manager page must be deleted');
 assert(!fs.existsSync(path.join(root, 'miniapp/src/pages/admin/invitations/index.tsx')), 'miniapp invitation page must be deleted');
+const miniappInventory = fs.readFileSync(path.join(root, 'miniapp/src/utils/miniappUiPageInventory.js'), 'utf8');
+assert(!/invite-register|invitationApi|auth\/register|邀请码/i.test(miniappInventory), 'miniapp inventory must not describe legacy invitation or registration flows');
 
 console.log('legacy authorization runtime regression tests passed');

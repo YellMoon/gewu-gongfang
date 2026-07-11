@@ -8,6 +8,7 @@ function isEnabled(value) {
 
 function getMiniappLoginDenialReason(user) {
   if (!user) return 'MINIAPP_USER_NOT_PREAUTHORIZED';
+  if (user.review_status === 'pending' || roleOf(user) === 'pending') return 'USER_PENDING_REVIEW';
   if (user.deleted === 1 || user.deleted === true || user.status === 0) return 'MINIAPP_LOGIN_DISABLED';
   const role = roleOf(user);
   if (!ALLOWED_MINIAPP_ROLES.has(role)) return 'MINIAPP_ROLE_NOT_ALLOWED';

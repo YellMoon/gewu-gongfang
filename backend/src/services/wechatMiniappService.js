@@ -22,7 +22,7 @@ async function getWechatAccessToken() {
   url.searchParams.set('grant_type', 'client_credential');
   url.searchParams.set('appid', appid);
   url.searchParams.set('secret', secret);
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
   const payload = await response.json();
   if (!response.ok || payload.errcode || !payload.access_token) {
     const error = new Error(`wechat access token failed: ${payload.errmsg || `HTTP ${response.status}`}`);
@@ -49,10 +49,11 @@ async function resolveWechatPhoneNumber(phoneCode) {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ code: phoneCode }),
+    signal: AbortSignal.timeout(8000),
   });
   const payload = await response.json();
-  const phone = String(payload.phone_info?.purePhoneNumber || payload.phone_info?.phoneNumber || '').trim();
-  if (!response.ok || payload.errcode || !phone) {
+  const phone = String(payload.phone_info?.purePhoneNumber || payload.phone_info?.phoneNumber || '').replace(/\D/g, '');
+  if (!response.ok || payload.errcode || !/^1\d{10}$/.test(phone)) {
     const error = new Error(`wechat phone exchange failed: ${payload.errmsg || `HTTP ${response.status}`}`);
     error.code = 'WECHAT_PHONE_EXCHANGE_FAILED';
     throw error;
