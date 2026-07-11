@@ -486,6 +486,32 @@ CREATE TABLE IF NOT EXISTS questions (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS authority_metadata (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS question_bank_store_bindings (
+  store_id TEXT PRIMARY KEY,
+  db_authority_id TEXT NOT NULL,
+  root_path TEXT NOT NULL,
+  bound_by TEXT NOT NULL,
+  bound_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active'
+);
+
+CREATE TABLE IF NOT EXISTS question_bank_storage_audit (
+  id TEXT PRIMARY KEY,
+  operation_id TEXT,
+  actor_user_id TEXT,
+  action TEXT NOT NULL,
+  store_id TEXT,
+  question_id TEXT,
+  details_json TEXT,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS question_contents (
   id TEXT PRIMARY KEY,
   tenant_id TEXT DEFAULT 'default',

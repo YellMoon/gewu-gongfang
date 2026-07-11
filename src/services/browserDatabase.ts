@@ -7,6 +7,7 @@ import {
   QuestionVersion, ImportTask, ImportTaskItem, ImportTaskStatus, ImportTaskItemStatus
 } from '../types';
 import type { SyncAction, SyncTable } from './syncEngine';
+const { applyTrustedQuestionProvenance } = require('./questionProvenance');
 import { calculateGrade, calculateFees, calculateDurationHours, groupByMonth, calculatePercentage } from '../utils/helpers';
 import { getColorForRoom } from '../utils/courseColors';
 import {
@@ -1746,11 +1747,13 @@ class BrowserDatabaseService {
   }
 
   createQuestion(question: Omit<Question, 'id' | 'created_at' | 'updated_at'>): Question {
+    const { storage_state: _ignoredStorageState, sourceDeviceId: _ignoredSourceDeviceId, ownerUserId: _ignoredOwnerUserId, ...trustedQuestion } = question;
+    const provenanceSafeQuestion = applyTrustedQuestionProvenance(trustedQuestion, { deviceId: this.getSyncDeviceId(), userId: this.getAuthorizationUserId() });
     const now = new Date().toISOString();
     const id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
     const content = question.content || '';
     const newQuestion: Question = {
-      ...question,
+      ...provenanceSafeQuestion,
       id,
       status: question.status || 'draft',
       has_image: question.has_image !== undefined ? question.has_image : /<img|!\[/.test(content),
@@ -1758,7 +1761,7 @@ class BrowserDatabaseService {
       created_by: question.created_by || '',
       storage_state: 'local_draft',
       sourceDeviceId: this.getSyncDeviceId(),
-      ownerUserId: question.ownerUserId || this.getAuthorizationUserId(),
+      ownerUserId: this.getAuthorizationUserId() || '',
       created_at: now,
       updated_at: now
     };
@@ -1824,10 +1827,12 @@ class BrowserDatabaseService {
   updateQuestion(id: string, updates: Partial<Omit<Question, 'id' | 'created_at'>>): boolean {
     const idx = this.data.questions.findIndex(q => q.id === id);
     if (idx === -1) return false;
+    const { storage_state: _ignoredStorageState, sourceDeviceId: _ignoredSourceDeviceId, ownerUserId: _ignoredOwnerUserId, ...safeUpdates } = updates;
+    const provenanceSafeUpdates = applyTrustedQuestionProvenance(safeUpdates, {}, this.data.questions[idx]);
     this.createQuestionVersionSnapshot(this.data.questions[idx]);
     this.data.questions[idx] = this.normalizeQuestionRecord({
       ...this.data.questions[idx],
-      ...updates,
+      ...provenanceSafeUpdates,
       updated_at: new Date().toISOString()
     });
     if (
