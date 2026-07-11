@@ -1,1 +1,12 @@
-const assert=require('assert'),fs=require('fs');for(const file of ['backend/src/routes/desktopPairing.js','gateway/src/routes/desktopPairing.js']){const source=fs.readFileSync(file,'utf8');for(const path of ["'/start'","'/exchange'","'/:id/approve'","'/:id/reject'"])assert.ok(source.includes(path),`${file} missing ${path}`);for(const code of ['SUPER_ADMIN_REQUIRED','PAIRING_NOT_FOUND','PAIRING_USER_UNRESOLVED'])assert.ok(source.includes(code),`${file} missing ${code}`);}const gatewayService=fs.readFileSync('gateway/src/services/desktopPairingService.js','utf8');assert.ok(!gatewayService.includes('backend/src'),'gateway pairing must be self-contained');console.log('desktop pairing parity tests passed');
+const assert = require('assert');
+const fs = require('fs');
+for (const file of ['backend/src/routes/desktopPairing.js', 'gateway/src/routes/desktopPairing.js']) {
+  const source = fs.readFileSync(file, 'utf8');
+  for (const route of ["'/start'", "'/exchange'", "'/pending'", "'/code/:pairingCode/approve'", "'/code/:pairingCode/reject'", "'/:id/approve'", "'/:id/reject'"]) {
+    assert.ok(source.includes(route), `${file} missing ${route}`);
+  }
+  for (const code of ['SUPER_ADMIN_REQUIRED', 'PAIRING_NOT_FOUND', 'PAIRING_USER_UNRESOLVED']) assert.ok(source.includes(code));
+  assert.ok(source.includes('pairing_code AS pairingCode') && !source.includes('secret_hash AS'), 'pending API must expose safe explicit fields only');
+}
+assert.ok(!fs.readFileSync('gateway/src/services/desktopPairingService.js', 'utf8').includes('backend/src'));
+console.log('desktop pairing parity tests passed');

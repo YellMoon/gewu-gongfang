@@ -81,7 +81,7 @@ async function processMiniappTask(task, db) {
     } catch (_error) { claims = null; }
     const validClaims = claims && claims.taskId === task.id && claims.actorUserId === payload.actorUserId
       && claims.deviceId === (payload.deviceId || payload.device_id) && db.consumeRelayAuthorizationNonce(claims);
-    const authz = validClaims ? db.resolveSyncActorContext(claims.deviceId, claims.actorUserId) : false;
+    const authz = validClaims ? db.resolveOrProvisionRelayActorContext(claims.deviceId, claims.actorUserId, claims.pairingApprovalId) : false;
     if (!authz) {
       const error = new Error('AUTHORIZATION_CONTEXT_REQUIRED'); error.code = 'AUTHORIZATION_CONTEXT_REQUIRED'; throw error;
     }

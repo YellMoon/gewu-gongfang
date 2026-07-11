@@ -66,6 +66,11 @@ try {
   assert.strictEqual(db.resolveSyncActorContext('relay-d1','relay-u1').teacherId, 't1');
   db.registerSyncDevice('other-owner-device', { ownerUserId:'other-user' });
   assert.strictEqual(db.resolveSyncActorContext('other-owner-device','relay-u1'), false, 'cross-owner device must fail');
+  assert.strictEqual(db.resolveOrProvisionRelayActorContext('remote-first-device','relay-u1','gateway-pairing-1').userId,'relay-u1');
+  assert.strictEqual(db.db.prepare("SELECT owner_user_id FROM sync_devices WHERE id='remote-first-device'").get().owner_user_id,'relay-u1',
+    'verified gateway pairing may provision the host device on first relay apply');
+  assert.strictEqual(db.resolveOrProvisionRelayActorContext('other-owner-device','relay-u1','gateway-pairing-2'),false,
+    'owner conflict must not rebind an existing host device');
 
   const first = db.getScopedChangeQueueSince(0, { tenantId:'default', deviceId:'server', clientId:'d1',
     authz:{ kind:'teacher', userId:'u1', teacherId:'t1', deviceId:'d1' } });

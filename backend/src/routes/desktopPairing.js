@@ -11,8 +11,9 @@ router.post('/exchange',(req,res)=>{ try { const result=exchangeDesktopPairing(g
   if(!user||user.review_status!=='approved'||user.login_enabled===0||user.status===0) throw Object.assign(new Error(),{code:'USER_NOT_APPROVED'});
   const token=jwt.sign({id:user.id,user_type:user.role,deviceId:result.deviceId},JWT_SECRET,{expiresIn:'30m'});
   res.json({success:true,token,userId:user.id,deviceId:result.deviceId,expiresIn:1800}); } catch(e){send(res,e);} });
-function review(status){return [authMiddleware,(req,res)=>{try{if(req.authz?.role!=='super_admin')return res.status(403).json({success:false,code:'SUPER_ADMIN_REQUIRED'});
-  const db=getInstance();const row=db.db.prepare('SELECT * FROM desktop_device_pairings WHERE id=?').get(req.params.id);if(!row)return res.status(404).json({success:false,code:'PAIRING_NOT_FOUND'});
+router.get('/pending',authMiddleware,(req,res)=>{if(req.authz?.role!=='super_admin')return res.status(403).json({success:false,code:'SUPER_ADMIN_REQUIRED'});const limit=Math.min(100,Math.max(1,Number(req.query.pageSize)||20)),offset=(Math.max(1,Number(req.query.page)||1)-1)*limit,search=String(req.query.code||'');const rows=getInstance().db.prepare(`SELECT id,device_id AS deviceId,device_name AS deviceName,phone,pairing_code AS pairingCode,status,expires_at AS expiresAt,created_at AS createdAt FROM desktop_device_pairings WHERE status='pending' AND pairing_code LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(`%${search}%`,limit,offset);res.json({success:true,items:rows});});
+function review(status,byCode=false){return [authMiddleware,(req,res)=>{try{if(req.authz?.role!=='super_admin')return res.status(403).json({success:false,code:'SUPER_ADMIN_REQUIRED'});
+  const db=getInstance();const row=byCode?db.db.prepare("SELECT * FROM desktop_device_pairings WHERE pairing_code=? AND status='pending' AND expires_at>=?").get(req.params.pairingCode,db._now()):db.db.prepare('SELECT * FROM desktop_device_pairings WHERE id=?').get(req.params.id);if(!row)return res.status(404).json({success:false,code:'PAIRING_NOT_FOUND'});
   const users=db.db.prepare("SELECT * FROM users WHERE deleted=0 AND review_status='approved' AND login_enabled=1").all().filter(u=>normalizePhone(u.phone)===row.phone);
   if(users.length!==1)return res.status(409).json({success:false,code:'PAIRING_USER_UNRESOLVED'});const now=db._now();
   db.db.transaction(()=>{db.db.prepare('UPDATE desktop_device_pairings SET status=?,approved_by=?,user_id=?,updated_at=? WHERE id=?').run(status,req.authz.userId,users[0].id,now,row.id);
@@ -20,4 +21,5 @@ function review(status){return [authMiddleware,(req,res)=>{try{if(req.authz?.rol
     db.recordAuthorizationAudit({actorUserId:req.authz.userId,targetUserId:users[0].id,action:`desktop-pairing:${status}`,after:{pairingId:row.id,deviceId:row.device_id}});})();
   res.json({success:true,status});}catch(e){send(res,e);}}];}
 router.post('/:id/approve',...review('approved'));router.post('/:id/reject',...review('rejected'));
+router.post('/code/:pairingCode/approve',...review('approved',true));router.post('/code/:pairingCode/reject',...review('rejected',true));
 module.exports=router;
