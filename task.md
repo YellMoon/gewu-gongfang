@@ -1,6 +1,6 @@
 # Task: 2026-07-11 Unified Role and Data Scope Authorization
 
-Status: design approved; implementation plan pending written-spec review
+Status: implementation in progress
 
 ## Objective
 
@@ -81,6 +81,8 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 - Full regression: `npm test` exited 0 on 2026-07-11.
 - Review RED: after requiring structured teacher-binding results and deleted-teacher exclusion, `node backend/src/services/authorizationPolicy.test.js` exited 1 because the implementation still returned the raw teacher record.
 - Review GREEN: the same focused command exited 0 after `resolveTeacherBinding` returned `{ ok, teacherId/code }` without throwing and ignored teachers with `deleted` set to `true` or `1`.
+- Quality RED: boundary tests made `node backend/src/services/authorizationPolicy.test.js` exit 1 with a `TypeError` from `roleForUser(null)` before hardening.
+- Quality GREEN: the focused command exited 0 after rejecting empty phones and invalid teacher IDs, safely handling null/non-object inputs and invalid teacher collections, and preserving explicit invalid-role precedence over `user_type`.
 
 ---
 

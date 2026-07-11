@@ -21,8 +21,15 @@ assert.strictEqual(
 );
 assert.strictEqual(roleForUser({ user_type: 'teacher' }), 'teacher');
 assert.strictEqual(roleForUser({ role: 'legacy_admin' }), 'pending');
+assert.strictEqual(
+  roleForUser({ role: 'legacy_admin', user_type: 'admin' }),
+  'pending',
+  'an explicit invalid role must not fall back to user_type'
+);
+assert.strictEqual(roleForUser(null), 'pending');
 assert.strictEqual(canReviewUsers({ phone: '137 3225 0653', role: 'admin' }), true);
 assert.strictEqual(canReviewUsers({ phone: '18257136756', role: 'admin' }), false);
+assert.strictEqual(canReviewUsers(null), false);
 
 const teachers = [
   { id: 'teacher-1', phone: '138 0000 0000' },
@@ -45,6 +52,29 @@ assert.deepStrictEqual(
   { ok: false, code: 'TEACHER_NOT_FOUND' }
 );
 assert.deepStrictEqual(
+  resolveTeacherBinding({ phone: '---' }, [{ id: 'teacher-empty-phone' }]),
+  { ok: false, code: 'TEACHER_NOT_FOUND' },
+  'empty normalized phones must never bind'
+);
+assert.deepStrictEqual(
+  resolveTeacherBinding({ phone: '13800000000' }, [{ phone: '13800000000' }]),
+  { ok: false, code: 'TEACHER_BINDING_INVALID' },
+  'a unique teacher without an id is not a valid binding'
+);
+assert.deepStrictEqual(
+  resolveTeacherBinding(null, teachers),
+  { ok: false, code: 'TEACHER_NOT_FOUND' }
+);
+assert.deepStrictEqual(
+  resolveTeacherBinding({ phone: '13800000000' }, null),
+  { ok: false, code: 'TEACHER_NOT_FOUND' }
+);
+assert.deepStrictEqual(
+  resolveTeacherBinding({ phone: '13800000000' }, [null, 'teacher', teachers[0]]),
+  { ok: true, teacherId: 'teacher-1' },
+  'invalid teacher entries must be ignored without throwing'
+);
+assert.deepStrictEqual(
   resolveTeacherBinding(
     { phone: '13800000000' },
     [
@@ -63,6 +93,7 @@ assert.deepStrictEqual(
 );
 assert.deepStrictEqual(scopeForUser({ role: 'teacher' }), { kind: 'none' });
 assert.deepStrictEqual(scopeForUser({ role: 'pending' }), { kind: 'none' });
+assert.deepStrictEqual(scopeForUser(null), { kind: 'none' });
 assert.deepStrictEqual(scopeForUser({ role: 'admin' }), { kind: 'all' });
 assert.deepStrictEqual(
   scopeForUser({ user_type: 'student', student_id: 'student-1' }),
