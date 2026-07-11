@@ -40,9 +40,17 @@ const cloudRelayHostApi = read('src/services/cloudRelayHostApi.ts');
 const permissionManager = read('src/pages/PermissionManager.tsx');
 const permissionManagerCss = read('src/pages/PermissionManager.css');
 const authorizationApi = read('src/services/authorizationApi.ts');
+const authorizationRequestCoordinator = read('src/services/authorizationRequestCoordinator.mjs');
 const scheduleStorage = read('src/utils/scheduleStorage.mjs');
 const packageJson = read('package.json');
 const packageManifest = JSON.parse(packageJson);
+
+assert(
+  permissionManager.includes('createLatestRequestCoordinator') &&
+  permissionManager.includes('requestCoordinator.current.run') &&
+  authorizationRequestCoordinator.includes('requestId === latestRequestId'),
+  'authorization list should ignore stale filter and review responses'
+);
 
 assert(
   permissionManager.includes("capabilities.includes('users:review')") &&

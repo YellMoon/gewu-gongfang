@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Card, Col, Descriptions, Empty, Input, Modal, Row, Select, Space, Statistic, Table, Tag, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import PairingReviewPanel from '../components/PairingReviewPanel';
 import { AuthorizationUser, ReviewableRole, disableUser, getMyCapabilities, listUsers, reviewUser } from '../services/authorizationApi';
 import { authorizationEmptyText, authorizationErrorText, createAuthorizationPresentation } from '../services/authorizationPresentation.mjs';
+import { createLatestRequestCoordinator } from '../services/authorizationRequestCoordinator.mjs';
 import './PermissionManager.css';
 
 type PresentedUser = AuthorizationUser & { roleLabel: string; statusLabel: string; teacherBindingLabel: string; bindingState: string; canReview: boolean; disabled: boolean };
@@ -26,6 +27,7 @@ const PermissionManager: React.FC = () => {
   const [selectedId, setSelectedId] = useState('');
   const [selectedRole, setSelectedRole] = useState<ReviewableRole>('student');
   const [bindingErrors, setBindingErrors] = useState<Record<string, string>>({});
+  const requestCoordinator = useRef(createLatestRequestCoordinator());
 
   const canReview = capabilities.includes('users:review');
   const presentation = useMemo(() => createAuthorizationPresentation({
@@ -36,14 +38,16 @@ const PermissionManager: React.FC = () => {
 
   const load = useCallback(async () => {
     setLoading(true); setErrorCode('');
-    try {
-      const [userResult, effectiveCapabilities] = await Promise.all([
+    await requestCoordinator.current.run(() => Promise.all([
         listUsers({ search, role, status, pageSize: 100 }), getMyCapabilities(),
-      ]);
-      setUsers(userResult.users); setCapabilities(effectiveCapabilities);
-      setSelectedId(current => userResult.users.some(user => user.id === current) ? current : (userResult.users[0]?.id || ''));
-    } catch (error: any) { setErrorCode(error?.code || 'NETWORK_ERROR'); }
-    finally { setLoading(false); }
+      ]), {
+      success: ([userResult, effectiveCapabilities]: any) => {
+        setUsers(userResult.users); setCapabilities(effectiveCapabilities);
+        setSelectedId(current => userResult.users.some((user: AuthorizationUser) => user.id === current) ? current : (userResult.users[0]?.id || ''));
+      },
+      error: (error: any) => setErrorCode(error?.code || 'NETWORK_ERROR'),
+      settled: () => setLoading(false),
+    });
   }, [search, role, status]);
   useEffect(() => { load(); }, [load]);
 

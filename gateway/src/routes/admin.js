@@ -11,7 +11,7 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const { getDb } = require('../db/database');
 const { requireType } = require('../middleware/permission');
-const { canReviewUsers } = require('../services/authorizationPolicy');
+const { canReviewUsers, resolveTeacherBinding } = require('../services/authorizationPolicy');
 
 // 所有管理员路由需要 admin 类型
 router.use((req, res, next) => {
@@ -33,7 +33,8 @@ router.get('/users', (req, res) => {
   const db = getDb();
   const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
   const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize || req.query.limit, 10) || 20));
-  const { user_type } = req.query;
+  const userType = req.query.role || req.query.user_type;
+  const status = req.query.status;
   const search = String(req.query.search || '').trim().slice(0, 100);
   const offset = (page - 1) * pageSize;
 
@@ -44,9 +45,13 @@ router.get('/users', (req, res) => {
     where += ' AND (name LIKE ? OR phone LIKE ?)';
     params.push(`%${search}%`, `%${search}%`);
   }
-  if (user_type) {
+  if (userType) {
     where += ' AND user_type = ?';
-    params.push(user_type);
+    params.push(userType);
+  }
+  if (status) {
+    where += ' AND review_status = ?';
+    params.push(status);
   }
 
   const total = db.prepare(`SELECT COUNT(*) as count FROM users WHERE ${where}`).get(...params).count;
@@ -57,7 +62,8 @@ router.get('/users', (req, res) => {
     ORDER BY created_at DESC LIMIT ? OFFSET ?
   `).all(...params, pageSize, offset);
 
-  res.json({ items: users, users, total, page, pageSize });
+  const projected = users.map(user => ({ ...user, role: user.user_type }));
+  res.json({ items: projected, users: projected, total, page, pageSize });
 });
 
 router.patch('/users/:id/review', (req, res) => {
@@ -78,11 +84,9 @@ router.patch('/users/:id/review', (req, res) => {
   if (role === 'teacher') {
     const teacherTable = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'teachers'").get();
     if (!teacherTable) return res.status(400).json({ success: false, code: 'TEACHER_NOT_FOUND' });
-    const normalized = String(target.phone || '').replace(/\D/g, '');
-    const matches = db.prepare('SELECT id, phone FROM teachers').all()
-      .filter(item => String(item.phone || '').replace(/\D/g, '') === normalized);
-    if (matches.length !== 1) return res.status(400).json({ success: false, code: matches.length ? 'TEACHER_PHONE_NOT_UNIQUE' : 'TEACHER_NOT_FOUND' });
-    teacherId = matches[0].id;
+    const binding = resolveTeacherBinding(target, db.prepare('SELECT id, phone, deleted FROM teachers').all());
+    if (!binding.ok) return res.status(400).json({ success: false, code: binding.code });
+    teacherId = binding.teacherId;
   }
   const now = new Date().toISOString();
   const user = db.transaction(() => {
