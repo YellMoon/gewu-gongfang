@@ -229,6 +229,54 @@ try {
     error => error && error.code === 'SUPER_ADMIN_IDENTITY_CONFLICT'
   );
   restarted.close();
+
+  const legacyIdentityWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-legacy-super-'));
+  process.env.DB_PATH = path.join(legacyIdentityWorkspace, 'scheduling.db');
+  process.env.READ_DB_PATH = process.env.DB_PATH;
+  const legacyIdentityDb = new Database(process.env.DB_PATH);
+  legacyIdentityDb.exec(`CREATE TABLE users (
+    id TEXT PRIMARY KEY, phone TEXT, name TEXT, nickname TEXT, role TEXT,
+    status INTEGER DEFAULT 1, login_enabled INTEGER DEFAULT 0, student_id TEXT,
+    linked_student_ids TEXT, deleted INTEGER DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  )`);
+  const insertLegacyIdentityUser = legacyIdentityDb.prepare(`INSERT INTO users
+    (id, phone, name, role, status, login_enabled, deleted, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 1, 1, 0, ?, ?)`);
+  insertLegacyIdentityUser.run('legacy-super', '137 3225 0653', 'legacy super', 'admin', oldNow, oldNow);
+  insertLegacyIdentityUser.run('legacy-review-target', '13000000111', 'legacy target', 'pending', oldNow, oldNow);
+  legacyIdentityDb.close();
+
+  const legacyIdentityService = new DatabaseService();
+  const legacyIdentity = legacyIdentityService.db.prepare(
+    'SELECT id, phone, role, review_status, status, login_enabled, is_super_admin_identity FROM users WHERE id = ?'
+  ).get('legacy-super');
+  assert.deepStrictEqual(
+    [legacyIdentity.phone, legacyIdentity.role, legacyIdentity.review_status, legacyIdentity.status,
+      legacyIdentity.login_enabled, legacyIdentity.is_super_admin_identity],
+    ['13732250653', 'super_admin', 'approved', 1, 1, 1]
+  );
+  const legacyContext = legacyIdentityService.getAuthorizationContextByUserId('legacy-super');
+  assert.strictEqual(legacyContext.role, 'super_admin');
+  assert.deepStrictEqual(legacyContext.scope, { kind: 'all' });
+  assert.strictEqual(legacyIdentityService.reviewUser({
+    actorPhone: '13732250653', userId: 'legacy-review-target', role: 'student',
+  }).role, 'student');
+  assert.throws(
+    () => legacyIdentityService.db.prepare(
+      'UPDATE users SET is_super_admin_identity = 1 WHERE id = ?'
+    ).run('legacy-review-target'),
+    error => error && error.code === 'SQLITE_CONSTRAINT_UNIQUE'
+  );
+  legacyIdentityService.close();
+
+  const legacyRestarted = new DatabaseService();
+  const legacyRestartedContext = legacyRestarted.getAuthorizationContextByUserId('legacy-super');
+  assert.strictEqual(legacyRestartedContext.role, 'super_admin');
+  assert.deepStrictEqual(legacyRestartedContext.scope, { kind: 'all' });
+  assert.strictEqual(legacyRestarted.db.prepare(
+    'SELECT COUNT(*) AS count FROM users WHERE is_super_admin_identity = 1'
+  ).get().count, 1);
+  legacyRestarted.close();
   console.log('database authorization checks passed');
 } finally {
   if (previous.db === undefined) delete process.env.DB_PATH; else process.env.DB_PATH = previous.db;

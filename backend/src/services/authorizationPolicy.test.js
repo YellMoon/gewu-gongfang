@@ -46,6 +46,14 @@ assert.strictEqual(canReviewUsers({
   id: CANONICAL_SUPER_ADMIN_ID, phone: '13732250653', role: 'super_admin', status: 0,
   login_enabled: 1, review_status: 'approved', deleted: 0,
 }), false);
+assert.strictEqual(roleForUser({
+  id: 'legacy-super', phone: '13732250653', role: 'super_admin', is_super_admin_identity: 1,
+  status: 1, login_enabled: 1, review_status: 'approved', deleted: 0,
+}), 'super_admin', 'a persisted legacy identity flag should survive a noncanonical historical id');
+assert.strictEqual(canReviewUsers({
+  id: 'legacy-super', phone: '13732250653', role: 'super_admin', is_super_admin_identity: 1,
+  status: 1, login_enabled: 1, review_status: 'approved', deleted: 0,
+}), true);
 assert.strictEqual(canReviewUsers({ phone: '18257136756', role: 'admin' }), false);
 assert.strictEqual(canReviewUsers(null), false);
 

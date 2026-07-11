@@ -208,6 +208,7 @@ CREATE TABLE IF NOT EXISTS users (
   review_status TEXT DEFAULT 'pending',
   reviewed_by TEXT,
   reviewed_at TEXT,
+  is_super_admin_identity INTEGER DEFAULT 0,
   deleted INTEGER DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
