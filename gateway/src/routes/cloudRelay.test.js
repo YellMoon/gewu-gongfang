@@ -4,6 +4,8 @@ const fs = require('fs');
 const schema = fs.readFileSync('gateway/src/db/schema.sql', 'utf-8');
 const route = fs.readFileSync('gateway/src/routes/cloudRelay.js', 'utf-8');
 const app = fs.readFileSync('gateway/src/app.js', 'utf-8');
+const authRoute = fs.readFileSync('gateway/src/routes/auth.js', 'utf-8');
+const permissionMiddleware = fs.readFileSync('gateway/src/middleware/permission.js', 'utf-8');
 
 assert.ok(schema.includes('host_heartbeats'), 'schema should include host_heartbeats');
 assert.ok(schema.includes('readonly_snapshots'), 'schema should include readonly_snapshots');
@@ -17,7 +19,10 @@ assert.ok(route.includes("router.post('/tasks/:id/complete'"), 'cloud relay shou
 assert.ok(route.includes("status = req.body.success === false ? 'failed' : 'completed'"), 'cloud relay should store completed or failed task status');
 assert.ok(route.includes('allowedTasksForUser'), 'cloud relay should apply role-specific task permissions');
 assert.ok(route.includes("user?.user_type === 'student'"), 'cloud relay should distinguish student task permissions');
+assert.ok(route.includes("['super_admin', 'admin'].includes(user?.user_type)"), 'cloud relay should grant super admin the existing admin task permissions');
 assert.ok(route.includes('adminTaskTypes'), 'asset import should be limited to administrator task permissions');
+assert.ok(authRoute.includes("['super_admin', 'admin', 'student']"), 'gateway login should accept super admin without widening student access');
+assert.ok(permissionMiddleware.includes("['super_admin', 'admin']"), 'gateway permissions should treat only super admin and admin as administrators');
 assert.ok(app.includes("require('./routes/cloudRelay')"), 'gateway app should mount cloud relay');
 
 console.log('cloudRelay route checks passed');

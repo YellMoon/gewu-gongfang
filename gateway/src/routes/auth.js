@@ -28,7 +28,7 @@ function linkedStudentIds(user = {}) {
 function loginDenialReason(user) {
   if (!user) return 'MINIAPP_USER_NOT_PREAUTHORIZED';
   if (user.status === 0 || user.login_enabled !== 1) return 'MINIAPP_LOGIN_DISABLED';
-  if (!['admin', 'student'].includes(user.user_type)) return 'MINIAPP_ROLE_NOT_ALLOWED';
+  if (!['super_admin', 'admin', 'student'].includes(user.user_type)) return 'MINIAPP_ROLE_NOT_ALLOWED';
   if (user.user_type === 'student' && linkedStudentIds(user).length === 0) return 'MINIAPP_STUDENT_NOT_LINKED';
   return '';
 }

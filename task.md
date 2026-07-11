@@ -95,6 +95,12 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 - GREEN: `node backend/src/databaseAuthorization.test.js` exited 0 with `database authorization checks passed`.
 - Focused regressions: authorization, `databaseMiniappAdminSeed`, `databaseImportSafety`, and `miniappPhoneLogin` all exited 0 on 2026-07-11.
 - Full regression: `npm test` exited 0 in 37.1 seconds on 2026-07-11.
+- Quality review RED: the focused authorization database test exited 1 because a normalized duplicate fixed phone remained `admin/approved`; miniapp access and cloud relay tests also exited 1 because `super_admin` lacked existing admin abilities.
+- Quality review GREEN: focused database, miniapp access/auth, cloud relay client/host/route, seed, import, phone login, and pure authorization policy tests all exited 0 after canonical identity hardening.
+- Canonical evidence: the seed ID is preferred, duplicate fixed-phone rows become pending/disabled, inactive or unreviewed canonical identity cannot review, and ambiguous non-seed identities return `SUPER_ADMIN_IDENTITY_CONFLICT`.
+- One-time migration evidence: `authorization_migrations` records `legacy-users-v1`; restart tests preserve post-migration rejected status, role, and manual teacher binding while reasserting only the fixed super-admin safety invariant.
+- Boundary evidence: caller device authorization flags are discarded with `trusted: false`; object and JSON-string audit/rejection inputs persist as single-layer valid JSON.
+- Quality full regression: `npm test` exited 0 in 14.6 seconds on 2026-07-11.
 
 ---
 

@@ -10,7 +10,7 @@ function isStudentUser(user) {
 }
 
 function isAdminUser(user) {
-  return ['admin', 'operator'].includes(roleOf(user));
+  return ['super_admin', 'admin', 'operator'].includes(roleOf(user));
 }
 
 function parseArray(value) {

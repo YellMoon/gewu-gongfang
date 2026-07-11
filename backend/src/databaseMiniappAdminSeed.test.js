@@ -34,13 +34,13 @@ try {
 
   service.db.prepare(
     'UPDATE users SET status = 0, login_enabled = 0, deleted = 1 WHERE phone = ?'
-  ).run(ADMIN_PHONES[0]);
+  ).run(ADMIN_PHONES[1]);
   service.close();
 
   const restarted = new DatabaseService();
   const revoked = restarted.db.prepare(
     'SELECT role, login_enabled, status, deleted FROM users WHERE phone = ?'
-  ).get(ADMIN_PHONES[0]);
+  ).get(ADMIN_PHONES[1]);
   assert.strictEqual(revoked.status, 0, 'restart must preserve an explicit account disable');
   assert.strictEqual(revoked.login_enabled, 0, 'restart must preserve revoked miniapp login access');
   assert.strictEqual(revoked.deleted, 1, 'restart must preserve an explicit account deletion');
