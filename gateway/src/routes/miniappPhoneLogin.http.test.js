@@ -29,6 +29,9 @@ const get = async (route, token) => { const response = await realFetch(`http://1
   assert.strictEqual(approved.status, 200); assert.ok(approved.body.data.token);
   const hydrated = await get('/api/admin/users', approved.body.data.token);
   assert.strictEqual(hydrated.status, 200, 'issued claims must hydrate an approved persisted user');
+  const permissions = await get('/api/permissions/my', approved.body.data.token);
+  assert.deepStrictEqual([permissions.body.identity.id, permissions.body.identity.role, permissions.body.identity.review_status], [pendingUser.id, 'admin', 'approved']);
+  assert.ok(permissions.body.identity.authorization_revision, 'gateway permission response should carry an authorization revision');
 
   const racing = await Promise.all([
     post('/api/auth/wechat-login', { code: 'race-a', phoneCode: 'race-a' }),

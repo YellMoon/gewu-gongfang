@@ -19,6 +19,7 @@ db.db.prepare(`INSERT INTO users (id, phone, name, role, status, login_enabled, 
   .run('pending-user', '13800000000', 'Pending', now, now);
 db.db.prepare(`INSERT INTO users (id, phone, name, role, status, login_enabled, review_status, deleted, created_at, updated_at)
  VALUES (?, ?, ?, 'teacher', 1, 1, 'approved', 0, ?, ?)`).run('approved-teacher', '13600000000', 'Teacher', now, now);
+db.db.prepare("UPDATE users SET teacher_id = 'teacher-1' WHERE id = 'approved-teacher'").run();
 db.db.prepare(`INSERT INTO users (id, phone, name, role, status, login_enabled, review_status, deleted, created_at, updated_at)
  VALUES (?, ?, ?, 'admin', 0, 1, 'approved', 0, ?, ?)`).run('disabled-admin', '13500000000', 'Disabled', now, now);
 
@@ -61,6 +62,11 @@ async function request(server, method, url, auth, body, headers = {}) {
     assert.deepStrictEqual(disabled.body.capabilities, []);
     const teacher = await request(base, 'GET', '/api/permissions/my', token('approved-teacher'));
     assert.deepStrictEqual(teacher.body.capabilities, ['business:teacher-scope', 'question-bank:view', 'question-bank:edit']);
+    assert.deepStrictEqual(
+      [teacher.body.identity.id, teacher.body.identity.role, teacher.body.identity.teacher_id, teacher.body.identity.review_status],
+      ['approved-teacher', 'teacher', 'teacher-1', 'approved']
+    );
+    assert.ok(teacher.body.identity.authorization_revision, 'permission response should carry an authorization revision');
     assert.ok(teacher.body.permissions.every(item => teacher.body.capabilities.includes(item.id)), 'compat permissions must be a capability projection');
 
     const superToken = token('miniapp-admin-13732250653');

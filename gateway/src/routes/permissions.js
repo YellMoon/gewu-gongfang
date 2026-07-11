@@ -47,7 +47,17 @@ router.get('/my', (req, res) => {
   const role = req.authz?.role || 'pending';
   const capabilities = effectiveCapabilities({ ...req.authz, role });
   const permissions = capabilities.map(id => ({ id, capability: id }));
-  return res.json({ permissions, capabilities, user_type: role, is_admin: ['super_admin', 'admin'].includes(role) });
+  const identity = {
+    id: req.user?.id || req.authz?.userId || null,
+    role,
+    teacher_id: req.user?.teacher_id || req.authz?.teacherId || null,
+    student_id: req.user?.student_id || req.authz?.studentId || null,
+    review_status: req.user?.review_status || req.authz?.reviewStatus || 'pending',
+    status: req.user?.status ?? req.authz?.status ?? 0,
+    login_enabled: req.user?.login_enabled ?? req.authz?.loginEnabled ?? 0,
+    authorization_revision: req.user?.updated_at || req.user?.reviewed_at || null,
+  };
+  return res.json({ permissions, capabilities, identity, user_type: role, is_admin: ['super_admin', 'admin'].includes(role) });
   /* legacy grant query retained below for rollback only
   const db = getDb();
 
