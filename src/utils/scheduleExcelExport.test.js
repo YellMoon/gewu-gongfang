@@ -170,7 +170,8 @@ assert.ok(!Object.values(rowStyleSheet).some(cell => cell && cell.v === '07:50-0
 assert.strictEqual(rowStyleSheet.G3.v, '');
 assert.strictEqual(rowStyleSheet.G3.s.fill.fgColor.rgb, rowStyleSheet.A3.s.fill.fgColor.rgb);
 assert.strictEqual(rowStyleSheet.G3.s.border.left.style, rowStyleSheet.A3.s.border.left.style);
-assert.ok(rowStyleSheet['!cols'][0].wch >= 24, 'course columns should avoid wrapping common course text');
+assert.ok(rowStyleSheet['!cols'][0].wch >= 14, 'course columns should still keep common course text readable');
+assert.ok(rowStyleSheet['!cols'][0].wch <= 21, 'short weekly course columns should stay close to course text width');
 
   console.log('scheduleExcelExport tests passed');
 })().catch(error => {

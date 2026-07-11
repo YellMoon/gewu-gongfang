@@ -38,7 +38,7 @@ interface ApiResponse<T = any> {
   data?: T;
   error?: string;
   total?: number;
-  code?: number;
+  code?: number | string;
 }
 
 class ApiClient {
@@ -140,6 +140,13 @@ class ApiClient {
           this.handleAuthExpired();
           return { success: false, error: '登录已过期' };
         } else if (res.statusCode === 403) {
+          if (res.data?.code || res.data?.error) {
+            return {
+              success: false,
+              error: res.data?.error,
+              code: res.data?.code,
+            };
+          }
           return { success: false, error: '无权限访问' };
         } else if (res.statusCode >= 500 && attempt < retries) {
           continue; // 服务端错误，重试

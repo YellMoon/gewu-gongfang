@@ -12,6 +12,7 @@ const FACETS = [
   'institutionId',
   'year',
   'semester',
+  'courseId',
   'courseName',
 ];
 
@@ -65,12 +66,35 @@ export function isDateWithinRevenueRange(dateStr, dateRange = []) {
   return true;
 }
 
+export function filterRevenueSchedules(schedules = [], courses = [], filters = {}, options = {}) {
+  const courseMap = new Map(courses.map(course => [course.id, course]));
+  const excludedStatuses = new Set(options.excludedStatuses || []);
+  const selectedTypes = Array.isArray(filters.courseTypes) ? filters.courseTypes.map(Number) : [];
+
+  return schedules.filter(schedule => {
+    const dateStr = String(schedule.start_time || '').split(' ')[0];
+    if (filters.dateRange && !isDateWithinRevenueRange(dateStr, filters.dateRange)) return false;
+    if (excludedStatuses.has(schedule.status)) return false;
+
+    const course = courseMap.get(schedule.course_id);
+    const courseType = Number(course?.type || schedule.course_type || 1);
+    const courseName = course?.display_name || schedule.course_name || course?.name || '';
+    if (selectedTypes.length > 0 && !selectedTypes.includes(courseType)) return false;
+    if (filters.year && Number(course?.year) !== Number(filters.year)) return false;
+    if (filters.semester && course?.semester !== filters.semester) return false;
+    if (filters.courseId && schedule.course_id !== filters.courseId) return false;
+    if (filters.courseName && courseName !== filters.courseName) return false;
+    return true;
+  });
+}
+
 function rowMatchesFilters(row, filters = {}, ignoreFacet) {
   if (ignoreFacet !== 'studentId' && filters.studentId && row.studentId !== filters.studentId) return false;
   if (ignoreFacet !== 'teacherId' && filters.teacherId && row.teacherId !== filters.teacherId) return false;
   if (ignoreFacet !== 'institutionId' && filters.institutionId && row.institutionId !== filters.institutionId) return false;
   if (ignoreFacet !== 'year' && filters.year && Number(row.courseYear) !== Number(filters.year)) return false;
   if (ignoreFacet !== 'semester' && filters.semester && row.semester !== filters.semester) return false;
+  if (ignoreFacet !== 'courseId' && filters.courseId && row.courseId !== filters.courseId) return false;
   if (ignoreFacet !== 'courseName' && filters.courseName && row.courseName !== filters.courseName) return false;
   if (
     ignoreFacet !== 'courseTypes' &&
@@ -102,7 +126,83 @@ function optionRowsFor(rows, filters, facet) {
   return rows.filter(row => rowMatchesFilters(row, filters, facet));
 }
 
-export function buildRevenueFacetOptions(rows = [], students = [], teachers = [], institutions = [], filters = {}) {
+function courseDisplayName(course = {}) {
+  return String(course.display_name || course.name || '').trim();
+}
+
+function courseStudentIds(course = {}) {
+  const ids = [
+    ...(Array.isArray(course.student_ids) ? course.student_ids : []),
+    ...(Array.isArray(course.student_pricings) ? course.student_pricings.map(item => item && item.student_id) : []),
+  ];
+  return new Set(ids.filter(Boolean).map(String));
+}
+
+function courseStudentNames(course = {}, studentNameById = new Map()) {
+  return Array.from(courseStudentIds(course))
+    .map(id => studentNameById.get(id) || id)
+    .filter(Boolean);
+}
+
+function courseMatchesFilters(course = {}, filters = {}) {
+  if (filters.studentId && !courseStudentIds(course).has(String(filters.studentId))) return false;
+  if (filters.teacherId && String(course.teacher_id || '') !== String(filters.teacherId)) return false;
+  if (filters.institutionId && String(course.institution_id || '') !== String(filters.institutionId)) return false;
+  if (filters.year && Number(course.year) !== Number(filters.year)) return false;
+  if (filters.semester && course.semester !== filters.semester) return false;
+  if (
+    Array.isArray(filters.courseTypes) &&
+    filters.courseTypes.length > 0 &&
+    !filters.courseTypes.map(Number).includes(Number(course.type))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function courseOptionLabel(course = {}, teacherNameById = new Map(), studentNameById = new Map()) {
+  const parts = [
+    courseDisplayName(course),
+    course.year,
+    course.semester,
+    teacherNameById.get(course.teacher_id) || course.teacher_name,
+    ...courseStudentNames(course, studentNameById),
+  ];
+  return parts.filter(item => item !== undefined && item !== null && String(item).trim() !== '').join(' · ');
+}
+
+function mergeCourseNameOptions(rowOptions, courses = [], filters = {}, teacherNameById = new Map(), studentNameById = new Map()) {
+  const map = new Map(courses.length ? [] : rowOptions.map(option => [option.value, option]));
+  courses
+    .filter(course => courseMatchesFilters(course, filters))
+    .forEach(course => {
+      const name = courseDisplayName(course);
+      if (!name) return;
+      const value = course.id || name;
+      if (map.has(value)) return;
+      map.set(value, { value, label: courseOptionLabel(course, teacherNameById, studentNameById) || name });
+    });
+  return Array.from(map.values()).sort((a, b) => String(a.label).localeCompare(String(b.label), 'zh-CN'));
+}
+
+export function buildCourseCatalogOptionSources(courses = []) {
+  const map = new Map();
+  courses.forEach(course => {
+    const name = courseDisplayName(course);
+    if (!name) return;
+    const key = course.id || name;
+    if (map.has(key)) return;
+    map.set(key, {
+      ...course,
+      id: key,
+      name,
+      display_name: name,
+    });
+  });
+  return Array.from(map.values()).sort((a, b) => courseOptionLabel(a).localeCompare(courseOptionLabel(b), 'zh-CN'));
+}
+
+export function buildRevenueFacetOptions(rows = [], students = [], teachers = [], institutions = [], filters = {}, courses = []) {
   const optionRows = Object.fromEntries(FACETS.map(facet => [facet, optionRowsFor(rows, filters, facet)]));
 
   const studentNameById = new Map(students.map(student => [student.id, student.name]));
@@ -140,10 +240,10 @@ export function buildRevenueFacetOptions(rows = [], students = [], teachers = []
       row => row.semester,
       row => row.semester
     ),
-    courseNames: uniqueOptions(
+    courseNames: mergeCourseNameOptions(uniqueOptions(
       optionRows.courseName,
       row => row.courseName,
       row => row.courseName
-    ),
+    ), courses, filters, teacherNameById, studentNameById),
   };
 }

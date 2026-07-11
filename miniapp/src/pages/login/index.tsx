@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [inviteCode, setInviteCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<'login' | 'invite'>('login');
+  const [needsPhoneAuth, setNeedsPhoneAuth] = useState(false);
 
   useDidShow(() => {
     const token = Taro.getStorageSync('auth_token');
@@ -20,7 +21,7 @@ export default function LoginPage() {
     }
   });
 
-  const handleWxLogin = async () => {
+  const requestWxLogin = async (phoneCode?: string) => {
     setLoading(true);
     try {
       const { code } = await Taro.login();
@@ -32,6 +33,7 @@ export default function LoginPage() {
 
       const res = await api.post<{ token: string; user?: any; userId?: string; nickname?: string; avatarUrl?: string; role?: string }>('/api/auth/wechat-login', {
         code,
+        ...(phoneCode ? { phoneCode } : {}),
       });
 
       if (res.success && res.data) {
@@ -52,6 +54,9 @@ export default function LoginPage() {
         setTimeout(() => {
           Taro.reLaunch({ url: '/pages/index/index' });
         }, 500);
+      } else if (res.code === 'MINIAPP_USER_NOT_PREAUTHORIZED' && !phoneCode) {
+        setNeedsPhoneAuth(true);
+        Taro.showToast({ title: '\u8bf7\u9a8c\u8bc1\u9884\u7559\u624b\u673a\u53f7', icon: 'none' });
       } else {
         Taro.showToast({ title: res.error || '登录失败', icon: 'error' });
       }
@@ -60,6 +65,17 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleWxLogin = () => requestWxLogin();
+
+  const handlePhoneLogin = async (event: any) => {
+    const phoneCode = event?.detail?.code;
+    if (!phoneCode) {
+      Taro.showToast({ title: '\u672a\u5b8c\u6210\u624b\u673a\u53f7\u9a8c\u8bc1', icon: 'none' });
+      return;
+    }
+    await requestWxLogin(phoneCode);
   };
 
   const handleInviteRegister = async () => {
@@ -106,6 +122,17 @@ export default function LoginPage() {
 
       {mode === 'login' ? (
         <View className="login-form">
+          {needsPhoneAuth ? (
+            <Button
+              className={`wx-login-btn ${loading ? 'loading' : ''}`}
+              openType="getPhoneNumber"
+              onGetPhoneNumber={handlePhoneLogin}
+              loading={loading}
+              disabled={loading}
+            >
+              {loading ? '\u9a8c\u8bc1\u4e2d...' : '\u9a8c\u8bc1\u9884\u7559\u624b\u673a\u53f7'}
+            </Button>
+          ) : (
           <Button
             className={`wx-login-btn ${loading ? 'loading' : ''}`}
             onClick={handleWxLogin}
@@ -114,6 +141,7 @@ export default function LoginPage() {
           >
             {loading ? '登录中...' : '微信一键登录'}
           </Button>
+          )}
 
           <View className="divider">
             <View className="divider-line" />

@@ -241,6 +241,9 @@ const academicFiltered = filterStudentDetailsForRevenue([
 });
 assert.deepStrictEqual(academicFiltered.map(row => row.key), ['spring-math']);
 
+const courseIdFiltered = filterStudentDetailsForRevenue(rows, students, { courseId: 'course-mixed' });
+assert.deepStrictEqual(courseIdFiltered.map(row => row.key), ['mixed-self', 'mixed-inst-a', 'mixed-inst-b']);
+
 console.log('revenueDetailFilters tests passed');
 })().catch(error => {
   console.error(error);

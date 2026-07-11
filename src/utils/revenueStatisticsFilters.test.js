@@ -6,8 +6,11 @@ const dayjs = require('dayjs');
     applyRevenueDateChange,
     clearRevenueDateRange,
     buildRevenueFacetOptions,
+    buildCourseCatalogOptionSources,
+    filterRevenueSchedules,
     isDateWithinRevenueRange,
   } = await import('./revenueStatisticsFilters.mjs');
+  assert.strictEqual(typeof filterRevenueSchedules, 'function', 'revenue schedule filtering should be reusable and testable');
 
   const initialRange = [dayjs('2026-06-01'), dayjs('2026-06-30')];
   const startChanged = applyRevenueDateChange(initialRange, 'start', dayjs('2026-06-12'));
@@ -138,6 +141,82 @@ const dayjs = require('dayjs');
   assert.deepStrictEqual(byCourseName.semesters.map(item => item.value), ['暑假']);
   assert.deepStrictEqual(byCourseName.students.map(item => item.value), ['student-a']);
   assert.deepStrictEqual(byCourseName.teachers.map(item => item.value), ['teacher-c']);
+
+  const courseCatalogSources = buildCourseCatalogOptionSources([
+    {
+      id: 'course-math-spring',
+      name: '\u6570\u5b66\u63d0\u9ad8',
+      year: 2026,
+      semester: '\u6625\u5b66\u671f',
+      teacher_id: 'teacher-a',
+      student_pricings: [{ student_id: 'student-a' }, { student_id: 'student-b' }],
+      active: true,
+    },
+    {
+      id: 'course-math-autumn',
+      name: '\u6570\u5b66\u63d0\u9ad8',
+      year: 2026,
+      semester: '\u79cb\u5b66\u671f',
+      teacher_id: 'teacher-b',
+      student_pricings: [{ student_id: 'student-c' }],
+      active: true,
+    },
+    { id: 'course-closed', name: '\u5386\u53f2\u7ed3\u8bfe\u73ed', active: false },
+    { id: 'course-no-schedule', display_name: '\u65b0\u5f00\u65e0\u6392\u8bfe', name: '\u65b0\u5f00\u65e0\u6392\u8bfe', active: true },
+  ]);
+  assert.deepStrictEqual(
+    courseCatalogSources.map(item => item.id).sort(),
+    [
+      'course-closed',
+      'course-math-autumn',
+      'course-math-spring',
+      'course-no-schedule',
+    ],
+    'course name source should come from the course catalog'
+  );
+
+  const optionsWithCatalogCourses = buildRevenueFacetOptions(rows, students, teachers, institutions, {}, courseCatalogSources);
+  assert.deepStrictEqual(
+    optionsWithCatalogCourses.courseNames.map(item => item.value).sort(),
+    [
+      'course-closed',
+      'course-math-autumn',
+      'course-math-spring',
+      'course-no-schedule',
+    ],
+    'course name filter should use stable course ids from the course catalog'
+  );
+  const springMath = optionsWithCatalogCourses.courseNames.find(item => item.value === 'course-math-spring');
+  assert.ok(springMath.label.includes('\u6625\u5b66\u671f'));
+  assert.ok(springMath.label.includes('\u5f20\u8001\u5e08'));
+  assert.ok(springMath.label.includes('\u5b66\u751f\u7532'));
+  assert.ok(springMath.label.includes('\u5b66\u751f\u4e59'));
+
+  const byCourseId = buildRevenueFacetOptions(rows, students, teachers, institutions, {
+    courseId: 'course-math-spring',
+  }, courseCatalogSources);
+  assert.deepStrictEqual(
+    byCourseId.students.map(item => item.value),
+    ['student-a', 'student-b'],
+    'course id filters should limit dependent facets to matching scheduled revenue rows'
+  );
+
+  const sameNameSchedules = [
+    { id: 'spring-in-range', course_id: 'course-math-spring', start_time: '2026-06-10 08:00', status: 1 },
+    { id: 'autumn-in-range', course_id: 'course-math-autumn', start_time: '2026-06-11 08:00', status: 1 },
+    { id: 'spring-outside-range', course_id: 'course-math-spring', start_time: '2026-07-02 08:00', status: 1 },
+    { id: 'spring-cancelled', course_id: 'course-math-spring', start_time: '2026-06-12 08:00', status: 3 },
+  ];
+  const selectedCourseSchedules = filterRevenueSchedules(sameNameSchedules, courseCatalogSources, {
+    dateRange: [dayjs('2026-06-01'), dayjs('2026-06-30')],
+    courseTypes: [],
+    courseId: 'course-math-spring',
+  }, { excludedStatuses: [3, 4] });
+  assert.deepStrictEqual(
+    selectedCourseSchedules.map(item => item.id),
+    ['spring-in-range'],
+    'date-scoped revenue filtering should not mix schedules from same-name course ids'
+  );
 
   console.log('revenueStatisticsFilters tests passed');
 })().catch(error => {
