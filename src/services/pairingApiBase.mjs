@@ -1,0 +1,1 @@
+export function resolvePairingApiBase(config={},location=globalThis.location){const raw=config.hostBaseUrl||config.cloudBaseUrl||((location?.protocol==='http:'||location?.protocol==='https:')?location.origin:'');if(!raw){const e=new Error('PAIRING_API_BASE_REQUIRED');e.code='PAIRING_API_BASE_REQUIRED';throw e;}return String(raw).replace(/\/+$/,'').replace(/\/api$/,'');}
