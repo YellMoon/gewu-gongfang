@@ -9,9 +9,9 @@ import './PermissionManager.css';
 
 type PresentedUser = AuthorizationUser & { roleLabel: string; statusLabel: string; teacherBindingLabel: string; bindingState: string; canReview: boolean; disabled: boolean };
 const roleOptions = [
-  { value: 'admin', label: '\u666e\u901a\u7ba1\u7406\u5458' },
-  { value: 'teacher', label: '\u8001\u5e08' },
-  { value: 'student', label: '\u5b66\u751f' },
+  { value: 'admin', label: '普通管理员' },
+  { value: 'teacher', label: '老师' },
+  { value: 'student', label: '学生' },
 ];
 
 const PermissionManager: React.FC = () => {
@@ -60,17 +60,17 @@ const PermissionManager: React.FC = () => {
     if (!selected || !canReview || !selected.canReview) return;
     const roleLabel = roleOptions.find(option => option.value === selectedRole)?.label;
     Modal.confirm({
-      title: '\u786e\u8ba4\u7528\u6237\u89d2\u8272',
+      title: '确认用户角色',
       content: selectedRole === 'teacher'
-        ? `\u5c06 ${selected.name || selected.nickname || selected.phone || selected.id} \u8bbe\u4e3a${roleLabel}\u3002\u7cfb\u7edf\u4f1a\u6839\u636e\u624b\u673a\u53f7\u6821\u9a8c\u5e76\u7ed1\u5b9a\u552f\u4e00 teacher_id\u3002`
-        : `\u5c06 ${selected.name || selected.nickname || selected.phone || selected.id} \u8bbe\u4e3a${roleLabel}\uff1f`,
-      okText: '\u786e\u8ba4\u5ba1\u6838', cancelText: '\u53d6\u6d88',
+        ? `将 ${selected.name || selected.nickname || selected.phone || selected.id} 设为${roleLabel}。系统会根据手机号校验并绑定唯一 teacher_id。`
+        : `将 ${selected.name || selected.nickname || selected.phone || selected.id} 设为${roleLabel}？`,
+      okText: '确认审核', cancelText: '取消',
       async onOk() {
         setSaving(true); setErrorCode('');
         try {
           await reviewUser(selected.id, selectedRole);
           setBindingErrors(previous => { const next = { ...previous }; delete next[selected.id]; return next; });
-          message.success('\u7528\u6237\u89d2\u8272\u5df2\u66f4\u65b0'); await load();
+          message.success('用户角色已更新'); await load();
         } catch (error: any) {
           const code = error?.code || 'NETWORK_ERROR'; setErrorCode(code);
           if (['TEACHER_NOT_FOUND', 'TEACHER_PHONE_NOT_UNIQUE', 'DUPLICATE_TEACHER_PHONE'].includes(code)) setBindingErrors(previous => ({ ...previous, [selected.id]: code }));
@@ -82,12 +82,12 @@ const PermissionManager: React.FC = () => {
   const confirmDisable = () => {
     if (!selected || !canReview || !selected.canReview) return;
     Modal.confirm({
-      title: '\u786e\u8ba4\u505c\u7528\u7528\u6237',
-      content: `\u505c\u7528 ${selected.name || selected.nickname || selected.phone || selected.id} \u540e\uff0c\u8be5\u7528\u6237\u5c06\u65e0\u6cd5\u767b\u5f55\u684c\u9762\u7aef\u6216\u5c0f\u7a0b\u5e8f\u3002`,
-      okText: '\u786e\u8ba4\u505c\u7528', okButtonProps: { danger: true }, cancelText: '\u53d6\u6d88',
+      title: '确认停用用户',
+      content: `停用 ${selected.name || selected.nickname || selected.phone || selected.id} 后，该用户将无法登录桌面端或小程序。`,
+      okText: '确认停用', okButtonProps: { danger: true }, cancelText: '取消',
       async onOk() {
         setSaving(true); setErrorCode('');
-        try { await disableUser(selected.id); message.success('\u7528\u6237\u5df2\u505c\u7528'); await load(); }
+        try { await disableUser(selected.id); message.success('用户已停用'); await load(); }
         catch (error: any) { setErrorCode(error?.code || 'NETWORK_ERROR'); throw error; }
         finally { setSaving(false); }
       },
@@ -95,42 +95,42 @@ const PermissionManager: React.FC = () => {
   };
 
   const columns: ColumnsType<PresentedUser> = [
-    { title: '\u7528\u6237', key: 'identity', render: (_, row) => <div><strong>{row.name || row.nickname || '\u672a\u586b\u59d3\u540d'}</strong><div className="authorization-muted">{row.phone || '\u672a\u7ed1\u5b9a\u624b\u673a\u53f7'}</div></div> },
-    { title: '\u89d2\u8272', dataIndex: 'roleLabel', key: 'role' },
-    { title: '\u72b6\u6001', key: 'status', render: (_, row) => <Tag color={row.disabled ? 'default' : row.review_status === 'pending' ? 'gold' : 'green'}>{row.statusLabel}</Tag> },
-    { title: '\u6559\u5e08\u7ed1\u5b9a', key: 'binding', responsive: ['md'], render: (_, row) => <span className={`authorization-binding ${row.bindingState}`}>{row.teacherBindingLabel}</span> },
-    { title: '\u64cd\u4f5c', key: 'action', render: (_, row) => <Button disabled={saving} onClick={() => setSelectedId(row.id)}>{canReview ? '\u5ba1\u6838 / \u67e5\u770b' : '\u67e5\u770b'}</Button> },
+    { title: '用户', key: 'identity', render: (_, row) => <div><strong>{row.name || row.nickname || '未填姓名'}</strong><div className="authorization-muted">{row.phone || '未绑定手机号'}</div></div> },
+    { title: '角色', dataIndex: 'roleLabel', key: 'role' },
+    { title: '状态', key: 'status', render: (_, row) => <Tag color={row.disabled ? 'default' : row.review_status === 'pending' ? 'gold' : 'green'}>{row.statusLabel}</Tag> },
+    { title: '教师绑定', key: 'binding', responsive: ['md'], render: (_, row) => <span className={`authorization-binding ${row.bindingState}`}>{row.teacherBindingLabel}</span> },
+    { title: '操作', key: 'action', render: (_, row) => <Button disabled={saving} onClick={() => setSelectedId(row.id)}>{canReview ? '审核 / 查看' : '查看'}</Button> },
   ];
   const pendingCount = rows.filter(row => row.review_status === 'pending').length;
   const teacherCount = rows.filter(row => row.role === 'teacher').length;
   const disabledCount = rows.filter(row => row.disabled).length;
 
   return <main className="authorization-workbench">
-    <div className="authorization-heading"><div><Typography.Title level={2}>\u7528\u6237\u4e0e\u6743\u9650</Typography.Title><Typography.Paragraph type="secondary">\u7528\u6237\u7c7b\u578b\u3001\u6570\u636e\u8303\u56f4\u4e0e\u6559\u5e08\u8eab\u4efd\u7531\u7edf\u4e00\u6388\u6743\u89c4\u5219\u7ba1\u7406\u3002</Typography.Paragraph></div></div>
-    {!canReview && !loading && !errorCode && <Alert showIcon type="info" message="\u5f53\u524d\u4e3a\u53ea\u8bfb\u89c6\u56fe" description="\u666e\u901a\u7ba1\u7406\u5458\u53ef\u67e5\u770b\u7528\u6237\u5206\u7c7b\uff0c\u4ec5\u8d85\u7ea7\u7ba1\u7406\u5458\u53ef\u4ee5\u5ba1\u6838\u6216\u53d8\u66f4\u89d2\u8272\u3002" />}
-    {errorCode && <Alert className="authorization-alert" showIcon type="error" message={authorizationErrorText(errorCode)} action={<Button onClick={load}>\u91cd\u8bd5</Button>} />}
+    <div className="authorization-heading"><div><Typography.Title level={2}>用户与权限</Typography.Title><Typography.Paragraph type="secondary">用户类型、数据范围与教师身份由统一授权规则管理。</Typography.Paragraph></div></div>
+    {!canReview && !loading && !errorCode && <Alert showIcon type="info" message="当前为只读视图" description="普通管理员可查看用户分类，仅超级管理员可以审核或变更角色。" />}
+    {errorCode && <Alert className="authorization-alert" showIcon type="error" message={authorizationErrorText(errorCode)} action={<Button onClick={load}>重试</Button>} />}
     <Row gutter={[12, 12]} className="authorization-summary">
-      <Col xs={12} md={6}><Card><Statistic title="\u5f53\u524d\u7ed3\u679c" value={rows.length} /></Card></Col>
-      <Col xs={12} md={6}><Card><Statistic title="\u5f85\u5ba1\u6838" value={pendingCount} /></Card></Col>
-      <Col xs={12} md={6}><Card><Statistic title="\u8001\u5e08" value={teacherCount} /></Card></Col>
-      <Col xs={12} md={6}><Card><Statistic title="\u5df2\u505c\u7528" value={disabledCount} /></Card></Col>
+      <Col xs={12} md={6}><Card><Statistic title="当前结果" value={rows.length} /></Card></Col>
+      <Col xs={12} md={6}><Card><Statistic title="待审核" value={pendingCount} /></Card></Col>
+      <Col xs={12} md={6}><Card><Statistic title="老师" value={teacherCount} /></Card></Col>
+      <Col xs={12} md={6}><Card><Statistic title="已停用" value={disabledCount} /></Card></Col>
     </Row>
     <Card className="authorization-list-card">
       <div className="authorization-filters">
-        <Input.Search aria-label="\u641c\u7d22\u7528\u6237" placeholder="\u59d3\u540d\u6216\u624b\u673a\u53f7" value={searchDraft} onChange={event => setSearchDraft(event.target.value)} onSearch={setSearch} enterButton="\u641c\u7d22" allowClear />
-        <Select aria-label="\u7b5b\u9009\u89d2\u8272" value={role} onChange={setRole} options={[{ value: '', label: '\u5168\u90e8\u89d2\u8272' }, { value: 'super_admin', label: '\u8d85\u7ea7\u7ba1\u7406\u5458' }, ...roleOptions, { value: 'pending', label: '\u5f85\u5206\u7c7b' }]} />
-        <Select aria-label="\u7b5b\u9009\u72b6\u6001" value={status} onChange={setStatus} options={[{ value: '', label: '\u5168\u90e8\u72b6\u6001' }, { value: 'pending', label: '\u5f85\u5ba1\u6838' }, { value: 'approved', label: '\u5df2\u901a\u8fc7' }, { value: 'rejected', label: '\u5df2\u62d2\u7edd' }]} />
+        <Input.Search aria-label="搜索用户" placeholder="姓名或手机号" value={searchDraft} onChange={event => setSearchDraft(event.target.value)} onSearch={setSearch} enterButton="搜索" allowClear />
+        <Select aria-label="筛选角色" value={role} onChange={setRole} options={[{ value: '', label: '全部角色' }, { value: 'super_admin', label: '超级管理员' }, ...roleOptions, { value: 'pending', label: '待分类' }]} />
+        <Select aria-label="筛选状态" value={status} onChange={setStatus} options={[{ value: '', label: '全部状态' }, { value: 'pending', label: '待审核' }, { value: 'approved', label: '已通过' }, { value: 'rejected', label: '已拒绝' }]} />
       </div>
       <Table<PresentedUser> rowKey="id" loading={loading || saving} dataSource={errorCode ? [] : rows} columns={columns} pagination={false} locale={{ emptyText: <Empty description={authorizationEmptyText({ search, role, status })} /> }} onRow={row => ({ onClick: () => setSelectedId(row.id) })} />
     </Card>
-    {selected && <Card className="authorization-detail" title="\u7528\u6237\u8be6\u60c5">
-      <Descriptions column={{ xs: 1, md: 2 }}><Descriptions.Item label="\u7528\u6237">{selected.name || selected.nickname || selected.id}</Descriptions.Item><Descriptions.Item label="\u624b\u673a\u53f7">{selected.phone || '-'}</Descriptions.Item><Descriptions.Item label="\u5f53\u524d\u89d2\u8272">{selected.roleLabel}</Descriptions.Item><Descriptions.Item label="\u5ba1\u6838\u72b6\u6001">{selected.statusLabel}</Descriptions.Item><Descriptions.Item label="teacher_id">{selected.teacherBindingLabel}</Descriptions.Item></Descriptions>
-      {['teacher-not-found', 'duplicate-teacher-phone'].includes(selected.bindingState) && <Alert className="authorization-alert" type="warning" showIcon message={selected.teacherBindingLabel} description="\u8bf7\u5148\u786e\u8ba4\u7528\u6237\u624b\u673a\u53f7\u4e0e\u6559\u5e08\u6863\u6848\u4e00\u81f4\uff0c\u4e14\u53ea\u5bf9\u5e94\u4e00\u6761\u6559\u5e08\u8bb0\u5f55\u3002" />}
+    {selected && <Card className="authorization-detail" title="用户详情">
+      <Descriptions column={{ xs: 1, md: 2 }}><Descriptions.Item label="用户">{selected.name || selected.nickname || selected.id}</Descriptions.Item><Descriptions.Item label="手机号">{selected.phone || '-'}</Descriptions.Item><Descriptions.Item label="当前角色">{selected.roleLabel}</Descriptions.Item><Descriptions.Item label="审核状态">{selected.statusLabel}</Descriptions.Item><Descriptions.Item label="teacher_id">{selected.teacherBindingLabel}</Descriptions.Item></Descriptions>
+      {['teacher-not-found', 'duplicate-teacher-phone'].includes(selected.bindingState) && <Alert className="authorization-alert" type="warning" showIcon message={selected.teacherBindingLabel} description="请先确认用户手机号与教师档案一致，且只对应一条教师记录。" />}
       {canReview && <Space className="authorization-review-actions" wrap>
-        <Select aria-label="\u9009\u62e9\u7528\u6237\u89d2\u8272" value={selectedRole} options={roleOptions} onChange={setSelectedRole} disabled={saving || !selected.canReview} />
-        <Button type="primary" onClick={confirmReview} loading={saving} disabled={saving || !selected.canReview}>\u5ba1\u6838\u5e76\u4fdd\u5b58</Button>
-        <Button className="authorization-disable-action" danger onClick={confirmDisable} disabled={saving || !selected.canReview}>\u505c\u7528\u7528\u6237</Button>
-        {selected.disabled && <Tag>\u5df2\u505c\u7528\u7528\u6237\u4e0d\u53ef\u53d8\u66f4</Tag>}
+        <Select aria-label="选择用户角色" value={selectedRole} options={roleOptions} onChange={setSelectedRole} disabled={saving || !selected.canReview} />
+        <Button type="primary" onClick={confirmReview} loading={saving} disabled={saving || !selected.canReview}>审核并保存</Button>
+        <Button className="authorization-disable-action" danger onClick={confirmDisable} disabled={saving || !selected.canReview}>停用用户</Button>
+        {selected.disabled && <Tag>已停用用户不可变更</Tag>}
       </Space>}
     </Card>}
     {canReview && <PairingReviewPanel />}
