@@ -238,6 +238,7 @@ Simplify the desktop data-sync page by adapting its default content to the confi
 - Follow project policy for `gewu/master`, Windows packaging, OSS desktop update publication, and post-package native dependency restoration.
 # 2026-07-11 老师业务数据域隔离证据
 
-- `node backend/src/services/dataScopeService.test.js`：老师课程依赖链、支付安全默认、个人资产、公共题库、个人作答、读写断言通过。
+- `node backend/src/services/dataScopeService.test.js`：老师课程依赖链、支付安全默认、个人资产、公共题库、读写断言通过。当前真实 host snapshot 构造未包含用户作答表，因此不将合成作答字段作为完成证据。
 - `node gateway/src/routes/cloudRelay.test.js`：真实 cloud relay 过滤函数 teacher snapshot 通过。
 - 统计输入证据：裁剪后的 schedules/assetRecords 汇总仅包含 t1（课时费 100、学费 500、资产 10）。桌面 UI 会话接入不在本任务范围，未声称桌面 UI 已完成隔离。
+- 审查修复：gateway/backend snapshot read 强制持久化 approved active 用户；unknown/pending fail closed。学生与老师均使用明确字段 allowlist，未知数组和预聚合 stats 不透传；`scopedFinancials` 从裁剪后的 schedules/payments/assets 重算。

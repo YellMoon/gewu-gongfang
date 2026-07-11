@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { getDb } = require('../db/database');
 const { scopeBusinessSnapshot } = require('../../../backend/src/services/dataScopeService');
+const { isApprovedActive, roleForUser } = require('../services/authorizationPolicy');
 
 const router = express.Router();
 
@@ -99,74 +100,19 @@ function redactTeacherForStudent(teacher = {}) {
 
 function filterSnapshotForUser(snapshot, user) {
   if (!snapshot) return snapshot;
-  if ((user?.user_type || user?.role) === 'teacher') {
+  const role = roleForUser(user || {});
+  if (role === 'teacher') {
     return { ...snapshot, payload: scopeBusinessSnapshot(snapshot.payload || {}, {
       kind: 'teacher', teacherId: user.teacher_id || user.teacherId, userId: user.id || user.user_id || user.userId,
     }) };
   }
-  if (!isStudentUser(user)) return snapshot;
-
-  const linkedStudentIds = getLinkedStudentIds(user);
-  if (linkedStudentIds.length === 0) {
-    return {
-      ...snapshot,
-      payload: {
-        redactedForRole: 'student',
-        linkedStudentIds: [],
-        students: [],
-        courses: [],
-        schedules: [],
-        teachers: [],
-        payments: [],
-        consumptions: [],
-        assetRecords: [],
-        assetCategories: [],
-      },
-    };
+  if (['super_admin', 'admin'].includes(role)) return snapshot;
+  if (role === 'student') {
+    return { ...snapshot, payload: scopeBusinessSnapshot(snapshot.payload || {}, {
+      kind: 'student', studentIds: getLinkedStudentIds(user), userId: user.id,
+    }) };
   }
-
-  const payload = snapshot.payload || {};
-  const courseById = new Map((payload.courses || []).map(course => [course.id, course]));
-  const courses = (payload.courses || []).filter(course =>
-    hasAnyStudentLink(courseStudentIds(course), linkedStudentIds)
-  );
-  const allowedCourseIds = new Set(courses.map(course => course.id));
-  const schedules = (payload.schedules || []).filter(schedule =>
-    allowedCourseIds.has(schedule.course_id)
-    || hasAnyStudentLink(scheduleStudentIds(schedule, courseById), linkedStudentIds)
-  );
-  const students = (payload.students || []).filter(student => linkedStudentIds.includes(student.id));
-  const teachers = (payload.teachers || []).filter(teacher =>
-    courses.some(course => course.teacher_id === teacher.id || course.teacherId === teacher.id)
-  );
-  const {
-    payments: _payments,
-    consumptions: _consumptions,
-    assetRecords: _assetRecords,
-    assetCategories: _assetCategories,
-    stats: _stats,
-    revenueStats: _revenueStats,
-    financeStats: _financeStats,
-    studentTuitionStats: _studentTuitionStats,
-    ...rest
-  } = payload;
-
-  return {
-    ...snapshot,
-    payload: {
-      ...rest,
-      redactedForRole: 'student',
-      linkedStudentIds,
-      students: students.map(redactStudentForStudent),
-      courses: courses.map(redactCourseForStudent),
-      schedules: schedules.map(redactScheduleForStudent),
-      teachers: teachers.map(redactTeacherForStudent),
-      payments: [],
-      consumptions: [],
-      assetRecords: [],
-      assetCategories: [],
-    },
-  };
+  return { ...snapshot, payload: scopeBusinessSnapshot(snapshot.payload || {}, { kind: 'student', studentIds: [] }) };
 }
 
 router.post('/host/heartbeat', (req, res) => {
@@ -204,7 +150,15 @@ router.post('/snapshots/publish', (req, res) => {
   res.json({ success: true, id: snapshotId, createdAt: time });
 });
 
-router.get('/snapshots/read', (req, res) => {
+function requireApprovedSnapshotUser(req, res, next) {
+  if (!req.user) return res.status(401).json({ success: false, code: 'UNAUTHORIZED', error: 'Authentication required' });
+  if (!isApprovedActive(req.user) || roleForUser(req.user) === 'pending') {
+    return res.status(403).json({ success: false, code: 'USER_NOT_APPROVED', error: 'Approved active user required' });
+  }
+  return next();
+}
+
+router.get('/snapshots/read', requireApprovedSnapshotUser, (req, res) => {
   const db = getDb();
   const snapshotType = req.query.snapshotType || 'full';
   const row = db.prepare(
@@ -287,3 +241,4 @@ router.get('/tasks/:id/result', (req, res) => {
 
 module.exports = router;
 module.exports.filterSnapshotForUser = filterSnapshotForUser;
+module.exports.requireApprovedSnapshotUser = requireApprovedSnapshotUser;

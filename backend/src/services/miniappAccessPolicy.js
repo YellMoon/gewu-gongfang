@@ -119,15 +119,22 @@ function redactTeacherForStudent(teacher = {}) {
 
 function filterSnapshotForUser(snapshot, user) {
   if (!snapshot) return snapshot;
+  const hasPersistedState = user && (user.review_status !== undefined || user.status !== undefined || user.login_enabled !== undefined);
+  if (hasPersistedState && !(user.review_status === 'approved' && (user.status === 1 || user.status === true) && (user.login_enabled === 1 || user.login_enabled === true))) {
+    return { ...snapshot, payload: {} };
+  }
   if (roleOf(user) === 'teacher') {
     return { ...snapshot, payload: scopeBusinessSnapshot(snapshot.payload || {}, {
       kind: 'teacher', teacherId: user.teacher_id || user.teacherId, userId: user.id || user.user_id || user.userId,
     }) };
   }
-  if (!isStudentUser(user)) return snapshot;
+  if (isAdminUser(user)) return snapshot;
+  if (!isStudentUser(user)) return { ...snapshot, payload: {} };
 
   const linkedStudentIds = getLinkedStudentIds(user);
-  const payload = snapshot.payload || {};
+  const payload = scopeBusinessSnapshot(snapshot.payload || {}, {
+    kind: 'student', studentIds: linkedStudentIds, userId: user.id || user.user_id || user.userId,
+  });
   const courseById = new Map((payload.courses || []).map(course => [course.id, course]));
 
   if (linkedStudentIds.length === 0) {
@@ -144,12 +151,7 @@ function filterSnapshotForUser(snapshot, user) {
         consumptions: [],
         assetRecords: [],
         assetCategories: [],
-        subjects: payload.subjects || [],
-        chapters: payload.chapters || [],
-        knowledge_points: payload.knowledge_points || [],
-        questions: payload.questions || [],
-        question_contents: payload.question_contents || [],
-        question_assets: payload.question_assets || [],
+        ...payload,
       },
     };
   }

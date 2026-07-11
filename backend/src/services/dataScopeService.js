@@ -24,7 +24,45 @@ function scopeStudent(snapshot, context) {
   const courses = copyRows(snapshot.courses).filter(row => studentLinks(row).some(x => allowedStudents.has(x)));
   const courseIds = ids(courses);
   const schedules = copyRows(snapshot.schedules).filter(row => inSet(courseIds, value(row, 'course_id', 'courseId')) || studentLinks(row).some(x => allowedStudents.has(x)));
-  return { ...snapshot, courses, schedules, students: copyRows(snapshot.students).filter(row => inSet(allowedStudents, id(row))), payments: [], consumptions: [], assetRecords: [], assetCategories: [] };
+  const scheduleIds = ids(schedules);
+  const userId = context.userId;
+  const teacherIds = new Set(courses.map(row => value(row, 'teacher_id', 'teacherId')).filter(Boolean).map(String));
+  const roomIds = new Set([...courses, ...schedules].map(row => value(row, 'room_id', 'roomId')).filter(Boolean).map(String));
+  const institutionIds = new Set(courses.map(row => value(row, 'institution_id', 'institutionId')).filter(Boolean).map(String));
+  const scopedStudents = copyRows(snapshot.students).filter(row => inSet(allowedStudents, id(row)));
+  const schoolIds = new Set(scopedStudents.map(row => value(row, 'school_id', 'schoolId')).filter(Boolean).map(String));
+  return withSafePublic(snapshot, {
+    courses, schedules,
+    students: scopedStudents,
+    teachers: copyRows(snapshot.teachers).filter(row => inSet(teacherIds, id(row))),
+    rooms: copyRows(snapshot.rooms).filter(row => inSet(roomIds, id(row))),
+    institutions: copyRows(snapshot.institutions).filter(row => inSet(institutionIds, id(row))),
+    schools: copyRows(snapshot.schools).filter(row => inSet(schoolIds, id(row))),
+    enrollments: copyRows(snapshot.enrollments).filter(row => inSet(courseIds, value(row, 'course_id', 'courseId')) && inSet(allowedStudents, value(row, 'student_id', 'studentId'))),
+    consumptions: copyRows(snapshot.consumptions).filter(row => inSet(scheduleIds, value(row, 'schedule_id', 'scheduleId')) && inSet(allowedStudents, value(row, 'student_id', 'studentId'))),
+    payments: copyRows(snapshot.payments).filter(row => (inSet(courseIds, value(row, 'course_id', 'courseId')) || inSet(scheduleIds, value(row, 'schedule_id', 'scheduleId'))) && inSet(allowedStudents, value(row, 'student_id', 'studentId'))),
+    assetRecords: copyRows(snapshot.assetRecords || snapshot.asset_records).filter(row => userId && String(value(row, 'owner_user_id', 'ownerUserId')) === String(userId)),
+    assetCategories: copyRows(snapshot.assetCategories || snapshot.asset_categories),
+  });
+}
+
+const PUBLIC_TABLES = new Set(['subjects', 'chapters', 'knowledge_points', 'knowledgePoints', 'questions', 'question_contents', 'questionContents', 'question_assets', 'questionAssets', 'question_bank_assets', 'questionBankAssets']);
+const SAFE_METADATA = new Set(['version', 'created_at', 'createdAt', 'updated_at', 'updatedAt', 'snapshotType', 'schemaVersion']);
+function withSafePublic(snapshot, business) {
+  const result = {};
+  for (const key of SAFE_METADATA) if (snapshot[key] !== undefined && !Array.isArray(snapshot[key])) result[key] = snapshot[key];
+  for (const key of PUBLIC_TABLES) if (Array.isArray(snapshot[key])) result[key] = copyRows(snapshot[key]);
+  return Object.assign(result, business);
+}
+
+function buildScopedFinancialSnapshot(scoped = {}) {
+  const sum = (rows, keys) => copyRows(rows).reduce((total, row) => total + Number(value(row, ...keys) || 0), 0);
+  return {
+    tuition: sum(scoped.schedules, ['calculated_tuition', 'calculatedTuition']),
+    teacherFees: sum(scoped.schedules, ['calculated_teacher_fee', 'calculatedTeacherFee']),
+    payments: sum(scoped.payments, ['amount', 'payment_amount', 'paymentAmount']),
+    assets: sum(scoped.assetRecords, ['amount', 'value']),
+  };
 }
 
 function scopeTeacher(snapshot, context) {
@@ -40,13 +78,7 @@ function scopeTeacher(snapshot, context) {
   const institutionIds = new Set(courses.map(row => value(row, 'institution_id', 'institutionId')).filter(Boolean).map(String));
   const roomIds = new Set([...courses, ...schedules].map(row => value(row, 'room_id', 'roomId')).filter(Boolean).map(String));
   const schoolIds = new Set(students.map(row => value(row, 'school_id', 'schoolId')).filter(Boolean).map(String));
-  const publicQuestionTables = new Set(['subjects', 'chapters', 'knowledge_points', 'knowledgePoints', 'questions', 'question_contents', 'questionContents', 'question_assets', 'questionAssets', 'question_bank_assets', 'questionBankAssets']);
-  const result = {};
-  for (const [key, input] of Object.entries(snapshot || {})) {
-    if (!Array.isArray(input)) { result[key] = input; continue; }
-    if (publicQuestionTables.has(key)) result[key] = copyRows(input);
-  }
-  Object.assign(result, {
+  const result = withSafePublic(snapshot, {
     courses, schedules, students, enrollments: enrollmentRows,
     consumptions: copyRows(snapshot.consumptions).filter(row => inSet(scheduleIds, value(row, 'schedule_id', 'scheduleId')) || inSet(courseIds, value(row, 'course_id', 'courseId'))),
     payments: copyRows(snapshot.payments).filter(row => inSet(courseIds, value(row, 'course_id', 'courseId')) || inSet(scheduleIds, value(row, 'schedule_id', 'scheduleId'))),
@@ -57,9 +89,7 @@ function scopeTeacher(snapshot, context) {
     assetRecords: copyRows(snapshot.assetRecords || snapshot.asset_records).filter(row => String(value(row, 'owner_user_id', 'ownerUserId') || '') === String(context.userId || '')),
     assetCategories: copyRows(snapshot.assetCategories || snapshot.asset_categories),
   });
-  for (const key of ['question_answer_records', 'questionAnswerRecords', 'question_attempts', 'questionAttempts']) {
-    if (Array.isArray(snapshot[key])) result[key] = copyRows(snapshot[key]).filter(row => String(value(row, 'user_id', 'userId') || '') === String(context.userId || ''));
-  }
+  result.scopedFinancials = buildScopedFinancialSnapshot(result);
   return result;
 }
 
@@ -79,14 +109,26 @@ function assertRecordReadable(table, record, context, lookup = {}) {
     throw scopeError('TEACHER_SCOPE_VIOLATION', 'course belongs to another teacher');
   }
   if (['schedules', 'enrollments', 'consumptions', 'payments'].includes(table)) {
-    const courseId = value(record, 'course_id', 'courseId');
+    let courseId = value(record, 'course_id', 'courseId');
+    const scheduleId = value(record, 'schedule_id', 'scheduleId');
+    if (!courseId && scheduleId) {
+      const schedule = (lookup.schedules || []).find(row => String(id(row)) === String(scheduleId));
+      if (!schedule) throw scopeError('DATA_SCOPE_UNRESOLVED', `schedule ownership unresolved for ${table}`);
+      courseId = value(schedule, 'course_id', 'courseId');
+    }
     const course = (lookup.courses || []).find(row => String(id(row)) === String(courseId));
     if (!course) throw scopeError('DATA_SCOPE_UNRESOLVED', `course ownership unresolved for ${table}`);
     return assertRecordReadable('courses', course, context, lookup);
+  }
+  if (['assetRecords', 'asset_records'].includes(table)) {
+    const owner = value(record, 'owner_user_id', 'ownerUserId');
+    if (!owner) throw scopeError('DATA_SCOPE_UNRESOLVED', 'asset owner unresolved');
+    if (String(owner) === String(context.userId)) return true;
+    throw scopeError('TEACHER_SCOPE_VIOLATION', 'asset belongs to another user');
   }
   if (['questions', 'subjects', 'chapters', 'knowledge_points', 'question_assets'].includes(table)) return true;
   throw scopeError('DATA_SCOPE_UNRESOLVED', `scope unresolved for ${table}`);
 }
 function assertRecordWritable(table, record, context, lookup = {}) { return assertRecordReadable(table, record, context, lookup); }
 
-module.exports = { scopeBusinessSnapshot, assertRecordReadable, assertRecordWritable };
+module.exports = { scopeBusinessSnapshot, buildScopedFinancialSnapshot, assertRecordReadable, assertRecordWritable };
