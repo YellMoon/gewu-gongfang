@@ -54,3 +54,12 @@
 
 - 修改前生产数据库备份：`/root/scheduling-data/prod/scheduling-pre-unified-auth-20260711-204817.db`（692224 bytes）。
 - 数据库变更均为加法迁移；代码可通过版本提交回滚，旧授权表不会在新运行时参与决策。
+
+## 桌面发布
+
+- 自动版本分类为 minor：`5.12.1` → `5.13.0`（新增角色、审核 API、老师数据域与同步能力）。
+- 首次 packaged smoke 暴露题库来源适配器 CommonJS/ESM 混用导致的 Electron 空白页；根因修复为原生 ESM 后重新构建。
+- `npm run test:packaged-smoke` 通过，打包页面标题为“格物工坊”且根节点非空。
+- `npm run rebuild:node` 与 `require('better-sqlite3')` 通过，Node ABI 已恢复。
+- 最终安装包：`dist/格物工坊 Setup 5.13.0.exe`，107225910 bytes。
+- OSS 主 feed 与 `desktop/releases/5.13.0/` 归档上传成功；最终 SHA-512 为 `8U8+tgLsP/R+cthp0773PtOEtzajwMGWQEjOMt1nDItoadk2FBmYzKklFyqFVBjXwJsnuIeWzc9395lmVMPyLg==`。

@@ -12,7 +12,7 @@ assert.ok(source.includes("const { storage_state: _ignoredStorageState, sourceDe
   'question creation must discard caller supplied provenance');
 assert.ok(source.includes("const { storage_state: _ignoredStorageState, sourceDeviceId: _ignoredSourceDeviceId, ownerUserId: _ignoredOwnerUserId, ...safeUpdates } = updates"),
   'question updates must not overwrite trusted provenance');
-assert.ok(source.includes("require('./questionProvenance')"), 'browser database must use the tested trusted provenance adapter');
+assert.ok(source.includes("from './questionProvenance.mjs'"), 'browser database must use the tested trusted provenance adapter');
 assert.ok(source.includes('nativeVerified !== true') && !source.includes('questionDraftProvenance?.register'),
   'local draft authorization must fail closed and must not register renderer-selected ids');
 const preload = fs.readFileSync('public/preload.js', 'utf-8');

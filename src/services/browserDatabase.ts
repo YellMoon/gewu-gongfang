@@ -7,7 +7,7 @@ import {
   QuestionVersion, ImportTask, ImportTaskItem, ImportTaskStatus, ImportTaskItemStatus
 } from '../types';
 import type { SyncAction, SyncTable } from './syncEngine';
-const { applyTrustedQuestionProvenance } = require('./questionProvenance');
+import { applyTrustedQuestionProvenance } from './questionProvenance.mjs';
 const { normalizeDesktopAuthorizationSession } = require('./desktopQuestionDeleteContext');
 import { calculateGrade, calculateFees, calculateDurationHours, groupByMonth, calculatePercentage } from '../utils/helpers';
 import { getColorForRoom } from '../utils/courseColors';
@@ -1749,7 +1749,7 @@ class BrowserDatabaseService {
 
   createQuestion(question: Omit<Question, 'id' | 'created_at' | 'updated_at'>, trustedDraftId?: string): Question {
     const { storage_state: _ignoredStorageState, sourceDeviceId: _ignoredSourceDeviceId, ownerUserId: _ignoredOwnerUserId, ...trustedQuestion } = question;
-    const provenanceSafeQuestion = applyTrustedQuestionProvenance(trustedQuestion, { deviceId: this.getSyncDeviceId(), userId: this.getAuthorizationUserId() });
+    const provenanceSafeQuestion = applyTrustedQuestionProvenance(trustedQuestion, { deviceId: this.getSyncDeviceId(), userId: this.getAuthorizationUserId() }) as Omit<Question, 'id' | 'created_at' | 'updated_at'>;
     const now = new Date().toISOString();
     const id = trustedDraftId || (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
     const content = question.content || '';
@@ -1829,7 +1829,7 @@ class BrowserDatabaseService {
     const idx = this.data.questions.findIndex(q => q.id === id);
     if (idx === -1) return false;
     const { storage_state: _ignoredStorageState, sourceDeviceId: _ignoredSourceDeviceId, ownerUserId: _ignoredOwnerUserId, ...safeUpdates } = updates;
-    const provenanceSafeUpdates = applyTrustedQuestionProvenance(safeUpdates, {}, this.data.questions[idx]);
+    const provenanceSafeUpdates = applyTrustedQuestionProvenance(safeUpdates, {}, this.data.questions[idx]) as Partial<Question>;
     this.createQuestionVersionSnapshot(this.data.questions[idx]);
     this.data.questions[idx] = this.normalizeQuestionRecord({
       ...this.data.questions[idx],
