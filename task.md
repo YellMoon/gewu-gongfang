@@ -25,8 +25,8 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 - [x] Write and self-review the design specification.
 - [x] Obtain review of the written design specification.
 - [x] Write a file-level TDD implementation plan.
-- [ ] Create a database rollback snapshot before schema migration.
-- [ ] Add failing tests for the shared role and approval policy.
+- [x] Create a database rollback snapshot before schema migration.
+- [x] Add failing tests for the shared role and approval policy.
 - [ ] Implement role migration, fixed super-admin enforcement, pending state, and unique teacher binding.
 - [ ] Add failing tests for teacher row/data scope and source attribution.
 - [ ] Implement authoritative read/write data scoping and filtered aggregation.
@@ -65,10 +65,20 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 
 ## Rollback and publish notes
 
-- Preserve a database backup before schema or migration mutations and record its exact path.
+- Authoritative production database backup verified before schema or migration mutations: `/root/scheduling-data/prod/scheduling-pre-unified-auth-20260711-204817.db` (692,224 bytes; `test -s` and `stat` passed). Restore it to `/root/scheduling-data/prod/scheduling.db` while the service is stopped if rollback is required.
 - Use additive schema changes; do not delete legacy browser storage keys during migration so code rollback remains possible.
 - Keep implementation commits scoped so identity, data scope, sync, question bank, and UI can be audited and reverted independently.
 - Follow the project default `gewu/master` push, Windows package, OSS feed publication, and post-package native dependency verification workflow only after the full implementation is verified.
+
+### Task 1 evidence: backup and pure authorization policy
+
+- [x] Locate the authoritative database path and create a non-destructive timestamped backup.
+- [x] Add failing tests for fixed super-admin promotion/review, normalized unique teacher binding, roles, and data scopes.
+- [x] Implement the pure authorization policy without schema or database migration.
+- [x] Verify the focused test and the existing full test suite.
+- RED: `node backend/src/services/authorizationPolicy.test.js` exited 1 with `Cannot find module './authorizationPolicy'` before implementation.
+- GREEN: `node backend/src/services/authorizationPolicy.test.js` exited 0 with `authorization policy checks passed`.
+- Full regression: `npm test` exited 0 on 2026-07-11.
 
 ---
 
