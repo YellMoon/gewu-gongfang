@@ -283,3 +283,24 @@ Simplify the desktop data-sync page by adapting its default content to the confi
 - 学生快照统一：真实 enrollment 以 `schedule_id + student_id` 经允许排课过滤（兼容 `course_id`）；学生、课程、排课、老师由共享 service 做安全字段白名单脱敏，payments/consumptions/assets 继续按原学生策略清空。unknown/pending 返回空 payload，仅 approved student（包括未绑定学生）保留公共题库。
 - 云中继加固：gateway 主机 heartbeat/snapshot publish/task list/task complete 使用 timing-safe host token 且缺配置 fail closed；真实 HTTP 测试覆盖匿名、错误 token、正确 token及任务 owner 边界。gateway 内置独立 scope service，并以 parity test 防止与 backend 行为漂移。公共题库和关联基础数据逐表投影；金额忽略非有限值、保留负数并按 id 去重；同时出现 course/schedule 时以 schedule 归属为准并拒绝冲突。
 - 资源投影补全：题库图片资源保留渲染所需 URL/data URL、mime/type、尺寸和 alt 的 snake/camel 字段，继续排除对象键、内部路径及 hash；学生关联 room/institution/school 只保留安全名称字段。普通用户任务结果查询在 SQL 层附加规范化 owner 条件，跨用户返回不可枚举的 404。
+
+---
+
+# Task: 2026-07-11 统一角色、审核与老师数据权限
+
+Status: implemented and verified; release publishing in progress
+
+- [x] 删除菜单结构管理、邀请页面、邀请码授权和任意模块授权矩阵运行时。
+- [x] 建立超级管理员、普通管理员、老师、学生、待审核五角色契约。
+- [x] 固定 `13732250653` 为不可停用超级管理员，只有超级管理员可审核、分类、停用和审批设备。
+- [x] 老师唯一绑定 `teacher_id`，桌面端和小程序能力一致，业务数据与同步范围仅限本人。
+- [x] 老师拥有公共题库查看/编辑；已提交试题仅可信本地数据主机桌面端可删除。
+- [x] 桌面端和小程序端重建用户审核工作台，普通管理员只读。
+- [x] 手机号验证登录改为待审核流程并补齐并发、超时、缺配置和审核后令牌测试。
+- [x] 权限缓存 fail closed，冷启动/前台恢复强制刷新，身份或 `teacher_id` 改变时清除旧业务缓存。
+- [x] `npm test`、桌面构建、小程序 typecheck、微信发布检查和 H5 构建通过。
+- [x] 真实桌面/H5 运行时复验并留下截图；发现并修复桌面 Unicode 字面转义显示缺陷。
+- [x] 完成残留审计和验证记录：`docs/verification-2026-07-12-unified-authorization.md`。
+- [ ] 合并并推送 `gewu/master`。
+- [ ] 自动递增版本、构建 Windows 安装包并发布 OSS 更新 feed。
+- [ ] 恢复 Node ABI 并验证 `better-sqlite3`。
