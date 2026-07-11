@@ -50,7 +50,7 @@ databaseModule.getInstance = () => service;
 delete require.cache[require.resolve('../app')];
 const { createApp } = require('../app');
 const questionBank = require('../services/questionBankService');
-const { commitQuestionToBoundStore, updateCommittedQuestion } = require('../services/questionBankStorageService');
+const { commitQuestionToBoundStore, updateCommittedQuestion, createTrustedInternalStorageUpdateContext, deleteCommittedQuestion } = require('../services/questionBankStorageService');
 
 function token(id, deviceId, tokenUse = 'desktop-session') {
   return jwt.sign({ id, deviceId, token_use: tokenUse }, process.env.JWT_SECRET,
@@ -115,9 +115,12 @@ function committed(id) {
     const withoutHook = service.applySyncChanges([syncChange], { deviceId:'host-device', authz:syncAuthz });
     assert.strictEqual(withoutHook.applied, 0);
     assert.strictEqual(withoutHook.errors[0].error, 'COMMITTED_QUESTION_STORAGE_UPDATE_REQUIRED');
-    const withHook = service.applySyncChanges([{ ...syncChange, id:'sync-op-hook' }], { deviceId:'host-device', authz:syncAuthz, storageHooks:{ updateCommittedQuestion:({change,tenantId})=>updateCommittedQuestion(change.data.id,{db:service.db,tenantId,authz:syncAuthz,runtime:syncAuthz,payload:change.data}) } });
+    const internalCredential = createTrustedInternalStorageUpdateContext({ validatedAuthz: syncAuthz, hostRuntime: { runtimeNodeRole:'primary-host' } });
+    assert.throws(() => createTrustedInternalStorageUpdateContext({ validatedAuthz:{...syncAuthz,deviceActive:false}, hostRuntime:{runtimeNodeRole:'primary-host'} }), error => error.code === 'TRUSTED_INTERNAL_STORAGE_ACTOR_REQUIRED');
+    const withHook = service.applySyncChanges([{ ...syncChange, id:'sync-op-hook' }], { deviceId:'host-device', authz:syncAuthz, storageHooks:{ updateCommittedQuestion:({change,tenantId})=>updateCommittedQuestion(change.data.id,{db:service.db,tenantId,internalCredential,payload:change.data}) } });
     assert.strictEqual(withHook.applied, 1);
     assert.strictEqual(JSON.parse(fs.readFileSync(path.join(qbRoot,'questions','sync-update','question.json'),'utf8')).contents[0].stem,'synced committed update');
+    assert.throws(() => deleteCommittedQuestion('sync-update', { db:service.db, tenantId:'default', internalCredential }), error => error.code === 'HOST_DESKTOP_REQUIRED_FOR_COMMITTED_DELETE');
     process.env.GEWU_NODE_ROLE = 'desktop-client';
     const deniedCommittedUpdate = await jsonRequest(base, 'PUT', `/api/question-bank/questions/${success.id}`, token('approved-teacher','teacher-device'), 'teacher-device', { stem: 'forbidden update' });
     assert.strictEqual(deniedCommittedUpdate.status, 403);

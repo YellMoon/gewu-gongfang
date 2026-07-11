@@ -47,7 +47,8 @@ try {
   db.registerSyncDevice('relay-d1', { ownerUserId:'relay-u1' });
   const relayToken = db.issueSyncAuthorization('relay-d1', { actorUserId:'relay-u1', actorTeacherId:'t1' });
   assert.deepStrictEqual(db.consumeSyncAuthorizationContext('relay-d1', relayToken.token, 'relay-u1'),
-    { kind:'teacher', userId:'relay-u1', teacherId:'t1', studentId:null, deviceId:'relay-d1' });
+    { kind:'teacher', role:'teacher', userId:'relay-u1', teacherId:'t1', studentId:null, deviceId:'relay-d1',
+      userApproved:true, deviceTrusted:false, deviceActive:true, deviceOwnerUserId:'relay-u1' });
   const wrongDeviceToken = db.issueSyncAuthorization('relay-d1', { actorUserId:'relay-u1', actorTeacherId:'t1' });
   assert.strictEqual(db.consumeSyncAuthorizationContext('forged-device', wrongDeviceToken.token, 'relay-u1'), false);
   const revokedToken = db.issueSyncAuthorization('relay-d1', { actorUserId:'relay-u1', actorTeacherId:'t1' });

@@ -9,7 +9,7 @@
  * - POST /api/sync/push { changes: SyncChange[] }
  */
 const { Router } = require('express');
-const { updateCommittedQuestion } = require('../services/questionBankStorageService');
+const { updateCommittedQuestion, createTrustedInternalStorageUpdateContext } = require('../services/questionBankStorageService');
 const { getInstance } = require('../database');
 const { scopeForUser } = require('../services/authorizationPolicy');
 
@@ -60,7 +60,9 @@ function requestAuthz(req) {
   if (!req.user || !req.authz?.deviceId) return null;
   const scope = scopeForUser(req.user);
   return { kind: scope.kind === 'all' ? 'admin' : scope.kind, userId: req.authz.userId,
-    teacherId: scope.teacherId || null, studentId: scope.studentId || null, deviceId: req.authz.deviceId };
+    teacherId: scope.teacherId || null, studentId: scope.studentId || null, deviceId: req.authz.deviceId,
+    role: req.authz.role, userApproved: req.authz.userApproved, deviceTrusted: req.authz.deviceTrusted,
+    deviceActive: req.authz.deviceActive, deviceOwnerUserId: req.authz.deviceOwnerUserId };
 }
 
 function groupedChangesFromQueue(changes) {
@@ -211,7 +213,7 @@ router.post('/push', (req, res) => {
     }
 
     const result = db.applySyncChanges(changes, { deviceId: authz.deviceId, tenantId: readTenantId(req), authz, storageHooks: {
-      updateCommittedQuestion: ({ change, tenantId }) => updateCommittedQuestion(change.data.id, { db: db.db || db, tenantId, authz, runtime: authz, payload: change.data }),
+      updateCommittedQuestion: ({ change, tenantId }) => updateCommittedQuestion(change.data.id, { db: db.db || db, tenantId, internalCredential: createTrustedInternalStorageUpdateContext({ validatedAuthz: authz, hostRuntime: { runtimeNodeRole: process.env.GEWU_NODE_ROLE || 'desktop-client' } }), payload: change.data }),
     } });
     const serverTime = db._now();
     console.log(`[Sync:Push] device=${deviceId} applied=${result.applied} conflicts=${result.conflicts} errors=${result.errors.length}`);

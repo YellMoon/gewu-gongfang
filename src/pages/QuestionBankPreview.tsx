@@ -591,7 +591,7 @@ const QuestionBankPreview: React.FC = () => {
       } catch (_err) {}
       db?.updateQuestion?.(editing.id, data);
     } else {
-      await createNativeQuestionDraft(db, data);
+      try { await createNativeQuestionDraft(db, data); } catch (_error) { message.error('DRAFT_PROVENANCE_UNAVAILABLE'); return; }
     }
     setModalVisible(false);
     setEditing(null);
@@ -619,7 +619,7 @@ const QuestionBankPreview: React.FC = () => {
     if (!q) return;
     const db = (window as any).dbService;
     const { id: oid, created_at, updated_at, ...rest } = q;
-    await createNativeQuestionDraft(db, { ...rest });
+    try { await createNativeQuestionDraft(db, { ...rest }); } catch (_error) { message.error('DRAFT_PROVENANCE_UNAVAILABLE'); return; }
     loadData();
     message.success('已创建变式题副本');
   };
