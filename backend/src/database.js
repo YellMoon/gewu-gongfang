@@ -1526,7 +1526,9 @@ class DatabaseService {
           let provenance = null;
           if (options.authz) {
             const read = name => this._tableColumns(name).length ? this.db.prepare(`SELECT * FROM ${name} WHERE tenant_id = ?`).all(change.tenantId) : [];
-            const validation = validateSyncMutation(change, { ...options.authz, deviceId: options.authz.deviceId || deviceId }, {
+            const hasCommittedQuestionHook = table === 'questions' && existing?.storage_state === 'host_committed'
+              && change.action === 'update' && typeof options.storageHooks?.updateCommittedQuestion === 'function';
+            const validation = validateSyncMutation(change, { ...options.authz, deviceId: options.authz.deviceId || deviceId, storageHookVerified: hasCommittedQuestionHook }, {
               courses: read('courses'), schedules: read('schedules'), existing,
             });
             provenance = validation.provenance;
@@ -1540,6 +1542,11 @@ class DatabaseService {
             if (validation.decision === 'conflict') {
               results.conflicts++;
               this.recordSyncConflict(change, existing, { deviceId });
+              continue;
+            }
+            if (hasCommittedQuestionHook) {
+              options.storageHooks.updateCommittedQuestion({ change, existing, tenantId: change.tenantId, authz: options.authz });
+              results.applied++;
               continue;
             }
           }

@@ -1,5 +1,4 @@
 const { app, BrowserWindow, Menu, ipcMain, dialog, screen, shell } = require('electron');
-const jwt = require('jsonwebtoken');
 const path = require('path');
 const { QuestionDraftProvenanceRegistry } = require('./questionDraftProvenanceRegistry');
 const fs = require('fs');
@@ -256,13 +255,14 @@ ipcMain.handle('get-user-data-path', () => app.getPath('userData'));
 const questionDraftRegistry = new QuestionDraftProvenanceRegistry({
   filePath: path.join(app.getPath('userData'), 'question-draft-provenance.json'),
   tokenVerifier: async rawToken => {
-    if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET_REQUIRED_FOR_DRAFT_PROVENANCE');
-    const token = String(rawToken || '').replace(/^Bearer\s+/i, '');
-    const claims = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'], issuer: 'gewu-auth', audience: 'gewu-api' });
-    return { userId: claims.id || claims.userId, deviceId: claims.deviceId, tokenUse: claims.token_use };
+    const port = Number(process.env.PORT || 3001);
+    const response = await fetch(`http://127.0.0.1:${port}/api/auth/desktop-session`, { headers: { authorization: String(rawToken || ''), 'x-device-id': process.env.GEWU_DEVICE_ID || '' } });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.code || 'DESKTOP_SESSION_INTROSPECTION_FAILED');
+    return data.session;
   },
 });
-ipcMain.handle('register-question-draft-provenance', (_event, { questionId, authorization }) => questionDraftRegistry.register(questionId, authorization));
+ipcMain.handle('issue-question-draft', (_event, { authorization }) => questionDraftRegistry.issue(authorization));
 ipcMain.handle('verify-question-draft-provenance', (_event, { questionId, authorization }) => questionDraftRegistry.verify(questionId, authorization));
 ipcMain.handle('runtime-config:get', async () => {
   return readRuntimeConfig(getRuntimeConfigPath(), { userDataPath: app.getPath('userData') });

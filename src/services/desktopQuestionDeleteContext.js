@@ -8,7 +8,11 @@ function normalizeDesktopAuthorizationSession(session = {}) {
   return { authorization: token, authContext: { userId: authContext.userId || '', deviceId: authContext.deviceId || '' } };
 }
 async function verifyNativeQuestionDraft(questionId, session, bridge = globalThis.questionDraftProvenance) {
-  if (!bridge?.verify || !session?.authorization) return false;
-  try { return (await bridge.verify(questionId, session.authorization)) === true; } catch (_error) { return false; }
+  if (!bridge?.verifyDraft || !session?.authorization) return false;
+  try { return (await bridge.verifyDraft(questionId, session.authorization)) === true; } catch (_error) { return false; }
 }
-module.exports = { normalizeDesktopQuestionDeleteContext, normalizeDesktopAuthorizationSession, verifyNativeQuestionDraft };
+async function issueNativeQuestionDraft(session, bridge = globalThis.questionDraftProvenance) {
+  if (!bridge?.issueDraft || !session?.authorization) return null;
+  try { const result = await bridge.issueDraft(session.authorization); return result?.questionId || null; } catch (_error) { return null; }
+}
+module.exports = { normalizeDesktopQuestionDeleteContext, normalizeDesktopAuthorizationSession, verifyNativeQuestionDraft, issueNativeQuestionDraft };

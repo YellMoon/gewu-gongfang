@@ -9,6 +9,7 @@
  * - POST /api/sync/push { changes: SyncChange[] }
  */
 const { Router } = require('express');
+const { updateCommittedQuestion } = require('../services/questionBankStorageService');
 const { getInstance } = require('../database');
 const { scopeForUser } = require('../services/authorizationPolicy');
 
@@ -209,7 +210,9 @@ router.post('/push', (req, res) => {
       return res.status(403).json({ success: false, error: 'sync authorization required' });
     }
 
-    const result = db.applySyncChanges(changes, { deviceId: authz.deviceId, tenantId: readTenantId(req), authz });
+    const result = db.applySyncChanges(changes, { deviceId: authz.deviceId, tenantId: readTenantId(req), authz, storageHooks: {
+      updateCommittedQuestion: ({ change, tenantId }) => updateCommittedQuestion(change.data.id, { db: db.db || db, tenantId, authz, runtime: authz, payload: change.data }),
+    } });
     const serverTime = db._now();
     console.log(`[Sync:Push] device=${deviceId} applied=${result.applied} conflicts=${result.conflicts} errors=${result.errors.length}`);
 

@@ -1747,11 +1747,11 @@ class BrowserDatabaseService {
     return result;
   }
 
-  createQuestion(question: Omit<Question, 'id' | 'created_at' | 'updated_at'>): Question {
+  createQuestion(question: Omit<Question, 'id' | 'created_at' | 'updated_at'>, trustedDraftId?: string): Question {
     const { storage_state: _ignoredStorageState, sourceDeviceId: _ignoredSourceDeviceId, ownerUserId: _ignoredOwnerUserId, ...trustedQuestion } = question;
     const provenanceSafeQuestion = applyTrustedQuestionProvenance(trustedQuestion, { deviceId: this.getSyncDeviceId(), userId: this.getAuthorizationUserId() });
     const now = new Date().toISOString();
-    const id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+    const id = trustedDraftId || (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
     const content = question.content || '';
     const newQuestion: Question = {
       ...provenanceSafeQuestion,
@@ -1772,10 +1772,6 @@ class BrowserDatabaseService {
     this.syncQuestionLocalRecord(normalizedQuestion);
     this.saveData();
     this.recordSyncChange('questions', 'create', normalizedQuestion.id, normalizedQuestion);
-    try {
-      const session = normalizeDesktopAuthorizationSession(JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null'));
-      (window as any).questionDraftProvenance?.register?.(normalizedQuestion.id, session.authorization)?.catch?.(() => undefined);
-    } catch (_error) {}
     return normalizedQuestion;
   }
 

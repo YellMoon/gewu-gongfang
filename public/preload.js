@@ -39,6 +39,6 @@ contextBridge.exposeInMainWorld('env', {
   isProd: process.env.NODE_ENV === 'production',
 });
 contextBridge.exposeInMainWorld('questionDraftProvenance', {
-  register: (questionId, authorization) => ipcRenderer.invoke('register-question-draft-provenance', { questionId, authorization }),
-  verify: (questionId, authorization) => ipcRenderer.invoke('verify-question-draft-provenance', { questionId, authorization }),
+  issueDraft: authorization => ipcRenderer.invoke('issue-question-draft', { authorization }),
+  verifyDraft: (questionId, authorization) => ipcRenderer.invoke('verify-question-draft-provenance', { questionId, authorization }),
 });

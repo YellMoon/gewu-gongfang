@@ -10,6 +10,7 @@ const {
 } = require('../services/cloudRelayClient');
 const questionBank = require('../services/questionBankService');
 const { resolveQuestionAssetPath } = require('../services/questionBankStorageService');
+const { updateCommittedQuestion } = require('../services/questionBankStorageService');
 const { writePaperArtifact } = require('../services/paperArtifactService');
 const { verifyRelayAssertion } = require('../services/relayAssertionService');
 
@@ -89,6 +90,7 @@ async function processMiniappTask(task, db) {
       deviceId: authz.deviceId,
       tenantId: payload.tenantId || payload.tenant_id || 'default',
       authz,
+      storageHooks: { updateCommittedQuestion: ({ change, tenantId }) => updateCommittedQuestion(change.data.id, { db: db.db || db, tenantId, authz, runtime: { ...authz, runtimeNodeRole: 'primary-host', tokenUse: 'desktop-session', clientType: 'desktop' }, payload: change.data }) },
     });
     return {
       taskType: task.task_type,

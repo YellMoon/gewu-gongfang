@@ -16,6 +16,7 @@ import { getApiBase } from '../utils/apiBase';
 const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
 const { deleteQuestionViaApi } = require('../services/questionDeleteApi');
 const { normalizeDesktopQuestionDeleteContext, verifyNativeQuestionDraft } = require('../services/desktopQuestionDeleteContext');
+const { createNativeQuestionDraft } = require('../services/nativeQuestionDraftCreate');
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
 import { splitSearchTerms } from '../utils/highlightText';
@@ -590,7 +591,7 @@ const QuestionBankPreview: React.FC = () => {
       } catch (_err) {}
       db?.updateQuestion?.(editing.id, data);
     } else {
-      db.createQuestion(data);
+      await createNativeQuestionDraft(db, data);
     }
     setModalVisible(false);
     setEditing(null);
@@ -613,12 +614,12 @@ const QuestionBankPreview: React.FC = () => {
     setQuestionTotal(previous => Math.max(0, previous - 1));
   };
 
-  const handleCopy = (id: string) => {
+  const handleCopy = async (id: string) => {
     const q = questions.find(x => x.id === id);
     if (!q) return;
     const db = (window as any).dbService;
     const { id: oid, created_at, updated_at, ...rest } = q;
-    db.createQuestion({ ...rest });
+    await createNativeQuestionDraft(db, { ...rest });
     loadData();
     message.success('已创建变式题副本');
   };
