@@ -267,6 +267,13 @@ Simplify the desktop data-sync page by adapting its default content to the confi
 - Preserve unrelated user changes and inspect the worktree before each commit.
 - The implementation can be rolled back as a single focused commit if needed.
 - Follow project policy for `gewu/master`, Windows packaging, OSS desktop update publication, and post-package native dependency restoration.
+
+## Question deletion cleanup and teacher import attribution
+
+- [x] Removed unreachable legacy single-delete and batch-delete branches from both question-bank pages.
+- [x] Added a real HTTP import check/commit test using a temporary database and an approved teacher paired-desktop JWT.
+- [x] Verified unauthenticated commit is rejected without inserting questions and authenticated commit persists token-derived source device and owner user IDs.
+- [x] Added the focused HTTP test to `test:question-deletion`.
 # 2026-07-11 老师业务数据域隔离证据
 
 - `node backend/src/services/dataScopeService.test.js`：老师课程依赖链、支付安全默认、个人资产、公共题库、读写断言通过。当前真实 host snapshot 构造未包含用户作答表，因此不将合成作答字段作为完成证据。
