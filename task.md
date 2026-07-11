@@ -236,3 +236,8 @@ Simplify the desktop data-sync page by adapting its default content to the confi
 - Preserve unrelated user changes and inspect the worktree before each commit.
 - The implementation can be rolled back as a single focused commit if needed.
 - Follow project policy for `gewu/master`, Windows packaging, OSS desktop update publication, and post-package native dependency restoration.
+# 2026-07-11 老师业务数据域隔离证据
+
+- `node backend/src/services/dataScopeService.test.js`：老师课程依赖链、支付安全默认、个人资产、公共题库、个人作答、读写断言通过。
+- `node gateway/src/routes/cloudRelay.test.js`：真实 cloud relay 过滤函数 teacher snapshot 通过。
+- 统计输入证据：裁剪后的 schedules/assetRecords 汇总仅包含 t1（课时费 100、学费 500、资产 10）。桌面 UI 会话接入不在本任务范围，未声称桌面 UI 已完成隔离。
