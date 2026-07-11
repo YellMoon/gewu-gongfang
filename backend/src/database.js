@@ -1327,8 +1327,10 @@ class DatabaseService {
     const teacherId = role === 'teacher' ? user.teacher_id : null;
     const device = this.db.prepare('SELECT * FROM sync_devices WHERE id = ? AND active = 1').get(deviceId);
     if (!device || device.owner_user_id !== user.id) return false;
-    return { kind: ['super_admin', 'admin'].includes(role) ? 'admin' : role,
-      userId: user.id, teacherId, studentId: user.student_id || null, deviceId };
+    return { kind: ['super_admin', 'admin'].includes(role) ? 'admin' : role, role,
+      userId: user.id, teacherId, studentId: user.student_id || null, deviceId,
+      userApproved: true, deviceTrusted: device.trusted === 1, deviceActive: device.active === 1,
+      deviceOwnerUserId: device.owner_user_id };
   }
 
   resolveOrProvisionRelayActorContext(deviceId, actorUserId, pairingApprovalId) {

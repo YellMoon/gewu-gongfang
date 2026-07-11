@@ -2,6 +2,19 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { canDeleteQuestion, committedDeleteError } = require('./questionDeletionPolicy');
+const internalStorageUpdateCredentials = new WeakSet();
+
+function createTrustedInternalStorageUpdateContext({ validatedAuthz = {}, hostRuntime = {} }) {
+  const nodeRole = hostRuntime.runtimeNodeRole || hostRuntime.nodeRole;
+  if (nodeRole !== 'primary-host' || !validatedAuthz.userId || !validatedAuthz.deviceId
+    || validatedAuthz.userApproved !== true || validatedAuthz.deviceTrusted !== true
+    || validatedAuthz.deviceActive !== true || validatedAuthz.deviceOwnerUserId !== validatedAuthz.userId) {
+    throw authorityError('validated primary-host actor required', 'TRUSTED_INTERNAL_STORAGE_ACTOR_REQUIRED');
+  }
+  const credential = Object.freeze({ actor: { ...validatedAuthz }, runtime: { ...hostRuntime, runtimeNodeRole: 'primary-host' } });
+  internalStorageUpdateCredentials.add(credential);
+  return credential;
+}
 
 function now() {
   return new Date().toISOString();
@@ -228,11 +241,14 @@ function commitQuestionToBoundStore(questionId, context = {}) {
 }
 
 function updateCommittedQuestion(questionId, context = {}) {
-  const { db, authz = {}, runtime = {}, tenantId = 'default', payload = {} } = context;
-  if (!canDeleteQuestion({ ...authz, ...runtime, runtimeNodeRole: runtime.runtimeNodeRole || runtime.nodeRole, storageState: 'host_committed' })) {
+  const { db, tenantId = 'default', payload = {} } = context;
+  const internal = internalStorageUpdateCredentials.has(context.internalCredential);
+  const authz = internal ? context.internalCredential.actor : (context.authz || {});
+  const runtime = internal ? context.internalCredential.runtime : (context.runtime || {});
+  if (!internal && !canDeleteQuestion({ ...authz, ...runtime, runtimeNodeRole: runtime.runtimeNodeRole || runtime.nodeRole, storageState: 'host_committed' })) {
     const error = new Error('committed question update requires trusted primary-host desktop'); error.code = 'HOST_DESKTOP_REQUIRED_FOR_COMMITTED_UPDATE'; error.status = 403; throw error;
   }
-  assertTrustedHost(authz, runtime);
+  if (!internal) assertTrustedHost(authz, runtime);
   const binding = activeBinding(db); verifyBinding(db, binding);
   const existing = deletionSnapshot(db, questionId, tenantId);
   if (!existing.question || existing.question.storage_state !== 'host_committed') throw authorityError('committed question not found', 'QUESTION_NOT_COMMITTED');
@@ -251,6 +267,8 @@ function updateCommittedQuestion(questionId, context = {}) {
       const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf-8'));
       manifest.questions = { ...(manifest.questions || {}), [questionId]: { ...(manifest.questions?.[questionId] || {}), path: `questions/${path.basename(questionId)}/question.json`, updatedAt: now() } };
       writeJsonAtomic(manifestFile, manifest);
+      db.prepare(`INSERT INTO question_bank_storage_audit (id,operation_id,actor_user_id,action,store_id,question_id,details_json,created_at) VALUES (?,?,?,?,?,?,?,?)`)
+        .run(crypto.randomUUID(), context.operationId || null, authz.userId, 'update_committed_question', binding.store_id, questionId, JSON.stringify({ deviceId: authz.deviceId }), now());
     })();
     fs.rmSync(backup, { recursive: true, force: true });
     return updated;
@@ -474,4 +492,5 @@ module.exports = {
   migrateBoundLegacyQuestions,
   restoreCommittedQuestion,
   updateCommittedQuestion,
+  createTrustedInternalStorageUpdateContext,
 };

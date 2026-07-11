@@ -730,7 +730,7 @@ const QuestionBankImport: React.FC = () => {
     if (editing) {
       db.updateQuestion(editing.id, data);
     } else {
-      await createNativeQuestionDraft(db, data);
+      try { await createNativeQuestionDraft(db, data); } catch (_error) { message.error('DRAFT_PROVENANCE_UNAVAILABLE'); return; }
     }
     setModalVisible(false);
     setEditing(null);
@@ -1020,7 +1020,7 @@ const QuestionBankImport: React.FC = () => {
         });
         await createNativeQuestionDraft(db, preparedQuestion);
         added++;
-      } catch (e) { /* skip bad ones */ }
+      } catch (e: any) { if (e?.code === 'DRAFT_PROVENANCE_UNAVAILABLE') message.error(e.code); }
     }
     if (skippedDuplicates > 0) {
       message.warning(`检测到 ${skippedDuplicates} 道完全重复试题，已自动过滤`);
