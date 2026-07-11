@@ -3,6 +3,8 @@
  * 支持微信小程序登录 + 邀请码注册
  */
 const jwt = require('jsonwebtoken');
+const { getDb } = require('../db/database');
+const { roleForUser } = require('../services/authorizationPolicy');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'edu-platform-secret-2026';
 
@@ -19,7 +21,12 @@ function authMiddleware(req, res, next) {
   try {
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
+    const persisted = getDb().prepare('SELECT * FROM users WHERE id = ?').get(decoded.id);
+    if (!persisted) return res.status(401).json({ error: 'Authenticated user not found', code: 'UNAUTHORIZED' });
+    req.user = persisted;
+    req.authz = { userId: persisted.id, phone: persisted.phone || null, role: roleForUser(persisted),
+      teacherId: persisted.teacher_id || null, studentId: persisted.student_id || null,
+      deviceId: null, clientType: 'gateway', isPrimaryHost: false };
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
@@ -38,7 +45,14 @@ function optionalAuth(req, res, next) {
   if (authHeader && authHeader.startsWith('Bearer ')) {
     try {
       const token = authHeader.split(' ')[1];
-      req.user = jwt.verify(token, JWT_SECRET);
+      const decoded = jwt.verify(token, JWT_SECRET);
+      const persisted = getDb().prepare('SELECT * FROM users WHERE id = ?').get(decoded.id);
+      if (persisted) {
+        req.user = persisted;
+        req.authz = { userId: persisted.id, phone: persisted.phone || null, role: roleForUser(persisted),
+          teacherId: persisted.teacher_id || null, studentId: persisted.student_id || null,
+          deviceId: null, clientType: 'gateway', isPrimaryHost: false };
+      }
     } catch (err) {
       // token 无效也放行
     }

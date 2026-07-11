@@ -110,6 +110,19 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 - Index-order RED: a historical database containing two identity flags failed during startup with `UNIQUE constraint failed` before identity recovery could run.
 - Index-order GREEN: startup now performs additive schema work, migration, and atomic identity recovery before creating the partial unique index; canonical conflicts retain only the canonical flag, while ambiguous noncanonical conflicts clear all flags and disable every candidate.
 
+### Task 3 evidence: unified local and gateway review authorization
+
+- [x] Add authenticated local user listing and canonical-super-only review endpoints with stable error codes.
+- [x] Build `req.authz` from persisted identity; body role/actor/teacher claims are ignored and a node-role header alone never proves primary-host status.
+- [x] Return one effective capability contract for pending, student, teacher, admin, and super-admin; gateway never grants committed-question deletion.
+- [x] Mirror additive review columns and canonical authorization policy in gateway while retaining legacy grant tables for rollback without consulting them at runtime.
+- RED: local route test exited 1 because the old write middleware returned `FORBIDDEN`; gateway policy test exited 1 because the policy module did not exist.
+- GREEN: `node backend/src/routes/adminUsers.test.js` and `node gateway/src/services/authorizationPolicy.test.js` exited 0 on 2026-07-11.
+- Security evidence: unauthenticated review returns 401; ordinary admin returns 403 `SUPER_ADMIN_REQUIRED`; forged body actor/host and `x-node-role` do not elevate; pending capabilities are empty.
+- Host evidence: committed-question deletion defaults denied and is available locally only when server config explicitly enables trusted-host resolution and the registered `sync_devices` record is trusted host plus desktop client context.
+- Regression evidence: pure authorization, database authorization, miniapp auth/access, and gateway cloud-relay tests exited 0 on 2026-07-11.
+- Full regression: `npm test` exited 0 in 14.1 seconds on 2026-07-11 after updating the permissions-route security assertion from optional to required authentication.
+
 ---
 
 # Task: 2026-07-10 miniapp publish and business fixes

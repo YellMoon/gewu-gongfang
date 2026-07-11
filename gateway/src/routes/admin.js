@@ -11,6 +11,7 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const { getDb } = require('../db/database');
 const { requireType } = require('../middleware/permission');
+const { canReviewUsers } = require('../services/authorizationPolicy');
 
 // 所有管理员路由需要 admin 类型
 router.use(requireType(['admin']));
@@ -44,6 +45,34 @@ router.get('/users', (req, res) => {
   `).all(...params, Number(limit), offset);
 
   res.json({ users, total, page: Number(page), limit: Number(limit) });
+});
+
+router.patch('/users/:id/review', (req, res) => {
+  if (!canReviewUsers(req.user) || req.authz?.role !== 'super_admin') {
+    return res.status(403).json({ success: false, code: 'SUPER_ADMIN_REQUIRED' });
+  }
+  const role = req.body?.role;
+  if (!['admin', 'teacher', 'student'].includes(role)) {
+    return res.status(400).json({ success: false, code: 'INVALID_AUTHORIZATION_ROLE' });
+  }
+  const db = getDb();
+  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!target) return res.status(404).json({ success: false, code: 'AUTHORIZATION_USER_NOT_FOUND' });
+  let teacherId = null;
+  if (role === 'teacher') {
+    const teacherTable = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'teachers'").get();
+    if (!teacherTable) return res.status(400).json({ success: false, code: 'TEACHER_NOT_FOUND' });
+    const normalized = String(target.phone || '').replace(/\D/g, '');
+    const matches = db.prepare('SELECT id, phone FROM teachers').all()
+      .filter(item => String(item.phone || '').replace(/\D/g, '') === normalized);
+    if (matches.length !== 1) return res.status(400).json({ success: false, code: matches.length ? 'TEACHER_PHONE_NOT_UNIQUE' : 'TEACHER_NOT_FOUND' });
+    teacherId = matches[0].id;
+  }
+  const now = new Date().toISOString();
+  db.prepare(`UPDATE users SET user_type = ?, teacher_id = ?, review_status = 'approved', reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ?`)
+    .run(role, teacherId, req.user.id, now, now, target.id);
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(target.id);
+  return res.json({ success: true, user });
 });
 
 /**

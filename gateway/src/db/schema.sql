@@ -10,6 +10,11 @@ CREATE TABLE IF NOT EXISTS users (
   login_enabled INTEGER DEFAULT 0,
   student_id TEXT,
   linked_student_ids TEXT,
+  teacher_id TEXT,
+  review_status TEXT NOT NULL DEFAULT 'pending',
+  reviewed_by TEXT,
+  reviewed_at TEXT,
+  is_super_admin_identity INTEGER DEFAULT 0,
   invited_by TEXT,                       -- 邀请人ID (仅 invited 类型)
   invite_code TEXT,                      -- 邀请码 (仅 invited 类型)
   created_at TEXT NOT NULL,

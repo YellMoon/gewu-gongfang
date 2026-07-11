@@ -2,6 +2,8 @@
  * JWT authentication and lightweight authorization helpers.
  */
 const jwt = require('jsonwebtoken');
+const { getInstance } = require('../database');
+const { roleForUser } = require('../services/authorizationPolicy');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 
@@ -23,6 +25,30 @@ function getBearerToken(req) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   return authHeader.split(' ')[1];
+}
+
+function attachAuthorizationContext(req, tokenUser) {
+  let user = tokenUser;
+  try {
+    const persisted = tokenUser?.id ? getInstance().db.prepare('SELECT * FROM users WHERE id = ? AND deleted = 0').get(tokenUser.id) : null;
+    if (persisted) user = persisted;
+  } catch (_) {
+    // Authentication remains available during early database startup.
+  }
+  req.user = user;
+  const deviceId = req.headers['x-device-id'] || null;
+  let isPrimaryHost = false;
+  if (process.env.GEWU_TRUSTED_PRIMARY_HOST === 'true' && deviceId) {
+    try {
+      const device = getInstance().getSyncDevice(deviceId);
+      isPrimaryHost = Boolean(device && device.trusted === 1 && ['primary-host', 'host'].includes(device.role));
+    } catch (_) { isPrimaryHost = false; }
+  }
+  req.authz = {
+    userId: user?.id || null, phone: user?.phone || null, role: roleForUser(user),
+    teacherId: user?.teacher_id || null, studentId: user?.student_id || null,
+    deviceId, clientType: req.headers['x-client-type'] || 'unknown', isPrimaryHost,
+  };
 }
 
 function readTenantFromRequest(req) {
@@ -76,7 +102,7 @@ function authMiddleware(req, res, next) {
   }
 
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    attachAuthorizationContext(req, jwt.verify(token, JWT_SECRET));
     if (!applyAuthenticatedTenant(req, res)) return undefined;
     return next();
   } catch (_err) {
@@ -98,7 +124,7 @@ function optionalAuth(req, res, next) {
   const token = getBearerToken(req);
   if (token) {
     try {
-      req.user = jwt.verify(token, JWT_SECRET);
+      attachAuthorizationContext(req, jwt.verify(token, JWT_SECRET));
       if (!applyAuthenticatedTenant(req, res)) return undefined;
     } catch (_err) {
       // Optional auth keeps old behavior: invalid tokens do not block reads.
@@ -175,4 +201,5 @@ module.exports = {
   requireWriteAccess,
   generateToken,
   JWT_SECRET,
+  attachAuthorizationContext,
 };

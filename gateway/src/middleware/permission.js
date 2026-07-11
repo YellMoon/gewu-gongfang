@@ -46,6 +46,12 @@ function enforceTenantScope(req, res, next) {
  */
 function requirePermission(module, action) {
   return (req, res, next) => {
+    const { effectiveCapabilities } = require('../services/authorizationPolicy');
+    const capabilities = effectiveCapabilities(req.authz || {});
+    if (['super_admin', 'admin'].includes(req.authz?.role)) return next();
+    if (module === 'question-bank' && capabilities.includes(`question-bank:${action}`)) return next();
+    return res.status(403).json({ error: 'FORBIDDEN', module, action, user_type: req.authz?.role || 'pending' });
+    /* legacy grant checks retained for rollback only
     // 管理员跳过所有权限检查
     if (isAdminUser(req.user)) {
       return next();
@@ -95,7 +101,7 @@ function requirePermission(module, action) {
       module,
       action,
       user_type: req.user.user_type
-    });
+    }); */
   };
 }
 
@@ -128,6 +134,10 @@ module.exports = { requirePermission, requireType, enforceTenantScope };
  * 在需要检查具体权限的路由前使用
  */
 function loadUserPermissions(req, res, next) {
+  const { effectiveCapabilities } = require('../services/authorizationPolicy');
+  req.userPerms = effectiveCapabilities(req.authz || {});
+  return next();
+  /* legacy grant loading retained for rollback only
   if (!req.user || !req.user.id) {
     req.userPerms = [];
     return next();
@@ -148,7 +158,7 @@ function loadUserPermissions(req, res, next) {
   `).all(req.user.id);
 
   req.userPerms = perms.map(p => p.id);
-  next();
+  next(); */
 }
 
 module.exports = { requirePermission, requireType, loadUserPermissions, enforceTenantScope };
