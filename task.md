@@ -52,3 +52,48 @@ Complete the current release after WeChat upload whitelist is ready:
 - Code rollback is normal git revert of the release commit.
 - Cloud backend rollback should restore previous PM2 code and keep DB snapshot policy unchanged.
 - Desktop update rollback can republish the previous `latest.yml` if needed.
+
+---
+
+# Task: 2026-07-11 Desktop Sync Page Simplification
+
+Status: design approved; specification pending user review
+
+## Objective
+
+Simplify the desktop data-sync page by adapting its default content to the configured device role and replacing the ambiguous group of sync controls with one clearly explained primary workflow.
+
+## Execution checklist
+
+- [x] Inspect the current sync page and underlying one-click sync behavior.
+- [x] Confirm role-aware information architecture.
+- [x] Confirm the client-side primary action and its data-direction wording.
+- [ ] Write and review the design specification.
+- [ ] Write an implementation plan.
+- [ ] Add focused tests before changing production behavior.
+- [ ] Implement the role-aware simplified page.
+- [ ] Verify unit tests, build, desktop and narrow rendered layouts, and primary interactions.
+- [ ] Commit and push to `gewu/master`.
+- [ ] Bump the desktop version, package Windows installer, publish the OSS update feed, rebuild Node native dependencies, and verify the release output.
+
+## Bottom-level logic
+
+- Reuse the existing `runOneClickSync` workflow: preview, confirm, upload pending local operations, pull host operations, merge/apply locally.
+- Determine the surface from `runtimeConfig.nodeRole`.
+- Client devices get one primary bidirectional-sync action.
+- The primary host gets request-processing and conflict-review entry points.
+- Directional and destructive maintenance actions remain accessible only in a collapsed advanced section.
+- Do not change synchronization protocols, conflict policy, authorization requirements, queue retention, or cloud-relay behavior.
+
+## Validation plan
+
+- Unit-test role presentation and primary-action copy where practical.
+- Run sync service tests and the production build.
+- Render the affected desktop route and verify client/host states, desktop/narrow viewports, console health, and at least one primary interaction.
+- Check loading, offline/waiting, empty, error, disabled, conflict, and confirmation states supported by available fixtures/runtime state.
+
+## Rollback and publish notes
+
+- Preserve unrelated user changes and inspect the worktree before each commit.
+- The implementation can be rolled back as a single focused commit if needed.
+- Follow project policy for `gewu/master`, Windows packaging, OSS desktop update publication, and post-package native dependency restoration.
