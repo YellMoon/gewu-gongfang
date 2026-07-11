@@ -16,10 +16,14 @@ router.post('/start', (req, res) => {
 
 router.post('/exchange', (req, res) => {
   try {
-    const result = exchangeDesktopPairing(getDb(), req.body);
-    const user = getDb().prepare('SELECT * FROM users WHERE id=?').get(result.userId);
-    if (!user || user.review_status !== 'approved' || user.login_enabled === 0 || user.status === 0) throw Object.assign(new Error(), { code: 'USER_NOT_APPROVED' });
     if (!process.env.JWT_SECRET) throw Object.assign(new Error(), { code: 'JWT_SECRET_REQUIRED' });
+    const database = getDb();
+    const pairing = database.prepare('SELECT * FROM desktop_device_pairings WHERE id=?').get(req.body.id);
+    if (!pairing) throw Object.assign(new Error(), { code:'PAIRING_NOT_FOUND' });
+    if (pairing.status !== 'approved' || pairing.exchanged_at || Date.parse(pairing.expires_at) < Date.now()) throw Object.assign(new Error(), { code:'PAIRING_NOT_APPROVED' });
+    const user = database.prepare('SELECT * FROM users WHERE id=?').get(pairing.user_id);
+    if (!user || user.review_status !== 'approved' || user.login_enabled === 0 || user.status === 0) throw Object.assign(new Error(), { code: 'USER_NOT_APPROVED' });
+    const result = exchangeDesktopPairing(database, req.body);
     const token = jwt.sign({ id: user.id, user_type: user.user_type, deviceId: result.deviceId, token_use: 'desktop-session' }, JWT_SECRET,
       { expiresIn: '30m', algorithm: 'HS256', issuer: 'gewu-auth', audience: 'gewu-api' });
     res.json({ success: true, token, userId: user.id, deviceId: result.deviceId, expiresIn: 1800 });

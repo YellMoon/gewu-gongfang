@@ -8,14 +8,19 @@ process.env.GATEWAY_DB_PATH = path.join(root, 'gateway.db');
 process.env.GEWU_CLOUD_RELAY_HOST_TOKEN = 'test-host-secret';
 const { initDatabase, closeDatabase, getDb } = require('../db/database');
 const router = require('./cloudRelay');
+const pairingRouter = require('./desktopPairing');
 
 (async () => {
   initDatabase();
   const app = express(); app.use(express.json());
   app.use((req, _res, next) => { if (req.headers['x-test-user']) req.user = JSON.parse(req.headers['x-test-user']); next(); });
   app.use('/api/cloud', router);
+  app.use('/api/desktop-pairing', pairingRouter);
   const server = app.listen(0); const base = `http://127.0.0.1:${server.address().port}/api/cloud`;
   const call = (url, options = {}) => fetch(base + url, { ...options, signal: AbortSignal.timeout(3000), headers: { 'content-type': 'application/json', ...(options.headers || {}) } });
+  const pairingCall=(url,body)=>fetch(`http://127.0.0.1:${server.address().port}/api/desktop-pairing${url}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  assert.strictEqual((await pairingCall('/start',{phone:'13800138000',deviceId:'pair-http-d1',secret:'a'.repeat(64)})).status,200);
+  assert.strictEqual((await pairingCall('/start',{phone:'23800138000',deviceId:'pair-http-d2',secret:'a'.repeat(64)})).status,403);
   assert.strictEqual((await call('/snapshots/publish', { method: 'POST', body: '{}' })).status, 403);
   assert.strictEqual((await call('/tasks')).status, 403);
   assert.strictEqual((await call('/tasks/x/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'wrong' }, body: '{}' })).status, 403);

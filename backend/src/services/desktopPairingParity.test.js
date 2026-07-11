@@ -7,6 +7,10 @@ for (const file of ['backend/src/routes/desktopPairing.js', 'gateway/src/routes/
   }
   for (const code of ['SUPER_ADMIN_REQUIRED', 'PAIRING_NOT_FOUND', 'PAIRING_USER_UNRESOLVED']) assert.ok(source.includes(code));
   assert.ok(source.includes('pairing_code AS pairingCode') && !source.includes('secret_hash AS'), 'pending API must expose safe explicit fields only');
+  const exchangeSection=source.slice(source.indexOf("router.post('/exchange'"),source.indexOf("router.get('/pending'"));
+  assert.ok(exchangeSection.indexOf('JWT_SECRET_REQUIRED') < exchangeSection.indexOf('exchangeDesktopPairing('));
+  assert.ok(exchangeSection.indexOf('USER_NOT_APPROVED') < exchangeSection.indexOf('exchangeDesktopPairing('),
+    'exchange must not consume pairing before secret configuration and persisted user checks');
 }
 assert.ok(!fs.readFileSync('gateway/src/services/desktopPairingService.js', 'utf8').includes('backend/src'));
 const gatewayRoute=fs.readFileSync('gateway/src/routes/desktopPairing.js','utf8');
