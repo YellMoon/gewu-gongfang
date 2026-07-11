@@ -231,7 +231,7 @@ export default function Index() {
   };
 
   const getUserTypeLabel = (type: string) => {
-    const labels: Record<string, string> = { admin: '管理员', teacher: '教师', student: '学生', invited: '被邀请者' };
+    const labels: Record<string, string> = { admin: '管理员', teacher: '教师', student: '学生' };
     return labels[type] || type;
   };
 
@@ -374,14 +374,6 @@ export default function Index() {
               <View className="home-admin-row__body">
                 <Text className="home-admin-row__title">用户管理</Text>
                 <Text className="home-admin-row__desc">查看账号、角色与权限边界</Text>
-              </View>
-              <Text className="home-admin-row__arrow">›</Text>
-            </View>
-            <View className="home-admin-row" onClick={() => Taro.navigateTo({ url: '/pages/admin/invitations/index' })}>
-              <Text className="home-admin-row__mark">邀</Text>
-              <View className="home-admin-row__body">
-                <Text className="home-admin-row__title">邀请管理</Text>
-                <Text className="home-admin-row__desc">发放和检查小程序访问权限</Text>
               </View>
               <Text className="home-admin-row__arrow">›</Text>
             </View>

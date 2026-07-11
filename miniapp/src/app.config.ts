@@ -16,7 +16,6 @@ export default defineAppConfig({
     'pages/assets/index',
     'pages/settings/index',
     'pages/admin/users/index',
-    'pages/admin/invitations/index',
   ],
   window: {
     backgroundTextStyle: 'light',

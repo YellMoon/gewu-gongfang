@@ -59,7 +59,7 @@ export function assertMiniappWriteAllowed(target: string): void {
 export interface UserInfo {
   id: string;
   name: string;
-  user_type: 'admin' | 'teacher' | 'student' | 'invited';
+  user_type: 'admin' | 'teacher' | 'student';
   avatar?: string;
   student_id?: string;
   studentId?: string;
@@ -161,21 +161,7 @@ export function getMiniappRolePolicy(user: Partial<UserInfo> | null = getCurrent
   };
 }
 
-/**
- * 是否是被邀请者
- */
-export function isInvited(): boolean {
-  return getUserType() === 'invited';
-}
 
-/**
- * 检查当前用户是否可以访问资产模块
- * 规则：仅 admin 和 invited 可访问
- */
-export function canAccessAssets(): boolean {
-  const type = getUserType();
-  return type === 'admin' || type === 'invited';
-}
 
 /**
  * 从后端获取当前用户的权限列表

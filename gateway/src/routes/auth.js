@@ -91,7 +91,7 @@ router.post('/wechat-login', (req, res) => {
 });
 
 router.post('/register', (_req, res) => {
-  return res.status(403).json({
+  return res.status(410).json({
     success: false,
     code: 'MINIAPP_SELF_REGISTER_DISABLED',
     error: 'Miniapp self registration is disabled',

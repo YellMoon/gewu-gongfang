@@ -13,7 +13,6 @@ import {
   FileWordOutlined,
   HomeOutlined,
   LockOutlined,
-  MenuOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
   TeamOutlined,
@@ -28,8 +27,8 @@ export type PageKey =
   | 'school' | 'address' | 'institution'
   | 'question-bank-tools' | 'question-bank-import' | 'question-bank-preview' | 'question-bank-edit' | 'question-bank-paper' | 'question-bank-audit'
   | 'payment' | 'revenue-statistics' | 'personal-assets'
-  | 'admin' | 'teacher' | 'student' | 'invitee' | 'permission'
-  | 'menu-manage' | 'system-params' | 'operate-log'
+  | 'teacher' | 'student' | 'permission'
+  | 'system-params' | 'operate-log'
   | 'cloud-sync';
 
 export interface NavItem {
@@ -110,10 +109,7 @@ export const navGroups: NavGroup[] = [
     label: '系统与数据',
     icon: <SettingOutlined />,
     items: [
-      { key: 'admin', label: '管理员', description: '管理员登录和账号管理', icon: <UserOutlined /> },
-      { key: 'invitee', label: '被邀请者', description: '查看被邀请者授权信息', icon: <UserOutlined /> },
       { key: 'permission', label: '权限管理', description: '配置模块访问权限', icon: <LockOutlined /> },
-      { key: 'menu-manage', label: '菜单结构管理', description: '维护菜单配置', icon: <MenuOutlined /> },
       { key: 'system-params', label: '系统参数', description: '调整系统基础参数', icon: <SettingOutlined /> },
       { key: 'operate-log', label: '操作日志', description: '查看系统操作记录', icon: <FileProtectOutlined /> },
     ],
@@ -137,12 +133,9 @@ const legacyQuestionBankItems: Record<PageKey, NavItem> = {
   payment: { key: 'payment', label: '缴费', icon: <DollarOutlined /> },
   'revenue-statistics': { key: 'revenue-statistics', label: '费用统计', icon: <BarChartOutlined /> },
   'personal-assets': { key: 'personal-assets', label: '个人资产统计', icon: <DatabaseOutlined /> },
-  admin: { key: 'admin', label: '管理员', icon: <UserOutlined /> },
   teacher: { key: 'teacher', label: '老师', icon: <TeamOutlined /> },
   student: { key: 'student', label: '学生', icon: <UserOutlined /> },
-  invitee: { key: 'invitee', label: '被邀请者', icon: <UserOutlined /> },
   permission: { key: 'permission', label: '权限管理', icon: <LockOutlined /> },
-  'menu-manage': { key: 'menu-manage', label: '菜单结构管理', icon: <MenuOutlined /> },
   'system-params': { key: 'system-params', label: '系统参数', icon: <SettingOutlined /> },
   'operate-log': { key: 'operate-log', label: '操作日志', icon: <FileProtectOutlined /> },
   'cloud-sync': { key: 'cloud-sync', label: '云同步', icon: <CloudSyncOutlined /> },

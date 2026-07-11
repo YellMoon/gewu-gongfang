@@ -59,7 +59,7 @@ class ApiClient {
     return headers;
   }
 
-  private buildUrl(path: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE'): string {
+  private buildUrl(path: string, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'): string {
     const url = `${getBaseUrl()}${path}`;
     if (method !== 'GET') return url;
     const separator = url.includes('?') ? '&' : '?';
@@ -97,7 +97,7 @@ class ApiClient {
   }
 
   async request<T>(
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
     data?: any,
     retries = RETRY_COUNT,
@@ -173,6 +173,7 @@ class ApiClient {
   get<T>(path: string) { return this.request<T>('GET', path); }
   post<T>(path: string, data?: any) { return this.request<T>('POST', path, data); }
   put<T>(path: string, data?: any) { return this.request<T>('PUT', path, data); }
+  patch<T>(path: string, data?: any) { return this.request<T>('PATCH', path, data); }
   delete<T>(path: string) { return this.request<T>('DELETE', path); }
 }
 
@@ -182,8 +183,6 @@ export const api = new ApiClient();
 export const authApi = {
   login: (data: { openid: string; name?: string }) =>
     api.post<{ token: string; user: any }>('/api/auth/login', data),
-  register: (data: { openid: string; invite_code: string; name?: string }) =>
-    api.post<{ token: string; user: any }>('/api/auth/register', data),
   refresh: (token: string) =>
     api.post<{ token: string }>('/api/auth/refresh', { token }),
 };
@@ -205,22 +204,8 @@ export const adminApi = {
     if (params?.user_type) qs.set('user_type', params.user_type);
     return api.get<{ users: any[]; total: number }>(`/api/admin/users?${qs}`);
   },
-  setUserType: (userId: string, userType: string) =>
-    api.put(`/api/admin/users/${userId}/type`, { user_type: userType }),
-  getUserPermissions: (userId: string) =>
-    api.get<any[]>(`/api/admin/users/${userId}/permissions`),
-  grantPermission: (userId: string, permissionId: string, expiresAt?: string) =>
-    api.post(`/api/admin/users/${userId}/permissions`, { permission_id: permissionId, expires_at: expiresAt }),
-  revokePermission: (userId: string, permissionId: string) =>
-    api.delete(`/api/admin/users/${userId}/permissions/${permissionId}`),
-};
-
-// ========== 邀请码 API ==========
-export const invitationApi = {
-  create: (data: { target_name?: string; permissions?: string[] }) =>
-    api.post<any>('/api/invitations/create', data),
-  list: () => api.get<any[]>('/api/invitations/list'),
-  revoke: (id: string) => api.delete(`/api/invitations/${id}`),
+  reviewUser: (userId: string, role: string) =>
+    api.patch(`/api/admin/users/${userId}/review`, { role }),
 };
 
 export const cloudRelayApi = {
