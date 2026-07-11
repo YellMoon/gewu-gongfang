@@ -306,12 +306,21 @@ CREATE TABLE IF NOT EXISTS sync_devices (
 );
 
 CREATE TABLE IF NOT EXISTS sync_delivery_scope (
+  tenant_id TEXT NOT NULL DEFAULT 'default',
   actor_user_id TEXT NOT NULL,
   device_id TEXT NOT NULL,
   table_name TEXT NOT NULL,
   record_id TEXT NOT NULL,
   last_visible_at TEXT NOT NULL,
-  PRIMARY KEY (actor_user_id, device_id, table_name, record_id)
+  PRIMARY KEY (tenant_id, actor_user_id, device_id, table_name, record_id)
+);
+
+CREATE TABLE IF NOT EXISTS relay_authorization_nonces (
+  nonce TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  actor_user_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  consumed_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sync_authorizations (

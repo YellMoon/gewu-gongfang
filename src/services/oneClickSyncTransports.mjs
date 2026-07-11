@@ -33,8 +33,9 @@ export function createDirectSyncTransport(options = {}) {
   const role = options.role || 'desktop-client';
   const authContext = options.authContext || null;
   const authorization = options.authorization || '';
-  const authenticatedHeaders = () => ({ ...(authorization ? { Authorization: authorization } : {}),
-    ...(authContext?.deviceId ? { 'x-device-id': authContext.deviceId } : {}) });
+  const resolveSession = async () => options.sessionResolver ? options.sessionResolver() : { authorization, authContext };
+  const authenticatedHeaders = session => ({ ...(session?.authorization ? { Authorization: session.authorization } : {}),
+    ...(session?.authContext?.deviceId ? { 'x-device-id': session.authContext.deviceId } : {}) });
 
   async function post(path, body, headers = {}) {
     const res = await fetchImpl(`${baseUrl}${path}`, {
@@ -60,12 +61,13 @@ export function createDirectSyncTransport(options = {}) {
     },
     async preview(input = {}) {
       try {
+        const session = await resolveSession();
         const url = new URL(`${baseUrl}/api/sync`);
         url.searchParams.set('since', toIsoTime(input.lastSyncTime));
-        url.searchParams.set('deviceId', input.deviceId || deviceId);
+        url.searchParams.set('deviceId', session?.authContext?.deviceId || input.deviceId || deviceId);
         const data = await readJsonResponse(await fetchImpl(url.toString(), {
           method: 'GET',
-          headers: { 'Content-Type': 'application/json', ...authenticatedHeaders() },
+          headers: { 'Content-Type': 'application/json', ...authenticatedHeaders(session) },
         }));
         return {
           success: !!data.success,
@@ -78,19 +80,20 @@ export function createDirectSyncTransport(options = {}) {
       }
     },
     async pushSyncBatch(batch) {
-      if (!authContext?.userId || !authContext?.deviceId || !authorization) {
+      const session = await resolveSession();
+      if (!session?.authContext?.userId || !session?.authContext?.deviceId || !session?.authorization) {
         const error = new Error('AUTHORIZATION_CONTEXT_REQUIRED'); error.code = 'AUTHORIZATION_CONTEXT_REQUIRED'; throw error;
       }
-      const batchDeviceId = batch.deviceId || batch.clientId || deviceId;
+      const batchDeviceId = session.authContext.deviceId;
       await post('/api/sync/devices/register', {
         deviceId: batchDeviceId,
         role,
         deviceName: options.deviceName || batchDeviceId,
-      }, authenticatedHeaders());
+      }, authenticatedHeaders(session));
       const auth = await post('/api/sync/authorize', {
         deviceId: batchDeviceId,
         role,
-      }, authenticatedHeaders());
+      }, authenticatedHeaders(session));
       const data = await post('/api/sync/push', {
         deviceId: batchDeviceId,
         tenantId: batch.tenantId || 'default',
@@ -98,7 +101,7 @@ export function createDirectSyncTransport(options = {}) {
         syncAuthorizationToken: auth?.authorization?.token,
       }, {
         'x-sync-authorization': auth?.authorization?.token || '',
-        ...authenticatedHeaders(),
+        ...authenticatedHeaders(session),
       });
       return {
         success: !!data.success,
@@ -109,12 +112,13 @@ export function createDirectSyncTransport(options = {}) {
       };
     },
     async pullSyncOps(lastSyncTs) {
+      const session = await resolveSession();
       const url = new URL(`${baseUrl}/api/sync`);
       url.searchParams.set('since', toIsoTime(lastSyncTs));
-      url.searchParams.set('deviceId', deviceId);
+      url.searchParams.set('deviceId', session?.authContext?.deviceId || deviceId);
       const data = await readJsonResponse(await fetchImpl(url.toString(), {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json', ...authenticatedHeaders() },
+        headers: { 'Content-Type': 'application/json', ...authenticatedHeaders(session) },
       }));
       const changes = data.changes || [];
       return {
@@ -134,11 +138,12 @@ export function createCloudRelaySyncTransport(options = {}) {
   const desktopSyncToken = options.desktopSyncToken || '';
   const authContext = options.authContext || null;
   const authorization = options.authorization || '';
-  const headers = () => ({
+  const resolveSession = async () => options.sessionResolver ? options.sessionResolver() : { authorization, authContext };
+  const headers = session => ({
     'Content-Type': 'application/json',
     ...(desktopSyncToken ? { 'x-gewu-desktop-sync-token': desktopSyncToken } : {}),
-    ...(authorization ? { Authorization: authorization } : {}),
-    ...(authContext?.deviceId ? { 'x-device-id': authContext.deviceId } : {}),
+    ...(session?.authorization ? { Authorization: session.authorization } : {}),
+    ...(session?.authContext?.deviceId ? { 'x-device-id': session.authContext.deviceId } : {}),
   });
   return {
     name: 'cloud',
@@ -165,18 +170,21 @@ export function createCloudRelaySyncTransport(options = {}) {
       };
     },
     async submitSyncRequest(input = {}) {
-      if (!authContext?.userId || !authContext?.deviceId || !authorization) {
+      const session = await resolveSession();
+      if (!session?.authContext?.userId || !session?.authContext?.deviceId || !session?.authorization) {
         const error = new Error('AUTHORIZATION_CONTEXT_REQUIRED'); error.code = 'AUTHORIZATION_CONTEXT_REQUIRED'; throw error;
       }
+      await readJsonResponse(await fetchImpl(`${baseUrl}/api/cloud/desktop-sync/devices/register`, {
+        method:'POST', headers:headers(session), body:JSON.stringify({ deviceId:session.authContext.deviceId }),
+      }));
       const data = await readJsonResponse(await fetchImpl(`${baseUrl}/api/cloud/desktop-sync/requests`, {
         method: 'POST',
-        headers: headers(),
+        headers: headers(session),
         body: JSON.stringify({
-          deviceId,
+          deviceId: session.authContext.deviceId,
           tenantId: input.tenantId || 'default',
           pendingChanges: input.pendingChanges || [],
           preview: input.preview || null,
-          syncAuthorizationToken: input.syncAuthorizationToken || options.syncAuthorizationToken || null,
         }),
       }));
       return {
@@ -187,9 +195,10 @@ export function createCloudRelaySyncTransport(options = {}) {
       };
     },
     async pollSyncRequest(requestId) {
+      const session = await resolveSession();
       const data = await readJsonResponse(await fetchImpl(`${baseUrl}/api/cloud/desktop-sync/requests/${encodeURIComponent(requestId)}/result`, {
         method: 'GET',
-        headers: headers(),
+        headers: headers(session),
       }));
       return data.request || null;
     },
@@ -242,6 +251,7 @@ export async function discoverLanDirectSyncTransports(options = {}) {
     deviceName: options.deviceName,
     authorization: options.authorization,
     authContext: options.authContext,
+    sessionResolver: options.sessionResolver,
     fetchImpl,
   }));
 }

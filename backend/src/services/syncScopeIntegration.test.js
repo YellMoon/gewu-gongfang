@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { DatabaseService } = require('../database');
+const { issueRelayAssertion, verifyRelayAssertion } = require('./relayAssertionService');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-sync-scope-'));
 process.env.DB_PATH = path.join(dir, 'test.db');
@@ -58,12 +59,21 @@ try {
   db.db.prepare("UPDATE users SET teacher_id='t2' WHERE id='relay-u1'").run();
   assert.strictEqual(db.consumeSyncAuthorizationContext('relay-d1', reboundToken.token, 'relay-u1'), false,
     'teacher binding changes must invalidate queued relay authorization');
+  db.db.prepare("UPDATE users SET teacher_id='t1' WHERE id='relay-u1'").run();
+  const relayClaims = verifyRelayAssertion(issueRelayAssertion({ taskId:'task-real', actorUserId:'relay-u1', deviceId:'relay-d1' }, 'shared'), 'shared');
+  assert.ok(db.consumeRelayAuthorizationNonce(relayClaims));
+  assert.strictEqual(db.consumeRelayAuthorizationNonce(relayClaims), false, 'relay nonce replay must fail CAS/unique consumption');
+  assert.strictEqual(db.resolveSyncActorContext('relay-d1','relay-u1').teacherId, 't1');
+  db.registerSyncDevice('other-owner-device', { ownerUserId:'other-user' });
+  assert.strictEqual(db.resolveSyncActorContext('other-owner-device','relay-u1'), false, 'cross-owner device must fail');
 
   const first = db.getScopedChangeQueueSince(0, { tenantId:'default', deviceId:'server', clientId:'d1',
     authz:{ kind:'teacher', userId:'u1', teacherId:'t1', deviceId:'d1' } });
   assert(first.changes.some(x => x.table === 'courses' && x.data.id === 'c1'));
   db.close();
   db = new DatabaseService();
+  db.db.prepare(`INSERT INTO sync_delivery_scope (tenant_id,actor_user_id,device_id,table_name,record_id,last_visible_at)
+    VALUES ('other','u1','d1','courses','same-id-other-tenant',?)`).run(now);
   db.db.prepare('UPDATE courses SET teacher_id=?, updated_at=? WHERE id=?').run('t2','2026-07-13T00:00:00.000Z','c1');
   const second = db.getScopedChangeQueueSince('2026-07-12T12:00:00.000Z', { tenantId:'default', deviceId:'server', clientId:'d1',
     authz:{ kind:'teacher', userId:'u1', teacherId:'t1', deviceId:'d1' } });
@@ -71,5 +81,16 @@ try {
     'relationship transfer must emit a minimal tombstone to a prior recipient');
   assert(!second.changes.some(x => x.table === 'courses' && x.data.id === 'c2' && x.action === 'delete'),
     'records never delivered to this actor/device must not leak through tombstones');
+  assert(!second.changes.some(x => x.data.id === 'same-id-other-tenant'), 'delivery ledger must not cross tenant boundaries');
+  assert.ok(db.db.prepare("SELECT 1 FROM sync_delivery_scope WHERE tenant_id='other' AND record_id='same-id-other-tenant'").get(),
+    'pulling default tenant must not delete another tenant ledger row');
+  db.db.exec(`DROP TABLE sync_delivery_scope;
+    CREATE TABLE sync_delivery_scope (actor_user_id TEXT NOT NULL,device_id TEXT NOT NULL,table_name TEXT NOT NULL,
+      record_id TEXT NOT NULL,last_visible_at TEXT NOT NULL,PRIMARY KEY(actor_user_id,device_id,table_name,record_id));
+    INSERT INTO sync_delivery_scope VALUES ('legacy-u','legacy-d','courses','legacy-r','2026-01-01T00:00:00.000Z');`);
+  db.close();
+  db = new DatabaseService();
+  assert.ok(db.db.prepare("SELECT 1 FROM sync_delivery_scope WHERE tenant_id='default' AND actor_user_id='legacy-u'").get(),
+    'legacy delivery ledger rows must migrate to default tenant without loss');
   console.log('sync scope integration tests passed');
 } finally { db.close(); fs.rmSync(dir,{recursive:true,force:true}); }

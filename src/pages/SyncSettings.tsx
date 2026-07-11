@@ -11,6 +11,7 @@ import browserDatabase from '../services/browserDatabase';
 import type { CloudSyncContext } from '../navigation/navigationContext';
 import { runOneClickSync } from '../services/oneClickSyncService.mjs';
 import { createCloudRelaySyncTransport, createDirectSyncTransport, discoverLanDirectSyncTransports } from '../services/oneClickSyncTransports.mjs';
+import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 import { getSyncPresentation } from '../services/syncPresentation.mjs';
 
 interface SyncSettingsProps {
@@ -257,6 +258,7 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
           role: config.nodeRole || 'desktop-client',
           deviceName: config.deviceId || eng.getDeviceId(),
           desktopSyncToken: config.desktopSyncToken || '',
+          sessionResolver: () => readDesktopAuthorizationSession(),
         });
         transports.push(...discovered);
       }
@@ -266,6 +268,7 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
           deviceId: eng.getDeviceId(),
           role: config.nodeRole || 'desktop-client',
           deviceName: config.deviceId || eng.getDeviceId(),
+          sessionResolver: () => readDesktopAuthorizationSession(),
         });
         if (!transports.some((transport: any) => transport.baseUrl === manualDirect.baseUrl)) transports.push(manualDirect);
       }
@@ -274,6 +277,7 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
           baseUrl: config.cloudBaseUrl,
           deviceId: eng.getDeviceId(),
           desktopSyncToken: config.desktopSyncToken || '',
+          sessionResolver: () => readDesktopAuthorizationSession(),
         }));
       }
       const result = await runOneClickSync({

@@ -7,6 +7,7 @@ const {
   isAllowedMiniappTaskForUser,
 } = require('../services/miniappAccessPolicy');
 const { roleForUser } = require('../services/authorizationPolicy');
+const { issueRelayAssertion } = require('../services/relayAssertionService');
 
 const router = Router();
 
@@ -171,14 +172,26 @@ router.post('/desktop-sync/requests', requireDesktopSyncAccess, (req, res) => {
   const db = getInstance().db;
   const taskId = id('desktop_sync');
   const time = now();
+  const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.body.device_id;
+  const user = req.user;
+  if (!user || user.review_status !== 'approved' || user.status === 0 || user.login_enabled === 0) {
+    return sendForbidden(res, 'USER_NOT_APPROVED', 'Approved active user required');
+  }
+  const device = db.prepare('SELECT * FROM sync_devices WHERE id=? AND active=1').get(deviceId);
+  if (!device || device.owner_user_id !== user.id) return sendForbidden(res, 'SYNC_DEVICE_OWNER_MISMATCH');
+  let relayAssertion;
+  try {
+    relayAssertion = issueRelayAssertion({ taskId, actorUserId:user.id, deviceId, issuedAt:Date.now() },
+      process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '');
+  } catch (error) { return sendForbidden(res, error.code || 'RELAY_ASSERTION_SECRET_REQUIRED'); }
   const payload = {
-    deviceId: req.body.deviceId || req.body.device_id || 'unknown',
+    deviceId,
     tenantId: req.body.tenantId || req.body.tenant_id || 'default',
     pendingChanges: req.body.pendingChanges || req.body.changes || [],
     preview: req.body.preview || null,
     submittedAt: time,
-    actorUserId: req.user?.id || null,
-    syncAuthorizationToken: req.body.syncAuthorizationToken || null,
+    actorUserId: user.id,
+    relayAssertion,
   };
   db.prepare(
     `INSERT INTO miniapp_tasks (id, task_type, status, payload, created_by, created_at, updated_at)
@@ -193,6 +206,17 @@ router.post('/desktop-sync/requests', requireDesktopSyncAccess, (req, res) => {
       acceptedChanges: payload.pendingChanges.length,
     },
   });
+});
+
+router.post('/desktop-sync/devices/register', requireDesktopSyncAccess, (req, res) => {
+  if (!req.user || req.user.review_status !== 'approved') return sendForbidden(res, 'USER_NOT_APPROVED');
+  const deviceId = req.headers['x-device-id'] || req.body.deviceId;
+  if (!deviceId) return res.status(400).json({ success:false, code:'DEVICE_ID_REQUIRED' });
+  try {
+    const device = getInstance().registerSyncDevice(deviceId, { ownerUserId:req.user.id,
+      deviceName:req.body.deviceName || deviceId, role:'desktop-client' });
+    return res.json({ success:true, device:{ id:device.id, ownerUserId:device.owner_user_id } });
+  } catch (error) { return sendForbidden(res, error.code || 'SYNC_DEVICE_OWNER_MISMATCH'); }
 });
 
 router.get('/desktop-sync/requests/:id/result', requireDesktopSyncAccess, (req, res) => {

@@ -45,6 +45,9 @@ async function main() {
     tenantId: 'default',
   })).success, true);
   assert.ok(directCalls.some(call => String(call.url).includes('/api/sync/authorize')), 'direct push should request short authorization');
+  await direct.pushSyncBatch({ changes: [{ table:'students', action:'update', data:{id:'stu2'} }], deviceId:'desktop_test', tenantId:'default' });
+  assert.strictEqual(directCalls.filter(call => String(call.url).includes('/api/sync/authorize')).length, 2,
+    'every direct push must obtain a fresh one-time authorization');
 
   const cloudCalls = [];
   const cloud = createCloudRelaySyncTransport({
@@ -56,6 +59,7 @@ async function main() {
     fetchImpl: async (url, options = {}) => {
       cloudCalls.push({ url, options });
       if (String(url).includes('/api/cloud/host/status')) return jsonResponse({ success: true, online: true });
+      if (String(url).includes('/api/cloud/desktop-sync/devices/register')) return jsonResponse({ success:true, device:{id:'desktop_test'} });
       if (String(url).includes('/api/cloud/desktop-sync/requests')) {
         return jsonResponse({ success: true, request: { id: 'desktop_sync_1', status: 'pending_host' } });
       }
