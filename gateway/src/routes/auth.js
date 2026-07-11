@@ -4,22 +4,11 @@ const { getDb } = require('../db/database');
 const { generateToken, refreshToken } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 const { resolveWechatIdentity, resolveWechatPhoneNumber } = require('../services/wechatMiniappService');
-const crypto = require('crypto');
-
-const authWindows = new Map();
+const { createAuthRateLimiter } = require('../services/authRateLimiter');
+const authLimiter = createAuthRateLimiter();
 function authRateLimit(req, res, next) {
-  const now = Date.now();
-  const identifier = crypto.createHash('sha256').update(String(req.body?.phoneCode || req.body?.code || '')).digest('hex');
-  const keys = [[`ip:${req.ip}`, 10], [`identity:${identifier}`, 5]];
-  for (const [key, limit] of keys) {
-    const recent = (authWindows.get(key) || []).filter(time => now - time < 60000);
-    if (recent.length >= limit) {
-      res.set('Retry-After', '60');
-      return res.status(429).json({ success: false, code: 'AUTH_RATE_LIMITED' });
-    }
-    recent.push(now);
-    authWindows.set(key, recent);
-  }
+  const result = authLimiter.check({ ip: req.ip, identifier: req.body?.phoneCode || req.body?.code });
+  if (!result.allowed) { res.set('Retry-After', String(result.retryAfter)); return res.status(429).json({ success: false, code: 'AUTH_RATE_LIMITED' }); }
   next();
 }
 

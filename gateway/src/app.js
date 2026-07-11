@@ -5,6 +5,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const proxyaddr = require('proxy-addr');
 const { initDatabase } = require('./db/database');
 const { authMiddleware, optionalAuth } = require('./middleware/auth');
 const { errorHandler } = require('./middleware/errorHandler');
@@ -22,6 +23,8 @@ const desktopPairingRouter = require('./routes/desktopPairing');
 
 function createApp() {
   const app = express();
+  const trustedCidrs = ['loopback', ...String(process.env.TRUST_PROXY_CIDRS || '').split(',').map(value => value.trim()).filter(Boolean)];
+  app.set('trust proxy', proxyaddr.compile(trustedCidrs));
 
   // CORS
   app.use(cors({
