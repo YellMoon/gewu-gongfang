@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Card, Col, Descriptions, Empty, Input, Modal, Row, Select, Space, Statistic, Table, Tag, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import PairingReviewPanel from '../components/PairingReviewPanel';
-import { AuthorizationUser, ReviewableRole, getMyCapabilities, listUsers, reviewUser } from '../services/authorizationApi';
+import { AuthorizationUser, ReviewableRole, disableUser, getMyCapabilities, listUsers, reviewUser } from '../services/authorizationApi';
 import { authorizationEmptyText, authorizationErrorText, createAuthorizationPresentation } from '../services/authorizationPresentation.mjs';
 import './PermissionManager.css';
 
@@ -75,6 +75,20 @@ const PermissionManager: React.FC = () => {
       },
     });
   };
+  const confirmDisable = () => {
+    if (!selected || !canReview || !selected.canReview) return;
+    Modal.confirm({
+      title: '\u786e\u8ba4\u505c\u7528\u7528\u6237',
+      content: `\u505c\u7528 ${selected.name || selected.nickname || selected.phone || selected.id} \u540e\uff0c\u8be5\u7528\u6237\u5c06\u65e0\u6cd5\u767b\u5f55\u684c\u9762\u7aef\u6216\u5c0f\u7a0b\u5e8f\u3002`,
+      okText: '\u786e\u8ba4\u505c\u7528', okButtonProps: { danger: true }, cancelText: '\u53d6\u6d88',
+      async onOk() {
+        setSaving(true); setErrorCode('');
+        try { await disableUser(selected.id); message.success('\u7528\u6237\u5df2\u505c\u7528'); await load(); }
+        catch (error: any) { setErrorCode(error?.code || 'NETWORK_ERROR'); throw error; }
+        finally { setSaving(false); }
+      },
+    });
+  };
 
   const columns: ColumnsType<PresentedUser> = [
     { title: '\u7528\u6237', key: 'identity', render: (_, row) => <div><strong>{row.name || row.nickname || '\u672a\u586b\u59d3\u540d'}</strong><div className="authorization-muted">{row.phone || '\u672a\u7ed1\u5b9a\u624b\u673a\u53f7'}</div></div> },
@@ -111,6 +125,7 @@ const PermissionManager: React.FC = () => {
       {canReview && <Space className="authorization-review-actions" wrap>
         <Select aria-label="\u9009\u62e9\u7528\u6237\u89d2\u8272" value={selectedRole} options={roleOptions} onChange={setSelectedRole} disabled={saving || !selected.canReview} />
         <Button type="primary" onClick={confirmReview} loading={saving} disabled={saving || !selected.canReview}>\u5ba1\u6838\u5e76\u4fdd\u5b58</Button>
+        <Button className="authorization-disable-action" danger onClick={confirmDisable} disabled={saving || !selected.canReview}>\u505c\u7528\u7528\u6237</Button>
         {selected.disabled && <Tag>\u5df2\u505c\u7528\u7528\u6237\u4e0d\u53ef\u53d8\u66f4</Tag>}
       </Space>}
     </Card>}

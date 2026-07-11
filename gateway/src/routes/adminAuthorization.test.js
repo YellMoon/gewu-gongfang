@@ -14,7 +14,12 @@ const fakeDb = {
     return {
       get(id) { if (sql.includes('FROM users')) return rows.get(id); return { count: rows.size }; },
       all() { return [...rows.values()]; },
-      run() { if (sql.includes('user_permissions')) permissionWrites += 1; if (sql.includes('authorization_audit_log')) auditWrites += 1; return { changes: 1 }; },
+      run(...args) {
+        if (sql.includes('user_permissions')) permissionWrites += 1;
+        if (sql.includes('authorization_audit_log')) auditWrites += 1;
+        if (sql.includes('UPDATE users SET status = 0')) Object.assign(rows.get(args[args.length - 1]), { status: 0, login_enabled: 0 });
+        return { changes: 1 };
+      },
     };
   },
 };
@@ -56,6 +61,17 @@ async function call(server, method, path, body, headers = {}) {
     const immutable = await call(server, 'PATCH', '/api/admin/users/miniapp-admin-13732250653/review', { role: 'student' }, { 'x-test-super': 'true' });
     assert.strictEqual(immutable.status, 400);
     assert.strictEqual(immutable.body.code, 'SUPER_ADMIN_IMMUTABLE');
+    const ordinaryDisable = await call(server, 'PATCH', '/api/admin/users/target/disable');
+    assert.strictEqual(ordinaryDisable.status, 403);
+    assert.strictEqual(ordinaryDisable.body.code, 'SUPER_ADMIN_REQUIRED');
+    const superDisable = await call(server, 'PATCH', '/api/admin/users/target/disable', null, { 'x-test-super': 'true' });
+    assert.strictEqual(superDisable.status, 200);
+    assert.deepStrictEqual([superDisable.body.user.status, superDisable.body.user.login_enabled], [0, 0]);
+    assert.strictEqual(auditWrites, 2, 'successful disable writes one additional authorization audit row');
+    const immutableDisable = await call(server, 'PATCH', '/api/admin/users/miniapp-admin-13732250653/disable', null, { 'x-test-super': 'true' });
+    assert.strictEqual(immutableDisable.status, 400);
+    assert.strictEqual(immutableDisable.body.code, 'SUPER_ADMIN_IMMUTABLE');
+    assert.strictEqual((await call(server, 'PATCH', '/api/admin/users/missing-user/disable', null, { 'x-test-super': 'true' })).status, 404);
     const grant = await call(server, 'POST', '/api/admin/users/target/permissions', { permission_id: 'admin:all' });
     assert.strictEqual(grant.status, 410);
     assert.strictEqual(grant.body.code, 'LEGACY_PERMISSION_GRANTS_DISABLED');

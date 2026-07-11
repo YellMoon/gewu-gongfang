@@ -67,6 +67,17 @@ async function request(server, method, url, auth, body, headers = {}) {
     const reviewed = await request(base, 'PATCH', '/api/admin/users/pending-user/review', superToken, { role: 'admin' });
     assert.strictEqual(reviewed.status, 200);
     assert.strictEqual(reviewed.body.user.role, 'admin');
+    const ordinaryDisable = await request(base, 'PATCH', '/api/admin/users/approved-teacher/disable', token('ordinary-admin'));
+    assert.strictEqual(ordinaryDisable.status, 403);
+    assert.strictEqual(ordinaryDisable.body.code, 'SUPER_ADMIN_REQUIRED');
+    const disabledBySuper = await request(base, 'PATCH', '/api/admin/users/approved-teacher/disable', superToken);
+    assert.strictEqual(disabledBySuper.status, 200);
+    assert.deepStrictEqual([disabledBySuper.body.user.status, disabledBySuper.body.user.login_enabled], [0, 0]);
+    assert.strictEqual(db.db.prepare("SELECT action FROM authorization_audit_log WHERE target_user_id = ? ORDER BY created_at DESC LIMIT 1").get('approved-teacher').action, 'disable_user');
+    const immutableDisable = await request(base, 'PATCH', '/api/admin/users/miniapp-admin-13732250653/disable', superToken);
+    assert.strictEqual(immutableDisable.status, 400);
+    assert.strictEqual(immutableDisable.body.code, 'SUPER_ADMIN_IMMUTABLE');
+    assert.strictEqual((await request(base, 'PATCH', '/api/admin/users/missing-user/disable', superToken)).status, 404);
     const permissions = await request(base, 'GET', '/api/permissions/my', token('ordinary-admin'), null, { 'x-node-role': 'primary-host', 'x-client-type': 'desktop' });
     assert.ok(permissions.body.capabilities.includes('business:all'));
     assert.ok(!permissions.body.capabilities.includes('users:review'));

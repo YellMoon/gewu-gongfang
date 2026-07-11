@@ -97,6 +97,29 @@ router.patch('/users/:id/review', (req, res) => {
   return res.json({ success: true, user });
 });
 
+router.patch('/users/:id/disable', (req, res) => {
+  if (!canReviewUsers(req.user) || req.authz?.role !== 'super_admin') {
+    return res.status(403).json({ success: false, code: 'SUPER_ADMIN_REQUIRED' });
+  }
+  const db = getDb();
+  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!target) return res.status(404).json({ success: false, code: 'AUTHORIZATION_USER_NOT_FOUND' });
+  if (target.is_super_admin_identity === 1 || String(target.phone || '').replace(/\D/g, '') === '13732250653') {
+    return res.status(400).json({ success: false, code: 'SUPER_ADMIN_IMMUTABLE' });
+  }
+  if (target.status === 0 && target.login_enabled === 0) return res.json({ success: true, user: target });
+  const now = new Date().toISOString();
+  const user = db.transaction(() => {
+    db.prepare('UPDATE users SET status = 0, login_enabled = 0, updated_at = ? WHERE id = ?').run(now, target.id);
+    const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(target.id);
+    db.prepare(`INSERT INTO authorization_audit_log
+      (id, actor_user_id, target_user_id, action, before_json, after_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(uuidv4(), req.user.id, target.id, 'disable_user', JSON.stringify(target), JSON.stringify(updated), now);
+    return updated;
+  })();
+  return res.json({ success: true, user });
+});
+
 router.all('/users/:id/type', (_req, res) => res.status(410).json({ success: false, code: 'LEGACY_ROLE_ENDPOINT_DISABLED' }));
 router.all('/users/:id/permissions', (_req, res) => res.status(410).json({ success: false, code: 'LEGACY_PERMISSION_ENDPOINT_DISABLED' }));
 router.all('/users/:id/permissions/:permissionId', (_req, res) => res.status(410).json({ success: false, code: 'LEGACY_PERMISSION_ENDPOINT_DISABLED' }));
