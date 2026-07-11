@@ -13,6 +13,7 @@ dist-new/
 build/
 win-unpacked-test/
 .superpowers/
+.worktrees/
 
 # Executables and installers
 *.exe
