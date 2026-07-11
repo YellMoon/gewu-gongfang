@@ -120,6 +120,14 @@ CREATE TABLE IF NOT EXISTS cloud_devices (
   device_name TEXT,
   role TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'active',
+  owner_user_id TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS desktop_device_pairings (
+  id TEXT PRIMARY KEY, device_id TEXT NOT NULL, device_name TEXT, phone TEXT NOT NULL, secret_hash TEXT NOT NULL,
+  pairing_code TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', expires_at TEXT NOT NULL,
+  approved_by TEXT, user_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, exchanged_at TEXT
 );

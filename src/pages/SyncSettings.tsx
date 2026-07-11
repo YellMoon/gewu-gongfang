@@ -2,7 +2,7 @@
  * 同步设置页面 v2 — CRDT 引擎同步状态 + 控制面板
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Card, Button, Tag, Descriptions, Divider, message, Modal, Statistic, Row, Col, Alert, Table, Space, Collapse } from 'antd';
+import { Card, Button, Input, Tag, Descriptions, Divider, message, Modal, Statistic, Row, Col, Alert, Table, Space, Collapse } from 'antd';
 import { SyncOutlined, CloudSyncOutlined, CloudServerOutlined, WarningOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
 import { SyncEngine, SyncStatus } from '../services/syncEngine';
 import { getSyncUrl, pushSyncBatch, pullSyncOps, registerSyncDevice, requestSyncAuthorization } from '../services/syncApi';
@@ -11,7 +11,7 @@ import browserDatabase from '../services/browserDatabase';
 import type { CloudSyncContext } from '../navigation/navigationContext';
 import { runOneClickSync } from '../services/oneClickSyncService.mjs';
 import { createCloudRelaySyncTransport, createDirectSyncTransport, discoverLanDirectSyncTransports } from '../services/oneClickSyncTransports.mjs';
-import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
+import { readDesktopAuthorizationSession, startPairing, pollOrExchange } from '../services/desktopAuthorizationSession.mjs';
 import { getSyncPresentation } from '../services/syncPresentation.mjs';
 
 interface SyncSettingsProps {
@@ -28,7 +28,40 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
   const [syncConflicts, setSyncConflicts] = useState<any[]>([]);
   const [conflictsLoading, setConflictsLoading] = useState(false);
   const [oneClickLoading, setOneClickLoading] = useState(false);
+  const [pairingPhone, setPairingPhone] = useState('');
+  const [pairing, setPairing] = useState<any>(null);
+  const [pairingLoading, setPairingLoading] = useState(false);
   const engineRef = useRef<SyncEngine | null>(null);
+  const handleStartPairing = async () => {
+    setPairingLoading(true);
+    try {
+      const baseUrl = runtimeConfig?.hostBaseUrl || runtimeConfig?.cloudBaseUrl || '';
+      const result = await startPairing({
+        baseUrl,
+        phone: pairingPhone,
+        deviceId: engineRef.current?.getDeviceId(),
+        deviceName: runtimeConfig?.deviceId || 'desktop',
+      });
+      setPairing(result);
+      message.info(`\u914d\u5bf9\u7801: ${result.pairingCode}`);
+    } catch (error: any) {
+      message.error(error.code || error.message);
+    } finally {
+      setPairingLoading(false);
+    }
+  };
+  const handleRefreshPairing = async () => {
+    setPairingLoading(true);
+    try {
+      await pollOrExchange();
+      setPairing(null);
+      message.success('\u540c\u6b65\u8d26\u53f7\u5df2\u7ed1\u5b9a');
+    } catch (error: any) {
+      message.warning(error.code || error.message);
+    } finally {
+      setPairingLoading(false);
+    }
+  };
 
   // 延迟初始化 SyncEngine，捕获构造函数可能的异常
   useEffect(() => {
@@ -459,6 +492,12 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
   return (
     <div style={{ padding: 16 }}>
       {contextAlert}
+      <Card title={'\u7ed1\u5b9a\u540c\u6b65\u8d26\u53f7'} style={{marginBottom:16}}>
+        <Space wrap><Input value={pairingPhone} onChange={e=>setPairingPhone(e.target.value)} placeholder={'\u8f93\u5165\u5df2\u5ba1\u6838\u8d26\u53f7\u624b\u673a\u53f7'} />
+          <Button loading={pairingLoading} onClick={handleStartPairing}>{'\u7533\u8bf7\u914d\u5bf9'}</Button>
+          {pairing&&<><Tag color="blue">{pairing.pairingCode}</Tag><Button loading={pairingLoading} onClick={handleRefreshPairing}>{'\u6211\u5df2\u83b7\u6279\uff0c\u5237\u65b0'}</Button></>}
+        </Space>
+      </Card>
       {/* 同步状态卡片 */}
       <Card
         title={
