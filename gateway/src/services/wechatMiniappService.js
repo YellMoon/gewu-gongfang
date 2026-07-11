@@ -8,7 +8,13 @@ function config() {
 }
 
 async function jsonFetch(url, options) {
-  const response = await fetch(url, { ...options, signal: AbortSignal.timeout(8000) });
+  let response;
+  try {
+    response = await fetch(url, { ...options, signal: AbortSignal.timeout(Number(process.env.WECHAT_TIMEOUT_MS || 8000)) });
+  } catch (error) {
+    if (error.name === 'AbortError' || error.name === 'TimeoutError') throw Object.assign(new Error('WeChat upstream timed out'), { code: 'WECHAT_UPSTREAM_TIMEOUT' });
+    throw Object.assign(new Error('WeChat upstream failed'), { code: 'WECHAT_UPSTREAM_FAILED' });
+  }
   const payload = await response.json();
   if (!response.ok || payload.errcode) throw Object.assign(new Error('WeChat exchange failed'), { code: 'WECHAT_EXCHANGE_FAILED' });
   return payload;
