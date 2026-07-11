@@ -86,7 +86,7 @@ router.patch('/users/:id/review', (req, res) => {
   }
   const now = new Date().toISOString();
   const user = db.transaction(() => {
-    db.prepare(`UPDATE users SET user_type = ?, teacher_id = ?, review_status = 'approved', reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ?`)
+    db.prepare(`UPDATE users SET user_type = ?, teacher_id = ?, status = 1, login_enabled = 1, review_status = 'approved', reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ?`)
       .run(role, teacherId, req.user.id, now, now, target.id);
     const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(target.id);
     db.prepare(`INSERT INTO authorization_audit_log

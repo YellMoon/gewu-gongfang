@@ -1739,6 +1739,22 @@ class DatabaseService {
     return this.db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
   }
 
+  createPendingMiniappUserByVerifiedPhone(phone, openid, unionid, profile = {}) {
+    const phoneOwner = this.getMiniappUserByPhone(phone);
+    if (phoneOwner) return this.bindMiniappUserWechatByVerifiedPhone(phone, openid, unionid, profile);
+    const openidOwner = this.getMiniappUserByWechat(openid);
+    if (openidOwner) return openidOwner;
+    const now = this._now();
+    const id = uuidv4();
+    this.db.prepare(`INSERT INTO users
+      (id, phone, name, nickname, wechat_openid, wechat_unionid, avatar_url, role,
+       status, login_enabled, review_status, deleted, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 1, 0, 'pending', 0, ?, ?)`)
+      .run(id, phone, profile.nickname || phone, profile.nickname || null, openid,
+        unionid || null, profile.avatarUrl || null, now, now);
+    return this.db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  }
+
   findAuthorizedMiniappUserByWechat(openid) {
     const user = this.getMiniappUserByWechat(openid);
     return getMiniappLoginDenialReason(user) ? null : user;
@@ -1822,7 +1838,7 @@ class DatabaseService {
     }
     const now = this._now();
     return this.db.transaction(() => {
-      this.db.prepare(`UPDATE users SET role = ?, review_status = 'approved', teacher_id = ?,
+      this.db.prepare(`UPDATE users SET role = ?, review_status = 'approved', status = 1, login_enabled = 1, teacher_id = ?,
         reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ?`)
         .run(role, teacherId, actor.id, now, now, target.id);
       const updated = this.db.prepare('SELECT * FROM users WHERE id = ?').get(target.id);

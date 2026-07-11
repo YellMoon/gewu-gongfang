@@ -1,13 +1,13 @@
 const pageInventory = [
   {
     route: 'pages/login/index',
-    title: '登录与邀请码注册',
+    title: '微信手机号验证与待审核',
     registered: true,
     roleViews: ['guest'],
     surface: 'auth',
     visualStatus: 'optimized',
-    verificationStates: ['wechat-login', 'verified-phone-binding', 'invite-register', 'loading'],
-    realFeatureBasis: ['api.post(/api/auth/wechat-login)', 'Button(open-type=getPhoneNumber)', 'api.post(/api/auth/register)', 'auth_token storage'],
+    verificationStates: ['wechat-login', 'verified-phone-binding', 'pending-review', 'loading'],
+    realFeatureBasis: ['api.post(/api/auth/wechat-login)', 'Button(open-type=getPhoneNumber)', 'PHONE_VERIFICATION_REQUIRED', 'PENDING_REVIEW', 'auth_token storage for approved users only'],
     screenshotRequired: true,
     files: ['src/pages/login/index.tsx', 'src/pages/login/index.scss'],
   },
