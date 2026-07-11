@@ -15,6 +15,17 @@ function canReviewUsers(user = {}) {
   const canonical = user.id === CANONICAL_SUPER_ADMIN_ID || user.is_super_admin_identity === 1 || user.is_super_admin_identity === true;
   return canonical && roleForUser(user) === 'super_admin';
 }
+function resolveTeacherBinding(user = {}, teachers = []) {
+  const phone = normalizePhone(user.phone);
+  if (!phone) return { ok: false, code: 'TEACHER_NOT_FOUND' };
+  const matches = (Array.isArray(teachers) ? teachers : []).filter(teacher => teacher
+    && teacher.deleted !== true && teacher.deleted !== 1
+    && normalizePhone(teacher.phone) === phone);
+  if (matches.length === 0) return { ok: false, code: 'TEACHER_NOT_FOUND' };
+  if (matches.length > 1) return { ok: false, code: 'TEACHER_PHONE_NOT_UNIQUE' };
+  if (matches[0].id == null || String(matches[0].id).trim() === '') return { ok: false, code: 'TEACHER_BINDING_INVALID' };
+  return { ok: true, teacherId: matches[0].id };
+}
 function isApprovedActive(authz = {}) {
   const reviewStatus = authz.reviewStatus ?? authz.review_status;
   const loginEnabled = authz.loginEnabled ?? authz.login_enabled;
@@ -31,4 +42,4 @@ function effectiveCapabilities(authz = {}) {
   if (['super_admin', 'admin', 'teacher'].includes(role)) result.push('question-bank:edit');
   return result;
 }
-module.exports = { SUPER_ADMIN_PHONE, CANONICAL_SUPER_ADMIN_ID, normalizePhone, roleForUser, canReviewUsers, isApprovedActive, effectiveCapabilities };
+module.exports = { SUPER_ADMIN_PHONE, CANONICAL_SUPER_ADMIN_ID, normalizePhone, roleForUser, canReviewUsers, resolveTeacherBinding, isApprovedActive, effectiveCapabilities };
