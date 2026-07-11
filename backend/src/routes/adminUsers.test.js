@@ -40,6 +40,8 @@ async function request(server, method, url, auth, body, headers = {}) {
   const base = `http://127.0.0.1:${listener.address().port}`;
   try {
     assert.strictEqual((await request(base, 'PATCH', '/api/admin/users/pending-user/review', null, { role: 'admin', actorPhone: '13732250653' })).status, 401);
+    const ghost = jwt.sign({ id: 'ghost-super', phone: '13732250653', role: 'super_admin', user_type: 'super_admin' }, process.env.JWT_SECRET);
+    assert.strictEqual((await request(base, 'PATCH', '/api/admin/users/pending-user/review', ghost, { role: 'admin' })).status, 401, 'JWT claims without a persisted user must fail closed');
     const ordinary = await request(base, 'PATCH', '/api/admin/users/pending-user/review', token('ordinary-admin'), { role: 'admin', actorPhone: '13732250653', isPrimaryHost: true }, { 'x-node-role': 'primary-host' });
     assert.strictEqual(ordinary.status, 403);
     assert.strictEqual(ordinary.body.code, 'SUPER_ADMIN_REQUIRED');

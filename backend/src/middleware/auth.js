@@ -28,12 +28,17 @@ function getBearerToken(req) {
 }
 
 function attachAuthorizationContext(req, tokenUser) {
-  let user = tokenUser;
+  let user = null;
   try {
     const persisted = tokenUser?.id ? getInstance().db.prepare('SELECT * FROM users WHERE id = ? AND deleted = 0').get(tokenUser.id) : null;
     if (persisted) user = persisted;
-  } catch (_) {
-    // Authentication remains available during early database startup.
+  } catch (error) {
+    console.error('[Auth] persisted identity lookup failed', error?.code || error?.message || 'unknown');
+  }
+  if (!user) {
+    req.user = undefined;
+    req.authz = undefined;
+    return false;
   }
   req.user = user;
   const deviceId = req.headers['x-device-id'] || null;
@@ -49,6 +54,7 @@ function attachAuthorizationContext(req, tokenUser) {
     teacherId: user?.teacher_id || null, studentId: user?.student_id || null,
     deviceId, clientType: req.headers['x-client-type'] || 'unknown', isPrimaryHost,
   };
+  return true;
 }
 
 function readTenantFromRequest(req) {
@@ -102,7 +108,9 @@ function authMiddleware(req, res, next) {
   }
 
   try {
-    attachAuthorizationContext(req, jwt.verify(token, JWT_SECRET));
+    if (!attachAuthorizationContext(req, jwt.verify(token, JWT_SECRET))) {
+      return sendAuthError(res, 401, '认证用户不存在', 'AUTH_USER_NOT_FOUND');
+    }
     if (!applyAuthenticatedTenant(req, res)) return undefined;
     return next();
   } catch (_err) {

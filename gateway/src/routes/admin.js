@@ -81,6 +81,8 @@ router.patch('/users/:id/review', (req, res) => {
  * Body: { user_type: 'teacher' | 'student' | 'invited' | 'admin' }
  */
 router.put('/users/:id/type', (req, res) => {
+  return res.status(410).json({ success: false, code: 'LEGACY_ROLE_ENDPOINT_DISABLED', replacement: 'PATCH /api/admin/users/:id/review' });
+  /* legacy implementation retained for rollback only
   const { id } = req.params;
   const { user_type } = req.body;
 
@@ -99,7 +101,7 @@ router.put('/users/:id/type', (req, res) => {
     .run(user_type, new Date().toISOString(), id);
 
   console.log(`[Admin] 用户类型变更: ${user.name} → ${user_type}`);
-  res.json({ ok: true, user_type });
+  res.json({ ok: true, user_type }); */
 });
 
 /**
@@ -128,6 +130,8 @@ router.get('/users/:id/permissions', (req, res) => {
  * Body: { permission_id, expires_at? }
  */
 router.post('/users/:id/permissions', (req, res) => {
+  return res.status(410).json({ success: false, code: 'LEGACY_PERMISSION_GRANTS_DISABLED' });
+  /* legacy implementation retained for rollback only
   const { id } = req.params;
   const { permission_id, expires_at } = req.body;
 
@@ -171,7 +175,7 @@ router.post('/users/:id/permissions', (req, res) => {
   `).run(uuidv4(), id, permission_id, req.user.id, now, expires_at || null);
 
   console.log(`[Admin] 权限授予: ${user.name} ← ${permission_id}`);
-  res.json({ ok: true });
+  res.json({ ok: true }); */
 });
 
 /**
@@ -179,6 +183,8 @@ router.post('/users/:id/permissions', (req, res) => {
  * 撤销权限
  */
 router.delete('/users/:id/permissions/:pid', (req, res) => {
+  return res.status(410).json({ success: false, code: 'LEGACY_PERMISSION_GRANTS_DISABLED' });
+  /* legacy implementation retained for rollback only
   const { id, pid } = req.params;
   const db = getDb();
 
@@ -191,7 +197,7 @@ router.delete('/users/:id/permissions/:pid', (req, res) => {
   }
 
   console.log(`[Admin] 权限撤销: ${id} ← ${pid}`);
-  res.json({ ok: true });
+  res.json({ ok: true }); */
 });
 
 module.exports = router;

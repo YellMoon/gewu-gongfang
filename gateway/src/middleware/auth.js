@@ -26,6 +26,7 @@ function authMiddleware(req, res, next) {
     req.user = persisted;
     req.authz = { userId: persisted.id, phone: persisted.phone || null, role: roleForUser(persisted),
       teacherId: persisted.teacher_id || null, studentId: persisted.student_id || null,
+      reviewStatus: persisted.review_status, status: persisted.status, loginEnabled: persisted.login_enabled,
       deviceId: null, clientType: 'gateway', isPrimaryHost: false };
     next();
   } catch (err) {
@@ -51,6 +52,7 @@ function optionalAuth(req, res, next) {
         req.user = persisted;
         req.authz = { userId: persisted.id, phone: persisted.phone || null, role: roleForUser(persisted),
           teacherId: persisted.teacher_id || null, studentId: persisted.student_id || null,
+          reviewStatus: persisted.review_status, status: persisted.status, loginEnabled: persisted.login_enabled,
           deviceId: null, clientType: 'gateway', isPrimaryHost: false };
       }
     } catch (err) {
