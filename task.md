@@ -1,3 +1,77 @@
+# Task: 2026-07-11 Unified Role and Data Scope Authorization
+
+Status: design approved; implementation plan pending written-spec review
+
+## Objective
+
+Replace the disconnected desktop, miniapp, invitation, and module-permission systems with one enforced role and data-scope model for super administrators, administrators, teachers, students, and pending users. Remove menu structure management, isolate teacher-owned business data across desktop/miniapp/sync, protect host-committed question-bank deletion, verify both runtimes, and publish the completed desktop update.
+
+## Confirmed constraints
+
+- Phone `13732250653` is the fixed super administrator; only super administrators may review users or change roles and teacher bindings.
+- Ordinary administrators retain full business-data access but no user-review authority.
+- Teacher accounts bind by normalized phone to exactly one `teacher_id` and have the same functional permissions on desktop and miniapp.
+- Teacher business data is limited to their own courses and input; question-bank content is not teacher-scoped.
+- Only the primary local data host desktop may delete questions already committed to the question-bank drive.
+- Other devices may freely modify only their own unsynchronized local question drafts; host writes are revalidated and source-attributed.
+- Students retain the current own-data read and limited-task model.
+- Remove invitee/invited, invitation authorization, local module grants, and all other old permission systems.
+- Preserve the local host as business-data authority and require explicit user confirmation before client changes sync upward.
+
+## Execution checklist
+
+- [x] Inspect current desktop, miniapp, gateway, backend, database, and sync permission paths.
+- [x] Confirm roles, teacher identity binding, administrator boundary, teacher parity across clients, and question-bank exception.
+- [x] Write and self-review the design specification.
+- [ ] Obtain review of the written design specification.
+- [ ] Write a file-level TDD implementation plan.
+- [ ] Create a database rollback snapshot before schema migration.
+- [ ] Add failing tests for the shared role and approval policy.
+- [ ] Implement role migration, fixed super-admin enforcement, pending state, and unique teacher binding.
+- [ ] Add failing tests for teacher row/data scope and source attribution.
+- [ ] Implement authoritative read/write data scoping and filtered aggregation.
+- [ ] Add failing tests for scoped host download and validated client upload.
+- [ ] Implement sync scoping, source metadata, rejection, and review queue behavior.
+- [ ] Add failing tests for question local-draft versus host-committed deletion rules.
+- [ ] Implement question storage-state and host-desktop-only committed deletion protection.
+- [ ] Add failing UI/navigation regression tests.
+- [ ] Remove menu structure management and all obsolete permission/invitation surfaces.
+- [ ] Build desktop and miniapp review workbenches from the real authorization APIs.
+- [ ] Run targeted tests, `npm test`, desktop build, miniapp typecheck, and release checks.
+- [ ] Verify real desktop and miniapp/H5 UI for all roles and key failure/empty states, retaining screenshots or check records.
+- [ ] Commit and push `gewu/master`.
+- [ ] Bump/package the Windows desktop app, publish the OSS update feed, rebuild Node native dependencies, and verify artifacts.
+
+## Bottom-level logic
+
+- Construct authorization context from authenticated server state, never request-body role or ownership fields.
+- Resolve teachers only when one normalized phone maps to one teacher record; otherwise leave the user pending.
+- Apply teacher scope at repository/query and write-validation boundaries, before aggregation.
+- Derive course-related ownership through `courses.teacher_id`; use explicit owner/source fields for user-entered non-course data.
+- Revalidate every uploaded mutation against current host relationships and record actor/device/operation provenance.
+- Distinguish device-local question drafts from host-committed question records.
+- Require both primary-host identity and desktop client identity for committed-question deletion.
+- Enforce all sensitive rules server-side; UI visibility is not an authorization mechanism.
+
+## Validation plan
+
+- Prove each new policy with a failing test before implementation and a passing test afterward.
+- Test super-admin-only review from desktop and miniapp API paths.
+- Test teacher cross-scope reads, writes, aggregates, downloads, and uploads are rejected or excluded.
+- Test source metadata and conflict/rejection records survive persistence and reload.
+- Test question deletion across local draft, host desktop, client desktop, miniapp, and relay contexts.
+- Search for and reject residual menu-manage, invitee/invited authorization, invitation UI, and `permissions_data` runtime references.
+- Render and exercise affected pages at desktop and narrow widths with console inspection.
+
+## Rollback and publish notes
+
+- Preserve a database backup before schema or migration mutations and record its exact path.
+- Use additive schema changes; do not delete legacy browser storage keys during migration so code rollback remains possible.
+- Keep implementation commits scoped so identity, data scope, sync, question bank, and UI can be audited and reverted independently.
+- Follow the project default `gewu/master` push, Windows package, OSS feed publication, and post-package native dependency verification workflow only after the full implementation is verified.
+
+---
+
 # Task: 2026-07-10 miniapp publish and business fixes
 
 ## Goal
