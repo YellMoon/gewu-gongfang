@@ -6,7 +6,8 @@ const jwt = require('jsonwebtoken');
 const { getDb } = require('../db/database');
 const { roleForUser } = require('../services/authorizationPolicy');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'edu-platform-secret-2026';
+const JWT_SECRET = process.env.JWT_SECRET || null;
+function verifyToken(token){if(!JWT_SECRET)throw new Error('JWT_SECRET_REQUIRED');const decoded=jwt.verify(token,JWT_SECRET,{algorithms:['HS256']});if(decoded.token_use==='desktop-session'&&(decoded.iss!=='gewu-auth'||decoded.aud!=='gewu-api'))throw new Error('TOKEN_AUDIENCE_INVALID');return decoded;}
 
 /**
  * 必须认证中间件
@@ -20,7 +21,7 @@ function authMiddleware(req, res, next) {
 
   try {
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = verifyToken(token);
     const persisted = getDb().prepare('SELECT * FROM users WHERE id = ?').get(decoded.id);
     if (!persisted) return res.status(401).json({ error: 'Authenticated user not found', code: 'UNAUTHORIZED' });
     req.user = persisted;
@@ -46,7 +47,7 @@ function optionalAuth(req, res, next) {
   if (authHeader && authHeader.startsWith('Bearer ')) {
     try {
       const token = authHeader.split(' ')[1];
-      const decoded = jwt.verify(token, JWT_SECRET);
+      const decoded = verifyToken(token);
       const persisted = getDb().prepare('SELECT * FROM users WHERE id = ?').get(decoded.id);
       if (persisted) {
         req.user = persisted;

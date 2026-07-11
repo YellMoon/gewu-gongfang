@@ -31,6 +31,9 @@ function initDatabase() {
   const deviceColumns = new Set(database.prepare('PRAGMA table_info(cloud_devices)').all().map(c=>c.name));
   if(!deviceColumns.has('owner_user_id')) database.prepare('ALTER TABLE cloud_devices ADD COLUMN owner_user_id TEXT').run();
   if(!deviceColumns.has('active')) database.prepare('ALTER TABLE cloud_devices ADD COLUMN active INTEGER NOT NULL DEFAULT 1').run();
+  database.prepare(`UPDATE desktop_device_pairings SET status='rejected' WHERE status='pending' AND id NOT IN
+    (SELECT MIN(id) FROM desktop_device_pairings WHERE status='pending' GROUP BY pairing_code)`).run();
+  database.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_gateway_pairing_pending_code ON desktop_device_pairings(pairing_code) WHERE status='pending'").run();
   console.log('[DB] Gateway 数据库表已创建/更新');
   return database;
 }

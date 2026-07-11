@@ -348,6 +348,9 @@ class DatabaseService {
     const syncDeviceColumns = new Set(this.db.prepare('PRAGMA table_info(sync_devices)').all().map(column => column.name));
     if (!syncDeviceColumns.has('owner_user_id')) this.db.prepare('ALTER TABLE sync_devices ADD COLUMN owner_user_id TEXT').run();
     if (!syncDeviceColumns.has('active')) this.db.prepare('ALTER TABLE sync_devices ADD COLUMN active INTEGER NOT NULL DEFAULT 1').run();
+    this.db.prepare(`UPDATE desktop_device_pairings SET status='rejected' WHERE status='pending' AND id NOT IN
+      (SELECT MIN(id) FROM desktop_device_pairings WHERE status='pending' GROUP BY pairing_code)`).run();
+    this.db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_pairing_pending_code ON desktop_device_pairings(pairing_code) WHERE status='pending'").run();
     const deliveryColumns = new Set(this.db.prepare('PRAGMA table_info(sync_delivery_scope)').all().map(column => column.name));
     if (!deliveryColumns.has('tenant_id')) this.db.transaction(() => {
       this.db.exec(`CREATE TABLE sync_delivery_scope_v2 (
@@ -1510,6 +1513,10 @@ class DatabaseService {
           const existing = columns.includes('tenant_id')
             ? this.db.prepare(`SELECT * FROM ${table} WHERE id = ? AND tenant_id = ?`).get(recordId, change.tenantId)
             : this.db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(recordId);
+          if (!existing && options.authz?.kind === 'teacher' && table === 'courses') {
+            record.teacher_id = options.authz.teacherId;
+            change.data.teacher_id = options.authz.teacherId;
+          }
           let provenance = null;
           if (options.authz) {
             const read = name => this._tableColumns(name).length ? this.db.prepare(`SELECT * FROM ${name} WHERE tenant_id = ?`).all(change.tenantId) : [];

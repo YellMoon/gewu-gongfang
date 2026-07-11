@@ -12,16 +12,17 @@ function safeHashEqual(raw, expected) {
 }
 function createDesktopPairing(db, input = {}, options = {}) {
   const phone = normalizePhone(input.phone); const deviceId = String(input.deviceId || ''); const secret = String(input.secret || '');
-  if (!phone || !deviceId || secret.length < 32) throw error(CODES.REQUIRED);
+  if (!/^1\d{10}$/.test(phone) || !deviceId || deviceId.length > 128 || String(input.deviceName || '').length > 128 || secret.length < 32 || secret.length > 128) throw error(CODES.REQUIRED);
   const now = options.now || new Date().toISOString(); const expiresAt = options.expiresAt || new Date(Date.parse(now)+10*60*1000).toISOString();
   const pending=db.prepare("SELECT created_at FROM desktop_device_pairings WHERE device_id=? AND status='pending' ORDER BY created_at DESC LIMIT 1").get(deviceId);
   if(pending&&Date.parse(now)-Date.parse(pending.created_at)<5000)throw error('PAIRING_RATE_LIMITED');
   db.prepare("UPDATE desktop_device_pairings SET status='rejected',updated_at=? WHERE device_id=? AND status='pending'").run(now,deviceId);
   const row = { id:uuidv4(), deviceId, deviceName:String(input.deviceName || deviceId), phone,
-    secretHash:hashSecret(secret), pairingCode:String(crypto.randomInt(100000,1000000)), expiresAt };
-  db.prepare(`INSERT INTO desktop_device_pairings
+    secretHash:hashSecret(secret), pairingCode:null, expiresAt };
+  const insert=db.prepare(`INSERT INTO desktop_device_pairings
     (id,device_id,device_name,phone,secret_hash,pairing_code,status,expires_at,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,'pending',?,?,?)`).run(row.id,row.deviceId,row.deviceName,row.phone,row.secretHash,row.pairingCode,row.expiresAt,now,now);
+    VALUES (?,?,?,?,?,?,'pending',?,?,?)`);
+  for(let attempt=0;attempt<5;attempt++){row.pairingCode=String(crypto.randomInt(100000,1000000));try{insert.run(row.id,row.deviceId,row.deviceName,row.phone,row.secretHash,row.pairingCode,row.expiresAt,now,now);break;}catch(e){if(attempt===4||!String(e.code).includes('CONSTRAINT'))throw e;}}
   return { id:row.id, pairingCode:row.pairingCode, expiresAt:row.expiresAt, status:'pending' };
 }
 function exchangeDesktopPairing(db, input = {}, options = {}) {
