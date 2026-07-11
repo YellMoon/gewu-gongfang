@@ -127,6 +127,24 @@ try {
     () => service.reviewUser({ actorPhone: '13732250653', userId: 'miniapp-admin-13732250653', role: 'student' }),
     error => error && error.code === 'SUPER_ADMIN_IMMUTABLE'
   );
+  assert.throws(
+    () => service.disableAuthorizationUser({ actorPhone: '18257136756', userId: 'review-student' }),
+    error => error && error.code === 'SUPER_ADMIN_REQUIRED'
+  );
+  const disabledAuthorizationUser = service.disableAuthorizationUser({ actorPhone: '13732250653', userId: 'review-student' });
+  assert.deepStrictEqual([disabledAuthorizationUser.status, disabledAuthorizationUser.login_enabled], [0, 0]);
+  assert.strictEqual(
+    service.db.prepare("SELECT action FROM authorization_audit_log WHERE target_user_id = ? ORDER BY created_at DESC LIMIT 1").get('review-student').action,
+    'disable_user'
+  );
+  assert.throws(
+    () => service.disableAuthorizationUser({ actorPhone: '13732250653', userId: 'missing-user' }),
+    error => error && error.code === 'AUTHORIZATION_USER_NOT_FOUND'
+  );
+  assert.throws(
+    () => service.disableAuthorizationUser({ actorPhone: '13732250653', userId: 'miniapp-admin-13732250653' }),
+    error => error && error.code === 'SUPER_ADMIN_IMMUTABLE'
+  );
 
   for (const assignment of [
     "status = 0",

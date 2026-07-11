@@ -30,4 +30,18 @@ router.patch('/:id/review', (req, res) => {
   }
 });
 
+router.patch('/:id/disable', (req, res) => {
+  if (!canReviewUsers(req.user) || req.authz?.role !== 'super_admin') {
+    return res.status(403).json({ success: false, code: 'SUPER_ADMIN_REQUIRED', message: 'Super administrator approval is required' });
+  }
+  try {
+    const user = getInstance().disableAuthorizationUser({ actorPhone: req.authz.phone, userId: req.params.id });
+    return res.json({ success: true, user, data: { user } });
+  } catch (error) {
+    const status = error.code === 'AUTHORIZATION_USER_NOT_FOUND' ? 404
+      : error.code === 'SUPER_ADMIN_REQUIRED' ? 403 : 400;
+    return res.status(status).json({ success: false, code: error.code || 'DISABLE_FAILED', message: error.message });
+  }
+});
+
 module.exports = router;

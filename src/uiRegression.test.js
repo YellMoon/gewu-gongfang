@@ -57,9 +57,15 @@ assert(
 assert(
   authorizationApi.includes('export async function listUsers') &&
   authorizationApi.includes('export async function reviewUser') &&
-  !authorizationApi.includes('export async function disableUser') &&
+  authorizationApi.includes('export async function disableUser') &&
   authorizationApi.includes('export async function getMyCapabilities'),
   'desktop authorization API should expose the unified user-review contract'
+);
+assert(
+  permissionManager.includes('disableUser(selected.id)') &&
+  permissionManager.includes('authorization-disable-action') &&
+  permissionManager.includes("title: '\\u786e\\u8ba4\\u505c\\u7528\\u7528\\u6237'"),
+  'only the capability-gated review workbench should expose a confirmed user-disable action'
 );
 
 assert(

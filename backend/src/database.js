@@ -1902,6 +1902,43 @@ class DatabaseService {
     })();
   }
 
+  disableAuthorizationUser({ actorPhone, userId } = {}) {
+    const identity = this._canonicalSuperAdmin();
+    if (!identity.ok) {
+      const error = new Error('Super administrator identity is conflicting');
+      error.code = identity.code;
+      throw error;
+    }
+    const actor = identity.user;
+    const active = actor.deleted === 0 && actor.status === 1 && actor.login_enabled === 1
+      && actor.review_status === 'approved' && actor.role === 'super_admin';
+    if (normalizePhone(actorPhone) !== SUPER_ADMIN_PHONE || !active || !canReviewUsers(actor)) {
+      const error = new Error('Super administrator approval is required');
+      error.code = 'SUPER_ADMIN_REQUIRED';
+      throw error;
+    }
+    const target = this.db.prepare('SELECT * FROM users WHERE id = ? AND deleted = 0').get(userId);
+    if (!target) {
+      const error = new Error('Authorization user was not found');
+      error.code = 'AUTHORIZATION_USER_NOT_FOUND';
+      throw error;
+    }
+    if (normalizePhone(target.phone) === SUPER_ADMIN_PHONE) {
+      const error = new Error('The fixed super administrator cannot be disabled');
+      error.code = 'SUPER_ADMIN_IMMUTABLE';
+      throw error;
+    }
+    if (target.status === 0 && target.login_enabled === 0) return target;
+    const now = this._now();
+    return this.db.transaction(() => {
+      this.db.prepare('UPDATE users SET status = 0, login_enabled = 0, updated_at = ? WHERE id = ?').run(now, target.id);
+      const updated = this.db.prepare('SELECT * FROM users WHERE id = ?').get(target.id);
+      this.recordAuthorizationAudit({ actorUserId: actor.id, actorPhone: normalizePhone(actor.phone),
+        targetUserId: target.id, action: 'disable_user', before: target, after: updated, createdAt: now });
+      return updated;
+    })();
+  }
+
   listAuthorizationUsers({ status, role, search, page = 1, pageSize = 20 } = {}) {
     const validStatuses = new Set(['pending', 'approved', 'rejected']);
     const validRoles = new Set(['super_admin', 'admin', 'teacher', 'student', 'pending']);
