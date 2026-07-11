@@ -641,14 +641,6 @@ const QuestionBankPreview: React.FC = () => {
     setQuestionTotal(previous => Math.max(0, previous - succeeded.length));
     setSelectedRowKeys(previous => previous.filter(id => !succeeded.includes(id)));
     message.info(`Deleted ${succeeded.length}; failed ${selectedRowKeys.length - succeeded.length}`);
-    return;
-    selectedRowKeys.filter(id => {
-      const question = questions.find(item => item.id === id);
-      return questionDeletePresentation(question, deleteContext).enabled;
-    }).forEach(id => db.deleteQuestion(id));
-    setSelectedRowKeys([]);
-    loadData();
-    message.success(`已删除 ${selectedRowKeys.length} 题`);
   };
 
   const handleBatchTag = () => {

@@ -305,24 +305,6 @@ const QuestionBankEdit: React.FC = () => {
     setQuestions(prev => prev.filter(item => item.id !== question.id));
     setQuestionTotal(prev => Math.max(0, prev - 1));
     setSelectedRowKeys(prev => prev.filter(id => id !== question.id));
-    return;
-    let remoteDeleted = false;
-    try {
-      const res = await fetch(`${API_BASE}/questions/${question.id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || '删除失败');
-      remoteDeleted = true;
-    } catch (_err) {}
-    const localDeleted = question.storage_state === 'local_draft' ? db?.deleteQuestion?.(question.id) : false;
-    if (question.storage_state === 'local_draft') await removeQuestionLocalRecord(question.id, deleteContext);
-    if (!remoteDeleted && !localDeleted) {
-      message.error('删除失败');
-      return;
-    }
-    message.success('试题已放入回收站，7天内可撤回');
-    setQuestions(prev => prev.filter(item => item.id !== question.id));
-    setQuestionTotal(prev => Math.max(0, prev - 1));
-    setSelectedRowKeys(prev => prev.filter(id => id !== question.id));
   };
 
   const toggleQuestionSelection = useCallback((id: string, checked: boolean) => {
@@ -370,23 +352,6 @@ const QuestionBankEdit: React.FC = () => {
     setQuestionTotal(prev => Math.max(0, prev - succeeded.length));
     setSelectedRowKeys(prev => prev.filter(id => !succeeded.includes(id)));
     message.info(`Deleted ${succeeded.length}; failed ${selectedRowKeys.length - succeeded.length}`);
-    return;
-    for (const id of ids) {
-      try {
-        const res = await fetch(`${API_BASE}/questions/${id}`, { method: 'DELETE' });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'delete failed');
-      } catch (_err) {}
-      const question = questions.find(item => item.id === id);
-      if (question?.storage_state === 'local_draft') {
-        db?.deleteQuestion?.(id);
-        await removeQuestionLocalRecord(id, deleteContext);
-      }
-    }
-    setQuestions(prev => prev.filter(item => !ids.includes(item.id)));
-    setQuestionTotal(prev => Math.max(0, prev - ids.length));
-    setSelectedRowKeys([]);
-    message.success(`已删除 ${ids.length} 道试题`);
   };
 
   const disabledDangerousDataClear = async () => {
