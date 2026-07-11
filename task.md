@@ -242,3 +242,4 @@ Simplify the desktop data-sync page by adapting its default content to the confi
 - `node gateway/src/routes/cloudRelay.test.js`：真实 cloud relay 过滤函数 teacher snapshot 通过。
 - 统计输入证据：裁剪后的 schedules/assetRecords 汇总仅包含 t1（课时费 100、学费 500、资产 10）。桌面 UI 会话接入不在本任务范围，未声称桌面 UI 已完成隔离。
 - 审查修复：gateway/backend snapshot read 强制持久化 approved active 用户；unknown/pending fail closed。学生与老师均使用明确字段 allowlist，未知数组和预聚合 stats 不透传；`scopedFinancials` 从裁剪后的 schedules/payments/assets 重算。
+- 学生快照统一：真实 enrollment 以 `schedule_id + student_id` 经允许排课过滤（兼容 `course_id`）；学生、课程、排课、老师由共享 service 做安全字段白名单脱敏，payments/consumptions/assets 继续按原学生策略清空。unknown/pending 返回空 payload，仅 approved student（包括未绑定学生）保留公共题库。

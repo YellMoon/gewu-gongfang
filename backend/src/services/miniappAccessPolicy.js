@@ -135,68 +135,7 @@ function filterSnapshotForUser(snapshot, user) {
   const payload = scopeBusinessSnapshot(snapshot.payload || {}, {
     kind: 'student', studentIds: linkedStudentIds, userId: user.id || user.user_id || user.userId,
   });
-  const courseById = new Map((payload.courses || []).map(course => [course.id, course]));
-
-  if (linkedStudentIds.length === 0) {
-    return {
-      ...snapshot,
-      payload: {
-        redactedForRole: 'student',
-        linkedStudentIds: [],
-        students: [],
-        courses: [],
-        schedules: [],
-        teachers: [],
-        payments: [],
-        consumptions: [],
-        assetRecords: [],
-        assetCategories: [],
-        ...payload,
-      },
-    };
-  }
-
-  const courses = (payload.courses || []).filter(course =>
-    hasAnyStudentLink(courseStudentIds(course), linkedStudentIds)
-  );
-  const allowedCourseIds = new Set(courses.map(course => course.id));
-  const schedules = (payload.schedules || []).filter(schedule =>
-    allowedCourseIds.has(schedule.course_id)
-    || hasAnyStudentLink(scheduleStudentIds(schedule, courseById), linkedStudentIds)
-  );
-  const students = (payload.students || []).filter(student => linkedStudentIds.includes(String(student.id)));
-  const teachers = (payload.teachers || []).filter(teacher =>
-    courses.some(course => course.teacher_id === teacher.id || course.teacherId === teacher.id)
-  );
-
-  const {
-    payments: _payments,
-    consumptions: _consumptions,
-    assetRecords: _assetRecords,
-    assetCategories: _assetCategories,
-    stats: _stats,
-    revenueStats: _revenueStats,
-    financeStats: _financeStats,
-    studentTuitionStats: _studentTuitionStats,
-    ...rest
-  } = payload;
-
-  return {
-    ...snapshot,
-    payload: {
-      ...rest,
-      redactedForRole: 'student',
-      linkedStudentIds,
-      students: students.map(redactStudentForStudent),
-      courses: courses.map(redactCourseForStudent),
-      schedules: schedules.map(redactScheduleForStudent),
-      teachers: teachers.map(redactTeacherForStudent),
-      payments: [],
-      consumptions: [],
-      assetRecords: [],
-      assetCategories: [],
-    },
-  };
+  return { ...snapshot, payload };
 }
 
 function allowedTasksForUser(user) {

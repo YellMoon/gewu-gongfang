@@ -112,7 +112,7 @@ function filterSnapshotForUser(snapshot, user) {
       kind: 'student', studentIds: getLinkedStudentIds(user), userId: user.id,
     }) };
   }
-  return { ...snapshot, payload: scopeBusinessSnapshot(snapshot.payload || {}, { kind: 'student', studentIds: [] }) };
+  return { ...snapshot, payload: {} };
 }
 
 router.post('/host/heartbeat', (req, res) => {

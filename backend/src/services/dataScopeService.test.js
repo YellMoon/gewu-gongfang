@@ -11,7 +11,7 @@ const snapshot = {
     { id: 'sc2', courseId: 'c2', studentIds: ['s1', 's2'], calculated_teacher_fee: 900, calculated_tuition: 5000 },
   ],
   students: [{ id: 's1', school_id: 'school1' }, { id: 's2', school_id: 'school2' }],
-  enrollments: [{ id: 'e1', course_id: 'c1', student_id: 's1' }, { id: 'e2', course_id: 'c2', student_id: 's2' }],
+  enrollments: [{ id: 'e1', schedule_id: 'sc1', student_id: 's1' }, { id: 'e2', schedule_id: 'sc2', student_id: 's2' }],
   consumptions: [{ id: 'x1', schedule_id: 'sc1', student_id: 's1' }, { id: 'x2', schedule_id: 'sc2', student_id: 's2' }],
   payments: [
     { id: 'p-ambiguous', student_id: 's1', amount: 999 },
@@ -54,6 +54,21 @@ assert.deepStrictEqual(emptyStudent.courses, []);
 assert.strictEqual(emptyStudent.questions.length, 2);
 assert.strictEqual(emptyStudent.secretRows, undefined);
 assert.strictEqual(emptyStudent.revenueStats, undefined);
+const studentScoped = scopeBusinessSnapshot({ ...snapshot,
+  students: [{ id: 's1', name: 'A', phone: 'secret', balance_money: 999 }],
+  courses: [{ ...snapshot.courses[0], price_tuition: 999, notes: 'safe course note' }],
+  schedules: [{ ...snapshot.schedules[0], calculated_tuition: 500, student_pricings: [{ student_id: 's1', tuition: 500 }] }],
+  teachers: [{ id: 't1', name: 'T', hourly_rate: 999, phone: 'secret' }],
+}, { kind: 'student', studentIds: ['s1'], userId: 'u1' });
+assert.deepStrictEqual(studentScoped.enrollments.map(x => x.id), ['e1'], 'real enrollment shape links through schedule_id');
+assert.strictEqual(studentScoped.students[0].phone, undefined);
+assert.strictEqual(studentScoped.students[0].balance_money, undefined);
+assert.strictEqual(studentScoped.courses[0].price_tuition, undefined);
+assert.strictEqual(studentScoped.schedules[0].calculated_tuition, undefined);
+assert.strictEqual(studentScoped.teachers[0].hourly_rate, undefined);
+assert.deepStrictEqual(studentScoped.payments, []);
+assert.deepStrictEqual(studentScoped.consumptions, []);
+assert.deepStrictEqual(studentScoped.assetRecords, []);
 
 assertRecordReadable('courses', snapshot.courses[0], { kind: 'teacher', teacherId: 't1' });
 assert.throws(() => assertRecordReadable('courses', snapshot.courses[1], { kind: 'teacher', teacherId: 't1' }), err => err.code === 'TEACHER_SCOPE_VIOLATION');
