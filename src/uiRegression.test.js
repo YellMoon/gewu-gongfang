@@ -57,7 +57,7 @@ assert(
 assert(
   authorizationApi.includes('export async function listUsers') &&
   authorizationApi.includes('export async function reviewUser') &&
-  authorizationApi.includes('export async function disableUser') &&
+  !authorizationApi.includes('export async function disableUser') &&
   authorizationApi.includes('export async function getMyCapabilities'),
   'desktop authorization API should expose the unified user-review contract'
 );

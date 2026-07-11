@@ -69,7 +69,7 @@ const PermissionManager: React.FC = () => {
           message.success('\u7528\u6237\u89d2\u8272\u5df2\u66f4\u65b0'); await load();
         } catch (error: any) {
           const code = error?.code || 'NETWORK_ERROR'; setErrorCode(code);
-          if (['TEACHER_NOT_FOUND', 'DUPLICATE_TEACHER_PHONE'].includes(code)) setBindingErrors(previous => ({ ...previous, [selected.id]: code }));
+          if (['TEACHER_NOT_FOUND', 'TEACHER_PHONE_NOT_UNIQUE', 'DUPLICATE_TEACHER_PHONE'].includes(code)) setBindingErrors(previous => ({ ...previous, [selected.id]: code }));
           throw error;
         } finally { setSaving(false); }
       },

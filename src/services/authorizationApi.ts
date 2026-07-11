@@ -30,10 +30,6 @@ export async function reviewUser(userId: string, role: ReviewableRole) {
   const data = await request(`/api/admin/users/${encodeURIComponent(userId)}/review`, { method: 'PATCH', body: JSON.stringify({ role }) });
   return (data.user || data.data?.user) as AuthorizationUser;
 }
-export async function disableUser(userId: string) {
-  const data = await request(`/api/admin/users/${encodeURIComponent(userId)}/disable`, { method: 'PATCH' });
-  return (data.user || data.data?.user) as AuthorizationUser;
-}
 export async function getMyCapabilities() {
   const data = await request('/api/permissions/my');
   return (data.capabilities || data.data?.capabilities || []) as string[];
