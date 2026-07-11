@@ -195,10 +195,10 @@ const TodayWorkbench: React.FC<TodayWorkbenchProps> = ({ onNavigate }) => {
           <span>试题库、导入与知识树、组卷</span>
           <span className="today-workbench__entry-sub">试题库 · 导入与知识树 · 组卷</span>
         </button>
-        <button className="today-workbench__entry-card" onClick={() => onNavigate('cloud-sync')}>
+        <button className="today-workbench__entry-card" onClick={() => onNavigate('system-params')}>
           <CloudSyncOutlined />
           <strong>云同步</strong>
-          <span>查看同步控制台和本地队列</span>
+          <span>查看同步设置和本地队列</span>
         </button>
       </div>
 

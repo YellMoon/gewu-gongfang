@@ -16,6 +16,7 @@ export type QuestionBankToolsContext = {
 
 export type CloudSyncContext = {
   mode?: 'issues' | 'pending';
+  section?: 'sync-settings';
 };
 
 export type NavigationContext =
@@ -33,5 +34,15 @@ export type NavigationTarget = {
 export type NavigationInput = PageKey | NavigationTarget;
 
 export function normalizeNavigationTarget(input: NavigationInput): NavigationTarget {
-  return typeof input === 'string' ? { page: input } : input;
+  const target = typeof input === 'string' ? { page: input } : input;
+  if (target.page === 'cloud-sync') {
+    return {
+      page: 'system-params',
+      context: {
+        ...(typeof target.context === 'object' ? target.context : {}),
+        section: 'sync-settings',
+      } as CloudSyncContext,
+    };
+  }
+  return target;
 }

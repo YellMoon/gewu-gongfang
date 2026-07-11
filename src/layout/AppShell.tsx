@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Layout, Menu, Space, Tag, Tooltip } from 'antd';
+import { Button, Layout, Menu, Tooltip } from 'antd';
 import {
-  CloudSyncOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   ReloadOutlined,
@@ -9,6 +8,7 @@ import {
 import PageHeaderBar from './PageHeaderBar';
 import { findNavItem, findOpenGroup, navGroups, PageKey, todayNavItem } from '../navigation/appNavigation';
 import type { NavigationInput } from '../navigation/navigationContext';
+import SyncQuickPanel from '../components/sync/SyncQuickPanel';
 
 const { Content, Sider } = Layout;
 
@@ -178,12 +178,7 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
                 刷新
               </Button>
             )}
-            status={(
-              <Space size={6} wrap>
-                <Tag color="blue">本地</Tag>
-                <Tag icon={<CloudSyncOutlined />} color="processing">同步</Tag>
-              </Space>
-            )}
+            status={<SyncQuickPanel onNavigate={onNavigate} />}
           />
         </div>
         <Content className={`app-shell__content app-shell__content--${currentPage}`}>

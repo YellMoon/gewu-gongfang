@@ -175,7 +175,7 @@ const App: React.FC = () => {
       case 'personal-assets': return <PersonalAssets />;
       case 'permission': return <PermissionManager />;
       case 'cloud-sync': return <ErrorBoundary><SyncSettings context={pageContext as any} /></ErrorBoundary>;
-      case 'system-params': return <SystemSettings />;
+      case 'system-params': return <SystemSettings context={pageContext as any} />;
       case 'admin': {
         const isLoggedIn = sessionStorage.getItem('admin_logged_in') === 'true';
         if (!isLoggedIn) {
