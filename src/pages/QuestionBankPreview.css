@@ -260,3 +260,6 @@
     grid-template-columns: 1fr;
   }
 }
+.question-delete-hidden > :nth-child(3) {
+  display: none;
+}

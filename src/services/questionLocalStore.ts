@@ -1,4 +1,5 @@
 import type { KnowledgeNode, Question } from '../types';
+const { canRemoveQuestionLocalRecord } = require('./questionLocalDeletionPolicy');
 
 const DB_NAME = 'question_local_store_v1';
 const DB_VERSION = 1;
@@ -34,6 +35,9 @@ type QuestionMeta = {
   has_formula?: boolean;
   fingerprint?: string;
   search_text?: string;
+  storage_state?: 'local_draft' | 'host_committed';
+  sourceDeviceId?: string;
+  ownerUserId?: string;
 };
 
 type QuestionContent = {
@@ -173,6 +177,9 @@ function buildMeta(question: Question): QuestionMeta {
     has_formula: Boolean((question as any).has_formula),
     fingerprint: stripHtml(content).replace(/\s+/g, ''),
     search_text: searchText,
+    storage_state: (question as any).storage_state,
+    sourceDeviceId: (question as any).sourceDeviceId,
+    ownerUserId: (question as any).ownerUserId,
   };
 }
 
@@ -232,15 +239,19 @@ export async function upsertQuestionLocalRecord(question: Question): Promise<voi
   });
 }
 
-export async function removeQuestionLocalRecord(id: string): Promise<void> {
+export async function removeQuestionLocalRecord(id: string, context: { deviceId?: string; userId?: string } = {}): Promise<boolean> {
   let db: IDBDatabase;
   try {
     db = await openDb();
   } catch (_err) {
+    const record = fallbackContent.get(id);
+    if (!canRemoveQuestionLocalRecord(record, context)) return false;
     fallbackMeta.delete(id);
     fallbackContent.delete(id);
-    return;
+    return true;
   }
+  const content = await requestToPromise<any>(db.transaction(CONTENT_STORE, 'readonly').objectStore(CONTENT_STORE).get(id));
+  if (!canRemoveQuestionLocalRecord(content?.payload, context)) return false;
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction([META_STORE, CONTENT_STORE], 'readwrite');
     tx.objectStore(META_STORE).delete(id);
@@ -248,6 +259,7 @@ export async function removeQuestionLocalRecord(id: string): Promise<void> {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
+  return true;
 }
 
 export async function clearQuestionLocalStore(): Promise<void> {

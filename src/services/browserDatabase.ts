@@ -271,6 +271,13 @@ class BrowserDatabaseService {
     }
   }
 
+  private getAuthorizationUserId(): string {
+    try {
+      const session = JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null');
+      return session?.user?.id || session?.userId || '';
+    } catch { return ''; }
+  }
+
   private recordSyncChange(table: SyncTable, action: SyncAction, recordId: string, payload: Record<string, any> = {}, baseVersion: string | null = null): void {
     try {
       const key = 'sync_engine_sync_pending_changes';
@@ -1751,7 +1758,7 @@ class BrowserDatabaseService {
       created_by: question.created_by || '',
       storage_state: 'local_draft',
       sourceDeviceId: this.getSyncDeviceId(),
-      ownerUserId: question.ownerUserId || question.created_by || '',
+      ownerUserId: question.ownerUserId || this.getAuthorizationUserId(),
       created_at: now,
       updated_at: now
     };
@@ -1840,6 +1847,14 @@ class BrowserDatabaseService {
   deleteQuestion(id: string): boolean {
     const idx = this.data.questions.findIndex(q => q.id === id);
     if (idx === -1) return false;
+    if (this.data.questions[idx].storage_state === 'host_committed') return false;
+    let userId = '';
+    try {
+      const session = JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null');
+      userId = session?.user?.id || session?.userId || '';
+    } catch (_error) {}
+    if (this.data.questions[idx].sourceDeviceId !== this.getSyncDeviceId()
+      || !userId || this.data.questions[idx].ownerUserId !== userId) return false;
     this.data.questions[idx] = this.normalizeQuestionRecord({
       ...this.data.questions[idx],
       deleted: true,
