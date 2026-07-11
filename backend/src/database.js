@@ -8,7 +8,6 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { getMiniappLoginDenialReason } = require('./services/miniappAuthPolicy');
 const { validateSyncMutation } = require('./services/syncScopeService');
-const { findQuestionBankStore } = require('./services/questionBankStorageService');
 const { scopeBusinessSnapshot } = require('./services/dataScopeService');
 const {
   SUPER_ADMIN_PHONE,
@@ -261,15 +260,6 @@ class DatabaseService {
     this.db.prepare("UPDATE questions SET has_formula = 0 WHERE has_formula IS NULL").run();
     this.db.prepare("UPDATE questions SET created_by = '' WHERE created_by IS NULL").run();
     this.db.prepare("UPDATE questions SET storage_state = 'local_draft' WHERE storage_state IS NULL OR storage_state NOT IN ('local_draft', 'host_committed')").run();
-    const questionBankRoot = process.env.QUESTION_BANK_ROOT;
-    const verifiedStore = questionBankRoot ? findQuestionBankStore([questionBankRoot], { storeId: process.env.QUESTION_BANK_STORE_ID || undefined }) : null;
-    if (verifiedStore?.available && verifiedStore.manifest?.storeId && Number(verifiedStore.manifest.schemaVersion) >= 1) {
-      const committedAt = this._now();
-      this.db.prepare(`UPDATE questions
-        SET storage_state = 'host_committed', committed_at = COALESCE(committed_at, ?),
-            committed_by_device_id = COALESCE(committed_by_device_id, ?)
-        WHERE storage_state = 'local_draft' AND deleted = 0`).run(committedAt, process.env.GEWU_DEVICE_ID || null);
-    }
   }
 
   _ensureImportTaskColumns() {

@@ -8,6 +8,7 @@ function canDeleteQuestion(context = {}) {
   if (context.storageState !== 'host_committed' || context.gateway) return false;
   return context.runtimeNodeRole === 'primary-host'
     && context.tokenUse === 'desktop-session'
+    && context.clientType === 'desktop'
     && Boolean(context.deviceId)
     && context.deviceId === context.tokenDeviceId
     && context.deviceTrusted === true
