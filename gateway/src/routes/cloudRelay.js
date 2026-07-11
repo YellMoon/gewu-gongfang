@@ -240,10 +240,11 @@ router.post('/tasks/:id/complete', requireHostToken, (req, res) => {
 
 router.get('/tasks/:id/result', requireApprovedSnapshotUser, (req, res) => {
   const db = getDb();
-  const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(req.params.id);
-  if (row && !['super_admin', 'admin'].includes(roleForUser(req.user)) && row.created_by !== req.user.id) {
-    return res.status(403).json({ success: false, code: 'TASK_SCOPE_VIOLATION' });
-  }
+  const isAdmin = ['super_admin', 'admin'].includes(roleForUser(req.user));
+  const row = isAdmin
+    ? db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(String(req.params.id))
+    : db.prepare('SELECT * FROM miniapp_tasks WHERE id = ? AND CAST(created_by AS TEXT) = ?').get(String(req.params.id), String(req.user.id));
+  if (!row && !isAdmin) return res.status(404).json({ success: false, code: 'TASK_NOT_FOUND' });
   res.json({
     success: true,
     task: row ? {

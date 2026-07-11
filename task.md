@@ -244,3 +244,4 @@ Simplify the desktop data-sync page by adapting its default content to the confi
 - 审查修复：gateway/backend snapshot read 强制持久化 approved active 用户；unknown/pending fail closed。学生与老师均使用明确字段 allowlist，未知数组和预聚合 stats 不透传；`scopedFinancials` 从裁剪后的 schedules/payments/assets 重算。
 - 学生快照统一：真实 enrollment 以 `schedule_id + student_id` 经允许排课过滤（兼容 `course_id`）；学生、课程、排课、老师由共享 service 做安全字段白名单脱敏，payments/consumptions/assets 继续按原学生策略清空。unknown/pending 返回空 payload，仅 approved student（包括未绑定学生）保留公共题库。
 - 云中继加固：gateway 主机 heartbeat/snapshot publish/task list/task complete 使用 timing-safe host token 且缺配置 fail closed；真实 HTTP 测试覆盖匿名、错误 token、正确 token及任务 owner 边界。gateway 内置独立 scope service，并以 parity test 防止与 backend 行为漂移。公共题库和关联基础数据逐表投影；金额忽略非有限值、保留负数并按 id 去重；同时出现 course/schedule 时以 schedule 归属为准并拒绝冲突。
+- 资源投影补全：题库图片资源保留渲染所需 URL/data URL、mime/type、尺寸和 alt 的 snake/camel 字段，继续排除对象键、内部路径及 hash；学生关联 room/institution/school 只保留安全名称字段。普通用户任务结果查询在 SQL 层附加规范化 owner 条件，跨用户返回不可枚举的 404。
