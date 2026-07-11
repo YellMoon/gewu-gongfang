@@ -247,7 +247,7 @@ function createApp() {
 
   // 公开路由（无需认证）
   app.use('/api/auth', authRouter);
-  app.use('/api/sync', syncRouter);
+  app.use('/api/sync', optionalAuth, syncRouter);
   app.use('/api/cloud-relay-host', optionalAuth, requireWriteAccess, cloudRelayHostRouter);
   app.use('/api/modules', optionalAuth, modulesRouter);
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);

@@ -10,6 +10,7 @@
  */
 const { Router } = require('express');
 const { getInstance } = require('../database');
+const { scopeForUser } = require('../services/authorizationPolicy');
 
 const router = Router();
 
@@ -182,7 +183,12 @@ router.post('/push', (req, res) => {
       return res.status(403).json({ success: false, error: 'sync authorization required' });
     }
 
-    const result = db.applySyncChanges(changes, { deviceId, tenantId: readTenantId(req) });
+    const scoped = req.authz ? scopeForUser(req.user) : null;
+    if (!scoped || !req.authz?.deviceId) {
+      return res.status(403).json({ success: false, code: 'AUTHORIZATION_CONTEXT_REQUIRED', error: 'authenticated user and registered device required' });
+    }
+    const result = db.applySyncChanges(changes, { deviceId: req.authz.deviceId, tenantId: readTenantId(req),
+      authz: { ...scoped, userId: req.authz.userId, deviceId: req.authz.deviceId } });
     const serverTime = db._now();
     console.log(`[Sync:Push] device=${deviceId} applied=${result.applied} conflicts=${result.conflicts} errors=${result.errors.length}`);
 
