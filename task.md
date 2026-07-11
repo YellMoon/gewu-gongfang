@@ -84,6 +84,18 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 - Quality RED: boundary tests made `node backend/src/services/authorizationPolicy.test.js` exit 1 with a `TypeError` from `roleForUser(null)` before hardening.
 - Quality GREEN: the focused command exited 0 after rejecting empty phones and invalid teacher IDs, safely handling null/non-object inputs and invalid teacher collections, and preserving explicit invalid-role precedence over `user_type`.
 
+### Task 2 evidence: authorization schema and database persistence
+
+- [x] Add additive user review/binding columns plus authorization audit and sync rejection tables.
+- [x] Migrate legacy roles safely, promote only the fixed super-admin, and bind teachers only on one active phone match.
+- [x] Add review/list/context/audit/rejection DatabaseService methods with parameterized SQL and stable error codes.
+- [x] Preserve fixed super-admin miniapp login compatibility and update affected seed/login expectations.
+- [x] Add the focused database authorization test to `test:backend` and run all requested regressions.
+- RED: `node backend/src/databaseAuthorization.test.js` exited 1 with `users should include teacher_id` before schema/database implementation.
+- GREEN: `node backend/src/databaseAuthorization.test.js` exited 0 with `database authorization checks passed`.
+- Focused regressions: authorization, `databaseMiniappAdminSeed`, `databaseImportSafety`, and `miniappPhoneLogin` all exited 0 on 2026-07-11.
+- Full regression: `npm test` exited 0 in 37.1 seconds on 2026-07-11.
+
 ---
 
 # Task: 2026-07-10 miniapp publish and business fixes

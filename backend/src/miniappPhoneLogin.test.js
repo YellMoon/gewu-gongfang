@@ -84,7 +84,7 @@ async function postJson(baseUrl, body) {
     });
     assert.strictEqual(firstLogin.status, 200, 'verified seeded phone should complete first login');
     assert.strictEqual(firstLogin.body.success, true);
-    assert.strictEqual(firstLogin.body.data.user.role, 'admin');
+    assert.strictEqual(firstLogin.body.data.user.role, 'super_admin');
     assert.strictEqual(firstLogin.body.data.user.phone, '13732250653');
 
     const boundUser = getInstance().db.prepare('SELECT * FROM users WHERE phone = ?').get('13732250653');

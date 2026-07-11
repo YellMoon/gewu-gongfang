@@ -7,6 +7,14 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { getMiniappLoginDenialReason } = require('./services/miniappAuthPolicy');
+const {
+  SUPER_ADMIN_PHONE,
+  normalizePhone,
+  roleForUser,
+  canReviewUsers,
+  resolveTeacherBinding,
+  scopeForUser,
+} = require('./services/authorizationPolicy');
 
 const SCHEMA_VERSION = 3101;
 const MINIAPP_ADMIN_SEED_USERS = [
@@ -76,6 +84,7 @@ class DatabaseService {
     this._ensureImportTaskColumns();
     this._ensureArchiveJobColumns();
     this._ensureMiniappUserColumns();
+    this._ensureAuthorizationPersistence();
     this._ensureHostHeartbeatColumns();
     console.log(`[DB] initialized env=${this.environment} schema=${this.schemaVersion} path=${this.dbPath}`);
   }
@@ -306,6 +315,76 @@ class DatabaseService {
       if (existing) return;
       insertSeed.run(seed.id, seed.phone, seed.name, seed.name, now, now);
     });
+  }
+
+  _ensureAuthorizationPersistence() {
+    const columns = new Set(this.db.prepare('PRAGMA table_info(users)').all().map(column => column.name));
+    const addColumn = (name, ddl) => {
+      if (!columns.has(name)) {
+        this.db.prepare(`ALTER TABLE users ADD COLUMN ${name} ${ddl}`).run();
+        columns.add(name);
+      }
+    };
+    addColumn('teacher_id', 'TEXT');
+    addColumn('review_status', "TEXT DEFAULT 'pending'");
+    addColumn('reviewed_by', 'TEXT');
+    addColumn('reviewed_at', 'TEXT');
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS authorization_audit_log (
+        id TEXT PRIMARY KEY, actor_user_id TEXT, actor_phone TEXT, target_user_id TEXT,
+        action TEXT NOT NULL, before_json TEXT, after_json TEXT, created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS sync_rejections (
+        id TEXT PRIMARY KEY, operation_id TEXT, actor_user_id TEXT, actor_teacher_id TEXT,
+        source_device_id TEXT, table_name TEXT, record_id TEXT, reason_code TEXT NOT NULL,
+        payload_json TEXT, created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_authorization_users_review ON users(review_status, role);
+      CREATE INDEX IF NOT EXISTS idx_authorization_audit_target ON authorization_audit_log(target_user_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_sync_rejections_operation ON sync_rejections(operation_id, created_at);
+    `);
+    this._migrateAuthorizationUsers();
+  }
+
+  _migrateAuthorizationUsers() {
+    const users = this.db.prepare(
+      'SELECT id, phone, role, student_id, teacher_id, review_status FROM users WHERE deleted = 0'
+    ).all();
+    const teachers = this.db.prepare(
+      'SELECT id, phone, deleted FROM teachers WHERE deleted = 0'
+    ).all();
+    const update = this.db.prepare(
+      'UPDATE users SET role = ?, review_status = ?, teacher_id = ?, updated_at = ? WHERE id = ?'
+    );
+    const migrate = this.db.transaction(() => {
+      for (const user of users) {
+        let role = user.role;
+        let reviewStatus = user.review_status;
+        let teacherId = null;
+        if (normalizePhone(user.phone) === SUPER_ADMIN_PHONE) {
+          role = 'super_admin';
+          reviewStatus = 'approved';
+        } else if (role === 'admin' || role === 'student') {
+          reviewStatus = 'approved';
+        } else if (role === 'teacher') {
+          const binding = resolveTeacherBinding(user, teachers);
+          if (binding.ok) {
+            teacherId = binding.teacherId;
+            reviewStatus = 'approved';
+          } else {
+            role = 'pending';
+            reviewStatus = 'pending';
+          }
+        } else if (role !== 'pending') {
+          role = 'pending';
+          reviewStatus = 'pending';
+        } else {
+          reviewStatus = 'pending';
+        }
+        update.run(role, reviewStatus, teacherId, this._now(), user.id);
+      }
+    });
+    migrate();
   }
 
   _ensureHostHeartbeatColumns() {
@@ -1446,6 +1525,105 @@ class DatabaseService {
     return user;
   }
 
+  reviewUser({ actorPhone, userId, role } = {}) {
+    const actor = this.db.prepare('SELECT * FROM users WHERE phone = ? AND deleted = 0 ORDER BY created_at LIMIT 1')
+      .get(normalizePhone(actorPhone));
+    if (!actor || !canReviewUsers(actor)) {
+      const error = new Error('Super administrator approval is required');
+      error.code = 'SUPER_ADMIN_REQUIRED';
+      throw error;
+    }
+    if (!['admin', 'student', 'teacher'].includes(role)) {
+      const error = new Error('Invalid authorization role');
+      error.code = 'INVALID_AUTHORIZATION_ROLE';
+      throw error;
+    }
+    const target = this.db.prepare('SELECT * FROM users WHERE id = ? AND deleted = 0').get(userId);
+    if (!target) {
+      const error = new Error('Authorization user was not found');
+      error.code = 'AUTHORIZATION_USER_NOT_FOUND';
+      throw error;
+    }
+    if (normalizePhone(target.phone) === SUPER_ADMIN_PHONE) {
+      const error = new Error('The fixed super administrator cannot be downgraded');
+      error.code = 'SUPER_ADMIN_IMMUTABLE';
+      throw error;
+    }
+    let teacherId = null;
+    if (role === 'teacher') {
+      const binding = resolveTeacherBinding(
+        target,
+        this.db.prepare('SELECT id, phone, deleted FROM teachers WHERE deleted = 0').all()
+      );
+      if (!binding.ok) {
+        const error = new Error(binding.code);
+        error.code = binding.code;
+        throw error;
+      }
+      teacherId = binding.teacherId;
+    }
+    const now = this._now();
+    return this.db.transaction(() => {
+      this.db.prepare(`UPDATE users SET role = ?, review_status = 'approved', teacher_id = ?,
+        reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ?`)
+        .run(role, teacherId, actor.id, now, now, target.id);
+      const updated = this.db.prepare('SELECT * FROM users WHERE id = ?').get(target.id);
+      this.recordAuthorizationAudit({ actorUserId: actor.id, actorPhone: normalizePhone(actor.phone),
+        targetUserId: target.id, action: 'review_user', before: target, after: updated, createdAt: now });
+      return updated;
+    })();
+  }
+
+  listAuthorizationUsers({ status, role, search } = {}) {
+    const where = ['deleted = 0'];
+    const params = [];
+    if (status) { where.push('review_status = ?'); params.push(status); }
+    if (role) { where.push('role = ?'); params.push(role); }
+    if (search) {
+      where.push("(COALESCE(name, '') LIKE ? OR COALESCE(nickname, '') LIKE ? OR COALESCE(phone, '') LIKE ?)");
+      params.push(...Array(3).fill(`%${search}%`));
+    }
+    return this._reader().prepare(`SELECT * FROM users WHERE ${where.join(' AND ')} ORDER BY created_at, id`).all(...params);
+  }
+
+  getAuthorizationContextByUserId(userId, device = {}) {
+    const user = this._reader().prepare('SELECT * FROM users WHERE id = ? AND deleted = 0').get(userId);
+    if (!user) return null;
+    const role = roleForUser(user);
+    return { userId: user.id, role, reviewStatus: user.review_status,
+      teacherId: user.teacher_id || null, studentId: user.student_id || null,
+      scope: scopeForUser({ ...user, role }), device: { ...device } };
+  }
+
+  recordAuthorizationAudit(entry = {}) {
+    const row = { id: entry.id || uuidv4(), actor_user_id: entry.actorUserId || entry.actor_user_id || null,
+      actor_phone: entry.actorPhone || entry.actor_phone || null,
+      target_user_id: entry.targetUserId || entry.target_user_id || null,
+      action: entry.action || 'authorization_change',
+      before_json: JSON.stringify(entry.before === undefined ? entry.before_json || null : entry.before),
+      after_json: JSON.stringify(entry.after === undefined ? entry.after_json || null : entry.after),
+      created_at: entry.createdAt || entry.created_at || this._now() };
+    this.db.prepare(`INSERT INTO authorization_audit_log
+      (id, actor_user_id, actor_phone, target_user_id, action, before_json, after_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(...Object.values(row));
+    return row;
+  }
+
+  recordSyncRejection(entry = {}) {
+    const row = { id: entry.id || uuidv4(), operation_id: entry.operationId || entry.operation_id || null,
+      actor_user_id: entry.actorUserId || entry.actor_user_id || null,
+      actor_teacher_id: entry.actorTeacherId || entry.actor_teacher_id || null,
+      source_device_id: entry.sourceDeviceId || entry.source_device_id || null,
+      table_name: entry.tableName || entry.table_name || null, record_id: entry.recordId || entry.record_id || null,
+      reason_code: entry.reasonCode || entry.reason_code || 'SYNC_REJECTED',
+      payload_json: JSON.stringify(entry.payload === undefined ? entry.payload_json || null : entry.payload),
+      created_at: entry.createdAt || entry.created_at || this._now() };
+    this.db.prepare(`INSERT INTO sync_rejections
+      (id, operation_id, actor_user_id, actor_teacher_id, source_device_id, table_name, record_id, reason_code, payload_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(...Object.values(row));
+    return row;
+  }
+
   close() {
     if (this.readDb && this.readDb !== this.db) {
       this.readDb.close();
@@ -1467,4 +1645,3 @@ function getInstance() {
 }
 
 module.exports = { DatabaseService, getInstance };
-

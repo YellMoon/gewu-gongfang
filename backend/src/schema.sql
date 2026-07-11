@@ -204,9 +204,37 @@ CREATE TABLE IF NOT EXISTS users (
   login_enabled INTEGER DEFAULT 0,
   student_id TEXT,
   linked_student_ids TEXT,
+  teacher_id TEXT,
+  review_status TEXT DEFAULT 'pending',
+  reviewed_by TEXT,
+  reviewed_at TEXT,
   deleted INTEGER DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS authorization_audit_log (
+  id TEXT PRIMARY KEY,
+  actor_user_id TEXT,
+  actor_phone TEXT,
+  target_user_id TEXT,
+  action TEXT NOT NULL,
+  before_json TEXT,
+  after_json TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sync_rejections (
+  id TEXT PRIMARY KEY,
+  operation_id TEXT,
+  actor_user_id TEXT,
+  actor_teacher_id TEXT,
+  source_device_id TEXT,
+  table_name TEXT,
+  record_id TEXT,
+  reason_code TEXT NOT NULL,
+  payload_json TEXT,
+  created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS miniapp_login_attempts (
