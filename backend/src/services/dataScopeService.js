@@ -13,6 +13,11 @@ const active = row => !row?.deleted_at && !row?.deletedAt && row?.deleted !== tr
 const ids = rows => new Set(rows.map(id).filter(Boolean).map(String));
 const inSet = (set, candidate) => candidate !== undefined && candidate !== null && set.has(String(candidate));
 const copyRows = rows => (Array.isArray(rows) ? rows.filter(active).map(row => ({ ...row })) : []);
+function pick(row, keys) { const result = {}; for (const key of keys) if (row?.[key] !== undefined) result[key] = row[key]; return result; }
+const redactStudent = row => pick(row, ['id', 'name', 'school', 'grade_year', 'grade_current', 'source_type']);
+const redactCourse = row => pick(row, ['id', 'name', 'display_name', 'type', 'year', 'semester', 'teacher_id', 'teacherId', 'teacher_name', 'room_id', 'room_name', 'active', 'default_duration_minutes', 'created_at', 'updated_at']);
+const redactSchedule = row => pick(row, ['id', 'course_id', 'courseId', 'start_time', 'end_time', 'recurring_rule', 'status', 'room', 'room_id', 'service_type', 'created_at', 'updated_at']);
+const redactTeacher = row => pick(row, ['id', 'name', 'subject']);
 const studentLinks = row => [
   ...array(value(row, 'student_ids', 'studentIds')),
   ...array(value(row, 'student_pricings', 'studentPricings')).map(item => typeof item === 'object' ? value(item, 'student_id', 'studentId') : item),
@@ -32,17 +37,15 @@ function scopeStudent(snapshot, context) {
   const scopedStudents = copyRows(snapshot.students).filter(row => inSet(allowedStudents, id(row)));
   const schoolIds = new Set(scopedStudents.map(row => value(row, 'school_id', 'schoolId')).filter(Boolean).map(String));
   return withSafePublic(snapshot, {
-    courses, schedules,
-    students: scopedStudents,
-    teachers: copyRows(snapshot.teachers).filter(row => inSet(teacherIds, id(row))),
+    redactedForRole: 'student', linkedStudentIds: [...allowedStudents],
+    courses: courses.map(redactCourse), schedules: schedules.map(redactSchedule),
+    students: scopedStudents.map(redactStudent),
+    teachers: copyRows(snapshot.teachers).filter(row => inSet(teacherIds, id(row))).map(redactTeacher),
     rooms: copyRows(snapshot.rooms).filter(row => inSet(roomIds, id(row))),
     institutions: copyRows(snapshot.institutions).filter(row => inSet(institutionIds, id(row))),
     schools: copyRows(snapshot.schools).filter(row => inSet(schoolIds, id(row))),
-    enrollments: copyRows(snapshot.enrollments).filter(row => inSet(courseIds, value(row, 'course_id', 'courseId')) && inSet(allowedStudents, value(row, 'student_id', 'studentId'))),
-    consumptions: copyRows(snapshot.consumptions).filter(row => inSet(scheduleIds, value(row, 'schedule_id', 'scheduleId')) && inSet(allowedStudents, value(row, 'student_id', 'studentId'))),
-    payments: copyRows(snapshot.payments).filter(row => (inSet(courseIds, value(row, 'course_id', 'courseId')) || inSet(scheduleIds, value(row, 'schedule_id', 'scheduleId'))) && inSet(allowedStudents, value(row, 'student_id', 'studentId'))),
-    assetRecords: copyRows(snapshot.assetRecords || snapshot.asset_records).filter(row => userId && String(value(row, 'owner_user_id', 'ownerUserId')) === String(userId)),
-    assetCategories: copyRows(snapshot.assetCategories || snapshot.asset_categories),
+    enrollments: copyRows(snapshot.enrollments).filter(row => (inSet(scheduleIds, value(row, 'schedule_id', 'scheduleId')) || inSet(courseIds, value(row, 'course_id', 'courseId'))) && inSet(allowedStudents, value(row, 'student_id', 'studentId'))),
+    consumptions: [], payments: [], assetRecords: [], assetCategories: [],
   });
 }
 

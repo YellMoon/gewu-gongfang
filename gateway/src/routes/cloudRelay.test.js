@@ -47,8 +47,22 @@ assert.deepStrictEqual(middlewareStatus(undefined), { status: 401, nextCalled: f
 assert.deepStrictEqual(middlewareStatus({ user_type: 'teacher', review_status: 'pending', status: 1, login_enabled: 1 }), { status: 403, nextCalled: false });
 assert.deepStrictEqual(middlewareStatus({ user_type: 'teacher', review_status: 'approved', status: 1, login_enabled: 1 }), { status: 200, nextCalled: true });
 const unknownSnapshot = filterSnapshotForUser({ payload: { courses: [{ id: 'secret' }], questions: [{ id: 'q' }], secretRows: [{ id: 'leak' }] } }, {});
-assert.deepStrictEqual(unknownSnapshot.payload.courses, []);
-assert.strictEqual(unknownSnapshot.payload.questions.length, 1);
+assert.strictEqual(unknownSnapshot.payload.courses, undefined);
+assert.strictEqual(unknownSnapshot.payload.questions, undefined, 'unknown users receive an empty payload, including no public question bank');
 assert.strictEqual(unknownSnapshot.payload.secretRows, undefined);
+const studentSnapshot = filterSnapshotForUser({ payload: {
+  students: [{ id: 'stu1', name: 'A', phone: 'secret', balance_money: 99 }],
+  courses: [{ id: 'c1', teacher_id: 't1', student_ids: ['stu1'], price_tuition: 999, notes: 'secret' }],
+  schedules: [{ id: 's1', course_id: 'c1', calculated_tuition: 999, notes: 'secret' }],
+  teachers: [{ id: 't1', name: 'T', hourly_rate: 999, phone: 'secret' }],
+  payments: [{ id: 'p1', course_id: 'c1', student_id: 'stu1', amount: 999 }], questions: [{ id: 'q1' }],
+} }, { id: 'student-user', user_type: 'student', student_id: 'stu1', review_status: 'approved', status: 1, login_enabled: 1 });
+assert.strictEqual(studentSnapshot.payload.students[0].phone, undefined);
+assert.strictEqual(studentSnapshot.payload.courses[0].price_tuition, undefined);
+assert.strictEqual(studentSnapshot.payload.courses[0].notes, undefined);
+assert.strictEqual(studentSnapshot.payload.schedules[0].calculated_tuition, undefined);
+assert.strictEqual(studentSnapshot.payload.teachers[0].hourly_rate, undefined);
+assert.deepStrictEqual(studentSnapshot.payload.payments, []);
+assert.strictEqual(studentSnapshot.payload.questions.length, 1);
 
 console.log('cloudRelay route checks passed');
