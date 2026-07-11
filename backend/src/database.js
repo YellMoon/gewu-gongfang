@@ -1634,7 +1634,15 @@ class DatabaseService {
     })();
   }
 
-  listAuthorizationUsers({ status, role, search } = {}) {
+  listAuthorizationUsers({ status, role, search, page = 1, pageSize = 20 } = {}) {
+    const validStatuses = new Set(['pending', 'approved', 'rejected']);
+    const validRoles = new Set(['super_admin', 'admin', 'teacher', 'student', 'pending']);
+    if (status && !validStatuses.has(status)) { const error = new Error('Invalid review status'); error.code = 'INVALID_REVIEW_STATUS'; throw error; }
+    if (role && !validRoles.has(role)) { const error = new Error('Invalid role'); error.code = 'INVALID_AUTHORIZATION_ROLE'; throw error; }
+    search = String(search || '').trim();
+    if (search.length > 100) { const error = new Error('Search is too long'); error.code = 'SEARCH_TOO_LONG'; throw error; }
+    page = Math.max(1, Number.parseInt(page, 10) || 1);
+    pageSize = Math.min(100, Math.max(1, Number.parseInt(pageSize, 10) || 20));
     const where = ['deleted = 0'];
     const params = [];
     if (status) { where.push('review_status = ?'); params.push(status); }
@@ -1643,7 +1651,13 @@ class DatabaseService {
       where.push("(COALESCE(name, '') LIKE ? OR COALESCE(nickname, '') LIKE ? OR COALESCE(phone, '') LIKE ?)");
       params.push(...Array(3).fill(`%${search}%`));
     }
-    return this._reader().prepare(`SELECT * FROM users WHERE ${where.join(' AND ')} ORDER BY created_at, id`).all(...params);
+    const reader = this._reader();
+    const total = reader.prepare(`SELECT COUNT(*) AS count FROM users WHERE ${where.join(' AND ')}`).get(...params).count;
+    const items = reader.prepare(`SELECT id, phone, name, nickname, role, status, login_enabled, review_status,
+      teacher_id, student_id, reviewed_by, reviewed_at, created_at, updated_at
+      FROM users WHERE ${where.join(' AND ')} ORDER BY created_at, id LIMIT ? OFFSET ?`)
+      .all(...params, pageSize, (page - 1) * pageSize);
+    return { items, total, page, pageSize };
   }
 
   getAuthorizationContextByUserId(userId, device = {}) {

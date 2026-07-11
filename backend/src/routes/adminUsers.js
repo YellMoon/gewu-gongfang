@@ -8,8 +8,12 @@ router.get('/', (req, res) => {
   if (!['super_admin', 'admin'].includes(req.authz?.role)) {
     return res.status(403).json({ success: false, code: 'ADMIN_USERS_READ_REQUIRED' });
   }
-  const users = getInstance().listAuthorizationUsers(req.query || {});
-  return res.json({ success: true, users, data: { users } });
+  try {
+    const result = getInstance().listAuthorizationUsers(req.query || {});
+    return res.json({ success: true, ...result, users: result.items, data: result });
+  } catch (error) {
+    return res.status(400).json({ success: false, code: error.code || 'INVALID_USER_LIST_QUERY' });
+  }
 });
 
 router.patch('/:id/review', (req, res) => {

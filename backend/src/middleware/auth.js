@@ -43,12 +43,9 @@ function attachAuthorizationContext(req, tokenUser) {
   req.user = user;
   const deviceId = req.headers['x-device-id'] || null;
   let isPrimaryHost = false;
-  if (process.env.GEWU_TRUSTED_PRIMARY_HOST === 'true' && deviceId) {
-    try {
-      const device = getInstance().getSyncDevice(deviceId);
-      isPrimaryHost = Boolean(device && device.trusted === 1 && ['primary-host', 'host'].includes(device.role));
-    } catch (_) { isPrimaryHost = false; }
-  }
+  // A device id is public/replayable. Until a non-consuming scoped credential
+  // verifier exists for request auth, committed deletion stays fail-closed.
+  isPrimaryHost = false;
   req.authz = {
     userId: user?.id || null, phone: user?.phone || null, role: roleForUser(user),
     teacherId: user?.teacher_id || null, studentId: user?.student_id || null,

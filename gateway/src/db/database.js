@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 
 const DB_DIR = path.join(__dirname, '../../data');
-const DB_PATH = path.join(DB_DIR, 'gateway.db');
+const DB_PATH = process.env.GATEWAY_DB_PATH || path.join(DB_DIR, 'gateway.db');
 
 let db;
 
@@ -49,6 +49,30 @@ function ensureUserColumns(database) {
   addColumn('reviewed_at', 'TEXT');
   addColumn('is_super_admin_identity', 'INTEGER DEFAULT 0');
   database.prepare('UPDATE users SET login_enabled = 0 WHERE login_enabled IS NULL').run();
+  recoverCanonicalSuperAdmin(database);
+}
+
+function recoverCanonicalSuperAdmin(database) {
+  const normalize = value => String(value || '').replace(/\D/g, '');
+  const rows = database.prepare('SELECT * FROM users').all();
+  const fixed = rows.filter(row => normalize(row.phone) === '13732250653');
+  const seeded = fixed.find(row => row.id === 'miniapp-admin-13732250653');
+  const flagged = fixed.filter(row => row.is_super_admin_identity === 1);
+  const selected = seeded || (flagged.length === 1 ? flagged[0] : (fixed.length === 1 && flagged.length === 0 ? fixed[0] : null));
+  database.transaction(() => {
+    database.prepare('UPDATE users SET is_super_admin_identity = 0 WHERE is_super_admin_identity != 0').run();
+    for (const row of fixed) {
+      if (!selected || row.id !== selected.id) {
+        database.prepare("UPDATE users SET user_type = 'pending', review_status = 'pending', login_enabled = 0, updated_at = ? WHERE id = ?")
+          .run(new Date().toISOString(), row.id);
+      }
+    }
+    if (selected) {
+      database.prepare("UPDATE users SET phone = '13732250653', user_type = 'super_admin', status = 1, login_enabled = 1, review_status = 'approved', is_super_admin_identity = 1, updated_at = ? WHERE id = ?")
+        .run(new Date().toISOString(), selected.id);
+    }
+  })();
+  database.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_gateway_single_super_identity ON users(is_super_admin_identity) WHERE is_super_admin_identity = 1');
 }
 
 function closeDatabase() {

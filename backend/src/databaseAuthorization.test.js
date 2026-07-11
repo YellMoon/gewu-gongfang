@@ -143,7 +143,7 @@ try {
   }
 
   assert.deepStrictEqual(
-    service.listAuthorizationUsers({ status: 'approved', role: 'admin', search: 'review' }).map(row => row.id),
+    service.listAuthorizationUsers({ status: 'approved', role: 'admin', search: 'review' }).items.map(row => row.id),
     ['review-admin']
   );
   const context = service.getAuthorizationContextByUserId('review-teacher', { id: 'device-1', name: 'test device' });

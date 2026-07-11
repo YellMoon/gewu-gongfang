@@ -35,9 +35,10 @@ function permission(id, action) {
 router.get('/my', (req, res) => {
   const role = req.authz?.role || roleOf(req.user);
   const capabilities = effectiveCapabilities({ ...req.authz, role });
-  const permissions = role === 'pending' ? [] : role === 'student'
-    ? studentModuleIds.map(id => permission(id, 'view'))
-    : moduleIds.flatMap(id => actions.map(action => permission(id, action)));
+  const permissions = capabilities.map(id => {
+    const separator = id.indexOf(':');
+    return permission(id.slice(0, separator), id.slice(separator + 1));
+  });
 
   res.json({
     success: true,

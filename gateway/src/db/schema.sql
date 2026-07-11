@@ -59,6 +59,16 @@ CREATE TABLE IF NOT EXISTS user_permissions (
   UNIQUE(user_id, permission_id)
 );
 
+CREATE TABLE IF NOT EXISTS authorization_audit_log (
+  id TEXT PRIMARY KEY,
+  actor_user_id TEXT,
+  target_user_id TEXT,
+  action TEXT NOT NULL,
+  before_json TEXT,
+  after_json TEXT,
+  created_at TEXT NOT NULL
+);
+
 -- ===================== 邀请记录表 =====================
 CREATE TABLE IF NOT EXISTS invitations (
   id TEXT PRIMARY KEY,
