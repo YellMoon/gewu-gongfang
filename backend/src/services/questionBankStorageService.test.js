@@ -13,6 +13,7 @@ const {
   bindQuestionBankStoreToDatabase,
   commitQuestionToBoundStore,
   deleteCommittedQuestion,
+  restoreCommittedQuestion,
   migrateBoundLegacyQuestions,
 } = require('./questionBankStorageService');
 const Database = require('better-sqlite3');
@@ -84,7 +85,9 @@ const runtime = { nodeRole: 'primary-host', clientType: 'desktop', tokenUse: 'de
 const bound = bindQuestionBankStoreToDatabase({ db, root, authz, runtime });
 assert.ok(bound.dbAuthorityId);
 assert.strictEqual(inspectQuestionBankStore(root).manifest.authorityDatabaseId, bound.dbAuthorityId);
+assert.strictEqual(bindQuestionBankStoreToDatabase({ db, root, authz, runtime }).idempotent, true);
 assert.throws(() => bindQuestionBankStoreToDatabase({ db, root: secondRoot, authz: { ...authz, role: 'admin' }, runtime }), /super administrator/);
+assert.throws(() => bindQuestionBankStoreToDatabase({ db, root: secondRoot, authz, runtime }), error => error.code === 'QUESTION_BANK_DATABASE_ALREADY_BOUND');
 
 const committed = commitQuestionToBoundStore('q1', { db, tenantId: 'default', authz, runtime });
 assert.strictEqual(committed.storageState, 'host_committed');
@@ -97,6 +100,11 @@ assert.strictEqual(db.prepare("SELECT deleted FROM questions WHERE id='q1'").get
 assert.strictEqual(db.prepare("SELECT deleted FROM question_contents WHERE id='c1'").get().deleted, 1);
 assert.strictEqual(db.prepare("SELECT deleted FROM question_assets WHERE id='a1'").get().deleted, 1);
 assert.ok(fs.existsSync(path.join(root, '.trash', 'op-delete-q1', 'q1', 'question.json')));
+assert.throws(() => restoreCommittedQuestion('q1', { db, tenantId: 'default', authz, runtime: { ...runtime, clientType: 'miniapp' } }), error => error.code === 'HOST_DESKTOP_REQUIRED_FOR_COMMITTED_DELETE');
+assert.strictEqual(restoreCommittedQuestion('q1', { db, tenantId: 'default', authz, runtime }).restored, true);
+assert.strictEqual(db.prepare("SELECT deleted FROM questions WHERE id='q1'").get().deleted, 0);
+assert.strictEqual(db.prepare("SELECT deleted FROM question_contents WHERE id='c1'").get().deleted, 0);
+assert.ok(fs.existsSync(path.join(root, 'questions', 'q1', 'question.json')));
 
 db.prepare("INSERT INTO questions VALUES ('q2','default','host_committed','t','host1',0,NULL,'t')").run();
 db.prepare("INSERT INTO question_contents VALUES ('c2','q2','x','','','[]','h',0,'t')").run();
@@ -110,7 +118,18 @@ assert.throws(() => deleteCommittedQuestion('q3', { db, tenantId: 'default', aut
 assert.strictEqual(db.prepare("SELECT deleted FROM questions WHERE id='q3'").get().deleted, 0);
 assert.strictEqual(db.prepare("SELECT deleted FROM question_contents WHERE id='c3'").get().deleted, 0);
 assert.ok(fs.existsSync(path.join(root, 'questions', 'q3', 'question.json')), 'failed delete must restore files');
+db.exec('DROP TRIGGER fail_q3_delete');
+deleteCommittedQuestion('q3', { db, tenantId: 'default', authz, runtime, operationId: 'op-delete-q3' });
+db.exec("CREATE TRIGGER fail_q3_restore BEFORE UPDATE OF deleted ON question_contents WHEN OLD.question_id='q3' AND NEW.deleted=0 BEGIN SELECT RAISE(ABORT,'forced restore rollback'); END;");
+assert.throws(() => restoreCommittedQuestion('q3', { db, tenantId: 'default', authz, runtime }), /forced restore rollback/);
+assert.strictEqual(db.prepare("SELECT deleted FROM questions WHERE id='q3'").get().deleted, 1);
+assert.ok(fs.existsSync(path.join(root, '.trash', 'op-delete-q3', 'q3', 'question.json')), 'failed restore must return files to trash');
 db.close();
+
+const conflictingDb = new Database(':memory:');
+ensureQuestionBankAuthoritySchema(conflictingDb);
+assert.throws(() => bindQuestionBankStoreToDatabase({ db: conflictingDb, root, authz, runtime }), error => error.code === 'QUESTION_BANK_STORE_ALREADY_BOUND');
+conflictingDb.close();
 
 const db2 = new Database(':memory:');
 db2.exec("CREATE TABLE questions (id TEXT PRIMARY KEY, tenant_id TEXT, storage_state TEXT, committed_at TEXT, committed_by_device_id TEXT, deleted INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)");

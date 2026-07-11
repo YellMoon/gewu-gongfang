@@ -11,6 +11,8 @@ import {
 } from '../services/runtimeConfigClient';
 import SyncSettings from './SyncSettings';
 import type { CloudSyncContext } from '../navigation/navigationContext';
+import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
+const { questionBankBindingPresentation, bindQuestionBankStore } = require('../services/questionBankBindingUi');
 
 const { Text } = Typography;
 
@@ -44,6 +46,7 @@ type QuestionBankStorageStatus = {
     lastVerifiedAt?: string;
   };
   candidateRoots?: string[];
+  binding?: { store_id: string; db_authority_id: string; root_path: string; bound_by: string; bound_at: string; status: string } | null;
 };
 
 type BackupTargetStatus = {
@@ -243,6 +246,18 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
     }
   };
 
+  const bindCurrentQuestionBankStore = async () => {
+    if (!questionBankStorageStatus?.root) return;
+    setQuestionBankStorageLoading(true);
+    try {
+      const session = readDesktopAuthorizationSession();
+      const data = await bindQuestionBankStore(fetch, `${apiOrigin}/api/question-bank/storage/bind`, questionBankStorageStatus, session);
+      setQuestionBankStorageStatus(data.status);
+      message.success('Question bank store bound');
+    } catch (error: any) { message.error(error.message || 'QUESTION_BANK_BIND_FAILED'); }
+    finally { setQuestionBankStorageLoading(false); }
+  };
+
   const loadBackupTargetStatus = async () => {
     try {
       const res = await fetch(`${API_BASE}/backups/targets/status`);
@@ -427,15 +442,18 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
               <span>storeId：{questionBankStorageStatus?.manifest?.storeId || runtimeConfig?.questionBankStoreId || '-'}</span>
               <span>写入状态：{questionBankStorageStatus?.writable ? '可写' : '保护/不可写'}</span>
               {questionBankStorageStatus?.pathChanged && <span>已通过 manifest 自动识别盘符变化。</span>}
+              <span>{questionBankBindingPresentation(questionBankStorageStatus).label}</span>
+              <span>DB authority: {questionBankBindingPresentation(questionBankStorageStatus).authority || '-'}</span>
+              <span>{questionBankBindingPresentation(questionBankStorageStatus).warning}</span>
               {(questionBankStorageStatus?.reason || questionBankStorageStatus?.detail) && (
                 <span>{questionBankStorageStatus.reason || questionBankStorageStatus.detail}</span>
               )}
             </Space>
           )}
           action={(
-            <Button size="small" loading={questionBankStorageLoading} onClick={loadQuestionBankStorageStatus}>
+            <Space><Button size="small" loading={questionBankStorageLoading} onClick={loadQuestionBankStorageStatus}>
               检测题库盘
-            </Button>
+            </Button>{!questionBankStorageStatus?.binding && <Popconfirm title="Binding cannot switch implicitly. Continue?" onConfirm={bindCurrentQuestionBankStore}><Button size="small" type="primary">Bind store</Button></Popconfirm>}</Space>
           )}
         />
         <Alert

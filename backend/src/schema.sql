@@ -512,6 +512,19 @@ CREATE TABLE IF NOT EXISTS question_bank_storage_audit (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS question_bank_delete_operations (
+  operation_id TEXT PRIMARY KEY,
+  question_id TEXT NOT NULL,
+  tenant_id TEXT NOT NULL,
+  store_id TEXT NOT NULL,
+  trash_relative_path TEXT NOT NULL,
+  snapshot_json TEXT NOT NULL,
+  manifest_before_json TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  restored_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS question_contents (
   id TEXT PRIMARY KEY,
   tenant_id TEXT DEFAULT 'default',
