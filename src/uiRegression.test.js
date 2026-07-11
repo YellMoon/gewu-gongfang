@@ -46,6 +46,11 @@ const packageJson = read('package.json');
 const packageManifest = JSON.parse(packageJson);
 
 assert(
+  !/\\u[0-9a-fA-F]{4}/.test(permissionManager),
+  'permission manager user-facing copy should use UTF-8 text instead of literal unicode escapes'
+);
+
+assert(
   permissionManager.includes('createLatestRequestCoordinator') &&
   permissionManager.includes('requestCoordinator.current.run') &&
   authorizationRequestCoordinator.includes('requestId === latestRequestId'),
@@ -72,7 +77,7 @@ assert(
 assert(
   permissionManager.includes('disableUser(selected.id)') &&
   permissionManager.includes('authorization-disable-action') &&
-  permissionManager.includes("title: '\\u786e\\u8ba4\\u505c\\u7528\\u7528\\u6237'"),
+  permissionManager.includes('confirmDisable'),
   'only the capability-gated review workbench should expose a confirmed user-disable action'
 );
 
