@@ -15,6 +15,9 @@ declare module './services/oneClickSyncTransports.mjs' {
   export const discoverLanDirectSyncTransports: any;
   export const normalizeApiBaseUrl: any;
 }
+declare module './services/desktopAuthorizationSession.mjs' {
+  export const readDesktopAuthorizationSession: any;
+}
 
 interface Window {
   api?: {

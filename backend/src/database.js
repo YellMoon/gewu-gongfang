@@ -348,6 +348,17 @@ class DatabaseService {
     const syncDeviceColumns = new Set(this.db.prepare('PRAGMA table_info(sync_devices)').all().map(column => column.name));
     if (!syncDeviceColumns.has('owner_user_id')) this.db.prepare('ALTER TABLE sync_devices ADD COLUMN owner_user_id TEXT').run();
     if (!syncDeviceColumns.has('active')) this.db.prepare('ALTER TABLE sync_devices ADD COLUMN active INTEGER NOT NULL DEFAULT 1').run();
+    const deliveryColumns = new Set(this.db.prepare('PRAGMA table_info(sync_delivery_scope)').all().map(column => column.name));
+    if (!deliveryColumns.has('tenant_id')) this.db.transaction(() => {
+      this.db.exec(`CREATE TABLE sync_delivery_scope_v2 (
+        tenant_id TEXT NOT NULL DEFAULT 'default', actor_user_id TEXT NOT NULL, device_id TEXT NOT NULL,
+        table_name TEXT NOT NULL, record_id TEXT NOT NULL, last_visible_at TEXT NOT NULL,
+        PRIMARY KEY(tenant_id,actor_user_id,device_id,table_name,record_id));
+        INSERT INTO sync_delivery_scope_v2 (tenant_id,actor_user_id,device_id,table_name,record_id,last_visible_at)
+          SELECT 'default',actor_user_id,device_id,table_name,record_id,last_visible_at FROM sync_delivery_scope;
+        DROP TABLE sync_delivery_scope;
+        ALTER TABLE sync_delivery_scope_v2 RENAME TO sync_delivery_scope;`);
+    })();
     this.db.prepare('UPDATE users SET is_super_admin_identity = 0 WHERE is_super_admin_identity IS NULL').run();
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS authorization_audit_log (
@@ -367,8 +378,12 @@ class DatabaseService {
         PRIMARY KEY (table_name, record_id)
       );
       CREATE TABLE IF NOT EXISTS sync_delivery_scope (
-        actor_user_id TEXT NOT NULL, device_id TEXT NOT NULL, table_name TEXT NOT NULL, record_id TEXT NOT NULL,
-        last_visible_at TEXT NOT NULL, PRIMARY KEY(actor_user_id, device_id, table_name, record_id)
+        tenant_id TEXT NOT NULL DEFAULT 'default', actor_user_id TEXT NOT NULL, device_id TEXT NOT NULL,
+        table_name TEXT NOT NULL, record_id TEXT NOT NULL, last_visible_at TEXT NOT NULL,
+        PRIMARY KEY(tenant_id,actor_user_id,device_id,table_name,record_id)
+      );
+      CREATE TABLE IF NOT EXISTS relay_authorization_nonces (
+        nonce TEXT PRIMARY KEY, task_id TEXT NOT NULL, actor_user_id TEXT NOT NULL, device_id TEXT NOT NULL, consumed_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS authorization_migrations (
         name TEXT PRIMARY KEY, applied_at TEXT NOT NULL
@@ -1288,18 +1303,34 @@ class DatabaseService {
   }
 
   consumeSyncAuthorizationContext(deviceId, token, actorUserId, scope = 'sync:push') {
+    const context = this.resolveSyncActorContext(deviceId, actorUserId);
+    if (!context) return false;
+    const authorization = this.verifySyncAuthorization(deviceId, token, {
+      actorUserId: context.userId, actorTeacherId: context.teacherId, scope,
+    });
+    return authorization ? context : false;
+  }
+
+  resolveSyncActorContext(deviceId, actorUserId) {
     const user = this.db.prepare('SELECT * FROM users WHERE id = ? AND deleted = 0').get(actorUserId);
     if (!user || user.review_status !== 'approved' || user.status === 'inactive' || user.status === 0 || user.login_enabled === 0) return false;
     const role = roleForUser(user);
     const teacherId = role === 'teacher' ? user.teacher_id : null;
     const device = this.db.prepare('SELECT * FROM sync_devices WHERE id = ? AND active = 1').get(deviceId);
     if (!device || device.owner_user_id !== user.id) return false;
-    const authorization = this.verifySyncAuthorization(deviceId, token, {
-      actorUserId: user.id, actorTeacherId: teacherId, scope,
-    });
-    if (!authorization) return false;
     return { kind: ['super_admin', 'admin'].includes(role) ? 'admin' : role,
       userId: user.id, teacherId, studentId: user.student_id || null, deviceId };
+  }
+
+  consumeRelayAuthorizationNonce(claims) {
+    try {
+      return this.db.transaction(() => {
+        const inserted = this.db.prepare(`INSERT OR IGNORE INTO relay_authorization_nonces
+          (nonce,task_id,actor_user_id,device_id,consumed_at) VALUES (?,?,?,?,?)`)
+          .run(claims.nonce, claims.taskId, claims.actorUserId, claims.deviceId, this._now());
+        return inserted.changes === 1;
+      })();
+    } catch (_error) { return false; }
   }
 
   recordSyncConflict(change, existing, options = {}) {
@@ -1413,21 +1444,22 @@ class DatabaseService {
       return row ? [{ ...change, data: row }] : [];
     });
     const now = this._now();
+    const tenantId = options.tenantId || 'default';
     const ledger = this.db.prepare(`SELECT table_name, record_id FROM sync_delivery_scope
-      WHERE actor_user_id = ? AND device_id = ?`).all(authz.userId, authz.deviceId);
+      WHERE tenant_id = ? AND actor_user_id = ? AND device_id = ?`).all(tenantId, authz.userId, authz.deviceId);
     for (const prior of ledger) {
       if (visible.has(`${prior.table_name}:${prior.record_id}`)) continue;
       changes.push({ id: `scope-delete:${prior.table_name}:${prior.record_id}:${now}`, table: prior.table_name,
         action: 'delete', data: { id: prior.record_id, deleted: 1 }, version: now, updatedAt: now,
         tenantId: options.tenantId || 'default', deviceId: 'server' });
-      this.db.prepare(`DELETE FROM sync_delivery_scope WHERE actor_user_id=? AND device_id=? AND table_name=? AND record_id=?`)
-        .run(authz.userId, authz.deviceId, prior.table_name, prior.record_id);
+      this.db.prepare(`DELETE FROM sync_delivery_scope WHERE tenant_id=? AND actor_user_id=? AND device_id=? AND table_name=? AND record_id=?`)
+        .run(tenantId, authz.userId, authz.deviceId, prior.table_name, prior.record_id);
     }
     const remember = this.db.prepare(`INSERT INTO sync_delivery_scope
-      (actor_user_id, device_id, table_name, record_id, last_visible_at) VALUES (?,?,?,?,?)
-      ON CONFLICT(actor_user_id,device_id,table_name,record_id) DO UPDATE SET last_visible_at=excluded.last_visible_at`);
+      (tenant_id, actor_user_id, device_id, table_name, record_id, last_visible_at) VALUES (?,?,?,?,?,?)
+      ON CONFLICT(tenant_id,actor_user_id,device_id,table_name,record_id) DO UPDATE SET last_visible_at=excluded.last_visible_at`);
     for (const change of changes) if (change.action !== 'delete') {
-      remember.run(authz.userId, authz.deviceId, change.table, change.data.id, now);
+      remember.run(tenantId, authz.userId, authz.deviceId, change.table, change.data.id, now);
     }
     changes.sort((a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.id.localeCompare(b.id));
     return { ...payload, changes };

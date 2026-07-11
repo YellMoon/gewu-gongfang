@@ -11,6 +11,7 @@ const {
 const questionBank = require('../services/questionBankService');
 const { resolveQuestionAssetPath } = require('../services/questionBankStorageService');
 const { writePaperArtifact } = require('../services/paperArtifactService');
+const { verifyRelayAssertion } = require('../services/relayAssertionService');
 
 const router = Router();
 
@@ -74,9 +75,13 @@ async function processMiniappTask(task, db) {
   const payload = task.payload || {};
   if (task.task_type === 'desktop-sync') {
     const changes = payload.pendingChanges || payload.changes || [];
-    const relayDeviceId = payload.deviceId || payload.device_id;
-    const authz = db.consumeSyncAuthorizationContext(relayDeviceId, payload.syncAuthorizationToken,
-      payload.actorUserId, 'sync:push');
+    let claims;
+    try {
+      claims = verifyRelayAssertion(payload.relayAssertion, process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '');
+    } catch (_error) { claims = null; }
+    const validClaims = claims && claims.taskId === task.id && claims.actorUserId === payload.actorUserId
+      && claims.deviceId === (payload.deviceId || payload.device_id) && db.consumeRelayAuthorizationNonce(claims);
+    const authz = validClaims ? db.resolveSyncActorContext(claims.deviceId, claims.actorUserId) : false;
     if (!authz) {
       const error = new Error('AUTHORIZATION_CONTEXT_REQUIRED'); error.code = 'AUTHORIZATION_CONTEXT_REQUIRED'; throw error;
     }

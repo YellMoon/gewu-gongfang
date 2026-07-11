@@ -127,6 +127,9 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 - Shared question-bank scope is intentional: teachers may create/update shared questions and delete unsynchronized local drafts. Task 6, not teacher ownership, distinguishes and protects host-committed deletion.
 - Review RED: the integration test exited 1 because unauthenticated `applySyncChanges` still wrote; tombstone and token-consumption assertions were then added before implementation.
 - Review GREEN: focused sync scope, relay-path, atomic token reuse, revocation/rebinding/device mismatch, provenance, and restart-persistent tombstone tests exit 0.
+- Reachable direct authorization: `SyncSettings` resolves the current structured desktop session at call time; each direct push registers the session device, requests a fresh host one-time token with its Bearer session, and immediately consumes it. Missing session data fails with `AUTHORIZATION_CONTEXT_REQUIRED`.
+- Relay assertion closure: cloud relay binds devices to its persisted approved user, creates a short-lived HMAC assertion from the server-side user/task/device plus nonce, and the host timing-safe verifies and uniquely consumes that nonce before reloading its own user/device authorization. Clients never receive a host database token or supply a signature.
+- Tenant ledger migration: `sync_delivery_scope` now keys tenant plus actor/device/table/record. Startup transactionally migrates legacy rows to tenant `default`; tests preserve legacy rows and prove another tenant cannot emit or lose tombstones during a default-tenant pull.
 
 ### Task 3 evidence: unified local and gateway review authorization
 
