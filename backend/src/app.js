@@ -29,6 +29,7 @@ const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
 const permissionsRouter = require('./routes/permissions');
 const adminUsersRouter = require('./routes/adminUsers');
+const desktopPairingRouter = require('./routes/desktopPairing');
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const writeRateLimitStore = new Map();
@@ -247,6 +248,7 @@ function createApp() {
 
   // 公开路由（无需认证）
   app.use('/api/auth', authRouter);
+  app.use('/api/desktop-pairing', desktopPairingRouter);
   app.use('/api/sync', optionalAuth, syncRouter);
   app.use('/api/cloud-relay-host', optionalAuth, requireWriteAccess, cloudRelayHostRouter);
   app.use('/api/modules', optionalAuth, modulesRouter);

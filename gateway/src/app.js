@@ -18,6 +18,7 @@ const invitationsRouter = require('./routes/invitations');
 const permissionsRouter = require('./routes/permissions');
 const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
+const desktopPairingRouter = require('./routes/desktopPairing');
 
 function createApp() {
   const app = express();
@@ -45,6 +46,7 @@ function createApp() {
 
   // ===================== 公开路由（无需认证） =====================
   app.use('/api/auth', authRouter);
+  app.use('/api/desktop-pairing', desktopPairingRouter);
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);
   app.use('/api/invitations/use', invitationsRouter);  // 邀请码使用是公开的
 

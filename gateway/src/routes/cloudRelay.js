@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { getDb } = require('../db/database');
 const { scopeBusinessSnapshot } = require('../services/dataScopeService');
 const { isApprovedActive, roleForUser } = require('../services/authorizationPolicy');
+const { issueRelayAssertion } = require('../services/relayAssertionService');
 
 const router = express.Router();
 
@@ -182,6 +183,14 @@ router.get('/snapshots/read', requireApprovedSnapshotUser, (req, res) => {
     snapshot: filterSnapshotForUser(snapshot, req.user),
   });
 });
+
+router.post('/desktop-sync/devices/register', requireApprovedSnapshotUser, (req,res)=>{
+  const deviceId=req.headers['x-device-id']||req.body.deviceId;if(!deviceId)return res.status(400).json({success:false,code:'DEVICE_ID_REQUIRED'});
+  const db=getDb(),existing=db.prepare('SELECT * FROM cloud_devices WHERE id=?').get(deviceId);
+  if(existing?.owner_user_id&&existing.owner_user_id!==req.user.id)return res.status(403).json({success:false,code:'SYNC_DEVICE_OWNER_MISMATCH'});
+  const time=now();db.prepare(`INSERT INTO cloud_devices(id,device_name,role,status,owner_user_id,active,created_at,updated_at)VALUES(?,?,?,'active',?,1,?,?)ON CONFLICT(id)DO UPDATE SET owner_user_id=COALESCE(cloud_devices.owner_user_id,excluded.owner_user_id),active=1,updated_at=excluded.updated_at`).run(deviceId,req.body.deviceName||deviceId,'desktop-client',req.user.id,time,time);res.json({success:true,device:{id:deviceId}});
+});
+router.post('/desktop-sync/requests',requireApprovedSnapshotUser,(req,res)=>{const db=getDb(),deviceId=req.headers['x-device-id']||req.body.deviceId,device=db.prepare('SELECT * FROM cloud_devices WHERE id=? AND active=1').get(deviceId);if(!device||device.owner_user_id!==req.user.id)return res.status(403).json({success:false,code:'SYNC_DEVICE_OWNER_MISMATCH'});const taskId=id('desktop_sync'),time=now();let assertion;try{assertion=issueRelayAssertion({taskId,actorUserId:req.user.id,deviceId},process.env.GEWU_CLOUD_RELAY_HOST_TOKEN||'');}catch(e){return res.status(403).json({success:false,code:e.code});}const payload={deviceId,tenantId:req.body.tenantId||'default',pendingChanges:req.body.pendingChanges||[],actorUserId:req.user.id,relayAssertion:assertion,submittedAt:time};db.prepare("INSERT INTO miniapp_tasks(id,task_type,status,payload,created_by,created_at,updated_at)VALUES(?,'desktop-sync','pending_host',?,?,?,?)").run(taskId,JSON.stringify(payload),req.user.id,time,time);res.json({success:true,request:{id:taskId,status:'pending_host',acceptedChanges:payload.pendingChanges.length}});});
 
 router.post('/tasks', requireApprovedSnapshotUser, (req, res) => {
   const db = getDb();
