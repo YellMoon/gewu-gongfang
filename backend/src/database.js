@@ -8,7 +8,7 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { getMiniappLoginDenialReason } = require('./services/miniappAuthPolicy');
 const { validateSyncMutation } = require('./services/syncScopeService');
-const { assertRecordReadable, scopeBusinessSnapshot } = require('./services/dataScopeService');
+const { scopeBusinessSnapshot } = require('./services/dataScopeService');
 const {
   SUPER_ADMIN_PHONE,
   CANONICAL_SUPER_ADMIN_ID,
@@ -345,6 +345,9 @@ class DatabaseService {
     const syncAuthColumns = new Set(this.db.prepare('PRAGMA table_info(sync_authorizations)').all().map(column => column.name));
     if (!syncAuthColumns.has('actor_user_id')) this.db.prepare('ALTER TABLE sync_authorizations ADD COLUMN actor_user_id TEXT').run();
     if (!syncAuthColumns.has('actor_teacher_id')) this.db.prepare('ALTER TABLE sync_authorizations ADD COLUMN actor_teacher_id TEXT').run();
+    const syncDeviceColumns = new Set(this.db.prepare('PRAGMA table_info(sync_devices)').all().map(column => column.name));
+    if (!syncDeviceColumns.has('owner_user_id')) this.db.prepare('ALTER TABLE sync_devices ADD COLUMN owner_user_id TEXT').run();
+    if (!syncDeviceColumns.has('active')) this.db.prepare('ALTER TABLE sync_devices ADD COLUMN active INTEGER NOT NULL DEFAULT 1').run();
     this.db.prepare('UPDATE users SET is_super_admin_identity = 0 WHERE is_super_admin_identity IS NULL').run();
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS authorization_audit_log (
@@ -362,6 +365,10 @@ class DatabaseService {
         source_device_id TEXT, source_operation_id TEXT,
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
         PRIMARY KEY (table_name, record_id)
+      );
+      CREATE TABLE IF NOT EXISTS sync_delivery_scope (
+        actor_user_id TEXT NOT NULL, device_id TEXT NOT NULL, table_name TEXT NOT NULL, record_id TEXT NOT NULL,
+        last_visible_at TEXT NOT NULL, PRIMARY KEY(actor_user_id, device_id, table_name, record_id)
       );
       CREATE TABLE IF NOT EXISTS authorization_migrations (
         name TEXT PRIMARY KEY, applied_at TEXT NOT NULL
@@ -1217,12 +1224,17 @@ class DatabaseService {
   registerSyncDevice(deviceId, payload = {}) {
     const now = this._now();
     const id = deviceId || 'unknown';
+    const current = this.db.prepare('SELECT * FROM sync_devices WHERE id = ?').get(id);
+    if (current?.owner_user_id && payload.ownerUserId && current.owner_user_id !== payload.ownerUserId) {
+      const error = new Error('SYNC_DEVICE_OWNER_MISMATCH'); error.code = 'SYNC_DEVICE_OWNER_MISMATCH'; throw error;
+    }
     this.db.prepare(
-      `INSERT INTO sync_devices (id, device_name, role, trusted, last_seen_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO sync_devices (id, device_name, role, trusted, owner_user_id, active, last_seen_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          device_name = excluded.device_name,
          role = excluded.role,
+         owner_user_id = COALESCE(sync_devices.owner_user_id, excluded.owner_user_id),
          last_seen_at = excluded.last_seen_at,
          updated_at = excluded.updated_at`
     ).run(
@@ -1230,6 +1242,7 @@ class DatabaseService {
       payload.deviceName || payload.device_name || id,
       payload.role || 'desktop-client',
       payload.trusted ? 1 : 0,
+      payload.ownerUserId || null,
       now,
       now,
       now
@@ -1244,7 +1257,8 @@ class DatabaseService {
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const expiresAt = new Date(Date.now() + (options.ttlMs || 10 * 60 * 1000)).toISOString();
     const id = uuidv4();
-    this.registerSyncDevice(deviceId, { role: options.role || 'desktop-client', deviceName: options.deviceName });
+    this.registerSyncDevice(deviceId, { role: options.role || 'desktop-client', deviceName: options.deviceName,
+      ownerUserId: options.actorUserId });
     this.db.prepare(
       `INSERT INTO sync_authorizations (id, device_id, actor_user_id, actor_teacher_id, token_hash, scope, expires_at, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
@@ -1257,17 +1271,35 @@ class DatabaseService {
   verifySyncAuthorization(deviceId, token, options = {}) {
     const crypto = require('crypto');
     const tokenHash = crypto.createHash('sha256').update(String(token || '')).digest('hex');
-    const row = this.db.prepare(
-      `SELECT * FROM sync_authorizations
-       WHERE device_id = ? AND token_hash = ? AND scope = ? AND used_at IS NULL
-       ORDER BY created_at DESC LIMIT 1`
-    ).get(deviceId, tokenHash, options.scope || 'sync:push');
-    if (!row) return false;
-    if (Date.parse(row.expires_at) < Date.now()) return false;
-    if (!row.actor_user_id || row.actor_user_id !== options.actorUserId) return false;
-    if ((row.actor_teacher_id || null) !== (options.actorTeacherId || null)) return false;
-    this.db.prepare('UPDATE sync_authorizations SET used_at = ? WHERE id = ?').run(this._now(), row.id);
-    return row;
+    return this.db.transaction(() => {
+      const row = this.db.prepare(
+        `SELECT * FROM sync_authorizations
+         WHERE device_id = ? AND token_hash = ? AND scope = ? AND used_at IS NULL
+         ORDER BY created_at DESC LIMIT 1`
+      ).get(deviceId, tokenHash, options.scope || 'sync:push');
+      if (!row || Date.parse(row.expires_at) < Date.now()) return false;
+      if (!row.actor_user_id || row.actor_user_id !== options.actorUserId) return false;
+      if ((row.actor_teacher_id || null) !== (options.actorTeacherId || null)) return false;
+      const consumed = this.db.prepare('UPDATE sync_authorizations SET used_at = ? WHERE id = ? AND used_at IS NULL').run(this._now(), row.id);
+      if (consumed.changes !== 1) return false;
+      const { token_hash, ...safe } = row;
+      return safe;
+    })();
+  }
+
+  consumeSyncAuthorizationContext(deviceId, token, actorUserId, scope = 'sync:push') {
+    const user = this.db.prepare('SELECT * FROM users WHERE id = ? AND deleted = 0').get(actorUserId);
+    if (!user || user.review_status !== 'approved' || user.status === 'inactive' || user.status === 0 || user.login_enabled === 0) return false;
+    const role = roleForUser(user);
+    const teacherId = role === 'teacher' ? user.teacher_id : null;
+    const device = this.db.prepare('SELECT * FROM sync_devices WHERE id = ? AND active = 1').get(deviceId);
+    if (!device || device.owner_user_id !== user.id) return false;
+    const authorization = this.verifySyncAuthorization(deviceId, token, {
+      actorUserId: user.id, actorTeacherId: teacherId, scope,
+    });
+    if (!authorization) return false;
+    return { kind: ['super_admin', 'admin'].includes(role) ? 'admin' : role,
+      userId: user.id, teacherId, studentId: user.student_id || null, deviceId };
   }
 
   recordSyncConflict(change, existing, options = {}) {
@@ -1365,27 +1397,46 @@ class DatabaseService {
     }
     const payload = this.getChangeQueueSince(sinceTime, options);
     if (authz.kind === 'admin') return payload;
-    if (authz.kind === 'student') {
-      const snapshot = {};
-      for (const table of this._syncTables()) snapshot[table] = this.getChangesSince(table, 0, options);
-      const scoped = scopeBusinessSnapshot(snapshot, { ...authz,
-        studentIds: authz.studentIds || (authz.studentId ? [authz.studentId] : []) });
-      return { ...payload, changes: payload.changes.flatMap(change => {
-        const row = (scoped[change.table] || []).find(item => String(item.id) === String(change.data?.id));
-        return row ? [{ ...change, data: row }] : [];
-      }) };
+    if (!['teacher', 'student'].includes(authz.kind)) return { ...payload, changes: [] };
+    const snapshot = {};
+    for (const table of this._syncTables()) snapshot[table] = this.getChangesSince(table, 0, options)
+      .filter(row => row.deleted !== 1 && row.deleted !== true);
+    const scoped = scopeBusinessSnapshot(snapshot, { ...authz,
+      studentIds: authz.studentIds || (authz.studentId ? [authz.studentId] : []) });
+    const visible = new Map();
+    for (const [table, rows] of Object.entries(scoped)) {
+      if (!Array.isArray(rows)) continue;
+      for (const row of rows) if (row?.id != null) visible.set(`${table}:${row.id}`, row);
     }
-    if (authz.kind !== 'teacher') return { ...payload, changes: [] };
-    const lookup = {
-      courses: this.db.prepare('SELECT * FROM courses WHERE tenant_id = ?').all(options.tenantId || 'default'),
-      schedules: this.db.prepare('SELECT * FROM schedules WHERE tenant_id = ?').all(options.tenantId || 'default'),
-    };
-    return { ...payload, changes: payload.changes.filter(change => {
-      try { assertRecordReadable(change.table, change.data, authz, lookup); return true; } catch (_error) { return false; }
-    }) };
+    const changes = payload.changes.flatMap(change => {
+      const row = visible.get(`${change.table}:${change.data?.id}`);
+      return row ? [{ ...change, data: row }] : [];
+    });
+    const now = this._now();
+    const ledger = this.db.prepare(`SELECT table_name, record_id FROM sync_delivery_scope
+      WHERE actor_user_id = ? AND device_id = ?`).all(authz.userId, authz.deviceId);
+    for (const prior of ledger) {
+      if (visible.has(`${prior.table_name}:${prior.record_id}`)) continue;
+      changes.push({ id: `scope-delete:${prior.table_name}:${prior.record_id}:${now}`, table: prior.table_name,
+        action: 'delete', data: { id: prior.record_id, deleted: 1 }, version: now, updatedAt: now,
+        tenantId: options.tenantId || 'default', deviceId: 'server' });
+      this.db.prepare(`DELETE FROM sync_delivery_scope WHERE actor_user_id=? AND device_id=? AND table_name=? AND record_id=?`)
+        .run(authz.userId, authz.deviceId, prior.table_name, prior.record_id);
+    }
+    const remember = this.db.prepare(`INSERT INTO sync_delivery_scope
+      (actor_user_id, device_id, table_name, record_id, last_visible_at) VALUES (?,?,?,?,?)
+      ON CONFLICT(actor_user_id,device_id,table_name,record_id) DO UPDATE SET last_visible_at=excluded.last_visible_at`);
+    for (const change of changes) if (change.action !== 'delete') {
+      remember.run(authz.userId, authz.deviceId, change.table, change.data.id, now);
+    }
+    changes.sort((a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.id.localeCompare(b.id));
+    return { ...payload, changes };
   }
 
   applySyncChanges(changes, options = {}) {
+    if (!options.authz) {
+      const error = new Error('AUTHORIZATION_CONTEXT_REQUIRED'); error.code = 'AUTHORIZATION_CONTEXT_REQUIRED'; throw error;
+    }
     const deviceId = options.deviceId || 'unknown';
     const scopeTenantId = this._tenantId(options);
     const queue = this._legacyChangesToQueue(changes, deviceId).map(change => ({
@@ -1554,8 +1605,8 @@ class DatabaseService {
     return transaction(queue);
   }
 
-  applyPushChanges(clientId, changes) {
-    return this.applySyncChanges(changes, { deviceId: clientId || 'unknown' });
+  applyPushChanges(clientId, changes, authz) {
+    return this.applySyncChanges(changes, { deviceId: clientId || 'unknown', authz });
   }
   /**
    * 鑾峰彇鍚屾鐘舵€?   */

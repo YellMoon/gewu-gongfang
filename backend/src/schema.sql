@@ -298,9 +298,20 @@ CREATE TABLE IF NOT EXISTS sync_devices (
   device_name TEXT,
   role TEXT NOT NULL DEFAULT 'desktop-client',
   trusted INTEGER NOT NULL DEFAULT 0,
+  owner_user_id TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
   last_seen_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sync_delivery_scope (
+  actor_user_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  table_name TEXT NOT NULL,
+  record_id TEXT NOT NULL,
+  last_visible_at TEXT NOT NULL,
+  PRIMARY KEY (actor_user_id, device_id, table_name, record_id)
 );
 
 CREATE TABLE IF NOT EXISTS sync_authorizations (

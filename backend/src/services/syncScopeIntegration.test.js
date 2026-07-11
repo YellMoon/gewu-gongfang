@@ -7,7 +7,7 @@ const { DatabaseService } = require('../database');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-sync-scope-'));
 process.env.DB_PATH = path.join(dir, 'test.db');
 process.env.READ_DB_PATH = process.env.DB_PATH;
-const db = new DatabaseService();
+let db = new DatabaseService();
 try {
   const now = '2026-07-11T00:00:00.000Z';
   db.db.prepare('INSERT INTO teachers (id,name,created_at,updated_at) VALUES (?,?,?,?)').run('t1','T1',now,now);
@@ -19,11 +19,16 @@ try {
   assert(scoped.changes.some(x => x.table === 'courses' && x.data.id === 'c1'));
   assert(!scoped.changes.some(x => x.table === 'courses' && x.data.id === 'c2'));
   assert.throws(() => db.getScopedChangeQueueSince(0, { tenantId:'default' }), e => e.code === 'AUTHORIZATION_CONTEXT_REQUIRED');
+  assert.throws(() => db.applySyncChanges([{ id:'no-auth', table:'courses', action:'update', data:{id:'c1',name:'pwned'}, updatedAt:now }],
+    { tenantId:'default', deviceId:'d1' }), e => e.code === 'AUTHORIZATION_CONTEXT_REQUIRED');
+  assert.strictEqual(db.db.prepare('SELECT name FROM courses WHERE id=?').get('c1').name, 'C1');
 
   db.registerSyncDevice('d1');
   const issued = db.issueSyncAuthorization('d1', { actorUserId:'u1', actorTeacherId:'t1' });
   assert.strictEqual(db.verifySyncAuthorization('d1', issued.token, { actorUserId:'u2', actorTeacherId:'t1' }), false);
   assert.ok(db.verifySyncAuthorization('d1', issued.token, { actorUserId:'u1', actorTeacherId:'t1' }));
+  assert.strictEqual(db.verifySyncAuthorization('d1', issued.token, { actorUserId:'u1', actorTeacherId:'t1' }), false,
+    'one-time token must be consumed atomically');
 
   const denied = db.applySyncChanges([{ id:'evil', table:'courses', action:'update', data:{id:'c2',teacher_id:'t2'}, updatedAt:now }],
     { tenantId:'default', deviceId:'d1', authz:{kind:'teacher',userId:'u1',teacherId:'t1',deviceId:'d1'} });
@@ -35,5 +40,36 @@ try {
   assert.strictEqual(applied.applied, 1);
   assert.deepStrictEqual(db.db.prepare('SELECT updated_by_user_id, source_device_id, source_operation_id FROM sync_record_provenance WHERE table_name=? AND record_id=?').get('courses','c1'),
     { updated_by_user_id:'u1', source_device_id:'d1', source_operation_id:'good' });
+
+  db.db.prepare(`INSERT INTO users (id,phone,name,role,status,login_enabled,teacher_id,review_status,deleted,created_at,updated_at)
+    VALUES ('relay-u1','13000009999','Relay Teacher','teacher',1,1,'t1','approved',0,?,?)`).run(now,now);
+  db.registerSyncDevice('relay-d1', { ownerUserId:'relay-u1' });
+  const relayToken = db.issueSyncAuthorization('relay-d1', { actorUserId:'relay-u1', actorTeacherId:'t1' });
+  assert.deepStrictEqual(db.consumeSyncAuthorizationContext('relay-d1', relayToken.token, 'relay-u1'),
+    { kind:'teacher', userId:'relay-u1', teacherId:'t1', studentId:null, deviceId:'relay-d1' });
+  const wrongDeviceToken = db.issueSyncAuthorization('relay-d1', { actorUserId:'relay-u1', actorTeacherId:'t1' });
+  assert.strictEqual(db.consumeSyncAuthorizationContext('forged-device', wrongDeviceToken.token, 'relay-u1'), false);
+  const revokedToken = db.issueSyncAuthorization('relay-d1', { actorUserId:'relay-u1', actorTeacherId:'t1' });
+  db.db.prepare("UPDATE users SET review_status='pending' WHERE id='relay-u1'").run();
+  assert.strictEqual(db.consumeSyncAuthorizationContext('relay-d1', revokedToken.token, 'relay-u1'), false,
+    'queued relay changes must be rejected after actor revocation');
+  db.db.prepare("UPDATE users SET review_status='approved', teacher_id='t1' WHERE id='relay-u1'").run();
+  const reboundToken = db.issueSyncAuthorization('relay-d1', { actorUserId:'relay-u1', actorTeacherId:'t1' });
+  db.db.prepare("UPDATE users SET teacher_id='t2' WHERE id='relay-u1'").run();
+  assert.strictEqual(db.consumeSyncAuthorizationContext('relay-d1', reboundToken.token, 'relay-u1'), false,
+    'teacher binding changes must invalidate queued relay authorization');
+
+  const first = db.getScopedChangeQueueSince(0, { tenantId:'default', deviceId:'server', clientId:'d1',
+    authz:{ kind:'teacher', userId:'u1', teacherId:'t1', deviceId:'d1' } });
+  assert(first.changes.some(x => x.table === 'courses' && x.data.id === 'c1'));
+  db.close();
+  db = new DatabaseService();
+  db.db.prepare('UPDATE courses SET teacher_id=?, updated_at=? WHERE id=?').run('t2','2026-07-13T00:00:00.000Z','c1');
+  const second = db.getScopedChangeQueueSince('2026-07-12T12:00:00.000Z', { tenantId:'default', deviceId:'server', clientId:'d1',
+    authz:{ kind:'teacher', userId:'u1', teacherId:'t1', deviceId:'d1' } });
+  assert(second.changes.some(x => x.table === 'courses' && x.data.id === 'c1' && x.action === 'delete' && x.data.deleted === 1),
+    'relationship transfer must emit a minimal tombstone to a prior recipient');
+  assert(!second.changes.some(x => x.table === 'courses' && x.data.id === 'c2' && x.action === 'delete'),
+    'records never delivered to this actor/device must not leak through tombstones');
   console.log('sync scope integration tests passed');
 } finally { db.close(); fs.rmSync(dir,{recursive:true,force:true}); }

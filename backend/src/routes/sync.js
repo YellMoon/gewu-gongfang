@@ -160,9 +160,12 @@ router.post('/devices/register', (req, res) => {
   try {
     const db = getInstance();
     const deviceId = readDeviceId(req);
+    const authz = requestAuthz(req);
+    if (!authz || authz.deviceId !== deviceId) return res.status(403).json({ success: false, code: 'AUTHORIZATION_CONTEXT_REQUIRED' });
     const device = db.registerSyncDevice(deviceId, {
       deviceName: req.body?.deviceName || req.body?.device_name,
       role: req.body?.role || 'desktop-client',
+      ownerUserId: authz.userId,
     });
     res.json({ success: true, device });
   } catch (err) {

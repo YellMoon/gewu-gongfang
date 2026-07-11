@@ -74,8 +74,10 @@ async function processMiniappTask(task, db) {
   const payload = task.payload || {};
   if (task.task_type === 'desktop-sync') {
     const changes = payload.pendingChanges || payload.changes || [];
-    const authz = payload.authorizationContext;
-    if (!authz?.userId || !authz?.deviceId || !authz?.kind) {
+    const relayDeviceId = payload.deviceId || payload.device_id;
+    const authz = db.consumeSyncAuthorizationContext(relayDeviceId, payload.syncAuthorizationToken,
+      payload.actorUserId, 'sync:push');
+    if (!authz) {
       const error = new Error('AUTHORIZATION_CONTEXT_REQUIRED'); error.code = 'AUTHORIZATION_CONTEXT_REQUIRED'; throw error;
     }
     const result = db.applySyncChanges(changes, {

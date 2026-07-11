@@ -176,6 +176,7 @@ export function createCloudRelaySyncTransport(options = {}) {
           tenantId: input.tenantId || 'default',
           pendingChanges: input.pendingChanges || [],
           preview: input.preview || null,
+          syncAuthorizationToken: input.syncAuthorizationToken || options.syncAuthorizationToken || null,
         }),
       }));
       return {
