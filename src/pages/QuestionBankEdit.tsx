@@ -22,6 +22,7 @@ import {
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
 const { deleteQuestionViaApi } = require('../services/questionDeleteApi');
+const { normalizeDesktopQuestionDeleteContext } = require('../services/desktopQuestionDeleteContext');
 
 const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
@@ -106,13 +107,9 @@ const QuestionBankEdit: React.FC = () => {
 
   useEffect(() => {
     try {
-      const session = JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null');
-      const token = session?.token || session?.accessToken;
-      const deviceId = session?.deviceId;
-      const userId = session?.user?.id || session?.userId;
-      if (!token || !deviceId || !userId) return;
-      fetch('/api/permissions/my', { headers: { authorization: `Bearer ${token}`, 'x-device-id': deviceId } })
-        .then(response => response.json()).then(data => setDeleteContext({ capabilities: data.capabilities || [], deviceId, userId }))
+      const session = readDesktopAuthorizationSession();
+      fetch('/api/permissions/my', { headers: { authorization: session.authorization, 'x-device-id': session.authContext.deviceId } })
+        .then(response => response.json()).then(data => setDeleteContext(normalizeDesktopQuestionDeleteContext(session, data.capabilities)))
         .catch(() => undefined);
     } catch (_error) {}
   }, []);

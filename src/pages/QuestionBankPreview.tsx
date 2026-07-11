@@ -15,6 +15,8 @@ import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
 const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
 const { deleteQuestionViaApi } = require('../services/questionDeleteApi');
+const { normalizeDesktopQuestionDeleteContext } = require('../services/desktopQuestionDeleteContext');
+import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
 import { splitSearchTerms } from '../utils/highlightText';
 import { toggleQuestionBasket, useQuestionBasketIds } from '../components/QuestionBasket';
@@ -199,13 +201,9 @@ const QuestionBankPreview: React.FC = () => {
 
   useEffect(() => {
     try {
-      const session = JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null');
-      const token = session?.token || session?.accessToken;
-      const deviceId = session?.deviceId;
-      const userId = session?.user?.id || session?.userId;
-      if (!token || !deviceId || !userId) return;
-      fetch('/api/permissions/my', { headers: { authorization: `Bearer ${token}`, 'x-device-id': deviceId } })
-        .then(response => response.json()).then(data => setDeleteContext({ capabilities: data.capabilities || [], deviceId, userId }))
+      const session = readDesktopAuthorizationSession();
+      fetch('/api/permissions/my', { headers: { authorization: session.authorization, 'x-device-id': session.authContext.deviceId } })
+        .then(response => response.json()).then(data => setDeleteContext(normalizeDesktopQuestionDeleteContext(session, data.capabilities)))
         .catch(() => undefined);
     } catch (_error) {}
   }, []);
@@ -607,8 +605,8 @@ const QuestionBankPreview: React.FC = () => {
     if (!presentation.enabled) { message.warning(presentation.reason); return; }
     let ok = false;
     if (question?.storage_state === 'host_committed') {
-      const session = JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null') || {};
-      ok = (await deleteQuestionViaApi(fetch, `${API_BASE}/questions/${id}`, session)).ok;
+      const session = readDesktopAuthorizationSession();
+      ok = (await deleteQuestionViaApi(fetch, `${API_BASE}/questions/${id}`, { token: session.authorization.replace(/^Bearer\s+/i, ''), deviceId: session.authContext.deviceId })).ok;
     } else ok = Boolean((window as any).dbService.deleteQuestion(id));
     if (!ok) { message.error('Delete failed'); return; }
     setQuestions(previous => previous.filter(item => item.id !== id));
@@ -628,7 +626,8 @@ const QuestionBankPreview: React.FC = () => {
   const handleBatchDelete = async () => {
     const db = (window as any).dbService;
     const allowed = selectedRowKeys.filter(id => questionDeletePresentation(questions.find(item => item.id === id), deleteContext).enabled);
-    const session = JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null') || {};
+    let session: any = {};
+    try { const trusted = readDesktopAuthorizationSession(); session = { token: trusted.authorization.replace(/^Bearer\s+/i, ''), deviceId: trusted.authContext.deviceId }; } catch (_error) {}
     const settled = await Promise.allSettled(allowed.map(async id => {
       const question = questions.find(item => item.id === id);
       const ok = question?.storage_state === 'host_committed'

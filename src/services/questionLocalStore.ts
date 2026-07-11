@@ -1,5 +1,6 @@
 import type { KnowledgeNode, Question } from '../types';
 const { canRemoveQuestionLocalRecord } = require('./questionLocalDeletionPolicy');
+const { applyTrustedQuestionProvenance } = require('./questionProvenance');
 
 const DB_NAME = 'question_local_store_v1';
 const DB_VERSION = 1;
@@ -183,6 +184,16 @@ function buildMeta(question: Question): QuestionMeta {
   };
 }
 
+function trustedLocalQuestion(question: Question, existing?: Question): Question {
+  if (existing) return { ...question, storage_state: existing.storage_state, sourceDeviceId: existing.sourceDeviceId, ownerUserId: existing.ownerUserId };
+  let deviceId = '', userId = '';
+  try {
+    const session = JSON.parse(globalThis.sessionStorage?.getItem?.('gewu_desktop_authorization_session') || 'null');
+    deviceId = session?.deviceId || ''; userId = session?.user?.id || session?.userId || '';
+  } catch (_error) {}
+  return applyTrustedQuestionProvenance(question, { deviceId, userId }, existing) as Question;
+}
+
 function matchesList(value: any, selected?: string[]): boolean {
   const active = (selected || []).filter(item => item && item !== '全部');
   return active.length === 0 || active.includes(String(value || ''));
@@ -226,14 +237,17 @@ export async function upsertQuestionLocalRecord(question: Question): Promise<voi
   try {
     db = await openDb();
   } catch (_err) {
-    fallbackMeta.set(question.id, buildMeta(question));
-    fallbackContent.set(question.id, question);
+    const trusted = trustedLocalQuestion(question, fallbackContent.get(question.id));
+    fallbackMeta.set(question.id, buildMeta(trusted));
+    fallbackContent.set(question.id, trusted);
     return;
   }
+  const previous = await requestToPromise<any>(db.transaction(CONTENT_STORE, 'readonly').objectStore(CONTENT_STORE).get(question.id));
+  const trusted = trustedLocalQuestion(question, previous?.payload);
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction([META_STORE, CONTENT_STORE], 'readwrite');
-    tx.objectStore(META_STORE).put(buildMeta(question));
-    tx.objectStore(CONTENT_STORE).put({ id: question.id, payload: question } satisfies QuestionContent);
+    tx.objectStore(META_STORE).put(buildMeta(trusted));
+    tx.objectStore(CONTENT_STORE).put({ id: question.id, payload: trusted } satisfies QuestionContent);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });

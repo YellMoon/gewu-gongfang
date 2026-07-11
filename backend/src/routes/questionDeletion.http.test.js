@@ -10,6 +10,8 @@ fs.mkdirSync(path.join(qbRoot, 'assets', 'images'), { recursive: true });
 fs.mkdirSync(path.join(qbRoot, 'assets', 'word-imports'), { recursive: true });
 fs.mkdirSync(path.join(qbRoot, 'assets', 'exports'), { recursive: true });
 fs.mkdirSync(path.join(qbRoot, 'backups'), { recursive: true });
+fs.mkdirSync(path.join(qbRoot, 'questions'), { recursive: true });
+fs.mkdirSync(path.join(qbRoot, '.trash'), { recursive: true });
 fs.writeFileSync(path.join(qbRoot, 'manifest.json'), JSON.stringify({ storeId: 'test-store', schemaVersion: 1 }), 'utf8');
 const assetFile = path.join(qbRoot, 'assets', 'images', 'kept.png');
 fs.writeFileSync(assetFile, 'temporary-test-asset', 'utf8');
@@ -25,6 +27,11 @@ process.env.WRITE_ROLES = 'super_admin,admin,teacher';
 const { DatabaseService } = require('../database');
 const service = new DatabaseService();
 const now = new Date().toISOString();
+const authorityId = 'test-database-authority';
+service.db.prepare('INSERT INTO authority_metadata (key,value,updated_at) VALUES (?,?,?)').run('database_authority_id', authorityId, now);
+service.db.prepare("INSERT INTO question_bank_store_bindings (store_id,db_authority_id,root_path,bound_by,bound_at,status) VALUES (?,?,?,?,?,'active')")
+  .run('test-store', authorityId, qbRoot, 'client-super', now);
+fs.writeFileSync(path.join(qbRoot, 'manifest.json'), JSON.stringify({ storeId: 'test-store', schemaVersion: 1, authorityDatabaseId: authorityId }), 'utf8');
 for (const user of [
   ['host-admin', 'admin', 'approved'], ['client-super', 'super_admin', 'approved'],
   ['mini-super', 'super_admin', 'approved'], ['pending-user', 'pending', 'pending'],
@@ -60,11 +67,14 @@ async function jsonRequest(base, method, url, bearer, deviceId, body) {
 function committed(id) {
   const created = questionBank.createQuestion(service.db, { id, stem: id, type: 'fill', storage_state: 'host_committed',
     assets: [{ oss_key: `question-bank/assets/images/kept.png`, file_name: 'kept.png' }] });
-  return questionBank.markQuestionHostCommitted(service.db, created.id, {
+  const marked = questionBank.markQuestionHostCommitted(service.db, created.id, {
     runtimeNodeRole:'primary-host', tokenUse:'desktop-session', tokenDeviceId:'host-device',
     deviceId:'host-device', deviceTrusted:true, deviceActive:true, clientType:'desktop',
     userApproved:true, userId:'host-admin', deviceOwnerUserId:'host-admin',
   });
+  const dir = path.join(qbRoot, 'questions', id); fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'question.json'), JSON.stringify({ id }), 'utf8');
+  return marked;
 }
 
 (async () => {

@@ -14,6 +14,8 @@ const {
   inspectQuestionBankStore,
   assertQuestionBankWritable,
   findQuestionBankStore,
+  commitQuestionToBoundStore,
+  deleteCommittedQuestion,
 } = require('../services/questionBankStorageService');
 const {
   createMaintenanceToken,
@@ -39,6 +41,8 @@ const upload = multer({
 });
 
 function errorStatus(err) {
+  if (['AUTHORIZATION_CONTEXT_REQUIRED', 'TOKEN_REQUIRED'].includes(err.code)) return 401;
+  if (/_REQUIRED$|_MISMATCH$/.test(err.code || '')) return 403;
   return /oss_key is required|knowledge point not found/.test(err.message) ? 400 : 500;
 }
 
@@ -327,9 +331,20 @@ router.post('/questions', (req, res) => {
     const db = getInstance().db;
     const tId = tenantId(req);
     const result = questionBank.createQuestion(db, req.body, tId, req.authz || {});
+    let storage = { state: 'local_draft', code: 'QUESTION_BANK_STORE_NOT_BOUND' };
+    if (req.authz?.runtimeNodeRole === 'primary-host' && req.authz?.clientType === 'desktop') {
+      try {
+        const committed = commitQuestionToBoundStore(result.id, { db, tenantId: tId, authz: req.authz || {}, runtime: req.authz || {} });
+        storage = { state: committed.storageState, storeId: committed.storeId };
+      } catch (storageError) {
+        storage = { state: 'local_draft', code: storageError.code || 'QUESTION_BANK_STORAGE_COMMIT_FAILED', error: storageError.message };
+      }
+    } else {
+      storage.code = 'PRIMARY_HOST_COMMIT_REQUIRED';
+    }
     const embedding = searchService.upsertQuestionEmbedding(db, result.id, { tenantId: tId });
     searchService.schedulePendingJobs(db);
-    res.json({ success: true, ...result, embedding });
+    res.json({ success: true, ...result, storage_state: storage.state, storage, embedding });
   } catch (err) {
     res.status(errorStatus(err)).json({ success: false, error: err.message });
   }
@@ -352,7 +367,10 @@ router.put('/questions/:id', (req, res) => {
 router.delete('/questions/:id', (req, res) => {
   try {
     const db = getInstance().db;
-    const deleted = questionBank.deleteQuestion(db, req.params.id, tenantId(req), req.authz || {});
+    const existing = questionBank.getQuestion(db, req.params.id, tenantId(req));
+    const deleted = existing?.storage_state === 'host_committed'
+      ? deleteCommittedQuestion(req.params.id, { db, tenantId: tenantId(req), authz: req.authz || {}, runtime: req.authz || {}, operationId: req.get('x-operation-id') })?.deleted
+      : questionBank.deleteQuestion(db, req.params.id, tenantId(req), req.authz || {});
     if (!deleted) return res.status(404).json({ success: false, error: 'question not found' });
     searchService.schedulePendingJobs(db);
     res.json({ success: true });
@@ -590,6 +608,16 @@ router.post('/imports/:id/commit', (req, res) => {
     const tId = tenantId(req);
     const result = questionBank.commitImportBatch(db, req.params.id, tId, req.authz || {});
     if (!result) return res.status(404).json({ success: false, error: 'import batch not found' });
+    const storageResults = [];
+    for (const questionId of result.commit_result.question_ids || []) {
+      try {
+        const committed = commitQuestionToBoundStore(questionId, { db, tenantId: tId, authz: req.authz || {}, runtime: req.authz || {} });
+        storageResults.push({ questionId, state: committed.storageState, storeId: committed.storeId });
+      } catch (storageError) {
+        storageResults.push({ questionId, state: 'local_draft', code: storageError.code || 'QUESTION_BANK_STORAGE_COMMIT_FAILED', error: storageError.message });
+      }
+    }
+    result.commit_result.storage = storageResults;
     dbService._auditOperation({
       tenant_id: tId,
       action: 'import_commit',
@@ -600,7 +628,7 @@ router.post('/imports/:id/commit', (req, res) => {
     });
     res.json({ success: true, data: result });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(errorStatus(err)).json({ success: false, error: err.message, code: err.code });
   }
 });
 
