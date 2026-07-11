@@ -288,7 +288,7 @@ Simplify the desktop data-sync page by adapting its default content to the confi
 
 # Task: 2026-07-11 统一角色、审核与老师数据权限
 
-Status: implemented and verified; release publishing in progress
+Status: implemented, verified, packaged, published, and pushed
 
 - [x] 删除菜单结构管理、邀请页面、邀请码授权和任意模块授权矩阵运行时。
 - [x] 建立超级管理员、普通管理员、老师、学生、待审核五角色契约。
@@ -301,6 +301,7 @@ Status: implemented and verified; release publishing in progress
 - [x] `npm test`、桌面构建、小程序 typecheck、微信发布检查和 H5 构建通过。
 - [x] 真实桌面/H5 运行时复验并留下截图；发现并修复桌面 Unicode 字面转义显示缺陷。
 - [x] 完成残留审计和验证记录：`docs/verification-2026-07-12-unified-authorization.md`。
-- [ ] 合并并推送 `gewu/master`。
-- [ ] 自动递增版本、构建 Windows 安装包并发布 OSS 更新 feed。
-- [ ] 恢复 Node ABI 并验证 `better-sqlite3`。
+- [x] 合并并推送 `gewu/master`。
+- [x] 自动递增至 `5.13.0`、构建 Windows 安装包并发布 OSS 更新 feed。
+- [x] 修复 packaged smoke 发现的 CommonJS/ESM 空白页，重新打包并覆盖发布。
+- [x] 恢复 Node ABI 并验证 `better-sqlite3`。

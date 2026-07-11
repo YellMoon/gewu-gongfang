@@ -1,6 +1,6 @@
 import type { KnowledgeNode, Question } from '../types';
 const { canRemoveQuestionLocalRecord } = require('./questionLocalDeletionPolicy');
-const { applyTrustedQuestionProvenance } = require('./questionProvenance');
+import { applyTrustedQuestionProvenance } from './questionProvenance.mjs';
 const { normalizeDesktopAuthorizationSession } = require('./desktopQuestionDeleteContext');
 
 const DB_NAME = 'question_local_store_v1';
