@@ -28,10 +28,14 @@ const now = new Date().toISOString();
 for (const user of [
   ['host-admin', 'admin', 'approved'], ['client-super', 'super_admin', 'approved'],
   ['mini-super', 'super_admin', 'approved'], ['pending-user', 'pending', 'pending'],
+  ['host-student', 'student', 'approved'],
+  ['approved-teacher', 'teacher', 'approved'],
 ]) service.db.prepare(`INSERT INTO users (id,phone,name,role,status,login_enabled,review_status,deleted,created_at,updated_at)
  VALUES (?,?,?, ?,1,1,?,0,?,?)`).run(user[0], `${Math.random()}`.slice(2, 13), user[0], user[1], user[2], now, now);
 service.registerSyncDevice('host-device', { deviceName: 'Host', role: 'primary-host', trusted: true, ownerUserId: 'host-admin' });
 service.registerSyncDevice('client-device', { deviceName: 'Client', role: 'desktop-client', trusted: true, ownerUserId: 'client-super' });
+service.registerSyncDevice('student-device', { deviceName: 'Student host session', role: 'primary-host', trusted: true, ownerUserId: 'host-student' });
+service.registerSyncDevice('teacher-device', { deviceName: 'Teacher desktop', role: 'desktop-client', trusted: true, ownerUserId: 'approved-teacher' });
 
 const databaseModule = require('../database');
 databaseModule.getInstance = () => service;
@@ -49,6 +53,10 @@ async function remove(base, id, bearer, deviceId) {
   }});
   return { status: response.status, body: await response.json() };
 }
+async function jsonRequest(base, method, url, bearer, deviceId, body) {
+  const response = await fetch(`${base}${url}`, { method, headers: { 'content-type':'application/json', authorization:`Bearer ${bearer}`, 'x-device-id':deviceId }, body:JSON.stringify(body) });
+  return { status:response.status, body:await response.json() };
+}
 function committed(id) {
   const created = questionBank.createQuestion(service.db, { id, stem: id, type: 'fill', storage_state: 'host_committed',
     assets: [{ oss_key: `question-bank/assets/images/kept.png`, file_name: 'kept.png' }] });
@@ -62,11 +70,35 @@ function committed(id) {
   const listener = createApp().listen(0);
   const base = `http://127.0.0.1:${listener.address().port}`;
   try {
+    process.env.GEWU_NODE_ROLE = 'desktop-client';
+    const teacherCreate = await jsonRequest(base, 'POST', '/api/question-bank/questions', token('approved-teacher','teacher-device'), 'teacher-device', {
+      stem:'teacher create', type:'fill', storage_state:'host_committed', committed_at:'forged', committed_by_device_id:'forged', source_device_id:'forged', owner_user_id:'forged',
+    });
+    assert.strictEqual(teacherCreate.status, 200);
+    assert.strictEqual(teacherCreate.body.storage_state, 'local_draft');
+    assert.strictEqual(teacherCreate.body.source_device_id, 'teacher-device');
+    assert.strictEqual(teacherCreate.body.owner_user_id, 'approved-teacher');
+    const teacherUpdate = await jsonRequest(base, 'PUT', `/api/question-bank/questions/${teacherCreate.body.id}`, token('approved-teacher','teacher-device'), 'teacher-device', {
+      stem:'updated', storage_state:'host_committed', committed_at:'forged', source_device_id:'other', owner_user_id:'other',
+    });
+    assert.strictEqual(teacherUpdate.status, 200);
+    assert.strictEqual(teacherUpdate.body.data.storage_state, 'local_draft');
+    assert.strictEqual(teacherUpdate.body.data.source_device_id, 'teacher-device');
+    assert.strictEqual((await jsonRequest(base,'POST','/api/question-bank/questions',token('host-student','student-device'),'student-device',{stem:'no',type:'fill'})).status,403);
+    assert.strictEqual((await jsonRequest(base,'PUT',`/api/question-bank/questions/${teacherCreate.body.id}`,token('host-student','student-device'),'student-device',{stem:'no'})).status,403);
+
+    process.env.GEWU_NODE_ROLE = 'primary-host';
     const success = committed('success');
     const ok = await remove(base, success.id, token('host-admin', 'host-device'), 'host-device');
     assert.strictEqual(ok.status, 200);
     assert.strictEqual(service.db.prepare('SELECT deleted FROM questions WHERE id=?').get(success.id).deleted, 1);
     assert.ok(fs.existsSync(assetFile), 'soft delete must retain physical asset');
+
+    const studentQuestion = committed('student-success');
+    service.db.prepare('UPDATE sync_devices SET owner_user_id=? WHERE id=?').run('host-student', 'student-device');
+    const studentDelete = await remove(base, studentQuestion.id, token('host-student', 'student-device'), 'student-device');
+    assert.strictEqual(studentDelete.status, 200);
+    assert.strictEqual(service.db.prepare('SELECT deleted FROM questions WHERE id=?').get(studentQuestion.id).deleted, 1);
 
     const denials = [
       ['client', 'client-super', 'client-device', 'desktop-session', 'desktop-client'],

@@ -1,0 +1,10 @@
+const assert=require('assert'); const fs=require('fs'); const os=require('os'); const path=require('path');
+const temp=fs.mkdtempSync(path.join(os.tmpdir(),'gewu-qb-migration-')); const dbPath=path.join(temp,'test.db'); const root=path.join(temp,'qb'); fs.mkdirSync(root);
+fs.writeFileSync(path.join(root,'manifest.json'),JSON.stringify({storeId:'arbitrary',schemaVersion:1}),'utf8');
+process.env.DB_PATH=dbPath; process.env.READ_DB_PATH=dbPath; process.env.QUESTION_BANK_ROOT=root; process.env.QUESTION_BANK_STORE_ID='arbitrary';
+const {DatabaseService}=require('./database'); const questionBank=require('./services/questionBankService'); const {initQuestionBankStore}=require('./services/questionBankStorageService');
+let service=new DatabaseService(); const created=questionBank.createQuestion(service.db,{stem:'legacy',type:'fill'}); service.close();
+service=new DatabaseService(); assert.strictEqual(service.db.prepare('SELECT storage_state FROM questions WHERE id=?').get(created.id).storage_state,'local_draft','arbitrary manifest without required store directories must not migrate'); service.close();
+initQuestionBankStore(root,{deviceId:'host'}); process.env.QUESTION_BANK_STORE_ID=JSON.parse(fs.readFileSync(path.join(root,'manifest.json'),'utf8')).storeId;
+service=new DatabaseService(); const migrated=service.db.prepare('SELECT storage_state,committed_at FROM questions WHERE id=?').get(created.id); assert.strictEqual(migrated.storage_state,'host_committed'); assert.ok(migrated.committed_at); service.close();
+fs.rmSync(temp,{recursive:true,force:true}); console.log('question storage migration tests passed');
