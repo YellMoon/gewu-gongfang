@@ -6,5 +6,5 @@ const {DatabaseService}=require('./database'); const questionBank=require('./ser
 let service=new DatabaseService(); const created=questionBank.createQuestion(service.db,{stem:'legacy',type:'fill'}); service.close();
 service=new DatabaseService(); assert.strictEqual(service.db.prepare('SELECT storage_state FROM questions WHERE id=?').get(created.id).storage_state,'local_draft','arbitrary manifest without required store directories must not migrate'); service.close();
 initQuestionBankStore(root,{deviceId:'host'}); process.env.QUESTION_BANK_STORE_ID=JSON.parse(fs.readFileSync(path.join(root,'manifest.json'),'utf8')).storeId;
-service=new DatabaseService(); const migrated=service.db.prepare('SELECT storage_state,committed_at FROM questions WHERE id=?').get(created.id); assert.strictEqual(migrated.storage_state,'host_committed'); assert.ok(migrated.committed_at); service.close();
+service=new DatabaseService(); const migrated=service.db.prepare('SELECT storage_state,committed_at FROM questions WHERE id=?').get(created.id); assert.strictEqual(migrated.storage_state,'local_draft','even a valid store must not auto-promote without an explicit authority binding'); assert.strictEqual(migrated.committed_at,null); service.close();
 fs.rmSync(temp,{recursive:true,force:true}); console.log('question storage migration tests passed');

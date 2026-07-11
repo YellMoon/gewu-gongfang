@@ -57,7 +57,7 @@ function attachAuthorizationContext(req, tokenUser) {
     runtimeNodeRole: process.env.GEWU_NODE_ROLE || 'desktop-client',
     deviceTrusted: device?.trusted === 1, deviceActive: device?.active === 1,
     deviceOwnerUserId: device?.owner_user_id || null, userApproved,
-    clientType: req.headers['x-client-type'] || 'unknown', isPrimaryHost,
+    clientType: tokenUser?.token_use === 'desktop-session' ? 'desktop' : 'non-desktop', isPrimaryHost,
   };
   return true;
 }

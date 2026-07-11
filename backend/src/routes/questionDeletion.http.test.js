@@ -62,7 +62,8 @@ function committed(id) {
     assets: [{ oss_key: `question-bank/assets/images/kept.png`, file_name: 'kept.png' }] });
   return questionBank.markQuestionHostCommitted(service.db, created.id, {
     runtimeNodeRole:'primary-host', tokenUse:'desktop-session', tokenDeviceId:'host-device',
-    deviceId:'host-device', deviceTrusted:true,
+    deviceId:'host-device', deviceTrusted:true, deviceActive:true, clientType:'desktop',
+    userApproved:true, userId:'host-admin', deviceOwnerUserId:'host-admin',
   });
 }
 

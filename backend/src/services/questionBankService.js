@@ -674,7 +674,9 @@ class QuestionBankService {
 
   markQuestionHostCommitted(db, id, context = {}, tenantId = 'default') {
     if (context.runtimeNodeRole !== 'primary-host' || context.tokenUse !== 'desktop-session'
-      || !context.deviceId || context.deviceId !== context.tokenDeviceId || context.deviceTrusted !== true) {
+      || context.clientType !== 'desktop' || !context.deviceId || context.deviceId !== context.tokenDeviceId
+      || context.deviceTrusted !== true || context.deviceActive !== true || context.userApproved !== true
+      || context.deviceOwnerUserId !== context.userId) {
       const error = new Error('trusted primary host context required'); error.code = 'TRUSTED_HOST_CONTEXT_REQUIRED'; throw error;
     }
     const ts = now();

@@ -9,6 +9,7 @@ const { canDeleteQuestion } = require('./questionDeletionPolicy');
 
 const trustedHost = {
   runtimeNodeRole: 'primary-host', tokenUse: 'desktop-session',
+  clientType: 'desktop',
   tokenDeviceId: 'host-1', deviceId: 'host-1', deviceTrusted: true,
   deviceActive: true, deviceOwnerUserId: 'u1', userId: 'u1', userApproved: true,
   role: 'teacher', gateway: false,
@@ -20,6 +21,7 @@ const cases = [
   ['trusted primary host admin', { ...trustedHost, role: 'admin', storageState: 'host_committed' }, true],
   ['client desktop super admin', { ...trustedHost, runtimeNodeRole: 'desktop-client', role: 'super_admin', storageState: 'host_committed' }, false],
   ['primary host miniapp super admin', { ...trustedHost, tokenUse: 'miniapp-session', role: 'super_admin', storageState: 'host_committed' }, false],
+  ['forged miniapp client type', { ...trustedHost, clientType: 'miniapp', storageState: 'host_committed' }, false],
   ['cloud relay', { ...trustedHost, gateway: true, storageState: 'host_committed' }, false],
   ['pending user', { ...trustedHost, role: 'pending', userApproved: false, storageState: 'host_committed' }, false],
   ['student on host desktop', { ...trustedHost, role: 'student', storageState: 'host_committed' }, true],
