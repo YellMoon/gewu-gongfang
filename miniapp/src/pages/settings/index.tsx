@@ -3,7 +3,7 @@ import { View, Text } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { onNetworkStatusChange, offNetworkStatusChange } from '@tarojs/taro'
 import { getApiBaseUrl, setApiBaseUrl } from '../../utils/api'
-import { isOnline, getPendingChanges, clearPendingChanges, getLastSyncTimestamp } from '../../utils/storage'
+import { isOnline, getPendingChanges, clearPendingChanges, getLastSyncTimestamp, clearBusinessCache } from '../../utils/storage'
 import { clearPermissionCache } from '../../utils/permission'
 import { triggerSync, pullFromCloud } from '../../utils/sync'
 import './index.scss'
@@ -96,6 +96,7 @@ export default function Settings() {
       success: (res) => {
         if (res.confirm) {
           clearPermissionCache()
+          clearBusinessCache()
           Taro.removeStorageSync('auth_token')
           Taro.removeStorageSync('user_info')
           Taro.redirectTo({ url: '/pages/login/index' })

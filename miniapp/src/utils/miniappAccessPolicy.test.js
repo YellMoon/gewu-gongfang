@@ -1,5 +1,6 @@
 const assert = require('assert');
 const fs = require('fs');
+require('./miniappAuthorizationRuntime.test');
 
 const permission = fs.readFileSync('miniapp/src/utils/permission.ts', 'utf-8');
 const api = fs.readFileSync('miniapp/src/utils/api.ts', 'utf-8');
@@ -11,6 +12,7 @@ const questionBankPage = fs.readFileSync('miniapp/src/pages/question-bank/index.
 const assetsPage = fs.readFileSync('miniapp/src/pages/assets/index.tsx', 'utf-8');
 const assetsStyles = fs.readFileSync('miniapp/src/pages/assets/index.scss', 'utf-8');
 const loginPage = fs.readFileSync('miniapp/src/pages/login/index.tsx', 'utf-8');
+const storageSource = fs.readFileSync('miniapp/src/utils/storage.ts', 'utf-8');
 const adminUsersPage = fs.readFileSync('miniapp/src/pages/admin/users/index.tsx', 'utf-8');
 const studentsPage = fs.readFileSync('miniapp/src/pages/students/index.tsx', 'utf-8');
 const teachersPage = fs.readFileSync('miniapp/src/pages/teachers/index.tsx', 'utf-8');
@@ -21,6 +23,7 @@ const scheduleStyles = fs.readFileSync('miniapp/src/pages/schedule/index.scss', 
 const sharedComponents = fs.readFileSync('miniapp/src/components/shared.tsx', 'utf-8');
 const coursesPage = fs.readFileSync('miniapp/src/pages/courses/index.tsx', 'utf-8');
 const paymentsPageSource = fs.readFileSync('miniapp/src/pages/payments/index.tsx', 'utf-8');
+const customTabBar = fs.readFileSync('miniapp/src/custom-tab-bar/index.tsx', 'utf-8');
 
 assert.ok(permission.includes('readonlyModules'), 'miniapp permission should define readonlyModules');
 assert.ok(permission.includes('allowedWriteTasks'), 'miniapp permission should define allowedWriteTasks');
@@ -71,7 +74,17 @@ assert.ok(!assetsPage.includes('提交任务') && !assetsPage.includes('主机�
 assert.ok(assetsStyles.includes('.task-title') && assetsStyles.includes('font-size: 30rpx'), 'asset import title should have a controlled miniapp font size');
 assert.ok(assetsStyles.includes('.task-desc') && assetsStyles.includes('font-size: 24rpx'), 'asset import description should have a controlled miniapp font size');
 assert.ok(!miniappHome.includes('student-dashboard-scope'), 'home page should not show explanatory student scope copy');
-assert.ok(miniappHome.includes("user?.user_type !== 'student'"), 'home page should hide management shortcuts from students');
+assert.ok(miniappHome.includes("!['student', 'pending'].includes(access.role)"), 'home page should hide management shortcuts from students and pending users');
+assert.ok(miniappHome.includes('access.canReadUsers'), 'home review workbench entry should follow server-derived read capability');
+assert.ok(miniappHome.includes('access.canReviewUsers'), 'home review workbench copy should distinguish reviewer and read-only admin');
+assert.ok(!miniappHome.includes('账号与邀请'), 'home should remove legacy invitation wording');
+assert.ok(miniappHome.includes('scopeDashboardCollections'), 'home dashboard should scope cached collections before aggregation');
+assert.ok(miniappHome.includes('setBusinessCacheIdentity'), 'home should activate the authenticated cache namespace before reads');
+assert.ok(storageSource.includes('cache_${activeCacheIdentity}_${table}'), 'business cache keys should be identity scoped');
+assert.ok(storageSource.includes('previousIdentity !== nextIdentity'), 'business cache should clear the prior identity namespace on account switch');
+assert.ok(loginPage.includes('setBusinessCacheIdentity(normalizedUser)'), 'login should switch the business cache identity after authentication');
+assert.ok(customTabBar.includes("return 'pending'"), 'tab bar should fail closed when no authenticated role is available');
+assert.ok(customTabBar.includes("userType === 'pending' ? LIMITED_TABS"), 'pending users should not receive business navigation tabs');
 assert.ok(appConfig.includes("'pages/question-bank/index'"), 'app config should register the question bank page');
 assert.ok(questionBankPage.includes('createMiniappTask'), 'question bank page should submit question bank operations');
 assert.ok(questionBankPage.includes("'question-paper'"), 'question bank page should support paper assembly');

@@ -19,7 +19,7 @@ const pageInventory = [
     surface: 'role-dashboard',
     visualStatus: 'optimized',
     verificationStates: ['admin-dashboard', 'student-dashboard', 'empty-modules'],
-    realFeatureBasis: ['readCloudSnapshot(full)', 'api.get(/api/modules)', 'getMiniappRolePolicy', 'local schedules/students/courses'],
+    realFeatureBasis: ['readCloudSnapshot(full)', 'api.get(/api/modules)', 'deriveAccess', 'scopeDashboardCollections', 'setBusinessCacheIdentity', 'local schedules/students/courses'],
     screenshotRequired: true,
     files: ['src/pages/index/index.tsx', 'src/pages/index/index.scss'],
   },

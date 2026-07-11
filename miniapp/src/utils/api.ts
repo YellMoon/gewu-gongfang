@@ -9,6 +9,7 @@
  * - Token 自动刷新
  */
 import Taro from '@tarojs/taro';
+import { clearBusinessCache } from './storage';
 
 const STORAGE_KEY_BASE_URL = 'scheduling_api_base_url';
 declare const __API_BASE_URL__: string | undefined;
@@ -90,8 +91,10 @@ class ApiClient {
 
   /** Token 过期处理 */
   private handleAuthExpired(): void {
+    clearBusinessCache();
     Taro.removeStorageSync('auth_token');
     Taro.removeStorageSync('user_info');
+    Taro.removeStorageSync('user_permissions');
     Taro.showToast({ title: '登录已过期，请重新登录', icon: 'none', duration: 2000 });
     setTimeout(() => Taro.redirectTo({ url: '/pages/login/index' }), 1500);
   }

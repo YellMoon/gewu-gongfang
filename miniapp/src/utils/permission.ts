@@ -4,6 +4,7 @@
  */
 import Taro from '@tarojs/taro';
 import { moduleApi } from './api';
+import { deriveAccess, permissionIdentityKey } from './miniappAuthorizationRuntime';
 
 export const readonlyModules = [
   'students',
@@ -95,7 +96,22 @@ export interface PermissionData {
 
 // 内存缓存
 let _permissionCache: PermissionData | null = null;
+export type PermissionLoadStatus = 'idle' | 'loaded' | 'error';
+export interface PermissionState {
+  status: PermissionLoadStatus;
+  identityKey: string;
+  capabilities: MiniappCapability[];
+}
+let _permissionState: PermissionState = { status: 'idle', identityKey: '', capabilities: [] };
 const CACHE_KEY = 'user_permissions';
+
+export function getPermissionState(): PermissionState {
+  return { ..._permissionState, capabilities: [..._permissionState.capabilities] };
+}
+
+export function getEffectiveMiniappAccess(user: Partial<UserInfo> | null = getCurrentUser()) {
+  return deriveAccess(user, _permissionState);
+}
 
 /**
  * 获取当前用户信息
@@ -194,22 +210,38 @@ export function getMiniappRolePolicy(user: Partial<UserInfo> | null = getCurrent
  * 优先从缓存读取，缓存未命中则请求 API
  */
 export async function fetchPermissions(): Promise<PermissionData> {
+  const identityKey = permissionIdentityKey(getCurrentUser());
+  if (!identityKey) {
+    _permissionCache = null;
+    _permissionState = { status: 'error', identityKey: '', capabilities: [] };
+    return { permissions: [], capabilities: [], user_type: 'pending' };
+  }
   // 先尝试内存缓存
-  if (_permissionCache) {
+  if (_permissionCache && _permissionState.status === 'loaded' && _permissionState.identityKey === identityKey) {
     return _permissionCache;
   }
 
   // 再尝试 storage 缓存
   try {
     const cached = Taro.getStorageSync(CACHE_KEY);
-    if (cached && Array.isArray(cached.capabilities)) {
+    if (cached && cached.identityKey === identityKey && Array.isArray(cached.capabilities)) {
       _permissionCache = cached as PermissionData;
+      _permissionState = { status: 'loaded', identityKey, capabilities: cached.capabilities };
       return _permissionCache;
     }
+    if (cached) Taro.removeStorageSync(CACHE_KEY);
   } catch { /* ignore */ }
 
   // 请求 API
-  const res = await moduleApi.myPermissions();
+  let res;
+  try {
+    res = await moduleApi.myPermissions();
+  } catch {
+    _permissionCache = null;
+    _permissionState = { status: 'error', identityKey, capabilities: [] };
+    try { Taro.removeStorageSync(CACHE_KEY); } catch { /* ignore */ }
+    return { permissions: [], capabilities: [], user_type: getUserType() };
+  }
   if (res.success && res.data) {
     const raw = res.data as any;
     const data = {
@@ -218,13 +250,17 @@ export async function fetchPermissions(): Promise<PermissionData> {
       user_type: raw.user_type || getUserType(),
     } as PermissionData;
     _permissionCache = data;
+    _permissionState = { status: 'loaded', identityKey, capabilities: data.capabilities };
     try {
-      Taro.setStorageSync(CACHE_KEY, data);
+      Taro.setStorageSync(CACHE_KEY, { ...data, identityKey });
     } catch { /* ignore */ }
     return data;
   }
 
   // API 失败返回空权限
+  _permissionCache = null;
+  _permissionState = { status: 'error', identityKey, capabilities: [] };
+  try { Taro.removeStorageSync(CACHE_KEY); } catch { /* ignore */ }
   return { permissions: [], capabilities: [], user_type: getUserType() };
 }
 
@@ -242,25 +278,12 @@ export async function fetchPermissions(): Promise<PermissionData> {
  * 学生默认拥有 question-bank:view，可满足做题/组卷/查看需求
  */
 export function hasModulePermission(moduleId: string, action: string = 'view'): boolean {
-  const rolePolicy = getMiniappRolePolicy();
-  if (!_permissionCache) {
-    try {
-      const cached = Taro.getStorageSync(CACHE_KEY);
-      if (cached && Array.isArray(cached.capabilities)) _permissionCache = cached as PermissionData;
-    } catch { /* ignore */ }
-  }
-  const roleCapabilities = _permissionCache?.capabilities || rolePolicy.capabilities;
-  if (_permissionCache && roleCapabilities.length === 0) return false;
+  const access = getEffectiveMiniappAccess();
+  const roleCapabilities = access.capabilities as MiniappCapability[];
   if (moduleId === 'question-bank') {
     return roleCapabilities.includes(action === 'view' ? 'question-bank:view' : 'question-bank:edit');
   }
-  if (roleCapabilities.includes('business:all') || roleCapabilities.includes('business:teacher-scope')) {
-    return rolePolicy.modules.includes(moduleId);
-  }
-  if (rolePolicy.role === 'student') {
-    return action === 'view' && rolePolicy.modules.includes(moduleId);
-  }
-  return false;
+  return access.modules.includes(moduleId) && action === 'view';
 }
 
 /**
@@ -268,20 +291,7 @@ export function hasModulePermission(moduleId: string, action: string = 'view'): 
  * admin 返回所有已知模块
  */
 export function getPermittedModules(): string[] {
-  const rolePolicy = getMiniappRolePolicy();
-
-  if (!_permissionCache) {
-    try {
-      const cached = Taro.getStorageSync(CACHE_KEY);
-      if (cached && Array.isArray(cached.capabilities)) {
-        _permissionCache = cached as PermissionData;
-      }
-    } catch { /* ignore */ }
-  }
-
-  const capabilities = _permissionCache?.capabilities || rolePolicy.capabilities;
-  if (capabilities.length === 0) return [];
-  return rolePolicy.modules;
+  return getEffectiveMiniappAccess().modules;
 }
 
 /**
@@ -289,6 +299,7 @@ export function getPermittedModules(): string[] {
  */
 export function clearPermissionCache(): void {
   _permissionCache = null;
+  _permissionState = { status: 'idle', identityKey: '', capabilities: [] };
   try {
     Taro.removeStorageSync(CACHE_KEY);
   } catch { /* ignore */ }

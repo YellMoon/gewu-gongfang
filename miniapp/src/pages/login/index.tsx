@@ -3,6 +3,7 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { View, Text, Button } from '@tarojs/components';
 import { api } from '../../utils/api';
 import { clearPermissionCache } from '../../utils/permission';
+import { setBusinessCacheIdentity } from '../../utils/storage';
 import './index.scss';
 
 export default function LoginPage() {
@@ -21,9 +22,11 @@ export default function LoginPage() {
       const res = await api.post<any>('/api/auth/wechat-login', { code, ...(phoneCode ? { phoneCode } : {}) });
       if (res.success && res.data) {
         const loginUser = res.data.user || { id: res.data.userId, nickname: res.data.nickname, role: res.data.role || 'student' };
+        const normalizedUser = { ...loginUser, user_type: loginUser.role || loginUser.user_type || 'student' };
         clearPermissionCache();
         Taro.setStorageSync('auth_token', res.data.token);
-        Taro.setStorageSync('user_info', { ...loginUser, user_type: loginUser.role || loginUser.user_type || 'student' });
+        Taro.setStorageSync('user_info', normalizedUser);
+        setBusinessCacheIdentity(normalizedUser);
         Taro.reLaunch({ url: '/pages/index/index' });
       } else if (res.code === 'PENDING_REVIEW' || res.code === 'USER_PENDING_REVIEW') {
         setPendingReview(true);
