@@ -19,7 +19,7 @@ const {
   scopeForUser,
 } = require('./services/authorizationPolicy');
 
-const SCHEMA_VERSION = 3101;
+const SCHEMA_VERSION = 3102;
 const MINIAPP_ADMIN_SEED_USERS = [
   { id: 'miniapp-admin-13732250653', phone: '13732250653', name: 'Miniapp Admin 0653' },
   { id: 'miniapp-admin-18257136756', phone: '18257136756', name: 'Miniapp Admin 6756' },
@@ -93,6 +93,7 @@ class DatabaseService {
     this._recordSchemaVersion(schemaPath);
     this._ensureTenantColumns();
     this._ensureQuestionMetaColumns();
+    this._ensureQuestionContentColumns();
     this._ensureImportTaskColumns();
     this._ensureArchiveJobColumns();
     this._ensureMiniappUserColumns();
@@ -260,6 +261,17 @@ class DatabaseService {
     this.db.prepare("UPDATE questions SET has_formula = 0 WHERE has_formula IS NULL").run();
     this.db.prepare("UPDATE questions SET created_by = '' WHERE created_by IS NULL").run();
     this.db.prepare("UPDATE questions SET storage_state = 'local_draft' WHERE storage_state IS NULL OR storage_state NOT IN ('local_draft', 'host_committed')").run();
+  }
+
+  _ensureQuestionContentColumns() {
+    const exists = this.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'question_contents'"
+    ).get();
+    if (!exists) return;
+    const columns = new Set(this.db.prepare('PRAGMA table_info(question_contents)').all().map(column => column.name));
+    if (!columns.has('rich_content_json')) {
+      this.db.prepare('ALTER TABLE question_contents ADD COLUMN rich_content_json TEXT').run();
+    }
   }
 
   _ensureImportTaskColumns() {

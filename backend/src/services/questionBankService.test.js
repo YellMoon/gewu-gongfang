@@ -231,6 +231,50 @@ function testQuestionKnowledgePointCrud() {
   });
 }
 
+function testStructuredRichContentRoundTrip() {
+  withTempDatabase((db) => {
+    const richContent = {
+      version: 1,
+      type: 'question-document',
+      sections: {
+        stem: {
+          type: 'doc',
+          content: [{
+            type: 'paragraph',
+            attrs: { textAlign: 'justify', lineHeight: 1.5 },
+            content: [
+              { type: 'text', text: 'find velocity', marks: [{ type: 'bold' }, { type: 'fontFamily', attrs: { fontFamily: 'SimSun' } }] },
+              { type: 'formula', attrs: { id: 'f-1', canonicalLatex: '\\frac{s}{t}', displayMode: 'inline' } },
+              { type: 'image', attrs: { assetKey: 'asset-1', alt: 'motion diagram', width: 240, align: 'center' } },
+            ],
+          }],
+        },
+        options: [{ id: 'option-a', label: 'A', isCorrect: true, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'option A' }] }] } }],
+        subQuestions: [{ id: 'sub-1', label: '(1)', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'part one' }] }] }, answer: { type: 'doc', content: [] } }],
+        answer: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'answer A' }] }] },
+        analysis: { type: 'doc', content: [] },
+      },
+    };
+
+    const created = questionBank.createQuestion(db, {
+      type: 'single', stem: '<p>legacy stem</p>', answer: 'A',
+      options: [{ label: 'A', content: 'option A' }], rich_content: richContent,
+    }, 'default');
+    const loaded = questionBank.getQuestion(db, created.id, 'default');
+
+    assert.deepStrictEqual(loaded.rich_content, richContent);
+    assert.strictEqual(loaded.rich_content.sections.stem.content[0].content[1].attrs.canonicalLatex, '\\frac{s}{t}');
+    assert.ok(loaded.stem.includes('legacy stem'));
+
+    const updatedRich = JSON.parse(JSON.stringify(richContent));
+    updatedRich.sections.answer.content[0].content[0].text = 'updated answer';
+    questionBank.updateQuestion(db, created.id, { rich_content: updatedRich, answer: 'updated answer' }, 'default');
+    const updated = questionBank.getQuestion(db, created.id, 'default');
+    assert.strictEqual(updated.rich_content.sections.answer.content[0].content[0].text, 'updated answer');
+    assert.strictEqual(updated.answer, 'updated answer');
+  });
+}
+
 function main() {
   testImportValidationPrecedesDuplicateDetection();
   testImportTaskRecordsAndDetails();
@@ -238,6 +282,7 @@ function main() {
   testQuestionHtmlSanitization();
   testClearQuestionBankData();
   testQuestionKnowledgePointCrud();
+  testStructuredRichContentRoundTrip();
   console.log('questionBankService tests passed');
 }
 
