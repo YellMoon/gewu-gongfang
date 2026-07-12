@@ -49,9 +49,9 @@
 - Create: `modules/question-bank/parsers/word_content.py`
 - Modify: `modules/question-bank/parsers/parse_word.py`
 
-- [ ] Build a synthetic DOCX containing styled text, drawing, table, comment, OMML, split EQ field and OLE relationships in both `document.xml` and `comments.xml`.
-- [ ] Assert both parts yield the same ordered token kinds and retain part/paragraph/comment/relationship coordinates; run and observe failure.
-- [ ] Implement relationship normalization and a streaming child walker that yields text/style/break/image/OMML/field/OLE tokens.
+- [x] Build a synthetic DOCX containing styled text, drawing, table, comment, OMML, split EQ field and OLE relationships in both `document.xml` and `comments.xml`.
+- [x] Assert both parts yield the same ordered token kinds and retain part/paragraph/comment/relationship coordinates; run and observe failure.
+- [x] Implement relationship normalization and a streaming child walker that yields text/style/break/image/OMML/field/OLE tokens.
 - [ ] Replace divergent paragraph/comment low-level traversal in `parse_word.py` while keeping existing question-boundary behavior.
 - [ ] Run parser tests plus a real existing Word import smoke test and commit.
 
