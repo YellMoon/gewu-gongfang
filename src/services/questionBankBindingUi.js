@@ -1,4 +1,5 @@
 function questionBankBindingPresentation(status = {}) {
+  status = status || {};
   const binding = status.binding;
   return binding ? { bound: true, label: `Bound: ${binding.store_id}`, authority: binding.db_authority_id, warning: 'Binding is fixed and cannot switch implicitly.' }
     : { bound: false, label: 'Not bound', authority: '', warning: 'Bind only after verifying the primary-host question bank drive.' };

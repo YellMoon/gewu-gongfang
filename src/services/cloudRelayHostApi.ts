@@ -21,7 +21,10 @@ async function postHost(path: string, body: Record<string, any> = {}) {
 
   const res = await fetch(hostApiUrl(runtimeConfig.hostBaseUrl, path), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(runtimeConfig.desktopSyncToken ? { 'x-gewu-desktop-sync-token': runtimeConfig.desktopSyncToken } : {}),
+    },
     body: JSON.stringify(body),
   });
   const data = await res.json();

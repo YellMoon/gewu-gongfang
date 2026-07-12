@@ -157,6 +157,11 @@ function requireWriteAccess(req, res, next) {
     };
     return next();
   }
+  const expectedDesktopSyncToken = process.env.GEWU_DESKTOP_SYNC_TOKEN || '';
+  const providedDesktopSyncToken = req.headers['x-gewu-desktop-sync-token'] || '';
+  if (req.baseUrl === '/api/cloud-relay-host' && expectedDesktopSyncToken && providedDesktopSyncToken === expectedDesktopSyncToken) {
+    return next();
+  }
   if (!req.user) return sendAuthError(res, 401, '未登录', 'UNAUTHORIZED');
 
   const allowedRoles = (process.env.WRITE_ROLES || 'super_admin,admin,operator,teacher')
