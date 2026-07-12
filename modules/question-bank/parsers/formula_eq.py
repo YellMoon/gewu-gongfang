@@ -110,6 +110,56 @@ def _convert_integral(expression: str) -> str | None:
     return rf"{operator}_{{{lower}}}^{{{upper}}}{{{body}}}"
 
 
+def _array_expression(expression: str, start: int, force_cases: bool = False) -> tuple[str, int]:
+    # start points immediately after the \a command.
+    columns = 1
+    index = start
+    while index < len(expression) and expression[index] == "\\":
+        switch = re.match(r"\\(al|ac|ar|co(\d+)|vs\d+|hs\d+)", expression[index:], re.I)
+        if not switch:
+            break
+        if switch.group(2):
+            columns = max(1, int(switch.group(2)))
+        index += len(switch.group(0))
+    group, next_index = _balanced_group(expression, index)
+    cells = _split_arguments(group)
+    rows = []
+    for offset in range(0, len(cells), columns):
+        row = [_convert_expression(cell) for cell in cells[offset:offset + columns]]
+        if len(row) < columns:
+            row.extend([""] * (columns - len(row)))
+        rows.append(" & ".join(row))
+    environment = "cases" if force_cases else "array"
+    column_spec = "" if force_cases else "{%s}" % ("l" * columns)
+    return r"\begin{%s}%s%s\end{%s}" % (environment, column_spec, r" \\ ".join(rows), environment), next_index
+
+
+def _bracket_expression(expression: str, start: int) -> tuple[str, int]:
+    index = start
+    left = "("
+    right = ")"
+    while index < len(expression) and expression[index] == "\\":
+        switch = re.match(r"\\(lc|rc|bc)\\(.)", expression[index:], re.I | re.S)
+        if not switch:
+            break
+        side, character = switch.group(1).lower(), switch.group(2)
+        if side in {"lc", "bc"}:
+            left = character
+        if side in {"rc", "bc"}:
+            right = character
+        index += len(switch.group(0))
+    group, next_index = _balanced_group(expression, index)
+    if left == "{" and group.startswith(r"\a"):
+        converted, consumed = _array_expression(group, 2, force_cases=True)
+        if consumed != len(group):
+            raise ValueError("unexpected content after EQ piecewise array")
+        return converted, next_index
+    body = _convert_expression(group)
+    latex_left = r"\{" if left == "{" else left or "."
+    latex_right = r"\}" if right == "}" else right or "."
+    return r"\left%s%s\right%s" % (latex_left, body, latex_right), next_index
+
+
 def _convert_expression(expression: str) -> str:
     expression = expression.strip()
     integral = _convert_integral(expression)
@@ -140,20 +190,32 @@ def _convert_expression(expression: str) -> str:
             continue
         command = command_match.group(1).lower()
         argument_start = index + len(command_match.group(0))
-        if command not in {"f", "r"}:
-            raise ValueError("unsupported EQ command: \\" + command)
-        group, next_index = _balanced_group(expression, argument_start)
-        args = _split_arguments(group)
-        if command == "f" and len(args) == 2:
-            output.append(r"\frac{%s}{%s}" % (_convert_expression(args[0]), _convert_expression(args[1])))
-        elif command == "r" and len(args) == 1:
-            output.append(r"\sqrt{%s}" % _convert_expression(args[0]))
-        elif command == "r" and len(args) == 2:
-            output.append(r"\sqrt[%s]{%s}" % (_convert_expression(args[0]), _convert_expression(args[1])))
+        symbol_commands = {"ge": r"\ge ", "le": r"\le ", "ne": r"\ne ", "pm": r"\pm ", "in": r"\in ", "to": r"\to "}
+        if command in symbol_commands:
+            output.append(symbol_commands[command])
+            index = argument_start
+            continue
+        if command == "a":
+            converted, next_index = _array_expression(expression, argument_start)
+            output.append(converted)
+        elif command == "b":
+            converted, next_index = _bracket_expression(expression, argument_start)
+            output.append(converted)
+        elif command in {"f", "r"}:
+            group, next_index = _balanced_group(expression, argument_start)
+            args = _split_arguments(group)
+            if command == "f" and len(args) == 2:
+                output.append(r"\frac{%s}{%s}" % (_convert_expression(args[0]), _convert_expression(args[1])))
+            elif command == "r" and len(args) == 1:
+                output.append(r"\sqrt{%s}" % _convert_expression(args[0]))
+            elif command == "r" and len(args) == 2:
+                output.append(r"\sqrt[%s]{%s}" % (_convert_expression(args[0]), _convert_expression(args[1])))
+            else:
+                raise ValueError("invalid EQ command argument count")
         else:
-            raise ValueError("invalid EQ command argument count")
+            raise ValueError("unsupported EQ command: \\" + command)
         index = next_index
-    return "".join(output).strip()
+    return re.sub(r"\\([A-Za-z]+)\s+(?=\d)", r"\\\1 ", "".join(output)).strip()
 
 
 def convert_eq_to_latex(instruction: str, visible_result: str = "") -> EqConversion:

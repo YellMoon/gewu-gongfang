@@ -77,6 +77,16 @@ class EqFormulaTests(unittest.TestCase):
         self.assertEqual(blocked.status, "failed")
         self.assertIsNone(blocked.visible_text)
 
+    def test_converts_left_brace_array_into_piecewise_cases(self):
+        instruction = r"EQ f(x)=\b\lc\{(\a\al\co2(x\s\up2(2),x\ge0,-x,x<0))"
+        result = convert_eq_to_latex(instruction, visible_result="piecewise-render")
+
+        self.assertEqual(result.status, "complete")
+        self.assertEqual(
+            result.canonical_latex,
+            r"f(x)=\begin{cases}x^{2} & x\ge 0 \\ -x & x<0\end{cases}",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

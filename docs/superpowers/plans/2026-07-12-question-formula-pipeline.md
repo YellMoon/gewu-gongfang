@@ -74,11 +74,11 @@
 - Create: `modules/question-bank/parsers/formula_omml.py`
 - Modify: `modules/question-bank/parsers/parse_word.py`
 
-- [ ] Add failing fixtures for fractions, nth roots, sub/superscripts, n-ary operators, limits, matrices, equation arrays, delimiters, accents, bars and piecewise expressions.
-- [ ] Implement an OMML AST visitor that produces normalized LaTeX and warnings for approximations.
-- [ ] Compare rendered KaTeX-compatible output against expected structures and ensure no OMML XML appears in visible question text.
-- [ ] Route old `_math_latex` callers through the new adapter and run regression tests.
-- [ ] Commit.
+- [x] Add failing fixtures for fractions, nth roots, sub/superscripts, n-ary operators, limits, matrices, equation arrays, delimiters, accents, bars and piecewise expressions.
+- [x] Implement an OMML AST visitor that produces normalized LaTeX and warnings for approximations.
+- [x] Compare rendered KaTeX-compatible output against expected structures and ensure no OMML XML appears in visible question text.
+- [x] Route old `_math_latex` callers through the new adapter and run regression tests.
+- [x] Commit.
 
 ### Task 5: MathType import reuse and packaging
 
