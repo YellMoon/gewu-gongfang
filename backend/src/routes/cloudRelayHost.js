@@ -133,6 +133,10 @@ async function processMiniappTask(task, db) {
       questionCount: questions.length,
       fileName: artifact.fileName,
       fileUrl: artifact.fileUrl,
+      requestedFormulaMode: artifact.requestedFormulaMode,
+      effectiveFormulaModes: artifact.effectiveFormulaModes,
+      fallbackCount: artifact.fallbackCount,
+      formulaCount: artifact.formulaCount,
       questions: questions.map(question => ({ id: question.id, stem: question.stem })),
     };
   }
@@ -151,6 +155,10 @@ async function processMiniappTask(task, db) {
       questionCount: questions.length,
       fileName: artifact.fileName,
       fileUrl: artifact.fileUrl,
+      requestedFormulaMode: artifact.requestedFormulaMode,
+      effectiveFormulaModes: artifact.effectiveFormulaModes,
+      fallbackCount: artifact.fallbackCount,
+      formulaCount: artifact.formulaCount,
       questions: questions.map(question => ({ id: question.id, stem: question.stem })),
     };
   }

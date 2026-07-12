@@ -28,6 +28,8 @@ import { QUESTION_BASKET_SELECTED_STORAGE_KEY, QUESTION_BASKET_STORAGE_KEY } fro
 import QuestionRichContent from '../components/QuestionRichContent';
 import QuestionRenderer from '../components/QuestionRenderer';
 import { downloadPaperDocx } from '../services/docxExporter';
+import { downloadHostArtifact, requestHostPaperExport } from '../services/hostPaperExport';
+import type { FormulaExportMode, PaperArtifactFormat } from '../services/hostPaperExport';
 
 const API_BASE = getApiBase('/api/question-bank');
 
@@ -122,6 +124,7 @@ const QuestionBankPaper: React.FC = () => {
   const [items, setItems] = useState<PaperQuestion[]>([]);
   const [answerPosition, setAnswerPosition] = useState<AnswerPosition>('separate');
   const [includeDraft, setIncludeDraft] = useState(true);
+  const [formulaMode, setFormulaMode] = useState<FormulaExportMode>('word-native');
 
   useEffect(() => {
     let mounted = true;
@@ -208,6 +211,21 @@ const QuestionBankPaper: React.FC = () => {
     }
   };
 
+  const exportHostPaper = async (format: PaperArtifactFormat) => {
+    try {
+      const result = await requestHostPaperExport(API_BASE, {
+        title, format, formulaMode, questionIds: items.map(item => item.question.id),
+        includeAnswers: answerPosition !== 'hidden', subject: items[0]?.question.subject || '',
+      });
+      downloadHostArtifact(result);
+      const fallback = result.fallbackCount > 0 ? ` (${result.fallbackCount} ${String.fromCharCode(20010, 20844, 24335, 24050, 25353, 26174, 31034, 25928, 26524, 22238, 36864)})` : '';
+      message.success(`${result.fileName}${fallback}`);
+    } catch (error) {
+      console.error('host paper export failed', error);
+      message.error(String.fromCharCode(25968, 25454, 20027, 26426, 23548, 20986, 22833, 36133));
+    }
+  };
+
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       <Card
@@ -221,6 +239,12 @@ const QuestionBankPaper: React.FC = () => {
         }
         extra={
           <Space wrap>
+            <Select<FormulaExportMode> value={formulaMode} onChange={setFormulaMode} style={{ width: 210 }} options={[
+              { value: 'word-native', label: String.fromCharCode(87, 111, 114, 100, 32, 33258, 24102, 20844, 24335) },
+              { value: 'eq-field', label: String.fromCharCode(69, 81, 32, 22495, 20844, 24335) },
+              { value: 'mathtype-compatible', label: String.fromCharCode(77, 97, 116, 104, 84, 121, 112, 101, 32, 20860, 23481, 30690, 37327) },
+              { value: 'latex-vector', label: String.fromCharCode(76, 97, 84, 101, 88, 32, 30690, 37327, 20844, 24335) },
+            ]} />
             <Checkbox checked={includeDraft} onChange={e => setIncludeDraft(e.target.checked)}>
               包含草稿/待审核题
             </Checkbox>
@@ -232,7 +256,8 @@ const QuestionBankPaper: React.FC = () => {
             <Button icon={<SplitCellsOutlined />} onClick={applyAutoGroup} disabled={items.length === 0}>
               按题型分组
             </Button>
-            <Button type="primary" icon={<FileWordOutlined />} onClick={exportPaper} disabled={items.length === 0}>
+            <Button onClick={() => exportHostPaper('pdf')} disabled={items.length === 0}>{String.fromCharCode(23548, 20986, 32, 80, 68, 70)}</Button>
+            <Button type="primary" icon={<FileWordOutlined />} onClick={() => exportHostPaper('word')} disabled={items.length === 0}>
               导出试卷
             </Button>
           </Space>

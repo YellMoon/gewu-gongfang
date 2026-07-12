@@ -6,6 +6,7 @@ import type { Question } from '../types';
 import QuestionRichText from './QuestionRichText';
 import QuestionRenderer from './QuestionRenderer';
 import QuestionRichContent from './QuestionRichContent';
+import StructuredQuestionViewer from './StructuredQuestionViewer';
 import { assetRef, getQuestionAssetDataUrl, isAssetRef } from '../services/questionAssetStore';
 import './QuestionPreviewCard.css';
 
@@ -58,6 +59,7 @@ const QuestionPreviewCard: React.FC<{
   inBasket = false,
   selectable = false,
   checked = false,
+  showAnswer = true,
   onCheckChange,
   onEdit,
   editLabel = '编辑',
@@ -161,15 +163,14 @@ const QuestionPreviewCard: React.FC<{
         )}
         <div className="qb-card-index">{index !== undefined ? index + 1 : ''}</div>
         <div className="qb-card-body">
-          <QuestionRenderer
+          {resolvedQuestion.rich_content?.type === 'question-document' ? <StructuredQuestionViewer value={resolvedQuestion.rich_content} showAnswer={showAnswer} /> : <><QuestionRenderer
             content={displayContent}
             options={resolvedQuestion.options as any[]}
             questionType={resolvedQuestion.type}
             answer={resolvedQuestion.answer}
             analysis={resolvedQuestion.analysis || resolvedQuestion.explanation}
             terms={terms}
-          />
-          <QuestionRichContent question={resolvedQuestion} terms={terms} />
+          /><QuestionRichContent question={resolvedQuestion} terms={terms} /></>}
         </div>
       </div>
 

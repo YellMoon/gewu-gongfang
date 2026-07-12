@@ -45,6 +45,7 @@ const RichQuestionEditor: React.FC<RichQuestionEditorProps> = ({ value = '', onC
     extensions: [StarterKit, RichTextStyle, Color, FontFamily, Underline, Highlight.configure({ multicolor: true }), Subscript, Superscript, TextAlign.configure({ types: ['heading', 'paragraph'] }), RichImage.configure({ allowBase64: true }), Formula],
     content: value || '',
     editorProps: { attributes: { class: 'rich-question-editor__surface', 'data-placeholder': placeholder || '' } },
+    onCreate: ({ editor: current }) => { if (output === 'json') { onChange?.(current.getJSON()); onHtmlChange?.(current.getHTML()); } },
     onUpdate: ({ editor: current }) => { onChange?.(output === 'json' ? current.getJSON() : current.getHTML()); onHtmlChange?.(current.getHTML()); },
   });
   useEffect(() => {
