@@ -36,11 +36,11 @@
 - Create: `modules/question-bank/parsers/formula_model.py`
 - Modify: `package.json`
 
-- [ ] Write tests asserting a formula record serializes `canonical_latex`, source coordinates, original payload reference, display mode and warnings without exposing binary data in visible text.
-- [ ] Run `python -m unittest discover modules/question-bank/parsers/tests -v` and verify failure because `formula_model` does not exist.
-- [ ] Implement frozen/dataclass-style `FormulaDocument` and `FormulaConversionResult` with explicit JSON projection.
-- [ ] Re-run the focused suite and verify pass.
-- [ ] Add the Python parser suite to the repository test command and commit.
+- [x] Write tests asserting a formula record serializes `canonical_latex`, source coordinates, original payload reference, display mode and warnings without exposing binary data in visible text.
+- [x] Run `python -m unittest discover modules/question-bank/parsers/tests -v` and verify failure because `formula_model` does not exist.
+- [x] Implement frozen/dataclass-style `FormulaDocument` and `FormulaConversionResult` with explicit JSON projection.
+- [x] Re-run the focused suite and verify pass.
+- [x] Add the Python parser suite to the repository test command and commit.
 
 ### Task 2: Shared document/comment content walker
 
