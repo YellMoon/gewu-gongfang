@@ -1,14 +1,14 @@
 const crypto = require('crypto');
-const CODES = { REQUIRED:'PAIRING_INPUT_REQUIRED', NOT_FOUND:'PAIRING_NOT_FOUND', NOT_APPROVED:'PAIRING_NOT_APPROVED', EXPIRED:'PAIRING_EXPIRED', SECRET:'PAIRING_SECRET_INVALID', USED:'PAIRING_ALREADY_EXCHANGED' };
+const CODES = { REQUIRED:'PAIRING_INPUT_REQUIRED', IDENTITY:'PAIRING_IDENTITY_NOT_ALLOWED', NOT_FOUND:'PAIRING_NOT_FOUND', NOT_APPROVED:'PAIRING_NOT_APPROVED', EXPIRED:'PAIRING_EXPIRED', SECRET:'PAIRING_SECRET_INVALID', USED:'PAIRING_ALREADY_EXCHANGED' };
 const error = code => Object.assign(new Error(code), { code });
 const normalizePhone = value => String(value || '').replace(/\D/g, '');
 const hashSecret = secret => crypto.createHash('sha256').update(String(secret || '')).digest('hex');
 
 function createDesktopPairing(db, input = {}, options = {}) {
-  const phone = normalizePhone(input.phone);
+  if (['phone', 'userId', 'role', 'teacherId'].some(key => Object.hasOwn(input, key))) throw error(CODES.IDENTITY);
   const deviceId = String(input.deviceId || '');
   const secret = String(input.secret || '');
-  if (!/^1\d{10}$/.test(phone) || !deviceId || deviceId.length > 128 || String(input.deviceName || '').length > 128 || secret.length < 32 || secret.length > 128) throw error(CODES.REQUIRED);
+  if (!deviceId || deviceId.length > 128 || String(input.deviceName || '').length > 128 || secret.length < 32 || secret.length > 128) throw error(CODES.REQUIRED);
   const now = options.now || new Date().toISOString();
   const expiresAt = options.expiresAt || new Date(Date.parse(now) + 600000).toISOString();
   const pending = db.prepare("SELECT created_at FROM desktop_device_pairings WHERE device_id=? AND status='pending' ORDER BY created_at DESC LIMIT 1").get(deviceId);
@@ -19,7 +19,7 @@ function createDesktopPairing(db, input = {}, options = {}) {
   let pairingCode;
   for (let attempt = 0; attempt < 5; attempt++) {
     pairingCode = String(crypto.randomInt(100000, 1000000));
-    try { insert.run(id, deviceId, input.deviceName || deviceId, phone, hashSecret(secret), pairingCode, expiresAt, now, now); break; }
+    try { insert.run(id, deviceId, input.deviceName || deviceId, null, hashSecret(secret), pairingCode, expiresAt, now, now); break; }
     catch (caught) { if (attempt === 4 || !String(caught.code).includes('CONSTRAINT')) throw caught; }
   }
   return { id, pairingCode, expiresAt, status:'pending' };
