@@ -45,7 +45,7 @@ def collect_eq_fields(tokens: Iterable[WordToken]) -> list[EqField]:
         if token.kind == "field_simple":
             instruction = _clean_instruction(token.text or "")
             if re.match(r"(?i)^EQ(?:\s|$)", instruction):
-                fields.append(EqField(instruction, "", index, index))
+                fields.append(EqField(instruction, token.xml or "", index, index))
             continue
         if token.kind == "field_begin":
             stack.append(_FieldFrame(index, [], []))

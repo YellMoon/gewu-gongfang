@@ -21,6 +21,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 from formula_omml import convert_omml_to_latex
+from word_formula_import import import_part_formulas
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
@@ -225,9 +226,14 @@ def read_paragraph_comment_refs(file_path):
 def extract_numbered_items(doc, file_path):
     definitions = read_numbering_definitions(file_path)
     comments = read_docx_comments(file_path)
+    comment_formula_rows = import_part_formulas(file_path, "word/comments.xml")
+    comment_formulas = {}
+    for row in comment_formula_rows:
+        if row.comment_id:
+            comment_formulas.setdefault(row.comment_id, []).extend(row.formulas)
     counters = {}
     items = []
-    xml_items = extract_numbered_items_from_xml(file_path, definitions, comments, counters)
+    xml_items = extract_numbered_items_from_xml(file_path, definitions, comments, counters, comment_formulas)
     if xml_items:
         return xml_items
 
@@ -729,14 +735,15 @@ def read_docx_rich_paragraphs(file_path):
     }
     rows = []
     try:
+        canonical_rows = import_part_formulas(file_path, "word/document.xml")
         with zipfile.ZipFile(file_path, "r") as archive:
             if "word/document.xml" not in archive.namelist():
                 return []
             rels = _rels_for_document(archive)
             root = ET.fromstring(archive.read("word/document.xml"))
-            for paragraph in root.findall(".//w:p", ns):
+            for paragraph_index, paragraph in enumerate(root.findall(".//w:p", ns)):
                 assets = []
-                formulas = []
+                formulas = list(canonical_rows[paragraph_index].formulas) if paragraph_index < len(canonical_rows) else []
 
                 has_ole_object = bool(paragraph.findall(".//o:OLEObject", ns))
                 inline_assets = []
@@ -767,30 +774,6 @@ def read_docx_rich_paragraphs(file_path):
                     if asset:
                         asset["prog_id"] = prog_id
                         assets.append(asset)
-                        formulas.append({
-                            "format": "mathtype_ole",
-                            "text": prog_id,
-                            "asset_hash": asset["content_hash"],
-                            "rel_id": rid or "",
-                            "source_part": asset["source_part"],
-                        })
-
-                for math_node in paragraph.findall(".//m:oMath", ns) + paragraph.findall(".//m:oMathPara", ns):
-                    math_text = _math_text(math_node).strip()
-                    omml = _xml_bytes(math_node)
-                    formulas.append({
-                        "format": "omml",
-                        "text": math_text,
-                        "omml": omml,
-                    })
-
-                field_text = " ".join(node.text or "" for node in paragraph.findall(".//w:instrText", ns)).strip()
-                if field_text:
-                    formulas.append({
-                        "format": "field_code",
-                        "text": field_text,
-                        "field_code": field_text,
-                    })
 
                 rows.append({
                     "text": paragraph_text,
@@ -813,6 +796,7 @@ def read_docx_rich_blocks(file_path):
         "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
     }
     try:
+        canonical_rows = import_part_formulas(file_path, "word/document.xml")
         with zipfile.ZipFile(file_path, "r") as archive:
             if "word/document.xml" not in archive.namelist():
                 return []
@@ -822,21 +806,27 @@ def read_docx_rich_blocks(file_path):
             if body is None:
                 return []
             rows = []
+            paragraph_cursor = 0
             for child in list(body):
                 tag = _local_name(child)
                 if tag == "p":
                     inline_assets = []
                     text = _paragraph_text_with_markup(child, ns, archive, rels, bool(child.findall(".//o:OLEObject", ns)), inline_assets)
-                    formulas = []
-                    for math_node in child.findall(".//m:oMath", ns) + child.findall(".//m:oMathPara", ns):
-                        math_text = _math_text(math_node).strip()
-                        formulas.append({"format": "omml", "text": math_text, "omml": _xml_bytes(math_node)})
+                    formulas = list(canonical_rows[paragraph_cursor].formulas) if paragraph_cursor < len(canonical_rows) else []
                     rows.append({"text": text, "assets": inline_assets, "formulas": formulas, "block_type": "paragraph"})
+                    paragraph_cursor += 1
                 elif tag == "tbl":
                     inline_assets = []
                     text = _table_text_with_markup(child, ns, archive, rels, inline_assets)
+                    paragraph_count = len(child.findall(".//w:p", ns))
+                    formulas = []
+                    for offset in range(paragraph_count):
+                        row_index = paragraph_cursor + offset
+                        if row_index < len(canonical_rows):
+                            formulas.extend(canonical_rows[row_index].formulas)
                     if text:
-                        rows.append({"text": text, "assets": inline_assets, "formulas": [], "block_type": "table"})
+                        rows.append({"text": text, "assets": inline_assets, "formulas": formulas, "block_type": "table"})
+                    paragraph_cursor += paragraph_count
             return rows
     except Exception:
         return []
@@ -944,7 +934,7 @@ def attach_referenced_assets_from_rich_rows(questions, rich_rows):
         question["has_image"] = any(asset.get("asset_type") == "image" for asset in question["assets"])
 
 
-def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
+def extract_numbered_items_from_xml(file_path, definitions, comments, counters, comment_formulas=None):
     namespace = {
         "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
         "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
@@ -955,6 +945,8 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
         "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
     }
     try:
+        canonical_rows = import_part_formulas(file_path, "word/document.xml")
+        comment_formulas = comment_formulas or {}
         with zipfile.ZipFile(file_path, "r") as archive:
             if "word/document.xml" not in archive.namelist():
                 return []
@@ -962,6 +954,7 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
             root = ET.fromstring(archive.read("word/document.xml"))
             style_names = read_style_names_from_archive(archive)
             items = []
+            paragraph_cursor = 0
             body = root.find(".//w:body", namespace)
             if body is None:
                 return []
@@ -969,22 +962,31 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
                 if _local_name(child) == "tbl":
                     inline_assets = []
                     text = _table_text_with_markup(child, namespace, archive, rels, inline_assets)
+                    paragraph_count = len(child.findall(".//w:p", namespace))
+                    formulas = []
+                    for offset in range(paragraph_count):
+                        row_index = paragraph_cursor + offset
+                        if row_index < len(canonical_rows):
+                            formulas.extend(canonical_rows[row_index].formulas)
                     if text:
                         items.append({
                             "text": text,
                             "number_label": "",
                             "number_kind": "",
                             "comments": [],
-                            "rich": {"text": text, "assets": inline_assets, "formulas": []},
+                            "rich": {"text": text, "assets": inline_assets, "formulas": formulas},
                             "is_heading": False,
                         })
+                    paragraph_cursor += paragraph_count
                     continue
                 if _local_name(child) != "p":
                     continue
                 paragraph = child
                 inline_assets = []
                 text = _paragraph_text_with_markup(paragraph, namespace, archive, rels, bool(paragraph.findall(".//o:OLEObject", namespace)), inline_assets)
-                rich = {"text": text, "assets": inline_assets, "formulas": []}
+                formulas = list(canonical_rows[paragraph_cursor].formulas) if paragraph_cursor < len(canonical_rows) else []
+                rich = {"text": text, "assets": inline_assets, "formulas": formulas}
+                paragraph_cursor += 1
                 refs = []
                 for node in paragraph.findall(".//w:commentReference", namespace) + paragraph.findall(".//w:commentRangeStart", namespace) + paragraph.findall(".//w:commentRangeEnd", namespace):
                     comment_id = node.attrib.get(f"{{{namespace['w']}}}id")
@@ -1012,6 +1014,8 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters):
                 style_val = p_style.attrib.get(f"{{{namespace['w']}}}val", "") if p_style is not None else ""
                 style_name = style_names.get(style_val, "")
                 paragraph_comments = [comments[comment_id] for comment_id in refs if comments.get(comment_id)]
+                for comment_id in refs:
+                    formulas.extend(comment_formulas.get(comment_id, []))
                 items.append({
                     "text": text,
                     "number_label": number_label,
@@ -1648,6 +1652,7 @@ def extract_topics(paragraphs):
 
 def quality_report(questions):
     warnings = {}
+    formulas = []
     for question in questions:
         if not question.get("stem"):
             warnings["missing_stem"] = warnings.get("missing_stem", 0) + 1
@@ -1655,7 +1660,24 @@ def quality_report(questions):
             warnings["missing_answer"] = warnings.get("missing_answer", 0) + 1
         if question.get("options") and len(question["options"]) < 2:
             warnings["few_options"] = warnings.get("few_options", 0) + 1
-    return {"warnings": warnings, "parsed_items": len(questions)}
+        formulas.extend(item for item in question.get("formulas", []) if isinstance(item, dict))
+    by_source = {}
+    by_status = {}
+    for formula in formulas:
+        source_format = (formula.get("source") or {}).get("source_format", "unknown")
+        status = formula.get("conversion_status", "unknown")
+        by_source[source_format] = by_source.get(source_format, 0) + 1
+        by_status[status] = by_status.get(status, 0) + 1
+    return {
+        "warnings": warnings,
+        "parsed_items": len(questions),
+        "formula_import": {
+            "total": len(formulas),
+            "by_source": by_source,
+            "by_status": by_status,
+            "needs_review": sum(by_status.get(status, 0) for status in ("approximate", "preview_only", "failed")),
+        },
+    }
 
 
 def main():
@@ -1683,7 +1705,13 @@ def main():
             paragraphs = extract_paragraphs_from_docx(file_path)
             rich_rows = read_docx_rich_blocks(file_path) or read_docx_rich_paragraphs(file_path)
             comment_assets = read_docx_comment_assets(file_path)
-            numbered_items = []
+            definitions = read_numbering_definitions(file_path)
+            comments = read_docx_comments(file_path)
+            comment_formulas = {}
+            for row in import_part_formulas(file_path, "word/comments.xml"):
+                if row.comment_id:
+                    comment_formulas.setdefault(row.comment_id, []).extend(row.formulas)
+            numbered_items = extract_numbered_items_from_xml(file_path, definitions, comments, {}, comment_formulas)
         except Exception as exc:
             print(json.dumps({"error": f"cannot open Word document without python-docx: {exc}"}, ensure_ascii=False))
             sys.exit(1)
@@ -1692,7 +1720,13 @@ def main():
             paragraphs = extract_paragraphs_from_docx(file_path)
             rich_rows = read_docx_rich_blocks(file_path) or read_docx_rich_paragraphs(file_path)
             comment_assets = read_docx_comment_assets(file_path)
-            numbered_items = []
+            definitions = read_numbering_definitions(file_path)
+            comments = read_docx_comments(file_path)
+            comment_formulas = {}
+            for row in import_part_formulas(file_path, "word/comments.xml"):
+                if row.comment_id:
+                    comment_formulas.setdefault(row.comment_id, []).extend(row.formulas)
+            numbered_items = extract_numbered_items_from_xml(file_path, definitions, comments, {}, comment_formulas)
         except Exception:
             print(json.dumps({"error": f"cannot open Word document: {exc}"}, ensure_ascii=False))
             sys.exit(1)

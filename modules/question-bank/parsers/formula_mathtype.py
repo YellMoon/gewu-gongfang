@@ -95,6 +95,8 @@ def convert_mathtype_oles_to_mathml_batch(
         return {key: _CACHE.get(key) for key in seen}
     ruby = find_ruby_executable()
     if not ruby:
+        for key, _data in unique:
+            _CACHE[key] = None
         return {key: _CACHE.get(key) for key in seen}
 
     try:
@@ -121,10 +123,14 @@ def convert_mathtype_oles_to_mathml_batch(
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
     except Exception:
+        for key, _data in unique:
+            _CACHE[key] = None
         return {key: _CACHE.get(key) for key in seen}
 
     converted = parse_mathtype_batch_stdout(completed.stdout)
     if converted is None or len(converted) != len(unique):
+        for key, _data in unique:
+            _CACHE[key] = None
         return {key: _CACHE.get(key) for key in seen}
     for (key, _data), mathml in zip(unique, converted):
         _CACHE[key] = mathml

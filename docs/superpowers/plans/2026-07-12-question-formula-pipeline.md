@@ -52,8 +52,8 @@
 - [x] Build a synthetic DOCX containing styled text, drawing, table, comment, OMML, split EQ field and OLE relationships in both `document.xml` and `comments.xml`.
 - [x] Assert both parts yield the same ordered token kinds and retain part/paragraph/comment/relationship coordinates; run and observe failure.
 - [x] Implement relationship normalization and a streaming child walker that yields text/style/break/image/OMML/field/OLE tokens.
-- [ ] Replace divergent paragraph/comment low-level traversal in `parse_word.py` while keeping existing question-boundary behavior.
-- [ ] Run parser tests plus a real existing Word import smoke test and commit.
+- [x] Replace divergent paragraph/comment low-level traversal in `parse_word.py` while keeping existing question-boundary behavior.
+- [x] Run parser tests plus a real existing Word import smoke test and commit.
 
 ### Task 3: Complete EQ field state machine and converter
 
@@ -91,8 +91,8 @@
 - [x] Port reference-project tests for hash deduplication, batch sentinel parsing, converter failure and cached reuse; verify failure.
 - [x] Reuse the reference Ruby `mathtype_to_mathml_plus` invocation with explicit UTF-8, hidden subprocesses, timeouts and per-object isolation.
 - [x] Convert returned MathML to canonical LaTeX, retain OLE/preview references, and emit `preview_only` instead of invented LaTeX on failure.
-- [ ] Package the reviewed Ruby runtime/gems or a pinned legal dependency bundle and verify packaged path discovery.
-- [ ] Run parser and packaging smoke tests; commit.
+- [x] Package the reviewed Ruby runtime/gems or a pinned legal dependency bundle and verify packaged path discovery.
+- [x] Run parser and packaging smoke tests; commit.
 
 ### Task 6: End-to-end Word import quality gate
 
