@@ -327,6 +327,7 @@ Status: implemented, verified, deployed, packaged, uploaded, and pushed
 - [x] 部署云端 backend/gateway，上传新的微信小程序 `5.13.2` 开发版本。
 - [x] 在真实桌面/打包运行时复验主流程并记录限制；本机新安装路径健康检查返回 `5.13.2`，正式线上小程序发布状态仍以微信平台为准。
 - [x] 提交并推送 `gewu/master`；桌面代码变化已重新发布 OSS 更新包，并按用户本次明确要求上传夸克网盘 `5.13.2`。
+- [x] 尝试自动查询/提交微信小程序审核；当前普通小程序凭据返回 `86000 should be called only from third party`，已记录为微信后台/第三方平台权限限制。
 
 ## Bottom-level logic
 

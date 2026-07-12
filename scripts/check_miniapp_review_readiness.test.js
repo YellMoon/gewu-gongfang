@@ -28,9 +28,10 @@ assert.deepStrictEqual(validation.errors, [], 'default review info should be val
 
 assert.ok(fs.existsSync(REVIEW_DOC_PATH), 'miniapp review guide should exist');
 const doc = fs.readFileSync(REVIEW_DOC_PATH, 'utf-8');
+const currentVersion = require(path.join(process.cwd(), 'package.json')).version;
 assert.ok(doc.includes(info.versionDesc), 'review guide should contain reusable version description');
 assert.ok(doc.includes(info.testRemark), 'review guide should contain reusable test remark');
-assert.ok(doc.includes('5.0.34') || doc.includes('<当前版本>'), 'review guide should record current version or a version placeholder');
+assert.ok(doc.includes(currentVersion) || doc.includes('<当前版本>'), 'review guide should record current version or a version placeholder');
 assert.ok(doc.includes('被驳回'), 'review guide should include rejection handling');
 assert.ok(doc.includes('审核通过'), 'review guide should include approval handling');
 assert.ok(doc.includes('发布线上版'), 'review guide should include online release handoff');
