@@ -92,6 +92,7 @@
       "build/**/*",
       "public/electron.js",
       "public/preload.js",
+      "public/desktopCredentialStore.js",
       "package.json",
       "public/icon.ico",
       "backend/**/*",
