@@ -470,6 +470,14 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
           </Space>
         ) : (
           <>
+            {pairedUser ? (
+              <Alert type="success" showIcon message={`\u5df2\u7ed1\u5b9a\uff1a${pairedUser.name || pairedUser.id}`} description={'\u8d26\u53f7\u4e0e\u89d2\u8272\u7531\u7ba1\u7406\u5458\u7edf\u4e00\u7ba1\u7406'} style={{ marginBottom: 10 }} />
+            ) : (
+              <Space direction="vertical" size={8} style={{ width: '100%', marginBottom: 10 }}>
+                <Alert type="warning" showIcon message={'\u5f53\u524d\u8bbe\u5907\u5c1a\u672a\u7ed1\u5b9a\u540c\u6b65\u8d26\u53f7'} description={'\u4e0d\u9700\u586b\u5199\u624b\u673a\u53f7\uff1b\u7531\u8d85\u7ea7\u7ba1\u7406\u5458\u786e\u8ba4\u8bbe\u5907\u5e76\u9009\u62e9\u771f\u5b9e\u8d26\u53f7\u3002'} />
+                {!pairing ? <Button block loading={pairingLoading} onClick={handleStartPairing}>{'\u7533\u8bf7\u7ed1\u5b9a\u5f53\u524d\u8bbe\u5907'}</Button> : <Space wrap><span>{'\u914d\u5bf9\u7801\uff1a'}</span><Tag color="blue">{pairing.pairingCode}</Tag><Button loading={pairingLoading} onClick={handleRefreshPairing}>{'\u5237\u65b0\u6279\u51c6\u72b6\u6001'}</Button></Space>}
+              </Space>
+            )}
             <Button type="primary" size="large" block icon={<SyncOutlined />} loading={oneClickLoading} onClick={handleOneClickSync}>
               {'\u4e0e\u6570\u636e\u4e3b\u673a\u53cc\u5411\u540c\u6b65'}
             </Button>
@@ -502,8 +510,8 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
     <div style={{ padding: 16 }}>
       {contextAlert}
       <Card title={'\u5f53\u524d\u8bbe\u5907\u540c\u6b65\u8eab\u4efd'} style={{marginBottom:16}}>
-        {pairedUser ? <Alert type="success" showIcon message={`\u5df2\u7531\u7ba1\u7406\u5458\u7ed1\u5b9a\uff1a${pairedUser.name || pairedUser.id}`} description="\u8d26\u53f7\u548c\u89d2\u8272\u7531\u670d\u52a1\u7aef\u7ba1\u7406\uff0c\u5f53\u524d\u7535\u8111\u65e0\u6cd5\u81ea\u884c\u66f4\u6362\u3002" /> : <Space direction="vertical" size={10} style={{width:'100%'}}>
-          <Alert type="info" showIcon message="\u7533\u8bf7\u7ed1\u5b9a\u5f53\u524d\u8bbe\u5907" description="\u65e0\u9700\u586b\u5199\u624b\u673a\u53f7\u6216\u9009\u62e9\u8d26\u53f7\u3002\u7531\u8d85\u7ea7\u7ba1\u7406\u5458\u786e\u8ba4\u8bbe\u5907\u5e76\u7ed1\u5b9a\u771f\u5b9e\u8d26\u53f7\u3002" />
+        {pairedUser ? <Alert type="success" showIcon message={`\u5df2\u7531\u7ba1\u7406\u5458\u7ed1\u5b9a\uff1a${pairedUser.name || pairedUser.id}`} description={'\u8d26\u53f7\u548c\u89d2\u8272\u7531\u670d\u52a1\u7aef\u7ba1\u7406\uff0c\u5f53\u524d\u7535\u8111\u65e0\u6cd5\u81ea\u884c\u66f4\u6362\u3002'} /> : <Space direction="vertical" size={10} style={{width:'100%'}}>
+          <Alert type="info" showIcon message={'\u7533\u8bf7\u7ed1\u5b9a\u5f53\u524d\u8bbe\u5907'} description={'\u65e0\u9700\u586b\u5199\u624b\u673a\u53f7\u6216\u9009\u62e9\u8d26\u53f7\u3002\u7531\u8d85\u7ea7\u7ba1\u7406\u5458\u786e\u8ba4\u8bbe\u5907\u5e76\u7ed1\u5b9a\u771f\u5b9e\u8d26\u53f7\u3002'} />
           <Button type="primary" loading={pairingLoading} onClick={handleStartPairing}>{'\u7533\u8bf7\u7ed1\u5b9a\u5f53\u524d\u8bbe\u5907'}</Button>
           {pairing&&<Space wrap><span>\u8bbe\u5907\u914d\u5bf9\u7801\uff1a</span><Tag color="blue">{pairing.pairingCode}</Tag><Button loading={pairingLoading} onClick={handleRefreshPairing}>{'\u5237\u65b0\u6279\u51c6\u72b6\u6001'}</Button></Space>}
         </Space>}
