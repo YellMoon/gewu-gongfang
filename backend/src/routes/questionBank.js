@@ -215,11 +215,13 @@ function storageStatusPayload(db) {
 }
 
 router.get('/storage/status', (_req, res) => {
+  if (process.env.GEWU_NODE_ROLE !== 'primary-host') return res.status(403).json({ success: false, code: 'PRIMARY_HOST_REQUIRED' });
   res.json({ success: true, status: storageStatusPayload(getInstance().db) });
 });
 
 router.post('/storage/bind', (req, res) => {
   try {
+    if (process.env.GEWU_NODE_ROLE !== 'primary-host') return res.status(403).json({ success: false, code: 'PRIMARY_HOST_REQUIRED' });
     if (req.authz?.role !== 'super_admin') return res.status(403).json({ success: false, code: 'SUPER_ADMIN_REQUIRED', error: 'super administrator required' });
     const db = getInstance().db;
     const status = storageStatusPayload(db);

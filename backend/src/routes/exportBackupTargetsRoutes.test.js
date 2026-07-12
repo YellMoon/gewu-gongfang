@@ -11,6 +11,8 @@ assert.ok(
   source.includes("router.get('/backups/targets/status'"),
   'export routes should expose backup target status'
 );
+assert.ok(source.includes("process.env.GEWU_NODE_ROLE !== 'primary-host'") && source.includes('PRIMARY_HOST_REQUIRED'),
+  'ordinary desktop runtime must not receive backup target paths');
 assert.ok(
   source.includes('inspectBackupTargets') &&
   source.includes('localCache') &&

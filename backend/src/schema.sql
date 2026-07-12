@@ -323,7 +323,7 @@ CREATE TABLE IF NOT EXISTS relay_authorization_nonces (
   consumed_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS desktop_device_pairings (
-  id TEXT PRIMARY KEY, device_id TEXT NOT NULL, device_name TEXT, phone TEXT NOT NULL, secret_hash TEXT NOT NULL,
+  id TEXT PRIMARY KEY, device_id TEXT NOT NULL, device_name TEXT, phone TEXT, secret_hash TEXT NOT NULL,
   pairing_code TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', expires_at TEXT NOT NULL,
   approved_by TEXT, user_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, exchanged_at TEXT
 );

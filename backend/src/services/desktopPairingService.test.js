@@ -15,7 +15,7 @@ const started = createDesktopPairing(db, { deviceId: 'd1', deviceName: 'Office P
   expiresAt: '2026-01-01T00:10:00Z',
 });
 assert.strictEqual(started.status, 'pending');
-assert.strictEqual(db.prepare('SELECT phone FROM desktop_device_pairings WHERE id=?').get(started.id).phone, null);
+assert.strictEqual(db.prepare('SELECT phone FROM desktop_device_pairings WHERE id=?').get(started.id).phone, '');
 assert.strictEqual(db.prepare('SELECT secret_hash FROM desktop_device_pairings WHERE id=?').get(started.id).secret_hash.length, 64);
 
 for (const forbidden of [

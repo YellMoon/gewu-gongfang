@@ -150,15 +150,29 @@ router.post('/host/heartbeat', requireHostToken, (req, res) => {
   const hostDeviceId = req.body.hostDeviceId || req.body.deviceId;
   if (!hostDeviceId) return res.status(400).json({ success: false, error: 'hostDeviceId is required' });
   db.prepare(
-    `INSERT INTO host_heartbeats (id, host_device_id, status, base_url, last_snapshot_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO host_heartbeats (id, host_device_id, status, base_url, lan_urls, last_snapshot_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        status = excluded.status,
        base_url = excluded.base_url,
+       lan_urls = excluded.lan_urls,
        last_snapshot_at = excluded.last_snapshot_at,
        updated_at = excluded.updated_at`
-  ).run(hostDeviceId, hostDeviceId, req.body.status || 'online', req.body.baseUrl || '', req.body.lastSnapshotAt || null, time, time);
+  ).run(hostDeviceId, hostDeviceId, req.body.status || 'online', req.body.baseUrl || '', JSON.stringify(req.body.lanUrls || req.body.lan_urls || []), req.body.lastSnapshotAt || null, time, time);
   res.json({ success: true, serverTime: time });
+});
+
+router.get('/host/status', requireApprovedSnapshotUser, (_req, res) => {
+  const row = getDb().prepare('SELECT * FROM host_heartbeats ORDER BY updated_at DESC LIMIT 1').get();
+  const updatedAt = row?.updated_at ? Date.parse(row.updated_at) : 0;
+  const ttl = Number(process.env.GEWU_HOST_HEARTBEAT_TTL_MS || 5 * 60 * 1000);
+  let lanUrls = [];
+  try { lanUrls = JSON.parse(row?.lan_urls || '[]'); } catch (_error) { lanUrls = []; }
+  return res.json({
+    success: true,
+    online: Boolean(row && row.status !== 'offline' && Date.now() - updatedAt <= ttl),
+    host: row ? { baseUrl: row.base_url || '', lanUrls: Array.isArray(lanUrls) ? lanUrls : [], updatedAt: row.updated_at } : null,
+  });
 });
 
 router.post('/snapshots/publish', requireHostToken, (req, res) => {

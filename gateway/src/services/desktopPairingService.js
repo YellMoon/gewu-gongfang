@@ -19,7 +19,7 @@ function createDesktopPairing(db, input = {}, options = {}) {
   let pairingCode;
   for (let attempt = 0; attempt < 5; attempt++) {
     pairingCode = String(crypto.randomInt(100000, 1000000));
-    try { insert.run(id, deviceId, input.deviceName || deviceId, null, hashSecret(secret), pairingCode, expiresAt, now, now); break; }
+    try { insert.run(id, deviceId, input.deviceName || deviceId, '', hashSecret(secret), pairingCode, expiresAt, now, now); break; }
     catch (caught) { if (attempt === 4 || !String(caught.code).includes('CONSTRAINT')) throw caught; }
   }
   return { id, pairingCode, expiresAt, status:'pending' };
