@@ -61,11 +61,11 @@
 - Create: `modules/question-bank/parsers/tests/test_formula_eq.py`
 - Create: `modules/question-bank/parsers/formula_eq.py`
 
-- [ ] Add failing cases for `fldSimple@instr`, split `instrText`, nested fields, `begin/separate/end`, fractions, roots, superscript/subscript, integral/sum and unsupported instructions.
-- [ ] Verify tests fail for missing parser.
-- [ ] Implement a stack-based field collector and recursive EQ expression parser that returns canonical LaTeX or a visible-source fallback status.
-- [ ] Verify supported fields produce rendered LaTeX and unsupported fields never become visible source text.
-- [ ] Commit the focused change.
+- [x] Add failing cases for `fldSimple@instr`, split `instrText`, nested fields, `begin/separate/end`, fractions, roots, superscript/subscript, integral/sum and unsupported instructions.
+- [x] Verify tests fail for missing parser.
+- [x] Implement a stack-based field collector and recursive EQ expression parser that returns canonical LaTeX or a visible-source fallback status.
+- [x] Verify supported fields produce rendered LaTeX and unsupported fields never become visible source text.
+- [x] Commit the focused change.
 
 ### Task 4: OMML normalization coverage
 
