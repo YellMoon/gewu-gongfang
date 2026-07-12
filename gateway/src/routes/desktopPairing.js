@@ -25,8 +25,8 @@ router.post('/exchange', (req, res) => {
     if (!user || user.review_status !== 'approved' || user.login_enabled === 0 || user.status === 0) throw Object.assign(new Error(), { code: 'USER_NOT_APPROVED' });
     const result = exchangeDesktopPairing(database, req.body);
     const token = jwt.sign({ id: user.id, user_type: user.user_type, deviceId: result.deviceId, token_use: 'desktop-session' }, JWT_SECRET,
-      { expiresIn: '30m', algorithm: 'HS256', issuer: 'gewu-auth', audience: 'gewu-api' });
-    res.json({ success: true, token, userId: user.id, deviceId: result.deviceId, expiresIn: 1800,
+      { expiresIn: '30d', algorithm: 'HS256', issuer: 'gewu-auth', audience: 'gewu-api' });
+    res.json({ success: true, token, userId: user.id, deviceId: result.deviceId, expiresIn: 2592000,
       user: { id: user.id, name: user.nickname || user.name || '', role: user.user_type } });
   } catch (error) { send(res, error); }
 });

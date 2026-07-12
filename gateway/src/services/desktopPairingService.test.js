@@ -13,7 +13,7 @@ const row = service.createDesktopPairing(db, { deviceId: 'd1', deviceName: 'Offi
   now: '2026-01-01T00:00:00Z',
 });
 assert.strictEqual(row.status, 'pending');
-assert.strictEqual(db.prepare('SELECT phone FROM desktop_device_pairings WHERE id=?').get(row.id).phone, null);
+assert.strictEqual(db.prepare('SELECT phone FROM desktop_device_pairings WHERE id=?').get(row.id).phone, '');
 for (const forbidden of [{ phone: '13800138000' }, { userId: 'u1' }, { role: 'admin' }, { teacherId: 't1' }]) {
   assert.throws(
     () => service.createDesktopPairing(db, { deviceId: `d-${Object.keys(forbidden)[0]}`, secret, ...forbidden }),

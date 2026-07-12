@@ -2,7 +2,7 @@
  * 同步设置页面 v2 — CRDT 引擎同步状态 + 控制面板
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Card, Button, Input, Tag, Descriptions, Divider, message, Modal, Statistic, Row, Col, Alert, Table, Space, Collapse } from 'antd';
+import { Card, Button, Tag, Descriptions, Divider, message, Modal, Statistic, Row, Col, Alert, Table, Space, Collapse } from 'antd';
 import { SyncOutlined, CloudSyncOutlined, CloudServerOutlined, WarningOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
 import { SyncEngine, SyncStatus } from '../services/syncEngine';
 import { getSyncUrl, pushSyncBatch, pullSyncOps, registerSyncDevice, requestSyncAuthorization } from '../services/syncApi';
@@ -11,8 +11,9 @@ import browserDatabase from '../services/browserDatabase';
 import type { CloudSyncContext } from '../navigation/navigationContext';
 import { runOneClickSync } from '../services/oneClickSyncService.mjs';
 import { createCloudRelaySyncTransport, createDirectSyncTransport, discoverLanDirectSyncTransports } from '../services/oneClickSyncTransports.mjs';
-import { readDesktopAuthorizationSession, startPairing, pollOrExchange } from '../services/desktopAuthorizationSession.mjs';
+import { hydrateDesktopAuthorizationSession, readDesktopAuthorizationSession, startPairing, pollOrExchange } from '../services/desktopAuthorizationSession.mjs';
 import { getSyncPresentation } from '../services/syncPresentation.mjs';
+import { resolveManagedSyncConfig, syncFailureMessage } from '../services/managedSyncConfig.mjs';
 
 interface SyncSettingsProps {
   context?: CloudSyncContext;
@@ -28,17 +29,17 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
   const [syncConflicts, setSyncConflicts] = useState<any[]>([]);
   const [conflictsLoading, setConflictsLoading] = useState(false);
   const [oneClickLoading, setOneClickLoading] = useState(false);
-  const [pairingPhone, setPairingPhone] = useState('');
   const [pairing, setPairing] = useState<any>(null);
+  const [pairedUser, setPairedUser] = useState<any>(null);
   const [pairingLoading, setPairingLoading] = useState(false);
   const engineRef = useRef<SyncEngine | null>(null);
   const handleStartPairing = async () => {
     setPairingLoading(true);
     try {
-      const baseUrl = runtimeConfig?.hostBaseUrl || runtimeConfig?.cloudBaseUrl || '';
+      const config: any = resolveManagedSyncConfig(runtimeConfig || {});
+      const baseUrl = config.nodeRole === 'primary-host' ? config.hostBaseUrl : config.cloudBaseUrl;
       const result = await startPairing({
         baseUrl,
-        phone: pairingPhone,
         deviceId: engineRef.current?.getDeviceId(),
         deviceName: runtimeConfig?.deviceId || 'desktop',
       });
@@ -53,9 +54,10 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
   const handleRefreshPairing = async () => {
     setPairingLoading(true);
     try {
-      await pollOrExchange();
+      const result = await pollOrExchange();
       setPairing(null);
-      message.success('\u540c\u6b65\u8d26\u53f7\u5df2\u7ed1\u5b9a');
+      setPairedUser(result.user || { id: result.userId });
+      message.success('\u5f53\u524d\u8bbe\u5907\u5df2\u7531\u7ba1\u7406\u5458\u7ed1\u5b9a');
     } catch (error: any) {
       message.warning(error.code || error.message);
     } finally {
@@ -80,8 +82,11 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
 
   useEffect(() => {
     getRuntimeConfig()
-      .then(setRuntimeConfig)
+      .then(config => setRuntimeConfig({ ...config, cloudBaseUrl: resolveManagedSyncConfig(config).cloudBaseUrl }))
       .catch(() => setRuntimeConfig(null));
+    hydrateDesktopAuthorizationSession()
+      .then(session => setPairedUser(session.user))
+      .catch(() => setPairedUser(null));
   }, []);
 
   const loadSyncConflicts = useCallback(async () => {
@@ -282,18 +287,22 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
     if (!eng || oneClickLoading) return;
     setOneClickLoading(true);
     try {
-      const config = runtimeConfig || await getRuntimeConfig();
+      const config: any = resolveManagedSyncConfig(runtimeConfig || await getRuntimeConfig());
       const transports = [];
       if (config?.cloudBaseUrl) {
-        const discovered = await discoverLanDirectSyncTransports({
-          baseUrl: config.cloudBaseUrl,
-          deviceId: eng.getDeviceId(),
-          role: config.nodeRole || 'desktop-client',
-          deviceName: config.deviceId || eng.getDeviceId(),
-          desktopSyncToken: config.desktopSyncToken || '',
-          sessionResolver: () => readDesktopAuthorizationSession(),
-        });
-        transports.push(...discovered);
+        try {
+          const discovered = await discoverLanDirectSyncTransports({
+            baseUrl: config.cloudBaseUrl,
+            deviceId: eng.getDeviceId(),
+            role: config.nodeRole || 'desktop-client',
+            deviceName: config.deviceId || eng.getDeviceId(),
+            desktopSyncToken: config.desktopSyncToken || '',
+            sessionResolver: () => readDesktopAuthorizationSession(),
+          });
+          transports.push(...discovered);
+        } catch (_error) {
+          // Cloud relay remains available even when LAN discovery is unavailable.
+        }
       }
       if (config?.hostBaseUrl && (config.nodeRole === 'primary-host' || !isLocalHostBase(config.hostBaseUrl))) {
         const manualDirect = createDirectSyncTransport({
@@ -335,10 +344,10 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
         message.info(oneClickText.cancelled);
         return;
       }
-      message.error(result.error || oneClickText.failed);
+      message.error(syncFailureMessage(result.error));
     } catch (error: any) {
       refreshStatus();
-      message.error(error.message || oneClickText.failed);
+      message.error(syncFailureMessage(error.code || error.message));
     } finally {
       setOneClickLoading(false);
     }
@@ -492,11 +501,12 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
   return (
     <div style={{ padding: 16 }}>
       {contextAlert}
-      <Card title={'\u7ed1\u5b9a\u540c\u6b65\u8d26\u53f7'} style={{marginBottom:16}}>
-        <Space wrap><Input value={pairingPhone} onChange={e=>setPairingPhone(e.target.value)} placeholder={'\u8f93\u5165\u5df2\u5ba1\u6838\u8d26\u53f7\u624b\u673a\u53f7'} />
-          <Button loading={pairingLoading} onClick={handleStartPairing}>{'\u7533\u8bf7\u914d\u5bf9'}</Button>
-          {pairing&&<><Tag color="blue">{pairing.pairingCode}</Tag><Button loading={pairingLoading} onClick={handleRefreshPairing}>{'\u6211\u5df2\u83b7\u6279\uff0c\u5237\u65b0'}</Button></>}
-        </Space>
+      <Card title={'\u5f53\u524d\u8bbe\u5907\u540c\u6b65\u8eab\u4efd'} style={{marginBottom:16}}>
+        {pairedUser ? <Alert type="success" showIcon message={`\u5df2\u7531\u7ba1\u7406\u5458\u7ed1\u5b9a\uff1a${pairedUser.name || pairedUser.id}`} description="\u8d26\u53f7\u548c\u89d2\u8272\u7531\u670d\u52a1\u7aef\u7ba1\u7406\uff0c\u5f53\u524d\u7535\u8111\u65e0\u6cd5\u81ea\u884c\u66f4\u6362\u3002" /> : <Space direction="vertical" size={10} style={{width:'100%'}}>
+          <Alert type="info" showIcon message="\u7533\u8bf7\u7ed1\u5b9a\u5f53\u524d\u8bbe\u5907" description="\u65e0\u9700\u586b\u5199\u624b\u673a\u53f7\u6216\u9009\u62e9\u8d26\u53f7\u3002\u7531\u8d85\u7ea7\u7ba1\u7406\u5458\u786e\u8ba4\u8bbe\u5907\u5e76\u7ed1\u5b9a\u771f\u5b9e\u8d26\u53f7\u3002" />
+          <Button type="primary" loading={pairingLoading} onClick={handleStartPairing}>{'\u7533\u8bf7\u7ed1\u5b9a\u5f53\u524d\u8bbe\u5907'}</Button>
+          {pairing&&<Space wrap><span>\u8bbe\u5907\u914d\u5bf9\u7801\uff1a</span><Tag color="blue">{pairing.pairingCode}</Tag><Button loading={pairingLoading} onClick={handleRefreshPairing}>{'\u5237\u65b0\u6279\u51c6\u72b6\u6001'}</Button></Space>}
+        </Space>}
       </Card>
       {/* 同步状态卡片 */}
       <Card

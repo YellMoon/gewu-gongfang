@@ -20,6 +20,12 @@ declare module './services/desktopAuthorizationSession.mjs' {
   export const hydrateDesktopAuthorizationSession: any;
 }
 declare module './services/pairingApiBase.mjs' { export const resolvePairingApiBase: any; }
+declare module './services/managedSyncConfig.mjs' {
+  export const DEFAULT_MANAGED_CLOUD_BASE_URL: string;
+  export const resolveManagedSyncConfig: any;
+  export const syncFailureMessage: any;
+}
+declare module './services/systemSettingsRolePolicy.mjs' { export const systemSettingsRolePolicy: any; }
 
 interface Window {
   api?: {

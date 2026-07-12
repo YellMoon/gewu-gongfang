@@ -18,7 +18,7 @@ function createDesktopPairing(db, input = {}, options = {}) {
   const pending=db.prepare("SELECT created_at FROM desktop_device_pairings WHERE device_id=? AND status='pending' ORDER BY created_at DESC LIMIT 1").get(deviceId);
   if(pending&&Date.parse(now)-Date.parse(pending.created_at)<5000)throw error('PAIRING_RATE_LIMITED');
   db.prepare("UPDATE desktop_device_pairings SET status='rejected',updated_at=? WHERE device_id=? AND status='pending'").run(now,deviceId);
-  const row = { id:uuidv4(), deviceId, deviceName:String(input.deviceName || deviceId), phone:null,
+  const row = { id:uuidv4(), deviceId, deviceName:String(input.deviceName || deviceId), phone:'',
     secretHash:hashSecret(secret), pairingCode:null, expiresAt };
   const insert=db.prepare(`INSERT INTO desktop_device_pairings
     (id,device_id,device_name,phone,secret_hash,pairing_code,status,expires_at,created_at,updated_at)

@@ -11,6 +11,8 @@ assert.ok(
   source.includes("router.get('/storage/status'"),
   'question bank routes should expose removable storage status'
 );
+assert.ok(source.includes("process.env.GEWU_NODE_ROLE !== 'primary-host'") && source.includes('PRIMARY_HOST_REQUIRED'),
+  'ordinary desktop runtime must not receive question bank storage details');
 assert.ok(
   source.includes("router.post('/storage/init'"),
   'question bank routes should expose primary-host storage initialization'
