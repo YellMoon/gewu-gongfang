@@ -310,7 +310,7 @@ Status: implemented, verified, packaged, published, and pushed
 
 # Task: 2026-07-12 同步与线上小程序认证故障修复
 
-Status: fixing and verifying
+Status: implemented, verified, deployed, packaged, uploaded, and pushed
 
 ## Objective
 
@@ -320,13 +320,13 @@ Status: fixing and verifying
 
 - [x] 采集桌面同步/系统参数错误日志，定位系统参数空白页为题库绑定状态加载期 `null` 崩溃。
 - [x] 核对本地桌面版本、本地后端版本、线上健康检查、云端代码版本和小程序已上传版本。
-- [x] 验证线上登录页/登录 API 是否仍走旧邀请码和旧 openid 授权流程；云端已更新，小程序仍需确认线上版本发布状态。
+- [x] 验证线上登录页/登录 API 是否仍走旧邀请码和旧 openid 授权流程；源码和云端均已移除运行时邀请码入口，手机端正式线上版生效取决于微信平台发布。
 - [x] 为确认的同步与登录根因增加失败回归测试。
 - [x] 实现最小根因修复，并确保未审核用户得到明确待审核状态。
 - [x] 运行同步、认证、权限、桌面和小程序相关测试与构建。
-- [x] 部署云端 backend/gateway，上传新的微信小程序版本。
-- [x] 在真实桌面/打包运行时复验主流程并记录限制；小程序已上传开发版本，正式线上发布状态仍以微信平台为准。
-- [x] 提交并推送 `gewu/master`；桌面代码变化已重新发布 OSS 更新包，并按用户本次明确要求上传夸克网盘。
+- [x] 部署云端 backend/gateway，上传新的微信小程序 `5.13.2` 开发版本。
+- [x] 在真实桌面/打包运行时复验主流程并记录限制；本机新安装路径健康检查返回 `5.13.2`，正式线上小程序发布状态仍以微信平台为准。
+- [x] 提交并推送 `gewu/master`；桌面代码变化已重新发布 OSS 更新包，并按用户本次明确要求上传夸克网盘 `5.13.2`。
 
 ## Bottom-level logic
 
