@@ -63,9 +63,9 @@ assert.strictEqual(
     start_time: '2026-07-01 10:00',
     end_time: '2026-07-01 12:00',
     status: types.ScheduleStatus.PLANNED,
-    student_ids: [financialDetails.INSTITUTION_UNBOUND_STUDENT_ID],
+    student_ids: [],
     student_pricings: [{
-      student_id: financialDetails.INSTITUTION_UNBOUND_STUDENT_ID,
+      student_id: '__institution_unbound__',
       tuition: 120,
       teacher_fee: 60,
       status: types.StudentAttendanceStatus.NORMAL,
@@ -86,7 +86,12 @@ assert.strictEqual(
     price_teacher: 240,
     billing_unit: types.BillingUnit.PER_SESSION,
     teacher_fee_mode: types.TeacherFeeMode.PER_SESSION,
-    student_pricings: [],
+    student_pricings: [{
+      student_id: 'institution-student-1',
+      tuition: 480,
+      teacher_fee: 240,
+      status: types.StudentAttendanceStatus.NORMAL,
+    }],
     active: true,
     created_at: '',
     updated_at: '',
@@ -94,7 +99,8 @@ assert.strictEqual(
 
   const snapshot = financialDetails.buildCourseRefreshFinancialSnapshot(schedule, course);
 
-  assert.deepStrictEqual(snapshot.student_ids, [financialDetails.INSTITUTION_UNBOUND_STUDENT_ID]);
+  assert.deepStrictEqual(snapshot.student_ids, ['institution-student-1']);
+  assert.strictEqual(snapshot.student_ids.includes(financialDetails.INSTITUTION_UNBOUND_STUDENT_ID), false);
   assert.strictEqual(snapshot.student_pricings[0].tuition, 480);
   assert.strictEqual(snapshot.student_pricings[0].teacher_fee, 240);
   assert.strictEqual(snapshot.calculated_tuition, 480);

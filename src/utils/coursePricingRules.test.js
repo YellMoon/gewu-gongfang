@@ -2,25 +2,28 @@ const assert = require('assert');
 
 (async () => {
   const {
-    hasEffectiveStudentPricings,
-    isPureInstitutionCourseWithoutStudents,
+    getEligibleCourseStudents,
+    sanitizeCourseStudentPricings,
   } = await import('./coursePricingRules.mjs');
 
   const INSTITUTION = 2;
   const MIXED = 3;
 
-  assert.strictEqual(hasEffectiveStudentPricings(undefined), false);
-  assert.strictEqual(hasEffectiveStudentPricings([]), false);
-  assert.strictEqual(hasEffectiveStudentPricings([undefined, null, {}, { teacher_fee: 80 }, { student_id: '' }]), false);
-  assert.strictEqual(hasEffectiveStudentPricings([{ student_id: '__institution_unbound__', tuition: 300, teacher_fee: 120 }]), false);
-  assert.strictEqual(hasEffectiveStudentPricings([{ student_id: 'student-1', tuition: 300, teacher_fee: 120 }]), true);
+  const students = [
+    { id: 'self', source_type: 1 },
+    { id: 'inst-a-child', source_type: 2, institution_id: 'inst-a' },
+    { id: 'inst-a-managed', source_type: 2, institution_id: 'inst-a', is_institution_student: true },
+    { id: 'inst-b-managed', source_type: 2, institution_id: 'inst-b', is_institution_student: true },
+  ];
 
-  assert.strictEqual(isPureInstitutionCourseWithoutStudents(INSTITUTION, [{ teacher_fee: 80 }]), true);
-  assert.strictEqual(isPureInstitutionCourseWithoutStudents(INSTITUTION, [{ student_id: '__institution_unbound__' }]), true);
-  assert.strictEqual(isPureInstitutionCourseWithoutStudents(INSTITUTION, [{ student_id: 'student-1' }]), false);
-  assert.strictEqual(isPureInstitutionCourseWithoutStudents(MIXED, []), false);
+  assert.deepStrictEqual(getEligibleCourseStudents(students, INSTITUTION, 'inst-a').map(student => student.id), ['inst-a-child', 'inst-a-managed']);
+  assert.deepStrictEqual(getEligibleCourseStudents(students, MIXED, 'inst-a').map(student => student.id), ['self', 'inst-a-child', 'inst-a-managed']);
+  assert.deepStrictEqual(
+    sanitizeCourseStudentPricings([{ student_id: 'self' }, { student_id: 'inst-b-managed' }, { student_id: 'inst-a-managed' }], students, INSTITUTION, 'inst-a'),
+    [{ student_id: 'inst-a-managed' }]
+  );
 
-  console.log('coursePricingRules tests passed');
+  console.log('coursePricingRules institution student tests passed');
 })().catch((error) => {
   console.error(error);
   process.exit(1);
