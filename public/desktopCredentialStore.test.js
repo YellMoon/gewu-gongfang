@@ -3,6 +3,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { createDesktopCredentialStore } = require('./desktopCredentialStore');
+const packageJson = require('../package.json');
+
+assert.ok(packageJson.build.files.includes('public/desktopCredentialStore.js'), 'packaged Electron app must include the credential store required by electron.js');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-credential-'));
 const filePath = path.join(dir, 'desktop-session.bin');

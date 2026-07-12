@@ -36,6 +36,10 @@
 | `npm test` | 通过 |
 | `npx craco build` | 通过 |
 | `npm --prefix miniapp run build:weapp` | 通过 |
+| `npm run pack` | 通过，生成 `dist/win-unpacked` |
+| 打包文件清单 | `resources/app/public/desktopCredentialStore.js` 存在且语法检查通过 |
+| `npm run test:packaged-smoke` | 通过，打包应用从本地 `build/index.html` 正常启动 |
+| 打包后 Node native 恢复 | `require('better-sqlite3')` 通过 |
 | 桌面配对服务与 parity 测试 | 通过 |
 | Electron 凭证存储与迁移测试 | 通过 |
 | 一键同步服务与传输测试 | 通过 |
@@ -46,7 +50,7 @@
 
 ## 多端兼容与发布状态
 
-- 桌面端：源码、构建和浏览器运行时通过；未生成/发布新 OSS 版本。
+- 桌面端：源码、构建、目录打包、打包烟测和浏览器运行时通过；未发布新 OSS 版本。
 - 本地数据主机：后端 schema 和主机能力兼容测试通过；未安装到真实主机。
 - 阿里云：gateway schema 增量迁移、路由和 HTTP 测试通过；未部署。
 - 微信小程序：管理员设备审批改为选择真实账号，weapp 构建通过；未上传。
@@ -56,4 +60,3 @@
 
 - 当前变更由独立提交组成，可按提交逆序回退；未修改生产数据库、云端代码、OSS feed 或真实设备数据。
 - 合并发布前必须先创建阿里云数据库和代码备份；数据库变更仅新增可空列/兼容字段，不删除旧数据。
-
