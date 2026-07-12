@@ -15,7 +15,6 @@ const { loadUserPermissions } = require('./middleware/permission');
 // 路由
 const authRouter = require('./routes/auth');
 const adminRouter = require('./routes/admin');
-const invitationsRouter = require('./routes/invitations');
 const permissionsRouter = require('./routes/permissions');
 const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
@@ -51,11 +50,9 @@ function createApp() {
   app.use('/api/auth', authRouter);
   app.use('/api/desktop-pairing', desktopPairingRouter);
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);
-  app.use('/api/invitations/use', invitationsRouter);  // 邀请码使用是公开的
 
   // ===================== 需要认证的路由 =====================
   app.use('/api/admin', authMiddleware, loadUserPermissions, adminRouter);
-  app.use('/api/invitations', authMiddleware, loadUserPermissions, invitationsRouter);
   app.use('/api/permissions', authMiddleware, loadUserPermissions, permissionsRouter);
   app.use('/api/modules', authMiddleware, loadUserPermissions, modulesRouter);
 

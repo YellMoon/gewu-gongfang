@@ -1,6 +1,6 @@
 /**
  * JWT 认证中间件
- * 支持微信小程序登录 + 邀请码注册
+ * 支持微信小程序手机号验证登录和审核后授权
  */
 const jwt = require('jsonwebtoken');
 const { getDb } = require('../db/database');
