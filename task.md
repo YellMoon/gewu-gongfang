@@ -363,7 +363,7 @@ Status: active — design approved, implementation planning in progress
 - [x] 调研合法 MathType SDK与开放 MTEF/OLE生成方案。
 - [x] 确认数据主机集中导出、LaTeX权威编辑格式和显示优先回退规则。
 - [x] 写出完整设计规范。
-- [ ] 写出逐步 TDD 实施计划。
+- [x] 写出逐步 TDD 实施计划。
 - [ ] 建立 Word 公式解析样本与自动化测试基座。
 - [ ] 实现正文/批注共用内容遍历器与 EQ 域状态机。
 - [ ] 实现 OMML、EQ、MathType → 规范化 LaTeX转换及质量报告。
