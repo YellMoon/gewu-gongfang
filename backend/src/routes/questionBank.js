@@ -10,6 +10,7 @@ const searchService = require('../services/searchService');
 const eventBus = require('../services/eventBus');
 const cache = require('../services/cacheService');
 const { canDeleteQuestion, committedDeleteError } = require('../services/questionDeletionPolicy');
+const { writePaperArtifact } = require('../services/paperArtifactService');
 const {
   initQuestionBankStore,
   inspectQuestionBankStore,
@@ -345,6 +346,23 @@ router.get('/questions/:id', (req, res) => {
     res.json({ success: true, data: row });
   } catch (err) {
     res.status(errorStatus(err)).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/paper-export', async (req, res) => {
+  try {
+    const role = req.authz?.runtimeNodeRole || process.env.GEWU_RUNTIME_NODE_ROLE || 'primary-host';
+    if (role !== 'primary-host') return res.status(409).json({ success: false, code: 'PRIMARY_HOST_EXPORT_REQUIRED', error: 'paper export must run on the primary data host' });
+    const db = getInstance().db;
+    const tId = tenantId(req);
+    const ids = Array.isArray(req.body?.questionIds) ? req.body.questionIds : [];
+    const questions = ids.map(id => questionBank.getQuestion(db, id, tId)).filter(Boolean);
+    if (!questions.length) return res.status(400).json({ success: false, error: 'no exportable questions selected' });
+    const format = req.body?.format === 'pdf' ? 'pdf' : 'word';
+    const artifact = await writePaperArtifact(format, req.body || {}, questions, { deviceId: req.get('x-device-id') || process.env.GEWU_DEVICE_ID || 'unknown' });
+    res.json({ success: true, data: artifact });
+  } catch (err) {
+    res.status(errorStatus(err)).json({ success: false, error: err.message, code: err.code });
   }
 });
 

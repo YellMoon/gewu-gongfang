@@ -10,6 +10,9 @@ import AutoCloseSelect from '../components/AutoCloseSelect';
 import QuestionPreviewCard from '../components/QuestionPreviewCard';
 import QuestionRichContent from '../components/QuestionRichContent';
 import RichQuestionEditor from '../components/RichQuestionEditor';
+import QuestionDocumentEditor from '../components/QuestionDocumentEditor';
+import { createQuestionRichDocument, emptyRichDoc } from '../types/questionRichContent';
+import type { QuestionRichDocument } from '../types/questionRichContent';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
 import {
@@ -85,6 +88,25 @@ function buildTreeOptions(nodes: KnowledgeNode[], parentId?: string, depth = 0):
     ]);
 }
 
+function plainRichText(node: any): string {
+  if (!node) return '';
+  if (node.type === 'text') return String(node.text || '');
+  if (node.type === 'formula') return String(node.attrs?.canonicalLatex || '');
+  return Array.isArray(node.content) ? node.content.map(plainRichText).join(node.type === 'paragraph' ? '' : '\n') : '';
+}
+
+function initialRichDocument(question: Question): QuestionRichDocument {
+  if (question.rich_content?.type === 'question-document') return createQuestionRichDocument(question.rich_content);
+  const document = createQuestionRichDocument();
+  document.sections.options = (question.options || []).map((item: any, index: number) => {
+    const label = typeof item === 'object' && item?.label ? String(item.label) : String.fromCharCode(65 + index);
+    const text = typeof item === 'string' ? item : String(item?.content || item?.text || '');
+    return { id: `option-${index}-${question.id}`, label, isCorrect: Boolean(item?.is_correct || item?.isCorrect), content: text ? { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] } : emptyRichDoc() };
+  });
+  document.sections.subQuestions = (question.sub_questions || []).map((item: any, index: number) => ({ id: item.id || `sub-${index}-${question.id}`, label: item.label || `(${index + 1})`, content: item.content || emptyRichDoc(), answer: item.answer || emptyRichDoc() }));
+  return document;
+}
+
 const QuestionBankEdit: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [questionTotal, setQuestionTotal] = useState(0);
@@ -94,6 +116,7 @@ const QuestionBankEdit: React.FC = () => {
   const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
   const [modelNodes, setModelNodes] = useState<KnowledgeNode[]>([]);
   const [editing, setEditing] = useState<Question | null>(null);
+  const [richDocument, setRichDocument] = useState<QuestionRichDocument | null>(null);
   const [versions, setVersions] = useState<QuestionVersion[]>([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -201,6 +224,7 @@ const QuestionBankEdit: React.FC = () => {
   const openEditor = (question: Question) => {
     const db = (window as any).dbService;
     setEditing(question);
+    setRichDocument(initialRichDocument(question));
     setVersions(db?.getLatestQuestionVersions?.(question.id, 5) || []);
     setImageFiles([]);
     form.setFieldsValue({
@@ -226,7 +250,7 @@ const QuestionBankEdit: React.FC = () => {
   };
 
   const saveQuestion = async () => {
-    if (!editing) return;
+    if (!editing || !richDocument) return;
     const values = await form.validateFields();
     const payload: any = {
       stem: values.content,
@@ -235,7 +259,9 @@ const QuestionBankEdit: React.FC = () => {
       answer: values.answer,
       explanation: values.analysis,
       analysis: values.analysis,
-      options: values.options ? values.options.split('\n').map((s: string) => s.trim()).filter(Boolean) : [],
+      options: richDocument.sections.options.map(option => ({ label: option.label, content: plainRichText(option.content), is_correct: option.isCorrect })),
+      sub_questions: richDocument.sections.subQuestions,
+      rich_content: richDocument,
       type: normalizeQuestionType(values.type),
       difficulty: values.difficulty || 3,
       source: values.source || '',
@@ -278,6 +304,7 @@ const QuestionBankEdit: React.FC = () => {
     }
     message.success('试题已保存');
     setEditing(null);
+    setRichDocument(null);
     form.resetFields();
     loadData();
   };
@@ -570,6 +597,12 @@ const QuestionBankEdit: React.FC = () => {
         cancelText="取消"
       >
         <Form form={form} layout="vertical">
+          {richDocument && <QuestionDocumentEditor
+            value={richDocument}
+            legacy={{ stem: form.getFieldValue('content'), answer: form.getFieldValue('answer'), analysis: form.getFieldValue('analysis') }}
+            onChange={setRichDocument}
+            onLegacyChange={(field, html) => form.setFieldValue(field === 'stem' ? 'content' : field, html)}
+          />}
           <Form.Item name="content" label="题干" rules={[{ required: true, message: '请输入题干' }]}>
             <RichQuestionEditor minHeight={180} placeholder="输入题干，可设置字体格式、插入公式和图片" />
           </Form.Item>
