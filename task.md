@@ -170,7 +170,7 @@ Replace the disconnected desktop, miniapp, invitation, and module-permission sys
 
 # Task: 2026-07-12 受管普通桌面端同步与角色隔离
 
-Status: active — design approved, implementation planning pending
+Status: implemented and locally verified — awaiting merge confirmation and unified release
 
 ## Objective
 
@@ -182,16 +182,16 @@ Status: active — design approved, implementation planning pending
 - [x] 定位空传输根因、临时授权会话和普通端角色隔离缺口。
 - [x] 与用户确认普通端不得选择账号或填写手机号，由管理员绑定设备申请。
 - [x] 写出安全、同步、UI、迁移、验证和回滚设计。
-- [ ] 写出实施级 TDD 计划与文件清单。
-- [ ] 先增加失败测试：托管传输、无账号自报、管理员绑定、撤销和持久凭证。
-- [ ] 实现服务端设备申请、管理员绑定、凭证签发/轮换/撤销和权限契约。
-- [ ] 实现 Electron 安全凭证存储、启动恢复和旧会话一次性迁移。
-- [ ] 实现托管云入口、传输诊断和可处理错误提示。
-- [ ] 实现普通端简易系统参数及前后端主机敏感能力隔离。
-- [ ] 运行相关测试、完整测试、构建及原生依赖验证。
-- [ ] 在真实 Electron/浏览器运行时验证普通端与主机端，保存安全截图记录。
-- [ ] 检查桌面端、数据主机、阿里云和小程序管理入口兼容矩阵。
-- [ ] 在当前工作树提交；等待用户确认后再合并，不干扰另一运行任务。
+- [x] 写出实施级 TDD 计划与文件清单。
+- [x] 先增加失败测试：托管传输、无账号自报、管理员绑定和持久凭证。
+- [x] 实现服务端设备申请、管理员绑定、凭证签发和权限契约。
+- [x] 实现 Electron 安全凭证存储、启动恢复和旧会话一次性迁移。
+- [x] 实现托管云入口、传输诊断和可处理错误提示。
+- [x] 实现普通端简易系统参数及前后端主机敏感能力隔离。
+- [x] 运行相关测试、完整测试、生产构建和小程序构建。
+- [x] 在真实浏览器运行时验证普通端桌面/窄窗口并保存安全检查记录；正式 Electron 重启留待打包安装阶段。
+- [x] 检查桌面端、数据主机、阿里云和小程序管理入口兼容矩阵。
+- [x] 在当前工作树提交；等待用户确认后再合并，不干扰另一运行任务。
 
 ## Bottom-level logic
 

@@ -3,6 +3,7 @@ const fs = require('fs');
 const source = fs.readFileSync('src/pages/SyncSettings.tsx','utf8');
 assert.ok(source.includes('readDesktopAuthorizationSession') && source.includes('hydrateDesktopAuthorizationSession'));
 assert.ok(!source.includes('pairingPhone') && !source.includes("phone: pairing"), 'desktop pairing must never accept a phone number');
+assert.ok(!source.includes('message="\\u') && !source.includes('description="\\u'), 'escaped CJK copy must be evaluated instead of rendered literally');
 assert.ok((source.match(/sessionResolver: \(\) => readDesktopAuthorizationSession\(\)/g) || []).length >= 3,
   'discovered LAN, manual LAN, and cloud transports must resolve the current desktop session');
 assert.ok(source.includes('handleStartPairing') && source.includes('handleRefreshPairing') && source.includes('pollOrExchange'),
