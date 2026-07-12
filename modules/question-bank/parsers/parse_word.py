@@ -20,6 +20,8 @@ import uuid
 import zipfile
 import xml.etree.ElementTree as ET
 
+from formula_omml import convert_omml_to_latex
+
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
@@ -453,62 +455,7 @@ def _legacy_latex_span(latex):
 def _math_latex(node):
     if node is None:
         return ""
-    tag = _local_name(node)
-    if tag == "t":
-        return node.text or ""
-    if tag == "r":
-        plain_style = False
-        rpr = _first_child(node, "rPr")
-        if rpr is not None:
-            plain_style = any(_local_name(child) in ("nor", "lit") for child in list(rpr))
-            plain_style = plain_style or any(_local_name(child) == "sty" and child.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/math}val") in ("p", "plain") for child in list(rpr))
-        if plain_style:
-            return r"\mathrm{%s}" % _plain_math_text(node)
-        return "".join(_math_latex(child) for child in list(node) if _local_name(child) != "rPr")
-    if tag == "fName":
-        return _plain_math_text(node)
-    if tag in ("oMath", "oMathPara", "e", "num", "den", "deg", "sub", "sup"):
-        return "".join(_math_latex(child) for child in list(node))
-    if tag == "f":
-        num = _math_latex(_first_child(node, "num"))
-        den = _math_latex(_first_child(node, "den"))
-        if _omml_fraction_type(node) in ("lin", "skw"):
-            return "%s/%s" % (num, den)
-        return r"\frac{%s}{%s}" % (num, den)
-    if tag == "sSub":
-        base = _math_latex(_first_child(node, "e"))
-        sub = _math_latex(_first_child(node, "sub"))
-        return "%s_{%s}" % (base, sub)
-    if tag == "sSup":
-        base = _math_latex(_first_child(node, "e"))
-        sup = _math_latex(_first_child(node, "sup"))
-        return "%s^{%s}" % (base, sup)
-    if tag == "sSubSup":
-        base = _math_latex(_first_child(node, "e"))
-        sub = _math_latex(_first_child(node, "sub"))
-        sup = _math_latex(_first_child(node, "sup"))
-        return "%s_{%s}^{%s}" % (base, sub, sup) if base else "{}_{%s}^{%s}" % (sub, sup)
-    if tag == "rad":
-        deg = _math_latex(_first_child(node, "deg"))
-        body = _math_latex(_first_child(node, "e"))
-        return r"\sqrt[%s]{%s}" % (deg, body) if deg else r"\sqrt{%s}" % body
-    if tag == "nary":
-        symbol = "".join(child.attrib.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val", "") for child in node.iter() if _local_name(child) == "chr")
-        command = {"∑": r"\sum", "Σ": r"\sum", "∫": r"\int", "∏": r"\prod"}.get(symbol, symbol or r"\sum")
-        sub = _math_latex(_first_child(node, "sub"))
-        sup = _math_latex(_first_child(node, "sup"))
-        body = _math_latex(_first_child(node, "e"))
-        limits = ("%s%s" % ("_{%s}" % sub if sub else "", "^{%s}" % sup if sup else ""))
-        return "%s%s %s" % (command, limits, body)
-    if tag == "d":
-        return r"\left(%s\right)" % _math_latex(_first_child(node, "e"))
-    if tag == "bar":
-        return r"\overline{%s}" % _math_latex(_first_child(node, "e"))
-    if tag == "groupChr":
-        return _math_latex(_first_child(node, "e"))
-    if tag == "func":
-        return "%s(%s)" % (_plain_math_text(_first_child(node, "fName")), _math_latex(_first_child(node, "e")))
-    return "".join(_math_latex(child) for child in list(node))
+    return convert_omml_to_latex(node).canonical_latex or ""
 
 def _asset_from_run_rel(archive, rels, rid, has_ole_object=False):
     if archive is None or not rid:
