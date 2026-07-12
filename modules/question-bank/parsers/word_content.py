@@ -168,10 +168,8 @@ def _paragraph_tokens(
             append("omml", xml=ET.tostring(child, encoding="unicode"))
             continue
         if tag == "fldSimple":
-            append("field_simple", text=child.attrib.get("{%s}instr" % W, ""))
-            for nested_run in child.findall(".//w:r", NS):
-                for text_node in nested_run.findall("./w:t", NS):
-                    append("text", text=text_node.text or "", style=_run_style(nested_run))
+            visible_result = "".join(text_node.text or "" for text_node in child.findall(".//w:t", NS))
+            append("field_simple", text=child.attrib.get("{%s}instr" % W, ""), xml=visible_result)
             continue
         if tag != "r":
             continue
