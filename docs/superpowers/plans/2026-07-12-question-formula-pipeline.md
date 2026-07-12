@@ -88,9 +88,9 @@
 - Modify: `scripts/prepare-python-runtime.js`
 - Modify: `package.json`
 
-- [ ] Port reference-project tests for hash deduplication, batch sentinel parsing, converter failure and cached reuse; verify failure.
-- [ ] Reuse the reference Ruby `mathtype_to_mathml_plus` invocation with explicit UTF-8, hidden subprocesses, timeouts and per-object isolation.
-- [ ] Convert returned MathML to canonical LaTeX, retain OLE/preview references, and emit `preview_only` instead of invented LaTeX on failure.
+- [x] Port reference-project tests for hash deduplication, batch sentinel parsing, converter failure and cached reuse; verify failure.
+- [x] Reuse the reference Ruby `mathtype_to_mathml_plus` invocation with explicit UTF-8, hidden subprocesses, timeouts and per-object isolation.
+- [x] Convert returned MathML to canonical LaTeX, retain OLE/preview references, and emit `preview_only` instead of invented LaTeX on failure.
 - [ ] Package the reviewed Ruby runtime/gems or a pinned legal dependency bundle and verify packaged path discovery.
 - [ ] Run parser and packaging smoke tests; commit.
 
