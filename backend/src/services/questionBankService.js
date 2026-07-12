@@ -28,6 +28,46 @@ function parseJsonArray(value) {
   }
 }
 
+const RICH_CONTENT_MAX_BYTES = 4 * 1024 * 1024;
+const RICH_CONTENT_MAX_DEPTH = 40;
+const UNSAFE_OBJECT_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+
+function normalizeRichContent(value) {
+  if (value === undefined || value === null || value === '') return null;
+  let parsed = value;
+  if (typeof value === 'string') {
+    try { parsed = JSON.parse(value); } catch (_error) { throw new Error('rich_content must be valid JSON'); }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('rich_content must be an object');
+  }
+  if (parsed.version !== 1 || parsed.type !== 'question-document' || !parsed.sections || typeof parsed.sections !== 'object') {
+    throw new Error('rich_content must be a version 1 question-document');
+  }
+  const visit = (node, depth = 0) => {
+    if (depth > RICH_CONTENT_MAX_DEPTH) throw new Error('rich_content nesting is too deep');
+    if (node === null || typeof node === 'string' || typeof node === 'number' || typeof node === 'boolean') return;
+    if (typeof node !== 'object') throw new Error('rich_content contains unsupported values');
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child, depth + 1);
+      return;
+    }
+    for (const [key, child] of Object.entries(node)) {
+      if (UNSAFE_OBJECT_KEYS.has(key)) throw new Error('rich_content contains an unsafe key');
+      visit(child, depth + 1);
+    }
+  };
+  visit(parsed);
+  const serialized = JSON.stringify(parsed);
+  if (Buffer.byteLength(serialized, 'utf8') > RICH_CONTENT_MAX_BYTES) throw new Error('rich_content is too large');
+  return JSON.parse(serialized);
+}
+
+function parseRichContent(value) {
+  if (!value) return null;
+  try { return normalizeRichContent(value); } catch (_error) { return null; }
+}
+
 const ALLOWED_HTML_TAGS = new Set([
   'br', 'span', 'div', 'table', 'tbody', 'thead', 'tr', 'td', 'th',
   'sub', 'sup', 'i', 'b', 'strong', 'em', 'mark', 'img',
@@ -187,6 +227,7 @@ function questionTextParts(payload = {}) {
     payload.analysis,
     ...(Array.isArray(options) ? options : []),
     ...(Array.isArray(payload.formulas) ? payload.formulas : []),
+    payload.rich_content ? JSON.stringify(payload.rich_content) : '',
   ].map(value => String(value || ''));
 }
 
@@ -366,13 +407,15 @@ class QuestionBankService {
     const answer = sanitizeHtmlContent(payload.answer || '');
     const explanation = sanitizeHtmlContent(payload.explanation !== undefined ? payload.explanation : payload.analysis);
     const options = normalizeOptions(payload.options || payload.options_json);
+    const richContent = normalizeRichContent(payload.rich_content);
     const knowledgePointIds = payload.allow_tag_name_create === false
       ? normalizeKnowledgePointIds(payload)
       : this.resolveKnowledgePointIds(db, payload, tenantId);
     const modelPointIds = payload.allow_tag_name_create === false
       ? normalizeModelPointIds(payload)
       : this.resolveModelPointIds(db, payload, tenantId);
-    const contentHash = payload.content_hash || hashText([stem, answer, explanation, JSON.stringify(options)].join('|'));
+    const richContentJson = richContent ? JSON.stringify(richContent) : null;
+    const contentHash = payload.content_hash || hashText([stem, answer, explanation, JSON.stringify(options), richContentJson || ''].join('|'));
     const contentRef = normalizeOssRef(payload);
     const assets = normalizeQuestionAssets(payload);
     const hasImage = detectHasImage(payload, assets);
@@ -414,9 +457,9 @@ class QuestionBankService {
 
       db.prepare(
         `INSERT INTO question_contents
-         (id, tenant_id, question_id, stem, answer, explanation, options_json, content_hash, version, oss_key, oss_url, deleted, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?)`
-      ).run(contentId, tenantId, questionId, stem, answer || null, explanation || null, JSON.stringify(options), contentHash, contentRef?.oss_key || null, contentRef?.oss_url || null, ts, ts);
+         (id, tenant_id, question_id, stem, answer, explanation, options_json, rich_content_json, content_hash, version, oss_key, oss_url, deleted, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?)`
+      ).run(contentId, tenantId, questionId, stem, answer || null, explanation || null, JSON.stringify(options), richContentJson, contentHash, contentRef?.oss_key || null, contentRef?.oss_url || null, ts, ts);
 
       for (const knowledgePointId of knowledgePointIds) {
         db.prepare(
@@ -465,6 +508,7 @@ class QuestionBankService {
       stem: row.stem || '',
       content: row.stem || '',
       options,
+      rich_content: parseRichContent(row.rich_content_json),
       answer: row.answer || '',
       explanation: row.explanation || '',
       analysis: row.explanation || '',
@@ -496,6 +540,7 @@ class QuestionBankService {
                    qc.answer,
                    qc.explanation,
                    qc.options_json,
+                   qc.rich_content_json,
                    qc.content_hash,
                    qc.version AS content_version,
                    qc.oss_key AS content_oss_key,
@@ -597,7 +642,9 @@ class QuestionBankService {
     const options = payload.options !== undefined || payload.options_json !== undefined
       ? normalizeOptions(payload.options !== undefined ? payload.options : payload.options_json)
       : existing.options;
-    const contentHash = payload.content_hash || hashText([stem, answer, explanation, JSON.stringify(options)].join('|'));
+    const richContent = payload.rich_content !== undefined ? normalizeRichContent(payload.rich_content) : existing.rich_content;
+    const richContentJson = richContent ? JSON.stringify(richContent) : null;
+    const contentHash = payload.content_hash || hashText([stem, answer, explanation, JSON.stringify(options), richContentJson || ''].join('|'));
     const contentRef = normalizeOssRef(payload) || {
       oss_key: existing.content_oss_key || existing.oss_key || null,
       oss_url: existing.content_oss_url || existing.oss_url || null,
@@ -629,9 +676,9 @@ class QuestionBankService {
       db.prepare('UPDATE question_contents SET deleted = 1, updated_at = ? WHERE question_id = ? AND deleted = 0').run(ts, id);
       db.prepare(
         `INSERT INTO question_contents
-         (id, tenant_id, question_id, stem, answer, explanation, options_json, content_hash, version, oss_key, oss_url, deleted, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
-      ).run(uuidv4(), tenantId, id, stem, answer || null, explanation || null, JSON.stringify(options), contentHash, (existing.content_version || 1) + 1, contentRef.oss_key || null, contentRef.oss_url || null, ts, ts);
+         (id, tenant_id, question_id, stem, answer, explanation, options_json, rich_content_json, content_hash, version, oss_key, oss_url, deleted, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+      ).run(uuidv4(), tenantId, id, stem, answer || null, explanation || null, JSON.stringify(options), richContentJson, contentHash, (existing.content_version || 1) + 1, contentRef.oss_key || null, contentRef.oss_url || null, ts, ts);
 
       if (payload.knowledge_point_ids !== undefined || payload.knowledge_ids !== undefined || payload.knowledge_points !== undefined || payload.knowledge_point_names !== undefined || payload.knowledge_point !== undefined) {
         db.prepare('DELETE FROM question_knowledge_points WHERE question_id = ?').run(id);
