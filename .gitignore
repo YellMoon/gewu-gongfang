@@ -27,6 +27,7 @@ win-unpacked-test/
 # Package locks (keep only package.json)
 .package-lock.json
 package-lock.json
+/tmp/
 
 # Builder configs
 builder-debug.yml
