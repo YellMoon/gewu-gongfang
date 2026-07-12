@@ -1,3 +1,48 @@
+# Task: 2026-07-12 机构学生统一费用链路
+
+Status: implementation in progress
+
+## 2026-07-12 evidence
+
+- RED: institutionStudent module missing; course pricing candidate API missing; legacy UI regression required direct pure-institution totals.
+- GREEN: `npm run test:institution-student` passed lifecycle, idempotency, rename, candidate filtering, and real-student financial refresh checks.
+- Build: `npm run build` completed successfully after removing new financial fallback generation.
+- Full suite: reached an unrelated existing WYSIWYG assertion in `src/uiRegression.test.js`; all institution pricing and financial tests passed before that point.
+- Runtime: localhost:3001 created an institution, showed exactly one generated institution student, and exposed that student in the institution-course student selector.
+- Visual evidence record: direction=calm-operational/guided-confident; viewport=1280x720; path=institution create -> student list -> course add -> institution source -> institution student selector; states=disabled institution selector before source, enabled selector after source, generated student option, readonly totals; limitations=no complete schedule fixture, browser-only Electron warnings and existing Ant Design deprecations.
+
+## Objective
+
+为每个机构自动维护唯一的“机构名称+学生”机构学生，让机构排课和混合班通过真实学生定价承载课时收入、教师课时支出与出勤，并删除纯机构课程直接费用编辑和课表独立机构费用窗口。
+
+## Execution checklist
+
+- [x] 检查当前机构、学生、课程定价、课表费用和财务汇总路径。
+- [x] 写明设计规格、底层逻辑、验证和回滚边界。
+- [x] 写出文件级 TDD 实施计划并建立专用分支。
+- [ ] 新增机构学生领域规则与失败测试。
+- [ ] 实现机构创建、历史补齐、改名联动和删除保护。
+- [ ] 统一机构课程学生候选与学生定价编辑。
+- [ ] 删除虚拟纯机构费用兜底与独立机构费用窗口。
+- [ ] 运行相关测试、构建和桌面运行时 UI 验证。
+- [ ] 审计需求覆盖，提交并推送专用分支。
+
+## Bottom-level logic
+
+- 机构学生是 `students` 中的真实记录，具有机构来源、机构外键和明确自动身份标记。
+- 每机构最多一个自动机构学生；创建和补齐幂等，机构改名同步自动名称。
+- 机构课程收入、支出和出勤只走 `student_pricings` 与课表费用快照，不再生成虚拟机构费用学生。
+- 历史快照保持可读；新建和刷新课表使用真实机构学生 ID。
+
+## Validation and rollback
+
+- 以 Node 失败/通过测试证明生命周期、候选过滤、费用快照和财务汇总行为。
+- 运行生产构建与真实桌面主路径，检查空态、禁用态、焦点、裁切和控制台错误。
+- 回滚使用本专用分支提交反向提交；迁移只新增可识别记录和字段，不删除历史费用快照。
+- 本任务只推送 `codex/institution-student-fees` 供其他会话合并，不直接发布多端或 OSS。
+
+---
+
 # Task: 2026-07-11 Unified Role and Data Scope Authorization
 
 Status: implementation in progress

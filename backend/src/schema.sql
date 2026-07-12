@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS students (
   grade_current TEXT,
   source_type INTEGER DEFAULT 1,        -- 1:自有生源 2:机构生源
   institution_id TEXT,
+  is_institution_student INTEGER DEFAULT 0,
   parent_name TEXT,
   parent_wechat TEXT,
   student_source TEXT,

@@ -92,6 +92,7 @@ class DatabaseService {
     this.db.exec(schema);
     this._recordSchemaVersion(schemaPath);
     this._ensureTenantColumns();
+    this._ensureInstitutionStudentColumns();
     this._ensureQuestionMetaColumns();
     this._ensureQuestionContentColumns();
     this._ensureImportTaskColumns();
@@ -200,6 +201,15 @@ class DatabaseService {
         this.db.prepare(`CREATE INDEX IF NOT EXISTS idx_${table}_tenant ON ${table}(tenant_id)`).run();
       }
     }
+  }
+
+  _ensureInstitutionStudentColumns() {
+    const columns = new Set(this.db.prepare('PRAGMA table_info(students)').all().map(column => column.name));
+    if (!columns.has('is_institution_student')) this.db.prepare('ALTER TABLE students ADD COLUMN is_institution_student INTEGER DEFAULT 0').run();
+    this.db.prepare('UPDATE students SET is_institution_student = 0 WHERE is_institution_student IS NULL').run();
+    this.ensureInstitutionStudents();
+    this.db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_students_one_institution_student
+      ON students(tenant_id, institution_id) WHERE deleted = 0 AND is_institution_student = 1`).run();
   }
 
   _ensureArchiveJobColumns() {
@@ -778,6 +788,7 @@ class DatabaseService {
       grade_current: data.grade_current || null,
       source_type: data.source_type || 1,
       institution_id: data.institution_id || null,
+      is_institution_student: data.is_institution_student ? 1 : 0,
       parent_name: data.parent_name || null,
       parent_wechat: data.parent_wechat || null,
       student_source: data.student_source || null,
@@ -789,7 +800,7 @@ class DatabaseService {
 
   updateStudent(id, updates, options = {}) {
     const allowed = ['name', 'phone', 'school', 'grade_year', 'grade_current', 'source_type',
-      'institution_id', 'parent_name', 'parent_wechat', 'student_source',
+      'institution_id', 'is_institution_student', 'parent_name', 'parent_wechat', 'student_source',
       'balance_hours', 'balance_money', 'notes'];
     const filtered = {};
     for (const k of allowed) if (updates[k] !== undefined) filtered[k] = updates[k];
@@ -1066,13 +1077,34 @@ class DatabaseService {
   getAllInstitutions(options = {}) { return this._list('institutions', 'created_at DESC', options); }
   getInstitutionById(id, options = {}) { return this._get('institutions', id, options); }
 
+  ensureInstitutionStudents(options = {}) {
+    const tenantId = this._tenantId(options);
+    const institutions = this.db.prepare('SELECT id, name FROM institutions WHERE deleted = 0 AND tenant_id = ?').all(tenantId);
+    const findManaged = this.db.prepare('SELECT * FROM students WHERE deleted = 0 AND tenant_id = ? AND institution_id = ? AND is_institution_student = 1');
+    const createManaged = this.db.prepare(`INSERT INTO students
+      (id, tenant_id, name, source_type, institution_id, is_institution_student, balance_hours, balance_money, notes, deleted, created_at, updated_at)
+      VALUES (?, ?, ?, 2, ?, 1, 0, 0, ?, 0, ?, ?)`);
+    const updateManaged = this.db.prepare('UPDATE students SET name = ?, source_type = 2, updated_at = ? WHERE id = ?');
+    const now = this._now(); const ensured = [];
+    this.db.transaction(() => {
+      for (const institution of institutions) {
+        const name = String(institution.name || '').trim() + '\u5b66\u751f';
+        const existing = findManaged.get(tenantId, institution.id);
+        if (existing) { if (existing.name !== name || Number(existing.source_type) !== 2) updateManaged.run(name, now, existing.id); ensured.push(existing.id); }
+        else { const id = uuidv4(); createManaged.run(id, tenantId, name, institution.id, '\u673a\u6784\u8bfe\u7a0b\u8d39\u7528\u4e13\u7528\u5b66\u751f', now, now); ensured.push(id); }
+      }
+    })();
+    return ensured;
+  }
+
   createInstitution(data, options = {}) {
     const id = uuidv4();
-    return this._insert('institutions', {
-      id, name: data.name, contact_person: data.contact_person || null,
-      contact_phone: data.contact_phone || null, revenue_share: data.revenue_share || null,
-      notes: data.notes || null
-    }, options);
+    return this.db.transaction(() => {
+      const institution = this._insert('institutions', { id, name: data.name, contact_person: data.contact_person || null,
+        contact_phone: data.contact_phone || null, revenue_share: data.revenue_share || null, notes: data.notes || null }, options);
+      this.ensureInstitutionStudents(options);
+      return institution;
+    })();
   }
 
   updateInstitution(id, updates, options = {}) {
@@ -1080,7 +1112,11 @@ class DatabaseService {
     const filtered = {};
     for (const k of allowed) if (updates[k] !== undefined) filtered[k] = updates[k];
     if (Object.keys(filtered).length === 0) return this._get('institutions', id, options);
-    return this._update('institutions', id, filtered, options);
+    return this.db.transaction(() => {
+      const institution = this._update('institutions', id, filtered, options);
+      if (institution && filtered.name !== undefined) this.ensureInstitutionStudents(options);
+      return institution;
+    })();
   }
 
   deleteInstitution(id, options = {}) { return this._softDelete('institutions', id, options); }

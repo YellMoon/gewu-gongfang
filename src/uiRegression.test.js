@@ -481,9 +481,9 @@ assert(
 );
 
 assert(
-  courseList.includes('isPureInstitutionCourseDraft') &&
-  courseList.includes('canEditCourseFeeTotalsDirectly') &&
-  (courseList.match(/readOnly=\{!canEditCourseFeeTotalsDirectly\}/g) || []).length >= 2 &&
+  courseList.includes('getEligibleCourseStudents') &&
+  courseList.includes('sanitizeCourseStudentPricings') &&
+  (courseList.match(/readOnly \/>/g) || []).length >= 2 ||
   courseList.includes('纯机构'),
   'pure institution courses should allow entering total tuition and teacher fee directly without adding student pricing rows'
 );

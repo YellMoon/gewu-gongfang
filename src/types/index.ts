@@ -11,6 +11,7 @@ export interface Student {
   id: string;
   name: string;
   phone?: string;
+  is_institution_student?: boolean;
   school?: string;
   grade_year?: number;
   grade_current?: string;
