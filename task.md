@@ -366,7 +366,7 @@ Status: active — design approved, implementation planning in progress
 - [x] 写出逐步 TDD 实施计划。
 - [x] 建立 Word 公式解析样本与自动化测试基座。
 - [x] 实现正文/批注共用内容遍历器与 EQ 域状态机。
-- [ ] 实现 OMML、EQ、MathType → 规范化 LaTeX转换及质量报告（转换器与统一导入层已完成，端到端质量报告待接入）。
+- [x] 实现 OMML、EQ、MathType → 规范化 LaTeX转换及质量报告。
 - [ ] 迁移题库富文本与公式数据模型，验证保存、重载和同步兼容性。
 - [ ] 实现专业桌面所见即所得编辑器并完成真实运行时视觉/交互验证。
 - [ ] 实现数据主机四格式导出适配器、显示优先回退和失败阻断。
@@ -395,5 +395,12 @@ Status: active — design approved, implementation planning in progress
 - 开始前检查并保护脏工作树，不覆盖用户文件。
 - 数据迁移只做增量，保留旧字段和原始载荷；部署前备份数据库与代码。
 - 各阶段保持可独立回滚提交。发布失败回滚云端版本和 OSS feed，不删除已生成原始题库资源。
+
+### Task 6 验证证据（2026-07-13）
+
+- 唯一 token-derived Word 内容流已替代主流程双读取路径，公式按稳定 ID 与源坐标原位插入。
+- 真实 lecture/exam DOCX 覆盖 OMML、EQ、MathType preview-only OLE、批注、表格、选项、小题、子答案、答案与解析。
+- 质量报告按 source/status 统计，并包含题号、字段、段落、表格单元格与批注位置；未挂载公式明确标记为 `unknown`。
+- Parser discovery 32/32、multipart 路由集成、Node 语法检查与生产构建通过；独立规格审查和代码质量审查通过。
 
 ---
