@@ -367,7 +367,7 @@ Status: active — design approved, implementation planning in progress
 - [x] 建立 Word 公式解析样本与自动化测试基座。
 - [x] 实现正文/批注共用内容遍历器与 EQ 域状态机。
 - [x] 实现 OMML、EQ、MathType → 规范化 LaTeX转换及质量报告。
-- [ ] 迁移题库富文本与公式数据模型，验证保存、重载和同步兼容性。
+- [x] 迁移题库富文本与公式数据模型，验证保存、重载和同步兼容性。
 - [ ] 实现专业桌面所见即所得编辑器并完成真实运行时视觉/交互验证。
 - [ ] 实现数据主机四格式导出适配器、显示优先回退和失败阻断。
 - [ ] 生成并渲染四类 DOCX/PDF，验证公式数量、字号、基线、裁切和分页。
@@ -402,5 +402,13 @@ Status: active — design approved, implementation planning in progress
 - 真实 lecture/exam DOCX 覆盖 OMML、EQ、MathType preview-only OLE、批注、表格、选项、小题、子答案、答案与解析。
 - 质量报告按 source/status 统计，并包含题号、字段、段落、表格单元格与批注位置；未挂载公式明确标记为 `unknown`。
 - Parser discovery 32/32、multipart 路由集成、Node 语法检查与生产构建通过；独立规格审查和代码质量审查通过。
+
+### Task 7 验证证据（2026-07-13）
+
+- 前后端采用一致的 TipTap 节点、标记与属性白名单，拒绝危险 URL 和任意 HTML 属性。
+- rich-only 保存、数据库重载、旧客户端字段投影、选项/小题/答案/解析搜索与 derived flags 已通过行为测试。
+- 浏览器同步先完整验证再原子应用；非法记录不会造成部分写入，旧客户端局部更新保留未修改 section 的公式、图片、marks 与稳定 ID。
+- 增量 `search_text` 迁移按批次短事务回填，使用与新写入相同的纯文本投影并支持重启幂等。
+- 聚焦后端/浏览器/同步测试与生产构建通过；独立规格审查和代码质量审查通过。
 
 ---
