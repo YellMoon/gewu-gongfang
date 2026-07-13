@@ -1,4 +1,5 @@
 const assert = require('assert');
+const crypto = require('crypto');
 const Database = require('better-sqlite3');
 
 const implementations = [
@@ -14,7 +15,9 @@ function createDb() {
     protocol_version INTEGER NOT NULL DEFAULT 1, idempotency_key TEXT, request_hash TEXT,
     target_host_device_id TEXT, selection_context TEXT, phase TEXT, progress INTEGER NOT NULL DEFAULT 0,
     claimed_by TEXT, claim_token_hash TEXT, lease_expires_at TEXT, row_version INTEGER NOT NULL DEFAULT 0,
-    error_code TEXT, cancel_requested_at TEXT
+    error_code TEXT, cancel_requested_at TEXT, job_key TEXT, snapshot_hash TEXT, artifact_id TEXT,
+    attempt INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 3, next_attempt_at TEXT,
+    deadline_at TEXT, result_expires_at TEXT, completion_operation_id TEXT, completion_result_hash TEXT
   );
   CREATE UNIQUE INDEX idx_task_idempotency ON miniapp_tasks(created_by,idempotency_key) WHERE idempotency_key IS NOT NULL;`);
   return db;
@@ -26,12 +29,16 @@ for (const [name, service] of implementations) {
     taskType: 'paper-export-pdf', payload: { questionIds: ['q2', 'q1'], title: 'paper' },
     createdBy: 'user-1', tenantId: 'tenant-a', actorRole: 'student', allowDraft: false,
     targetHostDeviceId: 'host-a', idempotencyKey: 'idem-1',
+    maxAttempts: 4, deadlineAt: '2026-07-13T01:00:00.000Z', resultExpiresAt: '2026-07-20T00:00:00.000Z',
   };
   const created = service.createV2Task(db, input, { now: '2026-07-13T00:00:00.000Z', idFactory: () => 'task-v2' });
   assert.strictEqual(created.replayed, false, `${name}: first create is not a replay`);
   assert.strictEqual(created.task.protocol_version, 2);
   assert.strictEqual(created.task.target_host_device_id, 'host-a');
   assert.strictEqual(created.task.phase, 'queued');
+  assert.strictEqual(created.task.max_attempts, 4);
+  assert.strictEqual(created.task.deadline_at, '2026-07-13T01:00:00.000Z');
+  assert.strictEqual(created.task.result_expires_at, '2026-07-20T00:00:00.000Z');
   assert.deepStrictEqual(created.task.selection_context, { tenantId: 'tenant-a', actorRole: 'student', allowDraft: false });
 
   const replay = service.createV2Task(db, input, { now: '2026-07-13T00:00:01.000Z', idFactory: () => 'must-not-insert' });
@@ -57,7 +64,7 @@ for (const [name, service] of implementations) {
   });
   assert.strictEqual(secondClaim.task.row_version, 2, `${name}: expired lease can be reclaimed with CAS`);
   assert.throws(
-    () => service.completeV2Task(db, 'task-v2', { claimToken: 'claim-old', expectedRowVersion: 2, result: {} }),
+    () => service.completeV2Task(db, 'task-v2', { claimToken: 'claim-old', expectedRowVersion: 2, operationId: 'stale-op', resultHash: crypto.createHash('sha256').update('{}').digest('hex'), result: {} }),
     error => error.code === 'TASK_CLAIM_INVALID',
     `${name}: a stale claim token must be rejected`
   );
@@ -77,10 +84,19 @@ for (const [name, service] of implementations) {
     error => error.code === 'TASK_VERSION_CONFLICT',
     `${name}: stale row versions must fail CAS`
   );
+  const completionResult = { fileName: 'paper.pdf', artifactId: 'artifact-1' };
+  const completionHash = crypto.createHash('sha256').update(JSON.stringify({ artifactId: 'artifact-1', fileName: 'paper.pdf' })).digest('hex');
+  assert.throws(() => service.completeV2Task(db, 'task-v2', {
+    claimToken: 'claim-new', expectedRowVersion: 3, operationId: 'completion-op-1', resultHash: '0'.repeat(64), result: completionResult,
+  }), error => error.code === 'TASK_RESULT_HASH_MISMATCH' && error.statusCode === 400, `${name}: completion result hash must match canonical result JSON`);
   const completed = service.completeV2Task(db, 'task-v2', {
-    claimToken: 'claim-new', expectedRowVersion: 3, result: { fileName: 'paper.pdf' }, now: '2026-07-13T00:00:04.200Z',
+    claimToken: 'claim-new', expectedRowVersion: 3, operationId: 'completion-op-1', resultHash: completionHash, result: completionResult, now: '2026-07-13T00:00:04.200Z',
   });
   assert.deepStrictEqual([completed.status, completed.phase, completed.progress, completed.row_version], ['completed', 'completed', 100, 4]);
+  assert.deepStrictEqual([completed.completion_operation_id, completed.completion_result_hash], ['completion-op-1', completionHash]);
+  assert.strictEqual(service.completeV2Task(db, 'task-v2', { operationId: 'completion-op-1', resultHash: completionHash, result: completionResult }).row_version, 4, `${name}: lost ACK replay with same operation/hash is idempotent`);
+  assert.throws(() => service.completeV2Task(db, 'task-v2', { operationId: 'completion-op-1', resultHash: 'f'.repeat(64), result: completionResult }), error => error.code === 'TASK_COMPLETION_CONFLICT');
+  assert.throws(() => service.completeV2Task(db, 'task-v2', { operationId: 'completion-op-2', resultHash: completionHash, result: completionResult }), error => error.code === 'TASK_COMPLETION_CONFLICT');
   assert.throws(
     () => service.failV2Task(db, 'task-v2', { claimToken: 'claim-new', expectedRowVersion: 4, errorCode: 'LATE_FAIL' }),
     error => error.code === 'TASK_STATE_CONFLICT',

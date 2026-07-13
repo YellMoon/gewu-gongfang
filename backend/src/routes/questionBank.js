@@ -1,4 +1,5 @@
 const { Router } = require('express');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -10,8 +11,9 @@ const searchService = require('../services/searchService');
 const eventBus = require('../services/eventBus');
 const cache = require('../services/cacheService');
 const { canDeleteQuestion, committedDeleteError } = require('../services/questionDeletionPolicy');
-const { createLocalQuestionImageResolver, writePaperArtifact } = require('../services/paperArtifactService');
 const { resolveExactQuestionSelection } = require('../services/paperExportSelectionService');
+const { processDurablePaperTask } = require('../services/paperJobProcessor');
+const { createArtifactDownloadToken } = require('../services/paperArtifactAccess');
 const {
   initQuestionBankStore,
   inspectQuestionBankStore,
@@ -22,6 +24,7 @@ const {
   bindQuestionBankStoreToDatabase,
   restoreCommittedQuestion,
   updateCommittedQuestion,
+  resolveBoundQuestionBankRoot,
 } = require('../services/questionBankStorageService');
 const {
   createMaintenanceToken,
@@ -365,11 +368,33 @@ router.post('/paper-export', async (req, res) => {
     if (role !== 'primary-host') return res.status(409).json({ success: false, code: 'PRIMARY_HOST_EXPORT_REQUIRED', error: 'paper export must run on the primary data host' });
     const db = getInstance().db;
     const tId = tenantId(req);
-    const questions = resolvePaperExportQuestions(db, req.body || {}, { tenantId: tId, allowDraft: canExportDraft(req.authz) });
     const format = req.body?.format === 'pdf' ? 'pdf' : 'word';
-    const paperRoot = process.env.QUESTION_BANK_ROOT || path.join(process.cwd(), 'data', 'GewuQuestionBank');
-    const artifact = await writePaperArtifact(format, req.body || {}, questions, { root: paperRoot, deviceId: req.get('x-device-id') || process.env.GEWU_DEVICE_ID || 'unknown', resolveImageAsset: createLocalQuestionImageResolver(paperRoot) });
-    res.json({ success: true, data: artifact });
+    const idempotencyKey = String(req.get('x-idempotency-key') || req.body?.idempotencyKey || '').trim();
+    if (!idempotencyKey) return res.status(400).json({ success: false, code: 'PAPER_EXPORT_IDEMPOTENCY_REQUIRED', error: 'x-idempotency-key is required' });
+    resolveBoundQuestionBankRoot(db);
+    const actorId = req.user?.id || req.authz?.userId || '';
+    const requestJson = JSON.stringify(req.body || {});
+    const digest = value => crypto.createHash('sha256').update(value).digest('hex');
+    const taskId = `direct_${digest(`${actorId}\0${tId}\0${idempotencyKey}`)}`;
+    createArtifactDownloadToken({ artifact_id: 'preflight', task_id: taskId, owner_user_id: actorId, tenant_id: tId }, {
+      secret: process.env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET || '', kid: process.env.GEWU_ARTIFACT_DOWNLOAD_HMAC_KID || 'current', ttlSeconds: 1,
+    });
+    const task = {
+      id: taskId, task_type: format === 'pdf' ? 'paper-export-pdf' : 'paper-export-word', request_hash: digest(requestJson),
+      created_by: actorId, selection_context: { tenantId: tId, allowDraft: canExportDraft(req.authz) }, payload: req.body || {},
+    };
+    const durable = await processDurablePaperTask(task, db, {
+      relayScope: 'direct', skipCompletionOutbox: true,
+      selectQuestions: database => resolvePaperExportQuestions(database, req.body || {}, { tenantId: tId, allowDraft: canExportDraft(req.authz) }),
+    });
+    const artifact = durable.artifact;
+    const token = createArtifactDownloadToken(artifact, {
+      secret: process.env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET || '', kid: process.env.GEWU_ARTIFACT_DOWNLOAD_HMAC_KID || 'current',
+      ttlSeconds: Number(process.env.GEWU_ARTIFACT_DOWNLOAD_TTL_SECONDS || 300),
+    });
+    const fileUrl = `/api/cloud-relay-host/artifacts/${encodeURIComponent(artifact.artifact_id)}`;
+    res.json({ success: true, data: { artifactId: artifact.artifact_id, accessUrl: durable.accessEndpoint, fileUrl,
+      token, fileName: path.basename(artifact.file_path), reusedArtifact: durable.reusedArtifact } });
   } catch (err) {
     res.status(errorStatus(err)).json({ success: false, error: err.message, code: err.code });
   }

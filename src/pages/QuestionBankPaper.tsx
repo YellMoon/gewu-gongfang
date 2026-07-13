@@ -213,7 +213,7 @@ const QuestionBankPaper: React.FC = () => {
         title, format, formulaMode, questionIds: items.map(item => item.question.id),
         answerPosition, subject: items[0]?.question.subject || '',
       });
-      downloadHostArtifact(result);
+      await downloadHostArtifact(result);
       const fallback = result.fallbackCount > 0 ? ` (${result.fallbackCount} ${String.fromCharCode(20010, 20844, 24335, 24050, 25353, 26174, 31034, 25928, 26524, 22238, 36864)})` : '';
       message.success(`${result.fileName}${fallback}`);
     } catch (error) {

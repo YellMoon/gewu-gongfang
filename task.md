@@ -437,7 +437,19 @@ Status: active — implementation and multi-end verification in progress
 - V2 长渲染使用串行 heartbeat 持续续租并以最新版本完成；续租失败禁止完成并清理孤儿产物。V1（含无 hostId 的旧轮询）也原子领取，旧主机仅在 shared lease 有效期内兼容无 token 完成。
 - Cloud client 对非 2xx 与 `success:false` 结构化抛错；backend 完整 HTTP 合同验证同幂等键不同 body 返回 409、missing/non-owner 返回 404、错误 host token 返回 403，测试 bypass 仅可在显式 test 环境启用。
 - Backend/Gateway 任务服务文件哈希一致；定向 HTTP/service/schema/client/host 测试、完整 `test:backend`、整仓 `npm test`、生产构建及独立对抗复审通过。
-- 尚未完成不可变题目快照、artifact repository/授权下载、崩溃恢复与保留清理；这些仍属于 Task 11 第二阶段，不能据第一阶段声明完整任务链路完成。
+- 第一阶段验收时尚未完成不可变题目快照、artifact repository/授权下载、崩溃恢复与保留清理；这些内容已转入下列 Task 11 第二阶段继续实施，不能仅据第一阶段声明完整任务链路完成。
+
+### Task 11 第二阶段验证证据（2026-07-14）
+
+- 本地主机 writer DB 新增 durable paper job、artifact 与 completion outbox；`relay_scope + cloud_task_id` 唯一，直接导出也使用 actor/tenant/idempotency 派生的本地 durable job，不再绕过仓储链路。
+- Claim 后冻结题目顺序、rich JSON、公式、实际模板 SHA 和 renderer/gate 版本；本地、允许的 HTTPS 与 data 图片经既有 SSRF/重定向/magic/大小/超时门禁后复制为内容寻址 blob，复制后再次核对题目与源资产哈希。
+- 整卷渲染在可终止 Worker 中运行，父进程独立轮询 cancel/deadline；最终发布采用任务临时目录、可见性 gate、文件与目录 fsync、identity-bound sidecar、发布前 DB CAS 和同卷原子 rename。
+- Artifact `staged→verified` 与 job `→completed` 位于同一 immediate transaction；启动对账覆盖 temp-only、staged+temp、final+sidecar、verified 文件缺失及 verified artifact/job processing 等崩溃窗。
+- Completion outbox 持久 claim/version/operation/canonical result hash；云端校验 canonical hash并按 operation/hash 幂等 ACK，响应丢失可查询 host-scoped 终态；late cancel 会原子收口为 local cancelled、artifact revoked、outbox terminal_cancelled。
+- 下载只接受 DB verified artifactId；独立高熵 HMAC、kid 轮换、`now >= exp` 失效，JWT owner/同租户管理员与 header token 双校验。认证 GET access endpoint 可刷新短 token，URL、outbox、cloud result 与日志均不含 token；旧 filename 匿名读盘路径返回 404。
+- Cleanup 保护 active temp 与 pending outbox，处理过期 verified/revoked artifact 与 sidecar，并逐父链拒绝 Windows junction/reparse；retry/outbox 均有最大次数、cap 与 jitter。
+- Direct Word/PDF 真实 HTTP 走 bound root→immutable snapshot→Worker→repo，重复幂等键复用同 artifactId；桌面客户端下载使用认证 Blob，410 时换签一次并在 finally revoke object URL。
+- Round5 独立锁定复审通过；`test:paper-jobs` 已接入整仓门禁，fresh `npm test`、TypeScript、生产 `craco build`、双 schema/service/HTTP、Node 语法与 diff 检查全部通过。
 
 ### Task 11A 验证证据（2026-07-13）
 

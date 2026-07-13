@@ -1,4 +1,5 @@
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -99,8 +100,13 @@ const pairingRouter = require('./desktopPairing');
   const progressResponse = await call(`/tasks/${v2Created.task.id}/progress`, { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ claimToken: claimed.claimToken, expectedRowVersion: claimed.task.row_version, phase: 'rendering', progress: 40 }) });
   const progressed = await progressResponse.json();
   assert.deepStrictEqual([progressed.task.phase, progressed.task.progress], ['rendering', 40]);
-  const completeResponse = await call(`/tasks/${v2Created.task.id}/complete`, { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ claimToken: claimed.claimToken, expectedRowVersion: progressed.task.row_version, result: { fileName: 'paper.pdf' } }) });
+  const completionHash = crypto.createHash('sha256').update(JSON.stringify({ fileName: 'paper.pdf' })).digest('hex');
+  assert.strictEqual((await call(`/tasks/${v2Created.task.id}/complete`, { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ claimToken: claimed.claimToken, expectedRowVersion: progressed.task.row_version, operationId: 'gateway-complete-1', resultHash: '0'.repeat(64), result: { fileName: 'paper.pdf' } }) })).status, 400);
+  const completionBody = { claimToken: claimed.claimToken, expectedRowVersion: progressed.task.row_version, operationId: 'gateway-complete-1', resultHash: completionHash, result: { fileName: 'paper.pdf' } };
+  const completeResponse = await call(`/tasks/${v2Created.task.id}/complete`, { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify(completionBody) });
   assert.strictEqual((await completeResponse.json()).task.status, 'completed');
+  assert.strictEqual((await call(`/tasks/${v2Created.task.id}/complete`, { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify(completionBody) })).status, 200);
+  assert.strictEqual((await call(`/tasks/${v2Created.task.id}/complete`, { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ ...completionBody, resultHash: 'f'.repeat(64) }) })).status, 409);
 
   const cancelCreate = await call('/tasks', { method: 'POST', headers: { 'x-test-user': approved('u1'), 'x-idempotency-key': 'idem-http-cancel' }, body: v2Body });
   const cancelTask = (await cancelCreate.json()).task;

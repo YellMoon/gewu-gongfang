@@ -22,8 +22,19 @@ function requestHash(input) {
     actorRole: input.actorRole || '',
     allowDraft: Boolean(input.allowDraft),
     targetHostDeviceId: input.targetHostDeviceId,
+    maxAttempts: Math.max(1, Number(input.maxAttempts || 3)),
+    deadlineAt: input.deadlineAt || null,
+    resultExpiresAt: input.resultExpiresAt || null,
   });
   return crypto.createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
+}
+
+function canonicalResultJson(input) {
+  return JSON.stringify(stableValue(input || {}));
+}
+
+function resultHash(input) {
+  return crypto.createHash('sha256').update(canonicalResultJson(input)).digest('hex');
 }
 
 function parseJson(value, fallback) {
@@ -62,10 +73,12 @@ function createV2Task(db, input, options = {}) {
   try {
     db.prepare(`INSERT INTO miniapp_tasks
       (id,task_type,status,payload,result_payload,created_by,created_at,updated_at,protocol_version,
-       idempotency_key,request_hash,target_host_device_id,selection_context,phase,progress,row_version)
-      VALUES(?,?,'pending_host',?,NULL,?,?,?,?,?,?,?,?, 'queued',0,0)`)
+       idempotency_key,request_hash,target_host_device_id,selection_context,phase,progress,row_version,
+       attempt,max_attempts,next_attempt_at,deadline_at,result_expires_at)
+      VALUES(?,?,'pending_host',?,NULL,?,?,?,?,?,?,?,?, 'queued',0,0,0,?,NULL,?,?)`)
       .run(id, input.taskType, JSON.stringify(input.payload || {}), createdBy, now, now, 2,
-        idempotencyKey, hash, targetHostDeviceId, JSON.stringify(selectionContext));
+        idempotencyKey, hash, targetHostDeviceId, JSON.stringify(selectionContext),
+        Math.max(1, Number(input.maxAttempts || 3)), input.deadlineAt || null, input.resultExpiresAt || null);
   } catch (error) {
     if (!/UNIQUE constraint failed/.test(error.message || '')) throw error;
     const raced = db.prepare('SELECT * FROM miniapp_tasks WHERE created_by = ? AND idempotency_key = ?').get(createdBy, idempotencyKey);
@@ -86,12 +99,14 @@ function claimNextV2Task(db, input = {}) {
   const execute = db.transaction(() => {
     const candidate = db.prepare(`SELECT * FROM miniapp_tasks
       WHERE protocol_version >= 2 AND target_host_device_id = ?
+        AND attempt < max_attempts AND cancel_requested_at IS NULL
+        AND (deadline_at IS NULL OR deadline_at > ?) AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
         AND (status = 'pending_host' OR (status = 'processing' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?))
-      ORDER BY created_at ASC LIMIT 1`).get(hostDeviceId, now);
+      ORDER BY created_at ASC LIMIT 1`).get(hostDeviceId, now, now, now);
     if (!candidate) return null;
     const info = db.prepare(`UPDATE miniapp_tasks
       SET status='processing',phase='claimed',claimed_by=?,claim_token_hash=?,lease_expires_at=?,
-          updated_at=?,row_version=row_version+1
+          updated_at=?,row_version=row_version+1,attempt=attempt+1
       WHERE id=? AND row_version=? AND protocol_version>=2
         AND (status='pending_host' OR (status='processing' AND lease_expires_at IS NOT NULL AND lease_expires_at<=?))`)
       .run(hostDeviceId, claimTokenHash, leaseExpiresAt, now, candidate.id, candidate.row_version, now);
@@ -127,13 +142,23 @@ function updateV2TaskProgress(db, id, input = {}) {
 }
 
 function completeV2Task(db, id, input = {}) {
+  const operationId = String(input.operationId || input.operation_id || '').trim();
+  const suppliedHash = String(input.resultHash || input.result_hash || '').trim().toLowerCase();
+  if (!operationId) throw taskError('TASK_COMPLETION_OPERATION_REQUIRED', 'completion operation id is required', 400);
+  const existing = db.prepare('SELECT * FROM miniapp_tasks WHERE id=?').get(id);
+  if (existing?.status === 'completed') {
+    if (existing.completion_operation_id === operationId && existing.completion_result_hash === suppliedHash) return taskRow(existing);
+    throw taskError('TASK_COMPLETION_CONFLICT', 'task was completed by a different operation or result', 409);
+  }
+  const canonicalJson = canonicalResultJson(input.result || {});
+  if (suppliedHash !== resultHash(input.result || {})) throw taskError('TASK_RESULT_HASH_MISMATCH', 'completion result hash does not match canonical result payload', 400);
   const row = claimedTask(db, id, input);
   const now = input.now || new Date().toISOString();
   const info = db.prepare(`UPDATE miniapp_tasks
-    SET status='completed',phase='completed',progress=100,result_payload=?,error_code=NULL,
+    SET status='completed',phase='completed',progress=100,result_payload=?,completion_operation_id=?,completion_result_hash=?,error_code=NULL,
         lease_expires_at=NULL,updated_at=?,row_version=row_version+1
     WHERE id=? AND row_version=? AND status='processing'`)
-    .run(JSON.stringify(input.result || {}), now, id, row.row_version);
+    .run(canonicalJson, operationId, suppliedHash, now, id, row.row_version);
   if (info.changes !== 1) throw taskError('TASK_VERSION_CONFLICT', 'task row version is stale', 409);
   return taskRow(db.prepare('SELECT * FROM miniapp_tasks WHERE id=?').get(id));
 }
@@ -227,6 +252,7 @@ function completeLegacyTask(db, id, result = {}, success = true, claim = {}) {
 
 module.exports = {
   cancelV2Task,
+  canonicalResultJson,
   claimNextLegacyTask,
   claimNextV2Task,
   completeLegacyTask,
@@ -235,6 +261,7 @@ module.exports = {
   failV2Task,
   listLegacyPending,
   requestHash,
+  resultHash,
   taskError,
   taskRow,
   updateV2TaskProgress,

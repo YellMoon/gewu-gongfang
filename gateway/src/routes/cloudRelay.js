@@ -364,6 +364,15 @@ router.post('/tasks/:id/complete', requireHostToken, (req, res) => {
   res.json({ success: true, task: row });
 });
 
+router.get('/tasks/:id/state', requireHostToken, (req, res) => {
+  const hostDeviceId = String(req.query.hostDeviceId || req.query.host_device_id || '');
+  if (!hostDeviceId) return res.status(400).json({ success: false, code: 'HOST_DEVICE_ID_REQUIRED' });
+  const row = getDb().prepare(`SELECT id,status,result_payload,row_version,error_code,artifact_id,job_key,snapshot_hash
+    FROM miniapp_tasks WHERE id=? AND (target_host_device_id=? OR claimed_by=?)`).get(req.params.id, hostDeviceId, hostDeviceId);
+  if (!row) return res.status(404).json({ success: false, code: 'TASK_NOT_FOUND', error: 'task not found' });
+  return res.json({ success: true, task: { ...row, result_payload: row.result_payload ? JSON.parse(row.result_payload) : null } });
+});
+
 router.get('/tasks/:id/result', requireApprovedSnapshotUser, (req, res) => {
   const db = getDb();
   const isAdmin = ['super_admin', 'admin'].includes(roleForUser(req.user));
