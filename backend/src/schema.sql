@@ -534,6 +534,7 @@ CREATE TABLE IF NOT EXISTS question_contents (
   explanation TEXT,
   options_json TEXT,
   rich_content_json TEXT,
+  search_text TEXT,
   content_hash TEXT,
   version INTEGER DEFAULT 1,
   oss_key TEXT,

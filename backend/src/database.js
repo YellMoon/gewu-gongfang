@@ -9,6 +9,7 @@ const { v4: uuidv4 } = require('uuid');
 const { getMiniappLoginDenialReason } = require('./services/miniappAuthPolicy');
 const { validateSyncMutation } = require('./services/syncScopeService');
 const { scopeBusinessSnapshot } = require('./services/dataScopeService');
+const { projectSearchTextFromRow } = require('./services/questionRichContentProjection');
 const {
   SUPER_ADMIN_PHONE,
   CANONICAL_SUPER_ADMIN_ID,
@@ -263,7 +264,7 @@ class DatabaseService {
     this.db.prepare("UPDATE questions SET storage_state = 'local_draft' WHERE storage_state IS NULL OR storage_state NOT IN ('local_draft', 'host_committed')").run();
   }
 
-  _ensureQuestionContentColumns() {
+  _ensureQuestionContentColumns(searchBackfillBatchSize = 500) {
     const exists = this.db.prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'question_contents'"
     ).get();
@@ -271,6 +272,22 @@ class DatabaseService {
     const columns = new Set(this.db.prepare('PRAGMA table_info(question_contents)').all().map(column => column.name));
     if (!columns.has('rich_content_json')) {
       this.db.prepare('ALTER TABLE question_contents ADD COLUMN rich_content_json TEXT').run();
+    }
+    if (!columns.has('search_text')) {
+      this.db.prepare('ALTER TABLE question_contents ADD COLUMN search_text TEXT').run();
+    }
+    const batchSize = Math.min(Math.max(Number(searchBackfillBatchSize) || 500, 1), 5000);
+    const selectMissingSearchRows = this.db.prepare(
+      'SELECT id, stem, options_json, answer, explanation, rich_content_json FROM question_contents WHERE search_text IS NULL ORDER BY id LIMIT ?'
+    );
+    const updateSearchText = this.db.prepare('UPDATE question_contents SET search_text = ? WHERE id = ?');
+    const backfillSearchText = this.db.transaction(rows => {
+      for (const row of rows) updateSearchText.run(projectSearchTextFromRow(row), row.id);
+    });
+    while (true) {
+      const rows = selectMissingSearchRows.all(batchSize);
+      if (rows.length === 0) break;
+      backfillSearchText(rows);
     }
   }
 

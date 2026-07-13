@@ -120,11 +120,13 @@ Verification: representative lecture/exam DOCX fixtures cover OMML, EQ, MathType
 - Modify: `backend/src/services/questionBankService.js`
 - Modify: `src/services/browserDatabase.ts`
 
-- [ ] Add failing tests for legacy HTML/text migration, formula-node round trip, image references, persistence/reload, plain-text search projection and old-client compatibility.
-- [ ] Add additive versioned JSON columns/content rows without deleting legacy fields.
-- [ ] Implement strict sanitizer/validator and deterministic legacy projection.
-- [ ] Verify mutation → database → reload → derived flags/search → UI payload.
-- [ ] Run backend/browser database suites and commit.
+- [x] Add failing tests for legacy HTML/text migration, formula-node round trip, image references, persistence/reload, plain-text search projection and old-client compatibility.
+- [x] Add additive versioned JSON columns/content rows without deleting legacy fields.
+- [x] Implement strict sanitizer/validator and deterministic legacy projection.
+- [x] Verify mutation → database → reload → derived flags/search → UI payload.
+- [x] Run backend/browser database suites and commit.
+
+Verification: front-end and backend validators enforce aligned TipTap node/mark attribute contracts; legacy and rich projections preserve options, correctness, subquestions and answers. Browser sync uses behavior-tested atomic normalization, old-client partial updates preserve untouched rich sections, and the additive `search_text` migration uses restart-safe batches with one canonical plain-text projection. Focused backend/browser/sync tests and the production build passed; independent spec and code-quality reviews passed.
 
 ### Task 8: WYSIWYG editor core
 
