@@ -524,13 +524,30 @@ assert(
 );
 
 assert(
-  richQuestionEditor.includes('contentEditable') &&
-  richQuestionEditor.includes('insertFormula') &&
-  richQuestionEditor.includes('insertImage') &&
-  richQuestionEditor.includes('applyImageAlignment') &&
+  richQuestionEditor.includes('useEditor({') &&
+  richQuestionEditor.includes('EditorContent editor={editor}') &&
+  richQuestionEditor.includes("output === 'json' ? current.getJSON()") &&
+  richQuestionEditor.includes("canonicalLatex") &&
+  richQuestionEditor.includes("toggleHighlight") &&
+  richQuestionEditor.includes("RichImage.configure({ allowBase64: false })") &&
+  richQuestionEditor.includes("transformPastedHTML") &&
+  richQuestionEditor.includes("aria-label={title}") &&
+  richQuestionEditor.includes("aria-label={t('\\u5b57\\u53f7')}") &&
+  richQuestionEditor.includes("aria-label={t('\\u6587\\u5b57\\u989c\\u8272')}") &&
+  richQuestionEditor.includes("aria-label={t('\\u5220\\u9664\\u56fe\\u7247')}") &&
+  richQuestionEditor.includes("aria-pressed={editor.isActive('image', { align: 'left' })}") &&
+  richQuestionEditor.includes("aria-pressed={editor.isActive('highlight')}") &&
+  richQuestionEditor.includes("editor.isActive({ textAlign: 'center' })") &&
+  richQuestionEditor.includes("value={String(editor.getAttributes('textStyle').fontSize") &&
+  richQuestionEditor.includes("forceSelectionRender(value => value + 1)") &&
+  richQuestionEditor.includes("getQuestionAssetDataUrl") &&
+  richQuestionEditor.includes("pendingImagePositions.current") &&
+  richQuestionEditor.includes("assetDisplayRef(node.attrs.src, node.attrs.assetKey)") &&
+  richQuestionEditor.includes("insertContentAt(range") &&
+  richQuestionEditor.includes("<UndoOutlined />, undefined") &&
   questionBankPreview.includes('RichQuestionEditor') &&
   questionBankEdit.includes('RichQuestionEditor'),
-  'question edit dialogs should use a WYSIWYG editor for rich text, formulas, and images'
+  'question edit dialogs should use the controlled TipTap editor contract for rich text, formulas, images, and sanitized paste'
 );
 
 assert(

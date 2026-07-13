@@ -1,5 +1,5 @@
 const ALLOWED_TAGS = new Set([
-  'br', 'span', 'div', 'p', 'table', 'tbody', 'thead', 'tr', 'td', 'th',
+  'br', 'span', 'div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'hr', 'table', 'tbody', 'thead', 'tr', 'td', 'th',
   'sub', 'sup', 'i', 'b', 'strong', 'em', 'mark', 'img',
   'math', 'annotation', 'semantics', 'mrow', 'mi', 'mn', 'mo', 'msup', 'msub',
   'msubsup', 'mfrac', 'msqrt', 'mroot', 'mtext', 'mspace',
@@ -10,12 +10,14 @@ const URI_ATTRS = new Set(['src', 'href', 'xlink:href']);
 const ALLOWED_ATTRS = new Set([
   'class', 'style', 'src', 'alt', 'width', 'height', 'title',
   'aria-hidden', 'data-latex', 'data-inline-options', 'encoding',
-  'xmlns', 'display',
+  'xmlns', 'display', 'data-formula', 'data-id', 'data-display-mode',
+  'data-source-ref', 'data-preview-ref', 'data-conversion-status', 'data-source-format',
+  'data-asset-key', 'data-align', 'data-formula-block', 'data-warnings',
 ]);
 
 function isSafeUri(value: string): boolean {
   const text = value.trim().toLowerCase();
-  return text.startsWith('data:image/')
+  return /^data:image\/(?:png|jpe?g|gif|webp);base64,/i.test(text)
     || text.startsWith('question-asset://')
     || text.startsWith('blob:')
     || text.startsWith('/')
@@ -60,6 +62,7 @@ export function sanitizeHtml(html: string): string {
       const element = child as HTMLElement;
       const tagName = element.tagName.toLowerCase();
       if (!ALLOWED_TAGS.has(tagName)) {
+        walk(element);
         element.replaceWith(...Array.from(element.childNodes));
         continue;
       }

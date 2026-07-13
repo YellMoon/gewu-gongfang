@@ -8,7 +8,7 @@ const SAFE_REF = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,1023}$/;
 const UNSAFE_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 const ALLOWED_NODES = new Set([
   'doc', 'paragraph', 'text', 'hardBreak', 'heading', 'blockquote', 'bulletList', 'orderedList',
-  'listItem', 'horizontalRule', 'codeBlock', 'formula', 'image',
+  'listItem', 'horizontalRule', 'codeBlock', 'formula', 'formulaBlock', 'image',
 ]);
 const ALLOWED_MARKS = new Set([
   'bold', 'italic', 'underline', 'strike', 'code', 'subscript', 'superscript', 'textStyle', 'fontFamily', 'fontSize', 'highlight', 'link',
@@ -33,6 +33,7 @@ function safeWebHref(value: unknown): boolean {
 }
 
 function validateSafeObject(value: unknown, depth = 0): void {
+  if (value === undefined) return;
   if (depth > MAX_DEPTH) fail('nesting is too deep');
   if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) return;
   if (Array.isArray(value)) { value.forEach(item => validateSafeObject(item, depth + 1)); return; }
@@ -52,9 +53,10 @@ function validateNode(node: unknown, depth = 0): asserts node is JSONContent {
   const noAttrs = ['doc', 'text', 'hardBreak', 'blockquote', 'bulletList', 'listItem', 'horizontalRule'];
   if (noAttrs.includes(node.type)) allowKeys(attrs, [], node.type);
   if (['paragraph', 'heading'].includes(node.type)) {
-    allowKeys(attrs, node.type === 'heading' ? ['level', 'textAlign', 'lineHeight'] : ['textAlign', 'lineHeight'], node.type);
+    allowKeys(attrs, node.type === 'heading' ? ['level', 'textAlign', 'lineHeight', 'indent'] : ['textAlign', 'lineHeight', 'indent'], node.type);
     if (attrs.textAlign != null && !TEXT_ALIGNS.has(String(attrs.textAlign))) fail(`${node.type} textAlign is invalid`);
     if (attrs.lineHeight != null && !LINE_HEIGHTS.has(String(attrs.lineHeight))) fail(`${node.type} lineHeight is invalid`);
+    if (attrs.indent != null && (!Number.isInteger(attrs.indent) || attrs.indent < 0 || attrs.indent > 8)) fail(`${node.type} indent is invalid`);
     if (node.type === 'heading' && (!Number.isInteger(attrs.level) || attrs.level < 1 || attrs.level > 6)) fail('heading level is invalid');
   }
   if (node.type === 'orderedList') {
@@ -89,12 +91,12 @@ function validateNode(node: unknown, depth = 0): asserts node is JSONContent {
       if (mark.attrs !== undefined) validateSafeObject(mark.attrs, depth + 1);
     }
   }
-  if (node.type === 'formula') {
+  if (node.type === 'formula' || node.type === 'formulaBlock') {
     allowKeys(attrs, ['id', 'canonicalLatex', 'displayMode', 'sourceRef', 'warnings', 'conversionStatus', 'sourceFormat', 'previewRef'], 'formula');
     if (!SAFE_ID.test(String(attrs.id || ''))) fail('formula id is invalid');
     if (typeof attrs.canonicalLatex !== 'string' || !attrs.canonicalLatex.trim() || attrs.canonicalLatex.length > 10000) fail('formula canonicalLatex is invalid');
     if (!['inline', 'block'].includes(attrs.displayMode)) fail('formula displayMode is invalid');
-    if (attrs.sourceRef !== undefined && !SAFE_REF.test(String(attrs.sourceRef))) fail('formula sourceRef is invalid');
+    if (attrs.sourceRef != null && !SAFE_REF.test(String(attrs.sourceRef))) fail('formula sourceRef is invalid');
     if (attrs.previewRef != null && !SAFE_REF.test(String(attrs.previewRef))) fail('formula previewRef is invalid');
     if (attrs.conversionStatus != null && !['complete', 'approximate', 'preview_only', 'unsupported', 'failed'].includes(attrs.conversionStatus)) fail('formula conversionStatus is invalid');
     if (attrs.sourceFormat != null && !['omml', 'eq', 'mathtype', 'mathml', 'latex', 'unknown'].includes(attrs.sourceFormat)) fail('formula sourceFormat is invalid');
@@ -104,10 +106,10 @@ function validateNode(node: unknown, depth = 0): asserts node is JSONContent {
     allowKeys(attrs, ['src', 'assetKey', 'alt', 'title', 'width', 'height', 'align'], 'image');
     if (!SAFE_REF.test(String(attrs.assetKey || '')) || String(attrs.assetKey).includes('..')) fail('image assetKey is invalid');
     if (attrs.src != null && attrs.src !== `question-asset://${attrs.assetKey}`) fail('image src is invalid');
-    if (attrs.alt !== undefined && (typeof attrs.alt !== 'string' || attrs.alt.length > 1000)) fail('image alt is invalid');
-    if (attrs.title !== undefined && (typeof attrs.title !== 'string' || attrs.title.length > 1000)) fail('image title is invalid');
+    if (attrs.alt != null && (typeof attrs.alt !== 'string' || attrs.alt.length > 1000)) fail('image alt is invalid');
+    if (attrs.title != null && (typeof attrs.title !== 'string' || attrs.title.length > 1000)) fail('image title is invalid');
     for (const dimension of ['width', 'height']) {
-      if (attrs[dimension] !== undefined && (!Number.isFinite(attrs[dimension]) || attrs[dimension] <= 0 || attrs[dimension] > 10000)) fail(`image ${dimension} is invalid`);
+      if (attrs[dimension] != null && (!Number.isFinite(attrs[dimension]) || attrs[dimension] <= 0 || attrs[dimension] > 10000)) fail(`image ${dimension} is invalid`);
     }
     if (attrs.align !== undefined && !['left', 'center', 'right'].includes(attrs.align)) fail('image align is invalid');
   }
@@ -128,6 +130,16 @@ export function normalizeQuestionRichContent(value: unknown): QuestionRichDocume
   if (typeof value === 'string') {
     try { parsed = JSON.parse(value); } catch (_error) { fail('must be valid JSON'); }
   }
+  parsed = JSON.parse(JSON.stringify(parsed));
+  const stripOptionalNulls = (node: any): void => {
+    if (!node || typeof node !== 'object') return;
+    if (node.attrs && (node.type === 'formula' || node.type === 'formulaBlock')) for (const key of ['sourceRef', 'warnings', 'conversionStatus', 'sourceFormat', 'previewRef']) if (node.attrs[key] == null) delete node.attrs[key];
+    if (node.attrs && node.type === 'image') for (const key of ['src', 'alt', 'title', 'width', 'height', 'align']) if (node.attrs[key] == null) delete node.attrs[key];
+    if (Array.isArray(node.content)) node.content.forEach(stripOptionalNulls);
+    if (node.answer) stripOptionalNulls(node.answer);
+  };
+  const sectionsForCleanup = isRecord(parsed) && isRecord(parsed.sections) ? parsed.sections : {};
+  Object.values(sectionsForCleanup).forEach(section => Array.isArray(section) ? section.forEach(stripOptionalNulls) : stripOptionalNulls(section));
   if (!isRecord(parsed) || parsed.version !== 1 || parsed.type !== 'question-document') fail('must be a version 1 question-document');
   if (!isRecord(parsed.sections)) fail('sections are required');
   const sections = parsed.sections;
@@ -198,7 +210,7 @@ export function migrateLegacyQuestion(question: Record<string, any>): QuestionRi
 function nodeText(node: JSONContent, flags: { formula: boolean; image: boolean }): string {
   if (node.type === 'text') return node.text || '';
   if (node.type === 'hardBreak') return '\n';
-  if (node.type === 'formula') { flags.formula = true; return ` ${String(node.attrs?.canonicalLatex || '')} `; }
+  if (node.type === 'formula' || node.type === 'formulaBlock') { flags.formula = true; return ` ${String(node.attrs?.canonicalLatex || '')} `; }
   if (node.type === 'image') { flags.image = true; return ` ${String(node.attrs?.alt || '')} `; }
   const text = (node.content || []).map(child => nodeText(child, flags)).join('');
   return ['paragraph', 'heading', 'blockquote', 'listItem', 'codeBlock'].includes(node.type || '') ? `${text}\n` : text;

@@ -128,6 +128,17 @@ class ParseWordFormulaIntegrationTests(unittest.TestCase):
         self.assertEqual([node["attrs"]["canonicalLatex"] for node in stem_nodes if node["type"] == "formula"], [r"x^2"])
         self.assertEqual([node["attrs"]["canonicalLatex"] for node in answer_nodes if node["type"] == "formula"], [r"\sqrt{y}"])
 
+    def test_parser_optional_null_attrs_match_rich_content_normalizer_contract(self):
+        rich = build_question_rich_content({
+            "stem": '<span data-formula-id="f-null" data-latex="x"></span><img src="question-asset://asset-null" alt="diagram">',
+            "answer": "", "analysis": "", "options": [], "sub_questions": [],
+        })
+        nodes = rich["sections"]["stem"]["content"][0]["content"]
+        formula = next(node for node in nodes if node["type"] == "formula")
+        image = next(node for node in nodes if node["type"] == "image")
+        self.assertIsNone(formula["attrs"]["sourceRef"])
+        self.assertIsNone(image["attrs"]["width"])
+
     def test_rich_content_preserves_formula_field_ownership_and_source_order(self):
         formula = lambda latex, paragraph, content: {
             "id": f"formula-{paragraph}-{content}",

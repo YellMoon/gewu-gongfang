@@ -32,7 +32,7 @@ function testFormulaAndImageNodesRoundTrip() {
         { type: 'text', text: 'Velocity ' },
         { type: 'formula', attrs: { id: 'f-1', canonicalLatex: '\\frac{s}{t}', displayMode: 'inline', sourceRef: 'formula/source-1.json' } },
         { type: 'image', attrs: { assetKey: 'asset-1', alt: 'motion diagram', width: 240, align: 'center' } },
-      ] }] },
+      ] }, { type: 'formulaBlock', attrs: { id: 'f-block', canonicalLatex: 'E=mc^2', displayMode: 'block', sourceFormat: 'latex', conversionStatus: 'complete', warnings: [], previewRef: 'preview/f-block.png' } }] },
       options: [], subQuestions: [],
       answer: { type: 'doc', content: [] }, analysis: { type: 'doc', content: [] },
     },
@@ -40,10 +40,11 @@ function testFormulaAndImageNodesRoundTrip() {
 
   assert.strictEqual(rich.sections.stem.content[0].content[1].attrs.canonicalLatex, '\\frac{s}{t}');
   assert.strictEqual(rich.sections.stem.content[0].content[2].attrs.assetKey, 'asset-1');
+  assert.strictEqual(rich.sections.stem.content[1].attrs.displayMode, 'block');
   const projection = projectQuestionRichContent(rich);
   assert.strictEqual(projection.hasFormula, true);
   assert.strictEqual(projection.hasImage, true);
-  assert.strictEqual(projection.stem, 'Velocity \\frac{s}{t} motion diagram');
+  assert.strictEqual(projection.stem, 'Velocity \\frac{s}{t} motion diagram\nE=mc^2');
 }
 
 function testStrictValidationAndSanitization() {
@@ -106,10 +107,23 @@ function testProjectionIsDeterministicAndComplete() {
   assert.strictEqual(projectQuestionRichContent(code).stem, 'line one\nline two');
 }
 
+function testParserOptionalNullsAreNormalizedAway() {
+  const rich = normalizeQuestionRichContent({ version: 1, type: 'question-document', sections: {
+    stem: { type: 'doc', content: [{ type: 'paragraph', content: [
+      { type: 'formula', attrs: { id: 'f-null', canonicalLatex: 'x', displayMode: 'inline', sourceRef: null, previewRef: null } },
+      { type: 'image', attrs: { assetKey: 'asset-null', src: 'question-asset://asset-null', alt: 'diagram', width: null, height: null, title: null } },
+    ] }] }, options: [], subQuestions: [], answer: { type: 'doc', content: [] }, analysis: { type: 'doc', content: [] },
+  } });
+  const [formula, image] = rich.sections.stem.content[0].content;
+  assert.strictEqual(Object.hasOwn(formula.attrs, 'sourceRef'), false);
+  assert.strictEqual(Object.hasOwn(image.attrs, 'width'), false);
+}
+
 testLegacyMigrationAndDeterministicProjection();
 testFormulaAndImageNodesRoundTrip();
 testStrictValidationAndSanitization();
 testProjectionIsDeterministicAndComplete();
+testParserOptionalNullsAreNormalizedAway();
 const packageJson = fs.readFileSync('package.json', 'utf8');
 assert.ok(packageJson.includes('node src/services/questionRichContent.test.js') && packageJson.includes('npm run test:rich-content'), 'rich content suite should run in npm test');
 console.log('questionRichContent tests passed');
