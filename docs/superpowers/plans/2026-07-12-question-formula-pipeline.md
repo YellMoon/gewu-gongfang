@@ -101,11 +101,13 @@
 - Modify: `modules/question-bank/parsers/parse_word.py`
 - Modify: `modules/question-bank/src/routes/parse_word.js`
 
-- [ ] Add lecture and exam fixtures proving formulas in stems, options, subquestions, answers, analyses, comments and tables attach to the correct question in source order.
-- [ ] Make the current implementation fail on field and comment/OLE cases.
-- [ ] Replace `read_docx_rich_blocks() or read_docx_rich_paragraphs()` with one token-derived rich block stream and attach canonical formula nodes.
-- [ ] Return a parse quality report with counts by source/status and actionable locations.
-- [ ] Run forced XML fallback, python-docx path and route integration tests; commit.
+- [x] Add lecture and exam fixtures proving formulas in stems, options, subquestions, answers, analyses, comments and tables attach to the correct question in source order.
+- [x] Make the current implementation fail on field and comment/OLE cases.
+- [x] Replace `read_docx_rich_blocks() or read_docx_rich_paragraphs()` with one token-derived rich block stream and attach canonical formula nodes.
+- [x] Return a parse quality report with counts by source/status and actionable locations.
+- [x] Run forced XML fallback, python-docx path and route integration tests; commit.
+
+Verification: representative lecture/exam DOCX fixtures cover OMML, EQ, MathType preview-only OLE, comments, tables, repeated formulas, options, subquestions, subanswers, answers and analyses. Parser discovery passed 32/32; multipart route integration (including spawn failure single-settle) passed; Node syntax checks and the production build passed. Independent spec and code-quality reviews passed.
 
 ### Task 7: Structured rich-content persistence and compatibility
 
