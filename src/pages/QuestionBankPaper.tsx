@@ -13,6 +13,7 @@ import {
   Tag,
   Typography,
   message,
+  Alert,
 } from 'antd';
 import {
   ArrowDownOutlined,
@@ -27,13 +28,11 @@ import { normalizeQuestionType } from '../constants/questionTypes';
 import { QUESTION_BASKET_SELECTED_STORAGE_KEY, QUESTION_BASKET_STORAGE_KEY } from '../components/QuestionBasket';
 import QuestionRichContent from '../components/QuestionRichContent';
 import QuestionRenderer from '../components/QuestionRenderer';
-import { downloadPaperDocx } from '../services/docxExporter';
 import { downloadHostArtifact, requestHostPaperExport } from '../services/hostPaperExport';
-import type { FormulaExportMode, PaperArtifactFormat } from '../services/hostPaperExport';
+import type { AnswerPosition, FormulaExportMode, PaperArtifactFormat } from '../services/hostPaperExport';
+import { getRuntimeConfig } from '../services/runtimeConfigClient';
 
 const API_BASE = getApiBase('/api/question-bank');
-
-type AnswerPosition = 'separate' | 'after-question' | 'hidden';
 
 interface PaperQuestion {
   uid: string;
@@ -122,9 +121,26 @@ function renderSource(question: Question): string {
 const QuestionBankPaper: React.FC = () => {
   const [title, setTitle] = useState(todayTitle());
   const [items, setItems] = useState<PaperQuestion[]>([]);
-  const [answerPosition, setAnswerPosition] = useState<AnswerPosition>('separate');
+  const [answerPosition, setAnswerPosition] = useState<AnswerPosition>('end');
   const [includeDraft, setIncludeDraft] = useState(true);
   const [formulaMode, setFormulaMode] = useState<FormulaExportMode>('word-native');
+  const [exportingFormat, setExportingFormat] = useState<PaperArtifactFormat | null>(null);
+  const [hostReady, setHostReady] = useState(false);
+  const [hostReadinessError, setHostReadinessError] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+    getRuntimeConfig().then(config => {
+      if (!mounted) return;
+      setHostReady(config.nodeRole === 'primary-host');
+      setHostReadinessError(config.nodeRole === 'primary-host' ? '' : '\u5f53\u524d\u7535\u8111\u4e0d\u662f\u6307\u5b9a\u672c\u5730\u6570\u636e\u4e3b\u673a\uff0c\u4e0d\u80fd\u751f\u6210\u6b63\u5f0f\u8bd5\u5377\u6587\u4ef6\u3002');
+    }).catch(() => {
+      if (!mounted) return;
+      setHostReady(false);
+      setHostReadinessError('\u65e0\u6cd5\u786e\u8ba4\u672c\u5730\u6570\u636e\u4e3b\u673a\u72b6\u6001\uff0c\u8bf7\u68c0\u67e5\u684c\u9762\u7aef\u8fd0\u884c\u914d\u7f6e\u3002');
+    });
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -189,40 +205,23 @@ const QuestionBankPaper: React.FC = () => {
     message.success('已按题型重新分组');
   };
 
-  const exportPaper = async () => {
-    try {
-      const record = await downloadPaperDocx({
-        title,
-        answerPosition,
-        includeSource: true,
-        includeAnswerArea: true,
-        questions: items.map((item, index) => ({
-          id: item.question.id,
-          number: index + 1,
-          sectionTitle: item.sectionTitle,
-          score: item.score,
-          question: item.question,
-        })),
-      });
-      message.success(`试卷已导出：${record.fileName}`);
-    } catch (error) {
-      console.error('DOCX export failed', error);
-      message.error('DOCX 导出失败，请稍后重试');
-    }
-  };
-
   const exportHostPaper = async (format: PaperArtifactFormat) => {
+    if (!hostReady || exportingFormat) return;
+    setExportingFormat(format);
     try {
       const result = await requestHostPaperExport(API_BASE, {
         title, format, formulaMode, questionIds: items.map(item => item.question.id),
-        includeAnswers: answerPosition !== 'hidden', subject: items[0]?.question.subject || '',
+        answerPosition, subject: items[0]?.question.subject || '',
       });
       downloadHostArtifact(result);
       const fallback = result.fallbackCount > 0 ? ` (${result.fallbackCount} ${String.fromCharCode(20010, 20844, 24335, 24050, 25353, 26174, 31034, 25928, 26524, 22238, 36864)})` : '';
       message.success(`${result.fileName}${fallback}`);
     } catch (error) {
       console.error('host paper export failed', error);
-      message.error(String.fromCharCode(25968, 25454, 20027, 26426, 23548, 20986, 22833, 36133));
+      const reason = error instanceof Error ? error.message : String.fromCharCode(35831, 31245, 21518, 37325, 35797);
+      message.error(`${String.fromCharCode(25968, 25454, 20027, 26426, 23548, 20986, 22833, 36133)}: ${reason}`);
+    } finally {
+      setExportingFormat(null);
     }
   };
 
@@ -248,21 +247,28 @@ const QuestionBankPaper: React.FC = () => {
             <Checkbox checked={includeDraft} onChange={e => setIncludeDraft(e.target.checked)}>
               包含草稿/待审核题
             </Checkbox>
-            <Radio.Group value={answerPosition} onChange={e => setAnswerPosition(e.target.value)}>
-              <Radio.Button value="separate">答案单独附后</Radio.Button>
-              <Radio.Button value="after-question">答案跟题显示</Radio.Button>
-              <Radio.Button value="hidden">不显示答案</Radio.Button>
-            </Radio.Group>
+            <Space direction="vertical" size={2}>
+              <Radio.Group value={answerPosition} onChange={e => setAnswerPosition(e.target.value)} disabled={!!exportingFormat}>
+                <Radio.Button value="end">{String.fromCharCode(31572, 26696, 38598, 20013, 38468, 21518)}</Radio.Button>
+                <Radio.Button value="after-each">{String.fromCharCode(36880, 39064, 26174, 31034, 31572, 26696)}</Radio.Button>
+              </Radio.Group>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {answerPosition === 'end'
+                  ? String.fromCharCode(31572, 26696, 38598, 20013, 38468, 22312, 35797, 39064, 21518, 65292, 21547, 36873, 25321, 39064, 27719, 24635, 12289, 30693, 35782, 28857, 21644, 35299, 26512, 12290)
+                  : String.fromCharCode(27599, 39064, 21518, 32039, 36319, 31572, 26696, 12289, 30693, 35782, 28857, 21644, 35299, 26512, 65292, 19981, 20877, 29983, 25104, 23614, 37096, 31572, 26696, 21306, 12290)}
+              </Typography.Text>
+            </Space>
             <Button icon={<SplitCellsOutlined />} onClick={applyAutoGroup} disabled={items.length === 0}>
               按题型分组
             </Button>
-            <Button onClick={() => exportHostPaper('pdf')} disabled={items.length === 0}>{String.fromCharCode(23548, 20986, 32, 80, 68, 70)}</Button>
-            <Button type="primary" icon={<FileWordOutlined />} onClick={() => exportHostPaper('word')} disabled={items.length === 0}>
+            <Button onClick={() => exportHostPaper('pdf')} loading={exportingFormat === 'pdf'} disabled={items.length === 0 || !hostReady || !!exportingFormat}>{String.fromCharCode(23548, 20986, 32, 80, 68, 70)}</Button>
+            <Button type="primary" icon={<FileWordOutlined />} onClick={() => exportHostPaper('word')} loading={exportingFormat === 'word'} disabled={items.length === 0 || !hostReady || !!exportingFormat}>
               导出试卷
             </Button>
           </Space>
         }
       >
+        {hostReadinessError && <Alert type="warning" showIcon message={hostReadinessError} style={{ marginBottom: 12 }} />}
         <Space size={16} wrap>
           <Statistic title="题目数" value={items.length} suffix="题" />
           <Statistic title="总分" value={totalScore} suffix="分" />
@@ -323,7 +329,7 @@ const QuestionBankPaper: React.FC = () => {
                       questionType={row.question.type}
                     />
                     <QuestionRichContent question={row.question} />
-                    {answerPosition === 'after-question' && (
+                    {answerPosition === 'after-each' && (
                       <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed #d9d9d9', color: '#455a64' }}>
                         <div><b>答案：</b>{row.question.answer || '未填写'}</div>
                         {row.question.analysis && <div><b>解析：</b>{row.question.analysis}</div>}
@@ -368,7 +374,7 @@ const QuestionBankPaper: React.FC = () => {
         ))
       )}
 
-      {answerPosition === 'separate' && items.length > 0 && (
+      {answerPosition === 'end' && items.length > 0 && (
         <Card title="参考答案与解析">
           <Space direction="vertical" style={{ width: '100%' }}>
             {items.map((item, index) => (

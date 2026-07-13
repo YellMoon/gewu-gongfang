@@ -1,12 +1,15 @@
+import { requestHostPaperExportRuntime } from './hostPaperExportRuntime.mjs';
+
 export type FormulaExportMode = 'word-native' | 'eq-field' | 'mathtype-compatible' | 'latex-vector';
 export type PaperArtifactFormat = 'word' | 'pdf';
+export type AnswerPosition = 'end' | 'after-each' | 'hidden';
 
 export interface HostPaperExportInput {
   title: string;
   format: PaperArtifactFormat;
   formulaMode: FormulaExportMode;
   questionIds: string[];
-  includeAnswers: boolean;
+  answerPosition: AnswerPosition;
   subject?: string;
 }
 
@@ -20,10 +23,7 @@ export interface HostPaperExportResult {
 }
 
 export async function requestHostPaperExport(apiBase: string, input: HostPaperExportInput): Promise<HostPaperExportResult> {
-  const response = await fetch(`${apiBase}/paper-export`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
-  const payload = await response.json();
-  if (!response.ok || !payload.success) throw new Error(payload.error || 'host paper export failed');
-  return payload.data as HostPaperExportResult;
+  return requestHostPaperExportRuntime(apiBase, input) as Promise<HostPaperExportResult>;
 }
 
 export function downloadHostArtifact(result: HostPaperExportResult): void {

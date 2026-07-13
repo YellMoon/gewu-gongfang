@@ -181,6 +181,7 @@ function testQuestionKnowledgePointCrud() {
   withTempDatabase((db) => {
     insertKnowledgePoint(db, 'kp-motion', 'default', '运动学');
     insertKnowledgePoint(db, 'kp-force', 'default', '力与平衡');
+    insertKnowledgePoint(db, 'kp-force-duplicate-name', 'default', '力与平衡');
     insertKnowledgePoint(db, 'kp-other-tenant', 'tenant-b', '隔离知识点');
 
     const created = questionBank.createQuestion(db, {
@@ -200,14 +201,16 @@ function testQuestionKnowledgePointCrud() {
     assert.strictEqual(tags[0].name, '运动学');
 
     question = questionBank.setQuestionKnowledgePoints(db, created.id, {
-      knowledge_point_ids: ['kp-motion', 'kp-force'],
+      knowledge_point_ids: ['kp-motion', 'kp-force', 'kp-force-duplicate-name'],
     }, 'default');
-    assert.deepStrictEqual(question.knowledge_point_ids.sort(), ['kp-force', 'kp-motion']);
+    assert.deepStrictEqual(question.knowledge_point_ids.sort(), ['kp-force', 'kp-force-duplicate-name', 'kp-motion']);
+    assert.deepStrictEqual(question.knowledge_point_names, ['力与平衡', '运动学'], 'export-facing knowledge names must be stable and human-readable');
 
     question = questionBank.removeQuestionKnowledgePoints(db, created.id, {
       knowledge_point_ids: ['kp-motion'],
     }, 'default');
-    assert.deepStrictEqual(question.knowledge_point_ids, ['kp-force']);
+    assert.deepStrictEqual(question.knowledge_point_ids.sort(), ['kp-force', 'kp-force-duplicate-name']);
+    assert.deepStrictEqual(question.knowledge_point_names, ['\u529b\u4e0e\u5e73\u8861'], 'removing another ID must keep the deduplicated display name');
 
     assert.throws(() => {
       questionBank.addQuestionKnowledgePoints(db, created.id, {

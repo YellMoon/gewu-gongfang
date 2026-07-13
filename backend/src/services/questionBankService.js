@@ -694,6 +694,7 @@ class QuestionBankService {
   _mapQuestion(row, assets = []) {
     if (!row) return null;
     const knowledgeIds = row.knowledge_point_ids ? String(row.knowledge_point_ids).split(',').filter(Boolean) : [];
+    const knowledgeNames = row.knowledge_point_names ? String(row.knowledge_point_names).split('\u001f').filter(Boolean) : [];
     const modelIds = row.model_point_ids ? String(row.model_point_ids).split(',').filter(Boolean) : [];
     const options = parseJsonArray(row.options_json);
     return {
@@ -714,6 +715,8 @@ class QuestionBankService {
       } : null,
       knowledge_point_ids: knowledgeIds,
       knowledge_ids: knowledgeIds,
+      knowledge_point_names: knowledgeNames,
+      knowledge_points: knowledgeNames,
       model_point_ids: modelIds,
       model_ids: modelIds,
       status: normalizeQuestionStatus(row.status),
@@ -741,6 +744,13 @@ class QuestionBankService {
                    qc.oss_key AS content_oss_key,
                    qc.oss_url AS content_oss_url,
                    GROUP_CONCAT(DISTINCT qkp.knowledge_point_id) AS knowledge_point_ids,
+                   (SELECT GROUP_CONCAT(name, char(31)) FROM (
+                      SELECT DISTINCT kp.name AS name
+                      FROM question_knowledge_points ordered_qkp
+                      JOIN knowledge_points kp ON kp.id = ordered_qkp.knowledge_point_id
+                      WHERE ordered_qkp.question_id = q.id AND kp.tenant_id = q.tenant_id AND kp.deleted = 0
+                      ORDER BY kp.name ASC, kp.id ASC
+                   )) AS knowledge_point_names,
                    GROUP_CONCAT(DISTINCT qmp.model_point_id) AS model_point_ids
             FROM questions q
             LEFT JOIN question_contents qc ON qc.question_id = q.id AND qc.deleted = 0
