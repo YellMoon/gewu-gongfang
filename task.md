@@ -461,4 +461,12 @@ Status: active — implementation and multi-end verification in progress
 - `npm test`、生产构建、四组聚焦测试、独立规格审查及四轮代码质量审查通过。
 - 环境限制：LibreOffice 不可用，Word COM 转 PDF 超时，因此 DOCX 尚未完成真实 Word 逐页视觉验收；该项保留在文档渲染矩阵中，不能据此宣称全链路完成。
 
+### Task 12 验证证据（2026-07-14）
+
+- 桌面普通电脑可经云中继提交精确有序的 V2 组卷任务；未获云确认时只保留本地草稿。任务历史持久化，重启后恢复轮询，并支持取消、新幂等键重试、刷新和鉴权下载。
+- Playwright 新鲜会话验证完成下载、55% 渲染任务取消、720px 响应式和控制台健康；取消后显示“已取消”，窄屏 `documentWidth = viewportWidth = 720`，0 error、0 warning。
+- 小程序使用不含答案/解析/富文本/OLE 的最小预览索引，按同租户角色裁剪；只提交真实、有序题目 ID、答案位置、公式模式、目标主机和幂等键。
+- 微信开发者工具真实编译并进入 `pages/question-bank/index`，离线态正确呈现题库组卷、两种答案位置、四种公式模式、真实任务入口和任务记录；本地 `127.0.0.1:3999` 被合法域名校验拒绝，已作为发布前域名配置检查项记录，未误报为云端联通。
+- 桌面聚焦测试、relay/preview/workflow/权限聚焦测试、TypeScript、小程序 typecheck 与 WeApp 构建均通过；完整命令与边界记录见 `docs/verification-2026-07-14-question-formula-editor.md`。
+
 ---

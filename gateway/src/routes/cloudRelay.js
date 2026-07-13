@@ -5,6 +5,7 @@ const { scopeBusinessSnapshot } = require('../services/dataScopeService');
 const { isApprovedActive, roleForUser } = require('../services/authorizationPolicy');
 const { issueRelayAssertion } = require('../services/relayAssertionService');
 const taskService = require('../services/cloudRelayTaskService');
+const { buildQuestionPreviewIndex, safeHostBaseUrl } = require('../services/questionPreviewIndex');
 
 const router = express.Router();
 
@@ -215,6 +216,15 @@ router.get('/snapshots/read', requireApprovedSnapshotUser, (req, res) => {
     success: true,
     snapshot: filterSnapshotForUser(snapshot, req.user),
   });
+});
+
+router.get('/snapshots/questions', requireApprovedSnapshotUser, (req, res) => {
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM readonly_snapshots WHERE snapshot_type='full' ORDER BY created_at DESC LIMIT 1").get();
+  const host = db.prepare("SELECT host_device_id,status,base_url,updated_at FROM host_heartbeats ORDER BY updated_at DESC LIMIT 1").get();
+  const hostAvailable = Boolean(host && host.status !== 'offline' && Date.now() - Date.parse(host.updated_at) <= Number(process.env.GEWU_HOST_HEARTBEAT_TTL_MS || 300000));
+  const snapshot = row ? { ...row, payload: JSON.parse(row.payload || '{}') } : null;
+  res.json({ success: true, ...buildQuestionPreviewIndex(snapshot, req.user), hostAvailable, targetHostDeviceId: hostAvailable ? host.host_device_id : null, hostBaseUrl: hostAvailable ? safeHostBaseUrl(host.base_url) : null });
 });
 
 router.post('/desktop-sync/devices/register', requireApprovedSnapshotUser, (req,res)=>{

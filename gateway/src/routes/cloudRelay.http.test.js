@@ -25,12 +25,28 @@ const pairingRouter = require('./desktopPairing');
   assert.strictEqual((await call('/snapshots/publish', { method: 'POST', body: '{}' })).status, 403);
   assert.strictEqual((await call('/tasks')).status, 403);
   assert.strictEqual((await call('/tasks/x/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'wrong' }, body: '{}' })).status, 403);
-  assert.strictEqual((await call('/host/heartbeat', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ hostDeviceId: 'host1' }) })).status, 200);
+  assert.strictEqual((await call('/host/heartbeat', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ hostDeviceId: 'host1', baseUrl: 'https://host.example/base/' }) })).status, 200);
   const now = new Date().toISOString();
   getDb().prepare("INSERT INTO miniapp_tasks (id,task_type,status,payload,created_by,created_at,updated_at) VALUES ('task1','question-paper','pending_host','{}','u1',?,?)").run(now, now);
   assert.strictEqual((await call('/tasks', { headers: { 'x-gewu-host-token': 'test-host-secret' } })).status, 200);
   assert.strictEqual((await call('/tasks/task1/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: '{}' })).status, 200);
-  const approved = id => JSON.stringify({ id, user_type: 'student', student_id: id, review_status: 'approved', status: 1, login_enabled: 1 });
+  const approved = id => JSON.stringify({ id, user_type: 'student', student_id: id, tenant_id: 'tenant-a', review_status: 'approved', status: 1, login_enabled: 1 });
+  const admin = id => JSON.stringify({ id, user_type: 'admin', tenant_id: 'tenant-a', review_status: 'approved', status: 1, login_enabled: 1 });
+  const previewSnapshot = { questions: [
+    { id: 'q-draft', tenant_id: 'tenant-a', type: 'fill', stem: 'draft', answer: 'secret-draft', storage_state: 'local_draft' },
+    { id: 'q-visible', tenant_id: 'tenant-a', type: 'choice', stem: 'visible', answer: 'secret-answer', analysis: 'secret-analysis', storage_state: 'host_committed' },
+    { id: 'q-other', tenant_id: 'tenant-b', type: 'fill', stem: 'other tenant', storage_state: 'host_committed' },
+  ] };
+  assert.strictEqual((await call('/snapshots/publish', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ snapshotType: 'full', version: 'preview-v1', payload: previewSnapshot }) })).status, 200);
+  const studentPreview = await call('/snapshots/questions', { headers: { 'x-test-user': approved('u1') } });
+  assert.strictEqual(studentPreview.status, 200);
+  const studentPreviewBody = await studentPreview.json();
+  assert.deepStrictEqual(studentPreviewBody.questions.map(item => item.id), ['q-visible']);
+  assert.deepStrictEqual([studentPreviewBody.hostAvailable, studentPreviewBody.targetHostDeviceId], [true, 'host1']);
+  assert.strictEqual(studentPreviewBody.hostBaseUrl, 'https://host.example/base');
+  assert.ok(!JSON.stringify(studentPreviewBody).includes('secret'));
+  const adminPreview = await call('/snapshots/questions', { headers: { 'x-test-user': admin('admin1') } });
+  assert.deepStrictEqual((await adminPreview.json()).questions.map(item => item.id), ['q-draft', 'q-visible']);
   const teacher = id => JSON.stringify({ id, user_type:'teacher', teacher_id:'t1', review_status:'approved', status:1, login_enabled:1 });
   assert.strictEqual((await call('/desktop-sync/devices/register',{method:'POST',headers:{'x-test-user':teacher('teacher1'),'x-device-id':'cloud-d1'},body:'{}'})).status,200);
   getDb().prepare(`INSERT INTO desktop_device_pairings(id,device_id,device_name,phone,secret_hash,pairing_code,status,expires_at,user_id,created_at,updated_at)
