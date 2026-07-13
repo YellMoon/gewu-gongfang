@@ -17,11 +17,11 @@ process.env.READ_DB_PATH = process.env.DB_PATH;
 const { DatabaseService } = require('../database');
 const service = new DatabaseService();
 const now = new Date().toISOString();
-for (const id of ['relay-u1', 'relay-u2']) {
+for (const id of ['relay-u1', 'relay-u2', 'relay-admin']) {
   service.db.prepare(`INSERT INTO users
     (id, phone, name, role, status, login_enabled, review_status, deleted, created_at, updated_at)
-    VALUES (?, ?, ?, 'student', 1, 1, 'approved', 0, ?, ?)`)
-    .run(id, id === 'relay-u1' ? '13900000021' : '13900000022', id, now, now);
+    VALUES (?, ?, ?, ?, 1, 1, 'approved', 0, ?, ?)`)
+    .run(id, id === 'relay-u1' ? '13900000021' : id === 'relay-u2' ? '13900000022' : '13900000023', id, id === 'relay-admin' ? 'admin' : 'student', now, now);
 }
 const databaseModule = require('../database');
 databaseModule.getInstance = () => service;
@@ -41,7 +41,22 @@ const token = id => jwt.sign({ id }, process.env.JWT_SECRET, { algorithm: 'HS256
   const userHeaders = id => ({ authorization: `Bearer ${token(id)}` });
   const hostHeaders = { 'x-gewu-host-token': 'backend-host-secret' };
   try {
-    assert.strictEqual((await call('/host/heartbeat', { method: 'POST', headers: hostHeaders, body: JSON.stringify({ hostDeviceId: 'backend-host' }) })).status, 200);
+    assert.strictEqual((await call('/host/heartbeat', { method: 'POST', headers: hostHeaders, body: JSON.stringify({ hostDeviceId: 'backend-host', baseUrl: 'https://host.example/base/' }) })).status, 200);
+    const previewSnapshot = { questions: [
+      { id: 'q-draft', tenant_id: 'default', type: 'fill', stem: 'draft', answer: 'secret-draft', storage_state: 'local_draft' },
+      { id: 'q-visible', tenant_id: 'default', type: 'choice', stem: 'visible', answer: 'secret-answer', storage_state: 'host_committed' },
+      { id: 'q-other', tenant_id: 'tenant-b', type: 'fill', stem: 'other', storage_state: 'host_committed' },
+    ] };
+    assert.strictEqual((await call('/snapshots/publish', { method: 'POST', headers: hostHeaders, body: JSON.stringify({ snapshotType: 'full', version: 'preview-v1', payload: previewSnapshot }) })).status, 200);
+    const studentPreview = await call('/snapshots/questions', { headers: userHeaders('relay-u1') });
+    assert.strictEqual(studentPreview.status, 200);
+    const studentPreviewBody = await studentPreview.json();
+    assert.deepStrictEqual(studentPreviewBody.questions.map(item => item.id), ['q-visible']);
+    assert.deepStrictEqual([studentPreviewBody.hostAvailable, studentPreviewBody.targetHostDeviceId], [true, 'backend-host']);
+    assert.strictEqual(studentPreviewBody.hostBaseUrl, 'https://host.example/base');
+    assert.ok(!JSON.stringify(studentPreviewBody).includes('secret'));
+    const adminPreview = await call('/snapshots/questions', { headers: userHeaders('relay-admin') });
+    assert.deepStrictEqual((await adminPreview.json()).questions.map(item => item.id), ['q-draft', 'q-visible']);
     const firstBody = { protocolVersion: 2, taskType: 'paper-export-pdf', targetHostDeviceId: 'backend-host', payload: { questionIds: ['q1'] } };
     const first = await call('/tasks', { method: 'POST', headers: { ...userHeaders('relay-u1'), 'x-idempotency-key': 'backend-idem-1' }, body: JSON.stringify(firstBody) });
     assert.strictEqual(first.status, 200);

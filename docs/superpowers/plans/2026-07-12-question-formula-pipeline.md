@@ -208,11 +208,11 @@ Verification: front-end and backend validators enforce aligned TipTap node/mark 
 - Modify: `src/components/QuestionBasket.tsx`
 - Create: `docs/verification-2026-07-12-question-formula-editor.md`
 
-- [ ] Add selection controls for four output modes with truthful compatibility descriptions and host readiness state.
-- [ ] Show job progress, failure locations, fallback summary and download actions; never expose raw formula payloads.
-- [ ] Run the real desktop app and exercise import → edit → save → export at desktop and narrow widths, keyboard-only paths, loading/error/recovery states and console health.
-- [ ] Capture safe screenshots/check records and complete the visual evidence record against selected UI checks.
-- [ ] Commit.
+- [x] Add selection controls for four output modes with truthful compatibility descriptions and host readiness state.
+- [x] Show job progress, failure locations, fallback summary and download actions; never expose raw formula payloads.
+- [x] Run the real desktop app and exercise import → edit → save → export at desktop and narrow widths, keyboard-only paths, loading/error/recovery states and console health.
+- [x] Capture safe screenshots/check records and complete the visual evidence record against selected UI checks.
+- [x] Commit.
 
 ### Task 13: Document render matrix and regression closure
 

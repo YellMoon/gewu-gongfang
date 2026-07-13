@@ -167,6 +167,36 @@
   border-bottom: 1rpx solid rgba(23, 32, 51, 0.07);
 }
 
+.question-preview-item.selected {
+  border-color: #2f6fed;
+  background: #eef4ff;
+}
+
+.picker-row {
+  margin-top: 20rpx;
+  padding: 24rpx;
+  border: 1rpx solid #dce3ec;
+  border-radius: 16rpx;
+  color: #26364a;
+  background: #fff;
+}
+
+.task-item {
+  margin-top: 20rpx;
+  padding: 22rpx;
+  border: 1rpx solid #e5eaf0;
+  border-radius: 16rpx;
+  background: #fff;
+}
+
+.task-actions {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 16rpx;
+}
+
+.task-error { color: #b42318; font-size: 24rpx; }
+
 .question-preview-item:last-child {
   border-bottom: 0;
 }

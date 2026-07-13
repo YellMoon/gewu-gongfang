@@ -54,9 +54,7 @@ function exportRoot() {
 }
 
 function buildSnapshotPayload(db) {
-  if (typeof db.exportAllData === 'function') return db.exportAllData();
-
-  return {
+  const payload = typeof db.exportAllData === 'function' ? db.exportAllData() : {
     students: typeof db.getAllStudents === 'function' ? db.getAllStudents() : [],
     courses: typeof db.getAllCourses === 'function' ? db.getAllCourses() : [],
     schedules: typeof db.getAllSchedules === 'function' ? db.getAllSchedules() : [],
@@ -65,6 +63,16 @@ function buildSnapshotPayload(db) {
     schools: typeof db.getAllSchools === 'function' ? db.getAllSchools() : [],
     institutions: typeof db.getAllInstitutions === 'function' ? db.getAllInstitutions() : [],
   };
+  const sqlite = db.db || db;
+  const questionPreviews = typeof sqlite?.prepare === 'function' ? sqlite.prepare(`SELECT q.id,q.tenant_id,q.type,q.subject,q.difficulty,q.storage_state,
+    (SELECT c.stem FROM question_contents c WHERE c.question_id=q.id AND COALESCE(c.deleted,0)=0 ORDER BY c.version DESC,c.updated_at DESC LIMIT 1) AS stem
+    FROM questions q WHERE COALESCE(q.deleted,0)=0 ORDER BY q.created_at,q.id`).all().map(row => ({
+      id: String(row.id), tenantId: String(row.tenant_id || 'default'), type: String(row.type || 'unknown'),
+      stemPreview: String(row.stem || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 240),
+      status: String(row.storage_state || 'local_draft'), ...(row.subject ? { subject: row.subject } : {}),
+      ...(row.difficulty ? { difficulty: row.difficulty } : {}),
+    })).filter(row => row.stemPreview) : [];
+  return { ...payload, question_previews: questionPreviews };
 }
 
 function selectQuestions(db, payload = {}) {

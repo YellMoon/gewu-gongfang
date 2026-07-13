@@ -7,6 +7,7 @@ const client = fs.readFileSync('backend/src/services/cloudRelayClient.js', 'utf-
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 
 assert.ok(route.includes('processMiniappTask'), 'host cloud relay route should process miniapp tasks');
+assert.ok(route.includes('question_previews') && route.includes('stemPreview'), 'host snapshots must publish a minimal question preview index');
 assert.ok(route.includes("task.task_type === 'question-paper'"), 'host should process miniapp paper assembly tasks');
 assert.ok(route.includes("task.task_type === 'paper-export-word'"), 'host should process miniapp Word export tasks');
 assert.ok(route.includes("task.task_type === 'paper-export-pdf'"), 'host should process miniapp PDF export tasks');
