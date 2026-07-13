@@ -350,7 +350,7 @@ Status: implemented, verified, deployed, packaged, uploaded, and pushed
 - 四端未统一前不得标记完成。
 # Task: 2026-07-12 题库公式全链路与所见即所得编辑
 
-Status: active — design approved, implementation planning in progress
+Status: active — implementation and multi-end verification in progress
 
 ## Objective
 
@@ -368,8 +368,8 @@ Status: active — design approved, implementation planning in progress
 - [x] 实现正文/批注共用内容遍历器与 EQ 域状态机。
 - [x] 实现 OMML、EQ、MathType → 规范化 LaTeX转换及质量报告。
 - [x] 迁移题库富文本与公式数据模型，验证保存、重载和同步兼容性。
-- [ ] 实现专业桌面所见即所得编辑器并完成真实运行时视觉/交互验证。
-- [ ] 实现数据主机四格式导出适配器、显示优先回退和失败阻断。
+- [x] 实现专业桌面所见即所得编辑器并完成真实运行时视觉/交互验证。
+- [x] 实现数据主机四格式导出适配器、显示优先回退和失败阻断。
 - [x] 将 `C:\Users\83423\Desktop\组卷导出模板.docx` 固化为 Word/PDF 默认组卷模板，支持“答案统一置后”和“每题后紧跟答案块”两种模式。
 - [x] 答案置后模式在参考答案开头汇总选择题答案，随后逐题输出答案、【知识点】和【解析】；逐题模式按题目→答案/知识点/解析交错输出。
 - [ ] 生成并渲染四类 DOCX/PDF，验证公式数量、字号、基线、裁切和分页。
@@ -412,6 +412,32 @@ Status: active — design approved, implementation planning in progress
 - 浏览器同步先完整验证再原子应用；非法记录不会造成部分写入，旧客户端局部更新保留未修改 section 的公式、图片、marks 与稳定 ID。
 - 增量 `search_text` 迁移按批次短事务回填，使用与新写入相同的纯文本投影并支持重启幂等。
 - 聚焦后端/浏览器/同步测试与生产构建通过；独立规格审查和代码质量审查通过。
+
+### Task 9 验证证据（2026-07-13）
+
+- 题干、选项、选项正确性、小题及小题答案、主答案和解析均使用稳定 ID 的结构化 TipTap 编辑器；三处旧的重复公式文本域与重复题干/答案编辑入口已移除。
+- 旧题型别名、旧答案与旧公式可投影到新结构；保存、重试、双击保存、未保存离开、TipTap 水合默认值及资源引用 roundtrip 均有行为测试。
+- 内部 `question-asset://` 引用在进入 TipTap 前使用安全占位并在持久化输出时恢复，初始化阶段和 React NodeView 阶段均不再触发 CSP 错误或丢失原始资源引用。
+- fresh Playwright 真实链路验证：干净取消不弹确认，真实修改后可见确认框计数为 1；公式双击值为 `\\frac{a}{b}`；单选切换、选项上移、小题公式、图片和 720px 窄窗口均通过，console errors 为 0。
+- 视觉截图已生成于本地验证目录；其中脏确认截图未可靠呈现确认框，因此该项只采用可见 DOM 计数证据，不把截图误报为视觉证据。
+- `test:rich-content`、TypeScript、UI regression、整仓 `npm test` 与生产构建均通过。
+
+### Task 10 验证证据（2026-07-13）
+
+- Word native 与 EQ 模式仅在有真实 OMML 证据时声明成功；项目没有经审计的 MathType writer/fixture，因此 MathType 请求明确回退到 LaTeX 矢量公式并报告 `MATHTYPE_WRITER_UNAVAILABLE`，不伪造 OLE/MTEF。
+- 公式准备的 MathML→OMML、manifest policy、KaTeX/MathML/Sharp worker 使用同一硬截止时间；阻塞 worker 与 Python 子进程可终止，Node 事件循环不被同步转换阻塞。
+- 最终产物门禁按每个公式索引核对 DOCX 关系、extent/crop、OMML/EQ 容器与 PDF 页、annotation、绘制区域；源码残留、空白公式、断链媒体或索引集合不一致会阻止交付。
+- SVG、PNG 与 PDF 对抗覆盖透明/隐藏/零面积、`tRNS` 灰度/RGB/调色板及 1-bit padding、CTM、clip `W n/W f`、框外/页外、无字体资源、开放退化填充与组合 fill/stroke；最终 Python 套件 38/38 通过。
+- `paperArtifactService`、整仓 `npm test`、生产构建、独立规格/质量复审与 `git diff --check` 通过。
+
+### Task 11 第一阶段验证证据（2026-07-13）
+
+- 直接导出与 relay host 共用有序、唯一、全量命中的 `questionIds` 解析；重复、缺失、跨租户和无权限草稿选择整体失败，不静默替换题目。
+- Backend/Gateway 双 schema 可迁移旧表，V2 任务支持 durable idempotency/request hash、指定 host、原子 claim、lease、claim token、`row_version` CAS、进度、失败、取消与 V1/V2 隔离。
+- V2 长渲染使用串行 heartbeat 持续续租并以最新版本完成；续租失败禁止完成并清理孤儿产物。V1（含无 hostId 的旧轮询）也原子领取，旧主机仅在 shared lease 有效期内兼容无 token 完成。
+- Cloud client 对非 2xx 与 `success:false` 结构化抛错；backend 完整 HTTP 合同验证同幂等键不同 body 返回 409、missing/non-owner 返回 404、错误 host token 返回 403，测试 bypass 仅可在显式 test 环境启用。
+- Backend/Gateway 任务服务文件哈希一致；定向 HTTP/service/schema/client/host 测试、完整 `test:backend`、整仓 `npm test`、生产构建及独立对抗复审通过。
+- 尚未完成不可变题目快照、artifact repository/授权下载、崩溃恢复与保留清理；这些仍属于 Task 11 第二阶段，不能据第一阶段声明完整任务链路完成。
 
 ### Task 11A 验证证据（2026-07-13）
 

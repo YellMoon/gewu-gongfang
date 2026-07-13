@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 const { unzipSync, strFromU8 } = require('fflate');
 
-const { createLocalQuestionImageResolver, normalizeAnswerPosition, normalizedQuestion, writePaperArtifact } = require('./paperArtifactService');
+const { createLocalQuestionImageResolver, normalizeAnswerPosition, normalizedQuestion, prepareFormulaRows, resolveSupportScript, writePaperArtifact } = require('./paperArtifactService');
 
 const TEMPLATE_HASH = '631d6bfb41b2606837ee91488161917da7b5a700333b1e66c1ce05c74cd9dfdb';
 const templatePath = path.join(__dirname, '..', '..', 'resources', 'paper', 'default-paper-template.docx');
@@ -23,6 +23,72 @@ const countOf = (text, needle) => text.split(needle).length - 1;
   assert.strictEqual(normalizeAnswerPosition('inline'), 'after-each');
   assert.strictEqual(normalizeAnswerPosition('after-question'), 'after-each');
   assert.strictEqual(normalizeAnswerPosition('hidden'), 'hidden');
+  const originalCwd = process.cwd();
+  const unrelatedCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-unrelated-cwd-'));
+  try {
+    process.chdir(unrelatedCwd);
+    assert.ok(resolveSupportScript('modules/question-bank/export/visible_gate.py').endsWith(path.join('modules', 'question-bank', 'export', 'visible_gate.py')), 'support scripts must resolve outside the project cwd');
+  } finally {
+    process.chdir(originalCwd);
+    fs.rmSync(unrelatedCwd, { recursive: true, force: true });
+  }
+  const formulaRow = (index, latex = 'x') => ({ latex, display: false, questionId: `q-limit-${index}`, location: `subQuestions[${index}].answer`, index });
+  await assert.rejects(
+    () => prepareFormulaRows([formulaRow(0, 'x'.repeat(20001))], 'latex-vector'),
+    error => error.code === 'FORMULA_VISIBLE_GATE_FAILED' && error.diagnostics?.[0]?.code === 'FORMULA_LATEX_LENGTH_LIMIT_EXCEEDED' && error.diagnostics[0].questionId === 'q-limit-0'
+  );
+  await assert.rejects(
+    () => prepareFormulaRows(Array.from({ length: 2001 }, (_, index) => formulaRow(index)), 'latex-vector'),
+    error => error.code === 'FORMULA_VISIBLE_GATE_FAILED' && error.diagnostics?.[0]?.code === 'FORMULA_COUNT_LIMIT_EXCEEDED'
+  );
+  await assert.rejects(
+    () => prepareFormulaRows(Array.from({ length: 51 }, (_, index) => formulaRow(index, 'x'.repeat(20000))), 'latex-vector'),
+    error => error.code === 'FORMULA_VISIBLE_GATE_FAILED' && error.diagnostics?.[0]?.code === 'FORMULA_TOTAL_LATEX_LIMIT_EXCEEDED' && error.diagnostics[0].questionId === 'q-limit-50'
+  );
+  await assert.rejects(
+    () => prepareFormulaRows([formulaRow(0)], 'latex-vector', { renderFormula: async () => ({ svg: '<svg/>', width: 4096, height: 10 }), rasterizeFormula: async () => Buffer.from('png') }),
+    error => error.code === 'FORMULA_VISIBLE_GATE_FAILED' && error.diagnostics?.[0]?.code === 'FORMULA_RENDER_BOUNDS_LIMIT_EXCEEDED'
+  );
+  let rasterTarget;
+  await prepareFormulaRows([formulaRow(0)], 'latex-vector', {
+    renderFormula: async () => ({ svg: '<svg/>', width: 1000, height: 250 }),
+    rasterizeFormula: async (_rendered, target) => { rasterTarget = target; return Buffer.from('png'); },
+  });
+  assert.ok(rasterTarget.width * rasterTarget.height <= rasterTarget.pixelBudget && rasterTarget.width <= 2000, 'rasterization must obey the explicit pixel budget instead of fixed 4x enlargement');
+  const blockingStarted = Date.now();
+  await assert.rejects(
+    () => prepareFormulaRows([formulaRow(0)], 'latex-vector', { formulaDeadlineMs: 30, formulaWorkerPath: path.join(__dirname, 'fixtures', 'blockingFormulaWorker.js') }),
+    error => error.code === 'FORMULA_VISIBLE_GATE_FAILED' && error.diagnostics?.[0]?.code === 'FORMULA_PREPARATION_TIMEOUT'
+  );
+  assert.ok(Date.now() - blockingStarted < 2000, 'blocking CPU worker must be terminated before timeout rejection returns');
+  let eventLoopAdvanced = false;
+  setTimeout(() => { eventLoopAdvanced = true; }, 5);
+  const blockingPythonStarted = Date.now();
+  await assert.rejects(
+    () => prepareFormulaRows([formulaRow(0)], 'latex-vector', {
+      formulaDeadlineMs: 500,
+      formulaPolicyScript: path.join(__dirname, 'fixtures', 'blockingPython.py'),
+      renderFormula: async () => ({ svg: '<svg viewBox="0 0 1 1"><path d="M0 0L1 1"/></svg>', width: 10, height: 10 }),
+      rasterizeFormula: async () => Buffer.from('png'),
+    }),
+    error => error.code === 'FORMULA_VISIBLE_GATE_FAILED' && error.diagnostics?.[0]?.code === 'FORMULA_PREPARATION_TIMEOUT'
+  );
+  assert.ok(eventLoopAdvanced, 'Python formula conversion must not block the Node event loop');
+  assert.ok(Date.now() - blockingPythonStarted < 2000, 'blocking Python conversion must be terminated before timeout rejection returns');
+  await assert.rejects(
+    () => prepareFormulaRows([formulaRow(0)], 'word-native', {
+      allowNative: true,
+      formulaDeadlineMs: 1000,
+      formulaMathmlToOmmlScript: path.join(__dirname, 'fixtures', 'blockingPython.py'),
+    }),
+    error => error.code === 'FORMULA_VISIBLE_GATE_FAILED' && error.diagnostics?.[0]?.code === 'FORMULA_PREPARATION_TIMEOUT'
+  );
+  let activeFormulaRenders = 0; let peakFormulaRenders = 0;
+  await prepareFormulaRows(Array.from({ length: 12 }, (_, index) => formulaRow(index)), 'latex-vector', {
+    renderFormula: async () => { activeFormulaRenders += 1; peakFormulaRenders = Math.max(peakFormulaRenders, activeFormulaRenders); await new Promise(resolve => setTimeout(resolve, 5)); activeFormulaRenders -= 1; return { svg: '<svg viewBox="0 0 1 1"><path d="M0 0L1 1"/></svg>', width: 10, height: 10 }; },
+    rasterizeFormula: async () => Buffer.from('png'),
+  });
+  assert.ok(peakFormulaRenders <= 4, `formula preparation concurrency must be bounded, observed ${peakFormulaRenders}`);
 
   const templateFiles = unzipSync(fs.readFileSync(templatePath));
   const preserveOnlyParts = ['customXml/item1.xml', 'customXml/_rels/item1.xml.rels', 'docProps/app.xml', 'word/endnotes.xml'];
@@ -88,12 +154,82 @@ const countOf = (text, needle) => text.split(needle).length - 1;
   const hiddenPdf = await writePaperArtifact('pdf', { title: 'hidden', answerPosition: 'hidden' }, questions, { root });
   assert.ok(!hiddenPdf.semanticText.includes('答案：B') && !hiddenPdf.semanticText.includes('【知识点】') && !hiddenPdf.semanticText.includes('参考答案'));
 
+  const hiddenAnswerFormula = [{ id: 'q-hidden-formula', type: 'single', stem: 'plain stem', answer: '$x+1$' }];
+  const hiddenFormulaWord = await writePaperArtifact('word', { title: 'hidden-formula', answerPosition: 'hidden', formulaMode: 'word-native' }, hiddenAnswerFormula, { root });
+  assert.strictEqual(hiddenFormulaWord.formulaCount, 0, 'formulas omitted by answer placement must not be reported as visible formulas');
+  assert.strictEqual(hiddenFormulaWord.questionCount, 1);
+  assert.match(hiddenFormulaWord.sha256, /^[a-f0-9]{64}$/);
+  assert.strictEqual(hiddenFormulaWord.pageCount, null, 'DOCX page count must remain explicitly unknown until a real renderer runs');
+
+  const subAnswerFormula = [{ id: 'q-sub-answer', type: 'single', rich_content: { type: 'question-document', sections: { stem: { type: 'doc', content: [] }, options: [], subQuestions: [{ label: '(1)', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'part' }] }] }, answer: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'formula', attrs: { canonicalLatex: 'x+1' } }] }] } }], answer: { type: 'doc', content: [] }, analysis: { type: 'doc', content: [] } } } }];
+  for (const answerPosition of ['end', 'after-each']) {
+    const artifact = await writePaperArtifact('word', { title: `sub-answer-${answerPosition}`, answerPosition, formulaMode: 'latex-vector' }, subAnswerFormula, { root });
+    assert.strictEqual(artifact.formulaCount, 1, `${answerPosition} must include sub-question answer formulas in the manifest`);
+    const xml = strFromU8(unzipSync(fs.readFileSync(artifact.filePath))['word/document.xml']);
+    assert.ok(xml.includes('GEWU_FORMULA_0'), `${answerPosition} must render the sub-question answer`);
+  }
+  const hiddenSubAnswer = await writePaperArtifact('word', { title: 'sub-answer-hidden', answerPosition: 'hidden', formulaMode: 'latex-vector' }, subAnswerFormula, { root });
+  assert.strictEqual(hiddenSubAnswer.formulaCount, 0, 'hidden must omit sub-question answers from output and manifest');
+
+  const legacySubAnswerFormula = [{ id: 'q-legacy-sub', type: 'single', stem: 'legacy parent', sub_questions: [{ label: '(a)', content: 'legacy part $y$', answer: 'legacy result $z+1$' }] }];
+  for (const answerPosition of ['end', 'after-each']) {
+    const artifact = await writePaperArtifact('word', { title: `legacy-sub-${answerPosition}`, answerPosition, formulaMode: 'latex-vector' }, legacySubAnswerFormula, { root });
+    assert.strictEqual(artifact.formulaCount, 2, `${answerPosition} must include legacy sub-question content and answer formulas`);
+    const text = textOf(strFromU8(unzipSync(fs.readFileSync(artifact.filePath))['word/document.xml']));
+    assert.ok(text.includes('legacy part') && text.includes('legacy result'), `${answerPosition} must render legacy sub-question content and answer`);
+  }
+  const hiddenLegacySub = await writePaperArtifact('word', { title: 'legacy-sub-hidden', answerPosition: 'hidden', formulaMode: 'latex-vector' }, legacySubAnswerFormula, { root });
+  assert.strictEqual(hiddenLegacySub.formulaCount, 1, 'hidden must keep legacy sub-question content formula but omit its answer formula');
+
+  const concurrent = await Promise.all(Array.from({ length: 8 }, () => writePaperArtifact('word', { title: 'same-title', answerPosition: 'hidden' }, [{ type: 'single', stem: 'plain' }], { root })));
+  assert.strictEqual(new Set(concurrent.map(item => item.fileName)).size, concurrent.length, 'concurrent exports in the same millisecond must use collision-resistant names');
+
+  const modeQuestion = [{ id: 'q-mode', type: 'single', stem: 'mode $\\frac{a}{b}$', answer: 'A' }];
+  const mathtypeFallback = await writePaperArtifact('word', { title: 'mathtype-fallback', answerPosition: 'hidden', formulaMode: 'mathtype-compatible' }, modeQuestion, { root });
+  assert.deepStrictEqual(mathtypeFallback.effectiveFormulaModes, ['latex-vector']);
+  assert.strictEqual(mathtypeFallback.fallbackCount, 1);
+  assert.ok(mathtypeFallback.diagnostics.some(item => item.code === 'MATHTYPE_WRITER_UNAVAILABLE' && item.questionId === 'q-mode' && item.location === 'stem'));
+  const mathtypeFiles = unzipSync(fs.readFileSync(mathtypeFallback.filePath));
+  assert.ok(!Object.keys(mathtypeFiles).some(name => name.startsWith('word/embeddings/')), 'vector fallback must not masquerade as MathType OLE');
+  assert.ok(!strFromU8(mathtypeFiles['word/_rels/document.xml.rels']).includes('/oleObject'));
+
+  const pdfNativeFallback = await writePaperArtifact('pdf', { title: 'pdf-native-fallback', answerPosition: 'hidden', formulaMode: 'word-native' }, modeQuestion, { root });
+  assert.deepStrictEqual(pdfNativeFallback.effectiveFormulaModes, ['latex-vector']);
+  assert.strictEqual(pdfNativeFallback.fallbackCount, 1, 'PDF vectorization must be reported as a fallback from a requested editable Word mode');
+  assert.strictEqual(pdfNativeFallback.formulaCount, 1);
+  assert.ok(pdfNativeFallback.pageCount >= 1);
+  assert.match(pdfNativeFallback.sha256, /^[a-f0-9]{64}$/);
+  assert.ok(fs.readFileSync(pdfNativeFallback.filePath).includes(Buffer.from('gewu-formula:0')), 'generated PDF must carry formula-index geometry evidence');
+
+  const emptyFormulaQuestion = [{ id: 'q-empty', type: 'single', rich_content: { type: 'question-document', sections: { stem: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'formula', attrs: { canonicalLatex: '', displayMode: 'inline' } }] }] }, options: [], subQuestions: [], answer: { type: 'doc', content: [] }, analysis: { type: 'doc', content: [] } } } }];
+  const exportsDir = path.join(root, 'assets', 'exports');
+  const filesBeforeEmptyFailure = new Set(fs.readdirSync(exportsDir));
+  await assert.rejects(
+    () => writePaperArtifact('word', { title: 'must-clean-empty', answerPosition: 'hidden', formulaMode: 'latex-vector' }, emptyFormulaQuestion, { root }),
+    error => error.code === 'FORMULA_VISIBLE_GATE_FAILED' && error.diagnostics?.[0]?.questionId === 'q-empty' && error.diagnostics?.[0]?.location === 'stem'
+  );
+  assert.deepStrictEqual(new Set(fs.readdirSync(exportsDir)), filesBeforeEmptyFailure, 'failed visible gate must not leave a partial artifact');
+
   const aliasQuestions = ['选择题', '单选', 'single', 'single-choice', '多选', 'multi', 'multiple', 'multiple-choice'].map((type, index) => ({ type, stem: `alias-${index}`, answer: 'A' }));
   const aliases = await writePaperArtifact('pdf', { title: 'aliases', answerPosition: 'end' }, aliasQuestions, { root });
   assert.ok(aliases.semanticText.includes('题号 1 2 3 4 5 6 7 8'), 'all canonical choice aliases belong in summary');
   assert.strictEqual(normalizedQuestion({ type: 'experiment' }).type, '\u5b9e\u9a8c\u9898');
   assert.strictEqual(normalizedQuestion({ type: 'judge' }).type, '\u5224\u65ad\u9898');
   for (const type of ['fill', 'short', 'drawing', 'calculation', 'problem']) assert.strictEqual(normalizedQuestion({ type }).type, '\u89e3\u7b54\u9898');
+  const hiddenEmptyFormulaQuestion = [{ id: 'q-hidden-empty', type: 'single', rich_content: { type: 'question-document', sections: { stem: { type: 'doc', content: [] }, options: [], subQuestions: [], answer: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'formula', attrs: { canonicalLatex: '' } }] }] }, analysis: { type: 'doc', content: [] } } } }];
+  const hiddenEmpty = await writePaperArtifact('word', { title: 'hidden-empty', answerPosition: 'hidden', formulaMode: 'latex-vector' }, hiddenEmptyFormulaQuestion, { root });
+  assert.strictEqual(hiddenEmpty.formulaCount, 0, 'hidden answer formulas are outside the output contract and must not block or count');
+
+  const filesBeforePostWriteGateFailure = new Set(fs.readdirSync(exportsDir));
+  await assert.rejects(
+    () => writePaperArtifact('word', { title: 'must-clean-post-write', answerPosition: 'hidden', formulaMode: 'latex-vector' }, [{ id: 'q-clean', type: 'single', stem: 'plain' }], {
+      root,
+      inspectVisibleArtifact: () => { throw Object.assign(new Error('forced final gate failure'), { code: 'FORMULA_VISIBLE_GATE_FAILED' }); },
+    }),
+    /forced final gate failure/
+  );
+  assert.deepStrictEqual(new Set(fs.readdirSync(exportsDir)), filesBeforePostWriteGateFailure, 'post-write gate failure must delete the generated artifact');
+
   const longQuestions = Array.from({ length: 200 }, (_, index) => ({ type: 'single', stem: `long-question-${index + 1}`, answer: index % 2 ? 'B' : 'A', explanation: `analysis-${index + 1}`, knowledge_points: [`knowledge-${index + 1}`] }));
   const longPdf = await writePaperArtifact('pdf', { title: 'long-paper', answerPosition: 'end' }, longQuestions, { root });
   assert.ok(longPdf.pageCount > 4 && longPdf.semanticText.includes('200．B'), 'long paper must paginate while retaining the final answer block');

@@ -11,6 +11,7 @@ const eventBus = require('../services/eventBus');
 const cache = require('../services/cacheService');
 const { canDeleteQuestion, committedDeleteError } = require('../services/questionDeletionPolicy');
 const { createLocalQuestionImageResolver, writePaperArtifact } = require('../services/paperArtifactService');
+const { resolveExactQuestionSelection } = require('../services/paperExportSelectionService');
 const {
   initQuestionBankStore,
   inspectQuestionBankStore,
@@ -46,10 +47,19 @@ const upload = multer({
 });
 
 function errorStatus(err) {
+  if (Number(err.statusCode) >= 400) return Number(err.statusCode);
   if (['AUTHORIZATION_CONTEXT_REQUIRED', 'TOKEN_REQUIRED'].includes(err.code)) return 401;
   if (['QUESTION_BANK_STORE_ALREADY_BOUND', 'QUESTION_BANK_DATABASE_ALREADY_BOUND'].includes(err.code)) return 409;
   if (/_REQUIRED$|_MISMATCH$/.test(err.code || '')) return 403;
   return /oss_key is required|knowledge point not found/.test(err.message) ? 400 : 500;
+}
+
+function canExportDraft(authz = {}) {
+  return new Set(['super_admin', 'admin', 'operator', 'teacher']).has(authz.role || authz.user_type);
+}
+
+function resolvePaperExportQuestions(db, payload, context, dependencies = {}) {
+  return resolveExactQuestionSelection(db, payload, context, dependencies);
 }
 
 function tenantId(req) {
@@ -355,9 +365,7 @@ router.post('/paper-export', async (req, res) => {
     if (role !== 'primary-host') return res.status(409).json({ success: false, code: 'PRIMARY_HOST_EXPORT_REQUIRED', error: 'paper export must run on the primary data host' });
     const db = getInstance().db;
     const tId = tenantId(req);
-    const ids = Array.isArray(req.body?.questionIds) ? req.body.questionIds : [];
-    const questions = ids.map(id => questionBank.getQuestion(db, id, tId)).filter(Boolean);
-    if (!questions.length) return res.status(400).json({ success: false, error: 'no exportable questions selected' });
+    const questions = resolvePaperExportQuestions(db, req.body || {}, { tenantId: tId, allowDraft: canExportDraft(req.authz) });
     const format = req.body?.format === 'pdf' ? 'pdf' : 'word';
     const paperRoot = process.env.QUESTION_BANK_ROOT || path.join(process.cwd(), 'data', 'GewuQuestionBank');
     const artifact = await writePaperArtifact(format, req.body || {}, questions, { root: paperRoot, deviceId: req.get('x-device-id') || process.env.GEWU_DEVICE_ID || 'unknown', resolveImageAsset: createLocalQuestionImageResolver(paperRoot) });
@@ -837,3 +845,4 @@ router.delete('/exam-papers/:id', (req, res) => {
 });
 
 module.exports = router;
+module.exports.resolvePaperExportQuestions = resolvePaperExportQuestions;

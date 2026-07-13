@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireCoreReadAccess, requireWriteAccess } = require('./middleware/auth');
 const { buildErrorPayload, errorHandler } = require('./middleware/errorHandler');
 
@@ -51,6 +52,18 @@ function cleanupStore(store, now = Date.now()) {
   }
 }
 
+function stableRequestValue(value) {
+  if (Array.isArray(value)) return value.map(stableRequestValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableRequestValue(value[key])]));
+  }
+  return value;
+}
+
+function requestBodyHash(body) {
+  return crypto.createHash('sha256').update(JSON.stringify(stableRequestValue(body ?? null))).digest('hex');
+}
+
 function createWriteRateLimiter() {
   const windowMs = Number(process.env.WRITE_RATE_LIMIT_WINDOW_MS || 60000);
   const max = Number(process.env.WRITE_RATE_LIMIT_MAX || 120);
@@ -93,7 +106,7 @@ function writeSafetyMiddleware(req, res, next) {
 
   const idempotencyKey = req.headers['x-idempotency-key'];
   const idemKey = idempotencyKey
-    ? `${clientKey(req)}:${req.method}:${req.originalUrl}:${idempotencyKey}`
+    ? `${clientKey(req)}:${req.method}:${req.originalUrl}:${idempotencyKey}:${requestBodyHash(req.body)}`
     : null;
   if (idemKey) {
     const existing = idempotencyStore.get(idemKey);

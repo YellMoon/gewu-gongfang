@@ -97,6 +97,7 @@ class DatabaseService {
     this._ensureQuestionContentColumns();
     this._ensureImportTaskColumns();
     this._ensureArchiveJobColumns();
+    this._ensureMiniappTaskColumns();
     this._ensureMiniappUserColumns();
     this._ensureAuthorizationPersistence();
     this._ensureHostHeartbeatColumns();
@@ -225,6 +226,35 @@ class DatabaseService {
     addColumn('retention_days', 'INTEGER DEFAULT 30');
     addColumn('error_message', 'TEXT');
     addColumn('restored_at', 'TEXT');
+  }
+
+  _ensureMiniappTaskColumns() {
+    const exists = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='miniapp_tasks'").get();
+    if (!exists) return;
+    const columns = new Set(this.db.prepare('PRAGMA table_info(miniapp_tasks)').all().map(row => row.name));
+    const addColumn = (name, ddl) => {
+      if (!columns.has(name)) {
+        this.db.prepare(`ALTER TABLE miniapp_tasks ADD COLUMN ${name} ${ddl}`).run();
+        columns.add(name);
+      }
+    };
+    addColumn('protocol_version', 'INTEGER NOT NULL DEFAULT 1');
+    addColumn('idempotency_key', 'TEXT');
+    addColumn('request_hash', 'TEXT');
+    addColumn('target_host_device_id', 'TEXT');
+    addColumn('selection_context', 'TEXT');
+    addColumn('phase', 'TEXT');
+    addColumn('progress', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn('claimed_by', 'TEXT');
+    addColumn('claim_token_hash', 'TEXT');
+    addColumn('lease_expires_at', 'TEXT');
+    addColumn('row_version', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn('error_code', 'TEXT');
+    addColumn('cancel_requested_at', 'TEXT');
+    this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_miniapp_tasks_actor_idempotency
+      ON miniapp_tasks(created_by,idempotency_key) WHERE idempotency_key IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_miniapp_tasks_target_claim
+      ON miniapp_tasks(target_host_device_id,status,lease_expires_at,created_at);`);
   }
 
   _ensureQuestionMetaColumns() {

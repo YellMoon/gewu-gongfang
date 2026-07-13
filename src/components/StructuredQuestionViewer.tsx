@@ -1,6 +1,7 @@
 import React from 'react';
 import katex from 'katex';
 import type { QuestionRichDocument } from '../types/questionRichContent';
+import { RichAssetImage } from './RichAssetImage';
 
 function markStyle(marks: any[] = []): React.CSSProperties {
   const style: React.CSSProperties = {};
@@ -24,7 +25,7 @@ function renderNode(node: any, key: React.Key): React.ReactNode {
     const html = katex.renderToString(latex, { throwOnError: false, displayMode: node.attrs?.displayMode === 'block' });
     return <span key={key} className="structured-question-viewer__formula" dangerouslySetInnerHTML={{ __html: html }} />;
   }
-  if (node.type === 'image') return <img key={key} src={node.attrs?.src} alt={node.attrs?.alt || ''} style={{ width: node.attrs?.width || undefined }} data-align={node.attrs?.align || 'center'} />;
+  if (node.type === 'image') return <RichAssetImage key={key} src={node.attrs?.src} assetKey={node.attrs?.assetKey} alt={node.attrs?.alt || ''} style={{ width: node.attrs?.width || undefined }} data-align={node.attrs?.align || 'center'} />;
   const children = (node.content || []).map((child: any, index: number) => renderNode(child, `${String(key)}-${index}`));
   const style = { textAlign: node.attrs?.textAlign, lineHeight: node.attrs?.lineHeight } as React.CSSProperties;
   if (node.type === 'paragraph') return <p key={key} style={style}>{children}</p>;

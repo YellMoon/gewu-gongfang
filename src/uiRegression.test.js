@@ -30,6 +30,8 @@ const todayWorkbench = read('src/pages/TodayWorkbench.tsx');
 const questionRenderer = read('src/components/QuestionRenderer.tsx');
 const questionRendererCss = read('src/components/QuestionRenderer.css');
 const richQuestionEditor = read('src/components/RichQuestionEditor.tsx');
+const richAssetImage = read('src/components/RichAssetImage.tsx');
+const structuredQuestionViewer = read('src/components/StructuredQuestionViewer.tsx');
 const systemSettings = read('src/pages/SystemSettings.tsx');
 const syncSettings = read('src/pages/SyncSettings.tsx');
 const syncQuickPanel = read('src/components/sync/SyncQuickPanel.tsx');
@@ -540,13 +542,21 @@ assert(
   richQuestionEditor.includes("editor.isActive({ textAlign: 'center' })") &&
   richQuestionEditor.includes("value={String(editor.getAttributes('textStyle').fontSize") &&
   richQuestionEditor.includes("forceSelectionRender(value => value + 1)") &&
-  richQuestionEditor.includes("getQuestionAssetDataUrl") &&
   richQuestionEditor.includes("pendingImagePositions.current") &&
-  richQuestionEditor.includes("assetDisplayRef(node.attrs.src, node.attrs.assetKey)") &&
+  richQuestionEditor.includes("<RichAssetImage src={node.attrs.persistedSrc || node.attrs.src} assetKey={node.attrs.assetKey}") &&
+  richQuestionEditor.includes('maskPersistedImagesForEditor') &&
+  richAssetImage.includes("resolveAssetForDisplay(source, getQuestionAssetDataUrl)") &&
+  richAssetImage.includes("replacePersistedAssetImageSources") &&
+  questionRenderer.includes("<ResolvedRichHtml") &&
+  structuredQuestionViewer.includes("<RichAssetImage") &&
   richQuestionEditor.includes("insertContentAt(range") &&
   richQuestionEditor.includes("<UndoOutlined />, undefined") &&
-  questionBankPreview.includes('RichQuestionEditor') &&
-  questionBankEdit.includes('RichQuestionEditor'),
+  questionBankPreview.includes('QuestionStructureEditor') &&
+  questionBankEdit.includes('QuestionStructureEditor') &&
+  questionBankImport.includes('QuestionStructureEditor') &&
+  !questionBankPreview.includes('name="formulas"') &&
+  !questionBankEdit.includes('name="formulas"') &&
+  !questionBankImport.includes('name="formulas"'),
   'question edit dialogs should use the controlled TipTap editor contract for rich text, formulas, images, and sanitized paste'
 );
 

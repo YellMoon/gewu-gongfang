@@ -29,6 +29,7 @@ function initDatabase() {
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
   database.exec(schema);
   ensureUserColumns(database);
+  ensureMiniappTaskColumns(database);
   const deviceColumns = new Set(database.prepare('PRAGMA table_info(cloud_devices)').all().map(c=>c.name));
   if(!deviceColumns.has('owner_user_id')) database.prepare('ALTER TABLE cloud_devices ADD COLUMN owner_user_id TEXT').run();
   if(!deviceColumns.has('active')) database.prepare('ALTER TABLE cloud_devices ADD COLUMN active INTEGER NOT NULL DEFAULT 1').run();
@@ -37,6 +38,33 @@ function initDatabase() {
   database.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_gateway_pairing_pending_code ON desktop_device_pairings(pairing_code) WHERE status='pending'").run();
   console.log('[DB] Gateway 数据库表已创建/更新');
   return database;
+}
+
+function ensureMiniappTaskColumns(database) {
+  const columns = new Set(database.prepare('PRAGMA table_info(miniapp_tasks)').all().map(row => row.name));
+  const addColumn = (name, ddl) => {
+    if (!columns.has(name)) {
+      database.prepare(`ALTER TABLE miniapp_tasks ADD COLUMN ${name} ${ddl}`).run();
+      columns.add(name);
+    }
+  };
+  addColumn('protocol_version', 'INTEGER NOT NULL DEFAULT 1');
+  addColumn('idempotency_key', 'TEXT');
+  addColumn('request_hash', 'TEXT');
+  addColumn('target_host_device_id', 'TEXT');
+  addColumn('selection_context', 'TEXT');
+  addColumn('phase', 'TEXT');
+  addColumn('progress', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn('claimed_by', 'TEXT');
+  addColumn('claim_token_hash', 'TEXT');
+  addColumn('lease_expires_at', 'TEXT');
+  addColumn('row_version', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn('error_code', 'TEXT');
+  addColumn('cancel_requested_at', 'TEXT');
+  database.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_miniapp_tasks_actor_idempotency
+    ON miniapp_tasks(created_by,idempotency_key) WHERE idempotency_key IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_miniapp_tasks_target_claim
+    ON miniapp_tasks(target_host_device_id,status,lease_expires_at,created_at);`);
 }
 
 function ensureUserColumns(database) {

@@ -5,7 +5,7 @@ const ts = require('typescript');
 const filename = require.resolve('./richQuestionEditorState.ts');
 const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
 const loaded = new Module(filename); loaded._compile(compiled, filename);
-const { enqueueEmission, decideExternalSync, clampSelection, requireStoredAssetRef, resolveAssetForDisplay, mapPendingPositions, mapPendingBookmarks, assetDisplayRef, appendSequentialTask } = loaded.exports;
+const { enqueueEmission, decideExternalSync, clampSelection, requireStoredAssetRef, resolveAssetForDisplay, mapPendingPositions, mapPendingBookmarks, assetDisplayRef, appendSequentialTask, splitPersistedAssetImages, replacePersistedAssetImageSources, maskPersistedImagesForEditor, restorePersistedImagesFromEditor } = loaded.exports;
 const a = { type: 'doc', content: [{ type: 'paragraph' }] };
 const b = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'external' }] }] };
 let decision = decideExternalSync(a, a, [JSON.stringify(a)]);
@@ -32,6 +32,29 @@ assert.throws(() => requireStoredAssetRef('asset-1', 'question-asset://asset-2')
 assert.deepStrictEqual(Array.from(mapPendingPositions(new Map([[1, 4], [2, 4]]), position => position + 1)), [[1, 5], [2, 5]]);
 assert.deepStrictEqual(Array.from(mapPendingBookmarks(new Map([[1, { from: 4, to: 7 }], [2, { from: 4, to: 4 }]]), (position, assoc) => position + (assoc === 1 ? 3 : 2))), [[1, { from: 6, to: 10 }], [2, { from: 7, to: 7 }]]);
 assert.strictEqual(assetDisplayRef('', 'asset-1'), 'question-asset://asset-1');
+const persistedImageParts = splitPersistedAssetImages('<p>before<img src="question-asset://qa-image.png" alt="diagram" width="320">after</p>');
+assert.deepStrictEqual(persistedImageParts, [
+  { kind: 'html', html: '<p>before' },
+  { kind: 'asset', src: 'question-asset://qa-image.png', alt: 'diagram', width: 320 },
+  { kind: 'html', html: 'after</p>' },
+]);
+assert.ok(!persistedImageParts.filter(part => part.kind === 'html').some(part => part.html.includes('question-asset://')), 'raw persisted asset refs must never reach HTML insertion');
+const resolvedImageHtml = replacePersistedAssetImageSources(
+  '<p>before<img src="question-asset://qa-image.png" alt="diagram">after<img src="https://example.test/keep.png"></p>',
+  new Map([['question-asset://qa-image.png', 'data:image/png;base64,AAAA']]),
+);
+assert.ok(!resolvedImageHtml.includes('question-asset://'));
+assert.ok(resolvedImageHtml.includes('src="data:image/png;base64,AAAA"'));
+assert.ok(resolvedImageHtml.includes('src="https://example.test/keep.png"'));
+const persistedImageJson = { type: 'doc', content: [{ type: 'image', attrs: { src: 'question-asset://qa-image.png', assetKey: 'qa-image.png', alt: 'diagram' } }] };
+const maskedImageJson = maskPersistedImagesForEditor(persistedImageJson);
+assert.ok(maskedImageJson.content[0].attrs.src.startsWith('data:image/'), 'TipTap must only receive a CSP-safe image src');
+assert.strictEqual(maskedImageJson.content[0].attrs.persistedSrc, 'question-asset://qa-image.png');
+assert.deepStrictEqual(restorePersistedImagesFromEditor(maskedImageJson), persistedImageJson, 'editor JSON output must restore the persisted ref exactly');
+const maskedImageHtml = maskPersistedImagesForEditor('<p><img src="question-asset://qa-image.png" alt="diagram"></p>');
+assert.ok(!/<img\b[^>]*\ssrc="question-asset:\/\//i.test(maskedImageHtml));
+assert.ok(maskedImageHtml.includes('data-persisted-src="question-asset://qa-image.png"'));
+assert.strictEqual(restorePersistedImagesFromEditor(maskedImageHtml), '<p><img src="question-asset://qa-image.png" alt="diagram"></p>');
 resolveAssetForDisplay('question-asset://asset-1', async ref => ref === 'question-asset://asset-1' ? 'data:image/png;base64,AAAA' : '').then(resolved => {
   assert.strictEqual(resolved, 'data:image/png;base64,AAAA');
   return assert.rejects(() => resolveAssetForDisplay('data:image/png;base64,AAAA', async value => value), /persisted/);

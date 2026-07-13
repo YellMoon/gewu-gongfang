@@ -189,11 +189,13 @@ function textDoc(value: unknown): JSONContent {
 }
 
 export function migrateLegacyQuestion(question: Record<string, any>): QuestionRichDocument {
+  const legacyAnswer = legacyText(question.answer ?? '').toUpperCase();
+  const answerLabels = new Set((legacyAnswer.match(/[A-Z]/g) || []));
   const optionValues = Array.isArray(question.options) ? question.options : [];
   const options: RichOption[] = optionValues.map((option: any, index: number) => ({
     id: String(option?.id || `option-${index + 1}`),
     label: String(option?.label || String.fromCharCode(65 + index)),
-    isCorrect: Boolean(option?.isCorrect ?? option?.is_correct),
+    isCorrect: Boolean(option?.isCorrect ?? option?.is_correct ?? answerLabels.has(String(option?.label || String.fromCharCode(65 + index)).toUpperCase())),
     content: textDoc(isRecord(option) ? (option.content ?? option.text ?? '') : option),
   }));
   const legacySubs = Array.isArray(question.sub_questions) ? question.sub_questions : (Array.isArray(question.subQuestions) ? question.subQuestions : []);
@@ -201,8 +203,14 @@ export function migrateLegacyQuestion(question: Record<string, any>): QuestionRi
     id: String(sub?.id || `sub-${index + 1}`), label: String(sub?.label || `(${index + 1})`),
     content: textDoc(sub?.content ?? sub?.stem ?? ''), answer: textDoc(sub?.answer ?? ''),
   }));
+  const stem = textDoc(question.stem ?? question.content ?? '');
+  const legacyFormulas = Array.isArray(question.formulas) ? question.formulas : [];
+  for (const [index, formula] of legacyFormulas.entries()) {
+    const canonicalLatex = String(isRecord(formula) ? (formula.canonicalLatex ?? formula.latex ?? formula.content ?? '') : formula).trim().replace(/^\$+|\$+$/g, '');
+    if (canonicalLatex) stem.content!.push({ type: 'formulaBlock', attrs: { id: `legacy-formula-${index + 1}`, canonicalLatex, displayMode: 'block', sourceFormat: 'latex' } });
+  }
   return normalizeQuestionRichContent({ version: 1, type: 'question-document', sections: {
-    stem: textDoc(question.stem ?? question.content ?? ''), options, subQuestions,
+    stem, options, subQuestions,
     answer: textDoc(question.answer ?? ''), analysis: textDoc(question.explanation ?? question.analysis ?? ''),
   } });
 }
@@ -229,9 +237,12 @@ export function projectQuestionRichContent(input: unknown) {
   const subQuestions = rich.sections.subQuestions.map(sub => ({ label: sub.label, content: projectDoc(sub.content, flags), answer: projectDoc(sub.answer, flags) }));
   const answer = projectDoc(rich.sections.answer, flags);
   const explanation = projectDoc(rich.sections.analysis, flags);
+  const formulas: string[] = [];
+  const collectFormulas = (node: JSONContent) => { if (node.type === 'formula' || node.type === 'formulaBlock') formulas.push(String(node.attrs?.canonicalLatex || '')); (node.content || []).forEach(collectFormulas); };
+  collectFormulas(rich.sections.stem); rich.sections.options.forEach(option => collectFormulas(option.content)); rich.sections.subQuestions.forEach(sub => { collectFormulas(sub.content); collectFormulas(sub.answer); }); collectFormulas(rich.sections.answer); collectFormulas(rich.sections.analysis);
   const searchText = [stem, ...options.flatMap(o => [o.label, o.content]), ...subQuestions.flatMap(s => [s.label, s.content, s.answer]), answer, explanation]
     .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
-  return { stem, options, subQuestions, answer, explanation, searchText, hasFormula: flags.formula, hasImage: flags.image };
+  return { stem, options, subQuestions, answer, explanation, formulas: formulas.filter(Boolean), searchText, hasFormula: flags.formula, hasImage: flags.image };
 }
 
 export function normalizeBrowserQuestionRecord<T extends Record<string, any>>(question: T): T & { rich_content: QuestionRichDocument; search_text: string } {
