@@ -11,12 +11,24 @@ assert.ok(route.includes("task.task_type === 'question-paper'"), 'host should pr
 assert.ok(route.includes("task.task_type === 'paper-export-word'"), 'host should process miniapp Word export tasks');
 assert.ok(route.includes("task.task_type === 'paper-export-pdf'"), 'host should process miniapp PDF export tasks');
 assert.ok(route.includes('writePaperArtifact'), 'host should write paper export artifacts');
+assert.ok(route.includes('recoverStalePaperJobs'), 'host processor must recover stale local processing jobs after restart');
+assert.ok(route.includes('cleanupPaperStorage'), 'host processor startup must clean stale temp and expired artifacts safely');
+assert.ok(route.includes('reconcilePaperArtifacts'), 'host processor startup must reconcile rename/DB crash windows before cleanup');
+assert.ok(route.includes('bindPaperCompletionClaim') && route.includes('replayPaperCompletionOutbox'), 'host must bind current claim CAS and replay durable completion outbox every round');
+assert.ok(route.includes('queryMiniappTaskState'), 'lost completion ACK must query cloud terminal state before retrying');
 assert.ok(route.includes('createLocalQuestionImageResolver(paperRoot)'), 'relay host export must inject the configured local image resolver');
-assert.ok(questionBankRoute.includes('createLocalQuestionImageResolver(paperRoot)'), 'question bank export must inject the configured local image resolver');
+assert.ok(questionBankRoute.includes('processDurablePaperTask') && questionBankRoute.includes("relayScope: 'direct'") && questionBankRoute.includes('skipCompletionOutbox: true'), 'question bank direct export must use the durable snapshot/worker repository chain without a cloud outbox');
 assert.ok(route.includes('answerPosition'), 'relay task payload must carry canonical answerPosition through to the artifact result');
 assert.ok(route.includes('fileUrl'), 'host should return downloadable artifact URLs');
-assert.ok(route.includes("router.get('/artifacts/:fileName'"), 'host should expose artifact download route');
-assert.ok(route.includes('res.download'), 'host artifact route should download generated files');
+const artifactRoute = fs.readFileSync('backend/src/routes/paperArtifactAccess.js', 'utf-8');
+assert.ok(artifactRoute.includes("router.get('/:artifactId'"), 'read-only artifact router should expose artifactId download route');
+assert.ok(artifactRoute.includes("router.get('/:artifactId/access'") && artifactRoute.includes("req.get('x-gewu-artifact-token')"), 'artifact access must refresh short tokens with GET and download through a header rather than a query parameter');
+assert.ok(artifactRoute.includes("Cache-Control', 'no-store'"), 'artifact access exchange must prohibit caching');
+assert.ok(artifactRoute.includes('verifyArtifactDownloadToken'), 'artifact download must verify the dedicated HMAC token');
+assert.ok(artifactRoute.includes('GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET'), 'artifact download must use its independent required secret');
+assert.ok(artifactRoute.includes('FROM paper_artifacts WHERE artifact_id'), 'artifact download must resolve only DB-registered artifacts');
+assert.ok(!route.includes("router.get('/artifacts/:fileName'"), 'anonymous filename download route must be closed');
+assert.ok(artifactRoute.includes('res.download'), 'host artifact route should download generated files');
 assert.ok(route.includes('completeMiniappTask(task.id'), 'host should complete miniapp tasks back to cloud');
 assert.ok(route.includes("router.post('/tasks/process'"), 'host should expose a process pending tasks endpoint');
 assert.ok(route.includes('authOptionsFromRequest'), 'host route should forward authenticated maintenance requests to cloud relay');
@@ -96,6 +108,35 @@ const { resolvePaperExportQuestions } = require('./questionBank');
   assert.deepStrictEqual(claimedResults.map(row => [row.id, row.success]), [['v2-ok', true], ['v2-fail', false]]);
   assert.ok(lifecycle.some(([kind, id, body]) => kind === 'complete' && id === 'v2-ok' && body.claimToken === 'claim-ok' && body.expectedRowVersion === 2));
   assert.ok(lifecycle.some(([kind, id, body]) => kind === 'fail' && id === 'v2-fail' && body.claimToken === 'claim-fail' && body.expectedRowVersion === 2 && body.errorCode === 'BOOM'));
+
+  let durableClaimed = true; let durableCalls = 0; let legacyExportCalls = 0;
+  const durableResults = await processClaimedV2Tasks({}, {}, {
+    hostDeviceId: () => 'host-a',
+    claimMiniappTask: async () => durableClaimed
+      ? (durableClaimed = false, { success: true, task: { id: 'v2-durable', task_type: 'paper-export-pdf', protocol_version: 2, row_version: 1, payload: {} }, claimToken: 'claim-durable' })
+      : ({ success: true, task: null }),
+    updateMiniappTaskProgress: async (_id, body) => ({ success: true, task: { row_version: body.expectedRowVersion + 1 } }),
+    processDurablePaperTask: async () => { durableCalls += 1; return { artifactReady: true, artifact: { artifact_id: 'artifact-1' }, jobKey: 'job-1' }; },
+    processMiniappTask: async () => { legacyExportCalls += 1; throw new Error('legacy export path must not run'); },
+    completeMiniappTask: async () => ({ success: true }), failMiniappTask: async () => ({ success: true }),
+    markPaperCompletionDelivered: () => {},
+  });
+  assert.strictEqual(durableResults[0].success, true);
+  assert.strictEqual(durableCalls, 1);
+  assert.strictEqual(legacyExportCalls, 0, 'V2 exports must not duplicate generation through processMiniappTask');
+
+  let retryClaimed = true; let retryFailCalls = 0;
+  const retryScheduled = await processClaimedV2Tasks({}, {}, {
+    hostDeviceId: () => 'host-a',
+    claimMiniappTask: async () => retryClaimed
+      ? (retryClaimed = false, { success: true, task: { id: 'v2-retry', task_type: 'paper-export-pdf', protocol_version: 2, row_version: 1, payload: {} }, claimToken: 'claim-retry' })
+      : ({ success: true, task: null }),
+    updateMiniappTaskProgress: async (_id, body) => ({ success: true, task: { row_version: body.expectedRowVersion + 1 } }),
+    processDurablePaperTask: async () => { const error = new Error('transient'); error.paperJob = { status: 'retry_wait', next_attempt_at: '2026-07-13T00:01:00.000Z' }; throw error; },
+    completeMiniappTask: async () => ({ success: true }), failMiniappTask: async () => { retryFailCalls += 1; return { success: true }; },
+  });
+  assert.strictEqual(retryScheduled[0].retryScheduled, true);
+  assert.strictEqual(retryFailCalls, 0, 'local retry_wait must leave cloud lease to expire instead of terminally failing the task');
 
   let falseSuccessClaimed = true;
   const falseSuccessResults = await processClaimedV2Tasks({}, { hostToken: 'trusted' }, {

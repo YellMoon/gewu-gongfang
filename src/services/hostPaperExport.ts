@@ -14,8 +14,11 @@ export interface HostPaperExportInput {
 }
 
 export interface HostPaperExportResult {
+  artifactId: string;
   fileName: string;
   fileUrl: string;
+  accessUrl: string;
+  token: string;
   requestedFormulaMode: FormulaExportMode;
   effectiveFormulaModes: FormulaExportMode[];
   fallbackCount: number;
@@ -26,10 +29,7 @@ export async function requestHostPaperExport(apiBase: string, input: HostPaperEx
   return requestHostPaperExportRuntime(apiBase, input) as Promise<HostPaperExportResult>;
 }
 
-export function downloadHostArtifact(result: HostPaperExportResult): void {
-  const anchor = document.createElement('a');
-  anchor.href = result.fileUrl;
-  anchor.download = result.fileName;
-  anchor.rel = 'noopener';
-  anchor.click();
+export async function downloadHostArtifact(result: HostPaperExportResult): Promise<void> {
+  const { downloadHostArtifactRuntime } = await import('./hostPaperExportRuntime.mjs');
+  await downloadHostArtifactRuntime('/api/question-bank', result);
 }

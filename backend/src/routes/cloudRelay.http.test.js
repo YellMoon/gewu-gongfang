@@ -1,4 +1,5 @@
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -50,6 +51,15 @@ const token = id => jwt.sign({ id }, process.env.JWT_SECRET, { algorithm: 'HS256
 
     assert.strictEqual((await call('/tasks/missing/result', { headers: userHeaders('relay-u1') })).status, 404, 'missing task results must match gateway 404 semantics');
     assert.strictEqual((await call(`/tasks/${firstTask.id}/result`, { headers: userHeaders('relay-u2') })).status, 404, 'non-owner task results must fail closed with gateway-compatible 404 semantics');
+    const claimedV2 = await (await call('/tasks/claim', { method: 'POST', headers: hostHeaders, body: JSON.stringify({ hostDeviceId: 'backend-host' }) })).json();
+    const completionResult = { artifactId: 'artifact-http', accessEndpoint: '/api/cloud-relay-host/artifacts/artifact-http/access' };
+    const completionHash = crypto.createHash('sha256').update(JSON.stringify({ accessEndpoint: completionResult.accessEndpoint, artifactId: completionResult.artifactId })).digest('hex');
+    const completionUrl = `/tasks/${firstTask.id}/complete`;
+    assert.strictEqual((await call(completionUrl, { method: 'POST', headers: hostHeaders, body: JSON.stringify({ claimToken: claimedV2.claimToken, expectedRowVersion: claimedV2.task.row_version, operationId: 'backend-complete-1', resultHash: '0'.repeat(64), result: completionResult }) })).status, 400);
+    const completionBody = { claimToken: claimedV2.claimToken, expectedRowVersion: claimedV2.task.row_version, operationId: 'backend-complete-1', resultHash: completionHash, result: completionResult };
+    assert.strictEqual((await call(completionUrl, { method: 'POST', headers: hostHeaders, body: JSON.stringify(completionBody) })).status, 200);
+    assert.strictEqual((await call(completionUrl, { method: 'POST', headers: hostHeaders, body: JSON.stringify(completionBody) })).status, 200, 'lost completion ACK must replay idempotently');
+    assert.strictEqual((await call(completionUrl, { method: 'POST', headers: hostHeaders, body: JSON.stringify({ ...completionBody, operationId: 'backend-complete-2' }) })).status, 409);
 
     service.db.prepare("INSERT INTO miniapp_tasks (id,task_type,status,payload,created_by,created_at,updated_at,protocol_version) VALUES ('backend-legacy-explicit','paper-export-pdf','pending_host','{}','relay-u1',?,?,1)").run(now, now);
     const explicitPoll = await call('/tasks?status=pending_host&hostDeviceId=backend-host&leaseMs=1000', { headers: hostHeaders });

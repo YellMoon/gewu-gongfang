@@ -86,6 +86,14 @@ async function failMiniappTask(taskId, payload = {}, options = {}) {
   return postJson(`${base}/api/cloud/tasks/${taskId}/fail`, payload, options);
 }
 
+async function queryMiniappTaskState(taskId, options = {}) {
+  const base = baseUrl();
+  if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured', { task: null });
+  const query = new URLSearchParams({ hostDeviceId: String(options.hostDeviceId || options.host_device_id || '') });
+  const res = await fetch(`${base}/api/cloud/tasks/${encodeURIComponent(taskId)}/state?${query}`, { headers: buildHeaders(options) });
+  return readJsonResponse(res);
+}
+
 module.exports = {
   publishHeartbeat,
   publishSnapshot,
@@ -94,6 +102,7 @@ module.exports = {
   claimMiniappTask,
   updateMiniappTaskProgress,
   failMiniappTask,
+  queryMiniappTaskState,
   buildHeaders,
   readJsonResponse,
 };

@@ -26,6 +26,7 @@ const authRouter = require('./routes/auth');
 const questionBankRouter = require('./routes/questionBank');
 const opsRouter = require('./routes/ops');
 const cloudRelayHostRouter = require('./routes/cloudRelayHost');
+const paperArtifactAccessRouter = require('./routes/paperArtifactAccess');
 const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
 const permissionsRouter = require('./routes/permissions');
@@ -263,6 +264,7 @@ function createApp() {
   app.use('/api/auth', authRouter);
   app.use('/api/desktop-pairing', desktopPairingRouter);
   app.use('/api/sync', optionalAuth, syncRouter);
+  app.use('/api/cloud-relay-host/artifacts', optionalAuth, paperArtifactAccessRouter);
   app.use('/api/cloud-relay-host', optionalAuth, requireWriteAccess, cloudRelayHostRouter);
   app.use('/api/modules', optionalAuth, modulesRouter);
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);

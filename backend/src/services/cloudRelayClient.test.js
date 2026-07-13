@@ -2,6 +2,8 @@ const assert = require('assert');
 const fs = require('fs');
 
 const source = fs.readFileSync('backend/src/services/cloudRelayClient.js', 'utf-8');
+const backendRoute = fs.readFileSync('backend/src/routes/cloudRelay.js', 'utf-8');
+const gatewayRoute = fs.readFileSync('gateway/src/routes/cloudRelay.js', 'utf-8');
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 const client = require('./cloudRelayClient');
 
@@ -13,6 +15,8 @@ assert.ok(source.includes('/api/cloud/tasks/${taskId}/complete'), 'cloud relay c
 assert.ok(source.includes('buildHeaders'), 'cloud relay client should build authenticated headers');
 assert.ok(source.includes('Authorization'), 'cloud relay client should forward Authorization when provided');
 assert.ok(packageJson.includes('backend/src/services/cloudRelayClient.test.js'), 'cloud relay client test should run in npm test');
+assert.ok(backendRoute.includes("router.get('/tasks/:id/state'"));
+assert.ok(gatewayRoute.includes("router.get('/tasks/:id/state'"));
 
 (async () => {
   const originalFetch = global.fetch;
@@ -28,12 +32,14 @@ assert.ok(packageJson.includes('backend/src/services/cloudRelayClient.test.js'),
     await client.updateMiniappTaskProgress('task-1', { claimToken: 'claim', expectedRowVersion: 1, progress: 40, phase: 'rendering' }, auth);
     await client.completeMiniappTask('task-1', { claimToken: 'claim', expectedRowVersion: 2, result: { ok: true } }, auth);
     await client.failMiniappTask('task-2', { claimToken: 'claim-2', expectedRowVersion: 1, errorCode: 'FAILED' }, auth);
+    await client.queryMiniappTaskState('task-1', { ...auth, hostDeviceId: 'host-a' });
     await client.fetchPendingTasks({ ...auth, hostDeviceId: 'host-a', leaseMs: 5000 });
     assert.deepStrictEqual(calls.map(call => call.url), [
       'https://relay.example/api/cloud/tasks/claim',
       'https://relay.example/api/cloud/tasks/task-1/progress',
       'https://relay.example/api/cloud/tasks/task-1/complete',
       'https://relay.example/api/cloud/tasks/task-2/fail',
+      'https://relay.example/api/cloud/tasks/task-1/state?hostDeviceId=host-a',
       'https://relay.example/api/cloud/tasks?status=pending_host&hostDeviceId=host-a&leaseMs=5000',
     ]);
     assert.ok(calls.every(call => call.options.headers['x-gewu-host-token'] === 'trusted-host-token'));

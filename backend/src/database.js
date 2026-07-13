@@ -251,10 +251,50 @@ class DatabaseService {
     addColumn('row_version', 'INTEGER NOT NULL DEFAULT 0');
     addColumn('error_code', 'TEXT');
     addColumn('cancel_requested_at', 'TEXT');
+    addColumn('job_key', 'TEXT');
+    addColumn('snapshot_hash', 'TEXT');
+    addColumn('artifact_id', 'TEXT');
+    addColumn('attempt', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn('max_attempts', 'INTEGER NOT NULL DEFAULT 3');
+    addColumn('next_attempt_at', 'TEXT');
+    addColumn('deadline_at', 'TEXT');
+    addColumn('result_expires_at', 'TEXT');
+    addColumn('completion_operation_id', 'TEXT');
+    addColumn('completion_result_hash', 'TEXT');
     this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_miniapp_tasks_actor_idempotency
       ON miniapp_tasks(created_by,idempotency_key) WHERE idempotency_key IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_miniapp_tasks_target_claim
       ON miniapp_tasks(target_host_device_id,status,lease_expires_at,created_at);`);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS paper_jobs (
+      job_key TEXT PRIMARY KEY, relay_scope TEXT NOT NULL, cloud_task_id TEXT NOT NULL, task_id TEXT NOT NULL, tenant_id TEXT NOT NULL, owner_user_id TEXT NOT NULL,
+      request_hash TEXT NOT NULL, question_snapshot_json TEXT, snapshot_hash TEXT, selection_version TEXT,
+      resource_version TEXT, status TEXT NOT NULL DEFAULT 'queued', phase TEXT NOT NULL DEFAULT 'queued',
+      progress INTEGER NOT NULL DEFAULT 0, attempt INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 3,
+      next_attempt_at TEXT, cancel_requested_at TEXT, deadline_at TEXT, temp_dir TEXT, artifact_id TEXT,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL, claimed_at TEXT, completed_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS paper_artifacts (
+      artifact_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, job_key TEXT NOT NULL, owner_user_id TEXT NOT NULL,
+      tenant_id TEXT NOT NULL, snapshot_hash TEXT NOT NULL, format TEXT NOT NULL, mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL, sha256 TEXT NOT NULL, page_count INTEGER, formula_count INTEGER NOT NULL DEFAULT 0,
+      fallback_count INTEGER NOT NULL DEFAULT 0, effective_modes_json TEXT NOT NULL, file_path TEXT NOT NULL,
+      created_at TEXT NOT NULL, expires_at TEXT, storage_status TEXT NOT NULL DEFAULT 'verified'
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_paper_artifacts_job_snapshot_format_verified
+      ON paper_artifacts(job_key,snapshot_hash,format) WHERE storage_status='verified';
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_paper_jobs_relay_task ON paper_jobs(relay_scope,cloud_task_id);`);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS paper_completion_outbox (
+      outbox_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, job_key TEXT NOT NULL, artifact_id TEXT NOT NULL,
+      payload_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempt INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, delivered_at TEXT,
+      claim_token TEXT, expected_row_version INTEGER, operation_id TEXT, result_hash TEXT,
+      max_attempts INTEGER NOT NULL DEFAULT 10, last_error TEXT, terminal_at TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_paper_completion_once ON paper_completion_outbox(task_id,job_key,artifact_id);`);
+    const outboxColumns = new Set(this.db.prepare('PRAGMA table_info(paper_completion_outbox)').all().map(row => row.name));
+    for (const [name, ddl] of [['claim_token','TEXT'],['expected_row_version','INTEGER'],['operation_id','TEXT'],['result_hash','TEXT'],['max_attempts','INTEGER NOT NULL DEFAULT 10'],['last_error','TEXT'],['terminal_at','TEXT']]) {
+      if (!outboxColumns.has(name)) this.db.prepare(`ALTER TABLE paper_completion_outbox ADD COLUMN ${name} ${ddl}`).run();
+    }
   }
 
   _ensureQuestionMetaColumns() {

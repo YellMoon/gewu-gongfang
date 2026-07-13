@@ -428,7 +428,7 @@ async function resolveImageSegments(questions, options = {}) {
     }
     else {
       let resolved = null;
-      if (segment.assetKey && typeof options.resolveImageAsset === 'function') resolved = await options.resolveImageAsset(segment.assetKey, { root: options.root, maxBytes });
+      if (source && typeof options.resolveImageAsset === 'function') resolved = await options.resolveImageAsset(source, { root: options.root, maxBytes });
       if (resolved) { bytes = resolvedImageBytes(resolved, maxBytes); contentType = String(resolved.contentType || resolved.mimeType || '').toLowerCase(); }
     }
     if (!bytes && /^https?:\/\//i.test(segment.src || '')) {
@@ -794,13 +794,60 @@ function inspectVisibleArtifact(filePath, format, manifest, questionCount) {
   return parsed.report;
 }
 
+function fsyncFile(file) { const descriptor = fs.openSync(file, 'r+'); try { fs.fsyncSync(descriptor); } finally { fs.closeSync(descriptor); } }
+function fsyncDirectory(directory) {
+  let descriptor;
+  try { descriptor = fs.openSync(directory, 'r'); fs.fsyncSync(descriptor); }
+  catch (error) { if (!['EINVAL', 'EPERM', 'EISDIR', 'EBADF'].includes(error.code)) throw error; }
+  finally { if (descriptor !== undefined) fs.closeSync(descriptor); }
+}
+
 async function writePaperArtifact(format, payload = {}, questions = [], options = {}) {
   const normalizedFormat = format === 'pdf' ? 'pdf' : 'word'; const extension = normalizedFormat === 'pdf' ? 'pdf' : 'docx';
-  const fileName = `${Date.now().toString(36)}_${crypto.randomUUID()}_${safeFileName(payload.title || LABELS.defaultTitle)}.${extension}`; const root = exportRoot(options); const filePath = resolveQuestionAssetPath(root, 'exports', fileName);
+  const generatedName = `${Date.now().toString(36)}_${crypto.randomUUID()}_${safeFileName(payload.title || LABELS.defaultTitle)}.${extension}`;
+  const fileName = path.basename(options.finalFileName || generatedName);
+  if (!fileName.toLowerCase().endsWith(`.${extension}`)) throw Object.assign(new Error(`final artifact name must end with .${extension}`), { code: 'ARTIFACT_FINAL_NAME_INVALID' });
+  const root = exportRoot(options); const filePath = resolveQuestionAssetPath(root, 'exports', fileName);
+  const defaultTempDir = path.join(root, 'assets', 'paper-job-temp', crypto.randomUUID());
+  const tempDir = path.resolve(options.tempDir || defaultTempDir);
+  const rootRelative = path.relative(path.resolve(root), tempDir);
+  if (rootRelative === '..' || rootRelative.startsWith(`..${path.sep}`) || path.isAbsolute(rootRelative)) throw Object.assign(new Error('artifact temp directory escapes root'), { code: 'ARTIFACT_TEMP_PATH_ESCAPE' });
+  fs.mkdirSync(tempDir, { recursive: true });
+  let cursor = path.resolve(root);
+  for (const segment of rootRelative.split(path.sep).filter(Boolean)) {
+    if (fs.existsSync(cursor) && fs.lstatSync(cursor).isSymbolicLink()) throw Object.assign(new Error('artifact temp directory contains reparse link'), { code: 'ARTIFACT_TEMP_REPARSE_REJECTED' });
+    cursor = path.join(cursor, segment);
+  }
+  if (fs.existsSync(cursor) && fs.lstatSync(cursor).isSymbolicLink()) throw Object.assign(new Error('artifact temp directory contains reparse link'), { code: 'ARTIFACT_TEMP_REPARSE_REJECTED' });
+  const tempPath = path.join(tempDir, `${crypto.randomUUID()}.${extension}`);
+  const tempSidecar = `${tempPath}.verified.json`; const finalSidecar = `${filePath}.verified.json`;
+  const abortIfRequested = () => { if (options.signal?.aborted) throw Object.assign(new Error('paper artifact generation aborted'), { code: 'ABORT_ERR', name: 'AbortError' }); };
+  const progress = phase => { try { options.onProgress?.({ phase }); } catch (_error) { /* progress observers cannot corrupt an artifact */ } };
+  let published = false;
+  let sidecarPublished = false;
   try {
-    const rendered = normalizedFormat === 'pdf' ? await writePdf(filePath, payload, questions, options) : await writeDocx(filePath, payload, questions, options);
+    abortIfRequested(); progress('rendering');
+    const rendered = normalizedFormat === 'pdf' ? await writePdf(tempPath, payload, questions, options) : await writeDocx(tempPath, payload, questions, options);
+    abortIfRequested(); progress('validating');
     const inspectArtifact = options.inspectVisibleArtifact || inspectVisibleArtifact;
-    const report = inspectArtifact(filePath, normalizedFormat, rendered.manifest, questions.length);
+    const report = inspectArtifact(tempPath, normalizedFormat, rendered.manifest, questions.length);
+    options.faultInjection?.afterGate?.({ tempPath, report });
+    abortIfRequested(); progress('finalizing');
+    await options.beforePublish?.({ signal: options.signal, tempPath, report });
+    abortIfRequested();
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    if (fs.existsSync(filePath) || fs.existsSync(finalSidecar)) throw Object.assign(new Error('deterministic artifact already exists'), { code: 'ARTIFACT_FINAL_EXISTS' });
+    const stat = fs.statSync(tempPath);
+    const identity = options.artifactIdentity || {};
+    fs.writeFileSync(tempSidecar, JSON.stringify({ artifactId: identity.artifactId || '', jobKey: identity.jobKey || '', snapshotHash: identity.snapshotHash || '', sha256: report.sha256, sizeBytes: stat.size, pageCount: report.pageCount,
+      formulaCount: report.formulaCount, fallbackCount: report.fallbackCount, effectiveFormulaModes: report.effectiveFormulaModes || [] }), { flag: 'wx' });
+    fsyncFile(tempPath); fsyncFile(tempSidecar); fsyncDirectory(tempDir);
+    fs.renameSync(tempSidecar, finalSidecar); sidecarPublished = true;
+    fsyncDirectory(path.dirname(filePath));
+    fs.renameSync(tempPath, filePath); published = true;
+    fsyncFile(filePath); fsyncDirectory(path.dirname(filePath));
+    options.faultInjection?.afterRename?.({ filePath, sidecarPath: finalSidecar, report });
+    progress('completed');
     return {
       fileName,
       filePath,
@@ -812,11 +859,12 @@ async function writePaperArtifact(format, payload = {}, questions = [], options 
       ...report,
     };
   } catch (error) {
-    for (const candidate of [filePath, `${filePath}.normalized.docx`]) {
+    const preserve = error?.preserveForRecovery === true;
+    for (const candidate of [tempPath, tempSidecar, `${tempPath}.normalized.docx`, ...(!preserve && published ? [filePath, `${filePath}.normalized.docx`] : []), ...(!preserve && sidecarPublished ? [finalSidecar] : [])]) {
       try { fs.rmSync(candidate, { force: true }); } catch (_cleanupError) { /* best effort; preserve original error */ }
     }
     throw error;
   }
 }
 
-module.exports = { createLocalQuestionImageResolver, normalizeAnswerPosition, normalizedQuestion, prepareFormulaRows, resolveSupportScript, writePaperArtifact };
+module.exports = { createLocalQuestionImageResolver, normalizeAnswerPosition, normalizedQuestion, prepareFormulaRows, resolveImageSegments, resolveSupportScript, writePaperArtifact };

@@ -368,6 +368,15 @@ router.post('/tasks/:id/complete', (req, res) => {
   });
 });
 
+router.get('/tasks/:id/state', requireHostWrite, (req, res) => {
+  const hostDeviceId = String(req.query.hostDeviceId || req.query.host_device_id || '');
+  if (!hostDeviceId) return res.status(400).json({ success: false, code: 'HOST_DEVICE_ID_REQUIRED' });
+  const row = getInstance().db.prepare(`SELECT id,status,result_payload,row_version,error_code,artifact_id,job_key,snapshot_hash
+    FROM miniapp_tasks WHERE id=? AND (target_host_device_id=? OR claimed_by=?)`).get(req.params.id, hostDeviceId, hostDeviceId);
+  if (!row) return res.status(404).json({ success: false, code: 'TASK_NOT_FOUND', error: 'task not found' });
+  return res.json({ success: true, task: { ...row, result_payload: parseJson(row.result_payload, null) } });
+});
+
 router.get('/tasks/:id/result', (req, res) => {
   const db = getInstance().db;
   const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(req.params.id);

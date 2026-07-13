@@ -10,13 +10,17 @@ const {
   updateMiniappTaskProgress,
   completeMiniappTask,
   failMiniappTask,
+  queryMiniappTaskState,
 } = require('../services/cloudRelayClient');
 const questionBank = require('../services/questionBankService');
-const { resolveQuestionAssetPath } = require('../services/questionBankStorageService');
+const { resolveQuestionAssetPath, resolveBoundQuestionBankRoot } = require('../services/questionBankStorageService');
 const { updateCommittedQuestion, createTrustedInternalStorageUpdateContext } = require('../services/questionBankStorageService');
 const { createLocalQuestionImageResolver, writePaperArtifact } = require('../services/paperArtifactService');
 const { resolveLegacyQuestionSelection, resolveTaskQuestionSelection } = require('../services/paperExportSelectionService');
 const { verifyRelayAssertion } = require('../services/relayAssertionService');
+const { bindPaperCompletionClaim, processDurablePaperTask, replayPaperCompletionOutbox } = require('../services/paperJobProcessor');
+const { recoverStalePaperJobs } = require('../services/paperJobRepository');
+const { cleanupPaperStorage, reconcilePaperArtifacts } = require('../services/paperStorageCleanup');
 
 const router = Router();
 
@@ -232,11 +236,31 @@ async function processClaimedV2Tasks(db, authOptions, dependencies = {}) {
   const completeTask = dependencies.completeMiniappTask || completeMiniappTask;
   const failTask = dependencies.failMiniappTask || failMiniappTask;
   const processTask = dependencies.processMiniappTask || processMiniappTask;
+  const processDurableTask = dependencies.processDurablePaperTask || processDurablePaperTask;
+  const bindCompletionClaim = dependencies.bindPaperCompletionClaim || bindPaperCompletionClaim;
+  const replayCompletionOutbox = dependencies.replayPaperCompletionOutbox || replayPaperCompletionOutbox;
+  const queryTaskState = dependencies.queryMiniappTaskState || queryMiniappTaskState;
   const resolveHostDeviceId = dependencies.hostDeviceId || hostDeviceId;
   const cleanupTaskResult = dependencies.cleanupTaskResult || cleanupGeneratedTaskResult;
   const leaseMs = Math.max(100, Number(dependencies.leaseMs || 60000));
   const heartbeatIntervalMs = Math.max(1, Number(dependencies.heartbeatIntervalMs || Math.floor(leaseMs / 3)));
   const results = [];
+  const writerDb = db.db || db;
+  if (typeof writerDb.prepare === 'function') {
+    await replayCompletionOutbox(writerDb, {
+      completeTask: (taskId, body) => completeTask(taskId, body, authOptions),
+      queryTaskState: taskId => queryTaskState(taskId, { ...authOptions, hostDeviceId: resolveHostDeviceId() }),
+    });
+    const staleBefore = new Date(Date.now() - Math.max(60000, Number(dependencies.staleJobMs || 300000))).toISOString();
+    recoverStalePaperJobs(writerDb, { staleBefore });
+    try {
+      const authoritativeRoot = resolveBoundQuestionBankRoot(writerDb);
+      reconcilePaperArtifacts(writerDb, authoritativeRoot);
+      cleanupPaperStorage(writerDb, authoritativeRoot);
+    } catch (error) {
+      if (!['QUESTION_BANK_STORE_NOT_BOUND', 'QUESTION_BANK_AUTHORITY_MISMATCH'].includes(error.code)) throw error;
+    }
+  }
   const requireRelaySuccess = response => {
     if (response?.success === false) {
       throw Object.assign(new Error(response.error || response.message || response.code || 'cloud relay rejected task operation'), {
@@ -253,6 +277,7 @@ async function processClaimedV2Tasks(db, authOptions, dependencies = {}) {
     let rowVersion = Number(task.row_version || 0);
     let heartbeat = null;
     let generatedResult = null;
+    let durableArtifactReady = false;
     try {
       const progress = requireRelaySuccess(await updateProgress(task.id, {
         claimToken,
@@ -275,13 +300,45 @@ async function processClaimedV2Tasks(db, authOptions, dependencies = {}) {
           rowVersion = Number(renewed?.task?.row_version ?? rowVersion + 1);
         },
       });
-      const result = await processTask(task, db);
+      const durableExport = Number(task.protocol_version || 1) >= 2 && ['paper-export-word', 'paper-export-pdf'].includes(task.task_type)
+        && (Boolean(dependencies.processDurablePaperTask) || !dependencies.processMiniappTask);
+      const result = durableExport
+        ? await processDurableTask(task, db, {
+          deferCompletion: true,
+          selectQuestions: (database, durableTask) => resolveTaskQuestionSelection(
+            database,
+            durableTask,
+            durableTask.selection_context || { tenantId: durableTask.payload?.tenantId || durableTask.payload?.tenant_id || 'default', allowDraft: false },
+            { questionBank: dependencies.questionBank || questionBank }
+          ),
+        })
+        : await processTask(task, db);
       generatedResult = result;
+      durableArtifactReady = Boolean(durableExport && result?.artifactReady);
       await heartbeat.stop();
+      if (durableArtifactReady && typeof writerDb.prepare === 'function') {
+        bindCompletionClaim(writerDb, task.id, result.artifact.artifact_id, { claimToken, expectedRowVersion: rowVersion });
+        await replayCompletionOutbox(writerDb, {
+          completeTask: (taskId, body) => completeTask(taskId, body, authOptions),
+          queryTaskState: taskId => queryTaskState(taskId, { ...authOptions, hostDeviceId: resolveHostDeviceId() }),
+        });
+        const localCompletion = writerDb.prepare('SELECT status FROM paper_completion_outbox WHERE task_id=? AND artifact_id=?').get(task.id, result.artifact.artifact_id);
+        if (localCompletion?.status === 'delivered') { results.push({ id: task.id, success: true, completed: { success: true, replayedFromOutbox: true } }); continue; }
+        if (localCompletion?.status === 'terminal_cancelled') { results.push({ id: task.id, success: false, cancelled: true, artifactReady: false }); continue; }
+        throw Object.assign(new Error('paper completion remains pending after reconciliation'), { code: 'TASK_COMPLETION_PENDING' });
+      }
       const completed = requireRelaySuccess(await completeTask(task.id, { claimToken, expectedRowVersion: rowVersion, result }, authOptions));
       results.push({ id: task.id, success: true, completed });
     } catch (error) {
       try { await heartbeat?.stop(); } catch (_heartbeatError) { /* preserve the first processing error */ }
+      if (durableArtifactReady) {
+        results.push({ id: task.id, success: false, artifactReady: true, callbackPending: true, error: error.message, errorCode: error.code || 'TASK_COMPLETION_PENDING' });
+        continue;
+      }
+      if (error.paperJob?.status === 'retry_wait') {
+        results.push({ id: task.id, success: false, retryScheduled: true, nextAttemptAt: error.paperJob.next_attempt_at, error: error.message, errorCode: error.code || 'TASK_RETRY_SCHEDULED' });
+        continue;
+      }
       let cleanupError = null;
       if (generatedResult) {
         try { await cleanupTaskResult(generatedResult); } catch (artifactCleanupError) { cleanupError = artifactCleanupError.message; }
@@ -338,18 +395,6 @@ router.get('/tasks/pending', async (req, res, next) => {
     const authOptions = authOptionsFromRequest(req);
     const result = await fetchPendingTasks({ ...authOptions, hostDeviceId: hostDeviceId(), leaseMs: 60000 });
     res.json(result);
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.get('/artifacts/:fileName', (req, res, next) => {
-  try {
-    const root = exportRoot();
-    const fileName = path.basename(req.params.fileName);
-    const filePath = resolveQuestionAssetPath(root, 'exports', fileName);
-    if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, error: 'artifact not found' });
-    return res.download(filePath, fileName);
   } catch (err) {
     next(err);
   }
