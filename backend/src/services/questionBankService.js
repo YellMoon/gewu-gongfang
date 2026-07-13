@@ -34,7 +34,7 @@ const RICH_CONTENT_MAX_DEPTH = 40;
 const UNSAFE_OBJECT_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 const RICH_CONTENT_NODE_TYPES = new Set([
   'doc', 'paragraph', 'text', 'hardBreak', 'heading', 'blockquote', 'bulletList', 'orderedList',
-  'listItem', 'horizontalRule', 'codeBlock', 'formula', 'image',
+    'listItem', 'horizontalRule', 'codeBlock', 'formula', 'formulaBlock', 'image',
 ]);
 const RICH_CONTENT_MARK_TYPES = new Set([
   'bold', 'italic', 'underline', 'strike', 'code', 'subscript', 'superscript', 'textStyle', 'fontFamily', 'fontSize', 'highlight', 'link',
@@ -53,6 +53,18 @@ function normalizeRichContent(value) {
   if (typeof value === 'string') {
     try { parsed = JSON.parse(value); } catch (_error) { throw new Error('rich_content must be valid JSON'); }
   }
+  parsed = JSON.parse(JSON.stringify(parsed));
+  const stripOptionalNulls = node => {
+    if (!node || typeof node !== 'object') return;
+    if (node.attrs && (node.type === 'formula' || node.type === 'formulaBlock')) {
+      for (const key of ['sourceRef', 'warnings', 'conversionStatus', 'sourceFormat', 'previewRef']) if (node.attrs[key] == null) delete node.attrs[key];
+    }
+    if (node.attrs && node.type === 'image') {
+      for (const key of ['src', 'alt', 'title', 'width', 'height', 'align']) if (node.attrs[key] == null) delete node.attrs[key];
+    }
+    for (const child of Object.values(node)) if (child && typeof child === 'object') Array.isArray(child) ? child.forEach(stripOptionalNulls) : stripOptionalNulls(child);
+  };
+  stripOptionalNulls(parsed);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('rich_content must be an object');
   }
@@ -85,9 +97,10 @@ function normalizeRichContent(value) {
     const attrs = node.attrs && typeof node.attrs === 'object' && !Array.isArray(node.attrs) ? node.attrs : {};
     if (['doc', 'text', 'hardBreak', 'blockquote', 'bulletList', 'listItem', 'horizontalRule'].includes(node.type)) allowKeys(attrs, [], node.type);
     if (['paragraph', 'heading'].includes(node.type)) {
-      allowKeys(attrs, node.type === 'heading' ? ['level', 'textAlign', 'lineHeight'] : ['textAlign', 'lineHeight'], node.type);
+      allowKeys(attrs, node.type === 'heading' ? ['level', 'textAlign', 'lineHeight', 'indent'] : ['textAlign', 'lineHeight', 'indent'], node.type);
       if (attrs.textAlign != null && !RICH_TEXT_ALIGNS.has(String(attrs.textAlign))) throw new Error(`rich_content ${node.type} textAlign is invalid`);
       if (attrs.lineHeight != null && !RICH_LINE_HEIGHTS.has(String(attrs.lineHeight))) throw new Error(`rich_content ${node.type} lineHeight is invalid`);
+      if (attrs.indent != null && (!Number.isInteger(attrs.indent) || attrs.indent < 0 || attrs.indent > 8)) throw new Error(`rich_content ${node.type} indent is invalid`);
       if (node.type === 'heading' && (!Number.isInteger(attrs.level) || attrs.level < 1 || attrs.level > 6)) throw new Error('rich_content heading level is invalid');
     }
     if (node.type === 'orderedList') {
@@ -123,13 +136,13 @@ function normalizeRichContent(value) {
         }
       }
     }
-    if (node.type === 'formula') {
+    if (node.type === 'formula' || node.type === 'formulaBlock') {
       allowKeys(attrs, ['id', 'canonicalLatex', 'displayMode', 'sourceRef', 'warnings', 'conversionStatus', 'sourceFormat', 'previewRef'], 'formula');
       if (!SAFE_RICH_ID.test(String(attrs.id || '')) || typeof attrs.canonicalLatex !== 'string' || !attrs.canonicalLatex.trim()
         || attrs.canonicalLatex.length > 10000 || !['inline', 'block'].includes(attrs.displayMode)) {
         throw new Error('rich_content formula node is invalid');
       }
-      if (attrs.sourceRef !== undefined && !SAFE_RICH_REF.test(String(attrs.sourceRef))) throw new Error('rich_content formula sourceRef is invalid');
+      if (attrs.sourceRef != null && !SAFE_RICH_REF.test(String(attrs.sourceRef))) throw new Error('rich_content formula sourceRef is invalid');
       if (attrs.previewRef != null && !SAFE_RICH_REF.test(String(attrs.previewRef))) throw new Error('rich_content formula previewRef is invalid');
       if (attrs.conversionStatus != null && !['complete', 'approximate', 'preview_only', 'unsupported', 'failed'].includes(attrs.conversionStatus)) throw new Error('rich_content formula conversionStatus is invalid');
       if (attrs.sourceFormat != null && !['omml', 'eq', 'mathtype', 'mathml', 'latex', 'unknown'].includes(attrs.sourceFormat)) throw new Error('rich_content formula sourceFormat is invalid');

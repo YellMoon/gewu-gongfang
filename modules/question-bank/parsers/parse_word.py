@@ -1016,7 +1016,7 @@ class _TipTapHtmlParser(HTMLParser):
         values = dict(attrs)
         tag = tag.lower()
         if tag == "span" and (values.get("data-formula-id") or values.get("data-latex")):
-            self.current.append({"type": "formula", "attrs": {"id": values.get("data-formula-id") or "formula-%s" % uuid.uuid4().hex[:12], "canonicalLatex": values.get("data-latex") or None, "displayMode": "inline", "conversionStatus": values.get("data-conversion-status") or "complete", "sourceFormat": values.get("data-source-format") or "unknown", "previewRef": values.get("data-preview-ref") or None}})
+            self.current.append({"type": "formula", "attrs": {"id": values.get("data-formula-id") or "formula-%s" % uuid.uuid4().hex[:12], "canonicalLatex": values.get("data-latex") or None, "displayMode": "inline", "sourceRef": values.get("data-source-ref") or None, "conversionStatus": values.get("data-conversion-status") or "complete", "sourceFormat": values.get("data-source-format") or "unknown", "previewRef": values.get("data-preview-ref") or None}})
             return
         if tag == "img" and values.get("src"):
             width = values.get("width")

@@ -190,6 +190,17 @@ Verification: front-end and backend validators enforce aligned TipTap node/mark 
 - [ ] Make task execution idempotent and enforce timeout/cancel/retry/cleanup rules.
 - [ ] Run host task and artifact service tests; commit.
 
+### Task 11A: Default paper template and answer placement
+
+**Reference:** `C:\Users\83423\Desktop\组卷导出模板.docx` (SHA-256 `631d6bfb41b2606837ee91488161917da7b5a700333b1e66c1ce05c74cd9dfdb`)
+
+- [ ] Preserve the reference as the visual/layout authority for default Word and PDF paper exports, including its A4 two-section page system, title/student-information block, question-type sections, answer section and section-specific footers.
+- [ ] Generate the answer-at-end mode with a choice-answer summary table at the start of the reference-answer section, followed by every question's answer, `【知识点】` and `【解析】` in question order.
+- [ ] Generate the answer-after-each-question mode as question 1 → answer/knowledge/analysis 1 → question 2 → answer/knowledge/analysis 2, without a separate trailing answer section.
+- [ ] Expose the two truthful answer-position choices in the paper UI and carry the selected value through local-host and relay task payloads.
+- [ ] Use the same template-derived layout for PDF generation and block delivery when required formula/image/template content is missing.
+- [ ] Render both answer-position modes for DOCX and PDF, inspect every page and verify section headers/footers, answer summary correctness, formula visibility, clipping and pagination.
+
 ### Task 12: Export preference UI and runtime visual QA
 
 **Files:**

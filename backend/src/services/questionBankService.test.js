@@ -318,6 +318,22 @@ function testRichContentPersistenceProjectionAndOldClientCompatibility() {
   });
 }
 
+function testRichContentOptionalNullsUseCanonicalParity() {
+  withTempDatabase((db) => {
+    const payload = { version: 1, type: 'question-document', sections: {
+      stem: { type: 'doc', content: [{ type: 'paragraph', content: [
+        { type: 'formula', attrs: { id: 'f-null', canonicalLatex: 'x', displayMode: 'inline', sourceRef: null, previewRef: null } },
+        { type: 'image', attrs: { assetKey: 'asset-null', src: 'question-asset://asset-null', alt: 'diagram', width: null, height: null, title: null } },
+      ] }] }, options: [], subQuestions: [], answer: { type: 'doc', content: [] }, analysis: { type: 'doc', content: [] },
+    } };
+    const rich = questionBank.createQuestion(db, { type: 'single', rich_content: payload }, 'default').rich_content;
+    const [formula, image] = rich.sections.stem.content[0].content;
+    assert.strictEqual(Object.hasOwn(formula.attrs, 'sourceRef'), false);
+    assert.strictEqual(Object.hasOwn(formula.attrs, 'previewRef'), false);
+    for (const key of ['width', 'height', 'title']) assert.strictEqual(Object.hasOwn(image.attrs, key), false);
+  });
+}
+
 function testRichContentStrictAttributeValidation() {
   withTempDatabase((db) => {
     const make = node => ({ version: 1, type: 'question-document', sections: {
@@ -368,6 +384,7 @@ function main() {
   testQuestionKnowledgePointCrud();
   testStructuredRichContentRoundTrip();
   testRichContentPersistenceProjectionAndOldClientCompatibility();
+  testRichContentOptionalNullsUseCanonicalParity();
   testRichContentStrictAttributeValidation();
   testLegacySearchTextBackfillUsesCanonicalPlainText();
   console.log('questionBankService tests passed');
