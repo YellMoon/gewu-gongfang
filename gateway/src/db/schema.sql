@@ -113,7 +113,20 @@ CREATE TABLE IF NOT EXISTS miniapp_tasks (
   result_payload TEXT,
   created_by TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  protocol_version INTEGER NOT NULL DEFAULT 1,
+  idempotency_key TEXT,
+  request_hash TEXT,
+  target_host_device_id TEXT,
+  selection_context TEXT,
+  phase TEXT,
+  progress INTEGER NOT NULL DEFAULT 0,
+  claimed_by TEXT,
+  claim_token_hash TEXT,
+  lease_expires_at TEXT,
+  row_version INTEGER NOT NULL DEFAULT 0,
+  error_code TEXT,
+  cancel_requested_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS cloud_devices (

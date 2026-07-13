@@ -57,6 +57,55 @@ const pairingRouter = require('./desktopPairing');
   process.env.GEWU_CLOUD_RELAY_HOST_TOKEN='test-host-secret';
   assert.strictEqual((await call('/tasks/task1/result', { headers: { 'x-test-user': approved('u2') } })).status, 404);
   assert.strictEqual((await call('/tasks/task1/result', { headers: { 'x-test-user': approved('u1') } })).status, 200);
+  const v2Body = JSON.stringify({ protocolVersion: 2, taskType: 'paper-export-pdf', targetHostDeviceId: 'host1', payload: { questionIds: ['q2', 'q1'], title: 'paper' } });
+  const v2Create = await call('/tasks', { method: 'POST', headers: { 'x-test-user': approved('u1'), 'x-idempotency-key': 'idem-http-1' }, body: v2Body });
+  assert.strictEqual(v2Create.status, 200);
+  const v2Created = await v2Create.json();
+  assert.strictEqual(v2Created.task.protocol_version, 2);
+  assert.strictEqual(v2Created.task.target_host_device_id, 'host1');
+  const v2Replay = await call('/tasks', { method: 'POST', headers: { 'x-test-user': approved('u1'), 'x-idempotency-key': 'idem-http-1' }, body: v2Body });
+  assert.strictEqual((await v2Replay.json()).task.id, v2Created.task.id, 'HTTP idempotency replay must return the original task');
+  assert.strictEqual((await call('/tasks', { method: 'POST', headers: { 'x-test-user': approved('u1'), 'x-idempotency-key': 'idem-http-1' }, body: JSON.stringify({ ...JSON.parse(v2Body), payload: { questionIds: ['q1'] } }) })).status, 409);
+
+  getDb().prepare("INSERT INTO miniapp_tasks (id,task_type,status,payload,created_by,created_at,updated_at,protocol_version) VALUES ('legacy-claimed-http','paper-export-pdf','pending_host','{}','u1',?,?,1)").run(now, now);
+  const legacyClaimPoll = await call('/tasks?status=pending_host&hostDeviceId=host1&leaseMs=1000', { headers: { 'x-gewu-host-token': 'test-host-secret' } });
+  const legacyClaimedTask = (await legacyClaimPoll.json()).tasks.find(task => task.id === 'legacy-claimed-http');
+  assert.ok(legacyClaimedTask?.claimToken, 'new host polling must atomically claim V1 tasks and receive a claim token');
+  const competingLegacyPoll = await call('/tasks?status=pending_host&hostDeviceId=host2&leaseMs=1000', { headers: { 'x-gewu-host-token': 'test-host-secret' } });
+  assert.ok(!(await competingLegacyPoll.json()).tasks.some(task => task.id === 'legacy-claimed-http'), 'an active V1 lease must hide the task from another host');
+  assert.strictEqual((await call('/tasks/legacy-claimed-http/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ success: true, hostDeviceId: 'host2', claimToken: 'wrong', expectedRowVersion: legacyClaimedTask.row_version, result: {} }) })).status, 409);
+  assert.strictEqual((await call('/tasks/legacy-claimed-http/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ success: true, hostDeviceId: 'host1', claimToken: legacyClaimedTask.claimToken, expectedRowVersion: legacyClaimedTask.row_version, result: {} }) })).status, 200);
+
+  getDb().prepare("INSERT INTO miniapp_tasks (id,task_type,status,payload,created_by,created_at,updated_at,protocol_version) VALUES ('legacy-shared-http','paper-export-word','pending_host','{}','u1',?,?,1)").run(now, now);
+  const [legacySharedA, legacySharedB] = await Promise.all([
+    call('/tasks?status=pending_host', { headers: { 'x-gewu-host-token': 'test-host-secret' } }),
+    call('/tasks?status=pending_host', { headers: { 'x-gewu-host-token': 'test-host-secret' } }),
+  ]);
+  const sharedAppearances = [await legacySharedA.json(), await legacySharedB.json()]
+    .flatMap(body => body.tasks).filter(task => task.id === 'legacy-shared-http');
+  assert.strictEqual(sharedAppearances.length, 1, 'concurrent legacy polling without hostDeviceId must atomically return a V1 task only once');
+  assert.strictEqual((await call('/tasks/legacy-shared-http/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ success: true, result: {} }) })).status, 200, 'legacy shared claims remain completable by old trusted hosts during their lease');
+
+  const legacyPending = await call('/tasks', { headers: { 'x-gewu-host-token': 'test-host-secret' } });
+  assert.ok(!(await legacyPending.json()).tasks.some(task => task.id === v2Created.task.id), 'V1 polling must not return V2 tasks');
+  const claimResponse = await call('/tasks/claim', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ hostDeviceId: 'host1', leaseMs: 1000 }) });
+  const claimed = await claimResponse.json();
+  assert.strictEqual(claimed.task.id, v2Created.task.id);
+  assert.ok(claimed.claimToken);
+  const duplicateClaim = await call('/tasks/claim', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ hostDeviceId: 'host1' }) });
+  assert.strictEqual((await duplicateClaim.json()).task, null, 'active V2 lease must prevent duplicate claim');
+  assert.strictEqual((await call(`/tasks/${v2Created.task.id}/progress`, { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ claimToken: 'stale', expectedRowVersion: claimed.task.row_version, phase: 'rendering', progress: 40 }) })).status, 409);
+  assert.strictEqual((await call(`/tasks/${v2Created.task.id}/progress`, { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ claimToken: claimed.claimToken, expectedRowVersion: claimed.task.row_version, phase: 'made-up-phase', progress: 40 }) })).status, 400);
+  const progressResponse = await call(`/tasks/${v2Created.task.id}/progress`, { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ claimToken: claimed.claimToken, expectedRowVersion: claimed.task.row_version, phase: 'rendering', progress: 40 }) });
+  const progressed = await progressResponse.json();
+  assert.deepStrictEqual([progressed.task.phase, progressed.task.progress], ['rendering', 40]);
+  const completeResponse = await call(`/tasks/${v2Created.task.id}/complete`, { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ claimToken: claimed.claimToken, expectedRowVersion: progressed.task.row_version, result: { fileName: 'paper.pdf' } }) });
+  assert.strictEqual((await completeResponse.json()).task.status, 'completed');
+
+  const cancelCreate = await call('/tasks', { method: 'POST', headers: { 'x-test-user': approved('u1'), 'x-idempotency-key': 'idem-http-cancel' }, body: v2Body });
+  const cancelTask = (await cancelCreate.json()).task;
+  const cancelResponse = await call(`/tasks/${cancelTask.id}/cancel`, { method: 'POST', headers: { 'x-test-user': approved('u1') }, body: '{}' });
+  assert.strictEqual((await cancelResponse.json()).task.status, 'cancelled');
   getDb().prepare("INSERT INTO miniapp_tasks (id,task_type,status,payload,created_by,created_at,updated_at) VALUES ('task2','question-paper','completed','{}','1',?,?)").run(now, now);
   assert.strictEqual((await call('/tasks/task2/result', { headers: { 'x-test-user': approved(1) } })).status, 200, 'owner ids are normalized as strings in SQL');
   server.close(); closeDatabase(); fs.rmSync(root, { recursive: true, force: true });

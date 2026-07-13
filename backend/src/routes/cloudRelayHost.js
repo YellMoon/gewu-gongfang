@@ -6,12 +6,16 @@ const {
   publishHeartbeat,
   publishSnapshot,
   fetchPendingTasks,
+  claimMiniappTask,
+  updateMiniappTaskProgress,
   completeMiniappTask,
+  failMiniappTask,
 } = require('../services/cloudRelayClient');
 const questionBank = require('../services/questionBankService');
 const { resolveQuestionAssetPath } = require('../services/questionBankStorageService');
 const { updateCommittedQuestion, createTrustedInternalStorageUpdateContext } = require('../services/questionBankStorageService');
 const { createLocalQuestionImageResolver, writePaperArtifact } = require('../services/paperArtifactService');
+const { resolveLegacyQuestionSelection, resolveTaskQuestionSelection } = require('../services/paperExportSelectionService');
 const { verifyRelayAssertion } = require('../services/relayAssertionService');
 
 const router = Router();
@@ -60,21 +64,17 @@ function buildSnapshotPayload(db) {
 }
 
 function selectQuestions(db, payload = {}) {
-  const tenantId = payload.tenantId || payload.tenant_id || 'default';
-  const limit = Math.max(1, Math.min(Number(payload.questionCount || payload.count || 20) || 20, 100));
-  const filters = {
-    subject: payload.subject || undefined,
-    type: payload.type || undefined,
-    difficulty: payload.difficulty || undefined,
-    status: payload.status || 'published',
-  };
-  const rows = questionBank.listQuestions(db.db || db, filters, tenantId);
-  return rows.slice(0, limit);
+  return resolveLegacyQuestionSelection(db, payload, { tenantId: payload.tenantId || payload.tenant_id || 'default', allowDraft: false });
 }
 
 async function processMiniappTask(task, db, dependencies = {}) {
   const payload = task.payload || {};
-  const selectTaskQuestions = dependencies.selectQuestions || selectQuestions;
+  const selectTaskQuestions = dependencies.selectQuestions || ((database, taskPayload) => resolveTaskQuestionSelection(
+    database,
+    task,
+    task.selection_context || { tenantId: taskPayload.tenantId || taskPayload.tenant_id || 'default', allowDraft: false },
+    { questionBank: dependencies.questionBank || questionBank }
+  ));
   const writeTaskArtifact = dependencies.writePaperArtifact || writePaperArtifact;
   if (task.task_type === 'desktop-sync') {
     const changes = payload.pendingChanges || payload.changes || [];
@@ -142,6 +142,9 @@ async function processMiniappTask(task, db, dependencies = {}) {
       effectiveFormulaModes: artifact.effectiveFormulaModes,
       fallbackCount: artifact.fallbackCount,
       formulaCount: artifact.formulaCount,
+      sha256: artifact.sha256,
+      pageCount: artifact.pageCount,
+      diagnostics: artifact.diagnostics || [],
       questions: questions.map(question => ({ id: question.id, stem: question.stem })),
     };
   }
@@ -167,6 +170,9 @@ async function processMiniappTask(task, db, dependencies = {}) {
       effectiveFormulaModes: artifact.effectiveFormulaModes,
       fallbackCount: artifact.fallbackCount,
       formulaCount: artifact.formulaCount,
+      sha256: artifact.sha256,
+      pageCount: artifact.pageCount,
+      diagnostics: artifact.diagnostics || [],
       questions: questions.map(question => ({ id: question.id, stem: question.stem })),
     };
   }
@@ -180,6 +186,122 @@ async function processMiniappTask(task, db, dependencies = {}) {
   }
 
   throw new Error(`unsupported miniapp task type: ${task.task_type}`);
+}
+
+function startSerialLeaseHeartbeat({ intervalMs, renew }) {
+  let stopped = false;
+  let timer = null;
+  let inFlight = Promise.resolve();
+  let failure = null;
+  const schedule = () => {
+    if (stopped) return;
+    timer = setTimeout(() => {
+      timer = null;
+      inFlight = Promise.resolve()
+        .then(renew)
+        .catch(error => {
+          failure = error;
+          stopped = true;
+        })
+        .finally(() => {
+          if (!stopped) schedule();
+        });
+    }, intervalMs);
+  };
+  schedule();
+  return {
+    async stop() {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      await inFlight;
+      if (failure) throw failure;
+    },
+  };
+}
+
+async function cleanupGeneratedTaskResult(result) {
+  const fileName = result?.fileName ? path.basename(result.fileName) : '';
+  if (!fileName) return;
+  const filePath = resolveQuestionAssetPath(exportRoot(), 'exports', fileName);
+  if (fs.existsSync(filePath)) await fs.promises.unlink(filePath);
+}
+
+async function processClaimedV2Tasks(db, authOptions, dependencies = {}) {
+  const claimTask = dependencies.claimMiniappTask || claimMiniappTask;
+  const updateProgress = dependencies.updateMiniappTaskProgress || updateMiniappTaskProgress;
+  const completeTask = dependencies.completeMiniappTask || completeMiniappTask;
+  const failTask = dependencies.failMiniappTask || failMiniappTask;
+  const processTask = dependencies.processMiniappTask || processMiniappTask;
+  const resolveHostDeviceId = dependencies.hostDeviceId || hostDeviceId;
+  const cleanupTaskResult = dependencies.cleanupTaskResult || cleanupGeneratedTaskResult;
+  const leaseMs = Math.max(100, Number(dependencies.leaseMs || 60000));
+  const heartbeatIntervalMs = Math.max(1, Number(dependencies.heartbeatIntervalMs || Math.floor(leaseMs / 3)));
+  const results = [];
+  const requireRelaySuccess = response => {
+    if (response?.success === false) {
+      throw Object.assign(new Error(response.error || response.message || response.code || 'cloud relay rejected task operation'), {
+        code: response.code || 'CLOUD_RELAY_REQUEST_FAILED',
+        response,
+      });
+    }
+    return response;
+  };
+  for (let count = 0; count < 100; count += 1) {
+    const claimed = await claimTask({ hostDeviceId: resolveHostDeviceId(), leaseMs }, authOptions);
+    if (!claimed?.success || !claimed.task) break;
+    const { task, claimToken } = claimed;
+    let rowVersion = Number(task.row_version || 0);
+    let heartbeat = null;
+    let generatedResult = null;
+    try {
+      const progress = requireRelaySuccess(await updateProgress(task.id, {
+        claimToken,
+        expectedRowVersion: rowVersion,
+        phase: 'processing',
+        progress: 5,
+        leaseMs,
+      }, authOptions));
+      rowVersion = Number(progress?.task?.row_version ?? rowVersion + 1);
+      heartbeat = startSerialLeaseHeartbeat({
+        intervalMs: heartbeatIntervalMs,
+        renew: async () => {
+          const renewed = requireRelaySuccess(await updateProgress(task.id, {
+            claimToken,
+            expectedRowVersion: rowVersion,
+            phase: 'processing',
+            progress: Number(progress?.task?.progress || 5),
+            leaseMs,
+          }, authOptions));
+          rowVersion = Number(renewed?.task?.row_version ?? rowVersion + 1);
+        },
+      });
+      const result = await processTask(task, db);
+      generatedResult = result;
+      await heartbeat.stop();
+      const completed = requireRelaySuccess(await completeTask(task.id, { claimToken, expectedRowVersion: rowVersion, result }, authOptions));
+      results.push({ id: task.id, success: true, completed });
+    } catch (error) {
+      try { await heartbeat?.stop(); } catch (_heartbeatError) { /* preserve the first processing error */ }
+      let cleanupError = null;
+      if (generatedResult) {
+        try { await cleanupTaskResult(generatedResult); } catch (artifactCleanupError) { cleanupError = artifactCleanupError.message; }
+      }
+      let failed = null;
+      let failError = null;
+      try {
+        failed = requireRelaySuccess(await failTask(task.id, {
+          claimToken,
+          expectedRowVersion: rowVersion,
+          errorCode: error.code || 'TASK_PROCESSING_FAILED',
+          error: error.message,
+        }, authOptions));
+      } catch (taskFailError) {
+        failError = { code: taskFailError.code || 'TASK_FAIL_REPORT_FAILED', message: taskFailError.message };
+      }
+      results.push({ id: task.id, success: false, error: error.message, errorCode: error.code || 'TASK_PROCESSING_FAILED', failed, failError, cleanupError });
+    }
+  }
+  return results;
 }
 
 router.post('/heartbeat', async (req, res, next) => {
@@ -213,7 +335,8 @@ router.post('/snapshot', async (req, res, next) => {
 
 router.get('/tasks/pending', async (req, res, next) => {
   try {
-    const result = await fetchPendingTasks(authOptionsFromRequest(req));
+    const authOptions = authOptionsFromRequest(req);
+    const result = await fetchPendingTasks({ ...authOptions, hostDeviceId: hostDeviceId(), leaseMs: 60000 });
     res.json(result);
   } catch (err) {
     next(err);
@@ -236,16 +359,19 @@ router.post('/tasks/process', async (req, res, next) => {
   try {
     const db = getInstance();
     const authOptions = authOptionsFromRequest(req);
-    const pending = await fetchPendingTasks(authOptions);
-    if (!pending.success) return res.json(pending);
+    const claimedResults = await processClaimedV2Tasks(db, authOptions);
+    const pending = await fetchPendingTasks({ ...authOptions, hostDeviceId: hostDeviceId(), leaseMs: 60000 });
+    if (!pending.success) return res.json(claimedResults.length ? { success: true, processed: claimedResults.length, results: claimedResults, legacy: pending } : pending);
     const tasks = pending.tasks || [];
-    const results = [];
+    const results = [...claimedResults];
     for (const task of tasks) {
       try {
         const result = await processMiniappTask(task, db);
         const completed = await completeMiniappTask(task.id, {
           success: true,
           hostDeviceId: hostDeviceId(),
+          claimToken: task.claimToken,
+          expectedRowVersion: task.row_version,
           result,
         }, authOptions);
         results.push({ id: task.id, success: true, completed });
@@ -253,6 +379,8 @@ router.post('/tasks/process', async (req, res, next) => {
         const completed = await completeMiniappTask(task.id, {
           success: false,
           hostDeviceId: hostDeviceId(),
+          claimToken: task.claimToken,
+          expectedRowVersion: task.row_version,
           result: { error: err.message },
         }, authOptions);
         results.push({ id: task.id, success: false, error: err.message, completed });
@@ -266,4 +394,7 @@ router.post('/tasks/process', async (req, res, next) => {
 
 module.exports = router;
 module.exports.processMiniappTask = processMiniappTask;
+module.exports.processClaimedV2Tasks = processClaimedV2Tasks;
 module.exports.selectQuestions = selectQuestions;
+module.exports.startSerialLeaseHeartbeat = startSerialLeaseHeartbeat;
+module.exports.cleanupGeneratedTaskResult = cleanupGeneratedTaskResult;

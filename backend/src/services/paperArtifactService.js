@@ -1,6 +1,8 @@
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const crypto = require('crypto');
+const { spawn, spawnSync } = require('child_process');
+const { Worker } = require('worker_threads');
 const dns = require('dns');
 const net = require('net');
 const { AlignmentType, Document, ImageRun, Packer, Paragraph, SectionType, Table, TableCell, TableRow, TextRun, WidthType } = require('docx');
@@ -9,7 +11,7 @@ const sharp = require('sharp');
 const PDFDocument = require('pdfkit');
 const SVGtoPDF = require('svg-to-pdfkit');
 const { initQuestionBankStore, resolveQuestionAssetPath } = require('./questionBankStorageService');
-const { latexToEqField, latexToMathml, renderLatexSvg, resolveFormulaMode } = require('./formulaExportService');
+const { latexToEqField, renderLatexSvg, resolveFormulaMode } = require('./formulaExportService');
 
 const LABELS = {
   defaultTitle: '\u7ec3\u4e60\u8bd5\u5377', subject: '\u79d1\u76ee\uff1a', count: '\u9898\u76ee\u6570\uff1a',
@@ -17,6 +19,7 @@ const LABELS = {
 };
 const DEFAULT_TEMPLATE_PATH = path.join(__dirname, '..', '..', 'resources', 'paper', 'default-paper-template.docx');
 const CHOICE_TYPES = new Set(['\u5355\u9009\u9898', '\u591a\u9009\u9898', 'single-choice', 'multiple-choice', 'single', 'multiple']);
+const FORMULA_LIMITS = Object.freeze({ count: 2000, latexLength: 20000, totalLatexLength: 1000000, width: 1024, height: 256, rasterPixels: 1000000, concurrency: 4, deadlineMs: 30000 });
 
 function isPrivateNetworkAddress(value) {
   const address = String(value || '').toLowerCase().split('%')[0];
@@ -94,16 +97,19 @@ function documentSegments(documentNode) {
 
 function normalizedQuestion(question = {}, index = 0) {
   const rich = question.rich_content?.type === 'question-document' ? question.rich_content.sections : null;
+  const segmentsFor = value => value && typeof value === 'object' ? documentSegments(value) : legacySegments(value || '');
   const options = rich?.options || (question.options || []).map((item, optionIndex) => ({ label: item.label || String.fromCharCode(65 + optionIndex), content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: typeof item === 'string' ? item : item.content || item.text || '' }] }] } }));
+  const subQuestions = rich?.subQuestions || rich?.sub_questions || question.sub_questions || question.subQuestions || [];
   const richStem = rich ? documentSegments(rich.stem) : legacySegments(question.stem || question.content || question.title || '');
   const assetImages = (Array.isArray(question.assets) ? question.assets : [])
     .filter(asset => String(asset.mime_type || asset.mimeType || '').startsWith('image/') && (asset.assetKey || asset.asset_key || asset.oss_key || asset.oss_url || asset.url || asset.data_url))
     .map(asset => ({ type: 'image', assetKey: asset.assetKey || asset.asset_key || asset.oss_key || '', src: asset.oss_url || asset.url || asset.data_url || '', width: Number(asset.width || 320), required: true }));
   return {
+    id: String(question.id || question.question_id || `question-${index + 1}`),
     number: index + 1,
     stem: [...richStem, ...(richStem.some(segment => segment.type === 'image') ? [] : assetImages)],
     options: options.map(item => ({ label: item.label || '', content: documentSegments(item.content) })),
-    subs: (rich?.subQuestions || []).map(item => ({ label: item.label || '', content: documentSegments(item.content), answer: documentSegments(item.answer) })),
+    subs: subQuestions.map(item => ({ label: item.label || '', content: segmentsFor(item.content), answer: segmentsFor(item.answer) })),
     answer: rich ? documentSegments(rich.answer) : legacySegments(question.answer || ''),
     analysis: rich ? documentSegments(rich.analysis) : legacySegments(question.explanation || question.analysis || ''),
     type: normalizeBackendQuestionType(question.type || question.question_type || ''),
@@ -114,21 +120,78 @@ function normalizedQuestion(question = {}, index = 0) {
   };
 }
 
+function applicationRoots() {
+  return [...new Set([
+    process.env.GEWU_APP_PATH,
+    process.resourcesPath,
+    process.resourcesPath && path.join(process.resourcesPath, 'app.asar.unpacked'),
+    path.resolve(__dirname, '..', '..', '..'),
+    process.cwd(),
+  ].filter(Boolean).map(value => path.resolve(value)))];
+}
+
+function resolveSupportScript(relativePath) {
+  const found = applicationRoots().map(root => path.join(root, relativePath)).find(fs.existsSync);
+  if (!found) throw new Error(`support script is missing: ${relativePath}`);
+  return found;
+}
+
 function pythonExecutable() {
-  const candidates = [process.env.GEWU_PYTHON, path.join(process.cwd(), 'runtime', 'python', 'python.exe'), process.resourcesPath && path.join(process.resourcesPath, 'runtime', 'python', 'python.exe'), 'python'].filter(Boolean);
+  const configured = [process.env.PYTHON_BIN, process.env.GEWU_PYTHON].filter(Boolean).flatMap(value => {
+    const absolute = path.resolve(value);
+    return fs.existsSync(absolute) && fs.statSync(absolute).isDirectory() ? [path.join(absolute, 'python.exe'), path.join(absolute, 'python')] : [absolute];
+  });
+  const candidates = [...configured, ...applicationRoots().flatMap(root => [path.join(root, 'runtime', 'python', 'python.exe'), path.join(root, 'runtime', 'python', 'python')]), 'python'];
   return candidates.find(candidate => candidate === 'python' || fs.existsSync(candidate));
 }
 
-function mathmlRowsToOmml(mathmlRows) {
+function runPythonJson(script, args, payload, deadlineAt, timeoutError) {
+  return new Promise((resolve, reject) => {
+    const remaining = deadlineAt - Date.now();
+    if (remaining <= 0) { reject(timeoutError()); return; }
+    let child;
+    try {
+      child = spawn(pythonExecutable(), [script, ...(args || [])], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    } catch (error) {
+      reject(error); return;
+    }
+    const chunks = []; const errors = []; let outputBytes = 0; let settled = false; let timedOut = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true; clearTimeout(timer); callback(value);
+    };
+    const collect = target => chunk => {
+      outputBytes += chunk.length;
+      if (outputBytes > 16 * 1024 * 1024) {
+        child.kill('SIGKILL');
+        finish(reject, new Error('Python formula helper output exceeded 16 MiB'));
+        return;
+      }
+      target.push(chunk);
+    };
+    const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, remaining);
+    child.stdout.on('data', collect(chunks));
+    child.stderr.on('data', collect(errors));
+    child.once('error', error => finish(reject, timedOut ? timeoutError() : error));
+    child.once('close', status => {
+      if (timedOut) { finish(reject, timeoutError()); return; }
+      finish(resolve, { status, stdout: Buffer.concat(chunks).toString('utf8'), stderr: Buffer.concat(errors).toString('utf8') });
+    });
+    child.stdin.once('error', error => { if (error.code !== 'EPIPE') finish(reject, error); });
+    child.stdin.end(JSON.stringify(payload));
+  });
+}
+
+async function mathmlRowsToOmml(mathmlRows, options, deadlineAt, timeoutError) {
   if (!mathmlRows.length) return [];
-  const script = path.join(process.cwd(), 'modules', 'question-bank', 'exporters', 'mathml_to_omml.py');
-  const result = spawnSync(pythonExecutable(), [script], { input: JSON.stringify(mathmlRows), encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, windowsHide: true, timeout: 30000 });
+  const script = options.formulaMathmlToOmmlScript || resolveSupportScript(path.join('modules', 'question-bank', 'exporters', 'mathml_to_omml.py'));
+  const result = await runPythonJson(script, [], mathmlRows, deadlineAt, timeoutError);
   if (result.status !== 0) return mathmlRows.map(() => null);
   try { const parsed = JSON.parse(result.stdout); return Array.isArray(parsed.rows) ? parsed.rows : mathmlRows.map(() => null); } catch (_error) { return mathmlRows.map(() => null); }
 }
 
 function normalizeDocxPackage(filePath) {
-  const script = path.join(process.cwd(), 'modules', 'question-bank', 'exporters', 'normalize_docx.py');
+  const script = resolveSupportScript(path.join('modules', 'question-bank', 'exporters', 'normalize_docx.py'));
   const normalized = `${filePath}.normalized.docx`;
   const result = spawnSync(pythonExecutable(), [script, filePath, normalized], { encoding: 'utf8', windowsHide: true, timeout: 30000 });
   if (result.status !== 0 || !fs.existsSync(normalized)) throw new Error(`DOCX formula package normalization failed: ${result.stderr || result.status}`);
@@ -136,23 +199,190 @@ function normalizeDocxPackage(filePath) {
   fs.renameSync(normalized, filePath);
 }
 
-function formulaRows(questions) {
+function formulaRows(questions, answerPosition) {
   const rows = [];
-  const scan = segments => segments.forEach(segment => { if (segment.type === 'formula' && segment.latex) { segment.formulaIndex = rows.length; rows.push(segment); } });
-  questions.forEach(question => { scan(question.stem); question.options.forEach(item => scan(item.content)); question.subs.forEach(item => { scan(item.content); scan(item.answer); }); scan(question.answer); scan(question.knowledge); scan(question.analysis); });
+  const scan = (segments, question, location) => segments.forEach(segment => {
+    if (segment.type !== 'formula') return;
+    segment.formulaIndex = rows.length;
+    rows.push({
+      segment,
+      latex: String(segment.latex || ''),
+      display: Boolean(segment.display),
+      questionId: question.id,
+      location,
+      index: rows.length,
+    });
+  });
+  questions.forEach(question => {
+    scan(question.stem, question, 'stem');
+    question.options.forEach((item, index) => scan(item.content, question, `options[${index}]`));
+    question.subs.forEach((item, index) => scan(item.content, question, `subQuestions[${index}].content`));
+    if (answerPosition === 'after-each') {
+      question.subs.forEach((item, index) => scan(item.answer, question, `subQuestions[${index}].answer`));
+      scan(question.answer, question, 'answer');
+      scan(question.knowledge, question, 'knowledge');
+      scan(question.analysis, question, 'analysis');
+    }
+  });
+  if (answerPosition === 'end') questions.forEach(question => {
+    question.subs.forEach((item, index) => scan(item.answer, question, `subQuestions[${index}].answer`));
+    scan(question.answer, question, 'answer');
+    scan(question.knowledge, question, 'knowledge');
+    scan(question.analysis, question, 'analysis');
+  });
   return rows;
 }
 
-async function prepareFormulaRows(rows, preferredMode) {
-  const mode = resolveFormulaMode(preferredMode);
-  const omml = ['word-native', 'eq-field'].includes(mode) ? mathmlRowsToOmml(rows.map(row => latexToMathml(row.latex))) : rows.map(() => null);
-  return Promise.all(rows.map(async (row, index) => {
-    const rendered = renderLatexSvg(row.latex, row.display);
-    const png = await sharp(Buffer.from(rendered.svg)).resize(rendered.width * 4, rendered.height * 4, { fit: 'fill' }).png().toBuffer();
-    const native = omml[index];
-    const effectiveMode = mode === 'mathtype-compatible' ? 'mathtype-compatible' : (native ? mode : 'latex-vector');
-    return { ...row, ...rendered, png, omml: native, effectiveMode, fallbackUsed: !native && mode !== 'latex-vector' && mode !== 'mathtype-compatible' };
+function formulaGateError(diagnostics, message = 'formula visible-result gate failed') {
+  const error = new Error(message);
+  error.code = 'FORMULA_VISIBLE_GATE_FAILED';
+  error.diagnostics = Array.isArray(diagnostics) ? diagnostics : [];
+  return error;
+}
+
+async function resolveFormulaManifest(rows, preferredMode, omml, options, deadlineAt, timeoutError) {
+  const script = options.formulaPolicyScript || resolveSupportScript(path.join('modules', 'question-bank', 'export', 'formula_renderers.py'));
+  const requestedMode = resolveFormulaMode(preferredMode);
+  const input = rows.map((row, index) => ({
+    questionId: row.questionId,
+    location: row.location,
+    index,
+    canonicalLatex: row.latex,
+    requestedMode,
+    nativeAvailable: Boolean(options.allowNative && omml[index]),
+    mathtypeAvailable: false,
   }));
+  const result = await runPythonJson(script, [], { rows: input }, deadlineAt, timeoutError);
+  let parsed;
+  try { parsed = JSON.parse(result.stdout || '{}'); } catch (_error) { parsed = null; }
+  if (result.status !== 0 || !parsed?.ok || !Array.isArray(parsed.manifest)) {
+    throw formulaGateError(parsed?.diagnostics || [{ code: 'FORMULA_RENDERER_POLICY_FAILED', message: result.stderr || 'formula renderer policy failed', questionId: input[0]?.questionId || '', location: input[0]?.location || '', index: input[0]?.index || 0 }]);
+  }
+  return parsed.manifest;
+}
+
+async function prepareFormulaRows(rows, preferredMode, options = {}) {
+  const diagnosticFor = (code, message, row = rows[0], index = 0) => ({ code, message, questionId: row?.questionId || '', location: row?.location || '', index: Number(row?.index ?? index) });
+  if (rows.length > FORMULA_LIMITS.count) {
+    const row = rows[FORMULA_LIMITS.count] || rows.at(-1);
+    throw formulaGateError([diagnosticFor('FORMULA_COUNT_LIMIT_EXCEEDED', `formula count exceeds ${FORMULA_LIMITS.count}`, row, FORMULA_LIMITS.count)]);
+  }
+  let totalLatexLength = 0;
+  for (const [index, row] of rows.entries()) {
+    const length = String(row.latex || '').length;
+    if (length > FORMULA_LIMITS.latexLength) throw formulaGateError([diagnosticFor('FORMULA_LATEX_LENGTH_LIMIT_EXCEEDED', `formula LaTeX length exceeds ${FORMULA_LIMITS.latexLength}`, row, index)]);
+    totalLatexLength += length;
+    if (totalLatexLength > FORMULA_LIMITS.totalLatexLength) throw formulaGateError([diagnosticFor('FORMULA_TOTAL_LATEX_LIMIT_EXCEEDED', `total formula LaTeX length exceeds ${FORMULA_LIMITS.totalLatexLength}`, row, index)]);
+  }
+  const deadlineAt = Date.now() + Math.max(1, Number(options.formulaDeadlineMs || FORMULA_LIMITS.deadlineMs));
+  const preparationTimeout = (row = rows[0], index = 0) => formulaGateError([diagnosticFor('FORMULA_PREPARATION_TIMEOUT', 'formula preparation deadline exceeded', row, index)]);
+  const abortController = new AbortController();
+  const activeWorkers = new Set();
+  const mathmlInWorker = (row, index) => new Promise((resolve, reject) => {
+    const remaining = deadlineAt - Date.now();
+    if (remaining <= 0) { reject(formulaGateError([diagnosticFor('FORMULA_PREPARATION_TIMEOUT', 'formula preparation deadline exceeded', row, index)])); return; }
+    const item = new Worker(options.formulaMathmlWorkerPath || path.join(__dirname, 'formulaRenderWorker.js'), { workerData: { task: 'mathml', latex: row.latex, display: row.display, limits: FORMULA_LIMITS } });
+    activeWorkers.add(item); let settled = false;
+    const finish = async (callback, value) => {
+      if (settled) return;
+      settled = true; clearTimeout(timer); abortController.signal.removeEventListener('abort', onAbort);
+      try { await item.terminate(); } catch (_error) { /* already exited */ }
+      activeWorkers.delete(item);
+      callback(value);
+    };
+    const onAbort = () => finish(reject, formulaGateError([diagnosticFor('FORMULA_PREPARATION_TIMEOUT', 'formula preparation deadline exceeded', row, index)]));
+    const timer = setTimeout(() => { abortController.abort(); }, remaining);
+    abortController.signal.addEventListener('abort', onAbort, { once: true });
+    item.once('message', message => finish(resolve, message.mathml));
+    item.once('error', error => finish(reject, formulaGateError([diagnosticFor('FORMULA_RENDER_FAILED', error.message, row, index)])));
+  });
+  const mode = resolveFormulaMode(preferredMode);
+  let mathml = [];
+  if (options.allowNative && ['word-native', 'eq-field'].includes(mode)) {
+    mathml = new Array(rows.length); let mathmlCursor = 0;
+    const mathmlWorker = async () => { while (mathmlCursor < rows.length) { const index = mathmlCursor; mathmlCursor += 1; mathml[index] = await mathmlInWorker(rows[index], index); } };
+    try {
+      await Promise.all(Array.from({ length: Math.min(FORMULA_LIMITS.concurrency, rows.length) }, mathmlWorker));
+    } catch (error) {
+      abortController.abort(); await Promise.allSettled([...activeWorkers].map(item => item.terminate())); throw error;
+    }
+  }
+  const omml = mathml.length ? await mathmlRowsToOmml(mathml, options, deadlineAt, () => preparationTimeout()) : rows.map(() => null);
+  const manifest = await resolveFormulaManifest(rows, mode, omml, options, deadlineAt, () => preparationTimeout());
+  const renderFormula = options.renderFormula || ((latex, display) => renderLatexSvg(latex, display));
+  const rasterizeFormula = options.rasterizeFormula || ((rendered, target) => sharp(Buffer.from(rendered.svg)).resize(target.width, target.height, { fit: 'fill' }).png().toBuffer());
+  const timeBound = async (operation, row, index) => {
+    const remaining = deadlineAt - Date.now();
+    if (remaining <= 0) throw formulaGateError([diagnosticFor('FORMULA_PREPARATION_TIMEOUT', 'formula preparation deadline exceeded', row, index)]);
+    let timer;
+    try {
+      return await Promise.race([
+        Promise.resolve(operation),
+        new Promise((_, reject) => { timer = setTimeout(() => { reject(formulaGateError([diagnosticFor('FORMULA_PREPARATION_TIMEOUT', 'formula preparation deadline exceeded', row, index)])); abortController.abort(); }, remaining); }),
+      ]);
+    } finally { clearTimeout(timer); }
+  };
+  const renderInWorker = (row, index) => new Promise((resolve, reject) => {
+    const remaining = deadlineAt - Date.now();
+    if (remaining <= 0) { reject(formulaGateError([diagnosticFor('FORMULA_PREPARATION_TIMEOUT', 'formula preparation deadline exceeded', row, index)])); return; }
+    const workerPath = options.formulaWorkerPath || path.join(__dirname, 'formulaRenderWorker.js');
+    const formulaWorker = new Worker(workerPath, { workerData: { latex: row.latex, display: row.display, limits: FORMULA_LIMITS } });
+    activeWorkers.add(formulaWorker);
+    let settled = false;
+    const timeoutError = () => formulaGateError([diagnosticFor('FORMULA_PREPARATION_TIMEOUT', 'formula preparation deadline exceeded', row, index)]);
+    const finish = async (callback, value) => {
+      if (settled) return;
+      settled = true; clearTimeout(timer); abortController.signal.removeEventListener('abort', onAbort);
+      try { await formulaWorker.terminate(); } catch (_error) { /* already exited */ }
+      activeWorkers.delete(formulaWorker);
+      callback(value);
+    };
+    const onAbort = () => finish(reject, timeoutError());
+    const timer = setTimeout(() => { abortController.abort(); }, remaining);
+    abortController.signal.addEventListener('abort', onAbort, { once: true });
+    formulaWorker.once('message', message => {
+      if (message?.error) finish(reject, formulaGateError([diagnosticFor(message.error.code || 'FORMULA_RENDER_FAILED', message.error.message || 'formula worker failed', row, index)]));
+      else finish(resolve, { ...message, png: Buffer.from(message.png) });
+    });
+    formulaWorker.once('error', error => finish(reject, formulaGateError([diagnosticFor('FORMULA_RENDER_FAILED', error.message, row, index)])));
+    formulaWorker.once('exit', code => { if (!settled && code !== 0) finish(reject, formulaGateError([diagnosticFor('FORMULA_RENDER_FAILED', `formula worker exited with code ${code}`, row, index)])); });
+  });
+  const prepared = new Array(rows.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < rows.length) {
+      const index = cursor; cursor += 1;
+      const row = rows[index]; const policy = manifest[index];
+      try {
+        if (!options.renderFormula && !options.rasterizeFormula) {
+          const rendered = await renderInWorker(row, index);
+          prepared[index] = { ...row, svg: rendered.svg, width: rendered.width, height: rendered.height, png: rendered.png, omml: policy.effectiveMode === mode ? omml[index] : null, ...policy };
+          continue;
+        }
+        const rendered = await timeBound(renderFormula(row.latex, row.display, abortController.signal), row, index);
+        if (!(rendered.width > 0 && rendered.height > 0) || rendered.width > FORMULA_LIMITS.width || rendered.height > FORMULA_LIMITS.height) {
+          throw formulaGateError([diagnosticFor('FORMULA_RENDER_BOUNDS_LIMIT_EXCEEDED', `formula render bounds must be positive and at most ${FORMULA_LIMITS.width}x${FORMULA_LIMITS.height}`, row, index)]);
+        }
+        const scale = Math.min(2, Math.sqrt(FORMULA_LIMITS.rasterPixels / (rendered.width * rendered.height)));
+        const target = { width: Math.max(1, Math.floor(rendered.width * scale)), height: Math.max(1, Math.floor(rendered.height * scale)), pixelBudget: FORMULA_LIMITS.rasterPixels };
+        if (target.width * target.height > FORMULA_LIMITS.rasterPixels) throw formulaGateError([diagnosticFor('FORMULA_RASTER_PIXEL_LIMIT_EXCEEDED', 'formula raster pixel budget exceeded', row, index)]);
+        const png = await timeBound(rasterizeFormula(rendered, target, abortController.signal), row, index);
+        prepared[index] = { ...row, ...rendered, png, omml: policy.effectiveMode === mode ? omml[index] : null, ...policy };
+      } catch (error) {
+        abortController.abort();
+        if (error?.code === 'FORMULA_VISIBLE_GATE_FAILED') throw error;
+        throw formulaGateError([{ code: 'FORMULA_RENDER_FAILED', message: error.message, questionId: row.questionId, location: row.location, index }]);
+      }
+    }
+  };
+  try {
+    await Promise.all(Array.from({ length: Math.min(FORMULA_LIMITS.concurrency, rows.length) }, worker));
+  } catch (error) {
+    abortController.abort();
+    await Promise.allSettled([...activeWorkers].map(item => item.terminate()));
+    throw error;
+  }
+  return prepared;
 }
 
 function textRun(segment) {
@@ -294,7 +524,7 @@ function runsForSegments(segments, prepared) {
     }
     const formula = prepared[segment.formulaIndex];
     if (formula?.omml && ['word-native', 'eq-field'].includes(formula.effectiveMode)) return [new TextRun({ text: `[[GEWU_FORMULA_${segment.formulaIndex}]]` })];
-    return [new ImageRun({ type: 'svg', data: Buffer.from(formula.svg), fallback: { type: 'png', data: formula.png }, transformation: { width: formula.width, height: formula.height } })];
+    return [new ImageRun({ type: 'svg', data: Buffer.from(formula.svg), fallback: { type: 'png', data: formula.png }, transformation: { width: formula.width, height: formula.height }, altText: { title: `GEWU_FORMULA_${formula.index}`, description: `GEWU_FORMULA_${formula.index}`, name: `GEWU_FORMULA_${formula.index}` } })];
   });
 }
 
@@ -309,7 +539,8 @@ function replaceFormulaPlaceholders(buffer, prepared) {
     const replacement = formula.effectiveMode === 'eq-field'
       ? `<w:fldSimple w:instr=" EQ ${escapeXml(latexToEqField(formula.latex))} " w:fldLock="true" w:dirty="false">${formula.omml}</w:fldSimple>`
       : formula.omml;
-    xml = xml.replace(runPattern, replacement);
+    const indexedReplacement = `<w:sdt><w:sdtPr><w:tag w:val="GEWU_FORMULA_${index}"/></w:sdtPr><w:sdtContent>${replacement}</w:sdtContent></w:sdt>`;
+    xml = xml.replace(runPattern, indexedReplacement);
   });
   files['word/document.xml'] = strToU8(xml);
   return Buffer.from(zipSync(files, { level: 6 }));
@@ -386,7 +617,7 @@ async function writeDocx(filePath, payload, sourceQuestions, options = {}) {
   await resolveImageSegments(questions, options);
   const answerPosition = normalizeAnswerPosition(payload.answerPosition || payload.answer_position, payload.includeAnswers);
   const formulaMode = resolveFormulaMode(payload.formulaMode || payload.formula_mode);
-  const formulas = await prepareFormulaRows(formulaRows(questions), formulaMode);
+  const formulas = await prepareFormulaRows(formulaRows(questions, answerPosition), formulaMode, { allowNative: true });
   const questionChildren = [
     new Paragraph({ alignment: 'center', children: [new TextRun({ text: payload.title || LABELS.defaultTitle, bold: true, size: 34, font: 'SimSun' })] }),
     new Paragraph({ alignment: 'center', children: [new TextRun({ text: '\u5b66\u6821:___________\u59d3\u540d\uff1a___________\u73ed\u7ea7\uff1a___________\u8003\u53f7\uff1a___________', font: 'SimSun', size: 20 })] }),
@@ -402,6 +633,7 @@ async function writeDocx(filePath, payload, sourceQuestions, options = {}) {
     question.options.forEach(option => addQuestionSegments(`${option.label}. `, option.content));
     question.subs.forEach(sub => addQuestionSegments(`${sub.label} `, sub.content, true));
     if (answerPosition === 'after-each') {
+      question.subs.forEach(sub => addQuestionSegments(`${sub.label} ${LABELS.answer}`, sub.answer, true));
       addQuestionSegments('\u7b54\u6848\uff1a', question.answer, true);
       addQuestionSegments('\u3010\u77e5\u8bc6\u70b9\u3011', hasContent(question.knowledge) ? question.knowledge : legacySegments('\u672a\u586b\u5199'));
       addQuestionSegments('\u3010\u89e3\u6790\u3011', hasContent(question.analysis) ? question.analysis : legacySegments('\u672a\u586b\u5199'));
@@ -418,6 +650,7 @@ async function writeDocx(filePath, payload, sourceQuestions, options = {}) {
     const addAnswerSegments = (prefix, segments, bold = false) => answerChildren.push(new Paragraph({ spacing: { after: 100, line: 360 }, children: [new TextRun({ text: prefix, bold, font: 'SimSun', size: 22 }), ...runsForSegments(segments, formulas)] }));
     questions.forEach(question => {
       addAnswerSegments(`${question.number}\uff0e`, question.answer, true);
+      question.subs.forEach(sub => addAnswerSegments(`${sub.label} ${LABELS.answer}`, sub.answer, true));
       addAnswerSegments('\u3010\u77e5\u8bc6\u70b9\u3011', hasContent(question.knowledge) ? question.knowledge : legacySegments('\u672a\u586b\u5199'));
       addAnswerSegments('\u3010\u89e3\u6790\u3011', hasContent(question.analysis) ? question.analysis : legacySegments('\u672a\u586b\u5199'));
     });
@@ -433,18 +666,20 @@ async function writeDocx(filePath, payload, sourceQuestions, options = {}) {
   } else {
     fs.writeFileSync(filePath, templateDerivedPackage(formulaPackage, answerPosition));
   }
-  return { requestedFormulaMode: formulaMode, effectiveFormulaModes: [...new Set(formulas.map(item => item.effectiveMode))], fallbackCount: formulas.filter(item => item.fallbackUsed).length, formulaCount: formulas.length };
+  return { manifest: formulas.map(({ questionId, location, index, canonicalLatex, latex, requestedMode, effectiveMode, fallbackUsed, diagnostics }) => ({ questionId, location, index, canonicalLatex: canonicalLatex || latex, requestedMode, effectiveMode, fallbackUsed, diagnostics })) };
 }
 
 function cjkFontPath() { return [path.join(process.env.WINDIR || 'C:\\Windows', 'Fonts', 'simhei.ttf'), path.join(process.env.WINDIR || 'C:\\Windows', 'Fonts', 'Deng.ttf')].find(fs.existsSync); }
 async function writePdf(filePath, payload, sourceQuestions, options = {}) {
-  const questions = sourceQuestions.map(normalizedQuestion); const formulas = await prepareFormulaRows(formulaRows(questions), 'latex-vector');
+  const questions = sourceQuestions.map(normalizedQuestion);
   await resolveImageSegments(questions, options);
   const answerPosition = normalizeAnswerPosition(payload.answerPosition || payload.answer_position, payload.includeAnswers);
+  const formulaMode = resolveFormulaMode(payload.formulaMode || payload.formula_mode);
+  const formulas = await prepareFormulaRows(formulaRows(questions, answerPosition), formulaMode, { allowNative: false });
   const semantic = [];
   let pageCount = 0;
   await new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margins: { top: 50, left: 52, right: 52, bottom: 50 }, bufferPages: true });
+    const doc = new PDFDocument({ size: 'A4', margins: { top: 50, left: 52, right: 52, bottom: 50 }, bufferPages: true, compress: false });
     let answerPageStart = null;
     const output = fs.createWriteStream(filePath); doc.pipe(output); output.on('finish', resolve); output.on('error', reject);
     const font = cjkFontPath(); if (font) doc.font(font); doc.fontSize(18).text(payload.title || LABELS.defaultTitle, { align: 'center' }); doc.moveDown(.5);
@@ -466,7 +701,11 @@ async function writePdf(filePath, payload, sourceQuestions, options = {}) {
         flushText();
         const formula = formulas[segment.formulaIndex];
         if (doc.y + formula.height + 12 > doc.page.height - doc.page.margins.bottom - 24) doc.addPage();
-        SVGtoPDF(doc, formula.svg, doc.x + 16, doc.y, { width: formula.width, height: formula.height });
+        const formulaX = doc.x + 16; const formulaY = doc.y;
+        doc.addContent(`% GEWU_FORMULA_DRAW ${formula.index} ${formulaX} ${formulaY} ${formula.width} ${formula.height}`);
+        SVGtoPDF(doc, formula.svg, formulaX, formulaY, { width: formula.width, height: formula.height });
+        doc.addContent(`% GEWU_FORMULA_DRAW_END ${formula.index}`);
+        doc.link(formulaX, formulaY, formula.width, formula.height, `gewu-formula:${formula.index}`);
         doc.y += formula.height + 8;
       });
       flushText();
@@ -480,6 +719,7 @@ async function writePdf(filePath, payload, sourceQuestions, options = {}) {
       question.options.forEach(option => draw(`${option.label}. `, option.content));
       question.subs.forEach(sub => draw(`${sub.label} `, sub.content));
       if (answerPosition === 'after-each') {
+        question.subs.forEach(sub => draw(`${sub.label} ${LABELS.answer}`, sub.answer));
         draw('\u7b54\u6848\uff1a', question.answer);
         draw('\u3010\u77e5\u8bc6\u70b9\u3011', hasContent(question.knowledge) ? question.knowledge : legacySegments('\u672a\u586b\u5199'));
         draw('\u3010\u89e3\u6790\u3011', hasContent(question.analysis) ? question.analysis : legacySegments('\u672a\u586b\u5199'));
@@ -512,6 +752,7 @@ async function writePdf(filePath, payload, sourceQuestions, options = {}) {
       }
       questions.forEach(question => {
         draw(`${question.number}\uff0e`, question.answer);
+        question.subs.forEach(sub => draw(`${sub.label} ${LABELS.answer}`, sub.answer));
         draw('\u3010\u77e5\u8bc6\u70b9\u3011', hasContent(question.knowledge) ? question.knowledge : legacySegments('\u672a\u586b\u5199'));
         draw('\u3010\u89e3\u6790\u3011', hasContent(question.analysis) ? question.analysis : legacySegments('\u672a\u586b\u5199'));
       });
@@ -529,14 +770,53 @@ async function writePdf(filePath, payload, sourceQuestions, options = {}) {
     }
     doc.end();
   });
-  return { requestedFormulaMode: resolveFormulaMode(payload.formulaMode || payload.formula_mode), effectiveFormulaModes: ['latex-vector'], fallbackCount: 0, formulaCount: formulas.length, semanticText: semantic.join('\n'), pageCount };
+  return {
+    manifest: formulas.map(({ questionId, location, index, canonicalLatex, latex, requestedMode, effectiveMode, fallbackUsed, diagnostics }) => ({ questionId, location, index, canonicalLatex: canonicalLatex || latex, requestedMode, effectiveMode, fallbackUsed, diagnostics })),
+    semanticText: semantic.join('\n'),
+    rendererPageCount: pageCount,
+  };
+}
+
+function inspectVisibleArtifact(filePath, format, manifest, questionCount) {
+  const script = resolveSupportScript(path.join('modules', 'question-bank', 'export', 'visible_gate.py'));
+  const result = spawnSync(pythonExecutable(), [script], {
+    input: JSON.stringify({ path: filePath, format: format === 'word' ? 'docx' : 'pdf', manifest, questionCount }),
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+    windowsHide: true,
+    timeout: 30000,
+  });
+  let parsed;
+  try { parsed = JSON.parse(result.stdout || '{}'); } catch (_error) { parsed = null; }
+  if (result.status !== 0 || !parsed?.ok || !parsed.report) {
+    throw formulaGateError(parsed?.diagnostics || [{ code: 'FORMULA_VISIBLE_GATE_PROCESS_FAILED', message: result.stderr || 'visible-result inspection failed', questionId: manifest[0]?.questionId || '', location: manifest[0]?.location || 'artifact', index: manifest[0]?.index || 0 }]);
+  }
+  return parsed.report;
 }
 
 async function writePaperArtifact(format, payload = {}, questions = [], options = {}) {
   const normalizedFormat = format === 'pdf' ? 'pdf' : 'word'; const extension = normalizedFormat === 'pdf' ? 'pdf' : 'docx';
-  const fileName = `${Date.now().toString(36)}_${safeFileName(payload.title || LABELS.defaultTitle)}.${extension}`; const root = exportRoot(options); const filePath = resolveQuestionAssetPath(root, 'exports', fileName);
-  const report = normalizedFormat === 'pdf' ? await writePdf(filePath, payload, questions, options) : await writeDocx(filePath, payload, questions, options);
-  return { fileName, filePath, fileUrl: artifactUrl(fileName, options), answerPosition: normalizeAnswerPosition(payload.answerPosition || payload.answer_position, payload.includeAnswers), ...report };
+  const fileName = `${Date.now().toString(36)}_${crypto.randomUUID()}_${safeFileName(payload.title || LABELS.defaultTitle)}.${extension}`; const root = exportRoot(options); const filePath = resolveQuestionAssetPath(root, 'exports', fileName);
+  try {
+    const rendered = normalizedFormat === 'pdf' ? await writePdf(filePath, payload, questions, options) : await writeDocx(filePath, payload, questions, options);
+    const inspectArtifact = options.inspectVisibleArtifact || inspectVisibleArtifact;
+    const report = inspectArtifact(filePath, normalizedFormat, rendered.manifest, questions.length);
+    return {
+      fileName,
+      filePath,
+      fileUrl: artifactUrl(fileName, options),
+      answerPosition: normalizeAnswerPosition(payload.answerPosition || payload.answer_position, payload.includeAnswers),
+      requestedFormulaMode: resolveFormulaMode(payload.formulaMode || payload.formula_mode),
+      semanticText: rendered.semanticText,
+      rendererPageCount: rendered.rendererPageCount,
+      ...report,
+    };
+  } catch (error) {
+    for (const candidate of [filePath, `${filePath}.normalized.docx`]) {
+      try { fs.rmSync(candidate, { force: true }); } catch (_cleanupError) { /* best effort; preserve original error */ }
+    }
+    throw error;
+  }
 }
 
-module.exports = { createLocalQuestionImageResolver, normalizeAnswerPosition, normalizedQuestion, writePaperArtifact };
+module.exports = { createLocalQuestionImageResolver, normalizeAnswerPosition, normalizedQuestion, prepareFormulaRows, resolveSupportScript, writePaperArtifact };

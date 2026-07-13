@@ -119,11 +119,25 @@ function testParserOptionalNullsAreNormalizedAway() {
   assert.strictEqual(Object.hasOwn(image.attrs, 'width'), false);
 }
 
+function testLegacyChoiceAnswerAndFormulaMigration() {
+  const rich = migrateLegacyQuestion({
+    stem: 'legacy stem', answer: 'AC',
+    options: ['first', 'second', 'third'],
+    formulas: ['x^2', { latex: '\\frac{a}{b}' }],
+  });
+  assert.deepStrictEqual(rich.sections.options.map(option => option.isCorrect), [true, false, true]);
+  const formulaNodes = rich.sections.stem.content.filter(node => node.type === 'formulaBlock');
+  assert.deepStrictEqual(formulaNodes.map(node => node.attrs.canonicalLatex), ['x^2', '\\frac{a}{b}']);
+  const normalized = normalizeQuestionRichContent(rich);
+  assert.deepStrictEqual(normalized.sections.stem.content.filter(node => node.type === 'formulaBlock').map(node => node.attrs.canonicalLatex), ['x^2', '\\frac{a}{b}']);
+}
+
 testLegacyMigrationAndDeterministicProjection();
 testFormulaAndImageNodesRoundTrip();
 testStrictValidationAndSanitization();
 testProjectionIsDeterministicAndComplete();
 testParserOptionalNullsAreNormalizedAway();
+testLegacyChoiceAnswerAndFormulaMigration();
 const packageJson = fs.readFileSync('package.json', 'utf8');
 assert.ok(packageJson.includes('node src/services/questionRichContent.test.js') && packageJson.includes('npm run test:rich-content'), 'rich content suite should run in npm test');
 console.log('questionRichContent tests passed');

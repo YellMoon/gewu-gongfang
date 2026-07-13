@@ -17,36 +17,34 @@ import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
 import katex from 'katex';
 import { sanitizeHtml } from '../utils/sanitizeHtml';
-import { getQuestionAssetDataUrl, storeQuestionAsset } from '../services/questionAssetStore';
-import { appendSequentialTask, assetDisplayRef, clampSelection, decideExternalSync, enqueueEmission, mapPendingBookmarks, requireStoredAssetRef, resolveAssetForDisplay } from './richQuestionEditorState';
+import { storeQuestionAsset } from '../services/questionAssetStore';
+import { appendSequentialTask, clampSelection, decideExternalSync, enqueueEmission, mapPendingBookmarks, maskPersistedImagesForEditor, requireStoredAssetRef, restorePersistedImagesFromEditor } from './richQuestionEditorState';
+import { RichAssetImage } from './RichAssetImage';
 
-export interface RichQuestionEditorProps { value?: string | JSONContent; onChange?: (value: string | JSONContent) => void; onHtmlChange?: (html: string) => void; output?: 'html' | 'json'; placeholder?: string; minHeight?: number; onStoreImage?: (assetKey: string, dataUrl: string, file: File) => Promise<string>; }
+export interface RichQuestionEditorProps { value?: string | JSONContent; onChange?: (value: string | JSONContent) => void; onHtmlChange?: (html: string) => void; output?: 'html' | 'json'; placeholder?: string; minHeight?: number; onStoreImage?: (assetKey: string, dataUrl: string, file: File) => Promise<string>; disabled?: boolean; }
 const t = (value: string) => value;
 const FONTS = [{ value: '', label: t('\u9ed8\u8ba4\u5b57\u4f53') }, { value: 'SimSun', label: t('\u5b8b\u4f53') }, { value: 'Microsoft YaHei', label: t('\u5fae\u8f6f\u96c5\u9ed1') }, { value: 'KaiTi', label: t('\u6977\u4f53') }, { value: 'FangSong', label: t('\u4eff\u5b8b') }, { value: 'Arial', label: 'Arial' }, { value: 'Times New Roman', label: 'Times New Roman' }];
 const SIZES = ['12', '14', '16', '18', '20', '24', '28', '32'].map(value => ({ value, label: `${value}px` }));
 const LINE_HEIGHTS = ['1', '1.25', '1.5', '1.75', '2'].map(value => ({ value, label: value }));
 const RichImageView: React.FC<NodeViewProps> = ({ node, selected }) => {
-  const [displaySrc, setDisplaySrc] = useState('');
-  const [loadError, setLoadError] = useState(false);
-  useEffect(() => { let alive = true; setDisplaySrc(''); setLoadError(false); resolveAssetForDisplay(assetDisplayRef(node.attrs.src, node.attrs.assetKey), getQuestionAssetDataUrl).then(src => { if (alive) setDisplaySrc(src); }).catch(() => { if (alive) setLoadError(true); }); return () => { alive = false; }; }, [node.attrs.src, node.attrs.assetKey]);
-  return <NodeViewWrapper as="figure" className={`rich-image-node${selected ? ' is-selected' : ''}`} data-align={node.attrs.align} contentEditable={false}>{displaySrc ? <img src={displaySrc} alt={node.attrs.alt || ''} width={node.attrs.width || undefined} /> : <span role="status">{loadError ? t('\u56fe\u7247\u52a0\u8f7d\u5931\u8d25') : t('\u56fe\u7247\u52a0\u8f7d\u4e2d')}</span>}</NodeViewWrapper>;
+  return <NodeViewWrapper as="figure" className={`rich-image-node${selected ? ' is-selected' : ''}`} data-align={node.attrs.align} contentEditable={false}><RichAssetImage src={node.attrs.persistedSrc || node.attrs.src} assetKey={node.attrs.assetKey} alt={node.attrs.alt || ''} width={node.attrs.width || undefined} /></NodeViewWrapper>;
 };
 const RichTextStyle = TextStyle.extend({ addAttributes() { return { ...this.parent?.(), fontSize: { default: null, parseHTML: element => element.style.fontSize || null, renderHTML: attrs => attrs.fontSize ? { style: `font-size:${attrs.fontSize}` } : {} } }; } });
-const RichImage = Image.extend({ addAttributes() { return { ...this.parent?.(), assetKey: { default: undefined, parseHTML: element => element.getAttribute('data-asset-key') || undefined, renderHTML: attrs => attrs.assetKey ? { 'data-asset-key': attrs.assetKey } : {} }, width: { default: undefined, parseHTML: element => { const value = element.getAttribute('width'); return value ? Number(value) : undefined; }, renderHTML: attrs => attrs.width ? { width: attrs.width } : {} }, align: { default: 'center', parseHTML: element => element.getAttribute('data-align') || 'center', renderHTML: attrs => ({ 'data-align': attrs.align }) } }; }, addNodeView() { return ReactNodeViewRenderer(RichImageView); } });
+const RichImage = Image.extend({ addAttributes() { return { ...this.parent?.(), assetKey: { default: undefined, parseHTML: element => element.getAttribute('data-asset-key') || undefined, renderHTML: attrs => attrs.assetKey ? { 'data-asset-key': attrs.assetKey } : {} }, persistedSrc: { default: undefined, parseHTML: element => element.getAttribute('data-persisted-src') || undefined, renderHTML: attrs => attrs.persistedSrc ? { 'data-persisted-src': attrs.persistedSrc } : {} }, width: { default: undefined, parseHTML: element => { const value = element.getAttribute('width'); return value ? Number(value) : undefined; }, renderHTML: attrs => attrs.width ? { width: attrs.width } : {} }, align: { default: 'center', parseHTML: element => element.getAttribute('data-align') || 'center', renderHTML: attrs => ({ 'data-align': attrs.align }) } }; }, addNodeView() { return ReactNodeViewRenderer(RichImageView); } });
 const ParagraphTypography = Extension.create({
   name: 'paragraphTypography',
   addGlobalAttributes() { return [{ types: ['paragraph', 'heading'], attributes: { lineHeight: { default: null, parseHTML: element => element.style.lineHeight || null, renderHTML: attrs => attrs.lineHeight ? { style: `line-height:${attrs.lineHeight}` } : {} }, indent: { default: 0, parseHTML: element => Number(element.getAttribute('data-indent') || 0), renderHTML: attrs => attrs.indent ? { 'data-indent': attrs.indent, style: `margin-left:${attrs.indent * 2}em` } : {} } } }]; },
 });
 
-const FormulaView: React.FC<NodeViewProps> = ({ node, selected, updateAttributes }) => {
+const FormulaView: React.FC<NodeViewProps> = ({ node, selected, updateAttributes, editor }) => {
   const latex = String(node.attrs.canonicalLatex || '');
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(latex);
   const html = katex.renderToString(latex, { throwOnError: false, displayMode: node.attrs.displayMode === 'block' });
-  return <NodeViewWrapper as={node.type.name === 'formulaBlock' ? 'div' : 'span'} className={`rich-formula-node${selected ? ' is-selected' : ''}`} data-latex={latex} onDoubleClick={() => { setDraft(latex); setEditing(true); }}>
+  return <NodeViewWrapper as={node.type.name === 'formulaBlock' ? 'div' : 'span'} className={`rich-formula-node${selected ? ' is-selected' : ''}`} data-latex={latex} onDoubleClick={() => { if (editor.isEditable) { setDraft(latex); setEditing(true); } }}>
     <span dangerouslySetInnerHTML={{ __html: html }} />
-    <Modal open={editing} title={t('\u7f16\u8f91 LaTeX \u516c\u5f0f')} onCancel={() => setEditing(false)} onOk={() => { const canonicalLatex = draft.trim().replace(/^\$+|\$+$/g, ''); if (canonicalLatex) updateAttributes({ canonicalLatex }); setEditing(false); }} okText={t('\u66f4\u65b0\u516c\u5f0f')} cancelText={t('\u53d6\u6d88')}>
-      <Input.TextArea aria-label={t('LaTeX \u516c\u5f0f')} rows={3} value={draft} onChange={event => setDraft(event.target.value)} />
+    <Modal open={editing} title={t('\u7f16\u8f91 LaTeX \u516c\u5f0f')} onCancel={() => setEditing(false)} onOk={() => { const canonicalLatex = draft.trim().replace(/^\$+|\$+$/g, ''); if (editor.isEditable && canonicalLatex) updateAttributes({ canonicalLatex }); setEditing(false); }} okButtonProps={{ disabled: !editor.isEditable }} okText={t('\u66f4\u65b0\u516c\u5f0f')} cancelText={t('\u53d6\u6d88')}>
+      <Input.TextArea disabled={!editor.isEditable} aria-label={t('LaTeX \u516c\u5f0f')} rows={3} value={draft} onChange={event => setDraft(event.target.value)} />
       <div className="rich-question-editor__formula-preview" role="status" aria-live="polite"><span dangerouslySetInnerHTML={{ __html: katex.renderToString(draft.trim() || '\\square', { throwOnError: false, displayMode: node.attrs.displayMode === 'block' }) }} /></div>
     </Modal>
   </NodeViewWrapper>;
@@ -60,7 +58,7 @@ const Formula = Node.create({
 });
 const FormulaBlock = Formula.extend({ name: 'formulaBlock', group: 'block', inline: false, parseHTML() { return [{ tag: 'div[data-formula-block]' }]; }, renderHTML({ HTMLAttributes }) { return ['div', mergeAttributes(HTMLAttributes, { 'data-formula-block': 'latex' })]; } });
 
-const RichQuestionEditor: React.FC<RichQuestionEditorProps> = ({ value = '', onChange, onHtmlChange, output = 'html', placeholder, minHeight = 160, onStoreImage = storeQuestionAsset }) => {
+const RichQuestionEditor: React.FC<RichQuestionEditorProps> = ({ value = '', onChange, onHtmlChange, output = 'html', placeholder, minHeight = 160, onStoreImage = storeQuestionAsset, disabled = false }) => {
   const [formulaOpen, setFormulaOpen] = useState(false);
   const [formulaText, setFormulaText] = useState('');
   const [blockFormula, setBlockFormula] = useState(false);
@@ -74,28 +72,30 @@ const RichQuestionEditor: React.FC<RichQuestionEditorProps> = ({ value = '', onC
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const editor = useEditor({
     extensions: [StarterKit, RichTextStyle, ParagraphTypography, Color, FontFamily, Underline, Highlight.configure({ multicolor: true }), Subscript, Superscript, TextAlign.configure({ types: ['heading', 'paragraph'] }), RichImage.configure({ allowBase64: false }), Formula, FormulaBlock],
-    content: value || '',
+    content: maskPersistedImagesForEditor(value || ''),
     editorProps: {
       attributes: { class: 'rich-question-editor__surface', 'data-placeholder': placeholder || '', 'aria-label': placeholder || t('\u9898\u76ee\u5bcc\u6587\u672c\u7f16\u8f91\u533a') },
       transformPastedHTML: html => sanitizeHtml(html),
     },
-    onCreate: ({ editor: current }) => { if (output === 'json') { onChange?.(current.getJSON()); onHtmlChange?.(current.getHTML()); } },
-    onUpdate: ({ editor: current }) => { const next = output === 'json' ? current.getJSON() : current.getHTML(); pendingEmissions.current = enqueueEmission(pendingEmissions.current, next); onChange?.(next); onHtmlChange?.(current.getHTML()); },
+    onCreate: ({ editor: current }) => { if (output === 'json') { onChange?.(restorePersistedImagesFromEditor(current.getJSON())); onHtmlChange?.(restorePersistedImagesFromEditor(current.getHTML())); } },
+    onUpdate: ({ editor: current }) => { const next = restorePersistedImagesFromEditor(output === 'json' ? current.getJSON() : current.getHTML()); pendingEmissions.current = enqueueEmission(pendingEmissions.current, next); onChange?.(next); onHtmlChange?.(restorePersistedImagesFromEditor(current.getHTML())); },
     onSelectionUpdate: ({ editor: current }) => { setImageAlt(current.isActive('image') ? String(current.getAttributes('image').alt || '') : ''); forceSelectionRender(value => value + 1); },
     onTransaction: ({ transaction }) => { pendingImagePositions.current = mapPendingBookmarks(pendingImagePositions.current, (position, assoc) => transaction.mapping.map(position, assoc)); },
   });
   useEffect(() => {
     if (!editor) return;
-    const current = output === 'json' ? JSON.stringify(editor.getJSON()) : editor.getHTML();
+    const currentValue = restorePersistedImagesFromEditor(output === 'json' ? editor.getJSON() : editor.getHTML());
+    const current = output === 'json' ? JSON.stringify(currentValue) : String(currentValue);
     const incoming = output === 'json' ? JSON.stringify(value || { type: 'doc', content: [] }) : String(value || '');
     const decision = decideExternalSync(incoming, current, pendingEmissions.current);
     pendingEmissions.current = decision.pendingEmissions;
     if (decision.apply) {
       const selection = { from: editor.state.selection.from, to: editor.state.selection.to };
-      editor.commands.setContent(value || '', false);
+      editor.commands.setContent(maskPersistedImagesForEditor(value || ''), false);
       editor.commands.setTextSelection(clampSelection(selection, editor.state.doc.content.size + 2));
     }
   }, [editor, output, value]);
+  useEffect(() => { editor?.setEditable(!disabled); }, [editor, disabled]);
   const insertImage = useCallback((file: File) => {
     const bookmark = editor ? { from: editor.state.selection.from, to: editor.state.selection.to } : null;
     const sequence = ++imageSequence.current;
@@ -119,7 +119,7 @@ const RichQuestionEditor: React.FC<RichQuestionEditorProps> = ({ value = '', onC
         if (!mounted.current || !editor || !bookmark) return;
         const mapped = pendingImagePositions.current.get(sequence) || bookmark;
         const range = { from: Math.min(mapped.from, editor.state.doc.content.size), to: Math.min(Math.max(mapped.from, mapped.to), editor.state.doc.content.size) };
-        editor.chain().focus().insertContentAt(range, { type: 'image', attrs: { ...attrs, alt: file.name } }).run();
+        editor.chain().focus().insertContentAt(range, maskPersistedImagesForEditor({ type: 'image', attrs: { ...attrs, alt: file.name } })).run();
         pendingImagePositions.current.delete(sequence);
       } catch (error) { pendingImagePositions.current.delete(sequence); if (mounted.current) message.error(error instanceof Error ? error.message : t('\u56fe\u7247\u5b58\u50a8\u5931\u8d25')); }
     });
@@ -128,8 +128,8 @@ const RichQuestionEditor: React.FC<RichQuestionEditorProps> = ({ value = '', onC
   if (!editor) return null;
   const insertFormula = () => { const latex = formulaText.trim().replace(/^\$+|\$+$/g, ''); if (!latex) return; editor.chain().focus().insertContent({ type: blockFormula ? 'formulaBlock' : 'formula', attrs: { id: `formula-${Date.now()}`, canonicalLatex: latex, displayMode: blockFormula ? 'block' : 'inline', sourceFormat: 'latex' } }).run(); setFormulaText(''); setFormulaOpen(false); };
   const tool = (title: string, icon: React.ReactNode, pressed: boolean | undefined, run: () => void, disabled = false) => <Tooltip title={title}><Button aria-label={title} aria-pressed={pressed} size="small" type={pressed ? 'primary' : 'default'} icon={icon} disabled={disabled} onClick={run} /></Tooltip>;
-  return <div className="rich-question-editor">
-    <div className="rich-question-editor__toolbar" role="toolbar" aria-label={t('\u5bcc\u6587\u672c\u683c\u5f0f\u5de5\u5177\u680f')}><Space size={4} wrap>
+  return <div className="rich-question-editor" aria-disabled={disabled}>
+    {!disabled && <div className="rich-question-editor__toolbar" role="toolbar" aria-label={t('\u5bcc\u6587\u672c\u683c\u5f0f\u5de5\u5177\u680f')}><Space size={4} wrap>
       {tool(t('\u64a4\u9500'), <UndoOutlined />, undefined, () => editor.chain().focus().undo().run(), !editor.can().undo())}{tool(t('\u91cd\u505a'), <RedoOutlined />, undefined, () => editor.chain().focus().redo().run(), !editor.can().redo())}<span className="rich-question-editor__divider" />
       <Select aria-label={t('\u5b57\u4f53')} size="small" value={editor.getAttributes('textStyle').fontFamily || ''} options={FONTS} style={{ width: 132 }} onChange={font => font ? editor.chain().focus().setFontFamily(font).run() : editor.chain().focus().unsetFontFamily().run()} />
       <Select aria-label={t('\u5b57\u53f7')} size="small" value={String(editor.getAttributes('textStyle').fontSize || '').replace(/px$/, '') || undefined} placeholder={t('\u5b57\u53f7')} allowClear options={SIZES} style={{ width: 84 }} onChange={size => editor.chain().focus().setMark('textStyle', { fontSize: size ? `${size}px` : null }).run()} />
@@ -157,7 +157,7 @@ const RichQuestionEditor: React.FC<RichQuestionEditorProps> = ({ value = '', onC
       <Button aria-label={t('\u56fe\u7247\u53f3\u5bf9\u9f50')} aria-pressed={editor.isActive('image', { align: 'right' })} size="small" disabled={!editor.isActive('image')} icon={<AlignRightOutlined />} onClick={() => editor.chain().focus().updateAttributes('image', { align: 'right' }).run()} />
       <Button aria-label={t('\u5220\u9664\u56fe\u7247')} size="small" danger disabled={!editor.isActive('image')} icon={<DeleteOutlined />} onClick={() => editor.chain().focus().deleteSelection().run()} />
       <Input aria-label={t('\u56fe\u7247\u66ff\u4ee3\u6587\u672c')} size="small" value={imageAlt} disabled={!editor.isActive('image')} placeholder={t('\u56fe\u7247\u66ff\u4ee3\u6587\u672c')} style={{ width: 132 }} onChange={event => setImageAlt(event.target.value)} onPressEnter={() => editor.chain().focus().updateAttributes('image', { alt: imageAlt.trim() }).run()} onBlur={() => { if (editor.isActive('image')) editor.chain().focus().updateAttributes('image', { alt: imageAlt.trim() }).run(); }} />
-    </Space></div>
+    </Space></div>}
     <div style={{ minHeight }}><EditorContent editor={editor} /></div>
     <Modal open={formulaOpen} title={t('\u63d2\u5165 LaTeX \u516c\u5f0f')} onOk={insertFormula} onCancel={() => setFormulaOpen(false)} okText={t('\u63d2\u5165\u5e76\u663e\u793a')} cancelText={t('\u53d6\u6d88')}>
       <Input.TextArea aria-label={t('LaTeX \u516c\u5f0f')} autoFocus rows={3} value={formulaText} onChange={event => setFormulaText(event.target.value)} placeholder={'\\frac{a}{b}  /  \\sqrt{x}'} />

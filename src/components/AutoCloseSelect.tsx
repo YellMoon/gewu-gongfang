@@ -10,7 +10,7 @@ function AutoCloseSelect(props: any) {
     <Select
       {...props}
       open={open}
-      onDropdownVisibleChange={(v) => setOpen(v)}
+      onOpenChange={(v) => setOpen(v)}
       onChange={(value, option) => {
         props.onChange?.(value, option);
         // 选中后自动关闭（保留可扩展：props.autoClose === false 可禁用）

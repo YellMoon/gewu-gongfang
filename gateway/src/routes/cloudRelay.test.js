@@ -17,7 +17,7 @@ assert.ok(route.includes('/snapshots/read'), 'cloud relay should expose snapshot
 assert.ok(route.includes('/tasks'), 'cloud relay should expose miniapp tasks');
 assert.ok(route.includes("router.get('/tasks'"), 'cloud relay should let host fetch pending miniapp tasks');
 assert.ok(route.includes("router.post('/tasks/:id/complete'"), 'cloud relay should let host complete miniapp tasks');
-assert.ok(route.includes("status = req.body.success === false ? 'failed' : 'completed'"), 'cloud relay should store completed or failed task status');
+assert.ok(route.includes('taskService.completeLegacyTask') && route.includes('taskService.completeV2Task'), 'cloud relay should store terminal task state through protocol-aware services');
 assert.ok(route.includes('allowedTasksForUser'), 'cloud relay should apply role-specific task permissions');
 assert.ok(route.includes("user?.user_type === 'student'"), 'cloud relay should distinguish student task permissions');
 assert.ok(route.includes("['super_admin', 'admin'].includes(user?.user_type)"), 'cloud relay should grant super admin the existing admin task permissions');

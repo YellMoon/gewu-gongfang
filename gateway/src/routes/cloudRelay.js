@@ -4,6 +4,7 @@ const { getDb } = require('../db/database');
 const { scopeBusinessSnapshot } = require('../services/dataScopeService');
 const { isApprovedActive, roleForUser } = require('../services/authorizationPolicy');
 const { issueRelayAssertion } = require('../services/relayAssertionService');
+const taskService = require('../services/cloudRelayTaskService');
 
 const router = express.Router();
 
@@ -13,6 +14,22 @@ function now() {
 
 function id(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
+}
+
+function taskRouteError(res, error) {
+  return res.status(Number(error.statusCode) || 500).json({ success: false, code: error.code || 'TASK_OPERATION_FAILED', error: error.message });
+}
+
+function targetHostForTask(db, requested) {
+  const target = String(requested || process.env.GEWU_PRIMARY_HOST_DEVICE_ID || '').trim();
+  if (target) {
+    const exists = db.prepare('SELECT 1 FROM host_heartbeats WHERE host_device_id=?').get(target);
+    if (!exists) throw taskService.taskError('TARGET_HOST_NOT_FOUND', 'target host is not registered', 400);
+    return target;
+  }
+  const latest = db.prepare("SELECT host_device_id FROM host_heartbeats WHERE status='online' ORDER BY updated_at DESC LIMIT 1").get();
+  if (!latest) throw taskService.taskError('TARGET_HOST_REQUIRED', 'no target host is available', 409);
+  return latest.host_device_id;
 }
 function validateDesktopSyncInput(req, res) {
   const deviceId = String(req.headers['x-device-id'] || req.body.deviceId || '');
@@ -236,6 +253,22 @@ router.post('/tasks', requireApprovedSnapshotUser, (req, res) => {
   const db = getDb();
   const allowed = allowedTasksForUser(req.user);
   if (!allowed.has(req.body.taskType)) return res.status(403).json({ success: false, error: 'task type is not allowed' });
+  if (Number(req.body.protocolVersion || req.body.protocol_version || 1) >= 2) {
+    try {
+      const actorRole = roleForUser(req.user);
+      const created = taskService.createV2Task(db, {
+        taskType: req.body.taskType,
+        payload: req.body.payload || {},
+        createdBy: req.user.id,
+        tenantId: req.user.tenant_id || req.user.tenantId || 'default',
+        actorRole,
+        allowDraft: ['super_admin', 'admin'].includes(actorRole),
+        targetHostDeviceId: targetHostForTask(db, req.body.targetHostDeviceId || req.body.target_host_device_id),
+        idempotencyKey: req.headers['x-idempotency-key'] || req.body.idempotencyKey || req.body.idempotency_key,
+      });
+      return res.json({ success: true, task: created.task, replayed: created.replayed });
+    } catch (error) { return taskRouteError(res, error); }
+  }
   const taskId = id('task');
   const time = now();
   db.prepare(
@@ -248,43 +281,87 @@ router.post('/tasks', requireApprovedSnapshotUser, (req, res) => {
 router.get('/tasks', requireHostToken, (req, res) => {
   const db = getDb();
   const status = req.query.status || 'pending_host';
-  const rows = db.prepare(
-    `SELECT * FROM miniapp_tasks WHERE status = ? ORDER BY created_at ASC LIMIT 100`
+  const rows = status === 'pending_host' ? (() => {
+    const claimed = [];
+    const hostDeviceId = String(req.query.hostDeviceId || req.query.host_device_id || 'legacy-shared');
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 100));
+    for (let index = 0; index < limit; index += 1) {
+      const next = taskService.claimNextLegacyTask(db, { hostDeviceId, leaseMs: req.query.leaseMs || req.query.lease_ms });
+      if (!next) break;
+      claimed.push({ ...next.task, claimToken: next.claimToken });
+    }
+    return claimed;
+  })() : db.prepare(
+    `SELECT * FROM miniapp_tasks WHERE status = ? AND COALESCE(protocol_version,1)<2 ORDER BY created_at ASC LIMIT 100`
   ).all(status);
   res.json({
     success: true,
     tasks: rows.map(row => ({
       ...row,
-      payload: JSON.parse(row.payload || '{}'),
-      result_payload: row.result_payload ? JSON.parse(row.result_payload) : null,
+      payload: typeof row.payload === 'string' ? JSON.parse(row.payload || '{}') : (row.payload || {}),
+      result_payload: typeof row.result_payload === 'string' ? JSON.parse(row.result_payload) : (row.result_payload || null),
     })),
   });
 });
 
+router.post('/tasks/claim', requireHostToken, (req, res) => {
+  try {
+    const claimed = taskService.claimNextV2Task(getDb(), {
+      hostDeviceId: req.body.hostDeviceId || req.body.host_device_id,
+      leaseMs: req.body.leaseMs || req.body.lease_ms,
+    });
+    return res.json({ success: true, task: claimed?.task || null, claimToken: claimed?.claimToken || null });
+  } catch (error) { return taskRouteError(res, error); }
+});
+
+router.post('/tasks/:id/progress', requireHostToken, (req, res) => {
+  try {
+    const task = taskService.updateV2TaskProgress(getDb(), req.params.id, req.body || {});
+    return res.json({ success: true, task });
+  } catch (error) { return taskRouteError(res, error); }
+});
+
+router.post('/tasks/:id/fail', requireHostToken, (req, res) => {
+  try {
+    const task = taskService.failV2Task(getDb(), req.params.id, req.body || {});
+    return res.json({ success: true, task });
+  } catch (error) { return taskRouteError(res, error); }
+});
+
+router.post('/tasks/:id/cancel', requireApprovedSnapshotUser, (req, res) => {
+  try {
+    const role = roleForUser(req.user);
+    const task = taskService.cancelV2Task(getDb(), req.params.id, {
+      actorUserId: req.user.id,
+      isAdmin: ['super_admin', 'admin'].includes(role),
+    });
+    return res.json({ success: true, task });
+  } catch (error) { return taskRouteError(res, error); }
+});
+
 router.post('/tasks/:id/complete', requireHostToken, (req, res) => {
   const db = getDb();
-  const time = now();
-  const status = req.body.success === false ? 'failed' : 'completed';
+  const existing = db.prepare('SELECT protocol_version FROM miniapp_tasks WHERE id=?').get(req.params.id);
+  if (Number(existing?.protocol_version || 1) >= 2) {
+    try {
+      const task = taskService.completeV2Task(db, req.params.id, req.body || {});
+      return res.json({ success: true, task });
+    } catch (error) { return taskRouteError(res, error); }
+  }
   const resultPayload = {
     ...(req.body.result || req.body.resultPayload || {}),
     completedBy: req.body.completedBy || req.body.hostDeviceId || 'primary-host',
-    completedAt: time,
+    completedAt: now(),
   };
-  const info = db.prepare(
-    `UPDATE miniapp_tasks
-     SET status = ?, result_payload = ?, updated_at = ?
-     WHERE id = ?`
-  ).run(status, JSON.stringify(resultPayload), time, req.params.id);
-  if (info.changes === 0) return res.status(404).json({ success: false, error: 'task not found' });
-  const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(req.params.id);
-  res.json({
-    success: true,
-    task: {
-      ...row,
-      payload: JSON.parse(row.payload || '{}'),
-      result_payload: row.result_payload ? JSON.parse(row.result_payload) : null,
-    },
-  });
+  let row;
+  try {
+    row = taskService.completeLegacyTask(db, req.params.id, resultPayload, req.body.success !== false, {
+      claimToken: req.body.claimToken || req.body.claim_token,
+      expectedRowVersion: req.body.expectedRowVersion ?? req.body.expected_row_version,
+      hostDeviceId: req.body.hostDeviceId || req.body.host_device_id,
+    });
+  } catch (error) { return taskRouteError(res, error); }
+  res.json({ success: true, task: row });
 });
 
 router.get('/tasks/:id/result', requireApprovedSnapshotUser, (req, res) => {
