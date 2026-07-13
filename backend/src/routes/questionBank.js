@@ -10,7 +10,7 @@ const searchService = require('../services/searchService');
 const eventBus = require('../services/eventBus');
 const cache = require('../services/cacheService');
 const { canDeleteQuestion, committedDeleteError } = require('../services/questionDeletionPolicy');
-const { writePaperArtifact } = require('../services/paperArtifactService');
+const { createLocalQuestionImageResolver, writePaperArtifact } = require('../services/paperArtifactService');
 const {
   initQuestionBankStore,
   inspectQuestionBankStore,
@@ -359,7 +359,8 @@ router.post('/paper-export', async (req, res) => {
     const questions = ids.map(id => questionBank.getQuestion(db, id, tId)).filter(Boolean);
     if (!questions.length) return res.status(400).json({ success: false, error: 'no exportable questions selected' });
     const format = req.body?.format === 'pdf' ? 'pdf' : 'word';
-    const artifact = await writePaperArtifact(format, req.body || {}, questions, { deviceId: req.get('x-device-id') || process.env.GEWU_DEVICE_ID || 'unknown' });
+    const paperRoot = process.env.QUESTION_BANK_ROOT || path.join(process.cwd(), 'data', 'GewuQuestionBank');
+    const artifact = await writePaperArtifact(format, req.body || {}, questions, { root: paperRoot, deviceId: req.get('x-device-id') || process.env.GEWU_DEVICE_ID || 'unknown', resolveImageAsset: createLocalQuestionImageResolver(paperRoot) });
     res.json({ success: true, data: artifact });
   } catch (err) {
     res.status(errorStatus(err)).json({ success: false, error: err.message, code: err.code });

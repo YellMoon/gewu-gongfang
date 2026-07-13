@@ -11,7 +11,7 @@ const {
 const questionBank = require('../services/questionBankService');
 const { resolveQuestionAssetPath } = require('../services/questionBankStorageService');
 const { updateCommittedQuestion, createTrustedInternalStorageUpdateContext } = require('../services/questionBankStorageService');
-const { writePaperArtifact } = require('../services/paperArtifactService');
+const { createLocalQuestionImageResolver, writePaperArtifact } = require('../services/paperArtifactService');
 const { verifyRelayAssertion } = require('../services/relayAssertionService');
 
 const router = Router();
@@ -72,8 +72,10 @@ function selectQuestions(db, payload = {}) {
   return rows.slice(0, limit);
 }
 
-async function processMiniappTask(task, db) {
+async function processMiniappTask(task, db, dependencies = {}) {
   const payload = task.payload || {};
+  const selectTaskQuestions = dependencies.selectQuestions || selectQuestions;
+  const writeTaskArtifact = dependencies.writePaperArtifact || writePaperArtifact;
   if (task.task_type === 'desktop-sync') {
     const changes = payload.pendingChanges || payload.changes || [];
     let claims;
@@ -103,7 +105,7 @@ async function processMiniappTask(task, db) {
   }
 
   if (task.task_type === 'question-paper') {
-    const questions = selectQuestions(db, payload);
+    const questions = selectTaskQuestions(db, payload);
     return {
       taskType: task.task_type,
       title: payload.title || '练习试卷',
@@ -120,10 +122,12 @@ async function processMiniappTask(task, db) {
   }
 
   if (task.task_type === 'paper-export-word') {
-    const questions = selectQuestions(db, payload);
-    const artifact = await writePaperArtifact('word', payload, questions, {
-      root: exportRoot(),
+    const questions = selectTaskQuestions(db, payload);
+    const paperRoot = exportRoot();
+    const artifact = await writeTaskArtifact('word', payload, questions, {
+      root: paperRoot,
       deviceId: hostDeviceId(),
+      resolveImageAsset: createLocalQuestionImageResolver(paperRoot),
     });
     return {
       taskType: task.task_type,
@@ -131,6 +135,7 @@ async function processMiniappTask(task, db) {
       title: payload.title || '练习试卷',
       subject: payload.subject || '',
       questionCount: questions.length,
+      answerPosition: artifact.answerPosition,
       fileName: artifact.fileName,
       fileUrl: artifact.fileUrl,
       requestedFormulaMode: artifact.requestedFormulaMode,
@@ -142,10 +147,12 @@ async function processMiniappTask(task, db) {
   }
 
   if (task.task_type === 'paper-export-pdf') {
-    const questions = selectQuestions(db, payload);
-    const artifact = await writePaperArtifact('pdf', payload, questions, {
-      root: exportRoot(),
+    const questions = selectTaskQuestions(db, payload);
+    const paperRoot = exportRoot();
+    const artifact = await writeTaskArtifact('pdf', payload, questions, {
+      root: paperRoot,
       deviceId: hostDeviceId(),
+      resolveImageAsset: createLocalQuestionImageResolver(paperRoot),
     });
     return {
       taskType: task.task_type,
@@ -153,6 +160,7 @@ async function processMiniappTask(task, db) {
       title: payload.title || '练习试卷',
       subject: payload.subject || '',
       questionCount: questions.length,
+      answerPosition: artifact.answerPosition,
       fileName: artifact.fileName,
       fileUrl: artifact.fileUrl,
       requestedFormulaMode: artifact.requestedFormulaMode,
@@ -257,3 +265,5 @@ router.post('/tasks/process', async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.processMiniappTask = processMiniappTask;
+module.exports.selectQuestions = selectQuestions;

@@ -2,6 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 
 const route = fs.readFileSync('backend/src/routes/cloudRelayHost.js', 'utf-8');
+const questionBankRoute = fs.readFileSync('backend/src/routes/questionBank.js', 'utf-8');
 const client = fs.readFileSync('backend/src/services/cloudRelayClient.js', 'utf-8');
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 
@@ -10,6 +11,9 @@ assert.ok(route.includes("task.task_type === 'question-paper'"), 'host should pr
 assert.ok(route.includes("task.task_type === 'paper-export-word'"), 'host should process miniapp Word export tasks');
 assert.ok(route.includes("task.task_type === 'paper-export-pdf'"), 'host should process miniapp PDF export tasks');
 assert.ok(route.includes('writePaperArtifact'), 'host should write paper export artifacts');
+assert.ok(route.includes('createLocalQuestionImageResolver(paperRoot)'), 'relay host export must inject the configured local image resolver');
+assert.ok(questionBankRoute.includes('createLocalQuestionImageResolver(paperRoot)'), 'question bank export must inject the configured local image resolver');
+assert.ok(route.includes('answerPosition'), 'relay task payload must carry canonical answerPosition through to the artifact result');
 assert.ok(route.includes('fileUrl'), 'host should return downloadable artifact URLs');
 assert.ok(route.includes("router.get('/artifacts/:fileName'"), 'host should expose artifact download route');
 assert.ok(route.includes('res.download'), 'host artifact route should download generated files');
@@ -26,4 +30,27 @@ assert.ok(client.includes('x-gewu-host-token'), 'cloud relay client should send 
 assert.ok(route.includes('req.headers.authorization'), 'host route should read Authorization from incoming requests');
 assert.ok(packageJson.includes('backend/src/routes/cloudRelayHostTasks.test.js'), 'host task processing test should run in npm test');
 
-console.log('cloudRelayHost task processing checks passed');
+const { processMiniappTask } = require('./cloudRelayHost');
+
+(async () => {
+  const calls = [];
+  const dependencies = {
+    selectQuestions: (_db, payload) => [{ id: payload.questionIds?.[0] || 'q1', stem: 'stem' }],
+    writePaperArtifact: async (format, payload, questions) => {
+      calls.push({ format, payload, questions });
+      const answerPosition = ['after-each', 'inline', 'after-question'].includes(payload.answerPosition) ? 'after-each' : (payload.answerPosition === 'hidden' || payload.includeAnswers === false ? 'hidden' : 'end');
+      return { fileName: `paper.${format === 'word' ? 'docx' : 'pdf'}`, fileUrl: '/artifact', answerPosition, requestedFormulaMode: 'word-native', effectiveFormulaModes: ['word-native'], fallbackCount: 0, formulaCount: 0 };
+    },
+  };
+  const word = await processMiniappTask({ task_type: 'paper-export-word', payload: { title: 'word', answerPosition: 'end', questionIds: ['q-word'] } }, {}, dependencies);
+  const pdf = await processMiniappTask({ task_type: 'paper-export-pdf', payload: { title: 'pdf', answerPosition: 'after-each', questionIds: ['q-pdf'] } }, {}, dependencies);
+  assert.strictEqual(calls[0].format, 'word');
+  assert.strictEqual(calls[0].payload.answerPosition, 'end');
+  assert.strictEqual(calls[1].format, 'pdf');
+  assert.strictEqual(calls[1].payload.answerPosition, 'after-each');
+  assert.strictEqual(word.answerPosition, 'end');
+  assert.strictEqual(pdf.answerPosition, 'after-each');
+  const legacy = await processMiniappTask({ task_type: 'paper-export-word', payload: { answerPosition: 'inline', questionIds: ['q-legacy'] } }, {}, dependencies);
+  assert.strictEqual(legacy.answerPosition, 'after-each', 'legacy input must return the canonical artifact answer position');
+  console.log('cloudRelayHost task processing checks passed');
+})().catch(error => { console.error(error); process.exit(1); });
