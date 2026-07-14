@@ -16,11 +16,60 @@ function roleOf(user) {
   return VALID_ROLES.has(role) ? role : 'pending';
 }
 
+function normalizedIdentityValue(value) {
+  if (value === null || value === undefined || value === '') return '';
+  if (value === true || value === 1 || value === '1' || value === 'true') return '1';
+  if (value === false || value === 0 || value === '0' || value === 'false') return '0';
+  return String(value).trim();
+}
+
+function normalizedIdentityIds(...values) {
+  const ids = [];
+  function append(value) {
+    if (Array.isArray(value)) {
+      value.forEach(append);
+      return;
+    }
+    if (typeof value === 'string' && value.trim().startsWith('[')) {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) {
+          parsed.forEach(append);
+          return;
+        }
+      } catch (_error) { /* keep a non-JSON identifier as-is */ }
+    }
+    const id = normalizedIdentityValue(value);
+    if (id) ids.push(id);
+  }
+  values.forEach(append);
+  return Array.from(new Set(ids)).sort();
+}
+
 function permissionIdentityKey(user) {
   if (!user || !user.id) return '';
   if (hasReviewExperienceMarker(user) && !isReviewExperienceIdentity(user)) return '';
   if (isReviewExperienceIdentity(user)) return reviewSessionIdentityKey(user);
-  return `${user.id}:${roleOf(user)}`;
+  return JSON.stringify([
+    normalizedIdentityValue(user.id),
+    roleOf(user),
+    normalizedIdentityValue(user.tenant_id ?? user.tenantId),
+    normalizedIdentityValue(user.teacher_id ?? user.teacherId),
+    normalizedIdentityIds(
+      user.student_id,
+      user.studentId,
+      user.linked_student_id,
+      user.linkedStudentId,
+      user.linked_student_ids,
+      user.linkedStudentIds,
+    ),
+    normalizedIdentityValue(user.review_status ?? user.reviewStatus),
+    normalizedIdentityValue(user.status),
+    normalizedIdentityValue(user.active),
+    normalizedIdentityValue(user.login_enabled ?? user.loginEnabled),
+    normalizedIdentityValue(user.deleted),
+    normalizedIdentityValue(user.disabled),
+  ]);
 }
 
 function businessCacheIdentityKey(user) {

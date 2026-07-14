@@ -134,8 +134,9 @@ const authorizationSession = createAuthorizationSession({
   clearBusinessCache,
   setBusinessCacheIdentity,
   writeUser: (user: any) => {
-    authSessionRuntime.advanceIfIdentityChanges(user);
+    const changed = authSessionRuntime.advanceIfIdentityChanges(user);
     Taro.setStorageSync('user_info', user);
+    if (changed) authSessionRuntime.activate();
   },
   fetchRemote: async () => {
     const response = await moduleApi.myPermissions();

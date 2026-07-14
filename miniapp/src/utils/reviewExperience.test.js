@@ -114,14 +114,20 @@ assert.ok(apiSource.includes('reviewDemoApi')
   && apiSource.includes('experienceApiPath')
   && apiSource.includes('reviewArtifactRequest'), 'sandbox API integration must reuse the behavior-tested path and bearer helpers');
 assert.ok(apiSource.includes('createAuthRefreshRuntime') && apiSource.includes('this.authRefreshRuntime.refresh()'), 'API 401 handling must use the behavior-tested refresh coordinator');
-assert.ok(authSessionSource.includes('AUTH_SESSION_GENERATION_KEY') && authSessionSource.includes('createAuthSessionRuntime'), 'the miniapp must persist one shared injectable auth-session generation');
+assert.ok(authSessionSource.includes('AUTH_SESSION_GENERATION_KEY') && authSessionSource.includes('AUTH_SESSION_STATE_KEY')
+  && authSessionSource.includes('createAuthSessionRuntime'), 'the miniapp must persist one shared injectable auth-session generation and validity state');
 assert.ok(apiSource.includes('createApiResponseCoordinator')
   && apiSource.includes('responseCoordinator.handleResponse')
-  && apiSource.includes('authSessionRuntime.isSameSession(requestBinding)'), 'every API response and retry must remain bound to the request-start session');
+  && apiSource.includes('const isCurrentSession')
+  && apiSource.includes('authSessionRuntime.isSameSession(session, sessionOptions)'), 'every API response and retry must remain bound to the request-start session');
 assert.ok(loginSource.includes('createNormalSessionCommitter')
-  && loginSource.includes('advanceGeneration: () => authSessionRuntime.advanceGeneration()'), 'normal and review login must commit through the shared generation runtime');
+  && loginSource.includes('invalidateSession: () => authSessionRuntime.invalidate()')
+  && loginSource.includes('activateSession: () => authSessionRuntime.activate()'), 'normal and review login must commit through the shared persistent session runtime');
+assert.ok(loginSource.includes('authSessionRuntime.capture().token')
+  && !loginSource.includes("if (Taro.getStorageSync('auth_token'))"), 'login redirect must ignore a stale raw token after durable logout invalidation');
 assert.ok(permissionSource.includes('authSessionRuntime.advanceIfIdentityChanges(user)'), 'authorization identity switches must advance session generation without treating token rotation as a switch');
-assert.ok(settingsSource.includes('clearAuthenticatedSession') && homeSource.includes('clearAuthenticatedSession'), 'all visible logout paths must invalidate generation before clearing credentials');
+assert.ok(settingsSource.includes('clearAuthenticatedSession') && settingsSource.includes('invalidateSession: () => authSessionRuntime.invalidate()')
+  && homeSource.includes('clearAuthenticatedSession') && homeSource.includes('invalidateSession: () => authSessionRuntime.invalidate()'), 'all visible logout paths must durably invalidate before clearing credentials');
 assert.ok(syncSource.includes('createSessionBoundOperation') && syncEngineSource.includes('createSessionBoundOperation'), 'direct sync responses must be discarded before mutating queues or caches after a session switch');
 assert.ok(!syncEngineSource.includes('requestSession.token || token'), 'sync must never fall back to a caller-captured token after binding a newer empty session');
 assert.ok(questionBankSource.includes('createSessionBoundOperation') && apiSource.includes('createSessionBoundOperation'), 'artifact access and download responses must stay bound through file consumption');
@@ -219,7 +225,7 @@ async function testReviewSessionInitialReadRollback() {
   assert.strictEqual(failed.code, 'REVIEW_DEMO_SESSION_COMMIT_FAILED');
   assert.ok(removed.includes('auth_token'), 'initial storage read failure must still enter rollback');
   assert.ok(removed.includes(`sch_${reviewTaskCacheKey(adminReview)}`));
-  assert.strictEqual(generation, 3, 'even an initial storage read failure must invalidate pending old responses');
+  assert.strictEqual(generation, 4, 'the attempt must advance before the failed read and rollback must advance again');
 }
 
 async function testReviewSessionValidationAndMutex() {

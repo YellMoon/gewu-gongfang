@@ -27,6 +27,7 @@ const DEFAULT_BASE_URL = (typeof __API_BASE_URL__ !== 'undefined' && __API_BASE_
   : 'https://physicsedu.xyz/scheduling';
 const RETRY_COUNT = 1;
 const REQUEST_TIMEOUT = 30000;
+const AUTHENTICATION_ENTRY_PATHS = new Set(['/api/auth/login', '/api/auth/wechat-login', '/api/auth/review-demo']);
 
 function getBaseUrl(): string {
   try {
@@ -58,14 +59,10 @@ class ApiClient {
     requestRefresh: (token: string) => this.requestRefreshedToken(token),
   });
 
-  private responseCoordinator = createApiResponseCoordinator({
-    sessionRuntime: authSessionRuntime,
-    refresh: () => this.authRefreshRuntime.refresh(),
-  });
-
   private handleReviewAuthExpired(): void {
     const currentUser = Taro.getStorageSync('user_info');
     clearAuthenticatedSession({
+      invalidateSession: () => authSessionRuntime.invalidate(),
       advanceGeneration: () => authSessionRuntime.advanceGeneration(),
       clearBusinessCache,
       clearPermissionCache: () => Taro.removeStorageSync('user_permissions'),
@@ -108,6 +105,7 @@ class ApiClient {
   /** Token 过期处理 */
   private handleAuthExpired(): void {
     clearAuthenticatedSession({
+      invalidateSession: () => authSessionRuntime.invalidate(),
       advanceGeneration: () => authSessionRuntime.advanceGeneration(),
       clearBusinessCache,
       clearPermissionCache: () => Taro.removeStorageSync('user_permissions'),
@@ -124,14 +122,26 @@ class ApiClient {
     retries = RETRY_COUNT,
   ): Promise<ApiResponse<T>> {
     const url = this.buildUrl(path, method);
+    const authenticationEntry = AUTHENTICATION_ENTRY_PATHS.has(path);
+    const sessionOptions = authenticationEntry ? { allowInvalidated: true } : undefined;
     const requestBinding = authSessionRuntime.capture();
+    const responseCoordinator = createApiResponseCoordinator({
+      sessionRuntime: authSessionRuntime,
+      allowInvalidatedSession: authenticationEntry,
+      authenticationEntry,
+      refresh: () => this.authRefreshRuntime.refresh(),
+    });
+    const isCurrentSession = (session = requestBinding) => authSessionRuntime.isSameSession(session, sessionOptions);
 
     for (let attempt = 0; attempt <= retries; attempt++) {
-      if (!authSessionRuntime.isSameSession(requestBinding)) {
+      if (!isCurrentSession()) {
         return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
       }
       try {
         const requestSession = authSessionRuntime.capture();
+        if (!isCurrentSession(requestSession)) {
+          return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
+        }
         const res = await Taro.request({
           url,
           method,
@@ -141,13 +151,13 @@ class ApiClient {
           dataType: 'json',
         });
 
-        const responseDecision = await this.responseCoordinator.handleResponse(requestSession, res.statusCode);
+        const responseDecision = await responseCoordinator.handleResponse(requestSession, res.statusCode);
         if (responseDecision.action === 'session-changed') {
           return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
         }
         if (responseDecision.action === 'retry') continue;
         if (responseDecision.action === 'review-expired') {
-          if (!authSessionRuntime.isSameSession(requestBinding)) {
+          if (!isCurrentSession()) {
             return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
           }
           this.handleReviewAuthExpired();
@@ -158,13 +168,13 @@ class ApiClient {
           };
         }
         if (responseDecision.action === 'auth-expired') {
-          if (!authSessionRuntime.isSameSession(requestBinding)) {
+          if (!isCurrentSession()) {
             return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
           }
           this.handleAuthExpired();
           return { success: false, error: '\u767b\u5f55\u5df2\u8fc7\u671f' };
         }
-        if (!authSessionRuntime.isSameSession(requestBinding)) {
+        if (!isCurrentSession()) {
           return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
         }
 
