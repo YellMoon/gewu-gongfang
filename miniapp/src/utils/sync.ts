@@ -13,6 +13,8 @@ import {
   onNetworkChange,
 } from './storage';
 import { getApiBaseUrl } from './api';
+import { authSessionRuntime } from './authSession';
+import { createSessionBoundOperation } from './miniappApiSessionRuntime';
 
 type SyncAction = 'create' | 'update' | 'delete';
 
@@ -152,17 +154,17 @@ function summarizeChanges(changes: PendingChange[]): string {
 }
 
 async function requestSync(path: string, options: { method: 'GET' | 'POST'; data?: any }): Promise<any> {
-  const token = Taro.getStorageSync('auth_token');
-  const res = await Taro.request({
+  const sessionBoundary = createSessionBoundOperation(authSessionRuntime);
+  const res = await sessionBoundary.run((requestSession: any) => Taro.request({
     url: `${getApiBaseUrl()}${path}`,
     method: options.method,
     header: {
       'Content-Type': 'application/json',
-      'Authorization': token ? `Bearer ${token}` : '',
+      'Authorization': requestSession.token ? `Bearer ${requestSession.token}` : '',
     },
     data: options.data,
     timeout: 30000,
-  });
+  }));
   if (res.statusCode < 200 || res.statusCode >= 300) {
     throw new Error(`HTTP ${res.statusCode}`);
   }

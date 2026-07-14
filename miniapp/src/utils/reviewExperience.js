@@ -129,7 +129,7 @@ function createReviewSessionCommitter(dependencies) {
   }
 
   function rollback(identities) {
-    for (const action of [dependencies.clearBusinessCache, dependencies.clearPermissionCache]) {
+    for (const action of [dependencies.advanceGeneration, dependencies.clearBusinessCache, dependencies.clearPermissionCache]) {
       try { action(); } catch (_error) { /* continue cleanup */ }
     }
     for (const key of cleanupKeys(identities)) {
@@ -149,6 +149,7 @@ function createReviewSessionCommitter(dependencies) {
       for (const key of cleanupKeys(cleanupIdentities)) dependencies.removeStorage(key);
       dependencies.writeUser(session.user);
       dependencies.setBusinessCacheIdentity(session.user);
+      dependencies.advanceGeneration();
       dependencies.writeToken(session.token);
       await dependencies.relaunch();
       return { success: true };

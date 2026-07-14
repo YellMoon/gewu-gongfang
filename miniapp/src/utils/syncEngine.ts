@@ -1,4 +1,6 @@
 import Taro from '@tarojs/taro';
+import { authSessionRuntime } from './authSession';
+import { createSessionBoundOperation, isAuthSessionChangedError } from './miniappApiSessionRuntime';
 
 export type SyncTable =
   | 'students' | 'courses' | 'schedules' | 'payments' | 'consumptions'
@@ -178,17 +180,18 @@ export class MiniSyncEngine {
     return change;
   }
 
-  async push(baseUrl: string, token: string): Promise<{ pushed: number; success: boolean }> {
+  async push(baseUrl: string, _token: string): Promise<{ pushed: number; success: boolean }> {
     if (this.pendingChanges.length === 0) return { pushed: 0, success: true };
     const changes = [...this.pendingChanges];
+    const sessionBoundary = createSessionBoundOperation(authSessionRuntime);
 
     try {
-      const res = await Taro.request({
+      const res = await sessionBoundary.run((requestSession: any) => Taro.request({
         url: `${baseUrl}/api/sync/push`,
         method: 'POST',
         header: {
           'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
+          'Authorization': requestSession.token ? `Bearer ${requestSession.token}` : '',
         },
         data: {
           changes,
@@ -198,7 +201,7 @@ export class MiniSyncEngine {
           lastSyncTimestamp: this.storage.get<number>('sync_last_ts') || 0,
         },
         timeout: 30000,
-      });
+      }));
 
       if (res.statusCode === 200 && (res.data as any)?.success) {
         this.pendingChanges = [];
@@ -209,24 +212,26 @@ export class MiniSyncEngine {
       this.storage.set('sync_last_result', 'error');
       return { pushed: 0, success: false };
     } catch (err) {
+      if (isAuthSessionChangedError(err)) return { pushed: 0, success: false };
       console.error('[MiniSyncEngine] push failed:', err);
       this.storage.set('sync_last_result', 'error');
       return { pushed: 0, success: false };
     }
   }
 
-  async pull(baseUrl: string, token: string): Promise<{ operations: SyncChange[]; changes: SyncChange[]; success: boolean }> {
+  async pull(baseUrl: string, _token: string): Promise<{ operations: SyncChange[]; changes: SyncChange[]; success: boolean }> {
     const lastSyncTs = this.storage.get<number>('sync_last_ts') || 0;
+    const sessionBoundary = createSessionBoundOperation(authSessionRuntime);
 
     try {
-      const res = await Taro.request({
+      const res = await sessionBoundary.run((requestSession: any) => Taro.request({
         url: `${baseUrl}/api/sync?since=${encodeURIComponent(toIsoTime(lastSyncTs, false))}&deviceId=${encodeURIComponent(this.deviceId)}`,
         method: 'GET',
         header: {
-          'Authorization': token ? `Bearer ${token}` : '',
+          'Authorization': requestSession.token ? `Bearer ${requestSession.token}` : '',
         },
         timeout: 30000,
-      });
+      }));
 
       if (res.statusCode === 200 && (res.data as any)?.success) {
         const changes = (((res.data as any).changes || []) as any[]).map(change => normalizeChange(change, 'server'));
@@ -238,6 +243,7 @@ export class MiniSyncEngine {
       this.storage.set('sync_last_result', 'error');
       return { operations: [], changes: [], success: false };
     } catch (err) {
+      if (isAuthSessionChangedError(err)) return { operations: [], changes: [], success: false };
       console.error('[MiniSyncEngine] pull failed:', err);
       this.storage.set('sync_last_result', 'error');
       return { operations: [], changes: [], success: false };

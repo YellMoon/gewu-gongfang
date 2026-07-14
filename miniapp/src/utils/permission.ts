@@ -4,6 +4,7 @@
  */
 import Taro from '@tarojs/taro';
 import { moduleApi } from './api';
+import { authSessionRuntime } from './authSession';
 import {
   canUserSubmitMiniappWrite,
   deriveAccess,
@@ -132,7 +133,10 @@ const authorizationSession = createAuthorizationSession({
   },
   clearBusinessCache,
   setBusinessCacheIdentity,
-  writeUser: (user: any) => Taro.setStorageSync('user_info', user),
+  writeUser: (user: any) => {
+    authSessionRuntime.advanceIfIdentityChanges(user);
+    Taro.setStorageSync('user_info', user);
+  },
   fetchRemote: async () => {
     const response = await moduleApi.myPermissions();
     if (!response.success || !response.data) throw new Error(response.error || 'AUTHORIZATION_REFRESH_FAILED');

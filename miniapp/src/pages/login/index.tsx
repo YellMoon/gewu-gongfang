@@ -2,11 +2,14 @@ import { useRef, useState } from 'react';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { View, Text, Button, Input } from '@tarojs/components';
 import { api, authApi } from '../../utils/api';
+import { authSessionRuntime } from '../../utils/authSession';
 import { clearPermissionCache } from '../../utils/permission';
 import { clearBusinessCache, setBusinessCacheIdentity } from '../../utils/storage';
+import { clearAuthenticatedSession, createNormalSessionCommitter } from '../../utils/miniappApiSessionRuntime';
 import {
   createReviewSessionCommitter,
   createSynchronousMutex,
+  reviewCleanupStorageKeys,
   reviewLoginErrorMessage,
 } from '../../utils/reviewExperience';
 import './index.scss';
@@ -19,8 +22,23 @@ export default function LoginPage() {
   const [reviewRole, setReviewRole] = useState<'admin' | 'student'>('admin');
   const [reviewLoading, setReviewLoading] = useState(false);
   const loginMutexRef = useRef<ReturnType<typeof createSynchronousMutex> | null>(null);
+  const normalSessionCommitterRef = useRef<ReturnType<typeof createNormalSessionCommitter> | null>(null);
   const reviewSessionCommitterRef = useRef<ReturnType<typeof createReviewSessionCommitter> | null>(null);
   if (!loginMutexRef.current) loginMutexRef.current = createSynchronousMutex();
+  if (!normalSessionCommitterRef.current) {
+    normalSessionCommitterRef.current = createNormalSessionCommitter({
+      readUser: () => Taro.getStorageSync('user_info'),
+      clearBusinessCache,
+      clearPermissionCache,
+      removeStorage: (key: string) => Taro.removeStorageSync(key),
+      cleanupStorageKeys: reviewCleanupStorageKeys,
+      writeUser: (user: any) => Taro.setStorageSync('user_info', user),
+      setBusinessCacheIdentity,
+      advanceGeneration: () => authSessionRuntime.advanceGeneration(),
+      writeToken: (token: string) => Taro.setStorageSync('auth_token', token),
+      relaunch: () => Taro.reLaunch({ url: '/pages/index/index' }),
+    });
+  }
   if (!reviewSessionCommitterRef.current) {
     reviewSessionCommitterRef.current = createReviewSessionCommitter({
       readUser: () => Taro.getStorageSync('user_info'),
@@ -29,6 +47,7 @@ export default function LoginPage() {
       removeStorage: (key: string) => Taro.removeStorageSync(key),
       writeUser: (user: any) => Taro.setStorageSync('user_info', user),
       setBusinessCacheIdentity,
+      advanceGeneration: () => authSessionRuntime.advanceGeneration(),
       writeToken: (token: string) => Taro.setStorageSync('auth_token', token),
       relaunch: () => Taro.reLaunch({ url: '/pages/index/index' }),
     });
@@ -48,14 +67,19 @@ export default function LoginPage() {
       if (res.success && res.data) {
         const loginUser = res.data.user || { id: res.data.userId, nickname: res.data.nickname, role: res.data.role || 'student' };
         const normalizedUser = { ...loginUser, user_type: loginUser.role || loginUser.user_type || 'student' };
-        clearPermissionCache();
-        Taro.setStorageSync('auth_token', res.data.token);
-        Taro.setStorageSync('user_info', normalizedUser);
-        setBusinessCacheIdentity(normalizedUser);
-        Taro.reLaunch({ url: '/pages/index/index' });
+        const committed = await normalSessionCommitterRef.current?.commit({ token: res.data.token, user: normalizedUser });
+        if (committed?.success) return;
+        Taro.showToast({ title: '\u767b\u5f55\u72b6\u6001\u4fdd\u5b58\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5', icon: 'none' });
       } else if (res.code === 'PENDING_REVIEW' || res.code === 'USER_PENDING_REVIEW') {
         setPendingReview(true);
-        Taro.removeStorageSync('auth_token');
+        const currentUser = Taro.getStorageSync('user_info');
+        clearAuthenticatedSession({
+          advanceGeneration: () => authSessionRuntime.advanceGeneration(),
+          clearBusinessCache,
+          clearPermissionCache,
+          removeStorage: (key: string) => Taro.removeStorageSync(key),
+          cleanupStorageKeys: reviewCleanupStorageKeys,
+        }, [currentUser]);
       } else if (res.code === 'PHONE_VERIFICATION_REQUIRED' && !phoneCode) {
         setNeedsPhoneAuth(true);
         Taro.showToast({ title: '\u8bf7\u9a8c\u8bc1\u9884\u7559\u624b\u673a\u53f7', icon: 'none' });

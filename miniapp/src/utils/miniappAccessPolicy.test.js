@@ -92,7 +92,7 @@ assert.ok(miniappHome.includes('scopeDashboardCollections'), 'home dashboard sho
 assert.ok(miniappHome.includes('setBusinessCacheIdentity'), 'home should activate the authenticated cache namespace before reads');
 assert.ok(storageSource.includes('cache_${activeCacheIdentity}_${table}'), 'business cache keys should be identity scoped');
 assert.ok(storageSource.includes('previousIdentity !== nextIdentity'), 'business cache should clear the prior identity namespace on account switch');
-assert.ok(loginPage.includes('setBusinessCacheIdentity(normalizedUser)'), 'login should switch the business cache identity after authentication');
+assert.ok(loginPage.includes('createNormalSessionCommitter') && loginPage.includes('setBusinessCacheIdentity,'), 'login should atomically switch the business cache identity after authentication');
 assert.ok(loginPage.includes('createReviewSessionCommitter') && loginPage.includes('loginMutexRef'), 'review login should use the atomic session committer and a shared synchronous mutex');
 assert.ok(customTabBar.includes("return 'pending'"), 'tab bar should fail closed when no authenticated role is available');
 assert.ok(customTabBar.includes("userType === 'pending' ? LIMITED_TABS"), 'pending users should not receive business navigation tabs');
