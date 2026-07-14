@@ -52,8 +52,8 @@
 - [x] Build a synthetic DOCX containing styled text, drawing, table, comment, OMML, split EQ field and OLE relationships in both `document.xml` and `comments.xml`.
 - [x] Assert both parts yield the same ordered token kinds and retain part/paragraph/comment/relationship coordinates; run and observe failure.
 - [x] Implement relationship normalization and a streaming child walker that yields text/style/break/image/OMML/field/OLE tokens.
-- [ ] Replace divergent paragraph/comment low-level traversal in `parse_word.py` while keeping existing question-boundary behavior.
-- [ ] Run parser tests plus a real existing Word import smoke test and commit.
+- [x] Replace divergent paragraph/comment low-level traversal in `parse_word.py` while keeping existing question-boundary behavior.
+- [x] Run parser tests plus a real existing Word import smoke test and commit.
 
 ### Task 3: Complete EQ field state machine and converter
 
@@ -61,11 +61,11 @@
 - Create: `modules/question-bank/parsers/tests/test_formula_eq.py`
 - Create: `modules/question-bank/parsers/formula_eq.py`
 
-- [ ] Add failing cases for `fldSimple@instr`, split `instrText`, nested fields, `begin/separate/end`, fractions, roots, superscript/subscript, integral/sum and unsupported instructions.
-- [ ] Verify tests fail for missing parser.
-- [ ] Implement a stack-based field collector and recursive EQ expression parser that returns canonical LaTeX or a visible-source fallback status.
-- [ ] Verify supported fields produce rendered LaTeX and unsupported fields never become visible source text.
-- [ ] Commit the focused change.
+- [x] Add failing cases for `fldSimple@instr`, split `instrText`, nested fields, `begin/separate/end`, fractions, roots, superscript/subscript, integral/sum and unsupported instructions.
+- [x] Verify tests fail for missing parser.
+- [x] Implement a stack-based field collector and recursive EQ expression parser that returns canonical LaTeX or a visible-source fallback status.
+- [x] Verify supported fields produce rendered LaTeX and unsupported fields never become visible source text.
+- [x] Commit the focused change.
 
 ### Task 4: OMML normalization coverage
 
@@ -74,11 +74,11 @@
 - Create: `modules/question-bank/parsers/formula_omml.py`
 - Modify: `modules/question-bank/parsers/parse_word.py`
 
-- [ ] Add failing fixtures for fractions, nth roots, sub/superscripts, n-ary operators, limits, matrices, equation arrays, delimiters, accents, bars and piecewise expressions.
-- [ ] Implement an OMML AST visitor that produces normalized LaTeX and warnings for approximations.
-- [ ] Compare rendered KaTeX-compatible output against expected structures and ensure no OMML XML appears in visible question text.
-- [ ] Route old `_math_latex` callers through the new adapter and run regression tests.
-- [ ] Commit.
+- [x] Add failing fixtures for fractions, nth roots, sub/superscripts, n-ary operators, limits, matrices, equation arrays, delimiters, accents, bars and piecewise expressions.
+- [x] Implement an OMML AST visitor that produces normalized LaTeX and warnings for approximations.
+- [x] Compare rendered KaTeX-compatible output against expected structures and ensure no OMML XML appears in visible question text.
+- [x] Route old `_math_latex` callers through the new adapter and run regression tests.
+- [x] Commit.
 
 ### Task 5: MathType import reuse and packaging
 
@@ -88,11 +88,11 @@
 - Modify: `scripts/prepare-python-runtime.js`
 - Modify: `package.json`
 
-- [ ] Port reference-project tests for hash deduplication, batch sentinel parsing, converter failure and cached reuse; verify failure.
-- [ ] Reuse the reference Ruby `mathtype_to_mathml_plus` invocation with explicit UTF-8, hidden subprocesses, timeouts and per-object isolation.
-- [ ] Convert returned MathML to canonical LaTeX, retain OLE/preview references, and emit `preview_only` instead of invented LaTeX on failure.
-- [ ] Package the reviewed Ruby runtime/gems or a pinned legal dependency bundle and verify packaged path discovery.
-- [ ] Run parser and packaging smoke tests; commit.
+- [x] Port reference-project tests for hash deduplication, batch sentinel parsing, converter failure and cached reuse; verify failure.
+- [x] Reuse the reference Ruby `mathtype_to_mathml_plus` invocation with explicit UTF-8, hidden subprocesses, timeouts and per-object isolation.
+- [x] Convert returned MathML to canonical LaTeX, retain OLE/preview references, and emit `preview_only` instead of invented LaTeX on failure.
+- [x] Package the reviewed Ruby runtime/gems or a pinned legal dependency bundle and verify packaged path discovery.
+- [x] Run parser and packaging smoke tests; commit.
 
 ### Task 6: End-to-end Word import quality gate
 
@@ -101,11 +101,13 @@
 - Modify: `modules/question-bank/parsers/parse_word.py`
 - Modify: `modules/question-bank/src/routes/parse_word.js`
 
-- [ ] Add lecture and exam fixtures proving formulas in stems, options, subquestions, answers, analyses, comments and tables attach to the correct question in source order.
-- [ ] Make the current implementation fail on field and comment/OLE cases.
-- [ ] Replace `read_docx_rich_blocks() or read_docx_rich_paragraphs()` with one token-derived rich block stream and attach canonical formula nodes.
-- [ ] Return a parse quality report with counts by source/status and actionable locations.
-- [ ] Run forced XML fallback, python-docx path and route integration tests; commit.
+- [x] Add lecture and exam fixtures proving formulas in stems, options, subquestions, answers, analyses, comments and tables attach to the correct question in source order.
+- [x] Make the current implementation fail on field and comment/OLE cases.
+- [x] Replace `read_docx_rich_blocks() or read_docx_rich_paragraphs()` with one token-derived rich block stream and attach canonical formula nodes.
+- [x] Return a parse quality report with counts by source/status and actionable locations.
+- [x] Run forced XML fallback, python-docx path and route integration tests; commit.
+
+Verification: representative lecture/exam DOCX fixtures cover OMML, EQ, MathType preview-only OLE, comments, tables, repeated formulas, options, subquestions, subanswers, answers and analyses. Parser discovery passed 32/32; multipart route integration (including spawn failure single-settle) passed; Node syntax checks and the production build passed. Independent spec and code-quality reviews passed.
 
 ### Task 7: Structured rich-content persistence and compatibility
 
@@ -118,11 +120,13 @@
 - Modify: `backend/src/services/questionBankService.js`
 - Modify: `src/services/browserDatabase.ts`
 
-- [ ] Add failing tests for legacy HTML/text migration, formula-node round trip, image references, persistence/reload, plain-text search projection and old-client compatibility.
-- [ ] Add additive versioned JSON columns/content rows without deleting legacy fields.
-- [ ] Implement strict sanitizer/validator and deterministic legacy projection.
-- [ ] Verify mutation → database → reload → derived flags/search → UI payload.
-- [ ] Run backend/browser database suites and commit.
+- [x] Add failing tests for legacy HTML/text migration, formula-node round trip, image references, persistence/reload, plain-text search projection and old-client compatibility.
+- [x] Add additive versioned JSON columns/content rows without deleting legacy fields.
+- [x] Implement strict sanitizer/validator and deterministic legacy projection.
+- [x] Verify mutation → database → reload → derived flags/search → UI payload.
+- [x] Run backend/browser database suites and commit.
+
+Verification: front-end and backend validators enforce aligned TipTap node/mark attribute contracts; legacy and rich projections preserve options, correctness, subquestions and answers. Browser sync uses behavior-tested atomic normalization, old-client partial updates preserve untouched rich sections, and the additive `search_text` migration uses restart-safe batches with one canonical plain-text projection. Focused backend/browser/sync tests and the production build passed; independent spec and code-quality reviews passed.
 
 ### Task 8: WYSIWYG editor core
 
@@ -186,6 +190,17 @@
 - [ ] Make task execution idempotent and enforce timeout/cancel/retry/cleanup rules.
 - [ ] Run host task and artifact service tests; commit.
 
+### Task 11A: Default paper template and answer placement
+
+**Reference:** `C:\Users\83423\Desktop\组卷导出模板.docx` (SHA-256 `631d6bfb41b2606837ee91488161917da7b5a700333b1e66c1ce05c74cd9dfdb`)
+
+- [x] Preserve the reference as the visual/layout authority for default Word and PDF paper exports, including its A4 two-section page system, title/student-information block, question-type sections, answer section and section-specific footers.
+- [x] Generate the answer-at-end mode with a choice-answer summary table at the start of the reference-answer section, followed by every question's answer, `【知识点】` and `【解析】` in question order.
+- [x] Generate the answer-after-each-question mode as question 1 → answer/knowledge/analysis 1 → question 2 → answer/knowledge/analysis 2, without a separate trailing answer section.
+- [x] Expose the two truthful answer-position choices in the paper UI and carry the selected value through local-host and relay task payloads.
+- [x] Use the same template-derived layout for PDF generation and block delivery when required formula/image/template content is missing.
+- [ ] Render both answer-position modes for DOCX and PDF, inspect every page and verify section headers/footers, answer summary correctness, formula visibility, clipping and pagination.
+
 ### Task 12: Export preference UI and runtime visual QA
 
 **Files:**
@@ -193,11 +208,11 @@
 - Modify: `src/components/QuestionBasket.tsx`
 - Create: `docs/verification-2026-07-12-question-formula-editor.md`
 
-- [ ] Add selection controls for four output modes with truthful compatibility descriptions and host readiness state.
-- [ ] Show job progress, failure locations, fallback summary and download actions; never expose raw formula payloads.
-- [ ] Run the real desktop app and exercise import → edit → save → export at desktop and narrow widths, keyboard-only paths, loading/error/recovery states and console health.
-- [ ] Capture safe screenshots/check records and complete the visual evidence record against selected UI checks.
-- [ ] Commit.
+- [x] Add selection controls for four output modes with truthful compatibility descriptions and host readiness state.
+- [x] Show job progress, failure locations, fallback summary and download actions; never expose raw formula payloads.
+- [x] Run the real desktop app and exercise import → edit → save → export at desktop and narrow widths, keyboard-only paths, loading/error/recovery states and console health.
+- [x] Capture safe screenshots/check records and complete the visual evidence record against selected UI checks.
+- [x] Commit.
 
 ### Task 13: Document render matrix and regression closure
 

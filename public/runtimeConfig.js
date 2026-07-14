@@ -77,12 +77,24 @@ function writeRuntimeConfig(configPath, config, options = {}) {
   return normalized;
 }
 
+function deriveScopedSecret(seed, scope) {
+  return crypto.createHmac('sha256', seed).update(`gewu-desktop-runtime:${scope}`).digest('hex');
+}
+
 function applyRuntimeConfigToEnv(config, env = process.env) {
   env.GEWU_NODE_ROLE = config.nodeRole;
   env.GEWU_DEVICE_ID = config.deviceId;
   env.GEWU_HOST_BASE_URL = config.hostBaseUrl || '';
   env.GEWU_CLOUD_BASE_URL = config.cloudBaseUrl || '';
-  if (config.desktopSyncToken) env.GEWU_DESKTOP_SYNC_TOKEN = config.desktopSyncToken;
+  if (config.desktopSyncToken) {
+    env.GEWU_DESKTOP_SYNC_TOKEN = config.desktopSyncToken;
+    if (Buffer.byteLength(config.desktopSyncToken, 'utf8') >= 32) {
+      if (!env.JWT_SECRET) env.JWT_SECRET = deriveScopedSecret(config.desktopSyncToken, 'jwt');
+      if (!env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET) {
+        env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET = deriveScopedSecret(config.desktopSyncToken, 'artifact-download');
+      }
+    }
+  }
   env.DB_PATH = config.mainDbPath;
   if (config.questionBankPath) env.QUESTION_BANK_ROOT = config.questionBankPath;
   if (config.questionAssetPath) env.QUESTION_BANK_UPLOAD_DIR = config.questionAssetPath;

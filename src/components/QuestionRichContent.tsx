@@ -1,6 +1,7 @@
 import React from 'react';
 import { Space, Tag } from 'antd';
 import QuestionRenderer from './QuestionRenderer';
+import { RichAssetImage } from './RichAssetImage'; // utf-8
 
 function decodeDataUrlJson(value?: string): any | null {
   if (!value || !value.startsWith('data:application/json;base64,')) return null;
@@ -68,9 +69,10 @@ const QuestionRichContent: React.FC<{ question: any; terms?: string[] }> = ({ qu
           {imageAssets.map((asset: any, index: number) => {
             const src = asset.resolved_url || asset.oss_url || asset.data_url || asset.url;
             return src ? (
-              <img
+              <RichAssetImage
                 key={asset.content_hash || asset.id || index}
                 src={src}
+                assetKey={asset.content_hash || asset.id || asset.file_name}
                 alt={asset.file_name || `question-image-${index + 1}`}
                 style={{ maxWidth: 360, maxHeight: 220, objectFit: 'contain', border: '1px solid #edf0f5', borderRadius: 4 }}
               />
@@ -91,9 +93,10 @@ const QuestionRichContent: React.FC<{ question: any; terms?: string[] }> = ({ qu
           {formulaAssets.filter((asset: any) => asset.asset_type === 'formula_preview').map((asset: any, index: number) => {
             const src = asset.resolved_url || asset.oss_url || asset.data_url || asset.url;
             return src ? (
-              <img
+              <RichAssetImage
                 key={asset.content_hash || asset.id || `formula-preview-${index}`}
                 src={src}
+                assetKey={asset.content_hash || asset.id || asset.file_name}
                 alt={asset.file_name || `formula-preview-${index + 1}`}
                 style={{ maxWidth: 240, maxHeight: 120, objectFit: 'contain', border: '1px solid #f1e8ff', borderRadius: 4 }}
               />

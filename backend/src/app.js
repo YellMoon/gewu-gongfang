@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireCoreReadAccess, requireWriteAccess } = require('./middleware/auth');
 const { buildErrorPayload, errorHandler } = require('./middleware/errorHandler');
 
@@ -25,6 +26,7 @@ const authRouter = require('./routes/auth');
 const questionBankRouter = require('./routes/questionBank');
 const opsRouter = require('./routes/ops');
 const cloudRelayHostRouter = require('./routes/cloudRelayHost');
+const paperArtifactAccessRouter = require('./routes/paperArtifactAccess');
 const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
 const permissionsRouter = require('./routes/permissions');
@@ -49,6 +51,18 @@ function cleanupStore(store, now = Date.now()) {
   for (const [key, value] of store.entries()) {
     if (value.expiresAt <= now) store.delete(key);
   }
+}
+
+function stableRequestValue(value) {
+  if (Array.isArray(value)) return value.map(stableRequestValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableRequestValue(value[key])]));
+  }
+  return value;
+}
+
+function requestBodyHash(body) {
+  return crypto.createHash('sha256').update(JSON.stringify(stableRequestValue(body ?? null))).digest('hex');
 }
 
 function createWriteRateLimiter() {
@@ -93,7 +107,7 @@ function writeSafetyMiddleware(req, res, next) {
 
   const idempotencyKey = req.headers['x-idempotency-key'];
   const idemKey = idempotencyKey
-    ? `${clientKey(req)}:${req.method}:${req.originalUrl}:${idempotencyKey}`
+    ? `${clientKey(req)}:${req.method}:${req.originalUrl}:${idempotencyKey}:${requestBodyHash(req.body)}`
     : null;
   if (idemKey) {
     const existing = idempotencyStore.get(idemKey);
@@ -250,6 +264,7 @@ function createApp() {
   app.use('/api/auth', authRouter);
   app.use('/api/desktop-pairing', desktopPairingRouter);
   app.use('/api/sync', optionalAuth, syncRouter);
+  app.use('/api/cloud-relay-host/artifacts', optionalAuth, paperArtifactAccessRouter);
   app.use('/api/cloud-relay-host', optionalAuth, requireWriteAccess, cloudRelayHostRouter);
   app.use('/api/modules', optionalAuth, modulesRouter);
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);

@@ -20,6 +20,7 @@ import {
 } from './tagAdapter';
 import { normalizeQuestionType } from '../constants/questionTypes';
 import { cacheQuestionTrees, clearQuestionLocalStore, removeQuestionLocalRecord, upsertQuestionLocalRecord } from './questionLocalStore';
+import { applyQuestionSyncRecords, buildBrowserQuestionSearchText, mergeBrowserQuestionUpdate, normalizeBrowserQuestionRecord } from './questionRichContent';
 
 interface Database {
   students: Student[];
@@ -340,25 +341,7 @@ class BrowserDatabaseService {
   }
 
   private questionIndexText(question: Partial<Question>): string {
-    const plain = (value: any) => String(value || '')
-      .replace(/<img\b[^>]*>/gi, ' ')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\$\$[\s\S]*?\$\$|\$[^$]*?\$/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    return [
-      question.content,
-      question.answer,
-      question.analysis,
-      question.source,
-      question.exam_type,
-      question.region,
-      question.school,
-      question.year,
-      ...(Array.isArray(question.options) ? question.options : []),
-      ...(Array.isArray(question.knowledge_ids) ? question.knowledge_ids : []),
-      ...(Array.isArray(question.model_ids) ? question.model_ids : []),
-    ].map(plain).filter(Boolean).join('\n').toLowerCase();
+    return buildBrowserQuestionSearchText(question);
   }
 
   private rebuildQuestionIndexes(): void {
@@ -441,15 +424,16 @@ class BrowserDatabaseService {
   }
 
   private normalizeQuestionRecord(question: Question): Question {
+    const richNormalized = normalizeBrowserQuestionRecord(question as any);
     const normalized: Question = {
-      ...question,
+      ...richNormalized,
       subject: question.subject || '物理',
       type: normalizeQuestionType(question.type),
       exam_type: question.exam_type || '其他',
       edit_status: question.edit_status || '未编辑',
       status: question.status || 'draft',
-      has_image: this.detectQuestionHasImage(question),
-      has_formula: this.detectQuestionHasFormula(question),
+      has_image: richNormalized.has_image || this.detectQuestionHasImage(question),
+      has_formula: richNormalized.has_formula || this.detectQuestionHasFormula(question),
       created_by: question.created_by || '',
       storage_state: question.storage_state || 'local_draft',
       knowledge_ids: question.knowledge_ids || question.knowledge_point_ids || [],
@@ -1304,10 +1288,10 @@ class BrowserDatabaseService {
     for (const table of SYNC_TABLES) {
       const map = localData[table];
       if (!map) continue;
-      this.data[table] = Array.from(map.values()).map(record => {
+      this.data[table] = (table === 'questions' ? applyQuestionSyncRecords(map) : Array.from(map.values()).map(record => {
         const { _synced, ...cleanRecord } = record || {};
         return cleanRecord;
-      });
+      })) as any;
     }
     this.saveData();
   }
@@ -1831,11 +1815,11 @@ class BrowserDatabaseService {
     const { storage_state: _ignoredStorageState, sourceDeviceId: _ignoredSourceDeviceId, ownerUserId: _ignoredOwnerUserId, ...safeUpdates } = updates;
     const provenanceSafeUpdates = applyTrustedQuestionProvenance(safeUpdates, {}, this.data.questions[idx]) as Partial<Question>;
     this.createQuestionVersionSnapshot(this.data.questions[idx]);
-    this.data.questions[idx] = this.normalizeQuestionRecord({
+    this.data.questions[idx] = this.normalizeQuestionRecord(mergeBrowserQuestionUpdate(this.data.questions[idx], provenanceSafeUpdates as any) as unknown as Question);
+    this.data.questions[idx] = {
       ...this.data.questions[idx],
-      ...provenanceSafeUpdates,
       updated_at: new Date().toISOString()
-    });
+    };
     if (
       updates.knowledge_ids ||
       updates.model_ids ||

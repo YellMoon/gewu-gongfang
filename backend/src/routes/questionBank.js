@@ -1,4 +1,5 @@
 const { Router } = require('express');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -10,6 +11,9 @@ const searchService = require('../services/searchService');
 const eventBus = require('../services/eventBus');
 const cache = require('../services/cacheService');
 const { canDeleteQuestion, committedDeleteError } = require('../services/questionDeletionPolicy');
+const { resolveExactQuestionSelection } = require('../services/paperExportSelectionService');
+const { processDurablePaperTask } = require('../services/paperJobProcessor');
+const { createArtifactDownloadToken } = require('../services/paperArtifactAccess');
 const {
   initQuestionBankStore,
   inspectQuestionBankStore,
@@ -20,6 +24,7 @@ const {
   bindQuestionBankStoreToDatabase,
   restoreCommittedQuestion,
   updateCommittedQuestion,
+  resolveBoundQuestionBankRoot,
 } = require('../services/questionBankStorageService');
 const {
   createMaintenanceToken,
@@ -45,10 +50,19 @@ const upload = multer({
 });
 
 function errorStatus(err) {
+  if (Number(err.statusCode) >= 400) return Number(err.statusCode);
   if (['AUTHORIZATION_CONTEXT_REQUIRED', 'TOKEN_REQUIRED'].includes(err.code)) return 401;
   if (['QUESTION_BANK_STORE_ALREADY_BOUND', 'QUESTION_BANK_DATABASE_ALREADY_BOUND'].includes(err.code)) return 409;
   if (/_REQUIRED$|_MISMATCH$/.test(err.code || '')) return 403;
   return /oss_key is required|knowledge point not found/.test(err.message) ? 400 : 500;
+}
+
+function canExportDraft(authz = {}) {
+  return new Set(['super_admin', 'admin', 'operator', 'teacher']).has(authz.role || authz.user_type);
+}
+
+function resolvePaperExportQuestions(db, payload, context, dependencies = {}) {
+  return resolveExactQuestionSelection(db, payload, context, dependencies);
 }
 
 function tenantId(req) {
@@ -347,6 +361,44 @@ router.get('/questions/:id', (req, res) => {
     res.json({ success: true, data: row });
   } catch (err) {
     res.status(errorStatus(err)).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/paper-export', async (req, res) => {
+  try {
+    const role = req.authz?.runtimeNodeRole || process.env.GEWU_RUNTIME_NODE_ROLE || 'primary-host';
+    if (role !== 'primary-host') return res.status(409).json({ success: false, code: 'PRIMARY_HOST_EXPORT_REQUIRED', error: 'paper export must run on the primary data host' });
+    const db = getInstance().db;
+    const tId = tenantId(req);
+    const format = req.body?.format === 'pdf' ? 'pdf' : 'word';
+    const idempotencyKey = String(req.get('x-idempotency-key') || req.body?.idempotencyKey || '').trim();
+    if (!idempotencyKey) return res.status(400).json({ success: false, code: 'PAPER_EXPORT_IDEMPOTENCY_REQUIRED', error: 'x-idempotency-key is required' });
+    resolveBoundQuestionBankRoot(db);
+    const actorId = req.user?.id || req.authz?.userId || '';
+    const requestJson = JSON.stringify(req.body || {});
+    const digest = value => crypto.createHash('sha256').update(value).digest('hex');
+    const taskId = `direct_${digest(`${actorId}\0${tId}\0${idempotencyKey}`)}`;
+    createArtifactDownloadToken({ artifact_id: 'preflight', task_id: taskId, owner_user_id: actorId, tenant_id: tId }, {
+      secret: process.env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET || '', kid: process.env.GEWU_ARTIFACT_DOWNLOAD_HMAC_KID || 'current', ttlSeconds: 1,
+    });
+    const task = {
+      id: taskId, task_type: format === 'pdf' ? 'paper-export-pdf' : 'paper-export-word', request_hash: digest(requestJson),
+      created_by: actorId, selection_context: { tenantId: tId, allowDraft: canExportDraft(req.authz) }, payload: req.body || {},
+    };
+    const durable = await processDurablePaperTask(task, db, {
+      relayScope: 'direct', skipCompletionOutbox: true,
+      selectQuestions: database => resolvePaperExportQuestions(database, req.body || {}, { tenantId: tId, allowDraft: canExportDraft(req.authz) }),
+    });
+    const artifact = durable.artifact;
+    const token = createArtifactDownloadToken(artifact, {
+      secret: process.env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET || '', kid: process.env.GEWU_ARTIFACT_DOWNLOAD_HMAC_KID || 'current',
+      ttlSeconds: Number(process.env.GEWU_ARTIFACT_DOWNLOAD_TTL_SECONDS || 300),
+    });
+    const fileUrl = `/api/cloud-relay-host/artifacts/${encodeURIComponent(artifact.artifact_id)}`;
+    res.json({ success: true, data: { artifactId: artifact.artifact_id, accessUrl: durable.accessEndpoint, fileUrl,
+      token, fileName: path.basename(artifact.file_path), reusedArtifact: durable.reusedArtifact } });
+  } catch (err) {
+    res.status(errorStatus(err)).json({ success: false, error: err.message, code: err.code });
   }
 });
 
@@ -820,3 +872,4 @@ router.delete('/exam-papers/:id', (req, res) => {
 });
 
 module.exports = router;
+module.exports.resolvePaperExportQuestions = resolvePaperExportQuestions;

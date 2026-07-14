@@ -11,6 +11,7 @@ const {
   findQuestionBankStore,
   ensureQuestionBankAuthoritySchema,
   bindQuestionBankStoreToDatabase,
+  resolveBoundQuestionBankRoot,
   commitQuestionToBoundStore,
   deleteCommittedQuestion,
   restoreCommittedQuestion,
@@ -85,6 +86,7 @@ db.prepare("INSERT INTO question_assets VALUES ('a-old','q1','old.txt','inline:/
 const authz = { role: 'super_admin', userId: 'root', userApproved: true, deviceTrusted: true, deviceActive: true, deviceOwnerUserId: 'root' };
 const runtime = { nodeRole: 'primary-host', clientType: 'desktop', tokenUse: 'desktop-session', deviceId: 'host1', tokenDeviceId: 'host1' };
 const bound = bindQuestionBankStoreToDatabase({ db, root, authz, runtime });
+assert.strictEqual(resolveBoundQuestionBankRoot(db), path.resolve(root), 'exports must use the verified writer-DB binding root');
 assert.ok(bound.dbAuthorityId);
 assert.strictEqual(inspectQuestionBankStore(root).manifest.authorityDatabaseId, bound.dbAuthorityId);
 assert.strictEqual(bindQuestionBankStoreToDatabase({ db, root, authz, runtime }).idempotent, true);

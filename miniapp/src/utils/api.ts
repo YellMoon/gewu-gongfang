@@ -226,11 +226,18 @@ export const cloudRelayApi = {
     api.post<any>('/api/cloud/tasks', { taskType, payload }),
   getMiniappTaskResult: (taskId: string) =>
     api.get<any>(`/api/cloud/tasks/${taskId}/result`),
+  readQuestionPreview: () => api.get<any>('/api/cloud/snapshots/questions'),
+  createPaperTaskV2: (taskType: string, payload: any, targetHostDeviceId: string, idempotencyKey: string) =>
+    api.post<any>('/api/cloud/tasks', { protocolVersion: 2, taskType, payload, targetHostDeviceId, idempotencyKey }),
+  cancelMiniappTask: (taskId: string) => api.post<any>(`/api/cloud/tasks/${taskId}/cancel`, {}),
 };
 
 export const readCloudSnapshot = cloudRelayApi.readCloudSnapshot;
 export const createMiniappTask = cloudRelayApi.createMiniappTask;
 export const getMiniappTaskResult = cloudRelayApi.getMiniappTaskResult;
+export const readQuestionPreview = cloudRelayApi.readQuestionPreview;
+export const createPaperTaskV2 = cloudRelayApi.createPaperTaskV2;
+export const cancelMiniappTask = cloudRelayApi.cancelMiniappTask;
 
 // ========== 业务 API ==========
 export const studentApi = {
