@@ -33,7 +33,7 @@ const app = createApp({
     now: () => now,
     maxCreatesPerWindow: 10,
     rateWindowMs: 60_000,
-    maxCreatesPerClientWindow: 7,
+    maxCreatesPerClientWindow: 11,
     clientRateWindowMs: 30 * 60_000,
   },
 });
@@ -167,6 +167,26 @@ const payload = {
     body: JSON.stringify({ taskType: 'question-paper', payload }),
   }, tokenA);
   assert.strictEqual(structuredJsonCreate.status, 200);
+
+  const quotedCharsetCreate = await request('/api/review-demo/tasks', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json; charset="utf-8"' },
+    body: JSON.stringify({ taskType: 'question-paper', payload }),
+  }, tokenA);
+  assert.strictEqual(quotedCharsetCreate.status, 200);
+  for (const invalidContentType of [
+    'application/json; charset=utf-8=evil',
+    'application/json; charset=utf-8; charset=utf-8',
+    'application/json; charset=gbk',
+  ]) {
+    const invalidContentTypeCreate = await request('/api/review-demo/tasks', {
+      method: 'POST',
+      headers: { 'content-type': invalidContentType },
+      body: JSON.stringify({ taskType: 'question-paper', payload }),
+    }, tokenA);
+    assert.strictEqual(invalidContentTypeCreate.status, 415, invalidContentType);
+    assert.strictEqual((await invalidContentTypeCreate.json()).code, 'REVIEW_DEMO_CONTENT_TYPE_UNSUPPORTED');
+  }
 
   const createWord = await request('/api/review-demo/tasks', {
     method: 'POST', body: JSON.stringify({ taskType: 'paper-export-word', payload }),

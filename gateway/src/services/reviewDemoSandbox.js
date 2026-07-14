@@ -1,9 +1,13 @@
 'use strict';
 
 const crypto = require('crypto');
+const path = require('path');
 const PDFDocument = require('pdfkit');
 const { Document, HeadingLevel, Packer, Paragraph, TextRun } = require('docx');
 const { reviewQuestionById } = require('./reviewDemoData');
+
+const CJK_PDF_FONT_PATH = path.join(__dirname, '../../assets/fonts/NotoSansCJKsc-Regular.otf');
+const CJK_TITLE_PATTERN = /[\u3400-\u9fff\uf900-\ufaff]/;
 
 const TASK_TYPES = new Set(['question-paper', 'paper-export-word', 'paper-export-pdf']);
 const ANSWER_POSITIONS = new Set(['end', 'after-each']);
@@ -103,7 +107,10 @@ function pdfBuffer(request) {
     doc.on('data', chunk => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
-    doc.font('Helvetica-Bold').fontSize(18).text(request.title, { align: 'center' });
+    doc.registerFont('NotoSansSC', CJK_PDF_FONT_PATH);
+    doc.font(CJK_TITLE_PATTERN.test(request.title) ? 'NotoSansSC' : 'Helvetica-Bold')
+      .fontSize(18)
+      .text(request.title, { align: 'center' });
     doc.moveDown(0.5).font('Helvetica').fontSize(9).text(`Review sandbox / ${request.formulaMode} / ${request.answerPosition}`, { align: 'center' });
     doc.moveDown();
     request.questions.forEach((question, index) => {

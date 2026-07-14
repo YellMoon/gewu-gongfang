@@ -1,7 +1,12 @@
 'use strict';
 
 const assert = require('assert');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { strFromU8, unzipSync } = require('fflate');
+const pdfParse = require('pdf-parse');
+const gatewayPackage = require('../../package.json');
 const {
   ANSWER_POSITIONS,
   FORMULA_MODES,
@@ -84,6 +89,28 @@ const turn = () => new Promise(resolve => setImmediate(resolve));
     normalizedRequest({ ...base, taskType: 'question-paper', title: '\u5ba1\u6838 Cafe\u0301' }).title,
     '\u5ba1\u6838 Caf\u00e9',
   );
+  assert.strictEqual(gatewayPackage.dependencies['@fontsource/noto-sans-sc'], undefined, 'the gateway must deploy its vetted font asset without a runtime package dependency');
+  const cjkFontPath = path.join(__dirname, '../../assets/fonts/NotoSansCJKsc-Regular.otf');
+  const cjkFontLicense = fs.readFileSync(path.join(__dirname, '../../assets/fonts/OFL.txt'), 'utf8');
+  const cjkFont = fs.readFileSync(cjkFontPath);
+  assert.strictEqual(cjkFont.length, 16_437_364, 'the deployed CJK font must match the vetted upstream asset size');
+  assert.strictEqual(
+    crypto.createHash('sha256').update(cjkFont).digest('hex'),
+    '2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b',
+    'the deployed CJK font must match the vetted upstream SHA-256',
+  );
+  assert.match(cjkFontLicense, /SIL OPEN FONT LICENSE Version 1\.1/i);
+
+  const chinesePdfSandbox = createReviewDemoSandbox();
+  const chinesePdf = await chinesePdfSandbox.create('chinese-pdf-session', {
+    ...base,
+    title: '\u7ec3\u4e60\u8bd5\u5377',
+    taskType: 'paper-export-pdf',
+    answerPosition: 'after-each',
+  });
+  const chinesePdfText = (await pdfParse(chinesePdf.artifact.buffer)).text;
+  assert.ok(chinesePdfText.includes('\u7ec3\u4e60\u8bd5\u5377'), 'the miniapp default Chinese title must be extractable from the PDF');
+  assert.ok(chinesePdfText.includes('Answer: C'), 'embedding a CJK title font must preserve the English answer content');
 
   const paper = await sandbox.create('session-a', { ...base, taskType: 'question-paper' });
   assert.strictEqual(paper.status, 'completed');

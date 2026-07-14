@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const contentTypeParser = require('content-type');
 const { effectiveCapabilities } = require('../services/authorizationPolicy');
 const { createReviewDemoSandbox, sandboxError } = require('../services/reviewDemoSandbox');
 
@@ -45,6 +46,35 @@ function sendError(res, error) {
     success: false,
     code: error.code || 'REVIEW_DEMO_SANDBOX_ERROR',
     error: error.message || 'Review sandbox request failed',
+  });
+}
+
+function contentTypeParameterNames(value) {
+  const segments = [];
+  let segment = '';
+  let quoted = false;
+  let escaped = false;
+  for (const character of value) {
+    if (escaped) {
+      escaped = false;
+      segment += character;
+    } else if (quoted && character === '\\') {
+      escaped = true;
+      segment += character;
+    } else if (character === '"') {
+      quoted = !quoted;
+      segment += character;
+    } else if (character === ';' && !quoted) {
+      segments.push(segment);
+      segment = '';
+    } else {
+      segment += character;
+    }
+  }
+  segments.push(segment);
+  return segments.slice(1).map(parameter => {
+    const equalsAt = parameter.indexOf('=');
+    return equalsAt < 0 ? '' : parameter.slice(0, equalsAt).trim().toLowerCase();
   });
 }
 
@@ -135,15 +165,19 @@ function createReviewDemoRouter(options = {}) {
 
   function parseCreateJson(req, res, next) {
     const contentType = String(req.get('content-type') || '');
-    const [rawMediaType, ...parameters] = contentType.split(';');
-    const mediaType = rawMediaType.trim().toLowerCase();
+    let parsedContentType;
+    try {
+      parsedContentType = contentTypeParser.parse(contentType);
+    } catch (_error) {
+      req.reviewDemoRawBody = null;
+      return sendError(res, sandboxError('REVIEW_DEMO_CONTENT_TYPE_UNSUPPORTED', 415));
+    }
+    const mediaType = parsedContentType.type.toLowerCase();
     const jsonMediaType = mediaType === 'application/json'
       || /^application\/[a-z0-9!#$&^_.+-]+\+json$/.test(mediaType);
-    const charsetSupported = parameters.every(parameter => {
-      const [name, value] = parameter.split('=').map(part => part.trim().toLowerCase());
-      return name !== 'charset' || value === 'utf-8' || value === 'utf8';
-    });
-    if (!jsonMediaType || !charsetSupported) {
+    const charsetParameters = contentTypeParameterNames(contentType).filter(name => name === 'charset');
+    const charset = parsedContentType.parameters.charset;
+    if (!jsonMediaType || charsetParameters.length > 1 || (charset !== undefined && charset.toLowerCase() !== 'utf-8')) {
       req.reviewDemoRawBody = null;
       return sendError(res, sandboxError('REVIEW_DEMO_CONTENT_TYPE_UNSUPPORTED', 415));
     }
