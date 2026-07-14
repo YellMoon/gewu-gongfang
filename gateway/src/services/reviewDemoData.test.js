@@ -29,6 +29,14 @@ assert.strictEqual(studentPreview.sandboxAvailable, true);
 assert.deepStrictEqual(adminPreview.questions.map(item => item.id), REVIEW_DEMO_QUESTIONS.map(item => item.id));
 assert.ok(studentPreview.questions.length > 0);
 assert.ok(studentPreview.questions.every(item => item.status === 'published'));
+const externalQuestionSets = [admin.questions, student.questions, adminPreview.questions, studentPreview.questions];
+for (const questions of externalQuestionSets) {
+  for (const question of questions) {
+    assert.strictEqual(Object.hasOwn(question, 'exportStem'), false);
+    assert.strictEqual(Object.hasOwn(question, 'exportKnowledgePoint'), false);
+    assert.strictEqual(Object.hasOwn(question, 'exportExplanation'), false);
+  }
+}
 
 admin.students[0].name = 'mutated';
 assert.notStrictEqual(buildReviewSnapshot('admin').students[0].name, 'mutated');

@@ -32,6 +32,20 @@ const REVIEW_DEMO_QUESTIONS = Object.freeze([
   },
 ]);
 
+const EXTERNAL_QUESTION_OMITTED_FIELDS = new Set([
+  'answer',
+  'knowledgePoint',
+  'explanation',
+  'options',
+  'exportStem',
+  'exportKnowledgePoint',
+  'exportExplanation',
+]);
+
+function externalReviewQuestion(question) {
+  return Object.fromEntries(Object.entries(question).filter(([key]) => !EXTERNAL_QUESTION_OMITTED_FIELDS.has(key)));
+}
+
 const BASE = Object.freeze({
   students: [
     { id: 'review-demo-student', name: '\u5ba1\u6838\u793a\u4f8b\u5b66\u751f', school: '\u793a\u4f8b\u4e2d\u5b66', grade_year: 2026, grade_current: '\u9ad8\u4e00', source_type: 'review-demo' },
@@ -54,7 +68,7 @@ const BASE = Object.freeze({
   payments: [{ id: 'review-demo-payment', student_id: 'review-demo-student', amount: 1200, payment_date: '2026-07-01', source_type: 'review-demo' }],
   assetRecords: [{ id: 'review-demo-asset', name: '\u5ba1\u6838\u793a\u4f8b\u8d44\u4ea7', amount: 5000, category_id: 'review-demo-asset-category' }],
   assetCategories: [{ id: 'review-demo-asset-category', name: '\u6559\u5b66\u8bbe\u5907\u793a\u4f8b' }],
-  questions: REVIEW_DEMO_QUESTIONS.map(({ answer, knowledgePoint, explanation, options, ...question }) => ({ ...question })),
+  questions: REVIEW_DEMO_QUESTIONS.map(externalReviewQuestion),
 });
 
 function clone(value) {
@@ -77,7 +91,7 @@ function buildReviewSnapshot(role) {
 }
 
 function buildReviewQuestionPreview(role) {
-  const questions = REVIEW_DEMO_QUESTIONS.map(({ answer, knowledgePoint, explanation, options, ...item }) => ({ ...item }));
+  const questions = REVIEW_DEMO_QUESTIONS.map(externalReviewQuestion);
   return {
     questions: clone(questions),
     sandboxAvailable: true,

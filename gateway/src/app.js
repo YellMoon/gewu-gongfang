@@ -33,15 +33,22 @@ function createApp(options = {}) {
     credentials: true
   }));
 
-  // Body parsing
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ extended: true }));
-
   // 请求日志
   app.use((req, _res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
     next();
   });
+
+  // Review sandbox must authenticate, rate-limit, and parse its bounded body
+  // before the general 50 MiB parser buffers any create request.
+  app.use('/api/review-demo', authMiddleware, createReviewDemoRouter({
+    ...(options.reviewDemoRouteOptions || {}),
+    sandbox: options.reviewDemoSandbox,
+  }));
+
+  // Body parsing
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ extended: true }));
 
   // ===================== 健康检查 =====================
   app.get('/api/health', (_req, res) => {
@@ -51,10 +58,6 @@ function createApp(options = {}) {
   // ===================== 公开路由（无需认证） =====================
   app.use('/api/auth', authRouter);
   app.use('/api', optionalAuth, reviewDemoGuard);
-  app.use('/api/review-demo', authMiddleware, createReviewDemoRouter({
-    ...(options.reviewDemoRouteOptions || {}),
-    sandbox: options.reviewDemoSandbox,
-  }));
   app.use('/api/desktop-pairing', desktopPairingRouter);
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);
 
