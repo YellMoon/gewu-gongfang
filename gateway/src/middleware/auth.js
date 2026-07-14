@@ -5,9 +5,37 @@
 const jwt = require('jsonwebtoken');
 const { getDb } = require('../db/database');
 const { roleForUser } = require('../services/authorizationPolicy');
+const {
+  looksLikeReviewDemoToken,
+  parseReviewDemoToken,
+  reviewDemoUserFromClaims,
+} = require('../services/reviewDemoSession');
 
 const JWT_SECRET = process.env.JWT_SECRET || null;
-function verifyToken(token){if(!JWT_SECRET)throw new Error('JWT_SECRET_REQUIRED');const decoded=jwt.verify(token,JWT_SECRET,{algorithms:['HS256']});if(decoded.token_use==='desktop-session'&&(decoded.iss!=='gewu-auth'||decoded.aud!=='gewu-api'))throw new Error('TOKEN_AUDIENCE_INVALID');return decoded;}
+function verifyToken(token){if(!JWT_SECRET)throw new Error('JWT_SECRET_REQUIRED');if(looksLikeReviewDemoToken(token))return parseReviewDemoToken(token);const decoded=jwt.verify(token,JWT_SECRET,{algorithms:['HS256']});if(decoded.token_use==='desktop-session'&&(decoded.iss!=='gewu-auth'||decoded.aud!=='gewu-api'))throw new Error('TOKEN_AUDIENCE_INVALID');return decoded;}
+
+function attachReviewDemo(req, decoded) {
+  const user = reviewDemoUserFromClaims(decoded);
+  req.user = user;
+  req.authz = {
+    userId: user.id, phone: null, role: user.user_type,
+    teacherId: null, studentId: user.student_id || null,
+    reviewStatus: 'approved', status: 1, loginEnabled: 1,
+    deviceId: null, clientType: 'miniapp-review', isPrimaryHost: false,
+    isReviewDemo: true, readOnly: true, reviewDemoSessionId: user.review_demo_session_id,
+  };
+}
+
+function attachPersisted(req, decoded) {
+  const persisted = getDb().prepare('SELECT * FROM users WHERE id = ?').get(decoded.id);
+  if (!persisted) return false;
+  req.user = persisted;
+  req.authz = { userId: persisted.id, phone: persisted.phone || null, role: roleForUser(persisted),
+    teacherId: persisted.teacher_id || null, studentId: persisted.student_id || null,
+    reviewStatus: persisted.review_status, status: persisted.status, loginEnabled: persisted.login_enabled,
+    deviceId: null, clientType: 'gateway', isPrimaryHost: false, isReviewDemo: false, readOnly: false };
+  return true;
+}
 
 /**
  * 必须认证中间件
@@ -22,13 +50,8 @@ function authMiddleware(req, res, next) {
   try {
     const token = authHeader.split(' ')[1];
     const decoded = verifyToken(token);
-    const persisted = getDb().prepare('SELECT * FROM users WHERE id = ?').get(decoded.id);
-    if (!persisted) return res.status(401).json({ error: 'Authenticated user not found', code: 'UNAUTHORIZED' });
-    req.user = persisted;
-    req.authz = { userId: persisted.id, phone: persisted.phone || null, role: roleForUser(persisted),
-      teacherId: persisted.teacher_id || null, studentId: persisted.student_id || null,
-      reviewStatus: persisted.review_status, status: persisted.status, loginEnabled: persisted.login_enabled,
-      deviceId: null, clientType: 'gateway', isPrimaryHost: false };
+    if (decoded.token_use === 'review-demo') attachReviewDemo(req, decoded);
+    else if (!attachPersisted(req, decoded)) return res.status(401).json({ error: 'Authenticated user not found', code: 'UNAUTHORIZED' });
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
@@ -48,14 +71,8 @@ function optionalAuth(req, res, next) {
     try {
       const token = authHeader.split(' ')[1];
       const decoded = verifyToken(token);
-      const persisted = getDb().prepare('SELECT * FROM users WHERE id = ?').get(decoded.id);
-      if (persisted) {
-        req.user = persisted;
-        req.authz = { userId: persisted.id, phone: persisted.phone || null, role: roleForUser(persisted),
-          teacherId: persisted.teacher_id || null, studentId: persisted.student_id || null,
-          reviewStatus: persisted.review_status, status: persisted.status, loginEnabled: persisted.login_enabled,
-          deviceId: null, clientType: 'gateway', isPrimaryHost: false };
-      }
+      if (decoded.token_use === 'review-demo') attachReviewDemo(req, decoded);
+      else attachPersisted(req, decoded);
     } catch (err) {
       // token 无效也放行
     }
@@ -90,6 +107,7 @@ function generateToken(user) {
 function refreshToken(token) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true });
+    if (decoded.token_use === 'review-demo') return null;
     // 生成新 token
     return jwt.sign(
       {

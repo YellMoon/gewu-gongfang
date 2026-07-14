@@ -4,7 +4,8 @@ const os = require('os');
 const path = require('path');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-gateway-phone-'));
 process.env.GATEWAY_DB_PATH = path.join(temp, 'gateway.db');
-process.env.JWT_SECRET = 'gateway-phone-test-secret';
+process.env.JWT_SECRET = 'gateway-phone-test-secret-at-least-32-bytes';
+process.env.MINIAPP_REVIEW_EXPERIENCE_CODE = 'review-http-code-2026';
 process.env.WECHAT_APPID = 'test-app';
 process.env.WECHAT_APPSECRET = 'test-secret';
 process.env.WECHAT_TIMEOUT_MS = '20';
@@ -17,6 +18,23 @@ const server = createApp().listen(0);
 const post = async (route, body) => { const response = await realFetch(`http://127.0.0.1:${server.address().port}${route}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); return { status: response.status, headers: response.headers, body: await response.json() }; };
 const get = async (route, token) => { const response = await realFetch(`http://127.0.0.1:${server.address().port}${route}`, { headers: { authorization: `Bearer ${token}` } }); return { status: response.status, body: await response.json() }; };
 (async () => {
+  const usersBeforeReview = getDb().prepare('SELECT COUNT(*) count FROM users').get().count;
+  const deniedReview = await post('/api/auth/review-demo', { code: 'wrong', role: 'admin' });
+  assert.strictEqual(deniedReview.status, 403);
+  assert.strictEqual(deniedReview.body.code, 'REVIEW_DEMO_CODE_INVALID');
+  const review = await post('/api/auth/review-demo', { code: process.env.MINIAPP_REVIEW_EXPERIENCE_CODE, role: 'student' });
+  assert.strictEqual(review.status, 200); assert.ok(review.body.data.token);
+  assert.deepStrictEqual(
+    [review.body.data.user.user_type, review.body.data.user.is_review_demo, review.body.data.user.read_only],
+    ['student', true, true],
+  );
+  assert.strictEqual(getDb().prepare('SELECT COUNT(*) count FROM users').get().count, usersBeforeReview);
+  const reviewPermissions = await get('/api/permissions/my', review.body.data.token);
+  assert.strictEqual(reviewPermissions.status, 200);
+  assert.strictEqual(reviewPermissions.body.identity.id, review.body.data.user.id);
+  const reviewRefresh = await post('/api/auth/refresh', { token: review.body.data.token });
+  assert.strictEqual(reviewRefresh.status, 401, 'review token must not become a normal refreshed token');
+
   assert.strictEqual((await post('/api/auth/login', { openid: 'raw' })).status, 410);
   assert.strictEqual((await post('/api/auth/wechat-login', { code: 'new', phone: '13732250653' })).body.code, 'PHONE_VERIFICATION_REQUIRED');
   const pending = await post('/api/auth/wechat-login', { code: 'new', phoneCode: 'verified' });
