@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const http = require('http');
 const os = require('os');
 const path = require('path');
 
@@ -26,7 +27,7 @@ getDb().prepare(`INSERT INTO users
 
 const app = createApp({
   reviewDemoSandbox: sandbox,
-  reviewDemoRouteOptions: { now: () => now, maxCreatesPerWindow: 2, rateWindowMs: 60_000 },
+  reviewDemoRouteOptions: { now: () => now, maxCreatesPerWindow: 3, rateWindowMs: 60_000 },
 });
 const server = app.listen(0);
 const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -38,13 +39,47 @@ async function request(route, options = {}, token) {
   return fetch(`${baseUrl}${route}`, { ...options, headers, signal: AbortSignal.timeout(10_000) });
 }
 
-async function reviewToken(role) {
+async function reviewToken(role, padding = '') {
   const response = await request('/api/auth/review-demo', {
     method: 'POST',
-    body: JSON.stringify({ code: process.env.MINIAPP_REVIEW_EXPERIENCE_CODE, role }),
+    body: JSON.stringify({ code: process.env.MINIAPP_REVIEW_EXPERIENCE_CODE, role, padding }),
   });
   assert.strictEqual(response.status, 200);
   return (await response.json()).data.token;
+}
+
+function openChunkedCreate(token, partialBody) {
+  return new Promise((resolve, reject) => {
+    const target = new URL('/api/review-demo/tasks', baseUrl);
+    const request = http.request({
+      hostname: target.hostname,
+      port: target.port,
+      path: target.pathname,
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+        'transfer-encoding': 'chunked',
+      },
+    }, response => {
+      const chunks = [];
+      response.on('data', chunk => chunks.push(chunk));
+      response.on('end', () => resolve({
+        status: response.statusCode,
+        body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+      }));
+    });
+    const timer = setTimeout(() => {
+      request.destroy();
+      reject(new Error('review create did not reject an oversized chunked body before the request ended'));
+    }, 1_000);
+    request.on('response', () => clearTimeout(timer));
+    request.on('error', error => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    request.write(partialBody);
+  });
 }
 
 const payload = {
@@ -57,22 +92,28 @@ const payload = {
 (async () => {
   const tasksBefore = getDb().prepare('SELECT COUNT(*) count FROM miniapp_tasks').get().count;
   const tokenA = await reviewToken('student');
-  const tokenB = await reviewToken('student');
+  const tokenB = await reviewToken('student', 'x'.repeat(70 * 1024));
   const normalToken = generateToken(getDb().prepare('SELECT * FROM users WHERE id = ?').get('normal-student'));
 
   assert.strictEqual((await request('/api/review-demo/tasks', { method: 'POST', body: '{}' })).status, 401);
+  const declaredOversized = await request('/api/review-demo/tasks', {
+    method: 'POST',
+    body: JSON.stringify({ taskType: 'question-paper', payload: { padding: 'x'.repeat(70 * 1024) } }),
+  }, tokenB);
+  assert.strictEqual(declaredOversized.status, 413);
+  assert.strictEqual((await declaredOversized.json()).code, 'REVIEW_DEMO_BODY_TOO_LARGE');
   const normalDenied = await request('/api/review-demo/tasks', {
     method: 'POST', body: JSON.stringify({ taskType: 'question-paper', payload }),
   }, normalToken);
   assert.strictEqual(normalDenied.status, 403);
   assert.strictEqual((await normalDenied.json()).code, 'REVIEW_DEMO_CAPABILITY_REQUIRED');
 
-  const oversized = await request('/api/review-demo/tasks', {
-    method: 'POST',
-    body: JSON.stringify({ taskType: 'question-paper', payload: { ...payload, padding: 'x'.repeat(70 * 1024) } }),
-  }, tokenA);
+  const oversized = await openChunkedCreate(
+    tokenA,
+    `{"taskType":"question-paper","payload":{"padding":"${'x'.repeat(70 * 1024)}`,
+  );
   assert.strictEqual(oversized.status, 413);
-  assert.strictEqual((await oversized.json()).code, 'REVIEW_DEMO_BODY_TOO_LARGE');
+  assert.strictEqual(oversized.body.code, 'REVIEW_DEMO_BODY_TOO_LARGE');
 
   const createWord = await request('/api/review-demo/tasks', {
     method: 'POST', body: JSON.stringify({ taskType: 'paper-export-word', payload }),

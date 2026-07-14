@@ -55,17 +55,71 @@ function createReviewDemoRouter(options = {}) {
   const rateWindowMs = Number(options.rateWindowMs ?? DEFAULT_RATE_WINDOW_MS);
   const rateBuckets = new Map();
 
-  function enforceBodyLimit(req, res, next) {
-    try {
-      const declaredBytes = Number(req.get('content-length') || 0);
-      const parsedBytes = Buffer.byteLength(JSON.stringify(req.body || {}), 'utf8');
-      if (declaredBytes > maxBodyBytes || parsedBytes > maxBodyBytes) {
-        return sendError(res, sandboxError('REVIEW_DEMO_BODY_TOO_LARGE', 413));
-      }
-      return next();
-    } catch (_error) {
-      return sendError(res, sandboxError('REVIEW_DEMO_BODY_INVALID', 400));
+  function parseBoundedCreateBody(req, res, next) {
+    const declaredBytes = Number(req.get('content-length') || 0);
+    if (declaredBytes > maxBodyBytes) {
+      res.set('Connection', 'close');
+      return sendError(res, sandboxError('REVIEW_DEMO_BODY_TOO_LARGE', 413));
     }
+
+    if (req.body !== undefined) {
+      const parsedBytes = Buffer.byteLength(JSON.stringify(req.body || {}), 'utf8');
+      if (parsedBytes > maxBodyBytes) return sendError(res, sandboxError('REVIEW_DEMO_BODY_TOO_LARGE', 413));
+      return next();
+    }
+
+    let received = 0;
+    let settled = false;
+    const chunks = [];
+    const cleanup = () => {
+      req.removeListener('aborted', onAborted);
+      req.removeListener('data', onData);
+      req.removeListener('end', onEnd);
+      req.removeListener('error', onError);
+    };
+    const fail = error => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      return sendError(res, error);
+    };
+    const rejectOversized = () => {
+      req.pause();
+      res.set('Connection', 'close');
+      return fail(sandboxError('REVIEW_DEMO_BODY_TOO_LARGE', 413));
+    };
+    function onAborted() {
+      fail(sandboxError('REVIEW_DEMO_BODY_INVALID', 400));
+    }
+    function onError() {
+      fail(sandboxError('REVIEW_DEMO_BODY_INVALID', 400));
+    }
+    function onData(chunk) {
+      received += chunk.length;
+      if (received > maxBodyBytes) {
+        rejectOversized();
+        return;
+      }
+      chunks.push(chunk);
+    }
+    function onEnd() {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try {
+        const text = Buffer.concat(chunks).toString('utf8');
+        req.body = text ? JSON.parse(text) : {};
+        return next();
+      } catch (_error) {
+        return sendError(res, sandboxError('REVIEW_DEMO_BODY_INVALID', 400));
+      }
+    }
+
+    req.on('aborted', onAborted);
+    req.on('data', onData);
+    req.on('end', onEnd);
+    req.on('error', onError);
+    return undefined;
   }
 
   function enforceCreateRate(req, res, next) {
@@ -92,7 +146,7 @@ function createReviewDemoRouter(options = {}) {
 
   router.use(requireReviewDemoCapability);
 
-  router.post('/tasks', enforceBodyLimit, enforceCreateRate, async (req, res) => {
+  router.post('/tasks', enforceCreateRate, parseBoundedCreateBody, async (req, res) => {
     try {
       const body = req.body || {};
       const request = { ...(body.payload || {}), taskType: body.taskType };

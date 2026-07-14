@@ -53,10 +53,16 @@ const pairingRouter = require('./desktopPairing');
   assert.strictEqual(reviewPreviewBody.sandboxAvailable, true);
   assert.ok(reviewPreviewBody.questions.length >= 4);
   assert.ok(!JSON.stringify(reviewPreviewBody).includes('q-visible'));
+  assert.ok(!JSON.stringify(reviewPreviewBody).includes('exportStem'));
+  assert.ok(!JSON.stringify(reviewPreviewBody).includes('exportKnowledgePoint'));
+  assert.ok(!JSON.stringify(reviewPreviewBody).includes('exportExplanation'));
   const reviewSnapshot = await call('/snapshots/read?snapshotType=full', { headers: { 'x-test-user': reviewUser } });
   const reviewSnapshotBody = await reviewSnapshot.json();
   assert.strictEqual(reviewSnapshotBody.snapshot.version, 'review-demo-v1');
   assert.ok(reviewSnapshotBody.snapshot.payload.students.length >= 2);
+  assert.ok(!JSON.stringify(reviewSnapshotBody).includes('exportStem'));
+  assert.ok(!JSON.stringify(reviewSnapshotBody).includes('exportKnowledgePoint'));
+  assert.ok(!JSON.stringify(reviewSnapshotBody).includes('exportExplanation'));
   const teacher = id => JSON.stringify({ id, user_type:'teacher', teacher_id:'t1', review_status:'approved', status:1, login_enabled:1 });
   assert.strictEqual((await call('/desktop-sync/devices/register',{method:'POST',headers:{'x-test-user':teacher('teacher1'),'x-device-id':'cloud-d1'},body:'{}'})).status,200);
   getDb().prepare(`INSERT INTO desktop_device_pairings(id,device_id,device_name,phone,secret_hash,pairing_code,status,expires_at,user_id,created_at,updated_at)
