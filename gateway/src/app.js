@@ -11,6 +11,7 @@ const { authMiddleware, optionalAuth } = require('./middleware/auth');
 const { errorHandler } = require('./middleware/errorHandler');
 const { loadModules } = require('./config/moduleLoader');
 const { loadUserPermissions } = require('./middleware/permission');
+const { reviewDemoGuard } = require('./middleware/reviewDemoGuard');
 
 // 路由
 const authRouter = require('./routes/auth');
@@ -48,6 +49,7 @@ function createApp() {
 
   // ===================== 公开路由（无需认证） =====================
   app.use('/api/auth', authRouter);
+  app.use('/api', optionalAuth, reviewDemoGuard);
   app.use('/api/desktop-pairing', desktopPairingRouter);
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);
 

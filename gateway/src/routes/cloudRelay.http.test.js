@@ -47,6 +47,16 @@ const pairingRouter = require('./desktopPairing');
   assert.ok(!JSON.stringify(studentPreviewBody).includes('secret'));
   const adminPreview = await call('/snapshots/questions', { headers: { 'x-test-user': admin('admin1') } });
   assert.deepStrictEqual((await adminPreview.json()).questions.map(item => item.id), ['q-draft', 'q-visible']);
+  const reviewUser = JSON.stringify({ id: 'review-demo:admin:test', user_type: 'admin', review_status: 'approved', status: 1, login_enabled: 1, is_review_demo: true, read_only: true });
+  const reviewPreview = await call('/snapshots/questions', { headers: { 'x-test-user': reviewUser } });
+  const reviewPreviewBody = await reviewPreview.json();
+  assert.strictEqual(reviewPreviewBody.sandboxAvailable, true);
+  assert.ok(reviewPreviewBody.questions.length >= 4);
+  assert.ok(!JSON.stringify(reviewPreviewBody).includes('q-visible'));
+  const reviewSnapshot = await call('/snapshots/read?snapshotType=full', { headers: { 'x-test-user': reviewUser } });
+  const reviewSnapshotBody = await reviewSnapshot.json();
+  assert.strictEqual(reviewSnapshotBody.snapshot.version, 'review-demo-v1');
+  assert.ok(reviewSnapshotBody.snapshot.payload.students.length >= 2);
   const teacher = id => JSON.stringify({ id, user_type:'teacher', teacher_id:'t1', review_status:'approved', status:1, login_enabled:1 });
   assert.strictEqual((await call('/desktop-sync/devices/register',{method:'POST',headers:{'x-test-user':teacher('teacher1'),'x-device-id':'cloud-d1'},body:'{}'})).status,200);
   getDb().prepare(`INSERT INTO desktop_device_pairings(id,device_id,device_name,phone,secret_hash,pairing_code,status,expires_at,user_id,created_at,updated_at)

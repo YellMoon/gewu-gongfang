@@ -6,6 +6,7 @@ const { isApprovedActive, roleForUser } = require('../services/authorizationPoli
 const { issueRelayAssertion } = require('../services/relayAssertionService');
 const taskService = require('../services/cloudRelayTaskService');
 const { buildQuestionPreviewIndex, safeHostBaseUrl } = require('../services/questionPreviewIndex');
+const { buildReviewQuestionPreview, buildReviewSnapshot } = require('../services/reviewDemoData');
 
 const router = express.Router();
 
@@ -220,6 +221,19 @@ function requireApprovedSnapshotUser(req, res, next) {
 }
 
 router.get('/snapshots/read', requireApprovedSnapshotUser, (req, res) => {
+  if (req.authz?.isReviewDemo || req.user?.is_review_demo) {
+    const role = roleForUser(req.user || req.authz || {});
+    return res.json({
+      success: true,
+      snapshot: {
+        id: `review-demo-${role}`,
+        snapshot_type: 'full',
+        version: 'review-demo-v1',
+        created_at: '2026-07-14T00:00:00.000Z',
+        payload: buildReviewSnapshot(role),
+      },
+    });
+  }
   const db = getDb();
   const snapshotType = req.query.snapshotType || 'full';
   const row = db.prepare(
@@ -233,6 +247,9 @@ router.get('/snapshots/read', requireApprovedSnapshotUser, (req, res) => {
 });
 
 router.get('/snapshots/questions', requireApprovedSnapshotUser, (req, res) => {
+  if (req.authz?.isReviewDemo || req.user?.is_review_demo) {
+    return res.json({ success: true, ...buildReviewQuestionPreview(roleForUser(req.user || req.authz || {})) });
+  }
   const db = getDb();
   const row = db.prepare("SELECT * FROM readonly_snapshots WHERE snapshot_type='full' ORDER BY created_at DESC LIMIT 1").get();
   const host = db.prepare("SELECT host_device_id,status,base_url,updated_at FROM host_heartbeats ORDER BY updated_at DESC LIMIT 1").get();

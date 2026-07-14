@@ -34,6 +34,11 @@ function isApprovedActive(authz = {}) {
 function effectiveCapabilities(authz = {}) {
   const role = authz.role || roleForUser(authz);
   if (role === 'pending' || !isApprovedActive(authz)) return [];
+  if (authz.isReviewDemo === true || authz.is_review_demo === true) {
+    if (authz.readOnly !== true && authz.read_only !== true) return [];
+    if (!['admin', 'student'].includes(role)) return [];
+    return ['review-demo:read', `review-demo:${role}`, 'question-bank:view', 'review-demo:paper-export'];
+  }
   const result = [];
   if (role === 'super_admin') result.push('users:review');
   if (['super_admin', 'admin'].includes(role)) result.push('business:all');
