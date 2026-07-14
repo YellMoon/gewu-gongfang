@@ -6,6 +6,7 @@ import { setCachedList } from '../../utils/storage';
 import { teacherApi } from '../../utils/api';
 import { getLocalData } from '../../utils/sync';
 import { NetworkStatus, EmptyState, LoadingSkeleton, PullRefreshView } from '../../components/shared';
+import ReviewDemoBanner from '../../components/ReviewDemoBanner';
 import './index.scss';
 
 export default function Teachers() {
@@ -36,6 +37,7 @@ export default function Teachers() {
   return (
     <View className="teachers-page">
       <NetworkStatus onRetry={handleRefresh} />
+      <ReviewDemoBanner />
 
       <View className="search-bar">
         <Text className="page-title">教师 ({teachers.length})</Text>

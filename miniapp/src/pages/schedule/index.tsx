@@ -5,6 +5,7 @@ import { Schedule, ScheduleStatus, Course } from '../../types';
 import { getCachedList, setCachedList } from '../../utils/storage';
 import { scheduleApi } from '../../utils/api';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
+import ReviewDemoBanner from '../../components/ReviewDemoBanner';
 import './index.scss';
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
@@ -131,6 +132,7 @@ export default function SchedulePage() {
   return (
     <View className="schedule-page">
       <NetworkStatus onRetry={handleRefresh} />
+      <ReviewDemoBanner />
 
       <View className="view-toggle">
         <View className={`toggle-btn ${viewMode === 'week' ? 'active' : ''}`} onClick={() => setViewMode('week')}>

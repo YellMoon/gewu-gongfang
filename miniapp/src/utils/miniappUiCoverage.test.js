@@ -96,4 +96,51 @@ for (const route of ['pages/index/index', 'pages/question-bank/index', 'pages/se
 }
 assert.deepStrictEqual(missingReviewUiContracts, [], 'review experience entry pages must expose the shared read-only banner and inventory coverage');
 
+const { REVIEW_ADMIN_MODULES, REVIEW_STUDENT_MODULES } = require('./miniappAuthorizationRuntime');
+const reviewModuleRoutes = {
+  scheduling: ['pages/schedule/index', 'pages/schedule/detail/index', 'pages/schedule/edit/index', 'pages/student-detail/index'],
+  'question-bank': ['pages/question-bank/index'],
+  assets: ['pages/assets/index'],
+  students: ['pages/students/index', 'pages/student-detail/index'],
+  courses: ['pages/courses/index'],
+  teachers: ['pages/teachers/index'],
+  payments: ['pages/payments/index'],
+  stats: ['pages/stats/index'],
+};
+const expectedReviewRoles = new Map();
+const addExpectedReviewRole = (route, role) => {
+  const roles = expectedReviewRoles.get(route) || [];
+  if (!roles.includes(role)) roles.push(role);
+  expectedReviewRoles.set(route, roles.sort());
+};
+for (const route of ['pages/index/index', 'pages/settings/index', 'pages/forbidden/index']) {
+  addExpectedReviewRole(route, 'review-admin');
+  addExpectedReviewRole(route, 'review-student');
+}
+for (const moduleId of REVIEW_ADMIN_MODULES) {
+  for (const route of reviewModuleRoutes[moduleId] || []) addExpectedReviewRole(route, 'review-admin');
+}
+for (const moduleId of REVIEW_STUDENT_MODULES) {
+  for (const route of reviewModuleRoutes[moduleId] || []) addExpectedReviewRole(route, 'review-student');
+}
+addExpectedReviewRole('pages/admin/users/index', 'review-admin');
+
+const reviewCoverageFailures = [];
+for (const entry of pageInventory) {
+  const expectedRoles = expectedReviewRoles.get(entry.route) || [];
+  const actualRoles = entry.roleViews.filter(role => role.startsWith('review-')).sort();
+  if (JSON.stringify(actualRoles) !== JSON.stringify(expectedRoles)) {
+    reviewCoverageFailures.push(`${entry.route} review roles: expected ${expectedRoles.join(',') || 'none'}, got ${actualRoles.join(',') || 'none'}`);
+  }
+  if (expectedRoles.length === 0) continue;
+  if (!entry.verificationStates.includes('review-read-only')) reviewCoverageFailures.push(`${entry.route} missing review-read-only state`);
+  const pageSource = read(entry.files.find(file => file.endsWith('.tsx')));
+  if (!pageSource.includes('ReviewDemoBanner')) reviewCoverageFailures.push(`${entry.route} missing ReviewDemoBanner`);
+}
+assert.deepStrictEqual(
+  reviewCoverageFailures,
+  [],
+  'every registered route reachable by review authorization must declare exact review roles, read-only verification, and the shared banner'
+);
+
 console.log('miniapp full-page UI coverage checks passed');
