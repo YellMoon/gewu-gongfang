@@ -17,7 +17,7 @@ initDatabase();
 const server = createApp().listen(0);
 const post = async (route, body) => { const response = await realFetch(`http://127.0.0.1:${server.address().port}${route}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); return { status: response.status, headers: response.headers, body: await response.json() }; };
 const postWithToken = async (route, body, token) => { const response = await realFetch(`http://127.0.0.1:${server.address().port}${route}`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify(body) }); return { status: response.status, body: await response.json() }; };
-const get = async (route, token) => { const response = await realFetch(`http://127.0.0.1:${server.address().port}${route}`, { headers: { authorization: `Bearer ${token}` } }); return { status: response.status, body: await response.json() }; };
+const get = async (route, token, headers = {}) => { const response = await realFetch(`http://127.0.0.1:${server.address().port}${route}`, { headers: { authorization: `Bearer ${token}`, ...headers } }); return { status: response.status, body: await response.json() }; };
 (async () => {
   const usersBeforeReview = getDb().prepare('SELECT COUNT(*) count FROM users').get().count;
   const deniedReview = await post('/api/auth/review-demo', { code: 'wrong', role: 'admin' });
@@ -51,7 +51,7 @@ const get = async (route, token) => { const response = await realFetch(`http://1
   assert.strictEqual(getDb().prepare('SELECT COUNT(*) count FROM users WHERE phone_normalized = ?').get('13900000001').count, 1);
   assert.strictEqual((await post('/api/auth/wechat-login', { code: 'new' })).body.code, 'USER_PENDING_REVIEW');
   const pendingUser = getDb().prepare('SELECT * FROM users WHERE phone_normalized = ?').get('13900000001');
-  getDb().prepare("UPDATE users SET user_type='admin', review_status='approved', status=1, login_enabled=1 WHERE id=?").run(pendingUser.id);
+  getDb().prepare("UPDATE users SET user_type='admin', review_status='approved', status=1, login_enabled=1, tenant_id='tenant-real', student_id='student-primary', linked_student_ids='student-secondary, student-primary, student-secondary' WHERE id=?").run(pendingUser.id);
   const approved = await post('/api/auth/wechat-login', { code: 'new' });
   assert.strictEqual(approved.status, 200); assert.ok(approved.body.data.token);
   const approvedRefresh = await post('/api/auth/refresh', { token: approved.body.data.token });
@@ -62,8 +62,21 @@ const get = async (route, token) => { const response = await realFetch(`http://1
   assert.strictEqual(approvedRefresh.body.data, undefined, 'gateway refresh does not use a nested data.token response');
   const hydrated = await get('/api/admin/users', approved.body.data.token);
   assert.strictEqual(hydrated.status, 200, 'issued claims must hydrate an approved persisted user');
+  const spoofedTenant = await get('/api/permissions/my', approved.body.data.token, { 'x-tenantid': 'tenant-spoof' });
+  assert.strictEqual(spoofedTenant.status, 403, 'an untrusted tenant alias must not replace the persisted authenticated tenant');
   const permissions = await get('/api/permissions/my', approved.body.data.token);
   assert.deepStrictEqual([permissions.body.identity.id, permissions.body.identity.role, permissions.body.identity.review_status], [pendingUser.id, 'admin', 'approved']);
+  assert.strictEqual(permissions.body.identity.tenant_id, 'tenant-real', 'permission identity must return the canonical persisted tenant rather than a caller-provided alias');
+  assert.strictEqual(permissions.body.identity.student_id, 'student-primary');
+  assert.deepStrictEqual(permissions.body.identity.linked_student_ids, ['student-primary', 'student-secondary'], 'permission identity must return every normalized student binding');
+  assert.deepStrictEqual(
+    [permissions.body.identity.active, permissions.body.identity.deleted, permissions.body.identity.disabled],
+    [true, false, false],
+    'permission identity must expose the effective account state used by the normal scope fingerprint',
+  );
+  for (const sensitive of ['phone', 'phone_normalized', 'openid', 'invite_code', 'token', 'password']) {
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(permissions.body.identity, sensitive), false, `permission identity must not leak ${sensitive}`);
+  }
   assert.ok(permissions.body.identity.authorization_revision, 'gateway permission response should carry an authorization revision');
 
   const racing = await Promise.all([

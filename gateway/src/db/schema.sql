@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   avatar TEXT,
   user_type TEXT NOT NULL DEFAULT 'student',  -- 'admin' | 'teacher' | 'student' | 'invited'
+  tenant_id TEXT NOT NULL DEFAULT 'default',
   status INTEGER DEFAULT 1,             -- 1:正常 0:禁用
   login_enabled INTEGER DEFAULT 0,
   student_id TEXT,

@@ -5,7 +5,7 @@ import { api, authApi } from '../../utils/api';
 import { authSessionRuntime } from '../../utils/authSession';
 import { clearPermissionCache } from '../../utils/permission';
 import { clearBusinessCache, setBusinessCacheIdentity } from '../../utils/storage';
-import { clearAuthenticatedSession, createNormalSessionCommitter } from '../../utils/miniappApiSessionRuntime';
+import { clearAuthenticatedSession, createAuthenticationEntryBoundary, createNormalSessionCommitter } from '../../utils/miniappApiSessionRuntime';
 import {
   createReviewSessionCommitter,
   createSynchronousMutex,
@@ -66,11 +66,13 @@ export default function LoginPage() {
     if (!loginMutexRef.current?.tryAcquire()) return;
     setLoading(true);
     try {
-      const { code } = await Taro.login();
-      const res = await api.post<any>('/api/auth/wechat-login', { code, ...(phoneCode ? { phoneCode } : {}) });
+      const loginBoundary = createAuthenticationEntryBoundary(authSessionRuntime);
+      const { code } = await loginBoundary.run(() => Taro.login());
+      const res = await loginBoundary.run(() => api.post<any>('/api/auth/wechat-login', { code, ...(phoneCode ? { phoneCode } : {}) }));
       if (res.success && res.data) {
         const loginUser = res.data.user || { id: res.data.userId, nickname: res.data.nickname, role: res.data.role || 'student' };
         const normalizedUser = { ...loginUser, user_type: loginUser.role || loginUser.user_type || 'student' };
+        loginBoundary.assertCurrent();
         const committed = await normalSessionCommitterRef.current?.commit({ token: res.data.token, user: normalizedUser });
         if (committed?.success) return;
         Taro.showToast({ title: '\u767b\u5f55\u72b6\u6001\u4fdd\u5b58\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5', icon: 'none' });

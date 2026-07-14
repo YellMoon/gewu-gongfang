@@ -8,6 +8,8 @@ const {
   reviewRolePolicy,
   scopeDashboardCollections,
   businessCacheIdentityKey,
+  questionPaperTaskCacheKey,
+  createQuestionPaperTaskCacheRuntime,
 } = require('./miniappAuthorizationRuntime');
 
 const capabilities = {
@@ -52,8 +54,41 @@ assert.deepStrictEqual(teacherScoped.courses.map(item => item.id), ['course-1'])
 assert.deepStrictEqual(teacherScoped.students.map(item => item.id), ['student-1']);
 const pendingScoped = scopeDashboardCollections({ id: 'pending-user', user_type: 'pending' }, collections);
 assert.deepStrictEqual(pendingScoped, { students: [], courses: [], schedules: [] }, 'pending users must not read business cache');
-assert.strictEqual(businessCacheIdentityKey({ id: 'teacher-user', user_type: 'teacher', teacher_id: 'teacher-1' }), 'teacher-user:teacher:teacher-1');
+assert.ok(businessCacheIdentityKey({ id: 'teacher-user', user_type: 'teacher', teacher_id: 'teacher-1' }).includes('teacher-1'));
 assert.strictEqual(businessCacheIdentityKey({ id: 'pending-user', user_type: 'pending' }), '', 'pending users must not have a business cache namespace');
+const normalStudentScope = { id: 'student-user', user_type: 'student', tenant_id: 'tenant-a', student_id: 'student-a', linked_student_ids: ['student-c', 'student-b'], review_status: 'approved', status: 1, login_enabled: 1 };
+const normalStudentAliasScope = { id: 'student-user', role: 'student', tenantId: 'tenant-a', studentId: 'student-a', linkedStudentIds: ['student-b', 'student-c', 'student-b'], reviewStatus: 'approved', status: true, loginEnabled: true };
+assert.strictEqual(businessCacheIdentityKey(normalStudentScope), businessCacheIdentityKey(normalStudentAliasScope), 'business cache scope aliases and student binding order must normalize stably');
+for (const changedScope of [
+  { ...normalStudentScope, tenant_id: 'tenant-b' },
+  { ...normalStudentScope, linked_student_ids: ['student-d'] },
+  { ...normalStudentScope, status: 0 },
+]) {
+  assert.notStrictEqual(businessCacheIdentityKey(normalStudentScope), businessCacheIdentityKey(changedScope), 'tenant, student binding, and account-state changes must receive a new business cache namespace');
+}
+assert.strictEqual(typeof questionPaperTaskCacheKey, 'function', 'question-paper task history must have a normal/review scope-aware cache-key helper');
+assert.notStrictEqual(questionPaperTaskCacheKey(normalStudentScope), questionPaperTaskCacheKey({ ...normalStudentScope, tenant_id: 'tenant-b' }), 'normal task history must not cross tenant scope');
+assert.notStrictEqual(questionPaperTaskCacheKey(normalStudentScope), questionPaperTaskCacheKey({ ...normalStudentScope, linked_student_ids: ['student-z'] }), 'normal task history must not cross student bindings');
+assert.strictEqual(typeof createQuestionPaperTaskCacheRuntime, 'function', 'mounted question-bank state needs an atomic scope-aware cache runtime');
+const taskStores = new Map();
+let currentTaskIdentity = normalStudentScope;
+const initialTaskKey = questionPaperTaskCacheKey(normalStudentScope);
+const nextTaskIdentity = { ...normalStudentScope, tenant_id: 'tenant-b' };
+const nextTaskKey = questionPaperTaskCacheKey(nextTaskIdentity);
+taskStores.set(initialTaskKey, [{ localId: 'task-a' }]);
+taskStores.set(nextTaskKey, [{ localId: 'task-b' }]);
+const taskCacheRuntime = createQuestionPaperTaskCacheRuntime({
+  readIdentity: () => currentTaskIdentity,
+  read: key => taskStores.get(key) || [],
+  write: (key, tasks) => taskStores.set(key, tasks),
+});
+const initialTaskSnapshot = taskCacheRuntime.snapshot();
+assert.deepStrictEqual(initialTaskSnapshot.tasks, [{ localId: 'task-a' }]);
+currentTaskIdentity = nextTaskIdentity;
+const rejectedTaskWrite = taskCacheRuntime.replace([{ localId: 'stale-task-a' }], initialTaskSnapshot.scopeKey);
+assert.strictEqual(rejectedTaskWrite.written, false, 'a mounted old-scope task snapshot must never be written into the newly current scope');
+assert.deepStrictEqual(taskStores.get(nextTaskKey), [{ localId: 'task-b' }], 'a rejected old-scope write must leave the new tenant cache untouched');
+assert.deepStrictEqual(rejectedTaskWrite.snapshot, { scopeKey: nextTaskKey, tasks: [{ localId: 'task-b' }] }, 'scope switch must atomically reload the new task namespace');
 
 const reviewAdmin = {
   id: 'review-demo:admin:session-a', user_type: 'admin', is_review_demo: true, read_only: true,
