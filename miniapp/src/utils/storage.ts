@@ -4,7 +4,10 @@ import { businessCacheIdentityKey } from './miniappAuthorizationRuntime';
 
 const PREFIX = 'sch_';
 const CACHE_IDENTITY_KEY = 'cache_identity';
-const BUSINESS_TABLES: SyncTable[] = ['students', 'courses', 'schedules', 'teachers', 'payments', 'consumptions', 'questions', 'grades'];
+const BUSINESS_TABLES: SyncTable[] = [
+  'students', 'courses', 'schedules', 'teachers', 'payments', 'consumptions',
+  'assetRecords', 'assetCategories', 'questions', 'grades',
+];
 let activeCacheIdentity = '';
 
 // ========== 通用存储操作 ==========

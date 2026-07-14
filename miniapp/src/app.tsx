@@ -43,10 +43,10 @@ async function initializeAuthenticatedApp() {
 }
 
 async function initApp(startupSession: any, authSessionRuntime: any, captureTrustedAuthSession: any) {
-  const [{ fetchPermissions }, { setBusinessCacheIdentity }, syncEngine] = await Promise.all([
+  const [{ fetchPermissions }, { setBusinessCacheIdentity }, { isReviewExperienceIdentity }] = await Promise.all([
     import('./utils/permission'),
     import('./utils/storage'),
-    getSyncEngine(),
+    import('./utils/reviewExperience'),
   ]);
 
   if (!authSessionRuntime.isSameSession(startupSession)) return;
@@ -57,6 +57,12 @@ async function initApp(startupSession: any, authSessionRuntime: any, captureTrus
   } catch (err) {
     console.warn('初始化权限失败:', err);
   }
+
+  if (!authSessionRuntime.isSameSession(startupSession)) return;
+  if (isReviewExperienceIdentity(startupSession.identity)) return;
+
+  const syncEngine = await getSyncEngine();
+  if (!authSessionRuntime.isSameSession(startupSession)) return;
 
   // 检查待同步队列
   const pendingCount = syncEngine.getPendingCount();

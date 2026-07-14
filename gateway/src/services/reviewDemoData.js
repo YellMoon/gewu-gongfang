@@ -66,8 +66,14 @@ const BASE = Object.freeze({
   enrollments: [{ id: 'review-demo-enrollment', course_id: 'review-demo-course', student_id: 'review-demo-student' }],
   consumptions: [{ id: 'review-demo-consumption', course_id: 'review-demo-course', schedule_id: 'review-demo-schedule', student_id: 'review-demo-student', amount: 240 }],
   payments: [{ id: 'review-demo-payment', student_id: 'review-demo-student', amount: 1200, payment_date: '2026-07-01', source_type: 'review-demo' }],
-  assetRecords: [{ id: 'review-demo-asset', name: '\u5ba1\u6838\u793a\u4f8b\u8d44\u4ea7', amount: 5000, category_id: 'review-demo-asset-category' }],
-  assetCategories: [{ id: 'review-demo-asset-category', name: '\u6559\u5b66\u8bbe\u5907\u793a\u4f8b' }],
+  assetRecords: [{
+    id: 'review-demo-asset', name: '\u5ba1\u6838\u793a\u4f8b\u8d44\u4ea7', amount: 5000,
+    category_id: 'review-demo-asset-category', type: 'expense', date: '2026-07-01',
+    notes: '\u660e\u663e\u865a\u6784\u7684\u5ba1\u6838\u793a\u4f8b', created_at: '2026-07-01T08:00:00.000Z',
+  }],
+  assetCategories: [{
+    id: 'review-demo-asset-category', name: '\u6559\u5b66\u8bbe\u5907\u793a\u4f8b', type: 'expense', color: '#c58a3a',
+  }],
   questions: REVIEW_DEMO_QUESTIONS.map(externalReviewQuestion),
 });
 

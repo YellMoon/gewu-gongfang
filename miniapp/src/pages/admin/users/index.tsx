@@ -3,7 +3,9 @@ import { View, Text, Button, Picker, Input, ScrollView } from '@tarojs/component
 import Taro from '@tarojs/taro';
 import { adminApi } from '../../../utils/api';
 import { fetchPermissions, getCurrentUser } from '../../../utils/permission';
+import { isReviewExperienceIdentity } from '../../../utils/reviewExperience';
 import { createLatestRequestCoordinator, createOperationLocks } from './adminReviewCoordinator';
+import ReviewDemoBanner from '../../../components/ReviewDemoBanner';
 import './index.scss';
 
 const SUPER_ADMIN_PHONE = '13732250653';
@@ -26,6 +28,8 @@ function errorMessage(result: any, fallback: string) {
 }
 
 export default function AdminUsersPage() {
+  const currentUser = getCurrentUser();
+  const isReviewDemo = isReviewExperienceIdentity(currentUser);
   const [users, setUsers] = useState<any[]>([]);
   const [pairings, setPairings] = useState<any[]>([]);
   const [capabilities, setCapabilities] = useState<string[]>([]);
@@ -41,7 +45,7 @@ export default function AdminUsersPage() {
   const queryRef = useRef({ submittedSearch, status });
   queryRef.current = { submittedSearch, status };
 
-  const canReview = capabilities.includes('users:review');
+  const canReview = !isReviewDemo && capabilities.includes('users:review');
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -125,9 +129,11 @@ export default function AdminUsersPage() {
     });
   };
 
-  const currentRole = getCurrentUser()?.user_type;
+  const currentRole = currentUser?.user_type;
   return <View className="admin-page">
+    <ReviewDemoBanner />
     <View className="admin-header"><View><Text className="admin-title">{'\u7528\u6237\u6743\u9650\u5ba1\u6838'}</Text><Text className="admin-subtitle">{'\u6309\u89d2\u8272\u7edf\u4e00\u5206\u7c7b\uff0c\u8001\u5e08\u5fc5\u987b\u7ed1\u5b9a\u552f\u4e00 teacher_id'}</Text></View></View>
+    {isReviewDemo ? <View className="read-only-notice">{'\u5ba1\u6838\u4f53\u9a8c\u4e2d\u4e0d\u53ef\u5ba1\u6838\u6216\u505c\u7528\u771f\u5b9e\u7528\u6237\u3002'}</View> : null}
     {currentRole === 'admin' && !canReview ? <View className="read-only-notice">{'\u666e\u901a\u7ba1\u7406\u5458\u53ef\u67e5\u770b\u5206\u7c7b\uff0c\u4ec5\u56fa\u5b9a\u8d85\u7ea7\u7ba1\u7406\u5458\u53ef\u5ba1\u6838\u6216\u505c\u7528\u7528\u6237\u3002'}</View> : null}
     <View className="search-bar"><Input className="search-input" value={search} placeholder={'\u641c\u7d22\u59d3\u540d\u6216\u624b\u673a\u53f7'} onInput={event => setSearch(event.detail.value)} /><Button className="search-btn" onClick={() => setSubmittedSearch(search.trim())}>{'\u67e5\u8be2'}</Button></View>
     <ScrollView scrollX className="type-tabs">{statusFilters.map(item => <Text key={item || 'all'} className={`type-tab ${status === item ? 'active' : ''}`} onClick={() => setStatus(item)}>{item ? statusLabels[item] : '\u5168\u90e8'}</Text>)}</ScrollView>
