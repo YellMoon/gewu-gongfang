@@ -5,10 +5,21 @@ const { generateToken, refreshToken } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 const { resolveWechatIdentity, resolveWechatPhoneNumber } = require('../services/wechatMiniappService');
 const { createAuthRateLimiter } = require('../services/authRateLimiter');
+const { issueReviewDemoToken } = require('../services/reviewDemoSession');
 const authLimiter = createAuthRateLimiter();
+const reviewDemoLimiter = createAuthRateLimiter({ ipLimit: 30, identityLimit: 5 });
 function authRateLimit(req, res, next) {
   const result = authLimiter.check({ ip: req.ip, identifier: req.body?.phoneCode || req.body?.code });
   if (!result.allowed) { res.set('Retry-After', String(result.retryAfter)); return res.status(429).json({ success: false, code: 'AUTH_RATE_LIMITED' }); }
+  next();
+}
+
+function reviewDemoRateLimit(req, res, next) {
+  const result = reviewDemoLimiter.check({ ip: req.ip, identifier: req.body?.code });
+  if (!result.allowed) {
+    res.set('Retry-After', String(result.retryAfter));
+    return res.status(429).json({ success: false, code: 'REVIEW_DEMO_RATE_LIMITED' });
+  }
   next();
 }
 
@@ -56,6 +67,18 @@ function loginUserPayload(user) {
 }
 
 router.post('/login', (_req, res) => res.status(410).json({ success: false, code: 'LEGACY_OPENID_LOGIN_DISABLED' }));
+
+router.post('/review-demo', reviewDemoRateLimit, (req, res) => {
+  try {
+    const issued = issueReviewDemoToken({ code: req.body?.code, role: req.body?.role });
+    return res.json({ success: true, data: issued });
+  } catch (error) {
+    return res.status(Number(error.statusCode) || 500).json({
+      success: false,
+      code: error.code || 'REVIEW_DEMO_LOGIN_FAILED',
+    });
+  }
+});
 
 router.post('/wechat-login', authRateLimit, async (req, res) => {
   try {

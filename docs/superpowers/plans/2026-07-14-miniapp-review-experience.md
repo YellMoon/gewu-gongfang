@@ -29,7 +29,7 @@
 - Modify: `gateway/src/middleware/auth.js`
 - Modify: `gateway/src/routes/miniappPhoneLogin.http.test.js`
 
-- [ ] **Step 1: Write failing session tests**
+- [x] **Step 1: Write failing session tests**
 
 Test missing/short configuration, wrong code, invalid role, correct admin/student claims, two-hour expiry, issuer/audience/token-use validation, and synthetic identities without phone/openid.
 
@@ -40,25 +40,25 @@ assert.deepStrictEqual([issued.user.user_type, issued.user.is_review_demo, issue
 assert.strictEqual(parseReviewDemoToken(issued.token, env).token_use, 'review-demo');
 ```
 
-- [ ] **Step 2: Run the focused test and confirm RED**
+- [x] **Step 2: Run the focused test and confirm RED**
 
 Run: `node gateway/src/services/reviewDemoSession.test.js`
 Expected: module-not-found failure for `reviewDemoSession`.
 
-- [ ] **Step 3: Implement fail-closed session primitives**
+- [x] **Step 3: Implement fail-closed session primitives**
 
 Use timing-safe SHA-256 digest comparison, role allowlisting, random UUID session IDs, strict JWT options, and a synthetic identity factory. Export only focused functions used by routes and middleware.
 
-- [ ] **Step 4: Add the public login route and middleware branch**
+- [x] **Step 4: Add the public login route and middleware branch**
 
 Add `POST /api/auth/review-demo` behind a dedicated rate limiter. In `authMiddleware` and `optionalAuth`, accept a token as review-demo only after strict claim validation; otherwise follow the existing persisted-user lookup. Reject review tokens from `/api/auth/refresh`.
 
-- [ ] **Step 5: Verify focused and normal-login tests**
+- [x] **Step 5: Verify focused and normal-login tests**
 
 Run: `node gateway/src/services/reviewDemoSession.test.js && node gateway/src/routes/miniappPhoneLogin.http.test.js`
 Expected: both exit 0; existing phone approval assertions remain unchanged.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run: `git add gateway/src/services/reviewDemoSession.js gateway/src/services/reviewDemoSession.test.js gateway/src/routes/auth.js gateway/src/middleware/auth.js gateway/src/routes/miniappPhoneLogin.http.test.js && git commit -m "automatic release 2026-07-14"`
 
