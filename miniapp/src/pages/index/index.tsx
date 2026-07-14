@@ -6,7 +6,7 @@ import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { api, readCloudSnapshot } from '../../utils/api';
 import { authSessionRuntime } from '../../utils/authSession';
-import { clearAuthenticatedSession } from '../../utils/miniappApiSessionRuntime';
+import { captureTrustedAuthSession, clearAuthenticatedSession } from '../../utils/miniappApiSessionRuntime';
 import { reviewCleanupStorageKeys } from '../../utils/reviewExperience';
 import {
   fetchPermissions,
@@ -91,21 +91,22 @@ export default function Index() {
   });
 
   const checkLogin = async () => {
-    const token = Taro.getStorageSync('auth_token');
-    if (!token) {
+    const session = captureTrustedAuthSession(authSessionRuntime);
+    if (!session) {
       Taro.redirectTo({ url: '/pages/login/index' });
       return;
     }
 
-    const savedUser = Taro.getStorageSync('user_info');
-    if (!savedUser) {
-      Taro.redirectTo({ url: '/pages/login/index' });
-      return;
-    }
+    const savedUser = session.identity as UserInfo;
     setUser(savedUser);
     setBusinessCacheIdentity(savedUser);
     const permissionResult = await fetchPermissions();
-    const verifiedUser = Taro.getStorageSync('user_info');
+    const verifiedSession = captureTrustedAuthSession(authSessionRuntime);
+    if (!verifiedSession) {
+      Taro.redirectTo({ url: '/pages/login/index' });
+      return;
+    }
+    const verifiedUser = verifiedSession.identity as UserInfo;
     setUser(verifiedUser);
     const nextAccess = getEffectiveMiniappAccess(verifiedUser);
     setAccess(nextAccess);
@@ -155,7 +156,7 @@ export default function Index() {
       const students = getLocalData<Student>('students');
       const schedules = getLocalData<Schedule>('schedules');
       const courses = getLocalData<Course>('courses');
-      const currentUser = authenticatedUser || Taro.getStorageSync('user_info') || user;
+      const currentUser = authenticatedUser || user;
       if (!currentUser || currentUser.user_type === 'pending') {
         setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
         return;
@@ -246,8 +247,7 @@ export default function Index() {
         if (res.confirm) {
           const currentUser = Taro.getStorageSync('user_info');
           clearAuthenticatedSession({
-            invalidateSession: () => authSessionRuntime.invalidate(),
-            advanceGeneration: () => authSessionRuntime.advanceGeneration(),
+            invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance(),
             clearPermissionCache,
             clearBusinessCache,
             removeStorage: (key: string) => Taro.removeStorageSync(key),

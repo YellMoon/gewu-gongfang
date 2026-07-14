@@ -55,46 +55,51 @@ function createAuthSessionRuntime(dependencies) {
       memoryGeneration = parsedGeneration;
     }
 
-    try {
-      if (missingGeneration || parsedGeneration < memoryGeneration) {
-        dependencies.writeGeneration(memoryGeneration);
+    if (typeof dependencies.readSessionState !== 'function') {
+      try {
+        if (missingGeneration || parsedGeneration < memoryGeneration) dependencies.writeGeneration(memoryGeneration);
+      } catch (_error) {
+        storageTrusted = false;
+        return { generation: memoryGeneration, trusted: false };
       }
+      storageTrusted = true;
+      return { generation: memoryGeneration, trusted: true };
+    }
+
+    let storedState;
+    try {
+      storedState = dependencies.readSessionState();
     } catch (_error) {
       storageTrusted = false;
       return { generation: memoryGeneration, trusted: false };
     }
 
-    if (typeof dependencies.readSessionState === 'function') {
-      let storedState;
-      try {
-        storedState = dependencies.readSessionState();
-      } catch (_error) {
-        storageTrusted = false;
-        return { generation: memoryGeneration, trusted: false };
-      }
+    const missingState = storedState === '' || storedState === null || storedState === undefined;
+    const parsedState = missingState ? null : normalizedPersistentState(storedState);
+    if (!missingState && !parsedState) {
+      storageTrusted = false;
+      return { generation: memoryGeneration, trusted: false };
+    }
 
-      const missingState = storedState === '' || storedState === null || storedState === undefined;
-      const parsedState = missingState ? null : normalizedPersistentState(storedState);
-      if (!missingState && !parsedState) {
-        storageTrusted = false;
-        return { generation: memoryGeneration, trusted: false };
-      }
-      if (parsedState) {
-        if (parsedState.generation > memoryGeneration) {
-          memoryGeneration = parsedState.generation;
-          try { dependencies.writeGeneration(memoryGeneration); } catch (_error) {
-            storageTrusted = false;
-            return { generation: memoryGeneration, trusted: false };
-          }
-        }
-        invalidated = invalidated || parsedState.invalidated;
-      }
-      if (!parsedState || parsedState.generation !== memoryGeneration || parsedState.invalidated !== invalidated) {
-        try { writePersistentState(); } catch (_error) {
-          storageTrusted = false;
-          return { generation: memoryGeneration, trusted: false };
-        }
-      }
+    const persistedGenerationMismatch = Boolean(
+      parsedState && !missingGeneration && parsedState.generation !== parsedGeneration,
+    );
+    if (parsedState) {
+      memoryGeneration = Math.max(memoryGeneration, parsedState.generation);
+      invalidated = invalidated || parsedState.invalidated;
+    }
+    if (persistedGenerationMismatch) invalidated = true;
+
+    const stateNeedsWrite = !parsedState
+      || parsedState.generation !== memoryGeneration
+      || parsedState.invalidated !== invalidated;
+    const generationNeedsWrite = missingGeneration || parsedGeneration !== memoryGeneration;
+    try {
+      if (stateNeedsWrite) writePersistentState();
+      if (generationNeedsWrite) dependencies.writeGeneration(memoryGeneration);
+    } catch (_error) {
+      storageTrusted = false;
+      return { generation: memoryGeneration, trusted: false };
     }
 
     storageTrusted = true;
@@ -131,6 +136,20 @@ function createAuthSessionRuntime(dependencies) {
     }
   }
 
+  function invalidateAndAdvance() {
+    const before = readStorageState();
+    if (memoryGeneration >= Number.MAX_SAFE_INTEGER) throw new Error('AUTH_SESSION_GENERATION_EXHAUSTED');
+    invalidated = true;
+    memoryGeneration += 1;
+    initialized = true;
+    const errors = [];
+    try { writePersistentState(); } catch (error) { errors.push(error); }
+    try { dependencies.writeGeneration(memoryGeneration); } catch (error) { errors.push(error); }
+    storageTrusted = before.trusted && errors.length === 0;
+    if (errors.length > 0) throw errors[0];
+    return memoryGeneration;
+  }
+
   function readValue(read) {
     try { return { ok: true, value: read() }; } catch (_error) { return { ok: false, value: null }; }
   }
@@ -146,6 +165,7 @@ function createAuthSessionRuntime(dependencies) {
     return {
       token: authenticatedStateUsable && candidateIdentityKey ? String(tokenRead.value || '') : '',
       generation: generationState.generation,
+      identity: authenticatedStateUsable && candidateIdentityKey ? identity : null,
       identityKey: authenticatedStateUsable ? candidateIdentityKey : '',
       review: authenticatedStateUsable && hasReviewExperienceMarker(identity),
       trusted,
@@ -167,18 +187,12 @@ function createAuthSessionRuntime(dependencies) {
   function advanceIfIdentityChanges(nextIdentity) {
     const currentRead = readValue(dependencies.readIdentity);
     if (!currentRead.ok) {
-      const errors = [];
-      try { invalidate(); } catch (error) { errors.push(error); }
-      try { advanceGeneration(); } catch (error) { errors.push(error); }
-      if (errors.length > 0) throw errors[0];
+      invalidateAndAdvance();
       throw new Error('AUTH_SESSION_STORAGE_UNAVAILABLE');
     }
     const currentIdentity = currentRead.value;
     if (permissionIdentityKey(currentIdentity) === permissionIdentityKey(nextIdentity)) return false;
-    const errors = [];
-    try { invalidate(); } catch (error) { errors.push(error); }
-    try { advanceGeneration(); } catch (error) { errors.push(error); }
-    if (errors.length > 0) throw errors[0];
+    invalidateAndAdvance();
     return true;
   }
 
@@ -203,7 +217,14 @@ function createAuthSessionRuntime(dependencies) {
     }
   }
 
-  return { activate, advanceGeneration, advanceIfIdentityChanges, capture, invalidate, isSameSession, readGeneration };
+  return { activate, advanceGeneration, advanceIfIdentityChanges, capture, invalidate, invalidateAndAdvance, isSameSession, readGeneration };
+}
+
+function captureTrustedAuthSession(sessionRuntime) {
+  const session = sessionRuntime.capture();
+  if (session?.trusted !== true || session.invalidated === true
+    || !session.token || !session.identityKey || !session.identity) return null;
+  return session;
 }
 
 function createApiResponseCoordinator(dependencies) {
@@ -329,9 +350,11 @@ function cleanupStorageKeys(dependencies, identities = []) {
 
 function clearAuthenticatedSession(dependencies, identities = []) {
   const errors = [];
+  const sessionTransitions = typeof dependencies.invalidateAndAdvance === 'function'
+    ? [dependencies.invalidateAndAdvance]
+    : [dependencies.invalidateSession, dependencies.advanceGeneration];
   for (const action of [
-    dependencies.invalidateSession,
-    dependencies.advanceGeneration,
+    ...sessionTransitions,
     dependencies.clearBusinessCache,
     dependencies.clearPermissionCache,
   ]) {
@@ -351,13 +374,21 @@ function validatedNormalSession(responseData) {
 }
 
 function createNormalSessionCommitter(dependencies) {
+  function invalidateAndAdvanceSession() {
+    if (typeof dependencies.invalidateAndAdvance === 'function') {
+      dependencies.invalidateAndAdvance();
+      return;
+    }
+    if (typeof dependencies.invalidateSession === 'function') dependencies.invalidateSession();
+    dependencies.advanceGeneration();
+  }
+
   async function commit(responseData) {
     const session = validatedNormalSession(responseData);
     if (!session) return { success: false, code: 'AUTH_SESSION_RESPONSE_INVALID' };
     let identities = [null, session.user];
     try {
-      if (typeof dependencies.invalidateSession === 'function') dependencies.invalidateSession();
-      dependencies.advanceGeneration();
+      invalidateAndAdvanceSession();
       identities = [dependencies.readUser() || null, session.user];
       dependencies.clearBusinessCache();
       dependencies.clearPermissionCache();
@@ -381,6 +412,7 @@ module.exports = {
   AUTH_SESSION_GENERATION_KEY,
   AUTH_SESSION_STATE_KEY,
   AUTH_SESSION_STORAGE_KEYS,
+  captureTrustedAuthSession,
   clearAuthenticatedSession,
   createApiResponseCoordinator,
   createAuthenticationEntryBoundary,
