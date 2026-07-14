@@ -350,7 +350,7 @@ Status: implemented, verified, deployed, packaged, uploaded, and pushed
 - 四端未统一前不得标记完成。
 # Task: 2026-07-12 题库公式全链路与所见即所得编辑
 
-Status: active — implementation and multi-end verification in progress
+Status: completed — implementation, render verification and applicable release matrix finished; miniapp production review is explicitly deferred to the appended login-audit task
 
 ## Objective
 
@@ -373,8 +373,8 @@ Status: active — implementation and multi-end verification in progress
 - [x] 将 `C:\Users\83423\Desktop\组卷导出模板.docx` 固化为 Word/PDF 默认组卷模板，支持“答案统一置后”和“每题后紧跟答案块”两种模式。
 - [x] 答案置后模式在参考答案开头汇总选择题答案，随后逐题输出答案、【知识点】和【解析】；逐题模式按题目→答案/知识点/解析交错输出。
 - [x] 生成并渲染四类 DOCX/PDF，验证公式数量、字号、基线、裁切和分页。
-- [ ] 完成多端任务契约、权限、同步、构建与回归测试。
-- [ ] 按统一版本矩阵备份、发布、上传、安装主机并验证 OSS feed。
+- [x] 完成多端任务契约、权限、同步、构建与回归测试。
+- [x] 按统一版本矩阵备份、发布、上传、安装主机并验证 OSS feed。
 
 ## Bottom-level logic
 
@@ -476,6 +476,15 @@ Status: active — implementation and multi-end verification in progress
 - 修复了选择题汇总泄漏 LaTeX、合法复杂 OMML 被白名单误拒、模板页脚关系被公式图片关系覆盖、OPC 内容类型顺序非法，以及逐题答案块跨页拆分五类真实渲染缺陷。
 - Word native/EQ DOCX 保持可编辑且零回退；MathType 因无经审计 MTEF/OLE writer 明确回退 LaTeX 矢量，不伪造 OLE；PDF 对不可保留的可编辑 Word 模式同样如实报告矢量回退。
 - 复现样本、模式边界和命令见 `modules/question-bank/export/tests/fixtures/README.md` 与 `docs/verification-2026-07-14-question-formula-editor.md`。
+
+### Task 14 验证证据（2026-07-14）
+
+- 最终统一版本为 `5.14.3`；fresh `npm test`、生产构建、包内六项公式运行时依赖门禁、打包 UI smoke 与 Node ABI 137/SQLite 3.53.1 验证通过。
+- 阿里云部署前再次备份 backend/gateway 代码和两套 SQLite，目录 `/root/scheduling-backups/formula-pipeline/20260714-111058`，两库 `quick_check=ok`；公网 `/api/health` 返回 `5.14.3`，host relay 协议和匿名用户边界 smoke 通过。
+- OSS `desktop/latest.yml` 与归档 feed 均为 `5.14.3`；远端安装包 HTTP 200、`138655690` 字节，SHA-512 与 feed 一致。其他桌面电脑可按更新 feed 自助升级。
+- 微信开发者工具以 AppID `wx3d570539bbe6ba1b` 成功上传 `5.14.3` 开发版（772309 字节）。因用户已将手机号白名单导致的审核阻断指定为当前目标之后的独立任务，本阶段不提交审核、不声称线上版已发布。
+- 本地数据主机在一致性备份 `D:\GewuDataHost\backups\release-5.14.0-20260714-100729` 后安装 `5.14.3`；D 盘权威库、I 盘题库、缓存和备份目标在线，原 storeId `qb_mqukr4y6_9c27e660` 保持不变并完成 authority binding。
+- 已安装应用的 `127.0.0.1:3001/api/health` 返回 `5.14.3`。实际鉴权导出生成 Word-native/答案置后 DOCX 与 LaTeX-vector/逐题答案 PDF，各 2 个公式、0 回退、`storage_status=verified`；下载签名、大小与 SHA-256 校验通过，临时验收题已物理清理，题库恢复为空。
 
 ## 当前目标完成后的追加任务
 

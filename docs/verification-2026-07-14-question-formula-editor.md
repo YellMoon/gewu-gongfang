@@ -24,7 +24,7 @@
 
 - Task 13 已用同一复杂题目完成四种 DOCX 模式及对应 PDF 的逐页检查，证据见下节。
 - DOCX 已由 Microsoft Word 真实打开、导出并逐页检查；LibreOffice 仍不可用，因此本次不把 LibreOffice 作为额外渲染器证据。
-- Task 14 仍需完成阿里云、本地数据主机、小程序上传和桌面 OSS 更新矩阵，任一端受平台或权限阻断时只能记录为部分发布或受阻。
+- Task 14 已完成阿里云、本地数据主机、小程序开发版上传和桌面 OSS 更新矩阵；小程序生产审核/上线因手机号白名单审核阻断按用户要求转入独立后续任务，本阶段不把开发版上传误报为线上发布。
 
 ## Task 13: formula render matrix
 
@@ -46,3 +46,12 @@
   overrides; and answer blocks splitting across pages. The final matrix includes the fixes.
 - LibreOffice remains unavailable in this environment. Microsoft Word is therefore the
   authoritative DOCX renderer for this verification, not a structural-only substitute.
+
+## Task 14：统一发布矩阵
+
+- 最终版本 `5.14.3`：完整 `npm test`、生产构建、packaged smoke、公式运行时依赖门禁与 Node ABI 恢复均通过。
+- 云端备份：`/root/scheduling-backups/formula-pipeline/20260714-111058`；backend/gateway 代码及两套 SQLite 均记录 SHA-256 与字节数，两库在线备份 `quick_check=ok`。
+- 阿里云公网健康返回 `5.14.3`；host relay 协议和匿名用户边界通过。未提供 `SMOKE_JWT`，因此没有把已认证普通用户正向流程标记为已验证。
+- OSS 公共 feed 为 `5.14.3`，安装包 `138655690` 字节，HTTP 200，SHA-512 与 `latest.yml` 一致。
+- 微信开发者工具成功上传 `5.14.3` 开发版，AppID `wx3d570539bbe6ba1b`，包大小 772309 字节；审核与线上发布留给后续“登录审核阻断”任务。
+- 本地数据主机已安装 `5.14.3`，D 盘权威库、I 盘题库与备份目标在线，authority binding 和 storeId 一致；安装版真实导出 DOCX/PDF 均含 2 个公式、0 回退、产物状态 verified，临时题已清理。
