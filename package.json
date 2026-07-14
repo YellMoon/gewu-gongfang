@@ -69,7 +69,11 @@
     "xlsx-js-style": "^1.2.0"
   },
   "devDependencies": {
+    "@babel/core": "7.29.7",
     "@babel/plugin-transform-classes": "^7.29.7",
+    "@babel/preset-env": "7.29.7",
+    "@babel/preset-react": "7.29.7",
+    "@babel/preset-typescript": "7.29.7",
     "@craco/craco": "^7.1.0",
     "@tiptap/extension-color": "^2.27.2",
     "@tiptap/extension-font-family": "^2.27.2",
@@ -94,6 +98,7 @@
     "electron": "^28.0.0",
     "electron-builder": "^24.9.1",
     "electron-store": "^8.1.0",
+    "jsdom": "^16.7.0",
     "playwright": "^1.60.0",
     "react": "^18.2.0",
     "react-chartjs-2": "^5.2.0",
@@ -114,6 +119,7 @@
       "build/**/*",
       "public/electron.js",
       "public/preload.js",
+      "public/desktopCredentialStore.js",
       "package.json",
       "public/icon.ico",
       "backend/**/*",

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog, screen, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, screen, shell, safeStorage } = require('electron');
 const path = require('path');
 const { QuestionDraftProvenanceRegistry } = require('./questionDraftProvenanceRegistry');
 const fs = require('fs');
@@ -8,6 +8,7 @@ const {
   applyRuntimeConfigToEnv,
 } = require('./runtimeConfig');
 const { buildLanHostUrls } = require('./lanDiscovery');
+const { createDesktopCredentialStore } = require('./desktopCredentialStore');
 let autoUpdater = null;
 const updateFeedUrl = (process.env.UPDATE_FEED_URL || 'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop/').replace(/\/?$/, '/');
 try {
@@ -36,6 +37,13 @@ let backendServer = null;
 
 function getRuntimeConfigPath() {
   return path.join(app.getPath('userData'), 'gewugongfang.config.json');
+}
+
+function getDesktopCredentialStore() {
+  return createDesktopCredentialStore({
+    filePath: path.join(app.getPath('userData'), 'desktop-session.bin'),
+    safeStorage,
+  });
 }
 
 function loadAndApplyRuntimeConfig() {
@@ -270,6 +278,9 @@ ipcMain.handle('runtime-config:get', async () => {
 ipcMain.handle('runtime-config:set', async (_event, config) => {
   return writeRuntimeConfig(getRuntimeConfigPath(), config, { userDataPath: app.getPath('userData') });
 });
+ipcMain.handle('desktop-auth:get', async () => getDesktopCredentialStore().read());
+ipcMain.handle('desktop-auth:set', async (_event, credential) => getDesktopCredentialStore().write(credential));
+ipcMain.handle('desktop-auth:clear', async () => getDesktopCredentialStore().clear());
 ipcMain.handle('dialog:select-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openDirectory', 'createDirectory'],
