@@ -22,7 +22,7 @@ const normalized = normalizeRuntimeConfig({
   questionBankStoreId: 'qb_test_store',
   localCachePath: 'D:/GewuQuestionBankCache/',
   nasBackupPath: '//NAS/GewuQuestionBankBackup/',
-  desktopSyncToken: 'sync_secret_test',
+  desktopSyncToken: 'ab'.repeat(32),
   cloudBaseUrl: 'https://cloud.example.com/',
 });
 
@@ -36,7 +36,7 @@ assert.deepStrictEqual(
 assert.strictEqual(normalized.questionBankStoreId, 'qb_test_store');
 assert.strictEqual(normalized.localCachePath.replace(/\\/g, '/'), 'D:/GewuQuestionBankCache');
 assert.strictEqual(normalized.nasBackupPath.replace(/\\/g, '/'), '//NAS/GewuQuestionBankBackup');
-assert.strictEqual(normalized.desktopSyncToken, 'sync_secret_test');
+assert.strictEqual(normalized.desktopSyncToken, 'ab'.repeat(32));
 assert.strictEqual(normalized.cloudBaseUrl, 'https://cloud.example.com');
 
 writeRuntimeConfig(configPath, normalized);
@@ -54,7 +54,18 @@ assert.strictEqual(env.QUESTION_BANK_CANDIDATE_ROOTS.replace(/\\/g, '/'), 'E:/Ge
 assert.strictEqual(env.QUESTION_BANK_STORE_ID, 'qb_test_store');
 assert.strictEqual(env.GEWU_LOCAL_CACHE_PATH.replace(/\\/g, '/'), 'D:/GewuQuestionBankCache');
 assert.strictEqual(env.GEWU_NAS_BACKUP_PATH.replace(/\\/g, '/'), '//NAS/GewuQuestionBankBackup');
-assert.strictEqual(env.GEWU_DESKTOP_SYNC_TOKEN, 'sync_secret_test');
+assert.strictEqual(env.GEWU_DESKTOP_SYNC_TOKEN, 'ab'.repeat(32));
+assert.match(env.JWT_SECRET, /^[a-f0-9]{64}$/);
+assert.match(env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET, /^[a-f0-9]{64}$/);
+assert.notStrictEqual(env.JWT_SECRET, env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET);
+const repeatedEnv = {};
+applyRuntimeConfigToEnv(readBack, repeatedEnv);
+assert.strictEqual(repeatedEnv.JWT_SECRET, env.JWT_SECRET, 'derived local JWT secret must be stable across restarts');
+assert.strictEqual(repeatedEnv.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET, env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET, 'derived artifact secret must be stable across restarts');
+const explicitEnv = { JWT_SECRET: 'externally-managed-jwt', GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET: 'externally-managed-artifact' };
+applyRuntimeConfigToEnv(readBack, explicitEnv);
+assert.strictEqual(explicitEnv.JWT_SECRET, 'externally-managed-jwt');
+assert.strictEqual(explicitEnv.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET, 'externally-managed-artifact');
 
 const fallback = normalizeRuntimeConfig({}, { userDataPath: dir });
 assert.ok(fallback.deviceId.startsWith('desktop_'));

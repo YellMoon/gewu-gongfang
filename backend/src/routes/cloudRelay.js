@@ -8,6 +8,8 @@ const {
 } = require('../services/miniappAccessPolicy');
 const { roleForUser } = require('../services/authorizationPolicy');
 const { issueRelayAssertion } = require('../services/relayAssertionService');
+const taskService = require('../services/cloudRelayTaskService');
+const { buildQuestionPreviewIndex, safeHostBaseUrl } = require('../services/questionPreviewIndex');
 
 const router = Router();
 
@@ -19,8 +21,25 @@ function id(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
 }
 
+function taskRouteError(res, error) {
+  return res.status(Number(error.statusCode) || 500).json({ success: false, code: error.code || 'TASK_OPERATION_FAILED', error: error.message });
+}
+
+function targetHostForTask(db, requested) {
+  const target = String(requested || process.env.GEWU_PRIMARY_HOST_DEVICE_ID || '').trim();
+  if (target) {
+    const exists = db.prepare('SELECT 1 FROM host_heartbeats WHERE host_device_id=?').get(target);
+    if (!exists) throw taskService.taskError('TARGET_HOST_NOT_FOUND', 'target host is not registered', 400);
+    return target;
+  }
+  const latest = db.prepare("SELECT host_device_id FROM host_heartbeats WHERE status='online' ORDER BY updated_at DESC LIMIT 1").get();
+  if (!latest) throw taskService.taskError('TARGET_HOST_REQUIRED', 'no target host is available', 409);
+  return latest.host_device_id;
+}
+
 function parseJson(value, fallback) {
   if (!value) return fallback;
+  if (typeof value !== 'string') return value;
   try {
     return JSON.parse(value);
   } catch (_err) {
@@ -42,12 +61,14 @@ function validateDesktopSyncInput(req,res){const deviceId=String(req.headers['x-
 function isHostTokenValid(req) {
   const expected = process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '';
   if (!expected) return false;
-  const provided = req.headers['x-gewu-host-token'] || req.headers['x-host-token'];
-  return provided === expected;
+  const provided = req.headers['x-gewu-host-token'] || req.headers['x-host-token'] || '';
+  const expectedBuffer = Buffer.from(String(expected));
+  const providedBuffer = Buffer.from(String(provided));
+  return expectedBuffer.length === providedBuffer.length && crypto.timingSafeEqual(expectedBuffer, providedBuffer);
 }
 
 function isDevBypass() {
-  return process.env.NODE_ENV === 'development' || !process.env.JWT_SECRET;
+  return process.env.NODE_ENV === 'test' && process.env.GEWU_TEST_AUTH_BYPASS === '1';
 }
 
 function requireHostWrite(req, res, next) {
@@ -169,6 +190,15 @@ router.get('/snapshots/read', requireSnapshotRead, (req, res) => {
   res.json({ success: true, snapshot: filterSnapshotForUser(snapshot, req.user) });
 });
 
+router.get('/snapshots/questions', requireSnapshotRead, (req, res) => {
+  const db = getInstance().db;
+  const row = db.prepare("SELECT * FROM readonly_snapshots WHERE snapshot_type='full' ORDER BY created_at DESC LIMIT 1").get();
+  const host = db.prepare("SELECT host_device_id,status,base_url,updated_at FROM host_heartbeats ORDER BY updated_at DESC LIMIT 1").get();
+  const hostAvailable = Boolean(host && host.status !== 'offline' && Date.now() - Date.parse(host.updated_at) <= Number(process.env.GEWU_HOST_HEARTBEAT_TTL_MS || 300000));
+  const snapshot = row ? { ...row, payload: parseJson(row.payload, {}) } : null;
+  res.json({ success: true, ...buildQuestionPreviewIndex(snapshot, { ...req.user, tenantId: req.tenantId }), hostAvailable, targetHostDeviceId: hostAvailable ? host.host_device_id : null, hostBaseUrl: hostAvailable ? safeHostBaseUrl(host.base_url) : null });
+});
+
 router.post('/desktop-sync/requests', requireDesktopSyncAccess, (req, res) => {
   const invalid=validateDesktopSyncInput(req,res);if(invalid)return invalid;
   const db = getInstance().db;
@@ -241,6 +271,22 @@ router.get('/desktop-sync/requests/:id/result', requireDesktopSyncAccess, (req, 
 
 router.post('/tasks', requireMiniappTaskAccess, (req, res) => {
   const db = getInstance().db;
+  if (Number(req.body.protocolVersion || req.body.protocol_version || 1) >= 2) {
+    try {
+      const actorRole = roleForUser(req.user || {});
+      const created = taskService.createV2Task(db, {
+        taskType: req.body.taskType,
+        payload: req.body.payload || {},
+        createdBy: req.user?.id || 'miniapp',
+        tenantId: req.tenantId || req.user?.tenant_id || req.user?.tenantId || 'default',
+        actorRole,
+        allowDraft: ['super_admin', 'admin'].includes(actorRole),
+        targetHostDeviceId: targetHostForTask(db, req.body.targetHostDeviceId || req.body.target_host_device_id),
+        idempotencyKey: req.headers['x-idempotency-key'] || req.body.idempotencyKey || req.body.idempotency_key,
+      });
+      return res.json({ success: true, task: created.task, replayed: created.replayed });
+    } catch (error) { return taskRouteError(res, error); }
+  }
   const taskId = id('task');
   const time = now();
   db.prepare(
@@ -253,8 +299,18 @@ router.post('/tasks', requireMiniappTaskAccess, (req, res) => {
 router.get('/tasks', (req, res) => {
   const db = getInstance().db;
   const status = req.query.status || 'pending_host';
-  const rows = db.prepare(
-    `SELECT * FROM miniapp_tasks WHERE status = ? ORDER BY created_at DESC LIMIT 200`
+  const rows = status === 'pending_host' ? (() => {
+    const claimed = [];
+    const hostDeviceId = String(req.query.hostDeviceId || req.query.host_device_id || 'legacy-shared');
+    const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 200));
+    for (let index = 0; index < limit; index += 1) {
+      const next = taskService.claimNextLegacyTask(db, { hostDeviceId, leaseMs: req.query.leaseMs || req.query.lease_ms });
+      if (!next) break;
+      claimed.push({ ...next.task, claimToken: next.claimToken });
+    }
+    return claimed;
+  })() : db.prepare(
+    `SELECT * FROM miniapp_tasks WHERE status = ? AND COALESCE(protocol_version,1)<2 ORDER BY created_at DESC LIMIT 200`
   ).all(status);
   const tasks = rows.map(row => ({
     ...row,
@@ -264,20 +320,54 @@ router.get('/tasks', (req, res) => {
   res.json({ success: true, tasks });
 });
 
+router.post('/tasks/claim', requireHostWrite, (req, res) => {
+  try {
+    const claimed = taskService.claimNextV2Task(getInstance().db, {
+      hostDeviceId: req.body.hostDeviceId || req.body.host_device_id,
+      leaseMs: req.body.leaseMs || req.body.lease_ms,
+    });
+    return res.json({ success: true, task: claimed?.task || null, claimToken: claimed?.claimToken || null });
+  } catch (error) { return taskRouteError(res, error); }
+});
+
+router.post('/tasks/:id/progress', requireHostWrite, (req, res) => {
+  try { return res.json({ success: true, task: taskService.updateV2TaskProgress(getInstance().db, req.params.id, req.body || {}) }); }
+  catch (error) { return taskRouteError(res, error); }
+});
+
+router.post('/tasks/:id/fail', requireHostWrite, (req, res) => {
+  try { return res.json({ success: true, task: taskService.failV2Task(getInstance().db, req.params.id, req.body || {}) }); }
+  catch (error) { return taskRouteError(res, error); }
+});
+
+router.post('/tasks/:id/cancel', (req, res) => {
+  try {
+    const task = taskService.cancelV2Task(getInstance().db, req.params.id, {
+      actorUserId: req.user?.id,
+      isAdmin: isAdminUser(req.user),
+    });
+    return res.json({ success: true, task });
+  } catch (error) { return taskRouteError(res, error); }
+});
+
 router.post('/tasks/:id/complete', (req, res) => {
   const db = getInstance().db;
-  const time = now();
   const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ success: false, error: 'task not found' });
 
-  const status = req.body.success === false ? 'failed' : 'completed';
-  db.prepare(
-    `UPDATE miniapp_tasks
-     SET status = ?, result_payload = ?, updated_at = ?
-     WHERE id = ?`
-  ).run(status, JSON.stringify(req.body || {}), time, req.params.id);
+  if (Number(row.protocol_version || 1) >= 2) {
+    try { return res.json({ success: true, task: taskService.completeV2Task(db, req.params.id, req.body || {}) }); }
+    catch (error) { return taskRouteError(res, error); }
+  }
 
-  const updated = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(req.params.id);
+  let updated;
+  try {
+    updated = taskService.completeLegacyTask(db, req.params.id, req.body.result || req.body.resultPayload || req.body || {}, req.body.success !== false, {
+      claimToken: req.body.claimToken || req.body.claim_token,
+      expectedRowVersion: req.body.expectedRowVersion ?? req.body.expected_row_version,
+      hostDeviceId: req.body.hostDeviceId || req.body.host_device_id,
+    });
+  } catch (error) { return taskRouteError(res, error); }
   res.json({
     success: true,
     task: {
@@ -288,12 +378,19 @@ router.post('/tasks/:id/complete', (req, res) => {
   });
 });
 
+router.get('/tasks/:id/state', requireHostWrite, (req, res) => {
+  const hostDeviceId = String(req.query.hostDeviceId || req.query.host_device_id || '');
+  if (!hostDeviceId) return res.status(400).json({ success: false, code: 'HOST_DEVICE_ID_REQUIRED' });
+  const row = getInstance().db.prepare(`SELECT id,status,result_payload,row_version,error_code,artifact_id,job_key,snapshot_hash
+    FROM miniapp_tasks WHERE id=? AND (target_host_device_id=? OR claimed_by=?)`).get(req.params.id, hostDeviceId, hostDeviceId);
+  if (!row) return res.status(404).json({ success: false, code: 'TASK_NOT_FOUND', error: 'task not found' });
+  return res.json({ success: true, task: { ...row, result_payload: parseJson(row.result_payload, null) } });
+});
+
 router.get('/tasks/:id/result', (req, res) => {
   const db = getInstance().db;
   const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(req.params.id);
-  if (!canReadTaskResult(row, req.user)) {
-    return sendForbidden(res, 'TASK_RESULT_FORBIDDEN', 'Task result is not allowed');
-  }
+  if (!row || !canReadTaskResult(row, req.user)) return res.status(404).json({ success: false, code: 'TASK_NOT_FOUND', error: 'task not found' });
   res.json({
     success: true,
     task: row ? {

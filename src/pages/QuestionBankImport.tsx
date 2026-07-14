@@ -12,9 +12,14 @@ import type { Question, KnowledgeNode, ImportTask, ImportTaskItem } from '../typ
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType, questionTypeFromParser } from '../constants/questionTypes';
-import QuestionRenderer from '../components/QuestionRenderer';
 import { prepareQuestionAssetsForStorage, stripQuestionAssetPayload } from '../services/questionAssetStore';
 import { reconcileQuestionLocalStore } from '../services/questionLocalStore';
+import QuestionStructureEditor from '../components/question-editor/QuestionStructureEditor';
+import { normalizeStructureOrder, validateQuestionStructure } from '../components/question-editor/questionStructureOperations';
+import { createQuestionRichDocument } from '../types/questionRichContent';
+import type { QuestionRichDocument } from '../types/questionRichContent';
+import { migrateLegacyQuestion, projectQuestionRichContent } from '../services/questionRichContent';
+import { createQuestionEditorSaveGate, createRichDocumentDirtyCoordinator, mergeImportedQuestionMetadata, registerEditorSpaExitGuard, shouldProtectEditorExit } from '../components/question-editor/questionEditorSession'; // utf-8
 const { createNativeQuestionDraft } = require('../services/nativeQuestionDraftCreate');
 import {
   downloadImportValidationReport,
@@ -23,7 +28,6 @@ import {
   type ImportValidationSummary,
 } from '../services/questionValidation';
 
-const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
 
@@ -277,6 +281,10 @@ const QuestionBankImport: React.FC = () => {
   const [deleteConfirmNode, setDeleteConfirmNode] = useState<{ id: string; name: string } | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<Question | null>(null);
+  const [editingImportKey, setEditingImportKey] = useState<string | null>(null);
+  const [richDocument, setRichDocument] = useState<QuestionRichDocument>(() => createQuestionRichDocument());
+  const [editorDirty, setEditorDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [treeVisible, setTreeVisible] = useState(true);
   const [wordImporting, setWordImporting] = useState(false);
   const [wordResult, setWordResult] = useState<any>(null);
@@ -295,6 +303,37 @@ const QuestionBankImport: React.FC = () => {
   const [questionBankStorageStatus, setQuestionBankStorageStatus] = useState<QuestionBankStorageStatus | null>(null);
   const [examForm] = Form.useForm();
   const [form] = Form.useForm();
+  const saveGate = useRef(createQuestionEditorSaveGate()).current;
+  const richDirtyCoordinator = useRef(createRichDocumentDirtyCoordinator(null)).current;
+  const formDirtyRef = useRef(false);
+  const editorQuestionType = Form.useWatch('type', form);
+
+  const openRichDocument = (document: QuestionRichDocument) => {
+    richDirtyCoordinator.reset(document);
+    formDirtyRef.current = false;
+    setRichDocument(document);
+    setEditorDirty(false);
+  };
+  const updateRichDocument = (document: QuestionRichDocument) => {
+    const richState = richDirtyCoordinator.update(document);
+    setRichDocument(document);
+    setEditorDirty(formDirtyRef.current || richState.dirty);
+  };
+  const markFormDirty = () => {
+    formDirtyRef.current = true;
+    setEditorDirty(true);
+  };
+
+  useEffect(() => {
+    const protectDirtyEditor = (event: BeforeUnloadEvent) => {
+      if (!shouldProtectEditorExit(modalVisible, editorDirty)) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', protectDirtyEditor);
+    return () => window.removeEventListener('beforeunload', protectDirtyEditor);
+  }, [modalVisible, editorDirty]);
+  useEffect(() => registerEditorSpaExitGuard(() => shouldProtectEditorExit(modalVisible, editorDirty)), [modalVisible, editorDirty]);
   const examMetaRef = useRef<any>(null);
 
   const questionBankStorageUnavailable = !!(
@@ -686,8 +725,11 @@ const QuestionBankImport: React.FC = () => {
   };
 
   const handleSave = async () => {
+    const structureErrors = validateQuestionStructure(richDocument, form.getFieldValue('type'));
+    if (structureErrors.length > 0) { message.error(structureErrors[0]); return; }
     const values = await form.validateFields();
     const db = (window as any).dbService;
+    const projection = projectQuestionRichContent(richDocument);
 
     const knowledge_ids: string[] = [];
     if (values.knowledge_ids) {
@@ -706,15 +748,17 @@ const QuestionBankImport: React.FC = () => {
       subject: values.subject,
       type: normalizeQuestionType(values.type),
       difficulty: values.difficulty,
-      content: values.content,
-      options: values.options ? values.options.split('\n').filter((s: string) => s.trim()) : [],
-      answer: values.answer,
-      analysis: values.analysis,
+      content: projection.stem,
+      options: projection.options.map(option => ({ label: option.label, content: option.content, is_correct: option.isCorrect })),
+      answer: projection.answer,
+      analysis: projection.explanation,
+      sub_questions: projection.subQuestions,
+      rich_content: richDocument,
       knowledge_ids,
       knowledge_point: values.knowledge_point || '',
       model_ids,
       model_point: model_ids.length > 0 ? modelNodes.find(n => n.id === model_ids[0])?.name || '' : '',
-      formulas: values.formulas ? values.formulas.split('\n').filter((s: string) => s.trim()) : [],
+      formulas: projection.formulas,
       tags: values.tags ? values.tags.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
       source: values.source || '',
       year: values.year || '',
@@ -722,21 +766,48 @@ const QuestionBankImport: React.FC = () => {
       semester: values.semester || '',
       exam_type: values.exam_type || '',
       status: editing?.status || 'draft',
-      has_image: !!editing?.has_image,
-      has_formula: !!editing?.has_formula,
+      has_image: projection.hasImage,
+      has_formula: projection.hasFormula,
       created_by: editing?.created_by || '',
     };
 
-    if (editing) {
+    if (editingImportKey) {
+      const row = validationRows.find(item => item.key === editingImportKey);
+      const mergedQuestion = row ? mergeImportedQuestionMetadata(row.question, data) : data;
+      if (row) {
+        const nextQuestions = (wordResult?.questions || []).map((item: any, index: number) => index === row.index - 1 ? mergeImportedQuestionMetadata(item, data) : item);
+        const validation = validateImportQuestions(nextQuestions, questions);
+        setWordResult((current: any) => ({ ...current, questions: nextQuestions }));
+        setValidationRows(validation.rows);
+        setValidationSummary(validation.summary);
+      } else {
+        const validation = validateImportQuestions([mergedQuestion], questions);
+        setValidationRows(validation.rows); setValidationSummary(validation.summary);
+      }
+    } else if (editing) {
       db.updateQuestion(editing.id, data);
     } else {
       try { await createNativeQuestionDraft(db, data); } catch (_error) { message.error('DRAFT_PROVENANCE_UNAVAILABLE'); return; }
     }
+    richDirtyCoordinator.markSaved(richDocument);
+    formDirtyRef.current = false;
     setModalVisible(false);
     setEditing(null);
+    setEditingImportKey(null);
+    setRichDocument(createQuestionRichDocument());
+    setEditorDirty(false);
     form.resetFields();
     loadData();
-    message.success('题目已保存');
+    message.success('题目已保存'); // utf-8
+  };
+
+  const openImportedQuestionEditor = (row: ImportValidationRow) => {
+    const question: any = row.question;
+    const knowledgeIds = Object.fromEntries((question.knowledge_ids || question.knowledge_point_ids || []).map((id: string) => [id, true]));
+    const modelIds = Object.fromEntries((question.model_ids || question.model_point_ids || []).map((id: string) => [id, true]));
+    setEditing(null); setEditingImportKey(row.key); openRichDocument(normalizeStructureOrder(question.rich_content?.type === 'question-document' ? createQuestionRichDocument(question.rich_content) : migrateLegacyQuestion(question)));
+    form.setFieldsValue({ subject: question.subject || '\u7269\u7406', type: normalizeQuestionType(question.type), difficulty: question.difficulty || 3, knowledge_ids: knowledgeIds, model_ids: modelIds, tags: (question.tags || []).join(','), source: question.source, year: question.year, grade: question.grade, semester: question.semester, exam_type: question.exam_type });
+    setModalVisible(true);
   };
 
   const handleWordFileUpload = async (file: File, examMeta?: ExamMeta) => {
@@ -1449,6 +1520,11 @@ const QuestionBankImport: React.FC = () => {
                           </Space>
                         ),
                       },
+                      {
+                        title: '编辑', // utf-8
+                        width: 72,
+                        render: (_: any, row: ImportValidationRow) => <Button size="small" type="link" onClick={() => openImportedQuestionEditor(row)}>编辑</Button>,
+                      },
                     ]}
                   />
                   <Space style={{ marginTop: 12 }}>
@@ -1557,12 +1633,19 @@ const QuestionBankImport: React.FC = () => {
       <Modal
         title={editing ? '编辑题目' : '添加题目'}
         open={modalVisible}
-        onOk={handleSave}
-        onCancel={() => { setModalVisible(false); setEditing(null); form.resetFields(); }}
+        onOk={async () => { setSaving(true); const result = await saveGate(handleSave); if (!result.ok && result.owned) message.error(`\u4fdd\u5b58\u5931\u8d25\uff1a${(result.error as any)?.message || '\u8bf7\u91cd\u8bd5'}`); if (result.owned) setSaving(false); }}
+        onCancel={() => {
+          const close = () => { setModalVisible(false); setEditing(null); setEditingImportKey(null); setRichDocument(createQuestionRichDocument()); setEditorDirty(false); form.resetFields(); };
+          if (!editorDirty) close();
+          else Modal.confirm({ title: '\u5c1a\u6709\u672a\u4fdd\u5b58\u7684\u4fee\u6539', content: '\u786e\u5b9a\u79bb\u5f00\u5417\uff1f', onOk: close });
+        }}
+        confirmLoading={saving}
+        maskClosable={!editorDirty}
+        keyboard={!editorDirty}
         width={720}
         destroyOnClose
       >
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" onValuesChange={markFormDirty}>
           <Row gutter={16}>
             <Col span={8}>
               <Form.Item name="subject" label="科目" rules={[{ required: true }]}>
@@ -1581,46 +1664,8 @@ const QuestionBankImport: React.FC = () => {
             </Col>
           </Row>
 
-          <Form.Item name="content" label="题目内容" rules={[{ required: true }]}>
-            <TextArea rows={4} placeholder={'支持公式（用 $$ 包裹），如 $$F=ma$$\n物理量用斜体 <i>F</i>、单位正体 m/s、数学常数正体 π\n下标属性用 \\mathrm：$$v_{\\mathrm{0}}$$\n向量用 \\boldsymbol：$$\\boldsymbol{F}$$'} />
-          </Form.Item>
-          <details style={{ marginBottom: 12, fontSize: 12, color: '#666', background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 4, padding: '6px 10px' }}>
-            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>物理学科正斜体规范</summary>
-            <div style={{ marginTop: 4, lineHeight: 1.8 }}>
-              <b>斜体</b>：物理量符号（<i>F</i>, <i>m</i>, <i>v</i>, <i>g</i>, <i>E</i>, <i>B</i>）、变量下标（<i>m<sub>i</sub></i>）<br/>
-              <b>正体</b>：单位（m, s, kg, N, A）、数学常数（π, e）、函数（sin, cos, log）、微分符号 d、化学元素下标（<i>m</i><sub>H</sub>）<br/>
-              <b>粗斜体</b>：向量（<b><i>F</i></b>, <b><i>v</i></b>）
-            </div>
-          </details>
-          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.content !== cur.content}>
-            {({ getFieldValue }) => {
-              const content = getFieldValue('content');
-              if (!content) return null;
-              return (
-                <div style={{ marginBottom: 16, padding: 12, background: '#fafafa', borderRadius: 6, border: '1px solid #e8e8e8' }}>
-                  <div style={{ fontSize: 12, color: '#999', marginBottom: 6 }}>预览：</div>
-                  <QuestionRenderer content={content} />
-                </div>
-              );
-            }}
-          </Form.Item>
-
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="options" label="选项（每行一个）">
-                <TextArea rows={3} placeholder="A. xxx&#10;B. xxx&#10;C. xxx&#10;D. xxx" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="answer" label="答案" rules={[{ required: true }]}>
-                <Input placeholder="正确答案" />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Form.Item name="analysis" label="解析">
-            <TextArea rows={2} placeholder="解题思路（可选）" />
-          </Form.Item>
+          {/* utf-8 rich structure */}
+          <QuestionStructureEditor value={richDocument} disabled={saving} questionType={editorQuestionType} onChange={updateRichDocument} />
 
           <Divider orientation="left" style={{ fontSize: 12 }}>扩展信息</Divider>
 
@@ -1646,12 +1691,8 @@ const QuestionBankImport: React.FC = () => {
           </Row>
 
           <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="formulas" label="公式（每行一个）">
-                <TextArea rows={2} placeholder="F=ma&#10;E=mc²" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
+            {/* utf-8 metadata */}
+            <Col span={24}>
               <Form.Item name="tags" label="标签（逗号分隔）">
                 <Input placeholder="高考、压轴题、易错" />
               </Form.Item>

@@ -400,7 +400,7 @@ Status: implemented, verified, deployed, packaged, uploaded, and pushed
 - 四端未统一前不得标记完成。
 # Task: 2026-07-12 题库公式全链路与所见即所得编辑
 
-Status: active — design approved, implementation planning in progress
+Status: completed — implementation, render verification and applicable release matrix finished; miniapp production review is explicitly deferred to the appended login-audit task
 
 ## Objective
 
@@ -414,15 +414,17 @@ Status: active — design approved, implementation planning in progress
 - [x] 确认数据主机集中导出、LaTeX权威编辑格式和显示优先回退规则。
 - [x] 写出完整设计规范。
 - [x] 写出逐步 TDD 实施计划。
-- [ ] 建立 Word 公式解析样本与自动化测试基座。
-- [ ] 实现正文/批注共用内容遍历器与 EQ 域状态机。
-- [ ] 实现 OMML、EQ、MathType → 规范化 LaTeX转换及质量报告。
-- [ ] 迁移题库富文本与公式数据模型，验证保存、重载和同步兼容性。
-- [ ] 实现专业桌面所见即所得编辑器并完成真实运行时视觉/交互验证。
-- [ ] 实现数据主机四格式导出适配器、显示优先回退和失败阻断。
-- [ ] 生成并渲染四类 DOCX/PDF，验证公式数量、字号、基线、裁切和分页。
-- [ ] 完成多端任务契约、权限、同步、构建与回归测试。
-- [ ] 按统一版本矩阵备份、发布、上传、安装主机并验证 OSS feed。
+- [x] 建立 Word 公式解析样本与自动化测试基座。
+- [x] 实现正文/批注共用内容遍历器与 EQ 域状态机。
+- [x] 实现 OMML、EQ、MathType → 规范化 LaTeX转换及质量报告。
+- [x] 迁移题库富文本与公式数据模型，验证保存、重载和同步兼容性。
+- [x] 实现专业桌面所见即所得编辑器并完成真实运行时视觉/交互验证。
+- [x] 实现数据主机四格式导出适配器、显示优先回退和失败阻断。
+- [x] 将 `C:\Users\83423\Desktop\组卷导出模板.docx` 固化为 Word/PDF 默认组卷模板，支持“答案统一置后”和“每题后紧跟答案块”两种模式。
+- [x] 答案置后模式在参考答案开头汇总选择题答案，随后逐题输出答案、【知识点】和【解析】；逐题模式按题目→答案/知识点/解析交错输出。
+- [x] 生成并渲染四类 DOCX/PDF，验证公式数量、字号、基线、裁切和分页。
+- [x] 完成多端任务契约、权限、同步、构建与回归测试。
+- [x] 按统一版本矩阵备份、发布、上传、安装主机并验证 OSS feed。
 
 ## Bottom-level logic
 
@@ -445,5 +447,105 @@ Status: active — design approved, implementation planning in progress
 - 开始前检查并保护脏工作树，不覆盖用户文件。
 - 数据迁移只做增量，保留旧字段和原始载荷；部署前备份数据库与代码。
 - 各阶段保持可独立回滚提交。发布失败回滚云端版本和 OSS feed，不删除已生成原始题库资源。
+
+### Task 6 验证证据（2026-07-13）
+
+- 唯一 token-derived Word 内容流已替代主流程双读取路径，公式按稳定 ID 与源坐标原位插入。
+- 真实 lecture/exam DOCX 覆盖 OMML、EQ、MathType preview-only OLE、批注、表格、选项、小题、子答案、答案与解析。
+- 质量报告按 source/status 统计，并包含题号、字段、段落、表格单元格与批注位置；未挂载公式明确标记为 `unknown`。
+- Parser discovery 32/32、multipart 路由集成、Node 语法检查与生产构建通过；独立规格审查和代码质量审查通过。
+
+### Task 7 验证证据（2026-07-13）
+
+- 前后端采用一致的 TipTap 节点、标记与属性白名单，拒绝危险 URL 和任意 HTML 属性。
+- rich-only 保存、数据库重载、旧客户端字段投影、选项/小题/答案/解析搜索与 derived flags 已通过行为测试。
+- 浏览器同步先完整验证再原子应用；非法记录不会造成部分写入，旧客户端局部更新保留未修改 section 的公式、图片、marks 与稳定 ID。
+- 增量 `search_text` 迁移按批次短事务回填，使用与新写入相同的纯文本投影并支持重启幂等。
+- 聚焦后端/浏览器/同步测试与生产构建通过；独立规格审查和代码质量审查通过。
+
+### Task 9 验证证据（2026-07-13）
+
+- 题干、选项、选项正确性、小题及小题答案、主答案和解析均使用稳定 ID 的结构化 TipTap 编辑器；三处旧的重复公式文本域与重复题干/答案编辑入口已移除。
+- 旧题型别名、旧答案与旧公式可投影到新结构；保存、重试、双击保存、未保存离开、TipTap 水合默认值及资源引用 roundtrip 均有行为测试。
+- 内部 `question-asset://` 引用在进入 TipTap 前使用安全占位并在持久化输出时恢复，初始化阶段和 React NodeView 阶段均不再触发 CSP 错误或丢失原始资源引用。
+- fresh Playwright 真实链路验证：干净取消不弹确认，真实修改后可见确认框计数为 1；公式双击值为 `\\frac{a}{b}`；单选切换、选项上移、小题公式、图片和 720px 窄窗口均通过，console errors 为 0。
+- 视觉截图已生成于本地验证目录；其中脏确认截图未可靠呈现确认框，因此该项只采用可见 DOM 计数证据，不把截图误报为视觉证据。
+- `test:rich-content`、TypeScript、UI regression、整仓 `npm test` 与生产构建均通过。
+
+### Task 10 验证证据（2026-07-13）
+
+- Word native 与 EQ 模式仅在有真实 OMML 证据时声明成功；项目没有经审计的 MathType writer/fixture，因此 MathType 请求明确回退到 LaTeX 矢量公式并报告 `MATHTYPE_WRITER_UNAVAILABLE`，不伪造 OLE/MTEF。
+- 公式准备的 MathML→OMML、manifest policy、KaTeX/MathML/Sharp worker 使用同一硬截止时间；阻塞 worker 与 Python 子进程可终止，Node 事件循环不被同步转换阻塞。
+- 最终产物门禁按每个公式索引核对 DOCX 关系、extent/crop、OMML/EQ 容器与 PDF 页、annotation、绘制区域；源码残留、空白公式、断链媒体或索引集合不一致会阻止交付。
+- SVG、PNG 与 PDF 对抗覆盖透明/隐藏/零面积、`tRNS` 灰度/RGB/调色板及 1-bit padding、CTM、clip `W n/W f`、框外/页外、无字体资源、开放退化填充与组合 fill/stroke；最终 Python 套件 38/38 通过。
+- `paperArtifactService`、整仓 `npm test`、生产构建、独立规格/质量复审与 `git diff --check` 通过。
+
+### Task 11 第一阶段验证证据（2026-07-13）
+
+- 直接导出与 relay host 共用有序、唯一、全量命中的 `questionIds` 解析；重复、缺失、跨租户和无权限草稿选择整体失败，不静默替换题目。
+- Backend/Gateway 双 schema 可迁移旧表，V2 任务支持 durable idempotency/request hash、指定 host、原子 claim、lease、claim token、`row_version` CAS、进度、失败、取消与 V1/V2 隔离。
+- V2 长渲染使用串行 heartbeat 持续续租并以最新版本完成；续租失败禁止完成并清理孤儿产物。V1（含无 hostId 的旧轮询）也原子领取，旧主机仅在 shared lease 有效期内兼容无 token 完成。
+- Cloud client 对非 2xx 与 `success:false` 结构化抛错；backend 完整 HTTP 合同验证同幂等键不同 body 返回 409、missing/non-owner 返回 404、错误 host token 返回 403，测试 bypass 仅可在显式 test 环境启用。
+- Backend/Gateway 任务服务文件哈希一致；定向 HTTP/service/schema/client/host 测试、完整 `test:backend`、整仓 `npm test`、生产构建及独立对抗复审通过。
+- 第一阶段验收时尚未完成不可变题目快照、artifact repository/授权下载、崩溃恢复与保留清理；这些内容已转入下列 Task 11 第二阶段继续实施，不能仅据第一阶段声明完整任务链路完成。
+
+### Task 11 第二阶段验证证据（2026-07-14）
+
+- 本地主机 writer DB 新增 durable paper job、artifact 与 completion outbox；`relay_scope + cloud_task_id` 唯一，直接导出也使用 actor/tenant/idempotency 派生的本地 durable job，不再绕过仓储链路。
+- Claim 后冻结题目顺序、rich JSON、公式、实际模板 SHA 和 renderer/gate 版本；本地、允许的 HTTPS 与 data 图片经既有 SSRF/重定向/magic/大小/超时门禁后复制为内容寻址 blob，复制后再次核对题目与源资产哈希。
+- 整卷渲染在可终止 Worker 中运行，父进程独立轮询 cancel/deadline；最终发布采用任务临时目录、可见性 gate、文件与目录 fsync、identity-bound sidecar、发布前 DB CAS 和同卷原子 rename。
+- Artifact `staged→verified` 与 job `→completed` 位于同一 immediate transaction；启动对账覆盖 temp-only、staged+temp、final+sidecar、verified 文件缺失及 verified artifact/job processing 等崩溃窗。
+- Completion outbox 持久 claim/version/operation/canonical result hash；云端校验 canonical hash并按 operation/hash 幂等 ACK，响应丢失可查询 host-scoped 终态；late cancel 会原子收口为 local cancelled、artifact revoked、outbox terminal_cancelled。
+- 下载只接受 DB verified artifactId；独立高熵 HMAC、kid 轮换、`now >= exp` 失效，JWT owner/同租户管理员与 header token 双校验。认证 GET access endpoint 可刷新短 token，URL、outbox、cloud result 与日志均不含 token；旧 filename 匿名读盘路径返回 404。
+- Cleanup 保护 active temp 与 pending outbox，处理过期 verified/revoked artifact 与 sidecar，并逐父链拒绝 Windows junction/reparse；retry/outbox 均有最大次数、cap 与 jitter。
+- Direct Word/PDF 真实 HTTP 走 bound root→immutable snapshot→Worker→repo，重复幂等键复用同 artifactId；桌面客户端下载使用认证 Blob，410 时换签一次并在 finally revoke object URL。
+- Round5 独立锁定复审通过；`test:paper-jobs` 已接入整仓门禁，fresh `npm test`、TypeScript、生产 `craco build`、双 schema/service/HTTP、Node 语法与 diff 检查全部通过。
+
+### Task 11A 验证证据（2026-07-13）
+
+- 默认模板已作为应用资源固化，SHA-256 与用户提供原件一致；运行时不依赖桌面文件路径，并保留模板主题、样式、A4 分节和页脚页码字段，移除了样例教师身份信息。
+- “答案统一置后”会先汇总全部选择题答案，再按题号逐题输出答案、【知识点】和【解析】；“逐题显示答案”按题目与对应答案块交错输出。
+- Word/PDF、本地主机直出与 relay 任务使用同一答案位置契约；正式桌面请求携带持久化认证会话和设备标识。
+- 图片本地优先，受目录边界、junction/symlink、magic bytes、读取前大小、DNS/私网、重定向、流式上限与超时中止门禁保护；必需图片无法安全解析时阻止产物交付。
+- PDF 两种答案布局已逐页栅格检查，且长选择题表、图片和公式有页底分页保护；DOCX 已验证 ZIP/关系/媒体/模板保留结构。
+- `npm test`、生产构建、四组聚焦测试、独立规格审查及四轮代码质量审查通过。
+- 环境限制：LibreOffice 不可用，Word COM 转 PDF 超时，因此 DOCX 尚未完成真实 Word 逐页视觉验收；该项保留在文档渲染矩阵中，不能据此宣称全链路完成。
+
+### Task 12 验证证据（2026-07-14）
+
+- 桌面普通电脑可经云中继提交精确有序的 V2 组卷任务；未获云确认时只保留本地草稿。任务历史持久化，重启后恢复轮询，并支持取消、新幂等键重试、刷新和鉴权下载。
+- Playwright 新鲜会话验证完成下载、55% 渲染任务取消、720px 响应式和控制台健康；取消后显示“已取消”，窄屏 `documentWidth = viewportWidth = 720`，0 error、0 warning。
+- 小程序使用不含答案/解析/富文本/OLE 的最小预览索引，按同租户角色裁剪；只提交真实、有序题目 ID、答案位置、公式模式、目标主机和幂等键。
+- 微信开发者工具真实编译并进入 `pages/question-bank/index`，离线态正确呈现题库组卷、两种答案位置、四种公式模式、真实任务入口和任务记录；本地 `127.0.0.1:3999` 被合法域名校验拒绝，已作为发布前域名配置检查项记录，未误报为云端联通。
+- 桌面聚焦测试、relay/preview/workflow/权限聚焦测试、TypeScript、小程序 typecheck 与 WeApp 构建均通过；完整命令与边界记录见 `docs/verification-2026-07-14-question-formula-editor.md`。
+
+### Task 13 验证证据（2026-07-14）
+
+- 同一复杂富文本题目生成四种公式模式、两种答案位置、DOCX/PDF 共 16 份产物；每份均含 7 个受索引公式并通过最终可见性门禁。
+- 8 份 DOCX 均由 Microsoft Word 无修复打开并导出 PDF，Word 渲染 16 页与直出 PDF 16 页均以 150 DPI 栅格化逐页检查；分式、根式、积分、分段函数、希腊字母、图片、表格、页脚和分页均可见且无裁切。
+- 修复了选择题汇总泄漏 LaTeX、合法复杂 OMML 被白名单误拒、模板页脚关系被公式图片关系覆盖、OPC 内容类型顺序非法，以及逐题答案块跨页拆分五类真实渲染缺陷。
+- Word native/EQ DOCX 保持可编辑且零回退；MathType 因无经审计 MTEF/OLE writer 明确回退 LaTeX 矢量，不伪造 OLE；PDF 对不可保留的可编辑 Word 模式同样如实报告矢量回退。
+- 复现样本、模式边界和命令见 `modules/question-bank/export/tests/fixtures/README.md` 与 `docs/verification-2026-07-14-question-formula-editor.md`。
+
+### Task 14 验证证据（2026-07-14）
+
+- 最终统一版本为 `5.14.3`；fresh `npm test`、生产构建、包内六项公式运行时依赖门禁、打包 UI smoke 与 Node ABI 137/SQLite 3.53.1 验证通过。
+- 阿里云部署前再次备份 backend/gateway 代码和两套 SQLite，目录 `/root/scheduling-backups/formula-pipeline/20260714-111058`，两库 `quick_check=ok`；公网 `/api/health` 返回 `5.14.3`，host relay 协议和匿名用户边界 smoke 通过。
+- OSS `desktop/latest.yml` 与归档 feed 均为 `5.14.3`；远端安装包 HTTP 200、`138655690` 字节，SHA-512 与 feed 一致。其他桌面电脑可按更新 feed 自助升级。
+- 微信开发者工具以 AppID `wx3d570539bbe6ba1b` 成功上传 `5.14.3` 开发版（772309 字节）。因用户已将手机号白名单导致的审核阻断指定为当前目标之后的独立任务，本阶段不提交审核、不声称线上版已发布。
+- 本地数据主机在一致性备份 `D:\GewuDataHost\backups\release-5.14.0-20260714-100729` 后安装 `5.14.3`；D 盘权威库、I 盘题库、缓存和备份目标在线，原 storeId `qb_mqukr4y6_9c27e660` 保持不变并完成 authority binding。
+- 已安装应用的 `127.0.0.1:3001/api/health` 返回 `5.14.3`。实际鉴权导出生成 Word-native/答案置后 DOCX 与 LaTeX-vector/逐题答案 PDF，各 2 个公式、0 回退、`storage_status=verified`；下载签名、大小与 SHA-256 校验通过，临时验收题已物理清理，题库恢复为空。
+
+## 当前目标完成后的追加任务
+
+执行顺序固定如下：先完成并验收本公式全链路目标，再合并另外两个工作树的 PR，最后处理本节任务。
+
+### 小程序登录审核阻断
+
+- [ ] 按任务“处理登录审核阻断”（线程 `019f59da-1ae1-75c2-bf60-32a4e7d3dbd5`）中的既定方案，增加正式保留的“审核体验”入口，避免审核员因手机号白名单和人工批准流程无法进入核心功能。
+- [ ] 提供管理员体验和学生体验两种短期 `demo` 会话，继续复用现有角色权限模型，但只访问独立、脱敏的演示数据空间，绝不读取真实学员、财务、手机号或题库业务数据。
+- [ ] 服务端强制演示会话只读；允许浏览核心示例页面及在临时沙箱中体验组卷/导出，禁止用户审核、财务导入、真实教务写入、同步到本地主机等操作。
+- [ ] 同步调整小程序入口、阿里云鉴权、数据范围与提审说明，提供有效体验码；不得通过自动放开新用户、真实管理员账号或客户端审核特供绕过权限。
+- [ ] 完成安全回归、小程序构建上传和审核版本核验；若微信审核或平台权限仍阻断，记录真实状态，不宣称发布完成。
 
 ---

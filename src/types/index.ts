@@ -375,6 +375,7 @@ export interface Question {
   analysis?: string;
   formulas?: Array<string | Record<string, any>>; // 公式
   assets?: any[];
+  rich_content?: import('./questionRichContent').QuestionRichDocument | null;
   tags?: string[];                 // 标签
   source?: string;                 // 来源
   year?: string;                   // 年份

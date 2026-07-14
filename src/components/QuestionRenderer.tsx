@@ -7,6 +7,7 @@ import {
   PHYSICS_KATEX_MACROS,
 } from '../utils/physicsNotation';
 import { sanitizeHtml } from '../utils/sanitizeHtml';
+import { ResolvedRichHtml, RichAssetImage } from './RichAssetImage'; // utf-8
 import {
   columnsForOptions,
   imageSourcesFromHtml,
@@ -978,7 +979,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
     const processed = sanitizeHtml(applySearchHighlight(processHtmlSegment(seg.value), terms));
     const hasBlockHtml = /<(?:div|table|img)\b/i.test(processed);
     const Tag = hasBlockHtml ? 'div' : 'span';
-    return <Tag key={idx} dangerouslySetInnerHTML={{ __html: processed }} />;
+    return <ResolvedRichHtml key={idx} as={Tag} html={processed} />;
   };
 
   const optCount = normalizedOptions.length;
@@ -993,7 +994,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
     setExpanded(false);
   }, []);
   const renderHtml = (value?: string) => (
-    <span dangerouslySetInnerHTML={{ __html: sanitizeHtml(applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(convertHtmlLatexFractions(normalizeSubQuestionLabels(value || '')))), terms)) }} />
+    <ResolvedRichHtml html={sanitizeHtml(applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(convertHtmlLatexFractions(normalizeSubQuestionLabels(value || '')))), terms))} />
   );
 
   return (
@@ -1015,7 +1016,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
         {isChoice && stemImages.length > 0 && (
           <div className="question-images">
             {stemImages.map((src, i) => (
-              <img key={i} src={src} alt={`题目图片 ${i + 1}`} />
+              <RichAssetImage key={i} src={src} alt={`题目图片 ${i + 1}`} />
             ))}
           </div>
         )}
@@ -1025,7 +1026,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
             {normalizedOptions.map((opt, i) => (
               <div key={`${opt.label}-${i}`} className={`question-option${isImageOnlyOption(opt.content) ? ' image-only' : ''}`}>
                 <span className="question-option-label">{opt.label}.</span>
-                <span dangerouslySetInnerHTML={{ __html: sanitizeHtml(applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(convertHtmlLatexFractions(opt.content))), terms)) }} />
+                <ResolvedRichHtml html={sanitizeHtml(applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(convertHtmlLatexFractions(opt.content))), terms))} />
               </div>
             ))}
           </div>
