@@ -62,8 +62,7 @@ class ApiClient {
   private handleReviewAuthExpired(): void {
     const currentUser = Taro.getStorageSync('user_info');
     clearAuthenticatedSession({
-      invalidateSession: () => authSessionRuntime.invalidate(),
-      advanceGeneration: () => authSessionRuntime.advanceGeneration(),
+      invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance(),
       clearBusinessCache,
       clearPermissionCache: () => Taro.removeStorageSync('user_permissions'),
       removeStorage: (key: string) => Taro.removeStorageSync(key),
@@ -105,8 +104,7 @@ class ApiClient {
   /** Token 过期处理 */
   private handleAuthExpired(): void {
     clearAuthenticatedSession({
-      invalidateSession: () => authSessionRuntime.invalidate(),
-      advanceGeneration: () => authSessionRuntime.advanceGeneration(),
+      invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance(),
       clearBusinessCache,
       clearPermissionCache: () => Taro.removeStorageSync('user_permissions'),
       removeStorage: (key: string) => Taro.removeStorageSync(key),

@@ -1,4 +1,6 @@
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 
 let sessionModule = {};
 try {
@@ -8,6 +10,7 @@ try {
 }
 
 const {
+  captureTrustedAuthSession,
   clearAuthenticatedSession,
   createApiResponseCoordinator,
   createAuthenticationEntryBoundary,
@@ -48,6 +51,7 @@ function createPersistentSessionHarness(overrides = {}) {
     readGeneration: false,
     readSessionState: false,
     writeGeneration: false,
+    writeGenerationAfterWrite: false,
     writeSessionState: false,
   };
   function createRuntime() {
@@ -67,6 +71,7 @@ function createPersistentSessionHarness(overrides = {}) {
       writeGeneration: value => {
         if (faults.writeGeneration) throw new Error('generation write failed');
         storage.generation = value;
+        if (faults.writeGenerationAfterWrite) throw new Error('generation write interrupted after persistence');
       },
       readSessionState: () => {
         if (faults.readSessionState) throw new Error('session state read failed');
@@ -89,6 +94,29 @@ async function main() {
   assert.strictEqual(typeof createSessionBoundOperation, 'function', 'direct Taro requests and downloads must share the session response boundary');
   assert.strictEqual(typeof createAuthenticationEntryBoundary, 'function', 'raw platform login and the public login request must bind to their starting session generation and identity');
   assert.strictEqual(typeof openSessionBoundDocument, 'function', 'question-bank document consumption must use the same session boundary as access and download');
+  assert.strictEqual(typeof captureTrustedAuthSession, 'function', 'startup consumers need one trusted token/identity capture gate');
+
+  const trustedStartupHarness = createPersistentSessionHarness();
+  const trustedStartup = captureTrustedAuthSession(trustedStartupHarness.createRuntime());
+  assert.strictEqual(trustedStartup.token, 'normal-a');
+  assert.deepStrictEqual(trustedStartup.identity, normalIdentity);
+  const staleStartupHarness = createPersistentSessionHarness({
+    token: 'stale-token',
+    identity: normalIdentity,
+    sessionState: { version: 1, generation: 8, invalidated: true },
+  });
+  assert.strictEqual(
+    captureTrustedAuthSession(staleStartupHarness.createRuntime()),
+    null,
+    'startup must reject an invalidated session even when raw token and user storage still exist',
+  );
+
+  const monotonicRuntime = createPersistentSessionHarness({ generation: 2, sessionState: { version: 1, generation: 2, invalidated: false } });
+  const monotonicSession = monotonicRuntime.createRuntime();
+  assert.strictEqual(typeof monotonicSession.invalidateAndAdvance, 'function', 'session invalidation and generation advance must be one monotonic transition');
+  assert.strictEqual(monotonicSession.invalidateAndAdvance(), 3);
+  assert.strictEqual(monotonicRuntime.storage.generation, 3);
+  assert.deepStrictEqual(monotonicRuntime.storage.sessionState, { version: 1, generation: 3, invalidated: true });
 
   const delayedLoginState = createSessionState({ token: '', identity: null, generation: 2 });
   const delayedLoginBoundary = createAuthenticationEntryBoundary(delayedLoginState.runtime);
@@ -460,6 +488,49 @@ async function main() {
   );
   assert.strictEqual(signedOutRefreshCalls, 0);
 
+  const splitLogout = createPersistentSessionHarness({
+    generation: 5,
+    sessionState: { version: 1, generation: 5, invalidated: false },
+  });
+  const splitLogoutRuntime = splitLogout.createRuntime();
+  splitLogoutRuntime.capture();
+  splitLogout.faults.writeSessionState = true;
+  const splitLogoutResult = clearAuthenticatedSession({
+    invalidateAndAdvance: () => splitLogoutRuntime.invalidateAndAdvance(),
+    clearBusinessCache: () => {},
+    clearPermissionCache: () => {},
+    removeStorage: () => { throw new Error('remove failed'); },
+  });
+  assert.strictEqual(splitLogoutResult.success, false);
+  assert.strictEqual(splitLogout.storage.generation, 6, 'generation should expose the partial durable advance');
+  assert.deepStrictEqual(
+    splitLogout.storage.sessionState,
+    { version: 1, generation: 5, invalidated: false },
+    'the injected session-state failure should leave the old durable state behind',
+  );
+  splitLogout.faults.writeSessionState = false;
+  const splitRestartedCapture = splitLogout.createRuntime().capture();
+  assert.strictEqual(splitRestartedCapture.generation, 6, 'restart reconciliation must keep the maximum durable generation');
+  assert.strictEqual(splitRestartedCapture.invalidated, true, 'a durable generation/state mismatch must fail closed after restart');
+  assert.strictEqual(splitRestartedCapture.token, '', 'restart must not resurrect token A when logout cleanup also failed');
+  assert.deepStrictEqual(
+    splitLogout.storage.sessionState,
+    { version: 1, generation: 6, invalidated: true },
+    'trusted reconciliation must durably converge the split state to invalidated',
+  );
+
+  const stateAhead = createPersistentSessionHarness({
+    generation: 5,
+    sessionState: { version: 1, generation: 6, invalidated: false },
+  });
+  stateAhead.faults.writeGenerationAfterWrite = true;
+  assert.strictEqual(stateAhead.createRuntime().capture().trusted, false, 'an interrupted mismatch repair must remain untrusted in-process');
+  stateAhead.faults.writeGenerationAfterWrite = false;
+  const stateAheadRestart = stateAhead.createRuntime().capture();
+  assert.strictEqual(stateAheadRestart.generation, 6);
+  assert.strictEqual(stateAheadRestart.invalidated, true, 'state-ahead reconciliation must persist invalidation before making generations equal');
+  assert.strictEqual(stateAheadRestart.token, '', 'an interrupted state-ahead repair must not make token A trusted after restart');
+
   const unreadableAfterRestart = createPersistentSessionHarness();
   unreadableAfterRestart.faults.readSessionState = true;
   const restartedUnreadableRuntime = unreadableAfterRestart.createRuntime();
@@ -557,6 +628,23 @@ async function main() {
   });
   assert.strictEqual(logoutGeneration, 5, 'logout must advance generation');
   assert.deepStrictEqual([...logoutValues.keys()], []);
+
+  const appSource = fs.readFileSync(path.join(__dirname, '../app.tsx'), 'utf8');
+  const homeSource = fs.readFileSync(path.join(__dirname, '../pages/index/index.tsx'), 'utf8');
+  for (const [sourceName, source] of [['app startup', appSource], ['home startup', homeSource]]) {
+    assert.ok(
+      !source.includes("getStorageSync('auth_token')"),
+      `${sourceName} must not trust raw auth_token storage`,
+    );
+    assert.ok(
+      source.includes('captureTrustedAuthSession(authSessionRuntime)'),
+      `${sourceName} must gate startup on one trusted session capture`,
+    );
+  }
+  assert.ok(
+    appSource.includes("Taro.reLaunch({ url: '/pages/login/index' })"),
+    'an invalidated app launch must route to login instead of starting old-user initialization',
+  );
 
   console.log('miniapp API session runtime checks passed');
 }

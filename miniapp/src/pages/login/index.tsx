@@ -34,8 +34,7 @@ export default function LoginPage() {
       cleanupStorageKeys: reviewCleanupStorageKeys,
       writeUser: (user: any) => Taro.setStorageSync('user_info', user),
       setBusinessCacheIdentity,
-      invalidateSession: () => authSessionRuntime.invalidate(),
-      advanceGeneration: () => authSessionRuntime.advanceGeneration(),
+      invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance(),
       writeToken: (token: string) => Taro.setStorageSync('auth_token', token),
       activateSession: () => authSessionRuntime.activate(),
       relaunch: () => Taro.reLaunch({ url: '/pages/index/index' }),
@@ -49,8 +48,7 @@ export default function LoginPage() {
       removeStorage: (key: string) => Taro.removeStorageSync(key),
       writeUser: (user: any) => Taro.setStorageSync('user_info', user),
       setBusinessCacheIdentity,
-      invalidateSession: () => authSessionRuntime.invalidate(),
-      advanceGeneration: () => authSessionRuntime.advanceGeneration(),
+      invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance(),
       writeToken: (token: string) => Taro.setStorageSync('auth_token', token),
       activateSession: () => authSessionRuntime.activate(),
       relaunch: () => Taro.reLaunch({ url: '/pages/index/index' }),
@@ -80,8 +78,7 @@ export default function LoginPage() {
         setPendingReview(true);
         const currentUser = Taro.getStorageSync('user_info');
         clearAuthenticatedSession({
-          invalidateSession: () => authSessionRuntime.invalidate(),
-          advanceGeneration: () => authSessionRuntime.advanceGeneration(),
+          invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance(),
           clearBusinessCache,
           clearPermissionCache,
           removeStorage: (key: string) => Taro.removeStorageSync(key),

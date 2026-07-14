@@ -121,13 +121,14 @@ assert.ok(apiSource.includes('createApiResponseCoordinator')
   && apiSource.includes('const isCurrentSession')
   && apiSource.includes('authSessionRuntime.isSameSession(session, sessionOptions)'), 'every API response and retry must remain bound to the request-start session');
 assert.ok(loginSource.includes('createNormalSessionCommitter')
-  && loginSource.includes('invalidateSession: () => authSessionRuntime.invalidate()')
+  && loginSource.includes('invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance()')
   && loginSource.includes('activateSession: () => authSessionRuntime.activate()'), 'normal and review login must commit through the shared persistent session runtime');
 assert.ok(loginSource.includes('authSessionRuntime.capture().token')
   && !loginSource.includes("if (Taro.getStorageSync('auth_token'))"), 'login redirect must ignore a stale raw token after durable logout invalidation');
 assert.ok(permissionSource.includes('authSessionRuntime.advanceIfIdentityChanges(user)'), 'authorization identity switches must advance session generation without treating token rotation as a switch');
-assert.ok(settingsSource.includes('clearAuthenticatedSession') && settingsSource.includes('invalidateSession: () => authSessionRuntime.invalidate()')
-  && homeSource.includes('clearAuthenticatedSession') && homeSource.includes('invalidateSession: () => authSessionRuntime.invalidate()'), 'all visible logout paths must durably invalidate before clearing credentials');
+assert.ok(settingsSource.includes('clearAuthenticatedSession') && settingsSource.includes('invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance()')
+  && homeSource.includes('clearAuthenticatedSession') && homeSource.includes('invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance()')
+  && apiSource.includes('invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance()'), 'all logout and expiry paths must use one monotonic invalidate-and-advance transition');
 assert.ok(syncSource.includes('createSessionBoundOperation') && syncEngineSource.includes('createSessionBoundOperation'), 'direct sync responses must be discarded before mutating queues or caches after a session switch');
 assert.ok(!syncEngineSource.includes('requestSession.token || token'), 'sync must never fall back to a caller-captured token after binding a newer empty session');
 assert.ok(questionBankSource.includes('createSessionBoundOperation') && apiSource.includes('createSessionBoundOperation'), 'artifact access and download responses must stay bound through file consumption');

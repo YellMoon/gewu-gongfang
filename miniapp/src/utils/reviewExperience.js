@@ -128,8 +128,17 @@ function createReviewSessionCommitter(dependencies) {
     return Array.from(new Set(identities.flatMap(identity => reviewCleanupStorageKeys(identity))));
   }
 
+  function invalidateAndAdvanceSession() {
+    if (typeof dependencies.invalidateAndAdvance === 'function') {
+      dependencies.invalidateAndAdvance();
+      return;
+    }
+    if (typeof dependencies.invalidateSession === 'function') dependencies.invalidateSession();
+    dependencies.advanceGeneration();
+  }
+
   function rollback(identities) {
-    for (const action of [dependencies.invalidateSession, dependencies.advanceGeneration, dependencies.clearBusinessCache, dependencies.clearPermissionCache]) {
+    for (const action of [invalidateAndAdvanceSession, dependencies.clearBusinessCache, dependencies.clearPermissionCache]) {
       try { if (typeof action === 'function') action(); } catch (_error) { /* continue cleanup */ }
     }
     for (const key of cleanupKeys(identities)) {
@@ -142,8 +151,7 @@ function createReviewSessionCommitter(dependencies) {
     if (!session) return { success: false, code: 'REVIEW_DEMO_RESPONSE_INVALID' };
     let cleanupIdentities = [null, session.user];
     try {
-      if (typeof dependencies.invalidateSession === 'function') dependencies.invalidateSession();
-      dependencies.advanceGeneration();
+      invalidateAndAdvanceSession();
       const previousUser = dependencies.readUser() || null;
       cleanupIdentities = [previousUser, session.user];
       dependencies.clearBusinessCache();

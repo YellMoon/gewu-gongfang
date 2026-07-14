@@ -100,8 +100,7 @@ export default function Settings() {
         if (res.confirm) {
           const currentUser = Taro.getStorageSync('user_info')
           clearAuthenticatedSession({
-            invalidateSession: () => authSessionRuntime.invalidate(),
-            advanceGeneration: () => authSessionRuntime.advanceGeneration(),
+            invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance(),
             clearPermissionCache,
             clearBusinessCache,
             removeStorage: (key: string) => Taro.removeStorageSync(key),
