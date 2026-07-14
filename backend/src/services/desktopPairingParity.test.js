@@ -5,7 +5,8 @@ for (const file of ['backend/src/routes/desktopPairing.js', 'gateway/src/routes/
   for (const route of ["'/start'", "'/exchange'", "'/pending'", "'/code/:pairingCode/approve'", "'/code/:pairingCode/reject'", "'/:id/approve'", "'/:id/reject'"]) {
     assert.ok(source.includes(route), `${file} missing ${route}`);
   }
-  for (const code of ['SUPER_ADMIN_REQUIRED', 'PAIRING_NOT_FOUND', 'PAIRING_USER_UNRESOLVED']) assert.ok(source.includes(code));
+  for (const code of ['SUPER_ADMIN_REQUIRED', 'PAIRING_NOT_FOUND', 'PAIRING_USER_INVALID']) assert.ok(source.includes(code));
+  assert.ok(source.includes("req.body?.userId") && !source.includes('normalizePhone(user.phone)'), 'approval must bind an explicitly selected persisted user');
   assert.ok(source.includes('pairing_code AS pairingCode') && !source.includes('secret_hash AS'), 'pending API must expose safe explicit fields only');
   const exchangeSection=source.slice(source.indexOf("router.post('/exchange'"),source.indexOf("router.get('/pending'"));
   assert.ok(exchangeSection.indexOf('JWT_SECRET_REQUIRED') < exchangeSection.indexOf('exchangeDesktopPairing('));

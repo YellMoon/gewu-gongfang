@@ -133,7 +133,7 @@ const PermissionManager: React.FC = () => {
         {selected.disabled && <Tag>已停用用户不可变更</Tag>}
       </Space>}
     </Card>}
-    {canReview && <PairingReviewPanel />}
+    {canReview && <PairingReviewPanel users={rows} />}
   </main>;
 };
 

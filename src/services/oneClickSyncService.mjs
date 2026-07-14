@@ -55,16 +55,18 @@ export function buildOneClickSyncPreview(input) {
 }
 
 export async function chooseSyncTransport(transports) {
+  const diagnostics = [];
   for (const transport of transports || []) {
     if (!transport) continue;
     try {
       const check = transport.check ? await transport.check() : { ok: true };
-      if (check?.ok) return { ...transport, check };
-    } catch (_error) {
-      // Try the next transport.
+      if (check?.ok) return { ...transport, check, diagnostics };
+      diagnostics.push({ name: transport.name || 'unknown', code: check?.code || 'TRANSPORT_UNAVAILABLE', reason: check?.reason || '' });
+    } catch (error) {
+      diagnostics.push({ name: transport.name || 'unknown', code: error?.code || 'TRANSPORT_CHECK_FAILED', reason: error?.message || '' });
     }
   }
-  return null;
+  return { unavailable: true, diagnostics };
 }
 
 function getPendingChanges(engine) {
@@ -108,10 +110,14 @@ export async function runOneClickSync(options) {
   const pendingChanges = getPendingChanges(engine);
 
   const transport = await chooseSyncTransport(transports);
-  if (!transport) {
+  if (transport?.unavailable) {
+    const codes = transport.diagnostics.map(item => item.code);
+    const error = codes.find(code => ['AUTHORIZATION_CONTEXT_REQUIRED', 'PAIRING_NOT_APPROVED', 'USER_NOT_APPROVED', 'DEVICE_CREDENTIAL_REVOKED'].includes(code))
+      || (transport.diagnostics.some(item => item.name === 'cloud') ? 'CLOUD_UNREACHABLE' : 'NO_SYNC_TRANSPORT_AVAILABLE');
     return {
       status: 'failed',
-      error: 'NO_SYNC_TRANSPORT_AVAILABLE',
+      error,
+      diagnostics: transport.diagnostics,
       uploaded: 0,
       downloaded: 0,
       conflicts: 0,

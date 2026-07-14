@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS host_heartbeats (
   host_device_id TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'online',
   base_url TEXT,
+  lan_urls TEXT,
   last_snapshot_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -113,7 +114,20 @@ CREATE TABLE IF NOT EXISTS miniapp_tasks (
   result_payload TEXT,
   created_by TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  protocol_version INTEGER NOT NULL DEFAULT 1,
+  idempotency_key TEXT,
+  request_hash TEXT,
+  target_host_device_id TEXT,
+  selection_context TEXT,
+  phase TEXT,
+  progress INTEGER NOT NULL DEFAULT 0,
+  claimed_by TEXT,
+  claim_token_hash TEXT,
+  lease_expires_at TEXT,
+  row_version INTEGER NOT NULL DEFAULT 0,
+  error_code TEXT,
+  cancel_requested_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS cloud_devices (
@@ -128,7 +142,7 @@ CREATE TABLE IF NOT EXISTS cloud_devices (
 );
 
 CREATE TABLE IF NOT EXISTS desktop_device_pairings (
-  id TEXT PRIMARY KEY, device_id TEXT NOT NULL, device_name TEXT, phone TEXT NOT NULL, secret_hash TEXT NOT NULL,
+  id TEXT PRIMARY KEY, device_id TEXT NOT NULL, device_name TEXT, phone TEXT, secret_hash TEXT NOT NULL,
   pairing_code TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', expires_at TEXT NOT NULL,
   approved_by TEXT, user_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, exchanged_at TEXT
 );

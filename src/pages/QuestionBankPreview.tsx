@@ -23,7 +23,12 @@ import { splitSearchTerms } from '../utils/highlightText';
 import { toggleQuestionBasket, useQuestionBasketIds } from '../components/QuestionBasket';
 import QuestionPreviewCard from '../components/QuestionPreviewCard';
 import QuestionRenderer, { createKaTeXPhysicsOptions } from '../components/QuestionRenderer';
-import RichQuestionEditor from '../components/RichQuestionEditor';
+import QuestionStructureEditor from '../components/question-editor/QuestionStructureEditor';
+import { normalizeStructureOrder, validateQuestionStructure } from '../components/question-editor/questionStructureOperations';
+import type { QuestionRichDocument } from '../types/questionRichContent';
+import { createQuestionRichDocument } from '../types/questionRichContent';
+import { migrateLegacyQuestion, projectQuestionRichContent } from '../services/questionRichContent';
+import { createQuestionEditorSaveGate, createRichDocumentDirtyCoordinator, persistRemoteThenLocal, registerEditorSpaExitGuard, shouldProtectEditorExit } from '../components/question-editor/questionEditorSession'; // utf-8
 import {
   cacheQuestionTrees,
   ensureQuestionLocalStoreSeeded,
@@ -34,9 +39,9 @@ import katex from 'katex';
 import { applyPhysicsNotationToHTML } from '../utils/physicsNotation';
 import './QuestionBankPreview.css';
 
-const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
+// utf-8
 const API_BASE = getApiBase('/api/question-bank');
 const QUESTION_PAGE_SIZE = 10;
 
@@ -187,6 +192,9 @@ const QuestionBankPreview: React.FC = () => {
   const [previewQuestion, setPreviewQuestion] = useState<Question | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<Question | null>(null);
+  const [richDocument, setRichDocument] = useState<QuestionRichDocument | null>(null);
+  const [editorDirty, setEditorDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [versions, setVersions] = useState<QuestionVersion[]>([]);
   const [treeVisible, setTreeVisible] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -199,6 +207,26 @@ const QuestionBankPreview: React.FC = () => {
   const [questionBankStorageStatus, setQuestionBankStorageStatus] = useState<QuestionBankStorageStatus | null>(null);
   const [deleteContext, setDeleteContext] = useState<{ capabilities: string[]; deviceId?: string; userId?: string }>({ capabilities: [] });
   const [form] = Form.useForm();
+  const saveGate = React.useRef(createQuestionEditorSaveGate()).current;
+  const richDirtyCoordinator = React.useRef(createRichDocumentDirtyCoordinator(null)).current;
+  const formDirtyRef = React.useRef(false);
+  const editorQuestionType = Form.useWatch('type', form);
+
+  const openRichDocument = (document: QuestionRichDocument) => {
+    richDirtyCoordinator.reset(document);
+    formDirtyRef.current = false;
+    setRichDocument(document);
+    setEditorDirty(false);
+  };
+  const updateRichDocument = (document: QuestionRichDocument) => {
+    const richState = richDirtyCoordinator.update(document);
+    setRichDocument(document);
+    setEditorDirty(formDirtyRef.current || richState.dirty);
+  };
+  const markFormDirty = () => {
+    formDirtyRef.current = true;
+    setEditorDirty(true);
+  };
 
   useEffect(() => {
     try {
@@ -213,6 +241,17 @@ const QuestionBankPreview: React.FC = () => {
   const [knowledgeSelectedIds, setKnowledgeSelectedIds] = useState<(string | undefined)[]>([undefined]);
 
   const dbService = (window as any).dbService;
+
+  useEffect(() => {
+    const protectDirtyEditor = (event: BeforeUnloadEvent) => {
+      if (!shouldProtectEditorExit(modalVisible, editorDirty)) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', protectDirtyEditor);
+    return () => window.removeEventListener('beforeunload', protectDirtyEditor);
+  }, [modalVisible, editorDirty]);
+  useEffect(() => registerEditorSpaExitGuard(() => shouldProtectEditorExit(modalVisible, editorDirty)), [modalVisible, editorDirty]);
   const questionBankStorageUnavailable = !!(
     questionBankStorageStatus?.configured && questionBankStorageStatus.available === false
   );
@@ -537,8 +576,12 @@ const QuestionBankPreview: React.FC = () => {
   };
 
   const handleSave = async () => {
+    if (!richDocument) return;
+    const structureErrors = validateQuestionStructure(richDocument, form.getFieldValue('type'));
+    if (structureErrors.length > 0) { message.error(structureErrors[0]); return; }
     const values = await form.validateFields();
     const db = (window as any).dbService;
+    const projection = projectQuestionRichContent(richDocument);
 
     const knowledge_ids: string[] = [];
     if (values.knowledge_ids) {
@@ -557,15 +600,17 @@ const QuestionBankPreview: React.FC = () => {
       subject: values.subject,
       type: normalizeQuestionType(values.type),
       difficulty: values.difficulty,
-      content: values.content,
-      options: values.options ? values.options.split('\n').filter((s: string) => s.trim()) : [],
-      answer: values.answer,
-      analysis: values.analysis,
+      content: projection.stem,
+      options: projection.options.map(option => ({ label: option.label, content: option.content, is_correct: option.isCorrect })),
+      answer: projection.answer,
+      analysis: projection.explanation,
+      sub_questions: projection.subQuestions,
+      rich_content: richDocument,
       knowledge_ids,
       knowledge_point: values.knowledge_point || '',
       model_ids,
       model_point: model_ids.length > 0 ? modelNodes.find(n => n.id === model_ids[0])?.name || '' : '',
-      formulas: values.formulas ? values.formulas.split('\n').filter((s: string) => s.trim()) : [],
+      formulas: projection.formulas,
       tags: values.tags ? values.tags.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
       source: values.source || '',
       year: values.year || '',
@@ -576,25 +621,30 @@ const QuestionBankPreview: React.FC = () => {
       school: values.school || '',
       edit_status: '已编辑',
       status: editing?.status || 'draft',
-      has_image: !!editing?.has_image,
-      has_formula: !!editing?.has_formula,
+      has_image: projection.hasImage,
+      has_formula: projection.hasFormula,
       created_by: editing?.created_by || '',
     };
 
     if (editing) {
-      try {
-        await fetch(`${API_BASE}/questions/${editing.id}`, {
+      if (!db?.updateQuestion) throw new Error('LOCAL_QUESTION_STORE_UNAVAILABLE');
+      await persistRemoteThenLocal(
+        () => fetch(`${API_BASE}/questions/${editing.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...data, stem: data.content, explanation: data.analysis, knowledge_point_ids: data.knowledge_ids, model_point_ids: data.model_ids }),
-        });
-      } catch (_err) {}
-      db?.updateQuestion?.(editing.id, data);
+        }),
+        () => db.updateQuestion(editing.id, data),
+      );
     } else {
       try { await createNativeQuestionDraft(db, data); } catch (_error) { message.error('DRAFT_PROVENANCE_UNAVAILABLE'); return; }
     }
+    richDirtyCoordinator.markSaved(richDocument);
+    formDirtyRef.current = false;
     setModalVisible(false);
     setEditing(null);
+    setRichDocument(null);
+    setEditorDirty(false);
     setVersions([]);
     form.resetFields();
     loadData();
@@ -835,6 +885,7 @@ const QuestionBankPreview: React.FC = () => {
   const openEditModal = (r: Question) => {
     const db = (window as any).dbService;
     setEditing(r);
+    openRichDocument(normalizeStructureOrder(r.rich_content?.type === 'question-document' ? createQuestionRichDocument(r.rich_content) : migrateLegacyQuestion(r as any)));
     setVersions(db?.getLatestQuestionVersions?.(r.id, 5) || []);
     const knForm: Record<string, boolean> = {};
     (r.knowledge_ids || []).forEach(id => { knForm[id] = true; });
@@ -842,13 +893,10 @@ const QuestionBankPreview: React.FC = () => {
     (r.model_ids || []).forEach(id => { modelForm[id] = true; });
     form.setFieldsValue({
       subject: r.subject || '物理', type: normalizeQuestionType(r.type), difficulty: r.difficulty,
-      content: r.content, options: (r.options || []).join('\n'),
-      answer: r.answer, analysis: r.analysis,
       knowledge_point: r.knowledge_point,
       knowledge_ids: knForm,
       model_point: r.model_point,
       model_ids: modelForm,
-      formulas: (r.formulas || []).join('\n'),
       tags: (r.tags || []).join(','),
       source: r.source, year: r.year, grade: r.grade,
               semester: r.semester, exam_type: r.exam_type || '其他',
@@ -857,20 +905,18 @@ const QuestionBankPreview: React.FC = () => {
     setModalVisible(true);
   };
 
+  // utf-8 restore confirmation
   const restoreVersion = (version: QuestionVersion) => {
     if (!editing) return;
-    const db = (window as any).dbService;
-    const restored = db?.restoreQuestionVersion?.(editing.id, version.id);
-    if (!restored) {
-      message.error('版本恢复失败');
-      return;
-    }
-    message.success(`已恢复到版本 ${version.version_no}`);
-    setModalVisible(false);
-    setEditing(null);
-    setVersions([]);
-    form.resetFields();
-    loadData();
+    const restore = () => {
+      const db = (window as any).dbService;
+      const restored = db?.restoreQuestionVersion?.(editing.id, version.id);
+      if (!restored) { message.error('\u7248\u672c\u6062\u590d\u5931\u8d25'); return; }
+      message.success(`\u5df2\u6062\u590d\u5230\u7248\u672c ${version.version_no}`);
+      setModalVisible(false); setEditing(null); setRichDocument(null); setEditorDirty(false); setVersions([]); form.resetFields(); loadData();
+    };
+    if (!editorDirty) restore();
+    else Modal.confirm({ title: '\u5f53\u524d\u4fee\u6539\u5c1a\u672a\u4fdd\u5b58', content: '\u6062\u590d\u5386\u53f2\u7248\u672c\u5c06\u4e22\u5f03\u5f53\u524d\u4fee\u6539\uff0c\u662f\u5426\u7ee7\u7eed\uff1f', onOk: restore });
   };
 
   const columns: any[] = [
@@ -1309,12 +1355,19 @@ const QuestionBankPreview: React.FC = () => {
       <Modal
         title={editing ? '编辑题目' : '添加题目'}
         open={modalVisible}
-        onOk={handleSave}
-        onCancel={() => { setModalVisible(false); setEditing(null); setVersions([]); form.resetFields(); }}
+        onOk={async () => { setSaving(true); const result = await saveGate(handleSave); if (!result.ok && result.owned) message.error(`\u4fdd\u5b58\u5931\u8d25\uff1a${(result.error as any)?.message || '\u8bf7\u91cd\u8bd5'}`); if (result.owned) setSaving(false); }}
+        onCancel={() => {
+          const close = () => { setModalVisible(false); setEditing(null); setRichDocument(null); setEditorDirty(false); setVersions([]); form.resetFields(); };
+          if (!editorDirty) close();
+          else Modal.confirm({ title: '\u5c1a\u6709\u672a\u4fdd\u5b58\u7684\u4fee\u6539', content: '\u786e\u5b9a\u79bb\u5f00\u5417\uff1f', onOk: close });
+        }}
+        confirmLoading={saving}
+        maskClosable={!editorDirty}
+        keyboard={!editorDirty}
         width={720}
         destroyOnClose
       >
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" onValuesChange={markFormDirty}>
           <Row gutter={16}>
             <Col span={8}>
               <Form.Item name="subject" label="科目" rules={[{ required: true }]}>
@@ -1333,46 +1386,8 @@ const QuestionBankPreview: React.FC = () => {
             </Col>
           </Row>
 
-          <Form.Item name="content" label="题目内容" rules={[{ required: true }]}>
-            <RichQuestionEditor minHeight={180} placeholder="输入题干，可设置字体格式、插入公式和图片" />
-          </Form.Item>
-          <details style={{ marginBottom: 12, fontSize: 12, color: '#666', background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 4, padding: '6px 10px' }}>
-            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>物理学科正斜体规范</summary>
-            <div style={{ marginTop: 4, lineHeight: 1.8 }}>
-              <b>斜体</b>：物理量符号（<i>F</i>, <i>m</i>, <i>v</i>, <i>g</i>, <i>E</i>, <i>B</i>）、变量下标（<i>m<sub>i</sub></i>）<br/>
-              <b>正体</b>：单位（m, s, kg, N, A）、数学常数（π, e）、函数（sin, cos, log）、微分符号 d、化学元素下标（<i>m</i><sub>H</sub>）<br/>
-              <b>粗斜体</b>：向量（<b><i>F</i></b>, <b><i>v</i></b>）
-            </div>
-          </details>
-          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.content !== cur.content}>
-            {({ getFieldValue }) => {
-              const content = getFieldValue('content');
-              if (!content) return null;
-              return (
-                <div style={{ marginBottom: 16, padding: 12, background: '#fafafa', borderRadius: 6, border: '1px solid #e8e8e8' }}>
-                  <div style={{ fontSize: 12, color: '#999', marginBottom: 6 }}>预览：</div>
-                  <QuestionRenderer content={content} />
-                </div>
-              );
-            }}
-          </Form.Item>
-
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="options" label="选项（每行一个）">
-                <TextArea rows={3} placeholder="A. xxx&#10;B. xxx&#10;C. xxx&#10;D. xxx" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="answer" label="答案" rules={[{ required: true }]}>
-                <RichQuestionEditor minHeight={120} placeholder="输入答案，可插入公式和图片" />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Form.Item name="analysis" label="解析">
-            <RichQuestionEditor minHeight={140} placeholder="输入解析，可设置字体格式、插入公式和图片" />
-          </Form.Item>
+          {/* utf-8 rich structure */}
+          {richDocument && <QuestionStructureEditor value={richDocument} disabled={saving} questionType={editorQuestionType} onChange={updateRichDocument} />}
 
           <Divider orientation="left" style={{ fontSize: 12 }}>扩展信息</Divider>
 
@@ -1407,12 +1422,8 @@ const QuestionBankPreview: React.FC = () => {
           </Row>
 
           <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="formulas" label="公式（每行一个）">
-                <TextArea rows={2} placeholder="F=ma&#10;E=mc²" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
+            {/* utf-8 metadata */}
+            <Col span={24}>
               <Form.Item name="tags" label="标签（逗号分隔）">
                 <Input placeholder="高考、压轴题、易错" />
               </Form.Item>

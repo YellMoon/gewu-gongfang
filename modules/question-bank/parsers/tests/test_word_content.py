@@ -96,6 +96,37 @@ class WordContentWalkerTests(unittest.TestCase):
         self.assertEqual(comment_image.target, "word/media/comment.png")
         self.assertEqual([token.source.content_index for token in comment.tokens], list(range(len(comment.tokens))))
 
+    def test_table_tokens_preserve_row_cell_and_cell_paragraph_coordinates(self):
+        table = f'''<w:document xmlns:w="{W}"><w:body><w:tbl>
+          <w:tr><w:tc><w:p><w:r><w:t>A1</w:t></w:r></w:p><w:p><w:r><w:t>A2</w:t></w:r></w:p></w:tc>
+          <w:tc><w:p><w:r><w:t>B1</w:t></w:r></w:p></w:tc></w:tr>
+        </w:tbl></w:body></w:document>'''
+        fixture = DocxFixture().add("word/document.xml", table)
+        path = fixture.write()
+        try:
+            rows = read_word_part(path, "word/document.xml")
+            self.assertEqual(
+                [(row.tokens[0].text, row.tokens[0].source.table_row, row.tokens[0].source.table_cell, row.tokens[0].source.cell_paragraph) for row in rows],
+                [("A1", 0, 0, 0), ("A2", 0, 0, 1), ("B1", 0, 1, 0)],
+            )
+        finally:
+            fixture.cleanup()
+
+    def test_common_containers_are_walked_and_non_eq_simple_field_keeps_visible_result(self):
+        document = f'''<w:document xmlns:w="{W}" xmlns:m="{M}" xmlns:r="{R}" xmlns:a="{A}"><w:body><w:p>
+          <w:hyperlink><w:r><w:t>linked</w:t></w:r><m:oMath><m:r><m:t>x</m:t></m:r></m:oMath></w:hyperlink>
+          <w:sdt><w:sdtContent><w:r><w:t>controlled</w:t><w:drawing><a:blip r:embed="rImage"/></w:drawing></w:r></w:sdtContent></w:sdt>
+          <w:fldSimple w:instr=" DATE "><w:r><w:t>2026-07-13</w:t></w:r></w:fldSimple>
+        </w:p></w:body></w:document>'''
+        fixture = DocxFixture().add("word/document.xml", document).add("word/_rels/document.xml.rels", relationships_xml("document"))
+        path = fixture.write()
+        try:
+            tokens = read_word_part(path, "word/document.xml")[0].tokens
+            self.assertEqual([token.kind for token in tokens], ["text", "omml", "text", "image", "text"])
+            self.assertEqual([token.text for token in tokens if token.kind == "text"], ["linked", "controlled", "2026-07-13"])
+        finally:
+            fixture.cleanup()
+
 
 if __name__ == "__main__":
     unittest.main()

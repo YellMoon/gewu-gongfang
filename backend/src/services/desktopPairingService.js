@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 
-const CODES = Object.freeze({ REQUIRED:'PAIRING_INPUT_REQUIRED', NOT_FOUND:'PAIRING_NOT_FOUND',
+const CODES = Object.freeze({ REQUIRED:'PAIRING_INPUT_REQUIRED', IDENTITY:'PAIRING_IDENTITY_NOT_ALLOWED', NOT_FOUND:'PAIRING_NOT_FOUND',
   NOT_APPROVED:'PAIRING_NOT_APPROVED', EXPIRED:'PAIRING_EXPIRED', SECRET:'PAIRING_SECRET_INVALID', USED:'PAIRING_ALREADY_EXCHANGED' });
 function error(code) { const e = new Error(code); e.code = code; return e; }
 function normalizePhone(value) { return String(value || '').replace(/\D/g,''); }
@@ -11,13 +11,14 @@ function safeHashEqual(raw, expected) {
   return actual.length === stored.length && stored.length === 32 && crypto.timingSafeEqual(actual, stored);
 }
 function createDesktopPairing(db, input = {}, options = {}) {
-  const phone = normalizePhone(input.phone); const deviceId = String(input.deviceId || ''); const secret = String(input.secret || '');
-  if (!/^1\d{10}$/.test(phone) || !deviceId || deviceId.length > 128 || String(input.deviceName || '').length > 128 || secret.length < 32 || secret.length > 128) throw error(CODES.REQUIRED);
+  if (['phone', 'userId', 'role', 'teacherId'].some(key => Object.hasOwn(input, key))) throw error(CODES.IDENTITY);
+  const deviceId = String(input.deviceId || ''); const secret = String(input.secret || '');
+  if (!deviceId || deviceId.length > 128 || String(input.deviceName || '').length > 128 || secret.length < 32 || secret.length > 128) throw error(CODES.REQUIRED);
   const now = options.now || new Date().toISOString(); const expiresAt = options.expiresAt || new Date(Date.parse(now)+10*60*1000).toISOString();
   const pending=db.prepare("SELECT created_at FROM desktop_device_pairings WHERE device_id=? AND status='pending' ORDER BY created_at DESC LIMIT 1").get(deviceId);
   if(pending&&Date.parse(now)-Date.parse(pending.created_at)<5000)throw error('PAIRING_RATE_LIMITED');
   db.prepare("UPDATE desktop_device_pairings SET status='rejected',updated_at=? WHERE device_id=? AND status='pending'").run(now,deviceId);
-  const row = { id:uuidv4(), deviceId, deviceName:String(input.deviceName || deviceId), phone,
+  const row = { id:uuidv4(), deviceId, deviceName:String(input.deviceName || deviceId), phone:'',
     secretHash:hashSecret(secret), pairingCode:null, expiresAt };
   const insert=db.prepare(`INSERT INTO desktop_device_pairings
     (id,device_id,device_name,phone,secret_hash,pairing_code,status,expires_at,created_at,updated_at)

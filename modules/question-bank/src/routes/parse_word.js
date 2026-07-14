@@ -10,7 +10,7 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
-const PARSER_SCRIPT = path.join(__dirname, '..', 'parsers', 'parse_word.py');
+const PARSER_SCRIPT = path.join(__dirname, '..', '..', 'parsers', 'parse_word.py');
 const KNOWLEDGE_TREE = path.join(__dirname, '..', '..', 'data', 'knowledge_tree.json');
 
 // Ensure uploads dir
@@ -41,11 +41,14 @@ router.post('/', upload.single('file'), (req, res) => {
   const pythonBin = process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
   const proc = spawn(pythonBin, args, { timeout: 60000, windowsHide: true });
   let stdout = '', stderr = '';
+  let settled = false;
 
   proc.stdout.on('data', (data) => { stdout += data.toString(); });
   proc.stderr.on('data', (data) => { stderr += data.toString(); });
 
   proc.on('close', (code) => {
+    if (settled) return;
+    settled = true;
     // Cleanup uploaded file
     try { fs.unlinkSync(file.path); } catch(e) {}
 
@@ -63,6 +66,8 @@ router.post('/', upload.single('file'), (req, res) => {
   });
 
   proc.on('error', (err) => {
+    if (settled) return;
+    settled = true;
     try { fs.unlinkSync(file.path); } catch(e) {}
     res.status(500).json({ error: `Python进程启动失败: ${err.message}` });
   });

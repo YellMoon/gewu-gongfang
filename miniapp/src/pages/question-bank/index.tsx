@@ -1,323 +1,109 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, Input, Button, ScrollView } from '@tarojs/components';
+import { View, Text, Input, Button, ScrollView, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { createMiniappTask, getMiniappTaskResult, readCloudSnapshot } from '../../utils/api';
-import { getCachedList, setCachedList } from '../../utils/storage';
+import { cancelMiniappTask, createPaperTaskV2, getMiniappTaskResult, readQuestionPreview } from '../../utils/api';
+import { storage } from '../../utils/storage';
+// @ts-ignore shared CommonJS workflow is exercised by focused Node tests
+import * as workflow from '../../utils/questionPaperWorkflow';
 import './index.scss';
 
 type PaperAction = 'question-paper' | 'paper-export-word' | 'paper-export-pdf';
+type PreviewState = 'loading' | 'ready' | 'empty' | 'offline' | 'forbidden';
+interface QuestionPreview { id: string; type: string; stemPreview: string; status: string; }
+interface PaperTask { localId: string; confirmed: boolean; taskId?: string; status: string; phase: string; progress: number; createdAt: number; resultExpiresAt?: string | null; hostBaseUrl?: string | null; request: any; result?: any; error?: string; }
 
-interface QuestionPreview {
-  id: string;
-  stem?: string;
-  content?: string;
-  answer?: string;
-  explanation?: string;
-  analysis?: string;
-  subject?: string;
-  type?: string;
-  difficulty?: number;
-  source?: string;
-}
+const TASKS_KEY = 'question_paper_tasks_v2';
+const answers = [{ value: 'end', label: '\u7b54\u6848\u7edf\u4e00\u7f6e\u540e' }, { value: 'after-each', label: '\u7b54\u6848\u9010\u9898\u540e' }];
+const formulas = [{ value: 'word-native', label: 'Word native' }, { value: 'eq-field', label: 'EQ field' }, { value: 'mathtype-compatible', label: 'MathType' }, { value: 'latex-vector', label: 'LaTeX vector' }];
+const actionCopy: Record<PaperAction, string> = { 'question-paper': '\u521b\u5efa\u7ec4\u5377', 'paper-export-word': '\u5bfc\u51fa Word', 'paper-export-pdf': '\u5bfc\u51fa PDF' };
+const statusCopy: Record<string, string> = { draft: '\u672c\u5730\u8349\u7a3f\uff08\u672a\u83b7\u4e91\u786e\u8ba4\uff09', pending_host: '\u7b49\u5f85\u6570\u636e\u4e3b\u673a', processing: '\u5904\u7406\u4e2d', completed: '\u5df2\u5b8c\u6210', failed: '\u5931\u8d25', cancelled: '\u5df2\u53d6\u6d88' };
 
-function stripHtml(value = '') {
-  return String(value)
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function normalizeQuestions(payload?: Record<string, any>): QuestionPreview[] {
-  const questions = Array.isArray(payload?.questions) ? payload?.questions : [];
-  const contentByQuestionId = new Map<string, any>();
-  for (const content of Array.isArray(payload?.question_contents) ? payload?.question_contents : []) {
-    const questionId = content.question_id || content.questionId;
-    if (questionId && !contentByQuestionId.has(questionId)) contentByQuestionId.set(questionId, content);
-  }
-  return questions.map((question: any) => {
-    const content = contentByQuestionId.get(question.id) || {};
-    return {
-      ...question,
-      stem: question.stem || question.content || content.stem || '',
-      answer: question.answer || content.answer || '',
-      explanation: question.explanation || question.analysis || content.explanation || '',
-    };
-  });
-}
-
-const actionCopy: Record<PaperAction, { button: string; success: string }> = {
-  'question-paper': { button: '生成组卷', success: '组卷已创建' },
-  'paper-export-word': { button: '导出 Word', success: 'Word 导出已开始' },
-  'paper-export-pdf': { button: '导出 PDF', success: 'PDF 导出已开始' },
-};
+function absoluteHostUrl(base: string, endpoint: string) { return `${base.replace(/\/$/, '')}/${endpoint.replace(/^\//, '')}`; }
+function authHeader(extra: Record<string, string> = {}) { const token = Taro.getStorageSync('auth_token'); return { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extra }; }
 
 export default function QuestionBankPage() {
-  const [title, setTitle] = useState('练习试卷');
-  const [subject, setSubject] = useState('');
-  const [questionCount, setQuestionCount] = useState('20');
-  const [submittingAction, setSubmittingAction] = useState<PaperAction | null>(null);
-  const [lastTaskId, setLastTaskId] = useState('');
-  const [taskStatus, setTaskStatus] = useState('');
-  const [taskResultText, setTaskResultText] = useState('');
-  const [resultFileUrl, setResultFileUrl] = useState('');
-  const [searchText, setSearchText] = useState('');
+  const [title, setTitle] = useState('\u7ec3\u4e60\u8bd5\u5377');
   const [questions, setQuestions] = useState<QuestionPreview[]>([]);
-  const [questionLoading, setQuestionLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [searchText, setSearchText] = useState('');
+  const [previewState, setPreviewState] = useState<PreviewState>('loading');
+  const [previewMessage, setPreviewMessage] = useState('');
+  const [hostAvailable, setHostAvailable] = useState(false);
+  const [targetHostDeviceId, setTargetHostDeviceId] = useState('');
+  const [hostBaseUrl, setHostBaseUrl] = useState('');
+  const [answerIndex, setAnswerIndex] = useState(0);
+  const [formulaIndex, setFormulaIndex] = useState(0);
+  const [tasks, setTasks] = useState<PaperTask[]>(() => storage.get<PaperTask[]>(TASKS_KEY) || []);
+  const [submitting, setSubmitting] = useState<PaperAction | null>(null);
+  const persist = (next: PaperTask[]) => { setTasks(next); storage.set(TASKS_KEY, next); };
 
-  useEffect(() => {
-    loadQuestionPreview();
-  }, []);
-
-  const normalizedCount = useMemo(() => {
-    const count = Number.parseInt(questionCount, 10);
-    return Number.isFinite(count) && count > 0 ? count : 0;
-  }, [questionCount]);
-
-  const filteredQuestions = useMemo(() => {
-    const keyword = searchText.trim().toLowerCase();
-    const source = questions.slice(0, 80);
-    if (!keyword) return source.slice(0, 12);
-    return source
-      .filter(question => [
-        question.stem,
-        question.content,
-        question.answer,
-        question.explanation,
-        question.analysis,
-        question.subject,
-        question.type,
-        question.source,
-      ].some(value => stripHtml(String(value || '')).toLowerCase().includes(keyword)))
-      .slice(0, 12);
-  }, [questions, searchText]);
-
-  const loadQuestionPreview = async () => {
-    const cached = getCachedList<QuestionPreview>('questions');
-    if (cached.length > 0) setQuestions(cached);
-    setQuestionLoading(true);
+  const loadQuestions = async () => {
+    setPreviewState('loading'); setPreviewMessage('');
     try {
-      const res = await readCloudSnapshot('full');
-      const payload = res as any;
-      const nextSnapshot = payload.snapshot || payload.data?.snapshot || null;
-      const nextQuestions = normalizeQuestions(nextSnapshot?.payload);
-      if (nextQuestions.length > 0) {
-        setCachedList('questions', nextQuestions as any);
-        setQuestions(nextQuestions);
-      }
-    } catch {
-      if (cached.length === 0) setQuestions([]);
-    } finally {
-      setQuestionLoading(false);
-    }
+      const response: any = await readQuestionPreview();
+      if (!response.success) { setPreviewState(['USER_NOT_APPROVED', 'FORBIDDEN'].includes(String(response.code)) ? 'forbidden' : 'offline'); setPreviewMessage(response.error || 'unavailable'); return; }
+      const list = response.questions || response.data?.questions || [];
+      setQuestions(list); setHostAvailable(Boolean(response.hostAvailable)); setTargetHostDeviceId(response.targetHostDeviceId || ''); setHostBaseUrl(response.hostBaseUrl || '');
+      setPreviewState(list.length ? 'ready' : 'empty');
+      if (!response.hostAvailable) setPreviewMessage('\u6570\u636e\u4e3b\u673a\u5f53\u524d\u4e0d\u53ef\u7528');
+      else if (!response.hostBaseUrl) setPreviewMessage('\u4e3b\u673a\u672a\u767b\u8bb0\u5b89\u5168\u4e0b\u8f7d\u5730\u5740');
+    } catch { setPreviewState('offline'); setPreviewMessage('\u79bb\u7ebf\u6216\u4e91\u7aef\u4e0d\u53ef\u8fbe'); }
   };
 
-  const submit = async (taskType: PaperAction) => {
-    if (!title.trim()) {
-      Taro.showToast({ title: '请输入试卷名称', icon: 'none' });
-      return;
-    }
-    if (normalizedCount <= 0) {
-      Taro.showToast({ title: '请输入题目数量', icon: 'none' });
-      return;
-    }
-
-    setSubmittingAction(taskType);
+  const refreshTask = async (task: PaperTask) => {
+    if (!task.confirmed || !task.taskId) return task;
     try {
-      const res = await createMiniappTask(taskType, {
-        title: title.trim(),
-        subject: subject.trim(),
-        questionCount: normalizedCount,
-      });
+      const response: any = await getMiniappTaskResult(task.taskId); const cloud = response.task || response.data?.task;
+      if (!response.success || !cloud) return { ...task, error: response.error || 'not found' };
+      const sameTargetHost = targetHostDeviceId && targetHostDeviceId === task.request?.targetHostDeviceId;
+      return { ...task, status: cloud.status, phase: cloud.phase || cloud.status, progress: Number(cloud.progress || 0), resultExpiresAt: cloud.result_expires_at || task.resultExpiresAt, result: cloud.result_payload || task.result, hostBaseUrl: sameTargetHost ? (hostBaseUrl || task.hostBaseUrl) : task.hostBaseUrl, error: cloud.error_code || '' };
+    } catch { return { ...task, error: 'refresh failed' }; }
+  };
+  const refreshAll = async () => persist(await Promise.all(tasks.map(refreshTask)));
+  useEffect(() => { loadQuestions(); refreshAll(); }, []);
 
-      if (res.success) {
-        const payload = res as any;
-        const task = payload.task || payload.data?.task;
-        const taskId = task?.id || '';
-        setLastTaskId(taskId);
-        setTaskStatus(task?.status || 'pending_host');
-        setTaskResultText('');
-        setResultFileUrl('');
-        Taro.showToast({ title: actionCopy[taskType].success, icon: 'success' });
-      } else {
-        Taro.showToast({ title: res.error || '操作失败', icon: 'none' });
-      }
-    } catch {
-      Taro.showToast({ title: '网络异常，请稍后重试', icon: 'none' });
-    } finally {
-      setSubmittingAction(null);
-    }
+  const filtered = useMemo(() => { const key = searchText.trim().toLowerCase(); return questions.filter(q => !key || `${q.stemPreview} ${q.type}`.toLowerCase().includes(key)); }, [questions, searchText]);
+
+  const submit = async (taskType: PaperAction, source?: PaperTask) => {
+    const questionIds = source?.request?.payload?.questionIds || selectedIds;
+    if (!title.trim() || questionIds.length === 0) { Taro.showToast({ title: questionIds.length ? '\u8bf7\u8f93\u5165\u8bd5\u5377\u540d\u79f0' : '\u8bf7\u81f3\u5c11\u9009\u62e9\u4e00\u9053\u9898', icon: 'none' }); return; }
+    const draft: PaperTask = workflow.createTaskDraft({ taskType, questionIds, title: source?.request?.payload?.title || title.trim(), answerPosition: source?.request?.payload?.answerPosition || answers[answerIndex].value, formulaMode: source?.request?.payload?.formulaMode || formulas[formulaIndex].value, targetHostDeviceId }, { idFactory: () => `${Date.now()}-${Math.random().toString(36).slice(2)}` });
+    draft.hostBaseUrl = hostBaseUrl || source?.hostBaseUrl || null;
+    persist([draft, ...tasks]);
+    if (!hostAvailable || !targetHostDeviceId) return;
+    setSubmitting(taskType);
+    try {
+      const request = draft.request; const response: any = await createPaperTaskV2(request.taskType, request.payload, request.targetHostDeviceId, request.idempotencyKey); const cloud = response.task || response.data?.task;
+      if (!response.success || !cloud) throw new Error(response.error || 'cloud not confirmed');
+      persist([{ ...workflow.confirmTaskDraft(draft, cloud), hostBaseUrl: draft.hostBaseUrl }, ...tasks]);
+    } catch (error: any) { persist([{ ...draft, error: error?.message || 'cloud not confirmed' }, ...tasks]); }
+    finally { setSubmitting(null); }
   };
 
-  const isSubmitting = (taskType: PaperAction) => submittingAction === taskType;
-  const createPaper = () => submit('question-paper');
-  const exportWord = () => submit('paper-export-word');
-  const exportPdf = () => submit('paper-export-pdf');
-  const refreshTaskResult = async () => {
-    if (!lastTaskId) {
-      Taro.showToast({ title: '暂无可查询记录', icon: 'none' });
-      return;
-    }
+  const cancelTask = async (task: PaperTask) => { if (!workflow.canCancel(task) || !task.taskId) return; const response: any = await cancelMiniappTask(task.taskId); if (response.success) persist(tasks.map(item => item.localId === task.localId ? { ...item, status: 'cancelled', phase: 'cancelled' } : item)); };
+  const exchangeAccess = async (task: PaperTask) => {
+    const endpoint = task.result?.accessEndpoint || task.result?.accessUrl;
+    if (!task.hostBaseUrl || !endpoint) throw new Error('host URL unavailable');
+    const response = await Taro.request({ url: absoluteHostUrl(task.hostBaseUrl, endpoint), method: 'GET', header: authHeader(), timeout: 30000 });
+    if (response.statusCode !== 200 || !(response.data as any)?.success) throw new Error((response.data as any)?.error || 'access denied');
+    return (response.data as any).data;
+  };
+  const downloadTask = async (task: PaperTask) => {
+    if (workflow.isExpired(task)) { Taro.showToast({ title: '\u6587\u4ef6\u5df2\u8fc7\u671f', icon: 'none' }); return; }
     try {
-      const res = await getMiniappTaskResult(lastTaskId);
-      const payload = res as any;
-      const task = payload.task || payload.data?.task;
-      if (!res.success || !task) {
-        Taro.showToast({ title: '未查询到结果', icon: 'none' });
-        return;
-      }
-      setTaskStatus(task.status || '');
-      const result = task.result_payload || {};
-      setTaskResultText(result.fileName || result.title || result.error || '');
-      setResultFileUrl(result.fileUrl || '');
-    } catch {
-      Taro.showToast({ title: '查询失败，请稍后重试', icon: 'none' });
-    }
+      let access = await exchangeAccess(task);
+      const download = () => Taro.downloadFile({ url: absoluteHostUrl(task.hostBaseUrl || '', access.fileUrl), header: authHeader({ 'x-gewu-artifact-token': access.token }) });
+      let file = await download(); if (file.statusCode === 410) { access = await exchangeAccess(task); file = await download(); }
+      if (file.statusCode !== 200) throw new Error('download failed'); await Taro.openDocument({ filePath: file.tempFilePath, showMenu: true });
+    } catch (error: any) { Taro.showToast({ title: error?.message || 'download failed', icon: 'none' }); }
   };
 
-  const openResultFile = async () => {
-    if (!resultFileUrl) {
-      Taro.showToast({ title: '暂无可打开文件', icon: 'none' });
-      return;
-    }
-    try {
-      const downloaded = await Taro.downloadFile({ url: resultFileUrl });
-      if (downloaded.statusCode !== 200) throw new Error('download failed');
-      await Taro.openDocument({
-        filePath: downloaded.tempFilePath,
-        showMenu: true,
-      });
-    } catch {
-      Taro.showToast({ title: '文件打开失败', icon: 'none' });
-    }
-  };
-
-  const actions: Array<{ taskType: PaperAction; onClick: () => void }> = [
-    { taskType: 'question-paper', onClick: createPaper },
-    { taskType: 'paper-export-word', onClick: exportWord },
-    { taskType: 'paper-export-pdf', onClick: exportPdf },
-  ];
-
-  return (
-    <View className="question-bank-page">
-      <View className="hero-card">
-        <Text className="hero-title">题库组卷与导出</Text>
-        <Text className="hero-subtitle">选择组卷参数后，可生成试卷并导出 Word 或 PDF。</Text>
-      </View>
-
-      <View className="form-card">
-        <View className="form-row">
-          <Text className="field-label">试卷名称</Text>
-          <Input
-            className="field-input"
-            value={title}
-            placeholder="请输入试卷名称"
-            onInput={(event) => setTitle(event.detail.value)}
-          />
-        </View>
-
-        <View className="form-row">
-          <Text className="field-label">科目</Text>
-          <Input
-            className="field-input"
-            value={subject}
-            placeholder="可选"
-            onInput={(event) => setSubject(event.detail.value)}
-          />
-        </View>
-
-        <View className="form-row">
-          <Text className="field-label">题目数量</Text>
-          <Input
-            className="field-input"
-            type="number"
-            value={questionCount}
-            placeholder="请输入题目数量"
-            onInput={(event) => setQuestionCount(event.detail.value)}
-          />
-        </View>
-      </View>
-
-      <View className="action-card">
-        {actions.map(({ taskType, onClick }) => (
-          <Button
-            key={taskType}
-            className={`action-button ${taskType}`}
-            loading={isSubmitting(taskType)}
-            disabled={Boolean(submittingAction)}
-            onClick={onClick}
-          >
-            {actionCopy[taskType].button}
-          </Button>
-        ))}
-      </View>
-
-      <View className="preview-card">
-        <View className="preview-header">
-          <View>
-            <Text className="preview-title">{'\u8bd5\u9898\u9884\u89c8'}</Text>
-            <Text className="preview-subtitle">{'\u4ec5\u5c55\u793a\u4e3b\u673a\u5df2\u53d1\u5e03\u7684\u53ef\u7528\u9898\u76ee'}</Text>
-          </View>
-          <Button className="preview-refresh" loading={questionLoading} onClick={loadQuestionPreview}>
-            {'\u5237\u65b0'}
-          </Button>
-        </View>
-        <Input
-          className="preview-search"
-          value={searchText}
-          placeholder={'\u641c\u7d22\u9898\u5e72\u3001\u7b54\u6848\u6216\u6765\u6e90'}
-          onInput={(event) => setSearchText(event.detail.value)}
-        />
-        <ScrollView className="question-preview-list" scrollY>
-          {filteredQuestions.length > 0 ? filteredQuestions.map((question, index) => (
-            <View key={question.id || index} className="question-preview-item">
-              <View className="question-preview-meta">
-                <Text>{question.subject || '\u672a\u5206\u79d1'}</Text>
-                <Text>{question.type || '\u9898\u76ee'}</Text>
-                {question.difficulty ? <Text>{'\u96be\u5ea6'} {question.difficulty}</Text> : null}
-              </View>
-              <Text className="question-preview-stem">
-                {stripHtml(question.stem || question.content || '\u6682\u65e0\u9898\u5e72')}
-              </Text>
-              {(question.answer || question.explanation || question.analysis) ? (
-                <View className="question-preview-answer">
-                  {question.answer ? <Text>{'\u7b54\u6848\uff1a'}{stripHtml(question.answer)}</Text> : null}
-                  {(question.explanation || question.analysis) ? (
-                    <Text>{'\u89e3\u6790\uff1a'}{stripHtml(question.explanation || question.analysis)}</Text>
-                  ) : null}
-                </View>
-              ) : null}
-            </View>
-          )) : (
-            <View className="question-preview-empty">
-              <Text>{questionLoading ? '\u6b63\u5728\u52a0\u8f7d\u8bd5\u9898' : '\u6682\u65e0\u53ef\u9884\u89c8\u8bd5\u9898'}</Text>
-            </View>
-          )}
-        </ScrollView>
-      </View>
-
-      {lastTaskId ? (
-        <View className="result-card">
-          <View className="result-row">
-            <Text className="result-label">最近记录</Text>
-            <Text className="result-value">{lastTaskId}</Text>
-          </View>
-          <View className="result-row">
-            <Text className="result-label">状态</Text>
-            <Text className="result-value">{taskStatus || '处理中'}</Text>
-          </View>
-          {taskResultText ? (
-            <Text className="result-text">{taskResultText}</Text>
-          ) : null}
-          <Button className="result-button" onClick={refreshTaskResult}>查看结果</Button>
-          {resultFileUrl ? (
-            <Button className="result-button result-open-button" onClick={openResultFile}>打开文件</Button>
-          ) : null}
-        </View>
-      ) : null}
-    </View>
-  );
+  const stateText = previewState === 'loading' ? '\u6b63\u5728\u52a0\u8f7d\u9898\u76ee' : previewState === 'empty' ? '\u4e91\u7aef\u6682\u65e0\u53ef\u7528\u9898\u76ee' : previewState === 'forbidden' ? '\u5f53\u524d\u8d26\u53f7\u65e0\u6743\u8bfb\u53d6\u9898\u5e93' : '\u79bb\u7ebf\u6216\u4e91\u7aef\u4e0d\u53ef\u8fbe';
+  return <View className='question-bank-page'>
+    <View className='hero-card'><Text className='hero-title'>{'\u9898\u5e93\u7ec4\u5377\u4e0e\u5bfc\u51fa'}</Text><Text className='hero-subtitle'>{'\u6309\u9009\u62e9\u987a\u5e8f\u63d0\u4ea4\u771f\u5b9e\u9898\u76ee ID'}</Text></View>
+    <View className='form-card'><View className='form-row'><Text className='field-label'>{'\u8bd5\u5377\u540d\u79f0'}</Text><Input className='field-input' value={title} onInput={e => setTitle(e.detail.value)} /></View><Picker mode='selector' range={answers.map(x => x.label)} value={answerIndex} onChange={e => setAnswerIndex(Number(e.detail.value))}><View className='picker-row'>{answers[answerIndex].label}</View></Picker><Picker mode='selector' range={formulas.map(x => x.label)} value={formulaIndex} onChange={e => setFormulaIndex(Number(e.detail.value))}><View className='picker-row'>{formulas[formulaIndex].label}</View></Picker></View>
+    <View className='preview-card'><View className='preview-header'><View><Text className='preview-title'>{`\u9009\u62e9\u9898\u76ee (${selectedIds.length})`}</Text><Text className='preview-subtitle'>{hostAvailable ? targetHostDeviceId : '\u4e3b\u673a\u4e0d\u53ef\u7528'}</Text></View><Button className='preview-refresh' onClick={loadQuestions}>{'\u5237\u65b0'}</Button></View><Input className='preview-search' value={searchText} onInput={e => setSearchText(e.detail.value)} />{previewState !== 'ready' ? <View className={`question-preview-empty state-${previewState}`}><Text>{stateText}</Text><Text>{previewMessage}</Text></View> : <ScrollView className='question-preview-list' scrollY>{filtered.map(q => { const order = selectedIds.indexOf(q.id); return <View key={q.id} className={`question-preview-item ${order >= 0 ? 'selected' : ''}`} onClick={() => setSelectedIds(workflow.toggleOrderedSelection(selectedIds, q.id))}><View className='question-preview-meta'><Text>{order >= 0 ? `#${order + 1}` : '+'}</Text><Text>{q.type}</Text><Text>{q.status}</Text></View><Text className='question-preview-stem'>{q.stemPreview}</Text></View>; })}</ScrollView>}</View>
+    <View className='action-card'>{(['question-paper', 'paper-export-word', 'paper-export-pdf'] as PaperAction[]).map(a => <Button key={a} className={`action-button ${a}`} loading={submitting === a} disabled={Boolean(submitting) || selectedIds.length === 0} onClick={() => submit(a)}>{actionCopy[a]}</Button>)}</View>
+    <View className='result-card'><View className='preview-header'><Text className='preview-title'>{'\u4efb\u52a1\u8bb0\u5f55'}</Text><Button className='preview-refresh' onClick={refreshAll}>{'\u6062\u590d/\u5237\u65b0'}</Button></View>{tasks.length === 0 ? <Text className='result-text'>{'\u6682\u65e0\u4efb\u52a1'}</Text> : tasks.map(task => <View key={task.localId} className='task-item'><Text className='result-text'>{task.request.payload.title}</Text><Text className='result-value'>{statusCopy[task.status] || task.status} / {task.phase} / {task.progress}%</Text>{task.error ? <Text className='task-error'>{task.error}</Text> : null}<View className='task-actions'>{workflow.canCancel(task) ? <Button size='mini' onClick={() => cancelTask(task)}>{'\u53d6\u6d88'}</Button> : null}{(task.status === 'draft' || workflow.canRetry(task)) ? <Button size='mini' onClick={() => submit(task.request.taskType, task)}>{'\u91cd\u8bd5'}</Button> : null}{task.status === 'completed' && task.result?.artifactId ? <Button size='mini' onClick={() => downloadTask(task)}>{'\u4e0b\u8f7d'}</Button> : null}</View></View>)}</View>
+  </View>;
 }

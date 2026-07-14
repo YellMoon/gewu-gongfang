@@ -164,6 +164,12 @@ function verifyBinding(db, binding) {
   return inspected;
 }
 
+function resolveBoundQuestionBankRoot(db) {
+  const binding = activeBinding(db);
+  verifyBinding(db, binding);
+  return path.resolve(binding.root_path);
+}
+
 function migrateBoundLegacyQuestions({ db, root, authz = {}, runtime = {}, tenantId = 'default' }) {
   assertTrustedHost(authz, runtime, { superAdminOnly: true });
   const binding = activeBinding(db); verifyBinding(db, binding);
@@ -493,4 +499,5 @@ module.exports = {
   restoreCommittedQuestion,
   updateCommittedQuestion,
   createTrustedInternalStorageUpdateContext,
+  resolveBoundQuestionBankRoot,
 };
