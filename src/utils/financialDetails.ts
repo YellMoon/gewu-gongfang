@@ -128,16 +128,6 @@ const activePricing = (pricing: StudentCoursePricing): boolean =>
 const normalizeIds = (ids?: string[]): string[] =>
   Array.isArray(ids) ? ids.filter(Boolean) : [];
 
-const isPureInstitutionCourse = (course?: Course): boolean =>
-  course?.source_type === CourseSourceType.INSTITUTION && normalizeIds(course.student_pricings?.map(item => item.student_id)).length === 0;
-
-const buildInstitutionPricing = (course?: Course): StudentCoursePricing => ({
-  student_id: INSTITUTION_UNBOUND_STUDENT_ID,
-  tuition: Number(course?.price_tuition || 0),
-  teacher_fee: Number(course?.price_teacher || 0),
-  status: StudentAttendanceStatus.NORMAL,
-});
-
 const selectSnapshotPricings = (
   schedule: Pick<ScheduleLike, 'start_time' | 'end_time'> & Partial<ScheduleLike>,
   course?: Course,
@@ -146,7 +136,6 @@ const selectSnapshotPricings = (
   if (overridePricings !== undefined && overridePricings.length > 0) return overridePricings;
   if (schedule.student_pricings !== undefined && schedule.student_pricings.length > 0) return schedule.student_pricings;
   if (course?.student_pricings && course.student_pricings.length > 0) return course.student_pricings;
-  if (isPureInstitutionCourse(course)) return [buildInstitutionPricing(course)];
   return [];
 };
 
@@ -255,9 +244,7 @@ export function buildCourseRefreshFinancialSnapshot(
   course?: Course
 ): ScheduleFinancialSnapshot {
   const coursePricings = course?.student_pricings || [];
-  const refreshPricings = coursePricings.length > 0
-    ? coursePricings
-    : (isPureInstitutionCourse(course) ? [buildInstitutionPricing(course)] : []);
+  const refreshPricings = coursePricings;
 
   return buildScheduleFinancialSnapshot(
     {
@@ -302,13 +289,6 @@ const getSchedulePricings = (
 
   if (coursePricings.length > 0) {
     return { pricings: coursePricings, pricingSource: 'course' };
-  }
-
-  if (isPureInstitutionCourse(course)) {
-    return {
-      pricings: [buildInstitutionPricing(course)],
-      pricingSource: 'institution',
-    };
   }
 
   return {
