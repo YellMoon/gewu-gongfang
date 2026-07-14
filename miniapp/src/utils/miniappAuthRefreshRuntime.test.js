@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { createAuthRefreshRuntime } = require('./miniappAuthRefreshRuntime');
+const { createAuthRefreshRuntime, extractRefreshToken } = require('./miniappAuthRefreshRuntime');
 
 const normalIdentity = { id: 'admin-1', role: 'admin', user_type: 'admin' };
 const reviewIdentity = {
@@ -8,6 +8,11 @@ const reviewIdentity = {
 };
 
 async function main() {
+  assert.strictEqual(extractRefreshToken({ success: true, token: ' gateway-token ' }), 'gateway-token', 'the real gateway top-level refresh token must be accepted');
+  assert.strictEqual(extractRefreshToken({ success: false, token: 'poison' }), '', 'failed refresh responses must never yield a token');
+  assert.strictEqual(extractRefreshToken({ success: true, token: 123 }), '', 'refresh tokens must be non-empty strings');
+  assert.strictEqual(extractRefreshToken({ success: true, token: '   ' }), '');
+
   let token = 'normal-old';
   let identity = normalIdentity;
   let resolveRefresh;
@@ -39,10 +44,23 @@ async function main() {
     readToken: () => token,
     readIdentity: () => identity,
     writeToken: value => { token = value; },
-    requestRefresh: async originalToken => originalToken === 'normal-old' ? 'normal-new' : '',
+    requestRefresh: async originalToken => extractRefreshToken(
+      originalToken === 'normal-old' ? { success: true, token: 'normal-new' } : { success: false },
+    ),
   });
   assert.strictEqual(await normalRuntime.refresh(), true, 'unchanged normal session should still refresh');
   assert.strictEqual(token, 'normal-new');
+
+  token = 'normal-old';
+  let failedWrites = 0;
+  const failedRuntime = createAuthRefreshRuntime({
+    readToken: () => token,
+    readIdentity: () => normalIdentity,
+    writeToken: () => { failedWrites += 1; },
+    requestRefresh: async () => extractRefreshToken({ success: false, token: 'must-not-commit' }),
+  });
+  assert.strictEqual(await failedRuntime.refresh(), false, 'a rejected gateway refresh must fail before logout handling');
+  assert.strictEqual(failedWrites, 0);
 
   token = 'review-token';
   identity = reviewIdentity;
