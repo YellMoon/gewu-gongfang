@@ -108,7 +108,7 @@ function normalizedQuestion(question = {}, index = 0) {
     id: String(question.id || question.question_id || `question-${index + 1}`),
     number: index + 1,
     stem: [...richStem, ...(richStem.some(segment => segment.type === 'image') ? [] : assetImages)],
-    options: options.map(item => ({ label: item.label || '', content: documentSegments(item.content) })),
+    options: options.map(item => ({ label: item.label || '', isCorrect: item.isCorrect === true || item.is_correct === true, content: documentSegments(item.content) })),
     subs: subQuestions.map(item => ({ label: item.label || '', content: segmentsFor(item.content), answer: segmentsFor(item.answer) })),
     answer: rich ? documentSegments(rich.answer) : legacySegments(question.answer || ''),
     analysis: rich ? documentSegments(rich.analysis) : legacySegments(question.explanation || question.analysis || ''),
@@ -554,10 +554,6 @@ function templateDerivedPackage(buffer, answerPosition) {
   const templateXml = strFromU8(template['word/document.xml']);
   const templateSections = [...templateXml.matchAll(/<w:sectPr[\s\S]*?<\/w:sectPr>/g)].map(match => match[0]);
   const selected = answerPosition === 'end' ? templateSections.slice(-2) : templateSections.slice(0, 1);
-  let sectionIndex = 0;
-  generatedXml = generatedXml.replace(/<w:sectPr[\s\S]*?<\/w:sectPr>/g, () => {
-    return selected[Math.min(sectionIndex++, selected.length - 1)] || '';
-  });
   let generatedBody = generatedXml.match(/<w:body>([\s\S]*)<\/w:body>/)?.[1];
   if (!generatedBody) throw new Error('generated DOCX body is missing');
 
@@ -582,6 +578,10 @@ function templateDerivedPackage(buffer, answerPosition) {
     generatedBody = generatedBody.replace(new RegExp(`r:(?:id|embed|link)="${oldId}"`, 'g'), match => match.replace(oldId, newId));
     addedRelationships.push(updated);
   });
+  let sectionIndex = 0;
+  generatedBody = generatedBody.replace(/<w:sectPr[\s\S]*?<\/w:sectPr>/g, () => {
+    return selected[Math.min(sectionIndex++, selected.length - 1)] || '';
+  });
   templateRels = templateRels.replace('</Relationships>', `${addedRelationships.join('')}</Relationships>`);
   output['word/_rels/document.xml.rels'] = strToU8(templateRels);
   output['word/document.xml'] = strToU8(templateXml.replace(/<w:body>[\s\S]*<\/w:body>/, `<w:body>${generatedBody}</w:body>`));
@@ -594,17 +594,34 @@ function templateDerivedPackage(buffer, answerPosition) {
   }
   let types = strFromU8(template['[Content_Types].xml']);
   const generatedTypes = strFromU8(generated['[Content_Types].xml']);
+  const missingDefaults = [];
+  const missingOverrides = [];
   for (const row of generatedTypes.match(/<(?:Default|Override)\b[^>]+\/>/g) || []) {
     const extension = row.match(/Extension="([^"]+)"/)?.[1];
     const partName = row.match(/PartName="([^"]+)"/)?.[1];
-    if ((extension && !new RegExp(`Extension="${extension}"`, 'i').test(types)) || (partName && !types.includes(`PartName="${partName}"`))) types = types.replace('</Types>', `${row}</Types>`);
+    if (extension && !new RegExp(`Extension="${extension}"`, 'i').test(`${types}${missingDefaults.join('')}`)) missingDefaults.push(row);
+    if (partName && !`${types}${missingOverrides.join('')}`.includes(`PartName="${partName}"`)) missingOverrides.push(row);
   }
+  if (missingDefaults.length) {
+    types = /<Override\b/.test(types)
+      ? types.replace(/<Override\b/, `${missingDefaults.join('')}<Override`)
+      : types.replace('</Types>', `${missingDefaults.join('')}</Types>`);
+  }
+  if (missingOverrides.length) types = types.replace('</Types>', `${missingOverrides.join('')}</Types>`);
   output['[Content_Types].xml'] = strToU8(types);
   return Buffer.from(zipSync(output, { level: 6 }));
 }
 
 function hasContent(segments) { return segments.some(item => item.text || item.latex || item.src); }
 function plainText(segments) { return segments.map(item => item.text || (item.latex ? `[${item.latex}]` : '')).join('').trim(); }
+function choiceSummaryAnswer(question) {
+  const structured = question.options.filter(option => option.isCorrect).map(option => String(option.label || '').trim()).filter(Boolean);
+  if (structured.length) return structured.join('');
+  const textOnly = question.answer.map(item => item.text || '').join('').trim();
+  const optionLabels = new Set(question.options.map(option => String(option.label || '').trim().toUpperCase()).filter(Boolean));
+  const matched = [...new Set((textOnly.toUpperCase().match(/[A-Z]+/g) || []).join('').split('').filter(label => optionLabels.has(label)))];
+  return matched.join('') || textOnly || '\u672a\u586b\u5199';
+}
 function sectionTitle(type, index) {
   const labels = { '\u5355\u9009\u9898': '\u5355\u9009\u9898', '\u591a\u9009\u9898': '\u591a\u9009\u9898', '\u5224\u65ad\u9898': '\u5224\u65ad\u9898', '\u5b9e\u9a8c\u9898': '\u5b9e\u9a8c\u9898', '\u89e3\u7b54\u9898': '\u89e3\u7b54\u9898' };
   const numerals = ['\u4e00', '\u4e8c', '\u4e09', '\u56db', '\u4e94', '\u516d'];
@@ -622,7 +639,7 @@ async function writeDocx(filePath, payload, sourceQuestions, options = {}) {
     new Paragraph({ alignment: 'center', children: [new TextRun({ text: payload.title || LABELS.defaultTitle, bold: true, size: 34, font: 'SimSun' })] }),
     new Paragraph({ alignment: 'center', children: [new TextRun({ text: '\u5b66\u6821:___________\u59d3\u540d\uff1a___________\u73ed\u7ea7\uff1a___________\u8003\u53f7\uff1a___________', font: 'SimSun', size: 20 })] }),
   ];
-  const addQuestionSegments = (prefix, segments, bold = false) => questionChildren.push(new Paragraph({ spacing: { after: 100, line: 360 }, children: [new TextRun({ text: prefix, bold, font: 'SimSun', size: 22 }), ...runsForSegments(segments, formulas)] }));
+  const addQuestionSegments = (prefix, segments, bold = false, paragraph = {}) => questionChildren.push(new Paragraph({ spacing: { after: 100, line: 360 }, ...paragraph, children: [new TextRun({ text: prefix, bold, font: 'SimSun', size: 22 }), ...runsForSegments(segments, formulas)] }));
   let previousType = null; let typeIndex = -1;
   questions.forEach(question => {
     if (question.type !== previousType) {
@@ -633,10 +650,10 @@ async function writeDocx(filePath, payload, sourceQuestions, options = {}) {
     question.options.forEach(option => addQuestionSegments(`${option.label}. `, option.content));
     question.subs.forEach(sub => addQuestionSegments(`${sub.label} `, sub.content, true));
     if (answerPosition === 'after-each') {
-      question.subs.forEach(sub => addQuestionSegments(`${sub.label} ${LABELS.answer}`, sub.answer, true));
-      addQuestionSegments('\u7b54\u6848\uff1a', question.answer, true);
-      addQuestionSegments('\u3010\u77e5\u8bc6\u70b9\u3011', hasContent(question.knowledge) ? question.knowledge : legacySegments('\u672a\u586b\u5199'));
-      addQuestionSegments('\u3010\u89e3\u6790\u3011', hasContent(question.analysis) ? question.analysis : legacySegments('\u672a\u586b\u5199'));
+      question.subs.forEach(sub => addQuestionSegments(`${sub.label} ${LABELS.answer}`, sub.answer, true, { keepNext: true, keepLines: true }));
+      addQuestionSegments('\u7b54\u6848\uff1a', question.answer, true, { keepNext: true, keepLines: true });
+      addQuestionSegments('\u3010\u77e5\u8bc6\u70b9\u3011', hasContent(question.knowledge) ? question.knowledge : legacySegments('\u672a\u586b\u5199'), false, { keepNext: true, keepLines: true });
+      addQuestionSegments('\u3010\u89e3\u6790\u3011', hasContent(question.analysis) ? question.analysis : legacySegments('\u672a\u586b\u5199'), false, { keepLines: true });
     }
   });
   const sections = [{ properties: {}, children: questionChildren }];
@@ -645,14 +662,14 @@ async function writeDocx(filePath, payload, sourceQuestions, options = {}) {
     const choice = questions.filter(question => CHOICE_TYPES.has(question.type));
     if (choice.length) answerChildren.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: chunks(choice).flatMap(group => [
       new TableRow({ children: [new TableCell({ children: [new Paragraph('\u9898\u53f7')] }), ...group.map(question => new TableCell({ children: [new Paragraph({ alignment: AlignmentType.CENTER, text: String(question.number) })] }))] }),
-      new TableRow({ children: [new TableCell({ children: [new Paragraph('\u7b54\u6848')] }), ...group.map(question => new TableCell({ children: [new Paragraph({ alignment: AlignmentType.CENTER, text: plainText(question.answer) || '\u672a\u586b\u5199' })] }))] }),
+      new TableRow({ children: [new TableCell({ children: [new Paragraph('\u7b54\u6848')] }), ...group.map(question => new TableCell({ children: [new Paragraph({ alignment: AlignmentType.CENTER, text: choiceSummaryAnswer(question) })] }))] }),
     ]) }));
-    const addAnswerSegments = (prefix, segments, bold = false) => answerChildren.push(new Paragraph({ spacing: { after: 100, line: 360 }, children: [new TextRun({ text: prefix, bold, font: 'SimSun', size: 22 }), ...runsForSegments(segments, formulas)] }));
+    const addAnswerSegments = (prefix, segments, bold = false, paragraph = {}) => answerChildren.push(new Paragraph({ spacing: { after: 100, line: 360 }, ...paragraph, children: [new TextRun({ text: prefix, bold, font: 'SimSun', size: 22 }), ...runsForSegments(segments, formulas)] }));
     questions.forEach(question => {
-      addAnswerSegments(`${question.number}\uff0e`, question.answer, true);
-      question.subs.forEach(sub => addAnswerSegments(`${sub.label} ${LABELS.answer}`, sub.answer, true));
-      addAnswerSegments('\u3010\u77e5\u8bc6\u70b9\u3011', hasContent(question.knowledge) ? question.knowledge : legacySegments('\u672a\u586b\u5199'));
-      addAnswerSegments('\u3010\u89e3\u6790\u3011', hasContent(question.analysis) ? question.analysis : legacySegments('\u672a\u586b\u5199'));
+      addAnswerSegments(`${question.number}\uff0e`, question.answer, true, { keepNext: true, keepLines: true });
+      question.subs.forEach(sub => addAnswerSegments(`${sub.label} ${LABELS.answer}`, sub.answer, true, { keepNext: true, keepLines: true }));
+      addAnswerSegments('\u3010\u77e5\u8bc6\u70b9\u3011', hasContent(question.knowledge) ? question.knowledge : legacySegments('\u672a\u586b\u5199'), false, { keepNext: true, keepLines: true });
+      addAnswerSegments('\u3010\u89e3\u6790\u3011', hasContent(question.analysis) ? question.analysis : legacySegments('\u672a\u586b\u5199'), false, { keepLines: true });
     });
     sections.push({ properties: { type: SectionType.NEXT_PAGE }, children: answerChildren });
   }
@@ -677,6 +694,7 @@ async function writePdf(filePath, payload, sourceQuestions, options = {}) {
   const formulaMode = resolveFormulaMode(payload.formulaMode || payload.formula_mode);
   const formulas = await prepareFormulaRows(formulaRows(questions, answerPosition), formulaMode, { allowNative: false });
   const semantic = [];
+  const answerBlocks = [];
   let pageCount = 0;
   await new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margins: { top: 50, left: 52, right: 52, bottom: 50 }, bufferPages: true, compress: false });
@@ -711,6 +729,40 @@ async function writePdf(filePath, payload, sourceQuestions, options = {}) {
       flushText();
       doc.moveDown(.35);
     };
+    const measure = (prefix, segments) => {
+      const contentWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+      let height = 0; let pendingText = prefix;
+      const flushText = () => {
+        if (pendingText.trim()) height += doc.fontSize(11).heightOfString(pendingText, { width: contentWidth });
+        pendingText = '';
+      };
+      segments.forEach(segment => {
+        if (segment.type === 'text') { pendingText += segment.text; return; }
+        if (segment.type === 'image') {
+          flushText(); const width = Math.min(420, Math.max(40, Number(segment.width || 320))); height += width * 0.6 + 8; return;
+        }
+        if (segment.type === 'formula') { flushText(); const formula = formulas[segment.formulaIndex]; height += formula.height + 8; }
+      });
+      flushText();
+      return height + doc.currentLineHeight(true) * 0.35;
+    };
+    const answerRows = (question, primaryPrefix = LABELS.answer) => [
+      ...question.subs.map(sub => ({ prefix: `${sub.label} ${LABELS.answer}`, segments: sub.answer })),
+      { prefix: primaryPrefix, segments: question.answer },
+      { prefix: '\u3010\u77e5\u8bc6\u70b9\u3011', segments: hasContent(question.knowledge) ? question.knowledge : legacySegments('\u672a\u586b\u5199') },
+      { prefix: '\u3010\u89e3\u6790\u3011', segments: hasContent(question.analysis) ? question.analysis : legacySegments('\u672a\u586b\u5199') },
+    ];
+    const drawAnswerBlock = (question, primaryPrefix = LABELS.answer) => {
+      const rows = answerRows(question, primaryPrefix);
+      const estimatedHeight = rows.reduce((sum, row) => sum + measure(row.prefix, row.segments), 0);
+      const pageBottom = doc.page.height - doc.page.margins.bottom - 24;
+      const pageCapacity = pageBottom - doc.page.margins.top;
+      if (estimatedHeight <= pageCapacity && doc.y + estimatedHeight > pageBottom) doc.addPage();
+      const startPage = doc.bufferedPageRange().count;
+      rows.forEach(row => draw(row.prefix, row.segments));
+      const endPage = doc.bufferedPageRange().count;
+      answerBlocks.push({ questionNumber: question.number, startPage, endPage, estimatedHeight });
+    };
     let previousType = null; let typeIndex = -1;
     questions.forEach(question => {
       if (doc.y + 110 > doc.page.height - doc.page.margins.bottom - 24) doc.addPage();
@@ -718,12 +770,7 @@ async function writePdf(filePath, payload, sourceQuestions, options = {}) {
       draw(`${question.number}. `, question.stem);
       question.options.forEach(option => draw(`${option.label}. `, option.content));
       question.subs.forEach(sub => draw(`${sub.label} `, sub.content));
-      if (answerPosition === 'after-each') {
-        question.subs.forEach(sub => draw(`${sub.label} ${LABELS.answer}`, sub.answer));
-        draw('\u7b54\u6848\uff1a', question.answer);
-        draw('\u3010\u77e5\u8bc6\u70b9\u3011', hasContent(question.knowledge) ? question.knowledge : legacySegments('\u672a\u586b\u5199'));
-        draw('\u3010\u89e3\u6790\u3011', hasContent(question.analysis) ? question.analysis : legacySegments('\u672a\u586b\u5199'));
-      }
+      if (answerPosition === 'after-each') drawAnswerBlock(question);
       doc.moveDown(.5);
     });
     if (answerPosition === 'end') {
@@ -734,13 +781,13 @@ async function writePdf(filePath, payload, sourceQuestions, options = {}) {
       const choice = questions.filter(question => CHOICE_TYPES.has(question.type));
       if (choice.length) {
         const numberRow = `\u9898\u53f7 ${choice.map(question => question.number).join(' ')}`;
-        const answerRow = `\u7b54\u6848 ${choice.map(question => plainText(question.answer) || '\u672a\u586b\u5199').join(' ')}`;
+        const answerRow = `\u7b54\u6848 ${choice.map(choiceSummaryAnswer).join(' ')}`;
         const left = doc.page.margins.left; const width = doc.page.width - doc.page.margins.left - doc.page.margins.right; const cellHeight = 24;
         let tableY = doc.y + 8;
         for (const group of chunks(choice)) {
           if (tableY + cellHeight * 2 > doc.page.height - doc.page.margins.bottom - 24) { doc.addPage(); tableY = doc.y; }
           const columns = group.length + 1; const cellWidth = width / columns;
-          const rows = [['\u9898\u53f7', ...group.map(question => String(question.number))], ['\u7b54\u6848', ...group.map(question => plainText(question.answer) || '\u672a\u586b\u5199')]];
+          const rows = [['\u9898\u53f7', ...group.map(question => String(question.number))], ['\u7b54\u6848', ...group.map(choiceSummaryAnswer)]];
           rows.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
             const y = tableY + rowIndex * cellHeight;
             doc.rect(left + columnIndex * cellWidth, y, cellWidth, cellHeight).stroke('#666666');
@@ -750,12 +797,7 @@ async function writePdf(filePath, payload, sourceQuestions, options = {}) {
         }
         doc.x = left; doc.y = tableY + 12; semantic.push(numberRow, answerRow);
       }
-      questions.forEach(question => {
-        draw(`${question.number}\uff0e`, question.answer);
-        question.subs.forEach(sub => draw(`${sub.label} ${LABELS.answer}`, sub.answer));
-        draw('\u3010\u77e5\u8bc6\u70b9\u3011', hasContent(question.knowledge) ? question.knowledge : legacySegments('\u672a\u586b\u5199'));
-        draw('\u3010\u89e3\u6790\u3011', hasContent(question.analysis) ? question.analysis : legacySegments('\u672a\u586b\u5199'));
-      });
+      questions.forEach(question => drawAnswerBlock(question, `${question.number}\uff0e`));
     }
     const pageRange = doc.bufferedPageRange();
     pageCount = pageRange.count;
@@ -774,6 +816,7 @@ async function writePdf(filePath, payload, sourceQuestions, options = {}) {
     manifest: formulas.map(({ questionId, location, index, canonicalLatex, latex, requestedMode, effectiveMode, fallbackUsed, diagnostics }) => ({ questionId, location, index, canonicalLatex: canonicalLatex || latex, requestedMode, effectiveMode, fallbackUsed, diagnostics })),
     semanticText: semantic.join('\n'),
     rendererPageCount: pageCount,
+    layoutReport: { answerBlocks },
   };
 }
 
@@ -856,6 +899,7 @@ async function writePaperArtifact(format, payload = {}, questions = [], options 
       requestedFormulaMode: resolveFormulaMode(payload.formulaMode || payload.formula_mode),
       semanticText: rendered.semanticText,
       rendererPageCount: rendered.rendererPageCount,
+      layoutReport: rendered.layoutReport,
       ...report,
     };
   } catch (error) {

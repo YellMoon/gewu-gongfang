@@ -97,6 +97,9 @@ def _omml_renderable(container: ET.Element | None) -> bool:
         "eqArrPr", "phant", "phantPr", "ctrlPr", "argPr", "brk", "chr", "grow", "limLoc", "subHide",
         "supHide", "type", "baseJc", "plcHide", "pos", "vertJc", "zeroAsc", "zeroDesc", "zeroWid",
         "count", "sepChr", "begChr", "endChr", "sty", "scr",
+        # Word's package normalizer emits these valid OMML property nodes for
+        # radicals, n-ary operators, matrices/cases, and script layout.
+        "degHide", "nor", "rPr", "mcs", "scrLvl",
     }
     for formula in (node for node in container.iter() if node.tag == f"{{{MATH_NS}}}oMath"):
         math_nodes = [node for node in formula.iter() if node.tag.startswith(f"{{{MATH_NS}}}")]

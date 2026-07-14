@@ -22,6 +22,27 @@
 
 ## 后续验证边界
 
-- Task 13 仍需用同一复杂题目生成四种 DOCX 模式及对应 PDF，逐页检查公式数量、基线、根式/分式尺寸、裁切、行距、分页和图片关系。
-- DOCX 必须经真实 Word 或可用的独立 Office 渲染器逐页检查；当前 LibreOffice 不可用且既有 Word COM 转换曾超时，未运行的检查不得声称通过。
+- Task 13 已用同一复杂题目完成四种 DOCX 模式及对应 PDF 的逐页检查，证据见下节。
+- DOCX 已由 Microsoft Word 真实打开、导出并逐页检查；LibreOffice 仍不可用，因此本次不把 LibreOffice 作为额外渲染器证据。
 - Task 14 仍需完成阿里云、本地数据主机、小程序上传和桌面 OSS 更新矩阵，任一端受平台或权限阻断时只能记录为部分发布或受阻。
+
+## Task 13: formula render matrix
+
+- The same complex rich-content fixture generated 16 artifacts: four requested formula
+  modes, two answer positions, and DOCX/PDF for every combination.
+- Every artifact passed the final formula-visible gate with seven indexed formulas and no
+  visible LaTeX source, unresolved marker, missing relationship, crop, or zero-size result.
+- DOCX Word-native and EQ modes stayed editable with zero fallback. MathType-compatible
+  DOCX used the explicit audited-policy fallback to LaTeX vector because no MTEF/OLE writer
+  is available. PDF requests for native/EQ/MathType also reported vector fallback.
+- All eight DOCX files opened without repair in Microsoft Word and were exported by Word
+  to PDF. All 16 Word-rendered pages were rasterized and reviewed at 150 DPI.
+- All eight direct PDF files (16 pages) were independently rasterized and reviewed at
+  150 DPI. Fractions, roots, integrals, cases, Greek symbols, the embedded image, choice
+  summary, footer, and both answer layouts remained visible without clipping or overlap.
+- Visual review found and regression-tested five production defects: rich choice summaries
+  leaking LaTeX source; valid Word-normalized OMML tags being rejected; generated relationship
+  IDs overwriting template footer references; OPC content-type defaults being emitted after
+  overrides; and answer blocks splitting across pages. The final matrix includes the fixes.
+- LibreOffice remains unavailable in this environment. Microsoft Word is therefore the
+  authoritative DOCX renderer for this verification, not a structural-only substitute.
