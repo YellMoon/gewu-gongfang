@@ -125,7 +125,7 @@ Stage only Task 2 files and commit `automatic release 2026-07-14`.
 - Modify: `gateway/package.json`
 - Modify: `package.json`
 
-- [ ] **Step 1: Write failing sandbox tests**
+- [x] **Step 1: Write failing sandbox tests**
 
 Cover allowed task/formula/answer values, unknown question rejection, maximum question count, sanitized filename, DOCX ZIP signature, PDF signature, task ownership, cross-session rejection, cancel, and expiry.
 
@@ -137,29 +137,29 @@ assert.strictEqual(pdf.artifact.buffer.subarray(0, 4).toString(), '%PDF');
 assert.throws(() => sandbox.getArtifact(sessionB, word.artifact.id), /NOT_FOUND/);
 ```
 
-- [ ] **Step 2: Confirm RED**
+- [x] **Step 2: Confirm RED**
 
 Run: `node gateway/src/services/reviewDemoSandbox.test.js`
 Expected: missing module.
 
-- [ ] **Step 3: Add runtime dependencies**
+- [x] **Step 3: Add runtime dependencies**
 
 Add `docx` and `pdfkit` to `gateway/package.json`; add any direct root test dependency only when a root test imports it. Install without committing ignored lockfiles.
 
-- [ ] **Step 4: Implement bounded memory storage and generation**
+- [x] **Step 4: Implement bounded memory storage and generation**
 
 Use injected clock/TTL for tests, per-session ownership, opportunistic cleanup, maximum 50 tasks and 16 MiB artifacts per process, deterministic safe content, and no filesystem/database calls.
 
-- [ ] **Step 5: Implement HTTP routes**
+- [x] **Step 5: Implement HTTP routes**
 
 Add create/result/cancel/artifact routes under `/api/review-demo`. Require an authenticated review session and `review-demo:paper-export`; set attachment filename, content type, no-store, and content length on downloads.
 
-- [ ] **Step 6: Verify service and HTTP routes**
+- [x] **Step 6: Verify service and HTTP routes**
 
 Run: `node gateway/src/services/reviewDemoSandbox.test.js && node gateway/src/routes/reviewDemo.http.test.js`
 Expected: all assertions pass and database task count remains unchanged.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Stage Task 3 files and commit `automatic release 2026-07-14`.
 
@@ -176,29 +176,29 @@ Stage Task 3 files and commit `automatic release 2026-07-14`.
 - Modify: `miniapp/src/pages/login/index.scss`
 - Modify: `src/uiRegression.test.js`
 
-- [ ] **Step 1: Write failing runtime/UI source tests**
+- [x] **Step 1: Write failing runtime/UI source tests**
 
 Test review identity detection, admin/student module maps, distinct cache keys, API path selection, cleanup keys, and permanent login-page source markers for the code field and both role controls.
 
-- [ ] **Step 2: Confirm RED**
+- [x] **Step 2: Confirm RED**
 
 Run: `node miniapp/src/utils/reviewExperience.test.js && node miniapp/src/utils/miniappAuthorizationRuntime.test.js && node src/uiRegression.test.js`
 Expected: review helpers/markers absent.
 
-- [ ] **Step 3: Implement review helpers and authorization mapping**
+- [x] **Step 3: Implement review helpers and authorization mapping**
 
 Map `review-demo:admin` to existing administrator read pages and `review-demo:student` to scheduling/question-bank. Ensure `canReviewUsers=false`, `canEditQuestionBank=false`, and review business-cache keys include session identity.
 
-- [ ] **Step 4: Add review API methods and login controls**
+- [x] **Step 4: Add review API methods and login controls**
 
 Add `authApi.reviewDemo(code, role)` and sandbox methods. The login page stores only the returned token and verified synthetic identity, clears old caches, and relaunches. Error copy distinguishes invalid/disabled/rate-limited review access.
 
-- [ ] **Step 5: Verify focused tests and TypeScript build**
+- [x] **Step 5: Verify focused tests and TypeScript build**
 
 Run: focused Node tests above, then `npm --prefix miniapp run build:weapp`.
 Expected: all exit 0.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Stage Task 4 files and commit `automatic release 2026-07-14`.
 
