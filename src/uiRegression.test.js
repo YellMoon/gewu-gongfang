@@ -48,6 +48,36 @@ const authorizationRequestCoordinator = read('src/services/authorizationRequestC
 const scheduleStorage = read('src/utils/scheduleStorage.mjs');
 const packageJson = read('package.json');
 const packageManifest = JSON.parse(packageJson);
+const miniappReviewExperience = read('miniapp/src/utils/reviewExperience.js');
+const miniappApi = read('miniapp/src/utils/api.ts');
+const miniappLogin = read('miniapp/src/pages/login/index.tsx');
+const miniappLoginCss = read('miniapp/src/pages/login/index.scss');
+
+assert(
+  miniappLogin.includes('review-title') &&
+  miniappLogin.includes('review-code-input') &&
+  miniappLogin.includes('data-review-role="admin"') &&
+  miniappLogin.includes('data-review-role="student"') &&
+  miniappLogin.includes('authApi.reviewDemo'),
+  'miniapp login should permanently expose a dedicated review code entry with administrator and student roles'
+);
+
+assert(
+  miniappLoginCss.includes('.review-card') &&
+  miniappLoginCss.includes('.review-role-control') &&
+  miniappLoginCss.includes('.review-login-btn'),
+  'miniapp review login controls should have dedicated stable styles'
+);
+
+assert(
+  miniappReviewExperience.includes('review_demo_session_id') &&
+  miniappReviewExperience.includes('REVIEW_DEMO_CODE_INVALID') &&
+  miniappReviewExperience.includes('REVIEW_DEMO_DISABLED') &&
+  miniappReviewExperience.includes('REVIEW_DEMO_RATE_LIMITED') &&
+  miniappApi.includes("'/api/auth/review-demo'") &&
+  miniappApi.includes("'/api/review-demo/tasks'"),
+  'miniapp review runtime should isolate session caches, map stable login errors, and use dedicated gateway APIs'
+);
 
 assert(
   !/\\u[0-9a-fA-F]{4}/.test(permissionManager),

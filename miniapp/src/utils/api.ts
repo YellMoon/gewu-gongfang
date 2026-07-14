@@ -10,6 +10,7 @@
  */
 import Taro from '@tarojs/taro';
 import { clearBusinessCache } from './storage';
+import { isReviewExperienceIdentity, reviewCleanupStorageKeys } from './reviewExperience';
 
 const STORAGE_KEY_BASE_URL = 'scheduling_api_base_url';
 declare const __API_BASE_URL__: string | undefined;
@@ -44,6 +45,14 @@ interface ApiResponse<T = any> {
 
 class ApiClient {
   private tokenRefreshPromise: Promise<boolean> | null = null;
+
+  private handleReviewAuthExpired(): void {
+    const currentUser = Taro.getStorageSync('user_info');
+    clearBusinessCache();
+    reviewCleanupStorageKeys(currentUser).forEach(key => Taro.removeStorageSync(key));
+    Taro.showToast({ title: '\u5ba1\u6838\u4f53\u9a8c\u5df2\u8fc7\u671f\uff0c\u8bf7\u91cd\u65b0\u8fdb\u5165', icon: 'none', duration: 2000 });
+    setTimeout(() => Taro.redirectTo({ url: '/pages/login/index' }), 1500);
+  }
 
   private getHeaders(): Record<string, string> {
     const headers: Record<string, string> = {
@@ -131,6 +140,15 @@ class ApiClient {
           }
           return { success: true, data: body as T };
         } else if (res.statusCode === 401) {
+          const currentUser = Taro.getStorageSync('user_info');
+          if (isReviewExperienceIdentity(currentUser)) {
+            this.handleReviewAuthExpired();
+            return {
+              success: false,
+              error: '\u5ba1\u6838\u4f53\u9a8c\u5df2\u8fc7\u671f\uff0c\u8bf7\u91cd\u65b0\u8fdb\u5165',
+              code: 'REVIEW_DEMO_TOKEN_INVALID',
+            };
+          }
           // Token 过期，自动刷新
           if (this.tokenRefreshPromise) {
             await this.tokenRefreshPromise;
@@ -157,6 +175,8 @@ class ApiClient {
             error: res.data?.message || res.data?.error || `Request failed (${res.statusCode})`,
             code: res.data?.code,
           };
+        } else if (res.statusCode >= 500 && res.data?.code === 'REVIEW_DEMO_DISABLED') {
+          return { success: false, error: res.data?.error, code: res.data.code };
         } else if (res.statusCode >= 500 && attempt < retries) {
           continue; // 服务端错误，重试
         } else {
@@ -194,6 +214,8 @@ export const authApi = {
     api.post<{ token: string; user: any }>('/api/auth/login', data),
   refresh: (token: string) =>
     api.post<{ token: string }>('/api/auth/refresh', { token }),
+  reviewDemo: (code: string, role: 'admin' | 'student') =>
+    api.post<{ token: string; role: 'admin' | 'student'; user: any }>('/api/auth/review-demo', { code, role }),
 };
 
 // ========== 模块/权限 API ==========
@@ -230,6 +252,24 @@ export const cloudRelayApi = {
   createPaperTaskV2: (taskType: string, payload: any, targetHostDeviceId: string, idempotencyKey: string) =>
     api.post<any>('/api/cloud/tasks', { protocolVersion: 2, taskType, payload, targetHostDeviceId, idempotencyKey }),
   cancelMiniappTask: (taskId: string) => api.post<any>(`/api/cloud/tasks/${taskId}/cancel`, {}),
+};
+
+export const reviewDemoApi = {
+  createTask: (taskType: string, payload: any) =>
+    api.post<any>('/api/review-demo/tasks', { taskType, payload }),
+  getTaskResult: (taskId: string) =>
+    api.get<any>(`/api/review-demo/tasks/${encodeURIComponent(taskId)}/result`),
+  cancelTask: (taskId: string) =>
+    api.post<any>(`/api/review-demo/tasks/${encodeURIComponent(taskId)}/cancel`, {}),
+  artifactUrl: (artifactId: string) =>
+    `${getBaseUrl()}/api/review-demo/artifacts/${encodeURIComponent(artifactId)}`,
+  downloadArtifact: (artifactId: string) => {
+    const token = Taro.getStorageSync('auth_token');
+    return Taro.downloadFile({
+      url: `${getBaseUrl()}/api/review-demo/artifacts/${encodeURIComponent(artifactId)}`,
+      header: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  },
 };
 
 export const readCloudSnapshot = cloudRelayApi.readCloudSnapshot;

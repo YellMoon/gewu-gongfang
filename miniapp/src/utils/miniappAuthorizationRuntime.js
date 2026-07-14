@@ -1,6 +1,10 @@
+const { isReviewExperienceIdentity, reviewSessionIdentityKey } = require('./reviewExperience');
+
 const ADMIN_MODULES = ['scheduling', 'question-bank', 'assets', 'students', 'courses', 'teachers', 'payments', 'stats', 'admin'];
 const TEACHER_MODULES = ADMIN_MODULES.filter(moduleId => moduleId !== 'admin');
 const STUDENT_MODULES = ['scheduling', 'question-bank'];
+const REVIEW_ADMIN_MODULES = ADMIN_MODULES.filter(moduleId => moduleId !== 'admin');
+const REVIEW_STUDENT_MODULES = STUDENT_MODULES.slice();
 const VALID_ROLES = new Set(['super_admin', 'admin', 'teacher', 'student', 'pending']);
 
 function roleOf(user) {
@@ -10,12 +14,14 @@ function roleOf(user) {
 
 function permissionIdentityKey(user) {
   if (!user || !user.id) return '';
+  if (isReviewExperienceIdentity(user)) return reviewSessionIdentityKey(user);
   return `${user.id}:${roleOf(user)}`;
 }
 
 function businessCacheIdentityKey(user) {
   const role = roleOf(user);
   if (!user || !user.id || role === 'pending') return '';
+  if (isReviewExperienceIdentity(user)) return reviewSessionIdentityKey(user);
   const teacherId = role === 'teacher' ? (user.teacher_id || user.teacherId) : '';
   if (role === 'teacher' && !teacherId) return '';
   return [user.id, role, teacherId].filter(Boolean).join(':');
@@ -28,18 +34,21 @@ function deriveAccess(user, permissionState) {
     && identityKey && permissionState.identityKey === identityKey;
   const capabilities = loadedForIdentity && Array.isArray(permissionState.capabilities)
     ? permissionState.capabilities : [];
+  const reviewIdentity = isReviewExperienceIdentity(user);
   let modules = [];
-  if (capabilities.includes('business:all')) modules = ADMIN_MODULES.slice();
+  if (reviewIdentity && role === 'admin' && capabilities.includes('review-demo:admin')) modules = REVIEW_ADMIN_MODULES.slice();
+  else if (reviewIdentity && role === 'student' && capabilities.includes('review-demo:student')) modules = REVIEW_STUDENT_MODULES.slice();
+  else if (!reviewIdentity && capabilities.includes('business:all')) modules = ADMIN_MODULES.slice();
   else if (capabilities.includes('business:teacher-scope') && role === 'teacher') modules = TEACHER_MODULES.slice();
-  else if (capabilities.includes('question-bank:view') && role === 'student') modules = STUDENT_MODULES.slice();
+  else if (!reviewIdentity && capabilities.includes('question-bank:view') && role === 'student') modules = STUDENT_MODULES.slice();
   return {
     role,
     modules,
     capabilities,
     permissionStatus: loadedForIdentity ? 'loaded' : (permissionState && permissionState.status === 'error' ? 'error' : 'idle'),
-    canReadUsers: capabilities.includes('business:all') && (role === 'super_admin' || role === 'admin'),
-    canReviewUsers: capabilities.includes('users:review') && role === 'super_admin',
-    canEditQuestionBank: capabilities.includes('question-bank:edit'),
+    canReadUsers: !reviewIdentity && capabilities.includes('business:all') && (role === 'super_admin' || role === 'admin'),
+    canReviewUsers: !reviewIdentity && capabilities.includes('users:review') && role === 'super_admin',
+    canEditQuestionBank: !reviewIdentity && capabilities.includes('question-bank:edit'),
     canDeleteCommittedQuestions: false,
   };
 }
@@ -86,4 +95,15 @@ function scopeDashboardCollections(user, collections = {}) {
   return { students: students.slice(), courses: courses.slice(), schedules: schedules.slice() };
 }
 
-module.exports = { ADMIN_MODULES, TEACHER_MODULES, STUDENT_MODULES, roleOf, permissionIdentityKey, businessCacheIdentityKey, deriveAccess, scopeDashboardCollections };
+module.exports = {
+  ADMIN_MODULES,
+  TEACHER_MODULES,
+  STUDENT_MODULES,
+  REVIEW_ADMIN_MODULES,
+  REVIEW_STUDENT_MODULES,
+  roleOf,
+  permissionIdentityKey,
+  businessCacheIdentityKey,
+  deriveAccess,
+  scopeDashboardCollections,
+};

@@ -1,5 +1,7 @@
 const assert = require('assert');
 const {
+  REVIEW_ADMIN_MODULES,
+  REVIEW_STUDENT_MODULES,
   deriveAccess,
   permissionIdentityKey,
   scopeDashboardCollections,
@@ -50,5 +52,40 @@ const pendingScoped = scopeDashboardCollections({ id: 'pending-user', user_type:
 assert.deepStrictEqual(pendingScoped, { students: [], courses: [], schedules: [] }, 'pending users must not read business cache');
 assert.strictEqual(businessCacheIdentityKey({ id: 'teacher-user', user_type: 'teacher', teacher_id: 'teacher-1' }), 'teacher-user:teacher:teacher-1');
 assert.strictEqual(businessCacheIdentityKey({ id: 'pending-user', user_type: 'pending' }), '', 'pending users must not have a business cache namespace');
+
+const reviewAdmin = {
+  id: 'review-demo:admin:session-a', user_type: 'admin', is_review_demo: true, read_only: true,
+  review_demo_session_id: 'session-a', review_status: 'approved', status: 1, login_enabled: 1,
+};
+const reviewAdminAccess = deriveAccess(reviewAdmin, {
+  status: 'loaded',
+  identityKey: permissionIdentityKey(reviewAdmin),
+  capabilities: ['review-demo:read', 'review-demo:admin', 'review-demo:paper-export', 'question-bank:view'],
+});
+assert.deepStrictEqual(reviewAdminAccess.modules, REVIEW_ADMIN_MODULES, 'administrator review should map only to existing read-only administrator pages');
+assert.ok(!reviewAdminAccess.modules.includes('admin'), 'administrator review must not expose the user-review workbench');
+assert.strictEqual(reviewAdminAccess.canReadUsers, false);
+assert.strictEqual(reviewAdminAccess.canReviewUsers, false);
+assert.strictEqual(reviewAdminAccess.canEditQuestionBank, false);
+
+const reviewStudent = {
+  id: 'review-demo:student:session-s', user_type: 'student', is_review_demo: true, read_only: true,
+  review_demo_session_id: 'session-s', student_id: 'review-demo-student', review_status: 'approved', status: 1, login_enabled: 1,
+};
+const reviewStudentAccess = deriveAccess(reviewStudent, {
+  status: 'loaded',
+  identityKey: permissionIdentityKey(reviewStudent),
+  capabilities: ['review-demo:read', 'review-demo:student', 'review-demo:paper-export', 'question-bank:view'],
+});
+assert.deepStrictEqual(reviewStudentAccess.modules, REVIEW_STUDENT_MODULES, 'student review should map to scheduling and question bank only');
+assert.strictEqual(reviewStudentAccess.canReviewUsers, false);
+assert.strictEqual(reviewStudentAccess.canEditQuestionBank, false);
+assert.ok(permissionIdentityKey(reviewAdmin).includes('session-a'), 'review permission keys must include the server session identity');
+assert.ok(businessCacheIdentityKey(reviewAdmin).includes('session-a'), 'review business-cache keys must include the server session identity');
+assert.notStrictEqual(
+  businessCacheIdentityKey(reviewAdmin),
+  businessCacheIdentityKey({ id: reviewAdmin.id, user_type: 'admin' }),
+  'review cache namespaces must never collide with real users',
+);
 
 console.log('miniapp authorization runtime checks passed');
