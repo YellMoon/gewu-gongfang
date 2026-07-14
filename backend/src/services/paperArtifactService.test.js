@@ -139,6 +139,11 @@ const countOf = (text, needle) => text.split(needle).length - 1;
       assert.ok(!text.includes('参考答案') && !xml.includes('<w:tbl>'), 'after-each must have no trailing answer section or summary');
       assert.ok(compact.indexOf('独特单选题干') < compact.indexOf('答案：B') && compact.indexOf('答案：B') < compact.indexOf('独特解答题干'));
       assert.strictEqual(countOf(compact, '答案：B'), 1);
+      const chainedAnswerParagraphs = [...xml.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)].map(match => match[0]).filter(paragraph => {
+        const paragraphText = textOf(paragraph);
+        return paragraphText.includes('\u7b54\u6848\uff1a') || paragraphText.includes('\u3010\u77e5\u8bc6\u70b9\u3011');
+      });
+      assert.ok(chainedAnswerParagraphs.length >= questions.length * 2 && chainedAnswerParagraphs.every(paragraph => paragraph.includes('<w:keepNext')), 'DOCX after-each answer and knowledge paragraphs must keep the complete answer block together across page breaks');
     } else {
       assert.ok(!text.includes('参考答案') && !text.includes('答案：B') && !text.includes('【解析】'), 'hidden must truly omit answers');
     }
@@ -151,6 +156,8 @@ const countOf = (text, needle) => text.split(needle).length - 1;
   const afterEachPdf = await writePaperArtifact('pdf', { title: 'after-each', answerPosition: 'after-each' }, questions, { root });
   assert.ok(afterEachPdf.semanticText.indexOf('独特单选题干') < afterEachPdf.semanticText.indexOf('答案：B') && afterEachPdf.semanticText.indexOf('答案：B') < afterEachPdf.semanticText.indexOf('独特解答题干'));
   assert.ok(!afterEachPdf.semanticText.includes('参考答案') && !afterEachPdf.semanticText.includes('题号 1 3'));
+  assert.ok(afterEachPdf.layoutReport?.answerBlocks?.length === questions.length, 'after-each PDF must report every answer block for pagination verification');
+  assert.ok(afterEachPdf.layoutReport.answerBlocks.every(block => block.startPage === block.endPage), 'an answer/knowledge/analysis block that fits a page must not be split across pages');
   const hiddenPdf = await writePaperArtifact('pdf', { title: 'hidden', answerPosition: 'hidden' }, questions, { root });
   assert.ok(!hiddenPdf.semanticText.includes('答案：B') && !hiddenPdf.semanticText.includes('【知识点】') && !hiddenPdf.semanticText.includes('参考答案'));
 
@@ -181,6 +188,46 @@ const countOf = (text, needle) => text.split(needle).length - 1;
   const hiddenLegacySub = await writePaperArtifact('word', { title: 'legacy-sub-hidden', answerPosition: 'hidden', formulaMode: 'latex-vector' }, legacySubAnswerFormula, { root });
   assert.strictEqual(hiddenLegacySub.formulaCount, 1, 'hidden must keep legacy sub-question content formula but omit its answer formula');
 
+  const richChoiceAnswer = [{
+    id: 'q-rich-choice-summary', type: 'single',
+    rich_content: { type: 'question-document', sections: {
+      stem: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'rich choice' }] }] },
+      options: [
+        { id: 'a', label: 'A', isCorrect: false, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'wrong' }] }] } },
+        { id: 'b', label: 'B', isCorrect: true, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'right' }] }] } },
+      ],
+      subQuestions: [],
+      answer: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '答案为 B，' }, { type: 'formula', attrs: { canonicalLatex: '\\frac{v_0^2}{2g}' } }] }] },
+      analysis: { type: 'doc', content: [] },
+    } },
+  }];
+  const richChoiceArtifact = await writePaperArtifact('word', { title: 'rich-choice-summary', answerPosition: 'end', formulaMode: 'word-native' }, richChoiceAnswer, { root });
+  const richChoiceXml = strFromU8(unzipSync(fs.readFileSync(richChoiceArtifact.filePath))['word/document.xml']);
+  assert.ok(!textOf(richChoiceXml).includes('\\frac'), 'choice summary must not duplicate a formula as visible LaTeX source');
+  assert.ok(textOf(richChoiceXml).includes('题号 1 答案 B'), 'choice summary must use the structured correct option label');
+
+  const normalizedOmmlStructures = [{
+    id: 'q-normalized-omml', type: 'single',
+    rich_content: { type: 'question-document', sections: {
+      stem: { type: 'doc', content: [{ type: 'paragraph', content: [
+        { type: 'formula', attrs: { canonicalLatex: '\\sqrt{a^2+b^2}' } },
+        { type: 'formula', attrs: { canonicalLatex: '\\int_0^t v\\,dt' } },
+        { type: 'formula', attrs: { canonicalLatex: 'f(x)=\\begin{cases}x^2,&x\\ge0\\\\-x,&x<0\\end{cases}' } },
+      ] }] },
+      options: [], subQuestions: [],
+      answer: { type: 'doc', content: [] }, analysis: { type: 'doc', content: [] },
+    } },
+  }];
+  const normalizedOmmlArtifact = await writePaperArtifact('word', { title: 'normalized-omml', answerPosition: 'hidden', formulaMode: 'word-native' }, normalizedOmmlStructures, { root });
+  assert.strictEqual(normalizedOmmlArtifact.formulaCount, 3, 'valid normalized root, integral, and cases OMML must pass the final visible-result gate');
+  const vectorTemplateArtifact = await writePaperArtifact('word', { title: 'vector-template-relations', answerPosition: 'end', formulaMode: 'latex-vector' }, normalizedOmmlStructures, { root });
+  const vectorTemplateFiles = unzipSync(fs.readFileSync(vectorTemplateArtifact.filePath));
+  const vectorTemplateXml = strFromU8(vectorTemplateFiles['word/document.xml']);
+  const vectorTemplateRels = strFromU8(vectorTemplateFiles['word/_rels/document.xml.rels']);
+  const relationshipTypes = new Map([...vectorTemplateRels.matchAll(/<Relationship\b[^>]*Id="([^"]+)"[^>]*Type="([^"]+)"[^>]*\/>/g)].map(match => [match[1], match[2]]));
+  const footerRelationshipIds = [...vectorTemplateXml.matchAll(/<w:footerReference\b[^>]*r:id="([^"]+)"[^>]*\/>/g)].map(match => match[1]);
+  assert.ok(footerRelationshipIds.length > 0 && footerRelationshipIds.every(id => relationshipTypes.get(id)?.endsWith('/footer')), 'template footer references must never be remapped onto generated image relationships');
+
   const concurrent = await Promise.all(Array.from({ length: 8 }, () => writePaperArtifact('word', { title: 'same-title', answerPosition: 'hidden' }, [{ type: 'single', stem: 'plain' }], { root })));
   assert.strictEqual(new Set(concurrent.map(item => item.fileName)).size, concurrent.length, 'concurrent exports in the same millisecond must use collision-resistant names');
 
@@ -192,6 +239,10 @@ const countOf = (text, needle) => text.split(needle).length - 1;
   const mathtypeFiles = unzipSync(fs.readFileSync(mathtypeFallback.filePath));
   assert.ok(!Object.keys(mathtypeFiles).some(name => name.startsWith('word/embeddings/')), 'vector fallback must not masquerade as MathType OLE');
   assert.ok(!strFromU8(mathtypeFiles['word/_rels/document.xml.rels']).includes('/oleObject'));
+  const mathtypeContentTypes = strFromU8(mathtypeFiles['[Content_Types].xml']);
+  const defaultPositions = [...mathtypeContentTypes.matchAll(/<Default\b/g)].map(match => match.index);
+  const overridePositions = [...mathtypeContentTypes.matchAll(/<Override\b/g)].map(match => match.index);
+  assert.ok(Math.max(...defaultPositions) < Math.min(...overridePositions), 'all OPC Default content types must precede Override rows so Microsoft Word can open vector DOCX files');
 
   const pdfNativeFallback = await writePaperArtifact('pdf', { title: 'pdf-native-fallback', answerPosition: 'hidden', formulaMode: 'word-native' }, modeQuestion, { root });
   assert.deepStrictEqual(pdfNativeFallback.effectiveFormulaModes, ['latex-vector']);
