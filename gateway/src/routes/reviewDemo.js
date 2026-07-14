@@ -7,7 +7,9 @@ const { createReviewDemoSandbox, sandboxError } = require('../services/reviewDem
 const DEFAULT_BODY_BYTES = 64 * 1024;
 const DEFAULT_RATE_LIMIT = 20;
 const DEFAULT_RATE_WINDOW_MS = 60 * 1000;
-const MAX_RATE_BUCKETS = 100;
+const DEFAULT_CLIENT_RATE_LIMIT = 40;
+const DEFAULT_CLIENT_RATE_WINDOW_MS = 30 * 60 * 1000;
+const MAX_RATE_BUCKETS = 200;
 
 function requireReviewDemoCapability(req, res, next) {
   const capabilities = effectiveCapabilities(req.authz || {});
@@ -53,18 +55,32 @@ function createReviewDemoRouter(options = {}) {
   const maxBodyBytes = Number(options.maxBodyBytes ?? DEFAULT_BODY_BYTES);
   const maxCreatesPerWindow = Number(options.maxCreatesPerWindow ?? DEFAULT_RATE_LIMIT);
   const rateWindowMs = Number(options.rateWindowMs ?? DEFAULT_RATE_WINDOW_MS);
+  const maxCreatesPerClientWindow = Number(options.maxCreatesPerClientWindow ?? DEFAULT_CLIENT_RATE_LIMIT);
+  const clientRateWindowMs = Number(options.clientRateWindowMs ?? DEFAULT_CLIENT_RATE_WINDOW_MS);
   const rateBuckets = new Map();
 
-  function parseBoundedCreateBody(req, res, next) {
-    const declaredBytes = Number(req.get('content-length') || 0);
-    if (declaredBytes > maxBodyBytes) {
-      res.set('Connection', 'close');
-      return sendError(res, sandboxError('REVIEW_DEMO_BODY_TOO_LARGE', 413));
+  function readBoundedBody(req, res, next) {
+    if (req.body !== undefined) {
+      return sendError(res, sandboxError('REVIEW_DEMO_BODY_GATE_ORDER_INVALID', 500));
     }
 
-    if (req.body !== undefined) {
-      const parsedBytes = Buffer.byteLength(JSON.stringify(req.body || {}), 'utf8');
-      if (parsedBytes > maxBodyBytes) return sendError(res, sandboxError('REVIEW_DEMO_BODY_TOO_LARGE', 413));
+    const declaredHeader = req.get('content-length');
+    if (declaredHeader !== undefined) {
+      if (!/^\d+$/.test(declaredHeader)) {
+        return sendError(res, sandboxError('REVIEW_DEMO_BODY_INVALID', 400));
+      }
+      const declaredBytes = Number(declaredHeader);
+      if (!Number.isSafeInteger(declaredBytes)) {
+        return sendError(res, sandboxError('REVIEW_DEMO_BODY_INVALID', 400));
+      }
+      if (declaredBytes > maxBodyBytes) {
+        res.set('Connection', 'close');
+        return sendError(res, sandboxError('REVIEW_DEMO_BODY_TOO_LARGE', 413));
+      }
+    }
+
+    if (!req.get('transfer-encoding') && Number(declaredHeader || 0) === 0) {
+      req.reviewDemoRawBody = Buffer.alloc(0);
       return next();
     }
 
@@ -106,13 +122,8 @@ function createReviewDemoRouter(options = {}) {
       if (settled) return;
       settled = true;
       cleanup();
-      try {
-        const text = Buffer.concat(chunks).toString('utf8');
-        req.body = text ? JSON.parse(text) : {};
-        return next();
-      } catch (_error) {
-        return sendError(res, sandboxError('REVIEW_DEMO_BODY_INVALID', 400));
-      }
+      req.reviewDemoRawBody = Buffer.concat(chunks);
+      return next();
     }
 
     req.on('aborted', onAborted);
@@ -122,31 +133,67 @@ function createReviewDemoRouter(options = {}) {
     return undefined;
   }
 
+  function parseCreateJson(req, res, next) {
+    const contentType = String(req.get('content-type') || '');
+    const [rawMediaType, ...parameters] = contentType.split(';');
+    const mediaType = rawMediaType.trim().toLowerCase();
+    const jsonMediaType = mediaType === 'application/json'
+      || /^application\/[a-z0-9!#$&^_.+-]+\+json$/.test(mediaType);
+    const charsetSupported = parameters.every(parameter => {
+      const [name, value] = parameter.split('=').map(part => part.trim().toLowerCase());
+      return name !== 'charset' || value === 'utf-8' || value === 'utf8';
+    });
+    if (!jsonMediaType || !charsetSupported) {
+      req.reviewDemoRawBody = null;
+      return sendError(res, sandboxError('REVIEW_DEMO_CONTENT_TYPE_UNSUPPORTED', 415));
+    }
+
+    try {
+      const text = (req.reviewDemoRawBody || Buffer.alloc(0)).toString('utf8');
+      req.body = text ? JSON.parse(text) : {};
+      req.reviewDemoRawBody = null;
+      return next();
+    } catch (_error) {
+      req.reviewDemoRawBody = null;
+      return sendError(res, sandboxError('REVIEW_DEMO_BODY_INVALID', 400));
+    }
+  }
+
   function enforceCreateRate(req, res, next) {
     const current = now();
-    for (const [sessionId, bucket] of rateBuckets) {
-      if (bucket.resetAt <= current) rateBuckets.delete(sessionId);
+    for (const [key, bucket] of rateBuckets) {
+      if (bucket.resetAt <= current) rateBuckets.delete(key);
     }
     const sessionId = String(req.authz.reviewDemoSessionId);
-    let bucket = rateBuckets.get(sessionId);
-    if (!bucket) {
-      if (rateBuckets.size >= MAX_RATE_BUCKETS) {
-        return sendError(res, sandboxError('REVIEW_DEMO_RATE_LIMITED', 429));
-      }
-      bucket = { count: 0, resetAt: current + rateWindowMs };
-      rateBuckets.set(sessionId, bucket);
-    }
-    if (bucket.count >= maxCreatesPerWindow) {
-      res.set('Retry-After', String(Math.max(1, Math.ceil((bucket.resetAt - current) / 1000))));
+    const clientId = String(req.ip || req.socket?.remoteAddress || 'unknown');
+    const limits = [
+      { key: `session:${sessionId}`, max: maxCreatesPerWindow, windowMs: rateWindowMs },
+      { key: `client:${clientId}`, max: maxCreatesPerClientWindow, windowMs: clientRateWindowMs },
+    ];
+    const missingBuckets = limits.filter(limit => !rateBuckets.has(limit.key));
+    if (rateBuckets.size + missingBuckets.length > MAX_RATE_BUCKETS) {
       return sendError(res, sandboxError('REVIEW_DEMO_RATE_LIMITED', 429));
     }
-    bucket.count += 1;
+    for (const limit of missingBuckets) {
+      rateBuckets.set(limit.key, { count: 0, resetAt: current + limit.windowMs });
+    }
+    const exceeded = limits
+      .map(limit => ({ ...limit, bucket: rateBuckets.get(limit.key) }))
+      .filter(limit => limit.bucket.count >= limit.max);
+    if (exceeded.length > 0) {
+      const retryAt = Math.max(...exceeded.map(limit => limit.bucket.resetAt));
+      res.set('Retry-After', String(Math.max(1, Math.ceil((retryAt - current) / 1000))));
+      return sendError(res, sandboxError('REVIEW_DEMO_RATE_LIMITED', 429));
+    }
+    for (const limit of limits) rateBuckets.get(limit.key).count += 1;
     return next();
   }
 
   router.use(requireReviewDemoCapability);
+  router.post('/tasks', enforceCreateRate);
+  router.use(readBoundedBody);
 
-  router.post('/tasks', enforceCreateRate, parseBoundedCreateBody, async (req, res) => {
+  router.post('/tasks', parseCreateJson, async (req, res) => {
     try {
       const body = req.body || {};
       const request = { ...(body.payload || {}), taskType: body.taskType };
@@ -189,6 +236,19 @@ function createReviewDemoRouter(options = {}) {
       return sendError(res, error);
     }
   });
+
+  function methodNotAllowed(allow) {
+    return (_req, res) => {
+      res.set('Allow', allow);
+      return sendError(res, sandboxError('REVIEW_DEMO_METHOD_NOT_ALLOWED', 405));
+    };
+  }
+
+  router.all('/tasks', methodNotAllowed('POST'));
+  router.all('/tasks/:taskId/result', methodNotAllowed('GET'));
+  router.all('/tasks/:taskId/cancel', methodNotAllowed('POST'));
+  router.all('/artifacts/:artifactId', methodNotAllowed('GET'));
+  router.use((_req, res) => sendError(res, sandboxError('REVIEW_DEMO_ROUTE_NOT_FOUND', 404)));
 
   return router;
 }

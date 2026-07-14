@@ -20,6 +20,7 @@
     "bcryptjs": "^2.4.3"
   },
   "devDependencies": {
+    "fflate": "^0.8.3",
     "nodemon": "^3.1.7"
   },
   "license": "MIT"

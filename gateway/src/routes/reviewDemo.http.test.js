@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('assert');
+const express = require('express');
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -14,6 +15,7 @@ process.env.MINIAPP_REVIEW_EXPERIENCE_CODE = 'review-sandbox-code-2026';
 const { closeDatabase, getDb, initDatabase } = require('../db/database');
 const createApp = require('../app');
 const { generateToken } = require('../middleware/auth');
+const { createReviewDemoRouter } = require('./reviewDemo');
 const { createReviewDemoSandbox } = require('../services/reviewDemoSandbox');
 
 let now = Date.parse('2026-07-14T12:00:00.000Z');
@@ -27,7 +29,13 @@ getDb().prepare(`INSERT INTO users
 
 const app = createApp({
   reviewDemoSandbox: sandbox,
-  reviewDemoRouteOptions: { now: () => now, maxCreatesPerWindow: 3, rateWindowMs: 60_000 },
+  reviewDemoRouteOptions: {
+    now: () => now,
+    maxCreatesPerWindow: 10,
+    rateWindowMs: 60_000,
+    maxCreatesPerClientWindow: 7,
+    clientRateWindowMs: 30 * 60_000,
+  },
 });
 const server = app.listen(0);
 const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -48,17 +56,17 @@ async function reviewToken(role, padding = '') {
   return (await response.json()).data.token;
 }
 
-function openChunkedCreate(token, partialBody) {
+function openChunkedRequest(route, method, token, partialBody, contentType = 'application/json') {
   return new Promise((resolve, reject) => {
-    const target = new URL('/api/review-demo/tasks', baseUrl);
+    const target = new URL(route, baseUrl);
     const request = http.request({
       hostname: target.hostname,
       port: target.port,
       path: target.pathname,
-      method: 'POST',
+      method,
       headers: {
         authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
+        'content-type': contentType,
         'transfer-encoding': 'chunked',
       },
     }, response => {
@@ -71,7 +79,7 @@ function openChunkedCreate(token, partialBody) {
     });
     const timer = setTimeout(() => {
       request.destroy();
-      reject(new Error('review create did not reject an oversized chunked body before the request ended'));
+      reject(new Error('review route did not reject an oversized chunked body before the request ended'));
     }, 1_000);
     request.on('response', () => clearTimeout(timer));
     request.on('error', error => {
@@ -93,6 +101,7 @@ const payload = {
   const tasksBefore = getDb().prepare('SELECT COUNT(*) count FROM miniapp_tasks').get().count;
   const tokenA = await reviewToken('student');
   const tokenB = await reviewToken('student', 'x'.repeat(70 * 1024));
+  const tokenC = await reviewToken('student');
   const normalToken = generateToken(getDb().prepare('SELECT * FROM users WHERE id = ?').get('normal-student'));
 
   assert.strictEqual((await request('/api/review-demo/tasks', { method: 'POST', body: '{}' })).status, 401);
@@ -108,12 +117,56 @@ const payload = {
   assert.strictEqual(normalDenied.status, 403);
   assert.strictEqual((await normalDenied.json()).code, 'REVIEW_DEMO_CAPABILITY_REQUIRED');
 
-  const oversized = await openChunkedCreate(
+  const oversized = await openChunkedRequest(
+    '/api/review-demo/tasks',
+    'POST',
     tokenA,
     `{"taskType":"question-paper","payload":{"padding":"${'x'.repeat(70 * 1024)}`,
   );
   assert.strictEqual(oversized.status, 413);
   assert.strictEqual(oversized.body.code, 'REVIEW_DEMO_BODY_TOO_LARGE');
+
+  const unknownOversized = await openChunkedRequest(
+    '/api/review-demo/not-a-route',
+    'PATCH',
+    tokenA,
+    'x'.repeat(70 * 1024),
+    'application/octet-stream',
+  );
+  assert.strictEqual(unknownOversized.status, 413);
+  assert.strictEqual(unknownOversized.body.code, 'REVIEW_DEMO_BODY_TOO_LARGE');
+  const unknownRoute = await request('/api/review-demo/not-a-route', {}, tokenA);
+  assert.strictEqual(unknownRoute.status, 404);
+  assert.strictEqual((await unknownRoute.json()).code, 'REVIEW_DEMO_ROUTE_NOT_FOUND');
+  const oversizedWrongMethod = await request('/api/review-demo/tasks', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/octet-stream' },
+    body: 'x'.repeat(70 * 1024),
+  }, tokenA);
+  assert.strictEqual(oversizedWrongMethod.status, 413);
+  assert.strictEqual((await oversizedWrongMethod.json()).code, 'REVIEW_DEMO_BODY_TOO_LARGE');
+  const wrongMethod = await request('/api/review-demo/tasks', { method: 'PUT', body: '{}' }, tokenA);
+  assert.strictEqual(wrongMethod.status, 405);
+  assert.strictEqual((await wrongMethod.json()).code, 'REVIEW_DEMO_METHOD_NOT_ALLOWED');
+
+  const textCreate = await request('/api/review-demo/tasks', {
+    method: 'POST',
+    headers: { 'content-type': 'text/plain' },
+    body: JSON.stringify({ taskType: 'question-paper', payload }),
+  }, tokenA);
+  assert.strictEqual(textCreate.status, 415);
+  assert.strictEqual((await textCreate.json()).code, 'REVIEW_DEMO_CONTENT_TYPE_UNSUPPORTED');
+  const malformedCreate = await request('/api/review-demo/tasks', {
+    method: 'POST', body: '{"taskType":',
+  }, tokenA);
+  assert.strictEqual(malformedCreate.status, 400);
+  assert.strictEqual((await malformedCreate.json()).code, 'REVIEW_DEMO_BODY_INVALID');
+  const structuredJsonCreate = await request('/api/review-demo/tasks', {
+    method: 'POST',
+    headers: { 'content-type': 'application/vnd.gewu.review+json; charset=utf-8' },
+    body: JSON.stringify({ taskType: 'question-paper', payload }),
+  }, tokenA);
+  assert.strictEqual(structuredJsonCreate.status, 200);
 
   const createWord = await request('/api/review-demo/tasks', {
     method: 'POST', body: JSON.stringify({ taskType: 'paper-export-word', payload }),
@@ -153,10 +206,39 @@ const payload = {
 
   const rateLimited = await request('/api/review-demo/tasks', {
     method: 'POST', body: JSON.stringify({ taskType: 'question-paper', payload }),
-  }, tokenA);
+  }, tokenC);
   assert.strictEqual(rateLimited.status, 429);
   assert.strictEqual((await rateLimited.json()).code, 'REVIEW_DEMO_RATE_LIMITED');
   assert.ok(rateLimited.headers.get('retry-after'));
+  const trailingSlashRateLimited = await request('/api/review-demo/tasks/', {
+    method: 'POST', body: JSON.stringify({ taskType: 'question-paper', payload }),
+  }, tokenC);
+  assert.strictEqual(trailingSlashRateLimited.status, 429);
+  assert.strictEqual((await trailingSlashRateLimited.json()).code, 'REVIEW_DEMO_RATE_LIMITED');
+  assert.ok(sandbox.stats().tasks < 50, 'rotating review sessions on one trusted client must not fill the process task budget');
+
+  const parsedApp = express();
+  parsedApp.use(express.json({ limit: '1mb' }));
+  parsedApp.use((req, _res, next) => {
+    req.authz = {
+      role: 'student', reviewStatus: 'approved', status: 1, loginEnabled: 1,
+      isReviewDemo: true, readOnly: true, reviewDemoSessionId: 'already-parsed-session',
+    };
+    next();
+  });
+  parsedApp.use('/api/review-demo', createReviewDemoRouter({ sandbox: createReviewDemoSandbox() }));
+  const parsedServer = parsedApp.listen(0);
+  try {
+    const parsedResponse = await fetch(`http://127.0.0.1:${parsedServer.address().port}/api/review-demo/tasks`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ taskType: 'question-paper', payload }),
+    });
+    assert.strictEqual(parsedResponse.status, 500);
+    assert.strictEqual((await parsedResponse.json()).code, 'REVIEW_DEMO_BODY_GATE_ORDER_INVALID');
+  } finally {
+    await new Promise(resolve => parsedServer.close(resolve));
+  }
 
   const cancelled = await request(`/api/review-demo/tasks/${pdfTask.id}/cancel`, { method: 'POST', body: '{}' }, tokenA);
   assert.strictEqual(cancelled.status, 200);
