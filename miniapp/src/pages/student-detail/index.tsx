@@ -3,6 +3,7 @@ import { View, Text } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { Student, Payment, PaymentType, Grade } from '../../types';
 import { getLocalItem, getLocalData } from '../../utils/sync';
+import ReviewDemoBanner from '../../components/ReviewDemoBanner';
 import './index.scss';
 
 export default function StudentDetail() {
@@ -29,6 +30,7 @@ export default function StudentDetail() {
   if (!student) {
     return (
       <View className='container'>
+        <ReviewDemoBanner />
         <View className='empty-state'>
           <Text className='empty-state-icon'>生</Text>
           <Text className='empty-state-text'>未找到该学生信息</Text>
@@ -47,6 +49,7 @@ export default function StudentDetail() {
 
   return (
     <View className='container'>
+      <ReviewDemoBanner />
       {/* 学生头像和信息 */}
       <View className='student-header card'>
         <View className='student-avatar'>

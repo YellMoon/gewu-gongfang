@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text } from '@tarojs/components';
 import { Schedule, ScheduleStatus, Course, CourseType } from '../../types';
 import { getLocalData } from '../../utils/sync';
+import ReviewDemoBanner from '../../components/ReviewDemoBanner';
 import './index.scss';
 
 interface StatsData {
@@ -68,6 +69,7 @@ export default function Stats() {
 
   return (
     <View className='container'>
+      <ReviewDemoBanner />
       {/* 总收入卡片 */}
       <View className='revenue-card'>
         <Text className='revenue-label'>累计收入</Text>
