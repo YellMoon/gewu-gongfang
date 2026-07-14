@@ -16,6 +16,7 @@ const createApp = require('../app');
 initDatabase();
 const server = createApp().listen(0);
 const post = async (route, body) => { const response = await realFetch(`http://127.0.0.1:${server.address().port}${route}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); return { status: response.status, headers: response.headers, body: await response.json() }; };
+const postWithToken = async (route, body, token) => { const response = await realFetch(`http://127.0.0.1:${server.address().port}${route}`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify(body) }); return { status: response.status, body: await response.json() }; };
 const get = async (route, token) => { const response = await realFetch(`http://127.0.0.1:${server.address().port}${route}`, { headers: { authorization: `Bearer ${token}` } }); return { status: response.status, body: await response.json() }; };
 (async () => {
   const usersBeforeReview = getDb().prepare('SELECT COUNT(*) count FROM users').get().count;
@@ -32,6 +33,14 @@ const get = async (route, token) => { const response = await realFetch(`http://1
   const reviewPermissions = await get('/api/permissions/my', review.body.data.token);
   assert.strictEqual(reviewPermissions.status, 200);
   assert.strictEqual(reviewPermissions.body.identity.id, review.body.data.user.id);
+  assert.strictEqual(reviewPermissions.body.identity.is_review_demo, true);
+  assert.strictEqual(reviewPermissions.body.identity.read_only, true);
+  assert.ok(reviewPermissions.body.capabilities.includes('review-demo:student'));
+  assert.ok(!reviewPermissions.body.capabilities.includes('business:all'));
+  assert.strictEqual((await get('/api/admin/users', review.body.data.token)).status, 403);
+  const blockedReviewWrite = await postWithToken('/api/cloud/tasks', { taskType: 'question-paper', payload: {} }, review.body.data.token);
+  assert.strictEqual(blockedReviewWrite.status, 403);
+  assert.strictEqual(blockedReviewWrite.body.code, 'REVIEW_DEMO_READ_ONLY');
   const reviewRefresh = await post('/api/auth/refresh', { token: review.body.data.token });
   assert.strictEqual(reviewRefresh.status, 401, 'review token must not become a normal refreshed token');
 

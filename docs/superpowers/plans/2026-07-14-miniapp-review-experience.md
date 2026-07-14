@@ -76,7 +76,7 @@ Run: `git add gateway/src/services/reviewDemoSession.js gateway/src/services/rev
 - Modify: `gateway/src/routes/cloudRelay.http.test.js`
 - Modify: `gateway/src/app.js`
 
-- [ ] **Step 1: Write failing isolation tests**
+- [x] **Step 1: Write failing isolation tests**
 
 Assert that administrator and student snapshots are deterministic, contain no phone/openid/real host identifiers, student data is linked-student scoped, and review capabilities exclude all real writes.
 
@@ -88,29 +88,29 @@ assert.ok(!JSON.stringify(admin).match(/phone|openid|13732250653/));
 assert.deepStrictEqual(reviewCapabilities('admin').sort(), ['question-bank:view','review-demo:admin','review-demo:paper-export','review-demo:read'].sort());
 ```
 
-- [ ] **Step 2: Confirm RED**
+- [x] **Step 2: Confirm RED**
 
 Run: `node gateway/src/services/reviewDemoData.test.js && node gateway/src/middleware/reviewDemoGuard.test.js`
 Expected: missing modules.
 
-- [ ] **Step 3: Implement static data and explicit capabilities**
+- [x] **Step 3: Implement static data and explicit capabilities**
 
 Create obvious fictional schools, students, teachers, courses, schedules, payments, assets, and at least four question previews. Include answers, knowledge points, explanations, and safe formula text for export.
 
-- [ ] **Step 4: Implement and mount the firewall**
+- [x] **Step 4: Implement and mount the firewall**
 
 The guard must allow GET/HEAD/OPTIONS and `/api/review-demo/*`, but reject every other review mutation with `{ success:false, code:'REVIEW_DEMO_READ_ONLY' }`. Mount it after authentication classification and before protected/optional route handlers so modified clients cannot reach real writes.
 
-- [ ] **Step 5: Route review reads without real database access**
+- [x] **Step 5: Route review reads without real database access**
 
 Return review capabilities from `/api/permissions/my`. In cloud snapshot and question-preview handlers, branch before database reads when `req.authz.isReviewDemo` is true and return demo data plus `sandboxAvailable:true`.
 
-- [ ] **Step 6: Verify isolation and HTTP behavior**
+- [x] **Step 6: Verify isolation and HTTP behavior**
 
 Run: `node gateway/src/services/reviewDemoData.test.js && node gateway/src/middleware/reviewDemoGuard.test.js && node gateway/src/services/authorizationPolicy.test.js && node gateway/src/routes/cloudRelay.http.test.js`
 Expected: all exit 0, including a test that a review session cannot POST a real cloud task.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Stage only Task 2 files and commit `automatic release 2026-07-14`.
 

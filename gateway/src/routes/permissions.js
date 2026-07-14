@@ -56,6 +56,9 @@ router.get('/my', (req, res) => {
     status: req.user?.status ?? req.authz?.status ?? 0,
     login_enabled: req.user?.login_enabled ?? req.authz?.loginEnabled ?? 0,
     authorization_revision: req.user?.updated_at || req.user?.reviewed_at || null,
+    is_review_demo: req.authz?.isReviewDemo === true,
+    read_only: req.authz?.readOnly === true,
+    review_demo_session_id: req.authz?.reviewDemoSessionId || null,
   };
   return res.json({ permissions, capabilities, identity, user_type: role, is_admin: ['super_admin', 'admin'].includes(role) });
   /* legacy grant query retained below for rollback only
