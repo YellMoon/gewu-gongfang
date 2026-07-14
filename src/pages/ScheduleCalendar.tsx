@@ -1478,22 +1478,14 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
   }
 
   function isPureInstitutionSchedule(schedule: ScheduleEvent, course?: Course | null): boolean {
-    const targetCourse = course || courses.find(c => c.id === schedule.course_id);
-    const coursePricings = targetCourse?.student_pricings || [];
-    const scheduleStudentIds = schedule.student_ids || [];
-    const schedulePricings = (schedule.student_pricings || []).filter(sp => sp.student_id !== INSTITUTION_UNBOUND_STUDENT_ID);
-    return targetCourse?.source_type === CourseSourceType.INSTITUTION
-      && coursePricings.length === 0
-      && scheduleStudentIds.length === 0
-      && schedulePricings.length === 0;
+    return false;
   }
 
   function getInstitutionSchedulePricing(schedule: ScheduleEvent, course?: Course | null): StudentCoursePricing {
-    const snapshotPricing = schedule.student_pricings?.find(sp => sp.student_id === INSTITUTION_UNBOUND_STUDENT_ID);
     return {
-      student_id: INSTITUTION_UNBOUND_STUDENT_ID,
-      tuition: Number(snapshotPricing?.tuition ?? course?.price_tuition ?? 0),
-      teacher_fee: Number(snapshotPricing?.teacher_fee ?? course?.price_teacher ?? 0),
+      student_id: '',
+      tuition: 0,
+      teacher_fee: 0,
       status: StudentAttendanceStatus.NORMAL,
     };
   }

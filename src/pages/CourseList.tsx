@@ -11,7 +11,7 @@ import { getColorForRoom } from '../utils/courseColors';
 import { filterCourses } from '../utils/courseFilters';
 import DataPageLayout from '../layout/DataPageLayout';
 import { readSchedulesFromPrimaryStore, replaceSchedulesInPrimaryStore } from '../utils/scheduleStorage.mjs';
-import { isPureInstitutionCourseWithoutStudents } from '../utils/coursePricingRules.mjs';
+import { getEligibleCourseStudents, sanitizeCourseStudentPricings } from '../utils/coursePricingRules.mjs';
 
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Option } = Select;
@@ -63,9 +63,9 @@ const CourseList: React.FC = () => {
   const [form] = Form.useForm();
   const billingUnit = Form.useWatch('billing_unit', form) ?? BillingUnit.PER_HOUR;
   const sourceType = Form.useWatch('source_type', form) as CourseSourceType | undefined;
-  const studentPricingsDraft = Form.useWatch('student_pricings', form) || [];
-  const isPureInstitutionCourseDraft = isPureInstitutionCourseWithoutStudents(sourceType, studentPricingsDraft);
-  const canEditCourseFeeTotalsDirectly = isPureInstitutionCourseDraft;
+  const institutionId = Form.useWatch('institution_id', form) as string | undefined;
+  const eligibleStudents = getEligibleCourseStudents(students, sourceType, institutionId);
+  const isPureInstitutionCourseDraft = false;
   const dbService = (window as any).dbService;
 
   const loadData = async () => {
@@ -169,6 +169,9 @@ const CourseList: React.FC = () => {
         message.warning('请选择所属机构'); return;
       }
       let values = await form.validateFields();
+      values.student_pricings = sanitizeCourseStudentPricings(values.student_pricings, students, values.source_type, values.institution_id);
+      values.price_tuition = values.student_pricings.reduce((sum: number, pricing: StudentCoursePricing) => sum + Number(pricing.tuition || 0), 0);
+      values.price_teacher = values.student_pricings.reduce((sum: number, pricing: StudentCoursePricing) => sum + Number(pricing.teacher_fee || 0), 0);
       // 自动设置 teacher_name
       if (values.teacher_id) {
         const teacher = teachers.find(t => t.id === values.teacher_id);
@@ -539,7 +542,7 @@ const CourseList: React.FC = () => {
                           filterOption={(input, option) =>
                             String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
                           }>
-                          {students.map(s => (
+                          {eligibleStudents.map((s: Student) => (
                             <Option key={s.id} value={s.id}>{s.name}</Option>
                           ))}
                         </Select>
@@ -637,7 +640,7 @@ const CourseList: React.FC = () => {
                 label={`学费/${billingUnit === BillingUnit.PER_HOUR ? '小时' : '次'}（自动汇总）${isPureInstitutionCourseDraft ? ' / 纯机构可手填' : ''}`}
                 initialValue={0}
               >
-                <InputNumber min={0} style={{ width: '100%' }} prefix="¥" readOnly={!canEditCourseFeeTotalsDirectly} />
+                <InputNumber min={0} style={{ width: '100%' }} prefix="¥" readOnly />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -646,7 +649,7 @@ const CourseList: React.FC = () => {
                 label={`课时费/${billingUnit === BillingUnit.PER_HOUR ? '小时' : '次'}（自动汇总）${isPureInstitutionCourseDraft ? ' / 纯机构可手填' : ''}`}
                 initialValue={0}
               >
-                <InputNumber min={0} style={{ width: '100%' }} prefix="¥" readOnly={!canEditCourseFeeTotalsDirectly} />
+                <InputNumber min={0} style={{ width: '100%' }} prefix="¥" readOnly />
               </Form.Item>
             </Col>
           </Row>

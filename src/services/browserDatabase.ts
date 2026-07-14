@@ -169,6 +169,7 @@ class BrowserDatabaseService {
       ...s,
       grade_current: calculateGrade(s.grade_year)
     }));
+    this.ensureInstitutionStudents();
 
     // 题型迁移：旧题型统一为5种
     const typeMigrateMap: Record<string, string> = {
@@ -702,6 +703,7 @@ class BrowserDatabaseService {
       created_at: now
     };
     this.data.institutions.push(newInstitution);
+    this.ensureInstitutionStudents();
     this.saveData();
     this.recordSyncChange('institutions', 'create', newInstitution.id, newInstitution);
     return newInstitution;
@@ -711,9 +713,21 @@ class BrowserDatabaseService {
     const index = this.data.institutions.findIndex(i => i.id === id);
     if (index === -1) return undefined;
     this.data.institutions[index] = { ...this.data.institutions[index], ...updates };
+    this.ensureInstitutionStudents();
     this.saveData();
     this.recordSyncChange('institutions', 'update', id, this.data.institutions[index]);
     return this.data.institutions[index];
+  }
+
+  private ensureInstitutionStudents(): void {
+    const now = new Date().toISOString();
+    for (const institution of this.data.institutions || []) {
+      const existing = (this.data.students || []).find(student => student.is_institution_student && student.institution_id === institution.id);
+      const name = String(institution.name || '').trim() + '\u5b66\u751f';
+      if (existing) { existing.name = name; existing.source_type = StudentSource.INSTITUTION; existing.updated_at = now; }
+      else this.data.students.push({ id: this.generateId(), name, source_type: StudentSource.INSTITUTION, institution_id: institution.id,
+        is_institution_student: true, balance_hours: 0, balance_money: 0, notes: '\u673a\u6784\u8bfe\u7a0b\u8d39\u7528\u4e13\u7528\u5b66\u751f', created_at: now, updated_at: now });
+    }
   }
 
   deleteInstitution(id: string): boolean {
