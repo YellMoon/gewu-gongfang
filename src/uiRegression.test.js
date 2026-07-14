@@ -30,7 +30,11 @@ const todayWorkbench = read('src/pages/TodayWorkbench.tsx');
 const questionRenderer = read('src/components/QuestionRenderer.tsx');
 const questionRendererCss = read('src/components/QuestionRenderer.css');
 const richQuestionEditor = read('src/components/RichQuestionEditor.tsx');
+const richAssetImage = read('src/components/RichAssetImage.tsx');
+const structuredQuestionViewer = read('src/components/StructuredQuestionViewer.tsx');
 const systemSettings = read('src/pages/SystemSettings.tsx');
+assert.ok(systemSettings.includes("if (!settingsPolicy.isPrimaryHost)") && systemSettings.includes('\\u7ba1\\u7406\\u5458\\u6258\\u7ba1'), 'ordinary desktop settings must use a dedicated managed simple view');
+assert.ok(systemSettings.includes('if (policy.loadQuestionBankStorage)') && systemSettings.includes('if (policy.loadBackupTargets)'), 'ordinary desktop must not load host storage or backup status');
 const syncSettings = read('src/pages/SyncSettings.tsx');
 const syncQuickPanel = read('src/components/sync/SyncQuickPanel.tsx');
 const cloudSync = read('src/pages/CloudSync.tsx');
@@ -119,7 +123,6 @@ const desktopRuntimeOnlyDependencies = [
   'chart.js',
   'dayjs',
   'electron-store',
-  'katex',
   'react',
   'react-chartjs-2',
   'react-dom',
@@ -524,13 +527,38 @@ assert(
 );
 
 assert(
-  richQuestionEditor.includes('contentEditable') &&
-  richQuestionEditor.includes('insertFormula') &&
-  richQuestionEditor.includes('insertImage') &&
-  richQuestionEditor.includes('applyImageAlignment') &&
-  questionBankPreview.includes('RichQuestionEditor') &&
-  questionBankEdit.includes('RichQuestionEditor'),
-  'question edit dialogs should use a WYSIWYG editor for rich text, formulas, and images'
+  richQuestionEditor.includes('useEditor({') &&
+  richQuestionEditor.includes('EditorContent editor={editor}') &&
+  richQuestionEditor.includes("output === 'json' ? current.getJSON()") &&
+  richQuestionEditor.includes("canonicalLatex") &&
+  richQuestionEditor.includes("toggleHighlight") &&
+  richQuestionEditor.includes("RichImage.configure({ allowBase64: false })") &&
+  richQuestionEditor.includes("transformPastedHTML") &&
+  richQuestionEditor.includes("aria-label={title}") &&
+  richQuestionEditor.includes("aria-label={t('\\u5b57\\u53f7')}") &&
+  richQuestionEditor.includes("aria-label={t('\\u6587\\u5b57\\u989c\\u8272')}") &&
+  richQuestionEditor.includes("aria-label={t('\\u5220\\u9664\\u56fe\\u7247')}") &&
+  richQuestionEditor.includes("aria-pressed={editor.isActive('image', { align: 'left' })}") &&
+  richQuestionEditor.includes("aria-pressed={editor.isActive('highlight')}") &&
+  richQuestionEditor.includes("editor.isActive({ textAlign: 'center' })") &&
+  richQuestionEditor.includes("value={String(editor.getAttributes('textStyle').fontSize") &&
+  richQuestionEditor.includes("forceSelectionRender(value => value + 1)") &&
+  richQuestionEditor.includes("pendingImagePositions.current") &&
+  richQuestionEditor.includes("<RichAssetImage src={node.attrs.persistedSrc || node.attrs.src} assetKey={node.attrs.assetKey}") &&
+  richQuestionEditor.includes('maskPersistedImagesForEditor') &&
+  richAssetImage.includes("resolveAssetForDisplay(source, getQuestionAssetDataUrl)") &&
+  richAssetImage.includes("replacePersistedAssetImageSources") &&
+  questionRenderer.includes("<ResolvedRichHtml") &&
+  structuredQuestionViewer.includes("<RichAssetImage") &&
+  richQuestionEditor.includes("insertContentAt(range") &&
+  richQuestionEditor.includes("<UndoOutlined />, undefined") &&
+  questionBankPreview.includes('QuestionStructureEditor') &&
+  questionBankEdit.includes('QuestionStructureEditor') &&
+  questionBankImport.includes('QuestionStructureEditor') &&
+  !questionBankPreview.includes('name="formulas"') &&
+  !questionBankEdit.includes('name="formulas"') &&
+  !questionBankImport.includes('name="formulas"'),
+  'question edit dialogs should use the controlled TipTap editor contract for rich text, formulas, images, and sanitized paste'
 );
 
 assert(

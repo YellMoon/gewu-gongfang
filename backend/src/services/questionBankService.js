@@ -4,6 +4,7 @@ const sanitizeHtml = require('sanitize-html');
 const cache = require('./cacheService');
 const eventBus = require('./eventBus');
 const { canDeleteQuestion, committedDeleteError } = require('./questionDeletionPolicy');
+const { projectRichContent: projectCanonicalRichContent } = require('./questionRichContentProjection');
 
 function now() {
   return new Date().toISOString();
@@ -31,6 +32,20 @@ function parseJsonArray(value) {
 const RICH_CONTENT_MAX_BYTES = 4 * 1024 * 1024;
 const RICH_CONTENT_MAX_DEPTH = 40;
 const UNSAFE_OBJECT_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+const RICH_CONTENT_NODE_TYPES = new Set([
+  'doc', 'paragraph', 'text', 'hardBreak', 'heading', 'blockquote', 'bulletList', 'orderedList',
+    'listItem', 'horizontalRule', 'codeBlock', 'formula', 'formulaBlock', 'image',
+]);
+const RICH_CONTENT_MARK_TYPES = new Set([
+  'bold', 'italic', 'underline', 'strike', 'code', 'subscript', 'superscript', 'textStyle', 'fontFamily', 'fontSize', 'highlight', 'link',
+]);
+const SAFE_RICH_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/;
+const SAFE_RICH_REF = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,1023}$/;
+const RICH_FONT_FAMILIES = new Set(['SimSun', 'Microsoft YaHei', 'KaiTi', 'FangSong', 'Arial', 'Times New Roman']);
+const RICH_FONT_SIZES = new Set(['12px', '14px', '16px', '18px', '20px', '24px', '28px', '32px']);
+const RICH_LINE_HEIGHTS = new Set(['1', '1.25', '1.5', '1.75', '2']);
+const RICH_TEXT_ALIGNS = new Set(['left', 'center', 'right', 'justify']);
+const RICH_COLOR = /^#[0-9a-f]{3,8}$/i;
 
 function normalizeRichContent(value) {
   if (value === undefined || value === null || value === '') return null;
@@ -38,6 +53,18 @@ function normalizeRichContent(value) {
   if (typeof value === 'string') {
     try { parsed = JSON.parse(value); } catch (_error) { throw new Error('rich_content must be valid JSON'); }
   }
+  parsed = JSON.parse(JSON.stringify(parsed));
+  const stripOptionalNulls = node => {
+    if (!node || typeof node !== 'object') return;
+    if (node.attrs && (node.type === 'formula' || node.type === 'formulaBlock')) {
+      for (const key of ['sourceRef', 'warnings', 'conversionStatus', 'sourceFormat', 'previewRef']) if (node.attrs[key] == null) delete node.attrs[key];
+    }
+    if (node.attrs && node.type === 'image') {
+      for (const key of ['src', 'alt', 'title', 'width', 'height', 'align']) if (node.attrs[key] == null) delete node.attrs[key];
+    }
+    for (const child of Object.values(node)) if (child && typeof child === 'object') Array.isArray(child) ? child.forEach(stripOptionalNulls) : stripOptionalNulls(child);
+  };
+  stripOptionalNulls(parsed);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('rich_content must be an object');
   }
@@ -58,9 +85,130 @@ function normalizeRichContent(value) {
     }
   };
   visit(parsed);
+  const allowKeys = (attrs, allowed, label) => {
+    for (const key of Object.keys(attrs || {})) if (!allowed.includes(key)) throw new Error(`rich_content ${label} contains unsupported attr ${key}`);
+  };
+  const validateNode = (node, depth = 0) => {
+    if (!node || typeof node !== 'object' || Array.isArray(node) || !RICH_CONTENT_NODE_TYPES.has(node.type)) {
+      throw new Error('rich_content contains an unsupported node');
+    }
+    if (depth > RICH_CONTENT_MAX_DEPTH) throw new Error('rich_content nesting is too deep');
+    if (node.type === 'text' && typeof node.text !== 'string') throw new Error('rich_content text node requires text');
+    const attrs = node.attrs && typeof node.attrs === 'object' && !Array.isArray(node.attrs) ? node.attrs : {};
+    if (['doc', 'text', 'hardBreak', 'blockquote', 'bulletList', 'listItem', 'horizontalRule'].includes(node.type)) allowKeys(attrs, [], node.type);
+    if (['paragraph', 'heading'].includes(node.type)) {
+      allowKeys(attrs, node.type === 'heading' ? ['level', 'textAlign', 'lineHeight', 'indent'] : ['textAlign', 'lineHeight', 'indent'], node.type);
+      if (attrs.textAlign != null && !RICH_TEXT_ALIGNS.has(String(attrs.textAlign))) throw new Error(`rich_content ${node.type} textAlign is invalid`);
+      if (attrs.lineHeight != null && !RICH_LINE_HEIGHTS.has(String(attrs.lineHeight))) throw new Error(`rich_content ${node.type} lineHeight is invalid`);
+      if (attrs.indent != null && (!Number.isInteger(attrs.indent) || attrs.indent < 0 || attrs.indent > 8)) throw new Error(`rich_content ${node.type} indent is invalid`);
+      if (node.type === 'heading' && (!Number.isInteger(attrs.level) || attrs.level < 1 || attrs.level > 6)) throw new Error('rich_content heading level is invalid');
+    }
+    if (node.type === 'orderedList') {
+      allowKeys(attrs, ['start'], 'orderedList');
+      if (attrs.start != null && (!Number.isInteger(attrs.start) || attrs.start < 1 || attrs.start > 100000)) throw new Error('rich_content orderedList start is invalid');
+    }
+    if (node.type === 'codeBlock') {
+      allowKeys(attrs, ['language'], 'codeBlock');
+      if (attrs.language != null && !/^[A-Za-z0-9_+-]{1,40}$/.test(String(attrs.language))) throw new Error('rich_content codeBlock language is invalid');
+    }
+    if (node.marks !== undefined) {
+      if (!Array.isArray(node.marks) || node.marks.some(mark => !mark || !RICH_CONTENT_MARK_TYPES.has(mark.type))) {
+        throw new Error('rich_content contains an unsupported mark');
+      }
+      for (const mark of node.marks) {
+        const markAttrs = mark.attrs && typeof mark.attrs === 'object' && !Array.isArray(mark.attrs) ? mark.attrs : {};
+        if (['bold', 'italic', 'underline', 'strike', 'code', 'subscript', 'superscript'].includes(mark.type)) allowKeys(markAttrs, [], mark.type);
+        if (mark.type === 'textStyle') {
+          allowKeys(markAttrs, ['color', 'fontFamily', 'fontSize'], 'textStyle');
+          if (markAttrs.color != null && !RICH_COLOR.test(String(markAttrs.color))) throw new Error('rich_content textStyle color is invalid');
+          if (markAttrs.fontFamily != null && !RICH_FONT_FAMILIES.has(String(markAttrs.fontFamily))) throw new Error('rich_content textStyle fontFamily is invalid');
+          if (markAttrs.fontSize != null && !RICH_FONT_SIZES.has(String(markAttrs.fontSize))) throw new Error('rich_content textStyle fontSize is invalid');
+        }
+        if (mark.type === 'fontFamily') { allowKeys(markAttrs, ['fontFamily'], 'fontFamily'); if (!RICH_FONT_FAMILIES.has(String(markAttrs.fontFamily))) throw new Error('rich_content fontFamily is invalid'); }
+        if (mark.type === 'fontSize') { allowKeys(markAttrs, ['fontSize'], 'fontSize'); if (!RICH_FONT_SIZES.has(String(markAttrs.fontSize))) throw new Error('rich_content fontSize is invalid'); }
+        if (mark.type === 'highlight') { allowKeys(markAttrs, ['color'], 'highlight'); if (markAttrs.color != null && !RICH_COLOR.test(String(markAttrs.color))) throw new Error('rich_content highlight color is invalid'); }
+        if (mark.type === 'link') {
+          allowKeys(markAttrs, ['href', 'target', 'rel', 'class'], 'link');
+          if (typeof markAttrs.href !== 'string' || !(/^https?:\/\//i.test(markAttrs.href) || /^\/(?!\/)/.test(markAttrs.href) || /^#[A-Za-z0-9_-]+$/.test(markAttrs.href))) throw new Error('rich_content link href is invalid');
+          if (markAttrs.target != null && !['_blank', '_self'].includes(markAttrs.target)) throw new Error('rich_content link target is invalid');
+          if (markAttrs.rel != null && markAttrs.rel !== 'noopener noreferrer') throw new Error('rich_content link rel is invalid');
+          if (markAttrs.class != null && !/^[A-Za-z0-9_-]{1,64}$/.test(markAttrs.class)) throw new Error('rich_content link class is invalid');
+        }
+      }
+    }
+    if (node.type === 'formula' || node.type === 'formulaBlock') {
+      allowKeys(attrs, ['id', 'canonicalLatex', 'displayMode', 'sourceRef', 'warnings', 'conversionStatus', 'sourceFormat', 'previewRef'], 'formula');
+      if (!SAFE_RICH_ID.test(String(attrs.id || '')) || typeof attrs.canonicalLatex !== 'string' || !attrs.canonicalLatex.trim()
+        || attrs.canonicalLatex.length > 10000 || !['inline', 'block'].includes(attrs.displayMode)) {
+        throw new Error('rich_content formula node is invalid');
+      }
+      if (attrs.sourceRef != null && !SAFE_RICH_REF.test(String(attrs.sourceRef))) throw new Error('rich_content formula sourceRef is invalid');
+      if (attrs.previewRef != null && !SAFE_RICH_REF.test(String(attrs.previewRef))) throw new Error('rich_content formula previewRef is invalid');
+      if (attrs.conversionStatus != null && !['complete', 'approximate', 'preview_only', 'unsupported', 'failed'].includes(attrs.conversionStatus)) throw new Error('rich_content formula conversionStatus is invalid');
+      if (attrs.sourceFormat != null && !['omml', 'eq', 'mathtype', 'mathml', 'latex', 'unknown'].includes(attrs.sourceFormat)) throw new Error('rich_content formula sourceFormat is invalid');
+      if (attrs.warnings != null && (!Array.isArray(attrs.warnings) || attrs.warnings.some(item => typeof item !== 'string' || item.length > 1000))) throw new Error('rich_content formula warnings are invalid');
+    }
+    if (node.type === 'image') {
+      allowKeys(attrs, ['src', 'assetKey', 'alt', 'title', 'width', 'height', 'align'], 'image');
+      if (!SAFE_RICH_REF.test(String(attrs.assetKey || '')) || String(attrs.assetKey).includes('..')) throw new Error('rich_content image assetKey is invalid');
+      if (attrs.src != null && attrs.src !== `question-asset://${attrs.assetKey}`) throw new Error('rich_content image src is invalid');
+      if (attrs.alt != null && (typeof attrs.alt !== 'string' || attrs.alt.length > 1000)) throw new Error('rich_content image alt is invalid');
+      if (attrs.title != null && (typeof attrs.title !== 'string' || attrs.title.length > 1000)) throw new Error('rich_content image title is invalid');
+      for (const dimension of ['width', 'height']) if (attrs[dimension] != null && (!Number.isFinite(attrs[dimension]) || attrs[dimension] <= 0 || attrs[dimension] > 10000)) throw new Error(`rich_content image ${dimension} is invalid`);
+      if (attrs.align != null && !['left', 'center', 'right'].includes(attrs.align)) throw new Error('rich_content image align is invalid');
+    }
+    if (node.content !== undefined) {
+      if (!Array.isArray(node.content)) throw new Error('rich_content node content must be an array');
+      node.content.forEach(child => validateNode(child, depth + 1));
+    }
+  };
+  for (const name of ['stem', 'answer', 'analysis']) {
+    validateNode(parsed.sections[name]);
+    if (parsed.sections[name].type !== 'doc') throw new Error(`rich_content ${name} must be a doc`);
+  }
+  if (!Array.isArray(parsed.sections.options) || !Array.isArray(parsed.sections.subQuestions)) {
+    throw new Error('rich_content option and subquestion sections must be arrays');
+  }
+  for (const option of parsed.sections.options) {
+    if (!option || !SAFE_RICH_ID.test(String(option.id || '')) || typeof option.label !== 'string' || typeof option.isCorrect !== 'boolean') {
+      throw new Error('rich_content option is invalid');
+    }
+    validateNode(option.content);
+    if (option.content.type !== 'doc') throw new Error('rich_content option content must be a doc');
+  }
+  for (const sub of parsed.sections.subQuestions) {
+    if (!sub || !SAFE_RICH_ID.test(String(sub.id || '')) || typeof sub.label !== 'string') throw new Error('rich_content subquestion is invalid');
+    validateNode(sub.content);
+    validateNode(sub.answer);
+    if (sub.content.type !== 'doc') throw new Error('rich_content subquestion content must be a doc');
+    if (sub.answer.type !== 'doc') throw new Error('rich_content subquestion answer must be a doc');
+  }
   const serialized = JSON.stringify(parsed);
   if (Buffer.byteLength(serialized, 'utf8') > RICH_CONTENT_MAX_BYTES) throw new Error('rich_content is too large');
   return JSON.parse(serialized);
+}
+
+function projectRichContent(richContent) {
+  const flags = { hasFormula: false, hasImage: false };
+  const nodeText = node => {
+    if (node.type === 'text') return node.text || '';
+    if (node.type === 'hardBreak') return '\n';
+    if (node.type === 'formula') { flags.hasFormula = true; return ` ${node.attrs.canonicalLatex} `; }
+    if (node.type === 'image') { flags.hasImage = true; return ` ${node.attrs.alt || ''} `; }
+    const text = (node.content || []).map(nodeText).join('');
+    return ['paragraph', 'heading', 'blockquote', 'listItem'].includes(node.type) ? `${text}\n` : text;
+  };
+  const docText = doc => nodeText(doc).replace(/\r\n?/g, '\n').replace(/[\t\f\v ]+/g, ' ')
+    .replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  const sections = richContent.sections;
+  const stem = docText(sections.stem);
+  const options = sections.options.map(option => ({ label: option.label, content: docText(option.content), is_correct: option.isCorrect }));
+  const subQuestions = sections.subQuestions.map(sub => ({ label: sub.label, content: docText(sub.content), answer: docText(sub.answer) }));
+  const answer = docText(sections.answer);
+  const explanation = docText(sections.analysis);
+  const searchText = [stem, ...options.flatMap(option => [option.label, option.content]), ...subQuestions.flatMap(sub => [sub.label, sub.content, sub.answer]), answer, explanation]
+    .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  return { stem, options, subQuestions, answer, explanation, searchText, ...flags };
 }
 
 function parseRichContent(value) {
@@ -107,6 +255,49 @@ const SANITIZE_HTML_OPTIONS = {
 
 function sanitizeHtmlContent(value) {
   return sanitizeHtml(String(value || ''), SANITIZE_HTML_OPTIONS);
+}
+
+function legacyTextDoc(value) {
+  const text = sanitizeHtml(String(value || ''), { allowedTags: [], allowedAttributes: {} })
+    .replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+  return { type: 'doc', content: text ? [{ type: 'paragraph', content: [{ type: 'text', text }] }] : [] };
+}
+
+function migrateLegacyRichContent(question = {}) {
+  const options = normalizeOptions(question.options || question.options_json).map((option, index) => ({
+    id: String(option?.id || `option-${index + 1}`),
+    label: String(option?.label || String.fromCharCode(65 + index)),
+    isCorrect: Boolean(option?.isCorrect ?? option?.is_correct),
+    content: legacyTextDoc(typeof option === 'string' ? option : (option?.content ?? option?.text ?? '')),
+  }));
+  const legacySubs = Array.isArray(question.sub_questions) ? question.sub_questions : (Array.isArray(question.subQuestions) ? question.subQuestions : []);
+  const subQuestions = legacySubs.map((sub, index) => ({
+    id: String(sub?.id || `sub-${index + 1}`), label: String(sub?.label || `(${index + 1})`),
+    content: legacyTextDoc(sub?.content ?? sub?.stem ?? ''), answer: legacyTextDoc(sub?.answer ?? ''),
+  }));
+  return normalizeRichContent({ version: 1, type: 'question-document', sections: {
+    stem: legacyTextDoc(question.stem ?? question.content ?? ''), options, subQuestions,
+    answer: legacyTextDoc(question.answer ?? ''), analysis: legacyTextDoc(question.explanation ?? question.analysis ?? ''),
+  } });
+}
+
+function mergeLegacyRichContent(existingRich, existing, payload) {
+  const existingProjection = projectCanonicalRichContent(existingRich);
+  const mergedLegacy = {
+    stem: payload.stem ?? payload.content ?? existing.stem,
+    answer: payload.answer ?? existing.answer,
+    explanation: payload.explanation ?? payload.analysis ?? existing.explanation,
+    options: payload.options ?? payload.options_json ?? existing.options,
+    sub_questions: payload.sub_questions ?? payload.subQuestions ?? existingProjection.subQuestions,
+  };
+  const migrated = migrateLegacyRichContent(mergedLegacy);
+  const next = JSON.parse(JSON.stringify(existingRich));
+  if (payload.stem !== undefined || payload.content !== undefined) next.sections.stem = migrated.sections.stem;
+  if (payload.options !== undefined || payload.options_json !== undefined) next.sections.options = migrated.sections.options;
+  if (payload.sub_questions !== undefined || payload.subQuestions !== undefined) next.sections.subQuestions = migrated.sections.subQuestions;
+  if (payload.answer !== undefined) next.sections.answer = migrated.sections.answer;
+  if (payload.explanation !== undefined || payload.analysis !== undefined) next.sections.analysis = migrated.sections.analysis;
+  return normalizeRichContent(next);
 }
 
 function sanitizeOptionContent(option) {
@@ -403,11 +594,12 @@ class QuestionBankService {
     const ts = now();
     const questionId = payload.id || uuidv4();
     const contentId = uuidv4();
-    const stem = sanitizeHtmlContent(payload.stem || payload.content || '');
-    const answer = sanitizeHtmlContent(payload.answer || '');
-    const explanation = sanitizeHtmlContent(payload.explanation !== undefined ? payload.explanation : payload.analysis);
-    const options = normalizeOptions(payload.options || payload.options_json);
-    const richContent = normalizeRichContent(payload.rich_content);
+    const richContent = payload.rich_content !== undefined ? normalizeRichContent(payload.rich_content) : migrateLegacyRichContent(payload);
+    const richProjection = projectCanonicalRichContent(richContent);
+    const stem = sanitizeHtmlContent(payload.stem !== undefined || payload.content !== undefined ? (payload.stem ?? payload.content) : (richProjection?.stem || ''));
+    const answer = sanitizeHtmlContent(payload.answer !== undefined ? payload.answer : (richProjection?.answer || ''));
+    const explanation = sanitizeHtmlContent(payload.explanation !== undefined || payload.analysis !== undefined ? (payload.explanation ?? payload.analysis) : (richProjection?.explanation || ''));
+    const options = normalizeOptions(payload.options !== undefined || payload.options_json !== undefined ? (payload.options ?? payload.options_json) : (richProjection?.options || []));
     const knowledgePointIds = payload.allow_tag_name_create === false
       ? normalizeKnowledgePointIds(payload)
       : this.resolveKnowledgePointIds(db, payload, tenantId);
@@ -415,11 +607,12 @@ class QuestionBankService {
       ? normalizeModelPointIds(payload)
       : this.resolveModelPointIds(db, payload, tenantId);
     const richContentJson = richContent ? JSON.stringify(richContent) : null;
+    const searchText = richProjection.searchText;
     const contentHash = payload.content_hash || hashText([stem, answer, explanation, JSON.stringify(options), richContentJson || ''].join('|'));
     const contentRef = normalizeOssRef(payload);
     const assets = normalizeQuestionAssets(payload);
-    const hasImage = detectHasImage(payload, assets);
-    const hasFormula = detectHasFormula(payload);
+    const hasImage = richProjection ? richProjection.hasImage || assets.length > 0 : detectHasImage(payload, assets);
+    const hasFormula = richProjection ? richProjection.hasFormula : detectHasFormula(payload);
 
     const transaction = db.transaction(() => {
       db.prepare(
@@ -457,9 +650,9 @@ class QuestionBankService {
 
       db.prepare(
         `INSERT INTO question_contents
-         (id, tenant_id, question_id, stem, answer, explanation, options_json, rich_content_json, content_hash, version, oss_key, oss_url, deleted, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?)`
-      ).run(contentId, tenantId, questionId, stem, answer || null, explanation || null, JSON.stringify(options), richContentJson, contentHash, contentRef?.oss_key || null, contentRef?.oss_url || null, ts, ts);
+         (id, tenant_id, question_id, stem, answer, explanation, options_json, rich_content_json, search_text, content_hash, version, oss_key, oss_url, deleted, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?)`
+      ).run(contentId, tenantId, questionId, stem, answer || null, explanation || null, JSON.stringify(options), richContentJson, searchText, contentHash, contentRef?.oss_key || null, contentRef?.oss_url || null, ts, ts);
 
       for (const knowledgePointId of knowledgePointIds) {
         db.prepare(
@@ -501,6 +694,7 @@ class QuestionBankService {
   _mapQuestion(row, assets = []) {
     if (!row) return null;
     const knowledgeIds = row.knowledge_point_ids ? String(row.knowledge_point_ids).split(',').filter(Boolean) : [];
+    const knowledgeNames = row.knowledge_point_names ? String(row.knowledge_point_names).split('\u001f').filter(Boolean) : [];
     const modelIds = row.model_point_ids ? String(row.model_point_ids).split(',').filter(Boolean) : [];
     const options = parseJsonArray(row.options_json);
     return {
@@ -509,6 +703,7 @@ class QuestionBankService {
       content: row.stem || '',
       options,
       rich_content: parseRichContent(row.rich_content_json),
+      search_text: row.search_text || '',
       answer: row.answer || '',
       explanation: row.explanation || '',
       analysis: row.explanation || '',
@@ -520,6 +715,8 @@ class QuestionBankService {
       } : null,
       knowledge_point_ids: knowledgeIds,
       knowledge_ids: knowledgeIds,
+      knowledge_point_names: knowledgeNames,
+      knowledge_points: knowledgeNames,
       model_point_ids: modelIds,
       model_ids: modelIds,
       status: normalizeQuestionStatus(row.status),
@@ -541,11 +738,19 @@ class QuestionBankService {
                    qc.explanation,
                    qc.options_json,
                    qc.rich_content_json,
+                   qc.search_text,
                    qc.content_hash,
                    qc.version AS content_version,
                    qc.oss_key AS content_oss_key,
                    qc.oss_url AS content_oss_url,
                    GROUP_CONCAT(DISTINCT qkp.knowledge_point_id) AS knowledge_point_ids,
+                   (SELECT GROUP_CONCAT(name, char(31)) FROM (
+                      SELECT DISTINCT kp.name AS name
+                      FROM question_knowledge_points ordered_qkp
+                      JOIN knowledge_points kp ON kp.id = ordered_qkp.knowledge_point_id
+                      WHERE ordered_qkp.question_id = q.id AND kp.tenant_id = q.tenant_id AND kp.deleted = 0
+                      ORDER BY kp.name ASC, kp.id ASC
+                   )) AS knowledge_point_names,
                    GROUP_CONCAT(DISTINCT qmp.model_point_id) AS model_point_ids
             FROM questions q
             LEFT JOIN question_contents qc ON qc.question_id = q.id AND qc.deleted = 0
@@ -612,10 +817,11 @@ class QuestionBankService {
       where.push('EXISTS (SELECT 1 FROM question_knowledge_points x WHERE x.question_id = q.id AND x.knowledge_point_id = ?)');
       params.push(filters.knowledge_point_id);
     }
-    if (filters.q) {
-      const keyword = `%${escapeLikePattern(filters.q)}%`;
-      where.push("(qc.stem LIKE ? ESCAPE '\\' OR qc.answer LIKE ? ESCAPE '\\' OR qc.explanation LIKE ? ESCAPE '\\' OR q.source LIKE ? ESCAPE '\\')");
-      params.push(keyword, keyword, keyword, keyword);
+    const searchQuery = filters.q || filters.search;
+    if (searchQuery) {
+      const keyword = `%${escapeLikePattern(searchQuery)}%`;
+      where.push("(COALESCE(qc.search_text, qc.stem || ' ' || COALESCE(qc.options_json, '') || ' ' || COALESCE(qc.answer, '') || ' ' || COALESCE(qc.explanation, '') || ' ' || COALESCE(qc.rich_content_json, '')) LIKE ? ESCAPE '\\' OR q.source LIKE ? ESCAPE '\\')");
+      params.push(keyword, keyword);
     }
 
     const limit = Math.min(Math.max(Number(filters.limit) || 50, 1), 200);
@@ -636,14 +842,22 @@ class QuestionBankService {
     if (!existing) return null;
 
     const ts = now();
-    const stem = sanitizeHtmlContent(payload.stem !== undefined ? payload.stem : (payload.content !== undefined ? payload.content : existing.stem));
-    const answer = sanitizeHtmlContent(payload.answer !== undefined ? payload.answer : existing.answer);
-    const explanation = sanitizeHtmlContent(payload.explanation !== undefined ? payload.explanation : (payload.analysis !== undefined ? payload.analysis : existing.explanation));
-    const options = payload.options !== undefined || payload.options_json !== undefined
-      ? normalizeOptions(payload.options !== undefined ? payload.options : payload.options_json)
-      : existing.options;
-    const richContent = payload.rich_content !== undefined ? normalizeRichContent(payload.rich_content) : existing.rich_content;
+    const legacyContentKeys = ['stem', 'content', 'answer', 'explanation', 'analysis', 'options', 'options_json', 'sub_questions', 'subQuestions'];
+    const hasLegacyContentMutation = payload.rich_content === undefined && legacyContentKeys.some(key => payload[key] !== undefined);
+    const richContent = payload.rich_content !== undefined
+      ? normalizeRichContent(payload.rich_content)
+      : hasLegacyContentMutation
+        ? mergeLegacyRichContent(existing.rich_content || migrateLegacyRichContent(existing), existing, payload)
+        : existing.rich_content;
+    const richProjection = richContent ? projectCanonicalRichContent(richContent) : null;
+    const stem = sanitizeHtmlContent(payload.stem !== undefined || payload.content !== undefined ? (payload.stem ?? payload.content) : (richProjection?.stem ?? existing.stem));
+    const answer = sanitizeHtmlContent(payload.answer !== undefined ? payload.answer : (richProjection?.answer ?? existing.answer));
+    const explanation = sanitizeHtmlContent(payload.explanation !== undefined || payload.analysis !== undefined ? (payload.explanation ?? payload.analysis) : (richProjection?.explanation ?? existing.explanation));
+    const options = normalizeOptions(payload.options !== undefined || payload.options_json !== undefined
+      ? (payload.options ?? payload.options_json)
+      : (richProjection?.options ?? existing.options));
     const richContentJson = richContent ? JSON.stringify(richContent) : null;
+    const searchText = richProjection?.searchText || [stem, ...options.map(option => typeof option === 'string' ? option : `${option.label || ''} ${option.content || option.text || ''}`), answer, explanation].join(' ').replace(/\s+/g, ' ').trim();
     const contentHash = payload.content_hash || hashText([stem, answer, explanation, JSON.stringify(options), richContentJson || ''].join('|'));
     const contentRef = normalizeOssRef(payload) || {
       oss_key: existing.content_oss_key || existing.oss_key || null,
@@ -652,8 +866,8 @@ class QuestionBankService {
     const replacingAssets = payload.assets !== undefined || payload.cover !== undefined || payload.cover_image !== undefined || payload.title_image !== undefined || payload.attachments !== undefined;
     const nextAssets = replacingAssets ? normalizeQuestionAssets(payload) : existing.assets || [];
     const mergedForDetection = { ...existing, ...payload, stem, content: stem, answer, explanation, options };
-    const hasImage = payload.has_image !== undefined ? boolValue(payload.has_image) : detectHasImage(mergedForDetection, nextAssets);
-    const hasFormula = payload.has_formula !== undefined ? boolValue(payload.has_formula) : detectHasFormula(mergedForDetection);
+    const hasImage = richProjection ? richProjection.hasImage || nextAssets.length > 0 : (payload.has_image !== undefined ? boolValue(payload.has_image) : detectHasImage(mergedForDetection, nextAssets));
+    const hasFormula = richProjection ? richProjection.hasFormula : (payload.has_formula !== undefined ? boolValue(payload.has_formula) : detectHasFormula(mergedForDetection));
 
     const transaction = db.transaction(() => {
       const questionUpdates = {};
@@ -676,9 +890,9 @@ class QuestionBankService {
       db.prepare('UPDATE question_contents SET deleted = 1, updated_at = ? WHERE question_id = ? AND deleted = 0').run(ts, id);
       db.prepare(
         `INSERT INTO question_contents
-         (id, tenant_id, question_id, stem, answer, explanation, options_json, rich_content_json, content_hash, version, oss_key, oss_url, deleted, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
-      ).run(uuidv4(), tenantId, id, stem, answer || null, explanation || null, JSON.stringify(options), richContentJson, contentHash, (existing.content_version || 1) + 1, contentRef.oss_key || null, contentRef.oss_url || null, ts, ts);
+         (id, tenant_id, question_id, stem, answer, explanation, options_json, rich_content_json, search_text, content_hash, version, oss_key, oss_url, deleted, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+      ).run(uuidv4(), tenantId, id, stem, answer || null, explanation || null, JSON.stringify(options), richContentJson, searchText, contentHash, (existing.content_version || 1) + 1, contentRef.oss_key || null, contentRef.oss_url || null, ts, ts);
 
       if (payload.knowledge_point_ids !== undefined || payload.knowledge_ids !== undefined || payload.knowledge_points !== undefined || payload.knowledge_point_names !== undefined || payload.knowledge_point !== undefined) {
         db.prepare('DELETE FROM question_knowledge_points WHERE question_id = ?').run(id);
@@ -882,7 +1096,7 @@ class QuestionBankService {
   }
 
   searchQuestionsFallback(db, filters = {}, tenantId = 'default') {
-    return this.listQuestions(db, { ...filters, limit: filters.limit || 50 }, tenantId);
+    return this.listQuestions(db, { ...filters, q: filters.q || filters.search, limit: filters.limit || 50 }, tenantId);
   }
 
   enqueueSearchJob(db, questionId, operation = 'upsert', tenantId = 'default') {

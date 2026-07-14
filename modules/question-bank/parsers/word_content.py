@@ -64,6 +64,9 @@ class TokenSource:
     paragraph_index: int
     content_index: int
     comment_id: str | None = None
+    table_row: int | None = None
+    table_cell: int | None = None
+    cell_paragraph: int | None = None
 
 
 @dataclass(frozen=True)
@@ -140,6 +143,9 @@ def _paragraph_tokens(
     paragraph_index: int,
     comment_id: str | None,
     relationships: dict[str, Relationship],
+    table_row: int | None = None,
+    table_cell: int | None = None,
+    cell_paragraph: int | None = None,
 ) -> tuple[WordToken, ...]:
     tokens: list[WordToken] = []
 
@@ -147,7 +153,7 @@ def _paragraph_tokens(
         tokens.append(
             WordToken(
                 kind=kind,
-                source=TokenSource(part_name, paragraph_index, len(tokens), comment_id),
+                source=TokenSource(part_name, paragraph_index, len(tokens), comment_id, table_row, table_cell, cell_paragraph),
                 **values,
             )
         )
@@ -162,17 +168,24 @@ def _paragraph_tokens(
             **values,
         )
 
-    for child in list(paragraph):
+    def visit(child: ET.Element) -> None:
         tag = _local_name(child)
         if tag in {"oMath", "oMathPara"}:
             append("omml", xml=ET.tostring(child, encoding="unicode"))
-            continue
+            return
         if tag == "fldSimple":
+            instruction = child.attrib.get("{%s}instr" % W, "")
             visible_result = "".join(text_node.text or "" for text_node in child.findall(".//w:t", NS))
-            append("field_simple", text=child.attrib.get("{%s}instr" % W, ""), xml=visible_result)
-            continue
+            if instruction.strip().upper().startswith("EQ"):
+                append("field_simple", text=instruction, xml=visible_result)
+            else:
+                for nested in list(child):
+                    visit(nested)
+            return
         if tag != "r":
-            continue
+            for nested in list(child):
+                visit(nested)
+            return
 
         style = _run_style(child)
         for node in list(child):
@@ -208,6 +221,8 @@ def _paragraph_tokens(
                 add_relationship_token("image", blip.attrib.get("{%s}embed" % R) or blip.attrib.get("{%s}link" % R))
             for image in node.findall(".//v:imagedata", NS):
                 add_relationship_token("image", image.attrib.get("{%s}id" % R))
+    for child in list(paragraph):
+        visit(child)
     return tuple(tokens)
 
 
@@ -227,8 +242,17 @@ def read_word_part(docx_path: str | Path, part_name: str) -> list[WordParagraph]
                     rows.append(WordParagraph(part_name, paragraph_index, comment_id, tokens))
                     paragraph_index += 1
         else:
-            for paragraph in root.findall(".//w:p", NS):
-                tokens = _paragraph_tokens(paragraph, part_name, paragraph_index, None, relationships)
-                rows.append(WordParagraph(part_name, paragraph_index, None, tokens))
-                paragraph_index += 1
+            body = root.find("./w:body", NS)
+            for child in list(body) if body is not None else []:
+                if _local_name(child) == "p":
+                    tokens = _paragraph_tokens(child, part_name, paragraph_index, None, relationships)
+                    rows.append(WordParagraph(part_name, paragraph_index, None, tokens))
+                    paragraph_index += 1
+                elif _local_name(child) == "tbl":
+                    for row_index, table_row in enumerate(child.findall("./w:tr", NS)):
+                        for cell_index, cell in enumerate(table_row.findall("./w:tc", NS)):
+                            for cell_paragraph, paragraph in enumerate(cell.findall(".//w:p", NS)):
+                                tokens = _paragraph_tokens(paragraph, part_name, paragraph_index, None, relationships, row_index, cell_index, cell_paragraph)
+                                rows.append(WordParagraph(part_name, paragraph_index, None, tokens))
+                                paragraph_index += 1
         return rows

@@ -17,9 +17,12 @@ const LEGACY_QUESTION_TYPE_MAP: Record<string, QuestionType> = {
   判断: '判断题',
 };
 
-const PARSER_QUESTION_TYPE_MAP: Record<string, QuestionType> = {
+const PARSER_QUESTION_TYPE_MAP: Record<string, QuestionType> = { // utf-8
   single: '单选题',
+  'single-choice': '单选题',
   multi: '多选题',
+  multiple: '多选题',
+  'multiple-choice': '多选题',
   experiment: '实验题',
   judge: '判断题',
   calculation: '解答题',
@@ -29,17 +32,21 @@ const PARSER_QUESTION_TYPE_MAP: Record<string, QuestionType> = {
   drawing: '解答题',
 };
 
+function machineQuestionTypeKey(type?: string | null): string {
+  return String(type || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+}
+
 export function normalizeQuestionType(type?: string | null): QuestionType {
   const value = String(type || '').trim();
   if (QUESTION_TYPE_SET.has(value)) return value as QuestionType;
-  return LEGACY_QUESTION_TYPE_MAP[value] || '解答题';
+  return LEGACY_QUESTION_TYPE_MAP[value] || PARSER_QUESTION_TYPE_MAP[machineQuestionTypeKey(value)] || '解答题';
 }
 
 export function questionTypeFromParser(questionTypes?: string[] | string | null): QuestionType {
   const types = Array.isArray(questionTypes) ? questionTypes : [questionTypes || ''];
   for (const type of types) {
     const value = String(type || '').trim();
-    const mapped = PARSER_QUESTION_TYPE_MAP[value] || LEGACY_QUESTION_TYPE_MAP[value];
+    const mapped = PARSER_QUESTION_TYPE_MAP[machineQuestionTypeKey(value)] || LEGACY_QUESTION_TYPE_MAP[value];
     if (mapped) return mapped;
     if (QUESTION_TYPE_SET.has(value)) return value as QuestionType;
   }

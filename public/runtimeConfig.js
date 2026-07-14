@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const VALID_ROLES = new Set(['primary-host', 'desktop-client']);
+const MANAGED_CLOUD_BASE_URL = 'https://physicsedu.xyz/scheduling';
 
 function trimTrailingSlash(value) {
   return String(value || '').replace(/[\\/]+$/, '');
@@ -17,7 +18,7 @@ function defaultConfig(userDataPath) {
     nodeRole: 'desktop-client',
     deviceId: makeDeviceId(),
     hostBaseUrl: 'http://127.0.0.1:3001',
-    cloudBaseUrl: '',
+    cloudBaseUrl: MANAGED_CLOUD_BASE_URL,
     desktopSyncToken: '',
     mainDbPath: path.join(userDataPath, 'data', 'scheduling.db'),
     questionBankPath: '',
@@ -37,7 +38,9 @@ function normalizeRuntimeConfig(input = {}, options = {}) {
   next.nodeRole = VALID_ROLES.has(next.nodeRole) ? next.nodeRole : 'desktop-client';
   next.deviceId = next.deviceId || defaults.deviceId;
   next.hostBaseUrl = trimTrailingSlash(next.hostBaseUrl || defaults.hostBaseUrl);
-  next.cloudBaseUrl = trimTrailingSlash(next.cloudBaseUrl || '');
+  next.cloudBaseUrl = next.nodeRole === 'desktop-client'
+    ? trimTrailingSlash(options.managedCloudBaseUrl || MANAGED_CLOUD_BASE_URL)
+    : trimTrailingSlash(next.cloudBaseUrl || MANAGED_CLOUD_BASE_URL);
   next.desktopSyncToken = String(next.desktopSyncToken || '').trim();
   next.mainDbPath = next.mainDbPath || defaults.mainDbPath;
   next.questionBankPath = trimTrailingSlash(next.questionBankPath || '');
@@ -74,12 +77,24 @@ function writeRuntimeConfig(configPath, config, options = {}) {
   return normalized;
 }
 
+function deriveScopedSecret(seed, scope) {
+  return crypto.createHmac('sha256', seed).update(`gewu-desktop-runtime:${scope}`).digest('hex');
+}
+
 function applyRuntimeConfigToEnv(config, env = process.env) {
   env.GEWU_NODE_ROLE = config.nodeRole;
   env.GEWU_DEVICE_ID = config.deviceId;
   env.GEWU_HOST_BASE_URL = config.hostBaseUrl || '';
   env.GEWU_CLOUD_BASE_URL = config.cloudBaseUrl || '';
-  if (config.desktopSyncToken) env.GEWU_DESKTOP_SYNC_TOKEN = config.desktopSyncToken;
+  if (config.desktopSyncToken) {
+    env.GEWU_DESKTOP_SYNC_TOKEN = config.desktopSyncToken;
+    if (Buffer.byteLength(config.desktopSyncToken, 'utf8') >= 32) {
+      if (!env.JWT_SECRET) env.JWT_SECRET = deriveScopedSecret(config.desktopSyncToken, 'jwt');
+      if (!env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET) {
+        env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET = deriveScopedSecret(config.desktopSyncToken, 'artifact-download');
+      }
+    }
+  }
   env.DB_PATH = config.mainDbPath;
   if (config.questionBankPath) env.QUESTION_BANK_ROOT = config.questionBankPath;
   if (config.questionAssetPath) env.QUESTION_BANK_UPLOAD_DIR = config.questionAssetPath;
@@ -97,4 +112,5 @@ module.exports = {
   readRuntimeConfig,
   writeRuntimeConfig,
   applyRuntimeConfigToEnv,
+  MANAGED_CLOUD_BASE_URL,
 };

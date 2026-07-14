@@ -9,6 +9,7 @@ import io
 import base64
 import hashlib
 import html
+from html.parser import HTMLParser
 import json
 import mimetypes
 import os
@@ -22,6 +23,7 @@ import xml.etree.ElementTree as ET
 
 from formula_omml import convert_omml_to_latex
 from word_formula_import import import_part_formulas
+from word_content import read_word_part
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
@@ -452,10 +454,41 @@ def _math_text(node):
     return "".join(_math_text(child) for child in list(node))
 
 
-def _legacy_latex_span(latex):
+def _legacy_latex_span(latex, formula_id=None):
     if not latex:
         return ""
-    return '<span class="legacy-latex" data-latex="%s"></span>' % html.escape(latex, quote=True)
+    id_attr = ' data-formula-id="%s"' % html.escape(str(formula_id), quote=True) if formula_id else ""
+    return '<span class="legacy-latex"%s data-latex="%s"></span>' % (id_attr, html.escape(latex, quote=True))
+
+
+def _formula_span(formula):
+    source = formula.get("source") or {}
+    attrs = {
+        "data-formula-id": formula.get("id"),
+        "data-latex": formula.get("canonical_latex") or "",
+        "data-conversion-status": formula.get("conversion_status") or "unknown",
+        "data-source-format": source.get("source_format") or "unknown",
+        "data-preview-ref": source.get("preview_ref") or formula.get("preview_ref") or "",
+    }
+    encoded = " ".join('%s="%s"' % (key, html.escape(str(value), quote=True)) for key, value in attrs.items() if value is not None)
+    return '<span class="legacy-latex" %s></span>' % encoded
+
+
+def _ensure_formula_markup(text, formulas):
+    result = text or ""
+    placed_ids = set(re.findall(r'data-formula-id=["\']([^"\']+)', result))
+    for formula in formulas or []:
+        latex = str(formula.get("canonical_latex") or "").strip() if isinstance(formula, dict) else ""
+        formula_id = str(formula.get("id") or "") if isinstance(formula, dict) else ""
+        if latex and (not formula_id or formula_id not in placed_ids):
+            result += _legacy_latex_span(latex, formula.get("id"))
+            if formula_id:
+                placed_ids.add(formula_id)
+    return result
+
+
+def _formula_ids_in_markup(text):
+    return set(re.findall(r'data-formula-id=["\']([^"\']+)', str(text or "")))
 
 
 def _math_latex(node):
@@ -504,7 +537,7 @@ def _image_tag(asset):
     size_attrs = ""
     if width and height:
         size_attrs = ' width="%s" height="%s" style="width:%spx;height:%spx;"' % (width, height, width, height)
-    return '<img src="%s" alt="%s"%s />' % (src, alt, size_attrs)
+    return '<img src="%s" alt="%s"%s />' % (html.escape(str(src or ""), quote=True), html.escape(str(alt or ""), quote=True), size_attrs)
 
 
 def _word_toggle_enabled(run, property_name, ns):
@@ -748,6 +781,7 @@ def read_docx_rich_paragraphs(file_path):
                 has_ole_object = bool(paragraph.findall(".//o:OLEObject", ns))
                 inline_assets = []
                 paragraph_text = _paragraph_text_with_markup(paragraph, ns, archive, rels, has_ole_object, inline_assets)
+                paragraph_text = _ensure_formula_markup(paragraph_text, formulas)
                 assets.extend(inline_assets)
 
                 for blip in paragraph.findall(".//a:blip", ns):
@@ -813,6 +847,7 @@ def read_docx_rich_blocks(file_path):
                     inline_assets = []
                     text = _paragraph_text_with_markup(child, ns, archive, rels, bool(child.findall(".//o:OLEObject", ns)), inline_assets)
                     formulas = list(canonical_rows[paragraph_cursor].formulas) if paragraph_cursor < len(canonical_rows) else []
+                    text = _ensure_formula_markup(text, formulas)
                     rows.append({"text": text, "assets": inline_assets, "formulas": formulas, "block_type": "paragraph"})
                     paragraph_cursor += 1
                 elif tag == "tbl":
@@ -824,12 +859,93 @@ def read_docx_rich_blocks(file_path):
                         row_index = paragraph_cursor + offset
                         if row_index < len(canonical_rows):
                             formulas.extend(canonical_rows[row_index].formulas)
+                    text = _ensure_formula_markup(text, formulas)
                     if text:
                         rows.append({"text": text, "assets": inline_assets, "formulas": formulas, "block_type": "table"})
                     paragraph_cursor += paragraph_count
             return rows
     except Exception:
         return []
+
+
+def _styled_token_text(token):
+    value = html.escape(token.text or "")
+    if not value:
+        return ""
+    if token.style.vert_align == "subscript":
+        value = "<sub>%s</sub>" % value
+    elif token.style.vert_align == "superscript":
+        value = "<sup>%s</sup>" % value
+    if token.style.italic:
+        value = "<i>%s</i>" % value
+    if token.style.bold:
+        value = "<strong>%s</strong>" % value
+    if token.style.underline:
+        value = "<u>%s</u>" % value
+    return value
+
+
+def read_docx_token_rich_blocks(file_path, part_name="word/document.xml"):
+    """Build the only rich block stream directly from ordered Word tokens."""
+    paragraphs = read_word_part(file_path, part_name)
+    imported = import_part_formulas(file_path, part_name)
+    formula_rows = {row.paragraph_index: list(row.formulas) for row in imported}
+    rows = []
+    with zipfile.ZipFile(file_path, "r") as archive:
+        for paragraph in paragraphs:
+            formulas = formula_rows.get(paragraph.paragraph_index, [])
+            formula_by_index = {(item.get("source") or {}).get("content_index"): item for item in formulas}
+            parts = []
+            assets = []
+            field_depth = 0
+            for token in paragraph.tokens:
+                formula = formula_by_index.get(token.source.content_index)
+                if formula:
+                    parts.append(_formula_span(formula))
+                    if token.kind == "ole" and token.target:
+                        asset = _asset_from_part(archive, token.target, "formula_ole", token.rel_id, token.rel_type)
+                        if asset:
+                            asset["prog_id"] = token.prog_id or "OLEObject"
+                            assets.append(asset)
+                    if token.kind == "field_begin":
+                        field_depth = 1
+                    continue
+                if field_depth:
+                    if token.kind == "field_begin":
+                        field_depth += 1
+                    elif token.kind == "field_end":
+                        field_depth -= 1
+                    continue
+                if token.kind == "text":
+                    parts.append(_styled_token_text(token))
+                elif token.kind == "break":
+                    parts.append("<br />")
+                elif token.kind == "image" and token.target:
+                    asset = _asset_from_part(archive, token.target, "image", token.rel_id, token.rel_type)
+                    if asset:
+                        assets.append(asset)
+                        parts.append(_image_tag(asset))
+                elif token.kind == "ole" and token.target:
+                    asset = _asset_from_part(archive, token.target, "formula_ole", token.rel_id, token.rel_type)
+                    if asset:
+                        asset["prog_id"] = token.prog_id or "OLEObject"
+                        assets.append(asset)
+            source = paragraph.tokens[0].source if paragraph.tokens else None
+            rows.append({
+                "text": clean_word_text(normalize_physics_markup("".join(parts))),
+                "assets": assets,
+                "formulas": formulas,
+                "block_type": "table_cell_paragraph" if source and source.table_row is not None else "paragraph",
+                "source": {
+                    "part_name": part_name,
+                    "paragraph_index": paragraph.paragraph_index,
+                    "comment_id": paragraph.comment_id,
+                    "table_row": source.table_row if source else None,
+                    "table_cell": source.table_cell if source else None,
+                    "cell_paragraph": source.cell_paragraph if source else None,
+                },
+            })
+    return rows
 
 
 def attach_rich_content(question, rich):
@@ -866,6 +982,103 @@ def _question_rich_text(question):
         if isinstance(sub_question, dict):
             parts.extend([sub_question.get("title", ""), sub_question.get("content", ""), sub_question.get("answer", "")])
     return "\n".join(str(part or "") for part in parts)
+
+
+class _TipTapHtmlParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.paragraphs = [[]]
+        self.marks = []
+
+    @property
+    def current(self):
+        return self.paragraphs[-1]
+
+    def new_paragraph(self):
+        if self.current:
+            self.paragraphs.append([])
+
+    def append_text(self, value):
+        chunks = str(value or "").split("\n")
+        for index, chunk in enumerate(chunks):
+            if chunk:
+                node = {"type": "text", "text": chunk}
+                if self.marks:
+                    node["marks"] = [dict(mark) for mark in self.marks]
+                if self.current and self.current[-1].get("type") == "text" and self.current[-1].get("marks") == node.get("marks"):
+                    self.current[-1]["text"] += chunk
+                else:
+                    self.current.append(node)
+            if index < len(chunks) - 1:
+                self.new_paragraph()
+
+    def handle_starttag(self, tag, attrs):
+        values = dict(attrs)
+        tag = tag.lower()
+        if tag == "span" and (values.get("data-formula-id") or values.get("data-latex")):
+            self.current.append({"type": "formula", "attrs": {"id": values.get("data-formula-id") or "formula-%s" % uuid.uuid4().hex[:12], "canonicalLatex": values.get("data-latex") or None, "displayMode": "inline", "sourceRef": values.get("data-source-ref") or None, "conversionStatus": values.get("data-conversion-status") or "complete", "sourceFormat": values.get("data-source-format") or "unknown", "previewRef": values.get("data-preview-ref") or None}})
+            return
+        if tag == "img" and values.get("src"):
+            width = values.get("width")
+            self.current.append({"type": "image", "attrs": {"src": values["src"], "assetKey": values["src"].split("://", 1)[-1] if values["src"].startswith("question-asset://") else None, "alt": values.get("alt", ""), "width": int(width) if str(width or "").isdigit() else None, "align": "center"}})
+            return
+        if tag == "br":
+            self.new_paragraph()
+            return
+        mark_types = {"strong": "bold", "b": "bold", "i": "italic", "em": "italic", "u": "underline", "sub": "subscript", "sup": "superscript"}
+        if tag in mark_types:
+            self.marks.append({"type": mark_types[tag]})
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if tag in ("p", "div", "tr"):
+            self.new_paragraph()
+        mark_types = {"strong": "bold", "b": "bold", "i": "italic", "em": "italic", "u": "underline", "sub": "subscript", "sup": "superscript"}
+        mark_type = mark_types.get(tag)
+        if mark_type:
+            for index in range(len(self.marks) - 1, -1, -1):
+                if self.marks[index].get("type") == mark_type:
+                    self.marks.pop(index)
+                    break
+
+    def handle_data(self, data):
+        self.append_text(data)
+
+    def document(self):
+        return {"type": "doc", "content": [{"type": "paragraph", "content": content} for content in self.paragraphs if content]}
+
+
+def html_to_rich_document(value):
+    parser = _TipTapHtmlParser()
+    parser.feed(str(value or ""))
+    return parser.document()
+
+
+def build_question_rich_content(question):
+    formulas = question.get("formulas", []) or []
+    body_formulas = [item for item in formulas if "comments" not in str((item.get("source") or {}).get("part_name", ""))]
+    comment_formulas = [item for item in formulas if "comments" in str((item.get("source") or {}).get("part_name", ""))]
+    field_values = [question.get("stem", ""), question.get("answer", ""), question.get("analysis") or question.get("explanation") or ""]
+    for option in question.get("options", []) or []:
+        field_values.append((option.get("content") or option.get("text") or "") if isinstance(option, dict) else str(option))
+    for item in question.get("sub_questions", []) or []:
+        field_values.extend([item.get("content", ""), item.get("answer", "")])
+    placed_ids = set().union(*(_formula_ids_in_markup(value) for value in field_values)) if field_values else set()
+    stem = _ensure_formula_markup(question.get("stem", ""), [item for item in body_formulas if item.get("id") not in placed_ids])
+    answer = _ensure_formula_markup(question.get("answer", ""), [item for item in comment_formulas if item.get("id") not in placed_ids])
+    options = []
+    for index, option in enumerate(question.get("options", []) or []):
+        if isinstance(option, dict):
+            label = option.get("label") or chr(65 + index)
+            content = option.get("content") or option.get("text") or ""
+            correct = bool(option.get("is_correct") or option.get("isCorrect"))
+        else:
+            label, content, correct = chr(65 + index), str(option), False
+        options.append({"id": "option-%s" % uuid.uuid4().hex[:12], "label": label, "isCorrect": correct, "content": html_to_rich_document(content)})
+    sub_questions = []
+    for index, item in enumerate(question.get("sub_questions", []) or []):
+        sub_questions.append({"id": item.get("id") or "sub-%s" % uuid.uuid4().hex[:12], "label": item.get("label") or item.get("title") or "(%s)" % (index + 1), "content": html_to_rich_document(item.get("content", "")), "answer": html_to_rich_document(item.get("answer", ""))})
+    return {"version": 1, "type": "question-document", "sections": {"stem": html_to_rich_document(stem), "options": options, "subQuestions": sub_questions, "answer": html_to_rich_document(answer), "analysis": html_to_rich_document(question.get("analysis") or question.get("explanation") or "")}}
 
 
 def annotate_format_warnings(question):
@@ -945,7 +1158,13 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters, 
         "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
     }
     try:
-        canonical_rows = import_part_formulas(file_path, "word/document.xml")
+        token_rows = read_docx_token_rich_blocks(file_path)
+        comment_token_rows = read_docx_token_rich_blocks(file_path, "word/comments.xml")
+        comment_rich = {}
+        for row in comment_token_rows:
+            comment_id = (row.get("source") or {}).get("comment_id")
+            if comment_id is not None:
+                comment_rich.setdefault(str(comment_id), []).append(row)
         comment_formulas = comment_formulas or {}
         with zipfile.ZipFile(file_path, "r") as archive:
             if "word/document.xml" not in archive.namelist():
@@ -960,21 +1179,19 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters, 
                 return []
             for child in list(body):
                 if _local_name(child) == "tbl":
-                    inline_assets = []
-                    text = _table_text_with_markup(child, namespace, archive, rels, inline_assets)
                     paragraph_count = len(child.findall(".//w:p", namespace))
-                    formulas = []
                     for offset in range(paragraph_count):
                         row_index = paragraph_cursor + offset
-                        if row_index < len(canonical_rows):
-                            formulas.extend(canonical_rows[row_index].formulas)
-                    if text:
+                        rich = token_rows[row_index] if row_index < len(token_rows) else {"text": "", "assets": [], "formulas": []}
+                        text = rich.get("text", "")
+                        if not text:
+                            continue
                         items.append({
                             "text": text,
                             "number_label": "",
                             "number_kind": "",
                             "comments": [],
-                            "rich": {"text": text, "assets": inline_assets, "formulas": formulas},
+                            "rich": rich,
                             "is_heading": False,
                         })
                     paragraph_cursor += paragraph_count
@@ -982,10 +1199,9 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters, 
                 if _local_name(child) != "p":
                     continue
                 paragraph = child
-                inline_assets = []
-                text = _paragraph_text_with_markup(paragraph, namespace, archive, rels, bool(paragraph.findall(".//o:OLEObject", namespace)), inline_assets)
-                formulas = list(canonical_rows[paragraph_cursor].formulas) if paragraph_cursor < len(canonical_rows) else []
-                rich = {"text": text, "assets": inline_assets, "formulas": formulas}
+                rich = token_rows[paragraph_cursor] if paragraph_cursor < len(token_rows) else {"text": "", "assets": [], "formulas": []}
+                text = rich.get("text", "")
+                formulas = list(rich.get("formulas", []))
                 paragraph_cursor += 1
                 refs = []
                 for node in paragraph.findall(".//w:commentReference", namespace) + paragraph.findall(".//w:commentRangeStart", namespace) + paragraph.findall(".//w:commentRangeEnd", namespace):
@@ -1013,9 +1229,17 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters, 
                 p_style = paragraph.find("./w:pPr/w:pStyle", namespace)
                 style_val = p_style.attrib.get(f"{{{namespace['w']}}}val", "") if p_style is not None else ""
                 style_name = style_names.get(style_val, "")
-                paragraph_comments = [comments[comment_id] for comment_id in refs if comments.get(comment_id)]
+                paragraph_comments = []
+                for comment_id in refs:
+                    rich_comments = comment_rich.get(str(comment_id), [])
+                    if rich_comments:
+                        paragraph_comments.extend(row.get("text", "") for row in rich_comments if row.get("text"))
+                    elif comments.get(comment_id):
+                        paragraph_comments.append(comments[comment_id])
                 for comment_id in refs:
                     formulas.extend(comment_formulas.get(comment_id, []))
+                rich = dict(rich)
+                rich["formulas"] = formulas
                 items.append({
                     "text": text,
                     "number_label": number_label,
@@ -1393,7 +1617,7 @@ def parse_exam_answer_blocks(paragraphs):
         if number is not None:
             if current:
                 answers.append(current)
-            current = {"number": number, "answer": "", "explanation": ""}
+            current = {"number": number, "answer": "", "explanation": "", "sub_answers": []}
             mode = "answer"
             marker = ANALYSIS_MARK_RE.search(content)
             if marker:
@@ -1405,6 +1629,11 @@ def parse_exam_answer_blocks(paragraphs):
             continue
         if not current:
             continue
+        sub_label, sub_content = extract_sub_question(text)
+        if sub_label:
+            current["sub_answers"].append({"label": sub_label, "answer": sub_content})
+            mode = "subanswer"
+            continue
         marker = ANALYSIS_MARK_RE.search(text)
         if marker:
             before = text[: marker.start()].strip()
@@ -1415,7 +1644,9 @@ def parse_exam_answer_blocks(paragraphs):
                 current["explanation"] = (current["explanation"] + "\n" + after).strip()
             mode = "analysis"
             continue
-        if mode == "answer":
+        if mode == "subanswer" and current["sub_answers"]:
+            current["sub_answers"][-1]["answer"] = (current["sub_answers"][-1]["answer"] + "\n" + text).strip()
+        elif mode == "answer":
             current["answer"] = (current["answer"] + "\n" + text).strip()
         else:
             current["explanation"] = (current["explanation"] + "\n" + text).strip()
@@ -1602,7 +1833,26 @@ def parse_exam_questions(paragraphs, default_topic=None, rich_rows=None):
         if answer:
             question["answer"] = answer.get("answer", "")
             question["analysis"] = answer.get("explanation", "")
+            for sub_index, sub_answer in enumerate(answer.get("sub_answers", [])):
+                target = next((item for item in question.get("sub_questions", []) if item.get("title") == sub_answer.get("label")), None)
+                if target is None and sub_index < len(question.get("sub_questions", [])):
+                    target = question["sub_questions"][sub_index]
+                if target is not None:
+                    target["answer"] = sub_answer.get("answer", "")
             finalize_question_type(question)
+    if rich_rows and answer_part:
+        answer_row_offset = len(question_part) + 1
+        current_number = None
+        for answer_index, text in enumerate(answer_part):
+            number, _content = extract_question_number((text or "").strip())
+            if number is not None:
+                current_number = number
+            question = next((item for item in questions if item.get("number") == current_number), None)
+            row_index = answer_row_offset + answer_index
+            if question and row_index < len(rich_rows):
+                rich = rich_rows[row_index]
+                if rich.get("assets") or rich.get("formulas"):
+                    attach_rich_content(question, rich)
     return questions
 
 
@@ -1653,21 +1903,59 @@ def extract_topics(paragraphs):
 def quality_report(questions):
     warnings = {}
     formulas = []
-    for question in questions:
+    formula_context = []
+    for question_index, question in enumerate(questions):
         if not question.get("stem"):
             warnings["missing_stem"] = warnings.get("missing_stem", 0) + 1
         if not question.get("answer"):
             warnings["missing_answer"] = warnings.get("missing_answer", 0) + 1
         if question.get("options") and len(question["options"]) < 2:
             warnings["few_options"] = warnings.get("few_options", 0) + 1
-        formulas.extend(item for item in question.get("formulas", []) if isinstance(item, dict))
+        for formula in question.get("formulas", []):
+            if not isinstance(formula, dict):
+                continue
+            formulas.append(formula)
+            formula_id = str(formula.get("id") or "")
+            field = "unknown"
+            candidates = [("stem", question.get("stem", "")), ("answer", question.get("answer", "")), ("analysis", question.get("analysis") or question.get("explanation") or "")]
+            candidates.extend(("option[%s]" % index, (item.get("content") or item.get("text") or "") if isinstance(item, dict) else str(item)) for index, item in enumerate(question.get("options", []) or []))
+            for index, item in enumerate(question.get("sub_questions", []) or []):
+                candidates.extend([("subquestion[%s]" % index, item.get("content", "")), ("subanswer[%s]" % index, item.get("answer", ""))])
+            for candidate, value in candidates:
+                if formula_id and formula_id in _formula_ids_in_markup(value):
+                    field = candidate
+                    break
+            formula_context.append((formula, question_index, question.get("number"), field))
     by_source = {}
     by_status = {}
-    for formula in formulas:
-        source_format = (formula.get("source") or {}).get("source_format", "unknown")
+    issues = []
+    for formula, question_index, question_number, field in formula_context:
+        source = formula.get("source") or {}
+        source_format = source.get("source_format", "unknown")
         status = formula.get("conversion_status", "unknown")
         by_source[source_format] = by_source.get(source_format, 0) + 1
         by_status[status] = by_status.get(status, 0) + 1
+        if status in ("approximate", "preview_only", "failed"):
+            location = str(source.get("part_name") or "unknown")
+            if source.get("paragraph_index") is not None:
+                location += ":paragraph[%s]" % source["paragraph_index"]
+            if source.get("content_index") is not None:
+                location += ":content[%s]" % source["content_index"]
+            if source.get("table_row") is not None:
+                location += ":table[row=%s,cell=%s,paragraph=%s]" % (source.get("table_row"), source.get("table_cell"), source.get("cell_paragraph"))
+            if source.get("comment_id") is not None:
+                location += ":comment[%s]" % source.get("comment_id")
+            location += ":question[index=%s%s]:field[%s]" % (question_index, ",number=%s" % question_number if question_number is not None else "", field)
+            issues.append({
+                "formula_id": formula.get("id"),
+                "status": status,
+                "source_format": source_format,
+                "location": location,
+                "question_index": question_index,
+                "question_number": question_number,
+                "field": field,
+                "warnings": list(formula.get("warnings") or []),
+            })
     return {
         "warnings": warnings,
         "parsed_items": len(questions),
@@ -1676,6 +1964,7 @@ def quality_report(questions):
             "by_source": by_source,
             "by_status": by_status,
             "needs_review": sum(by_status.get(status, 0) for status in ("approximate", "preview_only", "failed")),
+            "issues": issues,
         },
     }
 
@@ -1696,14 +1985,14 @@ def main():
             raise ImportError("forced docx xml fallback")
         from docx import Document
         doc = Document(file_path)
-        rich_rows = read_docx_rich_blocks(file_path) or read_docx_rich_paragraphs(file_path)
+        rich_rows = read_docx_token_rich_blocks(file_path)
         comment_assets = read_docx_comment_assets(file_path)
         paragraphs = [row.get("text", "") for row in rich_rows] or [paragraph.text for paragraph in doc.paragraphs]
         numbered_items = extract_numbered_items(doc, file_path)
     except ImportError:
         try:
-            paragraphs = extract_paragraphs_from_docx(file_path)
-            rich_rows = read_docx_rich_blocks(file_path) or read_docx_rich_paragraphs(file_path)
+            rich_rows = read_docx_token_rich_blocks(file_path)
+            paragraphs = [row.get("text", "") for row in rich_rows]
             comment_assets = read_docx_comment_assets(file_path)
             definitions = read_numbering_definitions(file_path)
             comments = read_docx_comments(file_path)
@@ -1717,8 +2006,8 @@ def main():
             sys.exit(1)
     except Exception as exc:
         try:
-            paragraphs = extract_paragraphs_from_docx(file_path)
-            rich_rows = read_docx_rich_blocks(file_path) or read_docx_rich_paragraphs(file_path)
+            rich_rows = read_docx_token_rich_blocks(file_path)
+            paragraphs = [row.get("text", "") for row in rich_rows]
             comment_assets = read_docx_comment_assets(file_path)
             definitions = read_numbering_definitions(file_path)
             comments = read_docx_comments(file_path)
@@ -1744,6 +2033,9 @@ def main():
     if comment_assets:
         asset_rows.append({"assets": comment_assets})
     attach_referenced_assets_from_rich_rows(questions, asset_rows)
+
+    for question in questions:
+        question["rich_content"] = build_question_rich_content(question)
 
     result = {
         "success": True,

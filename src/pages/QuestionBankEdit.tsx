@@ -1,15 +1,21 @@
+// utf-8
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Button, Card, Checkbox, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select as AntSelect,
   Space, Tag, Upload, message, Pagination, Typography
 } from 'antd';
 import type { UploadFile } from 'antd/es/upload/interface';
-import { DeleteOutlined, FileImageOutlined, FunctionOutlined, TagsOutlined } from '@ant-design/icons';
+import { DeleteOutlined, FileImageOutlined, TagsOutlined } from '@ant-design/icons';
 import type { KnowledgeNode, Question, QuestionVersion } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import QuestionPreviewCard from '../components/QuestionPreviewCard';
 import QuestionRichContent from '../components/QuestionRichContent';
-import RichQuestionEditor from '../components/RichQuestionEditor';
+import QuestionStructureEditor from '../components/question-editor/QuestionStructureEditor';
+import { mergeQuestionAssets, normalizeStructureOrder, validateQuestionStructure } from '../components/question-editor/questionStructureOperations';
+import { createQuestionEditorSaveGate, createRichDocumentDirtyCoordinator, persistRemoteThenLocal, registerEditorSpaExitGuard, shouldProtectEditorExit } from '../components/question-editor/questionEditorSession'; // utf-8
+import { createQuestionRichDocument } from '../types/questionRichContent';
+import type { QuestionRichDocument } from '../types/questionRichContent';
+import { migrateLegacyQuestion, projectQuestionRichContent } from '../services/questionRichContent';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
 import {
@@ -24,7 +30,6 @@ const { questionDeletePresentation } = require('../services/questionDeletionPres
 const { deleteQuestionViaApi } = require('../services/questionDeleteApi');
 const { normalizeDesktopQuestionDeleteContext, verifyNativeQuestionDraft } = require('../services/desktopQuestionDeleteContext');
 
-const { TextArea } = Input;
 const Select = AutoCloseSelect as typeof AntSelect;
 const API_BASE = getApiBase('/api/question-bank');
 const QUESTION_PAGE_SIZE = 10;
@@ -85,6 +90,14 @@ function buildTreeOptions(nodes: KnowledgeNode[], parentId?: string, depth = 0):
     ]);
 }
 
+function initialRichDocument(question: Question): QuestionRichDocument {
+  if (question.rich_content?.type === 'question-document') return normalizeStructureOrder(createQuestionRichDocument(question.rich_content));
+  const document = migrateLegacyQuestion(question as any);
+  document.sections.options = document.sections.options.map((item, index) => ({ ...item, id: `option-${index}-${question.id}` }));
+  document.sections.subQuestions = document.sections.subQuestions.map((item, index) => ({ ...item, id: `sub-${index}-${question.id}` }));
+  return normalizeStructureOrder(document);
+}
+
 const QuestionBankEdit: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [questionTotal, setQuestionTotal] = useState(0);
@@ -94,16 +107,51 @@ const QuestionBankEdit: React.FC = () => {
   const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
   const [modelNodes, setModelNodes] = useState<KnowledgeNode[]>([]);
   const [editing, setEditing] = useState<Question | null>(null);
+  const [richDocument, setRichDocument] = useState<QuestionRichDocument | null>(null);
   const [versions, setVersions] = useState<QuestionVersion[]>([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [trashPage, setTrashPage] = useState(1);
   const [imageFiles, setImageFiles] = useState<UploadFile[]>([]);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editorDirty, setEditorDirty] = useState(false);
   const [trashVisible, setTrashVisible] = useState(false);
   const [deleteContext, setDeleteContext] = useState<{ capabilities: string[]; deviceId?: string; userId?: string }>({ capabilities: [] });
   const [form] = Form.useForm();
   const [batchForm] = Form.useForm();
+  const [modalApi, modalContextHolder] = Modal.useModal(); // utf-8
+  const saveGate = React.useRef(createQuestionEditorSaveGate()).current;
+  const richDirtyCoordinator = React.useRef(createRichDocumentDirtyCoordinator(null)).current;
+  const formDirtyRef = React.useRef(false);
+  const editorQuestionType = Form.useWatch('type', form);
+
+  const openRichDocument = (document: QuestionRichDocument) => {
+    richDirtyCoordinator.reset(document);
+    formDirtyRef.current = false;
+    setRichDocument(document);
+    setEditorDirty(false);
+  };
+  const updateRichDocument = (document: QuestionRichDocument) => {
+    const richState = richDirtyCoordinator.update(document);
+    setRichDocument(document);
+    setEditorDirty(formDirtyRef.current || richState.dirty);
+  };
+  const markFormDirty = () => {
+    formDirtyRef.current = true;
+    setEditorDirty(true);
+  };
+
+  useEffect(() => {
+    const protectDirtyEditor = (event: BeforeUnloadEvent) => {
+      if (!shouldProtectEditorExit(Boolean(editing), editorDirty)) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', protectDirtyEditor);
+    return () => window.removeEventListener('beforeunload', protectDirtyEditor);
+  }, [editing, editorDirty]);
+  useEffect(() => registerEditorSpaExitGuard(() => shouldProtectEditorExit(Boolean(editing), editorDirty)), [editing, editorDirty]);
 
   useEffect(() => {
     try {
@@ -127,7 +175,7 @@ const QuestionBankEdit: React.FC = () => {
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const db = (window as any).dbService;
+    const db = (window as any).dbService; // utf-8 atomic save
     const cachedKnowledge = await getCachedQuestionTree('knowledge');
     const cachedModels = await getCachedQuestionTree('model');
     if (cachedKnowledge.length > 0) setKnowledgeNodes(cachedKnowledge);
@@ -201,13 +249,10 @@ const QuestionBankEdit: React.FC = () => {
   const openEditor = (question: Question) => {
     const db = (window as any).dbService;
     setEditing(question);
+    openRichDocument(initialRichDocument(question));
     setVersions(db?.getLatestQuestionVersions?.(question.id, 5) || []);
     setImageFiles([]);
     form.setFieldsValue({
-      content: question.content,
-      answer: question.answer,
-      analysis: question.analysis,
-      options: (question.options || []).map((item: any) => typeof item === 'string' ? item : `${item.label || ''}. ${item.content || item.text || ''}`).join('\n'),
       type: normalizeQuestionType(question.type),
       difficulty: question.difficulty || 3,
       source: question.source,
@@ -220,22 +265,29 @@ const QuestionBankEdit: React.FC = () => {
       subject: question.subject || '物理',
       knowledge_ids: question.knowledge_ids || [],
       model_ids: question.model_ids || [],
-      formulas: (question.formulas || []).map((item: any) => typeof item === 'string' ? item : JSON.stringify(item)).join('\n'),
       tags: (question.tags || []).join(','),
     });
   };
 
   const saveQuestion = async () => {
-    if (!editing) return;
+    if (!editing || !richDocument) return;
+    const structureErrors = validateQuestionStructure(richDocument, form.getFieldValue('type'));
+    if (structureErrors.length > 0) {
+      message.error(structureErrors[0]);
+      return;
+    }
     const values = await form.validateFields();
+    const projection = projectQuestionRichContent(richDocument);
     const payload: any = {
-      stem: values.content,
+      stem: projection.stem,
       subject: values.subject || '物理',
-      content: values.content,
-      answer: values.answer,
-      explanation: values.analysis,
-      analysis: values.analysis,
-      options: values.options ? values.options.split('\n').map((s: string) => s.trim()).filter(Boolean) : [],
+      content: projection.stem,
+      answer: projection.answer,
+      explanation: projection.explanation,
+      analysis: projection.explanation,
+      options: projection.options.map(option => ({ label: option.label, content: option.content, is_correct: option.isCorrect })),
+      sub_questions: projection.subQuestions,
+      rich_content: richDocument,
       type: normalizeQuestionType(values.type),
       difficulty: values.difficulty || 3,
       source: values.source || '',
@@ -252,34 +304,51 @@ const QuestionBankEdit: React.FC = () => {
       edit_status: '已编辑',
       status: editing.status || 'draft',
       has_image: imageFiles.length > 0 || !!editing.has_image,
-      has_formula: !!editing.has_formula || !!values.formulas,
+      has_formula: projection.hasFormula,
       created_by: editing.created_by || '',
-      formulas: values.formulas ? values.formulas.split('\n').map((s: string) => s.trim()).filter(Boolean) : [],
+      formulas: projection.formulas,
       tags: values.tags ? values.tags.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
-      assets: imageFiles.map(file => ({
+      assets: mergeQuestionAssets(editing.assets || [], imageFiles.map(file => ({
         asset_type: 'image',
         file_name: file.name,
         mime_type: file.type || 'image/*',
         oss_key: `local-question-images/${editing.id}/${file.name}`,
         oss_url: file.url || file.thumbUrl || '',
-      })),
+      }))),
     };
     const db = (window as any).dbService;
-    try {
-      const res = await fetch(`${API_BASE}/questions/${editing.id}`, {
+    if (!db?.updateQuestion) throw new Error('LOCAL_QUESTION_STORE_UNAVAILABLE');
+    await persistRemoteThenLocal(
+      () => fetch(`${API_BASE}/questions/${editing.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || '后端保存失败');
-    } catch (_err) {
-      db?.updateQuestion?.(editing.id, { ...payload, content: payload.stem, analysis: payload.explanation });
-    }
+      }),
+      () => db.updateQuestion(editing.id, { ...payload, content: payload.stem, analysis: payload.explanation }),
+    );
     message.success('试题已保存');
+    richDirtyCoordinator.markSaved(richDocument);
+    formDirtyRef.current = false;
     setEditing(null);
+    setRichDocument(null);
+    setEditorDirty(false);
     form.resetFields();
     loadData();
+  };
+
+  const closeEditor = () => {
+    const close = () => {
+      setEditing(null);
+      setRichDocument(null);
+      setEditorDirty(false);
+      form.resetFields();
+    };
+    if (!editorDirty) { close(); return; }
+    modalApi.confirm({
+      title: '\u5c1a\u6709\u672a\u4fdd\u5b58\u7684\u4fee\u6539',
+      content: '\u79bb\u5f00\u540e\u672c\u6b21\u4fee\u6539\u5c06\u4e22\u5931\uff0c\u786e\u5b9a\u79bb\u5f00\u5417\uff1f',
+      okText: '\u79bb\u5f00', cancelText: '\u7ee7\u7eed\u7f16\u8f91', okButtonProps: { danger: true }, onOk: close,
+    });
   };
 
   const deleteQuestion = async (question: Question) => {
@@ -408,6 +477,8 @@ const QuestionBankEdit: React.FC = () => {
   };
 
   return (
+    <>
+    {modalContextHolder}
     <Card
       title="试题编辑"
       extra={
@@ -563,25 +634,27 @@ const QuestionBankEdit: React.FC = () => {
       <Modal
         open={!!editing}
         title="编辑试题"
-        onCancel={() => setEditing(null)}
-        onOk={saveQuestion}
+        onCancel={closeEditor}
+        onOk={async () => {
+          setSaving(true);
+          const result = await saveGate(saveQuestion);
+          if (!result.ok) message.error(`\u4fdd\u5b58\u5931\u8d25\uff1a${(result.error as any)?.message || '\u8bf7\u68c0\u67e5\u8fde\u63a5\u540e\u91cd\u8bd5'}`);
+          if (result.owned) setSaving(false);
+        }}
+        confirmLoading={saving}
+        maskClosable={!editorDirty}
+        keyboard={!editorDirty}
         width={980}
         okText="保存"
         cancelText="取消"
       >
-        <Form form={form} layout="vertical">
-          <Form.Item name="content" label="题干" rules={[{ required: true, message: '请输入题干' }]}>
-            <RichQuestionEditor minHeight={180} placeholder="输入题干，可设置字体格式、插入公式和图片" />
-          </Form.Item>
-          <Form.Item name="answer" label="答案">
-            <RichQuestionEditor minHeight={120} placeholder="输入答案，可插入公式和图片" />
-          </Form.Item>
-          <Form.Item name="analysis" label="解析">
-            <RichQuestionEditor minHeight={140} placeholder="输入解析，可设置字体格式、插入公式和图片" />
-          </Form.Item>
-          <Form.Item name="options" label="选项">
-            <TextArea rows={3} placeholder="每行一个选项" />
-          </Form.Item>
+        <Form form={form} layout="vertical" onValuesChange={markFormDirty}>
+          {richDocument && <QuestionStructureEditor
+            value={richDocument}
+            disabled={saving}
+            questionType={editorQuestionType}
+            onChange={updateRichDocument}
+          />}
           <Space wrap>
             <Form.Item name="subject" label="科目" style={{ width: 120 }}>
               <Select options={SUBJECTS.map(v => ({ value: v, label: v }))} />
@@ -616,9 +689,6 @@ const QuestionBankEdit: React.FC = () => {
           <Form.Item name="model_ids" label="模型">
             <Select mode="multiple" options={modelOptions} />
           </Form.Item>
-          <Form.Item name="formulas" label={<span><FunctionOutlined /> 公式</span>}>
-            <TextArea rows={2} placeholder="可录入 LaTeX 或公式说明" />
-          </Form.Item>
           {editing && <QuestionRichContent question={editing} />}
           <Form.Item label={<span><FileImageOutlined /> 图片</span>}>
             <Upload
@@ -640,6 +710,7 @@ const QuestionBankEdit: React.FC = () => {
         </Form>
       </Modal>
     </Card>
+    </>
   );
 };
 

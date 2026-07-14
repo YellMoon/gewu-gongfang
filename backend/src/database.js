@@ -9,6 +9,7 @@ const { v4: uuidv4 } = require('uuid');
 const { getMiniappLoginDenialReason } = require('./services/miniappAuthPolicy');
 const { validateSyncMutation } = require('./services/syncScopeService');
 const { scopeBusinessSnapshot } = require('./services/dataScopeService');
+const { projectSearchTextFromRow } = require('./services/questionRichContentProjection');
 const {
   SUPER_ADMIN_PHONE,
   CANONICAL_SUPER_ADMIN_ID,
@@ -97,6 +98,7 @@ class DatabaseService {
     this._ensureQuestionContentColumns();
     this._ensureImportTaskColumns();
     this._ensureArchiveJobColumns();
+    this._ensureMiniappTaskColumns();
     this._ensureMiniappUserColumns();
     this._ensureAuthorizationPersistence();
     this._ensureHostHeartbeatColumns();
@@ -236,6 +238,75 @@ class DatabaseService {
     addColumn('restored_at', 'TEXT');
   }
 
+  _ensureMiniappTaskColumns() {
+    const exists = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='miniapp_tasks'").get();
+    if (!exists) return;
+    const columns = new Set(this.db.prepare('PRAGMA table_info(miniapp_tasks)').all().map(row => row.name));
+    const addColumn = (name, ddl) => {
+      if (!columns.has(name)) {
+        this.db.prepare(`ALTER TABLE miniapp_tasks ADD COLUMN ${name} ${ddl}`).run();
+        columns.add(name);
+      }
+    };
+    addColumn('protocol_version', 'INTEGER NOT NULL DEFAULT 1');
+    addColumn('idempotency_key', 'TEXT');
+    addColumn('request_hash', 'TEXT');
+    addColumn('target_host_device_id', 'TEXT');
+    addColumn('selection_context', 'TEXT');
+    addColumn('phase', 'TEXT');
+    addColumn('progress', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn('claimed_by', 'TEXT');
+    addColumn('claim_token_hash', 'TEXT');
+    addColumn('lease_expires_at', 'TEXT');
+    addColumn('row_version', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn('error_code', 'TEXT');
+    addColumn('cancel_requested_at', 'TEXT');
+    addColumn('job_key', 'TEXT');
+    addColumn('snapshot_hash', 'TEXT');
+    addColumn('artifact_id', 'TEXT');
+    addColumn('attempt', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn('max_attempts', 'INTEGER NOT NULL DEFAULT 3');
+    addColumn('next_attempt_at', 'TEXT');
+    addColumn('deadline_at', 'TEXT');
+    addColumn('result_expires_at', 'TEXT');
+    addColumn('completion_operation_id', 'TEXT');
+    addColumn('completion_result_hash', 'TEXT');
+    this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_miniapp_tasks_actor_idempotency
+      ON miniapp_tasks(created_by,idempotency_key) WHERE idempotency_key IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_miniapp_tasks_target_claim
+      ON miniapp_tasks(target_host_device_id,status,lease_expires_at,created_at);`);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS paper_jobs (
+      job_key TEXT PRIMARY KEY, relay_scope TEXT NOT NULL, cloud_task_id TEXT NOT NULL, task_id TEXT NOT NULL, tenant_id TEXT NOT NULL, owner_user_id TEXT NOT NULL,
+      request_hash TEXT NOT NULL, question_snapshot_json TEXT, snapshot_hash TEXT, selection_version TEXT,
+      resource_version TEXT, status TEXT NOT NULL DEFAULT 'queued', phase TEXT NOT NULL DEFAULT 'queued',
+      progress INTEGER NOT NULL DEFAULT 0, attempt INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 3,
+      next_attempt_at TEXT, cancel_requested_at TEXT, deadline_at TEXT, temp_dir TEXT, artifact_id TEXT,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL, claimed_at TEXT, completed_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS paper_artifacts (
+      artifact_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, job_key TEXT NOT NULL, owner_user_id TEXT NOT NULL,
+      tenant_id TEXT NOT NULL, snapshot_hash TEXT NOT NULL, format TEXT NOT NULL, mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL, sha256 TEXT NOT NULL, page_count INTEGER, formula_count INTEGER NOT NULL DEFAULT 0,
+      fallback_count INTEGER NOT NULL DEFAULT 0, effective_modes_json TEXT NOT NULL, file_path TEXT NOT NULL,
+      created_at TEXT NOT NULL, expires_at TEXT, storage_status TEXT NOT NULL DEFAULT 'verified'
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_paper_artifacts_job_snapshot_format_verified
+      ON paper_artifacts(job_key,snapshot_hash,format) WHERE storage_status='verified';
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_paper_jobs_relay_task ON paper_jobs(relay_scope,cloud_task_id);`);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS paper_completion_outbox (
+      outbox_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, job_key TEXT NOT NULL, artifact_id TEXT NOT NULL,
+      payload_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempt INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, delivered_at TEXT,
+      claim_token TEXT, expected_row_version INTEGER, operation_id TEXT, result_hash TEXT,
+      max_attempts INTEGER NOT NULL DEFAULT 10, last_error TEXT, terminal_at TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_paper_completion_once ON paper_completion_outbox(task_id,job_key,artifact_id);`);
+    const outboxColumns = new Set(this.db.prepare('PRAGMA table_info(paper_completion_outbox)').all().map(row => row.name));
+    for (const [name, ddl] of [['claim_token','TEXT'],['expected_row_version','INTEGER'],['operation_id','TEXT'],['result_hash','TEXT'],['max_attempts','INTEGER NOT NULL DEFAULT 10'],['last_error','TEXT'],['terminal_at','TEXT']]) {
+      if (!outboxColumns.has(name)) this.db.prepare(`ALTER TABLE paper_completion_outbox ADD COLUMN ${name} ${ddl}`).run();
+    }
+  }
+
   _ensureQuestionMetaColumns() {
     const exists = this.db.prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'questions'"
@@ -273,7 +344,7 @@ class DatabaseService {
     this.db.prepare("UPDATE questions SET storage_state = 'local_draft' WHERE storage_state IS NULL OR storage_state NOT IN ('local_draft', 'host_committed')").run();
   }
 
-  _ensureQuestionContentColumns() {
+  _ensureQuestionContentColumns(searchBackfillBatchSize = 500) {
     const exists = this.db.prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'question_contents'"
     ).get();
@@ -281,6 +352,22 @@ class DatabaseService {
     const columns = new Set(this.db.prepare('PRAGMA table_info(question_contents)').all().map(column => column.name));
     if (!columns.has('rich_content_json')) {
       this.db.prepare('ALTER TABLE question_contents ADD COLUMN rich_content_json TEXT').run();
+    }
+    if (!columns.has('search_text')) {
+      this.db.prepare('ALTER TABLE question_contents ADD COLUMN search_text TEXT').run();
+    }
+    const batchSize = Math.min(Math.max(Number(searchBackfillBatchSize) || 500, 1), 5000);
+    const selectMissingSearchRows = this.db.prepare(
+      'SELECT id, stem, options_json, answer, explanation, rich_content_json FROM question_contents WHERE search_text IS NULL ORDER BY id LIMIT ?'
+    );
+    const updateSearchText = this.db.prepare('UPDATE question_contents SET search_text = ? WHERE id = ?');
+    const backfillSearchText = this.db.transaction(rows => {
+      for (const row of rows) updateSearchText.run(projectSearchTextFromRow(row), row.id);
+    });
+    while (true) {
+      const rows = selectMissingSearchRows.all(batchSize);
+      if (rows.length === 0) break;
+      backfillSearchText(rows);
     }
   }
 

@@ -101,11 +101,13 @@
 - Modify: `modules/question-bank/parsers/parse_word.py`
 - Modify: `modules/question-bank/src/routes/parse_word.js`
 
-- [ ] Add lecture and exam fixtures proving formulas in stems, options, subquestions, answers, analyses, comments and tables attach to the correct question in source order.
-- [ ] Make the current implementation fail on field and comment/OLE cases.
-- [ ] Replace `read_docx_rich_blocks() or read_docx_rich_paragraphs()` with one token-derived rich block stream and attach canonical formula nodes.
-- [ ] Return a parse quality report with counts by source/status and actionable locations.
-- [ ] Run forced XML fallback, python-docx path and route integration tests; commit.
+- [x] Add lecture and exam fixtures proving formulas in stems, options, subquestions, answers, analyses, comments and tables attach to the correct question in source order.
+- [x] Make the current implementation fail on field and comment/OLE cases.
+- [x] Replace `read_docx_rich_blocks() or read_docx_rich_paragraphs()` with one token-derived rich block stream and attach canonical formula nodes.
+- [x] Return a parse quality report with counts by source/status and actionable locations.
+- [x] Run forced XML fallback, python-docx path and route integration tests; commit.
+
+Verification: representative lecture/exam DOCX fixtures cover OMML, EQ, MathType preview-only OLE, comments, tables, repeated formulas, options, subquestions, subanswers, answers and analyses. Parser discovery passed 32/32; multipart route integration (including spawn failure single-settle) passed; Node syntax checks and the production build passed. Independent spec and code-quality reviews passed.
 
 ### Task 7: Structured rich-content persistence and compatibility
 
@@ -118,11 +120,13 @@
 - Modify: `backend/src/services/questionBankService.js`
 - Modify: `src/services/browserDatabase.ts`
 
-- [ ] Add failing tests for legacy HTML/text migration, formula-node round trip, image references, persistence/reload, plain-text search projection and old-client compatibility.
-- [ ] Add additive versioned JSON columns/content rows without deleting legacy fields.
-- [ ] Implement strict sanitizer/validator and deterministic legacy projection.
-- [ ] Verify mutation → database → reload → derived flags/search → UI payload.
-- [ ] Run backend/browser database suites and commit.
+- [x] Add failing tests for legacy HTML/text migration, formula-node round trip, image references, persistence/reload, plain-text search projection and old-client compatibility.
+- [x] Add additive versioned JSON columns/content rows without deleting legacy fields.
+- [x] Implement strict sanitizer/validator and deterministic legacy projection.
+- [x] Verify mutation → database → reload → derived flags/search → UI payload.
+- [x] Run backend/browser database suites and commit.
+
+Verification: front-end and backend validators enforce aligned TipTap node/mark attribute contracts; legacy and rich projections preserve options, correctness, subquestions and answers. Browser sync uses behavior-tested atomic normalization, old-client partial updates preserve untouched rich sections, and the additive `search_text` migration uses restart-safe batches with one canonical plain-text projection. Focused backend/browser/sync tests and the production build passed; independent spec and code-quality reviews passed.
 
 ### Task 8: WYSIWYG editor core
 
@@ -186,6 +190,17 @@
 - [ ] Make task execution idempotent and enforce timeout/cancel/retry/cleanup rules.
 - [ ] Run host task and artifact service tests; commit.
 
+### Task 11A: Default paper template and answer placement
+
+**Reference:** `C:\Users\83423\Desktop\组卷导出模板.docx` (SHA-256 `631d6bfb41b2606837ee91488161917da7b5a700333b1e66c1ce05c74cd9dfdb`)
+
+- [x] Preserve the reference as the visual/layout authority for default Word and PDF paper exports, including its A4 two-section page system, title/student-information block, question-type sections, answer section and section-specific footers.
+- [x] Generate the answer-at-end mode with a choice-answer summary table at the start of the reference-answer section, followed by every question's answer, `【知识点】` and `【解析】` in question order.
+- [x] Generate the answer-after-each-question mode as question 1 → answer/knowledge/analysis 1 → question 2 → answer/knowledge/analysis 2, without a separate trailing answer section.
+- [x] Expose the two truthful answer-position choices in the paper UI and carry the selected value through local-host and relay task payloads.
+- [x] Use the same template-derived layout for PDF generation and block delivery when required formula/image/template content is missing.
+- [ ] Render both answer-position modes for DOCX and PDF, inspect every page and verify section headers/footers, answer summary correctness, formula visibility, clipping and pagination.
+
 ### Task 12: Export preference UI and runtime visual QA
 
 **Files:**
@@ -193,11 +208,11 @@
 - Modify: `src/components/QuestionBasket.tsx`
 - Create: `docs/verification-2026-07-12-question-formula-editor.md`
 
-- [ ] Add selection controls for four output modes with truthful compatibility descriptions and host readiness state.
-- [ ] Show job progress, failure locations, fallback summary and download actions; never expose raw formula payloads.
-- [ ] Run the real desktop app and exercise import → edit → save → export at desktop and narrow widths, keyboard-only paths, loading/error/recovery states and console health.
-- [ ] Capture safe screenshots/check records and complete the visual evidence record against selected UI checks.
-- [ ] Commit.
+- [x] Add selection controls for four output modes with truthful compatibility descriptions and host readiness state.
+- [x] Show job progress, failure locations, fallback summary and download actions; never expose raw formula payloads.
+- [x] Run the real desktop app and exercise import → edit → save → export at desktop and narrow widths, keyboard-only paths, loading/error/recovery states and console health.
+- [x] Capture safe screenshots/check records and complete the visual evidence record against selected UI checks.
+- [x] Commit.
 
 ### Task 13: Document render matrix and regression closure
 

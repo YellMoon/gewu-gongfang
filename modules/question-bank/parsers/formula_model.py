@@ -45,6 +45,9 @@ class FormulaSource:
     comment_id: str | None = None
     rel_id: str | None = None
     content_index: int | None = None
+    table_row: int | None = None
+    table_cell: int | None = None
+    cell_paragraph: int | None = None
     payload_hash: str | None = None
     payload_ref: str | None = None
     preview_ref: str | None = None
@@ -67,6 +70,9 @@ class FormulaSource:
                 "comment_id": self.comment_id,
                 "rel_id": self.rel_id,
                 "content_index": self.content_index,
+                "table_row": self.table_row,
+                "table_cell": self.table_cell,
+                "cell_paragraph": self.cell_paragraph,
                 "payload_hash": self.payload_hash,
                 "payload_ref": self.payload_ref,
                 "preview_ref": self.preview_ref,
