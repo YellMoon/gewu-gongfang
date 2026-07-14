@@ -1,3 +1,5 @@
+const { isReviewExperienceIdentity, reviewSessionIdentityKey } = require('./reviewExperience');
+
 function roleOf(identity) {
   return identity && (identity.role || identity.user_type) || 'pending';
 }
@@ -6,14 +8,20 @@ function fingerprint(identity) {
   if (!identity) return '';
   return [identity.id || '', roleOf(identity), identity.teacher_id || identity.teacherId || '',
     identity.student_id || identity.studentId || '', identity.review_status || '', identity.status,
-    identity.login_enabled, identity.authorization_revision || identity.updated_at || ''].join('|');
+    identity.login_enabled, identity.authorization_revision || identity.updated_at || '',
+    identity.is_review_demo === true, identity.read_only === true, reviewSessionIdentityKey(identity)].join('|');
 }
 
 function isActive(identity) {
-  return Boolean(identity && identity.id && identity.review_status === 'approved'
+  const active = Boolean(identity && identity.id && identity.review_status === 'approved'
     && (identity.status === 1 || identity.status === true)
     && (identity.login_enabled === 1 || identity.login_enabled === true)
     && roleOf(identity) !== 'pending');
+  if (!active) return false;
+  const hasReviewMarker = identity.is_review_demo === true
+    || identity.read_only === true
+    || Boolean(identity.review_demo_session_id);
+  return !hasReviewMarker || isReviewExperienceIdentity(identity);
 }
 
 function normalizedUser(identity, localUser) {
