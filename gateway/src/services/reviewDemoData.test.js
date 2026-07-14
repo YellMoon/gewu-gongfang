@@ -18,6 +18,18 @@ assert.ok(student.schedules.every(item => item.student_ids.includes('review-demo
 assert.ok(admin.payments.length > 0);
 assert.deepStrictEqual(student.payments, []);
 assert.deepStrictEqual(student.assetRecords, []);
+assert.ok(admin.assetRecords.length > 0);
+assert.ok(admin.assetRecords.every(item => (
+  String(item.id).startsWith('review-demo-')
+  && ['income', 'expense'].includes(item.type)
+  && /^\d{4}-\d{2}-\d{2}$/.test(item.date)
+  && Number.isFinite(Date.parse(item.created_at))
+)));
+assert.ok(admin.assetCategories.every(item => (
+  String(item.id).startsWith('review-demo-')
+  && ['income', 'expense'].includes(item.type)
+  && /^#[0-9a-fA-F]{6}$/.test(item.color)
+)));
 assert.ok(Array.isArray(admin.questions) && admin.questions.length >= 4);
 assert.strictEqual(JSON.stringify(admin).includes('13732250653'), false);
 assert.strictEqual(/"(phone|openid|phone_normalized)"/.test(JSON.stringify(admin)), false);

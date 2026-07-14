@@ -52,6 +52,23 @@ const miniappReviewExperience = read('miniapp/src/utils/reviewExperience.js');
 const miniappApi = read('miniapp/src/utils/api.ts');
 const miniappLogin = read('miniapp/src/pages/login/index.tsx');
 const miniappLoginCss = read('miniapp/src/pages/login/index.scss');
+const miniappReviewBannerPath = path.join(root, 'miniapp/src/components/ReviewDemoBanner.tsx');
+let miniappReviewBanner = fs.existsSync(miniappReviewBannerPath) ? fs.readFileSync(miniappReviewBannerPath, 'utf8') : '';
+const miniappSharedCss = read('miniapp/src/components/shared.scss');
+const miniappHome = read('miniapp/src/pages/index/index.tsx');
+const miniappQuestionBank = read('miniapp/src/pages/question-bank/index.tsx');
+let miniappSettings = read('miniapp/src/pages/settings/index.tsx');
+let miniappAdminUsers = read('miniapp/src/pages/admin/users/index.tsx');
+let miniappAssets = read('miniapp/src/pages/assets/index.tsx');
+let miniappScheduleEdit = read('miniapp/src/pages/schedule/edit/index.tsx');
+const miniappStorage = read('miniapp/src/utils/storage.ts');
+const miniappApp = read('miniapp/src/app.tsx');
+const decodeUnicodeEscapes = source => source.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) => String.fromCharCode(Number.parseInt(hex, 16)));
+miniappReviewBanner = decodeUnicodeEscapes(miniappReviewBanner);
+miniappSettings = decodeUnicodeEscapes(miniappSettings);
+miniappAdminUsers = decodeUnicodeEscapes(miniappAdminUsers);
+miniappAssets = decodeUnicodeEscapes(miniappAssets);
+miniappScheduleEdit = decodeUnicodeEscapes(miniappScheduleEdit);
 
 assert(
   miniappLogin.includes('review-title') &&
@@ -92,6 +109,74 @@ assert(
   miniappApi.includes('createAuthRefreshRuntime') &&
   miniappApi.includes('experienceApiPath'),
   'miniapp review runtime should isolate session caches, map stable login errors, and use dedicated gateway APIs'
+);
+
+assert(
+  miniappReviewBanner.includes('isReviewExperienceIdentity') &&
+  miniappReviewBanner.includes('脱敏示例数据') &&
+  miniappReviewBanner.includes('只读') &&
+  miniappSharedCss.includes('.review-demo-banner') &&
+  [miniappHome, miniappQuestionBank, miniappSettings, miniappAdminUsers, miniappAssets, miniappScheduleEdit]
+    .every(source => source.includes('ReviewDemoBanner')),
+  'verified review entry pages should render one shared sanitized read-only banner'
+);
+
+assert(
+  miniappAdminUsers.includes('isReviewExperienceIdentity') &&
+  miniappAdminUsers.includes('审核体验中不可审核或停用真实用户') &&
+  miniappAssets.includes('isReviewExperienceIdentity') &&
+  miniappAssets.includes('审核体验中不可导入财务数据') &&
+  miniappScheduleEdit.includes('审核体验中不可编辑排课') &&
+  miniappQuestionBank.includes('isReviewExperienceIdentity'),
+  'verified review identities should see explicit disabled-write copy while normal roles keep their existing actions'
+);
+
+assert(
+  miniappReviewExperience.includes('REVIEW_TASK_CACHE_PREFIX') &&
+  miniappReviewExperience.includes('reviewTaskCacheKey') &&
+  miniappQuestionBank.includes('createQuestionPaperTaskCacheRuntime') &&
+  miniappQuestionBank.includes('reviewDemoApi.createTask') &&
+  miniappQuestionBank.includes('reviewDemoApi.getTaskResult') &&
+  miniappQuestionBank.includes('reviewDemoApi.cancelTask') &&
+  miniappQuestionBank.includes('reviewDemoApi.downloadArtifact') &&
+  miniappQuestionBank.includes('openSessionBoundDocument'),
+  'review paper tasks should use a dedicated cache and the direct in-memory sandbox create/read/cancel/download flow'
+);
+
+assert(
+  miniappSettings.includes('reviewCleanupStorageKeys') &&
+  miniappSettings.includes('clearAuthenticatedSession') &&
+  miniappSettings.includes('clearPermissionCache') &&
+  miniappSettings.includes('clearBusinessCache') &&
+  miniappSettings.includes('Taro.reLaunch') &&
+  miniappSettings.includes('退出审核体验') &&
+  miniappSettings.includes('Taro.redirectTo') &&
+  miniappSettings.includes('if (isReviewDemo) {') &&
+  miniappSettings.includes('const pendingChanges = isReviewDemo ? [] : getPendingChanges()'),
+  'exiting review should clear auth, identity, permission, business, and sandbox task state before relaunching login without changing normal logout navigation'
+);
+
+assert(
+  miniappStorage.includes("'assetRecords'") && miniappStorage.includes("'assetCategories'"),
+  'business-cache cleanup should clear finance assets as part of review exit without changing normal cache scoping'
+);
+assert(
+  miniappHome.includes("setCachedList('assetRecords'") && miniappHome.includes("setCachedList('assetCategories'"),
+  'scoped cloud snapshots should feed the existing assets page for normal and sanitized review data'
+);
+
+assert(
+  miniappAssets.includes("useState<'month' | 'year' | 'all'>(isReviewDemo ? 'all' : 'month')"),
+  'review assets should default to the deterministic all-time view while normal users keep the monthly default'
+);
+
+const reviewSyncGuardAt = miniappApp.indexOf('if (isReviewExperienceIdentity(startupSession.identity)) return;');
+const normalSyncInitAt = miniappApp.indexOf('const syncEngine = await getSyncEngine();');
+assert(
+  reviewSyncGuardAt > miniappApp.indexOf('await fetchPermissions()') &&
+  normalSyncInitAt > reviewSyncGuardAt &&
+  miniappApp.indexOf('Taro.onNetworkStatusChange', normalSyncInitAt) > normalSyncInitAt,
+  'review startup should load permissions and cache identity but skip normal sync initialization, push, pull, and network listeners'
 );
 
 assert(

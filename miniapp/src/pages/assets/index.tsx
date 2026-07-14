@@ -7,7 +7,9 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { getLocalData } from '../../utils/sync';
 import { createMiniappTask } from '../../utils/api';
 import { assertMiniappWriteAllowed } from '../../utils/permission';
+import { isReviewExperienceIdentity } from '../../utils/reviewExperience';
 import { NetworkStatus, EmptyState, StatCard } from '../../components/shared';
+import ReviewDemoBanner from '../../components/ReviewDemoBanner';
 import './index.scss';
 
 interface AssetRecord {
@@ -28,9 +30,10 @@ interface AssetCategory {
 }
 
 export default function Assets() {
+  const isReviewDemo = isReviewExperienceIdentity(Taro.getStorageSync('user_info'));
   const [records, setRecords] = useState<AssetRecord[]>([]);
   const [categories, setCategories] = useState<AssetCategory[]>([]);
-  const [period, setPeriod] = useState<'month' | 'year' | 'all'>('month');
+  const [period, setPeriod] = useState<'month' | 'year' | 'all'>(isReviewDemo ? 'all' : 'month');
 
   useDidShow(() => { loadData(); });
 
@@ -40,6 +43,10 @@ export default function Assets() {
   };
 
   const submitAssetImportTask = async () => {
+    if (isReviewDemo) {
+      Taro.showToast({ title: '\u5ba1\u6838\u4f53\u9a8c\u4e2d\u4e0d\u53ef\u5bfc\u5165\u8d22\u52a1\u6570\u636e', icon: 'none' });
+      return;
+    }
     try {
       assertMiniappWriteAllowed('asset-import');
       const res = await createMiniappTask('asset-import', {
@@ -86,8 +93,10 @@ export default function Assets() {
   return (
     <View className="assets-page">
       <NetworkStatus />
+      <ReviewDemoBanner />
 
-      <View className="task-card" onClick={submitAssetImportTask}>
+      <View className={`task-card ${isReviewDemo ? 'review-read-only' : ''}`} onClick={isReviewDemo ? undefined : submitAssetImportTask}>
+        {isReviewDemo ? <Text className="task-desc">{'\u5ba1\u6838\u4f53\u9a8c\u4e2d\u4e0d\u53ef\u5bfc\u5165\u8d22\u52a1\u6570\u636e\uff0c\u4ec5\u5c55\u793a\u8131\u654f\u793a\u4f8b\u6c47\u603b\u3002'}</Text> : null}
         <Text className="task-title">导入财务数据</Text>
         <Text className="task-desc">选择个人资产统计所需的数据文件并开始导入。</Text>
       </View>

@@ -58,4 +58,42 @@ const emojiPattern = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
 const filesWithEmoji = uiFilesToScan.filter((file) => emojiPattern.test(read(file)));
 assert.deepStrictEqual(filesWithEmoji, [], 'miniapp UI source should not use emoji as visible UI assets');
 
+const storageSource = read('src/utils/storage.ts');
+assert.ok(
+  storageSource.includes("'assetRecords'") && storageSource.includes("'assetCategories'"),
+  'review exit business-cache cleanup must include finance asset records and categories'
+);
+
+const reviewBannerFile = 'src/components/ReviewDemoBanner.tsx';
+const reviewEntryFiles = [
+  'src/pages/index/index.tsx',
+  'src/pages/question-bank/index.tsx',
+  'src/pages/settings/index.tsx',
+  'src/pages/admin/users/index.tsx',
+  'src/pages/assets/index.tsx',
+  'src/pages/schedule/edit/index.tsx',
+];
+const missingReviewUiContracts = [];
+if (!fs.existsSync(path.join(root, reviewBannerFile))) {
+  missingReviewUiContracts.push('shared ReviewDemoBanner component');
+} else {
+  let bannerSource = read(reviewBannerFile);
+  bannerSource = bannerSource.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) => String.fromCharCode(Number.parseInt(hex, 16)));
+  if (!bannerSource.includes('isReviewExperienceIdentity')) missingReviewUiContracts.push('strict review identity check in shared banner');
+  if (!bannerSource.includes('脱敏示例数据') || !bannerSource.includes('只读')) missingReviewUiContracts.push('sanitized read-only review banner copy');
+}
+for (const file of reviewEntryFiles) {
+  if (!read(file).includes('ReviewDemoBanner')) missingReviewUiContracts.push(`ReviewDemoBanner rendered by ${file}`);
+}
+for (const route of ['pages/index/index', 'pages/question-bank/index', 'pages/settings/index', 'pages/assets/index']) {
+  const entry = pageInventory.find((item) => item.route === route);
+  if (!entry?.roleViews.includes('review-admin') && !entry?.roleViews.includes('review-student')) {
+    missingReviewUiContracts.push(`review role coverage for ${route}`);
+  }
+  if (!entry?.verificationStates.includes('review-read-only')) {
+    missingReviewUiContracts.push(`review read-only verification state for ${route}`);
+  }
+}
+assert.deepStrictEqual(missingReviewUiContracts, [], 'review experience entry pages must expose the shared read-only banner and inventory coverage');
+
 console.log('miniapp full-page UI coverage checks passed');

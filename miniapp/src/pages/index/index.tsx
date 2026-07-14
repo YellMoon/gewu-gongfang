@@ -22,6 +22,7 @@ import { getLocalData } from '../../utils/sync';
 import { clearBusinessCache, setBusinessCacheIdentity, setCachedList } from '../../utils/storage';
 import { scopeDashboardCollections } from '../../utils/miniappAuthorizationRuntime';
 import { NetworkStatus, LoadingSkeleton, EmptyState } from '../../components/shared';
+import ReviewDemoBanner from '../../components/ReviewDemoBanner';
 import { Schedule, ScheduleStatus, Student, Course } from '../../types';
 import './index.scss';
 
@@ -73,6 +74,8 @@ function cacheSnapshotPayload(payload?: Record<string, any>) {
   if (Array.isArray(payload.teachers)) setCachedList('teachers', payload.teachers);
   if (Array.isArray(payload.payments)) setCachedList('payments', payload.payments);
   if (Array.isArray(payload.consumptions)) setCachedList('consumptions', payload.consumptions);
+  if (Array.isArray(payload.assetRecords)) setCachedList('assetRecords', payload.assetRecords);
+  if (Array.isArray(payload.assetCategories)) setCachedList('assetCategories', payload.assetCategories);
   if (Array.isArray(payload.questions)) setCachedList('questions', payload.questions);
 }
 
@@ -279,6 +282,7 @@ export default function Index() {
   return (
     <View className="home-page">
       <NetworkStatus onRetry={loadDashboard} />
+      <ReviewDemoBanner />
 
       <View className="home-hero">
         <View className="home-hero__topline">
