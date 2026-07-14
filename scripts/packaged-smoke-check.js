@@ -6,6 +6,8 @@ const { chromium } = require('playwright');
 const productExe = process.env.PACKAGED_EXE || path.join(process.cwd(), 'dist', 'win-unpacked', '格物工坊.exe');
 const debugPort = Number(process.env.PACKAGED_DEBUG_PORT || 9333);
 const debugUrl = `http://127.0.0.1:${debugPort}`;
+const packagedAppRoot = path.join(path.dirname(productExe), 'resources', 'app');
+const embeddedBackendDependencies = ['fflate', 'katex', 'mathjax-full', 'pdfkit', 'sharp', 'svg-to-pdfkit'];
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -37,6 +39,12 @@ function stopProcessTree(pid) {
 async function main() {
   if (!fs.existsSync(productExe)) {
     throw new Error(`Packaged executable not found: ${productExe}`);
+  }
+  const missingDependencies = embeddedBackendDependencies.filter(dependency => (
+    !fs.existsSync(path.join(packagedAppRoot, 'node_modules', dependency, 'package.json'))
+  ));
+  if (missingDependencies.length > 0) {
+    throw new Error(`Packaged embedded backend dependencies are missing: ${missingDependencies.join(', ')}`);
   }
 
   const child = spawn(productExe, [`--remote-debugging-port=${debugPort}`], {

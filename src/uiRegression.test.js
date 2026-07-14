@@ -121,7 +121,6 @@ const desktopRuntimeOnlyDependencies = [
   'chart.js',
   'dayjs',
   'electron-store',
-  'katex',
   'react',
   'react-chartjs-2',
   'react-dom',
