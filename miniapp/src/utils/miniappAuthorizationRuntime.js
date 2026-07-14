@@ -33,25 +33,33 @@ function businessCacheIdentityKey(user) {
   return [user.id, role, teacherId].filter(Boolean).join(':');
 }
 
+function reviewCapabilityAllowlist(user) {
+  if (!isReviewExperienceIdentity(user)) return [];
+  return [
+    'review-demo:read',
+    roleOf(user) === 'admin' ? 'review-demo:admin' : 'review-demo:student',
+    'review-demo:paper-export',
+    'question-bank:view',
+  ];
+}
+
+function sanitizeCapabilitiesForIdentity(user, capabilities) {
+  const stringCapabilities = Array.isArray(capabilities)
+    ? capabilities.filter(capability => typeof capability === 'string') : [];
+  if (!hasReviewExperienceMarker(user)) return stringCapabilities;
+  if (!isReviewExperienceIdentity(user)) return [];
+  return reviewCapabilityAllowlist(user).filter(capability => stringCapabilities.includes(capability));
+}
+
 function deriveAccess(user, permissionState) {
   const role = roleOf(user);
-  const reviewMarked = hasReviewExperienceMarker(user);
   const reviewIdentity = isReviewExperienceIdentity(user);
   const identityKey = permissionIdentityKey(user);
   const loadedForIdentity = permissionState && permissionState.status === 'loaded'
     && identityKey && permissionState.identityKey === identityKey;
   const loadedCapabilities = loadedForIdentity && Array.isArray(permissionState.capabilities)
     ? permissionState.capabilities : [];
-  const reviewCapabilityAllowlist = reviewIdentity
-    ? new Set([
-      'review-demo:read',
-      role === 'admin' ? 'review-demo:admin' : 'review-demo:student',
-      'review-demo:paper-export',
-      'question-bank:view',
-    ]) : new Set();
-  const capabilities = reviewMarked
-    ? (reviewIdentity ? [...reviewCapabilityAllowlist].filter(capability => loadedCapabilities.includes(capability)) : [])
-    : loadedCapabilities;
+  const capabilities = sanitizeCapabilitiesForIdentity(user, loadedCapabilities);
   let modules = [];
   if (reviewIdentity && role === 'admin' && capabilities.includes('review-demo:admin')) modules = REVIEW_ADMIN_MODULES.slice();
   else if (reviewIdentity && role === 'student' && capabilities.includes('review-demo:student')) modules = REVIEW_STUDENT_MODULES.slice();
@@ -74,7 +82,6 @@ function reviewRolePolicy(user) {
   if (!hasReviewExperienceMarker(user)) return null;
   const strict = isReviewExperienceIdentity(user);
   const role = strict ? roleOf(user) : 'pending';
-  const roleCapability = role === 'admin' ? 'review-demo:admin' : 'review-demo:student';
   return {
     role,
     modules: role === 'admin' ? REVIEW_ADMIN_MODULES.slice() : role === 'student' ? REVIEW_STUDENT_MODULES.slice() : [],
@@ -82,7 +89,7 @@ function reviewRolePolicy(user) {
     linkedStudentIds: role === 'student' ? [user.student_id].filter(Boolean) : [],
     allowedWriteTasks: [],
     canReadAllSnapshots: false,
-    capabilities: strict ? ['review-demo:read', roleCapability, 'review-demo:paper-export', 'question-bank:view'] : [],
+    capabilities: strict ? reviewCapabilityAllowlist(user) : [],
     canReviewUsers: false,
     canEditQuestionBank: false,
   };
@@ -145,6 +152,7 @@ module.exports = {
   roleOf,
   permissionIdentityKey,
   reviewRolePolicy,
+  sanitizeCapabilitiesForIdentity,
   businessCacheIdentityKey,
   deriveAccess,
   scopeDashboardCollections,

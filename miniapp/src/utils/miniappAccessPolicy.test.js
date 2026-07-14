@@ -2,6 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 require('./miniappAuthorizationRuntime.test');
 require('./miniappAuthorizationSession.test');
+require('./miniappPermissionFetchRuntime.test');
 require('../pages/admin/users/adminReviewCoordinator.test');
 
 const permission = fs.readFileSync('miniapp/src/utils/permission.ts', 'utf-8');
@@ -32,6 +33,7 @@ assert.ok(permission.includes('allowedWriteTasks'), 'miniapp permission should d
 assert.ok(permission.includes('studentModules'), 'miniapp permission should define studentModules');
 assert.ok(permission.includes('getMiniappRolePolicy'), 'miniapp permission should expose role-specific policy');
 assert.ok(permission.includes('reviewRolePolicy(user)') && permission.includes('canUserSubmitMiniappWrite'), 'miniapp permission boundary must delegate strict review policy and generic write checks to the tested runtime');
+assert.ok(permission.includes('createPermissionFetchBoundary') && permission.includes('sanitizeCapabilities: sanitizeCapabilitiesForIdentity'), 'fetchPermissions and persistent session cache must use the behavior-tested sanitizer boundary');
 assert.ok(permission.includes("'super_admin' | 'admin' | 'teacher' | 'student' | 'pending'"), 'miniapp user contract should include every unified authorization role');
 assert.ok(permission.includes("'users:review'"), 'super admin policy should expose the review capability');
 assert.ok(permission.includes("'business:all'"), 'administrator policy should consume the shared business capability');

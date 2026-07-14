@@ -10,7 +10,7 @@
  */
 import Taro from '@tarojs/taro';
 import { clearBusinessCache } from './storage';
-import { createAuthRefreshRuntime } from './miniappAuthRefreshRuntime';
+import { createAuthRefreshRuntime, extractRefreshToken } from './miniappAuthRefreshRuntime';
 import {
   experienceApiPath,
   hasReviewExperienceMarker,
@@ -92,8 +92,7 @@ class ApiClient {
       data: { token },
       timeout: 10000,
     });
-    return res.statusCode === 200 && typeof res.data?.data?.token === 'string'
-      ? res.data.data.token : '';
+    return res.statusCode === 200 ? extractRefreshToken(res.data) : '';
   }
 
   /** Token 过期处理 */

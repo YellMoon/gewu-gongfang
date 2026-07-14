@@ -7,10 +7,11 @@ import { moduleApi } from './api';
 import {
   canUserSubmitMiniappWrite,
   deriveAccess,
-  permissionIdentityKey,
   reviewRolePolicy,
+  sanitizeCapabilitiesForIdentity,
 } from './miniappAuthorizationRuntime';
 import { createAuthorizationSession } from './miniappAuthorizationSession';
+import { createPermissionFetchBoundary } from './miniappPermissionFetchRuntime';
 import { clearBusinessCache, setBusinessCacheIdentity } from './storage';
 
 export const readonlyModules = [
@@ -138,6 +139,15 @@ const authorizationSession = createAuthorizationSession({
     const payload = response.data as any;
     return { identity: payload.identity, capabilities: payload.capabilities || [] };
   },
+  sanitizeCapabilities: sanitizeCapabilitiesForIdentity,
+});
+
+const permissionFetchBoundary = createPermissionFetchBoundary({
+  getCurrentUser,
+  getMemoryCache: () => _permissionCache,
+  setMemoryCache: (value: PermissionData | null) => { _permissionCache = value; },
+  setPermissionState: (value: PermissionState) => { _permissionState = value; },
+  refreshAuthorization: (localUser: UserInfo | null) => authorizationSession.refresh(localUser, { force: true }),
 });
 
 export function getPermissionState(): PermissionState {
@@ -246,29 +256,7 @@ export function getMiniappRolePolicy(user: Partial<UserInfo> | null = getCurrent
  * Refresh permissions from the authenticated server. Persistent data is never authoritative.
  */
 export async function fetchPermissions(): Promise<PermissionData> {
-  const localUser = getCurrentUser();
-  const localIdentityKey = permissionIdentityKey(localUser);
-  _permissionCache = null;
-  _permissionState = { status: 'idle', identityKey: localIdentityKey, capabilities: [] };
-  const result = await authorizationSession.refresh(localUser, { force: true });
-  if (result.status === 'stale') {
-    return _permissionCache || { permissions: [], capabilities: [], user_type: getCurrentUser()?.user_type || 'pending' };
-  }
-  const refreshedUser = getCurrentUser();
-  const identityKey = permissionIdentityKey(refreshedUser);
-  if (result.status !== 'loaded') {
-    _permissionState = { status: 'error', identityKey, capabilities: [] };
-    return { permissions: [], capabilities: [], user_type: refreshedUser?.user_type || 'pending' };
-  }
-  const capabilities = Array.isArray(result.capabilities) ? result.capabilities as MiniappCapability[] : [];
-  const data = {
-    permissions: capabilities.map(capability => ({ id: capability, module_id: capability.split(':')[0], action: capability.split(':')[1], description: capability, status: 1 })),
-    capabilities,
-    user_type: refreshedUser?.user_type || 'pending',
-  };
-  _permissionCache = data;
-  _permissionState = { status: 'loaded', identityKey, capabilities };
-  return data;
+  return permissionFetchBoundary.fetchPermissions();
 }
 
 /**

@@ -6,10 +6,19 @@ function roleOf(identity) {
 }
 
 function hasReviewExperienceMarker(identity) {
+  const capabilityValues = [
+    identity?.capability,
+    ...(Array.isArray(identity?.capabilities) ? identity.capabilities : []),
+    ...(Array.isArray(identity?.permissions) ? identity.permissions.map(item => (
+      typeof item === 'string' ? item : item?.id || item?.capability
+    )) : []),
+  ];
   return Boolean(identity && (
     identity.is_review_demo === true
     || identity.read_only === true
     || identity.review_demo_session_id
+    || String(identity.id || '').startsWith('review-demo:')
+    || capabilityValues.some(value => typeof value === 'string' && value.startsWith('review-demo:'))
   ));
 }
 
@@ -52,6 +61,11 @@ function requireResourceId(operation, resourceId) {
 
 function experienceApiPath(identity, operation, resourceId) {
   const review = isReviewExperienceIdentity(identity);
+  if (hasReviewExperienceMarker(identity) && !review) {
+    const error = new Error('REVIEW_DEMO_IDENTITY_INVALID');
+    error.code = 'REVIEW_DEMO_IDENTITY_INVALID';
+    throw error;
+  }
   if (operation === 'snapshot') return '/api/cloud/snapshots/read?snapshotType=full';
   if (operation === 'questionPreview') return '/api/cloud/snapshots/questions';
   if (operation === 'createTask') return review ? '/api/review-demo/tasks' : '/api/cloud/tasks';

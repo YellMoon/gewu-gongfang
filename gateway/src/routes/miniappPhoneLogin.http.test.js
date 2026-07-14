@@ -54,6 +54,12 @@ const get = async (route, token) => { const response = await realFetch(`http://1
   getDb().prepare("UPDATE users SET user_type='admin', review_status='approved', status=1, login_enabled=1 WHERE id=?").run(pendingUser.id);
   const approved = await post('/api/auth/wechat-login', { code: 'new' });
   assert.strictEqual(approved.status, 200); assert.ok(approved.body.data.token);
+  const approvedRefresh = await post('/api/auth/refresh', { token: approved.body.data.token });
+  assert.strictEqual(approvedRefresh.status, 200);
+  assert.strictEqual(approvedRefresh.body.success, true);
+  assert.strictEqual(typeof approvedRefresh.body.token, 'string', 'gateway refresh must return a top-level token');
+  assert.ok(approvedRefresh.body.token);
+  assert.strictEqual(approvedRefresh.body.data, undefined, 'gateway refresh does not use a nested data.token response');
   const hydrated = await get('/api/admin/users', approved.body.data.token);
   assert.strictEqual(hydrated.status, 200, 'issued claims must hydrate an approved persisted user');
   const permissions = await get('/api/permissions/my', approved.body.data.token);

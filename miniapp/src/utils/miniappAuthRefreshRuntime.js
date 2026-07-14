@@ -1,5 +1,10 @@
 const { hasReviewExperienceMarker } = require('./reviewExperience');
 
+function extractRefreshToken(payload) {
+  if (!payload || payload.success !== true) return '';
+  return typeof payload.token === 'string' ? payload.token.trim() : '';
+}
+
 function createAuthRefreshRuntime(dependencies) {
   let inFlight = null;
 
@@ -37,4 +42,4 @@ function createAuthRefreshRuntime(dependencies) {
   return { isCurrentSession, refresh };
 }
 
-module.exports = { createAuthRefreshRuntime };
+module.exports = { createAuthRefreshRuntime, extractRefreshToken };

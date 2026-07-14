@@ -1,4 +1,8 @@
-const { isReviewExperienceIdentity, reviewSessionIdentityKey } = require('./reviewExperience');
+const {
+  hasReviewExperienceMarker,
+  isReviewExperienceIdentity,
+  reviewSessionIdentityKey,
+} = require('./reviewExperience');
 
 function roleOf(identity) {
   return identity && (identity.role || identity.user_type) || 'pending';
@@ -18,10 +22,7 @@ function isActive(identity) {
     && (identity.login_enabled === 1 || identity.login_enabled === true)
     && roleOf(identity) !== 'pending');
   if (!active) return false;
-  const hasReviewMarker = identity.is_review_demo === true
-    || identity.read_only === true
-    || Boolean(identity.review_demo_session_id);
-  return !hasReviewMarker || isReviewExperienceIdentity(identity);
+  return !hasReviewExperienceMarker(identity) || isReviewExperienceIdentity(identity);
 }
 
 function normalizedUser(identity, localUser) {
@@ -39,7 +40,9 @@ function createAuthorizationSession(dependencies) {
       const remote = await dependencies.fetchRemote();
       if (requestId !== generation) return { status: 'stale', identity: null, capabilities: [] };
       const remoteIdentity = remote && remote.identity;
-      const capabilities = remote && Array.isArray(remote.capabilities) ? remote.capabilities.filter(value => typeof value === 'string') : [];
+      const rawCapabilities = remote && Array.isArray(remote.capabilities) ? remote.capabilities.filter(value => typeof value === 'string') : [];
+      const capabilities = typeof dependencies.sanitizeCapabilities === 'function'
+        ? dependencies.sanitizeCapabilities(remoteIdentity, rawCapabilities) : rawCapabilities;
       const active = isActive(remoteIdentity);
       const changed = fingerprint(remoteIdentity) !== fingerprint((cached && cached.identity) || localUser);
       const lostCapabilities = Boolean(cached && Array.isArray(cached.capabilities)

@@ -58,6 +58,27 @@ assert.throws(() => experienceApiPath(adminReview, 'artifact', ''), /requires a 
 assert.strictEqual(experienceApiPath(normalAdmin, 'createTask'), '/api/cloud/tasks');
 assert.strictEqual(experienceApiPath(normalAdmin, 'taskResult', 'task-1'), '/api/cloud/tasks/task-1/result');
 assert.strictEqual(experienceApiPath(normalAdmin, 'cancelTask', 'task-1'), '/api/cloud/tasks/task-1/cancel');
+
+const malformedReviewMarkers = [
+  { ...normalAdmin, is_review_demo: true },
+  { ...normalAdmin, read_only: true },
+  { ...normalAdmin, id: 'review-demo:admin:broken' },
+  { ...normalAdmin, review_demo_session_id: 'broken-session' },
+  { ...normalAdmin, capability: 'review-demo:admin' },
+  { ...normalAdmin, capabilities: ['review-demo:read', 'business:all'] },
+];
+for (const malformedIdentity of malformedReviewMarkers) {
+  for (const [operation, resourceId] of [
+    ['createTask'], ['taskResult', 'task-1'], ['cancelTask', 'task-1'], ['artifact', 'artifact-1'],
+  ]) {
+    assert.throws(
+      () => experienceApiPath(malformedIdentity, operation, resourceId),
+      error => error?.code === 'REVIEW_DEMO_IDENTITY_INVALID'
+        && error?.message === 'REVIEW_DEMO_IDENTITY_INVALID',
+      `${operation} must fail closed for malformed review markers`,
+    );
+  }
+}
 assert.deepStrictEqual(reviewArtifactRequest(adminReview, 'review-token', 'artifact/1'), {
   path: '/api/review-demo/artifacts/artifact%2F1',
   header: { Authorization: 'Bearer review-token' },
