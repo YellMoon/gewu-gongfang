@@ -13,10 +13,24 @@ function sandboxError(code, statusCode, message = code) {
   return Object.assign(new Error(message), { code, statusCode });
 }
 
+function isXml10Text(value) {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    const valid = codePoint === 0x9 || codePoint === 0xA || codePoint === 0xD
+      || (codePoint >= 0x20 && codePoint <= 0xD7FF)
+      || (codePoint >= 0xE000 && codePoint <= 0xFFFD)
+      || (codePoint >= 0x10000 && codePoint <= 0x10FFFF);
+    if (!valid) return false;
+  }
+  return true;
+}
+
 function normalizedRequest(input = {}) {
   const taskType = String(input.taskType || '');
   if (!TASK_TYPES.has(taskType)) throw sandboxError('REVIEW_DEMO_TASK_TYPE_INVALID', 400);
-  const title = String(input.title || '').trim();
+  const rawTitle = String(input.title || '');
+  if (!isXml10Text(rawTitle)) throw sandboxError('REVIEW_DEMO_TITLE_INVALID', 400);
+  const title = rawTitle.normalize('NFC').trim();
   if (!title || title.length > 80) throw sandboxError('REVIEW_DEMO_TITLE_INVALID', 400);
   const requestedQuestionIds = Array.isArray(input.questionIds) ? input.questionIds.map(String) : [];
   if (requestedQuestionIds.length < 1 || requestedQuestionIds.length > 20) throw sandboxError('REVIEW_DEMO_QUESTION_COUNT_INVALID', 400);
@@ -44,16 +58,19 @@ function optionText(question) {
   return Array.isArray(question.options) ? question.options.map((value, index) => `${String.fromCharCode(65 + index)}. ${value}`) : [];
 }
 
-function answerLines(question) {
+function answerLines(question, options = {}) {
+  const knowledgePoint = options.exportSafe ? question.exportKnowledgePoint : question.knowledgePoint;
+  const explanation = options.exportSafe ? question.exportExplanation : question.explanation;
   return [
     `Answer: ${question.answer}`,
-    `Knowledge point: ${question.exportKnowledgePoint || question.knowledgePoint}`,
-    `Explanation: ${question.exportExplanation || question.explanation}`,
+    `Knowledge point: ${knowledgePoint}`,
+    `Explanation: ${explanation}`,
   ];
 }
 
-function questionLines(question, index) {
-  return [`${index + 1}. ${question.exportStem || question.stemPreview}`, ...optionText(question)];
+function questionLines(question, index, options = {}) {
+  const stem = options.exportSafe ? question.exportStem : question.stemPreview;
+  return [`${index + 1}. ${stem}`, ...optionText(question)];
 }
 
 async function docxBuffer(request) {
@@ -82,7 +99,7 @@ async function docxBuffer(request) {
 function pdfBuffer(request) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    const doc = new PDFDocument({ size: 'A4', margin: 54, compress: true });
+    const doc = new PDFDocument({ size: 'A4', margin: 54, compress: false });
     doc.on('data', chunk => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
@@ -90,10 +107,10 @@ function pdfBuffer(request) {
     doc.moveDown(0.5).font('Helvetica').fontSize(9).text(`Review sandbox / ${request.formulaMode} / ${request.answerPosition}`, { align: 'center' });
     doc.moveDown();
     request.questions.forEach((question, index) => {
-      doc.font('Helvetica-Bold').fontSize(11).text(`${index + 1}. ${question.exportStem || `Review question ${index + 1}`}`);
+      doc.font('Helvetica-Bold').fontSize(11).text(questionLines(question, index, { exportSafe: true })[0]);
       optionText(question).forEach(line => doc.font('Helvetica').fontSize(10).text(line, { indent: 16 }));
       if (request.answerPosition === 'after-each') {
-        answerLines(question).forEach(line => doc.font('Helvetica').fontSize(9).text(line, { indent: 16 }));
+        answerLines(question, { exportSafe: true }).forEach(line => doc.font('Helvetica').fontSize(9).text(line, { indent: 16 }));
       }
       doc.moveDown(0.5);
     });
@@ -101,7 +118,7 @@ function pdfBuffer(request) {
       doc.addPage().font('Helvetica-Bold').fontSize(16).text('Reference answers', { align: 'center' }).moveDown();
       request.questions.forEach((question, index) => {
         doc.font('Helvetica-Bold').fontSize(10).text(`${index + 1}. ${question.answer}`);
-        answerLines(question).slice(1).forEach(line => doc.font('Helvetica').fontSize(9).text(line, { indent: 16 }));
+        answerLines(question, { exportSafe: true }).slice(1).forEach(line => doc.font('Helvetica').fontSize(9).text(line, { indent: 16 }));
       });
     }
     doc.end();
@@ -113,12 +130,27 @@ function createReviewDemoSandbox(options = {}) {
   const ttlMs = Number(options.ttlMs ?? 30 * 60 * 1000);
   const maxTasks = Number(options.maxTasks ?? 50);
   const maxArtifactBytes = Number(options.maxArtifactBytes ?? 16 * 1024 * 1024);
+  const maxConcurrentGenerations = Number(options.maxConcurrentGenerations ?? 2);
+  if (!Number.isSafeInteger(maxConcurrentGenerations) || maxConcurrentGenerations < 1) {
+    throw new RangeError('maxConcurrentGenerations must be a positive integer');
+  }
+  const artifactGenerators = {
+    'paper-export-word': docxBuffer,
+    'paper-export-pdf': pdfBuffer,
+    ...(options.artifactGenerators || {}),
+  };
   const tasks = new Map();
   const artifacts = new Map();
+  const expiredTaskOwners = new Map();
+  const expiredArtifactOwners = new Map();
   let reservedTasks = 0;
+  let activeGenerations = 0;
+  const generationWaiters = [];
 
   function artifactBytes() {
-    return [...artifacts.values()].reduce((sum, artifact) => sum + artifact.buffer.length, 0);
+    return [...artifacts.values()].reduce((sum, artifact) => (
+      sum + (Buffer.isBuffer(artifact.buffer) ? artifact.buffer.length : 0)
+    ), 0);
   }
 
   function requireSession(sessionId) {
@@ -127,10 +159,73 @@ function createReviewDemoSandbox(options = {}) {
     return value;
   }
 
+  function clearTaskArtifact(task, artifact) {
+    if (!task) return;
+    if (task.artifact === artifact || task.result?.artifactId === artifact.id) {
+      task.artifact = null;
+      task.result = {
+        ...task.result,
+        artifactId: null,
+        fileName: null,
+        mimeType: null,
+        downloadPath: null,
+      };
+    }
+  }
+
+  function rememberExpired(map, id, ownerSessionId) {
+    map.delete(id);
+    map.set(id, ownerSessionId);
+    while (map.size > maxTasks) map.delete(map.keys().next().value);
+  }
+
+  function releaseArtifact(artifact, expired = false) {
+    if (!artifact) return;
+    artifacts.delete(artifact.id);
+    if (expired) rememberExpired(expiredArtifactOwners, artifact.id, artifact.ownerSessionId);
+    clearTaskArtifact(tasks.get(artifact.taskId), artifact);
+    artifact.buffer = null;
+  }
+
+  function releaseTask(task, expired = false) {
+    if (!task) return;
+    const artifact = task.artifact || [...artifacts.values()].find(item => item.taskId === task.id);
+    if (artifact) releaseArtifact(artifact, expired);
+    tasks.delete(task.id);
+    if (expired) rememberExpired(expiredTaskOwners, task.id, task.ownerSessionId);
+    task.artifact = null;
+  }
+
+  function releaseArtifactAndTask(artifact, expired = false) {
+    const task = artifact ? tasks.get(artifact.taskId) : null;
+    if (task) releaseTask(task, expired);
+    else releaseArtifact(artifact, expired);
+  }
+
   function cleanup() {
     const current = now();
-    for (const [id, task] of tasks) if (task.expiresAtMs <= current) tasks.delete(id);
-    for (const [id, artifact] of artifacts) if (artifact.expiresAtMs <= current) artifacts.delete(id);
+    for (const task of tasks.values()) if (task.expiresAtMs <= current) releaseTask(task, true);
+    for (const artifact of artifacts.values()) {
+      if (artifact.expiresAtMs <= current) releaseArtifactAndTask(artifact, true);
+    }
+  }
+
+  function acquireGenerationSlot() {
+    return new Promise(resolve => {
+      const start = () => {
+        activeGenerations += 1;
+        let released = false;
+        resolve(() => {
+          if (released) return;
+          released = true;
+          activeGenerations -= 1;
+          const next = generationWaiters.shift();
+          if (next) next();
+        });
+      };
+      if (activeGenerations < maxConcurrentGenerations) start();
+      else generationWaiters.push(start);
+    });
   }
 
   async function create(sessionId, input) {
@@ -145,7 +240,16 @@ function createReviewDemoSandbox(options = {}) {
       let artifact = null;
       if (request.taskType !== 'question-paper') {
         const word = request.taskType === 'paper-export-word';
-        const buffer = word ? await docxBuffer(request) : await pdfBuffer(request);
+        const generator = artifactGenerators[request.taskType];
+        if (typeof generator !== 'function') throw new TypeError(`Missing artifact generator for ${request.taskType}`);
+        const releaseGenerationSlot = await acquireGenerationSlot();
+        let buffer;
+        try {
+          buffer = await generator(request);
+        } finally {
+          releaseGenerationSlot();
+        }
+        if (!Buffer.isBuffer(buffer)) throw new TypeError('Artifact generator must return a Buffer');
         if (buffer.length > maxArtifactBytes) throw sandboxError('REVIEW_DEMO_ARTIFACT_TOO_LARGE', 413);
         if (artifactBytes() + buffer.length > maxArtifactBytes) {
           throw sandboxError('REVIEW_DEMO_ARTIFACT_CAPACITY_EXCEEDED', 429);
@@ -189,17 +293,27 @@ function createReviewDemoSandbox(options = {}) {
 
   function getTask(sessionId, taskId) {
     const ownerSessionId = requireSession(sessionId);
-    const task = tasks.get(String(taskId));
-    if (!task || task.ownerSessionId !== ownerSessionId) throw sandboxError('REVIEW_DEMO_TASK_NOT_FOUND', 404);
-    if (task.expiresAtMs <= now()) { tasks.delete(task.id); throw sandboxError('REVIEW_DEMO_TASK_EXPIRED', 410); }
+    const id = String(taskId);
+    const task = tasks.get(id);
+    if (!task) {
+      if (expiredTaskOwners.get(id) === ownerSessionId) throw sandboxError('REVIEW_DEMO_TASK_EXPIRED', 410);
+      throw sandboxError('REVIEW_DEMO_TASK_NOT_FOUND', 404);
+    }
+    if (task.ownerSessionId !== ownerSessionId) throw sandboxError('REVIEW_DEMO_TASK_NOT_FOUND', 404);
+    if (task.expiresAtMs <= now()) { releaseTask(task, true); throw sandboxError('REVIEW_DEMO_TASK_EXPIRED', 410); }
     return task;
   }
 
   function getArtifact(sessionId, artifactId) {
     const ownerSessionId = requireSession(sessionId);
-    const artifact = artifacts.get(String(artifactId));
-    if (!artifact || artifact.ownerSessionId !== ownerSessionId) throw sandboxError('REVIEW_DEMO_ARTIFACT_NOT_FOUND', 404);
-    if (artifact.expiresAtMs <= now()) { artifacts.delete(artifact.id); throw sandboxError('REVIEW_DEMO_ARTIFACT_EXPIRED', 410); }
+    const id = String(artifactId);
+    const artifact = artifacts.get(id);
+    if (!artifact) {
+      if (expiredArtifactOwners.get(id) === ownerSessionId) throw sandboxError('REVIEW_DEMO_ARTIFACT_EXPIRED', 410);
+      throw sandboxError('REVIEW_DEMO_ARTIFACT_NOT_FOUND', 404);
+    }
+    if (artifact.ownerSessionId !== ownerSessionId) throw sandboxError('REVIEW_DEMO_ARTIFACT_NOT_FOUND', 404);
+    if (artifact.expiresAtMs <= now()) { releaseArtifactAndTask(artifact, true); throw sandboxError('REVIEW_DEMO_ARTIFACT_EXPIRED', 410); }
     return artifact;
   }
 
@@ -208,9 +322,7 @@ function createReviewDemoSandbox(options = {}) {
     task.status = 'cancelled';
     task.phase = 'cancelled';
     task.progress = 100;
-    if (task.artifact) artifacts.delete(task.artifact.id);
-    task.artifact = null;
-    task.result = { ...task.result, artifactId: null, downloadPath: null };
+    if (task.artifact) releaseArtifact(task.artifact);
     return task;
   }
 
