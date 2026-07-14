@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Card, Button, message, Space, Divider, Popconfirm, Typography, Table, Tag, Form, Input, Select, Progress, Collapse } from 'antd';
+import { Alert, Card, Button, message, Space, Divider, Popconfirm, Typography, Table, Tag, Form, Input, Select, Progress, Collapse, Descriptions } from 'antd';
 import { CloudDownloadOutlined, CloudSyncOutlined, ExportOutlined, ImportOutlined, DeleteOutlined, ReloadOutlined, RollbackOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { APP_VERSION } from '../generated/version';
@@ -12,6 +12,7 @@ import {
 import SyncSettings from './SyncSettings';
 import type { CloudSyncContext } from '../navigation/navigationContext';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
+import { systemSettingsRolePolicy } from '../services/systemSettingsRolePolicy.mjs';
 const { questionBankBindingPresentation, bindQuestionBankStore } = require('../services/questionBankBindingUi');
 
 const { Text } = Typography;
@@ -109,10 +110,14 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
   };
 
   useEffect(() => {
-    loadBackupJobs();
-    loadRuntimeConfig();
-    loadQuestionBankStorageStatus();
-    loadBackupTargetStatus();
+    getRuntimeConfig().then(config => {
+      setRuntimeConfig(config);
+      runtimeForm.setFieldsValue(config);
+      const policy = systemSettingsRolePolicy(config.nodeRole);
+      if (policy.loadBackupJobs) loadBackupJobs();
+      if (policy.loadQuestionBankStorage) loadQuestionBankStorageStatus();
+      if (policy.loadBackupTargets) loadBackupTargetStatus();
+    }).catch((error: any) => message.warning(error.message || '\u8fd0\u884c\u914d\u7f6e\u6682\u4e0d\u53ef\u7528'));
   }, []);
 
   useEffect(() => {
@@ -420,6 +425,29 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
     };
     input.click();
   };
+
+  const settingsPolicy = systemSettingsRolePolicy(runtimeConfig?.nodeRole);
+  if (!settingsPolicy.isPrimaryHost) {
+    let accountLabel = '\u7b49\u5f85\u7ba1\u7406\u5458\u6279\u51c6';
+    try {
+      const session = readDesktopAuthorizationSession();
+      accountLabel = session.user?.name || session.authContext.userId;
+    } catch (_error) {}
+    return (
+      <div>
+        <Card title={'\u672c\u673a\u4e0e\u540c\u6b65'} style={{ marginBottom: 16 }}>
+          <Alert type="info" showIcon message={'\u666e\u901a\u79bb\u7ebf\u5ba2\u6237\u7aef'} description={'\u540c\u6b65\u670d\u52a1\u4e0e\u8d26\u53f7\u7531\u7ba1\u7406\u5458\u7edf\u4e00\u914d\u7f6e\u3002\u672c\u673a\u65e0\u9700\u586b\u5199\u8def\u5f84\u3001\u4e91\u5730\u5740\u6216\u540c\u6b65\u5bc6\u94a5\u3002'} style={{ marginBottom: 16 }} />
+          <Descriptions bordered size="small" column={{ xs: 1, md: 2 }}>
+            <Descriptions.Item label={'\u8f6f\u4ef6\u7248\u672c'}>{APP_VERSION}</Descriptions.Item>
+            <Descriptions.Item label={'\u8bbe\u5907'}>{runtimeConfig?.deviceId || '\u6b63\u5728\u8bfb\u53d6'}</Descriptions.Item>
+            <Descriptions.Item label={'\u540c\u6b65\u8d26\u53f7'}>{accountLabel}</Descriptions.Item>
+            <Descriptions.Item label={'\u914d\u7f6e\u65b9\u5f0f'}><Tag color="blue">{'\u7ba1\u7406\u5458\u6258\u7ba1'}</Tag></Descriptions.Item>
+          </Descriptions>
+        </Card>
+        <section id="sync-settings"><SyncSettings variant="quick" /></section>
+      </div>
+    );
+  }
 
   return (
     <div>

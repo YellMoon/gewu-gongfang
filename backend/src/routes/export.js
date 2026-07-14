@@ -198,6 +198,7 @@ router.post('/backups', (req, res) => {
 
 router.get('/backups/targets/status', (_req, res) => {
   try {
+    if (process.env.GEWU_NODE_ROLE !== 'primary-host') return res.status(403).json({ success: false, code: 'PRIMARY_HOST_REQUIRED' });
     const targets = inspectBackupTargets({
       localCachePath: process.env.GEWU_LOCAL_CACHE_PATH,
       nasBackupPath: process.env.GEWU_NAS_BACKUP_PATH,

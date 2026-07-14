@@ -56,7 +56,7 @@ export function createDirectSyncTransport(options = {}) {
         const data = await readJsonResponse(res);
         return { ok: data?.ok !== false, data };
       } catch (error) {
-        return { ok: false, reason: error.message };
+        return { ok: false, code: error.code || 'DIRECT_UNREACHABLE', reason: error.message };
       }
     },
     async preview(input = {}) {
@@ -150,15 +150,16 @@ export function createCloudRelaySyncTransport(options = {}) {
     label: 'Cloud relay',
     queueOnly: true,
     async check() {
-      if (!baseUrl) return { ok: false, reason: 'cloud base url is not configured' };
+      if (!baseUrl) return { ok: false, code: 'CLOUD_CONFIG_MISSING', reason: 'cloud base url is not configured' };
       try {
+        const session = await resolveSession();
         const data = await readJsonResponse(await fetchImpl(`${baseUrl}/api/cloud/host/status`, {
           method: 'GET',
-          headers: headers(),
+          headers: headers(session),
         }));
         return { ok: !!data.success, hostOnline: !!data.online, data };
       } catch (error) {
-        return { ok: false, reason: error.message };
+        return { ok: false, code: error.code || 'CLOUD_UNREACHABLE', reason: error.message };
       }
     },
     async preview() {
@@ -231,9 +232,12 @@ export async function discoverLanDirectSyncTransports(options = {}) {
   if (!baseUrl) return [];
   const fetchImpl = options.fetchImpl || fetch;
   const desktopSyncToken = options.desktopSyncToken || '';
+  const session = options.sessionResolver ? await options.sessionResolver() : null;
   const headers = {
     'Content-Type': 'application/json',
     ...(desktopSyncToken ? { 'x-gewu-desktop-sync-token': desktopSyncToken } : {}),
+    ...(session?.authorization ? { Authorization: session.authorization } : {}),
+    ...(session?.authContext?.deviceId ? { 'x-device-id': session.authContext.deviceId } : {}),
   };
   const data = await readJsonResponse(await fetchImpl(`${baseUrl}/api/cloud/host/status`, {
     method: 'GET',

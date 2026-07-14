@@ -33,6 +33,8 @@ const richQuestionEditor = read('src/components/RichQuestionEditor.tsx');
 const richAssetImage = read('src/components/RichAssetImage.tsx');
 const structuredQuestionViewer = read('src/components/StructuredQuestionViewer.tsx');
 const systemSettings = read('src/pages/SystemSettings.tsx');
+assert.ok(systemSettings.includes("if (!settingsPolicy.isPrimaryHost)") && systemSettings.includes('\\u7ba1\\u7406\\u5458\\u6258\\u7ba1'), 'ordinary desktop settings must use a dedicated managed simple view');
+assert.ok(systemSettings.includes('if (policy.loadQuestionBankStorage)') && systemSettings.includes('if (policy.loadBackupTargets)'), 'ordinary desktop must not load host storage or backup status');
 const syncSettings = read('src/pages/SyncSettings.tsx');
 const syncQuickPanel = read('src/components/sync/SyncQuickPanel.tsx');
 const cloudSync = read('src/pages/CloudSync.tsx');
