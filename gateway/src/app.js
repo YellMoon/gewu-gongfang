@@ -20,8 +20,9 @@ const permissionsRouter = require('./routes/permissions');
 const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
 const desktopPairingRouter = require('./routes/desktopPairing');
+const { createReviewDemoRouter } = require('./routes/reviewDemo');
 
-function createApp() {
+function createApp(options = {}) {
   const app = express();
   const trustedCidrs = ['loopback', ...String(process.env.TRUST_PROXY_CIDRS || '').split(',').map(value => value.trim()).filter(Boolean)];
   app.set('trust proxy', proxyaddr.compile(trustedCidrs));
@@ -50,6 +51,10 @@ function createApp() {
   // ===================== 公开路由（无需认证） =====================
   app.use('/api/auth', authRouter);
   app.use('/api', optionalAuth, reviewDemoGuard);
+  app.use('/api/review-demo', authMiddleware, createReviewDemoRouter({
+    ...(options.reviewDemoRouteOptions || {}),
+    sandbox: options.reviewDemoSandbox,
+  }));
   app.use('/api/desktop-pairing', desktopPairingRouter);
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);
 
