@@ -129,8 +129,8 @@ function createReviewSessionCommitter(dependencies) {
   }
 
   function rollback(identities) {
-    for (const action of [dependencies.advanceGeneration, dependencies.clearBusinessCache, dependencies.clearPermissionCache]) {
-      try { action(); } catch (_error) { /* continue cleanup */ }
+    for (const action of [dependencies.invalidateSession, dependencies.advanceGeneration, dependencies.clearBusinessCache, dependencies.clearPermissionCache]) {
+      try { if (typeof action === 'function') action(); } catch (_error) { /* continue cleanup */ }
     }
     for (const key of cleanupKeys(identities)) {
       try { dependencies.removeStorage(key); } catch (_error) { /* continue cleanup */ }
@@ -142,6 +142,8 @@ function createReviewSessionCommitter(dependencies) {
     if (!session) return { success: false, code: 'REVIEW_DEMO_RESPONSE_INVALID' };
     let cleanupIdentities = [null, session.user];
     try {
+      if (typeof dependencies.invalidateSession === 'function') dependencies.invalidateSession();
+      dependencies.advanceGeneration();
       const previousUser = dependencies.readUser() || null;
       cleanupIdentities = [previousUser, session.user];
       dependencies.clearBusinessCache();
@@ -149,8 +151,8 @@ function createReviewSessionCommitter(dependencies) {
       for (const key of cleanupKeys(cleanupIdentities)) dependencies.removeStorage(key);
       dependencies.writeUser(session.user);
       dependencies.setBusinessCacheIdentity(session.user);
-      dependencies.advanceGeneration();
       dependencies.writeToken(session.token);
+      if (typeof dependencies.activateSession === 'function') dependencies.activateSession();
       await dependencies.relaunch();
       return { success: true };
     } catch (error) {

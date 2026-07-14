@@ -34,8 +34,10 @@ export default function LoginPage() {
       cleanupStorageKeys: reviewCleanupStorageKeys,
       writeUser: (user: any) => Taro.setStorageSync('user_info', user),
       setBusinessCacheIdentity,
+      invalidateSession: () => authSessionRuntime.invalidate(),
       advanceGeneration: () => authSessionRuntime.advanceGeneration(),
       writeToken: (token: string) => Taro.setStorageSync('auth_token', token),
+      activateSession: () => authSessionRuntime.activate(),
       relaunch: () => Taro.reLaunch({ url: '/pages/index/index' }),
     });
   }
@@ -47,15 +49,17 @@ export default function LoginPage() {
       removeStorage: (key: string) => Taro.removeStorageSync(key),
       writeUser: (user: any) => Taro.setStorageSync('user_info', user),
       setBusinessCacheIdentity,
+      invalidateSession: () => authSessionRuntime.invalidate(),
       advanceGeneration: () => authSessionRuntime.advanceGeneration(),
       writeToken: (token: string) => Taro.setStorageSync('auth_token', token),
+      activateSession: () => authSessionRuntime.activate(),
       relaunch: () => Taro.reLaunch({ url: '/pages/index/index' }),
     });
   }
   const loginBusy = loading || reviewLoading;
 
   useDidShow(() => {
-    if (Taro.getStorageSync('auth_token')) Taro.reLaunch({ url: '/pages/index/index' });
+    if (authSessionRuntime.capture().token) Taro.reLaunch({ url: '/pages/index/index' });
   });
 
   const requestWxLogin = async (phoneCode?: string) => {
@@ -74,6 +78,7 @@ export default function LoginPage() {
         setPendingReview(true);
         const currentUser = Taro.getStorageSync('user_info');
         clearAuthenticatedSession({
+          invalidateSession: () => authSessionRuntime.invalidate(),
           advanceGeneration: () => authSessionRuntime.advanceGeneration(),
           clearBusinessCache,
           clearPermissionCache,

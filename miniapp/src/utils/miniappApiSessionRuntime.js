@@ -2,6 +2,7 @@ const { permissionIdentityKey } = require('./miniappAuthorizationRuntime');
 const { hasReviewExperienceMarker } = require('./reviewExperience');
 
 const AUTH_SESSION_GENERATION_KEY = 'auth_session_generation';
+const AUTH_SESSION_STATE_KEY = 'auth_session_state_v1';
 const AUTH_SESSION_STORAGE_KEYS = ['auth_token', 'user_info', 'user_permissions'];
 
 function normalizedGeneration(value) {
@@ -10,78 +11,227 @@ function normalizedGeneration(value) {
 }
 
 function createAuthSessionRuntime(dependencies) {
-  function readGeneration() {
-    let stored;
+  let memoryGeneration = 0;
+  let initialized = false;
+  let invalidated = false;
+  let storageTrusted = false;
+
+  function persistentState() {
+    return { version: 1, generation: memoryGeneration, invalidated };
+  }
+
+  function normalizedPersistentState(value) {
+    if (!value || typeof value !== 'object' || value.version !== 1) return null;
+    const generation = Number(value.generation);
+    if (!Number.isSafeInteger(generation) || generation < 0 || typeof value.invalidated !== 'boolean') return null;
+    return { version: 1, generation, invalidated: value.invalidated };
+  }
+
+  function writePersistentState() {
+    if (typeof dependencies.writeSessionState !== 'function') return;
+    dependencies.writeSessionState(persistentState());
+  }
+
+  function readStorageState() {
+    let storedGeneration;
     try {
-      stored = dependencies.readGeneration();
+      storedGeneration = dependencies.readGeneration();
     } catch (_error) {
-      return 0;
+      storageTrusted = false;
+      return { generation: memoryGeneration, trusted: false };
     }
-    const generation = normalizedGeneration(stored);
-    if (stored === '' || stored === null || stored === undefined || generation !== Number(stored)) {
-      try { dependencies.writeGeneration(generation); } catch (_error) { /* fail closed at the next session mutation */ }
+
+    const missingGeneration = storedGeneration === '' || storedGeneration === null || storedGeneration === undefined;
+    const parsedGeneration = Number(storedGeneration);
+    if (!missingGeneration && (!Number.isSafeInteger(parsedGeneration) || parsedGeneration < 0)) {
+      storageTrusted = false;
+      return { generation: memoryGeneration, trusted: false };
     }
-    return generation;
+
+    if (!initialized) {
+      memoryGeneration = missingGeneration ? 0 : parsedGeneration;
+      initialized = true;
+    } else if (!missingGeneration && parsedGeneration > memoryGeneration) {
+      memoryGeneration = parsedGeneration;
+    }
+
+    try {
+      if (missingGeneration || parsedGeneration < memoryGeneration) {
+        dependencies.writeGeneration(memoryGeneration);
+      }
+    } catch (_error) {
+      storageTrusted = false;
+      return { generation: memoryGeneration, trusted: false };
+    }
+
+    if (typeof dependencies.readSessionState === 'function') {
+      let storedState;
+      try {
+        storedState = dependencies.readSessionState();
+      } catch (_error) {
+        storageTrusted = false;
+        return { generation: memoryGeneration, trusted: false };
+      }
+
+      const missingState = storedState === '' || storedState === null || storedState === undefined;
+      const parsedState = missingState ? null : normalizedPersistentState(storedState);
+      if (!missingState && !parsedState) {
+        storageTrusted = false;
+        return { generation: memoryGeneration, trusted: false };
+      }
+      if (parsedState) {
+        if (parsedState.generation > memoryGeneration) {
+          memoryGeneration = parsedState.generation;
+          try { dependencies.writeGeneration(memoryGeneration); } catch (_error) {
+            storageTrusted = false;
+            return { generation: memoryGeneration, trusted: false };
+          }
+        }
+        invalidated = invalidated || parsedState.invalidated;
+      }
+      if (!parsedState || parsedState.generation !== memoryGeneration || parsedState.invalidated !== invalidated) {
+        try { writePersistentState(); } catch (_error) {
+          storageTrusted = false;
+          return { generation: memoryGeneration, trusted: false };
+        }
+      }
+    }
+
+    storageTrusted = true;
+    return { generation: memoryGeneration, trusted: true };
+  }
+
+  function readGeneration() {
+    return readStorageState().generation;
   }
 
   function advanceGeneration() {
-    const generation = readGeneration();
-    if (generation >= Number.MAX_SAFE_INTEGER) throw new Error('AUTH_SESSION_GENERATION_EXHAUSTED');
-    const next = generation + 1;
-    dependencies.writeGeneration(next);
-    return next;
+    const before = readStorageState();
+    if (memoryGeneration >= Number.MAX_SAFE_INTEGER) throw new Error('AUTH_SESSION_GENERATION_EXHAUSTED');
+    memoryGeneration += 1;
+    initialized = true;
+    const errors = [];
+    try { dependencies.writeGeneration(memoryGeneration); } catch (error) { errors.push(error); }
+    try { writePersistentState(); } catch (error) { errors.push(error); }
+    storageTrusted = before.trusted && errors.length === 0;
+    if (errors.length > 0) throw errors[0];
+    return memoryGeneration;
   }
 
-  function safeRead(read, fallback) {
-    try { return read(); } catch (_error) { return fallback; }
+  function invalidate() {
+    const before = readStorageState();
+    invalidated = true;
+    try {
+      writePersistentState();
+      storageTrusted = before.trusted;
+      return memoryGeneration;
+    } catch (error) {
+      storageTrusted = false;
+      throw error;
+    }
+  }
+
+  function readValue(read) {
+    try { return { ok: true, value: read() }; } catch (_error) { return { ok: false, value: null }; }
   }
 
   function capture() {
-    const identity = safeRead(dependencies.readIdentity, null) || null;
+    const generationState = readStorageState();
+    const identityRead = readValue(dependencies.readIdentity);
+    const tokenRead = readValue(dependencies.readToken);
+    const identity = identityRead.value || null;
+    const candidateIdentityKey = permissionIdentityKey(identity);
+    const trusted = generationState.trusted && storageTrusted && identityRead.ok && tokenRead.ok;
+    const authenticatedStateUsable = trusted && !invalidated;
     return {
-      token: String(safeRead(dependencies.readToken, '') || ''),
-      generation: readGeneration(),
-      identityKey: permissionIdentityKey(identity),
-      review: hasReviewExperienceMarker(identity),
+      token: authenticatedStateUsable && candidateIdentityKey ? String(tokenRead.value || '') : '',
+      generation: generationState.generation,
+      identityKey: authenticatedStateUsable ? candidateIdentityKey : '',
+      review: authenticatedStateUsable && hasReviewExperienceMarker(identity),
+      trusted,
+      invalidated: trusted ? invalidated : true,
     };
   }
 
-  function isSameSession(snapshot) {
-    if (!snapshot) return false;
+  function isSameSession(snapshot, options = {}) {
+    if (!snapshot || snapshot.trusted !== true) return false;
+    if (snapshot.invalidated && options.allowInvalidated !== true) return false;
     const current = capture();
-    return current.generation === snapshot.generation
+    return current.trusted === true
+      && (options.allowInvalidated === true || current.invalidated !== true)
+      && current.invalidated === snapshot.invalidated
+      && current.generation === snapshot.generation
       && current.identityKey === snapshot.identityKey;
   }
 
   function advanceIfIdentityChanges(nextIdentity) {
-    const currentIdentity = safeRead(dependencies.readIdentity, null);
+    const currentRead = readValue(dependencies.readIdentity);
+    if (!currentRead.ok) {
+      const errors = [];
+      try { invalidate(); } catch (error) { errors.push(error); }
+      try { advanceGeneration(); } catch (error) { errors.push(error); }
+      if (errors.length > 0) throw errors[0];
+      throw new Error('AUTH_SESSION_STORAGE_UNAVAILABLE');
+    }
+    const currentIdentity = currentRead.value;
     if (permissionIdentityKey(currentIdentity) === permissionIdentityKey(nextIdentity)) return false;
-    advanceGeneration();
+    const errors = [];
+    try { invalidate(); } catch (error) { errors.push(error); }
+    try { advanceGeneration(); } catch (error) { errors.push(error); }
+    if (errors.length > 0) throw errors[0];
     return true;
   }
 
-  return { advanceGeneration, advanceIfIdentityChanges, capture, isSameSession, readGeneration };
+  function activate() {
+    const state = readStorageState();
+    const identityRead = readValue(dependencies.readIdentity);
+    const tokenRead = readValue(dependencies.readToken);
+    if (!state.trusted || !identityRead.ok || !tokenRead.ok
+      || !permissionIdentityKey(identityRead.value) || !String(tokenRead.value || '')) {
+      storageTrusted = false;
+      throw new Error('AUTH_SESSION_STORAGE_UNAVAILABLE');
+    }
+    invalidated = false;
+    try {
+      writePersistentState();
+      storageTrusted = true;
+      return true;
+    } catch (error) {
+      invalidated = true;
+      storageTrusted = false;
+      throw error;
+    }
+  }
+
+  return { activate, advanceGeneration, advanceIfIdentityChanges, capture, invalidate, isSameSession, readGeneration };
 }
 
 function createApiResponseCoordinator(dependencies) {
+  let authRetryUsed = false;
+
   async function handleResponse(requestSession, statusCode) {
-    if (!dependencies.sessionRuntime.isSameSession(requestSession)) {
+    const sessionOptions = dependencies.allowInvalidatedSession ? { allowInvalidated: true } : undefined;
+    if (!dependencies.sessionRuntime.isSameSession(requestSession, sessionOptions)) {
       return { action: 'session-changed' };
     }
+    if (dependencies.authenticationEntry) return { action: 'accept' };
     if (statusCode !== 401) return { action: 'accept' };
     if (requestSession.review) return { action: 'review-expired' };
+    if (authRetryUsed) return { action: 'auth-expired' };
 
     const current = dependencies.sessionRuntime.capture();
     if (current.token && current.token !== requestSession.token) {
+      authRetryUsed = true;
       return { action: 'retry' };
     }
 
     await dependencies.refresh();
-    if (!dependencies.sessionRuntime.isSameSession(requestSession)) {
+    if (!dependencies.sessionRuntime.isSameSession(requestSession, sessionOptions)) {
       return { action: 'session-changed' };
     }
     const afterRefresh = dependencies.sessionRuntime.capture();
     if (afterRefresh.token && afterRefresh.token !== requestSession.token) {
+      authRetryUsed = true;
       return { action: 'retry' };
     }
     return { action: 'auth-expired' };
@@ -103,13 +253,24 @@ function isAuthSessionChangedError(error) {
 function createSessionBoundOperation(sessionRuntime) {
   const binding = sessionRuntime.capture();
 
+  function matchesBinding(current) {
+    return binding?.trusted === true
+      && binding.invalidated !== true
+      && current?.trusted === true
+      && current.invalidated !== true
+      && current.generation === binding.generation
+      && current.identityKey === binding.identityKey;
+  }
+
   function assertCurrent() {
-    if (!sessionRuntime.isSameSession(binding)) throw authSessionChangedError();
+    if (!matchesBinding(sessionRuntime.capture())) throw authSessionChangedError();
   }
 
   function currentSession() {
     assertCurrent();
-    return sessionRuntime.capture();
+    const current = sessionRuntime.capture();
+    if (!matchesBinding(current)) throw authSessionChangedError();
+    return current;
   }
 
   async function run(operation) {
@@ -136,6 +297,7 @@ function cleanupStorageKeys(dependencies, identities = []) {
 function clearAuthenticatedSession(dependencies, identities = []) {
   const errors = [];
   for (const action of [
+    dependencies.invalidateSession,
     dependencies.advanceGeneration,
     dependencies.clearBusinessCache,
     dependencies.clearPermissionCache,
@@ -161,14 +323,16 @@ function createNormalSessionCommitter(dependencies) {
     if (!session) return { success: false, code: 'AUTH_SESSION_RESPONSE_INVALID' };
     let identities = [null, session.user];
     try {
+      if (typeof dependencies.invalidateSession === 'function') dependencies.invalidateSession();
+      dependencies.advanceGeneration();
       identities = [dependencies.readUser() || null, session.user];
       dependencies.clearBusinessCache();
       dependencies.clearPermissionCache();
       for (const key of cleanupStorageKeys(dependencies, identities)) dependencies.removeStorage(key);
       dependencies.writeUser(session.user);
       dependencies.setBusinessCacheIdentity(session.user);
-      dependencies.advanceGeneration();
       dependencies.writeToken(session.token);
+      if (typeof dependencies.activateSession === 'function') dependencies.activateSession();
       await dependencies.relaunch();
       return { success: true };
     } catch (error) {
@@ -182,6 +346,7 @@ function createNormalSessionCommitter(dependencies) {
 
 module.exports = {
   AUTH_SESSION_GENERATION_KEY,
+  AUTH_SESSION_STATE_KEY,
   AUTH_SESSION_STORAGE_KEYS,
   clearAuthenticatedSession,
   createApiResponseCoordinator,
