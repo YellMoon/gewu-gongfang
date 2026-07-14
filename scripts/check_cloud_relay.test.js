@@ -22,8 +22,14 @@ assert.ok(script.includes('/api/cloud/tasks'), 'smoke should create and list min
 assert.ok(script.includes('/api/cloud/tasks/${taskId}/complete'), 'smoke should complete a miniapp task');
 assert.ok(script.includes('/api/cloud/tasks/${taskId}/result'), 'smoke should read a miniapp task result');
 assert.ok(script.includes('GEWU_CLOUD_BASE_URL'), 'smoke should read cloud base url from env');
+assert.ok(script.includes('GEWU_CLOUD_RELAY_HOST_TOKEN'), 'smoke should require the cloud relay host token for host routes');
+assert.ok(script.includes('GEWU_DESKTOP_SYNC_TOKEN'), 'smoke should support the deployed desktop sync token fallback');
+assert.ok(script.includes("'x-gewu-host-token'"), 'smoke should send the host token header');
 assert.ok(script.includes('SMOKE_JWT'), 'smoke should support authenticated production writes with SMOKE_JWT');
 assert.ok(script.includes('Authorization'), 'smoke should send Authorization header when SMOKE_JWT is set');
+assert.ok(script.includes('verifyAnonymousUserBoundary'), 'smoke without a user JWT should verify rejection instead of attempting obsolete anonymous writes');
+assert.ok(script.includes('if (!smokeJwt)') && script.includes('authenticated user flow skipped'), 'positive user checks should be skipped explicitly when no user JWT is supplied');
+assert.ok(!script.includes('process.exit(1)'), 'failed network checks should set exitCode after fetch cleanup instead of aborting libuv handles');
 assert.ok(packageJson.includes('scripts/check_cloud_relay.test.js'), 'cloud relay smoke test should run in npm test');
 
 console.log('cloud relay deployment checks passed');
