@@ -5,6 +5,14 @@ function roleOf(identity) {
   return String(identity && (identity.user_type || identity.role) || '');
 }
 
+function hasReviewExperienceMarker(identity) {
+  return Boolean(identity && (
+    identity.is_review_demo === true
+    || identity.read_only === true
+    || identity.review_demo_session_id
+  ));
+}
+
 function isReviewExperienceIdentity(identity) {
   if (!identity) return false;
   const role = roleOf(identity);
@@ -62,6 +70,14 @@ function experienceApiPath(identity, operation, resourceId) {
   throw new Error(`unsupported experience API operation: ${operation}`);
 }
 
+function reviewArtifactRequest(identity, token, artifactId) {
+  if (typeof token !== 'string' || !token.trim()) throw new Error('review token is required');
+  return {
+    path: experienceApiPath(identity, 'artifact', artifactId),
+    header: { Authorization: `Bearer ${token.trim()}` },
+  };
+}
+
 function reviewCleanupStorageKeys(identity) {
   const keys = ['auth_token', 'user_info', 'user_permissions'];
   const taskKey = reviewTaskCacheKey(identity);
@@ -84,11 +100,75 @@ function reviewLoginErrorMessage(code, detail = '') {
   return '\u5ba1\u6838\u4f53\u9a8c\u767b\u5f55\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5';
 }
 
+function validatedReviewSession(responseData, expectedRole) {
+  const token = typeof responseData?.token === 'string' ? responseData.token.trim() : '';
+  const role = responseData?.role;
+  const user = responseData?.user;
+  if (!token || role !== expectedRole || !isReviewExperienceIdentity(user)
+    || roleOf(user) !== expectedRole) return null;
+  return { token, user };
+}
+
+function createReviewSessionCommitter(dependencies) {
+  function cleanupKeys(identities) {
+    return Array.from(new Set(identities.flatMap(identity => reviewCleanupStorageKeys(identity))));
+  }
+
+  function rollback(identities) {
+    for (const action of [dependencies.clearBusinessCache, dependencies.clearPermissionCache]) {
+      try { action(); } catch (_error) { /* continue cleanup */ }
+    }
+    for (const key of cleanupKeys(identities)) {
+      try { dependencies.removeStorage(key); } catch (_error) { /* continue cleanup */ }
+    }
+  }
+
+  async function commit(responseData, expectedRole) {
+    const session = validatedReviewSession(responseData, expectedRole);
+    if (!session) return { success: false, code: 'REVIEW_DEMO_RESPONSE_INVALID' };
+    let cleanupIdentities = [null, session.user];
+    try {
+      const previousUser = dependencies.readUser() || null;
+      cleanupIdentities = [previousUser, session.user];
+      dependencies.clearBusinessCache();
+      dependencies.clearPermissionCache();
+      for (const key of cleanupKeys(cleanupIdentities)) dependencies.removeStorage(key);
+      dependencies.writeUser(session.user);
+      dependencies.setBusinessCacheIdentity(session.user);
+      dependencies.writeToken(session.token);
+      await dependencies.relaunch();
+      return { success: true };
+    } catch (error) {
+      rollback(cleanupIdentities);
+      return { success: false, code: 'REVIEW_DEMO_SESSION_COMMIT_FAILED', error };
+    }
+  }
+
+  return { commit };
+}
+
+function createSynchronousMutex() {
+  let locked = false;
+  return {
+    tryAcquire() {
+      if (locked) return false;
+      locked = true;
+      return true;
+    },
+    release() { locked = false; },
+    isLocked() { return locked; },
+  };
+}
+
 module.exports = {
   REVIEW_TASK_CACHE_PREFIX,
+  createReviewSessionCommitter,
+  createSynchronousMutex,
   experienceApiPath,
+  hasReviewExperienceMarker,
   isReviewExperienceIdentity,
   reviewCleanupStorageKeys,
+  reviewArtifactRequest,
   reviewLoginErrorMessage,
   reviewSessionIdentityKey,
   reviewTaskCacheKey,

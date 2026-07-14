@@ -1,4 +1,8 @@
-const { isReviewExperienceIdentity, reviewSessionIdentityKey } = require('./reviewExperience');
+const {
+  hasReviewExperienceMarker,
+  isReviewExperienceIdentity,
+  reviewSessionIdentityKey,
+} = require('./reviewExperience');
 
 const ADMIN_MODULES = ['scheduling', 'question-bank', 'assets', 'students', 'courses', 'teachers', 'payments', 'stats', 'admin'];
 const TEACHER_MODULES = ADMIN_MODULES.filter(moduleId => moduleId !== 'admin');
@@ -14,6 +18,7 @@ function roleOf(user) {
 
 function permissionIdentityKey(user) {
   if (!user || !user.id) return '';
+  if (hasReviewExperienceMarker(user) && !isReviewExperienceIdentity(user)) return '';
   if (isReviewExperienceIdentity(user)) return reviewSessionIdentityKey(user);
   return `${user.id}:${roleOf(user)}`;
 }
@@ -21,6 +26,7 @@ function permissionIdentityKey(user) {
 function businessCacheIdentityKey(user) {
   const role = roleOf(user);
   if (!user || !user.id || role === 'pending') return '';
+  if (hasReviewExperienceMarker(user) && !isReviewExperienceIdentity(user)) return '';
   if (isReviewExperienceIdentity(user)) return reviewSessionIdentityKey(user);
   const teacherId = role === 'teacher' ? (user.teacher_id || user.teacherId) : '';
   if (role === 'teacher' && !teacherId) return '';
@@ -29,12 +35,23 @@ function businessCacheIdentityKey(user) {
 
 function deriveAccess(user, permissionState) {
   const role = roleOf(user);
+  const reviewMarked = hasReviewExperienceMarker(user);
+  const reviewIdentity = isReviewExperienceIdentity(user);
   const identityKey = permissionIdentityKey(user);
   const loadedForIdentity = permissionState && permissionState.status === 'loaded'
     && identityKey && permissionState.identityKey === identityKey;
-  const capabilities = loadedForIdentity && Array.isArray(permissionState.capabilities)
+  const loadedCapabilities = loadedForIdentity && Array.isArray(permissionState.capabilities)
     ? permissionState.capabilities : [];
-  const reviewIdentity = isReviewExperienceIdentity(user);
+  const reviewCapabilityAllowlist = reviewIdentity
+    ? new Set([
+      'review-demo:read',
+      role === 'admin' ? 'review-demo:admin' : 'review-demo:student',
+      'review-demo:paper-export',
+      'question-bank:view',
+    ]) : new Set();
+  const capabilities = reviewMarked
+    ? (reviewIdentity ? [...reviewCapabilityAllowlist].filter(capability => loadedCapabilities.includes(capability)) : [])
+    : loadedCapabilities;
   let modules = [];
   if (reviewIdentity && role === 'admin' && capabilities.includes('review-demo:admin')) modules = REVIEW_ADMIN_MODULES.slice();
   else if (reviewIdentity && role === 'student' && capabilities.includes('review-demo:student')) modules = REVIEW_STUDENT_MODULES.slice();
@@ -51,6 +68,29 @@ function deriveAccess(user, permissionState) {
     canEditQuestionBank: !reviewIdentity && capabilities.includes('question-bank:edit'),
     canDeleteCommittedQuestions: false,
   };
+}
+
+function reviewRolePolicy(user) {
+  if (!hasReviewExperienceMarker(user)) return null;
+  const strict = isReviewExperienceIdentity(user);
+  const role = strict ? roleOf(user) : 'pending';
+  const roleCapability = role === 'admin' ? 'review-demo:admin' : 'review-demo:student';
+  return {
+    role,
+    modules: role === 'admin' ? REVIEW_ADMIN_MODULES.slice() : role === 'student' ? REVIEW_STUDENT_MODULES.slice() : [],
+    readonlyScope: strict ? 'review-demo' : 'none',
+    linkedStudentIds: role === 'student' ? [user.student_id].filter(Boolean) : [],
+    allowedWriteTasks: [],
+    canReadAllSnapshots: false,
+    capabilities: strict ? ['review-demo:read', roleCapability, 'review-demo:paper-export', 'question-bank:view'] : [],
+    canReviewUsers: false,
+    canEditQuestionBank: false,
+  };
+}
+
+function canUserSubmitMiniappWrite(user, target, allowedTargets) {
+  if (hasReviewExperienceMarker(user)) return false;
+  return Array.isArray(allowedTargets) && allowedTargets.includes(target);
 }
 
 function relatedStudentIds(items) {
@@ -101,8 +141,10 @@ module.exports = {
   STUDENT_MODULES,
   REVIEW_ADMIN_MODULES,
   REVIEW_STUDENT_MODULES,
+  canUserSubmitMiniappWrite,
   roleOf,
   permissionIdentityKey,
+  reviewRolePolicy,
   businessCacheIdentityKey,
   deriveAccess,
   scopeDashboardCollections,

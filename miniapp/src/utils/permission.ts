@@ -4,7 +4,12 @@
  */
 import Taro from '@tarojs/taro';
 import { moduleApi } from './api';
-import { deriveAccess, permissionIdentityKey } from './miniappAuthorizationRuntime';
+import {
+  canUserSubmitMiniappWrite,
+  deriveAccess,
+  permissionIdentityKey,
+  reviewRolePolicy,
+} from './miniappAuthorizationRuntime';
 import { createAuthorizationSession } from './miniappAuthorizationSession';
 import { clearBusinessCache, setBusinessCacheIdentity } from './storage';
 
@@ -57,14 +62,18 @@ export type MiniappCapability =
   | 'business:all'
   | 'business:teacher-scope'
   | 'question-bank:view'
-  | 'question-bank:edit';
+  | 'question-bank:edit'
+  | 'review-demo:read'
+  | 'review-demo:admin'
+  | 'review-demo:student'
+  | 'review-demo:paper-export';
 
-export function canMiniappWrite(target: string): boolean {
-  return allowedWriteTasks.includes(target);
+export function canMiniappWrite(target: string, user: Partial<UserInfo> | null = getCurrentUser()): boolean {
+  return canUserSubmitMiniappWrite(user, target, allowedWriteTasks);
 }
 
-export function assertMiniappWriteAllowed(target: string): void {
-  if (!canMiniappWrite(target)) {
+export function assertMiniappWriteAllowed(target: string, user: Partial<UserInfo> | null = getCurrentUser()): void {
+  if (!canMiniappWrite(target, user)) {
     throw new Error('小程序仅允许提交财务导入、组卷和导出任务');
   }
 }
@@ -80,6 +89,12 @@ export interface UserInfo {
   linkedStudentId?: string;
   linked_student_ids?: string[];
   linkedStudentIds?: string[];
+  is_review_demo?: boolean;
+  read_only?: boolean;
+  review_demo_session_id?: string;
+  review_status?: string;
+  status?: number | boolean;
+  login_enabled?: number | boolean;
 }
 
 export interface PermissionItem {
@@ -178,6 +193,8 @@ export function getLinkedStudentIds(user: Partial<UserInfo> | null = getCurrentU
 }
 
 export function getMiniappRolePolicy(user: Partial<UserInfo> | null = getCurrentUser()) {
+  const strictReviewPolicy = reviewRolePolicy(user);
+  if (strictReviewPolicy) return strictReviewPolicy;
   if (user?.user_type === 'super_admin') {
     return {
       role: 'super_admin',

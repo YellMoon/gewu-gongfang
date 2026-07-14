@@ -4,9 +4,11 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  padding: 112rpx 48rpx 56rpx;
+  padding: calc(112rpx + env(safe-area-inset-top)) 48rpx calc(56rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   background:
     linear-gradient(150deg, rgba(23, 32, 51, 0.96), rgba(31, 111, 104, 0.94) 58%, rgba(180, 111, 58, 0.86)),
     #172033;
@@ -205,4 +207,41 @@
   font-size: 24rpx;
   line-height: 34rpx;
   color: rgba(255, 250, 241, 0.56);
+}
+
+@media (max-height: 620px) {
+  .login-page {
+    padding-top: calc(44rpx + env(safe-area-inset-top));
+    padding-bottom: calc(28rpx + env(safe-area-inset-bottom));
+  }
+
+  .login-header {
+    margin-bottom: 28rpx;
+  }
+
+  .login-logo {
+    width: 86rpx;
+    height: 86rpx;
+    margin-bottom: 16rpx;
+    border-radius: 26rpx;
+  }
+
+  .logo-text {
+    font-size: 42rpx;
+    line-height: 48rpx;
+  }
+
+  .login-title {
+    font-size: 44rpx;
+    line-height: 52rpx;
+  }
+
+  .login-form,
+  .review-card {
+    padding: 22rpx;
+  }
+
+  .review-card {
+    margin-top: 16rpx;
+  }
 }
