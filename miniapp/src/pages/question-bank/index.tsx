@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { View, Text, Input, Button, ScrollView, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { cancelMiniappTask, createPaperTaskV2, getMiniappTaskResult, readQuestionPreview } from '../../utils/api';
+import { authSessionRuntime } from '../../utils/authSession';
+import { createSessionBoundOperation } from '../../utils/miniappApiSessionRuntime';
 import { storage } from '../../utils/storage';
 // @ts-ignore shared CommonJS workflow is exercised by focused Node tests
 import * as workflow from '../../utils/questionPaperWorkflow';
@@ -19,7 +21,7 @@ const actionCopy: Record<PaperAction, string> = { 'question-paper': '\u521b\u5ef
 const statusCopy: Record<string, string> = { draft: '\u672c\u5730\u8349\u7a3f\uff08\u672a\u83b7\u4e91\u786e\u8ba4\uff09', pending_host: '\u7b49\u5f85\u6570\u636e\u4e3b\u673a', processing: '\u5904\u7406\u4e2d', completed: '\u5df2\u5b8c\u6210', failed: '\u5931\u8d25', cancelled: '\u5df2\u53d6\u6d88' };
 
 function absoluteHostUrl(base: string, endpoint: string) { return `${base.replace(/\/$/, '')}/${endpoint.replace(/^\//, '')}`; }
-function authHeader(extra: Record<string, string> = {}) { const token = Taro.getStorageSync('auth_token'); return { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extra }; }
+function authHeader(token: string, extra: Record<string, string> = {}) { return { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extra }; }
 
 export default function QuestionBankPage() {
   const [title, setTitle] = useState('\u7ec3\u4e60\u8bd5\u5377');
@@ -81,20 +83,21 @@ export default function QuestionBankPage() {
   };
 
   const cancelTask = async (task: PaperTask) => { if (!workflow.canCancel(task) || !task.taskId) return; const response: any = await cancelMiniappTask(task.taskId); if (response.success) persist(tasks.map(item => item.localId === task.localId ? { ...item, status: 'cancelled', phase: 'cancelled' } : item)); };
-  const exchangeAccess = async (task: PaperTask) => {
+  const exchangeAccess = async (task: PaperTask, sessionBoundary: ReturnType<typeof createSessionBoundOperation>) => {
     const endpoint = task.result?.accessEndpoint || task.result?.accessUrl;
     if (!task.hostBaseUrl || !endpoint) throw new Error('host URL unavailable');
-    const response = await Taro.request({ url: absoluteHostUrl(task.hostBaseUrl, endpoint), method: 'GET', header: authHeader(), timeout: 30000 });
+    const response = await sessionBoundary.run((requestSession: any) => Taro.request({ url: absoluteHostUrl(task.hostBaseUrl || '', endpoint), method: 'GET', header: authHeader(requestSession.token), timeout: 30000 }));
     if (response.statusCode !== 200 || !(response.data as any)?.success) throw new Error((response.data as any)?.error || 'access denied');
     return (response.data as any).data;
   };
   const downloadTask = async (task: PaperTask) => {
     if (workflow.isExpired(task)) { Taro.showToast({ title: '\u6587\u4ef6\u5df2\u8fc7\u671f', icon: 'none' }); return; }
     try {
-      let access = await exchangeAccess(task);
-      const download = () => Taro.downloadFile({ url: absoluteHostUrl(task.hostBaseUrl || '', access.fileUrl), header: authHeader({ 'x-gewu-artifact-token': access.token }) });
-      let file = await download(); if (file.statusCode === 410) { access = await exchangeAccess(task); file = await download(); }
-      if (file.statusCode !== 200) throw new Error('download failed'); await Taro.openDocument({ filePath: file.tempFilePath, showMenu: true });
+      const sessionBoundary = createSessionBoundOperation(authSessionRuntime);
+      let access = await exchangeAccess(task, sessionBoundary);
+      const download = () => sessionBoundary.run((requestSession: any) => Taro.downloadFile({ url: absoluteHostUrl(task.hostBaseUrl || '', access.fileUrl), header: authHeader(requestSession.token, { 'x-gewu-artifact-token': access.token }) }));
+      let file = await download(); if (file.statusCode === 410) { access = await exchangeAccess(task, sessionBoundary); file = await download(); }
+      if (file.statusCode !== 200) throw new Error('download failed'); sessionBoundary.assertCurrent(); await Taro.openDocument({ filePath: file.tempFilePath, showMenu: true });
     } catch (error: any) { Taro.showToast({ title: error?.message || 'download failed', icon: 'none' }); }
   };
 

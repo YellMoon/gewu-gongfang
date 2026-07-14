@@ -5,6 +5,9 @@ import { useState, useCallback, useMemo } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { api, readCloudSnapshot } from '../../utils/api';
+import { authSessionRuntime } from '../../utils/authSession';
+import { clearAuthenticatedSession } from '../../utils/miniappApiSessionRuntime';
+import { reviewCleanupStorageKeys } from '../../utils/reviewExperience';
 import {
   fetchPermissions,
   getPermittedModules,
@@ -241,10 +244,14 @@ export default function Index() {
       content: '确定要退出登录吗？',
       success: (res) => {
         if (res.confirm) {
-          clearPermissionCache();
-          clearBusinessCache();
-          Taro.removeStorageSync('auth_token');
-          Taro.removeStorageSync('user_info');
+          const currentUser = Taro.getStorageSync('user_info');
+          clearAuthenticatedSession({
+            advanceGeneration: () => authSessionRuntime.advanceGeneration(),
+            clearPermissionCache,
+            clearBusinessCache,
+            removeStorage: (key: string) => Taro.removeStorageSync(key),
+            cleanupStorageKeys: reviewCleanupStorageKeys,
+          }, [currentUser]);
           Taro.redirectTo({ url: '/pages/login/index' });
         }
       },

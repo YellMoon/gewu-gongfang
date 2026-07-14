@@ -1,5 +1,3 @@
-const { hasReviewExperienceMarker } = require('./reviewExperience');
-
 function extractRefreshToken(payload) {
   if (!payload || payload.success !== true) return '';
   return typeof payload.token === 'string' ? payload.token.trim() : '';
@@ -8,38 +6,39 @@ function extractRefreshToken(payload) {
 function createAuthRefreshRuntime(dependencies) {
   let inFlight = null;
 
-  function isCurrentSession(requestToken, reviewExpected) {
-    const currentToken = dependencies.readToken();
-    const currentIsReview = hasReviewExperienceMarker(dependencies.readIdentity());
-    return String(currentToken || '') === String(requestToken || '')
-      && currentIsReview === Boolean(reviewExpected);
+  function refreshKey(session) {
+    return JSON.stringify([session.generation, session.identityKey, session.token]);
   }
 
   function refresh() {
-    if (inFlight) return inFlight;
-    const originalToken = dependencies.readToken();
-    if (!originalToken || !isCurrentSession(originalToken, false)) {
+    const originalSession = dependencies.sessionRuntime.capture();
+    if (!originalSession.token || originalSession.review) {
       return Promise.resolve(false);
     }
+    const key = refreshKey(originalSession);
+    if (inFlight && inFlight.key === key) return inFlight.operation;
     const operation = (async () => {
       try {
-        const replacementToken = await dependencies.requestRefresh(originalToken);
+        const replacementToken = await dependencies.requestRefresh(originalSession.token);
         if (typeof replacementToken !== 'string' || !replacementToken.trim()) return false;
-        if (!isCurrentSession(originalToken, false)) return false;
+        if (!dependencies.sessionRuntime.isSameSession(originalSession)) return false;
+        const currentSession = dependencies.sessionRuntime.capture();
+        if (currentSession.review || currentSession.token !== originalSession.token) return false;
         dependencies.writeToken(replacementToken.trim());
         return true;
       } catch (_error) {
         return false;
       }
     })();
-    inFlight = operation;
+    const entry = { key, operation };
+    inFlight = entry;
     operation.finally(() => {
-      if (inFlight === operation) inFlight = null;
+      if (inFlight === entry) inFlight = null;
     });
     return operation;
   }
 
-  return { isCurrentSession, refresh };
+  return { refresh };
 }
 
 module.exports = { createAuthRefreshRuntime, extractRefreshToken };

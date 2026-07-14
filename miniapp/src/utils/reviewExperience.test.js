@@ -100,12 +100,31 @@ assert.strictEqual(reviewLoginErrorMessage('', '网络连接失败，请检查�
 
 const apiSource = read('miniapp/src/utils/api.ts');
 const loginSource = read('miniapp/src/pages/login/index.tsx');
+const authSessionPath = 'miniapp/src/utils/authSession.ts';
+const authSessionSource = fs.existsSync(path.join(root, authSessionPath)) ? read(authSessionPath) : '';
+const permissionSource = read('miniapp/src/utils/permission.ts');
+const settingsSource = read('miniapp/src/pages/settings/index.tsx');
+const homeSource = read('miniapp/src/pages/index/index.tsx');
+const syncSource = read('miniapp/src/utils/sync.ts');
+const syncEngineSource = read('miniapp/src/utils/syncEngine.ts');
+const questionBankSource = read('miniapp/src/pages/question-bank/index.tsx');
 assert.ok(apiSource.includes("'/api/auth/review-demo'"), 'review login API must use the real gateway route');
 assert.ok(apiSource.includes('reviewDemoApi')
   && apiSource.includes('reviewDemoPath')
   && apiSource.includes('experienceApiPath')
   && apiSource.includes('reviewArtifactRequest'), 'sandbox API integration must reuse the behavior-tested path and bearer helpers');
 assert.ok(apiSource.includes('createAuthRefreshRuntime') && apiSource.includes('this.authRefreshRuntime.refresh()'), 'API 401 handling must use the behavior-tested refresh coordinator');
+assert.ok(authSessionSource.includes('AUTH_SESSION_GENERATION_KEY') && authSessionSource.includes('createAuthSessionRuntime'), 'the miniapp must persist one shared injectable auth-session generation');
+assert.ok(apiSource.includes('createApiResponseCoordinator')
+  && apiSource.includes('responseCoordinator.handleResponse')
+  && apiSource.includes('authSessionRuntime.isSameSession(requestBinding)'), 'every API response and retry must remain bound to the request-start session');
+assert.ok(loginSource.includes('createNormalSessionCommitter')
+  && loginSource.includes('advanceGeneration: () => authSessionRuntime.advanceGeneration()'), 'normal and review login must commit through the shared generation runtime');
+assert.ok(permissionSource.includes('authSessionRuntime.advanceIfIdentityChanges(user)'), 'authorization identity switches must advance session generation without treating token rotation as a switch');
+assert.ok(settingsSource.includes('clearAuthenticatedSession') && homeSource.includes('clearAuthenticatedSession'), 'all visible logout paths must invalidate generation before clearing credentials');
+assert.ok(syncSource.includes('createSessionBoundOperation') && syncEngineSource.includes('createSessionBoundOperation'), 'direct sync responses must be discarded before mutating queues or caches after a session switch');
+assert.ok(!syncEngineSource.includes('requestSession.token || token'), 'sync must never fall back to a caller-captured token after binding a newer empty session');
+assert.ok(questionBankSource.includes('createSessionBoundOperation') && apiSource.includes('createSessionBoundOperation'), 'artifact access and download responses must stay bound through file consumption');
 assert.ok(loginSource.includes('review-title'), 'the login page must permanently identify the review entry');
 assert.ok(loginSource.includes('review-code-input'), 'the login page must expose a dedicated review code field');
 assert.ok(loginSource.includes('data-review-role="admin"') && loginSource.includes('data-review-role="student"'), 'the login page must expose administrator and student review controls');
@@ -115,6 +134,7 @@ assert.ok(!loginSource.includes('MINIAPP_REVIEW_EXPERIENCE_CODE'), 'the real rev
 async function testAtomicReviewSessionCommit() {
   const values = new Map([['user_info', normalAdmin], ['auth_token', 'normal-token']]);
   const events = [];
+  let generation = 4;
   const committer = createReviewSessionCommitter({
     readUser: () => values.get('user_info'),
     clearBusinessCache: () => events.push('clear-business'),
@@ -122,6 +142,7 @@ async function testAtomicReviewSessionCommit() {
     removeStorage: key => { events.push(`remove:${key}`); values.delete(key); },
     writeUser: user => { events.push('write-user'); values.set('user_info', user); },
     setBusinessCacheIdentity: () => events.push('set-business-identity'),
+    advanceGeneration: () => { generation += 1; events.push('advance-generation'); },
     writeToken: token => { events.push('write-token'); values.set('auth_token', token); },
     relaunch: async () => events.push('relaunch'),
   });
@@ -129,13 +150,16 @@ async function testAtomicReviewSessionCommit() {
   assert.deepStrictEqual(committed, { success: true });
   assert.strictEqual(values.get('user_info'), adminReview);
   assert.strictEqual(values.get('auth_token'), 'review-token');
+  assert.strictEqual(generation, 5, 'review login must advance persistent session generation');
   assert.ok(events.indexOf('write-user') < events.indexOf('write-token'), 'identity must be persisted before token');
+  assert.ok(events.indexOf('advance-generation') < events.indexOf('write-token'), 'generation must advance before the review credential is exposed');
   assert.ok(events.indexOf('write-token') < events.indexOf('relaunch'), 'token must be the last session write before relaunch');
 }
 
 async function testAtomicReviewSessionRollback() {
   const values = new Map([['user_info', normalAdmin], ['auth_token', 'normal-token']]);
   const removed = [];
+  let generation = 8;
   const committer = createReviewSessionCommitter({
     readUser: () => values.get('user_info'),
     clearBusinessCache: () => {},
@@ -143,6 +167,7 @@ async function testAtomicReviewSessionRollback() {
     removeStorage: key => { removed.push(key); values.delete(key); },
     writeUser: user => values.set('user_info', user),
     setBusinessCacheIdentity: () => {},
+    advanceGeneration: () => { generation += 1; },
     writeToken: () => { throw new Error('second session write failed'); },
     relaunch: async () => {},
   });
@@ -150,12 +175,14 @@ async function testAtomicReviewSessionRollback() {
   assert.strictEqual(failed.success, false);
   assert.strictEqual(values.has('auth_token'), false, 'failed commit must not leave a token');
   assert.strictEqual(values.has('user_info'), false, 'failed commit must not leave a synthetic identity');
+  assert.strictEqual(generation, 10, 'failed review commit must advance once for the attempt and again for rollback');
   assert.ok(removed.includes('user_permissions'));
   assert.ok(removed.includes(`sch_${reviewTaskCacheKey(adminReview)}`), 'failed commit must clear the attempted review task namespace');
 }
 
 async function testReviewSessionRelaunchRollback() {
   const values = new Map();
+  let generation = 12;
   const committer = createReviewSessionCommitter({
     readUser: () => null,
     clearBusinessCache: () => {},
@@ -163,6 +190,7 @@ async function testReviewSessionRelaunchRollback() {
     removeStorage: key => values.delete(key),
     writeUser: user => values.set('user_info', user),
     setBusinessCacheIdentity: () => {},
+    advanceGeneration: () => { generation += 1; },
     writeToken: token => values.set('auth_token', token),
     relaunch: async () => { throw new Error('relaunch failed'); },
   });
@@ -170,10 +198,12 @@ async function testReviewSessionRelaunchRollback() {
   assert.strictEqual(failed.code, 'REVIEW_DEMO_SESSION_COMMIT_FAILED');
   assert.strictEqual(values.has('auth_token'), false, 'relaunch failure must roll back the token');
   assert.strictEqual(values.has('user_info'), false, 'relaunch failure must roll back the identity');
+  assert.strictEqual(generation, 14);
 }
 
 async function testReviewSessionInitialReadRollback() {
   const removed = [];
+  let generation = 2;
   const committer = createReviewSessionCommitter({
     readUser: () => { throw new Error('storage read failed'); },
     clearBusinessCache: () => {},
@@ -181,6 +211,7 @@ async function testReviewSessionInitialReadRollback() {
     removeStorage: key => removed.push(key),
     writeUser: () => {},
     setBusinessCacheIdentity: () => {},
+    advanceGeneration: () => { generation += 1; },
     writeToken: () => {},
     relaunch: async () => {},
   });
@@ -188,6 +219,7 @@ async function testReviewSessionInitialReadRollback() {
   assert.strictEqual(failed.code, 'REVIEW_DEMO_SESSION_COMMIT_FAILED');
   assert.ok(removed.includes('auth_token'), 'initial storage read failure must still enter rollback');
   assert.ok(removed.includes(`sch_${reviewTaskCacheKey(adminReview)}`));
+  assert.strictEqual(generation, 3, 'even an initial storage read failure must invalidate pending old responses');
 }
 
 async function testReviewSessionValidationAndMutex() {
@@ -196,7 +228,8 @@ async function testReviewSessionValidationAndMutex() {
     readUser: () => null,
     clearBusinessCache: () => { writes += 1; }, clearPermissionCache: () => { writes += 1; },
     removeStorage: () => { writes += 1; }, writeUser: () => { writes += 1; },
-    setBusinessCacheIdentity: () => { writes += 1; }, writeToken: () => { writes += 1; }, relaunch: async () => { writes += 1; },
+    setBusinessCacheIdentity: () => { writes += 1; }, advanceGeneration: () => { writes += 1; },
+    writeToken: () => { writes += 1; }, relaunch: async () => { writes += 1; },
   });
   assert.strictEqual((await committer.commit({ token: ' ', role: 'admin', user: adminReview }, 'admin')).code, 'REVIEW_DEMO_RESPONSE_INVALID');
   assert.strictEqual((await committer.commit({ token: 'token', role: 'student', user: adminReview }, 'admin')).code, 'REVIEW_DEMO_RESPONSE_INVALID');

@@ -10,10 +10,11 @@
  */
 import Taro from '@tarojs/taro';
 import { clearBusinessCache } from './storage';
+import { authSessionRuntime } from './authSession';
 import { createAuthRefreshRuntime, extractRefreshToken } from './miniappAuthRefreshRuntime';
+import { clearAuthenticatedSession, createApiResponseCoordinator, createSessionBoundOperation } from './miniappApiSessionRuntime';
 import {
   experienceApiPath,
-  hasReviewExperienceMarker,
   isReviewExperienceIdentity,
   reviewArtifactRequest,
   reviewCleanupStorageKeys,
@@ -52,16 +53,25 @@ interface ApiResponse<T = any> {
 
 class ApiClient {
   private authRefreshRuntime = createAuthRefreshRuntime({
-    readToken: () => Taro.getStorageSync('auth_token'),
-    readIdentity: () => Taro.getStorageSync('user_info'),
+    sessionRuntime: authSessionRuntime,
     writeToken: (token: string) => Taro.setStorageSync('auth_token', token),
     requestRefresh: (token: string) => this.requestRefreshedToken(token),
   });
 
+  private responseCoordinator = createApiResponseCoordinator({
+    sessionRuntime: authSessionRuntime,
+    refresh: () => this.authRefreshRuntime.refresh(),
+  });
+
   private handleReviewAuthExpired(): void {
     const currentUser = Taro.getStorageSync('user_info');
-    clearBusinessCache();
-    reviewCleanupStorageKeys(currentUser).forEach(key => Taro.removeStorageSync(key));
+    clearAuthenticatedSession({
+      advanceGeneration: () => authSessionRuntime.advanceGeneration(),
+      clearBusinessCache,
+      clearPermissionCache: () => Taro.removeStorageSync('user_permissions'),
+      removeStorage: (key: string) => Taro.removeStorageSync(key),
+      cleanupStorageKeys: reviewCleanupStorageKeys,
+    }, [currentUser]);
     Taro.showToast({ title: '\u5ba1\u6838\u4f53\u9a8c\u5df2\u8fc7\u671f\uff0c\u8bf7\u91cd\u65b0\u8fdb\u5165', icon: 'none', duration: 2000 });
     setTimeout(() => Taro.redirectTo({ url: '/pages/login/index' }), 1500);
   }
@@ -97,10 +107,12 @@ class ApiClient {
 
   /** Token 过期处理 */
   private handleAuthExpired(): void {
-    clearBusinessCache();
-    Taro.removeStorageSync('auth_token');
-    Taro.removeStorageSync('user_info');
-    Taro.removeStorageSync('user_permissions');
+    clearAuthenticatedSession({
+      advanceGeneration: () => authSessionRuntime.advanceGeneration(),
+      clearBusinessCache,
+      clearPermissionCache: () => Taro.removeStorageSync('user_permissions'),
+      removeStorage: (key: string) => Taro.removeStorageSync(key),
+    });
     Taro.showToast({ title: '登录已过期，请重新登录', icon: 'none', duration: 2000 });
     setTimeout(() => Taro.redirectTo({ url: '/pages/login/index' }), 1500);
   }
@@ -112,19 +124,49 @@ class ApiClient {
     retries = RETRY_COUNT,
   ): Promise<ApiResponse<T>> {
     const url = this.buildUrl(path, method);
+    const requestBinding = authSessionRuntime.capture();
 
     for (let attempt = 0; attempt <= retries; attempt++) {
+      if (!authSessionRuntime.isSameSession(requestBinding)) {
+        return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
+      }
       try {
-        const requestToken = String(Taro.getStorageSync('auth_token') || '');
-        const requestIdentity = Taro.getStorageSync('user_info');
+        const requestSession = authSessionRuntime.capture();
         const res = await Taro.request({
           url,
           method,
-          header: this.getHeaders(requestToken),
+          header: this.getHeaders(requestSession.token),
           data: method !== 'GET' ? data : undefined,
           timeout: REQUEST_TIMEOUT,
           dataType: 'json',
         });
+
+        const responseDecision = await this.responseCoordinator.handleResponse(requestSession, res.statusCode);
+        if (responseDecision.action === 'session-changed') {
+          return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
+        }
+        if (responseDecision.action === 'retry') continue;
+        if (responseDecision.action === 'review-expired') {
+          if (!authSessionRuntime.isSameSession(requestBinding)) {
+            return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
+          }
+          this.handleReviewAuthExpired();
+          return {
+            success: false,
+            error: '\u5ba1\u6838\u4f53\u9a8c\u5df2\u8fc7\u671f\uff0c\u8bf7\u91cd\u65b0\u8fdb\u5165',
+            code: 'REVIEW_DEMO_TOKEN_INVALID',
+          };
+        }
+        if (responseDecision.action === 'auth-expired') {
+          if (!authSessionRuntime.isSameSession(requestBinding)) {
+            return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
+          }
+          this.handleAuthExpired();
+          return { success: false, error: '\u767b\u5f55\u5df2\u8fc7\u671f' };
+        }
+        if (!authSessionRuntime.isSameSession(requestBinding)) {
+          return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
+        }
 
         if (res.statusCode >= 200 && res.statusCode < 300) {
           const body = res.data as any;
@@ -138,27 +180,6 @@ class ApiClient {
             }
           }
           return { success: true, data: body as T };
-        } else if (res.statusCode === 401) {
-          const requestWasReview = hasReviewExperienceMarker(requestIdentity);
-          if (requestWasReview) {
-            if (this.authRefreshRuntime.isCurrentSession(requestToken, true)) this.handleReviewAuthExpired();
-            return {
-              success: false,
-              error: '\u5ba1\u6838\u4f53\u9a8c\u5df2\u8fc7\u671f\uff0c\u8bf7\u91cd\u65b0\u8fdb\u5165',
-              code: 'REVIEW_DEMO_TOKEN_INVALID',
-            };
-          }
-          // Token 过期，自动刷新
-          if (!this.authRefreshRuntime.isCurrentSession(requestToken, false)) {
-            return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
-          }
-          const refreshed = await this.authRefreshRuntime.refresh();
-          if (refreshed) continue; // 刷新成功，重试
-          if (!this.authRefreshRuntime.isCurrentSession(requestToken, false)) {
-            return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
-          }
-          this.handleAuthExpired();
-          return { success: false, error: '登录已过期' };
         } else if (res.statusCode === 403) {
           if (res.data?.code || res.data?.error) {
             return {
@@ -269,12 +290,14 @@ export const reviewDemoApi = {
   artifactUrl: (artifactId: string) =>
     `${getBaseUrl()}${reviewDemoPath('artifact', artifactId)}`,
   downloadArtifact: (artifactId: string) => {
-    const identity = Taro.getStorageSync('user_info');
-    const token = Taro.getStorageSync('auth_token');
-    const request = reviewArtifactRequest(identity, token, artifactId);
-    return Taro.downloadFile({
-      url: `${getBaseUrl()}${request.path}`,
-      header: request.header,
+    const sessionBoundary = createSessionBoundOperation(authSessionRuntime);
+    return sessionBoundary.run((requestSession: any) => {
+      const identity = Taro.getStorageSync('user_info');
+      const request = reviewArtifactRequest(identity, requestSession.token, artifactId);
+      return Taro.downloadFile({
+        url: `${getBaseUrl()}${request.path}`,
+        header: request.header,
+      });
     });
   },
 };
