@@ -283,6 +283,39 @@ function createSessionBoundOperation(sessionRuntime) {
   return { assertCurrent, binding, currentSession, run };
 }
 
+function createAuthenticationEntryBoundary(sessionRuntime) {
+  const binding = sessionRuntime.capture();
+
+  function assertCurrent() {
+    if (!sessionRuntime.isSameSession(binding, { allowInvalidated: true })) throw authSessionChangedError();
+  }
+
+  async function run(operation) {
+    assertCurrent();
+    const result = await operation();
+    assertCurrent();
+    return result;
+  }
+
+  return { assertCurrent, binding, run };
+}
+
+async function openSessionBoundDocument(sessionBoundary, dependencies) {
+  try {
+    return await sessionBoundary.run(() => dependencies.openDocument({
+      filePath: dependencies.filePath,
+      showMenu: dependencies.showMenu !== false,
+    }));
+  } catch (error) {
+    try {
+      if (typeof dependencies.removeTemporaryFile === 'function') {
+        await dependencies.removeTemporaryFile(dependencies.filePath);
+      }
+    } catch (_cleanupError) { /* preserve the session/open failure */ }
+    throw error;
+  }
+}
+
 function cleanupStorageKeys(dependencies, identities = []) {
   const keys = [...AUTH_SESSION_STORAGE_KEYS];
   if (typeof dependencies.cleanupStorageKeys === 'function') {
@@ -350,9 +383,11 @@ module.exports = {
   AUTH_SESSION_STORAGE_KEYS,
   clearAuthenticatedSession,
   createApiResponseCoordinator,
+  createAuthenticationEntryBoundary,
   createAuthSessionRuntime,
   createNormalSessionCommitter,
   createSessionBoundOperation,
   isAuthSessionChangedError,
   normalizedGeneration,
+  openSessionBoundDocument,
 };

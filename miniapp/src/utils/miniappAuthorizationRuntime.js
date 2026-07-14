@@ -2,6 +2,7 @@ const {
   hasReviewExperienceMarker,
   isReviewExperienceIdentity,
   reviewSessionIdentityKey,
+  reviewTaskCacheKey,
 } = require('./reviewExperience');
 
 const ADMIN_MODULES = ['scheduling', 'question-bank', 'assets', 'students', 'courses', 'teachers', 'payments', 'stats', 'admin'];
@@ -77,9 +78,47 @@ function businessCacheIdentityKey(user) {
   if (!user || !user.id || role === 'pending') return '';
   if (hasReviewExperienceMarker(user) && !isReviewExperienceIdentity(user)) return '';
   if (isReviewExperienceIdentity(user)) return reviewSessionIdentityKey(user);
-  const teacherId = role === 'teacher' ? (user.teacher_id || user.teacherId) : '';
-  if (role === 'teacher' && !teacherId) return '';
-  return [user.id, role, teacherId].filter(Boolean).join(':');
+  if (role === 'teacher' && !(user.teacher_id || user.teacherId)) return '';
+  const scope = permissionIdentityKey(user);
+  return scope ? `normal:${scope}` : '';
+}
+
+function questionPaperTaskCacheKey(user) {
+  if (isReviewExperienceIdentity(user)) return reviewTaskCacheKey(user);
+  const scope = businessCacheIdentityKey(user);
+  return scope ? `question_paper_tasks_v2_${encodeURIComponent(scope)}` : '';
+}
+
+function createQuestionPaperTaskCacheRuntime(dependencies) {
+  let current = { scopeKey: null, tasks: [] };
+
+  function readSnapshot() {
+    const scopeKey = questionPaperTaskCacheKey(dependencies.readIdentity());
+    if (scopeKey !== current.scopeKey) {
+      let tasks = [];
+      if (scopeKey) {
+        try {
+          const stored = dependencies.read(scopeKey);
+          tasks = Array.isArray(stored) ? stored.slice() : [];
+        } catch (_error) { tasks = []; }
+      }
+      current = { scopeKey, tasks };
+    }
+    return { scopeKey: current.scopeKey || '', tasks: current.tasks.slice() };
+  }
+
+  function replace(tasks, expectedScopeKey) {
+    const beforeWrite = readSnapshot();
+    if (!beforeWrite.scopeKey || beforeWrite.scopeKey !== expectedScopeKey) {
+      return { written: false, snapshot: beforeWrite };
+    }
+    const nextTasks = Array.isArray(tasks) ? tasks.slice() : [];
+    dependencies.write(beforeWrite.scopeKey, nextTasks);
+    current = { scopeKey: beforeWrite.scopeKey, tasks: nextTasks };
+    return { written: true, snapshot: readSnapshot() };
+  }
+
+  return { replace, snapshot: readSnapshot };
 }
 
 function reviewCapabilityAllowlist(user) {
@@ -203,6 +242,8 @@ module.exports = {
   reviewRolePolicy,
   sanitizeCapabilitiesForIdentity,
   businessCacheIdentityKey,
+  createQuestionPaperTaskCacheRuntime,
+  questionPaperTaskCacheKey,
   deriveAccess,
   scopeDashboardCollections,
 };

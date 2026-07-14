@@ -31,6 +31,7 @@ function attachPersisted(req, decoded) {
   if (!persisted) return false;
   req.user = persisted;
   req.authz = { userId: persisted.id, phone: persisted.phone || null, role: roleForUser(persisted),
+    tenantId: persisted.tenant_id || persisted.tenantId || 'default',
     teacherId: persisted.teacher_id || null, studentId: persisted.student_id || null,
     reviewStatus: persisted.review_status, status: persisted.status, loginEnabled: persisted.login_enabled,
     deviceId: null, clientType: 'gateway', isPrimaryHost: false, isReviewDemo: false, readOnly: false };

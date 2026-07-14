@@ -10,9 +10,11 @@ try {
 const {
   clearAuthenticatedSession,
   createApiResponseCoordinator,
+  createAuthenticationEntryBoundary,
   createAuthSessionRuntime,
   createNormalSessionCommitter,
   createSessionBoundOperation,
+  openSessionBoundDocument,
 } = sessionModule;
 
 const normalIdentity = { id: 'admin-1', role: 'admin', user_type: 'admin' };
@@ -85,6 +87,63 @@ async function main() {
   assert.strictEqual(typeof createNormalSessionCommitter, 'function', 'normal login must use an atomic generation-aware session commit');
   assert.strictEqual(typeof clearAuthenticatedSession, 'function', 'logout and expiry must advance generation before clearing storage');
   assert.strictEqual(typeof createSessionBoundOperation, 'function', 'direct Taro requests and downloads must share the session response boundary');
+  assert.strictEqual(typeof createAuthenticationEntryBoundary, 'function', 'raw platform login and the public login request must bind to their starting session generation and identity');
+  assert.strictEqual(typeof openSessionBoundDocument, 'function', 'question-bank document consumption must use the same session boundary as access and download');
+
+  const delayedLoginState = createSessionState({ token: '', identity: null, generation: 2 });
+  const delayedLoginBoundary = createAuthenticationEntryBoundary(delayedLoginState.runtime);
+  let releasePlatformLogin;
+  let wechatRequests = 0;
+  let loginCommits = 0;
+  const delayedLogin = (async () => {
+    await delayedLoginBoundary.run(() => new Promise(resolve => { releasePlatformLogin = resolve; }));
+    await delayedLoginBoundary.run(async () => { wechatRequests += 1; return { success: true }; });
+    delayedLoginBoundary.assertCurrent();
+    loginCommits += 1;
+  })();
+  await Promise.resolve();
+  delayedLoginState.state.identity = normalIdentity;
+  delayedLoginState.state.token = 'normal-switched';
+  delayedLoginState.state.generation += 1;
+  releasePlatformLogin({ code: 'stale-code' });
+  await assert.rejects(delayedLogin, error => error?.code === 'AUTH_SESSION_CHANGED');
+  assert.strictEqual(wechatRequests, 0, 'a switch during delayed platform login must abort before the WeChat login request');
+  assert.strictEqual(loginCommits, 0, 'a switch during delayed platform login must never commit the old login');
+
+  const delayedRequestState = createSessionState({ token: '', identity: null, generation: 4 });
+  const delayedRequestBoundary = createAuthenticationEntryBoundary(delayedRequestState.runtime);
+  let releaseWechatRequest;
+  let markWechatRequestStarted;
+  const wechatRequestStarted = new Promise(resolve => { markWechatRequestStarted = resolve; });
+  const delayedRequest = (async () => {
+    await delayedRequestBoundary.run(async () => ({ code: 'fresh-code' }));
+    await delayedRequestBoundary.run(() => new Promise(resolve => {
+      releaseWechatRequest = resolve;
+      markWechatRequestStarted();
+    }));
+    delayedRequestBoundary.assertCurrent();
+    loginCommits += 1;
+  })();
+  await wechatRequestStarted;
+  delayedRequestState.state.identity = normalIdentity;
+  delayedRequestState.state.token = 'another-session';
+  delayedRequestState.state.generation += 1;
+  releaseWechatRequest({ success: true, data: { token: 'stale-token', user: normalIdentity } });
+  await assert.rejects(delayedRequest, error => error?.code === 'AUTH_SESSION_CHANGED');
+  assert.strictEqual(loginCommits, 0, 'a switch while the WeChat request is pending must reject the response before session commit');
+
+  const publicLoginHarness = createPersistentSessionHarness({
+    token: 'removed-too-late',
+    identity: normalIdentity,
+    generation: 13,
+    sessionState: { version: 1, generation: 13, invalidated: true },
+  });
+  const publicLoginBoundary = createAuthenticationEntryBoundary(publicLoginHarness.createRuntime());
+  assert.deepStrictEqual(
+    await publicLoginBoundary.run(async () => ({ code: 'fresh-code' })),
+    { code: 'fresh-code' },
+    'a provable invalidated signed-out session must still be allowed to start a public login',
+  );
 
   const { runtime, state } = createSessionState();
   let releaseRefresh;
@@ -242,6 +301,56 @@ async function main() {
   state.token = 'normal-b';
   const rotatedResponse = await rotatedBoundary.run(async requestSession => requestSession.token);
   assert.strictEqual(rotatedResponse, 'normal-b', 'a direct request should use current token B and remain valid within the same session');
+
+  state.token = 'normal-a';
+  state.identity = normalIdentity;
+  state.generation += 1;
+  const documentBoundary = createSessionBoundOperation(runtime);
+  const temporaryFiles = [];
+  let openCalls = 0;
+  state.identity = reviewIdentity;
+  state.token = 'review-token';
+  state.generation += 1;
+  await assert.rejects(
+    openSessionBoundDocument(documentBoundary, {
+      filePath: 'temp-old.docx',
+      openDocument: async () => { openCalls += 1; },
+      removeTemporaryFile: async filePath => { temporaryFiles.push(filePath); },
+    }),
+    error => error?.code === 'AUTH_SESSION_CHANGED',
+  );
+  assert.strictEqual(openCalls, 0, 'a file downloaded by an old session must not be opened after a switch');
+  assert.deepStrictEqual(temporaryFiles, ['temp-old.docx'], 'a rejected old-session temporary file should be cleaned up');
+
+  state.identity = normalIdentity;
+  state.token = 'normal-a';
+  state.generation += 1;
+  const delayedOpenBoundary = createSessionBoundOperation(runtime);
+  let releaseOpen;
+  const delayedOpen = openSessionBoundDocument(delayedOpenBoundary, {
+    filePath: 'temp-delayed.docx',
+    openDocument: () => { openCalls += 1; return new Promise(resolve => { releaseOpen = resolve; }); },
+    removeTemporaryFile: async filePath => { temporaryFiles.push(filePath); },
+  });
+  await Promise.resolve();
+  state.identity = reviewIdentity;
+  state.token = 'review-token';
+  state.generation += 1;
+  releaseOpen({});
+  await assert.rejects(delayedOpen, error => error?.code === 'AUTH_SESSION_CHANGED');
+  assert.deepStrictEqual(temporaryFiles, ['temp-old.docx', 'temp-delayed.docx'], 'a switch while openDocument is pending must reject consumption and clean up the temporary file');
+
+  state.identity = normalIdentity;
+  state.token = 'normal-a';
+  state.generation += 1;
+  const stableOpenBoundary = createSessionBoundOperation(runtime);
+  const stableOpen = await openSessionBoundDocument(stableOpenBoundary, {
+    filePath: 'temp-current.docx',
+    openDocument: async options => ({ opened: options.filePath }),
+    removeTemporaryFile: async filePath => { temporaryFiles.push(filePath); },
+  });
+  assert.deepStrictEqual(stableOpen, { opened: 'temp-current.docx' });
+  assert.deepStrictEqual(temporaryFiles, ['temp-old.docx', 'temp-delayed.docx'], 'a successfully consumed current-session document must not be deleted by the failure cleanup path');
 
   let legacyGeneration;
   const legacyWrites = [];

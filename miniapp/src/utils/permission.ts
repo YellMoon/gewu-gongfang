@@ -84,7 +84,12 @@ export interface UserInfo {
   id: string;
   name: string;
   user_type: MiniappRole;
+  role?: MiniappRole;
   avatar?: string;
+  tenant_id?: string;
+  tenantId?: string;
+  teacher_id?: string;
+  teacherId?: string;
   student_id?: string;
   studentId?: string;
   linked_student_id?: string;
@@ -95,8 +100,13 @@ export interface UserInfo {
   read_only?: boolean;
   review_demo_session_id?: string;
   review_status?: string;
+  reviewStatus?: string;
   status?: number | boolean;
+  active?: number | boolean;
   login_enabled?: number | boolean;
+  loginEnabled?: number | boolean;
+  deleted?: number | boolean;
+  disabled?: number | boolean;
 }
 
 export interface PermissionItem {

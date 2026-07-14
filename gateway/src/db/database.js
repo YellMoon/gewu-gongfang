@@ -118,6 +118,7 @@ function ensureUserColumns(database) {
     }
   };
   addColumn('login_enabled', 'INTEGER DEFAULT 0');
+  addColumn('tenant_id', "TEXT NOT NULL DEFAULT 'default'");
   addColumn('student_id', 'TEXT');
   addColumn('linked_student_ids', 'TEXT');
   addColumn('teacher_id', 'TEXT');

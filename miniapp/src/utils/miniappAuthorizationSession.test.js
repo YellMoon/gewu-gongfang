@@ -1,5 +1,6 @@
 const assert = require('assert');
-const { createAuthorizationSession } = require('./miniappAuthorizationSession');
+const { createAuthorizationSession, fingerprint } = require('./miniappAuthorizationSession');
+const { permissionIdentityKey } = require('./miniappAuthorizationRuntime');
 
 function identity(overrides = {}) {
   return { id: 'user-1', role: 'teacher', teacher_id: 'teacher-1', review_status: 'approved', status: 1, login_enabled: 1, authorization_revision: 'rev-1', ...overrides };
@@ -20,6 +21,90 @@ function identity(overrides = {}) {
   const refreshed = await session.refresh({ id: 'user-1', user_type: 'teacher', teacher_id: 'teacher-1' }, { force: true });
   assert.strictEqual(session.getFetchCount(), 1, 'cold start must request the server even when a fresh persistent cache exists');
   assert.strictEqual(refreshed.status, 'loaded');
+  assert.strictEqual(
+    fingerprint(identity({ tenant_id: 'tenant-a', linked_student_ids: ['student-b', 'student-a'] })),
+    permissionIdentityKey(identity({ tenantId: 'tenant-a', linkedStudentIds: ['student-a', 'student-b', 'student-a'] })),
+    'authorization sessions must use the same complete and alias-stable normal scope fingerprint as every other session boundary',
+  );
+
+  const poisonedScopeCases = [
+    {
+      label: 'tenant',
+      local: identity({ tenant_id: 'tenant-a' }),
+      remote: identity({ tenantId: 'tenant-b' }),
+    },
+    {
+      label: 'student binding',
+      local: identity({ role: 'student', teacher_id: null, student_id: 'student-a', linked_student_ids: ['student-b'] }),
+      remote: identity({ role: 'student', teacher_id: null, studentId: 'student-a', linkedStudentIds: ['student-c'] }),
+    },
+    {
+      label: 'account status',
+      local: identity({ status: 0 }),
+      remote: identity({ status: 1 }),
+    },
+  ];
+  for (const scopeCase of poisonedScopeCases) {
+    const scopeEvents = [];
+    const poisonedCache = { verified: true, identity: scopeCase.remote, capabilities: ['business:teacher-scope'] };
+    const scopeSession = createAuthorizationSession({
+      readCache: () => poisonedCache,
+      writeCache: () => {},
+      clearPermissionCache: () => scopeEvents.push('clear-permission'),
+      clearBusinessCache: () => scopeEvents.push('clear-business'),
+      setBusinessCacheIdentity: () => scopeEvents.push('set-business'),
+      writeUser: () => {},
+      fetchRemote: async () => ({ identity: scopeCase.remote, capabilities: ['business:teacher-scope'] }),
+    });
+    await scopeSession.refresh(scopeCase.local, { force: true });
+    assert.deepStrictEqual(
+      scopeEvents.slice(0, 2),
+      ['clear-business', 'clear-permission'],
+      `a persistent cache poisoned with the remote ${scopeCase.label} scope must not hide a change from the current locally verified identity`,
+    );
+  }
+
+  let canonicalWrittenUser;
+  const canonicalRemote = identity({
+    tenant_id: 'tenant-new', teacher_id: 'teacher-new', student_id: 'student-new',
+    linked_student_ids: ['student-linked-new'], active: true, deleted: false, disabled: false,
+  });
+  const canonicalSession = createAuthorizationSession({
+    readCache: () => null,
+    writeCache: () => {},
+    clearPermissionCache: () => {},
+    clearBusinessCache: () => {},
+    setBusinessCacheIdentity: () => {},
+    writeUser: user => { canonicalWrittenUser = user; },
+    fetchRemote: async () => ({ identity: canonicalRemote, capabilities: ['business:teacher-scope'] }),
+  });
+  await canonicalSession.refresh({
+    id: 'user-1', user_type: 'teacher', tenantId: 'tenant-old', teacherId: 'teacher-old',
+    studentId: 'student-old', linkedStudentIds: ['student-linked-old'], active: true, deleted: false, disabled: false,
+  }, { force: true });
+  assert.strictEqual(canonicalWrittenUser.tenantId, undefined, 'a verified canonical tenant must remove the stale local alias');
+  assert.strictEqual(canonicalWrittenUser.teacherId, undefined, 'a verified canonical teacher binding must remove the stale local alias');
+  assert.strictEqual(canonicalWrittenUser.studentId, undefined, 'a verified canonical student binding must remove the stale local alias');
+  assert.strictEqual(canonicalWrittenUser.linkedStudentIds, undefined, 'revoked local student aliases must not survive a remote refresh');
+  assert.strictEqual(permissionIdentityKey(canonicalWrittenUser), permissionIdentityKey(canonicalRemote), 'the persisted user must contain only the verified remote normal scope');
+
+  for (const inactiveOverride of [{ active: false }, { deleted: true }, { disabled: true }]) {
+    const inactiveEvents = [];
+    const inactiveSession = createAuthorizationSession({
+      readCache: () => null,
+      writeCache: value => inactiveEvents.push(['write-cache', value]),
+      clearPermissionCache: () => inactiveEvents.push(['clear-permission']),
+      clearBusinessCache: () => inactiveEvents.push(['clear-business']),
+      setBusinessCacheIdentity: () => inactiveEvents.push(['set-business']),
+      writeUser: () => {},
+      fetchRemote: async () => ({ identity: identity(inactiveOverride), capabilities: ['business:teacher-scope'] }),
+    });
+    const inactiveResult = await inactiveSession.refresh(identity(), { force: true });
+    assert.deepStrictEqual(inactiveResult.capabilities, [], `${JSON.stringify(inactiveOverride)} must fail closed even before status/login flags converge`);
+    assert.ok(inactiveEvents.some(event => event[0] === 'clear-business'));
+    assert.ok(!inactiveEvents.some(event => event[0] === 'set-business'));
+    assert.ok(inactiveEvents.some(event => event[0] === 'write-cache' && event[1] === null));
+  }
 
   const downgradedEvents = [];
   const downgraded = createAuthorizationSession({

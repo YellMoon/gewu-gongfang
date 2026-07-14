@@ -35,6 +35,9 @@ assert.ok(permission.includes('getMiniappRolePolicy'), 'miniapp permission shoul
 assert.ok(permission.includes('reviewRolePolicy(user)') && permission.includes('canUserSubmitMiniappWrite'), 'miniapp permission boundary must delegate strict review policy and generic write checks to the tested runtime');
 assert.ok(permission.includes('createPermissionFetchBoundary') && permission.includes('sanitizeCapabilities: sanitizeCapabilitiesForIdentity'), 'fetchPermissions and persistent session cache must use the behavior-tested sanitizer boundary');
 assert.ok(permission.includes("'super_admin' | 'admin' | 'teacher' | 'student' | 'pending'"), 'miniapp user contract should include every unified authorization role');
+for (const scopeField of ['tenant_id?: string', 'tenantId?: string', 'teacher_id?: string', 'teacherId?: string', 'active?: number | boolean', 'deleted?: number | boolean', 'disabled?: number | boolean']) {
+  assert.ok(permission.includes(scopeField), `miniapp user contract must retain the verified normal-scope field ${scopeField}`);
+}
 assert.ok(permission.includes("'users:review'"), 'super admin policy should expose the review capability');
 assert.ok(permission.includes("'business:all'"), 'administrator policy should consume the shared business capability');
 assert.ok(permission.includes("'business:teacher-scope'"), 'teacher policy should consume the shared teacher scope capability');
@@ -94,6 +97,7 @@ assert.ok(storageSource.includes('cache_${activeCacheIdentity}_${table}'), 'busi
 assert.ok(storageSource.includes('previousIdentity !== nextIdentity'), 'business cache should clear the prior identity namespace on account switch');
 assert.ok(loginPage.includes('createNormalSessionCommitter') && loginPage.includes('setBusinessCacheIdentity,'), 'login should atomically switch the business cache identity after authentication');
 assert.ok(loginPage.includes('createReviewSessionCommitter') && loginPage.includes('loginMutexRef'), 'review login should use the atomic session committer and a shared synchronous mutex');
+assert.ok(loginPage.includes('createAuthenticationEntryBoundary') && loginPage.includes('loginBoundary.run(() => Taro.login())'), 'normal platform login must remain bound to its starting session before any WeChat request or commit');
 assert.ok(customTabBar.includes("return 'pending'"), 'tab bar should fail closed when no authenticated role is available');
 assert.ok(customTabBar.includes("userType === 'pending' ? LIMITED_TABS"), 'pending users should not receive business navigation tabs');
 assert.ok(appConfig.includes("'pages/question-bank/index'"), 'app config should register the question bank page');
@@ -102,9 +106,11 @@ assert.ok(questionBankPage.includes("'question-paper'"), 'question bank page sho
 assert.ok(questionBankPage.includes("'paper-export-word'"), 'question bank page should support Word export');
 assert.ok(questionBankPage.includes("'paper-export-pdf'"), 'question bank page should support PDF export');
 assert.ok(questionBankPage.includes('getMiniappTaskResult'), 'question bank page should check paper/export task results');
-assert.ok(questionBankPage.includes('TASKS_KEY') && questionBankPage.includes('storage.set(TASKS_KEY'), 'question bank page should persist task history for restart recovery');
+assert.ok(questionBankPage.includes('createQuestionPaperTaskCacheRuntime') && !questionBankPage.includes("const TASKS_KEY = 'question_paper_tasks_v2'"), 'question bank task history must use the complete authenticated scope namespace');
+assert.ok(questionBankPage.includes('createQuestionPaperTaskCacheRuntime') && questionBankPage.includes('taskState.scopeKey'), 'mounted question-bank task state must bind writes to the scope that produced the snapshot');
 assert.ok(questionBankPage.includes('result?.artifactId') || questionBankPage.includes('result?.accessEndpoint'), 'question bank page should keep authenticated artifact result metadata');
 assert.ok(questionBankPage.includes('Taro.downloadFile'), 'question bank page should download generated paper files');
+assert.ok(questionBankPage.includes('openSessionBoundDocument') && !questionBankPage.includes('await Taro.openDocument'), 'question bank must keep openDocument inside the same tested session boundary as access and download');
 assert.ok(questionBankPage.includes("'x-gewu-artifact-token'") && questionBankPage.includes('accessEndpoint'), 'artifact download must exchange access and send the token in a header');
 assert.ok(!questionBankPage.includes('questionCount:'), 'paper submission must send exact ordered questionIds rather than a count');
 assert.ok(!api.includes('studentApi') || !api.includes("create: (data: any) => api.post<any>('/scheduling/students'"), 'miniapp API must not expose direct student create');
