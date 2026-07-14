@@ -10,7 +10,14 @@
  */
 import Taro from '@tarojs/taro';
 import { clearBusinessCache } from './storage';
-import { isReviewExperienceIdentity, reviewCleanupStorageKeys } from './reviewExperience';
+import { createAuthRefreshRuntime } from './miniappAuthRefreshRuntime';
+import {
+  experienceApiPath,
+  hasReviewExperienceMarker,
+  isReviewExperienceIdentity,
+  reviewArtifactRequest,
+  reviewCleanupStorageKeys,
+} from './reviewExperience';
 
 const STORAGE_KEY_BASE_URL = 'scheduling_api_base_url';
 declare const __API_BASE_URL__: string | undefined;
@@ -44,7 +51,12 @@ interface ApiResponse<T = any> {
 }
 
 class ApiClient {
-  private tokenRefreshPromise: Promise<boolean> | null = null;
+  private authRefreshRuntime = createAuthRefreshRuntime({
+    readToken: () => Taro.getStorageSync('auth_token'),
+    readIdentity: () => Taro.getStorageSync('user_info'),
+    writeToken: (token: string) => Taro.setStorageSync('auth_token', token),
+    requestRefresh: (token: string) => this.requestRefreshedToken(token),
+  });
 
   private handleReviewAuthExpired(): void {
     const currentUser = Taro.getStorageSync('user_info');
@@ -54,18 +66,13 @@ class ApiClient {
     setTimeout(() => Taro.redirectTo({ url: '/pages/login/index' }), 1500);
   }
 
-  private getHeaders(): Record<string, string> {
+  private getHeaders(token = ''): Record<string, string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-cache',
       Pragma: 'no-cache',
     };
-    try {
-      const token = Taro.getStorageSync('auth_token');
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-    } catch { /* ignore */ }
+    if (token) headers['Authorization'] = `Bearer ${token}`;
     return headers;
   }
 
@@ -77,25 +84,16 @@ class ApiClient {
   }
 
   /** Token 刷新 */
-  private async refreshToken(): Promise<boolean> {
-    try {
-      const token = Taro.getStorageSync('auth_token');
-      if (!token) return false;
-      const res = await Taro.request({
-        url: `${getBaseUrl()}/api/auth/refresh`,
-        method: 'POST',
-        header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        data: { token },
-        timeout: 10000,
-      });
-      if (res.statusCode === 200 && res.data?.data?.token) {
-        Taro.setStorageSync('auth_token', res.data.data.token);
-        return true;
-      }
-      return false;
-    } catch {
-      return false;
-    }
+  private async requestRefreshedToken(token: string): Promise<string> {
+    const res = await Taro.request({
+      url: `${getBaseUrl()}/api/auth/refresh`,
+      method: 'POST',
+      header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      data: { token },
+      timeout: 10000,
+    });
+    return res.statusCode === 200 && typeof res.data?.data?.token === 'string'
+      ? res.data.data.token : '';
   }
 
   /** Token 过期处理 */
@@ -118,10 +116,12 @@ class ApiClient {
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
+        const requestToken = String(Taro.getStorageSync('auth_token') || '');
+        const requestIdentity = Taro.getStorageSync('user_info');
         const res = await Taro.request({
           url,
           method,
-          header: this.getHeaders(),
+          header: this.getHeaders(requestToken),
           data: method !== 'GET' ? data : undefined,
           timeout: REQUEST_TIMEOUT,
           dataType: 'json',
@@ -140,9 +140,9 @@ class ApiClient {
           }
           return { success: true, data: body as T };
         } else if (res.statusCode === 401) {
-          const currentUser = Taro.getStorageSync('user_info');
-          if (isReviewExperienceIdentity(currentUser)) {
-            this.handleReviewAuthExpired();
+          const requestWasReview = hasReviewExperienceMarker(requestIdentity);
+          if (requestWasReview) {
+            if (this.authRefreshRuntime.isCurrentSession(requestToken, true)) this.handleReviewAuthExpired();
             return {
               success: false,
               error: '\u5ba1\u6838\u4f53\u9a8c\u5df2\u8fc7\u671f\uff0c\u8bf7\u91cd\u65b0\u8fdb\u5165',
@@ -150,14 +150,14 @@ class ApiClient {
             };
           }
           // Token 过期，自动刷新
-          if (this.tokenRefreshPromise) {
-            await this.tokenRefreshPromise;
-            continue; // 刷新后重试
+          if (!this.authRefreshRuntime.isCurrentSession(requestToken, false)) {
+            return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
           }
-          this.tokenRefreshPromise = this.refreshToken();
-          const refreshed = await this.tokenRefreshPromise;
-          this.tokenRefreshPromise = null;
+          const refreshed = await this.authRefreshRuntime.refresh();
           if (refreshed) continue; // 刷新成功，重试
+          if (!this.authRefreshRuntime.isCurrentSession(requestToken, false)) {
+            return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
+          }
           this.handleAuthExpired();
           return { success: false, error: '登录已过期' };
         } else if (res.statusCode === 403) {
@@ -254,20 +254,28 @@ export const cloudRelayApi = {
   cancelMiniappTask: (taskId: string) => api.post<any>(`/api/cloud/tasks/${taskId}/cancel`, {}),
 };
 
+function reviewDemoPath(operation: string, resourceId?: string): string {
+  const identity = Taro.getStorageSync('user_info');
+  if (!isReviewExperienceIdentity(identity)) throw new Error('review identity is required');
+  return experienceApiPath(identity, operation, resourceId);
+}
+
 export const reviewDemoApi = {
   createTask: (taskType: string, payload: any) =>
-    api.post<any>('/api/review-demo/tasks', { taskType, payload }),
+    api.post<any>(reviewDemoPath('createTask'), { taskType, payload }),
   getTaskResult: (taskId: string) =>
-    api.get<any>(`/api/review-demo/tasks/${encodeURIComponent(taskId)}/result`),
+    api.get<any>(reviewDemoPath('taskResult', taskId)),
   cancelTask: (taskId: string) =>
-    api.post<any>(`/api/review-demo/tasks/${encodeURIComponent(taskId)}/cancel`, {}),
+    api.post<any>(reviewDemoPath('cancelTask', taskId), {}),
   artifactUrl: (artifactId: string) =>
-    `${getBaseUrl()}/api/review-demo/artifacts/${encodeURIComponent(artifactId)}`,
+    `${getBaseUrl()}${reviewDemoPath('artifact', artifactId)}`,
   downloadArtifact: (artifactId: string) => {
+    const identity = Taro.getStorageSync('user_info');
     const token = Taro.getStorageSync('auth_token');
+    const request = reviewArtifactRequest(identity, token, artifactId);
     return Taro.downloadFile({
-      url: `${getBaseUrl()}/api/review-demo/artifacts/${encodeURIComponent(artifactId)}`,
-      header: token ? { Authorization: `Bearer ${token}` } : {},
+      url: `${getBaseUrl()}${request.path}`,
+      header: request.header,
     });
   },
 };

@@ -2,8 +2,10 @@ const assert = require('assert');
 const {
   REVIEW_ADMIN_MODULES,
   REVIEW_STUDENT_MODULES,
+  canUserSubmitMiniappWrite,
   deriveAccess,
   permissionIdentityKey,
+  reviewRolePolicy,
   scopeDashboardCollections,
   businessCacheIdentityKey,
 } = require('./miniappAuthorizationRuntime');
@@ -60,9 +62,15 @@ const reviewAdmin = {
 const reviewAdminAccess = deriveAccess(reviewAdmin, {
   status: 'loaded',
   identityKey: permissionIdentityKey(reviewAdmin),
-  capabilities: ['review-demo:read', 'review-demo:admin', 'review-demo:paper-export', 'question-bank:view'],
+  capabilities: [
+    'review-demo:read', 'review-demo:admin', 'review-demo:student', 'review-demo:paper-export',
+    'question-bank:view', 'question-bank:edit', 'users:review', 'business:all', 'business:teacher-scope',
+  ],
 });
 assert.deepStrictEqual(reviewAdminAccess.modules, REVIEW_ADMIN_MODULES, 'administrator review should map only to existing read-only administrator pages');
+assert.deepStrictEqual(reviewAdminAccess.capabilities, [
+  'review-demo:read', 'review-demo:admin', 'review-demo:paper-export', 'question-bank:view',
+], 'review access must remove poisoned real-user and wrong-role capabilities');
 assert.ok(!reviewAdminAccess.modules.includes('admin'), 'administrator review must not expose the user-review workbench');
 assert.strictEqual(reviewAdminAccess.canReadUsers, false);
 assert.strictEqual(reviewAdminAccess.canReviewUsers, false);
@@ -87,5 +95,22 @@ assert.notStrictEqual(
   businessCacheIdentityKey({ id: reviewAdmin.id, user_type: 'admin' }),
   'review cache namespaces must never collide with real users',
 );
+const reviewAdminPolicy = reviewRolePolicy(reviewAdmin);
+assert.deepStrictEqual(reviewAdminPolicy.modules, REVIEW_ADMIN_MODULES);
+assert.deepStrictEqual(reviewAdminPolicy.allowedWriteTasks, [], 'review role policy must not inherit normal admin write tasks');
+assert.deepStrictEqual(reviewAdminPolicy.capabilities, reviewAdminAccess.capabilities);
+assert.strictEqual(reviewAdminPolicy.canReadAllSnapshots, false);
+assert.strictEqual(reviewAdminPolicy.canReviewUsers, false);
+assert.strictEqual(reviewAdminPolicy.canEditQuestionBank, false);
+assert.strictEqual(canUserSubmitMiniappWrite(reviewAdmin, 'asset-import', ['asset-import']), false, 'review identities must fail every generic write guard');
+const malformedReview = { ...reviewAdmin, id: 'admin-1' };
+const malformedAccess = deriveAccess(malformedReview, {
+  status: 'loaded', identityKey: permissionIdentityKey(malformedReview), capabilities: ['business:all', 'question-bank:edit'],
+});
+assert.deepStrictEqual(malformedAccess.modules, [], 'malformed review markers must fail closed instead of falling back to normal admin');
+assert.deepStrictEqual(malformedAccess.capabilities, []);
+assert.strictEqual(businessCacheIdentityKey(malformedReview), '', 'malformed review identities must not receive a cache namespace');
+assert.deepStrictEqual(reviewRolePolicy(malformedReview).allowedWriteTasks, []);
+assert.strictEqual(canUserSubmitMiniappWrite({ id: 'admin-1', user_type: 'admin' }, 'asset-import', ['asset-import']), true, 'normal write policy must remain unchanged');
 
 console.log('miniapp authorization runtime checks passed');

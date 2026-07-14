@@ -65,8 +65,21 @@ assert(
 assert(
   miniappLoginCss.includes('.review-card') &&
   miniappLoginCss.includes('.review-role-control') &&
-  miniappLoginCss.includes('.review-login-btn'),
+  miniappLoginCss.includes('.review-login-btn') &&
+  miniappLoginCss.includes('overflow-y: auto') &&
+  miniappLoginCss.includes('env(safe-area-inset-top)') &&
+  miniappLoginCss.includes('env(safe-area-inset-bottom)') &&
+  miniappLoginCss.includes('@media (max-height: 620px)'),
   'miniapp review login controls should have dedicated stable styles'
+);
+
+assert(
+  miniappLogin.includes('useRef') &&
+  miniappLogin.includes('loginMutexRef') &&
+  miniappLogin.includes('loginBusy') &&
+  miniappLogin.includes('aria-pressed={reviewRole ===') &&
+  miniappLogin.includes('createReviewSessionCommitter'),
+  'normal and review login should share a synchronous mutex, disabled state, role semantics, and atomic review-session commit'
 );
 
 assert(
@@ -74,8 +87,10 @@ assert(
   miniappReviewExperience.includes('REVIEW_DEMO_CODE_INVALID') &&
   miniappReviewExperience.includes('REVIEW_DEMO_DISABLED') &&
   miniappReviewExperience.includes('REVIEW_DEMO_RATE_LIMITED') &&
+  miniappReviewExperience.includes('createReviewSessionCommitter') &&
   miniappApi.includes("'/api/auth/review-demo'") &&
-  miniappApi.includes("'/api/review-demo/tasks'"),
+  miniappApi.includes('createAuthRefreshRuntime') &&
+  miniappApi.includes('experienceApiPath'),
   'miniapp review runtime should isolate session caches, map stable login errors, and use dedicated gateway APIs'
 );
 

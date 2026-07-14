@@ -31,6 +31,7 @@ assert.ok(permission.includes('readonlyModules'), 'miniapp permission should def
 assert.ok(permission.includes('allowedWriteTasks'), 'miniapp permission should define allowedWriteTasks');
 assert.ok(permission.includes('studentModules'), 'miniapp permission should define studentModules');
 assert.ok(permission.includes('getMiniappRolePolicy'), 'miniapp permission should expose role-specific policy');
+assert.ok(permission.includes('reviewRolePolicy(user)') && permission.includes('canUserSubmitMiniappWrite'), 'miniapp permission boundary must delegate strict review policy and generic write checks to the tested runtime');
 assert.ok(permission.includes("'super_admin' | 'admin' | 'teacher' | 'student' | 'pending'"), 'miniapp user contract should include every unified authorization role');
 assert.ok(permission.includes("'users:review'"), 'super admin policy should expose the review capability');
 assert.ok(permission.includes("'business:all'"), 'administrator policy should consume the shared business capability');
@@ -90,6 +91,7 @@ assert.ok(miniappHome.includes('setBusinessCacheIdentity'), 'home should activat
 assert.ok(storageSource.includes('cache_${activeCacheIdentity}_${table}'), 'business cache keys should be identity scoped');
 assert.ok(storageSource.includes('previousIdentity !== nextIdentity'), 'business cache should clear the prior identity namespace on account switch');
 assert.ok(loginPage.includes('setBusinessCacheIdentity(normalizedUser)'), 'login should switch the business cache identity after authentication');
+assert.ok(loginPage.includes('createReviewSessionCommitter') && loginPage.includes('loginMutexRef'), 'review login should use the atomic session committer and a shared synchronous mutex');
 assert.ok(customTabBar.includes("return 'pending'"), 'tab bar should fail closed when no authenticated role is available');
 assert.ok(customTabBar.includes("userType === 'pending' ? LIMITED_TABS"), 'pending users should not receive business navigation tabs');
 assert.ok(appConfig.includes("'pages/question-bank/index'"), 'app config should register the question bank page');
