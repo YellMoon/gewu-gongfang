@@ -95,13 +95,22 @@ export default function Assets() {
       <NetworkStatus />
       <ReviewDemoBanner />
 
-      <View className={`task-card ${isReviewDemo ? 'review-read-only' : ''}`} onClick={isReviewDemo ? undefined : submitAssetImportTask}>
-        {isReviewDemo ? <Text className="task-desc">{'\u5ba1\u6838\u4f53\u9a8c\u4e2d\u4e0d\u53ef\u5bfc\u5165\u8d22\u52a1\u6570\u636e\uff0c\u4ec5\u5c55\u793a\u8131\u654f\u793a\u4f8b\u6c47\u603b\u3002'}</Text> : null}
+      {isReviewDemo ? (
+        <View className="task-card review-read-only" aria-disabled={isReviewDemo}>
+          <Text className="task-title">{'\u8d22\u52a1\u8131\u654f\u793a\u4f8b\uff08\u53ea\u8bfb\uff09'}</Text>
+          <Text className="task-desc">{'\u5ba1\u6838\u4f53\u9a8c\u4ec5\u5c55\u793a\u8131\u654f\u793a\u4f8b\u6c47\u603b\uff0c\u5bfc\u5165\u4e0d\u53ef\u7528\u3002'}</Text>
+        </View>
+      ) : (
+      <>
+      <View className="task-card" onClick={submitAssetImportTask}>
         <Text className="task-title">导入财务数据</Text>
         <Text className="task-desc">选择个人资产统计所需的数据文件并开始导入。</Text>
       </View>
 
       {/* 总览卡片 */}
+      </>
+      )}
+
       <View className="overview-card">
         <View className="overview-row">
           <View className="overview-item">

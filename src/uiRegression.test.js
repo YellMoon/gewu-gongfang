@@ -60,6 +60,7 @@ const miniappQuestionBank = read('miniapp/src/pages/question-bank/index.tsx');
 let miniappSettings = read('miniapp/src/pages/settings/index.tsx');
 let miniappAdminUsers = read('miniapp/src/pages/admin/users/index.tsx');
 let miniappAssets = read('miniapp/src/pages/assets/index.tsx');
+const miniappAssetsCss = read('miniapp/src/pages/assets/index.scss');
 let miniappScheduleEdit = read('miniapp/src/pages/schedule/edit/index.tsx');
 const miniappStorage = read('miniapp/src/utils/storage.ts');
 const miniappApp = read('miniapp/src/app.tsx');
@@ -69,6 +70,7 @@ miniappSettings = decodeUnicodeEscapes(miniappSettings);
 miniappAdminUsers = decodeUnicodeEscapes(miniappAdminUsers);
 miniappAssets = decodeUnicodeEscapes(miniappAssets);
 miniappScheduleEdit = decodeUnicodeEscapes(miniappScheduleEdit);
+const decodedMiniappQuestionBank = decodeUnicodeEscapes(miniappQuestionBank);
 
 assert(
   miniappLogin.includes('review-title') &&
@@ -168,6 +170,19 @@ assert(
 assert(
   miniappAssets.includes("useState<'month' | 'year' | 'all'>(isReviewDemo ? 'all' : 'month')"),
   'review assets should default to the deterministic all-time view while normal users keep the monthly default'
+);
+
+assert(
+  decodedMiniappQuestionBank.includes("isReviewDemo ? '\u6309\u9009\u62e9\u987a\u5e8f\u63d0\u4ea4\u793a\u4f8b\u9898\u76ee ID' : '\u6309\u9009\u62e9\u987a\u5e8f\u63d0\u4ea4\u771f\u5b9e\u9898\u76ee ID'") &&
+  miniappAssets.includes('{isReviewDemo ? (') &&
+  miniappAssets.includes('<View className="task-card review-read-only" aria-disabled={isReviewDemo}>') &&
+  miniappAssets.includes('\u8d22\u52a1\u8131\u654f\u793a\u4f8b\uff08\u53ea\u8bfb\uff09') &&
+  miniappAssets.includes('\u5ba1\u6838\u4f53\u9a8c\u4ec5\u5c55\u793a\u8131\u654f\u793a\u4f8b\u6c47\u603b\uff0c\u5bfc\u5165\u4e0d\u53ef\u7528\u3002') &&
+  miniappAssets.includes('\u5bfc\u5165\u8d22\u52a1\u6570\u636e') &&
+  miniappAssets.includes('\u9009\u62e9\u4e2a\u4eba\u8d44\u4ea7\u7edf\u8ba1\u6240\u9700\u7684\u6570\u636e\u6587\u4ef6\u5e76\u5f00\u59cb\u5bfc\u5165\u3002') &&
+  miniappAssetsCss.includes('.task-card.review-read-only') &&
+  miniappAssetsCss.includes('pointer-events: none'),
+  'review-only copy must identify sample question IDs and render finance import as a visibly disabled read-only card while normal copy stays unchanged'
 );
 
 const reviewSyncGuardAt = miniappApp.indexOf('if (isReviewExperienceIdentity(startupSession.identity)) return;');

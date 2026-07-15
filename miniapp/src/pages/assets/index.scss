@@ -15,6 +15,12 @@
   box-shadow: 0 14rpx 34rpx rgba(23, 32, 51, 0.08);
 }
 
+.task-card.review-read-only {
+  opacity: 0.68;
+  filter: grayscale(0.35);
+  pointer-events: none;
+}
+
 .task-title {
   display: block;
   font-size: 30rpx;

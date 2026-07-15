@@ -48,24 +48,90 @@ function externalReviewQuestion(question) {
 
 const BASE = Object.freeze({
   students: [
-    { id: 'review-demo-student', name: '\u5ba1\u6838\u793a\u4f8b\u5b66\u751f', school: '\u793a\u4f8b\u4e2d\u5b66', grade_year: 2026, grade_current: '\u9ad8\u4e00', source_type: 'review-demo' },
-    { id: 'review-demo-student-2', name: '\u5ba1\u6838\u793a\u4f8b\u5b66\u751f\u4e8c', school: '\u793a\u4f8b\u4e2d\u5b66', grade_year: 2026, grade_current: '\u9ad8\u4e8c', source_type: 'review-demo' },
+    {
+      id: 'review-demo-student', name: '\u5ba1\u6838\u793a\u4f8b\u5b66\u751f', school: '\u793a\u4f8b\u4e2d\u5b66',
+      grade_year: 2026, grade_current: '\u9ad8\u4e00', source_type: 1, balance_hours: 12, balance_money: 1200,
+      created_at: '2026-07-01T08:00:00.000Z', updated_at: '2026-07-10T08:00:00.000Z',
+    },
+    {
+      id: 'review-demo-student-2', name: '\u5ba1\u6838\u793a\u4f8b\u5b66\u751f\u4e8c', school: '\u793a\u4f8b\u4e2d\u5b66',
+      grade_year: 2026, grade_current: '\u9ad8\u4e8c', source_type: 2, institution_id: 'review-demo-institution',
+      balance_hours: 8, balance_money: 800, created_at: '2026-07-02T08:00:00.000Z', updated_at: '2026-07-11T08:00:00.000Z',
+    },
   ],
-  teachers: [{ id: 'review-demo-teacher', name: '\u5ba1\u6838\u793a\u4f8b\u6559\u5e08', subject: '\u7269\u7406' }],
-  institutions: [{ id: 'review-demo-institution', name: '\u683c\u7269\u5de5\u574a\u5ba1\u6838\u793a\u4f8b\u6821\u533a' }],
-  schools: [{ id: 'review-demo-school', name: '\u793a\u4f8b\u4e2d\u5b66' }],
-  rooms: [{ id: 'review-demo-room', name: '\u793a\u4f8b\u6559\u5ba4 A' }],
+  teachers: [{
+    id: 'review-demo-teacher', name: '\u5ba1\u6838\u793a\u4f8b\u6559\u5e08', subject: '\u7269\u7406', hourly_rate: 180,
+    created_at: '2026-07-01T08:00:00.000Z', updated_at: '2026-07-10T08:00:00.000Z',
+  }],
+  institutions: [{
+    id: 'review-demo-institution', name: '\u683c\u7269\u5de5\u574a\u5ba1\u6838\u793a\u4f8b\u6821\u533a', revenue_share: 0.2,
+    created_at: '2026-07-01T08:00:00.000Z',
+  }],
+  schools: [{
+    id: 'review-demo-school', name: '\u793a\u4f8b\u4e2d\u5b66', count: 2,
+    created_at: '2026-07-01T08:00:00.000Z', updated_at: '2026-07-10T08:00:00.000Z',
+  }],
+  rooms: [{
+    id: 'review-demo-room', name: '\u793a\u4f8b\u6559\u5ba4 A', address: '\u5ba1\u6838\u793a\u4f8b\u5730\u5740', count: 12,
+    created_at: '2026-07-01T08:00:00.000Z', updated_at: '2026-07-10T08:00:00.000Z',
+  }],
   courses: [
-    { id: 'review-demo-course', name: '\u9ad8\u4e00\u7269\u7406\u793a\u4f8b\u8bfe', display_name: '\u9ad8\u4e00\u7269\u7406', type: 'one-to-one', year: 2026, semester: '\u6691\u671f', teacher_id: 'review-demo-teacher', institution_id: 'review-demo-institution', room_id: 'review-demo-room', student_ids: ['review-demo-student'], active: true },
-    { id: 'review-demo-course-2', name: '\u9ad8\u4e8c\u7269\u7406\u793a\u4f8b\u8bfe', display_name: '\u9ad8\u4e8c\u7269\u7406', type: 'small-class', year: 2026, semester: '\u6691\u671f', teacher_id: 'review-demo-teacher', institution_id: 'review-demo-institution', room_id: 'review-demo-room', student_ids: ['review-demo-student-2'], active: true },
+    {
+      id: 'review-demo-course', name: '\u9ad8\u4e00\u7269\u7406\u793a\u4f8b\u8bfe', display_name: '\u9ad8\u4e00\u7269\u7406',
+      type: 1, source_type: 1, year: 2026, semester: '\u6691\u671f', teacher_id: 'review-demo-teacher',
+      teacher_name: '\u5ba1\u6838\u793a\u4f8b\u6559\u5e08', institution_id: 'review-demo-institution', room_id: 'review-demo-room',
+      room_name: '\u793a\u4f8b\u6559\u5ba4 A', price_tuition: 240, price_teacher: 120, billing_unit: 1,
+      teacher_fee_mode: 1, student_ids: ['review-demo-student'],
+      student_pricings: [{ student_id: 'review-demo-student', tuition: 240, teacher_fee: 120, status: 1 }],
+      active: true, default_duration_minutes: 90,
+      created_at: '2026-07-01T08:00:00.000Z', updated_at: '2026-07-10T08:00:00.000Z',
+    },
+    {
+      id: 'review-demo-course-2', name: '\u9ad8\u4e8c\u7269\u7406\u793a\u4f8b\u8bfe', display_name: '\u9ad8\u4e8c\u7269\u7406',
+      type: 3, source_type: 2, year: 2026, semester: '\u6691\u671f', teacher_id: 'review-demo-teacher',
+      teacher_name: '\u5ba1\u6838\u793a\u4f8b\u6559\u5e08', institution_id: 'review-demo-institution', room_id: 'review-demo-room',
+      room_name: '\u793a\u4f8b\u6559\u5ba4 A', price_tuition: 320, price_teacher: 160, billing_unit: 1,
+      teacher_fee_mode: 2, student_ids: ['review-demo-student-2'],
+      student_pricings: [{ student_id: 'review-demo-student-2', tuition: 320, teacher_fee: 160, status: 1 }],
+      active: true, default_duration_minutes: 90,
+      created_at: '2026-07-02T08:00:00.000Z', updated_at: '2026-07-11T08:00:00.000Z',
+    },
   ],
   schedules: [
-    { id: 'review-demo-schedule', course_id: 'review-demo-course', start_time: '2026-07-15T10:00:00+08:00', end_time: '2026-07-15T11:30:00+08:00', status: 'scheduled', room_id: 'review-demo-room', student_ids: ['review-demo-student'], calculated_tuition: 240, calculated_teacher_fee: 120 },
-    { id: 'review-demo-schedule-2', course_id: 'review-demo-course-2', start_time: '2026-07-16T14:00:00+08:00', end_time: '2026-07-16T15:30:00+08:00', status: 'scheduled', room_id: 'review-demo-room', student_ids: ['review-demo-student-2'], calculated_tuition: 320, calculated_teacher_fee: 160 },
+    {
+      id: 'review-demo-schedule', course_id: 'review-demo-course', start_time: '2026-07-15T10:00:00+08:00',
+      end_time: '2026-07-15T11:30:00+08:00', status: 1, room_id: 'review-demo-room', room: '\u793a\u4f8b\u6559\u5ba4 A',
+      service_type: 1, student_ids: ['review-demo-student'],
+      student_pricings: [{ student_id: 'review-demo-student', tuition: 240, teacher_fee: 120, status: 1 }],
+      calculated_tuition: 240, calculated_teacher_fee: 120,
+      created_at: '2026-07-10T08:00:00.000Z', updated_at: '2026-07-10T08:00:00.000Z',
+    },
+    {
+      id: 'review-demo-schedule-2', course_id: 'review-demo-course-2', start_time: '2026-07-14T14:00:00+08:00',
+      end_time: '2026-07-14T15:30:00+08:00', status: 2, room_id: 'review-demo-room', room: '\u793a\u4f8b\u6559\u5ba4 A',
+      service_type: 1, student_ids: ['review-demo-student-2'],
+      student_pricings: [{ student_id: 'review-demo-student-2', tuition: 320, teacher_fee: 160, status: 1 }],
+      calculated_tuition: 320, calculated_teacher_fee: 160,
+      created_at: '2026-07-09T08:00:00.000Z', updated_at: '2026-07-14T08:00:00.000Z',
+    },
   ],
-  enrollments: [{ id: 'review-demo-enrollment', course_id: 'review-demo-course', student_id: 'review-demo-student' }],
-  consumptions: [{ id: 'review-demo-consumption', course_id: 'review-demo-course', schedule_id: 'review-demo-schedule', student_id: 'review-demo-student', amount: 240 }],
-  payments: [{ id: 'review-demo-payment', student_id: 'review-demo-student', amount: 1200, payment_date: '2026-07-01', source_type: 'review-demo' }],
+  enrollments: [
+    { id: 'review-demo-enrollment', schedule_id: 'review-demo-schedule', student_id: 'review-demo-student', hours_consumed: 0, status: 1, created_at: '2026-07-10T08:00:00.000Z' },
+    { id: 'review-demo-enrollment-2', schedule_id: 'review-demo-schedule-2', student_id: 'review-demo-student-2', hours_consumed: 1.5, status: 2, created_at: '2026-07-09T08:00:00.000Z' },
+  ],
+  consumptions: [
+    {
+      id: 'review-demo-consumption', schedule_id: 'review-demo-schedule-2', student_id: 'review-demo-student-2',
+      hours: 1.5, amount: 320, consumption_date: '2026-07-14', created_at: '2026-07-14T08:00:00.000Z',
+    },
+  ],
+  payments: [
+    {
+      id: 'review-demo-payment', student_id: 'review-demo-student', amount: 1200, payment_type: 1,
+      payment_date: '2026-07-01', payment_method: '\u5ba1\u6838\u793a\u4f8b', notes: '\u8131\u654f\u793a\u4f8b\u8bb0\u5f55',
+      created_at: '2026-07-01T08:00:00.000Z',
+    },
+  ],
   assetRecords: [{
     id: 'review-demo-asset', name: '\u5ba1\u6838\u793a\u4f8b\u8d44\u4ea7', amount: 5000,
     category_id: 'review-demo-asset-category', type: 'expense', date: '2026-07-01',
