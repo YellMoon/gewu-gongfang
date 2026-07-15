@@ -8,6 +8,9 @@ CREATE TABLE IF NOT EXISTS students (
   tenant_id TEXT DEFAULT 'default',
   name TEXT NOT NULL,
   phone TEXT,
+  parent_phone TEXT,
+  parent_phone_normalized TEXT,
+  parent_relation TEXT,
   school TEXT,
   grade_year INTEGER,
   grade_current TEXT,
@@ -203,6 +206,9 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT DEFAULT 'admin',
   status INTEGER DEFAULT 1,
   login_enabled INTEGER DEFAULT 0,
+  identity_kind TEXT,
+  auth_version INTEGER NOT NULL DEFAULT 1,
+  disabled_at TEXT,
   student_id TEXT,
   linked_student_ids TEXT,
   teacher_id TEXT,
@@ -253,6 +259,67 @@ CREATE TABLE IF NOT EXISTS miniapp_login_attempts (
   denial_reason TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS miniapp_login_events (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  phone_normalized TEXT NOT NULL,
+  identity_kind TEXT,
+  result_code TEXT NOT NULL,
+  session_id TEXT,
+  miniapp_version TEXT,
+  platform TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS miniapp_role_applications (
+  id TEXT PRIMARY KEY,
+  applicant_user_id TEXT NOT NULL,
+  application_type TEXT NOT NULL CHECK(application_type IN ('student', 'teacher')),
+  status TEXT NOT NULL,
+  revision INTEGER NOT NULL,
+  payload_json TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  verified_phone_normalized TEXT NOT NULL,
+  student_phone_normalized TEXT,
+  parent_phone_normalized TEXT,
+  applicant_identity_kind TEXT,
+  host_task_id TEXT,
+  host_entity_id TEXT,
+  reviewed_by TEXT,
+  reviewed_at TEXT,
+  rejection_reason TEXT,
+  submitted_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS account_memberships (
+  id TEXT PRIMARY KEY,
+  subject_type TEXT NOT NULL,
+  subject_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  source TEXT NOT NULL,
+  starts_at TEXT NOT NULL,
+  ends_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(subject_type, subject_id)
+);
+
+CREATE TABLE IF NOT EXISTS identity_provisioning_receipts (
+  id TEXT PRIMARY KEY,
+  application_id TEXT NOT NULL,
+  revision INTEGER NOT NULL,
+  request_hash TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  result_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(application_id, revision, request_hash)
 );
 
 -- ===================== 同步日志 =====================
@@ -399,6 +466,7 @@ CREATE TABLE IF NOT EXISTS host_heartbeats (
   status TEXT NOT NULL DEFAULT 'online',
   base_url TEXT,
   lan_urls TEXT,
+  capabilities TEXT,
   last_snapshot_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -741,6 +809,19 @@ CREATE INDEX IF NOT EXISTS idx_sync_authorizations_device ON sync_authorizations
 CREATE INDEX IF NOT EXISTS idx_sync_conflicts_status ON sync_conflicts(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_readonly_snapshots_type_created ON readonly_snapshots(snapshot_type, created_at);
 CREATE INDEX IF NOT EXISTS idx_miniapp_tasks_status_created ON miniapp_tasks(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_miniapp_login_events_created ON miniapp_login_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_miniapp_login_events_user_created ON miniapp_login_events(user_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_miniapp_applications_user_idempotency
+  ON miniapp_role_applications(applicant_user_id, idempotency_key);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_miniapp_applications_active_user
+  ON miniapp_role_applications(applicant_user_id)
+  WHERE status IN ('submitted', 'provisioning', 'manual_resolution_required');
+CREATE INDEX IF NOT EXISTS idx_miniapp_applications_status_created
+  ON miniapp_role_applications(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_memberships_status_subject
+  ON account_memberships(status, subject_type, subject_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_identity_receipts_request
+  ON identity_provisioning_receipts(application_id, revision, request_hash);
 CREATE INDEX IF NOT EXISTS idx_host_heartbeats_updated ON host_heartbeats(updated_at);
 CREATE INDEX IF NOT EXISTS idx_operation_audit_created ON operation_audit_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_operation_audit_action ON operation_audit_log(action, status, created_at);
