@@ -218,33 +218,33 @@ Stage Task 4 files and commit `automatic release 2026-07-14`.
 - Modify: `miniapp/src/utils/miniappUiCoverage.test.js`
 - Modify: `src/uiRegression.test.js`
 
-- [ ] **Step 1: Add failing UI coverage assertions**
+- [x] **Step 1: Add failing UI coverage assertions**
 
 Require the shared banner, review-only disabled-write copy, sandbox task-cache key, direct sandbox artifact download path, and exit cleanup action.
 
-- [ ] **Step 2: Confirm RED**
+- [x] **Step 2: Confirm RED**
 
 Run: `node miniapp/src/utils/miniappUiCoverage.test.js && node src/uiRegression.test.js`
 Expected: review UI contract failures.
 
-- [ ] **Step 3: Implement the shared banner and write restrictions**
+- [x] **Step 3: Implement the shared banner and write restrictions**
 
 Render the banner on role entry pages. Hide or disable user review, finance import, and schedule edit actions for verified review identities while preserving normal role behavior.
 
-- [ ] **Step 4: Route paper tasks to the sandbox**
+- [x] **Step 4: Route paper tasks to the sandbox**
 
 For review identities, load demo previews, create/read/cancel sandbox tasks, use a review-specific cache key, download from the gateway with the bearer token, and open DOCX/PDF. Never call host endpoints or save real task IDs.
 
-- [ ] **Step 5: Implement exit cleanup**
+- [x] **Step 5: Implement exit cleanup**
 
 Clear `auth_token`, `user_info`, permission state, business caches, and review task cache, then relaunch login. Normal logout behavior remains intact.
 
-- [ ] **Step 6: Verify UI and miniapp build**
+- [x] **Step 6: Verify UI and miniapp build**
 
 Run: `node miniapp/src/utils/miniappUiCoverage.test.js && node src/uiRegression.test.js && npm --prefix miniapp run build:weapp`
 Expected: all exit 0.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Stage Task 5 files and commit `automatic release 2026-07-14`.
 
