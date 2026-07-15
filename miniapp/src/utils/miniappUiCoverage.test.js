@@ -13,14 +13,116 @@ assert.ok(pagesMatch, 'app.config.ts should define pages');
 const configuredPages = Array.from(pagesMatch[1].matchAll(/'([^']+)'/g), (match) => match[1]);
 const inventoryRoutes = pageInventory.map((entry) => entry.route);
 const duplicates = inventoryRoutes.filter((route, index) => inventoryRoutes.indexOf(route) !== index);
+const configuredDuplicates = configuredPages.filter((route, index) => configuredPages.indexOf(route) !== index);
 
 assert.deepStrictEqual(duplicates, [], 'miniapp UI inventory should not contain duplicate routes');
+assert.deepStrictEqual(configuredDuplicates, [], 'app.config.ts should not register duplicate routes');
 
 const missingFromInventory = configuredPages.filter((route) => !inventoryRoutes.includes(route));
 assert.deepStrictEqual(
   missingFromInventory,
   [],
   'miniapp UI inventory must cover every route registered in app.config.ts'
+);
+const inventoryNotRegistered = inventoryRoutes.filter((route) => !configuredPages.includes(route));
+assert.deepStrictEqual(
+  inventoryNotRegistered,
+  [],
+  'miniapp UI inventory and app.config.ts must contain exactly the same routes'
+);
+
+function listSourceFiles(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const absolutePath = path.join(directory, entry.name);
+    if (entry.isDirectory()) return listSourceFiles(absolutePath);
+    if (!/\.(?:js|ts|tsx)$/.test(entry.name) || /\.test\./.test(entry.name)) return [];
+    return [absolutePath];
+  });
+}
+
+function staticNavigationRoute(expression) {
+  const trimmed = expression.trim();
+  const quote = trimmed[0];
+  if (!['\'', '"', '`'].includes(quote) || trimmed.at(-1) !== quote) return '';
+  const value = trimmed.slice(1, -1);
+  const routePart = value.split('?')[0];
+  if (!routePart.startsWith('/pages/') || routePart.includes('${')) return '';
+  return routePart.slice(1);
+}
+
+const navigationCalls = [];
+let navigationInvocationCount = 0;
+for (const absolutePath of listSourceFiles(path.join(root, 'src'))) {
+  const source = fs.readFileSync(absolutePath, 'utf8');
+  navigationInvocationCount += Array.from(
+    source.matchAll(/Taro\.(navigateTo|redirectTo|reLaunch|switchTab)\s*\(/g),
+  ).length;
+  const navigationPattern = /Taro\.(navigateTo|redirectTo|reLaunch|switchTab)\s*\(\s*\{\s*url:\s*([\s\S]*?)\s*\}\s*\)/g;
+  for (const match of source.matchAll(navigationPattern)) {
+    navigationCalls.push({
+      file: path.relative(root, absolutePath).replace(/\\/g, '/'),
+      method: match[1],
+      expression: match[2].trim(),
+      route: staticNavigationRoute(match[2]),
+      source,
+    });
+  }
+}
+assert.strictEqual(
+  navigationCalls.length,
+  navigationInvocationCount,
+  'every navigation invocation must use an object with an inspectable url field'
+);
+
+const dynamicNavigationPatterns = [
+  {
+    file: 'src/pages/index/index.tsx',
+    expression: 'config.pages',
+    declarationPattern: /\bpages:\s*(['"])(\/pages\/[^'"]+)\1/g,
+    normalize: (value) => value.slice(1).split('?')[0],
+  },
+  {
+    file: 'src/pages/index/index.tsx',
+    expression: 'item.url',
+    declarationPattern: /\burl:\s*(['"])(\/pages\/[^'"]+)\1/g,
+    normalize: (value) => value.slice(1).split('?')[0],
+  },
+  {
+    file: 'src/custom-tab-bar/index.tsx',
+    expression: '`/${item.pagePath}`',
+    declarationPattern: /\bpagePath:\s*(['"])(pages\/[^'"]+)\1/g,
+    normalize: (value) => value.split('?')[0],
+  },
+];
+
+for (const call of navigationCalls) {
+  call.routes = call.route ? [call.route] : [];
+  if (call.routes.length > 0) continue;
+  const resolver = dynamicNavigationPatterns.find((candidate) => (
+    candidate.file === call.file && candidate.expression === call.expression
+  ));
+  if (!resolver) continue;
+  call.routes = Array.from(
+    call.source.matchAll(resolver.declarationPattern),
+    (match) => resolver.normalize(match[2]),
+  );
+}
+const unresolvedNavigationCalls = navigationCalls
+  .filter((call) => call.routes.length === 0)
+  .map((call) => `${call.file}: ${call.method}(${call.expression})`);
+assert.deepStrictEqual(
+  unresolvedNavigationCalls,
+  [],
+  'dynamic miniapp navigation must be resolved through an explicit, testable route declaration pattern'
+);
+
+const unregisteredNavigationTargets = navigationCalls
+  .flatMap((call) => call.routes)
+  .filter((route) => !configuredPages.includes(route) || !inventoryRoutes.includes(route));
+assert.deepStrictEqual(
+  unregisteredNavigationTargets,
+  [],
+  'every navigateTo/redirectTo/reLaunch/switchTab target must be registered and inventoried'
 );
 
 const forbidden = pageInventory.find((entry) => entry.route === 'pages/forbidden/index');
