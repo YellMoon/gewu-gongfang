@@ -4,6 +4,8 @@ const path = require('path');
 
 const {
   buildDefaultReviewInfo,
+  validateReviewExperienceCode,
+  validateReviewGuide,
   validateReviewInfo,
   REVIEW_DOC_PATH,
 } = require('./check_miniapp_review_readiness');
@@ -17,6 +19,11 @@ assert.ok(info.testRemark.length <= 200, 'review test remark must fit WeChat 200
 assert.strictEqual(info.orderCenterPath, '', 'non-transaction miniapp should leave order center path empty');
 assert.strictEqual(info.expeditedAudit, false, 'audit expedited option should default to false');
 assert.strictEqual(info.privacyCollection, true, 'WeChat login requires privacy collection disclosure');
+assert.ok(info.testRemark.includes('<review experience code>'), 'review note must use the literal private-code placeholder');
+assert.ok(info.testRemark.includes('审核体验'), 'review note should identify the permanent review entry');
+assert.ok(info.testRemark.includes('管理员') && info.testRemark.includes('学生'), 'review note should explain both roles');
+assert.ok(info.testRemark.includes('只读') && info.testRemark.includes('脱敏'), 'review note should explain sanitized read-only data');
+assert.ok(info.testRemark.includes('沙箱') && info.testRemark.includes('Word/PDF'), 'review note should explain isolated export sandbox');
 
 for (const forbidden of ['教学工具', '学籍管理', '分班', '档案', '主机处理', '提交任务']) {
   assert.ok(!info.versionDesc.includes(forbidden), `review desc should not mention unsupported/explanatory copy: ${forbidden}`);
@@ -35,8 +42,33 @@ assert.ok(doc.includes(currentVersion) || doc.includes('<当前版本>'), 'revie
 assert.ok(doc.includes('被驳回'), 'review guide should include rejection handling');
 assert.ok(doc.includes('审核通过'), 'review guide should include approval handling');
 assert.ok(doc.includes('发布线上版'), 'review guide should include online release handoff');
+for (const required of [
+  '永久保留',
+  '管理员体验',
+  '学生体验',
+  '脱敏',
+  '只读',
+  '绑定的示例学生',
+  '隔离内存沙箱',
+  '不会写入真实',
+  '<review experience code>',
+]) {
+  assert.ok(doc.includes(required), `review guide should document: ${required}`);
+}
+assert.deepStrictEqual(validateReviewGuide(doc).errors, [], 'review guide should satisfy the permanent review contract');
+
+for (const weak of ['', 'short', 'aaaaaaaaaaaaaaaa', 'review-experience-code', '<review experience code>']) {
+  const result = validateReviewExperienceCode({ MINIAPP_REVIEW_EXPERIENCE_CODE: weak });
+  assert.strictEqual(result.ok, false, `weak review code should fail closed: ${weak ? '<redacted>' : '<missing>'}`);
+  assert.ok(!JSON.stringify(result).includes(weak) || weak === '', 'review code validation must not echo submitted values');
+}
+const strongCode = 'Gewu-Review-2026-A9x7';
+const strongValidation = validateReviewExperienceCode({ MINIAPP_REVIEW_EXPERIENCE_CODE: strongCode });
+assert.deepStrictEqual(strongValidation, { ok: true, errors: [] }, 'strong configured review code should pass readiness');
+assert.ok(!JSON.stringify(strongValidation).includes(strongCode), 'successful validation must not expose the review code');
 
 const scriptSource = fs.readFileSync(path.join(process.cwd(), 'scripts/check_miniapp_review_readiness.js'), 'utf-8');
 assert.ok(scriptSource.includes('validateReviewInfo'), 'review readiness script should validate review fields');
+assert.ok(!scriptSource.includes("console.log(process.env.MINIAPP_REVIEW_EXPERIENCE_CODE"), 'readiness must never print the configured code');
 
 console.log('miniapp review readiness checks passed');
