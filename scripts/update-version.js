@@ -120,6 +120,15 @@ function syncBackendPackageVersion(version) {
   return writePackageVersion(backendPkgPath, version);
 }
 
+function syncPackageLockVersion(lockPath, version) {
+  if (!fs.existsSync(lockPath)) return null;
+  const lock = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
+  lock.version = version;
+  if (lock.packages && lock.packages['']) lock.packages[''].version = version;
+  fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
+  return lock;
+}
+
 function writeGeneratedVersion(pkg, now = new Date()) {
   const outDir = path.join(__dirname, '..', 'src', 'generated');
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
@@ -133,6 +142,7 @@ function writeGeneratedVersion(pkg, now = new Date()) {
 
 function main() {
   const pkgPath = path.join(__dirname, '..', 'package.json');
+  const lockPath = path.join(__dirname, '..', 'package-lock.json');
   const pkg = require(pkgPath);
   const args = process.argv.slice(2);
 
@@ -140,10 +150,12 @@ function main() {
     const bumpLevel = resolveBumpLevel(args);
     const newVersion = nextVersion(pkg.version, bumpLevel);
     const pkgContent = writePackageVersion(pkgPath, newVersion);
+    syncPackageLockVersion(lockPath, newVersion);
     syncBackendPackageVersion(newVersion);
     writeGeneratedVersion(pkgContent);
     console.log(`Version bumped (${bumpLevel}): ${pkg.version} → ${newVersion}`);
   } else {
+    syncPackageLockVersion(lockPath, pkg.version);
     syncBackendPackageVersion(pkg.version);
     writeGeneratedVersion(pkg);
   }
@@ -159,4 +171,5 @@ module.exports = {
   readChangeContext,
   resolveBumpLevel,
   syncBackendPackageVersion,
+  syncPackageLockVersion,
 };

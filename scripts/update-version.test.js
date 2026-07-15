@@ -1,5 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const version = require('./update-version');
 
 const source = fs.readFileSync('scripts/update-version.js', 'utf-8');
@@ -44,6 +46,13 @@ assert.ok(source.includes('--bump=minor'), 'update-version should document --bum
 assert.ok(source.includes('--bump=patch'), 'update-version should document --bump=patch');
 assert.ok(source.includes('VERSION_BUMP_LEVEL'), 'update-version should support env-driven bump level');
 assert.ok(source.includes('syncBackendPackageVersion'), 'update-version should sync backend/package.json with the root package version');
+const lockFixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-version-lock-'));
+const lockFixturePath = path.join(lockFixtureDir, 'package-lock.json');
+fs.writeFileSync(lockFixturePath, JSON.stringify({ version: '1.2.3', packages: { '': { version: '1.2.3' } } }, null, 2));
+version.syncPackageLockVersion(lockFixturePath, '2.0.0');
+const syncedLock = JSON.parse(fs.readFileSync(lockFixturePath, 'utf8'));
+assert.strictEqual(syncedLock.version, '2.0.0', 'version bump should sync package-lock top-level version');
+assert.strictEqual(syncedLock.packages[''].version, '2.0.0', 'version bump should sync package-lock root package version');
 assert.ok(packageJson.includes('version:bump:major'), 'package scripts should expose major version bump');
 assert.ok(packageJson.includes('version:bump:minor'), 'package scripts should expose minor version bump');
 assert.ok(packageJson.includes('version:bump:patch'), 'package scripts should expose patch version bump');
