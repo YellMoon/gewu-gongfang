@@ -44,7 +44,13 @@ def main():
     finally:
       sftp.close()
     backend_deploy.run(ssh, f"cd '{REMOTE_GATEWAY}' && npm install --production 2>&1", timeout=180)
-    backend_deploy.run(ssh, f"pm2 restart {SERVICE_NAME} 2>&1 || (cd '{REMOTE_GATEWAY}' && pm2 start src/app.js --name {SERVICE_NAME})", timeout=120)
+    gateway_env = backend_deploy.remote_env_prefix()
+    backend_deploy.run(
+      ssh,
+      f"cd '{REMOTE_GATEWAY}' && {gateway_env} pm2 restart {SERVICE_NAME} --update-env 2>&1 "
+      f"|| ({gateway_env} pm2 start src/app.js --name {SERVICE_NAME})",
+      timeout=120,
+    )
     backend_deploy.run(ssh, "pm2 save", timeout=60)
     backend_deploy.run(ssh, "curl -s http://localhost:3001/api/health || echo 'gateway health check failed'", timeout=30)
   finally:

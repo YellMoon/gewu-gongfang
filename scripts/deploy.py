@@ -77,6 +77,7 @@ KEY_PATH = os.getenv("DEPLOY_KEY_PATH")
 BACKEND_JWT_SECRET = os.getenv("BACKEND_JWT_SECRET")
 WECHAT_APPID = os.getenv("WECHAT_APPID")
 WECHAT_APPSECRET = os.getenv("WECHAT_APPSECRET")
+MINIAPP_REVIEW_EXPERIENCE_CODE = os.getenv("MINIAPP_REVIEW_EXPERIENCE_CODE")
 REMOTE_DIR = os.getenv("DEPLOY_REMOTE_DIR", DEFAULTS["remote_dir"])
 DB_PATH = os.getenv("DB_PATH", DEFAULTS["db_path"])
 READ_DB_PATH = os.getenv("READ_DB_PATH", DB_PATH)
@@ -102,8 +103,36 @@ def require_remote_env():
             missing.append("WECHAT_APPID")
         if not WECHAT_APPSECRET:
             missing.append("WECHAT_APPSECRET")
+        if not MINIAPP_REVIEW_EXPERIENCE_CODE:
+            missing.append("MINIAPP_REVIEW_EXPERIENCE_CODE")
     if missing:
         raise SystemExit(f"Missing required environment variables: {', '.join(missing)}")
+    if MINIAPP_REVIEW_EXPERIENCE_CODE:
+        validate_review_experience_code(MINIAPP_REVIEW_EXPERIENCE_CODE)
+
+
+def validate_review_experience_code(value):
+    raw = str(value or "")
+    normalized = raw.strip()
+    lower = normalized.lower()
+    forbidden = {
+        "review-experience-code",
+        "review-demo-code",
+        "password123456789",
+        "<review experience code>",
+    }
+    strong = (
+        raw == normalized
+        and 16 <= len(normalized) <= 128
+        and any(character.isalpha() for character in normalized)
+        and any(character.isdigit() for character in normalized)
+        and any(not character.isalnum() for character in normalized)
+        and len(set(normalized)) >= 10
+        and lower not in forbidden
+    )
+    if not strong:
+        raise SystemExit("MINIAPP_REVIEW_EXPERIENCE_CODE is missing or weak")
+    return True
 
 
 def redact_command(cmd):
@@ -113,6 +142,7 @@ def redact_command(cmd):
         PASSWORD,
         BACKEND_JWT_SECRET,
         os.getenv("WECHAT_APPSECRET"),
+        MINIAPP_REVIEW_EXPERIENCE_CODE,
         os.getenv("GEWU_DESKTOP_SYNC_TOKEN"),
         os.getenv("GEWU_CLOUD_RELAY_HOST_TOKEN"),
     ]:
@@ -179,6 +209,7 @@ def remote_env_prefix():
         "JWT_SECRET": BACKEND_JWT_SECRET,
         "WECHAT_APPID": WECHAT_APPID,
         "WECHAT_APPSECRET": WECHAT_APPSECRET,
+        "MINIAPP_REVIEW_EXPERIENCE_CODE": MINIAPP_REVIEW_EXPERIENCE_CODE,
         "DB_PATH": DB_PATH,
         "READ_DB_PATH": READ_DB_PATH,
         "GEWU_NODE_ROLE": os.getenv("GEWU_NODE_ROLE", "primary-host"),
