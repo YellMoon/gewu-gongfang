@@ -77,6 +77,7 @@ USER = os.getenv("DEPLOY_USER", "root")
 PASSWORD = os.getenv("DEPLOY_PASSWORD")
 KEY_PATH = os.getenv("DEPLOY_KEY_PATH")
 BACKEND_JWT_SECRET = os.getenv("BACKEND_JWT_SECRET")
+GEWU_SSH_KNOWN_HOSTS = os.getenv("GEWU_SSH_KNOWN_HOSTS")
 WECHAT_APPID = os.getenv("WECHAT_APPID")
 WECHAT_APPSECRET = os.getenv("WECHAT_APPSECRET")
 MINIAPP_REVIEW_EXPERIENCE_CODE = os.getenv("MINIAPP_REVIEW_EXPERIENCE_CODE")
@@ -104,6 +105,8 @@ def require_remote_env():
     if not PASSWORD and not KEY_PATH:
         missing.append("DEPLOY_PASSWORD or DEPLOY_KEY_PATH")
     if APP_ENV == "prod":
+        if not BACKEND_JWT_SECRET:
+            missing.append("BACKEND_JWT_SECRET")
         if not WECHAT_APPID:
             missing.append("WECHAT_APPID")
         if not WECHAT_APPSECRET:
@@ -112,8 +115,30 @@ def require_remote_env():
             missing.append("MINIAPP_REVIEW_EXPERIENCE_CODE")
     if missing:
         raise SystemExit(f"Missing required environment variables: {', '.join(missing)}")
+    if BACKEND_JWT_SECRET:
+        validate_backend_jwt_secret(BACKEND_JWT_SECRET)
     if MINIAPP_REVIEW_EXPERIENCE_CODE:
         validate_review_experience_code(MINIAPP_REVIEW_EXPERIENCE_CODE)
+
+
+def validate_backend_jwt_secret(value):
+    raw = str(value or "")
+    normalized = raw.strip()
+    lower = normalized.lower()
+    strong = (
+        raw == normalized
+        and len(normalized) >= 32
+        and all(0x21 <= ord(character) <= 0x7E for character in normalized)
+        and any("a" <= character <= "z" for character in normalized)
+        and any("A" <= character <= "Z" for character in normalized)
+        and any(character.isdigit() for character in normalized)
+        and any(not character.isalnum() for character in normalized)
+        and len(set(normalized)) >= 12
+        and not any(term in lower for term in ("change-me", "changeme", "default", "password", "jwt-secret"))
+    )
+    if not strong:
+        raise SystemExit("BACKEND_JWT_SECRET is missing or weak (minimum 32 characters)")
+    return True
 
 
 def validate_review_experience_code(value):
@@ -196,6 +221,16 @@ def safe_print(value=""):
         print(str(value).encode(encoding, errors="replace").decode(encoding, errors="replace"))
 
 
+class RemoteCommandError(RuntimeError):
+    def __init__(self, exit_status):
+        self.exit_status = int(exit_status)
+        super().__init__(f"Remote command failed (exit status {self.exit_status})")
+
+
+class RemoteHealthError(RuntimeError):
+    pass
+
+
 def run(ssh, cmd, timeout=30):
     safe_print(f">>> {redact_command(cmd)}")
     _, stdout, stderr = ssh.exec_command(cmd, timeout=timeout)
@@ -205,13 +240,50 @@ def run(ssh, cmd, timeout=30):
         safe_print(redact_text(out))
     if err.strip():
         safe_print(f"STDERR: {redact_text(err)}")
+    channel = getattr(stdout, "channel", None)
+    if channel is None or not hasattr(channel, "recv_exit_status"):
+        raise RemoteCommandError(-1)
+    exit_status = channel.recv_exit_status()
+    if exit_status != 0:
+        raise RemoteCommandError(exit_status)
     return out, err
+
+
+def _server_host_key_name(host, port):
+    return str(host) if int(port) == 22 else f"[{host}]:{int(port)}"
+
+
+def _host_key_is_trusted(ssh, host, port):
+    server_name = _server_host_key_name(host, port)
+    stores = [getattr(ssh, "_system_host_keys", None), getattr(ssh, "_host_keys", None)]
+    return any(store is not None and store.lookup(server_name) for store in stores)
+
+
+def configure_host_key_verification(ssh):
+    ssh.load_system_host_keys()
+    if GEWU_SSH_KNOWN_HOSTS:
+        configured = Path(GEWU_SSH_KNOWN_HOSTS).expanduser()
+        if not configured.is_absolute():
+            raise SystemExit("GEWU_SSH_KNOWN_HOSTS must be an absolute file path")
+        try:
+            resolved = configured.resolve(strict=True)
+        except (OSError, RuntimeError) as error:
+            raise SystemExit("GEWU_SSH_KNOWN_HOSTS must reference a readable file") from error
+        if not resolved.is_file():
+            raise SystemExit("GEWU_SSH_KNOWN_HOSTS must reference a readable file")
+        try:
+            ssh.load_host_keys(str(resolved))
+        except (OSError, paramiko.SSHException) as error:
+            raise SystemExit("GEWU_SSH_KNOWN_HOSTS could not be loaded") from error
+    ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
+    if APP_ENV == "prod" and not _host_key_is_trusted(ssh, HOST, PORT):
+        raise SystemExit("Production deployment trusted SSH host key required")
 
 
 def connect():
     require_remote_env()
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    configure_host_key_verification(ssh)
     print(f"Connecting {HOST}:{PORT} env={APP_ENV} remote={REMOTE_DIR}")
     ssh.connect(HOST, port=PORT, username=USER, password=PASSWORD, key_filename=KEY_PATH, timeout=10)
     return ssh
@@ -280,22 +352,49 @@ def upload_remote_env_file(ssh, path_factory=None):
         raise ValueError("Invalid remote environment path")
     sftp = ssh.open_sftp()
     remote_file = None
+    primary_error = None
+    removed = False
     try:
         remote_file = sftp.file(remote_path, "w")
         sftp.chmod(remote_path, 0o600)
         remote_file.write(serialize_remote_env_file())
         remote_file.flush()
-        return remote_path
-    except Exception:
+    except Exception as error:
+        primary_error = error
+    if remote_file is not None:
+        try:
+            remote_file.close()
+        except Exception as error:
+            if primary_error is None:
+                primary_error = error
+    if primary_error is not None:
         try:
             sftp.remove(remote_path)
+            removed = True
         except Exception:
             pass
-        raise
-    finally:
-        if remote_file is not None:
-            remote_file.close()
+    try:
         sftp.close()
+    except Exception as error:
+        if primary_error is None:
+            primary_error = error
+    if primary_error is not None and not removed:
+        cleanup_sftp = None
+        try:
+            cleanup_sftp = ssh.open_sftp()
+            cleanup_sftp.remove(remote_path)
+        except Exception:
+            pass
+        finally:
+            if cleanup_sftp is not None:
+                try:
+                    cleanup_sftp.close()
+                except Exception:
+                    pass
+        raise primary_error
+    if primary_error is not None:
+        raise primary_error
+    return remote_path
 
 
 def remove_remote_env_file(ssh, remote_path):
@@ -342,6 +441,29 @@ def start_backend_service(ssh, service_name, path_factory=None):
     return run_with_remote_env(ssh, command, timeout=30, path_factory=path_factory)
 
 
+def check_remote_health(ssh, port, component):
+    out, _ = run(
+        ssh,
+        f"curl --fail --silent --show-error --max-time 15 http://localhost:{port}/api/health",
+        timeout=30,
+    )
+    try:
+        body = json.loads(out)
+    except (TypeError, ValueError) as error:
+        raise RemoteHealthError(f"{component} health response has an invalid JSON contract") from error
+    valid = (
+        isinstance(body, dict)
+        and body.get("ok") is True
+        and isinstance(body.get("time"), str)
+        and bool(body["time"].strip())
+        and isinstance(body.get("version"), str)
+        and bool(body["version"].strip())
+    )
+    if not valid:
+        raise RemoteHealthError(f"{component} health response has an invalid JSON contract")
+    return body
+
+
 def rollback_plan():
     print("Rollback plan for single-file schema:")
     print(f"1. Stop service: pm2 stop scheduling-backend-{APP_ENV}")
@@ -381,11 +503,11 @@ def main():
             time.sleep(2)
             run(ssh, "pm2 status")
             health_port = APP_PORT
-            run(ssh, f"curl -s http://localhost:{health_port}/api/health || echo 'health check failed'")
+            check_remote_health(ssh, health_port, "backend")
         elif mode == "status":
             run(ssh, "pm2 status")
             health_port = APP_PORT
-            run(ssh, f"curl -s http://localhost:{health_port}/api/health")
+            check_remote_health(ssh, health_port, "backend")
         else:
             raise SystemExit(f"Unknown mode: {mode}")
     finally:

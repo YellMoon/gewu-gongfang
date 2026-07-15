@@ -599,6 +599,9 @@ Status: completed — implementation, render verification and applicable release
 - The permanent review-entry guide now covers both admin and student roles, sanitized read-only examples, the linked sample student, the isolated in-memory paper/DOCX/PDF sandbox, and server-side denial of real writes. No actual deployment review code is committed; non-placeholder values are explicit non-production test fixtures.
 - Readiness and deployment validate `MINIAPP_REVIEW_EXPERIENCE_CODE` strength without returning or logging its value. The formal Gateway deploy refreshes the validated PM2 environment through `--update-env`, with command redaction applied before output.
 - The injectable public smoke covers both roles: login, canonical permissions, scoped snapshot, question preview, sandbox create/read/cancel, DOCX/PDF signatures, and `403 REVIEW_DEMO_READ_ONLY` on `/api/cloud/tasks` before its domain route.
+- Public-smoke response readers now enforce declared and cumulative byte caps for JSON and artifacts, cancel oversized streams, and validate an explicit admin/student snapshot collection, field, identifier, reference, count, and status allowlist.
+- Production deployment now requires a strong Gateway-compatible backend JWT secret, rejects unknown SSH host keys using system or an explicitly configured known-hosts file, aborts on remote nonzero exit status, and accepts health responses only when their HTTP and JSON contracts pass.
+- Secret staging failure-injection checks cover flush, remote-file close, SFTP close, and removal errors while preserving the primary failure and attempting cleanup.
 - Focused local tests and syntax checks pass. No real code has been recorded or configured; no public smoke, cloud deployment, miniapp upload, WeChat submission, or public release is claimed at this stage.
 
 Release-related unchecked items above remain pending until Task 7 has runtime evidence.
