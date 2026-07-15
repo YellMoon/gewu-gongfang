@@ -14,6 +14,7 @@ const rootPkg = JSON.parse(packageJson);
 const backendPkg = JSON.parse(backendPackage);
 const deployRequirementsPath = 'scripts/requirements-deploy.txt';
 const STRONG_TEST_FIXTURE = 'vN7$kP2@xR9!mQ4#tL8&cW5*zH3^sJ6?dF';
+const STRONG_JWT_FIXTURE = 'J7@vN2#qR9!mT4$kL8&cW5*zH3^sP6?dF1';
 
 assert.ok(fs.existsSync(deployRequirementsPath), 'deploy Python dependencies should be declared');
 const deployRequirements = fs.readFileSync(deployRequirementsPath, 'utf-8');
@@ -27,7 +28,7 @@ fs.writeFileSync(envFixturePath, [
   'APP_ENV=prod',
   'DEPLOY_HOST=deploy-env-test-host',
   'DEPLOY_PASSWORD=deploy-env-test-password',
-  'BACKEND_JWT_SECRET="s3cr3t\'marker"',
+  `BACKEND_JWT_SECRET="${STRONG_JWT_FIXTURE}"`,
   'WECHAT_APPID="wx-review-env-test"',
   'WECHAT_APPSECRET="wechat-review-env-secret"',
   `MINIAPP_REVIEW_EXPERIENCE_CODE="${STRONG_TEST_FIXTURE}"`,
@@ -56,6 +57,7 @@ const missingReviewEnv = {
   DEPLOY_PASSWORD: 'deploy-env-test-password',
   WECHAT_APPID: 'wx-review-env-test',
   WECHAT_APPSECRET: 'wechat-review-env-secret',
+  BACKEND_JWT_SECRET: '',
   MINIAPP_REVIEW_EXPERIENCE_CODE: '',
 };
 const missingReviewProbe = spawnSync('python', [
@@ -64,9 +66,14 @@ const missingReviewProbe = spawnSync('python', [
 ], { cwd: process.cwd(), env: missingReviewEnv, encoding: 'utf-8' });
 assert.strictEqual(missingReviewProbe.status, 0, missingReviewProbe.stderr || 'missing review code probe should run');
 assert.ok(missingReviewProbe.stdout.includes('MINIAPP_REVIEW_EXPERIENCE_CODE'), 'production deploy should fail closed when review code is missing');
+assert.ok(missingReviewProbe.stdout.includes('BACKEND_JWT_SECRET'), 'production deploy should fail closed when the backend JWT secret is missing');
 assert.ok(!missingReviewProbe.stdout.includes(STRONG_TEST_FIXTURE), 'deployment validation must not print the configured review code');
 
-const weakReviewEnv = { ...missingReviewEnv, MINIAPP_REVIEW_EXPERIENCE_CODE: 'GewuReview2026!demo' };
+const weakReviewEnv = {
+  ...missingReviewEnv,
+  BACKEND_JWT_SECRET: STRONG_JWT_FIXTURE,
+  MINIAPP_REVIEW_EXPERIENCE_CODE: 'GewuReview2026!demo',
+};
 const weakReviewProbe = spawnSync('python', [
   '-c',
   'import scripts.deploy as d\ntry:\n d.require_remote_env()\nexcept SystemExit as e:\n print(str(e))\nelse:\n raise SystemExit("expected strong-format review policy")',
@@ -75,9 +82,23 @@ assert.strictEqual(weakReviewProbe.status, 0, weakReviewProbe.stderr || 'weak re
 assert.ok(weakReviewProbe.stdout.includes('missing or weak'), 'Python deploy should enforce the shared strong-format policy');
 assert.ok(!weakReviewProbe.stdout.includes('GewuReview2026!demo'), 'weak-value errors must not echo the submitted review code');
 
+const weakJwtValue = 'weak-backend-jwt-secret';
+const weakJwtEnv = {
+  ...missingReviewEnv,
+  BACKEND_JWT_SECRET: weakJwtValue,
+  MINIAPP_REVIEW_EXPERIENCE_CODE: STRONG_TEST_FIXTURE,
+};
+const weakJwtProbe = spawnSync('python', [
+  '-c',
+  'import scripts.deploy as d\ntry:\n d.require_remote_env()\nexcept SystemExit as e:\n print(str(e))\nelse:\n raise SystemExit("expected strong backend JWT policy")',
+], { cwd: process.cwd(), env: weakJwtEnv, encoding: 'utf-8' });
+assert.strictEqual(weakJwtProbe.status, 0, weakJwtProbe.stderr || 'weak JWT probe should run');
+assert.ok(weakJwtProbe.stdout.includes('BACKEND_JWT_SECRET is missing or weak'), 'production deploy should enforce a strong >=32-byte backend JWT secret');
+assert.ok(!weakJwtProbe.stdout.includes(weakJwtValue), 'JWT validation errors must not echo the submitted secret');
+
 const deploySecurityEnv = {
   ...missingReviewEnv,
-  BACKEND_JWT_SECRET: 'unit-jwt-secret-with-32-characters!',
+  BACKEND_JWT_SECRET: STRONG_JWT_FIXTURE,
   WECHAT_APPSECRET: 'unit-wechat-secret-fixture',
   GEWU_DESKTOP_SYNC_TOKEN: 'unit-desktop-sync-secret',
   GEWU_CLOUD_RELAY_HOST_TOKEN: 'unit-host-relay-secret',
@@ -88,7 +109,9 @@ import scripts.deploy as d
 import scripts.deploy_gateway as g
 
 class Stream:
-    def __init__(self, value): self.value = value
+    class Channel:
+        def recv_exit_status(self): return 0
+    def __init__(self, value): self.value, self.channel = value, self.Channel()
     def read(self): return self.value.encode("utf-8")
 
 class RemoteFile:
@@ -150,6 +173,161 @@ assert.deepStrictEqual(
   'migration, backend PM2 and gateway should keep secrets out of exec input, chmod 600 before writing, trap/finally cleanup, update PM2 env, and transfer every runtime secret',
 );
 
+const commandFailureProbe = spawnSync('python', ['-c', `
+import scripts.deploy as d
+
+class Channel:
+    def __init__(self, status): self.status = status
+    def recv_exit_status(self): return self.status
+
+class Stream:
+    def __init__(self, value, status): self.value, self.channel = value, Channel(status)
+    def read(self): return self.value.encode("utf-8")
+
+class RemoteFile:
+    def write(self, value): pass
+    def flush(self): pass
+    def close(self): pass
+
+class Sftp:
+    def file(self, path, mode): return RemoteFile()
+    def chmod(self, path, mode): pass
+    def remove(self, path): pass
+    def close(self): pass
+
+class Ssh:
+    def __init__(self, statuses): self.statuses = list(statuses)
+    def open_sftp(self): return Sftp()
+    def exec_command(self, command, timeout=30):
+        status = self.statuses.pop(0)
+        return None, Stream("private-output", status), Stream("private-error", status)
+
+def must_abort(label, callback):
+    try:
+        callback()
+    except d.RemoteCommandError as error:
+        message = str(error)
+        print(label, error.exit_status, "private-output" not in message, "private-error" not in message)
+    else:
+        raise SystemExit(label + " did not abort")
+
+must_abort("run", lambda: d.run(Ssh([9]), "false"))
+must_abort("migrate", lambda: d.migrate(Ssh([0, 17]), path_factory=lambda: "/tmp/gewu-pm2-env-migrate-fail"))
+must_abort("start", lambda: d.start_backend_service(Ssh([23]), "service", path_factory=lambda: "/tmp/gewu-pm2-env-start-fail"))
+must_abort("health-status", lambda: d.check_remote_health(Ssh([28]), 3002, "backend"))
+
+class JsonSsh(Ssh):
+    def exec_command(self, command, timeout=30):
+        return None, Stream('{"ok":false}', 0), Stream('', 0)
+
+try:
+    d.check_remote_health(JsonSsh([]), 3002, "backend")
+except d.RemoteHealthError as error:
+    print("health-json", "private" not in str(error))
+else:
+    raise SystemExit("invalid health JSON did not abort")
+`], { cwd: process.cwd(), env: deploySecurityEnv, encoding: 'utf-8' });
+assert.strictEqual(commandFailureProbe.status, 0, commandFailureProbe.stderr || 'remote command failure probe should run');
+assert.ok(commandFailureProbe.stdout.includes('run 9 True True'), 'run should raise a sanitized error with the remote exit status');
+assert.ok(commandFailureProbe.stdout.includes('migrate 17 True True'), 'migration should abort on a nonzero remote command');
+assert.ok(commandFailureProbe.stdout.includes('start 23 True True'), 'PM2 start should abort on a nonzero remote command');
+assert.ok(commandFailureProbe.stdout.includes('health-status 28 True True'), 'health checks should abort on a nonzero HTTP command');
+assert.ok(commandFailureProbe.stdout.includes('health-json True'), 'health checks should reject an HTTP 200 body unless its JSON contract has ok=true');
+
+const cleanupFailureProbe = spawnSync('python', ['-c', `
+import scripts.deploy as d
+
+class RemoteFile:
+    def __init__(self, owner): self.owner = owner
+    def write(self, value): self.owner.events.append("write")
+    def flush(self):
+        self.owner.events.append("flush")
+        if self.owner.fail_flush: raise RuntimeError("flush-primary")
+    def close(self):
+        self.owner.events.append("file-close")
+        if self.owner.fail_file_close: raise RuntimeError("file-close-primary")
+
+class Sftp:
+    def __init__(self, owner, fail_flush=False, fail_file_close=False, fail_remove=False, fail_close=False):
+        self.owner, self.fail_flush, self.fail_file_close = owner, fail_flush, fail_file_close
+        self.fail_remove, self.fail_close, self.events = fail_remove, fail_close, owner.events
+    def file(self, path, mode): self.events.append("file-open"); return RemoteFile(self)
+    def chmod(self, path, mode): self.events.append("chmod")
+    def remove(self, path):
+        self.events.append("remove")
+        if self.fail_remove: raise RuntimeError("remove-secondary")
+    def close(self):
+        self.events.append("sftp-close")
+        if self.fail_close: raise RuntimeError("sftp-close-primary")
+
+class Ssh:
+    def __init__(self, configs): self.configs, self.events = list(configs), []
+    def open_sftp(self): return Sftp(self, **self.configs.pop(0))
+
+def check(label, configs, expected):
+    ssh = Ssh(configs)
+    try:
+        d.upload_remote_env_file(ssh, path_factory=lambda: "/tmp/gewu-pm2-env-cleanup-case")
+    except RuntimeError as error:
+        print(label, str(error) == expected, ",".join(ssh.events))
+    else:
+        raise SystemExit(label + " did not fail")
+
+check("flush", [{"fail_flush": True, "fail_file_close": True, "fail_remove": True, "fail_close": True}], "flush-primary")
+check("file-close", [{"fail_file_close": True}], "file-close-primary")
+check("sftp-close", [{"fail_close": True}, {}], "sftp-close-primary")
+`], { cwd: process.cwd(), env: deploySecurityEnv, encoding: 'utf-8' });
+assert.strictEqual(cleanupFailureProbe.status, 0, cleanupFailureProbe.stderr || 'remote env cleanup failure probe should run');
+const cleanupLines = cleanupFailureProbe.stdout.trim().split(/\r?\n/).filter(line => /^(flush|file-close|sftp-close) /.test(line));
+assert.ok(cleanupLines.some(line => line.startsWith('flush True ') && line.includes('file-close') && line.includes('remove') && line.includes('sftp-close')), 'flush failure should remain primary while every cleanup is attempted');
+assert.ok(cleanupLines.some(line => line.startsWith('file-close True ') && line.includes('remove') && line.includes('sftp-close')), 'file close failure should trigger removal and SFTP close');
+assert.ok(cleanupLines.some(line => line.startsWith('sftp-close True ') && line.includes('remove')), 'SFTP close failure should trigger best-effort removal through a fresh channel');
+
+const knownHostsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-known-hosts-'));
+const knownHostsPath = path.join(knownHostsDir, 'known_hosts');
+const knownHostsProbeEnv = { ...deploySecurityEnv, GEWU_SSH_KNOWN_HOSTS: knownHostsPath };
+const knownHostsProbe = spawnSync('python', ['-c', `
+import pathlib
+import paramiko
+
+path = pathlib.Path(r"${knownHostsPath.replace(/\\/g, '\\\\')}")
+key = paramiko.RSAKey.generate(1024)
+path.write_text("deploy-env-test-host " + key.get_name() + " " + key.get_base64() + "\\n", encoding="utf-8")
+import scripts.deploy as d
+client = paramiko.SSHClient()
+d.configure_host_key_verification(client)
+print(isinstance(client._policy, paramiko.RejectPolicy))
+print(client._host_keys.lookup("deploy-env-test-host") is not None)
+client._log = lambda *args: None
+try:
+    client._policy.missing_host_key(client, "unknown.example.test", key)
+except paramiko.SSHException:
+    print("unknown-rejected")
+else:
+    raise SystemExit("unknown host was trusted")
+`], { cwd: process.cwd(), env: knownHostsProbeEnv, encoding: 'utf-8' });
+fs.rmSync(knownHostsDir, { recursive: true, force: true });
+assert.strictEqual(knownHostsProbe.status, 0, knownHostsProbe.stderr || 'known-host verification probe should run');
+assert.deepStrictEqual(knownHostsProbe.stdout.trim().split(/\r?\n/), ['True', 'True', 'unknown-rejected'], 'deployment must load the controlled pin and reject unknown hosts');
+
+const untrustedProdEnv = { ...deploySecurityEnv };
+delete untrustedProdEnv.GEWU_SSH_KNOWN_HOSTS;
+const untrustedProdProbe = spawnSync('python', ['-c', `
+import scripts.deploy as d
+import paramiko
+client = paramiko.SSHClient()
+client._system_host_keys.clear()
+client._host_keys.clear()
+try:
+    d.configure_host_key_verification(client)
+except SystemExit as error:
+    print(str(error))
+else:
+    raise SystemExit("production accepted no trusted host key")
+`], { cwd: process.cwd(), env: untrustedProdEnv, encoding: 'utf-8' });
+assert.strictEqual(untrustedProdProbe.status, 0, untrustedProdProbe.stderr || 'untrusted production probe should run');
+assert.ok(untrustedProdProbe.stdout.includes('trusted SSH host key required'), 'production should fail before connecting when no system key or controlled pin matches');
+
 for (const name of [
   'GEWU_NODE_ROLE',
   'GEWU_DEVICE_ID',
@@ -188,7 +366,12 @@ assert.ok(deployPy.includes('"app_port": "3002"'), 'production backend should de
 assert.ok(deployPy.includes('APP_PORT = os.getenv("PORT", DEFAULTS["app_port"])'), 'pm2 deploy should support overriding the environment-specific backend port');
 assert.ok(deployPy.includes('"PORT": APP_PORT'), 'pm2 deploy should inject the resolved backend port');
 assert.ok(deployPy.includes('health_port = APP_PORT'), 'pm2 deploy health check should use the resolved backend port');
-assert.ok(deployPy.includes("curl -s http://localhost:{health_port}/api/health"), 'pm2 status should use the configured backend port');
+assert.ok(deployPy.includes('check_remote_health(ssh, health_port, "backend")'), 'pm2 status should use the configured backend port');
+assert.ok(!deployPy.includes("/api/health || echo"), 'backend deploy health must never turn a failure into success');
+assert.ok(!deployGatewayPy.includes("/api/health || echo"), 'gateway deploy health must never turn a failure into success');
+assert.ok(deployPy.includes('recv_exit_status'), 'remote command execution must inspect the Paramiko exit status');
+assert.ok(deployPy.includes('RejectPolicy'), 'SSH deployment must use reject-on-unknown host-key policy');
+assert.ok(!deployPy.includes('AutoAddPolicy'), 'SSH deployment must never auto-trust an unknown host');
 assert.ok(deployPy.includes('load_dotenv'), 'pm2 deploy should load local deploy variables without a wrapper command');
 assert.ok(deployPy.includes('.env.local'), 'pm2 deploy should prefer the project .env.local file');
 assert.ok(deployPy.includes('read_root_version'), 'pm2 deploy should derive GEWU_APP_VERSION from the root package version');

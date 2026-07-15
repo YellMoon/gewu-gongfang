@@ -4,35 +4,70 @@ const assert = require('assert');
 
 const {
   DOCX_SIGNATURE,
+  MAX_ARTIFACT_BYTES,
+  MAX_JSON_BYTES,
   PDF_SIGNATURE,
+  assertSnapshot,
   loadSmokeConfig,
+  readBoundedArtifactBody,
+  readBoundedJsonBody,
   runReviewDemoSmoke,
   sanitizeFailure,
 } = require('./check_review_demo');
+const {
+  buildReviewQuestionPreview,
+  buildReviewSnapshot,
+} = require('../gateway/src/services/reviewDemoData');
 
 // Explicit non-production test fixture; never use it as a deployed review code.
 const EXPERIENCE_CODE = 'vN7$kP2@xR9!mQ4#tL8&cW5*zH3^sJ6?dF';
 const BASE_URL = 'https://review.example.test/scheduling';
 
-function jsonResponse(status, body) {
+function streamBody(bytes, tracker = {}) {
+  const buffer = Buffer.from(bytes);
+  let delivered = false;
   return {
-    ok: status >= 200 && status < 300,
-    status,
-    headers: { get: name => name.toLowerCase() === 'content-type' ? 'application/json' : null },
-    json: async () => body,
-    arrayBuffer: async () => Buffer.from(JSON.stringify(body)),
+    getReader() {
+      return {
+        async read() {
+          if (delivered) return { done: true, value: undefined };
+          delivered = true;
+          return { done: false, value: buffer };
+        },
+        async cancel() { tracker.cancelled = true; },
+        releaseLock() { tracker.released = true; },
+      };
+    },
   };
 }
 
-function binaryResponse(contentType, bytes) {
+function bodyResponse(status, contentType, bytes, options = {}) {
   const buffer = Buffer.from(bytes);
+  const tracker = options.tracker || {};
   return {
-    ok: true,
-    status: 200,
-    headers: { get: name => name.toLowerCase() === 'content-type' ? contentType : null },
-    json: async () => { throw new Error('binary response is not JSON'); },
-    arrayBuffer: async () => buffer,
+    ok: status >= 200 && status < 300,
+    status,
+    headers: {
+      get: name => {
+        const normalized = name.toLowerCase();
+        if (normalized === 'content-type') return contentType;
+        if (normalized === 'content-length') {
+          if (options.declaredLength === null) return null;
+          return String(options.declaredLength ?? buffer.length);
+        }
+        return null;
+      },
+    },
+    body: streamBody(buffer, tracker),
   };
+}
+
+function jsonResponse(status, body, options) {
+  return bodyResponse(status, 'application/json', Buffer.from(JSON.stringify(body)), options);
+}
+
+function binaryResponse(contentType, bytes) {
+  return bodyResponse(200, contentType, bytes);
 }
 
 function buildFakeFetch(options = {}) {
@@ -86,27 +121,17 @@ function buildFakeFetch(options = {}) {
       });
     }
     if (url.pathname.endsWith('/api/cloud/snapshots/read')) {
-      const students = role === 'student'
-        ? [{ id: 'review-demo-student', name: '审核示例学生' }]
-        : [{ id: 'review-demo-student', name: '审核示例学生' }, { id: 'review-demo-student-2', name: '审核示例学生二' }];
       return jsonResponse(200, {
         success: true,
         snapshot: {
-          id: `review-demo-${role}`, version: 'review-demo-v1',
-          payload: {
-            students,
-            schedules: [{ id: 'review-demo-schedule', student_ids: ['review-demo-student'] }],
-            payments: [], assetRecords: [],
-          },
+          id: `review-demo-${role}`,
+          version: 'review-demo-v1',
+          payload: buildReviewSnapshot(role),
         },
       });
     }
     if (url.pathname.endsWith('/api/cloud/snapshots/questions')) {
-      return jsonResponse(200, {
-        success: true, sandboxAvailable: true, hostAvailable: false,
-        targetHostDeviceId: null, hostBaseUrl: null, reviewDemoRole: role,
-        questions: [{ id: 'review-q-1', stemPreview: '【示例】题目' }, { id: 'review-q-2', stemPreview: '【示例】题目二' }],
-      });
+      return jsonResponse(200, { success: true, ...buildReviewQuestionPreview(role) });
     }
     if (url.pathname.endsWith('/api/review-demo/tasks') && method === 'POST') {
       const type = body.taskType;
@@ -152,8 +177,66 @@ for (const env of [
 
 assert.ok(Buffer.from(DOCX_SIGNATURE).equals(Buffer.from('PK\x03\x04')), 'DOCX signature contract should be ZIP local-file header');
 assert.ok(Buffer.from(PDF_SIGNATURE).equals(Buffer.from('%PDF')), 'PDF signature contract should be PDF magic bytes');
+assert.strictEqual(typeof readBoundedJsonBody, 'function', 'smoke should expose its bounded JSON reader for security tests');
+assert.strictEqual(typeof readBoundedArtifactBody, 'function', 'smoke should expose its bounded artifact reader for security tests');
+assert.strictEqual(typeof assertSnapshot, 'function', 'smoke should expose the positive snapshot contract for security tests');
+assert.ok(Number.isSafeInteger(MAX_JSON_BYTES) && MAX_JSON_BYTES > 0, 'JSON response cap should be explicit');
+assert.ok(Number.isSafeInteger(MAX_ARTIFACT_BYTES) && MAX_ARTIFACT_BYTES > MAX_JSON_BYTES, 'artifact response cap should be explicit and bounded');
+
+for (const role of ['admin', 'student']) {
+  assert.doesNotThrow(() => assertSnapshot({
+    success: true,
+    snapshot: { id: `review-demo-${role}`, version: 'review-demo-v1', payload: buildReviewSnapshot(role) },
+  }, role), `${role} static snapshot should satisfy the independent smoke whitelist`);
+}
+
+const invalidSnapshots = [];
+const withExtraCollection = buildReviewSnapshot('admin');
+withExtraCollection.realUsers = [];
+invalidSnapshots.push(['extra collection', withExtraCollection]);
+const withExtraField = buildReviewSnapshot('admin');
+withExtraField.students[0].phoneAlias = 'not-allowed';
+invalidSnapshots.push(['extra field', withExtraField]);
+const withExcessRows = buildReviewSnapshot('admin');
+withExcessRows.students.push({ ...withExcessRows.students[0], id: 'review-demo-student-3' });
+invalidSnapshots.push(['excess rows', withExcessRows]);
+const withBadReference = buildReviewSnapshot('admin');
+withBadReference.schedules[0].course_id = 'review-demo-course-missing';
+invalidSnapshots.push(['bad reference', withBadReference]);
+const withRealStyleId = buildReviewSnapshot('admin');
+withRealStyleId.students[0].id = 'student-748392';
+invalidSnapshots.push(['real-style id', withRealStyleId]);
+const withBadStatus = buildReviewSnapshot('admin');
+withBadStatus.schedules[0].status = 9;
+invalidSnapshots.push(['bad status', withBadStatus]);
+for (const [label, payload] of invalidSnapshots) {
+  assert.throws(() => assertSnapshot({
+    success: true,
+    snapshot: { id: 'review-demo-admin', version: 'review-demo-v1', payload },
+  }, 'admin'), /snapshot:/, `positive snapshot contract should reject ${label}`);
+}
 
 (async () => {
+  for (const [label, readBody, cap, contentType, payload] of [
+    ['JSON', readBoundedJsonBody, MAX_JSON_BYTES, 'application/json', Buffer.alloc(MAX_JSON_BYTES + 1, 0x20)],
+    ['artifact', readBoundedArtifactBody, MAX_ARTIFACT_BYTES, 'application/pdf', Buffer.alloc(MAX_ARTIFACT_BYTES + 1, 0x41)],
+  ]) {
+    for (const [lengthCase, declaredLength] of [
+      ['declared oversized', cap + 1],
+      ['undeclared oversized', null],
+      ['false-length oversized', 1],
+    ]) {
+      const tracker = {};
+      const response = bodyResponse(200, contentType, payload, { declaredLength, tracker });
+      await assert.rejects(
+        () => readBody(response, `${label} ${lengthCase}`),
+        /response body exceeds limit/,
+        `${label} reader should reject ${lengthCase} body`,
+      );
+      assert.strictEqual(tracker.cancelled, true, `${label} ${lengthCase} reader should be cancelled`);
+    }
+  }
+
   const good = buildFakeFetch();
   const logLines = [];
   const result = await runReviewDemoSmoke({

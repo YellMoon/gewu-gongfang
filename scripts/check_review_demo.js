@@ -7,6 +7,52 @@ const PDF_SIGNATURE = Buffer.from('%PDF', 'ascii');
 const ROLES = Object.freeze(['admin', 'student']);
 const EXPECTED_CAPABILITIES = Object.freeze(['review-demo:read', 'question-bank:view', 'review-demo:paper-export']);
 const REQUEST_TIMEOUT_MS = 15_000;
+const MAX_JSON_BYTES = 1024 * 1024;
+const MAX_ARTIFACT_BYTES = 16 * 1024 * 1024;
+
+const SNAPSHOT_ALLOWED_FIELDS = Object.freeze({
+  students: ['id', 'name', 'school', 'grade_year', 'grade_current', 'source_type', 'institution_id', 'balance_hours', 'balance_money', 'created_at', 'updated_at'],
+  teachers: ['id', 'name', 'subject', 'hourly_rate', 'created_at', 'updated_at'],
+  institutions: ['id', 'name', 'revenue_share', 'created_at'],
+  schools: ['id', 'name', 'count', 'created_at', 'updated_at'],
+  rooms: ['id', 'name', 'address', 'count', 'created_at', 'updated_at'],
+  courses: ['id', 'name', 'display_name', 'type', 'source_type', 'year', 'semester', 'teacher_id', 'teacher_name', 'institution_id', 'room_id', 'room_name', 'price_tuition', 'price_teacher', 'billing_unit', 'teacher_fee_mode', 'student_ids', 'student_pricings', 'active', 'default_duration_minutes', 'created_at', 'updated_at'],
+  schedules: ['id', 'course_id', 'start_time', 'end_time', 'status', 'room_id', 'room', 'service_type', 'student_ids', 'student_pricings', 'calculated_tuition', 'calculated_teacher_fee', 'created_at', 'updated_at'],
+  enrollments: ['id', 'schedule_id', 'student_id', 'hours_consumed', 'status', 'created_at'],
+  consumptions: ['id', 'schedule_id', 'student_id', 'hours', 'amount', 'consumption_date', 'created_at'],
+  payments: ['id', 'student_id', 'amount', 'payment_type', 'payment_date', 'payment_method', 'notes', 'created_at'],
+  assetRecords: ['id', 'name', 'amount', 'category_id', 'type', 'date', 'notes', 'created_at'],
+  assetCategories: ['id', 'name', 'type', 'color'],
+  questions: ['id', 'type', 'status', 'difficulty', 'stemPreview'],
+});
+
+const ADMIN_SNAPSHOT_IDS = Object.freeze({
+  students: ['review-demo-student', 'review-demo-student-2'],
+  teachers: ['review-demo-teacher'],
+  institutions: ['review-demo-institution'],
+  schools: ['review-demo-school'],
+  rooms: ['review-demo-room'],
+  courses: ['review-demo-course', 'review-demo-course-2'],
+  schedules: ['review-demo-schedule', 'review-demo-schedule-2'],
+  enrollments: ['review-demo-enrollment', 'review-demo-enrollment-2'],
+  consumptions: ['review-demo-consumption'],
+  payments: ['review-demo-payment'],
+  assetRecords: ['review-demo-asset'],
+  assetCategories: ['review-demo-asset-category'],
+  questions: ['review-q-1', 'review-q-2', 'review-q-3', 'review-q-4'],
+});
+
+const STUDENT_SNAPSHOT_IDS = Object.freeze({
+  ...ADMIN_SNAPSHOT_IDS,
+  students: ['review-demo-student'],
+  courses: ['review-demo-course'],
+  schedules: ['review-demo-schedule'],
+  enrollments: ['review-demo-enrollment'],
+  consumptions: [],
+  payments: [],
+  assetRecords: [],
+  assetCategories: [],
+});
 
 class SmokeFailure extends Error {
   constructor(message) {
@@ -58,9 +104,59 @@ function boundedRequest(options = {}) {
   return { ...options, signal: options.signal || AbortSignal.timeout(REQUEST_TIMEOUT_MS) };
 }
 
+async function readBoundedBody(response, maximumBytes, step) {
+  const reader = response?.body?.getReader?.();
+  requireCondition(reader && typeof reader.read === 'function' && typeof reader.cancel === 'function', `${step}: streaming response body required`);
+  const rawLength = response.headers?.get?.('content-length');
+  if (rawLength !== null && rawLength !== undefined && rawLength !== '') {
+    requireCondition(/^\d+$/.test(String(rawLength)), `${step}: invalid content length`);
+    const declaredLength = Number(rawLength);
+    requireCondition(Number.isSafeInteger(declaredLength), `${step}: invalid content length`);
+    if (declaredLength > maximumBytes) {
+      try { await reader.cancel(); } catch (_error) { /* best effort */ }
+      try { reader.releaseLock?.(); } catch (_error) { /* best effort */ }
+      fail(`${step}: response body exceeds limit`);
+    }
+  }
+
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value || []);
+      total += chunk.length;
+      if (total > maximumBytes) {
+        try { await reader.cancel(); } catch (_error) { /* best effort */ }
+        fail(`${step}: response body exceeds limit`);
+      }
+      chunks.push(chunk);
+    }
+  } catch (error) {
+    if (error instanceof SmokeFailure) throw error;
+    try { await reader.cancel(); } catch (_error) { /* best effort */ }
+    fail(`${step}: response body read failed`);
+  } finally {
+    try { reader.releaseLock?.(); } catch (_error) { /* best effort */ }
+  }
+  return Buffer.concat(chunks, total);
+}
+
+async function readBoundedJsonBody(response, step) {
+  return readBoundedBody(response, MAX_JSON_BYTES, step);
+}
+
+async function readBoundedArtifactBody(response, step) {
+  return readBoundedBody(response, MAX_ARTIFACT_BYTES, step);
+}
+
 async function safeJson(response, step) {
   try {
-    const body = await response.json();
+    const contentType = String(response.headers?.get?.('content-type') || '').split(';')[0].trim().toLowerCase();
+    requireCondition(contentType === 'application/json', `${step}: invalid JSON content type`);
+    const bytes = await readBoundedJsonBody(response, step);
+    const body = JSON.parse(bytes.toString('utf8'));
     requireCondition(body && typeof body === 'object' && !Array.isArray(body), `${step}: invalid JSON contract`);
     return body;
   } catch (error) {
@@ -98,6 +194,45 @@ function assertNoSensitiveKeys(value, step) {
     }
   };
   visit(value);
+}
+
+function assertNoSensitiveValues(value, step) {
+  const visit = current => {
+    if (Array.isArray(current)) return current.forEach(visit);
+    if (current && typeof current === 'object') return Object.values(current).forEach(visit);
+    if (typeof current !== 'string') return;
+    requireCondition(!/(?:^|\D)1[3-9]\d{9}(?:\D|$)/.test(current), `${step}: phone-like value present`);
+    requireCondition(!/(?:^|\D)\d{17}[\dXx](?:\D|$)/.test(current), `${step}: identity-like value present`);
+  };
+  visit(value);
+}
+
+function assertAllowedFields(item, collection, step) {
+  requireCondition(item && typeof item === 'object' && !Array.isArray(item), `${step}: invalid item`);
+  const allowed = new Set(SNAPSHOT_ALLOWED_FIELDS[collection]);
+  for (const key of Object.keys(item)) {
+    requireCondition(allowed.has(key), `${step}: unexpected field`);
+  }
+}
+
+function assertExactIds(items, expectedIds, step) {
+  const actualIds = items.map(item => item?.id);
+  requireCondition(JSON.stringify(actualIds) === JSON.stringify(expectedIds), `${step}: deterministic ids mismatch`);
+}
+
+function assertReference(collection, id, allowedIds, step) {
+  requireCondition(typeof id === 'string' && allowedIds.has(id), `${step}: invalid ${collection} reference`);
+}
+
+function assertStudentPricings(items, studentIds, step) {
+  requireCondition(Array.isArray(items), `${step}: student pricings missing`);
+  for (const pricing of items) {
+    requireCondition(pricing && typeof pricing === 'object' && !Array.isArray(pricing), `${step}: invalid student pricing`);
+    const keys = Object.keys(pricing);
+    requireCondition(keys.every(key => ['student_id', 'tuition', 'teacher_fee', 'status'].includes(key)), `${step}: unexpected student pricing field`);
+    requireCondition(pricing.status === 1, `${step}: invalid student pricing status`);
+    assertReference('student', pricing.student_id, studentIds, step);
+  }
 }
 
 function assertLoginContract(body, role) {
@@ -149,20 +284,71 @@ function assertSnapshot(body, role) {
   const payload = body.snapshot.payload;
   requireCondition(payload && typeof payload === 'object', `${role} snapshot: payload missing`);
   assertNoSensitiveKeys(payload, `${role} snapshot`);
+  assertNoSensitiveValues(payload, `${role} snapshot`);
+
+  const expectedIds = role === 'student' ? STUDENT_SNAPSHOT_IDS : ADMIN_SNAPSHOT_IDS;
+  const expectedCollections = Object.keys(SNAPSHOT_ALLOWED_FIELDS);
+  requireCondition(
+    JSON.stringify(Object.keys(payload)) === JSON.stringify(expectedCollections),
+    `${role} snapshot: collection whitelist mismatch`,
+  );
+  for (const collection of expectedCollections) {
+    requireCondition(Array.isArray(payload[collection]), `${role} snapshot: ${collection} must be an array`);
+    assertExactIds(payload[collection], expectedIds[collection], `${role} snapshot: ${collection}`);
+    for (const item of payload[collection]) assertAllowedFields(item, collection, `${role} snapshot: ${collection}`);
+  }
+
+  const studentIds = new Set(expectedIds.students);
+  const teacherIds = new Set(expectedIds.teachers);
+  const institutionIds = new Set(expectedIds.institutions);
+  const roomIds = new Set(expectedIds.rooms);
+  const courseIds = new Set(expectedIds.courses);
+  const scheduleIds = new Set(expectedIds.schedules);
+  const categoryIds = new Set(expectedIds.assetCategories);
+
+  for (const course of payload.courses) {
+    requireCondition(course.active === true, `${role} snapshot: invalid course status`);
+    assertReference('teacher', course.teacher_id, teacherIds, `${role} snapshot: course`);
+    assertReference('institution', course.institution_id, institutionIds, `${role} snapshot: course`);
+    assertReference('room', course.room_id, roomIds, `${role} snapshot: course`);
+    requireCondition(Array.isArray(course.student_ids) && course.student_ids.length > 0, `${role} snapshot: course student scope missing`);
+    course.student_ids.forEach(id => assertReference('student', id, studentIds, `${role} snapshot: course`));
+    assertStudentPricings(course.student_pricings, studentIds, `${role} snapshot: course`);
+  }
+  const expectedScheduleStatus = role === 'student'
+    ? { 'review-demo-schedule': 1 }
+    : { 'review-demo-schedule': 1, 'review-demo-schedule-2': 2 };
+  for (const schedule of payload.schedules) {
+    requireCondition(schedule.status === expectedScheduleStatus[schedule.id], `${role} snapshot: invalid schedule status`);
+    assertReference('course', schedule.course_id, courseIds, `${role} snapshot: schedule`);
+    assertReference('room', schedule.room_id, roomIds, `${role} snapshot: schedule`);
+    requireCondition(Array.isArray(schedule.student_ids) && schedule.student_ids.length > 0, `${role} snapshot: schedule student scope missing`);
+    schedule.student_ids.forEach(id => assertReference('student', id, studentIds, `${role} snapshot: schedule`));
+    assertStudentPricings(schedule.student_pricings, studentIds, `${role} snapshot: schedule`);
+  }
+  const expectedEnrollmentStatus = role === 'student'
+    ? { 'review-demo-enrollment': 1 }
+    : { 'review-demo-enrollment': 1, 'review-demo-enrollment-2': 2 };
+  for (const enrollment of payload.enrollments) {
+    requireCondition(enrollment.status === expectedEnrollmentStatus[enrollment.id], `${role} snapshot: invalid enrollment status`);
+    assertReference('schedule', enrollment.schedule_id, scheduleIds, `${role} snapshot: enrollment`);
+    assertReference('student', enrollment.student_id, studentIds, `${role} snapshot: enrollment`);
+  }
+  for (const consumption of payload.consumptions) {
+    assertReference('schedule', consumption.schedule_id, scheduleIds, `${role} snapshot: consumption`);
+    assertReference('student', consumption.student_id, studentIds, `${role} snapshot: consumption`);
+  }
+  for (const payment of payload.payments) assertReference('student', payment.student_id, studentIds, `${role} snapshot: payment`);
+  for (const asset of payload.assetRecords) assertReference('asset category', asset.category_id, categoryIds, `${role} snapshot: asset`);
+  for (const question of payload.questions) {
+    requireCondition(question.status === 'published', `${role} snapshot: invalid question status`);
+    requireCondition(String(question.stemPreview || '').includes('\u3010\u793a\u4f8b\u3011'), `${role} snapshot: unsanitized question`);
+  }
+
   if (role === 'student') {
-    requireCondition(
-      Array.isArray(payload.students)
-        && payload.students.length === 1
-        && payload.students[0].id === 'review-demo-student',
-      'student snapshot: linked sample scope mismatch',
-    );
-    requireCondition(
-      Array.isArray(payload.schedules)
-        && payload.schedules.every(item => Array.isArray(item.student_ids) && item.student_ids.includes('review-demo-student')),
-      'student snapshot: schedule scope mismatch',
-    );
-    for (const field of ['payments', 'assetRecords', 'assetCategories', 'consumptions']) {
-      if (payload[field] !== undefined) requireCondition(Array.isArray(payload[field]) && payload[field].length === 0, `student snapshot: ${field} must be empty`);
+    requireCondition(payload.students[0].id === 'review-demo-student', 'student snapshot: linked sample scope mismatch');
+    for (const schedule of payload.schedules) {
+      requireCondition(schedule.student_ids.includes('review-demo-student'), 'student snapshot: schedule scope mismatch');
     }
   }
 }
@@ -232,7 +418,7 @@ async function downloadArtifact(context, task, signature, expectedType, label) {
   requireCondition(String(response.headers?.get?.('content-type') || '').split(';')[0] === expectedType, `${context.role} ${label}: content type mismatch`);
   let bytes;
   try {
-    bytes = Buffer.from(await response.arrayBuffer());
+    bytes = await readBoundedArtifactBody(response, `${context.role} ${label}`);
   } catch (_error) {
     fail(`${context.role} ${label}: download failed`);
   }
@@ -321,9 +507,14 @@ if (require.main === module) main();
 
 module.exports = {
   DOCX_SIGNATURE,
+  MAX_ARTIFACT_BYTES,
+  MAX_JSON_BYTES,
   PDF_SIGNATURE,
   SmokeFailure,
+  assertSnapshot,
   loadSmokeConfig,
+  readBoundedArtifactBody,
+  readBoundedJsonBody,
   runReviewDemoSmoke,
   sanitizeFailure,
   smokeRole,
