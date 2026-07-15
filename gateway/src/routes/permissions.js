@@ -43,7 +43,7 @@ function tenantScope(req) {
 }
 
 function linkedStudentIds(req, role) {
-  const ids = [
+  const explicitIds = [
     req.user?.student_id,
     req.user?.studentId,
     req.user?.linked_student_id,
@@ -54,8 +54,10 @@ function linkedStudentIds(req, role) {
     req.authz?.student_id,
     req.authz?.linkedStudentIds,
     req.authz?.linked_student_ids,
-    role === 'student' ? (req.user?.id || req.authz?.userId) : null,
   ].flatMap(parseIds);
+  const ids = explicitIds.length > 0
+    ? explicitIds
+    : [role === 'student' ? (req.user?.id || req.authz?.userId) : null].flatMap(parseIds);
   return Array.from(new Set(ids)).sort();
 }
 

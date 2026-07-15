@@ -71,22 +71,41 @@ function requireCondition(value, message) {
 
 function loadSmokeConfig(env = process.env) {
   const rawBaseUrl = String(env.MINIAPP_REVIEW_BASE_URL || '').trim();
+  const rawRealBaseUrl = String(env.MINIAPP_REAL_API_BASE_URL || '').trim();
   const codeValidation = validateReviewExperienceCode(env);
   let parsed;
+  let parsedReal;
   try {
     parsed = new URL(rawBaseUrl);
+    parsedReal = new URL(rawRealBaseUrl);
   } catch (_error) {
     throw new SmokeFailure('review smoke configuration is invalid');
   }
+  const baseUrl = rawBaseUrl.replace(/\/+$/, '');
+  const realBaseUrl = rawRealBaseUrl.replace(/\/+$/, '');
   const validUrl = parsed.protocol === 'https:'
     && Boolean(parsed.hostname)
     && !parsed.username
     && !parsed.password
     && !parsed.search
-    && !parsed.hash;
-  if (!validUrl || !codeValidation.ok) throw new SmokeFailure('review smoke configuration is invalid');
+    && !parsed.hash
+    && baseUrl === parsed.origin;
+  const validRealUrl = (
+    parsedReal.protocol === 'https:'
+    && Boolean(parsedReal.hostname)
+    && !parsedReal.username
+    && !parsedReal.password
+    && !parsedReal.search
+    && !parsedReal.hash
+    && parsedReal.origin === parsed.origin
+    && realBaseUrl === `${parsed.origin}/scheduling`
+  );
+  if (!validUrl || !validRealUrl || !codeValidation.ok) {
+    throw new SmokeFailure('review smoke configuration is invalid');
+  }
   return {
-    baseUrl: rawBaseUrl.replace(/\/+$/, ''),
+    baseUrl,
+    realBaseUrl,
     experienceCode: String(env.MINIAPP_REVIEW_EXPERIENCE_CODE),
   };
 }
@@ -425,7 +444,24 @@ async function downloadArtifact(context, task, signature, expectedType, label) {
   requireCondition(bytes.length >= signature.length && bytes.subarray(0, signature.length).equals(signature), `${context.role} ${label} signature mismatch`);
 }
 
-async function smokeRole({ role, baseUrl, experienceCode, fetchImpl }) {
+async function assertBackendIsolation({ role, realBaseUrl, fetchImpl, token }) {
+  const permissions = await requestJson(fetchImpl, realBaseUrl, '/api/permissions/my', {
+    method: 'GET', headers: authHeaders(token),
+  }, 401, `${role} Backend permission bypass`);
+  requireCondition(permissions.code === 'TOKEN_INVALID', `${role} Backend permission bypass: token type was not rejected`);
+
+  const deniedRead = await requestJson(fetchImpl, realBaseUrl, '/api/question-bank/questions', {
+    method: 'GET', headers: authHeaders(token),
+  }, 401, `${role} Backend read bypass`);
+  requireCondition(deniedRead.code === 'TOKEN_INVALID', `${role} Backend read bypass: review token was not rejected before anonymous question access`);
+
+  const deniedWrite = await requestJson(fetchImpl, realBaseUrl, '/api/students', {
+    method: 'POST', headers: authHeaders(token, true), body: JSON.stringify({ name: 'must-not-write' }),
+  }, 401, `${role} Backend write bypass`);
+  requireCondition(deniedWrite.code === 'TOKEN_INVALID', `${role} Backend write bypass: review token was not rejected`);
+}
+
+async function smokeRole({ role, baseUrl, realBaseUrl, experienceCode, fetchImpl }) {
   const login = await requestJson(fetchImpl, baseUrl, '/api/auth/review-demo', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -479,15 +515,16 @@ async function smokeRole({ role, baseUrl, experienceCode, fetchImpl }) {
     body: JSON.stringify({ taskType: 'question-paper', payload: {} }),
   }, 403, `${role} write denial`);
   requireCondition(denied.success === false && denied.code === 'REVIEW_DEMO_READ_ONLY', `${role} write denial: firewall contract mismatch`);
+  await assertBackendIsolation({ role, realBaseUrl, fetchImpl, token: session.token });
 }
 
 async function runReviewDemoSmoke(options = {}) {
-  const { baseUrl, experienceCode } = loadSmokeConfig(options.env || process.env);
+  const { baseUrl, realBaseUrl, experienceCode } = loadSmokeConfig(options.env || process.env);
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   const logger = options.logger || console.log;
   requireCondition(typeof fetchImpl === 'function', 'fetch runtime unavailable');
   for (const role of ROLES) {
-    await smokeRole({ role, baseUrl, experienceCode, fetchImpl });
+    await smokeRole({ role, baseUrl, realBaseUrl, experienceCode, fetchImpl });
     logger(`review demo smoke passed: ${role}`);
   }
   return { ok: true, roles: [...ROLES] };
@@ -511,6 +548,7 @@ module.exports = {
   MAX_JSON_BYTES,
   PDF_SIGNATURE,
   SmokeFailure,
+  assertBackendIsolation,
   assertSnapshot,
   loadSmokeConfig,
   readBoundedArtifactBody,

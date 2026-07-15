@@ -7,6 +7,7 @@ const {
   MAX_ARTIFACT_BYTES,
   MAX_JSON_BYTES,
   PDF_SIGNATURE,
+  assertBackendIsolation,
   assertSnapshot,
   loadSmokeConfig,
   readBoundedArtifactBody,
@@ -21,7 +22,8 @@ const {
 
 // Explicit non-production test fixture; never use it as a deployed review code.
 const EXPERIENCE_CODE = 'vN7$kP2@xR9!mQ4#tL8&cW5*zH3^sJ6?dF';
-const BASE_URL = 'https://review.example.test/scheduling';
+const BASE_URL = 'https://review.example.test';
+const REAL_BASE_URL = 'https://review.example.test/scheduling';
 
 function streamBody(bytes, tracker = {}) {
   const buffer = Buffer.from(bytes);
@@ -79,7 +81,11 @@ function buildFakeFetch(options = {}) {
     const auth = String(init.headers?.authorization || init.headers?.Authorization || '');
     const roleFromToken = auth.match(/^Bearer token-(admin|student)-/)?.[1] || '';
     const body = init.body ? JSON.parse(String(init.body)) : null;
-    calls.push({ method, path: url.pathname, role: roleFromToken || body?.role || null, body, hasSignal: Boolean(init.signal) });
+    calls.push({ host: url.host, method, path: url.pathname, role: roleFromToken || body?.role || null, body, hasSignal: Boolean(init.signal) });
+
+    if (url.pathname.startsWith('/scheduling/')) {
+      return jsonResponse(401, { success: false, code: 'TOKEN_INVALID' });
+    }
 
     if (url.pathname.endsWith('/api/auth/review-demo')) {
       if (options.failLogin) {
@@ -163,14 +169,21 @@ function buildFakeFetch(options = {}) {
 }
 
 assert.deepStrictEqual(
-  loadSmokeConfig({ MINIAPP_REVIEW_BASE_URL: BASE_URL, MINIAPP_REVIEW_EXPERIENCE_CODE: EXPERIENCE_CODE }),
-  { baseUrl: BASE_URL, experienceCode: EXPERIENCE_CODE },
-  'smoke should read base URL and code only from environment',
+  loadSmokeConfig({
+    MINIAPP_REVIEW_BASE_URL: BASE_URL,
+    MINIAPP_REAL_API_BASE_URL: REAL_BASE_URL,
+    MINIAPP_REVIEW_EXPERIENCE_CODE: EXPERIENCE_CODE,
+  }),
+  { baseUrl: BASE_URL, realBaseUrl: REAL_BASE_URL, experienceCode: EXPERIENCE_CODE },
+  'public smoke should accept an explicit real Backend base for bypass-isolation probes',
 );
 for (const env of [
   {},
-  { MINIAPP_REVIEW_BASE_URL: 'http://review.example.test', MINIAPP_REVIEW_EXPERIENCE_CODE: EXPERIENCE_CODE },
-  { MINIAPP_REVIEW_BASE_URL: BASE_URL, MINIAPP_REVIEW_EXPERIENCE_CODE: 'short' },
+  { MINIAPP_REVIEW_BASE_URL: BASE_URL, MINIAPP_REVIEW_EXPERIENCE_CODE: EXPERIENCE_CODE },
+  { MINIAPP_REVIEW_BASE_URL: 'http://review.example.test', MINIAPP_REAL_API_BASE_URL: REAL_BASE_URL, MINIAPP_REVIEW_EXPERIENCE_CODE: EXPERIENCE_CODE },
+  { MINIAPP_REVIEW_BASE_URL: BASE_URL, MINIAPP_REAL_API_BASE_URL: 'https://attacker.example.test/scheduling', MINIAPP_REVIEW_EXPERIENCE_CODE: EXPERIENCE_CODE },
+  { MINIAPP_REVIEW_BASE_URL: BASE_URL, MINIAPP_REAL_API_BASE_URL: 'https://review.example.test/not-scheduling', MINIAPP_REVIEW_EXPERIENCE_CODE: EXPERIENCE_CODE },
+  { MINIAPP_REVIEW_BASE_URL: BASE_URL, MINIAPP_REAL_API_BASE_URL: REAL_BASE_URL, MINIAPP_REVIEW_EXPERIENCE_CODE: 'short' },
 ]) {
   assert.throws(() => loadSmokeConfig(env), /review smoke configuration is invalid/);
 }
@@ -180,6 +193,7 @@ assert.ok(Buffer.from(PDF_SIGNATURE).equals(Buffer.from('%PDF')), 'PDF signature
 assert.strictEqual(typeof readBoundedJsonBody, 'function', 'smoke should expose its bounded JSON reader for security tests');
 assert.strictEqual(typeof readBoundedArtifactBody, 'function', 'smoke should expose its bounded artifact reader for security tests');
 assert.strictEqual(typeof assertSnapshot, 'function', 'smoke should expose the positive snapshot contract for security tests');
+assert.strictEqual(typeof assertBackendIsolation, 'function', 'smoke should expose the real Backend bypass-isolation contract');
 assert.ok(Number.isSafeInteger(MAX_JSON_BYTES) && MAX_JSON_BYTES > 0, 'JSON response cap should be explicit');
 assert.ok(Number.isSafeInteger(MAX_ARTIFACT_BYTES) && MAX_ARTIFACT_BYTES > MAX_JSON_BYTES, 'artifact response cap should be explicit and bounded');
 
@@ -240,7 +254,11 @@ for (const [label, payload] of invalidSnapshots) {
   const good = buildFakeFetch();
   const logLines = [];
   const result = await runReviewDemoSmoke({
-    env: { MINIAPP_REVIEW_BASE_URL: BASE_URL, MINIAPP_REVIEW_EXPERIENCE_CODE: EXPERIENCE_CODE },
+    env: {
+      MINIAPP_REVIEW_BASE_URL: BASE_URL,
+      MINIAPP_REAL_API_BASE_URL: REAL_BASE_URL,
+      MINIAPP_REVIEW_EXPERIENCE_CODE: EXPERIENCE_CODE,
+    },
     fetchImpl: good.fetchImpl,
     logger: line => logLines.push(String(line)),
   });
@@ -249,20 +267,23 @@ for (const [label, payload] of invalidSnapshots) {
   assert.ok(good.calls.every(call => call.hasSignal), 'every public smoke request should have a bounded timeout signal');
 
   const expectedPerRole = [
-    ['POST', '/scheduling/api/auth/review-demo'],
-    ['GET', '/scheduling/api/permissions/my'],
-    ['GET', '/scheduling/api/cloud/snapshots/read'],
-    ['GET', '/scheduling/api/cloud/snapshots/questions'],
-    ['POST', '/scheduling/api/review-demo/tasks'],
+    ['POST', '/api/auth/review-demo'],
+    ['GET', '/api/permissions/my'],
+    ['GET', '/api/cloud/snapshots/read'],
+    ['GET', '/api/cloud/snapshots/questions'],
+    ['POST', '/api/review-demo/tasks'],
     ['GET', null],
     ['POST', null],
-    ['POST', '/scheduling/api/review-demo/tasks'],
+    ['POST', '/api/review-demo/tasks'],
     ['GET', null],
     ['GET', null],
-    ['POST', '/scheduling/api/review-demo/tasks'],
+    ['POST', '/api/review-demo/tasks'],
     ['GET', null],
     ['GET', null],
-    ['POST', '/scheduling/api/cloud/tasks'],
+    ['POST', '/api/cloud/tasks'],
+    ['GET', '/scheduling/api/permissions/my'],
+    ['GET', '/scheduling/api/question-bank/questions'],
+    ['POST', '/scheduling/api/students'],
   ];
   for (const role of ['admin', 'student']) {
     const roleCalls = good.calls.filter(call => call.role === role);
@@ -276,13 +297,14 @@ for (const [label, payload] of invalidSnapshots) {
       ['question-paper', 'paper-export-word', 'paper-export-pdf'],
       `${role} should smoke composition plus both export formats`,
     );
-    assert.strictEqual(roleCalls.at(-1).body.taskType, 'question-paper', 'write-denial probe should target a real cloud task route');
+    assert.strictEqual(roleCalls.at(-4).body.taskType, 'question-paper', 'write-denial probe should target a real cloud task route');
+    assert.ok(roleCalls.slice(-3).every(call => call.path.startsWith('/scheduling/')), `${role} should probe the real Backend bypass boundary`);
   }
 
   const failed = buildFakeFetch({ failLogin: true });
   await assert.rejects(
     () => runReviewDemoSmoke({
-      env: { MINIAPP_REVIEW_BASE_URL: BASE_URL, MINIAPP_REVIEW_EXPERIENCE_CODE: EXPERIENCE_CODE },
+      env: { MINIAPP_REVIEW_BASE_URL: BASE_URL, MINIAPP_REAL_API_BASE_URL: REAL_BASE_URL, MINIAPP_REVIEW_EXPERIENCE_CODE: EXPERIENCE_CODE },
       fetchImpl: failed.fetchImpl,
       logger: () => {},
     }),
@@ -299,7 +321,7 @@ for (const [label, payload] of invalidSnapshots) {
   const badPdf = buildFakeFetch({ badPdf: true });
   await assert.rejects(
     () => runReviewDemoSmoke({
-      env: { MINIAPP_REVIEW_BASE_URL: BASE_URL, MINIAPP_REVIEW_EXPERIENCE_CODE: EXPERIENCE_CODE },
+      env: { MINIAPP_REVIEW_BASE_URL: BASE_URL, MINIAPP_REAL_API_BASE_URL: REAL_BASE_URL, MINIAPP_REVIEW_EXPERIENCE_CODE: EXPERIENCE_CODE },
       fetchImpl: badPdf.fetchImpl,
       logger: () => {},
     }),

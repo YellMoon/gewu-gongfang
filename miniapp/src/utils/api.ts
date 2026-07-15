@@ -13,6 +13,7 @@ import { clearBusinessCache } from './storage';
 import { authSessionRuntime } from './authSession';
 import { createAuthRefreshRuntime, extractRefreshToken } from './miniappAuthRefreshRuntime';
 import { clearAuthenticatedSession, createApiResponseCoordinator, createSessionBoundOperation } from './miniappApiSessionRuntime';
+import { selectApiBaseUrl } from './miniappApiRoutingRuntime';
 import {
   experienceApiPath,
   isReviewExperienceIdentity,
@@ -22,9 +23,13 @@ import {
 
 const STORAGE_KEY_BASE_URL = 'scheduling_api_base_url';
 declare const __API_BASE_URL__: string | undefined;
+declare const __REVIEW_API_BASE_URL__: string | undefined;
 const DEFAULT_BASE_URL = (typeof __API_BASE_URL__ !== 'undefined' && __API_BASE_URL__)
   ? __API_BASE_URL__.replace(/\/+$/, '')
   : 'https://physicsedu.xyz/scheduling';
+const DEFAULT_REVIEW_BASE_URL = (typeof __REVIEW_API_BASE_URL__ !== 'undefined' && __REVIEW_API_BASE_URL__)
+  ? __REVIEW_API_BASE_URL__.replace(/\/+$/, '')
+  : 'https://physicsedu.xyz';
 const RETRY_COUNT = 1;
 const REQUEST_TIMEOUT = 30000;
 const AUTHENTICATION_ENTRY_PATHS = new Set(['/api/auth/login', '/api/auth/wechat-login', '/api/auth/review-demo']);
@@ -37,11 +42,25 @@ function getBaseUrl(): string {
   }
 }
 
+function getRequestBaseUrl(path: string): string {
+  let reviewIdentity = false;
+  try {
+    reviewIdentity = isReviewExperienceIdentity(Taro.getStorageSync('user_info'));
+  } catch { /* fall back to the normal API unless this is the review login entry */ }
+  return selectApiBaseUrl({
+    path,
+    normalBaseUrl: getBaseUrl(),
+    reviewBaseUrl: DEFAULT_REVIEW_BASE_URL,
+    isReviewIdentity: reviewIdentity,
+  });
+}
+
 export function setBaseUrl(url: string): void {
   Taro.setStorageSync(STORAGE_KEY_BASE_URL, url.replace(/\/+$/, ''));
 }
 
 export const getApiBaseUrl = getBaseUrl;
+export const getReviewApiBaseUrl = () => DEFAULT_REVIEW_BASE_URL;
 export const setApiBaseUrl = setBaseUrl;
 
 interface ApiResponse<T = any> {
@@ -83,7 +102,7 @@ class ApiClient {
   }
 
   private buildUrl(path: string, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'): string {
-    const url = `${getBaseUrl()}${path}`;
+    const url = `${getRequestBaseUrl(path)}${path}`;
     if (method !== 'GET') return url;
     const separator = url.includes('?') ? '&' : '?';
     return `${url}${separator}_t=${Date.now()}`;
@@ -91,8 +110,9 @@ class ApiClient {
 
   /** Token 刷新 */
   private async requestRefreshedToken(token: string): Promise<string> {
+    const path = '/api/auth/refresh';
     const res = await Taro.request({
-      url: `${getBaseUrl()}/api/auth/refresh`,
+      url: `${getRequestBaseUrl(path)}${path}`,
       method: 'POST',
       header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       data: { token },
@@ -296,14 +316,17 @@ export const reviewDemoApi = {
   cancelTask: (taskId: string) =>
     api.post<any>(reviewDemoPath('cancelTask', taskId), {}),
   artifactUrl: (artifactId: string) =>
-    `${getBaseUrl()}${reviewDemoPath('artifact', artifactId)}`,
+    (() => {
+      const path = reviewDemoPath('artifact', artifactId);
+      return `${getRequestBaseUrl(path)}${path}`;
+    })(),
   downloadArtifact: (artifactId: string) => {
     const sessionBoundary = createSessionBoundOperation(authSessionRuntime);
     return sessionBoundary.run((requestSession: any) => {
       const identity = Taro.getStorageSync('user_info');
       const request = reviewArtifactRequest(identity, requestSession.token, artifactId);
       return Taro.downloadFile({
-        url: `${getBaseUrl()}${request.path}`,
+        url: `${getRequestBaseUrl(request.path)}${request.path}`,
         header: request.header,
       });
     });

@@ -12,6 +12,7 @@ process.env.WECHAT_TIMEOUT_MS = '20';
 const realFetch = global.fetch;
 global.fetch = async (input, options = {}) => { const url = String(input); if (url.includes('jscode2session')) { const code = new URL(url).searchParams.get('js_code'); if (code === 'timeout') return new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })))); return { ok: true, status: 200, json: async () => ({ openid: `openid-${code}` }) }; } if (url.includes('/cgi-bin/token')) return { ok: true, status: 200, json: async () => ({ access_token: 'token', expires_in: 7200 }) }; if (url.includes('getuserphonenumber')) { const body = JSON.parse(options.body); return { ok: true, status: 200, json: async () => ({ phone_info: { purePhoneNumber: body.code.startsWith('race') ? '13900000002' : '13900000001' } }) }; } return realFetch(input, options); };
 const { initDatabase, closeDatabase, getDb } = require('../db/database');
+const { generateToken } = require('../middleware/auth');
 const createApp = require('../app');
 initDatabase();
 const server = createApp().listen(0);
@@ -35,6 +36,12 @@ const get = async (route, token, headers = {}) => { const response = await realF
   assert.strictEqual(reviewPermissions.body.identity.id, review.body.data.user.id);
   assert.strictEqual(reviewPermissions.body.identity.is_review_demo, true);
   assert.strictEqual(reviewPermissions.body.identity.read_only, true);
+  assert.strictEqual(reviewPermissions.body.identity.student_id, 'review-demo-student');
+  assert.deepStrictEqual(
+    reviewPermissions.body.identity.linked_student_ids,
+    ['review-demo-student'],
+    'review student permissions must never widen the sample scope with the synthetic session user id',
+  );
   assert.ok(reviewPermissions.body.capabilities.includes('review-demo:student'));
   assert.ok(!reviewPermissions.body.capabilities.includes('business:all'));
   assert.strictEqual((await get('/api/admin/users', review.body.data.token)).status, 403);
@@ -43,6 +50,41 @@ const get = async (route, token, headers = {}) => { const response = await realF
   assert.strictEqual(blockedReviewWrite.body.code, 'REVIEW_DEMO_READ_ONLY');
   const reviewRefresh = await post('/api/auth/refresh', { token: review.body.data.token });
   assert.strictEqual(reviewRefresh.status, 401, 'review token must not become a normal refreshed token');
+
+  getDb().prepare(`INSERT INTO users
+    (id, name, user_type, status, login_enabled, review_status, student_id, linked_student_ids, created_at, updated_at)
+    VALUES (?, ?, 'student', 1, 1, 'approved', ?, ?, ?, ?)`).run(
+    'student-user-explicit',
+    'Explicit Student',
+    'student-primary',
+    JSON.stringify(['student-secondary', 'student-primary']),
+    '2026-07-15T00:00:00.000Z',
+    '2026-07-15T00:00:00.000Z',
+  );
+  const explicitStudentPermissions = await get('/api/permissions/my', generateToken({
+    id: 'student-user-explicit', user_type: 'student', name: 'Explicit Student',
+    student_id: 'student-primary', linked_student_ids: ['student-secondary', 'student-primary'],
+  }));
+  assert.deepStrictEqual(
+    explicitStudentPermissions.body.identity.linked_student_ids,
+    ['student-primary', 'student-secondary'],
+    'an explicitly linked normal student must not widen scope with the user id',
+  );
+
+  getDb().prepare(`INSERT INTO users
+    (id, name, user_type, status, login_enabled, review_status, created_at, updated_at)
+    VALUES (?, ?, 'student', 1, 1, 'approved', ?, ?)`).run(
+    'student-user-fallback', 'Fallback Student', '2026-07-15T00:00:00.000Z', '2026-07-15T00:00:00.000Z',
+  );
+  const fallbackStudentPermissions = await get('/api/permissions/my', generateToken({
+    id: 'student-user-fallback', user_type: 'student', name: 'Fallback Student',
+  }));
+  assert.strictEqual(fallbackStudentPermissions.body.identity.student_id, 'student-user-fallback');
+  assert.deepStrictEqual(
+    fallbackStudentPermissions.body.identity.linked_student_ids,
+    ['student-user-fallback'],
+    'a normal student without explicit bindings should retain the user-id fallback',
+  );
 
   assert.strictEqual((await post('/api/auth/login', { openid: 'raw' })).status, 410);
   assert.strictEqual((await post('/api/auth/wechat-login', { code: 'new', phone: '13732250653' })).body.code, 'PHONE_VERIFICATION_REQUIRED');
