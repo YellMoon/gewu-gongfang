@@ -600,6 +600,7 @@ Status: completed — implementation, render verification and applicable release
 - Readiness and deployment validate `MINIAPP_REVIEW_EXPERIENCE_CODE` strength without returning or logging its value. The formal Gateway deploy refreshes the validated PM2 environment through `--update-env`, with command redaction applied before output.
 - The injectable public smoke covers both roles: login, canonical permissions, scoped snapshot, question preview, sandbox create/read/cancel, DOCX/PDF signatures, and `403 REVIEW_DEMO_READ_ONLY` on `/api/cloud/tasks` before its domain route.
 - Focused local tests and syntax checks pass. No real code has been recorded or configured; no public smoke, cloud deployment, miniapp upload, WeChat submission, or public release is claimed at this stage.
+- No actual deployment review code is committed. Every non-placeholder review-code value in tracked files is an explicit non-production test fixture used only to verify validation and redaction.
 
 Release-related unchecked items above remain pending until Task 7 has runtime evidence.
 

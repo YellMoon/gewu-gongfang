@@ -15,6 +15,8 @@ Optional env:
 """
 import os
 import json
+import re
+import secrets
 import shlex
 import sys
 import time
@@ -78,6 +80,9 @@ BACKEND_JWT_SECRET = os.getenv("BACKEND_JWT_SECRET")
 WECHAT_APPID = os.getenv("WECHAT_APPID")
 WECHAT_APPSECRET = os.getenv("WECHAT_APPSECRET")
 MINIAPP_REVIEW_EXPERIENCE_CODE = os.getenv("MINIAPP_REVIEW_EXPERIENCE_CODE")
+REVIEW_CODE_POLICY = json.loads(
+    (Path(__file__).resolve().parent / "review-experience-code-policy.json").read_text(encoding="utf-8")
+)
 REMOTE_DIR = os.getenv("DEPLOY_REMOTE_DIR", DEFAULTS["remote_dir"])
 DB_PATH = os.getenv("DB_PATH", DEFAULTS["db_path"])
 READ_DB_PATH = os.getenv("READ_DB_PATH", DB_PATH)
@@ -115,43 +120,72 @@ def validate_review_experience_code(value):
     raw = str(value or "")
     normalized = raw.strip()
     lower = normalized.lower()
-    forbidden = {
-        "review-experience-code",
-        "review-demo-code",
-        "password123456789",
-        "<review experience code>",
-    }
+    has_repeated_substring = False
+    minimum_repeat = int(REVIEW_CODE_POLICY["minRepeatedSubstringLength"])
+    for size in range(minimum_repeat, len(normalized) // 2 + 1):
+        for start in range(0, len(normalized) - size + 1):
+            candidate = normalized[start:start + size]
+            if normalized.find(candidate, start + size) >= 0:
+                has_repeated_substring = True
+                break
+        if has_repeated_substring:
+            break
+    sequence_length = int(REVIEW_CODE_POLICY["sequenceLength"])
+    has_sequence = False
+    for seed in REVIEW_CODE_POLICY["sequenceSeeds"]:
+        for sequence in (seed, seed[::-1]):
+            if any(sequence[index:index + sequence_length] in lower for index in range(len(sequence) - sequence_length + 1)):
+                has_sequence = True
+                break
+        if has_sequence:
+            break
     strong = (
         raw == normalized
-        and 16 <= len(normalized) <= 128
-        and any(character.isalpha() for character in normalized)
+        and int(REVIEW_CODE_POLICY["minLength"]) <= len(normalized) <= int(REVIEW_CODE_POLICY["maxLength"])
+        and all(0x21 <= ord(character) <= 0x7E for character in normalized)
+        and any("a" <= character <= "z" for character in normalized)
+        and any("A" <= character <= "Z" for character in normalized)
         and any(character.isdigit() for character in normalized)
-        and any(not character.isalnum() for character in normalized)
-        and len(set(normalized)) >= 10
-        and lower not in forbidden
+        and any(not ("a" <= character.lower() <= "z" or character.isdigit()) for character in normalized)
+        and len(set(normalized)) >= int(REVIEW_CODE_POLICY["minUniqueCharacters"])
+        and not any(term in lower for term in REVIEW_CODE_POLICY["forbiddenTerms"])
+        and re.search(r"(?:19|20)\d{2}", normalized) is None
+        and re.search(r"\d{1,4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?", normalized) is None
+        and re.search(r"(.)\1{%d,}" % int(REVIEW_CODE_POLICY["maxRepeatedCharacterRun"]), normalized) is None
+        and not has_repeated_substring
+        and not has_sequence
+        and normalized != "<review experience code>"
     )
     if not strong:
         raise SystemExit("MINIAPP_REVIEW_EXPERIENCE_CODE is missing or weak")
     return True
 
 
-def redact_command(cmd):
-    redacted = cmd
-    redaction_candidates = []
+def redaction_candidates():
+    candidates = []
     for secret in [
         PASSWORD,
         BACKEND_JWT_SECRET,
-        os.getenv("WECHAT_APPSECRET"),
+        WECHAT_APPSECRET,
         MINIAPP_REVIEW_EXPERIENCE_CODE,
         os.getenv("GEWU_DESKTOP_SYNC_TOKEN"),
         os.getenv("GEWU_CLOUD_RELAY_HOST_TOKEN"),
     ]:
         if secret:
             value = str(secret)
-            redaction_candidates.extend([value, shlex.quote(value)])
-    for candidate in sorted(set(redaction_candidates), key=len, reverse=True):
+            candidates.extend([value, shlex.quote(value)])
+    return sorted(set(candidates), key=len, reverse=True)
+
+
+def redact_text(value):
+    redacted = str(value)
+    for candidate in redaction_candidates():
         redacted = redacted.replace(candidate, "<redacted>")
     return redacted
+
+
+def redact_command(cmd):
+    return redact_text(cmd)
 
 
 def safe_print(value=""):
@@ -168,9 +202,9 @@ def run(ssh, cmd, timeout=30):
     out = stdout.read().decode("utf-8", errors="replace")
     err = stderr.read().decode("utf-8", errors="replace")
     if out.strip():
-        safe_print(out)
+        safe_print(redact_text(out))
     if err.strip():
-        safe_print(f"STDERR: {err}")
+        safe_print(f"STDERR: {redact_text(err)}")
     return out, err
 
 
@@ -200,8 +234,8 @@ def upload_backend(ssh):
     sftp.close()
 
 
-def remote_env_prefix():
-    env = {
+def remote_env_values():
+    return {
         "NODE_ENV": "production" if APP_ENV == "prod" else APP_ENV,
         "PORT": APP_PORT,
         "APP_ENV": APP_ENV,
@@ -224,7 +258,62 @@ def remote_env_prefix():
         "GEWU_LOCAL_CACHE_PATH": os.getenv("GEWU_LOCAL_CACHE_PATH", "/root/GewuQuestionBankCache"),
         "GEWU_NAS_BACKUP_PATH": os.getenv("GEWU_NAS_BACKUP_PATH", ""),
     }
+
+
+def remote_env_prefix():
+    env = remote_env_values()
     return " ".join(f"{key}={shlex.quote(str(value or ''))}" for key, value in env.items())
+
+
+def serialize_remote_env_file(values=None):
+    env = values or remote_env_values()
+    lines = []
+    for key, value in env.items():
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]*", str(key)):
+            raise ValueError("Invalid remote environment key")
+        text = str(value or "")
+        if any(character in text for character in ("\x00", "\r", "\n")):
+            raise ValueError(f"Remote environment value contains a forbidden control character: {key}")
+        lines.append(f"export {key}={shlex.quote(text)}")
+    return "\n".join(lines) + "\n"
+
+
+def upload_remote_env_file(ssh, path_factory=None):
+    factory = path_factory or (lambda: f"/tmp/gewu-pm2-env-{secrets.token_hex(16)}")
+    remote_path = str(factory())
+    if not re.fullmatch(r"/tmp/gewu-pm2-env-[A-Za-z0-9_-]{8,64}", remote_path):
+        raise ValueError("Invalid remote environment path")
+    sftp = ssh.open_sftp()
+    remote_file = None
+    try:
+        remote_file = sftp.file(remote_path, "w")
+        sftp.chmod(remote_path, 0o600)
+        remote_file.write(serialize_remote_env_file())
+        remote_file.flush()
+        return remote_path
+    except Exception:
+        try:
+            sftp.remove(remote_path)
+        except Exception:
+            pass
+        raise
+    finally:
+        if remote_file is not None:
+            remote_file.close()
+        sftp.close()
+
+
+def remove_remote_env_file(ssh, remote_path):
+    if not re.fullmatch(r"/tmp/gewu-pm2-env-[A-Za-z0-9_-]{8,64}", str(remote_path)):
+        raise ValueError("Invalid remote environment path")
+    sftp = ssh.open_sftp()
+    try:
+        try:
+            sftp.remove(remote_path)
+        except FileNotFoundError:
+            pass
+    finally:
+        sftp.close()
 
 
 def migrate(ssh):

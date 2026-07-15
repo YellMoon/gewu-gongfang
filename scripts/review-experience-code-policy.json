@@ -1,0 +1,40 @@
+{
+  "minLength": 32,
+  "maxLength": 128,
+  "minUniqueCharacters": 20,
+  "maxRepeatedCharacterRun": 3,
+  "minRepeatedSubstringLength": 4,
+  "sequenceLength": 4,
+  "forbiddenTerms": [
+    "gewu",
+    "review",
+    "demo",
+    "test",
+    "admin",
+    "student",
+    "experience",
+    "code",
+    "password",
+    "miniapp",
+    "scheduling",
+    "physics",
+    "education",
+    "project",
+    "product",
+    "workshop",
+    "example",
+    "sample",
+    "fixture",
+    "qwerty",
+    "asdfgh",
+    "zxcvbn",
+    "letmein"
+  ],
+  "sequenceSeeds": [
+    "0123456789",
+    "abcdefghijklmnopqrstuvwxyz",
+    "qwertyuiop",
+    "asdfghjkl",
+    "zxcvbnm"
+  ]
+}

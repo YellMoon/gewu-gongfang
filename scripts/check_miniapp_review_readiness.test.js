@@ -11,6 +11,7 @@ const {
 } = require('./check_miniapp_review_readiness');
 
 const info = buildDefaultReviewInfo();
+const STRONG_TEST_FIXTURE = 'vN7$kP2@xR9!mQ4#tL8&cW5*zH3^sJ6?dF';
 
 assert.ok(info.versionDesc.length > 20, 'review version description should explain this release');
 assert.ok(info.versionDesc.length <= 200, 'review version description must fit WeChat 200 char limit');
@@ -52,20 +53,38 @@ for (const required of [
   '隔离内存沙箱',
   '不会写入真实',
   '<review experience code>',
+  '密码管理器',
+  'Set-Clipboard',
+  '不会输出',
 ]) {
   assert.ok(doc.includes(required), `review guide should document: ${required}`);
 }
 assert.deepStrictEqual(validateReviewGuide(doc).errors, [], 'review guide should satisfy the permanent review contract');
 
-for (const weak of ['', 'short', 'aaaaaaaaaaaaaaaa', 'review-experience-code', '<review experience code>']) {
+for (const weak of [
+  '',
+  'short',
+  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  'GewuReview2026!demo',
+  'AdminStudentReview!2026FixtureValue',
+  'Qwerty1234567890!Qwerty1234567890!',
+  'AbcdEfghIjklMnop1234!@#$AbcdEfgh',
+  'Review-Experience-Code-For-Test-123!',
+  '<review experience code>',
+]) {
   const result = validateReviewExperienceCode({ MINIAPP_REVIEW_EXPERIENCE_CODE: weak });
   assert.strictEqual(result.ok, false, `weak review code should fail closed: ${weak ? '<redacted>' : '<missing>'}`);
   assert.ok(!JSON.stringify(result).includes(weak) || weak === '', 'review code validation must not echo submitted values');
 }
-const strongCode = 'Gewu-Review-2026-A9x7';
-const strongValidation = validateReviewExperienceCode({ MINIAPP_REVIEW_EXPERIENCE_CODE: strongCode });
+const strongValidation = validateReviewExperienceCode({ MINIAPP_REVIEW_EXPERIENCE_CODE: STRONG_TEST_FIXTURE });
 assert.deepStrictEqual(strongValidation, { ok: true, errors: [] }, 'strong configured review code should pass readiness');
-assert.ok(!JSON.stringify(strongValidation).includes(strongCode), 'successful validation must not expose the review code');
+assert.ok(!JSON.stringify(strongValidation).includes(STRONG_TEST_FIXTURE), 'successful validation must not expose the review code');
+
+const policyPath = path.join(process.cwd(), 'scripts', 'review-experience-code-policy.json');
+assert.ok(fs.existsSync(policyPath), 'JS and Python validators should share one review-code policy file');
+const policy = JSON.parse(fs.readFileSync(policyPath, 'utf8'));
+assert.ok(policy.minLength >= 32, 'shared policy should require a materially long code');
+assert.ok(policy.minUniqueCharacters >= 20, 'shared policy should require high character diversity');
 
 const scriptSource = fs.readFileSync(path.join(process.cwd(), 'scripts/check_miniapp_review_readiness.js'), 'utf-8');
 assert.ok(scriptSource.includes('validateReviewInfo'), 'review readiness script should validate review fields');
