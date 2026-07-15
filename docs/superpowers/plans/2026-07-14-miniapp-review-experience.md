@@ -259,29 +259,29 @@ Stage Task 5 files and commit `automatic release 2026-07-14`.
 - Modify: `scripts/deployEnv.test.js`
 - Modify: `task.md`
 
-- [ ] **Step 1: Write failing readiness/smoke tests**
+- [x] **Step 1: Write failing readiness/smoke tests**
 
 Require the permanent entry copy, both roles, read-only and sandbox statements, a code placeholder, strong environment validation without secret output, and public smoke checks for admin/student login, permissions, snapshot, sandbox export, and write denial.
 
-- [ ] **Step 2: Confirm RED**
+- [x] **Step 2: Confirm RED**
 
 Run: `node scripts/check_miniapp_review_readiness.test.js && node scripts/check_review_demo.test.js`
 Expected: missing review contracts/smoke script.
 
-- [ ] **Step 3: Update documentation and checks**
+- [x] **Step 3: Update documentation and checks**
 
 Use accurate Chinese review notes: admin reads sanitized examples, student reads a linked sample, paper/export uses an isolated sandbox, and no real writes occur. Keep the actual code outside Git.
 
-- [ ] **Step 4: Implement secret-safe public smoke**
+- [x] **Step 4: Implement secret-safe public smoke**
 
 Read the code from environment, never print it, redact response bodies, and fail if either role cannot log in, if the review JWT accesses real writes, or if DOCX/PDF signatures are invalid.
 
-- [ ] **Step 5: Verify focused checks**
+- [x] **Step 5: Verify focused checks**
 
 Run both tests plus `node scripts/check_project_status_doc.test.js`.
 Expected: all exit 0.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Stage Task 6 files and commit `automatic release 2026-07-14`.
 
