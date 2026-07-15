@@ -12,6 +12,7 @@ const backendPackage = fs.readFileSync('backend/package.json', 'utf-8');
 const rootPkg = JSON.parse(packageJson);
 const backendPkg = JSON.parse(backendPackage);
 const deployRequirementsPath = 'scripts/requirements-deploy.txt';
+const STRONG_TEST_FIXTURE = 'vN7$kP2@xR9!mQ4#tL8&cW5*zH3^sJ6?dF';
 
 assert.ok(fs.existsSync(deployRequirementsPath), 'deploy Python dependencies should be declared');
 const deployRequirements = fs.readFileSync(deployRequirementsPath, 'utf-8');
@@ -28,7 +29,7 @@ fs.writeFileSync(envFixturePath, [
   'BACKEND_JWT_SECRET="s3cr3t\'marker"',
   'WECHAT_APPID="wx-review-env-test"',
   'WECHAT_APPSECRET="wechat-review-env-secret"',
-  'MINIAPP_REVIEW_EXPERIENCE_CODE="Gewu-Review-2026-A9x7"',
+  `MINIAPP_REVIEW_EXPERIENCE_CODE="${STRONG_TEST_FIXTURE}"`,
 ].join('\n'), 'utf-8');
 const cleanEnv = { ...process.env, DOTENV_CONFIG_PATH: envFixturePath };
 for (const name of ['APP_ENV', 'SCHEDULE_ENV', 'PORT', 'DEPLOY_HOST', 'DEPLOY_PASSWORD', 'DEPLOY_KEY_PATH', 'BACKEND_JWT_SECRET', 'WECHAT_APPID', 'WECHAT_APPSECRET', 'MINIAPP_REVIEW_EXPERIENCE_CODE']) {
@@ -37,7 +38,7 @@ for (const name of ['APP_ENV', 'SCHEDULE_ENV', 'PORT', 'DEPLOY_HOST', 'DEPLOY_PA
 cleanEnv.DOTENV_CONFIG_PATH = envFixturePath;
 const deployProbe = spawnSync('python', [
   '-c',
-  'import scripts.deploy as d; print(d.APP_ENV); print(d.HOST); print(d.APP_PORT); print("GEWU_HOST_BASE_URL=http://127.0.0.1:3002" in d.remote_env_prefix()); print("MINIAPP_REVIEW_EXPERIENCE_CODE=" in d.remote_env_prefix()); print("Gewu-Review-2026-A9x7" not in d.redact_command(d.remote_env_prefix())); d.require_remote_env(); print("review-config-ok")',
+  'import scripts.deploy as d; print(d.APP_ENV); print(d.HOST); print(d.APP_PORT); print("GEWU_HOST_BASE_URL=http://127.0.0.1:3002" in d.remote_env_prefix()); print("MINIAPP_REVIEW_EXPERIENCE_CODE=" in d.remote_env_prefix()); print(d.MINIAPP_REVIEW_EXPERIENCE_CODE not in d.redact_command(d.remote_env_prefix())); d.require_remote_env(); print("review-config-ok")',
 ], { cwd: process.cwd(), env: cleanEnv, encoding: 'utf-8' });
 fs.rmSync(envFixtureDir, { recursive: true, force: true });
 assert.strictEqual(deployProbe.status, 0, deployProbe.stderr || 'deploy env probe should succeed');
@@ -62,7 +63,88 @@ const missingReviewProbe = spawnSync('python', [
 ], { cwd: process.cwd(), env: missingReviewEnv, encoding: 'utf-8' });
 assert.strictEqual(missingReviewProbe.status, 0, missingReviewProbe.stderr || 'missing review code probe should run');
 assert.ok(missingReviewProbe.stdout.includes('MINIAPP_REVIEW_EXPERIENCE_CODE'), 'production deploy should fail closed when review code is missing');
-assert.ok(!missingReviewProbe.stdout.includes('Gewu-Review-2026-A9x7'), 'deployment validation must not print the configured review code');
+assert.ok(!missingReviewProbe.stdout.includes(STRONG_TEST_FIXTURE), 'deployment validation must not print the configured review code');
+
+const weakReviewEnv = { ...missingReviewEnv, MINIAPP_REVIEW_EXPERIENCE_CODE: 'GewuReview2026!demo' };
+const weakReviewProbe = spawnSync('python', [
+  '-c',
+  'import scripts.deploy as d\ntry:\n d.require_remote_env()\nexcept SystemExit as e:\n print(str(e))\nelse:\n raise SystemExit("expected strong-format review policy")',
+], { cwd: process.cwd(), env: weakReviewEnv, encoding: 'utf-8' });
+assert.strictEqual(weakReviewProbe.status, 0, weakReviewProbe.stderr || 'weak review code probe should run');
+assert.ok(weakReviewProbe.stdout.includes('missing or weak'), 'Python deploy should enforce the shared strong-format policy');
+assert.ok(!weakReviewProbe.stdout.includes('GewuReview2026!demo'), 'weak-value errors must not echo the submitted review code');
+
+const deploySecurityEnv = {
+  ...missingReviewEnv,
+  BACKEND_JWT_SECRET: 'unit-jwt-secret-with-32-characters!',
+  WECHAT_APPSECRET: 'unit-wechat-secret-fixture',
+  GEWU_DESKTOP_SYNC_TOKEN: 'unit-desktop-sync-secret',
+  GEWU_CLOUD_RELAY_HOST_TOKEN: 'unit-host-relay-secret',
+  MINIAPP_REVIEW_EXPERIENCE_CODE: STRONG_TEST_FIXTURE,
+};
+const deploySecurityProbe = spawnSync('python', ['-c', `
+import scripts.deploy as d
+import scripts.deploy_gateway as g
+
+class Stream:
+    def __init__(self, value): self.value = value
+    def read(self): return self.value.encode("utf-8")
+
+class RemoteFile:
+    def __init__(self, owner, path): self.owner, self.path = owner, path
+    def write(self, value): self.owner.events.append("write"); self.owner.contents[self.path] = value
+    def flush(self): pass
+    def close(self): pass
+
+class FakeSftp:
+    def __init__(self): self.contents, self.modes, self.removed, self.events = {}, [], [], []
+    def file(self, path, mode): return RemoteFile(self, path)
+    def chmod(self, path, mode): self.events.append("chmod"); self.modes.append((path, mode))
+    def remove(self, path): self.removed.append(path)
+    def close(self): pass
+
+class FakeSsh:
+    def __init__(self): self.sftp, self.commands = FakeSftp(), []
+    def open_sftp(self): return self.sftp
+    def exec_command(self, command, timeout=30):
+        self.commands.append(command)
+        leaks = "|".join(filter(None, [d.PASSWORD, d.BACKEND_JWT_SECRET, d.WECHAT_APPSECRET, d.MINIAPP_REVIEW_EXPERIENCE_CODE, d.os.getenv("GEWU_DESKTOP_SYNC_TOKEN"), d.os.getenv("GEWU_CLOUD_RELAY_HOST_TOKEN")]))
+        return None, Stream("stdout=" + leaks), Stream("stderr=" + leaks)
+
+ssh = FakeSsh()
+path = d.upload_remote_env_file(ssh, path_factory=lambda: "/tmp/gewu-pm2-env-unit-test")
+try:
+    g.restart_gateway(ssh, path)
+finally:
+    d.remove_remote_env_file(ssh, path)
+runtime_secrets = [d.BACKEND_JWT_SECRET, d.WECHAT_APPSECRET, d.MINIAPP_REVIEW_EXPERIENCE_CODE, d.os.getenv("GEWU_DESKTOP_SYNC_TOKEN"), d.os.getenv("GEWU_CLOUD_RELAY_HOST_TOKEN")]
+all_secrets = [d.PASSWORD] + runtime_secrets
+command = ssh.commands[0]
+content = ssh.sftp.contents[path]
+print(all(secret not in command for secret in all_secrets if secret))
+print(ssh.sftp.modes == [(path, 0o600)] and ssh.sftp.events.index("chmod") < ssh.sftp.events.index("write"))
+print(ssh.sftp.removed == [path])
+print("--update-env" in command and "trap" in command and path in command)
+print(all(secret in content for secret in runtime_secrets if secret))
+`], { cwd: process.cwd(), env: deploySecurityEnv, encoding: 'utf-8' });
+assert.strictEqual(deploySecurityProbe.status, 0, deploySecurityProbe.stderr || 'secret-safe gateway deploy probe should run');
+assert.ok(deploySecurityProbe.stdout.includes('<redacted>'), 'unexpected remote stdout/stderr secrets should be redacted');
+const deploySecurityOutput = `${deploySecurityProbe.stdout}\n${deploySecurityProbe.stderr}`;
+for (const secret of [
+  deploySecurityEnv.DEPLOY_PASSWORD,
+  deploySecurityEnv.BACKEND_JWT_SECRET,
+  deploySecurityEnv.WECHAT_APPSECRET,
+  deploySecurityEnv.GEWU_DESKTOP_SYNC_TOKEN,
+  deploySecurityEnv.GEWU_CLOUD_RELAY_HOST_TOKEN,
+  deploySecurityEnv.MINIAPP_REVIEW_EXPERIENCE_CODE,
+]) {
+  assert.ok(!deploySecurityOutput.includes(secret), 'deploy stdout/stderr must not expose fixture secrets');
+}
+assert.deepStrictEqual(
+  deploySecurityProbe.stdout.trim().split(/\r?\n/).slice(-5),
+  ['True', 'True', 'True', 'True', 'True'],
+  'gateway deploy should keep secrets out of exec input, chmod 600 before writing, trap/finally cleanup, update PM2 env, and transfer every runtime secret',
+);
 
 for (const name of [
   'GEWU_NODE_ROLE',
@@ -86,7 +168,8 @@ for (const name of ['WECHAT_APPID', 'WECHAT_APPSECRET']) {
 }
 assert.ok(deployPy.includes('MINIAPP_REVIEW_EXPERIENCE_CODE'), 'pm2 deploy should pass the review experience code');
 assert.ok(deployPy.includes('validate_review_experience_code'), 'pm2 deploy should validate review code strength before connection');
-assert.ok(deployGatewayPy.includes('remote_env_prefix()'), 'formal gateway deploy should inject the validated remote environment');
+assert.ok(deployGatewayPy.includes('upload_remote_env_file'), 'formal gateway deploy should transfer secrets outside the SSH command line');
+assert.ok(deployGatewayPy.includes('remove_remote_env_file'), 'formal gateway deploy should clean up its temporary env file in finally');
 assert.ok(deployGatewayPy.includes('--update-env'), 'formal gateway restart should refresh PM2 environment variables');
 
 assert.ok(deployPy.includes('DEPLOY_KEY_PATH'), 'pm2 deploy should support SSH key authentication');

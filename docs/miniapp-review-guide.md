@@ -45,11 +45,17 @@
 
 ## 提交前检查
 
-1. 使用强随机体验码配置 `MINIAPP_REVIEW_EXPERIENCE_CODE`，只通过部署环境和微信私密提审备注传递。
-2. 运行 `node scripts/check_miniapp_review_readiness.js`，确认文案契约和体验码强度通过；命令不会输出体验码。
-3. 配置 `MINIAPP_REVIEW_BASE_URL=https://physicsedu.xyz/scheduling` 后运行 `node scripts/check_review_demo.js`，确认管理员和学生两条公开链路、沙箱导出签名及真实写入拒绝均通过。
-4. 阿里云健康检查：`https://physicsedu.xyz/scheduling/api/health`，期望返回 `ok: true` 且版本与本次发布一致。
-5. 微信小程序 API 合法域名包含 `https://physicsedu.xyz`。
+1. 优先使用密码管理器的加密随机生成器创建并保存体验码：至少 32 个 ASCII 字符，同时含大小写字母、数字和符号；不要使用项目名、产品名、角色、年份、日期、键盘序列或重复片段。强格式门禁只能排除明显可猜值，不是对随机性的数学证明。
+2. Windows 本机也可用以下命令生成候选值并直接写入剪贴板；命令不会输出候选值。立即粘贴到密码管理器，随后清空剪贴板；不得粘贴到终端命令行、聊天、日志或 Git：
+
+   ```powershell
+   node -e "const c=require('crypto').randomBytes(32).toString('base64url')+'!aA1';const r=require('child_process').spawnSync('powershell.exe',['-NoProfile','-Command','Set-Clipboard'],{input:c,encoding:'utf8',stdio:['pipe','ignore','ignore']});process.exit(r.status??1)"
+   ```
+
+3. 使用候选值配置 `MINIAPP_REVIEW_EXPERIENCE_CODE`，只通过受控部署环境和微信私密提审备注传递。运行 `node scripts/check_miniapp_review_readiness.js` 确认文案与共享强格式策略通过；readiness 不会输出体验码。
+4. 配置 `MINIAPP_REVIEW_BASE_URL=https://physicsedu.xyz/scheduling` 后运行 `node scripts/check_review_demo.js`，确认管理员和学生两条公开链路、沙箱导出签名及真实写入拒绝均通过。
+5. 阿里云健康检查：`https://physicsedu.xyz/scheduling/api/health`，期望返回 `ok: true` 且版本与本次发布一致。
+6. 微信小程序 API 合法域名包含 `https://physicsedu.xyz`。
 
 ## 被驳回时的处理
 

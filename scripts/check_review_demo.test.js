@@ -10,7 +10,8 @@ const {
   sanitizeFailure,
 } = require('./check_review_demo');
 
-const EXPERIENCE_CODE = 'Gewu-Review-2026-A9x7';
+// Explicit non-production test fixture; never use it as a deployed review code.
+const EXPERIENCE_CODE = 'vN7$kP2@xR9!mQ4#tL8&cW5*zH3^sJ6?dF';
 const BASE_URL = 'https://review.example.test/scheduling';
 
 function jsonResponse(status, body) {

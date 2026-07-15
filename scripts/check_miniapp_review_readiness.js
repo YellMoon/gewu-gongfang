@@ -5,6 +5,7 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 const REVIEW_DOC_PATH = path.join(ROOT_DIR, 'docs', 'miniapp-review-guide.md');
 const REVIEW_CODE_ENV = 'MINIAPP_REVIEW_EXPERIENCE_CODE';
 const REVIEW_CODE_PLACEHOLDER = '<review experience code>';
+const REVIEW_CODE_POLICY = require('./review-experience-code-policy.json');
 
 function buildDefaultReviewInfo() {
   return {
@@ -21,20 +22,42 @@ function validateReviewExperienceCode(env = process.env) {
   const raw = String(env[REVIEW_CODE_ENV] || '');
   const value = raw.trim();
   const lower = value.toLowerCase();
-  const forbidden = new Set([
-    'review-experience-code',
-    'review-demo-code',
-    'password123456789',
-    REVIEW_CODE_PLACEHOLDER,
-  ]);
+  const repeatedCharacter = new RegExp(`(.)\\1{${REVIEW_CODE_POLICY.maxRepeatedCharacterRun},}`);
+  const hasRepeatedSubstring = (() => {
+    const minimum = REVIEW_CODE_POLICY.minRepeatedSubstringLength;
+    for (let size = minimum; size <= Math.floor(value.length / 2); size += 1) {
+      for (let start = 0; start + size <= value.length; start += 1) {
+        const candidate = value.slice(start, start + size);
+        if (value.indexOf(candidate, start + size) >= 0) return true;
+      }
+    }
+    return false;
+  })();
+  const hasSequence = REVIEW_CODE_POLICY.sequenceSeeds.some(seed => {
+    const candidates = [seed, [...seed].reverse().join('')];
+    return candidates.some(sequence => {
+      for (let index = 0; index + REVIEW_CODE_POLICY.sequenceLength <= sequence.length; index += 1) {
+        if (lower.includes(sequence.slice(index, index + REVIEW_CODE_POLICY.sequenceLength))) return true;
+      }
+      return false;
+    });
+  });
   const strong = raw === value
-    && value.length >= 16
-    && value.length <= 128
-    && /[A-Za-z]/.test(value)
+    && value.length >= REVIEW_CODE_POLICY.minLength
+    && value.length <= REVIEW_CODE_POLICY.maxLength
+    && /^[\x21-\x7e]+$/.test(value)
+    && /[a-z]/.test(value)
+    && /[A-Z]/.test(value)
     && /\d/.test(value)
     && /[^A-Za-z0-9]/.test(value)
-    && new Set(value).size >= 10
-    && !forbidden.has(lower);
+    && new Set(value).size >= REVIEW_CODE_POLICY.minUniqueCharacters
+    && !REVIEW_CODE_POLICY.forbiddenTerms.some(term => lower.includes(term))
+    && !/(?:19|20)\d{2}/.test(value)
+    && !/\d{1,4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?/.test(value)
+    && !repeatedCharacter.test(value)
+    && !hasRepeatedSubstring
+    && !hasSequence
+    && value !== REVIEW_CODE_PLACEHOLDER;
   return strong
     ? { ok: true, errors: [] }
     : { ok: false, errors: [`${REVIEW_CODE_ENV} is missing or weak`] };
@@ -51,6 +74,9 @@ function validateReviewGuide(doc) {
     '隔离内存沙箱',
     '不会写入真实',
     REVIEW_CODE_PLACEHOLDER,
+    '密码管理器',
+    'Set-Clipboard',
+    '不会输出',
   ];
   const errors = required.filter(copy => !doc.includes(copy)).map(copy => `review guide missing required contract: ${copy}`);
   return { ok: errors.length === 0, errors };
