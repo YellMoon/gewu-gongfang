@@ -21,6 +21,13 @@ const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
 const desktopPairingRouter = require('./routes/desktopPairing');
 const { createReviewDemoRouter } = require('./routes/reviewDemo');
+const gatewayPackage = require('../package.json');
+
+function getHealthVersion() {
+  const deployedVersion = String(process.env.GEWU_APP_VERSION || '').trim();
+  if (deployedVersion) return deployedVersion;
+  return String(gatewayPackage.version || 'local').trim() || 'local';
+}
 
 function createApp(options = {}) {
   const app = express();
@@ -52,7 +59,7 @@ function createApp(options = {}) {
 
   // ===================== 健康检查 =====================
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, time: new Date().toISOString(), version: '4.0.0' });
+    res.json({ ok: true, time: new Date().toISOString(), version: getHealthVersion() });
   });
 
   // ===================== 公开路由（无需认证） =====================

@@ -214,25 +214,49 @@ def must_abort(label, callback):
 must_abort("run", lambda: d.run(Ssh([9]), "false"))
 must_abort("migrate", lambda: d.migrate(Ssh([0, 17]), path_factory=lambda: "/tmp/gewu-pm2-env-migrate-fail"))
 must_abort("start", lambda: d.start_backend_service(Ssh([23]), "service", path_factory=lambda: "/tmp/gewu-pm2-env-start-fail"))
-must_abort("health-status", lambda: d.check_remote_health(Ssh([28]), 3002, "backend"))
+must_abort("health-status", lambda: d.check_remote_health(Ssh([28]), 3002, "backend", "5.14.3"))
 
 class JsonSsh(Ssh):
+    def __init__(self, body): self.body = body
     def exec_command(self, command, timeout=30):
-        return None, Stream('{"ok":false}', 0), Stream('', 0)
+        return None, Stream(self.body, 0), Stream('', 0)
 
 try:
-    d.check_remote_health(JsonSsh([]), 3002, "backend")
+    d.check_remote_health(JsonSsh('{"ok":true,"time":"2026-07-15T00:00:00.000Z","version":"5.14.2"}'), 3002, "backend", "5.14.3")
 except d.RemoteHealthError as error:
-    print("health-json", "private" not in str(error))
+    print("health-version", "private" not in str(error))
 else:
-    raise SystemExit("invalid health JSON did not abort")
+    raise SystemExit("old health version did not abort")
+
+exact = d.check_remote_health(JsonSsh('{"ok":true,"time":"2026-07-15T00:00:00.000Z","version":"5.14.3"}'), 3002, "backend", "5.14.3")
+print("health-exact", exact["version"] == "5.14.3")
+
+cleanup_secret = "cleanup-secret-value"
+d.upload_remote_env_file = lambda ssh, path_factory=None: "/tmp/gewu-pm2-env-dual-failure"
+d.remove_remote_env_file = lambda ssh, path: (_ for _ in ()).throw(RuntimeError(cleanup_secret))
+try:
+    d.run_with_remote_env(Ssh([41]), "false")
+except d.RemoteCommandError as error:
+    combined = str(error) + " " + " ".join(getattr(error, "__notes__", []))
+    print("dual-failure", error.exit_status, cleanup_secret not in combined)
+else:
+    raise SystemExit("dual failure lost the command error")
+try:
+    d.run_with_remote_env(Ssh([0]), "true")
+except d.RemoteEnvironmentCleanupError as error:
+    print("cleanup-only", cleanup_secret not in str(error))
+else:
+    raise SystemExit("cleanup-only failure was ignored")
 `], { cwd: process.cwd(), env: deploySecurityEnv, encoding: 'utf-8' });
 assert.strictEqual(commandFailureProbe.status, 0, commandFailureProbe.stderr || 'remote command failure probe should run');
 assert.ok(commandFailureProbe.stdout.includes('run 9 True True'), 'run should raise a sanitized error with the remote exit status');
 assert.ok(commandFailureProbe.stdout.includes('migrate 17 True True'), 'migration should abort on a nonzero remote command');
 assert.ok(commandFailureProbe.stdout.includes('start 23 True True'), 'PM2 start should abort on a nonzero remote command');
 assert.ok(commandFailureProbe.stdout.includes('health-status 28 True True'), 'health checks should abort on a nonzero HTTP command');
-assert.ok(commandFailureProbe.stdout.includes('health-json True'), 'health checks should reject an HTTP 200 body unless its JSON contract has ok=true');
+assert.ok(commandFailureProbe.stdout.includes('health-version True'), 'health checks should reject a structurally valid response with an old unified version');
+assert.ok(commandFailureProbe.stdout.includes('health-exact True'), 'health checks should accept the exact expected unified version');
+assert.ok(commandFailureProbe.stdout.includes('dual-failure 41 True'), 'command failure should remain primary when environment cleanup also fails');
+assert.ok(commandFailureProbe.stdout.includes('cleanup-only True'), 'successful commands should still fail safely when environment cleanup fails');
 
 const cleanupFailureProbe = spawnSync('python', ['-c', `
 import scripts.deploy as d
@@ -366,7 +390,8 @@ assert.ok(deployPy.includes('"app_port": "3002"'), 'production backend should de
 assert.ok(deployPy.includes('APP_PORT = os.getenv("PORT", DEFAULTS["app_port"])'), 'pm2 deploy should support overriding the environment-specific backend port');
 assert.ok(deployPy.includes('"PORT": APP_PORT'), 'pm2 deploy should inject the resolved backend port');
 assert.ok(deployPy.includes('health_port = APP_PORT'), 'pm2 deploy health check should use the resolved backend port');
-assert.ok(deployPy.includes('check_remote_health(ssh, health_port, "backend")'), 'pm2 status should use the configured backend port');
+assert.ok(deployPy.includes('check_remote_health(ssh, health_port, "backend", read_root_version())'), 'pm2 status should require the configured backend port and exact root version');
+assert.ok(deployGatewayPy.includes('check_remote_health(ssh, 3001, "gateway", backend_deploy.read_root_version())'), 'Gateway deploy should require the exact root unified version');
 assert.ok(!deployPy.includes("/api/health || echo"), 'backend deploy health must never turn a failure into success');
 assert.ok(!deployGatewayPy.includes("/api/health || echo"), 'gateway deploy health must never turn a failure into success');
 assert.ok(deployPy.includes('recv_exit_status'), 'remote command execution must inspect the Paramiko exit status');
