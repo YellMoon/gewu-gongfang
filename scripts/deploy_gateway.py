@@ -55,7 +55,7 @@ def main():
     backend_deploy.run(ssh, f"cd '{REMOTE_GATEWAY}' && npm install --production 2>&1", timeout=180)
     restart_gateway(ssh)
     backend_deploy.run(ssh, "pm2 save", timeout=60)
-    backend_deploy.check_remote_health(ssh, 3001, "gateway")
+    backend_deploy.check_remote_health(ssh, 3001, "gateway", backend_deploy.read_root_version())
   finally:
     ssh.close()
 

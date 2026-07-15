@@ -5,7 +5,7 @@
   "main": "public/electron.js",
   "homepage": ".",
   "scripts": {
-    "pretest:backend": "node backend/src/routes/cloudRelay.http.test.js && node backend/src/routes/paperArtifactAccess.http.test.js",
+    "pretest:backend": "node gateway/src/appHealth.test.js && node backend/src/routes/cloudRelay.http.test.js && node backend/src/routes/paperArtifactAccess.http.test.js",
     "dev": "concurrently \"npm run dev:react\" \"wait-on http://localhost:3000 && electron .\"",
     "dev:react": "craco start",
     "build": "node scripts/prepare-ruby-runtime.js && node scripts/prepare-python-runtime.js && node scripts/update-version.js && craco build",

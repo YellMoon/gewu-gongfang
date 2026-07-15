@@ -231,6 +231,10 @@ class RemoteHealthError(RuntimeError):
     pass
 
 
+class RemoteEnvironmentCleanupError(RuntimeError):
+    pass
+
+
 def run(ssh, cmd, timeout=30):
     safe_print(f">>> {redact_command(cmd)}")
     _, stdout, stderr = ssh.exec_command(cmd, timeout=timeout)
@@ -421,9 +425,19 @@ def remote_env_shell_command(remote_path, command):
 def run_with_remote_env(ssh, command, timeout=30, path_factory=None):
     remote_path = upload_remote_env_file(ssh, path_factory=path_factory)
     try:
-        return run(ssh, remote_env_shell_command(remote_path, command), timeout=timeout)
-    finally:
+        result = run(ssh, remote_env_shell_command(remote_path, command), timeout=timeout)
+    except Exception as primary_error:
+        try:
+            remove_remote_env_file(ssh, remote_path)
+        except Exception:
+            if hasattr(primary_error, "add_note"):
+                primary_error.add_note("Remote environment cleanup also failed")
+        raise
+    try:
         remove_remote_env_file(ssh, remote_path)
+    except Exception as error:
+        raise RemoteEnvironmentCleanupError("Remote environment cleanup failed") from error
+    return result
 
 
 def migrate(ssh, path_factory=None):
@@ -441,7 +455,7 @@ def start_backend_service(ssh, service_name, path_factory=None):
     return run_with_remote_env(ssh, command, timeout=30, path_factory=path_factory)
 
 
-def check_remote_health(ssh, port, component):
+def check_remote_health(ssh, port, component, expected_version):
     out, _ = run(
         ssh,
         f"curl --fail --silent --show-error --max-time 15 http://localhost:{port}/api/health",
@@ -457,7 +471,7 @@ def check_remote_health(ssh, port, component):
         and isinstance(body.get("time"), str)
         and bool(body["time"].strip())
         and isinstance(body.get("version"), str)
-        and bool(body["version"].strip())
+        and body["version"] == expected_version
     )
     if not valid:
         raise RemoteHealthError(f"{component} health response has an invalid JSON contract")
@@ -503,11 +517,11 @@ def main():
             time.sleep(2)
             run(ssh, "pm2 status")
             health_port = APP_PORT
-            check_remote_health(ssh, health_port, "backend")
+            check_remote_health(ssh, health_port, "backend", read_root_version())
         elif mode == "status":
             run(ssh, "pm2 status")
             health_port = APP_PORT
-            check_remote_health(ssh, health_port, "backend")
+            check_remote_health(ssh, health_port, "backend", read_root_version())
         else:
             raise SystemExit(f"Unknown mode: {mode}")
     finally:
