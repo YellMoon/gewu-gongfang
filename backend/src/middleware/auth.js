@@ -6,7 +6,19 @@ const { getInstance } = require('../database');
 const { roleForUser } = require('../services/authorizationPolicy');
 
 const JWT_SECRET = process.env.JWT_SECRET || null;
-function verifyToken(token){if(!JWT_SECRET)throw new Error('JWT_SECRET_REQUIRED');const decoded=jwt.verify(token,JWT_SECRET,{algorithms:['HS256']});if(decoded.token_use==='desktop-session'&&(decoded.iss!=='gewu-auth'||decoded.aud!=='gewu-api'))throw new Error('TOKEN_AUDIENCE_INVALID');return decoded;}
+function verifyToken(token) {
+  if (!JWT_SECRET) throw new Error('JWT_SECRET_REQUIRED');
+  const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+  if (decoded.token_use === 'review-demo') {
+    const error = new Error('REVIEW_TOKEN_NOT_ACCEPTED_BY_BACKEND');
+    error.code = 'REVIEW_TOKEN_NOT_ACCEPTED_BY_BACKEND';
+    throw error;
+  }
+  if (decoded.token_use === 'desktop-session' && (decoded.iss !== 'gewu-auth' || decoded.aud !== 'gewu-api')) {
+    throw new Error('TOKEN_AUDIENCE_INVALID');
+  }
+  return decoded;
+}
 
 function sendAuthError(res, status, message, code) {
   return res.status(status).json({
@@ -139,7 +151,10 @@ function optionalAuth(req, res, next) {
     try {
       attachAuthorizationContext(req, verifyToken(token));
       if (!applyAuthenticatedTenant(req, res)) return undefined;
-    } catch (_err) {
+    } catch (error) {
+      if (error?.code === 'REVIEW_TOKEN_NOT_ACCEPTED_BY_BACKEND') {
+        return sendAuthError(res, 401, '审核体验令牌仅允许访问隔离网关', 'TOKEN_INVALID');
+      }
       // Optional auth keeps old behavior: invalid tokens do not block reads.
     }
   }

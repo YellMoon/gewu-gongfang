@@ -17,6 +17,8 @@ Three options were considered. A real pre-authorized operating account could exp
 - A successful request issues a two-hour HS256 JWT with `iss=gewu-review-demo`, `aud=gewu-miniapp-review`, `token_use=review-demo`, a random `session_id`, and the selected role.
 - The token has no WeChat openid, phone number, or persisted user row. Normal WeChat login and approval remain unchanged. Review tokens cannot use the normal refresh route.
 - Authentication middleware validates review claims strictly and constructs a synthetic identity. Normal tokens still require a matching `users` row. Neither path may fall back to the other.
+- Backend authentication explicitly rejects `token_use=review-demo`; core reads and writes therefore remain unavailable even if a modified client sends a Gateway review token directly to the normal `/scheduling` base.
+- Production routing keeps normal login and business requests on the Backend base `https://physicsedu.xyz/scheduling`. The review login entry and requests made under a strictly verified review identity use the independently configured Gateway base `MINIAPP_REVIEW_API_BASE_URL` (default `https://physicsedu.xyz`), so review isolation does not redirect normal users to Gateway modules.
 
 ## Data and authorization isolation
 
@@ -54,10 +56,10 @@ Three options were considered. A real pre-authorized operating account could exp
 - Unit tests cover missing/wrong code, role allowlisting, rate limiting, JWT issuer/audience/use, token-type separation, and the absence of persisted-user lookup for review tokens.
 - HTTP tests cover both roles, permissions, scoped demo snapshots, question preview, DOCX/PDF generation, cross-session download rejection, expiry, write blocking, and normal-login regression.
 - Miniapp tests cover permanent entry visibility, role selection, cache isolation, module mapping, disabled writes, question API routing, exit cleanup, and expiration.
-- Final verification runs full `npm test`, production miniapp build, readiness checks, post-deploy public smoke, and both role paths in WeChat Developer Tools.
+- Final verification runs full `npm test`, production miniapp build, readiness checks, post-deploy public smoke (including direct Backend bypass probes), and both role paths in WeChat Developer Tools.
 
 ## Release and rollback
 
 - The final unified version includes both merged pull requests and this review experience. Cloud code and databases are backed up before deployment.
 - After development upload, the release notes include a valid code and role instructions. If WeChat OpenAPI remains blocked by error 86000, manual submission/publication is recorded as an external blocker and is not reported as live.
-- Rollback restores gateway code and removes `MINIAPP_REVIEW_EXPERIENCE_CODE`; fail-closed configuration leaves normal phone login unaffected.
+- Rollback restores gateway code and removes `MINIAPP_REVIEW_EXPERIENCE_CODE`; fail-closed configuration leaves normal phone login and the Backend request base unaffected.

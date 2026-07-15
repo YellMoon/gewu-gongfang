@@ -53,8 +53,8 @@
    ```
 
 3. 使用候选值配置 `MINIAPP_REVIEW_EXPERIENCE_CODE`，只通过受控部署环境和微信私密提审备注传递。运行 `node scripts/check_miniapp_review_readiness.js` 确认文案与共享强格式策略通过；readiness 不会输出体验码。
-4. 配置 `MINIAPP_REVIEW_BASE_URL=https://physicsedu.xyz/scheduling` 后运行 `node scripts/check_review_demo.js`，确认管理员和学生两条公开链路、沙箱导出签名及真实写入拒绝均通过。
-5. 阿里云健康检查：`https://physicsedu.xyz/scheduling/api/health`，期望返回 `ok: true` 且版本与本次发布一致。
+4. 小程序普通登录和业务请求继续使用 Backend 基址 `https://physicsedu.xyz/scheduling`；审核登录及经服务端验证的审核会话独立使用 Gateway 基址 `https://physicsedu.xyz`。配置 `MINIAPP_REVIEW_BASE_URL=https://physicsedu.xyz` 与 `MINIAPP_REAL_API_BASE_URL=https://physicsedu.xyz/scheduling` 后运行 `node scripts/check_review_demo.js`，确认管理员和学生两条公开链路、沙箱导出签名、Gateway 真实写入拒绝，以及审核 token 对 Backend 权限/读/写路径的旁路拒绝均通过。
+5. 阿里云健康检查同时覆盖 Gateway `https://physicsedu.xyz/api/health` 与 Backend `https://physicsedu.xyz/scheduling/api/health`，两者均应返回 `ok: true` 且版本与本次发布一致。
 6. 微信小程序 API 合法域名包含 `https://physicsedu.xyz`。
 
 ## 被驳回时的处理

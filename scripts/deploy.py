@@ -478,6 +478,24 @@ def check_remote_health(ssh, port, component, expected_version):
     return body
 
 
+def wait_for_remote_health(ssh, port, component, expected_version, attempts=12, delay_seconds=1):
+    bounded_attempts = int(attempts)
+    if bounded_attempts < 1:
+        raise ValueError("health attempts must be at least 1")
+    delay = max(0, float(delay_seconds))
+    last_error = None
+    for attempt in range(bounded_attempts):
+        try:
+            return check_remote_health(ssh, port, component, expected_version)
+        except (RemoteCommandError, RemoteHealthError) as error:
+            last_error = error
+            if attempt + 1 < bounded_attempts and delay:
+                time.sleep(delay)
+    raise RemoteHealthError(
+        f"{component} health did not become ready after {bounded_attempts} attempts"
+    ) from last_error
+
+
 def rollback_plan():
     print("Rollback plan for single-file schema:")
     print(f"1. Stop service: pm2 stop scheduling-backend-{APP_ENV}")

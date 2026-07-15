@@ -6,7 +6,8 @@ export default {
   },
   defineConstants: {
     __APP_ENV__: JSON.stringify(process.env.MINIAPP_APP_ENV || 'staging'),
-    __API_BASE_URL__: JSON.stringify(process.env.MINIAPP_API_BASE_URL || 'https://physicsedu.xyz/scheduling')
+    __API_BASE_URL__: JSON.stringify(process.env.MINIAPP_API_BASE_URL || 'https://physicsedu.xyz/scheduling'),
+    __REVIEW_API_BASE_URL__: JSON.stringify(process.env.MINIAPP_REVIEW_API_BASE_URL || 'https://physicsedu.xyz')
   },
   mini: {},
   h5: {

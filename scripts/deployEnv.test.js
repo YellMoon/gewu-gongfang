@@ -231,6 +231,42 @@ else:
 exact = d.check_remote_health(JsonSsh('{"ok":true,"time":"2026-07-15T00:00:00.000Z","version":"5.14.3"}'), 3002, "backend", "5.14.3")
 print("health-exact", exact["version"] == "5.14.3")
 
+class SequenceHealthSsh:
+    def __init__(self, responses): self.responses, self.calls = list(responses), 0
+    def exec_command(self, command, timeout=30):
+        self.calls += 1
+        status, body = self.responses.pop(0)
+        return None, Stream(body, status), Stream('', status)
+
+delayed = SequenceHealthSsh([
+    (7, ''),
+    (0, '{"ok":true,"time":"2026-07-15T00:00:01.000Z","version":"5.14.3"}'),
+])
+ready = d.wait_for_remote_health(delayed, 3001, "gateway", "5.14.3", attempts=3, delay_seconds=0)
+print("health-retry", ready["version"] == "5.14.3", delayed.calls == 2)
+
+contract_delay = SequenceHealthSsh([
+    (0, '{"ok":true,"time":"2026-07-15T00:00:01.000Z","version":"5.14.2"}'),
+    (0, '{"ok":true,"time":"2026-07-15T00:00:02.000Z","version":"5.14.3"}'),
+])
+contract_ready = d.wait_for_remote_health(contract_delay, 3001, "gateway", "5.14.3", attempts=3, delay_seconds=0)
+print("health-contract-retry", contract_ready["version"] == "5.14.3", contract_delay.calls == 2)
+
+never_ready = SequenceHealthSsh([(7, ''), (7, '')])
+try:
+    d.wait_for_remote_health(never_ready, 3001, "gateway", "5.14.3", attempts=2, delay_seconds=0)
+except d.RemoteHealthError as error:
+    print("health-retry-exhausted", never_ready.calls == 2, "private" not in str(error))
+else:
+    raise SystemExit("bounded health retries did not abort")
+
+try:
+    d.wait_for_remote_health(never_ready, 3001, "gateway", "5.14.3", attempts=0, delay_seconds=0)
+except ValueError:
+    print("health-zero-attempts", True)
+else:
+    raise SystemExit("zero health attempts were accepted")
+
 cleanup_secret = "cleanup-secret-value"
 d.upload_remote_env_file = lambda ssh, path_factory=None: "/tmp/gewu-pm2-env-dual-failure"
 d.remove_remote_env_file = lambda ssh, path: (_ for _ in ()).throw(RuntimeError(cleanup_secret))
@@ -255,6 +291,10 @@ assert.ok(commandFailureProbe.stdout.includes('start 23 True True'), 'PM2 start 
 assert.ok(commandFailureProbe.stdout.includes('health-status 28 True True'), 'health checks should abort on a nonzero HTTP command');
 assert.ok(commandFailureProbe.stdout.includes('health-version True'), 'health checks should reject a structurally valid response with an old unified version');
 assert.ok(commandFailureProbe.stdout.includes('health-exact True'), 'health checks should accept the exact expected unified version');
+assert.ok(commandFailureProbe.stdout.includes('health-retry True True'), 'deployment health polling should tolerate bounded startup delay');
+assert.ok(commandFailureProbe.stdout.includes('health-contract-retry True True'), 'deployment health polling should tolerate a stale-version contract during startup');
+assert.ok(commandFailureProbe.stdout.includes('health-retry-exhausted True True'), 'deployment health polling should fail after its bounded attempt count');
+assert.ok(commandFailureProbe.stdout.includes('health-zero-attempts True'), 'deployment health polling should reject a zero attempt budget');
 assert.ok(commandFailureProbe.stdout.includes('dual-failure 41 True'), 'command failure should remain primary when environment cleanup also fails');
 assert.ok(commandFailureProbe.stdout.includes('cleanup-only True'), 'successful commands should still fail safely when environment cleanup fails');
 
@@ -391,7 +431,11 @@ assert.ok(deployPy.includes('APP_PORT = os.getenv("PORT", DEFAULTS["app_port"])'
 assert.ok(deployPy.includes('"PORT": APP_PORT'), 'pm2 deploy should inject the resolved backend port');
 assert.ok(deployPy.includes('health_port = APP_PORT'), 'pm2 deploy health check should use the resolved backend port');
 assert.ok(deployPy.includes('check_remote_health(ssh, health_port, "backend", read_root_version())'), 'pm2 status should require the configured backend port and exact root version');
-assert.ok(deployGatewayPy.includes('check_remote_health(ssh, 3001, "gateway", backend_deploy.read_root_version())'), 'Gateway deploy should require the exact root unified version');
+assert.ok(
+  deployGatewayPy.includes('backend_deploy.wait_for_remote_health(')
+    && deployGatewayPy.includes('backend_deploy.read_root_version()'),
+  'Gateway deploy should poll for startup and require the exact root unified version',
+);
 assert.ok(!deployPy.includes("/api/health || echo"), 'backend deploy health must never turn a failure into success');
 assert.ok(!deployGatewayPy.includes("/api/health || echo"), 'gateway deploy health must never turn a failure into success');
 assert.ok(deployPy.includes('recv_exit_status'), 'remote command execution must inspect the Paramiko exit status');
