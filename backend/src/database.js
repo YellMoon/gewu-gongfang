@@ -101,6 +101,7 @@ class DatabaseService {
     this._ensureMiniappTaskColumns();
     this._ensureMiniappUserColumns();
     this._ensureAuthorizationPersistence();
+    this._migrateMiniappMemberships();
     this._ensureHostHeartbeatColumns();
     console.log(`[DB] initialized env=${this.environment} schema=${this.schemaVersion} path=${this.dbPath}`);
   }
@@ -207,7 +208,16 @@ class DatabaseService {
 
   _ensureInstitutionStudentColumns() {
     const columns = new Set(this.db.prepare('PRAGMA table_info(students)').all().map(column => column.name));
-    if (!columns.has('is_institution_student')) this.db.prepare('ALTER TABLE students ADD COLUMN is_institution_student INTEGER DEFAULT 0').run();
+    const addColumn = (name, ddl) => {
+      if (!columns.has(name)) {
+        this.db.prepare(`ALTER TABLE students ADD COLUMN ${name} ${ddl}`).run();
+        columns.add(name);
+      }
+    };
+    addColumn('is_institution_student', 'INTEGER DEFAULT 0');
+    addColumn('parent_phone', 'TEXT');
+    addColumn('parent_phone_normalized', 'TEXT');
+    addColumn('parent_relation', 'TEXT');
     this.db.prepare('UPDATE students SET is_institution_student = 0 WHERE is_institution_student IS NULL').run();
     this.ensureInstitutionStudents();
     this.db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_students_one_institution_student
@@ -420,10 +430,14 @@ class DatabaseService {
     addColumn('student_id', 'TEXT');
     addColumn('linked_student_ids', 'TEXT');
     addColumn('deleted', 'INTEGER DEFAULT 0');
+    addColumn('identity_kind', 'TEXT');
+    addColumn('auth_version', 'INTEGER NOT NULL DEFAULT 1');
+    addColumn('disabled_at', 'TEXT');
 
     this.db.prepare("UPDATE users SET deleted = 0 WHERE deleted IS NULL").run();
     this.db.prepare("UPDATE users SET status = 1 WHERE status IS NULL").run();
     this.db.prepare("UPDATE users SET login_enabled = 0 WHERE login_enabled IS NULL").run();
+    this.db.prepare("UPDATE users SET auth_version = 1 WHERE auth_version IS NULL OR auth_version < 1").run();
     this.db.prepare("UPDATE users SET name = nickname WHERE (name IS NULL OR name = '') AND nickname IS NOT NULL").run();
     this._seedMiniappAdminUsers();
   }
@@ -631,6 +645,54 @@ class DatabaseService {
     if (!columns.has('lan_urls')) {
       this.db.prepare('ALTER TABLE host_heartbeats ADD COLUMN lan_urls TEXT').run();
     }
+    if (!columns.has('capabilities')) {
+      this.db.prepare('ALTER TABLE host_heartbeats ADD COLUMN capabilities TEXT').run();
+    }
+  }
+
+  _migrateMiniappMemberships() {
+    const now = this._now();
+    const approvedUsers = this.db.prepare(`SELECT * FROM users
+      WHERE deleted = 0 AND review_status = 'approved' AND login_enabled = 1
+        AND status != 0 AND status != 'inactive' AND id NOT LIKE 'review-demo:%'`).all();
+    const insertMembership = this.db.prepare(`INSERT OR IGNORE INTO account_memberships
+      (id, subject_type, subject_id, status, source, starts_at, ends_at, created_at, updated_at)
+      VALUES (?, ?, ?, 'active', 'existing_approval', ?, NULL, ?, ?)`);
+    const studentExists = this.db.prepare('SELECT 1 FROM students WHERE id = ? AND deleted = 0');
+    const teacherExists = this.db.prepare('SELECT 1 FROM teachers WHERE id = ? AND deleted = 0');
+    const markManualResolution = this.db.prepare(`UPDATE users
+      SET review_status = 'manual_resolution_required', login_enabled = 0,
+          auth_version = auth_version + 1, updated_at = ?
+      WHERE id = ? AND review_status = 'approved'`);
+
+    this.db.transaction(() => {
+      for (const user of approvedUsers) {
+        const role = user.role || user.user_type;
+        let subjectType = null;
+        let subjectId = null;
+        if (role === 'student') {
+          if (!user.student_id || !studentExists.get(user.student_id)) {
+            markManualResolution.run(now, user.id);
+            continue;
+          }
+          subjectType = 'student';
+          subjectId = user.student_id;
+        } else if (role === 'teacher') {
+          if (!user.teacher_id || !teacherExists.get(user.teacher_id)) {
+            markManualResolution.run(now, user.id);
+            continue;
+          }
+          subjectType = 'teacher';
+          subjectId = user.teacher_id;
+        } else if (role === 'admin' || role === 'super_admin') {
+          subjectType = 'user';
+          subjectId = user.id;
+        }
+        if (subjectType && subjectId) {
+          insertMembership.run(uuidv4(), subjectType, subjectId, now, now, now);
+        }
+      }
+    })();
   }
 
   _tenantId(options = {}) {

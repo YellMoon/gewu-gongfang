@@ -17,6 +17,15 @@ legacy.exec(`CREATE TABLE users (
 CREATE TABLE teachers (
   id TEXT PRIMARY KEY, tenant_id TEXT DEFAULT 'default', name TEXT NOT NULL, phone TEXT, deleted INTEGER DEFAULT 0,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE students (
+  id TEXT PRIMARY KEY, tenant_id TEXT DEFAULT 'default', name TEXT NOT NULL, phone TEXT,
+  parent_phone TEXT, parent_phone_normalized TEXT, parent_relation TEXT,
+  school TEXT, grade_year INTEGER, grade_current TEXT, source_type INTEGER DEFAULT 1,
+  institution_id TEXT, is_institution_student INTEGER DEFAULT 0, parent_name TEXT,
+  parent_wechat TEXT, student_source TEXT, balance_hours REAL DEFAULT 0,
+  balance_money REAL DEFAULT 0, notes TEXT, deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 )`);
 const insertLegacy = legacy.prepare(`INSERT INTO users
   (id, phone, name, role, status, login_enabled, deleted, created_at, updated_at)
@@ -38,6 +47,10 @@ const oldNow = '2026-01-01T00:00:00.000Z';
   ['teacher-duplicate', '13000000010', 'duplicate teacher', 'pending'],
   ['teacher-empty', '', 'empty phone teacher', 'pending'],
 ].forEach(row => insertLegacy.run(...row, oldNow, oldNow));
+legacy.prepare(`INSERT INTO students
+  (id, name, phone, deleted, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)`)
+  .run('s-legacy-valid', 'legacy student', '13000000001', oldNow, oldNow);
+legacy.prepare('UPDATE users SET student_id = ? WHERE id = ?').run('s-legacy-valid', 'student');
 const insertLegacyTeacher = legacy.prepare(`INSERT INTO teachers
   (id, name, phone, deleted, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)`);
 insertLegacyTeacher.run('t-unique-old', 'unique legacy teacher', '13000000002', oldNow, oldNow);
