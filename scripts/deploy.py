@@ -260,11 +260,6 @@ def remote_env_values():
     }
 
 
-def remote_env_prefix():
-    env = remote_env_values()
-    return " ".join(f"{key}={shlex.quote(str(value or ''))}" for key, value in env.items())
-
-
 def serialize_remote_env_file(values=None):
     env = values or remote_env_values()
     lines = []
@@ -316,14 +311,35 @@ def remove_remote_env_file(ssh, remote_path):
         sftp.close()
 
 
-def migrate(ssh):
+def remote_env_shell_command(remote_path, command):
+    if not re.fullmatch(r"/tmp/gewu-pm2-env-[A-Za-z0-9_-]{8,64}", str(remote_path)):
+        raise ValueError("Invalid remote environment path")
+    quoted_path = shlex.quote(str(remote_path))
+    cleanup = shlex.quote(f"rm -f -- {quoted_path}")
+    return f"trap {cleanup} EXIT HUP INT TERM; set -a; . {quoted_path}; set +a; {command}"
+
+
+def run_with_remote_env(ssh, command, timeout=30, path_factory=None):
+    remote_path = upload_remote_env_file(ssh, path_factory=path_factory)
+    try:
+        return run(ssh, remote_env_shell_command(remote_path, command), timeout=timeout)
+    finally:
+        remove_remote_env_file(ssh, remote_path)
+
+
+def migrate(ssh, path_factory=None):
     run(ssh, f"mkdir -p '{os.path.dirname(DB_PATH)}'")
     cmd = (
-        f"cd '{REMOTE_DIR}' && {remote_env_prefix()} "
+        f"cd '{REMOTE_DIR}' && "
         "node -e \"const { getInstance } = require('./src/database'); "
         "const db = getInstance(); console.log(JSON.stringify(db.getSchemaStatus(), null, 2)); db.close();\""
     )
-    run(ssh, cmd, timeout=60)
+    run_with_remote_env(ssh, cmd, timeout=60, path_factory=path_factory)
+
+
+def start_backend_service(ssh, service_name, path_factory=None):
+    command = f"cd '{REMOTE_DIR}' && pm2 start server.js --name {service_name} --update-env"
+    return run_with_remote_env(ssh, command, timeout=30, path_factory=path_factory)
 
 
 def rollback_plan():
@@ -360,11 +376,7 @@ def main():
             service_name = f"scheduling-backend-{APP_ENV}"
             run(ssh, f"pm2 stop {service_name} 2>/dev/null || true")
             run(ssh, f"pm2 delete {service_name} 2>/dev/null || true")
-            run(
-                ssh,
-                f"cd '{REMOTE_DIR}' && {remote_env_prefix()} pm2 start server.js --name {service_name}",
-                timeout=30,
-            )
+            start_backend_service(ssh, service_name)
             run(ssh, "pm2 save")
             time.sleep(2)
             run(ssh, "pm2 status")

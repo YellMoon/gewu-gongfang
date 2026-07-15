@@ -1,6 +1,5 @@
 """Deploy the formal gateway source and restart the remote PM2 process."""
 import importlib.util
-import shlex
 from datetime import datetime
 from pathlib import Path
 
@@ -32,22 +31,17 @@ def upload_dir(sftp, ssh, local_dir, remote_dir):
       print(f"  OK: {Path(remote_path).relative_to(REMOTE_GATEWAY)}")
 
 
-def restart_gateway(ssh, remote_env_path):
-  quoted_env_path = shlex.quote(remote_env_path)
-  cleanup = shlex.quote(f"rm -f -- {quoted_env_path}")
+def restart_gateway(ssh, path_factory=None):
   command = (
-    f"trap {cleanup} EXIT HUP INT TERM; "
-    f"set -a; . {quoted_env_path}; set +a; "
     f"cd '{REMOTE_GATEWAY}' && "
     f"(pm2 restart {SERVICE_NAME} --update-env 2>&1 "
     f"|| pm2 start src/app.js --name {SERVICE_NAME} --update-env)"
   )
-  return backend_deploy.run(ssh, command, timeout=120)
+  return backend_deploy.run_with_remote_env(ssh, command, timeout=120, path_factory=path_factory)
 
 
 def main():
   ssh = backend_deploy.connect()
-  remote_env_path = None
   try:
     stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     backup_dir = f"/root/scheduling-backups/gateway/{stamp}"
@@ -59,13 +53,10 @@ def main():
     finally:
       sftp.close()
     backend_deploy.run(ssh, f"cd '{REMOTE_GATEWAY}' && npm install --production 2>&1", timeout=180)
-    remote_env_path = backend_deploy.upload_remote_env_file(ssh)
-    restart_gateway(ssh, remote_env_path)
+    restart_gateway(ssh)
     backend_deploy.run(ssh, "pm2 save", timeout=60)
     backend_deploy.run(ssh, "curl -s http://localhost:3001/api/health || echo 'gateway health check failed'", timeout=30)
   finally:
-    if remote_env_path:
-      backend_deploy.remove_remote_env_file(ssh, remote_env_path)
     ssh.close()
 
 
