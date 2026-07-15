@@ -26,11 +26,12 @@ export default function Settings() {
 
   useEffect(() => {
     refreshStatus()
-    const unsub = onNetworkStatusChange((res) => {
+    const handleNetworkStatusChange = (res: { isConnected: boolean }) => {
       setOnline(res.isConnected)
       refreshStatus()
-    })
-    return () => offNetworkStatusChange()
+    }
+    onNetworkStatusChange(handleNetworkStatusChange)
+    return () => offNetworkStatusChange(handleNetworkStatusChange)
   }, [])
 
   const refreshStatus = () => {

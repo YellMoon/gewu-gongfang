@@ -7,6 +7,7 @@ import { paymentApi } from '../../utils/api';
 import { getLocalData } from '../../utils/sync';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
 import ReviewDemoBanner from '../../components/ReviewDemoBanner';
+import { sortPaymentsNewestFirst } from './paymentsRuntime';
 import './index.scss';
 
 export default function Payments() {
@@ -89,7 +90,7 @@ export default function Payments() {
           refresherBackground="#f7f4ee"
         >
           <View className="pay-list">
-            {filteredPayments.sort((a, b) => b.created_at.localeCompare(a.created_at)).map(p => (
+            {sortPaymentsNewestFirst(filteredPayments).map(p => (
               <View key={p.id} className="pay-card">
                 <View className="pay-left">
                   <Text className="pay-student">{getStudentName(p.student_id)}</Text>
