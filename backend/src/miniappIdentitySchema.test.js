@@ -42,6 +42,37 @@ try {
     );
   }
 
+  const parentPhoneStudent = service.createStudent({
+    name: 'Parent phone CRUD',
+    phone: '13000000010',
+    parent_phone: '13000000011',
+    parent_phone_normalized: '13000000011',
+    parent_relation: 'mother',
+  });
+  assert.deepStrictEqual({
+    parentPhone: parentPhoneStudent.parent_phone,
+    parentPhoneNormalized: parentPhoneStudent.parent_phone_normalized,
+    parentRelation: parentPhoneStudent.parent_relation,
+  }, {
+    parentPhone: '13000000011',
+    parentPhoneNormalized: '13000000011',
+    parentRelation: 'mother',
+  });
+  const updatedParentPhoneStudent = service.updateStudent(parentPhoneStudent.id, {
+    parent_phone: '13000000012',
+    parent_phone_normalized: '13000000012',
+    parent_relation: 'father',
+  });
+  assert.deepStrictEqual({
+    parentPhone: updatedParentPhoneStudent.parent_phone,
+    parentPhoneNormalized: updatedParentPhoneStudent.parent_phone_normalized,
+    parentRelation: updatedParentPhoneStudent.parent_relation,
+  }, {
+    parentPhone: '13000000012',
+    parentPhoneNormalized: '13000000012',
+    parentRelation: 'father',
+  });
+
   const heartbeatColumns = columns('host_heartbeats');
   assert.ok(heartbeatColumns.has('capabilities'), 'host_heartbeats should include capabilities');
   for (const index of [

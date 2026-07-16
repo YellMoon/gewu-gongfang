@@ -932,6 +932,9 @@ class DatabaseService {
       id,
       name: data.name,
       phone: data.phone || null,
+      parent_phone: data.parent_phone || null,
+      parent_phone_normalized: data.parent_phone_normalized || null,
+      parent_relation: data.parent_relation || null,
       school: data.school || null,
       grade_year: data.grade_year || null,
       grade_current: data.grade_current || null,
@@ -948,7 +951,8 @@ class DatabaseService {
   }
 
   updateStudent(id, updates, options = {}) {
-    const allowed = ['name', 'phone', 'school', 'grade_year', 'grade_current', 'source_type',
+    const allowed = ['name', 'phone', 'parent_phone', 'parent_phone_normalized', 'parent_relation',
+      'school', 'grade_year', 'grade_current', 'source_type',
       'institution_id', 'is_institution_student', 'parent_name', 'parent_wechat', 'student_source',
       'balance_hours', 'balance_money', 'notes'];
     const filtered = {};

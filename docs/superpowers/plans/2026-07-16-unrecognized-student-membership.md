@@ -371,7 +371,7 @@ git commit -m "自动发布 2026-07-16"
 - Modify: `backend/src/database.js`
 - Modify: `backend/src/services/cloudRelayClient.js`
 
-- [ ] **Step 1: 写学生/老师收敛 RED 测试**
+- [x] **Step 1: 写学生/老师收敛 RED 测试**
 
 覆盖无匹配创建、唯一兼容匹配复用、只补空字段、学生/家长跨列占用、姓名/关系冲突、多匹配、老师空课时费、receipt 重放和结果最小化：
 
@@ -383,19 +383,19 @@ assert.deepStrictEqual(Object.keys(first).sort(), ['entityId', 'entityType', 're
 assert.strictEqual(db.prepare('SELECT COUNT(*) count FROM students').get().count, 1);
 ```
 
-- [ ] **Step 2: 运行测试确认 RED**
+- [x] **Step 2: 运行测试确认 RED**
 
 Run: `node backend/src/services/identityProvisioningService.test.js`
 
 Expected: FAIL with missing module。
 
-- [ ] **Step 3: 实现本地主机事务与 receipt**
+- [x] **Step 3: 实现本地主机事务与 receipt**
 
 学生使用现有 `students.phone` 作为学生手机号，新增 `parent_phone`；同时查询 `phone_normalized` 与 `parent_phone_normalized` 的交叉占用。创建学生时写 `grade_year` 并用现有学校服务自动维护学校；主机用同一 9 月学年算法复核。老师按规范化手机号唯一匹配，创建时显式写 `hourly_rate: null`。
 
 冲突错误固定为 `STUDENT_PROFILE_CONFLICT`、`STUDENT_PHONE_CROSS_OCCUPIED`、`TEACHER_PROFILE_CONFLICT`；错误中不得回传完整现有档案。
 
-- [ ] **Step 4: 接入 V2 主机处理链和心跳能力**
+- [x] **Step 4: 接入 V2 主机处理链和心跳能力**
 
 `processMiniappTask` 增加：
 
@@ -410,13 +410,13 @@ if (task.task_type === 'identity-provisioning') {
 
 主机 heartbeat 增加 `capabilities: ['identity-provisioning-v1', ...existing]`。继续复用现有 claim token、租约续期、row_version CAS、完成/失败与进程重启流程。
 
-- [ ] **Step 5: 运行本地主机 GREEN 与重启回归**
+- [x] **Step 5: 运行本地主机 GREEN 与重启回归**
 
 Run: `node backend/src/services/identityProvisioningService.test.js && node backend/src/routes/cloudRelayHostTasks.test.js && node backend/src/services/cloudRelayClient.test.js`
 
 Expected: PASS；重复 claim 和重复完成不创建第二个实体。
 
-- [ ] **Step 6: 本地提交主机切片**
+- [x] **Step 6: 本地提交主机切片**
 
 ```powershell
 git add backend/src/services/identityProvisioningService.js backend/src/services/identityProvisioningService.test.js backend/src/routes/cloudRelayHost.js backend/src/routes/cloudRelayHostTasks.test.js backend/src/database.js backend/src/services/cloudRelayClient.js

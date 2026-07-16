@@ -11,6 +11,9 @@ assert.ok(route.includes('question_previews') && route.includes('stemPreview'), 
 assert.ok(route.includes("task.task_type === 'question-paper'"), 'host should process miniapp paper assembly tasks');
 assert.ok(route.includes("task.task_type === 'paper-export-word'"), 'host should process miniapp Word export tasks');
 assert.ok(route.includes("task.task_type === 'paper-export-pdf'"), 'host should process miniapp PDF export tasks');
+assert.ok(route.includes("task.task_type === 'identity-provisioning'"), 'host should process internal identity provisioning tasks');
+assert.ok(route.includes('requestHash: task.request_hash'), 'host must pass the cloud request hash into the receipt boundary');
+assert.ok(route.includes('capabilities: hostCapabilities()'), 'host heartbeat must advertise its authoritative provisioning capability');
 assert.ok(route.includes('writePaperArtifact'), 'host should write paper export artifacts');
 assert.ok(route.includes('recoverStalePaperJobs'), 'host processor must recover stale local processing jobs after restart');
 assert.ok(route.includes('cleanupPaperStorage'), 'host processor startup must clean stale temp and expired artifacts safely');
@@ -47,6 +50,7 @@ assert.ok(packageJson.includes('backend/src/routes/cloudRelayHostTasks.test.js')
 
 const { processClaimedV2Tasks, processMiniappTask } = require('./cloudRelayHost');
 const { resolvePaperExportQuestions } = require('./questionBank');
+const { resultHash: hashTaskResult } = require('../services/cloudRelayTaskService');
 
 (async () => {
   const calls = [];
@@ -67,6 +71,47 @@ const { resolvePaperExportQuestions } = require('./questionBank');
       return { fileName: `paper.${format === 'word' ? 'docx' : 'pdf'}`, fileUrl: '/artifact', answerPosition, requestedFormulaMode: 'word-native', effectiveFormulaModes: ['word-native'], fallbackCount: 0, formulaCount: 0, sha256: 'a'.repeat(64), pageCount: format === 'pdf' ? 1 : null, diagnostics: [] };
     },
   };
+  let provisioningInput = null;
+  const provisioningResult = await processMiniappTask({
+    task_type: 'identity-provisioning',
+    request_hash: 'c'.repeat(64),
+    payload: {
+      applicationId: 'application-1',
+      revision: 1,
+      applicationType: 'student',
+      payload: { studentName: 'Student' },
+      reviewedBy: 'admin-1',
+      tenantId: 'default',
+    },
+  }, {}, {
+    ...dependencies,
+    identityProvisioningService: {
+      provision(input) {
+        provisioningInput = input;
+        return {
+          entityId: 'student-1',
+          entityType: 'student',
+          receiptId: 'receipt-1',
+          resultHash: 'd'.repeat(64),
+        };
+      },
+    },
+  });
+  assert.deepStrictEqual(provisioningInput, {
+    applicationId: 'application-1',
+    revision: 1,
+    applicationType: 'student',
+    payload: { studentName: 'Student' },
+    reviewedBy: 'admin-1',
+    tenantId: 'default',
+    requestHash: 'c'.repeat(64),
+  });
+  assert.deepStrictEqual(provisioningResult, {
+    entityId: 'student-1',
+    entityType: 'student',
+    receiptId: 'receipt-1',
+    resultHash: 'd'.repeat(64),
+  });
   const word = await processMiniappTask({ task_type: 'paper-export-word', protocol_version: 2, selection_context: { tenantId: 'tenant-a', allowDraft: false }, payload: { title: 'word', tenantId: 'tenant-a', answerPosition: 'end', questionIds: ['q2', 'q1'] } }, {}, dependencies);
   const pdf = await processMiniappTask({ task_type: 'paper-export-pdf', protocol_version: 2, selection_context: { tenantId: 'tenant-a', allowDraft: false }, payload: { title: 'pdf', tenantId: 'tenant-a', answerPosition: 'after-each', questionIds: ['q1'] } }, {}, dependencies);
   assert.strictEqual(calls[0].format, 'word');
@@ -107,7 +152,12 @@ const { resolvePaperExportQuestions } = require('./questionBank');
     failMiniappTask: async (id, body) => { lifecycle.push(['fail', id, body]); return { success: true }; },
   });
   assert.deepStrictEqual(claimedResults.map(row => [row.id, row.success]), [['v2-ok', true], ['v2-fail', false]]);
-  assert.ok(lifecycle.some(([kind, id, body]) => kind === 'complete' && id === 'v2-ok' && body.claimToken === 'claim-ok' && body.expectedRowVersion === 2));
+  assert.ok(lifecycle.some(([kind, id, body]) => kind === 'complete'
+    && id === 'v2-ok'
+    && body.claimToken === 'claim-ok'
+    && body.expectedRowVersion === 2
+    && body.operationId === 'host-task:v2-ok'
+    && body.resultHash === hashTaskResult({ fileName: 'paper.docx' })));
   assert.ok(lifecycle.some(([kind, id, body]) => kind === 'fail' && id === 'v2-fail' && body.claimToken === 'claim-fail' && body.expectedRowVersion === 2 && body.errorCode === 'BOOM'));
 
   let durableClaimed = true; let durableCalls = 0; let legacyExportCalls = 0;

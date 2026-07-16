@@ -1,3 +1,9 @@
+const IDENTITY_PROVISIONING_CAPABILITY = 'identity-provisioning-v1';
+
+function hostCapabilities() {
+  return [IDENTITY_PROVISIONING_CAPABILITY];
+}
+
 function buildHeaders(options = {}) {
   const headers = { 'Content-Type': 'application/json' };
   const authorization = options.authorization || options.Authorization || '';
@@ -95,6 +101,8 @@ async function queryMiniappTaskState(taskId, options = {}) {
 }
 
 module.exports = {
+  IDENTITY_PROVISIONING_CAPABILITY,
+  hostCapabilities,
   publishHeartbeat,
   publishSnapshot,
   fetchPendingTasks,

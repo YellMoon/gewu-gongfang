@@ -11,7 +11,10 @@ const {
   completeMiniappTask,
   failMiniappTask,
   queryMiniappTaskState,
+  hostCapabilities,
 } = require('../services/cloudRelayClient');
+const { createIdentityProvisioningService } = require('../services/identityProvisioningService');
+const { resultHash: hashTaskResult } = require('../services/cloudRelayTaskService');
 const questionBank = require('../services/questionBankService');
 const { resolveQuestionAssetPath, resolveBoundQuestionBankRoot } = require('../services/questionBankStorageService');
 const { updateCommittedQuestion, createTrustedInternalStorageUpdateContext } = require('../services/questionBankStorageService');
@@ -88,6 +91,14 @@ async function processMiniappTask(task, db, dependencies = {}) {
     { questionBank: dependencies.questionBank || questionBank }
   ));
   const writeTaskArtifact = dependencies.writePaperArtifact || writePaperArtifact;
+  if (task.task_type === 'identity-provisioning') {
+    const identityProvisioningService = dependencies.identityProvisioningService
+      || createIdentityProvisioningService({ db: db.db || db });
+    return identityProvisioningService.provision({
+      ...payload,
+      requestHash: task.request_hash,
+    });
+  }
   if (task.task_type === 'desktop-sync') {
     const changes = payload.pendingChanges || payload.changes || [];
     let claims;
@@ -335,7 +346,13 @@ async function processClaimedV2Tasks(db, authOptions, dependencies = {}) {
         if (localCompletion?.status === 'terminal_cancelled') { results.push({ id: task.id, success: false, cancelled: true, artifactReady: false }); continue; }
         throw Object.assign(new Error('paper completion remains pending after reconciliation'), { code: 'TASK_COMPLETION_PENDING' });
       }
-      const completed = requireRelaySuccess(await completeTask(task.id, { claimToken, expectedRowVersion: rowVersion, result }, authOptions));
+      const completed = requireRelaySuccess(await completeTask(task.id, {
+        claimToken,
+        expectedRowVersion: rowVersion,
+        operationId: `host-task:${task.id}`,
+        resultHash: hashTaskResult(result),
+        result,
+      }, authOptions));
       results.push({ id: task.id, success: true, completed });
     } catch (error) {
       try { await heartbeat?.stop(); } catch (_heartbeatError) { /* preserve the first processing error */ }
@@ -376,6 +393,7 @@ router.post('/heartbeat', async (req, res, next) => {
       status: 'online',
       baseUrl: process.env.GEWU_HOST_BASE_URL || '',
       lanUrls: hostLanUrls(),
+      capabilities: hostCapabilities(),
     }, authOptionsFromRequest(req));
     res.json(result);
   } catch (err) {
