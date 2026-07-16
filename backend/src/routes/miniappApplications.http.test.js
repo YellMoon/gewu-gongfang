@@ -1,10 +1,11 @@
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-async function requestJson(baseUrl, method, pathname, { token, body, idempotencyKey } = {}) {
-  const headers = {};
+async function requestJson(baseUrl, method, pathname, { token, body, idempotencyKey, headers: extraHeaders } = {}) {
+  const headers = { ...(extraHeaders || {}) };
   if (token) headers.authorization = `Bearer ${token}`;
   if (body !== undefined) headers['content-type'] = 'application/json';
   if (idempotencyKey) headers['x-idempotency-key'] = idempotencyKey;
@@ -29,12 +30,14 @@ async function requestJson(baseUrl, method, pathname, { token, body, idempotency
     JWT_SECRET: 'miniapp-applications-http-test-secret',
     REQUIRE_NONCE: 'false',
     GEWU_PRIMARY_HOST_DEVICE_ID: 'http-host-authority',
+    GEWU_CLOUD_RELAY_HOST_TOKEN: 'http-host-write-secret',
   });
 
   delete require.cache[require.resolve('../database')];
   delete require.cache[require.resolve('../middleware/auth')];
   delete require.cache[require.resolve('../app')];
   const { getInstance } = require('../database');
+  const taskService = require('../services/cloudRelayTaskService');
   const { createMiniappIdentityService } = require('../services/miniappIdentityService');
   const { createApp } = require('../app');
   const database = getInstance();
@@ -247,6 +250,67 @@ async function requestJson(baseUrl, method, pathname, { token, body, idempotency
     assert.strictEqual(approveReplay.status, 200);
     assert.strictEqual(approveReplay.body.data.replayed, true);
     assert.strictEqual(approveReplay.body.data.task.id, approvedForProvisioning.body.data.task.id);
+
+    const provisioningTaskId = approvedForProvisioning.body.data.task.id;
+    const claim = taskService.claimNextV2Task(db, {
+      hostDeviceId: 'http-host-authority',
+      now,
+      tokenFactory: () => 'http-provisioning-claim-token',
+    });
+    assert.strictEqual(claim.task.id, provisioningTaskId);
+    const receipt = {
+      entityId: 'http-host-teacher-profile',
+      entityType: 'teacher',
+      receiptId: 'http-host-teacher-receipt',
+    };
+    const provisioningResult = {
+      ...receipt,
+      resultHash: crypto.createHash('sha256').update(JSON.stringify(receipt)).digest('hex'),
+    };
+    const completedProvisioning = await requestJson(
+      baseUrl,
+      'POST',
+      `/api/cloud/tasks/${provisioningTaskId}/complete`,
+      {
+        headers: { 'x-gewu-host-token': 'http-host-write-secret' },
+        body: {
+          claimToken: claim.claimToken,
+          expectedRowVersion: claim.task.row_version,
+          operationId: 'http-provisioning-completion',
+          result: provisioningResult,
+          resultHash: taskService.resultHash(provisioningResult),
+        },
+      },
+    );
+    assert.strictEqual(completedProvisioning.status, 200);
+    assert.deepStrictEqual(
+      {
+        status: completedProvisioning.body.reconciliation.status,
+        taskId: completedProvisioning.body.reconciliation.taskId,
+        entityId: completedProvisioning.body.reconciliation.entityId,
+      },
+      {
+        status: 'approved',
+        taskId: provisioningTaskId,
+        entityId: 'http-host-teacher-profile',
+      },
+    );
+    assert.deepStrictEqual(
+      db.prepare(`SELECT role, identity_kind, teacher_id, review_status, login_enabled
+        FROM users WHERE id='http-review-teacher'`).get(),
+      {
+        role: 'teacher',
+        identity_kind: 'teacher',
+        teacher_id: 'http-host-teacher-profile',
+        review_status: 'approved',
+        login_enabled: 1,
+      },
+    );
+    assert.strictEqual(
+      db.prepare("SELECT status FROM miniapp_role_applications WHERE id=?")
+        .get(reviewTeacher.body.data.application.id).status,
+      'approved',
+    );
 
     const missingReason = await requestJson(
       baseUrl,

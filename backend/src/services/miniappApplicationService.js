@@ -374,6 +374,7 @@ module.exports = {
   ACTIVE_APPLICATION_STATUSES,
   createMiniappApplicationService,
   gradeYearFor,
+  payloadHash,
   validateStudentApplication,
   validateTeacherApplication,
 };

@@ -8,16 +8,20 @@ const {
 } = require('../services/miniappIdentityService');
 const { createMiniappApplicationService } = require('../services/miniappApplicationService');
 const { createMiniappApplicationReviewService } = require('../services/miniappApplicationReviewService');
+const { createMiniappProvisioningReconciler } = require('../services/miniappProvisioningReconciler');
 
 const router = Router();
-let cachedDb = null;
+let cachedApplicationDb = null;
+let cachedReviewDb = null;
+let cachedReconcilerDb = null;
 let cachedService = null;
 let cachedReviewService = null;
+let cachedReconciler = null;
 
 function applicationService() {
   const db = getInstance().db;
-  if (!cachedService || cachedDb !== db) {
-    cachedDb = db;
+  if (!cachedService || cachedApplicationDb !== db) {
+    cachedApplicationDb = db;
     cachedService = createMiniappApplicationService({ db });
   }
   return cachedService;
@@ -25,12 +29,20 @@ function applicationService() {
 
 function applicationReviewService() {
   const db = getInstance().db;
-  if (!cachedReviewService || cachedDb !== db) {
-    cachedDb = db;
-    cachedService = createMiniappApplicationService({ db });
+  if (!cachedReviewService || cachedReviewDb !== db) {
+    cachedReviewDb = db;
     cachedReviewService = createMiniappApplicationReviewService({ db });
   }
   return cachedReviewService;
+}
+
+function provisioningReconciler() {
+  const db = getInstance().db;
+  if (!cachedReconciler || cachedReconcilerDb !== db) {
+    cachedReconcilerDb = db;
+    cachedReconciler = createMiniappProvisioningReconciler({ db });
+  }
+  return cachedReconciler;
 }
 
 function statusForError(code) {
@@ -67,6 +79,7 @@ function requireReviewSession(req, res, next) {
 
 router.get('/admin', requireReviewSession, (req, res) => {
   try {
+    provisioningReconciler().reconcilePendingCompletedTasks();
     const result = applicationReviewService().list({
       actor: req.user,
       status: req.query.status,

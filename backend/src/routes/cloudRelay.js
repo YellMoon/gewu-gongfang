@@ -9,6 +9,7 @@ const {
 const { roleForUser } = require('../services/authorizationPolicy');
 const { issueRelayAssertion } = require('../services/relayAssertionService');
 const taskService = require('../services/cloudRelayTaskService');
+const { createMiniappProvisioningReconciler } = require('../services/miniappProvisioningReconciler');
 const { buildQuestionPreviewIndex, safeHostBaseUrl } = require('../services/questionPreviewIndex');
 
 const router = Router();
@@ -370,7 +371,13 @@ router.post('/tasks/:id/complete', (req, res) => {
   if (!row) return res.status(404).json({ success: false, error: 'task not found' });
 
   if (Number(row.protocol_version || 1) >= 2) {
-    try { return res.json({ success: true, task: taskService.completeV2Task(db, req.params.id, req.body || {}) }); }
+    try {
+      const task = taskService.completeV2Task(db, req.params.id, req.body || {});
+      const reconciliation = task.task_type === 'identity-provisioning'
+        ? createMiniappProvisioningReconciler({ db }).reconcileCompletedTask(task.id)
+        : null;
+      return res.json({ success: true, task, reconciliation });
+    }
     catch (error) { return taskRouteError(res, error); }
   }
 
