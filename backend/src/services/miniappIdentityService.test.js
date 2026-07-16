@@ -75,6 +75,19 @@ try {
   assert.strictEqual(formal.claims.auth_version, 4, 'first openid binding must revoke older sessions');
   assert.ok(!('phone' in formal.claims));
   assert.ok(!('openid' in formal.claims));
+  assert.ok(!('loginEventId' in formal.claims));
+  assert.ok(formal.loginEventId && formal.loginEventId.startsWith('identity-test-'));
+  assert.deepStrictEqual(
+    db.prepare(`SELECT user_id, phone_normalized, result_code, session_id
+      FROM miniapp_login_events WHERE id=?`).get(formal.loginEventId),
+    {
+      user_id: 'formal-admin',
+      phone_normalized: '13800138001',
+      result_code: 'FORMAL_LOGIN_SUCCESS',
+      session_id: formal.sessionId,
+    },
+    'the trusted caller must receive the exact fresh verified-phone event id'
+  );
   assert.deepStrictEqual(identity.readIdentityForToken(formal.claims).id, 'formal-admin');
   assert.strictEqual(jwt.verify(formal.token, secret, {
     algorithms: ['HS256'],

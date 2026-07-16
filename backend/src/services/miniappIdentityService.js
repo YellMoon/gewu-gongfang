@@ -166,8 +166,9 @@ function createMiniappIdentityService({
   }
 
   function writeEvent({ user, phone, resultCode, sessionId = null, miniappVersion = null, platform = null }) {
+    const eventId = uuid();
     insertEvent.run(
-      uuid(),
+      eventId,
       user?.id || null,
       phone,
       user ? identityKind(user, isFormal(user) ? 'formal' : 'unrecognized') : null,
@@ -177,6 +178,7 @@ function createMiniappIdentityService({
       platform ? String(platform).slice(0, 32) : null,
       timestamp(),
     );
+    return eventId;
   }
 
   function conflictOutcome(code, user, input) {
@@ -248,7 +250,7 @@ function createMiniappIdentityService({
     const issued = accountState === 'formal'
       ? issueFormalToken(phoneOwner, sessionId)
       : issueUnrecognizedToken(phoneOwner, sessionId);
-    writeEvent({
+    const loginEventId = writeEvent({
       user: phoneOwner,
       phone: input.phone,
       resultCode: accountState === 'formal' ? 'FORMAL_LOGIN_SUCCESS' : 'UNRECOGNIZED_LOGIN_SUCCESS',
@@ -259,6 +261,7 @@ function createMiniappIdentityService({
     return {
       login: {
         ...issued,
+        loginEventId,
         user: presentUser(phoneOwner, accountState),
       },
     };
