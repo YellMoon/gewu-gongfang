@@ -423,6 +423,85 @@ CREATE TABLE IF NOT EXISTS desktop_device_pairings (
   approved_by TEXT, user_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, exchanged_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS desktop_device_authorizations (
+  id TEXT PRIMARY KEY,
+  device_id TEXT NOT NULL UNIQUE,
+  device_name TEXT NOT NULL,
+  device_kind TEXT NOT NULL DEFAULT 'desktop-client'
+    CHECK (device_kind IN ('desktop-client', 'primary-host')),
+  user_id TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  key_fingerprint TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'active', 'revoked', 'replaced', 'retired')),
+  source_challenge_id TEXT NOT NULL UNIQUE,
+  approved_by_user_id TEXT,
+  approved_by_device_id TEXT,
+  approved_at TEXT,
+  last_phone_verified_at TEXT NOT NULL,
+  phone_reverify_due_at TEXT NOT NULL,
+  credential_version INTEGER NOT NULL DEFAULT 1 CHECK (credential_version >= 1),
+  last_seen_at TEXT,
+  replaced_by_device_id TEXT,
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  revoked_at TEXT,
+  retired_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS desktop_identity_challenges (
+  id TEXT PRIMARY KEY,
+  device_id TEXT NOT NULL,
+  device_name TEXT NOT NULL,
+  device_kind TEXT NOT NULL DEFAULT 'desktop-client'
+    CHECK (device_kind IN ('desktop-client', 'primary-host')),
+  public_key TEXT NOT NULL,
+  key_fingerprint TEXT NOT NULL,
+  purpose TEXT NOT NULL,
+  challenge_token_hash TEXT NOT NULL UNIQUE,
+  short_code TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending_phone'
+    CHECK (status IN (
+      'pending_phone', 'identity_verified_pending_approval', 'approved_pending_exchange',
+      'exchanged', 'expired', 'rejected', 'conflict', 'cancelled'
+    )),
+  claimed_user_id TEXT,
+  verified_login_event_id TEXT UNIQUE,
+  authorization_id TEXT,
+  phone_verified_at TEXT,
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  approved_at TEXT,
+  exchanged_at TEXT,
+  rejected_at TEXT,
+  cancelled_at TEXT,
+  FOREIGN KEY (claimed_user_id) REFERENCES users(id),
+  FOREIGN KEY (verified_login_event_id) REFERENCES miniapp_login_events(id) ON DELETE SET NULL,
+  FOREIGN KEY (authorization_id) REFERENCES desktop_device_authorizations(id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_desktop_identity_active_short_code
+  ON desktop_identity_challenges(short_code)
+  WHERE status IN ('pending_phone', 'identity_verified_pending_approval', 'approved_pending_exchange');
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_desktop_identity_active_device
+  ON desktop_identity_challenges(device_id)
+  WHERE status IN ('pending_phone', 'identity_verified_pending_approval', 'approved_pending_exchange');
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_desktop_identity_active_key_fingerprint
+  ON desktop_identity_challenges(key_fingerprint)
+  WHERE status IN ('pending_phone', 'identity_verified_pending_approval', 'approved_pending_exchange');
+
+CREATE INDEX IF NOT EXISTS idx_desktop_identity_claimant_status
+  ON desktop_identity_challenges(claimed_user_id, status, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_desktop_device_authorizations_user_status
+  ON desktop_device_authorizations(user_id, status, updated_at);
+
 CREATE TABLE IF NOT EXISTS sync_authorizations (
   id TEXT PRIMARY KEY,
   device_id TEXT NOT NULL,

@@ -95,7 +95,7 @@ Run: `git add backend/src/schema.sql backend/src/database.js backend/src/service
 - Modify: `backend/src/services/miniappIdentityService.js`
 - Modify: `package.json`
 
-- [ ] **Step 1: 写挑战状态机 RED 测试**
+- [x] **Step 1: 写挑战状态机 RED 测试**
 
 覆盖：start 只接受 deviceId、deviceName、publicKey、keyFingerprint 和 purpose；传 phone、userId、role、teacherId 或 primary-host 全部拒绝。`confirmVerifiedIdentity` 只能接收微信服务已解析的 identity/loginEvent，首次固定 claimant，重复同一证明幂等，不同用户冲突；短码、挑战秘密、设备指纹、过期和并发 CAS 全部校验。
 
@@ -114,23 +114,23 @@ assert.throws(function () {
 }, function (error) { return error.code === 'DESKTOP_IDENTITY_INPUT_FORBIDDEN'; });
 ```
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `node backend/src/services/desktopIdentityService.test.js`
 
 Expected: FAIL with missing module/table.
 
-- [ ] **Step 3: 实现挑战表和纯领域服务**
+- [x] **Step 3: 实现挑战表和纯领域服务**
 
 新增 `desktop_identity_challenges` 和 `desktop_device_authorizations`，challenge token 只存 SHA-256，短码使用部分唯一索引，状态更新使用 `row_version`。公开 start 只能申请 `desktop-client`；手机号确认函数必须由路由在成功调用微信交换和 `miniappIdentityService` 后传入已验证 identity，服务本身不接受客户端手机号。
 
-- [ ] **Step 4: 运行 GREEN 和身份冲突回归**
+- [x] **Step 4: 运行 GREEN 和身份冲突回归**
 
 Run: `node backend/src/services/desktopIdentityService.test.js && node backend/src/services/miniappIdentityService.test.js && node backend/src/services/miniappApplicationService.test.js`
 
 Expected: PASS，且测试数据库中不存在微信 code、phoneCode、挑战明文或设备私钥。
 
-- [ ] **Step 5: 本地提交挑战领域切片**
+- [x] **Step 5: 本地提交挑战领域切片**
 
 Run: `git add backend/src/schema.sql backend/src/database.js backend/src/services/desktopIdentityService.js backend/src/services/desktopIdentityService.test.js backend/src/services/miniappIdentityService.js package.json && git commit -m "自动发布 2026-07-17"`
 

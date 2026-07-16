@@ -35,6 +35,8 @@ try {
     'miniapp_role_applications',
     'account_memberships',
     'identity_provisioning_receipts',
+    'desktop_identity_challenges',
+    'desktop_device_authorizations',
   ]) {
     assert.ok(
       service.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table),
@@ -80,6 +82,10 @@ try {
     'idx_miniapp_applications_active_user',
     'idx_memberships_status_subject',
     'idx_identity_receipts_request',
+    'idx_desktop_identity_active_short_code',
+    'idx_desktop_identity_active_device',
+    'idx_desktop_identity_active_key_fingerprint',
+    'idx_desktop_device_authorizations_user_status',
   ]) {
     assert.ok(
       service.db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name=?").get(index),
