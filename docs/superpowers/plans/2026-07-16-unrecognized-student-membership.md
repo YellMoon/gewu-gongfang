@@ -472,6 +472,18 @@ git add backend/src/services/miniappProvisioningReconciler.js backend/src/servic
 git commit -m "自动发布 2026-07-16"
 ```
 
+### Task 6A: 桌面人类身份、多角色、多设备与数据主机换机
+
+用户于 2026-07-17 批准混合身份补充：首次、新设备、换机和找回必须微信扫码并重新验证手机号；已批准电脑日常用本机密码/PIN解锁。固定超级管理员同时是老师，同一 `users` 身份必须保留唯一 `teacher_id` 并同时拥有 `super_admin`、`teacher` 授权；当前主机、第二台电脑和未来设备分别授权但不复制人或老师档案。数据主机新增顶级审核中心，并提供一次性 bootstrap、计划换机和紧急恢复，任一时刻只允许一个主机 generation。
+
+完整 TDD 任务、文件边界、安全不变量和发布矩阵见 `docs/superpowers/plans/2026-07-17-desktop-human-identity-multi-device.md`。该计划完成前 Task 7 可保持待执行；所有外部推送、打包、上传和部署仍推迟到原 Task 13 统一矩阵。
+
+- [x] 用户批准混合身份与同一人多角色、多设备、未来换机设计。
+- [x] 完成现状审计并写入正式设计和逐文件计划。
+- [ ] 执行桌面身份计划 Task 1 至 Task 11，取得 fresh 测试、构建和真实 Electron 证据。
+- [ ] 把桌面确认页、设备中心、主机 bootstrap/迁移加入本计划 Task 12 全页面与安全矩阵。
+- [ ] 在原 Task 13 执行真实主机 bootstrap、第二台电脑注册批准和统一发布；不在未获用户实际换机要求时切换主机。
+
 ### Task 7: 固定示例题与 Backend 隔离导出沙箱
 
 **Files:**

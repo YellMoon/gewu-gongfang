@@ -221,6 +221,33 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS user_role_grants (
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('super_admin', 'admin', 'teacher', 'student')),
+  subject_type TEXT,
+  subject_id TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked')),
+  source TEXT NOT NULL,
+  granted_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  revoked_at TEXT,
+  PRIMARY KEY (user_id, role),
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  CHECK (
+    (role = 'teacher' AND subject_type = 'teacher' AND subject_id IS NOT NULL)
+    OR (role = 'student' AND subject_type = 'student' AND subject_id IS NOT NULL)
+    OR (role IN ('super_admin', 'admin') AND subject_type IS NULL AND subject_id IS NULL)
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_role_grants_active_teacher
+  ON user_role_grants(subject_id)
+  WHERE role = 'teacher' AND status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_user_role_grants_user_status
+  ON user_role_grants(user_id, status, role);
+
 CREATE TABLE IF NOT EXISTS authorization_audit_log (
   id TEXT PRIMARY KEY,
   actor_user_id TEXT,

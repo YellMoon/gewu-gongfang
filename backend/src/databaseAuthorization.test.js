@@ -53,6 +53,7 @@ legacy.prepare(`INSERT INTO students
 legacy.prepare('UPDATE users SET student_id = ? WHERE id = ?').run('s-legacy-valid', 'student');
 const insertLegacyTeacher = legacy.prepare(`INSERT INTO teachers
   (id, name, phone, deleted, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)`);
+insertLegacyTeacher.run('t-super-self', 'canonical super admin teacher profile', '13732250653', oldNow, oldNow);
 insertLegacyTeacher.run('t-unique-old', 'unique legacy teacher', '13000000002', oldNow, oldNow);
 insertLegacyTeacher.run('t-review', 'review teacher', '13000000009', oldNow, oldNow);
 insertLegacyTeacher.run('t-duplicate-1', 'duplicate one', '13000000010', oldNow, oldNow);
@@ -65,11 +66,13 @@ process.env.NODE_ENV = 'production';
 
 try {
   const service = new DatabaseService();
+  assert.strictEqual(service.getSchemaStatus().schemaVersion, 3103);
+  assert.strictEqual(service.getSchemaStatus().sqliteUserVersion, 3103);
   const columns = service.db.prepare('PRAGMA table_info(users)').all().map(row => row.name);
   ['teacher_id', 'review_status', 'reviewed_by', 'reviewed_at'].forEach(column => {
     assert.ok(columns.includes(column), `users should include ${column}`);
   });
-  ['authorization_audit_log', 'sync_rejections'].forEach(table => {
+  ['authorization_audit_log', 'sync_rejections', 'user_role_grants'].forEach(table => {
     assert.ok(service.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table));
   });
 
@@ -82,8 +85,10 @@ try {
     'SELECT id, role, review_status, teacher_id FROM users'
   ).all().map(row => [row.id, row]));
   assert.deepStrictEqual(
-    [migrated['miniapp-admin-13732250653'].role, migrated['miniapp-admin-13732250653'].review_status],
-    ['super_admin', 'approved']
+    [migrated['miniapp-admin-13732250653'].role, migrated['miniapp-admin-13732250653'].review_status,
+      migrated['miniapp-admin-13732250653'].teacher_id],
+    ['super_admin', 'approved', 't-super-self'],
+    'the canonical super administrator may also retain one unique teacher binding'
   );
   assert.deepStrictEqual(
     [migrated['super-duplicate'].role, migrated['super-duplicate'].review_status],
@@ -99,6 +104,27 @@ try {
   const canonicalContext = service.getAuthorizationContextByUserId('miniapp-admin-13732250653');
   assert.strictEqual(canonicalContext.role, 'super_admin');
   assert.deepStrictEqual(canonicalContext.scope, { kind: 'all' });
+  assert.deepStrictEqual(
+    service.db.prepare(
+      'SELECT role, subject_type, subject_id, status FROM user_role_grants WHERE user_id=? ORDER BY role'
+    ).all('miniapp-admin-13732250653'),
+    [
+      { role: 'super_admin', subject_type: null, subject_id: null, status: 'active' },
+      { role: 'teacher', subject_type: 'teacher', subject_id: 't-super-self', status: 'active' },
+    ],
+    'the canonical human identity must persist both administrator and teacher grants'
+  );
+  assert.deepStrictEqual(
+    service.db.prepare(
+      'SELECT role, subject_type, subject_id FROM user_role_grants WHERE user_id=? ORDER BY role'
+    ).all('teacher-unique'),
+    [{ role: 'teacher', subject_type: 'teacher', subject_id: 't-unique-old' }]
+  );
+  assert.deepStrictEqual(
+    service.db.prepare('SELECT role FROM user_role_grants WHERE user_id=?').all('super-duplicate'),
+    [],
+    'a non-canonical fixed-phone account must not receive a super-admin grant'
+  );
   assert.deepStrictEqual([migrated.admin.role, migrated.admin.review_status], ['admin', 'approved']);
   assert.deepStrictEqual([migrated.student.role, migrated.student.review_status], ['student', 'approved']);
   assert.deepStrictEqual(
@@ -223,7 +249,10 @@ try {
     "UPDATE users SET role = 'teacher', review_status = 'rejected', teacher_id = 'manual-binding' WHERE id = 'review-teacher'"
   ).run();
   service.db.prepare(
-    "UPDATE users SET role = 'pending', review_status = 'pending', status = 0, login_enabled = 0 WHERE id = ?"
+    "UPDATE users SET role = 'pending', review_status = 'pending', status = 0, login_enabled = 0, teacher_id = NULL WHERE id = ?"
+  ).run('miniapp-admin-13732250653');
+  service.db.prepare(
+    "DELETE FROM user_role_grants WHERE user_id = ? AND role = 'teacher'"
   ).run('miniapp-admin-13732250653');
   service.close();
   const restarted = new DatabaseService();
@@ -244,13 +273,20 @@ try {
     'restart must preserve a post-migration review decision and teacher binding'
   );
   const restoredCanonical = restarted.db.prepare(
-    'SELECT role, review_status, status, login_enabled, deleted FROM users WHERE id = ?'
+    'SELECT role, review_status, status, login_enabled, deleted, teacher_id FROM users WHERE id = ?'
   ).get('miniapp-admin-13732250653');
   assert.deepStrictEqual(
     [restoredCanonical.role, restoredCanonical.review_status, restoredCanonical.status,
-      restoredCanonical.login_enabled, restoredCanonical.deleted],
-    ['super_admin', 'approved', 1, 1, 0],
-    'restart must restore the non-transferable canonical super-admin safety invariant'
+      restoredCanonical.login_enabled, restoredCanonical.deleted, restoredCanonical.teacher_id],
+    ['super_admin', 'approved', 1, 1, 0, 't-super-self'],
+    'restart must restore the canonical super-admin invariant without deleting its teacher identity'
+  );
+  assert.deepStrictEqual(
+    restarted.db.prepare(
+      "SELECT subject_id, status FROM user_role_grants WHERE user_id = ? AND role = 'teacher'"
+    ).get('miniapp-admin-13732250653'),
+    { subject_id: 't-super-self', status: 'active' },
+    'an upgraded host must reconstruct the canonical teacher grant after the old build cleared teacher_id'
   );
   restarted.db.prepare("UPDATE users SET phone = '13000000999' WHERE id = ?")
     .run('miniapp-admin-13732250653');
