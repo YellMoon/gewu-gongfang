@@ -32,6 +32,7 @@ const cloudRelayRouter = require('./routes/cloudRelay');
 const permissionsRouter = require('./routes/permissions');
 const adminUsersRouter = require('./routes/adminUsers');
 const desktopPairingRouter = require('./routes/desktopPairing');
+const miniappApplicationsRouter = require('./routes/miniappApplications');
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const writeRateLimitStore = new Map();
@@ -45,6 +46,18 @@ function isWriteRequest(req) {
 function clientKey(req) {
   const userId = req.user?.id || req.user?.openid || 'anonymous';
   return `${userId}:${req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown'}`;
+}
+
+function requestIdentityKey(req) {
+  const authorization = req.headers.authorization || '';
+  if (authorization.startsWith('Bearer ')) {
+    return `bearer:${crypto.createHash('sha256').update(authorization).digest('hex')}`;
+  }
+  return clientKey(req);
+}
+
+function hasDurableIdempotency(req) {
+  return req.method === 'POST' && req.path === '/api/miniapp/applications';
 }
 
 function cleanupStore(store, now = Date.now()) {
@@ -105,9 +118,9 @@ function writeSafetyMiddleware(req, res, next) {
   cleanupStore(nonceStore, now);
   cleanupStore(idempotencyStore, now);
 
-  const idempotencyKey = req.headers['x-idempotency-key'];
+  const idempotencyKey = hasDurableIdempotency(req) ? null : req.headers['x-idempotency-key'];
   const idemKey = idempotencyKey
-    ? `${clientKey(req)}:${req.method}:${req.originalUrl}:${idempotencyKey}:${requestBodyHash(req.body)}`
+    ? `${requestIdentityKey(req)}:${req.method}:${req.originalUrl}:${idempotencyKey}:${requestBodyHash(req.body)}`
     : null;
   if (idemKey) {
     const existing = idempotencyStore.get(idemKey);
@@ -130,7 +143,7 @@ function writeSafetyMiddleware(req, res, next) {
   }
 
   if (nonce) {
-    const nonceKey = `${clientKey(req)}:${nonce}`;
+    const nonceKey = `${requestIdentityKey(req)}:${nonce}`;
     if (nonceStore.has(nonceKey)) {
       return res.status(409).json(buildErrorPayload(req, 409, '重复请求 nonce', {
         code: 'NONCE_REPLAYED',
@@ -270,6 +283,7 @@ function createApp() {
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);
   app.use('/api/admin/users', authMiddleware, adminUsersRouter);
   app.use('/api/permissions', authMiddleware, permissionsRouter);
+  app.use('/api/miniapp/applications', authMiddleware, miniappApplicationsRouter);
 
   // 鍗婂叕寮€璺敱锛堝彲閫夎璇侊級
   app.use('/api/students', optionalAuth, requireCoreReadAccess, requireWriteAccess, studentsRouter);

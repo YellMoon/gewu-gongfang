@@ -241,11 +241,11 @@ git commit -m "自动发布 2026-07-16"
 - Modify: `backend/src/app.js`
 - Modify: `package.json`
 
-- [ ] **Step 1: 写年级、字段、双手机号和状态机 RED 测试**
+- [x] **Step 1: 写年级、字段、双手机号和状态机 RED 测试**
 
 ```js
 assert.strictEqual(gradeYearFor('高一', new Date('2026-09-01T00:00:00+08:00')), 2026);
-assert.strictEqual(gradeYearFor('高三', new Date('2026-07-31T00:00:00+08:00')), 2022);
+assert.strictEqual(gradeYearFor('高三', new Date('2026-07-31T00:00:00+08:00')), 2023);
 assert.throws(() => validateStudentApplication({
   studentName: '张同学', studentPhone: '13800138000', school: '宁波中学', currentGrade: '高一',
   parentRelation: '妈妈', parentPhone: '13800138000', verifiedPhone: '13800138000',
@@ -254,13 +254,13 @@ assert.throws(() => validateStudentApplication({
 
 覆盖学生本人确认已满 14 岁、未满 14 岁只能由家长手机号提交、老师不含 `hourly_rate`、申请人不能传 `student_id/teacher_id/role/balance`、同一用户一个活动申请、同一幂等键同内容复用/不同内容 409、拒绝后新 revision、`provisioning` 后不可自撤回。
 
-- [ ] **Step 2: 运行测试确认 RED**
+- [x] **Step 2: 运行测试确认 RED**
 
 Run: `node backend/src/services/miniappApplicationService.test.js`
 
 Expected: FAIL with missing module。
 
-- [ ] **Step 3: 实现纯校验和申请服务**
+- [x] **Step 3: 实现纯校验和申请服务**
 
 导出固定接口：
 
@@ -276,7 +276,7 @@ module.exports = {
 
 学生 payload 只允许 `studentName, studentPhone, school, currentGrade, gradeYear, parentRelation, parentPhone, parentName, parentWechat, studentSource, notes, guardianConfirmation, applicantAgeConfirmation`；老师只允许 `name, phone, subject, notes`。所有文本 trim 并有明确长度上限，备注为纯文本。
 
-- [ ] **Step 4: 实现未认可令牌自助路由**
+- [x] **Step 4: 实现未认可令牌自助路由**
 
 路由固定为：
 
@@ -288,13 +288,13 @@ POST   /api/miniapp/applications/:id/withdraw
 
 三条路由都要求 `token_use=unrecognized-student` 或申请已通过后的同一用户正式令牌；任何查询只返回本人申请。响应状态明确区分 `not_submitted/submitted/provisioning/manual_resolution_required/rejected/withdrawn/approved_relogin_required`。
 
-- [ ] **Step 5: 运行服务和 HTTP GREEN 测试**
+- [x] **Step 5: 运行服务和 HTTP GREEN 测试**
 
 Run: `node backend/src/services/miniappApplicationService.test.js && node backend/src/routes/miniappApplications.http.test.js`
 
 Expected: PASS；第二个申请人对相同手机号组合只收到 `ACTIVE_APPLICATION_EXISTS`，响应不包含另一申请人的 payload。
 
-- [ ] **Step 6: 本地提交申请切片**
+- [x] **Step 6: 本地提交申请切片**
 
 ```powershell
 git add backend/src/services/miniappApplicationService.js backend/src/services/miniappApplicationService.test.js backend/src/routes/miniappApplications.js backend/src/routes/miniappApplications.http.test.js backend/src/app.js package.json
