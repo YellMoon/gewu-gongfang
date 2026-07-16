@@ -7,6 +7,9 @@ const gatewayRoute = fs.readFileSync('gateway/src/routes/cloudRelay.js', 'utf-8'
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 const client = require('./cloudRelayClient');
 
+assert.strictEqual(client.IDENTITY_PROVISIONING_CAPABILITY, 'identity-provisioning-v1');
+assert.deepStrictEqual(client.hostCapabilities(), ['identity-provisioning-v1']);
+
 assert.ok(source.includes('publishHeartbeat'), 'cloud relay client should publish heartbeat');
 assert.ok(source.includes('publishSnapshot'), 'cloud relay client should publish snapshot');
 assert.ok(source.includes('fetchPendingTasks'), 'cloud relay client should fetch pending tasks');
