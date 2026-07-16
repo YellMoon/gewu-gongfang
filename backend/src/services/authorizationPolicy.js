@@ -74,14 +74,23 @@ function resolveTeacherBinding(user, teachers) {
 
 function scopeForUser(user) {
   user = asObject(user);
-  const role = roleForUser(user);
+  const explicitActiveRole = user.activeRole || user.active_role || null;
+  const eligibleRoles = Array.isArray(user.eligibleRoles)
+    ? user.eligibleRoles
+    : Array.isArray(user.eligible_roles) ? user.eligible_roles : null;
+  if (explicitActiveRole && (!eligibleRoles || !eligibleRoles.includes(explicitActiveRole))) {
+    return { kind: 'none' };
+  }
+  const role = explicitActiveRole || roleForUser(user);
+  const teacherId = user.teacher_id || user.teacherId;
+  const studentId = user.student_id || user.studentId;
 
   if (role === 'super_admin' || role === 'admin') return { kind: 'all' };
-  if (role === 'teacher' && user.teacher_id) {
-    return { kind: 'teacher', teacherId: user.teacher_id };
+  if (role === 'teacher' && teacherId) {
+    return { kind: 'teacher', teacherId };
   }
-  if (role === 'student' && user.student_id) {
-    return { kind: 'student', studentId: user.student_id };
+  if (role === 'student' && studentId) {
+    return { kind: 'student', studentId };
   }
   return { kind: 'none' };
 }

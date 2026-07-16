@@ -10,6 +10,7 @@ const { getMiniappLoginDenialReason } = require('./services/miniappAuthPolicy');
 const { validateSyncMutation } = require('./services/syncScopeService');
 const { scopeBusinessSnapshot } = require('./services/dataScopeService');
 const { projectSearchTextFromRow } = require('./services/questionRichContentProjection');
+const { ensureCompatibilityRoleGrants } = require('./services/userRoleGrantService');
 const {
   SUPER_ADMIN_PHONE,
   CANONICAL_SUPER_ADMIN_ID,
@@ -20,7 +21,7 @@ const {
   scopeForUser,
 } = require('./services/authorizationPolicy');
 
-const SCHEMA_VERSION = 3102;
+const SCHEMA_VERSION = 3103;
 const MINIAPP_ADMIN_SEED_USERS = [
   { id: 'miniapp-admin-13732250653', phone: '13732250653', name: 'Miniapp Admin 0653' },
   { id: 'miniapp-admin-18257136756', phone: '18257136756', name: 'Miniapp Admin 6756' },
@@ -102,6 +103,7 @@ class DatabaseService {
     this._ensureMiniappUserColumns();
     this._ensureAuthorizationPersistence();
     this._migrateMiniappMemberships();
+    this._ensureRoleGrantPersistence();
     this._ensureHostHeartbeatColumns();
     console.log(`[DB] initialized env=${this.environment} schema=${this.schemaVersion} path=${this.dbPath}`);
   }
@@ -534,6 +536,10 @@ class DatabaseService {
       ON users(is_super_admin_identity) WHERE is_super_admin_identity = 1`).run();
   }
 
+  _ensureRoleGrantPersistence() {
+    ensureCompatibilityRoleGrants(this.db, { now: this._now() });
+  }
+
   _enforceUniqueNormalizedPhones() {
     const rows = this.db.prepare('SELECT * FROM users WHERE deleted = 0').all();
     const groups = new Map();
@@ -578,6 +584,10 @@ class DatabaseService {
         if (normalizedPhone === SUPER_ADMIN_PHONE) {
           role = user.id === CANONICAL_SUPER_ADMIN_ID ? 'super_admin' : 'pending';
           reviewStatus = user.id === CANONICAL_SUPER_ADMIN_ID ? 'approved' : 'pending';
+          if (user.id === CANONICAL_SUPER_ADMIN_ID) {
+            const binding = resolveTeacherBinding(user, teachers);
+            if (binding.ok) teacherId = binding.teacherId;
+          }
         } else if (role === 'admin' || role === 'student') {
           reviewStatus = 'approved';
         } else if (role === 'teacher') {
@@ -630,9 +640,19 @@ class DatabaseService {
         demote.run(normalizePhone(duplicate.phone), now, duplicate.id);
       }
       if (!identity.ok) return;
+      const currentTeacher = identity.user.teacher_id
+        ? this.db.prepare('SELECT id FROM teachers WHERE id = ? AND deleted = 0').get(identity.user.teacher_id)
+        : null;
+      const teacherBinding = currentTeacher
+        ? { ok: true, teacherId: currentTeacher.id }
+        : resolveTeacherBinding(
+          identity.user,
+          this.db.prepare('SELECT id, phone, deleted FROM teachers WHERE deleted = 0').all()
+        );
+      const teacherId = teacherBinding.ok ? teacherBinding.teacherId : null;
       this.db.prepare(`UPDATE users SET phone = ?, is_super_admin_identity = 1, role = 'super_admin', review_status = 'approved',
-        status = 1, login_enabled = 1, deleted = 0, teacher_id = NULL, updated_at = ? WHERE id = ?`)
-        .run(SUPER_ADMIN_PHONE, now, identity.user.id);
+        status = 1, login_enabled = 1, deleted = 0, teacher_id = ?, updated_at = ? WHERE id = ?`)
+        .run(SUPER_ADMIN_PHONE, teacherId, now, identity.user.id);
     })();
   }
 

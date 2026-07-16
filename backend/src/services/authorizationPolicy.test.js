@@ -129,5 +129,34 @@ assert.deepStrictEqual(
   scopeForUser({ user_type: 'student', student_id: 'student-1' }),
   { kind: 'student', studentId: 'student-1' }
 );
+assert.deepStrictEqual(
+  scopeForUser({
+    role: 'super_admin',
+    activeRole: 'teacher',
+    eligibleRoles: ['super_admin', 'teacher'],
+    teacherId: 'teacher-self',
+  }),
+  { kind: 'teacher', teacherId: 'teacher-self' },
+  'a super administrator using the teacher work identity must receive teacher scope'
+);
+assert.deepStrictEqual(
+  scopeForUser({
+    role: 'super_admin',
+    activeRole: 'super_admin',
+    eligibleRoles: ['super_admin', 'teacher'],
+    teacherId: 'teacher-self',
+  }),
+  { kind: 'all' }
+);
+assert.deepStrictEqual(
+  scopeForUser({
+    role: 'teacher',
+    activeRole: 'super_admin',
+    eligibleRoles: ['teacher'],
+    teacherId: 'teacher-1',
+  }),
+  { kind: 'none' },
+  'an active role outside the server-provided grant set must fail closed'
+);
 
 console.log('authorization policy checks passed');
