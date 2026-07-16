@@ -8,6 +8,8 @@ const path = require('path');
 const crypto = require('crypto');
 const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireCoreReadAccess, requireWriteAccess } = require('./middleware/auth');
 const { buildErrorPayload, errorHandler } = require('./middleware/errorHandler');
+const { getInstance } = require('./database');
+const { createMiniappProvisioningReconciler } = require('./services/miniappProvisioningReconciler');
 
 const studentsRouter = require('./routes/students');
 const coursesRouter = require('./routes/courses');
@@ -249,6 +251,12 @@ function getAppVersion() {
 
 function createApp() {
   const app = express();
+
+  try {
+    createMiniappProvisioningReconciler({ db: getInstance().db }).reconcilePendingCompletedTasks();
+  } catch (error) {
+    console.warn('[miniapp-provisioning] startup reconciliation skipped', error?.code || error?.message || 'unknown');
+  }
 
   // CORS
   app.use(cors({

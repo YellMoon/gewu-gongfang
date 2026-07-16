@@ -52,6 +52,8 @@ function createMiniappIdentityService({
   const findById = db.prepare('SELECT * FROM users WHERE id = ? AND deleted = 0');
   const studentExists = db.prepare('SELECT 1 FROM students WHERE id = ? AND deleted = 0');
   const teacherExists = db.prepare('SELECT 1 FROM teachers WHERE id = ? AND deleted = 0');
+  const findMembership = db.prepare(`SELECT status, ends_at FROM account_memberships
+    WHERE subject_type = ? AND subject_id = ?`);
   const insertEvent = db.prepare(`INSERT INTO miniapp_login_events
     (id, user_id, phone_normalized, identity_kind, result_code, session_id,
      miniapp_version, platform, created_at)
@@ -66,10 +68,32 @@ function createMiniappIdentityService({
     return FORMAL_ROLES.has(role) ? role : null;
   }
 
+  function membershipFor(user, role = formalRole(user)) {
+    const subjectType = role === 'student' ? 'student'
+      : role === 'teacher' ? 'teacher'
+        : role === 'admin' || role === 'super_admin' ? 'user' : null;
+    const subjectId = role === 'student' ? user?.student_id
+      : role === 'teacher' ? user?.teacher_id : user?.id;
+    if (!subjectType || !subjectId) return null;
+    return findMembership.get(subjectType, subjectId) || null;
+  }
+
+  function isActiveMembership(membership) {
+    if (!membership || membership.status !== 'active') return false;
+    if (!membership.ends_at) return true;
+    const expiresAt = Date.parse(membership.ends_at);
+    return Number.isFinite(expiresAt) && expiresAt > new Date(now()).getTime();
+  }
+
   function hasValidFormalMapping(user, role = formalRole(user)) {
     if (!role) return false;
-    if (role === 'student') return Boolean(user.student_id && studentExists.get(user.student_id));
-    if (role === 'teacher') return Boolean(user.teacher_id && teacherExists.get(user.teacher_id));
+    const reconciledMembership = isActiveMembership(membershipFor(user, role));
+    if (role === 'student') {
+      return Boolean(user.student_id && (studentExists.get(user.student_id) || reconciledMembership));
+    }
+    if (role === 'teacher') {
+      return Boolean(user.teacher_id && (teacherExists.get(user.teacher_id) || reconciledMembership));
+    }
     return role === 'admin' || role === 'super_admin';
   }
 
@@ -90,6 +114,8 @@ function createMiniappIdentityService({
 
   function presentUser(user, accountState) {
     const role = accountState === 'formal' ? formalRole(user) : 'student';
+    const membership = accountState === 'formal' ? membershipFor(user, role) : null;
+    const member = isActiveMembership(membership);
     return {
       id: user.id,
       name: user.name || user.nickname || '',
@@ -103,6 +129,8 @@ function createMiniappIdentityService({
       account_state: accountState,
       student_id: accountState === 'formal' ? user.student_id || null : null,
       teacher_id: accountState === 'formal' ? user.teacher_id || null : null,
+      is_member: member,
+      membership_status: membership?.status || null,
     };
   }
 

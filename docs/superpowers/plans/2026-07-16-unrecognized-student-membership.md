@@ -433,7 +433,7 @@ git commit -m "自动发布 2026-07-16"
 - Modify: `backend/src/app.js`
 - Modify: `backend/src/services/miniappIdentityService.js`
 
-- [ ] **Step 1: 写原子收敛 RED 测试**
+- [x] **Step 1: 写原子收敛 RED 测试**
 
 覆盖学生两条身份共享 `student_id`、另一手机号 openid 为空、同一学生一条 student/一条 parent、手机号冲突整笔回滚、老师唯一绑定、会员共享、崩溃后重放、旧令牌失效：
 
@@ -445,27 +445,27 @@ assert.strictEqual(new Set(identities.map(row => row.student_id)).size, 1);
 assert.strictEqual(db.prepare("SELECT COUNT(*) count FROM account_memberships WHERE subject_type='student' AND subject_id=?").get(result.entityId).count, 1);
 ```
 
-- [ ] **Step 2: 运行测试确认 RED**
+- [x] **Step 2: 运行测试确认 RED**
 
 Run: `node backend/src/services/miniappProvisioningReconciler.test.js`
 
 Expected: FAIL with missing module。
 
-- [ ] **Step 3: 实现单事务收敛**
+- [x] **Step 3: 实现单事务收敛**
 
 reconciler 重新校验 `application.status='provisioning'`、revision、task ID、result hash 和实体类型；再创建/复用两条身份、写 `identity_kind`、业务 ID、正式 `role/user_type`、`review_status='approved'`、`login_enabled=1`、会员和审计，最后标记申请 `approved`。任一身份冲突回滚并改为 `manual_resolution_required`，不允许半启用。
 
-- [ ] **Step 4: 加入完成回调、启动和列表读取重放**
+- [x] **Step 4: 加入完成回调、启动和列表读取重放**
 
 V2 task 完成后调用一次；Backend 启动和管理员申请列表读取前扫描终态未收敛任务。重复执行必须返回相同 approved 状态，不重复增 auth_version 或会员。
 
-- [ ] **Step 5: 运行 reconciler 与鉴权回归**
+- [x] **Step 5: 运行 reconciler 与鉴权回归**
 
 Run: `node backend/src/services/miniappProvisioningReconciler.test.js && node backend/src/services/miniappIdentityService.test.js && node backend/src/routes/cloudRelay.http.test.js && node backend/src/routes/miniappApplications.http.test.js`
 
 Expected: PASS；审核前令牌不能因数据库状态改变而获得正式能力，用户必须重新验证手机号登录。
 
-- [ ] **Step 6: 本地提交原子启用切片**
+- [x] **Step 6: 本地提交原子启用切片**
 
 ```powershell
 git add backend/src/services/miniappProvisioningReconciler.js backend/src/services/miniappProvisioningReconciler.test.js backend/src/routes/cloudRelay.js backend/src/routes/miniappApplications.js backend/src/app.js backend/src/services/miniappIdentityService.js
