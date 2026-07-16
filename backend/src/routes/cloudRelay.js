@@ -53,6 +53,15 @@ function normalizeLanUrls(value) {
   return Array.from(new Set(raw.map(item => String(item || '').replace(/\/+$/, '')).filter(Boolean)));
 }
 
+function normalizeCapabilities(value) {
+  const raw = Array.isArray(value) ? value : parseJson(value, []);
+  if (!Array.isArray(raw)) return [];
+  return Array.from(new Set(raw
+    .map(item => String(item || '').trim())
+    .filter(item => item && item.length <= 64 && /^[a-z0-9][a-z0-9._-]*$/i.test(item))))
+    .slice(0, 32);
+}
+
 function sendForbidden(res, code, message = 'Forbidden') {
   return res.status(code === 'UNAUTHORIZED' ? 401 : 403).json({ success: false, code, error: message });
 }
@@ -91,6 +100,9 @@ function requireSnapshotRead(req, res, next) {
 }
 
 function requireMiniappTaskAccess(req, res, next) {
+  if (taskService.isInternalTaskType(req.body.taskType)) {
+    return sendForbidden(res, 'INTERNAL_TASK_TYPE_FORBIDDEN', 'Internal task types cannot be created through this endpoint');
+  }
   if (!req.user && !isDevBypass()) return sendForbidden(res, 'UNAUTHORIZED', 'Authentication required');
   if (!isAllowedMiniappTaskForUser(req.user, req.body.taskType)) {
     return sendForbidden(res, 'TASK_TYPE_FORBIDDEN', 'Task type is not allowed');
@@ -118,12 +130,13 @@ router.post('/host/heartbeat', requireHostWrite, (req, res) => {
   if (!hostDeviceId) return res.status(400).json({ success: false, error: 'hostDeviceId is required' });
 
   db.prepare(
-    `INSERT INTO host_heartbeats (id, host_device_id, status, base_url, lan_urls, last_snapshot_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO host_heartbeats (id, host_device_id, status, base_url, lan_urls, capabilities, last_snapshot_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        status = excluded.status,
        base_url = excluded.base_url,
        lan_urls = excluded.lan_urls,
+       capabilities = excluded.capabilities,
        last_snapshot_at = excluded.last_snapshot_at,
        updated_at = excluded.updated_at`
   ).run(
@@ -132,6 +145,7 @@ router.post('/host/heartbeat', requireHostWrite, (req, res) => {
     req.body.status || 'online',
     req.body.baseUrl || '',
     JSON.stringify(normalizeLanUrls(req.body.lanUrls || req.body.lan_urls)),
+    JSON.stringify(normalizeCapabilities(req.body.capabilities)),
     req.body.lastSnapshotAt || null,
     time,
     time

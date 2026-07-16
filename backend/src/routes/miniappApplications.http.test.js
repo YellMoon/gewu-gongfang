@@ -28,6 +28,7 @@ async function requestJson(baseUrl, method, pathname, { token, body, idempotency
     READ_DB_PATH: dbPath,
     JWT_SECRET: 'miniapp-applications-http-test-secret',
     REQUIRE_NONCE: 'false',
+    GEWU_PRIMARY_HOST_DEVICE_ID: 'http-host-authority',
   });
 
   delete require.cache[require.resolve('../database')];
@@ -47,6 +48,17 @@ async function requestJson(baseUrl, method, pathname, { token, body, idempotency
   insertPending.run('http-parent', '13800138101', '13800138101', 'Parent Applicant', now, now);
   insertPending.run('http-teacher', '13800138102', '13800138102', 'Teacher Applicant', now, now);
   insertPending.run('http-other', '13800138103', '13800138103', 'Other Applicant', now, now);
+  insertPending.run('http-review-teacher', '13800138110', '13800138110', 'Review Teacher', now, now);
+  insertPending.run('http-review-reject', '13800138111', '13800138111', 'Reject Teacher', now, now);
+  db.prepare(`INSERT INTO users
+    (id, phone, phone_normalized, name, role, identity_kind, status, login_enabled,
+     review_status, auth_version, deleted, created_at, updated_at)
+    VALUES ('http-review-admin', '13800138190', '13800138190', 'HTTP Review Admin',
+      'admin', 'admin', 1, 1, 'approved', 1, 0, ?, ?)`).run(now, now);
+  db.prepare(`INSERT INTO host_heartbeats
+    (id, host_device_id, status, base_url, lan_urls, capabilities, created_at, updated_at)
+    VALUES ('http-host-authority', 'http-host-authority', 'online', '', '[]',
+      '["identity-provisioning-v1"]', ?, ?)`).run(now, now);
 
   let sequence = 0;
   const identity = createMiniappIdentityService({
@@ -59,6 +71,12 @@ async function requestJson(baseUrl, method, pathname, { token, body, idempotency
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(`http-${kind}`);
     return [kind, identity.issueUnrecognizedToken(user, `http-${kind}-session`).token];
   }));
+  const reviewAdmin = db.prepare("SELECT * FROM users WHERE id='http-review-admin'").get();
+  tokens.reviewAdmin = identity.issueFormalToken(reviewAdmin, 'http-review-admin-session').token;
+  for (const kind of ['review-teacher', 'review-reject']) {
+    const user = db.prepare('SELECT * FROM users WHERE id=?').get(`http-${kind}`);
+    tokens[kind] = identity.issueUnrecognizedToken(user, `http-${kind}-session`).token;
+  }
 
   const server = createApp().listen(0);
   try {
@@ -160,6 +178,114 @@ async function requestJson(baseUrl, method, pathname, { token, body, idempotency
     assert.deepStrictEqual(teacherCreated.body.data.application.payload, {
       name: '\u674e\u8001\u5e08', phone: '13800138102', subject: '\u7269\u7406',
     });
+
+    const reviewTeacher = await requestJson(baseUrl, 'POST', '/api/miniapp/applications', {
+      token: tokens['review-teacher'],
+      idempotencyKey: 'http-review-teacher-1',
+      body: {
+        applicationType: 'teacher',
+        payload: { name: 'Review Teacher', phone: '13800138110', subject: '\u7269\u7406' },
+      },
+    });
+    const reviewReject = await requestJson(baseUrl, 'POST', '/api/miniapp/applications', {
+      token: tokens['review-reject'],
+      idempotencyKey: 'http-review-reject-1',
+      body: {
+        applicationType: 'teacher',
+        payload: { name: 'Reject Teacher', phone: '13800138111' },
+      },
+    });
+    assert.strictEqual(reviewTeacher.status, 201);
+    assert.strictEqual(reviewReject.status, 201);
+    assert.strictEqual(
+      (await requestJson(baseUrl, 'GET', '/api/miniapp/applications/admin', { token: tokens.teacher })).status,
+      403,
+    );
+    const adminList = await requestJson(baseUrl, 'GET', '/api/miniapp/applications/admin?status=submitted', {
+      token: tokens.reviewAdmin,
+    });
+    assert.strictEqual(adminList.status, 200);
+    assert.ok(adminList.body.data.items.some(item => item.id === reviewTeacher.body.data.application.id));
+    assert.ok(!JSON.stringify(adminList.body).includes('wechat_openid'));
+
+    const applicantBeforeApproval = db.prepare(`SELECT role, review_status, login_enabled, teacher_id
+      FROM users WHERE id='http-review-teacher'`).get();
+    const membershipsBeforeApproval = db.prepare('SELECT COUNT(*) count FROM account_memberships').get().count;
+    const approvedForProvisioning = await requestJson(
+      baseUrl,
+      'POST',
+      `/api/miniapp/applications/${reviewTeacher.body.data.application.id}/approve`,
+      {
+        token: tokens.reviewAdmin,
+        body: { expectedRevision: reviewTeacher.body.data.application.revision },
+      },
+    );
+    assert.strictEqual(approvedForProvisioning.status, 200);
+    assert.strictEqual(approvedForProvisioning.body.data.application.status, 'provisioning');
+    assert.strictEqual(approvedForProvisioning.body.data.task.task_type, 'identity-provisioning');
+    assert.strictEqual(approvedForProvisioning.body.data.task.target_host_device_id, 'http-host-authority');
+    assert.ok(!JSON.stringify(approvedForProvisioning.body.data.task.payload).includes('wechat_openid'));
+    assert.ok(!JSON.stringify(approvedForProvisioning.body.data.task.payload).includes('Bearer '));
+    assert.deepStrictEqual(
+      db.prepare(`SELECT role, review_status, login_enabled, teacher_id
+        FROM users WHERE id='http-review-teacher'`).get(),
+      applicantBeforeApproval,
+    );
+    assert.strictEqual(
+      db.prepare('SELECT COUNT(*) count FROM account_memberships').get().count,
+      membershipsBeforeApproval,
+    );
+    const approveReplay = await requestJson(
+      baseUrl,
+      'POST',
+      `/api/miniapp/applications/${reviewTeacher.body.data.application.id}/approve`,
+      {
+        token: tokens.reviewAdmin,
+        body: { expectedRevision: reviewTeacher.body.data.application.revision },
+      },
+    );
+    assert.strictEqual(approveReplay.status, 200);
+    assert.strictEqual(approveReplay.body.data.replayed, true);
+    assert.strictEqual(approveReplay.body.data.task.id, approvedForProvisioning.body.data.task.id);
+
+    const missingReason = await requestJson(
+      baseUrl,
+      'POST',
+      `/api/miniapp/applications/${reviewReject.body.data.application.id}/reject`,
+      {
+        token: tokens.reviewAdmin,
+        body: { expectedRevision: reviewReject.body.data.application.revision },
+      },
+    );
+    assert.strictEqual(missingReason.status, 400);
+    assert.strictEqual(missingReason.body.code, 'APPLICATION_REJECTION_REASON_REQUIRED');
+    const rejectedByAdmin = await requestJson(
+      baseUrl,
+      'POST',
+      `/api/miniapp/applications/${reviewReject.body.data.application.id}/reject`,
+      {
+        token: tokens.reviewAdmin,
+        body: {
+          expectedRevision: reviewReject.body.data.application.revision,
+          reason: 'Please correct the submitted information.',
+        },
+      },
+    );
+    assert.strictEqual(rejectedByAdmin.status, 200);
+    assert.strictEqual(rejectedByAdmin.body.data.application.status, 'rejected');
+
+    const forgedInternalTask = await requestJson(baseUrl, 'POST', '/api/cloud/tasks', {
+      token: tokens.reviewAdmin,
+      idempotencyKey: 'http-forged-identity-provisioning',
+      body: {
+        protocolVersion: 2,
+        taskType: 'identity-provisioning',
+        targetHostDeviceId: 'http-host-authority',
+        payload: { forged: true },
+      },
+    });
+    assert.strictEqual(forgedInternalTask.status, 403);
+    assert.strictEqual(forgedInternalTask.body.code, 'INTERNAL_TASK_TYPE_FORBIDDEN');
 
     db.prepare("UPDATE miniapp_role_applications SET status='rejected' WHERE id=?")
       .run(created.body.data.application.id);

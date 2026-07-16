@@ -47,6 +47,10 @@ function canReviewUsers(user) {
   return hasCanonicalIdentity && roleForUser(user) === 'super_admin';
 }
 
+function canReviewApplications(user) {
+  return ['super_admin', 'admin'].includes(roleForUser(user));
+}
+
 function resolveTeacherBinding(user, teachers) {
   user = asObject(user);
   const phone = normalizePhone(user.phone);
@@ -87,6 +91,8 @@ function effectiveCapabilities(authz = {}, { gateway = false } = {}) {
   if (role === 'pending') return [];
   const capabilities = [];
   if (role === 'super_admin') capabilities.push('users:review');
+  if ((['super_admin', 'admin'].includes(role) && authz.userApproved === true)
+    || canReviewApplications(authz)) capabilities.push('applications:review');
   if (role === 'super_admin' || role === 'admin') capabilities.push('business:all');
   if (role === 'teacher') capabilities.push('business:teacher-scope');
   if (['super_admin', 'admin', 'teacher', 'student'].includes(role)) capabilities.push('question-bank:view');
@@ -104,6 +110,7 @@ module.exports = {
   ROLES,
   normalizePhone,
   roleForUser,
+  canReviewApplications,
   canReviewUsers,
   resolveTeacherBinding,
   scopeForUser,

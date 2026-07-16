@@ -1,15 +1,18 @@
 const { Router } = require('express');
 const { getInstance } = require('../database');
 const { sendError } = require('../middleware/errorHandler');
+const { canReviewApplications } = require('../services/authorizationPolicy');
 const {
   FORMAL_TOKEN_USE,
   UNRECOGNIZED_TOKEN_USE,
 } = require('../services/miniappIdentityService');
 const { createMiniappApplicationService } = require('../services/miniappApplicationService');
+const { createMiniappApplicationReviewService } = require('../services/miniappApplicationReviewService');
 
 const router = Router();
 let cachedDb = null;
 let cachedService = null;
+let cachedReviewService = null;
 
 function applicationService() {
   const db = getInstance().db;
@@ -18,6 +21,16 @@ function applicationService() {
     cachedService = createMiniappApplicationService({ db });
   }
   return cachedService;
+}
+
+function applicationReviewService() {
+  const db = getInstance().db;
+  if (!cachedReviewService || cachedDb !== db) {
+    cachedDb = db;
+    cachedService = createMiniappApplicationService({ db });
+    cachedReviewService = createMiniappApplicationReviewService({ db });
+  }
+  return cachedReviewService;
 }
 
 function statusForError(code) {
@@ -39,11 +52,72 @@ function statusForError(code) {
 
 function sendApplicationError(res, error) {
   const code = error?.code || 'APPLICATION_REQUEST_FAILED';
-  return sendError(res, statusForError(code), code, {
+  return sendError(res, Number(error?.statusCode) || statusForError(code), code, {
     code,
     details: error?.details,
   });
 }
+
+function requireReviewSession(req, res, next) {
+  if (canReviewApplications(req.user)) return next();
+  return sendError(res, 403, 'APPLICATION_REVIEW_FORBIDDEN', {
+    code: 'APPLICATION_REVIEW_FORBIDDEN',
+  });
+}
+
+router.get('/admin', requireReviewSession, (req, res) => {
+  try {
+    const result = applicationReviewService().list({
+      actor: req.user,
+      status: req.query.status,
+      limit: req.query.limit,
+    });
+    return res.json({ success: true, data: result, ...result });
+  } catch (error) {
+    return sendApplicationError(res, error);
+  }
+});
+
+router.post('/:id/approve', requireReviewSession, (req, res) => {
+  try {
+    const result = applicationReviewService().approve({
+      actor: req.user,
+      applicationId: req.params.id,
+      expectedRevision: req.body?.expectedRevision ?? req.body?.revision,
+      tenantId: req.tenantId,
+    });
+    return res.json({ success: true, data: result, ...result });
+  } catch (error) {
+    return sendApplicationError(res, error);
+  }
+});
+
+router.post('/:id/reject', requireReviewSession, (req, res) => {
+  try {
+    const result = applicationReviewService().reject({
+      actor: req.user,
+      applicationId: req.params.id,
+      expectedRevision: req.body?.expectedRevision ?? req.body?.revision,
+      reason: req.body?.reason ?? req.body?.rejectionReason,
+    });
+    return res.json({ success: true, data: result, ...result });
+  } catch (error) {
+    return sendApplicationError(res, error);
+  }
+});
+
+router.post('/:id/retry', requireReviewSession, (req, res) => {
+  try {
+    const result = applicationReviewService().retry({
+      actor: req.user,
+      applicationId: req.params.id,
+      expectedRevision: req.body?.expectedRevision ?? req.body?.revision,
+    });
+    return res.json({ success: true, data: result, ...result });
+  } catch (error) {
+    return sendApplicationError(res, error);
+  }
+});
 
 function requireApplicationSession(req, res, next) {
   if (req.authz?.tokenUse === UNRECOGNIZED_TOKEN_USE) return next();

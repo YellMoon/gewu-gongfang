@@ -41,7 +41,15 @@ const token = id => jwt.sign({ id }, process.env.JWT_SECRET, { algorithm: 'HS256
   const userHeaders = id => ({ authorization: `Bearer ${token(id)}` });
   const hostHeaders = { 'x-gewu-host-token': 'backend-host-secret' };
   try {
-    assert.strictEqual((await call('/host/heartbeat', { method: 'POST', headers: hostHeaders, body: JSON.stringify({ hostDeviceId: 'backend-host', baseUrl: 'https://host.example/base/' }) })).status, 200);
+    assert.strictEqual((await call('/host/heartbeat', { method: 'POST', headers: hostHeaders, body: JSON.stringify({
+      hostDeviceId: 'backend-host',
+      baseUrl: 'https://host.example/base/',
+      capabilities: ['identity-provisioning-v1', 'identity-provisioning-v1'],
+    }) })).status, 200);
+    assert.deepStrictEqual(
+      JSON.parse(service.db.prepare("SELECT capabilities FROM host_heartbeats WHERE host_device_id='backend-host'").get().capabilities),
+      ['identity-provisioning-v1'],
+    );
     const previewSnapshot = { questions: [
       { id: 'q-draft', tenant_id: 'default', type: 'fill', stem: 'draft', answer: 'secret-draft', storage_state: 'local_draft' },
       { id: 'q-visible', tenant_id: 'default', type: 'choice', stem: 'visible', answer: 'secret-answer', storage_state: 'host_committed' },
@@ -57,6 +65,18 @@ const token = id => jwt.sign({ id }, process.env.JWT_SECRET, { algorithm: 'HS256
     assert.ok(!JSON.stringify(studentPreviewBody).includes('secret'));
     const adminPreview = await call('/snapshots/questions', { headers: userHeaders('relay-admin') });
     assert.deepStrictEqual((await adminPreview.json()).questions.map(item => item.id), ['q-draft', 'q-visible']);
+    const forgedInternal = await call('/tasks', {
+      method: 'POST',
+      headers: { ...userHeaders('relay-admin'), 'x-idempotency-key': 'backend-internal-forbidden' },
+      body: JSON.stringify({
+        protocolVersion: 2,
+        taskType: 'identity-provisioning',
+        targetHostDeviceId: 'backend-host',
+        payload: {},
+      }),
+    });
+    assert.strictEqual(forgedInternal.status, 403);
+    assert.strictEqual((await forgedInternal.json()).code, 'INTERNAL_TASK_TYPE_FORBIDDEN');
     const firstBody = { protocolVersion: 2, taskType: 'paper-export-pdf', targetHostDeviceId: 'backend-host', payload: { questionIds: ['q1'] } };
     const first = await call('/tasks', { method: 'POST', headers: { ...userHeaders('relay-u1'), 'x-idempotency-key': 'backend-idem-1' }, body: JSON.stringify(firstBody) });
     assert.strictEqual(first.status, 200);
