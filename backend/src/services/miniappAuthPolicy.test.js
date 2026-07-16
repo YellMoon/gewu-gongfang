@@ -13,8 +13,14 @@ assert.strictEqual(
 
 assert.strictEqual(
   getMiniappLoginDenialReason({ role: 'teacher', login_enabled: 1, deleted: 0 }),
-  'MINIAPP_ROLE_NOT_ALLOWED',
-  'only admin and student miniapp roles are allowed'
+  'MINIAPP_TEACHER_NOT_LINKED',
+  'teacher login must be bound to a local teacher record'
+);
+
+assert.strictEqual(
+  getMiniappLoginDenialReason({ role: 'teacher', login_enabled: 1, deleted: 0, teacher_id: 'teacher-1' }),
+  '',
+  'enabled linked teachers should be allowed'
 );
 
 assert.strictEqual(

@@ -1,6 +1,6 @@
 const { getLinkedStudentIds, parseArray, roleOf } = require('./miniappAccessPolicy');
 
-const ALLOWED_MINIAPP_ROLES = new Set(['super_admin', 'admin', 'student']);
+const ALLOWED_MINIAPP_ROLES = new Set(['super_admin', 'admin', 'teacher', 'student']);
 
 function isEnabled(value) {
   return value === 1 || value === true || value === '1' || value === 'true';
@@ -14,6 +14,7 @@ function getMiniappLoginDenialReason(user) {
   if (!ALLOWED_MINIAPP_ROLES.has(role)) return 'MINIAPP_ROLE_NOT_ALLOWED';
   if (!isEnabled(user.login_enabled)) return 'MINIAPP_LOGIN_DISABLED';
   if (role === 'student' && getLinkedStudentIds(user).length === 0) return 'MINIAPP_STUDENT_NOT_LINKED';
+  if (role === 'teacher' && !user.teacher_id && !user.teacherId) return 'MINIAPP_TEACHER_NOT_LINKED';
   return '';
 }
 

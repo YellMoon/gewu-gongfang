@@ -156,7 +156,7 @@ git commit -m "自动发布 2026-07-16"
 - Modify: `backend/src/miniappPhoneLogin.test.js`
 - Modify: `package.json`
 
-- [ ] **Step 1: 写手机号/openid/令牌 RED 测试**
+- [x] **Step 1: 写手机号/openid/令牌 RED 测试**
 
 覆盖缺少 `phoneCode`、新手机号、待绑定手机号、phone/openid 双向冲突、禁用、并发、限流、登录事件和令牌声明：
 
@@ -173,13 +173,13 @@ assert.strictEqual(login.claims.iss, 'gewu-miniapp-auth');
 assert.strictEqual(login.claims.aud, 'gewu-miniapp-experience');
 ```
 
-- [ ] **Step 2: 运行测试确认 RED**
+- [x] **Step 2: 运行测试确认 RED**
 
 Run: `node backend/src/services/miniappIdentityService.test.js`
 
 Expected: FAIL with `Cannot find module './miniappIdentityService'`。
 
-- [ ] **Step 3: 实现规范化绑定和登录事件事务**
+- [x] **Step 3: 实现规范化绑定和登录事件事务**
 
 服务导出固定接口：
 
@@ -197,7 +197,7 @@ function createMiniappIdentityService({ db, jwtSecret, now, uuid }) {
 
 `loginWithVerifiedWechat` 必须先按规范化手机号查唯一身份，再校验 openid；空 openid 可绑定，冲突返回 `PHONE_WECHAT_BINDING_CONFLICT` 或 `OPENID_PHONE_BINDING_CONFLICT`，绝不覆盖。微信成功解析手机号后，无论结果为成功、未认可、禁用或冲突，都写 `miniapp_login_events`；事件不得包含 `code`、`phoneCode`、JWT、access token 或完整请求体。
 
-- [ ] **Step 4: 实现 auth_version 与令牌防火墙**
+- [x] **Step 4: 实现 auth_version 与令牌防火墙**
 
 未认可令牌声明固定为：
 
@@ -214,17 +214,17 @@ function createMiniappIdentityService({ db, jwtSecret, now, uuid }) {
 
 正式令牌使用 `aud='gewu-api'`、`token_use='miniapp-session'`。`attachAuthorizationContext` 每次重新读取用户并比较 `auth_version`；未认可令牌只在账号未禁用且未正式启用时有效，正式令牌必须仍满足 `approved + login_enabled + 有效业务映射`。刷新只能延续同一 `sid` 和同一 token_use，不能把未认可令牌升级为正式令牌。
 
-- [ ] **Step 5: 改造 `/api/auth/wechat-login`**
+- [x] **Step 5: 改造 `/api/auth/wechat-login`**
 
 每次新会话都要求同时存在 `code` 和 `phoneCode`；旧“已有 openid 可不验证手机号”分支删除。路由顺序固定为微信 openid 交换、手机号交换、身份服务事务、结果映射。拒绝授权不提交服务端；交换失败返回 `WECHAT_PHONE_EXCHANGE_FAILED`，不伪造含手机号事件。
 
-- [ ] **Step 6: 运行身份与旧正式账号回归**
+- [x] **Step 6: 运行身份与旧正式账号回归**
 
 Run: `node backend/src/services/authRateLimiter.test.js && node backend/src/services/miniappIdentityService.test.js && node backend/src/miniappPhoneLogin.test.js && node backend/src/services/miniappAuthPolicy.test.js`
 
 Expected: 全部 PASS；日志断言找不到动态 code、phone code 和 JWT。
 
-- [ ] **Step 7: 本地提交认证垂直切片**
+- [x] **Step 7: 本地提交认证垂直切片**
 
 ```powershell
 git add backend/src/services/miniappIdentityService.js backend/src/services/miniappIdentityService.test.js backend/src/services/authRateLimiter.js backend/src/services/authRateLimiter.test.js backend/src/routes/auth.js backend/src/middleware/auth.js backend/src/services/miniappAuthPolicy.js backend/src/miniappPhoneLogin.test.js package.json

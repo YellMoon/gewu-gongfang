@@ -53,6 +53,18 @@ const questionBank = require('../services/questionBankService');
 const { commitQuestionToBoundStore, updateCommittedQuestion, createTrustedInternalStorageUpdateContext, deleteCommittedQuestion } = require('../services/questionBankStorageService');
 
 function token(id, deviceId, tokenUse = 'desktop-session') {
+  if (tokenUse === 'miniapp-session') {
+    const user = service.db.prepare('SELECT auth_version, role FROM users WHERE id=?').get(id);
+    return jwt.sign({
+      sub: id,
+      sid: `miniapp-test-${id}`,
+      token_use: tokenUse,
+      auth_version: Number(user.auth_version || 1),
+      role: user.role,
+      iss: 'gewu-miniapp-auth',
+      aud: 'gewu-api',
+    }, process.env.JWT_SECRET, { algorithm: 'HS256' });
+  }
   return jwt.sign({ id, deviceId, token_use: tokenUse }, process.env.JWT_SECRET,
     { algorithm: 'HS256', issuer: 'gewu-auth', audience: 'gewu-api' });
 }
@@ -153,7 +165,7 @@ function committed(id) {
 
     const denials = [
       ['client', 'client-super', 'client-device', 'desktop-session', 'desktop-client'],
-      ['miniapp', 'mini-super', 'host-device', 'miniapp-session', 'primary-host'],
+      ['miniapp', 'host-admin', 'host-device', 'miniapp-session', 'primary-host'],
       ['pending', 'pending-user', 'host-device', 'desktop-session', 'primary-host'],
     ];
     for (const [id, userId, deviceId, use, nodeRole] of denials) {
