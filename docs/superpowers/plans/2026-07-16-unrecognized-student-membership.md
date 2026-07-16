@@ -311,8 +311,9 @@ git commit -m "自动发布 2026-07-16"
 - Modify: `backend/src/routes/cloudRelay.js`
 - Modify: `backend/src/services/authorizationPolicy.js`
 - Modify: `backend/src/routes/miniappApplications.http.test.js`
+- Modify: `package.json`
 
-- [ ] **Step 1: 写普通管理员与超级管理员边界 RED 测试**
+- [x] **Step 1: 写普通管理员与超级管理员边界 RED 测试**
 
 断言普通管理员可审学生/老师公开申请，但不能创建管理员、审核设备或读取登录事件；不能审核自己的认证身份。目标主机离线或心跳未声明 `identity-provisioning-v1` 时申请保持 `submitted`。
 
@@ -324,13 +325,13 @@ assert.strictEqual(decision.task.target_host_device_id, 'host-authority');
 assert.ok(!('openid' in decision.task.payload));
 ```
 
-- [ ] **Step 2: 运行测试确认 RED**
+- [x] **Step 2: 运行测试确认 RED**
 
 Run: `node backend/src/services/miniappApplicationReviewService.test.js`
 
 Expected: FAIL with missing service。
 
-- [ ] **Step 3: 实现受控审核和任务创建**
+- [x] **Step 3: 实现受控审核和任务创建**
 
 服务端审核路由固定为：
 
@@ -343,20 +344,20 @@ POST /api/miniapp/applications/:id/retry
 
 通过只允许申请当前 revision；任务幂等键为 `identity-provisioning:<application_id>:<revision>`，`request_hash` 来自规范化申请快照。任务 payload 只含申请 ID、revision、type、验证后的业务字段、审核人 ID 和 tenant ID，不含 JWT、openid、微信 code。
 
-- [ ] **Step 4: 禁止普通云任务入口创建 provisioning**
+- [x] **Step 4: 禁止普通云任务入口创建 provisioning**
 
 `POST /api/cloud/tasks` 对 `identity-provisioning` 始终返回 `INTERNAL_TASK_TYPE_FORBIDDEN`；只有 review service 直接调用 `createV2Task`。Gateway 和小程序都不能伪造该任务。
 
-- [ ] **Step 5: 运行审核与云任务回归**
+- [x] **Step 5: 运行审核与云任务回归**
 
 Run: `node backend/src/services/miniappApplicationReviewService.test.js && node backend/src/routes/miniappApplications.http.test.js && node backend/src/routes/cloudRelay.http.test.js && node backend/src/services/cloudRelayTaskSchemaMigration.test.js`
 
 Expected: PASS；批准动作不会修改 `login_enabled`、正式角色、会员或业务实体 ID。
 
-- [ ] **Step 6: 本地提交审核切片**
+- [x] **Step 6: 本地提交审核切片**
 
 ```powershell
-git add backend/src/services/miniappApplicationReviewService.js backend/src/services/miniappApplicationReviewService.test.js backend/src/routes/miniappApplications.js backend/src/services/cloudRelayTaskService.js backend/src/routes/cloudRelay.js backend/src/services/authorizationPolicy.js backend/src/routes/miniappApplications.http.test.js
+git add backend/src/services/miniappApplicationReviewService.js backend/src/services/miniappApplicationReviewService.test.js backend/src/routes/miniappApplications.js backend/src/services/cloudRelayTaskService.js backend/src/routes/cloudRelay.js backend/src/routes/cloudRelay.http.test.js backend/src/services/authorizationPolicy.js backend/src/routes/miniappApplications.http.test.js package.json docs/superpowers/plans/2026-07-16-unrecognized-student-membership.md
 git commit -m "自动发布 2026-07-16"
 ```
 
