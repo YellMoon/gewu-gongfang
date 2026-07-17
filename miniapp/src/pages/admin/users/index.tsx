@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, Button, Picker, Input, ScrollView } from '@tarojs/components';
+import { View, Text, Button, Input, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { adminApi } from '../../../utils/api';
 import { fetchPermissions, getCurrentUser } from '../../../utils/permission';
@@ -31,7 +31,6 @@ export default function AdminUsersPage() {
   const currentUser = getCurrentUser();
   const isReviewDemo = isReviewExperienceIdentity(currentUser);
   const [users, setUsers] = useState<any[]>([]);
-  const [pairings, setPairings] = useState<any[]>([]);
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -39,7 +38,6 @@ export default function AdminUsersPage() {
   const [submittedSearch, setSubmittedSearch] = useState('');
   const [status, setStatus] = useState('');
   const [lockedKeys, setLockedKeys] = useState<string[]>([]);
-  const [pairingUsers, setPairingUsers] = useState<Record<string, string>>({});
   const loadCoordinator = useRef(createLatestRequestCoordinator());
   const operationLocks = useRef(createOperationLocks());
   const queryRef = useRef({ submittedSearch, status });
@@ -54,28 +52,18 @@ export default function AdminUsersPage() {
       const nextCapabilities = permissionResult.capabilities || [];
       const canRead = nextCapabilities.includes('business:all');
       if (!canRead) throw new Error('\u5f53\u524d\u8d26\u53f7\u65e0\u6743\u67e5\u770b\u7528\u6237\u5206\u7c7b');
-      const isReviewer = nextCapabilities.includes('users:review');
       const query = queryRef.current;
-      const requests: Promise<any>[] = [adminApi.getUsers({ page: 1, search: query.submittedSearch, review_status: query.status })];
-      if (isReviewer) requests.push(adminApi.getPendingPairings());
-      const [userResult, pairingResult] = await Promise.all(requests);
+      const userResult = await adminApi.getUsers({ page: 1, search: query.submittedSearch, review_status: query.status });
       if (!userResult.success) throw new Error(errorMessage(userResult, '\u7528\u6237\u52a0\u8f7d\u5931\u8d25'));
       const payload = userResult.data || userResult;
-      let nextPairings: any[] = [];
-      if (isReviewer) {
-        if (!pairingResult?.success) throw new Error(errorMessage(pairingResult, '\u8bbe\u5907\u5ba1\u6838\u52a0\u8f7d\u5931\u8d25'));
-        nextPairings = pairingResult.data?.items || pairingResult.items || [];
-      }
-      return { nextCapabilities, users: payload.users || payload.items || [], pairings: nextPairings };
+      return { nextCapabilities, users: payload.users || payload.items || [] };
     }, result => {
       setCapabilities(result.nextCapabilities);
       setUsers(result.users);
-      setPairings(result.pairings);
     }, (caught: any) => {
       setCapabilities([]);
       setError(caught?.message || '\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5');
       setUsers([]);
-      setPairings([]);
     }, () => {
       setLoading(false);
     });
@@ -118,17 +106,6 @@ export default function AdminUsersPage() {
     });
   };
 
-  const reviewPairing = async (code: string, action: 'approve' | 'reject') => {
-    if (!canReview) return;
-    await runLocked(`pairing:${code}`, async () => {
-      const userId = pairingUsers[code];
-      if (action === 'approve' && !userId) return void Taro.showToast({ title: '\u8bf7\u5148\u9009\u62e9\u8981\u7ed1\u5b9a\u7684\u8d26\u53f7', icon: 'none' });
-      const result: any = await adminApi.reviewPairingCode(code, action, userId);
-      if (!result.success) return void Taro.showToast({ title: errorMessage(result, '\u8bbe\u5907\u5ba1\u6838\u5931\u8d25'), icon: 'none' });
-      await load();
-    });
-  };
-
   const currentRole = currentUser?.user_type;
   return <View className="admin-page">
     <ReviewDemoBanner />
@@ -137,7 +114,6 @@ export default function AdminUsersPage() {
     {currentRole === 'admin' && !canReview ? <View className="read-only-notice">{'\u666e\u901a\u7ba1\u7406\u5458\u53ef\u67e5\u770b\u5206\u7c7b\uff0c\u4ec5\u56fa\u5b9a\u8d85\u7ea7\u7ba1\u7406\u5458\u53ef\u5ba1\u6838\u6216\u505c\u7528\u7528\u6237\u3002'}</View> : null}
     <View className="search-bar"><Input className="search-input" value={search} placeholder={'\u641c\u7d22\u59d3\u540d\u6216\u624b\u673a\u53f7'} onInput={event => setSearch(event.detail.value)} /><Button className="search-btn" onClick={() => setSubmittedSearch(search.trim())}>{'\u67e5\u8be2'}</Button></View>
     <ScrollView scrollX className="type-tabs">{statusFilters.map(item => <Text key={item || 'all'} className={`type-tab ${status === item ? 'active' : ''}`} onClick={() => setStatus(item)}>{item ? statusLabels[item] : '\u5168\u90e8'}</Text>)}</ScrollView>
-    {canReview && pairings.length > 0 ? <View className="pairing-section"><Text className="section-title">{'\u5f85\u5ba1\u6838\u8bbe\u5907'}</Text>{pairings.map(item => { const pairingLocked = lockedKeys.includes(`pairing:${item.pairingCode}`); const eligibleUsers = users.filter(user => user.review_status === 'approved' && user.status !== 0 && user.login_enabled !== 0); const selectedIndex = Math.max(0, eligibleUsers.findIndex(user => user.id === pairingUsers[item.pairingCode])); return <View className="pairing-item" key={item.id || item.pairingCode}><View className="pairing-device"><Text>{item.deviceName || '\u672a\u547d\u540d\u8bbe\u5907'} \u00b7 {item.pairingCode}</Text><Picker mode="selector" range={eligibleUsers.map(user => user.name || user.nickname || user.id)} value={selectedIndex} onChange={event => setPairingUsers(current => ({...current,[item.pairingCode]:eligibleUsers[Number(event.detail.value)]?.id}))}><View className="pairing-account">{pairingUsers[item.pairingCode] ? (eligibleUsers.find(user => user.id === pairingUsers[item.pairingCode])?.name || '\u5df2\u9009\u8d26\u53f7') : '\u9009\u62e9\u7ed1\u5b9a\u8d26\u53f7'}</View></Picker></View><View><Button size="mini" disabled={pairingLocked || !pairingUsers[item.pairingCode]} loading={pairingLocked} onClick={() => reviewPairing(item.pairingCode, 'approve')}>{'\u6279\u51c6\u5e76\u7ed1\u5b9a'}</Button><Button size="mini" disabled={pairingLocked} onClick={() => reviewPairing(item.pairingCode, 'reject')}>{'\u62d2\u7edd'}</Button></View></View>; })}</View> : null}
     <View className="user-list">
       {loading ? <View className="loading">{'\u6b63\u5728\u52a0\u8f7d\u7528\u6237\u2026'}</View> : null}
       {!loading && error ? <View className="error"><Text>{error}</Text><Button size="mini" onClick={() => void load()}>{'\u91cd\u8bd5'}</Button></View> : null}

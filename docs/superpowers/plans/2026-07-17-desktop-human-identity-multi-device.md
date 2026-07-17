@@ -449,20 +449,44 @@ Run: `node src/services/identityDeviceCenterPolicy.test.js && node src/pages/Ide
 
 Expected: PASS；源码和构建中不存在任意账号选择器。
 
-- [ ] **Step 5: 本地提交审核中心切片**
+- [x] **Step 5: 本地提交审核中心切片**
 
 Run: `git add src/services/identityDeviceCenterPolicy.mjs src/services/identityDeviceCenterPolicy.test.js src/pages/IdentityDeviceCenter.tsx src/pages/IdentityDeviceCenter.css src/pages/IdentityDeviceCenter.test.js src/navigation/appNavigation.tsx src/layout/AppShell.tsx src/App.tsx src/pages/PermissionManager.tsx src/pages/SyncSettingsAuthorization.test.js src/uiRegression.test.js src/components/PairingReviewPanel.tsx package.json && git commit -m "自动发布 2026-07-17"`
 
 ### Task 9: 统一同步身份并关闭 Gateway V1 配对
 
 **Files:**
+- Modify: `gateway/src/databaseAuthorization.test.js`
+- Modify: `gateway/src/db/database.js`
+- Modify: `gateway/src/db/schema.sql`
+- Modify: `gateway/src/middleware/auth.js`
 - Modify: `gateway/src/routes/desktopPairing.js`
 - Modify: `gateway/src/routes/cloudRelay.js`
 - Modify: `gateway/src/routes/cloudRelay.http.test.js`
+- Modify: `gateway/src/services/relayAssertionService.js`
+- Modify: `backend/src/database.js`
+- Modify: `backend/src/middleware/auth.js`
+- Modify: `backend/src/routes/desktopPairing.js`
+- Modify: `backend/src/services/desktopPairingParity.test.js`
 - Modify: `backend/src/routes/cloudRelay.js`
 - Modify: `backend/src/routes/cloudRelay.http.test.js`
+- Modify: `backend/src/routes/cloudRelayHost.js`
+- Modify: `backend/src/routes/cloudRelayHostTasks.test.js`
+- Modify: `backend/src/routes/desktopCloudSync.test.js`
+- Modify: `backend/src/services/desktopSessionService.js`
+- Modify: `backend/src/services/desktopSessionService.test.js`
 - Modify: `backend/src/services/relayAssertionService.js`
 - Modify: `backend/src/services/relayAssertionService.test.js`
+- Modify: `backend/src/services/syncScopeIntegration.test.js`
+- Modify: `miniapp/src/pages/admin/users/index.scss`
+- Modify: `miniapp/src/pages/admin/users/index.tsx`
+- Modify: `miniapp/src/utils/api.ts`
+- Modify: `miniapp/src/utils/miniappUiPageInventory.js`
+- Modify: `src/custom.d.ts`
+- Modify: `src/pages/SyncSettings.tsx`
+- Modify: `src/pages/SyncSettingsAuthorization.test.js`
+- Modify: `src/services/desktopAuthorizationSession.mjs`
+- Modify: `src/services/desktopAuthorizationSession.test.js`
 - Modify: `src/services/pairingApiBase.mjs`
 - Modify: `src/services/pairingApiBase.test.js`
 - Modify: `src/services/oneClickSyncService.mjs`
@@ -471,9 +495,9 @@ Run: `git add src/services/identityDeviceCenterPolicy.mjs src/services/identityD
 - Modify: `src/services/oneClickSyncTransports.test.js`
 - Modify: `package.json`
 
-- [ ] **Step 1: 写 V1 tombstone 和同步身份 RED 测试**
+- [x] **Step 1: 写 V1 tombstone 和同步身份 RED 测试**
 
-Gateway 的 start/exchange/pending/approve/reject 全部预期 410 `DESKTOP_PAIRING_V1_REMOVED`，不写 pairing 表。所有直连、发现 LAN、手工 LAN 和云中继同步都必须从同一 V2 desktop session resolver 取得 userId、deviceId、activeRole、teacherId、sessionId 和 credentialVersion；只有本地离线租约时返回 `ONLINE_DESKTOP_SESSION_REQUIRED`。
+Gateway 和 Backend 的 start/exchange/pending/approve/reject 全部预期 410 `DESKTOP_PAIRING_V1_REMOVED`，不查询用户、不写 pairing 表；小程序管理员页不再提供任意账号选择式配对审批。所有直连、发现 LAN、手工 LAN 和云中继同步都必须从同一 V2 desktop session resolver 取得 userId、deviceId、activeRole、teacherId、sessionId、authVersion 和 credentialVersion；只有本地离线租约时返回 `ONLINE_DESKTOP_SESSION_REQUIRED`。
 
 ```js
 assert.strictEqual((await gatewayPairing('/start', {})).status, 410);
@@ -481,25 +505,25 @@ assert.strictEqual((await gatewayPairing('/start', {})).body.code, 'DESKTOP_PAIR
 assert.strictEqual(resolveSyncActor(offlineLease).code, 'ONLINE_DESKTOP_SESSION_REQUIRED');
 ```
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `node gateway/src/routes/cloudRelay.http.test.js && node backend/src/routes/cloudRelay.http.test.js && node src/services/pairingApiBase.test.js && node src/services/oneClickSyncService.test.js && node src/services/oneClickSyncTransports.test.js`
 
 Expected: FAIL；Gateway 仍能创建/批准 V1 pairing，部分旧同步路径未使用桌面会话。
 
-- [ ] **Step 3: tombstone V1 并绑定 relay assertion**
+- [x] **Step 3: tombstone V1 并绑定 relay assertion**
 
-Gateway desktopPairing router 固定 410，不查询用户或 pairing。Backend `/scheduling` 保持新控制面和中继 owner。relay assertion 增加 sessionId、activeRole、authVersion、credentialVersion 和到期时间，主机验证签名、nonce、设备 owner、角色 grant 和版本后才预览/应用。所有同步 transport 统一注入 `desktopIdentityClient.requireOnlineSession()`；仍保留变更预览和最终用户确认。
+Gateway 与 Backend desktopPairing router 固定 410，不查询用户或 pairing；小程序用户审核页删除旧配对 API 和账号选择器。Backend `/scheduling` 保持新控制面和中继 owner。relay assertion 增加 sessionId、activeRole、teacherId、authVersion、credentialVersion 和到期时间，主机验证签名、nonce、V2 session、设备 owner、角色 grant 和版本后才预览/应用。所有同步 transport 统一注入在线 V2 session resolver；仍保留变更预览和最终用户确认。
 
-- [ ] **Step 4: 运行 GREEN 与同步越权回归**
+- [x] **Step 4: 运行 GREEN 与同步越权回归**
 
-Run: `node gateway/src/routes/cloudRelay.http.test.js && node backend/src/routes/cloudRelay.http.test.js && node backend/src/services/relayAssertionService.test.js && node backend/src/services/syncScopeIntegration.test.js && node src/services/pairingApiBase.test.js && node src/services/oneClickSyncService.test.js && node src/services/oneClickSyncTransports.test.js`
+Run: `npm run test:sync-identity`
 
-Expected: PASS；老师 active role 不能通过同步写其他老师数据，撤销设备不能经任一 transport 同步。
+Expected: PASS；老师 active role 不能通过同步写其他老师数据，撤销设备即使已有排队任务也不能在主机落库，任一 transport 缺失在线 V2 session 都不能同步。
 
 - [ ] **Step 5: 本地提交统一同步身份切片**
 
-Run: `git add gateway/src/routes/desktopPairing.js gateway/src/routes/cloudRelay.js gateway/src/routes/cloudRelay.http.test.js backend/src/routes/cloudRelay.js backend/src/routes/cloudRelay.http.test.js backend/src/services/relayAssertionService.js backend/src/services/relayAssertionService.test.js src/services/pairingApiBase.mjs src/services/pairingApiBase.test.js src/services/oneClickSyncService.mjs src/services/oneClickSyncService.test.js src/services/oneClickSyncTransports.mjs src/services/oneClickSyncTransports.test.js package.json && git commit -m "自动发布 2026-07-17"`
+Run: `git add gateway/src/databaseAuthorization.test.js gateway/src/db/database.js gateway/src/db/schema.sql gateway/src/middleware/auth.js gateway/src/routes/desktopPairing.js gateway/src/routes/cloudRelay.js gateway/src/routes/cloudRelay.http.test.js gateway/src/services/relayAssertionService.js backend/src/database.js backend/src/middleware/auth.js backend/src/routes/desktopPairing.js backend/src/services/desktopPairingParity.test.js backend/src/routes/cloudRelay.js backend/src/routes/cloudRelay.http.test.js backend/src/routes/cloudRelayHost.js backend/src/routes/cloudRelayHostTasks.test.js backend/src/routes/desktopCloudSync.test.js backend/src/services/desktopSessionService.js backend/src/services/desktopSessionService.test.js backend/src/services/relayAssertionService.js backend/src/services/relayAssertionService.test.js backend/src/services/syncScopeIntegration.test.js miniapp/src/pages/admin/users/index.scss miniapp/src/pages/admin/users/index.tsx miniapp/src/utils/api.ts miniapp/src/utils/miniappUiPageInventory.js src/custom.d.ts src/pages/SyncSettings.tsx src/pages/SyncSettingsAuthorization.test.js src/services/desktopAuthorizationSession.mjs src/services/desktopAuthorizationSession.test.js src/services/pairingApiBase.mjs src/services/pairingApiBase.test.js src/services/oneClickSyncService.mjs src/services/oneClickSyncService.test.js src/services/oneClickSyncTransports.mjs src/services/oneClickSyncTransports.test.js package.json docs/superpowers/plans/2026-07-17-desktop-human-identity-multi-device.md && git commit -m "自动发布 2026-07-18"`
 
 ### Task 10: 当前主机 bootstrap、计划换机和紧急恢复
 

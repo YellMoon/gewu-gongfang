@@ -45,11 +45,15 @@ assert.ok(
   hostRelay.includes('applySyncChanges'),
   'host task processor should apply desktop sync changes to the primary host database'
 );
-assert.ok(cloudRelay.includes('actorUserId: user.id'), 'relay may forward only an authenticated actor id hint');
+assert.ok(cloudRelay.includes('actorUserId: actor.userId'), 'relay must bind the assertion to the verified V2 desktop actor');
 assert.ok(!cloudRelay.includes('authorizationContext'), 'relay must not forward trusted role or teacher context');
 assert.ok(hostRelay.includes('authz,'), 'host apply must use the shared transaction validator');
-assert.ok(hostRelay.includes('verifyRelayAssertion') && hostRelay.includes('resolveOrProvisionRelayActorContext'),
-  'host must verify cloud HMAC then rebuild actor context from its local DB');
+assert.ok(hostRelay.includes('verifyRelayAssertion') && hostRelay.includes('resolveRelaySessionActorContext'),
+  'host must verify cloud HMAC then rebuild the exact V2 session actor from its local DB');
+assert.ok(!hostRelay.includes('resolveOrProvisionRelayActorContext'),
+  'removed V1 pairing approvals must not provision a host sync device');
+assert.ok(cloudRelay.includes('ONLINE_DESKTOP_SESSION_REQUIRED') && cloudRelay.includes('credentialVersion'),
+  'cloud relay sync routes must require the current online V2 desktop session');
 assert.ok(
   packageJson.includes('backend/src/routes/desktopCloudSync.test.js'),
   'desktop cloud sync route test should run in npm test'

@@ -294,8 +294,6 @@ export const moduleApi = {
 
 // ========== 管理员 API ==========
 export const adminApi = {
-  getPendingPairings: () => api.get<any>('/api/desktop-pairing/pending'),
-  reviewPairingCode: (code: string, action: 'approve' | 'reject', userId?: string) => api.post(`/api/desktop-pairing/code/${code}/${action}`, action === 'approve' ? { userId } : {}),
   getUsers: (params?: { page?: number; search?: string; role?: string; review_status?: string }) => {
     const qs = new URLSearchParams();
     if (params?.page) qs.set('page', String(params.page));

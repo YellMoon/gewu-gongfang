@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
   reviewed_by TEXT,
   reviewed_at TEXT,
   is_super_admin_identity INTEGER DEFAULT 0,
+  auth_version INTEGER NOT NULL DEFAULT 1,
   invited_by TEXT,                       -- 邀请人ID (仅 invited 类型)
   invite_code TEXT,                      -- 邀请码 (仅 invited 类型)
   created_at TEXT NOT NULL,

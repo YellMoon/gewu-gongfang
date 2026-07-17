@@ -74,6 +74,9 @@ const teacherSession = service.issueSession({
 assert.strictEqual(teacherSession.session.activeRole, 'teacher');
 assert.deepStrictEqual(teacherSession.session.eligibleRoles, ['super_admin', 'teacher']);
 assert.strictEqual(teacherSession.session.teacherId, 'teacher-self');
+assert.strictEqual(teacherSession.session.authVersion, 7);
+assert.strictEqual(teacherSession.session.credentialVersion, 1);
+assert.strictEqual(teacherSession.session.authorizationId, 'authorization-host');
 assert.strictEqual(teacherSession.session.authTime, null);
 assert.ok(Date.parse(teacherSession.session.expiresAt) - clock.getTime() <= 8 * 60 * 60 * 1000);
 assert.ok(!teacherSession.token.includes(jwtSecret));

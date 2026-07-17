@@ -1,3 +1,5 @@
+import { resolveOnlineSyncActor } from './pairingApiBase.mjs';
+
 export function normalizeApiBaseUrl(baseUrl) {
   const trimmed = String(baseUrl || '').replace(/\/+$/, '');
   return trimmed.endsWith('/api') ? trimmed.slice(0, -4) : trimmed;
@@ -22,8 +24,21 @@ function toTimestamp(value) {
 
 async function readJsonResponse(res) {
   const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+  if (!res.ok) {
+    const error = new Error(data?.error || data?.code || `HTTP ${res.status}`);
+    error.code = data?.code || `HTTP_${res.status}`;
+    throw error;
+  }
   return data;
+}
+
+async function requireOnlineSession(options) {
+  if (typeof options?.sessionResolver !== 'function') {
+    const error = new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
+    error.code = 'ONLINE_DESKTOP_SESSION_REQUIRED';
+    throw error;
+  }
+  return resolveOnlineSyncActor(await options.sessionResolver());
 }
 
 export function createDirectSyncTransport(options = {}) {
@@ -31,9 +46,7 @@ export function createDirectSyncTransport(options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   const deviceId = options.deviceId || 'desktop';
   const role = options.role || 'desktop-client';
-  const authContext = options.authContext || null;
-  const authorization = options.authorization || '';
-  const resolveSession = async () => options.sessionResolver ? options.sessionResolver() : { authorization, authContext };
+  const resolveSession = async () => requireOnlineSession(options);
   const authenticatedHeaders = session => ({ ...(session?.authorization ? { Authorization: session.authorization } : {}),
     ...(session?.authContext?.deviceId ? { 'x-device-id': session.authContext.deviceId } : {}) });
 
@@ -52,7 +65,11 @@ export function createDirectSyncTransport(options = {}) {
     baseUrl,
     async check() {
       try {
-        const res = await fetchImpl(`${baseUrl}/api/health`, { method: 'GET' });
+        const session = await resolveSession();
+        const res = await fetchImpl(`${baseUrl}/api/health`, {
+          method: 'GET',
+          headers: authenticatedHeaders(session),
+        });
         const data = await readJsonResponse(res);
         return { ok: data?.ok !== false, data };
       } catch (error) {
@@ -76,14 +93,11 @@ export function createDirectSyncTransport(options = {}) {
           serverTimestamp: toTimestamp(data.serverTimestamp || data.serverTime || data.server_time),
         };
       } catch (error) {
-        return { success: false, hostOnline: false, incomingChanges: [], error: error.message };
+        return { success: false, hostOnline: false, incomingChanges: [], code: error.code || 'DIRECT_PREVIEW_FAILED', error: error.message };
       }
     },
     async pushSyncBatch(batch) {
       const session = await resolveSession();
-      if (!session?.authContext?.userId || !session?.authContext?.deviceId || !session?.authorization) {
-        const error = new Error('AUTHORIZATION_CONTEXT_REQUIRED'); error.code = 'AUTHORIZATION_CONTEXT_REQUIRED'; throw error;
-      }
       const batchDeviceId = session.authContext.deviceId;
       await post('/api/sync/devices/register', {
         deviceId: batchDeviceId,
@@ -136,9 +150,7 @@ export function createCloudRelaySyncTransport(options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   const deviceId = options.deviceId || 'desktop';
   const desktopSyncToken = options.desktopSyncToken || '';
-  const authContext = options.authContext || null;
-  const authorization = options.authorization || '';
-  const resolveSession = async () => options.sessionResolver ? options.sessionResolver() : { authorization, authContext };
+  const resolveSession = async () => requireOnlineSession(options);
   const headers = session => ({
     'Content-Type': 'application/json',
     ...(desktopSyncToken ? { 'x-gewu-desktop-sync-token': desktopSyncToken } : {}),
@@ -172,9 +184,6 @@ export function createCloudRelaySyncTransport(options = {}) {
     },
     async submitSyncRequest(input = {}) {
       const session = await resolveSession();
-      if (!session?.authContext?.userId || !session?.authContext?.deviceId || !session?.authorization) {
-        const error = new Error('AUTHORIZATION_CONTEXT_REQUIRED'); error.code = 'AUTHORIZATION_CONTEXT_REQUIRED'; throw error;
-      }
       await readJsonResponse(await fetchImpl(`${baseUrl}/api/cloud/desktop-sync/devices/register`, {
         method:'POST', headers:headers(session), body:JSON.stringify({ deviceId:session.authContext.deviceId }),
       }));
@@ -232,7 +241,7 @@ export async function discoverLanDirectSyncTransports(options = {}) {
   if (!baseUrl) return [];
   const fetchImpl = options.fetchImpl || fetch;
   const desktopSyncToken = options.desktopSyncToken || '';
-  const session = options.sessionResolver ? await options.sessionResolver() : null;
+  const session = await requireOnlineSession(options);
   const headers = {
     'Content-Type': 'application/json',
     ...(desktopSyncToken ? { 'x-gewu-desktop-sync-token': desktopSyncToken } : {}),
@@ -253,8 +262,6 @@ export async function discoverLanDirectSyncTransports(options = {}) {
     deviceId: options.deviceId,
     role: options.role,
     deviceName: options.deviceName,
-    authorization: options.authorization,
-    authContext: options.authContext,
     sessionResolver: options.sessionResolver,
     fetchImpl,
   }));

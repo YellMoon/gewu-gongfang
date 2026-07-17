@@ -27,8 +27,56 @@ function attachReviewDemo(req, decoded) {
 }
 
 function attachPersisted(req, decoded) {
-  const persisted = getDb().prepare('SELECT * FROM users WHERE id = ?').get(decoded.id);
+  const persisted = getDb().prepare('SELECT * FROM users WHERE id = ?').get(decoded.sub || decoded.id);
   if (!persisted) return false;
+  if (decoded.token_use === 'desktop-session') {
+    const activeRole = String(decoded.active_role || '').trim();
+    const eligibleRoles = Array.isArray(decoded.eligible_roles) ? decoded.eligible_roles.map(String) : [];
+    const deviceId = String(decoded.device_id || '').trim();
+    const sessionId = String(decoded.sid || '').trim();
+    const authVersion = Number(decoded.auth_version);
+    const credentialVersion = Number(decoded.credential_version);
+    const headerDeviceId = String(req.headers['x-device-id'] || '').trim();
+    if (!sessionId || !deviceId || !activeRole || !eligibleRoles.includes(activeRole)
+      || !Number.isSafeInteger(authVersion) || authVersion < 1
+      || !Number.isSafeInteger(credentialVersion) || credentialVersion < 1
+      || Number(persisted.auth_version || 1) !== authVersion
+      || (headerDeviceId && headerDeviceId !== deviceId)
+      || persisted.review_status !== 'approved' || persisted.status !== 1 || persisted.login_enabled !== 1
+      || (activeRole === 'teacher' && !persisted.teacher_id)) {
+      const error = new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
+      error.code = 'ONLINE_DESKTOP_SESSION_REQUIRED';
+      throw error;
+    }
+    req.user = { ...persisted, activeRole, eligibleRoles };
+    req.authz = {
+      userId: persisted.id,
+      phone: persisted.phone || null,
+      role: activeRole,
+      activeRole,
+      eligibleRoles,
+      tenantId: persisted.tenant_id || persisted.tenantId || 'default',
+      teacherId: activeRole === 'teacher' ? persisted.teacher_id : null,
+      studentId: persisted.student_id || null,
+      reviewStatus: persisted.review_status,
+      status: persisted.status,
+      loginEnabled: persisted.login_enabled,
+      deviceId,
+      sessionId,
+      sessionExpiresAt: Number.isFinite(Number(decoded.exp))
+        ? new Date(Number(decoded.exp) * 1000).toISOString()
+        : null,
+      authVersion,
+      credentialVersion,
+      tokenUse: 'desktop-session',
+      clientType: 'desktop',
+      isPrimaryHost: false,
+      isReviewDemo: false,
+      readOnly: false,
+      userApproved: true,
+    };
+    return true;
+  }
   req.user = persisted;
   req.authz = { userId: persisted.id, phone: persisted.phone || null, role: roleForUser(persisted),
     tenantId: persisted.tenant_id || persisted.tenantId || 'default',

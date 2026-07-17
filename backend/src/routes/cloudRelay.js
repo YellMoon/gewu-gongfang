@@ -87,11 +87,21 @@ function requireHostWrite(req, res, next) {
 }
 
 function requireDesktopSyncAccess(req, res, next) {
-  const expected = process.env.GEWU_DESKTOP_SYNC_TOKEN || '';
-  const provided = req.headers['x-gewu-desktop-sync-token'] || '';
-  if (expected && provided === expected) return next();
-  if (isDevBypass() || req.user) return next();
-  return sendForbidden(res, 'UNAUTHORIZED', 'Authentication required');
+  const actor = req.authz || {};
+  const headerDeviceId = String(req.headers['x-device-id'] || '').trim();
+  const expiresAt = Date.parse(String(actor.sessionExpiresAt || ''));
+  if (actor.clientType !== 'desktop' || actor.tokenUse !== 'desktop-session'
+    || !actor.userId || !actor.deviceId || !actor.sessionId || !actor.activeRole
+    || !Number.isSafeInteger(Number(actor.authVersion)) || Number(actor.authVersion) < 1
+    || !Number.isSafeInteger(Number(actor.credentialVersion)) || Number(actor.credentialVersion) < 1
+    || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    return res.status(401).json({ success:false, code:'ONLINE_DESKTOP_SESSION_REQUIRED' });
+  }
+  if (headerDeviceId && headerDeviceId !== actor.deviceId) {
+    return res.status(403).json({ success:false, code:'DESKTOP_DEVICE_HEADER_MISMATCH' });
+  }
+  req.syncActor = actor;
+  return next();
 }
 
 function requireSnapshotRead(req, res, next) {
@@ -219,16 +229,18 @@ router.post('/desktop-sync/requests', requireDesktopSyncAccess, (req, res) => {
   const db = getInstance().db;
   const taskId = id('desktop_sync');
   const time = now();
-  const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.body.device_id;
-  const user = req.user;
-  if (!user || user.review_status !== 'approved' || user.status === 0 || user.login_enabled === 0) {
-    return sendForbidden(res, 'USER_NOT_APPROVED', 'Approved active user required');
-  }
+  const actor = req.syncActor;
+  const deviceId = actor.deviceId;
   const device = db.prepare('SELECT * FROM sync_devices WHERE id=? AND active=1').get(deviceId);
-  if (!device || device.owner_user_id !== user.id) return sendForbidden(res, 'SYNC_DEVICE_OWNER_MISMATCH');
+  if (!device || device.owner_user_id !== actor.userId) return sendForbidden(res, 'SYNC_DEVICE_OWNER_MISMATCH');
   let relayAssertion;
   try {
-    relayAssertion = issueRelayAssertion({ taskId, actorUserId:user.id, deviceId, issuedAt:Date.now() },
+    relayAssertion = issueRelayAssertion({
+      taskId, actorUserId:actor.userId, deviceId, sessionId:actor.sessionId,
+      activeRole:actor.activeRole, teacherId:actor.teacherId || null,
+      authVersion:Number(actor.authVersion), credentialVersion:Number(actor.credentialVersion),
+      issuedAt:Date.now(), expiresAt:Date.parse(actor.sessionExpiresAt),
+    },
       process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '');
   } catch (error) { return sendForbidden(res, error.code || 'RELAY_ASSERTION_SECRET_REQUIRED'); }
   const payload = {
@@ -237,13 +249,13 @@ router.post('/desktop-sync/requests', requireDesktopSyncAccess, (req, res) => {
     pendingChanges: req.body.pendingChanges || req.body.changes || [],
     preview: req.body.preview || null,
     submittedAt: time,
-    actorUserId: user.id,
+    actorUserId: actor.userId,
     relayAssertion,
   };
   db.prepare(
     `INSERT INTO miniapp_tasks (id, task_type, status, payload, created_by, created_at, updated_at)
      VALUES (?, ?, 'pending_host', ?, ?, ?, ?)`
-  ).run(taskId, 'desktop-sync', JSON.stringify(payload), req.user?.id || payload.deviceId, time, time);
+  ).run(taskId, 'desktop-sync', JSON.stringify(payload), actor.userId, time, time);
   res.json({
     success: true,
     request: {
@@ -256,11 +268,10 @@ router.post('/desktop-sync/requests', requireDesktopSyncAccess, (req, res) => {
 });
 
 router.post('/desktop-sync/devices/register', requireDesktopSyncAccess, (req, res) => {
-  if (!req.user || req.user.review_status !== 'approved') return sendForbidden(res, 'USER_NOT_APPROVED');
-  const deviceId = req.headers['x-device-id'] || req.body.deviceId;
-  if (!deviceId) return res.status(400).json({ success:false, code:'DEVICE_ID_REQUIRED' });
+  const actor = req.syncActor;
+  const deviceId = actor.deviceId;
   try {
-    const device = getInstance().registerSyncDevice(deviceId, { ownerUserId:req.user.id,
+    const device = getInstance().registerSyncDevice(deviceId, { ownerUserId:actor.userId,
       deviceName:req.body.deviceName || deviceId, role:'desktop-client' });
     return res.json({ success:true, device:{ id:device.id, ownerUserId:device.owner_user_id } });
   } catch (error) { return sendForbidden(res, error.code || 'SYNC_DEVICE_OWNER_MISMATCH'); }
@@ -268,11 +279,11 @@ router.post('/desktop-sync/devices/register', requireDesktopSyncAccess, (req, re
 
 router.get('/desktop-sync/requests/:id/result', requireDesktopSyncAccess, (req, res) => {
   const db = getInstance().db;
-  if (!req.user) return sendForbidden(res, 'UNAUTHORIZED');
-  const admin = ['super_admin','admin'].includes(roleForUser(req.user));
+  const actor = req.syncActor;
+  const admin = ['super_admin','admin'].includes(actor.activeRole);
   const row = admin
     ? db.prepare('SELECT * FROM miniapp_tasks WHERE id = ? AND task_type = ?').get(req.params.id, 'desktop-sync')
-    : db.prepare('SELECT * FROM miniapp_tasks WHERE id = ? AND task_type = ? AND CAST(created_by AS TEXT)=?').get(req.params.id, 'desktop-sync', String(req.user.id));
+    : db.prepare('SELECT * FROM miniapp_tasks WHERE id = ? AND task_type = ? AND CAST(created_by AS TEXT)=?').get(req.params.id, 'desktop-sync', String(actor.userId));
   if (!row) return res.status(404).json({ success: false, error: 'desktop sync request not found' });
   res.json({
     success: true,

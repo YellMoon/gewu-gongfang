@@ -33,6 +33,8 @@ function normalizeSession(value) {
       teacherId: profile.teacherId ?? value?.teacherId ?? null,
       studentId: profile.studentId ?? value?.studentId ?? null,
       sessionId: session.id || value?.sessionId || null,
+      authVersion: session.authVersion ?? profile.authVersion ?? value?.authVersion ?? null,
+      credentialVersion: session.credentialVersion ?? profile.credentialVersion ?? value?.credentialVersion ?? null,
       rowVersion: session.rowVersion ?? value?.rowVersion ?? null,
     },
     expiresAt: value.expiresAt || session.expiresAt || null,
