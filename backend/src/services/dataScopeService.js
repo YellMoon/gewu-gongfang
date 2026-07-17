@@ -120,7 +120,7 @@ function scopeTeacher(snapshot, context) {
 }
 
 function scopeBusinessSnapshot(snapshot = {}, context = {}) {
-  if (context.kind === 'admin') return { ...snapshot, ...Object.fromEntries(Object.entries(snapshot).map(([k, v]) => [k, Array.isArray(v) ? v.map(x => ({ ...x })) : v])) };
+  if (context.kind === 'admin' || context.kind === 'all') return { ...snapshot, ...Object.fromEntries(Object.entries(snapshot).map(([k, v]) => [k, Array.isArray(v) ? v.map(x => ({ ...x })) : v])) };
   if (context.kind === 'teacher') return scopeTeacher(snapshot, context);
   if (context.kind === 'student') return scopeStudent(snapshot, context);
   return {};
@@ -128,7 +128,7 @@ function scopeBusinessSnapshot(snapshot = {}, context = {}) {
 
 function scopeError(code, message) { const error = new Error(message); error.code = code; return error; }
 function assertRecordReadable(table, record, context, lookup = {}) {
-  if (context.kind === 'admin') return true;
+  if (context.kind === 'admin' || context.kind === 'all') return true;
   if (context.kind !== 'teacher') throw scopeError('DATA_SCOPE_UNRESOLVED', `scope unresolved for ${table}`);
   if (table === 'courses') {
     if (String(value(record, 'teacher_id', 'teacherId') || '') === String(context.teacherId)) return true;

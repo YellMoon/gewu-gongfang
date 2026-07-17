@@ -15,10 +15,15 @@ try {
   db.db.prepare('INSERT INTO teachers (id,name,created_at,updated_at) VALUES (?,?,?,?)').run('t2','T2',now,now);
   db.db.prepare('INSERT INTO courses (id,name,display_name,type,source_type,teacher_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)').run('c1','C1','C1',1,1,'t1',now,now);
   db.db.prepare('INSERT INTO courses (id,name,display_name,type,source_type,teacher_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)').run('c2','C2','C2',1,1,'t2',now,now);
+  const dualRoleTeacherAuthz = { kind:'teacher', role:'teacher', activeRole:'teacher',
+    eligibleRoles:['super_admin','teacher'], userId:'u1', teacherId:'t1', deviceId:'d1' };
   const scoped = db.getScopedChangeQueueSince(0, { tenantId:'default', deviceId:'server', clientId:'d1',
-    authz:{ kind:'teacher', userId:'u1', teacherId:'t1', deviceId:'d1' } });
+    authz:dualRoleTeacherAuthz });
   assert(scoped.changes.some(x => x.table === 'courses' && x.data.id === 'c1'));
   assert(!scoped.changes.some(x => x.table === 'courses' && x.data.id === 'c2'));
+  const elevatedScoped = db.getScopedChangeQueueSince(0, { tenantId:'default', deviceId:'server', clientId:'d1-admin',
+    authz:{ ...dualRoleTeacherAuthz, kind:'admin', role:'super_admin', activeRole:'super_admin', teacherId:null } });
+  assert(elevatedScoped.changes.some(x => x.table === 'courses' && x.data.id === 'c2'));
   assert.throws(() => db.getScopedChangeQueueSince(0, { tenantId:'default' }), e => e.code === 'AUTHORIZATION_CONTEXT_REQUIRED');
   assert.throws(() => db.applySyncChanges([{ id:'no-auth', table:'courses', action:'update', data:{id:'c1',name:'pwned'}, updatedAt:now }],
     { tenantId:'default', deviceId:'d1' }), e => e.code === 'AUTHORIZATION_CONTEXT_REQUIRED');
@@ -32,7 +37,7 @@ try {
     'one-time token must be consumed atomically');
 
   const denied = db.applySyncChanges([{ id:'evil', table:'courses', action:'update', data:{id:'c2',teacher_id:'t2'}, updatedAt:now }],
-    { tenantId:'default', deviceId:'d1', authz:{kind:'teacher',userId:'u1',teacherId:'t1',deviceId:'d1'} });
+    { tenantId:'default', deviceId:'d1', authz:dualRoleTeacherAuthz });
   assert.strictEqual(denied.applied, 0);
   assert.strictEqual(db.db.prepare('SELECT name FROM courses WHERE id=?').get('c2').name, 'C2');
   assert.strictEqual(db.db.prepare('SELECT reason_code FROM sync_rejections WHERE operation_id=?').get('evil').reason_code, 'TEACHER_SCOPE_VIOLATION');

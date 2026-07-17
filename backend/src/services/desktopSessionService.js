@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { roleContextForUser } = require('./userRoleGrantService');
@@ -8,6 +9,8 @@ const TOKEN_AUDIENCE = 'gewu-api';
 const TOKEN_USE = 'desktop-session';
 const MAX_SESSION_MS = 8 * 60 * 60 * 1000;
 const RECENT_ELEVATION_MS = 15 * 60 * 1000;
+const ELEVATION_PROOF_MAX_AGE_MS = 2 * 60 * 1000;
+const PRIVILEGED_ROLES = new Set(['super_admin', 'admin']);
 
 function serviceError(code) {
   const error = new Error(code);
@@ -44,8 +47,36 @@ function sameStringArray(left, right) {
     && left.every(function (value, index) { return value === right[index]; });
 }
 
+function desktopRoleElevationSigningPayload({
+  sessionId,
+  deviceId,
+  activeRole,
+  sessionVersion,
+  elevationIssuedAt,
+} = {}) {
+  const normalizedSessionId = String(sessionId || '').trim();
+  const normalizedDeviceId = String(deviceId || '').trim();
+  const normalizedRole = String(activeRole || '').trim();
+  const normalizedIssuedAt = String(elevationIssuedAt || '').trim();
+  const version = Number(sessionVersion);
+  if (!normalizedSessionId || !normalizedDeviceId || !normalizedRole
+    || !Number.isSafeInteger(version) || version < 1
+    || !Number.isFinite(Date.parse(normalizedIssuedAt))) {
+    throw serviceError('DESKTOP_ROLE_ELEVATION_PAYLOAD_INVALID');
+  }
+  return [
+    'gewu-desktop-role-elevation-v1',
+    normalizedSessionId,
+    normalizedDeviceId,
+    normalizedRole,
+    String(version),
+    normalizedIssuedAt,
+  ].join('\n');
+}
+
 function presentSession(row, roleContext) {
   return Object.freeze({
+    id: row.sid,
     sid: row.sid,
     userId: row.user_id,
     deviceId: row.device_id,
@@ -57,6 +88,7 @@ function presentSession(row, roleContext) {
     issuedAt: row.issued_at,
     expiresAt: row.expires_at,
     status: row.status,
+    rowVersion: Number(row.row_version),
   });
 }
 
@@ -123,11 +155,10 @@ function createDesktopSessionService({
     return authorization;
   }
 
-  function issueSession(input = {}) {
+  function issueSessionAt(input = {}, current) {
     const userId = String(input.userId || '').trim();
     const deviceId = String(input.deviceId || '').trim();
     if (!userId || !deviceId) throw serviceError('DESKTOP_SESSION_INPUT_REQUIRED');
-    const current = currentDate();
     const durationMs = input.durationMs === undefined ? maxSessionMs : Number(input.durationMs);
     if (!Number.isSafeInteger(durationMs) || durationMs < 60 * 1000 || durationMs > maxSessionMs) {
       throw serviceError('DESKTOP_SESSION_DURATION_INVALID');
@@ -172,6 +203,7 @@ function createDesktopSessionService({
       active_role: roleContext.activeRole,
       auth_version: authVersion,
       credential_version: credentialVersion,
+      session_version: 1,
       auth_time: authTime ? Math.floor(Date.parse(authTime) / 1000) : null,
       token_use: TOKEN_USE,
       iss: TOKEN_ISSUER,
@@ -186,6 +218,10 @@ function createDesktopSessionService({
       claims: Object.freeze({ ...claims, eligible_roles: Object.freeze(claims.eligible_roles.slice()) }),
       session: presentSession(row, roleContext),
     });
+  }
+
+  function issueSession(input = {}) {
+    return issueSessionAt(input, currentDate());
   }
 
   function validateSessionClaims(claims = {}) {
@@ -209,6 +245,9 @@ function createDesktopSessionService({
     }
     if (row.user_id !== userId || row.device_id !== deviceId || row.active_role !== claims.active_role) {
       throw serviceError('DESKTOP_SESSION_CLAIMS_MISMATCH');
+    }
+    if (Number(claims.session_version) !== Number(row.row_version)) {
+      throw serviceError('DESKTOP_SESSION_VERSION_MISMATCH');
     }
     const user = findUser.get(userId);
     if (!approvedUser(user)) throw serviceError('DESKTOP_SESSION_USER_NOT_ACTIVE');
@@ -259,6 +298,7 @@ function createDesktopSessionService({
       authorizationId: authorization.id,
       authorizationRowVersion: Number(authorization.row_version),
       deviceKind: authorization.device_kind,
+      sessionRowVersion: Number(row.row_version),
       scope: Object.freeze(scope),
       userApproved: true,
       deviceActive: true,
@@ -298,6 +338,112 @@ function createDesktopSessionService({
       throw serviceError('DESKTOP_RECENT_ELEVATION_REQUIRED');
     }
     return context;
+  }
+
+  function assertElevationProof(input, context, authorization, current) {
+    const signature = String(input.elevationSignature || '').trim();
+    if (!signature) throw serviceError('DESKTOP_ROLE_ELEVATION_SIGNATURE_REQUIRED');
+    const issuedAt = String(input.elevationIssuedAt || '').trim();
+    const issuedAtMs = Date.parse(issuedAt);
+    if (!Number.isFinite(issuedAtMs)
+      || issuedAtMs > current.getTime() + 30 * 1000
+      || current.getTime() - issuedAtMs > ELEVATION_PROOF_MAX_AGE_MS) {
+      throw serviceError('DESKTOP_ROLE_ELEVATION_PROOF_STALE');
+    }
+    const payload = desktopRoleElevationSigningPayload({
+      sessionId: context.sessionId,
+      deviceId: context.deviceId,
+      activeRole: input.activeRole,
+      sessionVersion: context.sessionRowVersion,
+      elevationIssuedAt: issuedAt,
+    });
+    const signatureBuffer = Buffer.from(signature, 'base64');
+    if (signatureBuffer.length !== 64) {
+      throw serviceError('DESKTOP_ROLE_ELEVATION_SIGNATURE_INVALID');
+    }
+    let verified = false;
+    try {
+      verified = crypto.verify(
+        null,
+        Buffer.from(payload, 'utf8'),
+        crypto.createPublicKey(authorization.public_key),
+        signatureBuffer
+      );
+    } catch (_error) {
+      verified = false;
+    }
+    if (!verified) throw serviceError('DESKTOP_ROLE_ELEVATION_SIGNATURE_INVALID');
+  }
+
+  function switchActiveRole(input = {}) {
+    const context = input.actorContext;
+    const activeRole = String(input.activeRole || '').trim();
+    if (!context || !context.sessionId || !context.userId || !context.deviceId || !activeRole) {
+      throw serviceError('DESKTOP_ROLE_SWITCH_INPUT_INVALID');
+    }
+    if (context.activeRole === activeRole) throw serviceError('DESKTOP_ACTIVE_ROLE_UNCHANGED');
+    const roleContext = roleContextForUser(db, context.userId, activeRole);
+    const current = currentDate();
+    const authorization = assertAuthorizationActive(
+      findAuthorization.get(context.deviceId),
+      context.userId,
+      current
+    );
+    const elevationRequired = (activeRole === 'super_admin' && context.activeRole !== 'super_admin')
+      || (activeRole === 'admin' && !PRIVILEGED_ROLES.has(context.activeRole));
+    if (elevationRequired) assertElevationProof(input, context, authorization, current);
+
+    const rotate = db.transaction(function () {
+      const previousSession = findSession.get(context.sessionId);
+      if (!previousSession || previousSession.status !== 'active') {
+        throw serviceError('DESKTOP_SESSION_REVOKED');
+      }
+      if (previousSession.user_id !== context.userId
+        || previousSession.device_id !== context.deviceId
+        || previousSession.active_role !== context.activeRole) {
+        throw serviceError('DESKTOP_SESSION_CLAIMS_MISMATCH');
+      }
+      if (Number(previousSession.row_version) !== Number(context.sessionRowVersion)) {
+        throw serviceError('DESKTOP_SESSION_VERSION_MISMATCH');
+      }
+      const remainingMs = Date.parse(previousSession.expires_at) - current.getTime();
+      if (!Number.isSafeInteger(remainingMs) || remainingMs < 60 * 1000) {
+        throw serviceError('DESKTOP_SESSION_EXPIRED');
+      }
+      const issued = issueSessionAt({
+        userId: context.userId,
+        deviceId: context.deviceId,
+        activeRole: roleContext.activeRole,
+        authTime: elevationRequired ? current : null,
+        durationMs: Math.min(maxSessionMs, remainingMs),
+      }, current);
+      const revoked = db.prepare(`UPDATE desktop_sessions
+        SET status='revoked', revoke_reason='role_switch', revoked_at=?,
+            row_version=row_version+1, updated_at=?
+        WHERE sid=? AND status='active' AND row_version=?`)
+        .run(current.toISOString(), current.toISOString(), previousSession.sid, previousSession.row_version);
+      if (revoked.changes !== 1) throw serviceError('DESKTOP_SESSION_VERSION_MISMATCH');
+      insertAudit.run(
+        uuid(),
+        context.userId,
+        context.userId,
+        'desktop_session_active_role_switched',
+        JSON.stringify({
+          sessionId: previousSession.sid,
+          deviceId: context.deviceId,
+          activeRole: context.activeRole,
+        }),
+        JSON.stringify({
+          sessionId: issued.session.sid,
+          deviceId: context.deviceId,
+          activeRole: roleContext.activeRole,
+          elevated: elevationRequired,
+        }),
+        current.toISOString()
+      );
+      return issued;
+    });
+    return rotate();
   }
 
   function revokeDeviceAuthorization(input = {}) {
@@ -365,6 +511,7 @@ function createDesktopSessionService({
     issueSession,
     revokeDeviceAuthorization,
     revokeSessionsForDevice,
+    switchActiveRole,
     validateSessionClaims,
     verifySessionToken,
   });
@@ -373,8 +520,10 @@ function createDesktopSessionService({
 module.exports = {
   MAX_SESSION_MS,
   RECENT_ELEVATION_MS,
+  ELEVATION_PROOF_MAX_AGE_MS,
   TOKEN_AUDIENCE,
   TOKEN_ISSUER,
   TOKEN_USE,
   createDesktopSessionService,
+  desktopRoleElevationSigningPayload,
 };

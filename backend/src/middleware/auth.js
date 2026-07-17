@@ -3,7 +3,7 @@
  */
 const jwt = require('jsonwebtoken');
 const { getInstance } = require('../database');
-const { roleForUser } = require('../services/authorizationPolicy');
+const { roleForUser, scopeForUser } = require('../services/authorizationPolicy');
 const {
   EXPERIENCE_AUDIENCE,
   FORMAL_AUDIENCE,
@@ -110,7 +110,15 @@ function attachAuthorizationContext(req, tokenUser) {
     return false;
   }
   req.user = desktopContext
-    ? { ...user, role: desktopContext.activeRole, user_type: desktopContext.activeRole }
+    ? {
+      ...user,
+      role: desktopContext.activeRole,
+      user_type: desktopContext.activeRole,
+      activeRole: desktopContext.activeRole,
+      eligibleRoles: desktopContext.eligibleRoles,
+      teacherId: desktopContext.teacherId,
+      studentId: desktopContext.studentId,
+    }
     : user;
   const tokenDeviceId = tokenUser?.device_id || tokenUser?.deviceId || null;
   const headerDeviceId = req.headers['x-device-id'] || null;
@@ -135,10 +143,10 @@ function attachAuthorizationContext(req, tokenUser) {
     phone: user?.phone || null,
     role: desktopContext?.activeRole || roleForUser(user),
     activeRole: desktopContext?.activeRole || roleForUser(user),
-    eligibleRoles: desktopContext?.eligibleRoles || null,
-    scope: desktopContext?.scope || null,
-    teacherId: desktopContext?.teacherId || user?.teacher_id || null,
-    studentId: desktopContext?.studentId || user?.student_id || null,
+    eligibleRoles: desktopContext?.eligibleRoles || [roleForUser(user)],
+    scope: desktopContext?.scope || scopeForUser(req.user),
+    teacherId: desktopContext ? desktopContext.teacherId : user?.teacher_id || null,
+    studentId: desktopContext ? desktopContext.studentId : user?.student_id || null,
     deviceId, tokenDeviceId, tokenUse: tokenUser?.token_use || null,
     authVersion: Number(user?.auth_version || 1), sessionId: desktopContext?.sessionId || tokenUser?.sid || null,
     authTime: desktopContext?.authTime || null,

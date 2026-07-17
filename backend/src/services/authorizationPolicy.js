@@ -40,15 +40,26 @@ function roleForUser(user) {
   return ROLES.includes(role) ? role : 'pending';
 }
 
+function activeRoleForUser(user) {
+  user = asObject(user);
+  const activeRole = user.activeRole || user.active_role || null;
+  const eligibleRoles = Array.isArray(user.eligibleRoles)
+    ? user.eligibleRoles
+    : Array.isArray(user.eligible_roles) ? user.eligible_roles : null;
+  if (!activeRole) return roleForUser(user);
+  if (!eligibleRoles || !eligibleRoles.includes(activeRole)) return 'pending';
+  return ROLES.includes(activeRole) ? activeRole : 'pending';
+}
+
 function canReviewUsers(user) {
   user = asObject(user);
   const hasCanonicalIdentity = user.id === CANONICAL_SUPER_ADMIN_ID
     || user.is_super_admin_identity === 1 || user.is_super_admin_identity === true;
-  return hasCanonicalIdentity && roleForUser(user) === 'super_admin';
+  return hasCanonicalIdentity && activeRoleForUser(user) === 'super_admin';
 }
 
 function canReviewApplications(user) {
-  return ['super_admin', 'admin'].includes(roleForUser(user));
+  return ['super_admin', 'admin'].includes(activeRoleForUser(user));
 }
 
 function resolveTeacherBinding(user, teachers) {
@@ -96,7 +107,9 @@ function scopeForUser(user) {
 }
 
 function effectiveCapabilities(authz = {}, { gateway = false } = {}) {
-  const role = authz.role || roleForUser(authz);
+  const role = authz.activeRole || authz.active_role
+    ? activeRoleForUser(authz)
+    : authz.role || roleForUser(authz);
   if (role === 'pending') return [];
   const capabilities = [];
   if (role === 'super_admin') capabilities.push('users:review');
@@ -119,6 +132,7 @@ module.exports = {
   ROLES,
   normalizePhone,
   roleForUser,
+  activeRoleForUser,
   canReviewApplications,
   canReviewUsers,
   resolveTeacherBinding,

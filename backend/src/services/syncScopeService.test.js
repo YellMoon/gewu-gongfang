@@ -6,9 +6,19 @@ const lookup = {
   schedules: [{ id: 'sc1', course_id: 'c1' }, { id: 'sc2', course_id: 'c2' }],
 };
 const teacher = { kind: 'teacher', userId: 'u1', teacherId: 't1', deviceId: 'd-auth' };
+const dualRoleTeacher = {
+  ...teacher,
+  role: 'teacher',
+  activeRole: 'teacher',
+  eligibleRoles: ['super_admin', 'teacher'],
+};
 const op = (table, data, extra = {}) => ({ id: 'op-1', table, action: 'update', data, ...extra });
 
 assert.throws(() => validateSyncMutation(op('courses', { id: 'c2', teacher_id: 't2' }), teacher, lookup), e => e.code === 'TEACHER_SCOPE_VIOLATION');
+assert.throws(
+  () => validateSyncMutation(op('courses', { id: 'c2', teacher_id: 't2' }), dualRoleTeacher, lookup),
+  e => e.code === 'TEACHER_SCOPE_VIOLATION'
+);
 assert.strictEqual(validateSyncMutation(op('courses', { id: 'c1', teacher_id: 't1' }), teacher, lookup).decision, 'apply');
 assert.throws(() => validateSyncMutation(op('courses',{id:'c2',teacher_id:'t1'}),teacher,{...lookup,existing:{id:'c2',teacher_id:'t2'}}),e=>e.code==='TEACHER_SCOPE_VIOLATION');
 assert.throws(() => validateSyncMutation(op('courses',{id:'c1',teacher_id:'t2'}),teacher,{...lookup,existing:{id:'c1',teacher_id:'t1'}}),e=>e.code==='OWNERSHIP_FIELD_IMMUTABLE');
