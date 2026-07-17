@@ -408,7 +408,7 @@ router.post('/questions', (req, res) => {
     const tId = tenantId(req);
     const result = questionBank.createQuestion(db, req.body, tId, req.authz || {});
     let storage = { state: 'local_draft', code: 'QUESTION_BANK_STORE_NOT_BOUND' };
-    if (req.authz?.runtimeNodeRole === 'primary-host' && req.authz?.clientType === 'desktop') {
+    if (req.authz?.isPrimaryHost === true) {
       try {
         const committed = commitQuestionToBoundStore(result.id, { db, tenantId: tId, authz: req.authz || {}, runtime: req.authz || {} });
         storage = { state: committed.storageState, storeId: committed.storeId };

@@ -143,11 +143,17 @@ Run: `git add backend/src/schema.sql backend/src/database.js backend/src/service
 - Create: `backend/src/routes/desktopIdentity.http.test.js`
 - Modify: `backend/src/app.js`
 - Modify: `backend/src/middleware/auth.js`
+- Modify: `backend/src/routes/auth.js`
+- Modify: `backend/src/routes/questionBank.js`
+- Modify: `backend/src/services/desktopIdentityService.js`
+- Modify: `backend/src/services/wechatMiniappService.js`
+- Modify: `backend/src/services/questionBankStorageService.js`
+- Modify: `backend/src/services/questionDeletionPolicy.js`
 - Modify: `backend/src/schema.sql`
 - Modify: `backend/src/database.js`
 - Modify: `package.json`
 
-- [ ] **Step 1: 写真实 HTTP RED 契约**
+- [x] **Step 1: 写真实 HTTP RED 契约**
 
 使用临时 SQLite 和真实 Express 端口覆盖：start；小程序用新的 `code + phoneCode` 确认；待审列表只显示固定 claimant；approve 请求含 `userId` 返回 400；批准来自待审设备自己返回 403；来自另一台 active super-admin 设备且近期提权成功；exchange 需要目标设备签名；两台设备归属同一用户；第三台可新增；撤销一台不影响另一台。
 
@@ -159,17 +165,17 @@ assert.strictEqual((await approve({ challengeId: 'challenge-2', userId: canonica
 assert.strictEqual((await approve({ challengeId: 'challenge-2', expectedRowVersion: 2 }, trustedHostSession)).status, 200);
 ```
 
-- [ ] **Step 2: 运行 HTTP RED**
+- [x] **Step 2: 运行 HTTP RED**
 
 Run: `node backend/src/routes/desktopIdentity.http.test.js && node backend/src/services/desktopSessionService.test.js`
 
 Expected: FAIL because route, session table and revocation checks do not exist.
 
-- [ ] **Step 3: 实现审批、交换和短会话**
+- [x] **Step 3: 实现审批、交换和短会话**
 
-新增 `desktop_sessions`。审批端必须是 active device、`active_role=super_admin`、`auth_time` 在 15 分钟内且 deviceId 不等于目标。exchange 校验一次性 challenge secret、设备公钥签名和 CAS 后激活 authorization。会话最长 8 小时并保存 sid、auth_version、credential_version、active_role；中间件每次从数据库校验用户、设备和 session 版本，不再仅信任 30 天 JWT。
+新增 `desktop_sessions`。审批端必须是 active device、`active_role=super_admin`、`auth_time` 在 15 分钟内且 deviceId 不等于目标。exchange 校验一次性 challenge secret、设备公钥签名和 CAS 后激活 authorization。会话最长 8 小时并保存 sid、auth_version、credential_version、active_role；中间件每次从数据库校验用户、设备和 session 版本，不再仅信任 30 天 JWT。主机写入权限还必须同时满足授权记录 `device_kind=primary-host`，普通客户端即使连接到数据主机也不能冒充主机设备。
 
-- [ ] **Step 4: 运行 GREEN、并发和撤销测试**
+- [x] **Step 4: 运行 GREEN、并发和撤销测试**
 
 Run: `node backend/src/routes/desktopIdentity.http.test.js && node backend/src/services/desktopSessionService.test.js && node backend/src/services/desktopPairingService.test.js && node backend/src/services/desktopPairingParity.test.js`
 

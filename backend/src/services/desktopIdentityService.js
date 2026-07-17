@@ -10,9 +10,19 @@ const ACTIVE_CHALLENGE_STATUSES = Object.freeze([
 const START_KEYS = new Set(['deviceId', 'deviceName', 'publicKey', 'keyFingerprint', 'purpose']);
 const CONFIRM_KEYS = new Set(['challengeId', 'identity', 'loginEventId', 'expectedRowVersion']);
 const VERIFY_SECRET_KEYS = new Set(['challengeId', 'challengeSecret']);
+const APPROVE_KEYS = new Set(['challengeId', 'actorContext', 'expectedRowVersion']);
+const REJECT_KEYS = new Set(['challengeId', 'actorContext', 'expectedRowVersion', 'reason']);
+const EXCHANGE_KEYS = new Set([
+  'challengeId',
+  'challengeSecret',
+  'signature',
+  'expectedRowVersion',
+]);
 const PUBLIC_PURPOSES = new Set(['register']);
 const DEFAULT_CHALLENGE_TTL_MS = 10 * 60 * 1000;
 const PHONE_REVERIFY_MS = 30 * 24 * 60 * 60 * 1000;
+const RECENT_SUPER_ADMIN_MS = 15 * 60 * 1000;
+const ROLE_ORDER = Object.freeze(['super_admin', 'admin', 'teacher', 'student']);
 
 function serviceError(code) {
   const error = new Error(code);
@@ -67,6 +77,21 @@ function safeHashEqual(rawSecret, expectedHash) {
     && crypto.timingSafeEqual(actual, expected);
 }
 
+function desktopExchangeSigningPayload({ challengeId, deviceId, rowVersion, challengeSecret } = {}) {
+  const normalizedChallengeId = String(challengeId || '').trim();
+  const normalizedDeviceId = String(deviceId || '').trim();
+  if (!normalizedChallengeId || !normalizedDeviceId || !Number.isSafeInteger(Number(rowVersion))) {
+    throw serviceError('DESKTOP_EXCHANGE_PAYLOAD_INVALID');
+  }
+  return [
+    'gewu-desktop-exchange-v1',
+    normalizedChallengeId,
+    normalizedDeviceId,
+    String(Number(rowVersion)),
+    sha256(String(challengeSecret || '')),
+  ].join('\n');
+}
+
 function isApprovedIdentity(user) {
   return Boolean(user)
     && user.deleted !== 1
@@ -100,6 +125,53 @@ function presentChallenge(row) {
   });
 }
 
+function presentPublicChallenge(row) {
+  return Object.freeze({
+    id: row.id,
+    deviceId: row.device_id,
+    deviceName: row.device_name,
+    deviceKind: row.device_kind,
+    keyFingerprint: row.key_fingerprint,
+    purpose: row.purpose,
+    shortCode: row.short_code,
+    status: row.status,
+    rowVersion: Number(row.row_version),
+    expiresAt: row.expires_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  });
+}
+
+function maskPhone(phone) {
+  const normalized = normalizePhone(phone);
+  if (!normalized || normalized.length < 7) return '';
+  return `${normalized.slice(0, 3)}****${normalized.slice(-4)}`;
+}
+
+function presentAuthorization(row) {
+  return Object.freeze({
+    id: row.id,
+    deviceId: row.device_id,
+    deviceName: row.device_name,
+    deviceKind: row.device_kind,
+    userId: row.user_id,
+    keyFingerprint: row.key_fingerprint,
+    status: row.status,
+    approvedByUserId: row.approved_by_user_id || null,
+    approvedByDeviceId: row.approved_by_device_id || null,
+    approvedAt: row.approved_at || null,
+    lastPhoneVerifiedAt: row.last_phone_verified_at,
+    phoneReverifyDueAt: row.phone_reverify_due_at,
+    credentialVersion: Number(row.credential_version),
+    lastSeenAt: row.last_seen_at || null,
+    rowVersion: Number(row.row_version),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    revokedAt: row.revoked_at || null,
+    retiredAt: row.retired_at || null,
+  });
+}
+
 function createDesktopIdentityService({
   db,
   now = function () { return new Date(); },
@@ -130,6 +202,14 @@ function createDesktopIdentityService({
   const countActiveGrants = db.prepare(
     "SELECT COUNT(*) count FROM user_role_grants WHERE user_id=? AND status='active'"
   );
+  const findAuthorizationById = db.prepare(
+    'SELECT * FROM desktop_device_authorizations WHERE id=?'
+  );
+  const findActiveGrants = db.prepare(`SELECT role FROM user_role_grants
+    WHERE user_id=? AND status='active'`);
+  const insertAudit = db.prepare(`INSERT INTO authorization_audit_log
+    (id, actor_user_id, target_user_id, action, before_json, after_json, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`);
 
   function timestamp() {
     const value = now();
@@ -142,6 +222,42 @@ function createDesktopIdentityService({
     const row = findChallenge.get(String(challengeId || '').trim());
     if (!row) throw serviceError('DESKTOP_CHALLENGE_NOT_FOUND');
     return presentChallenge(row);
+  }
+
+  function readPublicChallenge(challengeId) {
+    const row = findChallenge.get(String(challengeId || '').trim());
+    if (!row) throw serviceError('DESKTOP_CHALLENGE_NOT_FOUND');
+    const currentTime = timestamp();
+    expireChallengeIfNeeded(row, currentTime);
+    return presentPublicChallenge(findChallenge.get(row.id));
+  }
+
+  function eligibleRolesForUser(userId) {
+    const roleSet = new Set(findActiveGrants.all(userId).map(function (grant) { return grant.role; }));
+    return Object.freeze(ROLE_ORDER.filter(function (role) { return roleSet.has(role); }));
+  }
+
+  function presentClaimant(userId) {
+    const user = findUser.get(String(userId || '').trim());
+    if (!user) throw serviceError('DESKTOP_IDENTITY_NOT_ELIGIBLE');
+    return Object.freeze({
+      id: user.id,
+      name: user.name || user.nickname || '',
+      maskedPhone: maskPhone(user.phone_normalized || user.phone),
+      eligibleRoles: eligibleRolesForUser(user.id),
+    });
+  }
+
+  function appendAudit({ actorUserId = null, targetUserId = null, action, before, after, at }) {
+    insertAudit.run(
+      uuid(),
+      actorUserId,
+      targetUserId,
+      action,
+      before === undefined ? null : JSON.stringify(before),
+      after === undefined ? null : JSON.stringify(after),
+      at
+    );
   }
 
   function startChallenge(input = {}) {
@@ -355,6 +471,18 @@ function createDesktopIdentityService({
         row.row_version
       );
     if (updated.changes !== 1) throw serviceError('DESKTOP_CHALLENGE_VERSION_STALE');
+    appendAudit({
+      targetUserId: identityId,
+      action: 'desktop_identity_phone_verified',
+      before: { challengeId: row.id, status: row.status, rowVersion: Number(row.row_version) },
+      after: {
+        challengeId: row.id,
+        deviceId: row.device_id,
+        status: 'identity_verified_pending_approval',
+        rowVersion: Number(row.row_version) + 1,
+      },
+      at: currentTime,
+    });
     return { row: findChallenge.get(row.id) };
   });
 
@@ -374,9 +502,253 @@ function createDesktopIdentityService({
     return presentChallenge(outcome.row);
   }
 
+  function assertApprovalActor(actorContext, targetDeviceId, currentTime) {
+    if (!actorContext || actorContext.activeRole !== 'super_admin') {
+      throw serviceError('DESKTOP_SUPER_ADMIN_ROLE_REQUIRED');
+    }
+    const actorUserId = String(actorContext.userId || '').trim();
+    const actorDeviceId = String(actorContext.deviceId || '').trim();
+    if (!actorUserId || !actorDeviceId) throw serviceError('DESKTOP_SUPER_ADMIN_ROLE_REQUIRED');
+    if (actorDeviceId === targetDeviceId) {
+      throw serviceError('DESKTOP_DEVICE_SELF_APPROVAL_FORBIDDEN');
+    }
+    const authTime = Date.parse(actorContext.authTime || '');
+    const nowMs = Date.parse(currentTime);
+    if (!Number.isFinite(authTime)
+      || authTime > nowMs + 30 * 1000
+      || nowMs - authTime > RECENT_SUPER_ADMIN_MS) {
+      throw serviceError('DESKTOP_RECENT_SUPER_ADMIN_REQUIRED');
+    }
+    return { actorUserId, actorDeviceId };
+  }
+
+  const approveTransaction = db.transaction(function (input) {
+    const challengeId = String(input.challengeId || '').trim();
+    const row = findChallenge.get(challengeId);
+    if (!row) throw serviceError('DESKTOP_CHALLENGE_NOT_FOUND');
+    const currentTime = timestamp();
+    if (expireChallengeIfNeeded(row, currentTime)) {
+      return { errorCode: 'DESKTOP_CHALLENGE_EXPIRED' };
+    }
+    if (row.status !== 'identity_verified_pending_approval') {
+      throw serviceError('DESKTOP_CHALLENGE_STATE_INVALID');
+    }
+    if (!Number.isSafeInteger(input.expectedRowVersion)
+      || Number(input.expectedRowVersion) !== Number(row.row_version)) {
+      throw serviceError('DESKTOP_CHALLENGE_VERSION_STALE');
+    }
+    const actor = assertApprovalActor(input.actorContext, row.device_id, currentTime);
+    const authorization = findAuthorizationById.get(row.authorization_id);
+    if (!authorization || authorization.status !== 'pending'
+      || authorization.user_id !== row.claimed_user_id) {
+      throw serviceError('DESKTOP_AUTHORIZATION_STATE_INVALID');
+    }
+
+    const challengeUpdate = db.prepare(`UPDATE desktop_identity_challenges
+      SET status='approved_pending_exchange', approved_at=?, row_version=row_version+1, updated_at=?
+      WHERE id=? AND status='identity_verified_pending_approval' AND row_version=?`)
+      .run(currentTime, currentTime, row.id, row.row_version);
+    if (challengeUpdate.changes !== 1) throw serviceError('DESKTOP_CHALLENGE_VERSION_STALE');
+    const authorizationUpdate = db.prepare(`UPDATE desktop_device_authorizations
+      SET approved_by_user_id=?, approved_by_device_id=?, approved_at=?,
+          row_version=row_version+1, updated_at=?
+      WHERE id=? AND status='pending' AND row_version=?`)
+      .run(
+        actor.actorUserId,
+        actor.actorDeviceId,
+        currentTime,
+        currentTime,
+        authorization.id,
+        authorization.row_version
+      );
+    if (authorizationUpdate.changes !== 1) throw serviceError('DESKTOP_AUTHORIZATION_VERSION_STALE');
+    appendAudit({
+      actorUserId: actor.actorUserId,
+      targetUserId: row.claimed_user_id,
+      action: 'desktop_device_authorization_approved',
+      before: { challengeId: row.id, status: row.status, rowVersion: Number(row.row_version) },
+      after: {
+        challengeId: row.id,
+        deviceId: row.device_id,
+        status: 'approved_pending_exchange',
+        rowVersion: Number(row.row_version) + 1,
+      },
+      at: currentTime,
+    });
+    return { row: findChallenge.get(row.id) };
+  });
+
+  function approveChallenge(input = {}) {
+    assertAllowedKeys(input, APPROVE_KEYS);
+    const outcome = approveTransaction(input);
+    if (outcome.errorCode) throw serviceError(outcome.errorCode);
+    return presentChallenge(outcome.row);
+  }
+
+  const rejectTransaction = db.transaction(function (input) {
+    const challengeId = String(input.challengeId || '').trim();
+    const row = findChallenge.get(challengeId);
+    if (!row) throw serviceError('DESKTOP_CHALLENGE_NOT_FOUND');
+    const currentTime = timestamp();
+    if (expireChallengeIfNeeded(row, currentTime)) {
+      return { errorCode: 'DESKTOP_CHALLENGE_EXPIRED' };
+    }
+    if (row.status !== 'identity_verified_pending_approval') {
+      throw serviceError('DESKTOP_CHALLENGE_STATE_INVALID');
+    }
+    if (!Number.isSafeInteger(input.expectedRowVersion)
+      || Number(input.expectedRowVersion) !== Number(row.row_version)) {
+      throw serviceError('DESKTOP_CHALLENGE_VERSION_STALE');
+    }
+    const actor = assertApprovalActor(input.actorContext, row.device_id, currentTime);
+    const authorization = findAuthorizationById.get(row.authorization_id);
+    const challengeUpdate = db.prepare(`UPDATE desktop_identity_challenges
+      SET status='rejected', rejected_at=?, row_version=row_version+1, updated_at=?
+      WHERE id=? AND status='identity_verified_pending_approval' AND row_version=?`)
+      .run(currentTime, currentTime, row.id, row.row_version);
+    if (challengeUpdate.changes !== 1) throw serviceError('DESKTOP_CHALLENGE_VERSION_STALE');
+    if (authorization) {
+      db.prepare(`UPDATE desktop_device_authorizations
+        SET status='revoked', revoked_at=?, row_version=row_version+1, updated_at=?
+        WHERE id=? AND status='pending'`)
+        .run(currentTime, currentTime, authorization.id);
+    }
+    appendAudit({
+      actorUserId: actor.actorUserId,
+      targetUserId: row.claimed_user_id,
+      action: 'desktop_device_authorization_rejected',
+      before: { challengeId: row.id, status: row.status },
+      after: {
+        challengeId: row.id,
+        deviceId: row.device_id,
+        status: 'rejected',
+        reason: String(input.reason || '').trim().slice(0, 64) || null,
+      },
+      at: currentTime,
+    });
+    return { row: findChallenge.get(row.id) };
+  });
+
+  function rejectChallenge(input = {}) {
+    assertAllowedKeys(input, REJECT_KEYS);
+    const outcome = rejectTransaction(input);
+    if (outcome.errorCode) throw serviceError(outcome.errorCode);
+    return presentChallenge(outcome.row);
+  }
+
+  const exchangeTransaction = db.transaction(function (input) {
+    const challengeId = String(input.challengeId || '').trim();
+    const row = findChallenge.get(challengeId);
+    if (!row) throw serviceError('DESKTOP_CHALLENGE_NOT_FOUND');
+    if (row.status === 'exchanged') throw serviceError('DESKTOP_CHALLENGE_ALREADY_EXCHANGED');
+    const currentTime = timestamp();
+    if (expireChallengeIfNeeded(row, currentTime)) {
+      return { errorCode: 'DESKTOP_CHALLENGE_EXPIRED' };
+    }
+    if (row.status !== 'approved_pending_exchange') {
+      throw serviceError('DESKTOP_CHALLENGE_STATE_INVALID');
+    }
+    if (!Number.isSafeInteger(input.expectedRowVersion)
+      || Number(input.expectedRowVersion) !== Number(row.row_version)) {
+      throw serviceError('DESKTOP_CHALLENGE_VERSION_STALE');
+    }
+    if (!safeHashEqual(input.challengeSecret, row.challenge_token_hash)) {
+      throw serviceError('DESKTOP_CHALLENGE_SECRET_INVALID');
+    }
+    const signature = String(input.signature || '').trim();
+    if (!signature) throw serviceError('DESKTOP_DEVICE_SIGNATURE_REQUIRED');
+    let signatureBuffer;
+    try {
+      signatureBuffer = Buffer.from(signature, 'base64');
+    } catch (_error) {
+      throw serviceError('DESKTOP_DEVICE_SIGNATURE_INVALID');
+    }
+    if (signatureBuffer.length !== 64) throw serviceError('DESKTOP_DEVICE_SIGNATURE_INVALID');
+    const payload = desktopExchangeSigningPayload({
+      challengeId: row.id,
+      deviceId: row.device_id,
+      rowVersion: Number(row.row_version),
+      challengeSecret: input.challengeSecret,
+    });
+    let signatureValid = false;
+    try {
+      signatureValid = crypto.verify(
+        null,
+        Buffer.from(payload, 'utf8'),
+        crypto.createPublicKey(row.public_key),
+        signatureBuffer
+      );
+    } catch (_error) {
+      signatureValid = false;
+    }
+    if (!signatureValid) throw serviceError('DESKTOP_DEVICE_SIGNATURE_INVALID');
+
+    const authorization = findAuthorizationById.get(row.authorization_id);
+    if (!authorization || authorization.status !== 'pending') {
+      throw serviceError('DESKTOP_AUTHORIZATION_STATE_INVALID');
+    }
+    const challengeUpdate = db.prepare(`UPDATE desktop_identity_challenges
+      SET status='exchanged', exchanged_at=?, row_version=row_version+1, updated_at=?
+      WHERE id=? AND status='approved_pending_exchange' AND row_version=?`)
+      .run(currentTime, currentTime, row.id, row.row_version);
+    if (challengeUpdate.changes !== 1) throw serviceError('DESKTOP_CHALLENGE_VERSION_STALE');
+    const authorizationUpdate = db.prepare(`UPDATE desktop_device_authorizations
+      SET status='active', row_version=row_version+1, updated_at=?
+      WHERE id=? AND status='pending' AND row_version=?`)
+      .run(currentTime, authorization.id, authorization.row_version);
+    if (authorizationUpdate.changes !== 1) throw serviceError('DESKTOP_AUTHORIZATION_VERSION_STALE');
+    appendAudit({
+      actorUserId: row.claimed_user_id,
+      targetUserId: row.claimed_user_id,
+      action: 'desktop_device_authorization_exchanged',
+      before: { challengeId: row.id, status: row.status },
+      after: { challengeId: row.id, deviceId: row.device_id, status: 'active' },
+      at: currentTime,
+    });
+    return {
+      challenge: findChallenge.get(row.id),
+      authorization: findAuthorizationById.get(authorization.id),
+    };
+  });
+
+  function exchangeChallenge(input = {}) {
+    assertAllowedKeys(input, EXCHANGE_KEYS);
+    const outcome = exchangeTransaction(input);
+    if (outcome.errorCode) throw serviceError(outcome.errorCode);
+    return Object.freeze({
+      challenge: presentChallenge(outcome.challenge),
+      authorization: presentAuthorization(outcome.authorization),
+    });
+  }
+
+  function listPendingAuthorizations() {
+    const rows = db.prepare(`SELECT * FROM desktop_identity_challenges
+      WHERE status='identity_verified_pending_approval'
+      ORDER BY created_at ASC, id ASC`).all();
+    return Object.freeze(rows.map(function (row) {
+      return Object.freeze({
+        challenge: presentChallenge(row),
+        claimant: presentClaimant(row.claimed_user_id),
+      });
+    }));
+  }
+
+  function listDevicesForUser(userId) {
+    const normalizedUserId = String(userId || '').trim();
+    if (!normalizedUserId) throw serviceError('DESKTOP_USER_ID_REQUIRED');
+    return Object.freeze(db.prepare(`SELECT * FROM desktop_device_authorizations
+      WHERE user_id=? ORDER BY created_at ASC, id ASC`).all(normalizedUserId).map(presentAuthorization));
+  }
+
   return Object.freeze({
+    approveChallenge,
     confirmVerifiedIdentity,
+    exchangeChallenge,
+    listDevicesForUser,
+    listPendingAuthorizations,
     readChallenge,
+    readPublicChallenge,
+    rejectChallenge,
     startChallenge,
     verifyChallengeSecret,
   });
@@ -385,5 +757,6 @@ function createDesktopIdentityService({
 module.exports = {
   ACTIVE_CHALLENGE_STATUSES,
   createDesktopIdentityService,
+  desktopExchangeSigningPayload,
   fingerprintPublicKey,
 };

@@ -83,7 +83,7 @@ db.prepare("INSERT INTO question_contents VALUES ('c1','q1','题干','答案','�
 db.prepare("INSERT INTO question_assets VALUES ('a1','q1','pic.txt','inline://pic.txt','data:text/plain;base64,aGVsbG8=',0,'t')").run();
 db.prepare("INSERT INTO question_contents VALUES ('c-old','q1','old','','','[]','old',1,'t')").run();
 db.prepare("INSERT INTO question_assets VALUES ('a-old','q1','old.txt','inline://old.txt','',1,'t')").run();
-const authz = { role: 'super_admin', userId: 'root', userApproved: true, deviceTrusted: true, deviceActive: true, deviceOwnerUserId: 'root' };
+const authz = { role: 'super_admin', userId: 'root', userApproved: true, deviceTrusted: true, deviceActive: true, deviceOwnerUserId: 'root', isPrimaryHost: true };
 const runtime = { nodeRole: 'primary-host', clientType: 'desktop', tokenUse: 'desktop-session', deviceId: 'host1', tokenDeviceId: 'host1' };
 const bound = bindQuestionBankStoreToDatabase({ db, root, authz, runtime });
 assert.strictEqual(resolveBoundQuestionBankRoot(db), path.resolve(root), 'exports must use the verified writer-DB binding root');

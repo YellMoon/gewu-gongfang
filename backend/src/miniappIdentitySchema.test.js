@@ -37,6 +37,7 @@ try {
     'identity_provisioning_receipts',
     'desktop_identity_challenges',
     'desktop_device_authorizations',
+    'desktop_sessions',
   ]) {
     assert.ok(
       service.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table),
@@ -86,6 +87,8 @@ try {
     'idx_desktop_identity_active_device',
     'idx_desktop_identity_active_key_fingerprint',
     'idx_desktop_device_authorizations_user_status',
+    'idx_desktop_sessions_device_status',
+    'idx_desktop_sessions_user_status',
   ]) {
     assert.ok(
       service.db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name=?").get(index),

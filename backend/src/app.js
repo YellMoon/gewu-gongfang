@@ -34,6 +34,7 @@ const cloudRelayRouter = require('./routes/cloudRelay');
 const permissionsRouter = require('./routes/permissions');
 const adminUsersRouter = require('./routes/adminUsers');
 const desktopPairingRouter = require('./routes/desktopPairing');
+const { createDesktopIdentityRouter } = require('./routes/desktopIdentity');
 const miniappApplicationsRouter = require('./routes/miniappApplications');
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -283,6 +284,7 @@ function createApp() {
 
   // 公开路由（无需认证）
   app.use('/api/auth', authRouter);
+  app.use('/api/desktop-identity', createDesktopIdentityRouter({ db: getInstance().db }));
   app.use('/api/desktop-pairing', desktopPairingRouter);
   app.use('/api/sync', optionalAuth, syncRouter);
   app.use('/api/cloud-relay-host/artifacts', optionalAuth, paperArtifactAccessRouter);
