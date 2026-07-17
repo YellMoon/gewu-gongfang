@@ -5,9 +5,6 @@ const invokeAllowList = new Set([
   'get-user-data-path',
   'runtime-config:get',
   'runtime-config:set',
-  'desktop-auth:get',
-  'desktop-auth:set',
-  'desktop-auth:clear',
   'dialog:select-folder',
   'open-external',
   'check-for-updates',
@@ -37,6 +34,15 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener(channel, wrapped);
   },
 });
+
+contextBridge.exposeInMainWorld('desktopIdentity', Object.freeze({
+  status: () => ipcRenderer.invoke('desktop-identity:status'),
+  beginRegistration: input => ipcRenderer.invoke('desktop-identity:begin-registration', input),
+  completeRegistration: input => ipcRenderer.invoke('desktop-identity:complete-registration', input),
+  unlock: input => ipcRenderer.invoke('desktop-identity:unlock', input),
+  lock: () => ipcRenderer.invoke('desktop-identity:lock'),
+  signChallenge: input => ipcRenderer.invoke('desktop-identity:sign-challenge', input),
+}));
 
 contextBridge.exposeInMainWorld('env', {
   isProd: process.env.NODE_ENV === 'production',

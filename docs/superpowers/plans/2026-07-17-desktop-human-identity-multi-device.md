@@ -231,7 +231,7 @@ Run: `node backend/src/routes/desktopRoleSession.http.test.js && node backend/sr
 
 Expected: PASS；同一个 JWT/session 不能通过自报 header 切换角色。
 
-- [ ] **Step 5: 本地提交当前身份切片**
+- [x] **Step 5: 本地提交当前身份切片**
 
 Run: `git add backend/src/services/authorizationPolicy.js backend/src/services/authorizationPolicy.test.js backend/src/services/dataScopeService.js backend/src/services/syncScopeService.js backend/src/services/desktopSessionService.js backend/src/middleware/auth.js backend/src/routes/desktopIdentity.js backend/src/routes/permissions.js backend/src/routes/sync.js backend/src/routes/adminUsers.test.js backend/src/services/dataScopeService.test.js backend/src/services/syncScopeService.test.js backend/src/services/syncScopeIntegration.test.js backend/src/routes/desktopRoleSession.http.test.js package.json docs/superpowers/plans/2026-07-17-desktop-human-identity-multi-device.md && git commit -m "自动发布 2026-07-17"`
 
@@ -247,7 +247,7 @@ Run: `git add backend/src/services/authorizationPolicy.js backend/src/services/a
 - Modify: `src/custom.d.ts`
 - Modify: `package.json`
 
-- [ ] **Step 1: 写保险库 RED 测试**
+- [x] **Step 1: 写保险库 RED 测试**
 
 临时目录和注入 safeStorage 覆盖：生成 Ed25519 设备密钥；文件中无密码、私钥、短会话明文；正确密码解锁；错误密码得到稳定错误并渐进延迟；设备 ID/指纹篡改失败；原子写失败保留旧信封；清除只删除凭证不删除业务数据。测试 preload 只暴露 beginRegistration、completeRegistration、unlock、lock、signChallenge 和 status，不暴露 raw read/write/privateKey。
 
@@ -255,22 +255,28 @@ Run: `git add backend/src/services/authorizationPolicy.js backend/src/services/a
 const vault = createDesktopIdentityVault({ filePath, safeStorage, now, delay });
 const publicIdentity = vault.beginRegistration({ deviceId: 'device-2' });
 assert.ok(publicIdentity.publicKey);
-vault.seal({ password: 'local-password-1', authorization: approvedAuthorization });
+vault.completeRegistration({
+  password: 'local-password-1',
+  authorization: approvedAuthorization,
+  profile,
+  sessionToken: 'short-session-token',
+});
 assert.strictEqual(fs.readFileSync(filePath).includes(Buffer.from('local-password-1')), false);
-assert.strictEqual(fs.readFileSync(filePath).includes(Buffer.from(approvedAuthorization.privateKey)), false);
+assert.strictEqual(safeStorage.decryptString(fs.readFileSync(filePath)).includes('BEGIN PRIVATE KEY'), false);
+assert.strictEqual(safeStorage.decryptString(fs.readFileSync(filePath)).includes('short-session-token'), false);
 ```
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `node public/desktopIdentityVault.test.js && node public/desktopCredentialStore.test.js && node src/services/browserDatabaseSafety.test.js`
 
 Expected: FAIL with missing vault and IPC channels.
 
-- [ ] **Step 3: 实现双层信封与主进程会话交换**
+- [x] **Step 3: 实现双层信封与主进程会话交换**
 
-用 `crypto.scryptSync` 派生 32 字节密钥，AES-256-GCM 加密设备私钥、authorization ID、离线 profile/lease，再用 safeStorage 包裹整个 envelope。主进程持有解锁态，使用私钥签服务器 nonce，并只把短期 token、用户摘要、eligibleRoles、activeRole、deviceId 和离线状态返回渲染层。旧 `desktop-session.bin` 仅作为升级检测，不自动把无微信证明的 V1 token 转成 V2。
+用 `crypto.scryptSync` 派生 32 字节密钥，AES-256-GCM 加密设备私钥、authorization ID、离线 profile/lease，再用 safeStorage 包裹整个 envelope。主进程持有解锁态，使用私钥签结构化服务器 nonce；短期 token 即使随完成注册输入到达也不写入信封，只向渲染层返回用户摘要、eligibleRoles、activeRole、deviceId 和离线状态。旧 `desktop-session.bin` 仅作为升级检测，不解密、不自动把无微信证明的 V1 token 转成 V2。
 
-- [ ] **Step 4: 运行 GREEN、安全扫描和 Electron 语法检查**
+- [x] **Step 4: 运行 GREEN、安全扫描和 Electron 语法检查**
 
 Run: `node public/desktopIdentityVault.test.js && node public/desktopCredentialStore.test.js && node src/services/browserDatabaseSafety.test.js && node --check public/electron.js && node --check public/preload.js`
 
@@ -278,7 +284,7 @@ Expected: PASS；测试产物和日志不含测试密码、私钥或 token。
 
 - [ ] **Step 5: 本地提交 Electron 保险库切片**
 
-Run: `git add public/desktopIdentityVault.js public/desktopIdentityVault.test.js public/electron.js public/preload.js public/desktopCredentialStore.js public/desktopCredentialStore.test.js src/custom.d.ts package.json && git commit -m "自动发布 2026-07-17"`
+Run: `git add public/desktopIdentityVault.js public/desktopIdentityVault.test.js public/electron.js public/preload.js public/desktopCredentialStore.js public/desktopCredentialStore.test.js src/custom.d.ts package.json docs/superpowers/plans/2026-07-17-desktop-human-identity-multi-device.md && git commit -m "自动发布 2026-07-17"`
 
 ### Task 6: 桌面启动身份门、离线租约和角色切换
 
