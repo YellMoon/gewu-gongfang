@@ -150,6 +150,11 @@ assert.ok(coveredRoles.has('admin'), 'miniapp UI inventory must cover admin UI')
 assert.ok(coveredRoles.has('student'), 'miniapp UI inventory must cover student UI');
 assert.ok(coveredRoles.has('guest'), 'miniapp UI inventory must cover login/guest UI');
 
+const desktopAuthorizationEntry = pageInventory.find(entry => entry.route === 'pages/desktop-authorization/index');
+assert.ok(desktopAuthorizationEntry?.roleViews.includes('guest'), 'desktop authorization must be a public guest entry');
+assert.ok(!desktopAuthorizationEntry?.roleViews.some(role => role.startsWith('review-')), 'review identities must not become desktop claimants');
+assert.ok(desktopAuthorizationEntry?.verificationStates.includes('phone-cancelled'), 'desktop authorization must cover cancelled phone consent');
+
 const uiFilesToScan = [
   'src/app.tsx',
   ...pageInventory.flatMap((entry) => entry.files).filter((file) => file.endsWith('.tsx')),

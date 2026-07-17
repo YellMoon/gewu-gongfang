@@ -87,6 +87,14 @@ assert.strictEqual(started.shortCode, '123456');
 assert.strictEqual(started.rowVersion, 1);
 assert.ok(started.challengeSecret.length >= 32);
 
+const miniappProjection = service.readMiniappChallenge(started.id);
+assert.deepStrictEqual(Object.keys(miniappProjection).sort(), [
+  'createdAt', 'deviceName', 'expiresAt', 'id', 'keyFingerprintSummary', 'purpose', 'status',
+].sort());
+assert.strictEqual(miniappProjection.keyFingerprintSummary, `${keyFingerprint.slice(0, 8)}…${keyFingerprint.slice(-4)}`);
+assert.ok(!('deviceId' in miniappProjection));
+assert.ok(!('rowVersion' in miniappProjection));
+
 const storedStarted = db.prepare('SELECT * FROM desktop_identity_challenges WHERE id=?').get(started.id);
 assert.strictEqual(storedStarted.device_kind, 'desktop-client');
 assert.strictEqual(storedStarted.key_fingerprint, keyFingerprint);

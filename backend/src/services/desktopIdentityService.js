@@ -142,6 +142,18 @@ function presentPublicChallenge(row) {
   });
 }
 
+function presentMiniappChallenge(row) {
+  return Object.freeze({
+    id: row.id,
+    deviceName: row.device_name,
+    keyFingerprintSummary: `${String(row.key_fingerprint || '').slice(0, 8)}…${String(row.key_fingerprint || '').slice(-4)}`,
+    purpose: row.purpose,
+    status: row.status,
+    expiresAt: row.expires_at,
+    createdAt: row.created_at,
+  });
+}
+
 function maskPhone(phone) {
   const normalized = normalizePhone(phone);
   if (!normalized || normalized.length < 7) return '';
@@ -232,6 +244,14 @@ function createDesktopIdentityService({
     return presentPublicChallenge(findChallenge.get(row.id));
   }
 
+  function readMiniappChallenge(challengeId) {
+    const row = findChallenge.get(String(challengeId || '').trim());
+    if (!row) throw serviceError('DESKTOP_CHALLENGE_NOT_FOUND');
+    const currentTime = timestamp();
+    expireChallengeIfNeeded(row, currentTime);
+    return presentMiniappChallenge(findChallenge.get(row.id));
+  }
+
   function eligibleRolesForUser(userId) {
     const roleSet = new Set(findActiveGrants.all(userId).map(function (grant) { return grant.role; }));
     return Object.freeze(ROLE_ORDER.filter(function (role) { return roleSet.has(role); }));
@@ -260,7 +280,7 @@ function createDesktopIdentityService({
     );
   }
 
-  function startChallenge(input = {}) {
+  function startChallenge(input = {}, options = {}) {
     assertAllowedKeys(input, START_KEYS);
     const deviceId = String(input.deviceId || '').trim();
     const deviceName = String(input.deviceName || '').trim();
@@ -301,7 +321,10 @@ function createDesktopIdentityService({
     if (secretBuffer.length < 32) throw serviceError('DESKTOP_CHALLENGE_RANDOM_INVALID');
     const challengeSecret = secretBuffer.toString('base64url');
     const challengeTokenHash = sha256(challengeSecret);
-    const challengeId = uuid();
+    const challengeId = String(options.challengeId || uuid()).trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{15,127}$/.test(challengeId)) {
+      throw serviceError('DESKTOP_CHALLENGE_ID_INVALID');
+    }
     const insert = db.prepare(`INSERT INTO desktop_identity_challenges
       (id, device_id, device_name, device_kind, public_key, key_fingerprint, purpose,
        challenge_token_hash, short_code, status, row_version, expires_at, created_at, updated_at)
@@ -356,6 +379,25 @@ function createDesktopIdentityService({
         ('pending_phone','identity_verified_pending_approval','approved_pending_exchange')`)
       .run(currentTime, row.id, row.row_version);
     return true;
+  }
+
+  function abandonPendingChallenge(challengeId) {
+    const normalizedId = String(challengeId || '').trim();
+    const row = findChallenge.get(normalizedId);
+    if (!row) throw serviceError('DESKTOP_CHALLENGE_NOT_FOUND');
+    const currentTime = timestamp();
+    const updated = db.prepare(`UPDATE desktop_identity_challenges
+      SET status='rejected', row_version=row_version+1, updated_at=?
+      WHERE id=? AND status='pending_phone' AND claimed_user_id IS NULL`)
+      .run(currentTime, normalizedId);
+    if (updated.changes !== 1) throw serviceError('DESKTOP_CHALLENGE_STATE_INVALID');
+    appendAudit({
+      action: 'desktop_identity_registration_abandoned',
+      before: { challengeId: row.id, status: row.status, rowVersion: Number(row.row_version) },
+      after: { challengeId: row.id, status: 'rejected', rowVersion: Number(row.row_version) + 1 },
+      at: currentTime,
+    });
+    return presentChallenge(findChallenge.get(normalizedId));
   }
 
   function verifyChallengeSecret(input = {}) {
@@ -741,12 +783,14 @@ function createDesktopIdentityService({
   }
 
   return Object.freeze({
+    abandonPendingChallenge,
     approveChallenge,
     confirmVerifiedIdentity,
     exchangeChallenge,
     listDevicesForUser,
     listPendingAuthorizations,
     readChallenge,
+    readMiniappChallenge,
     readPublicChallenge,
     rejectChallenge,
     startChallenge,
