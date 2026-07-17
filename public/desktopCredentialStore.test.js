@@ -16,8 +16,10 @@ const safeStorage = {
 };
 const store = createDesktopCredentialStore({ filePath, safeStorage });
 assert.strictEqual(store.read(), null);
+assert.deepStrictEqual(store.inspectLegacy(), { exists: false, upgradeRequired: false });
 store.write({ token: 'secret-jwt', userId: 'u1', deviceId: 'd1', user: { id: 'u1', name: '教师甲', role: 'teacher' } });
 assert.ok(!fs.readFileSync(filePath).toString().includes('secret-jwt'));
+assert.deepStrictEqual(store.inspectLegacy(), { exists: true, upgradeRequired: true });
 assert.deepStrictEqual(store.read(), {
   token: 'secret-jwt', userId: 'u1', deviceId: 'd1', user: { id: 'u1', name: '教师甲', role: 'teacher' }, expiresAt: null,
 });

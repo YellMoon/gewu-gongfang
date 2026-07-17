@@ -1,5 +1,6 @@
 const { app, BrowserWindow, Menu, ipcMain, dialog, screen, shell, safeStorage } = require('electron');
 const path = require('path');
+const os = require('os');
 const { QuestionDraftProvenanceRegistry } = require('./questionDraftProvenanceRegistry');
 const fs = require('fs');
 const {
@@ -8,7 +9,7 @@ const {
   applyRuntimeConfigToEnv,
 } = require('./runtimeConfig');
 const { buildLanHostUrls } = require('./lanDiscovery');
-const { createDesktopCredentialStore } = require('./desktopCredentialStore');
+const { createDesktopIdentityVault } = require('./desktopIdentityVault');
 let autoUpdater = null;
 const updateFeedUrl = (process.env.UPDATE_FEED_URL || 'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop/').replace(/\/?$/, '/');
 try {
@@ -34,16 +35,41 @@ process.on('uncaughtException', (err) => {
 
 let mainWindow;
 let backendServer = null;
+let desktopIdentityVault = null;
 
 function getRuntimeConfigPath() {
   return path.join(app.getPath('userData'), 'gewugongfang.config.json');
 }
 
-function getDesktopCredentialStore() {
-  return createDesktopCredentialStore({
-    filePath: path.join(app.getPath('userData'), 'desktop-session.bin'),
+function getDesktopIdentityVault() {
+  if (desktopIdentityVault) return desktopIdentityVault;
+  desktopIdentityVault = createDesktopIdentityVault({
+    filePath: path.join(app.getPath('userData'), 'desktop-identity-v2.bin'),
+    legacyFilePath: path.join(app.getPath('userData'), 'desktop-session.bin'),
     safeStorage,
   });
+  return desktopIdentityVault;
+}
+
+function configuredDesktopIdentity(input = {}) {
+  const runtimeConfig = readRuntimeConfig(getRuntimeConfigPath(), {
+    userDataPath: app.getPath('userData'),
+  });
+  const deviceId = String(process.env.GEWU_DEVICE_ID || runtimeConfig.deviceId || '').trim();
+  if (!deviceId) {
+    const error = new Error('DESKTOP_IDENTITY_DEVICE_ID_REQUIRED');
+    error.code = 'DESKTOP_IDENTITY_DEVICE_ID_REQUIRED';
+    throw error;
+  }
+  return {
+    deviceId,
+    deviceName: String(input.deviceName || runtimeConfig.deviceName || os.hostname()).trim().slice(0, 128),
+    deviceKind: runtimeConfig.nodeRole === 'primary-host' ? 'primary-host' : 'desktop-client',
+  };
+}
+
+function lockDesktopIdentityVault() {
+  try { desktopIdentityVault?.lock(); } catch (_error) { /* best effort */ }
 }
 
 function loadAndApplyRuntimeConfig() {
@@ -244,6 +270,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  lockDesktopIdentityVault();
   if (backendServer) {
     backendServer.close();
     backendServer = null;
@@ -252,6 +279,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  lockDesktopIdentityVault();
   if (backendServer) {
     backendServer.close();
     backendServer = null;
@@ -278,9 +306,20 @@ ipcMain.handle('runtime-config:get', async () => {
 ipcMain.handle('runtime-config:set', async (_event, config) => {
   return writeRuntimeConfig(getRuntimeConfigPath(), config, { userDataPath: app.getPath('userData') });
 });
-ipcMain.handle('desktop-auth:get', async () => getDesktopCredentialStore().read());
-ipcMain.handle('desktop-auth:set', async (_event, credential) => getDesktopCredentialStore().write(credential));
-ipcMain.handle('desktop-auth:clear', async () => getDesktopCredentialStore().clear());
+ipcMain.handle('desktop-identity:status', async () => getDesktopIdentityVault().status());
+ipcMain.handle('desktop-identity:begin-registration', async (_event, input) => {
+  return getDesktopIdentityVault().beginRegistration(configuredDesktopIdentity(input));
+});
+ipcMain.handle('desktop-identity:complete-registration', async (_event, input) => {
+  return getDesktopIdentityVault().completeRegistration(input);
+});
+ipcMain.handle('desktop-identity:unlock', async (_event, input) => {
+  return getDesktopIdentityVault().unlock(input);
+});
+ipcMain.handle('desktop-identity:lock', async () => getDesktopIdentityVault().lock());
+ipcMain.handle('desktop-identity:sign-challenge', async (_event, input) => {
+  return getDesktopIdentityVault().signChallenge(input);
+});
 ipcMain.handle('dialog:select-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openDirectory', 'createDirectory'],
