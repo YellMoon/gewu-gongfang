@@ -15,6 +15,11 @@ const APPROVE_KEYS = new Set(['expectedRowVersion']);
 const REJECT_KEYS = new Set(['expectedRowVersion', 'reason']);
 const EXCHANGE_KEYS = new Set(['challengeSecret', 'signature', 'expectedRowVersion']);
 const REVOKE_KEYS = new Set(['expectedRowVersion', 'reason']);
+const ROLE_SWITCH_KEYS = new Set([
+  'activeRole',
+  'elevationIssuedAt',
+  'elevationSignature',
+]);
 
 function routeError(code) {
   const error = new Error(code);
@@ -49,12 +54,15 @@ function statusForError(error, authenticationPhase = false) {
   if (code.includes('FORBIDDEN')
     || code.includes('ROLE_REQUIRED')
     || code.includes('RECENT_')
+    || code.startsWith('DESKTOP_ROLE_ELEVATION_')
+    || code === 'ACTIVE_ROLE_NOT_GRANTED'
     || code === 'DESKTOP_IDENTITY_NOT_ELIGIBLE') return 403;
   if (code.includes('STALE')
     || code.includes('CONFLICT')
     || code.includes('ALREADY')
     || code.includes('REPLAY')
     || code.includes('STATE_INVALID')
+    || code === 'DESKTOP_ACTIVE_ROLE_UNCHANGED'
     || code === 'DESKTOP_DEVICE_NOT_ACTIVE') return 409;
   return 400;
 }
@@ -220,6 +228,23 @@ function createDesktopIdentityRouter({
   router.get('/devices', authenticated(function (_req, res, context) {
     const items = identity().listDevicesForUser(context.userId);
     return res.json({ success: true, data: { items } });
+  }));
+
+  router.post('/session/role', authenticated(function (req, res, context) {
+    assertBodyKeys(req.body, ROLE_SWITCH_KEYS);
+    const issued = session().switchActiveRole({
+      actorContext: context,
+      activeRole: req.body.activeRole,
+      elevationIssuedAt: req.body.elevationIssuedAt,
+      elevationSignature: req.body.elevationSignature,
+    });
+    return res.json({
+      success: true,
+      data: {
+        session: issued.session,
+        token: issued.token,
+      },
+    });
   }));
 
   router.post('/devices/:deviceId/revoke', authenticated(function (req, res, context) {

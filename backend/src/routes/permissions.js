@@ -35,11 +35,16 @@ function permission(id, action) {
 router.get('/my', (req, res) => {
   const role = req.authz?.role || roleOf(req.user);
   const capabilities = effectiveCapabilities({ ...req.authz, role });
+  const eligibleRoles = Array.isArray(req.authz?.eligibleRoles)
+    ? req.authz.eligibleRoles.slice()
+    : [role];
   const identity = {
     id: req.user?.id || req.authz?.userId || null,
     role,
-    teacher_id: req.user?.teacher_id || req.authz?.teacherId || null,
-    student_id: req.user?.student_id || req.authz?.studentId || null,
+    active_role: role,
+    eligible_roles: eligibleRoles,
+    teacher_id: role === 'teacher' ? req.authz?.teacherId || null : null,
+    student_id: role === 'student' ? req.authz?.studentId || null : null,
     review_status: req.user?.review_status || (req.authz?.userApproved ? 'approved' : 'pending'),
     status: req.user?.status ?? 0,
     login_enabled: req.user?.login_enabled ?? 0,
@@ -55,10 +60,14 @@ router.get('/my', (req, res) => {
     data: {
       permissions, capabilities, identity,
       user_type: role,
+      active_role: role,
+      eligible_roles: eligibleRoles,
       is_admin: ['super_admin', 'admin'].includes(role),
     },
     permissions, capabilities, identity,
     user_type: role,
+    active_role: role,
+    eligible_roles: eligibleRoles,
     is_admin: ['super_admin', 'admin'].includes(role),
   });
 });

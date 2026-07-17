@@ -181,7 +181,7 @@ Run: `node backend/src/routes/desktopIdentity.http.test.js && node backend/src/s
 
 Expected: PASS；两次并发批准只有一个成功，撤销后旧 JWT 立即 401，另一台设备会话仍有效。
 
-- [ ] **Step 5: 本地提交控制面切片**
+- [x] **Step 5: 本地提交控制面切片**
 
 Run: `git add backend/src/app.js backend/src/middleware/auth.js backend/src/schema.sql backend/src/database.js backend/src/routes/desktopIdentity.js backend/src/routes/desktopIdentity.http.test.js backend/src/services/desktopSessionService.js backend/src/services/desktopSessionService.test.js package.json && git commit -m "自动发布 2026-07-17"`
 
@@ -191,14 +191,20 @@ Run: `git add backend/src/app.js backend/src/middleware/auth.js backend/src/sche
 - Modify: `backend/src/services/authorizationPolicy.js`
 - Modify: `backend/src/services/dataScopeService.js`
 - Modify: `backend/src/services/syncScopeService.js`
+- Modify: `backend/src/services/desktopSessionService.js`
 - Modify: `backend/src/middleware/auth.js`
+- Modify: `backend/src/routes/desktopIdentity.js`
 - Modify: `backend/src/routes/permissions.js`
+- Modify: `backend/src/routes/sync.js`
+- Modify: `backend/src/services/authorizationPolicy.test.js`
 - Modify: `backend/src/services/dataScopeService.test.js`
+- Modify: `backend/src/services/syncScopeService.test.js`
 - Modify: `backend/src/services/syncScopeIntegration.test.js`
 - Create: `backend/src/routes/desktopRoleSession.http.test.js`
+- Modify: `backend/src/routes/adminUsers.test.js`
 - Modify: `package.json`
 
-- [ ] **Step 1: 写同一人双角色 RED 测试**
+- [x] **Step 1: 写同一人双角色 RED 测试**
 
 构造同一用户 roles 为 `super_admin,teacher` 且 `teacher_id=t-self`。老师会话读取快照只含 t-self，写入其他老师课程被拒；超级管理员会话读取全量；老师会话不能调用设备审批；切换超级管理员需要 active device 和近期本机提权，切换回老师不扩大范围。
 
@@ -209,25 +215,25 @@ const adminContext = roleContextForUser(db, user, 'super_admin');
 assert.deepStrictEqual(scopeForUser(adminContext), { kind: 'all' });
 ```
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `node backend/src/routes/desktopRoleSession.http.test.js && node backend/src/services/dataScopeService.test.js && node backend/src/services/syncScopeIntegration.test.js`
 
 Expected: FAIL，因为当前 `roleForUser` 直接把固定用户视为 super_admin，忽略会话 active role。
 
-- [ ] **Step 3: 把 active role 贯穿权限和同步**
+- [x] **Step 3: 把 active role 贯穿权限和同步**
 
-`attachAuthorizationContext` 从已落库桌面 session 读取 activeRole/eligibleRoles，权限与范围只使用 activeRole；teacherId 只在老师 grant 合法时生效。新增 `/api/desktop-identity/session/role`：降权即时签发，升到 super_admin 要求主进程本机解锁证明和新 auth_time。权限响应同时返回 eligible_roles 与 active_role，不暴露未选角色的数据。
+`attachAuthorizationContext` 从已落库桌面 session 读取 activeRole/eligibleRoles，权限与范围只使用 activeRole；teacherId 只在老师 grant 合法时生效。新增 `/api/desktop-identity/session/role`：降权即时旋转会话；升到 super_admin 必须提交由当前设备 Ed25519 私钥签署、绑定 sid/device/target role/session version 且两分钟内有效的本机解锁证明，服务端只采用自己的当前时间写入新 auth_time。权限响应同时返回 eligible_roles 与 active_role，不暴露未选角色的数据。
 
-- [ ] **Step 4: 运行 GREEN 和越权矩阵**
+- [x] **Step 4: 运行 GREEN 和越权矩阵**
 
-Run: `node backend/src/routes/desktopRoleSession.http.test.js && node backend/src/services/authorizationPolicy.test.js && node backend/src/services/dataScopeService.test.js && node backend/src/services/syncScopeService.test.js && node backend/src/services/syncScopeIntegration.test.js`
+Run: `node backend/src/routes/desktopRoleSession.http.test.js && node backend/src/routes/adminUsers.test.js && node backend/src/services/authorizationPolicy.test.js && node backend/src/services/dataScopeService.test.js && node backend/src/services/syncScopeService.test.js && node backend/src/services/syncScopeIntegration.test.js`
 
 Expected: PASS；同一个 JWT/session 不能通过自报 header 切换角色。
 
 - [ ] **Step 5: 本地提交当前身份切片**
 
-Run: `git add backend/src/services/authorizationPolicy.js backend/src/services/dataScopeService.js backend/src/services/syncScopeService.js backend/src/middleware/auth.js backend/src/routes/permissions.js backend/src/services/dataScopeService.test.js backend/src/services/syncScopeIntegration.test.js backend/src/routes/desktopRoleSession.http.test.js package.json && git commit -m "自动发布 2026-07-17"`
+Run: `git add backend/src/services/authorizationPolicy.js backend/src/services/authorizationPolicy.test.js backend/src/services/dataScopeService.js backend/src/services/syncScopeService.js backend/src/services/desktopSessionService.js backend/src/middleware/auth.js backend/src/routes/desktopIdentity.js backend/src/routes/permissions.js backend/src/routes/sync.js backend/src/routes/adminUsers.test.js backend/src/services/dataScopeService.test.js backend/src/services/syncScopeService.test.js backend/src/services/syncScopeIntegration.test.js backend/src/routes/desktopRoleSession.http.test.js package.json docs/superpowers/plans/2026-07-17-desktop-human-identity-multi-device.md && git commit -m "自动发布 2026-07-17"`
 
 ### Task 5: Electron 设备密钥、本机密码信封和受限 IPC
 
