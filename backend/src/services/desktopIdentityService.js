@@ -181,6 +181,7 @@ function presentAuthorization(row) {
     updatedAt: row.updated_at,
     revokedAt: row.revoked_at || null,
     retiredAt: row.retired_at || null,
+    replacedByDeviceId: row.replaced_by_device_id || null,
   });
 }
 
@@ -782,11 +783,17 @@ function createDesktopIdentityService({
       WHERE user_id=? ORDER BY created_at ASC, id ASC`).all(normalizedUserId).map(presentAuthorization));
   }
 
+  function listAllDevices() {
+    return Object.freeze(db.prepare(`SELECT * FROM desktop_device_authorizations
+      ORDER BY created_at ASC, id ASC`).all().map(presentAuthorization));
+  }
+
   return Object.freeze({
     abandonPendingChallenge,
     approveChallenge,
     confirmVerifiedIdentity,
     exchangeChallenge,
+    listAllDevices,
     listDevicesForUser,
     listPendingAuthorizations,
     readChallenge,

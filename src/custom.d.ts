@@ -20,6 +20,19 @@ declare module './services/desktopAuthorizationSession.mjs' {
   export const hydrateDesktopAuthorizationSession: any;
 }
 declare module './services/pairingApiBase.mjs' { export const resolvePairingApiBase: any; }
+declare module './services/identityDeviceCenterPolicy.mjs' {
+  export const approveDesktopChallenge: any;
+  export const buildApprovalBody: any;
+  export const buildRejectionBody: any;
+  export const buildRevocationBody: any;
+  export const identityDeviceCenterAccess: any;
+  export const identityDeviceCenterErrorMessage: any;
+  export const loadIdentityDeviceCenter: any;
+  export const loadIdentityDevicePendingCount: any;
+  export const projectIdentityDeviceCenterSnapshot: any;
+  export const rejectDesktopChallenge: any;
+  export const revokeDesktopDevice: any;
+}
 declare module './services/desktopIdentityPartition.mjs' {
   export const partitionedStorageKey: any;
   export const migrateLegacyStorageValue: any;

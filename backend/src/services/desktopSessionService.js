@@ -101,6 +101,7 @@ function presentAuthorization(row) {
     credentialVersion: Number(row.credential_version),
     rowVersion: Number(row.row_version),
     revokedAt: row.revoked_at || null,
+    replacedByDeviceId: row.replaced_by_device_id || null,
   });
 }
 
@@ -322,10 +323,15 @@ function createDesktopSessionService({
     return validateSessionClaims(claims);
   }
 
-  function assertRecentSuperAdmin(context, options = {}) {
+  function assertSuperAdmin(context) {
     if (!context || context.activeRole !== 'super_admin') {
       throw serviceError('DESKTOP_SUPER_ADMIN_ROLE_REQUIRED');
     }
+    return context;
+  }
+
+  function assertRecentSuperAdmin(context, options = {}) {
+    assertSuperAdmin(context);
     if (options.targetDeviceId && context.deviceId === options.targetDeviceId) {
       throw serviceError('DESKTOP_DEVICE_SELF_APPROVAL_FORBIDDEN');
     }
@@ -455,6 +461,11 @@ function createDesktopSessionService({
     const allowedReasons = new Set(['lost', 'replaced', 'user_request', 'security']);
     const reason = String(input.reason || 'user_request');
     if (!allowedReasons.has(reason)) throw serviceError('DESKTOP_DEVICE_REVOCATION_REASON_INVALID');
+    const replacementDeviceId = String(input.replacementDeviceId || '').trim();
+    if ((reason === 'replaced' && (!replacementDeviceId || replacementDeviceId === deviceId))
+      || (reason !== 'replaced' && replacementDeviceId)) {
+      throw serviceError('DESKTOP_DEVICE_REPLACEMENT_INVALID');
+    }
     const current = currentDate().toISOString();
     const revoke = db.transaction(function () {
       const authorization = findAuthorization.get(deviceId);
@@ -463,11 +474,23 @@ function createDesktopSessionService({
         throw serviceError('DESKTOP_DEVICE_VERSION_STALE');
       }
       if (authorization.status !== 'active') throw serviceError('DESKTOP_DEVICE_NOT_ACTIVE');
+      if (reason === 'replaced') {
+        const replacement = findAuthorization.get(replacementDeviceId);
+        if (!replacement
+          || replacement.status !== 'active'
+          || replacement.user_id !== authorization.user_id
+          || !Number.isFinite(Date.parse(replacement.created_at))
+          || !Number.isFinite(Date.parse(authorization.created_at))
+          || Date.parse(replacement.created_at) <= Date.parse(authorization.created_at)) {
+          throw serviceError('DESKTOP_DEVICE_REPLACEMENT_INVALID');
+        }
+      }
+      const nextStatus = reason === 'replaced' ? 'replaced' : 'revoked';
       const updated = db.prepare(`UPDATE desktop_device_authorizations
-        SET status='revoked', credential_version=credential_version+1,
-            row_version=row_version+1, revoked_at=?, updated_at=?
+        SET status=?, credential_version=credential_version+1,
+            row_version=row_version+1, revoked_at=?, replaced_by_device_id=?, updated_at=?
         WHERE id=? AND status='active' AND row_version=?`)
-        .run(current, current, authorization.id, authorization.row_version);
+        .run(nextStatus, current, replacementDeviceId || null, current, authorization.id, authorization.row_version);
       if (updated.changes !== 1) throw serviceError('DESKTOP_DEVICE_VERSION_STALE');
       db.prepare(`UPDATE desktop_sessions
         SET status='revoked', revoke_reason=?, revoked_at=?, row_version=row_version+1, updated_at=?
@@ -487,9 +510,10 @@ function createDesktopSessionService({
         JSON.stringify({
           authorizationId: authorization.id,
           deviceId,
-          status: 'revoked',
+          status: nextStatus,
           rowVersion: Number(authorization.row_version) + 1,
           reason,
+          replacementDeviceId: replacementDeviceId || null,
         }),
         current
       );
@@ -508,6 +532,7 @@ function createDesktopSessionService({
 
   return Object.freeze({
     assertRecentSuperAdmin,
+    assertSuperAdmin,
     issueSession,
     revokeDeviceAuthorization,
     revokeSessionsForDevice,

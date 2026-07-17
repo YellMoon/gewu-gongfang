@@ -395,7 +395,7 @@ Run: `npm run test:desktop-authorization && npm run test:desktop-identity && npm
 
 Expected: PASS；构建产物注册确认页且无体验码、账号选择或静默手机号路径。
 
-- [ ] **Step 5: 本地提交小程序确认切片**
+- [x] **Step 5: 本地提交小程序确认切片**
 
 Run: `git add miniapp/src/utils/desktopAuthorizationRuntime.js miniapp/src/utils/desktopAuthorizationRuntime.test.js miniapp/src/pages/desktop-authorization miniapp/src/app.config.ts miniapp/src/utils/api.ts miniapp/src/utils/miniappUiPageInventory.js miniapp/src/utils/miniappUiCoverage.test.js package.json && git commit -m "自动发布 2026-07-17"`
 
@@ -415,8 +415,14 @@ Run: `git add miniapp/src/utils/desktopAuthorizationRuntime.js miniapp/src/utils
 - Modify: `src/pages/SyncSettingsAuthorization.test.js`
 - Modify: `src/uiRegression.test.js`
 - Modify: `package.json`
+- Modify: `backend/src/services/desktopIdentityService.js`
+- Modify: `backend/src/services/desktopSessionService.js`
+- Modify: `backend/src/routes/desktopIdentity.js`
+- Modify: `backend/src/routes/desktopIdentity.http.test.js`
+- Modify: `src/custom.d.ts`
+- Modify: `src/index.css`
 
-- [ ] **Step 1: 写可见入口、固定声明人和设备列表 RED 测试**
+- [x] **Step 1: 写可见入口、固定声明人和设备列表 RED 测试**
 
 断言 primary-host 的 super-admin active role 总能看到顶级入口和待审角标；老师 active role、普通管理员和待审设备看不到审批动作。待审表含已验证 claimant 和设备指纹但不含 Select/userId；批准只发送 challengeId/rowVersion。本人设备页同时列出 host 和第二台电脑，撤销 device-2 不影响 host；第三台显示 replacement 关系。
 
@@ -427,17 +433,17 @@ assert.strictEqual(buildApprovalBody(row).challengeId, row.id);
 assert.strictEqual(Object.hasOwn(buildApprovalBody(row), 'userId'), false);
 ```
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `node src/services/identityDeviceCenterPolicy.test.js && node src/pages/IdentityDeviceCenter.test.js && node src/pages/SyncSettingsAuthorization.test.js && node src/uiRegression.test.js`
 
 Expected: FAIL；现有面板仍位于 PermissionManager 底部并包含账号下拉选择。
 
-- [ ] **Step 3: 实现顶级页面、角标和明确状态**
+- [x] **Step 3: 实现顶级页面、角标和明确状态**
 
 新增 PageKey `identity-devices`，AppShell 导航显示待审 badge；页面分待审申请、我的设备、全部设备和数据主机四区，覆盖 loading/empty/offline/expired/conflict/concurrent/revoked。删除 PairingReviewPanel 和权限页嵌入。批准本人第二台设备时明确标注“申请人与审批人相同，但审批来自另一台可信设备”。所有操作使用 operation lock 和确认框。
 
-- [ ] **Step 4: 运行 GREEN 和生产构建**
+- [x] **Step 4: 运行 GREEN 和生产构建**
 
 Run: `node src/services/identityDeviceCenterPolicy.test.js && node src/pages/IdentityDeviceCenter.test.js && node src/pages/SyncSettingsAuthorization.test.js && node src/uiRegression.test.js && npm run typecheck && npm run build`
 

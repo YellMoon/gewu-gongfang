@@ -32,6 +32,7 @@ const QuestionBankPreview = React.lazy(() => import('./pages/QuestionBankPreview
 const QuestionBankEdit = React.lazy(() => import('./pages/QuestionBankEdit'));
 const QuestionBankPaper = React.lazy(() => import('./pages/QuestionBankPaper'));
 const AuditCenter = React.lazy(() => import('./pages/AuditCenter'));
+const IdentityDeviceCenter = React.lazy(() => import('./pages/IdentityDeviceCenter'));
 
 
 const PageLoading: React.FC = () => (
@@ -170,6 +171,7 @@ const App: React.FC = () => {
 
       case 'personal-assets': return <PersonalAssets />;
       case 'permission': return <PermissionManager />;
+      case 'identity-devices': return <LazyPage><IdentityDeviceCenter /></LazyPage>;
       case 'cloud-sync': return <ErrorBoundary><SyncSettings context={pageContext as any} /></ErrorBoundary>;
       case 'system-params': return <SystemSettings context={pageContext as any} />;
       case 'operate-log': return <OperateLog />;

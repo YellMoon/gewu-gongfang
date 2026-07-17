@@ -803,6 +803,14 @@ select,
   min-width: 0;
 }
 
+.app-shell__menu-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
 .revenue-filter-grid {
   display: grid;
   grid-template-columns: repeat(4, max-content);
