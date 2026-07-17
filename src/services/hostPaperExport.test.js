@@ -2,7 +2,17 @@ const assert = require('assert');
 
 (async () => {
   const { downloadHostArtifactRuntime, requestHostPaperExportRuntime } = await import('./hostPaperExportRuntime.mjs');
-  const storage = { getItem: () => JSON.stringify({ token: 'jwt-token', userId: 'user-1', deviceId: 'device-1' }) };
+  const authorizationSession = await import('./desktopAuthorizationSession.mjs');
+  const storage = { getItem: () => null, removeItem: () => {} };
+  await authorizationSession.saveDesktopAuthorizationSession({
+    token: 'jwt-token',
+    expiresAt: '2026-07-17T18:00:00.000Z',
+    session: {
+      id: 'session-1', userId: 'user-1', deviceId: 'device-1',
+      activeRole: 'teacher', eligibleRoles: ['teacher'], rowVersion: 1,
+    },
+    profile: { userId: 'user-1', activeRole: 'teacher', eligibleRoles: ['teacher'], teacherId: 'teacher-1' },
+  });
   let captured;
   const fetchImpl = async (url, init) => { captured = { url, init }; return { ok: true, json: async () => ({ success: true, data: { artifactId: 'artifact-1', fileName: 'paper.pdf', fileUrl: '/api/cloud-relay-host/artifacts/artifact-1', accessUrl: '/api/cloud-relay-host/artifacts/artifact-1/access', token: 'short-1' } }) }; };
   const input = { title: 'paper', format: 'pdf', formulaMode: 'word-native', questionIds: ['q1'], answerPosition: 'end' };
@@ -32,6 +42,7 @@ const assert = require('assert');
   assert.strictEqual(calls[2].init.headers['x-gewu-artifact-token'], 'short-2');
   assert.deepStrictEqual(clicked, ['blob:paper'], 'download anchor must point only to a local Blob URL'); assert.strictEqual(revoked, 'blob:paper');
   await assert.rejects(() => requestHostPaperExportRuntime('/api', input, { storage, fetchImpl: async () => ({ ok: false, json: async () => ({ success: false, error: 'denied' }) }) }), /denied/);
+  await authorizationSession.clearDesktopAuthorizationSession({ storage });
   await assert.rejects(() => requestHostPaperExportRuntime('/api', input, { storage: { getItem: () => null }, fetchImpl }), /AUTHORIZATION_CONTEXT_REQUIRED/);
   console.log('host paper export behavior checks passed');
 })().catch(error => { console.error(error); process.exit(1); });

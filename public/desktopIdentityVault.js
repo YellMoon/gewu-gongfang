@@ -10,6 +10,7 @@ const SCRYPT_P = 1;
 const SCRYPT_KEY_LENGTH = 32;
 const SCRYPT_MAX_MEMORY = 64 * 1024 * 1024;
 const RECENT_UNLOCK_MS = 2 * 60 * 1000;
+const OFFLINE_LEASE_MAX_MS = 72 * 60 * 60 * 1000;
 const MAX_ENVELOPE_BYTES = 256 * 1024;
 const ROLE_SET = new Set(['super_admin', 'admin', 'teacher', 'student']);
 const DEVICE_KIND_SET = new Set(['primary-host', 'desktop-client']);
@@ -211,7 +212,7 @@ function normalizeProfile(value, authorization) {
   });
 }
 
-function normalizeOfflineLease(value, profile) {
+function normalizeOfflineLease(value, profile, authorization) {
   if (value == null) return null;
   if (!value || typeof value !== 'object') throw vaultError('DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID');
   assertNoForbiddenSecrets(value);
@@ -224,11 +225,63 @@ function normalizeOfflineLease(value, profile) {
   if (!serialized || Buffer.byteLength(serialized, 'utf8') > 64 * 1024) {
     throw vaultError('DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID');
   }
-  const lease = JSON.parse(serialized);
-  const issuedAt = isoTimestamp(lease.issuedAt, 'DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID');
-  const expiresAt = isoTimestamp(lease.expiresAt, 'DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID');
+  const parsed = JSON.parse(serialized);
+  const issuedAt = isoTimestamp(parsed.issuedAt, 'DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID');
+  const expiresAt = isoTimestamp(parsed.expiresAt, 'DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID');
+  const eligibleRoles = Array.isArray(parsed.eligibleRoles)
+    ? [...new Set(parsed.eligibleRoles.map(role => String(role || '').trim()).filter(Boolean))]
+    : [];
+  const activeRole = stringField(
+    parsed.activeRole,
+    'DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID',
+    32
+  );
+  const scope = parsed.scope && typeof parsed.scope === 'object' && !Array.isArray(parsed.scope)
+    ? cloneJson(parsed.scope)
+    : null;
+  const lease = {
+    ...parsed,
+    id: stringField(parsed.id, 'DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID', 256),
+    userId: stringField(parsed.userId, 'DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID', 128),
+    deviceId: stringField(parsed.deviceId, 'DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID', 128),
+    authorizationId: stringField(
+      parsed.authorizationId,
+      'DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID',
+      128
+    ),
+    credentialVersion: safeInteger(
+      parsed.credentialVersion,
+      'DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID'
+    ),
+    eligibleRoles,
+    activeRole,
+    teacherId: optionalString(parsed.teacherId, 128),
+    studentId: optionalString(parsed.studentId, 128),
+    issuedAt,
+    expiresAt,
+    scope,
+  };
   if (Date.parse(expiresAt) <= Date.parse(issuedAt)
-    || (lease.activeRole && lease.activeRole !== profile.activeRole)) {
+    || Date.parse(expiresAt) - Date.parse(issuedAt) > OFFLINE_LEASE_MAX_MS
+    || Date.parse(expiresAt) > Date.parse(authorization.phoneReverifyDueAt)
+    || lease.userId !== profile.userId
+    || lease.deviceId !== authorization.deviceId
+    || lease.authorizationId !== authorization.id
+    || lease.credentialVersion !== authorization.credentialVersion
+    || eligibleRoles.length !== profile.eligibleRoles.length
+    || eligibleRoles.some((role, index) => role !== profile.eligibleRoles[index])
+    || !eligibleRoles.includes(activeRole)
+    || activeRole !== profile.activeRole
+    || !scope
+    || scope.kind !== activeRole) {
+    throw vaultError('DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID');
+  }
+  if (activeRole === 'teacher'
+    && (lease.teacherId !== profile.teacherId || scope.teacherId !== profile.teacherId)) {
+    throw vaultError('DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID');
+  }
+  if (activeRole === 'student'
+    && (lease.studentId !== profile.studentId || scope.studentId !== profile.studentId)) {
     throw vaultError('DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID');
   }
   return Object.freeze(lease);
@@ -295,12 +348,19 @@ function envelopeAad(publicIdentity, kdf) {
   }), 'utf8');
 }
 
-function desktopSessionNonceSigningPayload({
+function desktopDeviceSessionSigningPayload({
+  challengeId,
   authorizationId,
   deviceId,
+  credentialVersion,
   nonce,
   nonceIssuedAt,
 } = {}) {
+  const normalizedChallengeId = stringField(
+    challengeId,
+    'DESKTOP_SESSION_NONCE_PAYLOAD_INVALID',
+    128
+  );
   const normalizedAuthorizationId = stringField(
     authorizationId,
     'DESKTOP_SESSION_NONCE_PAYLOAD_INVALID',
@@ -308,14 +368,17 @@ function desktopSessionNonceSigningPayload({
   );
   const normalizedDeviceId = stringField(deviceId, 'DESKTOP_SESSION_NONCE_PAYLOAD_INVALID', 128);
   const normalizedNonce = stringField(nonce, 'DESKTOP_SESSION_NONCE_PAYLOAD_INVALID', 1024);
+  const version = safeInteger(credentialVersion, 'DESKTOP_SESSION_NONCE_PAYLOAD_INVALID');
   const normalizedIssuedAt = isoTimestamp(
     nonceIssuedAt,
     'DESKTOP_SESSION_NONCE_PAYLOAD_INVALID'
   );
   return [
-    'gewu-desktop-session-v1',
+    'gewu-desktop-session-v2',
+    normalizedChallengeId,
     normalizedAuthorizationId,
     normalizedDeviceId,
+    String(version),
     normalizedIssuedAt,
     sha256(normalizedNonce),
   ].join('\n');
@@ -483,7 +546,7 @@ function createDesktopIdentityVault({
     );
     const authorization = normalizeAuthorization(value.authorization, publicIdentity);
     const profile = normalizeProfile(value.profile, authorization);
-    const offlineLease = normalizeOfflineLease(value.offlineLease, profile);
+    const offlineLease = normalizeOfflineLease(value.offlineLease, profile, authorization);
     const secret = Object.freeze({
       version: PRIVATE_PAYLOAD_VERSION,
       publicIdentity,
@@ -643,7 +706,7 @@ function createDesktopIdentityVault({
     const publicIdentity = source.publicIdentity;
     const authorization = normalizeAuthorization(input.authorization, publicIdentity);
     const profile = normalizeProfile(input.profile, authorization);
-    const offlineLease = normalizeOfflineLease(input.offlineLease, profile);
+    const offlineLease = normalizeOfflineLease(input.offlineLease, profile, authorization);
     const built = buildEnvelope({
       password: input.password,
       publicIdentity,
@@ -676,6 +739,35 @@ function createDesktopIdentityVault({
       throw vaultError('DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED');
     }
     unlockedSecret = secret;
+    pendingRegistration = null;
+    unlockFailures = 0;
+    lastUnlockedAt = currentDate(now).getTime();
+    return presentUnlocked();
+  }
+
+  async function refreshOfflineLease(input = {}) {
+    if (!unlockedSecret) throw vaultError('DESKTOP_IDENTITY_VAULT_LOCKED');
+    let verified;
+    try {
+      verified = decryptPrivatePayload(readEnvelope(), input.password);
+    } catch (cause) {
+      throw vaultError('DESKTOP_IDENTITY_OFFLINE_LEASE_REFRESH_FAILED', cause);
+    }
+    const offlineLease = normalizeOfflineLease(
+      input.offlineLease,
+      verified.profile,
+      verified.authorization
+    );
+    const built = buildEnvelope({
+      password: input.password,
+      publicIdentity: verified.publicIdentity,
+      privateKey: verified.privateKey,
+      authorization: verified.authorization,
+      profile: verified.profile,
+      offlineLease,
+    });
+    writeEnvelope(built.envelope);
+    unlockedSecret = built.secret;
     pendingRegistration = null;
     unlockFailures = 0;
     lastUnlockedAt = currentDate(now).getTime();
@@ -744,13 +836,19 @@ function createDesktopIdentityVault({
       if (input.authorizationId && input.authorizationId !== authorizationId) {
         throw vaultError('DESKTOP_SESSION_NONCE_PAYLOAD_INVALID');
       }
-      payload = desktopSessionNonceSigningPayload({
+      const credentialVersion = unlockedSecret.authorization.credentialVersion;
+      if (input.credentialVersion && Number(input.credentialVersion) !== credentialVersion) {
+        throw vaultError('DESKTOP_SESSION_NONCE_PAYLOAD_INVALID');
+      }
+      payload = desktopDeviceSessionSigningPayload({
+        challengeId: input.challengeId,
         authorizationId,
         deviceId: publicIdentity.deviceId,
+        credentialVersion,
         nonce: input.nonce,
         nonceIssuedAt: input.nonceIssuedAt,
       });
-      responseExtra = { authorizationId };
+      responseExtra = { authorizationId, credentialVersion };
     } else {
       const current = currentDate(now);
       if (!Number.isFinite(lastUnlockedAt)
@@ -799,6 +897,7 @@ function createDesktopIdentityVault({
     clear,
     completeRegistration,
     lock,
+    refreshOfflineLease,
     seal,
     signChallenge,
     status,
@@ -809,6 +908,6 @@ function createDesktopIdentityVault({
 module.exports = {
   RECENT_UNLOCK_MS,
   createDesktopIdentityVault,
-  desktopSessionNonceSigningPayload,
+  desktopDeviceSessionSigningPayload,
   fingerprintPublicKey,
 };
