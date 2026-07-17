@@ -68,6 +68,12 @@ function generateDeviceKey() {
       .run(clock.toISOString(), clock.toISOString());
     db.prepare('UPDATE users SET teacher_id=? WHERE id=?')
       .run('teacher-http-self', canonicalId);
+    db.prepare(`INSERT INTO users
+      (id, phone, name, role, status, login_enabled, review_status,
+       auth_version, deleted, created_at, updated_at)
+      VALUES ('approved-admin-other', '13000000001', 'Other Admin', 'admin',
+        1, 1, 'approved', 1, 0, ?, ?)`)
+      .run(clock.toISOString(), clock.toISOString());
     db.prepare(`INSERT INTO user_role_grants
       (user_id, role, subject_type, subject_id, status, source, created_at, updated_at)
       VALUES (?, 'teacher', 'teacher', 'teacher-http-self', 'active', 'test', ?, ?)`)
@@ -78,7 +84,7 @@ function generateDeviceKey() {
       (id, device_id, device_name, device_kind, user_id, public_key, key_fingerprint,
        status, source_challenge_id, last_phone_verified_at, phone_reverify_due_at,
        credential_version, row_version, created_at, updated_at)
-      VALUES ('authorization-http-host', 'device-http-host', 'Current Host', 'desktop-client',
+      VALUES ('authorization-http-host', 'device-http-host', 'Current Host', 'primary-host',
         ?, ?, ?, 'active', 'bootstrap-http-host', ?, '2026-08-16T09:00:00.000Z', 1, 1, ?, ?)`)
       .run(
         canonicalId,
@@ -88,6 +94,15 @@ function generateDeviceKey() {
         clock.toISOString(),
         clock.toISOString()
       );
+    const otherKey = generateDeviceKey();
+    db.prepare(`INSERT INTO desktop_device_authorizations
+      (id, device_id, device_name, device_kind, user_id, public_key, key_fingerprint,
+       status, source_challenge_id, last_phone_verified_at, phone_reverify_due_at,
+       credential_version, row_version, created_at, updated_at)
+      VALUES ('authorization-http-other', 'device-http-other', 'Other User PC', 'desktop-client',
+        'approved-admin-other', ?, ?, 'active', 'bootstrap-http-other', ?,
+        '2026-08-16T09:00:00.000Z', 1, 1, ?, ?)`)
+      .run(otherKey.publicKey, otherKey.keyFingerprint, clock.toISOString(), clock.toISOString(), clock.toISOString());
 
     const identityService = createDesktopIdentityService({ db, now });
     const sessionService = createDesktopSessionService({ db, jwtSecret, now });
@@ -302,6 +317,12 @@ function generateDeviceKey() {
       deviceId: 'device-http-host',
       activeRole: 'teacher',
     });
+    const staleSuperAdminHost = sessionService.issueSession({
+      userId: canonicalId,
+      deviceId: 'device-http-host',
+      activeRole: 'super_admin',
+      authTime: new Date(clock.getTime() - 60 * 60 * 1000),
+    });
 
     const pending = await requestJson(
       baseUrl,
@@ -315,6 +336,23 @@ function generateDeviceKey() {
     assert.strictEqual(pending.body.data.items[0].claimant.maskedPhone, '137****0653');
     assert.deepStrictEqual(pending.body.data.items[0].claimant.eligibleRoles, ['super_admin', 'teacher']);
     assert.ok(!('userChoices' in pending.body.data.items[0]));
+
+    const stalePendingRead = await requestJson(
+      baseUrl,
+      'GET',
+      '/api/desktop-identity/authorizations/pending',
+      { token: staleSuperAdminHost.token }
+    );
+    assert.strictEqual(stalePendingRead.status, 200, 'super-admin may always read the pending badge');
+
+    const staleApproval = await requestJson(
+      baseUrl,
+      'POST',
+      `/api/desktop-identity/challenges/${secondConfirmed.id}/approve`,
+      { token: staleSuperAdminHost.token, body: { expectedRowVersion: secondConfirmed.rowVersion } }
+    );
+    assert.strictEqual(staleApproval.status, 403, 'approval still requires recent local-password elevation');
+    assert.strictEqual(staleApproval.body.code, 'DESKTOP_RECENT_ELEVATION_REQUIRED');
 
     const injectedApproval = await requestJson(
       baseUrl,
@@ -526,6 +564,45 @@ function generateDeviceKey() {
     );
     assert.ok(devices.body.data.items.every(function (item) { return item.userId === canonicalId; }));
 
+    const allDevices = await requestJson(
+      baseUrl,
+      'GET',
+      '/api/desktop-identity/devices/all',
+      { token: elevatedHost.token }
+    );
+    assert.strictEqual(allDevices.status, 200);
+    assert.deepStrictEqual(
+      allDevices.body.data.items.map(function (item) { return item.deviceId; }).sort(),
+      ['device-http-host', 'device-http-other', 'device-http-second', 'device-http-third']
+    );
+    assert.strictEqual(allDevices.body.data.items.find(function (item) {
+      return item.deviceId === 'device-http-host';
+    }).deviceKind, 'primary-host');
+    const teacherAllDevices = await requestJson(
+      baseUrl,
+      'GET',
+      '/api/desktop-identity/devices/all',
+      { token: teacherHost.token }
+    );
+    assert.strictEqual(teacherAllDevices.status, 403);
+    assert.strictEqual(teacherAllDevices.body.code, 'DESKTOP_SUPER_ADMIN_ROLE_REQUIRED');
+
+    const invalidOlderReplacement = await requestJson(
+      baseUrl,
+      'POST',
+      '/api/desktop-identity/devices/device-http-second/revoke',
+      {
+        token: elevatedHost.token,
+        body: {
+          expectedRowVersion: secondExchange.authorization.rowVersion,
+          reason: 'replaced',
+          replacementDeviceId: 'device-http-host',
+        },
+      }
+    );
+    assert.strictEqual(invalidOlderReplacement.status, 400);
+    assert.strictEqual(invalidOlderReplacement.body.code, 'DESKTOP_DEVICE_REPLACEMENT_INVALID');
+
     const revokedSecond = await requestJson(
       baseUrl,
       'POST',
@@ -534,12 +611,14 @@ function generateDeviceKey() {
         token: elevatedHost.token,
         body: {
           expectedRowVersion: secondExchange.authorization.rowVersion,
-          reason: 'lost',
+          reason: 'replaced',
+          replacementDeviceId: 'device-http-third',
         },
       }
     );
     assert.strictEqual(revokedSecond.status, 200);
-    assert.strictEqual(revokedSecond.body.data.authorization.status, 'revoked');
+    assert.strictEqual(revokedSecond.body.data.authorization.status, 'replaced');
+    assert.strictEqual(revokedSecond.body.data.authorization.replacedByDeviceId, 'device-http-third');
 
     const revokedSessionUse = await requestJson(
       baseUrl,

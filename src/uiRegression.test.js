@@ -43,6 +43,8 @@ const syncApi = read('src/services/syncApi.ts');
 const cloudRelayHostApi = read('src/services/cloudRelayHostApi.ts');
 const permissionManager = read('src/pages/PermissionManager.tsx');
 const permissionManagerCss = read('src/pages/PermissionManager.css');
+const identityDeviceCenter = read('src/pages/IdentityDeviceCenter.tsx');
+const identityDeviceCenterCss = read('src/pages/IdentityDeviceCenter.css');
 const authorizationApi = read('src/services/authorizationApi.ts');
 const authorizationRequestCoordinator = read('src/services/authorizationRequestCoordinator.mjs');
 const scheduleStorage = read('src/utils/scheduleStorage.mjs');
@@ -71,6 +73,7 @@ miniappAdminUsers = decodeUnicodeEscapes(miniappAdminUsers);
 miniappAssets = decodeUnicodeEscapes(miniappAssets);
 miniappScheduleEdit = decodeUnicodeEscapes(miniappScheduleEdit);
 const decodedMiniappQuestionBank = decodeUnicodeEscapes(miniappQuestionBank);
+const decodedIdentityDeviceCenter = decodeUnicodeEscapes(identityDeviceCenter);
 
 assert(
   miniappLogin.includes('review-title') &&
@@ -228,6 +231,21 @@ assert(
   permissionManager.includes('authorization-disable-action') &&
   permissionManager.includes('confirmDisable'),
   'only the capability-gated review workbench should expose a confirmed user-disable action'
+);
+
+assert(
+  appNavigation.includes("'identity-devices'") &&
+  appNavigation.includes('identityDeviceNavItem') &&
+  appNavigation.includes('0x8eab, 0x4efd, 0x4e0e, 0x8bbe, 0x5907') &&
+  appShell.includes('identityDevicePendingCount') &&
+  appShell.includes('<Badge') &&
+  decodedIdentityDeviceCenter.includes('待审设备申请') &&
+  decodedIdentityDeviceCenter.includes('我的设备') &&
+  decodedIdentityDeviceCenter.includes('全部设备') &&
+  decodedIdentityDeviceCenter.includes('本地数据主机') &&
+  identityDeviceCenterCss.includes('.identity-device-center') &&
+  !permissionManager.includes('PairingReviewPanel'),
+  'desktop identity and device center must be a top-level, badged workbench instead of a permission-page footer'
 );
 
 assert(

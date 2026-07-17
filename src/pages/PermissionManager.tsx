@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Card, Col, Descriptions, Empty, Input, Modal, Row, Select, Space, Statistic, Table, Tag, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import PairingReviewPanel from '../components/PairingReviewPanel';
 import { AuthorizationUser, ReviewableRole, disableUser, getMyCapabilities, listUsers, reviewUser } from '../services/authorizationApi';
 import { authorizationEmptyText, authorizationErrorText, createAuthorizationPresentation } from '../services/authorizationPresentation.mjs';
 import { createLatestRequestCoordinator } from '../services/authorizationRequestCoordinator.mjs';
@@ -133,7 +132,6 @@ const PermissionManager: React.FC = () => {
         {selected.disabled && <Tag>已停用用户不可变更</Tag>}
       </Space>}
     </Card>}
-    {canReview && <PairingReviewPanel users={rows} />}
   </main>;
 };
 

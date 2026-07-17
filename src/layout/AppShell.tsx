@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Layout, Menu, Tooltip } from 'antd';
+import { Badge, Button, Layout, Menu, Tooltip } from 'antd';
 import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -9,6 +9,10 @@ import PageHeaderBar from './PageHeaderBar';
 import { findNavItem, findOpenGroup, navGroups, PageKey, todayNavItem } from '../navigation/appNavigation';
 import type { NavigationInput } from '../navigation/navigationContext';
 import SyncQuickPanel from '../components/sync/SyncQuickPanel';
+import { getRuntimeConfig } from '../services/runtimeConfigClient';
+import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
+import { resolvePairingApiBase } from '../services/pairingApiBase.mjs';
+import { loadIdentityDevicePendingCount } from '../services/identityDeviceCenterPolicy.mjs';
 
 const { Content, Sider } = Layout;
 
@@ -31,6 +35,7 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
   const [navPinned, setNavPinned] = useState(false);
   const initialOpenGroup = findOpenGroup(currentPage);
   const [openKeys, setOpenKeys] = useState<string[]>(initialOpenGroup ? [initialOpenGroup] : []);
+  const [identityDevicePendingCount, setIdentityDevicePendingCount] = useState(0);
   const closeTimerRef = useRef<number | null>(null);
   const currentNavItem = findNavItem(currentPage);
   const navVisible = navOpen || navPinned;
@@ -48,6 +53,33 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
 
   useEffect(() => () => {
     if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    let stopped = false;
+    const refreshIdentityDevicePendingCount = async () => {
+      try {
+        const runtimeConfig = await getRuntimeConfig();
+        const session = readDesktopAuthorizationSession();
+        const baseUrl = resolvePairingApiBase(runtimeConfig, window.location);
+        const count = await loadIdentityDevicePendingCount({ runtimeConfig, session, baseUrl });
+        if (!stopped) setIdentityDevicePendingCount(count);
+      } catch (_error) {
+        if (!stopped) setIdentityDevicePendingCount(0);
+      }
+    };
+    const onUpdated = (event: Event) => {
+      const count = Number((event as CustomEvent).detail?.pendingCount);
+      if (!stopped && Number.isSafeInteger(count) && count >= 0) setIdentityDevicePendingCount(count);
+    };
+    void refreshIdentityDevicePendingCount();
+    const timer = window.setInterval(refreshIdentityDevicePendingCount, 30000);
+    window.addEventListener('identity-device-center-updated', onUpdated);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      window.removeEventListener('identity-device-center-updated', onUpdated);
+    };
   }, []);
 
   const clearCloseTimer = () => {
@@ -100,11 +132,13 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
         children: group.items.map((item) => ({
           key: item.key,
           icon: item.icon,
-          label: item.label,
+          label: item.key === 'identity-devices'
+            ? <span className="app-shell__menu-label">{item.label}<Badge count={identityDevicePendingCount} size="small" overflowCount={99} /></span>
+            : item.label,
         })),
       })),
     ],
-    [],
+    [identityDevicePendingCount],
   );
 
   return (

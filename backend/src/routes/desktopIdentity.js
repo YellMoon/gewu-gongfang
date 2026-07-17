@@ -21,7 +21,7 @@ const CONFIRM_KEYS = new Set(['code', 'phoneCode', 'expectedRowVersion']);
 const APPROVE_KEYS = new Set(['expectedRowVersion']);
 const REJECT_KEYS = new Set(['expectedRowVersion', 'reason']);
 const EXCHANGE_KEYS = new Set(['challengeSecret', 'signature', 'expectedRowVersion']);
-const REVOKE_KEYS = new Set(['expectedRowVersion', 'reason']);
+const REVOKE_KEYS = new Set(['expectedRowVersion', 'reason', 'replacementDeviceId']);
 const ROLE_SWITCH_KEYS = new Set([
   'activeRole',
   'elevationIssuedAt',
@@ -229,7 +229,7 @@ function createDesktopIdentityRouter({
   });
 
   router.get('/authorizations/pending', authenticated(function (_req, res, context) {
-    session().assertRecentSuperAdmin(context);
+    session().assertSuperAdmin(context);
     const items = identity().listPendingAuthorizations();
     return res.json({ success: true, data: { items } });
   }));
@@ -302,6 +302,12 @@ function createDesktopIdentityRouter({
     return res.json({ success: true, data: { items } });
   }));
 
+  router.get('/devices/all', authenticated(function (_req, res, context) {
+    session().assertSuperAdmin(context);
+    const items = identity().listAllDevices();
+    return res.json({ success: true, data: { items } });
+  }));
+
   router.post('/session/challenges/start', function (req, res) {
     try {
       assertBodyKeys(req.body, SESSION_CHALLENGE_START_KEYS);
@@ -357,6 +363,7 @@ function createDesktopIdentityRouter({
       deviceId: req.params.deviceId,
       expectedRowVersion: req.body.expectedRowVersion,
       reason: req.body.reason,
+      replacementDeviceId: req.body.replacementDeviceId,
       actorContext: context,
     });
     return res.json({ success: true, data: { authorization } });
