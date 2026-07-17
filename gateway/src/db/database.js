@@ -126,6 +126,7 @@ function ensureUserColumns(database) {
   addColumn('reviewed_by', 'TEXT');
   addColumn('reviewed_at', 'TEXT');
   addColumn('is_super_admin_identity', 'INTEGER DEFAULT 0');
+  addColumn('auth_version', 'INTEGER NOT NULL DEFAULT 1');
   addColumn('phone_normalized', 'TEXT');
   database.prepare('UPDATE users SET login_enabled = 0 WHERE login_enabled IS NULL').run();
   recoverCanonicalSuperAdmin(database);

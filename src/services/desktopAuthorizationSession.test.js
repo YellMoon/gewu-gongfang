@@ -24,6 +24,8 @@ async function main() {
       deviceId: 'd1',
       eligibleRoles: ['super_admin', 'teacher'],
       activeRole: 'teacher',
+      authVersion: 7,
+      credentialVersion: 3,
       rowVersion: 1,
     },
     profile: { userId: 'u1', user: { id: 'u1', name: '教师甲' }, teacherId: 'teacher-1' },
@@ -31,6 +33,9 @@ async function main() {
   await service.saveDesktopAuthorizationSession(value, { storage, desktopIdentity });
   assert.strictEqual(service.readDesktopAuthorizationSession(storage).authorization, 'Bearer short-session-token');
   assert.strictEqual(service.readDesktopAuthorizationSession(storage).authContext.activeRole, 'teacher');
+  assert.strictEqual(service.readDesktopAuthorizationSession(storage).authContext.sessionId, 'sid-1');
+  assert.strictEqual(service.readDesktopAuthorizationSession(storage).authContext.authVersion, 7);
+  assert.strictEqual(service.readDesktopAuthorizationSession(storage).authContext.credentialVersion, 3);
   assert.deepStrictEqual(storageWrites, [], 'short desktop sessions must remain in memory only');
   assert.strictEqual(ipcCalls.length, 0, 'saving a short session must not use raw credential IPC');
 

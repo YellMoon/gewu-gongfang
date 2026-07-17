@@ -19,7 +19,10 @@ declare module './services/desktopAuthorizationSession.mjs' {
   export const readDesktopAuthorizationSession: any;
   export const hydrateDesktopAuthorizationSession: any;
 }
-declare module './services/pairingApiBase.mjs' { export const resolvePairingApiBase: any; }
+declare module './services/pairingApiBase.mjs' {
+  export const resolveOnlineSyncActor: any;
+  export const resolvePairingApiBase: any;
+}
 declare module './services/identityDeviceCenterPolicy.mjs' {
   export const approveDesktopChallenge: any;
   export const buildApprovalBody: any;

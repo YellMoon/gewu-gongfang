@@ -149,6 +149,7 @@ function attachAuthorizationContext(req, tokenUser) {
     studentId: desktopContext ? desktopContext.studentId : user?.student_id || null,
     deviceId, tokenDeviceId, tokenUse: tokenUser?.token_use || null,
     authVersion: Number(user?.auth_version || 1), sessionId: desktopContext?.sessionId || tokenUser?.sid || null,
+    sessionExpiresAt: desktopContext?.sessionExpiresAt || null,
     authTime: desktopContext?.authTime || null,
     credentialVersion: desktopContext?.credentialVersion || null,
     authorizationId: desktopContext?.authorizationId || null,

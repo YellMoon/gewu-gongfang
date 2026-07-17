@@ -81,6 +81,15 @@ async function main() {
     chooseSyncTransport,
     runOneClickSync,
   } = await import('./oneClickSyncService.mjs');
+  const onlineActor = {
+    authorization: 'Bearer desktop-v2',
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    authContext: {
+      userId: 'u1', deviceId: 'desktop_test', activeRole: 'teacher', teacherId: 't1',
+      sessionId: 'sid-1', authVersion: 1, credentialVersion: 1,
+    },
+  };
+  const requireOnlineSession = async () => onlineActor;
 
   const preview = buildOneClickSyncPreview({
     channel: 'direct',
@@ -114,6 +123,7 @@ async function main() {
   const cancelled = await runOneClickSync({
     engine: cancelledEngine,
     transports: [direct],
+    requireOnlineSession,
     confirmPreview: async () => false,
     buildLocalDataMaps: () => ({ students: new Map() }),
     applyLocalDataMaps: () => {},
@@ -130,6 +140,7 @@ async function main() {
         incomingChanges: [{ table: 'students', action: 'update', data: { id: 'stu2', name: 'Host Student' } }],
       }),
     ],
+    requireOnlineSession,
     confirmPreview: async () => true,
     buildLocalDataMaps: () => ({ students: new Map() }),
     applyLocalDataMaps: () => {},
@@ -147,6 +158,7 @@ async function main() {
       makeTransport('direct', { check: { ok: false } }),
       makeTransport('cloud', { hostOnline: false, requestId: 'relay_req_wait' }),
     ],
+    requireOnlineSession,
     confirmPreview: async () => true,
     buildLocalDataMaps: () => ({ students: new Map() }),
     applyLocalDataMaps: () => {},
@@ -155,6 +167,25 @@ async function main() {
   assert.strictEqual(waiting.channel, 'cloud');
   assert.strictEqual(waiting.requestId, 'relay_req_wait');
   assert.strictEqual(waitingEngine.state.pendingChanges.length, 1, 'relay waiting should keep local queue until host confirms');
+
+  let offlineTransportChecks = 0;
+  const offlineEngine = makeEngine([{ table: 'courses', action: 'update', data: { id: 'c-offline' } }]);
+  const offline = await runOneClickSync({
+    engine: offlineEngine,
+    transports: [{ ...direct, check: async () => { offlineTransportChecks += 1; return { ok: true }; } }],
+    requireOnlineSession: async () => {
+      const error = new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
+      error.code = 'ONLINE_DESKTOP_SESSION_REQUIRED';
+      throw error;
+    },
+    confirmPreview: async () => true,
+    buildLocalDataMaps: () => ({ students: new Map() }),
+    applyLocalDataMaps: () => {},
+  });
+  assert.strictEqual(offline.status, 'failed');
+  assert.strictEqual(offline.error, 'ONLINE_DESKTOP_SESSION_REQUIRED');
+  assert.strictEqual(offlineTransportChecks, 0, 'offline lease must fail before transport discovery or mutation');
+  assert.strictEqual(offlineEngine.state.pendingChanges.length, 1);
 
   console.log('one-click sync service checks passed');
 }

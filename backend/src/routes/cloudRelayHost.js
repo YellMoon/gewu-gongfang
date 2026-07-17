@@ -20,7 +20,7 @@ const { resolveQuestionAssetPath, resolveBoundQuestionBankRoot } = require('../s
 const { updateCommittedQuestion, createTrustedInternalStorageUpdateContext } = require('../services/questionBankStorageService');
 const { createLocalQuestionImageResolver, writePaperArtifact } = require('../services/paperArtifactService');
 const { resolveLegacyQuestionSelection, resolveTaskQuestionSelection } = require('../services/paperExportSelectionService');
-const { verifyRelayAssertion } = require('../services/relayAssertionService');
+const { resolveRelaySessionActorContext, verifyRelayAssertion } = require('../services/relayAssertionService');
 const { bindPaperCompletionClaim, processDurablePaperTask, replayPaperCompletionOutbox } = require('../services/paperJobProcessor');
 const { recoverStalePaperJobs } = require('../services/paperJobRepository');
 const { cleanupPaperStorage, reconcilePaperArtifacts } = require('../services/paperStorageCleanup');
@@ -101,13 +101,20 @@ async function processMiniappTask(task, db, dependencies = {}) {
   }
   if (task.task_type === 'desktop-sync') {
     const changes = payload.pendingChanges || payload.changes || [];
-    let claims;
+    let claims = null;
+    let authz = null;
     try {
       claims = verifyRelayAssertion(payload.relayAssertion, process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '');
-    } catch (_error) { claims = null; }
-    const validClaims = claims && claims.taskId === task.id && claims.actorUserId === payload.actorUserId
-      && claims.deviceId === (payload.deviceId || payload.device_id) && db.consumeRelayAuthorizationNonce(claims);
-    const authz = validClaims ? db.resolveOrProvisionRelayActorContext(claims.deviceId, claims.actorUserId, claims.pairingApprovalId) : false;
+      const validClaims = claims.taskId === task.id && claims.actorUserId === payload.actorUserId
+        && claims.deviceId === (payload.deviceId || payload.device_id);
+      if (validClaims) {
+        authz = resolveRelaySessionActorContext(db, claims);
+        if (!db.consumeRelayAuthorizationNonce(claims)) authz = null;
+      }
+    } catch (_error) {
+      claims = null;
+      authz = null;
+    }
     if (!authz) {
       const error = new Error('AUTHORIZATION_CONTEXT_REQUIRED'); error.code = 'AUTHORIZATION_CONTEXT_REQUIRED'; throw error;
     }

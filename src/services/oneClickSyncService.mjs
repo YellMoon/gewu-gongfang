@@ -109,10 +109,28 @@ export async function runOneClickSync(options) {
   const applyLocalDataMaps = options?.applyLocalDataMaps || (() => {});
   const pendingChanges = getPendingChanges(engine);
 
+  try {
+    if (typeof options?.requireOnlineSession !== 'function') {
+      const error = new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
+      error.code = 'ONLINE_DESKTOP_SESSION_REQUIRED';
+      throw error;
+    }
+    await options.requireOnlineSession();
+  } catch (error) {
+    return {
+      status: 'failed',
+      error: error?.code || 'ONLINE_DESKTOP_SESSION_REQUIRED',
+      diagnostics: [{ name: 'identity', code: error?.code || 'ONLINE_DESKTOP_SESSION_REQUIRED', reason: error?.message || '' }],
+      uploaded: 0,
+      downloaded: 0,
+      conflicts: 0,
+    };
+  }
+
   const transport = await chooseSyncTransport(transports);
   if (transport?.unavailable) {
     const codes = transport.diagnostics.map(item => item.code);
-    const error = codes.find(code => ['AUTHORIZATION_CONTEXT_REQUIRED', 'PAIRING_NOT_APPROVED', 'USER_NOT_APPROVED', 'DEVICE_CREDENTIAL_REVOKED'].includes(code))
+    const error = codes.find(code => ['ONLINE_DESKTOP_SESSION_REQUIRED', 'AUTHORIZATION_CONTEXT_REQUIRED', 'PAIRING_NOT_APPROVED', 'USER_NOT_APPROVED', 'DEVICE_CREDENTIAL_REVOKED'].includes(code))
       || (transport.diagnostics.some(item => item.name === 'cloud') ? 'CLOUD_UNREACHABLE' : 'NO_SYNC_TRANSPORT_AVAILABLE');
     return {
       status: 'failed',

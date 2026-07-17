@@ -181,7 +181,7 @@ router.post('/host/heartbeat', requireHostToken, (req, res) => {
   res.json({ success: true, serverTime: time });
 });
 
-router.get('/host/status', requireApprovedSnapshotUser, (_req, res) => {
+router.get('/host/status', requireOnlineDesktopSession, (_req, res) => {
   const row = getDb().prepare('SELECT * FROM host_heartbeats ORDER BY updated_at DESC LIMIT 1').get();
   const updatedAt = row?.updated_at ? Date.parse(row.updated_at) : 0;
   const ttl = Number(process.env.GEWU_HOST_HEARTBEAT_TTL_MS || 5 * 60 * 1000);
@@ -217,6 +217,24 @@ function requireApprovedSnapshotUser(req, res, next) {
   if (!isApprovedActive(req.user) || roleForUser(req.user) === 'pending') {
     return res.status(403).json({ success: false, code: 'USER_NOT_APPROVED', error: 'Approved active user required' });
   }
+  return next();
+}
+
+function requireOnlineDesktopSession(req, res, next) {
+  const actor = req.authz || {};
+  const headerDeviceId = String(req.headers['x-device-id'] || '').trim();
+  const expiresAt = Date.parse(String(actor.sessionExpiresAt || ''));
+  if (actor.clientType !== 'desktop' || actor.tokenUse !== 'desktop-session'
+    || !actor.userId || !actor.deviceId || !actor.sessionId || !actor.activeRole
+    || !Number.isSafeInteger(Number(actor.authVersion)) || Number(actor.authVersion) < 1
+    || !Number.isSafeInteger(Number(actor.credentialVersion)) || Number(actor.credentialVersion) < 1
+    || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    return res.status(401).json({ success:false, code:'ONLINE_DESKTOP_SESSION_REQUIRED' });
+  }
+  if (headerDeviceId && headerDeviceId !== actor.deviceId) {
+    return res.status(403).json({ success:false, code:'DESKTOP_DEVICE_HEADER_MISMATCH' });
+  }
+  req.syncActor = actor;
   return next();
 }
 
@@ -258,34 +276,39 @@ router.get('/snapshots/questions', requireApprovedSnapshotUser, (req, res) => {
   res.json({ success: true, ...buildQuestionPreviewIndex(snapshot, req.user), hostAvailable, targetHostDeviceId: hostAvailable ? host.host_device_id : null, hostBaseUrl: hostAvailable ? safeHostBaseUrl(host.base_url) : null });
 });
 
-router.post('/desktop-sync/devices/register', requireApprovedSnapshotUser, (req,res)=>{
-  const deviceId=req.headers['x-device-id']||req.body.deviceId;if(!deviceId)return res.status(400).json({success:false,code:'DEVICE_ID_REQUIRED'});
+router.post('/desktop-sync/devices/register', requireOnlineDesktopSession, (req,res)=>{
+  const actor=req.syncActor,deviceId=actor.deviceId;
   const db=getDb(),existing=db.prepare('SELECT * FROM cloud_devices WHERE id=?').get(deviceId);
-  if(existing?.owner_user_id&&existing.owner_user_id!==req.user.id)return res.status(403).json({success:false,code:'SYNC_DEVICE_OWNER_MISMATCH'});
-  const time=now();db.prepare(`INSERT INTO cloud_devices(id,device_name,role,status,owner_user_id,active,created_at,updated_at)VALUES(?,?,?,'active',?,1,?,?)ON CONFLICT(id)DO UPDATE SET owner_user_id=COALESCE(cloud_devices.owner_user_id,excluded.owner_user_id),active=1,updated_at=excluded.updated_at`).run(deviceId,req.body.deviceName||deviceId,'desktop-client',req.user.id,time,time);res.json({success:true,device:{id:deviceId}});
+  if(existing?.owner_user_id&&existing.owner_user_id!==actor.userId)return res.status(403).json({success:false,code:'SYNC_DEVICE_OWNER_MISMATCH'});
+  const time=now();db.prepare(`INSERT INTO cloud_devices(id,device_name,role,status,owner_user_id,active,created_at,updated_at)VALUES(?,?,?,'active',?,1,?,?)ON CONFLICT(id)DO UPDATE SET owner_user_id=COALESCE(cloud_devices.owner_user_id,excluded.owner_user_id),active=1,updated_at=excluded.updated_at`).run(deviceId,req.body.deviceName||deviceId,'desktop-client',actor.userId,time,time);res.json({success:true,device:{id:deviceId}});
 });
-router.post('/desktop-sync/requests', requireApprovedSnapshotUser, (req, res) => {
+router.post('/desktop-sync/requests', requireOnlineDesktopSession, (req, res) => {
   const invalid = validateDesktopSyncInput(req, res);
   if (invalid) return invalid;
   const db = getDb();
-  const deviceId = req.headers['x-device-id'] || req.body.deviceId;
+  const actor = req.syncActor;
+  const deviceId = actor.deviceId;
   const device = db.prepare('SELECT * FROM cloud_devices WHERE id=? AND active=1').get(deviceId);
-  if (!device || device.owner_user_id !== req.user.id) return res.status(403).json({ success:false, code:'SYNC_DEVICE_OWNER_MISMATCH' });
-  const pairing = db.prepare("SELECT id FROM desktop_device_pairings WHERE device_id=? AND user_id=? AND status='approved' ORDER BY updated_at DESC LIMIT 1").get(deviceId, req.user.id);
-  if (!pairing) return res.status(403).json({ success:false, code:'PAIRING_NOT_APPROVED' });
+  if (!device || device.owner_user_id !== actor.userId) return res.status(403).json({ success:false, code:'SYNC_DEVICE_OWNER_MISMATCH' });
   const taskId = id('desktop_sync');
   const time = now();
   let assertion;
-  try { assertion = issueRelayAssertion({ taskId, actorUserId:req.user.id, deviceId, pairingApprovalId:pairing.id }, process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || ''); }
+  try { assertion = issueRelayAssertion({
+    taskId, actorUserId:actor.userId, deviceId, sessionId:actor.sessionId,
+    activeRole:actor.activeRole, teacherId:actor.teacherId || null,
+    authVersion:Number(actor.authVersion), credentialVersion:Number(actor.credentialVersion),
+    issuedAt:Date.now(), expiresAt:Date.parse(actor.sessionExpiresAt),
+  }, process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || ''); }
   catch (error) { return res.status(403).json({ success:false, code:error.code }); }
-  const payload = { deviceId, tenantId:req.body.tenantId || 'default', pendingChanges:req.body.pendingChanges, actorUserId:req.user.id, relayAssertion:assertion, submittedAt:time };
-  db.prepare("INSERT INTO miniapp_tasks(id,task_type,status,payload,created_by,created_at,updated_at) VALUES(?,'desktop-sync','pending_host',?,?,?,?)").run(taskId, JSON.stringify(payload), req.user.id, time, time);
+  const payload = { deviceId, tenantId:req.body.tenantId || 'default', pendingChanges:req.body.pendingChanges, actorUserId:actor.userId, relayAssertion:assertion, submittedAt:time };
+  db.prepare("INSERT INTO miniapp_tasks(id,task_type,status,payload,created_by,created_at,updated_at) VALUES(?,'desktop-sync','pending_host',?,?,?,?)").run(taskId, JSON.stringify(payload), actor.userId, time, time);
   return res.json({ success:true, request:{ id:taskId, status:'pending_host', acceptedChanges:payload.pendingChanges.length } });
 });
-router.get('/desktop-sync/requests/:id/result', requireApprovedSnapshotUser, (req, res) => {
+router.get('/desktop-sync/requests/:id/result', requireOnlineDesktopSession, (req, res) => {
   const db = getDb();
-  const admin = ['super_admin','admin'].includes(roleForUser(req.user));
-  const row = admin ? db.prepare("SELECT * FROM miniapp_tasks WHERE id=? AND task_type='desktop-sync'").get(req.params.id) : db.prepare("SELECT * FROM miniapp_tasks WHERE id=? AND task_type='desktop-sync' AND CAST(created_by AS TEXT)=?").get(req.params.id, String(req.user.id));
+  const actor = req.syncActor;
+  const admin = ['super_admin','admin'].includes(actor.activeRole);
+  const row = admin ? db.prepare("SELECT * FROM miniapp_tasks WHERE id=? AND task_type='desktop-sync'").get(req.params.id) : db.prepare("SELECT * FROM miniapp_tasks WHERE id=? AND task_type='desktop-sync' AND CAST(created_by AS TEXT)=?").get(req.params.id, String(actor.userId));
   if (!row) return res.status(404).json({ success:false, code:'DESKTOP_SYNC_REQUEST_NOT_FOUND' });
   return res.json({ success:true, request:{ ...row, payload:JSON.parse(row.payload || '{}'), result_payload:row.result_payload ? JSON.parse(row.result_payload) : null } });
 });
