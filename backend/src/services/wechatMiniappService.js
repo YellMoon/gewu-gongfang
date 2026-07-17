@@ -1,5 +1,17 @@
 let accessTokenCache = { value: '', expiresAt: 0 };
 
+function isProductionRuntime() {
+  return process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'prod';
+}
+
+function canUseDevWechatIdentity() {
+  return process.env.ALLOW_DEV_WECHAT_LOGIN === 'true' || !isProductionRuntime();
+}
+
+function makeDevOpenid(code) {
+  return `dev_${String(code || 'mock').replace(/[^a-zA-Z0-9]/g, '').slice(0, 32)}`;
+}
+
 function wechatConfig() {
   const appid = process.env.WECHAT_APPID;
   const secret = process.env.WECHAT_APPSECRET;
@@ -35,6 +47,39 @@ async function getWechatAccessToken() {
   return accessTokenCache.value;
 }
 
+async function resolveWechatIdentity(code) {
+  const normalizedCode = String(code || '').trim();
+  if (!normalizedCode) {
+    const error = new Error('code is required');
+    error.code = 'WECHAT_CODE_REQUIRED';
+    throw error;
+  }
+  const appid = process.env.WECHAT_APPID;
+  const secret = process.env.WECHAT_APPSECRET;
+  if (appid && secret && process.env.WECHAT_USE_MOCK_LOGIN !== 'true') {
+    const url = new URL('https://api.weixin.qq.com/sns/jscode2session');
+    url.searchParams.set('appid', appid);
+    url.searchParams.set('secret', secret);
+    url.searchParams.set('js_code', normalizedCode);
+    url.searchParams.set('grant_type', 'authorization_code');
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const payload = await response.json();
+    if (!response.ok || payload.errcode || !payload.openid) {
+      const detail = payload.errmsg || `HTTP ${response.status}`;
+      const error = new Error(`wechat code exchange failed: ${detail}`);
+      error.code = 'WECHAT_CODE_EXCHANGE_FAILED';
+      throw error;
+    }
+    return { openid: payload.openid, unionid: payload.unionid || null };
+  }
+  if (!canUseDevWechatIdentity()) {
+    const error = new Error('WECHAT_APPID/WECHAT_APPSECRET are required');
+    error.code = 'WECHAT_CONFIG_REQUIRED';
+    throw error;
+  }
+  return { openid: makeDevOpenid(normalizedCode), unionid: null };
+}
+
 async function resolveWechatPhoneNumber(phoneCode) {
   if (!phoneCode) {
     const error = new Error('phoneCode is required');
@@ -62,5 +107,6 @@ async function resolveWechatPhoneNumber(phoneCode) {
 }
 
 module.exports = {
+  resolveWechatIdentity,
   resolveWechatPhoneNumber,
 };

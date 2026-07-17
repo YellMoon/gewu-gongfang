@@ -7,6 +7,7 @@ const internalStorageUpdateCredentials = new WeakSet();
 function createTrustedInternalStorageUpdateContext({ validatedAuthz = {}, hostRuntime = {} }) {
   const nodeRole = hostRuntime.runtimeNodeRole || hostRuntime.nodeRole;
   if (nodeRole !== 'primary-host' || !validatedAuthz.userId || !validatedAuthz.deviceId
+    || validatedAuthz.isPrimaryHost !== true
     || validatedAuthz.userApproved !== true || validatedAuthz.deviceTrusted !== true
     || validatedAuthz.deviceActive !== true || validatedAuthz.deviceOwnerUserId !== validatedAuthz.userId) {
     throw authorityError('validated primary-host actor required', 'TRUSTED_INTERNAL_STORAGE_ACTOR_REQUIRED');
@@ -69,6 +70,7 @@ function authorityError(message, code) {
 
 function assertTrustedHost(authz = {}, runtime = {}, options = {}) {
   if ((runtime.nodeRole || runtime.runtimeNodeRole) !== 'primary-host') throw authorityError('primary host required', 'PRIMARY_HOST_REQUIRED');
+  if (authz.isPrimaryHost !== true) throw authorityError('primary host device authorization required', 'PRIMARY_HOST_DEVICE_REQUIRED');
   if (runtime.clientType !== 'desktop' || runtime.tokenUse !== 'desktop-session') throw authorityError('verified desktop session required', 'DESKTOP_SESSION_REQUIRED');
   if (!runtime.deviceId || runtime.deviceId !== runtime.tokenDeviceId || authz.deviceTrusted !== true || authz.deviceActive !== true) throw authorityError('trusted active device required', 'TRUSTED_DEVICE_REQUIRED');
   if (authz.userApproved !== true || !authz.userId || authz.deviceOwnerUserId !== authz.userId) throw authorityError('approved device owner required', 'APPROVED_OWNER_REQUIRED');

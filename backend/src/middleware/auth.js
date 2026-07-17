@@ -12,10 +12,13 @@ const {
   UNRECOGNIZED_TOKEN_USE,
   createMiniappIdentityService,
 } = require('../services/miniappIdentityService');
+const { createDesktopSessionService } = require('../services/desktopSessionService');
 
 const JWT_SECRET = process.env.JWT_SECRET || null;
 let cachedIdentityDb = null;
 let cachedIdentityService = null;
+let cachedDesktopSessionDb = null;
+let cachedDesktopSessionService = null;
 
 function identityServiceFor(db) {
   if (!cachedIdentityService || cachedIdentityDb !== db) {
@@ -23,6 +26,14 @@ function identityServiceFor(db) {
     cachedIdentityService = createMiniappIdentityService({ db, jwtSecret: JWT_SECRET });
   }
   return cachedIdentityService;
+}
+
+function desktopSessionServiceFor(db) {
+  if (!cachedDesktopSessionService || cachedDesktopSessionDb !== db) {
+    cachedDesktopSessionDb = db;
+    cachedDesktopSessionService = createDesktopSessionService({ db, jwtSecret: JWT_SECRET });
+  }
+  return cachedDesktopSessionService;
 }
 
 function verifyToken(token) {
@@ -77,7 +88,12 @@ function attachAuthorizationContext(req, tokenUser) {
   let user = null;
   const database = getInstance().db;
   const miniappToken = tokenUser?.token_use === FORMAL_TOKEN_USE || tokenUser?.token_use === UNRECOGNIZED_TOKEN_USE;
-  if (miniappToken) {
+  const desktopToken = tokenUser?.token_use === 'desktop-session';
+  let desktopContext = null;
+  if (desktopToken) {
+    desktopContext = desktopSessionServiceFor(database).validateSessionClaims(tokenUser);
+    user = database.prepare('SELECT * FROM users WHERE id = ? AND deleted = 0').get(desktopContext.userId);
+  } else if (miniappToken) {
     user = identityServiceFor(database).readIdentityForToken(tokenUser);
   } else {
     try {
@@ -93,26 +109,51 @@ function attachAuthorizationContext(req, tokenUser) {
     req.authz = undefined;
     return false;
   }
-  req.user = user;
-  const tokenDeviceId = tokenUser?.deviceId || null;
+  req.user = desktopContext
+    ? { ...user, role: desktopContext.activeRole, user_type: desktopContext.activeRole }
+    : user;
+  const tokenDeviceId = tokenUser?.device_id || tokenUser?.deviceId || null;
   const headerDeviceId = req.headers['x-device-id'] || null;
-  const deviceId = tokenDeviceId && tokenDeviceId === headerDeviceId ? tokenDeviceId : null;
-  const device = deviceId ? database.prepare('SELECT * FROM sync_devices WHERE id = ?').get(deviceId) : null;
+  if (desktopContext && headerDeviceId && tokenDeviceId !== headerDeviceId) {
+    const error = new Error('DESKTOP_DEVICE_HEADER_MISMATCH');
+    error.code = 'DESKTOP_DEVICE_HEADER_MISMATCH';
+    throw error;
+  }
+  const deviceId = desktopContext
+    ? desktopContext.deviceId
+    : tokenDeviceId && tokenDeviceId === headerDeviceId ? tokenDeviceId : null;
+  const device = !desktopContext && deviceId
+    ? database.prepare('SELECT * FROM sync_devices WHERE id = ?').get(deviceId)
+    : null;
   const userApproved = user.review_status === 'approved' && user.status !== 'inactive' && user.status !== 0 && user.login_enabled !== 0;
   const isPrimaryHost = process.env.GEWU_NODE_ROLE === 'primary-host'
-    && tokenUser?.token_use === 'desktop-session' && device?.trusted === 1 && device?.active === 1
-    && device?.owner_user_id === user.id && userApproved;
+    && desktopToken && desktopContext?.deviceTrusted && desktopContext?.deviceActive
+    && desktopContext?.deviceKind === 'primary-host'
+    && desktopContext?.userId === user.id && userApproved;
   req.authz = {
-    userId: user?.id || null, phone: user?.phone || null, role: roleForUser(user),
-    teacherId: user?.teacher_id || null, studentId: user?.student_id || null,
+    userId: user?.id || null,
+    phone: user?.phone || null,
+    role: desktopContext?.activeRole || roleForUser(user),
+    activeRole: desktopContext?.activeRole || roleForUser(user),
+    eligibleRoles: desktopContext?.eligibleRoles || null,
+    scope: desktopContext?.scope || null,
+    teacherId: desktopContext?.teacherId || user?.teacher_id || null,
+    studentId: desktopContext?.studentId || user?.student_id || null,
     deviceId, tokenDeviceId, tokenUse: tokenUser?.token_use || null,
-    authVersion: Number(user?.auth_version || 1), sessionId: tokenUser?.sid || null,
+    authVersion: Number(user?.auth_version || 1), sessionId: desktopContext?.sessionId || tokenUser?.sid || null,
+    authTime: desktopContext?.authTime || null,
+    credentialVersion: desktopContext?.credentialVersion || null,
+    authorizationId: desktopContext?.authorizationId || null,
+    authorizationRowVersion: desktopContext?.authorizationRowVersion || null,
+    deviceKind: desktopContext?.deviceKind || null,
     identityKind: user?.identity_kind || null,
     accountState: tokenUser?.token_use === UNRECOGNIZED_TOKEN_USE ? 'unrecognized' : 'formal',
     runtimeNodeRole: process.env.GEWU_NODE_ROLE || 'desktop-client',
-    deviceTrusted: device?.trusted === 1, deviceActive: device?.active === 1,
-    deviceOwnerUserId: device?.owner_user_id || null, userApproved,
-    clientType: tokenUser?.token_use === 'desktop-session'
+    deviceTrusted: desktopContext?.deviceTrusted || device?.trusted === 1,
+    deviceActive: desktopContext?.deviceActive || device?.active === 1,
+    deviceOwnerUserId: desktopContext?.userId || device?.owner_user_id || null,
+    userApproved,
+    clientType: desktopToken
       ? 'desktop'
       : miniappToken ? 'miniapp' : 'non-desktop',
     isPrimaryHost,
@@ -201,7 +242,8 @@ function optionalAuth(req, res, next) {
       const tokenHint = jwt.decode(token) || {};
       if (error?.code === 'REVIEW_TOKEN_NOT_ACCEPTED_BY_BACKEND'
         || tokenHint.token_use === FORMAL_TOKEN_USE
-        || tokenHint.token_use === UNRECOGNIZED_TOKEN_USE) {
+        || tokenHint.token_use === UNRECOGNIZED_TOKEN_USE
+        || tokenHint.token_use === 'desktop-session') {
         return sendAuthError(res, 401, 'Invalid or expired authentication token', 'TOKEN_INVALID');
       }
       // Optional auth keeps old behavior: invalid tokens do not block reads.

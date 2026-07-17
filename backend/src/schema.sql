@@ -502,6 +502,35 @@ CREATE INDEX IF NOT EXISTS idx_desktop_identity_claimant_status
 CREATE INDEX IF NOT EXISTS idx_desktop_device_authorizations_user_status
   ON desktop_device_authorizations(user_id, status, updated_at);
 
+CREATE TABLE IF NOT EXISTS desktop_sessions (
+  sid TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  authorization_id TEXT NOT NULL,
+  active_role TEXT NOT NULL CHECK (active_role IN ('super_admin', 'admin', 'teacher', 'student')),
+  eligible_roles_json TEXT NOT NULL,
+  auth_version INTEGER NOT NULL CHECK (auth_version >= 1),
+  credential_version INTEGER NOT NULL CHECK (credential_version >= 1),
+  auth_time TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked', 'expired')),
+  issued_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  last_seen_at TEXT,
+  revoke_reason TEXT,
+  revoked_at TEXT,
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (authorization_id) REFERENCES desktop_device_authorizations(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_desktop_sessions_device_status
+  ON desktop_sessions(device_id, status, expires_at);
+
+CREATE INDEX IF NOT EXISTS idx_desktop_sessions_user_status
+  ON desktop_sessions(user_id, status, expires_at);
+
 CREATE TABLE IF NOT EXISTS sync_authorizations (
   id TEXT PRIMARY KEY,
   device_id TEXT NOT NULL,

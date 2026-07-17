@@ -1,0 +1,238 @@
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const Database = require('better-sqlite3');
+const { createDesktopSessionService } = require('./desktopSessionService');
+
+const db = new Database(':memory:');
+db.pragma('foreign_keys = ON');
+db.exec(fs.readFileSync(path.join(__dirname, '..', 'schema.sql'), 'utf8'));
+
+let clock = new Date('2026-07-17T08:00:00.000Z');
+let sequence = 0;
+const canonicalId = 'miniapp-admin-13732250653';
+const jwtSecret = 'desktop-session-service-test-secret';
+
+db.prepare(`INSERT INTO teachers
+  (id, name, phone, deleted, created_at, updated_at)
+  VALUES ('teacher-self', 'Canonical Teacher', '13732250653', 0, ?, ?)`)
+  .run(clock.toISOString(), clock.toISOString());
+db.prepare(`INSERT INTO users
+  (id, phone, name, role, status, login_enabled, teacher_id, review_status,
+   auth_version, deleted, created_at, updated_at)
+  VALUES (?, '13732250653', 'Canonical User', 'super_admin', 1, 1, 'teacher-self',
+    'approved', 7, 0, ?, ?)`)
+  .run(canonicalId, clock.toISOString(), clock.toISOString());
+for (const grant of [
+  ['super_admin', null, null],
+  ['teacher', 'teacher', 'teacher-self'],
+]) {
+  db.prepare(`INSERT INTO user_role_grants
+    (user_id, role, subject_type, subject_id, status, source, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'active', 'test', ?, ?)`)
+    .run(canonicalId, grant[0], grant[1], grant[2], clock.toISOString(), clock.toISOString());
+}
+
+function insertAuthorization(id, deviceId, fingerprint) {
+  db.prepare(`INSERT INTO desktop_device_authorizations
+    (id, device_id, device_name, device_kind, user_id, public_key, key_fingerprint,
+     status, source_challenge_id, last_phone_verified_at, phone_reverify_due_at,
+     credential_version, row_version, created_at, updated_at)
+    VALUES (?, ?, ?, 'desktop-client', ?, 'test-public-key', ?, 'active', ?, ?, ?, 1, 1, ?, ?)`)
+    .run(
+      id,
+      deviceId,
+      deviceId,
+      canonicalId,
+      fingerprint,
+      `challenge-${deviceId}`,
+      clock.toISOString(),
+      '2026-08-16T08:00:00.000Z',
+      clock.toISOString(),
+      clock.toISOString()
+    );
+}
+
+insertAuthorization('authorization-host', 'device-host', '1'.repeat(64));
+insertAuthorization('authorization-second', 'device-second', '2'.repeat(64));
+
+const service = createDesktopSessionService({
+  db,
+  jwtSecret,
+  now: function () { return new Date(clock); },
+  uuid: function () { sequence += 1; return `desktop-session-${sequence}`; },
+});
+
+assert.ok(db.prepare(
+  "SELECT 1 FROM sqlite_master WHERE type='table' AND name='desktop_sessions'"
+).get());
+
+const teacherSession = service.issueSession({
+  userId: canonicalId,
+  deviceId: 'device-host',
+});
+assert.strictEqual(teacherSession.session.activeRole, 'teacher');
+assert.deepStrictEqual(teacherSession.session.eligibleRoles, ['super_admin', 'teacher']);
+assert.strictEqual(teacherSession.session.teacherId, 'teacher-self');
+assert.strictEqual(teacherSession.session.authTime, null);
+assert.ok(Date.parse(teacherSession.session.expiresAt) - clock.getTime() <= 8 * 60 * 60 * 1000);
+assert.ok(!teacherSession.token.includes(jwtSecret));
+
+const teacherContext = service.verifySessionToken(teacherSession.token);
+assert.strictEqual(teacherContext.userId, canonicalId);
+assert.strictEqual(teacherContext.deviceId, 'device-host');
+assert.strictEqual(teacherContext.activeRole, 'teacher');
+assert.strictEqual(teacherContext.scope.kind, 'teacher');
+assert.strictEqual(teacherContext.scope.teacherId, 'teacher-self');
+assert.ok(Object.isFrozen(teacherContext));
+
+const elevated = service.issueSession({
+  userId: canonicalId,
+  deviceId: 'device-host',
+  activeRole: 'super_admin',
+  authTime: clock,
+});
+const elevatedContext = service.verifySessionToken(elevated.token);
+assert.strictEqual(elevatedContext.activeRole, 'super_admin');
+assert.strictEqual(elevatedContext.scope.kind, 'all');
+assert.strictEqual(elevatedContext.authTime, clock.toISOString());
+assert.strictEqual(
+  service.assertRecentSuperAdmin(elevatedContext, { targetDeviceId: 'device-second' }),
+  elevatedContext
+);
+assert.throws(
+  function () {
+    service.assertRecentSuperAdmin(teacherContext, { targetDeviceId: 'device-second' });
+  },
+  function (error) { return error && error.code === 'DESKTOP_SUPER_ADMIN_ROLE_REQUIRED'; }
+);
+assert.throws(
+  function () {
+    service.assertRecentSuperAdmin(elevatedContext, { targetDeviceId: 'device-host' });
+  },
+  function (error) { return error && error.code === 'DESKTOP_DEVICE_SELF_APPROVAL_FORBIDDEN'; }
+);
+assert.throws(
+  function () {
+    service.assertRecentSuperAdmin(
+      { ...elevatedContext, authTime: '2026-07-17T07:44:59.000Z' },
+      { targetDeviceId: 'device-second' }
+    );
+  },
+  function (error) { return error && error.code === 'DESKTOP_RECENT_ELEVATION_REQUIRED'; }
+);
+
+assert.throws(
+  function () {
+    service.issueSession({
+      userId: canonicalId,
+      deviceId: 'device-host',
+      activeRole: 'student',
+    });
+  },
+  function (error) { return error && error.code === 'ACTIVE_ROLE_NOT_GRANTED'; }
+);
+assert.throws(
+  function () {
+    service.issueSession({
+      userId: canonicalId,
+      deviceId: 'device-host',
+      durationMs: 8 * 60 * 60 * 1000 + 1,
+    });
+  },
+  function (error) { return error && error.code === 'DESKTOP_SESSION_DURATION_INVALID'; }
+);
+assert.throws(
+  function () {
+    service.issueSession({
+      userId: canonicalId,
+      deviceId: 'device-host',
+      activeRole: 'super_admin',
+      authTime: '2026-07-17T08:01:00.000Z',
+    });
+  },
+  function (error) { return error && error.code === 'DESKTOP_SESSION_AUTH_TIME_INVALID'; }
+);
+
+db.prepare('UPDATE users SET auth_version=8 WHERE id=?').run(canonicalId);
+assert.throws(
+  function () { service.verifySessionToken(teacherSession.token); },
+  function (error) { return error && error.code === 'DESKTOP_SESSION_AUTH_VERSION_MISMATCH'; }
+);
+db.prepare('UPDATE users SET auth_version=7 WHERE id=?').run(canonicalId);
+
+db.prepare(`UPDATE desktop_device_authorizations
+  SET credential_version=2 WHERE device_id='device-host'`).run();
+assert.throws(
+  function () { service.verifySessionToken(teacherSession.token); },
+  function (error) { return error && error.code === 'DESKTOP_SESSION_CREDENTIAL_VERSION_MISMATCH'; }
+);
+db.prepare(`UPDATE desktop_device_authorizations
+  SET credential_version=1 WHERE device_id='device-host'`).run();
+
+db.prepare(`UPDATE desktop_device_authorizations
+  SET status='revoked' WHERE device_id='device-host'`).run();
+assert.throws(
+  function () { service.verifySessionToken(teacherSession.token); },
+  function (error) { return error && error.code === 'DESKTOP_DEVICE_NOT_ACTIVE'; }
+);
+db.prepare(`UPDATE desktop_device_authorizations
+  SET status='active' WHERE device_id='device-host'`).run();
+
+db.prepare(`UPDATE desktop_device_authorizations
+  SET phone_reverify_due_at='2026-07-17T07:59:59.000Z' WHERE device_id='device-host'`).run();
+assert.throws(
+  function () { service.verifySessionToken(teacherSession.token); },
+  function (error) { return error && error.code === 'DESKTOP_PHONE_REVERIFICATION_REQUIRED'; }
+);
+db.prepare(`UPDATE desktop_device_authorizations
+  SET phone_reverify_due_at='2026-08-16T08:00:00.000Z' WHERE device_id='device-host'`).run();
+
+const secondSession = service.issueSession({
+  userId: canonicalId,
+  deviceId: 'device-second',
+});
+assert.strictEqual(service.verifySessionToken(secondSession.token).deviceId, 'device-second');
+const revoked = service.revokeDeviceAuthorization({
+  deviceId: 'device-second',
+  actorContext: elevatedContext,
+  expectedRowVersion: 1,
+  reason: 'lost',
+});
+assert.strictEqual(revoked.status, 'revoked');
+assert.strictEqual(revoked.credentialVersion, 2);
+assert.strictEqual(revoked.rowVersion, 2);
+assert.deepStrictEqual(
+  db.prepare(`SELECT actor_user_id, target_user_id, action
+    FROM authorization_audit_log WHERE action='desktop_device_authorization_revoked'`).get(),
+  {
+    actor_user_id: canonicalId,
+    target_user_id: canonicalId,
+    action: 'desktop_device_authorization_revoked',
+  }
+);
+assert.throws(
+  function () { service.verifySessionToken(secondSession.token); },
+  function (error) { return error && error.code === 'DESKTOP_SESSION_REVOKED'; }
+);
+assert.strictEqual(service.verifySessionToken(teacherSession.token).deviceId, 'device-host');
+assert.throws(
+  function () {
+    service.revokeDeviceAuthorization({
+      deviceId: 'device-second',
+      actorContext: elevatedContext,
+      expectedRowVersion: 1,
+      reason: 'lost',
+    });
+  },
+  function (error) { return error && error.code === 'DESKTOP_DEVICE_VERSION_STALE'; }
+);
+
+clock = new Date('2026-07-17T16:00:01.000Z');
+assert.throws(
+  function () { service.verifySessionToken(teacherSession.token); },
+  function (error) { return error && error.code === 'DESKTOP_SESSION_EXPIRED'; }
+);
+
+db.close();
+console.log('desktop session service tests passed');
