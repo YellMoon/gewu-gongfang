@@ -33,6 +33,15 @@ const DEFAULT_REVIEW_BASE_URL = (typeof __REVIEW_API_BASE_URL__ !== 'undefined' 
 const RETRY_COUNT = 1;
 const REQUEST_TIMEOUT = 30000;
 const AUTHENTICATION_ENTRY_PATHS = new Set(['/api/auth/login', '/api/auth/wechat-login', '/api/auth/review-demo']);
+const DESKTOP_AUTHORIZATION_ENTRY_PATH = /^\/api\/desktop-identity\/challenges\/[A-Za-z0-9_-]{16,128}\/(?:public|confirm)$/;
+
+function isDesktopAuthorizationEntryPath(path: string): boolean {
+  return DESKTOP_AUTHORIZATION_ENTRY_PATH.test(path);
+}
+
+export function isAuthenticationEntryPath(path: string): boolean {
+  return AUTHENTICATION_ENTRY_PATHS.has(path) || isDesktopAuthorizationEntryPath(path);
+}
 
 function getBaseUrl(): string {
   try {
@@ -140,7 +149,8 @@ class ApiClient {
     retries = RETRY_COUNT,
   ): Promise<ApiResponse<T>> {
     const url = this.buildUrl(path, method);
-    const authenticationEntry = AUTHENTICATION_ENTRY_PATHS.has(path);
+    const authenticationEntry = isAuthenticationEntryPath(path);
+    const anonymousEntry = isDesktopAuthorizationEntryPath(path);
     const sessionOptions = authenticationEntry ? { allowInvalidated: true } : undefined;
     const requestBinding = authSessionRuntime.capture();
     const responseCoordinator = createApiResponseCoordinator({
@@ -163,7 +173,7 @@ class ApiClient {
         const res = await Taro.request({
           url,
           method,
-          header: this.getHeaders(requestSession.token),
+          header: this.getHeaders(anonymousEntry ? '' : requestSession.token),
           data: method !== 'GET' ? data : undefined,
           timeout: REQUEST_TIMEOUT,
           dataType: 'json',
@@ -264,6 +274,16 @@ export const authApi = {
     api.post<{ token: string }>('/api/auth/refresh', { token }),
   reviewDemo: (code: string, role: 'admin' | 'student') =>
     api.post<{ token: string; role: 'admin' | 'student'; user: any }>('/api/auth/review-demo', { code, role }),
+};
+
+export const desktopAuthorizationApi = {
+  read: (challengeId: string) =>
+    api.get<any>(`/api/desktop-identity/challenges/${encodeURIComponent(challengeId)}/public`),
+  confirm: (payload: { challengeId: string; code: string; phoneCode: string }) =>
+    api.post<any>(
+      `/api/desktop-identity/challenges/${encodeURIComponent(payload.challengeId)}/confirm`,
+      { code: payload.code, phoneCode: payload.phoneCode },
+    ),
 };
 
 // ========== 模块/权限 API ==========

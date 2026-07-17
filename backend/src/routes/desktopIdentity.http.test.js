@@ -94,6 +94,18 @@ function generateDeviceKey() {
     const miniappIdentityService = createMiniappIdentityService({ db, jwtSecret, now });
     const usedLoginCodes = new Set();
     const usedPhoneCodes = new Set();
+    const generatedUrlLinks = [];
+    let failNextUrlLink = false;
+    const createDesktopAuthorizationUrlLink = async function ({ challengeId }) {
+      generatedUrlLinks.push(challengeId);
+      if (failNextUrlLink) {
+        failNextUrlLink = false;
+        const error = new Error('url link failed');
+        error.code = 'WECHAT_URL_LINK_FAILED';
+        throw error;
+      }
+      return `https://wxaurl.cn/test-${challengeId}`;
+    };
     const resolveWechatIdentity = async function (code) {
       if (!code || usedLoginCodes.has(code)) {
         const error = new Error('WECHAT_CODE_EXCHANGE_FAILED');
@@ -140,6 +152,7 @@ function generateDeviceKey() {
       authenticateDesktop,
       resolveWechatIdentity,
       resolveWechatPhoneNumber,
+      createDesktopAuthorizationUrlLink,
     }));
     server = app.listen(0);
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -154,6 +167,7 @@ function generateDeviceKey() {
       assert.strictEqual(response.status, 200);
       assert.strictEqual(response.body.success, true);
       assert.strictEqual(response.body.data.challenge.status, 'pending_phone');
+      assert.strictEqual(response.body.data.challenge.qrValue, `https://wxaurl.cn/test-${response.body.data.challenge.id}`);
       return response.body.data.challenge;
     }
 
@@ -220,6 +234,25 @@ function generateDeviceKey() {
       return response.body.data;
     }
 
+    const failedLinkKey = generateDeviceKey();
+    failNextUrlLink = true;
+    const failedLinkStart = await requestJson(
+      baseUrl,
+      'POST',
+      '/api/desktop-identity/challenges/start',
+      { body: {
+        deviceId: 'device-http-link-failed', deviceName: 'Link Failed PC',
+        publicKey: failedLinkKey.publicKey, keyFingerprint: failedLinkKey.keyFingerprint,
+      } }
+    );
+    assert.strictEqual(failedLinkStart.status, 502);
+    assert.strictEqual(failedLinkStart.body.code, 'WECHAT_URL_LINK_FAILED');
+    assert.strictEqual(
+      db.prepare("SELECT status FROM desktop_identity_challenges WHERE device_id='device-http-link-failed'").get().status,
+      'rejected',
+      'production URL Link failure must abandon the challenge so the device can retry'
+    );
+
     const secondKey = generateDeviceKey();
     const secondStarted = await startDevice('device-http-second', 'Second PC', secondKey);
     const publicProjection = await requestJson(
@@ -231,6 +264,19 @@ function generateDeviceKey() {
     assert.ok(!('challengeSecret' in publicProjection.body.data.challenge));
     assert.ok(!('publicKey' in publicProjection.body.data.challenge));
     assert.ok(!('claimedUserId' in publicProjection.body.data.challenge));
+    assert.strictEqual(generatedUrlLinks.includes(secondStarted.id), true);
+
+    const miniappProjection = await requestJson(
+      baseUrl,
+      'GET',
+      `/api/desktop-identity/challenges/${secondStarted.id}/public`
+    );
+    assert.strictEqual(miniappProjection.status, 200);
+    assert.deepStrictEqual(Object.keys(miniappProjection.body.data.challenge).sort(), [
+      'createdAt', 'deviceName', 'expiresAt', 'id', 'keyFingerprintSummary', 'purpose', 'status',
+    ].sort());
+    assert.ok(!('deviceId' in miniappProjection.body.data.challenge));
+    assert.ok(!('rowVersion' in miniappProjection.body.data.challenge));
 
     const injectedConfirm = await requestJson(
       baseUrl,

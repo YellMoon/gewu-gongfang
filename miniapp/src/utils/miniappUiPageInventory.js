@@ -12,6 +12,18 @@ const pageInventory = [
     files: ['src/pages/login/index.tsx', 'src/pages/login/index.scss'],
   },
   {
+    route: 'pages/desktop-authorization/index',
+    title: '微信手机号确认电脑设备',
+    registered: true,
+    roleViews: ['guest', 'super_admin', 'admin', 'teacher', 'student', 'parent'],
+    surface: 'public-device-identity',
+    visualStatus: 'optimized',
+    verificationStates: ['loading', 'phone-required', 'phone-cancelled', 'approval-pending', 'approved', 'expired', 'identity-conflict', 'owner-conflict', 'network-error'],
+    realFeatureBasis: ['desktopAuthorizationApi.read', 'desktopAuthorizationApi.confirm', 'Button(open-type=getPhoneNumber)', 'Taro.login fresh code', 'desktop identity public challenge projection'],
+    screenshotRequired: true,
+    files: ['src/pages/desktop-authorization/index.tsx', 'src/pages/desktop-authorization/index.scss'],
+  },
+  {
     route: 'pages/index/index',
     title: '首页工作台',
     registered: true,

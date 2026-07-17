@@ -106,7 +106,71 @@ async function resolveWechatPhoneNumber(phoneCode) {
   return phone;
 }
 
+function desktopAuthorizationUrlLinkPayload(challengeId) {
+  const normalizedId = String(challengeId || '').trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{15,127}$/.test(normalizedId)) {
+    const error = new Error('desktop challenge id is invalid');
+    error.code = 'DESKTOP_CHALLENGE_ID_INVALID';
+    throw error;
+  }
+  const envVersion = String(process.env.WECHAT_MINIAPP_ENV_VERSION || 'release').trim();
+  if (!['release', 'trial', 'develop'].includes(envVersion)) {
+    const error = new Error('wechat miniapp environment version is invalid');
+    error.code = 'WECHAT_MINIAPP_ENV_VERSION_INVALID';
+    throw error;
+  }
+  return {
+    path: 'pages/desktop-authorization/index',
+    query: `challengeId=${encodeURIComponent(normalizedId)}`,
+    env_version: envVersion,
+    is_expire: true,
+    expire_type: 1,
+    expire_interval: 1,
+  };
+}
+
+async function createDesktopAuthorizationUrlLink({ challengeId } = {}) {
+  const body = desktopAuthorizationUrlLinkPayload(challengeId);
+  const accessToken = await getWechatAccessToken();
+  const url = new URL('https://api.weixin.qq.com/wxa/generate_urllink');
+  url.searchParams.set('access_token', accessToken);
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch (cause) {
+    const error = new Error('wechat URL Link request failed');
+    error.code = cause?.name === 'AbortError' || cause?.name === 'TimeoutError'
+      ? 'WECHAT_URL_LINK_TIMEOUT'
+      : 'WECHAT_URL_LINK_FAILED';
+    error.cause = cause;
+    throw error;
+  }
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (cause) {
+    const error = new Error('wechat URL Link response was invalid');
+    error.code = 'WECHAT_URL_LINK_FAILED';
+    error.cause = cause;
+    throw error;
+  }
+  const urlLink = String(payload.url_link || '').trim();
+  if (!response.ok || payload.errcode || !/^https:\/\/wxaurl\.cn\//i.test(urlLink)) {
+    const error = new Error('wechat URL Link generation failed');
+    error.code = 'WECHAT_URL_LINK_FAILED';
+    throw error;
+  }
+  return urlLink;
+}
+
 module.exports = {
+  createDesktopAuthorizationUrlLink,
+  desktopAuthorizationUrlLinkPayload,
   resolveWechatIdentity,
   resolveWechatPhoneNumber,
 };

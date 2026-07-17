@@ -1,6 +1,7 @@
 export default defineAppConfig({
   pages: [
     'pages/login/index',
+    'pages/desktop-authorization/index',
     'pages/index/index',
     'pages/forbidden/index',
     'pages/schedule/index',

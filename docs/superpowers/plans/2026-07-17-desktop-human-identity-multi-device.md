@@ -340,7 +340,7 @@ Run: `node src/services/desktopIdentityClient.test.js && node src/components/Des
 
 Expected: PASS；locked HTML/runtime 证据中无业务数据库读取和主机 heartbeat。
 
-- [ ] **Step 5: 本地提交启动身份门切片**
+- [x] **Step 5: 本地提交启动身份门切片**
 
 Run: `git add src/services/desktopIdentityClient.mjs src/services/desktopIdentityClient.test.js src/components/DesktopIdentityGate.tsx src/components/DesktopIdentityGate.css src/components/DesktopIdentityGate.test.js src/App.tsx src/index.tsx src/services/desktopAuthorizationSession.mjs src/services/desktopAuthorizationSession.test.js src/services/browserDatabase.ts package.json && git commit -m "自动发布 2026-07-17"`
 
@@ -356,9 +356,17 @@ Run: `git add src/services/desktopIdentityClient.mjs src/services/desktopIdentit
 - Modify: `miniapp/src/utils/api.ts`
 - Modify: `miniapp/src/utils/miniappUiPageInventory.js`
 - Modify: `miniapp/src/utils/miniappUiCoverage.test.js`
+- Modify: `miniapp/src/app.tsx`
+- Modify: `backend/src/services/desktopIdentityService.js`
+- Modify: `backend/src/services/desktopIdentityService.test.js`
+- Modify: `backend/src/services/wechatMiniappService.js`
+- Create: `backend/src/services/wechatDesktopAuthorizationUrlLink.test.js`
+- Modify: `backend/src/routes/desktopIdentity.js`
+- Modify: `backend/src/routes/desktopIdentity.http.test.js`
+- Modify: `backend/.env.example`
 - Modify: `package.json`
 
-- [ ] **Step 1: 写新 phoneCode、挑战投影和页面 RED 测试**
+- [x] **Step 1: 写新 phoneCode、挑战投影和页面 RED 测试**
 
 从 scene/query 只解析有界 challenge ID；读取挑战只返回设备名、指纹摘要、时间、purpose 和状态。确认按钮必须是 `openType="getPhoneNumber"`，每次点击同时调用 `Taro.login()` 获取新 code 并提交新的 phoneCode；取消授权不调用服务端。禁止使用缓存 openid、缓存手机号或普通 miniapp token 直接确认。
 
@@ -371,19 +379,19 @@ assert.throws(function () {
 }, function (error) { return error.code === 'WECHAT_PHONE_CODE_REQUIRED'; });
 ```
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `node miniapp/src/utils/desktopAuthorizationRuntime.test.js && node miniapp/src/utils/miniappPhoneLogin.test.js && node miniapp/src/utils/miniappUiCoverage.test.js`
 
 Expected: FAIL because page/runtime is absent and inventory count has not increased.
 
-- [ ] **Step 3: 实现真实手机号确认页**
+- [x] **Step 3: 实现真实手机号确认页**
 
-页面明确显示“二维码只建立一次性通道，微信手机号用于确认申请人”，显示脱敏设备指纹和过期时间。成功后展示等待可信设备批准；身份冲突、挑战过期、设备已归属他人、手机号取消和网络失败使用不同文案。最终小程序页面清单在 account-application 与 desktop-authorization 均加入后由 16 页增长为 18 页，实际注册数必须由 inventory 自动计算，不能写虚假固定数。
+页面明确显示“二维码只建立一次性通道，微信手机号用于确认申请人”，显示脱敏设备指纹和过期时间。成功后展示等待可信设备批准；身份冲突、挑战过期、设备已归属他人、手机号取消和网络失败使用不同文案。本任务先由 desktop-authorization 将当前清单从 16 页增加到 17 页；Task 12 加入 account-application 后达到最终 18 页。实际注册数必须由 inventory 自动计算，不能写虚假固定数。
 
-- [ ] **Step 4: 运行 GREEN、typecheck 和 WeApp build**
+- [x] **Step 4: 运行 GREEN、typecheck 和 WeApp build**
 
-Run: `node miniapp/src/utils/desktopAuthorizationRuntime.test.js && node miniapp/src/utils/miniappPhoneLogin.test.js && node miniapp/src/utils/miniappUiCoverage.test.js && npm --prefix miniapp run typecheck && npm --prefix miniapp run build:weapp`
+Run: `npm run test:desktop-authorization && npm run test:desktop-identity && npm --prefix miniapp run typecheck && npm --prefix miniapp run build:weapp`
 
 Expected: PASS；构建产物注册确认页且无体验码、账号选择或静默手机号路径。
 

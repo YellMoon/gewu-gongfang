@@ -1,4 +1,5 @@
 const { Router } = require('express');
+const { v4: uuidv4 } = require('uuid');
 const { getInstance } = require('../database');
 const { JWT_SECRET } = require('../middleware/auth');
 const { createDesktopIdentityService } = require('../services/desktopIdentityService');
@@ -12,6 +13,7 @@ const { createMiniappIdentityService } = require('../services/miniappIdentitySer
 const {
   resolveWechatIdentity: defaultResolveWechatIdentity,
   resolveWechatPhoneNumber: defaultResolveWechatPhoneNumber,
+  createDesktopAuthorizationUrlLink: defaultCreateDesktopAuthorizationUrlLink,
 } = require('../services/wechatMiniappService');
 
 const START_KEYS = new Set(['deviceId', 'deviceName', 'publicKey', 'keyFingerprint', 'purpose']);
@@ -53,6 +55,8 @@ function bearerToken(req) {
 
 function statusForError(error, authenticationPhase = false) {
   const code = String(error?.code || 'DESKTOP_IDENTITY_FAILED');
+  if (code === 'WECHAT_CONFIG_REQUIRED') return 503;
+  if (code.startsWith('WECHAT_') && (code.endsWith('_FAILED') || code.endsWith('_TIMEOUT'))) return 502;
   if (code === 'DESKTOP_SESSION_CHALLENGE_NOT_FOUND') return 404;
   if (code === 'DESKTOP_SESSION_CHALLENGE_REPLAYED'
     || code === 'DESKTOP_SESSION_CHALLENGE_EXPIRED'
@@ -100,6 +104,9 @@ function createDesktopIdentityRouter({
   authenticateDesktop,
   resolveWechatIdentity = defaultResolveWechatIdentity,
   resolveWechatPhoneNumber = defaultResolveWechatPhoneNumber,
+  createDesktopAuthorizationUrlLink = defaultCreateDesktopAuthorizationUrlLink,
+  challengeIdFactory = uuidv4,
+  allowDesktopAuthorizationUrlFallback = process.env.NODE_ENV !== 'production' && process.env.APP_ENV !== 'prod',
 } = {}) {
   const database = db || getInstance().db;
   let identities = identityService || null;
@@ -151,11 +158,21 @@ function createDesktopIdentityRouter({
     };
   }
 
-  router.post('/challenges/start', function (req, res) {
+  router.post('/challenges/start', async function (req, res) {
     try {
       assertBodyKeys(req.body, START_KEYS);
-      const challenge = identity().startChallenge(req.body);
-      return res.json({ success: true, data: { challenge } });
+      const challengeId = String(challengeIdFactory()).trim();
+      const challenge = identity().startChallenge(req.body, { challengeId });
+      let qrValue = null;
+      try {
+        qrValue = await createDesktopAuthorizationUrlLink({ challengeId: challenge.id });
+      } catch (error) {
+        if (!allowDesktopAuthorizationUrlFallback) {
+          identity().abandonPendingChallenge(challenge.id);
+          throw error;
+        }
+      }
+      return res.json({ success: true, data: { challenge: { ...challenge, qrValue } } });
     } catch (error) {
       return sendError(res, error);
     }
@@ -170,12 +187,25 @@ function createDesktopIdentityRouter({
     }
   });
 
+  router.get('/challenges/:id/public', function (req, res) {
+    try {
+      const challenge = identity().readMiniappChallenge(req.params.id);
+      return res.json({ success: true, data: { challenge } });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
   router.post('/challenges/:id/confirm', async function (req, res) {
     try {
       assertBodyKeys(req.body, CONFIRM_KEYS);
       const code = String(req.body.code || '').trim();
       const phoneCode = String(req.body.phoneCode || '').trim();
       if (!code || !phoneCode) throw routeError('VERIFIED_WECHAT_IDENTITY_REQUIRED');
+      const publicChallenge = identity().readMiniappChallenge(req.params.id);
+      if (publicChallenge.status !== 'pending_phone') {
+        throw routeError('DESKTOP_CHALLENGE_STATE_INVALID');
+      }
       const wechat = await resolveWechatIdentity(code);
       const phone = await resolveWechatPhoneNumber(phoneCode);
       const login = miniappIdentity().loginWithVerifiedWechat({
