@@ -282,7 +282,7 @@ Run: `node public/desktopIdentityVault.test.js && node public/desktopCredentialS
 
 Expected: PASS；测试产物和日志不含测试密码、私钥或 token。
 
-- [ ] **Step 5: 本地提交 Electron 保险库切片**
+- [x] **Step 5: 本地提交 Electron 保险库切片**
 
 Run: `git add public/desktopIdentityVault.js public/desktopIdentityVault.test.js public/electron.js public/preload.js public/desktopCredentialStore.js public/desktopCredentialStore.test.js src/custom.d.ts package.json docs/superpowers/plans/2026-07-17-desktop-human-identity-multi-device.md && git commit -m "自动发布 2026-07-17"`
 
@@ -291,6 +291,10 @@ Run: `git add public/desktopIdentityVault.js public/desktopIdentityVault.test.js
 **Files:**
 - Create: `src/services/desktopIdentityClient.mjs`
 - Create: `src/services/desktopIdentityClient.test.js`
+- Create: `src/services/desktopIdentityPartition.mjs`
+- Create: `src/services/desktopIdentityPartition.test.js`
+- Create: `src/services/desktopCacheProjection.mjs`
+- Create: `src/services/desktopCacheProjection.test.js`
 - Create: `src/components/DesktopIdentityGate.tsx`
 - Create: `src/components/DesktopIdentityGate.css`
 - Create: `src/components/DesktopIdentityGate.test.js`
@@ -299,9 +303,17 @@ Run: `git add public/desktopIdentityVault.js public/desktopIdentityVault.test.js
 - Modify: `src/services/desktopAuthorizationSession.mjs`
 - Modify: `src/services/desktopAuthorizationSession.test.js`
 - Modify: `src/services/browserDatabase.ts`
+- Modify: `src/services/questionLocalStore.ts`
+- Modify: `src/services/syncEngine.ts`
+- Create: `backend/src/services/desktopDeviceChallengeService.js`
+- Create: `backend/src/services/desktopDeviceChallengeService.test.js`
+- Modify: `backend/src/routes/desktopIdentity.js`
+- Modify: `backend/src/routes/desktopIdentity.http.test.js`
+- Modify: `backend/src/schema.sql`
+- Modify: `backend/src/database.js`
 - Modify: `package.json`
 
-- [ ] **Step 1: 写启动顺序和状态机 RED 测试**
+- [x] **Step 1: 写启动顺序和状态机 RED 测试**
 
 断言 locked 时不导入 browserDatabase、不启动 host heartbeat/task poll、不构造同步传输；无凭证显示二维码注册；手机号已确认显示待管理员批准；获批后要求设置密码；重启要求本机密码；在线失败只在 72 小时有效离线租约内进入 scoped offline；租约过期阻断；多角色默认 teacher，升 super_admin 必须再次 unlock。
 
@@ -312,19 +324,19 @@ assert.strictEqual(state.activeRole, 'teacher');
 assert.strictEqual(canStartBusinessRuntime({ gateState: { kind: 'locked' } }), false);
 ```
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `node src/services/desktopIdentityClient.test.js && node src/components/DesktopIdentityGate.test.js && node src/services/desktopAuthorizationSession.test.js && node src/services/oneClickSyncHostBackground.test.js`
 
 Expected: FAIL，因为 App 当前挂载后立即加载数据库并启动主机轮询。
 
-- [ ] **Step 3: 实现身份门并延迟全部业务副作用**
+- [x] **Step 3: 实现身份门并延迟全部业务副作用**
 
 `index.tsx` 先挂载 gate，只有 `online-unlocked` 或有效 `offline-unlocked` 才渲染业务 App。把 db import、window.dbService、host loop 和同步 transport 初始化移动到 gate 后。二维码 URL 来自 Backend challenge；密码只传受限 IPC。角色切换先清空旧角色内存缓存、请求新短会话，再加载以 `{userId,activeRole,subjectId}` 分区的本地缓存。
 
-- [ ] **Step 4: 运行 GREEN、TypeScript 和生产构建**
+- [x] **Step 4: 运行 GREEN、TypeScript 和生产构建**
 
-Run: `node src/services/desktopIdentityClient.test.js && node src/components/DesktopIdentityGate.test.js && node src/services/desktopAuthorizationSession.test.js && node src/services/oneClickSyncHostBackground.test.js && npm run typecheck && npm run build`
+Run: `node src/services/desktopIdentityClient.test.js && node src/components/DesktopIdentityGate.test.js && node src/services/desktopAuthorizationSession.test.js && node src/services/oneClickSyncHostBackground.test.js && npm run typecheck && npx craco build`
 
 Expected: PASS；locked HTML/runtime 证据中无业务数据库读取和主机 heartbeat。
 

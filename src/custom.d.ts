@@ -20,6 +20,28 @@ declare module './services/desktopAuthorizationSession.mjs' {
   export const hydrateDesktopAuthorizationSession: any;
 }
 declare module './services/pairingApiBase.mjs' { export const resolvePairingApiBase: any; }
+declare module './services/desktopIdentityPartition.mjs' {
+  export const partitionedStorageKey: any;
+  export const migrateLegacyStorageValue: any;
+  export const readCurrentDesktopIdentityContext: any;
+  export const readCurrentDesktopIdentityPartition: any;
+  export const setCurrentDesktopIdentityContext: any;
+  export const setCurrentDesktopIdentityPartition: any;
+  export const clearCurrentDesktopIdentityPartition: any;
+}
+declare module './services/desktopIdentityClient.mjs' {
+  export const OFFLINE_LEASE_MAX_MS: number;
+  export const canStartBusinessRuntime: any;
+  export const createDesktopIdentityClient: any;
+  export const isDesktopIdentityNetworkFailure: any;
+  export const partitionKeyForIdentity: any;
+  export const preferredActiveRole: any;
+  export const registrationViewForChallenge: any;
+  export const resolveDesktopGateState: any;
+}
+declare module './services/desktopCacheProjection.mjs' {
+  export const projectDesktopCacheForIdentity: any;
+}
 declare module './services/managedSyncConfig.mjs' {
   export const DEFAULT_MANAGED_CLOUD_BASE_URL: string;
   export const resolveManagedSyncConfig: any;
@@ -43,6 +65,7 @@ interface Window {
     }): Promise<any>;
     unlock(input: { password: string }): Promise<any>;
     lock(): Promise<any>;
+    refreshOfflineLease(input: Record<string, any>): Promise<any>;
     signChallenge(input: Record<string, any>): Promise<any>;
   };
 }

@@ -11,8 +11,10 @@ const {
   desktopRoleElevationSigningPayload,
 } = require('../backend/src/services/desktopSessionService');
 const {
+  desktopDeviceSessionSigningPayload,
+} = require('../backend/src/services/desktopDeviceChallengeService');
+const {
   createDesktopIdentityVault,
-  desktopSessionNonceSigningPayload,
 } = require('./desktopIdentityVault');
 const packageJson = require('../package.json');
 
@@ -64,6 +66,13 @@ function approvedProfile() {
 function offlineLease() {
   return {
     id: 'lease-device-2',
+    userId: 'canonical-human',
+    deviceId: 'device-2',
+    authorizationId: 'authorization-device-2',
+    credentialVersion: 1,
+    eligibleRoles: ['super_admin', 'teacher'],
+    teacherId: 'teacher-self',
+    studentId: null,
     issuedAt: '2026-07-17T10:00:00.000Z',
     expiresAt: '2026-07-20T10:00:00.000Z',
     activeRole: 'teacher',
@@ -214,20 +223,50 @@ async function main() {
 
   const sessionSignature = vault.signChallenge({
     purpose: 'session',
+    challengeId: 'daily-session-challenge-1',
     authorizationId: authorization.id,
+    credentialVersion: authorization.credentialVersion,
     nonce: 'daily-session-server-nonce',
     nonceIssuedAt: '2026-07-17T09:59:30.000Z',
   });
   assert.ok(verifySignature(
     publicIdentity.publicKey,
-    desktopSessionNonceSigningPayload({
+    desktopDeviceSessionSigningPayload({
+      challengeId: 'daily-session-challenge-1',
       authorizationId: authorization.id,
       deviceId: publicIdentity.deviceId,
+      credentialVersion: authorization.credentialVersion,
       nonce: 'daily-session-server-nonce',
       nonceIssuedAt: '2026-07-17T09:59:30.000Z',
     }),
     sessionSignature.signature
   ));
+  await assert.rejects(
+    vault.refreshOfflineLease({
+      password: 'wrong-password',
+      offlineLease: { ...offlineLease(), id: 'lease-refresh-wrong-password' },
+    }),
+    error => error.code === 'DESKTOP_IDENTITY_OFFLINE_LEASE_REFRESH_FAILED'
+  );
+  const refreshed = await vault.refreshOfflineLease({
+    password: 'local-password-1',
+    offlineLease: {
+      ...offlineLease(),
+      id: 'lease-device-2-refreshed',
+      expiresAt: '2026-07-20T09:00:00.000Z',
+    },
+  });
+  assert.strictEqual(refreshed.offlineLease.id, 'lease-device-2-refreshed');
+  await assert.rejects(
+    vault.refreshOfflineLease({
+      password: 'local-password-1',
+      offlineLease: {
+        ...offlineLease(),
+        expiresAt: '2026-07-20T10:00:00.001Z',
+      },
+    }),
+    error => error.code === 'DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID'
+  );
 
   const elevation = vault.signChallenge({
     purpose: 'role-elevation',
@@ -379,7 +418,7 @@ async function main() {
   }, { filename: 'preload.js' });
   assert.deepStrictEqual(
     Array.from(Object.keys(exposed.desktopIdentity)).sort(),
-    ['beginRegistration', 'completeRegistration', 'lock', 'signChallenge', 'status', 'unlock']
+    ['beginRegistration', 'completeRegistration', 'lock', 'refreshOfflineLease', 'signChallenge', 'status', 'unlock']
   );
   assert.ok(!('read' in exposed.desktopIdentity));
   assert.ok(!('write' in exposed.desktopIdentity));
@@ -395,6 +434,7 @@ async function main() {
     'desktop-identity:complete-registration',
     'desktop-identity:unlock',
     'desktop-identity:lock',
+    'desktop-identity:refresh-offline-lease',
     'desktop-identity:sign-challenge',
   ]) {
     assert.ok(electronSource.includes(`ipcMain.handle('${channel}'`), `electron main process must register ${channel}`);

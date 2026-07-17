@@ -502,6 +502,29 @@ CREATE INDEX IF NOT EXISTS idx_desktop_identity_claimant_status
 CREATE INDEX IF NOT EXISTS idx_desktop_device_authorizations_user_status
   ON desktop_device_authorizations(user_id, status, updated_at);
 
+CREATE TABLE IF NOT EXISTS desktop_device_session_challenges (
+  id TEXT PRIMARY KEY,
+  authorization_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  credential_version INTEGER NOT NULL CHECK (credential_version >= 1),
+  nonce_hash TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'consumed', 'expired', 'cancelled')),
+  nonce_issued_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  issued_session_id TEXT,
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  consumed_at TEXT,
+  FOREIGN KEY (authorization_id) REFERENCES desktop_device_authorizations(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_desktop_device_session_challenges_device_status
+  ON desktop_device_session_challenges(device_id, status, expires_at);
+
 CREATE TABLE IF NOT EXISTS desktop_sessions (
   sid TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,

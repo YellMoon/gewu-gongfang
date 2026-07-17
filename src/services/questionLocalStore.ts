@@ -1,9 +1,9 @@
 import type { KnowledgeNode, Question } from '../types';
 const { canRemoveQuestionLocalRecord } = require('./questionLocalDeletionPolicy');
 import { applyTrustedQuestionProvenance } from './questionProvenance.mjs';
+import { partitionedStorageKey } from './desktopIdentityPartition.mjs';
 const { normalizeDesktopAuthorizationSession } = require('./desktopQuestionDeleteContext');
 
-const DB_NAME = 'question_local_store_v1';
 const DB_VERSION = 1;
 const META_STORE = 'question_meta';
 const CONTENT_STORE = 'question_content';
@@ -70,15 +70,27 @@ export type QuestionPageQuery = {
 };
 
 let dbPromise: Promise<IDBDatabase> | null = null;
+let activeDbName: string | null = null;
 let seedPromise: Promise<void> | null = null;
 const fallbackMeta = new Map<string, QuestionMeta>();
 const fallbackContent = new Map<string, Question>();
 const fallbackTrees: Record<TreeKind, KnowledgeNode[]> = { knowledge: [], model: [] };
 
 function openDb(): Promise<IDBDatabase> {
+  const dbName = partitionedStorageKey('question_local_store_v1');
+  if (activeDbName !== dbName) {
+    if (dbPromise) dbPromise.then(db => db.close()).catch(() => undefined);
+    dbPromise = null;
+    seedPromise = null;
+    fallbackMeta.clear();
+    fallbackContent.clear();
+    fallbackTrees.knowledge = [];
+    fallbackTrees.model = [];
+    activeDbName = dbName;
+  }
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = indexedDB.open(dbName, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(META_STORE)) {

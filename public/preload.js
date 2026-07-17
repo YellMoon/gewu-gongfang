@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('desktopIdentity', Object.freeze({
   completeRegistration: input => ipcRenderer.invoke('desktop-identity:complete-registration', input),
   unlock: input => ipcRenderer.invoke('desktop-identity:unlock', input),
   lock: () => ipcRenderer.invoke('desktop-identity:lock'),
+  refreshOfflineLease: input => ipcRenderer.invoke('desktop-identity:refresh-offline-lease', input),
   signChallenge: input => ipcRenderer.invoke('desktop-identity:sign-challenge', input),
 }));
 

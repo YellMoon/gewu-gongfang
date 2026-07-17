@@ -8,7 +8,6 @@ import {
 } from '../types';
 import type { SyncAction, SyncTable } from './syncEngine';
 import { applyTrustedQuestionProvenance } from './questionProvenance.mjs';
-const { normalizeDesktopAuthorizationSession } = require('./desktopQuestionDeleteContext');
 import { calculateGrade, calculateFees, calculateDurationHours, groupByMonth, calculatePercentage } from '../utils/helpers';
 import { getColorForRoom } from '../utils/courseColors';
 import {
@@ -21,6 +20,15 @@ import {
 import { normalizeQuestionType } from '../constants/questionTypes';
 import { cacheQuestionTrees, clearQuestionLocalStore, removeQuestionLocalRecord, upsertQuestionLocalRecord } from './questionLocalStore';
 import { applyQuestionSyncRecords, buildBrowserQuestionSearchText, mergeBrowserQuestionUpdate, normalizeBrowserQuestionRecord } from './questionRichContent';
+import { projectDesktopCacheForIdentity } from './desktopCacheProjection.mjs';
+import { readDesktopAuthorizationSession } from './desktopAuthorizationSession.mjs';
+import {
+  partitionedStorageKey,
+  migrateLegacyStorageValue,
+  readCurrentDesktopIdentityContext,
+  readCurrentDesktopIdentityPartition,
+  setCurrentDesktopIdentityPartition,
+} from './desktopIdentityPartition.mjs';
 
 interface Database {
   students: Student[];
@@ -68,10 +76,8 @@ const QUESTION_VERSION_LIMIT = 20;
 const BUSINESS_DATA_SAFETY_BACKUP_KEY = 'business_data_safety_backups_v1';
 const BUSINESS_DATA_SAFETY_BACKUP_LIMIT = 20;
 
-class BrowserDatabaseService {
-  private storageKey = 'scheduling_system_db_v3';
-  private questionSearchIndex = new Map<string, string>();
-  private data: Database = {
+function emptyDatabase(): Database {
+  return {
     students: [],
     grades: [],
     courses: [],
@@ -93,15 +99,54 @@ class BrowserDatabaseService {
     institutions: [],
     schools: [],
     rooms: [],
-    teachers: []
+    teachers: [],
   };
+}
+
+class BrowserDatabaseService {
+  private partitionKey = readCurrentDesktopIdentityPartition();
+  private storageKey = partitionedStorageKey('scheduling_system_db_v3');
+  private questionSearchIndex = new Map<string, string>();
+  private data: Database = emptyDatabase();
 
   constructor() {
     this.loadData();
   }
 
+  private identityStorageKey(baseKey: string): string {
+    return partitionedStorageKey(baseKey);
+  }
+
+  public prepareIdentityPartitionChange(): void {
+    this.data = emptyDatabase();
+    this.questionSearchIndex.clear();
+  }
+
+  public switchIdentityPartition(partitionKey: string): void {
+    setCurrentDesktopIdentityPartition(partitionKey);
+    this.partitionKey = readCurrentDesktopIdentityPartition();
+    this.storageKey = partitionedStorageKey('scheduling_system_db_v3');
+    this.prepareIdentityPartitionChange();
+    this.loadData();
+  }
+
   private loadData(): void {
-    const stored = localStorage.getItem(this.storageKey);
+    let stored = localStorage.getItem(this.storageKey);
+    if (!stored) {
+      const legacy = localStorage.getItem('scheduling_system_db_v3');
+      if (legacy) {
+        try {
+          const projected = projectDesktopCacheForIdentity(
+            JSON.parse(legacy),
+            readCurrentDesktopIdentityContext()
+          );
+          stored = JSON.stringify(projected);
+          localStorage.setItem(this.storageKey, stored);
+        } catch (error) {
+          console.warn('[browserDatabase] legacy identity partition projection skipped:', error);
+        }
+      }
+    }
     let loadedData: any = null;
     if (stored) {
       loadedData = JSON.parse(stored);
@@ -263,12 +308,16 @@ class BrowserDatabaseService {
 
   private getSyncDeviceId(): string {
     try {
-      const key = 'sync_engine_sync_device_id';
-      const existing = localStorage.getItem(key);
+      const key = this.identityStorageKey('sync_engine_sync_device_id');
+      const existing = migrateLegacyStorageValue(
+        localStorage,
+        'sync_engine_sync_device_id',
+        { allowRoles: 'all' as any }
+      );
       if (existing) return JSON.parse(existing);
       const id = `desktop_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 11)}`;
       localStorage.setItem(key, JSON.stringify(id));
-      localStorage.setItem('sync_engine_sync_client_id', JSON.stringify(id));
+      localStorage.setItem(this.identityStorageKey('sync_engine_sync_client_id'), JSON.stringify(id));
       return id;
     } catch {
       return 'desktop';
@@ -277,17 +326,24 @@ class BrowserDatabaseService {
 
   private getAuthorizationUserId(): string {
     try {
-      const session = normalizeDesktopAuthorizationSession(JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null'));
+      const session = readDesktopAuthorizationSession();
       return session.authContext.userId;
-    } catch { return ''; }
+    } catch {
+      try { return readCurrentDesktopIdentityContext().userId; } catch { return ''; }
+    }
   }
 
   private recordSyncChange(table: SyncTable, action: SyncAction, recordId: string, payload: Record<string, any> = {}, baseVersion: string | null = null): void {
     try {
-      const key = 'sync_engine_sync_pending_changes';
-      const legacyKey = 'sync_engine_sync_pending_ops';
+      const key = this.identityStorageKey('sync_engine_sync_pending_changes');
+      const legacyKey = this.identityStorageKey('sync_engine_sync_pending_ops');
       const now = new Date().toISOString();
-      const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      const existingRaw = migrateLegacyStorageValue(
+        localStorage,
+        'sync_engine_sync_pending_changes',
+        { allowRoles: ['super_admin', 'admin'] }
+      );
+      const existing = JSON.parse(existingRaw || '[]');
       const sourceOperationId = `chg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
       const sourceDeviceId = this.getSyncDeviceId();
       const change = {
@@ -373,7 +429,13 @@ class BrowserDatabaseService {
 
   private createBusinessDataSafetyBackup(reason: string): void {
     try {
-      const existing = JSON.parse(localStorage.getItem(BUSINESS_DATA_SAFETY_BACKUP_KEY) || '[]');
+      const backupKey = this.identityStorageKey(BUSINESS_DATA_SAFETY_BACKUP_KEY);
+      const existingRaw = migrateLegacyStorageValue(
+        localStorage,
+        BUSINESS_DATA_SAFETY_BACKUP_KEY,
+        { allowRoles: ['super_admin', 'admin'] }
+      );
+      const existing = JSON.parse(existingRaw || '[]');
       const backups = Array.isArray(existing) ? existing : [];
       const next = [{
         id: `business_backup_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
@@ -381,7 +443,7 @@ class BrowserDatabaseService {
         created_at: new Date().toISOString(),
         data: this.businessDataSnapshot(),
       }, ...backups].slice(0, BUSINESS_DATA_SAFETY_BACKUP_LIMIT);
-      localStorage.setItem(BUSINESS_DATA_SAFETY_BACKUP_KEY, JSON.stringify(next));
+      localStorage.setItem(backupKey, JSON.stringify(next));
     } catch (error) {
       console.warn('[browserDatabase] create business data safety backup failed:', error);
     }
@@ -1855,8 +1917,11 @@ class BrowserDatabaseService {
     if (nativeVerified !== true) return false;
     let userId = '';
     try {
-      const session = normalizeDesktopAuthorizationSession(JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null'));
-      userId = session.authContext.userId;
+      try {
+        userId = readDesktopAuthorizationSession().authContext.userId;
+      } catch {
+        userId = readCurrentDesktopIdentityContext().userId;
+      }
     } catch (_error) {}
     if (this.data.questions[idx].sourceDeviceId !== this.getSyncDeviceId()
       || !userId || this.data.questions[idx].ownerUserId !== userId) return false;

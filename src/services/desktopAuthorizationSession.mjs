@@ -1,68 +1,89 @@
 const SESSION_KEY = 'gewu_desktop_authorization_session';
 const PENDING_KEY = 'gewu_desktop_pairing_pending';
-let cachedCredential = null;
+
+// Online desktop sessions are intentionally process-memory only. The long-lived
+// device credential and offline lease live in the Electron vault instead.
+let cachedSession = null;
 
 function authError(code = 'AUTHORIZATION_CONTEXT_REQUIRED') {
-  const error = new Error(code); error.code = code; return error;
+  const error = new Error(code);
+  error.code = code;
+  return error;
 }
-function sessionFrom(value) {
-  const token = value?.token || value?.accessToken;
-  const userId = value?.user?.id || value?.userId;
-  const deviceId = value?.deviceId;
-  if (!token || !userId || !deviceId) throw authError();
-  return { authorization: `Bearer ${token}`, authContext: { userId, deviceId }, user: value.user || { id: userId } };
-}
-function apiOf(deps = {}) { return deps.api || globalThis.window?.api; }
 
-export function readDesktopAuthorizationSession(storage = globalThis.sessionStorage) {
-  if (cachedCredential) return sessionFrom(cachedCredential);
-  let value;
-  try { value = JSON.parse(storage?.getItem?.(SESSION_KEY) || 'null'); } catch (_error) { throw authError(); }
-  return sessionFrom(value);
+function normalizeSession(value) {
+  const token = value?.token || value?.accessToken;
+  const session = value?.session || {};
+  const profile = value?.profile || {};
+  const user = profile?.user || value?.user || {};
+  const userId = session.userId || profile.userId || user.id || value?.userId;
+  const deviceId = session.deviceId || profile.deviceId || value?.deviceId;
+  const activeRole = session.activeRole || profile.activeRole || value?.activeRole;
+  const eligibleRoles = session.eligibleRoles || profile.eligibleRoles || value?.eligibleRoles || [];
+
+  if (!token || !userId || !deviceId || !activeRole) throw authError();
+
+  return {
+    authorization: `Bearer ${token}`,
+    authContext: {
+      userId,
+      deviceId,
+      activeRole,
+      eligibleRoles: [...eligibleRoles],
+      teacherId: profile.teacherId ?? value?.teacherId ?? null,
+      studentId: profile.studentId ?? value?.studentId ?? null,
+      sessionId: session.id || value?.sessionId || null,
+      rowVersion: session.rowVersion ?? value?.rowVersion ?? null,
+    },
+    expiresAt: value.expiresAt || session.expiresAt || null,
+    session: { ...session },
+    profile: { ...profile },
+    user: user.id ? { ...user } : { id: userId },
+  };
 }
-export async function hydrateDesktopAuthorizationSession(deps = {}) {
-  const api = apiOf(deps);
-  const storage = deps.storage || globalThis.sessionStorage;
-  if (api?.invoke) {
-    const persisted = await api.invoke('desktop-auth:get');
-    if (persisted) { cachedCredential = persisted; storage?.removeItem?.(SESSION_KEY); return sessionFrom(persisted); }
-  }
-  let legacy = null;
-  try { legacy = JSON.parse(storage?.getItem?.(SESSION_KEY) || 'null'); } catch (_error) { legacy = null; }
-  if (legacy && api?.invoke) {
-    await api.invoke('desktop-auth:set', legacy);
-    storage.removeItem(SESSION_KEY);
-    cachedCredential = legacy;
-    return sessionFrom(legacy);
-  }
-  if (legacy) { cachedCredential = legacy; return sessionFrom(legacy); }
-  throw authError();
+
+function removeLegacyStorage(storage) {
+  storage?.removeItem?.(SESSION_KEY);
+  storage?.removeItem?.(PENDING_KEY);
 }
+
 export const desktopAuthorizationSessionKey = SESSION_KEY;
-export async function saveDesktopAuthorizationSession(value, deps = {}) {
-  sessionFrom(value);
-  const api = apiOf(deps);
-  if (api?.invoke) await api.invoke('desktop-auth:set', value);
-  else (deps.storage || globalThis.sessionStorage)?.setItem?.(SESSION_KEY, JSON.stringify(value));
-  cachedCredential = value;
-  return sessionFrom(value);
+
+export function readDesktopAuthorizationSession(_storage = globalThis.sessionStorage) {
+  if (!cachedSession) throw authError();
+  return normalizeSession(cachedSession);
 }
-export async function clearDesktopAuthorizationSession(deps = {}) {
-  cachedCredential = null;
+
+export async function hydrateDesktopAuthorizationSession(deps = {}) {
   const storage = deps.storage || globalThis.sessionStorage;
-  storage?.removeItem?.(SESSION_KEY); storage?.removeItem?.(PENDING_KEY);
-  const api = apiOf(deps); if (api?.invoke) await api.invoke('desktop-auth:clear');
+  let legacy = null;
+  try {
+    legacy = storage?.getItem?.(SESSION_KEY) || null;
+  } catch (_error) {
+    legacy = null;
+  }
+  if (legacy) {
+    removeLegacyStorage(storage);
+    cachedSession = null;
+    throw authError('DESKTOP_IDENTITY_UPGRADE_REQUIRED');
+  }
+  if (!cachedSession) throw authError();
+  return normalizeSession(cachedSession);
 }
-function randomSecret(){const bytes=new Uint8Array(32);globalThis.crypto.getRandomValues(bytes);return Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');}
-export async function startPairing({baseUrl,deviceId,deviceName},deps={}){
-  const fetchImpl=deps.fetchImpl||fetch,storage=deps.storage||globalThis.sessionStorage,secret=randomSecret();
-  const res=await fetchImpl(`${String(baseUrl).replace(/\/$/,'')}/api/desktop-pairing/start`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId,deviceName,secret})});
-  const data=await res.json();if(!res.ok||!data.success)throw Object.assign(new Error(data.code||'PAIRING_START_FAILED'),{code:data.code});
-  const pending={...data.pairing,secret,baseUrl,deviceId};storage.setItem(PENDING_KEY,JSON.stringify(pending));return pending;
+
+export async function saveDesktopAuthorizationSession(value, _deps = {}) {
+  normalizeSession(value);
+  cachedSession = structuredClone(value);
+  return normalizeSession(cachedSession);
 }
-export async function pollOrExchange(deps={}){
-  const fetchImpl=deps.fetchImpl||fetch,storage=deps.storage||globalThis.sessionStorage,pending=JSON.parse(storage.getItem(PENDING_KEY)||'null');if(!pending)throw authError();
-  const res=await fetchImpl(`${String(pending.baseUrl).replace(/\/$/,'')}/api/desktop-pairing/exchange`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:pending.id,secret:pending.secret})});
-  const data=await res.json();if(!res.ok||!data.success)throw Object.assign(new Error(data.code||'PAIRING_NOT_APPROVED'),{code:data.code});
-  await saveDesktopAuthorizationSession({token:data.token,userId:data.userId,deviceId:data.deviceId,user:data.user},{storage,api:apiOf(deps)});storage.removeItem(PENDING_KEY);return data;
+
+export async function clearDesktopAuthorizationSession(deps = {}) {
+  cachedSession = null;
+  removeLegacyStorage(deps.storage || globalThis.sessionStorage);
+  if (deps.lockVault) await deps.desktopIdentity?.lock?.();
 }
+
+// Keep named exports during the migration so old bundles fail closed if a stale
+// settings page tries to call the removed V1 pairing flow.
+export const startPairing = undefined;
+export const pollOrExchange = undefined;

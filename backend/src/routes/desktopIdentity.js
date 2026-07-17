@@ -3,6 +3,11 @@ const { getInstance } = require('../database');
 const { JWT_SECRET } = require('../middleware/auth');
 const { createDesktopIdentityService } = require('../services/desktopIdentityService');
 const { createDesktopSessionService } = require('../services/desktopSessionService');
+const {
+  createDesktopDeviceChallengeService,
+  createDesktopOfflineLease,
+  createDesktopSessionProfile,
+} = require('../services/desktopDeviceChallengeService');
 const { createMiniappIdentityService } = require('../services/miniappIdentityService');
 const {
   resolveWechatIdentity: defaultResolveWechatIdentity,
@@ -20,6 +25,8 @@ const ROLE_SWITCH_KEYS = new Set([
   'elevationIssuedAt',
   'elevationSignature',
 ]);
+const SESSION_CHALLENGE_START_KEYS = new Set(['authorizationId', 'deviceId']);
+const SESSION_CHALLENGE_EXCHANGE_KEYS = new Set(['signature', 'expectedRowVersion']);
 
 function routeError(code) {
   const error = new Error(code);
@@ -46,6 +53,14 @@ function bearerToken(req) {
 
 function statusForError(error, authenticationPhase = false) {
   const code = String(error?.code || 'DESKTOP_IDENTITY_FAILED');
+  if (code === 'DESKTOP_SESSION_CHALLENGE_NOT_FOUND') return 404;
+  if (code === 'DESKTOP_SESSION_CHALLENGE_REPLAYED'
+    || code === 'DESKTOP_SESSION_CHALLENGE_EXPIRED'
+    || code === 'DESKTOP_SESSION_CHALLENGE_STALE'
+    || code === 'DESKTOP_SESSION_CHALLENGE_STATE_INVALID'
+    || code === 'DESKTOP_SESSION_CHALLENGE_CREDENTIAL_CHANGED') return 409;
+  if (code === 'DESKTOP_SESSION_CHALLENGE_SIGNATURE_REQUIRED'
+    || code === 'DESKTOP_SESSION_CHALLENGE_SIGNATURE_INVALID') return 401;
   if (authenticationPhase || code === 'DESKTOP_SESSION_REQUIRED'
     || code.startsWith('DESKTOP_SESSION_')) return 401;
   if (code === 'DESKTOP_IDENTITY_INPUT_FORBIDDEN'
@@ -54,6 +69,8 @@ function statusForError(error, authenticationPhase = false) {
   if (code.includes('FORBIDDEN')
     || code.includes('ROLE_REQUIRED')
     || code.includes('RECENT_')
+    || code === 'DESKTOP_PHONE_REVERIFICATION_REQUIRED'
+    || code === 'DESKTOP_DEVICE_AUTHORIZATION_MISMATCH'
     || code.startsWith('DESKTOP_ROLE_ELEVATION_')
     || code === 'ACTIVE_ROLE_NOT_GRANTED'
     || code === 'DESKTOP_IDENTITY_NOT_ELIGIBLE') return 403;
@@ -78,6 +95,7 @@ function createDesktopIdentityRouter({
   now,
   identityService,
   sessionService,
+  deviceChallengeService,
   miniappIdentityService,
   authenticateDesktop,
   resolveWechatIdentity = defaultResolveWechatIdentity,
@@ -86,6 +104,7 @@ function createDesktopIdentityRouter({
   const database = db || getInstance().db;
   let identities = identityService || null;
   let sessions = sessionService || null;
+  let deviceChallenges = deviceChallengeService || null;
   let miniappIdentities = miniappIdentityService || null;
   function identity() {
     if (!identities) identities = createDesktopIdentityService({ db: database, now });
@@ -94,6 +113,16 @@ function createDesktopIdentityRouter({
   function session() {
     if (!sessions) sessions = createDesktopSessionService({ db: database, jwtSecret, now });
     return sessions;
+  }
+  function dailyChallenge() {
+    if (!deviceChallenges) {
+      deviceChallenges = createDesktopDeviceChallengeService({
+        db: database,
+        sessionService: session(),
+        now,
+      });
+    }
+    return deviceChallenges;
   }
   function miniappIdentity() {
     if (!miniappIdentities) {
@@ -211,6 +240,17 @@ function createDesktopIdentityRouter({
         userId: exchanged.authorization.userId,
         deviceId: exchanged.authorization.deviceId,
       });
+      const offlineLease = createDesktopOfflineLease({
+        authorization: exchanged.authorization,
+        session: issued.session,
+        issuedAt: typeof now === 'function' ? now() : new Date(),
+      });
+      const profile = createDesktopSessionProfile({
+        session: issued.session,
+        user: database.prepare('SELECT id, name FROM users WHERE id=?').get(
+          exchanged.authorization.userId
+        ),
+      });
       return res.json({
         success: true,
         data: {
@@ -218,6 +258,8 @@ function createDesktopIdentityRouter({
           challenge: exchanged.challenge,
           session: issued.session,
           token: issued.token,
+          offlineLease,
+          profile,
         },
       });
     } catch (error) {
@@ -229,6 +271,38 @@ function createDesktopIdentityRouter({
     const items = identity().listDevicesForUser(context.userId);
     return res.json({ success: true, data: { items } });
   }));
+
+  router.post('/session/challenges/start', function (req, res) {
+    try {
+      assertBodyKeys(req.body, SESSION_CHALLENGE_START_KEYS);
+      const challenge = dailyChallenge().startChallenge(req.body);
+      return res.json({ success: true, data: { challenge } });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  router.post('/session/challenges/:id/exchange', function (req, res) {
+    try {
+      assertBodyKeys(req.body, SESSION_CHALLENGE_EXCHANGE_KEYS);
+      const issued = dailyChallenge().exchangeChallenge({
+        challengeId: req.params.id,
+        signature: req.body.signature,
+        expectedRowVersion: req.body.expectedRowVersion,
+      });
+      return res.json({
+        success: true,
+        data: {
+          session: issued.session,
+          token: issued.token,
+          offlineLease: issued.offlineLease,
+          profile: issued.profile,
+        },
+      });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
 
   router.post('/session/role', authenticated(function (req, res, context) {
     assertBodyKeys(req.body, ROLE_SWITCH_KEYS);

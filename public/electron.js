@@ -317,6 +317,9 @@ ipcMain.handle('desktop-identity:unlock', async (_event, input) => {
   return getDesktopIdentityVault().unlock(input);
 });
 ipcMain.handle('desktop-identity:lock', async () => getDesktopIdentityVault().lock());
+ipcMain.handle('desktop-identity:refresh-offline-lease', async (_event, input) => {
+  return getDesktopIdentityVault().refreshOfflineLease(input);
+});
 ipcMain.handle('desktop-identity:sign-challenge', async (_event, input) => {
   return getDesktopIdentityVault().signChallenge(input);
 });

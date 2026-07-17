@@ -4,6 +4,7 @@ import {
   operationToChange,
   type SyncOperation as QueuedSyncOperation,
 } from './mutationQueue';
+import { migrateLegacyStorageValue, partitionedStorageKey } from './desktopIdentityPartition.mjs';
 
 export type SyncTable =
   | 'students' | 'courses' | 'schedules' | 'payments' | 'consumptions'
@@ -313,11 +314,17 @@ export interface SyncStorage {
 }
 
 class DefaultSyncStorage implements SyncStorage {
-  private prefix = 'sync_engine_';
+  private key(key: string): string {
+    return partitionedStorageKey('sync_engine_' + key);
+  }
 
   get<T>(key: string): T | null {
     try {
-      const val = localStorage.getItem(this.prefix + key);
+      const val = migrateLegacyStorageValue(localStorage, 'sync_engine_' + key, {
+        allowRoles: ['sync_device_id', 'sync_client_id'].includes(key)
+          ? 'all' as any
+          : ['super_admin', 'admin'],
+      });
       return val ? JSON.parse(val) : null;
     } catch {
       return null;
@@ -326,7 +333,7 @@ class DefaultSyncStorage implements SyncStorage {
 
   set<T>(key: string, value: T): void {
     try {
-      localStorage.setItem(this.prefix + key, JSON.stringify(value));
+      localStorage.setItem(this.key(key), JSON.stringify(value));
     } catch (e) {
       console.error('[SyncEngine/Storage] write failed:', key, e);
     }
@@ -334,7 +341,7 @@ class DefaultSyncStorage implements SyncStorage {
 
   remove(key: string): void {
     try {
-      localStorage.removeItem(this.prefix + key);
+      localStorage.removeItem(this.key(key));
     } catch {
       // ignore
     }

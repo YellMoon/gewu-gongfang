@@ -6,8 +6,10 @@ assert.ok(!source.includes('pairingPhone') && !source.includes("phone: pairing")
 assert.ok(!source.includes('message="\\u') && !source.includes('description="\\u'), 'escaped CJK copy must be evaluated instead of rendered literally');
 assert.ok((source.match(/sessionResolver: \(\) => readDesktopAuthorizationSession\(\)/g) || []).length >= 3,
   'discovered LAN, manual LAN, and cloud transports must resolve the current desktop session');
-assert.ok(source.includes('handleStartPairing') && source.includes('handleRefreshPairing') && source.includes('pollOrExchange'),
-  'SyncSettings must expose the minimal pairing writer and manual refresh flow');
+assert.ok(!source.includes('startPairing') && !source.includes('pollOrExchange'),
+  'SyncSettings must not expose the removed V1 pairing flow after the startup identity gate');
+assert.ok(source.includes('桌面启动身份门统一完成'),
+  'SyncSettings must direct identity management to the startup identity gate');
 const reviewPanel=fs.readFileSync('src/components/PairingReviewPanel.tsx','utf8');
 const permissionManager=fs.readFileSync('src/pages/PermissionManager.tsx','utf8');
 const miniappUsers=fs.readFileSync('miniapp/src/pages/admin/users/index.tsx','utf8');

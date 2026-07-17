@@ -10,6 +10,9 @@ const {
   desktopExchangeSigningPayload,
 } = require('../services/desktopIdentityService');
 const { createDesktopSessionService } = require('../services/desktopSessionService');
+const {
+  desktopDeviceSessionSigningPayload,
+} = require('../services/desktopDeviceChallengeService');
 const { createMiniappIdentityService } = require('../services/miniappIdentityService');
 const { createDesktopIdentityRouter } = require('./desktopIdentity');
 
@@ -204,6 +207,16 @@ function generateDeviceKey() {
       assert.strictEqual(response.status, 200);
       assert.strictEqual(response.body.data.authorization.status, 'active');
       assert.ok(response.body.data.token);
+      assert.strictEqual(response.body.data.offlineLease.authorizationId, response.body.data.authorization.id);
+      assert.strictEqual(response.body.data.offlineLease.deviceId, challenge.deviceId);
+      assert.strictEqual(response.body.data.profile.userId, response.body.data.authorization.userId);
+      assert.strictEqual(response.body.data.profile.activeRole, 'teacher');
+      assert.deepStrictEqual(response.body.data.profile.eligibleRoles, ['super_admin', 'teacher']);
+      assert.ok(
+        Date.parse(response.body.data.offlineLease.expiresAt)
+          - Date.parse(response.body.data.offlineLease.issuedAt)
+          <= 72 * 60 * 60 * 1000
+      );
       return response.body.data;
     }
 
@@ -373,6 +386,87 @@ function generateDeviceKey() {
     const thirdExchange = await exchangeDevice(thirdApproved, thirdKey, thirdStarted.challengeSecret);
     assert.strictEqual(sessionService.verifySessionToken(thirdExchange.token).deviceId, 'device-http-third');
 
+    const injectedDailyStart = await requestJson(
+      baseUrl,
+      'POST',
+      '/api/desktop-identity/session/challenges/start',
+      {
+        body: {
+          authorizationId: thirdExchange.authorization.id,
+          deviceId: 'device-http-third',
+          userId: canonicalId,
+        },
+      }
+    );
+    assert.strictEqual(injectedDailyStart.status, 400);
+    assert.strictEqual(injectedDailyStart.body.code, 'DESKTOP_IDENTITY_INPUT_FORBIDDEN');
+
+    const dailyStarted = await requestJson(
+      baseUrl,
+      'POST',
+      '/api/desktop-identity/session/challenges/start',
+      {
+        body: {
+          authorizationId: thirdExchange.authorization.id,
+          deviceId: 'device-http-third',
+        },
+      }
+    );
+    assert.strictEqual(dailyStarted.status, 200);
+    assert.strictEqual(dailyStarted.body.data.challenge.status, 'pending');
+    const dailyChallenge = dailyStarted.body.data.challenge;
+    const dailyPayload = desktopDeviceSessionSigningPayload(dailyChallenge);
+    const dailySignature = crypto.sign(
+      null,
+      Buffer.from(dailyPayload, 'utf8'),
+      thirdKey.privateKey
+    ).toString('base64');
+    const injectedDailyExchange = await requestJson(
+      baseUrl,
+      'POST',
+      `/api/desktop-identity/session/challenges/${dailyChallenge.id}/exchange`,
+      {
+        body: {
+          signature: dailySignature,
+          expectedRowVersion: dailyChallenge.rowVersion,
+          authorizationId: thirdExchange.authorization.id,
+        },
+      }
+    );
+    assert.strictEqual(injectedDailyExchange.status, 400);
+    assert.strictEqual(injectedDailyExchange.body.code, 'DESKTOP_IDENTITY_INPUT_FORBIDDEN');
+    const dailyExchange = await requestJson(
+      baseUrl,
+      'POST',
+      `/api/desktop-identity/session/challenges/${dailyChallenge.id}/exchange`,
+      {
+        body: {
+          signature: dailySignature,
+          expectedRowVersion: dailyChallenge.rowVersion,
+        },
+      }
+    );
+    assert.strictEqual(dailyExchange.status, 200);
+    assert.strictEqual(dailyExchange.body.data.session.activeRole, 'teacher');
+    assert.strictEqual(dailyExchange.body.data.offlineLease.deviceId, 'device-http-third');
+    assert.strictEqual(
+      sessionService.verifySessionToken(dailyExchange.body.data.token).deviceId,
+      'device-http-third'
+    );
+    const dailyReplay = await requestJson(
+      baseUrl,
+      'POST',
+      `/api/desktop-identity/session/challenges/${dailyChallenge.id}/exchange`,
+      {
+        body: {
+          signature: dailySignature,
+          expectedRowVersion: dailyChallenge.rowVersion,
+        },
+      }
+    );
+    assert.strictEqual(dailyReplay.status, 409);
+    assert.strictEqual(dailyReplay.body.code, 'DESKTOP_SESSION_CHALLENGE_REPLAYED');
+
     const devices = await requestJson(
       baseUrl,
       'GET',
@@ -419,6 +513,7 @@ function generateDeviceKey() {
     const sensitiveRows = JSON.stringify({
       challenges: db.prepare('SELECT * FROM desktop_identity_challenges').all(),
       authorizations: db.prepare('SELECT * FROM desktop_device_authorizations').all(),
+      deviceSessionChallenges: db.prepare('SELECT * FROM desktop_device_session_challenges').all(),
       sessions: db.prepare('SELECT * FROM desktop_sessions').all(),
       loginEvents: db.prepare('SELECT * FROM miniapp_login_events').all(),
     });
@@ -428,6 +523,7 @@ function generateDeviceKey() {
       'fresh-login-third',
       'fresh-phone-third',
       secondStarted.challengeSecret,
+      dailyChallenge.nonce,
     ]) {
       assert.ok(!sensitiveRows.includes(secret), `${secret} must not be persisted`);
     }
