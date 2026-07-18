@@ -14,6 +14,10 @@ const {
   desktopDeviceSessionSigningPayload,
 } = require('../backend/src/services/desktopDeviceChallengeService');
 const {
+  PHYSICAL_CONFIRMATION,
+  verifyPrimaryHostLocalReceiptSignature,
+} = require('../backend/src/services/primaryHostReceiptProtocol');
+const {
   createDesktopIdentityVault,
 } = require('./desktopIdentityVault');
 const packageJson = require('../package.json');
@@ -182,6 +186,31 @@ async function main() {
   assert.strictEqual(completed.teacherId, 'teacher-self');
   assert.ok(!JSON.stringify(completed).includes('PRIVATE KEY'));
   assert.ok(!JSON.stringify(completed).includes('local-password-1'));
+
+  const signedHostReceipt = vault.signChallenge({
+    purpose: 'primary-host-receipt',
+    operation: 'transfer',
+    challengeId: 'host-transfer-challenge-1',
+    physicalConfirmation: PHYSICAL_CONFIRMATION,
+    evidence: {
+      runtimeNodeRole: 'desktop-client',
+      dbInstanceDigest: 'a'.repeat(64),
+      schemaVersion: 3107,
+      storeId: 'store-authority-1',
+      dbAuthorityId: 'db-authority-1',
+      quickCheck: 'ok',
+    },
+  });
+  assert.strictEqual(signedHostReceipt.purpose, 'primary-host-receipt');
+  assert.strictEqual(signedHostReceipt.receipt.userId, 'canonical-human');
+  assert.strictEqual(signedHostReceipt.receipt.deviceId, 'device-2');
+  assert.strictEqual(signedHostReceipt.receipt.authorizationId, authorization.id);
+  assert.strictEqual(signedHostReceipt.receipt.credentialVersion, authorization.credentialVersion);
+  assert.strictEqual(verifyPrimaryHostLocalReceiptSignature({
+    receipt: signedHostReceipt.receipt,
+    signature: signedHostReceipt.signature,
+    publicKey: publicIdentity.publicKey,
+  }), true);
 
   const rawFile = fs.readFileSync(filePath);
   const rawText = rawFile.toString('utf8');

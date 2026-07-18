@@ -44,10 +44,20 @@ function hostLanUrls() {
 }
 
 function authOptionsFromRequest(req) {
-  const hostToken = process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || process.env.GEWU_DESKTOP_SYNC_TOKEN || '';
+  const authorization = req.headers.authorization || '';
+  const hostCredential = process.env.GEWU_PRIMARY_HOST_CREDENTIAL || '';
+  const hostGeneration = process.env.GEWU_PRIMARY_HOST_GENERATION || '';
+  if (hostCredential || hostGeneration) {
+    return {
+      authorization,
+      hostCredential,
+      hostDeviceId: process.env.GEWU_DEVICE_ID || '',
+      hostGeneration: Number(hostGeneration),
+    };
+  }
   return {
-    authorization: req.headers.authorization || '',
-    hostToken,
+    authorization,
+    hostToken: process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || process.env.GEWU_DESKTOP_SYNC_TOKEN || '',
   };
 }
 
@@ -476,3 +486,4 @@ module.exports.processClaimedV2Tasks = processClaimedV2Tasks;
 module.exports.selectQuestions = selectQuestions;
 module.exports.startSerialLeaseHeartbeat = startSerialLeaseHeartbeat;
 module.exports.cleanupGeneratedTaskResult = cleanupGeneratedTaskResult;
+module.exports.authOptionsFromRequest = authOptionsFromRequest;

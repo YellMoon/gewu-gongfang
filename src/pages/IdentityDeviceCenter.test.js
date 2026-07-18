@@ -11,6 +11,25 @@ assert.ok(source.includes('loading') && source.includes('empty') && source.inclu
 assert.ok(source.includes('expired') && source.includes('conflict') && source.includes('concurrent') && source.includes('revoked'));
 assert.ok(source.includes('operationRef') && source.includes('Modal.confirm'), 'all mutations need a synchronous operation lock and confirmation');
 assert.ok(source.includes('approveDesktopChallenge') && source.includes('rejectDesktopChallenge') && source.includes('revokeDesktopDevice'));
+assert.ok(source.includes('startPrimaryHostOperation') && source.includes('bootstrapPrimaryHost'));
+assert.ok(source.includes('beginPrimaryHostTransfer') && source.includes('activatePrimaryHostTransfer'));
+assert.ok(source.includes('recoverPrimaryHost'));
+assert.ok(source.includes('startHostTransfer') && source.includes('completeHostTransfer'));
+assert.ok(source.includes('startHostRecovery') && source.includes('completeHostRecovery'));
+assert.ok(source.includes('primaryHostRuntime.prepareOperation') && source.includes('primaryHostRuntime.adopt'));
+assert.ok(source.includes('primaryHostRuntime.prepareOperation'));
+assert.ok(source.includes('primaryHostRuntime.status'));
+assert.ok(source.includes('resumeHostRuntimeAdoption'));
+assert.ok(source.includes('demoteStaleHostRuntime'));
+assert.ok(source.includes('primaryHostRuntime.demote'));
+assert.ok(source.includes('operationManifest: prepared.operationManifest'));
+assert.ok(source.includes('credentialStageId: prepared.credentialStage.id'));
+assert.strictEqual(source.includes('hostCredential'), false,
+  'renderer host migration flows must never receive or forward plaintext host credentials');
+assert.ok(source.includes('transferId: transfer.id') && source.includes('sourceEpochId: transfer.sourceEpochId'));
+assert.ok(source.includes('factorId') && source.includes('recoveryCode'));
+assert.ok(source.includes('<QRCode') && source.includes('<Input.Password'));
+assert.ok(source.includes('recoveryPackage') && source.includes('primaryHostRuntime.restart'));
 assert.ok(source.includes('replacementDeviceId'), 'replacement revocation must preserve an explicit device relationship');
 assert.strictEqual(source.includes('<Select'), false);
 assert.strictEqual(source.includes('selectedUsers'), false);

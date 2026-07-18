@@ -36,7 +36,8 @@ assert.ok(artifactRoute.includes('res.download'), 'host artifact route should do
 assert.ok(route.includes('completeMiniappTask(task.id'), 'host should complete miniapp tasks back to cloud');
 assert.ok(route.includes("router.post('/tasks/process'"), 'host should expose a process pending tasks endpoint');
 assert.ok(route.includes('authOptionsFromRequest'), 'host route should forward authenticated maintenance requests to cloud relay');
-assert.ok(route.includes('hostToken'), 'host route should forward a host token to protected cloud relay routes');
+assert.ok(route.includes('hostCredential') && route.includes('hostGeneration'), 'registered host must forward its managed epoch credential');
+assert.ok(route.includes('hostToken'), 'unregistered host should retain the one-time bootstrap compatibility token');
 assert.ok(route.includes("fetchPendingTasks({ ...authOptions, hostDeviceId: hostDeviceId(), leaseMs: 60000 })"), 'legacy polling must identify the host so the cloud route atomically leases V1 work');
 assert.ok(route.includes('claimToken: task.claimToken'), 'legacy completion must return its V1 claim token');
 assert.ok(route.includes('verifyRelayAssertion') && route.includes('resolveRelaySessionActorContext')
@@ -48,10 +49,11 @@ assert.ok(route.includes('authz,'), 'desktop sync host apply must pass actor con
 assert.ok(route.includes('AUTHORIZATION_CONTEXT_REQUIRED'), 'desktop sync without authenticated actor/device must fail closed');
 assert.ok(!route.includes('payload.authorizationContext'), 'desktop sync host must not trust relay payload role or teacher context');
 assert.ok(client.includes('x-gewu-host-token'), 'cloud relay client should send the host token header');
+assert.ok(client.includes('x-gewu-host-credential') && client.includes('x-gewu-host-generation'), 'cloud relay client should send managed host identity headers');
 assert.ok(route.includes('req.headers.authorization'), 'host route should read Authorization from incoming requests');
 assert.ok(packageJson.includes('backend/src/routes/cloudRelayHostTasks.test.js'), 'host task processing test should run in npm test');
 
-const { processClaimedV2Tasks, processMiniappTask } = require('./cloudRelayHost');
+const { processClaimedV2Tasks, processMiniappTask, authOptionsFromRequest } = require('./cloudRelayHost');
 const { resolvePaperExportQuestions } = require('./questionBank');
 const { resultHash: hashTaskResult } = require('../services/cloudRelayTaskService');
 const { DatabaseService } = require('../database');
@@ -59,6 +61,36 @@ const { createDesktopSessionService } = require('../services/desktopSessionServi
 const { issueRelayAssertion } = require('../services/relayAssertionService');
 const os = require('os');
 const path = require('path');
+
+{
+  const names = ['GEWU_CLOUD_RELAY_HOST_TOKEN', 'GEWU_DESKTOP_SYNC_TOKEN', 'GEWU_PRIMARY_HOST_CREDENTIAL', 'GEWU_PRIMARY_HOST_GENERATION', 'GEWU_DEVICE_ID'];
+  const previous = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  try {
+    process.env.GEWU_CLOUD_RELAY_HOST_TOKEN = 'bootstrap-root';
+    process.env.GEWU_DESKTOP_SYNC_TOKEN = 'legacy-sync';
+    delete process.env.GEWU_PRIMARY_HOST_CREDENTIAL;
+    delete process.env.GEWU_PRIMARY_HOST_GENERATION;
+    process.env.GEWU_DEVICE_ID = 'host-a';
+    assert.deepStrictEqual(authOptionsFromRequest({ headers: { authorization: 'Bearer session' } }), {
+      authorization: 'Bearer session',
+      hostToken: 'bootstrap-root',
+    });
+
+    process.env.GEWU_PRIMARY_HOST_CREDENTIAL = 'managed-credential';
+    process.env.GEWU_PRIMARY_HOST_GENERATION = '2';
+    assert.deepStrictEqual(authOptionsFromRequest({ headers: { authorization: 'Bearer session' } }), {
+      authorization: 'Bearer session',
+      hostCredential: 'managed-credential',
+      hostDeviceId: 'host-a',
+      hostGeneration: 2,
+    }, 'managed host identity must suppress the bootstrap root token');
+  } finally {
+    for (const name of names) {
+      if (previous[name] === undefined) delete process.env[name];
+      else process.env[name] = previous[name];
+    }
+  }
+}
 
 (async () => {
   const relayRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-host-relay-v2-'));

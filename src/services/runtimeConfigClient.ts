@@ -3,6 +3,8 @@ export type NodeRole = 'primary-host' | 'desktop-client';
 export type RuntimeConfig = {
   nodeRole: NodeRole;
   deviceId: string;
+  primaryHostEpochId: string;
+  primaryHostGeneration: number | null;
   hostBaseUrl: string;
   cloudBaseUrl: string;
   desktopSyncToken: string;

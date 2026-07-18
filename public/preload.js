@@ -45,6 +45,15 @@ contextBridge.exposeInMainWorld('desktopIdentity', Object.freeze({
   signChallenge: input => ipcRenderer.invoke('desktop-identity:sign-challenge', input),
 }));
 
+contextBridge.exposeInMainWorld('primaryHostRuntime', Object.freeze({
+  status: () => ipcRenderer.invoke('primary-host:status'),
+  adopt: input => ipcRenderer.invoke('primary-host:adopt', input),
+  demote: input => ipcRenderer.invoke('primary-host:demote', input),
+  issueLocalReceipt: input => ipcRenderer.invoke('primary-host:local-receipt', input),
+  prepareOperation: input => ipcRenderer.invoke('primary-host:prepare-operation', input),
+  restart: () => ipcRenderer.invoke('primary-host:restart'),
+}));
+
 contextBridge.exposeInMainWorld('env', {
   isProd: process.env.NODE_ENV === 'production',
 });

@@ -66,8 +66,8 @@ process.env.NODE_ENV = 'production';
 
 try {
   const service = new DatabaseService();
-  assert.strictEqual(service.getSchemaStatus().schemaVersion, 3106);
-  assert.strictEqual(service.getSchemaStatus().sqliteUserVersion, 3106);
+  assert.strictEqual(service.getSchemaStatus().schemaVersion, 3107);
+  assert.strictEqual(service.getSchemaStatus().sqliteUserVersion, 3107);
   const columns = service.db.prepare('PRAGMA table_info(users)').all().map(row => row.name);
   ['teacher_id', 'review_status', 'reviewed_by', 'reviewed_at'].forEach(column => {
     assert.ok(columns.includes(column), `users should include ${column}`);

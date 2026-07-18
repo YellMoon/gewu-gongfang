@@ -521,7 +521,7 @@ Run: `npm run test:sync-identity`
 
 Expected: PASS；老师 active role 不能通过同步写其他老师数据，撤销设备即使已有排队任务也不能在主机落库，任一 transport 缺失在线 V2 session 都不能同步。
 
-- [ ] **Step 5: 本地提交统一同步身份切片**
+- [x] **Step 5: 本地提交统一同步身份切片**
 
 Run: `git add gateway/src/databaseAuthorization.test.js gateway/src/db/database.js gateway/src/db/schema.sql gateway/src/middleware/auth.js gateway/src/routes/desktopPairing.js gateway/src/routes/cloudRelay.js gateway/src/routes/cloudRelay.http.test.js gateway/src/services/relayAssertionService.js backend/src/database.js backend/src/middleware/auth.js backend/src/routes/desktopPairing.js backend/src/services/desktopPairingParity.test.js backend/src/routes/cloudRelay.js backend/src/routes/cloudRelay.http.test.js backend/src/routes/cloudRelayHost.js backend/src/routes/cloudRelayHostTasks.test.js backend/src/routes/desktopCloudSync.test.js backend/src/services/desktopSessionService.js backend/src/services/desktopSessionService.test.js backend/src/services/relayAssertionService.js backend/src/services/relayAssertionService.test.js backend/src/services/syncScopeIntegration.test.js miniapp/src/pages/admin/users/index.scss miniapp/src/pages/admin/users/index.tsx miniapp/src/utils/api.ts miniapp/src/utils/miniappUiPageInventory.js src/custom.d.ts src/pages/SyncSettings.tsx src/pages/SyncSettingsAuthorization.test.js src/services/desktopAuthorizationSession.mjs src/services/desktopAuthorizationSession.test.js src/services/pairingApiBase.mjs src/services/pairingApiBase.test.js src/services/oneClickSyncService.mjs src/services/oneClickSyncService.test.js src/services/oneClickSyncTransports.mjs src/services/oneClickSyncTransports.test.js package.json docs/superpowers/plans/2026-07-17-desktop-human-identity-multi-device.md && git commit -m "自动发布 2026-07-18"`
 
@@ -544,31 +544,31 @@ Run: `git add gateway/src/databaseAuthorization.test.js gateway/src/db/database.
 - Modify: `scripts/check_local_storage_readiness.js`
 - Modify: `package.json`
 
-- [ ] **Step 1: 写主机 generation 和恢复失败矩阵 RED 测试**
+- [x] **Step 1: 写主机 generation 和恢复失败矩阵 RED 测试**
 
 覆盖：没有 active host 时，只有 primary-host 本机、规范超级管理员新手机号证明、本地数据库实例摘要、现有题库 authority binding 和物理确认 receipt 全部满足才可 bootstrap；重复调用幂等。计划迁移创建 generation+1 pending，目标必须是同一用户已激活设备；备份、SQLite quick_check、schema、题库 storeId、authority binding、云健康、同步 dry-run 任一失败都不激活。成功后旧 host heartbeat/claim/write 被拒。
 
 紧急恢复缺少手机号证明、未使用恢复因子、权威备份、题库绑定或旧主机失联证据任一项均失败；恢复因子只能使用一次，服务端只存慢哈希。
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `node backend/src/services/primaryHostIdentityService.test.js && node backend/src/services/hostRecoveryFactorService.test.js && node backend/src/routes/primaryHostIdentity.http.test.js`
 
 Expected: FAIL with missing tables/services.
 
-- [ ] **Step 3: 实现两阶段主机协议**
+- [x] **Step 3: 实现两阶段主机协议**
 
 新增 `primary_host_epochs`、`host_transfers`、`host_recovery_factors` 和本地 receipt。bootstrap 使用云 challenge 与本地 host token/authority evidence 双通道，成功后生成 generation 1 和一次性恢复包。计划迁移先 pending，目标主机提交有界验证 manifest 和本地签名 receipt，云端 CAS 激活新 generation 并轮换 host credential；旧 generation 只读为 retired。SystemSettings 删除可任意选择 nodeRole 的控件，角色只能由 bootstrap/迁移写入受管配置。
 
-- [ ] **Step 4: 运行 GREEN 与现有主机任务回归**
+- [x] **Step 4: 运行 GREEN 与现有主机任务回归**
 
 Run: `node backend/src/services/primaryHostIdentityService.test.js && node backend/src/services/hostRecoveryFactorService.test.js && node backend/src/routes/primaryHostIdentity.http.test.js && node backend/src/routes/cloudRelayHostTasks.test.js && node scripts/check_local_storage_readiness.test.js && node public/runtimeConfig.test.js`
 
 Expected: PASS；任何时刻查询只返回一个 active epoch，激活前失败不改变旧主机。
 
-- [ ] **Step 5: 本地提交主机身份切片**
+- [x] **Step 5: 本地提交主机身份切片**
 
-Run: `git add backend/src/services/primaryHostIdentityService.js backend/src/services/primaryHostIdentityService.test.js backend/src/services/hostRecoveryFactorService.js backend/src/services/hostRecoveryFactorService.test.js backend/src/routes/primaryHostIdentity.http.test.js backend/src/routes/desktopIdentity.js backend/src/routes/cloudRelay.js backend/src/routes/cloudRelayHost.js backend/src/schema.sql backend/src/database.js public/runtimeConfig.js src/pages/SystemSettings.tsx src/pages/IdentityDeviceCenter.tsx scripts/check_local_storage_readiness.js package.json && git commit -m "自动发布 2026-07-17"`
+Run: `git add backend/src/services/primaryHostIdentityService.js backend/src/services/primaryHostIdentityService.test.js backend/src/services/hostRecoveryFactorService.js backend/src/services/hostRecoveryFactorService.test.js backend/src/routes/primaryHostIdentity.http.test.js backend/src/routes/desktopIdentity.js backend/src/routes/cloudRelay.js backend/src/routes/cloudRelayHost.js backend/src/schema.sql backend/src/database.js public/runtimeConfig.js src/pages/SystemSettings.tsx src/pages/IdentityDeviceCenter.tsx scripts/check_local_storage_readiness.js package.json docs/superpowers/plans/2026-07-17-desktop-human-identity-multi-device.md && git commit -m "自动发布 2026-07-18"`
 
 ### Task 11: 安全回归、真实运行时和计划自证
 

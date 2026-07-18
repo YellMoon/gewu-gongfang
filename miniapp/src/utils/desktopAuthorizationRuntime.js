@@ -4,6 +4,14 @@ const ACTIVE_STATUSES = new Set([
   'pending_phone',
   'identity_verified_pending_approval',
   'approved_pending_exchange',
+  'identity_verified',
+  'consumed',
+]);
+const PURPOSES = new Set([
+  'register',
+  'primary-host-bootstrap',
+  'primary-host-transfer',
+  'primary-host-recovery',
 ]);
 const KNOWN_STATUSES = new Set([
   ...ACTIVE_STATUSES,
@@ -68,16 +76,51 @@ function normalizedWechatCode(value, missingCode) {
   return code;
 }
 
+function safeRowVersion(value) {
+  const version = Number(value);
+  if (!Number.isSafeInteger(version) || version < 1) throw runtimeError('DESKTOP_CHALLENGE_ROW_VERSION_INVALID');
+  return version;
+}
+
 function phoneCodeFromAuthorizationEvent(event = {}) {
   return normalizedWechatCode(event?.detail?.code, 'WECHAT_PHONE_AUTH_CANCELLED');
 }
 
-function buildDesktopConfirmationPayload({ challengeId, loginCode, phoneCode } = {}) {
+function buildDesktopConfirmationPayload({ challengeId, loginCode, phoneCode, expectedRowVersion } = {}) {
   return Object.freeze({
     challengeId: normalizedChallengeId(challengeId),
     code: normalizedWechatCode(loginCode, 'WECHAT_LOGIN_CODE_REQUIRED'),
     phoneCode: normalizedWechatCode(phoneCode, 'WECHAT_PHONE_CODE_REQUIRED'),
+    expectedRowVersion: safeRowVersion(expectedRowVersion),
   });
+}
+
+function desktopAuthorizationPurposePresentation(purposeValue) {
+  const purpose = String(purposeValue || '').trim();
+  const presentation = {
+    register: {
+      label: '\u65b0\u8bbe\u5907\u6ce8\u518c',
+      title: '\u786e\u8ba4\u8fd9\u53f0\u7535\u8111\u7684\u7533\u8bf7',
+      phoneCopy: '\u4e8c\u7ef4\u7801\u53ea\u5efa\u7acb\u4e00\u6b21\u6027\u901a\u9053\uff0c\u5fae\u4fe1\u624b\u673a\u53f7\u7528\u4e8e\u786e\u8ba4\u7533\u8bf7\u4eba\u3002\u672c\u9875\u4e0d\u4f7f\u7528\u7f13\u5b58\u8d26\u53f7\u66ff\u4f60\u786e\u8ba4\u3002',
+    },
+    'primary-host-bootstrap': {
+      label: '\u5efa\u7acb\u6570\u636e\u4e3b\u673a',
+      title: '\u786e\u8ba4\u5efa\u7acb\u672c\u5730\u6570\u636e\u4e3b\u673a',
+      phoneCopy: '\u8fd9\u662f\u9ad8\u98ce\u9669\u64cd\u4f5c\uff1a\u672c\u6b21\u5fc5\u987b\u6bcf\u6b21\u91cd\u65b0\u6388\u6743\u5fae\u4fe1\u624b\u673a\u53f7\uff0c\u4e0d\u4f7f\u7528\u5df2\u7f13\u5b58\u7684\u767b\u5f55\u72b6\u6001\u66ff\u4ee3\u672c\u4eba\u6838\u9a8c\u3002',
+    },
+    'primary-host-transfer': {
+      label: '\u8fc1\u79fb\u6570\u636e\u4e3b\u673a',
+      title: '\u786e\u8ba4\u5c06\u6570\u636e\u4e3b\u673a\u8fc1\u79fb\u5230\u65b0\u7535\u8111',
+      phoneCopy: '\u8fc1\u79fb\u4f1a\u8ba9\u65e7\u4e3b\u673a\u51ed\u636e\u5931\u6548\u3002\u672c\u6b21\u5fc5\u987b\u6bcf\u6b21\u91cd\u65b0\u6388\u6743\u5fae\u4fe1\u624b\u673a\u53f7\u3002',
+    },
+    'primary-host-recovery': {
+      label: '\u7d27\u6025\u6062\u590d\u6570\u636e\u4e3b\u673a',
+      title: '\u786e\u8ba4\u7d27\u6025\u6062\u590d\u4e3b\u673a\u8eab\u4efd',
+      phoneCopy: '\u53ea\u6709\u65e7\u4e3b\u673a\u786e\u5b9e\u65e0\u6cd5\u8fde\u7eed\u5230\u8fbe\u65f6\u624d\u5e94\u7ee7\u7eed\u3002\u672c\u6b21\u5fc5\u987b\u6bcf\u6b21\u91cd\u65b0\u6388\u6743\u5fae\u4fe1\u624b\u673a\u53f7\u3002',
+    },
+  }[purpose];
+  if (!presentation) throw runtimeError('DESKTOP_CHALLENGE_PURPOSE_INVALID');
+  return Object.freeze({ purpose, ...presentation, isHostOperation: purpose !== 'register' });
 }
 
 function fingerprintSummary(value) {
@@ -102,7 +145,7 @@ function projectDesktopAuthorizationChallenge(value = {}) {
   const purpose = String(value.purpose || '').trim();
   const status = String(value.status || '').trim();
   if (!deviceName || deviceName.length > 128) throw runtimeError('DESKTOP_CHALLENGE_DEVICE_INVALID');
-  if (purpose !== 'register') throw runtimeError('DESKTOP_CHALLENGE_PURPOSE_INVALID');
+  if (!PURPOSES.has(purpose)) throw runtimeError('DESKTOP_CHALLENGE_PURPOSE_INVALID');
   if (!KNOWN_STATUSES.has(status)) throw runtimeError('DESKTOP_CHALLENGE_STATUS_INVALID');
   return Object.freeze({
     id: normalizedChallengeId(value.id),
@@ -110,6 +153,7 @@ function projectDesktopAuthorizationChallenge(value = {}) {
     keyFingerprintSummary: fingerprintSummary(value.keyFingerprintSummary || value.keyFingerprint),
     purpose,
     status,
+    rowVersion: safeRowVersion(value.rowVersion ?? value.row_version),
     createdAt: validTimestamp(value.createdAt),
     expiresAt: validTimestamp(value.expiresAt),
   });
@@ -122,6 +166,15 @@ function desktopAuthorizationView(challenge, now = new Date()) {
   const status = ACTIVE_STATUSES.has(projected.status) && Date.parse(projected.expiresAt) <= current
     ? 'expired'
     : projected.status;
+  if (projected.purpose !== 'register') {
+    return ({
+      pending_phone: 'phone-required',
+      identity_verified: 'operation-confirmed',
+      consumed: 'operation-confirmed',
+      rejected: 'rejected',
+      expired: 'expired',
+    })[status] || 'error';
+  }
   return ({
     pending_phone: 'phone-required',
     identity_verified_pending_approval: 'approval-pending',
@@ -149,6 +202,7 @@ function desktopAuthorizationErrorMessage(code, fallback = '') {
 
 module.exports = {
   buildDesktopConfirmationPayload,
+  desktopAuthorizationPurposePresentation,
   desktopAuthorizationErrorMessage,
   desktopAuthorizationView,
   parseDesktopAuthorizationChallengeId,

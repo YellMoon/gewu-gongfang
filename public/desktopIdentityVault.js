@@ -1,6 +1,10 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const {
+  createPrimaryHostLocalReceipt,
+  primaryHostReceiptSigningPayload,
+} = require('../backend/src/services/primaryHostReceiptProtocol');
 
 const VAULT_VERSION = 2;
 const PRIVATE_PAYLOAD_VERSION = 1;
@@ -817,7 +821,7 @@ function createDesktopIdentityVault({
 
   function signChallenge(input = {}) {
     const purpose = String(input.purpose || '').trim();
-    if (!['exchange', 'session', 'role-elevation'].includes(purpose)) {
+    if (!['exchange', 'session', 'role-elevation', 'primary-host-receipt'].includes(purpose)) {
       throw vaultError('DESKTOP_IDENTITY_SIGNING_PURPOSE_INVALID');
     }
     const source = signingSource(purpose);
@@ -849,6 +853,29 @@ function createDesktopIdentityVault({
         nonceIssuedAt: input.nonceIssuedAt,
       });
       responseExtra = { authorizationId, credentialVersion };
+    } else if (purpose === 'primary-host-receipt') {
+      const current = currentDate(now);
+      if (!Number.isFinite(lastUnlockedAt)
+        || current.getTime() < lastUnlockedAt
+        || current.getTime() - lastUnlockedAt > RECENT_UNLOCK_MS) {
+        throw vaultError('DESKTOP_IDENTITY_RECENT_UNLOCK_REQUIRED');
+      }
+      const receipt = createPrimaryHostLocalReceipt({
+        operation: input.operation,
+        challengeId: input.challengeId,
+        identity: {
+          userId: unlockedSecret.profile.userId,
+          deviceId: publicIdentity.deviceId,
+          authorizationId: unlockedSecret.authorization.id,
+          credentialVersion: unlockedSecret.authorization.credentialVersion,
+        },
+        evidence: input.evidence,
+        operationManifest: input.operationManifest,
+        physicalConfirmation: input.physicalConfirmation,
+        now: () => current,
+      });
+      payload = primaryHostReceiptSigningPayload(receipt);
+      responseExtra = { receipt };
     } else {
       const current = currentDate(now);
       if (!Number.isFinite(lastUnlockedAt)

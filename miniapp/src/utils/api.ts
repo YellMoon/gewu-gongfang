@@ -279,10 +279,10 @@ export const authApi = {
 export const desktopAuthorizationApi = {
   read: (challengeId: string) =>
     api.get<any>(`/api/desktop-identity/challenges/${encodeURIComponent(challengeId)}/public`),
-  confirm: (payload: { challengeId: string; code: string; phoneCode: string }) =>
+  confirm: (payload: { challengeId: string; code: string; phoneCode: string; expectedRowVersion: number }) =>
     api.post<any>(
       `/api/desktop-identity/challenges/${encodeURIComponent(payload.challengeId)}/confirm`,
-      { code: payload.code, phoneCode: payload.phoneCode },
+      { code: payload.code, phoneCode: payload.phoneCode, expectedRowVersion: payload.expectedRowVersion },
     ),
 };
 

@@ -1,15 +1,24 @@
 const { app, BrowserWindow, Menu, ipcMain, dialog, screen, shell, safeStorage } = require('electron');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const { QuestionDraftProvenanceRegistry } = require('./questionDraftProvenanceRegistry');
 const fs = require('fs');
 const {
   readRuntimeConfig,
   writeRuntimeConfig,
+  writeManagedHostRuntimeConfig,
+  writeManagedClientRuntimeConfig,
   applyRuntimeConfigToEnv,
+  MANAGED_CLOUD_BASE_URL,
 } = require('./runtimeConfig');
 const { buildLanHostUrls } = require('./lanDiscovery');
 const { createDesktopIdentityVault } = require('./desktopIdentityVault');
+const { createPrimaryHostCredentialStore } = require('./primaryHostCredentialStore');
+const { buildPrimaryHostOperationManifest } = require('./primaryHostOperationValidation');
+const { createPrimaryHostRuntimeManager } = require('./primaryHostRuntimeManager');
+const electronLocalBridgeSecret = crypto.randomBytes(32).toString('base64url');
+process.env.GEWU_ELECTRON_LOCAL_BRIDGE_SECRET = electronLocalBridgeSecret;
 let autoUpdater = null;
 const updateFeedUrl = (process.env.UPDATE_FEED_URL || 'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop/').replace(/\/?$/, '/');
 try {
@@ -36,6 +45,7 @@ process.on('uncaughtException', (err) => {
 let mainWindow;
 let backendServer = null;
 let desktopIdentityVault = null;
+let primaryHostRuntimeManager = null;
 
 function getRuntimeConfigPath() {
   return path.join(app.getPath('userData'), 'gewugongfang.config.json');
@@ -49,6 +59,226 @@ function getDesktopIdentityVault() {
     safeStorage,
   });
   return desktopIdentityVault;
+}
+
+async function verifyPrimaryHostAdoption(input = {}) {
+  const authorization = String(input.authorization || '').trim();
+  const epoch = input.epoch && typeof input.epoch === 'object' ? input.epoch : {};
+  const credential = String(input.credential || '');
+  if (!authorization.startsWith('Bearer ') || authorization.length > 16384 || !credential) {
+    const error = new Error('PRIMARY_HOST_ADOPTION_AUTHORIZATION_REQUIRED');
+    error.code = 'PRIMARY_HOST_ADOPTION_AUTHORIZATION_REQUIRED';
+    throw error;
+  }
+  const response = await fetch(`${MANAGED_CLOUD_BASE_URL}/api/desktop-identity/primary-host/credentials/verify`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: authorization,
+    },
+    body: JSON.stringify({
+      epochId: epoch.id,
+      deviceId: epoch.deviceId,
+      generation: epoch.generation,
+      credential,
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (cause) {
+    const error = new Error('PRIMARY_HOST_ADOPTION_RESPONSE_INVALID');
+    error.code = 'PRIMARY_HOST_ADOPTION_RESPONSE_INVALID';
+    error.cause = cause;
+    throw error;
+  }
+  if (!response.ok || payload?.success !== true || !payload?.data?.epoch) {
+    const error = new Error(payload?.code || 'PRIMARY_HOST_ADOPTION_REJECTED');
+    error.code = payload?.code || 'PRIMARY_HOST_ADOPTION_REJECTED';
+    throw error;
+  }
+  return payload.data;
+}
+
+function getPrimaryHostRuntimeManager() {
+  if (primaryHostRuntimeManager) return primaryHostRuntimeManager;
+  const userDataPath = app.getPath('userData');
+  const credentialStore = createPrimaryHostCredentialStore({
+    filePath: path.join(userDataPath, 'primary-host-credential-v1.bin'),
+    safeStorage,
+  });
+  primaryHostRuntimeManager = createPrimaryHostRuntimeManager({
+    credentialStore,
+    configPath: getRuntimeConfigPath(),
+    userDataPath,
+    env: process.env,
+    readRuntimeConfig,
+    writeManagedHostRuntimeConfig,
+    writeManagedClientRuntimeConfig,
+    applyRuntimeConfigToEnv,
+    verifyAdoption: verifyPrimaryHostAdoption,
+  });
+  return primaryHostRuntimeManager;
+}
+
+async function readPrimaryHostControlStatus(authorization) {
+  const normalizedAuthorization = String(authorization || '').trim();
+  if (!normalizedAuthorization.startsWith('Bearer ') || normalizedAuthorization.length > 16384) {
+    const error = new Error('PRIMARY_HOST_CONTROL_AUTHORIZATION_REQUIRED');
+    error.code = 'PRIMARY_HOST_CONTROL_AUTHORIZATION_REQUIRED';
+    throw error;
+  }
+  const response = await fetch(`${MANAGED_CLOUD_BASE_URL}/api/desktop-identity/primary-host/status`, {
+    headers: { Accept: 'application/json', Authorization: normalizedAuthorization },
+    signal: AbortSignal.timeout(15000),
+  });
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (cause) {
+    const error = new Error('PRIMARY_HOST_CONTROL_RESPONSE_INVALID');
+    error.code = 'PRIMARY_HOST_CONTROL_RESPONSE_INVALID';
+    error.cause = cause;
+    throw error;
+  }
+  if (!response.ok || payload?.success !== true || !payload?.data) {
+    const error = new Error(payload?.code || 'PRIMARY_HOST_CONTROL_UNAVAILABLE');
+    error.code = payload?.code || 'PRIMARY_HOST_CONTROL_UNAVAILABLE';
+    throw error;
+  }
+  return payload.data;
+}
+
+async function preparePrimaryHostOperation(input = {}) {
+  const normalizedAuthorization = String(input.authorization || '').trim();
+  if (!normalizedAuthorization.startsWith('Bearer ') || normalizedAuthorization.length > 16384) {
+    const error = new Error('PRIMARY_HOST_CONTROL_AUTHORIZATION_REQUIRED');
+    error.code = 'PRIMARY_HOST_CONTROL_AUTHORIZATION_REQUIRED';
+    throw error;
+  }
+  const stagedCredential = getPrimaryHostRuntimeManager().stageAdoption({
+    operation: input.operation,
+    challengeId: input.challengeId,
+    targetGeneration: input.targetGeneration,
+  });
+  const credentialStage = Object.freeze({
+    id: stagedCredential.stageId,
+    deviceId: stagedCredential.deviceId,
+    targetGeneration: stagedCredential.generation,
+    commitment: stagedCredential.credentialCommitment,
+  });
+  const port = Number(process.env.PORT || 3001);
+  const response = await fetch(`http://127.0.0.1:${port}/api/desktop-identity/primary-host/local-evidence`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: normalizedAuthorization,
+      'x-gewu-electron-local-bridge': electronLocalBridgeSecret,
+    },
+    body: JSON.stringify({
+      purpose: input.operation,
+      sourceGeneration: input.sourceGeneration,
+      targetGeneration: input.targetGeneration,
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (cause) {
+    const error = new Error('PRIMARY_HOST_LOCAL_EVIDENCE_RESPONSE_INVALID');
+    error.code = 'PRIMARY_HOST_LOCAL_EVIDENCE_RESPONSE_INVALID';
+    error.cause = cause;
+    throw error;
+  }
+  if (!response.ok || payload?.success !== true || !payload?.data?.evidence) {
+    const error = new Error(payload?.code || 'PRIMARY_HOST_LOCAL_EVIDENCE_FAILED');
+    error.code = payload?.code || 'PRIMARY_HOST_LOCAL_EVIDENCE_FAILED';
+    throw error;
+  }
+  const runtimeConfig = readRuntimeConfig(getRuntimeConfigPath(), {
+    userDataPath: app.getPath('userData'),
+  });
+  const deviceId = String(process.env.GEWU_DEVICE_ID || runtimeConfig.deviceId || '').trim();
+  const controlStatus = input.operation === 'bootstrap'
+    ? null
+    : await readPrimaryHostControlStatus(input.authorization);
+  const operationManifest = buildPrimaryHostOperationManifest({
+    operation: input.operation,
+    deviceId,
+    transferId: input.transferId,
+    sourceEpochId: input.sourceEpochId,
+    challengeId: input.challengeId,
+    sourceGeneration: input.sourceGeneration,
+    targetGeneration: input.targetGeneration,
+    localPrepared: payload.data,
+    controlStatus,
+    credentialStage,
+  });
+  const signed = getDesktopIdentityVault().signChallenge({
+    purpose: 'primary-host-receipt',
+    operation: input.operation,
+    challengeId: input.challengeId,
+    physicalConfirmation: input.physicalConfirmation,
+    evidence: payload.data.evidence,
+    operationManifest,
+  });
+  const localReceipt = Object.freeze({ receipt: signed.receipt, signature: signed.signature });
+  if (input.operation === 'bootstrap') {
+    return Object.freeze({ localReceipt, operationManifest, credentialStage, preflightProof: null });
+  }
+  const proofResponse = await fetch(
+    `${MANAGED_CLOUD_BASE_URL}/api/desktop-identity/primary-host/preflight-proofs`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: normalizedAuthorization,
+      },
+      body: JSON.stringify({
+        operation: input.operation,
+        challengeId: input.challengeId,
+        transferId: input.transferId,
+        sourceEpochId: input.sourceEpochId || controlStatus?.activeEpoch?.id,
+        sourceGeneration: input.sourceGeneration,
+        targetGeneration: input.targetGeneration,
+        operationManifest,
+        localReceipt,
+      }),
+      signal: AbortSignal.timeout(15000),
+    }
+  );
+  let proofPayload;
+  try {
+    proofPayload = await proofResponse.json();
+  } catch (cause) {
+    const error = new Error('PRIMARY_HOST_PREFLIGHT_PROOF_RESPONSE_INVALID');
+    error.code = 'PRIMARY_HOST_PREFLIGHT_PROOF_RESPONSE_INVALID';
+    error.cause = cause;
+    throw error;
+  }
+  const preflight = proofPayload?.data?.preflight;
+  if (!proofResponse.ok || proofPayload?.success !== true || !preflight?.id || !preflight?.token
+    || preflight?.cloudPreflight?.status !== 'ok' || !preflight?.operationManifest) {
+    const error = new Error(proofPayload?.code || 'PRIMARY_HOST_PREFLIGHT_PROOF_FAILED');
+    error.code = proofPayload?.code || 'PRIMARY_HOST_PREFLIGHT_PROOF_FAILED';
+    throw error;
+  }
+  return Object.freeze({
+    localReceipt,
+    operationManifest: Object.freeze(preflight.operationManifest),
+    credentialStage: Object.freeze(preflight.operationManifest.credentialStage),
+    preflightProof: Object.freeze({ id: preflight.id, token: preflight.token, expiresAt: preflight.expiresAt }),
+  });
+}
+
+async function issuePrimaryHostLocalReceipt(input = {}) {
+  const prepared = await preparePrimaryHostOperation(input);
+  return prepared.localReceipt;
 }
 
 function configuredDesktopIdentity(input = {}) {
@@ -73,9 +303,11 @@ function lockDesktopIdentityVault() {
 }
 
 function loadAndApplyRuntimeConfig() {
-  const config = readRuntimeConfig(getRuntimeConfigPath(), { userDataPath: app.getPath('userData') });
-  applyRuntimeConfigToEnv(config, process.env);
-  return config;
+  const state = getPrimaryHostRuntimeManager().initialize();
+  if (state.credential.state === 'error') {
+    log(`Primary host credential failed closed: ${state.credential.code}`);
+  }
+  return state.config;
 }
 
 function findBackendApp() {
@@ -305,6 +537,18 @@ ipcMain.handle('runtime-config:get', async () => {
 });
 ipcMain.handle('runtime-config:set', async (_event, config) => {
   return writeRuntimeConfig(getRuntimeConfigPath(), config, { userDataPath: app.getPath('userData') });
+});
+ipcMain.handle('primary-host:status', async () => getPrimaryHostRuntimeManager().status());
+ipcMain.handle('primary-host:adopt', async (_event, input) => getPrimaryHostRuntimeManager().adopt(input));
+ipcMain.handle('primary-host:demote', async (_event, input) => getPrimaryHostRuntimeManager().demote(input));
+ipcMain.handle('primary-host:local-receipt', async (_event, input) => issuePrimaryHostLocalReceipt(input));
+ipcMain.handle('primary-host:prepare-operation', async (_event, input) => preparePrimaryHostOperation(input));
+ipcMain.handle('primary-host:restart', async () => {
+  setTimeout(() => {
+    app.relaunch();
+    app.exit(0);
+  }, 100);
+  return true;
 });
 ipcMain.handle('desktop-identity:status', async () => getDesktopIdentityVault().status());
 ipcMain.handle('desktop-identity:begin-registration', async (_event, input) => {

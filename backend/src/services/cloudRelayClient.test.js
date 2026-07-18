@@ -21,6 +21,22 @@ assert.ok(packageJson.includes('backend/src/services/cloudRelayClient.test.js'),
 assert.ok(backendRoute.includes("router.get('/tasks/:id/state'"));
 assert.ok(gatewayRoute.includes("router.get('/tasks/:id/state'"));
 
+assert.deepStrictEqual(client.buildHeaders({ hostToken: 'bootstrap-root-token' }), {
+  'Content-Type': 'application/json',
+  'x-gewu-host-token': 'bootstrap-root-token',
+});
+assert.deepStrictEqual(client.buildHeaders({
+  hostToken: 'must-not-leak-after-bootstrap',
+  hostCredential: 'managed-host-credential',
+  hostDeviceId: 'host-managed-a',
+  hostGeneration: 2,
+}), {
+  'Content-Type': 'application/json',
+  'x-gewu-host-device-id': 'host-managed-a',
+  'x-gewu-host-generation': '2',
+  'x-gewu-host-credential': 'managed-host-credential',
+}, 'managed host credentials must replace the bootstrap root token on network requests');
+
 (async () => {
   const originalFetch = global.fetch;
   const calls = [];

@@ -23,10 +23,12 @@ assert.deepStrictEqual(runtime.buildDesktopConfirmationPayload({
   challengeId: 'challenge-1234567890',
   loginCode: 'new-login-code',
   phoneCode: 'new-phone-code',
+  expectedRowVersion: 3,
 }), {
   challengeId: 'challenge-1234567890',
   code: 'new-login-code',
   phoneCode: 'new-phone-code',
+  expectedRowVersion: 3,
 });
 assert.throws(
   () => runtime.buildDesktopConfirmationPayload({
@@ -54,12 +56,26 @@ const projected = runtime.projectDesktopAuthorizationChallenge({
   expiresAt: '2026-07-17T09:10:00.000Z',
 });
 assert.deepStrictEqual(Object.keys(projected).sort(), [
-  'createdAt', 'deviceName', 'expiresAt', 'id', 'keyFingerprintSummary', 'purpose', 'status',
+  'createdAt', 'deviceName', 'expiresAt', 'id', 'keyFingerprintSummary', 'purpose', 'rowVersion', 'status',
 ].sort());
 assert.strictEqual(projected.keyFingerprintSummary, '01234567…cdef');
 assert.ok(!JSON.stringify(projected).includes('must-not-reach-page'));
 assert.strictEqual(runtime.desktopAuthorizationView(projected, new Date('2026-07-17T09:05:00.000Z')), 'phone-required');
 assert.strictEqual(runtime.desktopAuthorizationView(projected, new Date('2026-07-17T09:10:00.000Z')), 'expired');
+for (const [purpose, label] of [
+  ['primary-host-bootstrap', '\u5efa\u7acb\u6570\u636e\u4e3b\u673a'],
+  ['primary-host-transfer', '\u8fc1\u79fb\u6570\u636e\u4e3b\u673a'],
+  ['primary-host-recovery', '\u7d27\u6025\u6062\u590d\u6570\u636e\u4e3b\u673a'],
+]) {
+  const hostChallenge = runtime.projectDesktopAuthorizationChallenge({
+    ...projected,
+    id: `host-challenge-${purpose}`,
+    purpose,
+    status: 'identity_verified',
+  });
+  assert.strictEqual(runtime.desktopAuthorizationView(hostChallenge, new Date('2026-07-17T09:05:00.000Z')), 'operation-confirmed');
+  assert.strictEqual(runtime.desktopAuthorizationPurposePresentation(purpose).label, label);
+}
 const distinctErrors = [
   'DESKTOP_CHALLENGE_EXPIRED',
   'DESKTOP_CHALLENGE_CLAIMANT_CONFLICT',
@@ -78,6 +94,9 @@ assert.ok(pageSource.includes('phoneCodeFromAuthorizationEvent'));
 assert.ok(pageSource.includes('Taro.login()'));
 assert.ok(pageSource.includes('buildDesktopConfirmationPayload'));
 assert.ok(pageSource.includes('desktopAuthorizationApi.confirm'));
+assert.ok(pageSource.includes('desktopAuthorizationPurposePresentation'));
+assert.ok(pageSource.includes('operation-confirmed'));
+assert.ok(pageSource.includes('expectedRowVersion'));
 assert.ok(!pageSource.includes('openid'));
 assert.ok(!pageSource.includes("getStorageSync('phone"));
 assert.ok(visiblePageSource.includes('二维码只建立一次性通道'));
@@ -101,5 +120,9 @@ const inventory = pageInventory.find(entry => entry.route === 'pages/desktop-aut
 assert.ok(inventory?.roleViews.includes('guest'));
 assert.ok(inventory?.verificationStates.includes('phone-cancelled'));
 assert.ok(inventory?.verificationStates.includes('approval-pending'));
+assert.ok(inventory?.verificationStates.includes('host-bootstrap'));
+assert.ok(inventory?.verificationStates.includes('host-transfer'));
+assert.ok(inventory?.verificationStates.includes('host-recovery'));
+assert.ok(inventory?.verificationStates.includes('operation-confirmed'));
 
 console.log('miniapp desktop authorization runtime checks passed');

@@ -1,18 +1,24 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Button, Card, Descriptions, Empty, Modal, Space, Spin, Table, Tag, Typography, message } from 'antd';
+import { Alert, Button, Card, Descriptions, Empty, Input, Modal, QRCode, Space, Spin, Table, Tag, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { getRuntimeConfig } from '../services/runtimeConfigClient';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 import { resolvePairingApiBase } from '../services/pairingApiBase.mjs';
 import {
   approveDesktopChallenge,
+  activatePrimaryHostTransfer,
+  beginPrimaryHostTransfer,
+  bootstrapPrimaryHost,
   buildApprovalBody,
   buildRejectionBody,
   buildRevocationBody,
   identityDeviceCenterErrorMessage,
   loadIdentityDeviceCenter,
+  readPrimaryHostOperationChallenge,
+  recoverPrimaryHost,
   rejectDesktopChallenge,
   revokeDesktopDevice,
+  startPrimaryHostOperation,
 } from '../services/identityDeviceCenterPolicy.mjs';
 import './IdentityDeviceCenter.css';
 
@@ -46,6 +52,12 @@ const IdentityDeviceCenter: React.FC = () => {
   const [viewState, setViewState] = useState<ViewState>('loading');
   const [errorCode, setErrorCode] = useState('');
   const [operationKey, setOperationKey] = useState('');
+  const [hostOperation, setHostOperation] = useState<any>(null);
+  const [hostPassword, setHostPassword] = useState('');
+  const [factorId, setFactorId] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [hostOperationError, setHostOperationError] = useState('');
+  const [recoveryPackage, setRecoveryPackage] = useState<any>(null);
   const operationRef = useRef('');
   const requestContextRef = useRef<any>(null);
 
@@ -56,8 +68,15 @@ const IdentityDeviceCenter: React.FC = () => {
       const runtimeConfig = await getRuntimeConfig();
       const session = readDesktopAuthorizationSession();
       const baseUrl = resolvePairingApiBase(runtimeConfig, window.location);
+      const primaryHostRuntime = (window as any).primaryHostRuntime;
+      let hostRuntimeStatus = null;
+      try {
+        hostRuntimeStatus = primaryHostRuntime?.status
+          ? await primaryHostRuntime.status()
+          : null;
+      } catch (_error) { /* cloud state remains readable when local runtime status is unavailable */ }
       requestContextRef.current = { runtimeConfig, session, baseUrl };
-      const next = await loadIdentityDeviceCenter({ runtimeConfig, session, baseUrl });
+      const next = await loadIdentityDeviceCenter({ runtimeConfig, session, baseUrl, hostRuntimeStatus });
       setSnapshot(next);
       setViewState(next.mine.length || next.pending.length || next.all.length ? 'ready' : 'empty');
       window.dispatchEvent(new CustomEvent('identity-device-center-updated', {
@@ -148,6 +167,347 @@ const IdentityDeviceCenter: React.FC = () => {
     });
   };
 
+  const startHostBootstrap = async () => {
+    if (operationRef.current || !snapshot?.host?.canBootstrap) return;
+    operationRef.current = 'primary-host:bootstrap:start';
+    setOperationKey(operationRef.current);
+    setHostOperationError('');
+    setRecoveryPackage(null);
+    try {
+      const context = requestContextRef.current;
+      const data = await startPrimaryHostOperation({
+        ...context,
+        request: { operation: 'bootstrap', targetDeviceId: snapshot.host.deviceId },
+      });
+      setHostOperation({ operation: 'bootstrap', challenge: data.challenge });
+    } catch (error: any) {
+      setHostOperationError(error?.code || 'PRIMARY_HOST_OPERATION_FAILED');
+      message.error(identityDeviceCenterErrorMessage(error?.code));
+    } finally {
+      operationRef.current = '';
+      setOperationKey('');
+    }
+  };
+
+  const refreshHostOperation = async () => {
+    if (!hostOperation?.challenge?.id || operationRef.current) return;
+    operationRef.current = 'primary-host:challenge:refresh';
+    setOperationKey(operationRef.current);
+    setHostOperationError('');
+    try {
+      const context = requestContextRef.current;
+      const data = await readPrimaryHostOperationChallenge({
+        baseUrl: context.baseUrl,
+        challengeId: hostOperation.challenge.id,
+      });
+      setHostOperation((current: any) => ({
+        ...current,
+        challenge: { ...current.challenge, ...data.challenge },
+      }));
+    } catch (error: any) {
+      setHostOperationError(error?.code || 'PRIMARY_HOST_OPERATION_FAILED');
+    } finally {
+      operationRef.current = '';
+      setOperationKey('');
+    }
+  };
+
+  const completeHostBootstrap = async () => {
+    if (operationRef.current || hostOperation?.challenge?.status !== 'identity_verified') return;
+    operationRef.current = 'primary-host:bootstrap:complete';
+    setOperationKey(operationRef.current);
+    setHostOperationError('');
+    try {
+      if (!hostPassword) throw Object.assign(new Error('DESKTOP_IDENTITY_LOCAL_PASSWORD_REQUIRED'), { code: 'DESKTOP_IDENTITY_LOCAL_PASSWORD_REQUIRED' });
+      const desktopIdentity = (window as any).desktopIdentity;
+      const primaryHostRuntime = (window as any).primaryHostRuntime;
+      if (!desktopIdentity?.unlock || !primaryHostRuntime?.prepareOperation || !primaryHostRuntime?.adopt) {
+        throw Object.assign(new Error('PRIMARY_HOST_DESKTOP_RUNTIME_REQUIRED'), { code: 'PRIMARY_HOST_DESKTOP_RUNTIME_REQUIRED' });
+      }
+      await desktopIdentity.unlock({ password: hostPassword });
+      const context = requestContextRef.current;
+      const prepared = await primaryHostRuntime.prepareOperation({
+        operation: 'bootstrap',
+        challengeId: hostOperation.challenge.id,
+        targetGeneration: 1,
+        authorization: context.session.authorization,
+        physicalConfirmation: 'I_AM_PHYSICALLY_AT_THIS_DEVICE',
+      });
+      const result = await bootstrapPrimaryHost({
+        ...context,
+        request: {
+          challengeId: hostOperation.challenge.id,
+          expectedChallengeRowVersion: hostOperation.challenge.rowVersion,
+          localReceipt: prepared.localReceipt,
+          operationManifest: prepared.operationManifest,
+        },
+      });
+      await primaryHostRuntime.adopt({
+        authorization: context.session.authorization,
+        epoch: result.epoch,
+        credentialStageId: prepared.credentialStage.id,
+      });
+      setHostPassword('');
+      setRecoveryPackage(result.recoveryPackage);
+      setHostOperation((current: any) => ({ ...current, completed: true, epoch: result.epoch }));
+      await load();
+    } catch (error: any) {
+      setHostOperationError(error?.code || 'PRIMARY_HOST_OPERATION_FAILED');
+    } finally {
+      operationRef.current = '';
+      setOperationKey('');
+    }
+  };
+
+  const resumeHostRuntimeAdoption = async () => {
+    if (operationRef.current || !snapshot?.host?.canResumeRuntimeAdoption) return;
+    operationRef.current = 'primary-host:runtime-adoption:resume';
+    setOperationKey(operationRef.current);
+    setHostOperationError('');
+    try {
+      const context = requestContextRef.current;
+      const primaryHostRuntime = (window as any).primaryHostRuntime;
+      const stage = snapshot.host.pendingCredentialStage;
+      if (!primaryHostRuntime?.adopt || !primaryHostRuntime?.restart || !stage?.stageId) {
+        throw Object.assign(new Error('PRIMARY_HOST_DESKTOP_RUNTIME_REQUIRED'), { code: 'PRIMARY_HOST_DESKTOP_RUNTIME_REQUIRED' });
+      }
+      await primaryHostRuntime.adopt({
+        authorization: context.session.authorization,
+        epoch: snapshot.host.activeEpoch,
+        credentialStageId: stage.stageId,
+      });
+      message.success('\u4e3b\u673a\u51ed\u636e\u5df2\u6062\u590d\uff0c\u6b63\u5728\u91cd\u542f\u5e94\u7528');
+      await primaryHostRuntime.restart();
+    } catch (error: any) {
+      setHostOperationError(error?.code || 'PRIMARY_HOST_OPERATION_FAILED');
+      message.error(identityDeviceCenterErrorMessage(error?.code));
+    } finally {
+      operationRef.current = '';
+      setOperationKey('');
+    }
+  };
+
+  const demoteStaleHostRuntime = async () => {
+    if (operationRef.current || !snapshot?.host?.requiresRuntimeDemotion) return;
+    operationRef.current = 'primary-host:runtime:demote';
+    setOperationKey(operationRef.current);
+    setHostOperationError('');
+    try {
+      const primaryHostRuntime = (window as any).primaryHostRuntime;
+      if (!primaryHostRuntime?.demote || !primaryHostRuntime?.restart || !snapshot.host.runtimeEpochId) {
+        throw Object.assign(new Error('PRIMARY_HOST_DESKTOP_RUNTIME_REQUIRED'), { code: 'PRIMARY_HOST_DESKTOP_RUNTIME_REQUIRED' });
+      }
+      await primaryHostRuntime.demote({ expectedEpochId: snapshot.host.runtimeEpochId });
+      message.success('\u65e7\u4e3b\u673a\u51ed\u636e\u5df2\u6e05\u7406\uff0c\u6b63\u5728\u4ee5\u666e\u901a\u684c\u9762\u5ba2\u6237\u7aef\u91cd\u542f');
+      await primaryHostRuntime.restart();
+    } catch (error: any) {
+      setHostOperationError(error?.code || 'PRIMARY_HOST_OPERATION_FAILED');
+      message.error(identityDeviceCenterErrorMessage(error?.code));
+    } finally {
+      operationRef.current = '';
+      setOperationKey('');
+    }
+  };
+
+  const startHostTransfer = async (targetDevice: any) => {
+    if (operationRef.current || !snapshot?.host?.canStartTransfer || targetDevice?.status !== 'active') return;
+    operationRef.current = 'primary-host:transfer:start';
+    setOperationKey(operationRef.current);
+    setHostOperationError('');
+    setRecoveryPackage(null);
+    try {
+      const context = requestContextRef.current;
+      const data = await startPrimaryHostOperation({
+        ...context,
+        request: { operation: 'transfer', targetDeviceId: targetDevice.deviceId },
+      });
+      setHostOperation({ operation: 'transfer', targetDevice, challenge: data.challenge });
+    } catch (error: any) {
+      setHostOperationError(error?.code || 'PRIMARY_HOST_OPERATION_FAILED');
+      message.error(identityDeviceCenterErrorMessage(error?.code));
+    } finally {
+      operationRef.current = '';
+      setOperationKey('');
+    }
+  };
+
+  const completeHostTransfer = async () => {
+    if (operationRef.current || hostOperation?.operation !== 'transfer'
+      || hostOperation?.challenge?.status !== 'identity_verified') return;
+    operationRef.current = 'primary-host:transfer:complete';
+    setOperationKey(operationRef.current);
+    setHostOperationError('');
+    try {
+      const context = requestContextRef.current;
+      await beginPrimaryHostTransfer({
+        ...context,
+        request: {
+          challengeId: hostOperation.challenge.id,
+          expectedChallengeRowVersion: hostOperation.challenge.rowVersion,
+          expectedActiveEpochRowVersion: snapshot.host.activeEpoch.rowVersion,
+        },
+      });
+      message.success('\u8ba1\u5212\u8fc1\u79fb\u5df2\u521b\u5efa\uff0c\u8bf7\u5230\u76ee\u6807\u7535\u8111\u5b8c\u6210\u672c\u5730\u6821\u9a8c\u4e0e\u6fc0\u6d3b');
+      setHostOperation(null);
+      await load();
+    } catch (error: any) {
+      setHostOperationError(error?.code || 'PRIMARY_HOST_OPERATION_FAILED');
+    } finally {
+      operationRef.current = '';
+      setOperationKey('');
+    }
+  };
+
+  const openHostTransferActivation = () => {
+    const transfer = snapshot?.host?.incomingTransfer;
+    if (!transfer || operationRef.current) return;
+    setHostOperationError('');
+    setRecoveryPackage(null);
+    setHostOperation({
+      operation: 'transfer-activation',
+      transfer,
+      challenge: { id: transfer.challengeId, status: 'identity_verified' },
+    });
+  };
+
+  const activateHostTransfer = async () => {
+    const transfer = hostOperation?.transfer;
+    if (operationRef.current || hostOperation?.operation !== 'transfer-activation' || !transfer) return;
+    operationRef.current = 'primary-host:transfer:activate';
+    setOperationKey(operationRef.current);
+    setHostOperationError('');
+    try {
+      if (!hostPassword) throw Object.assign(new Error('DESKTOP_IDENTITY_LOCAL_PASSWORD_REQUIRED'), { code: 'DESKTOP_IDENTITY_LOCAL_PASSWORD_REQUIRED' });
+      const desktopIdentity = (window as any).desktopIdentity;
+      const primaryHostRuntime = (window as any).primaryHostRuntime;
+      if (!desktopIdentity?.unlock || !primaryHostRuntime?.prepareOperation || !primaryHostRuntime?.adopt) {
+        throw Object.assign(new Error('PRIMARY_HOST_DESKTOP_RUNTIME_REQUIRED'), { code: 'PRIMARY_HOST_DESKTOP_RUNTIME_REQUIRED' });
+      }
+      await desktopIdentity.unlock({ password: hostPassword });
+      const context = requestContextRef.current;
+      const prepared = await primaryHostRuntime.prepareOperation({
+        operation: 'transfer',
+        challengeId: transfer.challengeId,
+        transferId: transfer.id,
+        sourceEpochId: transfer.sourceEpochId,
+        sourceGeneration: transfer.sourceGeneration,
+        targetGeneration: transfer.targetGeneration,
+        authorization: context.session.authorization,
+        physicalConfirmation: 'I_AM_PHYSICALLY_AT_THIS_DEVICE',
+      });
+      const result = await activatePrimaryHostTransfer({
+        ...context,
+        transferId: transfer.id,
+        request: {
+          expectedTransferRowVersion: transfer.rowVersion,
+          localReceipt: prepared.localReceipt,
+          validationManifest: prepared.operationManifest,
+          preflightProof: prepared.preflightProof,
+        },
+      });
+      await primaryHostRuntime.adopt({
+        authorization: context.session.authorization,
+        epoch: result.epoch,
+        credentialStageId: prepared.credentialStage.id,
+      });
+      setHostPassword('');
+      setRecoveryPackage(result.recoveryPackage);
+      setHostOperation((current: any) => ({ ...current, completed: true, epoch: result.epoch }));
+      await load();
+    } catch (error: any) {
+      setHostOperationError(error?.code || 'PRIMARY_HOST_OPERATION_FAILED');
+    } finally {
+      operationRef.current = '';
+      setOperationKey('');
+    }
+  };
+
+  const startHostRecovery = async () => {
+    if (operationRef.current || !snapshot?.host?.canRecover) return;
+    operationRef.current = 'primary-host:recovery:start';
+    setOperationKey(operationRef.current);
+    setHostOperationError('');
+    setRecoveryPackage(null);
+    try {
+      const context = requestContextRef.current;
+      const data = await startPrimaryHostOperation({
+        ...context,
+        request: { operation: 'recovery', targetDeviceId: snapshot.host.deviceId },
+      });
+      setHostOperation({ operation: 'recovery', challenge: data.challenge });
+    } catch (error: any) {
+      setHostOperationError(error?.code || 'PRIMARY_HOST_OPERATION_FAILED');
+      message.error(identityDeviceCenterErrorMessage(error?.code));
+    } finally {
+      operationRef.current = '';
+      setOperationKey('');
+    }
+  };
+
+  const completeHostRecovery = async () => {
+    if (operationRef.current || hostOperation?.operation !== 'recovery'
+      || hostOperation?.challenge?.status !== 'identity_verified') return;
+    operationRef.current = 'primary-host:recovery:complete';
+    setOperationKey(operationRef.current);
+    setHostOperationError('');
+    try {
+      if (!hostPassword) throw Object.assign(new Error('DESKTOP_IDENTITY_LOCAL_PASSWORD_REQUIRED'), { code: 'DESKTOP_IDENTITY_LOCAL_PASSWORD_REQUIRED' });
+      if (!factorId.trim() || !recoveryCode.trim()) {
+        throw Object.assign(new Error('PRIMARY_HOST_RECOVERY_FACTOR_REQUIRED'), { code: 'PRIMARY_HOST_RECOVERY_FACTOR_REQUIRED' });
+      }
+      const desktopIdentity = (window as any).desktopIdentity;
+      const primaryHostRuntime = (window as any).primaryHostRuntime;
+      if (!desktopIdentity?.unlock || !primaryHostRuntime?.prepareOperation || !primaryHostRuntime?.adopt) {
+        throw Object.assign(new Error('PRIMARY_HOST_DESKTOP_RUNTIME_REQUIRED'), { code: 'PRIMARY_HOST_DESKTOP_RUNTIME_REQUIRED' });
+      }
+      await desktopIdentity.unlock({ password: hostPassword });
+      const context = requestContextRef.current;
+      const sourceGeneration = Number(snapshot.host.activeEpoch.generation);
+      const prepared = await primaryHostRuntime.prepareOperation({
+        operation: 'recovery',
+        challengeId: hostOperation.challenge.id,
+        sourceGeneration,
+        targetGeneration: sourceGeneration + 1,
+        authorization: context.session.authorization,
+        physicalConfirmation: 'I_AM_PHYSICALLY_AT_THIS_DEVICE',
+      });
+      const result = await recoverPrimaryHost({
+        ...context,
+        request: {
+          challengeId: hostOperation.challenge.id,
+          expectedChallengeRowVersion: hostOperation.challenge.rowVersion,
+          factorId: factorId.trim(),
+          recoveryCode: recoveryCode.trim(),
+          localReceipt: prepared.localReceipt,
+          evidence: prepared.operationManifest,
+          preflightProof: prepared.preflightProof,
+        },
+      });
+      await primaryHostRuntime.adopt({
+        authorization: context.session.authorization,
+        epoch: result.epoch,
+        credentialStageId: prepared.credentialStage.id,
+      });
+      setHostPassword('');
+      setFactorId('');
+      setRecoveryCode('');
+      setRecoveryPackage(result.recoveryPackage);
+      setHostOperation((current: any) => ({ ...current, completed: true, epoch: result.epoch }));
+      await load();
+    } catch (error: any) {
+      setHostOperationError(error?.code || 'PRIMARY_HOST_OPERATION_FAILED');
+    } finally {
+      operationRef.current = '';
+      setOperationKey('');
+    }
+  };
+
+  const copyRecoveryPackage = async () => {
+    if (!recoveryPackage) return;
+    await navigator.clipboard.writeText(JSON.stringify(recoveryPackage, null, 2));
+    message.success('\u6062\u590d\u5305\u5df2\u590d\u5236\uff0c\u8bf7\u4fdd\u5b58\u5230\u5b89\u5168\u7684\u79bb\u7ebf\u4f4d\u7f6e');
+  };
+
   const pendingColumns: ColumnsType<any> = [
     { title: '\u7533\u8bf7\u8bbe\u5907', render: (_, row) => <div><strong>{row.deviceName}</strong><div className="identity-device-center__muted">{row.deviceId}</div></div> },
     { title: '\u5bc6\u94a5\u6307\u7eb9', dataIndex: 'keyFingerprintSummary' },
@@ -232,9 +592,142 @@ const IdentityDeviceCenter: React.FC = () => {
           <Descriptions.Item label={'\u8bbe\u5907 ID'}>{snapshot.host.deviceId || '--'}</Descriptions.Item>
           <Descriptions.Item label={'\u4e3b\u673a\u5730\u5740'}>{snapshot.host.hostBaseUrl || '--'}</Descriptions.Item>
           <Descriptions.Item label={'\u6743\u5a01\u804c\u8d23'}>{'\u5ba1\u6279\u3001\u5168\u91cf\u6570\u636e\u4e0e\u540c\u6b65\u6700\u7ec8\u786e\u8ba4\u7531\u6307\u5b9a\u6570\u636e\u4e3b\u673a\u627f\u62c5'}</Descriptions.Item>
+          <Descriptions.Item label={'\u4e3b\u673a\u4ee3\u6b21'}>{snapshot.host.activeEpoch ? `#${snapshot.host.activeEpoch.generation}` : '\u5c1a\u672a\u5efa\u7acb\u53d7\u7ba1\u4e3b\u673a\u8eab\u4efd'}</Descriptions.Item>
+          <Descriptions.Item label={'\u8eab\u4efd\u72b6\u6001'}>{snapshot.host.runtimeMatchesActiveEpoch ? '\u672c\u673a\u51ed\u636e\u4e0e\u4e91\u7aef\u4e3b\u673a\u4ee3\u6b21\u4e00\u81f4' : snapshot.host.controlAvailable ? '\u7b49\u5f85\u5b8c\u6210\u4e3b\u673a\u8eab\u4efd\u64cd\u4f5c' : '\u65e0\u6cd5\u8bfb\u53d6\u4e3b\u673a\u63a7\u5236\u9762'}</Descriptions.Item>
         </Descriptions>
+        {snapshot.host.requiresRuntimeDemotion && <Alert
+          style={{ marginTop: 16 }}
+          type="error"
+          showIcon
+          message={'\u672c\u673a\u4e3b\u673a\u4ee3\u6b21\u5df2\u9000\u5f79'}
+          description={'\u4e91\u7aef\u5df2\u7531\u5176\u4ed6\u7535\u8111\u63a5\u7ba1\u6570\u636e\u4e3b\u673a\u3002\u8bf7\u6e05\u7406\u672c\u673a\u65e7\u51ed\u636e\uff0c\u5e76\u4ee5\u666e\u901a\u79bb\u7ebf\u5ba2\u6237\u7aef\u91cd\u542f\u3002'}
+          action={<Button
+            danger
+            loading={operationKey === 'primary-host:runtime:demote'}
+            onClick={() => void demoteStaleHostRuntime()}
+          >{'\u6e05\u7406\u65e7\u51ed\u636e\u5e76\u91cd\u542f'}</Button>}
+        />}
+        {snapshot.host.canResumeRuntimeAdoption && <Alert
+          style={{ marginTop: 16 }}
+          type="warning"
+          showIcon
+          message={'\u68c0\u6d4b\u5230\u672a\u5b8c\u6210\u7684\u4e3b\u673a\u51ed\u636e\u6536\u53e3'}
+          description={'\u4e91\u7aef\u5df2\u6fc0\u6d3b\u5f53\u524d\u4e3b\u673a\u4ee3\u6b21\uff0c\u4f46\u5e94\u7528\u5728\u5199\u5165\u672c\u673a\u8fd0\u884c\u914d\u7f6e\u524d\u4e2d\u65ad\u3002\u5df2\u52a0\u5bc6\u6682\u5b58\u7684\u51ed\u636e\u4ecd\u53ef\u5b89\u5168\u9a8c\u8bc1\u5e76\u6062\u590d\u3002'}
+          action={<Button
+            type="primary"
+            loading={operationKey === 'primary-host:runtime-adoption:resume'}
+            onClick={() => void resumeHostRuntimeAdoption()}
+          >{'\u6062\u590d\u4e3b\u673a\u51ed\u636e\u5e76\u91cd\u542f'}</Button>}
+        />}
+        {snapshot.host.canBootstrap && <Alert
+          style={{ marginTop: 16 }}
+          type="warning"
+          showIcon
+          message={'\u5f53\u524d\u662f\u65e7\u7248\u672c\u5730\u6570\u636e\u4e3b\u673a\uff0c\u9700\u8981\u5efa\u7acb\u53d7\u7ba1\u4e3b\u673a\u8eab\u4efd'}
+          description={'\u9700\u8981\u5fae\u4fe1\u626b\u7801\u9a8c\u8bc1\u672c\u4eba\u624b\u673a\u53f7\u3001\u672c\u673a\u5bc6\u7801\uff0c\u5e76\u6838\u9a8c\u5f53\u524d\u6570\u636e\u5e93\u4e0e\u79fb\u52a8\u9898\u5e93\u7ed1\u5b9a\u3002'}
+          action={<Button type="primary" loading={operationKey === 'primary-host:bootstrap:start'} onClick={() => void startHostBootstrap()}>{'\u5f00\u59cb\u5efa\u7acb\u4e3b\u673a\u8eab\u4efd'}</Button>}
+        />}
+        {snapshot.host.canStartTransfer && <Alert
+          style={{ marginTop: 16 }}
+          type="info"
+          showIcon
+          message={'\u8ba1\u5212\u6362\u673a'}
+          description={<Space direction="vertical" size="small">
+            <span>{'\u5148\u4e3a\u540c\u4e00\u7528\u6237\u7684\u5df2\u6fc0\u6d3b\u76ee\u6807\u7535\u8111\u521b\u5efa generation+1 \u5f85\u9a8c\u8bc1\u8fc1\u79fb\uff0c\u518d\u5230\u76ee\u6807\u7535\u8111\u5b8c\u6210\u672c\u5730\u5907\u4efd\u4e0e\u9898\u5e93\u7ed1\u5b9a\u6821\u9a8c\u3002'}</span>
+            <Space wrap>{snapshot.mine.filter((device: any) => device.status === 'active'
+              && !device.isCurrent
+              && device.ownerId === snapshot.identity.userId)
+              .map((device: any) => <Button
+                key={device.deviceId}
+                loading={operationKey === 'primary-host:transfer:start'}
+                onClick={() => void startHostTransfer(device)}
+              >{'\u8fc1\u79fb\u5230 '}{device.deviceName}</Button>)}</Space>
+          </Space>}
+        />}
+        {snapshot.host.canActivateTransfer && <Alert
+          style={{ marginTop: 16 }}
+          type="warning"
+          showIcon
+          message={`\u5df2\u6536\u5230 generation #${snapshot.host.incomingTransfer.targetGeneration} \u8ba1\u5212\u8fc1\u79fb`}
+          description={'\u53ea\u6709\u5f53\u524d\u76ee\u6807\u7535\u8111\u7684 SQLite\u3001schema\u3001\u79fb\u52a8\u9898\u5e93\u7ed1\u5b9a\u3001\u4e91\u7aef\u5065\u5eb7\u4e0e\u540c\u6b65 dry-run \u5168\u90e8\u901a\u8fc7\u540e\u624d\u4f1a\u539f\u5b50\u6fc0\u6d3b\u3002'}
+          action={<Button type="primary" onClick={openHostTransferActivation}>{'\u6821\u9a8c\u672c\u673a\u5e76\u6fc0\u6d3b'}</Button>}
+        />}
+        {snapshot.host.canRecover && <Alert
+          style={{ marginTop: 16 }}
+          type="error"
+          showIcon
+          message={'\u7d27\u6025\u6062\u590d'}
+          description={'\u4ec5\u5728\u65e7\u4e3b\u673a\u6301\u7eed\u79bb\u7ebf\u4e14\u4f60\u6301\u6709\u672a\u4f7f\u7528\u7684\u6062\u590d\u56e0\u5b50\u548c\u6743\u5a01\u5907\u4efd\u65f6\u4f7f\u7528\u3002'}
+          action={<Button danger loading={operationKey === 'primary-host:recovery:start'} onClick={() => void startHostRecovery()}>{'\u5f00\u59cb\u7d27\u6025\u6062\u590d'}</Button>}
+        />}
       </Card>
     </>}
+
+    <Modal
+      open={Boolean(hostOperation)}
+      title={hostOperation?.operation === 'bootstrap'
+        ? '\u5efa\u7acb\u53d7\u7ba1\u672c\u5730\u6570\u636e\u4e3b\u673a'
+        : hostOperation?.operation === 'transfer'
+          ? '\u521b\u5efa\u8ba1\u5212\u6362\u673a'
+          : hostOperation?.operation === 'transfer-activation'
+            ? '\u6821\u9a8c\u5e76\u6fc0\u6d3b\u65b0\u4e3b\u673a'
+            : '\u7d27\u6025\u6062\u590d\u672c\u5730\u6570\u636e\u4e3b\u673a'}
+      footer={null}
+      closable={!recoveryPackage}
+      maskClosable={false}
+      onCancel={() => { if (!recoveryPackage) {
+        setHostOperation(null);
+        setHostPassword('');
+        setFactorId('');
+        setRecoveryCode('');
+      } }}
+    >
+      {hostOperation && !recoveryPackage && <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Alert
+          showIcon
+          type="warning"
+          message={'\u8fd9\u662f\u9ad8\u98ce\u9669\u4e3b\u673a\u8eab\u4efd\u64cd\u4f5c'}
+          description={hostOperation.operation === 'transfer-activation'
+            ? '\u5fc5\u987b\u5728\u8fd9\u53f0\u76ee\u6807\u7535\u8111\u4e0a\u5b8c\u6210\u6743\u5a01\u5907\u4efd\u3001SQLite \u5b8c\u6574\u6027\u3001schema \u548c\u9898\u5e93\u7ed1\u5b9a\u6821\u9a8c\u3002'
+            : '\u8bf7\u7528\u5fae\u4fe1\u626b\u7801\uff0c\u5728\u5c0f\u7a0b\u5e8f\u4e2d\u6bcf\u6b21\u91cd\u65b0\u6388\u6743\u624b\u673a\u53f7\u3002\u5fae\u4fe1\u5b8c\u6210\u540e\u56de\u5230\u672c\u9875\u5237\u65b0\u3002'}
+        />
+        {hostOperation.challenge.qrValue && <div style={{ display: 'flex', justifyContent: 'center' }}><QRCode value={hostOperation.challenge.qrValue} size={220} /></div>}
+        <Descriptions size="small" column={1}>
+          <Descriptions.Item label={'\u64cd\u4f5c\u8bbe\u5907'}>{hostOperation.challenge.deviceName || snapshot?.host?.deviceId}</Descriptions.Item>
+          <Descriptions.Item label={'\u5fae\u4fe1\u9a8c\u8bc1'}>{hostOperation.challenge.status === 'identity_verified' ? '\u5df2\u901a\u8fc7' : '\u7b49\u5f85\u626b\u7801'}</Descriptions.Item>
+        </Descriptions>
+        {hostOperation.operation !== 'transfer-activation' && hostOperation.challenge.status !== 'identity_verified'
+          && <Button onClick={() => void refreshHostOperation()} loading={operationKey === 'primary-host:challenge:refresh'}>{'\u6211\u5df2\u5728\u5fae\u4fe1\u5b8c\u6210\uff0c\u5237\u65b0\u72b6\u6001'}</Button>}
+        {hostOperation.operation === 'bootstrap' && hostOperation.challenge.status === 'identity_verified' && <>
+          <Input.Password value={hostPassword} onChange={event => setHostPassword(event.target.value)} placeholder={'\u8f93\u5165\u8fd9\u53f0\u7535\u8111\u7684\u672c\u673a\u5bc6\u7801'} autoComplete="current-password" />
+          <Alert type="info" showIcon message={'\u786e\u8ba4\u4f60\u6b63\u5728\u8fd9\u53f0\u7535\u8111\u524d\uff0c\u4e14\u79fb\u52a8\u9898\u5e93\u76d8\u5df2\u63a5\u5165'} />
+          <Button type="primary" block loading={operationKey === 'primary-host:bootstrap:complete'} onClick={() => void completeHostBootstrap()}>{'\u6838\u9a8c\u672c\u673a\u5e76\u542f\u7528\u4e3b\u673a\u8eab\u4efd'}</Button>
+        </>}
+        {hostOperation.operation === 'transfer' && hostOperation.challenge.status === 'identity_verified' && <>
+          <Alert type="info" showIcon message={'\u624b\u673a\u53f7\u5df2\u9a8c\u8bc1\uff1b\u786e\u8ba4\u540e\u53ea\u521b\u5efa\u5f85\u6821\u9a8c\u8fc1\u79fb\uff0c\u4e0d\u4f1a\u7acb\u5373\u5207\u6362\u4e3b\u673a\u3002'} />
+          <Button type="primary" block loading={operationKey === 'primary-host:transfer:complete'} onClick={() => void completeHostTransfer()}>{'\u521b\u5efa generation+1 \u5f85\u6821\u9a8c\u8fc1\u79fb'}</Button>
+        </>}
+        {hostOperation.operation === 'transfer-activation' && <>
+          <Input.Password value={hostPassword} onChange={event => setHostPassword(event.target.value)} placeholder={'\u8f93\u5165\u8fd9\u53f0\u7535\u8111\u7684\u672c\u673a\u5bc6\u7801'} autoComplete="current-password" />
+          <Alert type="info" showIcon message={'\u786e\u8ba4\u79fb\u52a8\u9898\u5e93\u76d8\u5df2\u63a5\u5165\uff0c\u4e14\u5f53\u524d\u672c\u5730\u6570\u636e\u5e93\u662f\u6743\u5a01\u5907\u4efd\u7684\u76ee\u6807\u5b9e\u4f8b'} />
+          <Button type="primary" block loading={operationKey === 'primary-host:transfer:activate'} onClick={() => void activateHostTransfer()}>{'\u5f00\u59cb\u6821\u9a8c\u5e76\u539f\u5b50\u6fc0\u6d3b'}</Button>
+        </>}
+        {hostOperation.operation === 'recovery' && hostOperation.challenge.status === 'identity_verified' && <>
+          <Input value={factorId} onChange={event => setFactorId(event.target.value)} placeholder={'\u6062\u590d\u56e0\u5b50 ID'} autoComplete="off" />
+          <Input.Password value={recoveryCode} onChange={event => setRecoveryCode(event.target.value)} placeholder={'\u4e00\u6b21\u6027\u6062\u590d\u7801'} autoComplete="off" />
+          <Input.Password value={hostPassword} onChange={event => setHostPassword(event.target.value)} placeholder={'\u8f93\u5165\u8fd9\u53f0\u7535\u8111\u7684\u672c\u673a\u5bc6\u7801'} autoComplete="current-password" />
+          <Alert type="error" showIcon message={'\u6062\u590d\u56e0\u5b50\u53ea\u80fd\u4f7f\u7528\u4e00\u6b21\uff1b\u65e7\u4e3b\u673a\u5fc5\u987b\u5df2\u6301\u7eed\u5931\u8054\u81f3\u5c11 15 \u5206\u949f'} />
+          <Button danger type="primary" block loading={operationKey === 'primary-host:recovery:complete'} onClick={() => void completeHostRecovery()}>{'\u6821\u9a8c\u8bc1\u636e\u5e76\u6267\u884c\u7d27\u6025\u6062\u590d'}</Button>
+        </>}
+        {hostOperationError && <Alert type="error" showIcon message={identityDeviceCenterErrorMessage(hostOperationError)} />}
+      </Space>}
+      {recoveryPackage && <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Alert type="success" showIcon message={'\u4e3b\u673a\u8eab\u4efd\u5df2\u5efa\u7acb'} description={'\u4e0b\u65b9\u7d27\u6025\u6062\u590d\u5305\u53ea\u663e\u793a\u8fd9\u4e00\u6b21\u3002\u5b83\u4e0d\u662f\u65e5\u5e38\u767b\u5f55\u5bc6\u7801\uff0c\u8bf7\u79bb\u7ebf\u4fdd\u7ba1\u3002'} />
+        <Input.TextArea readOnly autoSize={{ minRows: 5 }} value={JSON.stringify(recoveryPackage, null, 2)} />
+        <Button onClick={() => void copyRecoveryPackage()}>{'\u590d\u5236\u7d27\u6025\u6062\u590d\u5305'}</Button>
+        <Button type="primary" onClick={() => void (window as any).primaryHostRuntime.restart()}>{'\u6211\u5df2\u5b89\u5168\u4fdd\u5b58\uff0c\u91cd\u542f\u5e94\u7528'}</Button>
+      </Space>}
+    </Modal>
   </main>;
 };
 
