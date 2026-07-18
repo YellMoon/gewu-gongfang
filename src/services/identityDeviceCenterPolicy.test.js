@@ -7,10 +7,16 @@ const assert = require('assert');
     buildRejectionBody,
     buildRevocationBody,
     identityDeviceCenterAccess,
+    activatePrimaryHostTransfer,
+    beginPrimaryHostTransfer,
+    bootstrapPrimaryHost,
     loadIdentityDeviceCenter,
     projectIdentityDeviceCenterSnapshot,
+    readPrimaryHostOperationChallenge,
+    recoverPrimaryHost,
     rejectDesktopChallenge,
     revokeDesktopDevice,
+    startPrimaryHostOperation,
   } = await import('./identityDeviceCenterPolicy.mjs');
 
   const canonicalSession = {
@@ -30,6 +36,7 @@ const assert = require('assert');
     canReview: true,
     canViewAllDevices: true,
     canRevoke: true,
+    canManageHost: true,
     activeRole: 'super_admin',
     eligibleRoles: ['super_admin', 'teacher'],
     userId: 'canonical-user',
@@ -76,6 +83,19 @@ const assert = require('assert');
   const snapshot = projectIdentityDeviceCenterSnapshot({
     pending: [pendingRow], mine, all: [...mine, { deviceId: 'other-1', deviceName: '其他用户电脑', userId: 'other-user', status: 'active', rowVersion: 1, createdAt: '2026-04-01T00:00:00.000Z' }],
     runtimeConfig: hostRuntime, session: canonicalSession,
+    hostRuntimeStatus: {
+      credential: {
+        state: 'staged', active: false, stageId: 'bootstrap:host-challenge',
+        deviceId: 'device-host', generation: 1,
+      },
+    },
+    hostControl: {
+      activeEpoch: {
+        id: 'epoch-1', generation: 1, deviceId: 'device-host', userId: 'canonical-user',
+        rowVersion: 3, status: 'active', activatedAt: '2026-07-18T00:00:00.000Z',
+      },
+      transfers: [], history: [],
+    },
   });
   assert.strictEqual(snapshot.pending[0].claimant.id, 'canonical-user');
   assert.strictEqual(snapshot.pending[0].sameClaimantAndReviewer, true);
@@ -85,6 +105,35 @@ const assert = require('assert');
   assert.deepStrictEqual(snapshot.mine.find(item => item.deviceId === 'device-3').replacesDeviceIds, ['device-2']);
   assert.strictEqual(snapshot.all.length, 4);
   assert.strictEqual(snapshot.identity.teacherId, 'teacher-self');
+  assert.strictEqual(snapshot.host.activeEpoch.id, 'epoch-1');
+  assert.strictEqual(snapshot.host.isActiveHostDevice, true);
+  assert.strictEqual(snapshot.host.canStartTransfer, true);
+  assert.strictEqual(snapshot.host.requiresRuntimeAdoption, true);
+  assert.strictEqual(snapshot.host.canResumeRuntimeAdoption, true);
+  assert.strictEqual(snapshot.host.pendingCredentialStage.stageId, 'bootstrap:host-challenge');
+
+  const demotionSnapshot = projectIdentityDeviceCenterSnapshot({
+    mine,
+    all: mine,
+    runtimeConfig: {
+      ...hostRuntime,
+      primaryHostEpochId: 'epoch-1',
+      primaryHostGeneration: 1,
+    },
+    session: canonicalSession,
+    hostControl: {
+      activeEpoch: {
+        id: 'epoch-2', generation: 2, deviceId: 'device-3', userId: 'canonical-user',
+        rowVersion: 1, status: 'active', activatedAt: '2026-07-18T01:00:00.000Z',
+      },
+      transfers: [], history: [],
+    },
+  });
+  assert.strictEqual(demotionSnapshot.host.isActiveHostDevice, false);
+  assert.strictEqual(demotionSnapshot.host.requiresRuntimeDemotion, true,
+    'a retired local host epoch must be demoted after another device becomes active');
+  assert.strictEqual(demotionSnapshot.host.canRecover, false,
+    'a retired local credential must be cleared before staging a recovery generation');
 
   assert.deepStrictEqual(buildRevocationBody(
     snapshot.mine.find(item => item.deviceId === 'device-2'),
@@ -96,14 +145,23 @@ const assert = require('assert');
   const calls = [];
   const fetchImpl = async (url, options = {}) => {
     calls.push({ url: String(url), options });
+    if (String(url).endsWith('/primary-host/status')) {
+      return { ok: true, json: async () => ({ success: true, data: {
+        activeEpoch: { id: 'epoch-1', generation: 1, deviceId: 'device-host', userId: 'canonical-user', rowVersion: 3, status: 'active' },
+        transfers: [], history: [],
+      } }) };
+    }
     const items = String(url).endsWith('/authorizations/pending') ? [pendingRow] : mine;
-    return { ok: true, json: async () => ({ success: true, data: { items, challenge: {}, authorization: {} } }) };
+    return { ok: true, json: async () => ({ success: true, data: {
+      items, challenge: { id: 'host-challenge', status: 'pending_phone', rowVersion: 1 },
+      authorization: {}, transfer: { id: 'transfer-1' }, epoch: { id: 'epoch-1' },
+    } }) };
   };
   const loaded = await loadIdentityDeviceCenter({
     baseUrl: 'http://127.0.0.1:3001', runtimeConfig: hostRuntime, session: canonicalSession, fetchImpl,
   });
   assert.strictEqual(loaded.pending.length, 1);
-  assert.strictEqual(calls.length, 3);
+  assert.strictEqual(calls.length, 4);
   assert.ok(calls.every(call => call.options.headers.Authorization === 'Bearer session-token'));
 
   calls.length = 0;
@@ -130,6 +188,52 @@ const assert = require('assert');
   assert.deepStrictEqual(JSON.parse(calls[0].options.body), {
     expectedRowVersion: 8, reason: 'replaced', replacementDeviceId: 'device-3',
   });
+
+  calls.length = 0;
+  await startPrimaryHostOperation({
+    baseUrl: 'http://127.0.0.1:3001', session: canonicalSession,
+    request: { operation: 'bootstrap', targetDeviceId: 'device-host' }, fetchImpl,
+  });
+  assert.ok(calls[0].url.endsWith('/api/desktop-identity/primary-host/challenges/start'));
+  assert.deepStrictEqual(JSON.parse(calls[0].options.body), { operation: 'bootstrap', targetDeviceId: 'device-host' });
+  calls.length = 0;
+  await readPrimaryHostOperationChallenge({
+    baseUrl: 'http://127.0.0.1:3001', challengeId: 'host-challenge', fetchImpl,
+  });
+  assert.ok(calls[0].url.endsWith('/api/desktop-identity/primary-host/challenges/host-challenge/public'));
+  assert.ok(!calls[0].options.headers.Authorization);
+
+  const operationContext = { baseUrl: 'http://127.0.0.1:3001', session: canonicalSession, fetchImpl };
+  calls.length = 0;
+  await bootstrapPrimaryHost({ ...operationContext, request: {
+    challengeId: 'host-challenge', expectedChallengeRowVersion: 2,
+    localReceipt: { receipt: { version: 2 }, signature: 'signed' },
+    operationManifest: { credentialStage: { id: 'bootstrap:host-challenge' } },
+  } });
+  assert.ok(calls[0].url.endsWith('/api/desktop-identity/primary-host/bootstrap'));
+  assert.deepStrictEqual(JSON.parse(calls[0].options.body).operationManifest, {
+    credentialStage: { id: 'bootstrap:host-challenge' },
+  });
+  calls.length = 0;
+  await beginPrimaryHostTransfer({ ...operationContext, request: {
+    challengeId: 'host-challenge', expectedChallengeRowVersion: 2, expectedActiveEpochRowVersion: 3,
+  } });
+  assert.ok(calls[0].url.endsWith('/api/desktop-identity/primary-host/transfers'));
+  calls.length = 0;
+  await activatePrimaryHostTransfer({ ...operationContext, transferId: 'transfer-1', request: {
+    expectedTransferRowVersion: 1, localReceipt: { receipt: {}, signature: 'signed' }, validationManifest: {},
+    preflightProof: { id: 'proof-transfer', token: 'proof-token-transfer' },
+  } });
+  assert.ok(calls[0].url.endsWith('/api/desktop-identity/primary-host/transfers/transfer-1/activate'));
+  assert.strictEqual(JSON.parse(calls[0].options.body).preflightProof.id, 'proof-transfer');
+  calls.length = 0;
+  await recoverPrimaryHost({ ...operationContext, request: {
+    challengeId: 'host-challenge', expectedChallengeRowVersion: 2, factorId: 'factor-1',
+    recoveryCode: 'recovery-code', localReceipt: { receipt: {}, signature: 'signed' }, evidence: {},
+    preflightProof: { id: 'proof-recovery', token: 'proof-token-recovery' },
+  } });
+  assert.ok(calls[0].url.endsWith('/api/desktop-identity/primary-host/recover'));
+  assert.strictEqual(JSON.parse(calls[0].options.body).preflightProof.id, 'proof-recovery');
 
   console.log('identity device center policy checks passed');
 })().catch(error => { console.error(error); process.exit(1); });

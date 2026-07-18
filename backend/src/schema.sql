@@ -554,6 +554,158 @@ CREATE INDEX IF NOT EXISTS idx_desktop_sessions_device_status
 CREATE INDEX IF NOT EXISTS idx_desktop_sessions_user_status
   ON desktop_sessions(user_id, status, expires_at);
 
+CREATE TABLE IF NOT EXISTS primary_host_operation_challenges (
+  id TEXT PRIMARY KEY,
+  operation TEXT NOT NULL CHECK (operation IN ('bootstrap', 'transfer', 'recovery')),
+  requested_by_user_id TEXT NOT NULL,
+  requested_by_device_id TEXT NOT NULL,
+  target_device_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending_phone'
+    CHECK (status IN ('pending_phone', 'identity_verified', 'consumed', 'expired', 'cancelled')),
+  verified_user_id TEXT,
+  verified_login_event_id TEXT UNIQUE,
+  phone_verified_at TEXT,
+  expires_at TEXT NOT NULL,
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  consumed_at TEXT,
+  FOREIGN KEY (requested_by_user_id) REFERENCES users(id),
+  FOREIGN KEY (verified_user_id) REFERENCES users(id),
+  FOREIGN KEY (verified_login_event_id) REFERENCES miniapp_login_events(id) ON DELETE SET NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_primary_host_challenge_active_request
+  ON primary_host_operation_challenges(operation, requested_by_user_id, target_device_id)
+  WHERE status IN ('pending_phone', 'identity_verified');
+
+CREATE INDEX IF NOT EXISTS idx_primary_host_challenge_status_expiry
+  ON primary_host_operation_challenges(status, expires_at);
+
+CREATE TABLE IF NOT EXISTS primary_host_epochs (
+  id TEXT PRIMARY KEY,
+  generation INTEGER NOT NULL UNIQUE CHECK (generation >= 1),
+  device_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  authorization_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active', 'retired', 'recovery_superseded')),
+  activation_reason TEXT NOT NULL CHECK (activation_reason IN ('bootstrap', 'transfer', 'recovery')),
+  source_epoch_id TEXT,
+  challenge_id TEXT NOT NULL,
+  db_instance_digest TEXT NOT NULL,
+  schema_version INTEGER NOT NULL CHECK (schema_version >= 1),
+  store_id TEXT NOT NULL,
+  db_authority_id TEXT NOT NULL,
+  host_credential_hash TEXT NOT NULL,
+  credential_version INTEGER NOT NULL DEFAULT 1 CHECK (credential_version >= 1),
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  activated_at TEXT NOT NULL,
+  retired_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (authorization_id) REFERENCES desktop_device_authorizations(id),
+  FOREIGN KEY (source_epoch_id) REFERENCES primary_host_epochs(id),
+  FOREIGN KEY (challenge_id) REFERENCES primary_host_operation_challenges(id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_primary_host_single_active
+  ON primary_host_epochs(status)
+  WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_primary_host_device_generation
+  ON primary_host_epochs(device_id, generation DESC);
+
+CREATE TABLE IF NOT EXISTS host_transfers (
+  id TEXT PRIMARY KEY,
+  source_epoch_id TEXT NOT NULL,
+  source_generation INTEGER NOT NULL CHECK (source_generation >= 1),
+  target_generation INTEGER NOT NULL UNIQUE CHECK (target_generation >= 2),
+  target_device_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  challenge_id TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending_validation'
+    CHECK (status IN ('pending_validation', 'activated', 'cancelled', 'expired')),
+  validation_manifest_hash TEXT,
+  last_failure_code TEXT,
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  activated_at TEXT,
+  FOREIGN KEY (source_epoch_id) REFERENCES primary_host_epochs(id),
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (challenge_id) REFERENCES primary_host_operation_challenges(id)
+);
+
+CREATE TABLE IF NOT EXISTS primary_host_preflight_proofs (
+  id TEXT PRIMARY KEY,
+  token_hash TEXT NOT NULL UNIQUE,
+  operation TEXT NOT NULL CHECK (operation IN ('transfer', 'recovery')),
+  user_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  authorization_id TEXT NOT NULL,
+  authorization_row_version INTEGER NOT NULL,
+  session_id TEXT NOT NULL,
+  session_row_version INTEGER NOT NULL,
+  auth_version INTEGER NOT NULL,
+  credential_version INTEGER NOT NULL,
+  challenge_id TEXT NOT NULL,
+  challenge_row_version INTEGER NOT NULL,
+  transfer_id TEXT,
+  transfer_row_version INTEGER,
+  source_epoch_id TEXT NOT NULL,
+  source_epoch_row_version INTEGER NOT NULL,
+  source_generation INTEGER NOT NULL,
+  target_generation INTEGER NOT NULL,
+  local_manifest_hash TEXT NOT NULL,
+  manifest_hash TEXT NOT NULL,
+  local_receipt_nonce TEXT NOT NULL,
+  local_receipt_signature_hash TEXT NOT NULL,
+  cloud_preflight_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'issued' CHECK (status IN ('issued', 'consumed')),
+  issued_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  consumed_at TEXT,
+  FOREIGN KEY (authorization_id) REFERENCES desktop_device_authorizations(id),
+  FOREIGN KEY (session_id) REFERENCES desktop_sessions(sid),
+  FOREIGN KEY (challenge_id) REFERENCES primary_host_operation_challenges(id),
+  FOREIGN KEY (transfer_id) REFERENCES host_transfers(id),
+  FOREIGN KEY (source_epoch_id) REFERENCES primary_host_epochs(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_primary_host_preflight_proofs_context
+  ON primary_host_preflight_proofs(operation, challenge_id, transfer_id, status, expires_at);
+
+CREATE INDEX IF NOT EXISTS idx_host_transfers_status_created
+  ON host_transfers(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS host_recovery_factors (
+  id TEXT PRIMARY KEY,
+  epoch_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  generation INTEGER NOT NULL CHECK (generation >= 1),
+  factor_hash TEXT NOT NULL,
+  factor_salt TEXT NOT NULL,
+  kdf_params_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'used', 'revoked')),
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  used_at TEXT,
+  used_by_device_id TEXT,
+  revoked_at TEXT,
+  FOREIGN KEY (epoch_id) REFERENCES primary_host_epochs(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_host_recovery_factor_active_epoch
+  ON host_recovery_factors(epoch_id)
+  WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_host_recovery_factor_user_status
+  ON host_recovery_factors(user_id, status, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS sync_authorizations (
   id TEXT PRIMARY KEY,
   device_id TEXT NOT NULL,

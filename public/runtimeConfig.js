@@ -17,6 +17,8 @@ function defaultConfig(userDataPath) {
   return {
     nodeRole: 'desktop-client',
     deviceId: makeDeviceId(),
+    primaryHostEpochId: '',
+    primaryHostGeneration: null,
     hostBaseUrl: 'http://127.0.0.1:3001',
     cloudBaseUrl: MANAGED_CLOUD_BASE_URL,
     desktopSyncToken: '',
@@ -37,6 +39,15 @@ function normalizeRuntimeConfig(input = {}, options = {}) {
 
   next.nodeRole = VALID_ROLES.has(next.nodeRole) ? next.nodeRole : 'desktop-client';
   next.deviceId = next.deviceId || defaults.deviceId;
+  next.primaryHostEpochId = String(next.primaryHostEpochId || '').trim();
+  const primaryHostGeneration = Number(next.primaryHostGeneration);
+  next.primaryHostGeneration = Number.isSafeInteger(primaryHostGeneration) && primaryHostGeneration > 0
+    ? primaryHostGeneration
+    : null;
+  if (next.nodeRole !== 'primary-host' || !next.primaryHostEpochId || !next.primaryHostGeneration) {
+    next.primaryHostEpochId = '';
+    next.primaryHostGeneration = null;
+  }
   next.hostBaseUrl = trimTrailingSlash(next.hostBaseUrl || defaults.hostBaseUrl);
   next.cloudBaseUrl = next.nodeRole === 'desktop-client'
     ? trimTrailingSlash(options.managedCloudBaseUrl || MANAGED_CLOUD_BASE_URL)
@@ -70,11 +81,86 @@ function readRuntimeConfig(configPath, options = {}) {
   return normalizeRuntimeConfig(raw, options);
 }
 
-function writeRuntimeConfig(configPath, config, options = {}) {
-  const normalized = normalizeRuntimeConfig(config, options);
+function persistRuntimeConfig(configPath, config) {
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(normalized, null, 2), 'utf-8');
-  return normalized;
+  const temporary = `${configPath}.tmp`;
+  try {
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+    fs.writeFileSync(temporary, JSON.stringify(config, null, 2), { encoding: 'utf-8', flag: 'wx' });
+    fs.renameSync(temporary, configPath);
+  } catch (error) {
+    try {
+      if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+    } catch (_cleanupError) { /* best effort */ }
+    throw error;
+  }
+  return config;
+}
+
+function writeRuntimeConfig(configPath, config, options = {}) {
+  const exists = fs.existsSync(configPath);
+  const current = exists
+    ? readRuntimeConfig(configPath, options)
+    : normalizeRuntimeConfig({
+      ...(config || {}),
+      nodeRole: 'desktop-client',
+      primaryHostEpochId: '',
+      primaryHostGeneration: null,
+    }, options);
+  const normalized = normalizeRuntimeConfig({
+    ...current,
+    ...(config || {}),
+    deviceId: current.deviceId,
+    nodeRole: current.nodeRole,
+    primaryHostEpochId: current.primaryHostEpochId,
+    primaryHostGeneration: current.primaryHostGeneration,
+  }, options);
+  return persistRuntimeConfig(configPath, normalized);
+}
+
+function runtimeConfigError(code) {
+  const error = new Error(code);
+  error.code = code;
+  return error;
+}
+
+function writeManagedHostRuntimeConfig(configPath, identity = {}, options = {}) {
+  const current = fs.existsSync(configPath)
+    ? readRuntimeConfig(configPath, options)
+    : normalizeRuntimeConfig({ deviceId: identity.deviceId }, options);
+  const deviceId = String(identity.deviceId || '').trim();
+  const epochId = String(identity.epochId || '').trim();
+  const generation = Number(identity.generation);
+  if (!deviceId || current.deviceId !== deviceId) {
+    throw runtimeConfigError('PRIMARY_HOST_RUNTIME_DEVICE_MISMATCH');
+  }
+  if (!epochId || epochId.length > 128 || !Number.isSafeInteger(generation) || generation < 1) {
+    throw runtimeConfigError('PRIMARY_HOST_RUNTIME_EPOCH_INVALID');
+  }
+  return persistRuntimeConfig(configPath, normalizeRuntimeConfig({
+    ...current,
+    nodeRole: 'primary-host',
+    primaryHostEpochId: epochId,
+    primaryHostGeneration: generation,
+  }, options));
+}
+
+function writeManagedClientRuntimeConfig(configPath, identity = {}, options = {}) {
+  const current = readRuntimeConfig(configPath, options);
+  const deviceId = String(identity.deviceId || '').trim();
+  const expectedEpochId = String(identity.expectedEpochId || '').trim();
+  if (!deviceId || current.deviceId !== deviceId) {
+    throw runtimeConfigError('PRIMARY_HOST_RUNTIME_DEVICE_MISMATCH');
+  }
+  if (expectedEpochId && current.primaryHostEpochId !== expectedEpochId) {
+    throw runtimeConfigError('PRIMARY_HOST_RUNTIME_EPOCH_MISMATCH');
+  }
+  return persistRuntimeConfig(configPath, normalizeRuntimeConfig({
+    ...current,
+    nodeRole: 'desktop-client',
+    primaryHostEpochId: '',
+    primaryHostGeneration: null,
+  }, options));
 }
 
 function deriveScopedSecret(seed, scope) {
@@ -84,6 +170,12 @@ function deriveScopedSecret(seed, scope) {
 function applyRuntimeConfigToEnv(config, env = process.env) {
   env.GEWU_NODE_ROLE = config.nodeRole;
   env.GEWU_DEVICE_ID = config.deviceId;
+  delete env.GEWU_PRIMARY_HOST_EPOCH_ID;
+  delete env.GEWU_PRIMARY_HOST_GENERATION;
+  if (config.nodeRole === 'primary-host' && config.primaryHostEpochId && config.primaryHostGeneration) {
+    env.GEWU_PRIMARY_HOST_EPOCH_ID = config.primaryHostEpochId;
+    env.GEWU_PRIMARY_HOST_GENERATION = String(config.primaryHostGeneration);
+  }
   env.GEWU_HOST_BASE_URL = config.hostBaseUrl || '';
   env.GEWU_CLOUD_BASE_URL = config.cloudBaseUrl || '';
   if (config.desktopSyncToken) {
@@ -111,6 +203,8 @@ module.exports = {
   normalizeRuntimeConfig,
   readRuntimeConfig,
   writeRuntimeConfig,
+  writeManagedHostRuntimeConfig,
+  writeManagedClientRuntimeConfig,
   applyRuntimeConfigToEnv,
   MANAGED_CLOUD_BASE_URL,
 };

@@ -1,9 +1,12 @@
 const { Router } = require('express');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { getInstance } = require('../database');
 const { JWT_SECRET } = require('../middleware/auth');
 const { createDesktopIdentityService } = require('../services/desktopIdentityService');
 const { createDesktopSessionService } = require('../services/desktopSessionService');
+const { createPrimaryHostIdentityService } = require('../services/primaryHostIdentityService');
+const { createPrimaryHostLocalValidationService } = require('../services/primaryHostLocalValidationService');
 const {
   createDesktopDeviceChallengeService,
   createDesktopOfflineLease,
@@ -29,6 +32,29 @@ const ROLE_SWITCH_KEYS = new Set([
 ]);
 const SESSION_CHALLENGE_START_KEYS = new Set(['authorizationId', 'deviceId']);
 const SESSION_CHALLENGE_EXCHANGE_KEYS = new Set(['signature', 'expectedRowVersion']);
+const PRIMARY_HOST_CHALLENGE_START_KEYS = new Set(['operation', 'targetDeviceId']);
+const PRIMARY_HOST_CHALLENGE_CONFIRM_KEYS = new Set(['code', 'phoneCode', 'expectedRowVersion']);
+const PRIMARY_HOST_LOCAL_EVIDENCE_KEYS = new Set(['purpose', 'sourceGeneration', 'targetGeneration']);
+const PRIMARY_HOST_PREFLIGHT_PROOF_KEYS = new Set([
+  'operation', 'challengeId', 'transferId', 'sourceEpochId', 'sourceGeneration',
+  'targetGeneration', 'operationManifest', 'localReceipt',
+]);
+const PRIMARY_HOST_BOOTSTRAP_KEYS = new Set([
+  'challengeId', 'expectedChallengeRowVersion', 'localReceipt', 'operationManifest',
+]);
+const PRIMARY_HOST_TRANSFER_KEYS = new Set([
+  'challengeId', 'expectedChallengeRowVersion', 'expectedActiveEpochRowVersion',
+]);
+const PRIMARY_HOST_TRANSFER_ACTIVATE_KEYS = new Set([
+  'expectedTransferRowVersion', 'localReceipt', 'validationManifest', 'preflightProof',
+]);
+const PRIMARY_HOST_RECOVERY_KEYS = new Set([
+  'challengeId', 'expectedChallengeRowVersion', 'factorId', 'recoveryCode',
+  'localReceipt', 'evidence', 'preflightProof',
+]);
+const PRIMARY_HOST_CREDENTIAL_VERIFY_KEYS = new Set([
+  'epochId', 'deviceId', 'generation', 'credential',
+]);
 
 function routeError(code) {
   const error = new Error(code);
@@ -58,6 +84,8 @@ function statusForError(error, authenticationPhase = false) {
   if (code === 'WECHAT_CONFIG_REQUIRED') return 503;
   if (code.startsWith('WECHAT_') && (code.endsWith('_FAILED') || code.endsWith('_TIMEOUT'))) return 502;
   if (code === 'DESKTOP_SESSION_CHALLENGE_NOT_FOUND') return 404;
+  if (code === 'PRIMARY_HOST_CHALLENGE_NOT_FOUND'
+    || code === 'PRIMARY_HOST_TRANSFER_NOT_FOUND') return 404;
   if (code === 'DESKTOP_SESSION_CHALLENGE_REPLAYED'
     || code === 'DESKTOP_SESSION_CHALLENGE_EXPIRED'
     || code === 'DESKTOP_SESSION_CHALLENGE_STALE'
@@ -77,12 +105,21 @@ function statusForError(error, authenticationPhase = false) {
     || code === 'DESKTOP_DEVICE_AUTHORIZATION_MISMATCH'
     || code.startsWith('DESKTOP_ROLE_ELEVATION_')
     || code === 'ACTIVE_ROLE_NOT_GRANTED'
-    || code === 'DESKTOP_IDENTITY_NOT_ELIGIBLE') return 403;
+    || code === 'DESKTOP_IDENTITY_NOT_ELIGIBLE'
+    || code === 'PRIMARY_HOST_LOCAL_RECEIPT_LOOPBACK_REQUIRED'
+    || code === 'PRIMARY_HOST_CANONICAL_SUPER_ADMIN_REQUIRED'
+    || code === 'PRIMARY_HOST_SUPER_ADMIN_ROLE_REQUIRED'
+    || code === 'PRIMARY_HOST_ACTIVE_DEVICE_REQUIRED'
+    || code === 'PRIMARY_HOST_DEVICE_NOT_ACTIVE') return 403;
   if (code.includes('STALE')
     || code.includes('CONFLICT')
     || code.includes('ALREADY')
     || code.includes('REPLAY')
     || code.includes('STATE_INVALID')
+    || code.startsWith('PRIMARY_HOST_EPOCH_')
+    || code.startsWith('PRIMARY_HOST_TRANSFER_')
+    || code.startsWith('PRIMARY_HOST_CHALLENGE_')
+    || code === 'PRIMARY_HOST_ALREADY_BOOTSTRAPPED'
     || code === 'DESKTOP_ACTIVE_ROLE_UNCHANGED'
     || code === 'DESKTOP_DEVICE_NOT_ACTIVE') return 409;
   return 400;
@@ -99,6 +136,8 @@ function createDesktopIdentityRouter({
   now,
   identityService,
   sessionService,
+  primaryHostIdentityService,
+  primaryHostLocalValidationService,
   deviceChallengeService,
   miniappIdentityService,
   authenticateDesktop,
@@ -107,10 +146,13 @@ function createDesktopIdentityRouter({
   createDesktopAuthorizationUrlLink = defaultCreateDesktopAuthorizationUrlLink,
   challengeIdFactory = uuidv4,
   allowDesktopAuthorizationUrlFallback = process.env.NODE_ENV !== 'production' && process.env.APP_ENV !== 'prod',
+  localBridgeSecret = process.env.GEWU_ELECTRON_LOCAL_BRIDGE_SECRET || '',
 } = {}) {
   const database = db || getInstance().db;
   let identities = identityService || null;
   let sessions = sessionService || null;
+  let primaryHosts = primaryHostIdentityService || null;
+  let primaryHostLocalValidation = primaryHostLocalValidationService || null;
   let deviceChallenges = deviceChallengeService || null;
   let miniappIdentities = miniappIdentityService || null;
   function identity() {
@@ -130,6 +172,24 @@ function createDesktopIdentityRouter({
       });
     }
     return deviceChallenges;
+  }
+  function primaryHost() {
+    if (!primaryHosts) {
+      primaryHosts = createPrimaryHostIdentityService({ db: database, now });
+    }
+    return primaryHosts;
+  }
+  function localHostValidation() {
+    if (!primaryHostLocalValidation) {
+      primaryHostLocalValidation = createPrimaryHostLocalValidationService({
+        db: database,
+        collectEvidence: input => primaryHost().collectLocalEvidence(input),
+        backupRoot: process.env.GEWU_LOCAL_CACHE_PATH
+          ? require('path').join(process.env.GEWU_LOCAL_CACHE_PATH, 'primary-host-validation')
+          : undefined,
+      });
+    }
+    return primaryHostLocalValidation;
   }
   function miniappIdentity() {
     if (!miniappIdentities) {
@@ -156,6 +216,30 @@ function createDesktopIdentityRouter({
         return sendError(res, error);
       }
     };
+  }
+
+  function isLoopbackRequest(req) {
+    const address = String(req.socket?.remoteAddress || req.ip || '').toLowerCase();
+    return address === '::1' || address === '127.0.0.1' || address === '::ffff:127.0.0.1';
+  }
+
+  function assertLocalBridge(req) {
+    if (!isLoopbackRequest(req)) throw routeError('PRIMARY_HOST_LOCAL_BRIDGE_FORBIDDEN');
+    const expected = Buffer.from(String(localBridgeSecret || ''), 'utf8');
+    const supplied = Buffer.from(String(req.get('x-gewu-electron-local-bridge') || ''), 'utf8');
+    if (expected.length < 32 || expected.length !== supplied.length
+      || !crypto.timingSafeEqual(expected, supplied)) {
+      throw routeError('PRIMARY_HOST_LOCAL_BRIDGE_FORBIDDEN');
+    }
+  }
+
+  function hostChallengeOrNull(challengeId) {
+    try {
+      return primaryHost().readOperationChallenge(challengeId);
+    } catch (error) {
+      if (error?.code === 'PRIMARY_HOST_CHALLENGE_NOT_FOUND') return null;
+      throw error;
+    }
   }
 
   router.post('/challenges/start', async function (req, res) {
@@ -189,6 +273,10 @@ function createDesktopIdentityRouter({
 
   router.get('/challenges/:id/public', function (req, res) {
     try {
+      if (hostChallengeOrNull(req.params.id)) {
+        const challenge = primaryHost().readPublicOperationChallenge(req.params.id);
+        return res.json({ success: true, data: { challenge } });
+      }
       const challenge = identity().readMiniappChallenge(req.params.id);
       return res.json({ success: true, data: { challenge } });
     } catch (error) {
@@ -202,6 +290,28 @@ function createDesktopIdentityRouter({
       const code = String(req.body.code || '').trim();
       const phoneCode = String(req.body.phoneCode || '').trim();
       if (!code || !phoneCode) throw routeError('VERIFIED_WECHAT_IDENTITY_REQUIRED');
+      const hostChallenge = hostChallengeOrNull(req.params.id);
+      if (hostChallenge) {
+        if (hostChallenge.status !== 'pending_phone') {
+          throw routeError('PRIMARY_HOST_CHALLENGE_STATE_INVALID');
+        }
+        const wechat = await resolveWechatIdentity(code);
+        const phone = await resolveWechatPhoneNumber(phoneCode);
+        const login = miniappIdentity().loginWithVerifiedWechat({
+          openid: wechat.openid,
+          unionid: wechat.unionid,
+          phone,
+          platform: `desktop-primary-host-${hostChallenge.operation}`,
+        });
+        primaryHost().confirmOperationChallenge({
+          challengeId: req.params.id,
+          identity: login.user,
+          loginEventId: login.loginEventId,
+          expectedRowVersion: req.body.expectedRowVersion,
+        });
+        const challenge = primaryHost().readPublicOperationChallenge(req.params.id);
+        return res.json({ success: true, data: { challenge } });
+      }
       const publicChallenge = identity().readMiniappChallenge(req.params.id);
       if (publicChallenge.status !== 'pending_phone') {
         throw routeError('DESKTOP_CHALLENGE_STATE_INVALID');
@@ -306,6 +416,166 @@ function createDesktopIdentityRouter({
     session().assertSuperAdmin(context);
     const items = identity().listAllDevices();
     return res.json({ success: true, data: { items } });
+  }));
+
+  router.get('/primary-host/status', authenticated(function (_req, res, context) {
+    const data = primaryHost().getStatus(context);
+    return res.json({ success: true, data });
+  }));
+
+  router.post('/primary-host/credentials/verify', authenticated(function (req, res, context) {
+    assertBodyKeys(req.body, PRIMARY_HOST_CREDENTIAL_VERIFY_KEYS);
+    const epoch = primaryHost().verifyCredentialAdoption({
+      actorContext: context,
+      epochId: req.body.epochId,
+      deviceId: req.body.deviceId,
+      generation: req.body.generation,
+      credential: req.body.credential,
+    });
+    return res.json({ success: true, data: { epoch } });
+  }));
+
+  router.post('/primary-host/challenges/start', authenticated(async function (req, res, context) {
+    assertBodyKeys(req.body, PRIMARY_HOST_CHALLENGE_START_KEYS);
+    const challenge = primaryHost().startOperationChallenge({
+      actorContext: context,
+      operation: req.body.operation,
+      targetDeviceId: req.body.targetDeviceId,
+    });
+    let qrValue = null;
+    try {
+      qrValue = await createDesktopAuthorizationUrlLink({ challengeId: challenge.id });
+    } catch (error) {
+      if (!allowDesktopAuthorizationUrlFallback) throw error;
+    }
+    return res.json({ success: true, data: { challenge: { ...challenge, qrValue } } });
+  }));
+
+  router.get('/primary-host/challenges/:id/public', function (req, res) {
+    try {
+      const challenge = primaryHost().readPublicOperationChallenge(req.params.id);
+      return res.json({ success: true, data: { challenge } });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  router.post('/primary-host/challenges/:id/confirm', async function (req, res) {
+    try {
+      assertBodyKeys(req.body, PRIMARY_HOST_CHALLENGE_CONFIRM_KEYS);
+      const code = String(req.body.code || '').trim();
+      const phoneCode = String(req.body.phoneCode || '').trim();
+      if (!code || !phoneCode) throw routeError('VERIFIED_WECHAT_IDENTITY_REQUIRED');
+      const publicChallenge = primaryHost().readOperationChallenge(req.params.id);
+      if (publicChallenge.status !== 'pending_phone') {
+        throw routeError('PRIMARY_HOST_CHALLENGE_STATE_INVALID');
+      }
+      const wechat = await resolveWechatIdentity(code);
+      const phone = await resolveWechatPhoneNumber(phoneCode);
+      const login = miniappIdentity().loginWithVerifiedWechat({
+        openid: wechat.openid,
+        unionid: wechat.unionid,
+        phone,
+        platform: `desktop-primary-host-${publicChallenge.operation}`,
+      });
+      primaryHost().confirmOperationChallenge({
+        challengeId: req.params.id,
+        identity: login.user,
+        loginEventId: login.loginEventId,
+        expectedRowVersion: req.body.expectedRowVersion,
+      });
+      const challenge = primaryHost().readPublicOperationChallenge(req.params.id);
+      return res.json({ success: true, data: { challenge } });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  router.post('/primary-host/local-evidence', authenticated(async function (req, res, context) {
+    assertBodyKeys(req.body, PRIMARY_HOST_LOCAL_EVIDENCE_KEYS);
+    assertLocalBridge(req);
+    const prepared = await localHostValidation().prepare({
+      deviceId: context.deviceId,
+      operation: req.body.purpose,
+      sourceGeneration: req.body.sourceGeneration,
+      targetGeneration: req.body.targetGeneration,
+      actorContext: context,
+    });
+    return res.json({ success: true, data: prepared });
+  }));
+
+  router.post('/primary-host/local-receipts', authenticated(function (_req, res) {
+    return res.status(410).json({
+      success: false,
+      code: 'PRIMARY_HOST_LOCAL_RECEIPT_MOVED_TO_DEVICE_VAULT',
+    });
+  }));
+
+  router.post('/primary-host/bootstrap', authenticated(function (req, res, context) {
+    assertBodyKeys(req.body, PRIMARY_HOST_BOOTSTRAP_KEYS);
+    const data = primaryHost().bootstrap({
+      actorContext: context,
+      challengeId: req.body.challengeId,
+      expectedChallengeRowVersion: req.body.expectedChallengeRowVersion,
+      localReceipt: req.body.localReceipt,
+      operationManifest: req.body.operationManifest,
+    });
+    return res.json({ success: true, data });
+  }));
+
+  router.post('/primary-host/transfers', authenticated(function (req, res, context) {
+    assertBodyKeys(req.body, PRIMARY_HOST_TRANSFER_KEYS);
+    const transfer = primaryHost().beginTransfer({
+      actorContext: context,
+      challengeId: req.body.challengeId,
+      expectedChallengeRowVersion: req.body.expectedChallengeRowVersion,
+      expectedActiveEpochRowVersion: req.body.expectedActiveEpochRowVersion,
+    });
+    return res.json({ success: true, data: { transfer } });
+  }));
+
+  router.post('/primary-host/preflight-proofs', authenticated(function (req, res, context) {
+    assertBodyKeys(req.body, PRIMARY_HOST_PREFLIGHT_PROOF_KEYS);
+    const preflight = primaryHost().issuePreflightProof({
+      actorContext: context,
+      operation: req.body.operation,
+      challengeId: req.body.challengeId,
+      transferId: req.body.transferId,
+      sourceEpochId: req.body.sourceEpochId,
+      sourceGeneration: req.body.sourceGeneration,
+      targetGeneration: req.body.targetGeneration,
+      operationManifest: req.body.operationManifest,
+      localReceipt: req.body.localReceipt,
+    });
+    return res.json({ success: true, data: { preflight } });
+  }));
+
+  router.post('/primary-host/transfers/:id/activate', authenticated(function (req, res, context) {
+    assertBodyKeys(req.body, PRIMARY_HOST_TRANSFER_ACTIVATE_KEYS);
+    const data = primaryHost().activateTransfer({
+      actorContext: context,
+      transferId: req.params.id,
+      expectedTransferRowVersion: req.body.expectedTransferRowVersion,
+      localReceipt: req.body.localReceipt,
+      validationManifest: req.body.validationManifest,
+      preflightProof: req.body.preflightProof,
+    });
+    return res.json({ success: true, data });
+  }));
+
+  router.post('/primary-host/recover', authenticated(function (req, res, context) {
+    assertBodyKeys(req.body, PRIMARY_HOST_RECOVERY_KEYS);
+    const data = primaryHost().recover({
+      actorContext: context,
+      challengeId: req.body.challengeId,
+      expectedChallengeRowVersion: req.body.expectedChallengeRowVersion,
+      factorId: req.body.factorId,
+      recoveryCode: req.body.recoveryCode,
+      localReceipt: req.body.localReceipt,
+      evidence: req.body.evidence,
+      preflightProof: req.body.preflightProof,
+    });
+    return res.json({ success: true, data });
   }));
 
   router.post('/session/challenges/start', function (req, res) {

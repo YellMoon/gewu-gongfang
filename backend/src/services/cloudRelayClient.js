@@ -8,6 +8,22 @@ function buildHeaders(options = {}) {
   const headers = { 'Content-Type': 'application/json' };
   const authorization = options.authorization || options.Authorization || '';
   if (authorization) headers.Authorization = authorization;
+  const hostCredential = options.hostCredential || options.host_credential || '';
+  const hostDeviceId = options.hostDeviceId || options.host_device_id || '';
+  const hostGeneration = options.hostGeneration ?? options.host_generation ?? '';
+  const hasManagedHostIdentity = Boolean(hostCredential || hostGeneration !== '');
+  if (hasManagedHostIdentity) {
+    const generation = Number(hostGeneration);
+    if (!hostCredential || !hostDeviceId || !Number.isInteger(generation) || generation < 1) {
+      throw Object.assign(new Error('managed host identity requires credential, device id, and positive generation'), {
+        code: 'MANAGED_HOST_IDENTITY_INCOMPLETE',
+      });
+    }
+    headers['x-gewu-host-device-id'] = String(hostDeviceId);
+    headers['x-gewu-host-generation'] = String(generation);
+    headers['x-gewu-host-credential'] = String(hostCredential);
+    return headers;
+  }
   const hostToken = options.hostToken || options.host_token || '';
   if (hostToken) headers['x-gewu-host-token'] = hostToken;
   return headers;

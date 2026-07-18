@@ -1,6 +1,7 @@
 const ACTIVE_DEVICE_STATUS = 'active';
 const PENDING_CHALLENGE_STATUS = 'identity_verified_pending_approval';
 const REVOCATION_REASONS = new Set(['lost', 'replaced', 'user_request', 'security']);
+const PRIMARY_HOST_OPERATIONS = new Set(['bootstrap', 'transfer', 'recovery']);
 
 function policyError(code, cause) {
   const error = new Error(code);
@@ -40,11 +41,15 @@ export function identityDeviceCenterAccess({ runtimeConfig = {}, session = {} } 
   const canReview = Boolean(
     userId && deviceId && isPrimaryHost && activeRole === 'super_admin' && eligibleRoles.includes('super_admin')
   );
+  const canManageHost = Boolean(
+    userId && deviceId && activeRole === 'super_admin' && eligibleRoles.includes('super_admin')
+  );
   return Object.freeze({
     visible: Boolean(userId && deviceId && activeRole),
     canReview,
     canViewAllDevices: canReview,
     canRevoke: canReview,
+    canManageHost,
     activeRole,
     eligibleRoles,
     userId,
@@ -157,7 +162,8 @@ function projectDevice(device, { access, runtimeConfig, replacementNames, replac
 }
 
 export function projectIdentityDeviceCenterSnapshot({
-  pending = [], mine = [], all = [], runtimeConfig = {}, session = {},
+  pending = [], mine = [], all = [], hostControl = null, hostRuntimeStatus = null,
+  runtimeConfig = {}, session = {},
 } = {}) {
   if (![pending, mine, all].every(Array.isArray)) throw policyError('DESKTOP_DEVICE_CENTER_RESPONSE_INVALID');
   const access = identityDeviceCenterAccess({ runtimeConfig, session });
@@ -173,6 +179,42 @@ export function projectIdentityDeviceCenterSnapshot({
     replacedSources.set(replacementId, [...(replacedSources.get(replacementId) || []), sourceId]);
   }
   const project = device => projectDevice(device, { access, runtimeConfig, replacementNames, replacedSources });
+  const controlAvailable = Boolean(hostControl && typeof hostControl === 'object' && !hostControl.errorCode);
+  const activeEpoch = controlAvailable && hostControl.activeEpoch ? Object.freeze({ ...hostControl.activeEpoch }) : null;
+  const transfers = controlAvailable && Array.isArray(hostControl.transfers)
+    ? Object.freeze(hostControl.transfers.map(transfer => Object.freeze({ ...transfer })))
+    : Object.freeze([]);
+  const history = controlAvailable && Array.isArray(hostControl.history)
+    ? Object.freeze(hostControl.history.map(epoch => Object.freeze({ ...epoch })))
+    : Object.freeze([]);
+  const incomingTransfer = transfers.find(transfer => transfer.status === 'pending_validation'
+    && text(transfer.targetDeviceId) === access.deviceId) || null;
+  const isActiveHostDevice = Boolean(activeEpoch && text(activeEpoch.deviceId) === access.deviceId);
+  const runtimeEpochId = text(runtimeConfig.primaryHostEpochId);
+  const runtimeGeneration = Number(runtimeConfig.primaryHostGeneration) || null;
+  const runtimeMatchesActiveEpoch = Boolean(isActiveHostDevice
+    && runtimeConfig.nodeRole === 'primary-host'
+    && runtimeEpochId === text(activeEpoch.id)
+    && runtimeGeneration === Number(activeEpoch.generation));
+  const runtimeCredential = hostRuntimeStatus?.credential && typeof hostRuntimeStatus.credential === 'object'
+    ? hostRuntimeStatus.credential
+    : null;
+  const pendingCredentialStage = runtimeCredential?.state === 'staged'
+    ? Object.freeze({
+      state: 'staged',
+      stageId: text(runtimeCredential.stageId),
+      operation: text(runtimeCredential.operation),
+      deviceId: text(runtimeCredential.deviceId),
+      generation: Number(runtimeCredential.generation) || null,
+    })
+    : null;
+  const canResumeRuntimeAdoption = Boolean(isActiveHostDevice
+    && !runtimeMatchesActiveEpoch
+    && pendingCredentialStage?.stageId
+    && pendingCredentialStage.deviceId === access.deviceId
+    && pendingCredentialStage.generation === Number(activeEpoch.generation));
+  const requiresRuntimeDemotion = Boolean(runtimeEpochId && activeEpoch
+    && (runtimeEpochId !== text(activeEpoch.id) || !isActiveHostDevice));
   return Object.freeze({
     access,
     identity: Object.freeze({
@@ -189,6 +231,25 @@ export function projectIdentityDeviceCenterSnapshot({
       deviceId: text(runtimeConfig.deviceId),
       hostBaseUrl: text(runtimeConfig.hostBaseUrl),
       isPrimaryHost: access.isPrimaryHost,
+      runtimeEpochId,
+      runtimeGeneration,
+      controlAvailable,
+      controlErrorCode: hostControl?.errorCode || null,
+      activeEpoch,
+      transfers,
+      history,
+      incomingTransfer,
+      isActiveHostDevice,
+      runtimeMatchesActiveEpoch,
+      canBootstrap: access.canManageHost && controlAvailable && !activeEpoch && access.isPrimaryHost,
+      canStartTransfer: access.canManageHost && isActiveHostDevice,
+      canActivateTransfer: access.canManageHost && Boolean(incomingTransfer),
+      canRecover: access.canManageHost && Boolean(activeEpoch) && !isActiveHostDevice
+        && !requiresRuntimeDemotion,
+      requiresRuntimeAdoption: isActiveHostDevice && !runtimeMatchesActiveEpoch,
+      pendingCredentialStage,
+      canResumeRuntimeAdoption,
+      requiresRuntimeDemotion,
     }),
   });
 }
@@ -229,7 +290,17 @@ async function identityRequest({ baseUrl, session, fetchImpl = globalThis.fetch 
   return responsePayload(response);
 }
 
-export async function loadIdentityDeviceCenter({ baseUrl, runtimeConfig, session, fetchImpl = globalThis.fetch } = {}) {
+async function publicIdentityRequest({ baseUrl, fetchImpl = globalThis.fetch }, pathname) {
+  if (typeof fetchImpl !== 'function') throw policyError('DESKTOP_IDENTITY_FETCH_REQUIRED');
+  const response = await fetchImpl(`${apiBase(baseUrl)}${pathname}`, {
+    method: 'GET', headers: { Accept: 'application/json' },
+  });
+  return responsePayload(response);
+}
+
+export async function loadIdentityDeviceCenter({
+  baseUrl, runtimeConfig, session, hostRuntimeStatus = null, fetchImpl = globalThis.fetch,
+} = {}) {
   const access = identityDeviceCenterAccess({ runtimeConfig, session });
   if (!access.visible) throw policyError('AUTHORIZATION_CONTEXT_REQUIRED');
   const ownPromise = identityRequest({ baseUrl, session, fetchImpl }, '/api/desktop-identity/devices');
@@ -239,14 +310,114 @@ export async function loadIdentityDeviceCenter({ baseUrl, runtimeConfig, session
   const allPromise = access.canViewAllDevices
     ? identityRequest({ baseUrl, session, fetchImpl }, '/api/desktop-identity/devices/all')
     : Promise.resolve({ items: [] });
-  const [ownData, pendingData, allData] = await Promise.all([ownPromise, pendingPromise, allPromise]);
+  const hostPromise = access.canManageHost
+    ? identityRequest({ baseUrl, session, fetchImpl }, '/api/desktop-identity/primary-host/status')
+      .catch(error => ({ errorCode: error.code || 'PRIMARY_HOST_STATUS_UNAVAILABLE' }))
+    : Promise.resolve(null);
+  const [ownData, pendingData, allData, hostControl] = await Promise.all([
+    ownPromise, pendingPromise, allPromise, hostPromise,
+  ]);
   return projectIdentityDeviceCenterSnapshot({
     mine: ownData.items || [],
     pending: pendingData.items || [],
     all: allData.items || [],
+    hostControl,
+    hostRuntimeStatus,
     runtimeConfig,
     session,
   });
+}
+
+export async function startPrimaryHostOperation({ baseUrl, session, request, fetchImpl = globalThis.fetch } = {}) {
+  const operation = text(request?.operation);
+  const targetDeviceId = text(request?.targetDeviceId);
+  if (!PRIMARY_HOST_OPERATIONS.has(operation) || !targetDeviceId) {
+    throw policyError('PRIMARY_HOST_OPERATION_INPUT_INVALID');
+  }
+  return identityRequest(
+    { baseUrl, session, fetchImpl },
+    '/api/desktop-identity/primary-host/challenges/start',
+    { method: 'POST', body: { operation, targetDeviceId } }
+  );
+}
+
+export async function readPrimaryHostOperationChallenge({ baseUrl, challengeId, fetchImpl = globalThis.fetch } = {}) {
+  const id = text(challengeId);
+  if (!id) throw policyError('PRIMARY_HOST_CHALLENGE_REQUIRED');
+  return publicIdentityRequest(
+    { baseUrl, fetchImpl },
+    `/api/desktop-identity/primary-host/challenges/${encodeURIComponent(id)}/public`
+  );
+}
+
+export async function bootstrapPrimaryHost({ baseUrl, session, request, fetchImpl = globalThis.fetch } = {}) {
+  const challengeId = text(request?.challengeId);
+  if (!challengeId || !request?.localReceipt || !request?.operationManifest) {
+    throw policyError('PRIMARY_HOST_BOOTSTRAP_INPUT_INVALID');
+  }
+  return identityRequest(
+    { baseUrl, session, fetchImpl }, '/api/desktop-identity/primary-host/bootstrap',
+    { method: 'POST', body: {
+      challengeId,
+      expectedChallengeRowVersion: safeVersion(request.expectedChallengeRowVersion),
+      localReceipt: request.localReceipt,
+      operationManifest: request.operationManifest,
+    } }
+  );
+}
+
+export async function beginPrimaryHostTransfer({ baseUrl, session, request, fetchImpl = globalThis.fetch } = {}) {
+  const challengeId = text(request?.challengeId);
+  if (!challengeId) throw policyError('PRIMARY_HOST_TRANSFER_INPUT_INVALID');
+  return identityRequest(
+    { baseUrl, session, fetchImpl }, '/api/desktop-identity/primary-host/transfers',
+    { method: 'POST', body: {
+      challengeId,
+      expectedChallengeRowVersion: safeVersion(request.expectedChallengeRowVersion),
+      expectedActiveEpochRowVersion: safeVersion(request.expectedActiveEpochRowVersion),
+    } }
+  );
+}
+
+export async function activatePrimaryHostTransfer({
+  baseUrl, session, transferId, request, fetchImpl = globalThis.fetch,
+} = {}) {
+  const id = text(transferId);
+  if (!id || !request?.localReceipt || !request?.validationManifest || !request?.preflightProof) {
+    throw policyError('PRIMARY_HOST_TRANSFER_ACTIVATION_INPUT_INVALID');
+  }
+  return identityRequest(
+    { baseUrl, session, fetchImpl },
+    `/api/desktop-identity/primary-host/transfers/${encodeURIComponent(id)}/activate`,
+    { method: 'POST', body: {
+      expectedTransferRowVersion: safeVersion(request.expectedTransferRowVersion),
+      localReceipt: request.localReceipt,
+      validationManifest: request.validationManifest,
+      preflightProof: request.preflightProof,
+    } }
+  );
+}
+
+export async function recoverPrimaryHost({ baseUrl, session, request, fetchImpl = globalThis.fetch } = {}) {
+  const challengeId = text(request?.challengeId);
+  const factorId = text(request?.factorId);
+  const recoveryCode = text(request?.recoveryCode);
+  if (!challengeId || !factorId || !recoveryCode || !request?.localReceipt
+    || !request?.evidence || !request?.preflightProof) {
+    throw policyError('PRIMARY_HOST_RECOVERY_INPUT_INVALID');
+  }
+  return identityRequest(
+    { baseUrl, session, fetchImpl }, '/api/desktop-identity/primary-host/recover',
+    { method: 'POST', body: {
+      challengeId,
+      expectedChallengeRowVersion: safeVersion(request.expectedChallengeRowVersion),
+      factorId,
+      recoveryCode,
+      localReceipt: request.localReceipt,
+      evidence: request.evidence,
+      preflightProof: request.preflightProof,
+    } }
+  );
 }
 
 export async function loadIdentityDevicePendingCount({ baseUrl, runtimeConfig, session, fetchImpl = globalThis.fetch } = {}) {

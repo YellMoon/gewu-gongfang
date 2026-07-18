@@ -154,6 +154,7 @@ const desktopAuthorizationEntry = pageInventory.find(entry => entry.route === 'p
 assert.ok(desktopAuthorizationEntry?.roleViews.includes('guest'), 'desktop authorization must be a public guest entry');
 assert.ok(!desktopAuthorizationEntry?.roleViews.some(role => role.startsWith('review-')), 'review identities must not become desktop claimants');
 assert.ok(desktopAuthorizationEntry?.verificationStates.includes('phone-cancelled'), 'desktop authorization must cover cancelled phone consent');
+assert.ok(desktopAuthorizationEntry?.verificationStates.includes('operation-confirmed'), 'desktop authorization must cover completed high-risk host verification');
 
 const uiFilesToScan = [
   'src/app.tsx',

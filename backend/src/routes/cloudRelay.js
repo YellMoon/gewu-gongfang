@@ -8,6 +8,7 @@ const {
 } = require('../services/miniappAccessPolicy');
 const { roleForUser } = require('../services/authorizationPolicy');
 const { issueRelayAssertion } = require('../services/relayAssertionService');
+const { createPrimaryHostIdentityService } = require('../services/primaryHostIdentityService');
 const taskService = require('../services/cloudRelayTaskService');
 const { createMiniappProvisioningReconciler } = require('../services/miniappProvisioningReconciler');
 const { buildQuestionPreviewIndex, safeHostBaseUrl } = require('../services/questionPreviewIndex');
@@ -69,6 +70,10 @@ function sendForbidden(res, code, message = 'Forbidden') {
 function validateDesktopSyncInput(req,res){const deviceId=String(req.headers['x-device-id']||req.body.deviceId||'');const name=String(req.body.deviceName||'');if(!deviceId||deviceId.length>128||name.length>128)return res.status(400).json({success:false,code:'INVALID_SYNC_REQUEST'});const changes=req.body.pendingChanges;if(!Array.isArray(changes)||changes.length>500)return res.status(changes?.length>500?413:400).json({success:false,code:changes?.length>500?'SYNC_REQUEST_TOO_LARGE':'INVALID_SYNC_REQUEST'});if(Buffer.byteLength(JSON.stringify(req.body))>2*1024*1024)return res.status(413).json({success:false,code:'SYNC_REQUEST_TOO_LARGE'});for(const op of changes){if(!op||typeof op!=='object'||!op.id||!op.table||!['create','update','delete'].includes(op.action)||Buffer.byteLength(JSON.stringify(op))>128*1024)return res.status(400).json({success:false,code:'INVALID_SYNC_REQUEST'});}return null;}
 
 function isHostTokenValid(req) {
+  const active = getInstance().db.prepare(
+    "SELECT 1 FROM primary_host_epochs WHERE status='active' LIMIT 1"
+  ).get();
+  if (active) return false;
   const expected = process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '';
   if (!expected) return false;
   const provided = req.headers['x-gewu-host-token'] || req.headers['x-host-token'] || '';
@@ -77,12 +82,41 @@ function isHostTokenValid(req) {
   return expectedBuffer.length === providedBuffer.length && crypto.timingSafeEqual(expectedBuffer, providedBuffer);
 }
 
+function requireManagedHostCredential(req) {
+  const deviceId = String(req.headers['x-gewu-host-device-id'] || '').trim();
+  const generation = Number(req.headers['x-gewu-host-generation']);
+  const credential = String(req.headers['x-gewu-host-credential'] || '').trim();
+  const service = createPrimaryHostIdentityService({ db: getInstance().db });
+  const epoch = service.assertActiveHostCredential({ deviceId, generation, credential });
+  const bodyDeviceId = String(req.body?.hostDeviceId || req.body?.host_device_id || req.body?.deviceId || '').trim();
+  const queryDeviceId = String(req.query?.hostDeviceId || req.query?.host_device_id || '').trim();
+  if ((bodyDeviceId && bodyDeviceId !== epoch.deviceId)
+    || (queryDeviceId && queryDeviceId !== epoch.deviceId)) {
+    throw Object.assign(new Error('PRIMARY_HOST_REQUEST_DEVICE_MISMATCH'), {
+      code: 'PRIMARY_HOST_REQUEST_DEVICE_MISMATCH',
+    });
+  }
+  return epoch;
+}
+
 function isDevBypass() {
   return process.env.NODE_ENV === 'test' && process.env.GEWU_TEST_AUTH_BYPASS === '1';
 }
 
 function requireHostWrite(req, res, next) {
-  if (isDevBypass() || isAdminUser(req.user) || isHostTokenValid(req)) return next();
+  if (isDevBypass()) return next();
+  const active = getInstance().db.prepare(
+    "SELECT 1 FROM primary_host_epochs WHERE status='active' LIMIT 1"
+  ).get();
+  if (!active && (isAdminUser(req.user) || isHostTokenValid(req))) return next();
+  if (active) {
+    try {
+      req.hostEpoch = requireManagedHostCredential(req);
+      return next();
+    } catch (error) {
+      return sendForbidden(res, error?.code || 'HOST_WRITE_FORBIDDEN', 'Active primary-host credential required');
+    }
+  }
   return sendForbidden(res, 'HOST_WRITE_FORBIDDEN', 'Host relay write is not allowed');
 }
 
