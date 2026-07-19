@@ -112,6 +112,81 @@ const assert = require('assert');
   assert.strictEqual(snapshot.host.canResumeRuntimeAdoption, true);
   assert.strictEqual(snapshot.host.pendingCredentialStage.stageId, 'bootstrap:host-challenge');
 
+  const pendingRecoveryDelivery = {
+    id: 'delivery-1',
+    epochId: 'epoch-1',
+    factorId: 'factor-1',
+    generation: 1,
+    status: 'pending',
+    rowVersion: 1,
+    ackNonce: 'a'.repeat(64),
+    recipientKeyFingerprint: 'b'.repeat(64),
+    envelope: { ciphertext: 'target-device-ciphertext' },
+  };
+  const localRecoveryDelivery = {
+    credential: {
+      state: 'active',
+      recoveryDelivery: { pending: true, deliveryId: 'delivery-1', epochId: 'epoch-1', rowVersion: 1 },
+    },
+  };
+  const bootstrapBlocked = projectIdentityDeviceCenterSnapshot({
+    mine,
+    all: mine,
+    runtimeConfig: hostRuntime,
+    session: canonicalSession,
+    hostRuntimeStatus: localRecoveryDelivery,
+    hostControl: {
+      activeEpoch: null,
+      transfers: [],
+      history: [],
+      recoveryDeliveryPending: true,
+      pendingRecoveryDelivery,
+    },
+  });
+  assert.strictEqual(bootstrapBlocked.host.recoveryDeliveryPending, true);
+  assert.strictEqual(bootstrapBlocked.host.recoveryDelivery.id, 'delivery-1');
+  assert.strictEqual(bootstrapBlocked.host.hasLocalRecoveryDelivery, true);
+  assert.strictEqual(bootstrapBlocked.host.blocksHighRiskOperations, true);
+  assert.strictEqual(bootstrapBlocked.host.canBootstrap, false);
+
+  const transferBlocked = projectIdentityDeviceCenterSnapshot({
+    mine,
+    all: mine,
+    runtimeConfig: hostRuntime,
+    session: canonicalSession,
+    hostRuntimeStatus: localRecoveryDelivery,
+    hostControl: {
+      activeEpoch: snapshot.host.activeEpoch,
+      transfers: [],
+      history: [],
+      recoveryDeliveryPending: true,
+      pendingRecoveryDelivery,
+    },
+  });
+  assert.strictEqual(transferBlocked.host.canStartTransfer, false);
+
+  const remoteHostBlocked = projectIdentityDeviceCenterSnapshot({
+    mine,
+    all: mine,
+    runtimeConfig: { ...hostRuntime, nodeRole: 'desktop-client' },
+    session: canonicalSession,
+    hostRuntimeStatus: localRecoveryDelivery,
+    hostControl: {
+      activeEpoch: {
+        id: 'epoch-remote', generation: 2, deviceId: 'device-3', userId: 'canonical-user',
+        rowVersion: 1, status: 'active', activatedAt: '2026-07-18T01:00:00.000Z',
+      },
+      transfers: [{
+        id: 'transfer-incoming', status: 'pending_validation', targetDeviceId: 'device-host',
+      }],
+      history: [],
+      recoveryDeliveryPending: true,
+    },
+  });
+  assert.strictEqual(remoteHostBlocked.host.recoveryDelivery, null);
+  assert.strictEqual(remoteHostBlocked.host.canActivateTransfer, false);
+  assert.strictEqual(remoteHostBlocked.host.canRecover, false);
+
   const demotionSnapshot = projectIdentityDeviceCenterSnapshot({
     mine,
     all: mine,

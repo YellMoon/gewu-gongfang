@@ -1,3 +1,12 @@
+const {
+  ACK_SIGNATURE_ALGORITHM,
+  CONTENT_ENCRYPTION_ALGORITHM,
+  DELIVERY_PROTOCOL_VERSION,
+  KEY_WRAP_ALGORITHM,
+  RECOVERY_DELIVERY_KEY_ALGORITHM,
+  validateRecoveryDeliveryPublicKey,
+} = require('../backend/src/services/primaryHostRecoveryDeliveryProtocol');
+
 const MIN_OLD_HOST_UNREACHABLE_MS = 15 * 60 * 1000;
 
 function operationError(code) {
@@ -71,6 +80,24 @@ function normalizeCredentialStage(value, { deviceId, targetGeneration }) {
   });
 }
 
+function normalizeRecoveryDeliveryDescriptor(value) {
+  const code = 'PRIMARY_HOST_RECOVERY_DELIVERY_KEY_INVALID';
+  if (value?.protocolVersion !== DELIVERY_PROTOCOL_VERSION) throw operationError(code);
+  try {
+    const key = validateRecoveryDeliveryPublicKey(value);
+    return Object.freeze({
+      protocolVersion: DELIVERY_PROTOCOL_VERSION,
+      keyAlgorithm: RECOVERY_DELIVERY_KEY_ALGORITHM,
+      keyWrapAlgorithm: KEY_WRAP_ALGORITHM,
+      contentEncryptionAlgorithm: CONTENT_ENCRYPTION_ALGORITHM,
+      acknowledgementSignatureAlgorithm: ACK_SIGNATURE_ALGORITHM,
+      recipientKeyFingerprint: key.publicKeyFingerprint,
+    });
+  } catch (_error) {
+    throw operationError(code);
+  }
+}
+
 function buildPrimaryHostOperationManifest(input = {}) {
   const operation = String(input.operation || '').trim();
   if (operation === 'bootstrap') {
@@ -81,6 +108,7 @@ function buildPrimaryHostOperationManifest(input = {}) {
         deviceId: input.deviceId,
         targetGeneration,
       }),
+      recoveryDelivery: normalizeRecoveryDeliveryDescriptor(input.recoveryDeliveryKey),
     };
   }
   if (operation !== 'transfer' && operation !== 'recovery') {
@@ -104,6 +132,7 @@ function buildPrimaryHostOperationManifest(input = {}) {
     deviceId: input.deviceId,
     targetGeneration,
   });
+  authorityManifest.recoveryDelivery = normalizeRecoveryDeliveryDescriptor(input.recoveryDeliveryKey);
 
   if (operation === 'transfer') {
     const transferIdentity = {
