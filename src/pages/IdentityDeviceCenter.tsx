@@ -57,7 +57,8 @@ const IdentityDeviceCenter: React.FC = () => {
   const [factorId, setFactorId] = useState('');
   const [recoveryCode, setRecoveryCode] = useState('');
   const [hostOperationError, setHostOperationError] = useState('');
-  const [recoveryPackage, setRecoveryPackage] = useState<any>(null);
+  const [pendingRecoveryDelivery, setPendingRecoveryDelivery] = useState<any>(null);
+  const [revealedRecoveryPackage, setRevealedRecoveryPackage] = useState<any>(null);
   const operationRef = useRef('');
   const requestContextRef = useRef<any>(null);
 
@@ -77,6 +78,13 @@ const IdentityDeviceCenter: React.FC = () => {
       } catch (_error) { /* cloud state remains readable when local runtime status is unavailable */ }
       requestContextRef.current = { runtimeConfig, session, baseUrl };
       const next = await loadIdentityDeviceCenter({ runtimeConfig, session, baseUrl, hostRuntimeStatus });
+      const localRecoveryDelivery = hostRuntimeStatus?.credential?.recoveryDelivery;
+      if (localRecoveryDelivery?.pending) {
+        setPendingRecoveryDelivery(localRecoveryDelivery);
+      } else {
+        setPendingRecoveryDelivery(null);
+        setRevealedRecoveryPackage(null);
+      }
       setSnapshot(next);
       setViewState(next.mine.length || next.pending.length || next.all.length ? 'ready' : 'empty');
       window.dispatchEvent(new CustomEvent('identity-device-center-updated', {
@@ -172,7 +180,7 @@ const IdentityDeviceCenter: React.FC = () => {
     operationRef.current = 'primary-host:bootstrap:start';
     setOperationKey(operationRef.current);
     setHostOperationError('');
-    setRecoveryPackage(null);
+    setRevealedRecoveryPackage(null);
     try {
       const context = requestContextRef.current;
       const data = await startPrimaryHostOperation({
@@ -240,16 +248,19 @@ const IdentityDeviceCenter: React.FC = () => {
           expectedChallengeRowVersion: hostOperation.challenge.rowVersion,
           localReceipt: prepared.localReceipt,
           operationManifest: prepared.operationManifest,
+          recoveryDeliveryKey: prepared.recoveryDeliveryKey,
         },
       });
-      await primaryHostRuntime.adopt({
+      const adopted = await primaryHostRuntime.adopt({
         authorization: context.session.authorization,
         epoch: result.epoch,
         credentialStageId: prepared.credentialStage.id,
+        recoveryDelivery: result.recoveryDelivery,
       });
       setHostPassword('');
-      setRecoveryPackage(result.recoveryPackage);
-      setHostOperation((current: any) => ({ ...current, completed: true, epoch: result.epoch }));
+      setPendingRecoveryDelivery(adopted.recoveryDelivery);
+      setRevealedRecoveryPackage(null);
+      setHostOperation(null);
       await load();
     } catch (error: any) {
       setHostOperationError(error?.code || 'PRIMARY_HOST_OPERATION_FAILED');
@@ -268,16 +279,20 @@ const IdentityDeviceCenter: React.FC = () => {
       const context = requestContextRef.current;
       const primaryHostRuntime = (window as any).primaryHostRuntime;
       const stage = snapshot.host.pendingCredentialStage;
-      if (!primaryHostRuntime?.adopt || !primaryHostRuntime?.restart || !stage?.stageId) {
+      const recoveryDelivery = snapshot.host.recoveryDelivery;
+      if (!primaryHostRuntime?.adopt || !stage?.stageId || !recoveryDelivery?.id) {
         throw Object.assign(new Error('PRIMARY_HOST_DESKTOP_RUNTIME_REQUIRED'), { code: 'PRIMARY_HOST_DESKTOP_RUNTIME_REQUIRED' });
       }
-      await primaryHostRuntime.adopt({
+      const adopted = await primaryHostRuntime.adopt({
         authorization: context.session.authorization,
         epoch: snapshot.host.activeEpoch,
         credentialStageId: stage.stageId,
+        recoveryDelivery,
       });
-      message.success('\u4e3b\u673a\u51ed\u636e\u5df2\u6062\u590d\uff0c\u6b63\u5728\u91cd\u542f\u5e94\u7528');
-      await primaryHostRuntime.restart();
+      setPendingRecoveryDelivery(adopted.recoveryDelivery);
+      setRevealedRecoveryPackage(null);
+      message.success('\u4e3b\u673a\u51ed\u636e\u548c\u52a0\u5bc6\u6062\u590d\u5305\u5df2\u6062\u590d\uff0c\u8bf7\u5148\u5b8c\u6210\u79bb\u7ebf\u4fdd\u5b58');
+      await load();
     } catch (error: any) {
       setHostOperationError(error?.code || 'PRIMARY_HOST_OPERATION_FAILED');
       message.error(identityDeviceCenterErrorMessage(error?.code));
@@ -314,7 +329,7 @@ const IdentityDeviceCenter: React.FC = () => {
     operationRef.current = 'primary-host:transfer:start';
     setOperationKey(operationRef.current);
     setHostOperationError('');
-    setRecoveryPackage(null);
+    setRevealedRecoveryPackage(null);
     try {
       const context = requestContextRef.current;
       const data = await startPrimaryHostOperation({
@@ -362,7 +377,7 @@ const IdentityDeviceCenter: React.FC = () => {
     const transfer = snapshot?.host?.incomingTransfer;
     if (!transfer || operationRef.current) return;
     setHostOperationError('');
-    setRecoveryPackage(null);
+    setRevealedRecoveryPackage(null);
     setHostOperation({
       operation: 'transfer-activation',
       transfer,
@@ -403,16 +418,19 @@ const IdentityDeviceCenter: React.FC = () => {
           localReceipt: prepared.localReceipt,
           validationManifest: prepared.operationManifest,
           preflightProof: prepared.preflightProof,
+          recoveryDeliveryKey: prepared.recoveryDeliveryKey,
         },
       });
-      await primaryHostRuntime.adopt({
+      const adopted = await primaryHostRuntime.adopt({
         authorization: context.session.authorization,
         epoch: result.epoch,
         credentialStageId: prepared.credentialStage.id,
+        recoveryDelivery: result.recoveryDelivery,
       });
       setHostPassword('');
-      setRecoveryPackage(result.recoveryPackage);
-      setHostOperation((current: any) => ({ ...current, completed: true, epoch: result.epoch }));
+      setPendingRecoveryDelivery(adopted.recoveryDelivery);
+      setRevealedRecoveryPackage(null);
+      setHostOperation(null);
       await load();
     } catch (error: any) {
       setHostOperationError(error?.code || 'PRIMARY_HOST_OPERATION_FAILED');
@@ -427,7 +445,7 @@ const IdentityDeviceCenter: React.FC = () => {
     operationRef.current = 'primary-host:recovery:start';
     setOperationKey(operationRef.current);
     setHostOperationError('');
-    setRecoveryPackage(null);
+    setRevealedRecoveryPackage(null);
     try {
       const context = requestContextRef.current;
       const data = await startPrimaryHostOperation({
@@ -481,18 +499,21 @@ const IdentityDeviceCenter: React.FC = () => {
           localReceipt: prepared.localReceipt,
           evidence: prepared.operationManifest,
           preflightProof: prepared.preflightProof,
+          recoveryDeliveryKey: prepared.recoveryDeliveryKey,
         },
       });
-      await primaryHostRuntime.adopt({
+      const adopted = await primaryHostRuntime.adopt({
         authorization: context.session.authorization,
         epoch: result.epoch,
         credentialStageId: prepared.credentialStage.id,
+        recoveryDelivery: result.recoveryDelivery,
       });
       setHostPassword('');
       setFactorId('');
       setRecoveryCode('');
-      setRecoveryPackage(result.recoveryPackage);
-      setHostOperation((current: any) => ({ ...current, completed: true, epoch: result.epoch }));
+      setPendingRecoveryDelivery(adopted.recoveryDelivery);
+      setRevealedRecoveryPackage(null);
+      setHostOperation(null);
       await load();
     } catch (error: any) {
       setHostOperationError(error?.code || 'PRIMARY_HOST_OPERATION_FAILED');
@@ -502,10 +523,57 @@ const IdentityDeviceCenter: React.FC = () => {
     }
   };
 
+  const revealRecoveryPackage = async () => {
+    if (!pendingRecoveryDelivery?.deliveryId) return;
+    const primaryHostRuntime = (window as any).primaryHostRuntime;
+    if (!primaryHostRuntime?.revealRecoveryPackage) {
+      setHostOperationError('PRIMARY_HOST_DESKTOP_RUNTIME_REQUIRED');
+      return;
+    }
+    try {
+      const revealed = await primaryHostRuntime.revealRecoveryPackage({
+        deliveryId: pendingRecoveryDelivery.deliveryId,
+      });
+      setRevealedRecoveryPackage(revealed.recoveryPackage);
+    } catch (error: any) {
+      setHostOperationError(error?.code || 'PRIMARY_HOST_RECOVERY_DELIVERY_PENDING');
+    }
+  };
+
   const copyRecoveryPackage = async () => {
-    if (!recoveryPackage) return;
-    await navigator.clipboard.writeText(JSON.stringify(recoveryPackage, null, 2));
+    if (!revealedRecoveryPackage) return;
+    await navigator.clipboard.writeText(JSON.stringify(revealedRecoveryPackage, null, 2));
     message.success('\u6062\u590d\u5305\u5df2\u590d\u5236\uff0c\u8bf7\u4fdd\u5b58\u5230\u5b89\u5168\u7684\u79bb\u7ebf\u4f4d\u7f6e');
+  };
+
+  const acknowledgeRecoveryPackageAndRestart = async () => {
+    if (operationRef.current || !revealedRecoveryPackage
+      || !pendingRecoveryDelivery?.deliveryId || !pendingRecoveryDelivery?.rowVersion) return;
+    operationRef.current = 'primary-host:recovery-package:acknowledge';
+    setOperationKey(operationRef.current);
+    setHostOperationError('');
+    try {
+      const context = requestContextRef.current;
+      const primaryHostRuntime = (window as any).primaryHostRuntime;
+      if (!primaryHostRuntime?.acknowledgeRecoveryPackage || !primaryHostRuntime?.restart) {
+        throw Object.assign(new Error('PRIMARY_HOST_DESKTOP_RUNTIME_REQUIRED'), { code: 'PRIMARY_HOST_DESKTOP_RUNTIME_REQUIRED' });
+      }
+      await primaryHostRuntime.acknowledgeRecoveryPackage({
+        authorization: context.session.authorization,
+        deliveryId: pendingRecoveryDelivery.deliveryId,
+        expectedRowVersion: pendingRecoveryDelivery.rowVersion,
+      });
+      setPendingRecoveryDelivery(null);
+      setRevealedRecoveryPackage(null);
+      message.success('\u6062\u590d\u5305\u4ea4\u4ed8\u5df2\u786e\u8ba4\uff0c\u6b63\u5728\u91cd\u542f\u5e94\u7528');
+      await primaryHostRuntime.restart();
+    } catch (error: any) {
+      setHostOperationError(error?.code || 'PRIMARY_HOST_RECOVERY_DELIVERY_ACK_REJECTED');
+      message.error(identityDeviceCenterErrorMessage(error?.code));
+    } finally {
+      operationRef.current = '';
+      setOperationKey('');
+    }
   };
 
   const pendingColumns: ColumnsType<any> = [
@@ -595,6 +663,13 @@ const IdentityDeviceCenter: React.FC = () => {
           <Descriptions.Item label={'\u4e3b\u673a\u4ee3\u6b21'}>{snapshot.host.activeEpoch ? `#${snapshot.host.activeEpoch.generation}` : '\u5c1a\u672a\u5efa\u7acb\u53d7\u7ba1\u4e3b\u673a\u8eab\u4efd'}</Descriptions.Item>
           <Descriptions.Item label={'\u8eab\u4efd\u72b6\u6001'}>{snapshot.host.runtimeMatchesActiveEpoch ? '\u672c\u673a\u51ed\u636e\u4e0e\u4e91\u7aef\u4e3b\u673a\u4ee3\u6b21\u4e00\u81f4' : snapshot.host.controlAvailable ? '\u7b49\u5f85\u5b8c\u6210\u4e3b\u673a\u8eab\u4efd\u64cd\u4f5c' : '\u65e0\u6cd5\u8bfb\u53d6\u4e3b\u673a\u63a7\u5236\u9762'}</Descriptions.Item>
         </Descriptions>
+        {snapshot.host.blocksHighRiskOperations && <Alert
+          style={{ marginTop: 16 }}
+          type="error"
+          showIcon
+          message={'\u6062\u590d\u5305\u5c1a\u672a\u786e\u8ba4\u4ea4\u4ed8'}
+          description={'\u5fc5\u987b\u5148\u5728\u76ee\u6807\u7535\u8111\u4e0a\u663e\u793a\u5e76\u79bb\u7ebf\u4fdd\u5b58\u4e00\u6b21\u6027\u6062\u590d\u5305\uff0c\u518d\u5b8c\u6210\u7b7e\u540d\u786e\u8ba4\u3002\u6b64\u524d\u4e0d\u80fd\u7ee7\u7eed bootstrap\u3001\u8ba1\u5212\u6362\u673a\u6216\u7d27\u6025\u6062\u590d\u3002'}
+        />}
         {snapshot.host.requiresRuntimeDemotion && <Alert
           style={{ marginTop: 16 }}
           type="error"
@@ -617,7 +692,7 @@ const IdentityDeviceCenter: React.FC = () => {
             type="primary"
             loading={operationKey === 'primary-host:runtime-adoption:resume'}
             onClick={() => void resumeHostRuntimeAdoption()}
-          >{'\u6062\u590d\u4e3b\u673a\u51ed\u636e\u5e76\u91cd\u542f'}</Button>}
+          >{'\u6062\u590d\u4e3b\u673a\u51ed\u636e\u4e0e\u6062\u590d\u5305'}</Button>}
         />}
         {snapshot.host.canBootstrap && <Alert
           style={{ marginTop: 16 }}
@@ -673,16 +748,15 @@ const IdentityDeviceCenter: React.FC = () => {
             ? '\u6821\u9a8c\u5e76\u6fc0\u6d3b\u65b0\u4e3b\u673a'
             : '\u7d27\u6025\u6062\u590d\u672c\u5730\u6570\u636e\u4e3b\u673a'}
       footer={null}
-      closable={!recoveryPackage}
       maskClosable={false}
-      onCancel={() => { if (!recoveryPackage) {
+      onCancel={() => {
         setHostOperation(null);
         setHostPassword('');
         setFactorId('');
         setRecoveryCode('');
-      } }}
+      }}
     >
-      {hostOperation && !recoveryPackage && <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+      {hostOperation && <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Alert
           showIcon
           type="warning"
@@ -721,12 +795,39 @@ const IdentityDeviceCenter: React.FC = () => {
         </>}
         {hostOperationError && <Alert type="error" showIcon message={identityDeviceCenterErrorMessage(hostOperationError)} />}
       </Space>}
-      {recoveryPackage && <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-        <Alert type="success" showIcon message={'\u4e3b\u673a\u8eab\u4efd\u5df2\u5efa\u7acb'} description={'\u4e0b\u65b9\u7d27\u6025\u6062\u590d\u5305\u53ea\u663e\u793a\u8fd9\u4e00\u6b21\u3002\u5b83\u4e0d\u662f\u65e5\u5e38\u767b\u5f55\u5bc6\u7801\uff0c\u8bf7\u79bb\u7ebf\u4fdd\u7ba1\u3002'} />
-        <Input.TextArea readOnly autoSize={{ minRows: 5 }} value={JSON.stringify(recoveryPackage, null, 2)} />
-        <Button onClick={() => void copyRecoveryPackage()}>{'\u590d\u5236\u7d27\u6025\u6062\u590d\u5305'}</Button>
-        <Button type="primary" onClick={() => void (window as any).primaryHostRuntime.restart()}>{'\u6211\u5df2\u5b89\u5168\u4fdd\u5b58\uff0c\u91cd\u542f\u5e94\u7528'}</Button>
-      </Space>}
+    </Modal>
+
+    <Modal
+      open={Boolean(pendingRecoveryDelivery)}
+      title={'\u4fdd\u5b58\u4e00\u6b21\u6027\u6062\u590d\u5305'}
+      footer={null}
+      closable={false}
+      maskClosable={false}
+      keyboard={false}
+    >
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Alert
+          type="warning"
+          showIcon
+          message={'\u6062\u590d\u5305\u5c1a\u672a\u786e\u8ba4\u4ea4\u4ed8'}
+          description={'\u8be5\u6062\u590d\u5305\u53ea\u5b58\u5728\u672c\u673a\u52a0\u5bc6\u5b58\u50a8\u4e2d\u3002\u8bf7\u663e\u793a\u540e\u590d\u5236\u5230\u79bb\u7ebf\u4ecb\u8d28\uff0c\u786e\u8ba4\u6210\u529f\u524d\u4e0d\u4f1a\u5220\u9664\u672c\u5730\u526f\u672c\u6216\u79c1\u94a5\u3002'}
+        />
+        {!revealedRecoveryPackage
+          ? <Button type="primary" block onClick={() => void revealRecoveryPackage()}>{'\u663e\u793a\u4e00\u6b21\u6027\u6062\u590d\u5305'}</Button>
+          : <>
+            <div className="recovery-delivery-secret">
+              <pre>{JSON.stringify(revealedRecoveryPackage, null, 2)}</pre>
+            </div>
+            <Button block onClick={() => void copyRecoveryPackage()}>{'\u590d\u5236\u6062\u590d\u5305\u5230\u526a\u8d34\u677f'}</Button>
+            <Button
+              type="primary"
+              block
+              loading={operationKey === 'primary-host:recovery-package:acknowledge'}
+              onClick={() => void acknowledgeRecoveryPackageAndRestart()}
+            >{'\u6211\u5df2\u79bb\u7ebf\u4fdd\u5b58\uff0c\u786e\u8ba4\u4ea4\u4ed8\u5e76\u91cd\u542f'}</Button>
+          </>}
+        {hostOperationError && <Alert type="error" showIcon message={identityDeviceCenterErrorMessage(hostOperationError)} />}
+      </Space>
     </Modal>
   </main>;
 };

@@ -1704,8 +1704,8 @@ Replace the old raw-package source assertions with these security and recovery a
 
 ```js
 assert.strictEqual(source.includes('result.recoveryPackage'), false);
-assert.ok(source.includes('primaryHostRuntime.revealRecoveryDelivery'));
-assert.ok(source.includes('primaryHostRuntime.acknowledgeRecoveryDelivery'));
+assert.ok(source.includes('primaryHostRuntime.revealRecoveryPackage'));
+assert.ok(source.includes('primaryHostRuntime.acknowledgeRecoveryPackage'));
 assert.ok(source.includes('snapshot.host.blocksHighRiskOperations'));
 assert.ok(source.includes('closable={false}'));
 assert.ok(decoded.includes('显示一次性恢复包'));
@@ -1735,6 +1735,12 @@ Use separate metadata and revealed-secret state:
 ```tsx
 const [pendingRecoveryDelivery, setPendingRecoveryDelivery] = useState<any>(null);
 const [revealedRecoveryPackage, setRevealedRecoveryPackage] = useState<any>(null);
+```
+
+For bootstrap, transfer, and recovery, send the staged public key separately from the signed operation manifest:
+
+```tsx
+recoveryDeliveryKey: prepared.recoveryDeliveryKey,
 ```
 
 After every successful `primaryHostRuntime.adopt`, use only the main-process result:
@@ -1775,9 +1781,9 @@ After each `refresh`, if `hostRuntimeStatus.credential.recoveryDelivery.pending`
 Implement the three handlers without logging either returned value:
 
 ```tsx
-const revealRecoveryDelivery = async () => {
-  if (!pendingRecoveryDelivery?.deliveryId || !primaryHostRuntime?.revealRecoveryDelivery) return;
-  const revealed = await primaryHostRuntime.revealRecoveryDelivery({
+const revealRecoveryPackage = async () => {
+  if (!pendingRecoveryDelivery?.deliveryId || !primaryHostRuntime?.revealRecoveryPackage) return;
+  const revealed = await primaryHostRuntime.revealRecoveryPackage({
     deliveryId: pendingRecoveryDelivery.deliveryId,
   });
   setRevealedRecoveryPackage(revealed.recoveryPackage);
@@ -1789,13 +1795,14 @@ const copyRecoveryPackage = async () => {
   message.success('恢复包已复制，请保存到离线介质');
 };
 
-const acknowledgeRecoveryDeliveryAndRestart = async () => {
+const acknowledgeRecoveryPackageAndRestart = async () => {
   if (!revealedRecoveryPackage || !pendingRecoveryDelivery?.deliveryId
-    || !primaryHostRuntime?.acknowledgeRecoveryDelivery) return;
+    || !primaryHostRuntime?.acknowledgeRecoveryPackage) return;
   await withOperation('primary-host:recovery-delivery:ack', async () => {
-    await primaryHostRuntime.acknowledgeRecoveryDelivery({
+    await primaryHostRuntime.acknowledgeRecoveryPackage({
       authorization: session.authorization,
       deliveryId: pendingRecoveryDelivery.deliveryId,
+      expectedRowVersion: pendingRecoveryDelivery.rowVersion,
     });
     setPendingRecoveryDelivery(null);
     setRevealedRecoveryPackage(null);
@@ -1822,7 +1829,7 @@ Render this modal independently from the operation challenge modal:
   <Space direction="vertical" size="middle" style={{ width: '100%' }}>
     <Alert type="warning" showIcon message={'在确认前请勿关闭应用或开始另一项主机操作'} />
     {!revealedRecoveryPackage && (
-      <Button type="primary" block onClick={() => void revealRecoveryDelivery()}>
+      <Button type="primary" block onClick={() => void revealRecoveryPackage()}>
         {'显示一次性恢复包'}
       </Button>
     )}
@@ -1839,7 +1846,7 @@ Render this modal independently from the operation challenge modal:
           type="primary"
           block
           loading={operationKey === 'primary-host:recovery-delivery:ack'}
-          onClick={() => void acknowledgeRecoveryDeliveryAndRestart()}
+          onClick={() => void acknowledgeRecoveryPackageAndRestart()}
         >
           {'我已离线保存，确认交付并重启'}
         </Button>
@@ -1898,8 +1905,8 @@ for (const marker of [
   'host_recovery_deliveries',
   'primaryHostRecoveryDeliveryProtocol',
   'PRIMARY_HOST_RECOVERY_DELIVERY_KEY_REQUIRED',
-  'revealRecoveryDelivery',
-  'acknowledgeRecoveryDelivery',
+  'revealRecoveryPackage',
+  'acknowledgeRecoveryPackage',
   'RECOVERY_DELIVERY_STORE_VERSION',
 ]) {
   assert.ok(source.includes(marker), `deploy readiness must gate recovery delivery marker: ${marker}`);
@@ -1938,9 +1945,9 @@ function checkPrimaryHostRecoveryDelivery() {
     ['backend/src/services/primaryHostRecoveryDeliveryProtocol.js', 'RSA_PKCS1_PSS_PADDING'],
     ['backend/src/services/primaryHostRecoveryDeliveryService.js', "status='acknowledged'"],
     ['public/primaryHostCredentialStore.js', 'RECOVERY_DELIVERY_STORE_VERSION'],
-    ['public/primaryHostRuntimeManager.js', 'revealRecoveryDelivery'],
-    ['public/primaryHostRuntimeManager.js', 'acknowledgeRecoveryDelivery'],
-    ['src/pages/IdentityDeviceCenter.tsx', 'acknowledgeRecoveryDeliveryAndRestart'],
+    ['public/primaryHostRuntimeManager.js', 'revealRecoveryPackage'],
+    ['public/primaryHostRuntimeManager.js', 'acknowledgeRecoveryPackage'],
+    ['src/pages/IdentityDeviceCenter.tsx', 'acknowledgeRecoveryPackageAndRestart'],
   ];
   const evidence = required.map(([file, marker]) => {
     const found = readText(file).includes(marker);
@@ -1964,7 +1971,7 @@ Include its issues in the existing identity failure aggregate, print its evidenc
 Extend `checkIdentityBuildSafety` with the delivery UI markers and secret/log exclusions:
 
 ```js
-for (const required of ['revealRecoveryDelivery', 'acknowledgeRecoveryDelivery']) {
+for (const required of ['revealRecoveryPackage', 'acknowledgeRecoveryPackage']) {
   if (!aggregate.includes(required)) {
     issues.push(`desktop build is missing recovery delivery marker: ${required}`);
   }
