@@ -81,6 +81,16 @@ function readRuntimeConfig(configPath, options = {}) {
   return normalizeRuntimeConfig(raw, options);
 }
 
+function ensureRuntimeConfig(configPath, options = {}) {
+  if (fs.existsSync(configPath)) return readRuntimeConfig(configPath, options);
+  try {
+    return writeRuntimeConfig(configPath, {}, options);
+  } catch (error) {
+    if (fs.existsSync(configPath)) return readRuntimeConfig(configPath, options);
+    throw error;
+  }
+}
+
 function persistRuntimeConfig(configPath, config) {
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   const temporary = `${configPath}.tmp`;
@@ -202,6 +212,7 @@ function applyRuntimeConfigToEnv(config, env = process.env) {
 module.exports = {
   normalizeRuntimeConfig,
   readRuntimeConfig,
+  ensureRuntimeConfig,
   writeRuntimeConfig,
   writeManagedHostRuntimeConfig,
   writeManagedClientRuntimeConfig,

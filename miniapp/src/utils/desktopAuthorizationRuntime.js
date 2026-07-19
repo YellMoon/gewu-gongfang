@@ -9,6 +9,7 @@ const ACTIVE_STATUSES = new Set([
 ]);
 const PURPOSES = new Set([
   'register',
+  'password_reset',
   'primary-host-bootstrap',
   'primary-host-transfer',
   'primary-host-recovery',
@@ -103,6 +104,11 @@ function desktopAuthorizationPurposePresentation(purposeValue) {
       title: '\u786e\u8ba4\u8fd9\u53f0\u7535\u8111\u7684\u7533\u8bf7',
       phoneCopy: '\u4e8c\u7ef4\u7801\u53ea\u5efa\u7acb\u4e00\u6b21\u6027\u901a\u9053\uff0c\u5fae\u4fe1\u624b\u673a\u53f7\u7528\u4e8e\u786e\u8ba4\u7533\u8bf7\u4eba\u3002\u672c\u9875\u4e0d\u4f7f\u7528\u7f13\u5b58\u8d26\u53f7\u66ff\u4f60\u786e\u8ba4\u3002',
     },
+    password_reset: {
+      label: '\u91cd\u8bbe\u672c\u673a\u5bc6\u7801',
+      title: '\u786e\u8ba4\u8fd9\u53f0\u7535\u8111\u7684\u5bc6\u7801\u91cd\u8bbe\u7533\u8bf7',
+      phoneCopy: '\u8bf7\u91cd\u65b0\u6388\u6743\u5fae\u4fe1\u624b\u673a\u53f7\uff0c\u786e\u8ba4\u662f\u539f\u8bbe\u5907\u6240\u5c5e\u7684\u540c\u4e00\u4e2a\u771f\u5b9e\u8eab\u4efd\u3002\u672c\u6b21\u4e0d\u4f1a\u663e\u793a\u65e7\u5bc6\u7801\u3002',
+    },
     'primary-host-bootstrap': {
       label: '\u5efa\u7acb\u6570\u636e\u4e3b\u673a',
       title: '\u786e\u8ba4\u5efa\u7acb\u672c\u5730\u6570\u636e\u4e3b\u673a',
@@ -120,7 +126,11 @@ function desktopAuthorizationPurposePresentation(purposeValue) {
     },
   }[purpose];
   if (!presentation) throw runtimeError('DESKTOP_CHALLENGE_PURPOSE_INVALID');
-  return Object.freeze({ purpose, ...presentation, isHostOperation: purpose !== 'register' });
+  return Object.freeze({
+    purpose,
+    ...presentation,
+    isHostOperation: purpose.startsWith('primary-host-'),
+  });
 }
 
 function fingerprintSummary(value) {
@@ -166,7 +176,7 @@ function desktopAuthorizationView(challenge, now = new Date()) {
   const status = ACTIVE_STATUSES.has(projected.status) && Date.parse(projected.expiresAt) <= current
     ? 'expired'
     : projected.status;
-  if (projected.purpose !== 'register') {
+  if (projected.purpose.startsWith('primary-host-')) {
     return ({
       pending_phone: 'phone-required',
       identity_verified: 'operation-confirmed',

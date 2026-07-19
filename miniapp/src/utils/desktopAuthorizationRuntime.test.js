@@ -62,6 +62,21 @@ assert.strictEqual(projected.keyFingerprintSummary, '01234567…cdef');
 assert.ok(!JSON.stringify(projected).includes('must-not-reach-page'));
 assert.strictEqual(runtime.desktopAuthorizationView(projected, new Date('2026-07-17T09:05:00.000Z')), 'phone-required');
 assert.strictEqual(runtime.desktopAuthorizationView(projected, new Date('2026-07-17T09:10:00.000Z')), 'expired');
+const passwordResetChallenge = runtime.projectDesktopAuthorizationChallenge({
+  ...projected,
+  id: 'password-reset-challenge-1234567890',
+  purpose: 'password_reset',
+  status: 'identity_verified_pending_approval',
+});
+assert.strictEqual(
+  runtime.desktopAuthorizationView(passwordResetChallenge, new Date('2026-07-17T09:05:00.000Z')),
+  'approval-pending'
+);
+assert.strictEqual(runtime.desktopAuthorizationPurposePresentation('password_reset').isHostOperation, false);
+assert.strictEqual(
+  runtime.desktopAuthorizationPurposePresentation('password_reset').label,
+  '\u91cd\u8bbe\u672c\u673a\u5bc6\u7801'
+);
 for (const [purpose, label] of [
   ['primary-host-bootstrap', '\u5efa\u7acb\u6570\u636e\u4e3b\u673a'],
   ['primary-host-transfer', '\u8fc1\u79fb\u6570\u636e\u4e3b\u673a'],

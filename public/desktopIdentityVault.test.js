@@ -333,6 +333,89 @@ async function main() {
     sessionVersion: 1,
   }));
 
+  const resetFilePath = path.join(workspace, 'password-reset-vault.bin');
+  const resetVault = createDesktopIdentityVault({
+    filePath: resetFilePath,
+    safeStorage,
+    now: () => new Date('2026-07-17T10:10:00.000Z'),
+    delay: async () => {},
+  });
+  const resetOriginalIdentity = resetVault.beginRegistration({
+    deviceId: 'device-2',
+    deviceName: '第二台电脑',
+    deviceKind: 'desktop-client',
+  });
+  resetVault.completeRegistration({
+    password: 'reset-old-password',
+    authorization: approvedAuthorization(resetOriginalIdentity),
+    profile: approvedProfile(),
+    offlineLease: offlineLease(),
+  });
+  resetVault.lock();
+  const resetOriginalEnvelope = fs.readFileSync(resetFilePath);
+  const firstPendingReset = resetVault.beginPasswordReset();
+  assert.strictEqual(firstPendingReset.deviceId, resetOriginalIdentity.deviceId);
+  assert.strictEqual(firstPendingReset.deviceName, resetOriginalIdentity.deviceName);
+  assert.notStrictEqual(firstPendingReset.keyFingerprint, resetOriginalIdentity.keyFingerprint);
+  assert.strictEqual(resetVault.status().state, 'password_reset_pending');
+  assert.deepStrictEqual(
+    fs.readFileSync(resetFilePath),
+    resetOriginalEnvelope,
+    'starting password reset must preserve the committed vault'
+  );
+  resetVault.lock();
+  assert.strictEqual(resetVault.status().state, 'sealed');
+  assert.deepStrictEqual(fs.readFileSync(resetFilePath), resetOriginalEnvelope);
+
+  const pendingReset = resetVault.beginPasswordReset();
+  const resetExchange = resetVault.signChallenge({
+    purpose: 'exchange',
+    challengeId: 'challenge-password-reset',
+    rowVersion: 4,
+    challengeSecret: 'password-reset-exchange-secret',
+  });
+  assert.ok(verifySignature(
+    pendingReset.publicKey,
+    desktopExchangeSigningPayload({
+      challengeId: 'challenge-password-reset',
+      deviceId: pendingReset.deviceId,
+      rowVersion: 4,
+      challengeSecret: 'password-reset-exchange-secret',
+    }),
+    resetExchange.signature
+  ));
+  const resetAuthorization = {
+    ...approvedAuthorization(pendingReset),
+    credentialVersion: 2,
+    lastPhoneVerifiedAt: '2026-07-17T10:10:00.000Z',
+    phoneReverifyDueAt: '2026-08-16T10:10:00.000Z',
+  };
+  const resetLease = {
+    ...offlineLease(),
+    id: 'lease-device-2-after-password-reset',
+    credentialVersion: 2,
+    issuedAt: '2026-07-17T10:10:00.000Z',
+    expiresAt: '2026-07-20T10:10:00.000Z',
+  };
+  const resetCompleted = resetVault.completePasswordReset({
+    password: 'reset-new-password',
+    authorization: resetAuthorization,
+    profile: approvedProfile(),
+    offlineLease: resetLease,
+  });
+  assert.strictEqual(resetCompleted.deviceId, resetOriginalIdentity.deviceId);
+  assert.strictEqual(resetCompleted.keyFingerprint, pendingReset.keyFingerprint);
+  assert.strictEqual(resetCompleted.credentialVersion, 2);
+  resetVault.lock();
+  await assert.rejects(
+    resetVault.unlock({ password: 'reset-old-password' }),
+    error => error.code === 'DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED'
+  );
+  const resetUnlocked = await resetVault.unlock({ password: 'reset-new-password' });
+  assert.strictEqual(resetUnlocked.deviceId, resetOriginalIdentity.deviceId);
+  assert.strictEqual(resetUnlocked.user.id, 'canonical-human');
+  assert.strictEqual(fs.readFileSync(businessFile, 'utf8'), 'business-data-must-survive');
+
   vault.lock();
   const originalFile = fs.readFileSync(filePath);
   for (const field of ['deviceId', 'keyFingerprint']) {
@@ -447,7 +530,10 @@ async function main() {
   }, { filename: 'preload.js' });
   assert.deepStrictEqual(
     Array.from(Object.keys(exposed.desktopIdentity)).sort(),
-    ['beginRegistration', 'completeRegistration', 'lock', 'refreshOfflineLease', 'signChallenge', 'status', 'unlock']
+    [
+      'beginPasswordReset', 'beginRegistration', 'completePasswordReset', 'completeRegistration',
+      'lock', 'refreshOfflineLease', 'signChallenge', 'status', 'unlock',
+    ]
   );
   assert.ok(!('read' in exposed.desktopIdentity));
   assert.ok(!('write' in exposed.desktopIdentity));
@@ -460,7 +546,9 @@ async function main() {
   for (const channel of [
     'desktop-identity:status',
     'desktop-identity:begin-registration',
+    'desktop-identity:begin-password-reset',
     'desktop-identity:complete-registration',
+    'desktop-identity:complete-password-reset',
     'desktop-identity:unlock',
     'desktop-identity:lock',
     'desktop-identity:refresh-offline-lease',

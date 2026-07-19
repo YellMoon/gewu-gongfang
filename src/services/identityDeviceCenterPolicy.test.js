@@ -59,7 +59,8 @@ const assert = require('assert');
   const pendingRow = {
     challenge: {
       id: 'challenge-pending-1', deviceId: 'device-2', deviceName: '第二台电脑',
-      keyFingerprint: 'a'.repeat(64), status: 'identity_verified_pending_approval', rowVersion: 7,
+      keyFingerprint: 'a'.repeat(64), purpose: 'password_reset',
+      status: 'identity_verified_pending_approval', rowVersion: 7,
       createdAt: '2026-07-17T09:00:00.000Z', expiresAt: '2026-07-17T09:10:00.000Z',
     },
     claimant: {
@@ -98,6 +99,7 @@ const assert = require('assert');
     },
   });
   assert.strictEqual(snapshot.pending[0].claimant.id, 'canonical-user');
+  assert.strictEqual(snapshot.pending[0].purpose, 'password_reset');
   assert.strictEqual(snapshot.pending[0].sameClaimantAndReviewer, true);
   assert.strictEqual(snapshot.mine.find(item => item.deviceId === 'device-host').isHost, true);
   assert.strictEqual(snapshot.mine.find(item => item.deviceId === 'device-host').canRevoke, false);

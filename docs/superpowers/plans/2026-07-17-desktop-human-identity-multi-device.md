@@ -579,21 +579,21 @@ Run: `git add backend/src/services/primaryHostIdentityService.js backend/src/ser
 - Modify: `scripts/check_project_status_doc.js`
 - Modify: `package.json`
 
-- [ ] **Step 1: 增加发布门禁 RED 测试**
+- [x] **Step 1: 增加发布门禁 RED 测试**
 
 门禁必须确认 Backend V2 desktop identity 路由、Gateway V1 410、角色 grant migration、主机 generation、miniapp desktop-authorization 页、桌面 identity gate 和 device center 均存在；同时扫描源码/构建产物禁止审批 `userId` 选择、长期明文 token、私钥/password 日志、locked 状态业务启动和可编辑 nodeRole。
 
-- [ ] **Step 2: 运行门禁 RED**
+- [x] **Step 2: 运行门禁 RED**
 
 Run: `node scripts/check_deploy_readiness.test.js && node scripts/check_project_status_doc.js`
 
 Expected: FAIL until all required evidence keys and documentation are present.
 
-- [ ] **Step 3: 完成文档和可执行门禁**
+- [x] **Step 3: 完成文档和可执行门禁**
 
 验证文档逐项记录：同一超级管理员老师双角色；host、第二台电脑和第三台替换设备；新手机号挑战；待审、自批拒绝和可信旧设备批准；密码错误/找回；在线/离线/过期；teacher/admin scope；撤销；bootstrap；计划迁移前失败/成功；紧急恢复缺因子失败。记录只用脱敏 ID/哈希摘要，不写手机号明文、token、密钥、密码或恢复因子。
 
-- [ ] **Step 4: 跑聚焦测试、fresh 全量测试和构建**
+- [x] **Step 4: 跑聚焦测试、fresh 全量测试和构建**
 
 Run: `npm test`
 
@@ -601,11 +601,13 @@ Run: `npm run build && npm --prefix miniapp run typecheck && npm --prefix miniap
 
 Expected: 全部 exit 0；保存命令时间、输出行数和关键测试名，不以旧日志替代 fresh 结果。
 
-- [ ] **Step 5: 真实 Electron 两角色/多设备 UI 验证**
+- [x] **Step 5: 真实 Electron 两角色/多设备 UI 验证**
 
 在数据主机与普通客户端配置分别启动真实 Electron，桌面和窄窗口检查 locked、二维码、待审、密码、离线、老师工作台、超级管理员工作台、设备中心和主机迁移。验证无空白页、裁切、不可见审核入口、控制台错误或缓存串角色。只使用测试挑战和脱敏设备，不执行真实主机迁移或外部发布。
 
-- [ ] **Step 6: 本地提交验证切片**
+2026-07-19 已使用 Electron 28.3.3、生产 preload/build、临时 userData 与纯回环 fixture 完成：安全密码重设、老师窄屏、超级管理员、离线租约、数据主机宽屏、恢复包跨进程交付和 OSS 更新入口；渲染错误、主进程意外错误、网络失败均为 0，证据见 `output/task11-primary-host-recovery-delivery/`。
+
+- [x] **Step 6: 本地提交验证切片**
 
 Run: `git add docs/verification-2026-07-17-desktop-human-identity.md scripts/check_deploy_readiness.js scripts/check_deploy_readiness.test.js scripts/check_project_status_doc.js package.json && git commit -m "自动发布 2026-07-17"`
 

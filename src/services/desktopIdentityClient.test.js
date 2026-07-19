@@ -441,6 +441,106 @@ async function main() {
     error => error.code === 'ONLINE_DESKTOP_SESSION_REQUIRED'
   );
 
+  const resetBridgeCalls = [];
+  const resetRequests = [];
+  const resetLease = { ...validLease, credentialVersion: 2, id: 'offline-lease-after-reset' };
+  const resetSession = {
+    ...onlineSession.session,
+    id: 'session-after-password-reset',
+    credentialVersion: 2,
+  };
+  const resetDesktopIdentity = {
+    status: async () => ({ state: 'sealed', sealed: true, unlocked: false, deviceId: 'device-2' }),
+    beginPasswordReset: async () => {
+      resetBridgeCalls.push(['beginPasswordReset']);
+      return {
+        deviceId: 'device-2',
+        deviceName: '\u7b2c\u4e8c\u53f0\u7535\u8111',
+        deviceKind: 'desktop-client',
+        publicKey: 'RESET-PUBLIC-KEY',
+        keyFingerprint: 'a'.repeat(64),
+      };
+    },
+    completePasswordReset: async input => {
+      resetBridgeCalls.push(['completePasswordReset', input]);
+      return {
+        ...unlockedVault,
+        keyFingerprint: 'a'.repeat(64),
+        credentialVersion: 2,
+        offlineLease: input.offlineLease,
+      };
+    },
+    signChallenge: async input => {
+      resetBridgeCalls.push(['signChallenge', input]);
+      return { purpose: 'exchange', deviceId: 'device-2', signature: 'password-reset-signature' };
+    },
+    lock: async () => {},
+    unlock: async () => unlockedVault,
+  };
+  const resetResponses = [
+    { success: true, data: { challenge: {
+      id: 'password-reset-challenge', challengeSecret: 'password-reset-secret',
+      status: 'pending_phone', rowVersion: 1, expiresAt: '2026-07-17T10:10:00.000Z',
+    } } },
+    { success: true, data: { challenge: {
+      id: 'password-reset-challenge', purpose: 'password_reset',
+      status: 'identity_verified_pending_approval', rowVersion: 2,
+      expiresAt: '2026-07-17T10:10:00.000Z',
+    } } },
+    { success: true, data: { challenge: {
+      id: 'password-reset-challenge', purpose: 'password_reset',
+      status: 'approved_pending_exchange', rowVersion: 3,
+      expiresAt: '2026-07-17T10:10:00.000Z',
+    } } },
+    { success: true, data: {
+      authorization: {
+        id: 'authorization-device-2', deviceId: 'device-2', deviceName: '\u7b2c\u4e8c\u53f0\u7535\u8111',
+        deviceKind: 'desktop-client', userId: 'canonical-human',
+        keyFingerprint: 'a'.repeat(64), status: 'active', credentialVersion: 2,
+        lastPhoneVerifiedAt: '2026-07-17T10:00:00.000Z',
+        phoneReverifyDueAt: '2026-08-16T10:00:00.000Z',
+      },
+      session: resetSession,
+      token: 'password-reset-session-token',
+      offlineLease: resetLease,
+      profile: serverProfile,
+    } },
+  ];
+  const resetClient = createDesktopIdentityClient({
+    desktopIdentity: resetDesktopIdentity,
+    fetchImpl: async (url, init = {}) => {
+      resetRequests.push({ url, body: init.body ? JSON.parse(init.body) : null });
+      const body = resetResponses.shift();
+      return { ok: true, status: 200, json: async () => body };
+    },
+    now: () => new Date(at),
+    sessionStore: { save: async value => value, clear: async () => {} },
+  });
+  const resetPending = await resetClient.beginPasswordReset({
+    baseUrl: 'https://identity.example/scheduling',
+  });
+  assert.strictEqual(resetPending.challenge.purpose, 'password_reset');
+  assert.deepStrictEqual(resetRequests[0].body, {
+    deviceId: 'device-2',
+    deviceName: '\u7b2c\u4e8c\u53f0\u7535\u8111',
+    publicKey: 'RESET-PUBLIC-KEY',
+    keyFingerprint: 'a'.repeat(64),
+    purpose: 'password_reset',
+  });
+  const resetPhoneVerified = await resetClient.pollRegistration(resetPending);
+  const resetApproved = await resetClient.pollRegistration(resetPhoneVerified);
+  const resetResult = await resetClient.completeRegistration({
+    pending: resetApproved,
+    password: 'new-local-password',
+  });
+  assert.strictEqual(resetResult.gateState.kind, 'online-unlocked');
+  assert.strictEqual(resetResult.vaultStatus.credentialVersion, 2);
+  assert.strictEqual(resetBridgeCalls[0][0], 'beginPasswordReset');
+  const resetSealCall = resetBridgeCalls.find(call => call[0] === 'completePasswordReset');
+  assert.strictEqual(resetSealCall[1].password, 'new-local-password');
+  assert.strictEqual(resetSealCall[1].authorization.deviceId, 'device-2');
+  assert.strictEqual(resetSealCall[1].offlineLease.credentialVersion, 2);
+
   console.log('desktop identity client checks passed');
 }
 

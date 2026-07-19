@@ -331,7 +331,9 @@ function createDesktopIdentityRouter({
         openid: wechat.openid,
         unionid: wechat.unionid,
         phone,
-        platform: 'desktop-device-registration',
+        platform: publicChallenge.purpose === 'password_reset'
+          ? 'desktop-password-reset'
+          : 'desktop-device-registration',
       });
       const challenge = identity().confirmVerifiedIdentity({
         challengeId: req.params.id,

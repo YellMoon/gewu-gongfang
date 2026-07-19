@@ -6,6 +6,7 @@ const path = require('path');
 const {
   normalizeRuntimeConfig,
   readRuntimeConfig,
+  ensureRuntimeConfig,
   writeRuntimeConfig,
   writeManagedHostRuntimeConfig,
   writeManagedClientRuntimeConfig,
@@ -14,6 +15,13 @@ const {
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-runtime-config-'));
 const configPath = path.join(dir, 'gewugongfang.config.json');
+
+const firstLaunchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-runtime-first-launch-'));
+const firstLaunchPath = path.join(firstLaunchDir, 'gewugongfang.config.json');
+const firstLaunchConfig = ensureRuntimeConfig(firstLaunchPath, { userDataPath: firstLaunchDir });
+const repeatedFirstLaunchConfig = ensureRuntimeConfig(firstLaunchPath, { userDataPath: firstLaunchDir });
+assert.ok(fs.existsSync(firstLaunchPath), 'first launch must persist the generated runtime configuration');
+assert.strictEqual(repeatedFirstLaunchConfig.deviceId, firstLaunchConfig.deviceId, 'device id must stay stable across reads');
 
 const normalized = normalizeRuntimeConfig({
   nodeRole: 'primary-host',

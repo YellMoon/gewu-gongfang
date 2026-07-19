@@ -114,6 +114,7 @@ function projectPending(row, access) {
     deviceId: text(challenge.deviceId),
     deviceName: text(challenge.deviceName) || '\u672a\u547d\u540d\u7535\u8111',
     keyFingerprintSummary: fingerprintSummary(challenge.keyFingerprint),
+    purpose: text(challenge.purpose) || 'register',
     status: text(challenge.status),
     rowVersion: safeVersion(challenge.rowVersion ?? challenge.row_version),
     createdAt: text(challenge.createdAt),
