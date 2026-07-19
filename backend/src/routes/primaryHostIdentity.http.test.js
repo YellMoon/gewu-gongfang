@@ -11,10 +11,7 @@ const {
   primaryHostReceiptSigningPayload,
 } = require('../services/primaryHostReceiptProtocol');
 const {
-  ACK_SIGNATURE_ALGORITHM,
-  CONTENT_ENCRYPTION_ALGORITHM,
   DELIVERY_PROTOCOL_VERSION,
-  KEY_WRAP_ALGORITHM,
   RECOVERY_DELIVERY_KEY_ALGORITHM,
   generateRecoveryDeliveryKeyPair,
   openRecoveryPackage,
@@ -46,17 +43,6 @@ const recoveryDeliveryKeyPairs = Object.freeze({
   bootstrap: generateRecoveryDeliveryKeyPair(),
   transfer: generateRecoveryDeliveryKeyPair(),
 });
-function recoveryDeliveryDescriptor(operation) {
-  const key = recoveryDeliveryKeyPairs[operation];
-  return {
-    protocolVersion: DELIVERY_PROTOCOL_VERSION,
-    keyAlgorithm: RECOVERY_DELIVERY_KEY_ALGORITHM,
-    keyWrapAlgorithm: KEY_WRAP_ALGORITHM,
-    contentEncryptionAlgorithm: CONTENT_ENCRYPTION_ALGORITHM,
-    acknowledgementSignatureAlgorithm: ACK_SIGNATURE_ALGORITHM,
-    recipientKeyFingerprint: key.publicKeyFingerprint,
-  };
-}
 function recoveryDeliveryPublicKey(operation) {
   const key = recoveryDeliveryKeyPairs[operation];
   return {
@@ -294,16 +280,14 @@ app.use('/api/cloud', cloudRelayRouter);
       method: 'POST', headers: desktopHeaders, body: JSON.stringify({}),
     });
     assert.strictEqual(retiredReceiptEndpoint.status, 410);
-    const bootstrapManifest = {
-      ...buildPrimaryHostOperationManifest({
-        operation: 'bootstrap',
-        deviceId: actor.deviceId,
-        challengeId: started.id,
-        targetGeneration: 1,
-        credentialStage: credentialStage('bootstrap', started.id, actor.deviceId, 1),
-      }),
-      recoveryDelivery: recoveryDeliveryDescriptor('bootstrap'),
-    };
+    const bootstrapManifest = buildPrimaryHostOperationManifest({
+      operation: 'bootstrap',
+      deviceId: actor.deviceId,
+      challengeId: started.id,
+      targetGeneration: 1,
+      credentialStage: credentialStage('bootstrap', started.id, actor.deviceId, 1),
+      recoveryDeliveryKey: recoveryDeliveryPublicKey('bootstrap'),
+    });
     const receipt = createPrimaryHostLocalReceipt({
       operation: 'bootstrap',
       challengeId: started.id,
@@ -548,24 +532,22 @@ app.use('/api/cloud', cloudRelayRouter);
     } finally {
       backupDb.close();
     }
-    const localManifest = {
-      ...buildPrimaryHostOperationManifest({
-        operation: 'transfer',
-        deviceId: targetActor.deviceId,
-        transferId: pendingTransfer.id,
-        sourceEpochId: pendingTransfer.sourceEpochId,
-        challengeId: pendingTransfer.challengeId,
-        sourceGeneration: pendingTransfer.sourceGeneration,
-        targetGeneration: pendingTransfer.targetGeneration,
-        localPrepared,
-        controlStatus: transferControlStatus,
-        credentialStage: credentialStage(
-          'transfer', pendingTransfer.challengeId, targetActor.deviceId, pendingTransfer.targetGeneration
-        ),
-        now: new Date(currentTime),
-      }),
-      recoveryDelivery: recoveryDeliveryDescriptor('transfer'),
-    };
+    const localManifest = buildPrimaryHostOperationManifest({
+      operation: 'transfer',
+      deviceId: targetActor.deviceId,
+      transferId: pendingTransfer.id,
+      sourceEpochId: pendingTransfer.sourceEpochId,
+      challengeId: pendingTransfer.challengeId,
+      sourceGeneration: pendingTransfer.sourceGeneration,
+      targetGeneration: pendingTransfer.targetGeneration,
+      localPrepared,
+      controlStatus: transferControlStatus,
+      credentialStage: credentialStage(
+        'transfer', pendingTransfer.challengeId, targetActor.deviceId, pendingTransfer.targetGeneration
+      ),
+      recoveryDeliveryKey: recoveryDeliveryPublicKey('transfer'),
+      now: new Date(currentTime),
+    });
     const targetReceipt = createPrimaryHostLocalReceipt({
       operation: 'transfer',
       challengeId: pendingTransfer.challengeId,

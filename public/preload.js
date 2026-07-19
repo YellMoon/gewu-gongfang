@@ -51,6 +51,8 @@ contextBridge.exposeInMainWorld('primaryHostRuntime', Object.freeze({
   demote: input => ipcRenderer.invoke('primary-host:demote', input),
   issueLocalReceipt: input => ipcRenderer.invoke('primary-host:local-receipt', input),
   prepareOperation: input => ipcRenderer.invoke('primary-host:prepare-operation', input),
+  revealRecoveryPackage: input => ipcRenderer.invoke('primary-host:reveal-recovery-package', input),
+  acknowledgeRecoveryPackage: input => ipcRenderer.invoke('primary-host:acknowledge-recovery-package', input),
   restart: () => ipcRenderer.invoke('primary-host:restart'),
 }));
 

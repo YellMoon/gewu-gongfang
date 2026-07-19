@@ -1,4 +1,9 @@
 const crypto = require('crypto');
+const {
+  generateRecoveryDeliveryKeyPair: defaultGenerateRecoveryDeliveryKeyPair,
+  openRecoveryPackage: defaultOpenRecoveryPackage,
+  signRecoveryDeliveryAcknowledgement: defaultSignRecoveryDeliveryAcknowledgement,
+} = require('../backend/src/services/primaryHostRecoveryDeliveryProtocol');
 
 function runtimeError(code, cause) {
   const error = new Error(code);
@@ -24,6 +29,11 @@ function createPrimaryHostRuntimeManager({
   writeManagedClientRuntimeConfig,
   applyRuntimeConfigToEnv,
   verifyAdoption,
+  acknowledgeDelivery,
+  generateRecoveryDeliveryKeyPair = defaultGenerateRecoveryDeliveryKeyPair,
+  openRecoveryPackage = defaultOpenRecoveryPackage,
+  signRecoveryDeliveryAcknowledgement = defaultSignRecoveryDeliveryAcknowledgement,
+  now = () => new Date(),
   randomBytes = crypto.randomBytes,
 }) {
   if (!credentialStore || !configPath || !readRuntimeConfig
@@ -33,6 +43,13 @@ function createPrimaryHostRuntimeManager({
   }
   const configOptions = { userDataPath };
   let lastState = null;
+
+  function currentDate() {
+    const value = now();
+    const date = value instanceof Date ? new Date(value) : new Date(value);
+    if (!Number.isFinite(date.getTime())) throw runtimeError('PRIMARY_HOST_CLOCK_INVALID');
+    return date;
+  }
 
   function failClosed(config, code) {
     const effectiveConfig = {
@@ -126,9 +143,59 @@ function createPrimaryHostRuntimeManager({
     if (!verifiedEpoch || !sameEpoch(verifiedEpoch, epoch)) {
       throw runtimeError('PRIMARY_HOST_CREDENTIAL_ADOPTION_MISMATCH');
     }
+    const delivery = input.recoveryDelivery && typeof input.recoveryDelivery === 'object'
+      ? input.recoveryDelivery
+      : {};
+    const envelope = delivery.envelope;
+    const stagedKey = staged.recoveryDeliveryKey;
+    if (delivery.status !== 'pending' || !envelope || !stagedKey) {
+      throw runtimeError('PRIMARY_HOST_RECOVERY_DELIVERY_PENDING');
+    }
+    if (!delivery.id || delivery.epochId !== verifiedEpoch.id
+      || delivery.factorId !== envelope?.aad?.factorId
+      || Number(delivery.generation) !== Number(verifiedEpoch.generation)
+      || delivery.recipientKeyFingerprint !== stagedKey.publicKeyFingerprint
+      || envelope?.aad?.epochId !== verifiedEpoch.id
+      || envelope?.aad?.deviceId !== verifiedEpoch.deviceId
+      || Number(envelope?.aad?.generation) !== Number(verifiedEpoch.generation)
+      || envelope?.aad?.recipientKeyFingerprint !== stagedKey.publicKeyFingerprint) {
+      throw runtimeError('PRIMARY_HOST_RECOVERY_DELIVERY_MISMATCH');
+    }
+    let recoveryPackage;
+    try {
+      recoveryPackage = openRecoveryPackage({
+        envelope,
+        privateKeyPem: stagedKey.privateKeyPem,
+        expected: {
+          epochId: verifiedEpoch.id,
+          factorId: delivery.factorId,
+          deviceId: verifiedEpoch.deviceId,
+          generation: verifiedEpoch.generation,
+          recipientPublicKeyFingerprint: stagedKey.publicKeyFingerprint,
+        },
+      });
+    } catch (cause) {
+      throw runtimeError(cause?.code || 'PRIMARY_HOST_RECOVERY_DELIVERY_DECRYPT_FAILED', cause);
+    }
+    if (recoveryPackage.epochId !== verifiedEpoch.id
+      || recoveryPackage.factorId !== delivery.factorId
+      || recoveryPackage.deviceId !== verifiedEpoch.deviceId
+      || Number(recoveryPackage.generation) !== Number(verifiedEpoch.generation)) {
+      throw runtimeError('PRIMARY_HOST_RECOVERY_DELIVERY_MISMATCH');
+    }
     const credential = credentialStore.commit({
       stageId: staged.stageId,
       epoch: verifiedEpoch,
+      pendingRecoveryDelivery: {
+        deliveryId: delivery.id,
+        epochId: delivery.epochId,
+        factorId: delivery.factorId,
+        generation: delivery.generation,
+        acknowledgementNonce: delivery.ackNonce,
+        rowVersion: delivery.rowVersion,
+        recipientPublicKeyFingerprint: delivery.recipientKeyFingerprint,
+        recoveryPackage,
+      },
     });
     const managedConfig = writeManagedHostRuntimeConfig(configPath, {
       deviceId: verifiedEpoch.deviceId,
@@ -153,15 +220,68 @@ function createPrimaryHostRuntimeManager({
       throw runtimeError('PRIMARY_HOST_CREDENTIAL_STAGE_INVALID');
     }
     const stageId = `${operation}:${challengeId}`;
+    const existing = credentialStore.read();
+    if (existing?.state === 'staged'
+      && existing.stageId === stageId
+      && existing.operation === operation
+      && existing.deviceId === config.deviceId
+      && existing.generation === generation) {
+      return credentialStore.status();
+    }
     const hostCredential = Buffer.from(randomBytes(32)).toString('base64url');
     if (hostCredential.length < 32) throw runtimeError('PRIMARY_HOST_CREDENTIAL_GENERATION_FAILED');
+    const recoveryDeliveryKey = generateRecoveryDeliveryKeyPair();
     return credentialStore.stage({
       stageId,
       operation,
       deviceId: config.deviceId,
       targetGeneration: generation,
       hostCredential,
+      recoveryDeliveryKey,
     });
+  }
+
+  function revealRecoveryPackage({ deliveryId } = {}) {
+    return credentialStore.revealRecoveryPackage({ deliveryId });
+  }
+
+  async function acknowledgeRecoveryPackage({ authorization, deliveryId, expectedRowVersion } = {}) {
+    if (typeof acknowledgeDelivery !== 'function') {
+      throw runtimeError('PRIMARY_HOST_RECOVERY_DELIVERY_ACKNOWLEDGER_REQUIRED');
+    }
+    const stored = credentialStore.read();
+    const pending = stored?.pendingRecoveryDelivery;
+    if (!pending || pending.deliveryId !== String(deliveryId || '')) {
+      throw runtimeError('PRIMARY_HOST_RECOVERY_DELIVERY_MISMATCH');
+    }
+    if (Number(expectedRowVersion) !== pending.rowVersion) {
+      throw runtimeError('PRIMARY_HOST_RECOVERY_DELIVERY_ACK_CONFLICT');
+    }
+    const acknowledgement = Object.freeze({
+      deliveryId: pending.deliveryId,
+      epochId: pending.epochId,
+      factorId: pending.factorId,
+      recipientKeyFingerprint: pending.recipientPublicKeyFingerprint,
+      expectedRowVersion: pending.rowVersion,
+      acknowledgementNonce: pending.acknowledgementNonce,
+      acknowledgedAt: currentDate().toISOString(),
+    });
+    const signature = signRecoveryDeliveryAcknowledgement({
+      acknowledgement,
+      privateKeyPem: stored.recoveryDeliveryKey.privateKeyPem,
+    });
+    const remote = await acknowledgeDelivery({ authorization, acknowledgement, signature });
+    const acknowledged = remote?.recoveryDelivery;
+    if (acknowledged?.id !== pending.deliveryId
+      || acknowledged.status !== 'acknowledged'
+      || !Number.isSafeInteger(Number(acknowledged.rowVersion))
+      || Number(acknowledged.rowVersion) <= pending.rowVersion) {
+      throw runtimeError('PRIMARY_HOST_RECOVERY_DELIVERY_ACK_RESPONSE_INVALID');
+    }
+    const credential = credentialStore.clearRecoveryDelivery({ deliveryId: pending.deliveryId });
+    const config = readRuntimeConfig(configPath, configOptions);
+    lastState = Object.freeze({ config, credential });
+    return Object.freeze({ ...credential, restartRequired: true });
   }
 
   function demote({ expectedEpochId } = {}) {
@@ -181,7 +301,9 @@ function createPrimaryHostRuntimeManager({
     initialize,
     stageAdoption,
     adopt,
+    acknowledgeRecoveryPackage,
     demote,
+    revealRecoveryPackage,
     status() {
       return lastState || initialize();
     },
