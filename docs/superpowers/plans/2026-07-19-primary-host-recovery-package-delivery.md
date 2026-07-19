@@ -4,7 +4,7 @@
 
 **Goal:** Make every new primary-host bootstrap, planned transfer, and emergency recovery deliver its recovery package to the target Electron device through a crash-safe, target-device-only encrypted envelope that remains recoverable until the user explicitly acknowledges offline storage.
 
-**Architecture:** Electron generates a dedicated RSA-3072 delivery key while staging the host credential and places only the public key and fingerprint in the signed operation manifest. The backend creates the recovery factor, encrypts the one-time package with AES-256-GCM, wraps the content key with RSA-OAEP-SHA256, stores the pending envelope through schema 3108, and accepts an acknowledgement only after a fresh RSA-PSS proof from the target device. Electron atomically adopts the host credential and decrypted package into `safeStorage`, exposes only metadata until an explicit reveal, acknowledges remotely before deleting local secrets, and blocks further high-risk host operations while delivery is pending.
+**Architecture:** Electron generates a dedicated RSA-3072 delivery key while staging the host credential. The signed manifest contains only a protocol/algorithm/fingerprint descriptor, while the matching public key travels in the separate top-level `recoveryDeliveryKey` request field. The backend creates the recovery factor, encrypts the one-time package with AES-256-GCM, wraps the content key with RSA-OAEP-SHA256, stores the pending envelope through schema 3108, and accepts an acknowledgement only after a fresh RSA-PSS proof from the target device. Electron atomically adopts the host credential and decrypted package into `safeStorage`, exposes only metadata until an explicit reveal, acknowledges remotely before deleting local secrets, and blocks further high-risk host operations while delivery is pending.
 
 **Tech Stack:** Node.js CommonJS, `node:crypto`, better-sqlite3, Express, Electron 28 `safeStorage`/IPC/contextBridge, React 18, TypeScript, Ant Design, assertion-based Node tests, isolated Playwright/Electron runtime checks.
 
@@ -26,6 +26,69 @@
 - Modify `public/electron.js`, `public/preload.js`, and `package.json`: delivery protocol wiring, privileged IPC, packaged-file and test-suite gates.
 - Modify `src/pages/IdentityDeviceCenter.tsx`, `src/pages/IdentityDeviceCenter.css`, and `src/pages/IdentityDeviceCenter.test.js`: blocking recovery-delivery modal and high-risk-operation lock.
 - Modify `docs/verification-2026-07-17-desktop-human-identity.md`, `docs/superpowers/plans/2026-07-17-desktop-human-identity-multi-device.md`, `scripts/check_deploy_readiness.js`, and their tests: Task 11 evidence and schema/protocol release gates.
+
+## Authoritative wire contract
+
+All tasks use these exact boundaries:
+
+```js
+const recoveryDeliveryDescriptor = {
+  protocolVersion: 'primary-host-recovery-delivery/v1',
+  keyAlgorithm: 'RSA-3072',
+  keyWrapAlgorithm: 'RSA-OAEP-SHA256',
+  contentEncryptionAlgorithm: 'AES-256-GCM',
+  acknowledgementSignatureAlgorithm: 'RSA-PSS-SHA256',
+  recipientKeyFingerprint: '64-lowercase-hex-characters',
+};
+
+const recoveryDeliveryKey = {
+  protocolVersion: recoveryDeliveryDescriptor.protocolVersion,
+  algorithm: recoveryDeliveryDescriptor.keyAlgorithm,
+  publicKeyPem: 'SPKI PEM public key',
+  publicKeyFingerprint: recoveryDeliveryDescriptor.recipientKeyFingerprint,
+};
+
+const envelope = {
+  protocolVersion: recoveryDeliveryDescriptor.protocolVersion,
+  keyWrapAlgorithm: recoveryDeliveryDescriptor.keyWrapAlgorithm,
+  contentEncryptionAlgorithm: recoveryDeliveryDescriptor.contentEncryptionAlgorithm,
+  aad: {
+    epochId: 'epoch-id',
+    factorId: 'factor-id',
+    deviceId: 'target-device-id',
+    generation: 1,
+    recipientKeyFingerprint: recoveryDeliveryDescriptor.recipientKeyFingerprint,
+  },
+  wrappedKey: 'base64',
+  iv: 'base64-96-bit',
+  authTag: 'base64-128-bit',
+  ciphertext: 'base64',
+};
+
+const recoveryDelivery = {
+  id: 'delivery-id',
+  epochId: 'epoch-id',
+  factorId: 'factor-id',
+  generation: 1,
+  status: 'pending',
+  rowVersion: 1,
+  ackNonce: '64-lowercase-hex-characters',
+  recipientKeyFingerprint: recoveryDeliveryDescriptor.recipientKeyFingerprint,
+  envelope,
+};
+
+const acknowledgement = {
+  deliveryId: recoveryDelivery.id,
+  epochId: recoveryDelivery.epochId,
+  factorId: recoveryDelivery.factorId,
+  recipientKeyFingerprint: recoveryDelivery.recipientKeyFingerprint,
+  expectedRowVersion: recoveryDelivery.rowVersion,
+  acknowledgementNonce: recoveryDelivery.ackNonce,
+  acknowledgedAt: 'canonical-ISO-8601-timestamp',
+};
+```
+
+The operation manifest contains `recoveryDelivery: recoveryDeliveryDescriptor`; the activation HTTP body contains both that signed manifest and the separate `recoveryDeliveryKey`. Activation returns `recoveryDelivery`; target-device status returns the same shape as `pendingRecoveryDelivery`; other owner devices receive only `recoveryDeliveryPending: true`. The renderer never receives the private key or acknowledgement signature.
 
 ### Task 1: Shared cryptographic delivery protocol
 
