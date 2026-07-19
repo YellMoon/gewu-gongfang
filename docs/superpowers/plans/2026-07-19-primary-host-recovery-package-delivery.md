@@ -1197,6 +1197,7 @@ const stagedWithKey = store.stage({
 });
 assert.deepStrictEqual(stagedWithKey.recoveryDeliveryKey, {
   protocolVersion: deliveryKey.protocolVersion,
+  algorithm: deliveryKey.algorithm,
   publicKeyPem: deliveryKey.publicKeyPem,
   publicKeyFingerprint: deliveryKey.publicKeyFingerprint,
 });
@@ -1216,16 +1217,17 @@ afterStageRestart.commit({
   },
   pendingRecoveryDelivery: {
     deliveryId: 'delivery-2', epochId: 'epoch-2', factorId: 'factor-2',
-    acknowledgementNonce: 'a'.repeat(64), rowVersion: 1,
+    generation: 2, acknowledgementNonce: 'a'.repeat(64), rowVersion: 1,
     recipientPublicKeyFingerprint: deliveryKey.publicKeyFingerprint,
     recoveryPackage: {
       factorId: 'factor-2', recoveryCode: 'offline-only-code', epochId: 'epoch-2', generation: 2,
+      deviceId: 'desktop-host-a', createdAt: '2026-07-19T01:00:00.000Z',
     },
   },
 });
 assert.strictEqual(JSON.stringify(afterStageRestart.status()).includes('offline-only-code'), false);
 assert.deepStrictEqual(afterStageRestart.status().recoveryDelivery, {
-  pending: true, deliveryId: 'delivery-2', epochId: 'epoch-2', factorId: 'factor-2', rowVersion: 1,
+  pending: true, deliveryId: 'delivery-2', epochId: 'epoch-2', rowVersion: 1,
 });
 
 const afterAdoptionRestart = createPrimaryHostCredentialStore({
@@ -1272,7 +1274,9 @@ function normalizeRecoveryDeliveryKey(value = {}) {
     || !privateKeyPem.includes('BEGIN PRIVATE KEY')) {
     throw credentialError('PRIMARY_HOST_RECOVERY_DELIVERY_KEY_INVALID');
   }
-  return Object.freeze({ protocolVersion, publicKeyPem, privateKeyPem, publicKeyFingerprint });
+  return Object.freeze({
+    protocolVersion, algorithm: 'RSA-3072', publicKeyPem, privateKeyPem, publicKeyFingerprint,
+  });
 }
 
 function normalizePendingRecoveryDelivery(value = {}, deliveryKey) {
@@ -1306,6 +1310,7 @@ For a staged version-3 credential, add:
 ```js
 recoveryDeliveryKey: Object.freeze({
   protocolVersion: credential.recoveryDeliveryKey.protocolVersion,
+  algorithm: credential.recoveryDeliveryKey.algorithm,
   publicKeyPem: credential.recoveryDeliveryKey.publicKeyPem,
   publicKeyFingerprint: credential.recoveryDeliveryKey.publicKeyFingerprint,
 }),
@@ -1319,7 +1324,6 @@ recoveryDelivery: credential.pendingRecoveryDelivery
     pending: true,
     deliveryId: credential.pendingRecoveryDelivery.deliveryId,
     epochId: credential.pendingRecoveryDelivery.epochId,
-    factorId: credential.pendingRecoveryDelivery.factorId,
     rowVersion: credential.pendingRecoveryDelivery.rowVersion,
   })
   : Object.freeze({ pending: false }),
@@ -1327,7 +1331,7 @@ recoveryDelivery: credential.pendingRecoveryDelivery
 
 Update every existing active-status expectation in `primaryHostCredentialStore.test.js` and `primaryHostRuntimeManager.test.js` to include `recoveryDelivery: { pending: false }`. Version-1 and version-2 files remain readable; only their public projection gains this nonsensitive field.
 
-No status object may include `privateKeyPem`, `recoveryCode`, `recoveryPackage`, or the acknowledgement nonce.
+No status object may include `privateKeyPem`, `recoveryCode`, `recoveryPackage`, the factor ID, or the acknowledgement nonce.
 
 - [ ] **Step 5: Make stage, commit, reveal, and clear atomic**
 
@@ -1376,13 +1380,19 @@ clearRecoveryDelivery({ deliveryId } = {}) {
   const cleared = Object.freeze({
     version: RECOVERY_DELIVERY_STORE_VERSION,
     state: 'active',
-    stageId: credential.stageId,
     epochId: credential.epochId,
     generation: credential.generation,
     deviceId: credential.deviceId,
     userId: credential.userId,
     activatedAt: credential.activatedAt,
     credential: credential.credential,
+    recoveryDeliveryAcknowledgement: {
+      deliveryId: pending.deliveryId,
+      epochId: pending.epochId,
+      factorId: pending.factorId,
+      rowVersion: pending.rowVersion,
+      recipientPublicKeyFingerprint: pending.recipientPublicKeyFingerprint,
+    },
   });
   writeEncrypted(cleared);
   return publicStatus(cleared);
