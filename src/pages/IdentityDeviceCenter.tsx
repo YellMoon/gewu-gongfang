@@ -123,7 +123,9 @@ const IdentityDeviceCenter: React.FC = () => {
       content: <div>
         <p>{'\u7533\u8bf7\u4eba\u5df2\u7531\u672c\u6b21\u5fae\u4fe1\u624b\u673a\u53f7\u9a8c\u8bc1\u56fa\u5b9a\u4e3a\uff1a'}{row.claimant.name}{'\uff08'}{row.claimant.maskedPhone || '\u624b\u673a\u53f7\u5df2\u8131\u654f'}{'\uff09\u3002'}</p>
         {row.sameClaimantAndReviewer && <p className="identity-device-center__same-owner">{'\u7533\u8bf7\u4eba\u4e0e\u5ba1\u6279\u4eba\u76f8\u540c\uff0c\u4f46\u5ba1\u6279\u6765\u81ea\u53e6\u4e00\u53f0\u53ef\u4fe1\u8bbe\u5907\u3002'}</p>}
-        <p>{'\u6279\u51c6\u540e\uff0c\u65b0\u7535\u8111\u4ecd\u9700\u8bbe\u7f6e\u81ea\u5df1\u7684\u672c\u673a\u5bc6\u7801\uff0c\u4e0d\u80fd\u53d6\u5f97\u5f53\u524d\u4e3b\u673a\u5bc6\u7801\u3002'}</p>
+        {row.purpose === 'password_reset'
+          ? <p>{'\u8fd9\u662f\u540c\u4e00\u53f0\u7535\u8111\u7684\u672c\u673a\u5bc6\u7801\u91cd\u8bbe\u7533\u8bf7\u3002\u6279\u51c6\u540e\u53ea\u8f6e\u6362\u8bbe\u5907\u5bc6\u94a5\uff0c\u4e0d\u5220\u9664\u672c\u673a\u4e1a\u52a1\u6570\u636e\u6216\u5f85\u540c\u6b65\u53d8\u66f4\u3002'}</p>
+          : <p>{'\u6279\u51c6\u540e\uff0c\u65b0\u7535\u8111\u4ecd\u9700\u8bbe\u7f6e\u81ea\u5df1\u7684\u672c\u673a\u5bc6\u7801\uff0c\u4e0d\u80fd\u53d6\u5f97\u5f53\u524d\u4e3b\u673a\u5bc6\u7801\u3002'}</p>}
       </div>,
       okText: '\u6279\u51c6\u6b64\u8bbe\u5907', cancelText: '\u53d6\u6d88',
       async onOk() {
@@ -577,6 +579,9 @@ const IdentityDeviceCenter: React.FC = () => {
   };
 
   const pendingColumns: ColumnsType<any> = [
+    { title: '\u7533\u8bf7\u7c7b\u578b', render: (_, row) => row.purpose === 'password_reset'
+      ? <Tag color="orange">{'\u91cd\u8bbe\u672c\u673a\u5bc6\u7801'}</Tag>
+      : <Tag>{'\u65b0\u8bbe\u5907\u6ce8\u518c'}</Tag> },
     { title: '\u7533\u8bf7\u8bbe\u5907', render: (_, row) => <div><strong>{row.deviceName}</strong><div className="identity-device-center__muted">{row.deviceId}</div></div> },
     { title: '\u5bc6\u94a5\u6307\u7eb9', dataIndex: 'keyFingerprintSummary' },
     { title: '\u5df2\u9a8c\u8bc1\u7533\u8bf7\u4eba', render: (_, row) => <div><strong>{row.claimant.name}</strong><div className="identity-device-center__muted">{row.claimant.maskedPhone} · {row.claimant.eligibleRoles.map((role: string) => roleLabels[role] || role).join(' / ')}</div></div> },

@@ -13,6 +13,10 @@ import SyncSettings from './SyncSettings';
 import type { CloudSyncContext } from '../navigation/navigationContext';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 import { systemSettingsRolePolicy } from '../services/systemSettingsRolePolicy.mjs';
+import {
+  desktopUpdateStateAfterCheck,
+  invokeDesktopUpdateCheck,
+} from '../services/desktopUpdateClient.mjs';
 const { questionBankBindingPresentation, bindQuestionBankStore } = require('../services/questionBankBindingUi');
 
 const { Text } = Typography;
@@ -331,13 +335,9 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
     }
     setDesktopUpdate(prev => ({ ...prev, checking: true, error: undefined }));
     try {
-      const result = await window.api.invoke('check-for-updates');
+      const result = await invokeDesktopUpdateCheck(window.api);
       if (!result?.success) throw new Error(result?.error || '检查更新失败');
-      setDesktopUpdate(prev => ({
-        ...prev,
-        feedUrl: result.feedUrl || prev.feedUrl,
-        latestVersion: result.updateInfo?.version || prev.latestVersion,
-      }));
+      setDesktopUpdate(prev => desktopUpdateStateAfterCheck(prev, result));
     } catch (error: any) {
       setDesktopUpdate(prev => ({
         ...prev,

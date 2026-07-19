@@ -5,6 +5,7 @@ const path = require('path');
 const Database = require('better-sqlite3');
 const {
   createDesktopIdentityService,
+  desktopExchangeSigningPayload,
   fingerprintPublicKey,
 } = require('./desktopIdentityService');
 
@@ -49,10 +50,19 @@ insertApprovedUser(canonicalId, '13732250653', 'super_admin');
 insertApprovedUser(otherUserId, '13000000001', 'admin');
 
 function generateDeviceKey() {
+  const credential = generateDeviceCredential();
+  return {
+    publicKey: credential.publicKey,
+    keyFingerprint: credential.keyFingerprint,
+  };
+}
+
+function generateDeviceCredential() {
   const keyPair = crypto.generateKeyPairSync('ed25519');
   const publicKey = keyPair.publicKey.export({ type: 'spki', format: 'pem' });
   const publicKeyDer = crypto.createPublicKey(publicKey).export({ type: 'spki', format: 'der' });
   return {
+    privateKey: keyPair.privateKey,
     publicKey,
     keyFingerprint: crypto.createHash('sha256').update(publicKeyDer).digest('hex'),
   };
@@ -355,6 +365,125 @@ assert.strictEqual(
   db.prepare('SELECT COUNT(*) count FROM desktop_device_authorizations WHERE device_id=?')
     .get('device-expired').count,
   0
+);
+
+const originalResetCredential = generateDeviceCredential();
+db.prepare(`INSERT INTO desktop_device_authorizations
+  (id, device_id, device_name, device_kind, user_id, public_key, key_fingerprint,
+   status, source_challenge_id, approved_by_user_id, approved_by_device_id, approved_at,
+   last_phone_verified_at, phone_reverify_due_at, credential_version, row_version,
+   created_at, updated_at)
+  VALUES (?, ?, ?, 'desktop-client', ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)`)
+  .run(
+    'authorization-password-reset',
+    'device-password-reset',
+    'Password Reset PC',
+    canonicalId,
+    originalResetCredential.publicKey,
+    originalResetCredential.keyFingerprint,
+    'initial-registration-password-reset',
+    canonicalId,
+    'approver-device',
+    currentTime,
+    currentTime,
+    '2026-08-16T00:04:02.000Z',
+    currentTime,
+    currentTime
+  );
+const nextResetCredential = generateDeviceCredential();
+const resetStarted = service.startChallenge({
+  deviceId: 'device-password-reset',
+  deviceName: 'Password Reset PC',
+  publicKey: nextResetCredential.publicKey,
+  keyFingerprint: nextResetCredential.keyFingerprint,
+  purpose: 'password_reset',
+});
+assert.strictEqual(resetStarted.status, 'pending_phone');
+assert.strictEqual(
+  db.prepare('SELECT key_fingerprint FROM desktop_device_authorizations WHERE id=?')
+    .get('authorization-password-reset').key_fingerprint,
+  originalResetCredential.keyFingerprint,
+  'starting password reset must not replace the committed device key'
+);
+
+currentTime = '2026-07-17T00:05:00.000Z';
+insertLoginEvent('login-reset-wrong-owner', otherUserId, '13000000001', currentTime);
+assert.throws(
+  () => service.confirmVerifiedIdentity({
+    challengeId: resetStarted.id,
+    identity: { id: otherUserId },
+    loginEventId: 'login-reset-wrong-owner',
+    expectedRowVersion: resetStarted.rowVersion,
+  }),
+  error => error?.code === 'DESKTOP_PASSWORD_RESET_IDENTITY_MISMATCH'
+);
+assert.strictEqual(
+  db.prepare('SELECT credential_version FROM desktop_device_authorizations WHERE id=?')
+    .get('authorization-password-reset').credential_version,
+  1
+);
+
+currentTime = '2026-07-17T00:05:01.000Z';
+insertLoginEvent('login-reset-owner', canonicalId, '13732250653', currentTime);
+const resetConfirmed = service.confirmVerifiedIdentity({
+  challengeId: resetStarted.id,
+  identity: { id: canonicalId },
+  loginEventId: 'login-reset-owner',
+  expectedRowVersion: resetStarted.rowVersion,
+});
+assert.strictEqual(resetConfirmed.authorizationId, 'authorization-password-reset');
+assert.strictEqual(resetConfirmed.status, 'identity_verified_pending_approval');
+const resetApproved = service.approveChallenge({
+  challengeId: resetStarted.id,
+  actorContext: {
+    activeRole: 'super_admin',
+    userId: canonicalId,
+    deviceId: 'approver-device',
+    authTime: currentTime,
+  },
+  expectedRowVersion: resetConfirmed.rowVersion,
+});
+const beforeResetExchange = db.prepare(
+  'SELECT * FROM desktop_device_authorizations WHERE id=?'
+).get('authorization-password-reset');
+assert.strictEqual(beforeResetExchange.status, 'active');
+assert.strictEqual(beforeResetExchange.key_fingerprint, originalResetCredential.keyFingerprint);
+assert.strictEqual(beforeResetExchange.credential_version, 1);
+
+const resetSignature = crypto.sign(
+  null,
+  Buffer.from(desktopExchangeSigningPayload({
+    challengeId: resetStarted.id,
+    deviceId: 'device-password-reset',
+    rowVersion: resetApproved.rowVersion,
+    challengeSecret: resetStarted.challengeSecret,
+  }), 'utf8'),
+  nextResetCredential.privateKey
+).toString('base64');
+const resetExchanged = service.exchangeChallenge({
+  challengeId: resetStarted.id,
+  challengeSecret: resetStarted.challengeSecret,
+  signature: resetSignature,
+  expectedRowVersion: resetApproved.rowVersion,
+});
+assert.strictEqual(resetExchanged.authorization.id, 'authorization-password-reset');
+assert.strictEqual(resetExchanged.authorization.userId, canonicalId);
+assert.strictEqual(resetExchanged.authorization.deviceId, 'device-password-reset');
+assert.strictEqual(resetExchanged.authorization.keyFingerprint, nextResetCredential.keyFingerprint);
+assert.strictEqual(resetExchanged.authorization.credentialVersion, 2);
+assert.strictEqual(resetExchanged.authorization.status, 'active');
+const resetExchangeRetry = service.exchangeChallenge({
+  challengeId: resetStarted.id,
+  challengeSecret: resetStarted.challengeSecret,
+  signature: resetSignature,
+  expectedRowVersion: resetApproved.rowVersion,
+});
+assert.strictEqual(resetExchangeRetry.authorization.id, resetExchanged.authorization.id);
+assert.strictEqual(resetExchangeRetry.authorization.credentialVersion, 2);
+assert.strictEqual(
+  db.prepare(`SELECT COUNT(*) count FROM authorization_audit_log
+    WHERE action='desktop_device_password_reset_exchanged' AND target_user_id=?`).get(canonicalId).count,
+  1
 );
 
 db.prepare('DELETE FROM miniapp_login_events WHERE id=?').run('login-canonical-1');

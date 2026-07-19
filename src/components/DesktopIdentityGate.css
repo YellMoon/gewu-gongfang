@@ -62,6 +62,29 @@
   min-height: 100vh;
 }
 
+.desktop-identity-runtime--offline {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.desktop-identity-runtime--offline > .app-shell {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+
+.desktop-identity-runtime--offline .app-shell__main {
+  height: 100%;
+}
+
+.desktop-identity-runtime--offline .app-shell__content,
+.desktop-identity-runtime--offline .app-shell__content--course-calendar {
+  height: calc(100% - 64px);
+}
+
 .desktop-identity-runtime-bar {
   position: fixed;
   z-index: 1100;
@@ -87,6 +110,19 @@
   top: 0;
   left: 0;
   right: 0;
+}
+
+.desktop-identity-runtime--offline .desktop-identity-offline-banner {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.desktop-identity-runtime--offline .desktop-identity-runtime-bar {
+  top: 60px;
+}
+
+.desktop-identity-runtime--offline .desktop-identity-runtime-error {
+  top: 118px;
 }
 
 .desktop-identity-runtime-error {

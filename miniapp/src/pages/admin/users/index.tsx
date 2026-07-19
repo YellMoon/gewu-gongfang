@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, Button, Input, ScrollView } from '@tarojs/components';
+import { View, Text, Button, Input, Picker, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { adminApi } from '../../../utils/api';
 import { fetchPermissions, getCurrentUser } from '../../../utils/permission';
@@ -55,8 +55,7 @@ export default function AdminUsersPage() {
       const query = queryRef.current;
       const userResult = await adminApi.getUsers({ page: 1, search: query.submittedSearch, review_status: query.status });
       if (!userResult.success) throw new Error(errorMessage(userResult, '\u7528\u6237\u52a0\u8f7d\u5931\u8d25'));
-      const payload = userResult.data || userResult;
-      return { nextCapabilities, users: payload.users || payload.items || [] };
+      return { nextCapabilities, users: userResult.data?.users || [] };
     }, result => {
       setCapabilities(result.nextCapabilities);
       setUsers(result.users);

@@ -700,7 +700,24 @@ function createDesktopIdentityVault({
     const keyPair = crypto.generateKeyPairSync('ed25519');
     const publicIdentity = publicIdentityFromKeyPair(input, keyPair);
     const privateKey = keyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
-    pendingRegistration = Object.freeze({ publicIdentity, privateKey });
+    pendingRegistration = Object.freeze({ purpose: 'register', publicIdentity, privateKey });
+    return Object.freeze({ ...publicIdentity });
+  }
+
+  function beginPasswordReset() {
+    if (!fsImpl.existsSync(filePath)) throw vaultError('DESKTOP_IDENTITY_VAULT_NOT_FOUND');
+    if (pendingRegistration) throw vaultError('DESKTOP_IDENTITY_REGISTRATION_ALREADY_PENDING');
+    const committedIdentity = readEnvelope().publicIdentity;
+    const keyPair = crypto.generateKeyPairSync('ed25519');
+    const publicIdentity = publicIdentityFromKeyPair({
+      deviceId: committedIdentity.deviceId,
+      deviceName: committedIdentity.deviceName,
+      deviceKind: committedIdentity.deviceKind,
+    }, keyPair);
+    const privateKey = keyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+    pendingRegistration = Object.freeze({ purpose: 'password_reset', publicIdentity, privateKey });
+    unlockedSecret = null;
+    lastUnlockedAt = null;
     return Object.freeze({ ...publicIdentity });
   }
 
@@ -728,7 +745,16 @@ function createDesktopIdentityVault({
   }
 
   function completeRegistration(input = {}) {
-    if (!pendingRegistration) throw vaultError('DESKTOP_IDENTITY_REGISTRATION_NOT_PENDING');
+    if (!pendingRegistration || pendingRegistration.purpose !== 'register') {
+      throw vaultError('DESKTOP_IDENTITY_REGISTRATION_NOT_PENDING');
+    }
+    return seal(input);
+  }
+
+  function completePasswordReset(input = {}) {
+    if (!pendingRegistration || pendingRegistration.purpose !== 'password_reset') {
+      throw vaultError('DESKTOP_IDENTITY_PASSWORD_RESET_NOT_PENDING');
+    }
     return seal(input);
   }
 
@@ -788,7 +814,10 @@ function createDesktopIdentityVault({
   function status() {
     if (unlockedSecret) return presentUnlocked();
     if (pendingRegistration) {
-      return presentPublicState('registration_pending', pendingRegistration.publicIdentity);
+      const state = pendingRegistration.purpose === 'password_reset'
+        ? 'password_reset_pending'
+        : 'registration_pending';
+      return presentPublicState(state, pendingRegistration.publicIdentity);
     }
     if (fsImpl.existsSync(filePath)) {
       const envelope = readEnvelope();
@@ -920,8 +949,10 @@ function createDesktopIdentityVault({
   }
 
   return Object.freeze({
+    beginPasswordReset,
     beginRegistration,
     clear,
+    completePasswordReset,
     completeRegistration,
     lock,
     refreshOfflineLease,

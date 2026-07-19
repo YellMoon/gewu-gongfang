@@ -551,6 +551,62 @@ function generateDeviceKey() {
     assert.strictEqual(dailyReplay.status, 409);
     assert.strictEqual(dailyReplay.body.code, 'DESKTOP_SESSION_CHALLENGE_REPLAYED');
 
+    const resetKey = generateDeviceKey();
+    const resetStartResponse = await requestJson(
+      baseUrl,
+      'POST',
+      '/api/desktop-identity/challenges/start',
+      { body: {
+        deviceId: 'device-http-third',
+        deviceName: 'Client supplied name must not replace the registered name',
+        publicKey: resetKey.publicKey,
+        keyFingerprint: resetKey.keyFingerprint,
+        purpose: 'password_reset',
+      } }
+    );
+    assert.strictEqual(resetStartResponse.status, 200);
+    const resetStarted = resetStartResponse.body.data.challenge;
+    const resetConfirmedData = await confirmDevice(resetStarted.id, 'password-reset');
+    assert.strictEqual(resetConfirmedData.challenge.purpose, 'password_reset');
+    assert.strictEqual(resetConfirmedData.challenge.deviceName, 'Third PC');
+    const resetApproved = await approveDevice(resetConfirmedData.challenge, elevatedHost.token);
+    const beforeResetExchange = await requestJson(
+      baseUrl,
+      'GET',
+      '/api/desktop-identity/devices',
+      { token: thirdExchange.token }
+    );
+    assert.strictEqual(beforeResetExchange.status, 200);
+    const resetExchange = await exchangeDevice(
+      resetApproved,
+      resetKey,
+      resetStarted.challengeSecret
+    );
+    assert.strictEqual(resetExchange.authorization.id, thirdExchange.authorization.id);
+    assert.strictEqual(resetExchange.authorization.deviceId, 'device-http-third');
+    assert.strictEqual(resetExchange.authorization.credentialVersion, 2);
+    assert.strictEqual(resetExchange.authorization.keyFingerprint, resetKey.keyFingerprint);
+    assert.strictEqual(
+      db.prepare('SELECT COUNT(*) count FROM desktop_device_authorizations WHERE device_id=?')
+        .get('device-http-third').count,
+      1
+    );
+    const oldSessionAfterReset = await requestJson(
+      baseUrl,
+      'GET',
+      '/api/desktop-identity/devices',
+      { token: thirdExchange.token }
+    );
+    assert.strictEqual(oldSessionAfterReset.status, 401);
+    assert.strictEqual(oldSessionAfterReset.body.code, 'DESKTOP_SESSION_CREDENTIAL_VERSION_MISMATCH');
+    const resetSessionUse = await requestJson(
+      baseUrl,
+      'GET',
+      '/api/desktop-identity/devices',
+      { token: resetExchange.token }
+    );
+    assert.strictEqual(resetSessionUse.status, 200);
+
     const devices = await requestJson(
       baseUrl,
       'GET',
@@ -631,7 +687,7 @@ function generateDeviceKey() {
       baseUrl,
       'GET',
       '/api/desktop-identity/devices',
-      { token: thirdExchange.token }
+      { token: resetExchange.token }
     );
     assert.strictEqual(thirdStillActive.status, 200);
 

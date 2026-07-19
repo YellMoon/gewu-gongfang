@@ -33,6 +33,7 @@ const richQuestionEditor = read('src/components/RichQuestionEditor.tsx');
 const richAssetImage = read('src/components/RichAssetImage.tsx');
 const structuredQuestionViewer = read('src/components/StructuredQuestionViewer.tsx');
 const systemSettings = read('src/pages/SystemSettings.tsx');
+const desktopUpdateClient = read('src/services/desktopUpdateClient.mjs');
 assert.ok(systemSettings.includes("if (!settingsPolicy.isPrimaryHost)") && systemSettings.includes('\\u7ba1\\u7406\\u5458\\u6258\\u7ba1'), 'ordinary desktop settings must use a dedicated managed simple view');
 assert.ok(systemSettings.includes('if (policy.loadQuestionBankStorage)') && systemSettings.includes('if (policy.loadBackupTargets)'), 'ordinary desktop must not load host storage or backup status');
 const ordinaryDesktopSettingsStart = systemSettings.indexOf('if (!settingsPolicy.isPrimaryHost)');
@@ -268,7 +269,8 @@ assert(
 
 assert(
   systemSettings.includes('软件更新') &&
-  systemSettings.includes('check-for-updates') &&
+  systemSettings.includes('invokeDesktopUpdateCheck') &&
+  desktopUpdateClient.includes("api.invoke('check-for-updates')") &&
   systemSettings.includes('download-update') &&
   systemSettings.includes('install-update') &&
   packageJson.includes('publish:desktop-update'),

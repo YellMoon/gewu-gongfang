@@ -6,6 +6,7 @@ const { QuestionDraftProvenanceRegistry } = require('./questionDraftProvenanceRe
 const fs = require('fs');
 const {
   readRuntimeConfig,
+  ensureRuntimeConfig,
   writeRuntimeConfig,
   writeManagedHostRuntimeConfig,
   writeManagedClientRuntimeConfig,
@@ -22,6 +23,7 @@ const {
   openRecoveryPackage,
   signRecoveryDeliveryAcknowledgement,
 } = require('../backend/src/services/primaryHostRecoveryDeliveryProtocol');
+const { withOperationTimeout } = require('./updateCheckTimeout');
 const electronLocalBridgeSecret = crypto.randomBytes(32).toString('base64url');
 process.env.GEWU_ELECTRON_LOCAL_BRIDGE_SECRET = electronLocalBridgeSecret;
 let autoUpdater = null;
@@ -106,6 +108,7 @@ async function verifyPrimaryHostAdoption(input = {}) {
   }
   return payload.data;
 }
+
 async function acknowledgePrimaryHostRecoveryDelivery(input = {}) {
   const authorization = String(input.authorization || '').trim();
   const acknowledgement = input.acknowledgement && typeof input.acknowledgement === 'object'
@@ -148,7 +151,6 @@ async function acknowledgePrimaryHostRecoveryDelivery(input = {}) {
   return payload.data;
 }
 
-
 function getPrimaryHostRuntimeManager() {
   if (primaryHostRuntimeManager) return primaryHostRuntimeManager;
   const userDataPath = app.getPath('userData');
@@ -161,7 +163,7 @@ function getPrimaryHostRuntimeManager() {
     configPath: getRuntimeConfigPath(),
     userDataPath,
     env: process.env,
-    readRuntimeConfig,
+    readRuntimeConfig: ensureRuntimeConfig,
     writeManagedHostRuntimeConfig,
     writeManagedClientRuntimeConfig,
     applyRuntimeConfigToEnv,
@@ -250,7 +252,7 @@ async function preparePrimaryHostOperation(input = {}) {
     error.code = payload?.code || 'PRIMARY_HOST_LOCAL_EVIDENCE_FAILED';
     throw error;
   }
-  const runtimeConfig = readRuntimeConfig(getRuntimeConfigPath(), {
+  const runtimeConfig = ensureRuntimeConfig(getRuntimeConfigPath(), {
     userDataPath: app.getPath('userData'),
   });
   const deviceId = String(process.env.GEWU_DEVICE_ID || runtimeConfig.deviceId || '').trim();
@@ -341,7 +343,7 @@ async function issuePrimaryHostLocalReceipt(input = {}) {
 }
 
 function configuredDesktopIdentity(input = {}) {
-  const runtimeConfig = readRuntimeConfig(getRuntimeConfigPath(), {
+  const runtimeConfig = ensureRuntimeConfig(getRuntimeConfigPath(), {
     userDataPath: app.getPath('userData'),
   });
   const deviceId = String(process.env.GEWU_DEVICE_ID || runtimeConfig.deviceId || '').trim();
@@ -478,11 +480,13 @@ function createWindow() {
     mainWindow.show();
   } else {
     const candidates = [
-      path.join(__dirname, 'index.html'),
-      path.join(__dirname, 'build', 'index.html'),
       path.join(__dirname, '..', 'build', 'index.html'),
+      path.join(__dirname, 'build', 'index.html'),
       path.join(process.resourcesPath, 'app.asar', 'build', 'index.html'),
       path.join(path.dirname(process.execPath), 'build', 'index.html'),
+      // Source launches also contain CRA's uncompiled public/index.html. Keep it
+      // as a last-resort diagnostic fallback so it can never shadow build/.
+      path.join(__dirname, 'index.html'),
     ];
 
     let indexPath = null;
@@ -592,7 +596,7 @@ const questionDraftRegistry = new QuestionDraftProvenanceRegistry({
 ipcMain.handle('issue-question-draft', (_event, { authorization }) => questionDraftRegistry.issue(authorization));
 ipcMain.handle('verify-question-draft-provenance', (_event, { questionId, authorization }) => questionDraftRegistry.verify(questionId, authorization));
 ipcMain.handle('runtime-config:get', async () => {
-  return readRuntimeConfig(getRuntimeConfigPath(), { userDataPath: app.getPath('userData') });
+  return ensureRuntimeConfig(getRuntimeConfigPath(), { userDataPath: app.getPath('userData') });
 });
 ipcMain.handle('runtime-config:set', async (_event, config) => {
   return writeRuntimeConfig(getRuntimeConfigPath(), config, { userDataPath: app.getPath('userData') });
@@ -619,8 +623,14 @@ ipcMain.handle('desktop-identity:status', async () => getDesktopIdentityVault().
 ipcMain.handle('desktop-identity:begin-registration', async (_event, input) => {
   return getDesktopIdentityVault().beginRegistration(configuredDesktopIdentity(input));
 });
+ipcMain.handle('desktop-identity:begin-password-reset', async () => {
+  return getDesktopIdentityVault().beginPasswordReset();
+});
 ipcMain.handle('desktop-identity:complete-registration', async (_event, input) => {
   return getDesktopIdentityVault().completeRegistration(input);
+});
+ipcMain.handle('desktop-identity:complete-password-reset', async (_event, input) => {
+  return getDesktopIdentityVault().completePasswordReset(input);
 });
 ipcMain.handle('desktop-identity:unlock', async (_event, input) => {
   return getDesktopIdentityVault().unlock(input);
@@ -648,7 +658,12 @@ ipcMain.handle('check-for-updates', async () => {
   if (!autoUpdater) return { success: false, error: 'autoUpdater unavailable' };
   try {
     log('check-for-updates feed=' + updateFeedUrl + ' version=' + app.getVersion());
-    const result = await autoUpdater.checkForUpdates();
+    const result = await withOperationTimeout(
+      autoUpdater.checkForUpdates(),
+      30_000,
+      'UPDATE_CHECK_TIMEOUT',
+      '\u66f4\u65b0\u68c0\u67e5\u8d85\u65f6\uff0c\u8bf7\u68c0\u67e5\u7f51\u7edc\u540e\u91cd\u8bd5',
+    );
     return {
       success: true,
       updateInfo: result?.updateInfo || null,

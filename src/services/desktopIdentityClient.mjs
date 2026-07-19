@@ -287,6 +287,35 @@ export function createDesktopIdentityClient({
     };
   }
 
+  async function beginPasswordReset({ baseUrl } = {}) {
+    const normalizedUrl = normalizedBaseUrl(baseUrl);
+    if (typeof desktopIdentity.beginPasswordReset !== 'function') {
+      throw identityError('DESKTOP_IDENTITY_PASSWORD_RESET_UNAVAILABLE');
+    }
+    const publicIdentity = await desktopIdentity.beginPasswordReset();
+    const data = await request(fetchImpl, normalizedUrl, '/api/desktop-identity/challenges/start', {
+      method: 'POST',
+      body: {
+        deviceId: publicIdentity.deviceId,
+        deviceName: publicIdentity.deviceName,
+        publicKey: publicIdentity.publicKey,
+        keyFingerprint: publicIdentity.keyFingerprint,
+        purpose: 'password_reset',
+      },
+    });
+    const challenge = { ...data.challenge, purpose: 'password_reset' };
+    if (!challenge?.id || !challenge.challengeSecret) {
+      throw identityError('DESKTOP_PASSWORD_RESET_CHALLENGE_INVALID');
+    }
+    return {
+      baseUrl: normalizedUrl,
+      publicIdentity,
+      challenge,
+      challengeSecret: challenge.challengeSecret,
+      qrValue: challenge.qrValue || null,
+    };
+  }
+
   async function pollRegistration(pending) {
     if (!pending?.challenge?.id || !pending?.challengeSecret) {
       throw identityError('DESKTOP_REGISTRATION_CONTEXT_REQUIRED');
@@ -335,7 +364,16 @@ export function createDesktopIdentityClient({
     });
     const lease = exchanged.offlineLease;
     if (!lease) throw identityError('DESKTOP_OFFLINE_LEASE_REQUIRED');
-    const vaultStatus = await desktopIdentity.completeRegistration({
+    const passwordReset = pending.challenge.purpose === 'password_reset';
+    const commitVault = passwordReset
+      ? desktopIdentity.completePasswordReset?.bind(desktopIdentity)
+      : desktopIdentity.completeRegistration?.bind(desktopIdentity);
+    if (typeof commitVault !== 'function') {
+      throw identityError(passwordReset
+        ? 'DESKTOP_IDENTITY_PASSWORD_RESET_UNAVAILABLE'
+        : 'DESKTOP_IDENTITY_REGISTRATION_UNAVAILABLE');
+    }
+    const vaultStatus = await commitVault({
       password,
       authorization: exchanged.authorization,
       profile,
@@ -476,6 +514,7 @@ export function createDesktopIdentityClient({
   }
 
   return Object.freeze({
+    beginPasswordReset,
     beginRegistration,
     completeRegistration,
     lock,

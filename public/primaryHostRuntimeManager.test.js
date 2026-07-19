@@ -299,4 +299,10 @@ async function main() {
   console.log('primary host runtime manager checks passed');
 }
 
-main().catch(error => { console.error(error); process.exitCode = 1; });
+main().then(() => {
+  if (process.versions.electron) require('electron').app.exit(0);
+}).catch(error => {
+  console.error(error);
+  if (process.versions.electron) require('electron').app.exit(1);
+  else process.exitCode = 1;
+});
