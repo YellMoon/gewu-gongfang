@@ -706,6 +706,33 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_host_recovery_factor_active_epoch
 CREATE INDEX IF NOT EXISTS idx_host_recovery_factor_user_status
   ON host_recovery_factors(user_id, status, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS host_recovery_deliveries (
+  id TEXT PRIMARY KEY,
+  epoch_id TEXT NOT NULL,
+  factor_id TEXT NOT NULL UNIQUE,
+  user_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  protocol_version TEXT NOT NULL,
+  recipient_key_fingerprint TEXT NOT NULL,
+  recipient_public_key_pem TEXT,
+  ack_nonce TEXT,
+  envelope_json TEXT,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'acknowledged')),
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  acknowledged_at TEXT,
+  FOREIGN KEY (epoch_id) REFERENCES primary_host_epochs(id),
+  FOREIGN KEY (factor_id) REFERENCES host_recovery_factors(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_host_recovery_deliveries_epoch
+  ON host_recovery_deliveries(epoch_id);
+
+CREATE INDEX IF NOT EXISTS idx_host_recovery_deliveries_target_pending
+  ON host_recovery_deliveries(user_id, device_id, status, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS sync_authorizations (
   id TEXT PRIMARY KEY,
   device_id TEXT NOT NULL,
