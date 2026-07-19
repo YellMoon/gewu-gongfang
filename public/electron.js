@@ -17,6 +17,11 @@ const { createDesktopIdentityVault } = require('./desktopIdentityVault');
 const { createPrimaryHostCredentialStore } = require('./primaryHostCredentialStore');
 const { buildPrimaryHostOperationManifest } = require('./primaryHostOperationValidation');
 const { createPrimaryHostRuntimeManager } = require('./primaryHostRuntimeManager');
+const {
+  generateRecoveryDeliveryKeyPair,
+  openRecoveryPackage,
+  signRecoveryDeliveryAcknowledgement,
+} = require('../backend/src/services/primaryHostRecoveryDeliveryProtocol');
 const electronLocalBridgeSecret = crypto.randomBytes(32).toString('base64url');
 process.env.GEWU_ELECTRON_LOCAL_BRIDGE_SECRET = electronLocalBridgeSecret;
 let autoUpdater = null;
@@ -101,6 +106,48 @@ async function verifyPrimaryHostAdoption(input = {}) {
   }
   return payload.data;
 }
+async function acknowledgePrimaryHostRecoveryDelivery(input = {}) {
+  const authorization = String(input.authorization || '').trim();
+  const acknowledgement = input.acknowledgement && typeof input.acknowledgement === 'object'
+    ? input.acknowledgement
+    : {};
+  const deliveryId = String(acknowledgement.deliveryId || '').trim();
+  if (!authorization.startsWith('Bearer ') || authorization.length > 16384 || !deliveryId) {
+    const error = new Error('PRIMARY_HOST_CONTROL_AUTHORIZATION_REQUIRED');
+    error.code = 'PRIMARY_HOST_CONTROL_AUTHORIZATION_REQUIRED';
+    throw error;
+  }
+  const { deliveryId: _pathDeliveryId, ...acknowledgementBody } = acknowledgement;
+  const response = await fetch(
+    `${MANAGED_CLOUD_BASE_URL}/api/desktop-identity/primary-host/recovery-deliveries/${encodeURIComponent(deliveryId)}/acknowledge`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: authorization,
+      },
+      body: JSON.stringify({ ...acknowledgementBody, signature: input.signature }),
+      signal: AbortSignal.timeout(15000),
+    }
+  );
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (cause) {
+    const error = new Error('PRIMARY_HOST_RECOVERY_DELIVERY_ACK_RESPONSE_INVALID');
+    error.code = 'PRIMARY_HOST_RECOVERY_DELIVERY_ACK_RESPONSE_INVALID';
+    error.cause = cause;
+    throw error;
+  }
+  if (!response.ok || payload?.success !== true || !payload?.data?.recoveryDelivery) {
+    const error = new Error(payload?.code || 'PRIMARY_HOST_RECOVERY_DELIVERY_ACK_REJECTED');
+    error.code = payload?.code || 'PRIMARY_HOST_RECOVERY_DELIVERY_ACK_REJECTED';
+    throw error;
+  }
+  return payload.data;
+}
+
 
 function getPrimaryHostRuntimeManager() {
   if (primaryHostRuntimeManager) return primaryHostRuntimeManager;
@@ -119,6 +166,10 @@ function getPrimaryHostRuntimeManager() {
     writeManagedClientRuntimeConfig,
     applyRuntimeConfigToEnv,
     verifyAdoption: verifyPrimaryHostAdoption,
+    acknowledgeDelivery: acknowledgePrimaryHostRecoveryDelivery,
+    generateRecoveryDeliveryKeyPair,
+    openRecoveryPackage,
+    signRecoveryDeliveryAcknowledgement,
   });
   return primaryHostRuntimeManager;
 }
@@ -217,6 +268,7 @@ async function preparePrimaryHostOperation(input = {}) {
     localPrepared: payload.data,
     controlStatus,
     credentialStage,
+    recoveryDeliveryKey: stagedCredential.recoveryDeliveryKey,
   });
   const signed = getDesktopIdentityVault().signChallenge({
     purpose: 'primary-host-receipt',
@@ -228,7 +280,13 @@ async function preparePrimaryHostOperation(input = {}) {
   });
   const localReceipt = Object.freeze({ receipt: signed.receipt, signature: signed.signature });
   if (input.operation === 'bootstrap') {
-    return Object.freeze({ localReceipt, operationManifest, credentialStage, preflightProof: null });
+    return Object.freeze({
+      localReceipt,
+      operationManifest,
+      credentialStage,
+      recoveryDeliveryKey: stagedCredential.recoveryDeliveryKey,
+      preflightProof: null,
+    });
   }
   const proofResponse = await fetch(
     `${MANAGED_CLOUD_BASE_URL}/api/desktop-identity/primary-host/preflight-proofs`,
@@ -272,6 +330,7 @@ async function preparePrimaryHostOperation(input = {}) {
     localReceipt,
     operationManifest: Object.freeze(preflight.operationManifest),
     credentialStage: Object.freeze(preflight.operationManifest.credentialStage),
+    recoveryDeliveryKey: stagedCredential.recoveryDeliveryKey,
     preflightProof: Object.freeze({ id: preflight.id, token: preflight.token, expiresAt: preflight.expiresAt }),
   });
 }
@@ -543,6 +602,12 @@ ipcMain.handle('primary-host:adopt', async (_event, input) => getPrimaryHostRunt
 ipcMain.handle('primary-host:demote', async (_event, input) => getPrimaryHostRuntimeManager().demote(input));
 ipcMain.handle('primary-host:local-receipt', async (_event, input) => issuePrimaryHostLocalReceipt(input));
 ipcMain.handle('primary-host:prepare-operation', async (_event, input) => preparePrimaryHostOperation(input));
+ipcMain.handle('primary-host:reveal-recovery-package', async (_event, input) => (
+  getPrimaryHostRuntimeManager().revealRecoveryPackage(input)
+));
+ipcMain.handle('primary-host:acknowledge-recovery-package', async (_event, input) => (
+  getPrimaryHostRuntimeManager().acknowledgeRecoveryPackage(input)
+));
 ipcMain.handle('primary-host:restart', async () => {
   setTimeout(() => {
     app.relaunch();

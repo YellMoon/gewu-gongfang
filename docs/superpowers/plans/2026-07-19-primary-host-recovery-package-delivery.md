@@ -1436,33 +1436,39 @@ assert.strictEqual(prepared.recoveryDeliveryKey.protocolVersion, DELIVERY_PROTOC
 assert.strictEqual(Object.hasOwn(prepared.recoveryDeliveryKey, 'privateKeyPem'), false);
 
 const envelope = sealRecoveryPackage({
-  deliveryId: 'delivery-2', epochId: epoch.id, factorId: 'factor-2',
-  userId: epoch.userId, deviceId: epoch.deviceId,
-  acknowledgementNonce: 'b'.repeat(64), issuedAt: '2026-07-19T01:00:00.000Z', rowVersion: 1,
+  epochId: epoch.id, factorId: 'factor-2', deviceId: epoch.deviceId, generation: 2,
   recoveryPackage: {
     factorId: 'factor-2', recoveryCode: 'offline-code-2', epochId: epoch.id, generation: 2,
+    deviceId: epoch.deviceId, createdAt: '2026-07-19T01:00:00.000Z',
   },
+  recipientKeyAlgorithm: prepared.recoveryDeliveryKey.algorithm,
   recipientPublicKeyPem: prepared.recoveryDeliveryKey.publicKeyPem,
   recipientPublicKeyFingerprint: prepared.recoveryDeliveryKey.publicKeyFingerprint,
 });
+const recoveryDelivery = {
+  id: 'delivery-2', epochId: epoch.id, factorId: 'factor-2', generation: 2,
+  status: 'pending', rowVersion: 1, ackNonce: 'b'.repeat(64),
+  recipientKeyFingerprint: prepared.recoveryDeliveryKey.publicKeyFingerprint,
+  envelope,
+};
 
 await managerAfterActivationRestart.adopt({
   authorization: 'Bearer desktop-session',
   credentialStageId: prepared.stageId,
   epoch,
-  recoveryDelivery: { status: 'pending', envelope },
+  recoveryDelivery,
 });
 assert.strictEqual(managerAfterAdoptionRestart.status().credential.recoveryDelivery.pending, true);
 assert.strictEqual(
-  managerAfterAdoptionRestart.revealRecoveryDelivery({ deliveryId: 'delivery-2' })
+  managerAfterAdoptionRestart.revealRecoveryPackage({ deliveryId: 'delivery-2' })
     .recoveryPackage.recoveryCode,
   'offline-code-2'
 );
 
 acknowledgementControl.fail = true;
 await assert.rejects(
-  () => managerAfterAdoptionRestart.acknowledgeRecoveryDelivery({
-    authorization: 'Bearer desktop-session', deliveryId: 'delivery-2',
+  () => managerAfterAdoptionRestart.acknowledgeRecoveryPackage({
+    authorization: 'Bearer desktop-session', deliveryId: 'delivery-2', expectedRowVersion: 1,
   }),
   /simulated acknowledgement outage/
 );
@@ -1471,16 +1477,16 @@ assert.strictEqual(managerAfterAdoptionRestart.status().credential.recoveryDeliv
 acknowledgementControl.fail = false;
 acknowledgementControl.commitThenDrop = true;
 await assert.rejects(
-  () => managerAfterAdoptionRestart.acknowledgeRecoveryDelivery({
-    authorization: 'Bearer desktop-session', deliveryId: 'delivery-2',
+  () => managerAfterAdoptionRestart.acknowledgeRecoveryPackage({
+    authorization: 'Bearer desktop-session', deliveryId: 'delivery-2', expectedRowVersion: 1,
   }),
   /simulated response loss after remote commit/
 );
 assert.strictEqual(managerAfterAdoptionRestart.status().credential.recoveryDelivery.pending, true);
 
 acknowledgementControl.commitThenDrop = false;
-await managerAfterAdoptionRestart.acknowledgeRecoveryDelivery({
-  authorization: 'Bearer desktop-session', deliveryId: 'delivery-2',
+await managerAfterAdoptionRestart.acknowledgeRecoveryPackage({
+  authorization: 'Bearer desktop-session', deliveryId: 'delivery-2', expectedRowVersion: 1,
 });
 assert.strictEqual(managerAfterAdoptionRestart.status().credential.recoveryDelivery.pending, false);
 assert.strictEqual(acknowledgements.length, 3);
@@ -1491,10 +1497,10 @@ Also assert source wiring and packaging:
 
 ```js
 assert.ok(electronSource.includes("require('../backend/src/services/primaryHostRecoveryDeliveryProtocol')"));
-assert.ok(electronSource.includes("ipcMain.handle('primary-host:reveal-recovery-delivery'"));
-assert.ok(electronSource.includes("ipcMain.handle('primary-host:acknowledge-recovery-delivery'"));
-assert.ok(preloadSource.includes("ipcRenderer.invoke('primary-host:reveal-recovery-delivery'"));
-assert.ok(preloadSource.includes("ipcRenderer.invoke('primary-host:acknowledge-recovery-delivery'"));
+assert.ok(electronSource.includes("ipcMain.handle('primary-host:reveal-recovery-package'"));
+assert.ok(electronSource.includes("ipcMain.handle('primary-host:acknowledge-recovery-package'"));
+assert.ok(preloadSource.includes("ipcRenderer.invoke('primary-host:reveal-recovery-package'"));
+assert.ok(preloadSource.includes("ipcRenderer.invoke('primary-host:acknowledge-recovery-package'"));
 assert.ok(packageJson.build.files.some(entry => entry === 'backend/**/*'));
 ```
 
@@ -1531,28 +1537,27 @@ const envelope = input.recoveryDelivery?.envelope;
 if (!envelope || input.recoveryDelivery?.status !== 'pending') {
   throw runtimeError('PRIMARY_HOST_RECOVERY_DELIVERY_PENDING');
 }
-if (envelope.epochId !== verifiedEpoch.id
-  || envelope.userId !== verifiedEpoch.userId
-  || envelope.deviceId !== verifiedEpoch.deviceId
-  || envelope.recipientPublicKeyFingerprint !== staged.recoveryDeliveryKey.publicKeyFingerprint) {
+if (input.recoveryDelivery.epochId !== verifiedEpoch.id
+  || input.recoveryDelivery.factorId !== envelope.aad?.factorId
+  || Number(input.recoveryDelivery.generation) !== Number(verifiedEpoch.generation)
+  || envelope.aad?.deviceId !== verifiedEpoch.deviceId
+  || input.recoveryDelivery.recipientKeyFingerprint
+    !== staged.recoveryDeliveryKey.publicKeyFingerprint) {
   throw runtimeError('PRIMARY_HOST_RECOVERY_DELIVERY_MISMATCH');
 }
 const recoveryPackage = openRecoveryPackage({
   envelope,
   privateKeyPem: staged.recoveryDeliveryKey.privateKeyPem,
   expected: {
-    deliveryId: envelope.deliveryId,
     epochId: verifiedEpoch.id,
-    factorId: envelope.factorId,
-    userId: verifiedEpoch.userId,
+    factorId: input.recoveryDelivery.factorId,
     deviceId: verifiedEpoch.deviceId,
-    acknowledgementNonce: envelope.acknowledgementNonce,
-    issuedAt: envelope.issuedAt,
-    rowVersion: envelope.rowVersion,
+    generation: verifiedEpoch.generation,
+    recipientPublicKeyFingerprint: staged.recoveryDeliveryKey.publicKeyFingerprint,
   },
 });
 if (recoveryPackage.epochId !== verifiedEpoch.id
-  || recoveryPackage.factorId !== envelope.factorId
+  || recoveryPackage.factorId !== input.recoveryDelivery.factorId
   || Number(recoveryPackage.generation) !== Number(verifiedEpoch.generation)) {
   throw runtimeError('PRIMARY_HOST_RECOVERY_DELIVERY_MISMATCH');
 }
@@ -1560,12 +1565,13 @@ const credential = credentialStore.commit({
   stageId: staged.stageId,
   epoch: verifiedEpoch,
   pendingRecoveryDelivery: {
-    deliveryId: envelope.deliveryId,
-    epochId: envelope.epochId,
-    factorId: envelope.factorId,
-    acknowledgementNonce: envelope.acknowledgementNonce,
-    rowVersion: envelope.rowVersion,
-    recipientPublicKeyFingerprint: envelope.recipientPublicKeyFingerprint,
+    deliveryId: input.recoveryDelivery.id,
+    epochId: input.recoveryDelivery.epochId,
+    factorId: input.recoveryDelivery.factorId,
+    generation: input.recoveryDelivery.generation,
+    acknowledgementNonce: input.recoveryDelivery.ackNonce,
+    rowVersion: input.recoveryDelivery.rowVersion,
+    recipientPublicKeyFingerprint: input.recoveryDelivery.recipientKeyFingerprint,
     recoveryPackage,
   },
 });
@@ -1578,32 +1584,35 @@ Keep the existing managed-config reconciliation after this commit. Therefore exi
 Add these manager methods. The acknowledgement function must not clear local state in a `finally` block or error path:
 
 ```js
-function revealRecoveryDelivery({ deliveryId } = {}) {
+function revealRecoveryPackage({ deliveryId } = {}) {
   return credentialStore.revealRecoveryPackage({ deliveryId });
 }
 
-async function acknowledgeRecoveryDelivery({ authorization, deliveryId } = {}) {
+async function acknowledgeRecoveryPackage({ authorization, deliveryId, expectedRowVersion } = {}) {
   if (typeof acknowledgeDelivery !== 'function') {
     throw runtimeError('PRIMARY_HOST_RECOVERY_DELIVERY_ACKNOWLEDGER_REQUIRED');
   }
   const stored = credentialStore.read();
-  const pending = credentialStore.revealRecoveryPackage({ deliveryId });
+  const pending = stored?.pendingRecoveryDelivery;
+  if (!pending || pending.deliveryId !== deliveryId
+    || pending.rowVersion !== Number(expectedRowVersion)) {
+    throw runtimeError('PRIMARY_HOST_RECOVERY_DELIVERY_ACK_CONFLICT');
+  }
   const acknowledgement = {
     deliveryId: pending.deliveryId,
     epochId: pending.epochId,
     factorId: pending.factorId,
-    userId: stored.userId,
-    deviceId: stored.deviceId,
+    recipientKeyFingerprint: pending.recipientPublicKeyFingerprint,
+    expectedRowVersion: pending.rowVersion,
     acknowledgementNonce: pending.acknowledgementNonce,
     acknowledgedAt: new Date().toISOString(),
-    rowVersion: pending.rowVersion,
   };
   const signature = signRecoveryDeliveryAcknowledgement({
     acknowledgement,
     privateKeyPem: stored.recoveryDeliveryKey.privateKeyPem,
   });
   const remote = await acknowledgeDelivery({ authorization, acknowledgement, signature });
-  if (remote?.recoveryDelivery?.deliveryId !== pending.deliveryId
+  if (remote?.recoveryDelivery?.id !== pending.deliveryId
     || remote.recoveryDelivery.status !== 'acknowledged') {
     throw runtimeError('PRIMARY_HOST_RECOVERY_DELIVERY_ACK_RESPONSE_INVALID');
   }
@@ -1649,19 +1658,19 @@ async function acknowledgePrimaryHostRecoveryDelivery(input = {}) {
 Add main-process handlers:
 
 ```js
-ipcMain.handle('primary-host:reveal-recovery-delivery', async (_event, input) => (
-  getPrimaryHostRuntimeManager().revealRecoveryDelivery(input)
+ipcMain.handle('primary-host:reveal-recovery-package', async (_event, input) => (
+  getPrimaryHostRuntimeManager().revealRecoveryPackage(input)
 ));
-ipcMain.handle('primary-host:acknowledge-recovery-delivery', async (_event, input) => (
-  getPrimaryHostRuntimeManager().acknowledgeRecoveryDelivery(input)
+ipcMain.handle('primary-host:acknowledge-recovery-package', async (_event, input) => (
+  getPrimaryHostRuntimeManager().acknowledgeRecoveryPackage(input)
 ));
 ```
 
 Expose only invocation methods from preload:
 
 ```js
-revealRecoveryDelivery: input => ipcRenderer.invoke('primary-host:reveal-recovery-delivery', input),
-acknowledgeRecoveryDelivery: input => ipcRenderer.invoke('primary-host:acknowledge-recovery-delivery', input),
+revealRecoveryPackage: input => ipcRenderer.invoke('primary-host:reveal-recovery-package', input),
+acknowledgeRecoveryPackage: input => ipcRenderer.invoke('primary-host:acknowledge-recovery-package', input),
 ```
 
 - [ ] **Step 7: Run GREEN, syntax checks, and commit**
