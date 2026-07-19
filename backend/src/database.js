@@ -21,7 +21,7 @@ const {
   scopeForUser,
 } = require('./services/authorizationPolicy');
 
-const SCHEMA_VERSION = 3107;
+const SCHEMA_VERSION = 3108;
 const MINIAPP_ADMIN_SEED_USERS = [
   { id: 'miniapp-admin-13732250653', phone: '13732250653', name: 'Miniapp Admin 0653' },
   { id: 'miniapp-admin-18257136756', phone: '18257136756', name: 'Miniapp Admin 6756' },
