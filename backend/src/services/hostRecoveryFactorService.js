@@ -94,6 +94,7 @@ function createHostRecoveryFactorService({
       recoveryPackage: Object.freeze({
         factorId,
         recoveryCode,
+        epochId,
         generation: nextGeneration,
         deviceId,
         createdAt: timestamp,
