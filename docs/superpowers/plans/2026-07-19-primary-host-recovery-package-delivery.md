@@ -833,29 +833,31 @@ git commit -m "自动发布 2026-07-19"
 - Modify: `backend/src/services/primaryHostIdentityService.test.js`
 - Modify: `backend/src/routes/desktopIdentity.js`
 - Modify: `backend/src/routes/primaryHostIdentity.http.test.js`
+- Modify: `backend/src/services/hostRecoveryFactorService.js`
+- Modify: `backend/src/services/hostRecoveryFactorService.test.js`
 
 - [ ] **Step 1: Extend service and HTTP tests first**
 
-For bootstrap, planned-transfer activation, and emergency recovery, provide a real `recoveryDeliveryKey` in the signed manifest and replace raw-package assertions with this contract:
+For bootstrap, planned-transfer activation, and emergency recovery, provide a real top-level `recoveryDeliveryKey`, bind its descriptor into the signed manifest as `recoveryDelivery`, and replace raw-package assertions with this contract:
 
 ```js
 assert.strictEqual(Object.hasOwn(result, 'recoveryPackage'), false);
 assert.strictEqual(result.recoveryDelivery.status, 'pending');
-assert.strictEqual(result.recoveryDelivery.envelope.deviceId, targetDeviceId);
+assert.strictEqual(result.recoveryDelivery.envelope.aad.deviceId, targetDeviceId);
 assert.strictEqual(JSON.stringify(result).includes(rawRecoveryCode), false);
 const persisted = db.prepare('SELECT * FROM host_recovery_deliveries WHERE epoch_id=?').get(result.epoch.id);
 assert.strictEqual(persisted.status, 'pending');
 assert.ok(persisted.envelope_json);
 ```
 
-Repeat each successful request with the same consumed challenge/transfer identity and assert the response keeps the same `epoch.id` and `recoveryDelivery.deliveryId`. Add these HTTP assertions:
+Repeat each successful request with the same consumed challenge/transfer identity and assert the response keeps the same `epoch.id` and `recoveryDelivery.id`. Add these HTTP assertions:
 
 ```js
 assert.strictEqual(bootstrapWithoutDeliveryKey.status, 400);
 assert.strictEqual(bootstrapWithoutDeliveryKey.body.code, 'PRIMARY_HOST_RECOVERY_DELIVERY_KEY_REQUIRED');
 assert.strictEqual(nonTargetStatus.body.data.recoveryDeliveryPending, true);
-assert.strictEqual(Object.hasOwn(nonTargetStatus.body.data, 'recoveryDelivery'), false);
-assert.strictEqual(targetStatus.body.data.recoveryDelivery.envelope.deviceId, targetDeviceId);
+assert.strictEqual(Object.hasOwn(nonTargetStatus.body.data, 'pendingRecoveryDelivery'), false);
+assert.strictEqual(targetStatus.body.data.pendingRecoveryDelivery.envelope.aad.deviceId, targetDeviceId);
 assert.strictEqual(acknowledgementResponse.status, 200);
 assert.strictEqual(acknowledgementResponse.body.data.recoveryDelivery.status, 'acknowledged');
 ```
@@ -866,7 +868,7 @@ Also create a legacy fixture containing an already-active epoch but no delivery 
 const legacyStatus = legacyService.getStatus(legacyActorContext);
 assert.strictEqual(legacyStatus.activeEpoch.id, 'legacy-active-epoch');
 assert.strictEqual(legacyStatus.recoveryDeliveryPending, false);
-assert.strictEqual(Object.hasOwn(legacyStatus, 'recoveryDelivery'), false);
+assert.strictEqual(Object.hasOwn(legacyStatus, 'pendingRecoveryDelivery'), false);
 ```
 
 - [ ] **Step 2: Run RED for service and HTTP contracts**
@@ -885,10 +887,12 @@ Expected: FAIL because activation still returns `recoveryPackage`, ignores `reco
 Instantiate `createPrimaryHostRecoveryDeliveryService({ db, now: currentDate, uuid, randomBytes })` next to `recoveryFactors`. Change `prepareEpochSecrets` to accept the exact manifest used by each operation:
 
 ```js
-function prepareEpochSecrets({ epochId, userId, deviceId, generation, credentialStage, manifest, actor }) {
+function prepareEpochSecrets({
+  epochId, userId, deviceId, generation, credentialStage,
+  recoveryDeliveryKey, operationManifest, actor,
+}) {
   const staged = assertCredentialStage(credentialStage, { actor, generation });
-  const deliveryKey = manifest?.recoveryDeliveryKey;
-  if (!deliveryKey) {
+  if (!recoveryDeliveryKey) {
     throw hostError('PRIMARY_HOST_RECOVERY_DELIVERY_KEY_REQUIRED');
   }
   const recovery = recoveryFactors.prepare({ epochId, userId, deviceId, generation });
@@ -898,13 +902,14 @@ function prepareEpochSecrets({ epochId, userId, deviceId, generation, credential
     userId,
     deviceId,
     recoveryPackage: recovery.recoveryPackage,
-    deliveryKey,
+    deliveryKey: recoveryDeliveryKey,
+    recoveryDeliveryDescriptor: operationManifest?.recoveryDelivery,
   });
   return { hostCredentialHash: staged.commitment, recovery, delivery };
 }
 ```
 
-Pass `manifest: input.operationManifest`, `manifest: input.validationManifest`, or `manifest: input.evidence` at the three call sites. Inside each existing activation transaction, store both records in this order after epoch insertion:
+Pass the top-level `input.recoveryDeliveryKey` separately from `operationManifest: input.operationManifest`, `operationManifest: input.validationManifest`, or `operationManifest: input.evidence` at the three call sites. Inside each existing activation transaction, store both records in this order after epoch insertion:
 
 ```js
 recoveryFactors.storePrepared(prepared.recovery);
@@ -963,8 +968,8 @@ const result = {
   recoveryDeliveryPending: recoveryDeliveries.hasPendingForUser(actor.userId),
 };
 if (pendingDelivery) {
-  result.recoveryDelivery = recoveryDeliveries.getTargetDelivery({
-    deliveryId: pendingDelivery.deliveryId,
+  result.pendingRecoveryDelivery = recoveryDeliveries.getTargetDelivery({
+    id: pendingDelivery.id,
     userId: actor.userId,
     deviceId: actor.deviceId,
   });
@@ -991,7 +996,8 @@ Define the request allowlist:
 
 ```js
 const PRIMARY_HOST_RECOVERY_DELIVERY_ACK_KEYS = new Set([
-  'epochId', 'factorId', 'acknowledgementNonce', 'acknowledgedAt', 'rowVersion', 'signature',
+  'epochId', 'factorId', 'recipientKeyFingerprint', 'expectedRowVersion',
+  'acknowledgementNonce', 'acknowledgedAt', 'signature',
 ]);
 ```
 
@@ -1006,9 +1012,10 @@ router.post('/primary-host/recovery-deliveries/:deliveryId/acknowledge', authent
       deliveryId: req.params.deliveryId,
       epochId: req.body.epochId,
       factorId: req.body.factorId,
+      recipientKeyFingerprint: req.body.recipientKeyFingerprint,
+      expectedRowVersion: req.body.expectedRowVersion,
       acknowledgementNonce: req.body.acknowledgementNonce,
       acknowledgedAt: req.body.acknowledgedAt,
-      rowVersion: req.body.rowVersion,
     },
     signature: req.body.signature,
   });
@@ -1043,17 +1050,27 @@ git commit -m "自动发布 2026-07-19"
 
 - [ ] **Step 1: Write failing manifest and policy tests**
 
-Generate a real key pair in `primaryHostOperationValidation.test.js` and assert that bootstrap, transfer, and recovery manifests contain exactly this public material:
+Generate a real key pair in `primaryHostOperationValidation.test.js` and assert that bootstrap, transfer, and recovery manifests contain only its signed protocol/algorithm/fingerprint descriptor, never PEM material:
 
 ```js
 const recoveryDeliveryKey = {
   protocolVersion: keyPair.protocolVersion,
+  algorithm: keyPair.algorithm,
   publicKeyPem: keyPair.publicKeyPem,
   publicKeyFingerprint: keyPair.publicKeyFingerprint,
 };
-assert.deepStrictEqual(bootstrap.recoveryDeliveryKey, recoveryDeliveryKey);
-assert.deepStrictEqual(transfer.recoveryDeliveryKey, recoveryDeliveryKey);
-assert.deepStrictEqual(recovery.recoveryDeliveryKey, recoveryDeliveryKey);
+const recoveryDeliveryDescriptor = {
+  protocolVersion: DELIVERY_PROTOCOL_VERSION,
+  keyAlgorithm: RECOVERY_DELIVERY_KEY_ALGORITHM,
+  keyWrapAlgorithm: KEY_WRAP_ALGORITHM,
+  contentEncryptionAlgorithm: CONTENT_ENCRYPTION_ALGORITHM,
+  acknowledgementSignatureAlgorithm: ACK_SIGNATURE_ALGORITHM,
+  recipientKeyFingerprint: keyPair.publicKeyFingerprint,
+};
+assert.deepStrictEqual(bootstrap.recoveryDelivery, recoveryDeliveryDescriptor);
+assert.deepStrictEqual(transfer.recoveryDelivery, recoveryDeliveryDescriptor);
+assert.deepStrictEqual(recovery.recoveryDelivery, recoveryDeliveryDescriptor);
+assert.strictEqual(JSON.stringify(bootstrap).includes(keyPair.publicKeyPem), false);
 assert.throws(
   () => buildPrimaryHostOperationManifest({
     operation: 'bootstrap', deviceId: 'new-host', targetGeneration: 1,
@@ -1085,19 +1102,23 @@ node public/primaryHostOperationValidation.test.js
 node src/services/identityDeviceCenterPolicy.test.js
 ```
 
-Expected: FAIL because manifests omit `recoveryDeliveryKey` and the policy lacks delivery state/capability gates.
+Expected: FAIL because manifests omit `recoveryDelivery` and the policy lacks delivery state/capability gates.
 
 - [ ] **Step 3: Normalize and attach the delivery key**
 
-Import the shared validator and define one normalizer in `primaryHostOperationValidation.js`:
+Import the shared validator and algorithm constants, then define one normalizer in `primaryHostOperationValidation.js`:
 
 ```js
 const {
+  ACK_SIGNATURE_ALGORITHM,
+  CONTENT_ENCRYPTION_ALGORITHM,
   DELIVERY_PROTOCOL_VERSION,
+  KEY_WRAP_ALGORITHM,
+  RECOVERY_DELIVERY_KEY_ALGORITHM,
   validateRecoveryDeliveryPublicKey,
 } = require('../backend/src/services/primaryHostRecoveryDeliveryProtocol');
 
-function normalizeRecoveryDeliveryKey(value) {
+function normalizeRecoveryDeliveryDescriptor(value) {
   if (value?.protocolVersion !== DELIVERY_PROTOCOL_VERSION) {
     throw operationError('PRIMARY_HOST_RECOVERY_DELIVERY_KEY_INVALID');
   }
@@ -1105,8 +1126,11 @@ function normalizeRecoveryDeliveryKey(value) {
     const validated = validateRecoveryDeliveryPublicKey(value);
     return Object.freeze({
       protocolVersion: DELIVERY_PROTOCOL_VERSION,
-      publicKeyPem: validated.publicKeyPem,
-      publicKeyFingerprint: validated.publicKeyFingerprint,
+      keyAlgorithm: RECOVERY_DELIVERY_KEY_ALGORITHM,
+      keyWrapAlgorithm: KEY_WRAP_ALGORITHM,
+      contentEncryptionAlgorithm: CONTENT_ENCRYPTION_ALGORITHM,
+      acknowledgementSignatureAlgorithm: ACK_SIGNATURE_ALGORITHM,
+      recipientKeyFingerprint: validated.publicKeyFingerprint,
     });
   } catch (_error) {
     throw operationError('PRIMARY_HOST_RECOVERY_DELIVERY_KEY_INVALID');
@@ -1114,7 +1138,7 @@ function normalizeRecoveryDeliveryKey(value) {
 }
 ```
 
-Add `recoveryDeliveryKey: normalizeRecoveryDeliveryKey(input.recoveryDeliveryKey)` to the bootstrap return and to `authorityManifest`. Do not accept a key from cloud status or any renderer-supplied field outside the value returned by the main-process stage.
+Add `recoveryDelivery: normalizeRecoveryDeliveryDescriptor(input.recoveryDeliveryKey)` to the bootstrap return and to `authorityManifest`. The caller sends the corresponding public key separately as the top-level activation request field; never serialize PEM into the signed manifest.
 
 - [ ] **Step 4: Project pending state and gate host capabilities**
 
@@ -1122,8 +1146,8 @@ Add these fields to the frozen `host` snapshot:
 
 ```js
 recoveryDeliveryPending: Boolean(hostControl?.recoveryDeliveryPending),
-recoveryDelivery: hostControl?.recoveryDelivery
-  ? Object.freeze({ ...hostControl.recoveryDelivery })
+recoveryDelivery: hostControl?.pendingRecoveryDelivery
+  ? Object.freeze({ ...hostControl.pendingRecoveryDelivery })
   : null,
 hasLocalRecoveryDelivery: Boolean(hostRuntimeStatus?.credential?.recoveryDelivery?.pending),
 blocksHighRiskOperations: Boolean(

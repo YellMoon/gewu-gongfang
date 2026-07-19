@@ -1,5 +1,13 @@
 const assert = require('assert');
 const packageJson = require('../package.json');
+const {
+  ACK_SIGNATURE_ALGORITHM,
+  CONTENT_ENCRYPTION_ALGORITHM,
+  DELIVERY_PROTOCOL_VERSION,
+  KEY_WRAP_ALGORITHM,
+  RECOVERY_DELIVERY_KEY_ALGORITHM,
+  generateRecoveryDeliveryKeyPair,
+} = require('../backend/src/services/primaryHostRecoveryDeliveryProtocol');
 const { buildPrimaryHostOperationManifest } = require('./primaryHostOperationValidation');
 
 assert.ok(packageJson.build.files.includes('public/primaryHostOperationValidation.js'));
@@ -26,6 +34,21 @@ const credentialStage = {
   targetGeneration: 2,
   commitment: 'c'.repeat(64),
 };
+const recoveryDeliveryKeyPair = generateRecoveryDeliveryKeyPair();
+const recoveryDeliveryKey = {
+  protocolVersion: recoveryDeliveryKeyPair.protocolVersion,
+  algorithm: recoveryDeliveryKeyPair.algorithm,
+  publicKeyPem: recoveryDeliveryKeyPair.publicKeyPem,
+  publicKeyFingerprint: recoveryDeliveryKeyPair.publicKeyFingerprint,
+};
+const recoveryDeliveryDescriptor = {
+  protocolVersion: DELIVERY_PROTOCOL_VERSION,
+  keyAlgorithm: RECOVERY_DELIVERY_KEY_ALGORITHM,
+  keyWrapAlgorithm: KEY_WRAP_ALGORITHM,
+  contentEncryptionAlgorithm: CONTENT_ENCRYPTION_ALGORITHM,
+  acknowledgementSignatureAlgorithm: ACK_SIGNATURE_ALGORITHM,
+  recipientKeyFingerprint: recoveryDeliveryKeyPair.publicKeyFingerprint,
+};
 const controlStatus = {
   activeEpoch: {
     id: 'epoch-1', generation: 1, deviceId: 'old-host', activatedAt: '2026-07-18T06:00:00.000Z',
@@ -36,17 +59,21 @@ const controlStatus = {
     targetGeneration: 2, targetDeviceId: 'new-host',
   }],
 };
-assert.deepStrictEqual(buildPrimaryHostOperationManifest({
+const bootstrap = buildPrimaryHostOperationManifest({
   operation: 'bootstrap', deviceId: 'new-host', challengeId: 'challenge-bootstrap-1',
   targetGeneration: 1,
   credentialStage: { ...credentialStage, id: 'bootstrap:challenge-bootstrap-1', targetGeneration: 1 },
-}), {
-  credentialStage: { ...credentialStage, id: 'bootstrap:challenge-bootstrap-1', targetGeneration: 1 },
+  recoveryDeliveryKey,
 });
+assert.deepStrictEqual(bootstrap, {
+  credentialStage: { ...credentialStage, id: 'bootstrap:challenge-bootstrap-1', targetGeneration: 1 },
+  recoveryDelivery: recoveryDeliveryDescriptor,
+});
+assert.strictEqual(JSON.stringify(bootstrap).includes(recoveryDeliveryKey.publicKeyPem), false);
 const transfer = buildPrimaryHostOperationManifest({
   operation: 'transfer', deviceId: 'new-host', transferId: 'transfer-1', sourceEpochId: 'epoch-1',
   challengeId: 'challenge-transfer-1', sourceGeneration: 1, targetGeneration: 2,
-  localPrepared, controlStatus, credentialStage,
+  localPrepared, controlStatus, credentialStage, recoveryDeliveryKey,
   now: new Date('2026-07-18T07:01:00.000Z'),
 });
 assert.strictEqual(transfer.backup.sha256, 'b'.repeat(64));
@@ -54,6 +81,7 @@ assert.strictEqual(transfer.database.dbInstanceDigest, 'a'.repeat(64));
 assert.strictEqual(transfer.questionBank.storeId, 'store-1');
 assert.deepStrictEqual(transfer.localPreflight, localPreflight);
 assert.deepStrictEqual(transfer.credentialStage, credentialStage);
+assert.deepStrictEqual(transfer.recoveryDelivery, recoveryDeliveryDescriptor);
 assert.ok(!Object.hasOwn(transfer, 'cloud'));
 assert.ok(!Object.hasOwn(transfer, 'sync'));
 assert.deepStrictEqual(transfer.transfer, {
@@ -64,16 +92,18 @@ assert.throws(() => buildPrimaryHostOperationManifest({
   operation: 'transfer', deviceId: 'attacker', transferId: 'transfer-1', sourceEpochId: 'epoch-1',
   challengeId: 'challenge-transfer-1', sourceGeneration: 1, targetGeneration: 2,
   localPrepared, controlStatus, credentialStage: { ...credentialStage, deviceId: 'attacker' },
+  recoveryDeliveryKey,
 }), error => error.code === 'PRIMARY_HOST_PENDING_TRANSFER_MISMATCH');
 assert.throws(() => buildPrimaryHostOperationManifest({
   operation: 'transfer', deviceId: 'new-host', transferId: 'transfer-other', sourceEpochId: 'epoch-1',
   challengeId: 'challenge-transfer-1', sourceGeneration: 1, targetGeneration: 2,
-  localPrepared, controlStatus, credentialStage,
+  localPrepared, controlStatus, credentialStage, recoveryDeliveryKey,
 }), error => error.code === 'PRIMARY_HOST_PENDING_TRANSFER_MISMATCH');
 
 const recovery = buildPrimaryHostOperationManifest({
   operation: 'recovery', deviceId: 'new-host', sourceGeneration: 1, targetGeneration: 2,
   localPrepared, credentialStage: { ...credentialStage, id: 'recovery:challenge-recovery-1' },
+  recoveryDeliveryKey,
   controlStatus: {
     ...controlStatus,
     transfers: [],
@@ -89,19 +119,28 @@ assert.strictEqual(recovery.oldHostUnreachable.generation, 1);
 assert.ok(recovery.oldHostUnreachable.durationMs >= 15 * 60 * 1000);
 assert.ok(recovery.oldHostUnreachable.consecutiveFailures >= 3);
 assert.strictEqual(recovery.credentialStage.commitment, 'c'.repeat(64));
+assert.deepStrictEqual(recovery.recoveryDelivery, recoveryDeliveryDescriptor);
 assert.throws(() => buildPrimaryHostOperationManifest({
   operation: 'bootstrap', deviceId: 'new-host', challengeId: 'challenge-bootstrap-1', targetGeneration: 1,
   credentialStage: { ...credentialStage, id: 'bootstrap:challenge-bootstrap-1', targetGeneration: 1, commitment: 'not-a-hash' },
+  recoveryDeliveryKey,
 }), error => error.code === 'PRIMARY_HOST_CREDENTIAL_STAGE_INVALID');
+assert.throws(() => buildPrimaryHostOperationManifest({
+  operation: 'bootstrap', deviceId: 'new-host', targetGeneration: 1,
+  credentialStage: { ...credentialStage, id: 'bootstrap:challenge-bootstrap-1', targetGeneration: 1 },
+  recoveryDeliveryKey: { ...recoveryDeliveryKey, publicKeyFingerprint: '0'.repeat(64) },
+}), error => error.code === 'PRIMARY_HOST_RECOVERY_DELIVERY_KEY_INVALID');
 assert.throws(() => buildPrimaryHostOperationManifest({
   operation: 'recovery', deviceId: 'new-host', sourceGeneration: 1, targetGeneration: 2,
   localPrepared, controlStatus, credentialStage: { ...credentialStage, id: 'recovery:challenge-recovery-1' },
+  recoveryDeliveryKey,
   now: new Date('2026-07-18T07:01:00.000Z'),
 }), error => error.code === 'PRIMARY_HOST_OLD_HOST_STILL_REACHABLE');
 assert.throws(() => buildPrimaryHostOperationManifest({
   operation: 'transfer', deviceId: 'new-host', transferId: 'transfer-1', sourceEpochId: 'epoch-1',
   challengeId: 'challenge-transfer-1', sourceGeneration: 1, targetGeneration: 2,
   localPrepared: { evidence, localValidation: { backup } }, controlStatus, credentialStage,
+  recoveryDeliveryKey,
 }), error => error.code === 'PRIMARY_HOST_LOCAL_PREFLIGHT_FAILED');
 
 console.log('primary host operation validation checks passed');

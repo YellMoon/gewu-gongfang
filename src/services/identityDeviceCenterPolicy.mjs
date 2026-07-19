@@ -215,6 +215,13 @@ export function projectIdentityDeviceCenterSnapshot({
     && pendingCredentialStage.generation === Number(activeEpoch.generation));
   const requiresRuntimeDemotion = Boolean(runtimeEpochId && activeEpoch
     && (runtimeEpochId !== text(activeEpoch.id) || !isActiveHostDevice));
+  const recoveryDeliveryPending = Boolean(controlAvailable && hostControl.recoveryDeliveryPending);
+  const recoveryDelivery = controlAvailable && hostControl.pendingRecoveryDelivery
+    && typeof hostControl.pendingRecoveryDelivery === 'object'
+    ? Object.freeze({ ...hostControl.pendingRecoveryDelivery })
+    : null;
+  const hasLocalRecoveryDelivery = Boolean(runtimeCredential?.recoveryDelivery?.pending);
+  const blocksHighRiskOperations = recoveryDeliveryPending || hasLocalRecoveryDelivery;
   return Object.freeze({
     access,
     identity: Object.freeze({
@@ -241,11 +248,16 @@ export function projectIdentityDeviceCenterSnapshot({
       incomingTransfer,
       isActiveHostDevice,
       runtimeMatchesActiveEpoch,
-      canBootstrap: access.canManageHost && controlAvailable && !activeEpoch && access.isPrimaryHost,
-      canStartTransfer: access.canManageHost && isActiveHostDevice,
-      canActivateTransfer: access.canManageHost && Boolean(incomingTransfer),
+      recoveryDeliveryPending,
+      recoveryDelivery,
+      hasLocalRecoveryDelivery,
+      blocksHighRiskOperations,
+      canBootstrap: access.canManageHost && controlAvailable && !activeEpoch && access.isPrimaryHost
+        && !blocksHighRiskOperations,
+      canStartTransfer: access.canManageHost && isActiveHostDevice && !blocksHighRiskOperations,
+      canActivateTransfer: access.canManageHost && Boolean(incomingTransfer) && !blocksHighRiskOperations,
       canRecover: access.canManageHost && Boolean(activeEpoch) && !isActiveHostDevice
-        && !requiresRuntimeDemotion,
+        && !requiresRuntimeDemotion && !blocksHighRiskOperations,
       requiresRuntimeAdoption: isActiveHostDevice && !runtimeMatchesActiveEpoch,
       pendingCredentialStage,
       canResumeRuntimeAdoption,
