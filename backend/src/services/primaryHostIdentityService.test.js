@@ -10,6 +10,16 @@ const {
   createPrimaryHostLocalReceipt,
   primaryHostReceiptSigningPayload,
 } = require('./primaryHostReceiptProtocol');
+const {
+  ACK_SIGNATURE_ALGORITHM,
+  CONTENT_ENCRYPTION_ALGORITHM,
+  DELIVERY_PROTOCOL_VERSION,
+  KEY_WRAP_ALGORITHM,
+  RECOVERY_DELIVERY_KEY_ALGORITHM,
+  generateRecoveryDeliveryKeyPair,
+  openRecoveryPackage,
+  signRecoveryDeliveryAcknowledgement,
+} = require('./primaryHostRecoveryDeliveryProtocol');
 
 const db = new Database(':memory:');
 db.pragma('foreign_keys = ON');
@@ -31,11 +41,11 @@ const randomBytes = size => {
 };
 const authorityByDevice = new Map([
   ['host-device-1', {
-    runtimeNodeRole: 'primary-host', dbInstanceDigest: 'a'.repeat(64), schemaVersion: 3107,
+    runtimeNodeRole: 'primary-host', dbInstanceDigest: 'a'.repeat(64), schemaVersion: 3108,
     storeId: 'store-authority-1', dbAuthorityId: 'db-authority-1', quickCheck: 'ok',
   }],
   ['host-device-2', {
-    runtimeNodeRole: 'desktop-client', dbInstanceDigest: 'b'.repeat(64), schemaVersion: 3107,
+    runtimeNodeRole: 'desktop-client', dbInstanceDigest: 'b'.repeat(64), schemaVersion: 3108,
     storeId: 'store-authority-1', dbAuthorityId: 'db-authority-1', quickCheck: 'ok',
   }],
 ]);
@@ -167,6 +177,71 @@ const stagedHostCredentials = {
   recovery: 'locally-staged-recovery-host-credential',
 };
 
+const recoveryDeliveryKeyPairs = Object.freeze({
+  bootstrap: generateRecoveryDeliveryKeyPair(),
+  transfer: generateRecoveryDeliveryKeyPair(),
+  recovery: generateRecoveryDeliveryKeyPair(),
+});
+
+function recoveryDeliveryDescriptor(operation) {
+  const key = recoveryDeliveryKeyPairs[operation];
+  return Object.freeze({
+    protocolVersion: DELIVERY_PROTOCOL_VERSION,
+    keyAlgorithm: RECOVERY_DELIVERY_KEY_ALGORITHM,
+    keyWrapAlgorithm: KEY_WRAP_ALGORITHM,
+    contentEncryptionAlgorithm: CONTENT_ENCRYPTION_ALGORITHM,
+    acknowledgementSignatureAlgorithm: ACK_SIGNATURE_ALGORITHM,
+    recipientKeyFingerprint: key.publicKeyFingerprint,
+  });
+}
+
+function recoveryDeliveryPublicKey(operation) {
+  const key = recoveryDeliveryKeyPairs[operation];
+  return Object.freeze({
+    protocolVersion: DELIVERY_PROTOCOL_VERSION,
+    algorithm: RECOVERY_DELIVERY_KEY_ALGORITHM,
+    publicKeyPem: key.publicKeyPem,
+    publicKeyFingerprint: key.publicKeyFingerprint,
+  });
+}
+
+function decryptRecoveryDelivery(result, operation, deviceId) {
+  const delivery = result.recoveryDelivery;
+  assert.ok(delivery?.envelope, `${operation} must return a target-device envelope`);
+  return openRecoveryPackage({
+    envelope: delivery.envelope,
+    privateKeyPem: recoveryDeliveryKeyPairs[operation].privateKeyPem,
+    expected: {
+      epochId: delivery.epochId,
+      factorId: delivery.factorId,
+      deviceId,
+      generation: delivery.generation,
+      recipientPublicKeyFingerprint: delivery.recipientKeyFingerprint,
+    },
+  });
+}
+
+function acknowledgeRecoveryDelivery(result, operation, actorContext) {
+  const delivery = result.recoveryDelivery;
+  const acknowledgement = {
+    deliveryId: delivery.id,
+    epochId: delivery.epochId,
+    factorId: delivery.factorId,
+    recipientKeyFingerprint: delivery.recipientKeyFingerprint,
+    expectedRowVersion: delivery.rowVersion,
+    acknowledgementNonce: delivery.ackNonce,
+    acknowledgedAt: currentTime,
+  };
+  return service.acknowledgeRecoveryDelivery({
+    actorContext,
+    acknowledgement,
+    signature: signRecoveryDeliveryAcknowledgement({
+      acknowledgement,
+      privateKeyPem: recoveryDeliveryKeyPairs[operation].privateKeyPem,
+    }),
+  });
+}
+
 function credentialStage(operation, challengeId, deviceId, targetGeneration) {
   return {
     id: `${operation}:${challengeId}`,
@@ -186,7 +261,7 @@ function transferManifest(overrides = {}) {
     },
     database: {
       quickCheck: 'ok',
-      schemaVersion: 3107,
+      schemaVersion: 3108,
       dbInstanceDigest: 'b'.repeat(64),
       dbAuthorityId: 'db-authority-1',
     },
@@ -198,6 +273,7 @@ function transferManifest(overrides = {}) {
     localPreflight: { status: 'ok', tablesChecked: 17 },
     cloudPreflight: { status: 'ok', protocolVersion: 2, targetDeviceId: 'host-device-2' },
     credentialStage: credentialStage('transfer', 'host-challenge-3', 'host-device-2', 2),
+    recoveryDelivery: recoveryDeliveryDescriptor('transfer'),
     ...overrides,
   };
 }
@@ -212,7 +288,7 @@ function recoveryEvidence(overrides = {}) {
     },
     database: {
       quickCheck: 'ok',
-      schemaVersion: 3107,
+      schemaVersion: 3108,
       dbInstanceDigest: 'a'.repeat(64),
       dbAuthorityId: 'db-authority-1',
     },
@@ -230,6 +306,7 @@ function recoveryEvidence(overrides = {}) {
     localPreflight: { status: 'ok', tablesChecked: 17 },
     cloudPreflight: { status: 'ok', protocolVersion: 2, targetDeviceId: 'host-device-1' },
     credentialStage: credentialStage('recovery', 'host-challenge-4', 'host-device-1', 3),
+    recoveryDelivery: recoveryDeliveryDescriptor('recovery'),
     ...overrides,
   };
 }
@@ -305,22 +382,37 @@ authorityByDevice.set('host-device-1', originalHostEvidence);
 
 const bootstrapManifest = {
   credentialStage: credentialStage('bootstrap', verifiedBootstrap.id, 'host-device-1', 1),
+  recoveryDelivery: recoveryDeliveryDescriptor('bootstrap'),
 };
 const bootstrapReceipt = localReceipt(verifiedBootstrap, actor('host-device-1'), 'bootstrap', bootstrapManifest);
+assert.throws(
+  () => service.bootstrap({
+    actorContext: actor('host-device-1'),
+    challengeId: verifiedBootstrap.id,
+    expectedChallengeRowVersion: verifiedBootstrap.rowVersion,
+    localReceipt: bootstrapReceipt,
+    operationManifest: bootstrapManifest,
+  }),
+  error => error?.code === 'PRIMARY_HOST_RECOVERY_DELIVERY_KEY_REQUIRED'
+);
 const bootstrapped = service.bootstrap({
   actorContext: actor('host-device-1'),
   challengeId: verifiedBootstrap.id,
   expectedChallengeRowVersion: verifiedBootstrap.rowVersion,
   localReceipt: bootstrapReceipt,
   operationManifest: bootstrapManifest,
+  recoveryDeliveryKey: recoveryDeliveryPublicKey('bootstrap'),
 });
 assert.strictEqual(bootstrapped.epoch.generation, 1);
 assert.strictEqual(bootstrapped.epoch.status, 'active');
 assert.strictEqual(bootstrapped.epoch.deviceId, 'host-device-1');
 assert.strictEqual(Object.hasOwn(bootstrapped, 'hostCredential'), false);
-assert.ok(bootstrapped.recoveryPackage.recoveryCode.length >= 32);
+assert.strictEqual(Object.hasOwn(bootstrapped, 'recoveryPackage'), false);
+const bootstrapRecoveryPackage = decryptRecoveryDelivery(bootstrapped, 'bootstrap', 'host-device-1');
+assert.ok(bootstrapRecoveryPackage.recoveryCode.length >= 32);
 assert.ok(!JSON.stringify(db.prepare('SELECT * FROM primary_host_epochs').all()).includes(stagedHostCredentials.bootstrap));
-assert.ok(!JSON.stringify(db.prepare('SELECT * FROM host_recovery_factors').all()).includes(bootstrapped.recoveryPackage.recoveryCode));
+assert.ok(!JSON.stringify(db.prepare('SELECT * FROM host_recovery_factors').all()).includes(bootstrapRecoveryPackage.recoveryCode));
+assert.ok(!JSON.stringify(db.prepare('SELECT * FROM host_recovery_deliveries').all()).includes(bootstrapRecoveryPackage.recoveryCode));
 assert.strictEqual(service.assertActiveHostCredential({
   deviceId: 'host-device-1', generation: 1, credential: stagedHostCredentials.bootstrap,
 }).generation, 1);
@@ -331,11 +423,32 @@ const repeatedBootstrap = service.bootstrap({
   expectedChallengeRowVersion: verifiedBootstrap.rowVersion + 1,
   localReceipt: bootstrapReceipt,
   operationManifest: bootstrapManifest,
+  recoveryDeliveryKey: recoveryDeliveryPublicKey('bootstrap'),
 });
 assert.strictEqual(repeatedBootstrap.epoch.generation, 1);
 assert.strictEqual(repeatedBootstrap.alreadyActive, true);
 assert.strictEqual(Object.hasOwn(repeatedBootstrap, 'hostCredential'), false);
+assert.strictEqual(repeatedBootstrap.recoveryDelivery.id, bootstrapped.recoveryDelivery.id);
+assert.deepStrictEqual(repeatedBootstrap.recoveryDelivery.envelope, bootstrapped.recoveryDelivery.envelope);
 assert.strictEqual(db.prepare("SELECT COUNT(*) count FROM primary_host_epochs").get().count, 1);
+
+const bootstrapTargetStatus = service.getStatus(actor('host-device-1'));
+assert.strictEqual(bootstrapTargetStatus.recoveryDeliveryPending, true);
+assert.strictEqual(bootstrapTargetStatus.pendingRecoveryDelivery.id, bootstrapped.recoveryDelivery.id);
+const bootstrapOtherDeviceStatus = service.getStatus(actor('host-device-2'));
+assert.strictEqual(bootstrapOtherDeviceStatus.recoveryDeliveryPending, true);
+assert.strictEqual(Object.hasOwn(bootstrapOtherDeviceStatus, 'pendingRecoveryDelivery'), false);
+assert.throws(
+  () => service.startOperationChallenge({
+    actorContext: actor('host-device-1'), operation: 'transfer', targetDeviceId: 'host-device-2',
+  }),
+  error => error?.code === 'PRIMARY_HOST_RECOVERY_DELIVERY_PENDING'
+);
+assert.strictEqual(
+  acknowledgeRecoveryDelivery(bootstrapped, 'bootstrap', actor('host-device-1')).status,
+  'acknowledged'
+);
+assert.strictEqual(service.getStatus(actor('host-device-1')).recoveryDeliveryPending, false);
 
 assert.throws(
   () => service.startOperationChallenge({
@@ -418,6 +531,7 @@ assert.throws(
     localReceipt: transferReceipt,
     validationManifest: { ...validManifest, attestationTamper: true },
     preflightProof: { id: 'transfer-proof-id', token: 'transfer-proof' },
+    recoveryDeliveryKey: recoveryDeliveryPublicKey('transfer'),
   }),
   error => error?.code === 'PRIMARY_HOST_PREFLIGHT_PROOF_CONTEXT_MISMATCH'
 );
@@ -429,10 +543,28 @@ const activatedTransfer = service.activateTransfer({
   localReceipt: transferReceipt,
   validationManifest: validManifest,
   preflightProof: { id: 'transfer-proof-id', token: 'transfer-proof' },
+  recoveryDeliveryKey: recoveryDeliveryPublicKey('transfer'),
 });
 assert.strictEqual(activatedTransfer.epoch.generation, 2);
 assert.strictEqual(activatedTransfer.epoch.deviceId, 'host-device-2');
 assert.strictEqual(Object.hasOwn(activatedTransfer, 'hostCredential'), false);
+assert.strictEqual(Object.hasOwn(activatedTransfer, 'recoveryPackage'), false);
+const transferRecoveryPackage = decryptRecoveryDelivery(
+  activatedTransfer,
+  'transfer',
+  'host-device-2'
+);
+const repeatedTransfer = service.activateTransfer({
+  actorContext: actor('host-device-2'),
+  transferId: pendingTransfer.id,
+  expectedTransferRowVersion: pendingTransfer.rowVersion,
+  localReceipt: transferReceipt,
+  validationManifest: validManifest,
+  preflightProof: { id: 'transfer-proof-id', token: 'transfer-proof' },
+  recoveryDeliveryKey: recoveryDeliveryPublicKey('transfer'),
+});
+assert.strictEqual(repeatedTransfer.epoch.id, activatedTransfer.epoch.id);
+assert.strictEqual(repeatedTransfer.recoveryDelivery.id, activatedTransfer.recoveryDelivery.id);
 assert.strictEqual(db.prepare('SELECT status FROM primary_host_epochs WHERE generation=1').get().status, 'retired');
 assert.throws(
   () => service.assertActiveHostCredential({
@@ -443,6 +575,10 @@ assert.throws(
 assert.strictEqual(service.assertActiveHostCredential({
   deviceId: 'host-device-2', generation: 2, credential: stagedHostCredentials.transfer,
 }).generation, 2);
+assert.strictEqual(
+  acknowledgeRecoveryDelivery(activatedTransfer, 'transfer', actor('host-device-2')).status,
+  'acknowledged'
+);
 
 currentTime = '2026-07-18T00:25:00.000Z';
 db.prepare(`INSERT INTO host_heartbeats
@@ -469,8 +605,8 @@ for (const [name, evidence, code] of [
     () => service.recover({
       actorContext: actor('host-device-1'), challengeId: verifiedRecovery.id,
       expectedChallengeRowVersion: verifiedRecovery.rowVersion,
-      factorId: activatedTransfer.recoveryPackage.factorId,
-      recoveryCode: activatedTransfer.recoveryPackage.recoveryCode,
+      factorId: transferRecoveryPackage.factorId,
+      recoveryCode: transferRecoveryPackage.recoveryCode,
       localReceipt: recoveryReceipt,
       evidence,
     }),
@@ -490,8 +626,8 @@ assert.throws(
   () => service.recover({
     actorContext: actor('host-device-1'), challengeId: verifiedRecovery.id,
     expectedChallengeRowVersion: verifiedRecovery.rowVersion,
-    factorId: activatedTransfer.recoveryPackage.factorId,
-    recoveryCode: activatedTransfer.recoveryPackage.recoveryCode,
+    factorId: transferRecoveryPackage.factorId,
+    recoveryCode: transferRecoveryPackage.recoveryCode,
     localReceipt: localReceipt(verifiedRecovery, actor('host-device-1'), 'recovery', forgedOfflineEvidence),
     evidence: forgedOfflineEvidence,
   }),
@@ -504,7 +640,7 @@ assert.throws(
   () => service.recover({
     actorContext: actor('host-device-1'), challengeId: verifiedRecovery.id,
     expectedChallengeRowVersion: verifiedRecovery.rowVersion,
-    factorId: activatedTransfer.recoveryPackage.factorId,
+    factorId: transferRecoveryPackage.factorId,
     recoveryCode: 'wrong-recovery-code',
     localReceipt: recoveryReceipt,
     evidence: validRecovery,
@@ -521,10 +657,11 @@ assert.throws(
     actorContext: actor('host-device-1'),
     challengeId: verifiedRecovery.id,
     expectedChallengeRowVersion: verifiedRecovery.rowVersion,
-    factorId: activatedTransfer.recoveryPackage.factorId,
-    recoveryCode: activatedTransfer.recoveryPackage.recoveryCode,
+    factorId: transferRecoveryPackage.factorId,
+    recoveryCode: transferRecoveryPackage.recoveryCode,
     localReceipt: recoveryReceipt,
     evidence: validRecovery,
+    recoveryDeliveryKey: recoveryDeliveryPublicKey('recovery'),
   }),
   error => error?.code === 'PRIMARY_HOST_OLD_HOST_HEARTBEAT_CHANGED',
   'a heartbeat renewed after preflight but before retirement must abort recovery'
@@ -535,32 +672,38 @@ const recovered = service.recover({
   actorContext: actor('host-device-1'),
   challengeId: verifiedRecovery.id,
   expectedChallengeRowVersion: verifiedRecovery.rowVersion,
-  factorId: activatedTransfer.recoveryPackage.factorId,
-  recoveryCode: activatedTransfer.recoveryPackage.recoveryCode,
+  factorId: transferRecoveryPackage.factorId,
+  recoveryCode: transferRecoveryPackage.recoveryCode,
   localReceipt: recoveryReceipt,
   evidence: validRecovery,
   preflightProof: { id: 'recovery-proof-id', token: 'recovery-proof' },
+  recoveryDeliveryKey: recoveryDeliveryPublicKey('recovery'),
 });
 assert.strictEqual(recovered.epoch.generation, 3);
 assert.strictEqual(recovered.epoch.deviceId, 'host-device-1');
 assert.strictEqual(Object.hasOwn(recovered, 'hostCredential'), false);
+assert.strictEqual(Object.hasOwn(recovered, 'recoveryPackage'), false);
+const recoveredPackage = decryptRecoveryDelivery(recovered, 'recovery', 'host-device-1');
+assert.strictEqual(recoveredPackage.epochId, recovered.epoch.id);
 assert.strictEqual(service.assertActiveHostCredential({
   deviceId: 'host-device-1', generation: 3, credential: stagedHostCredentials.recovery,
 }).generation, 3);
 assert.strictEqual(db.prepare('SELECT status FROM host_recovery_factors WHERE id=?').get(
-  activatedTransfer.recoveryPackage.factorId
+  transferRecoveryPackage.factorId
 ).status, 'used');
-assert.throws(
-  () => service.recover({
-    actorContext: actor('host-device-1'), challengeId: verifiedRecovery.id,
-    expectedChallengeRowVersion: verifiedRecovery.rowVersion + 1,
-    factorId: activatedTransfer.recoveryPackage.factorId,
-    recoveryCode: activatedTransfer.recoveryPackage.recoveryCode,
-    localReceipt: recoveryReceipt,
-    evidence: validRecovery,
-  }),
-  error => ['PRIMARY_HOST_RECOVERY_FACTOR_USED', 'PRIMARY_HOST_CHALLENGE_REPLAYED'].includes(error?.code)
-);
+const repeatedRecovery = service.recover({
+  actorContext: actor('host-device-1'), challengeId: verifiedRecovery.id,
+  expectedChallengeRowVersion: verifiedRecovery.rowVersion + 1,
+  factorId: transferRecoveryPackage.factorId,
+  recoveryCode: transferRecoveryPackage.recoveryCode,
+  localReceipt: recoveryReceipt,
+  evidence: validRecovery,
+  preflightProof: { id: 'recovery-proof-id', token: 'recovery-proof' },
+  recoveryDeliveryKey: recoveryDeliveryPublicKey('recovery'),
+});
+assert.strictEqual(repeatedRecovery.epoch.id, recovered.epoch.id);
+assert.strictEqual(repeatedRecovery.recoveryDelivery.id, recovered.recoveryDelivery.id);
+assert.strictEqual(service.getStatus(actor('host-device-1')).pendingRecoveryDelivery.id, recovered.recoveryDelivery.id);
 
 const activeRows = db.prepare("SELECT * FROM primary_host_epochs WHERE status='active'").all();
 assert.strictEqual(activeRows.length, 1);

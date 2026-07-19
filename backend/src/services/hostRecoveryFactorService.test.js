@@ -49,6 +49,7 @@ const prepared = service.prepare({
   generation: 1,
 });
 assert.ok(prepared.recoveryPackage.recoveryCode.length >= 32);
+assert.strictEqual(prepared.recoveryPackage.epochId, 'epoch-1');
 service.storePrepared(prepared);
 
 const stored = db.prepare('SELECT * FROM host_recovery_factors WHERE id=?').get(prepared.recoveryPackage.factorId);

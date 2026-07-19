@@ -7,6 +7,9 @@ const {
 } = require('./authorizationPolicy');
 const { inspectQuestionBankStore } = require('./questionBankStorageService');
 const { createHostRecoveryFactorService } = require('./hostRecoveryFactorService');
+const {
+  createPrimaryHostRecoveryDeliveryService,
+} = require('./primaryHostRecoveryDeliveryService');
 const { createPrimaryHostPreflightProofService } = require('./primaryHostPreflightProofService');
 const {
   OPERATIONS,
@@ -163,12 +166,16 @@ function createPrimaryHostIdentityService({
   randomBytes = crypto.randomBytes,
   localEvidenceProvider,
   recoveryFactorService,
+  recoveryDeliveryService,
   preflightProofService,
   hostHeartbeatTtlMs = process.env.GEWU_HOST_HEARTBEAT_TTL_MS,
 } = {}) {
   if (!db || typeof db.prepare !== 'function') throw hostError('PRIMARY_HOST_DB_REQUIRED');
   const evidenceProvider = localEvidenceProvider || defaultLocalEvidenceProvider(db);
   const recoveryFactors = recoveryFactorService || createHostRecoveryFactorService({ db, now, uuid, randomBytes });
+  const recoveryDeliveries = recoveryDeliveryService || createPrimaryHostRecoveryDeliveryService({
+    db, now, uuid, randomBytes,
+  });
   const preflightProofs = preflightProofService || createPrimaryHostPreflightProofService({
     db, now, uuid, randomBytes,
   });
@@ -254,6 +261,7 @@ function createPrimaryHostIdentityService({
     const actor = assertActor(input.actorContext);
     const operation = requiredText(input.operation, 'PRIMARY_HOST_OPERATION_REQUIRED');
     if (!OPERATIONS.has(operation)) throw hostError('PRIMARY_HOST_OPERATION_INVALID');
+    assertNoPendingRecoveryDelivery(actor.userId);
     const targetDeviceId = requiredText(input.targetDeviceId || actor.deviceId, 'PRIMARY_HOST_TARGET_DEVICE_REQUIRED');
     const active = getActiveEpochRow();
     if (operation === 'bootstrap') {
@@ -425,10 +433,30 @@ function createPrimaryHostIdentityService({
     return Object.freeze({ commitment });
   }
 
-  function prepareEpochSecrets({ epochId, userId, deviceId, generation, credentialStage, actor }) {
+  function prepareEpochSecrets({
+    epochId,
+    userId,
+    deviceId,
+    generation,
+    credentialStage,
+    recoveryDeliveryKey,
+    operationManifest,
+    actor,
+  }) {
     const staged = assertCredentialStage(credentialStage, { actor, generation });
+    if (!recoveryDeliveryKey) throw hostError('PRIMARY_HOST_RECOVERY_DELIVERY_KEY_REQUIRED');
     const recovery = recoveryFactors.prepare({ epochId, userId, deviceId, generation });
-    return { hostCredentialHash: staged.commitment, recovery };
+    const delivery = recoveryDeliveries.prepare({
+      epochId,
+      factorId: recovery.recoveryPackage.factorId,
+      userId,
+      deviceId,
+      generation,
+      recoveryPackage: recovery.recoveryPackage,
+      deliveryKey: recoveryDeliveryKey,
+      recoveryDeliveryDescriptor: operationManifest?.recoveryDelivery,
+    });
+    return { hostCredentialHash: staged.commitment, recovery, delivery };
   }
 
   function insertEpoch({
@@ -455,6 +483,36 @@ function createPrimaryHostIdentityService({
     if (result.changes !== 1) throw hostError('PRIMARY_HOST_CHALLENGE_VERSION_MISMATCH');
   }
 
+  function recoveryDeliveryForEpoch({ epochId, actor, required = true }) {
+    try {
+      return recoveryDeliveries.getTargetDelivery({
+        epochId,
+        userId: actor.userId,
+        deviceId: actor.deviceId,
+      });
+    } catch (error) {
+      if (!required && error?.code === 'PRIMARY_HOST_RECOVERY_DELIVERY_NOT_FOUND') return null;
+      throw error;
+    }
+  }
+
+  function presentActivatedResult({ epochRow, actor, extra = {}, deliveryRequired = true }) {
+    const result = { epoch: presentEpoch(epochRow), ...extra };
+    const recoveryDelivery = recoveryDeliveryForEpoch({
+      epochId: epochRow.id,
+      actor,
+      required: deliveryRequired,
+    });
+    if (recoveryDelivery) result.recoveryDelivery = recoveryDelivery;
+    return Object.freeze(result);
+  }
+
+  function assertNoPendingRecoveryDelivery(userId) {
+    if (recoveryDeliveries.hasPendingForUser(userId)) {
+      throw hostError('PRIMARY_HOST_RECOVERY_DELIVERY_PENDING');
+    }
+  }
+
   function bootstrap(input = {}) {
     const actor = assertActor(input.actorContext);
     const existing = getActiveEpochRow();
@@ -462,14 +520,16 @@ function createPrimaryHostIdentityService({
       const challenge = findChallenge.get(String(input.challengeId || ''));
       if (existing.device_id === actor.deviceId && existing.user_id === actor.userId
         && challenge && existing.challenge_id === challenge.id) {
-        return Object.freeze({
-          epoch: presentEpoch(existing),
-          alreadyActive: true,
-          recoveryPackage: null,
+        return presentActivatedResult({
+          epochRow: existing,
+          actor,
+          extra: { alreadyActive: true },
+          deliveryRequired: false,
         });
       }
       throw hostError('PRIMARY_HOST_ALREADY_BOOTSTRAPPED');
     }
+    assertNoPendingRecoveryDelivery(actor.userId);
     const challenge = assertVerifiedChallenge({
       challengeId: requiredText(input.challengeId, 'PRIMARY_HOST_CHALLENGE_REQUIRED'),
       operation: 'bootstrap', actor, expectedRowVersion: input.expectedChallengeRowVersion,
@@ -482,6 +542,8 @@ function createPrimaryHostIdentityService({
     const prepared = prepareEpochSecrets({
       epochId, userId: actor.userId, deviceId: actor.deviceId, generation: 1,
       credentialStage: input.operationManifest?.credentialStage,
+      recoveryDeliveryKey: input.recoveryDeliveryKey,
+      operationManifest: input.operationManifest,
       actor,
     });
     const timestamp = currentDate().toISOString();
@@ -497,16 +559,18 @@ function createPrimaryHostIdentityService({
         WHERE id=? AND status='active'`).run(timestamp, actor.authorization.id);
       recoveryFactors.revokeActiveForUser({ userId: actor.userId });
       recoveryFactors.storePrepared(prepared.recovery);
+      recoveryDeliveries.storePrepared(prepared.delivery);
     })();
-    return Object.freeze({
-      epoch: presentEpoch(db.prepare('SELECT * FROM primary_host_epochs WHERE id=?').get(epochId)),
-      alreadyActive: false,
-      recoveryPackage: prepared.recovery.recoveryPackage,
+    return presentActivatedResult({
+      epochRow: db.prepare('SELECT * FROM primary_host_epochs WHERE id=?').get(epochId),
+      actor,
+      extra: { alreadyActive: false },
     });
   }
 
   function beginTransfer(input = {}) {
     const actor = assertActor(input.actorContext);
+    assertNoPendingRecoveryDelivery(actor.userId);
     const active = getActiveEpochRow();
     if (!active) throw hostError('PRIMARY_HOST_NOT_BOOTSTRAPPED');
     if (active.user_id !== actor.userId || active.device_id !== actor.deviceId) {
@@ -600,6 +664,24 @@ function createPrimaryHostIdentityService({
     const transferId = requiredText(input.transferId, 'PRIMARY_HOST_TRANSFER_REQUIRED');
     const transfer = db.prepare('SELECT * FROM host_transfers WHERE id=?').get(transferId);
     if (!transfer) throw hostError('PRIMARY_HOST_TRANSFER_NOT_FOUND');
+    if (transfer.status === 'activated') {
+      const activatedEpoch = getActiveEpochRow();
+      if (transfer.target_device_id === actor.deviceId
+        && transfer.user_id === actor.userId
+        && activatedEpoch?.device_id === actor.deviceId
+        && activatedEpoch?.user_id === actor.userId
+        && activatedEpoch?.activation_reason === 'transfer'
+        && activatedEpoch?.source_epoch_id === transfer.source_epoch_id
+        && activatedEpoch?.challenge_id === transfer.challenge_id) {
+        return presentActivatedResult({
+          epochRow: activatedEpoch,
+          actor,
+          extra: { transfer: presentTransfer(transfer) },
+        });
+      }
+      throw hostError('PRIMARY_HOST_TRANSFER_STATE_INVALID');
+    }
+    assertNoPendingRecoveryDelivery(actor.userId);
     if (transfer.status !== 'pending_validation') throw hostError('PRIMARY_HOST_TRANSFER_STATE_INVALID');
     if (Number(transfer.row_version) !== Number(input.expectedTransferRowVersion)) {
       throw hostError('PRIMARY_HOST_TRANSFER_VERSION_MISMATCH');
@@ -622,6 +704,8 @@ function createPrimaryHostIdentityService({
     const prepared = prepareEpochSecrets({
       epochId, userId: actor.userId, deviceId: actor.deviceId, generation: transfer.target_generation,
       credentialStage: input.validationManifest?.credentialStage,
+      recoveryDeliveryKey: input.recoveryDeliveryKey,
+      operationManifest: input.validationManifest,
       actor,
     });
     const timestamp = currentDate().toISOString();
@@ -663,11 +747,14 @@ function createPrimaryHostIdentityService({
         .run(actor.deviceId, timestamp, active.device_id, actor.deviceId);
       recoveryFactors.revokeActiveForUser({ userId: actor.userId });
       recoveryFactors.storePrepared(prepared.recovery);
+      recoveryDeliveries.storePrepared(prepared.delivery);
     })();
-    return Object.freeze({
-      epoch: presentEpoch(db.prepare('SELECT * FROM primary_host_epochs WHERE id=?').get(epochId)),
-      transfer: presentTransfer(db.prepare('SELECT * FROM host_transfers WHERE id=?').get(transfer.id)),
-      recoveryPackage: prepared.recovery.recoveryPackage,
+    return presentActivatedResult({
+      epochRow: db.prepare('SELECT * FROM primary_host_epochs WHERE id=?').get(epochId),
+      actor,
+      extra: {
+        transfer: presentTransfer(db.prepare('SELECT * FROM host_transfers WHERE id=?').get(transfer.id)),
+      },
     });
   }
 
@@ -698,8 +785,21 @@ function createPrimaryHostIdentityService({
     const active = getActiveEpochRow();
     if (!active) throw hostError('PRIMARY_HOST_NOT_BOOTSTRAPPED');
     if (active.user_id !== actor.userId) throw hostError('PRIMARY_HOST_OWNER_MISMATCH');
+    const challengeId = requiredText(input.challengeId, 'PRIMARY_HOST_CHALLENGE_REQUIRED');
+    const challengeCandidate = findChallenge.get(challengeId);
+    if (challengeCandidate?.status === 'consumed'
+      && challengeCandidate.operation === 'recovery'
+      && challengeCandidate.requested_by_user_id === actor.userId
+      && challengeCandidate.target_device_id === actor.deviceId
+      && active.device_id === actor.deviceId
+      && active.user_id === actor.userId
+      && active.activation_reason === 'recovery'
+      && active.challenge_id === challengeCandidate.id) {
+      return presentActivatedResult({ epochRow: active, actor });
+    }
+    assertNoPendingRecoveryDelivery(actor.userId);
     const challenge = assertVerifiedChallenge({
-      challengeId: requiredText(input.challengeId, 'PRIMARY_HOST_CHALLENGE_REQUIRED'),
+      challengeId,
       operation: 'recovery', actor, expectedRowVersion: input.expectedChallengeRowVersion,
     });
     if (active.device_id === actor.deviceId) throw hostError('PRIMARY_HOST_RECOVERY_TARGET_UNCHANGED');
@@ -720,6 +820,8 @@ function createPrimaryHostIdentityService({
     const prepared = prepareEpochSecrets({
       epochId, userId: actor.userId, deviceId: actor.deviceId, generation: nextGeneration,
       credentialStage: input.evidence?.credentialStage,
+      recoveryDeliveryKey: input.recoveryDeliveryKey,
+      operationManifest: input.evidence,
       actor,
     });
     const timestamp = currentDate().toISOString();
@@ -765,10 +867,20 @@ function createPrimaryHostIdentityService({
         exceptFactorId: prepared.recovery.recoveryPackage.factorId,
       });
       recoveryFactors.storePrepared(prepared.recovery);
+      recoveryDeliveries.storePrepared(prepared.delivery);
     })();
-    return Object.freeze({
-      epoch: presentEpoch(db.prepare('SELECT * FROM primary_host_epochs WHERE id=?').get(epochId)),
-      recoveryPackage: prepared.recovery.recoveryPackage,
+    return presentActivatedResult({
+      epochRow: db.prepare('SELECT * FROM primary_host_epochs WHERE id=?').get(epochId),
+      actor,
+    });
+  }
+
+  function acknowledgeRecoveryDelivery(input = {}) {
+    const actor = assertActor(input.actorContext);
+    return recoveryDeliveries.acknowledge({
+      actor: { userId: actor.userId, deviceId: actor.deviceId },
+      acknowledgement: input.acknowledgement,
+      signature: input.signature,
     });
   }
 
@@ -826,7 +938,24 @@ function createPrimaryHostIdentityService({
       }
       activeEpoch = Object.freeze({ ...activeEpoch, heartbeat });
     }
-    return Object.freeze({ activeEpoch, transfers: Object.freeze(transfers), history: Object.freeze(history) });
+    const result = {
+      activeEpoch,
+      transfers: Object.freeze(transfers),
+      history: Object.freeze(history),
+      recoveryDeliveryPending: recoveryDeliveries.hasPendingForUser(actor.userId),
+    };
+    const pendingRecoveryDelivery = recoveryDeliveries.getPendingSummary({
+      userId: actor.userId,
+      deviceId: actor.deviceId,
+    });
+    if (pendingRecoveryDelivery) {
+      result.pendingRecoveryDelivery = recoveryDeliveries.getTargetDelivery({
+        id: pendingRecoveryDelivery.id,
+        userId: actor.userId,
+        deviceId: actor.deviceId,
+      });
+    }
+    return Object.freeze(result);
   }
 
   function issuePreflightProof(input = {}) {
@@ -835,6 +964,7 @@ function createPrimaryHostIdentityService({
   }
 
   return Object.freeze({
+    acknowledgeRecoveryDelivery,
     activateTransfer,
     assertActiveHostCredential,
     beginTransfer,

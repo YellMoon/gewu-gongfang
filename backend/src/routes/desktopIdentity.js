@@ -41,16 +41,22 @@ const PRIMARY_HOST_PREFLIGHT_PROOF_KEYS = new Set([
 ]);
 const PRIMARY_HOST_BOOTSTRAP_KEYS = new Set([
   'challengeId', 'expectedChallengeRowVersion', 'localReceipt', 'operationManifest',
+  'recoveryDeliveryKey',
 ]);
 const PRIMARY_HOST_TRANSFER_KEYS = new Set([
   'challengeId', 'expectedChallengeRowVersion', 'expectedActiveEpochRowVersion',
 ]);
 const PRIMARY_HOST_TRANSFER_ACTIVATE_KEYS = new Set([
   'expectedTransferRowVersion', 'localReceipt', 'validationManifest', 'preflightProof',
+  'recoveryDeliveryKey',
 ]);
 const PRIMARY_HOST_RECOVERY_KEYS = new Set([
   'challengeId', 'expectedChallengeRowVersion', 'factorId', 'recoveryCode',
-  'localReceipt', 'evidence', 'preflightProof',
+  'localReceipt', 'evidence', 'preflightProof', 'recoveryDeliveryKey',
+]);
+const PRIMARY_HOST_RECOVERY_DELIVERY_ACK_KEYS = new Set([
+  'epochId', 'factorId', 'recipientKeyFingerprint', 'expectedRowVersion',
+  'acknowledgementNonce', 'acknowledgedAt', 'signature',
 ]);
 const PRIMARY_HOST_CREDENTIAL_VERIFY_KEYS = new Set([
   'epochId', 'deviceId', 'generation', 'credential',
@@ -85,7 +91,8 @@ function statusForError(error, authenticationPhase = false) {
   if (code.startsWith('WECHAT_') && (code.endsWith('_FAILED') || code.endsWith('_TIMEOUT'))) return 502;
   if (code === 'DESKTOP_SESSION_CHALLENGE_NOT_FOUND') return 404;
   if (code === 'PRIMARY_HOST_CHALLENGE_NOT_FOUND'
-    || code === 'PRIMARY_HOST_TRANSFER_NOT_FOUND') return 404;
+    || code === 'PRIMARY_HOST_TRANSFER_NOT_FOUND'
+    || code === 'PRIMARY_HOST_RECOVERY_DELIVERY_NOT_FOUND') return 404;
   if (code === 'DESKTOP_SESSION_CHALLENGE_REPLAYED'
     || code === 'DESKTOP_SESSION_CHALLENGE_EXPIRED'
     || code === 'DESKTOP_SESSION_CHALLENGE_STALE'
@@ -110,7 +117,8 @@ function statusForError(error, authenticationPhase = false) {
     || code === 'PRIMARY_HOST_CANONICAL_SUPER_ADMIN_REQUIRED'
     || code === 'PRIMARY_HOST_SUPER_ADMIN_ROLE_REQUIRED'
     || code === 'PRIMARY_HOST_ACTIVE_DEVICE_REQUIRED'
-    || code === 'PRIMARY_HOST_DEVICE_NOT_ACTIVE') return 403;
+    || code === 'PRIMARY_HOST_DEVICE_NOT_ACTIVE'
+    || code === 'PRIMARY_HOST_RECOVERY_DELIVERY_ACK_PROOF_INVALID') return 403;
   if (code.includes('STALE')
     || code.includes('CONFLICT')
     || code.includes('ALREADY')
@@ -120,6 +128,7 @@ function statusForError(error, authenticationPhase = false) {
     || code.startsWith('PRIMARY_HOST_TRANSFER_')
     || code.startsWith('PRIMARY_HOST_CHALLENGE_')
     || code === 'PRIMARY_HOST_ALREADY_BOOTSTRAPPED'
+    || code === 'PRIMARY_HOST_RECOVERY_DELIVERY_PENDING'
     || code === 'DESKTOP_ACTIVE_ROLE_UNCHANGED'
     || code === 'DESKTOP_DEVICE_NOT_ACTIVE') return 409;
   return 400;
@@ -519,6 +528,7 @@ function createDesktopIdentityRouter({
       expectedChallengeRowVersion: req.body.expectedChallengeRowVersion,
       localReceipt: req.body.localReceipt,
       operationManifest: req.body.operationManifest,
+      recoveryDeliveryKey: req.body.recoveryDeliveryKey,
     });
     return res.json({ success: true, data });
   }));
@@ -559,6 +569,7 @@ function createDesktopIdentityRouter({
       localReceipt: req.body.localReceipt,
       validationManifest: req.body.validationManifest,
       preflightProof: req.body.preflightProof,
+      recoveryDeliveryKey: req.body.recoveryDeliveryKey,
     });
     return res.json({ success: true, data });
   }));
@@ -574,8 +585,27 @@ function createDesktopIdentityRouter({
       localReceipt: req.body.localReceipt,
       evidence: req.body.evidence,
       preflightProof: req.body.preflightProof,
+      recoveryDeliveryKey: req.body.recoveryDeliveryKey,
     });
     return res.json({ success: true, data });
+  }));
+
+  router.post('/primary-host/recovery-deliveries/:deliveryId/acknowledge', authenticated(function (req, res, context) {
+    assertBodyKeys(req.body, PRIMARY_HOST_RECOVERY_DELIVERY_ACK_KEYS);
+    const recoveryDelivery = primaryHost().acknowledgeRecoveryDelivery({
+      actorContext: context,
+      acknowledgement: {
+        deliveryId: req.params.deliveryId,
+        epochId: req.body.epochId,
+        factorId: req.body.factorId,
+        recipientKeyFingerprint: req.body.recipientKeyFingerprint,
+        expectedRowVersion: req.body.expectedRowVersion,
+        acknowledgementNonce: req.body.acknowledgementNonce,
+        acknowledgedAt: req.body.acknowledgedAt,
+      },
+      signature: req.body.signature,
+    });
+    return res.json({ success: true, data: { recoveryDelivery } });
   }));
 
   router.post('/session/challenges/start', function (req, res) {

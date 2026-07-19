@@ -10,6 +10,16 @@ const {
   createPrimaryHostLocalReceipt,
   primaryHostReceiptSigningPayload,
 } = require('../services/primaryHostReceiptProtocol');
+const {
+  ACK_SIGNATURE_ALGORITHM,
+  CONTENT_ENCRYPTION_ALGORITHM,
+  DELIVERY_PROTOCOL_VERSION,
+  KEY_WRAP_ALGORITHM,
+  RECOVERY_DELIVERY_KEY_ALGORITHM,
+  generateRecoveryDeliveryKeyPair,
+  openRecoveryPackage,
+  signRecoveryDeliveryAcknowledgement,
+} = require('../services/primaryHostRecoveryDeliveryProtocol');
 const { buildPrimaryHostOperationManifest } = require('../../../public/primaryHostOperationValidation');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-primary-host-http-'));
@@ -32,6 +42,44 @@ const stagedHostCredentials = Object.freeze({
   bootstrap: 'locally-staged-bootstrap-host-credential-for-http-tests',
   transfer: 'locally-staged-transfer-host-credential-for-http-tests',
 });
+const recoveryDeliveryKeyPairs = Object.freeze({
+  bootstrap: generateRecoveryDeliveryKeyPair(),
+  transfer: generateRecoveryDeliveryKeyPair(),
+});
+function recoveryDeliveryDescriptor(operation) {
+  const key = recoveryDeliveryKeyPairs[operation];
+  return {
+    protocolVersion: DELIVERY_PROTOCOL_VERSION,
+    keyAlgorithm: RECOVERY_DELIVERY_KEY_ALGORITHM,
+    keyWrapAlgorithm: KEY_WRAP_ALGORITHM,
+    contentEncryptionAlgorithm: CONTENT_ENCRYPTION_ALGORITHM,
+    acknowledgementSignatureAlgorithm: ACK_SIGNATURE_ALGORITHM,
+    recipientKeyFingerprint: key.publicKeyFingerprint,
+  };
+}
+function recoveryDeliveryPublicKey(operation) {
+  const key = recoveryDeliveryKeyPairs[operation];
+  return {
+    protocolVersion: DELIVERY_PROTOCOL_VERSION,
+    algorithm: RECOVERY_DELIVERY_KEY_ALGORITHM,
+    publicKeyPem: key.publicKeyPem,
+    publicKeyFingerprint: key.publicKeyFingerprint,
+  };
+}
+function decryptRecoveryDelivery(result, operation, deviceId) {
+  const delivery = result.recoveryDelivery;
+  return openRecoveryPackage({
+    envelope: delivery.envelope,
+    privateKeyPem: recoveryDeliveryKeyPairs[operation].privateKeyPem,
+    expected: {
+      epochId: delivery.epochId,
+      factorId: delivery.factorId,
+      deviceId,
+      generation: delivery.generation,
+      recipientPublicKeyFingerprint: delivery.recipientKeyFingerprint,
+    },
+  });
+}
 function credentialStage(operation, challengeId, deviceId, targetGeneration) {
   const credential = stagedHostCredentials[operation];
   return {
@@ -186,6 +234,10 @@ app.use('/api/cloud', cloudRelayRouter);
   const server = app.listen(0);
   const origin = `http://127.0.0.1:${server.address().port}`;
   const desktopHeaders = { authorization: 'Bearer online-host-session', 'content-type': 'application/json' };
+  const targetHeaders = {
+    authorization: 'Bearer online-target-session',
+    'content-type': 'application/json',
+  };
   const call = (pathname, options = {}) => fetch(origin + pathname, {
     ...options,
     signal: AbortSignal.timeout(3000),
@@ -242,13 +294,16 @@ app.use('/api/cloud', cloudRelayRouter);
       method: 'POST', headers: desktopHeaders, body: JSON.stringify({}),
     });
     assert.strictEqual(retiredReceiptEndpoint.status, 410);
-    const bootstrapManifest = buildPrimaryHostOperationManifest({
-      operation: 'bootstrap',
-      deviceId: actor.deviceId,
-      challengeId: started.id,
-      targetGeneration: 1,
-      credentialStage: credentialStage('bootstrap', started.id, actor.deviceId, 1),
-    });
+    const bootstrapManifest = {
+      ...buildPrimaryHostOperationManifest({
+        operation: 'bootstrap',
+        deviceId: actor.deviceId,
+        challengeId: started.id,
+        targetGeneration: 1,
+        credentialStage: credentialStage('bootstrap', started.id, actor.deviceId, 1),
+      }),
+      recoveryDelivery: recoveryDeliveryDescriptor('bootstrap'),
+    };
     const receipt = createPrimaryHostLocalReceipt({
       operation: 'bootstrap',
       challengeId: started.id,
@@ -272,7 +327,7 @@ app.use('/api/cloud', cloudRelayRouter);
       ).toString('base64'),
     };
 
-    const bootstrapResponse = await call('/api/desktop-identity/primary-host/bootstrap', {
+    const bootstrapWithoutDeliveryKey = await call('/api/desktop-identity/primary-host/bootstrap', {
       method: 'POST', headers: desktopHeaders,
       body: JSON.stringify({
         challengeId: started.id,
@@ -281,11 +336,32 @@ app.use('/api/cloud', cloudRelayRouter);
         operationManifest: bootstrapManifest,
       }),
     });
+    assert.strictEqual(bootstrapWithoutDeliveryKey.status, 400);
+    assert.strictEqual(
+      (await bootstrapWithoutDeliveryKey.json()).code,
+      'PRIMARY_HOST_RECOVERY_DELIVERY_KEY_REQUIRED'
+    );
+    const bootstrapResponse = await call('/api/desktop-identity/primary-host/bootstrap', {
+      method: 'POST', headers: desktopHeaders,
+      body: JSON.stringify({
+        challengeId: started.id,
+        expectedChallengeRowVersion: confirmed.rowVersion,
+        localReceipt,
+        operationManifest: bootstrapManifest,
+        recoveryDeliveryKey: recoveryDeliveryPublicKey('bootstrap'),
+      }),
+    });
     assert.strictEqual(bootstrapResponse.status, 200);
     const bootstrap = (await bootstrapResponse.json()).data;
     assert.strictEqual(bootstrap.epoch.generation, 1);
     assert.strictEqual(Object.hasOwn(bootstrap, 'hostCredential'), false);
-    assert.ok(bootstrap.recoveryPackage.recoveryCode);
+    assert.strictEqual(Object.hasOwn(bootstrap, 'recoveryPackage'), false);
+    const bootstrapRecoveryPackage = decryptRecoveryDelivery(
+      bootstrap,
+      'bootstrap',
+      actor.deviceId
+    );
+    assert.ok(bootstrapRecoveryPackage.recoveryCode);
 
     const verifiedAdoptionResponse = await call('/api/desktop-identity/primary-host/credentials/verify', {
       method: 'POST', headers: desktopHeaders,
@@ -317,7 +393,53 @@ app.use('/api/cloud', cloudRelayRouter);
     const status = (await statusResponse.json()).data;
     assert.strictEqual(status.activeEpoch.generation, 1);
     assert.ok(!JSON.stringify(status).includes(stagedHostCredentials.bootstrap));
-    assert.ok(!JSON.stringify(status).includes(bootstrap.recoveryPackage.recoveryCode));
+    assert.ok(!JSON.stringify(status).includes(bootstrapRecoveryPackage.recoveryCode));
+    assert.strictEqual(status.recoveryDeliveryPending, true);
+    assert.strictEqual(status.pendingRecoveryDelivery.id, bootstrap.recoveryDelivery.id);
+
+    const nonTargetPendingResponse = await call('/api/desktop-identity/primary-host/status', {
+      headers: targetHeaders,
+    });
+    assert.strictEqual(nonTargetPendingResponse.status, 200);
+    const nonTargetPending = (await nonTargetPendingResponse.json()).data;
+    assert.strictEqual(nonTargetPending.recoveryDeliveryPending, true);
+    assert.strictEqual(Object.hasOwn(nonTargetPending, 'pendingRecoveryDelivery'), false);
+
+    const bootstrapAcknowledgement = {
+      deliveryId: bootstrap.recoveryDelivery.id,
+      epochId: bootstrap.recoveryDelivery.epochId,
+      factorId: bootstrap.recoveryDelivery.factorId,
+      recipientKeyFingerprint: bootstrap.recoveryDelivery.recipientKeyFingerprint,
+      expectedRowVersion: bootstrap.recoveryDelivery.rowVersion,
+      acknowledgementNonce: bootstrap.recoveryDelivery.ackNonce,
+      acknowledgedAt: currentTime,
+    };
+    const bootstrapAckBody = {
+      epochId: bootstrapAcknowledgement.epochId,
+      factorId: bootstrapAcknowledgement.factorId,
+      recipientKeyFingerprint: bootstrapAcknowledgement.recipientKeyFingerprint,
+      expectedRowVersion: bootstrapAcknowledgement.expectedRowVersion,
+      acknowledgementNonce: bootstrapAcknowledgement.acknowledgementNonce,
+      acknowledgedAt: bootstrapAcknowledgement.acknowledgedAt,
+      signature: signRecoveryDeliveryAcknowledgement({
+        acknowledgement: bootstrapAcknowledgement,
+        privateKeyPem: recoveryDeliveryKeyPairs.bootstrap.privateKeyPem,
+      }),
+    };
+    const nonTargetAck = await call(
+      `/api/desktop-identity/primary-host/recovery-deliveries/${bootstrap.recoveryDelivery.id}/acknowledge`,
+      { method: 'POST', headers: targetHeaders, body: JSON.stringify(bootstrapAckBody) }
+    );
+    assert.strictEqual(nonTargetAck.status, 404);
+    const bootstrapAckResponse = await call(
+      `/api/desktop-identity/primary-host/recovery-deliveries/${bootstrap.recoveryDelivery.id}/acknowledge`,
+      { method: 'POST', headers: desktopHeaders, body: JSON.stringify(bootstrapAckBody) }
+    );
+    assert.strictEqual(bootstrapAckResponse.status, 200);
+    assert.strictEqual(
+      (await bootstrapAckResponse.json()).data.recoveryDelivery.status,
+      'acknowledged'
+    );
 
     const legacyHeartbeat = await call('/api/cloud/host/heartbeat', {
       method: 'POST',
@@ -373,10 +495,6 @@ app.use('/api/cloud', cloudRelayRouter);
     const pendingTransfer = (await beginTransferResponse.json()).data.transfer;
     assert.strictEqual(pendingTransfer.status, 'pending_validation');
 
-    const targetHeaders = {
-      authorization: 'Bearer online-target-session',
-      'content-type': 'application/json',
-    };
     const transferStatusResponse = await call('/api/desktop-identity/primary-host/status', {
       headers: targetHeaders,
     });
@@ -430,21 +548,24 @@ app.use('/api/cloud', cloudRelayRouter);
     } finally {
       backupDb.close();
     }
-    const localManifest = buildPrimaryHostOperationManifest({
-      operation: 'transfer',
-      deviceId: targetActor.deviceId,
-      transferId: pendingTransfer.id,
-      sourceEpochId: pendingTransfer.sourceEpochId,
-      challengeId: pendingTransfer.challengeId,
-      sourceGeneration: pendingTransfer.sourceGeneration,
-      targetGeneration: pendingTransfer.targetGeneration,
-      localPrepared,
-      controlStatus: transferControlStatus,
-      credentialStage: credentialStage(
-        'transfer', pendingTransfer.challengeId, targetActor.deviceId, pendingTransfer.targetGeneration
-      ),
-      now: new Date(currentTime),
-    });
+    const localManifest = {
+      ...buildPrimaryHostOperationManifest({
+        operation: 'transfer',
+        deviceId: targetActor.deviceId,
+        transferId: pendingTransfer.id,
+        sourceEpochId: pendingTransfer.sourceEpochId,
+        challengeId: pendingTransfer.challengeId,
+        sourceGeneration: pendingTransfer.sourceGeneration,
+        targetGeneration: pendingTransfer.targetGeneration,
+        localPrepared,
+        controlStatus: transferControlStatus,
+        credentialStage: credentialStage(
+          'transfer', pendingTransfer.challengeId, targetActor.deviceId, pendingTransfer.targetGeneration
+        ),
+        now: new Date(currentTime),
+      }),
+      recoveryDelivery: recoveryDeliveryDescriptor('transfer'),
+    };
     const targetReceipt = createPrimaryHostLocalReceipt({
       operation: 'transfer',
       challengeId: pendingTransfer.challengeId,
@@ -488,6 +609,7 @@ app.use('/api/cloud', cloudRelayRouter);
           localReceipt: targetLocalReceipt,
           validationManifest: preflight.operationManifest,
           preflightProof: { id: preflight.id, token: preflight.token },
+          recoveryDeliveryKey: recoveryDeliveryPublicKey('transfer'),
         }),
       }
     );
@@ -496,6 +618,13 @@ app.use('/api/cloud', cloudRelayRouter);
     assert.strictEqual(activation.epoch.generation, 2);
     assert.strictEqual(activation.epoch.deviceId, 'http-target-device');
     assert.strictEqual(Object.hasOwn(activation, 'hostCredential'), false);
+    assert.strictEqual(Object.hasOwn(activation, 'recoveryPackage'), false);
+    const transferRecoveryPackage = decryptRecoveryDelivery(
+      activation,
+      'transfer',
+      targetActor.deviceId
+    );
+    assert.strictEqual(transferRecoveryPackage.epochId, activation.epoch.id);
 
     const verifiedTransferAdoptionResponse = await call('/api/desktop-identity/primary-host/credentials/verify', {
       method: 'POST', headers: targetHeaders,
