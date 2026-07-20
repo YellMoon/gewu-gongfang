@@ -108,6 +108,10 @@ const countOf = (text, needle) => text.split(needle).length - 1;
     const xml = strFromU8(files['word/document.xml']);
     const text = textOf(xml);
     const compact = text.replace(/\s+/g, '');
+    const coreProperties = strFromU8(files['docProps/core.xml']);
+    assert.ok(coreProperties.includes('Gewu Workshop'), 'exported DOCX creator metadata must identify the application');
+    assert.ok(!coreProperties.includes('\u6797') && !coreProperties.includes('13732250653'),
+      'exported DOCX metadata must not retain template identity residue');
     assert.ok(files['word/styles.xml'] && files['word/theme/theme1.xml'], 'template styles and theme must remain');
     assert.ok(files['word/footer1.xml'] && files['word/footer2.xml'], 'template footers must remain');
     const footerText = Object.keys(files).filter(name => /^word\/footer\d+\.xml$/.test(name)).map(name => strFromU8(files[name])).join('\n');
@@ -160,6 +164,18 @@ const countOf = (text, needle) => text.split(needle).length - 1;
   assert.ok(afterEachPdf.layoutReport.answerBlocks.every(block => block.startPage === block.endPage), 'an answer/knowledge/analysis block that fits a page must not be split across pages');
   const hiddenPdf = await writePaperArtifact('pdf', { title: 'hidden', answerPosition: 'hidden' }, questions, { root });
   assert.ok(!hiddenPdf.semanticText.includes('答案：B') && !hiddenPdf.semanticText.includes('【知识点】') && !hiddenPdf.semanticText.includes('参考答案'));
+
+  const footerStressPdf = await writePaperArtifact('pdf', { title: 'footer-safe', answerPosition: 'hidden' }, [{
+    id: 'q-footer-safe',
+    type: 'single',
+    stem: 'footer-safe stem',
+    options: Array.from({ length: 38 }, (_, index) => ({ label: `O${index + 1}`, content: `footer-safe option ${index + 1}` })),
+    answer: 'O1',
+  }], { root });
+  assert.ok(footerStressPdf.layoutReport?.contentRows?.length > 38, 'PDF layout diagnostics must report question rows');
+  assert.ok(footerStressPdf.layoutReport.contentRows.some(row => row.endPage > 1), 'the footer stress fixture must span pages');
+  assert.ok(footerStressPdf.layoutReport.contentRows.every(row => row.endY <= row.pageBottom + 0.5),
+    'question rows must never enter the reserved footer area');
 
   const hiddenAnswerFormula = [{ id: 'q-hidden-formula', type: 'single', stem: 'plain stem', answer: '$x+1$' }];
   const hiddenFormulaWord = await writePaperArtifact('word', { title: 'hidden-formula', answerPosition: 'hidden', formulaMode: 'word-native' }, hiddenAnswerFormula, { root });

@@ -36,11 +36,22 @@ const adminUsersRouter = require('./routes/adminUsers');
 const desktopPairingRouter = require('./routes/desktopPairing');
 const { createDesktopIdentityRouter } = require('./routes/desktopIdentity');
 const miniappApplicationsRouter = require('./routes/miniappApplications');
+const { createUnrecognizedExperienceRouter } = require('./routes/unrecognizedExperience');
+const { createUnrecognizedExperienceSandbox } = require('./services/unrecognizedExperienceSandbox');
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const writeRateLimitStore = new Map();
 const nonceStore = new Map();
 const idempotencyStore = new Map();
+let sharedUnrecognizedExperienceSandbox = null;
+
+function unrecognizedExperienceSandboxForApp(options = {}) {
+  if (options.unrecognizedExperienceSandbox) return options.unrecognizedExperienceSandbox;
+  if (!sharedUnrecognizedExperienceSandbox) {
+    sharedUnrecognizedExperienceSandbox = createUnrecognizedExperienceSandbox();
+  }
+  return sharedUnrecognizedExperienceSandbox;
+}
 
 function isWriteRequest(req) {
   return WRITE_METHODS.has(req.method);
@@ -250,7 +261,7 @@ function getAppVersion() {
   return process.env.GEWU_APP_VERSION || process.env.APP_VERSION || resolvePackageVersion();
 }
 
-function createApp() {
+function createApp(options = {}) {
   const app = express();
 
   try {
@@ -263,6 +274,13 @@ function createApp() {
   app.use(cors({
     origin: process.env.CORS_ORIGIN || '*',
     credentials: true
+  }));
+
+  const unrecognizedExperienceSandbox = unrecognizedExperienceSandboxForApp(options);
+  app.locals.unrecognizedExperienceSandbox = unrecognizedExperienceSandbox;
+  app.use('/api/experience', authMiddleware, createUnrecognizedExperienceRouter({
+    ...(options.unrecognizedExperienceRouteOptions || {}),
+    sandbox: unrecognizedExperienceSandbox,
   }));
 
   // Body parsing

@@ -19,6 +19,7 @@ const storageSource = fs.readFileSync('miniapp/src/utils/storage.ts', 'utf-8');
 const adminUsersPage = fs.readFileSync('miniapp/src/pages/admin/users/index.tsx', 'utf-8');
 const studentsPage = fs.readFileSync('miniapp/src/pages/students/index.tsx', 'utf-8');
 const teachersPage = fs.readFileSync('miniapp/src/pages/teachers/index.tsx', 'utf-8');
+const teachersStyles = fs.readFileSync('miniapp/src/pages/teachers/index.scss', 'utf-8');
 const paymentsPage = fs.readFileSync('miniapp/src/pages/payments/index.tsx', 'utf-8');
 const schedulePage = fs.readFileSync('miniapp/src/pages/schedule/index.tsx', 'utf-8');
 const scheduleDetailPage = fs.readFileSync('miniapp/src/pages/schedule/detail/index.tsx', 'utf-8');
@@ -129,6 +130,11 @@ assert.ok(schedulePage.includes('day-column-inner'), 'schedule page should put d
 assert.ok(scheduleStyles.includes('.day-column-inner'), 'schedule styles should define the inner day column spacing class');
 assert.ok(sharedComponents.includes('className="pr-scroll"'), 'PullRefreshView should keep padding classes off the scroll-view');
 assert.ok(!sharedComponents.includes('className={`pr-scroll ${className || \'\'}'), 'PullRefreshView should not attach page padding classes to scroll-view');
+assert.ok(
+  /\.teachers-page\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/s.test(teachersStyles)
+    && /\.teacher-list\s*\{[^}]*flex:\s*1;/s.test(teachersStyles),
+  'teachers page must give PullRefreshView a flex-column parent and a flexible list height so populated review data remains visible'
+);
 assert.ok(!sharedComponents.includes('Taro.getNetworkType'), 'NetworkStatus should not call getNetworkType on mount because WeChat DevTools can emit internal timeout errors');
 assert.ok(coursesPage.includes('className="course-scroll"') && coursesPage.includes('className="course-list"'), 'courses page should separate scroll container from padded list');
 assert.ok(paymentsPageSource.includes('className="pay-scroll"') && paymentsPageSource.includes('className="pay-list"'), 'payments page should separate scroll container from padded list');
