@@ -15,19 +15,39 @@ const {
 } = require('./runtimeConfig');
 const { buildLanHostUrls } = require('./lanDiscovery');
 const { createDesktopIdentityVault } = require('./desktopIdentityVault');
-const { createPrimaryHostCredentialStore } = require('./primaryHostCredentialStore');
-const { buildPrimaryHostOperationManifest } = require('./primaryHostOperationValidation');
-const { createPrimaryHostRuntimeManager } = require('./primaryHostRuntimeManager');
 const {
-  generateRecoveryDeliveryKeyPair,
-  openRecoveryPackage,
-  signRecoveryDeliveryAcknowledgement,
-} = require('../backend/src/services/primaryHostRecoveryDeliveryProtocol');
+  PRIMARY_HOST_FLAVOR,
+  resolveDesktopBuildFlavor,
+  updateFeedForFlavor,
+} = require('./desktopBuildFlavor');
+const desktopPackage = require('../package.json');
+const DESKTOP_BUILD_FLAVOR = resolveDesktopBuildFlavor({
+  isPackaged: app.isPackaged,
+  metadata: desktopPackage,
+  env: process.env,
+});
+const PRIMARY_HOST_CAPABLE = DESKTOP_BUILD_FLAVOR === PRIMARY_HOST_FLAVOR;
+let createPrimaryHostCredentialStore;
+let buildPrimaryHostOperationManifest;
+let createPrimaryHostRuntimeManager;
+let generateRecoveryDeliveryKeyPair;
+let openRecoveryPackage;
+let signRecoveryDeliveryAcknowledgement;
+if (PRIMARY_HOST_CAPABLE) {
+  ({ createPrimaryHostCredentialStore } = require('./primaryHostCredentialStore'));
+  ({ buildPrimaryHostOperationManifest } = require('./primaryHostOperationValidation'));
+  ({ createPrimaryHostRuntimeManager } = require('./primaryHostRuntimeManager'));
+  ({
+    generateRecoveryDeliveryKeyPair,
+    openRecoveryPackage,
+    signRecoveryDeliveryAcknowledgement,
+  } = require('../backend/src/services/primaryHostRecoveryDeliveryProtocol'));
+}
 const { withOperationTimeout } = require('./updateCheckTimeout');
 const electronLocalBridgeSecret = crypto.randomBytes(32).toString('base64url');
 process.env.GEWU_ELECTRON_LOCAL_BRIDGE_SECRET = electronLocalBridgeSecret;
 let autoUpdater = null;
-const updateFeedUrl = (process.env.UPDATE_FEED_URL || 'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop/').replace(/\/?$/, '/');
+const updateFeedUrl = updateFeedForFlavor(DESKTOP_BUILD_FLAVOR, process.env);
 try {
   autoUpdater = require('electron-updater').autoUpdater;
   autoUpdater.autoDownload = false;
@@ -152,6 +172,11 @@ async function acknowledgePrimaryHostRecoveryDelivery(input = {}) {
 }
 
 function getPrimaryHostRuntimeManager() {
+  if (!PRIMARY_HOST_CAPABLE) {
+    const error = new Error('PRIMARY_HOST_BUILD_REQUIRED');
+    error.code = 'PRIMARY_HOST_BUILD_REQUIRED';
+    throw error;
+  }
   if (primaryHostRuntimeManager) return primaryHostRuntimeManager;
   const userDataPath = app.getPath('userData');
   const credentialStore = createPrimaryHostCredentialStore({
@@ -355,7 +380,7 @@ function configuredDesktopIdentity(input = {}) {
   return {
     deviceId,
     deviceName: String(input.deviceName || runtimeConfig.deviceName || os.hostname()).trim().slice(0, 128),
-    deviceKind: runtimeConfig.nodeRole === 'primary-host' ? 'primary-host' : 'desktop-client',
+    deviceKind: PRIMARY_HOST_CAPABLE && runtimeConfig.nodeRole === 'primary-host' ? 'primary-host' : 'desktop-client',
   };
 }
 
@@ -364,6 +389,20 @@ function lockDesktopIdentityVault() {
 }
 
 function loadAndApplyRuntimeConfig() {
+  if (!PRIMARY_HOST_CAPABLE) {
+    const configPath = getRuntimeConfigPath();
+    const options = { userDataPath: app.getPath('userData') };
+    let config = ensureRuntimeConfig(configPath, options);
+    if (config.nodeRole !== 'desktop-client' || config.primaryHostEpochId || config.primaryHostGeneration) {
+      config = writeManagedClientRuntimeConfig(configPath, {
+        deviceId: config.deviceId,
+        expectedEpochId: config.primaryHostEpochId || '',
+      }, options);
+      log('Ordinary desktop build forced stale primary-host runtime state back to desktop-client');
+    }
+    applyRuntimeConfigToEnv(config, process.env);
+    return config;
+  }
   const state = getPrimaryHostRuntimeManager().initialize();
   if (state.credential.state === 'error') {
     log(`Primary host credential failed closed: ${state.credential.code}`);
@@ -462,6 +501,7 @@ function createWindow() {
     title: '格物工坊',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      additionalArguments: [`--gewu-desktop-build-flavor=${DESKTOP_BUILD_FLAVOR}`],
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
@@ -596,29 +636,33 @@ const questionDraftRegistry = new QuestionDraftProvenanceRegistry({
 ipcMain.handle('issue-question-draft', (_event, { authorization }) => questionDraftRegistry.issue(authorization));
 ipcMain.handle('verify-question-draft-provenance', (_event, { questionId, authorization }) => questionDraftRegistry.verify(questionId, authorization));
 ipcMain.handle('runtime-config:get', async () => {
-  return ensureRuntimeConfig(getRuntimeConfigPath(), { userDataPath: app.getPath('userData') });
+  const config = ensureRuntimeConfig(getRuntimeConfigPath(), { userDataPath: app.getPath('userData') });
+  return { ...config, buildFlavor: DESKTOP_BUILD_FLAVOR, primaryHostCapable: PRIMARY_HOST_CAPABLE };
 });
 ipcMain.handle('runtime-config:set', async (_event, config) => {
-  return writeRuntimeConfig(getRuntimeConfigPath(), config, { userDataPath: app.getPath('userData') });
+  const saved = writeRuntimeConfig(getRuntimeConfigPath(), config, { userDataPath: app.getPath('userData') });
+  return { ...saved, buildFlavor: DESKTOP_BUILD_FLAVOR, primaryHostCapable: PRIMARY_HOST_CAPABLE };
 });
-ipcMain.handle('primary-host:status', async () => getPrimaryHostRuntimeManager().status());
-ipcMain.handle('primary-host:adopt', async (_event, input) => getPrimaryHostRuntimeManager().adopt(input));
-ipcMain.handle('primary-host:demote', async (_event, input) => getPrimaryHostRuntimeManager().demote(input));
-ipcMain.handle('primary-host:local-receipt', async (_event, input) => issuePrimaryHostLocalReceipt(input));
-ipcMain.handle('primary-host:prepare-operation', async (_event, input) => preparePrimaryHostOperation(input));
-ipcMain.handle('primary-host:reveal-recovery-package', async (_event, input) => (
-  getPrimaryHostRuntimeManager().revealRecoveryPackage(input)
-));
-ipcMain.handle('primary-host:acknowledge-recovery-package', async (_event, input) => (
-  getPrimaryHostRuntimeManager().acknowledgeRecoveryPackage(input)
-));
-ipcMain.handle('primary-host:restart', async () => {
-  setTimeout(() => {
-    app.relaunch();
-    app.exit(0);
-  }, 100);
-  return true;
-});
+if (PRIMARY_HOST_CAPABLE) {
+  ipcMain.handle('primary-host:status', async () => getPrimaryHostRuntimeManager().status());
+  ipcMain.handle('primary-host:adopt', async (_event, input) => getPrimaryHostRuntimeManager().adopt(input));
+  ipcMain.handle('primary-host:demote', async (_event, input) => getPrimaryHostRuntimeManager().demote(input));
+  ipcMain.handle('primary-host:local-receipt', async (_event, input) => issuePrimaryHostLocalReceipt(input));
+  ipcMain.handle('primary-host:prepare-operation', async (_event, input) => preparePrimaryHostOperation(input));
+  ipcMain.handle('primary-host:reveal-recovery-package', async (_event, input) => (
+    getPrimaryHostRuntimeManager().revealRecoveryPackage(input)
+  ));
+  ipcMain.handle('primary-host:acknowledge-recovery-package', async (_event, input) => (
+    getPrimaryHostRuntimeManager().acknowledgeRecoveryPackage(input)
+  ));
+  ipcMain.handle('primary-host:restart', async () => {
+    setTimeout(() => {
+      app.relaunch();
+      app.exit(0);
+    }, 100);
+    return true;
+  });
+}
 ipcMain.handle('desktop-identity:status', async () => getDesktopIdentityVault().status());
 ipcMain.handle('desktop-identity:begin-registration', async (_event, input) => {
   return getDesktopIdentityVault().beginRegistration(configuredDesktopIdentity(input));

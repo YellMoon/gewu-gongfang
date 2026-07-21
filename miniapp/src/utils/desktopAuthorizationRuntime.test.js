@@ -127,7 +127,7 @@ assert.ok(apiSource.includes('desktopAuthorizationApi'));
 assert.ok(apiSource.includes('/public'));
 assert.ok(apiSource.includes('/confirm'));
 assert.ok(apiSource.includes('isAuthenticationEntryPath'));
-assert.ok(apiSource.includes("this.getHeaders(anonymousEntry ? '' : requestSession.token)"));
+assert.ok(apiSource.includes("this.getHeaders(anonymousEntry ? '' : requestSession.token"));
 
 const appConfig = fs.readFileSync('miniapp/src/app.config.ts', 'utf8');
 assert.ok(appConfig.includes("'pages/desktop-authorization/index'"));

@@ -48,6 +48,28 @@ try {
   assert.deepStrictEqual(db.db.prepare('SELECT updated_by_user_id, source_device_id, source_operation_id FROM sync_record_provenance WHERE table_name=? AND record_id=?').get('courses','c1'),
     { updated_by_user_id:'u1', source_device_id:'d1', source_operation_id:'good' });
 
+  db.db.prepare(`INSERT INTO taxonomy_systems
+    (id,tenant_id,subject,name,sort_order,deleted,created_at,updated_at)
+    VALUES ('custom-system','default','Chemistry','Concepts',1,0,?,?)`).run(now,now);
+  db.db.prepare(`INSERT INTO taxonomy_nodes
+    (id,tenant_id,system_id,parent_id,name,sort_order,deleted,created_at,updated_at)
+    VALUES ('custom-node','default','custom-system',NULL,'Atoms',1,0,?,?)`).run(now,now);
+  db.db.prepare(`INSERT INTO questions
+    (id,tenant_id,subject,type,taxonomy_json,created_at,updated_at)
+    VALUES ('taxonomy-question','default','Chemistry','single',?, ?, ?)`).run(
+      JSON.stringify({ 'custom-system':['custom-node'] }), now, now);
+  db.db.prepare(`INSERT INTO question_taxonomy_nodes
+    (question_id,system_id,node_id,created_at,updated_at)
+    VALUES ('taxonomy-question','custom-system','custom-node',?,?)`).run(now,now);
+  const taxonomyDelete = db.applySyncChanges([{
+    id:'delete-taxonomy-system', table:'taxonomy_systems', action:'delete',
+    data:{ id:'custom-system' }, updatedAt:'2026-07-12T00:00:00.000Z',
+  }], { tenantId:'default', deviceId:'admin-device', authz:{kind:'admin',role:'super_admin',userId:'admin-user',deviceId:'admin-device'} });
+  assert.strictEqual(taxonomyDelete.applied, 1);
+  assert.strictEqual(db.db.prepare("SELECT deleted FROM taxonomy_nodes WHERE id='custom-node'").get().deleted, 1);
+  assert.strictEqual(db.db.prepare("SELECT COUNT(*) AS count FROM question_taxonomy_nodes WHERE question_id='taxonomy-question'").get().count, 0);
+  assert.deepStrictEqual(JSON.parse(db.db.prepare("SELECT taxonomy_json FROM questions WHERE id='taxonomy-question'").get().taxonomy_json), {});
+
   db.db.prepare(`INSERT INTO users (id,phone,name,role,status,login_enabled,teacher_id,review_status,deleted,created_at,updated_at)
     VALUES ('relay-u1','13000009999','Relay Teacher','teacher',1,1,'t1','approved',0,?,?)`).run(now,now);
   db.db.prepare(`INSERT INTO user_role_grants

@@ -69,6 +69,7 @@ try {
   });
   assert.strictEqual(formal.user.role, 'admin');
   assert.strictEqual(formal.user.account_state, 'formal');
+  assert.strictEqual(formal.user.membership, null);
   assert.strictEqual(formal.claims.token_use, 'miniapp-session');
   assert.strictEqual(formal.claims.iss, 'gewu-miniapp-auth');
   assert.strictEqual(formal.claims.aud, 'gewu-api');
@@ -111,6 +112,15 @@ try {
   });
   assert.strictEqual(unrecognized.user.role, 'student');
   assert.strictEqual(unrecognized.user.account_state, 'unrecognized');
+  assert.strictEqual(unrecognized.user.token_use, 'unrecognized-student');
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(unrecognized.user, 'membership'), false);
+  assert.deepStrictEqual(unrecognized.user.capabilities, [
+    'experience:read',
+    'profile-application:read',
+    'profile-application:submit',
+    'sample-questions:view',
+    'sample-paper-export',
+  ]);
   assert.strictEqual(unrecognized.claims.token_use, 'unrecognized-student');
   assert.strictEqual(unrecognized.claims.iss, 'gewu-miniapp-auth');
   assert.strictEqual(unrecognized.claims.aud, 'gewu-miniapp-experience');

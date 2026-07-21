@@ -10,8 +10,9 @@ import {
   CheckCircleOutlined, FileWordOutlined, CloseCircleOutlined, EyeOutlined,
   FilterOutlined, ReloadOutlined
 } from '@ant-design/icons';
-import type { Question, KnowledgeNode, QuestionVersion } from '../types';
+import type { Question, KnowledgeNode, QuestionVersion, TaxonomySystem } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
+import TaxonomyManager from '../components/TaxonomyManager';
 import { getApiBase } from '../utils/apiBase';
 const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
 const { deleteQuestionViaApi } = require('../services/questionDeleteApi');
@@ -156,6 +157,9 @@ const QuestionBankPreview: React.FC = () => {
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
   const [modelNodes, setModelNodes] = useState<KnowledgeNode[]>([]);
+  const [taxonomySystems, setTaxonomySystems] = useState<TaxonomySystem[]>([]);
+  const [taxonomyNodes, setTaxonomyNodes] = useState<Record<string, KnowledgeNode[]>>({});
+  const [taxonomySelections, setTaxonomySelections] = useState<Record<string, { include: string[]; exclude: string[] }>>({});
 
   // Multi-select filter state
   const [filterSubjects, setFilterSubjects] = useState<string[]>(['物理']);
@@ -282,6 +286,10 @@ const QuestionBankPreview: React.FC = () => {
     formulas: row.formulas || [],
     knowledge_ids: row.knowledge_ids ?? row.knowledge_point_ids ?? [],
     model_ids: row.model_ids ?? row.model_point_ids ?? [],
+    taxonomy_ids: row.taxonomy_ids || {
+      knowledge: row.knowledge_ids ?? row.knowledge_point_ids ?? [],
+      model: row.model_ids ?? row.model_point_ids ?? [],
+    },
   } as Question);
 
   const loadData = useCallback(async () => {
@@ -358,6 +366,7 @@ const QuestionBankPreview: React.FC = () => {
     setKnowledgeSelectedIds([undefined]);
     setFilterExcludeKnowledgeIds([undefined]);
     setModelSelectedIds([undefined]);
+    setTaxonomySelections({});
     setSearchText('');
     setAppliedSearchText('');
   };
@@ -372,6 +381,14 @@ const QuestionBankPreview: React.FC = () => {
   const expandedModelGroups = useMemo(() => activeModelIds
     .filter(id => !!id)
     .map(id => getDescendantIds(modelNodes, id)), [activeModelIds.join(','), modelNodes]);
+  const expandedTaxonomyFilters = useMemo(() => Object.fromEntries(taxonomySystems.map(system => {
+    const selection = taxonomySelections[system.id] || { include: [], exclude: [] };
+    const nodes = taxonomyNodes[system.id] || [];
+    return [system.id, {
+      includeGroups: selection.include.map(id => getDescendantIds(nodes, id)),
+      excludeIds: selection.exclude.flatMap(id => getDescendantIds(nodes, id)),
+    }];
+  })), [taxonomySystems, taxonomyNodes, taxonomySelections]);
 
   const getNodeName = (id: string) => {
     const n = knowledgeNodes.find(x => x.id === id);
@@ -402,9 +419,7 @@ const QuestionBankPreview: React.FC = () => {
         basketOnly,
         source: sourceFilter,
         searchTerms,
-        includeKnowledgeGroups: expandedIncludeGroups,
-        excludeKnowledgeIds: expandedExcludeIds,
-        includeModelGroups: expandedModelGroups,
+        taxonomyFilters: expandedTaxonomyFilters,
         dedupe: true,
       });
       setQuestionTotal(result.total);
@@ -415,7 +430,7 @@ const QuestionBankPreview: React.FC = () => {
   }, [
     localStoreReady, refreshNonce, currentPage, filterSubjects, filterTypes, filterExamTypes, filterStatuses,
     filterGrades, filterSemesters, filterDifficulties, filterYear, basketIds, basketOnly,
-    sourceFilter, searchTerms, expandedIncludeGroups, expandedExcludeIds, expandedModelGroups,
+    sourceFilter, searchTerms, expandedTaxonomyFilters,
   ]);
 
   useEffect(() => { refreshQuestionPage(); }, [refreshQuestionPage]);
@@ -527,6 +542,16 @@ const QuestionBankPreview: React.FC = () => {
   };
 
   const currentSubject = filterSubjects[0] || '物理';
+  const handleTaxonomiesChanged = useCallback((systems: TaxonomySystem[], nodes: Record<string, KnowledgeNode[]>) => {
+    setTaxonomySystems(systems);
+    setTaxonomyNodes(nodes);
+    setKnowledgeNodes(nodes.knowledge || []);
+    setModelNodes(nodes.model || []);
+    setTaxonomySelections(previous => Object.fromEntries(systems.map(system => [
+      system.id,
+      previous[system.id] || { include: [], exclude: [] },
+    ])));
+  }, []);
   const subjectKnowledgeNodes = knowledgeNodes.filter((node: any) => !node.subject || filterSubjects.includes(node.subject));
   const subjectModelNodes = modelNodes.filter((node: any) => !node.subject || filterSubjects.includes(node.subject));
   const treeData = buildTreeData(subjectKnowledgeNodes);
@@ -575,6 +600,20 @@ const QuestionBankPreview: React.FC = () => {
     );
   };
 
+  const renderTaxonomyCheckboxes = (systemId: string, nodes: KnowledgeNode[], parentId?: string, depth = 0): React.ReactNode => {
+    const children = nodes.filter(node => node.parent_id === parentId || (!parentId && !node.parent_id)).sort((a, b) => a.order - b.order);
+    if (children.length === 0) return null;
+    return <div style={{ marginLeft: depth * 20 }}>
+      {children.map(node => <div key={node.id}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
+          <Form.Item name={['taxonomy_ids', systemId, node.id]} valuePropName="checked" noStyle><Checkbox /></Form.Item>
+          <span style={{ fontWeight: node.parent_id ? 'normal' : 600 }}>{node.name}</span>
+        </div>
+        {renderTaxonomyCheckboxes(systemId, nodes, node.id, depth + 1)}
+      </div>)}
+    </div>;
+  };
+
   const handleSave = async () => {
     if (!richDocument) return;
     const structureErrors = validateQuestionStructure(richDocument, form.getFieldValue('type'));
@@ -583,18 +622,12 @@ const QuestionBankPreview: React.FC = () => {
     const db = (window as any).dbService;
     const projection = projectQuestionRichContent(richDocument);
 
-    const knowledge_ids: string[] = [];
-    if (values.knowledge_ids) {
-      Object.entries(values.knowledge_ids).forEach(([id, checked]) => {
-        if (checked) knowledge_ids.push(id);
-      });
-    }
-    const model_ids: string[] = [];
-    if (values.model_ids) {
-      Object.entries(values.model_ids).forEach(([id, checked]) => {
-        if (checked) model_ids.push(id);
-      });
-    }
+    const taxonomy_ids = Object.fromEntries(taxonomySystems.map(system => [
+      system.id,
+      Object.entries(values.taxonomy_ids?.[system.id] || {}).filter(([, checked]) => checked).map(([id]) => id),
+    ]));
+    const knowledge_ids: string[] = taxonomy_ids.knowledge || [];
+    const model_ids: string[] = taxonomy_ids.model || [];
 
     const data: any = {
       subject: values.subject,
@@ -609,6 +642,7 @@ const QuestionBankPreview: React.FC = () => {
       knowledge_ids,
       knowledge_point: values.knowledge_point || '',
       model_ids,
+      taxonomy_ids,
       model_point: model_ids.length > 0 ? modelNodes.find(n => n.id === model_ids[0])?.name || '' : '',
       formulas: projection.formulas,
       tags: values.tags ? values.tags.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
@@ -891,12 +925,17 @@ const QuestionBankPreview: React.FC = () => {
     (r.knowledge_ids || []).forEach(id => { knForm[id] = true; });
     const modelForm: Record<string, boolean> = {};
     (r.model_ids || []).forEach(id => { modelForm[id] = true; });
+    const taxonomyForm = Object.fromEntries(taxonomySystems.map(system => [
+      system.id,
+      Object.fromEntries((r.taxonomy_ids?.[system.id] || (system.id === 'knowledge' ? r.knowledge_ids : system.id === 'model' ? r.model_ids : []) || []).map(id => [id, true])),
+    ]));
     form.setFieldsValue({
       subject: r.subject || '物理', type: normalizeQuestionType(r.type), difficulty: r.difficulty,
       knowledge_point: r.knowledge_point,
       knowledge_ids: knForm,
       model_point: r.model_point,
       model_ids: modelForm,
+      taxonomy_ids: taxonomyForm,
       tags: (r.tags || []).join(','),
       source: r.source, year: r.year, grade: r.grade,
               semester: r.semester, exam_type: r.exam_type || '其他',
@@ -1039,6 +1078,7 @@ const QuestionBankPreview: React.FC = () => {
             extra={<Button type="link" size="small" onClick={() => setTreeVisible(false)}>收起</Button>}
             className="qb-preview-tree-card"
           >
+            <TaxonomyManager subject={currentSubject} database={dbService} onChanged={handleTaxonomiesChanged} />
             <Input
               allowClear
               prefix={<SearchOutlined />}
@@ -1109,6 +1149,7 @@ const QuestionBankPreview: React.FC = () => {
                   setKnowledgeSelectedIds([undefined]);
                   setFilterExcludeKnowledgeIds([undefined]);
                   setModelSelectedIds([undefined]);
+                  setTaxonomySelections({});
                 }}
                 options={SUBJECTS.map(subject => ({ label: subject, value: subject }))}
               />
@@ -1173,6 +1214,35 @@ const QuestionBankPreview: React.FC = () => {
             </div>
 
             <div className="qb-filter-row qb-filter-row-secondary">
+              {taxonomySystems.map(system => {
+                const selection = taxonomySelections[system.id] || { include: [], exclude: [] };
+                const options = (taxonomyNodes[system.id] || []).map(node => ({ label: node.name, value: node.id }));
+                return <div key={system.id} className="taxonomy-filter-pair">
+                  <Text strong>{system.name}</Text>
+                  <AntSelect
+                    mode="multiple"
+                    allowClear
+                    placeholder={`${'\u5305\u542b'}${system.name}`}
+                    value={selection.include}
+                    options={options}
+                    onChange={include => setTaxonomySelections(previous => ({
+                      ...previous,
+                      [system.id]: { include, exclude: (previous[system.id]?.exclude || []).filter(id => !include.includes(id)) },
+                    }))}
+                  />
+                  <AntSelect
+                    mode="multiple"
+                    allowClear
+                    placeholder={`${'\u6392\u9664'}${system.name}`}
+                    value={selection.exclude}
+                    options={options}
+                    onChange={exclude => setTaxonomySelections(previous => ({
+                      ...previous,
+                      [system.id]: { include: (previous[system.id]?.include || []).filter(id => !exclude.includes(id)), exclude },
+                    }))}
+                  />
+                </div>;
+              })}
               <AntSelect
                 mode="multiple"
                 allowClear
@@ -1355,6 +1425,7 @@ const QuestionBankPreview: React.FC = () => {
       <Modal
         title={editing ? '编辑题目' : '添加题目'}
         open={modalVisible}
+        wrapClassName="taxonomy-edit-modal"
         onOk={async () => { setSaving(true); const result = await saveGate(handleSave); if (!result.ok && result.owned) message.error(`\u4fdd\u5b58\u5931\u8d25\uff1a${(result.error as any)?.message || '\u8bf7\u91cd\u8bd5'}`); if (result.owned) setSaving(false); }}
         onCancel={() => {
           const close = () => { setModalVisible(false); setEditing(null); setRichDocument(null); setEditorDirty(false); setVersions([]); form.resetFields(); };
@@ -1440,6 +1511,13 @@ const QuestionBankPreview: React.FC = () => {
               {modelNodes.length > 0 ? renderModelCheckboxes(modelNodes) : <Empty description="暂无模型数据" />}
             </div>
           </Form.Item>
+          {taxonomySystems.map(system => <Form.Item key={system.id} label={system.name}>
+            <div style={{ maxHeight: 200, overflow: 'auto', background: '#fafafa', padding: 12, borderRadius: 6 }}>
+              {(taxonomyNodes[system.id] || []).length > 0
+                ? renderTaxonomyCheckboxes(system.id, taxonomyNodes[system.id] || [])
+                : <Empty description={'\u6682\u65e0\u8282\u70b9\u6570\u636e'} />}
+            </div>
+          </Form.Item>)}
           {editing && (
             <>
               <Divider orientation="left" style={{ fontSize: 12 }}>版本记录</Divider>

@@ -1,7 +1,6 @@
 const {
-  hasReviewExperienceMarker,
-  isReviewExperienceIdentity,
-} = require('./reviewExperience');
+  hasLegacyReviewMarker,
+} = require('./accountExperience');
 const { permissionIdentityKey } = require('./miniappAuthorizationRuntime');
 
 function roleOf(identity) {
@@ -64,7 +63,7 @@ function isActive(identity) {
     && !flagIsTrue(identity.disabled)
     && roleOf(identity) !== 'pending');
   if (!active) return false;
-  return !hasReviewExperienceMarker(identity) || isReviewExperienceIdentity(identity);
+  return !hasLegacyReviewMarker(identity);
 }
 
 function normalizedUser(identity, localUser) {

@@ -19,8 +19,7 @@ export default defineAppConfig({
     'pages/settings/index',
     'pages/admin/users/index',
     'pages/unrecognized-experience/index',
-    'pages/unrecognized-apply/index',
-    'pages/unrecognized-status/index',
+    'pages/account-application/index',
   ],
   window: {
     backgroundTextStyle: 'light',

@@ -80,10 +80,6 @@ BACKEND_JWT_SECRET = os.getenv("BACKEND_JWT_SECRET")
 GEWU_SSH_KNOWN_HOSTS = os.getenv("GEWU_SSH_KNOWN_HOSTS")
 WECHAT_APPID = os.getenv("WECHAT_APPID")
 WECHAT_APPSECRET = os.getenv("WECHAT_APPSECRET")
-MINIAPP_REVIEW_EXPERIENCE_CODE = os.getenv("MINIAPP_REVIEW_EXPERIENCE_CODE")
-REVIEW_CODE_POLICY = json.loads(
-    (Path(__file__).resolve().parent / "review-experience-code-policy.json").read_text(encoding="utf-8")
-)
 REMOTE_DIR = os.getenv("DEPLOY_REMOTE_DIR", DEFAULTS["remote_dir"])
 DB_PATH = os.getenv("DB_PATH", DEFAULTS["db_path"])
 READ_DB_PATH = os.getenv("READ_DB_PATH", DB_PATH)
@@ -111,14 +107,10 @@ def require_remote_env():
             missing.append("WECHAT_APPID")
         if not WECHAT_APPSECRET:
             missing.append("WECHAT_APPSECRET")
-        if not MINIAPP_REVIEW_EXPERIENCE_CODE:
-            missing.append("MINIAPP_REVIEW_EXPERIENCE_CODE")
     if missing:
         raise SystemExit(f"Missing required environment variables: {', '.join(missing)}")
     if BACKEND_JWT_SECRET:
         validate_backend_jwt_secret(BACKEND_JWT_SECRET)
-    if MINIAPP_REVIEW_EXPERIENCE_CODE:
-        validate_review_experience_code(MINIAPP_REVIEW_EXPERIENCE_CODE)
 
 
 def validate_backend_jwt_secret(value):
@@ -141,58 +133,12 @@ def validate_backend_jwt_secret(value):
     return True
 
 
-def validate_review_experience_code(value):
-    raw = str(value or "")
-    normalized = raw.strip()
-    lower = normalized.lower()
-    has_repeated_substring = False
-    minimum_repeat = int(REVIEW_CODE_POLICY["minRepeatedSubstringLength"])
-    for size in range(minimum_repeat, len(normalized) // 2 + 1):
-        for start in range(0, len(normalized) - size + 1):
-            candidate = normalized[start:start + size]
-            if normalized.find(candidate, start + size) >= 0:
-                has_repeated_substring = True
-                break
-        if has_repeated_substring:
-            break
-    sequence_length = int(REVIEW_CODE_POLICY["sequenceLength"])
-    has_sequence = False
-    for seed in REVIEW_CODE_POLICY["sequenceSeeds"]:
-        for sequence in (seed, seed[::-1]):
-            if any(sequence[index:index + sequence_length] in lower for index in range(len(sequence) - sequence_length + 1)):
-                has_sequence = True
-                break
-        if has_sequence:
-            break
-    strong = (
-        raw == normalized
-        and int(REVIEW_CODE_POLICY["minLength"]) <= len(normalized) <= int(REVIEW_CODE_POLICY["maxLength"])
-        and all(0x21 <= ord(character) <= 0x7E for character in normalized)
-        and any("a" <= character <= "z" for character in normalized)
-        and any("A" <= character <= "Z" for character in normalized)
-        and any(character.isdigit() for character in normalized)
-        and any(not ("a" <= character.lower() <= "z" or character.isdigit()) for character in normalized)
-        and len(set(normalized)) >= int(REVIEW_CODE_POLICY["minUniqueCharacters"])
-        and not any(term in lower for term in REVIEW_CODE_POLICY["forbiddenTerms"])
-        and re.search(r"(?:19|20)\d{2}", normalized) is None
-        and re.search(r"\d{1,4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?", normalized) is None
-        and re.search(r"(.)\1{%d,}" % int(REVIEW_CODE_POLICY["maxRepeatedCharacterRun"]), normalized) is None
-        and not has_repeated_substring
-        and not has_sequence
-        and normalized != "<review experience code>"
-    )
-    if not strong:
-        raise SystemExit("MINIAPP_REVIEW_EXPERIENCE_CODE is missing or weak")
-    return True
-
-
 def redaction_candidates():
     candidates = []
     for secret in [
         PASSWORD,
         BACKEND_JWT_SECRET,
         WECHAT_APPSECRET,
-        MINIAPP_REVIEW_EXPERIENCE_CODE,
         os.getenv("GEWU_DESKTOP_SYNC_TOKEN"),
         os.getenv("GEWU_CLOUD_RELAY_HOST_TOKEN"),
     ]:
@@ -319,7 +265,6 @@ def remote_env_values():
         "JWT_SECRET": BACKEND_JWT_SECRET,
         "WECHAT_APPID": WECHAT_APPID,
         "WECHAT_APPSECRET": WECHAT_APPSECRET,
-        "MINIAPP_REVIEW_EXPERIENCE_CODE": MINIAPP_REVIEW_EXPERIENCE_CODE,
         "DB_PATH": DB_PATH,
         "READ_DB_PATH": READ_DB_PATH,
         "GEWU_NODE_ROLE": os.getenv("GEWU_NODE_ROLE", "primary-host"),

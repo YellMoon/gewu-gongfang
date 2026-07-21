@@ -41,11 +41,11 @@ const randomBytes = size => {
 };
 const authorityByDevice = new Map([
   ['host-device-1', {
-    runtimeNodeRole: 'primary-host', dbInstanceDigest: 'a'.repeat(64), schemaVersion: 3108,
+    runtimeNodeRole: 'primary-host', dbInstanceDigest: 'a'.repeat(64), schemaVersion: 3109,
     storeId: 'store-authority-1', dbAuthorityId: 'db-authority-1', quickCheck: 'ok',
   }],
   ['host-device-2', {
-    runtimeNodeRole: 'desktop-client', dbInstanceDigest: 'b'.repeat(64), schemaVersion: 3108,
+    runtimeNodeRole: 'desktop-client', dbInstanceDigest: 'b'.repeat(64), schemaVersion: 3109,
     storeId: 'store-authority-1', dbAuthorityId: 'db-authority-1', quickCheck: 'ok',
   }],
 ]);
@@ -261,7 +261,7 @@ function transferManifest(overrides = {}) {
     },
     database: {
       quickCheck: 'ok',
-      schemaVersion: 3108,
+      schemaVersion: 3109,
       dbInstanceDigest: 'b'.repeat(64),
       dbAuthorityId: 'db-authority-1',
     },
@@ -288,7 +288,7 @@ function recoveryEvidence(overrides = {}) {
     },
     database: {
       quickCheck: 'ok',
-      schemaVersion: 3108,
+      schemaVersion: 3109,
       dbInstanceDigest: 'a'.repeat(64),
       dbAuthorityId: 'db-authority-1',
     },

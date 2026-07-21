@@ -87,6 +87,21 @@ async function requestJson(baseUrl, method, pathname, { token, body, idempotency
     const noToken = await requestJson(baseUrl, 'GET', '/api/miniapp/applications/me');
     assert.strictEqual(noToken.status, 401);
 
+    for (const [method, pathname] of [
+      ['GET', '/api/students'],
+      ['GET', '/api/question-bank/questions'],
+      ['POST', '/api/cloud/tasks'],
+      ['POST', '/api/sync/push'],
+      ['GET', '/api/permissions/my'],
+    ]) {
+      const denied = await requestJson(baseUrl, method, pathname, {
+        token: tokens.student,
+        ...(method === 'POST' ? { body: {} } : {}),
+      });
+      assert.strictEqual(denied.status, 403, `${method} ${pathname} must reject unrecognized sessions`);
+      assert.strictEqual(denied.body.code, 'UNRECOGNIZED_SCOPE_FORBIDDEN');
+    }
+
     const studentPayload = {
       studentName: '\u5f20\u540c\u5b66',
       studentPhone: '13800138100',

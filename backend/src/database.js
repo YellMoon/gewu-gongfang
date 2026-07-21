@@ -11,6 +11,7 @@ const { validateSyncMutation } = require('./services/syncScopeService');
 const { scopeBusinessSnapshot } = require('./services/dataScopeService');
 const { projectSearchTextFromRow } = require('./services/questionRichContentProjection');
 const { ensureCompatibilityRoleGrants } = require('./services/userRoleGrantService');
+const { runMiniappPrivacyRetention } = require('./services/miniappPrivacyRetention');
 const {
   SUPER_ADMIN_PHONE,
   CANONICAL_SUPER_ADMIN_ID,
@@ -21,7 +22,7 @@ const {
   scopeForUser,
 } = require('./services/authorizationPolicy');
 
-const SCHEMA_VERSION = 3108;
+const SCHEMA_VERSION = 3109;
 const MINIAPP_ADMIN_SEED_USERS = [
   { id: 'miniapp-admin-13732250653', phone: '13732250653', name: 'Miniapp Admin 0653' },
   { id: 'miniapp-admin-18257136756', phone: '18257136756', name: 'Miniapp Admin 6756' },
@@ -105,6 +106,7 @@ class DatabaseService {
     this._migrateMiniappMemberships();
     this._ensureRoleGrantPersistence();
     this._ensureHostHeartbeatColumns();
+    runMiniappPrivacyRetention(this.db);
     console.log(`[DB] initialized env=${this.environment} schema=${this.schemaVersion} path=${this.dbPath}`);
   }
 
@@ -155,13 +157,13 @@ class DatabaseService {
     return ['students', 'grades', 'courses', 'schedules', 'enrollments',
       'payments', 'consumptions', 'institutions', 'schools', 'rooms', 'teachers',
       'subjects', 'chapters', 'knowledge_points', 'questions', 'question_contents',
-      'question_assets', 'model_points', 'import_batches', 'import_items', 'search_index_jobs', 'vector_embeddings',
+      'question_assets', 'model_points', 'taxonomy_systems', 'taxonomy_nodes', 'import_batches', 'import_items', 'search_index_jobs', 'vector_embeddings',
       'data_archive_jobs', 'outbox_events'];
   }
 
   _questionBankTenantScopedTables() {
     return ['subjects', 'chapters', 'knowledge_points', 'questions', 'question_contents',
-      'question_assets', 'model_points', 'import_batches', 'import_items', 'search_index_jobs', 'vector_embeddings',
+      'question_assets', 'model_points', 'taxonomy_systems', 'taxonomy_nodes', 'import_batches', 'import_items', 'search_index_jobs', 'vector_embeddings',
       'data_archive_jobs', 'outbox_events'];
   }
 
@@ -345,6 +347,7 @@ class DatabaseService {
     addColumn('committed_by_device_id', 'TEXT');
     addColumn('source_device_id', 'TEXT');
     addColumn('owner_user_id', 'TEXT');
+    addColumn('taxonomy_json', "TEXT NOT NULL DEFAULT '{}'");
     addColumn('deleted_at', 'TEXT');
     this.db.prepare("UPDATE questions SET subject = '物理' WHERE subject IS NULL OR subject = ''").run();
     this.db.prepare("UPDATE questions SET exam_type = '其他' WHERE exam_type IS NULL OR exam_type = ''").run();
@@ -833,7 +836,7 @@ class DatabaseService {
     return ['students', 'grades', 'courses', 'schedules', 'enrollments',
       'payments', 'consumptions', 'institutions', 'schools', 'rooms', 'teachers',
       'subjects', 'chapters', 'knowledge_points', 'questions', 'question_contents',
-      'question_assets'];
+      'question_assets', 'taxonomy_systems', 'taxonomy_nodes'];
   }
 
   _tableColumns(table) {
@@ -1843,6 +1846,9 @@ class DatabaseService {
           }
 
           const incoming = { ...record, updated_at: now };
+          if (table === 'questions' && record.taxonomy_ids !== undefined) {
+            incoming.taxonomy_json = JSON.stringify(record.taxonomy_ids || {});
+          }
           if (columns.includes('created_at') && !incoming.created_at) incoming.created_at = existing?.created_at || now;
           if (columns.includes('deleted')) incoming.deleted = change.action === 'delete' ? 1 : (incoming.deleted || 0);
           if (columns.includes('tenant_id') && !incoming.tenant_id) incoming.tenant_id = change.tenantId;
@@ -1860,6 +1866,39 @@ class DatabaseService {
             this.db.prepare(
               `INSERT INTO ${table} (${insertKeys.join(', ')}) VALUES (${placeholders})`
             ).run(...insertKeys.map(k => insertRecord[k]));
+          }
+          if (table === 'questions' && incoming.taxonomy_json !== undefined) {
+            let taxonomy = {};
+            try { taxonomy = JSON.parse(incoming.taxonomy_json || '{}') || {}; } catch (_error) {}
+            this.db.prepare('DELETE FROM question_taxonomy_nodes WHERE question_id = ?').run(recordId);
+            const insertTaxonomy = this.db.prepare(`INSERT OR IGNORE INTO question_taxonomy_nodes
+              (question_id, system_id, node_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`);
+            for (const [systemId, nodeIds] of Object.entries(taxonomy)) {
+              for (const nodeId of Array.isArray(nodeIds) ? nodeIds : []) {
+                const node = this.db.prepare('SELECT id FROM taxonomy_nodes WHERE id = ? AND tenant_id = ? AND system_id = ? AND deleted = 0')
+                  .get(String(nodeId), change.tenantId, systemId);
+                if (node) insertTaxonomy.run(recordId, systemId, String(nodeId), now, now);
+              }
+            }
+          }
+          if (table === 'taxonomy_systems' && change.action === 'delete') {
+            this.db.prepare('UPDATE taxonomy_nodes SET deleted = 1, updated_at = ? WHERE tenant_id = ? AND system_id = ?')
+              .run(now, change.tenantId, recordId);
+            this.db.prepare(`DELETE FROM question_taxonomy_nodes WHERE system_id = ?
+              AND question_id IN (SELECT id FROM questions WHERE tenant_id = ?)`).run(recordId, change.tenantId);
+            const affectedQuestions = this.db.prepare(
+              'SELECT id, taxonomy_json FROM questions WHERE tenant_id = ? AND taxonomy_json IS NOT NULL'
+            ).all(change.tenantId);
+            const clearDeletedSystem = this.db.prepare(
+              'UPDATE questions SET taxonomy_json = ?, updated_at = ? WHERE id = ? AND tenant_id = ?'
+            );
+            for (const question of affectedQuestions) {
+              let taxonomy = {};
+              try { taxonomy = JSON.parse(question.taxonomy_json || '{}') || {}; } catch (_error) {}
+              if (!Object.prototype.hasOwnProperty.call(taxonomy, recordId)) continue;
+              delete taxonomy[recordId];
+              clearDeletedSystem.run(JSON.stringify(taxonomy), now, question.id, change.tenantId);
+            }
           }
           results.applied++;
           if (provenance) {

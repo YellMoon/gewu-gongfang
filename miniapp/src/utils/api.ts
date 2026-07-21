@@ -15,24 +15,18 @@ import { createAuthRefreshRuntime, extractRefreshToken } from './miniappAuthRefr
 import { clearAuthenticatedSession, createApiResponseCoordinator, createSessionBoundOperation } from './miniappApiSessionRuntime';
 import { selectApiBaseUrl } from './miniappApiRoutingRuntime';
 import {
-  experienceApiPath,
-  isReviewExperienceIdentity,
-  reviewArtifactRequest,
-  reviewCleanupStorageKeys,
-} from './reviewExperience';
+  accountExperienceArtifactRequest,
+  accountExperiencePath,
+} from './accountExperience';
 
 const STORAGE_KEY_BASE_URL = 'scheduling_api_base_url';
 declare const __API_BASE_URL__: string | undefined;
-declare const __REVIEW_API_BASE_URL__: string | undefined;
 const DEFAULT_BASE_URL = (typeof __API_BASE_URL__ !== 'undefined' && __API_BASE_URL__)
   ? __API_BASE_URL__.replace(/\/+$/, '')
   : 'https://physicsedu.xyz/scheduling';
-const DEFAULT_REVIEW_BASE_URL = (typeof __REVIEW_API_BASE_URL__ !== 'undefined' && __REVIEW_API_BASE_URL__)
-  ? __REVIEW_API_BASE_URL__.replace(/\/+$/, '')
-  : 'https://physicsedu.xyz';
 const RETRY_COUNT = 1;
 const REQUEST_TIMEOUT = 30000;
-const AUTHENTICATION_ENTRY_PATHS = new Set(['/api/auth/login', '/api/auth/wechat-login', '/api/auth/review-demo']);
+const AUTHENTICATION_ENTRY_PATHS = new Set(['/api/auth/login', '/api/auth/wechat-login']);
 const DESKTOP_AUTHORIZATION_ENTRY_PATH = /^\/api\/desktop-identity\/challenges\/[A-Za-z0-9_-]{16,128}\/(?:public|confirm)$/;
 
 function isDesktopAuthorizationEntryPath(path: string): boolean {
@@ -52,15 +46,8 @@ function getBaseUrl(): string {
 }
 
 function getRequestBaseUrl(path: string): string {
-  let reviewIdentity = false;
-  try {
-    reviewIdentity = isReviewExperienceIdentity(Taro.getStorageSync('user_info'));
-  } catch { /* fall back to the normal API unless this is the review login entry */ }
   return selectApiBaseUrl({
-    path,
     normalBaseUrl: getBaseUrl(),
-    reviewBaseUrl: DEFAULT_REVIEW_BASE_URL,
-    isReviewIdentity: reviewIdentity,
   });
 }
 
@@ -69,7 +56,6 @@ export function setBaseUrl(url: string): void {
 }
 
 export const getApiBaseUrl = getBaseUrl;
-export const getReviewApiBaseUrl = () => DEFAULT_REVIEW_BASE_URL;
 export const setApiBaseUrl = setBaseUrl;
 
 interface ApiResponse<T = any> {
@@ -87,24 +73,12 @@ class ApiClient {
     requestRefresh: (token: string) => this.requestRefreshedToken(token),
   });
 
-  private handleReviewAuthExpired(): void {
-    const currentUser = Taro.getStorageSync('user_info');
-    clearAuthenticatedSession({
-      invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance(),
-      clearBusinessCache,
-      clearPermissionCache: () => Taro.removeStorageSync('user_permissions'),
-      removeStorage: (key: string) => Taro.removeStorageSync(key),
-      cleanupStorageKeys: reviewCleanupStorageKeys,
-    }, [currentUser]);
-    Taro.showToast({ title: '\u5ba1\u6838\u4f53\u9a8c\u5df2\u8fc7\u671f\uff0c\u8bf7\u91cd\u65b0\u8fdb\u5165', icon: 'none', duration: 2000 });
-    setTimeout(() => Taro.redirectTo({ url: '/pages/login/index' }), 1500);
-  }
-
-  private getHeaders(token = ''): Record<string, string> {
+  private getHeaders(token = '', extraHeaders: Record<string, string> = {}): Record<string, string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-cache',
       Pragma: 'no-cache',
+      ...extraHeaders,
     };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     return headers;
@@ -147,6 +121,7 @@ class ApiClient {
     path: string,
     data?: any,
     retries = RETRY_COUNT,
+    extraHeaders: Record<string, string> = {},
   ): Promise<ApiResponse<T>> {
     const url = this.buildUrl(path, method);
     const authenticationEntry = isAuthenticationEntryPath(path);
@@ -173,7 +148,7 @@ class ApiClient {
         const res = await Taro.request({
           url,
           method,
-          header: this.getHeaders(anonymousEntry ? '' : requestSession.token),
+          header: this.getHeaders(anonymousEntry ? '' : requestSession.token, extraHeaders),
           data: method !== 'GET' ? data : undefined,
           timeout: REQUEST_TIMEOUT,
           dataType: 'json',
@@ -184,17 +159,6 @@ class ApiClient {
           return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
         }
         if (responseDecision.action === 'retry') continue;
-        if (responseDecision.action === 'review-expired') {
-          if (!isCurrentSession()) {
-            return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
-          }
-          this.handleReviewAuthExpired();
-          return {
-            success: false,
-            error: '\u5ba1\u6838\u4f53\u9a8c\u5df2\u8fc7\u671f\uff0c\u8bf7\u91cd\u65b0\u8fdb\u5165',
-            code: 'REVIEW_DEMO_TOKEN_INVALID',
-          };
-        }
         if (responseDecision.action === 'auth-expired') {
           if (!isCurrentSession()) {
             return { success: false, error: '\u767b\u5f55\u72b6\u6001\u5df2\u5207\u6362\uff0c\u8bf7\u91cd\u8bd5' };
@@ -233,8 +197,6 @@ class ApiClient {
             error: res.data?.message || res.data?.error || `Request failed (${res.statusCode})`,
             code: res.data?.code,
           };
-        } else if (res.statusCode >= 500 && res.data?.code === 'REVIEW_DEMO_DISABLED') {
-          return { success: false, error: res.data?.error, code: res.data.code };
         } else if (res.statusCode >= 500 && attempt < retries) {
           continue; // 服务端错误，重试
         } else {
@@ -259,6 +221,9 @@ class ApiClient {
 
   get<T>(path: string) { return this.request<T>('GET', path); }
   post<T>(path: string, data?: any) { return this.request<T>('POST', path, data); }
+  postWithHeaders<T>(path: string, data: any, headers: Record<string, string>) {
+    return this.request<T>('POST', path, data, RETRY_COUNT, headers);
+  }
   put<T>(path: string, data?: any) { return this.request<T>('PUT', path, data); }
   patch<T>(path: string, data?: any) { return this.request<T>('PATCH', path, data); }
   delete<T>(path: string) { return this.request<T>('DELETE', path); }
@@ -272,8 +237,6 @@ export const authApi = {
     api.post<{ token: string; user: any }>('/api/auth/login', data),
   refresh: (token: string) =>
     api.post<{ token: string }>('/api/auth/refresh', { token }),
-  reviewDemo: (code: string, role: 'admin' | 'student') =>
-    api.post<{ token: string; role: 'admin' | 'student'; user: any }>('/api/auth/review-demo', { code, role }),
 };
 
 export const desktopAuthorizationApi = {
@@ -320,29 +283,56 @@ export const cloudRelayApi = {
   cancelMiniappTask: (taskId: string) => api.post<any>(`/api/cloud/tasks/${taskId}/cancel`, {}),
 };
 
-function reviewDemoPath(operation: string, resourceId?: string): string {
+function accountPath(operation: string, resourceId?: string): string {
   const identity = Taro.getStorageSync('user_info');
-  if (!isReviewExperienceIdentity(identity)) throw new Error('review identity is required');
-  return experienceApiPath(identity, operation, resourceId);
+  return accountExperiencePath(identity, operation, resourceId);
 }
 
-export const reviewDemoApi = {
+export const applicationApi = {
+  mine: () => api.get<any>('/api/miniapp/applications/me'),
+  submit: (applicationType: 'student' | 'teacher', payload: any, idempotencyKey: string) =>
+    api.postWithHeaders<any>(
+      '/api/miniapp/applications',
+      { applicationType, payload },
+      { 'x-idempotency-key': idempotencyKey },
+    ),
+  withdraw: (applicationId: string) =>
+    api.post<any>(`/api/miniapp/applications/${encodeURIComponent(applicationId)}/withdraw`, {}),
+  adminList: (status = '') => api.get<any>(
+    `/api/miniapp/applications/admin${status ? `?status=${encodeURIComponent(status)}` : ''}`,
+  ),
+  approveApplication: (applicationId: string, expectedRevision: number) => api.post<any>(
+    `/api/miniapp/applications/${encodeURIComponent(applicationId)}/approve`,
+    { expectedRevision },
+  ),
+  rejectApplication: (applicationId: string, expectedRevision: number, reason: string) => api.post<any>(
+    `/api/miniapp/applications/${encodeURIComponent(applicationId)}/reject`,
+    { expectedRevision, reason },
+  ),
+  retryApplication: (applicationId: string, expectedRevision: number) => api.post<any>(
+    `/api/miniapp/applications/${encodeURIComponent(applicationId)}/retry`,
+    { expectedRevision },
+  ),
+};
+
+export const experienceApi = {
+  questions: () => api.get<any>('/api/experience/questions'),
   createTask: (taskType: string, payload: any) =>
-    api.post<any>(reviewDemoPath('createTask'), { taskType, payload }),
+    api.post<any>(accountPath('createTask'), { taskType, payload }),
   getTaskResult: (taskId: string) =>
-    api.get<any>(reviewDemoPath('taskResult', taskId)),
+    api.get<any>(accountPath('taskResult', taskId)),
   cancelTask: (taskId: string) =>
-    api.post<any>(reviewDemoPath('cancelTask', taskId), {}),
+    api.post<any>(accountPath('cancelTask', taskId), {}),
   artifactUrl: (artifactId: string) =>
     (() => {
-      const path = reviewDemoPath('artifact', artifactId);
+      const path = accountPath('artifact', artifactId);
       return `${getRequestBaseUrl(path)}${path}`;
     })(),
   downloadArtifact: (artifactId: string) => {
     const sessionBoundary = createSessionBoundOperation(authSessionRuntime);
     return sessionBoundary.run((requestSession: any) => {
       const identity = Taro.getStorageSync('user_info');
-      const request = reviewArtifactRequest(identity, requestSession.token, artifactId);
+      const request = accountExperienceArtifactRequest(identity, requestSession.token, artifactId);
       return Taro.downloadFile({
         url: `${getRequestBaseUrl(request.path)}${request.path}`,
         header: request.header,

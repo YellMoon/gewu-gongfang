@@ -93,6 +93,18 @@ const dynamicNavigationPatterns = [
     declarationPattern: /\bpagePath:\s*(['"])(pages\/[^'"]+)\1/g,
     normalize: (value) => value.split('?')[0],
   },
+  {
+    file: 'src/pages/login/index.tsx',
+    expression: 'homeForIdentity(user)',
+    declarationPattern: /\b(?:FORMAL_HOME|UNRECOGNIZED_HOME)\s*=\s*(['"])(\/pages\/[^'"]+)\1/g,
+    normalize: (value) => value.slice(1).split('?')[0],
+  },
+  {
+    file: 'src/pages/login/index.tsx',
+    expression: 'homeForIdentity(session.identity)',
+    declarationPattern: /\b(?:FORMAL_HOME|UNRECOGNIZED_HOME)\s*=\s*(['"])(\/pages\/[^'"]+)\1/g,
+    normalize: (value) => value.slice(1).split('?')[0],
+  },
 ];
 
 for (const call of navigationCalls) {
@@ -172,83 +184,41 @@ assert.ok(
   'review exit business-cache cleanup must include finance asset records and categories'
 );
 
-const reviewBannerFile = 'src/components/ReviewDemoBanner.tsx';
-const reviewEntryFiles = [
-  'src/pages/index/index.tsx',
-  'src/pages/question-bank/index.tsx',
-  'src/pages/settings/index.tsx',
-  'src/pages/admin/users/index.tsx',
-  'src/pages/assets/index.tsx',
-  'src/pages/schedule/edit/index.tsx',
+assert.ok(fs.existsSync(path.join(root, 'src/components/AccountStatusBanner.tsx')));
+assert.ok(fs.existsSync(path.join(root, 'src/components/MembershipBadge.tsx')));
+assert.ok(!fs.existsSync(path.join(root, 'src/components/ReviewDemoBanner.tsx')));
+assert.ok(!fs.existsSync(path.join(root, 'src/utils/reviewExperience.js')));
+
+const accountExperienceRoutes = [
+  'pages/index/index',
+  'pages/schedule/index',
+  'pages/question-bank/index',
+  'pages/settings/index',
+  'pages/unrecognized-experience/index',
+  'pages/account-application/index',
 ];
-const missingReviewUiContracts = [];
-if (!fs.existsSync(path.join(root, reviewBannerFile))) {
-  missingReviewUiContracts.push('shared ReviewDemoBanner component');
-} else {
-  let bannerSource = read(reviewBannerFile);
-  bannerSource = bannerSource.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) => String.fromCharCode(Number.parseInt(hex, 16)));
-  if (!bannerSource.includes('isReviewExperienceIdentity')) missingReviewUiContracts.push('strict review identity check in shared banner');
-  if (!bannerSource.includes('脱敏示例数据') || !bannerSource.includes('只读')) missingReviewUiContracts.push('sanitized read-only review banner copy');
+for (const route of accountExperienceRoutes) {
+  const entry = pageInventory.find(item => item.route === route);
+  assert.ok(entry?.roleViews.includes('unrecognized-student'), `${route} must cover the real unrecognized identity`);
 }
-for (const file of reviewEntryFiles) {
-  if (!read(file).includes('ReviewDemoBanner')) missingReviewUiContracts.push(`ReviewDemoBanner rendered by ${file}`);
-}
-for (const route of ['pages/index/index', 'pages/question-bank/index', 'pages/settings/index', 'pages/assets/index']) {
-  const entry = pageInventory.find((item) => item.route === route);
-  if (!entry?.roleViews.includes('review-admin') && !entry?.roleViews.includes('review-student')) {
-    missingReviewUiContracts.push(`review role coverage for ${route}`);
-  }
-  if (!entry?.verificationStates.includes('review-read-only')) {
-    missingReviewUiContracts.push(`review read-only verification state for ${route}`);
-  }
-}
-assert.deepStrictEqual(missingReviewUiContracts, [], 'review experience entry pages must expose the shared read-only banner and inventory coverage');
-
-const { REVIEW_ADMIN_MODULES, REVIEW_STUDENT_MODULES } = require('./miniappAuthorizationRuntime');
-const reviewModuleRoutes = {
-  scheduling: ['pages/schedule/index', 'pages/schedule/detail/index', 'pages/schedule/edit/index', 'pages/student-detail/index'],
-  'question-bank': ['pages/question-bank/index'],
-  assets: ['pages/assets/index'],
-  students: ['pages/students/index', 'pages/student-detail/index'],
-  courses: ['pages/courses/index'],
-  teachers: ['pages/teachers/index'],
-  payments: ['pages/payments/index'],
-  stats: ['pages/stats/index'],
-};
-const expectedReviewRoles = new Map();
-const addExpectedReviewRole = (route, role) => {
-  const roles = expectedReviewRoles.get(route) || [];
-  if (!roles.includes(role)) roles.push(role);
-  expectedReviewRoles.set(route, roles.sort());
-};
-for (const route of ['pages/index/index', 'pages/settings/index', 'pages/forbidden/index']) {
-  addExpectedReviewRole(route, 'review-admin');
-  addExpectedReviewRole(route, 'review-student');
-}
-for (const moduleId of REVIEW_ADMIN_MODULES) {
-  for (const route of reviewModuleRoutes[moduleId] || []) addExpectedReviewRole(route, 'review-admin');
-}
-for (const moduleId of REVIEW_STUDENT_MODULES) {
-  for (const route of reviewModuleRoutes[moduleId] || []) addExpectedReviewRole(route, 'review-student');
-}
-addExpectedReviewRole('pages/admin/users/index', 'review-admin');
-
-const reviewCoverageFailures = [];
 for (const entry of pageInventory) {
-  const expectedRoles = expectedReviewRoles.get(entry.route) || [];
-  const actualRoles = entry.roleViews.filter(role => role.startsWith('review-')).sort();
-  if (JSON.stringify(actualRoles) !== JSON.stringify(expectedRoles)) {
-    reviewCoverageFailures.push(`${entry.route} review roles: expected ${expectedRoles.join(',') || 'none'}, got ${actualRoles.join(',') || 'none'}`);
-  }
-  if (expectedRoles.length === 0) continue;
-  if (!entry.verificationStates.includes('review-read-only')) reviewCoverageFailures.push(`${entry.route} missing review-read-only state`);
-  const pageSource = read(entry.files.find(file => file.endsWith('.tsx')));
-  if (!pageSource.includes('ReviewDemoBanner')) reviewCoverageFailures.push(`${entry.route} missing ReviewDemoBanner`);
+  assert.ok(!entry.roleViews.some(role => role.startsWith('review-')), `${entry.route} must not retain synthetic review roles`);
+  assert.ok(!entry.verificationStates.some(state => state.startsWith('review-')), `${entry.route} must not retain removed review states`);
 }
-assert.deepStrictEqual(
-  reviewCoverageFailures,
-  [],
-  'every registered route reachable by review authorization must declare exact review roles, read-only verification, and the shared banner'
-);
+
+const applicationEntry = pageInventory.find(item => item.route === 'pages/account-application/index');
+for (const state of [
+  'loading', 'not-submitted', 'invalid', 'submitting', 'submitted', 'provisioning',
+  'manual-resolution-required', 'rejected', 'withdrawn', 'approved-relogin-required',
+  'offline', 'network-error',
+]) {
+  assert.ok(applicationEntry?.verificationStates.includes(state), `account application inventory missing ${state}`);
+}
+
+const legacyClientSources = listSourceFiles(path.join(root, 'src'))
+  .filter(file => !/accountExperience\.js$/.test(file) && !/miniappApiSessionRuntime\.js$/.test(file))
+  .filter(file => /ReviewDemoBanner|reviewDemoApi|reviewExperience/.test(fs.readFileSync(file, 'utf8')))
+  .map(file => path.relative(root, file).replace(/\\/g, '/'));
+assert.deepStrictEqual(legacyClientSources, [], 'miniapp UI and client flow must not retain the removed review-demo implementation');
 
 console.log('miniapp full-page UI coverage checks passed');

@@ -22,7 +22,9 @@ assert.ok(app.includes("app.use('/api/payments', optionalAuth, requireCoreReadAc
 assert.ok(app.includes("app.use('/api/cloud', optionalAuth, cloudRelayRouter)"), 'cloud relay should enforce miniapp task permissions inside the route');
 assert.ok(cloudRoute.includes('filterSnapshotForUser'), 'backend cloud relay should filter snapshots by user role');
 assert.ok(cloudRoute.includes('requireMiniappTaskAccess'), 'backend cloud relay should enforce task permissions per route');
-assert.ok(gatewayAuth.includes('MINIAPP_USER_NOT_PREAUTHORIZED'), 'gateway login should reject unknown users');
+assert.ok(gatewayAuth.includes('MINIAPP_AUTH_MOVED_TO_BACKEND'), 'legacy Gateway login must be a tombstone owned by the backend');
+assert.ok(app.includes("app.use('/api', optionalAuth, unrecognizedStudentGuard)"),
+  'restricted unrecognized sessions must be stopped before formal business routes');
 assert.ok(!gatewayAuth.includes('自动注册'), 'gateway login must not auto-register miniapp users');
 assert.ok(gatewaySchema.includes('login_enabled INTEGER DEFAULT 0'), 'gateway user schema should keep login disabled until explicitly enabled');
 assert.ok(packageJson.includes('backend/src/services/miniappAccessPolicy.test.js'), 'miniapp access policy test should run in npm test');

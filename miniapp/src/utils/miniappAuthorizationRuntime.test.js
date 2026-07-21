@@ -1,11 +1,10 @@
 const assert = require('assert');
 const {
-  REVIEW_ADMIN_MODULES,
-  REVIEW_STUDENT_MODULES,
+  UNRECOGNIZED_MODULES,
   canUserSubmitMiniappWrite,
   deriveAccess,
   permissionIdentityKey,
-  reviewRolePolicy,
+  accountExperiencePolicy,
   scopeDashboardCollections,
   businessCacheIdentityKey,
   questionPaperTaskCacheKey,
@@ -66,7 +65,7 @@ for (const changedScope of [
 ]) {
   assert.notStrictEqual(businessCacheIdentityKey(normalStudentScope), businessCacheIdentityKey(changedScope), 'tenant, student binding, and account-state changes must receive a new business cache namespace');
 }
-assert.strictEqual(typeof questionPaperTaskCacheKey, 'function', 'question-paper task history must have a normal/review scope-aware cache-key helper');
+assert.strictEqual(typeof questionPaperTaskCacheKey, 'function', 'question-paper task history must have a normal scope-aware cache-key helper');
 assert.notStrictEqual(questionPaperTaskCacheKey(normalStudentScope), questionPaperTaskCacheKey({ ...normalStudentScope, tenant_id: 'tenant-b' }), 'normal task history must not cross tenant scope');
 assert.notStrictEqual(questionPaperTaskCacheKey(normalStudentScope), questionPaperTaskCacheKey({ ...normalStudentScope, linked_student_ids: ['student-z'] }), 'normal task history must not cross student bindings');
 assert.strictEqual(typeof createQuestionPaperTaskCacheRuntime, 'function', 'mounted question-bank state needs an atomic scope-aware cache runtime');
@@ -90,62 +89,38 @@ assert.strictEqual(rejectedTaskWrite.written, false, 'a mounted old-scope task s
 assert.deepStrictEqual(taskStores.get(nextTaskKey), [{ localId: 'task-b' }], 'a rejected old-scope write must leave the new tenant cache untouched');
 assert.deepStrictEqual(rejectedTaskWrite.snapshot, { scopeKey: nextTaskKey, tasks: [{ localId: 'task-b' }] }, 'scope switch must atomically reload the new task namespace');
 
-const reviewAdmin = {
-  id: 'review-demo:admin:session-a', user_type: 'admin', is_review_demo: true, read_only: true,
-  review_demo_session_id: 'session-a', review_status: 'approved', status: 1, login_enabled: 1,
-};
-const reviewAdminAccess = deriveAccess(reviewAdmin, {
-  status: 'loaded',
-  identityKey: permissionIdentityKey(reviewAdmin),
-  capabilities: [
-    'review-demo:read', 'review-demo:admin', 'review-demo:student', 'review-demo:paper-export',
-    'question-bank:view', 'question-bank:edit', 'users:review', 'business:all', 'business:teacher-scope',
+const unrecognized = {
+  id: 'unrecognized-1', user_type: 'student', role: 'student', account_state: 'unrecognized',
+  token_use: 'unrecognized-student', capabilities: [
+    'experience:read', 'profile-application:read', 'profile-application:submit',
+    'sample-questions:view', 'sample-paper-export',
   ],
-});
-assert.deepStrictEqual(reviewAdminAccess.modules, REVIEW_ADMIN_MODULES, 'administrator review should map only to existing read-only administrator pages');
-assert.deepStrictEqual(reviewAdminAccess.capabilities, [
-  'review-demo:read', 'review-demo:admin', 'review-demo:paper-export', 'question-bank:view',
-], 'review access must remove poisoned real-user and wrong-role capabilities');
-assert.ok(!reviewAdminAccess.modules.includes('admin'), 'administrator review must not expose the user-review workbench');
-assert.strictEqual(reviewAdminAccess.canReadUsers, false);
-assert.strictEqual(reviewAdminAccess.canReviewUsers, false);
-assert.strictEqual(reviewAdminAccess.canEditQuestionBank, false);
-
-const reviewStudent = {
-  id: 'review-demo:student:session-s', user_type: 'student', is_review_demo: true, read_only: true,
-  review_demo_session_id: 'session-s', student_id: 'review-demo-student', review_status: 'approved', status: 1, login_enabled: 1,
 };
-const reviewStudentAccess = deriveAccess(reviewStudent, {
-  status: 'loaded',
-  identityKey: permissionIdentityKey(reviewStudent),
-  capabilities: ['review-demo:read', 'review-demo:student', 'review-demo:paper-export', 'question-bank:view'],
+const unrecognizedAccess = deriveAccess(unrecognized, {
+  status: 'loaded', identityKey: permissionIdentityKey(unrecognized), capabilities: unrecognized.capabilities,
 });
-assert.deepStrictEqual(reviewStudentAccess.modules, REVIEW_STUDENT_MODULES, 'student review should map to scheduling and question bank only');
-assert.strictEqual(reviewStudentAccess.canReviewUsers, false);
-assert.strictEqual(reviewStudentAccess.canEditQuestionBank, false);
-assert.ok(permissionIdentityKey(reviewAdmin).includes('session-a'), 'review permission keys must include the server session identity');
-assert.ok(businessCacheIdentityKey(reviewAdmin).includes('session-a'), 'review business-cache keys must include the server session identity');
-assert.notStrictEqual(
-  businessCacheIdentityKey(reviewAdmin),
-  businessCacheIdentityKey({ id: reviewAdmin.id, user_type: 'admin' }),
-  'review cache namespaces must never collide with real users',
-);
-const reviewAdminPolicy = reviewRolePolicy(reviewAdmin);
-assert.deepStrictEqual(reviewAdminPolicy.modules, REVIEW_ADMIN_MODULES);
-assert.deepStrictEqual(reviewAdminPolicy.allowedWriteTasks, [], 'review role policy must not inherit normal admin write tasks');
-assert.deepStrictEqual(reviewAdminPolicy.capabilities, reviewAdminAccess.capabilities);
-assert.strictEqual(reviewAdminPolicy.canReadAllSnapshots, false);
-assert.strictEqual(reviewAdminPolicy.canReviewUsers, false);
-assert.strictEqual(reviewAdminPolicy.canEditQuestionBank, false);
-assert.strictEqual(canUserSubmitMiniappWrite(reviewAdmin, 'asset-import', ['asset-import']), false, 'review identities must fail every generic write guard');
-const malformedReview = { ...reviewAdmin, id: 'admin-1' };
-const malformedAccess = deriveAccess(malformedReview, {
-  status: 'loaded', identityKey: permissionIdentityKey(malformedReview), capabilities: ['business:all', 'question-bank:edit'],
+assert.deepStrictEqual(unrecognizedAccess.modules, UNRECOGNIZED_MODULES);
+assert.strictEqual(unrecognizedAccess.experienceOnly, true);
+assert.strictEqual(unrecognizedAccess.canReadUsers, false);
+assert.strictEqual(unrecognizedAccess.canReviewUsers, false);
+assert.strictEqual(unrecognizedAccess.canEditQuestionBank, false);
+assert.strictEqual(businessCacheIdentityKey(unrecognized), '', 'unrecognized identities must never open a formal business cache');
+assert.strictEqual(questionPaperTaskCacheKey(unrecognized), '', 'experience tasks stay in the isolated experience page');
+const unrecognizedPolicy = accountExperiencePolicy(unrecognized);
+assert.deepStrictEqual(unrecognizedPolicy.modules, UNRECOGNIZED_MODULES);
+assert.strictEqual(unrecognizedPolicy.readonlyScope, 'account-experience');
+assert.deepStrictEqual(unrecognizedPolicy.allowedWriteTasks, []);
+assert.strictEqual(canUserSubmitMiniappWrite(unrecognized, 'asset-import', ['asset-import']), false);
+
+const legacyReview = { id: 'review-demo:admin:legacy', user_type: 'admin', is_review_demo: true };
+const legacyAccess = deriveAccess(legacyReview, {
+  status: 'loaded', identityKey: permissionIdentityKey(legacyReview), capabilities: ['business:all'],
 });
-assert.deepStrictEqual(malformedAccess.modules, [], 'malformed review markers must fail closed instead of falling back to normal admin');
-assert.deepStrictEqual(malformedAccess.capabilities, []);
-assert.strictEqual(businessCacheIdentityKey(malformedReview), '', 'malformed review identities must not receive a cache namespace');
-assert.deepStrictEqual(reviewRolePolicy(malformedReview).allowedWriteTasks, []);
+assert.deepStrictEqual(legacyAccess.modules, [], 'legacy review identities must fail closed');
+assert.deepStrictEqual(legacyAccess.capabilities, []);
+assert.strictEqual(permissionIdentityKey(legacyReview), '');
+assert.strictEqual(businessCacheIdentityKey(legacyReview), '');
+assert.deepStrictEqual(accountExperiencePolicy(legacyReview).allowedWriteTasks, []);
 assert.strictEqual(canUserSubmitMiniappWrite({ id: 'admin-1', user_type: 'admin' }, 'asset-import', ['asset-import']), true, 'normal write policy must remain unchanged');
 
 console.log('miniapp authorization runtime checks passed');

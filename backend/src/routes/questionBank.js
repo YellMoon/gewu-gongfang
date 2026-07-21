@@ -325,6 +325,93 @@ router.post('/parse-word', upload.single('file'), (req, res) => {
   });
 });
 
+router.get('/taxonomies', (req, res) => {
+  try {
+    const data = questionBank.listTaxonomySystems(getInstance().db, req.query.subject, tenantId(req));
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(err.statusCode || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
+  }
+});
+
+router.post('/taxonomies', (req, res) => {
+  try {
+    const data = questionBank.createTaxonomySystem(getInstance().db, req.body || {}, tenantId(req));
+    res.status(201).json({ success: true, data });
+  } catch (err) {
+    res.status(err.statusCode || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
+  }
+});
+
+router.put('/taxonomies/:systemId', (req, res) => {
+  try {
+    const data = questionBank.updateTaxonomySystem(getInstance().db, req.params.systemId, req.body || {}, tenantId(req));
+    if (!data) return res.status(404).json({ success: false, error: 'taxonomy system not found' });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(err.statusCode || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
+  }
+});
+
+router.delete('/taxonomies/:systemId', (req, res) => {
+  try {
+    const deleted = questionBank.deleteTaxonomySystem(getInstance().db, req.params.systemId, tenantId(req));
+    if (!deleted) return res.status(404).json({ success: false, error: 'taxonomy system not found' });
+    res.json({ success: true, deleted: true });
+  } catch (err) {
+    res.status(err.statusCode || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
+  }
+});
+
+router.get('/taxonomies/:systemId/nodes', (req, res) => {
+  try {
+    const data = questionBank.listTaxonomyNodes(getInstance().db, req.params.systemId, tenantId(req));
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(err.statusCode || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
+  }
+});
+
+router.post('/taxonomies/:systemId/nodes', (req, res) => {
+  try {
+    const data = questionBank.createTaxonomyNode(getInstance().db, req.params.systemId, req.body || {}, tenantId(req));
+    res.status(201).json({ success: true, data });
+  } catch (err) {
+    res.status(err.statusCode || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
+  }
+});
+
+router.put('/taxonomies/:systemId/nodes/:nodeId', (req, res) => {
+  try {
+    const data = questionBank.updateTaxonomyNode(getInstance().db, req.params.systemId, req.params.nodeId, req.body || {}, tenantId(req));
+    if (!data) return res.status(404).json({ success: false, error: 'taxonomy node not found' });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(err.statusCode || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
+  }
+});
+
+router.delete('/taxonomies/:systemId/nodes/:nodeId', (req, res) => {
+  try {
+    const deleted = questionBank.deleteTaxonomyNode(getInstance().db, req.params.systemId, req.params.nodeId, tenantId(req));
+    if (!deleted) return res.status(404).json({ success: false, error: 'taxonomy node not found' });
+    res.json({ success: true, deleted: true });
+  } catch (err) {
+    res.status(err.statusCode || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
+  }
+});
+
+router.put('/questions/:id/taxonomies/:systemId', (req, res) => {
+  try {
+    const nodeIds = req.body?.node_ids || req.body?.taxonomy_node_ids || [];
+    const data = questionBank.setQuestionTaxonomyNodes(getInstance().db, req.params.id, req.params.systemId, nodeIds, tenantId(req));
+    if (!data) return res.status(404).json({ success: false, error: 'question not found' });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(err.statusCode || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
+  }
+});
+
 router.get('/questions', (req, res) => {
   try {
     const db = getInstance().db;

@@ -899,6 +899,7 @@ CREATE TABLE IF NOT EXISTS questions (
   committed_by_device_id TEXT,
   source_device_id TEXT,
   owner_user_id TEXT,
+  taxonomy_json TEXT NOT NULL DEFAULT '{}',
   deleted INTEGER DEFAULT 0,
   deleted_at TEXT,
   created_at TEXT NOT NULL,
@@ -1006,6 +1007,45 @@ CREATE TABLE IF NOT EXISTS question_model_points (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (question_id, model_point_id)
+);
+
+CREATE TABLE IF NOT EXISTS taxonomy_systems (
+  id TEXT NOT NULL,
+  tenant_id TEXT DEFAULT 'default',
+  subject TEXT NOT NULL,
+  name TEXT NOT NULL,
+  sort_order INTEGER DEFAULT 0,
+  deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS taxonomy_state (
+  tenant_id TEXT PRIMARY KEY,
+  initialized_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS taxonomy_nodes (
+  id TEXT NOT NULL,
+  tenant_id TEXT DEFAULT 'default',
+  system_id TEXT NOT NULL,
+  parent_id TEXT,
+  name TEXT NOT NULL,
+  sort_order INTEGER DEFAULT 0,
+  deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS question_taxonomy_nodes (
+  question_id TEXT NOT NULL,
+  system_id TEXT NOT NULL,
+  node_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (question_id, system_id, node_id)
 );
 
 CREATE TABLE IF NOT EXISTS knowledge_point_rollups (
@@ -1178,6 +1218,10 @@ CREATE INDEX IF NOT EXISTS idx_model_points_tenant ON model_points(tenant_id, de
 CREATE INDEX IF NOT EXISTS idx_model_points_parent ON model_points(parent_id, deleted);
 CREATE INDEX IF NOT EXISTS idx_qmp_question ON question_model_points(question_id);
 CREATE INDEX IF NOT EXISTS idx_qmp_model ON question_model_points(model_point_id);
+CREATE INDEX IF NOT EXISTS idx_taxonomy_systems_subject ON taxonomy_systems(tenant_id, subject, deleted, sort_order);
+CREATE INDEX IF NOT EXISTS idx_taxonomy_nodes_system ON taxonomy_nodes(tenant_id, system_id, parent_id, deleted, sort_order);
+CREATE INDEX IF NOT EXISTS idx_question_taxonomy_question ON question_taxonomy_nodes(question_id, system_id);
+CREATE INDEX IF NOT EXISTS idx_question_taxonomy_node ON question_taxonomy_nodes(node_id);
 CREATE INDEX IF NOT EXISTS idx_import_batches_status ON import_batches(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_import_items_batch ON import_items(batch_id, item_index);
 CREATE INDEX IF NOT EXISTS idx_search_jobs_status ON search_index_jobs(status, created_at);

@@ -38,11 +38,12 @@ export function identityDeviceCenterAccess({ runtimeConfig = {}, session = {} } 
   const activeRole = text(context.activeRole);
   const eligibleRoles = uniqueRoles(context.eligibleRoles);
   const isPrimaryHost = runtimeConfig.nodeRole === 'primary-host';
+  const primaryHostCapable = runtimeConfig.primaryHostCapable === true;
   const canReview = Boolean(
     userId && deviceId && isPrimaryHost && activeRole === 'super_admin' && eligibleRoles.includes('super_admin')
   );
   const canManageHost = Boolean(
-    userId && deviceId && activeRole === 'super_admin' && eligibleRoles.includes('super_admin')
+    primaryHostCapable && userId && deviceId && activeRole === 'super_admin' && eligibleRoles.includes('super_admin')
   );
   return Object.freeze({
     visible: Boolean(userId && deviceId && activeRole),
@@ -56,6 +57,7 @@ export function identityDeviceCenterAccess({ runtimeConfig = {}, session = {} } 
     deviceId,
     teacherId: context.teacherId ?? null,
     isPrimaryHost,
+    primaryHostCapable,
   });
 }
 

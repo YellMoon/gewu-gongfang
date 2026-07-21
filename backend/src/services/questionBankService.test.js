@@ -378,6 +378,41 @@ function testLegacySearchTextBackfillUsesCanonicalPlainText() {
   });
 }
 
+function testDynamicTaxonomyLifecycle() {
+  withTempDatabase((db) => {
+    const physics = questionBank.listTaxonomySystems(db, '\u7269\u7406', 'default');
+    assert.deepStrictEqual(physics.map(system => system.id), ['knowledge', 'model']);
+    assert.deepStrictEqual(questionBank.listTaxonomySystems(db, 'Chemistry', 'default'), []);
+
+    const system = questionBank.createTaxonomySystem(db, { subject: 'Chemistry', name: 'Concepts' }, 'default');
+    const root = questionBank.createTaxonomyNode(db, system.id, { name: 'Matter' }, 'default');
+    const child = questionBank.createTaxonomyNode(db, system.id, { name: 'Atoms', parent_id: root.id }, 'default');
+    const created = questionBank.createQuestion(db, {
+      subject: 'Chemistry', type: 'single', stem: 'taxonomy test question', taxonomy_ids: { [system.id]: [child.id] },
+    }, 'default');
+    assert.deepStrictEqual(created.taxonomy_ids[system.id], [child.id]);
+    assert.strictEqual(questionBank.listQuestions(db, { taxonomy_filters: JSON.stringify({ [system.id]: { includeGroups: [[child.id]], excludeIds: [] } }) }, 'default').length, 1);
+    assert.strictEqual(questionBank.listQuestions(db, { taxonomy_filters: JSON.stringify({ [system.id]: { includeGroups: [], excludeIds: [child.id] } }) }, 'default').length, 0);
+
+    const renamed = questionBank.updateTaxonomySystem(db, system.id, { name: 'Knowledge framework' }, 'default');
+    assert.strictEqual(renamed.name, 'Knowledge framework');
+    questionBank.updateTaxonomyNode(db, system.id, child.id, { name: 'Atomic structure' }, 'default');
+    assert.deepStrictEqual(questionBank.getQuestion(db, created.id, 'default').taxonomy_ids[system.id], [child.id]);
+
+    assert.strictEqual(questionBank.deleteTaxonomyNode(db, system.id, root.id, 'default'), true);
+    assert.deepStrictEqual(questionBank.getQuestion(db, created.id, 'default').taxonomy_ids[system.id], []);
+    assert.ok(questionBank.getQuestion(db, created.id, 'default'));
+
+    const next = questionBank.createTaxonomyNode(db, system.id, { name: 'Reactions' }, 'default');
+    questionBank.setQuestionTaxonomyNodes(db, created.id, system.id, [next.id], 'default');
+    assert.strictEqual(questionBank.deleteTaxonomySystem(db, system.id, 'default'), true);
+    const keptQuestion = questionBank.getQuestion(db, created.id, 'default');
+    assert.ok(keptQuestion);
+    assert.strictEqual(Object.hasOwn(keptQuestion.taxonomy_ids, system.id), false);
+    assert.deepStrictEqual(questionBank.listTaxonomySystems(db, 'Chemistry', 'default'), []);
+  });
+}
+
 function main() {
   testImportValidationPrecedesDuplicateDetection();
   testImportTaskRecordsAndDetails();
@@ -390,6 +425,7 @@ function main() {
   testRichContentOptionalNullsUseCanonicalParity();
   testRichContentStrictAttributeValidation();
   testLegacySearchTextBackfillUsesCanonicalPlainText();
+  testDynamicTaxonomyLifecycle();
   console.log('questionBankService tests passed');
 }
 

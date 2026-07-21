@@ -6,7 +6,6 @@ import { setCachedList } from '../../utils/storage';
 import { studentApi } from '../../utils/api';
 import { getLocalData } from '../../utils/sync';
 import { NetworkStatus, EmptyState, LoadingSkeleton, PullRefreshView } from '../../components/shared';
-import ReviewDemoBanner from '../../components/ReviewDemoBanner';
 import './index.scss';
 
 export default function Students() {
@@ -45,7 +44,6 @@ export default function Students() {
   return (
     <View className="students-page">
       <NetworkStatus onRetry={handleRefresh} />
-      <ReviewDemoBanner />
 
       <View className="search-bar">
         <Input

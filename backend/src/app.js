@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireCoreReadAccess, requireWriteAccess } = require('./middleware/auth');
+const { unrecognizedStudentGuard } = require('./middleware/unrecognizedStudentGuard');
 const { buildErrorPayload, errorHandler } = require('./middleware/errorHandler');
 const { getInstance } = require('./database');
 const { createMiniappProvisioningReconciler } = require('./services/miniappProvisioningReconciler');
@@ -275,6 +276,10 @@ function createApp(options = {}) {
     origin: process.env.CORS_ORIGIN || '*',
     credentials: true
   }));
+
+  // Resolve an optional identity once at the API boundary so restricted
+  // unrecognized-student sessions cannot fall through to formal business APIs.
+  app.use('/api', optionalAuth, unrecognizedStudentGuard);
 
   const unrecognizedExperienceSandbox = unrecognizedExperienceSandboxForApp(options);
   app.locals.unrecognizedExperienceSandbox = unrecognizedExperienceSandbox;

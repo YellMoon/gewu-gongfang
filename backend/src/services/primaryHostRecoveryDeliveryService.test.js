@@ -49,7 +49,7 @@ db.prepare(`INSERT INTO primary_host_epochs
    challenge_id, db_instance_digest, schema_version, store_id, db_authority_id,
    host_credential_hash, credential_version, row_version, created_at, updated_at, activated_at)
   VALUES ('epoch-1', 1, 'target-device', 'owner-1', 'authorization-target', 'active', 'bootstrap',
-    'challenge-1', ?, 3108, 'store-1', 'authority-1', ?, 1, 1, ?, ?, ?)`)
+    'challenge-1', ?, 3109, 'store-1', 'authority-1', ?, 1, 1, ?, ?, ?)`)
   .run('c'.repeat(64), 'd'.repeat(64), createdAt, createdAt, createdAt);
 db.prepare(`INSERT INTO host_recovery_factors
   (id, epoch_id, user_id, device_id, generation, factor_hash, factor_salt,

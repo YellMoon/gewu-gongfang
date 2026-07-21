@@ -291,7 +291,16 @@ export interface KnowledgeNode {
   updated_at: string;
 }
 
-export type TagType = 'knowledge' | 'model' | 'source';
+export type TagType = string;
+
+export interface TaxonomySystem {
+  id: string;
+  name: string;
+  subject: string;
+  sort_no: number;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface Tag {
   id: string;
@@ -368,6 +377,7 @@ export interface Question {
   knowledge_ids?: string[];        // 关联知识点ID
   model_point?: string;
   model_ids?: string[];            // 关联模型ID
+  taxonomy_ids?: Record<string, string[]>;
   type: string;
   difficulty: number;
   content: string;

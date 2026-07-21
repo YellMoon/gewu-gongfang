@@ -593,12 +593,12 @@ Status: completed — implementation, render verification and applicable release
 - [ ] 完成安全回归、小程序构建上传和审核版本核验；若微信审核或平台权限仍阻断，记录真实状态，不宣称发布完成。
 
 ---
-### Review experience Task 6 local evidence (2026-07-15)
+### Superseded review-experience evidence (2026-07-22)
 
-- The permanent review-entry guide now covers both admin and student roles, sanitized read-only examples, the linked sample student, the isolated in-memory paper/DOCX/PDF sandbox, and server-side denial of real writes. No actual deployment review code is committed; non-placeholder values are explicit non-production test fixtures.
-- Readiness and deployment validate `MINIAPP_REVIEW_EXPERIENCE_CODE` strength without returning or logging its value. The formal Gateway deploy refreshes the validated PM2 environment through `--update-env`, with command redaction applied before output.
-- The injectable public smoke covers both roles: login, canonical permissions, scoped snapshot, question preview, sandbox create/read/cancel, DOCX/PDF signatures, and `403 REVIEW_DEMO_READ_ONLY` on `/api/cloud/tasks` before its domain route.
-- Public-smoke response readers now enforce declared and cumulative byte caps for JSON and artifacts, cancel oversized streams, and validate an explicit admin/student snapshot collection, field, identifier, reference, count, and status allowlist.
+- The former experience-code and synthetic admin/student review flow is removed. It is retained in history only and must not be restored as a production entry point.
+- WeChat review now uses the same verified-phone login as every user. An unknown phone receives a real, restricted unrecognized-student identity with four fixed sample questions, isolated DOCX/PDF export, and a real account-application path.
+- Release readiness and deployment no longer accept or require `MINIAPP_REVIEW_EXPERIENCE_CODE`; the miniapp uses the single Backend base URL. Gateway review-demo routes remain tombstones solely to invalidate old clients and tokens.
+- The review guide documents collected fields, purpose, server-side isolation and 180-day redaction. Final public smoke and release evidence remain pending.
 - Production deployment now requires a strong Gateway-compatible backend JWT secret, rejects unknown SSH host keys using system or an explicitly configured known-hosts file, aborts on remote nonzero exit status, and accepts health responses only when their HTTP and JSON contracts pass.
 - Backend and Gateway deployment health checks require the exact root unified version; Gateway reports `GEWU_APP_VERSION` in deployed environments and uses its package version only as a local fallback.
 - Secret staging failure-injection checks cover flush, remote-file close, SFTP close, and removal errors while preserving the primary failure and attempting cleanup.

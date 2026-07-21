@@ -525,6 +525,16 @@ function parseJsonObject(value) {
   }
 }
 
+function normalizeTaxonomyIds(value) {
+  const parsed = parseJsonObject(value) || {};
+  const result = {};
+  for (const [systemId, nodeIds] of Object.entries(parsed)) {
+    if (!systemId || !Array.isArray(nodeIds)) continue;
+    result[systemId] = [...new Set(nodeIds.map(String).filter(Boolean))];
+  }
+  return result;
+}
+
 function importItemUiStatus(row) {
   if (row.status === 'imported') return 'imported';
   if (row.status === 'duplicate') return 'warning';
@@ -543,6 +553,190 @@ class QuestionBankService {
          VALUES (?, ?, 'active', 'standard', 0, ?, ?)`
       ).run(tenantId, tenantId === 'default' ? '榛樿绉熸埛' : tenantId, ts, ts);
     }
+  }
+
+  ensureTaxonomySeed(db, tenantId = 'default') {
+    this.ensureTenant(db, tenantId);
+    if (db.prepare('SELECT tenant_id FROM taxonomy_state WHERE tenant_id = ?').get(tenantId)) return;
+    const ts = now();
+    const transaction = db.transaction(() => {
+      db.prepare(`INSERT OR IGNORE INTO taxonomy_systems
+        (id, tenant_id, subject, name, sort_order, deleted, created_at, updated_at)
+        VALUES ('knowledge', ?, '\u7269\u7406', '\u77e5\u8bc6\u70b9', 1, 0, ?, ?)`)
+        .run(tenantId, ts, ts);
+      db.prepare(`INSERT OR IGNORE INTO taxonomy_systems
+        (id, tenant_id, subject, name, sort_order, deleted, created_at, updated_at)
+        VALUES ('model', ?, '\u7269\u7406', '\u6a21\u578b', 2, 0, ?, ?)`)
+        .run(tenantId, ts, ts);
+      db.prepare(`INSERT OR IGNORE INTO taxonomy_nodes
+        (id, tenant_id, system_id, parent_id, name, sort_order, deleted, created_at, updated_at)
+        SELECT id, tenant_id, 'knowledge', parent_id, name, sort_order, deleted, created_at, updated_at
+        FROM knowledge_points WHERE tenant_id = ?`).run(tenantId);
+      db.prepare(`INSERT OR IGNORE INTO taxonomy_nodes
+        (id, tenant_id, system_id, parent_id, name, sort_order, deleted, created_at, updated_at)
+        SELECT id, tenant_id, 'model', parent_id, name, sort_order, deleted, created_at, updated_at
+        FROM model_points WHERE tenant_id = ?`).run(tenantId);
+      db.prepare(`INSERT OR IGNORE INTO question_taxonomy_nodes
+        (question_id, system_id, node_id, created_at, updated_at)
+        SELECT rel.question_id, 'knowledge', rel.knowledge_point_id, rel.created_at, rel.updated_at
+        FROM question_knowledge_points rel
+        INNER JOIN questions q ON q.id = rel.question_id
+        WHERE q.tenant_id = ?`).run(tenantId);
+      db.prepare(`INSERT OR IGNORE INTO question_taxonomy_nodes
+        (question_id, system_id, node_id, created_at, updated_at)
+        SELECT rel.question_id, 'model', rel.model_point_id, rel.created_at, rel.updated_at
+        FROM question_model_points rel
+        INNER JOIN questions q ON q.id = rel.question_id
+        WHERE q.tenant_id = ?`).run(tenantId);
+      db.prepare('INSERT INTO taxonomy_state (tenant_id, initialized_at) VALUES (?, ?)').run(tenantId, ts);
+    });
+    transaction();
+  }
+
+  listTaxonomySystems(db, subject, tenantId = 'default') {
+    this.ensureTaxonomySeed(db, tenantId);
+    const params = [tenantId];
+    let where = 'tenant_id = ? AND deleted = 0';
+    if (subject) { where += ' AND subject = ?'; params.push(subject); }
+    return db.prepare(`SELECT * FROM taxonomy_systems WHERE ${where} ORDER BY sort_order, name`).all(...params);
+  }
+
+  createTaxonomySystem(db, payload, tenantId = 'default') {
+    this.ensureTaxonomySeed(db, tenantId);
+    const name = String(payload.name || '').trim();
+    const subject = String(payload.subject || '').trim();
+    if (!name || !subject) throw Object.assign(new Error('taxonomy system name and subject are required'), { statusCode: 400 });
+    const duplicate = db.prepare('SELECT id FROM taxonomy_systems WHERE tenant_id = ? AND subject = ? AND name = ? AND deleted = 0').get(tenantId, subject, name);
+    if (duplicate) throw Object.assign(new Error('taxonomy system name already exists'), { statusCode: 409 });
+    const ts = now();
+    const id = payload.id || `taxonomy-${uuidv4()}`;
+    db.prepare(`INSERT INTO taxonomy_systems (id, tenant_id, subject, name, sort_order, deleted, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 0, ?, ?)`).run(id, tenantId, subject, name, Number(payload.sort_order || 0), ts, ts);
+    return db.prepare('SELECT * FROM taxonomy_systems WHERE id = ? AND tenant_id = ?').get(id, tenantId);
+  }
+
+  updateTaxonomySystem(db, id, payload, tenantId = 'default') {
+    this.ensureTaxonomySeed(db, tenantId);
+    const existing = db.prepare('SELECT * FROM taxonomy_systems WHERE id = ? AND tenant_id = ? AND deleted = 0').get(id, tenantId);
+    if (!existing) return null;
+    const name = payload.name === undefined ? existing.name : String(payload.name).trim();
+    if (!name) throw Object.assign(new Error('taxonomy system name is required'), { statusCode: 400 });
+    const duplicate = db.prepare('SELECT id FROM taxonomy_systems WHERE tenant_id = ? AND subject = ? AND name = ? AND id <> ? AND deleted = 0').get(tenantId, existing.subject, name, id);
+    if (duplicate) throw Object.assign(new Error('taxonomy system name already exists'), { statusCode: 409 });
+    db.prepare('UPDATE taxonomy_systems SET name = ?, sort_order = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+      .run(name, payload.sort_order === undefined ? existing.sort_order : Number(payload.sort_order), now(), id, tenantId);
+    return db.prepare('SELECT * FROM taxonomy_systems WHERE id = ? AND tenant_id = ?').get(id, tenantId);
+  }
+
+  deleteTaxonomySystem(db, id, tenantId = 'default') {
+    this.ensureTaxonomySeed(db, tenantId);
+    const existing = db.prepare('SELECT id FROM taxonomy_systems WHERE id = ? AND tenant_id = ? AND deleted = 0').get(id, tenantId);
+    if (!existing) return false;
+    const ts = now();
+    const transaction = db.transaction(() => {
+      const affected = db.prepare(`SELECT DISTINCT q.id, q.taxonomy_json FROM questions q
+        JOIN question_taxonomy_nodes rel ON rel.question_id = q.id
+        WHERE q.tenant_id = ? AND rel.system_id = ?`).all(tenantId, id);
+      db.prepare('DELETE FROM question_taxonomy_nodes WHERE system_id = ?').run(id);
+      db.prepare('UPDATE taxonomy_nodes SET deleted = 1, updated_at = ? WHERE tenant_id = ? AND system_id = ?').run(ts, tenantId, id);
+      db.prepare('UPDATE taxonomy_systems SET deleted = 1, updated_at = ? WHERE tenant_id = ? AND id = ?').run(ts, tenantId, id);
+      for (const question of affected) {
+        const taxonomy = normalizeTaxonomyIds(question.taxonomy_json);
+        delete taxonomy[id];
+        db.prepare('UPDATE questions SET taxonomy_json = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+          .run(JSON.stringify(taxonomy), ts, question.id, tenantId);
+      }
+      if (id === 'knowledge') {
+        db.prepare('DELETE FROM question_knowledge_points WHERE question_id IN (SELECT id FROM questions WHERE tenant_id = ?)').run(tenantId);
+      }
+      if (id === 'model') {
+        db.prepare('DELETE FROM question_model_points WHERE question_id IN (SELECT id FROM questions WHERE tenant_id = ?)').run(tenantId);
+      }
+    });
+    transaction();
+    return true;
+  }
+
+  listTaxonomyNodes(db, systemId, tenantId = 'default') {
+    this.ensureTaxonomySeed(db, tenantId);
+    return db.prepare(`SELECT * FROM taxonomy_nodes WHERE tenant_id = ? AND system_id = ? AND deleted = 0
+      ORDER BY sort_order, name`).all(tenantId, systemId);
+  }
+
+  createTaxonomyNode(db, systemId, payload, tenantId = 'default') {
+    this.ensureTaxonomySeed(db, tenantId);
+    const system = db.prepare('SELECT id FROM taxonomy_systems WHERE id = ? AND tenant_id = ? AND deleted = 0').get(systemId, tenantId);
+    const name = String(payload.name || '').trim();
+    if (!system) throw Object.assign(new Error('taxonomy system not found'), { statusCode: 404 });
+    if (!name) throw Object.assign(new Error('taxonomy node name is required'), { statusCode: 400 });
+    if (payload.parent_id) {
+      const parent = db.prepare('SELECT id FROM taxonomy_nodes WHERE id = ? AND tenant_id = ? AND system_id = ? AND deleted = 0').get(payload.parent_id, tenantId, systemId);
+      if (!parent) throw Object.assign(new Error('taxonomy parent node not found'), { statusCode: 400 });
+    }
+    const id = payload.id || `taxonomy-node-${uuidv4()}`;
+    const ts = now();
+    db.prepare(`INSERT INTO taxonomy_nodes (id, tenant_id, system_id, parent_id, name, sort_order, deleted, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`).run(id, tenantId, systemId, payload.parent_id || null, name, Number(payload.sort_order || 0), ts, ts);
+    return db.prepare('SELECT * FROM taxonomy_nodes WHERE id = ? AND tenant_id = ?').get(id, tenantId);
+  }
+
+  updateTaxonomyNode(db, systemId, id, payload, tenantId = 'default') {
+    const existing = db.prepare('SELECT * FROM taxonomy_nodes WHERE id = ? AND tenant_id = ? AND system_id = ? AND deleted = 0').get(id, tenantId, systemId);
+    if (!existing) return null;
+    const name = payload.name === undefined ? existing.name : String(payload.name).trim();
+    if (!name) throw Object.assign(new Error('taxonomy node name is required'), { statusCode: 400 });
+    db.prepare('UPDATE taxonomy_nodes SET name = ?, parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND system_id = ?')
+      .run(name, payload.parent_id === undefined ? existing.parent_id : (payload.parent_id || null), payload.sort_order === undefined ? existing.sort_order : Number(payload.sort_order), now(), id, tenantId, systemId);
+    return db.prepare('SELECT * FROM taxonomy_nodes WHERE id = ? AND tenant_id = ?').get(id, tenantId);
+  }
+
+  deleteTaxonomyNode(db, systemId, id, tenantId = 'default') {
+    const root = db.prepare('SELECT id FROM taxonomy_nodes WHERE id = ? AND tenant_id = ? AND system_id = ? AND deleted = 0').get(id, tenantId, systemId);
+    if (!root) return false;
+    const rows = db.prepare(`WITH RECURSIVE descendants(id) AS (
+      SELECT id FROM taxonomy_nodes WHERE id = ? AND tenant_id = ? AND system_id = ? AND deleted = 0
+      UNION ALL SELECT node.id FROM taxonomy_nodes node JOIN descendants parent ON node.parent_id = parent.id
+      WHERE node.tenant_id = ? AND node.system_id = ? AND node.deleted = 0)
+      SELECT id FROM descendants`).all(id, tenantId, systemId, tenantId, systemId);
+    const ids = rows.map(row => row.id);
+    const placeholders = ids.map(() => '?').join(',');
+    const ts = now();
+    const transaction = db.transaction(() => {
+      db.prepare(`DELETE FROM question_taxonomy_nodes WHERE system_id = ? AND node_id IN (${placeholders})`).run(systemId, ...ids);
+      db.prepare(`UPDATE taxonomy_nodes SET deleted = 1, updated_at = ? WHERE tenant_id = ? AND id IN (${placeholders})`).run(ts, tenantId, ...ids);
+      const questions = db.prepare('SELECT id, taxonomy_json FROM questions WHERE tenant_id = ? AND deleted = 0').all(tenantId);
+      for (const question of questions) {
+        const taxonomy = normalizeTaxonomyIds(question.taxonomy_json);
+        if (!taxonomy[systemId]?.some(nodeId => ids.includes(nodeId))) continue;
+        taxonomy[systemId] = taxonomy[systemId].filter(nodeId => !ids.includes(nodeId));
+        db.prepare('UPDATE questions SET taxonomy_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(taxonomy), ts, question.id);
+      }
+    });
+    transaction();
+    return true;
+  }
+
+  setQuestionTaxonomyNodes(db, questionId, systemId, nodeIds, tenantId = 'default') {
+    const question = db.prepare('SELECT id, taxonomy_json FROM questions WHERE id = ? AND tenant_id = ? AND deleted = 0').get(questionId, tenantId);
+    if (!question) return null;
+    const uniqueIds = [...new Set((nodeIds || []).map(String).filter(Boolean))];
+    for (const nodeId of uniqueIds) {
+      const node = db.prepare('SELECT id FROM taxonomy_nodes WHERE id = ? AND tenant_id = ? AND system_id = ? AND deleted = 0').get(nodeId, tenantId, systemId);
+      if (!node) throw Object.assign(new Error('taxonomy node not found'), { statusCode: 400 });
+    }
+    const ts = now();
+    const taxonomy = normalizeTaxonomyIds(question.taxonomy_json);
+    taxonomy[systemId] = uniqueIds;
+    const transaction = db.transaction(() => {
+      db.prepare('DELETE FROM question_taxonomy_nodes WHERE question_id = ? AND system_id = ?').run(questionId, systemId);
+      const insert = db.prepare(`INSERT INTO question_taxonomy_nodes (question_id, system_id, node_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)`);
+      for (const nodeId of uniqueIds) insert.run(questionId, systemId, nodeId, ts, ts);
+      db.prepare('UPDATE questions SET taxonomy_json = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run(JSON.stringify(taxonomy), ts, questionId, tenantId);
+    });
+    transaction();
+    return this.getQuestion(db, questionId, tenantId);
   }
 
   resolveKnowledgePointIds(db, payload = {}, tenantId = 'default') {
@@ -606,6 +800,34 @@ class QuestionBankService {
     const modelPointIds = payload.allow_tag_name_create === false
       ? normalizeModelPointIds(payload)
       : this.resolveModelPointIds(db, payload, tenantId);
+    this.ensureTaxonomySeed(db, tenantId);
+    const taxonomyIds = normalizeTaxonomyIds(payload.taxonomy_ids);
+    if (taxonomyIds.knowledge === undefined) taxonomyIds.knowledge = knowledgePointIds;
+    if (taxonomyIds.model === undefined) taxonomyIds.model = modelPointIds;
+    for (const [systemId, nodeIds] of Object.entries(taxonomyIds)) {
+      const system = db.prepare('SELECT id FROM taxonomy_systems WHERE id = ? AND tenant_id = ? AND deleted = 0').get(systemId, tenantId);
+      if (!system) throw Object.assign(new Error('taxonomy system not found'), { statusCode: 400 });
+      for (const nodeId of nodeIds) {
+        let node = db.prepare('SELECT id FROM taxonomy_nodes WHERE id = ? AND tenant_id = ? AND system_id = ? AND deleted = 0').get(nodeId, tenantId, systemId);
+        if (!node && systemId === 'knowledge') {
+          const legacy = db.prepare('SELECT * FROM knowledge_points WHERE id = ? AND tenant_id = ? AND deleted = 0').get(nodeId, tenantId);
+          if (legacy) {
+            db.prepare(`INSERT OR IGNORE INTO taxonomy_nodes (id, tenant_id, system_id, parent_id, name, sort_order, deleted, created_at, updated_at)
+              VALUES (?, ?, 'knowledge', ?, ?, ?, 0, ?, ?)`).run(legacy.id, tenantId, legacy.parent_id || null, legacy.name, legacy.sort_order || 0, legacy.created_at || ts, legacy.updated_at || ts);
+            node = legacy;
+          }
+        }
+        if (!node && systemId === 'model') {
+          const legacy = db.prepare('SELECT * FROM model_points WHERE id = ? AND tenant_id = ? AND deleted = 0').get(nodeId, tenantId);
+          if (legacy) {
+            db.prepare(`INSERT OR IGNORE INTO taxonomy_nodes (id, tenant_id, system_id, parent_id, name, sort_order, deleted, created_at, updated_at)
+              VALUES (?, ?, 'model', ?, ?, ?, 0, ?, ?)`).run(legacy.id, tenantId, legacy.parent_id || null, legacy.name, legacy.sort_order || 0, legacy.created_at || ts, legacy.updated_at || ts);
+            node = legacy;
+          }
+        }
+        if (!node) throw Object.assign(new Error('taxonomy node not found'), { statusCode: 400 });
+      }
+    }
     const richContentJson = richContent ? JSON.stringify(richContent) : null;
     const searchText = richProjection.searchText;
     const contentHash = payload.content_hash || hashText([stem, answer, explanation, JSON.stringify(options), richContentJson || ''].join('|'));
@@ -617,8 +839,8 @@ class QuestionBankService {
     const transaction = db.transaction(() => {
       db.prepare(
         `INSERT INTO questions
-         (id, tenant_id, subject, subject_id, chapter_id, type, difficulty, source, year, grade, semester, exam_type, region, school, edit_status, status, has_image, has_formula, created_by, storage_state, committed_at, committed_by_device_id, source_device_id, owner_user_id, deleted, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+         (id, tenant_id, subject, subject_id, chapter_id, type, difficulty, source, year, grade, semester, exam_type, region, school, edit_status, status, has_image, has_formula, created_by, storage_state, committed_at, committed_by_device_id, source_device_id, owner_user_id, taxonomy_json, deleted, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
       ).run(
         questionId,
         tenantId,
@@ -644,6 +866,7 @@ class QuestionBankService {
         null,
         context.deviceId || null,
         context.userId || null,
+        JSON.stringify(taxonomyIds),
         ts,
         ts
       );
@@ -666,6 +889,12 @@ class QuestionBankService {
           `INSERT OR REPLACE INTO question_model_points (question_id, model_point_id, weight, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?)`
         ).run(questionId, modelPointId, 1, ts, ts);
+      }
+
+      const insertTaxonomyRel = db.prepare(`INSERT OR REPLACE INTO question_taxonomy_nodes
+        (question_id, system_id, node_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`);
+      for (const [systemId, nodeIds] of Object.entries(taxonomyIds)) {
+        for (const nodeId of nodeIds) insertTaxonomyRel.run(questionId, systemId, nodeId, ts, ts);
       }
 
       for (const asset of assets) {
@@ -719,6 +948,12 @@ class QuestionBankService {
       knowledge_points: knowledgeNames,
       model_point_ids: modelIds,
       model_ids: modelIds,
+      taxonomy_ids: (() => {
+        const taxonomy = normalizeTaxonomyIds(row.taxonomy_json);
+        if (taxonomy.knowledge === undefined) taxonomy.knowledge = knowledgeIds;
+        if (taxonomy.model === undefined) taxonomy.model = modelIds;
+        return taxonomy;
+      })(),
       status: normalizeQuestionStatus(row.status),
       has_image: boolValue(row.has_image, false),
       has_formula: boolValue(row.has_formula, false),
@@ -780,6 +1015,7 @@ class QuestionBankService {
         db.prepare('UPDATE question_assets SET deleted = 1, updated_at = ? WHERE question_id = ? AND deleted = 0').run(ts, row.id);
         db.prepare('DELETE FROM question_knowledge_points WHERE question_id = ?').run(row.id);
         db.prepare('DELETE FROM question_model_points WHERE question_id = ?').run(row.id);
+        db.prepare('DELETE FROM question_taxonomy_nodes WHERE question_id = ?').run(row.id);
       }
     });
     transaction();
@@ -816,6 +1052,25 @@ class QuestionBankService {
     if (filters.knowledge_point_id) {
       where.push('EXISTS (SELECT 1 FROM question_knowledge_points x WHERE x.question_id = q.id AND x.knowledge_point_id = ?)');
       params.push(filters.knowledge_point_id);
+    }
+    const taxonomyFilters = parseJsonObject(filters.taxonomy_filters || filters.taxonomyFilters) || {};
+    for (const [systemId, filter] of Object.entries(taxonomyFilters)) {
+      const includeGroups = Array.isArray(filter?.includeGroups) ? filter.includeGroups : [];
+      for (const group of includeGroups) {
+        const ids = [...new Set((Array.isArray(group) ? group : []).map(String).filter(Boolean))];
+        if (ids.length === 0) continue;
+        where.push(`EXISTS (SELECT 1 FROM question_taxonomy_nodes tax_include
+          WHERE tax_include.question_id = q.id AND tax_include.system_id = ?
+          AND tax_include.node_id IN (${ids.map(() => '?').join(',')}))`);
+        params.push(systemId, ...ids);
+      }
+      const excluded = [...new Set((Array.isArray(filter?.excludeIds) ? filter.excludeIds : []).map(String).filter(Boolean))];
+      if (excluded.length > 0) {
+        where.push(`NOT EXISTS (SELECT 1 FROM question_taxonomy_nodes tax_exclude
+          WHERE tax_exclude.question_id = q.id AND tax_exclude.system_id = ?
+          AND tax_exclude.node_id IN (${excluded.map(() => '?').join(',')}))`);
+        params.push(systemId, ...excluded);
+      }
     }
     const searchQuery = filters.q || filters.search;
     if (searchQuery) {
@@ -914,6 +1169,42 @@ class QuestionBankService {
         }
       }
 
+      const taxonomy = payload.taxonomy_ids === undefined
+        ? normalizeTaxonomyIds(existing.taxonomy_ids || existing.taxonomy_json)
+        : normalizeTaxonomyIds(payload.taxonomy_ids);
+      const knowledgeChanged = payload.knowledge_point_ids !== undefined || payload.knowledge_ids !== undefined || payload.knowledge_points !== undefined || payload.knowledge_point_names !== undefined || payload.knowledge_point !== undefined;
+      const modelChanged = payload.model_point_ids !== undefined || payload.model_ids !== undefined || payload.model_points !== undefined || payload.model_point_names !== undefined || payload.model_point !== undefined;
+      if (knowledgeChanged) {
+        taxonomy.knowledge = db.prepare('SELECT knowledge_point_id AS id FROM question_knowledge_points WHERE question_id = ?').all(id).map(row => row.id);
+      }
+      if (modelChanged) {
+        taxonomy.model = db.prepare('SELECT model_point_id AS id FROM question_model_points WHERE question_id = ?').all(id).map(row => row.id);
+      }
+      if (payload.taxonomy_ids !== undefined) {
+        db.prepare('DELETE FROM question_taxonomy_nodes WHERE question_id = ?').run(id);
+        const insertTaxonomyRel = db.prepare(`INSERT INTO question_taxonomy_nodes
+          (question_id, system_id, node_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`);
+        for (const [systemId, nodeIds] of Object.entries(taxonomy)) {
+          const system = db.prepare('SELECT id FROM taxonomy_systems WHERE id = ? AND tenant_id = ? AND deleted = 0').get(systemId, tenantId);
+          if (!system) throw Object.assign(new Error('taxonomy system not found'), { statusCode: 400 });
+          for (const nodeId of nodeIds) {
+            const node = db.prepare('SELECT id FROM taxonomy_nodes WHERE id = ? AND tenant_id = ? AND system_id = ? AND deleted = 0').get(nodeId, tenantId, systemId);
+            if (!node) throw Object.assign(new Error('taxonomy node not found'), { statusCode: 400 });
+            insertTaxonomyRel.run(id, systemId, nodeId, ts, ts);
+          }
+        }
+      } else {
+        for (const systemId of ['knowledge', 'model']) {
+          if ((systemId === 'knowledge' && !knowledgeChanged) || (systemId === 'model' && !modelChanged)) continue;
+          db.prepare('DELETE FROM question_taxonomy_nodes WHERE question_id = ? AND system_id = ?').run(id, systemId);
+          const insertTaxonomyRel = db.prepare(`INSERT OR REPLACE INTO question_taxonomy_nodes
+            (question_id, system_id, node_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`);
+          for (const nodeId of taxonomy[systemId] || []) insertTaxonomyRel.run(id, systemId, nodeId, ts, ts);
+        }
+      }
+      db.prepare('UPDATE questions SET taxonomy_json = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run(JSON.stringify(taxonomy), ts, id, tenantId);
+
       if (replacingAssets) {
         db.prepare('UPDATE question_assets SET deleted = 1, updated_at = ? WHERE question_id = ? AND deleted = 0').run(ts, id);
         for (const asset of nextAssets) {
@@ -980,6 +1271,7 @@ class QuestionBankService {
       for (const questionId of questionIds) {
         db.prepare('DELETE FROM question_knowledge_points WHERE question_id = ?').run(questionId);
         db.prepare('DELETE FROM question_model_points WHERE question_id = ?').run(questionId);
+        db.prepare('DELETE FROM question_taxonomy_nodes WHERE question_id = ?').run(questionId);
         db.prepare('DELETE FROM question_assets WHERE question_id = ?').run(questionId);
         db.prepare('DELETE FROM question_contents WHERE question_id = ?').run(questionId);
         db.prepare("DELETE FROM vector_embeddings WHERE tenant_id = ? AND entity_type = 'question' AND entity_id = ?").run(tenantId, questionId);

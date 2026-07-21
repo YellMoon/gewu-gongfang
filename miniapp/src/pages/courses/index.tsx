@@ -9,7 +9,6 @@ import { setCachedList } from '../../utils/storage';
 import { courseApi } from '../../utils/api';
 import { getLocalData } from '../../utils/sync';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
-import ReviewDemoBanner from '../../components/ReviewDemoBanner';
 import './index.scss';
 
 const TYPE_LABELS: Record<number, string> = { 1: '一对一', 2: '一对二', 3: '小组课', 4: '大班课' };
@@ -47,7 +46,6 @@ export default function Courses() {
   return (
     <View className="courses-page">
       <NetworkStatus onRetry={handleRefresh} />
-      <ReviewDemoBanner />
 
       {/* 筛选栏 */}
       <ScrollView scrollX className="filter-bar">

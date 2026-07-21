@@ -177,7 +177,7 @@ const hostService = createPrimaryHostIdentityService({
   localEvidenceProvider: () => ({
     runtimeNodeRole: 'primary-host',
     dbInstanceDigest: '1'.repeat(64),
-    schemaVersion: 3108,
+    schemaVersion: 3109,
     storeId: 'http-store-1',
     dbAuthorityId: 'http-db-authority-1',
     quickCheck: 'ok',
@@ -528,7 +528,7 @@ app.use('/api/cloud', cloudRelayRouter);
     const backupDb = new (require('better-sqlite3'))(backupPath, { readonly: true, fileMustExist: true });
     try {
       assert.strictEqual(backupDb.pragma('quick_check', { simple: true }), 'ok');
-      assert.strictEqual(backupDb.pragma('user_version', { simple: true }), 3108);
+      assert.strictEqual(backupDb.pragma('user_version', { simple: true }), 3109);
     } finally {
       backupDb.close();
     }
