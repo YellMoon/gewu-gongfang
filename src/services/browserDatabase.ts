@@ -81,6 +81,8 @@ const SYNC_TABLES: SyncTable[] = [
 const QUESTION_VERSION_LIMIT = 20;
 const BUSINESS_DATA_SAFETY_BACKUP_KEY = 'business_data_safety_backups_v1';
 const BUSINESS_DATA_SAFETY_BACKUP_LIMIT = 20;
+const TAXONOMY_DELETION_BACKUP_KEY = 'taxonomy_deletion_backups_v1';
+const TAXONOMY_DELETION_BACKUP_LIMIT = 50;
 
 function emptyDatabase(): Database {
   return {
@@ -1890,42 +1892,136 @@ class BrowserDatabaseService {
     return this.data.taxonomySystems[index];
   }
 
-  deleteTaxonomySystem(id: string): boolean {
+  private readTaxonomyDeletionBackups(): any[] {
+    try {
+      const raw = localStorage.getItem(this.identityStorageKey(TAXONOMY_DELETION_BACKUP_KEY));
+      const parsed = JSON.parse(raw || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private persistTaxonomyDeletionBackup(record: any): void {
+    const key = this.identityStorageKey(TAXONOMY_DELETION_BACKUP_KEY);
+    const backups = [record, ...this.readTaxonomyDeletionBackups()].slice(0, TAXONOMY_DELETION_BACKUP_LIMIT);
+    localStorage.setItem(key, JSON.stringify(backups));
+  }
+
+  private requireTaxonomyDeletionConfirmation(options: any, affectedQuestionCount: number): void {
+    if (options?.confirmed !== true || !Number.isInteger(Number(options?.expectedAffectedQuestionCount))) {
+      throw new Error('TAXONOMY_DELETE_CONFIRMATION_REQUIRED');
+    }
+    if (Number(options.expectedAffectedQuestionCount) !== affectedQuestionCount) {
+      throw new Error('TAXONOMY_DELETE_IMPACT_CHANGED');
+    }
+  }
+
+  getTaxonomySystemDeletionImpact(id: string): any | null {
     const system = this.data.taxonomySystems.find(item => item.id === id);
-    if (!system) return false;
+    if (!system) return null;
+    const nodeIds = new Set(this.data.tags.filter(tag => tag.tag_type === id).map(tag => tag.id));
+    const affectedQuestionIds = new Set(this.data.questionTagRels
+      .filter(rel => rel.tag_type === id && nodeIds.has(rel.tag_id))
+      .map(rel => rel.question_id));
+    for (const question of this.data.questions) {
+      if ((question.taxonomy_ids?.[id] || []).length > 0) affectedQuestionIds.add(question.id);
+    }
+    return {
+      entity_type: 'system', system_id: id, system_name: system.name,
+      affected_question_count: affectedQuestionIds.size, deleted_node_count: nodeIds.size,
+    };
+  }
+
+  getTaxonomyNodeDeletionImpact(systemId: string, id: string): any | null {
+    const nodes = this.collectTagDescendantIds(id, systemId);
+    if (nodes.length === 0) return null;
+    const nodeIds = new Set(nodes.map(node => node.id));
+    const affectedQuestionIds = new Set(this.data.questionTagRels
+      .filter(rel => rel.tag_type === systemId && nodeIds.has(rel.tag_id))
+      .map(rel => rel.question_id));
+    for (const question of this.data.questions) {
+      if ((question.taxonomy_ids?.[systemId] || []).some(nodeId => nodeIds.has(nodeId))) affectedQuestionIds.add(question.id);
+    }
+    return {
+      entity_type: 'node', system_id: systemId, node_id: id,
+      affected_question_count: affectedQuestionIds.size, deleted_node_count: nodeIds.size,
+    };
+  }
+
+  deleteTaxonomySystem(id: string, options: any = {}): any | null {
+    const system = this.data.taxonomySystems.find(item => item.id === id);
+    if (!system) return null;
+    const impact = this.getTaxonomySystemDeletionImpact(id)!;
+    this.requireTaxonomyDeletionConfirmation(options, impact.affected_question_count);
+    const nodes = this.data.tags.filter(tag => tag.tag_type === id);
+    const annotations = this.data.questions.map(question => ({
+      question_id: question.id,
+      node_ids: [...new Set([
+        ...(question.taxonomy_ids?.[id] || []),
+        ...this.data.questionTagRels.filter(rel => rel.question_id === question.id && rel.tag_type === id).map(rel => rel.tag_id),
+      ])],
+    })).filter(annotation => annotation.node_ids.length > 0);
+    const backupId = `taxonomy-deletion-${this.generateId()}`;
+    const backup = {
+      id: backupId, entity_type: 'system', system_id: id, node_id: null,
+      affected_question_count: impact.affected_question_count, deleted_node_count: nodes.length,
+      created_at: new Date().toISOString(), restored_at: null,
+      audit_events: [{ action: 'taxonomy_cascade_delete', status: 'success', at: new Date().toISOString() }],
+      snapshot: { system, nodes, annotations },
+    };
+    this.persistTaxonomyDeletionBackup(backup);
+    const before = JSON.parse(JSON.stringify(this.data)) as Database;
     const affectedQuestionIds = new Set(
       this.data.questionTagRels.filter(rel => rel.tag_type === id).map(rel => rel.question_id)
     );
-    this.data.taxonomySystems = this.data.taxonomySystems.filter(item => item.id !== id);
-    this.data.tags = this.data.tags.filter(tag => tag.tag_type !== id);
-    this.data.questionTagRels = this.data.questionTagRels.filter(rel => rel.tag_type !== id);
-    if (id === 'knowledge') this.data.knowledgeTree = [];
-    if (id === 'model') this.data.modelTree = [];
-    for (const question of this.data.questions) {
-      if (question.taxonomy_ids) delete question.taxonomy_ids[id];
-      if (id === 'knowledge') {
-        question.knowledge_ids = [];
-        question.knowledge_point_ids = [];
-        question.knowledge_point = '';
+    try {
+      this.data.taxonomySystems = this.data.taxonomySystems.filter(item => item.id !== id);
+      this.data.tags = this.data.tags.filter(tag => tag.tag_type !== id);
+      this.data.questionTagRels = this.data.questionTagRels.filter(rel => rel.tag_type !== id);
+      if (id === 'knowledge') this.data.knowledgeTree = [];
+      if (id === 'model') this.data.modelTree = [];
+      for (const question of this.data.questions) {
+        if (question.taxonomy_ids) delete question.taxonomy_ids[id];
+        if (id === 'knowledge') {
+          question.knowledge_ids = [];
+          question.knowledge_point_ids = [];
+          question.knowledge_point = '';
+        }
+        if (id === 'model') {
+          question.model_ids = [];
+          question.model_point_ids = [];
+          question.model_point = '';
+        }
+        if (affectedQuestionIds.has(question.id)) {
+          question.updated_at = new Date().toISOString();
+        }
       }
-      if (id === 'model') {
-        question.model_ids = [];
-        question.model_point_ids = [];
-        question.model_point = '';
-      }
-      if (affectedQuestionIds.has(question.id)) {
-        question.updated_at = new Date().toISOString();
-        this.syncQuestionLocalRecord(question);
-        this.recordSyncChange('questions', 'update', question.id, question);
-      }
+      this.syncTaxonomySyncRowsFromCanonical();
+      this.saveData();
+    } catch (error) {
+      this.data = before;
+      this.saveData();
+      throw error;
     }
-    this.syncTaxonomySyncRowsFromCanonical();
-    this.saveData();
+    for (const question of this.data.questions.filter(item => affectedQuestionIds.has(item.id))) {
+      this.syncQuestionLocalRecord(question);
+      this.recordSyncChange('questions', 'update', question.id, question);
+    }
     this.recordSyncChange('taxonomy_systems', 'delete', id, {
       subject: system.subject, name: system.name, sort_order: system.sort_no,
       deleted: 1, created_at: system.created_at, updated_at: new Date().toISOString(),
+      _taxonomy_delete_confirmation: {
+        confirmed: true,
+        expected_affected_question_count: impact.affected_question_count,
+        backup_id: backupId,
+      },
     });
-    return true;
+    for (const node of nodes) this.recordSyncChange('taxonomy_nodes', 'delete', node.id, {
+      system_id: id, parent_id: node.parent_id || null, name: node.tag_name,
+      sort_order: node.sort_no, deleted: 1, created_at: node.created_at, updated_at: new Date().toISOString(),
+    }, node.updated_at);
+    return { deleted: true, backup_id: backupId, ...impact };
   }
 
   getTaxonomyNodes(systemId: string): KnowledgeNode[] {
@@ -1977,20 +2073,143 @@ class BrowserDatabaseService {
     return Boolean(updated);
   }
 
-  deleteTaxonomyNode(systemId: string, id: string): boolean {
+  deleteTaxonomyNode(systemId: string, id: string, options: any = {}): any | null {
     const rows = this.collectTagDescendantIds(id, systemId)
       .map(item => this.data.tags.find(tag => tag.id === item.id && tag.tag_type === item.tag_type))
       .filter((tag): tag is Tag => Boolean(tag));
-    const deleted = this.deleteTag(id, systemId);
-    if (!deleted) return false;
-    this.syncTaxonomySyncRowsFromCanonical();
+    if (rows.length === 0) return null;
+    const impact = this.getTaxonomyNodeDeletionImpact(systemId, id)!;
+    this.requireTaxonomyDeletionConfirmation(options, impact.affected_question_count);
+    const nodeIds = new Set(rows.map(row => row.id));
+    const annotations = this.data.questions.map(question => ({
+      question_id: question.id,
+      node_ids: [...new Set([
+        ...(question.taxonomy_ids?.[systemId] || []).filter(nodeId => nodeIds.has(nodeId)),
+        ...this.data.questionTagRels.filter(rel => rel.question_id === question.id && rel.tag_type === systemId && nodeIds.has(rel.tag_id)).map(rel => rel.tag_id),
+      ])],
+    })).filter(annotation => annotation.node_ids.length > 0);
+    const backupId = `taxonomy-deletion-${this.generateId()}`;
+    const system = this.data.taxonomySystems.find(item => item.id === systemId);
+    this.persistTaxonomyDeletionBackup({
+      id: backupId, entity_type: 'node', system_id: systemId, node_id: id,
+      affected_question_count: impact.affected_question_count, deleted_node_count: rows.length,
+      created_at: new Date().toISOString(), restored_at: null,
+      audit_events: [{ action: 'taxonomy_cascade_delete', status: 'success', at: new Date().toISOString() }],
+      snapshot: { system, nodes: rows, annotations },
+    });
+    const before = JSON.parse(JSON.stringify(this.data)) as Database;
+    const affectedQuestionIds = new Set(annotations.map(item => item.question_id));
+    try {
+      this.data.tags = this.data.tags.filter(tag => !(tag.tag_type === systemId && nodeIds.has(tag.id)));
+      this.data.questionTagRels = this.data.questionTagRels.filter(rel => !(rel.tag_type === systemId && nodeIds.has(rel.tag_id)));
+      this.syncLegacyTreesFromTags();
+      this.syncAllQuestionLegacyTagFields();
+      for (const question of this.data.questions.filter(item => affectedQuestionIds.has(item.id))) question.updated_at = new Date().toISOString();
+      this.syncTaxonomySyncRowsFromCanonical();
+      this.saveData();
+    } catch (error) {
+      this.data = before;
+      this.saveData();
+      throw error;
+    }
+    for (const question of this.data.questions.filter(item => affectedQuestionIds.has(item.id))) {
+      this.syncQuestionLocalRecord(question);
+      this.recordSyncChange('questions', 'update', question.id, question);
+    }
     for (const tag of rows) {
       this.recordSyncChange('taxonomy_nodes', 'delete', tag.id, {
         system_id: systemId, parent_id: tag.parent_id || null, name: tag.tag_name,
         sort_order: tag.sort_no, deleted: 1, created_at: tag.created_at, updated_at: new Date().toISOString(),
+        ...(tag.id === id ? {
+          _taxonomy_delete_confirmation: {
+            confirmed: true,
+            expected_affected_question_count: impact.affected_question_count,
+            cascade_node_ids: rows.map(row => row.id),
+            backup_id: backupId,
+          },
+        } : {}),
       }, tag.updated_at);
     }
-    return true;
+    return { deleted: true, backup_id: backupId, ...impact };
+  }
+
+  listTaxonomyDeletionBackups(): any[] {
+    return this.readTaxonomyDeletionBackups().map(({ snapshot: _snapshot, ...backup }) => backup);
+  }
+
+  restoreTaxonomyDeletion(backupId: string): any | null {
+    const backups = this.readTaxonomyDeletionBackups();
+    const index = backups.findIndex(backup => backup.id === backupId);
+    if (index === -1) return null;
+    const backup = backups[index];
+    if (backup.restored_at) throw new Error('TAXONOMY_DELETION_ALREADY_RESTORED');
+    const snapshot = backup.snapshot;
+    if (!snapshot?.system) throw new Error('TAXONOMY_DELETION_BACKUP_INVALID');
+    if (backup.entity_type === 'node' && !this.data.taxonomySystems.some(item => item.id === snapshot.system.id)) {
+      throw new Error('TAXONOMY_RESTORE_REQUIRES_ACTIVE_SYSTEM');
+    }
+    const before = JSON.parse(JSON.stringify(this.data)) as Database;
+    try {
+      if (backup.entity_type === 'system') {
+        this.data.taxonomySystems = [
+          ...this.data.taxonomySystems.filter(item => item.id !== snapshot.system.id),
+          snapshot.system,
+        ];
+      }
+      const restoreKeys = new Set((snapshot.nodes || []).map((node: Tag) => `${node.tag_type}__${node.id}`));
+      this.data.tags = [
+        ...this.data.tags.filter(tag => !restoreKeys.has(`${tag.tag_type}__${tag.id}`)),
+        ...(snapshot.nodes || []),
+      ];
+      for (const annotation of snapshot.annotations || []) {
+        const question = this.data.questions.find(item => item.id === annotation.question_id);
+        if (!question) continue;
+        question.taxonomy_ids = question.taxonomy_ids || {};
+        question.taxonomy_ids[backup.system_id] = [...new Set([
+          ...(question.taxonomy_ids[backup.system_id] || []), ...(annotation.node_ids || []),
+        ])];
+        for (const nodeId of annotation.node_ids || []) {
+          if (!this.data.questionTagRels.some(rel => rel.question_id === question.id && rel.tag_type === backup.system_id && rel.tag_id === nodeId)) {
+            this.data.questionTagRels.push({
+              id: this.generateId(), question_id: question.id, tag_id: nodeId,
+              tag_type: backup.system_id, created_at: new Date().toISOString(),
+            });
+          }
+        }
+        question.updated_at = new Date().toISOString();
+      }
+      this.syncLegacyTreesFromTags();
+      this.syncAllQuestionLegacyTagFields();
+      this.syncTaxonomySyncRowsFromCanonical();
+      this.saveData();
+    } catch (error) {
+      this.data = before;
+      this.saveData();
+      throw error;
+    }
+    backups[index] = {
+      ...backup, restored_at: new Date().toISOString(),
+      audit_events: [
+        ...(backup.audit_events || []),
+        { action: 'taxonomy_cascade_restore', status: 'success', at: new Date().toISOString() },
+      ],
+    };
+    localStorage.setItem(this.identityStorageKey(TAXONOMY_DELETION_BACKUP_KEY), JSON.stringify(backups));
+    if (backup.entity_type === 'system') {
+      this.recordSyncChange('taxonomy_systems', 'create', snapshot.system.id, {
+        subject: snapshot.system.subject, name: snapshot.system.name, sort_order: snapshot.system.sort_no,
+        deleted: 0, created_at: snapshot.system.created_at, updated_at: new Date().toISOString(),
+      });
+    }
+    for (const node of snapshot.nodes || []) this.recordSyncChange('taxonomy_nodes', 'create', node.id, {
+      system_id: node.tag_type, parent_id: node.parent_id || null, name: node.tag_name,
+      sort_order: node.sort_no, deleted: 0, created_at: node.created_at, updated_at: new Date().toISOString(),
+    });
+    for (const annotation of snapshot.annotations || []) {
+      const question = this.data.questions.find(item => item.id === annotation.question_id);
+      if (question) this.recordSyncChange('questions', 'update', question.id, question);
+    }
+    return { restored: true, backup_id: backupId, affected_question_count: backup.affected_question_count };
   }
 
   getQuestionTaxonomyNodes(questionId: string, systemId: string): KnowledgeNode[] | null {

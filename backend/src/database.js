@@ -22,7 +22,7 @@ const {
   scopeForUser,
 } = require('./services/authorizationPolicy');
 
-const SCHEMA_VERSION = 3109;
+const SCHEMA_VERSION = 3110;
 const MINIAPP_ADMIN_SEED_USERS = [
   { id: 'miniapp-admin-13732250653', phone: '13732250653', name: 'Miniapp Admin 0653' },
   { id: 'miniapp-admin-18257136756', phone: '18257136756', name: 'Miniapp Admin 6756' },
@@ -1845,6 +1845,44 @@ class DatabaseService {
             continue;
           }
 
+          let taxonomyDeletionContext = null;
+          if (change.action === 'delete' && existing && existing.deleted !== 1
+            && (table === 'taxonomy_systems' || table === 'taxonomy_nodes')) {
+            const confirmation = record._taxonomy_delete_confirmation;
+            if (!confirmation?.confirmed || !Number.isInteger(Number(confirmation.expected_affected_question_count))) {
+              const error = new Error('TAXONOMY_DELETE_CONFIRMATION_REQUIRED');
+              error.code = 'TAXONOMY_DELETE_CONFIRMATION_REQUIRED';
+              throw error;
+            }
+            const taxonomyService = require('./services/questionBankService');
+            const systemId = table === 'taxonomy_systems' ? recordId : existing.system_id;
+            const nodeIds = table === 'taxonomy_systems'
+              ? this.db.prepare('SELECT id FROM taxonomy_nodes WHERE tenant_id = ? AND system_id = ? AND deleted = 0').all(change.tenantId, systemId).map(row => row.id)
+              : [...new Set((confirmation.cascade_node_ids || [recordId]).map(String))];
+            const nodes = nodeIds.length === 0 ? [] : this.db.prepare(
+              `SELECT * FROM taxonomy_nodes WHERE tenant_id = ? AND system_id = ? AND id IN (${nodeIds.map(() => '?').join(',')}) AND deleted = 0`
+            ).all(change.tenantId, systemId, ...nodeIds);
+            const annotations = taxonomyService._taxonomyQuestionAnnotations(
+              this.db, change.tenantId, systemId, table === 'taxonomy_systems' ? null : new Set(nodeIds)
+            );
+            if (annotations.length !== Number(confirmation.expected_affected_question_count)) {
+              const error = new Error('TAXONOMY_DELETE_IMPACT_CHANGED');
+              error.code = 'TAXONOMY_DELETE_IMPACT_CHANGED';
+              throw error;
+            }
+            const system = table === 'taxonomy_systems'
+              ? existing
+              : this.db.prepare('SELECT * FROM taxonomy_systems WHERE id = ? AND tenant_id = ?').get(systemId, change.tenantId);
+            const backupId = taxonomyService._insertTaxonomyDeletionBackup(this.db, { system, nodes, annotations }, {
+              tenantId: change.tenantId,
+              entityType: table === 'taxonomy_systems' ? 'system' : 'node',
+              systemId,
+              nodeId: table === 'taxonomy_nodes' ? recordId : null,
+              actor: options.authz?.userId || options.authz?.deviceId || deviceId,
+            });
+            taxonomyDeletionContext = { systemId, nodeIds, annotations, backupId };
+          }
+
           const incoming = { ...record, updated_at: now };
           if (table === 'questions' && record.taxonomy_ids !== undefined) {
             incoming.taxonomy_json = JSON.stringify(record.taxonomy_ids || {});
@@ -1898,6 +1936,31 @@ class DatabaseService {
               if (!Object.prototype.hasOwnProperty.call(taxonomy, recordId)) continue;
               delete taxonomy[recordId];
               clearDeletedSystem.run(JSON.stringify(taxonomy), now, question.id, change.tenantId);
+            }
+          }
+          if (table === 'taxonomy_nodes' && change.action === 'delete' && taxonomyDeletionContext) {
+            const nodeIds = taxonomyDeletionContext.nodeIds;
+            if (nodeIds.length > 0) {
+              const placeholders = nodeIds.map(() => '?').join(',');
+              this.db.prepare(`UPDATE taxonomy_nodes SET deleted = 1, updated_at = ?
+                WHERE tenant_id = ? AND system_id = ? AND id IN (${placeholders})`)
+                .run(now, change.tenantId, taxonomyDeletionContext.systemId, ...nodeIds);
+              this.db.prepare(`DELETE FROM question_taxonomy_nodes WHERE system_id = ? AND node_id IN (${placeholders})
+                AND question_id IN (SELECT id FROM questions WHERE tenant_id = ?)`)
+                .run(taxonomyDeletionContext.systemId, ...nodeIds, change.tenantId);
+              const clearDeletedNodes = this.db.prepare(
+                'UPDATE questions SET taxonomy_json = ?, updated_at = ? WHERE id = ? AND tenant_id = ?'
+              );
+              for (const annotation of taxonomyDeletionContext.annotations) {
+                const question = this.db.prepare('SELECT taxonomy_json FROM questions WHERE id = ? AND tenant_id = ?')
+                  .get(annotation.question_id, change.tenantId);
+                if (!question) continue;
+                let taxonomy = {};
+                try { taxonomy = JSON.parse(question.taxonomy_json || '{}') || {}; } catch (_error) {}
+                taxonomy[taxonomyDeletionContext.systemId] = (taxonomy[taxonomyDeletionContext.systemId] || [])
+                  .filter(nodeId => !nodeIds.includes(nodeId));
+                clearDeletedNodes.run(JSON.stringify(taxonomy), now, annotation.question_id, change.tenantId);
+              }
             }
           }
           results.applied++;

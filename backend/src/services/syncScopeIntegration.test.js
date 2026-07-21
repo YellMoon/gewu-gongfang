@@ -63,12 +63,16 @@ try {
     VALUES ('taxonomy-question','custom-system','custom-node',?,?)`).run(now,now);
   const taxonomyDelete = db.applySyncChanges([{
     id:'delete-taxonomy-system', table:'taxonomy_systems', action:'delete',
-    data:{ id:'custom-system' }, updatedAt:'2026-07-12T00:00:00.000Z',
+    data:{ id:'custom-system', _taxonomy_delete_confirmation:{
+      confirmed:true, expected_affected_question_count:1,
+    } }, updatedAt:'2026-07-12T00:00:00.000Z',
   }], { tenantId:'default', deviceId:'admin-device', authz:{kind:'admin',role:'super_admin',userId:'admin-user',deviceId:'admin-device'} });
   assert.strictEqual(taxonomyDelete.applied, 1);
   assert.strictEqual(db.db.prepare("SELECT deleted FROM taxonomy_nodes WHERE id='custom-node'").get().deleted, 1);
   assert.strictEqual(db.db.prepare("SELECT COUNT(*) AS count FROM question_taxonomy_nodes WHERE question_id='taxonomy-question'").get().count, 0);
   assert.deepStrictEqual(JSON.parse(db.db.prepare("SELECT taxonomy_json FROM questions WHERE id='taxonomy-question'").get().taxonomy_json), {});
+  assert.strictEqual(db.db.prepare("SELECT COUNT(*) AS count FROM taxonomy_deletion_backups WHERE system_id='custom-system'").get().count, 1);
+  assert.strictEqual(db.db.prepare("SELECT COUNT(*) AS count FROM operation_audit_log WHERE action='taxonomy_cascade_delete' AND record_id='custom-system'").get().count, 1);
 
   db.db.prepare(`INSERT INTO users (id,phone,name,role,status,login_enabled,teacher_id,review_status,deleted,created_at,updated_at)
     VALUES ('relay-u1','13000009999','Relay Teacher','teacher',1,1,'t1','approved',0,?,?)`).run(now,now);
