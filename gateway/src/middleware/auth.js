@@ -5,36 +5,79 @@
 const jwt = require('jsonwebtoken');
 const { getDb } = require('../db/database');
 const { roleForUser } = require('../services/authorizationPolicy');
-const {
-  looksLikeReviewDemoToken,
-  parseReviewDemoToken,
-  reviewDemoUserFromClaims,
-} = require('../services/reviewDemoSession');
 
 const JWT_SECRET = process.env.JWT_SECRET || null;
-function verifyToken(token){if(!JWT_SECRET)throw new Error('JWT_SECRET_REQUIRED');if(looksLikeReviewDemoToken(token))return parseReviewDemoToken(token);const decoded=jwt.verify(token,JWT_SECRET,{algorithms:['HS256']});if(decoded.token_use==='desktop-session'&&(decoded.iss!=='gewu-auth'||decoded.aud!=='gewu-api'))throw new Error('TOKEN_AUDIENCE_INVALID');return decoded;}
+function verifyToken(token){if(!JWT_SECRET)throw new Error('JWT_SECRET_REQUIRED');const decoded=jwt.verify(token,JWT_SECRET,{algorithms:['HS256']});if(decoded.token_use==='desktop-session'&&(decoded.iss!=='gewu-auth'||decoded.aud!=='gewu-api'))throw new Error('TOKEN_AUDIENCE_INVALID');return decoded;}
 
-function attachReviewDemo(req, decoded) {
-  const user = reviewDemoUserFromClaims(decoded);
-  req.user = user;
-  req.authz = {
-    userId: user.id, phone: null, role: user.user_type,
-    teacherId: null, studentId: user.student_id || null,
-    reviewStatus: 'approved', status: 1, loginEnabled: 1,
-    deviceId: null, clientType: 'miniapp-review', isPrimaryHost: false,
-    isReviewDemo: true, readOnly: true, reviewDemoSessionId: user.review_demo_session_id,
-  };
+const EXPERIENCE_ONLY_TOKEN_USES = new Set(['review-demo', 'unrecognized-student']);
+
+function rejectExperienceOnlyToken(token, res) {
+  const tokenUse = jwt.decode(token)?.token_use;
+  if (!EXPERIENCE_ONLY_TOKEN_USES.has(tokenUse)) return false;
+  res.status(401).json({
+    success: false,
+    code: 'EXPERIENCE_TOKEN_NOT_ACCEPTED_BY_GATEWAY',
+    error: 'Experience-only tokens are not accepted by the legacy gateway',
+  });
+  return true;
 }
 
 function attachPersisted(req, decoded) {
-  const persisted = getDb().prepare('SELECT * FROM users WHERE id = ?').get(decoded.id);
+  const persisted = getDb().prepare('SELECT * FROM users WHERE id = ?').get(decoded.sub || decoded.id);
   if (!persisted) return false;
+  if (decoded.token_use === 'desktop-session') {
+    const activeRole = String(decoded.active_role || '').trim();
+    const eligibleRoles = Array.isArray(decoded.eligible_roles) ? decoded.eligible_roles.map(String) : [];
+    const deviceId = String(decoded.device_id || '').trim();
+    const sessionId = String(decoded.sid || '').trim();
+    const authVersion = Number(decoded.auth_version);
+    const credentialVersion = Number(decoded.credential_version);
+    const headerDeviceId = String(req.headers['x-device-id'] || '').trim();
+    if (!sessionId || !deviceId || !activeRole || !eligibleRoles.includes(activeRole)
+      || !Number.isSafeInteger(authVersion) || authVersion < 1
+      || !Number.isSafeInteger(credentialVersion) || credentialVersion < 1
+      || Number(persisted.auth_version || 1) !== authVersion
+      || (headerDeviceId && headerDeviceId !== deviceId)
+      || persisted.review_status !== 'approved' || persisted.status !== 1 || persisted.login_enabled !== 1
+      || (activeRole === 'teacher' && !persisted.teacher_id)) {
+      const error = new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
+      error.code = 'ONLINE_DESKTOP_SESSION_REQUIRED';
+      throw error;
+    }
+    req.user = { ...persisted, activeRole, eligibleRoles };
+    req.authz = {
+      userId: persisted.id,
+      phone: persisted.phone || null,
+      role: activeRole,
+      activeRole,
+      eligibleRoles,
+      tenantId: persisted.tenant_id || persisted.tenantId || 'default',
+      teacherId: activeRole === 'teacher' ? persisted.teacher_id : null,
+      studentId: persisted.student_id || null,
+      reviewStatus: persisted.review_status,
+      status: persisted.status,
+      loginEnabled: persisted.login_enabled,
+      deviceId,
+      sessionId,
+      sessionExpiresAt: Number.isFinite(Number(decoded.exp))
+        ? new Date(Number(decoded.exp) * 1000).toISOString()
+        : null,
+      authVersion,
+      credentialVersion,
+      tokenUse: 'desktop-session',
+      clientType: 'desktop',
+      isPrimaryHost: false,
+      readOnly: false,
+      userApproved: true,
+    };
+    return true;
+  }
   req.user = persisted;
   req.authz = { userId: persisted.id, phone: persisted.phone || null, role: roleForUser(persisted),
     tenantId: persisted.tenant_id || persisted.tenantId || 'default',
     teacherId: persisted.teacher_id || null, studentId: persisted.student_id || null,
     reviewStatus: persisted.review_status, status: persisted.status, loginEnabled: persisted.login_enabled,
-    deviceId: null, clientType: 'gateway', isPrimaryHost: false, isReviewDemo: false, readOnly: false };
+    deviceId: null, clientType: 'gateway', isPrimaryHost: false, readOnly: false };
   return true;
 }
 
@@ -50,9 +93,9 @@ function authMiddleware(req, res, next) {
 
   try {
     const token = authHeader.split(' ')[1];
+    if (rejectExperienceOnlyToken(token, res)) return undefined;
     const decoded = verifyToken(token);
-    if (decoded.token_use === 'review-demo') attachReviewDemo(req, decoded);
-    else if (!attachPersisted(req, decoded)) return res.status(401).json({ error: 'Authenticated user not found', code: 'UNAUTHORIZED' });
+    if (!attachPersisted(req, decoded)) return res.status(401).json({ error: 'Authenticated user not found', code: 'UNAUTHORIZED' });
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
@@ -71,9 +114,9 @@ function optionalAuth(req, res, next) {
   if (authHeader && authHeader.startsWith('Bearer ')) {
     try {
       const token = authHeader.split(' ')[1];
+      if (rejectExperienceOnlyToken(token, res)) return undefined;
       const decoded = verifyToken(token);
-      if (decoded.token_use === 'review-demo') attachReviewDemo(req, decoded);
-      else attachPersisted(req, decoded);
+      attachPersisted(req, decoded);
     } catch (err) {
       // token 无效也放行
     }

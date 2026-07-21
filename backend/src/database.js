@@ -10,6 +10,8 @@ const { getMiniappLoginDenialReason } = require('./services/miniappAuthPolicy');
 const { validateSyncMutation } = require('./services/syncScopeService');
 const { scopeBusinessSnapshot } = require('./services/dataScopeService');
 const { projectSearchTextFromRow } = require('./services/questionRichContentProjection');
+const { ensureCompatibilityRoleGrants } = require('./services/userRoleGrantService');
+const { runMiniappPrivacyRetention } = require('./services/miniappPrivacyRetention');
 const {
   SUPER_ADMIN_PHONE,
   CANONICAL_SUPER_ADMIN_ID,
@@ -20,7 +22,7 @@ const {
   scopeForUser,
 } = require('./services/authorizationPolicy');
 
-const SCHEMA_VERSION = 3102;
+const SCHEMA_VERSION = 3109;
 const MINIAPP_ADMIN_SEED_USERS = [
   { id: 'miniapp-admin-13732250653', phone: '13732250653', name: 'Miniapp Admin 0653' },
   { id: 'miniapp-admin-18257136756', phone: '18257136756', name: 'Miniapp Admin 6756' },
@@ -101,7 +103,10 @@ class DatabaseService {
     this._ensureMiniappTaskColumns();
     this._ensureMiniappUserColumns();
     this._ensureAuthorizationPersistence();
+    this._migrateMiniappMemberships();
+    this._ensureRoleGrantPersistence();
     this._ensureHostHeartbeatColumns();
+    runMiniappPrivacyRetention(this.db);
     console.log(`[DB] initialized env=${this.environment} schema=${this.schemaVersion} path=${this.dbPath}`);
   }
 
@@ -152,13 +157,13 @@ class DatabaseService {
     return ['students', 'grades', 'courses', 'schedules', 'enrollments',
       'payments', 'consumptions', 'institutions', 'schools', 'rooms', 'teachers',
       'subjects', 'chapters', 'knowledge_points', 'questions', 'question_contents',
-      'question_assets', 'model_points', 'import_batches', 'import_items', 'search_index_jobs', 'vector_embeddings',
+      'question_assets', 'model_points', 'taxonomy_systems', 'taxonomy_nodes', 'import_batches', 'import_items', 'search_index_jobs', 'vector_embeddings',
       'data_archive_jobs', 'outbox_events'];
   }
 
   _questionBankTenantScopedTables() {
     return ['subjects', 'chapters', 'knowledge_points', 'questions', 'question_contents',
-      'question_assets', 'model_points', 'import_batches', 'import_items', 'search_index_jobs', 'vector_embeddings',
+      'question_assets', 'model_points', 'taxonomy_systems', 'taxonomy_nodes', 'import_batches', 'import_items', 'search_index_jobs', 'vector_embeddings',
       'data_archive_jobs', 'outbox_events'];
   }
 
@@ -207,7 +212,16 @@ class DatabaseService {
 
   _ensureInstitutionStudentColumns() {
     const columns = new Set(this.db.prepare('PRAGMA table_info(students)').all().map(column => column.name));
-    if (!columns.has('is_institution_student')) this.db.prepare('ALTER TABLE students ADD COLUMN is_institution_student INTEGER DEFAULT 0').run();
+    const addColumn = (name, ddl) => {
+      if (!columns.has(name)) {
+        this.db.prepare(`ALTER TABLE students ADD COLUMN ${name} ${ddl}`).run();
+        columns.add(name);
+      }
+    };
+    addColumn('is_institution_student', 'INTEGER DEFAULT 0');
+    addColumn('parent_phone', 'TEXT');
+    addColumn('parent_phone_normalized', 'TEXT');
+    addColumn('parent_relation', 'TEXT');
     this.db.prepare('UPDATE students SET is_institution_student = 0 WHERE is_institution_student IS NULL').run();
     this.ensureInstitutionStudents();
     this.db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_students_one_institution_student
@@ -333,6 +347,7 @@ class DatabaseService {
     addColumn('committed_by_device_id', 'TEXT');
     addColumn('source_device_id', 'TEXT');
     addColumn('owner_user_id', 'TEXT');
+    addColumn('taxonomy_json', "TEXT NOT NULL DEFAULT '{}'");
     addColumn('deleted_at', 'TEXT');
     this.db.prepare("UPDATE questions SET subject = '物理' WHERE subject IS NULL OR subject = ''").run();
     this.db.prepare("UPDATE questions SET exam_type = '其他' WHERE exam_type IS NULL OR exam_type = ''").run();
@@ -420,10 +435,14 @@ class DatabaseService {
     addColumn('student_id', 'TEXT');
     addColumn('linked_student_ids', 'TEXT');
     addColumn('deleted', 'INTEGER DEFAULT 0');
+    addColumn('identity_kind', 'TEXT');
+    addColumn('auth_version', 'INTEGER NOT NULL DEFAULT 1');
+    addColumn('disabled_at', 'TEXT');
 
     this.db.prepare("UPDATE users SET deleted = 0 WHERE deleted IS NULL").run();
     this.db.prepare("UPDATE users SET status = 1 WHERE status IS NULL").run();
     this.db.prepare("UPDATE users SET login_enabled = 0 WHERE login_enabled IS NULL").run();
+    this.db.prepare("UPDATE users SET auth_version = 1 WHERE auth_version IS NULL OR auth_version < 1").run();
     this.db.prepare("UPDATE users SET name = nickname WHERE (name IS NULL OR name = '') AND nickname IS NOT NULL").run();
     this._seedMiniappAdminUsers();
   }
@@ -520,6 +539,10 @@ class DatabaseService {
       ON users(is_super_admin_identity) WHERE is_super_admin_identity = 1`).run();
   }
 
+  _ensureRoleGrantPersistence() {
+    ensureCompatibilityRoleGrants(this.db, { now: this._now() });
+  }
+
   _enforceUniqueNormalizedPhones() {
     const rows = this.db.prepare('SELECT * FROM users WHERE deleted = 0').all();
     const groups = new Map();
@@ -564,6 +587,10 @@ class DatabaseService {
         if (normalizedPhone === SUPER_ADMIN_PHONE) {
           role = user.id === CANONICAL_SUPER_ADMIN_ID ? 'super_admin' : 'pending';
           reviewStatus = user.id === CANONICAL_SUPER_ADMIN_ID ? 'approved' : 'pending';
+          if (user.id === CANONICAL_SUPER_ADMIN_ID) {
+            const binding = resolveTeacherBinding(user, teachers);
+            if (binding.ok) teacherId = binding.teacherId;
+          }
         } else if (role === 'admin' || role === 'student') {
           reviewStatus = 'approved';
         } else if (role === 'teacher') {
@@ -616,9 +643,19 @@ class DatabaseService {
         demote.run(normalizePhone(duplicate.phone), now, duplicate.id);
       }
       if (!identity.ok) return;
+      const currentTeacher = identity.user.teacher_id
+        ? this.db.prepare('SELECT id FROM teachers WHERE id = ? AND deleted = 0').get(identity.user.teacher_id)
+        : null;
+      const teacherBinding = currentTeacher
+        ? { ok: true, teacherId: currentTeacher.id }
+        : resolveTeacherBinding(
+          identity.user,
+          this.db.prepare('SELECT id, phone, deleted FROM teachers WHERE deleted = 0').all()
+        );
+      const teacherId = teacherBinding.ok ? teacherBinding.teacherId : null;
       this.db.prepare(`UPDATE users SET phone = ?, is_super_admin_identity = 1, role = 'super_admin', review_status = 'approved',
-        status = 1, login_enabled = 1, deleted = 0, teacher_id = NULL, updated_at = ? WHERE id = ?`)
-        .run(SUPER_ADMIN_PHONE, now, identity.user.id);
+        status = 1, login_enabled = 1, deleted = 0, teacher_id = ?, updated_at = ? WHERE id = ?`)
+        .run(SUPER_ADMIN_PHONE, teacherId, now, identity.user.id);
     })();
   }
 
@@ -631,6 +668,54 @@ class DatabaseService {
     if (!columns.has('lan_urls')) {
       this.db.prepare('ALTER TABLE host_heartbeats ADD COLUMN lan_urls TEXT').run();
     }
+    if (!columns.has('capabilities')) {
+      this.db.prepare('ALTER TABLE host_heartbeats ADD COLUMN capabilities TEXT').run();
+    }
+  }
+
+  _migrateMiniappMemberships() {
+    const now = this._now();
+    const approvedUsers = this.db.prepare(`SELECT * FROM users
+      WHERE deleted = 0 AND review_status = 'approved' AND login_enabled = 1
+        AND status != 0 AND status != 'inactive' AND id NOT LIKE 'review-demo:%'`).all();
+    const insertMembership = this.db.prepare(`INSERT OR IGNORE INTO account_memberships
+      (id, subject_type, subject_id, status, source, starts_at, ends_at, created_at, updated_at)
+      VALUES (?, ?, ?, 'active', 'existing_approval', ?, NULL, ?, ?)`);
+    const studentExists = this.db.prepare('SELECT 1 FROM students WHERE id = ? AND deleted = 0');
+    const teacherExists = this.db.prepare('SELECT 1 FROM teachers WHERE id = ? AND deleted = 0');
+    const markManualResolution = this.db.prepare(`UPDATE users
+      SET review_status = 'manual_resolution_required', login_enabled = 0,
+          auth_version = auth_version + 1, updated_at = ?
+      WHERE id = ? AND review_status = 'approved'`);
+
+    this.db.transaction(() => {
+      for (const user of approvedUsers) {
+        const role = user.role || user.user_type;
+        let subjectType = null;
+        let subjectId = null;
+        if (role === 'student') {
+          if (!user.student_id || !studentExists.get(user.student_id)) {
+            markManualResolution.run(now, user.id);
+            continue;
+          }
+          subjectType = 'student';
+          subjectId = user.student_id;
+        } else if (role === 'teacher') {
+          if (!user.teacher_id || !teacherExists.get(user.teacher_id)) {
+            markManualResolution.run(now, user.id);
+            continue;
+          }
+          subjectType = 'teacher';
+          subjectId = user.teacher_id;
+        } else if (role === 'admin' || role === 'super_admin') {
+          subjectType = 'user';
+          subjectId = user.id;
+        }
+        if (subjectType && subjectId) {
+          insertMembership.run(uuidv4(), subjectType, subjectId, now, now, now);
+        }
+      }
+    })();
   }
 
   _tenantId(options = {}) {
@@ -751,7 +836,7 @@ class DatabaseService {
     return ['students', 'grades', 'courses', 'schedules', 'enrollments',
       'payments', 'consumptions', 'institutions', 'schools', 'rooms', 'teachers',
       'subjects', 'chapters', 'knowledge_points', 'questions', 'question_contents',
-      'question_assets'];
+      'question_assets', 'taxonomy_systems', 'taxonomy_nodes'];
   }
 
   _tableColumns(table) {
@@ -870,6 +955,9 @@ class DatabaseService {
       id,
       name: data.name,
       phone: data.phone || null,
+      parent_phone: data.parent_phone || null,
+      parent_phone_normalized: data.parent_phone_normalized || null,
+      parent_relation: data.parent_relation || null,
       school: data.school || null,
       grade_year: data.grade_year || null,
       grade_current: data.grade_current || null,
@@ -886,7 +974,8 @@ class DatabaseService {
   }
 
   updateStudent(id, updates, options = {}) {
-    const allowed = ['name', 'phone', 'school', 'grade_year', 'grade_current', 'source_type',
+    const allowed = ['name', 'phone', 'parent_phone', 'parent_phone_normalized', 'parent_relation',
+      'school', 'grade_year', 'grade_current', 'source_type',
       'institution_id', 'is_institution_student', 'parent_name', 'parent_wechat', 'student_source',
       'balance_hours', 'balance_money', 'notes'];
     const filtered = {};
@@ -1499,16 +1588,10 @@ class DatabaseService {
   }
 
   resolveOrProvisionRelayActorContext(deviceId, actorUserId, pairingApprovalId) {
-    let device = this.db.prepare('SELECT * FROM sync_devices WHERE id = ?').get(deviceId);
-    if (device && device.owner_user_id && device.owner_user_id !== actorUserId) return false;
-    if (!device) {
-      const user = this.db.prepare('SELECT * FROM users WHERE id=? AND deleted=0').get(actorUserId);
-      if (!user || user.review_status !== 'approved' || user.login_enabled === 0 || !pairingApprovalId) return false;
-      this.registerSyncDevice(deviceId, { ownerUserId:actorUserId, deviceName:deviceId, role:'desktop-client', trusted:true });
-      this.recordAuthorizationAudit({ actorUserId, targetUserId:actorUserId, action:'relay-device:provision',
-        after:{ deviceId, pairingApprovalId } });
-    }
-    return this.resolveSyncActorContext(deviceId, actorUserId);
+    void deviceId;
+    void actorUserId;
+    void pairingApprovalId;
+    return false;
   }
 
   consumeRelayAuthorizationNonce(claims) {
@@ -1763,6 +1846,9 @@ class DatabaseService {
           }
 
           const incoming = { ...record, updated_at: now };
+          if (table === 'questions' && record.taxonomy_ids !== undefined) {
+            incoming.taxonomy_json = JSON.stringify(record.taxonomy_ids || {});
+          }
           if (columns.includes('created_at') && !incoming.created_at) incoming.created_at = existing?.created_at || now;
           if (columns.includes('deleted')) incoming.deleted = change.action === 'delete' ? 1 : (incoming.deleted || 0);
           if (columns.includes('tenant_id') && !incoming.tenant_id) incoming.tenant_id = change.tenantId;
@@ -1780,6 +1866,39 @@ class DatabaseService {
             this.db.prepare(
               `INSERT INTO ${table} (${insertKeys.join(', ')}) VALUES (${placeholders})`
             ).run(...insertKeys.map(k => insertRecord[k]));
+          }
+          if (table === 'questions' && incoming.taxonomy_json !== undefined) {
+            let taxonomy = {};
+            try { taxonomy = JSON.parse(incoming.taxonomy_json || '{}') || {}; } catch (_error) {}
+            this.db.prepare('DELETE FROM question_taxonomy_nodes WHERE question_id = ?').run(recordId);
+            const insertTaxonomy = this.db.prepare(`INSERT OR IGNORE INTO question_taxonomy_nodes
+              (question_id, system_id, node_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`);
+            for (const [systemId, nodeIds] of Object.entries(taxonomy)) {
+              for (const nodeId of Array.isArray(nodeIds) ? nodeIds : []) {
+                const node = this.db.prepare('SELECT id FROM taxonomy_nodes WHERE id = ? AND tenant_id = ? AND system_id = ? AND deleted = 0')
+                  .get(String(nodeId), change.tenantId, systemId);
+                if (node) insertTaxonomy.run(recordId, systemId, String(nodeId), now, now);
+              }
+            }
+          }
+          if (table === 'taxonomy_systems' && change.action === 'delete') {
+            this.db.prepare('UPDATE taxonomy_nodes SET deleted = 1, updated_at = ? WHERE tenant_id = ? AND system_id = ?')
+              .run(now, change.tenantId, recordId);
+            this.db.prepare(`DELETE FROM question_taxonomy_nodes WHERE system_id = ?
+              AND question_id IN (SELECT id FROM questions WHERE tenant_id = ?)`).run(recordId, change.tenantId);
+            const affectedQuestions = this.db.prepare(
+              'SELECT id, taxonomy_json FROM questions WHERE tenant_id = ? AND taxonomy_json IS NOT NULL'
+            ).all(change.tenantId);
+            const clearDeletedSystem = this.db.prepare(
+              'UPDATE questions SET taxonomy_json = ?, updated_at = ? WHERE id = ? AND tenant_id = ?'
+            );
+            for (const question of affectedQuestions) {
+              let taxonomy = {};
+              try { taxonomy = JSON.parse(question.taxonomy_json || '{}') || {}; } catch (_error) {}
+              if (!Object.prototype.hasOwnProperty.call(taxonomy, recordId)) continue;
+              delete taxonomy[recordId];
+              clearDeletedSystem.run(JSON.stringify(taxonomy), now, question.id, change.tenantId);
+            }
           }
           results.applied++;
           if (provenance) {

@@ -1,9 +1,14 @@
 const crypto = require('crypto');
 
 const PROGRESS_PHASES = new Set(['processing', 'selecting', 'rendering', 'exporting', 'uploading', 'finalizing']);
+const INTERNAL_TASK_TYPES = new Set(['identity-provisioning']);
 
 function taskError(code, message, statusCode = 409) {
   return Object.assign(new Error(message), { code, statusCode });
+}
+
+function isInternalTaskType(taskType) {
+  return INTERNAL_TASK_TYPES.has(String(taskType || '').trim());
 }
 
 function stableValue(value) {
@@ -52,6 +57,9 @@ function taskRow(row) {
 }
 
 function createV2Task(db, input, options = {}) {
+  if (isInternalTaskType(input.taskType) && options.internal !== true) {
+    throw taskError('INTERNAL_TASK_TYPE_FORBIDDEN', 'internal task types cannot be created through public task flows', 403);
+  }
   const idempotencyKey = String(input.idempotencyKey || '').trim();
   const targetHostDeviceId = String(input.targetHostDeviceId || '').trim();
   if (!idempotencyKey) throw taskError('IDEMPOTENCY_KEY_REQUIRED', 'V2 tasks require an idempotency key', 400);
@@ -86,6 +94,27 @@ function createV2Task(db, input, options = {}) {
     return { task: taskRow(raced), replayed: true };
   }
   return { task: taskRow(db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(id)), replayed: false };
+}
+
+function retryV2Task(db, id, options = {}) {
+  const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id=?').get(id);
+  if (!row) throw taskError('TASK_NOT_FOUND', 'task not found', 404);
+  if (Number(row.protocol_version || 1) < 2) throw taskError('TASK_PROTOCOL_MISMATCH', 'task is not a V2 task', 409);
+  if (isInternalTaskType(row.task_type) && options.internal !== true) {
+    throw taskError('INTERNAL_TASK_TYPE_FORBIDDEN', 'internal task retries require an internal caller', 403);
+  }
+  if (['pending_host', 'processing'].includes(row.status)) return taskRow(row);
+  if (row.status !== 'failed') throw taskError('TASK_RETRY_NOT_ALLOWED', 'task cannot be retried from its current state', 409);
+  const now = options.now || new Date().toISOString();
+  const info = db.prepare(`UPDATE miniapp_tasks
+    SET status='pending_host', phase='queued', progress=0, result_payload=NULL,
+        claimed_by=NULL, claim_token_hash=NULL, lease_expires_at=NULL, error_code=NULL,
+        next_attempt_at=NULL, cancel_requested_at=NULL, completion_operation_id=NULL,
+        completion_result_hash=NULL, attempt=0, updated_at=?, row_version=row_version+1
+    WHERE id=? AND row_version=? AND status='failed'`)
+    .run(now, id, row.row_version);
+  if (info.changes !== 1) throw taskError('TASK_VERSION_CONFLICT', 'task row version is stale', 409);
+  return taskRow(db.prepare('SELECT * FROM miniapp_tasks WHERE id=?').get(id));
 }
 
 function claimNextV2Task(db, input = {}) {
@@ -259,9 +288,11 @@ module.exports = {
   completeV2Task,
   createV2Task,
   failV2Task,
+  isInternalTaskType,
   listLegacyPending,
   requestHash,
   resultHash,
+  retryV2Task,
   taskError,
   taskRow,
   updateV2TaskProgress,

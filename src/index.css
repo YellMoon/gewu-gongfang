@@ -799,8 +799,42 @@ select,
   padding: 10px 12px !important;
 }
 
+.stats-page-layout__filters .ant-card-head,
+.stats-page-layout__metrics .ant-card-head {
+  padding: 0 12px;
+  min-height: 40px;
+  border-bottom: none;
+}
+
+.stats-page-layout__filters .ant-card-head-title,
+.stats-page-layout__metrics .ant-card-head-title {
+  padding: 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.stats-page-layout__filters .ant-card-head-wrapper {
+  width: 100%;
+}
+
 .stats-page-layout__metrics {
   min-width: 0;
+}
+
+.stats-page-layout__filters [role='button']:focus-visible,
+.stats-page-layout__metrics [role='button']:focus-visible {
+  outline: 2px solid var(--app-primary, #1677b8);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.app-shell__menu-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
 }
 
 .revenue-filter-grid {
@@ -1182,3 +1216,19 @@ select,
   }
 }
 
+.taxonomy-subject-selector {
+  margin-bottom: 8px;
+}
+
+.taxonomy-subject-selector .ant-select {
+  width: 100%;
+}
+
+.ant-card-body:has(> .taxonomy-manager) > .taxonomy-manager ~ * {
+  display: none !important;
+}
+
+.taxonomy-edit-modal .ant-form-item:has(input[id*="knowledge_ids"]),
+.taxonomy-edit-modal .ant-form-item:has(input[id*="model_ids"]) {
+  display: none;
+}

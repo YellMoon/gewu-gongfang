@@ -33,8 +33,16 @@ const richQuestionEditor = read('src/components/RichQuestionEditor.tsx');
 const richAssetImage = read('src/components/RichAssetImage.tsx');
 const structuredQuestionViewer = read('src/components/StructuredQuestionViewer.tsx');
 const systemSettings = read('src/pages/SystemSettings.tsx');
+const desktopUpdateClient = read('src/services/desktopUpdateClient.mjs');
 assert.ok(systemSettings.includes("if (!settingsPolicy.isPrimaryHost)") && systemSettings.includes('\\u7ba1\\u7406\\u5458\\u6258\\u7ba1'), 'ordinary desktop settings must use a dedicated managed simple view');
 assert.ok(systemSettings.includes('if (policy.loadQuestionBankStorage)') && systemSettings.includes('if (policy.loadBackupTargets)'), 'ordinary desktop must not load host storage or backup status');
+const ordinaryDesktopSettingsStart = systemSettings.indexOf('if (!settingsPolicy.isPrimaryHost)');
+const primaryHostSettingsStart = systemSettings.indexOf('\n  return (', ordinaryDesktopSettingsStart);
+const ordinaryDesktopSettingsView = systemSettings.slice(ordinaryDesktopSettingsStart, primaryHostSettingsStart);
+assert.ok(
+  /renderDesktopUpdatePanel\s*\(/.test(ordinaryDesktopSettingsView) || /<DesktopUpdatePanel\b/.test(ordinaryDesktopSettingsView),
+  'ordinary desktop settings must render the OSS desktop updater instead of returning before it'
+);
 const syncSettings = read('src/pages/SyncSettings.tsx');
 const syncQuickPanel = read('src/components/sync/SyncQuickPanel.tsx');
 const cloudSync = read('src/pages/CloudSync.tsx');
@@ -43,155 +51,79 @@ const syncApi = read('src/services/syncApi.ts');
 const cloudRelayHostApi = read('src/services/cloudRelayHostApi.ts');
 const permissionManager = read('src/pages/PermissionManager.tsx');
 const permissionManagerCss = read('src/pages/PermissionManager.css');
+const identityDeviceCenter = read('src/pages/IdentityDeviceCenter.tsx');
+const identityDeviceCenterCss = read('src/pages/IdentityDeviceCenter.css');
 const authorizationApi = read('src/services/authorizationApi.ts');
 const authorizationRequestCoordinator = read('src/services/authorizationRequestCoordinator.mjs');
 const scheduleStorage = read('src/utils/scheduleStorage.mjs');
 const packageJson = read('package.json');
 const packageManifest = JSON.parse(packageJson);
-const miniappReviewExperience = read('miniapp/src/utils/reviewExperience.js');
 const miniappApi = read('miniapp/src/utils/api.ts');
 const miniappLogin = read('miniapp/src/pages/login/index.tsx');
 const miniappLoginCss = read('miniapp/src/pages/login/index.scss');
-const miniappReviewBannerPath = path.join(root, 'miniapp/src/components/ReviewDemoBanner.tsx');
-let miniappReviewBanner = fs.existsSync(miniappReviewBannerPath) ? fs.readFileSync(miniappReviewBannerPath, 'utf8') : '';
-const miniappSharedCss = read('miniapp/src/components/shared.scss');
-const miniappHome = read('miniapp/src/pages/index/index.tsx');
+const miniappUnrecognizedExperience = read('miniapp/src/utils/unrecognizedExperience.ts');
+const miniappUnrecognizedPage = read('miniapp/src/pages/unrecognized-experience/index.tsx');
+const miniappAccountApplication = read('miniapp/src/pages/account-application/index.tsx');
+const miniappAppConfig = read('miniapp/src/app.config.ts');
 const miniappQuestionBank = read('miniapp/src/pages/question-bank/index.tsx');
-let miniappSettings = read('miniapp/src/pages/settings/index.tsx');
-let miniappAdminUsers = read('miniapp/src/pages/admin/users/index.tsx');
-let miniappAssets = read('miniapp/src/pages/assets/index.tsx');
-const miniappAssetsCss = read('miniapp/src/pages/assets/index.scss');
-let miniappScheduleEdit = read('miniapp/src/pages/schedule/edit/index.tsx');
-const miniappStorage = read('miniapp/src/utils/storage.ts');
-const miniappApp = read('miniapp/src/app.tsx');
 const decodeUnicodeEscapes = source => source.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) => String.fromCharCode(Number.parseInt(hex, 16)));
-miniappReviewBanner = decodeUnicodeEscapes(miniappReviewBanner);
-miniappSettings = decodeUnicodeEscapes(miniappSettings);
-miniappAdminUsers = decodeUnicodeEscapes(miniappAdminUsers);
-miniappAssets = decodeUnicodeEscapes(miniappAssets);
-miniappScheduleEdit = decodeUnicodeEscapes(miniappScheduleEdit);
-const decodedMiniappQuestionBank = decodeUnicodeEscapes(miniappQuestionBank);
+const decodedIdentityDeviceCenter = decodeUnicodeEscapes(identityDeviceCenter);
 
 assert(
-  miniappLogin.includes('review-title') &&
-  miniappLogin.includes('review-code-input') &&
-  miniappLogin.includes('data-review-role="admin"') &&
-  miniappLogin.includes('data-review-role="student"') &&
-  miniappLogin.includes('authApi.reviewDemo'),
-  'miniapp login should permanently expose a dedicated review code entry with administrator and student roles'
+  miniappLogin.includes("api.post<any>('/api/auth/wechat-login'") &&
+  miniappLogin.includes('phoneCode') &&
+  miniappLogin.includes('未建档学生可进入示例题体验并提交身份申请') &&
+  !miniappLogin.includes('reviewDemo'),
+  'miniapp login should use verified WeChat phone identity and route unrecognized students to the real limited experience'
 );
 
 assert(
-  miniappLoginCss.includes('.review-card') &&
-  miniappLoginCss.includes('.review-role-control') &&
-  miniappLoginCss.includes('.review-login-btn') &&
+  miniappLoginCss.includes('.login-page') &&
   miniappLoginCss.includes('overflow-y: auto') &&
   miniappLoginCss.includes('env(safe-area-inset-top)') &&
-  miniappLoginCss.includes('env(safe-area-inset-bottom)') &&
-  miniappLoginCss.includes('@media (max-height: 620px)'),
-  'miniapp review login controls should have dedicated stable styles'
+  miniappLoginCss.includes('env(safe-area-inset-bottom)'),
+  'miniapp verified-phone login should retain safe-area-aware scrolling styles'
 );
 
 assert(
-  miniappLogin.includes('useRef') &&
-  miniappLogin.includes('loginMutexRef') &&
-  miniappLogin.includes('loginBusy') &&
-  miniappLogin.includes('aria-pressed={reviewRole ===') &&
-  miniappLogin.includes('createReviewSessionCommitter'),
-  'normal and review login should share a synchronous mutex, disabled state, role semantics, and atomic review-session commit'
+  miniappUnrecognizedExperience.includes('getQuestions()') &&
+  miniappUnrecognizedExperience.includes('createTask(params:') &&
+  miniappUnrecognizedExperience.includes('cancelTask(taskId: string)') &&
+  miniappUnrecognizedExperience.includes('downloadArtifact(artifactId: string)') &&
+  miniappUnrecognizedExperience.includes('submitApplication') &&
+  miniappUnrecognizedExperience.includes('withdrawApplication'),
+  'unrecognized students should have the fixed-question task and identity-application API surface'
 );
 
 assert(
-  miniappReviewExperience.includes('review_demo_session_id') &&
-  miniappReviewExperience.includes('REVIEW_DEMO_CODE_INVALID') &&
-  miniappReviewExperience.includes('REVIEW_DEMO_DISABLED') &&
-  miniappReviewExperience.includes('REVIEW_DEMO_RATE_LIMITED') &&
-  miniappReviewExperience.includes('createReviewSessionCommitter') &&
-  miniappApi.includes("'/api/auth/review-demo'") &&
-  miniappApi.includes('createAuthRefreshRuntime') &&
-  miniappApi.includes('experienceApiPath'),
-  'miniapp review runtime should isolate session caches, map stable login errors, and use dedicated gateway APIs'
+  !miniappApi.includes("'/api/auth/review-demo'") &&
+  !miniappApi.includes('reviewDemoApi') &&
+  miniappApi.includes("'/api/miniapp/applications/me'") &&
+  miniappApi.includes("accountPath('createTask')"),
+  'miniapp API must remove the public review-demo login while retaining scoped unrecognized-account APIs'
 );
 
 assert(
-  miniappReviewBanner.includes('isReviewExperienceIdentity') &&
-  miniappReviewBanner.includes('脱敏示例数据') &&
-  miniappReviewBanner.includes('只读') &&
-  miniappSharedCss.includes('.review-demo-banner') &&
-  [miniappHome, miniappQuestionBank, miniappSettings, miniappAdminUsers, miniappAssets, miniappScheduleEdit]
-    .every(source => source.includes('ReviewDemoBanner')),
-  'verified review entry pages should render one shared sanitized read-only banner'
+  miniappUnrecognizedPage.includes('体验组卷') &&
+  miniappUnrecognizedPage.includes('选择示例题目，提交组卷与导出任务') &&
+  miniappUnrecognizedPage.includes("Taro.navigateTo({ url: '/pages/account-application/index' })") &&
+  miniappQuestionBank.includes("Taro.navigateTo({ url: '/pages/unrecognized-experience/index' })"),
+  'unrecognized experience should expose fixed question tasks and a real identity-application entry'
 );
 
 assert(
-  miniappAdminUsers.includes('isReviewExperienceIdentity') &&
-  miniappAdminUsers.includes('审核体验中不可审核或停用真实用户') &&
-  miniappAssets.includes('isReviewExperienceIdentity') &&
-  miniappAssets.includes('审核体验中不可导入财务数据') &&
-  miniappScheduleEdit.includes('审核体验中不可编辑排课') &&
-  miniappQuestionBank.includes('isReviewExperienceIdentity'),
-  'verified review identities should see explicit disabled-write copy while normal roles keep their existing actions'
+  miniappAccountApplication.includes('verifiedPhone') &&
+  miniappAccountApplication.includes('submitApplication') &&
+  miniappAccountApplication.includes('withdrawApplication') &&
+  miniappAccountApplication.includes('撤回申请') &&
+  miniappAccountApplication.includes('修改并重新提交'),
+  'identity applications should bind the verified phone and support submit, withdraw, and resubmit states'
 );
 
 assert(
-  miniappReviewExperience.includes('REVIEW_TASK_CACHE_PREFIX') &&
-  miniappReviewExperience.includes('reviewTaskCacheKey') &&
-  miniappQuestionBank.includes('createQuestionPaperTaskCacheRuntime') &&
-  miniappQuestionBank.includes('reviewDemoApi.createTask') &&
-  miniappQuestionBank.includes('reviewDemoApi.getTaskResult') &&
-  miniappQuestionBank.includes('reviewDemoApi.cancelTask') &&
-  miniappQuestionBank.includes('reviewDemoApi.downloadArtifact') &&
-  miniappQuestionBank.includes('openSessionBoundDocument'),
-  'review paper tasks should use a dedicated cache and the direct in-memory sandbox create/read/cancel/download flow'
-);
-
-assert(
-  miniappSettings.includes('reviewCleanupStorageKeys') &&
-  miniappSettings.includes('clearAuthenticatedSession') &&
-  miniappSettings.includes('clearPermissionCache') &&
-  miniappSettings.includes('clearBusinessCache') &&
-  miniappSettings.includes('Taro.reLaunch') &&
-  miniappSettings.includes('退出审核体验') &&
-  miniappSettings.includes('Taro.redirectTo') &&
-  miniappSettings.includes('if (isReviewDemo) {') &&
-  miniappSettings.includes('const pendingChanges = isReviewDemo ? [] : getPendingChanges()'),
-  'exiting review should clear auth, identity, permission, business, and sandbox task state before relaunching login without changing normal logout navigation'
-);
-
-assert(
-  miniappStorage.includes("'assetRecords'") && miniappStorage.includes("'assetCategories'"),
-  'business-cache cleanup should clear finance assets as part of review exit without changing normal cache scoping'
-);
-assert(
-  miniappHome.includes("setCachedList('assetRecords'") && miniappHome.includes("setCachedList('assetCategories'"),
-  'scoped cloud snapshots should feed the existing assets page for normal and sanitized review data'
-);
-
-assert(
-  miniappAssets.includes("useState<'month' | 'year' | 'all'>(isReviewDemo ? 'all' : 'month')"),
-  'review assets should default to the deterministic all-time view while normal users keep the monthly default'
-);
-
-assert(
-  decodedMiniappQuestionBank.includes("isReviewDemo ? '\u6309\u9009\u62e9\u987a\u5e8f\u63d0\u4ea4\u793a\u4f8b\u9898\u76ee ID' : '\u6309\u9009\u62e9\u987a\u5e8f\u63d0\u4ea4\u771f\u5b9e\u9898\u76ee ID'") &&
-  miniappAssets.includes('{isReviewDemo ? (') &&
-  miniappAssets.includes('<View className="task-card review-read-only" aria-disabled={isReviewDemo}>') &&
-  miniappAssets.includes('\u8d22\u52a1\u8131\u654f\u793a\u4f8b\uff08\u53ea\u8bfb\uff09') &&
-  miniappAssets.includes('\u5ba1\u6838\u4f53\u9a8c\u4ec5\u5c55\u793a\u8131\u654f\u793a\u4f8b\u6c47\u603b\uff0c\u5bfc\u5165\u4e0d\u53ef\u7528\u3002') &&
-  miniappAssets.includes('\u5bfc\u5165\u8d22\u52a1\u6570\u636e') &&
-  miniappAssets.includes('\u9009\u62e9\u4e2a\u4eba\u8d44\u4ea7\u7edf\u8ba1\u6240\u9700\u7684\u6570\u636e\u6587\u4ef6\u5e76\u5f00\u59cb\u5bfc\u5165\u3002') &&
-  miniappAssetsCss.includes('.task-card.review-read-only') &&
-  miniappAssetsCss.includes('pointer-events: none'),
-  'review-only copy must identify sample question IDs and render finance import as a visibly disabled read-only card while normal copy stays unchanged'
-);
-
-const reviewSyncGuardAt = miniappApp.indexOf('if (isReviewExperienceIdentity(startupSession.identity)) return;');
-const normalSyncInitAt = miniappApp.indexOf('const syncEngine = await getSyncEngine();');
-assert(
-  reviewSyncGuardAt > miniappApp.indexOf('await fetchPermissions()') &&
-  normalSyncInitAt > reviewSyncGuardAt &&
-  miniappApp.indexOf('Taro.onNetworkStatusChange', normalSyncInitAt) > normalSyncInitAt,
-  'review startup should load permissions and cache identity but skip normal sync initialization, push, pull, and network listeners'
+  miniappAppConfig.includes("'pages/unrecognized-experience/index'") &&
+  miniappAppConfig.includes("'pages/account-application/index'"),
+  'all unrecognized-student routes must be registered and reachable at runtime'
 );
 
 assert(
@@ -231,6 +163,21 @@ assert(
 );
 
 assert(
+  appNavigation.includes("'identity-devices'") &&
+  appNavigation.includes('identityDeviceNavItem') &&
+  appNavigation.includes('0x8eab, 0x4efd, 0x4e0e, 0x8bbe, 0x5907') &&
+  appShell.includes('identityDevicePendingCount') &&
+  appShell.includes('<Badge') &&
+  decodedIdentityDeviceCenter.includes('待审设备申请') &&
+  decodedIdentityDeviceCenter.includes('我的设备') &&
+  decodedIdentityDeviceCenter.includes('全部设备') &&
+  decodedIdentityDeviceCenter.includes('本地数据主机') &&
+  identityDeviceCenterCss.includes('.identity-device-center') &&
+  !permissionManager.includes('PairingReviewPanel'),
+  'desktop identity and device center must be a top-level, badged workbench instead of a permission-page footer'
+);
+
+assert(
   systemSettings.includes('/api/question-bank/storage/status') &&
   systemSettings.includes('questionBankCandidatePaths') &&
   systemSettings.includes('questionBankStoreId') &&
@@ -243,7 +190,8 @@ assert(
 
 assert(
   systemSettings.includes('软件更新') &&
-  systemSettings.includes('check-for-updates') &&
+  systemSettings.includes('invokeDesktopUpdateCheck') &&
+  desktopUpdateClient.includes("api.invoke('check-for-updates')") &&
   systemSettings.includes('download-update') &&
   systemSettings.includes('install-update') &&
   packageJson.includes('publish:desktop-update'),

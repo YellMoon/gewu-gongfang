@@ -11,7 +11,6 @@
 const { Router } = require('express');
 const { updateCommittedQuestion, createTrustedInternalStorageUpdateContext } = require('../services/questionBankStorageService');
 const { getInstance } = require('../database');
-const { scopeForUser } = require('../services/authorizationPolicy');
 
 const router = Router();
 
@@ -58,11 +57,14 @@ function readTenantId(req) {
 
 function requestAuthz(req) {
   if (!req.user || !req.authz?.deviceId) return null;
-  const scope = scopeForUser(req.user);
+  const scope = req.authz.scope || { kind: 'none' };
   return { kind: scope.kind === 'all' ? 'admin' : scope.kind, userId: req.authz.userId,
     teacherId: scope.teacherId || null, studentId: scope.studentId || null, deviceId: req.authz.deviceId,
     role: req.authz.role, userApproved: req.authz.userApproved, deviceTrusted: req.authz.deviceTrusted,
-    deviceActive: req.authz.deviceActive, deviceOwnerUserId: req.authz.deviceOwnerUserId };
+    deviceActive: req.authz.deviceActive, deviceOwnerUserId: req.authz.deviceOwnerUserId,
+    tokenUse: req.authz.tokenUse, tokenDeviceId: req.authz.tokenDeviceId,
+    clientType: req.authz.clientType, runtimeNodeRole: req.authz.runtimeNodeRole,
+    isPrimaryHost: req.authz.isPrimaryHost };
 }
 
 function groupedChangesFromQueue(changes) {

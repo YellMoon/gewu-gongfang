@@ -7,7 +7,10 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireCoreReadAccess, requireWriteAccess } = require('./middleware/auth');
+const { unrecognizedStudentGuard } = require('./middleware/unrecognizedStudentGuard');
 const { buildErrorPayload, errorHandler } = require('./middleware/errorHandler');
+const { getInstance } = require('./database');
+const { createMiniappProvisioningReconciler } = require('./services/miniappProvisioningReconciler');
 
 const studentsRouter = require('./routes/students');
 const coursesRouter = require('./routes/courses');
@@ -32,11 +35,24 @@ const cloudRelayRouter = require('./routes/cloudRelay');
 const permissionsRouter = require('./routes/permissions');
 const adminUsersRouter = require('./routes/adminUsers');
 const desktopPairingRouter = require('./routes/desktopPairing');
+const { createDesktopIdentityRouter } = require('./routes/desktopIdentity');
+const miniappApplicationsRouter = require('./routes/miniappApplications');
+const { createUnrecognizedExperienceRouter } = require('./routes/unrecognizedExperience');
+const { createUnrecognizedExperienceSandbox } = require('./services/unrecognizedExperienceSandbox');
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const writeRateLimitStore = new Map();
 const nonceStore = new Map();
 const idempotencyStore = new Map();
+let sharedUnrecognizedExperienceSandbox = null;
+
+function unrecognizedExperienceSandboxForApp(options = {}) {
+  if (options.unrecognizedExperienceSandbox) return options.unrecognizedExperienceSandbox;
+  if (!sharedUnrecognizedExperienceSandbox) {
+    sharedUnrecognizedExperienceSandbox = createUnrecognizedExperienceSandbox();
+  }
+  return sharedUnrecognizedExperienceSandbox;
+}
 
 function isWriteRequest(req) {
   return WRITE_METHODS.has(req.method);
@@ -45,6 +61,18 @@ function isWriteRequest(req) {
 function clientKey(req) {
   const userId = req.user?.id || req.user?.openid || 'anonymous';
   return `${userId}:${req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown'}`;
+}
+
+function requestIdentityKey(req) {
+  const authorization = req.headers.authorization || '';
+  if (authorization.startsWith('Bearer ')) {
+    return `bearer:${crypto.createHash('sha256').update(authorization).digest('hex')}`;
+  }
+  return clientKey(req);
+}
+
+function hasDurableIdempotency(req) {
+  return req.method === 'POST' && req.path === '/api/miniapp/applications';
 }
 
 function cleanupStore(store, now = Date.now()) {
@@ -105,9 +133,9 @@ function writeSafetyMiddleware(req, res, next) {
   cleanupStore(nonceStore, now);
   cleanupStore(idempotencyStore, now);
 
-  const idempotencyKey = req.headers['x-idempotency-key'];
+  const idempotencyKey = hasDurableIdempotency(req) ? null : req.headers['x-idempotency-key'];
   const idemKey = idempotencyKey
-    ? `${clientKey(req)}:${req.method}:${req.originalUrl}:${idempotencyKey}:${requestBodyHash(req.body)}`
+    ? `${requestIdentityKey(req)}:${req.method}:${req.originalUrl}:${idempotencyKey}:${requestBodyHash(req.body)}`
     : null;
   if (idemKey) {
     const existing = idempotencyStore.get(idemKey);
@@ -130,7 +158,7 @@ function writeSafetyMiddleware(req, res, next) {
   }
 
   if (nonce) {
-    const nonceKey = `${clientKey(req)}:${nonce}`;
+    const nonceKey = `${requestIdentityKey(req)}:${nonce}`;
     if (nonceStore.has(nonceKey)) {
       return res.status(409).json(buildErrorPayload(req, 409, '重复请求 nonce', {
         code: 'NONCE_REPLAYED',
@@ -234,13 +262,30 @@ function getAppVersion() {
   return process.env.GEWU_APP_VERSION || process.env.APP_VERSION || resolvePackageVersion();
 }
 
-function createApp() {
+function createApp(options = {}) {
   const app = express();
+
+  try {
+    createMiniappProvisioningReconciler({ db: getInstance().db }).reconcilePendingCompletedTasks();
+  } catch (error) {
+    console.warn('[miniapp-provisioning] startup reconciliation skipped', error?.code || error?.message || 'unknown');
+  }
 
   // CORS
   app.use(cors({
     origin: process.env.CORS_ORIGIN || '*',
     credentials: true
+  }));
+
+  // Resolve an optional identity once at the API boundary so restricted
+  // unrecognized-student sessions cannot fall through to formal business APIs.
+  app.use('/api', optionalAuth, unrecognizedStudentGuard);
+
+  const unrecognizedExperienceSandbox = unrecognizedExperienceSandboxForApp(options);
+  app.locals.unrecognizedExperienceSandbox = unrecognizedExperienceSandbox;
+  app.use('/api/experience', authMiddleware, createUnrecognizedExperienceRouter({
+    ...(options.unrecognizedExperienceRouteOptions || {}),
+    sandbox: unrecognizedExperienceSandbox,
   }));
 
   // Body parsing
@@ -262,6 +307,7 @@ function createApp() {
 
   // 公开路由（无需认证）
   app.use('/api/auth', authRouter);
+  app.use('/api/desktop-identity', createDesktopIdentityRouter({ db: getInstance().db }));
   app.use('/api/desktop-pairing', desktopPairingRouter);
   app.use('/api/sync', optionalAuth, syncRouter);
   app.use('/api/cloud-relay-host/artifacts', optionalAuth, paperArtifactAccessRouter);
@@ -270,6 +316,7 @@ function createApp() {
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);
   app.use('/api/admin/users', authMiddleware, adminUsersRouter);
   app.use('/api/permissions', authMiddleware, permissionsRouter);
+  app.use('/api/miniapp/applications', authMiddleware, miniappApplicationsRouter);
 
   // 鍗婂叕寮€璺敱锛堝彲閫夎璇侊級
   app.use('/api/students', optionalAuth, requireCoreReadAccess, requireWriteAccess, studentsRouter);

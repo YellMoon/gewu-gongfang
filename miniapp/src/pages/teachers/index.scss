@@ -1,6 +1,8 @@
 .teachers-page {
   min-height: 100vh;
   padding-bottom: calc(148rpx + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
   background: #f7f4ee;
 }
 
@@ -31,6 +33,7 @@
 
 .teacher-list {
   padding: 18rpx 24rpx 32rpx;
+  flex: 1;
 }
 
 .teacher-card {

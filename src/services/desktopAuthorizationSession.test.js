@@ -3,32 +3,58 @@ const assert = require('assert');
 async function main() {
   const service = await import('./desktopAuthorizationSession.mjs');
   const values = new Map();
-  const storage = { getItem: key => values.get(key) || null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
-  const ipc = new Map();
-  const api = { invoke: async (channel, value) => {
-    if (channel === 'desktop-auth:get') return ipc.get('credential') || null;
-    if (channel === 'desktop-auth:set') { ipc.set('credential', value); return true; }
-    if (channel === 'desktop-auth:clear') { ipc.delete('credential'); return true; }
-    throw new Error(channel);
-  } };
+  const storageWrites = [];
+  const storage = {
+    getItem: key => values.get(key) || null,
+    setItem: (key, value) => { storageWrites.push([key, value]); values.set(key, value); },
+    removeItem: key => values.delete(key),
+  };
+  const ipcCalls = [];
+  const desktopIdentity = {
+    status: async () => ({ state: 'sealed', sealed: true, unlocked: false }),
+    lock: async () => { ipcCalls.push('lock'); },
+  };
   assert.throws(() => service.readDesktopAuthorizationSession({ getItem: () => null }), error => error.code === 'AUTHORIZATION_CONTEXT_REQUIRED');
-  let requestBody;
-  const pending = await service.startPairing({ baseUrl: 'http://host', deviceId: 'd1', deviceName: 'PC' }, { storage, fetchImpl: async (_url, init) => {
-    requestBody = JSON.parse(init.body);
-    return { ok: true, json: async () => ({ success: true, pairing: { id: 'p1', pairingCode: '123456', expiresAt: 'later' } }) };
-  } });
-  assert.strictEqual(pending.pairingCode, '123456');
-  assert.deepStrictEqual(requestBody, { deviceId: 'd1', deviceName: 'PC', secret: requestBody.secret });
-  assert.ok(!Object.hasOwn(requestBody, 'phone') && !Object.hasOwn(requestBody, 'userId') && !Object.hasOwn(requestBody, 'role'));
-  await service.pollOrExchange({ storage, api, fetchImpl: async () => ({ ok: true, json: async () => ({ success: true, token: 'jwt', userId: 'u1', deviceId: 'd1', user: { id: 'u1', name: '教师甲', role: 'teacher' } }) }) });
-  assert.strictEqual(service.readDesktopAuthorizationSession(storage).authorization, 'Bearer jwt');
-  assert.strictEqual(ipc.get('credential').user.name, '教师甲');
+  const value = {
+    token: 'short-session-token',
+    expiresAt: '2026-07-17T18:00:00.000Z',
+    session: {
+      id: 'sid-1',
+      userId: 'u1',
+      deviceId: 'd1',
+      eligibleRoles: ['super_admin', 'teacher'],
+      activeRole: 'teacher',
+      authVersion: 7,
+      credentialVersion: 3,
+      rowVersion: 1,
+    },
+    profile: { userId: 'u1', user: { id: 'u1', name: '教师甲' }, teacherId: 'teacher-1' },
+  };
+  await service.saveDesktopAuthorizationSession(value, { storage, desktopIdentity });
+  assert.strictEqual(service.readDesktopAuthorizationSession(storage).authorization, 'Bearer short-session-token');
+  assert.strictEqual(service.readDesktopAuthorizationSession(storage).authContext.activeRole, 'teacher');
+  assert.strictEqual(service.readDesktopAuthorizationSession(storage).authContext.sessionId, 'sid-1');
+  assert.strictEqual(service.readDesktopAuthorizationSession(storage).authContext.authVersion, 7);
+  assert.strictEqual(service.readDesktopAuthorizationSession(storage).authContext.credentialVersion, 3);
+  assert.deepStrictEqual(storageWrites, [], 'short desktop sessions must remain in memory only');
+  assert.strictEqual(ipcCalls.length, 0, 'saving a short session must not use raw credential IPC');
+
+  await service.clearDesktopAuthorizationSession({ storage, desktopIdentity, lockVault: true });
+  assert.deepStrictEqual(ipcCalls, ['lock']);
+  assert.throws(
+    () => service.readDesktopAuthorizationSession(storage),
+    error => error.code === 'AUTHORIZATION_CONTEXT_REQUIRED'
+  );
+
   values.set(service.desktopAuthorizationSessionKey, JSON.stringify({ token: 'legacy', userId: 'u2', deviceId: 'd2' }));
-  await service.clearDesktopAuthorizationSession({ storage, api });
-  values.set(service.desktopAuthorizationSessionKey, JSON.stringify({ token: 'legacy', userId: 'u2', deviceId: 'd2' }));
-  const migrated = await service.hydrateDesktopAuthorizationSession({ storage, api });
-  assert.strictEqual(migrated.authorization, 'Bearer legacy');
+  await assert.rejects(
+    service.hydrateDesktopAuthorizationSession({ storage, desktopIdentity }),
+    error => error.code === 'DESKTOP_IDENTITY_UPGRADE_REQUIRED'
+  );
   assert.strictEqual(values.has(service.desktopAuthorizationSessionKey), false);
+  assert.strictEqual(storageWrites.length, 0, 'V1 tokens must never be auto-migrated to V2 storage');
+  assert.strictEqual(typeof service.startPairing, 'undefined', 'V1 desktop pairing must no longer be callable');
+  assert.strictEqual(typeof service.pollOrExchange, 'undefined', 'V1 exchange must no longer be callable');
   console.log('desktop authorization session tests passed');
 }
 main().catch(error => { console.error(error); process.exit(1); });

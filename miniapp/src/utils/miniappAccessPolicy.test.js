@@ -19,6 +19,7 @@ const storageSource = fs.readFileSync('miniapp/src/utils/storage.ts', 'utf-8');
 const adminUsersPage = fs.readFileSync('miniapp/src/pages/admin/users/index.tsx', 'utf-8');
 const studentsPage = fs.readFileSync('miniapp/src/pages/students/index.tsx', 'utf-8');
 const teachersPage = fs.readFileSync('miniapp/src/pages/teachers/index.tsx', 'utf-8');
+const teachersStyles = fs.readFileSync('miniapp/src/pages/teachers/index.scss', 'utf-8');
 const paymentsPage = fs.readFileSync('miniapp/src/pages/payments/index.tsx', 'utf-8');
 const schedulePage = fs.readFileSync('miniapp/src/pages/schedule/index.tsx', 'utf-8');
 const scheduleDetailPage = fs.readFileSync('miniapp/src/pages/schedule/detail/index.tsx', 'utf-8');
@@ -32,7 +33,7 @@ assert.ok(permission.includes('readonlyModules'), 'miniapp permission should def
 assert.ok(permission.includes('allowedWriteTasks'), 'miniapp permission should define allowedWriteTasks');
 assert.ok(permission.includes('studentModules'), 'miniapp permission should define studentModules');
 assert.ok(permission.includes('getMiniappRolePolicy'), 'miniapp permission should expose role-specific policy');
-assert.ok(permission.includes('reviewRolePolicy(user)') && permission.includes('canUserSubmitMiniappWrite'), 'miniapp permission boundary must delegate strict review policy and generic write checks to the tested runtime');
+assert.ok(permission.includes('accountExperiencePolicy(user)') && permission.includes('canUserSubmitMiniappWrite'), 'miniapp permission boundary must delegate the real account experience policy and generic write checks to the tested runtime');
 assert.ok(permission.includes('createPermissionFetchBoundary') && permission.includes('sanitizeCapabilities: sanitizeCapabilitiesForIdentity'), 'fetchPermissions and persistent session cache must use the behavior-tested sanitizer boundary');
 assert.ok(permission.includes("'super_admin' | 'admin' | 'teacher' | 'student' | 'pending'"), 'miniapp user contract should include every unified authorization role');
 for (const scopeField of ['tenant_id?: string', 'tenantId?: string', 'teacher_id?: string', 'teacherId?: string', 'active?: number | boolean', 'deleted?: number | boolean', 'disabled?: number | boolean']) {
@@ -79,6 +80,10 @@ assert.ok(adminUsersPage.includes('loading') && adminUsersPage.includes('empty')
 assert.ok(adminUsersPage.includes('lockedKeys'), 'review workbench should expose per-user and per-pairing saving state');
 assert.ok(adminUsersPage.includes('createLatestRequestCoordinator'), 'review workbench should reject stale load responses');
 assert.ok(adminUsersPage.includes('createOperationLocks'), 'review workbench should lock duplicate mutations by entity key');
+assert.ok(api.includes('adminList:') && api.includes('approveApplication:') && api.includes('rejectApplication:') && api.includes('retryApplication:'), 'miniapp API must expose the real application review workflow');
+assert.ok(adminUsersPage.includes("capabilities.includes('applications:review')"), 'ordinary and super administrators must use the server application-review capability');
+assert.ok(adminUsersPage.includes('applicationApi.adminList') && adminUsersPage.includes('applicationApi.approveApplication') && adminUsersPage.includes('applicationApi.rejectApplication') && adminUsersPage.includes('applicationApi.retryApplication'), 'administrator UI must cover listing, approval, rejection and provisioning retry');
+assert.ok(adminUsersPage.includes('applicantIdentityKind') && adminUsersPage.includes('hostTaskId') && adminUsersPage.includes('rejectionReason'), 'application cards must expose applicant identity and truthful workflow status');
 assert.ok(adminUsersPage.includes('read-only-notice'), 'ordinary administrators should receive an explicit read-only state');
 assert.ok(api.includes('disableUser:'), 'miniapp admin API should expose the real disable endpoint');
 assert.ok(api.includes('review_status'), 'miniapp user listing API should support review-status filtering');
@@ -96,7 +101,12 @@ assert.ok(miniappHome.includes('setBusinessCacheIdentity'), 'home should activat
 assert.ok(storageSource.includes('cache_${activeCacheIdentity}_${table}'), 'business cache keys should be identity scoped');
 assert.ok(storageSource.includes('previousIdentity !== nextIdentity'), 'business cache should clear the prior identity namespace on account switch');
 assert.ok(loginPage.includes('createNormalSessionCommitter') && loginPage.includes('setBusinessCacheIdentity,'), 'login should atomically switch the business cache identity after authentication');
-assert.ok(loginPage.includes('createReviewSessionCommitter') && loginPage.includes('loginMutexRef'), 'review login should use the atomic session committer and a shared synchronous mutex');
+assert.ok(loginPage.includes('createNormalSessionCommitter') && loginPage.includes('loginBusyRef'), 'the single verified-phone login must use the atomic session committer and a shared synchronous mutex');
+assert.ok(!loginPage.includes('createReviewSessionCommitter') && !loginPage.includes('reviewDemoApi'), 'removed review identities must not have a client login path');
+assert.ok(miniappHome.includes('isUnrecognizedIdentity') && miniappHome.includes('AccountStatusBanner'), 'home must isolate the real unrecognized identity before formal API loading');
+assert.ok(schedulePage.includes('isUnrecognizedIdentity') && schedulePage.includes('AccountStatusBanner'), 'schedule must render a real empty state without calling formal APIs for unrecognized identities');
+assert.ok(questionBankPage.includes('UnrecognizedExperiencePage'), 'question bank must route unrecognized identities to the isolated four-question experience');
+assert.ok(customTabBar.includes('EXPERIENCE_TABS') && customTabBar.includes("navigationMode === 'unrecognized'"), 'unrecognized identities need the four-tab restricted shell');
 assert.ok(loginPage.includes('createAuthenticationEntryBoundary') && loginPage.includes('loginBoundary.run(() => Taro.login())'), 'normal platform login must remain bound to its starting session before any WeChat request or commit');
 assert.ok(customTabBar.includes("return 'pending'"), 'tab bar should fail closed when no authenticated role is available');
 assert.ok(customTabBar.includes("userType === 'pending' ? LIMITED_TABS"), 'pending users should not receive business navigation tabs');
@@ -129,6 +139,11 @@ assert.ok(schedulePage.includes('day-column-inner'), 'schedule page should put d
 assert.ok(scheduleStyles.includes('.day-column-inner'), 'schedule styles should define the inner day column spacing class');
 assert.ok(sharedComponents.includes('className="pr-scroll"'), 'PullRefreshView should keep padding classes off the scroll-view');
 assert.ok(!sharedComponents.includes('className={`pr-scroll ${className || \'\'}'), 'PullRefreshView should not attach page padding classes to scroll-view');
+assert.ok(
+  /\.teachers-page\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/s.test(teachersStyles)
+    && /\.teacher-list\s*\{[^}]*flex:\s*1;/s.test(teachersStyles),
+  'teachers page must give PullRefreshView a flex-column parent and a flexible list height so populated review data remains visible'
+);
 assert.ok(!sharedComponents.includes('Taro.getNetworkType'), 'NetworkStatus should not call getNetworkType on mount because WeChat DevTools can emit internal timeout errors');
 assert.ok(coursesPage.includes('className="course-scroll"') && coursesPage.includes('className="course-list"'), 'courses page should separate scroll container from padded list');
 assert.ok(paymentsPageSource.includes('className="pay-scroll"') && paymentsPageSource.includes('className="pay-list"'), 'payments page should separate scroll container from padded list');

@@ -13,6 +13,7 @@ import {
   FileWordOutlined,
   HomeOutlined,
   LockOutlined,
+  LaptopOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
   TeamOutlined,
@@ -27,7 +28,7 @@ export type PageKey =
   | 'school' | 'address' | 'institution'
   | 'question-bank-tools' | 'question-bank-import' | 'question-bank-preview' | 'question-bank-edit' | 'question-bank-paper' | 'question-bank-audit'
   | 'payment' | 'revenue-statistics' | 'personal-assets'
-  | 'teacher' | 'student' | 'permission'
+  | 'teacher' | 'student' | 'permission' | 'identity-devices'
   | 'system-params' | 'operate-log'
   | 'cloud-sync';
 
@@ -61,7 +62,7 @@ export const todayNavItem: NavItem = {
   icon: <AppstoreOutlined />,
 };
 
-export const navGroups: NavGroup[] = [
+const baseNavGroups: NavGroup[] = [
   {
     key: 'academic',
     label: '教务',
@@ -116,7 +117,19 @@ export const navGroups: NavGroup[] = [
   },
 ];
 
+export const identityDeviceNavItem: NavItem = {
+  key: 'identity-devices',
+  label: String.fromCodePoint(0x8eab, 0x4efd, 0x4e0e, 0x8bbe, 0x5907),
+  description: String.fromCodePoint(0x5ba1, 0x6838, 0x7535, 0x8111, 0x7533, 0x8bf7, 0x5e76, 0x7ba1, 0x7406, 0x672c, 0x4eba, 0x8bbe, 0x5907),
+  icon: <LaptopOutlined />,
+};
+
+export const navGroups: NavGroup[] = baseNavGroups.map(group => group.key === 'system-data'
+  ? { ...group, items: [identityDeviceNavItem, ...group.items] }
+  : group);
+
 const legacyQuestionBankItems: Record<PageKey, NavItem> = {
+  'identity-devices': identityDeviceNavItem,
   'question-bank-import': { key: 'question-bank-import', label: '试题导入', description: '导入题库文档和试题', icon: <UploadOutlined /> },
   'question-bank-edit': { key: 'question-bank-edit', label: '试题编辑', description: '编辑已导入的试题', icon: <BookOutlined /> },
   'question-bank-audit': { key: 'question-bank-audit', label: '审核中心', description: '审核题库变更与内容', icon: <SafetyCertificateOutlined /> },

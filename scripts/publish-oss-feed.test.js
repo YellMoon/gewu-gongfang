@@ -6,6 +6,11 @@ const { spawnSync } = require('child_process');
 const yaml = require('js-yaml');
 
 const packageJson = require('../package.json');
+const {
+  DESKTOP_CLIENT_FLAVOR,
+  PRIMARY_HOST_FLAVOR,
+  updateFeedForFlavor,
+} = require('../public/desktopBuildFlavor');
 const publishScript = fs.readFileSync(path.join(__dirname, 'publish-oss-feed.js'), 'utf8');
 const electronMain = fs.readFileSync(path.join(__dirname, '..', 'public', 'electron.js'), 'utf8');
 const quarkUpload = fs.readFileSync(path.join(__dirname, 'upload-quark-clean.js'), 'utf8');
@@ -20,8 +25,14 @@ assert.ok(
   'electron-builder publish URL should point to the Beijing OSS desktop update bucket'
 );
 assert.ok(
-  electronMain.includes(`${beijingUpdateBaseUrl}/`),
-  'desktop auto-updater should default to the Beijing OSS update feed'
+  electronMain.includes('updateFeedForFlavor(DESKTOP_BUILD_FLAVOR, process.env)') &&
+  updateFeedForFlavor(DESKTOP_CLIENT_FLAVOR, {}) === `${beijingUpdateBaseUrl}/`,
+  'ordinary desktop auto-updater should default to the Beijing OSS desktop feed'
+);
+assert.strictEqual(
+  updateFeedForFlavor(PRIMARY_HOST_FLAVOR, {}),
+  `${beijingUpdateBaseUrl}-host/`,
+  'primary-host desktop auto-updater should use the isolated Beijing OSS host feed'
 );
 assert.ok(
   publishScript.includes(beijingUpdateBaseUrl),

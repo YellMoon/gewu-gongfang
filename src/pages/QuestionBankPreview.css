@@ -263,3 +263,64 @@
 .question-delete-hidden > :nth-child(3) {
   display: none;
 }
+.taxonomy-system-block {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #edf0f5;
+}
+
+.qb-preview-tree-card > .ant-card-head .qb-tree-section-title {
+  font-size: 0;
+}
+
+.qb-preview-tree-card > .ant-card-head .qb-tree-section-title .anticon {
+  font-size: 14px;
+}
+
+.qb-preview-tree-card > .ant-card-head .qb-tree-section-title::after {
+  content: "\4F53\7CFB";
+  margin-left: 6px;
+  font-size: 14px;
+}
+
+.qb-preview-tree-card .taxonomy-manager ~ .qb-tree-search,
+.qb-preview-tree-card .taxonomy-manager ~ .knowledge-tree,
+.qb-preview-tree-card .taxonomy-manager ~ .qb-tree-divider,
+.qb-preview-tree-card .taxonomy-manager ~ .qb-model-tree-title {
+  display: none;
+}
+
+.qb-filter-row-secondary > .qb-filter-multi {
+  display: none;
+}
+
+.taxonomy-filter-pair {
+  display: grid;
+  grid-template-columns: minmax(64px, auto) minmax(160px, 1fr) minmax(160px, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.taxonomy-edit-modal .ant-form-item:has(input[id*="knowledge_ids"]),
+.taxonomy-edit-modal .ant-form-item:has(input[id*="model_ids"]) {
+  display: none;
+}
+
+.taxonomy-system-title,
+.taxonomy-node-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.taxonomy-node-title {
+  width: 100%;
+}
+
+.taxonomy-node-title > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

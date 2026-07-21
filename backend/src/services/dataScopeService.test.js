@@ -45,9 +45,22 @@ assert.strictEqual(scoped.schedules.reduce((sum, row) => sum + row.calculated_te
 assert.strictEqual(scoped.schedules.reduce((sum, row) => sum + row.calculated_tuition, 0), 500, 'tuition excludes other teachers');
 assert.strictEqual(scoped.assetRecords.reduce((sum, row) => sum + row.amount, 0), 10, 'assets exclude other owners');
 assert.notStrictEqual(scoped, snapshot);
+const dualRoleTeacherScoped = scopeBusinessSnapshot(snapshot, {
+  kind: 'teacher',
+  activeRole: 'teacher',
+  eligibleRoles: ['super_admin', 'teacher'],
+  teacherId: 't1',
+  userId: 'u1',
+});
+assert.deepStrictEqual(
+  dualRoleTeacherScoped.courses.map(x => x.id),
+  ['c1'],
+  'eligible super-admin role must not widen a teacher active session'
+);
 assert.strictEqual(snapshot.courses.length, 2, 'input must not be mutated');
 
 assert.strictEqual(scopeBusinessSnapshot(snapshot, { kind: 'admin' }).courses.length, 2);
+assert.strictEqual(scopeBusinessSnapshot(snapshot, { kind: 'all' }).courses.length, 2);
 assert.deepStrictEqual(scopeBusinessSnapshot(snapshot, { kind: 'pending' }), {});
 const emptyStudent = scopeBusinessSnapshot(snapshot, { kind: 'student', studentIds: [] });
 assert.deepStrictEqual(emptyStudent.courses, []);

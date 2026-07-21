@@ -587,24 +587,117 @@ Status: completed — implementation, render verification and applicable release
 
 ### 小程序登录审核阻断
 
-- [ ] 按任务“处理登录审核阻断”（线程 `019f59da-1ae1-75c2-bf60-32a4e7d3dbd5`）中的既定方案，增加正式保留的“审核体验”入口，避免审核员因手机号白名单和人工批准流程无法进入核心功能。
-- [ ] 提供管理员体验和学生体验两种短期 `demo` 会话，继续复用现有角色权限模型，但只访问独立、脱敏的演示数据空间，绝不读取真实学员、财务、手机号或题库业务数据。
-- [ ] 服务端强制演示会话只读；允许浏览核心示例页面及在临时沙箱中体验组卷/导出，禁止用户审核、财务导入、真实教务写入、同步到本地主机等操作。
-- [ ] 同步调整小程序入口、阿里云鉴权、数据范围与提审说明，提供有效体验码；不得通过自动放开新用户、真实管理员账号或客户端审核特供绕过权限。
+- [x] 2026-07-16 用户已明确废弃“体验码 + 可选择管理员/学生演示角色”的产品方案；既有安全沙箱只作为后续“未认可学生”固定示例题与 Word/PDF 导出的隔离实现基础，不再暴露审核专用角色或体验码入口。
+- [ ] 改为所有用户每次登录都由微信按钮强制验证手机号；未审核或未通过审核的真实账号签发严格受限的“未认可学生”会话，已通过审核的账号按学生、老师、管理员等真实角色进入对应界面。
+- [ ] 未认可学生只能看到体验账号说明、申请状态、空课程/空真实题库及明确标注的固定示例题；不得读取真实学员、课程、财务、手机号、题库快照，不得向本地数据主机提交核心业务写入。
 - [ ] 完成安全回归、小程序构建上传和审核版本核验；若微信审核或平台权限仍阻断，记录真实状态，不宣称发布完成。
 
 ---
-### Review experience Task 6 local evidence (2026-07-15)
+### Superseded review-experience evidence (2026-07-22)
 
-- The permanent review-entry guide now covers both admin and student roles, sanitized read-only examples, the linked sample student, the isolated in-memory paper/DOCX/PDF sandbox, and server-side denial of real writes. No actual deployment review code is committed; non-placeholder values are explicit non-production test fixtures.
-- Readiness and deployment validate `MINIAPP_REVIEW_EXPERIENCE_CODE` strength without returning or logging its value. The formal Gateway deploy refreshes the validated PM2 environment through `--update-env`, with command redaction applied before output.
-- The injectable public smoke covers both roles: login, canonical permissions, scoped snapshot, question preview, sandbox create/read/cancel, DOCX/PDF signatures, and `403 REVIEW_DEMO_READ_ONLY` on `/api/cloud/tasks` before its domain route.
-- Public-smoke response readers now enforce declared and cumulative byte caps for JSON and artifacts, cancel oversized streams, and validate an explicit admin/student snapshot collection, field, identifier, reference, count, and status allowlist.
+- The former experience-code and synthetic admin/student review flow is removed. It is retained in history only and must not be restored as a production entry point.
+- WeChat review now uses the same verified-phone login as every user. An unknown phone receives a real, restricted unrecognized-student identity with four fixed sample questions, isolated DOCX/PDF export, and a real account-application path.
+- Release readiness and deployment no longer accept or require `MINIAPP_REVIEW_EXPERIENCE_CODE`; the miniapp uses the single Backend base URL. Gateway review-demo routes remain tombstones solely to invalidate old clients and tokens.
+- The review guide documents collected fields, purpose, server-side isolation and 180-day redaction. Final public smoke and release evidence remain pending.
 - Production deployment now requires a strong Gateway-compatible backend JWT secret, rejects unknown SSH host keys using system or an explicitly configured known-hosts file, aborts on remote nonzero exit status, and accepts health responses only when their HTTP and JSON contracts pass.
 - Backend and Gateway deployment health checks require the exact root unified version; Gateway reports `GEWU_APP_VERSION` in deployed environments and uses its package version only as a local fallback.
 - Secret staging failure-injection checks cover flush, remote-file close, SFTP close, and removal errors while preserving the primary failure and attempting cleanup.
 - Focused local tests and syntax checks pass. No real code has been recorded or configured; no public smoke, cloud deployment, miniapp upload, WeChat submission, or public release is claimed at this stage.
 
 Release-related unchecked items above remain pending until Task 7 has runtime evidence.
+
+---
+
+### 2026-07-16 未认可学生、公开申请与双手机号学生账户
+
+#### 目标与已确认约束
+
+- 状态：`design_approved`。用户已确认推荐账户模型、老师申请不采集课时费，并授权后续不再就一般实现细节询问；完成设计自审和实施计划后按 TDD 执行。
+- 所有登录必须使用微信 `getPhoneNumber` 获取的动态凭证验证当前手机号；不得只凭客户端填写手机号或复用未重新验证的静默登录路径。
+- 每一次服务端登录结果都必须留痕，包括已验证手机号、关联用户、结果码、时间和必要版本信息；不保存微信登录 code、手机号 code、JWT 或其他临时凭证。
+- 未获审核通过的真实用户统一进入“未认可学生”界面。界面只说明当前为体验账号并引导提交真实资料；课程、财务、真实题库和其他敏感数据均为空或不可达。
+- 公开申请只允许 `student` 与 `teacher`；管理员永远不可自助申请。普通管理员可审核学生/老师公开申请，固定超级管理员继续负责管理员身份、设备绑定等高权限操作。
+- 学生申请强制字段：学生姓名、学生手机号、学校、当前年级、家长角色（爸爸或妈妈）、家长手机号。学生手机号和家长手机号必须不同，当前微信验证手机号必须等于二者之一；其他现有学生基本信息选填。
+- 当前年级使用高一、高二、高三、高复；服务端按每年 9 月切换学年，将当前年级反算为高一入学年份并保存 `grade_year`，`grade_current` 由该年份统一计算。
+- 一个学生业务档案最多绑定两个登录身份：学生本人一个、唯一家长一个。二者分别拥有独立微信身份与登录审计记录，但共享同一个 `student_id`、学生数据范围和会员状态；家长仍呈现为学生用户，不新增家长业务角色。
+- 老师申请复用现有老师基本字段中的姓名、手机号、科目、备注；不采集课时费。姓名和已验证手机号必填，科目、备注按现有字段规则选填。审核通过后绑定唯一 `teacher_id`。
+- 审核通过只在账号名称旁显示“会员”标记，不提供定价、购买、订阅或虚构付费入口。会员状态与角色/审核状态分离，为未来收费渠道预留扩展空间；现有已审核用户迁移为有效会员。
+- 未认可学生可查看的示例题固定取自 `D:\题库测试文件\试卷格式\2026届浙江宁波市高三第二学期高考与选考模拟考试（二模）物理试卷.docx` 的少量脱敏题目（计划题号 1、2、4、11）。生产运行时不得访问 D 盘或携带原始整卷，只发布人工核对后的固定最小示例集合；第 2 题移除非必要照片引用并保持物理陈述与答案不变。
+
+#### 实施级检查清单
+
+- [x] 向用户提交 2–3 种账户/绑定方案并采用“一个学生业务档案 + 学生/家长两条独立认证身份”的推荐设计；用户已确认。
+- [x] 将确认后的完整设计写入 `docs/superpowers/specs/2026-07-16-unrecognized-student-membership-design.md`，并按生产路由自审为 Backend 单一认证/申请源；用户已授权自行继续，无需再次等待复核。
+- [ ] 编写逐文件实施计划，明确数据库迁移、兼容期、幂等键、失败恢复、回滚和统一发布顺序。
+- [ ] 阿里云 Backend（`/scheduling`）作为唯一小程序认证/申请源，增加真实未认可会话、公开申请、登录事件、双手机号身份绑定、独立会员状态及审核审计；不得与 Gateway 镜像用户或双重签发令牌。
+- [ ] Backend 对未认可会话采用服务端能力白名单，只允许读取自身申请/状态、固定示例题及隔离 Word/PDF 沙箱；真实快照、正式云任务、设备配对和所有核心写入必须 fail closed。Gateway 对该令牌一律拒绝，旧体验码与合成角色入口返回 410。
+- [ ] 本地数据主机增加学生家长手机号/关系所需业务字段与跨身份唯一性校验，并增加幂等的学生/老师建档或绑定任务处理；阿里云不得直接创建权威学生/老师业务记录。
+- [ ] 管理员批准后先进入 `provisioning`，通过 `/scheduling` Backend 现有 V2 云任务 owner 让指定数据主机创建或复用唯一 `student_id`/`teacher_id`；主机成功回传后 Backend 才原子启用正式账号和会员。失败、超时、重复回调和重启恢复均不得产生重复档案或越权账号。
+- [ ] 学生获批时为学生手机号和唯一家长手机号分别建立/复用一条认证身份，二者共享同一 `student_id`；尚未登录的另一手机号只作为待绑定身份，首次使用微信验证该手机号后才绑定 openid。
+- [ ] 小程序登录页改成唯一的手机号授权登录动作；新增未认可学生资料申请/状态 UI，并让待审核老师在获批前仍停留在未认可学生壳层，获批后重新登录进入老师界面。
+- [ ] 在账号名称旁实现真实会员标记；不得新增价格、购买、续费、权益承诺或其他尚未实现的商业功能文案。
+- [ ] 用固定示例题替换当前虚构题目，验证示例列表、组卷、取消、Word、PDF、会话隔离、资源大小限制和无 D 盘运行依赖。
+- [ ] 用 RED→GREEN 测试覆盖手机号每次验证、申请字段/年级反算、双手机号冲突、同学生最大两个身份、老师唯一绑定、普通管理员审核边界、主机任务幂等、令牌不自动提权、登录留痕和隐私字段投影。
+- [ ] 维护并验证 `miniapp/src/app.config.ts` 全部 16 个注册页面；分别留下未认可学生、受认可学生、老师、管理员及空态/离线/无权限/有限写入关键状态截图与检查记录，确保 `miniappUiCoverage` 通过。
+- [ ] 更新小程序隐私保护指引及登录前告知：说明手机号、学生/家长/老师申请资料的用途、处理方式、保存期限和权利入口；按最小必要原则限制后台可见范围。
+- [ ] 完成版本递增、全量测试、构建、提交与 `gewu/master` 推送，并按统一发布矩阵执行阿里云备份/迁移/部署/健康检查、本地数据主机升级与真实链路验证、小程序上传、OSS 桌面更新发布及 Node ABI 恢复验证。
+- [ ] 尝试微信审核/发布并留存结果；若平台、账号、白名单或审核权限阻断，只能标记“部分发布/受阻”并附精确证据。
+
+#### 底层不变量
+
+- 认证身份与学生业务档案分离：一个手机号只属于一个登录身份；一个学生档案最多有 `student`、`parent` 两种身份各一条；两个身份共享业务范围但不共享 openid、令牌或登录事件。
+- 申请提交不等于认可，管理员点击通过也不立即开放正式权限；只有指定本地数据主机完成权威建档/绑定并由 Backend 幂等收敛后才可签发正式角色令牌。
+- 未认可令牌不能因后台状态变化而原地升级权限；获批后必须重新登录获得正式令牌，旧令牌在整个有效期内始终受限。
+- 会员状态不授予角色权限，角色权限也不伪造付费状态；当前“审核通过赠予有效会员”作为明确来源记录，未来付费扩展不得改变已有权限审计语义。
+- 登录事件保存真实验证手机号以满足运营审计，但只有受控后台可见；禁止记录微信临时 code、JWT、环境密钥、体验码或完整请求体。
+- 固定示例题属于公开体验资源，不属于权威题库快照；所有真实题库查询对未认可身份返回空集合或 403，绝不靠前端隐藏实现隔离。
+
+#### 验证、回滚与发布说明
+
+- 数据迁移必须先备份阿里云 Backend/Gateway 与本地权威数据库，新增表/列/索引采用向前兼容迁移；任何身份冲突只记录脱敏审计并停止自动合并，不覆盖原用户或学生档案。
+- 发布顺序暂定为兼容服务端 → 本地数据主机 → 小程序 → OSS 桌面端；最终顺序以已确认设计和实施计划为准。任一步失败时保留旧客户端可登录能力，但不得回退到体验码或放开未审核权限。
+- 验收证据至少包括单元/HTTP/集成/迁移测试、真实微信运行时截图、Backend/Gateway 公网权限探针、本地主机任务与题库盘检查、阿里云/OSS/小程序上传版本记录及微信平台状态。
+
+---
+
+### 2026-07-17 桌面人类身份、多角色、多设备与数据主机换机
+
+#### 状态与已确认约束
+
+- 状态：`design_approved`。用户批准“微信手机号负责首次/新设备身份，本机密码/PIN负责已授权电脑日常解锁”的混合方案。
+- 固定超级管理员同时是一名老师，必须由同一个 `users` 身份同时持有 `super_admin` 与 `teacher` 授权并绑定唯一 `teacher_id`；不得复制用户或老师档案。现有 `_enforceCanonicalSuperAdmin()` 清空 `teacher_id` 的行为必须删除并回归验证。
+- 用户当前同时使用本数据主机和另一台普通电脑，未来还可能新增或更换电脑。设备授权是一对多，每台设备独立验证、批准、撤销和审计，但都指向同一人类身份。
+- “数据主机”是唯一设备职责，不是用户角色；同一人可在主机和普通电脑登录，但任一时刻只能有一台激活的权威数据主机。
+- 新电脑、首次注册、换机和身份恢复必须微信扫码进入正式小程序，重新验证微信手机号并确认设备；审核员不能再为未验证申请任意选择账号。
+- 已批准电脑每次应用启动先输入本机密码/PIN。密码只解锁当前设备的加密凭证，不能在另一台电脑登录，也不能替代微信手机号注册/找回。
+- 数据主机增加顶级“身份与设备”审核中心、待审角标和主机迁移/恢复入口，解决当前主机没有明显审核窗口和初始管理员会话死锁。
+
+#### 实施级检查清单
+
+- [x] 完成现状审计：桌面无启动身份门、申请只含设备信息、审核员可任意选择用户、审核面板隐藏且依赖既有超级管理员会话、固定超级管理员初始化清空 `teacher_id`。
+- [x] 用户批准混合身份方案及多角色、多设备、未来换机补充；正式设计写入 `docs/superpowers/specs/2026-07-17-desktop-human-identity-multi-device-design.md`。
+- [x] 编写逐文件 TDD 实施计划 `docs/superpowers/plans/2026-07-17-desktop-human-identity-multi-device.md`，并作为原总计划 Task 6A 加入统一发布矩阵。
+- [ ] 新增角色授权集合和当前工作身份；迁移固定超级管理员为 `super_admin + teacher`，保留唯一 `teacher_id`，老师/管理员服务端数据范围可切换且缓存隔离。
+- [ ] 新增微信手机号桌面挑战、固定声明人、耐久设备授权、短会话、撤销和复核时限；删除审批接口的任意 `userId` 选择。
+- [ ] Electron 主进程实现设备密钥、本机密码/PIN加密信封、启动身份门、在线短会话和有限离线身份租约；业务页面和主机轮询必须在解锁后启动。
+- [ ] 新增顶级身份与设备审核中心及小程序确认入口；覆盖两台设备、第三台换机、丢失撤销、同一人批准自己新设备但待审设备不能自批。
+- [ ] 实现当前主机一次性 bootstrap、两阶段计划换机、离线恢复因子与紧急恢复；任何时刻只有一个 `primary_host_epoch`。
+- [ ] Backend 成为唯一桌面身份/设备控制面；Gateway V1 配对入口 410，主机继续作为业务数据和题库最高权威。
+- [ ] 用 RED→GREEN 覆盖角色迁移、teacher scope、二维码重放、用户注入、跨设备秘密、密码限速、撤销、离线租约、主机换机和恢复失败矩阵。
+- [ ] 完成真实 Electron 主机/普通电脑/窄窗口验证，并随当前目标统一执行小程序、阿里云、本地主机和 OSS 发布核验。
+
+#### 底层不变量
+
+- 人、角色、业务主体和设备四层分离：一个人可多角色、多设备；一台设备只属于一人；一个老师角色只绑定一个权威 `teacher_id`。
+- `active_role=teacher` 必须执行老师范围，即使该用户也拥有超级管理员授权；高权限操作要求近期本机提权且来自已激活设备。
+- 本机密码不是云账号密码；设备信息不是人类身份；微信扫码本身也不是身份，必须由用户主动完成手机号验证。
+- 旧主机存在时从旧主机签发计划迁移；旧主机损坏时同时要求规范手机号、离线恢复因子、权威备份和题库绑定，云端不得单因素提升新主机。
+- 设备撤销、用户停用、角色版本变化和主机 generation 变化必须使旧会话或旧主机能力失效，但不得删除普通端本地数据或待同步队列。
+
+#### 验证、回滚与发布说明
+
+- 迁移先增表和双读，不删除旧 `role/teacher_id/desktop_device_pairings`；旧设备除当前主机受控 bootstrap 外均需重新扫码，不能把缺少人类验证的旧 approved pairing 直接升级。
+- 发布顺序纳入当前总目标：兼容 Backend、本地主机 bootstrap/升级、小程序桌面确认入口、OSS 桌面端、最后关闭 Gateway V1；中间版本不得推送或外部发布。
+- 回滚只回滚代码/功能开关，不删除角色授权、设备授权、会话、主机 generation 或审计；不得恢复审核员任意选账号。
 
 ---

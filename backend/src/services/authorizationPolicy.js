@@ -40,11 +40,26 @@ function roleForUser(user) {
   return ROLES.includes(role) ? role : 'pending';
 }
 
+function activeRoleForUser(user) {
+  user = asObject(user);
+  const activeRole = user.activeRole || user.active_role || null;
+  const eligibleRoles = Array.isArray(user.eligibleRoles)
+    ? user.eligibleRoles
+    : Array.isArray(user.eligible_roles) ? user.eligible_roles : null;
+  if (!activeRole) return roleForUser(user);
+  if (!eligibleRoles || !eligibleRoles.includes(activeRole)) return 'pending';
+  return ROLES.includes(activeRole) ? activeRole : 'pending';
+}
+
 function canReviewUsers(user) {
   user = asObject(user);
   const hasCanonicalIdentity = user.id === CANONICAL_SUPER_ADMIN_ID
     || user.is_super_admin_identity === 1 || user.is_super_admin_identity === true;
-  return hasCanonicalIdentity && roleForUser(user) === 'super_admin';
+  return hasCanonicalIdentity && activeRoleForUser(user) === 'super_admin';
+}
+
+function canReviewApplications(user) {
+  return ['super_admin', 'admin'].includes(activeRoleForUser(user));
 }
 
 function resolveTeacherBinding(user, teachers) {
@@ -70,23 +85,36 @@ function resolveTeacherBinding(user, teachers) {
 
 function scopeForUser(user) {
   user = asObject(user);
-  const role = roleForUser(user);
+  const explicitActiveRole = user.activeRole || user.active_role || null;
+  const eligibleRoles = Array.isArray(user.eligibleRoles)
+    ? user.eligibleRoles
+    : Array.isArray(user.eligible_roles) ? user.eligible_roles : null;
+  if (explicitActiveRole && (!eligibleRoles || !eligibleRoles.includes(explicitActiveRole))) {
+    return { kind: 'none' };
+  }
+  const role = explicitActiveRole || roleForUser(user);
+  const teacherId = user.teacher_id || user.teacherId;
+  const studentId = user.student_id || user.studentId;
 
   if (role === 'super_admin' || role === 'admin') return { kind: 'all' };
-  if (role === 'teacher' && user.teacher_id) {
-    return { kind: 'teacher', teacherId: user.teacher_id };
+  if (role === 'teacher' && teacherId) {
+    return { kind: 'teacher', teacherId };
   }
-  if (role === 'student' && user.student_id) {
-    return { kind: 'student', studentId: user.student_id };
+  if (role === 'student' && studentId) {
+    return { kind: 'student', studentId };
   }
   return { kind: 'none' };
 }
 
 function effectiveCapabilities(authz = {}, { gateway = false } = {}) {
-  const role = authz.role || roleForUser(authz);
+  const role = authz.activeRole || authz.active_role
+    ? activeRoleForUser(authz)
+    : authz.role || roleForUser(authz);
   if (role === 'pending') return [];
   const capabilities = [];
   if (role === 'super_admin') capabilities.push('users:review');
+  if ((['super_admin', 'admin'].includes(role) && authz.userApproved === true)
+    || canReviewApplications(authz)) capabilities.push('applications:review');
   if (role === 'super_admin' || role === 'admin') capabilities.push('business:all');
   if (role === 'teacher') capabilities.push('business:teacher-scope');
   if (['super_admin', 'admin', 'teacher', 'student'].includes(role)) capabilities.push('question-bank:view');
@@ -104,6 +132,8 @@ module.exports = {
   ROLES,
   normalizePhone,
   roleForUser,
+  activeRoleForUser,
+  canReviewApplications,
   canReviewUsers,
   resolveTeacherBinding,
   scopeForUser,

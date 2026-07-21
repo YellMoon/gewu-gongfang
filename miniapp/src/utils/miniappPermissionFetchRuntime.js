@@ -2,6 +2,7 @@ const {
   permissionIdentityKey,
   sanitizeCapabilitiesForIdentity,
 } = require('./miniappAuthorizationRuntime');
+const { accountCapabilities, isUnrecognizedIdentity } = require('./accountExperience');
 
 function emptyPermissionData(user) {
   return { permissions: [], capabilities: [], user_type: user?.user_type || 'pending' };
@@ -27,6 +28,13 @@ function createPermissionFetchBoundary(dependencies) {
     const localIdentityKey = permissionIdentityKey(localUser);
     dependencies.setMemoryCache(null);
     dependencies.setPermissionState({ status: 'idle', identityKey: localIdentityKey, capabilities: [] });
+    if (isUnrecognizedIdentity(localUser)) {
+      const capabilities = accountCapabilities(localUser);
+      const data = permissionData(localUser, capabilities);
+      dependencies.setMemoryCache(data);
+      dependencies.setPermissionState({ status: 'loaded', identityKey: localIdentityKey, capabilities });
+      return data;
+    }
     const result = await dependencies.refreshAuthorization(localUser);
     if (result.status === 'stale') {
       return dependencies.getMemoryCache() || emptyPermissionData(dependencies.getCurrentUser());

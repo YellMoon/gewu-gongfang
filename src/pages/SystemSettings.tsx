@@ -13,6 +13,10 @@ import SyncSettings from './SyncSettings';
 import type { CloudSyncContext } from '../navigation/navigationContext';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 import { systemSettingsRolePolicy } from '../services/systemSettingsRolePolicy.mjs';
+import {
+  desktopUpdateStateAfterCheck,
+  invokeDesktopUpdateCheck,
+} from '../services/desktopUpdateClient.mjs';
 const { questionBankBindingPresentation, bindQuestionBankStore } = require('../services/questionBankBindingUi');
 
 const { Text } = Typography;
@@ -196,7 +200,13 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
     setRuntimeLoading(true);
     try {
       const values = await runtimeForm.validateFields();
-      const saved = await saveRuntimeConfig(values);
+      const {
+        nodeRole: _managedNodeRole,
+        primaryHostEpochId: _managedEpochId,
+        primaryHostGeneration: _managedGeneration,
+        ...editableValues
+      } = values;
+      const saved = await saveRuntimeConfig(editableValues);
       setRuntimeConfig(saved);
       runtimeForm.setFieldsValue(saved);
       message.success('数据主机与同步配置已保存，重启软件后生效');
@@ -325,13 +335,9 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
     }
     setDesktopUpdate(prev => ({ ...prev, checking: true, error: undefined }));
     try {
-      const result = await window.api.invoke('check-for-updates');
+      const result = await invokeDesktopUpdateCheck(window.api);
       if (!result?.success) throw new Error(result?.error || '检查更新失败');
-      setDesktopUpdate(prev => ({
-        ...prev,
-        feedUrl: result.feedUrl || prev.feedUrl,
-        latestVersion: result.updateInfo?.version || prev.latestVersion,
-      }));
+      setDesktopUpdate(prev => desktopUpdateStateAfterCheck(prev, result));
     } catch (error: any) {
       setDesktopUpdate(prev => ({
         ...prev,
@@ -358,6 +364,45 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
   const handleInstallDesktopUpdate = async () => {
     await window.api?.invoke('install-update');
   };
+
+  const renderDesktopUpdatePanel = () => (
+    <Card title={'\u8f6f\u4ef6\u66f4\u65b0'} style={{ marginBottom: 16 }}>
+      <Alert
+        type={desktopUpdate.error ? 'error' : desktopUpdate.downloaded ? 'success' : desktopUpdate.available ? 'info' : 'success'}
+        showIcon
+        style={{ marginBottom: 16 }}
+        message={
+          desktopUpdate.error
+            ? '\u66f4\u65b0\u68c0\u67e5\u5931\u8d25'
+            : desktopUpdate.downloaded
+              ? '\u66f4\u65b0\u5df2\u4e0b\u8f7d\u5b8c\u6210'
+              : desktopUpdate.available
+                ? `\u53d1\u73b0\u65b0\u7248\u672c ${desktopUpdate.latestVersion || ''}`
+                : '\u53ef\u5728\u8f6f\u4ef6\u5185\u68c0\u67e5\u548c\u5b89\u88c5\u66f4\u65b0'
+        }
+        description={desktopUpdate.error || desktopUpdate.feedUrl || '\u901a\u8fc7\u963f\u91cc\u4e91 OSS \u66f4\u65b0\u901a\u9053\u68c0\u67e5\u3001\u4e0b\u8f7d\u5e76\u5b89\u88c5\u684c\u9762\u7aef\u65b0\u7248\u672c\u3002'}
+      />
+      <Space wrap>
+        <Button icon={<CloudDownloadOutlined />} loading={desktopUpdate.checking} onClick={handleCheckDesktopUpdate}>
+          {'\u68c0\u67e5\u66f4\u65b0'}
+        </Button>
+        <Button
+          type="primary"
+          disabled={!desktopUpdate.available || desktopUpdate.downloaded}
+          loading={desktopUpdate.downloading}
+          onClick={handleDownloadDesktopUpdate}
+        >
+          {'\u4e0b\u8f7d\u66f4\u65b0'}
+        </Button>
+        <Button disabled={!desktopUpdate.downloaded} onClick={handleInstallDesktopUpdate}>
+          {'\u91cd\u542f\u5e76\u5b89\u88c5'}
+        </Button>
+      </Space>
+      {desktopUpdate.downloading && (
+        <Progress style={{ marginTop: 16 }} percent={desktopUpdate.progress} />
+      )}
+    </Card>
+  );
 
   const handleResetData = () => {
     if (!dbService) {
@@ -444,6 +489,7 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
             <Descriptions.Item label={'\u914d\u7f6e\u65b9\u5f0f'}><Tag color="blue">{'\u7ba1\u7406\u5458\u6258\u7ba1'}</Tag></Descriptions.Item>
           </Descriptions>
         </Card>
+        {renderDesktopUpdatePanel()}
         <section id="sync-settings"><SyncSettings variant="quick" /></section>
       </div>
     );
@@ -510,12 +556,18 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
         <Form form={runtimeForm} layout="vertical">
           <Form.Item name="nodeRole" label="运行角色" rules={[{ required: true }]}>
             <Select
+              disabled
               options={[
                 { label: '本地数据主机', value: 'primary-host' },
                 { label: '普通离线客户端', value: 'desktop-client' },
               ]}
             />
           </Form.Item>
+          <Alert
+            type="info"
+            showIcon
+            message={'\u4e3b\u673a\u8eab\u4efd\u7531\u201c\u8eab\u4efd\u4e0e\u8bbe\u5907\u201d\u4e2d\u5fc3\u7ba1\u7406\uff0c\u4e0d\u80fd\u5728\u666e\u901a\u8bbe\u7f6e\u4e2d\u624b\u5de5\u5207\u6362\u3002'}
+          />
           <Form.Item name="deviceId" label="设备 ID" rules={[{ required: true }]}>
             <Input disabled />
           </Form.Item>
@@ -546,9 +598,11 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
           <Form.Item name="cloudBaseUrl" label="阿里云服务地址">
             <Input placeholder="https://your-domain.example.com" />
           </Form.Item>
-          <Form.Item name="desktopSyncToken" label={'\u684c\u9762\u7aef\u540c\u6b65\u5bc6\u94a5'}>
+          {false && (
+          <Form.Item hidden name="retiredDesktopSyncToken" label={'\u684c\u9762\u7aef\u540c\u6b65\u5bc6\u94a5'}>
             <Input.Password placeholder="same token on host, clients, and cloud env GEWU_DESKTOP_SYNC_TOKEN" />
           </Form.Item>
+          )}
           <Form.Item name="questionBankCandidatePaths" label="题库盘候选路径（支持热插拔/盘符变化）">
             <Select mode="tags" tokenSeparators={[';']} placeholder="例如 I:/GewuQuestionBank；换 Type-C 后可加入 J:/GewuQuestionBank" />
           </Form.Item>

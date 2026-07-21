@@ -1,6 +1,5 @@
 import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import ReviewDemoBanner from '../../components/ReviewDemoBanner';
 import './index.scss';
 
 export default function ForbiddenPage() {
@@ -14,7 +13,6 @@ export default function ForbiddenPage() {
 
   return (
     <View className="forbidden-page">
-      <ReviewDemoBanner />
       <View className="forbidden-icon">
         <Text className="icon-mark">限</Text>
       </View>

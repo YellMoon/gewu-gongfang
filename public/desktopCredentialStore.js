@@ -23,6 +23,10 @@ function validateCredential(value) {
 function createDesktopCredentialStore({ filePath, safeStorage, fsImpl = fs }) {
   if (!filePath || !safeStorage) throw new Error('DESKTOP_CREDENTIAL_STORE_CONFIG_REQUIRED');
   return {
+    inspectLegacy() {
+      const exists = fsImpl.existsSync(filePath);
+      return { exists, upgradeRequired: exists };
+    },
     read() {
       if (!fsImpl.existsSync(filePath)) return null;
       if (!safeStorage.isEncryptionAvailable()) throw new Error('DESKTOP_CREDENTIAL_ENCRYPTION_UNAVAILABLE');
@@ -34,8 +38,15 @@ function createDesktopCredentialStore({ filePath, safeStorage, fsImpl = fs }) {
       const credential = validateCredential(value);
       fsImpl.mkdirSync(path.dirname(filePath), { recursive: true });
       const temporary = `${filePath}.tmp`;
-      fsImpl.writeFileSync(temporary, safeStorage.encryptString(JSON.stringify(credential)));
-      fsImpl.renameSync(temporary, filePath);
+      try {
+        fsImpl.writeFileSync(temporary, safeStorage.encryptString(JSON.stringify(credential)));
+        fsImpl.renameSync(temporary, filePath);
+      } catch (error) {
+        try {
+          if (fsImpl.existsSync(temporary)) fsImpl.unlinkSync(temporary);
+        } catch (_cleanupError) { /* best effort */ }
+        throw error;
+      }
       return { userId: credential.userId, deviceId: credential.deviceId, user: credential.user, expiresAt: credential.expiresAt };
     },
     clear() {

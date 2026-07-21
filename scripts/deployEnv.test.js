@@ -13,7 +13,6 @@ const taskDoc = fs.readFileSync('task.md', 'utf-8');
 const rootPkg = JSON.parse(packageJson);
 const backendPkg = JSON.parse(backendPackage);
 const deployRequirementsPath = 'scripts/requirements-deploy.txt';
-const STRONG_TEST_FIXTURE = 'vN7$kP2@xR9!mQ4#tL8&cW5*zH3^sJ6?dF';
 const STRONG_JWT_FIXTURE = 'J7@vN2#qR9!mT4$kL8&cW5*zH3^sP6?dF1';
 
 assert.ok(fs.existsSync(deployRequirementsPath), 'deploy Python dependencies should be declared');
@@ -31,22 +30,21 @@ fs.writeFileSync(envFixturePath, [
   `BACKEND_JWT_SECRET="${STRONG_JWT_FIXTURE}"`,
   'WECHAT_APPID="wx-review-env-test"',
   'WECHAT_APPSECRET="wechat-review-env-secret"',
-  `MINIAPP_REVIEW_EXPERIENCE_CODE="${STRONG_TEST_FIXTURE}"`,
 ].join('\n'), 'utf-8');
 const cleanEnv = { ...process.env, DOTENV_CONFIG_PATH: envFixturePath };
-for (const name of ['APP_ENV', 'SCHEDULE_ENV', 'PORT', 'DEPLOY_HOST', 'DEPLOY_PASSWORD', 'DEPLOY_KEY_PATH', 'BACKEND_JWT_SECRET', 'WECHAT_APPID', 'WECHAT_APPSECRET', 'MINIAPP_REVIEW_EXPERIENCE_CODE']) {
+for (const name of ['APP_ENV', 'SCHEDULE_ENV', 'PORT', 'DEPLOY_HOST', 'DEPLOY_PASSWORD', 'DEPLOY_KEY_PATH', 'BACKEND_JWT_SECRET', 'WECHAT_APPID', 'WECHAT_APPSECRET']) {
   delete cleanEnv[name];
 }
 cleanEnv.DOTENV_CONFIG_PATH = envFixturePath;
 const deployProbe = spawnSync('python', [
   '-c',
-  'import scripts.deploy as d; values=d.remote_env_values(); print(d.APP_ENV); print(d.HOST); print(d.APP_PORT); print(values["GEWU_HOST_BASE_URL"] == "http://127.0.0.1:3002"); print("MINIAPP_REVIEW_EXPERIENCE_CODE" in values); print(values["MINIAPP_REVIEW_EXPERIENCE_CODE"] == d.MINIAPP_REVIEW_EXPERIENCE_CODE); d.require_remote_env(); print("review-config-ok")',
+  'import scripts.deploy as d; values=d.remote_env_values(); print(d.APP_ENV); print(d.HOST); print(d.APP_PORT); print(values["GEWU_HOST_BASE_URL"] == "http://127.0.0.1:3002"); print("MINIAPP_REVIEW_EXPERIENCE_CODE" not in values); d.require_remote_env(); print("account-config-ok")',
 ], { cwd: process.cwd(), env: cleanEnv, encoding: 'utf-8' });
 fs.rmSync(envFixtureDir, { recursive: true, force: true });
 assert.strictEqual(deployProbe.status, 0, deployProbe.stderr || 'deploy env probe should succeed');
 assert.deepStrictEqual(
   deployProbe.stdout.trim().split(/\r?\n/),
-  ['prod', 'deploy-env-test-host', '3002', 'True', 'True', 'True', 'review-config-ok'],
+  ['prod', 'deploy-env-test-host', '3002', 'True', 'True', 'account-config-ok'],
   'deploy.py should load APP_ENV and host from DOTENV_CONFIG_PATH and resolve the prod port'
 );
 
@@ -58,35 +56,18 @@ const missingReviewEnv = {
   WECHAT_APPID: 'wx-review-env-test',
   WECHAT_APPSECRET: 'wechat-review-env-secret',
   BACKEND_JWT_SECRET: '',
-  MINIAPP_REVIEW_EXPERIENCE_CODE: '',
 };
 const missingReviewProbe = spawnSync('python', [
   '-c',
-  'import scripts.deploy as d\ntry:\n d.require_remote_env()\nexcept SystemExit as e:\n print(str(e))\nelse:\n raise SystemExit("expected fail-closed review configuration")',
+  'import scripts.deploy as d\ntry:\n d.require_remote_env()\nexcept SystemExit as e:\n print(str(e))\nelse:\n raise SystemExit("expected fail-closed production configuration")',
 ], { cwd: process.cwd(), env: missingReviewEnv, encoding: 'utf-8' });
-assert.strictEqual(missingReviewProbe.status, 0, missingReviewProbe.stderr || 'missing review code probe should run');
-assert.ok(missingReviewProbe.stdout.includes('MINIAPP_REVIEW_EXPERIENCE_CODE'), 'production deploy should fail closed when review code is missing');
+assert.strictEqual(missingReviewProbe.status, 0, missingReviewProbe.stderr || 'missing production secret probe should run');
 assert.ok(missingReviewProbe.stdout.includes('BACKEND_JWT_SECRET'), 'production deploy should fail closed when the backend JWT secret is missing');
-assert.ok(!missingReviewProbe.stdout.includes(STRONG_TEST_FIXTURE), 'deployment validation must not print the configured review code');
-
-const weakReviewEnv = {
-  ...missingReviewEnv,
-  BACKEND_JWT_SECRET: STRONG_JWT_FIXTURE,
-  MINIAPP_REVIEW_EXPERIENCE_CODE: 'GewuReview2026!demo',
-};
-const weakReviewProbe = spawnSync('python', [
-  '-c',
-  'import scripts.deploy as d\ntry:\n d.require_remote_env()\nexcept SystemExit as e:\n print(str(e))\nelse:\n raise SystemExit("expected strong-format review policy")',
-], { cwd: process.cwd(), env: weakReviewEnv, encoding: 'utf-8' });
-assert.strictEqual(weakReviewProbe.status, 0, weakReviewProbe.stderr || 'weak review code probe should run');
-assert.ok(weakReviewProbe.stdout.includes('missing or weak'), 'Python deploy should enforce the shared strong-format policy');
-assert.ok(!weakReviewProbe.stdout.includes('GewuReview2026!demo'), 'weak-value errors must not echo the submitted review code');
 
 const weakJwtValue = 'weak-backend-jwt-secret';
 const weakJwtEnv = {
   ...missingReviewEnv,
   BACKEND_JWT_SECRET: weakJwtValue,
-  MINIAPP_REVIEW_EXPERIENCE_CODE: STRONG_TEST_FIXTURE,
 };
 const weakJwtProbe = spawnSync('python', [
   '-c',
@@ -102,7 +83,6 @@ const deploySecurityEnv = {
   WECHAT_APPSECRET: 'unit-wechat-secret-fixture',
   GEWU_DESKTOP_SYNC_TOKEN: 'unit-desktop-sync-secret',
   GEWU_CLOUD_RELAY_HOST_TOKEN: 'unit-host-relay-secret',
-  MINIAPP_REVIEW_EXPERIENCE_CODE: STRONG_TEST_FIXTURE,
 };
 const deploySecurityProbe = spawnSync('python', ['-c', `
 import scripts.deploy as d
@@ -132,7 +112,7 @@ class FakeSsh:
     def open_sftp(self): return self.sftp
     def exec_command(self, command, timeout=30):
         self.commands.append(command)
-        leaks = "|".join(filter(None, [d.PASSWORD, d.BACKEND_JWT_SECRET, d.WECHAT_APPSECRET, d.MINIAPP_REVIEW_EXPERIENCE_CODE, d.os.getenv("GEWU_DESKTOP_SYNC_TOKEN"), d.os.getenv("GEWU_CLOUD_RELAY_HOST_TOKEN")]))
+        leaks = "|".join(filter(None, [d.PASSWORD, d.BACKEND_JWT_SECRET, d.WECHAT_APPSECRET, d.os.getenv("GEWU_DESKTOP_SYNC_TOKEN"), d.os.getenv("GEWU_CLOUD_RELAY_HOST_TOKEN")]))
         return None, Stream("stdout=" + leaks), Stream("stderr=" + leaks)
 
 ssh = FakeSsh()
@@ -144,7 +124,7 @@ paths = [
 d.migrate(ssh, path_factory=lambda: paths[0])
 d.start_backend_service(ssh, "scheduling-backend-prod", path_factory=lambda: paths[1])
 g.restart_gateway(ssh, path_factory=lambda: paths[2])
-runtime_secrets = [d.BACKEND_JWT_SECRET, d.WECHAT_APPSECRET, d.MINIAPP_REVIEW_EXPERIENCE_CODE, d.os.getenv("GEWU_DESKTOP_SYNC_TOKEN"), d.os.getenv("GEWU_CLOUD_RELAY_HOST_TOKEN")]
+runtime_secrets = [d.BACKEND_JWT_SECRET, d.WECHAT_APPSECRET, d.os.getenv("GEWU_DESKTOP_SYNC_TOKEN"), d.os.getenv("GEWU_CLOUD_RELAY_HOST_TOKEN")]
 all_secrets = [d.PASSWORD] + runtime_secrets
 secure_commands = ssh.commands[1:]
 print(all(secret not in command for command in ssh.commands for secret in all_secrets if secret))
@@ -163,7 +143,6 @@ for (const secret of [
   deploySecurityEnv.WECHAT_APPSECRET,
   deploySecurityEnv.GEWU_DESKTOP_SYNC_TOKEN,
   deploySecurityEnv.GEWU_CLOUD_RELAY_HOST_TOKEN,
-  deploySecurityEnv.MINIAPP_REVIEW_EXPERIENCE_CODE,
 ]) {
   assert.ok(!deploySecurityOutput.includes(secret), 'deploy stdout/stderr must not expose fixture secrets');
 }
@@ -412,15 +391,14 @@ for (const name of [
 for (const name of ['WECHAT_APPID', 'WECHAT_APPSECRET']) {
   assert.ok(deployPy.includes(name), `pm2 deploy should pass ${name}`);
 }
-assert.ok(deployPy.includes('MINIAPP_REVIEW_EXPERIENCE_CODE'), 'pm2 deploy should pass the review experience code');
-assert.ok(deployPy.includes('validate_review_experience_code'), 'pm2 deploy should validate review code strength before connection');
+assert.ok(!deployPy.includes('MINIAPP_REVIEW_EXPERIENCE_CODE'), 'pm2 deploy must not retain the removed review experience code');
+assert.ok(!deployPy.includes('validate_review_experience_code'), 'pm2 deploy must not retain the removed review-code validator');
 assert.ok(!deployPy.includes('remote_env_prefix'), 'deploy helpers must not retain a future secret command-line expansion path');
 assert.ok(!deployGatewayPy.includes('remote_env_prefix'), 'formal gateway deploy must not expand secrets into commands');
 assert.ok(deployPy.includes('run_with_remote_env'), 'backend migration and PM2 should share secure env staging');
 assert.ok(deployGatewayPy.includes('run_with_remote_env'), 'formal gateway should share secure env staging');
 assert.ok(deployGatewayPy.includes('--update-env'), 'formal gateway restart should refresh PM2 environment variables');
-assert.ok(!taskDoc.includes('Git contains only the literal `<review experience code>` placeholder'), 'task status must not contradict explicit non-production fixtures');
-assert.ok(taskDoc.includes('No actual deployment review code is committed'), 'task status should distinguish test fixtures from deployment secrets');
+assert.ok(!taskDoc.includes('Git contains only the literal `<review experience code>` placeholder'), 'task status must not restore the removed review-code workflow');
 
 assert.ok(deployPy.includes('DEPLOY_KEY_PATH'), 'pm2 deploy should support SSH key authentication');
 assert.ok(deployPy.includes('key_filename'), 'pm2 deploy should pass SSH key path to paramiko');

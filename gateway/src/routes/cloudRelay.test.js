@@ -22,7 +22,8 @@ assert.ok(route.includes('allowedTasksForUser'), 'cloud relay should apply role-
 assert.ok(route.includes("user?.user_type === 'student'"), 'cloud relay should distinguish student task permissions');
 assert.ok(route.includes("['super_admin', 'admin'].includes(user?.user_type)"), 'cloud relay should grant super admin the existing admin task permissions');
 assert.ok(route.includes('adminTaskTypes'), 'asset import should be limited to administrator task permissions');
-assert.ok(authRoute.includes("['super_admin', 'admin', 'student']"), 'gateway login should accept super admin without widening student access');
+assert.ok(authRoute.includes('MINIAPP_AUTH_MOVED_TO_BACKEND'), 'gateway must not issue miniapp identities after Backend ownership moved');
+assert.ok(!authRoute.includes('resolveWechatIdentity') && !authRoute.includes('resolveWechatPhoneNumber'), 'gateway must not retain a second WeChat identity resolver');
 assert.ok(permissionMiddleware.includes("['super_admin', 'admin']"), 'gateway permissions should treat only super admin and admin as administrators');
 assert.ok(app.includes("require('./routes/cloudRelay')"), 'gateway app should mount cloud relay');
 

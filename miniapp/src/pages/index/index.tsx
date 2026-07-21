@@ -7,7 +7,7 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { api, readCloudSnapshot } from '../../utils/api';
 import { authSessionRuntime } from '../../utils/authSession';
 import { captureTrustedAuthSession, clearAuthenticatedSession } from '../../utils/miniappApiSessionRuntime';
-import { reviewCleanupStorageKeys } from '../../utils/reviewExperience';
+import { accountSessionCleanupStorageKeys, isUnrecognizedIdentity } from '../../utils/accountExperience';
 import {
   fetchPermissions,
   getPermittedModules,
@@ -16,13 +16,15 @@ import {
   getMiniappRolePolicy,
   getLinkedStudentIds,
   getEffectiveMiniappAccess,
+  MiniappCapability,
   MiniappRole,
 } from '../../utils/permission';
 import { getLocalData } from '../../utils/sync';
 import { clearBusinessCache, setBusinessCacheIdentity, setCachedList } from '../../utils/storage';
 import { scopeDashboardCollections } from '../../utils/miniappAuthorizationRuntime';
 import { NetworkStatus, LoadingSkeleton, EmptyState } from '../../components/shared';
-import ReviewDemoBanner from '../../components/ReviewDemoBanner';
+import AccountStatusBanner from '../../components/AccountStatusBanner';
+import MembershipBadge from '../../components/MembershipBadge';
 import { Schedule, ScheduleStatus, Student, Course } from '../../types';
 import './index.scss';
 
@@ -31,6 +33,10 @@ interface UserInfo {
   name: string;
   user_type: MiniappRole;
   avatar?: string;
+  account_state?: 'formal' | 'unrecognized';
+  token_use?: 'miniapp-session' | 'unrecognized-student';
+  capabilities?: MiniappCapability[];
+  membership?: { status?: string } | null;
 }
 
 interface ModuleInfo {
@@ -102,6 +108,19 @@ export default function Index() {
 
     const savedUser = session.identity as UserInfo;
     setUser(savedUser);
+    if (isUnrecognizedIdentity(savedUser)) {
+      await fetchPermissions();
+      const nextAccess = getEffectiveMiniappAccess(savedUser);
+      setAccess(nextAccess);
+      setModules([
+        { id: 'scheduling', name: '\u8bfe\u7a0b\u8868', description: '', icon: '' },
+        { id: 'question-bank', name: '\u793a\u4f8b\u9898', description: '', icon: '' },
+      ]);
+      setSnapshot(null);
+      setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
+      setLoading(false);
+      return;
+    }
     setBusinessCacheIdentity(savedUser);
     const permissionResult = await fetchPermissions();
     const verifiedSession = captureTrustedAuthSession(authSessionRuntime);
@@ -254,7 +273,7 @@ export default function Index() {
             clearPermissionCache,
             clearBusinessCache,
             removeStorage: (key: string) => Taro.removeStorageSync(key),
-            cleanupStorageKeys: reviewCleanupStorageKeys,
+            cleanupStorageKeys: accountSessionCleanupStorageKeys,
           }, [currentUser]);
           Taro.redirectTo({ url: '/pages/login/index' });
         }
@@ -279,10 +298,39 @@ export default function Index() {
   ), [modules]);
   const shortcuts = showAdminShortcuts ? ADMIN_SHORTCUTS : STUDENT_SHORTCUTS;
 
+  if (access.experienceOnly && user) {
+    return (
+      <View className='home-page'>
+        <AccountStatusBanner />
+        <View className='home-hero'>
+          <View className='home-hero__topline'>
+            <Text className='home-brand'>{'\u683c\u7269\u5de5\u574a'}</Text>
+            <View className='home-role-pill'><Text className='home-role-pill__text'>{'\u4f53\u9a8c\u8d26\u53f7'}</Text></View>
+          </View>
+          <View className='home-hero__body'>
+            <View className='home-avatar'><Text className='home-avatar__text'>{user.name?.charAt(0) || '\u683c'}</Text></View>
+            <View className='home-hero__copy'>
+              <Text className='home-hero__title'>{user.name || '\u5fae\u4fe1\u7528\u6237'}</Text>
+              <Text className='home-hero__subtitle'>{'\u53ef\u67e5\u770b\u7a7a\u8bfe\u8868\u3001\u4f7f\u7528\u56db\u9053\u793a\u4f8b\u9898\u5e76\u63d0\u4ea4\u6b63\u5f0f\u8d26\u53f7\u7533\u8bf7\u3002'}</Text>
+            </View>
+            <View className='home-logout' onClick={handleLogout}><Text className='home-logout__text'>{'\u9000\u51fa'}</Text></View>
+          </View>
+        </View>
+        <View className='home-section'>
+          <View className='home-section__header'><Text className='home-section__title'>{'\u53ef\u7528\u529f\u80fd'}</Text><Text className='home-section__meta'>3</Text></View>
+          <View className='home-action-list'>
+            <View className='home-action-card tone-teal' onClick={() => Taro.switchTab({ url: '/pages/schedule/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u8bfe'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{'\u8bfe\u7a0b\u8868'}</Text><Text className='home-action-card__desc'>{'\u5f53\u524d\u8d26\u53f7\u6682\u65e0\u6b63\u5f0f\u8bfe\u7a0b\u6570\u636e'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View>
+            <View className='home-action-card tone-indigo' onClick={() => Taro.navigateTo({ url: '/pages/question-bank/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u9898'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{'\u793a\u4f8b\u9898\u4e0e\u7ec4\u5377'}</Text><Text className='home-action-card__desc'>{'\u56db\u9053\u793a\u4f8b\u9898\u4e0d\u5c5e\u4e8e\u6b63\u5f0f\u9898\u5e93'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View>
+            <View className='home-action-card tone-amber' onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u7533'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{'\u7533\u8bf7\u6b63\u5f0f\u8d26\u53f7'}</Text><Text className='home-action-card__desc'>{'\u67e5\u770b\u7533\u8bf7\u72b6\u6001\u6216\u63d0\u4ea4\u771f\u5b9e\u8d44\u6599'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View className="home-page">
       <NetworkStatus onRetry={loadDashboard} />
-      <ReviewDemoBanner />
 
       <View className="home-hero">
         <View className="home-hero__topline">
@@ -297,9 +345,16 @@ export default function Index() {
             <Text className="home-avatar__text">{user?.name?.charAt(0) || '格'}</Text>
           </View>
           <View className="home-hero__copy">
+            {user ? <MembershipBadge membership={user.membership} /> : null}
             <Text className="home-hero__title">{greeting}</Text>
             <Text className="home-hero__subtitle">
-              {user ? `${user.name}，今天先看课程、题库和数据快照。` : '登录后查看今日课程与授权数据。'}
+              {user ? `${user.name}` : '登录后查看今日课程与授权数据。'}
+              {false && (
+                <View className="member-badge">
+                  <Text className="member-text">会员</Text>
+                </View>
+              )}
+              {user ? '，今天先看课程、题库和数据快照。' : ''}
             </Text>
           </View>
           {user && (
