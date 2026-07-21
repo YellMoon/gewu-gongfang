@@ -4,7 +4,7 @@ const BUSINESS_KEYS = [
   'assetRecords', 'assetCategories',
 ];
 const QUESTION_KEYS = [
-  'questions', 'knowledgeTree', 'modelTree', 'tags', 'questionTagRels',
+  'questions', 'knowledgeTree', 'modelTree', 'taxonomySystems', 'tags', 'questionTagRels',
   'questionBasketIds', 'questionVersions', 'importTasks', 'importTaskItems',
 ];
 

@@ -3,6 +3,23 @@
 .admin-title { display: block; font-size: 38rpx; line-height: 48rpx; font-weight: 900; }
 .admin-subtitle { display: block; margin-top: 8rpx; color: #6b7280; font-size: 23rpx; line-height: 34rpx; }
 .read-only-notice { margin: 0 24rpx 18rpx; padding: 20rpx 22rpx; border-radius: 20rpx; background: #fff4d9; color: #805b18; font-size: 23rpx; line-height: 34rpx; }
+.application-review-section { margin: 0 24rpx 24rpx; padding: 22rpx; border-radius: 24rpx; background: #eef3f1; }
+.application-review-heading, .application-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16rpx; }
+.application-review-title { font-size: 29rpx; line-height: 40rpx; font-weight: 900; }
+.application-review-count { min-width: 42rpx; padding: 2rpx 10rpx; border-radius: 999rpx; background: #1f6f68; color: #fff; text-align: center; font-size: 21rpx; }
+.application-card { margin-top: 16rpx; padding: 20rpx; border: 1rpx solid rgba(23, 32, 51, .06); border-radius: 20rpx; background: #fffdf8; }
+.application-name { display: block; font-size: 27rpx; line-height: 38rpx; font-weight: 900; }
+.application-kind { display: block; margin-top: 4rpx; color: #6b7280; font-size: 21rpx; line-height: 30rpx; }
+.application-status { padding: 5rpx 12rpx; border-radius: 999rpx; background: #eef5f2; color: #1f6f68; font-size: 20rpx; line-height: 28rpx; font-weight: 800; }
+.application-status.status-manual_resolution_required, .application-status.status-rejected { background: #fff0ec; color: #b74435; }
+.application-details { display: grid; gap: 7rpx; margin-top: 16rpx; color: #4d5a6a; font-size: 22rpx; line-height: 32rpx; }
+.application-host-task, .application-reason { display: block; margin-top: 12rpx; color: #657184; font-size: 21rpx; line-height: 31rpx; word-break: break-all; }
+.application-reason { color: #b74435; }
+.application-actions { display: flex; gap: 12rpx; margin-top: 18rpx; }
+.application-actions button { margin: 0; border: 0; border-radius: 14rpx; background: #1f6f68; color: #fff; }
+.application-actions button::after { border: 0; }
+.application-actions button.reject { background: #fff0ec; color: #b74435; }
+.empty.compact { padding: 32rpx 12rpx 12rpx; }
 .search-bar { display: flex; gap: 12rpx; padding: 0 24rpx 16rpx; }
 .search-input { flex: 1; height: 74rpx; box-sizing: border-box; padding: 0 22rpx; border-radius: 20rpx; background: #fffdf8; font-size: 25rpx; }
 .search-btn { width: 120rpx !important; height: 74rpx !important; line-height: 74rpx !important; margin: 0 !important; border-radius: 20rpx !important; background: #1f6f68 !important; color: white !important; font-size: 25rpx !important; }

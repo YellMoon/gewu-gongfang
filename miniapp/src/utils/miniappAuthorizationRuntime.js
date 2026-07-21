@@ -1,15 +1,13 @@
 const {
-  hasReviewExperienceMarker,
-  isReviewExperienceIdentity,
-  reviewSessionIdentityKey,
-  reviewTaskCacheKey,
-} = require('./reviewExperience');
+  accountCapabilities,
+  hasLegacyReviewMarker,
+  isUnrecognizedIdentity,
+} = require('./accountExperience');
 
 const ADMIN_MODULES = ['scheduling', 'question-bank', 'assets', 'students', 'courses', 'teachers', 'payments', 'stats', 'admin'];
 const TEACHER_MODULES = ADMIN_MODULES.filter(moduleId => moduleId !== 'admin');
 const STUDENT_MODULES = ['scheduling', 'question-bank'];
-const REVIEW_ADMIN_MODULES = ADMIN_MODULES.filter(moduleId => moduleId !== 'admin');
-const REVIEW_STUDENT_MODULES = STUDENT_MODULES.slice();
+const UNRECOGNIZED_MODULES = ['scheduling', 'question-bank', 'settings'];
 const VALID_ROLES = new Set(['super_admin', 'admin', 'teacher', 'student', 'pending']);
 
 function roleOf(user) {
@@ -49,8 +47,8 @@ function normalizedIdentityIds(...values) {
 
 function permissionIdentityKey(user) {
   if (!user || !user.id) return '';
-  if (hasReviewExperienceMarker(user) && !isReviewExperienceIdentity(user)) return '';
-  if (isReviewExperienceIdentity(user)) return reviewSessionIdentityKey(user);
+  if (hasLegacyReviewMarker(user)) return '';
+  if (isUnrecognizedIdentity(user)) return `unrecognized:${normalizedIdentityValue(user.id)}`;
   return JSON.stringify([
     normalizedIdentityValue(user.id),
     roleOf(user),
@@ -76,15 +74,14 @@ function permissionIdentityKey(user) {
 function businessCacheIdentityKey(user) {
   const role = roleOf(user);
   if (!user || !user.id || role === 'pending') return '';
-  if (hasReviewExperienceMarker(user) && !isReviewExperienceIdentity(user)) return '';
-  if (isReviewExperienceIdentity(user)) return reviewSessionIdentityKey(user);
+  if (hasLegacyReviewMarker(user) || isUnrecognizedIdentity(user)) return '';
   if (role === 'teacher' && !(user.teacher_id || user.teacherId)) return '';
   const scope = permissionIdentityKey(user);
   return scope ? `normal:${scope}` : '';
 }
 
 function questionPaperTaskCacheKey(user) {
-  if (isReviewExperienceIdentity(user)) return reviewTaskCacheKey(user);
+  if (hasLegacyReviewMarker(user) || isUnrecognizedIdentity(user)) return '';
   const scope = businessCacheIdentityKey(user);
   return scope ? `question_paper_tasks_v2_${encodeURIComponent(scope)}` : '';
 }
@@ -121,27 +118,17 @@ function createQuestionPaperTaskCacheRuntime(dependencies) {
   return { replace, snapshot: readSnapshot };
 }
 
-function reviewCapabilityAllowlist(user) {
-  if (!isReviewExperienceIdentity(user)) return [];
-  return [
-    'review-demo:read',
-    roleOf(user) === 'admin' ? 'review-demo:admin' : 'review-demo:student',
-    'review-demo:paper-export',
-    'question-bank:view',
-  ];
-}
-
 function sanitizeCapabilitiesForIdentity(user, capabilities) {
   const stringCapabilities = Array.isArray(capabilities)
     ? capabilities.filter(capability => typeof capability === 'string') : [];
-  if (!hasReviewExperienceMarker(user)) return stringCapabilities;
-  if (!isReviewExperienceIdentity(user)) return [];
-  return reviewCapabilityAllowlist(user).filter(capability => stringCapabilities.includes(capability));
+  if (hasLegacyReviewMarker(user)) return [];
+  if (isUnrecognizedIdentity(user)) return accountCapabilities(user);
+  return stringCapabilities;
 }
 
 function deriveAccess(user, permissionState) {
   const role = roleOf(user);
-  const reviewIdentity = isReviewExperienceIdentity(user);
+  const experienceOnly = isUnrecognizedIdentity(user);
   const identityKey = permissionIdentityKey(user);
   const loadedForIdentity = permissionState && permissionState.status === 'loaded'
     && identityKey && permissionState.identityKey === identityKey;
@@ -149,42 +136,47 @@ function deriveAccess(user, permissionState) {
     ? permissionState.capabilities : [];
   const capabilities = sanitizeCapabilitiesForIdentity(user, loadedCapabilities);
   let modules = [];
-  if (reviewIdentity && role === 'admin' && capabilities.includes('review-demo:admin')) modules = REVIEW_ADMIN_MODULES.slice();
-  else if (reviewIdentity && role === 'student' && capabilities.includes('review-demo:student')) modules = REVIEW_STUDENT_MODULES.slice();
-  else if (!reviewIdentity && capabilities.includes('business:all')) modules = ADMIN_MODULES.slice();
+  if (experienceOnly && capabilities.includes('experience:read')) modules = UNRECOGNIZED_MODULES.slice();
+  else if (!experienceOnly && capabilities.includes('business:all')) modules = ADMIN_MODULES.slice();
   else if (capabilities.includes('business:teacher-scope') && role === 'teacher') modules = TEACHER_MODULES.slice();
-  else if (!reviewIdentity && capabilities.includes('question-bank:view') && role === 'student') modules = STUDENT_MODULES.slice();
+  else if (!experienceOnly && capabilities.includes('question-bank:view') && role === 'student') modules = STUDENT_MODULES.slice();
   return {
     role,
+    experienceOnly,
     modules,
     capabilities,
     permissionStatus: loadedForIdentity ? 'loaded' : (permissionState && permissionState.status === 'error' ? 'error' : 'idle'),
-    canReadUsers: !reviewIdentity && capabilities.includes('business:all') && (role === 'super_admin' || role === 'admin'),
-    canReviewUsers: !reviewIdentity && capabilities.includes('users:review') && role === 'super_admin',
-    canEditQuestionBank: !reviewIdentity && capabilities.includes('question-bank:edit'),
+    canReadUsers: !experienceOnly && capabilities.includes('business:all') && (role === 'super_admin' || role === 'admin'),
+    canReviewUsers: !experienceOnly && capabilities.includes('users:review') && role === 'super_admin',
+    canEditQuestionBank: !experienceOnly && capabilities.includes('question-bank:edit'),
     canDeleteCommittedQuestions: false,
   };
 }
 
-function reviewRolePolicy(user) {
-  if (!hasReviewExperienceMarker(user)) return null;
-  const strict = isReviewExperienceIdentity(user);
-  const role = strict ? roleOf(user) : 'pending';
+function accountExperiencePolicy(user) {
+  if (hasLegacyReviewMarker(user)) {
+    return {
+      role: 'pending', modules: [], readonlyScope: 'none', linkedStudentIds: [],
+      allowedWriteTasks: [], canReadAllSnapshots: false, capabilities: [],
+      canReviewUsers: false, canEditQuestionBank: false,
+    };
+  }
+  if (!isUnrecognizedIdentity(user)) return null;
   return {
-    role,
-    modules: role === 'admin' ? REVIEW_ADMIN_MODULES.slice() : role === 'student' ? REVIEW_STUDENT_MODULES.slice() : [],
-    readonlyScope: strict ? 'review-demo' : 'none',
-    linkedStudentIds: role === 'student' ? [user.student_id].filter(Boolean) : [],
+    role: 'unrecognized-student',
+    modules: UNRECOGNIZED_MODULES.slice(),
+    readonlyScope: 'account-experience',
+    linkedStudentIds: [],
     allowedWriteTasks: [],
     canReadAllSnapshots: false,
-    capabilities: strict ? reviewCapabilityAllowlist(user) : [],
+    capabilities: accountCapabilities(user),
     canReviewUsers: false,
     canEditQuestionBank: false,
   };
 }
 
 function canUserSubmitMiniappWrite(user, target, allowedTargets) {
-  if (hasReviewExperienceMarker(user)) return false;
+  if (hasLegacyReviewMarker(user) || isUnrecognizedIdentity(user)) return false;
   return Array.isArray(allowedTargets) && allowedTargets.includes(target);
 }
 
@@ -204,6 +196,7 @@ function scopeDashboardCollections(user, collections = {}) {
   const courses = Array.isArray(collections.courses) ? collections.courses : [];
   const schedules = Array.isArray(collections.schedules) ? collections.schedules : [];
   const role = roleOf(user);
+  if (hasLegacyReviewMarker(user) || isUnrecognizedIdentity(user)) return { students: [], courses: [], schedules: [] };
   if (role === 'pending') return { students: [], courses: [], schedules: [] };
   if (role === 'teacher') {
     const teacherId = user && (user.teacher_id || user.teacherId);
@@ -234,12 +227,11 @@ module.exports = {
   ADMIN_MODULES,
   TEACHER_MODULES,
   STUDENT_MODULES,
-  REVIEW_ADMIN_MODULES,
-  REVIEW_STUDENT_MODULES,
+  UNRECOGNIZED_MODULES,
   canUserSubmitMiniappWrite,
   roleOf,
   permissionIdentityKey,
-  reviewRolePolicy,
+  accountExperiencePolicy,
   sanitizeCapabilitiesForIdentity,
   businessCacheIdentityKey,
   createQuestionPaperTaskCacheRuntime,

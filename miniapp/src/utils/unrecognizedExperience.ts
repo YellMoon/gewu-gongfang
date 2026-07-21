@@ -1,14 +1,11 @@
-import { api } from './api';
+import { applicationApi, experienceApi } from './api';
 
 export interface UnrecognizedQuestion {
   id: string;
   number: number;
   type: string;
   stemRichContent: any;
-  options: Array<{
-    key: string;
-    contentRichContent: any;
-  }>;
+  options: Array<{ key: string; contentRichContent: any }>;
   answer: string;
   explanationRichContent: any;
   sourceLabel: string;
@@ -26,18 +23,15 @@ export interface UnrecognizedTask {
   error: string | null;
 }
 
-export interface UnrecognizedSession {
-  token: string;
-  userId: string;
-  sessionId: string;
-  accountState: string;
+function requireSuccess(response: any, fallback: string): any {
+  if (!response?.success) throw new Error(response?.error || fallback);
+  return response;
 }
 
 export const unrecognizedExperienceApi = {
   async getQuestions(): Promise<UnrecognizedQuestion[]> {
-    const res = await api.get<any>('/api/experience/questions');
-    if (!res.success) throw new Error(res.error || 'Failed to get questions');
-    return res.data.questions;
+    const response: any = requireSuccess(await experienceApi.questions(), 'Failed to get questions');
+    return response.questions || response.data?.questions || [];
   },
 
   async createTask(params: {
@@ -47,54 +41,40 @@ export const unrecognizedExperienceApi = {
     answerPosition?: string;
     formulaMode?: string;
   }): Promise<UnrecognizedTask> {
-    const res = await api.post<any>('/api/experience/tasks', params);
-    if (!res.success) throw new Error(res.error || 'Failed to create task');
-    return res.data.task;
+    const { taskType, ...payload } = params;
+    const response: any = requireSuccess(await experienceApi.createTask(taskType, payload), 'Failed to create task');
+    return response.task || response.data?.task;
   },
 
   async getTask(taskId: string): Promise<UnrecognizedTask> {
-    const res = await api.get<any>(`/api/experience/tasks/${taskId}`);
-    if (!res.success) throw new Error(res.error || 'Failed to get task');
-    return res.data.task;
+    const response: any = requireSuccess(await experienceApi.getTaskResult(taskId), 'Failed to get task');
+    return response.task || response.data?.task;
   },
 
-  async downloadArtifact(taskId: string, artifactId: string): Promise<string> {
-    const res = await api.get<any>(`/api/experience/tasks/${taskId}/artifacts/${artifactId}`);
-    if (!res.success) throw new Error(res.error || 'Failed to download artifact');
-    return res.data.downloadUrl;
+  downloadArtifact(artifactId: string): Promise<any> {
+    return experienceApi.downloadArtifact(artifactId);
   },
 
-  async cancelTask(taskId: string): Promise<void> {
-    const res = await api.post<any>(`/api/experience/tasks/${taskId}/cancel`);
-    if (!res.success) throw new Error(res.error || 'Failed to cancel task');
+  async cancelTask(taskId: string): Promise<UnrecognizedTask> {
+    const response: any = requireSuccess(await experienceApi.cancelTask(taskId), 'Failed to cancel task');
+    return response.task || response.data?.task;
   },
 
-  async submitApplication(params: {
-    type: 'student' | 'teacher';
-    name: string;
-    phone: string;
-    school?: string;
-    grade?: string;
-    parentRole?: string;
-    parentPhone?: string;
-    subject?: string;
-    notes?: string;
-  }): Promise<{ applicationId: string; status: string }> {
-    const res = await api.post<any>('/api/experience/apply', params);
-    if (!res.success) throw new Error(res.error || 'Failed to submit application');
-    return res.data;
+  async submitApplication(applicationType: 'student' | 'teacher', payload: any, idempotencyKey: string): Promise<any> {
+    const response: any = requireSuccess(
+      await applicationApi.submit(applicationType, payload, idempotencyKey),
+      'Failed to submit application',
+    );
+    return response.data || response;
   },
 
-  async getApplicationStatus(): Promise<{
-    hasApplication: boolean;
-    status?: string;
-    type?: string;
-    createdAt?: string;
-    reviewedAt?: string;
-    reviewNote?: string;
-  }> {
-    const res = await api.get<any>('/api/experience/application/status');
-    if (!res.success) throw new Error(res.error || 'Failed to get application status');
-    return res.data;
+  async getApplicationStatus(): Promise<any> {
+    const response: any = requireSuccess(await applicationApi.mine(), 'Failed to get application status');
+    return response.data || response;
+  },
+
+  async withdrawApplication(applicationId: string): Promise<any> {
+    const response: any = requireSuccess(await applicationApi.withdraw(applicationId), 'Failed to withdraw application');
+    return response.data || response;
   },
 };

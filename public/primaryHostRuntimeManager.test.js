@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const packageJson = require('../package.json');
+const hostBuilderConfig = require('../electron-builder.host.config.cjs');
 const {
   DELIVERY_PROTOCOL_VERSION,
   RECOVERY_DELIVERY_KEY_ALGORITHM,
@@ -28,7 +29,8 @@ function safeStorage() {
 }
 
 async function main() {
-  assert.ok(packageJson.build.files.includes('public/primaryHostRuntimeManager.js'));
+  assert.ok(!packageJson.build.files.includes('public/primaryHostRuntimeManager.js'));
+  assert.ok(hostBuilderConfig.files.includes('public/primaryHostRuntimeManager.js'));
   const electronSource = fs.readFileSync(path.join(__dirname, 'electron.js'), 'utf8');
   const preloadSource = fs.readFileSync(path.join(__dirname, 'preload.js'), 'utf8');
   assert.ok(electronSource.includes("require('./primaryHostCredentialStore')"));

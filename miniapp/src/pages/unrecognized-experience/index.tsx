@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { View, Text, Input, Button, ScrollView, Checkbox, CheckboxGroup } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { unrecognizedExperienceApi, UnrecognizedQuestion, UnrecognizedTask } from '../../utils/unrecognizedExperience';
+import { authSessionRuntime } from '../../utils/authSession';
+import { isUnrecognizedIdentity } from '../../utils/accountExperience';
+import { createSessionBoundOperation, openSessionBoundDocument } from '../../utils/miniappApiSessionRuntime';
 import './index.scss';
 
 type TaskType = 'question-paper' | 'paper-export-word' | 'paper-export-pdf';
@@ -30,6 +33,7 @@ const formulas = [
 ];
 
 export default function UnrecognizedExperiencePage() {
+  const authorized = isUnrecognizedIdentity(Taro.getStorageSync('user_info'));
   const [pageState, setPageState] = useState<PageState>('loading');
   const [questions, setQuestions] = useState<UnrecognizedQuestion[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -52,19 +56,6 @@ export default function UnrecognizedExperiencePage() {
     }
   };
 
-  const loadApplicationStatus = async () => {
-    try {
-      const status = await unrecognizedExperienceApi.getApplicationStatus();
-      if (status.hasApplication) {
-        Taro.showModal({
-          title: '申请状态',
-          content: `您已提交申请，当前状态：${status.status || '未知'}`,
-          showCancel: false,
-        });
-      }
-    } catch { /* ignore */ }
-  };
-
   const refreshTasks = async () => {
     const updated: UnrecognizedTask[] = [];
     for (const task of tasks) {
@@ -81,18 +72,26 @@ export default function UnrecognizedExperiencePage() {
   };
 
   useEffect(() => {
+    if (!authorized) {
+      Taro.reLaunch({ url: '/pages/login/index' });
+      return undefined;
+    }
     loadQuestions();
-    loadApplicationStatus();
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, []);
+  }, [authorized]);
 
   useEffect(() => {
-    if (tasks.some(t => t.status === 'pending_host' || t.status === 'processing')) {
-      pollRef.current = setInterval(refreshTasks, 5000);
-    } else if (pollRef.current) {
+    if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
+    if (tasks.some(t => t.status === 'pending_host' || t.status === 'processing')) {
+      pollRef.current = setInterval(refreshTasks, 5000);
+    }
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = null;
+    };
   }, [tasks]);
 
   const filtered = questions.filter(q => {
@@ -146,14 +145,15 @@ export default function UnrecognizedExperiencePage() {
       return;
     }
     try {
-      const url = await unrecognizedExperienceApi.downloadArtifact(task.id, task.result.artifactId);
-      Taro.downloadFile({
-        url,
-        success(res) {
-          if (res.statusCode === 200) {
-            Taro.openDocument({ filePath: res.tempFilePath });
-          }
-        },
+      const sessionBoundary = createSessionBoundOperation(authSessionRuntime);
+      const file: any = await unrecognizedExperienceApi.downloadArtifact(task.result.artifactId);
+      if (file.statusCode !== 200 || !file.tempFilePath) throw new Error('\u4e0b\u8f7d\u5931\u8d25');
+      await openSessionBoundDocument(sessionBoundary, {
+        filePath: file.tempFilePath,
+        openDocument: (options: any) => Taro.openDocument(options),
+        removeTemporaryFile: (filePath: string) => new Promise<void>(resolve => {
+          try { Taro.getFileSystemManager().unlink({ filePath, complete: () => resolve() }); } catch (_error) { resolve(); }
+        }),
       });
     } catch (err: any) {
       Taro.showToast({ title: err?.message || '下载失败', icon: 'none' });
@@ -161,7 +161,7 @@ export default function UnrecognizedExperiencePage() {
   };
 
   const goToApply = () => {
-    Taro.navigateTo({ url: '/pages/unrecognized-apply/index' });
+    Taro.navigateTo({ url: '/pages/account-application/index' });
   };
 
   const stateText = pageState === 'loading' ? '正在加载题目' : pageState === 'empty' ? '暂无可用题目' : '加载失败';

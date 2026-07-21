@@ -199,6 +199,14 @@ async function refreshToken(baseUrl, token) {
     assert.ok(unknownPhone.body.data.token, 'unrecognized users should receive a restricted token');
     assert.strictEqual(unknownPhone.body.data.user.role, 'student');
     assert.strictEqual(unknownPhone.body.data.user.account_state, 'unrecognized');
+    assert.strictEqual(unknownPhone.body.data.user.token_use, 'unrecognized-student');
+    assert.deepStrictEqual(unknownPhone.body.data.user.capabilities, [
+      'experience:read',
+      'profile-application:read',
+      'profile-application:submit',
+      'sample-questions:view',
+      'sample-paper-export',
+    ]);
     const unrecognizedClaims = jwt.verify(unknownPhone.body.data.token, process.env.JWT_SECRET, {
       algorithms: ['HS256'],
       issuer: 'gewu-miniapp-auth',

@@ -1,0 +1,47 @@
+.application-page {
+  min-height: 100vh;
+  padding: 28rpx 24rpx calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: #f7f4ee;
+  color: #172033;
+}
+
+.state-card,
+.application-form {
+  border: 1rpx solid rgba(23, 32, 51, 0.06);
+  border-radius: 26rpx;
+  background: #fffdf8;
+  box-shadow: 0 12rpx 30rpx rgba(23, 32, 51, 0.06);
+}
+
+.state-card { padding: 32rpx; }
+.state-kicker { display: block; color: #1f6f68; font-size: 22rpx; font-weight: 900; letter-spacing: 4rpx; }
+.state-title { display: block; margin-top: 12rpx; font-size: 38rpx; line-height: 50rpx; font-weight: 900; }
+.state-description { display: block; margin-top: 12rpx; color: #657184; font-size: 26rpx; line-height: 40rpx; }
+.rejection-reason { display: block; margin-top: 20rpx; padding: 18rpx; border-radius: 16rpx; background: #fff1f0; color: #b42318; font-size: 25rpx; line-height: 38rpx; }
+.task-reference { display: block; margin-top: 18rpx; color: #7d8795; font-size: 22rpx; word-break: break-all; }
+
+.application-form { margin-top: 22rpx; padding: 28rpx; }
+.section-title { display: block; margin: 6rpx 0 16rpx; color: #4d5a6a; font-size: 24rpx; font-weight: 800; }
+.segmented { display: flex; gap: 12rpx; margin-bottom: 24rpx; padding: 8rpx; border-radius: 20rpx; background: #f0ede6; }
+.segmented button { flex: 1; height: 68rpx; line-height: 68rpx; margin: 0; border: 0; border-radius: 16rpx; background: transparent; color: #657184; font-size: 26rpx; font-weight: 800; }
+.segmented button::after { border: 0; }
+.segmented button.active { background: #1f6f68; color: #fff; box-shadow: 0 8rpx 18rpx rgba(31, 111, 104, 0.18); }
+
+.field { margin-top: 18rpx; padding: 20rpx 22rpx; border: 1rpx solid #e1e5eb; border-radius: 18rpx; background: #fff; }
+.field .label { display: block; margin-bottom: 10rpx; color: #4d5a6a; font-size: 23rpx; font-weight: 800; }
+.field input { height: 54rpx; color: #172033; font-size: 28rpx; }
+.field.locked { background: #f0f3f5; }
+.locked-value { display: block; font-size: 29rpx; font-weight: 800; }
+.field-tip { display: block; margin-top: 8rpx; color: #8b96a8; font-size: 21rpx; line-height: 32rpx; }
+.picker-value { display: flex; justify-content: space-between; color: #172033; font-size: 28rpx; line-height: 54rpx; }
+.confirmation { display: flex; align-items: flex-start; gap: 12rpx; margin: 22rpx 4rpx 0; color: #4d5a6a; font-size: 24rpx; line-height: 36rpx; }
+
+.primary-action,
+.secondary-action { height: 82rpx; line-height: 82rpx; border: 0; border-radius: 22rpx; font-size: 28rpx; font-weight: 900; }
+.primary-action::after,
+.secondary-action::after { border: 0; }
+.primary-action { margin-top: 28rpx; background: #1f6f68; color: #fff; }
+.primary-action.standalone { margin-top: 22rpx; }
+.secondary-action { margin-top: 22rpx; background: #e9eeed; color: #1f6f68; }
+.secondary-action.danger { background: #fff1f0; color: #b42318; }

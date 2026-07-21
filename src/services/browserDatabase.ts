@@ -4,7 +4,7 @@ import {
   ScheduleStatus, PaymentType, BillingUnit, TeacherFeeMode, ServiceType, StudentSource,
   RevenueStats, StudentTuitionStats, StudentCoursePricing,
   AssetRecord, AssetCategory, AssetStats, Question, KnowledgeNode, Tag, QuestionTagRel, TagType,
-  QuestionVersion, ImportTask, ImportTaskItem, ImportTaskStatus, ImportTaskItemStatus
+  QuestionVersion, ImportTask, ImportTaskItem, ImportTaskStatus, ImportTaskItemStatus, TaxonomySystem
 } from '../types';
 import type { SyncAction, SyncTable } from './syncEngine';
 import { applyTrustedQuestionProvenance } from './questionProvenance.mjs';
@@ -47,6 +47,10 @@ interface Database {
   questions: Question[];
   knowledgeTree: KnowledgeNode[];
   modelTree: KnowledgeNode[];
+  taxonomySystems: TaxonomySystem[];
+  taxonomyInitialized: boolean;
+  taxonomy_systems: any[];
+  taxonomy_nodes: any[];
   tags: Tag[];
   questionTagRels: QuestionTagRel[];
   questionBasketIds: string[];
@@ -70,6 +74,8 @@ const SYNC_TABLES: SyncTable[] = [
   'assetRecords',
   'questions',
   'assetCategories',
+  'taxonomy_systems',
+  'taxonomy_nodes',
 ];
 
 const QUESTION_VERSION_LIMIT = 20;
@@ -90,6 +96,10 @@ function emptyDatabase(): Database {
     questions: [],
     knowledgeTree: [],
     modelTree: [],
+    taxonomySystems: [],
+    taxonomyInitialized: false,
+    taxonomy_systems: [],
+    taxonomy_nodes: [],
     tags: [],
     questionTagRels: [],
     questionBasketIds: [],
@@ -176,6 +186,10 @@ class BrowserDatabaseService {
         questions: [],
         knowledgeTree: loadedData?.knowledgeTree ?? [],
         modelTree: loadedData?.modelTree ?? [],
+        taxonomySystems: loadedData?.taxonomySystems ?? [],
+        taxonomyInitialized: loadedData?.taxonomyInitialized === true,
+        taxonomy_systems: loadedData?.taxonomy_systems ?? [],
+        taxonomy_nodes: loadedData?.taxonomy_nodes ?? [],
         tags: loadedData?.tags ?? [],
         questionTagRels: loadedData?.questionTagRels ?? [],
         questionBasketIds: loadedData?.questionBasketIds ?? [],
@@ -237,7 +251,9 @@ class BrowserDatabaseService {
     });
 
     // 知识树迁移到 tag 表
-    this.data.tags = loadedData?.tags || [];
+    this.data.taxonomySystems = this.data.taxonomySystems || [];
+    this.data.taxonomyInitialized = this.data.taxonomyInitialized === true;
+    this.data.tags = this.data.tags || [];
     if (this.data.tags.length === 0 && this.data.knowledgeTree.length > 0) {
       const now = new Date().toISOString();
       this.data.tags = this.data.knowledgeTree.map((n: KnowledgeNode) => ({
@@ -265,7 +281,7 @@ class BrowserDatabaseService {
       { id: 'model-force', tag_name: '受力分析模型', sort_no: 7 },
     ];
     const now2 = new Date().toISOString();
-    for (const mt of MODEL_TAGS) {
+    for (const mt of (this.data.taxonomySystems.some(system => system.id === 'model') ? MODEL_TAGS : [])) {
       if (!this.data.tags.find((t: Tag) => t.id === mt.id)) {
         this.data.tags.push({
           id: mt.id,
@@ -281,6 +297,7 @@ class BrowserDatabaseService {
         });
       }
     }
+    this.syncTaxonomySyncRowsFromCanonical();
 
     // 课程颜色自动分配（首次启动：扫描所有课程，根据上课地址分配背景色）
     const coursesNeedColor = this.data.courses.some((c: any) => !c.color);
@@ -602,8 +619,8 @@ class BrowserDatabaseService {
   }
 
   private migrateLegacyTagData(): void {
-    this.data.tags = upsertLegacyTreeTags(this.data.tags || [], this.data.knowledgeTree || [], 'knowledge');
-    this.data.tags = upsertLegacyTreeTags(this.data.tags || [], this.data.modelTree || [], 'model');
+    this.data.tags = upsertLegacyTreeTags(this.data.tags || [], this.data.knowledgeTree || [], 'knowledge', '\u7269\u7406');
+    this.data.tags = upsertLegacyTreeTags(this.data.tags || [], this.data.modelTree || [], 'model', '\u7269\u7406');
 
     const migratedRels = [
       ...(this.data.questionTagRels || []),
@@ -613,6 +630,86 @@ class BrowserDatabaseService {
       ]),
     ];
     this.data.questionTagRels = normalizeQuestionTagRels(migratedRels);
+    this.migrateTaxonomySystems();
+    this.syncLegacyTreesFromTags();
+    this.syncAllQuestionLegacyTagFields();
+  }
+
+  private migrateTaxonomySystems(): void {
+    const now = new Date().toISOString();
+    const systems = [...(this.data.taxonomySystems || [])];
+    const ensure = (id: string, name: string, sortNo: number) => {
+      if (systems.some(system => system.id === id)) return;
+      systems.push({ id, name, subject: '\u7269\u7406', sort_no: sortNo, created_at: now, updated_at: now });
+    };
+    if (!this.data.taxonomyInitialized) {
+      ensure('knowledge', '\u77e5\u8bc6\u70b9', 1);
+      ensure('model', '\u6a21\u578b', 2);
+    }
+    this.data.taxonomySystems = systems;
+    this.data.taxonomyInitialized = true;
+    for (const question of this.data.questions || []) {
+      question.taxonomy_ids = {
+        ...(question.taxonomy_ids || {}),
+        knowledge: [...new Set(question.knowledge_ids || question.knowledge_point_ids || [])],
+        model: [...new Set(question.model_ids || question.model_point_ids || [])],
+      };
+    }
+  }
+
+  private syncTaxonomySyncRowsFromCanonical(): void {
+    const activeSystemIds = new Set((this.data.taxonomySystems || []).map(system => system.id));
+    this.data.taxonomy_systems = (this.data.taxonomySystems || []).map(system => ({
+      id: system.id,
+      subject: system.subject,
+      name: system.name,
+      sort_order: system.sort_no,
+      deleted: 0,
+      created_at: system.created_at,
+      updated_at: system.updated_at,
+    }));
+    this.data.taxonomy_nodes = (this.data.tags || [])
+      .filter(tag => activeSystemIds.has(tag.tag_type) && tag.status !== 0)
+      .map(tag => ({
+        id: tag.id,
+        system_id: tag.tag_type,
+        parent_id: tag.parent_id || null,
+        name: tag.tag_name,
+        sort_order: tag.sort_no,
+        deleted: 0,
+        created_at: tag.created_at,
+        updated_at: tag.updated_at,
+      }));
+  }
+
+  private hydrateTaxonomiesFromSyncRows(): void {
+    const systems = (this.data.taxonomy_systems || []).filter(row => !row.deleted).map(row => ({
+      id: String(row.id),
+      subject: String(row.subject || ''),
+      name: String(row.name || ''),
+      sort_no: Number(row.sort_order || 0),
+      created_at: row.created_at || new Date().toISOString(),
+      updated_at: row.updated_at || row.created_at || new Date().toISOString(),
+    }));
+    if (systems.length === 0 && (this.data.taxonomy_systems || []).length === 0) return;
+    const systemIds = new Set(systems.map(system => system.id));
+    const knownSystemIds = new Set((this.data.taxonomy_systems || []).map(row => String(row.id)));
+    this.data.taxonomySystems = systems;
+    this.data.tags = [
+      ...(this.data.tags || []).filter(tag => !knownSystemIds.has(tag.tag_type)),
+      ...(this.data.taxonomy_nodes || []).filter(row => !row.deleted && systemIds.has(String(row.system_id))).map(row => ({
+        id: String(row.id),
+        tag_type: String(row.system_id),
+        tag_name: String(row.name || ''),
+        tag_code: String(row.id),
+        parent_id: row.parent_id || undefined,
+        subject: systems.find(system => system.id === String(row.system_id))?.subject,
+        sort_no: Number(row.sort_order || 0),
+        status: 1,
+        created_at: row.created_at || new Date().toISOString(),
+        updated_at: row.updated_at || row.created_at || new Date().toISOString(),
+      })),
+    ];
     this.syncLegacyTreesFromTags();
     this.syncAllQuestionLegacyTagFields();
   }
@@ -636,6 +733,13 @@ class BrowserDatabaseService {
     const modelIds = rels.filter(rel => rel.tag_type === 'model').map(rel => rel.tag_id);
     question.knowledge_ids = [...new Set(knowledgeIds)];
     question.model_ids = [...new Set(modelIds)];
+    question.taxonomy_ids = {
+      ...(question.taxonomy_ids || {}),
+      ...Object.fromEntries(this.getTaxonomySystems(question.subject || '\u7269\u7406').map(system => [
+        system.id,
+        [...new Set(rels.filter(rel => rel.tag_type === system.id).map(rel => rel.tag_id))],
+      ])),
+    };
     const primaryKnowledge = question.knowledge_ids.length > 0
       ? this.data.tags.find(tag => tag.id === question.knowledge_ids![0] && tag.tag_type === 'knowledge')
       : null;
@@ -674,6 +778,10 @@ class BrowserDatabaseService {
       ...(question.model_ids || []),
       ...(question.model_point_ids || []),
     ]);
+    for (const [systemId, nodeIds] of Object.entries(question.taxonomy_ids || {})) {
+      if (systemId === 'knowledge' || systemId === 'model') continue;
+      this.replaceQuestionTagRels(question.id, systemId, nodeIds || []);
+    }
   }
 
   // ========== 学校信息管理 ==========
@@ -1335,6 +1443,10 @@ class BrowserDatabaseService {
       questions: data.questions || [],
       knowledgeTree: data.knowledgeTree || [],
       modelTree: data.modelTree || [],
+      taxonomySystems: data.taxonomySystems || [],
+      taxonomyInitialized: data.taxonomyInitialized === true,
+      taxonomy_systems: data.taxonomy_systems || [],
+      taxonomy_nodes: data.taxonomy_nodes || [],
       tags: data.tags || [],
       questionTagRels: data.questionTagRels || [],
       questionBasketIds: data.questionBasketIds || [],
@@ -1369,6 +1481,7 @@ class BrowserDatabaseService {
         return cleanRecord;
       })) as any;
     }
+    this.hydrateTaxonomiesFromSyncRows();
     this.saveData();
   }
 
@@ -1720,6 +1833,176 @@ class BrowserDatabaseService {
     return { ...task, items: this.getImportTaskItems(taskId) };
   }
 
+  getTaxonomySystems(subject?: string): TaxonomySystem[] {
+    return [...(this.data.taxonomySystems || [])]
+      .filter(system => !subject || system.subject === subject)
+      .sort((a, b) => a.sort_no - b.sort_no || a.name.localeCompare(b.name));
+  }
+
+  createTaxonomySystem(input: { name: string; subject: string; sort_no?: number }): TaxonomySystem {
+    const name = String(input.name || '').trim();
+    const subject = String(input.subject || '').trim();
+    if (!name || !subject) throw new Error('TAXONOMY_SYSTEM_NAME_AND_SUBJECT_REQUIRED');
+    if (this.getTaxonomySystems(subject).some(system => system.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+      throw new Error('TAXONOMY_SYSTEM_NAME_DUPLICATE');
+    }
+    const now = new Date().toISOString();
+    const system: TaxonomySystem = {
+      id: `taxonomy-${this.generateId()}`,
+      name,
+      subject,
+      sort_no: input.sort_no ?? this.getTaxonomySystems(subject).length + 1,
+      created_at: now,
+      updated_at: now,
+    };
+    this.data.taxonomySystems.push(system);
+    this.syncTaxonomySyncRowsFromCanonical();
+    this.saveData();
+    this.recordSyncChange('taxonomy_systems', 'create', system.id, {
+      subject: system.subject, name: system.name, sort_order: system.sort_no,
+      deleted: 0, created_at: system.created_at, updated_at: system.updated_at,
+    });
+    return system;
+  }
+
+  updateTaxonomySystem(id: string, updates: Partial<Pick<TaxonomySystem, 'name' | 'sort_no'>>): TaxonomySystem | undefined {
+    const index = this.data.taxonomySystems.findIndex(system => system.id === id);
+    if (index === -1) return undefined;
+    const current = this.data.taxonomySystems[index];
+    const name = updates.name === undefined ? current.name : String(updates.name).trim();
+    if (!name) throw new Error('TAXONOMY_SYSTEM_NAME_REQUIRED');
+    if (this.getTaxonomySystems(current.subject).some(system => system.id !== id && system.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+      throw new Error('TAXONOMY_SYSTEM_NAME_DUPLICATE');
+    }
+    this.data.taxonomySystems[index] = {
+      ...current,
+      ...updates,
+      name,
+      updated_at: new Date().toISOString(),
+    };
+    this.syncTaxonomySyncRowsFromCanonical();
+    this.saveData();
+    const updated = this.data.taxonomySystems[index];
+    this.recordSyncChange('taxonomy_systems', 'update', id, {
+      subject: updated.subject, name: updated.name, sort_order: updated.sort_no,
+      deleted: 0, created_at: updated.created_at, updated_at: updated.updated_at,
+    });
+    return this.data.taxonomySystems[index];
+  }
+
+  deleteTaxonomySystem(id: string): boolean {
+    const system = this.data.taxonomySystems.find(item => item.id === id);
+    if (!system) return false;
+    const affectedQuestionIds = new Set(
+      this.data.questionTagRels.filter(rel => rel.tag_type === id).map(rel => rel.question_id)
+    );
+    this.data.taxonomySystems = this.data.taxonomySystems.filter(item => item.id !== id);
+    this.data.tags = this.data.tags.filter(tag => tag.tag_type !== id);
+    this.data.questionTagRels = this.data.questionTagRels.filter(rel => rel.tag_type !== id);
+    if (id === 'knowledge') this.data.knowledgeTree = [];
+    if (id === 'model') this.data.modelTree = [];
+    for (const question of this.data.questions) {
+      if (question.taxonomy_ids) delete question.taxonomy_ids[id];
+      if (id === 'knowledge') {
+        question.knowledge_ids = [];
+        question.knowledge_point_ids = [];
+        question.knowledge_point = '';
+      }
+      if (id === 'model') {
+        question.model_ids = [];
+        question.model_point_ids = [];
+        question.model_point = '';
+      }
+      if (affectedQuestionIds.has(question.id)) {
+        question.updated_at = new Date().toISOString();
+        this.syncQuestionLocalRecord(question);
+        this.recordSyncChange('questions', 'update', question.id, question);
+      }
+    }
+    this.syncTaxonomySyncRowsFromCanonical();
+    this.saveData();
+    this.recordSyncChange('taxonomy_systems', 'delete', id, {
+      subject: system.subject, name: system.name, sort_order: system.sort_no,
+      deleted: 1, created_at: system.created_at, updated_at: new Date().toISOString(),
+    });
+    return true;
+  }
+
+  getTaxonomyNodes(systemId: string): KnowledgeNode[] {
+    return tagsToLegacyTree(this.data.tags || [], systemId, []);
+  }
+
+  createTaxonomyNode(systemId: string, node: Omit<KnowledgeNode, 'id' | 'created_at' | 'updated_at'>): KnowledgeNode {
+    const system = this.data.taxonomySystems.find(item => item.id === systemId);
+    if (!system) throw new Error('TAXONOMY_SYSTEM_NOT_FOUND');
+    const now = new Date().toISOString();
+    const created: KnowledgeNode = {
+      ...node,
+      id: `taxonomy-node-${this.generateId()}`,
+      created_at: now,
+      updated_at: now,
+    };
+    this.createTag({
+      id: created.id,
+      tag_type: systemId,
+      tag_name: created.name,
+      tag_code: created.id,
+      parent_id: created.parent_id,
+      subject: system.subject,
+      sort_no: created.order,
+      status: 1,
+    });
+    this.syncTaxonomySyncRowsFromCanonical();
+    this.recordSyncChange('taxonomy_nodes', 'create', created.id, {
+      system_id: systemId, parent_id: created.parent_id || null, name: created.name,
+      sort_order: created.order, deleted: 0, created_at: created.created_at, updated_at: created.updated_at,
+    });
+    return created;
+  }
+
+  updateTaxonomyNode(systemId: string, id: string, updates: Partial<Omit<KnowledgeNode, 'id'>>): boolean {
+    const current = this.data.tags.find(tag => tag.id === id && tag.tag_type === systemId);
+    const updated = this.updateTag(id, {
+      ...(updates.name === undefined ? {} : { tag_name: String(updates.name).trim() }),
+      ...(updates.parent_id === undefined ? {} : { parent_id: updates.parent_id }),
+      ...(updates.order === undefined ? {} : { sort_no: updates.order }),
+    }, systemId);
+    if (updated) {
+      this.syncTaxonomySyncRowsFromCanonical();
+      this.recordSyncChange('taxonomy_nodes', 'update', id, {
+        system_id: systemId, parent_id: updated.parent_id || null, name: updated.tag_name,
+        sort_order: updated.sort_no, deleted: 0, created_at: updated.created_at, updated_at: updated.updated_at,
+      }, current?.updated_at || null);
+    }
+    return Boolean(updated);
+  }
+
+  deleteTaxonomyNode(systemId: string, id: string): boolean {
+    const rows = this.collectTagDescendantIds(id, systemId)
+      .map(item => this.data.tags.find(tag => tag.id === item.id && tag.tag_type === item.tag_type))
+      .filter((tag): tag is Tag => Boolean(tag));
+    const deleted = this.deleteTag(id, systemId);
+    if (!deleted) return false;
+    this.syncTaxonomySyncRowsFromCanonical();
+    for (const tag of rows) {
+      this.recordSyncChange('taxonomy_nodes', 'delete', tag.id, {
+        system_id: systemId, parent_id: tag.parent_id || null, name: tag.tag_name,
+        sort_order: tag.sort_no, deleted: 1, created_at: tag.created_at, updated_at: new Date().toISOString(),
+      }, tag.updated_at);
+    }
+    return true;
+  }
+
+  getQuestionTaxonomyNodes(questionId: string, systemId: string): KnowledgeNode[] | null {
+    if (!this.data.questions.some(question => question.id === questionId)) return null;
+    const ids = new Set(this.getQuestionTagRels(questionId, systemId).map(rel => rel.tag_id));
+    return this.getTaxonomyNodes(systemId).filter(node => ids.has(node.id));
+  }
+
+  setQuestionTaxonomyNodes(questionId: string, systemId: string, nodeIds: string[]): Question | null {
+    return this.setQuestionTagRels(questionId, systemId, nodeIds);
+  }
+
   getAllTags(tagType?: TagType): Tag[] {
     const tags = (this.data.tags || []).filter(tag => tag.status !== 0);
     return tagType ? tags.filter(tag => tag.tag_type === tagType) : tags;
@@ -1757,10 +2040,20 @@ class BrowserDatabaseService {
     const toDelete = this.collectTagDescendantIds(id, tagType);
     if (toDelete.length === 0) return false;
     const deleteKeys = new Set(toDelete.map(item => `${item.tag_type}__${item.id}`));
+    const affectedQuestionIds = new Set((this.data.questionTagRels || [])
+      .filter(rel => deleteKeys.has(`${rel.tag_type}__${rel.tag_id}`))
+      .map(rel => rel.question_id));
     this.data.tags = (this.data.tags || []).filter(tag => !deleteKeys.has(`${tag.tag_type}__${tag.id}`));
     this.data.questionTagRels = (this.data.questionTagRels || []).filter(rel => !deleteKeys.has(`${rel.tag_type}__${rel.tag_id}`));
     this.syncLegacyTreesFromTags();
     this.syncAllQuestionLegacyTagFields();
+    for (const questionId of affectedQuestionIds) {
+      const question = this.data.questions.find(item => item.id === questionId);
+      if (!question) continue;
+      question.updated_at = new Date().toISOString();
+      this.syncQuestionLocalRecord(question);
+      this.recordSyncChange('questions', 'update', questionId, question);
+    }
     this.saveData();
     return true;
   }
@@ -1777,6 +2070,7 @@ class BrowserDatabaseService {
     if (!question) return null;
     this.replaceQuestionTagRels(questionId, tagType, tagIds);
     question.updated_at = new Date().toISOString();
+    this.syncQuestionLocalRecord(question);
     this.saveData();
     this.recordSyncChange('questions', 'update', questionId, question);
     return question;
@@ -2016,6 +2310,7 @@ class BrowserDatabaseService {
   }
 
   initDefaultKnowledgeTree(): void {
+    if (!this.data.taxonomySystems.some(system => system.id === 'knowledge')) return;
     if (this.data.knowledgeTree.length > 0) return;
     const now = new Date().toISOString();
     this.data.knowledgeTree = [
@@ -2052,7 +2347,7 @@ class BrowserDatabaseService {
     for (const n of this.data.knowledgeTree) {
       n.children = this.data.knowledgeTree.filter(c => c.parent_id === n.id).map(c => c.id);
     }
-    this.data.tags = upsertLegacyTreeTags(this.data.tags || [], this.data.knowledgeTree || [], 'knowledge');
+    this.data.tags = upsertLegacyTreeTags(this.data.tags || [], this.data.knowledgeTree || [], 'knowledge', '\u7269\u7406');
   }
 
   createKnowledgeNode(node: Omit<KnowledgeNode, 'id' | 'created_at' | 'updated_at'>): KnowledgeNode {
@@ -2136,6 +2431,7 @@ class BrowserDatabaseService {
   }
 
   initDefaultModelTree(): void {
+    if (!this.data.taxonomySystems.some(system => system.id === 'model')) return;
     if ((this.data.modelTree || []).length > 0) return;
     const now = new Date().toISOString();
     this.data.modelTree = [
@@ -2158,7 +2454,7 @@ class BrowserDatabaseService {
     for (const n of this.data.modelTree) {
       n.children = this.data.modelTree.filter(c => c.parent_id === n.id).map(c => c.id);
     }
-    this.data.tags = upsertLegacyTreeTags(this.data.tags || [], this.data.modelTree || [], 'model');
+    this.data.tags = upsertLegacyTreeTags(this.data.tags || [], this.data.modelTree || [], 'model', '\u7269\u7406');
   }
 
   createModelNode(node: Omit<KnowledgeNode, 'id' | 'created_at' | 'updated_at'>): KnowledgeNode {

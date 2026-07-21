@@ -5,7 +5,8 @@ import { Schedule, ScheduleStatus, Course, Student } from '../../types';
 import { getCachedList, setCachedList } from '../../utils/storage';
 import { scheduleApi } from '../../utils/api';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
-import ReviewDemoBanner from '../../components/ReviewDemoBanner';
+import AccountStatusBanner from '../../components/AccountStatusBanner';
+import { isUnrecognizedIdentity } from '../../utils/accountExperience';
 import './index.scss';
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
@@ -20,9 +21,11 @@ interface ScheduleWithCourse extends Schedule {
 }
 
 export default function SchedulePage() {
+  const isUnrecognized = isUnrecognizedIdentity(Taro.getStorageSync('user_info'));
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [schedules, setSchedules] = useState<ScheduleWithCourse[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -33,21 +36,37 @@ export default function SchedulePage() {
   }, [currentDate]);
 
   const loadData = () => {
+    if (isUnrecognized) {
+      setSchedules([]);
+      setCourses([]);
+      setStudents([]);
+      setLoading(false);
+      return;
+    }
     const allSchedules = getCachedList<Schedule>('schedules');
-    const courses = getCachedList<Course>('courses');
+    const cachedCourses = getCachedList<Course>('courses');
     const allStudents = getCachedList<Student>('students');
 
     const enriched: ScheduleWithCourse[] = allSchedules.map((s) => {
-      const course = courses.find((c) => c.id === s.course_id);
+      const course = cachedCourses.find((c) => c.id === s.course_id);
       return { ...s, course_name: course?.display_name || course?.name || '未知课程', course_type: course?.type };
     });
 
     setSchedules(enriched);
+    setCourses(cachedCourses);
     setStudents(allStudents);
     setLoading(false);
   };
 
   const handleRefresh = useCallback(async () => {
+    if (isUnrecognized) {
+      setSchedules([]);
+      setCourses([]);
+      setStudents([]);
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
     setRefreshing(true);
     try {
       const res = await scheduleApi.getAll();
@@ -121,7 +140,7 @@ export default function SchedulePage() {
           return false;
         }
         // 检查课程的学生列表
-        const course = getCachedList<Course>('courses').find(c => c.id === schedule.course_id);
+        const course = courses.find(c => c.id === schedule.course_id);
         const courseStudentIds = (course?.student_pricings || []).map(p => p.student_id);
         const scheduleStudentIds = schedule.student_ids || [];
         const allStudentIds = [...new Set([...courseStudentIds, ...scheduleStudentIds])];
@@ -156,10 +175,18 @@ export default function SchedulePage() {
     </View>
   );
 
+  if (isUnrecognized) {
+    return (
+      <View className='schedule-page'>
+        <AccountStatusBanner />
+        <EmptyState icon={'\u8bfe'} text={'\u5f53\u524d\u4f53\u9a8c\u8d26\u53f7\u6682\u65e0\u6b63\u5f0f\u8bfe\u7a0b\u6570\u636e'} />
+      </View>
+    );
+  }
+
   return (
     <View className="schedule-page">
       <NetworkStatus onRetry={handleRefresh} />
-      <ReviewDemoBanner />
 
       <View className="view-toggle">
         <View className={`toggle-btn ${viewMode === 'week' ? 'active' : ''}`} onClick={() => setViewMode('week')}>

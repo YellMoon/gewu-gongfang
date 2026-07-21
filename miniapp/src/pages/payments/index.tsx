@@ -6,7 +6,6 @@ import { setCachedList } from '../../utils/storage';
 import { paymentApi } from '../../utils/api';
 import { getLocalData } from '../../utils/sync';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
-import ReviewDemoBanner from '../../components/ReviewDemoBanner';
 import { sortPaymentsNewestFirst } from './paymentsRuntime';
 import './index.scss';
 
@@ -52,7 +51,6 @@ export default function Payments() {
   return (
     <View className="payments-page">
       <NetworkStatus onRetry={handleRefresh} />
-      <ReviewDemoBanner />
 
       <View className="pay-summary">
         <View className="pay-stat">

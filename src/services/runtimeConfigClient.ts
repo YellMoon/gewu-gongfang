@@ -1,6 +1,8 @@
 export type NodeRole = 'primary-host' | 'desktop-client';
 
 export type RuntimeConfig = {
+  buildFlavor: NodeRole;
+  primaryHostCapable: boolean;
   nodeRole: NodeRole;
   deviceId: string;
   primaryHostEpochId: string;

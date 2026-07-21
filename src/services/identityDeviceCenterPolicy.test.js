@@ -29,7 +29,7 @@ const assert = require('assert');
       teacherId: 'teacher-self',
     },
   };
-  const hostRuntime = { nodeRole: 'primary-host', deviceId: 'device-host', hostBaseUrl: 'http://127.0.0.1:3001' };
+  const hostRuntime = { nodeRole: 'primary-host', primaryHostCapable: true, deviceId: 'device-host', hostBaseUrl: 'http://127.0.0.1:3001' };
 
   assert.deepStrictEqual(identityDeviceCenterAccess({ runtimeConfig: hostRuntime, session: canonicalSession }), {
     visible: true,
@@ -43,6 +43,7 @@ const assert = require('assert');
     deviceId: 'device-host',
     teacherId: 'teacher-self',
     isPrimaryHost: true,
+    primaryHostCapable: true,
   });
   assert.strictEqual(identityDeviceCenterAccess({
     runtimeConfig: hostRuntime,
@@ -51,6 +52,9 @@ const assert = require('assert');
   assert.strictEqual(identityDeviceCenterAccess({
     runtimeConfig: { ...hostRuntime, nodeRole: 'desktop-client' }, session: canonicalSession,
   }).canReview, false, 'ordinary desktop must not expose review actions');
+  assert.strictEqual(identityDeviceCenterAccess({
+    runtimeConfig: { ...hostRuntime, nodeRole: 'desktop-client', primaryHostCapable: false }, session: canonicalSession,
+  }).canManageHost, false, 'ordinary build must not expose primary-host migration or recovery operations');
   assert.strictEqual(identityDeviceCenterAccess({
     runtimeConfig: hostRuntime,
     session: { ...canonicalSession, authContext: { ...canonicalSession.authContext, activeRole: 'admin', eligibleRoles: ['admin'] } },

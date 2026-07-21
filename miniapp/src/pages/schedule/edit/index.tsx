@@ -1,25 +1,15 @@
-import { View, Text } from '@tarojs/components';
+import { Text, View } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import ReviewDemoBanner from '../../../components/ReviewDemoBanner';
-import { isReviewExperienceIdentity } from '../../../utils/reviewExperience';
 import './edit.scss';
 
 export default function ScheduleEdit() {
-  const isReviewDemo = isReviewExperienceIdentity(Taro.getStorageSync('user_info'));
   return (
-    <View className="se-container">
-      <ReviewDemoBanner />
-      <View className="se-field">
-        {isReviewDemo ? <Text className="se-value">{'\u5ba1\u6838\u4f53\u9a8c\u4e2d\u4e0d\u53ef\u7f16\u8f91\u6392\u8bfe\uff1b\u5f53\u524d\u4ec5\u5c55\u793a\u8131\u654f\u793a\u4f8b\u8bfe\u7a0b\u3002'}</Text> : null}
-        <Text className="se-label">排课编辑</Text>
-        <Text className="se-value">
-          微信小程序端不提供排课新增和编辑。请在电脑端完成排课管理。
-        </Text>
+    <View className='se-container'>
+      <View className='se-field'>
+        <Text className='se-label'>{'\u6392\u8bfe\u7f16\u8f91'}</Text>
+        <Text className='se-value'>{'\u5fae\u4fe1\u5c0f\u7a0b\u5e8f\u7aef\u4e0d\u63d0\u4f9b\u6392\u8bfe\u65b0\u589e\u548c\u7f16\u8f91\u3002\u8bf7\u5728\u7535\u8111\u7aef\u5b8c\u6210\u6392\u8bfe\u7ba1\u7406\u3002'}</Text>
       </View>
-
-      <View className="se-submit" onClick={() => Taro.navigateBack()}>
-        <Text className="se-submit-text">返回</Text>
-      </View>
+      <View className='se-submit' onClick={() => Taro.navigateBack()}><Text className='se-submit-text'>{'\u8fd4\u56de'}</Text></View>
     </View>
   );
 }

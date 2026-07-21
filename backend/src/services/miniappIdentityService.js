@@ -9,6 +9,13 @@ const FORMAL_TOKEN_USE = 'miniapp-session';
 const UNRECOGNIZED_TOKEN_USE = 'unrecognized-student';
 const FORMAL_ROLES = new Set(['super_admin', 'admin', 'teacher', 'student']);
 const LOGIN_EVENT_RETENTION_MS = 180 * 24 * 60 * 60 * 1000;
+const UNRECOGNIZED_CAPABILITIES = Object.freeze([
+  'experience:read',
+  'profile-application:read',
+  'profile-application:submit',
+  'sample-questions:view',
+  'sample-paper-export',
+]);
 
 function serviceError(code, message = code) {
   const error = new Error(message);
@@ -116,6 +123,7 @@ function createMiniappIdentityService({
     const role = accountState === 'formal' ? formalRole(user) : 'student';
     const membership = accountState === 'formal' ? membershipFor(user, role) : null;
     const member = isActiveMembership(membership);
+    const tokenUse = accountState === 'formal' ? FORMAL_TOKEN_USE : UNRECOGNIZED_TOKEN_USE;
     return {
       id: user.id,
       name: user.name || user.nickname || '',
@@ -127,10 +135,15 @@ function createMiniappIdentityService({
       user_type: role,
       identity_kind: identityKind(user, accountState),
       account_state: accountState,
+      token_use: tokenUse,
+      ...(accountState === 'unrecognized' ? { capabilities: [...UNRECOGNIZED_CAPABILITIES] } : {}),
       student_id: accountState === 'formal' ? user.student_id || null : null,
       teacher_id: accountState === 'formal' ? user.teacher_id || null : null,
       is_member: member,
       membership_status: membership?.status || null,
+      ...(accountState === 'formal' ? {
+        membership: membership ? { status: membership.status, endsAt: membership.ends_at || null } : null,
+      } : {}),
     };
   }
 

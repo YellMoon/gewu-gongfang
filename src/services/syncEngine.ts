@@ -9,7 +9,8 @@ import { migrateLegacyStorageValue, partitionedStorageKey } from './desktopIdent
 export type SyncTable =
   | 'students' | 'courses' | 'schedules' | 'payments' | 'consumptions'
   | 'teachers' | 'grades' | 'rooms' | 'institutions' | 'assetRecords'
-  | 'questions' | 'assetCategories';
+  | 'questions' | 'assetCategories'
+  | 'taxonomy_systems' | 'taxonomy_nodes';
 
 export type SyncAction = 'create' | 'update' | 'delete';
 
@@ -64,7 +65,7 @@ export interface SyncStatus {
 export const SYNC_TABLES: SyncTable[] = [
   'students', 'courses', 'schedules', 'payments', 'consumptions',
   'teachers', 'grades', 'rooms', 'institutions', 'assetRecords',
-  'questions', 'assetCategories',
+  'questions', 'assetCategories', 'taxonomy_systems', 'taxonomy_nodes',
 ];
 
 function toIsoTime(value: number | string | Date | undefined, fallbackNow = true): string {

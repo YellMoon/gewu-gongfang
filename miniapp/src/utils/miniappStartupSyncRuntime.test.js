@@ -13,17 +13,13 @@ assert.strictEqual(
   'startup sync must expose a session-bound network listener',
 );
 
-function reviewIdentity(sessionId = 'review-1') {
+function unrecognizedIdentity(sessionId = 'unrecognized-1') {
   return {
-    id: `review-demo:admin:${sessionId}`,
-    role: 'admin',
-    user_type: 'admin',
-    is_review_demo: true,
-    read_only: true,
-    review_demo_session_id: sessionId,
-    review_status: 'approved',
-    status: 1,
-    login_enabled: 1,
+    id: sessionId,
+    role: 'student',
+    user_type: 'student',
+    account_state: 'unrecognized',
+    token_use: 'unrecognized-student',
   };
 }
 
@@ -42,7 +38,7 @@ function createHarness() {
     startupSession,
     isSameSession: (session) => session === currentSession,
     captureTrustedAuthSession: () => currentSession,
-    isReviewExperienceIdentity: (identity) => identity?.is_review_demo === true,
+    isExperienceOnlyIdentity: (identity) => identity?.account_state === 'unrecognized',
     onNetworkStatusChange: (callback) => { listener = callback; },
     offNetworkStatusChange: (callback) => {
       assert.strictEqual(callback, listener);
@@ -64,16 +60,16 @@ function createHarness() {
       const activeListener = listener;
       if (activeListener) await activeListener({ isConnected: false });
     },
-    switchToReview() {
+    switchToExperience() {
       currentSession = {
         generation: 8,
-        token: 'review-token',
-        identity: reviewIdentity(),
+        token: 'experience-token',
+        identity: unrecognizedIdentity(),
       };
     },
-    mutateCurrentSessionToReview() {
-      currentSession.token = 'review-token';
-      currentSession.identity = reviewIdentity('same-generation-review');
+    mutateCurrentSessionToExperience() {
+      currentSession.token = 'experience-token';
+      currentSession.identity = unrecognizedIdentity('same-generation-experience');
     },
   };
 }
@@ -87,22 +83,22 @@ async function run() {
   assert.strictEqual(normal.getOffCalls(), 0, 'a valid normal session listener stays active');
 
   const race = createHarness();
-  race.switchToReview();
+  race.switchToExperience();
   await race.reconnect();
   assert.deepStrictEqual(
     race.pullCalls,
     [],
-    'a listener created by a previous normal startup must never pull after switching to review',
+    'a listener created by a previous normal startup must never pull after switching to account experience',
   );
   assert.strictEqual(race.getOffCalls(), 1, 'an invalidated startup listener must unsubscribe itself');
   race.dispose();
   assert.strictEqual(race.getOffCalls(), 1, 'listener disposal must be idempotent');
 
-  const reviewGuard = createHarness();
-  reviewGuard.mutateCurrentSessionToReview();
-  await reviewGuard.reconnect();
-  assert.deepStrictEqual(reviewGuard.pullCalls, [], 'the callback must independently reject a current review identity');
-  assert.strictEqual(reviewGuard.getOffCalls(), 1, 'a review identity must dispose the normal startup listener');
+  const experienceGuard = createHarness();
+  experienceGuard.mutateCurrentSessionToExperience();
+  await experienceGuard.reconnect();
+  assert.deepStrictEqual(experienceGuard.pullCalls, [], 'the callback must independently reject an unrecognized identity');
+  assert.strictEqual(experienceGuard.getOffCalls(), 1, 'an unrecognized identity must dispose the normal startup listener');
 }
 
 run().then(() => {

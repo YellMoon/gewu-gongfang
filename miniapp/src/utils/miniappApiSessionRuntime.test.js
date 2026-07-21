@@ -25,6 +25,14 @@ const reviewIdentity = {
   id: 'review-demo:admin:session-a', role: 'admin', user_type: 'admin', review_status: 'approved',
   status: 1, login_enabled: 1, is_review_demo: true, read_only: true, review_demo_session_id: 'session-a',
 };
+const unrecognizedIdentity = {
+  id: 'unrecognized-1', role: 'student', user_type: 'student',
+  account_state: 'unrecognized', token_use: 'unrecognized-student',
+  capabilities: [
+    'experience:read', 'profile-application:read', 'profile-application:submit',
+    'sample-questions:view', 'sample-paper-export',
+  ],
+};
 
 function createSessionState(overrides = {}) {
   const state = { token: 'normal-a', identity: normalIdentity, generation: 7, ...overrides };
@@ -220,6 +228,20 @@ async function main() {
   assert.strictEqual(singleNetworkRequests, 2, 'one logical request may send only A and one auth retry with B');
   assert.strictEqual(singleRequest.state.token, 'normal-b', 'the rejected B session must not be overwritten by a second refresh');
 
+  const experienceState = createSessionState({ token: 'experience-a', identity: unrecognizedIdentity });
+  const experienceRequest = experienceState.runtime.capture();
+  assert.strictEqual(experienceRequest.experienceOnly, true, 'real unrecognized identities must be marked as experience-only sessions');
+  let experienceRefreshCalls = 0;
+  const experienceCoordinator = createApiResponseCoordinator({
+    sessionRuntime: experienceState.runtime,
+    refresh: async () => {
+      experienceRefreshCalls += 1;
+      experienceState.state.token = 'experience-b';
+    },
+  });
+  assert.deepStrictEqual(await experienceCoordinator.handleResponse(experienceRequest, 401), { action: 'retry' });
+  assert.strictEqual(experienceRefreshCalls, 1, 'unrecognized sessions must refresh through the shared Backend session flow');
+
   const identityCases = [
     {
       label: 'tenant switch',
@@ -301,8 +323,8 @@ async function main() {
   state.token = 'review-token';
   state.generation += 1;
   const reviewRequest = runtime.capture();
-  assert.deepStrictEqual(await coordinator.handleResponse(reviewRequest, 401), { action: 'review-expired' });
-  assert.strictEqual(refreshCalls, 1, 'review 401 must never enter normal refresh');
+  assert.deepStrictEqual(await coordinator.handleResponse(reviewRequest, 401), { action: 'auth-expired' });
+  assert.strictEqual(refreshCalls, 1, 'removed review sessions must not receive a dedicated refresh path');
 
   state.identity = normalIdentity;
   state.token = 'normal-a';

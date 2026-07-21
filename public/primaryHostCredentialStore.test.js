@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const packageJson = require('../package.json');
+const hostBuilderConfig = require('../electron-builder.host.config.cjs');
 const {
   generateRecoveryDeliveryKeyPair,
 } = require('../backend/src/services/primaryHostRecoveryDeliveryProtocol');
@@ -24,8 +25,9 @@ function mockSafeStorage(control = {}) {
 }
 
 assert.ok(
-  packageJson.build.files.includes('public/primaryHostCredentialStore.js'),
-  'packaged Electron app must include the primary-host credential store'
+  !packageJson.build.files.includes('public/primaryHostCredentialStore.js')
+    && hostBuilderConfig.files.includes('public/primaryHostCredentialStore.js'),
+  'only the primary-host package may include the primary-host credential store'
 );
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-primary-host-credential-'));

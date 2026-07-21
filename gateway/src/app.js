@@ -11,7 +11,6 @@ const { authMiddleware, optionalAuth } = require('./middleware/auth');
 const { errorHandler } = require('./middleware/errorHandler');
 const { loadModules } = require('./config/moduleLoader');
 const { loadUserPermissions } = require('./middleware/permission');
-const { reviewDemoGuard } = require('./middleware/reviewDemoGuard');
 
 // 路由
 const authRouter = require('./routes/auth');
@@ -20,8 +19,15 @@ const permissionsRouter = require('./routes/permissions');
 const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
 const desktopPairingRouter = require('./routes/desktopPairing');
-const { createReviewDemoRouter } = require('./routes/reviewDemo');
 const gatewayPackage = require('../package.json');
+
+function reviewDemoRemoved(_req, res) {
+  return res.status(410).json({
+    success: false,
+    code: 'REVIEW_DEMO_REMOVED',
+    error: 'Legacy review demo has been removed; use the scheduling backend experience APIs',
+  });
+}
 
 function getHealthVersion() {
   const deployedVersion = String(process.env.GEWU_APP_VERSION || '').trim();
@@ -46,12 +52,9 @@ function createApp(options = {}) {
     next();
   });
 
-  // Review sandbox must authenticate, rate-limit, and parse its bounded body
-  // before the general 50 MiB parser buffers any create request.
-  app.use('/api/review-demo', authMiddleware, createReviewDemoRouter({
-    ...(options.reviewDemoRouteOptions || {}),
-    sandbox: options.reviewDemoSandbox,
-  }));
+  // Permanent compatibility tombstone. Keep this before the general body
+  // parser so removed endpoints cannot buffer or process legacy payloads.
+  app.use('/api/review-demo', reviewDemoRemoved);
 
   // Body parsing
   app.use(express.json({ limit: '50mb' }));
@@ -64,7 +67,7 @@ function createApp(options = {}) {
 
   // ===================== 公开路由（无需认证） =====================
   app.use('/api/auth', authRouter);
-  app.use('/api', optionalAuth, reviewDemoGuard);
+  app.use('/api', optionalAuth);
   app.use('/api/desktop-pairing', desktopPairingRouter);
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Collapse } from 'antd';
+import { Card } from 'antd';
 import { DownOutlined, RightOutlined } from '@ant-design/icons';
 
 interface StatsPageLayoutProps {
@@ -27,7 +27,16 @@ const StatsPageLayout: React.FC<StatsPageLayoutProps> = ({
           title={
             <div 
               style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
-              onClick={() => setFiltersCollapsed(!filtersCollapsed)}
+              role="button"
+              tabIndex={0}
+              aria-expanded={!filtersCollapsed}
+              onClick={() => setFiltersCollapsed(value => !value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setFiltersCollapsed(value => !value);
+                }
+              }}
             >
               {filtersCollapsed ? <RightOutlined /> : <DownOutlined />}
               <span>筛选条件</span>
@@ -43,7 +52,16 @@ const StatsPageLayout: React.FC<StatsPageLayoutProps> = ({
           title={
             <div 
               style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
-              onClick={() => setMetricsCollapsed(!metricsCollapsed)}
+              role="button"
+              tabIndex={0}
+              aria-expanded={!metricsCollapsed}
+              onClick={() => setMetricsCollapsed(value => !value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setMetricsCollapsed(value => !value);
+                }
+              }}
             >
               {metricsCollapsed ? <RightOutlined /> : <DownOutlined />}
               <span>关键指标</span>

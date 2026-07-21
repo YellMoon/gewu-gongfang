@@ -29,7 +29,7 @@ function createSessionBoundNetworkSyncListener(dependencies) {
     if (!session
       || !dependencies.isSameSession(dependencies.startupSession)
       || !dependencies.isSameSession(session)
-      || dependencies.isReviewExperienceIdentity(session.identity)) {
+      || dependencies.isExperienceOnlyIdentity(session.identity)) {
       dispose();
       if (!session && typeof dependencies.onMissingSession === 'function') dependencies.onMissingSession();
       return;

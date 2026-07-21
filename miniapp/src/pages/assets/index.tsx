@@ -1,201 +1,80 @@
-/**
- * 资产统计 v1 — 收支概览 + 分类统计 + 趋势
- */
-import { useState, useMemo } from 'react';
-import { View, Text, ScrollView } from '@tarojs/components';
+import { useMemo, useState } from 'react';
+import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
-import { getLocalData } from '../../utils/sync';
 import { createMiniappTask } from '../../utils/api';
 import { assertMiniappWriteAllowed } from '../../utils/permission';
-import { isReviewExperienceIdentity } from '../../utils/reviewExperience';
-import { NetworkStatus, EmptyState, StatCard } from '../../components/shared';
-import ReviewDemoBanner from '../../components/ReviewDemoBanner';
+import { getLocalData } from '../../utils/sync';
+import { EmptyState, NetworkStatus } from '../../components/shared';
 import './index.scss';
 
-interface AssetRecord {
-  id: string;
-  category_id: string;
-  amount: number;
-  type: 'income' | 'expense';
-  date: string;
-  notes?: string;
-  created_at: string;
-}
-
-interface AssetCategory {
-  id: string;
-  name: string;
-  type: 'income' | 'expense';
-  color: string;
-}
+interface AssetRecord { id: string; category_id: string; amount: number; type: 'income' | 'expense'; date: string; notes?: string; }
+interface AssetCategory { id: string; name: string; type: 'income' | 'expense'; color: string; }
 
 export default function Assets() {
-  const isReviewDemo = isReviewExperienceIdentity(Taro.getStorageSync('user_info'));
   const [records, setRecords] = useState<AssetRecord[]>([]);
   const [categories, setCategories] = useState<AssetCategory[]>([]);
-  const [period, setPeriod] = useState<'month' | 'year' | 'all'>(isReviewDemo ? 'all' : 'month');
+  const [period, setPeriod] = useState<'month' | 'year' | 'all'>('month');
 
-  useDidShow(() => { loadData(); });
-
-  const loadData = () => {
+  useDidShow(() => {
     setRecords(getLocalData<AssetRecord>('assetRecords'));
     setCategories(getLocalData<AssetCategory>('assetCategories'));
-  };
+  });
 
   const submitAssetImportTask = async () => {
-    if (isReviewDemo) {
-      Taro.showToast({ title: '\u5ba1\u6838\u4f53\u9a8c\u4e2d\u4e0d\u53ef\u5bfc\u5165\u8d22\u52a1\u6570\u636e', icon: 'none' });
-      return;
-    }
     try {
       assertMiniappWriteAllowed('asset-import');
-      const res = await createMiniappTask('asset-import', {
+      const response = await createMiniappTask('asset-import', {
         source: 'miniapp-assets',
         requestedAt: new Date().toISOString(),
       });
-      if (!res.success) throw new Error(res.error || '导入失败');
-      Taro.showToast({ title: '财务导入已开始', icon: 'success' });
+      if (!response.success) throw new Error(response.error || '\u5bfc\u5165\u5931\u8d25');
+      Taro.showToast({ title: '\u8d22\u52a1\u5bfc\u5165\u5df2\u5f00\u59cb', icon: 'success' });
     } catch (error: any) {
-      Taro.showToast({ title: error.message || '导入失败', icon: 'none' });
+      Taro.showToast({ title: error?.message || '\u5bfc\u5165\u5931\u8d25', icon: 'none' });
     }
   };
 
   const now = new Date();
-  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const thisYear = String(now.getFullYear());
-
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const yearKey = String(now.getFullYear());
   const filteredRecords = useMemo(() => {
-    if (period === 'month') return records.filter(r => r.date?.startsWith(thisMonth));
-    if (period === 'year') return records.filter(r => r.date?.startsWith(thisYear));
+    if (period === 'month') return records.filter(record => record.date?.startsWith(monthKey));
+    if (period === 'year') return records.filter(record => record.date?.startsWith(yearKey));
     return records;
-  }, [records, period, thisMonth, thisYear]);
-
-  const totalIncome = filteredRecords.filter(r => r.type === 'income').reduce((s, r) => s + r.amount, 0);
-  const totalExpense = filteredRecords.filter(r => r.type === 'expense').reduce((s, r) => s + r.amount, 0);
-  const netProfit = totalIncome - totalExpense;
-
-  // 按分类汇总
+  }, [records, period, monthKey, yearKey]);
+  const totalIncome = filteredRecords.filter(record => record.type === 'income').reduce((sum, record) => sum + record.amount, 0);
+  const totalExpense = filteredRecords.filter(record => record.type === 'expense').reduce((sum, record) => sum + record.amount, 0);
   const categoryStats = useMemo(() => {
-    const map = new Map<string, { name: string; amount: number; color: string; type: string }>();
-    filteredRecords.forEach(r => {
-      const cat = categories.find(c => c.id === r.category_id);
-      const key = r.category_id || 'unknown';
-      const existing = map.get(key) || { name: cat?.name || '未分类', amount: 0, color: cat?.color || '#999', type: r.type };
-      existing.amount += r.amount;
-      map.set(key, existing);
-    });
-    return Array.from(map.values()).sort((a, b) => b.amount - a.amount);
+    const values = new Map<string, { name: string; amount: number; color: string; type: string }>();
+    for (const record of filteredRecords) {
+      const category = categories.find(item => item.id === record.category_id);
+      const key = record.category_id || 'unknown';
+      const value = values.get(key) || { name: category?.name || '\u672a\u5206\u7c7b', amount: 0, color: category?.color || '#999', type: record.type };
+      value.amount += record.amount;
+      values.set(key, value);
+    }
+    return Array.from(values.values()).sort((left, right) => right.amount - left.amount);
   }, [filteredRecords, categories]);
 
-  const incomeStats = categoryStats.filter(s => s.type === 'income');
-  const expenseStats = categoryStats.filter(s => s.type === 'expense');
-
   return (
-    <View className="assets-page">
+    <View className='assets-page'>
       <NetworkStatus />
-      <ReviewDemoBanner />
-
-      {isReviewDemo ? (
-        <View className="task-card review-read-only" aria-disabled={isReviewDemo}>
-          <Text className="task-title">{'\u8d22\u52a1\u8131\u654f\u793a\u4f8b\uff08\u53ea\u8bfb\uff09'}</Text>
-          <Text className="task-desc">{'\u5ba1\u6838\u4f53\u9a8c\u4ec5\u5c55\u793a\u8131\u654f\u793a\u4f8b\u6c47\u603b\uff0c\u5bfc\u5165\u4e0d\u53ef\u7528\u3002'}</Text>
-        </View>
-      ) : (
-      <>
-      <View className="task-card" onClick={submitAssetImportTask}>
-        <Text className="task-title">导入财务数据</Text>
-        <Text className="task-desc">选择个人资产统计所需的数据文件并开始导入。</Text>
+      <View className='task-card' onClick={submitAssetImportTask}>
+        <Text className='task-title'>{'\u5bfc\u5165\u8d22\u52a1\u6570\u636e'}</Text>
+        <Text className='task-desc'>{'\u9009\u62e9\u4e2a\u4eba\u8d44\u4ea7\u7edf\u8ba1\u6240\u9700\u7684\u6570\u636e\u6587\u4ef6\u5e76\u5f00\u59cb\u5bfc\u5165\u3002'}</Text>
       </View>
-
-      {/* 总览卡片 */}
-      </>
-      )}
-
-      <View className="overview-card">
-        <View className="overview-row">
-          <View className="overview-item">
-            <Text className="ov-label">总收入</Text>
-            <Text className="ov-value income">¥{totalIncome.toFixed(0)}</Text>
-          </View>
-          <View className="overview-item">
-            <Text className="ov-label">总支出</Text>
-            <Text className="ov-value expense">¥{totalExpense.toFixed(0)}</Text>
-          </View>
-          <View className="overview-item">
-            <Text className="ov-label">净利润</Text>
-            <Text className={`ov-value ${netProfit >= 0 ? 'income' : 'expense'}`}>¥{netProfit.toFixed(0)}</Text>
-          </View>
-        </View>
+      <View className='overview-card'><View className='overview-row'>
+        <View className='overview-item'><Text className='ov-label'>{'\u603b\u6536\u5165'}</Text><Text className='ov-value income'>{'\u00a5'}{totalIncome.toFixed(0)}</Text></View>
+        <View className='overview-item'><Text className='ov-label'>{'\u603b\u652f\u51fa'}</Text><Text className='ov-value expense'>{'\u00a5'}{totalExpense.toFixed(0)}</Text></View>
+        <View className='overview-item'><Text className='ov-label'>{'\u7ed3\u4f59'}</Text><Text className={`ov-value ${totalIncome - totalExpense >= 0 ? 'income' : 'expense'}`}>{'\u00a5'}{(totalIncome - totalExpense).toFixed(0)}</Text></View>
+      </View></View>
+      <View className='period-bar'>
+        {[{ key: 'month' as const, label: '\u672c\u6708' }, { key: 'year' as const, label: '\u672c\u5e74' }, { key: 'all' as const, label: '\u5168\u90e8' }].map(item => <View key={item.key} className={`period-tag ${period === item.key ? 'active' : ''}`} onClick={() => setPeriod(item.key)}><Text>{item.label}</Text></View>)}
       </View>
-
-      {/* 时间筛选 */}
-      <View className="period-bar">
-        {[{ k: 'month' as const, v: '本月' }, { k: 'year' as const, v: '本年' }, { k: 'all' as const, v: '全部' }].map(p => (
-          <View key={p.k} className={`period-tag ${period === p.k ? 'active' : ''}`} onClick={() => setPeriod(p.k)}>
-            <Text>{p.v}</Text>
-          </View>
-        ))}
-      </View>
-
-      {filteredRecords.length === 0 ? (
-        <EmptyState icon="账" text="暂无资产记录" />
-      ) : (
-        <ScrollView scrollY className="stats-scroll">
-          <View className="stats-content">
-          {/* 收入分类 */}
-          {incomeStats.length > 0 && (
-            <View className="cat-section">
-              <Text className="cat-title">收入分类</Text>
-              {incomeStats.map((s, i) => (
-                <View key={i} className="cat-row">
-                  <View className="cat-dot" style={{ background: s.color }} />
-                  <Text className="cat-name">{s.name}</Text>
-                  <View className="cat-bar-wrap">
-                    <View className="cat-bar" style={{ width: `${totalIncome > 0 ? (s.amount / totalIncome * 100) : 0}%`, background: s.color }} />
-                  </View>
-                  <Text className="cat-amount income">¥{s.amount.toFixed(0)}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {/* 支出分类 */}
-          {expenseStats.length > 0 && (
-            <View className="cat-section">
-              <Text className="cat-title">支出分类</Text>
-              {expenseStats.map((s, i) => (
-                <View key={i} className="cat-row">
-                  <View className="cat-dot" style={{ background: s.color }} />
-                  <Text className="cat-name">{s.name}</Text>
-                  <View className="cat-bar-wrap">
-                    <View className="cat-bar" style={{ width: `${totalExpense > 0 ? (s.amount / totalExpense * 100) : 0}%`, background: s.color }} />
-                  </View>
-                  <Text className="cat-amount expense">¥{s.amount.toFixed(0)}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {/* 最近记录 */}
-          <View className="cat-section">
-            <Text className="cat-title">最近记录</Text>
-            {filteredRecords.sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 20).map(r => {
-              const cat = categories.find(c => c.id === r.category_id);
-              return (
-                <View key={r.id} className="record-row">
-                  <View className="record-dot" style={{ background: cat?.color || '#999' }} />
-                  <View className="record-info">
-                    <Text className="record-name">{cat?.name || '未分类'}</Text>
-                    <Text className="record-date">{r.date} {r.notes ? `· ${r.notes}` : ''}</Text>
-                  </View>
-                  <Text className={`record-amount ${r.type}`}>{r.type === 'income' ? '+' : '-'}¥{r.amount}</Text>
-                </View>
-              );
-            })}
-          </View>
-          </View>
-        </ScrollView>
-      )}
+      {filteredRecords.length === 0 ? <EmptyState icon={'\u8d26'} text={'\u6682\u65e0\u8d44\u4ea7\u8bb0\u5f55'} /> : <ScrollView scrollY className='stats-scroll'><View className='stats-content'>
+        {categoryStats.map((item, index) => <View key={`${item.name}-${index}`} className='cat-row'><View className='cat-dot' style={{ background: item.color }} /><Text className='cat-name'>{item.name}</Text><Text className={`cat-amount ${item.type}`}>{'\u00a5'}{item.amount.toFixed(0)}</Text></View>)}
+        <View className='cat-section'><Text className='cat-title'>{'\u6700\u8fd1\u8bb0\u5f55'}</Text>{filteredRecords.slice(0, 20).map(record => <View key={record.id} className='record-row'><Text>{record.date}</Text><Text className={record.type}>{'\u00a5'}{record.amount.toFixed(0)}</Text></View>)}</View>
+      </View></ScrollView>}
     </View>
   );
 }

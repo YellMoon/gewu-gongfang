@@ -8,7 +8,7 @@ import { authSessionRuntime } from './authSession';
 import {
   canUserSubmitMiniappWrite,
   deriveAccess,
-  reviewRolePolicy,
+  accountExperiencePolicy,
   sanitizeCapabilitiesForIdentity,
 } from './miniappAuthorizationRuntime';
 import { createAuthorizationSession } from './miniappAuthorizationSession';
@@ -61,14 +61,16 @@ export const teacherModules = adminModules.filter(moduleId => moduleId !== 'admi
 export type MiniappRole = 'super_admin' | 'admin' | 'teacher' | 'student' | 'pending';
 export type MiniappCapability =
   | 'users:review'
+  | 'applications:review'
   | 'business:all'
   | 'business:teacher-scope'
   | 'question-bank:view'
   | 'question-bank:edit'
-  | 'review-demo:read'
-  | 'review-demo:admin'
-  | 'review-demo:student'
-  | 'review-demo:paper-export';
+  | 'experience:read'
+  | 'profile-application:read'
+  | 'profile-application:submit'
+  | 'sample-questions:view'
+  | 'sample-paper-export';
 
 export function canMiniappWrite(target: string, user: Partial<UserInfo> | null = getCurrentUser()): boolean {
   return canUserSubmitMiniappWrite(user, target, allowedWriteTasks);
@@ -99,6 +101,9 @@ export interface UserInfo {
   is_review_demo?: boolean;
   read_only?: boolean;
   review_demo_session_id?: string;
+  account_state?: 'formal' | 'unrecognized';
+  token_use?: 'miniapp-session' | 'unrecognized-student';
+  capabilities?: MiniappCapability[];
   review_status?: string;
   reviewStatus?: string;
   status?: number | boolean;
@@ -218,8 +223,8 @@ export function getLinkedStudentIds(user: Partial<UserInfo> | null = getCurrentU
 }
 
 export function getMiniappRolePolicy(user: Partial<UserInfo> | null = getCurrentUser()) {
-  const strictReviewPolicy = reviewRolePolicy(user);
-  if (strictReviewPolicy) return strictReviewPolicy;
+  const experiencePolicy = accountExperiencePolicy(user);
+  if (experiencePolicy) return experiencePolicy;
   if (user?.user_type === 'super_admin') {
     return {
       role: 'super_admin',

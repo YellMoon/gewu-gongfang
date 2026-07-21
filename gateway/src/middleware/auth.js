@@ -5,25 +5,21 @@
 const jwt = require('jsonwebtoken');
 const { getDb } = require('../db/database');
 const { roleForUser } = require('../services/authorizationPolicy');
-const {
-  looksLikeReviewDemoToken,
-  parseReviewDemoToken,
-  reviewDemoUserFromClaims,
-} = require('../services/reviewDemoSession');
 
 const JWT_SECRET = process.env.JWT_SECRET || null;
-function verifyToken(token){if(!JWT_SECRET)throw new Error('JWT_SECRET_REQUIRED');if(looksLikeReviewDemoToken(token))return parseReviewDemoToken(token);const decoded=jwt.verify(token,JWT_SECRET,{algorithms:['HS256']});if(decoded.token_use==='desktop-session'&&(decoded.iss!=='gewu-auth'||decoded.aud!=='gewu-api'))throw new Error('TOKEN_AUDIENCE_INVALID');return decoded;}
+function verifyToken(token){if(!JWT_SECRET)throw new Error('JWT_SECRET_REQUIRED');const decoded=jwt.verify(token,JWT_SECRET,{algorithms:['HS256']});if(decoded.token_use==='desktop-session'&&(decoded.iss!=='gewu-auth'||decoded.aud!=='gewu-api'))throw new Error('TOKEN_AUDIENCE_INVALID');return decoded;}
 
-function attachReviewDemo(req, decoded) {
-  const user = reviewDemoUserFromClaims(decoded);
-  req.user = user;
-  req.authz = {
-    userId: user.id, phone: null, role: user.user_type,
-    teacherId: null, studentId: user.student_id || null,
-    reviewStatus: 'approved', status: 1, loginEnabled: 1,
-    deviceId: null, clientType: 'miniapp-review', isPrimaryHost: false,
-    isReviewDemo: true, readOnly: true, reviewDemoSessionId: user.review_demo_session_id,
-  };
+const EXPERIENCE_ONLY_TOKEN_USES = new Set(['review-demo', 'unrecognized-student']);
+
+function rejectExperienceOnlyToken(token, res) {
+  const tokenUse = jwt.decode(token)?.token_use;
+  if (!EXPERIENCE_ONLY_TOKEN_USES.has(tokenUse)) return false;
+  res.status(401).json({
+    success: false,
+    code: 'EXPERIENCE_TOKEN_NOT_ACCEPTED_BY_GATEWAY',
+    error: 'Experience-only tokens are not accepted by the legacy gateway',
+  });
+  return true;
 }
 
 function attachPersisted(req, decoded) {
@@ -71,7 +67,6 @@ function attachPersisted(req, decoded) {
       tokenUse: 'desktop-session',
       clientType: 'desktop',
       isPrimaryHost: false,
-      isReviewDemo: false,
       readOnly: false,
       userApproved: true,
     };
@@ -82,7 +77,7 @@ function attachPersisted(req, decoded) {
     tenantId: persisted.tenant_id || persisted.tenantId || 'default',
     teacherId: persisted.teacher_id || null, studentId: persisted.student_id || null,
     reviewStatus: persisted.review_status, status: persisted.status, loginEnabled: persisted.login_enabled,
-    deviceId: null, clientType: 'gateway', isPrimaryHost: false, isReviewDemo: false, readOnly: false };
+    deviceId: null, clientType: 'gateway', isPrimaryHost: false, readOnly: false };
   return true;
 }
 
@@ -98,9 +93,9 @@ function authMiddleware(req, res, next) {
 
   try {
     const token = authHeader.split(' ')[1];
+    if (rejectExperienceOnlyToken(token, res)) return undefined;
     const decoded = verifyToken(token);
-    if (decoded.token_use === 'review-demo') attachReviewDemo(req, decoded);
-    else if (!attachPersisted(req, decoded)) return res.status(401).json({ error: 'Authenticated user not found', code: 'UNAUTHORIZED' });
+    if (!attachPersisted(req, decoded)) return res.status(401).json({ error: 'Authenticated user not found', code: 'UNAUTHORIZED' });
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
@@ -119,9 +114,9 @@ function optionalAuth(req, res, next) {
   if (authHeader && authHeader.startsWith('Bearer ')) {
     try {
       const token = authHeader.split(' ')[1];
+      if (rejectExperienceOnlyToken(token, res)) return undefined;
       const decoded = verifyToken(token);
-      if (decoded.token_use === 'review-demo') attachReviewDemo(req, decoded);
-      else attachPersisted(req, decoded);
+      attachPersisted(req, decoded);
     } catch (err) {
       // token 无效也放行
     }

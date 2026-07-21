@@ -1,5 +1,6 @@
 const assert = require('assert');
 const packageJson = require('../package.json');
+const hostBuilderConfig = require('../electron-builder.host.config.cjs');
 const {
   ACK_SIGNATURE_ALGORITHM,
   CONTENT_ENCRYPTION_ALGORITHM,
@@ -10,7 +11,8 @@ const {
 } = require('../backend/src/services/primaryHostRecoveryDeliveryProtocol');
 const { buildPrimaryHostOperationManifest } = require('./primaryHostOperationValidation');
 
-assert.ok(packageJson.build.files.includes('public/primaryHostOperationValidation.js'));
+assert.ok(!packageJson.build.files.includes('public/primaryHostOperationValidation.js'));
+assert.ok(hostBuilderConfig.files.includes('public/primaryHostOperationValidation.js'));
 assert.ok(packageJson.scripts.test.includes('npm run test:primary-host'), 'default npm test must execute the primary-host suite');
 assert.ok(packageJson.scripts['test:primary-host'].includes('primaryHostSyncPreflightService.test.js'));
 assert.ok(packageJson.scripts['test:primary-host'].includes('primaryHostPreflightProofService.test.js'));

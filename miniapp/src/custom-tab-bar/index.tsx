@@ -26,6 +26,13 @@ const STUDENT_TABS: TabItem[] = [
   { pagePath: 'pages/settings/index', label: '我的', iconText: '我' },
 ];
 
+const EXPERIENCE_TABS: TabItem[] = [
+  { pagePath: 'pages/index/index', label: '首页', iconText: '首' },
+  { pagePath: 'pages/schedule/index', label: '课程表', iconText: '课' },
+  { pagePath: 'pages/question-bank/index', label: '题库', iconText: '题' },
+  { pagePath: 'pages/settings/index', label: '我的', iconText: '我' },
+];
+
 const LIMITED_TABS: TabItem[] = [
   { pagePath: 'pages/index/index', label: '\u9996\u9875', iconText: '\u9996' },
   { pagePath: 'pages/settings/index', label: '\u6211\u7684', iconText: '\u6211' },
@@ -48,24 +55,36 @@ function getUserType() {
 export default function RoleTabBar() {
   const [currentRoute, setCurrentRoute] = useState(getCurrentRoute());
   const [userType, setUserType] = useState(getUserType());
+  const [navigationMode, setNavigationMode] = useState('limited');
 
   useDidShow(() => {
     setCurrentRoute(getCurrentRoute());
     setUserType('pending');
+    setNavigationMode('limited');
     void fetchPermissions().then(() => {
       const access = getEffectiveMiniappAccess();
       setUserType(access.modules.length > 0 ? access.role : 'pending');
-    }).catch(() => setUserType('pending'));
+      setNavigationMode(access.experienceOnly ? 'unrecognized' : (access.modules.length > 0 ? 'formal' : 'limited'));
+    }).catch(() => {
+      setUserType('pending');
+      setNavigationMode('limited');
+    });
   });
 
   const tabs = useMemo(() => (
-    userType === 'pending' ? LIMITED_TABS : (userType === 'student' ? STUDENT_TABS : ADMIN_TABS)
-  ), [userType]);
+    navigationMode === 'unrecognized'
+      ? EXPERIENCE_TABS
+      : (userType === 'pending' ? LIMITED_TABS : (userType === 'student' ? STUDENT_TABS : ADMIN_TABS))
+  ), [navigationMode, userType]);
 
   const isTabPage = tabs.some((item) => item.pagePath === currentRoute);
 
   const handleSwitch = (item: TabItem) => {
     if (item.pagePath === currentRoute) return;
+    if (item.pagePath === 'pages/question-bank/index') {
+      Taro.navigateTo({ url: `/${item.pagePath}` });
+      return;
+    }
     Taro.switchTab({ url: `/${item.pagePath}` });
   };
 

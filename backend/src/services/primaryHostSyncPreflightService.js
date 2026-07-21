@@ -6,7 +6,7 @@ const SYNC_TABLES = Object.freeze([
   'students', 'grades', 'courses', 'schedules', 'enrollments',
   'payments', 'consumptions', 'institutions', 'schools', 'rooms', 'teachers',
   'subjects', 'chapters', 'knowledge_points', 'questions', 'question_contents',
-  'question_assets',
+  'question_assets', 'taxonomy_systems', 'taxonomy_nodes', 'question_taxonomy_nodes',
 ]);
 
 const RELAY_QUEUE_COLUMNS = Object.freeze([

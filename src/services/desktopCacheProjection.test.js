@@ -43,6 +43,7 @@ const assert = require('assert');
     questions: [{ id: 'question-public' }],
     knowledgeTree: [{ id: 'knowledge-public' }],
     modelTree: [{ id: 'model-public' }],
+    taxonomySystems: [{ id: 'taxonomy-public' }],
     tags: [{ id: 'tag-public' }],
     questionTagRels: [{ id: 'rel-public' }],
     questionBasketIds: ['question-public'],
@@ -74,6 +75,7 @@ const assert = require('assert');
     assert.deepStrictEqual(teacher[key].map(row => row.id), ids, `${key} must be teacher scoped`);
   }
   assert.deepStrictEqual(teacher.questions.map(row => row.id), ['question-public']);
+  assert.deepStrictEqual(teacher.taxonomySystems.map(row => row.id), ['taxonomy-public']);
   assert.deepStrictEqual(teacher.assetCategories.map(row => row.id), ['asset-category']);
 
   const admin = projectDesktopCacheForIdentity(source, {

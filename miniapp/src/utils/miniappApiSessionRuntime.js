@@ -1,5 +1,5 @@
 const { permissionIdentityKey } = require('./miniappAuthorizationRuntime');
-const { hasReviewExperienceMarker } = require('./reviewExperience');
+const { isUnrecognizedIdentity } = require('./accountExperience');
 
 const AUTH_SESSION_GENERATION_KEY = 'auth_session_generation';
 const AUTH_SESSION_STATE_KEY = 'auth_session_state_v1';
@@ -167,7 +167,7 @@ function createAuthSessionRuntime(dependencies) {
       generation: generationState.generation,
       identity: authenticatedStateUsable && candidateIdentityKey ? identity : null,
       identityKey: authenticatedStateUsable ? candidateIdentityKey : '',
-      review: authenticatedStateUsable && hasReviewExperienceMarker(identity),
+      experienceOnly: authenticatedStateUsable && isUnrecognizedIdentity(identity),
       trusted,
       invalidated: trusted ? invalidated : true,
     };
@@ -237,7 +237,6 @@ function createApiResponseCoordinator(dependencies) {
     }
     if (dependencies.authenticationEntry) return { action: 'accept' };
     if (statusCode !== 401) return { action: 'accept' };
-    if (requestSession.review) return { action: 'review-expired' };
     if (authRetryUsed) return { action: 'auth-expired' };
 
     const current = dependencies.sessionRuntime.capture();
@@ -369,7 +368,11 @@ function clearAuthenticatedSession(dependencies, identities = []) {
 function validatedNormalSession(responseData) {
   const token = typeof responseData?.token === 'string' ? responseData.token.trim() : '';
   const user = responseData?.user;
-  if (!token || !user || !user.id || hasReviewExperienceMarker(user)) return null;
+  const legacyReviewMarker = user?.token_use === 'review-demo'
+    || user?.is_review_demo === true
+    || Boolean(user?.review_demo_session_id);
+  const malformedUnrecognized = user?.account_state === 'unrecognized' && !isUnrecognizedIdentity(user);
+  if (!token || !user || !user.id || legacyReviewMarker || malformedUnrecognized) return null;
   return { token, user };
 }
 
@@ -397,7 +400,7 @@ function createNormalSessionCommitter(dependencies) {
       dependencies.setBusinessCacheIdentity(session.user);
       dependencies.writeToken(session.token);
       if (typeof dependencies.activateSession === 'function') dependencies.activateSession();
-      await dependencies.relaunch();
+      await dependencies.relaunch(session.user);
       return { success: true };
     } catch (error) {
       clearAuthenticatedSession(dependencies, identities);

@@ -21,13 +21,7 @@ assert.deepStrictEqual(effectiveCapabilities({ ...active, role: 'teacher' }), [
 assert.deepStrictEqual(effectiveCapabilities({ ...active, role: 'admin' }), [
   'business:all', 'question-bank:view', 'question-bank:edit',
 ]);
-assert.deepStrictEqual(effectiveCapabilities({ ...active, role: 'admin', isReviewDemo: true, readOnly: true }), [
-  'review-demo:read', 'review-demo:admin', 'question-bank:view', 'review-demo:paper-export',
-]);
-assert.deepStrictEqual(effectiveCapabilities({ ...active, role: 'student', isReviewDemo: true, readOnly: true }), [
-  'review-demo:read', 'review-demo:student', 'question-bank:view', 'review-demo:paper-export',
-]);
-assert.deepStrictEqual(effectiveCapabilities({ ...active, role: 'admin', isReviewDemo: true, readOnly: false }), []);
+assert.ok(!effectiveCapabilities({ ...active, role: 'admin' }).some(capability => capability.startsWith('review-demo:')));
 assert.ok(!effectiveCapabilities({ ...active, role: 'admin', isPrimaryHost: true, clientType: 'desktop' }).includes('users:review'));
 assert.ok(!effectiveCapabilities({ ...active, role: 'super_admin', isPrimaryHost: true, clientType: 'desktop' }).includes('question-bank:delete-committed'), 'gateway never grants host-only deletion');
 
