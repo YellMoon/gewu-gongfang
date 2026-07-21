@@ -5,17 +5,17 @@ import { onNetworkStatusChange, offNetworkStatusChange } from '@tarojs/taro'
 import { getApiBaseUrl, setApiBaseUrl } from '../../utils/api'
 import { authSessionRuntime } from '../../utils/authSession'
 import { clearAuthenticatedSession } from '../../utils/miniappApiSessionRuntime'
-import { reviewCleanupStorageKeys } from '../../utils/reviewExperience'
-import { isReviewExperienceIdentity } from '../../utils/reviewExperience'
+import { accountSessionCleanupStorageKeys, isUnrecognizedIdentity } from '../../utils/accountExperience'
 import { isOnline, getPendingChanges, clearPendingChanges, getLastSyncTimestamp, clearBusinessCache } from '../../utils/storage'
 import { clearPermissionCache } from '../../utils/permission'
 import { triggerSync, pullFromCloud } from '../../utils/sync'
-import ReviewDemoBanner from '../../components/ReviewDemoBanner'
+import AccountStatusBanner from '../../components/AccountStatusBanner'
+import MembershipBadge from '../../components/MembershipBadge'
 import './index.scss'
 
 export default function Settings() {
   const currentIdentity = Taro.getStorageSync('user_info')
-  const isReviewDemo = isReviewExperienceIdentity(currentIdentity)
+  const isUnrecognized = isUnrecognizedIdentity(currentIdentity)
   const [online, setOnline] = useState(true)
   const [pendingCount, setPendingCount] = useState(0)
   const [syncing, setSyncing] = useState(false)
@@ -36,7 +36,7 @@ export default function Settings() {
 
   const refreshStatus = () => {
     setOnline(isOnline())
-    if (isReviewDemo) {
+    if (isUnrecognized) {
       setPendingCount(0)
       setLastSync(0)
       return
@@ -47,7 +47,7 @@ export default function Settings() {
   }
 
   const handleSyncNow = async () => {
-    if (isReviewDemo) {
+    if (isUnrecognized) {
       Taro.showToast({ title: '\u5ba1\u6838\u4f53\u9a8c\u4e2d\u4e0d\u53ef\u540c\u6b65\u4e1a\u52a1\u6570\u636e', icon: 'none' })
       return
     }
@@ -73,13 +73,13 @@ export default function Settings() {
   }
 
   const handleEditUrl = () => {
-    if (isReviewDemo) return
+    if (isUnrecognized) return
     setTempUrl(serverUrl)
     setEditingUrl(true)
   }
 
   const handleSaveUrl = () => {
-    if (isReviewDemo) {
+    if (isUnrecognized) {
       setEditingUrl(false)
       return
     }
@@ -92,7 +92,7 @@ export default function Settings() {
   }
 
   const handleClearPending = () => {
-    if (isReviewDemo) return
+    if (isUnrecognized) return
     Taro.showModal({
       title: '确认清空',
       content: `确定要清空 ${pendingCount} 条待同步数据？`,
@@ -119,27 +119,66 @@ export default function Settings() {
       success: (res) => {
         if (res.confirm) {
           const currentUser = Taro.getStorageSync('user_info')
-          const exitingReview = isReviewExperienceIdentity(currentUser)
+          const exitingExperience = isUnrecognizedIdentity(currentUser)
           clearAuthenticatedSession({
             invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance(),
             clearPermissionCache,
             clearBusinessCache,
             removeStorage: (key: string) => Taro.removeStorageSync(key),
-            cleanupStorageKeys: reviewCleanupStorageKeys,
+            cleanupStorageKeys: accountSessionCleanupStorageKeys,
           }, [currentUser])
-          if (exitingReview) Taro.reLaunch({ url: '/pages/login/index' })
+          if (exitingExperience) Taro.reLaunch({ url: '/pages/login/index' })
           else Taro.redirectTo({ url: '/pages/login/index' })
         }
       }
     })
   }
 
-  const pendingChanges = isReviewDemo ? [] : getPendingChanges().slice(0, 10)
+  if (isUnrecognized) {
+    return (
+      <View className='settings-page'>
+        <AccountStatusBanner />
+        <View className='section'>
+          <View className='setting-item'>
+            <View className='item-left'><View className='item-icon info'>{'\u7528'}</View><Text className='item-label'>{'\u5f53\u524d\u8d26\u53f7'}</Text></View>
+            <View className='item-right'><Text className='value'>{currentIdentity?.name || '\u5fae\u4fe1\u7528\u6237'}</Text></View>
+          </View>
+        </View>
+        <View className='section'>
+          <View className='setting-item' onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}>
+            <View className='item-left'><View className='item-icon info'>{'\u7533'}</View><Text className='item-label'>{'\u7533\u8bf7\u6b63\u5f0f\u8d26\u53f7'}</Text></View>
+            <View className='item-right'><Text className='arrow'>{'\u203a'}</Text></View>
+          </View>
+        </View>
+        <View className='logout-wrap'><button className='logout-btn' onClick={handleLogout}>{'\u9000\u51fa\u767b\u5f55'}</button></View>
+      </View>
+    )
+  }
+
+  const pendingChanges = getPendingChanges().slice(0, 10)
 
   return (
     <View className='settings-page'>
-      <ReviewDemoBanner />
-      {isReviewDemo ? <View className='section'><Text className='item-label'>{'\u5ba1\u6838\u4f53\u9a8c\u671f\u95f4\u4e1a\u52a1\u6570\u636e\u53ea\u8bfb\uff0c\u4e0d\u53ef\u4fee\u6539\u670d\u52a1\u5668\u3001\u540c\u6b65\u6216\u6e05\u7a7a\u5f85\u540c\u6b65\u6570\u636e\u3002'}</Text></View> : null}
+      
+      {/* 用户信息 */}
+      <View className='section'>
+        <View className='setting-item'>
+          <View className='item-left'>
+            <View className='item-icon info'>用</View>
+            <Text className='item-label'>当前用户</Text>
+          </View>
+          <View className='item-right'>
+            <MembershipBadge membership={currentIdentity?.membership} />
+            <Text className='value'>{currentIdentity?.name || '未知用户'}</Text>
+            {currentIdentity?.isMember && (
+              <View className='member-badge'>
+                <Text className='member-text'>会员</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
+
       {/* 网络状态 */}
       <View className={`sync-status ${online ? 'online' : 'offline'}`}>
         <Text>{online ? '在线' : '离线'}</Text>
@@ -149,7 +188,7 @@ export default function Settings() {
       {/* 服务器设置 */}
       <View className='section'>
         <View className='section-title'>服务器配置</View>
-        <View className='setting-item' onClick={isReviewDemo ? undefined : handleEditUrl}>
+        <View className='setting-item' onClick={handleEditUrl}>
           <View className='item-left'>
             <View className='item-icon server'>云</View>
             <Text className='item-label'>API 服务器地址</Text>
@@ -196,13 +235,13 @@ export default function Settings() {
         )}
 
         <View className='sync-button-wrap'>
-          <button className='btn-sync' onClick={handleSyncNow} disabled={isReviewDemo || syncing || !online}>
+          <button className='btn-sync' onClick={handleSyncNow} disabled={syncing || !online}>
             {syncing ? '同步中...' : '立即同步'}
           </button>
         </View>
 
         {pendingCount > 0 && (
-          <View className='setting-item' onClick={isReviewDemo ? undefined : handleClearPending}>
+          <View className='setting-item' onClick={handleClearPending}>
             <View className='item-left'>
               <View className='item-icon danger'>清</View>
               <Text className='item-label danger-text'>清空待同步</Text>
@@ -242,7 +281,6 @@ export default function Settings() {
 
       {/* 退出登录 */}
       <View className='logout-wrap'>
-        {isReviewDemo ? <Text className='item-label'>{'\u9000\u51fa\u5ba1\u6838\u4f53\u9a8c'}</Text> : null}
         <button
           className='logout-btn'
           onClick={handleLogout}

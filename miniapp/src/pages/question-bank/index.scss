@@ -347,3 +347,36 @@
   background: #1f6f68;
   color: #fffaf1;
 }
+
+.experience-section {
+  background: white;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 32rpx;
+}
+
+.section-header {
+  margin-bottom: 16rpx;
+}
+
+.section-title {
+  display: block;
+  font-size: 32rpx;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 8rpx;
+}
+
+.section-subtitle {
+  display: block;
+  font-size: 24rpx;
+  color: #999;
+}
+
+.experience-btn {
+  background: #f5f5f5;
+  color: #1f6f68;
+  border: 1rpx solid #1f6f68;
+  border-radius: 40rpx;
+  font-size: 28rpx;
+}

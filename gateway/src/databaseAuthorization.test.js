@@ -29,6 +29,40 @@ authMiddleware(req, res, () => { hydrated = true; });
 assert.strictEqual(hydrated, true);
 assert.strictEqual(req.authz.role, 'super_admin', 'middleware must hydrate canonical role from the database, not JWT claims');
 
+db.prepare(`INSERT INTO users
+  (id, phone, name, user_type, status, login_enabled, review_status, teacher_id, auth_version, created_at, updated_at)
+  VALUES ('desktop-teacher', '13900000031', 'Desktop Teacher', 'teacher', 1, 1, 'approved', 'teacher-31', 4, ?, ?)`)
+  .run(now, now);
+const desktopToken = jwt.sign({
+  sub: 'desktop-teacher', sid: 'gateway-session-31', device_id: 'gateway-device-31',
+  active_role: 'teacher', eligible_roles: ['teacher'], auth_version: 4, credential_version: 2,
+  token_use: 'desktop-session', iss: 'gewu-auth', aud: 'gewu-api',
+}, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '1h' });
+const desktopReq = { headers: { authorization: `Bearer ${desktopToken}`, 'x-device-id': 'gateway-device-31' } };
+let desktopHydrated = false;
+authMiddleware(desktopReq, res, () => { desktopHydrated = true; });
+assert.strictEqual(desktopHydrated, true);
+assert.deepStrictEqual({
+  userId: desktopReq.authz.userId,
+  deviceId: desktopReq.authz.deviceId,
+  activeRole: desktopReq.authz.activeRole,
+  teacherId: desktopReq.authz.teacherId,
+  sessionId: desktopReq.authz.sessionId,
+  authVersion: desktopReq.authz.authVersion,
+  credentialVersion: desktopReq.authz.credentialVersion,
+  tokenUse: desktopReq.authz.tokenUse,
+  clientType: desktopReq.authz.clientType,
+}, {
+  userId: 'desktop-teacher', deviceId: 'gateway-device-31', activeRole: 'teacher', teacherId: 'teacher-31',
+  sessionId: 'gateway-session-31', authVersion: 4, credentialVersion: 2,
+  tokenUse: 'desktop-session', clientType: 'desktop',
+});
+const mismatchedReq = { headers: { authorization: `Bearer ${desktopToken}`, 'x-device-id': 'other-device' } };
+let mismatchNext = false; let mismatchStatus = null;
+authMiddleware(mismatchedReq, { status(code) { mismatchStatus = code; return this; }, json() { return this; } }, () => { mismatchNext = true; });
+assert.strictEqual(mismatchNext, false);
+assert.strictEqual(mismatchStatus, 401);
+
 database.closeDatabase();
 fs.rmSync(dir, { recursive: true, force: true });
 console.log('gateway database authorization tests passed');

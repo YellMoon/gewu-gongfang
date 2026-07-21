@@ -6,7 +6,10 @@ const {
   ROLES,
   normalizePhone,
   roleForUser,
+  activeRoleForUser,
+  canReviewApplications,
   canReviewUsers,
+  effectiveCapabilities,
   resolveTeacherBinding,
   scopeForUser,
 } = require('./authorizationPolicy');
@@ -60,6 +63,23 @@ assert.strictEqual(canReviewUsers({
 }), true);
 assert.strictEqual(canReviewUsers({ phone: '18257136756', role: 'admin' }), false);
 assert.strictEqual(canReviewUsers(null), false);
+const canonicalTeacherSession = {
+  id: CANONICAL_SUPER_ADMIN_ID,
+  phone: SUPER_ADMIN_PHONE,
+  role: 'teacher',
+  activeRole: 'teacher',
+  eligibleRoles: ['super_admin', 'teacher'],
+  status: 1,
+  login_enabled: 1,
+  review_status: 'approved',
+  deleted: 0,
+  is_super_admin_identity: 1,
+};
+assert.strictEqual(activeRoleForUser(canonicalTeacherSession), 'teacher');
+assert.strictEqual(canReviewUsers(canonicalTeacherSession), false);
+assert.strictEqual(canReviewApplications(canonicalTeacherSession), false);
+assert.ok(!effectiveCapabilities(canonicalTeacherSession).includes('business:all'));
+assert.ok(effectiveCapabilities(canonicalTeacherSession).includes('business:teacher-scope'));
 
 const teachers = [
   { id: 'teacher-1', phone: '138 0000 0000' },
@@ -128,6 +148,35 @@ assert.deepStrictEqual(scopeForUser({ role: 'admin' }), { kind: 'all' });
 assert.deepStrictEqual(
   scopeForUser({ user_type: 'student', student_id: 'student-1' }),
   { kind: 'student', studentId: 'student-1' }
+);
+assert.deepStrictEqual(
+  scopeForUser({
+    role: 'super_admin',
+    activeRole: 'teacher',
+    eligibleRoles: ['super_admin', 'teacher'],
+    teacherId: 'teacher-self',
+  }),
+  { kind: 'teacher', teacherId: 'teacher-self' },
+  'a super administrator using the teacher work identity must receive teacher scope'
+);
+assert.deepStrictEqual(
+  scopeForUser({
+    role: 'super_admin',
+    activeRole: 'super_admin',
+    eligibleRoles: ['super_admin', 'teacher'],
+    teacherId: 'teacher-self',
+  }),
+  { kind: 'all' }
+);
+assert.deepStrictEqual(
+  scopeForUser({
+    role: 'teacher',
+    activeRole: 'super_admin',
+    eligibleRoles: ['teacher'],
+    teacherId: 'teacher-1',
+  }),
+  { kind: 'none' },
+  'an active role outside the server-provided grant set must fail closed'
 );
 
 console.log('authorization policy checks passed');

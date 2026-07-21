@@ -88,9 +88,35 @@ async function request(server, method, url, auth, body, headers = {}) {
     assert.ok(permissions.body.capabilities.includes('business:all'));
     assert.ok(!permissions.body.capabilities.includes('users:review'));
     assert.ok(!permissions.body.capabilities.includes('question-bank:delete-committed'), 'a forged host header cannot elevate a desktop admin');
-    db.registerSyncDevice('known-trusted-host', { deviceName: 'Known host', trusted: true, role: 'host' });
+    db.registerSyncDevice('known-trusted-host', {
+      deviceName: 'Known host',
+      trusted: true,
+      role: 'host',
+      ownerUserId: 'ordinary-admin',
+    });
     const replayedDevice = await request(base, 'GET', '/api/permissions/my', token('ordinary-admin'), null, { 'x-device-id': 'known-trusted-host', 'x-client-type': 'desktop' });
     assert.ok(!replayedDevice.body.capabilities.includes('question-bank:delete-committed'), 'knowing a trusted device id is not authentication');
+    const legacyDeviceToken = jwt.sign(
+      { id: 'ordinary-admin', device_id: 'known-trusted-host' },
+      process.env.JWT_SECRET
+    );
+    db.db.prepare(`INSERT INTO courses
+      (id, name, display_name, type, source_type, created_at, updated_at)
+      VALUES ('legacy-sync-course', 'Legacy Sync Course', 'Legacy Sync Course', 1, 1, ?, ?)`)
+      .run(now, now);
+    const legacySync = await request(
+      base,
+      'GET',
+      '/api/sync?since=0&deviceId=known-trusted-host',
+      legacyDeviceToken,
+      null,
+      { 'x-device-id': 'known-trusted-host' }
+    );
+    assert.strictEqual(legacySync.status, 200, 'legacy single-role desktop sync keeps its persisted admin scope');
+    assert.ok(
+      legacySync.body.changes.some(change => change.table === 'courses' && change.data.id === 'legacy-sync-course'),
+      'legacy single-role desktop sync must keep reading its persisted admin data scope'
+    );
     assert.ok(list.body.users.every(user => !('wechat_openid' in user) && !('wechat_unionid' in user)), 'admin list must not leak identity provider secrets');
   } finally {
     await new Promise(resolve => listener.close(resolve));

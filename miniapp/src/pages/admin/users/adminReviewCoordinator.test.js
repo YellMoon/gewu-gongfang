@@ -35,5 +35,12 @@ const deferred = () => { let resolve; const promise = new Promise(done => { reso
   pairingTask.resolve();
   await pairing;
   assert.strictEqual(locks.isLocked('pairing:code-1'), false, 'pairing lock must clear in finally');
+
+  const applicationTask = deferred();
+  const application = locks.run('application:application-1', () => applicationTask.promise);
+  assert.strictEqual(await locks.run('application:application-1', async () => {}), false, 'application review must reject duplicate actions');
+  applicationTask.resolve();
+  await application;
+  assert.strictEqual(locks.isLocked('application:application-1'), false);
   console.log('miniapp admin review coordinator checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

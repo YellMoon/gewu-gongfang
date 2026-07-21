@@ -1,36 +1,27 @@
+'use strict';
+
 const assert = require('assert');
 const { createAuthorizationSession } = require('./miniappAuthorizationSession');
-const {
-  permissionIdentityKey,
-  sanitizeCapabilitiesForIdentity,
-} = require('./miniappAuthorizationRuntime');
+const { permissionIdentityKey, sanitizeCapabilitiesForIdentity } = require('./miniappAuthorizationRuntime');
 const { createPermissionFetchBoundary } = require('./miniappPermissionFetchRuntime');
 
-const reviewAdmin = {
-  id: 'review-demo:admin:session-a',
-  role: 'admin',
-  user_type: 'admin',
-  review_status: 'approved',
-  status: 1,
-  login_enabled: 1,
-  is_review_demo: true,
-  read_only: true,
-  review_demo_session_id: 'session-a',
+const unrecognized = {
+  id: 'unrecognized-1', role: 'student', user_type: 'student', account_state: 'unrecognized',
+  token_use: 'unrecognized-student', capabilities: [
+    'experience:read', 'profile-application:read', 'profile-application:submit',
+    'sample-questions:view', 'sample-paper-export',
+  ],
 };
-
 const normalAdmin = {
-  id: 'admin-1',
-  role: 'admin',
-  user_type: 'admin',
-  review_status: 'approved',
-  status: 1,
-  login_enabled: 1,
+  id: 'admin-1', role: 'admin', user_type: 'admin', review_status: 'approved',
+  status: 1, login_enabled: 1,
 };
 
 async function runFetch(identity, remoteCapabilities) {
   let currentUser = { ...identity };
   let memoryCache = null;
   let permissionState = null;
+  let remoteCalls = 0;
   const persistentWrites = [];
   const authorizationSession = createAuthorizationSession({
     readCache: () => null,
@@ -39,7 +30,7 @@ async function runFetch(identity, remoteCapabilities) {
     clearBusinessCache: () => {},
     setBusinessCacheIdentity: () => {},
     writeUser: user => { currentUser = user; },
-    fetchRemote: async () => ({ identity, capabilities: remoteCapabilities }),
+    fetchRemote: async () => { remoteCalls += 1; return { identity, capabilities: remoteCapabilities }; },
     sanitizeCapabilities: sanitizeCapabilitiesForIdentity,
   });
   const boundary = createPermissionFetchBoundary({
@@ -50,43 +41,28 @@ async function runFetch(identity, remoteCapabilities) {
     refreshAuthorization: localUser => authorizationSession.refresh(localUser, { force: true }),
   });
   const result = await boundary.fetchPermissions();
-  return { result, memoryCache, permissionState, persistentWrites };
+  return { result, memoryCache, permissionState, persistentWrites, remoteCalls };
 }
 
 async function main() {
-  const poisonedCapabilities = [
-    'review-demo:read', 'review-demo:admin', 'review-demo:student', 'review-demo:paper-export',
-    'question-bank:view', 'question-bank:edit', 'users:review', 'business:all', 'business:teacher-scope',
-  ];
-  const review = await runFetch(reviewAdmin, poisonedCapabilities);
-  const safeReviewCapabilities = [
-    'review-demo:read', 'review-demo:admin', 'review-demo:paper-export', 'question-bank:view',
-  ];
-  assert.deepStrictEqual(review.result.capabilities, safeReviewCapabilities, 'fetchPermissions must return only the strict review allowlist');
-  assert.deepStrictEqual(review.memoryCache.capabilities, safeReviewCapabilities, 'the in-memory fetch cache must be sanitized');
-  assert.deepStrictEqual(review.permissionState.capabilities, safeReviewCapabilities, 'the effective permission state must be sanitized');
-  const persistedReview = review.persistentWrites.filter(Boolean).at(-1);
-  assert.deepStrictEqual(persistedReview.capabilities, safeReviewCapabilities, 'raw poisoned review capabilities must never reach persistent storage');
-  assert.deepStrictEqual(review.result.permissions.map(item => item.id), safeReviewCapabilities);
-
-  const adminUsersPageCapabilities = review.result.capabilities || [];
-  assert.strictEqual(adminUsersPageCapabilities.includes('business:all'), false, 'admin users page must not read users for a review identity');
-  assert.strictEqual(adminUsersPageCapabilities.includes('users:review'), false, 'admin users page must not enable review controls for a review identity');
-  assert.strictEqual(adminUsersPageCapabilities.includes('question-bank:edit'), false);
+  const experience = await runFetch(unrecognized, ['business:all', 'users:review']);
+  assert.deepStrictEqual(experience.result.capabilities, unrecognized.capabilities);
+  assert.deepStrictEqual(experience.memoryCache.capabilities, unrecognized.capabilities);
+  assert.deepStrictEqual(experience.permissionState, {
+    status: 'loaded', identityKey: permissionIdentityKey(unrecognized), capabilities: unrecognized.capabilities,
+  });
+  assert.strictEqual(experience.remoteCalls, 0, 'unrecognized identity must not call the forbidden formal permission endpoint');
+  assert.deepStrictEqual(experience.persistentWrites, [], 'experience capabilities come from the signed identity and need no persistent formal cache');
 
   const normalCapabilities = ['users:review', 'business:all', 'question-bank:view', 'question-bank:edit'];
   const normal = await runFetch(normalAdmin, normalCapabilities);
-  assert.deepStrictEqual(normal.result.capabilities, normalCapabilities, 'normal verified users must keep their server capabilities');
+  assert.deepStrictEqual(normal.result.capabilities, normalCapabilities);
+  assert.strictEqual(normal.remoteCalls, 1);
   assert.deepStrictEqual(normal.persistentWrites.filter(Boolean).at(-1).capabilities, normalCapabilities);
-  assert.strictEqual(normal.result.capabilities.includes('users:review'), true, 'normal superuser-style page consumption must remain unchanged');
 
-  const malformedReview = { ...reviewAdmin, id: 'admin-1' };
-  assert.deepStrictEqual(sanitizeCapabilitiesForIdentity(malformedReview, poisonedCapabilities), [], 'malformed review markers must fail closed at the fetch boundary');
-  const idOnlyMalformedReview = { ...normalAdmin, id: 'review-demo:admin:broken' };
-  const malformedFetch = await runFetch(idOnlyMalformedReview, poisonedCapabilities);
-  assert.deepStrictEqual(malformedFetch.result.capabilities, [], 'a review-demo id without a strict review identity must not return capabilities');
-  assert.strictEqual(malformedFetch.persistentWrites.filter(Boolean).length, 0, 'a malformed review identity must never be persisted as verified');
-  assert.ok(permissionIdentityKey(reviewAdmin));
+  const legacyReview = { ...normalAdmin, id: 'review-demo:admin:legacy', is_review_demo: true };
+  assert.deepStrictEqual(sanitizeCapabilitiesForIdentity(legacyReview, normalCapabilities), []);
+  assert.strictEqual(permissionIdentityKey(legacyReview), '');
   console.log('miniapp permission fetch runtime checks passed');
 }
 

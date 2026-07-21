@@ -11,8 +11,16 @@ function memoryStorage(seed = {}) {
 
 (async () => {
   const client = await import('./paperExportTaskClient.mjs');
-  const authStorage = memoryStorage({
-    gewu_desktop_authorization_session: JSON.stringify({ token: 'jwt-token', userId: 'user-1', deviceId: 'desktop-2' }),
+  const authorizationSession = await import('./desktopAuthorizationSession.mjs');
+  const authStorage = memoryStorage();
+  await authorizationSession.saveDesktopAuthorizationSession({
+    token: 'jwt-token',
+    expiresAt: '2026-07-17T18:00:00.000Z',
+    session: {
+      id: 'session-1', userId: 'user-1', deviceId: 'desktop-2',
+      activeRole: 'teacher', eligibleRoles: ['teacher'], rowVersion: 1,
+    },
+    profile: { userId: 'user-1', activeRole: 'teacher', eligibleRoles: ['teacher'], teacherId: 'teacher-1' },
   });
   const taskStorage = memoryStorage();
   const input = {

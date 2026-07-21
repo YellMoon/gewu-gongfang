@@ -550,6 +550,7 @@ function templateDerivedPackage(buffer, answerPosition) {
   const generated = unzipSync(new Uint8Array(buffer));
   const template = unzipSync(new Uint8Array(fs.readFileSync(DEFAULT_TEMPLATE_PATH)));
   const output = { ...template };
+  if (generated['docProps/core.xml']) output['docProps/core.xml'] = generated['docProps/core.xml'];
   let generatedXml = strFromU8(generated['word/document.xml']);
   const templateXml = strFromU8(template['word/document.xml']);
   const templateSections = [...templateXml.matchAll(/<w:sectPr[\s\S]*?<\/w:sectPr>/g)].map(match => match[0]);
@@ -686,7 +687,13 @@ async function writeDocx(filePath, payload, sourceQuestions, options = {}) {
   return { manifest: formulas.map(({ questionId, location, index, canonicalLatex, latex, requestedMode, effectiveMode, fallbackUsed, diagnostics }) => ({ questionId, location, index, canonicalLatex: canonicalLatex || latex, requestedMode, effectiveMode, fallbackUsed, diagnostics })) };
 }
 
-function cjkFontPath() { return [path.join(process.env.WINDIR || 'C:\\Windows', 'Fonts', 'simhei.ttf'), path.join(process.env.WINDIR || 'C:\\Windows', 'Fonts', 'Deng.ttf')].find(fs.existsSync); }
+function cjkFontPath() {
+  return [
+    path.join(__dirname, '../../assets/fonts/NotoSansCJKsc-Regular.otf'),
+    path.join(process.env.WINDIR || 'C:\\Windows', 'Fonts', 'simhei.ttf'),
+    path.join(process.env.WINDIR || 'C:\\Windows', 'Fonts', 'Deng.ttf'),
+  ].find(fs.existsSync);
+}
 async function writePdf(filePath, payload, sourceQuestions, options = {}) {
   const questions = sourceQuestions.map(normalizedQuestion);
   await resolveImageSegments(questions, options);
@@ -695,6 +702,7 @@ async function writePdf(filePath, payload, sourceQuestions, options = {}) {
   const formulas = await prepareFormulaRows(formulaRows(questions, answerPosition), formulaMode, { allowNative: false });
   const semantic = [];
   const answerBlocks = [];
+  const contentRows = [];
   let pageCount = 0;
   await new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margins: { top: 50, left: 52, right: 52, bottom: 50 }, bufferPages: true, compress: false });
@@ -703,8 +711,14 @@ async function writePdf(filePath, payload, sourceQuestions, options = {}) {
     const font = cjkFontPath(); if (font) doc.font(font); doc.fontSize(18).text(payload.title || LABELS.defaultTitle, { align: 'center' }); doc.moveDown(.5);
     doc.fontSize(10).text('\u5b66\u6821:___________  \u59d3\u540d\uff1a___________  \u73ed\u7ea7\uff1a___________  \u8003\u53f7\uff1a___________', { align: 'center' });
     doc.fontSize(10).text(`${LABELS.count}${questions.length}`, { align: 'center' }); doc.moveDown();
-    const draw = (prefix, segments) => {
+    const draw = (prefix, segments, kind = 'content') => {
       semantic.push(`${prefix}${plainText(segments)}`);
+      const estimatedHeight = measure(prefix, segments);
+      const pageBottom = doc.page.height - doc.page.margins.bottom - 24;
+      const pageCapacity = pageBottom - doc.page.margins.top;
+      if (estimatedHeight <= pageCapacity && doc.y + estimatedHeight > pageBottom) doc.addPage();
+      const startPage = doc.bufferedPageRange().count;
+      const startY = doc.y;
       let pendingText = prefix;
       const flushText = () => { if (pendingText.trim()) doc.fontSize(11).text(pendingText); pendingText = ''; };
       segments.forEach(segment => {
@@ -728,6 +742,16 @@ async function writePdf(filePath, payload, sourceQuestions, options = {}) {
       });
       flushText();
       doc.moveDown(.35);
+      contentRows.push({
+        kind,
+        prefix,
+        startPage,
+        endPage: doc.bufferedPageRange().count,
+        startY,
+        endY: doc.y,
+        pageBottom: doc.page.height - doc.page.margins.bottom - 24,
+        estimatedHeight,
+      });
     };
     const measure = (prefix, segments) => {
       const contentWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
@@ -759,7 +783,7 @@ async function writePdf(filePath, payload, sourceQuestions, options = {}) {
       const pageCapacity = pageBottom - doc.page.margins.top;
       if (estimatedHeight <= pageCapacity && doc.y + estimatedHeight > pageBottom) doc.addPage();
       const startPage = doc.bufferedPageRange().count;
-      rows.forEach(row => draw(row.prefix, row.segments));
+      rows.forEach(row => draw(row.prefix, row.segments, 'answer'));
       const endPage = doc.bufferedPageRange().count;
       answerBlocks.push({ questionNumber: question.number, startPage, endPage, estimatedHeight });
     };
@@ -767,9 +791,9 @@ async function writePdf(filePath, payload, sourceQuestions, options = {}) {
     questions.forEach(question => {
       if (doc.y + 110 > doc.page.height - doc.page.margins.bottom - 24) doc.addPage();
       if (question.type !== previousType) { previousType = question.type; typeIndex += 1; doc.moveDown(.2); doc.fontSize(13).text(sectionTitle(question.type, typeIndex), { underline: false }); doc.moveDown(.25); semantic.push(sectionTitle(question.type, typeIndex)); }
-      draw(`${question.number}. `, question.stem);
-      question.options.forEach(option => draw(`${option.label}. `, option.content));
-      question.subs.forEach(sub => draw(`${sub.label} `, sub.content));
+      draw(`${question.number}. `, question.stem, 'question-stem');
+      question.options.forEach(option => draw(`${option.label}. `, option.content, 'question-option'));
+      question.subs.forEach(sub => draw(`${sub.label} `, sub.content, 'sub-question'));
       if (answerPosition === 'after-each') drawAnswerBlock(question);
       doc.moveDown(.5);
     });
@@ -816,7 +840,7 @@ async function writePdf(filePath, payload, sourceQuestions, options = {}) {
     manifest: formulas.map(({ questionId, location, index, canonicalLatex, latex, requestedMode, effectiveMode, fallbackUsed, diagnostics }) => ({ questionId, location, index, canonicalLatex: canonicalLatex || latex, requestedMode, effectiveMode, fallbackUsed, diagnostics })),
     semanticText: semantic.join('\n'),
     rendererPageCount: pageCount,
-    layoutReport: { answerBlocks },
+    layoutReport: { answerBlocks, contentRows },
   };
 }
 

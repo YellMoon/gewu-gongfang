@@ -1,6 +1,8 @@
 export default defineAppConfig({
   pages: [
     'pages/login/index',
+    'pages/login/privacy',
+    'pages/desktop-authorization/index',
     'pages/index/index',
     'pages/forbidden/index',
     'pages/schedule/index',
@@ -16,6 +18,8 @@ export default defineAppConfig({
     'pages/assets/index',
     'pages/settings/index',
     'pages/admin/users/index',
+    'pages/unrecognized-experience/index',
+    'pages/account-application/index',
   ],
   window: {
     backgroundTextStyle: 'light',

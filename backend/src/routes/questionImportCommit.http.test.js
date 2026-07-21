@@ -2,7 +2,6 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const jwt = require('jsonwebtoken');
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-question-import-http-'));
 process.env.NODE_ENV = 'test';
@@ -15,24 +14,35 @@ process.env.WRITE_ROLES = 'super_admin,admin,teacher';
 const { DatabaseService } = require('../database');
 const service = new DatabaseService();
 const now = new Date().toISOString();
+service.db.prepare(`INSERT INTO teachers
+  (id, name, phone, deleted, created_at, updated_at)
+  VALUES ('import-teacher-profile', 'Import Teacher', '13900000001', 0, ?, ?)`)
+  .run(now, now);
 service.db.prepare(`INSERT INTO users
-  (id, phone, name, role, status, login_enabled, review_status, deleted, created_at, updated_at)
-  VALUES (?, ?, ?, 'teacher', 1, 1, 'approved', 0, ?, ?)`)
+  (id, phone, name, role, status, login_enabled, review_status, teacher_id, deleted, created_at, updated_at)
+  VALUES (?, ?, ?, 'teacher', 1, 1, 'approved', 'import-teacher-profile', 0, ?, ?)`)
   .run('import-teacher', '13900000001', 'Import Teacher', now, now);
-service.registerSyncDevice('import-teacher-device', {
-  deviceName: 'Import Teacher Desktop', role: 'desktop-client', trusted: true, ownerUserId: 'import-teacher',
-});
+service.db.prepare(`INSERT INTO user_role_grants
+  (user_id, role, subject_type, subject_id, status, source, created_at, updated_at)
+  VALUES ('import-teacher', 'teacher', 'teacher', 'import-teacher-profile', 'active', 'test', ?, ?)`)
+  .run(now, now);
+service.db.prepare(`INSERT INTO desktop_device_authorizations
+  (id, device_id, device_name, device_kind, user_id, public_key, key_fingerprint,
+   status, source_challenge_id, last_phone_verified_at, phone_reverify_due_at,
+   credential_version, row_version, created_at, updated_at)
+  VALUES ('import-teacher-authorization', 'import-teacher-device', 'Import Teacher Desktop',
+    'desktop-client', 'import-teacher', 'test-public-key', 'import-teacher-fingerprint',
+    'active', 'import-teacher-bootstrap', ?, '2099-01-01T00:00:00.000Z', 1, 1, ?, ?)`)
+  .run(now, now, now);
 
 const databaseModule = require('../database');
 databaseModule.getInstance = () => service;
 delete require.cache[require.resolve('../app')];
 const { createApp } = require('../app');
-
-const bearer = jwt.sign(
-  { id: 'import-teacher', deviceId: 'import-teacher-device', token_use: 'desktop-session' },
-  process.env.JWT_SECRET,
-  { algorithm: 'HS256', issuer: 'gewu-auth', audience: 'gewu-api' }
-);
+const { createDesktopSessionService } = require('../services/desktopSessionService');
+const bearer = createDesktopSessionService({ db: service.db, jwtSecret: process.env.JWT_SECRET })
+  .issueSession({ userId: 'import-teacher', deviceId: 'import-teacher-device', activeRole: 'teacher' })
+  .token;
 
 async function request(base, url, authorization) {
   const response = await fetch(`${base}${url}`, {

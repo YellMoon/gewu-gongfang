@@ -8,20 +8,40 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gateway-relay-auth-'));
 process.env.GATEWAY_DB_PATH = path.join(root, 'gateway.db');
 process.env.GEWU_CLOUD_RELAY_HOST_TOKEN = 'test-host-secret';
 const { initDatabase, closeDatabase, getDb } = require('../db/database');
+const { verifyRelayAssertion } = require('../../../backend/src/services/relayAssertionService');
 const router = require('./cloudRelay');
 const pairingRouter = require('./desktopPairing');
 
 (async () => {
   initDatabase();
   const app = express(); app.use(express.json());
-  app.use((req, _res, next) => { if (req.headers['x-test-user']) req.user = JSON.parse(req.headers['x-test-user']); next(); });
+  app.use((req, _res, next) => {
+    if (req.headers['x-test-user']) req.user = JSON.parse(req.headers['x-test-user']);
+    if (req.headers['x-test-authz']) req.authz = JSON.parse(req.headers['x-test-authz']);
+    next();
+  });
   app.use('/api/cloud', router);
   app.use('/api/desktop-pairing', pairingRouter);
   const server = app.listen(0); const base = `http://127.0.0.1:${server.address().port}/api/cloud`;
   const call = (url, options = {}) => fetch(base + url, { ...options, signal: AbortSignal.timeout(3000), headers: { 'content-type': 'application/json', ...(options.headers || {}) } });
-  const pairingCall=(url,body)=>fetch(`http://127.0.0.1:${server.address().port}/api/desktop-pairing${url}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-  assert.strictEqual((await pairingCall('/start',{deviceId:'pair-http-d1',secret:'a'.repeat(64)})).status,200);
-  assert.strictEqual((await pairingCall('/start',{phone:'13800138000',deviceId:'pair-http-d2',secret:'a'.repeat(64)})).status,400);
+  const pairingCall=(url,options={})=>fetch(`http://127.0.0.1:${server.address().port}/api/desktop-pairing${url}`,{
+    method:options.method||'POST',headers:{'content-type':'application/json',...(options.headers||{})},
+    ...(options.method==='GET'?{}:{body:JSON.stringify(options.body||{})}),
+  });
+  const pairingRowsBefore=getDb().prepare('SELECT COUNT(*) count FROM desktop_device_pairings').get().count;
+  for (const [url,options] of [
+    ['/start',{body:{deviceId:'pair-http-d1',secret:'a'.repeat(64)}}],
+    ['/exchange',{body:{id:'legacy',secret:'a'.repeat(64)}}],
+    ['/pending',{method:'GET'}],
+    ['/legacy/approve',{body:{userId:'teacher1'}}],
+    ['/code/123456/reject',{body:{}}],
+  ]) {
+    const response=await pairingCall(url,options);
+    assert.strictEqual(response.status,410,`${url} must be tombstoned`);
+    assert.strictEqual((await response.json()).code,'DESKTOP_PAIRING_V1_REMOVED');
+  }
+  assert.strictEqual(getDb().prepare('SELECT COUNT(*) count FROM desktop_device_pairings').get().count,pairingRowsBefore,
+    'V1 tombstones must not write pairing rows');
   assert.strictEqual((await call('/snapshots/publish', { method: 'POST', body: '{}' })).status, 403);
   assert.strictEqual((await call('/tasks')).status, 403);
   assert.strictEqual((await call('/tasks/x/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'wrong' }, body: '{}' })).status, 403);
@@ -47,46 +67,38 @@ const pairingRouter = require('./desktopPairing');
   assert.ok(!JSON.stringify(studentPreviewBody).includes('secret'));
   const adminPreview = await call('/snapshots/questions', { headers: { 'x-test-user': admin('admin1') } });
   assert.deepStrictEqual((await adminPreview.json()).questions.map(item => item.id), ['q-draft', 'q-visible']);
-  const reviewUser = JSON.stringify({ id: 'review-demo:admin:test', user_type: 'admin', review_status: 'approved', status: 1, login_enabled: 1, is_review_demo: true, read_only: true });
-  const reviewPreview = await call('/snapshots/questions', { headers: { 'x-test-user': reviewUser } });
-  const reviewPreviewBody = await reviewPreview.json();
-  assert.strictEqual(reviewPreviewBody.sandboxAvailable, true);
-  assert.ok(reviewPreviewBody.questions.length >= 4);
-  assert.ok(!JSON.stringify(reviewPreviewBody).includes('q-visible'));
-  assert.ok(!JSON.stringify(reviewPreviewBody).includes('exportStem'));
-  assert.ok(!JSON.stringify(reviewPreviewBody).includes('exportKnowledgePoint'));
-  assert.ok(!JSON.stringify(reviewPreviewBody).includes('exportExplanation'));
-  const reviewSnapshot = await call('/snapshots/read?snapshotType=full', { headers: { 'x-test-user': reviewUser } });
-  const reviewSnapshotBody = await reviewSnapshot.json();
-  assert.strictEqual(reviewSnapshotBody.snapshot.version, 'review-demo-v1');
-  assert.ok(reviewSnapshotBody.snapshot.payload.students.length >= 2);
-  assert.ok(!JSON.stringify(reviewSnapshotBody).includes('exportStem'));
-  assert.ok(!JSON.stringify(reviewSnapshotBody).includes('exportKnowledgePoint'));
-  assert.ok(!JSON.stringify(reviewSnapshotBody).includes('exportExplanation'));
   const teacher = id => JSON.stringify({ id, user_type:'teacher', teacher_id:'t1', review_status:'approved', status:1, login_enabled:1 });
-  assert.strictEqual((await call('/desktop-sync/devices/register',{method:'POST',headers:{'x-test-user':teacher('teacher1'),'x-device-id':'cloud-d1'},body:'{}'})).status,200);
-  getDb().prepare(`INSERT INTO desktop_device_pairings(id,device_id,device_name,phone,secret_hash,pairing_code,status,expires_at,user_id,created_at,updated_at)
-    VALUES('pair-cloud-d1','cloud-d1','PC','13000000000','hash','123456','approved',?,'teacher1',?,?)`).run(new Date(Date.now()+600000).toISOString(),now,now);
+  const desktopAuthz = (id, deviceId, overrides={}) => JSON.stringify({
+    userId:id,deviceId,activeRole:'teacher',role:'teacher',teacherId:'t1',studentId:null,
+    sessionId:`sid-${id}-${deviceId}`,authVersion:4,credentialVersion:2,
+    sessionExpiresAt:new Date(Date.now()+60*60*1000).toISOString(),tokenUse:'desktop-session',clientType:'desktop',
+    userApproved:true,deviceActive:true,deviceTrusted:true,...overrides,
+  });
+  const desktopHeaders=(id,deviceId,overrides={})=>({'x-test-user':teacher(id),'x-test-authz':desktopAuthz(id,deviceId,overrides),'x-device-id':deviceId});
+  assert.strictEqual((await call('/desktop-sync/devices/register',{method:'POST',headers:desktopHeaders('teacher1','cloud-d1'),body:'{}'})).status,200);
   const legalChanges=[{id:'op1',table:'courses',action:'update',data:{id:'c1'}}];
-  assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:{'x-test-user':teacher('teacher1'),'x-device-id':'cloud-d1'},body:JSON.stringify({pendingChanges:legalChanges})})).status,200);
+  assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:desktopHeaders('teacher1','cloud-d1'),body:JSON.stringify({pendingChanges:legalChanges})})).status,200);
   const desktopTask=getDb().prepare("SELECT * FROM miniapp_tasks WHERE task_type='desktop-sync'").get();
-  assert.ok(JSON.parse(desktopTask.payload).relayAssertion.signature,'formal gateway must persist a server-signed relay assertion');
-  getDb().prepare("UPDATE desktop_device_pairings SET expires_at='2000-01-01T00:00:00.000Z' WHERE id='pair-cloud-d1'").run();
-  assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:{'x-test-user':teacher('teacher1'),'x-device-id':'cloud-d1'},body:JSON.stringify({pendingChanges:legalChanges})})).status,200,'approved pairing remains durable after request-window expiry');
-  getDb().prepare("UPDATE desktop_device_pairings SET status='pending' WHERE id='pair-cloud-d1'").run();
-  assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:{'x-test-user':teacher('teacher1'),'x-device-id':'cloud-d1'},body:JSON.stringify({pendingChanges:legalChanges})})).status,403);
-  getDb().prepare("UPDATE desktop_device_pairings SET status='approved' WHERE id='pair-cloud-d1'").run();
-  const pendingPoll=await call(`/desktop-sync/requests/${desktopTask.id}/result`,{headers:{'x-test-user':teacher('teacher1')}});assert.strictEqual(pendingPoll.status,200);assert.strictEqual((await pendingPoll.json()).request.status,'pending_host');
+  const relayPayload=JSON.parse(desktopTask.payload);
+  const verifiedAssertion=verifyRelayAssertion(relayPayload.relayAssertion,'test-host-secret');
+  assert.deepStrictEqual({
+    actorUserId:verifiedAssertion.actorUserId,deviceId:verifiedAssertion.deviceId,sessionId:verifiedAssertion.sessionId,
+    activeRole:verifiedAssertion.activeRole,teacherId:verifiedAssertion.teacherId,authVersion:verifiedAssertion.authVersion,
+    credentialVersion:verifiedAssertion.credentialVersion,
+  },{actorUserId:'teacher1',deviceId:'cloud-d1',sessionId:'sid-teacher1-cloud-d1',activeRole:'teacher',teacherId:'t1',authVersion:4,credentialVersion:2});
+  assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:{'x-test-user':teacher('teacher1'),'x-device-id':'cloud-d1'},body:JSON.stringify({pendingChanges:legalChanges})})).status,401,
+    'legacy approved user context must not replace an online V2 desktop session');
+  const pendingPoll=await call(`/desktop-sync/requests/${desktopTask.id}/result`,{headers:desktopHeaders('teacher1','cloud-d1')});assert.strictEqual(pendingPoll.status,200);assert.strictEqual((await pendingPoll.json()).request.status,'pending_host');
   getDb().prepare("UPDATE miniapp_tasks SET status='completed',result_payload=? WHERE id=?").run(JSON.stringify({applied:1}),desktopTask.id);
-  const completedPoll=await call(`/desktop-sync/requests/${desktopTask.id}/result`,{headers:{'x-test-user':teacher('teacher1')}});assert.strictEqual((await completedPoll.json()).request.result_payload.applied,1);
-  assert.strictEqual((await call(`/desktop-sync/requests/${desktopTask.id}/result`,{headers:{'x-test-user':teacher('teacher2')}})).status,404);
+  const completedPoll=await call(`/desktop-sync/requests/${desktopTask.id}/result`,{headers:desktopHeaders('teacher1','cloud-d1')});assert.strictEqual((await completedPoll.json()).request.result_payload.applied,1);
+  assert.strictEqual((await call(`/desktop-sync/requests/${desktopTask.id}/result`,{headers:desktopHeaders('teacher2','cloud-d2')})).status,404);
   assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',body:JSON.stringify({deviceId:'cloud-d1'})})).status,401);
-  assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:{'x-test-user':teacher('teacher2'),'x-device-id':'cloud-d1'},body:JSON.stringify({pendingChanges:legalChanges})})).status,403);
+  assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:desktopHeaders('teacher2','cloud-d1'),body:JSON.stringify({pendingChanges:legalChanges})})).status,403);
   delete process.env.GEWU_CLOUD_RELAY_HOST_TOKEN;
-  assert.strictEqual((await call('/desktop-sync/devices/register',{method:'POST',headers:{'x-test-user':teacher('teacher1'),'x-device-id':'cloud-d2'},body:'{}'})).status,200);
-  assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:{'x-test-user':teacher('teacher1'),'x-device-id':'cloud-d2'},body:JSON.stringify({pendingChanges:legalChanges})})).status,403);
+  assert.strictEqual((await call('/desktop-sync/devices/register',{method:'POST',headers:desktopHeaders('teacher1','cloud-d2'),body:'{}'})).status,200);
+  assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:desktopHeaders('teacher1','cloud-d2'),body:JSON.stringify({pendingChanges:legalChanges})})).status,403);
   const tooMany=Array.from({length:501},(_,i)=>({id:`op${i}`,table:'courses',action:'update',data:{id:`c${i}`}}));
-  assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:{'x-test-user':teacher('teacher1'),'x-device-id':'cloud-d1'},body:JSON.stringify({pendingChanges:tooMany})})).status,413);
+  assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:desktopHeaders('teacher1','cloud-d1'),body:JSON.stringify({pendingChanges:tooMany})})).status,413);
   process.env.GEWU_CLOUD_RELAY_HOST_TOKEN='test-host-secret';
   assert.strictEqual((await call('/tasks/task1/result', { headers: { 'x-test-user': approved('u2') } })).status, 404);
   assert.strictEqual((await call('/tasks/task1/result', { headers: { 'x-test-user': approved('u1') } })).status, 200);

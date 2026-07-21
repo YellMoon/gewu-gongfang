@@ -9,6 +9,8 @@ const packageJson = fs.readFileSync('package.json', 'utf-8');
 assert.ok(appConfig.includes('custom: true'), 'miniapp should enable custom tabBar');
 assert.ok(tabBar.includes('ADMIN_TABS'), 'custom tabBar should define admin tabs');
 assert.ok(tabBar.includes('STUDENT_TABS'), 'custom tabBar should define student tabs');
+assert.ok(tabBar.includes('EXPERIENCE_TABS'), 'custom tabBar should define the four-tab unrecognized student shell');
+assert.ok(tabBar.includes('pages/question-bank/index'), 'unrecognized tabBar should expose only the isolated sample question experience');
 assert.ok(tabBar.includes('pages/assets/index'), 'admin tabBar should include real assets page');
 assert.ok(tabBar.includes('pages/students/index'), 'admin tabBar should include real students page');
 assert.ok(tabBar.includes('pages/settings/index'), 'role tabBar should include real settings page');
@@ -19,6 +21,7 @@ for (const iconPath of iconPaths) {
   assert.ok(fs.existsSync(`miniapp/src/${iconPath}`), `tabBar icon asset should exist: ${iconPath}`);
 }
 assert.ok(tabBar.includes("userType === 'student'"), 'custom tabBar should switch by student role');
+assert.ok(tabBar.includes("navigationMode === 'unrecognized'"), 'custom tabBar should select the account experience shell from verified access');
 assert.ok(tabBar.includes('switchTab'), 'custom tabBar should navigate with switchTab');
 assert.ok(tabBar.includes('isTabPage'), 'custom tabBar should render only on real tab pages');
 assert.ok(tabBar.includes('window.location.hash'), 'custom tabBar should use H5 hash route for visual QA');

@@ -45,11 +45,11 @@ const artifactInput = {
   artifactId: 'artifact-1', taskId: 'task-1', jobKey: base.jobKey, ownerUserId: 'owner-a', tenantId: 'tenant-a',
   snapshotHash: firstHash, format: 'pdf', mimeType: 'application/pdf', sizeBytes: 123, sha256: 'a'.repeat(64),
   pageCount: 2, formulaCount: 3, fallbackCount: 1, effectiveModes: ['latex-vector'], filePath: 'exports/final.pdf',
-  expiresAt: '2026-07-20T00:00:00.000Z',
+  expiresAt: '2026-07-20T23:59:59.000Z',
 };
 assert.strictEqual(recordVerifiedArtifact(db, artifactInput, { now: '2026-07-13T00:00:05.000Z' }).artifact_id, 'artifact-1');
-assert.strictEqual(findVerifiedArtifact(db, base.jobKey, firstHash, 'pdf').artifact_id, 'artifact-1');
-assert.strictEqual(recordVerifiedArtifact(db, { ...artifactInput, artifactId: 'artifact-duplicate' }).artifact_id, 'artifact-1', 'double execution must reuse one verified artifact');
+assert.strictEqual(findVerifiedArtifact(db, base.jobKey, firstHash, 'pdf', { now: '2026-07-13T00:00:05.000Z' }).artifact_id, 'artifact-1');
+assert.strictEqual(recordVerifiedArtifact(db, { ...artifactInput, artifactId: 'artifact-duplicate' }, { now: '2026-07-13T00:00:05.000Z' }).artifact_id, 'artifact-1', 'double execution must reuse one verified artifact');
 
 const txKey = paperJobKey('relay-primary', 'task-tx');
 createOrGetPaperJob(db, { ...base, jobKey: txKey, cloudTaskId: 'task-tx', taskId: 'task-tx' });

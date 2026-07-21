@@ -7,6 +7,9 @@ const gatewayRoute = fs.readFileSync('gateway/src/routes/cloudRelay.js', 'utf-8'
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 const client = require('./cloudRelayClient');
 
+assert.strictEqual(client.IDENTITY_PROVISIONING_CAPABILITY, 'identity-provisioning-v1');
+assert.deepStrictEqual(client.hostCapabilities(), ['identity-provisioning-v1']);
+
 assert.ok(source.includes('publishHeartbeat'), 'cloud relay client should publish heartbeat');
 assert.ok(source.includes('publishSnapshot'), 'cloud relay client should publish snapshot');
 assert.ok(source.includes('fetchPendingTasks'), 'cloud relay client should fetch pending tasks');
@@ -17,6 +20,22 @@ assert.ok(source.includes('Authorization'), 'cloud relay client should forward A
 assert.ok(packageJson.includes('backend/src/services/cloudRelayClient.test.js'), 'cloud relay client test should run in npm test');
 assert.ok(backendRoute.includes("router.get('/tasks/:id/state'"));
 assert.ok(gatewayRoute.includes("router.get('/tasks/:id/state'"));
+
+assert.deepStrictEqual(client.buildHeaders({ hostToken: 'bootstrap-root-token' }), {
+  'Content-Type': 'application/json',
+  'x-gewu-host-token': 'bootstrap-root-token',
+});
+assert.deepStrictEqual(client.buildHeaders({
+  hostToken: 'must-not-leak-after-bootstrap',
+  hostCredential: 'managed-host-credential',
+  hostDeviceId: 'host-managed-a',
+  hostGeneration: 2,
+}), {
+  'Content-Type': 'application/json',
+  'x-gewu-host-device-id': 'host-managed-a',
+  'x-gewu-host-generation': '2',
+  'x-gewu-host-credential': 'managed-host-credential',
+}, 'managed host credentials must replace the bootstrap root token on network requests');
 
 (async () => {
   const originalFetch = global.fetch;

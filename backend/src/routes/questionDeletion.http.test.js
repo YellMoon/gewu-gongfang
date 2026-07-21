@@ -39,22 +39,84 @@ for (const user of [
   ['approved-teacher', 'teacher', 'approved'],
 ]) service.db.prepare(`INSERT INTO users (id,phone,name,role,status,login_enabled,review_status,deleted,created_at,updated_at)
  VALUES (?,?,?, ?,1,1,?,0,?,?)`).run(user[0], `${Math.random()}`.slice(2, 13), user[0], user[1], user[2], now, now);
+service.db.prepare(`INSERT INTO students
+  (id, name, deleted, created_at, updated_at)
+  VALUES ('host-student-profile', 'host-student', 0, ?, ?)`)
+  .run(now, now);
+service.db.prepare(`INSERT INTO teachers
+  (id, name, deleted, created_at, updated_at)
+  VALUES ('approved-teacher-profile', 'approved-teacher', 0, ?, ?)`)
+  .run(now, now);
+service.db.prepare("UPDATE users SET student_id='host-student-profile' WHERE id='host-student'").run();
+service.db.prepare("UPDATE users SET teacher_id='approved-teacher-profile' WHERE id='approved-teacher'").run();
+const insertGrant = service.db.prepare(`INSERT OR IGNORE INTO user_role_grants
+  (user_id, role, subject_type, subject_id, status, source, created_at, updated_at)
+  VALUES (?, ?, ?, ?, 'active', 'test', ?, ?)`);
+insertGrant.run('host-admin', 'admin', null, null, now, now);
+insertGrant.run('client-super', 'super_admin', null, null, now, now);
+insertGrant.run('mini-super', 'super_admin', null, null, now, now);
+insertGrant.run('host-student', 'student', 'student', 'host-student-profile', now, now);
+insertGrant.run('approved-teacher', 'teacher', 'teacher', 'approved-teacher-profile', now, now);
 service.registerSyncDevice('host-device', { deviceName: 'Host', role: 'primary-host', trusted: true, ownerUserId: 'host-admin' });
 service.registerSyncDevice('client-device', { deviceName: 'Client', role: 'desktop-client', trusted: true, ownerUserId: 'client-super' });
 service.registerSyncDevice('student-device', { deviceName: 'Student host session', role: 'primary-host', trusted: true, ownerUserId: 'host-student' });
 service.registerSyncDevice('teacher-device', { deviceName: 'Teacher desktop', role: 'desktop-client', trusted: true, ownerUserId: 'approved-teacher' });
 service.registerSyncDevice('super-host-device', { deviceName: 'Super host', role: 'primary-host', trusted: true, ownerUserId: 'miniapp-admin-13732250653' });
+const insertDesktopAuthorization = service.db.prepare(`INSERT INTO desktop_device_authorizations
+  (id, device_id, device_name, device_kind, user_id, public_key, key_fingerprint,
+   status, source_challenge_id, last_phone_verified_at, phone_reverify_due_at,
+   credential_version, row_version, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, 'test-public-key', ?, 'active', ?, ?,
+    '2099-01-01T00:00:00.000Z', 1, 1, ?, ?)`);
+for (const [deviceId, userId, deviceKind] of [
+  ['host-device', 'host-admin', 'primary-host'],
+  ['client-device', 'client-super', 'desktop-client'],
+  ['student-device', 'host-student', 'primary-host'],
+  ['teacher-device', 'approved-teacher', 'desktop-client'],
+  ['super-host-device', 'miniapp-admin-13732250653', 'primary-host'],
+]) {
+  insertDesktopAuthorization.run(
+    `authorization-${deviceId}`,
+    deviceId,
+    deviceId,
+    deviceKind,
+    userId,
+    `fingerprint-${deviceId}`,
+    `bootstrap-${deviceId}`,
+    now,
+    now,
+    now
+  );
+}
 
 const databaseModule = require('../database');
 databaseModule.getInstance = () => service;
 delete require.cache[require.resolve('../app')];
 const { createApp } = require('../app');
+const { createDesktopSessionService } = require('../services/desktopSessionService');
+const desktopSessions = createDesktopSessionService({ db: service.db, jwtSecret: process.env.JWT_SECRET });
 const questionBank = require('../services/questionBankService');
 const { commitQuestionToBoundStore, updateCommittedQuestion, createTrustedInternalStorageUpdateContext, deleteCommittedQuestion } = require('../services/questionBankStorageService');
 
 function token(id, deviceId, tokenUse = 'desktop-session') {
-  return jwt.sign({ id, deviceId, token_use: tokenUse }, process.env.JWT_SECRET,
-    { algorithm: 'HS256', issuer: 'gewu-auth', audience: 'gewu-api' });
+  if (tokenUse === 'miniapp-session') {
+    const user = service.db.prepare('SELECT auth_version, role FROM users WHERE id=?').get(id);
+    return jwt.sign({
+      sub: id,
+      sid: `miniapp-test-${id}`,
+      token_use: tokenUse,
+      auth_version: Number(user.auth_version || 1),
+      role: user.role,
+      iss: 'gewu-miniapp-auth',
+      aud: 'gewu-api',
+    }, process.env.JWT_SECRET, { algorithm: 'HS256' });
+  }
+  if (id === 'pending-user') {
+    return jwt.sign({ id, deviceId, token_use: tokenUse }, process.env.JWT_SECRET,
+      { algorithm: 'HS256', issuer: 'gewu-auth', audience: 'gewu-api' });
+  }
+  const user = service.db.prepare('SELECT role FROM users WHERE id=?').get(id);
+  return desktopSessions.issueSession({ userId: id, deviceId, activeRole: user.role }).token;
 }
 async function remove(base, id, bearer, deviceId) {
   const response = await fetch(`${base}/api/question-bank/questions/${id}`, { method: 'DELETE', headers: {
@@ -70,7 +132,7 @@ function committed(id) {
   const created = questionBank.createQuestion(service.db, { id, stem: id, type: 'fill', storage_state: 'host_committed',
     assets: [{ oss_key: `question-bank/assets/images/kept.png`, file_name: 'kept.png' }] });
   commitQuestionToBoundStore(created.id, { db: service.db, tenantId: 'default', authz: {
-    role:'admin', deviceTrusted:true, deviceActive:true, userApproved:true, userId:'host-admin', deviceOwnerUserId:'host-admin',
+    role:'admin', deviceTrusted:true, deviceActive:true, userApproved:true, userId:'host-admin', deviceOwnerUserId:'host-admin', isPrimaryHost:true,
   }, runtime: { nodeRole:'primary-host', tokenUse:'desktop-session', tokenDeviceId:'host-device', deviceId:'host-device', clientType:'desktop' } });
   return questionBank.getQuestion(service.db, created.id, 'default');
 }
@@ -110,7 +172,7 @@ function committed(id) {
     process.env.GEWU_NODE_ROLE = 'primary-host';
     const success = committed('success');
     const syncQuestion = committed('sync-update');
-    const syncAuthz = { kind:'admin', role:'admin', userId:'host-admin', deviceId:'host-device', runtimeNodeRole:'primary-host', tokenUse:'desktop-session', tokenDeviceId:'host-device', deviceTrusted:true, deviceActive:true, clientType:'desktop', userApproved:true, deviceOwnerUserId:'host-admin' };
+    const syncAuthz = { kind:'admin', role:'admin', userId:'host-admin', deviceId:'host-device', runtimeNodeRole:'primary-host', tokenUse:'desktop-session', tokenDeviceId:'host-device', deviceTrusted:true, deviceActive:true, clientType:'desktop', userApproved:true, deviceOwnerUserId:'host-admin', isPrimaryHost:true };
     const syncChange = { id:'sync-op', table:'questions', action:'update', tenantId:'default', data:{ id:'sync-update', stem:'synced committed update' }, updatedAt:new Date().toISOString() };
     const withoutHook = service.applySyncChanges([syncChange], { deviceId:'host-device', authz:syncAuthz });
     assert.strictEqual(withoutHook.applied, 0);
@@ -153,7 +215,7 @@ function committed(id) {
 
     const denials = [
       ['client', 'client-super', 'client-device', 'desktop-session', 'desktop-client'],
-      ['miniapp', 'mini-super', 'host-device', 'miniapp-session', 'primary-host'],
+      ['miniapp', 'host-admin', 'host-device', 'miniapp-session', 'primary-host'],
       ['pending', 'pending-user', 'host-device', 'desktop-session', 'primary-host'],
     ];
     for (const [id, userId, deviceId, use, nodeRole] of denials) {
@@ -165,8 +227,8 @@ function committed(id) {
         a: service.db.prepare('SELECT * FROM question_assets WHERE question_id=?').all(id),
       };
       const result = await remove(base, id, token(userId, deviceId, use), deviceId);
-      assert.strictEqual(result.status, 403, id);
-      assert.strictEqual(result.body.code, id === 'pending' ? 'FORBIDDEN' : 'HOST_DESKTOP_REQUIRED_FOR_COMMITTED_DELETE', id);
+      assert.strictEqual(result.status, id === 'pending' ? 401 : 403, id);
+      assert.strictEqual(result.body.code, id === 'pending' ? 'TOKEN_INVALID' : 'HOST_DESKTOP_REQUIRED_FOR_COMMITTED_DELETE', id);
       assert.deepStrictEqual(service.db.prepare('SELECT * FROM questions WHERE id=?').get(id), before.q);
       assert.deepStrictEqual(service.db.prepare('SELECT * FROM question_contents WHERE question_id=?').all(id), before.c);
       assert.deepStrictEqual(service.db.prepare('SELECT * FROM question_assets WHERE question_id=?').all(id), before.a);

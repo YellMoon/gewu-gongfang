@@ -224,28 +224,40 @@
   height: 100%;
 }
 
-/* ========== Review demo ========== */
-.review-demo-banner {
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-  margin: 20rpx 24rpx;
-  padding: 20rpx 24rpx;
-  border: 1rpx solid rgba(146, 94, 25, 0.24);
-  border-radius: 20rpx;
-  background: #fff6e5;
-  box-shadow: 0 10rpx 24rpx rgba(106, 72, 24, 0.08);
+.account-status-banner {
+  margin-bottom: 22rpx;
+  padding: 24rpx 26rpx;
+  border: 1rpx solid rgba(31, 111, 104, 0.16);
+  border-radius: 22rpx;
+  background: #eef5f2;
 }
 
-.review-demo-banner__title {
-  color: #8a5417;
-  font-size: 26rpx;
-  font-weight: 700;
-  line-height: 36rpx;
+.account-status-banner__title {
+  display: block;
+  color: #1f6f68;
+  font-size: 27rpx;
+  line-height: 38rpx;
+  font-weight: 900;
 }
 
-.review-demo-banner__copy {
-  color: #6e583a;
-  font-size: 23rpx;
-  line-height: 34rpx;
+.account-status-banner__copy {
+  display: block;
+  margin-top: 8rpx;
+  color: #4d5a6a;
+  font-size: 24rpx;
+  line-height: 38rpx;
+}
+
+.membership-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 10rpx;
+  padding: 2rpx 10rpx;
+  border-radius: 999rpx;
+  background: #fff2cc;
+  color: #8a5a00;
+  font-size: 20rpx;
+  line-height: 30rpx;
+  font-weight: 900;
+  vertical-align: middle;
 }

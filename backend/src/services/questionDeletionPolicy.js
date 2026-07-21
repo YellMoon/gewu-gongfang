@@ -6,7 +6,8 @@ function canDeleteQuestion(context = {}) {
       && context.userId === context.ownerUserId);
   }
   if (context.storageState !== 'host_committed' || context.gateway) return false;
-  return context.runtimeNodeRole === 'primary-host'
+  return context.isPrimaryHost === true
+    && context.runtimeNodeRole === 'primary-host'
     && context.tokenUse === 'desktop-session'
     && context.clientType === 'desktop'
     && Boolean(context.deviceId)

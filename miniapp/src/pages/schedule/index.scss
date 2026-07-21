@@ -33,6 +33,40 @@
   box-shadow: 0 8rpx 22rpx rgba(23, 32, 51, 0.08);
 }
 
+.filter-bar {
+  display: flex;
+  gap: 12rpx;
+  padding: 18rpx 24rpx 14rpx;
+  background: rgba(247, 244, 238, 0.96);
+  white-space: nowrap;
+  border-bottom: 1rpx solid rgba(23, 32, 51, 0.06);
+  box-sizing: border-box;
+}
+
+.filter-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 58rpx;
+  padding: 0 24rpx;
+  margin-right: 12rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  line-height: 32rpx;
+  font-weight: 700;
+  background: #fffdf8;
+  color: #6b7280;
+  border: 1rpx solid rgba(23, 32, 51, 0.06);
+  box-sizing: border-box;
+  transition: all 0.2s;
+}
+
+.filter-tag.active {
+  background: #1f6f68;
+  color: #fffaf1;
+  border-color: #1f6f68;
+}
+
 .week-nav,
 .day-nav {
   display: flex;

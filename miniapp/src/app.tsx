@@ -21,15 +21,29 @@ function getSyncEngine(): Promise<SyncEngineInstance> {
 let App: React.FC<PropsWithChildren<any>>;
 
 App = function App({ children }: PropsWithChildren<any>) {
-  useLaunch(() => {
+  useLaunch((options) => {
     console.log('\u6559\u80b2\u7efc\u5408\u670d\u52a1\u5e73\u53f0 v1.6.0');
-    initializeAuthenticatedApp().catch(() => Taro.reLaunch({ url: '/pages/login/index' }));
+    initializeAuthenticatedApp(options).catch(() => {
+      if (!isUnauthenticatedEntryPage(options?.path)) {
+        Taro.reLaunch({ url: '/pages/login/index' });
+      }
+    });
   });
 
   return children;
 };
 
-async function initializeAuthenticatedApp() {
+const UNAUTHENTICATED_ENTRY_PAGES = new Set([
+  'pages/login/index',
+  'pages/desktop-authorization/index',
+]);
+
+export function isUnauthenticatedEntryPage(path?: string): boolean {
+  return UNAUTHENTICATED_ENTRY_PAGES.has(String(path || '').replace(/^\//, '').split('?')[0]);
+}
+
+async function initializeAuthenticatedApp(launchOptions: any = {}) {
+  if (isUnauthenticatedEntryPage(launchOptions.path)) return;
   const [{ authSessionRuntime }, { captureTrustedAuthSession }] = await Promise.all([
     import('./utils/authSession'),
     import('./utils/miniappApiSessionRuntime'),
@@ -48,17 +62,21 @@ async function initApp(startupSession: any, authSessionRuntime: any, captureTrus
 
   const [
     { fetchPermissions },
-    { setBusinessCacheIdentity },
-    { isReviewExperienceIdentity },
+    { clearBusinessCache, setBusinessCacheIdentity },
+    { isUnrecognizedIdentity },
     { createSessionBoundNetworkSyncListener },
   ] = await Promise.all([
     import('./utils/permission'),
     import('./utils/storage'),
-    import('./utils/reviewExperience'),
+    import('./utils/accountExperience'),
     import('./utils/miniappStartupSyncRuntime'),
   ]);
 
   if (!authSessionRuntime.isSameSession(startupSession)) return;
+  if (isUnrecognizedIdentity(startupSession.identity)) {
+    clearBusinessCache();
+    return;
+  }
   setBusinessCacheIdentity(startupSession.identity);
 
   try {
@@ -68,7 +86,7 @@ async function initApp(startupSession: any, authSessionRuntime: any, captureTrus
   }
 
   if (!authSessionRuntime.isSameSession(startupSession)) return;
-  if (isReviewExperienceIdentity(startupSession.identity)) return;
+  if (isUnrecognizedIdentity(startupSession.identity)) return;
 
   const syncEngine = await getSyncEngine();
   if (!authSessionRuntime.isSameSession(startupSession)) return;
@@ -79,7 +97,7 @@ async function initApp(startupSession: any, authSessionRuntime: any, captureTrus
     const session = captureTrustedAuthSession(authSessionRuntime);
     if (!session
       || !authSessionRuntime.isSameSession(startupSession)
-      || isReviewExperienceIdentity(session.identity)) return;
+      || isUnrecognizedIdentity(session.identity)) return;
     syncEngine.push('', session.token).then((result) => {
       if (result.success) console.log(`[Sync] \u81ea\u52a8\u63a8\u9001 ${result.pushed} \u6761\u6210\u529f`);
     });
@@ -89,7 +107,7 @@ async function initApp(startupSession: any, authSessionRuntime: any, captureTrus
     startupSession,
     isSameSession: (session: any) => authSessionRuntime.isSameSession(session),
     captureTrustedAuthSession: () => captureTrustedAuthSession(authSessionRuntime),
-    isReviewExperienceIdentity,
+    isExperienceOnlyIdentity: isUnrecognizedIdentity,
     onNetworkStatusChange: (listener: any) => Taro.onNetworkStatusChange(listener),
     offNetworkStatusChange: (listener: any) => (Taro as any).offNetworkStatusChange?.(listener),
     pull: (token: string) => syncEngine.pull('', token),

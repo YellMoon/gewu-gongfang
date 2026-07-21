@@ -52,9 +52,10 @@ function scopeStudent(snapshot, context) {
   });
 }
 
-const PUBLIC_TABLES = new Set(['subjects', 'chapters', 'knowledge_points', 'knowledgePoints', 'questions', 'question_contents', 'questionContents', 'question_assets', 'questionAssets', 'question_bank_assets', 'questionBankAssets']);
+const PUBLIC_TABLES = new Set(['subjects', 'chapters', 'knowledge_points', 'knowledgePoints', 'taxonomy_systems', 'taxonomy_nodes', 'question_taxonomy_nodes', 'questions', 'question_contents', 'questionContents', 'question_assets', 'questionAssets', 'question_bank_assets', 'questionBankAssets']);
 const PUBLIC_FIELDS = {
   subjects: ['id', 'name', 'code'], chapters: ['id', 'subject_id', 'name', 'sort_order'], knowledge_points: ['id', 'chapter_id', 'name', 'description'], knowledgePoints: ['id', 'chapterId', 'name', 'description'],
+  taxonomy_systems: ['id', 'subject', 'name', 'sort_order'], taxonomy_nodes: ['id', 'system_id', 'parent_id', 'name', 'sort_order'], question_taxonomy_nodes: ['question_id', 'system_id', 'node_id'],
   questions: ['id', 'subject_id', 'chapter_id', 'type', 'difficulty', 'source', 'paper_id', 'question_number', 'status', 'created_at', 'updated_at'],
   question_contents: ['id', 'question_id', 'stem', 'answer', 'explanation', 'options_json', 'version'], questionContents: ['id', 'questionId', 'stem', 'answer', 'explanation', 'optionsJson', 'version'],
   question_assets: ['id', 'question_id', 'asset_type', 'type', 'mime_type', 'oss_url', 'url', 'data_url', 'width', 'height', 'alt', 'sort_order'], questionAssets: ['id', 'questionId', 'assetType', 'type', 'mimeType', 'ossUrl', 'url', 'dataUrl', 'width', 'height', 'alt', 'sortOrder'],
@@ -120,7 +121,7 @@ function scopeTeacher(snapshot, context) {
 }
 
 function scopeBusinessSnapshot(snapshot = {}, context = {}) {
-  if (context.kind === 'admin') return { ...snapshot, ...Object.fromEntries(Object.entries(snapshot).map(([k, v]) => [k, Array.isArray(v) ? v.map(x => ({ ...x })) : v])) };
+  if (context.kind === 'admin' || context.kind === 'all') return { ...snapshot, ...Object.fromEntries(Object.entries(snapshot).map(([k, v]) => [k, Array.isArray(v) ? v.map(x => ({ ...x })) : v])) };
   if (context.kind === 'teacher') return scopeTeacher(snapshot, context);
   if (context.kind === 'student') return scopeStudent(snapshot, context);
   return {};
@@ -128,7 +129,7 @@ function scopeBusinessSnapshot(snapshot = {}, context = {}) {
 
 function scopeError(code, message) { const error = new Error(message); error.code = code; return error; }
 function assertRecordReadable(table, record, context, lookup = {}) {
-  if (context.kind === 'admin') return true;
+  if (context.kind === 'admin' || context.kind === 'all') return true;
   if (context.kind !== 'teacher') throw scopeError('DATA_SCOPE_UNRESOLVED', `scope unresolved for ${table}`);
   if (table === 'courses') {
     if (String(value(record, 'teacher_id', 'teacherId') || '') === String(context.teacherId)) return true;

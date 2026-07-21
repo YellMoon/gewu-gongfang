@@ -11,7 +11,8 @@ import browserDatabase from '../services/browserDatabase';
 import type { CloudSyncContext } from '../navigation/navigationContext';
 import { runOneClickSync } from '../services/oneClickSyncService.mjs';
 import { createCloudRelaySyncTransport, createDirectSyncTransport, discoverLanDirectSyncTransports } from '../services/oneClickSyncTransports.mjs';
-import { hydrateDesktopAuthorizationSession, readDesktopAuthorizationSession, startPairing, pollOrExchange } from '../services/desktopAuthorizationSession.mjs';
+import { hydrateDesktopAuthorizationSession, readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
+import { resolveOnlineSyncActor } from '../services/pairingApiBase.mjs';
 import { getSyncPresentation } from '../services/syncPresentation.mjs';
 import { resolveManagedSyncConfig, syncFailureMessage } from '../services/managedSyncConfig.mjs';
 
@@ -29,41 +30,8 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
   const [syncConflicts, setSyncConflicts] = useState<any[]>([]);
   const [conflictsLoading, setConflictsLoading] = useState(false);
   const [oneClickLoading, setOneClickLoading] = useState(false);
-  const [pairing, setPairing] = useState<any>(null);
   const [pairedUser, setPairedUser] = useState<any>(null);
-  const [pairingLoading, setPairingLoading] = useState(false);
   const engineRef = useRef<SyncEngine | null>(null);
-  const handleStartPairing = async () => {
-    setPairingLoading(true);
-    try {
-      const config: any = resolveManagedSyncConfig(runtimeConfig || {});
-      const baseUrl = config.nodeRole === 'primary-host' ? config.hostBaseUrl : config.cloudBaseUrl;
-      const result = await startPairing({
-        baseUrl,
-        deviceId: engineRef.current?.getDeviceId(),
-        deviceName: runtimeConfig?.deviceId || 'desktop',
-      });
-      setPairing(result);
-      message.info(`\u914d\u5bf9\u7801: ${result.pairingCode}`);
-    } catch (error: any) {
-      message.error(error.code || error.message);
-    } finally {
-      setPairingLoading(false);
-    }
-  };
-  const handleRefreshPairing = async () => {
-    setPairingLoading(true);
-    try {
-      const result = await pollOrExchange();
-      setPairing(null);
-      setPairedUser(result.user || { id: result.userId });
-      message.success('\u5f53\u524d\u8bbe\u5907\u5df2\u7531\u7ba1\u7406\u5458\u7ed1\u5b9a');
-    } catch (error: any) {
-      message.warning(error.code || error.message);
-    } finally {
-      setPairingLoading(false);
-    }
-  };
 
   // 延迟初始化 SyncEngine，捕获构造函数可能的异常
   useEffect(() => {
@@ -288,6 +256,7 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
     setOneClickLoading(true);
     try {
       const config: any = resolveManagedSyncConfig(runtimeConfig || await getRuntimeConfig());
+      const requireOnlineSession = () => resolveOnlineSyncActor(readDesktopAuthorizationSession());
       const transports = [];
       if (config?.cloudBaseUrl) {
         try {
@@ -297,7 +266,7 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
             role: config.nodeRole || 'desktop-client',
             deviceName: config.deviceId || eng.getDeviceId(),
             desktopSyncToken: config.desktopSyncToken || '',
-            sessionResolver: () => readDesktopAuthorizationSession(),
+            sessionResolver: requireOnlineSession,
           });
           transports.push(...discovered);
         } catch (_error) {
@@ -310,7 +279,7 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
           deviceId: eng.getDeviceId(),
           role: config.nodeRole || 'desktop-client',
           deviceName: config.deviceId || eng.getDeviceId(),
-          sessionResolver: () => readDesktopAuthorizationSession(),
+          sessionResolver: requireOnlineSession,
         });
         if (!transports.some((transport: any) => transport.baseUrl === manualDirect.baseUrl)) transports.push(manualDirect);
       }
@@ -319,13 +288,14 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
           baseUrl: config.cloudBaseUrl,
           deviceId: eng.getDeviceId(),
           desktopSyncToken: config.desktopSyncToken || '',
-          sessionResolver: () => readDesktopAuthorizationSession(),
+          sessionResolver: requireOnlineSession,
         }));
       }
       const result = await runOneClickSync({
         engine: eng,
         transports,
         confirmPreview: confirmOneClickPreview,
+        requireOnlineSession,
         buildLocalDataMaps: () => browserDatabase.buildSyncLocalDataMaps(),
         applyLocalDataMaps: (localData: any) => browserDatabase.applySyncLocalDataMaps(localData),
       });
@@ -473,10 +443,7 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
             {pairedUser ? (
               <Alert type="success" showIcon message={`\u5df2\u7ed1\u5b9a\uff1a${pairedUser.name || pairedUser.id}`} description={'\u8d26\u53f7\u4e0e\u89d2\u8272\u7531\u7ba1\u7406\u5458\u7edf\u4e00\u7ba1\u7406'} style={{ marginBottom: 10 }} />
             ) : (
-              <Space direction="vertical" size={8} style={{ width: '100%', marginBottom: 10 }}>
-                <Alert type="warning" showIcon message={'\u5f53\u524d\u8bbe\u5907\u5c1a\u672a\u7ed1\u5b9a\u540c\u6b65\u8d26\u53f7'} description={'\u4e0d\u9700\u586b\u5199\u624b\u673a\u53f7\uff1b\u7531\u8d85\u7ea7\u7ba1\u7406\u5458\u786e\u8ba4\u8bbe\u5907\u5e76\u9009\u62e9\u771f\u5b9e\u8d26\u53f7\u3002'} />
-                {!pairing ? <Button block loading={pairingLoading} onClick={handleStartPairing}>{'\u7533\u8bf7\u7ed1\u5b9a\u5f53\u524d\u8bbe\u5907'}</Button> : <Space wrap><span>{'\u914d\u5bf9\u7801\uff1a'}</span><Tag color="blue">{pairing.pairingCode}</Tag><Button loading={pairingLoading} onClick={handleRefreshPairing}>{'\u5237\u65b0\u6279\u51c6\u72b6\u6001'}</Button></Space>}
-              </Space>
+              <Alert type="info" showIcon message="当前使用离线身份租约" description="设备注册与身份审核已由桌面启动身份门统一完成；恢复联网并重新验证后才能同步。" style={{ marginBottom: 10 }} />
             )}
             <Button type="primary" size="large" block icon={<SyncOutlined />} loading={oneClickLoading} onClick={handleOneClickSync}>
               {'\u4e0e\u6570\u636e\u4e3b\u673a\u53cc\u5411\u540c\u6b65'}
@@ -510,11 +477,9 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
     <div style={{ padding: 16 }}>
       {contextAlert}
       <Card title={'\u5f53\u524d\u8bbe\u5907\u540c\u6b65\u8eab\u4efd'} style={{marginBottom:16}}>
-        {pairedUser ? <Alert type="success" showIcon message={`\u5df2\u7531\u7ba1\u7406\u5458\u7ed1\u5b9a\uff1a${pairedUser.name || pairedUser.id}`} description={'\u8d26\u53f7\u548c\u89d2\u8272\u7531\u670d\u52a1\u7aef\u7ba1\u7406\uff0c\u5f53\u524d\u7535\u8111\u65e0\u6cd5\u81ea\u884c\u66f4\u6362\u3002'} /> : <Space direction="vertical" size={10} style={{width:'100%'}}>
-          <Alert type="info" showIcon message={'\u7533\u8bf7\u7ed1\u5b9a\u5f53\u524d\u8bbe\u5907'} description={'\u65e0\u9700\u586b\u5199\u624b\u673a\u53f7\u6216\u9009\u62e9\u8d26\u53f7\u3002\u7531\u8d85\u7ea7\u7ba1\u7406\u5458\u786e\u8ba4\u8bbe\u5907\u5e76\u7ed1\u5b9a\u771f\u5b9e\u8d26\u53f7\u3002'} />
-          <Button type="primary" loading={pairingLoading} onClick={handleStartPairing}>{'\u7533\u8bf7\u7ed1\u5b9a\u5f53\u524d\u8bbe\u5907'}</Button>
-          {pairing&&<Space wrap><span>\u8bbe\u5907\u914d\u5bf9\u7801\uff1a</span><Tag color="blue">{pairing.pairingCode}</Tag><Button loading={pairingLoading} onClick={handleRefreshPairing}>{'\u5237\u65b0\u6279\u51c6\u72b6\u6001'}</Button></Space>}
-        </Space>}
+        {pairedUser
+          ? <Alert type="success" showIcon message={`\u5df2\u7531\u7ba1\u7406\u5458\u7ed1\u5b9a\uff1a${pairedUser.name || pairedUser.id}`} description="账号、角色和设备授权由桌面启动身份门与服务端统一管理，不能在同步页自行更换。" />
+          : <Alert type="info" showIcon message="当前使用离线身份租约" description="离线状态不能申请同步授权；请恢复联网并在桌面启动身份门重新验证。" />}
       </Card>
       {/* 同步状态卡片 */}
       <Card

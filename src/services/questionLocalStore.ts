@@ -1,10 +1,11 @@
 import type { KnowledgeNode, Question } from '../types';
 const { canRemoveQuestionLocalRecord } = require('./questionLocalDeletionPolicy');
 import { applyTrustedQuestionProvenance } from './questionProvenance.mjs';
+import { partitionedStorageKey } from './desktopIdentityPartition.mjs';
+import { matchesTaxonomyFilters } from './taxonomyFilter.mjs';
 const { normalizeDesktopAuthorizationSession } = require('./desktopQuestionDeleteContext');
 
-const DB_NAME = 'question_local_store_v1';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const META_STORE = 'question_meta';
 const CONTENT_STORE = 'question_content';
 const TREE_STORE = 'tree_cache';
@@ -27,6 +28,7 @@ type QuestionMeta = {
   school?: string;
   knowledge_ids?: string[];
   model_ids?: string[];
+  taxonomy_ids?: Record<string, string[]>;
   knowledge_point?: string;
   model_point?: string;
   created_at?: string;
@@ -65,21 +67,34 @@ export type QuestionPageQuery = {
   includeKnowledgeGroups?: string[][];
   excludeKnowledgeIds?: string[];
   includeModelGroups?: string[][];
+  taxonomyFilters?: Record<string, { includeGroups?: string[][]; excludeIds?: string[] }>;
   pendingEditOnly?: boolean;
   dedupe?: boolean;
 };
 
 let dbPromise: Promise<IDBDatabase> | null = null;
+let activeDbName: string | null = null;
 let seedPromise: Promise<void> | null = null;
 const fallbackMeta = new Map<string, QuestionMeta>();
 const fallbackContent = new Map<string, Question>();
 const fallbackTrees: Record<TreeKind, KnowledgeNode[]> = { knowledge: [], model: [] };
 
 function openDb(): Promise<IDBDatabase> {
+  const dbName = partitionedStorageKey('question_local_store_v1');
+  if (activeDbName !== dbName) {
+    if (dbPromise) dbPromise.then(db => db.close()).catch(() => undefined);
+    dbPromise = null;
+    seedPromise = null;
+    fallbackMeta.clear();
+    fallbackContent.clear();
+    fallbackTrees.knowledge = [];
+    fallbackTrees.model = [];
+    activeDbName = dbName;
+  }
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
+    const request = indexedDB.open(dbName, DB_VERSION);
+    request.onupgradeneeded = event => {
       const db = request.result;
       if (!db.objectStoreNames.contains(META_STORE)) {
         const store = db.createObjectStore(META_STORE, { keyPath: 'id' });
@@ -93,6 +108,9 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(TREE_STORE)) {
         db.createObjectStore(TREE_STORE, { keyPath: 'kind' });
+      }
+      if (event.oldVersion > 0 && event.oldVersion < 2 && request.transaction && db.objectStoreNames.contains(META_STORE)) {
+        request.transaction.objectStore(META_STORE).clear();
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -169,6 +187,7 @@ function buildMeta(question: Question): QuestionMeta {
     school: (question as any).school,
     knowledge_ids: normalizeArray((question as any).knowledge_ids ?? (question as any).knowledge_point_ids),
     model_ids: normalizeArray((question as any).model_ids ?? (question as any).model_point_ids),
+    taxonomy_ids: Object.fromEntries(Object.entries((question as any).taxonomy_ids || {}).map(([systemId, ids]) => [systemId, normalizeArray(ids)])),
     knowledge_point: (question as any).knowledge_point,
     model_point: (question as any).model_point,
     created_at: (question as any).created_at,
@@ -229,6 +248,7 @@ function matchesQuery(meta: QuestionMeta, query: QuestionPageQuery): boolean {
   if (exclude.size > 0 && knowledgeIds.some(id => exclude.has(id))) return false;
   const modelIds = normalizeArray(meta.model_ids);
   if (!matchesAnyGroup(modelIds, query.includeModelGroups)) return false;
+  if (!matchesTaxonomyFilters(meta.taxonomy_ids || {}, query.taxonomyFilters || {})) return false;
   return true;
 }
 

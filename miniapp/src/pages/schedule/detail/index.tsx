@@ -3,7 +3,6 @@ import { View, Text } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { Schedule, ScheduleStatus, Course, Student } from '../../../types';
 import { getLocalItem, getLocalData } from '../../../utils/sync';
-import ReviewDemoBanner from '../../../components/ReviewDemoBanner';
 import './detail.scss';
 
 const STATUS_MAP: Record<number, { label: string; color: string }> = {
@@ -42,7 +41,6 @@ export default function ScheduleDetail() {
   if (!schedule) {
     return (
       <View className="container">
-        <ReviewDemoBanner />
         <View className="empty-state">
           <Text className="empty-state-icon">课</Text>
           <Text className="empty-state-text">未找到排课记录</Text>
@@ -59,7 +57,6 @@ export default function ScheduleDetail() {
 
   return (
     <View className="sd-container">
-      <ReviewDemoBanner />
       <View className="sd-status-bar" style={{ background: status.color }}>
         <Text className="sd-status-label">{status.label}</Text>
       </View>

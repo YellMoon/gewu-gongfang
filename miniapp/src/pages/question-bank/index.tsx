@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Input, Button, ScrollView, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { cancelMiniappTask, createPaperTaskV2, getMiniappTaskResult, readQuestionPreview, reviewDemoApi } from '../../utils/api';
+import { cancelMiniappTask, createPaperTaskV2, getMiniappTaskResult, readQuestionPreview } from '../../utils/api';
 import { authSessionRuntime } from '../../utils/authSession';
 import { createSessionBoundOperation, openSessionBoundDocument } from '../../utils/miniappApiSessionRuntime';
 import { createQuestionPaperTaskCacheRuntime } from '../../utils/miniappAuthorizationRuntime';
-import { isReviewExperienceIdentity } from '../../utils/reviewExperience';
 import { storage } from '../../utils/storage';
-import ReviewDemoBanner from '../../components/ReviewDemoBanner';
+import { isUnrecognizedIdentity } from '../../utils/accountExperience';
+import UnrecognizedExperiencePage from '../unrecognized-experience';
 // @ts-ignore shared CommonJS workflow is exercised by focused Node tests
 import * as workflow from '../../utils/questionPaperWorkflow';
 import './index.scss';
@@ -25,8 +25,7 @@ const statusCopy: Record<string, string> = { draft: '\u672c\u5730\u8349\u7a3f\uf
 function absoluteHostUrl(base: string, endpoint: string) { return `${base.replace(/\/$/, '')}/${endpoint.replace(/^\//, '')}`; }
 function authHeader(token: string, extra: Record<string, string> = {}) { return { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extra }; }
 
-export default function QuestionBankPage() {
-  const isReviewDemo = isReviewExperienceIdentity(Taro.getStorageSync('user_info'));
+function FormalQuestionBankPage() {
   const taskCacheRuntimeRef = useRef<any>(null);
   if (!taskCacheRuntimeRef.current) {
     taskCacheRuntimeRef.current = createQuestionPaperTaskCacheRuntime({
@@ -43,7 +42,6 @@ export default function QuestionBankPage() {
   const [previewState, setPreviewState] = useState<PreviewState>('loading');
   const [previewMessage, setPreviewMessage] = useState('');
   const [hostAvailable, setHostAvailable] = useState(false);
-  const [sandboxAvailable, setSandboxAvailable] = useState(false);
   const [targetHostDeviceId, setTargetHostDeviceId] = useState('');
   const [hostBaseUrl, setHostBaseUrl] = useState('');
   const [answerIndex, setAnswerIndex] = useState(0);
@@ -67,16 +65,10 @@ export default function QuestionBankPage() {
     try {
       const response: any = await readQuestionPreview();
       if (!response.success) { setPreviewState(['USER_NOT_APPROVED', 'FORBIDDEN'].includes(String(response.code)) ? 'forbidden' : 'offline'); setPreviewMessage(response.error || 'unavailable'); return; }
-      if (isReviewDemo && response.sandboxAvailable !== true) {
-        setQuestions([]); setSandboxAvailable(false); setHostAvailable(false); setTargetHostDeviceId(''); setHostBaseUrl('');
-        setPreviewState('forbidden'); setPreviewMessage('\u5ba1\u6838\u6c99\u7bb1\u672a\u901a\u8fc7\u670d\u52a1\u7aef\u9a8c\u8bc1');
-        return;
-      }
       const list = response.questions || response.data?.questions || [];
-      setQuestions(list); setSandboxAvailable(isReviewDemo && response.sandboxAvailable === true);
-      setHostAvailable(!isReviewDemo && Boolean(response.hostAvailable)); setTargetHostDeviceId(isReviewDemo ? '' : (response.targetHostDeviceId || '')); setHostBaseUrl(isReviewDemo ? '' : (response.hostBaseUrl || ''));
+      setQuestions(list);
+      setHostAvailable(Boolean(response.hostAvailable)); setTargetHostDeviceId(response.targetHostDeviceId || ''); setHostBaseUrl(response.hostBaseUrl || '');
       setPreviewState(list.length ? 'ready' : 'empty');
-      if (isReviewDemo) { setPreviewMessage('\u5ba1\u6838\u6c99\u7bb1\u5df2\u5c31\u7eea\uff0c\u4efb\u52a1\u4e0e\u6587\u4ef6 30 \u5206\u949f\u540e\u8fc7\u671f'); return; }
       if (!response.hostAvailable) setPreviewMessage('\u6570\u636e\u4e3b\u673a\u5f53\u524d\u4e0d\u53ef\u7528');
       else if (!response.hostBaseUrl) setPreviewMessage('\u4e3b\u673a\u672a\u767b\u8bb0\u5b89\u5168\u4e0b\u8f7d\u5730\u5740');
     } catch { setPreviewState('offline'); setPreviewMessage('\u79bb\u7ebf\u6216\u4e91\u7aef\u4e0d\u53ef\u8fbe'); }
@@ -85,10 +77,10 @@ export default function QuestionBankPage() {
   const refreshTask = async (task: PaperTask) => {
     if (!task.confirmed || !task.taskId) return task;
     try {
-      const response: any = isReviewDemo ? await reviewDemoApi.getTaskResult(task.taskId) : await getMiniappTaskResult(task.taskId); const cloud = response.task || response.data?.task;
+      const response: any = await getMiniappTaskResult(task.taskId); const cloud = response.task || response.data?.task;
       if (!response.success || !cloud) return { ...task, error: response.error || 'not found' };
       const sameTargetHost = targetHostDeviceId && targetHostDeviceId === task.request?.targetHostDeviceId;
-      return { ...task, status: cloud.status, phase: cloud.phase || cloud.status, progress: Number(cloud.progress || 0), resultExpiresAt: cloud.result_expires_at || task.resultExpiresAt, result: cloud.result || cloud.result_payload || task.result, hostBaseUrl: isReviewDemo ? null : (sameTargetHost ? (hostBaseUrl || task.hostBaseUrl) : task.hostBaseUrl), error: cloud.error_code || '' };
+      return { ...task, status: cloud.status, phase: cloud.phase || cloud.status, progress: Number(cloud.progress || 0), resultExpiresAt: cloud.result_expires_at || task.resultExpiresAt, result: cloud.result || cloud.result_payload || task.result, hostBaseUrl: sameTargetHost ? (hostBaseUrl || task.hostBaseUrl) : task.hostBaseUrl, error: cloud.error_code || '' };
     } catch { return { ...task, error: 'refresh failed' }; }
   };
   const refreshAll = async () => { if (!synchronizeTaskScope()) return; persist(await Promise.all(tasks.map(refreshTask))); };
@@ -104,16 +96,14 @@ export default function QuestionBankPage() {
     if (!synchronizeTaskScope()) return;
     const questionIds = source?.request?.payload?.questionIds || selectedIds;
     if (!title.trim() || questionIds.length === 0) { Taro.showToast({ title: questionIds.length ? '\u8bf7\u8f93\u5165\u8bd5\u5377\u540d\u79f0' : '\u8bf7\u81f3\u5c11\u9009\u62e9\u4e00\u9053\u9898', icon: 'none' }); return; }
-    const draft: PaperTask = workflow.createTaskDraft({ taskType, questionIds, title: source?.request?.payload?.title || title.trim(), answerPosition: source?.request?.payload?.answerPosition || answers[answerIndex].value, formulaMode: source?.request?.payload?.formulaMode || formulas[formulaIndex].value, targetHostDeviceId: isReviewDemo ? '' : targetHostDeviceId }, { idFactory: () => `${Date.now()}-${Math.random().toString(36).slice(2)}` });
-    draft.hostBaseUrl = isReviewDemo ? null : (hostBaseUrl || source?.hostBaseUrl || null);
+    const draft: PaperTask = workflow.createTaskDraft({ taskType, questionIds, title: source?.request?.payload?.title || title.trim(), answerPosition: source?.request?.payload?.answerPosition || answers[answerIndex].value, formulaMode: source?.request?.payload?.formulaMode || formulas[formulaIndex].value, targetHostDeviceId }, { idFactory: () => `${Date.now()}-${Math.random().toString(36).slice(2)}` });
+    draft.hostBaseUrl = hostBaseUrl || source?.hostBaseUrl || null;
     if (!persist([draft, ...tasks])) return;
-    if (isReviewDemo ? !sandboxAvailable : (!hostAvailable || !targetHostDeviceId)) return;
+    if (!hostAvailable || !targetHostDeviceId) return;
     setSubmitting(taskType);
     try {
       const request = draft.request;
-      const response: any = isReviewDemo
-        ? await reviewDemoApi.createTask(request.taskType, request.payload)
-        : await createPaperTaskV2(request.taskType, request.payload, request.targetHostDeviceId, request.idempotencyKey);
+      const response: any = await createPaperTaskV2(request.taskType, request.payload, request.targetHostDeviceId, request.idempotencyKey);
       const cloud = response.task || response.data?.task;
       if (!response.success || !cloud) throw new Error(response.error || 'cloud not confirmed');
       persist([{ ...workflow.confirmTaskDraft(draft, cloud), result: cloud.result || cloud.result_payload || null, hostBaseUrl: draft.hostBaseUrl }, ...tasks]);
@@ -121,7 +111,7 @@ export default function QuestionBankPage() {
     finally { setSubmitting(null); }
   };
 
-  const cancelTask = async (task: PaperTask) => { if (!synchronizeTaskScope() || !workflow.canCancel(task) || !task.taskId) return; const response: any = isReviewDemo ? await reviewDemoApi.cancelTask(task.taskId) : await cancelMiniappTask(task.taskId); if (response.success) persist(tasks.map(item => item.localId === task.localId ? { ...item, status: 'cancelled', phase: 'cancelled' } : item)); };
+  const cancelTask = async (task: PaperTask) => { if (!synchronizeTaskScope() || !workflow.canCancel(task) || !task.taskId) return; const response: any = await cancelMiniappTask(task.taskId); if (response.success) persist(tasks.map(item => item.localId === task.localId ? { ...item, status: 'cancelled', phase: 'cancelled' } : item)); };
   const exchangeAccess = async (task: PaperTask, sessionBoundary: ReturnType<typeof createSessionBoundOperation>) => {
     const endpoint = task.result?.accessEndpoint || task.result?.accessUrl;
     if (!task.hostBaseUrl || !endpoint) throw new Error('host URL unavailable');
@@ -134,21 +124,6 @@ export default function QuestionBankPage() {
     if (workflow.isExpired(task)) { Taro.showToast({ title: '\u6587\u4ef6\u5df2\u8fc7\u671f', icon: 'none' }); return; }
     try {
       const sessionBoundary = createSessionBoundOperation(authSessionRuntime);
-      if (isReviewDemo) {
-        const artifactId = task.result?.artifactId;
-        if (!artifactId) throw new Error('\u5ba1\u6838\u6c99\u7bb1\u6587\u4ef6\u4e0d\u53ef\u7528');
-        const file: any = await reviewDemoApi.downloadArtifact(artifactId);
-        if (file.statusCode === 410) throw new Error('\u5ba1\u6838\u6c99\u7bb1\u6587\u4ef6\u5df2\u8fc7\u671f\uff0c\u8bf7\u91cd\u65b0\u5bfc\u51fa');
-        if (file.statusCode !== 200 || !file.tempFilePath) throw new Error('\u5ba1\u6838\u6c99\u7bb1\u6587\u4ef6\u4e0b\u8f7d\u5931\u8d25');
-        await openSessionBoundDocument(sessionBoundary, {
-          filePath: file.tempFilePath,
-          openDocument: (options: any) => Taro.openDocument(options),
-          removeTemporaryFile: (filePath: string) => new Promise<void>(resolve => {
-            try { Taro.getFileSystemManager().unlink({ filePath, complete: () => resolve() }); } catch (_error) { resolve(); }
-          }),
-        });
-        return;
-      }
       let access = await exchangeAccess(task, sessionBoundary);
       const download = () => sessionBoundary.run((requestSession: any) => Taro.downloadFile({ url: absoluteHostUrl(task.hostBaseUrl || '', access.fileUrl), header: authHeader(requestSession.token, { 'x-gewu-artifact-token': access.token }) }));
       let file = await download(); if (file.statusCode === 410) { access = await exchangeAccess(task, sessionBoundary); file = await download(); }
@@ -164,16 +139,31 @@ export default function QuestionBankPage() {
   };
 
   const stateText = previewState === 'loading' ? '\u6b63\u5728\u52a0\u8f7d\u9898\u76ee' : previewState === 'empty' ? '\u4e91\u7aef\u6682\u65e0\u53ef\u7528\u9898\u76ee' : previewState === 'forbidden' ? '\u5f53\u524d\u8d26\u53f7\u65e0\u6743\u8bfb\u53d6\u9898\u5e93' : '\u79bb\u7ebf\u6216\u4e91\u7aef\u4e0d\u53ef\u8fbe';
-  const availabilityLabel = isReviewDemo
-    ? (sandboxAvailable ? '\u5ba1\u6838\u6c99\u7bb1\u5df2\u5c31\u7eea' : '\u5ba1\u6838\u6c99\u7bb1\u4e0d\u53ef\u7528')
-    : (hostAvailable ? targetHostDeviceId : '\u4e3b\u673a\u4e0d\u53ef\u7528');
+  const availabilityLabel = hostAvailable ? targetHostDeviceId : '\u4e3b\u673a\u4e0d\u53ef\u7528';
   return <View className='question-bank-page'>
-    <ReviewDemoBanner />
-    {isReviewDemo ? <View className='review-sandbox-note'><Text>{'\u5ba1\u6838\u4f53\u9a8c\u4ec5\u4f7f\u7528\u793a\u4f8b\u9898\uff1b\u7ec4\u5377\u3001Word/PDF \u5bfc\u51fa\u548c\u4e0b\u8f7d\u5747\u5728\u5185\u5b58\u6c99\u7bb1\u4e2d\u5b8c\u6210\uff0c\u4e0d\u4f1a\u5199\u5165\u771f\u5b9e\u9898\u5e93\u6216\u6570\u636e\u4e3b\u673a\u3002'}</Text></View> : null}
-    <View className='hero-card'><Text className='hero-title'>{'\u9898\u5e93\u7ec4\u5377\u4e0e\u5bfc\u51fa'}</Text><Text className='hero-subtitle'>{isReviewDemo ? '\u6309\u9009\u62e9\u987a\u5e8f\u63d0\u4ea4\u793a\u4f8b\u9898\u76ee ID' : '\u6309\u9009\u62e9\u987a\u5e8f\u63d0\u4ea4\u771f\u5b9e\u9898\u76ee ID'}</Text></View>
+    {false && (
+      <View className="experience-section">
+        <View className="section-header">
+          <Text className="section-title">体验题库</Text>
+          <Text className="section-subtitle">固定示例题，不属于正式题库</Text>
+        </View>
+        <Button
+          className="experience-btn"
+          onClick={() => Taro.navigateTo({ url: '/pages/unrecognized-experience/index' })}
+        >
+          进入体验
+        </Button>
+      </View>
+    )}
+    <View className='hero-card'><Text className='hero-title'>{'\u9898\u5e93\u7ec4\u5377\u4e0e\u5bfc\u51fa'}</Text><Text className='hero-subtitle'>{'\u6309\u9009\u62e9\u987a\u5e8f\u63d0\u4ea4\u771f\u5b9e\u9898\u76ee ID'}</Text></View>
     <View className='form-card'><View className='form-row'><Text className='field-label'>{'\u8bd5\u5377\u540d\u79f0'}</Text><Input className='field-input' value={title} onInput={e => setTitle(e.detail.value)} /></View><Picker mode='selector' range={answers.map(x => x.label)} value={answerIndex} onChange={e => setAnswerIndex(Number(e.detail.value))}><View className='picker-row'>{answers[answerIndex].label}</View></Picker><Picker mode='selector' range={formulas.map(x => x.label)} value={formulaIndex} onChange={e => setFormulaIndex(Number(e.detail.value))}><View className='picker-row'>{formulas[formulaIndex].label}</View></Picker></View>
     <View className='preview-card'><View className='preview-header'><View><Text className='preview-title'>{`\u9009\u62e9\u9898\u76ee (${selectedIds.length})`}</Text><Text className='preview-subtitle'>{availabilityLabel}</Text></View><Button className='preview-refresh' onClick={loadQuestions}>{'\u5237\u65b0'}</Button></View><Input className='preview-search' value={searchText} onInput={e => setSearchText(e.detail.value)} />{previewState !== 'ready' ? <View className={`question-preview-empty state-${previewState}`}><Text>{stateText}</Text><Text>{previewMessage}</Text></View> : <ScrollView className='question-preview-list' scrollY>{filtered.map(q => { const order = selectedIds.indexOf(q.id); return <View key={q.id} className={`question-preview-item ${order >= 0 ? 'selected' : ''}`} onClick={() => setSelectedIds(workflow.toggleOrderedSelection(selectedIds, q.id))}><View className='question-preview-meta'><Text>{order >= 0 ? `#${order + 1}` : '+'}</Text><Text>{q.type}</Text><Text>{q.status}</Text></View><Text className='question-preview-stem'>{q.stemPreview}</Text></View>; })}</ScrollView>}</View>
     <View className='action-card'>{(['question-paper', 'paper-export-word', 'paper-export-pdf'] as PaperAction[]).map(a => <Button key={a} className={`action-button ${a}`} loading={submitting === a} disabled={Boolean(submitting) || selectedIds.length === 0} onClick={() => submit(a)}>{actionCopy[a]}</Button>)}</View>
     <View className='result-card'><View className='preview-header'><Text className='preview-title'>{'\u4efb\u52a1\u8bb0\u5f55'}</Text><Button className='preview-refresh' onClick={refreshAll}>{'\u6062\u590d/\u5237\u65b0'}</Button></View>{tasks.length === 0 ? <Text className='result-text'>{'\u6682\u65e0\u4efb\u52a1'}</Text> : tasks.map(task => <View key={task.localId} className='task-item'><Text className='result-text'>{task.request.payload.title}</Text><Text className='result-value'>{statusCopy[task.status] || task.status} / {task.phase} / {task.progress}%</Text>{task.error ? <Text className='task-error'>{task.error}</Text> : null}<View className='task-actions'>{workflow.canCancel(task) ? <Button size='mini' onClick={() => cancelTask(task)}>{'\u53d6\u6d88'}</Button> : null}{(task.status === 'draft' || workflow.canRetry(task)) ? <Button size='mini' onClick={() => submit(task.request.taskType, task)}>{'\u91cd\u8bd5'}</Button> : null}{task.status === 'completed' && task.result?.artifactId ? <Button size='mini' onClick={() => downloadTask(task)}>{'\u4e0b\u8f7d'}</Button> : null}</View></View>)}</View>
   </View>;
+}
+
+export default function QuestionBankPage() {
+  const identity = Taro.getStorageSync('user_info');
+  return isUnrecognizedIdentity(identity) ? <UnrecognizedExperiencePage /> : <FormalQuestionBankPage />;
 }

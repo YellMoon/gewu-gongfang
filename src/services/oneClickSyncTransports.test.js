@@ -12,12 +12,22 @@ async function main() {
   assert.strictEqual(normalizeApiBaseUrl('http://host:3001/'), 'http://host:3001');
   assert.strictEqual(normalizeApiBaseUrl('http://host:3001/api'), 'http://host:3001');
 
+  const onlineSession = {
+    authorization: 'Bearer session-test',
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    authContext: {
+      userId: 'u1', deviceId: 'desktop_test', activeRole: 'teacher', teacherId: 't1',
+      sessionId: 'sid-1', authVersion: 1, credentialVersion: 1,
+    },
+  };
+  let sessionResolutions = 0;
+  const sessionResolver = async () => { sessionResolutions += 1; return onlineSession; };
+
   const directCalls = [];
   const direct = createDirectSyncTransport({
     baseUrl: 'http://lan-host:3001',
     deviceId: 'desktop_test',
-    authorization: 'Bearer session-test',
-    authContext: { userId: 'u1', deviceId: 'desktop_test' },
+    sessionResolver,
     fetchImpl: async (url, options = {}) => {
       directCalls.push({ url, options });
       if (String(url).endsWith('/api/health')) return jsonResponse({ ok: true });
@@ -54,8 +64,7 @@ async function main() {
     baseUrl: 'https://cloud.example.com/scheduling',
     deviceId: 'desktop_test',
     desktopSyncToken: 'sync_secret_test',
-    authorization: 'Bearer session-test',
-    authContext: { userId: 'u1', deviceId: 'desktop_test' },
+    sessionResolver,
     fetchImpl: async (url, options = {}) => {
       cloudCalls.push({ url, options });
       if (String(url).includes('/api/cloud/host/status')) return jsonResponse({ success: true, online: true });
@@ -77,12 +86,13 @@ async function main() {
   assert.ok(cloudCalls.some(call => String(call.url).includes('/api/cloud/desktop-sync/requests')), 'cloud should submit desktop sync requests');
   assert.ok(cloudCalls.every(call => call.options.headers['x-gewu-desktop-sync-token'] === 'sync_secret_test'), 'cloud requests should include desktop sync token');
   await assert.rejects(() => createCloudRelaySyncTransport({ baseUrl: 'https://cloud.example.com', fetchImpl: async () => jsonResponse({}) })
-    .submitSyncRequest({ pendingChanges: [{}] }), error => error.code === 'AUTHORIZATION_CONTEXT_REQUIRED');
+    .submitSyncRequest({ pendingChanges: [{}] }), error => error.code === 'ONLINE_DESKTOP_SESSION_REQUIRED');
 
   const discovered = await discoverLanDirectSyncTransports({
     baseUrl: 'https://cloud.example.com/scheduling',
     deviceId: 'desktop_test',
     desktopSyncToken: 'sync_secret_test',
+    sessionResolver,
     fetchImpl: async (url) => {
       if (String(url).includes('/api/cloud/host/status')) {
         return jsonResponse({
@@ -99,6 +109,31 @@ async function main() {
   });
   assert.strictEqual(discovered.length, 1, 'LAN discovery should ignore local/self URLs and de-duplicate candidates');
   assert.strictEqual(discovered[0].baseUrl, 'http://192.168.31.8:3001');
+  assert.ok(sessionResolutions >= 8, 'health, preview, push, cloud relay, and LAN discovery must resolve the online V2 session');
+
+  let offlineFetches = 0;
+  const offlineDirect = createDirectSyncTransport({
+    baseUrl: 'http://lan-host:3001',
+    sessionResolver: async () => {
+      const error = new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
+      error.code = 'ONLINE_DESKTOP_SESSION_REQUIRED';
+      throw error;
+    },
+    fetchImpl: async () => { offlineFetches += 1; return jsonResponse({ ok: true }); },
+  });
+  const offlineCheck = await offlineDirect.check();
+  assert.deepStrictEqual([offlineCheck.ok, offlineCheck.code], [false, 'ONLINE_DESKTOP_SESSION_REQUIRED']);
+  assert.strictEqual(offlineFetches, 0, 'offline lease must not probe or contact a sync target');
+
+  let fallbackFetches = 0;
+  const noResolverCheck = await createDirectSyncTransport({
+    baseUrl: 'http://lan-host:3001',
+    authorization: onlineSession.authorization,
+    authContext: onlineSession.authContext,
+    fetchImpl: async () => { fallbackFetches += 1; return jsonResponse({ ok: true }); },
+  }).check();
+  assert.deepStrictEqual([noResolverCheck.ok, noResolverCheck.code], [false, 'ONLINE_DESKTOP_SESSION_REQUIRED']);
+  assert.strictEqual(fallbackFetches, 0, 'legacy static auth options must not bypass the online session resolver');
 
   console.log('one-click sync transport checks passed');
 }

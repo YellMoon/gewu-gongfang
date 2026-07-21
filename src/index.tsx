@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
+import DesktopIdentityGate from './components/DesktopIdentityGate';
 import { App as AntdApp, ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import dayjs from 'dayjs';
@@ -24,7 +24,7 @@ if (rootElement) {
   root.render(
     <ConfigProvider locale={zhCN} theme={appTheme} select={{ showSearch: true }}>
       <AntdApp>
-        <App />
+        <DesktopIdentityGate />
       </AntdApp>
     </ConfigProvider>
   );

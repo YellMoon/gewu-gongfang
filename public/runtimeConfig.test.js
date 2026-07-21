@@ -6,12 +6,22 @@ const path = require('path');
 const {
   normalizeRuntimeConfig,
   readRuntimeConfig,
+  ensureRuntimeConfig,
   writeRuntimeConfig,
+  writeManagedHostRuntimeConfig,
+  writeManagedClientRuntimeConfig,
   applyRuntimeConfigToEnv,
 } = require('./runtimeConfig');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-runtime-config-'));
 const configPath = path.join(dir, 'gewugongfang.config.json');
+
+const firstLaunchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-runtime-first-launch-'));
+const firstLaunchPath = path.join(firstLaunchDir, 'gewugongfang.config.json');
+const firstLaunchConfig = ensureRuntimeConfig(firstLaunchPath, { userDataPath: firstLaunchDir });
+const repeatedFirstLaunchConfig = ensureRuntimeConfig(firstLaunchPath, { userDataPath: firstLaunchDir });
+assert.ok(fs.existsSync(firstLaunchPath), 'first launch must persist the generated runtime configuration');
+assert.strictEqual(repeatedFirstLaunchConfig.deviceId, firstLaunchConfig.deviceId, 'device id must stay stable across reads');
 
 const normalized = normalizeRuntimeConfig({
   nodeRole: 'primary-host',
@@ -39,14 +49,38 @@ assert.strictEqual(normalized.nasBackupPath.replace(/\\/g, '/'), '//NAS/GewuQues
 assert.strictEqual(normalized.desktopSyncToken, 'ab'.repeat(32));
 assert.strictEqual(normalized.cloudBaseUrl, 'https://cloud.example.com');
 
-writeRuntimeConfig(configPath, normalized);
+const ordinaryWrite = writeRuntimeConfig(configPath, normalized, { userDataPath: dir });
+assert.strictEqual(ordinaryWrite.nodeRole, 'desktop-client', 'ordinary settings must not self-promote a device to primary host');
+assert.strictEqual(ordinaryWrite.deviceId, 'desktop_test');
+writeManagedHostRuntimeConfig(configPath, {
+  deviceId: 'desktop_test',
+  epochId: 'primary-host-epoch-1',
+  generation: 1,
+}, { userDataPath: dir });
 const readBack = readRuntimeConfig(configPath, { userDataPath: dir });
 assert.strictEqual(readBack.mainDbPath.replace(/\\/g, '/'), 'D:/GewuData/scheduling.db');
+assert.strictEqual(readBack.nodeRole, 'primary-host');
+assert.strictEqual(readBack.primaryHostEpochId, 'primary-host-epoch-1');
+assert.strictEqual(readBack.primaryHostGeneration, 1);
+
+const attemptedRoleTamper = writeRuntimeConfig(configPath, {
+  ...readBack,
+  nodeRole: 'desktop-client',
+  primaryHostEpochId: 'attacker-epoch',
+  primaryHostGeneration: 99,
+  hostBaseUrl: 'http://192.168.1.8:3001',
+}, { userDataPath: dir });
+assert.strictEqual(attemptedRoleTamper.nodeRole, 'primary-host');
+assert.strictEqual(attemptedRoleTamper.primaryHostEpochId, 'primary-host-epoch-1');
+assert.strictEqual(attemptedRoleTamper.primaryHostGeneration, 1);
+assert.strictEqual(attemptedRoleTamper.hostBaseUrl, 'http://192.168.1.8:3001');
 
 const env = {};
 applyRuntimeConfigToEnv(readBack, env);
 assert.strictEqual(env.GEWU_NODE_ROLE, 'primary-host');
 assert.strictEqual(env.GEWU_DEVICE_ID, 'desktop_test');
+assert.strictEqual(env.GEWU_PRIMARY_HOST_EPOCH_ID, 'primary-host-epoch-1');
+assert.strictEqual(env.GEWU_PRIMARY_HOST_GENERATION, '1');
 assert.strictEqual(env.DB_PATH.replace(/\\/g, '/'), 'D:/GewuData/scheduling.db');
 assert.strictEqual(env.QUESTION_BANK_ROOT.replace(/\\/g, '/'), 'E:/GewuQuestionBank');
 assert.strictEqual(env.QUESTION_BANK_UPLOAD_DIR.replace(/\\/g, '/'), 'E:/GewuQuestionBank/assets');
@@ -71,3 +105,13 @@ const fallback = normalizeRuntimeConfig({}, { userDataPath: dir });
 assert.ok(fallback.deviceId.startsWith('desktop_'));
 assert.strictEqual(fallback.nodeRole, 'desktop-client');
 assert.ok(fallback.mainDbPath.endsWith(path.join('data', 'scheduling.db')));
+
+assert.throws(() => writeManagedHostRuntimeConfig(configPath, {
+  deviceId: 'another-device', epochId: 'epoch-2', generation: 2,
+}, { userDataPath: dir }), /PRIMARY_HOST_RUNTIME_DEVICE_MISMATCH/);
+const demoted = writeManagedClientRuntimeConfig(configPath, {
+  deviceId: 'desktop_test', expectedEpochId: 'primary-host-epoch-1',
+}, { userDataPath: dir });
+assert.strictEqual(demoted.nodeRole, 'desktop-client');
+assert.strictEqual(demoted.primaryHostEpochId, '');
+assert.strictEqual(demoted.primaryHostGeneration, null);

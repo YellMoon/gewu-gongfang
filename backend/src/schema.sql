@@ -8,6 +8,9 @@ CREATE TABLE IF NOT EXISTS students (
   tenant_id TEXT DEFAULT 'default',
   name TEXT NOT NULL,
   phone TEXT,
+  parent_phone TEXT,
+  parent_phone_normalized TEXT,
+  parent_relation TEXT,
   school TEXT,
   grade_year INTEGER,
   grade_current TEXT,
@@ -203,6 +206,9 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT DEFAULT 'admin',
   status INTEGER DEFAULT 1,
   login_enabled INTEGER DEFAULT 0,
+  identity_kind TEXT,
+  auth_version INTEGER NOT NULL DEFAULT 1,
+  disabled_at TEXT,
   student_id TEXT,
   linked_student_ids TEXT,
   teacher_id TEXT,
@@ -214,6 +220,33 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS user_role_grants (
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('super_admin', 'admin', 'teacher', 'student')),
+  subject_type TEXT,
+  subject_id TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked')),
+  source TEXT NOT NULL,
+  granted_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  revoked_at TEXT,
+  PRIMARY KEY (user_id, role),
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  CHECK (
+    (role = 'teacher' AND subject_type = 'teacher' AND subject_id IS NOT NULL)
+    OR (role = 'student' AND subject_type = 'student' AND subject_id IS NOT NULL)
+    OR (role IN ('super_admin', 'admin') AND subject_type IS NULL AND subject_id IS NULL)
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_role_grants_active_teacher
+  ON user_role_grants(subject_id)
+  WHERE role = 'teacher' AND status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_user_role_grants_user_status
+  ON user_role_grants(user_id, status, role);
 
 CREATE TABLE IF NOT EXISTS authorization_audit_log (
   id TEXT PRIMARY KEY,
@@ -253,6 +286,67 @@ CREATE TABLE IF NOT EXISTS miniapp_login_attempts (
   denial_reason TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS miniapp_login_events (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  phone_normalized TEXT NOT NULL,
+  identity_kind TEXT,
+  result_code TEXT NOT NULL,
+  session_id TEXT,
+  miniapp_version TEXT,
+  platform TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS miniapp_role_applications (
+  id TEXT PRIMARY KEY,
+  applicant_user_id TEXT NOT NULL,
+  application_type TEXT NOT NULL CHECK(application_type IN ('student', 'teacher')),
+  status TEXT NOT NULL,
+  revision INTEGER NOT NULL,
+  payload_json TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  verified_phone_normalized TEXT NOT NULL,
+  student_phone_normalized TEXT,
+  parent_phone_normalized TEXT,
+  applicant_identity_kind TEXT,
+  host_task_id TEXT,
+  host_entity_id TEXT,
+  reviewed_by TEXT,
+  reviewed_at TEXT,
+  rejection_reason TEXT,
+  submitted_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS account_memberships (
+  id TEXT PRIMARY KEY,
+  subject_type TEXT NOT NULL,
+  subject_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  source TEXT NOT NULL,
+  starts_at TEXT NOT NULL,
+  ends_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(subject_type, subject_id)
+);
+
+CREATE TABLE IF NOT EXISTS identity_provisioning_receipts (
+  id TEXT PRIMARY KEY,
+  application_id TEXT NOT NULL,
+  revision INTEGER NOT NULL,
+  request_hash TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  result_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(application_id, revision, request_hash)
 );
 
 -- ===================== 同步日志 =====================
@@ -329,6 +423,316 @@ CREATE TABLE IF NOT EXISTS desktop_device_pairings (
   approved_by TEXT, user_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, exchanged_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS desktop_device_authorizations (
+  id TEXT PRIMARY KEY,
+  device_id TEXT NOT NULL UNIQUE,
+  device_name TEXT NOT NULL,
+  device_kind TEXT NOT NULL DEFAULT 'desktop-client'
+    CHECK (device_kind IN ('desktop-client', 'primary-host')),
+  user_id TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  key_fingerprint TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'active', 'revoked', 'replaced', 'retired')),
+  source_challenge_id TEXT NOT NULL UNIQUE,
+  approved_by_user_id TEXT,
+  approved_by_device_id TEXT,
+  approved_at TEXT,
+  last_phone_verified_at TEXT NOT NULL,
+  phone_reverify_due_at TEXT NOT NULL,
+  credential_version INTEGER NOT NULL DEFAULT 1 CHECK (credential_version >= 1),
+  last_seen_at TEXT,
+  replaced_by_device_id TEXT,
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  revoked_at TEXT,
+  retired_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS desktop_identity_challenges (
+  id TEXT PRIMARY KEY,
+  device_id TEXT NOT NULL,
+  device_name TEXT NOT NULL,
+  device_kind TEXT NOT NULL DEFAULT 'desktop-client'
+    CHECK (device_kind IN ('desktop-client', 'primary-host')),
+  public_key TEXT NOT NULL,
+  key_fingerprint TEXT NOT NULL,
+  purpose TEXT NOT NULL,
+  challenge_token_hash TEXT NOT NULL UNIQUE,
+  short_code TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending_phone'
+    CHECK (status IN (
+      'pending_phone', 'identity_verified_pending_approval', 'approved_pending_exchange',
+      'exchanged', 'expired', 'rejected', 'conflict', 'cancelled'
+    )),
+  claimed_user_id TEXT,
+  verified_login_event_id TEXT UNIQUE,
+  authorization_id TEXT,
+  phone_verified_at TEXT,
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  approved_at TEXT,
+  exchanged_at TEXT,
+  rejected_at TEXT,
+  cancelled_at TEXT,
+  FOREIGN KEY (claimed_user_id) REFERENCES users(id),
+  FOREIGN KEY (verified_login_event_id) REFERENCES miniapp_login_events(id) ON DELETE SET NULL,
+  FOREIGN KEY (authorization_id) REFERENCES desktop_device_authorizations(id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_desktop_identity_active_short_code
+  ON desktop_identity_challenges(short_code)
+  WHERE status IN ('pending_phone', 'identity_verified_pending_approval', 'approved_pending_exchange');
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_desktop_identity_active_device
+  ON desktop_identity_challenges(device_id)
+  WHERE status IN ('pending_phone', 'identity_verified_pending_approval', 'approved_pending_exchange');
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_desktop_identity_active_key_fingerprint
+  ON desktop_identity_challenges(key_fingerprint)
+  WHERE status IN ('pending_phone', 'identity_verified_pending_approval', 'approved_pending_exchange');
+
+CREATE INDEX IF NOT EXISTS idx_desktop_identity_claimant_status
+  ON desktop_identity_challenges(claimed_user_id, status, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_desktop_device_authorizations_user_status
+  ON desktop_device_authorizations(user_id, status, updated_at);
+
+CREATE TABLE IF NOT EXISTS desktop_device_session_challenges (
+  id TEXT PRIMARY KEY,
+  authorization_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  credential_version INTEGER NOT NULL CHECK (credential_version >= 1),
+  nonce_hash TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'consumed', 'expired', 'cancelled')),
+  nonce_issued_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  issued_session_id TEXT,
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  consumed_at TEXT,
+  FOREIGN KEY (authorization_id) REFERENCES desktop_device_authorizations(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_desktop_device_session_challenges_device_status
+  ON desktop_device_session_challenges(device_id, status, expires_at);
+
+CREATE TABLE IF NOT EXISTS desktop_sessions (
+  sid TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  authorization_id TEXT NOT NULL,
+  active_role TEXT NOT NULL CHECK (active_role IN ('super_admin', 'admin', 'teacher', 'student')),
+  eligible_roles_json TEXT NOT NULL,
+  auth_version INTEGER NOT NULL CHECK (auth_version >= 1),
+  credential_version INTEGER NOT NULL CHECK (credential_version >= 1),
+  auth_time TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked', 'expired')),
+  issued_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  last_seen_at TEXT,
+  revoke_reason TEXT,
+  revoked_at TEXT,
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (authorization_id) REFERENCES desktop_device_authorizations(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_desktop_sessions_device_status
+  ON desktop_sessions(device_id, status, expires_at);
+
+CREATE INDEX IF NOT EXISTS idx_desktop_sessions_user_status
+  ON desktop_sessions(user_id, status, expires_at);
+
+CREATE TABLE IF NOT EXISTS primary_host_operation_challenges (
+  id TEXT PRIMARY KEY,
+  operation TEXT NOT NULL CHECK (operation IN ('bootstrap', 'transfer', 'recovery')),
+  requested_by_user_id TEXT NOT NULL,
+  requested_by_device_id TEXT NOT NULL,
+  target_device_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending_phone'
+    CHECK (status IN ('pending_phone', 'identity_verified', 'consumed', 'expired', 'cancelled')),
+  verified_user_id TEXT,
+  verified_login_event_id TEXT UNIQUE,
+  phone_verified_at TEXT,
+  expires_at TEXT NOT NULL,
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  consumed_at TEXT,
+  FOREIGN KEY (requested_by_user_id) REFERENCES users(id),
+  FOREIGN KEY (verified_user_id) REFERENCES users(id),
+  FOREIGN KEY (verified_login_event_id) REFERENCES miniapp_login_events(id) ON DELETE SET NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_primary_host_challenge_active_request
+  ON primary_host_operation_challenges(operation, requested_by_user_id, target_device_id)
+  WHERE status IN ('pending_phone', 'identity_verified');
+
+CREATE INDEX IF NOT EXISTS idx_primary_host_challenge_status_expiry
+  ON primary_host_operation_challenges(status, expires_at);
+
+CREATE TABLE IF NOT EXISTS primary_host_epochs (
+  id TEXT PRIMARY KEY,
+  generation INTEGER NOT NULL UNIQUE CHECK (generation >= 1),
+  device_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  authorization_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active', 'retired', 'recovery_superseded')),
+  activation_reason TEXT NOT NULL CHECK (activation_reason IN ('bootstrap', 'transfer', 'recovery')),
+  source_epoch_id TEXT,
+  challenge_id TEXT NOT NULL,
+  db_instance_digest TEXT NOT NULL,
+  schema_version INTEGER NOT NULL CHECK (schema_version >= 1),
+  store_id TEXT NOT NULL,
+  db_authority_id TEXT NOT NULL,
+  host_credential_hash TEXT NOT NULL,
+  credential_version INTEGER NOT NULL DEFAULT 1 CHECK (credential_version >= 1),
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  activated_at TEXT NOT NULL,
+  retired_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (authorization_id) REFERENCES desktop_device_authorizations(id),
+  FOREIGN KEY (source_epoch_id) REFERENCES primary_host_epochs(id),
+  FOREIGN KEY (challenge_id) REFERENCES primary_host_operation_challenges(id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_primary_host_single_active
+  ON primary_host_epochs(status)
+  WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_primary_host_device_generation
+  ON primary_host_epochs(device_id, generation DESC);
+
+CREATE TABLE IF NOT EXISTS host_transfers (
+  id TEXT PRIMARY KEY,
+  source_epoch_id TEXT NOT NULL,
+  source_generation INTEGER NOT NULL CHECK (source_generation >= 1),
+  target_generation INTEGER NOT NULL UNIQUE CHECK (target_generation >= 2),
+  target_device_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  challenge_id TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending_validation'
+    CHECK (status IN ('pending_validation', 'activated', 'cancelled', 'expired')),
+  validation_manifest_hash TEXT,
+  last_failure_code TEXT,
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  activated_at TEXT,
+  FOREIGN KEY (source_epoch_id) REFERENCES primary_host_epochs(id),
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (challenge_id) REFERENCES primary_host_operation_challenges(id)
+);
+
+CREATE TABLE IF NOT EXISTS primary_host_preflight_proofs (
+  id TEXT PRIMARY KEY,
+  token_hash TEXT NOT NULL UNIQUE,
+  operation TEXT NOT NULL CHECK (operation IN ('transfer', 'recovery')),
+  user_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  authorization_id TEXT NOT NULL,
+  authorization_row_version INTEGER NOT NULL,
+  session_id TEXT NOT NULL,
+  session_row_version INTEGER NOT NULL,
+  auth_version INTEGER NOT NULL,
+  credential_version INTEGER NOT NULL,
+  challenge_id TEXT NOT NULL,
+  challenge_row_version INTEGER NOT NULL,
+  transfer_id TEXT,
+  transfer_row_version INTEGER,
+  source_epoch_id TEXT NOT NULL,
+  source_epoch_row_version INTEGER NOT NULL,
+  source_generation INTEGER NOT NULL,
+  target_generation INTEGER NOT NULL,
+  local_manifest_hash TEXT NOT NULL,
+  manifest_hash TEXT NOT NULL,
+  local_receipt_nonce TEXT NOT NULL,
+  local_receipt_signature_hash TEXT NOT NULL,
+  cloud_preflight_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'issued' CHECK (status IN ('issued', 'consumed')),
+  issued_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  consumed_at TEXT,
+  FOREIGN KEY (authorization_id) REFERENCES desktop_device_authorizations(id),
+  FOREIGN KEY (session_id) REFERENCES desktop_sessions(sid),
+  FOREIGN KEY (challenge_id) REFERENCES primary_host_operation_challenges(id),
+  FOREIGN KEY (transfer_id) REFERENCES host_transfers(id),
+  FOREIGN KEY (source_epoch_id) REFERENCES primary_host_epochs(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_primary_host_preflight_proofs_context
+  ON primary_host_preflight_proofs(operation, challenge_id, transfer_id, status, expires_at);
+
+CREATE INDEX IF NOT EXISTS idx_host_transfers_status_created
+  ON host_transfers(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS host_recovery_factors (
+  id TEXT PRIMARY KEY,
+  epoch_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  generation INTEGER NOT NULL CHECK (generation >= 1),
+  factor_hash TEXT NOT NULL,
+  factor_salt TEXT NOT NULL,
+  kdf_params_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'used', 'revoked')),
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  used_at TEXT,
+  used_by_device_id TEXT,
+  revoked_at TEXT,
+  FOREIGN KEY (epoch_id) REFERENCES primary_host_epochs(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_host_recovery_factor_active_epoch
+  ON host_recovery_factors(epoch_id)
+  WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_host_recovery_factor_user_status
+  ON host_recovery_factors(user_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS host_recovery_deliveries (
+  id TEXT PRIMARY KEY,
+  epoch_id TEXT NOT NULL,
+  factor_id TEXT NOT NULL UNIQUE,
+  user_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  protocol_version TEXT NOT NULL,
+  recipient_key_fingerprint TEXT NOT NULL,
+  recipient_public_key_pem TEXT,
+  ack_nonce TEXT,
+  envelope_json TEXT,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'acknowledged')),
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  acknowledged_at TEXT,
+  FOREIGN KEY (epoch_id) REFERENCES primary_host_epochs(id),
+  FOREIGN KEY (factor_id) REFERENCES host_recovery_factors(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_host_recovery_deliveries_epoch
+  ON host_recovery_deliveries(epoch_id);
+
+CREATE INDEX IF NOT EXISTS idx_host_recovery_deliveries_target_pending
+  ON host_recovery_deliveries(user_id, device_id, status, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS sync_authorizations (
   id TEXT PRIMARY KEY,
   device_id TEXT NOT NULL,
@@ -399,6 +803,7 @@ CREATE TABLE IF NOT EXISTS host_heartbeats (
   status TEXT NOT NULL DEFAULT 'online',
   base_url TEXT,
   lan_urls TEXT,
+  capabilities TEXT,
   last_snapshot_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -494,6 +899,7 @@ CREATE TABLE IF NOT EXISTS questions (
   committed_by_device_id TEXT,
   source_device_id TEXT,
   owner_user_id TEXT,
+  taxonomy_json TEXT NOT NULL DEFAULT '{}',
   deleted INTEGER DEFAULT 0,
   deleted_at TEXT,
   created_at TEXT NOT NULL,
@@ -601,6 +1007,45 @@ CREATE TABLE IF NOT EXISTS question_model_points (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (question_id, model_point_id)
+);
+
+CREATE TABLE IF NOT EXISTS taxonomy_systems (
+  id TEXT NOT NULL,
+  tenant_id TEXT DEFAULT 'default',
+  subject TEXT NOT NULL,
+  name TEXT NOT NULL,
+  sort_order INTEGER DEFAULT 0,
+  deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS taxonomy_state (
+  tenant_id TEXT PRIMARY KEY,
+  initialized_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS taxonomy_nodes (
+  id TEXT NOT NULL,
+  tenant_id TEXT DEFAULT 'default',
+  system_id TEXT NOT NULL,
+  parent_id TEXT,
+  name TEXT NOT NULL,
+  sort_order INTEGER DEFAULT 0,
+  deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS question_taxonomy_nodes (
+  question_id TEXT NOT NULL,
+  system_id TEXT NOT NULL,
+  node_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (question_id, system_id, node_id)
 );
 
 CREATE TABLE IF NOT EXISTS knowledge_point_rollups (
@@ -741,6 +1186,19 @@ CREATE INDEX IF NOT EXISTS idx_sync_authorizations_device ON sync_authorizations
 CREATE INDEX IF NOT EXISTS idx_sync_conflicts_status ON sync_conflicts(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_readonly_snapshots_type_created ON readonly_snapshots(snapshot_type, created_at);
 CREATE INDEX IF NOT EXISTS idx_miniapp_tasks_status_created ON miniapp_tasks(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_miniapp_login_events_created ON miniapp_login_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_miniapp_login_events_user_created ON miniapp_login_events(user_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_miniapp_applications_user_idempotency
+  ON miniapp_role_applications(applicant_user_id, idempotency_key);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_miniapp_applications_active_user
+  ON miniapp_role_applications(applicant_user_id)
+  WHERE status IN ('submitted', 'provisioning', 'manual_resolution_required');
+CREATE INDEX IF NOT EXISTS idx_miniapp_applications_status_created
+  ON miniapp_role_applications(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_memberships_status_subject
+  ON account_memberships(status, subject_type, subject_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_identity_receipts_request
+  ON identity_provisioning_receipts(application_id, revision, request_hash);
 CREATE INDEX IF NOT EXISTS idx_host_heartbeats_updated ON host_heartbeats(updated_at);
 CREATE INDEX IF NOT EXISTS idx_operation_audit_created ON operation_audit_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_operation_audit_action ON operation_audit_log(action, status, created_at);
@@ -760,6 +1218,10 @@ CREATE INDEX IF NOT EXISTS idx_model_points_tenant ON model_points(tenant_id, de
 CREATE INDEX IF NOT EXISTS idx_model_points_parent ON model_points(parent_id, deleted);
 CREATE INDEX IF NOT EXISTS idx_qmp_question ON question_model_points(question_id);
 CREATE INDEX IF NOT EXISTS idx_qmp_model ON question_model_points(model_point_id);
+CREATE INDEX IF NOT EXISTS idx_taxonomy_systems_subject ON taxonomy_systems(tenant_id, subject, deleted, sort_order);
+CREATE INDEX IF NOT EXISTS idx_taxonomy_nodes_system ON taxonomy_nodes(tenant_id, system_id, parent_id, deleted, sort_order);
+CREATE INDEX IF NOT EXISTS idx_question_taxonomy_question ON question_taxonomy_nodes(question_id, system_id);
+CREATE INDEX IF NOT EXISTS idx_question_taxonomy_node ON question_taxonomy_nodes(node_id);
 CREATE INDEX IF NOT EXISTS idx_import_batches_status ON import_batches(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_import_items_batch ON import_items(batch_id, item_index);
 CREATE INDEX IF NOT EXISTS idx_search_jobs_status ON search_index_jobs(status, created_at);
