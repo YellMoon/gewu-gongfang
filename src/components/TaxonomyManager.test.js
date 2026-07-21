@@ -6,6 +6,7 @@ const preview = fs.readFileSync('src/pages/QuestionBankPreview.tsx', 'utf8');
 const importer = fs.readFileSync('src/pages/QuestionBankImport.tsx', 'utf8');
 const database = fs.readFileSync('src/services/browserDatabase.ts', 'utf8');
 const schema = fs.readFileSync('backend/src/schema.sql', 'utf8');
+const routes = fs.readFileSync('backend/src/routes/questionBank.js', 'utf8');
 
 for (const method of [
   'createTaxonomySystem', 'updateTaxonomySystem', 'deleteTaxonomySystem',
@@ -13,7 +14,11 @@ for (const method of [
 ]) assert.ok(manager.includes(method), `taxonomy manager must expose ${method}`);
 
 assert.ok(manager.includes('removeSystemBody'));
-assert.ok(manager.includes('database.deleteTaxonomySystem(system.id)'));
+assert.ok(manager.includes('getTaxonomySystemDeletionImpact'));
+assert.ok(manager.includes('getTaxonomyNodeDeletionImpact'));
+assert.ok(manager.includes('affected_question_count'));
+assert.ok(manager.includes('expectedAffectedQuestionCount'));
+assert.ok(manager.includes('restoreTaxonomyDeletion'));
 assert.ok(preview.includes('<TaxonomyManager'));
 assert.ok(importer.includes('<TaxonomyManager'));
 assert.ok(preview.includes('taxonomySelections'));
@@ -25,7 +30,11 @@ assert.ok(database.includes("subject: '\\u7269\\u7406'"));
 assert.ok(database.includes("ensure('knowledge', '\\u77e5\\u8bc6\\u70b9'"));
 assert.ok(database.includes("ensure('model', '\\u6a21\\u578b'"));
 assert.ok(database.includes("if (question.taxonomy_ids) delete question.taxonomy_ids[id]"));
-for (const table of ['taxonomy_systems', 'taxonomy_nodes', 'question_taxonomy_nodes']) {
+assert.ok(routes.includes("router.get('/taxonomies/:systemId/deletion-impact'"));
+assert.ok(routes.includes("router.get('/taxonomies/:systemId/nodes/:nodeId/deletion-impact'"));
+assert.ok(routes.includes("router.get('/taxonomy-deletion-backups'"));
+assert.ok(routes.includes("router.post('/taxonomy-deletion-backups/:backupId/restore'"));
+for (const table of ['taxonomy_systems', 'taxonomy_nodes', 'question_taxonomy_nodes', 'taxonomy_deletion_backups']) {
   assert.ok(schema.includes(`CREATE TABLE IF NOT EXISTS ${table}`));
 }
 

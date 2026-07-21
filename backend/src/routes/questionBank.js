@@ -353,11 +353,25 @@ router.put('/taxonomies/:systemId', (req, res) => {
   }
 });
 
+router.get('/taxonomies/:systemId/deletion-impact', (req, res) => {
+  try {
+    const data = questionBank.getTaxonomySystemDeletionImpact(getInstance().db, req.params.systemId, tenantId(req));
+    if (!data) return res.status(404).json({ success: false, error: 'taxonomy system not found' });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(err.statusCode || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
+  }
+});
+
 router.delete('/taxonomies/:systemId', (req, res) => {
   try {
-    const deleted = questionBank.deleteTaxonomySystem(getInstance().db, req.params.systemId, tenantId(req));
-    if (!deleted) return res.status(404).json({ success: false, error: 'taxonomy system not found' });
-    res.json({ success: true, deleted: true });
+    const data = questionBank.deleteTaxonomySystem(getInstance().db, req.params.systemId, tenantId(req), {
+      confirmed: req.body?.confirmed === true,
+      expectedAffectedQuestionCount: req.body?.expected_affected_question_count,
+      actor: req.authz?.userId || req.authz?.user_id || req.get('x-device-id') || 'desktop',
+    });
+    if (!data) return res.status(404).json({ success: false, error: 'taxonomy system not found' });
+    res.json({ success: true, data });
   } catch (err) {
     res.status(err.statusCode || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
   }
@@ -391,11 +405,50 @@ router.put('/taxonomies/:systemId/nodes/:nodeId', (req, res) => {
   }
 });
 
+router.get('/taxonomies/:systemId/nodes/:nodeId/deletion-impact', (req, res) => {
+  try {
+    const data = questionBank.getTaxonomyNodeDeletionImpact(
+      getInstance().db, req.params.systemId, req.params.nodeId, tenantId(req)
+    );
+    if (!data) return res.status(404).json({ success: false, error: 'taxonomy node not found' });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(err.statusCode || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
+  }
+});
+
 router.delete('/taxonomies/:systemId/nodes/:nodeId', (req, res) => {
   try {
-    const deleted = questionBank.deleteTaxonomyNode(getInstance().db, req.params.systemId, req.params.nodeId, tenantId(req));
-    if (!deleted) return res.status(404).json({ success: false, error: 'taxonomy node not found' });
-    res.json({ success: true, deleted: true });
+    const data = questionBank.deleteTaxonomyNode(
+      getInstance().db, req.params.systemId, req.params.nodeId, tenantId(req), {
+        confirmed: req.body?.confirmed === true,
+        expectedAffectedQuestionCount: req.body?.expected_affected_question_count,
+        actor: req.authz?.userId || req.authz?.user_id || req.get('x-device-id') || 'desktop',
+      }
+    );
+    if (!data) return res.status(404).json({ success: false, error: 'taxonomy node not found' });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(err.statusCode || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
+  }
+});
+
+router.get('/taxonomy-deletion-backups', (req, res) => {
+  try {
+    const data = questionBank.listTaxonomyDeletionBackups(getInstance().db, tenantId(req), req.query.limit);
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(err.statusCode || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
+  }
+});
+
+router.post('/taxonomy-deletion-backups/:backupId/restore', (req, res) => {
+  try {
+    const data = questionBank.restoreTaxonomyDeletion(getInstance().db, req.params.backupId, tenantId(req), {
+      actor: req.authz?.userId || req.authz?.user_id || req.get('x-device-id') || 'desktop',
+    });
+    if (!data) return res.status(404).json({ success: false, error: 'taxonomy deletion backup not found' });
+    res.json({ success: true, data });
   } catch (err) {
     res.status(err.statusCode || errorStatus(err)).json({ success: false, error: err.message, code: err.code });
   }

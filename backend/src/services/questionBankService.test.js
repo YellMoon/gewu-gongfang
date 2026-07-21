@@ -399,17 +399,77 @@ function testDynamicTaxonomyLifecycle() {
     questionBank.updateTaxonomyNode(db, system.id, child.id, { name: 'Atomic structure' }, 'default');
     assert.deepStrictEqual(questionBank.getQuestion(db, created.id, 'default').taxonomy_ids[system.id], [child.id]);
 
-    assert.strictEqual(questionBank.deleteTaxonomyNode(db, system.id, root.id, 'default'), true);
+    const nodeImpact = questionBank.getTaxonomyNodeDeletionImpact(db, system.id, root.id, 'default');
+    assert.strictEqual(nodeImpact.affected_question_count, 1);
+    assert.strictEqual(nodeImpact.deleted_node_count, 2);
+    assert.throws(
+      () => questionBank.deleteTaxonomyNode(db, system.id, root.id, 'default'),
+      /TAXONOMY_DELETE_CONFIRMATION_REQUIRED/
+    );
+    const nodeDeletion = questionBank.deleteTaxonomyNode(db, system.id, root.id, 'default', {
+      confirmed: true,
+      expectedAffectedQuestionCount: nodeImpact.affected_question_count,
+      actor: 'taxonomy-test',
+    });
+    assert.strictEqual(nodeDeletion.deleted, true);
+    assert.strictEqual(nodeDeletion.affected_question_count, 1);
+    assert.ok(nodeDeletion.backup_id);
     assert.deepStrictEqual(questionBank.getQuestion(db, created.id, 'default').taxonomy_ids[system.id], []);
     assert.ok(questionBank.getQuestion(db, created.id, 'default'));
 
+    const restoredNode = questionBank.restoreTaxonomyDeletion(db, nodeDeletion.backup_id, 'default', { actor: 'taxonomy-test' });
+    assert.strictEqual(restoredNode.restored, true);
+    assert.deepStrictEqual(questionBank.getQuestion(db, created.id, 'default').taxonomy_ids[system.id], [child.id]);
+
     const next = questionBank.createTaxonomyNode(db, system.id, { name: 'Reactions' }, 'default');
     questionBank.setQuestionTaxonomyNodes(db, created.id, system.id, [next.id], 'default');
-    assert.strictEqual(questionBank.deleteTaxonomySystem(db, system.id, 'default'), true);
+    const systemImpact = questionBank.getTaxonomySystemDeletionImpact(db, system.id, 'default');
+    assert.strictEqual(systemImpact.affected_question_count, 1);
+    assert.strictEqual(systemImpact.deleted_node_count, 3);
+    assert.throws(
+      () => questionBank.deleteTaxonomySystem(db, system.id, 'default'),
+      /TAXONOMY_DELETE_CONFIRMATION_REQUIRED/
+    );
+    const backupsBeforeRollbackCheck = db.prepare('SELECT COUNT(*) AS count FROM taxonomy_deletion_backups').get().count;
+    db.exec(`CREATE TRIGGER taxonomy_delete_rollback_test BEFORE UPDATE OF deleted ON taxonomy_systems
+      WHEN OLD.id = '${system.id}' AND NEW.deleted = 1 BEGIN SELECT RAISE(ABORT, 'forced taxonomy rollback'); END;`);
+    assert.throws(() => questionBank.deleteTaxonomySystem(db, system.id, 'default', {
+      confirmed: true,
+      expectedAffectedQuestionCount: systemImpact.affected_question_count,
+      actor: 'taxonomy-test',
+    }), /forced taxonomy rollback/);
+    db.exec('DROP TRIGGER taxonomy_delete_rollback_test');
+    assert.strictEqual(db.prepare('SELECT deleted FROM taxonomy_systems WHERE id = ? AND tenant_id = ?').get(system.id, 'default').deleted, 0);
+    assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM taxonomy_deletion_backups').get().count, backupsBeforeRollbackCheck);
+    assert.deepStrictEqual(questionBank.getQuestion(db, created.id, 'default').taxonomy_ids[system.id], [next.id]);
+    const systemDeletion = questionBank.deleteTaxonomySystem(db, system.id, 'default', {
+      confirmed: true,
+      expectedAffectedQuestionCount: systemImpact.affected_question_count,
+      actor: 'taxonomy-test',
+    });
+    assert.strictEqual(systemDeletion.deleted, true);
+    assert.strictEqual(systemDeletion.affected_question_count, 1);
+    assert.ok(systemDeletion.backup_id);
     const keptQuestion = questionBank.getQuestion(db, created.id, 'default');
     assert.ok(keptQuestion);
     assert.strictEqual(Object.hasOwn(keptQuestion.taxonomy_ids, system.id), false);
     assert.deepStrictEqual(questionBank.listTaxonomySystems(db, 'Chemistry', 'default'), []);
+
+    const backup = db.prepare('SELECT * FROM taxonomy_deletion_backups WHERE id = ?').get(systemDeletion.backup_id);
+    assert.strictEqual(backup.affected_question_count, 1);
+    assert.strictEqual(backup.restored_at, null);
+    const audit = db.prepare("SELECT detail FROM operation_audit_log WHERE action = 'taxonomy_cascade_delete' AND record_id = ? ORDER BY created_at DESC LIMIT 1")
+      .get(system.id);
+    assert.strictEqual(JSON.parse(audit.detail).backup_id, systemDeletion.backup_id);
+
+    const restoredSystem = questionBank.restoreTaxonomyDeletion(db, systemDeletion.backup_id, 'default', { actor: 'taxonomy-test' });
+    assert.strictEqual(restoredSystem.restored, true);
+    assert.strictEqual(questionBank.listTaxonomySystems(db, 'Chemistry', 'default').length, 1);
+    assert.deepStrictEqual(questionBank.getQuestion(db, created.id, 'default').taxonomy_ids[system.id], [next.id]);
+    assert.throws(
+      () => questionBank.restoreTaxonomyDeletion(db, systemDeletion.backup_id, 'default', { actor: 'taxonomy-test' }),
+      /TAXONOMY_DELETION_ALREADY_RESTORED/
+    );
   });
 }
 

@@ -1048,6 +1048,21 @@ CREATE TABLE IF NOT EXISTS question_taxonomy_nodes (
   PRIMARY KEY (question_id, system_id, node_id)
 );
 
+CREATE TABLE IF NOT EXISTS taxonomy_deletion_backups (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT DEFAULT 'default',
+  entity_type TEXT NOT NULL,
+  system_id TEXT NOT NULL,
+  node_id TEXT,
+  affected_question_count INTEGER NOT NULL DEFAULT 0,
+  deleted_node_count INTEGER NOT NULL DEFAULT 0,
+  snapshot_json TEXT NOT NULL,
+  created_by TEXT DEFAULT 'system',
+  created_at TEXT NOT NULL,
+  restored_by TEXT,
+  restored_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS knowledge_point_rollups (
   knowledge_point_id TEXT PRIMARY KEY,
   direct_question_count INTEGER DEFAULT 0,
@@ -1222,6 +1237,8 @@ CREATE INDEX IF NOT EXISTS idx_taxonomy_systems_subject ON taxonomy_systems(tena
 CREATE INDEX IF NOT EXISTS idx_taxonomy_nodes_system ON taxonomy_nodes(tenant_id, system_id, parent_id, deleted, sort_order);
 CREATE INDEX IF NOT EXISTS idx_question_taxonomy_question ON question_taxonomy_nodes(question_id, system_id);
 CREATE INDEX IF NOT EXISTS idx_question_taxonomy_node ON question_taxonomy_nodes(node_id);
+CREATE INDEX IF NOT EXISTS idx_taxonomy_deletion_backups_tenant_created
+  ON taxonomy_deletion_backups(tenant_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_import_batches_status ON import_batches(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_import_items_batch ON import_items(batch_id, item_index);
 CREATE INDEX IF NOT EXISTS idx_search_jobs_status ON search_index_jobs(status, created_at);
