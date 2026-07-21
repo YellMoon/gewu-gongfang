@@ -68,21 +68,21 @@ export default function UnrecognizedStatusPage() {
         return {
           text: '已通过',
           color: '#52c41a',
-          icon: '✅',
+          icon: 'OK',
           description: '恭喜！您的申请已通过，请重新登录使用正式账号',
         };
       case 'rejected':
         return {
           text: '已拒绝',
           color: '#ff4d4f',
-          icon: '❌',
+          icon: 'X',
           description: status.reviewNote || '您的申请未通过审核',
         };
       default:
         return {
           text: '未知状态',
           color: '#999',
-          icon: '❓',
+          icon: '?',
           description: '请稍后重试',
         };
     }

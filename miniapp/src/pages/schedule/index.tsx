@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { Schedule, ScheduleStatus, Course } from '../../types';
+import { Schedule, ScheduleStatus, Course, Student } from '../../types';
 import { getCachedList, setCachedList } from '../../utils/storage';
 import { scheduleApi } from '../../utils/api';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
@@ -9,6 +9,10 @@ import ReviewDemoBanner from '../../components/ReviewDemoBanner';
 import './index.scss';
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
+
+// ScheduleStatus: PLANNED=1, CANCELLED=3, LEAVE=4
+const SCHEDULE_STATUS_CANCELLED = 3;
+const SCHEDULE_STATUS_LEAVE = 4;
 
 interface ScheduleWithCourse extends Schedule {
   course_name?: string;
@@ -19,6 +23,8 @@ export default function SchedulePage() {
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [schedules, setSchedules] = useState<ScheduleWithCourse[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -29,6 +35,7 @@ export default function SchedulePage() {
   const loadData = () => {
     const allSchedules = getCachedList<Schedule>('schedules');
     const courses = getCachedList<Course>('courses');
+    const allStudents = getCachedList<Student>('students');
 
     const enriched: ScheduleWithCourse[] = allSchedules.map((s) => {
       const course = courses.find((c) => c.id === s.course_id);
@@ -36,6 +43,7 @@ export default function SchedulePage() {
     });
 
     setSchedules(enriched);
+    setStudents(allStudents);
     setLoading(false);
   };
 
@@ -104,7 +112,26 @@ export default function SchedulePage() {
 
   const getSchedulesForDate = (date: Date): ScheduleWithCourse[] => {
     const dateString = formatDate(date);
-    return schedules.filter((schedule) => schedule.start_time?.startsWith(dateString));
+    return schedules.filter((schedule) => {
+      if (!schedule.start_time?.startsWith(dateString)) return false;
+      
+      // 如果选中了学生，筛选该学生的课程，但排除请假和取消的
+      if (selectedStudentId) {
+        if (schedule.status === SCHEDULE_STATUS_CANCELLED || schedule.status === SCHEDULE_STATUS_LEAVE) {
+          return false;
+        }
+        // 检查课程的学生列表
+        const course = getCachedList<Course>('courses').find(c => c.id === schedule.course_id);
+        const courseStudentIds = (course?.student_pricings || []).map(p => p.student_id);
+        const scheduleStudentIds = schedule.student_ids || [];
+        const allStudentIds = [...new Set([...courseStudentIds, ...scheduleStudentIds])];
+        if (!allStudentIds.includes(selectedStudentId)) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
   };
   const getDayTitle = (date: Date, index: number) => (
     `\u5468${WEEKDAYS[index]} ${date.getMonth() + 1}/${date.getDate()}`
@@ -142,6 +169,27 @@ export default function SchedulePage() {
           <Text>日视图</Text>
         </View>
       </View>
+
+      {/* 学生筛选栏 */}
+      {students.length > 0 && (
+        <ScrollView scrollX className="filter-bar">
+          <View
+            className={`filter-tag ${!selectedStudentId ? 'active' : ''}`}
+            onClick={() => setSelectedStudentId('')}
+          >
+            <Text>全部学生</Text>
+          </View>
+          {students.map(student => (
+            <View
+              key={student.id}
+              className={`filter-tag ${selectedStudentId === student.id ? 'active' : ''}`}
+              onClick={() => setSelectedStudentId(student.id)}
+            >
+              <Text>{student.name}</Text>
+            </View>
+          ))}
+        </ScrollView>
+      )}
 
       {loading ? (
         <LoadingSkeleton rows={5} />

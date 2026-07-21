@@ -19,6 +19,8 @@ export default function Stats() {
     byCourseType: [],
     byMonth: [],
   });
+  const [courseTypeCollapsed, setCourseTypeCollapsed] = useState(false);
+  const [monthCollapsed, setMonthCollapsed] = useState(false);
 
   useEffect(() => {
     loadStats();
@@ -80,8 +82,11 @@ export default function Stats() {
       {/* 按课程类型 */}
       {stats.byCourseType.length > 0 && (
         <View className='card'>
-          <View className='card-title'><Text>按课程类型</Text></View>
-          {stats.byCourseType.map((ct, idx) => (
+          <View className='card-title' onClick={() => setCourseTypeCollapsed(!courseTypeCollapsed)}>
+            <Text>按课程类型</Text>
+            <Text className='collapse-icon'>{courseTypeCollapsed ? '›' : '⌄'}</Text>
+          </View>
+          {!courseTypeCollapsed && stats.byCourseType.map((ct, idx) => (
             <View key={idx} className='stat-row'>
               <Text className='stat-name'>{ct.typeName}</Text>
               <View className='stat-bar-wrap'>
@@ -99,8 +104,11 @@ export default function Stats() {
       {/* 按月统计 */}
       {stats.byMonth.length > 0 && (
         <View className='card'>
-          <View className='card-title'><Text>按月统计</Text></View>
-          {stats.byMonth.map((m, idx) => (
+          <View className='card-title' onClick={() => setMonthCollapsed(!monthCollapsed)}>
+            <Text>按月统计</Text>
+            <Text className='collapse-icon'>{monthCollapsed ? '›' : '⌄'}</Text>
+          </View>
+          {!monthCollapsed && stats.byMonth.map((m, idx) => (
             <View key={idx} className='stat-row'>
               <Text className='stat-name'>{m.month}</Text>
               <View className='stat-values' style={{ alignItems: 'flex-end' }}>
