@@ -799,6 +799,25 @@ select,
   padding: 10px 12px !important;
 }
 
+.stats-page-layout__filters .ant-card-head,
+.stats-page-layout__metrics .ant-card-head {
+  padding: 0 12px;
+  min-height: 40px;
+  border-bottom: none;
+}
+
+.stats-page-layout__filters .ant-card-head-title,
+.stats-page-layout__metrics .ant-card-head-title {
+  padding: 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.stats-page-layout__filters .ant-card-head-wrapper {
+  width: 100%;
+}
+
 .stats-page-layout__metrics {
   min-width: 0;
 }

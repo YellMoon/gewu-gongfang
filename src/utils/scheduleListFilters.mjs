@@ -10,6 +10,10 @@ function scheduleDateInRange(schedule, dateRange) {
   return scheduleTime >= startTime && scheduleTime <= endTime;
 }
 
+// ScheduleStatus: PLANNED=1, CANCELLED=3, LEAVE=4
+const SCHEDULE_STATUS_CANCELLED = 3;
+const SCHEDULE_STATUS_LEAVE = 4;
+
 function findScheduleCourse(schedule, courses) {
   return courses.find(item => String(item.id) === String(schedule.course_id));
 }
@@ -47,8 +51,14 @@ function scheduleMatchesFilters(schedule, courses, filters = {}) {
     return false;
   }
 
-  if (filterStudent && !getScheduleStudentIds(schedule, course).includes(filterStudent)) {
-    return false;
+  // 当按学生筛选时，排除请假和取消的课程
+  if (filterStudent) {
+    if (schedule.status === SCHEDULE_STATUS_CANCELLED || schedule.status === SCHEDULE_STATUS_LEAVE) {
+      return false;
+    }
+    if (!getScheduleStudentIds(schedule, course).includes(filterStudent)) {
+      return false;
+    }
   }
 
   if (filterYear !== undefined && filterYear !== null && String(getScheduleYear(schedule, course)) !== String(filterYear)) {

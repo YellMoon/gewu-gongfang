@@ -161,7 +161,7 @@ export default function UnrecognizedExperiencePage() {
   };
 
   const goToApply = () => {
-    Taro.navigateTo({ url: '/pages/unrecognized-experience/apply' });
+    Taro.navigateTo({ url: '/pages/unrecognized-apply/index' });
   };
 
   const stateText = pageState === 'loading' ? '正在加载题目' : pageState === 'empty' ? '暂无可用题目' : '加载失败';
