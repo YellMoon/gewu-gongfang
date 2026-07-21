@@ -200,7 +200,7 @@ function checkPrimaryHostRecoveryDelivery() {
   const issues = [];
   const required = [
     ['backend/src/schema.sql', 'CREATE TABLE IF NOT EXISTS host_recovery_deliveries'],
-    ['backend/src/database.js', 'const SCHEMA_VERSION = 3109'],
+    ['backend/src/database.js', 'const SCHEMA_VERSION = 3110'],
     ['backend/src/services/primaryHostRecoveryDeliveryProtocol.js', 'RSA_PKCS1_OAEP_PADDING'],
     ['backend/src/services/primaryHostRecoveryDeliveryProtocol.js', 'RSA_PKCS1_PSS_PADDING'],
     ['backend/src/services/primaryHostIdentityService.js', 'PRIMARY_HOST_RECOVERY_DELIVERY_KEY_REQUIRED'],
