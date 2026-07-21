@@ -1,0 +1,104 @@
+.apply-page {
+  min-height: 100vh;
+  background: #f7f4ee;
+  padding: 32rpx;
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
+}
+
+.header {
+  margin-bottom: 32rpx;
+}
+
+.title {
+  display: block;
+  font-size: 36rpx;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 8rpx;
+}
+
+.subtitle {
+  display: block;
+  font-size: 24rpx;
+  color: #999;
+}
+
+.type-switch {
+  display: flex;
+  margin-bottom: 32rpx;
+  background: white;
+  border-radius: 12rpx;
+  overflow: hidden;
+}
+
+.type-btn {
+  flex: 1;
+  background: white;
+  color: #666;
+  border-radius: 0;
+  font-size: 28rpx;
+  padding: 20rpx;
+  
+  &.active {
+    background: #1f6f68;
+    color: white;
+  }
+  
+  &::after {
+    border: none;
+  }
+}
+
+.form {
+  background: white;
+  border-radius: 16rpx;
+  overflow: hidden;
+}
+
+.form-item {
+  display: flex;
+  align-items: center;
+  padding: 24rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+  
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.label {
+  width: 160rpx;
+  font-size: 28rpx;
+  color: #333;
+}
+
+.input {
+  flex: 1;
+  font-size: 28rpx;
+}
+
+.picker {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 28rpx;
+}
+
+.arrow {
+  font-size: 24rpx;
+  color: #999;
+}
+
+.submit-btn {
+  margin-top: 32rpx;
+  background: #1f6f68;
+  color: white;
+  border-radius: 40rpx;
+  font-size: 32rpx;
+  padding: 24rpx;
+  
+  &[disabled] {
+    background: #ccc;
+  }
+}

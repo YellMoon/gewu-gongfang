@@ -36,6 +36,11 @@ export default function QuestionBankPage() {
     });
   }
   const taskCacheRuntime = taskCacheRuntimeRef.current;
+  const [isUnrecognized, setIsUnrecognized] = useState(false);
+  useEffect(() => {
+    const session = Taro.getStorageSync('unrecognized_session');
+    setIsUnrecognized(!!session?.token);
+  }, []);
   const [title, setTitle] = useState('\u7ec3\u4e60\u8bd5\u5377');
   const [questions, setQuestions] = useState<QuestionPreview[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -170,6 +175,20 @@ export default function QuestionBankPage() {
   return <View className='question-bank-page'>
     <ReviewDemoBanner />
     {isReviewDemo ? <View className='review-sandbox-note'><Text>{'\u5ba1\u6838\u4f53\u9a8c\u4ec5\u4f7f\u7528\u793a\u4f8b\u9898\uff1b\u7ec4\u5377\u3001Word/PDF \u5bfc\u51fa\u548c\u4e0b\u8f7d\u5747\u5728\u5185\u5b58\u6c99\u7bb1\u4e2d\u5b8c\u6210\uff0c\u4e0d\u4f1a\u5199\u5165\u771f\u5b9e\u9898\u5e93\u6216\u6570\u636e\u4e3b\u673a\u3002'}</Text></View> : null}
+    {isUnrecognized && (
+      <View className="experience-section">
+        <View className="section-header">
+          <Text className="section-title">体验题库</Text>
+          <Text className="section-subtitle">固定示例题，不属于正式题库</Text>
+        </View>
+        <Button
+          className="experience-btn"
+          onClick={() => Taro.navigateTo({ url: '/pages/unrecognized-experience/index' })}
+        >
+          进入体验
+        </Button>
+      </View>
+    )}
     <View className='hero-card'><Text className='hero-title'>{'\u9898\u5e93\u7ec4\u5377\u4e0e\u5bfc\u51fa'}</Text><Text className='hero-subtitle'>{isReviewDemo ? '\u6309\u9009\u62e9\u987a\u5e8f\u63d0\u4ea4\u793a\u4f8b\u9898\u76ee ID' : '\u6309\u9009\u62e9\u987a\u5e8f\u63d0\u4ea4\u771f\u5b9e\u9898\u76ee ID'}</Text></View>
     <View className='form-card'><View className='form-row'><Text className='field-label'>{'\u8bd5\u5377\u540d\u79f0'}</Text><Input className='field-input' value={title} onInput={e => setTitle(e.detail.value)} /></View><Picker mode='selector' range={answers.map(x => x.label)} value={answerIndex} onChange={e => setAnswerIndex(Number(e.detail.value))}><View className='picker-row'>{answers[answerIndex].label}</View></Picker><Picker mode='selector' range={formulas.map(x => x.label)} value={formulaIndex} onChange={e => setFormulaIndex(Number(e.detail.value))}><View className='picker-row'>{formulas[formulaIndex].label}</View></Picker></View>
     <View className='preview-card'><View className='preview-header'><View><Text className='preview-title'>{`\u9009\u62e9\u9898\u76ee (${selectedIds.length})`}</Text><Text className='preview-subtitle'>{availabilityLabel}</Text></View><Button className='preview-refresh' onClick={loadQuestions}>{'\u5237\u65b0'}</Button></View><Input className='preview-search' value={searchText} onInput={e => setSearchText(e.detail.value)} />{previewState !== 'ready' ? <View className={`question-preview-empty state-${previewState}`}><Text>{stateText}</Text><Text>{previewMessage}</Text></View> : <ScrollView className='question-preview-list' scrollY>{filtered.map(q => { const order = selectedIds.indexOf(q.id); return <View key={q.id} className={`question-preview-item ${order >= 0 ? 'selected' : ''}`} onClick={() => setSelectedIds(workflow.toggleOrderedSelection(selectedIds, q.id))}><View className='question-preview-meta'><Text>{order >= 0 ? `#${order + 1}` : '+'}</Text><Text>{q.type}</Text><Text>{q.status}</Text></View><Text className='question-preview-stem'>{q.stemPreview}</Text></View>; })}</ScrollView>}</View>

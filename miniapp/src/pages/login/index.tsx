@@ -88,7 +88,15 @@ export default function LoginPage() {
         setNeedsPhoneAuth(true);
         Taro.showToast({ title: '\u8bf7\u9a8c\u8bc1\u9884\u7559\u624b\u673a\u53f7', icon: 'none' });
       } else if (res.code === 'PHONE_IDENTITY_CONFLICT') {
-        Taro.showToast({ title: '\u624b\u673a\u53f7\u6216\u5fae\u4fe1\u5df2\u7ed1\u5b9a\u5176\u4ed6\u8d26\u53f7', icon: 'none' });
+        Taro.showToast({ title: '\u624b\u673a\u53f7\u5fae\u4fe1\u5df2\u7ed1\u5b9a\u5176\u4ed6\u8d26\u53f7', icon: 'none' });
+      } else if (res.code === 'UNRECOGNIZED_STUDENT') {
+        Taro.setStorageSync('unrecognized_session', {
+          token: res.data.token,
+          userId: res.data.userId,
+          sessionId: res.data.sessionId,
+          accountState: 'unrecognized',
+        });
+        Taro.reLaunch({ url: '/pages/unrecognized-experience/index' });
       } else if (res.code === 'AUTH_RATE_LIMITED') {
         Taro.showToast({ title: '\u64cd\u4f5c\u9891\u7e41\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5', icon: 'none' });
       } else Taro.showToast({ title: res.error || '\u767b\u5f55\u5931\u8d25', icon: 'error' });
@@ -169,6 +177,24 @@ export default function LoginPage() {
         disabled={loginBusy}
       >{'\u8fdb\u5165\u5ba1\u6838\u4f53\u9a8c'}</Button>
       <Text className="review-note">{'\u5ba1\u6838\u4f53\u9a8c\u4ec5\u4f7f\u7528\u53ea\u8bfb\u8131\u654f\u793a\u4f8b\u6570\u636e'}</Text>
+    </View>
+    <View className="experience-entry">
+      <Button
+        className="experience-btn"
+        onClick={() => Taro.navigateTo({ url: '/pages/unrecognized-experience/index' })}
+      >
+        {'\u4f53\u9a8c\u8d26\u53f7'}
+      </Button>
+      <Text className="experience-hint">{'\u65e0\u9700\u6ce8\u518c\uff0c\u7acb\u5373\u4f53\u9a8c\u57fa\u7840\u529f\u80fd'}</Text>
+    </View>
+    <View className="privacy-entry">
+      <Text className="privacy-text">{'\u767b\u5f55\u5373\u8868\u793a\u540c\u610f'}</Text>
+      <Text
+        className="privacy-link"
+        onClick={() => Taro.navigateTo({ url: '/pages/login/privacy' })}
+      >
+        {'\u300a\u9690\u79c1\u4fdd\u62a4\u6307\u5f15\u300b'}
+      </Text>
     </View>
   </View>;
 }
