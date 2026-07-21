@@ -140,6 +140,25 @@ export default function Settings() {
     <View className='settings-page'>
       <ReviewDemoBanner />
       {isReviewDemo ? <View className='section'><Text className='item-label'>{'\u5ba1\u6838\u4f53\u9a8c\u671f\u95f4\u4e1a\u52a1\u6570\u636e\u53ea\u8bfb\uff0c\u4e0d\u53ef\u4fee\u6539\u670d\u52a1\u5668\u3001\u540c\u6b65\u6216\u6e05\u7a7a\u5f85\u540c\u6b65\u6570\u636e\u3002'}</Text></View> : null}
+      
+      {/* 用户信息 */}
+      <View className='section'>
+        <View className='setting-item'>
+          <View className='item-left'>
+            <View className='item-icon info'>用</View>
+            <Text className='item-label'>当前用户</Text>
+          </View>
+          <View className='item-right'>
+            <Text className='value'>{currentIdentity?.name || '未知用户'}</Text>
+            {currentIdentity?.isMember && (
+              <View className='member-badge'>
+                <Text className='member-text'>会员</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
+
       {/* 网络状态 */}
       <View className={`sync-status ${online ? 'online' : 'offline'}`}>
         <Text>{online ? '在线' : '离线'}</Text>

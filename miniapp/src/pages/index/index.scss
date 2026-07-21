@@ -448,3 +448,17 @@
   color: #a2abb8;
   text-align: right;
 }
+
+.member-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #ffd700, #ffb800);
+  color: white;
+  font-size: 20rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 20rpx;
+  margin-left: 12rpx;
+}
+
+.member-text {
+  font-weight: bold;
+}

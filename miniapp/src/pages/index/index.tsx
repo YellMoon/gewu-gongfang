@@ -31,6 +31,7 @@ interface UserInfo {
   name: string;
   user_type: MiniappRole;
   avatar?: string;
+  isMember?: boolean;
 }
 
 interface ModuleInfo {
@@ -299,7 +300,13 @@ export default function Index() {
           <View className="home-hero__copy">
             <Text className="home-hero__title">{greeting}</Text>
             <Text className="home-hero__subtitle">
-              {user ? `${user.name}，今天先看课程、题库和数据快照。` : '登录后查看今日课程与授权数据。'}
+              {user ? `${user.name}` : '登录后查看今日课程与授权数据。'}
+              {user?.isMember && (
+                <View className="member-badge">
+                  <Text className="member-text">会员</Text>
+                </View>
+              )}
+              {user ? '，今天先看课程、题库和数据快照。' : ''}
             </Text>
           </View>
           {user && (
