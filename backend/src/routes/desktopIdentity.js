@@ -257,15 +257,17 @@ function createDesktopIdentityRouter({
     try {
       const qrValue = await createDesktopAuthorizationUrlLink({ challengeId });
       return { qrValue, qrImageDataUrl: null, qrEntryMode: 'url-link' };
-    } catch (error) {
-      if (Number(error?.wechatErrcode) === 85407) {
+    } catch (urlLinkError) {
+      try {
         const qrImageDataUrl = await createDesktopAuthorizationQrCode({ challengeId });
         return { qrValue: null, qrImageDataUrl, qrEntryMode: 'mini-program-code' };
+      } catch (qrCodeError) {
+        if (allowDesktopAuthorizationUrlFallback) {
+          return { qrValue: null, qrImageDataUrl: null, qrEntryMode: null };
+        }
+        if (!qrCodeError.cause) qrCodeError.cause = urlLinkError;
+        throw qrCodeError;
       }
-      if (allowDesktopAuthorizationUrlFallback) {
-        return { qrValue: null, qrImageDataUrl: null, qrEntryMode: null };
-      }
-      throw error;
     }
   }
 

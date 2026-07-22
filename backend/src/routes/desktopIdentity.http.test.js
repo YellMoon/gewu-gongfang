@@ -111,6 +111,7 @@ function generateDeviceKey() {
     const usedPhoneCodes = new Set();
     const generatedUrlLinks = [];
     let failNextUrlLink = null;
+    let failNextQrCode = false;
     const createDesktopAuthorizationUrlLink = async function ({ challengeId }) {
       generatedUrlLinks.push(challengeId);
       if (failNextUrlLink) {
@@ -124,6 +125,12 @@ function generateDeviceKey() {
       return `https://wxaurl.cn/test-${challengeId}`;
     };
     const createDesktopAuthorizationQrCode = async function ({ challengeId }) {
+      if (failNextQrCode) {
+        failNextQrCode = false;
+        const error = new Error('qr code failed');
+        error.code = 'WECHAT_QR_CODE_FAILED';
+        throw error;
+      }
       return `data:image/jpeg;base64,${Buffer.from(`qr-${challengeId}`).toString('base64')}`;
     };
     const resolveWechatIdentity = async function (code) {
@@ -282,12 +289,28 @@ function generateDeviceKey() {
         publicKey: failedLinkKey.publicKey, keyFingerprint: failedLinkKey.keyFingerprint,
       } }
     );
-    assert.strictEqual(failedLinkStart.status, 502);
-    assert.strictEqual(failedLinkStart.body.code, 'WECHAT_URL_LINK_FAILED');
+    assert.strictEqual(failedLinkStart.status, 200);
+    assert.strictEqual(failedLinkStart.body.data.challenge.qrEntryMode, 'mini-program-code');
+    assert.ok(failedLinkStart.body.data.challenge.qrImageDataUrl.startsWith('data:image/jpeg;base64,'));
+
+    const failedEntryKey = generateDeviceKey();
+    failNextUrlLink = true;
+    failNextQrCode = true;
+    const failedEntryStart = await requestJson(
+      baseUrl,
+      'POST',
+      '/api/desktop-identity/challenges/start',
+      { body: {
+        deviceId: 'device-http-entry-failed', deviceName: 'Entry Failed PC',
+        publicKey: failedEntryKey.publicKey, keyFingerprint: failedEntryKey.keyFingerprint,
+      } }
+    );
+    assert.strictEqual(failedEntryStart.status, 502);
+    assert.strictEqual(failedEntryStart.body.code, 'WECHAT_QR_CODE_FAILED');
     assert.strictEqual(
-      db.prepare("SELECT status FROM desktop_identity_challenges WHERE device_id='device-http-link-failed'").get().status,
+      db.prepare("SELECT status FROM desktop_identity_challenges WHERE device_id='device-http-entry-failed'").get().status,
       'rejected',
-      'production URL Link failure must abandon the challenge so the device can retry'
+      'failure of both official WeChat entry methods must abandon the challenge so the device can retry'
     );
 
     const secondKey = generateDeviceKey();
