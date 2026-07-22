@@ -703,7 +703,7 @@ git commit -m "feat: 增加同步批次备份审计与自动处理"
 - Modify: `src/uiRegression.test.js:185-205`
 - Modify: `package.json`
 
-- [ ] **Step 1: 写 shell/updater RED 测试**
+- [x] **Step 1: 写 shell/updater RED 测试**
 
 ```js
 assert.deepStrictEqual(buildApplicationMenu({ isPackaged: true }), null);
@@ -714,7 +714,7 @@ assert.strictEqual(updateFeedForFlavor('primary-host'), 'https://gewu-staging-ed
 
 UI 回归断言“检查更新”始终可见，且状态覆盖 checking/available/downloading/downloaded/error；身份错误只显示稳定中文，不包含 `Error invoking remote method`。
 
-- [ ] **Step 2: 运行 RED/现状测试**
+- [x] **Step 2: 运行 RED/现状测试**
 
 Run:
 
@@ -726,7 +726,7 @@ node src/uiRegression.test.js
 
 Expected: 新 policy 测试 FAIL；现有 updater 回归给出真实基线。
 
-- [ ] **Step 3: 提取可测 shell policy 并保持生产无菜单**
+- [x] **Step 3: 提取可测 shell policy 并保持生产无菜单**
 
 `createWindow()` 在创建窗口前调用：
 
@@ -736,11 +736,11 @@ Menu.setApplicationMenu(buildApplicationMenu({ isPackaged: app.isPackaged }));
 
 生产返回 `null`；开发构建只保留调试菜单/快捷键。BrowserWindow 同时设置 `autoHideMenuBar: true`、`menuBarVisible: false`，避免旧系统菜单闪现。
 
-- [ ] **Step 4: 验证 updater 真链路**
+- [x] **Step 4: 验证 updater 真链路**
 
 保留现有 IPC，补充结构化返回和 UI 状态；普通/主机 flavor 必须使用隔离 feed。失败显示网络/签名/版本错误，不把 updater 堆栈显示给用户。安装动作仍需用户点击，不静默覆盖运行中数据。
 
-- [ ] **Step 5: 运行 GREEN 并提交**
+- [x] **Step 5: 运行 GREEN 并提交**
 
 Run:
 

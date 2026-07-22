@@ -34,6 +34,7 @@ const richAssetImage = read('src/components/RichAssetImage.tsx');
 const structuredQuestionViewer = read('src/components/StructuredQuestionViewer.tsx');
 const systemSettings = read('src/pages/SystemSettings.tsx');
 const desktopUpdateClient = read('src/services/desktopUpdateClient.mjs');
+const desktopIdentityError = read('src/services/desktopIdentityError.mjs');
 assert.ok(systemSettings.includes("if (!settingsPolicy.isPrimaryHost)") && systemSettings.includes('\\u7ba1\\u7406\\u5458\\u6258\\u7ba1'), 'ordinary desktop settings must use a dedicated managed simple view');
 assert.ok(systemSettings.includes('if (policy.loadQuestionBankStorage)') && systemSettings.includes('if (policy.loadBackupTargets)'), 'ordinary desktop must not load host storage or backup status');
 const ordinaryDesktopSettingsStart = systemSettings.indexOf('if (!settingsPolicy.isPrimaryHost)');
@@ -194,10 +195,20 @@ assert(
   systemSettings.includes('软件更新') &&
   systemSettings.includes('invokeDesktopUpdateCheck') &&
   desktopUpdateClient.includes("api.invoke('check-for-updates')") &&
+  systemSettings.includes("api.on('update-available'") &&
+  systemSettings.includes("api.on('download-progress'") &&
+  systemSettings.includes("api.on('update-downloaded'") &&
+  systemSettings.includes("api.on('update-error'") &&
   systemSettings.includes('download-update') &&
   systemSettings.includes('install-update') &&
   packageJson.includes('publish:desktop-update'),
   'system settings should expose an in-app desktop updater and release script should publish the desktop update feed'
+);
+
+assert(
+  desktopIdentityError.includes('desktopIdentityErrorMessage') &&
+  !desktopIdentityError.includes('Error invoking remote method'),
+  'desktop identity errors must use stable user-facing copy without Electron IPC wrappers'
 );
 
 assert(

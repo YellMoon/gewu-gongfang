@@ -3,6 +3,7 @@ const fs = require('fs');
 
 const indexSource = fs.readFileSync('src/index.tsx', 'utf8');
 const gateSource = fs.readFileSync('src/components/DesktopIdentityGate.tsx', 'utf8');
+const identityErrorSource = fs.readFileSync('src/services/desktopIdentityError.mjs', 'utf8');
 const decodedGateSource = gateSource.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) => (
   String.fromCharCode(Number.parseInt(hex, 16))
 ));
@@ -53,6 +54,8 @@ for (const code of [
   'PAIRING_CODE_EXPIRED', 'PAIRING_CODE_USED', 'PAIRING_CODE_LOCKED', 'PAIRING_HOST_OFFLINE',
   'PAIRING_CAPABILITY_STALE', 'DESKTOP_DEVICE_FINGERPRINT_MISMATCH',
   'SINGLE_USER_MODE_DISABLED', 'LOCAL_BACKUP_FAILED',
-]) assert.ok(gateSource.includes(code), `gate must map ${code}`);
+]) assert.ok(identityErrorSource.includes(code), `gate must map ${code}`);
+assert.ok(gateSource.includes('desktopIdentityErrorMessage(error)'));
+assert.ok(!identityErrorSource.includes('Error invoking remote method'));
 
 console.log('desktop identity gate source checks passed');

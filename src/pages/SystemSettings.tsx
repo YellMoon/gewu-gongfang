@@ -15,6 +15,7 @@ import { readDesktopAuthorizationSession } from '../services/desktopAuthorizatio
 import { systemSettingsRolePolicy } from '../services/systemSettingsRolePolicy.mjs';
 import {
   desktopUpdateStateAfterCheck,
+  desktopUpdateErrorMessage,
   invokeDesktopUpdateCheck,
 } from '../services/desktopUpdateClient.mjs';
 const { questionBankBindingPresentation, bindQuestionBankStore } = require('../services/questionBankBindingUi');
@@ -330,41 +331,50 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
 
   const handleCheckDesktopUpdate = async () => {
     if (!window.api?.invoke) {
-      message.error('当前环境不支持软件内更新');
+      message.error('\u5f53\u524d\u73af\u5883\u4e0d\u652f\u6301\u8f6f\u4ef6\u5185\u66f4\u65b0');
       return;
     }
     setDesktopUpdate(prev => ({ ...prev, checking: true, error: undefined }));
     try {
       const result = await invokeDesktopUpdateCheck(window.api);
-      if (!result?.success) throw new Error(result?.error || '检查更新失败');
+      if (!result?.success) {
+        const safeError = result?.error || desktopUpdateErrorMessage(result, 'check');
+        setDesktopUpdate(prev => ({ ...prev, checking: false, error: safeError }));
+        message.error(safeError);
+        return;
+      }
       setDesktopUpdate(prev => desktopUpdateStateAfterCheck(prev, result));
     } catch (error: any) {
-      setDesktopUpdate(prev => ({
-        ...prev,
-        checking: false,
-        error: error.message || '检查更新失败',
-      }));
-      message.error(error.message || '检查更新失败');
+      const safeError = desktopUpdateErrorMessage(error, 'check');
+      setDesktopUpdate(prev => ({ ...prev, checking: false, error: safeError }));
+      message.error(safeError);
     }
   };
 
   const handleDownloadDesktopUpdate = async () => {
     setDesktopUpdate(prev => ({ ...prev, downloading: true, error: undefined }));
-    const result = await window.api?.invoke('download-update');
-    if (!result?.success) {
-      setDesktopUpdate(prev => ({
-        ...prev,
-        downloading: false,
-        error: result?.error || '下载更新失败',
-      }));
-      message.error(result?.error || '下载更新失败');
+    try {
+      const result = await window.api?.invoke('download-update');
+      if (!result?.success) {
+        const safeError = result?.error || desktopUpdateErrorMessage(result, 'download');
+        setDesktopUpdate(prev => ({ ...prev, downloading: false, error: safeError }));
+        message.error(safeError);
+      }
+    } catch (error: any) {
+      const safeError = desktopUpdateErrorMessage(error, 'download');
+      setDesktopUpdate(prev => ({ ...prev, downloading: false, error: safeError }));
+      message.error(safeError);
     }
   };
 
   const handleInstallDesktopUpdate = async () => {
-    await window.api?.invoke('install-update');
+    try {
+      const result = await window.api?.invoke('install-update');
+      if (!result?.success) message.error(result?.error || desktopUpdateErrorMessage(result, 'install'));
+    } catch (error: any) {
+      message.error(desktopUpdateErrorMessage(error, 'install'));
+    }
   };
-
   const renderDesktopUpdatePanel = () => (
     <Card title={'\u8f6f\u4ef6\u66f4\u65b0'} style={{ marginBottom: 16 }}>
       <Alert

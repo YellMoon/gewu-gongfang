@@ -20,6 +20,7 @@ import {
 } from '@ant-design/icons';
 import { getRuntimeConfig } from '../services/runtimeConfigClient';
 import { resolveManagedSyncConfig } from '../services/managedSyncConfig.mjs';
+import { desktopIdentityErrorMessage } from '../services/desktopIdentityError.mjs';
 import {
   canStartBusinessRuntime,
   createDesktopIdentityClient,
@@ -74,32 +75,7 @@ function roleLabel(role?: string): string {
 }
 
 function messageForError(error: any): string {
-  const code = String(error?.code || error?.message || 'DESKTOP_IDENTITY_FAILED');
-  const passwordResetMessage = ({
-    DESKTOP_PASSWORD_RESET_IDENTITY_MISMATCH: '\u5fae\u4fe1\u6838\u9a8c\u8eab\u4efd\u4e0e\u8fd9\u53f0\u7535\u8111\u539f\u6709\u8eab\u4efd\u4e0d\u4e00\u81f4\uff0c\u4e0d\u80fd\u91cd\u8bbe\u5bc6\u7801\u3002',
-    DESKTOP_PASSWORD_RESET_DEVICE_NOT_ACTIVE: '\u8fd9\u53f0\u7535\u8111\u7684\u539f\u6388\u6743\u5df2\u5931\u6548\uff0c\u4e0d\u80fd\u901a\u8fc7\u5bc6\u7801\u91cd\u8bbe\u6062\u590d\u3002',
-    DESKTOP_IDENTITY_PASSWORD_RESET_UNAVAILABLE: '\u5f53\u524d\u684c\u9762\u7248\u672c\u4e0d\u652f\u6301\u5b89\u5168\u91cd\u8bbe\u672c\u673a\u5bc6\u7801\u3002',
-  } as Record<string, string>)[code];
-  if (passwordResetMessage) return passwordResetMessage;
-  return ({
-    DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED: '本机密码不正确，请重试。',
-    DESKTOP_PHONE_REVERIFICATION_REQUIRED: '该设备需要重新通过微信核验手机号。',
-    DESKTOP_DEVICE_NOT_ACTIVE: '该设备授权已被撤销或停用。',
-    DESKTOP_SESSION_CHALLENGE_SIGNATURE_INVALID: '本机设备签名验证失败。',
-    DESKTOP_REGISTRATION_NOT_APPROVED: '设备尚未获得审核通过。',
-    PAIRING_API_BASE_REQUIRED: '尚未配置阿里云身份服务地址。',
-    PAIRING_CODE_INVALID: '一次性配对码格式不正确，请检查后重试。',
-    PAIRING_CODE_EXPIRED: '一次性配对码已过期，请在数据主机上重新生成。',
-    PAIRING_CODE_USED: '一次性配对码已经使用，请在数据主机上重新生成。',
-    PAIRING_CODE_LOCKED: '配对码尝试次数过多，已锁定，请在数据主机上重新生成。',
-    PAIRING_HOST_OFFLINE: '暂时无法连接数据主机，请确认主机在线后重试。',
-    PAIRING_CAPABILITY_STALE: '数据主机配对能力已过期，请重新生成配对码。',
-    DESKTOP_DEVICE_FINGERPRINT_MISMATCH: '设备密钥指纹不一致，请取消本次配对并重新开始。',
-    SINGLE_USER_MODE_DISABLED: '数据主机尚未启用临时单人模式。',
-    DESKTOP_SINGLE_USER_MODE_DISABLED: '数据主机尚未启用临时单人模式。',
-    LOCAL_BACKUP_FAILED: '初始化前本地备份失败，未修改身份或业务数据。',
-    PRIMARY_HOST_LOCAL_BACKUP_FAILED: '初始化前本地备份失败，未修改身份或业务数据。',
-  } as Record<string, string>)[code] || `身份验证未完成（${code}）`;
+  return desktopIdentityErrorMessage(error);
 }
 
 const DesktopIdentityGate: React.FC = () => {

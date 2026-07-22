@@ -45,6 +45,7 @@ if (PRIMARY_HOST_CAPABLE) {
   } = require('../backend/src/services/primaryHostRecoveryDeliveryProtocol'));
 }
 const { withOperationTimeout } = require('./updateCheckTimeout');
+const { buildApplicationMenu, desktopUpdaterErrorMessage, desktopWindowChrome } = require('./electronShellPolicy');
 const electronLocalBridgeSecret = crypto.randomBytes(32).toString('base64url');
 process.env.GEWU_ELECTRON_LOCAL_BRIDGE_SECRET = electronLocalBridgeSecret;
 let autoUpdater = null;
@@ -513,8 +514,8 @@ function createWindow() {
   log('__dirname=' + __dirname);
   log('app.getAppPath=' + app.getAppPath());
 
-  // ⑥ 去掉菜单栏和灰色区域
-  Menu.setApplicationMenu(null);
+  const windowChrome = desktopWindowChrome();
+  Menu.setApplicationMenu(buildApplicationMenu({ isPackaged: app.isPackaged, menuApi: Menu }));
 
   const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
 
@@ -527,6 +528,8 @@ function createWindow() {
     backgroundColor: '#ffffff',
     show: false,
     title: '格物工坊',
+    autoHideMenuBar: windowChrome.autoHideMenuBar,
+    menuBarVisible: windowChrome.menuBarVisible,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       additionalArguments: [`--gewu-desktop-build-flavor=${DESKTOP_BUILD_FLAVOR}`],
@@ -537,6 +540,8 @@ function createWindow() {
       webSecurity: true,
     }
   });
+  mainWindow.setAutoHideMenuBar(windowChrome.autoHideMenuBar);
+  mainWindow.setMenuBarVisibility(windowChrome.menuBarVisible);
 
   // 打开时最大化
   mainWindow.maximize();
@@ -797,7 +802,7 @@ ipcMain.handle('open-external', (_event, url) => {
   return shell.openExternal(url);
 });
 ipcMain.handle('check-for-updates', async () => {
-  if (!autoUpdater) return { success: false, error: 'autoUpdater unavailable' };
+  if (!autoUpdater) return { success: false, code: 'DESKTOP_UPDATER_UNAVAILABLE', error: desktopUpdaterErrorMessage('unavailable', 'check') };
   try {
     log('check-for-updates feed=' + updateFeedUrl + ' version=' + app.getVersion());
     const result = await withOperationTimeout(
@@ -813,22 +818,28 @@ ipcMain.handle('check-for-updates', async () => {
     };
   } catch (err) {
     log('check-for-updates failed: ' + err.message);
-    return { success: false, error: err.message };
+    return { success: false, code: err?.code || 'DESKTOP_UPDATE_CHECK_FAILED', error: desktopUpdaterErrorMessage(err, 'check') };
   }
 });
 ipcMain.handle('download-update', async () => {
-  if (!autoUpdater) return { success: false, error: 'autoUpdater unavailable' };
+  if (!autoUpdater) return { success: false, code: 'DESKTOP_UPDATER_UNAVAILABLE', error: desktopUpdaterErrorMessage('unavailable', 'download') };
   try {
     await autoUpdater.downloadUpdate();
     return { success: true };
   } catch (err) {
-    return { success: false, error: err.message };
+    log('download-update failed: ' + err.message);
+    return { success: false, code: err?.code || 'DESKTOP_UPDATE_DOWNLOAD_FAILED', error: desktopUpdaterErrorMessage(err, 'download') };
   }
 });
 ipcMain.handle('install-update', () => {
-  if (!autoUpdater) return { success: false, error: 'autoUpdater unavailable' };
-  autoUpdater.quitAndInstall(false, true);
-  return { success: true };
+  if (!autoUpdater) return { success: false, code: 'DESKTOP_UPDATER_UNAVAILABLE', error: desktopUpdaterErrorMessage('unavailable', 'install') };
+  try {
+    autoUpdater.quitAndInstall(false, true);
+    return { success: true };
+  } catch (err) {
+    log('install-update failed: ' + err.message);
+    return { success: false, code: err?.code || 'DESKTOP_UPDATE_INSTALL_FAILED', error: desktopUpdaterErrorMessage(err, 'install') };
+  }
 });
 
 if (autoUpdater) {
@@ -848,6 +859,6 @@ if (autoUpdater) {
   autoUpdater.on('download-progress', info => mainWindow?.webContents.send('download-progress', info));
   autoUpdater.on('error', err => {
     log('update-error ' + err.message);
-    mainWindow?.webContents.send('update-error', err.message);
+    mainWindow?.webContents.send('update-error', desktopUpdaterErrorMessage(err, 'check'));
   });
 }
