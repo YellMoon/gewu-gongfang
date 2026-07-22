@@ -26,6 +26,7 @@ const DESKTOP_BUILD_FLAVOR = resolveDesktopBuildFlavor({
   metadata: desktopPackage,
   env: process.env,
 });
+process.env.GEWU_DESKTOP_BUILD_FLAVOR = DESKTOP_BUILD_FLAVOR;
 const PRIMARY_HOST_CAPABLE = DESKTOP_BUILD_FLAVOR === PRIMARY_HOST_FLAVOR;
 let createPrimaryHostCredentialStore;
 let buildPrimaryHostOperationManifest;
@@ -86,6 +87,33 @@ function getDesktopIdentityVault() {
     safeStorage,
   });
   return desktopIdentityVault;
+}
+
+async function localDesktopIdentityRequest(pathname, { method = 'GET', body } = {}) {
+  const port = Number(process.env.PORT || 3001);
+  const headers = {
+    Accept: 'application/json',
+    'x-gewu-electron-local-bridge': electronLocalBridgeSecret,
+  };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const response = await fetch(`http://127.0.0.1:${port}/api/desktop-identity${pathname}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(30000),
+  });
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (_error) {
+    payload = null;
+  }
+  if (!response.ok || !payload?.success) {
+    const error = new Error(payload?.code || 'DESKTOP_SINGLE_USER_LOCAL_REQUEST_FAILED');
+    error.code = payload?.code || 'DESKTOP_SINGLE_USER_LOCAL_REQUEST_FAILED';
+    throw error;
+  }
+  return payload;
 }
 
 async function verifyPrimaryHostAdoption(input = {}) {
@@ -662,10 +690,80 @@ if (PRIMARY_HOST_CAPABLE) {
     }, 100);
     return true;
   });
+  ipcMain.handle('single-user:enable-mode', async (_event, input) => (
+    getPrimaryHostRuntimeManager().setIdentityMode({
+      mode: 'single-user',
+      confirmation: input?.confirmation,
+    })
+  ));
+  ipcMain.handle('single-user:disable-mode', async (_event, input) => {
+    const disabled = await localDesktopIdentityRequest('/single-user/disable', {
+      method: 'POST',
+      body: {},
+    });
+    const runtime = getPrimaryHostRuntimeManager().setIdentityMode({
+      mode: 'full',
+      confirmation: input?.confirmation,
+    });
+    return Object.freeze({ disabled, runtime });
+  });
+  ipcMain.handle('single-user:status', async () => {
+    const runtime = getPrimaryHostRuntimeManager().status();
+    if (runtime?.config?.desktopIdentityMode !== 'single-user') {
+      return Object.freeze({ mode: runtime?.config?.desktopIdentityMode || 'full', runtime });
+    }
+    const local = await localDesktopIdentityRequest('/single-user/status');
+    return Object.freeze({ ...local, runtime });
+  });
+  ipcMain.handle('single-user:bootstrap', async (_event, input = {}) => {
+    if (Object.hasOwn(input, 'password')) {
+      const error = new Error('DESKTOP_SINGLE_USER_PASSWORD_FORBIDDEN');
+      error.code = 'DESKTOP_SINGLE_USER_PASSWORD_FORBIDDEN';
+      throw error;
+    }
+    return localDesktopIdentityRequest('/single-user/bootstrap', {
+      method: 'POST',
+      body: {
+        publicIdentity: input.publicIdentity,
+        confirmation: input.confirmation,
+        operationManifest: input.operationManifest,
+      },
+    });
+  });
+  ipcMain.handle('single-user:reset-host-password', async (_event, input = {}) => {
+    if (Object.hasOwn(input, 'password')) {
+      const error = new Error('DESKTOP_SINGLE_USER_PASSWORD_FORBIDDEN');
+      error.code = 'DESKTOP_SINGLE_USER_PASSWORD_FORBIDDEN';
+      throw error;
+    }
+    return localDesktopIdentityRequest('/single-user/reset-host-password', {
+      method: 'POST',
+      body: {
+        publicIdentity: input.publicIdentity,
+        confirmation: input.confirmation,
+        expectedCredentialVersion: input.expectedCredentialVersion,
+      },
+    });
+  });
+  ipcMain.handle('single-user:issue-pairing-code', async () => (
+    localDesktopIdentityRequest('/single-user/grants', { method: 'POST', body: {} })
+  ));
+  ipcMain.handle('single-user:revoke-pairing-code', async (_event, input = {}) => (
+    localDesktopIdentityRequest(
+      `/single-user/grants/${encodeURIComponent(String(input.grantId || ''))}/revoke`,
+      { method: 'POST', body: {} }
+    )
+  ));
 }
 ipcMain.handle('desktop-identity:status', async () => getDesktopIdentityVault().status());
 ipcMain.handle('desktop-identity:begin-registration', async (_event, input) => {
   return getDesktopIdentityVault().beginRegistration(configuredDesktopIdentity(input));
+});
+ipcMain.handle('desktop-identity:begin-single-user-enrollment', async (_event, input) => {
+  return getDesktopIdentityVault().beginSingleUserEnrollment(configuredDesktopIdentity(input));
+});
+ipcMain.handle('desktop-identity:create-pairing-envelope', async (_event, input) => {
+  return getDesktopIdentityVault().createPairingEnvelope(input);
 });
 ipcMain.handle('desktop-identity:begin-password-reset', async () => {
   return getDesktopIdentityVault().beginPasswordReset();

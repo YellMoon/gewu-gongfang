@@ -370,7 +370,7 @@ git commit -m "feat: 实现主机单人身份与一次性配对授权"
 - Modify: `src/custom.d.ts`
 - Modify: `package.json`
 
-- [ ] **Step 1: 写 HTTP 与 IPC RED 契约**
+- [x] **Step 1: 写 HTTP 与 IPC RED 契约**
 
 新增测试覆盖：
 
@@ -384,7 +384,7 @@ assert.strictEqual((await postLan('/single-user/pairing-requests', encryptedEnve
 
 测试还断言 renderer 暴露的方法集合中没有 bridge secret、私钥、明文 vault 内容或任意文件读写方法。
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run:
 
@@ -395,7 +395,7 @@ node public/desktopIdentityVault.test.js
 
 Expected: FAIL with missing single-user routes and IPC.
 
-- [ ] **Step 3: 新增回环受保护路由**
+- [x] **Step 3: 新增回环受保护路由**
 
 路由加入严格 allowlist：
 
@@ -408,7 +408,7 @@ const SINGLE_USER_PAIR_KEYS = new Set(['protocolVersion','capabilityId','clientE
 
 bootstrap/reset/grant/revoke 同时要求 `req.ip` 为 loopback、正确的 `x-gewu-local-bridge`、`GEWU_NODE_ROLE=primary-host` 和 `GEWU_DESKTOP_IDENTITY_MODE=single-user`。capability 和 pairing-request 允许 LAN/云转发，但受限速器约束。
 
-- [ ] **Step 4: 扩展 vault 而不暴露私钥**
+- [x] **Step 4: 扩展 vault 而不暴露私钥**
 
 `desktopIdentityVault` 新增：
 
@@ -426,13 +426,13 @@ function signPairingEnvelope(input = {}) {
 
 `createPairingEnvelope({ capability, pairingCode })` 在主进程内组合 pending public identity、调用 `signPairingEnvelope`，再交给 `singleUserPairingEnvelope.encryptPairingRequest`；renderer 只能拿到密文 envelope。仍由既有 `completeRegistration({ password, authorization, profile, offlineLease })` 写 scrypt + AES-GCM + safeStorage 双层信封。密码不进入 HTTP body。
 
-- [ ] **Step 5: Electron 主进程持有本地 bridge secret**
+- [x] **Step 5: Electron 主进程持有本地 bridge secret**
 
 Electron 启动生成 32 字节 `GEWU_ELECTRON_LOCAL_BRIDGE_SECRET`，只放主进程/embedded backend 环境。所有 flavor 的 `desktopIdentity` 增加 `createPairingEnvelope`；只有主机 flavor 额外暴露 `single-user:enable-mode`、`single-user:disable-mode`、`single-user:status`、`single-user:bootstrap`、`single-user:reset-host-password`、`single-user:issue-pairing-code`、`single-user:revoke-pairing-code`。IPC 自己补 bridge header，preload 不暴露 bridge secret。
 
 `backend/src/app.js` 为 desktop identity router 和 cloud relay host processor 注入同一 `getSingleUserDesktopIdentityService(database)` 实例，保证两条入口共享内存中的 X25519 capability 私钥；服务使用 `WeakMap<db, service>` 缓存，不能每个请求重新生成能力密钥。
 
-- [ ] **Step 6: 运行 GREEN 并提交**
+- [x] **Step 6: 运行 GREEN 并提交**
 
 Run:
 

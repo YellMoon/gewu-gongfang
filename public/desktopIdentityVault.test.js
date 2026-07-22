@@ -20,6 +20,7 @@ const {
 const {
   createDesktopIdentityVault,
 } = require('./desktopIdentityVault');
+const pairingProtocol = require('./singleUserPairingEnvelope');
 const packageJson = require('../package.json');
 
 function mockSafeStorage() {
@@ -122,7 +123,7 @@ async function main() {
     legacyUpgradeRequired: false,
   });
 
-  const publicIdentity = vault.beginRegistration({
+  const publicIdentity = vault.beginSingleUserEnrollment({
     deviceId: 'device-2',
     deviceName: '第二台电脑',
     deviceKind: 'desktop-client',
@@ -139,6 +140,25 @@ async function main() {
     'keyFingerprint',
     'publicKey',
   ]);
+
+  const hostCapability = pairingProtocol.createHostCapability({
+    now: () => new Date(clock),
+    ttlMs: 10 * 60 * 1000,
+  });
+  const pairingEnvelope = vault.createPairingEnvelope({
+    capability: hostCapability.publicCapability,
+    pairingCode: '0123-4567-89AB-CDEF',
+  });
+  assert.strictEqual(JSON.stringify(pairingEnvelope).includes('0123456789ABCDEF'), false);
+  assert.strictEqual(Object.hasOwn(pairingEnvelope, 'privateKey'), false);
+  const openedPairing = pairingProtocol.decryptPairingRequest({
+    envelope: pairingEnvelope,
+    capabilityPrivateKey: hostCapability.privateKey,
+    expectedCapabilityId: hostCapability.publicCapability.id,
+    now: () => new Date(clock),
+  });
+  assert.strictEqual(openedPairing.device.deviceId, publicIdentity.deviceId);
+  assert.strictEqual(openedPairing.device.publicKey, publicIdentity.publicKey.trim());
 
   const exchange = vault.signChallenge({
     purpose: 'exchange',
@@ -531,13 +551,16 @@ async function main() {
   assert.deepStrictEqual(
     Array.from(Object.keys(exposed.desktopIdentity)).sort(),
     [
-      'beginPasswordReset', 'beginRegistration', 'completePasswordReset', 'completeRegistration',
+      'beginPasswordReset', 'beginRegistration', 'beginSingleUserEnrollment',
+      'completePasswordReset', 'completeRegistration', 'createPairingEnvelope',
       'lock', 'refreshOfflineLease', 'signChallenge', 'status', 'unlock',
     ]
   );
   assert.ok(!('read' in exposed.desktopIdentity));
   assert.ok(!('write' in exposed.desktopIdentity));
   assert.ok(!('privateKey' in exposed.desktopIdentity));
+  assert.ok(!('signPairingEnvelope' in exposed.desktopIdentity));
+  assert.strictEqual(exposed.singleUserRuntime, undefined, 'ordinary preload must not expose host controls');
   await exposed.desktopIdentity.status();
   assert.strictEqual(invoked[0][0], 'desktop-identity:status');
   await assert.rejects(exposed.api.invoke('desktop-auth:get'), /IPC channel not allowed/);
@@ -546,6 +569,8 @@ async function main() {
   for (const channel of [
     'desktop-identity:status',
     'desktop-identity:begin-registration',
+    'desktop-identity:begin-single-user-enrollment',
+    'desktop-identity:create-pairing-envelope',
     'desktop-identity:begin-password-reset',
     'desktop-identity:complete-registration',
     'desktop-identity:complete-password-reset',

@@ -8,6 +8,9 @@ const { createDesktopSessionService } = require('../services/desktopSessionServi
 const { createPrimaryHostIdentityService } = require('../services/primaryHostIdentityService');
 const { createPrimaryHostLocalValidationService } = require('../services/primaryHostLocalValidationService');
 const {
+  getSingleUserDesktopIdentityService,
+} = require('../services/singleUserDesktopIdentityService');
+const {
   createDesktopDeviceChallengeService,
   createDesktopOfflineLease,
   createDesktopSessionProfile,
@@ -62,6 +65,12 @@ const PRIMARY_HOST_RECOVERY_DELIVERY_ACK_KEYS = new Set([
 const PRIMARY_HOST_CREDENTIAL_VERIFY_KEYS = new Set([
   'epochId', 'deviceId', 'generation', 'credential',
 ]);
+const SINGLE_USER_BOOTSTRAP_KEYS = new Set(['publicIdentity', 'confirmation', 'operationManifest']);
+const SINGLE_USER_RESET_KEYS = new Set(['publicIdentity', 'confirmation', 'expectedCredentialVersion']);
+const SINGLE_USER_GRANT_KEYS = new Set([]);
+const SINGLE_USER_PAIR_KEYS = new Set([
+  'protocolVersion', 'capabilityId', 'clientEphemeralPublicKey', 'iv', 'ciphertext', 'tag',
+]);
 
 function routeError(code) {
   const error = new Error(code);
@@ -89,6 +98,7 @@ function bearerToken(req) {
 function statusForError(error, authenticationPhase = false) {
   const code = String(error?.code || 'DESKTOP_IDENTITY_FAILED');
   if (code === 'WECHAT_CONFIG_REQUIRED') return 503;
+  if (code === 'DESKTOP_PAIRING_RATE_LIMITED') return 429;
   if (code.startsWith('WECHAT_') && (code.endsWith('_FAILED') || code.endsWith('_TIMEOUT'))) return 502;
   if (code === 'DESKTOP_SESSION_CHALLENGE_NOT_FOUND') return 404;
   if (code === 'PRIMARY_HOST_CHALLENGE_NOT_FOUND'
@@ -148,6 +158,7 @@ function createDesktopIdentityRouter({
   sessionService,
   primaryHostIdentityService,
   primaryHostLocalValidationService,
+  singleUserIdentityService,
   deviceChallengeService,
   miniappIdentityService,
   authenticateDesktop,
@@ -158,12 +169,21 @@ function createDesktopIdentityRouter({
   challengeIdFactory = uuidv4,
   allowDesktopAuthorizationUrlFallback = process.env.NODE_ENV !== 'production' && process.env.APP_ENV !== 'prod',
   localBridgeSecret = process.env.GEWU_ELECTRON_LOCAL_BRIDGE_SECRET || '',
+  desktopBuildFlavor = process.env.GEWU_DESKTOP_BUILD_FLAVOR || 'desktop-client',
+  desktopIdentityMode = process.env.GEWU_DESKTOP_IDENTITY_MODE || 'full',
+  runtimeContext = () => ({
+    deviceId: process.env.GEWU_DEVICE_ID || '',
+    nodeRole: process.env.GEWU_NODE_ROLE || 'desktop-client',
+    epochId: process.env.GEWU_PRIMARY_HOST_EPOCH_ID || null,
+    generation: process.env.GEWU_PRIMARY_HOST_GENERATION || null,
+  }),
 } = {}) {
   const database = db || getInstance().db;
   let identities = identityService || null;
   let sessions = sessionService || null;
   let primaryHosts = primaryHostIdentityService || null;
   let primaryHostLocalValidation = primaryHostLocalValidationService || null;
+  let singleUserIdentities = singleUserIdentityService || null;
   let deviceChallenges = deviceChallengeService || null;
   let miniappIdentities = miniappIdentityService || null;
   function identity() {
@@ -208,6 +228,18 @@ function createDesktopIdentityRouter({
     }
     return miniappIdentities;
   }
+  function singleUserIdentity() {
+    if (!singleUserIdentities) {
+      singleUserIdentities = getSingleUserDesktopIdentityService({
+        db: database,
+        now,
+        identityMode: () => desktopIdentityMode,
+        runtimeContext,
+        localValidationService: localHostValidation(),
+      });
+    }
+    return singleUserIdentities;
+  }
   const verifyDesktop = authenticateDesktop || function (token) {
     return session().verifySessionToken(token);
   };
@@ -244,6 +276,49 @@ function createDesktopIdentityRouter({
     }
   }
 
+  function assertSingleUserHostRuntime(req) {
+    assertLocalBridge(req);
+    const runtime = runtimeContext() || {};
+    if (desktopBuildFlavor !== 'primary-host' || desktopIdentityMode !== 'single-user'
+      || runtime.nodeRole !== 'primary-host') {
+      throw routeError('DESKTOP_SINGLE_USER_HOST_RUNTIME_FORBIDDEN');
+    }
+    return runtime;
+  }
+
+  function localHostActor() {
+    const epoch = database.prepare(
+      "SELECT * FROM primary_host_epochs WHERE status='active' ORDER BY generation DESC LIMIT 1"
+    ).get();
+    const authorization = epoch && database.prepare(
+      'SELECT * FROM desktop_device_authorizations WHERE id=? AND status=\'active\''
+    ).get(epoch.authorization_id);
+    if (!epoch || !authorization) throw routeError('DESKTOP_SINGLE_USER_HOST_NOT_BOOTSTRAPPED');
+    return Object.freeze({
+      userId: epoch.user_id,
+      deviceId: epoch.device_id,
+      authorizationId: epoch.authorization_id,
+      credentialVersion: Number(authorization.credential_version),
+      activeRole: 'super_admin',
+      eligibleRoles: Object.freeze(['super_admin']),
+      epochId: epoch.id,
+      generation: Number(epoch.generation),
+    });
+  }
+
+  const pairingRateBuckets = new Map();
+  function assertPairingRate(req, bucket, limit, windowMs) {
+    const current = Date.now();
+    const key = `${bucket}:${String(req.ip || req.socket?.remoteAddress || 'unknown')}`;
+    const previous = pairingRateBuckets.get(key);
+    const state = !previous || current - previous.startedAt >= windowMs
+      ? { startedAt: current, count: 0 }
+      : previous;
+    state.count += 1;
+    pairingRateBuckets.set(key, state);
+    if (state.count > limit) throw routeError('DESKTOP_PAIRING_RATE_LIMITED');
+  }
+
   function hostChallengeOrNull(challengeId) {
     try {
       return primaryHost().readOperationChallenge(challengeId);
@@ -270,6 +345,123 @@ function createDesktopIdentityRouter({
       }
     }
   }
+
+  router.post('/single-user/bootstrap', async function (req, res) {
+    try {
+      assertBodyKeys(req.body, SINGLE_USER_BOOTSTRAP_KEYS);
+      const runtime = assertSingleUserHostRuntime(req);
+      const result = await singleUserIdentity().bootstrapLocalHost({
+        localBridgeVerified: true,
+        buildFlavor: desktopBuildFlavor,
+        runtime,
+        publicIdentity: req.body.publicIdentity,
+        confirmation: req.body.confirmation,
+        operationManifest: req.body.operationManifest,
+      });
+      return res.json({ success: true, ...result });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  router.get('/single-user/status', function (req, res) {
+    try {
+      const runtime = assertSingleUserHostRuntime(req);
+      const epoch = database.prepare(
+        "SELECT id,generation,device_id,user_id,status FROM primary_host_epochs WHERE status='active' LIMIT 1"
+      ).get() || null;
+      return res.json({
+        success: true,
+        mode: desktopIdentityMode,
+        buildFlavor: desktopBuildFlavor,
+        runtime,
+        epoch,
+      });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  router.post('/single-user/reset-host-password', function (req, res) {
+    try {
+      assertBodyKeys(req.body, SINGLE_USER_RESET_KEYS);
+      const runtime = assertSingleUserHostRuntime(req);
+      const result = singleUserIdentity().resetLocalHostCredential({
+        actor: localHostActor(),
+        runtime,
+        publicIdentity: req.body.publicIdentity,
+        confirmation: req.body.confirmation,
+        expectedCredentialVersion: req.body.expectedCredentialVersion,
+      });
+      return res.json({ success: true, ...result });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  router.post('/single-user/grants', function (req, res) {
+    try {
+      assertBodyKeys(req.body, SINGLE_USER_GRANT_KEYS);
+      const runtime = assertSingleUserHostRuntime(req);
+      const result = singleUserIdentity().issuePairingGrant({ actor: localHostActor(), runtime });
+      return res.json({ success: true, grant: result });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  router.post('/single-user/grants/:grantId/revoke', function (req, res) {
+    try {
+      assertBodyKeys(req.body, SINGLE_USER_GRANT_KEYS);
+      const runtime = assertSingleUserHostRuntime(req);
+      const result = singleUserIdentity().revokePairingGrant({
+        actor: localHostActor(),
+        runtime,
+        grantId: req.params.grantId,
+      });
+      return res.json({ success: true, grant: result });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  router.post('/single-user/disable', function (req, res) {
+    try {
+      assertBodyKeys(req.body, SINGLE_USER_GRANT_KEYS);
+      const runtime = assertSingleUserHostRuntime(req);
+      const result = singleUserIdentity().disableSingleUserAuthorizations({
+        actor: localHostActor(),
+        runtime,
+      });
+      return res.json({ success: true, ...result });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  router.get('/single-user/pairing-capability', function (req, res) {
+    try {
+      assertPairingRate(req, 'capability', 120, 60 * 1000);
+      const capability = singleUserIdentity().currentPairingCapability();
+      return res.json({ success: true, capability });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  router.post('/single-user/pairing-requests', function (req, res) {
+    try {
+      assertBodyKeys(req.body, SINGLE_USER_PAIR_KEYS);
+      assertPairingRate(req, 'request', 20, 10 * 60 * 1000);
+      const result = singleUserIdentity().consumeEncryptedPairingRequest({
+        envelope: req.body,
+        channel: 'direct',
+      });
+      return res.json({ success: true, ...result });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
 
   router.post('/challenges/start', async function (req, res) {
     try {

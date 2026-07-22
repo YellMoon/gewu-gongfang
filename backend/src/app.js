@@ -36,6 +36,9 @@ const permissionsRouter = require('./routes/permissions');
 const adminUsersRouter = require('./routes/adminUsers');
 const desktopPairingRouter = require('./routes/desktopPairing');
 const { createDesktopIdentityRouter } = require('./routes/desktopIdentity');
+const { createPrimaryHostIdentityService } = require('./services/primaryHostIdentityService');
+const { createPrimaryHostLocalValidationService } = require('./services/primaryHostLocalValidationService');
+const { getSingleUserDesktopIdentityService } = require('./services/singleUserDesktopIdentityService');
 const miniappApplicationsRouter = require('./routes/miniappApplications');
 const { createUnrecognizedExperienceRouter } = require('./routes/unrecognizedExperience');
 const { createUnrecognizedExperienceSandbox } = require('./services/unrecognizedExperienceSandbox');
@@ -264,9 +267,22 @@ function getAppVersion() {
 
 function createApp(options = {}) {
   const app = express();
+  const database = getInstance().db;
+  const primaryHostIdentityService = createPrimaryHostIdentityService({ db: database });
+  const primaryHostLocalValidationService = createPrimaryHostLocalValidationService({
+    db: database,
+    collectEvidence: input => primaryHostIdentityService.collectLocalEvidence(input),
+    backupRoot: process.env.GEWU_LOCAL_CACHE_PATH
+      ? path.join(process.env.GEWU_LOCAL_CACHE_PATH, 'primary-host-validation')
+      : undefined,
+  });
+  const singleUserIdentityService = getSingleUserDesktopIdentityService({
+    db: database,
+    localValidationService: primaryHostLocalValidationService,
+  });
 
   try {
-    createMiniappProvisioningReconciler({ db: getInstance().db }).reconcilePendingCompletedTasks();
+    createMiniappProvisioningReconciler({ db: database }).reconcilePendingCompletedTasks();
   } catch (error) {
     console.warn('[miniapp-provisioning] startup reconciliation skipped', error?.code || error?.message || 'unknown');
   }
@@ -307,7 +323,12 @@ function createApp(options = {}) {
 
   // 公开路由（无需认证）
   app.use('/api/auth', authRouter);
-  app.use('/api/desktop-identity', createDesktopIdentityRouter({ db: getInstance().db }));
+  app.use('/api/desktop-identity', createDesktopIdentityRouter({
+    db: database,
+    primaryHostIdentityService,
+    primaryHostLocalValidationService,
+    singleUserIdentityService,
+  }));
   app.use('/api/desktop-pairing', desktopPairingRouter);
   app.use('/api/sync', optionalAuth, syncRouter);
   app.use('/api/cloud-relay-host/artifacts', optionalAuth, paperArtifactAccessRouter);

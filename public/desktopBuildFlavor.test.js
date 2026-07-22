@@ -48,6 +48,12 @@ assert.ok(hostBuild.publish.some(entry => entry.url.endsWith('/desktop/host/')))
 assert.ok(electronSource.includes('if (PRIMARY_HOST_CAPABLE)'));
 assert.ok(electronSource.includes("config.nodeRole !== 'desktop-client'"));
 assert.ok(preloadSource.includes("if (desktopBuildFlavor === 'primary-host')"));
+assert.ok(preloadSource.includes('createPairingEnvelope'));
+assert.ok(preloadSource.includes("exposeInMainWorld('singleUserRuntime'"));
+assert.ok(!preloadSource.includes('GEWU_ELECTRON_LOCAL_BRIDGE_SECRET'));
+assert.ok(!preloadSource.includes('signPairingEnvelope'));
+assert.ok(electronSource.includes("'x-gewu-electron-local-bridge': electronLocalBridgeSecret"));
+assert.ok(electronSource.includes("ipcMain.handle('single-user:bootstrap'"));
 assert.ok(packageJson.build.files.includes('public/desktopBuildFlavor.js'));
 assert.ok(
   packageJson.build.files.includes('public/singleUserPairingEnvelope.js'),

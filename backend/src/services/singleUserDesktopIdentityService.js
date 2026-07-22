@@ -400,6 +400,10 @@ function createSingleUserDesktopIdentityService({
       throw identityError('DESKTOP_SINGLE_USER_RESET_CONFIRMATION_REQUIRED');
     }
     const context = assertHostActor(input.actor, input.runtime);
+    if (input.expectedCredentialVersion !== undefined
+      && Number(input.expectedCredentialVersion) !== Number(context.authorization.credential_version)) {
+      throw identityError('DESKTOP_SINGLE_USER_CREDENTIAL_VERSION_STALE');
+    }
     const publicIdentity = normalizePublicIdentity(input.publicIdentity, 'primary-host');
     if (publicIdentity.deviceId !== context.active.device_id) {
       throw identityError('DESKTOP_SINGLE_USER_RUNTIME_MISMATCH');

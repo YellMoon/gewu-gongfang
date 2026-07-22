@@ -5,6 +5,7 @@ const {
   createPrimaryHostLocalReceipt,
   primaryHostReceiptSigningPayload,
 } = require('../backend/src/services/primaryHostReceiptProtocol');
+const singleUserPairingEnvelope = require('./singleUserPairingEnvelope');
 
 const VAULT_VERSION = 2;
 const PRIVATE_PAYLOAD_VERSION = 1;
@@ -704,6 +705,43 @@ function createDesktopIdentityVault({
     return Object.freeze({ ...publicIdentity });
   }
 
+  function beginSingleUserEnrollment(input = {}) {
+    return beginRegistration({
+      ...input,
+      deviceKind: input.deviceKind || 'desktop-client',
+    });
+  }
+
+  function signPairingEnvelope(input = {}) {
+    if (!pendingRegistration || pendingRegistration.purpose !== 'register') {
+      throw vaultError('DESKTOP_IDENTITY_REGISTRATION_NOT_PENDING');
+    }
+    if (typeof input.payload !== 'string' || !input.payload || input.payload.length > 64 * 1024) {
+      throw vaultError('DESKTOP_IDENTITY_PAIRING_PAYLOAD_INVALID');
+    }
+    const privateKey = privateKeyForSecret(pendingRegistration);
+    return crypto.sign(null, Buffer.from(input.payload, 'utf8'), privateKey).toString('base64');
+  }
+
+  function createPairingEnvelope(input = {}) {
+    if (!pendingRegistration || pendingRegistration.purpose !== 'register') {
+      throw vaultError('DESKTOP_IDENTITY_REGISTRATION_NOT_PENDING');
+    }
+    const publicIdentity = pendingRegistration.publicIdentity;
+    return singleUserPairingEnvelope.encryptPairingRequest({
+      capability: input.capability,
+      pairingCode: input.pairingCode,
+      device: {
+        deviceId: publicIdentity.deviceId,
+        deviceName: publicIdentity.deviceName,
+        deviceKind: publicIdentity.deviceKind,
+        publicKey: publicIdentity.publicKey,
+      },
+      sign: payload => signPairingEnvelope({ payload }),
+      now,
+    });
+  }
+
   function beginPasswordReset() {
     if (!fsImpl.existsSync(filePath)) throw vaultError('DESKTOP_IDENTITY_VAULT_NOT_FOUND');
     if (pendingRegistration) throw vaultError('DESKTOP_IDENTITY_REGISTRATION_ALREADY_PENDING');
@@ -951,13 +989,16 @@ function createDesktopIdentityVault({
   return Object.freeze({
     beginPasswordReset,
     beginRegistration,
+    beginSingleUserEnrollment,
     clear,
     completePasswordReset,
     completeRegistration,
     lock,
     refreshOfflineLease,
+    createPairingEnvelope,
     seal,
     signChallenge,
+    signPairingEnvelope,
     status,
     unlock,
   });

@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld('api', {
 contextBridge.exposeInMainWorld('desktopIdentity', Object.freeze({
   status: () => ipcRenderer.invoke('desktop-identity:status'),
   beginRegistration: input => ipcRenderer.invoke('desktop-identity:begin-registration', input),
+  beginSingleUserEnrollment: input => ipcRenderer.invoke('desktop-identity:begin-single-user-enrollment', input),
+  createPairingEnvelope: input => ipcRenderer.invoke('desktop-identity:create-pairing-envelope', input),
   beginPasswordReset: () => ipcRenderer.invoke('desktop-identity:begin-password-reset'),
   completeRegistration: input => ipcRenderer.invoke('desktop-identity:complete-registration', input),
   completePasswordReset: input => ipcRenderer.invoke('desktop-identity:complete-password-reset', input),
@@ -57,6 +59,15 @@ contextBridge.exposeInMainWorld('desktopBuild', Object.freeze({
 }));
 
 if (desktopBuildFlavor === 'primary-host') {
+  contextBridge.exposeInMainWorld('singleUserRuntime', Object.freeze({
+    enableMode: input => ipcRenderer.invoke('single-user:enable-mode', input),
+    disableMode: input => ipcRenderer.invoke('single-user:disable-mode', input),
+    status: () => ipcRenderer.invoke('single-user:status'),
+    bootstrap: input => ipcRenderer.invoke('single-user:bootstrap', input),
+    resetHostPassword: input => ipcRenderer.invoke('single-user:reset-host-password', input),
+    issuePairingCode: () => ipcRenderer.invoke('single-user:issue-pairing-code'),
+    revokePairingCode: input => ipcRenderer.invoke('single-user:revoke-pairing-code', input),
+  }));
   contextBridge.exposeInMainWorld('primaryHostRuntime', Object.freeze({
     status: () => ipcRenderer.invoke('primary-host:status'),
     adopt: input => ipcRenderer.invoke('primary-host:adopt', input),

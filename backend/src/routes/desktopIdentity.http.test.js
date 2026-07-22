@@ -16,8 +16,8 @@ const {
 const { createMiniappIdentityService } = require('../services/miniappIdentityService');
 const { createDesktopIdentityRouter } = require('./desktopIdentity');
 
-async function requestJson(baseUrl, method, pathname, { token, body } = {}) {
-  const headers = {};
+async function requestJson(baseUrl, method, pathname, { token, body, headers: extraHeaders } = {}) {
+  const headers = { ...(extraHeaders || {}) };
   if (token) headers.authorization = `Bearer ${token}`;
   if (body !== undefined) headers['content-type'] = 'application/json';
   const response = await fetch(`${baseUrl}${pathname}`, {
@@ -168,6 +168,42 @@ function generateDeviceKey() {
     };
 
     const app = express();
+    const localBridgeSecret = 'desktop-identity-http-local-bridge-secret';
+    const singleUserCalls = [];
+    const pairingCapability = Object.freeze({
+      protocolVersion: 'gewu-single-user-pairing/v1',
+      id: 'a'.repeat(32),
+      publicKey: 'test-x25519-public-key',
+      issuedAt: clock.toISOString(),
+      expiresAt: '2026-07-17T09:10:00.000Z',
+    });
+    const singleUserIdentityService = {
+      bootstrapLocalHost: async input => {
+        singleUserCalls.push(['bootstrap', input]);
+        return { authorization: { id: 'single-host-auth' }, epoch: { id: 'single-host-epoch' } };
+      },
+      resetLocalHostCredential: input => {
+        singleUserCalls.push(['reset', input]);
+        return { authorization: { id: 'single-host-auth', credentialVersion: 2 } };
+      },
+      issuePairingGrant: input => {
+        singleUserCalls.push(['grant', input]);
+        return { id: 'grant-1', code: '0123456789ABCDEF', capability: pairingCapability };
+      },
+      revokePairingGrant: input => {
+        singleUserCalls.push(['revoke', input]);
+        return { id: input.grantId, status: 'revoked' };
+      },
+      currentPairingCapability: () => pairingCapability,
+      consumeEncryptedPairingRequest: input => {
+        singleUserCalls.push(['pair', input]);
+        return { requestId: 'pair-request-1', authorization: { id: 'ordinary-auth-1' } };
+      },
+      disableSingleUserAuthorizations: input => {
+        singleUserCalls.push(['disable', input]);
+        return { revokedAuthorizations: 1 };
+      },
+    };
     app.use(express.json({ limit: '64kb' }));
     app.use('/api/desktop-identity', createDesktopIdentityRouter({
       db,
@@ -181,9 +217,74 @@ function generateDeviceKey() {
       resolveWechatPhoneNumber,
       createDesktopAuthorizationUrlLink,
       createDesktopAuthorizationQrCode,
+      singleUserIdentityService,
+      localBridgeSecret,
+      desktopBuildFlavor: 'primary-host',
+      desktopIdentityMode: 'single-user',
+      runtimeContext: () => ({
+        deviceId: 'device-http-host',
+        nodeRole: 'primary-host',
+        epochId: 'single-host-epoch',
+        generation: 1,
+      }),
     }));
     server = app.listen(0);
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const localHeaders = { 'x-gewu-electron-local-bridge': localBridgeSecret };
+    const bootstrapPayload = {
+      publicIdentity: {
+        deviceId: 'device-http-host',
+        deviceName: 'Current Host',
+        deviceKind: 'primary-host',
+        publicKey: 'test-public-key',
+      },
+      confirmation: 'SET_LOCAL_PASSWORD_CONFIRMED',
+    };
+    const deniedBootstrap = await requestJson(
+      baseUrl,
+      'POST',
+      '/api/desktop-identity/single-user/bootstrap',
+      { body: bootstrapPayload }
+    );
+    assert.strictEqual(deniedBootstrap.status, 403);
+    const localBootstrap = await requestJson(
+      baseUrl,
+      'POST',
+      '/api/desktop-identity/single-user/bootstrap',
+      { body: bootstrapPayload, headers: localHeaders }
+    );
+    assert.strictEqual(localBootstrap.status, 200);
+    assert.strictEqual(singleUserCalls[0][1].localBridgeVerified, true);
+    const deniedGrant = await requestJson(
+      baseUrl,
+      'POST',
+      '/api/desktop-identity/single-user/grants',
+      { body: {} }
+    );
+    assert.strictEqual(deniedGrant.status, 403);
+    const capabilityResponse = await requestJson(
+      baseUrl,
+      'GET',
+      '/api/desktop-identity/single-user/pairing-capability'
+    );
+    assert.strictEqual(capabilityResponse.status, 200);
+    assert.strictEqual(capabilityResponse.body.capability.id, pairingCapability.id);
+    const encryptedEnvelope = {
+      protocolVersion: 'gewu-single-user-pairing/v1',
+      capabilityId: pairingCapability.id,
+      clientEphemeralPublicKey: 'ephemeral-public-key',
+      iv: 'AAAAAAAAAAAAAAAA',
+      ciphertext: 'ciphertext',
+      tag: 'AAAAAAAAAAAAAAAAAAAAAA==',
+    };
+    const pairResponse = await requestJson(
+      baseUrl,
+      'POST',
+      '/api/desktop-identity/single-user/pairing-requests',
+      { body: encryptedEnvelope }
+    );
+    assert.strictEqual(pairResponse.status, 200);
+    assert.deepStrictEqual(Object.keys(singleUserCalls.at(-1)[1].envelope).sort(), Object.keys(encryptedEnvelope).sort());
 
     async function startDevice(deviceId, deviceName, key) {
       const response = await requestJson(

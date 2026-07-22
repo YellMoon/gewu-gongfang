@@ -73,6 +73,11 @@ interface Window {
   desktopIdentity?: {
     status(): Promise<any>;
     beginRegistration(input?: { deviceName?: string }): Promise<any>;
+    beginSingleUserEnrollment(input?: { deviceName?: string }): Promise<any>;
+    createPairingEnvelope(input: {
+      capability: Record<string, any>;
+      pairingCode: string;
+    }): Promise<Record<string, any>>;
     beginPasswordReset(): Promise<any>;
     completeRegistration(input: {
       password: string;
@@ -90,5 +95,14 @@ interface Window {
     lock(): Promise<any>;
     refreshOfflineLease(input: Record<string, any>): Promise<any>;
     signChallenge(input: Record<string, any>): Promise<any>;
+  };
+  singleUserRuntime?: {
+    enableMode(input: { confirmation: 'ENABLE_SINGLE_USER_MODE' }): Promise<any>;
+    disableMode(input: { confirmation: 'DISABLE_SINGLE_USER_MODE' }): Promise<any>;
+    status(): Promise<any>;
+    bootstrap(input: Record<string, any>): Promise<any>;
+    resetHostPassword(input: Record<string, any>): Promise<any>;
+    issuePairingCode(): Promise<any>;
+    revokePairingCode(input: { grantId: string }): Promise<any>;
   };
 }
