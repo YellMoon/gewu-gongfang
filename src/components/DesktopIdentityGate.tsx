@@ -5,6 +5,7 @@ import {
   Card,
   Divider,
   Input,
+  Modal,
   QRCode,
   Space,
   Spin,
@@ -31,6 +32,12 @@ import {
   clearCurrentDesktopIdentityPartition,
   setCurrentDesktopIdentityContext,
 } from '../services/desktopIdentityPartition.mjs';
+import {
+  discoverPairingCapability,
+  normalizePairingCode,
+  pollPairingResult,
+  submitPairingRequest,
+} from '../services/singleUserPairingClient.mjs';
 import './DesktopIdentityGate.css';
 
 const BusinessApp = React.lazy(() => import('../App'));
@@ -49,6 +56,11 @@ type GateState = {
 
 function browserOnline(): boolean {
   return typeof navigator === 'undefined' || navigator.onLine !== false;
+}
+
+function localPasswordValid(value: string): boolean {
+  const bytes = new TextEncoder().encode(value || '').byteLength;
+  return bytes >= 6 && bytes <= 1024;
 }
 
 function roleLabel(role?: string): string {
@@ -76,12 +88,27 @@ function messageForError(error: any): string {
     DESKTOP_SESSION_CHALLENGE_SIGNATURE_INVALID: '本机设备签名验证失败。',
     DESKTOP_REGISTRATION_NOT_APPROVED: '设备尚未获得审核通过。',
     PAIRING_API_BASE_REQUIRED: '尚未配置阿里云身份服务地址。',
+    PAIRING_CODE_INVALID: '一次性配对码格式不正确，请检查后重试。',
+    PAIRING_CODE_EXPIRED: '一次性配对码已过期，请在数据主机上重新生成。',
+    PAIRING_CODE_USED: '一次性配对码已经使用，请在数据主机上重新生成。',
+    PAIRING_CODE_LOCKED: '配对码尝试次数过多，已锁定，请在数据主机上重新生成。',
+    PAIRING_HOST_OFFLINE: '暂时无法连接数据主机，请确认主机在线后重试。',
+    PAIRING_CAPABILITY_STALE: '数据主机配对能力已过期，请重新生成配对码。',
+    DESKTOP_DEVICE_FINGERPRINT_MISMATCH: '设备密钥指纹不一致，请取消本次配对并重新开始。',
+    SINGLE_USER_MODE_DISABLED: '数据主机尚未启用临时单人模式。',
+    DESKTOP_SINGLE_USER_MODE_DISABLED: '数据主机尚未启用临时单人模式。',
+    LOCAL_BACKUP_FAILED: '初始化前本地备份失败，未修改身份或业务数据。',
+    PRIMARY_HOST_LOCAL_BACKUP_FAILED: '初始化前本地备份失败，未修改身份或业务数据。',
   } as Record<string, string>)[code] || `身份验证未完成（${code}）`;
 }
 
 const DesktopIdentityGate: React.FC = () => {
   const [gateState, setGateState] = useState<GateState>({ kind: 'loading' });
   const [pending, setPending] = useState<any>(null);
+  const [pairingPending, setPairingPending] = useState<any>(null);
+  const [runtimeConfig, setRuntimeConfig] = useState<any>(null);
+  const [hostIdentityStatus, setHostIdentityStatus] = useState<any>(null);
+  const [pairingCode, setPairingCode] = useState('');
   const [onlineSession, setOnlineSession] = useState<any>(null);
   const [baseUrl, setBaseUrl] = useState('');
   const [deviceName, setDeviceName] = useState('');
@@ -154,6 +181,7 @@ const DesktopIdentityGate: React.FC = () => {
       try {
         if (!window.desktopIdentity) throw new Error('DESKTOP_IDENTITY_BRIDGE_REQUIRED');
         const config = await getRuntimeConfig();
+        setRuntimeConfig(config);
         const managed = resolveManagedSyncConfig(config);
         const identityBaseUrl = String(managed.cloudBaseUrl || '').replace(/\/+$/, '');
         if (!identityBaseUrl) throw new Error('PAIRING_API_BASE_REQUIRED');
@@ -166,12 +194,35 @@ const DesktopIdentityGate: React.FC = () => {
         clientRef.current = client;
         setBaseUrl(identityBaseUrl);
         setDeviceName(String((config as any).deviceName || config.deviceId || '这台电脑'));
-        if (['registration_pending', 'password_reset_pending'].includes(vaultStatus.state)) {
+        if (config.buildFlavor === 'primary-host' && config.desktopIdentityMode === 'full') {
+          setGateState({ kind: 'single-user-mode-offer' });
+          return;
+        }
+        if (config.buildFlavor === 'primary-host' && config.desktopIdentityMode === 'single-user') {
+          if (!window.singleUserRuntime?.status) throw new Error('SINGLE_USER_MODE_DISABLED');
+          const status = await window.singleUserRuntime.status();
+          if (cancelled) return;
+          setHostIdentityStatus(status);
+        }
+        if (vaultStatus.state === 'empty') {
           setGateState({
-            kind: vaultStatus.state === 'password_reset_pending'
-              ? 'password-reset-interrupted'
-              : 'registration-interrupted',
+            kind: config.buildFlavor === 'primary-host'
+              ? 'single-user-host-bootstrap-required'
+              : 'single-user-pairing-required',
           });
+          return;
+        }
+        if ((vaultStatus.legacyUpgradeRequired || vaultStatus.state === 'legacy_upgrade_required')
+          && config.buildFlavor === 'desktop-client') {
+          setGateState({ kind: 'single-user-pairing-required' });
+          return;
+        }
+        if (['registration_pending', 'password_reset_pending'].includes(vaultStatus.state)) {
+          setGateState(config.buildFlavor === 'desktop-client'
+            ? { kind: 'single-user-pairing-required' }
+            : { kind: vaultStatus.state === 'password_reset_pending'
+              ? 'password-reset-interrupted'
+              : 'registration-interrupted' });
           return;
         }
         const next = resolveDesktopGateState({
@@ -268,6 +319,196 @@ const DesktopIdentityGate: React.FC = () => {
     }
   };
 
+  const hostProfileFor = (result: any) => ({
+    userId: result.actor.userId,
+    user: { id: result.actor.userId, name: '\u672c\u673a\u6240\u6709\u8005' },
+    eligibleRoles: result.actor.eligibleRoles,
+    activeRole: result.actor.activeRole,
+    teacherId: null,
+    studentId: null,
+  });
+
+  const enableSingleUserMode = () => {
+    Modal.confirm({
+      title: '\u542f\u7528\u4e34\u65f6\u5355\u4eba\u6a21\u5f0f',
+      content: '\u5f53\u524d\u4ec5\u7531\u4f60\u672c\u4eba\u4f7f\u7528\u684c\u9762\u7aef\u3002\u542f\u7528\u540e\uff0c\u666e\u901a\u684c\u9762\u7aef\u53ef\u51ed\u6570\u636e\u4e3b\u673a\u751f\u6210\u7684\u4e00\u6b21\u6027\u914d\u5bf9\u7801\u81ea\u52a8\u83b7\u6279\uff1b\u4e0d\u4f1a\u66f4\u6539\u5fae\u4fe1\u5c0f\u7a0b\u5e8f\u3002\u5e94\u7528\u9700\u8981\u91cd\u542f\u3002',
+      okText: '\u786e\u8ba4\u542f\u7528\u5e76\u91cd\u542f',
+      cancelText: '\u53d6\u6d88',
+      async onOk() {
+        setBusy(true);
+        setError('');
+        try {
+          if (!window.singleUserRuntime?.enableMode) throw new Error('SINGLE_USER_MODE_DISABLED');
+          await window.singleUserRuntime.enableMode({ confirmation: 'ENABLE_SINGLE_USER_MODE' });
+          await window.api?.invoke('primary-host:restart');
+        } catch (caught) {
+          setError(messageForError(caught));
+          setBusy(false);
+          throw caught;
+        }
+      },
+    });
+  };
+
+  const initializeSingleUserHost = async () => {
+    if (!localPasswordValid(password)) {
+      setError('\u672c\u673a\u5bc6\u7801\u81f3\u5c11\u9700\u8981 6 \u4e2a\u5b57\u7b26\u3002');
+      return;
+    }
+    if (password !== passwordAgain) {
+      setError('\u4e24\u6b21\u8f93\u5165\u7684\u672c\u673a\u5bc6\u7801\u4e0d\u4e00\u81f4\u3002');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      if (!window.desktopIdentity?.beginSingleUserEnrollment || !window.singleUserRuntime?.bootstrap) {
+        throw new Error('SINGLE_USER_MODE_DISABLED');
+      }
+      await clientRef.current?.lock();
+      const publicIdentity = await window.desktopIdentity.beginSingleUserEnrollment({ deviceName });
+      const initialized = await window.singleUserRuntime.bootstrap({
+        publicIdentity,
+        confirmation: 'SET_LOCAL_PASSWORD_CONFIRMED',
+        operationManifest: { operation: 'single-user-bootstrap', requestedAt: new Date().toISOString() },
+      });
+      await window.desktopIdentity.completeRegistration({
+        password,
+        authorization: initialized.authorization,
+        profile: hostProfileFor(initialized),
+        offlineLease: null,
+      });
+      const result = await clientRef.current.unlock({
+        baseUrl: String(runtimeConfig?.hostBaseUrl || 'http://127.0.0.1:3001'),
+        password,
+        online: true,
+      });
+      setPassword('');
+      setPasswordAgain('');
+      acceptRuntime(result);
+    } catch (caught) {
+      try { await clientRef.current?.lock(); } catch (_cleanupError) { /* best effort */ }
+      setError(messageForError(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resetSingleUserHostPassword = async () => {
+    if (!localPasswordValid(password)) {
+      setError('\u672c\u673a\u5bc6\u7801\u81f3\u5c11\u9700\u8981 6 \u4e2a\u5b57\u7b26\u3002');
+      return;
+    }
+    if (password !== passwordAgain) {
+      setError('\u4e24\u6b21\u8f93\u5165\u7684\u672c\u673a\u5bc6\u7801\u4e0d\u4e00\u81f4\u3002');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      if (!window.desktopIdentity?.beginPasswordReset || !window.singleUserRuntime?.resetHostPassword) {
+        throw new Error('SINGLE_USER_MODE_DISABLED');
+      }
+      const publicIdentity = await window.desktopIdentity.beginPasswordReset();
+      const reset = await window.singleUserRuntime.resetHostPassword({
+        publicIdentity,
+        confirmation: 'RESET_LOCAL_PASSWORD_CONFIRMED',
+        expectedCredentialVersion: hostIdentityStatus?.epoch?.credentialVersion,
+      });
+      await window.desktopIdentity.completePasswordReset({
+        password,
+        authorization: reset.authorization,
+        profile: hostProfileFor(reset),
+        offlineLease: null,
+      });
+      const result = await clientRef.current.unlock({
+        baseUrl: String(runtimeConfig?.hostBaseUrl || 'http://127.0.0.1:3001'),
+        password,
+        online: true,
+      });
+      setPassword('');
+      setPasswordAgain('');
+      acceptRuntime(result);
+    } catch (caught) {
+      try { await clientRef.current?.lock(); } catch (_cleanupError) { /* old sealed vault remains */ }
+      setError(messageForError(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const finishSingleUserPairing = useCallback(async (completed: any) => {
+    const result = await clientRef.current.completeSingleUserPairing({
+      password,
+      result: completed.result,
+      baseUrl: completed.channel === 'direct' ? completed.baseUrl : undefined,
+      online: completed.channel === 'direct',
+    });
+    setPairingPending(null);
+    setPairingCode('');
+    setPassword('');
+    setPasswordAgain('');
+    acceptRuntime(result);
+  }, [acceptRuntime, password]);
+
+  const beginSingleUserPairing = async () => {
+    if (!localPasswordValid(password)) {
+      setError('\u672c\u673a\u5bc6\u7801\u81f3\u5c11\u9700\u8981 6 \u4e2a\u5b57\u7b26\u3002');
+      return;
+    }
+    if (password !== passwordAgain) {
+      setError('\u4e24\u6b21\u8f93\u5165\u7684\u672c\u673a\u5bc6\u7801\u4e0d\u4e00\u81f4\u3002');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const code = normalizePairingCode(pairingCode);
+      if (!window.desktopIdentity?.beginSingleUserEnrollment || !window.desktopIdentity?.createPairingEnvelope) {
+        throw new Error('DESKTOP_IDENTITY_BRIDGE_REQUIRED');
+      }
+      await clientRef.current?.lock();
+      await window.desktopIdentity.beginSingleUserEnrollment({ deviceName });
+      const discovery = await discoverPairingCapability({
+        lanBaseUrl: runtimeConfig?.hostBaseUrl,
+        cloudBaseUrl: baseUrl,
+      });
+      const envelope = await window.desktopIdentity.createPairingEnvelope({
+        capability: discovery.capability,
+        pairingCode: code,
+      });
+      const submitted = await submitPairingRequest({ discovery, envelope });
+      setPairingPending(submitted);
+      if (submitted.status === 'completed') await finishSingleUserPairing(submitted);
+    } catch (caught) {
+      setError(messageForError(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pollSingleUserPairing = useCallback(async () => {
+    if (!pairingPending || pairingPending.status === 'completed' || pollingRef.current) return;
+    pollingRef.current = true;
+    setPolling(true);
+    try {
+      const next = await pollPairingResult({ pending: pairingPending });
+      setPairingPending(next);
+      if (next.status === 'completed') await finishSingleUserPairing(next);
+    } catch (caught) {
+      setError(messageForError(caught));
+    } finally {
+      pollingRef.current = false;
+      setPolling(false);
+    }
+  }, [finishSingleUserPairing, pairingPending]);
+
+  useEffect(() => {
+    if (!pairingPending || pairingPending.status === 'completed') return undefined;
+    const timer = window.setInterval(() => { void pollSingleUserPairing(); }, 2500);
+    return () => window.clearInterval(timer);
+  }, [pairingPending?.requestId, pairingPending?.status, pollSingleUserPairing]);
+
   const beginPasswordReset = async () => {
     if (!browserOnline()) {
       setError('\u91cd\u8bbe\u672c\u673a\u5bc6\u7801\u5fc5\u987b\u8054\u7f51\u5b8c\u6210\u5fae\u4fe1\u8eab\u4efd\u6838\u9a8c\u548c\u8bbe\u5907\u5ba1\u6838\u3002');
@@ -290,6 +531,28 @@ const DesktopIdentityGate: React.FC = () => {
     } finally {
       setBusy(false);
     }
+  };
+
+  const beginRecoveryFlow = async () => {
+    if (runtimeConfig?.buildFlavor === 'primary-host'
+      && runtimeConfig?.desktopIdentityMode === 'single-user') {
+      setPassword('');
+      setPasswordAgain('');
+      setError('');
+      setGateState({ kind: 'single-user-host-reset' });
+      return;
+    }
+    if (runtimeConfig?.buildFlavor === 'desktop-client') {
+      try { await clientRef.current?.lock(); } catch (_error) { /* sealed vault remains unchanged */ }
+      setPairingPending(null);
+      setPairingCode('');
+      setPassword('');
+      setPasswordAgain('');
+      setError('');
+      setGateState({ kind: 'single-user-pairing-required' });
+      return;
+    }
+    await beginPasswordReset();
   };
 
   const unlock = async () => {
@@ -591,6 +854,85 @@ const DesktopIdentityGate: React.FC = () => {
         <Divider />
         <Space direction="vertical" size={16} className="desktop-identity-form">
           {gateState.kind === 'loading' && <Spin tip="正在检查本机身份…" />}
+          {gateState.kind === 'single-user-mode-offer' && (
+            <>
+              <Alert
+                type="warning"
+                showIcon
+                message={'\u542f\u7528\u4e34\u65f6\u5355\u4eba\u6a21\u5f0f'}
+                description={'\u6b64\u6a21\u5f0f\u4ec5\u9002\u7528\u4e8e\u5f53\u524d\u684c\u9762\u7aef\u53ea\u7531\u4f60\u672c\u4eba\u4f7f\u7528\u7684\u9636\u6bb5\u3002\u666e\u901a\u684c\u9762\u7aef\u4ecd\u9700\u4e00\u6b21\u6027\u914d\u5bf9\u7801\uff0c\u4e0d\u4f1a\u81ea\u52a8\u53d8\u6210\u6570\u636e\u4e3b\u673a\u3002'}
+              />
+              <Button type="primary" loading={busy} onClick={enableSingleUserMode} block>
+                {'\u542f\u7528\u4e34\u65f6\u5355\u4eba\u6a21\u5f0f'}
+              </Button>
+            </>
+          )}
+          {gateState.kind === 'single-user-host-bootstrap-required' && (
+            <>
+              <Alert
+                type="info"
+                showIcon
+                message={'\u5355\u4eba\u6a21\u5f0f\u521d\u59cb\u5316'}
+                description={'\u521d\u59cb\u5316\u524d\u4f1a\u5907\u4efd\uff0c\u4e0d\u4f1a\u5220\u9664\u6570\u636e\u3002\u53ea\u4f1a\u4e3a\u5f53\u524d\u6570\u636e\u4e3b\u673a\u5efa\u7acb\u672c\u673a\u8eab\u4efd\u548c\u5bc6\u7801\u3002'}
+              />
+              <Input value={deviceName} onChange={event => setDeviceName(event.target.value)} placeholder={'\u6570\u636e\u4e3b\u673a\u540d\u79f0'} maxLength={128} />
+              <Input.Password prefix={<LockOutlined />} visibilityToggle value={password} onChange={event => setPassword(event.target.value)} placeholder={'\u8bbe\u7f6e\u672c\u673a\u5bc6\u7801\uff08\u81f3\u5c11 6 \u4e2a\u5b57\u7b26\uff09'} />
+              <Input.Password prefix={<LockOutlined />} visibilityToggle value={passwordAgain} onChange={event => setPasswordAgain(event.target.value)} placeholder={'\u518d\u6b21\u8f93\u5165\u672c\u673a\u5bc6\u7801'} onPressEnter={initializeSingleUserHost} />
+              <Button type="primary" loading={busy} onClick={initializeSingleUserHost} block>{'\u5907\u4efd\u5e76\u5b8c\u6210\u521d\u59cb\u5316'}</Button>
+            </>
+          )}
+          {gateState.kind === 'single-user-host-reset' && (
+            <>
+              <Alert
+                type="warning"
+                showIcon
+                message={'\u91cd\u65b0\u6838\u9a8c\u8eab\u4efd\u5e76\u91cd\u8bbe\u5bc6\u7801'}
+                description={'\u53ea\u8f6e\u6362\u5f53\u524d\u4e3b\u673a\u7684\u8bbe\u5907\u5bc6\u94a5\u4e0e\u672c\u673a\u5bc6\u7801\uff0c\u4e0d\u4f1a\u5220\u9664\u672c\u673a\u6570\u636e\u3001\u5f85\u540c\u6b65\u53d8\u66f4\u6216\u9898\u5e93\u3002'}
+              />
+              <Input.Password prefix={<LockOutlined />} visibilityToggle value={password} onChange={event => setPassword(event.target.value)} placeholder={'\u8bbe\u7f6e\u65b0\u7684\u672c\u673a\u5bc6\u7801'} />
+              <Input.Password prefix={<LockOutlined />} visibilityToggle value={passwordAgain} onChange={event => setPasswordAgain(event.target.value)} placeholder={'\u518d\u6b21\u8f93\u5165\u65b0\u5bc6\u7801'} onPressEnter={resetSingleUserHostPassword} />
+              <Button type="primary" loading={busy} onClick={resetSingleUserHostPassword} block>{'\u786e\u8ba4\u8eab\u4efd\u5e76\u91cd\u8bbe'}</Button>
+              <Button onClick={() => setGateState({ kind: 'locked' })} block>{'\u8fd4\u56de\u89e3\u9501'}</Button>
+            </>
+          )}
+          {gateState.kind === 'single-user-pairing-required' && (
+            pairingPending ? (
+              <>
+                <Alert
+                  type="info"
+                  showIcon
+                  message={pairingPending.status === 'completed'
+                    ? '\u914d\u5bf9\u51ed\u636e\u5df2\u5b89\u5168\u53d6\u56de'
+                    : '\u914d\u5bf9\u8bf7\u6c42\u5df2\u53d1\u51fa\uff0c\u6b63\u5728\u7b49\u5f85\u6570\u636e\u4e3b\u673a\u81ea\u52a8\u6279\u51c6'}
+                  description={pairingPending.channel === 'direct' ? '\u5c40\u57df\u7f51\u76f4\u8fde' : '\u963f\u91cc\u4e91\u52a0\u5bc6\u4e2d\u7ee7'}
+                />
+                <Button
+                  icon={<ReloadOutlined />}
+                  loading={polling || busy}
+                  onClick={() => void (pairingPending.status === 'completed'
+                    ? finishSingleUserPairing(pairingPending)
+                    : pollSingleUserPairing())}
+                  block
+                >
+                  {pairingPending.status === 'completed'
+                    ? '\u4fdd\u5b58\u672c\u673a\u51ed\u636e\u5e76\u8fdb\u5165'
+                    : '\u7acb\u5373\u68c0\u67e5\u6279\u51c6\u7ed3\u679c'}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Paragraph className="desktop-identity-copy">
+                  {'\u8f93\u5165\u6570\u636e\u4e3b\u673a\u751f\u6210\u7684\u4e00\u6b21\u6027\u914d\u5bf9\u7801\u3002\u672c\u673a\u5c06\u81ea\u884c\u751f\u6210\u8bbe\u5907\u5bc6\u94a5\uff0c\u5bc6\u94a5\u548c\u914d\u5bf9\u7801\u660e\u6587\u90fd\u4e0d\u4f1a\u4e0a\u4f20\u3002'}
+                </Paragraph>
+                <Input value={deviceName} onChange={event => setDeviceName(event.target.value)} placeholder={'\u8bbe\u5907\u540d\u79f0\uff0c\u4f8b\u5982\uff1a\u5bb6\u91cc\u7535\u8111'} maxLength={128} />
+                <Input value={pairingCode} onChange={event => setPairingCode(event.target.value)} placeholder={'\u8f93\u5165\u4e00\u6b21\u6027\u914d\u5bf9\u7801'} maxLength={24} autoComplete="one-time-code" />
+                <Input.Password prefix={<LockOutlined />} visibilityToggle value={password} onChange={event => setPassword(event.target.value)} placeholder={'\u4e3a\u8fd9\u53f0\u7535\u8111\u8bbe\u7f6e\u672c\u673a\u5bc6\u7801'} />
+                <Input.Password prefix={<LockOutlined />} visibilityToggle value={passwordAgain} onChange={event => setPasswordAgain(event.target.value)} placeholder={'\u518d\u6b21\u8f93\u5165\u672c\u673a\u5bc6\u7801'} onPressEnter={beginSingleUserPairing} />
+                <Text type="secondary">{'\u6bcf\u53f0\u7535\u8111\u7684\u672c\u673a\u5bc6\u7801\u76f8\u4e92\u72ec\u7acb\uff1b\u914d\u5bf9\u6210\u529f\u540e\u4e0d\u4f1a\u81ea\u52a8\u53d1\u8d77\u6570\u636e\u540c\u6b65\u3002'}</Text>
+                <Button type="primary" loading={busy} onClick={beginSingleUserPairing} block>{'\u9a8c\u8bc1\u914d\u5bf9\u7801\u5e76\u8fdb\u5165'}</Button>
+              </>
+            )
+          )}
           {gateState.kind === 'upgrade-required' && (
             <Alert type="warning" showIcon message="需要升级旧版桌面授权" description="旧版配对信息不会自动迁移，请重新通过微信核验本人手机号。" />
           )}
@@ -614,11 +956,15 @@ const DesktopIdentityGate: React.FC = () => {
                 autoFocus
               />
               <Text type="secondary">{'\u5bc6\u7801\u6846\u53f3\u4fa7\u7684\u773c\u775b\u6309\u94ae\u53ea\u663e\u793a\u672c\u6b21\u8f93\u5165\uff0c\u4e0d\u80fd\u663e\u793a\u5386\u53f2\u5bc6\u7801\u3002'}</Text>
-              <Button type="link" loading={busy} onClick={beginPasswordReset} block>
+              <Button type="link" loading={busy} onClick={() => void beginRecoveryFlow()} block>
                 {'\u5fd8\u8bb0\u672c\u673a\u5bc6\u7801\uff1f\u91cd\u65b0\u6838\u9a8c\u8eab\u4efd\u5e76\u91cd\u8bbe'}
               </Button>
               <Text type="secondary">
-                {'\u91cd\u8bbe\u9700\u8054\u7f51\u3001\u5fae\u4fe1\u6838\u9a8c\u672c\u4eba\u624b\u673a\u53f7\u5e76\u7531\u53e6\u4e00\u53f0\u5df2\u6388\u6743\u8bbe\u5907\u6279\u51c6\uff1b\u4e0d\u4f1a\u5220\u9664\u672c\u673a\u6570\u636e\u6216\u5f85\u540c\u6b65\u53d8\u66f4\u3002'}
+                {runtimeConfig?.buildFlavor === 'desktop-client'
+                  ? '\u5fd8\u8bb0\u5bc6\u7801\u65f6\u9700\u8981\u6570\u636e\u4e3b\u673a\u751f\u6210\u65b0\u7684\u4e00\u6b21\u6027\u914d\u5bf9\u7801\uff1b\u4e0d\u4f1a\u5220\u9664\u672c\u673a\u6570\u636e\u6216\u5f85\u540c\u6b65\u53d8\u66f4\u3002'
+                  : runtimeConfig?.desktopIdentityMode === 'single-user'
+                    ? '\u6570\u636e\u4e3b\u673a\u5c06\u5728\u672c\u673a\u91cd\u65b0\u6838\u9a8c\u5e76\u8f6e\u6362\u5bc6\u94a5\uff1b\u4e0d\u4f1a\u5220\u9664\u672c\u673a\u6570\u636e\u6216\u5f85\u540c\u6b65\u53d8\u66f4\u3002'
+                    : '\u91cd\u8bbe\u9700\u8054\u7f51\u3001\u5fae\u4fe1\u9a8c\u8bc1\u672c\u4eba\u624b\u673a\u53f7\u5e76\u7531\u53e6\u4e00\u53f0\u5df2\u6388\u6743\u8bbe\u5907\u6279\u51c6\uff1b\u4e0d\u4f1a\u5220\u9664\u672c\u673a\u6570\u636e\u6216\u5f85\u540c\u6b65\u53d8\u66f4\u3002'}
               </Text>
               <Button type="primary" loading={busy} onClick={unlock} block>验证并进入</Button>
               <Text type="secondary">这不是云端通用密码；另一台电脑需要设置自己的本机密码。</Text>

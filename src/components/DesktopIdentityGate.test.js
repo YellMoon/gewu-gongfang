@@ -42,5 +42,17 @@ assert.ok(gateStyle.includes('.desktop-identity-runtime--offline > .app-shell'))
 assert.ok(gateStyle.includes('.desktop-identity-runtime--offline .desktop-identity-runtime-bar'));
 assert.ok(appSource.includes('processMiniappCloudTasks'));
 assert.ok(appSource.includes('publishCloudHeartbeat'));
+assert.ok(gateSource.includes('discoverPairingCapability') && gateSource.includes('submitPairingRequest'));
+assert.ok(gateSource.includes('pollPairingResult') && gateSource.includes('normalizePairingCode'));
+assert.ok(decodedGateSource.includes('输入一次性配对码'));
+assert.ok(decodedGateSource.includes('单人模式初始化'));
+assert.ok(decodedGateSource.includes('初始化前会备份，不会删除数据'));
+assert.ok(decodedGateSource.includes('启用临时单人模式'));
+assert.ok(gateSource.includes("buildFlavor === 'primary-host'") && gateSource.includes("desktopIdentityMode === 'single-user'"));
+for (const code of [
+  'PAIRING_CODE_EXPIRED', 'PAIRING_CODE_USED', 'PAIRING_CODE_LOCKED', 'PAIRING_HOST_OFFLINE',
+  'PAIRING_CAPABILITY_STALE', 'DESKTOP_DEVICE_FINGERPRINT_MISMATCH',
+  'SINGLE_USER_MODE_DISABLED', 'LOCAL_BACKUP_FAILED',
+]) assert.ok(gateSource.includes(code), `gate must map ${code}`);
 
 console.log('desktop identity gate source checks passed');

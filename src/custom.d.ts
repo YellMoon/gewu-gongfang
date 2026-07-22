@@ -63,6 +63,12 @@ declare module './services/managedSyncConfig.mjs' {
   export const resolveManagedSyncConfig: any;
   export const syncFailureMessage: any;
 }
+declare module './services/singleUserPairingClient.mjs' {
+  export const discoverPairingCapability: any;
+  export const normalizePairingCode: any;
+  export const pollPairingResult: any;
+  export const submitPairingRequest: any;
+}
 declare module './services/systemSettingsRolePolicy.mjs' { export const systemSettingsRolePolicy: any; }
 
 interface Window {
@@ -73,7 +79,7 @@ interface Window {
   desktopIdentity?: {
     status(): Promise<any>;
     beginRegistration(input?: { deviceName?: string }): Promise<any>;
-    beginSingleUserEnrollment(input?: { deviceName?: string }): Promise<any>;
+    beginSingleUserEnrollment(input?: { deviceName?: string; deviceKind?: string }): Promise<any>;
     createPairingEnvelope(input: {
       capability: Record<string, any>;
       pairingCode: string;

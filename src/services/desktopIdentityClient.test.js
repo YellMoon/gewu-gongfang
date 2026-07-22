@@ -543,6 +543,33 @@ async function main() {
   assert.strictEqual(resetSealCall[1].authorization.deviceId, 'device-2');
   assert.strictEqual(resetSealCall[1].offlineLease.credentialVersion, 2);
 
+  const singleUserSealCalls = [];
+  const singleUserClient = createDesktopIdentityClient({
+    desktopIdentity: {
+      status: async () => unlockedVault,
+      completeRegistration: async input => {
+        singleUserSealCalls.push(input);
+        return { ...unlockedVault, offlineLease: input.offlineLease };
+      },
+    },
+    fetchImpl: async () => { throw new Error('single-user completion must not auto-sync'); },
+    now: () => new Date(at),
+    sessionStore: { save: async value => value, clear: async () => {} },
+  });
+  const pairedOffline = await singleUserClient.completeSingleUserPairing({
+    password: 'paired-local-password',
+    online: false,
+    result: {
+      authorization: { id: 'authorization-device-2' },
+      profile: serverProfile,
+      offlineLease: validLease,
+    },
+  });
+  assert.strictEqual(pairedOffline.gateState.kind, 'offline-unlocked');
+  assert.strictEqual(singleUserSealCalls.length, 1);
+  assert.strictEqual(singleUserSealCalls[0].password, 'paired-local-password');
+  assert.strictEqual(singleUserSealCalls[0].offlineLease.id, validLease.id);
+
   console.log('desktop identity client checks passed');
 }
 

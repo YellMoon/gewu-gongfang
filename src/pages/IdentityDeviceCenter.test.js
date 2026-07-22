@@ -60,5 +60,10 @@ assert.strictEqual(decoded.includes('选择设备绑定账号'), false);
 assert.strictEqual(source.includes('userId:'), false, 'review page must not submit or select a claimant user id');
 assert.ok(style.includes(':focus-visible') && style.includes('@media (max-width: 900px)'));
 assert.ok(style.includes('.recovery-delivery-secret') && style.includes('user-select: all'));
+assert.ok(decoded.includes('普通桌面端一次性配对'));
+assert.ok(decoded.includes('生成一次性配对码') && decoded.includes('撤销当前配对码'));
+assert.ok(source.includes('singleUserRuntime.issuePairingCode'));
+assert.ok(source.includes('singleUserRuntime.revokePairingCode'));
+assert.ok(source.includes("desktopIdentityMode === 'single-user'"));
 
 console.log('identity device center page source checks passed');

@@ -59,6 +59,9 @@ const IdentityDeviceCenter: React.FC = () => {
   const [hostOperationError, setHostOperationError] = useState('');
   const [pendingRecoveryDelivery, setPendingRecoveryDelivery] = useState<any>(null);
   const [revealedRecoveryPackage, setRevealedRecoveryPackage] = useState<any>(null);
+  const [runtimeConfigState, setRuntimeConfigState] = useState<any>(null);
+  const [singleUserPairingGrant, setSingleUserPairingGrant] = useState<any>(null);
+  const [pairingSecondsRemaining, setPairingSecondsRemaining] = useState(0);
   const operationRef = useRef('');
   const requestContextRef = useRef<any>(null);
 
@@ -67,6 +70,7 @@ const IdentityDeviceCenter: React.FC = () => {
     setErrorCode('');
     try {
       const runtimeConfig = await getRuntimeConfig();
+      setRuntimeConfigState(runtimeConfig);
       const session = readDesktopAuthorizationSession();
       const baseUrl = resolvePairingApiBase(runtimeConfig, window.location);
       const primaryHostRuntime = (window as any).primaryHostRuntime;
@@ -98,6 +102,20 @@ const IdentityDeviceCenter: React.FC = () => {
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    if (!singleUserPairingGrant?.expiresAt) {
+      setPairingSecondsRemaining(0);
+      return undefined;
+    }
+    const update = () => setPairingSecondsRemaining(Math.max(
+      0,
+      Math.ceil((Date.parse(singleUserPairingGrant.expiresAt) - Date.now()) / 1000)
+    ));
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [singleUserPairingGrant?.expiresAt]);
+
   const runOperation = async (key: string, work: () => Promise<any>, successText: string) => {
     if (operationRef.current) return;
     operationRef.current = key;
@@ -115,6 +133,49 @@ const IdentityDeviceCenter: React.FC = () => {
       operationRef.current = '';
       setOperationKey('');
     }
+  };
+
+  const issueSingleUserPairingCode = async () => {
+    if (operationRef.current) return;
+    operationRef.current = 'single-user:pairing:issue';
+    setOperationKey(operationRef.current);
+    setErrorCode('');
+    try {
+      const singleUserRuntime = (window as any).singleUserRuntime;
+      if (!singleUserRuntime?.issuePairingCode) throw Object.assign(new Error('SINGLE_USER_MODE_DISABLED'), { code: 'SINGLE_USER_MODE_DISABLED' });
+      const response = await singleUserRuntime.issuePairingCode();
+      setSingleUserPairingGrant(response.grant);
+      message.success('\u4e00\u6b21\u6027\u914d\u5bf9\u7801\u5df2\u751f\u6210');
+    } catch (error: any) {
+      setErrorCode(error?.code || 'DESKTOP_PAIRING_GRANT_FAILED');
+    } finally {
+      operationRef.current = '';
+      setOperationKey('');
+    }
+  };
+
+  const revokeSingleUserPairingCode = async () => {
+    if (operationRef.current || !singleUserPairingGrant?.id) return;
+    operationRef.current = 'single-user:pairing:revoke';
+    setOperationKey(operationRef.current);
+    try {
+      const singleUserRuntime = (window as any).singleUserRuntime;
+      if (!singleUserRuntime?.revokePairingCode) throw Object.assign(new Error('SINGLE_USER_MODE_DISABLED'), { code: 'SINGLE_USER_MODE_DISABLED' });
+      await singleUserRuntime.revokePairingCode({ grantId: singleUserPairingGrant.id });
+      setSingleUserPairingGrant(null);
+      message.success('\u5f53\u524d\u914d\u5bf9\u7801\u5df2\u64a4\u9500');
+    } catch (error: any) {
+      setErrorCode(error?.code || 'DESKTOP_PAIRING_GRANT_REVOKE_FAILED');
+    } finally {
+      operationRef.current = '';
+      setOperationKey('');
+    }
+  };
+
+  const copySingleUserPairingCode = async () => {
+    if (!singleUserPairingGrant?.code) return;
+    await navigator.clipboard.writeText(singleUserPairingGrant.code);
+    message.success('\u914d\u5bf9\u7801\u5df2\u590d\u5236');
   };
 
   const confirmApproval = (row: any) => {
@@ -629,6 +690,33 @@ const IdentityDeviceCenter: React.FC = () => {
     {viewState === 'conflict' && <Alert className="identity-device-center__alert" showIcon type="error" message={'\u8eab\u4efd\u6216\u8bbe\u5907\u5f52\u5c5e\u51b2\u7a81'} />}
     {viewState === 'concurrent' && <Alert className="identity-device-center__alert" showIcon type="info" message={'\u72b6\u6001\u5df2\u88ab\u53e6\u4e00\u9879\u64cd\u4f5c\u66f4\u65b0\uff0c\u8bf7\u5237\u65b0'} />}
     {viewState === 'revoked' && <Alert className="identity-device-center__alert" showIcon type="error" message={'\u5f53\u524d\u8bbe\u5907\u6388\u6743\u5df2\u64a4\u9500\uff0c\u8bf7\u91cd\u65b0\u8fdb\u5165\u767b\u5f55\u6d41\u7a0b'} />}
+
+    {runtimeConfigState?.buildFlavor === 'primary-host'
+      && runtimeConfigState?.desktopIdentityMode === 'single-user' && (
+      <Card className="identity-device-center__section" title={'\u666e\u901a\u684c\u9762\u7aef\u4e00\u6b21\u6027\u914d\u5bf9'}>
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Typography.Paragraph type="secondary">
+            {'\u6bcf\u6b21\u53ea\u751f\u6210\u4e00\u4e2a 10 \u5206\u949f\u6709\u6548\u7684\u914d\u5bf9\u7801\uff1b\u65b0\u7801\u4f1a\u64a4\u9500\u65e7\u7801\u3002\u666e\u901a\u7aef\u914d\u5bf9\u6210\u529f\u540e\u4ecd\u9700\u624b\u52a8\u53d1\u8d77\u540c\u6b65\u3002'}
+          </Typography.Paragraph>
+          {singleUserPairingGrant && pairingSecondsRemaining > 0 ? (
+            <>
+              <Typography.Title level={3} copyable={false} style={{ margin: 0, letterSpacing: 3 }}>
+                {String(singleUserPairingGrant.code).match(/.{1,4}/g)?.join('-')}
+              </Typography.Title>
+              <Tag color="orange">{Math.floor(pairingSecondsRemaining / 60)}:{String(pairingSecondsRemaining % 60).padStart(2, '0')} {'\u540e\u8fc7\u671f'}</Tag>
+              <Space wrap>
+                <Button onClick={() => void copySingleUserPairingCode()}>{'\u590d\u5236\u914d\u5bf9\u7801'}</Button>
+                <Button danger loading={operationKey === 'single-user:pairing:revoke'} onClick={() => void revokeSingleUserPairingCode()}>{'\u64a4\u9500\u5f53\u524d\u914d\u5bf9\u7801'}</Button>
+              </Space>
+            </>
+          ) : (
+            <Button type="primary" loading={operationKey === 'single-user:pairing:issue'} onClick={() => void issueSingleUserPairingCode()}>
+              {'\u751f\u6210\u4e00\u6b21\u6027\u914d\u5bf9\u7801'}
+            </Button>
+          )}
+        </Space>
+      </Card>
+    )}
 
     {viewState === 'loading' && !snapshot && <Card className="identity-device-center__loading"><Spin /><span>{'\u6b63\u5728\u8bfb\u53d6\u8eab\u4efd\u4e0e\u8bbe\u5907\u72b6\u6001\u2026'}</span></Card>}
     {viewState === 'empty' && <Card><Empty description={'\u6ca1\u6709\u53ef\u663e\u793a\u7684\u8bbe\u5907\u8bb0\u5f55'} /></Card>}

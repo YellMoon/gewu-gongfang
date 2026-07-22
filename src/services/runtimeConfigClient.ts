@@ -4,6 +4,7 @@ export type RuntimeConfig = {
   buildFlavor: NodeRole;
   primaryHostCapable: boolean;
   nodeRole: NodeRole;
+  desktopIdentityMode: 'full' | 'single-user';
   deviceId: string;
   primaryHostEpochId: string;
   primaryHostGeneration: number | null;

@@ -541,7 +541,7 @@ git commit -m "feat: 增加阿里云不透明桌面配对中继"
 - Modify: `src/services/runtimeConfigClient.test.js`
 - Modify: `package.json`
 
-- [ ] **Step 1: 写客户端/UI RED 测试**
+- [x] **Step 1: 写客户端/UI RED 测试**
 
 测试普通端状态机：输入带分组的 16 位码，优先发现 LAN capability，失败后使用 cloud；请求成功后用现有 vault 密封；错误不删除 pending key；配对成功不自动同步。主机界面只在 `buildFlavor=primary-host && desktopIdentityMode=single-user` 显示初始化/重设/生成配对码。
 
@@ -553,7 +553,7 @@ assert.ok(ordinaryGate.includes('输入一次性配对码'));
 assert.ok(!ordinaryGate.includes('初始化数据主机'));
 ```
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run:
 
@@ -566,7 +566,7 @@ node src/pages/IdentityDeviceCenter.test.js
 
 Expected: FAIL with missing client/mode-specific UI.
 
-- [ ] **Step 3: 实现配对客户端状态机**
+- [x] **Step 3: 实现配对客户端状态机**
 
 `singleUserPairingClient.mjs` 公开 `normalizePairingCode`、`discoverPairingCapability`、`submitPairingRequest`、`pollPairingResult`。renderer 把 capability 与规范化配对码传给 `window.desktopIdentity.createPairingEnvelope`，密文返回后才进入网络层；设备私钥和配对明文不进入 fetch body。请求 secret 由客户端 `crypto.getRandomValues` 生成，只有 hash 发给网关；明文 secret 仅存在本机内存。
 
@@ -582,13 +582,13 @@ await desktopIdentity.completeRegistration({
 return exchangeOnlineSession({ baseUrl, desktopIdentity });
 ```
 
-- [ ] **Step 4: 实现清晰 UI 与错误映射**
+- [x] **Step 4: 实现清晰 UI 与错误映射**
 
 主机 flavor 且 mode 为 `full` 时只显示“启用临时单人模式”及风险说明，二次确认后调用 host-only mode IPC 并重启；不会自动启用。主机空 vault 且 mode 为 `single-user` 时显示“单人模式初始化”、两次密码输入和“初始化前会备份，不会删除数据”。主机 sealed 且忘记密码：显示“重新核验身份并重设密码”。主机设备中心：生成/复制/撤销配对码及倒计时。普通端：设备名、配对码、两次本机密码；不显示微信、手机号、主机迁移/恢复。
 
 稳定错误映射至少包含 `PAIRING_CODE_EXPIRED`、`PAIRING_CODE_USED`、`PAIRING_CODE_LOCKED`、`PAIRING_HOST_OFFLINE`、`PAIRING_CAPABILITY_STALE`、`DESKTOP_DEVICE_FINGERPRINT_MISMATCH`、`SINGLE_USER_MODE_DISABLED`、`LOCAL_BACKUP_FAILED`。
 
-- [ ] **Step 5: 运行 GREEN、typecheck 并提交**
+- [x] **Step 5: 运行 GREEN、typecheck 并提交**
 
 Run:
 

@@ -16,6 +16,7 @@ const {
   createDesktopSessionProfile,
 } = require('../services/desktopDeviceChallengeService');
 const { createMiniappIdentityService } = require('../services/miniappIdentityService');
+const { roleContextForUser } = require('../services/userRoleGrantService');
 const {
   resolveWechatIdentity: defaultResolveWechatIdentity,
   resolveWechatPhoneNumber: defaultResolveWechatPhoneNumber,
@@ -240,6 +241,44 @@ function createDesktopIdentityRouter({
     }
     return singleUserIdentities;
   }
+  function projectSingleUserPairingResult(authorized) {
+    const authorizationRow = database.prepare(
+      "SELECT * FROM desktop_device_authorizations WHERE id=? AND status='active'"
+    ).get(authorized.authorization.id);
+    const user = authorizationRow && database.prepare(
+      'SELECT * FROM users WHERE id=? AND deleted=0'
+    ).get(authorizationRow.user_id);
+    if (!authorizationRow || !user) {
+      const error = new Error('DESKTOP_PAIRING_AUTHORIZATION_PROJECTION_FAILED');
+      error.code = 'DESKTOP_PAIRING_AUTHORIZATION_PROJECTION_FAILED';
+      throw error;
+    }
+    const roleContext = roleContextForUser(database, user.id);
+    const projection = {
+      id: `desktop-pairing:${authorized.requestId}`,
+      userId: user.id,
+      deviceId: authorizationRow.device_id,
+      activeRole: roleContext.activeRole,
+      eligibleRoles: roleContext.eligibleRoles,
+      teacherId: roleContext.teacherId,
+      studentId: roleContext.studentId,
+    };
+    return Object.freeze({
+      authorization: authorized.authorization,
+      profile: createDesktopSessionProfile({ session: projection, user }),
+      offlineLease: createDesktopOfflineLease({
+        authorization: authorizationRow,
+        session: projection,
+        issuedAt: typeof now === 'function' ? now() : new Date(),
+        leaseId: `desktop-pairing-offline:${authorized.requestId}`,
+      }),
+      authorizationSummary: Object.freeze({
+        id: authorized.authorization.id,
+        deviceId: authorized.authorization.deviceId,
+        credentialVersion: authorized.authorization.credentialVersion,
+      }),
+    });
+  }
   const verifyDesktop = authenticateDesktop || function (token) {
     return session().verifySessionToken(token);
   };
@@ -453,10 +492,11 @@ function createDesktopIdentityRouter({
     try {
       assertBodyKeys(req.body, SINGLE_USER_PAIR_KEYS);
       assertPairingRate(req, 'request', 20, 10 * 60 * 1000);
-      const result = singleUserIdentity().consumeEncryptedPairingRequest({
+      const authorized = singleUserIdentity().consumeEncryptedPairingRequest({
         envelope: req.body,
         channel: 'direct',
       });
+      const result = projectSingleUserPairingResult(authorized);
       return res.json({ success: true, ...result });
     } catch (error) {
       return sendError(res, error);

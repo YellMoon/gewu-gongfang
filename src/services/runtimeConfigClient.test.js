@@ -13,6 +13,7 @@ assert.ok(source.includes('desktopSyncToken'), 'client runtime config should inc
 assert.ok(source.includes('primaryHostEpochId') && source.includes('primaryHostGeneration'), 'client must expose managed host epoch metadata');
 assert.ok(source.includes('localCachePath'), 'client runtime config should include local cache path');
 assert.ok(source.includes('nasBackupPath'), 'client runtime config should include NAS backup path');
+assert.ok(source.includes('desktopIdentityMode'), 'client runtime config should expose managed desktop identity mode');
 assert.ok(source.includes("dialog:select-folder"), 'client should call dialog:select-folder');
 assert.ok(source.includes('getRuntimeConfig'), 'client should export getRuntimeConfig');
 assert.ok(source.includes('saveRuntimeConfig'), 'client should export saveRuntimeConfig');

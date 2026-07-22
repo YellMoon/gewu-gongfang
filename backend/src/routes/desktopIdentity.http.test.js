@@ -277,6 +277,15 @@ function generateDeviceKey() {
       ciphertext: 'ciphertext',
       tag: 'AAAAAAAAAAAAAAAAAAAAAA==',
     };
+    db.prepare(`INSERT INTO desktop_device_authorizations
+      (id,device_id,device_name,device_kind,user_id,public_key,key_fingerprint,status,
+       source_challenge_id,authorization_source,last_phone_verified_at,phone_reverify_due_at,
+       credential_version,row_version,created_at,updated_at)
+      VALUES ('ordinary-auth-1','ordinary-device-1','Ordinary PC','desktop-client',?,
+        'ordinary-public-key',?,'active','single-user-pair-request-1','single_user_pairing',
+        ?,?,1,1,?,?)`)
+      .run(canonicalId, 'b'.repeat(64), clock.toISOString(), '2036-07-17T09:00:00.000Z',
+        clock.toISOString(), clock.toISOString());
     const pairResponse = await requestJson(
       baseUrl,
       'POST',
@@ -284,7 +293,11 @@ function generateDeviceKey() {
       { body: encryptedEnvelope }
     );
     assert.strictEqual(pairResponse.status, 200);
+    assert.strictEqual(pairResponse.body.authorization.id, 'ordinary-auth-1');
+    assert.strictEqual(pairResponse.body.profile.userId, canonicalId);
+    assert.strictEqual(pairResponse.body.offlineLease.authorizationId, 'ordinary-auth-1');
     assert.deepStrictEqual(Object.keys(singleUserCalls.at(-1)[1].envelope).sort(), Object.keys(encryptedEnvelope).sort());
+    db.prepare("DELETE FROM desktop_device_authorizations WHERE id='ordinary-auth-1'").run();
 
     async function startDevice(deviceId, deviceName, key) {
       const response = await requestJson(

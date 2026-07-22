@@ -397,6 +397,28 @@ export function createDesktopIdentityClient({
     };
   }
 
+  async function completeSingleUserPairing({ password, result, baseUrl, online = false } = {}) {
+    if (!result?.authorization || !result?.profile || !result?.offlineLease) {
+      throw identityError('PAIRING_RESULT_INVALID');
+    }
+    if (typeof desktopIdentity.completeRegistration !== 'function') {
+      throw identityError('DESKTOP_IDENTITY_REGISTRATION_UNAVAILABLE');
+    }
+    const vaultStatus = await desktopIdentity.completeRegistration({
+      password,
+      authorization: result.authorization,
+      profile: result.profile,
+      offlineLease: result.offlineLease,
+    });
+    await sessionStore.clear();
+    if (online) return unlock({ baseUrl, password, online: true });
+    return {
+      offline: true,
+      vaultStatus,
+      gateState: resolveDesktopGateState({ vaultStatus, online: false, now: currentDate() }),
+    };
+  }
+
   async function unlock({ baseUrl, password, online = true } = {}) {
     const vaultStatus = await desktopIdentity.unlock({ password });
     if (!online) {
@@ -520,6 +542,7 @@ export function createDesktopIdentityClient({
     beginPasswordReset,
     beginRegistration,
     completeRegistration,
+    completeSingleUserPairing,
     lock,
     pollRegistration,
     status: () => desktopIdentity.status(),
