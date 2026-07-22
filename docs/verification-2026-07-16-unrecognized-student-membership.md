@@ -36,11 +36,15 @@ release_status: not-published
 | 项目全量 | `npm test` | 退出 0；未跳过测试或更新快照 |
 | 生产小程序 | `npm run miniapp:release-check` | WeApp 编译成功；发布 smoke 退出 0 |
 | 桌面身份发布门禁 | `npm run check:desktop-identity-release` | 退出 0 |
+| 生产安全探针 | 短时未认可令牌直连 Backend/Gateway；只记录状态码、错误码和泄漏布尔值 | 允许接口 3/3 为 200；正式 Backend 入口 9/9 为 403；Gateway 入口 2/2 为 401；旧审核入口 2/2 为 410；无不匹配 |
+| 生产隐私探针 | 检查 4 个 PM2 日志文件的本次请求增量与 `miniapp_login_events` 表结构 | 未发现探针令牌/Authorization 头；无 code、phoneCode、JWT、access token、完整请求体字段；数据库 `quick_check=ok` |
 | Git 差异 | fresh `git fetch gewu --prune` 后比较 `gewu/master...HEAD` | 主线已含 PR #5；已跟踪工作区仅有本次小程序码修复 |
 
 ## 安全与数据边界
 
-- 未认可 token 直连 Backend 正式 API 返回 403；Gateway 身份入口拒绝，旧 review-demo 返回 410。
+- 生产脱敏探针确认：未认可 token 的本人身份、本人申请、固定示例题接口为 200；学员、课程、题库、云快照、桌面身份、桌面配对、同步、管理员和权限等正式 Backend 入口均返回 403 + `UNRECOGNIZED_SCOPE_FORBIDDEN`。
+- 同一短时令牌访问 Gateway 权限和云任务入口均在身份查库前返回 401 + `EXPERIENCE_TOKEN_NOT_ACCEPTED_BY_GATEWAY`；旧 review-demo 登录和路由固定返回 410 + `REVIEW_DEMO_REMOVED`。
+- 探针前后比较 4 个 PM2 日志文件的请求增量，未发现完整令牌或 Authorization 头；生产 `miniapp_login_events` 表不存在 code、phoneCode、JWT、access token 或完整请求体字段，生产库 `quick_check=ok`。
 - 体验导出只使用 Backend 临时目录，不读取权威题库快照、移动题库盘、`miniapp_tasks` 或本地主机业务库，不上传 OSS。
 - 身份切换通过统一 session committer 先清业务缓存与权限再写新 identity/token；服务端防火墙独立成立。
 - 180 天隐私保留测试覆盖登录事件、拒绝/撤回申请和稳定已批准 payload 的删除或匿名化；认证身份手机号和审计摘要按设计保留，临时 code/JWT 不入表。

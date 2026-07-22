@@ -856,9 +856,11 @@ Expected: WeApp 构建成功，API base 为 `https://physicsedu.xyz/scheduling`�
 
 分别以未认可学生、正式学生、家长、老师、普通管理员、超级管理员打开适用页面；所有 17 页至少有一种角色证据，差异路由分别检查。截图命名使用 `<role>-<route>-<state>.png`。必须检查未认可直连无真实数据、申请全状态、会员标记位置、四示例题、Word/PDF、空态、离线、无权限、有限写入；首页不得代替其余页面。
 
-- [ ] **Step 5: 运行安全与数据泄露探针**
+- [x] **Step 5: 运行安全与数据泄露探针**
 
 用未认可 token 直连 Backend 正式 API 和 Gateway，断言正式 Backend 403、Gateway 401、旧审核路由 410。检查服务器日志和数据库事件不含微信 code、phoneCode、JWT、access token、完整请求体；示例题服务在无 D 盘挂载环境仍通过。
+
+2026-07-22 生产脱敏探针以 5 分钟短时令牌完成：Backend 本人身份、本人申请、固定示例题接口均为 200；学员、课程、题库、云快照、桌面身份、桌面配对、同步、管理员和权限入口均为 403 + `UNRECOGNIZED_SCOPE_FORBIDDEN`；Gateway 权限和云任务入口均为 401 + `EXPERIENCE_TOKEN_NOT_ACCEPTED_BY_GATEWAY`；旧审核登录和路由均为 410 + `REVIEW_DEMO_REMOVED`。4 个 PM2 日志文件的本次增量未出现探针令牌或 Authorization 头，`miniapp_login_events` 不含临时凭证/完整请求体字段，生产库 `quick_check=ok`。固定示例题无 D 盘依赖已由独立服务与 HTTP 测试覆盖。
 
 - [ ] **Step 6: 更新验证文档和任务清单**
 
