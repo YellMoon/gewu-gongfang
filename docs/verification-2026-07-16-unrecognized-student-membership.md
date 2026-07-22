@@ -4,7 +4,7 @@ verification_status: partial
 
 redacted_evidence_only: true
 
-release_status: not-published
+release_status: partial-published
 
 当前发布候选版本为 `6.2.0`，工作分支为 `codex/unrecognized-student-experience`。本记录只保存脱敏测试结论、样卷哈希和错误码，不记录微信 code、phoneCode、JWT、access token、手机号、设备私钥、本机密码或恢复因子。
 
@@ -15,7 +15,7 @@ release_status: not-published
 - 小程序使用唯一微信手机号登录动作，未认可账号只得到固定示例题、隔离 Word/PDF 和公开申请能力。
 - 20 个注册页面、七类身份视角与申请/空态/离线/无权限/有限写入状态均进入静态覆盖门禁和真实微信开发者工具运行时矩阵。
 - 当前微信账号可以正常获取 access token 和生成官方小程序码；URL Link 返回权限码 `85407`。这不是服务器 IP 白名单故障，桌面身份入口已在本地实现仅针对该权限码的小程序码回退。
-- 真实微信逐页证据已完成；真实桌面扫码、当前主机 bootstrap、第二台电脑批准与统一多端发布尚未完成，所以状态仍为 `partial / not-published`。
+- 真实微信逐页证据、小程序 6.2.0 上传、阿里云 6.2.0、普通/主机 OSS feed、本机主机包安装和夸克交付均已完成；微信审核接口受 `86000` 限制，真实桌面扫码、当前主机 bootstrap 与第二台电脑批准尚未完成，所以状态为 `partial / partial-published`。
 
 ## 固定示例题来源边界
 
@@ -44,6 +44,14 @@ release_status: not-published
 | 阿里云部署前备份 | `/root/scheduling-backups/formula-pipeline/20260722-105340` | Backend/Gateway 代码与两套 SQLite 均有非零大小和 SHA-256；两库 `quick_check=ok` |
 | 本地主机升级前备份 | `D:\GewuDataHost\backups\release-6.2.0-20260722-105441` | 权威库、设备配置、题库 manifest 已备份；源库与备份库 `quick_check=ok`，逐文件 SHA-256 已写入 `backup-verification.json` |
 | 桌面构建矩阵 | 普通 `dist/格物工坊 Setup 6.2.0.exe`；主机 `dist-host/GewuGongfang-PrimaryHost-6.2.0-x64.exe` | 打包元数据分别为 `desktop-client` / `primary-host`；Node `better-sqlite3` ABI 恢复并可加载 |
+| 阿里云 6.2.0 部署 | Backend `/root/scheduling-backend`、Gateway `/root/education-platform/gateway` | PM2 在线；内网与公网 `/api/health` 均返回 `ok=true, version=6.2.0` |
+| 数据主机 6.2.0 安装 | `C:\Users\83423\AppData\Local\gewu-gongfang\` | 包内 `desktopBuildFlavor=primary-host`；本地 `/api/health` 返回 6.2.0；权威库 `quick_check=ok`；D 盘缓存/备份和 I 盘题库 storeId 均在线 |
+| 小程序上传 | 阿里云固定出口运行 `miniprogram-ci 2.1.31` | AppID `wx3d570539bbe6ba1b`、版本 6.2.0、完整包 933918 bytes，上传返回 `success=true`；本机动态 IP 曾返回 `-10008 invalid ip: 122.234.183.160` |
+| 小程序审核状态 | `node scripts/miniapp-review.js status` | 返回 `86000 should be called only from third party`；开发版本已上传，审核/正式发布需微信后台人工提交 |
+| 普通桌面 OSS | `desktop/latest.yml` 与 `desktop/releases/6.2.0/` | 四对象 PUT 均为 HTTP 200；安装包 150626600 bytes，feed 版本 6.2.0 |
+| 数据主机 OSS | `desktop/host/latest.yml` 与 `desktop/host/releases/6.2.0/` | 四对象 PUT 均为 HTTP 200；安装包 150634742 bytes，ETag `BEC9587485358A1AC8795954903A58C0`，feed 版本 6.2.0 |
+| OSS 网络恢复 | 连续大文件 PUT 复现 `ECONNRESET`，RED→GREEN 增加有限退避重试 | 聚焦测试、`publish-oss-feed.test.js` 与真实四对象主机发布均退出 0 |
+| 夸克交付 | `node scripts/upload-quark-clean.js` | `codex项目/2026-07-22/格物工坊 Setup 6.2.0.exe` 同页确认上传完成，页面显示 143.6 MB、完成 1 项 |
 
 ## 安全与数据边界
 
@@ -63,7 +71,6 @@ release_status: not-published
 
 ## 仍待完成的统一矩阵
 
-1. 完成当前版本阿里云部署前备份与部署，使生产桌面身份挑战可返回官方小程序码。
-2. 构建并安装数据主机专属桌面包，完成真实微信扫码、当前主机 bootstrap 与恢复包离线交付确认。
-3. 用第二台普通桌面端完成同一人的注册、异机批准和角色保持验证；未获明确换机指令时不执行主机切换。
-4. 完成小程序上传/核验、OSS 普通与主机 feed、Node ABI 恢复、本地主机健康/题库盘/同步/heartbeat 验证，再按证据报告完成、部分发布或受阻。
+1. 在当前数据主机重新生成微信身份二维码，由用户本人扫码并授权手机号；完成本机密码注册后执行真实主机 bootstrap、恢复包离线交付确认、heartbeat `identity-provisioning-v1` 与隔离建档任务验证。
+2. 用第二台普通桌面端完成同一人的注册、异机批准和角色保持验证；未获明确换机指令时不执行主机切换。
+3. 小程序 6.2.0 开发版本已经上传；微信开放接口审核查询受 `86000` 限制，需在小程序后台人工提交审核并在审核通过后发布。

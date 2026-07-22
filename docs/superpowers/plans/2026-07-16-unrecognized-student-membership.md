@@ -890,7 +890,7 @@ git commit -m "自动发布 2026-07-16"
 
 备份 Backend/Gateway 代码和两套 SQLite，运行 `PRAGMA quick_check`；验证备份目录、大小和哈希后才迁移。把备份路径和 quick_check 结果写入验证文档，不记录密钥。
 
-- [ ] **Step 3: 部署 Backend 兼容层和 Gateway tombstone**
+- [x] **Step 3: 部署 Backend 兼容层和 Gateway tombstone**
 
 先部署 Backend schema/auth/application/sandbox，再部署 Gateway 410；迁移、重启后验证内网和公网 `/api/health`、正式旧账号登录、未认可登录、申请、主机任务、Gateway 拒绝契约。
 
@@ -898,13 +898,17 @@ git commit -m "自动发布 2026-07-16"
 
 先备份本地权威数据库，安装本次版本且保留数据目录/设备配置；验证本地健康、D 盘权威库、移动硬盘题库、缓存、备份目标、同步和 heartbeat `identity-provisioning-v1`。用隔离验收身份跑一次学生或老师建档/绑定任务并清理临时验收记录。
 
-- [ ] **Step 5: 上传小程序并核验**
+2026-07-22：6.2.0 主机包已安装，本地健康、权威库 quick_check、D 盘缓存/备份和 I 盘题库均通过；微信身份二维码等待用户本人手机号授权，真实 bootstrap、恢复交付、heartbeat capability 和隔离建档任务仍待完成。
+
+- [x] **Step 5: 上传小程序并核验**
 
 Run: `npm run miniapp:upload`
 
 Expected: 微信开发者工具上传成功，AppID、版本、包大小和上传时间有证据；随后尝试审核/发布。若白名单、平台或权限阻断，记录精确错误并标记“部分发布/受阻”。
 
-- [ ] **Step 6: 构建并发布 OSS 桌面更新**
+2026-07-22：本机动态 IP `122.234.183.160` 返回 `-10008`，随后改由已登记白名单的阿里云固定公网 IP 上传成功；AppID `wx3d570539bbe6ba1b`、版本 6.2.0、完整包 933918 bytes。审核状态接口返回 `86000 should be called only from third party`，因此仅开发版本上传完成，审核/正式发布受平台权限阻断。
+
+- [x] **Step 6: 构建并发布 OSS 桌面更新**
 
 Run:
 
@@ -916,7 +920,9 @@ npm run rebuild:node
 
 Expected: 安装包、`latest.yml`、远端 HTTP 200、文件大小和 SHA-512 一致；`better-sqlite3` 恢复 Node ABI 并通过相关 backend/database smoke。
 
-- [ ] **Step 7: 最终全量验证、提交与推送**
+普通端与主机端两条 feed 均已发布 6.2.0。主机通道连续大文件 PUT 曾稳定复现 `ECONNRESET`，经 RED→GREEN 增加仅针对瞬时网络错误的有限退避重试后，真实四对象发布退出 0。
+
+- [x] **Step 7: 最终全量验证、提交与推送**
 
 Run:
 
@@ -930,9 +936,11 @@ git push gewu master
 
 Expected: 测试 exit 0；推送后 `gewu/master` 与 HEAD 一致。提交前确认不纳入 `.playwright-cli/` 临时状态、未筛选 `output/`、本地凭据或 D 盘源文件；只提交明确验证证据。
 
-- [ ] **Step 8: 按统一矩阵给出最终状态**
+- [x] **Step 8: 按统一矩阵给出最终状态**
 
 只有小程序上传/审核、阿里云、数据主机、OSS/ABI 均有当前版本证据时写“已发布完成”；任一外部端未完成则写“部分发布”或“受阻”，列出仍旧版本、错误码和下一安全动作。
+
+当前结论为“部分发布”：阿里云、两条 OSS feed、本机主机安装、小程序开发版本上传和夸克交付均完成；微信审核 `86000`、当前主机真实 bootstrap 与第二台电脑验证仍未完成。
 
 ---
 

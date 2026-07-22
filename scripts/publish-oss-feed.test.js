@@ -16,6 +16,16 @@ const electronMain = fs.readFileSync(path.join(__dirname, '..', 'public', 'elect
 const quarkUpload = fs.readFileSync(path.join(__dirname, 'upload-quark-clean.js'), 'utf8');
 const beijingUpdateBaseUrl = 'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop';
 
+const retryTest = spawnSync(process.execPath, ['scripts/oss-upload-retry.test.js'], {
+  cwd: path.join(__dirname, '..'),
+  encoding: 'utf8',
+});
+assert.strictEqual(
+  retryTest.status,
+  0,
+  `OSS retry helper checks should pass:\n${retryTest.stdout}\n${retryTest.stderr}`
+);
+
 assert.ok(
   packageJson.scripts['publish:desktop-rollback'],
   'package scripts should expose an OSS desktop rollback command'
@@ -37,6 +47,10 @@ assert.strictEqual(
 assert.ok(
   publishScript.includes(beijingUpdateBaseUrl),
   'OSS publish script should default to the Beijing OSS desktop update bucket'
+);
+assert.ok(
+  publishScript.includes('retryTransientNetwork(() => putOssObject'),
+  'OSS publish script should retry transient network failures for each individual object upload'
 );
 assert.ok(
   quarkUpload.includes(beijingUpdateBaseUrl),

@@ -3,6 +3,7 @@ const fs = require('fs');
 const https = require('https');
 const path = require('path');
 const { URL } = require('url');
+const { retryTransientNetwork } = require('./oss-upload-retry');
 
 try {
   const dotenv = require('dotenv');
@@ -211,7 +212,10 @@ async function runUploadPlan(items) {
   for (const item of items) {
     upload.push({
       key: item.key,
-      result: await putOssObject(item.key, item.body, item.contentType),
+      result: await retryTransientNetwork(() => putOssObject(item.key, item.body, item.contentType), {
+        retries: Number(process.env.OSS_UPLOAD_RETRIES || 2),
+        delayMs: Number(process.env.OSS_UPLOAD_RETRY_DELAY_MS || 2000),
+      }),
     });
   }
   return upload;
