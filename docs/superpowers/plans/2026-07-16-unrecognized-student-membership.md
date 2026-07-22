@@ -866,7 +866,7 @@ Expected: WeApp 构建成功，API base 为 `https://physicsedu.xyz/scheduling`�
 
 记录每条命令、版本、截图绝对路径、HTTP 状态、数据库迁移计数、阻断与回滚点。只把有当前证据的 `task.md` 项标记完成。
 
-- [ ] **Step 7: 本地提交验证证据**
+- [x] **Step 7: 本地提交验证证据**
 
 ```powershell
 git add docs/verification-2026-07-16-unrecognized-student-membership.md task.md
@@ -882,11 +882,11 @@ git commit -m "自动发布 2026-07-16"
 - Modify: `docs/verification-2026-07-16-unrecognized-student-membership.md`
 - Modify: `task.md`
 
-- [ ] **Step 1: 按语义版本规则递增补丁版本**
+- [x] **Step 1: 按语义版本规则递增补丁版本**
 
-使用 `auto-version-bump` 判定本次为兼容功能升级，预期从 `5.14.4` 升到 `5.15.0`；运行版本脚本后核对 `package.json`、锁文件、小程序版本和健康接口一致。
+使用 `auto-version-bump` 判定本次为兼容功能升级；实际从 `6.1.0` 升到 `6.2.0`。普通端与主机端安装包版本一致，打包元数据分别为 `desktop-client` 和 `primary-host`。
 
-- [ ] **Step 2: 阿里云部署前备份**
+- [x] **Step 2: 阿里云部署前备份**
 
 备份 Backend/Gateway 代码和两套 SQLite，运行 `PRAGMA quick_check`；验证备份目录、大小和哈希后才迁移。把备份路径和 quick_check 结果写入验证文档，不记录密钥。
 

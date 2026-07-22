@@ -6,7 +6,7 @@ redacted_evidence_only: true
 
 release_status: not-published
 
-当前基线版本为 `6.1.0`，工作分支为 `codex/unrecognized-student-experience`。本记录只保存脱敏测试结论、样卷哈希和错误码，不记录微信 code、phoneCode、JWT、access token、手机号、设备私钥、本机密码或恢复因子。统一矩阵完成前不推送、不打包、不部署。
+当前发布候选版本为 `6.2.0`，工作分支为 `codex/unrecognized-student-experience`。本记录只保存脱敏测试结论、样卷哈希和错误码，不记录微信 code、phoneCode、JWT、access token、手机号、设备私钥、本机密码或恢复因子。
 
 ## 当前结论
 
@@ -34,12 +34,16 @@ release_status: not-published
 | 类型检查 | 根项目 `npm run typecheck`；`npm --prefix miniapp run typecheck` | 全部退出 0 |
 | Task 7–11 原计划矩阵 | 固定数据、沙箱、防火墙、410、会话、申请 UI、隐私、20 页覆盖和发布脚本测试 | 全部退出 0 |
 | 后端与跨端回归 | `npm run test:backend` | 退出 0；页面拆分后的入口与共享组件均由回归测试覆盖 |
+| 项目全量 | `npm test`（`6.2.0`） | 退出 0；未跳过测试或更新快照 |
 | 生产小程序 | `npm run miniapp:release-check` | WeApp 编译成功；发布 smoke 退出 0 |
 | 桌面身份发布门禁 | `npm run check:desktop-identity-release` | 退出 0 |
 | 生产安全探针 | 短时未认可令牌直连 Backend/Gateway；只记录状态码、错误码和泄漏布尔值 | 允许接口 3/3 为 200；正式 Backend 入口 9/9 为 403；Gateway 入口 2/2 为 401；旧审核入口 2/2 为 410；无不匹配 |
 | 生产隐私探针 | 检查 4 个 PM2 日志文件的本次请求增量与 `miniapp_login_events` 表结构 | 未发现探针令牌/Authorization 头；无 code、phoneCode、JWT、access token、完整请求体字段；数据库 `quick_check=ok` |
 | 微信真实运行时 | `output/miniapp-6.1.0-ui-coverage/runtime-fixture-matrix/matrix.json` 与同目录 20 张 PNG | `completed=true`；20/20 页面、guest/super_admin/student/teacher/parent/admin/unrecognized 七类身份视角；最小截图 10885 bytes |
 | Git 差异 | fresh `git fetch gewu --prune` 后比较 `gewu/master...HEAD` | 主线已含 PR #3/#4/#5；当前分支包含其后续审查修复，尚未合并推送 |
+| 阿里云部署前备份 | `/root/scheduling-backups/formula-pipeline/20260722-105340` | Backend/Gateway 代码与两套 SQLite 均有非零大小和 SHA-256；两库 `quick_check=ok` |
+| 本地主机升级前备份 | `D:\GewuDataHost\backups\release-6.2.0-20260722-105441` | 权威库、设备配置、题库 manifest 已备份；源库与备份库 `quick_check=ok`，逐文件 SHA-256 已写入 `backup-verification.json` |
+| 桌面构建矩阵 | 普通 `dist/格物工坊 Setup 6.2.0.exe`；主机 `dist-host/GewuGongfang-PrimaryHost-6.2.0-x64.exe` | 打包元数据分别为 `desktop-client` / `primary-host`；Node `better-sqlite3` ABI 恢复并可加载 |
 
 ## 安全与数据边界
 
