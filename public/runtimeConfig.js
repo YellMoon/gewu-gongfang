@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const VALID_ROLES = new Set(['primary-host', 'desktop-client']);
+const DESKTOP_IDENTITY_MODES = new Set(['full', 'single-user']);
 const MANAGED_CLOUD_BASE_URL = 'https://physicsedu.xyz/scheduling';
 
 function trimTrailingSlash(value) {
@@ -16,6 +17,7 @@ function makeDeviceId() {
 function defaultConfig(userDataPath) {
   return {
     nodeRole: 'desktop-client',
+    desktopIdentityMode: 'full',
     deviceId: makeDeviceId(),
     primaryHostEpochId: '',
     primaryHostGeneration: null,
@@ -38,6 +40,10 @@ function normalizeRuntimeConfig(input = {}, options = {}) {
   const next = { ...defaults, ...(input || {}) };
 
   next.nodeRole = VALID_ROLES.has(next.nodeRole) ? next.nodeRole : 'desktop-client';
+  next.desktopIdentityMode = options.primaryHostCapable === true
+    && DESKTOP_IDENTITY_MODES.has(next.desktopIdentityMode)
+    ? next.desktopIdentityMode
+    : 'full';
   next.deviceId = next.deviceId || defaults.deviceId;
   next.primaryHostEpochId = String(next.primaryHostEpochId || '').trim();
   const primaryHostGeneration = Number(next.primaryHostGeneration);
@@ -124,6 +130,7 @@ function writeRuntimeConfig(configPath, config, options = {}) {
     nodeRole: current.nodeRole,
     primaryHostEpochId: current.primaryHostEpochId,
     primaryHostGeneration: current.primaryHostGeneration,
+    desktopIdentityMode: current.desktopIdentityMode,
   }, options);
   return persistRuntimeConfig(configPath, normalized);
 }
@@ -170,6 +177,22 @@ function writeManagedClientRuntimeConfig(configPath, identity = {}, options = {}
     nodeRole: 'desktop-client',
     primaryHostEpochId: '',
     primaryHostGeneration: null,
+    desktopIdentityMode: 'full',
+  }, options));
+}
+
+function writeManagedDesktopIdentityMode(configPath, mode, options = {}) {
+  if (options.primaryHostCapable !== true) {
+    throw runtimeConfigError('DESKTOP_IDENTITY_MODE_HOST_FLAVOR_REQUIRED');
+  }
+  const normalizedMode = String(mode || '').trim();
+  if (!DESKTOP_IDENTITY_MODES.has(normalizedMode)) {
+    throw runtimeConfigError('DESKTOP_IDENTITY_MODE_INVALID');
+  }
+  const current = readRuntimeConfig(configPath, options);
+  return persistRuntimeConfig(configPath, normalizeRuntimeConfig({
+    ...current,
+    desktopIdentityMode: normalizedMode,
   }, options));
 }
 
@@ -179,6 +202,9 @@ function deriveScopedSecret(seed, scope) {
 
 function applyRuntimeConfigToEnv(config, env = process.env) {
   env.GEWU_NODE_ROLE = config.nodeRole;
+  env.GEWU_DESKTOP_IDENTITY_MODE = DESKTOP_IDENTITY_MODES.has(config.desktopIdentityMode)
+    ? config.desktopIdentityMode
+    : 'full';
   env.GEWU_DEVICE_ID = config.deviceId;
   delete env.GEWU_PRIMARY_HOST_EPOCH_ID;
   delete env.GEWU_PRIMARY_HOST_GENERATION;
@@ -216,6 +242,7 @@ module.exports = {
   writeRuntimeConfig,
   writeManagedHostRuntimeConfig,
   writeManagedClientRuntimeConfig,
+  writeManagedDesktopIdentityMode,
   applyRuntimeConfigToEnv,
   MANAGED_CLOUD_BASE_URL,
 };

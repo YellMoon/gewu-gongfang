@@ -10,6 +10,7 @@ const {
   writeRuntimeConfig,
   writeManagedHostRuntimeConfig,
   writeManagedClientRuntimeConfig,
+  writeManagedDesktopIdentityMode,
   applyRuntimeConfigToEnv,
 } = require('./runtimeConfig');
 
@@ -22,6 +23,19 @@ const firstLaunchConfig = ensureRuntimeConfig(firstLaunchPath, { userDataPath: f
 const repeatedFirstLaunchConfig = ensureRuntimeConfig(firstLaunchPath, { userDataPath: firstLaunchDir });
 assert.ok(fs.existsSync(firstLaunchPath), 'first launch must persist the generated runtime configuration');
 assert.strictEqual(repeatedFirstLaunchConfig.deviceId, firstLaunchConfig.deviceId, 'device id must stay stable across reads');
+assert.strictEqual(firstLaunchConfig.desktopIdentityMode, 'full', 'desktop identity mode must default to full');
+
+const ordinarySingleUserAttempt = normalizeRuntimeConfig({ desktopIdentityMode: 'single-user' }, {
+  userDataPath: firstLaunchDir,
+  primaryHostCapable: false,
+});
+assert.strictEqual(ordinarySingleUserAttempt.desktopIdentityMode, 'full', 'ordinary flavor must reject single-user mode');
+
+const hostSingleUserConfig = normalizeRuntimeConfig({ desktopIdentityMode: 'single-user' }, {
+  userDataPath: firstLaunchDir,
+  primaryHostCapable: true,
+});
+assert.strictEqual(hostSingleUserConfig.desktopIdentityMode, 'single-user');
 
 const normalized = normalizeRuntimeConfig({
   nodeRole: 'primary-host',
@@ -62,6 +76,15 @@ assert.strictEqual(readBack.mainDbPath.replace(/\\/g, '/'), 'D:/GewuData/schedul
 assert.strictEqual(readBack.nodeRole, 'primary-host');
 assert.strictEqual(readBack.primaryHostEpochId, 'primary-host-epoch-1');
 assert.strictEqual(readBack.primaryHostGeneration, 1);
+assert.throws(() => writeManagedDesktopIdentityMode(configPath, 'single-user', {
+  userDataPath: dir,
+  primaryHostCapable: false,
+}), /DESKTOP_IDENTITY_MODE_HOST_FLAVOR_REQUIRED/);
+const singleUserHost = writeManagedDesktopIdentityMode(configPath, 'single-user', {
+  userDataPath: dir,
+  primaryHostCapable: true,
+});
+assert.strictEqual(singleUserHost.desktopIdentityMode, 'single-user');
 
 const attemptedRoleTamper = writeRuntimeConfig(configPath, {
   ...readBack,
@@ -80,6 +103,11 @@ applyRuntimeConfigToEnv(readBack, env);
 assert.strictEqual(env.GEWU_NODE_ROLE, 'primary-host');
 assert.strictEqual(env.GEWU_DEVICE_ID, 'desktop_test');
 assert.strictEqual(env.GEWU_PRIMARY_HOST_EPOCH_ID, 'primary-host-epoch-1');
+assert.strictEqual(env.GEWU_DESKTOP_IDENTITY_MODE, 'full');
+
+const singleUserEnv = {};
+applyRuntimeConfigToEnv(singleUserHost, singleUserEnv);
+assert.strictEqual(singleUserEnv.GEWU_DESKTOP_IDENTITY_MODE, 'single-user');
 assert.strictEqual(env.GEWU_PRIMARY_HOST_GENERATION, '1');
 assert.strictEqual(env.DB_PATH.replace(/\\/g, '/'), 'D:/GewuData/scheduling.db');
 assert.strictEqual(env.QUESTION_BANK_ROOT.replace(/\\/g, '/'), 'E:/GewuQuestionBank');

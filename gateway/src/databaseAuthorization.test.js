@@ -15,6 +15,9 @@ db.prepare(`INSERT INTO users (id, phone, name, user_type, status, login_enabled
  VALUES ('legacy-fixed', '137-3225-0653', 'Legacy', 'admin', 1, 1, 'approved', 0, ?, ?)`).run(now, now);
 database.closeDatabase();
 db = database.initDatabase();
+['desktop_pairing_capabilities', 'desktop_pairing_relay_requests'].forEach(table => {
+  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table), `${table} must exist`);
+});
 const canonical = db.prepare("SELECT * FROM users WHERE replace(replace(phone, '-', ''), ' ', '') = '13732250653'").get();
 assert.strictEqual(canonical.id, 'legacy-fixed');
 assert.strictEqual(canonical.user_type, 'super_admin');

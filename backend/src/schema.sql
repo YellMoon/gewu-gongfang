@@ -435,6 +435,8 @@ CREATE TABLE IF NOT EXISTS desktop_device_authorizations (
   status TEXT NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'active', 'revoked', 'replaced', 'retired')),
   source_challenge_id TEXT NOT NULL UNIQUE,
+  authorization_source TEXT NOT NULL DEFAULT 'wechat_phone'
+    CHECK (authorization_source IN ('wechat_phone', 'single_user_local_bootstrap', 'single_user_pairing')),
   approved_by_user_id TEXT,
   approved_by_device_id TEXT,
   approved_at TEXT,
@@ -501,6 +503,75 @@ CREATE INDEX IF NOT EXISTS idx_desktop_identity_claimant_status
 
 CREATE INDEX IF NOT EXISTS idx_desktop_device_authorizations_user_status
   ON desktop_device_authorizations(user_id, status, updated_at);
+
+CREATE TABLE IF NOT EXISTS desktop_single_user_pairing_grants (
+  id TEXT PRIMARY KEY,
+  owner_user_id TEXT NOT NULL,
+  epoch_id TEXT NOT NULL,
+  generation INTEGER NOT NULL CHECK (generation >= 1),
+  capability_id TEXT NOT NULL,
+  code_salt TEXT NOT NULL,
+  code_digest TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'consumed', 'revoked', 'expired', 'locked')),
+  failed_attempts INTEGER NOT NULL DEFAULT 0 CHECK (failed_attempts >= 0),
+  max_attempts INTEGER NOT NULL DEFAULT 5 CHECK (max_attempts >= 1),
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  consumed_at TEXT,
+  revoked_at TEXT,
+  locked_at TEXT,
+  FOREIGN KEY (owner_user_id) REFERENCES users(id),
+  FOREIGN KEY (epoch_id) REFERENCES primary_host_epochs(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_single_user_pairing_grants_status_expiry
+  ON desktop_single_user_pairing_grants(status, expires_at);
+
+CREATE TABLE IF NOT EXISTS desktop_single_user_pairing_requests (
+  id TEXT PRIMARY KEY,
+  grant_id TEXT,
+  channel TEXT NOT NULL CHECK (channel IN ('direct', 'cloud')),
+  envelope_hash TEXT NOT NULL UNIQUE,
+  device_id TEXT,
+  device_name TEXT,
+  public_key TEXT,
+  key_fingerprint TEXT,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'authorized', 'rejected', 'expired')),
+  authorization_id TEXT,
+  error_code TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT,
+  FOREIGN KEY (grant_id) REFERENCES desktop_single_user_pairing_grants(id),
+  FOREIGN KEY (authorization_id) REFERENCES desktop_device_authorizations(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_single_user_pairing_requests_status_created
+  ON desktop_single_user_pairing_requests(status, created_at);
+
+CREATE TABLE IF NOT EXISTS desktop_sync_batch_backups (
+  id TEXT PRIMARY KEY,
+  batch_id TEXT NOT NULL UNIQUE,
+  request_id TEXT,
+  source_device_id TEXT NOT NULL,
+  actor_user_id TEXT NOT NULL,
+  change_digest TEXT NOT NULL,
+  counts_json TEXT NOT NULL,
+  sqlite_backup_path TEXT NOT NULL,
+  question_manifest_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'prepared'
+    CHECK (status IN ('prepared', 'applied', 'failed', 'recovery_required')),
+  error_code TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_desktop_sync_batch_backups_status_created
+  ON desktop_sync_batch_backups(status, created_at);
 
 CREATE TABLE IF NOT EXISTS desktop_device_session_challenges (
   id TEXT PRIMARY KEY,

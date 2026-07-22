@@ -35,7 +35,7 @@
 - Modify: `miniapp/src/utils/desktopAuthorizationRuntime.js:84-102,217-225`
 - Modify: `miniapp/src/utils/desktopAuthorizationRuntime.test.js:40-66,116-126`
 
-- [ ] **Step 1: 记录并验证现有五个已知改动**
+- [x] **Step 1: 记录并验证现有五个已知改动**
 
 Run:
 
@@ -47,7 +47,7 @@ npm run test:desktop-authorization
 
 Expected: diff 只包含 miniapp challenge `rowVersion` 投影和手机号授权错误分类；两组测试 PASS。
 
-- [ ] **Step 2: 单独提交既有修复，不发布小程序**
+- [x] **Step 2: 单独提交既有修复，不发布小程序**
 
 Run:
 
@@ -72,7 +72,7 @@ Expected: commit 只含五个已知文件；`.codex-task-handoff/`、`.playwrigh
 - Modify: `gateway/src/db/database.js`
 - Modify: `package.json:20-60`
 
-- [ ] **Step 1: 写配置与迁移 RED 测试**
+- [x] **Step 1: 写配置与迁移 RED 测试**
 
 ```js
 const ordinary = normalizeRuntimeConfig({ desktopIdentityMode: 'single-user' }, {
@@ -101,7 +101,7 @@ assertTable('desktop_single_user_pairing_requests');
 assertTable('desktop_sync_batch_backups');
 ```
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run:
 
@@ -114,7 +114,7 @@ node gateway/src/databaseAuthorization.test.js
 
 Expected: FAIL，缺少 `desktopIdentityMode`、受控写入函数和三张本地表/网关配对中继表。
 
-- [ ] **Step 3: 实现配置强制边界**
+- [x] **Step 3: 实现配置强制边界**
 
 在 `public/runtimeConfig.js` 中使用明确枚举：
 
@@ -140,7 +140,7 @@ function writeManagedDesktopIdentityMode(configPath, mode, options = {}) {
 
 `applyRuntimeConfigToEnv` 总是写入 `GEWU_DESKTOP_IDENTITY_MODE`；普通 flavor 在 `loadAndApplyRuntimeConfig()` 中再次强制 `full`。`primaryHostRuntimeManager.setIdentityMode({ mode, confirmation })` 只接受 `confirmation === 'ENABLE_SINGLE_USER_MODE'` 或 `DISABLE_SINGLE_USER_MODE`，写入后要求 Electron 重启；普通包既不包含 manager，也不暴露该 IPC。
 
-- [ ] **Step 4: 实现增量 schema**
+- [x] **Step 4: 实现增量 schema**
 
 `desktop_device_authorizations.authorization_source` 默认 `wechat_phone`。新增本地 grant/request/backup 表；grant 只存 `code_salt`、`code_digest` 和公开能力 ID，不存配对码或 X25519 私钥。网关新增 `desktop_pairing_capabilities` 与 `desktop_pairing_relay_requests`，只存公开能力和密文：
 
@@ -165,7 +165,7 @@ CREATE TABLE IF NOT EXISTS desktop_single_user_pairing_grants (
 
 迁移使用 `PRAGMA table_info` + `ALTER TABLE ... ADD COLUMN`；不重建或删除现有授权表。
 
-- [ ] **Step 5: 运行 GREEN 并提交**
+- [x] **Step 5: 运行 GREEN 并提交**
 
 Run:
 

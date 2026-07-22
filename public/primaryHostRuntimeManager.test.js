@@ -16,6 +16,7 @@ const {
   writeRuntimeConfig,
   writeManagedHostRuntimeConfig,
   writeManagedClientRuntimeConfig,
+  writeManagedDesktopIdentityMode,
   applyRuntimeConfigToEnv,
 } = require('./runtimeConfig');
 const { createPrimaryHostRuntimeManager } = require('./primaryHostRuntimeManager');
@@ -90,6 +91,7 @@ async function main() {
     readRuntimeConfig,
     writeManagedHostRuntimeConfig,
     writeManagedClientRuntimeConfig,
+    writeManagedDesktopIdentityMode,
     applyRuntimeConfigToEnv,
     verifyAdoption: async input => {
       verified.push(input);
@@ -116,6 +118,15 @@ async function main() {
   assert.strictEqual(initialized.config.nodeRole, 'desktop-client');
   assert.deepStrictEqual(initialized.credential, { state: 'empty', active: false });
   assert.ok(!env.GEWU_PRIMARY_HOST_CREDENTIAL);
+  assert.throws(() => manager.setIdentityMode({
+    mode: 'single-user', confirmation: 'WRONG_CONFIRMATION',
+  }), error => error.code === 'DESKTOP_IDENTITY_MODE_CONFIRMATION_REQUIRED');
+  const enabledMode = manager.setIdentityMode({
+    mode: 'single-user', confirmation: 'ENABLE_SINGLE_USER_MODE',
+  });
+  assert.strictEqual(enabledMode.config.desktopIdentityMode, 'single-user');
+  assert.strictEqual(enabledMode.restartRequired, true);
+  assert.strictEqual(env.GEWU_DESKTOP_IDENTITY_MODE, 'single-user');
 
   const epoch = {
     id: 'epoch-target-2', generation: 2, deviceId: 'desktop-target-a', userId: 'canonical-owner',

@@ -26,6 +26,30 @@ CREATE TABLE students (
   parent_wechat TEXT, student_source TEXT, balance_hours REAL DEFAULT 0,
   balance_money REAL DEFAULT 0, notes TEXT, deleted INTEGER DEFAULT 0,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE desktop_device_authorizations (
+  id TEXT PRIMARY KEY,
+  device_id TEXT NOT NULL UNIQUE,
+  device_name TEXT NOT NULL,
+  device_kind TEXT NOT NULL DEFAULT 'desktop-client',
+  user_id TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  key_fingerprint TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending',
+  source_challenge_id TEXT NOT NULL UNIQUE,
+  approved_by_user_id TEXT,
+  approved_by_device_id TEXT,
+  approved_at TEXT,
+  last_phone_verified_at TEXT NOT NULL,
+  phone_reverify_due_at TEXT NOT NULL,
+  credential_version INTEGER NOT NULL DEFAULT 1,
+  last_seen_at TEXT,
+  replaced_by_device_id TEXT,
+  row_version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  revoked_at TEXT,
+  retired_at TEXT
 )`);
 const insertLegacy = legacy.prepare(`INSERT INTO users
   (id, phone, name, role, status, login_enabled, deleted, created_at, updated_at)
@@ -66,15 +90,21 @@ process.env.NODE_ENV = 'production';
 
 try {
   const service = new DatabaseService();
-  assert.strictEqual(service.getSchemaStatus().schemaVersion, 3110);
-  assert.strictEqual(service.getSchemaStatus().sqliteUserVersion, 3110);
+  assert.strictEqual(service.getSchemaStatus().schemaVersion, 3120);
+  assert.strictEqual(service.getSchemaStatus().sqliteUserVersion, 3120);
   const columns = service.db.prepare('PRAGMA table_info(users)').all().map(row => row.name);
   ['teacher_id', 'review_status', 'reviewed_by', 'reviewed_at'].forEach(column => {
     assert.ok(columns.includes(column), `users should include ${column}`);
   });
-  ['authorization_audit_log', 'sync_rejections', 'user_role_grants'].forEach(table => {
+  ['authorization_audit_log', 'sync_rejections', 'user_role_grants',
+    'desktop_single_user_pairing_grants', 'desktop_single_user_pairing_requests',
+    'desktop_sync_batch_backups'].forEach(table => {
     assert.ok(service.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table));
   });
+  const desktopAuthorizationColumns = service.db.prepare(
+    'PRAGMA table_info(desktop_device_authorizations)'
+  ).all().map(row => row.name);
+  assert.ok(desktopAuthorizationColumns.includes('authorization_source'));
 
   const now = '2026-07-11T12:00:00.000Z';
   assert.ok(service.db.prepare(

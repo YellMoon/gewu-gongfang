@@ -27,6 +27,7 @@ function createPrimaryHostRuntimeManager({
   readRuntimeConfig,
   writeManagedHostRuntimeConfig,
   writeManagedClientRuntimeConfig,
+  writeManagedDesktopIdentityMode,
   applyRuntimeConfigToEnv,
   verifyAdoption,
   acknowledgeDelivery,
@@ -38,10 +39,11 @@ function createPrimaryHostRuntimeManager({
 }) {
   if (!credentialStore || !configPath || !readRuntimeConfig
     || !writeManagedHostRuntimeConfig || !writeManagedClientRuntimeConfig
+    || !writeManagedDesktopIdentityMode
     || !applyRuntimeConfigToEnv) {
     throw runtimeError('PRIMARY_HOST_RUNTIME_MANAGER_CONFIG_REQUIRED');
   }
-  const configOptions = { userDataPath };
+  const configOptions = { userDataPath, primaryHostCapable: true };
   let lastState = null;
 
   function currentDate() {
@@ -297,12 +299,31 @@ function createPrimaryHostRuntimeManager({
     return lastState;
   }
 
+  function setIdentityMode({ mode, confirmation } = {}) {
+    const normalizedMode = String(mode || '').trim();
+    const requiredConfirmation = normalizedMode === 'single-user'
+      ? 'ENABLE_SINGLE_USER_MODE'
+      : normalizedMode === 'full'
+        ? 'DISABLE_SINGLE_USER_MODE'
+        : '';
+    if (!requiredConfirmation) throw runtimeError('DESKTOP_IDENTITY_MODE_INVALID');
+    if (confirmation !== requiredConfirmation) {
+      throw runtimeError('DESKTOP_IDENTITY_MODE_CONFIRMATION_REQUIRED');
+    }
+    const config = writeManagedDesktopIdentityMode(configPath, normalizedMode, configOptions);
+    applyRuntimeConfigToEnv(config, env);
+    const credential = lastState?.credential || credentialStore.status();
+    lastState = Object.freeze({ config, credential });
+    return Object.freeze({ config, credential, restartRequired: true });
+  }
+
   return Object.freeze({
     initialize,
     stageAdoption,
     adopt,
     acknowledgeRecoveryPackage,
     demote,
+    setIdentityMode,
     revealRecoveryPackage,
     status() {
       return lastState || initialize();

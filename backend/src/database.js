@@ -22,7 +22,7 @@ const {
   scopeForUser,
 } = require('./services/authorizationPolicy');
 
-const SCHEMA_VERSION = 3110;
+const SCHEMA_VERSION = 3120;
 const MINIAPP_ADMIN_SEED_USERS = [
   { id: 'miniapp-admin-13732250653', phone: '13732250653', name: 'Miniapp Admin 0653' },
   { id: 'miniapp-admin-18257136756', phone: '18257136756', name: 'Miniapp Admin 6756' },
@@ -483,6 +483,14 @@ class DatabaseService {
     const syncDeviceColumns = new Set(this.db.prepare('PRAGMA table_info(sync_devices)').all().map(column => column.name));
     if (!syncDeviceColumns.has('owner_user_id')) this.db.prepare('ALTER TABLE sync_devices ADD COLUMN owner_user_id TEXT').run();
     if (!syncDeviceColumns.has('active')) this.db.prepare('ALTER TABLE sync_devices ADD COLUMN active INTEGER NOT NULL DEFAULT 1').run();
+    const desktopAuthorizationColumns = new Set(this.db.prepare(
+      'PRAGMA table_info(desktop_device_authorizations)'
+    ).all().map(column => column.name));
+    if (!desktopAuthorizationColumns.has('authorization_source')) {
+      this.db.prepare("ALTER TABLE desktop_device_authorizations ADD COLUMN authorization_source TEXT NOT NULL DEFAULT 'wechat_phone'").run();
+    }
+    this.db.prepare(`CREATE INDEX IF NOT EXISTS idx_desktop_device_authorizations_source_status
+      ON desktop_device_authorizations(authorization_source, status, updated_at)`).run();
     this.db.prepare(`UPDATE desktop_device_pairings SET status='rejected' WHERE status='pending' AND id NOT IN
       (SELECT MIN(id) FROM desktop_device_pairings WHERE status='pending' GROUP BY pairing_code)`).run();
     this.db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_pairing_pending_code ON desktop_device_pairings(pairing_code) WHERE status='pending'").run();

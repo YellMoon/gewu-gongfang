@@ -148,3 +148,43 @@ CREATE TABLE IF NOT EXISTS desktop_device_pairings (
   pairing_code TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', expires_at TEXT NOT NULL,
   approved_by TEXT, user_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, exchanged_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS desktop_pairing_capabilities (
+  host_device_id TEXT PRIMARY KEY,
+  capability_id TEXT NOT NULL UNIQUE,
+  protocol_version TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  epoch_id TEXT NOT NULL,
+  generation INTEGER NOT NULL CHECK (generation >= 1),
+  status TEXT NOT NULL DEFAULT 'online' CHECK (status IN ('online', 'offline', 'expired')),
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_desktop_pairing_capabilities_status_expiry
+  ON desktop_pairing_capabilities(status, expires_at);
+
+CREATE TABLE IF NOT EXISTS desktop_pairing_relay_requests (
+  id TEXT PRIMARY KEY,
+  target_host_device_id TEXT NOT NULL,
+  capability_id TEXT NOT NULL,
+  protocol_version TEXT NOT NULL,
+  envelope_json TEXT NOT NULL,
+  envelope_hash TEXT NOT NULL UNIQUE,
+  request_secret_hash TEXT NOT NULL,
+  source_address_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending_host'
+    CHECK (status IN ('pending_host', 'processing', 'completed', 'rejected', 'expired')),
+  result_payload TEXT,
+  error_code TEXT,
+  attempt INTEGER NOT NULL DEFAULT 0 CHECK (attempt >= 0),
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT,
+  result_read_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_desktop_pairing_relay_requests_target_status
+  ON desktop_pairing_relay_requests(target_host_device_id, status, created_at);
