@@ -1,6 +1,6 @@
 # Task: 2026-07-23 桌面单人模式、一次性配对与统一收尾
 
-Status: design written; awaiting written-spec review
+Status: design approved; implementation plan written
 
 ## Objective
 
@@ -21,8 +21,8 @@ Status: design written; awaiting written-spec review
 - [x] 比较临时放行、共享密钥、一次性配对方案并确认采用一次性配对。
 - [x] 确认“手动发起、自动批准”、小程序冻结和模式关闭后的失效边界。
 - [x] 写出并自检书面设计规格。
-- [ ] 用户复核书面设计规格。
-- [ ] 编写文件级 TDD 实施计划。
+- [x] 用户复核书面设计规格。
+- [x] 编写文件级 TDD 实施计划。
 - [ ] 按测试先行实现单人模式、主机初始化、配对与撤销。
 - [ ] 实现手动同步预览、主机自动处理、备份/审计/冲突保留。
 - [ ] 验证并修复窗口默认菜单、密码重设入口和 OSS 更新模块。
