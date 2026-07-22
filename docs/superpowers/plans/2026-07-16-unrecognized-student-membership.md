@@ -480,8 +480,8 @@ git commit -m "自动发布 2026-07-16"
 
 - [x] 用户批准混合身份与同一人多角色、多设备、未来换机设计。
 - [x] 完成现状审计并写入正式设计和逐文件计划。
-- [ ] 执行桌面身份计划 Task 1 至 Task 11，取得 fresh 测试、构建和真实 Electron 证据。
-- [ ] 把桌面确认页、设备中心、主机 bootstrap/迁移加入本计划 Task 12 全页面与安全矩阵。
+- [x] 执行桌面身份计划 Task 1 至 Task 11，取得 fresh 测试、构建和真实 Electron 证据。
+- [x] 把桌面确认页、设备中心、主机 bootstrap/迁移加入本计划 Task 12 全页面与安全矩阵。
 - [ ] 在原 Task 13 执行真实主机 bootstrap、第二台电脑注册批准和统一发布；不在未获用户实际换机要求时切换主机。
 
 ### Task 7: 固定示例题与 Backend 隔离导出沙箱
@@ -852,9 +852,9 @@ Run: `npm run miniapp:release-check`
 
 Expected: WeApp 构建成功，API base 为 `https://physicsedu.xyz/scheduling`，无 review-demo 入口，17 页面覆盖通过。
 
-- [ ] **Step 4: 用真实微信运行时逐页采集证据**
+- [x] **Step 4: 用真实微信运行时逐页采集证据**
 
-分别以未认可学生、正式学生、家长、老师、普通管理员、超级管理员打开适用页面；所有 17 页至少有一种角色证据，差异路由分别检查。截图命名使用 `<role>-<route>-<state>.png`。必须检查未认可直连无真实数据、申请全状态、会员标记位置、四示例题、Word/PDF、空态、离线、无权限、有限写入；首页不得代替其余页面。
+分别以未认可学生、正式学生、家长、老师、普通管理员、超级管理员打开适用页面；所有 20 页至少有一种角色证据，差异路由分别检查。2026-07-22 已在微信开发者工具 Stable `2.01.2510290` 完成 20/20 页面、七类身份视角的运行时矩阵，证据位于 `output/miniapp-6.1.0-ui-coverage/runtime-fixture-matrix/`；矩阵 `completed=true`，最小截图 10885 bytes。首页未替代其余页面。
 
 - [x] **Step 5: 运行安全与数据泄露探针**
 
@@ -862,7 +862,7 @@ Expected: WeApp 构建成功，API base 为 `https://physicsedu.xyz/scheduling`�
 
 2026-07-22 生产脱敏探针以 5 分钟短时令牌完成：Backend 本人身份、本人申请、固定示例题接口均为 200；学员、课程、题库、云快照、桌面身份、桌面配对、同步、管理员和权限入口均为 403 + `UNRECOGNIZED_SCOPE_FORBIDDEN`；Gateway 权限和云任务入口均为 401 + `EXPERIENCE_TOKEN_NOT_ACCEPTED_BY_GATEWAY`；旧审核登录和路由均为 410 + `REVIEW_DEMO_REMOVED`。4 个 PM2 日志文件的本次增量未出现探针令牌或 Authorization 头，`miniapp_login_events` 不含临时凭证/完整请求体字段，生产库 `quick_check=ok`。固定示例题无 D 盘依赖已由独立服务与 HTTP 测试覆盖。
 
-- [ ] **Step 6: 更新验证文档和任务清单**
+- [x] **Step 6: 更新验证文档和任务清单**
 
 记录每条命令、版本、截图绝对路径、HTTP 状态、数据库迁移计数、阻断与回滚点。只把有当前证据的 `task.md` 项标记完成。
 

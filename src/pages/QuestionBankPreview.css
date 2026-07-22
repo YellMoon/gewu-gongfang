@@ -277,19 +277,6 @@
   font-size: 14px;
 }
 
-.qb-preview-tree-card > .ant-card-head .qb-tree-section-title::after {
-  content: "\4F53\7CFB";
-  margin-left: 6px;
-  font-size: 14px;
-}
-
-.qb-preview-tree-card .taxonomy-manager ~ .qb-tree-search,
-.qb-preview-tree-card .taxonomy-manager ~ .knowledge-tree,
-.qb-preview-tree-card .taxonomy-manager ~ .qb-tree-divider,
-.qb-preview-tree-card .taxonomy-manager ~ .qb-model-tree-title {
-  display: none;
-}
-
 .qb-filter-row-secondary > .qb-filter-multi {
   display: none;
 }

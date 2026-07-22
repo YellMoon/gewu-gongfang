@@ -63,6 +63,7 @@ const miniappLogin = read('miniapp/src/pages/login/index.tsx');
 const miniappLoginCss = read('miniapp/src/pages/login/index.scss');
 const miniappUnrecognizedExperience = read('miniapp/src/utils/unrecognizedExperience.ts');
 const miniappUnrecognizedPage = read('miniapp/src/pages/unrecognized-experience/index.tsx');
+const miniappUnrecognizedContent = read('miniapp/src/components/UnrecognizedExperienceContent/index.tsx');
 const miniappAccountApplication = read('miniapp/src/pages/account-application/index.tsx');
 const miniappAppConfig = read('miniapp/src/app.config.ts');
 const miniappQuestionBank = read('miniapp/src/pages/question-bank/index.tsx');
@@ -104,9 +105,10 @@ assert(
 );
 
 assert(
-  miniappUnrecognizedPage.includes('体验组卷') &&
-  miniappUnrecognizedPage.includes('选择示例题目，提交组卷与导出任务') &&
-  miniappUnrecognizedPage.includes("Taro.navigateTo({ url: '/pages/account-application/index' })") &&
+  miniappUnrecognizedPage.includes("import UnrecognizedExperienceContent from '../../components/UnrecognizedExperienceContent'") &&
+  miniappUnrecognizedContent.includes('体验组卷') &&
+  miniappUnrecognizedContent.includes('选择示例题目，提交组卷与导出任务') &&
+  miniappUnrecognizedContent.includes("Taro.navigateTo({ url: '/pages/account-application/index' })") &&
   miniappQuestionBank.includes("Taro.navigateTo({ url: '/pages/unrecognized-experience/index' })"),
   'unrecognized experience should expose fixed question tasks and a real identity-application entry'
 );

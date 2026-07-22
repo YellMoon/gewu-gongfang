@@ -31,6 +31,7 @@ import {
 
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
+const legacyTaxonomyUiEnabled = () => false;
 
 const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'];
 const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试', '竞赛', '强基计划', '其他'];
@@ -1209,7 +1210,7 @@ const QuestionBankImport: React.FC = () => {
         <Col span={5}>
           <Card
             size="small"
-            title={<span><BranchesOutlined /> 知识树</span>}
+            title={<span><BranchesOutlined /> 体系</span>}
             extra={<Button type="link" size="small" onClick={() => setTreeVisible(false)}>收起</Button>}
             style={{ height: '100%' }}
           >
@@ -1217,6 +1218,7 @@ const QuestionBankImport: React.FC = () => {
               <Select value={taxonomySubject} options={SUBJECTS.map(subject => ({ label: subject, value: subject }))} onChange={setTaxonomySubject} />
             </div>
             <TaxonomyManager subject={taxonomySubject} database={(window as any).dbService} onChanged={handleTaxonomiesChanged} />
+            {legacyTaxonomyUiEnabled() && <>
             <div className="qb-tree-section-title qb-knowledge-tree-title"><TagsOutlined /> 知识点</div>
             {/* Root-level inline add */}
             {addingChildParentId === '__ROOT__' ? (
@@ -1350,6 +1352,7 @@ const QuestionBankImport: React.FC = () => {
                 style={{ fontSize: 13 }}
               />
             </div>
+            </>}
           </Card>
         </Col>
       )}
@@ -1358,7 +1361,7 @@ const QuestionBankImport: React.FC = () => {
         <Card style={{ margin: 0 }}>
           {!treeVisible && (
             <div style={{ marginBottom: 12 }}>
-              <Button type="link" icon={<BranchesOutlined />} onClick={() => setTreeVisible(true)}>展开知识点/模型</Button>
+              <Button type="link" icon={<BranchesOutlined />} onClick={() => setTreeVisible(true)}>展开体系</Button>
             </div>
           )}
 

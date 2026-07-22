@@ -1,7 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const { getMiniappHomeDisplayName } = require('./miniappHomePresentation');
+const { getMiniappHomeDisplayName, getMiniappHomeRoleLabel } = require('./miniappHomePresentation');
 
 const root = path.resolve(__dirname, '../..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf-8');
@@ -26,7 +26,13 @@ assert.ok(homePage.includes('isUnrecognizedIdentity') && homePage.includes('Acco
 assert.strictEqual(getMiniappHomeDisplayName({}), '微信用户');
 assert.strictEqual(getMiniappHomeDisplayName({ name: '  ', nickname: ' 小格 ' }), '小格');
 assert.strictEqual(getMiniappHomeDisplayName({ name: '格物同学', nickname: '备用名' }), '格物同学');
+assert.strictEqual(getMiniappHomeRoleLabel('super_admin'), '超级管理员');
+assert.strictEqual(getMiniappHomeRoleLabel('admin'), '管理员');
+assert.strictEqual(getMiniappHomeRoleLabel('teacher'), '教师');
+assert.strictEqual(getMiniappHomeRoleLabel('student'), '学生');
+assert.strictEqual(getMiniappHomeRoleLabel('unknown-role'), 'unknown-role');
 assert.ok(homePage.includes('getMiniappHomeDisplayName(user)'), 'home greeting must normalize missing and blank identity names');
+assert.ok(homePage.includes('getMiniappHomeRoleLabel(user.user_type)'), 'home role pill must use the shared localized role label helper');
 assert.ok(homePage.includes('name: getMiniappHomeDisplayName(savedUser)') && homePage.includes('name: getMiniappHomeDisplayName(verifiedUser)'), 'home state must never retain an absent identity name');
 assert.ok(accountStatusBanner.includes('当前为体验账号。提交真实资料并经管理员审核后，可使用相应正式功能。'));
 assert.ok(membershipBadge.includes("membership?.status !== 'active'"), 'membership badge must be derived only from the server membership state');

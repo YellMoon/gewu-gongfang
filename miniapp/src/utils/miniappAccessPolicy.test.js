@@ -105,7 +105,19 @@ assert.ok(loginPage.includes('createNormalSessionCommitter') && loginPage.includ
 assert.ok(!loginPage.includes('createReviewSessionCommitter') && !loginPage.includes('reviewDemoApi'), 'removed review identities must not have a client login path');
 assert.ok(miniappHome.includes('isUnrecognizedIdentity') && miniappHome.includes('AccountStatusBanner'), 'home must isolate the real unrecognized identity before formal API loading');
 assert.ok(schedulePage.includes('isUnrecognizedIdentity') && schedulePage.includes('AccountStatusBanner'), 'schedule must render a real empty state without calling formal APIs for unrecognized identities');
-assert.ok(questionBankPage.includes('UnrecognizedExperiencePage'), 'question bank must route unrecognized identities to the isolated four-question experience');
+assert.ok(
+  questionBankPage.includes('isUnrecognizedIdentity')
+    && questionBankPage.includes("Taro.reLaunch({ url: '/pages/unrecognized-experience/index' })"),
+  'question bank must route unrecognized identities to the isolated registered four-question experience',
+);
+assert.ok(
+  !questionBankPage.includes('UnrecognizedExperienceContent'),
+  'formal question bank must not bundle the isolated experience page implementation',
+);
+assert.ok(
+  questionBankPage.includes('if (isUnrecognized) return; loadQuestions(); refreshAll();'),
+  'unrecognized identities must not trigger formal question-bank loading while redirecting',
+);
 assert.ok(customTabBar.includes('EXPERIENCE_TABS') && customTabBar.includes("navigationMode === 'unrecognized'"), 'unrecognized identities need the four-tab restricted shell');
 assert.ok(loginPage.includes('createAuthenticationEntryBoundary') && loginPage.includes('loginBoundary.run(() => Taro.login())'), 'normal platform login must remain bound to its starting session before any WeChat request or commit');
 assert.ok(customTabBar.includes("return 'pending'"), 'tab bar should fail closed when no authenticated role is available');

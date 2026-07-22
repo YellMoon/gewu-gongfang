@@ -1908,6 +1908,26 @@ class BrowserDatabaseService {
     localStorage.setItem(key, JSON.stringify(backups));
   }
 
+  private appendTaxonomyDeletionAudit(backupId: string, status: 'success' | 'failed', error?: unknown): void {
+    const key = this.identityStorageKey(TAXONOMY_DELETION_BACKUP_KEY);
+    const backups = this.readTaxonomyDeletionBackups();
+    const index = backups.findIndex(backup => backup.id === backupId);
+    if (index === -1) return;
+    backups[index] = {
+      ...backups[index],
+      audit_events: [
+        ...(Array.isArray(backups[index].audit_events) ? backups[index].audit_events : []),
+        {
+          action: 'taxonomy_cascade_delete',
+          status,
+          at: new Date().toISOString(),
+          ...(status === 'failed' ? { error: String((error as any)?.message || error || 'unknown') } : {}),
+        },
+      ],
+    };
+    localStorage.setItem(key, JSON.stringify(backups));
+  }
+
   private requireTaxonomyDeletionConfirmation(options: any, affectedQuestionCount: number): void {
     if (options?.confirmed !== true || !Number.isInteger(Number(options?.expectedAffectedQuestionCount))) {
       throw new Error('TAXONOMY_DELETE_CONFIRMATION_REQUIRED');
@@ -1967,14 +1987,12 @@ class BrowserDatabaseService {
       id: backupId, entity_type: 'system', system_id: id, node_id: null,
       affected_question_count: impact.affected_question_count, deleted_node_count: nodes.length,
       created_at: new Date().toISOString(), restored_at: null,
-      audit_events: [{ action: 'taxonomy_cascade_delete', status: 'success', at: new Date().toISOString() }],
+      audit_events: [{ action: 'taxonomy_cascade_delete', status: 'pending', at: new Date().toISOString() }],
       snapshot: { system, nodes, annotations },
     };
     this.persistTaxonomyDeletionBackup(backup);
     const before = JSON.parse(JSON.stringify(this.data)) as Database;
-    const affectedQuestionIds = new Set(
-      this.data.questionTagRels.filter(rel => rel.tag_type === id).map(rel => rel.question_id)
-    );
+    const affectedQuestionIds = new Set(annotations.map(item => item.question_id));
     try {
       this.data.taxonomySystems = this.data.taxonomySystems.filter(item => item.id !== id);
       this.data.tags = this.data.tags.filter(tag => tag.tag_type !== id);
@@ -1999,9 +2017,11 @@ class BrowserDatabaseService {
       }
       this.syncTaxonomySyncRowsFromCanonical();
       this.saveData();
+      this.appendTaxonomyDeletionAudit(backupId, 'success');
     } catch (error) {
       this.data = before;
-      this.saveData();
+      try { this.saveData(); } catch (_rollbackError) {}
+      try { this.appendTaxonomyDeletionAudit(backupId, 'failed', error); } catch (_auditError) {}
       throw error;
     }
     for (const question of this.data.questions.filter(item => affectedQuestionIds.has(item.id))) {
@@ -2094,7 +2114,7 @@ class BrowserDatabaseService {
       id: backupId, entity_type: 'node', system_id: systemId, node_id: id,
       affected_question_count: impact.affected_question_count, deleted_node_count: rows.length,
       created_at: new Date().toISOString(), restored_at: null,
-      audit_events: [{ action: 'taxonomy_cascade_delete', status: 'success', at: new Date().toISOString() }],
+      audit_events: [{ action: 'taxonomy_cascade_delete', status: 'pending', at: new Date().toISOString() }],
       snapshot: { system, nodes: rows, annotations },
     });
     const before = JSON.parse(JSON.stringify(this.data)) as Database;
@@ -2107,9 +2127,11 @@ class BrowserDatabaseService {
       for (const question of this.data.questions.filter(item => affectedQuestionIds.has(item.id))) question.updated_at = new Date().toISOString();
       this.syncTaxonomySyncRowsFromCanonical();
       this.saveData();
+      this.appendTaxonomyDeletionAudit(backupId, 'success');
     } catch (error) {
       this.data = before;
-      this.saveData();
+      try { this.saveData(); } catch (_rollbackError) {}
+      try { this.appendTaxonomyDeletionAudit(backupId, 'failed', error); } catch (_auditError) {}
       throw error;
     }
     for (const question of this.data.questions.filter(item => affectedQuestionIds.has(item.id))) {

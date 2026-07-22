@@ -192,8 +192,8 @@ const TodayWorkbench: React.FC<TodayWorkbenchProps> = ({ onNavigate }) => {
         <button className="today-workbench__entry-card" onClick={() => onNavigate('question-bank-tools')}>
           <DatabaseOutlined />
           <strong>题库</strong>
-          <span>试题库、导入与知识树、组卷</span>
-          <span className="today-workbench__entry-sub">试题库 · 导入与知识树 · 组卷</span>
+          <span>试题库、导入与体系、组卷</span>
+          <span className="today-workbench__entry-sub">试题库 · 导入与体系 · 组卷</span>
         </button>
         <button className="today-workbench__entry-card" onClick={() => onNavigate('system-params')}>
           <CloudSyncOutlined />
@@ -272,7 +272,7 @@ const TodayWorkbench: React.FC<TodayWorkbenchProps> = ({ onNavigate }) => {
       <Space size={8} wrap className="today-workbench__footer-links">
         <Typography.Text type="secondary">题库常用入口：</Typography.Text>
         <button onClick={() => onNavigate('question-bank-preview')}><FileSearchOutlined /> 试题库</button>
-        <button onClick={() => onNavigate('question-bank-tools')}><ImportOutlined /> 导入与知识树</button>
+        <button onClick={() => onNavigate('question-bank-tools')}><ImportOutlined /> 导入与体系</button>
         <button onClick={() => onNavigate('question-bank-paper')}>组卷 <RightOutlined /></button>
       </Space>
     </div>

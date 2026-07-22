@@ -7,8 +7,7 @@ import { createSessionBoundOperation, openSessionBoundDocument } from '../../uti
 import { createQuestionPaperTaskCacheRuntime } from '../../utils/miniappAuthorizationRuntime';
 import { storage } from '../../utils/storage';
 import { isUnrecognizedIdentity } from '../../utils/accountExperience';
-import UnrecognizedExperiencePage from '../unrecognized-experience';
-// @ts-ignore shared CommonJS workflow is exercised by focused Node tests
+// @ts-ignore CommonJS workflow module has no TypeScript declarations.
 import * as workflow from '../../utils/questionPaperWorkflow';
 import './index.scss';
 
@@ -25,7 +24,11 @@ const statusCopy: Record<string, string> = { draft: '\u672c\u5730\u8349\u7a3f\uf
 function absoluteHostUrl(base: string, endpoint: string) { return `${base.replace(/\/$/, '')}/${endpoint.replace(/^\//, '')}`; }
 function authHeader(token: string, extra: Record<string, string> = {}) { return { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extra }; }
 
-function FormalQuestionBankPage() {
+export default function QuestionBankPage() {
+  const isUnrecognized = isUnrecognizedIdentity(Taro.getStorageSync('user_info'));
+  useEffect(() => {
+    if (isUnrecognized) Taro.reLaunch({ url: '/pages/unrecognized-experience/index' });
+  }, [isUnrecognized]);
   const taskCacheRuntimeRef = useRef<any>(null);
   if (!taskCacheRuntimeRef.current) {
     taskCacheRuntimeRef.current = createQuestionPaperTaskCacheRuntime({
@@ -84,7 +87,7 @@ function FormalQuestionBankPage() {
     } catch { return { ...task, error: 'refresh failed' }; }
   };
   const refreshAll = async () => { if (!synchronizeTaskScope()) return; persist(await Promise.all(tasks.map(refreshTask))); };
-  useEffect(() => { loadQuestions(); refreshAll(); }, []);
+  useEffect(() => { if (isUnrecognized) return; loadQuestions(); refreshAll(); }, [isUnrecognized]);
   useEffect(() => {
     const current = taskCacheRuntime.snapshot();
     if (current.scopeKey !== taskState.scopeKey) setTaskState(current);
@@ -140,6 +143,13 @@ function FormalQuestionBankPage() {
 
   const stateText = previewState === 'loading' ? '\u6b63\u5728\u52a0\u8f7d\u9898\u76ee' : previewState === 'empty' ? '\u4e91\u7aef\u6682\u65e0\u53ef\u7528\u9898\u76ee' : previewState === 'forbidden' ? '\u5f53\u524d\u8d26\u53f7\u65e0\u6743\u8bfb\u53d6\u9898\u5e93' : '\u79bb\u7ebf\u6216\u4e91\u7aef\u4e0d\u53ef\u8fbe';
   const availabilityLabel = hostAvailable ? targetHostDeviceId : '\u4e3b\u673a\u4e0d\u53ef\u7528';
+  if (isUnrecognized) {
+    return <View className='question-bank-page'>
+      <View className='preview-card'>
+        <Text className='preview-title'>{'\u6b63\u5728\u8fdb\u5165\u4f53\u9a8c\u9898\u5e93'}</Text>
+      </View>
+    </View>;
+  }
   return <View className='question-bank-page'>
     {false && (
       <View className="experience-section">
@@ -161,9 +171,4 @@ function FormalQuestionBankPage() {
     <View className='action-card'>{(['question-paper', 'paper-export-word', 'paper-export-pdf'] as PaperAction[]).map(a => <Button key={a} className={`action-button ${a}`} loading={submitting === a} disabled={Boolean(submitting) || selectedIds.length === 0} onClick={() => submit(a)}>{actionCopy[a]}</Button>)}</View>
     <View className='result-card'><View className='preview-header'><Text className='preview-title'>{'\u4efb\u52a1\u8bb0\u5f55'}</Text><Button className='preview-refresh' onClick={refreshAll}>{'\u6062\u590d/\u5237\u65b0'}</Button></View>{tasks.length === 0 ? <Text className='result-text'>{'\u6682\u65e0\u4efb\u52a1'}</Text> : tasks.map(task => <View key={task.localId} className='task-item'><Text className='result-text'>{task.request.payload.title}</Text><Text className='result-value'>{statusCopy[task.status] || task.status} / {task.phase} / {task.progress}%</Text>{task.error ? <Text className='task-error'>{task.error}</Text> : null}<View className='task-actions'>{workflow.canCancel(task) ? <Button size='mini' onClick={() => cancelTask(task)}>{'\u53d6\u6d88'}</Button> : null}{(task.status === 'draft' || workflow.canRetry(task)) ? <Button size='mini' onClick={() => submit(task.request.taskType, task)}>{'\u91cd\u8bd5'}</Button> : null}{task.status === 'completed' && task.result?.artifactId ? <Button size='mini' onClick={() => downloadTask(task)}>{'\u4e0b\u8f7d'}</Button> : null}</View></View>)}</View>
   </View>;
-}
-
-export default function QuestionBankPage() {
-  const identity = Taro.getStorageSync('user_info');
-  return isUnrecognizedIdentity(identity) ? <UnrecognizedExperiencePage /> : <FormalQuestionBankPage />;
 }

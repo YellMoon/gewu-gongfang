@@ -176,7 +176,7 @@ const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate, conte
         items={[
           {
             key: 'import',
-            label: '导入与知识树',
+            label: '导入与体系',
             children: <QuestionBankImport />,
           },
           {

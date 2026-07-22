@@ -40,6 +40,7 @@ import katex from 'katex';
 import { applyPhysicsNotationToHTML } from '../utils/physicsNotation';
 import './QuestionBankPreview.css';
 
+const legacyTaxonomyUiEnabled = () => false;
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
 // utf-8
@@ -1074,11 +1075,12 @@ const QuestionBankPreview: React.FC = () => {
         <Col span={5} className="qb-preview-sidebar">
           <Card
             size="small"
-            title={<span className="qb-tree-section-title"><BranchesOutlined /> 知识树</span>}
+            title={<span className="qb-tree-section-title"><BranchesOutlined /> 体系</span>}
             extra={<Button type="link" size="small" onClick={() => setTreeVisible(false)}>收起</Button>}
             className="qb-preview-tree-card"
           >
             <TaxonomyManager subject={currentSubject} database={dbService} onChanged={handleTaxonomiesChanged} />
+            {legacyTaxonomyUiEnabled() && <>
             <Input
               allowClear
               prefix={<SearchOutlined />}
@@ -1117,6 +1119,7 @@ const QuestionBankPreview: React.FC = () => {
                 style={{ fontSize: 13 }}
               />
             </div>
+            </>}
           </Card>
         </Col>
       )}
@@ -1138,7 +1141,7 @@ const QuestionBankPreview: React.FC = () => {
           <div className="qb-preview-header">
             <Space className="qb-preview-titlebar">
               {!treeVisible && (
-                <Button type="link" icon={<BranchesOutlined />} onClick={() => setTreeVisible(true)}>展开知识点/模型</Button>
+                <Button type="link" icon={<BranchesOutlined />} onClick={() => setTreeVisible(true)}>展开体系</Button>
               )}
               <h2>试题库</h2>
               <Select
@@ -1243,36 +1246,6 @@ const QuestionBankPreview: React.FC = () => {
                   />
                 </div>;
               })}
-              <AntSelect
-                mode="multiple"
-                allowClear
-                className="qb-filter-multi"
-                placeholder="包含知识点"
-                value={activeKnowledgeIds}
-                onChange={(values) => setKnowledgeSelectedIds(values.length ? values : [undefined])}
-                filterOption={(input, option) => (option?.label as string || '').toLowerCase().includes(input.toLowerCase())}
-                options={subjectKnowledgeNodes.map(n => ({ label: n.name, value: n.id }))}
-              />
-              <AntSelect
-                mode="multiple"
-                allowClear
-                className="qb-filter-multi"
-                placeholder="排除知识点"
-                value={activeExcludeKnowledgeIds}
-                onChange={(values) => setFilterExcludeKnowledgeIds(values.length ? values : [undefined])}
-                filterOption={(input, option) => (option?.label as string || '').toLowerCase().includes(input.toLowerCase())}
-                options={subjectKnowledgeNodes.map(n => ({ label: n.name, value: n.id }))}
-              />
-              <AntSelect
-                mode="multiple"
-                allowClear
-                className="qb-filter-multi"
-                placeholder="模型"
-                value={activeModelIds}
-                onChange={(values) => setModelSelectedIds(values.length ? values : [undefined])}
-                filterOption={(input, option) => (option?.label as string || '').toLowerCase().includes(input.toLowerCase())}
-                options={subjectModelNodes.map(n => ({ label: n.name, value: n.id }))}
-              />
             </div>
 
             <div className="qb-search-row">

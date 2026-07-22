@@ -22,7 +22,7 @@ import {
 import { getLocalData } from '../../utils/sync';
 import { clearBusinessCache, setBusinessCacheIdentity, setCachedList } from '../../utils/storage';
 import { scopeDashboardCollections } from '../../utils/miniappAuthorizationRuntime';
-import { getMiniappHomeDisplayName } from '../../utils/miniappHomePresentation';
+import { getMiniappHomeDisplayName, getMiniappHomeRoleLabel } from '../../utils/miniappHomePresentation';
 import { NetworkStatus, LoadingSkeleton, EmptyState } from '../../components/shared';
 import AccountStatusBanner from '../../components/AccountStatusBanner';
 import MembershipBadge from '../../components/MembershipBadge';
@@ -283,14 +283,9 @@ export default function Index() {
     });
   };
 
-  const getUserTypeLabel = (type: string) => {
-    const labels: Record<string, string> = { admin: '管理员', teacher: '教师', student: '学生' };
-    return labels[type] || type;
-  };
-
   const isStudent = user?.user_type === 'student';
   const showAdminShortcuts = access.modules.includes('scheduling') && !['student', 'pending'].includes(access.role);
-  const roleLabel = user ? getUserTypeLabel(user.user_type) : '未登录';
+  const roleLabel = user ? getMiniappHomeRoleLabel(user.user_type) : '未登录';
   const greeting = isStudent ? '学习面板' : '运营面板';
   const snapshotLabel = formatSnapshotTime(snapshot?.created_at);
   const userDisplayName = user ? getMiniappHomeDisplayName(user) : '';

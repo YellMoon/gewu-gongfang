@@ -1224,10 +1224,6 @@ select,
   width: 100%;
 }
 
-.ant-card-body:has(> .taxonomy-manager) > .taxonomy-manager ~ * {
-  display: none !important;
-}
-
 .taxonomy-edit-modal .ant-form-item:has(input[id*="knowledge_ids"]),
 .taxonomy-edit-modal .ant-form-item:has(input[id*="model_ids"]) {
   display: none;

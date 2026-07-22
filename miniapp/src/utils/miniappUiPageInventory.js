@@ -225,7 +225,11 @@ const pageInventory = [
     verificationStates: ['welcome', 'question-bank-preview', 'submit-apply'],
     realFeatureBasis: ['app.config.ts registered page', 'unrecognized student experience flow', 'question bank preview read-only'],
     screenshotRequired: true,
-    files: ['src/pages/unrecognized-experience/index.tsx', 'src/pages/unrecognized-experience/index.scss'],
+    files: [
+      'src/pages/unrecognized-experience/index.tsx',
+      'src/components/UnrecognizedExperienceContent/index.tsx',
+      'src/components/UnrecognizedExperienceContent/index.scss',
+    ],
   },
   {
     route: 'pages/account-application/index',
