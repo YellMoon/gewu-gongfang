@@ -4,7 +4,7 @@ const DESKTOP_CLIENT_FLAVOR = 'desktop-client';
 const PRIMARY_HOST_FLAVOR = 'primary-host';
 const UPDATE_FEEDS = Object.freeze({
   [DESKTOP_CLIENT_FLAVOR]: 'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop/',
-  [PRIMARY_HOST_FLAVOR]: 'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop-host/',
+  [PRIMARY_HOST_FLAVOR]: 'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop/host/',
 });
 
 function normalizeFlavor(value) {
