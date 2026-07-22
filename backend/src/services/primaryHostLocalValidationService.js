@@ -8,7 +8,7 @@ const { runScopedSyncReadPreview } = require('./primaryHostSyncPreflightService'
 const OPERATIONS = new Set(['bootstrap', 'transfer', 'recovery']);
 const DEFAULT_BACKUP_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_BACKUP_ARTIFACTS = 5;
-const VALIDATION_BACKUP_NAME = /^primary-host-(transfer|recovery)-g\d+-[A-Za-z0-9_-]{1,80}\.sqlite$/;
+const VALIDATION_BACKUP_NAME = /^primary-host-(bootstrap|transfer|recovery)-g\d+-[A-Za-z0-9_-]{1,80}\.sqlite$/;
 
 function validationError(code, cause) {
   const error = new Error(code);
@@ -66,7 +66,14 @@ function pruneValidationBackups({ root, nowMs, retentionMs, maxArtifacts, preser
   }
 }
 
-function inspectAuthoritativeBackup(filePath, evidence, DatabaseImpl = Database, actorContext, now) {
+function inspectAuthoritativeBackup(
+  filePath,
+  evidence,
+  DatabaseImpl = Database,
+  actorContext,
+  now,
+  { runPreflight = true } = {}
+) {
   let backupDb;
   try {
     backupDb = new DatabaseImpl(filePath, { readonly: true, fileMustExist: true });
@@ -96,11 +103,9 @@ function inspectAuthoritativeBackup(filePath, evidence, DatabaseImpl = Database,
       || storeId !== String(evidence.storeId || '')) {
       throw validationError('PRIMARY_HOST_LOCAL_BACKUP_AUTHORITY_INVALID');
     }
-    const localPreflight = runScopedSyncReadPreview({
-      db: backupDb,
-      actorContext,
-      now,
-    });
+    const localPreflight = runPreflight
+      ? runScopedSyncReadPreview({ db: backupDb, actorContext, now })
+      : null;
     return Object.freeze({ quickCheck, schemaVersion, storeId, dbAuthorityId, localPreflight });
   } catch (error) {
     if (error?.code?.startsWith('PRIMARY_HOST_')) throw error;
@@ -144,10 +149,12 @@ function createPrimaryHostLocalValidationService({
       deviceId: input.deviceId,
       purpose: operation,
     }) });
-    if (operation === 'bootstrap') return Object.freeze({ evidence, localValidation: null });
-    const sourceGeneration = positiveInteger(input.sourceGeneration);
-    const targetGeneration = positiveInteger(input.targetGeneration);
-    if (targetGeneration !== sourceGeneration + 1) throw validationError('PRIMARY_HOST_LOCAL_GENERATION_INVALID');
+    const isBootstrap = operation === 'bootstrap';
+    const sourceGeneration = isBootstrap ? 1 : positiveInteger(input.sourceGeneration);
+    const targetGeneration = isBootstrap ? 1 : positiveInteger(input.targetGeneration);
+    if (!isBootstrap && targetGeneration !== sourceGeneration + 1) {
+      throw validationError('PRIMARY_HOST_LOCAL_GENERATION_INVALID');
+    }
     const current = now();
     const currentDate = current instanceof Date ? new Date(current) : new Date(current);
     if (!Number.isFinite(currentDate.getTime())) throw validationError('PRIMARY_HOST_LOCAL_VALIDATION_CLOCK_INVALID');
@@ -174,7 +181,8 @@ function createPrimaryHostLocalValidationService({
         evidence,
         Database,
         input.actorContext,
-        currentDate
+        currentDate,
+        { runPreflight: !isBootstrap }
       );
       const { localPreflight, ...inspectedBackup } = inspected;
       const sha256 = await hashFile(artifactPath, fsImpl);

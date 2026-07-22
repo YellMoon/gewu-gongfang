@@ -60,6 +60,39 @@ function approvedUser(row) {
     && row.review_status === 'approved';
 }
 
+function insertPrimaryHostEpochRow({
+  db,
+  id,
+  generation,
+  deviceId,
+  userId,
+  authorizationId,
+  status = 'active',
+  activationReason,
+  sourceEpochId = null,
+  challengeId,
+  dbInstanceDigest,
+  schemaVersion,
+  storeId,
+  dbAuthorityId,
+  credentialHash,
+  credentialVersion = 1,
+  timestamp,
+}) {
+  db.prepare(`INSERT INTO primary_host_epochs
+    (id, generation, device_id, user_id, authorization_id, status, activation_reason,
+     source_epoch_id, challenge_id, db_instance_digest, schema_version, store_id,
+     db_authority_id, host_credential_hash, credential_version, row_version,
+     created_at, updated_at, activated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`)
+    .run(
+      id, generation, deviceId, userId, authorizationId, status, activationReason,
+      sourceEpochId, challengeId, dbInstanceDigest, schemaVersion, storeId, dbAuthorityId,
+      credentialHash, credentialVersion, timestamp, timestamp, timestamp
+    );
+  return db.prepare('SELECT * FROM primary_host_epochs WHERE id=?').get(id);
+}
+
 function presentChallenge(row) {
   return Object.freeze({
     id: row.id,
@@ -463,16 +496,25 @@ function createPrimaryHostIdentityService({
     id, generation, actor, status = 'active', activationReason, sourceEpochId = null,
     challenge, receipt, credentialHash, credentialVersion = 1, timestamp,
   }) {
-    db.prepare(`INSERT INTO primary_host_epochs
-      (id, generation, device_id, user_id, authorization_id, status, activation_reason,
-       source_epoch_id, challenge_id, db_instance_digest, schema_version, store_id,
-       db_authority_id, host_credential_hash, credential_version, row_version,
-       created_at, updated_at, activated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`)
-      .run(id, generation, actor.deviceId, actor.userId, actor.authorization.id, status,
-        activationReason, sourceEpochId, challenge.id, receipt.dbInstanceDigest,
-        receipt.schemaVersion, receipt.storeId, receipt.dbAuthorityId, credentialHash,
-        credentialVersion, timestamp, timestamp, timestamp);
+    insertPrimaryHostEpochRow({
+      db,
+      id,
+      generation,
+      deviceId: actor.deviceId,
+      userId: actor.userId,
+      authorizationId: actor.authorization.id,
+      status,
+      activationReason,
+      sourceEpochId,
+      challengeId: challenge.id,
+      dbInstanceDigest: receipt.dbInstanceDigest,
+      schemaVersion: receipt.schemaVersion,
+      storeId: receipt.storeId,
+      dbAuthorityId: receipt.dbAuthorityId,
+      credentialHash,
+      credentialVersion,
+      timestamp,
+    });
   }
 
   function consumeChallenge(challenge, timestamp) {
@@ -988,4 +1030,5 @@ module.exports = {
   PHYSICAL_CONFIRMATION,
   RECEIPT_TTL_MS,
   createPrimaryHostIdentityService,
+  insertPrimaryHostEpochRow,
 };

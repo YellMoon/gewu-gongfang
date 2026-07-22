@@ -264,7 +264,7 @@ git commit -m "feat: 增加端到端加密桌面配对协议"
 - Modify: `backend/src/services/primaryHostLocalValidationService.test.js`
 - Modify: `package.json`
 
-- [ ] **Step 1: 写领域 RED 测试**
+- [x] **Step 1: 写领域 RED 测试**
 
 覆盖：模式默认关闭；普通 flavor、非回环、非 canonical owner、错误 runtime device/epoch、DB `quick_check` 失败、题库绑定失败、备份失败均不能改表；成功初始化创建 `single_user_local_bootstrap` 授权且不改变业务表计数；密码重设只替换公钥并递增 credential version；配对码正好 80 bit、16 个 Crockford 字符、10 分钟、只存 scrypt 摘要；并发消费只有一个成功；第五次错误后锁定；普通设备的 `deviceKind=primary-host` 被拒绝。
 
@@ -284,7 +284,7 @@ assert.match(grant.code, /^[0-9A-HJKMNP-TV-Z]{16}$/);
 assert.strictEqual(db.prepare('SELECT code_digest FROM desktop_single_user_pairing_grants WHERE id=?').get(grant.id).code_digest.includes(grant.code), false);
 ```
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run:
 
@@ -295,7 +295,7 @@ node backend/src/services/desktopSessionService.test.js
 
 Expected: FAIL with missing service/source-aware revalidation.
 
-- [ ] **Step 3: 实现严格服务接口**
+- [x] **Step 3: 实现严格服务接口**
 
 服务只公开：
 
@@ -326,7 +326,7 @@ const digest = crypto.scryptSync(code, salt, 32).toString('hex');
 
 `consumeEncryptedPairingRequest` 先解密和验证设备签名，再在一个 better-sqlite3 transaction 中锁定 grant、常量时间验证摘要、消费 grant、创建/替换 ordinary authorization、记录 request 和审计。
 
-- [ ] **Step 4: 让会话校验识别授权来源**
+- [x] **Step 4: 让会话校验识别授权来源**
 
 `desktopSessionService` 的手机号到期判断改为：
 
@@ -340,11 +340,11 @@ if (authorization.authorization_source === 'wechat_phone') {
 
 `single_user_pairing` 只能签发 ordinary session；`single_user_local_bootstrap` 只有 runtime device/active epoch 同时匹配时才能签发 host session。
 
-- [ ] **Step 5: 实现模式关闭撤销**
+- [x] **Step 5: 实现模式关闭撤销**
 
 在一个事务中把 `single_user_pairing` 授权设为 `revoked`、credential version +1、关联 session 设为 `revoked`、pending grant/request 失效；`single_user_local_bootstrap` 不删除，但禁止签发新会话。保留主机 epoch、业务数据、备份和审计。
 
-- [ ] **Step 6: 运行 GREEN 并提交**
+- [x] **Step 6: 运行 GREEN 并提交**
 
 Run:
 

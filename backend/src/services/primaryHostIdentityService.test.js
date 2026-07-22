@@ -4,7 +4,10 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 const { CANONICAL_SUPER_ADMIN_ID, SUPER_ADMIN_PHONE } = require('./authorizationPolicy');
-const { createPrimaryHostIdentityService } = require('./primaryHostIdentityService');
+const {
+  createPrimaryHostIdentityService,
+  insertPrimaryHostEpochRow,
+} = require('./primaryHostIdentityService');
 const {
   PHYSICAL_CONFIRMATION,
   createPrimaryHostLocalReceipt,
@@ -22,6 +25,7 @@ const {
 } = require('./primaryHostRecoveryDeliveryProtocol');
 
 const db = new Database(':memory:');
+assert.strictEqual(typeof insertPrimaryHostEpochRow, 'function');
 db.pragma('foreign_keys = ON');
 db.exec(fs.readFileSync(path.join(__dirname, '..', 'schema.sql'), 'utf8'));
 

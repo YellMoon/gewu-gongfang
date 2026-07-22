@@ -58,7 +58,11 @@ async function main() {
   });
   const bootstrap = await service.prepare({ operation: 'bootstrap', deviceId: 'host-a' });
   assert.strictEqual(bootstrap.evidence.runtimeNodeRole, 'primary-host');
-  assert.strictEqual(bootstrap.localValidation, null);
+  assert.strictEqual(bootstrap.localValidation.backup.authoritative, true);
+  assert.strictEqual(bootstrap.localValidation.backup.quickCheck, 'ok');
+  assert.strictEqual(bootstrap.localValidation.backup.storeId, 'store-1');
+  assert.match(bootstrap.localValidation.backup.artifactName, /^primary-host-bootstrap-g1-/);
+  assert.strictEqual(bootstrap.localValidation.localPreflight, null);
 
   const transfer = await service.prepare({
     operation: 'transfer', deviceId: 'target-b', sourceGeneration: 1, targetGeneration: 2,

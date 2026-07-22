@@ -114,6 +114,9 @@ function createDesktopSessionService({
   now = function () { return new Date(); },
   uuid = uuidv4,
   maxSessionMs = MAX_SESSION_MS,
+  isSingleUserModeActive = function () {
+    return process.env.GEWU_DESKTOP_IDENTITY_MODE === 'single-user';
+  },
 } = {}) {
   if (!db || typeof db.prepare !== 'function' || typeof db.transaction !== 'function') {
     throw serviceError('DESKTOP_SESSION_DB_REQUIRED');
@@ -128,6 +131,9 @@ function createDesktopSessionService({
     'SELECT * FROM desktop_device_authorizations WHERE device_id=?'
   );
   const findSession = db.prepare('SELECT * FROM desktop_sessions WHERE sid=?');
+  const findActiveHostEpoch = db.prepare(
+    "SELECT * FROM primary_host_epochs WHERE status='active' ORDER BY generation DESC LIMIT 1"
+  );
   const insertAudit = db.prepare(`INSERT INTO authorization_audit_log
     (id, actor_user_id, target_user_id, action, before_json, after_json, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)`);
@@ -148,15 +154,42 @@ function createDesktopSessionService({
     return date.toISOString();
   }
 
+  function assertAuthorizationSource(authorization, at) {
+    const source = authorization.authorization_source || 'wechat_phone';
+    if (source === 'wechat_phone') {
+      if (Date.parse(authorization.phone_reverify_due_at) <= at.getTime()) {
+        throw serviceError('DESKTOP_PHONE_REVERIFICATION_REQUIRED');
+      }
+      return authorization;
+    }
+    if (source !== 'single_user_pairing' && source !== 'single_user_local_bootstrap') {
+      throw serviceError('DESKTOP_AUTHORIZATION_SOURCE_INVALID');
+    }
+    if (isSingleUserModeActive() !== true) {
+      throw serviceError('DESKTOP_SINGLE_USER_AUTHORIZATION_DISABLED');
+    }
+    if (source === 'single_user_pairing') {
+      if (authorization.device_kind !== 'desktop-client') {
+        throw serviceError('DESKTOP_SINGLE_USER_AUTHORIZATION_KIND_INVALID');
+      }
+      return authorization;
+    }
+    const epoch = findActiveHostEpoch.get();
+    if (authorization.device_kind !== 'primary-host' || !epoch
+      || epoch.device_id !== authorization.device_id
+      || epoch.user_id !== authorization.user_id
+      || epoch.authorization_id !== authorization.id) {
+      throw serviceError('DESKTOP_SINGLE_USER_HOST_EPOCH_MISMATCH');
+    }
+    return authorization;
+  }
+
   function assertAuthorizationActive(authorization, userId, at) {
     if (!authorization || authorization.status !== 'active') {
       throw serviceError('DESKTOP_DEVICE_NOT_ACTIVE');
     }
     if (authorization.user_id !== userId) throw serviceError('DESKTOP_DEVICE_OWNER_MISMATCH');
-    if (Date.parse(authorization.phone_reverify_due_at) <= at.getTime()) {
-      throw serviceError('DESKTOP_PHONE_REVERIFICATION_REQUIRED');
-    }
-    return authorization;
+    return assertAuthorizationSource(authorization, at);
   }
 
   function issueSessionAt(input = {}, current) {
@@ -269,9 +302,7 @@ function createDesktopSessionService({
       || Number(claims.credential_version) !== credentialVersion) {
       throw serviceError('DESKTOP_SESSION_CREDENTIAL_VERSION_MISMATCH');
     }
-    if (Date.parse(authorization.phone_reverify_due_at) <= current.getTime()) {
-      throw serviceError('DESKTOP_PHONE_REVERIFICATION_REQUIRED');
-    }
+    assertAuthorizationSource(authorization, current);
     const roleContext = roleContextForUser(db, userId, row.active_role);
     const persistedEligibleRoles = parseJsonArray(row.eligible_roles_json);
     if (!sameStringArray(roleContext.eligibleRoles, persistedEligibleRoles)
