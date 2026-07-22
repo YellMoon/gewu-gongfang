@@ -26,7 +26,7 @@ Status: implementation complete; release verification in progress
 - [x] 按测试先行实现单人模式、主机初始化、配对与撤销。
 - [x] 实现手动同步预览、主机自动处理、备份/审计/冲突保留。
 - [x] 验证并修复窗口默认菜单、密码重设入口和 OSS 更新模块。
-- [ ] 审计 OpenCode PR 与此前体系、主机 flavor 隔离等任务完成度，补齐缺口。
+- [x] 审计 OpenCode PR 与此前体系、主机 flavor 隔离等任务完成度，补齐缺口。
 - [ ] 运行全量测试、构建、Electron 真实运行时与多端兼容验证。
 - [ ] 备份并部署阿里云，升级当前数据主机，发布普通端/主机端 OSS feed。
 - [ ] 提交、合并并推送 `gewu/master`，上传夸克网盘并核验产物。

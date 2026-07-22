@@ -763,11 +763,11 @@ git commit -m "fix: 恢复桌面更新入口并移除默认菜单"
 - Create: `scripts/single-user-pairing-runtime-smoke.js`
 - Modify: `task.md`
 
-- [ ] **Step 1: 扩展发布就绪检查**
+- [x] **Step 1: 扩展发布就绪检查**
 
 检查必须 fail closed：普通包不能包含主机管理模块；默认 mode 为 full；配对码不进入 schema、日志或响应 fixture；legacy `GEWU_DESKTOP_SYNC_TOKEN` 不能替代 V2 session；主机/普通 feed 分离；miniapp 本阶段标记 frozen。
 
-- [ ] **Step 2: 运行完整安全测试**
+- [x] **Step 2: 运行完整安全测试**
 
 Run:
 
@@ -783,7 +783,7 @@ npm run typecheck
 
 Expected: 全部 PASS；若全量套件发现与本次无关的既有失败，先定位并记录，不能用窄测试替代。
 
-- [ ] **Step 3: 准备隔离的真实运行时数据副本**
+- [x] **Step 3: 准备隔离的真实运行时数据副本**
 
 从当前数据主机执行 SQLite 在线备份并复制 runtime config/题库元数据清单到测试目录；不修改生产数据目录。记录原路径、备份路径、摘要和恢复命令，不记录任何凭证。
 
@@ -795,7 +795,7 @@ Expected: 全部 PASS；若全量套件发现与本次无关的既有失败，�
 
 以独立 userData 启动 ordinary flavor，验证：不能出现主机入口；输入配对码后建立 ordinary authorization；重启解锁；手动同步显示预览；主机自动处理；离线时队列保留；冲突可见；撤销设备后旧会话立即失败。
 
-- [ ] **Step 6: 保存非敏感证据并提交**
+- [x] **Step 6: 保存非敏感证据并提交**
 
 在 `task.md` 记录版本、测试命令、退出码、运行时状态和截图路径；截图不得包含配对码、电话、token 或本机绝对私密路径。
 
@@ -812,7 +812,7 @@ git commit -m "test: 完成桌面单人配对安全与运行时验证"
 - Modify: `task.md`
 - Create: `docs/reports/2026-07-23-unified-completion-audit.md`
 
-- [ ] **Step 1: 获取权威 Git/PR 状态但不合并**
+- [x] **Step 1: 获取权威 Git/PR 状态但不合并**
 
 Run:
 
@@ -824,7 +824,7 @@ git diff --name-status gewu/master...HEAD
 
 Expected: 明确 OpenCode PR/提交是否已进入 `gewu/master`、本地分支独有提交及未提交文件；不 push、不 merge。
 
-- [ ] **Step 2: 逐项建立证据矩阵**
+- [x] **Step 2: 逐项建立证据矩阵**
 
 审计报告每项必须标记 `proved / incomplete / contradicted / missing`，并引用文件、测试或运行时证据：
 
@@ -839,7 +839,7 @@ Expected: 明确 OpenCode PR/提交是否已进入 `gewu/master`、本地分支�
 | 未认可学生管理员/学生端 | membership/backend/frontend 对应计划文件 | 两份计划的目标测试退出 0 | 管理员和学生关键状态运行记录 | 三类证据齐全才填 `proved` |
 ```
 
-- [ ] **Step 3: 对非 proved 项执行已有精确计划**
+- [x] **Step 3: 对非 proved 项执行已有精确计划**
 
 本步骤不以修改报告代替实现。按审计项回到以下已有计划的未完成任务，逐条执行其中的文件列表、RED/GREEN 命令和运行时验证：
 
@@ -852,7 +852,7 @@ Expected: 明确 OpenCode PR/提交是否已进入 `gewu/master`、本地分支�
 
 体系与级联删除若不是 `proved`，以 `src/components/TaxonomyManager.tsx`、`src/services/taxonomyFilter.*`、`backend/src/services/questionBankService.*` 和 `npm run test:taxonomy` 为固定边界补写独立设计/实施计划，再按 TDD 执行。任何项只有在代码、测试和真实运行时三类证据齐全后才能改为 `proved`。
 
-- [ ] **Step 4: 重新运行覆盖矩阵**
+- [x] **Step 4: 重新运行覆盖矩阵**
 
 Run:
 
@@ -870,7 +870,7 @@ npm test
 
 Expected: 与冻结小程序无关的代码测试全部 PASS；小程序不进行构建、上传或真实发布动作。
 
-- [ ] **Step 5: 提交审计报告**
+- [x] **Step 5: 提交审计报告**
 
 Run:
 
