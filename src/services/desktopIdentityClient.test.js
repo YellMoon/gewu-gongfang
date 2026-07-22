@@ -223,6 +223,7 @@ async function main() {
           rowVersion: 1,
           expiresAt: '2026-07-17T10:10:00.000Z',
           qrValue: 'weixin://desktop-registration-challenge',
+          qrImageDataUrl: 'data:image/jpeg;base64,/9j/4A==',
         },
       },
     },
@@ -346,6 +347,7 @@ async function main() {
   assert.strictEqual(pending.challenge.status, 'pending_phone');
   assert.strictEqual(pending.challengeSecret, 'registration-secret');
   assert.strictEqual(pending.qrValue, 'weixin://desktop-registration-challenge');
+  assert.strictEqual(pending.qrImageDataUrl, 'data:image/jpeg;base64,/9j/4A==');
   assert.deepStrictEqual(requests[0].body, {
     deviceId: 'device-2',
     deviceName: '第二台电脑',

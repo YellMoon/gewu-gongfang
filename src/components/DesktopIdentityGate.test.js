@@ -26,6 +26,8 @@ assert.ok(gateSource.includes('clearCurrentDesktopIdentityPartition(window)'));
 assert.ok(gateSource.includes("gateState.kind === 'offline-unlocked'"));
 assert.ok(gateSource.includes("{ kind: 'offline-blocked' }"));
 assert.ok(gateSource.includes('<QRCode'), 'new-device registration must render the backend challenge QR value');
+assert.ok(gateSource.includes('pending.qrImageDataUrl') && gateSource.includes('<img'),
+  'new-device registration must render an official mini-program code image fallback');
 assert.ok(gateSource.includes('请输入本机密码'));
 assert.ok(decodedGateSource.includes('忘记本机密码？重新核验身份并重设'));
 assert.ok(gateSource.includes('beginPasswordReset'));

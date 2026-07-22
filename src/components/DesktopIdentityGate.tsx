@@ -477,7 +477,11 @@ const DesktopIdentityGate: React.FC = () => {
     }
     return (
       <>
-        {pending.qrValue ? (
+        {pending.qrImageDataUrl ? (
+          <div className="desktop-identity-qr">
+            <img src={pending.qrImageDataUrl} width={196} height={196} alt="微信小程序身份核验码" />
+          </div>
+        ) : pending.qrValue ? (
           <div className="desktop-identity-qr">
             <QRCode value={pending.qrValue} size={196} bordered={false} />
           </div>

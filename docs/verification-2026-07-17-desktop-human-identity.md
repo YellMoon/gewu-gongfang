@@ -1,6 +1,6 @@
 # 桌面人类身份、多角色、多设备与主机迁移验证记录
 
-verification_status: completed
+verification_status: partial
 
 redacted_evidence_only: true
 
@@ -31,7 +31,7 @@ release_status: not-published
 
 ## 已完成的 fresh 命令
 
-- `npm run test:primary-host`：通过全部主机身份命令，schema 为 3108。
+- `npm run test:primary-host`：通过全部主机身份命令；当前 schema 为 3110。
 - Task 10 指定的六命令 GREEN 矩阵：通过。
 - `npm run test:desktop-authorization`：通过。
 - `npm run test:identity-device-center`：通过。
@@ -47,6 +47,9 @@ release_status: not-published
 - 2026-07-19 22:44–22:46（Asia/Shanghai）fresh `npm test`：退出码 0、703 行、114.7 秒；schema 3108、主机恢复包、身份/同步、题库和 Word/PDF 导出链路全部通过。
 - 2026-07-19 22:47 fresh 专门矩阵：`npm run typecheck`、小程序 typecheck、`test:desktop-identity`、`test:identity-device-center`、`test:sync-identity` 与身份发布门禁均退出码 0。
 - 2026-07-19 22:48 fresh 非版本变更构建：`npx craco build` 成功，小程序 `build:weapp` 成功（Webpack 19.11 秒）；未打包、上传或部署。
+- 2026-07-22 生产脱敏审计：schema 3110，但当前没有主机 epoch、桌面授权、双设备用户或双角色规范用户；本机安装配置虽为 `primary-host`，仍缺托管 epoch/generation，因此真实 bootstrap 尚未完成。
+- 2026-07-22 已复现安装版首次注册 `WECHAT_URL_LINK_FAILED`。同一生产微信账号可正常获取 access token；URL Link 返回权限码 `85407`，官方 `wxa/getwxacode` 返回 JPEG，证明不是 IP 白名单问题。
+- 2026-07-22 本地按 RED→GREEN 实现只针对 `85407` 的官方小程序码回退；`test:desktop-identity`、`test:primary-host`、`test:identity-device-center`、`test:sync-identity`、根/小程序 typecheck、`npm test` 与小程序生产构建均退出 0。该修复尚未部署。
 
 ## 真实 Electron 隔离运行时
 
@@ -68,10 +71,10 @@ release_status: not-published
 - 文档中的设备 A/B/C、用户和哈希均为脱敏概念，不保存真实身份材料。
 - 服务端恢复因子只存慢哈希；主机凭据由 Electron 主进程本地生成并通过系统加密存储，renderer 和云端响应不接收明文主机凭据。
 - 一次性恢复包在界面显示前的页面刷新和 Electron 进程退出窗口已由隔离真实运行时验证；真实 bootstrap、换机和恢复仍留到统一发布矩阵并需用户明确授权。
-- 当前仅有本地提交，没有推送 `gewu/master`，没有 OSS 发布、阿里云部署、小程序上传或本地主机升级。
+- 版本 6.1.0 已在本次审计前完成主线合并与多端发布；本轮小程序码修复仍仅在工作区，没有推送、OSS 发布、阿里云部署、小程序上传或本地主机升级。历史 6.1.0 发布不能替代真实身份 bootstrap 证据。
 
 ## 下一步
 
-1. 回到未认可学生计划，从固定脱敏示例题与隔离 Word/PDF 继续，纳入桌面角色、设备和主机 generation 的统一安全矩阵。
-2. 在统一矩阵完成前继续保持 `release_status: not-published`，不推送、不打包、不部署，也不执行真实 bootstrap、换机或恢复。
-3. 发布阶段再补真实微信扫码、真实两台电脑和数据主机安装证据；外部端任一未完成时只报告“部分发布”或“受阻”。
+1. 未认可学生 Task 7–11 与 Task 12 自动化/生产构建已完成；继续补当前版本 17 页真实微信运行时证据。
+2. 在统一矩阵完成前继续保持本轮 `release_status: not-published`，不推送、不打包、不部署，也不执行真实换机或恢复。
+3. 统一发布后补真实微信扫码、当前主机 bootstrap、第二台电脑注册批准和角色保持证据；未获用户实际换机要求时不切换主机。外部端任一未完成时只报告“部分发布”或“受阻”。

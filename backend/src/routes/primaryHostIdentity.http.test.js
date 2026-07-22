@@ -211,7 +211,13 @@ app.use('/api/desktop-identity', createDesktopIdentityRouter({
   })(),
   resolveWechatIdentity: async () => ({ openid: 'host-http-openid', unionid: null }),
   resolveWechatPhoneNumber: async () => SUPER_ADMIN_PHONE,
-  createDesktopAuthorizationUrlLink: async ({ challengeId }) => `weixin://host/${challengeId}`,
+  createDesktopAuthorizationUrlLink: async () => {
+    const error = new Error('url link permission unavailable');
+    error.code = 'WECHAT_URL_LINK_FAILED';
+    error.wechatErrcode = 85407;
+    throw error;
+  },
+  createDesktopAuthorizationQrCode: async ({ challengeId }) => `data:image/jpeg;base64,${Buffer.from(`host-${challengeId}`).toString('base64')}`,
   localBridgeSecret: 'electron-local-bridge-secret-for-http-tests',
 }));
 app.use('/api/cloud', cloudRelayRouter);
@@ -244,7 +250,9 @@ app.use('/api/cloud', cloudRelayRouter);
     assert.strictEqual(startedResponse.status, 200);
     const started = (await startedResponse.json()).data.challenge;
     assert.strictEqual(started.status, 'pending_phone');
-    assert.ok(started.qrValue.startsWith('weixin://host/'));
+    assert.strictEqual(started.qrValue, null);
+    assert.ok(started.qrImageDataUrl.startsWith('data:image/jpeg;base64,'));
+    assert.strictEqual(started.qrEntryMode, 'mini-program-code');
 
     const publicRead = await call(`/api/desktop-identity/challenges/${started.id}/public`);
     assert.strictEqual(publicRead.status, 200);

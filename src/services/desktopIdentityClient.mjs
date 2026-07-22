@@ -284,6 +284,7 @@ export function createDesktopIdentityClient({
       challenge,
       challengeSecret: challenge.challengeSecret,
       qrValue: challenge.qrValue || null,
+      qrImageDataUrl: challenge.qrImageDataUrl || null,
     };
   }
 
@@ -313,6 +314,7 @@ export function createDesktopIdentityClient({
       challenge,
       challengeSecret: challenge.challengeSecret,
       qrValue: challenge.qrValue || null,
+      qrImageDataUrl: challenge.qrImageDataUrl || null,
     };
   }
 
@@ -329,6 +331,7 @@ export function createDesktopIdentityClient({
       ...pending,
       challenge: data.challenge,
       qrValue: data.challenge?.qrValue || pending.qrValue || null,
+      qrImageDataUrl: data.challenge?.qrImageDataUrl || pending.qrImageDataUrl || null,
     };
   }
 

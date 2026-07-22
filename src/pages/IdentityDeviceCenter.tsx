@@ -770,7 +770,9 @@ const IdentityDeviceCenter: React.FC = () => {
             ? '\u5fc5\u987b\u5728\u8fd9\u53f0\u76ee\u6807\u7535\u8111\u4e0a\u5b8c\u6210\u6743\u5a01\u5907\u4efd\u3001SQLite \u5b8c\u6574\u6027\u3001schema \u548c\u9898\u5e93\u7ed1\u5b9a\u6821\u9a8c\u3002'
             : '\u8bf7\u7528\u5fae\u4fe1\u626b\u7801\uff0c\u5728\u5c0f\u7a0b\u5e8f\u4e2d\u6bcf\u6b21\u91cd\u65b0\u6388\u6743\u624b\u673a\u53f7\u3002\u5fae\u4fe1\u5b8c\u6210\u540e\u56de\u5230\u672c\u9875\u5237\u65b0\u3002'}
         />
-        {hostOperation.challenge.qrValue && <div style={{ display: 'flex', justifyContent: 'center' }}><QRCode value={hostOperation.challenge.qrValue} size={220} /></div>}
+        {hostOperation.challenge.qrImageDataUrl
+          ? <div style={{ display: 'flex', justifyContent: 'center' }}><img src={hostOperation.challenge.qrImageDataUrl} width={220} height={220} alt={'\u5fae\u4fe1\u5c0f\u7a0b\u5e8f\u4e3b\u673a\u8eab\u4efd\u6838\u9a8c\u7801'} /></div>
+          : hostOperation.challenge.qrValue && <div style={{ display: 'flex', justifyContent: 'center' }}><QRCode value={hostOperation.challenge.qrValue} size={220} /></div>}
         <Descriptions size="small" column={1}>
           <Descriptions.Item label={'\u64cd\u4f5c\u8bbe\u5907'}>{hostOperation.challenge.deviceName || snapshot?.host?.deviceId}</Descriptions.Item>
           <Descriptions.Item label={'\u5fae\u4fe1\u9a8c\u8bc1'}>{hostOperation.challenge.status === 'identity_verified' ? '\u5df2\u901a\u8fc7' : '\u7b49\u5f85\u626b\u7801'}</Descriptions.Item>

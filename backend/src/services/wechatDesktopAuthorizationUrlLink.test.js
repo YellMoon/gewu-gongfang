@@ -17,6 +17,15 @@ const assert = require('assert');
     () => service.desktopAuthorizationUrlLinkPayload('../challenge'),
     error => error.code === 'DESKTOP_CHALLENGE_ID_INVALID'
   );
+  assert.deepStrictEqual(
+    service.desktopAuthorizationQrCodePayload('challenge-1234567890'),
+    {
+      path: 'pages/desktop-authorization/index?challengeId=challenge-1234567890',
+      env_version: 'release',
+      check_path: false,
+      width: 430,
+    }
+  );
   const previous = {
     appid: process.env.WECHAT_APPID,
     secret: process.env.WECHAT_APPSECRET,
@@ -42,6 +51,52 @@ const assert = require('assert');
     assert.strictEqual(calls.length, 2);
     assert.ok(calls[1].url.includes('/wxa/generate_urllink'));
     assert.deepStrictEqual(JSON.parse(calls[1].options.body), service.desktopAuthorizationUrlLinkPayload('challenge-1234567890'));
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ errcode: 85407, errmsg: 'no scheme permission' }),
+    });
+    await assert.rejects(
+      () => service.createDesktopAuthorizationUrlLink({ challengeId: 'challenge-1234567890' }),
+      error => error.code === 'WECHAT_URL_LINK_FAILED' && error.wechatErrcode === 85407
+    );
+    let qrRequest = null;
+    const validQrBytes = Uint8Array.from([
+      0xff, 0xd8, 0xff, 0xe0,
+      ...new Array(252).fill(0),
+    ]);
+    global.fetch = async (url, options = {}) => {
+      qrRequest = { url: String(url), options };
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: name => name.toLowerCase() === 'content-type' ? 'image/jpeg' : null },
+        arrayBuffer: async () => validQrBytes.buffer,
+      };
+    };
+    const qrDataUrl = await service.createDesktopAuthorizationQrCode({ challengeId: 'challenge-1234567890' });
+    assert.ok(qrDataUrl.startsWith('data:image/jpeg;base64,/9j/4A'));
+    assert.strictEqual(Buffer.from(qrDataUrl.split(',')[1], 'base64').length, 256);
+    assert.ok(qrRequest.url.includes('/wxa/getwxacode'));
+    assert.deepStrictEqual(JSON.parse(qrRequest.options.body), service.desktopAuthorizationQrCodePayload('challenge-1234567890'));
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => Uint8Array.from([0xff, 0xd8, 0xff, 0xe0]).buffer,
+    });
+    await assert.rejects(
+      () => service.createDesktopAuthorizationQrCode({ challengeId: 'challenge-1234567890' }),
+      error => error.code === 'WECHAT_QR_CODE_FAILED'
+    );
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => { throw new Error('truncated image response'); },
+    });
+    await assert.rejects(
+      () => service.createDesktopAuthorizationQrCode({ challengeId: 'challenge-1234567890' }),
+      error => error.code === 'WECHAT_QR_CODE_FAILED'
+    );
     global.fetch = async () => ({
       ok: true,
       status: 200,

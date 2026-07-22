@@ -498,7 +498,7 @@ git commit -m "自动发布 2026-07-16"
 - Move: `gateway/assets/fonts/OFL.txt` → `backend/assets/fonts/OFL.txt`
 - Move: `gateway/assets/fonts/README.md` → `backend/assets/fonts/README.md`
 
-- [ ] **Step 1: 固定授权源文件证据和四题边界**
+- [x] **Step 1: 固定授权源文件证据和四题边界**
 
 Run:
 
@@ -508,7 +508,7 @@ python -X utf8 scripts/inspect-paper-template.py "D:\题库测试文件\试卷�
 
 Expected: 能定位题号 1、2、4、11 及答案 A、C、B、AC；第 2 题运行时数据不含照片 relationship 或图片文件。把源 SHA-256 和人工核对结果只写进测试注释，不写绝对 D 盘路径到生产数据。
 
-- [ ] **Step 2: 写固定数据 RED 测试**
+- [x] **Step 2: 写固定数据 RED 测试**
 
 ```js
 assert.deepStrictEqual(samples.map(item => item.id), [
@@ -522,7 +522,7 @@ assert.ok(samples.every(item => item.sourceLabel === '示例题（不属于正�
 assert.ok(samples.every(item => !JSON.stringify(item).includes('D:\\')));
 ```
 
-- [ ] **Step 3: 创建最小脱敏数据文件**
+- [x] **Step 3: 创建最小脱敏数据文件**
 
 每题仅包含：
 
@@ -541,11 +541,11 @@ assert.ok(samples.every(item => !JSON.stringify(item).includes('D:\\')));
 
 使用现有 Word 解析器恢复 OMML/EQ 为可编辑 LaTeX；不得把整卷、照片、页眉页脚、学校/姓名栏或其他题目写入该文件。
 
-- [ ] **Step 4: 把现有审核沙箱重构为真实会话沙箱**
+- [x] **Step 4: 把现有审核沙箱重构为真实会话沙箱**
 
 复用原有 30 分钟过期、会话 owner、限流、请求体上限、取消和跨会话下载拒绝，但命名空间改成 `unrecognized-experience`，owner 必须等于未认可令牌 `sid`。任务仅接受四个固定 ID，禁止访问 `readonly_snapshots`、`miniapp_tasks`、题库盘或本地主机。
 
-- [ ] **Step 5: 暴露 Backend 白名单路由**
+- [x] **Step 5: 暴露 Backend 白名单路由**
 
 ```text
 GET  /api/experience/questions
@@ -557,13 +557,13 @@ GET  /api/experience/artifacts/:id
 
 Word/PDF 走现有公式导出运行时，但产物只落 Backend 临时目录，过期清理，不上传 OSS，不写业务库。
 
-- [ ] **Step 6: 运行数据、沙箱和导出 GREEN 测试**
+- [x] **Step 6: 运行数据、沙箱和导出 GREEN 测试**
 
 Run: `node backend/src/services/unrecognizedExperienceData.test.js && node backend/src/services/unrecognizedExperienceSandbox.test.js && node backend/src/routes/unrecognizedExperience.http.test.js`
 
 Expected: PASS；覆盖列表、组卷、Word、PDF、取消、过期、跨会话、越界 ID、大小限制和无 D 盘依赖。
 
-- [ ] **Step 7: 本地提交体验沙箱切片**
+- [x] **Step 7: 本地提交体验沙箱切片**
 
 ```powershell
 git add backend/src/services/unrecognizedExperienceData.js backend/src/services/unrecognizedExperienceData.test.js backend/src/services/unrecognizedExperienceSandbox.js backend/src/services/unrecognizedExperienceSandbox.test.js backend/src/routes/unrecognizedExperience.js backend/src/routes/unrecognizedExperience.http.test.js backend/src/app.js backend/assets/fonts gateway/assets/fonts
@@ -584,17 +584,17 @@ git commit -m "自动发布 2026-07-16"
 - Modify: `scripts/check_review_demo.js`
 - Modify: `scripts/check_review_demo.test.js`
 
-- [ ] **Step 1: 写未认可直连绕过 RED 测试**
+- [x] **Step 1: 写未认可直连绕过 RED 测试**
 
 遍历正式业务路由，使用有效未认可令牌请求课程、学生、老师、财务、真实题库、快照、云任务、设备配对、同步和管理员 API，预期全为 403；只允许 auth/me、applications/me、applications submit/withdraw 和 experience 五类路由。
 
-- [ ] **Step 2: 运行测试确认 RED**
+- [x] **Step 2: 运行测试确认 RED**
 
 Run: `node backend/src/middleware/unrecognizedStudentGuard.test.js && node backend/src/routes/miniappFirewall.test.js`
 
 Expected: FAIL，现有 optionalAuth 或正式业务路由接受未认可令牌。
 
-- [ ] **Step 3: 实现默认拒绝的路由白名单**
+- [x] **Step 3: 实现默认拒绝的路由白名单**
 
 ```js
 const ALLOWED = [
@@ -608,17 +608,17 @@ const ALLOWED = [
 
 Guard 必须在所有正式业务 router 之前运行；未列路由统一 `UNRECOGNIZED_SCOPE_FORBIDDEN`。身份切换时正式缓存由客户端清理，但服务端防火墙独立成立。
 
-- [ ] **Step 4: 永久关闭 Gateway 审核体验入口**
+- [x] **Step 4: 永久关闭 Gateway 审核体验入口**
 
 `/api/auth/review-demo`、`/api/review-demo/*` 固定返回 HTTP 410 + `REVIEW_DEMO_REMOVED`；Gateway auth 对 `unrecognized-student` 和旧 `review-demo` token 都返回 401，不读取 Backend 身份表，不签发小程序 token。
 
-- [ ] **Step 5: 运行双服务边界 GREEN 测试**
+- [x] **Step 5: 运行双服务边界 GREEN 测试**
 
 Run: `node backend/src/middleware/unrecognizedStudentGuard.test.js && node backend/src/routes/miniappFirewall.test.js && node gateway/src/routes/reviewDemo.http.test.js && node scripts/check_review_demo.test.js`
 
 Expected: PASS；代码扫描确认小程序认证、申请、会员和体验 API 仅指向 `/scheduling` Backend。
 
-- [ ] **Step 6: 本地提交防火墙切片**
+- [x] **Step 6: 本地提交防火墙切片**
 
 ```powershell
 git add backend/src/middleware/unrecognizedStudentGuard.js backend/src/middleware/unrecognizedStudentGuard.test.js backend/src/app.js backend/src/routes/miniappFirewall.test.js gateway/src/routes/reviewDemo.js gateway/src/routes/reviewDemo.http.test.js gateway/src/middleware/auth.js gateway/src/app.js scripts/check_review_demo.js scripts/check_review_demo.test.js
@@ -641,7 +641,7 @@ git commit -m "自动发布 2026-07-16"
 - Modify: `miniapp/src/utils/miniappPhoneLogin.test.js`
 - Modify: `miniapp/src/app.tsx`
 
-- [ ] **Step 1: 写登录页和会话 RED 测试**
+- [x] **Step 1: 写登录页和会话 RED 测试**
 
 断言无体验码、无角色选择、无静默无手机号登录；唯一主按钮是 `openType="getPhoneNumber"`。未认可响应必须持久化真实 identity 并清理上一正式身份的课程、财务、权限、题库任务和下载缓存。
 
@@ -655,31 +655,31 @@ assert.deepStrictEqual(accountCapabilities(unrecognized), [
 ]);
 ```
 
-- [ ] **Step 2: 运行测试确认 RED**
+- [x] **Step 2: 运行测试确认 RED**
 
 Run: `node miniapp/src/utils/accountExperience.test.js && node miniapp/src/utils/miniappPhoneLogin.test.js`
 
 Expected: FAIL with missing module or legacy review code present。
 
-- [ ] **Step 3: 用真实账户体验语义替换 reviewExperience**
+- [x] **Step 3: 用真实账户体验语义替换 reviewExperience**
 
 `isUnrecognizedIdentity` 只接受服务端返回的 `account_state='unrecognized'`、`token_use='unrecognized-student'` 和固定 capabilities；不接受 `id` 前缀、客户端 role、`read_only` 或合成 marker。API 路由把体验操作映射到 `/api/experience/*`，正式操作继续 `/api/cloud/*`。
 
-- [ ] **Step 4: 改造登录与错误文案**
+- [x] **Step 4: 改造登录与错误文案**
 
 按钮文案“验证手机号并登录”。处理 `PHONE_AUTHORIZATION_REQUIRED`、`WECHAT_PHONE_EXCHANGE_FAILED`、双向绑定冲突、`ACCOUNT_DISABLED`、`AUTH_RATE_LIMITED` 和网络错误。成功未认可与正式账号都通过同一原子 session committer，先 invalidate、清业务缓存、清权限、写 identity/token，再 reLaunch；审核通过后旧 token 401 时清缓存并回登录页。
 
-- [ ] **Step 5: 统一所有认证/申请/体验 API 到 Backend**
+- [x] **Step 5: 统一所有认证/申请/体验 API 到 Backend**
 
 删除 `DEFAULT_REVIEW_BASE_URL` 和 `reviewDemoApi`；新增 `applicationApi`、`experienceApi`。测试生产 base URL 必须为 `https://physicsedu.xyz/scheduling`，不能命中根域 Gateway。
 
-- [ ] **Step 6: 运行小程序会话 GREEN 测试**
+- [x] **Step 6: 运行小程序会话 GREEN 测试**
 
 Run: `node miniapp/src/utils/accountExperience.test.js && node miniapp/src/utils/miniappPhoneLogin.test.js && node miniapp/src/utils/miniappAuthorizationRuntime.test.js && node miniapp/src/utils/miniappApiSessionRuntime.test.js && node miniapp/src/utils/miniappApiRoutingRuntime.test.js`
 
 Expected: PASS；身份切换测试证明上一账号缓存不可见。
 
-- [ ] **Step 7: 本地提交小程序认证切片**
+- [x] **Step 7: 本地提交小程序认证切片**
 
 ```powershell
 git add miniapp/src/utils/accountExperience.js miniapp/src/utils/accountExperience.test.js miniapp/src/utils/api.ts miniapp/src/utils/authSession.ts miniapp/src/utils/miniappAuthorizationRuntime.js miniapp/src/utils/miniappAuthorizationRuntime.test.js miniapp/src/utils/miniappApiSessionRuntime.js miniapp/src/utils/miniappApiSessionRuntime.test.js miniapp/src/pages/login/index.tsx miniapp/src/pages/login/index.scss miniapp/src/utils/miniappPhoneLogin.test.js miniapp/src/app.tsx
@@ -712,7 +712,7 @@ git commit -m "自动发布 2026-07-16"
 - Modify: `miniapp/src/pages/admin/users/adminReviewCoordinator.test.js`
 - Modify: `miniapp/src/utils/miniappAccessPolicy.test.js`
 
-- [ ] **Step 1: 写申请状态和导航 RED 测试**
+- [x] **Step 1: 写申请状态和导航 RED 测试**
 
 申请 runtime 用显式状态联合：
 
@@ -727,35 +727,35 @@ for (const state of states) assert.ok(copyForApplicationState(state));
 
 断言学生申请字段、家长代学生、未满 14 岁监护确认、老师无课时费、拒绝原因、修订重提、withdraw、重复点击锁和 provisioning 文案。
 
-- [ ] **Step 2: 运行 UI 纯逻辑 RED 测试**
+- [x] **Step 2: 运行 UI 纯逻辑 RED 测试**
 
 Run: `node miniapp/src/pages/account-application/applicationRuntime.test.js && node miniapp/src/custom-tab-bar/roleTabBar.test.js && node miniapp/src/utils/miniappAccessPolicy.test.js`
 
 Expected: FAIL with missing page/runtime。
 
-- [ ] **Step 3: 注册第 17 页并实现申请表/状态页**
+- [x] **Step 3: 注册第 17 页并实现申请表/状态页**
 
 路由为 `pages/account-application/index`。未认可设置页和首页的“申请正式账号”使用 `navigateTo` 到该已注册页。学生表单必填姓名、学生手机号、学校、年级、爸爸/妈妈、家长手机号；老师表单必填姓名和锁定手机号，科目/备注选填，DOM 和文案中均不得出现课时费。
 
-- [ ] **Step 4: 实现未认可学生壳层和真实空态**
+- [x] **Step 4: 实现未认可学生壳层和真实空态**
 
 Tab 只保留首页、课程表、题库、设置；首页显示“体验账号”和固定说明，课程/学生/老师/财务/统计不请求正式 API并显示明确空态。题库正式区为空，单独展示四道“示例题（不属于正式题库）”，组卷/Word/PDF 只调用 `experienceApi`。
 
-- [ ] **Step 5: 实现管理员公开申请区域**
+- [x] **Step 5: 实现管理员公开申请区域**
 
 普通管理员能查看/批准/拒绝学生和老师申请；超级管理员额外看到冲突处理、用户禁用和设备配对。学生卡展示申请人身份、必要手机号审核视图、学校、年级/入学年份和家长关系；老师卡不展示课时费。批准/拒绝/重试都有 operation lock 和确认框，`provisioning` 显示主机/阶段/错误码。
 
-- [ ] **Step 6: 只在账号名称旁显示会员标记**
+- [x] **Step 6: 只在账号名称旁显示会员标记**
 
 `MembershipBadge` 仅由服务端 `membership.status==='active'` 渲染；首页卡片、导航、弹窗和其他页面不得出现价格、购买、续费、套餐或权益承诺。
 
-- [ ] **Step 7: 运行 UI GREEN 与文案真实性扫描**
+- [x] **Step 7: 运行 UI GREEN 与文案真实性扫描**
 
 Run: `node miniapp/src/pages/account-application/applicationRuntime.test.js && node miniapp/src/custom-tab-bar/roleTabBar.test.js && node miniapp/src/utils/miniappAccessPolicy.test.js && node miniapp/src/pages/admin/users/adminReviewCoordinator.test.js && node miniapp/src/utils/miniappHomeVisual.test.js`
 
 Expected: PASS；源码扫描不存在审核体验码、合成角色、老师课时费或虚构会员购买入口。
 
-- [ ] **Step 8: 本地提交 UI 切片**
+- [x] **Step 8: 本地提交 UI 切片**
 
 ```powershell
 git add miniapp/src/pages/account-application miniapp/src/components/AccountStatusBanner.tsx miniapp/src/components/MembershipBadge.tsx miniapp/src/app.config.ts miniapp/src/custom-tab-bar miniapp/src/pages/index miniapp/src/pages/schedule miniapp/src/pages/students miniapp/src/pages/courses miniapp/src/pages/payments miniapp/src/pages/stats miniapp/src/pages/question-bank miniapp/src/pages/settings miniapp/src/pages/admin/users miniapp/src/utils/miniappAccessPolicy.test.js
@@ -776,11 +776,11 @@ git commit -m "自动发布 2026-07-16"
 - Modify: `docs/miniapp-review-guide.md`
 - Create: `docs/verification-2026-07-16-unrecognized-student-membership.md`
 
-- [ ] **Step 1: 写 180 天保留 RED 测试**
+- [x] **Step 1: 写 180 天保留 RED 测试**
 
 断言登录事件手机号、拒绝/撤回 payload、已批准稳定 180 天 payload 都按规则删除或匿名化；认证身份手机号和审计摘要保留。临时 code/JWT 从不入表。
 
-- [ ] **Step 2: 实现可重复执行的保留任务**
+- [x] **Step 2: 实现可重复执行的保留任务**
 
 ```js
 function runMiniappPrivacyRetention(db, now) {
@@ -794,21 +794,21 @@ function runMiniappPrivacyRetention(db, now) {
 
 任务启动时运行一次，并可由运维脚本调用；只输出数量和结构化结果，不输出手机号或 payload。
 
-- [ ] **Step 3: 更新平台隐私字段清单与用户告知**
+- [x] **Step 3: 更新平台隐私字段清单与用户告知**
 
 文档逐项列出手机号、学生姓名、学校、年级、家长手机号/关系、老师姓名/科目/备注的用途、管理员可见范围、本地主机写入和保存期限；明确未满 14 岁由家长提交。发布检查扫描代码字段与文档字段一致。
 
-- [ ] **Step 4: 更新 17 页面覆盖门禁**
+- [x] **Step 4: 更新 17 页面覆盖门禁**
 
 页面清单以 `app.config.ts` 为源，覆盖 17 个注册页面以及源码 `navigateTo/redirectTo/reLaunch/switchTab` 目标。矩阵角色至少包含：未认可学生、受认可学生、家长、老师、普通管理员、超级管理员；状态至少包含空态、离线、无权限、有限写入、申请所有状态。
 
-- [ ] **Step 5: 运行隐私与覆盖 GREEN 测试**
+- [x] **Step 5: 运行隐私与覆盖 GREEN 测试**
 
 Run: `node backend/src/services/miniappPrivacyRetention.test.js && node miniapp/src/utils/miniappUiCoverage.test.js && node scripts/check_miniapp_release.test.js && node scripts/check_miniapp_review_readiness.test.js`
 
 Expected: PASS，页面数为 17，零未注册跳转，零缺失角色/状态记录。
 
-- [ ] **Step 6: 本地提交隐私和门禁切片**
+- [x] **Step 6: 本地提交隐私和门禁切片**
 
 ```powershell
 git add backend/src/services/miniappPrivacyRetention.js backend/src/services/miniappPrivacyRetention.test.js miniapp/src/utils/miniappUiPageInventory.js miniapp/src/utils/miniappUiCoverage.test.js scripts/check_miniapp_release.js scripts/check_miniapp_release.test.js scripts/check_miniapp_review_readiness.js scripts/check_miniapp_review_readiness.test.js docs/miniapp-review-guide.md docs/verification-2026-07-16-unrecognized-student-membership.md
@@ -822,7 +822,7 @@ git commit -m "自动发布 2026-07-16"
 - Modify: `task.md`
 - Create: `output/miniapp-5.15.0-ui-coverage/` screenshots and sanitized console logs
 
-- [ ] **Step 1: 运行聚焦测试和静态检查**
+- [x] **Step 1: 运行聚焦测试和静态检查**
 
 Run:
 
@@ -840,13 +840,13 @@ npm --prefix miniapp run typecheck
 
 Expected: 全部 PASS。
 
-- [ ] **Step 2: 运行项目全量测试**
+- [x] **Step 2: 运行项目全量测试**
 
 Run: `npm test`
 
 Expected: exit 0；不得用跳过测试或更新快照掩盖失败。
 
-- [ ] **Step 3: 构建生产小程序并运行发布门禁**
+- [x] **Step 3: 构建生产小程序并运行发布门禁**
 
 Run: `npm run miniapp:release-check`
 

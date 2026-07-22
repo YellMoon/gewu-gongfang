@@ -110,16 +110,21 @@ function generateDeviceKey() {
     const usedLoginCodes = new Set();
     const usedPhoneCodes = new Set();
     const generatedUrlLinks = [];
-    let failNextUrlLink = false;
+    let failNextUrlLink = null;
     const createDesktopAuthorizationUrlLink = async function ({ challengeId }) {
       generatedUrlLinks.push(challengeId);
       if (failNextUrlLink) {
+        const linkFailure = failNextUrlLink;
         failNextUrlLink = false;
         const error = new Error('url link failed');
         error.code = 'WECHAT_URL_LINK_FAILED';
+        if (linkFailure === 'permission') error.wechatErrcode = 85407;
         throw error;
       }
       return `https://wxaurl.cn/test-${challengeId}`;
+    };
+    const createDesktopAuthorizationQrCode = async function ({ challengeId }) {
+      return `data:image/jpeg;base64,${Buffer.from(`qr-${challengeId}`).toString('base64')}`;
     };
     const resolveWechatIdentity = async function (code) {
       if (!code || usedLoginCodes.has(code)) {
@@ -168,6 +173,7 @@ function generateDeviceKey() {
       resolveWechatIdentity,
       resolveWechatPhoneNumber,
       createDesktopAuthorizationUrlLink,
+      createDesktopAuthorizationQrCode,
     }));
     server = app.listen(0);
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -248,6 +254,22 @@ function generateDeviceKey() {
       );
       return response.body.data;
     }
+
+    const qrFallbackKey = generateDeviceKey();
+    failNextUrlLink = 'permission';
+    const qrFallbackStart = await requestJson(
+      baseUrl,
+      'POST',
+      '/api/desktop-identity/challenges/start',
+      { body: {
+        deviceId: 'device-http-qr-fallback', deviceName: 'QR Fallback PC',
+        publicKey: qrFallbackKey.publicKey, keyFingerprint: qrFallbackKey.keyFingerprint,
+      } }
+    );
+    assert.strictEqual(qrFallbackStart.status, 200);
+    assert.strictEqual(qrFallbackStart.body.data.challenge.qrValue, null);
+    assert.ok(qrFallbackStart.body.data.challenge.qrImageDataUrl.startsWith('data:image/jpeg;base64,'));
+    assert.strictEqual(qrFallbackStart.body.data.challenge.qrEntryMode, 'mini-program-code');
 
     const failedLinkKey = generateDeviceKey();
     failNextUrlLink = true;

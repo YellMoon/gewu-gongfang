@@ -41,6 +41,8 @@ assert.strictEqual(source.includes('result.recoveryPackage'), false,
 assert.ok(source.includes('transferId: transfer.id') && source.includes('sourceEpochId: transfer.sourceEpochId'));
 assert.ok(source.includes('factorId') && source.includes('recoveryCode'));
 assert.ok(source.includes('<QRCode') && source.includes('<Input.Password'));
+assert.ok(source.includes('hostOperation.challenge.qrImageDataUrl') && source.includes('<img'),
+  'primary-host verification must render an official mini-program code image fallback');
 assert.ok(source.includes('primaryHostRuntime.revealRecoveryPackage'));
 assert.ok(source.includes('primaryHostRuntime.acknowledgeRecoveryPackage'));
 assert.ok(source.includes('expectedRowVersion: pendingRecoveryDelivery.rowVersion'));

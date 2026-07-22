@@ -129,6 +129,16 @@ function desktopAuthorizationUrlLinkPayload(challengeId) {
   };
 }
 
+function desktopAuthorizationQrCodePayload(challengeId) {
+  const urlLinkPayload = desktopAuthorizationUrlLinkPayload(challengeId);
+  return {
+    path: `${urlLinkPayload.path}?${urlLinkPayload.query}`,
+    env_version: urlLinkPayload.env_version,
+    check_path: false,
+    width: 430,
+  };
+}
+
 async function createDesktopAuthorizationUrlLink({ challengeId } = {}) {
   const body = desktopAuthorizationUrlLinkPayload(challengeId);
   const accessToken = await getWechatAccessToken();
@@ -159,17 +169,72 @@ async function createDesktopAuthorizationUrlLink({ challengeId } = {}) {
     error.cause = cause;
     throw error;
   }
-  const urlLink = String(payload.url_link || '').trim();
-  if (!response.ok || payload.errcode || !/^https:\/\/wxaurl\.cn\//i.test(urlLink)) {
+  const urlLink = String(payload?.url_link || '').trim();
+  if (!response.ok || payload?.errcode || !/^https:\/\/wxaurl\.cn\//i.test(urlLink)) {
     const error = new Error('wechat URL Link generation failed');
     error.code = 'WECHAT_URL_LINK_FAILED';
+    const wechatErrcode = Number(payload?.errcode);
+    if (Number.isFinite(wechatErrcode)) error.wechatErrcode = wechatErrcode;
     throw error;
   }
   return urlLink;
 }
 
+async function createDesktopAuthorizationQrCode({ challengeId } = {}) {
+  const body = desktopAuthorizationQrCodePayload(challengeId);
+  const accessToken = await getWechatAccessToken();
+  const url = new URL('https://api.weixin.qq.com/wxa/getwxacode');
+  url.searchParams.set('access_token', accessToken);
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch (cause) {
+    const error = new Error('wechat mini-program code request failed');
+    error.code = cause?.name === 'AbortError' || cause?.name === 'TimeoutError'
+      ? 'WECHAT_QR_CODE_TIMEOUT'
+      : 'WECHAT_QR_CODE_FAILED';
+    error.cause = cause;
+    throw error;
+  }
+
+  let bytes;
+  try {
+    bytes = Buffer.from(await response.arrayBuffer());
+  } catch (cause) {
+    const error = new Error('wechat mini-program code response was invalid');
+    error.code = 'WECHAT_QR_CODE_FAILED';
+    error.cause = cause;
+    throw error;
+  }
+  const isJpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  const isPng = bytes.length >= 8
+    && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+    && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a;
+  if (!response.ok || bytes.length < 128 || bytes.length > 2 * 1024 * 1024 || (!isJpeg && !isPng)) {
+    let providerPayload = null;
+    try {
+      providerPayload = JSON.parse(bytes.subarray(0, 65536).toString('utf8'));
+    } catch (_error) {
+      providerPayload = null;
+    }
+    const error = new Error('wechat mini-program code generation failed');
+    error.code = 'WECHAT_QR_CODE_FAILED';
+    const wechatErrcode = Number(providerPayload?.errcode);
+    if (Number.isFinite(wechatErrcode)) error.wechatErrcode = wechatErrcode;
+    throw error;
+  }
+  return `data:${isPng ? 'image/png' : 'image/jpeg'};base64,${bytes.toString('base64')}`;
+}
+
 module.exports = {
+  createDesktopAuthorizationQrCode,
   createDesktopAuthorizationUrlLink,
+  desktopAuthorizationQrCodePayload,
   desktopAuthorizationUrlLinkPayload,
   resolveWechatIdentity,
   resolveWechatPhoneNumber,

@@ -16,6 +16,7 @@ const { createMiniappIdentityService } = require('../services/miniappIdentitySer
 const {
   resolveWechatIdentity: defaultResolveWechatIdentity,
   resolveWechatPhoneNumber: defaultResolveWechatPhoneNumber,
+  createDesktopAuthorizationQrCode: defaultCreateDesktopAuthorizationQrCode,
   createDesktopAuthorizationUrlLink: defaultCreateDesktopAuthorizationUrlLink,
 } = require('../services/wechatMiniappService');
 
@@ -152,6 +153,7 @@ function createDesktopIdentityRouter({
   authenticateDesktop,
   resolveWechatIdentity = defaultResolveWechatIdentity,
   resolveWechatPhoneNumber = defaultResolveWechatPhoneNumber,
+  createDesktopAuthorizationQrCode = defaultCreateDesktopAuthorizationQrCode,
   createDesktopAuthorizationUrlLink = defaultCreateDesktopAuthorizationUrlLink,
   challengeIdFactory = uuidv4,
   allowDesktopAuthorizationUrlFallback = process.env.NODE_ENV !== 'production' && process.env.APP_ENV !== 'prod',
@@ -251,21 +253,35 @@ function createDesktopIdentityRouter({
     }
   }
 
+  async function createDesktopAuthorizationEntry(challengeId) {
+    try {
+      const qrValue = await createDesktopAuthorizationUrlLink({ challengeId });
+      return { qrValue, qrImageDataUrl: null, qrEntryMode: 'url-link' };
+    } catch (error) {
+      if (Number(error?.wechatErrcode) === 85407) {
+        const qrImageDataUrl = await createDesktopAuthorizationQrCode({ challengeId });
+        return { qrValue: null, qrImageDataUrl, qrEntryMode: 'mini-program-code' };
+      }
+      if (allowDesktopAuthorizationUrlFallback) {
+        return { qrValue: null, qrImageDataUrl: null, qrEntryMode: null };
+      }
+      throw error;
+    }
+  }
+
   router.post('/challenges/start', async function (req, res) {
     try {
       assertBodyKeys(req.body, START_KEYS);
       const challengeId = String(challengeIdFactory()).trim();
       const challenge = identity().startChallenge(req.body, { challengeId });
-      let qrValue = null;
+      let entry;
       try {
-        qrValue = await createDesktopAuthorizationUrlLink({ challengeId: challenge.id });
+        entry = await createDesktopAuthorizationEntry(challenge.id);
       } catch (error) {
-        if (!allowDesktopAuthorizationUrlFallback) {
-          identity().abandonPendingChallenge(challenge.id);
-          throw error;
-        }
+        identity().abandonPendingChallenge(challenge.id);
+        throw error;
       }
-      return res.json({ success: true, data: { challenge: { ...challenge, qrValue } } });
+      return res.json({ success: true, data: { challenge: { ...challenge, ...entry } } });
     } catch (error) {
       return sendError(res, error);
     }
@@ -453,13 +469,8 @@ function createDesktopIdentityRouter({
       operation: req.body.operation,
       targetDeviceId: req.body.targetDeviceId,
     });
-    let qrValue = null;
-    try {
-      qrValue = await createDesktopAuthorizationUrlLink({ challengeId: challenge.id });
-    } catch (error) {
-      if (!allowDesktopAuthorizationUrlFallback) throw error;
-    }
-    return res.json({ success: true, data: { challenge: { ...challenge, qrValue } } });
+    const entry = await createDesktopAuthorizationEntry(challenge.id);
+    return res.json({ success: true, data: { challenge: { ...challenge, ...entry } } });
   }));
 
   router.get('/primary-host/challenges/:id/public', function (req, res) {
