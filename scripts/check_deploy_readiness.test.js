@@ -41,6 +41,7 @@ for (const name of [
   'checkIdentityBuildSafety',
   'checkPrimaryHostRecoveryDelivery',
   'checkDesktopPasswordReset',
+  'checkDesktopReleaseBoundary',
 ]) {
   assert.strictEqual(typeof readiness[name], 'function', `deploy readiness should export ${name}`);
 }
@@ -76,5 +77,9 @@ assert.deepStrictEqual(
 const buildSafety = readiness.checkIdentityBuildSafety();
 assert.deepStrictEqual(buildSafety.issues, [], `identity build safety failed: ${buildSafety.issues.join(', ')}`);
 assert.strictEqual(buildSafety.scanned, true, 'fresh desktop build artifacts must be scanned');
+const desktopRelease = readiness.checkDesktopReleaseBoundary();
+assert.deepStrictEqual(desktopRelease.issues, [], `desktop release boundary failed: ${desktopRelease.issues.join(', ')}`);
+assert.strictEqual(desktopRelease.miniappReleaseState, 'frozen');
+assert.strictEqual(desktopRelease.defaultDesktopFlavor, 'desktop-client');
 
 console.log('deploy readiness checks passed');

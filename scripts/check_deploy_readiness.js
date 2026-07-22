@@ -392,6 +392,64 @@ function checkIdentityBuildSafety() {
   return Object.freeze({ scanned: true, files: Object.freeze(files), issues: Object.freeze(issues) });
 }
 
+function checkDesktopReleaseBoundary() {
+  const issues = [];
+  const packageJson = readJson('package.json');
+  const hostConfig = require(path.join(process.cwd(), 'electron-builder.host.config.cjs'));
+  const runtimeConfig = readText('public/runtimeConfig.js');
+  const buildFlavor = readText('public/desktopBuildFlavor.js');
+  const directTransport = readText('src/services/oneClickSyncTransports.mjs');
+  const schema = readText('backend/src/schema.sql');
+  const relayRoute = readText('gateway/src/routes/cloudRelay.js');
+  const ordinaryFiles = packageJson.build?.files || [];
+  const hostFiles = hostConfig.files || [];
+  const hostOnlyFiles = [
+    'public/primaryHostCredentialStore.js',
+    'public/primaryHostOperationValidation.js',
+    'public/primaryHostRuntimeManager.js',
+  ];
+
+  if (packageJson.desktopBuildFlavor !== 'desktop-client') {
+    issues.push('default desktop package flavor must be desktop-client');
+  }
+  if (!ordinaryFiles.includes('public/electronShellPolicy.js')) {
+    issues.push('ordinary package is missing electronShellPolicy.js');
+  }
+  for (const file of hostOnlyFiles) {
+    if (ordinaryFiles.includes(file)) issues.push(`ordinary package contains host-only module: ${file}`);
+    if (!hostFiles.includes(file)) issues.push(`primary-host package is missing host-only module: ${file}`);
+  }
+  if (!runtimeConfig.includes("desktopIdentityMode: 'full'")) {
+    issues.push('desktop identity mode must default to full');
+  }
+  const grantStart = schema.indexOf('CREATE TABLE IF NOT EXISTS desktop_single_user_pairing_grants');
+  const grantEnd = schema.indexOf('CREATE TABLE IF NOT EXISTS desktop_single_user_pairing_requests', grantStart);
+  const grantSchema = grantStart >= 0 && grantEnd > grantStart ? schema.slice(grantStart, grantEnd) : '';
+  if (!grantSchema.includes('code_salt') || !grantSchema.includes('code_digest')) {
+    issues.push('single-user pairing grants must persist only salted code digests');
+  }
+  if (/pairing_code\s+TEXT/i.test(grantSchema)) {
+    issues.push('single-user pairing grant schema contains a plaintext pairing code');
+  }
+  for (const forbidden of ['/api/sync/authorize', 'x-sync-authorization', 'syncAuthorizationToken']) {
+    if (directTransport.includes(forbidden)) {
+      issues.push(`direct V2 sync transport still accepts legacy authorization: ${forbidden}`);
+    }
+  }
+  if (!relayRoute.includes("'pairingcode'") || !relayRoute.includes("'pairing_code'")) {
+    issues.push('cloud relay must reject pairing-code response fields');
+  }
+  const clientFeed = /desktop\/['"]/.test(buildFlavor);
+  const hostFeed = /desktop\/host\/['"]/.test(buildFlavor);
+  if (!clientFeed || !hostFeed) issues.push('desktop client and primary-host update feeds must be isolated');
+
+  return Object.freeze({
+    defaultDesktopFlavor: packageJson.desktopBuildFlavor,
+    miniappReleaseState: 'frozen',
+    issues: Object.freeze(issues),
+  });
+}
+
 function main() {
   const required = checkRequiredEnv();
   const optional = checkOptionalEnv();
@@ -401,6 +459,7 @@ function main() {
   const desktopPasswordReset = checkDesktopPasswordReset();
   const identitySourceSafety = checkIdentitySourceSafety();
   const identityBuildSafety = checkIdentityBuildSafety();
+  const desktopReleaseBoundary = checkDesktopReleaseBoundary();
   const missingRequired = required.filter(item => item.status === 'missing').map(item => item.name);
 
   console.log('Deploy readiness');
@@ -418,6 +477,8 @@ function main() {
   desktopPasswordReset.evidence.forEach(item => console.log(`- ${item.key}: ${item.status}`));
   console.log(`Desktop identity source safety: ${identitySourceSafety.issues.length === 0 ? 'pass' : 'fail'}`);
   console.log(`Desktop identity build safety: ${identityBuildSafety.issues.length === 0 ? 'pass' : 'fail'}`);
+  console.log(`Desktop release boundary: ${desktopReleaseBoundary.issues.length === 0 ? 'pass' : 'fail'}`);
+  console.log(`Miniapp release state: ${desktopReleaseBoundary.miniappReleaseState}`);
 
   if (miniapp.issues.length > 0) {
     console.log('Miniapp config issues:');
@@ -433,6 +494,7 @@ function main() {
     ...desktopPasswordReset.issues,
     ...identitySourceSafety.issues,
     ...identityBuildSafety.issues,
+    ...desktopReleaseBoundary.issues,
   ];
   if (identityIssues.length > 0) {
     console.log('Desktop identity issues:');
@@ -457,5 +519,6 @@ module.exports = {
   checkDesktopPasswordReset,
   checkIdentitySourceSafety,
   checkIdentityBuildSafety,
+  checkDesktopReleaseBoundary,
   IDENTITY_EVIDENCE_CHECKS,
 };

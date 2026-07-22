@@ -4,12 +4,12 @@ const { chromium } = require('playwright');
 
 const baseUrl = process.env.UI_SMOKE_URL || 'http://localhost:3000';
 const screenshotDir = path.join(process.cwd(), 'tmp', 'ui-smoke');
-const routes = [
+const allRoutes = [
   // Home renders the default today workbench.
   { path: '/', key: 'home', requiredText: ['今日工作台', '课程表', '学生费用欠缴'] },
   { path: '/?page=course-calendar', key: 'course-calendar', pageKey: 'course-calendar', requiredText: ['课程表', '刷新课程信息', '本周'] },
   { path: '/?page=schedule-list', key: 'schedule-list', pageKey: 'schedule-list', requiredText: ['排课列表', '查询', '导出'] },
-  { path: '/?page=question-bank-tools', key: 'question-bank-tools', pageKey: 'question-bank-tools', requiredText: ['题库工具', '导入与知识树'] },
+  { path: '/?page=question-bank-tools', key: 'question-bank-tools', pageKey: 'question-bank-tools', requiredText: ['题库工具', '导入与体系'] },
   { path: '/?page=question-bank-import', key: 'question-bank-import', pageKey: 'question-bank-import', requiredText: ['拖拽或选择 Word 文件', '讲义格式'] },
   { path: '/?page=question-bank-preview', key: 'question-bank-preview', pageKey: 'question-bank-preview', requiredText: ['试题库', '更多筛选'] },
   { path: '/?page=question-bank-paper', key: 'question-bank-paper', pageKey: 'question-bank-paper', requiredText: ['题目数', '总分'] },
@@ -22,8 +22,11 @@ const routes = [
   { path: '/?page=address', key: 'address', pageKey: 'address', requiredText: ['地址总数', '添加地址'] },
   { path: '/?page=institution', key: 'institution', pageKey: 'institution', requiredText: ['机构总数', '添加机构'] },
   { path: '/?page=operate-log', key: 'operate-log', pageKey: 'operate-log', requiredText: ['操作审计', '刷新'] },
-  { path: '/?page=cloud-sync', key: 'cloud-sync', pageKey: 'cloud-sync', requiredText: ['同步控制', '待同步操作'] },
+  { path: '/?page=cloud-sync', key: 'cloud-sync', pageKey: 'cloud-sync', requiredText: ['与数据主机双向同步', '同步设置'] },
 ];
+const requestedRoute = String(process.env.UI_SMOKE_ROUTE || '').trim();
+const routes = requestedRoute ? allRoutes.filter(route => route.key === requestedRoute) : allRoutes;
+if (requestedRoute && routes.length === 0) throw new Error(`Unknown UI smoke route: ${requestedRoute}`);
 
 async function getBodyText(page) {
   return page.locator('body').innerText().then((text) => text.trim());
@@ -37,6 +40,66 @@ async function waitForAppReady(page) {
 
 async function installNavigationProbe(page) {
   await page.addInitScript(() => {
+    const now = Date.now();
+    const userId = 'ui-smoke-super-admin';
+    const deviceId = 'ui-smoke-device';
+    const authorizationId = 'ui-smoke-authorization';
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false });
+    window.api = {
+      invoke: async (channel) => {
+        if (channel === 'runtime-config:get') {
+          return {
+            buildFlavor: 'desktop-client',
+            primaryHostCapable: false,
+            nodeRole: 'desktop-client',
+            desktopIdentityMode: 'full',
+            deviceId,
+            deviceName: 'UI smoke isolated client',
+            primaryHostEpochId: '',
+            primaryHostGeneration: null,
+            hostBaseUrl: 'http://127.0.0.1:3001',
+            cloudBaseUrl: 'http://127.0.0.1:3001',
+            desktopSyncToken: '',
+            mainDbPath: '',
+            questionBankPath: '',
+            questionAssetPath: '',
+            questionBankCandidatePaths: [],
+            questionBankStoreId: '',
+            localCachePath: '',
+            nasBackupPath: '',
+          };
+        }
+        if (channel === 'get-app-version') return 'ui-smoke';
+        return null;
+      },
+    };
+    window.desktopIdentity = {
+      status: async () => ({
+        state: 'active',
+        unlocked: true,
+        deviceId,
+        authorizationId,
+        credentialVersion: 1,
+        user: { id: userId, name: 'UI smoke administrator' },
+        eligibleRoles: ['super_admin'],
+        activeRole: 'super_admin',
+        teacherId: null,
+        studentId: null,
+        offlineLease: {
+          issuedAt: new Date(now - 60_000).toISOString(),
+          expiresAt: new Date(now + 60 * 60 * 1000).toISOString(),
+          userId,
+          deviceId,
+          authorizationId,
+          credentialVersion: 1,
+          eligibleRoles: ['super_admin'],
+          activeRole: 'super_admin',
+          teacherId: null,
+          studentId: null,
+        },
+      }),
+      lock: async () => ({ state: 'sealed', unlocked: false }),
+    };
     window.__uiSmokeNavigateReady = false;
     const nativeAddEventListener = window.addEventListener;
     window.addEventListener = function addEventListener(type, listener, options) {
@@ -65,7 +128,7 @@ async function waitForRequiredText(page, route) {
     const bodyText = await getBodyText(page);
     const missingTexts = requiredTexts.filter((text) => !bodyText.includes(text));
     throw new Error(
-      `${route.key}: required page text not found. Required: ${requiredTexts.join(', ')}. Missing: ${missingTexts.join(', ')}. Body text length: ${bodyText.length}`
+      `${route.key}: required page text not found. Required: ${requiredTexts.join(', ')}. Missing: ${missingTexts.join(', ')}. Body: ${bodyText.slice(0, 1000)}`
     );
   });
 }
@@ -110,6 +173,36 @@ async function checkRoute(page, route) {
       })
       .join(', ');
     throw new Error(`${route.key}: suspiciously narrow visible buttons: ${details}`);
+  }
+
+  if (route.key === 'question-bank-preview') {
+    let removeSystemButton = page.locator('.taxonomy-system-title button.ant-btn-dangerous').last();
+    if (await removeSystemButton.count() === 0) {
+      await page.evaluate(() => {
+        const database = window.dbService;
+        if ((database?.getTaxonomySystems?.('\u7269\u7406') || []).length === 0) {
+          database.createTaxonomySystem({ name: '\u8fd0\u884c\u9a8c\u8bc1\u4f53\u7cfb', subject: '\u7269\u7406' });
+        }
+        window.dispatchEvent(new CustomEvent('navigate-page', { detail: 'question-bank-tools' }));
+      });
+      await page.getByText('\u9898\u5e93\u5de5\u5177', { exact: true }).first().waitFor();
+      await page.evaluate(() => {
+        window.dispatchEvent(new CustomEvent('navigate-page', { detail: 'question-bank-preview' }));
+      });
+      await waitForRequiredText(page, route);
+      removeSystemButton = page.locator('.taxonomy-system-title button.ant-btn-dangerous').last();
+      await removeSystemButton.waitFor();
+    }
+    await removeSystemButton.click();
+    const confirmation = page.getByRole('dialog').filter({ hasText: '删除体系' });
+    await confirmation.getByText(/将影响 \d+ 道试题，删除 \d+ 个节点。/).waitFor();
+    await confirmation.getByText('操作前会自动保留可恢复备份和审计记录。', { exact: false }).waitFor();
+    await page.waitForTimeout(500);
+    await page.screenshot({
+      path: path.join(screenshotDir, 'question-bank-taxonomy-delete-confirm.png'),
+      fullPage: true,
+    });
+    await confirmation.locator('.ant-btn-default').click();
   }
 
   await page.screenshot({

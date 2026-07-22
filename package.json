@@ -138,6 +138,7 @@
       "public/desktopIdentityVault.js",
       "public/desktopCredentialStore.js",
       "public/desktopBuildFlavor.js",
+      "public/electronShellPolicy.js",
       "public/singleUserPairingEnvelope.js",
       "public/updateCheckTimeout.js",
       "package.json",

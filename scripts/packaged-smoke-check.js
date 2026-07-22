@@ -8,6 +8,29 @@ const debugPort = Number(process.env.PACKAGED_DEBUG_PORT || 9333);
 const debugUrl = `http://127.0.0.1:${debugPort}`;
 const packagedAppRoot = path.join(path.dirname(productExe), 'resources', 'app');
 const embeddedBackendDependencies = ['fflate', 'katex', 'mathjax-full', 'pdfkit', 'sharp', 'svg-to-pdfkit'];
+const hostOnlyRuntimeFiles = [
+  'public/primaryHostCredentialStore.js',
+  'public/primaryHostOperationValidation.js',
+  'public/primaryHostRuntimeManager.js',
+];
+
+function verifyPackagedFlavorBoundary() {
+  const metadataPath = path.join(packagedAppRoot, 'package.json');
+  const shellPolicyPath = path.join(packagedAppRoot, 'public', 'electronShellPolicy.js');
+  if (!fs.existsSync(metadataPath) || !fs.existsSync(shellPolicyPath)) {
+    throw new Error('Packaged flavor metadata or Electron shell policy is missing');
+  }
+  const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+  const flavor = metadata.desktopBuildFlavor === 'primary-host' ? 'primary-host' : 'desktop-client';
+  const presentHostFiles = hostOnlyRuntimeFiles.filter(file => fs.existsSync(path.join(packagedAppRoot, ...file.split('/'))));
+  if (flavor === 'desktop-client' && presentHostFiles.length > 0) {
+    throw new Error(`Ordinary package contains host-only runtime files: ${presentHostFiles.join(', ')}`);
+  }
+  if (flavor === 'primary-host' && presentHostFiles.length !== hostOnlyRuntimeFiles.length) {
+    throw new Error('Primary-host package is missing host-only runtime files');
+  }
+  return flavor;
+}
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -40,6 +63,7 @@ async function main() {
   if (!fs.existsSync(productExe)) {
     throw new Error(`Packaged executable not found: ${productExe}`);
   }
+  const packagedFlavor = verifyPackagedFlavorBoundary();
   const missingDependencies = embeddedBackendDependencies.filter(dependency => (
     !fs.existsSync(path.join(packagedAppRoot, 'node_modules', dependency, 'package.json'))
   ));
@@ -83,7 +107,7 @@ async function main() {
       throw new Error(`Packaged app smoke failed: ${JSON.stringify({ state, blockingMessages }, null, 2)}`);
     }
 
-    console.log(`packaged smoke passed: ${state.title} ${state.url}`);
+    console.log(`packaged smoke passed: flavor=${packagedFlavor} ${state.title} ${state.url}`);
   } finally {
     if (browser) {
       await browser.close().catch(() => {});
@@ -96,3 +120,5 @@ main().catch(error => {
   console.error(error.message || error);
   process.exitCode = 1;
 });
+
+module.exports = { verifyPackagedFlavorBoundary };

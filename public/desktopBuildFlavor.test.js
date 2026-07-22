@@ -55,6 +55,8 @@ assert.ok(!preloadSource.includes('signPairingEnvelope'));
 assert.ok(electronSource.includes("'x-gewu-electron-local-bridge': electronLocalBridgeSecret"));
 assert.ok(electronSource.includes("ipcMain.handle('single-user:bootstrap'"));
 assert.ok(packageJson.build.files.includes('public/desktopBuildFlavor.js'));
+assert.ok(packageJson.build.files.includes('public/electronShellPolicy.js'),
+  'both packaged flavors must include the production menu and updater error policy');
 assert.ok(
   packageJson.build.files.includes('public/singleUserPairingEnvelope.js'),
   'ordinary package must include the opaque pairing protocol client'

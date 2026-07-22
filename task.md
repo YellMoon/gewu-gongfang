@@ -1,6 +1,6 @@
 # Task: 2026-07-23 桌面单人模式、一次性配对与统一收尾
 
-Status: design approved; implementation plan written
+Status: implementation complete; release verification in progress
 
 ## Objective
 
@@ -23,9 +23,9 @@ Status: design approved; implementation plan written
 - [x] 写出并自检书面设计规格。
 - [x] 用户复核书面设计规格。
 - [x] 编写文件级 TDD 实施计划。
-- [ ] 按测试先行实现单人模式、主机初始化、配对与撤销。
-- [ ] 实现手动同步预览、主机自动处理、备份/审计/冲突保留。
-- [ ] 验证并修复窗口默认菜单、密码重设入口和 OSS 更新模块。
+- [x] 按测试先行实现单人模式、主机初始化、配对与撤销。
+- [x] 实现手动同步预览、主机自动处理、备份/审计/冲突保留。
+- [x] 验证并修复窗口默认菜单、密码重设入口和 OSS 更新模块。
 - [ ] 审计 OpenCode PR 与此前体系、主机 flavor 隔离等任务完成度，补齐缺口。
 - [ ] 运行全量测试、构建、Electron 真实运行时与多端兼容验证。
 - [ ] 备份并部署阿里云，升级当前数据主机，发布普通端/主机端 OSS feed。
@@ -45,6 +45,15 @@ Status: design approved; implementation plan written
 - 真实验证覆盖主机初始化、普通端配对、重启解锁、同步预览/自动批准、离线/冲突、撤销和 OSS 更新。
 - 发布前备份云端数据库/代码和本地主机数据；回滚先关闭单人模式并撤销临时授权，再回退应用，禁止删除业务数据。
 - 微信小程序本阶段冻结，不构建、不上传；未完成的端必须报告“部分发布”或“受阻”。
+
+## 2026-07-23 fresh evidence
+
+- 单人身份、主机、设备中心和同步聚焦矩阵全部退出 0；`npm test`、`npm run typecheck`、`npm run build`、`npm run check:desktop-identity-release` 均退出 0。
+- 只读 SQLite 在线副本来自当前权威库；复制前后 `users=2`、`questions=0`、身份与主机新表均为 0，`quick_check=ok`，副本 SHA-256 为 `3b9f19014ef29594335f25ef815b8aa039c747106e467fdcfa0fc52fc9be55ca`。生产库未被测试写入。
+- `node scripts/single-user-pairing-runtime-smoke.js` 在隔离副本上通过身份服务、vault、普通端配对客户端和同步批次备份四组运行检查，输出确认 `secretsRecorded=false`。
+- `npm run test:ui-smoke` 的隔离浏览器身份 fixture 已适配当前身份门；题库体系页、统一筛选和二次删除确认均完成真实渲染检查，截图位于 `tmp/ui-smoke/question-bank-preview.png` 与 `tmp/ui-smoke/question-bank-taxonomy-delete-confirm.png`。
+- GitHub PR #3、#4、#5 均为 merged；合并提交 `5356cfa`、`9a79ca2`、`3c4df4e` 全部是当前分支祖先。SSH fetch 因本机到 GitHub 22 端口断开失败，PR 状态另由 GitHub API 核验；没有据此伪造 fetch 成功。
+- 当前生产配置仍是 `primary-host`，权威库和题库 manifest 均存在；真实安装包、当前主机升级、双 OSS feed、阿里云和夸克证据留在统一发布阶段完成。
 
 ---
 
