@@ -1,6 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const { getMiniappHomeDisplayName } = require('./miniappHomePresentation');
 
 const root = path.resolve(__dirname, '../..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf-8');
@@ -22,6 +23,11 @@ assert.ok(
 );
 
 assert.ok(homePage.includes('isUnrecognizedIdentity') && homePage.includes('AccountStatusBanner'), 'home must render a real unrecognized-account shell before formal data loading');
+assert.strictEqual(getMiniappHomeDisplayName({}), '微信用户');
+assert.strictEqual(getMiniappHomeDisplayName({ name: '  ', nickname: ' 小格 ' }), '小格');
+assert.strictEqual(getMiniappHomeDisplayName({ name: '格物同学', nickname: '备用名' }), '格物同学');
+assert.ok(homePage.includes('getMiniappHomeDisplayName(user)'), 'home greeting must normalize missing and blank identity names');
+assert.ok(homePage.includes('name: getMiniappHomeDisplayName(savedUser)') && homePage.includes('name: getMiniappHomeDisplayName(verifiedUser)'), 'home state must never retain an absent identity name');
 assert.ok(accountStatusBanner.includes('当前为体验账号。提交真实资料并经管理员审核后，可使用相应正式功能。'));
 assert.ok(membershipBadge.includes("membership?.status !== 'active'"), 'membership badge must be derived only from the server membership state');
 for (const forbiddenMarketingCopy of ['购买', '续费', '套餐', '会员价格', '会员权益']) {

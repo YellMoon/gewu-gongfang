@@ -22,6 +22,7 @@ import {
 import { getLocalData } from '../../utils/sync';
 import { clearBusinessCache, setBusinessCacheIdentity, setCachedList } from '../../utils/storage';
 import { scopeDashboardCollections } from '../../utils/miniappAuthorizationRuntime';
+import { getMiniappHomeDisplayName } from '../../utils/miniappHomePresentation';
 import { NetworkStatus, LoadingSkeleton, EmptyState } from '../../components/shared';
 import AccountStatusBanner from '../../components/AccountStatusBanner';
 import MembershipBadge from '../../components/MembershipBadge';
@@ -30,7 +31,8 @@ import './index.scss';
 
 interface UserInfo {
   id: string;
-  name: string;
+  name?: string;
+  nickname?: string;
   user_type: MiniappRole;
   avatar?: string;
   account_state?: 'formal' | 'unrecognized';
@@ -107,7 +109,7 @@ export default function Index() {
     }
 
     const savedUser = session.identity as UserInfo;
-    setUser(savedUser);
+    setUser({ ...savedUser, name: getMiniappHomeDisplayName(savedUser) });
     if (isUnrecognizedIdentity(savedUser)) {
       await fetchPermissions();
       const nextAccess = getEffectiveMiniappAccess(savedUser);
@@ -129,7 +131,7 @@ export default function Index() {
       return;
     }
     const verifiedUser = verifiedSession.identity as UserInfo;
-    setUser(verifiedUser);
+    setUser({ ...verifiedUser, name: getMiniappHomeDisplayName(verifiedUser) });
     const nextAccess = getEffectiveMiniappAccess(verifiedUser);
     setAccess(nextAccess);
     if (permissionResult.capabilities.length === 0 || nextAccess.modules.length === 0) {
@@ -291,6 +293,7 @@ export default function Index() {
   const roleLabel = user ? getUserTypeLabel(user.user_type) : '未登录';
   const greeting = isStudent ? '学习面板' : '运营面板';
   const snapshotLabel = formatSnapshotTime(snapshot?.created_at);
+  const userDisplayName = user ? getMiniappHomeDisplayName(user) : '';
   const moduleActions = useMemo(() => (
     modules
       .filter((mod) => MODULE_CONFIG[mod.id])
@@ -308,9 +311,9 @@ export default function Index() {
             <View className='home-role-pill'><Text className='home-role-pill__text'>{'\u4f53\u9a8c\u8d26\u53f7'}</Text></View>
           </View>
           <View className='home-hero__body'>
-            <View className='home-avatar'><Text className='home-avatar__text'>{user.name?.charAt(0) || '\u683c'}</Text></View>
+            <View className='home-avatar'><Text className='home-avatar__text'>{userDisplayName.charAt(0) || '\u683c'}</Text></View>
             <View className='home-hero__copy'>
-              <Text className='home-hero__title'>{user.name || '\u5fae\u4fe1\u7528\u6237'}</Text>
+              <Text className='home-hero__title'>{userDisplayName}</Text>
               <Text className='home-hero__subtitle'>{'\u53ef\u67e5\u770b\u7a7a\u8bfe\u8868\u3001\u4f7f\u7528\u56db\u9053\u793a\u4f8b\u9898\u5e76\u63d0\u4ea4\u6b63\u5f0f\u8d26\u53f7\u7533\u8bf7\u3002'}</Text>
             </View>
             <View className='home-logout' onClick={handleLogout}><Text className='home-logout__text'>{'\u9000\u51fa'}</Text></View>
