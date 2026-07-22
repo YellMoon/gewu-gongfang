@@ -55,7 +55,14 @@ function makeTransport(name, options = {}) {
     },
     async pushSyncBatch(batch) {
       if (options.waitingHost) return { success: false, waitingHost: true };
-      return { success: options.pushSuccess !== false, serverTimestamp: 100, applied: batch.changes.length };
+      return {
+        success: options.pushSuccess !== false,
+        serverTimestamp: 100,
+        applied: batch.changes.length,
+        conflicts: options.conflicts || 0,
+        errors: options.errors || [],
+        backupId: options.backupId || 'sync-backup-test-1',
+      };
     },
     async pullSyncOps() {
       return {
@@ -150,6 +157,27 @@ async function main() {
   assert.strictEqual(confirmed.uploaded, 1);
   assert.strictEqual(confirmed.downloaded, 1);
   assert.strictEqual(confirmedEngine.state.pendingChanges.length, 0, 'successful push should clear pending queue');
+  assert.strictEqual(confirmed.backupId, 'sync-backup-test-1');
+
+  const reviewEngine = makeEngine([{ table: 'courses', action: 'update', data: { id: 'c-review' } }]);
+  const needsReview = await runOneClickSync({
+    engine: reviewEngine,
+    transports: [makeTransport('direct', {
+      conflicts: 1,
+      errors: [{ id: 'c-review', error: 'SYNC_WRITE_FORBIDDEN' }],
+      backupId: 'sync-backup-review-1',
+    })],
+    requireOnlineSession,
+    confirmPreview: async () => true,
+    buildLocalDataMaps: () => ({ students: new Map() }),
+    applyLocalDataMaps: () => {},
+  });
+  assert.strictEqual(needsReview.status, 'needs-review');
+  assert.strictEqual(needsReview.conflicts, 1);
+  assert.strictEqual(needsReview.rejected, 1);
+  assert.strictEqual(needsReview.backupId, 'sync-backup-review-1');
+  assert.strictEqual(reviewEngine.state.pendingChanges.length, 1,
+    'conflicts or rejections must keep the client batch pending');
 
   const waitingEngine = makeEngine([{ table: 'courses', action: 'create', data: { id: 'c2' } }]);
   const waiting = await runOneClickSync({

@@ -9,7 +9,10 @@
  * - POST /api/sync/push { changes: SyncChange[] }
  */
 const { Router } = require('express');
+const crypto = require('crypto');
 const { updateCommittedQuestion, createTrustedInternalStorageUpdateContext } = require('../services/questionBankStorageService');
+const { createSyncBatchBackupService } = require('../services/syncBatchBackupService');
+const { runAuthorizedSyncBatchPreflight } = require('../services/primaryHostSyncPreflightService');
 const { getInstance } = require('../database');
 
 const router = Router();
@@ -67,6 +70,13 @@ function requestAuthz(req) {
     isPrimaryHost: req.authz.isPrimaryHost };
 }
 
+function syncBatchId(req, changes, deviceId) {
+  const supplied = String(req.body?.batchId || req.body?.batch_id || '').trim();
+  if (supplied) return supplied;
+  const hash = crypto.createHash('sha256').update(JSON.stringify(changes)).digest('hex');
+  return `direct:${deviceId}:${hash}`;
+}
+
 function groupedChangesFromQueue(changes) {
   return changes.reduce((grouped, change) => {
     const rows = grouped[change.table] || [];
@@ -111,7 +121,11 @@ router.get('/', (req, res) => {
     console.log(`[Sync:Queue] device=${deviceId} since=${since.slice(0, 19)} changes=${payload.changes.length}`);
     sendQueueResponse(res, payload);
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    const code = String(err?.code || 'SYNC_BATCH_APPLY_FAILED');
+    const status = code.includes('REQUIRED') || code.includes('INVALID') ? 400
+      : code.includes('AUTHORIZATION') || code.includes('FORBIDDEN') ? 403
+        : code.includes('REUSE') || code.includes('RETRY') ? 409 : 500;
+    res.status(status).json({ success: false, code, error: code });
   }
 });
 
@@ -195,7 +209,7 @@ router.post('/authorize', (req, res) => {
   }
 });
 
-router.post('/push', (req, res) => {
+router.post('/push', async (req, res) => {
   try {
     const db = getInstance();
     const deviceId = readDeviceId(req);
@@ -205,18 +219,43 @@ router.post('/push', (req, res) => {
       return res.status(400).json({ success: false, error: '缺少 changes' });
     }
 
-    const token = req.headers['x-sync-authorization'] || req.body?.syncAuthorizationToken;
     const authz = requestAuthz(req);
     if (!authz) return res.status(403).json({ success: false, code: 'AUTHORIZATION_CONTEXT_REQUIRED' });
-    if (process.env.GEWU_NODE_ROLE === 'primary-host' && !db.verifySyncAuthorization(authz.deviceId, token, {
-      actorUserId: authz.userId, actorTeacherId: authz.teacherId, scope: 'sync:push',
-    })) {
-      return res.status(403).json({ success: false, error: 'sync authorization required' });
-    }
 
-    const result = db.applySyncChanges(changes, { deviceId: authz.deviceId, tenantId: readTenantId(req), authz, storageHooks: {
-      updateCommittedQuestion: ({ change, tenantId }) => updateCommittedQuestion(change.data.id, { db: db.db || db, tenantId, internalCredential: createTrustedInternalStorageUpdateContext({ validatedAuthz: authz, hostRuntime: { runtimeNodeRole: process.env.GEWU_NODE_ROLE || 'desktop-client' } }), payload: change.data }),
-    } });
+    const batchService = createSyncBatchBackupService({
+      db,
+      backupRoot: process.env.GEWU_LOCAL_CACHE_PATH
+        ? require('path').join(process.env.GEWU_LOCAL_CACHE_PATH, 'sync-batch-backups')
+        : undefined,
+      validateActor: input => runAuthorizedSyncBatchPreflight({
+        db: db.db || db,
+        actorContext: input.authz,
+        changes: input.changes,
+      }).actor,
+    });
+    const result = await batchService.applyAuthorizedSyncBatch({
+      batchId: syncBatchId(req, changes, authz.deviceId),
+      requestId: req.body?.requestId || req.body?.request_id || null,
+      changes,
+      authz: { ...req.authz, kind: authz.kind },
+      applyOptions: {
+        tenantId: readTenantId(req),
+        storageHooks: {
+          updateCommittedQuestion: ({ change, tenantId, authz: validatedAuthz }) => updateCommittedQuestion(
+            change.data.id,
+            {
+              db: db.db || db,
+              tenantId,
+              internalCredential: createTrustedInternalStorageUpdateContext({
+                validatedAuthz,
+                hostRuntime: { runtimeNodeRole: process.env.GEWU_NODE_ROLE || 'desktop-client' },
+              }),
+              payload: change.data,
+            }
+          ),
+        },
+      },
+    });
     const serverTime = db._now();
     console.log(`[Sync:Push] device=${deviceId} applied=${result.applied} conflicts=${result.conflicts} errors=${result.errors.length}`);
 

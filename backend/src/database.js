@@ -103,6 +103,7 @@ class DatabaseService {
     this._ensureMiniappTaskColumns();
     this._ensureMiniappUserColumns();
     this._ensureAuthorizationPersistence();
+    this._ensureSyncBatchBackupPersistence();
     this._migrateMiniappMemberships();
     this._ensureRoleGrantPersistence();
     this._ensureHostHeartbeatColumns();
@@ -549,6 +550,15 @@ class DatabaseService {
 
   _ensureRoleGrantPersistence() {
     ensureCompatibilityRoleGrants(this.db, { now: this._now() });
+  }
+
+  _ensureSyncBatchBackupPersistence() {
+    const columns = new Set(this.db.prepare(
+      'PRAGMA table_info(desktop_sync_batch_backups)'
+    ).all().map(column => column.name));
+    if (!columns.has('result_json')) {
+      this.db.prepare('ALTER TABLE desktop_sync_batch_backups ADD COLUMN result_json TEXT').run();
+    }
   }
 
   _enforceUniqueNormalizedPhones() {
@@ -1773,6 +1783,7 @@ class DatabaseService {
           results.errors.push({ table, id: change.id, error: 'missing record id' });
           continue;
         }
+        let committedStorageUpdate = false;
         try {
           const existing = columns.includes('tenant_id')
             ? this.db.prepare(`SELECT * FROM ${table} WHERE id = ? AND tenant_id = ?`).get(recordId, change.tenantId)
@@ -1786,6 +1797,7 @@ class DatabaseService {
             const read = name => this._tableColumns(name).length ? this.db.prepare(`SELECT * FROM ${name} WHERE tenant_id = ?`).all(change.tenantId) : [];
             const hasCommittedQuestionHook = table === 'questions' && existing?.storage_state === 'host_committed'
               && change.action === 'update' && typeof options.storageHooks?.updateCommittedQuestion === 'function';
+            committedStorageUpdate = hasCommittedQuestionHook;
             const validation = validateSyncMutation(change, { ...options.authz, deviceId: options.authz.deviceId || deviceId, storageHookVerified: hasCommittedQuestionHook }, {
               courses: read('courses'), schedules: read('schedules'), existing,
             });
@@ -2001,6 +2013,7 @@ class DatabaseService {
             `INSERT INTO sync_log (client_id, action, table_name, record_id, sync_time, status) VALUES (?, 'push', ?, ?, ?, 'success')`
           ).run(change.deviceId, table, recordId, now);
         } catch (e) {
+          if (options.failBatchOnStorageError && committedStorageUpdate) throw e;
           if (options.authz && ['TEACHER_SCOPE_VIOLATION', 'SYNC_WRITE_FORBIDDEN', 'AUTHORIZATION_CONTEXT_REQUIRED'].includes(e.code)) {
             this.recordSyncRejection({ operationId: change.id, actorUserId: options.authz.userId,
               actorTeacherId: options.authz.teacherId, sourceDeviceId: options.authz.deviceId || deviceId,

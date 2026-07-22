@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 const {
+  runAuthorizedSyncBatchPreflight,
   runRelayQueueReadPreview,
   runScopedSyncReadPreview,
 } = require('./primaryHostSyncPreflightService');
@@ -65,6 +66,15 @@ const relay = runRelayQueueReadPreview({
 });
 assert.strictEqual(relay.status, 'ok');
 assert.strictEqual(relay.protocolVersion, 2);
+const batch = runAuthorizedSyncBatchPreflight({
+  db,
+  actorContext: actor,
+  now: new Date(now),
+  changes: [{ id: 'batch-change-1', table: 'subjects', action: 'update', data: { id: 'preflight-subject-1' } }],
+});
+assert.strictEqual(batch.changeCount, 1);
+assert.deepStrictEqual(batch.tables, ['subjects']);
+assert.strictEqual(batch.actor.sessionId, actor.sessionId);
 assert.strictEqual(db.prepare('SELECT total_changes() value').get().value, before, 'preflight must execute zero writes');
 
 assert.throws(

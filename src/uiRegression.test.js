@@ -267,20 +267,21 @@ assert(
 );
 
 assert(
-  syncSettings.includes('申请同步权限') &&
-  syncSettings.includes('检测到') &&
-  syncSettings.includes('离线更改') &&
-  syncSettings.includes('只拉取主机数据'),
-  'sync settings should require user confirmation before pushing offline changes'
+  syncSettings.includes('runOneClickSync') &&
+  syncSettings.includes('confirmOneClickPreview') &&
+  syncSettings.includes('backupId') &&
+  !syncSettings.includes('requestSyncAuthorization'),
+  'sync settings should use the V2 one-click confirmation and show its durable backup id'
 );
 
 assert(
-  cloudSync.includes('requestSyncAuthorization') &&
-  cloudSync.includes('registerSyncDevice') &&
+  cloudSync.includes('runOneClickSync') &&
+  cloudSync.includes('readDesktopAuthorizationSession') &&
   cloudSync.includes('Modal.confirm') &&
-  cloudSync.includes('authorizationToken') &&
-  cloudSync.includes('申请同步权限'),
-  'cloud sync dashboard should also require authorization confirmation before pushing offline changes'
+  cloudSync.includes('backupId') &&
+  !cloudSync.includes('requestSyncAuthorization') &&
+  !cloudSync.includes('authorizationToken'),
+  'cloud sync dashboard should share the V2 one-click sync contract'
 );
 
 assert(
@@ -333,17 +334,16 @@ assert(
 
 assert(
   syncSettings.includes("variant?: 'quick' | 'advanced'") &&
-  syncSettings.includes('\\u4e0e\\u6570\\u636e\\u4e3b\\u673a\\u53cc\\u5411\\u540c\\u6b65') &&
+  syncSettings.includes('\\u5f00\\u59cb\\u540c\\u6b65') &&
   syncSettings.includes('\\u5904\\u7406\\u5f85\\u540c\\u6b65\\u8bf7\\u6c42') &&
   systemSettings.includes('id="sync-settings"') &&
   systemSettings.includes('sync-advanced'),
-  'sync UI should expose explicit bidirectional client copy and role-aware advanced host management'
+  'sync UI should expose the manual start action and role-aware advanced host management'
 );
 
 assert(
-  syncSettings.includes("confirmTitle: '\\u786e\\u8ba4\\u53cc\\u5411\\u540c\\u6b65'") &&
-  !syncSettings.includes("confirmTitle: '\\u786e\\u8ba4\\u4e00\\u952e\\u540c\\u6b65'"),
-  'sync confirmation dialog should describe bidirectional sync explicitly'
+  syncSettings.includes("confirmTitle: '\\u786e\\u8ba4\\u5f00\\u59cb\\u540c\\u6b65'"),
+  'sync confirmation dialog should use the approved manual start wording'
 );
 
 assert(

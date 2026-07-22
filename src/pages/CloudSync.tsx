@@ -3,12 +3,16 @@
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, Button, Tag, Descriptions, Divider, message, Alert, Row, Col, Statistic, Modal } from 'antd';
-import { SyncOutlined, CloudSyncOutlined, CloudServerOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
+import { SyncOutlined, CloudSyncOutlined, DeleteOutlined } from '@ant-design/icons';
 import { SyncEngine, SyncStatus } from '../services/syncEngine';
-import { pushSyncBatch, pullSyncOps, registerSyncDevice, requestSyncAuthorization } from '../services/syncApi';
 import { getRuntimeConfig, RuntimeConfig } from '../services/runtimeConfigClient';
 import browserDatabase from '../services/browserDatabase';
 import { processMiniappCloudTasks, publishCloudHeartbeat, publishCloudSnapshot } from '../services/cloudRelayHostApi';
+import { runOneClickSync } from '../services/oneClickSyncService.mjs';
+import { createCloudRelaySyncTransport, createDirectSyncTransport, discoverLanDirectSyncTransports } from '../services/oneClickSyncTransports.mjs';
+import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
+import { resolveOnlineSyncActor } from '../services/pairingApiBase.mjs';
+import { resolveManagedSyncConfig, syncFailureMessage } from '../services/managedSyncConfig.mjs';
 
 const CloudSync: React.FC = () => {
   const [engine, setEngine] = useState<SyncEngine | null>(null);
@@ -16,6 +20,7 @@ const CloudSync: React.FC = () => {
   const [initError, setInitError] = useState<string | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const [cloudPublishLoading, setCloudPublishLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
   const engineRef = useRef<SyncEngine | null>(null);
 
   useEffect(() => {
@@ -48,87 +53,112 @@ const CloudSync: React.FC = () => {
     return () => clearInterval(timer);
   }, [refreshStatus]);
 
-  const handlePush = async () => {
-    const eng = engineRef.current;
-    if (!eng) return;
-    const pending = eng.getPendingOps();
-    if (pending.length === 0) {
-      message.info('没有待同步的变更');
+  const formatActionSummary = (summary: any) => {
+    const parts = [
+      summary?.byAction?.create ? `\u65b0\u589e ${summary.byAction.create} \u6761` : '',
+      summary?.byAction?.update ? `\u4fee\u6539 ${summary.byAction.update} \u6761` : '',
+      summary?.byAction?.delete ? `\u5220\u9664 ${summary.byAction.delete} \u6761` : '',
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join('\uff0c') : '\u65e0\u53d8\u66f4';
+  };
+
+  const confirmSyncPreview = (preview: any) => new Promise<boolean>((resolve) => {
+    if (!preview.confirmationRequired) {
+      resolve(true);
       return;
     }
-
-    return new Promise<boolean>((resolve) => {
-      Modal.confirm({
-        title: `检测到 ${pending.length} 条离线更改`,
-        content: '是否申请同步权限并同步到本地数据主机？同步前不会静默覆盖主机数据。',
-        okText: '申请同步权限并推送',
-        cancelText: '稍后',
-        onCancel: () => resolve(false),
-        onOk: async () => {
-          try {
-            message.loading({ content: '正在申请同步权限...', key: 'sync' });
-            await registerSyncDevice({
-              deviceId: eng.getDeviceId(),
-              role: runtimeConfig?.nodeRole || 'desktop-client',
-              deviceName: runtimeConfig?.deviceId || eng.getDeviceId(),
-            });
-            const auth = await requestSyncAuthorization({
-              deviceId: eng.getDeviceId(),
-              role: runtimeConfig?.nodeRole || 'desktop-client',
-            });
-            if (!auth.success) throw new Error(auth.error || '申请同步权限失败');
-
-            message.loading({ content: '正在推送离线更改...', key: 'sync' });
-            const result = await eng.push(batch => pushSyncBatch(batch, {
-              authorizationToken: auth.authorization.token,
-            }));
-            refreshStatus();
-
-            if (result.success) {
-              message.success({ content: `已推送 ${result.pushed} 条离线更改`, key: 'sync' });
-              (window as any).operateLogger?.log('同步', `申请同步权限并推送 ${result.pushed} 条离线更改`, '云同步');
-              resolve(true);
-              return;
-            }
-
-            message.error({ content: `推送失败，${pending.length} 条离线更改已保留`, key: 'sync' });
-            resolve(false);
-          } catch (error: any) {
-            refreshStatus();
-            message.error({ content: error.message || '申请同步权限失败', key: 'sync' });
-            resolve(false);
-          }
-        },
-      });
+    Modal.confirm({
+      title: '\u786e\u8ba4\u5f00\u59cb\u540c\u6b65',
+      width: 620,
+      content: (
+        <div style={{ lineHeight: 1.8 }}>
+          <p>{preview.channel === 'direct' ? '\u901a\u9053\uff1a\u5c40\u57df\u7f51\u76f4\u8fde' : '\u901a\u9053\uff1a\u963f\u91cc\u4e91\u4e2d\u7ee7'}</p>
+          <p><strong>{'\u672c\u673a\u5c06\u4e0a\u4f20\uff1a'}</strong>{`${preview.upload.total} \u6761\uff08${formatActionSummary(preview.upload)}\uff09`}</p>
+          <p><strong>{'\u5c06\u4ece\u4e3b\u673a\u83b7\u53d6\uff1a'}</strong>{`${preview.download.total} \u6761\uff08${formatActionSummary(preview.download)}\uff09`}</p>
+          <p><strong>{'\u9ad8\u98ce\u9669/\u5220\u9664\u9879\uff1a'}</strong>{`${preview.risk.high} \u6761`}</p>
+          <p><strong>{'\u9884\u8ba1\u51b2\u7a81\uff1a'}</strong>{'0 \u6761\uff1b'}<strong>{'\u9884\u8ba1\u62d2\u7edd\uff1a'}</strong>{'0 \u6761'}</p>
+        </div>
+      ),
+      okText: '\u5f00\u59cb\u540c\u6b65',
+      cancelText: '\u53d6\u6d88',
+      onOk: () => resolve(true),
+      onCancel: () => resolve(false),
     });
+  });
+
+  const isLocalHostBase = (value?: string) => {
+    const text = String(value || '').toLowerCase();
+    return text.includes('127.0.0.1') || text.includes('localhost');
   };
 
-  const handlePull = async () => {
+  const handleStartSync = async () => {
     const eng = engineRef.current;
-    if (!eng) return false;
-
-    message.loading({ content: '正在拉取云端变更...', key: 'pull' });
-
-    const localData = browserDatabase.buildSyncLocalDataMaps();
-    const result = await eng.pull(pullSyncOps, localData);
-    if (result.success) {
-      browserDatabase.applySyncLocalDataMaps(localData);
+    if (!eng || syncLoading) return;
+    setSyncLoading(true);
+    try {
+      const config: any = resolveManagedSyncConfig(runtimeConfig || await getRuntimeConfig());
+      const requireOnlineSession = () => resolveOnlineSyncActor(readDesktopAuthorizationSession());
+      const transports = [];
+      if (config?.cloudBaseUrl) {
+        try {
+          transports.push(...await discoverLanDirectSyncTransports({
+            baseUrl: config.cloudBaseUrl,
+            deviceId: eng.getDeviceId(),
+            role: config.nodeRole || 'desktop-client',
+            deviceName: config.deviceId || eng.getDeviceId(),
+            desktopSyncToken: config.desktopSyncToken || '',
+            sessionResolver: requireOnlineSession,
+          }));
+        } catch (_error) {
+          // Cloud relay remains available when LAN discovery is unavailable.
+        }
+      }
+      if (config?.hostBaseUrl && (config.nodeRole === 'primary-host' || !isLocalHostBase(config.hostBaseUrl))) {
+        const direct = createDirectSyncTransport({
+          baseUrl: config.hostBaseUrl,
+          deviceId: eng.getDeviceId(),
+          role: config.nodeRole || 'desktop-client',
+          deviceName: config.deviceId || eng.getDeviceId(),
+          sessionResolver: requireOnlineSession,
+        });
+        if (!transports.some((transport: any) => transport.baseUrl === direct.baseUrl)) transports.push(direct);
+      }
+      if (config?.cloudBaseUrl) {
+        transports.push(createCloudRelaySyncTransport({
+          baseUrl: config.cloudBaseUrl,
+          deviceId: eng.getDeviceId(),
+          desktopSyncToken: config.desktopSyncToken || '',
+          sessionResolver: requireOnlineSession,
+        }));
+      }
+      const result = await runOneClickSync({
+        engine: eng,
+        transports,
+        confirmPreview: confirmSyncPreview,
+        requireOnlineSession,
+        buildLocalDataMaps: () => browserDatabase.buildSyncLocalDataMaps(),
+        applyLocalDataMaps: (localData: any) => browserDatabase.applySyncLocalDataMaps(localData),
+      });
       refreshStatus();
-      const conflictText = result.conflicts.length > 0 ? `，${result.conflicts.length} 条冲突保留本地` : '';
-      message.success({ content: `已拉取并应用 ${result.applied} 条云端变更${conflictText}`, key: 'pull' });
-      (window as any).operateLogger?.log('同步', `手动拉取 ${result.applied} 条云端变更`, '云同步');
-      return true;
+      const backupId = result.backupId ? String(result.backupId).slice(0, 12) : '';
+      const backupText = backupId ? `\uff0c\u5907\u4efd ${backupId}` : '';
+      if (result.status === 'synced') {
+        message.success(`\u540c\u6b65\u5b8c\u6210\uff1a\u4e0a\u4f20 ${result.uploaded} \u6761\uff0c\u62c9\u53d6 ${result.downloaded} \u6761\uff0c\u51b2\u7a81 ${result.conflicts || 0} \u6761\uff0c\u62d2\u7edd ${result.rejected || 0} \u6761${backupText}`);
+      } else if (result.status === 'needs-review') {
+        message.warning(`\u540c\u6b65\u9700\u8981\u5904\u7406\uff0c\u672c\u673a\u961f\u5217\u5df2\u4fdd\u7559\uff1a\u51b2\u7a81 ${result.conflicts || 0} \u6761\uff0c\u62d2\u7edd ${result.rejected || 0} \u6761${backupText}`);
+      } else if (result.status === 'waiting-host') {
+        message.info(`\u540c\u6b65\u8bf7\u6c42\u5df2\u63d0\u4ea4\uff0c\u7b49\u5f85\u4e3b\u673a\u4e0a\u7ebf${result.requestId ? `\uff08${result.requestId}\uff09` : ''}`);
+      } else if (result.status === 'cancelled') {
+        message.info('\u5df2\u53d6\u6d88\u540c\u6b65\uff0c\u672c\u673a\u961f\u5217\u672a\u53d8\u66f4');
+      } else {
+        message.error(syncFailureMessage(result.error));
+      }
+    } catch (error: any) {
+      refreshStatus();
+      message.error(syncFailureMessage(error.code || error.message));
+    } finally {
+      setSyncLoading(false);
     }
-
-    refreshStatus();
-    message.error({ content: '拉取失败，本地数据和待同步队列未变更', key: 'pull' });
-    return false;
-  };
-
-  const handleSyncBoth = async () => {
-    const pushed = await handlePush();
-    if (pushed === false) return;
-    await handlePull();
   };
 
   const handlePublishCloudSnapshot = async () => {
@@ -252,14 +282,8 @@ const CloudSync: React.FC = () => {
       <Divider>同步控制</Divider>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <Button type="primary" icon={<CloudServerOutlined />} onClick={handlePush} disabled={status.pendingCount === 0}>
-          推送变更 ({status.pendingCount})
-        </Button>
-        <Button icon={<ReloadOutlined />} onClick={handlePull}>
-          拉取云端变更
-        </Button>
-        <Button icon={<SyncOutlined />} onClick={handleSyncBoth}>
-          双向同步
+        <Button type="primary" icon={<SyncOutlined />} onClick={handleStartSync} loading={syncLoading}>
+          {'\u5f00\u59cb\u540c\u6b65'}
         </Button>
         <Button
           icon={<CloudSyncOutlined />}

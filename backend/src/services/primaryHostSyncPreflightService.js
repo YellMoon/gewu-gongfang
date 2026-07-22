@@ -197,7 +197,31 @@ function runRelayQueueReadPreview(input = {}) {
   });
 }
 
+function runAuthorizedSyncBatchPreflight(input = {}) {
+  const db = sqlite(input.db);
+  const before = totalChanges(db);
+  const actor = resolveCurrentActor(db, input.actorContext, isoNow(input.now));
+  const changes = Array.isArray(input.changes) ? input.changes : [];
+  for (const change of changes) {
+    const table = String(change?.table || '');
+    if (!SYNC_TABLES.includes(table) || tableColumns(db, table).length === 0) {
+      throw preflightError('PRIMARY_HOST_SYNC_BATCH_SCHEMA_INCOMPATIBLE');
+    }
+    if (!change?.data?.id || !['create', 'update', 'delete'].includes(change?.action)) {
+      throw preflightError('PRIMARY_HOST_SYNC_BATCH_CHANGE_INVALID');
+    }
+  }
+  assertReadOnly(db, before);
+  return Object.freeze({
+    status: 'ok',
+    actor,
+    changeCount: changes.length,
+    tables: Object.freeze([...new Set(changes.map(change => String(change.table)))].sort()),
+  });
+}
+
 module.exports = {
+  runAuthorizedSyncBatchPreflight,
   runRelayQueueReadPreview,
   runScopedSyncReadPreview,
 };

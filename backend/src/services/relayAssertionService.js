@@ -183,6 +183,7 @@ function resolveRelaySessionActorContext(database, claims, options = {}) {
     teacherId: roleContext.teacherId,
     studentId: roleContext.studentId,
     deviceId: claims.deviceId,
+    authorizationId: authorization.id,
     sessionId: claims.sessionId,
     authVersion: Number(claims.authVersion),
     credentialVersion: Number(claims.credentialVersion),

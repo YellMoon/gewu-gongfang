@@ -28,6 +28,8 @@ const { updateCommittedQuestion, createTrustedInternalStorageUpdateContext } = r
 const { createLocalQuestionImageResolver, writePaperArtifact } = require('../services/paperArtifactService');
 const { resolveLegacyQuestionSelection, resolveTaskQuestionSelection } = require('../services/paperExportSelectionService');
 const { resolveRelaySessionActorContext, verifyRelayAssertion } = require('../services/relayAssertionService');
+const { createSyncBatchBackupService } = require('../services/syncBatchBackupService');
+const { runAuthorizedSyncBatchPreflight } = require('../services/primaryHostSyncPreflightService');
 const { bindPaperCompletionClaim, processDurablePaperTask, replayPaperCompletionOutbox } = require('../services/paperJobProcessor');
 const { recoverStalePaperJobs } = require('../services/paperJobRepository');
 const { cleanupPaperStorage, reconcilePaperArtifacts } = require('../services/paperStorageCleanup');
@@ -182,11 +184,39 @@ async function processMiniappTask(task, db, dependencies = {}) {
     if (!authz) {
       const error = new Error('AUTHORIZATION_CONTEXT_REQUIRED'); error.code = 'AUTHORIZATION_CONTEXT_REQUIRED'; throw error;
     }
-    const result = db.applySyncChanges(changes, {
-      deviceId: authz.deviceId,
-      tenantId: payload.tenantId || payload.tenant_id || 'default',
+    const batchService = dependencies.syncBatchBackupService || createSyncBatchBackupService({
+      db,
+      backupRoot: process.env.GEWU_LOCAL_CACHE_PATH
+        ? path.join(process.env.GEWU_LOCAL_CACHE_PATH, 'sync-batch-backups')
+        : undefined,
+      validateActor: input => runAuthorizedSyncBatchPreflight({
+        db: db.db || db,
+        actorContext: input.authz,
+        changes: input.changes,
+      }).actor,
+    });
+    const result = await batchService.applyAuthorizedSyncBatch({
+      batchId: task.id,
+      requestId: payload.requestId || task.id,
+      changes,
       authz,
-      storageHooks: { updateCommittedQuestion: ({ change, tenantId }) => updateCommittedQuestion(change.data.id, { db: db.db || db, tenantId, internalCredential: createTrustedInternalStorageUpdateContext({ validatedAuthz: authz, hostRuntime: { runtimeNodeRole: process.env.GEWU_NODE_ROLE || 'desktop-client' } }), payload: change.data }) },
+      applyOptions: {
+        tenantId: payload.tenantId || payload.tenant_id || 'default',
+        storageHooks: {
+          updateCommittedQuestion: ({ change, tenantId, authz: validatedAuthz }) => updateCommittedQuestion(
+            change.data.id,
+            {
+              db: db.db || db,
+              tenantId,
+              internalCredential: createTrustedInternalStorageUpdateContext({
+                validatedAuthz,
+                hostRuntime: { runtimeNodeRole: process.env.GEWU_NODE_ROLE || 'desktop-client' },
+              }),
+              payload: change.data,
+            }
+          ),
+        },
+      },
     });
     return {
       taskType: task.task_type,
@@ -195,6 +225,8 @@ async function processMiniappTask(task, db, dependencies = {}) {
       applied: result.applied || 0,
       conflicts: result.conflicts || 0,
       errors: result.errors || [],
+      backupId: result.backupId,
+      counts: result.counts,
     };
   }
 

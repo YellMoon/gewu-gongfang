@@ -3,9 +3,9 @@
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, Button, Tag, Descriptions, Divider, message, Modal, Statistic, Row, Col, Alert, Table, Space, Collapse } from 'antd';
-import { SyncOutlined, CloudSyncOutlined, CloudServerOutlined, WarningOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
+import { SyncOutlined, CloudSyncOutlined, WarningOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
 import { SyncEngine, SyncStatus } from '../services/syncEngine';
-import { getSyncUrl, pushSyncBatch, pullSyncOps, registerSyncDevice, requestSyncAuthorization } from '../services/syncApi';
+import { getSyncUrl } from '../services/syncApi';
 import { getRuntimeConfig, RuntimeConfig } from '../services/runtimeConfigClient';
 import browserDatabase from '../services/browserDatabase';
 import type { CloudSyncContext } from '../navigation/navigationContext';
@@ -105,91 +105,9 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
     return () => clearInterval(timer);
   }, [refreshStatus]);
 
-  // 手动推送
-  const handleAuthorizedPush = async () => {
-    const eng = engineRef.current;
-    if (!eng) return;
-    const pending = eng.getPendingChanges();
-    if (pending.length === 0) {
-      message.info('没有待同步的离线更改');
-      return;
-    }
-
-    return new Promise<boolean>((resolve) => {
-      Modal.confirm({
-        title: `检测到 ${pending.length} 条离线更改`,
-        content: '是否申请同步权限并同步到本地数据主机？同步前不会静默覆盖主机数据。',
-        okText: '申请同步权限并推送',
-        cancelText: '稍后',
-        onCancel: () => resolve(false),
-        onOk: async () => {
-          try {
-            message.loading({ content: '正在申请同步权限...', key: 'sync' });
-            await registerSyncDevice({
-              deviceId: eng.getDeviceId(),
-              role: runtimeConfig?.nodeRole || 'desktop-client',
-              deviceName: runtimeConfig?.deviceId || eng.getDeviceId(),
-            });
-            const auth = await requestSyncAuthorization({
-              deviceId: eng.getDeviceId(),
-              role: runtimeConfig?.nodeRole || 'desktop-client',
-            });
-            if (!auth.success) throw new Error(auth.error || '申请同步权限失败');
-            message.loading({ content: '正在推送离线更改...', key: 'sync' });
-            const result = await eng.push(batch => pushSyncBatch(batch, {
-              authorizationToken: auth.authorization.token,
-            }));
-            refreshStatus();
-            if (!result.success) {
-              message.error({ content: `推送失败，${pending.length} 条离线更改已保留`, key: 'sync' });
-              resolve(false);
-              return;
-            }
-            message.success({ content: `同步完成，已推送 ${result.pushed} 条离线更改`, key: 'sync' });
-            (window as any).operateLogger?.log('同步', `申请同步权限并推送 ${result.pushed} 条离线更改`, '云同步');
-            resolve(true);
-          } catch (error: any) {
-            refreshStatus();
-            message.error({ content: error.message || '申请同步权限失败', key: 'sync' });
-            resolve(false);
-          }
-        },
-      });
-    });
-  };
-
-  // 手动拉取
-  const handlePull = async () => {
-    const eng = engineRef.current;
-    if (!eng) return false;
-
-    message.loading({ content: '正在拉取云端变更...', key: 'pull' });
-
-    const localData = browserDatabase.buildSyncLocalDataMaps();
-    const result = await eng.pull(pullSyncOps, localData);
-    if (result.success) {
-      browserDatabase.applySyncLocalDataMaps(localData);
-      refreshStatus();
-      const conflictText = result.conflicts.length > 0 ? `，${result.conflicts.length} 条冲突保留本地` : '';
-      message.success({ content: `已拉取并应用 ${result.applied} 条云端变更${conflictText}`, key: 'pull' });
-      (window as any).operateLogger?.log('同步', `手动拉取 ${result.applied} 条云端变更`, '云同步');
-      return true;
-    }
-
-    refreshStatus();
-    message.error({ content: '拉取失败，本地数据和待同步队列未变更', key: 'pull' });
-    return false;
-  };
-
-  const handleSyncBoth = async () => {
-    const pushed = await handleAuthorizedPush();
-    if (pushed === false) return;
-    await handlePull();
-  };
-
   const oneClickText = {
-    oneClick: '\u4e0e\u6570\u636e\u4e3b\u673a\u53cc\u5411\u540c\u6b65',
-    confirmTitle: '\u786e\u8ba4\u53cc\u5411\u540c\u6b65',
+    oneClick: '\u5f00\u59cb\u540c\u6b65',
+    confirmTitle: '\u786e\u8ba4\u5f00\u59cb\u540c\u6b65',
     direct: '\u5c40\u57df\u7f51\u76f4\u8fde',
     cloud: '\u963f\u91cc\u4e91\u4e2d\u7ee7',
     confirmIntro: '\u540c\u6b65\u3002\u8bf7\u786e\u8ba4\u4ee5\u4e0b\u53d8\u52a8\uff1a',
@@ -202,9 +120,10 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
     delete: '\u5220\u9664',
     noChange: '\u65e0\u53d8\u66f4',
     relayHint: '\u4e91\u4e2d\u7ee7\u6a21\u5f0f\u4f1a\u5148\u63d0\u4ea4\u540c\u6b65\u8bf7\u6c42\uff1b\u5982\u679c\u4e3b\u673a\u7535\u8111\u6682\u672a\u5904\u7406\uff0c\u5f53\u524d\u672c\u673a\u961f\u5217\u4f1a\u7ee7\u7eed\u4fdd\u7559\u3002',
-    ok: '\u786e\u8ba4\u53cc\u5411\u540c\u6b65',
+    ok: '\u5f00\u59cb\u540c\u6b65',
     cancel: '\u53d6\u6d88',
     synced: '\u540c\u6b65\u5b8c\u6210',
+    needsReview: '\u540c\u6b65\u9700\u8981\u5904\u7406\uff0c\u672c\u673a\u5f85\u540c\u6b65\u961f\u5217\u5df2\u4fdd\u7559',
     waiting: '\u540c\u6b65\u8bf7\u6c42\u5df2\u63d0\u4ea4\uff0c\u7b49\u5f85\u4e3b\u673a\u7535\u8111\u4e0a\u7ebf\u5904\u7406',
     cancelled: '\u5df2\u53d6\u6d88\u540c\u6b65\uff0c\u672c\u673a\u5f85\u540c\u6b65\u961f\u5217\u672a\u53d8\u66f4',
     failed: '\u4e00\u952e\u540c\u6b65\u5931\u8d25\uff0c\u5f85\u540c\u6b65\u961f\u5217\u5df2\u4fdd\u7559',
@@ -226,6 +145,8 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
     return parts.length > 0 ? parts.join('\uff0c') : oneClickText.noChange;
   };
 
+  const formatBackupId = (value?: string) => value ? String(value).slice(0, 12) : '';
+
   const confirmOneClickPreview = (preview: any) => new Promise<boolean>((resolve) => {
     if (!preview.confirmationRequired) {
       resolve(true);
@@ -240,6 +161,7 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
           <p><strong>{oneClickText.upload}</strong>{`${preview.upload.total} ${oneClickText.item}\uff08${formatActionSummary(preview.upload)}\uff09`}</p>
           <p><strong>{oneClickText.download}</strong>{`${preview.download.total} ${oneClickText.item}\uff08${formatActionSummary(preview.download)}\uff09`}</p>
           <p><strong>{oneClickText.risk}</strong>{`${preview.risk.high} ${oneClickText.item}`}</p>
+          <p><strong>{'\u9884\u8ba1\u51b2\u7a81\uff1a'}</strong>{'0 \u6761\uff1b'}<strong>{'\u9884\u8ba1\u62d2\u7edd\uff1a'}</strong>{'0 \u6761'}</p>
           {preview.channel === 'cloud' && <p>{oneClickText.relayHint}</p>}
         </div>
       ),
@@ -301,8 +223,15 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
       });
       refreshStatus();
       if (result.status === 'synced') {
-        message.success(`${oneClickText.synced}\uff1a\u4e0a\u4f20 ${result.uploaded} \u6761\uff0c\u62c9\u53d6 ${result.downloaded} \u6761\uff0c\u51b2\u7a81 ${result.conflicts} \u6761`);
+        const backup = formatBackupId(result.backupId);
+        message.success(`${oneClickText.synced}\uff1a\u4e0a\u4f20 ${result.uploaded} \u6761\uff0c\u62c9\u53d6 ${result.downloaded} \u6761\uff0c\u51b2\u7a81 ${result.conflicts || 0} \u6761\uff0c\u62d2\u7edd ${result.rejected || 0} \u6761${backup ? `\uff0c\u5907\u4efd ${backup}` : ''}`);
         (window as any).operateLogger?.log(oneClickText.logAction, `${oneClickText.oneClick}: ${result.channel}`, oneClickText.logCategory);
+        return;
+      }
+      if (result.status === 'needs-review') {
+        const backup = formatBackupId(result.backupId);
+        message.warning(`${oneClickText.needsReview}\uff1a\u51b2\u7a81 ${result.conflicts || 0} \u6761\uff0c\u62d2\u7edd ${result.rejected || 0} \u6761${backup ? `\uff0c\u5907\u4efd ${backup}` : ''}`);
+        await loadSyncConflicts();
         return;
       }
       if (result.status === 'waiting-host') {
@@ -557,25 +486,6 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
             onClick={handleOneClickSync}
           >
             {oneClickText.oneClick}
-          </Button>
-          <Button
-            icon={<CloudServerOutlined />}
-            onClick={handleAuthorizedPush}
-            disabled={status.pendingCount === 0}
-          >
-            申请同步权限并推送 ({status.pendingCount})
-          </Button>
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={handlePull}
-          >
-            只拉取主机数据
-          </Button>
-          <Button
-            icon={<SyncOutlined />}
-            onClick={handleSyncBoth}
-          >
-            双向同步
           </Button>
           <Button
             danger

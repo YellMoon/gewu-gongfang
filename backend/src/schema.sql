@@ -562,6 +562,7 @@ CREATE TABLE IF NOT EXISTS desktop_sync_batch_backups (
   counts_json TEXT NOT NULL,
   sqlite_backup_path TEXT NOT NULL,
   question_manifest_json TEXT NOT NULL,
+  result_json TEXT,
   status TEXT NOT NULL DEFAULT 'prepared'
     CHECK (status IN ('prepared', 'applied', 'failed', 'recovery_required')),
   error_code TEXT,

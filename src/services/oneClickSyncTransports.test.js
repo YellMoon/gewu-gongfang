@@ -31,11 +31,10 @@ async function main() {
     fetchImpl: async (url, options = {}) => {
       directCalls.push({ url, options });
       if (String(url).endsWith('/api/health')) return jsonResponse({ ok: true });
-      if (String(url).includes('/api/sync/devices/register')) return jsonResponse({ success: true });
-      if (String(url).includes('/api/sync/authorize')) {
-        return jsonResponse({ success: true, authorization: { token: 'auth_1' } });
-      }
-      if (String(url).includes('/api/sync/push')) return jsonResponse({ success: true, serverTimestamp: 10, applied: 1 });
+      if (String(url).includes('/api/sync/push')) return jsonResponse({
+        success: true, serverTimestamp: 10, applied: 1, backupId: 'backup-1',
+        counts: { create: 0, update: 1, delete: 0, conflict: 0, rejected: 0 },
+      });
       if (String(url).includes('/api/sync?')) {
         return jsonResponse({
           success: true,
@@ -49,15 +48,21 @@ async function main() {
 
   assert.strictEqual((await direct.check()).ok, true);
   assert.strictEqual((await direct.preview({ lastSyncTime: 0, deviceId: 'desktop_test' })).incomingChanges.length, 1);
-  assert.strictEqual((await direct.pushSyncBatch({
+  const directPush = await direct.pushSyncBatch({
     changes: [{ table: 'students', action: 'update', data: { id: 'stu1' } }],
     deviceId: 'desktop_test',
     tenantId: 'default',
-  })).success, true);
-  assert.ok(directCalls.some(call => String(call.url).includes('/api/sync/authorize')), 'direct push should request short authorization');
+  });
+  assert.strictEqual(directPush.success, true);
+  assert.strictEqual(directPush.backupId, 'backup-1');
+  assert.ok(!directCalls.some(call => String(call.url).includes('/api/sync/authorize') || String(call.url).includes('/api/sync/devices/register')),
+    'direct push must use the already paired V2 session without a legacy per-sync authorization request');
+  const pushCall = directCalls.find(call => String(call.url).includes('/api/sync/push'));
+  assert.strictEqual(pushCall.options.headers.Authorization, onlineSession.authorization);
+  assert.strictEqual(pushCall.options.headers['x-device-id'], onlineSession.authContext.deviceId);
   await direct.pushSyncBatch({ changes: [{ table:'students', action:'update', data:{id:'stu2'} }], deviceId:'desktop_test', tenantId:'default' });
-  assert.strictEqual(directCalls.filter(call => String(call.url).includes('/api/sync/authorize')).length, 2,
-    'every direct push must obtain a fresh one-time authorization');
+  assert.strictEqual(directCalls.filter(call => String(call.url).includes('/api/sync/push')).length, 2,
+    'every direct push must use the live V2 desktop session');
 
   const cloudCalls = [];
   const cloud = createCloudRelaySyncTransport({

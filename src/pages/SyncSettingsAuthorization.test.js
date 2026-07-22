@@ -1,6 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const source = fs.readFileSync('src/pages/SyncSettings.tsx','utf8');
+const cloudSyncSource = fs.readFileSync('src/pages/CloudSync.tsx','utf8');
 assert.ok(source.includes('readDesktopAuthorizationSession') && source.includes('hydrateDesktopAuthorizationSession'));
 assert.ok(source.includes('resolveOnlineSyncActor') && source.includes('requireOnlineSession'),
   'one-click sync must resolve a current online V2 desktop session before transport selection');
@@ -14,6 +15,15 @@ assert.ok(!source.includes('startPairing') && !source.includes('pollOrExchange')
   'SyncSettings must not expose the removed V1 pairing flow after the startup identity gate');
 assert.ok(source.includes('桌面启动身份门统一完成'),
   'SyncSettings must direct identity management to the startup identity gate');
+for (const pageSource of [source, cloudSyncSource]) {
+  assert.ok(pageSource.includes('runOneClickSync'), 'every desktop sync entry must use the V2 one-click orchestrator');
+  assert.ok(pageSource.includes('readDesktopAuthorizationSession') && pageSource.includes('resolveOnlineSyncActor'),
+    'every desktop sync entry must use the current V2 desktop session');
+  assert.ok(!pageSource.includes('requestSyncAuthorization') && !pageSource.includes('registerSyncDevice'),
+    'legacy per-sync authorization requests must not remain in desktop sync pages');
+  assert.ok(!pageSource.includes('authorizationToken'), 'legacy sync authorization tokens must not remain in desktop sync pages');
+  assert.ok(pageSource.includes('backupId'), 'sync results must expose the durable backup identifier');
+}
 const permissionManager=fs.readFileSync('src/pages/PermissionManager.tsx','utf8');
 const appNavigation=fs.readFileSync('src/navigation/appNavigation.tsx','utf8');
 const identityDeviceCenter=fs.readFileSync('src/pages/IdentityDeviceCenter.tsx','utf8');

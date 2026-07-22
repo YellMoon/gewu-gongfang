@@ -42,8 +42,8 @@ assert.ok(
   'host task processor should recognize desktop sync tasks'
 );
 assert.ok(
-  hostRelay.includes('applySyncChanges'),
-  'host task processor should apply desktop sync changes to the primary host database'
+  hostRelay.includes('applyAuthorizedSyncBatch'),
+  'host task processor should apply desktop sync through the shared backed-up batch service'
 );
 assert.ok(cloudRelay.includes('actorUserId: actor.userId'), 'relay must bind the assertion to the verified V2 desktop actor');
 assert.ok(!cloudRelay.includes('authorizationContext'), 'relay must not forward trusted role or teacher context');

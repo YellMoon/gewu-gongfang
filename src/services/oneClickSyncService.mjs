@@ -202,9 +202,33 @@ export async function runOneClickSync(options) {
   }
 
   let uploaded = 0;
+  let hostPushResult = null;
   if (pendingChanges.length > 0) {
-    const pushResult = await engine.push(batch => transport.pushSyncBatch(batch));
+    const pushResult = await engine.push(async batch => {
+      hostPushResult = await transport.pushSyncBatch(batch);
+      const conflicts = Number(hostPushResult?.conflicts || 0);
+      const rejected = Array.isArray(hostPushResult?.errors) ? hostPushResult.errors.length : 0;
+      if (hostPushResult?.success && (conflicts > 0 || rejected > 0)) {
+        return { ...hostPushResult, success: false, needsReview: true };
+      }
+      return hostPushResult;
+    });
     if (!pushResult?.success) {
+      const conflicts = Number(hostPushResult?.conflicts || 0);
+      const rejected = Array.isArray(hostPushResult?.errors) ? hostPushResult.errors.length : 0;
+      if (hostPushResult?.success && (conflicts > 0 || rejected > 0)) {
+        return {
+          status: 'needs-review',
+          channel: transport.name,
+          preview,
+          backupId: hostPushResult.backupId || null,
+          conflicts,
+          rejected,
+          errors: hostPushResult.errors || [],
+          uploaded: 0,
+          downloaded: 0,
+        };
+      }
       return {
         status: 'failed',
         channel: transport.name,
@@ -240,5 +264,7 @@ export async function runOneClickSync(options) {
     uploaded,
     downloaded: pullResult.applied || 0,
     conflicts: (pullResult.conflicts || []).length,
+    rejected: 0,
+    backupId: hostPushResult?.backupId || null,
   };
 }

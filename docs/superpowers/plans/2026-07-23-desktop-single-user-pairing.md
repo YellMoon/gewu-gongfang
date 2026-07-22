@@ -620,7 +620,7 @@ git commit -m "feat: 增加桌面单人初始化与配对界面"
 - Modify: `src/services/oneClickSyncService.test.js`
 - Modify: `package.json`
 
-- [ ] **Step 1: 写备份/事务 RED 测试**
+- [x] **Step 1: 写备份/事务 RED 测试**
 
 构造含普通表和题库 committed question 的批次，断言：预检写入数为 0；非空批次先生成 SQLite backup；manifest 只含受影响题库路径/摘要；备份失败时 `applySyncChanges` 未调用；题库临时文件替换失败时 DB 不提交、客户端批次保持 pending；成功审计含 batch/device/count/backup ID；重复 batch 幂等返回原结果。
 
@@ -632,7 +632,7 @@ await assert.rejects(() => applyWithBrokenFileReplace(prepared), /QUESTION_FILE_
 assert.strictEqual(readCourse(db, 'course-1').name, 'before');
 ```
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run:
 
@@ -645,7 +645,7 @@ node src/services/oneClickSyncService.test.js
 
 Expected: FAIL with missing batch backup service/result metadata.
 
-- [ ] **Step 3: 实现批次生命周期**
+- [x] **Step 3: 实现批次生命周期**
 
 服务公开 `preflightBatch`、`createBatchBackup`、`markBatchApplied`、`markBatchFailed`、`readBatchRecoveryRecord`。使用 better-sqlite3 `.backup()` 创建在线备份；文件写采用 sibling temp + fsync + rename；失败保留原文件。数据库事务只在文件准备全部成功后执行，提交成功后再清理临时文件。
 
@@ -666,15 +666,15 @@ Expected: FAIL with missing batch backup service/result metadata.
 }
 ```
 
-- [ ] **Step 4: 接入 direct/cloud 同步**
+- [x] **Step 4: 接入 direct/cloud 同步**
 
 `/api/sync/push` 与 `desktop-sync` host task 共用同一个 `applyAuthorizedSyncBatch`；只有 V2 session actor 通过预检才创建备份。主机继续自动领取任务，但冲突数组原样返回，不能在 host 端自动选胜者。
 
-- [ ] **Step 5: 统一手动同步文案与结果**
+- [x] **Step 5: 统一手动同步文案与结果**
 
 删除 `CloudSync.tsx` 中“申请同步权限”阶段，统一通过现有 V2 session 注册/授权。按钮与日志使用“开始同步”；确认弹窗显示上传、下载、新增、修改、删除、冲突、拒绝数量；结果显示 backup ID 的可读短标识。任何失败保持本地 pending queue。
 
-- [ ] **Step 6: 运行 GREEN 并提交**
+- [x] **Step 6: 运行 GREEN 并提交**
 
 Run:
 

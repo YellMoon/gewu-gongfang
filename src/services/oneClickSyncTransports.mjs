@@ -99,30 +99,19 @@ export function createDirectSyncTransport(options = {}) {
     async pushSyncBatch(batch) {
       const session = await resolveSession();
       const batchDeviceId = session.authContext.deviceId;
-      await post('/api/sync/devices/register', {
-        deviceId: batchDeviceId,
-        role,
-        deviceName: options.deviceName || batchDeviceId,
-      }, authenticatedHeaders(session));
-      const auth = await post('/api/sync/authorize', {
-        deviceId: batchDeviceId,
-        role,
-      }, authenticatedHeaders(session));
       const data = await post('/api/sync/push', {
         deviceId: batchDeviceId,
         tenantId: batch.tenantId || 'default',
         changes: batch.changes || batch.operations || [],
-        syncAuthorizationToken: auth?.authorization?.token,
-      }, {
-        'x-sync-authorization': auth?.authorization?.token || '',
-        ...authenticatedHeaders(session),
-      });
+      }, authenticatedHeaders(session));
       return {
         success: !!data.success,
         serverTimestamp: toTimestamp(data.serverTimestamp || data.serverTime || data.server_time),
         applied: data.applied || 0,
         conflicts: data.conflicts || 0,
         errors: data.errors || [],
+        backupId: data.backupId || null,
+        counts: data.counts || null,
       };
     },
     async pullSyncOps(lastSyncTs) {
