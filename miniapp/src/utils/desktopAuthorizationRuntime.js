@@ -84,7 +84,18 @@ function safeRowVersion(value) {
 }
 
 function phoneCodeFromAuthorizationEvent(event = {}) {
-  return normalizedWechatCode(event?.detail?.code, 'WECHAT_PHONE_AUTH_CANCELLED');
+  const detail = event?.detail || {};
+  const code = String(detail.code || '').trim();
+  if (code && code.length <= WECHAT_CODE_MAX_LENGTH) return code;
+
+  const errMsg = String(detail.errMsg || '').trim().toLowerCase();
+  if (/user\s+(deny|cancel)/.test(errMsg)) {
+    throw runtimeError('WECHAT_PHONE_AUTH_CANCELLED');
+  }
+  if (Number(detail.errno) === 1400001) {
+    throw runtimeError('WECHAT_PHONE_AUTH_QUOTA_EXHAUSTED');
+  }
+  throw runtimeError('WECHAT_PHONE_AUTH_UNAVAILABLE');
 }
 
 function buildDesktopConfirmationPayload({ challengeId, loginCode, phoneCode, expectedRowVersion } = {}) {
@@ -206,6 +217,8 @@ function desktopAuthorizationErrorMessage(code, fallback = '') {
     DESKTOP_DEVICE_ALREADY_REGISTERED: '\u8fd9\u53f0\u8bbe\u5907\u5df2\u5b8c\u6210\u6ce8\u518c\uff0c\u8bf7\u56de\u5230\u7535\u8111\u4f7f\u7528\u3002',
     DESKTOP_IDENTITY_NOT_ELIGIBLE: '\u5f53\u524d\u624b\u673a\u53f7\u8fd8\u6ca1\u6709\u53ef\u7528\u7684\u6b63\u5f0f\u8eab\u4efd\uff0c\u4e0d\u80fd\u6ce8\u518c\u7535\u8111\u3002',
     WECHAT_PHONE_AUTH_CANCELLED: '\u4f60\u5df2\u53d6\u6d88\u624b\u673a\u53f7\u6388\u6743\uff0c\u672c\u6b21\u6ca1\u6709\u5411\u670d\u52a1\u5668\u63d0\u4ea4\u3002',
+    WECHAT_PHONE_AUTH_QUOTA_EXHAUSTED: '\u5fae\u4fe1\u624b\u673a\u53f7\u9a8c\u8bc1\u989d\u5ea6\u5df2\u7528\u5b8c\uff0c\u8bf7\u5728\u5fae\u4fe1\u516c\u4f17\u5e73\u53f0\u300c\u4ed8\u8d39\u7ba1\u7406\u300d\u8865\u5145\u989d\u5ea6\u540e\u91cd\u8bd5\u3002',
+    WECHAT_PHONE_AUTH_UNAVAILABLE: '\u5fae\u4fe1\u672a\u80fd\u6253\u5f00\u624b\u673a\u53f7\u6388\u6743\u6846\u3002\u8bf7\u786e\u8ba4\u5c0f\u7a0b\u5e8f\u4e3b\u4f53\u4e3a\u975e\u4e2a\u4eba\u4e14\u5df2\u5b8c\u6210\u8ba4\u8bc1\uff0c\u5e76\u68c0\u67e5\u624b\u673a\u53f7\u9a8c\u8bc1\u7ec4\u4ef6\u6743\u9650\u4e0e\u989d\u5ea6\u3002',
     WECHAT_PHONE_EXCHANGE_FAILED: '\u5fae\u4fe1\u624b\u673a\u53f7\u6838\u9a8c\u5931\u8d25\uff0c\u8bf7\u91cd\u65b0\u70b9\u51fb\u9a8c\u8bc1\u3002',
   })[String(code || '')] || fallback || '\u7f51\u7edc\u8bf7\u6c42\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u7f51\u7edc\u540e\u91cd\u8bd5\u3002';
 }

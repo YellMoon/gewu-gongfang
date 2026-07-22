@@ -149,6 +149,7 @@ function presentMiniappChallenge(row) {
     keyFingerprintSummary: `${String(row.key_fingerprint || '').slice(0, 8)}…${String(row.key_fingerprint || '').slice(-4)}`,
     purpose: row.purpose,
     status: row.status,
+    rowVersion: Number(row.row_version),
     expiresAt: row.expires_at,
     createdAt: row.created_at,
   });

@@ -40,6 +40,26 @@ assert.throws(
   () => runtime.phoneCodeFromAuthorizationEvent({ detail: { errMsg: 'getPhoneNumber:fail user deny' } }),
   error => error.code === 'WECHAT_PHONE_AUTH_CANCELLED'
 );
+assert.strictEqual(
+  runtime.phoneCodeFromAuthorizationEvent({ detail: { code: 'phone-code-123', errMsg: 'getPhoneNumber:ok' } }),
+  'phone-code-123'
+);
+assert.throws(
+  () => runtime.phoneCodeFromAuthorizationEvent({
+    detail: { errno: 1400001, errMsg: 'getPhoneNumber:fail no quota' },
+  }),
+  error => error.code === 'WECHAT_PHONE_AUTH_QUOTA_EXHAUSTED'
+);
+assert.throws(
+  () => runtime.phoneCodeFromAuthorizationEvent({
+    detail: { errno: 1001, errMsg: 'getPhoneNumber:fail permission denied' },
+  }),
+  error => error.code === 'WECHAT_PHONE_AUTH_UNAVAILABLE'
+);
+assert.throws(
+  () => runtime.phoneCodeFromAuthorizationEvent({ detail: {} }),
+  error => error.code === 'WECHAT_PHONE_AUTH_UNAVAILABLE'
+);
 
 const projected = runtime.projectDesktopAuthorizationChallenge({
   id: 'challenge-1234567890',
@@ -96,6 +116,8 @@ const distinctErrors = [
   'DESKTOP_CHALLENGE_CLAIMANT_CONFLICT',
   'DESKTOP_DEVICE_OWNER_CONFLICT',
   'WECHAT_PHONE_AUTH_CANCELLED',
+  'WECHAT_PHONE_AUTH_QUOTA_EXHAUSTED',
+  'WECHAT_PHONE_AUTH_UNAVAILABLE',
 ].map(code => runtime.desktopAuthorizationErrorMessage(code));
 assert.strictEqual(new Set(distinctErrors).size, distinctErrors.length);
 

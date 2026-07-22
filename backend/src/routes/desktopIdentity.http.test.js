@@ -333,10 +333,10 @@ function generateDeviceKey() {
     );
     assert.strictEqual(miniappProjection.status, 200);
     assert.deepStrictEqual(Object.keys(miniappProjection.body.data.challenge).sort(), [
-      'createdAt', 'deviceName', 'expiresAt', 'id', 'keyFingerprintSummary', 'purpose', 'status',
+      'createdAt', 'deviceName', 'expiresAt', 'id', 'keyFingerprintSummary', 'purpose', 'rowVersion', 'status',
     ].sort());
     assert.ok(!('deviceId' in miniappProjection.body.data.challenge));
-    assert.ok(!('rowVersion' in miniappProjection.body.data.challenge));
+    assert.strictEqual(miniappProjection.body.data.challenge.rowVersion, secondStarted.rowVersion);
 
     const injectedConfirm = await requestJson(
       baseUrl,
