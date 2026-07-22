@@ -1,7 +1,8 @@
 const IDENTITY_PROVISIONING_CAPABILITY = 'identity-provisioning-v1';
+const DESKTOP_PAIRING_CAPABILITY = 'desktop-pairing-v1';
 
 function hostCapabilities() {
-  return [IDENTITY_PROVISIONING_CAPABILITY];
+  return [IDENTITY_PROVISIONING_CAPABILITY, DESKTOP_PAIRING_CAPABILITY];
 }
 
 function buildHeaders(options = {}) {
@@ -72,6 +73,12 @@ async function publishSnapshot(payload, options = {}) {
   return postJson(`${base}/api/cloud/snapshots/publish`, payload, options);
 }
 
+async function publishDesktopPairingCapability(payload, options = {}) {
+  const base = baseUrl();
+  if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured');
+  return postJson(`${base}/api/cloud/desktop-pairing/capability`, payload, options);
+}
+
 async function fetchPendingTasks(options = {}) {
   const base = baseUrl();
   if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured', { tasks: [] });
@@ -117,10 +124,12 @@ async function queryMiniappTaskState(taskId, options = {}) {
 }
 
 module.exports = {
+  DESKTOP_PAIRING_CAPABILITY,
   IDENTITY_PROVISIONING_CAPABILITY,
   hostCapabilities,
   publishHeartbeat,
   publishSnapshot,
+  publishDesktopPairingCapability,
   fetchPendingTasks,
   completeMiniappTask,
   claimMiniappTask,

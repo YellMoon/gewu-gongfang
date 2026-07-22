@@ -159,6 +159,7 @@ function normalizeAuthorization(value, publicIdentity) {
       64
     ).toLowerCase(),
     status: stringField(value.status, 'DESKTOP_IDENTITY_AUTHORIZATION_INVALID', 32),
+    authorizationSource: optionalString(value.authorizationSource, 64) || 'wechat_phone',
     credentialVersion: safeInteger(
       value.credentialVersion,
       'DESKTOP_IDENTITY_AUTHORIZATION_INVALID'
@@ -173,6 +174,8 @@ function normalizeAuthorization(value, publicIdentity) {
     ),
   };
   if (authorization.status !== 'active'
+    || !['wechat_phone', 'single_user_local_bootstrap', 'single_user_pairing']
+      .includes(authorization.authorizationSource)
     || authorization.deviceId !== publicIdentity.deviceId
     || authorization.deviceKind !== publicIdentity.deviceKind
     || authorization.keyFingerprint !== publicIdentity.keyFingerprint
@@ -685,6 +688,7 @@ function createDesktopIdentityVault({
       authorizationId: authorization.id,
       credentialVersion: authorization.credentialVersion,
       phoneReverifyDueAt: authorization.phoneReverifyDueAt,
+      authorizationSource: authorization.authorizationSource,
       user: cloneJson(profile.user),
       eligibleRoles: profile.eligibleRoles.slice(),
       activeRole: profile.activeRole,

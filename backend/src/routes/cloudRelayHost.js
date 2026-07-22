@@ -5,6 +5,7 @@ const { getInstance } = require('../database');
 const {
   publishHeartbeat,
   publishSnapshot,
+  publishDesktopPairingCapability,
   fetchPendingTasks,
   claimMiniappTask,
   updateMiniappTaskProgress,
@@ -13,6 +14,12 @@ const {
   queryMiniappTaskState,
   hostCapabilities,
 } = require('../services/cloudRelayClient');
+const { getSingleUserDesktopIdentityService } = require('../services/singleUserDesktopIdentityService');
+const { roleContextForUser } = require('../services/userRoleGrantService');
+const {
+  createDesktopOfflineLease,
+  createDesktopSessionProfile,
+} = require('../services/desktopDeviceChallengeService');
 const { createIdentityProvisioningService } = require('../services/identityProvisioningService');
 const { resultHash: hashTaskResult } = require('../services/cloudRelayTaskService');
 const questionBank = require('../services/questionBankService');
@@ -101,6 +108,53 @@ async function processMiniappTask(task, db, dependencies = {}) {
     { questionBank: dependencies.questionBank || questionBank }
   ));
   const writeTaskArtifact = dependencies.writePaperArtifact || writePaperArtifact;
+  if (task.task_type === 'desktop-pairing') {
+    const sqlite = db.db || db;
+    const singleUserIdentity = dependencies.singleUserIdentityService
+      || getSingleUserDesktopIdentityService({ db: sqlite });
+    const authorized = singleUserIdentity.consumeEncryptedPairingRequest({
+      requestId: task.id || payload.requestId,
+      envelope: payload.envelope,
+      channel: 'cloud',
+    });
+    if (typeof dependencies.buildDesktopPairingResult === 'function') {
+      return dependencies.buildDesktopPairingResult(authorized);
+    }
+    const authorizationRow = sqlite.prepare(
+      'SELECT * FROM desktop_device_authorizations WHERE id=? AND status=\'active\''
+    ).get(authorized.authorization.id);
+    const user = authorizationRow && sqlite.prepare('SELECT * FROM users WHERE id=? AND deleted=0')
+      .get(authorizationRow.user_id);
+    if (!authorizationRow || !user) {
+      const error = new Error('DESKTOP_PAIRING_AUTHORIZATION_PROJECTION_FAILED');
+      error.code = 'DESKTOP_PAIRING_AUTHORIZATION_PROJECTION_FAILED';
+      throw error;
+    }
+    const roleContext = roleContextForUser(sqlite, user.id);
+    const sessionProjection = {
+      id: `desktop-pairing:${task.id || authorized.requestId}`,
+      userId: user.id,
+      deviceId: authorizationRow.device_id,
+      activeRole: roleContext.activeRole,
+      eligibleRoles: roleContext.eligibleRoles,
+      teacherId: roleContext.teacherId,
+      studentId: roleContext.studentId,
+    };
+    return Object.freeze({
+      authorization: authorized.authorization,
+      profile: createDesktopSessionProfile({ session: sessionProjection, user }),
+      offlineLease: createDesktopOfflineLease({
+        authorization: authorizationRow,
+        session: sessionProjection,
+        leaseId: `desktop-pairing-offline:${task.id || authorized.requestId}`,
+      }),
+      authorizationSummary: Object.freeze({
+        id: authorized.authorization.id,
+        deviceId: authorized.authorization.deviceId,
+        credentialVersion: authorized.authorization.credentialVersion,
+      }),
+    });
+  }
   if (task.task_type === 'identity-provisioning') {
     const identityProvisioningService = dependencies.identityProvisioningService
       || createIdentityProvisioningService({ db: db.db || db });
@@ -405,14 +459,37 @@ async function processClaimedV2Tasks(db, authOptions, dependencies = {}) {
 
 router.post('/heartbeat', async (req, res, next) => {
   try {
+    const authOptions = authOptionsFromRequest(req);
     const result = await publishHeartbeat({
       hostDeviceId: hostDeviceId(),
       status: 'online',
       baseUrl: process.env.GEWU_HOST_BASE_URL || '',
       lanUrls: hostLanUrls(),
       capabilities: hostCapabilities(),
-    }, authOptionsFromRequest(req));
-    res.json(result);
+    }, authOptions);
+    let pairingCapability = null;
+    if (process.env.GEWU_DESKTOP_IDENTITY_MODE === 'single-user') {
+      try {
+        const sqlite = getInstance().db;
+        const singleUserIdentity = getSingleUserDesktopIdentityService({ db: sqlite });
+        const capability = singleUserIdentity.currentPairingCapability();
+        const epoch = sqlite.prepare(
+          "SELECT id,generation,device_id FROM primary_host_epochs WHERE status='active' LIMIT 1"
+        ).get();
+        if (epoch && epoch.device_id === hostDeviceId()) {
+          pairingCapability = await publishDesktopPairingCapability({
+            hostDeviceId: epoch.device_id,
+            epochId: epoch.id,
+            generation: Number(epoch.generation),
+            capability,
+          }, authOptions);
+        }
+      } catch (error) {
+        if (!['DESKTOP_PAIRING_CAPABILITY_UNAVAILABLE', 'DESKTOP_SINGLE_USER_MODE_DISABLED']
+          .includes(error?.code)) throw error;
+      }
+    }
+    res.json({ ...result, pairingCapability });
   } catch (err) {
     next(err);
   }

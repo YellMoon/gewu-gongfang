@@ -9,6 +9,7 @@ process.env.GATEWAY_DB_PATH = path.join(root, 'gateway.db');
 process.env.GEWU_CLOUD_RELAY_HOST_TOKEN = 'test-host-secret';
 const { initDatabase, closeDatabase, getDb } = require('../db/database');
 const { verifyRelayAssertion } = require('../../../backend/src/services/relayAssertionService');
+const taskService = require('../services/cloudRelayTaskService');
 const router = require('./cloudRelay');
 const pairingRouter = require('./desktopPairing');
 
@@ -46,12 +47,118 @@ const pairingRouter = require('./desktopPairing');
   assert.strictEqual((await call('/tasks')).status, 403);
   assert.strictEqual((await call('/tasks/x/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'wrong' }, body: '{}' })).status, 403);
   assert.strictEqual((await call('/host/heartbeat', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ hostDeviceId: 'host1', baseUrl: 'https://host.example/base/' }) })).status, 200);
+  const pairingCapability = {
+    protocolVersion: 'gewu-single-user-pairing/v1',
+    id: 'a'.repeat(32),
+    publicKey: 'x25519-public-key',
+    issuedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+  };
+  const publishedCapability = await call('/desktop-pairing/capability', {
+    method: 'POST',
+    headers: { 'x-gewu-host-token': 'test-host-secret' },
+    body: JSON.stringify({
+      hostDeviceId: 'host1',
+      epochId: 'epoch-1',
+      generation: 1,
+      capability: pairingCapability,
+    }),
+  });
+  assert.strictEqual(publishedCapability.status, 200);
+  const publicCapability = await call('/desktop-pairing/capability');
+  assert.strictEqual(publicCapability.status, 200);
+  assert.strictEqual((await publicCapability.json()).capability.id, pairingCapability.id);
+  const pairingRequestSecret = 'client-only-request-secret-1';
+  const pairingRequestSecretHash = crypto.createHash('sha256').update(pairingRequestSecret).digest('hex');
+  const encryptedEnvelope = {
+    protocolVersion: pairingCapability.protocolVersion,
+    capabilityId: pairingCapability.id,
+    clientEphemeralPublicKey: 'ephemeral-x25519-public-key',
+    iv: 'AAAAAAAAAAAAAAAA',
+    ciphertext: Buffer.from('opaque-ciphertext-without-pairing-code').toString('base64'),
+    tag: 'AAAAAAAAAAAAAAAAAAAAAA==',
+  };
+  const submittedPairing = await call('/desktop-pairing/requests', {
+    method: 'POST',
+    body: JSON.stringify({ envelope: encryptedEnvelope, requestSecretHash: pairingRequestSecretHash }),
+  });
+  assert.strictEqual(submittedPairing.status, 200);
+  const submittedPairingBody = await submittedPairing.json();
+  assert.strictEqual(submittedPairingBody.request.status, 'pending_host');
+  assert.ok(!JSON.stringify(submittedPairingBody).includes('0123456789ABCDEF'));
+  assert.strictEqual((await call(`/desktop-pairing/requests/${submittedPairingBody.request.id}`, {
+    headers: { 'x-pairing-request-secret': 'wrong-secret' },
+  })).status, 404);
+  const pairingClaimResponse = await call('/tasks/claim', {
+    method: 'POST',
+    headers: { 'x-gewu-host-token': 'test-host-secret' },
+    body: JSON.stringify({ hostDeviceId: 'host1', leaseMs: 1000 }),
+  });
+  const pairingClaim = await pairingClaimResponse.json();
+  assert.strictEqual(pairingClaim.task.task_type, 'desktop-pairing');
+  assert.deepStrictEqual(pairingClaim.task.payload.envelope, encryptedEnvelope);
+  const pairingResult = {
+    authorization: { id: 'ordinary-authorization-1', authorizationSource: 'single_user_pairing' },
+    profile: { userId: 'canonical-owner', eligibleRoles: ['super_admin'] },
+    offlineLease: { id: 'offline-lease-1' },
+  };
+  const pairingCompletion = await call(`/tasks/${pairingClaim.task.id}/complete`, {
+    method: 'POST',
+    headers: { 'x-gewu-host-token': 'test-host-secret' },
+    body: JSON.stringify({
+      claimToken: pairingClaim.claimToken,
+      expectedRowVersion: pairingClaim.task.row_version,
+      operationId: 'pairing-complete-1',
+      resultHash: taskService.resultHash(pairingResult),
+      result: pairingResult,
+    }),
+  });
+  assert.strictEqual(pairingCompletion.status, 200);
+  const completedPairing = await call(`/desktop-pairing/requests/${submittedPairingBody.request.id}`, {
+    headers: { 'x-pairing-request-secret': pairingRequestSecret },
+  });
+  const completedPairingBody = await completedPairing.json();
+  assert.strictEqual(completedPairingBody.request.status, 'completed');
+  assert.strictEqual(completedPairingBody.request.result.authorization.id, 'ordinary-authorization-1');
+  const rereadPairing = await call(`/desktop-pairing/requests/${submittedPairingBody.request.id}`, {
+    headers: { 'x-pairing-request-secret': pairingRequestSecret },
+  });
+  assert.strictEqual((await rereadPairing.json()).request.result, null, 'pairing result payload must be one-time read');
+  assert.strictEqual(
+    getDb().prepare('SELECT result_payload FROM desktop_pairing_relay_requests WHERE id=?').get(submittedPairingBody.request.id).result_payload,
+    null
+  );
+  assert.strictEqual(
+    getDb().prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='desktop_device_authorizations'").get(),
+    undefined,
+    'gateway must not contain the local desktop authorization table'
+  );
+  for (let attempt = 0; attempt < 19; attempt += 1) {
+    const invalidRateProbe = await call('/desktop-pairing/requests', { method: 'POST', body: '{}' });
+    assert.strictEqual(invalidRateProbe.status, 400);
+  }
+  assert.strictEqual(
+    (await call('/desktop-pairing/requests', { method: 'POST', body: '{}' })).status,
+    429,
+    'anonymous pairing submission must be rate limited by source address'
+  );
+  getDb().prepare("UPDATE desktop_pairing_capabilities SET status='expired'").run();
+  const offlineCapability = await call('/desktop-pairing/capability');
+  assert.strictEqual(offlineCapability.status, 503);
+  assert.strictEqual((await offlineCapability.json()).code, 'PAIRING_HOST_OFFLINE');
   const now = new Date().toISOString();
   getDb().prepare("INSERT INTO miniapp_tasks (id,task_type,status,payload,created_by,created_at,updated_at) VALUES ('task1','question-paper','pending_host','{}','u1',?,?)").run(now, now);
   assert.strictEqual((await call('/tasks', { headers: { 'x-gewu-host-token': 'test-host-secret' } })).status, 200);
   assert.strictEqual((await call('/tasks/task1/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: '{}' })).status, 200);
   const approved = id => JSON.stringify({ id, user_type: 'student', student_id: id, tenant_id: 'tenant-a', review_status: 'approved', status: 1, login_enabled: 1 });
   const admin = id => JSON.stringify({ id, user_type: 'admin', tenant_id: 'tenant-a', review_status: 'approved', status: 1, login_enabled: 1 });
+  assert.strictEqual(
+    (await call(`/tasks/${submittedPairingBody.request.id}/result`, {
+      headers: { 'x-test-user': admin('pairing-admin') },
+    })).status,
+    404,
+    'generic task result API must not expose desktop pairing results'
+  );
   const previewSnapshot = { questions: [
     { id: 'q-draft', tenant_id: 'tenant-a', type: 'fill', stem: 'draft', answer: 'secret-draft', storage_state: 'local_draft' },
     { id: 'q-visible', tenant_id: 'tenant-a', type: 'choice', stem: 'visible', answer: 'secret-answer', analysis: 'secret-analysis', storage_state: 'host_committed' },

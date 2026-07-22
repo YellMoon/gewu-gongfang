@@ -33,6 +33,10 @@ function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
+function singleUserReverifySentinel(current) {
+  return new Date(current.getTime() + 10 * 365 * 24 * 60 * 60 * 1000).toISOString();
+}
+
 function fingerprintPublicKey(publicKey, code = 'DESKTOP_SINGLE_USER_PUBLIC_KEY_INVALID') {
   try {
     const parsed = crypto.createPublicKey(publicKey);
@@ -78,6 +82,8 @@ function presentAuthorization(row) {
     keyFingerprint: row.key_fingerprint,
     status: row.status,
     authorizationSource: row.authorization_source,
+    lastPhoneVerifiedAt: row.last_phone_verified_at,
+    phoneReverifyDueAt: row.phone_reverify_due_at,
     credentialVersion: Number(row.credential_version),
     rowVersion: Number(row.row_version),
   });
@@ -288,7 +294,9 @@ function createSingleUserDesktopIdentityService({
         eligibleRoles: ['super_admin'],
       } : undefined,
     }));
-    const timestamp = currentDate().toISOString();
+    const current = currentDate();
+    const timestamp = current.toISOString();
+    const phoneReverifyDueAt = singleUserReverifySentinel(current);
     const result = db.transaction(() => {
       const liveQuickCheck = typeof db.pragma === 'function'
         ? String(db.pragma('quick_check', { simple: true }) || '')
@@ -334,7 +342,7 @@ function createSingleUserDesktopIdentityService({
           .run(
             authorizationId, runtime.deviceId, publicIdentity.deviceName, 'primary-host', user.id,
             publicIdentity.publicKey, publicIdentity.fingerprint, sourceChallengeId,
-            user.id, runtime.deviceId, timestamp, timestamp, timestamp, timestamp, timestamp
+            user.id, runtime.deviceId, timestamp, timestamp, phoneReverifyDueAt, timestamp, timestamp
           );
       } else {
         db.prepare(`UPDATE desktop_device_authorizations
@@ -516,7 +524,10 @@ function createSingleUserDesktopIdentityService({
     const envelopeHash = sha256(Buffer.from(JSON.stringify(input.envelope), 'utf8'));
     const current = currentDate();
     const timestamp = current.toISOString();
-    const requestId = uuid();
+    const phoneReverifyDueAt = singleUserReverifySentinel(current);
+    const requestId = input.requestId === undefined
+      ? uuid()
+      : requiredText(input.requestId, 'DESKTOP_PAIRING_REQUEST_ID_INVALID', 256);
     const outcome = db.transaction(() => {
       if (db.prepare('SELECT 1 FROM desktop_single_user_pairing_requests WHERE envelope_hash=?').get(envelopeHash)) {
         return { error: 'DESKTOP_PAIRING_REQUEST_REPLAYED' };
@@ -584,7 +595,7 @@ function createSingleUserDesktopIdentityService({
               row_version=row_version+1,revoked_at=NULL,retired_at=NULL,updated_at=? WHERE id=?`)
           .run(opened.device.deviceName, grant.owner_user_id, key.publicKey, key.fingerprint,
             `single-user-pairing:${requestId}`, grant.owner_user_id,
-            findActiveEpoch.get()?.device_id || null, timestamp, timestamp, timestamp,
+            findActiveEpoch.get()?.device_id || null, timestamp, timestamp, phoneReverifyDueAt,
             timestamp, authorization.id);
       } else {
         db.prepare(`INSERT INTO desktop_device_authorizations
@@ -596,7 +607,7 @@ function createSingleUserDesktopIdentityService({
           .run(authorizationId, opened.device.deviceId, opened.device.deviceName,
             grant.owner_user_id, key.publicKey, key.fingerprint, `single-user-pairing:${requestId}`,
             grant.owner_user_id, findActiveEpoch.get()?.device_id || null,
-            timestamp, timestamp, timestamp, timestamp, timestamp);
+            timestamp, timestamp, phoneReverifyDueAt, timestamp, timestamp);
       }
       authorization = db.prepare('SELECT * FROM desktop_device_authorizations WHERE id=?').get(authorizationId);
       db.prepare(`UPDATE desktop_single_user_pairing_grants

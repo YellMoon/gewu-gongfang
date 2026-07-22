@@ -6,6 +6,7 @@ const Database = require('better-sqlite3');
 const { createDesktopSessionService } = require('./desktopSessionService');
 const {
   createDesktopDeviceChallengeService,
+  createDesktopOfflineLease,
   desktopDeviceSessionSigningPayload,
 } = require('./desktopDeviceChallengeService');
 
@@ -204,7 +205,37 @@ assert.strictEqual(
 );
 
 db.prepare(`UPDATE desktop_device_authorizations
-  SET phone_reverify_due_at='2026-07-17T10:02:00.000Z'
+  SET authorization_source='single_user_pairing',
+      phone_reverify_due_at='2026-07-17T10:02:00.000Z'
+  WHERE id=?`).run(authorizationId);
+const nonWechatChallenge = service.startChallenge({ authorizationId, deviceId });
+assert.strictEqual(nonWechatChallenge.status, 'pending');
+const nonWechatLease = createDesktopOfflineLease({
+  authorization: {
+    id: authorizationId,
+    deviceId,
+    userId,
+    credentialVersion: 3,
+    authorizationSource: 'single_user_pairing',
+    phoneReverifyDueAt: '2026-07-17T10:02:00.000Z',
+  },
+  session: {
+    id: 'single-user-session',
+    userId,
+    deviceId,
+    activeRole: 'teacher',
+    eligibleRoles: ['super_admin', 'teacher'],
+    teacherId,
+  },
+  issuedAt: clock,
+});
+assert.strictEqual(
+  Date.parse(nonWechatLease.expiresAt) - Date.parse(nonWechatLease.issuedAt),
+  72 * 60 * 60 * 1000,
+  'single-user pairing leases must not be shortened by the legacy WeChat phone deadline'
+);
+db.prepare(`UPDATE desktop_device_authorizations
+  SET authorization_source='wechat_phone'
   WHERE id=?`).run(authorizationId);
 assert.throws(
   function () { service.startChallenge({ authorizationId, deviceId }); },

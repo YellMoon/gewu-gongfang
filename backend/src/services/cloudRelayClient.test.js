@@ -8,7 +8,8 @@ const packageJson = fs.readFileSync('package.json', 'utf-8');
 const client = require('./cloudRelayClient');
 
 assert.strictEqual(client.IDENTITY_PROVISIONING_CAPABILITY, 'identity-provisioning-v1');
-assert.deepStrictEqual(client.hostCapabilities(), ['identity-provisioning-v1']);
+assert.strictEqual(client.DESKTOP_PAIRING_CAPABILITY, 'desktop-pairing-v1');
+assert.deepStrictEqual(client.hostCapabilities(), ['identity-provisioning-v1', 'desktop-pairing-v1']);
 
 assert.ok(source.includes('publishHeartbeat'), 'cloud relay client should publish heartbeat');
 assert.ok(source.includes('publishSnapshot'), 'cloud relay client should publish snapshot');
@@ -47,6 +48,12 @@ assert.deepStrictEqual(client.buildHeaders({
   };
   try {
     const auth = { hostToken: 'trusted-host-token' };
+    await client.publishDesktopPairingCapability({
+      hostDeviceId: 'host-a',
+      epochId: 'epoch-a',
+      generation: 1,
+      capability: { id: 'capability-a' },
+    }, auth);
     await client.claimMiniappTask({ hostDeviceId: 'host-a', leaseMs: 5000 }, auth);
     await client.updateMiniappTaskProgress('task-1', { claimToken: 'claim', expectedRowVersion: 1, progress: 40, phase: 'rendering' }, auth);
     await client.completeMiniappTask('task-1', { claimToken: 'claim', expectedRowVersion: 2, result: { ok: true } }, auth);
@@ -54,6 +61,7 @@ assert.deepStrictEqual(client.buildHeaders({
     await client.queryMiniappTaskState('task-1', { ...auth, hostDeviceId: 'host-a' });
     await client.fetchPendingTasks({ ...auth, hostDeviceId: 'host-a', leaseMs: 5000 });
     assert.deepStrictEqual(calls.map(call => call.url), [
+      'https://relay.example/api/cloud/desktop-pairing/capability',
       'https://relay.example/api/cloud/tasks/claim',
       'https://relay.example/api/cloud/tasks/task-1/progress',
       'https://relay.example/api/cloud/tasks/task-1/complete',
@@ -62,7 +70,8 @@ assert.deepStrictEqual(client.buildHeaders({
       'https://relay.example/api/cloud/tasks?status=pending_host&hostDeviceId=host-a&leaseMs=5000',
     ]);
     assert.ok(calls.every(call => call.options.headers['x-gewu-host-token'] === 'trusted-host-token'));
-    assert.strictEqual(calls[0].body.hostDeviceId, 'host-a');
+    assert.strictEqual(calls[0].body.capability.id, 'capability-a');
+    assert.strictEqual(calls[1].body.hostDeviceId, 'host-a');
 
     global.fetch = async () => ({
       ok: false,

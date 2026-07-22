@@ -214,6 +214,31 @@ const path = require('path');
       return { fileName: `paper.${format === 'word' ? 'docx' : 'pdf'}`, fileUrl: '/artifact', answerPosition, requestedFormulaMode: 'word-native', effectiveFormulaModes: ['word-native'], fallbackCount: 0, formulaCount: 0, sha256: 'a'.repeat(64), pageCount: format === 'pdf' ? 1 : null, diagnostics: [] };
     },
   };
+  let pairingConsumeInput = null;
+  const desktopPairingResult = await processMiniappTask({
+    id: 'desktop-pairing-task-1',
+    task_type: 'desktop-pairing',
+    payload: { requestId: 'desktop-pairing-task-1', envelope: { ciphertext: 'opaque' } },
+  }, {}, {
+    singleUserIdentityService: {
+      consumeEncryptedPairingRequest(input) {
+        pairingConsumeInput = input;
+        return { authorization: { id: 'ordinary-auth-1' }, requestId: input.requestId };
+      },
+    },
+    buildDesktopPairingResult: authorized => ({
+      authorization: authorized.authorization,
+      profile: { userId: 'canonical-owner' },
+      offlineLease: { id: 'offline-lease-1' },
+    }),
+  });
+  assert.deepStrictEqual(pairingConsumeInput, {
+    requestId: 'desktop-pairing-task-1',
+    envelope: { ciphertext: 'opaque' },
+    channel: 'cloud',
+  });
+  assert.strictEqual(desktopPairingResult.authorization.id, 'ordinary-auth-1');
+  assert.strictEqual(Object.hasOwn(desktopPairingResult, 'sessionToken'), false);
   let provisioningInput = null;
   const provisioningResult = await processMiniappTask({
     task_type: 'identity-provisioning',

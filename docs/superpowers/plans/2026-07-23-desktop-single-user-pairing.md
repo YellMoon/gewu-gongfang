@@ -459,7 +459,7 @@ git commit -m "feat: 接通主机本地身份与受限IPC"
 - Modify: `src/services/oneClickSyncTransports.test.js`
 - Modify: `package.json`
 
-- [ ] **Step 1: 写云中继 RED 测试**
+- [x] **Step 1: 写云中继 RED 测试**
 
 覆盖主机发布 capability、普通端读取 capability、提交密文、使用客户端自生成 request secret 轮询、主机领取并完成；网关响应中不能包含配对码/authorization/session token；没有在线主机 capability 返回 `PAIRING_HOST_OFFLINE`；同设备/IP 限速；网关直接写授权表的路径不存在。
 
@@ -471,7 +471,7 @@ assert.ok(!JSON.stringify(request).includes(pairingCode));
 assert.strictEqual(await poll(request.id, wrongSecret), 404);
 ```
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run:
 
@@ -483,7 +483,7 @@ node backend/src/routes/cloudRelayHostTasks.test.js
 
 Expected: FAIL with missing `desktop-pairing` task flow.
 
-- [ ] **Step 3: 实现网关公开/主机端点**
+- [x] **Step 3: 实现网关公开/主机端点**
 
 新增：
 
@@ -496,7 +496,7 @@ GET  /api/cloud/desktop-pairing/requests/:id     (x-pairing-request-secret requi
 
 网关只校验 envelope 结构/大小，不解密。`request_secret_hash` 使用 SHA-256，响应仅在匹配时返回，成功读取一次后把敏感结果 payload 清空，只保留审计摘要。
 
-- [ ] **Step 4: 主机自动处理 pairing task**
+- [x] **Step 4: 主机自动处理 pairing task**
 
 `cloudRelayHost.processMiniappTask` 增加：
 
@@ -512,7 +512,7 @@ if (task.task_type === 'desktop-pairing') {
 
 成功结果含 authorization/profile/offlineLease 和授权摘要，不含配对码、主机私钥或会话 token。普通端随后使用设备签名走现有 V2 session challenge。
 
-- [ ] **Step 5: 运行 GREEN 并提交**
+- [x] **Step 5: 运行 GREEN 并提交**
 
 Run:
 

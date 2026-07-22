@@ -119,19 +119,23 @@ function createDesktopOfflineLease({
     authorization.credentialVersion || authorization.credential_version,
     'DESKTOP_OFFLINE_LEASE_INPUT_INVALID'
   );
-  const phoneReverifyDueAt = requiredTimestamp(
-    authorization.phoneReverifyDueAt || authorization.phone_reverify_due_at,
-    'DESKTOP_OFFLINE_LEASE_INPUT_INVALID'
+  const authorizationSource = String(
+    authorization.authorizationSource || authorization.authorization_source || 'wechat_phone'
   );
+  const phoneReverifyDueAt = authorizationSource === 'wechat_phone'
+    ? requiredTimestamp(
+      authorization.phoneReverifyDueAt || authorization.phone_reverify_due_at,
+      'DESKTOP_OFFLINE_LEASE_INPUT_INVALID'
+    )
+    : null;
   const activeRole = requiredString(session.activeRole, 'DESKTOP_OFFLINE_LEASE_INPUT_INVALID', 32);
   const eligibleRoles = Array.isArray(session.eligibleRoles)
     ? [...new Set(session.eligibleRoles.map(String))]
     : [];
   if (!eligibleRoles.includes(activeRole)) throw serviceError('DESKTOP_OFFLINE_LEASE_INPUT_INVALID');
-  const expiresAtMs = Math.min(
-    current.getTime() + maxDurationMs,
-    Date.parse(phoneReverifyDueAt)
-  );
+  const expiresAtMs = authorizationSource === 'wechat_phone'
+    ? Math.min(current.getTime() + maxDurationMs, Date.parse(phoneReverifyDueAt))
+    : current.getTime() + maxDurationMs;
   if (expiresAtMs <= current.getTime()) throw serviceError('DESKTOP_PHONE_REVERIFICATION_REQUIRED');
   let scope = { kind: activeRole, all: true };
   if (activeRole === 'teacher') scope = { kind: 'teacher', teacherId: session.teacherId };
@@ -238,7 +242,9 @@ function createDesktopDeviceChallengeService({
       throw serviceError('DESKTOP_DEVICE_AUTHORIZATION_MISMATCH');
     }
     if (authorization.status !== 'active') throw serviceError('DESKTOP_DEVICE_NOT_ACTIVE');
-    if (Date.parse(authorization.phone_reverify_due_at) <= current.getTime()) {
+    const authorizationSource = authorization.authorization_source || 'wechat_phone';
+    if (authorizationSource === 'wechat_phone'
+      && Date.parse(authorization.phone_reverify_due_at) <= current.getTime()) {
       throw serviceError('DESKTOP_PHONE_REVERIFICATION_REQUIRED');
     }
     if (!approvedUser(findUser.get(authorization.user_id))) {
