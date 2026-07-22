@@ -401,6 +401,8 @@ function checkDesktopReleaseBoundary() {
   const directTransport = readText('src/services/oneClickSyncTransports.mjs');
   const schema = readText('backend/src/schema.sql');
   const relayRoute = readText('gateway/src/routes/cloudRelay.js');
+  const backendSingleUserService = readText('backend/src/services/singleUserDesktopIdentityService.js');
+  const backendPairingProtocol = readText('backend/src/services/singleUserPairingEnvelope.js');
   const ordinaryFiles = packageJson.build?.files || [];
   const hostFiles = hostConfig.files || [];
   const hostOnlyFiles = [
@@ -438,6 +440,11 @@ function checkDesktopReleaseBoundary() {
   }
   if (!relayRoute.includes("'pairingcode'") || !relayRoute.includes("'pairing_code'")) {
     issues.push('cloud relay must reject pairing-code response fields');
+  }
+  if (backendSingleUserService.includes('../../../public/')
+    || !backendSingleUserService.includes("require('./singleUserPairingEnvelope')")
+    || !backendPairingProtocol.includes("const PROTOCOL_VERSION = 'gewu-single-user-pairing/v1'")) {
+    issues.push('standalone backend pairing protocol must not depend on desktop public files');
   }
   const clientFeed = /desktop\/['"]/.test(buildFlavor);
   const hostFeed = /desktop\/host\/['"]/.test(buildFlavor);

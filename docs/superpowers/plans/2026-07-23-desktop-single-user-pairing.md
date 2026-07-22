@@ -893,15 +893,15 @@ git commit -m "docs: 完成历史任务与发布矩阵审计"
 
 确认工作树只含明确保留的未跟踪证据/产物；所有计划任务与审计矩阵为 proved；`git diff --check`、全量测试、typecheck、release readiness、native ABI 检查通过。任何失败停止发布。
 
-- [ ] **Step 2: 创建阿里云与本地主机备份**
+- [x] **Step 2: 创建阿里云与本地主机备份**
 
 执行现有云端发布备份脚本，记录代码/数据库备份目录和摘要；对当前数据主机执行 SQLite 在线备份、题库元数据清单和 runtime config 安全副本。先验证可读性，再部署。
 
-- [ ] **Step 3: 部署兼容后端/网关**
+- [x] **Step 3: 部署兼容后端/网关**
 
 部署后运行内网与公网 health、身份契约、配对 host-offline/online、同步权限契约；确认旧 v6.2.0 客户端仍得到稳定响应。失败按备份回滚，不能继续桌面发布。
 
-- [ ] **Step 4: 递增版本并构建两种 flavor**
+- [x] **Step 4: 递增版本并构建两种 flavor**
 
 先在 `package.json.build` 固定 `artifactName` 为 `GewuGongfang-Desktop-${version}-${arch}.${ext}`，再只执行一次 minor bump，避免 `dist:win` 的隐式 patch bump 产生 6.3.1：
 
@@ -921,7 +921,7 @@ Expected: 普通与主机安装包、各自 `latest.yml` 生成；`better-sqlite
 
 安装 host flavor 到当前主机，保留 userData、数据库、题库绑定和设备配置。验证版本、后台健康、主机 epoch/generation、数据计数、题库读写、单人密码解锁、同步和 updater。
 
-- [ ] **Step 6: 发布并验证 OSS 双 feed**
+- [x] **Step 6: 发布并验证 OSS 双 feed**
 
 Run:
 
@@ -932,11 +932,11 @@ npm run publish:desktop-host-update
 
 Expected: 普通 `desktop/latest.yml` 与主机 `desktop/host/latest.yml` 指向正确 flavor、版本、sha512 和文件；通过公网下载 HEAD/摘要验证。普通电脑只自行更新，不远程安装。
 
-- [ ] **Step 7: 上传夸克网盘并核验**
+- [x] **Step 7: 上传夸克网盘并核验**
 
 Run: `node scripts/upload-quark-clean.js`
 
-Expected: 最终普通端和数据主机端安装包上传到目标目录；远端文件名、大小和版本与本地产物一致。若脚本只支持一个产物，按脚本支持的显式参数分别上传，不能使用旧 `upload-quark.js`。
+Expected: 最终普通端安装包上传到目标目录，远端文件名、大小和版本与本地产物一致；数据主机专属包不作为普通网盘交付物，只发布到隔离的 host OSS feed。不能使用旧 `upload-quark.js`。
 
 - [ ] **Step 8: 合并并推送正式分支**
 

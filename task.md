@@ -53,7 +53,11 @@ Status: implementation complete; release verification in progress
 - `node scripts/single-user-pairing-runtime-smoke.js` 在隔离副本上通过身份服务、vault、普通端配对客户端和同步批次备份四组运行检查，输出确认 `secretsRecorded=false`。
 - `npm run test:ui-smoke` 的隔离浏览器身份 fixture 已适配当前身份门；题库体系页、统一筛选和二次删除确认均完成真实渲染检查，截图位于 `tmp/ui-smoke/question-bank-preview.png` 与 `tmp/ui-smoke/question-bank-taxonomy-delete-confirm.png`。
 - GitHub PR #3、#4、#5 均为 merged；合并提交 `5356cfa`、`9a79ca2`、`3c4df4e` 全部是当前分支祖先。SSH fetch 因本机到 GitHub 22 端口断开失败，PR 状态另由 GitHub API 核验；没有据此伪造 fetch 成功。
-- 当前生产配置仍是 `primary-host`，权威库和题库 manifest 均存在；真实安装包、当前主机升级、双 OSS feed、阿里云和夸克证据留在统一发布阶段完成。
+- 6.3.0 ordinary/host 安装包均已构建并完成实际启动冒烟；普通包输出 `flavor=desktop-client` 且不含主机私有模块，主机包输出 `flavor=primary-host`。
+- 阿里云发布前代码/数据库备份位于 `/root/scheduling-backups/formula-pipeline/20260722-220910`，本地主机一致性备份位于 `D:\GewuDataHost\backups\release-6.3.0-20260722-220909`；两端 SQLite `quick_check=ok`。
+- Backend/Gateway 已部署 6.3.0，内网与公网 health 通过；ordinary/host OSS 双 feed 已公网回读验证文件名、大小和 SHA-512。普通安装包已在夸克 `codex项目/2026-07-23` 同页确认上传完成。
+- fresh `npm test`、`npm run typecheck`、`npm run check:desktop-identity-release`、Node ABI 137/SQLite 3.53.1 和 `git diff --check` 均通过。测试专用网关本地 HTTP fixture 从 3 秒放宽到 10 秒以消除全量高负载假失败，生产超时不变。
+- 当前安装 flavor 虽为 `primary-host`，生产 runtime config 实际仍是 `desktop-client/full`，且权威库没有 active host epoch/authorization；6.3.0 系统级覆盖安装与真实单人主机 bootstrap 仍待 UAC/用户本机密码步骤完成，因此统一发布仍是“部分发布”。
 
 ---
 

@@ -8,7 +8,7 @@ const {
   normalizePhone,
 } = require('./authorizationPolicy');
 const { insertPrimaryHostEpochRow } = require('./primaryHostIdentityService');
-const pairingProtocol = require('../../../public/singleUserPairingEnvelope');
+const pairingProtocol = require('./singleUserPairingEnvelope');
 
 const PAIRING_TTL_MS = 10 * 60 * 1000;
 const MAX_PAIRING_ATTEMPTS = 5;

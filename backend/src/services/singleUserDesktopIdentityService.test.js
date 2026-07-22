@@ -10,7 +10,7 @@ const {
   createSingleUserDesktopIdentityService,
   getSingleUserDesktopIdentityService,
 } = require('./singleUserDesktopIdentityService');
-const pairingProtocol = require('../../../public/singleUserPairingEnvelope');
+const pairingProtocol = require('./singleUserPairingEnvelope');
 
 async function main() {
   const db = new Database(':memory:');

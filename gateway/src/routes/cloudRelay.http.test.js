@@ -24,7 +24,10 @@ const pairingRouter = require('./desktopPairing');
   app.use('/api/cloud', router);
   app.use('/api/desktop-pairing', pairingRouter);
   const server = app.listen(0); const base = `http://127.0.0.1:${server.address().port}/api/cloud`;
-  const call = (url, options = {}) => fetch(base + url, { ...options, signal: AbortSignal.timeout(3000), headers: { 'content-type': 'application/json', ...(options.headers || {}) } });
+  // The full Windows suite also runs Python formula tests and several SQLite
+  // migrations. Give this local in-process HTTP fixture enough headroom under
+  // that transient load; this does not change any production timeout.
+  const call = (url, options = {}) => fetch(base + url, { ...options, signal: AbortSignal.timeout(10000), headers: { 'content-type': 'application/json', ...(options.headers || {}) } });
   const pairingCall=(url,options={})=>fetch(`http://127.0.0.1:${server.address().port}/api/desktop-pairing${url}`,{
     method:options.method||'POST',headers:{'content-type':'application/json',...(options.headers||{})},
     ...(options.method==='GET'?{}:{body:JSON.stringify(options.body||{})}),
