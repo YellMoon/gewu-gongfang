@@ -31,8 +31,8 @@ assert.ok(
 );
 assert.strictEqual(
   updateFeedForFlavor(PRIMARY_HOST_FLAVOR, {}),
-  `${beijingUpdateBaseUrl}-host/`,
-  'primary-host desktop auto-updater should use the isolated Beijing OSS host feed'
+  `${beijingUpdateBaseUrl}/host/`,
+  'primary-host desktop auto-updater should use the isolated authorized OSS host sub-feed'
 );
 assert.ok(
   publishScript.includes(beijingUpdateBaseUrl),

@@ -30,7 +30,7 @@ assert.strictEqual(
 );
 assert.strictEqual(
   updateFeedForFlavor(PRIMARY_HOST_FLAVOR),
-  'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop-host/',
+  'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop/host/',
 );
 assert.strictEqual(
   updateFeedForFlavor(PRIMARY_HOST_FLAVOR, { UPDATE_FEED_URL: 'https://updates.example/custom' }),
@@ -44,7 +44,7 @@ const preloadSource = fs.readFileSync('public/preload.js', 'utf8');
 assert.strictEqual(packageJson.desktopBuildFlavor, DESKTOP_CLIENT_FLAVOR);
 assert.strictEqual(hostBuild.extraMetadata.desktopBuildFlavor, PRIMARY_HOST_FLAVOR);
 assert.strictEqual(hostBuild.directories.output, 'dist-host');
-assert.ok(hostBuild.publish.some(entry => entry.url.endsWith('/desktop-host/')));
+assert.ok(hostBuild.publish.some(entry => entry.url.endsWith('/desktop/host/')));
 assert.ok(electronSource.includes('if (PRIMARY_HOST_CAPABLE)'));
 assert.ok(electronSource.includes("config.nodeRole !== 'desktop-client'"));
 assert.ok(preloadSource.includes("if (desktopBuildFlavor === 'primary-host')"));

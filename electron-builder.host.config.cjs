@@ -20,6 +20,6 @@ module.exports = {
   artifactName: 'GewuGongfang-PrimaryHost-${version}-${arch}.${ext}',
   publish: [{
     provider: 'generic',
-    url: 'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop-host/',
+    url: 'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop/host/',
   }],
 };
