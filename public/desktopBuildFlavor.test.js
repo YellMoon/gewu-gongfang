@@ -49,6 +49,14 @@ assert.ok(electronSource.includes('if (PRIMARY_HOST_CAPABLE)'));
 assert.ok(electronSource.includes("config.nodeRole !== 'desktop-client'"));
 assert.ok(preloadSource.includes("if (desktopBuildFlavor === 'primary-host')"));
 assert.ok(packageJson.build.files.includes('public/desktopBuildFlavor.js'));
+assert.ok(
+  packageJson.build.files.includes('public/singleUserPairingEnvelope.js'),
+  'ordinary package must include the opaque pairing protocol client'
+);
+assert.ok(
+  hostBuild.files.includes('public/singleUserPairingEnvelope.js'),
+  'primary-host package must include the opaque pairing protocol endpoint'
+);
 for (const hostOnlyFile of [
   'public/primaryHostCredentialStore.js',
   'public/primaryHostOperationValidation.js',

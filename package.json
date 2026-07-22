@@ -6,7 +6,7 @@
   "main": "public/electron.js",
   "homepage": ".",
   "scripts": {
-    "test:desktop-build-flavor": "node public/desktopBuildFlavor.test.js",
+    "test:desktop-build-flavor": "node public/desktopBuildFlavor.test.js && node public/singleUserPairingEnvelope.test.js",
     "test:taxonomy": "node src/services/taxonomyFilter.test.js && node src/components/TaxonomyManager.test.js && node backend/src/services/questionBankService.test.js",
     "pretest:backend": "node backend/src/services/electronDependencyCompatibility.test.js && node gateway/src/appHealth.test.js && node backend/src/routes/cloudRelay.http.test.js && node backend/src/routes/paperArtifactAccess.http.test.js && npm run test:desktop-identity && npm run test:desktop-authorization && npm run test:identity-device-center && npm run test:sync-identity",
     "dev": "concurrently \"npm run dev:react\" \"wait-on http://localhost:3000 && electron .\"",
@@ -138,6 +138,7 @@
       "public/desktopIdentityVault.js",
       "public/desktopCredentialStore.js",
       "public/desktopBuildFlavor.js",
+      "public/singleUserPairingEnvelope.js",
       "public/updateCheckTimeout.js",
       "package.json",
       "public/icon.ico",

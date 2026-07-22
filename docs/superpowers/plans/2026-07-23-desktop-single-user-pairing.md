@@ -189,7 +189,7 @@ Expected: tests PASS；现有授权自动得到 `wechat_phone` 来源；不 push
 - Modify: `electron-builder.host.config.cjs`
 - Modify: `package.json`
 
-- [ ] **Step 1: 写协议 RED 测试**
+- [x] **Step 1: 写协议 RED 测试**
 
 ```js
 const host = protocol.createHostCapability({ now: fixedNow });
@@ -215,13 +215,13 @@ assert.strictEqual(opened.device.deviceId, 'ordinary-1');
 
 另测篡改 capability ID、AAD、ciphertext、device public key、签名、过期时间和超长字段全部返回稳定错误码。
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `node public/singleUserPairingEnvelope.test.js`
 
 Expected: FAIL with missing module.
 
-- [ ] **Step 3: 实现协议**
+- [x] **Step 3: 实现协议**
 
 协议固定 `gewu-single-user-pairing/v1`。主机生成内存 X25519 密钥；客户端生成临时 X25519 密钥，用 HKDF-SHA256 派生 32 字节 AES key，以 12 字节随机 IV 和规范 JSON AAD 加密。明文包含 16 位 Crockford 配对码、设备声明、请求 nonce、签发/过期时间和设备 Ed25519 签名。公开返回值不含私钥：
 
@@ -236,11 +236,11 @@ return Object.freeze({
 });
 ```
 
-- [ ] **Step 4: 验证 ordinary 包不含主机私有运行模块**
+- [x] **Step 4: 验证 ordinary 包不含主机私有运行模块**
 
 `public/desktopBuildFlavor.test.js` 断言普通包包含无状态 envelope 协议，但仍不包含 `primaryHostCredentialStore.js`、`primaryHostOperationValidation.js`、`primaryHostRuntimeManager.js`。主机配置显式包含协议文件。
 
-- [ ] **Step 5: 运行 GREEN 并提交**
+- [x] **Step 5: 运行 GREEN 并提交**
 
 Run:
 
