@@ -41,7 +41,7 @@ assert.deepStrictEqual(client.buildHeaders({
 (async () => {
   const originalFetch = global.fetch;
   const calls = [];
-  process.env.GEWU_CLOUD_BASE_URL = 'https://relay.example';
+  process.env.GEWU_CLOUD_BASE_URL = 'https://relay.example/scheduling';
   global.fetch = async (url, options = {}) => {
     calls.push({ url, options, body: options.body ? JSON.parse(options.body) : null });
     return { json: async () => ({ success: true, task: null }) };
@@ -62,12 +62,12 @@ assert.deepStrictEqual(client.buildHeaders({
     await client.fetchPendingTasks({ ...auth, hostDeviceId: 'host-a', leaseMs: 5000 });
     assert.deepStrictEqual(calls.map(call => call.url), [
       'https://relay.example/api/cloud/desktop-pairing/capability',
-      'https://relay.example/api/cloud/tasks/claim',
-      'https://relay.example/api/cloud/tasks/task-1/progress',
-      'https://relay.example/api/cloud/tasks/task-1/complete',
-      'https://relay.example/api/cloud/tasks/task-2/fail',
-      'https://relay.example/api/cloud/tasks/task-1/state?hostDeviceId=host-a',
-      'https://relay.example/api/cloud/tasks?status=pending_host&hostDeviceId=host-a&leaseMs=5000',
+      'https://relay.example/scheduling/api/cloud/tasks/claim',
+      'https://relay.example/scheduling/api/cloud/tasks/task-1/progress',
+      'https://relay.example/scheduling/api/cloud/tasks/task-1/complete',
+      'https://relay.example/scheduling/api/cloud/tasks/task-2/fail',
+      'https://relay.example/scheduling/api/cloud/tasks/task-1/state?hostDeviceId=host-a',
+      'https://relay.example/scheduling/api/cloud/tasks?status=pending_host&hostDeviceId=host-a&leaseMs=5000',
     ]);
     assert.ok(calls.every(call => call.options.headers['x-gewu-host-token'] === 'trusted-host-token'));
     assert.strictEqual(calls[0].body.capability.id, 'capability-a');

@@ -57,6 +57,16 @@ function baseUrl() {
   return (process.env.GEWU_CLOUD_BASE_URL || '').replace(/\/+$/, '');
 }
 
+function gatewayBaseUrl() {
+  const base = baseUrl();
+  if (!base) return '';
+  try {
+    return new URL(base).origin;
+  } catch {
+    return base;
+  }
+}
+
 function skipped(reason, extra = {}) {
   return { success: false, skipped: true, reason, ...extra };
 }
@@ -74,7 +84,7 @@ async function publishSnapshot(payload, options = {}) {
 }
 
 async function publishDesktopPairingCapability(payload, options = {}) {
-  const base = baseUrl();
+  const base = gatewayBaseUrl();
   if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured');
   return postJson(`${base}/api/cloud/desktop-pairing/capability`, payload, options);
 }
