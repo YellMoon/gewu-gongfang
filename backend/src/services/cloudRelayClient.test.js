@@ -61,6 +61,7 @@ assert.deepStrictEqual(client.buildHeaders({
     await client.queryMiniappTaskState('task-1', { ...auth, hostDeviceId: 'host-a' });
     await client.fetchPendingTasks({ ...auth, hostDeviceId: 'host-a', leaseMs: 5000 });
     assert.deepStrictEqual(calls.map(call => call.url), [
+      'https://relay.example/api/cloud/host/heartbeat',
       'https://relay.example/api/cloud/desktop-pairing/capability',
       'https://relay.example/scheduling/api/cloud/tasks/claim',
       'https://relay.example/scheduling/api/cloud/tasks/task-1/progress',
@@ -70,8 +71,13 @@ assert.deepStrictEqual(client.buildHeaders({
       'https://relay.example/scheduling/api/cloud/tasks?status=pending_host&hostDeviceId=host-a&leaseMs=5000',
     ]);
     assert.ok(calls.every(call => call.options.headers['x-gewu-host-token'] === 'trusted-host-token'));
-    assert.strictEqual(calls[0].body.capability.id, 'capability-a');
-    assert.strictEqual(calls[1].body.hostDeviceId, 'host-a');
+    assert.deepStrictEqual(calls[0].body, {
+      hostDeviceId: 'host-a',
+      status: 'online',
+      capabilities: ['identity-provisioning-v1', 'desktop-pairing-v1'],
+    }, 'pairing publication should first register a fresh Gateway heartbeat');
+    assert.strictEqual(calls[1].body.capability.id, 'capability-a');
+    assert.strictEqual(calls[2].body.hostDeviceId, 'host-a');
 
     global.fetch = async () => ({
       ok: false,

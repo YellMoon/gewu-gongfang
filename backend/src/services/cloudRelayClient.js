@@ -86,6 +86,11 @@ async function publishSnapshot(payload, options = {}) {
 async function publishDesktopPairingCapability(payload, options = {}) {
   const base = gatewayBaseUrl();
   if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured');
+  await postJson(`${base}/api/cloud/host/heartbeat`, {
+    hostDeviceId: payload.hostDeviceId || payload.host_device_id,
+    status: 'online',
+    capabilities: hostCapabilities(),
+  }, options);
   return postJson(`${base}/api/cloud/desktop-pairing/capability`, payload, options);
 }
 
