@@ -47,7 +47,7 @@ router.get('/desktop-session', authMiddleware, (req, res) => {
  * POST /api/auth/wechat-login
  * 微信小程序登录
  * 
- * Body: { code: "微信登录code" }
+ * Body: { code: "微信登录code", phone?: "手填手机号", phoneCode?: "微信手机号动态码" }
  * Response: { token: "jwt...", user: { id, nickname, ... } }
  */
 router.post('/wechat-login', async (req, res) => {
