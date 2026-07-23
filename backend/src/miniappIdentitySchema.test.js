@@ -33,6 +33,7 @@ try {
   for (const table of [
     'miniapp_login_events',
     'miniapp_role_applications',
+    'miniapp_wechat_binding_requests',
     'account_memberships',
     'identity_provisioning_receipts',
     'desktop_identity_challenges',
@@ -43,6 +44,15 @@ try {
       service.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table),
       `${table} should exist`,
     );
+  }
+
+  const bindingColumns = columns('miniapp_wechat_binding_requests');
+  for (const column of [
+    'id', 'target_user_id', 'phone_normalized', 'candidate_openid',
+    'candidate_unionid', 'status', 'revision', 'reviewed_by',
+    'review_note', 'created_at', 'updated_at', 'resolved_at',
+  ]) {
+    assert.ok(bindingColumns.has(column), `binding requests should include ${column}`);
   }
 
   const parentPhoneStudent = service.createStudent({
@@ -81,6 +91,9 @@ try {
   for (const index of [
     'idx_miniapp_login_events_user_created',
     'idx_miniapp_applications_active_user',
+    'idx_miniapp_wechat_binding_active_openid',
+    'idx_miniapp_wechat_binding_active_user',
+    'idx_miniapp_wechat_binding_status_created',
     'idx_memberships_status_subject',
     'idx_identity_receipts_request',
     'idx_desktop_identity_active_short_code',

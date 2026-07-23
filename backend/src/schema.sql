@@ -323,6 +323,22 @@ CREATE TABLE IF NOT EXISTS miniapp_role_applications (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS miniapp_wechat_binding_requests (
+  id TEXT PRIMARY KEY,
+  target_user_id TEXT NOT NULL,
+  phone_normalized TEXT NOT NULL,
+  candidate_openid TEXT NOT NULL,
+  candidate_unionid TEXT,
+  status TEXT NOT NULL CHECK(status IN ('submitted', 'approved', 'rejected', 'expired')),
+  revision INTEGER NOT NULL DEFAULT 1,
+  reviewed_by TEXT,
+  review_note TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  resolved_at TEXT,
+  FOREIGN KEY (target_user_id) REFERENCES users(id)
+);
+
 CREATE TABLE IF NOT EXISTS account_memberships (
   id TEXT PRIMARY KEY,
   subject_type TEXT NOT NULL,
@@ -1282,6 +1298,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_miniapp_applications_active_user
   WHERE status IN ('submitted', 'provisioning', 'manual_resolution_required');
 CREATE INDEX IF NOT EXISTS idx_miniapp_applications_status_created
   ON miniapp_role_applications(status, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_miniapp_wechat_binding_active_openid
+  ON miniapp_wechat_binding_requests(candidate_openid)
+  WHERE status = 'submitted';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_miniapp_wechat_binding_active_user
+  ON miniapp_wechat_binding_requests(target_user_id)
+  WHERE status = 'submitted';
+CREATE INDEX IF NOT EXISTS idx_miniapp_wechat_binding_status_created
+  ON miniapp_wechat_binding_requests(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_memberships_status_subject
   ON account_memberships(status, subject_type, subject_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_identity_receipts_request
