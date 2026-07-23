@@ -44,7 +44,11 @@ const crypto = require('crypto');
   });
   assert.strictEqual(cloud.channel, 'cloud');
   assert.strictEqual(fallbackCalls.length, 2);
-  assert.ok(fallbackCalls[1].endsWith('/api/cloud/desktop-pairing/capability'));
+  assert.strictEqual(
+    fallbackCalls[1],
+    'https://physicsedu.xyz/api/cloud/desktop-pairing/capability',
+    'cloud pairing is relayed by the root Gateway, not the /scheduling Backend'
+  );
 
   const envelope = {
     protocolVersion: capability.protocolVersion,
@@ -84,6 +88,7 @@ const crypto = require('crypto');
   );
 
   let cloudBody = null;
+  let cloudSubmitUrl = '';
   const cryptoImpl = {
     getRandomValues(target) { target.fill(7); return target; },
     subtle: {
@@ -96,7 +101,8 @@ const crypto = require('crypto');
     discovery: cloud,
     envelope,
     cryptoImpl,
-    fetchImpl: async (_url, options) => {
+    fetchImpl: async (url, options) => {
+      cloudSubmitUrl = url;
       cloudBody = JSON.parse(options.body);
       return {
         ok: true,
@@ -105,6 +111,7 @@ const crypto = require('crypto');
       };
     },
   });
+  assert.strictEqual(cloudSubmitUrl, 'https://physicsedu.xyz/api/cloud/desktop-pairing/requests');
   assert.strictEqual(cloudSubmitted.status, 'pending_host');
   assert.strictEqual(cloudSubmitted.requestSecret, '07070707070707070707070707070707');
   assert.strictEqual(cloudBody.requestSecretHash, crypto.createHash('sha256').update(cloudSubmitted.requestSecret).digest('hex'));
@@ -112,9 +119,11 @@ const crypto = require('crypto');
   assert.ok(!JSON.stringify(cloudBody).includes(cloudSubmitted.requestSecret), 'raw request secret must stay in local memory');
 
   let pollSecret = '';
+  let pollUrl = '';
   const completed = await pollPairingResult({
     pending: cloudSubmitted,
-    fetchImpl: async (_url, options) => {
+    fetchImpl: async (url, options) => {
+      pollUrl = url;
       pollSecret = options.headers['x-pairing-request-secret'];
       return {
         ok: true,
@@ -130,6 +139,10 @@ const crypto = require('crypto');
       };
     },
   });
+  assert.strictEqual(
+    pollUrl,
+    'https://physicsedu.xyz/api/cloud/desktop-pairing/requests/request-1'
+  );
   assert.strictEqual(pollSecret, cloudSubmitted.requestSecret);
   assert.strictEqual(completed.result.authorization.id, 'auth-1');
 

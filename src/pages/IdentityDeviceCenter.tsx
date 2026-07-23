@@ -3,7 +3,7 @@ import { Alert, Button, Card, Descriptions, Empty, Input, Modal, QRCode, Space, 
 import type { ColumnsType } from 'antd/es/table';
 import { getRuntimeConfig } from '../services/runtimeConfigClient';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
-import { resolvePairingApiBase } from '../services/pairingApiBase.mjs';
+import { resolveDesktopIdentityBaseUrl } from '../services/managedSyncConfig.mjs';
 import {
   approveDesktopChallenge,
   activatePrimaryHostTransfer,
@@ -72,7 +72,7 @@ const IdentityDeviceCenter: React.FC = () => {
       const runtimeConfig = await getRuntimeConfig();
       setRuntimeConfigState(runtimeConfig);
       const session = readDesktopAuthorizationSession();
-      const baseUrl = resolvePairingApiBase(runtimeConfig, window.location);
+      const baseUrl = resolveDesktopIdentityBaseUrl(runtimeConfig);
       const primaryHostRuntime = (window as any).primaryHostRuntime;
       let hostRuntimeStatus = null;
       try {

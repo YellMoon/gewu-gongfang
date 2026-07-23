@@ -3,6 +3,11 @@ const path = require('path');
 
 const STATUS_DOC_PATH = 'docs/project-status-2026-06-27.md';
 const IDENTITY_VERIFICATION_PATH = 'docs/verification-2026-07-17-desktop-human-identity.md';
+const RELEASE_STATUSES = Object.freeze(new Set([
+  'not-published',
+  'partial-published',
+  'published',
+]));
 
 const STATUS_MARKERS = Object.freeze([
   '\u963f\u91cc\u4e91\u540e\u7aef',
@@ -31,13 +36,17 @@ const IDENTITY_EVIDENCE_KEYS = Object.freeze([
   'electron-host-wide',
   'electron-client-narrow',
   'redacted_evidence_only: true',
-  'release_status: not-published',
 ]);
 
 function readRequired(relativePath) {
   const absolutePath = path.join(process.cwd(), relativePath);
   if (!fs.existsSync(absolutePath)) return null;
   return fs.readFileSync(absolutePath, 'utf-8');
+}
+
+function hasValidReleaseStatus(documentText) {
+  const match = String(documentText || '').match(/^release_status:\s*([a-z-]+)\s*$/m);
+  return Boolean(match && RELEASE_STATUSES.has(match[1]));
 }
 
 function checkProjectStatusDocs() {
@@ -54,6 +63,9 @@ function checkProjectStatusDocs() {
   if (identityDoc !== null) {
     for (const key of IDENTITY_EVIDENCE_KEYS) {
       if (!identityDoc.includes(key)) issues.push(`${IDENTITY_VERIFICATION_PATH}: missing evidence ${key}`);
+    }
+    if (!hasValidReleaseStatus(identityDoc)) {
+      issues.push(`${IDENTITY_VERIFICATION_PATH}: missing or invalid release_status`);
     }
     for (const [label, pattern] of [
       ['raw phone number', /\b1[3-9]\d{9}\b/],
@@ -86,7 +98,9 @@ if (require.main === module) main();
 
 module.exports = {
   checkProjectStatusDocs,
+  hasValidReleaseStatus,
   IDENTITY_EVIDENCE_KEYS,
   IDENTITY_VERIFICATION_PATH,
+  RELEASE_STATUSES,
   STATUS_DOC_PATH,
 };

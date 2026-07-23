@@ -56,12 +56,30 @@ for (const evidenceKey of [
   'electron-host-wide',
   'electron-client-narrow',
   'redacted_evidence_only: true',
-  'release_status: not-published',
 ]) {
   assert.ok(identityVerification.includes(evidenceKey), `identity verification should include: ${evidenceKey}`);
 }
 
 const statusGate = require('./check_project_status_doc');
+assert.strictEqual(
+  typeof statusGate.hasValidReleaseStatus,
+  'function',
+  'project status gate should expose release-status validation'
+);
+for (const releaseStatus of ['not-published', 'partial-published', 'published']) {
+  assert.strictEqual(
+    statusGate.hasValidReleaseStatus(`release_status: ${releaseStatus}`),
+    true,
+    `project status gate should accept release status: ${releaseStatus}`
+  );
+}
+for (const releaseStatus of ['partial', 'complete', '']) {
+  assert.strictEqual(
+    statusGate.hasValidReleaseStatus(`release_status: ${releaseStatus}`),
+    false,
+    `project status gate should reject release status: ${releaseStatus || '(empty)'}`
+  );
+}
 assert.deepStrictEqual(statusGate.checkProjectStatusDocs().issues, []);
 
 console.log('project status document checks passed');

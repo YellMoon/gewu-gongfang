@@ -22,6 +22,20 @@ function normalizedBaseUrl(value) {
   return String(value || '').trim().replace(/\/+$/, '');
 }
 
+function normalizedCloudRelayBaseUrl(value) {
+  const normalized = normalizedBaseUrl(value);
+  if (!normalized) return '';
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.origin;
+    }
+  } catch (_error) {
+    // Preserve non-standard development bases so existing test and local transports can diagnose them.
+  }
+  return normalized;
+}
+
 async function readJson(response) {
   let body;
   try {
@@ -92,7 +106,7 @@ export async function discoverPairingCapability({
       // Cloud is the managed fallback when LAN discovery or capability validation fails.
     }
   }
-  const cloud = normalizedBaseUrl(cloudBaseUrl);
+  const cloud = normalizedCloudRelayBaseUrl(cloudBaseUrl);
   if (!cloud) throw pairingError('PAIRING_API_BASE_REQUIRED');
   try {
     return await fetchCapability(

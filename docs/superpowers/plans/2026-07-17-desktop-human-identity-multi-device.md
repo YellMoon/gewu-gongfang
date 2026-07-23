@@ -613,11 +613,11 @@ Run: `git add docs/verification-2026-07-17-desktop-human-identity.md scripts/che
 
 ### Task 12: 回到未认可学生计划并统一发布矩阵
 
-- [ ] **Step 1: 更新总计划状态**
+- [x] **Step 1: 更新总计划状态**
 
 在 `2026-07-16-unrecognized-student-membership.md` 的 Task 6 后增加本计划完成证据，并把 Task 7 固定示例题设为下一执行步骤。桌面角色、设备、主机 generation、miniapp 确认页都加入 Task 12 全页面/安全矩阵和 Task 13 发布矩阵。
 
-- [ ] **Step 2: 继续原 Task 7 至 Task 13**
+- [x] **Step 2: 继续原 Task 7 至 Task 13**
 
 完成固定脱敏示例题和隔离 Word/PDF、小程序白名单/UI、隐私保留、全页面多角色验证，最后才递增版本、推送 `gewu/master`、备份/部署阿里云、升级真实数据主机、执行真实 bootstrap、上传小程序并发布 OSS 更新。
 
@@ -625,6 +625,8 @@ Run: `git add docs/verification-2026-07-17-desktop-human-identity.md scripts/che
 
 当前主机完成一次性 bootstrap；另一台电脑扫码验证并由当前主机批准；两台显示同一 identity、双角色和 teacher_id，分别完成 teacher scope 与 super-admin 操作验证。只验证计划换机 dry-run 与恢复包生成，不在用户未要求实际换主机时切换当前权威主机。
 
-- [ ] **Step 4: 保持发布结论真实**
+2026-07-23：当前主机已完成 generation 1 bootstrap、6.4.0 安装和真实健康验证；生产脱敏审计只有 1 条 active desktop authorization，故第二台真实电脑、双机角色/同步/撤销和换机 dry-run 仍待执行。本步骤不能以同机临时 userData 或单元测试替代。
+
+- [x] **Step 4: 保持发布结论真实**
 
 微信审核、阿里云部署、本地主机安装、另一台电脑更新或 OSS feed 任一未完成时只报告“部分发布”或“受阻”。不得因为本计划单测通过就宣称整个长期目标完成。

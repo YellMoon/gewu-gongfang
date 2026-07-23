@@ -65,5 +65,14 @@ assert.ok(decoded.includes('生成一次性配对码') && decoded.includes('撤�
 assert.ok(source.includes('singleUserRuntime.issuePairingCode'));
 assert.ok(source.includes('singleUserRuntime.revokePairingCode'));
 assert.ok(source.includes("desktopIdentityMode === 'single-user'"));
+assert.ok(
+  source.includes('resolveDesktopIdentityBaseUrl(runtimeConfig)'),
+  'single-user primary host device management must use the protected local identity control plane'
+);
+assert.strictEqual(
+  source.includes('resolvePairingApiBase(runtimeConfig, window.location)'),
+  false,
+  'device management must not send single-user host requests to the managed /scheduling cloud base'
+);
 
 console.log('identity device center page source checks passed');

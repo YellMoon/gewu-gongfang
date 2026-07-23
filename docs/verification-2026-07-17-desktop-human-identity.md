@@ -4,16 +4,16 @@ verification_status: partial
 
 redacted_evidence_only: true
 
-release_status: not-published
+release_status: partial-published
 
-基线提交：`ed39491`。本记录只保存脱敏场景名、测试命令和结果，不记录真实手机号、会话令牌、设备私钥、本机密码或一次性恢复因子。统一多端矩阵完成前不推送、不打包、不部署，也不执行真实主机切换。
+基线提交：`ed39491`；当前发布提交：`261470e`（6.4.0）。本记录只保存脱敏场景名、测试命令和结果，不记录真实手机号、会话令牌、设备私钥、本机密码或一次性恢复因子。6.4.0 已完成阿里云、OSS、小程序开发版和指定数据主机的适用端发布，但真实第二台普通桌面端仍待验收，因此整体结论保持“部分发布”；未获用户实际换机要求时不执行真实主机切换。
 
 ## 自动化与运行时证据矩阵
 
 | evidence key | 脱敏场景 | 当前证据 | 状态 |
 | --- | --- | --- | --- |
 | dual-role-super-admin-teacher | 同一规范用户同时拥有超级管理员与老师角色，teacher_id 保持同一绑定 | 角色 grant、桌面 session、scope 测试与隔离 Electron 角色切换 | 自动化与真实 Electron UI 通过 |
-| device-host | 设备 A：现有本地数据主机 | 主机 generation、运行配置、凭据存储测试与隔离 Electron 数据主机配置 | 自动化与真实 Electron UI 通过；真实主机不变更 |
+| device-host | 设备 A：现有本地数据主机 | generation 1、6.4.0 主机安装、`primary-host/single-user` 运行配置、本地健康与权威库备份 | 自动化、真实安装与主机 bootstrap 通过；当前主机未切换 |
 | device-second | 设备 B：同一用户的第二台已授权电脑 | 多设备授权与计划迁移 HTTP 测试 | 自动化通过；真实 UI 待验证 |
 | device-replacement | 设备 C：替换设备，保留 replaces/replacedBy 关系 | 设备中心策略与撤销测试 | 自动化通过；真实 UI 待验证 |
 | fresh-phone-challenge | 每次高风险操作重新获取微信手机号证明 | 主机 challenge 与小程序确认页测试 | 自动化通过；真实扫码待验证 |
@@ -23,7 +23,7 @@ release_status: not-published
 | online-offline-expired | 在线、有效离线租约、过期与断网状态分离 | desktop identity client、gate 测试与隔离 Electron 离线窄屏 | 自动化与真实 Electron UI 通过 |
 | teacher-admin-scope | 老师角色只访问本人范围，超级管理员角色才有审批与全量范围 | scope、同步身份、设备中心测试与隔离 Electron 双角色切换 | 自动化与真实 Electron UI 通过 |
 | revocation | 撤销后现有会话、排队同步与主机写入均被拒绝 | session、sync scope 与 cloud relay 测试 | 自动化通过；真实 UI 待验证 |
-| host-bootstrap | generation 1 需要新手机号证明、本地签名 receipt、数据库和题库 authority evidence | primary-host 聚合套件与真实 HTTP 链 | 自动化通过；不执行真实 bootstrap |
+| host-bootstrap | generation 1 需要本地签名 receipt、数据库和题库 authority evidence | primary-host 聚合套件、真实 HTTP 链与 6.4.0 生产脱敏审计 | 自动化与真实 bootstrap 通过；生产仅有一个 active generation |
 | transfer-failure-and-success | 任一预检失败不退役旧主机；全部通过才 CAS 激活 generation+1 | 主机服务、预检证明、SQLite 备份与 HTTP 测试 | 自动化通过；不执行真实换机 |
 | recovery-missing-factor-rejected | 缺少或已使用恢复因子、旧主机仍可达、权威备份不符均拒绝恢复 | 主机恢复失败矩阵 | 自动化通过；不执行真实恢复 |
 | electron-host-wide | 数据主机配置、宽窗口、超级管理员工作台、设备中心与主机标识 | Electron 28.3.3 / Chromium 120 隔离运行时与截图 | 通过；无渲染/主进程意外错误 |
@@ -50,6 +50,10 @@ release_status: not-published
 - 2026-07-22 生产脱敏审计：schema 3110，但当前没有主机 epoch、桌面授权、双设备用户或双角色规范用户；本机安装配置虽为 `primary-host`，仍缺托管 epoch/generation，因此真实 bootstrap 尚未完成。
 - 2026-07-22 已复现安装版首次注册 `WECHAT_URL_LINK_FAILED`。同一生产微信账号可正常获取 access token；URL Link 返回权限码 `85407`，官方 `wxa/getwxacode` 返回 JPEG，证明不是 IP 白名单问题。
 - 2026-07-22 本地按 RED→GREEN 实现只针对 `85407` 的官方小程序码回退；`test:desktop-identity`、`test:primary-host`、`test:identity-device-center`、`test:sync-identity`、根/小程序 typecheck、`npm test` 与小程序生产构建均退出 0。该修复尚未部署。
+- 2026-07-23 6.4.0 统一发布已完成：部署前云端备份位于 `/root/scheduling-backups/unified-release/20260723-135533`，本机主机备份位于 `D:\GewuDataHost\backups\release-6.4.0-20260723-135335`；源库与备份库 `PRAGMA quick_check` 均为 `ok`。
+- 2026-07-23 生产脱敏审计确认 active host epoch 为 generation 1、active desktop authorization 为 1；本地主机配置为 `primary-host/single-user`，本地与公网健康均为 6.4.0。该证据完成真实 bootstrap，但也直接证明尚无第二台真实普通桌面端。
+- 2026-07-23 普通端与主机端 OSS feed 均为 6.4.0，普通端安装包 150685745 bytes、主机端安装包 150693969 bytes；小程序开发版上传成功（953634 bytes），正式审核/发布继续受微信主体与平台流程限制。
+- 2026-07-23 fresh Task 10/11 回归：六项主机 bootstrap/迁移/恢复聚焦命令、发布安全门禁、`npm test`、桌面生产构建、小程序 typecheck 与 WeApp 构建均退出码 0；构建产生的临时时间戳已恢复，未新增发布或部署。
 
 ## 真实 Electron 隔离运行时
 
@@ -70,11 +74,11 @@ release_status: not-published
 
 - 文档中的设备 A/B/C、用户和哈希均为脱敏概念，不保存真实身份材料。
 - 服务端恢复因子只存慢哈希；主机凭据由 Electron 主进程本地生成并通过系统加密存储，renderer 和云端响应不接收明文主机凭据。
-- 一次性恢复包在界面显示前的页面刷新和 Electron 进程退出窗口已由隔离真实运行时验证；真实 bootstrap、换机和恢复仍留到统一发布矩阵并需用户明确授权。
-- 版本 6.1.0 已在本次审计前完成主线合并与多端发布；本轮小程序码修复仍仅在工作区，没有推送、OSS 发布、阿里云部署、小程序上传或本地主机升级。历史 6.1.0 发布不能替代真实身份 bootstrap 证据。
+- 一次性恢复包在界面显示前的页面刷新和 Electron 进程退出窗口已由隔离真实运行时验证；真实 bootstrap 已完成，计划换机只做失败矩阵和隔离 dry-run，未获用户实际换机要求时不激活 generation 2；紧急恢复不在正常运行主机上实做。
+- 版本 6.4.0 已完成代码推送、阿里云部署、两条 OSS feed、小程序开发版上传和指定数据主机升级。微信正式审核/发布与第二台普通桌面端真实验收尚未完成，因此不得写“完整发布完成”。
 
 ## 下一步
 
-1. 未认可学生 Task 7–11 与 Task 12 自动化/生产构建已完成；继续补当前版本 17 页真实微信运行时证据。
-2. 在统一矩阵完成前继续保持本轮 `release_status: not-published`，不推送、不打包、不部署，也不执行真实换机或恢复。
-3. 统一发布后补真实微信扫码、当前主机 bootstrap、第二台电脑注册批准和角色保持证据；未获用户实际换机要求时不切换主机。外部端任一未完成时只报告“部分发布”或“受阻”。
+1. 当前数据主机先由用户在安装版中输入本机密码解锁；自动化不得读取、代填或绕过本机密码。
+2. 在另一台真实电脑安装普通桌面端 6.4.0，完成一次性注册、主机自动批准、同一 identity/双角色/teacher_id、teacher scope、super-admin 操作、同步和撤销验证。
+3. 第二台电脑完成后补计划换机 dry-run 与恢复包生成证据，但不激活 generation 2。微信正式审核/发布继续按用户后续企业主体安排推进；此前整体状态保持“部分发布”。
