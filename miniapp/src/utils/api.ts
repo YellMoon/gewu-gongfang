@@ -315,6 +315,20 @@ export const applicationApi = {
   ),
 };
 
+export const wechatBindingApi = {
+  adminList: (status = 'submitted') => api.get<any>(
+    `/api/miniapp/wechat-bindings/admin?status=${encodeURIComponent(status)}`,
+  ),
+  approve: (requestId: string, expectedRevision: number) => api.post<any>(
+    `/api/miniapp/wechat-bindings/${encodeURIComponent(requestId)}/approve`,
+    { expectedRevision },
+  ),
+  reject: (requestId: string, expectedRevision: number, reason: string) => api.post<any>(
+    `/api/miniapp/wechat-bindings/${encodeURIComponent(requestId)}/reject`,
+    { expectedRevision, reason },
+  ),
+};
+
 export const experienceApi = {
   questions: () => api.get<any>('/api/experience/questions'),
   createTask: (taskType: string, payload: any) =>

@@ -78,6 +78,65 @@
   box-shadow: 0 26rpx 66rpx rgba(23, 32, 51, 0.24);
 }
 
+.login-description {
+  display: block;
+  color: #596579;
+  font-size: 25rpx;
+  line-height: 38rpx;
+}
+
+.phone-field {
+  display: flex;
+  align-items: center;
+  height: 88rpx;
+  margin: 24rpx 0 18rpx;
+  padding: 0 24rpx;
+  box-sizing: border-box;
+  border: 1rpx solid #d6d9df;
+  border-radius: 22rpx;
+  background: #fff;
+}
+
+.phone-prefix {
+  padding-right: 20rpx;
+  border-right: 1rpx solid #e1e4e9;
+  color: #344054;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.phone-input {
+  flex: 1;
+  height: 88rpx;
+  padding-left: 20rpx;
+  color: #172033;
+  font-size: 29rpx;
+}
+
+.binding-review-notice {
+  margin-top: 20rpx;
+  padding: 20rpx;
+  border-radius: 18rpx;
+  background: #fff5e8;
+  border: 1rpx solid #f0d3ae;
+}
+
+.binding-review-title {
+  display: block;
+  color: #8c4b1f;
+  font-size: 26rpx;
+  line-height: 36rpx;
+  font-weight: 800;
+}
+
+.binding-review-description {
+  display: block;
+  margin-top: 6rpx;
+  color: #7a5a43;
+  font-size: 23rpx;
+  line-height: 34rpx;
+}
+
 .review-card {
   position: relative;
   z-index: 1;

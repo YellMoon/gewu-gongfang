@@ -1,12 +1,13 @@
 import { useRef, useState } from 'react';
 import Taro, { useDidShow } from '@tarojs/taro';
-import { View, Text, Button } from '@tarojs/components';
+import { View, Text, Button, Input } from '@tarojs/components';
 import { api } from '../../utils/api';
 import { authSessionRuntime } from '../../utils/authSession';
 import { accountSessionCleanupStorageKeys, isUnrecognizedIdentity } from '../../utils/accountExperience';
 import { clearPermissionCache } from '../../utils/permission';
 import { clearBusinessCache, setBusinessCacheIdentity } from '../../utils/storage';
 import { createAuthenticationEntryBoundary, createNormalSessionCommitter } from '../../utils/miniappApiSessionRuntime';
+import { loginResultState, normalizeManualPhone, validateManualPhone } from './manualPhoneLoginRuntime';
 import './index.scss';
 
 const FORMAL_HOME = '/pages/index/index';
@@ -18,6 +19,9 @@ function homeForIdentity(identity: any): string {
 
 function loginErrorMessage(code?: string, fallback?: string): string {
   const messages: Record<string, string> = {
+    MANUAL_PHONE_REQUIRED: '\u8bf7\u8f93\u5165\u624b\u673a\u53f7\u540e\u767b\u5f55',
+    MANUAL_PHONE_INVALID: '\u8bf7\u8f93\u5165\u6b63\u786e\u7684\u4e2d\u56fd\u5927\u9646\u624b\u673a\u53f7',
+    WECHAT_BINDING_REVIEW_REQUIRED: '\u8be5\u624b\u673a\u53f7\u5df2\u6709\u6863\u6848\uff0c\u5fae\u4fe1\u7ed1\u5b9a\u7533\u8bf7\u5df2\u63d0\u4ea4\uff0c\u8bf7\u7b49\u5f85\u8d85\u7ea7\u7ba1\u7406\u5458\u5ba1\u6838',
     PHONE_VERIFICATION_REQUIRED: '请授权微信绑定手机号后登录',
     PHONE_AUTHORIZATION_REQUIRED: '请授权微信绑定手机号后登录',
     WECHAT_PHONE_EXCHANGE_FAILED: '手机号验证失败，请重新授权',
@@ -33,6 +37,8 @@ function loginErrorMessage(code?: string, fallback?: string): string {
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
+  const [phone, setPhone] = useState('');
+  const [pendingBinding, setPendingBinding] = useState(false);
   const loginBusyRef = useRef(false);
   const sessionCommitterRef = useRef<ReturnType<typeof createNormalSessionCommitter> | null>(null);
 
@@ -59,10 +65,11 @@ export default function LoginPage() {
     }
   });
 
-  const handlePhoneLogin = async (event: any) => {
-    const phoneCode = String(event?.detail?.code || '').trim();
-    if (!phoneCode) {
-      Taro.showToast({ title: '需要授权手机号才能登录', icon: 'none' });
+  const handlePhoneLogin = async () => {
+    const normalizedPhone = normalizeManualPhone(phone);
+    const validationError = validateManualPhone(normalizedPhone);
+    if (validationError) {
+      Taro.showToast({ title: validationError, icon: 'none' });
       return;
     }
     if (loginBusyRef.current) return;
@@ -73,16 +80,21 @@ export default function LoginPage() {
       const { code } = await loginBoundary.run(() => Taro.login());
       const response = await loginBoundary.run(() => api.post<any>('/api/auth/wechat-login', {
         code,
-        phoneCode,
+        phone: normalizedPhone,
       }));
-      if (!response.success || !response.data?.token || !response.data?.user) {
+      const result = loginResultState(response);
+      if (result.kind === 'pending-binding') {
+        setPendingBinding(true);
+        return;
+      }
+      if (result.kind !== 'authenticated') {
         Taro.showToast({ title: loginErrorMessage(String(response.code || ''), response.error), icon: 'none' });
         return;
       }
 
-      const user = response.data.user;
+      const user = result.user;
       loginBoundary.assertCurrent();
-      const committed = await sessionCommitterRef.current?.commit({ token: response.data.token, user });
+      const committed = await sessionCommitterRef.current?.commit({ token: result.token, user });
       if (!committed?.success) {
         Taro.showToast({ title: '登录状态保存失败，请重试', icon: 'none' });
       }
@@ -103,14 +115,32 @@ export default function LoginPage() {
       <Text className="login-title">格物工坊</Text>
     </View>
     <View className="login-form">
-      <Text className="login-description">使用微信绑定手机号核验身份。未建档学生可进入示例题体验并提交身份申请。</Text>
+      <Text className="login-description">{'\u8bf7\u8f93\u5165\u624b\u673a\u53f7\u767b\u5f55\u3002\u624b\u673a\u53f7\u4ec5\u7528\u4e8e\u67e5\u627e\u8d26\u53f7\uff1b\u5df2\u6709\u6863\u6848\u9996\u6b21\u7ed1\u5b9a\u5f53\u524d\u5fae\u4fe1\u65f6\uff0c\u9700\u8981\u8d85\u7ea7\u7ba1\u7406\u5458\u5ba1\u6838\u3002'}</Text>
+      <View className="phone-field">
+        <Text className="phone-prefix">+86</Text>
+        <Input
+          className="phone-input"
+          type="number"
+          maxlength={11}
+          value={phone}
+          placeholder={'\u8bf7\u8f93\u5165\u624b\u673a\u53f7'}
+          disabled={loading}
+          onInput={event => {
+            setPhone(normalizeManualPhone(event.detail.value));
+            setPendingBinding(false);
+          }}
+        />
+      </View>
       <Button
         className="wx-login-btn"
-        openType="getPhoneNumber"
-        onGetPhoneNumber={handlePhoneLogin}
+        onClick={() => void handlePhoneLogin()}
         loading={loading}
         disabled={loading}
-      >验证手机号并登录</Button>
+      >{'\u767b\u5f55'}</Button>
+      {pendingBinding ? <View className="binding-review-notice">
+        <Text className="binding-review-title">{'\u5fae\u4fe1\u7ed1\u5b9a\u7533\u8bf7\u5df2\u63d0\u4ea4'}</Text>
+        <Text className="binding-review-description">{'\u4e3a\u9632\u6b62\u624b\u673a\u53f7\u88ab\u5192\u7528\uff0c\u9700\u8981\u8d85\u7ea7\u7ba1\u7406\u5458\u6838\u9a8c\u3002\u5ba1\u6838\u901a\u8fc7\u540e\uff0c\u8bf7\u5728\u672c\u9875\u91cd\u65b0\u767b\u5f55\u3002'}</Text>
+      </View> : null}
     </View>
     <View className="privacy-entry">
       <Text className="privacy-text">登录前请阅读</Text>

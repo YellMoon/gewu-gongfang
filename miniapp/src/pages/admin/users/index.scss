@@ -4,6 +4,10 @@
 .admin-subtitle { display: block; margin-top: 8rpx; color: #6b7280; font-size: 23rpx; line-height: 34rpx; }
 .read-only-notice { margin: 0 24rpx 18rpx; padding: 20rpx 22rpx; border-radius: 20rpx; background: #fff4d9; color: #805b18; font-size: 23rpx; line-height: 34rpx; }
 .application-review-section { margin: 0 24rpx 24rpx; padding: 22rpx; border-radius: 24rpx; background: #eef3f1; }
+.binding-review-section { margin: 0 24rpx 24rpx; padding: 22rpx; border-radius: 24rpx; background: #fff5e8; }
+.binding-read-only { display: block; margin-top: 10rpx; color: #7a5a43; font-size: 21rpx; line-height: 31rpx; }
+.binding-card { margin-top: 16rpx; padding: 20rpx; border: 1rpx solid #efd9bc; border-radius: 20rpx; background: #fffdf8; }
+.binding-created-at { display: block; margin-top: 14rpx; color: #657184; font-size: 21rpx; line-height: 31rpx; word-break: break-all; }
 .application-review-heading, .application-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16rpx; }
 .application-review-title { font-size: 29rpx; line-height: 40rpx; font-weight: 900; }
 .application-review-count { min-width: 42rpx; padding: 2rpx 10rpx; border-radius: 999rpx; background: #1f6f68; color: #fff; text-align: center; font-size: 21rpx; }

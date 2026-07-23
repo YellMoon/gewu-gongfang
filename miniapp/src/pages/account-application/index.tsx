@@ -88,7 +88,7 @@ export default function AccountApplicationPage() {
     if (!operationLock.current.tryAcquire('submit')) return;
     setState('submitting');
     try {
-      if (!verifiedPhone) throw new Error('当前账号没有可用的已验证手机号，请重新登录');
+      if (!verifiedPhone) throw new Error('\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u53ef\u7528\u7684\u767b\u5f55\u624b\u673a\u53f7\uff0c\u8bf7\u91cd\u65b0\u767b\u5f55');
       const payload = applicationType === 'student'
         ? buildStudentApplicationPayload({
           applicantKind,
@@ -182,7 +182,7 @@ export default function AccountApplicationPage() {
           ) : null}
 
           <View className='field'><Text className='label'>{applicationType === 'teacher' ? '老师姓名' : '学生姓名'} *</Text><Input value={name} onInput={event => setName(event.detail.value)} placeholder='请输入真实姓名' /></View>
-          <View className='field locked'><Text className='label'>已验证手机号</Text><Text className='locked-value'>{verifiedPhone || '未读取到手机号'}</Text><Text className='field-tip'>该号码来自本次微信手机号验证，不可修改</Text></View>
+          <View className='field locked'><Text className='label'>{'\u767b\u5f55\u624b\u673a\u53f7'}</Text><Text className='locked-value'>{verifiedPhone || '\u672a\u8bfb\u53d6\u5230\u624b\u673a\u53f7'}</Text><Text className='field-tip'>{'\u8be5\u53f7\u7801\u6765\u81ea\u767b\u5f55\u65f6\u7684\u624b\u52a8\u8f93\u5165\uff0c\u4e0d\u4ee3\u8868\u5fae\u4fe1\u5df2\u9a8c\u8bc1\u624b\u673a\u53f7'}</Text></View>
 
           {applicationType === 'student' ? (
             <>
