@@ -11,6 +11,15 @@ export function resolveManagedSyncConfig(config = {}, env = {}) {
   };
 }
 
+export function resolveDesktopIdentityBaseUrl(config = {}, env = {}) {
+  const managed = resolveManagedSyncConfig(config, env);
+  const useLocalSingleUserHost = config.buildFlavor === 'primary-host'
+    && config.desktopIdentityMode === 'single-user';
+  return String(
+    (useLocalSingleUserHost ? config.hostBaseUrl : managed.cloudBaseUrl) || ''
+  ).replace(/\/+$/, '');
+}
+
 export function syncFailureMessage(code) {
   return ({
     AUTHORIZATION_CONTEXT_REQUIRED: '当前设备尚未获得同步授权，请等待管理员批准。',

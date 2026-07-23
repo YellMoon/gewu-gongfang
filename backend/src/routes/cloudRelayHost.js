@@ -33,6 +33,7 @@ const { runAuthorizedSyncBatchPreflight } = require('../services/primaryHostSync
 const { bindPaperCompletionClaim, processDurablePaperTask, replayPaperCompletionOutbox } = require('../services/paperJobProcessor');
 const { recoverStalePaperJobs } = require('../services/paperJobRepository');
 const { cleanupPaperStorage, reconcilePaperArtifacts } = require('../services/paperStorageCleanup');
+const { resolveCloudRelayHostAuthOptions } = require('../services/cloudRelayHostAuth');
 
 const router = Router();
 
@@ -53,21 +54,14 @@ function hostLanUrls() {
 }
 
 function authOptionsFromRequest(req) {
-  const authorization = req.headers.authorization || '';
-  const hostCredential = process.env.GEWU_PRIMARY_HOST_CREDENTIAL || '';
-  const hostGeneration = process.env.GEWU_PRIMARY_HOST_GENERATION || '';
-  if (hostCredential || hostGeneration) {
-    return {
-      authorization,
-      hostCredential,
-      hostDeviceId: process.env.GEWU_DEVICE_ID || '',
-      hostGeneration: Number(hostGeneration),
-    };
-  }
-  return {
-    authorization,
+  return resolveCloudRelayHostAuthOptions({
+    authorization: req.headers.authorization || '',
+    hostCredential: process.env.GEWU_PRIMARY_HOST_CREDENTIAL || '',
+    hostDeviceId: process.env.GEWU_DEVICE_ID || '',
+    hostGeneration: process.env.GEWU_PRIMARY_HOST_GENERATION || '',
     hostToken: process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || process.env.GEWU_DESKTOP_SYNC_TOKEN || '',
-  };
+    identityMode: process.env.GEWU_DESKTOP_IDENTITY_MODE || 'full',
+  });
 }
 
 function exportRoot() {

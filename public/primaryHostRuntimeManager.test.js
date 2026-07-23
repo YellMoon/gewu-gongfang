@@ -38,12 +38,29 @@ async function main() {
   assert.ok(electronSource.includes("require('./primaryHostOperationValidation')"));
   assert.ok(electronSource.includes("require('./primaryHostRuntimeManager')"));
   assert.ok(electronSource.includes("require('../backend/src/services/primaryHostRecoveryDeliveryProtocol')"));
+  assert.match(electronSource, /writeManagedDesktopIdentityMode,\s+applyRuntimeConfigToEnv,/,
+    'Electron must import the managed desktop identity mode writer');
+  assert.match(
+    electronSource,
+    /createPrimaryHostRuntimeManager\(\{[\s\S]*?writeManagedDesktopIdentityMode,\s+applyRuntimeConfigToEnv,/,
+    'Electron must inject the managed desktop identity mode writer into the primary-host runtime manager'
+  );
   assert.ok(electronSource.includes("ipcMain.handle('primary-host:adopt'"));
   assert.ok(electronSource.includes("ipcMain.handle('primary-host:status'"));
   assert.ok(electronSource.includes("ipcMain.handle('primary-host:local-receipt'"));
   assert.ok(electronSource.includes("ipcMain.handle('primary-host:prepare-operation'"));
   assert.ok(electronSource.includes("ipcMain.handle('primary-host:reveal-recovery-package'"));
   assert.ok(electronSource.includes("ipcMain.handle('primary-host:acknowledge-recovery-package'"));
+  assert.match(
+    electronSource,
+    /ensureRuntimeConfig\(getRuntimeConfigPath\(\),\s*\{\s*userDataPath:\s*app\.getPath\('userData'\),\s*primaryHostCapable:\s*PRIMARY_HOST_CAPABLE,?\s*\}\)/,
+    'runtime-config:get must preserve the host-only single-user identity mode'
+  );
+  assert.match(
+    electronSource,
+    /writeRuntimeConfig\(getRuntimeConfigPath\(\),\s*config,\s*\{\s*userDataPath:\s*app\.getPath\('userData'\),\s*primaryHostCapable:\s*PRIMARY_HOST_CAPABLE,?\s*\}\)/,
+    'runtime-config:set must preserve the host-only single-user identity mode'
+  );
   assert.ok(electronSource.includes('sourceGeneration: input.sourceGeneration'));
   assert.ok(electronSource.includes('targetGeneration: input.targetGeneration'));
   assert.ok(electronSource.includes('transferId: input.transferId'));

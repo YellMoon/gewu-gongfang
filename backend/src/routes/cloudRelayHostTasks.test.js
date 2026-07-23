@@ -63,7 +63,7 @@ const os = require('os');
 const path = require('path');
 
 {
-  const names = ['GEWU_CLOUD_RELAY_HOST_TOKEN', 'GEWU_DESKTOP_SYNC_TOKEN', 'GEWU_PRIMARY_HOST_CREDENTIAL', 'GEWU_PRIMARY_HOST_GENERATION', 'GEWU_DEVICE_ID'];
+  const names = ['GEWU_CLOUD_RELAY_HOST_TOKEN', 'GEWU_DESKTOP_SYNC_TOKEN', 'GEWU_PRIMARY_HOST_CREDENTIAL', 'GEWU_PRIMARY_HOST_GENERATION', 'GEWU_DEVICE_ID', 'GEWU_DESKTOP_IDENTITY_MODE'];
   const previous = Object.fromEntries(names.map(name => [name, process.env[name]]));
   try {
     process.env.GEWU_CLOUD_RELAY_HOST_TOKEN = 'bootstrap-root';
@@ -76,6 +76,14 @@ const path = require('path');
       hostToken: 'bootstrap-root',
     });
 
+    process.env.GEWU_DESKTOP_IDENTITY_MODE = 'single-user';
+    process.env.GEWU_PRIMARY_HOST_GENERATION = '1';
+    assert.deepStrictEqual(authOptionsFromRequest({ headers: { authorization: 'Bearer session' } }), {
+      authorization: 'Bearer session',
+      hostToken: 'bootstrap-root',
+    }, 'single-user host must use its configured relay token without requiring a managed epoch credential');
+
+    process.env.GEWU_DESKTOP_IDENTITY_MODE = 'full';
     process.env.GEWU_PRIMARY_HOST_CREDENTIAL = 'managed-credential';
     process.env.GEWU_PRIMARY_HOST_GENERATION = '2';
     assert.deepStrictEqual(authOptionsFromRequest({ headers: { authorization: 'Bearer session' } }), {

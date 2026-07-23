@@ -494,7 +494,6 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
           <Alert type="info" showIcon message={'\u666e\u901a\u79bb\u7ebf\u5ba2\u6237\u7aef'} description={'\u540c\u6b65\u670d\u52a1\u4e0e\u8d26\u53f7\u7531\u7ba1\u7406\u5458\u7edf\u4e00\u914d\u7f6e\u3002\u672c\u673a\u65e0\u9700\u586b\u5199\u8def\u5f84\u3001\u4e91\u5730\u5740\u6216\u540c\u6b65\u5bc6\u94a5\u3002'} style={{ marginBottom: 16 }} />
           <Descriptions bordered size="small" column={{ xs: 1, md: 2 }}>
             <Descriptions.Item label={'\u8f6f\u4ef6\u7248\u672c'}>{APP_VERSION}</Descriptions.Item>
-            <Descriptions.Item label={'\u8bbe\u5907'}>{runtimeConfig?.deviceId || '\u6b63\u5728\u8bfb\u53d6'}</Descriptions.Item>
             <Descriptions.Item label={'\u540c\u6b65\u8d26\u53f7'}>{accountLabel}</Descriptions.Item>
             <Descriptions.Item label={'\u914d\u7f6e\u65b9\u5f0f'}><Tag color="blue">{'\u7ba1\u7406\u5458\u6258\u7ba1'}</Tag></Descriptions.Item>
           </Descriptions>
@@ -507,6 +506,7 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
 
   return (
     <div>
+      {renderDesktopUpdatePanel()}
       <Card title="数据主机与同步" style={{ marginBottom: 16 }}>
         <Alert
           type={runtimeConfig?.nodeRole === 'primary-host' ? 'success' : 'info'}
@@ -578,9 +578,6 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
             showIcon
             message={'\u4e3b\u673a\u8eab\u4efd\u7531\u201c\u8eab\u4efd\u4e0e\u8bbe\u5907\u201d\u4e2d\u5fc3\u7ba1\u7406\uff0c\u4e0d\u80fd\u5728\u666e\u901a\u8bbe\u7f6e\u4e2d\u624b\u5de5\u5207\u6362\u3002'}
           />
-          <Form.Item name="deviceId" label="设备 ID" rules={[{ required: true }]}>
-            <Input disabled />
-          </Form.Item>
           <Form.Item name="mainDbPath" label="主数据库路径" rules={[{ required: true }]}>
             <Input
               addonAfter={(

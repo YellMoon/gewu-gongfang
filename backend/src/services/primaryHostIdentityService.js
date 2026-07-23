@@ -395,6 +395,7 @@ function createPrimaryHostIdentityService({
     const evidence = evidenceProvider({
       deviceId: input.deviceId || process.env.GEWU_DEVICE_ID || '',
       purpose: input.purpose,
+      bootstrapCandidateVerified: input.bootstrapCandidateVerified === true,
     }) || {};
     if (input.purpose === 'bootstrap' && evidence.runtimeNodeRole !== 'primary-host') {
       throw hostError('PRIMARY_HOST_RUNTIME_ROLE_REQUIRED');

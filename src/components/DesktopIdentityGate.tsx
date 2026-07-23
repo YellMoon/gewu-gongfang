@@ -19,7 +19,7 @@ import {
   WechatOutlined,
 } from '@ant-design/icons';
 import { getRuntimeConfig } from '../services/runtimeConfigClient';
-import { resolveManagedSyncConfig } from '../services/managedSyncConfig.mjs';
+import { resolveDesktopIdentityBaseUrl } from '../services/managedSyncConfig.mjs';
 import { desktopIdentityErrorMessage } from '../services/desktopIdentityError.mjs';
 import {
   canStartBusinessRuntime,
@@ -158,8 +158,7 @@ const DesktopIdentityGate: React.FC = () => {
         if (!window.desktopIdentity) throw new Error('DESKTOP_IDENTITY_BRIDGE_REQUIRED');
         const config = await getRuntimeConfig();
         setRuntimeConfig(config);
-        const managed = resolveManagedSyncConfig(config);
-        const identityBaseUrl = String(managed.cloudBaseUrl || '').replace(/\/+$/, '');
+        const identityBaseUrl = resolveDesktopIdentityBaseUrl(config);
         if (!identityBaseUrl) throw new Error('PAIRING_API_BASE_REQUIRED');
         const client = createDesktopIdentityClient({
           desktopIdentity: window.desktopIdentity,
@@ -169,16 +168,12 @@ const DesktopIdentityGate: React.FC = () => {
         if (cancelled) return;
         clientRef.current = client;
         setBaseUrl(identityBaseUrl);
-        setDeviceName(String((config as any).deviceName || config.deviceId || '这台电脑'));
+        setDeviceName(String((config as any).deviceName || (
+          config.buildFlavor === 'primary-host' ? '本地数据主机' : '这台电脑'
+        )));
         if (config.buildFlavor === 'primary-host' && config.desktopIdentityMode === 'full') {
           setGateState({ kind: 'single-user-mode-offer' });
           return;
-        }
-        if (config.buildFlavor === 'primary-host' && config.desktopIdentityMode === 'single-user') {
-          if (!window.singleUserRuntime?.status) throw new Error('SINGLE_USER_MODE_DISABLED');
-          const status = await window.singleUserRuntime.status();
-          if (cancelled) return;
-          setHostIdentityStatus(status);
         }
         if (vaultStatus.state === 'empty') {
           setGateState({
@@ -187,6 +182,12 @@ const DesktopIdentityGate: React.FC = () => {
               : 'single-user-pairing-required',
           });
           return;
+        }
+        if (config.buildFlavor === 'primary-host' && config.desktopIdentityMode === 'single-user') {
+          if (!window.singleUserRuntime?.status) throw new Error('SINGLE_USER_MODE_DISABLED');
+          const status = await window.singleUserRuntime.status();
+          if (cancelled) return;
+          setHostIdentityStatus(status);
         }
         if ((vaultStatus.legacyUpgradeRequired || vaultStatus.state === 'legacy_upgrade_required')
           && config.buildFlavor === 'desktop-client') {
@@ -316,7 +317,7 @@ const DesktopIdentityGate: React.FC = () => {
         try {
           if (!window.singleUserRuntime?.enableMode) throw new Error('SINGLE_USER_MODE_DISABLED');
           await window.singleUserRuntime.enableMode({ confirmation: 'ENABLE_SINGLE_USER_MODE' });
-          await window.api?.invoke('primary-host:restart');
+          await window.primaryHostRuntime?.restart();
         } catch (caught) {
           setError(messageForError(caught));
           setBusy(false);
@@ -357,7 +358,7 @@ const DesktopIdentityGate: React.FC = () => {
       if (initialized.runtime?.restartRequired) {
         setPassword('');
         setPasswordAgain('');
-        await window.api?.invoke('primary-host:restart');
+        await window.primaryHostRuntime?.restart();
         return;
       }
       const result = await clientRef.current.unlock({
@@ -828,11 +829,12 @@ const DesktopIdentityGate: React.FC = () => {
   return (
     <main className="desktop-identity-shell">
       <Card className="desktop-identity-card" bordered={false}>
-        <div className="desktop-identity-mark"><SafetyCertificateOutlined /></div>
-        <Title level={2}>格物工坊身份验证</Title>
-        <Paragraph type="secondary">
-          同一个人可以同时拥有超级管理员和老师身份；每台电脑分别注册、分别撤销。
-        </Paragraph>
+        <header className="desktop-identity-header">
+          <div className="desktop-identity-mark" aria-hidden="true">
+            <SafetyCertificateOutlined />
+          </div>
+          <Title level={2} className="desktop-identity-title">格物工坊身份验证</Title>
+        </header>
         <Divider />
         <Space direction="vertical" size={16} className="desktop-identity-form">
           {gateState.kind === 'loading' && <Spin tip="正在检查本机身份…" />}
@@ -907,7 +909,7 @@ const DesktopIdentityGate: React.FC = () => {
                   {'\u8f93\u5165\u6570\u636e\u4e3b\u673a\u751f\u6210\u7684\u4e00\u6b21\u6027\u914d\u5bf9\u7801\u3002\u672c\u673a\u5c06\u81ea\u884c\u751f\u6210\u8bbe\u5907\u5bc6\u94a5\uff0c\u5bc6\u94a5\u548c\u914d\u5bf9\u7801\u660e\u6587\u90fd\u4e0d\u4f1a\u4e0a\u4f20\u3002'}
                 </Paragraph>
                 <Input value={deviceName} onChange={event => setDeviceName(event.target.value)} placeholder={'\u8bbe\u5907\u540d\u79f0\uff0c\u4f8b\u5982\uff1a\u5bb6\u91cc\u7535\u8111'} maxLength={128} />
-                <Input value={pairingCode} onChange={event => setPairingCode(event.target.value)} placeholder={'\u8f93\u5165\u4e00\u6b21\u6027\u914d\u5bf9\u7801'} maxLength={24} autoComplete="one-time-code" />
+                <Input.Password visibilityToggle value={pairingCode} onChange={event => setPairingCode(event.target.value)} placeholder={'\u8f93\u5165\u4e00\u6b21\u6027\u914d\u5bf9\u7801'} maxLength={24} autoComplete="one-time-code" />
                 <Input.Password prefix={<LockOutlined />} visibilityToggle value={password} onChange={event => setPassword(event.target.value)} placeholder={'\u4e3a\u8fd9\u53f0\u7535\u8111\u8bbe\u7f6e\u672c\u673a\u5bc6\u7801'} />
                 <Input.Password prefix={<LockOutlined />} visibilityToggle value={passwordAgain} onChange={event => setPasswordAgain(event.target.value)} placeholder={'\u518d\u6b21\u8f93\u5165\u672c\u673a\u5bc6\u7801'} onPressEnter={beginSingleUserPairing} />
                 <Text type="secondary">{'\u6bcf\u53f0\u7535\u8111\u7684\u672c\u673a\u5bc6\u7801\u76f8\u4e92\u72ec\u7acb\uff1b\u914d\u5bf9\u6210\u529f\u540e\u4e0d\u4f1a\u81ea\u52a8\u53d1\u8d77\u6570\u636e\u540c\u6b65\u3002'}</Text>

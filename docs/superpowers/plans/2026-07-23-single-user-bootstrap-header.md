@@ -31,7 +31,7 @@
 - Modify: `public/electron.js`
 - Modify: `package.json`
 
-- [ ] **Step 1: Write the failing policy test**
+- [x] **Step 1: Write the failing policy test**
 
 Create `public/desktopIdentityKind.test.js`:
 
@@ -65,7 +65,7 @@ assert.strictEqual(resolveConfiguredDesktopIdentityKind({
 console.log('desktop identity kind policy checks passed');
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run:
 
@@ -75,7 +75,7 @@ node public/desktopIdentityKind.test.js
 
 Expected: FAIL because `./desktopIdentityKind` does not exist.
 
-- [ ] **Step 3: Implement the pure policy**
+- [x] **Step 3: Implement the pure policy**
 
 Create `public/desktopIdentityKind.js`:
 
@@ -96,7 +96,7 @@ function resolveConfiguredDesktopIdentityKind(input = {}) {
 module.exports = { resolveConfiguredDesktopIdentityKind };
 ```
 
-- [ ] **Step 4: Wire the policy through trusted Electron state**
+- [x] **Step 4: Wire the policy through trusted Electron state**
 
 In `public/electron.js`:
 
@@ -143,7 +143,7 @@ ipcMain.handle('desktop-identity:begin-single-user-enrollment', async (_event, i
 
 Do not change `desktop-identity:begin-registration`.
 
-- [ ] **Step 5: Register and run the policy test**
+- [x] **Step 5: Register and run the policy test**
 
 Add `node public/desktopIdentityKind.test.js` immediately before
 `node public/desktopIdentityVault.test.js` in `test:desktop-identity`.
@@ -163,7 +163,7 @@ Expected: both PASS.
 - Modify: `src/services/desktopIdentityError.test.js`
 - Modify: `src/services/desktopIdentityError.mjs`
 
-- [ ] **Step 1: Write the failing mapping assertion**
+- [x] **Step 1: Write the failing mapping assertion**
 
 Add to `src/services/desktopIdentityError.test.js`:
 
@@ -181,7 +181,7 @@ assert.strictEqual(
 );
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run:
 
@@ -191,7 +191,7 @@ node src/services/desktopIdentityError.test.js
 
 Expected: FAIL because the code is not present in `ERROR_MESSAGES`.
 
-- [ ] **Step 3: Add the localized mapping**
+- [x] **Step 3: Add the localized mapping**
 
 Add to `ERROR_MESSAGES` in `src/services/desktopIdentityError.mjs`:
 
@@ -199,7 +199,7 @@ Add to `ERROR_MESSAGES` in `src/services/desktopIdentityError.mjs`:
 DESKTOP_SINGLE_USER_DEVICE_KIND_INVALID: '\u6570\u636e\u4e3b\u673a\u8eab\u4efd\u521d\u59cb\u5316\u53c2\u6570\u5f02\u5e38\uff0c\u672a\u4fee\u6539\u672c\u673a\u6570\u636e\u3002\u8bf7\u66f4\u65b0\u5e94\u7528\u540e\u91cd\u8bd5\u3002',
 ```
 
-- [ ] **Step 4: Run the mapping test and verify GREEN**
+- [x] **Step 4: Run the mapping test and verify GREEN**
 
 Run:
 
@@ -216,7 +216,7 @@ Expected: PASS with `desktop identity error mapping checks passed`.
 - Modify: `src/components/DesktopIdentityGate.tsx`
 - Modify: `src/components/DesktopIdentityGate.css`
 
-- [ ] **Step 1: Write failing UI contract assertions**
+- [x] **Step 1: Write failing UI contract assertions**
 
 Add to `src/components/DesktopIdentityGate.test.js`:
 
@@ -230,7 +230,7 @@ assert.ok(gateStyle.includes('.desktop-identity-header'));
 assert.ok(gateStyle.includes('align-items: center'));
 ```
 
-- [ ] **Step 2: Run the source check and verify RED**
+- [x] **Step 2: Run the source check and verify RED**
 
 Run:
 
@@ -240,7 +240,7 @@ node src/components/DesktopIdentityGate.test.js
 
 Expected: FAIL because the subtitle remains and header classes do not exist.
 
-- [ ] **Step 3: Replace the card header**
+- [x] **Step 3: Replace the card header**
 
 In `src/components/DesktopIdentityGate.tsx`, replace the separate mark, title,
 and subtitle with:
@@ -255,7 +255,7 @@ and subtitle with:
 <Divider />
 ```
 
-- [ ] **Step 4: Add responsive header styles**
+- [x] **Step 4: Add responsive header styles**
 
 In `src/components/DesktopIdentityGate.css`:
 
@@ -286,7 +286,7 @@ Extend the existing narrow-window media query:
 }
 ```
 
-- [ ] **Step 5: Run UI checks and type checking**
+- [x] **Step 5: Run UI checks and type checking**
 
 Run:
 
@@ -302,7 +302,7 @@ Expected: PASS.
 **Files:**
 - No new source files.
 
-- [ ] **Step 1: Run focused suites**
+- [x] **Step 1: Run focused suites**
 
 Run:
 
@@ -315,7 +315,7 @@ git diff --check
 
 Expected: all PASS; only existing Windows line-ending warnings are acceptable.
 
-- [ ] **Step 2: Rebuild the renderer without packaging**
+- [x] **Step 2: Rebuild the renderer without packaging**
 
 Run:
 
@@ -325,7 +325,7 @@ Run:
 
 Expected: `Compiled successfully.` No installer or distribution archive is generated.
 
-- [ ] **Step 3: Ensure both native dependency trees target Electron**
+- [x] **Step 3: Ensure both native dependency trees target Electron**
 
 Run:
 
@@ -337,7 +337,7 @@ npm.cmd --prefix backend rebuild better-sqlite3 --runtime=electron --target=28.3
 Expected: both rebuilds succeed. This is required because the embedded backend resolves
 `backend/node_modules/better-sqlite3`.
 
-- [ ] **Step 4: Start the host-flavor development runtime**
+- [x] **Step 4: Start the host-flavor development runtime**
 
 Run:
 
@@ -349,7 +349,7 @@ $env:GEWU_DESKTOP_BUILD_FLAVOR='primary-host'
 Expected: the identity card shows the inline header, no obsolete subtitle, and the
 single-user initialization form.
 
-- [ ] **Step 5: Complete real bootstrap**
+- [x] **Step 5: Complete real bootstrap**
 
 The user enters the local password twice and clicks `备份并完成初始化`.
 The agent never reads or types the password.
@@ -362,7 +362,7 @@ Expected:
   and contains a non-empty epoch id and positive generation.
 - Primary-host credential and desktop identity vault files exist.
 
-- [ ] **Step 6: Verify data and authority invariants**
+- [x] **Step 6: Verify data and authority invariants**
 
 Using read-only database checks, verify:
 
@@ -377,7 +377,7 @@ question-bank storeId = qb_mqukr4y6_9c27e660
 
 Also verify local backend health reports version `6.3.2` and role `primary-host`.
 
-- [ ] **Step 7: Restore Node ABI and rerun Node verification**
+- [x] **Step 7: Restore Node ABI and rerun Node verification**
 
 After closing Electron:
 

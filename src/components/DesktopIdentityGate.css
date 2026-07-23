@@ -19,12 +19,23 @@
   padding: 36px;
 }
 
+.desktop-identity-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.desktop-identity-title {
+  margin: 0 !important;
+}
+
 .desktop-identity-mark {
   width: 52px;
   height: 52px;
   display: grid;
   place-items: center;
-  margin-bottom: 18px;
+  flex: 0 0 auto;
+  margin-bottom: 0;
   border-radius: 16px;
   color: #fff;
   font-size: 25px;
@@ -141,6 +152,14 @@
 }
 
 @media (max-width: 640px) {
+  .desktop-identity-header { gap: 12px; }
+  .desktop-identity-mark {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    font-size: 22px;
+  }
+  .desktop-identity-title { font-size: 24px !important; }
   .desktop-identity-shell { padding: 16px; }
   .desktop-identity-card .ant-card-body { padding: 26px 22px; }
   .desktop-identity-runtime-bar { left: 12px; right: 12px; }

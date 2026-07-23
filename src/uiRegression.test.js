@@ -40,9 +40,14 @@ assert.ok(systemSettings.includes('if (policy.loadQuestionBankStorage)') && syst
 const ordinaryDesktopSettingsStart = systemSettings.indexOf('if (!settingsPolicy.isPrimaryHost)');
 const primaryHostSettingsStart = systemSettings.indexOf('\n  return (', ordinaryDesktopSettingsStart);
 const ordinaryDesktopSettingsView = systemSettings.slice(ordinaryDesktopSettingsStart, primaryHostSettingsStart);
+const primaryHostSettingsView = systemSettings.slice(primaryHostSettingsStart);
 assert.ok(
   /renderDesktopUpdatePanel\s*\(/.test(ordinaryDesktopSettingsView) || /<DesktopUpdatePanel\b/.test(ordinaryDesktopSettingsView),
   'ordinary desktop settings must render the OSS desktop updater instead of returning before it'
+);
+assert.ok(
+  /renderDesktopUpdatePanel\s*\(/.test(primaryHostSettingsView) || /<DesktopUpdatePanel\b/.test(primaryHostSettingsView),
+  'primary-host settings must render its isolated OSS desktop updater'
 );
 const syncSettings = read('src/pages/SyncSettings.tsx');
 const syncQuickPanel = read('src/components/sync/SyncQuickPanel.tsx');
@@ -178,6 +183,14 @@ assert(
   identityDeviceCenterCss.includes('.identity-device-center') &&
   !permissionManager.includes('PairingReviewPanel'),
   'desktop identity and device center must be a top-level, badged workbench instead of a permission-page footer'
+);
+
+assert(
+  decodedIdentityDeviceCenter.includes('设备 ID') &&
+  !identityDeviceCenter.includes('name="deviceId"') &&
+  !systemSettings.includes('name="deviceId"') &&
+  !systemSettings.includes('runtimeConfig?.deviceId ||'),
+  'the immutable device id must only appear as read-only identity-device metadata, never in verification or general settings forms'
 );
 
 assert(

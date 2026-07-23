@@ -10,6 +10,7 @@ const {
   writeRuntimeConfig,
   writeManagedHostRuntimeConfig,
   writeManagedClientRuntimeConfig,
+  writeManagedDesktopIdentityMode,
   applyRuntimeConfigToEnv,
   MANAGED_CLOUD_BASE_URL,
 } = require('./runtimeConfig');
@@ -20,6 +21,7 @@ const {
   resolveDesktopBuildFlavor,
   updateFeedForFlavor,
 } = require('./desktopBuildFlavor');
+const { resolveConfiguredDesktopIdentityKind } = require('./desktopIdentityKind');
 const desktopPackage = require('../package.json');
 const DESKTOP_BUILD_FLAVOR = resolveDesktopBuildFlavor({
   isPackaged: app.isPackaged,
@@ -220,6 +222,7 @@ function getPrimaryHostRuntimeManager() {
     readRuntimeConfig: ensureRuntimeConfig,
     writeManagedHostRuntimeConfig,
     writeManagedClientRuntimeConfig,
+    writeManagedDesktopIdentityMode,
     applyRuntimeConfigToEnv,
     verifyAdoption: verifyPrimaryHostAdoption,
     acknowledgeDelivery: acknowledgePrimaryHostRecoveryDelivery,
@@ -396,9 +399,10 @@ async function issuePrimaryHostLocalReceipt(input = {}) {
   return prepared.localReceipt;
 }
 
-function configuredDesktopIdentity(input = {}) {
+function configuredDesktopIdentity(input = {}, options = {}) {
   const runtimeConfig = ensureRuntimeConfig(getRuntimeConfigPath(), {
     userDataPath: app.getPath('userData'),
+    primaryHostCapable: PRIMARY_HOST_CAPABLE,
   });
   const deviceId = String(process.env.GEWU_DEVICE_ID || runtimeConfig.deviceId || '').trim();
   if (!deviceId) {
@@ -409,7 +413,12 @@ function configuredDesktopIdentity(input = {}) {
   return {
     deviceId,
     deviceName: String(input.deviceName || runtimeConfig.deviceName || os.hostname()).trim().slice(0, 128),
-    deviceKind: PRIMARY_HOST_CAPABLE && runtimeConfig.nodeRole === 'primary-host' ? 'primary-host' : 'desktop-client',
+    deviceKind: resolveConfiguredDesktopIdentityKind({
+      primaryHostCapable: PRIMARY_HOST_CAPABLE,
+      nodeRole: runtimeConfig.nodeRole,
+      desktopIdentityMode: runtimeConfig.desktopIdentityMode,
+      singleUserHostEnrollment: options.singleUserHostEnrollment === true,
+    }),
   };
 }
 
@@ -669,11 +678,17 @@ const questionDraftRegistry = new QuestionDraftProvenanceRegistry({
 ipcMain.handle('issue-question-draft', (_event, { authorization }) => questionDraftRegistry.issue(authorization));
 ipcMain.handle('verify-question-draft-provenance', (_event, { questionId, authorization }) => questionDraftRegistry.verify(questionId, authorization));
 ipcMain.handle('runtime-config:get', async () => {
-  const config = ensureRuntimeConfig(getRuntimeConfigPath(), { userDataPath: app.getPath('userData') });
+  const config = ensureRuntimeConfig(getRuntimeConfigPath(), {
+    userDataPath: app.getPath('userData'),
+    primaryHostCapable: PRIMARY_HOST_CAPABLE,
+  });
   return { ...config, buildFlavor: DESKTOP_BUILD_FLAVOR, primaryHostCapable: PRIMARY_HOST_CAPABLE };
 });
 ipcMain.handle('runtime-config:set', async (_event, config) => {
-  const saved = writeRuntimeConfig(getRuntimeConfigPath(), config, { userDataPath: app.getPath('userData') });
+  const saved = writeRuntimeConfig(getRuntimeConfigPath(), config, {
+    userDataPath: app.getPath('userData'),
+    primaryHostCapable: PRIMARY_HOST_CAPABLE,
+  });
   return { ...saved, buildFlavor: DESKTOP_BUILD_FLAVOR, primaryHostCapable: PRIMARY_HOST_CAPABLE };
 });
 if (PRIMARY_HOST_CAPABLE) {
@@ -769,7 +784,9 @@ ipcMain.handle('desktop-identity:begin-registration', async (_event, input) => {
   return getDesktopIdentityVault().beginRegistration(configuredDesktopIdentity(input));
 });
 ipcMain.handle('desktop-identity:begin-single-user-enrollment', async (_event, input) => {
-  return getDesktopIdentityVault().beginSingleUserEnrollment(configuredDesktopIdentity(input));
+  return getDesktopIdentityVault().beginSingleUserEnrollment(configuredDesktopIdentity(input, {
+    singleUserHostEnrollment: true,
+  }));
 });
 ipcMain.handle('desktop-identity:create-pairing-envelope', async (_event, input) => {
   return getDesktopIdentityVault().createPairingEnvelope(input);

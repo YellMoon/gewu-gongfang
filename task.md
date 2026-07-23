@@ -27,7 +27,7 @@ Status: implementation complete; release verification in progress
 - [x] 实现手动同步预览、主机自动处理、备份/审计/冲突保留。
 - [x] 验证并修复窗口默认菜单、密码重设入口和 OSS 更新模块。
 - [x] 审计 OpenCode PR 与此前体系、主机 flavor 隔离等任务完成度，补齐缺口。
-- [ ] 运行全量测试、构建、Electron 真实运行时与多端兼容验证。
+- [x] 运行全量测试、构建、Electron 真实运行时与多端兼容验证。
 - [ ] 备份并部署阿里云，升级当前数据主机，发布普通端/主机端 OSS feed。
 - [ ] 提交、合并并推送 `gewu/master`，上传夸克网盘并核验产物。
 
@@ -62,7 +62,12 @@ Status: implementation complete; release verification in progress
 - 6.3.1 fresh `npm test`、`npm run typecheck`、普通/主机真实 Electron 隔离启动冒烟、Node ABI 137/SQLite 3.53.1 均通过；普通包 `150673468` 字节，主机包 `150682142` 字节。
 - 6.3.1 发布前本地主机备份位于 `D:\GewuDataHost\backups\release-6.3.1-20260722-234718`，云端备份位于 `/root/scheduling-backups/formula-pipeline/20260722-234905`；本地权威库及云端 Backend/Gateway 两库均 `quick_check=ok`。
 - Backend/Gateway 已部署 6.3.1，内网与公网 health 均返回 6.3.1；ordinary/host OSS 双 feed 已公网回读验证版本和字节数。普通安装包已在夸克 `codex项目/2026-07-23` 同页确认上传完成。
-- 当前已安装主机专版为 6.3.0，生产配置与数据仍保持 `desktop-client/full`、D 盘权威库、I 盘题库、`users=2`、`questions=0`、无 active epoch/authorization。6.3.1 覆盖安装和用户自行设定本机密码完成前，统一发布仍是“部分发布”。
+- 6.3.1 主机专版已成功覆盖安装，应用名变化没有改变 userData、D 盘权威库、I 盘题库或设备标识；生产配置与数据仍保持 `desktop-client/full`、`users=2`、`questions=0`、无 active epoch/authorization。
+- 真实点击“启用临时单人模式”复现 `PRIMARY_HOST_RUNTIME_MANAGER_CONFIG_REQUIRED`：`primaryHostRuntimeManager` 已新增身份模式写入依赖，但 Electron 主进程漏掉导入和注入。6.3.2 以失败回归测试锁定后完成最小接线修复；固定设备 ID 同时从验证页和普通设置移除，仅在“身份与设备”中心只读显示，一次性配对码默认掩码。
+- 6.3.2 fresh `npm test`、`npm run typecheck`、普通/主机隔离真实 Electron 冒烟均通过；普通包 `150673858` 字节，主机包 `150682220` 字节。安装前备份位于 `D:\GewuDataHost\backups\release-6.3.2-20260723-093743`，源库与备份库均 `quick_check=ok`、`users=2`、`questions=0`。
+- 6.3.2 已覆盖安装并完成真实单人主机 bootstrap；配置为 `primary-host/single-user`，第 1 代主机 epoch、`primary-host` 设备授权、本机 vault 和登录会话均有效。权威库 `quick_check=ok`、`users=2`、`questions=0`，D 盘数据库、I 盘题库与 storeId 均保持不变。
+- 重启后的真实密码登录挑战与交换均返回 200；修复单人模式误走托管主机凭据后，云端心跳和任务轮询持续返回 200。数据主机系统参数页也已恢复 host 专用 OSS 更新面板；公网 host `latest.yml` 返回 200、当前版本 6.3.1。
+- fresh `npm test` 全量通过；更新面板补挂载后 `node src/uiRegression.test.js`、`npm run typecheck`、`npm run build` 再次退出 0。当前缺口转为提交合并、云端部署、6.3.3 双 feed/安装包发布、主机升级与夸克交付。
 
 ---
 

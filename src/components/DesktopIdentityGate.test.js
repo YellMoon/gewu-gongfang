@@ -20,6 +20,17 @@ assert.ok(
 assert.ok(!gateSource.includes('browserDatabase'), 'identity gate must not import the business database');
 assert.ok(!gateSource.includes('processMiniappCloudTasks'), 'identity gate must not start host task polling');
 assert.ok(!gateSource.includes('publishCloudHeartbeat'), 'identity gate must not start host heartbeat');
+assert.ok(
+  gateSource.includes('resolveDesktopIdentityBaseUrl(config)'),
+  'single-user host identity challenges must use the trusted local identity base URL policy'
+);
+assert.ok(!decodedGateSource.includes(
+  '同一个人可以同时拥有超级管理员和老师身份；每台电脑分别注册、分别撤销。'
+));
+assert.ok(gateSource.includes('className="desktop-identity-header"'));
+assert.ok(gateSource.includes('className="desktop-identity-title"'));
+assert.ok(gateStyle.includes('.desktop-identity-header'));
+assert.ok(gateStyle.includes('align-items: center'));
 assert.ok(gateSource.includes('canStartBusinessRuntime'));
 assert.ok(gateSource.includes('desktopIdentityExpiryDelay'));
 assert.ok(gateSource.includes('const secureRelock = useCallback'));
@@ -46,12 +57,33 @@ assert.ok(appSource.includes('publishCloudHeartbeat'));
 assert.ok(gateSource.includes('discoverPairingCapability') && gateSource.includes('submitPairingRequest'));
 assert.ok(gateSource.includes('pollPairingResult') && gateSource.includes('normalizePairingCode'));
 assert.ok(decodedGateSource.includes('输入一次性配对码'));
+assert.match(
+  gateSource,
+  /<Input\.Password\s+visibilityToggle\s+value=\{pairingCode\}/,
+  'the one-time device pairing code must be masked by default and only revealed explicitly'
+);
+assert.ok(
+  !gateSource.includes('config.deviceId ||'),
+  'identity verification must not expose the immutable device id as an editable device name'
+);
 assert.ok(decodedGateSource.includes('单人模式初始化'));
 assert.ok(decodedGateSource.includes('初始化前会备份，不会删除数据'));
 assert.ok(decodedGateSource.includes('启用临时单人模式'));
 assert.ok(gateSource.includes("buildFlavor === 'primary-host'") && gateSource.includes("desktopIdentityMode === 'single-user'"));
-assert.ok(gateSource.includes("initialized.runtime?.restartRequired") && gateSource.includes("primary-host:restart"),
+assert.ok(
+  gateSource.indexOf("if (vaultStatus.state === 'empty')") < gateSource.indexOf('await window.singleUserRuntime.status()'),
+  'an empty single-user host vault must enter bootstrap before querying the post-bootstrap host status endpoint'
+);
+assert.ok(gateSource.includes("initialized.runtime?.restartRequired") && gateSource.includes('window.primaryHostRuntime?.restart()'),
   'single-user bootstrap must restart after the vault and managed host runtime are committed');
+assert.ok(
+  gateSource.includes('window.primaryHostRuntime?.restart()'),
+  'single-user mode changes must restart through the primary-host preload bridge'
+);
+assert.ok(
+  !gateSource.includes("window.api?.invoke('primary-host:restart')"),
+  'single-user mode changes must not use the generic IPC allowlist for host restart'
+);
 for (const code of [
   'PAIRING_CODE_EXPIRED', 'PAIRING_CODE_USED', 'PAIRING_CODE_LOCKED', 'PAIRING_HOST_OFFLINE',
   'PAIRING_CAPABILITY_STALE', 'DESKTOP_DEVICE_FINGERPRINT_MISMATCH',

@@ -9,7 +9,7 @@ const REVIEW_DOC_PATH = path.join(ROOT_DIR, 'docs', 'miniapp-review-guide.md');
 function buildDefaultReviewInfo() {
   return {
     version: require(path.join(ROOT_DIR, 'package.json')).version,
-    versionDesc: '统一使用微信手机号核验身份；未建档学生进入受限体验账号，可查看四道示例题、体验隔离组卷导出并提交正式身份申请。',
+    versionDesc: '登录页由用户手动填写手机号；已有档案首次绑定当前微信需超级管理员审核，未建档用户进入受限体验账号，可查看四道示例题、体验隔离组卷导出并提交正式身份申请。',
     testRemark: '点击“验证手机号并登录”并授权审核员本人的微信手机号。未建档手机号会进入体验账号：可查看四道示例题、体验 Word/PDF 导出和提交身份申请；不会读取或修改正式教务数据。',
     orderCenterPath: '',
     expeditedAudit: false,

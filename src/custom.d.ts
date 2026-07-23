@@ -111,4 +111,7 @@ interface Window {
     issuePairingCode(): Promise<any>;
     revokePairingCode(input: { grantId: string }): Promise<any>;
   };
+  primaryHostRuntime?: {
+    restart(): Promise<any>;
+  };
 }

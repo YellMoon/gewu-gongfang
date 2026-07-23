@@ -716,5 +716,25 @@ assert.strictEqual(db.prepare("SELECT subject_id FROM user_role_grants WHERE use
   CANONICAL_SUPER_ADMIN_ID
 ).subject_id, 'teacher-owner', 'host duty must not replace the owner teacher binding');
 
+let bootstrapCandidateForwarded = false;
+const bootstrapCandidateService = createPrimaryHostIdentityService({
+  db,
+  localEvidenceProvider: input => {
+    bootstrapCandidateForwarded = input.bootstrapCandidateVerified === true;
+    return {
+      ...authorityByDevice.get('host-device-1'),
+      runtimeNodeRole: bootstrapCandidateForwarded ? 'primary-host' : 'desktop-client',
+    };
+  },
+});
+const bootstrapCandidateEvidence = bootstrapCandidateService.collectLocalEvidence({
+  deviceId: 'host-device-1',
+  purpose: 'bootstrap',
+  bootstrapCandidateVerified: true,
+});
+assert.strictEqual(bootstrapCandidateForwarded, true,
+  'verified bootstrap candidate must reach the local evidence provider');
+assert.strictEqual(bootstrapCandidateEvidence.runtimeNodeRole, 'primary-host');
+
 db.close();
 console.log('primary host identity service checks passed');
