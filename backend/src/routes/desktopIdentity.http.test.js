@@ -205,6 +205,12 @@ function generateDeviceKey() {
       },
     };
     app.use(express.json({ limit: '64kb' }));
+    const singleUserRuntime = {
+      deviceId: 'device-http-host',
+      nodeRole: 'desktop-client',
+      epochId: null,
+      generation: null,
+    };
     app.use('/api/desktop-identity', createDesktopIdentityRouter({
       db,
       jwtSecret,
@@ -221,12 +227,7 @@ function generateDeviceKey() {
       localBridgeSecret,
       desktopBuildFlavor: 'primary-host',
       desktopIdentityMode: 'single-user',
-      runtimeContext: () => ({
-        deviceId: 'device-http-host',
-        nodeRole: 'primary-host',
-        epochId: 'single-host-epoch',
-        generation: 1,
-      }),
+      runtimeContext: () => ({ ...singleUserRuntime }),
     }));
     server = app.listen(0);
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -255,6 +256,19 @@ function generateDeviceKey() {
     );
     assert.strictEqual(localBootstrap.status, 200);
     assert.strictEqual(singleUserCalls[0][1].localBridgeVerified, true);
+    assert.strictEqual(singleUserCalls[0][1].bootstrapCandidateVerified, true);
+    assert.strictEqual(singleUserCalls[0][1].runtime.nodeRole, 'desktop-client');
+    const repeatedLocalBootstrap = await requestJson(
+      baseUrl,
+      'POST',
+      '/api/desktop-identity/single-user/bootstrap',
+      { body: bootstrapPayload, headers: localHeaders }
+    );
+    assert.strictEqual(repeatedLocalBootstrap.status, 200,
+      'bootstrap must remain retryable after the database transaction but before runtime adoption');
+    singleUserRuntime.nodeRole = 'primary-host';
+    singleUserRuntime.epochId = 'single-host-epoch';
+    singleUserRuntime.generation = 1;
     const deniedGrant = await requestJson(
       baseUrl,
       'POST',

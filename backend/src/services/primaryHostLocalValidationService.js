@@ -148,6 +148,7 @@ function createPrimaryHostLocalValidationService({
     const evidence = Object.freeze({ ...collectEvidence({
       deviceId: input.deviceId,
       purpose: operation,
+      bootstrapCandidateVerified: input.bootstrapCandidateVerified === true,
     }) });
     const isBootstrap = operation === 'bootstrap';
     const sourceGeneration = isBootstrap ? 1 : positiveInteger(input.sourceGeneration);

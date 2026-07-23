@@ -128,6 +128,37 @@ async function main() {
   assert.strictEqual(enabledMode.restartRequired, true);
   assert.strictEqual(env.GEWU_DESKTOP_IDENTITY_MODE, 'single-user');
 
+  const singleUserBootstrapEpoch = {
+    id: 'single-user-epoch-1', generation: 1, deviceId: 'desktop-target-a',
+    userId: 'canonical-owner', activatedAt: '2026-07-23T04:00:00.000Z',
+  };
+  const failedRuntimeWriteManager = createPrimaryHostRuntimeManager({
+    ...dependencies,
+    writeManagedHostRuntimeConfig() {
+      const error = new Error('simulated managed runtime write failure');
+      error.code = 'PRIMARY_HOST_RUNTIME_CONFIG_FAILED';
+      throw error;
+    },
+  });
+  assert.throws(() => failedRuntimeWriteManager.completeSingleUserBootstrap({
+    epoch: singleUserBootstrapEpoch,
+  }), error => error.code === 'PRIMARY_HOST_RUNTIME_CONFIG_FAILED');
+  const completedSingleUserBootstrap = manager.completeSingleUserBootstrap({
+    epoch: singleUserBootstrapEpoch,
+  });
+  assert.strictEqual(completedSingleUserBootstrap.config.nodeRole, 'primary-host');
+  assert.strictEqual(completedSingleUserBootstrap.config.primaryHostEpochId, singleUserBootstrapEpoch.id);
+  assert.strictEqual(completedSingleUserBootstrap.restartRequired, true);
+  assert.strictEqual(env.GEWU_NODE_ROLE, 'primary-host');
+  assert.ok(!env.GEWU_PRIMARY_HOST_CREDENTIAL);
+  const resumedSingleUser = createPrimaryHostRuntimeManager({ ...dependencies, env: {} }).initialize();
+  assert.strictEqual(resumedSingleUser.config.nodeRole, 'primary-host');
+  assert.strictEqual(resumedSingleUser.credential.state, 'empty');
+  manager.demote({ expectedEpochId: singleUserBootstrapEpoch.id });
+  manager.setIdentityMode({
+    mode: 'single-user', confirmation: 'ENABLE_SINGLE_USER_MODE',
+  });
+
   const epoch = {
     id: 'epoch-target-2', generation: 2, deviceId: 'desktop-target-a', userId: 'canonical-owner',
     activatedAt: '2026-07-18T03:00:00.000Z',

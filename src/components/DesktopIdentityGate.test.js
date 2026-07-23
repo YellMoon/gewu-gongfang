@@ -50,6 +50,8 @@ assert.ok(decodedGateSource.includes('单人模式初始化'));
 assert.ok(decodedGateSource.includes('初始化前会备份，不会删除数据'));
 assert.ok(decodedGateSource.includes('启用临时单人模式'));
 assert.ok(gateSource.includes("buildFlavor === 'primary-host'") && gateSource.includes("desktopIdentityMode === 'single-user'"));
+assert.ok(gateSource.includes("initialized.runtime?.restartRequired") && gateSource.includes("primary-host:restart"),
+  'single-user bootstrap must restart after the vault and managed host runtime are committed');
 for (const code of [
   'PAIRING_CODE_EXPIRED', 'PAIRING_CODE_USED', 'PAIRING_CODE_LOCKED', 'PAIRING_HOST_OFFLINE',
   'PAIRING_CAPABILITY_STALE', 'DESKTOP_DEVICE_FINGERPRINT_MISMATCH',

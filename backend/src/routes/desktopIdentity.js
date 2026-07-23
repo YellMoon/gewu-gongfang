@@ -315,13 +315,21 @@ function createDesktopIdentityRouter({
     }
   }
 
-  function assertSingleUserHostRuntime(req) {
+  function assertSingleUserHostRuntime(req, { allowBootstrapCandidate = false } = {}) {
     assertLocalBridge(req);
     const runtime = runtimeContext() || {};
-    if (desktopBuildFlavor !== 'primary-host' || desktopIdentityMode !== 'single-user'
-      || runtime.nodeRole !== 'primary-host') {
+    if (desktopBuildFlavor !== 'primary-host' || desktopIdentityMode !== 'single-user') {
       throw routeError('DESKTOP_SINGLE_USER_HOST_RUNTIME_FORBIDDEN');
     }
+    if (runtime.nodeRole === 'primary-host') return runtime;
+    const activeEpoch = allowBootstrapCandidate && database.prepare(
+      "SELECT device_id FROM primary_host_epochs WHERE status='active' ORDER BY generation DESC LIMIT 1"
+    ).get();
+    const isBootstrapCandidate = allowBootstrapCandidate
+      && runtime.nodeRole === 'desktop-client'
+      && !runtime.epochId && !runtime.generation
+      && (!activeEpoch || activeEpoch.device_id === runtime.deviceId);
+    if (!isBootstrapCandidate) throw routeError('DESKTOP_SINGLE_USER_HOST_RUNTIME_FORBIDDEN');
     return runtime;
   }
 
@@ -388,9 +396,10 @@ function createDesktopIdentityRouter({
   router.post('/single-user/bootstrap', async function (req, res) {
     try {
       assertBodyKeys(req.body, SINGLE_USER_BOOTSTRAP_KEYS);
-      const runtime = assertSingleUserHostRuntime(req);
+      const runtime = assertSingleUserHostRuntime(req, { allowBootstrapCandidate: true });
       const result = await singleUserIdentity().bootstrapLocalHost({
         localBridgeVerified: true,
+        bootstrapCandidateVerified: true,
         buildFlavor: desktopBuildFlavor,
         runtime,
         publicIdentity: req.body.publicIdentity,

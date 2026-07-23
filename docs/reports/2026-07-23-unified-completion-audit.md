@@ -38,6 +38,16 @@
 
 ## 当前唯一发布缺口
 
-当前仍是“部分发布”：本机 6.2.0 系统级安装登记在 HKLM，覆盖升级 6.3.0 必须由用户在 UAC 中确认；当前运行时也尚未完成单人主机 bootstrap。安装、bootstrap、保数据复验成立前不得把主机/同步/OSS 安装项改为 `proved`，也不得合并推送 `gewu/master` 或宣称统一发布完成。
+当前仍是“部分发布”：6.3.0 主机专版已覆盖安装，但生产核验发现并阻断了单人主机 bootstrap 前置条件循环；修复后的 6.3.1 已完成测试、云端部署、双 OSS feed 和夸克交付，本机仍需新的 UAC 确认覆盖安装 6.3.1，并由用户自行设定本机密码完成真实 bootstrap。安装、bootstrap、保数据复验成立前不得把主机/同步/OSS 安装项改为 `proved`，也不得合并推送 `gewu/master` 或宣称统一发布完成。
 
 微信小程序明确为冻结状态：本轮不构建、不上传、不发布，不能宣称发布了新版小程序。
+
+## 2026-07-23 6.3.1 bootstrap 修复与发布证据
+
+- 根因：主机专版开启 `single-user` 后只更新身份模式，runtime 仍为 `desktop-client`；本地 bootstrap 路由和身份服务却要求 runtime 已是 `primary-host`，形成无法满足的循环。修复采用两阶段流程：仅主机 flavor + 单人模式 + Electron 回环本地桥可以进入候选初始化；权威库校验、在线备份和身份事务成功后才原子写入 host epoch；配置写失败可重复调用恢复，vault 完成后强制重启。
+- 回归覆盖候选门禁、普通/非本地拒绝、事务后 runtime 写入、写入失败重试、单人主机无云端 host credential 的安全恢复，以及 renderer 完成本地 vault 后重启。fresh `npm test`、`npm run typecheck` 全部退出 0。
+- 本地主机升级前备份：`D:\GewuDataHost\backups\release-6.3.1-20260722-234718`；源库与在线备份库 `quick_check=ok`。安装前再次只读核验为 `users=2`、`questions=0`、无 active epoch/authorization/grant。
+- 阿里云发布前备份：`/root/scheduling-backups/formula-pipeline/20260722-234905`；Backend/Gateway 代码及两套 SQLite 已备份，两库 `quick_check=ok`。Backend/Gateway 内网与公网 health 均返回 6.3.1，云中继基础契约通过。
+- ordinary/host 6.3.1 均完成隔离用户目录的真实 Electron 启动冒烟；包内 flavor 分别为 `desktop-client` / `primary-host`。普通安装包 `150673468` 字节，主机安装包 `150682142` 字节；打包后 Node ABI 137、SQLite 3.53.1 加载通过。
+- ordinary/host OSS feed 已上传并公网回读，版本均为 6.3.1、Content-Length 与本地一致。夸克 `codex项目/2026-07-23/GewuGongfang-Desktop-6.3.1-x64.exe` 已在上传同页确认显示 143.7 MB、完成 1 项。
+- 两种安装包保持相同 `appId=com.jvsclaw.gewugongfang` 和产品名“格物工坊”；变化仅是 artifact 文件名。生产配置仍指向 `D:\GewuDataHost\data\scheduling.db` 与 `I:\GewuQuestionBank`，安装器不会覆盖用户数据配置。

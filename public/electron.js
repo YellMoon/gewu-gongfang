@@ -726,7 +726,7 @@ if (PRIMARY_HOST_CAPABLE) {
       error.code = 'DESKTOP_SINGLE_USER_PASSWORD_FORBIDDEN';
       throw error;
     }
-    return localDesktopIdentityRequest('/single-user/bootstrap', {
+    const initialized = await localDesktopIdentityRequest('/single-user/bootstrap', {
       method: 'POST',
       body: {
         publicIdentity: input.publicIdentity,
@@ -734,6 +734,10 @@ if (PRIMARY_HOST_CAPABLE) {
         operationManifest: input.operationManifest,
       },
     });
+    const runtime = getPrimaryHostRuntimeManager().completeSingleUserBootstrap({
+      epoch: initialized.epoch,
+    });
+    return Object.freeze({ ...initialized, runtime });
   });
   ipcMain.handle('single-user:reset-host-password', async (_event, input = {}) => {
     if (Object.hasOwn(input, 'password')) {

@@ -58,6 +58,11 @@ Status: implementation complete; release verification in progress
 - Backend/Gateway 已部署 6.3.0，内网与公网 health 通过；ordinary/host OSS 双 feed 已公网回读验证文件名、大小和 SHA-512。普通安装包已在夸克 `codex项目/2026-07-23` 同页确认上传完成。
 - fresh `npm test`、`npm run typecheck`、`npm run check:desktop-identity-release`、Node ABI 137/SQLite 3.53.1 和 `git diff --check` 均通过。测试专用网关本地 HTTP fixture 从 3 秒放宽到 10 秒以消除全量高负载假失败，生产超时不变。
 - 当前安装 flavor 虽为 `primary-host`，生产 runtime config 实际仍是 `desktop-client/full`，且权威库没有 active host epoch/authorization；6.3.0 系统级覆盖安装与真实单人主机 bootstrap 仍待 UAC/用户本机密码步骤完成，因此统一发布仍是“部分发布”。
+- 6.3.0 覆盖安装已成功，但安装后生产核验发现“开启单人模式后 runtime 仍为 desktop-client，而 bootstrap 又强制要求 primary-host”的前置条件循环；已停止真实身份写入并以测试驱动修复为两阶段 bootstrap，包含本地桥/主机 flavor/单人模式门禁、数据库事务后受管 runtime 收尾、失败重试和初始化后强制重启。
+- 6.3.1 fresh `npm test`、`npm run typecheck`、普通/主机真实 Electron 隔离启动冒烟、Node ABI 137/SQLite 3.53.1 均通过；普通包 `150673468` 字节，主机包 `150682142` 字节。
+- 6.3.1 发布前本地主机备份位于 `D:\GewuDataHost\backups\release-6.3.1-20260722-234718`，云端备份位于 `/root/scheduling-backups/formula-pipeline/20260722-234905`；本地权威库及云端 Backend/Gateway 两库均 `quick_check=ok`。
+- Backend/Gateway 已部署 6.3.1，内网与公网 health 均返回 6.3.1；ordinary/host OSS 双 feed 已公网回读验证版本和字节数。普通安装包已在夸克 `codex项目/2026-07-23` 同页确认上传完成。
+- 当前已安装主机专版为 6.3.0，生产配置与数据仍保持 `desktop-client/full`、D 盘权威库、I 盘题库、`users=2`、`questions=0`、无 active epoch/authorization。6.3.1 覆盖安装和用户自行设定本机密码完成前，统一发布仍是“部分发布”。
 
 ---
 

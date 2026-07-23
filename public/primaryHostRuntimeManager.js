@@ -79,6 +79,15 @@ function createPrimaryHostRuntimeManager({
     }
     if (!credential) {
       if (config.primaryHostEpochId || config.primaryHostGeneration) {
+        if (config.desktopIdentityMode === 'single-user'
+          && config.nodeRole === 'primary-host'
+          && config.primaryHostEpochId
+          && config.primaryHostGeneration) {
+          applyRuntimeConfigToEnv(config, env);
+          delete env.GEWU_PRIMARY_HOST_CREDENTIAL;
+          lastState = Object.freeze({ config, credential: credentialStore.status() });
+          return lastState;
+        }
         return failClosed(config, 'PRIMARY_HOST_CREDENTIAL_MISSING');
       }
       applyRuntimeConfigToEnv(config, env);
@@ -317,6 +326,30 @@ function createPrimaryHostRuntimeManager({
     return Object.freeze({ config, credential, restartRequired: true });
   }
 
+  function completeSingleUserBootstrap({ epoch } = {}) {
+    const config = readRuntimeConfig(configPath, configOptions);
+    const normalizedEpoch = epoch && typeof epoch === 'object' ? epoch : {};
+    if (config.desktopIdentityMode !== 'single-user') {
+      throw runtimeError('DESKTOP_SINGLE_USER_MODE_DISABLED');
+    }
+    if (!normalizedEpoch.deviceId || normalizedEpoch.deviceId !== config.deviceId) {
+      throw runtimeError('PRIMARY_HOST_RUNTIME_DEVICE_MISMATCH');
+    }
+    if (credentialStore.read()) {
+      throw runtimeError('DESKTOP_SINGLE_USER_PRIMARY_HOST_CREDENTIAL_CONFLICT');
+    }
+    const managedConfig = writeManagedHostRuntimeConfig(configPath, {
+      deviceId: normalizedEpoch.deviceId,
+      epochId: normalizedEpoch.id,
+      generation: normalizedEpoch.generation,
+    }, configOptions);
+    applyRuntimeConfigToEnv(managedConfig, env);
+    delete env.GEWU_PRIMARY_HOST_CREDENTIAL;
+    const credential = credentialStore.status();
+    lastState = Object.freeze({ config: managedConfig, credential });
+    return Object.freeze({ config: managedConfig, credential, restartRequired: true });
+  }
+
   return Object.freeze({
     initialize,
     stageAdoption,
@@ -324,6 +357,7 @@ function createPrimaryHostRuntimeManager({
     acknowledgeRecoveryPackage,
     demote,
     setIdentityMode,
+    completeSingleUserBootstrap,
     revealRecoveryPackage,
     status() {
       return lastState || initialize();

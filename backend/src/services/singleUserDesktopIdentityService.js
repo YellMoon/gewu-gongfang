@@ -170,7 +170,11 @@ function createSingleUserDesktopIdentityService({
     return Object.freeze({ deviceId, deviceName, deviceKind: expectedKind, ...key });
   }
 
-  function configuredRuntime(input, { activeEpoch = null, allowUnboundEpoch = false } = {}) {
+  function configuredRuntime(input, {
+    activeEpoch = null,
+    allowUnboundEpoch = false,
+    allowBootstrapCandidate = false,
+  } = {}) {
     const configured = runtimeContext() || {};
     const supplied = input || {};
     const configuredDeviceId = requiredText(
@@ -178,11 +182,17 @@ function createSingleUserDesktopIdentityService({
       'DESKTOP_SINGLE_USER_RUNTIME_MISMATCH',
       128
     );
-    if (configured.nodeRole !== 'primary-host' || supplied.nodeRole !== 'primary-host'
-      || supplied.deviceId !== configuredDeviceId) {
+    const isConfiguredHost = configured.nodeRole === 'primary-host'
+      && supplied.nodeRole === 'primary-host';
+    const isBootstrapCandidate = allowBootstrapCandidate
+      && configured.nodeRole === 'desktop-client'
+      && supplied.nodeRole === 'desktop-client'
+      && !configured.epochId && !configured.generation
+      && !supplied.epochId && !supplied.generation;
+    if ((!isConfiguredHost && !isBootstrapCandidate) || supplied.deviceId !== configuredDeviceId) {
       throw identityError('DESKTOP_SINGLE_USER_RUNTIME_MISMATCH');
     }
-    if (activeEpoch && !allowUnboundEpoch) {
+    if (activeEpoch && !allowUnboundEpoch && !isBootstrapCandidate) {
       if (configured.epochId !== activeEpoch.id || supplied.epochId !== activeEpoch.id
         || Number(configured.generation) !== Number(activeEpoch.generation)
         || Number(supplied.generation) !== Number(activeEpoch.generation)) {
@@ -267,6 +277,9 @@ function createSingleUserDesktopIdentityService({
     if (input.buildFlavor !== 'primary-host') {
       throw identityError('DESKTOP_SINGLE_USER_HOST_BUILD_REQUIRED');
     }
+    if (input.bootstrapCandidateVerified !== true) {
+      throw identityError('DESKTOP_SINGLE_USER_BOOTSTRAP_CANDIDATE_REQUIRED');
+    }
     if (input.confirmation !== 'SET_LOCAL_PASSWORD_CONFIRMED') {
       throw identityError('DESKTOP_SINGLE_USER_CONFIRMATION_REQUIRED');
     }
@@ -275,6 +288,7 @@ function createSingleUserDesktopIdentityService({
     const runtime = configuredRuntime(input.runtime, {
       activeEpoch: activeBefore,
       allowUnboundEpoch: !activeBefore,
+      allowBootstrapCandidate: true,
     });
     if (publicIdentity.deviceId !== runtime.deviceId) {
       throw identityError('DESKTOP_SINGLE_USER_RUNTIME_MISMATCH');
@@ -286,6 +300,7 @@ function createSingleUserDesktopIdentityService({
     const validation = assertValidation(await localValidationService.prepare({
       operation: 'bootstrap',
       deviceId: runtime.deviceId,
+      bootstrapCandidateVerified: true,
       actorContext: activeBefore ? {
         userId: user.id,
         deviceId: runtime.deviceId,

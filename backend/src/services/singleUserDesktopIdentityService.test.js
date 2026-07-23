@@ -31,7 +31,7 @@ async function main() {
   };
   const runtime = {
     deviceId: 'host-device-1',
-    nodeRole: 'primary-host',
+    nodeRole: 'desktop-client',
     epochId: null,
     generation: null,
   };
@@ -44,14 +44,19 @@ async function main() {
     quickCheck: 'ok',
   };
   const localValidationService = {
-    async prepare() {
+    async prepare(input) {
       if (validationFailure) {
         const error = new Error(validationFailure);
         error.code = validationFailure;
         throw error;
       }
       return {
-        evidence,
+        evidence: {
+          ...evidence,
+          runtimeNodeRole: input.bootstrapCandidateVerified === true
+            ? 'primary-host'
+            : evidence.runtimeNodeRole,
+        },
         localValidation: {
           backup: {
             authoritative: true,
@@ -96,6 +101,7 @@ async function main() {
   const service = makeService();
   const bootstrapInput = overrides => ({
     localBridgeVerified: true,
+    bootstrapCandidateVerified: true,
     buildFlavor: 'primary-host',
     runtime: { ...runtime },
     publicIdentity: { ...hostIdentity },
@@ -118,6 +124,7 @@ async function main() {
   mode = 'single-user';
   await assertBootstrapRejected({ buildFlavor: 'desktop-client' }, 'DESKTOP_SINGLE_USER_HOST_BUILD_REQUIRED');
   await assertBootstrapRejected({ localBridgeVerified: false }, 'DESKTOP_SINGLE_USER_LOCAL_BRIDGE_REQUIRED');
+  await assertBootstrapRejected({ bootstrapCandidateVerified: false }, 'DESKTOP_SINGLE_USER_BOOTSTRAP_CANDIDATE_REQUIRED');
   await assertBootstrapRejected({ runtime: { ...runtime, deviceId: 'wrong-device' } }, 'DESKTOP_SINGLE_USER_RUNTIME_MISMATCH');
   db.prepare("UPDATE user_role_grants SET status='revoked' WHERE user_id=? AND role='super_admin'")
     .run(CANONICAL_SUPER_ADMIN_ID);
@@ -142,6 +149,7 @@ async function main() {
   assert.strictEqual(started.epoch.generation, 1);
   assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM single_user_business_probe').get().count, businessRowsBefore);
   assert.strictEqual(db.prepare('SELECT value FROM single_user_business_probe WHERE id=?').get('probe-1').value, 'preserve-me');
+  runtime.nodeRole = 'primary-host';
   runtime.epochId = started.epoch.id;
   runtime.generation = started.epoch.generation;
 

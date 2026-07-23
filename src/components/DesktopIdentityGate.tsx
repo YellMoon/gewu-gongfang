@@ -354,6 +354,12 @@ const DesktopIdentityGate: React.FC = () => {
         profile: hostProfileFor(initialized),
         offlineLease: null,
       });
+      if (initialized.runtime?.restartRequired) {
+        setPassword('');
+        setPasswordAgain('');
+        await window.api?.invoke('primary-host:restart');
+        return;
+      }
       const result = await clientRef.current.unlock({
         baseUrl: String(runtimeConfig?.hostBaseUrl || 'http://127.0.0.1:3001'),
         password,

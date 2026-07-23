@@ -156,7 +156,10 @@ function presentTransfer(row) {
 }
 
 function defaultLocalEvidenceProvider(db) {
-  return function () {
+  return function (input = {}) {
+    const runtimeNodeRole = input.bootstrapCandidateVerified === true
+      ? 'primary-host'
+      : process.env.GEWU_NODE_ROLE || 'desktop-client';
     const authority = db.prepare(
       "SELECT value FROM authority_metadata WHERE key='database_authority_id'"
     ).get();
@@ -165,7 +168,7 @@ function defaultLocalEvidenceProvider(db) {
     ).get();
     if (!authority?.value || !binding) {
       return {
-        runtimeNodeRole: process.env.GEWU_NODE_ROLE || 'desktop-client',
+        runtimeNodeRole,
         dbInstanceDigest: '',
         schemaVersion: Number(db.pragma('user_version', { simple: true }) || 0),
         storeId: '',
@@ -180,7 +183,7 @@ function defaultLocalEvidenceProvider(db) {
       && binding.db_authority_id === authority.value;
     const schemaVersion = Number(db.pragma('user_version', { simple: true }) || 0);
     return {
-      runtimeNodeRole: process.env.GEWU_NODE_ROLE || 'desktop-client',
+      runtimeNodeRole,
       dbInstanceDigest: storeMatches
         ? sha256(JSON.stringify([authority.value, schemaVersion, binding.store_id]))
         : '',
