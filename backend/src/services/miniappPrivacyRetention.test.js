@@ -52,11 +52,38 @@ try {
   application('old-submitted', 'submitted', old);
   application('recent-rejected', 'rejected', recent);
 
+  const insertBindingRequest = db.prepare(`INSERT INTO miniapp_wechat_binding_requests
+    (id, target_user_id, phone_normalized, candidate_openid, candidate_unionid,
+     status, revision, reviewed_by, review_note, created_at, updated_at, resolved_at)
+    VALUES (?, 'retention-user', '13800138000', ?, ?, ?, 2,
+      'miniapp-admin-13732250653', ?, ?, ?, ?)`);
+  insertBindingRequest.run(
+    'old-binding',
+    'openid-old',
+    'unionid-old',
+    'rejected',
+    'private rejection reason',
+    old,
+    old,
+    old,
+  );
+  insertBindingRequest.run(
+    'recent-binding',
+    'openid-recent',
+    'unionid-recent',
+    'submitted',
+    null,
+    recent,
+    recent,
+    null,
+  );
+
   const result = runMiniappPrivacyRetention(db, new Date('2026-07-22T00:00:00.000Z'));
   assert.deepStrictEqual(result, {
     loginEventsRedacted: 1,
     rejectedPayloadsRedacted: 2,
     approvedPayloadsRedacted: 1,
+    bindingRequestsRedacted: 1,
   });
   assert.strictEqual(db.prepare("SELECT phone_normalized FROM miniapp_login_events WHERE id='old-event'").get().phone_normalized, '[redacted]');
   assert.strictEqual(db.prepare("SELECT phone_normalized FROM miniapp_login_events WHERE id='recent-event'").get().phone_normalized, '13800138000');
@@ -66,11 +93,26 @@ try {
   );
   assert.notStrictEqual(db.prepare("SELECT payload_json FROM miniapp_role_applications WHERE id='old-submitted'").get().payload_json, '{}');
   assert.notStrictEqual(db.prepare("SELECT payload_json FROM miniapp_role_applications WHERE id='recent-rejected'").get().payload_json, '{}');
+  assert.deepStrictEqual(
+    db.prepare(`SELECT phone_normalized, candidate_openid, candidate_unionid, review_note
+      FROM miniapp_wechat_binding_requests WHERE id='old-binding'`).get(),
+    {
+      phone_normalized: '[redacted]',
+      candidate_openid: '[redacted]',
+      candidate_unionid: null,
+      review_note: null,
+    },
+  );
+  assert.strictEqual(
+    db.prepare("SELECT candidate_openid FROM miniapp_wechat_binding_requests WHERE id='recent-binding'").get().candidate_openid,
+    'openid-recent',
+  );
   assert.strictEqual(db.prepare("SELECT phone FROM users WHERE id='retention-user'").get().phone, '13800138000', 'authentication identity phone must be preserved');
   assert.deepStrictEqual(runMiniappPrivacyRetention(db, new Date('2026-07-22T00:00:00.000Z')), {
     loginEventsRedacted: 0,
     rejectedPayloadsRedacted: 0,
     approvedPayloadsRedacted: 0,
+    bindingRequestsRedacted: 0,
   }, 'retention must be idempotent');
   console.log('miniapp privacy retention checks passed');
 } finally {

@@ -31,11 +31,23 @@ function runMiniappPrivacyRetention(db, now = new Date()) {
       AND (payload_json <> '{}' OR verified_phone_normalized <> ?
         OR student_phone_normalized IS NOT NULL OR parent_phone_normalized IS NOT NULL
         OR rejection_reason IS NOT NULL)`);
+  const redactBindingRequests = db.prepare(`UPDATE miniapp_wechat_binding_requests
+    SET phone_normalized = ?, candidate_openid = ?, candidate_unionid = NULL, review_note = NULL
+    WHERE status IN ('approved', 'rejected', 'expired') AND updated_at < ?
+      AND (phone_normalized <> ? OR candidate_openid <> ?
+        OR candidate_unionid IS NOT NULL OR review_note IS NOT NULL)`);
 
   return db.transaction(() => ({
     loginEventsRedacted: redactLoginEvents.run(REDACTED, cutoff, REDACTED).changes,
     rejectedPayloadsRedacted: redactApplications.run(REDACTED, 'rejected', 'withdrawn', cutoff, REDACTED).changes,
     approvedPayloadsRedacted: redactApproved.run(REDACTED, cutoff, REDACTED).changes,
+    bindingRequestsRedacted: redactBindingRequests.run(
+      REDACTED,
+      REDACTED,
+      cutoff,
+      REDACTED,
+      REDACTED,
+    ).changes,
   }))();
 }
 

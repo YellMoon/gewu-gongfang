@@ -40,6 +40,7 @@ const { createPrimaryHostIdentityService } = require('./services/primaryHostIden
 const { createPrimaryHostLocalValidationService } = require('./services/primaryHostLocalValidationService');
 const { getSingleUserDesktopIdentityService } = require('./services/singleUserDesktopIdentityService');
 const miniappApplicationsRouter = require('./routes/miniappApplications');
+const miniappWechatBindingsRouter = require('./routes/miniappWechatBindings');
 const { createUnrecognizedExperienceRouter } = require('./routes/unrecognizedExperience');
 const { createUnrecognizedExperienceSandbox } = require('./services/unrecognizedExperienceSandbox');
 
@@ -338,6 +339,7 @@ function createApp(options = {}) {
   app.use('/api/admin/users', authMiddleware, adminUsersRouter);
   app.use('/api/permissions', authMiddleware, permissionsRouter);
   app.use('/api/miniapp/applications', authMiddleware, miniappApplicationsRouter);
+  app.use('/api/miniapp/wechat-bindings', authMiddleware, miniappWechatBindingsRouter);
 
   // 鍗婂叕寮€璺敱锛堝彲閫夎璇侊級
   app.use('/api/students', optionalAuth, requireCoreReadAccess, requireWriteAccess, studentsRouter);
