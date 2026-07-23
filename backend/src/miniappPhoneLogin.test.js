@@ -69,11 +69,14 @@ async function refreshToken(baseUrl, token) {
     const url = String(input);
     if (url.includes('/sns/jscode2session')) {
       const loginCode = new URL(url).searchParams.get('js_code');
-      const openid = loginCode === 'login-code-repeat'
-        ? 'openid-admin-0653'
-        : loginCode === 'login-code-unknown' || loginCode === 'login-code-pending'
-          ? 'openid-unknown-phone'
-          : 'openid-admin-0653';
+      const openids = {
+        'login-code-repeat': 'openid-admin-0653',
+        'login-code-unknown': 'openid-unknown-phone',
+        'login-code-pending': 'openid-unknown-phone',
+        'login-code-manual-fresh': 'openid-manual-fresh',
+        'login-code-manual-formal': 'openid-manual-formal',
+      };
+      const openid = openids[loginCode] || 'openid-admin-0653';
       return jsonResponse({ openid, unionid: null });
     }
     if (url.includes('/cgi-bin/token')) {
@@ -103,6 +106,12 @@ async function refreshToken(baseUrl, token) {
   const { createApp } = require('./app');
   const { getInstance } = require('./database');
   const app = createApp();
+  const seededAt = new Date().toISOString();
+  getInstance().db.prepare(`INSERT INTO users
+    (id, phone, phone_normalized, name, role, identity_kind, status, login_enabled,
+     review_status, auth_version, deleted, created_at, updated_at)
+    VALUES ('manual-existing-http', '13800138005', '13800138005', 'Manual Existing HTTP',
+      'admin', 'admin', 1, 1, 'approved', 1, 0, ?, ?)`).run(seededAt, seededAt);
   const server = app.listen(0);
 
   try {
@@ -119,6 +128,36 @@ async function refreshToken(baseUrl, token) {
     assert.strictEqual(firstLogin.body.success, true);
     assert.strictEqual(firstLogin.body.data.user.role, 'super_admin');
     assert.strictEqual(firstLogin.body.data.user.phone, '13732250653');
+
+    const manualFresh = await postJson(baseUrl, {
+      code: 'login-code-manual-fresh',
+      phone: '13600136000',
+      miniappVersion: '6.4.0',
+      platform: 'wechat',
+    });
+    assert.strictEqual(manualFresh.status, 200);
+    assert.strictEqual(manualFresh.body.success, true);
+    assert.strictEqual(manualFresh.body.data.user.account_state, 'unrecognized');
+
+    const manualFormal = await postJson(baseUrl, {
+      code: 'login-code-manual-formal',
+      phone: '13800138005',
+    });
+    assert.strictEqual(manualFormal.status, 202);
+    assert.strictEqual(manualFormal.body.code, 'WECHAT_BINDING_REVIEW_REQUIRED');
+    assert.ok(manualFormal.body.data.requestId);
+    assert.strictEqual(
+      getInstance().db.prepare("SELECT wechat_openid FROM users WHERE id='manual-existing-http'").get().wechat_openid,
+      null,
+    );
+
+    const mismatch = await postJson(baseUrl, {
+      code: 'login-code-repeat',
+      phone: '13900000000',
+      phoneCode: 'phone-code-admin',
+    });
+    assert.strictEqual(mismatch.status, 409);
+    assert.strictEqual(mismatch.body.code, 'WECHAT_PHONE_MISMATCH');
 
     const boundUser = getInstance().db.prepare('SELECT * FROM users WHERE phone = ?').get('13732250653');
     assert.strictEqual(boundUser.wechat_openid, 'openid-admin-0653', 'first phone login should bind openid');
@@ -158,10 +197,11 @@ async function refreshToken(baseUrl, token) {
       'refresh must not bypass auth_version revocation',
     );
 
+    const callsBeforeMissingPhone = phoneApiCalls;
     const repeatWithoutPhone = await postJson(baseUrl, { code: 'login-code-repeat' });
-    assert.strictEqual(repeatWithoutPhone.status, 403, 'every new session must verify the phone again');
-    assert.strictEqual(repeatWithoutPhone.body.code, 'PHONE_VERIFICATION_REQUIRED');
-    assert.strictEqual(phoneApiCalls, 1, 'missing phone authorization must not call the phone exchange API');
+    assert.strictEqual(repeatWithoutPhone.status, 400, 'every new session must include a phone claim');
+    assert.strictEqual(repeatWithoutPhone.body.code, 'MANUAL_PHONE_REQUIRED');
+    assert.strictEqual(phoneApiCalls, callsBeforeMissingPhone, 'missing phone input must not call the phone exchange API');
 
     const repeatLogin = await postJson(baseUrl, {
       code: 'login-code-repeat',
@@ -169,11 +209,15 @@ async function refreshToken(baseUrl, token) {
     });
     assert.strictEqual(repeatLogin.status, 200, 'bound openid should log in after another verified phone exchange');
     assert.strictEqual(repeatLogin.body.success, true);
-    assert.strictEqual(phoneApiCalls, 2, 'repeat login must consume another dynamic phone code');
+    assert.strictEqual(phoneApiCalls, callsBeforeMissingPhone + 1, 'repeat verified login must consume another dynamic phone code');
 
     const missingVerification = await postJson(baseUrl, { code: 'login-code-unknown', phone: '13732250653' });
-    assert.strictEqual(missingVerification.status, 403);
-    assert.strictEqual(missingVerification.body.code, 'PHONE_VERIFICATION_REQUIRED', 'caller supplied phone must be ignored');
+    assert.strictEqual(missingVerification.status, 409);
+    assert.strictEqual(
+      missingVerification.body.code,
+      'PHONE_WECHAT_BINDING_CONFLICT',
+      'manual phone input must not take over a phone bound to another WeChat account',
+    );
 
     const eventCountBeforePhoneFailure = getInstance().db.prepare('SELECT COUNT(*) count FROM miniapp_login_events').get().count;
     const failedPhoneExchange = await postJson(baseUrl, {
@@ -230,8 +274,8 @@ async function refreshToken(baseUrl, token) {
     assert.strictEqual(pending.wechat_openid, 'openid-unknown-phone');
 
     const pendingRepeat = await postJson(baseUrl, { code: 'login-code-pending' });
-    assert.strictEqual(pendingRepeat.status, 403);
-    assert.strictEqual(pendingRepeat.body.code, 'PHONE_VERIFICATION_REQUIRED');
+    assert.strictEqual(pendingRepeat.status, 400);
+    assert.strictEqual(pendingRepeat.body.code, 'MANUAL_PHONE_REQUIRED');
 
     const pendingVerified = await postJson(baseUrl, {
       code: 'login-code-pending',
@@ -266,7 +310,8 @@ async function refreshToken(baseUrl, token) {
 
     const events = getInstance().db.prepare(`SELECT result_code, phone_normalized, miniapp_version, platform
       FROM miniapp_login_events ORDER BY rowid`).all();
-    assert.strictEqual(events.length, 5, 'only attempts with a successfully exchanged phone should create events');
+    assert.strictEqual(events.length, 8, 'successful identity decisions and binding outcomes should create audit events');
+    assert.ok(events.some(event => event.result_code === 'WECHAT_BINDING_REVIEW_REQUIRED'));
     assert.ok(events.some(event => event.result_code === 'UNRECOGNIZED_LOGIN_SUCCESS'));
     assert.ok(events.some(event => event.result_code === 'FORMAL_LOGIN_SUCCESS'));
     assert.ok(events.some(event => event.miniapp_version === '5.15.0' && event.platform === 'devtools'));

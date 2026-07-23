@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const { getInstance } = require('../database');
 const { authMiddleware, JWT_SECRET } = require('../middleware/auth');
 const { createAuthRateLimiter } = require('../services/authRateLimiter');
+const { normalizePhone } = require('../services/authorizationPolicy');
 const {
   EXPERIENCE_AUDIENCE,
   FORMAL_AUDIENCE,
@@ -51,17 +52,21 @@ router.get('/desktop-session', authMiddleware, (req, res) => {
  */
 router.post('/wechat-login', async (req, res) => {
   try {
-    const { code, phoneCode, userInfo, miniappVersion, platform } = req.body;
+    const { code, phone, phoneCode, userInfo, miniappVersion, platform } = req.body || {};
     
     if (!code) {
-      return res.status(400).json({ error: '缺少登录code' });
+      return res.status(400).json({
+        success: false,
+        code: 'WECHAT_LOGIN_CODE_REQUIRED',
+        error: 'WeChat login code is required',
+      });
     }
 
-    if (!phoneCode) {
-      return res.status(403).json({
+    if (!phoneCode && !normalizePhone(phone)) {
+      return res.status(400).json({
         success: false,
-        code: 'PHONE_VERIFICATION_REQUIRED',
-        error: 'Verified WeChat phone authorization is required for every login session',
+        code: 'MANUAL_PHONE_REQUIRED',
+        error: 'Manual phone is required',
       });
     }
 
@@ -73,29 +78,48 @@ router.post('/wechat-login', async (req, res) => {
     }
 
     const { openid, unionid } = await resolveWechatIdentity(code);
-    let verifiedPhone;
-    try {
-      verifiedPhone = await resolveWechatPhoneNumber(phoneCode);
-    } catch (_error) {
-      const error = new Error('WeChat phone exchange failed');
-      error.code = 'WECHAT_PHONE_EXCHANGE_FAILED';
-      throw error;
-    }
-    const nickname = userInfo?.nickName || '管理员';
+    const nickname = userInfo?.nickName || '\u7ba1\u7406\u5458';
     const avatarUrl = userInfo?.avatarUrl || null;
     const profileNickname = userInfo?.nickName ? nickname : null;
+    const profile = { nickname: profileNickname, avatarUrl };
 
     const db = getInstance();
-    const login = identityServiceFor(db).loginWithVerifiedWechat({
-      openid,
-      unionid,
-      phone: verifiedPhone,
-      profile: { nickname: profileNickname, avatarUrl },
-      miniappVersion,
-      platform,
-    });
+    let login;
+    if (phoneCode) {
+      let verifiedPhone;
+      try {
+        verifiedPhone = await resolveWechatPhoneNumber(phoneCode);
+      } catch (_error) {
+        const error = new Error('WeChat phone exchange failed');
+        error.code = 'WECHAT_PHONE_EXCHANGE_FAILED';
+        throw error;
+      }
+      const claimedPhone = normalizePhone(phone);
+      if (claimedPhone && claimedPhone !== normalizePhone(verifiedPhone)) {
+        const error = new Error('WeChat verified phone does not match the claimed phone');
+        error.code = 'WECHAT_PHONE_MISMATCH';
+        throw error;
+      }
+      login = identityServiceFor(db).loginWithVerifiedWechat({
+        openid,
+        unionid,
+        phone: verifiedPhone,
+        profile,
+        miniappVersion,
+        platform,
+      });
+    } else {
+      login = identityServiceFor(db).loginWithClaimedWechat({
+        openid,
+        unionid,
+        phone,
+        profile,
+        miniappVersion,
+        platform,
+      });
+    }
 
-    res.json({
+    return res.json({
       success: true,
       data: {
         token: login.token,
@@ -109,18 +133,37 @@ router.post('/wechat-login', async (req, res) => {
     });
   } catch (err) {
     const code = err.code || 'MINIAPP_LOGIN_FAILED';
+    if (code === 'WECHAT_BINDING_REVIEW_REQUIRED') {
+      return res.status(202).json({
+        success: false,
+        code,
+        data: err.details,
+        error: 'WeChat binding review is required',
+      });
+    }
     const conflictCodes = new Set([
       'PHONE_WECHAT_BINDING_CONFLICT',
       'OPENID_PHONE_BINDING_CONFLICT',
       'FORMAL_IDENTITY_MAPPING_INVALID',
+      'WECHAT_BINDING_REQUEST_CONFLICT',
+      'WECHAT_PHONE_MISMATCH',
     ]);
-    const status = conflictCodes.has(code) ? 409 : code === 'MINIAPP_LOGIN_DISABLED' ? 403 : 502;
+    const validationCodes = new Set([
+      'MANUAL_PHONE_REQUIRED',
+      'MANUAL_PHONE_INVALID',
+      'WECHAT_LOGIN_CODE_REQUIRED',
+    ]);
+    const status = conflictCodes.has(code) ? 409
+      : validationCodes.has(code) ? 400
+        : code === 'MINIAPP_LOGIN_DISABLED' ? 403 : 502;
     const error = conflictCodes.has(code)
-      ? 'Verified phone and WeChat bindings conflict'
+      ? 'Phone and WeChat bindings conflict'
+      : validationCodes.has(code)
+        ? 'Miniapp login input is invalid'
       : code === 'MINIAPP_LOGIN_DISABLED'
         ? 'This account is disabled'
         : 'WeChat login verification failed';
-    res.status(status).json({ success: false, code, error });
+    return res.status(status).json({ success: false, code, error });
   }
 });
 

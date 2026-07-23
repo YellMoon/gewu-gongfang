@@ -60,6 +60,86 @@ try {
     VALUES ('pending-bind', '13800138003', '13800138003', 'Pending Bind', 'pending', 'unrecognized',
       1, 0, 'pending', 5, 0, ?, ?)`
   ).run(now, now);
+  db.prepare(`INSERT INTO users
+    (id, phone, phone_normalized, name, role, identity_kind, status, login_enabled,
+     review_status, auth_version, deleted, created_at, updated_at)
+    VALUES ('manual-existing', '13800138005', '13800138005', 'Manual Existing', 'admin', 'admin',
+      1, 1, 'approved', 7, 0, ?, ?)`
+  ).run(now, now);
+
+  const manualFresh = identity.loginWithClaimedWechat({
+    openid: 'wx-manual-fresh',
+    phone: '138 0013 8006',
+    miniappVersion: '6.4.0',
+    platform: 'wechat',
+  });
+  assert.strictEqual(manualFresh.user.account_state, 'unrecognized');
+  assert.strictEqual(manualFresh.user.phone, '13800138006');
+  assert.strictEqual(
+    identity.loginWithClaimedWechat({
+      openid: 'wx-manual-fresh',
+      phone: '13800138006',
+    }).user.id,
+    manualFresh.user.id,
+  );
+  assert.throws(
+    () => identity.loginWithClaimedWechat({
+      openid: 'wx-manual-fresh',
+      phone: '13800138007',
+    }),
+    error => error?.code === 'OPENID_PHONE_BINDING_CONFLICT',
+  );
+  assert.throws(
+    () => identity.loginWithClaimedWechat({
+      openid: 'wx-manual-other',
+      phone: '13800138006',
+    }),
+    error => error?.code === 'PHONE_WECHAT_BINDING_CONFLICT',
+  );
+
+  let bindingRequestId = '';
+  assert.throws(
+    () => identity.loginWithClaimedWechat({
+      openid: 'wx-manual-existing',
+      unionid: 'union-manual-existing',
+      phone: '13800138005',
+    }),
+    error => {
+      bindingRequestId = error?.details?.requestId || '';
+      return error?.code === 'WECHAT_BINDING_REVIEW_REQUIRED'
+        && error?.details?.status === 'submitted'
+        && Boolean(bindingRequestId);
+    },
+  );
+  assert.throws(
+    () => identity.loginWithClaimedWechat({
+      openid: 'wx-manual-existing',
+      phone: '13800138005',
+    }),
+    error => error?.code === 'WECHAT_BINDING_REVIEW_REQUIRED'
+      && error?.details?.requestId === bindingRequestId,
+    'repeated claimed login should reuse the active binding request',
+  );
+  assert.strictEqual(
+    db.prepare('SELECT COUNT(*) count FROM miniapp_wechat_binding_requests WHERE target_user_id=?').get('manual-existing').count,
+    1,
+  );
+  assert.strictEqual(
+    db.prepare("SELECT wechat_openid FROM users WHERE id='manual-existing'").get().wechat_openid,
+    null,
+    'manual phone entry must not bind an existing account before review',
+  );
+  assert.throws(
+    () => identity.loginWithClaimedWechat({
+      openid: 'wx-disabled-manual',
+      phone: '13800138002',
+    }),
+    error => error?.code === 'MINIAPP_LOGIN_DISABLED',
+  );
+  assert.strictEqual(
+    db.prepare('SELECT COUNT(*) count FROM miniapp_wechat_binding_requests WHERE target_user_id=?').get('disabled-user').count,
+    0,
+  );
 
   const formal = identity.loginWithVerifiedWechat({
     openid: 'wx-formal',
@@ -194,6 +274,14 @@ try {
   assert.throws(
     () => identity.loginWithVerifiedWechat({ openid: '', phone: '13800138000' }),
     error => error?.code === 'VERIFIED_WECHAT_IDENTITY_REQUIRED',
+  );
+  assert.throws(
+    () => identity.loginWithClaimedWechat({ openid: 'wx-missing-phone', phone: '' }),
+    error => error?.code === 'MANUAL_PHONE_REQUIRED',
+  );
+  assert.throws(
+    () => identity.loginWithClaimedWechat({ openid: 'wx-invalid-phone', phone: '123' }),
+    error => error?.code === 'MANUAL_PHONE_INVALID',
   );
   console.log('miniapp identity service checks passed');
 } finally {

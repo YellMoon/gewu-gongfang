@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { normalizePhone, roleForUser } = require('./authorizationPolicy');
+const { createMiniappWechatBindingService } = require('./miniappWechatBindingService');
 
 const TOKEN_ISSUER = 'gewu-miniapp-auth';
 const FORMAL_AUDIENCE = 'gewu-api';
@@ -17,9 +18,10 @@ const UNRECOGNIZED_CAPABILITIES = Object.freeze([
   'sample-paper-export',
 ]);
 
-function serviceError(code, message = code) {
-  const error = new Error(message);
+function serviceError(code, details) {
+  const error = new Error(code);
   error.code = code;
+  if (details && typeof details === 'object') error.details = details;
   return error;
 }
 
@@ -65,6 +67,11 @@ function createMiniappIdentityService({
     (id, user_id, phone_normalized, identity_kind, result_code, session_id,
      miniapp_version, platform, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const insertUnrecognizedUser = db.prepare(`INSERT INTO users
+    (id, wechat_openid, wechat_unionid, phone, phone_normalized, name, nickname, avatar_url,
+     role, identity_kind, status, login_enabled, review_status, auth_version, deleted, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unrecognized', 1, 0, 'pending', 1, 0, ?, ?)`);
+  const bindingService = createMiniappWechatBindingService({ db, now, uuid });
 
   function timestamp() {
     return asIso(now());
@@ -205,6 +212,49 @@ function createMiniappIdentityService({
     return { error: { code } };
   }
 
+  function createUnrecognizedUser(input, currentTime = timestamp()) {
+    const userId = uuid();
+    insertUnrecognizedUser.run(
+      userId,
+      input.openid,
+      input.unionid,
+      input.phone,
+      input.phone,
+      input.nickname || '\u4f53\u9a8c\u8d26\u53f7',
+      input.nickname,
+      input.avatarUrl,
+      currentTime,
+      currentTime,
+    );
+    return findById.get(userId);
+  }
+
+  function loginOutcomeForUser(user, input) {
+    if (user.review_status === 'approved' && isEnabled(user.login_enabled) && !isFormal(user)) {
+      return conflictOutcome('FORMAL_IDENTITY_MAPPING_INVALID', user, input);
+    }
+    const accountState = isFormal(user) ? 'formal' : 'unrecognized';
+    const sessionId = uuid();
+    const issued = accountState === 'formal'
+      ? issueFormalToken(user, sessionId)
+      : issueUnrecognizedToken(user, sessionId);
+    const loginEventId = writeEvent({
+      user,
+      phone: input.phone,
+      resultCode: accountState === 'formal' ? 'FORMAL_LOGIN_SUCCESS' : 'UNRECOGNIZED_LOGIN_SUCCESS',
+      sessionId,
+      miniappVersion: input.miniappVersion,
+      platform: input.platform,
+    });
+    return {
+      login: {
+        ...issued,
+        loginEventId,
+        user: presentUser(user, accountState),
+      },
+    };
+  }
+
   const performLogin = db.transaction(input => {
     let phoneOwner = findByPhone.get(input.phone);
     const openidOwner = findByOpenid.get(input.openid);
@@ -220,24 +270,7 @@ function createMiniappIdentityService({
 
     const currentTime = timestamp();
     if (!phoneOwner) {
-      const userId = uuid();
-      db.prepare(`INSERT INTO users
-        (id, wechat_openid, wechat_unionid, phone, phone_normalized, name, nickname, avatar_url,
-         role, identity_kind, status, login_enabled, review_status, auth_version, deleted, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unrecognized', 1, 0, 'pending', 1, 0, ?, ?)`)
-        .run(
-          userId,
-          input.openid,
-          input.unionid,
-          input.phone,
-          input.phone,
-          input.nickname || '\u4f53\u9a8c\u8d26\u53f7',
-          input.nickname,
-          input.avatarUrl,
-          currentTime,
-          currentTime,
-        );
-      phoneOwner = findById.get(userId);
+      phoneOwner = createUnrecognizedUser(input, currentTime);
     } else if (!phoneOwner.wechat_openid) {
       const result = db.prepare(`UPDATE users
         SET wechat_openid = ?, wechat_unionid = COALESCE(wechat_unionid, ?),
@@ -254,39 +287,40 @@ function createMiniappIdentityService({
       phoneOwner = findById.get(phoneOwner.id);
     }
 
-    if (phoneOwner.review_status === 'approved' && isEnabled(phoneOwner.login_enabled) && !isFormal(phoneOwner)) {
-      return conflictOutcome('FORMAL_IDENTITY_MAPPING_INVALID', phoneOwner, input);
-    }
-
-    const accountState = isFormal(phoneOwner) ? 'formal' : 'unrecognized';
-    const sessionId = uuid();
-    const issued = accountState === 'formal'
-      ? issueFormalToken(phoneOwner, sessionId)
-      : issueUnrecognizedToken(phoneOwner, sessionId);
-    const loginEventId = writeEvent({
-      user: phoneOwner,
-      phone: input.phone,
-      resultCode: accountState === 'formal' ? 'FORMAL_LOGIN_SUCCESS' : 'UNRECOGNIZED_LOGIN_SUCCESS',
-      sessionId,
-      miniappVersion: input.miniappVersion,
-      platform: input.platform,
-    });
-    return {
-      login: {
-        ...issued,
-        loginEventId,
-        user: presentUser(phoneOwner, accountState),
-      },
-    };
+    return loginOutcomeForUser(phoneOwner, input);
   });
 
-  function loginWithVerifiedWechat(input = {}) {
-    const phone = normalizePhone(input.phone);
-    const openid = String(input.openid || '').trim();
-    if (!openid || !/^1\d{10}$/.test(phone)) {
-      throw serviceError('VERIFIED_WECHAT_IDENTITY_REQUIRED');
+  const performClaimedLogin = db.transaction(input => {
+    let openidOwner = findByOpenid.get(input.openid);
+    const phoneOwner = findByPhone.get(input.phone);
+    if (openidOwner) {
+      if (!phoneOwner || phoneOwner.id !== openidOwner.id) {
+        return conflictOutcome('OPENID_PHONE_BINDING_CONFLICT', openidOwner, input);
+      }
+      if (isDisabled(openidOwner)) {
+        return conflictOutcome('MINIAPP_LOGIN_DISABLED', openidOwner, input);
+      }
+      if (input.unionid && !openidOwner.wechat_unionid) {
+        db.prepare('UPDATE users SET wechat_unionid=?, updated_at=? WHERE id=? AND wechat_unionid IS NULL')
+          .run(input.unionid, timestamp(), openidOwner.id);
+        openidOwner = findById.get(openidOwner.id);
+      }
+      return loginOutcomeForUser(openidOwner, input);
     }
-    const normalizedInput = {
+    if (phoneOwner?.wechat_openid) {
+      return conflictOutcome('PHONE_WECHAT_BINDING_CONFLICT', phoneOwner, input);
+    }
+    if (phoneOwner && isDisabled(phoneOwner)) {
+      return conflictOutcome('MINIAPP_LOGIN_DISABLED', phoneOwner, input);
+    }
+    if (phoneOwner) {
+      return { bindingTarget: phoneOwner };
+    }
+    return loginOutcomeForUser(createUnrecognizedUser(input), input);
+  });
+
+  function normalizedLoginInput(input, phone, openid) {
+    return {
       phone,
       openid,
       unionid: input.unionid ? String(input.unionid) : null,
@@ -295,6 +329,64 @@ function createMiniappIdentityService({
       miniappVersion: input.miniappVersion || null,
       platform: input.platform || null,
     };
+  }
+
+  function loginWithClaimedWechat(input = {}) {
+    const phone = normalizePhone(input.phone);
+    const openid = String(input.openid || '').trim();
+    if (!phone) throw serviceError('MANUAL_PHONE_REQUIRED');
+    if (!/^1\d{10}$/.test(phone)) throw serviceError('MANUAL_PHONE_INVALID');
+    if (!openid) throw serviceError('WECHAT_IDENTITY_REQUIRED');
+    const normalizedInput = normalizedLoginInput(input, phone, openid);
+    let outcome;
+    try {
+      outcome = performClaimedLogin.immediate(normalizedInput);
+    } catch (error) {
+      if (error?.code !== 'SQLITE_CONSTRAINT_UNIQUE') throw error;
+      const phoneOwner = findByPhone.get(phone);
+      const openidOwner = findByOpenid.get(openid);
+      const code = openidOwner && (!phoneOwner || openidOwner.id !== phoneOwner.id)
+        ? 'OPENID_PHONE_BINDING_CONFLICT'
+        : 'PHONE_WECHAT_BINDING_CONFLICT';
+      writeEvent({
+        user: openidOwner || phoneOwner || null,
+        phone,
+        resultCode: code,
+        miniappVersion: normalizedInput.miniappVersion,
+        platform: normalizedInput.platform,
+      });
+      throw serviceError(code);
+    }
+    if (outcome.error) throw serviceError(outcome.error.code);
+    if (outcome.bindingTarget) {
+      const request = bindingService.requestBinding({
+        targetUserId: outcome.bindingTarget.id,
+        phone,
+        openid,
+        unionid: normalizedInput.unionid,
+      });
+      writeEvent({
+        user: outcome.bindingTarget,
+        phone,
+        resultCode: 'WECHAT_BINDING_REVIEW_REQUIRED',
+        miniappVersion: normalizedInput.miniappVersion,
+        platform: normalizedInput.platform,
+      });
+      throw serviceError('WECHAT_BINDING_REVIEW_REQUIRED', {
+        requestId: request.id,
+        status: request.status,
+      });
+    }
+    return outcome.login;
+  }
+
+  function loginWithVerifiedWechat(input = {}) {
+    const phone = normalizePhone(input.phone);
+    const openid = String(input.openid || '').trim();
+    if (!openid || !/^1\d{10}$/.test(phone)) {
+      throw serviceError('VERIFIED_WECHAT_IDENTITY_REQUIRED');
+    }
+    const normalizedInput = normalizedLoginInput(input, phone, openid);
     let outcome;
     try {
       outcome = performLogin(normalizedInput);
@@ -353,6 +445,7 @@ function createMiniappIdentityService({
     expireLoginEvents,
     issueFormalToken,
     issueUnrecognizedToken,
+    loginWithClaimedWechat,
     loginWithVerifiedWechat,
     readIdentityForToken,
   };
