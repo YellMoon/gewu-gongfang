@@ -1,4 +1,5 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execFileSync, spawn } = require('child_process');
 const { chromium } = require('playwright');
@@ -59,6 +60,17 @@ function stopProcessTree(pid) {
   }
 }
 
+async function waitForProcessExit(child, timeoutMs = 10000) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise(resolve => {
+    const timer = setTimeout(resolve, timeoutMs);
+    child.once('exit', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
 async function main() {
   if (!fs.existsSync(productExe)) {
     throw new Error(`Packaged executable not found: ${productExe}`);
@@ -71,7 +83,11 @@ async function main() {
     throw new Error(`Packaged embedded backend dependencies are missing: ${missingDependencies.join(', ')}`);
   }
 
-  const child = spawn(productExe, [`--remote-debugging-port=${debugPort}`], {
+  const isolatedUserDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-packaged-smoke-'));
+  const child = spawn(productExe, [
+    `--remote-debugging-port=${debugPort}`,
+    `--user-data-dir=${isolatedUserDataDir}`,
+  ], {
     stdio: 'ignore',
     windowsHide: true,
   });
@@ -113,6 +129,14 @@ async function main() {
       await browser.close().catch(() => {});
     }
     stopProcessTree(child.pid);
+    await waitForProcessExit(child);
+    await sleep(500);
+    fs.rmSync(isolatedUserDataDir, {
+      recursive: true,
+      force: true,
+      maxRetries: 20,
+      retryDelay: 100,
+    });
   }
 }
 
