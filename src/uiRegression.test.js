@@ -78,10 +78,13 @@ const decodedIdentityDeviceCenter = decodeUnicodeEscapes(identityDeviceCenter);
 
 assert(
   miniappLogin.includes("api.post<any>('/api/auth/wechat-login'") &&
-  miniappLogin.includes('phoneCode') &&
-  miniappLogin.includes('未建档学生可进入示例题体验并提交身份申请') &&
+  miniappLogin.includes('phone: normalizedPhone') &&
+  miniappLogin.includes('validateManualPhone') &&
+  miniappLogin.includes('WECHAT_BINDING_REVIEW_REQUIRED') &&
+  miniappLogin.includes("'/pages/unrecognized-experience/index'") &&
+  !miniappLogin.includes('openType="getPhoneNumber"') &&
   !miniappLogin.includes('reviewDemo'),
-  'miniapp login should use verified WeChat phone identity and route unrecognized students to the real limited experience'
+  'miniapp login should use the reviewed manual-phone identity path and route unrecognized students to the real limited experience'
 );
 
 assert(
