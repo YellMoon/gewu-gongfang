@@ -216,6 +216,9 @@ function applyRuntimeConfigToEnv(config, env = process.env) {
   env.GEWU_CLOUD_BASE_URL = config.cloudBaseUrl || '';
   if (config.desktopSyncToken) {
     env.GEWU_DESKTOP_SYNC_TOKEN = config.desktopSyncToken;
+    if (config.nodeRole === 'primary-host' && !env.GEWU_CLOUD_RELAY_HOST_TOKEN) {
+      env.GEWU_CLOUD_RELAY_HOST_TOKEN = config.desktopSyncToken;
+    }
     if (Buffer.byteLength(config.desktopSyncToken, 'utf8') >= 32) {
       if (!env.JWT_SECRET) env.JWT_SECRET = deriveScopedSecret(config.desktopSyncToken, 'jwt');
       if (!env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET) {

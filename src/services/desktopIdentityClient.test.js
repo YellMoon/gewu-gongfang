@@ -570,6 +570,77 @@ async function main() {
   assert.strictEqual(singleUserSealCalls[0].password, 'paired-local-password');
   assert.strictEqual(singleUserSealCalls[0].offlineLease.id, validLease.id);
 
+  let pairingVaultStatus = {
+    state: 'registration_pending',
+    unlocked: false,
+    deviceId: unlockedVault.deviceId,
+  };
+  let pairingSealCount = 0;
+  let pairingRelayAttempts = 0;
+  const retryablePairingClient = createDesktopIdentityClient({
+    desktopIdentity: {
+      status: async () => pairingVaultStatus,
+      completeRegistration: async input => {
+        pairingSealCount += 1;
+        if (pairingSealCount > 1) {
+          const error = new Error('DESKTOP_IDENTITY_REGISTRATION_NOT_PENDING');
+          error.code = 'DESKTOP_IDENTITY_REGISTRATION_NOT_PENDING';
+          throw error;
+        }
+        pairingVaultStatus = {
+          ...unlockedVault,
+          authorizationSource: 'single_user_pairing',
+          offlineLease: input.offlineLease,
+        };
+        return pairingVaultStatus;
+      },
+      unlock: async () => pairingVaultStatus,
+      signChallenge: async () => ({ signature: 'paired-retry-signature' }),
+      refreshOfflineLease: async input => ({
+        ...pairingVaultStatus,
+        offlineLease: input.offlineLease,
+      }),
+    },
+    relaySessionExchange: async () => {
+      pairingRelayAttempts += 1;
+      if (pairingRelayAttempts === 1) {
+        const error = new Error('RELAY_ASSERTION_SECRET_REQUIRED');
+        error.code = 'RELAY_ASSERTION_SECRET_REQUIRED';
+        throw error;
+      }
+      return {
+        token: onlineSession.token,
+        session: onlineSession.session,
+        profile: serverProfile,
+        offlineLease: validLease,
+      };
+    },
+    now: () => new Date(at),
+    sessionStore: { save: async value => value, clear: async () => {} },
+  });
+  const retryablePairingInput = {
+    password: 'paired-local-password',
+    online: true,
+    cloudBaseUrl: 'https://identity.example/scheduling',
+    result: {
+      authorization: {
+        id: unlockedVault.authorizationId,
+        deviceId: unlockedVault.deviceId,
+        credentialVersion: unlockedVault.credentialVersion,
+      },
+      profile: serverProfile,
+      offlineLease: validLease,
+    },
+  };
+  await assert.rejects(
+    () => retryablePairingClient.completeSingleUserPairing(retryablePairingInput),
+    error => error.code === 'RELAY_ASSERTION_SECRET_REQUIRED'
+  );
+  const pairedRetry = await retryablePairingClient.completeSingleUserPairing(retryablePairingInput);
+  assert.strictEqual(pairedRetry.gateState.kind, 'online-unlocked');
+  assert.strictEqual(pairingSealCount, 1, 'a retry after vault persistence must not reseal pairing credentials');
+  assert.strictEqual(pairingRelayAttempts, 2);
+
   // A restarted paired ordinary device must ask the authoritative host through
   // the relay, save the returned online session, and refresh its offline lease.
   const pairedLeaseRefreshes = [];

@@ -45,8 +45,8 @@ export async function publishCloudSnapshot() {
   return postHost('/api/cloud-relay-host/snapshot');
 }
 
-export async function processMiniappCloudTasks() {
-  return postHost('/api/cloud-relay-host/tasks/process');
+export async function processMiniappCloudTasks(body: Record<string, any> = {}) {
+  return postHost('/api/cloud-relay-host/tasks/process', body);
 }
 
 export default {

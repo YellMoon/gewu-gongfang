@@ -128,6 +128,12 @@ async function processMiniappTask(task, db, dependencies = {}) {
     };
   }
   if (task.task_type === 'desktop-session-challenge-exchange') {
+    const relayAssertionSecret = process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '';
+    if (!relayAssertionSecret && !dependencies.issueRelaySessionAssertion) {
+      const error = new Error('RELAY_ASSERTION_SECRET_REQUIRED');
+      error.code = 'RELAY_ASSERTION_SECRET_REQUIRED';
+      throw error;
+    }
     const sqlite = db.db || db;
     const desktopDeviceChallengeService = dependencies.desktopDeviceChallengeService
       || createDesktopDeviceChallengeService({
@@ -156,7 +162,7 @@ async function processMiniappTask(task, db, dependencies = {}) {
       credentialVersion: Number(issued.session?.credentialVersion),
       issuedAt,
       expiresAt,
-    }, process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '');
+    }, relayAssertionSecret);
     return {
       session: issued.session,
       offlineLease: issued.offlineLease,
@@ -422,7 +428,7 @@ async function processClaimedV2Tasks(db, authOptions, dependencies = {}) {
   const heartbeatIntervalMs = Math.max(1, Number(dependencies.heartbeatIntervalMs || Math.floor(leaseMs / 3)));
   const results = [];
   const writerDb = db.db || db;
-  if (typeof writerDb.prepare === 'function') {
+  if (!dependencies.skipMaintenance && typeof writerDb.prepare === 'function') {
     await replayCompletionOutbox(writerDb, {
       completeTask: (taskId, body) => completeTask(taskId, body, authOptions),
       queryTaskState: taskId => queryTaskState(taskId, { ...authOptions, hostDeviceId: resolveHostDeviceId() }),
@@ -613,7 +619,9 @@ router.post('/tasks/process', async (req, res, next) => {
   try {
     const db = getInstance();
     const authOptions = authOptionsFromRequest(req);
-    const claimedResults = await processClaimedV2Tasks(db, authOptions);
+    const claimedResults = await processClaimedV2Tasks(db, authOptions, {
+      skipMaintenance: req.body?.skipMaintenance === true,
+    });
     const pending = await fetchPendingTasks({ ...authOptions, hostDeviceId: hostDeviceId(), leaseMs: 60000 });
     if (!pending.success) return res.json(claimedResults.length ? { success: true, processed: claimedResults.length, results: claimedResults, legacy: pending } : pending);
     const tasks = pending.tasks || [];

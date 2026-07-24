@@ -117,6 +117,11 @@ assert.strictEqual(env.QUESTION_BANK_STORE_ID, 'qb_test_store');
 assert.strictEqual(env.GEWU_LOCAL_CACHE_PATH.replace(/\\/g, '/'), 'D:/GewuQuestionBankCache');
 assert.strictEqual(env.GEWU_NAS_BACKUP_PATH.replace(/\\/g, '/'), '//NAS/GewuQuestionBankBackup');
 assert.strictEqual(env.GEWU_DESKTOP_SYNC_TOKEN, 'ab'.repeat(32));
+assert.strictEqual(
+  env.GEWU_CLOUD_RELAY_HOST_TOKEN,
+  'ab'.repeat(32),
+  'the embedded primary-host backend must sign desktop relay assertions with the configured cloud host token'
+);
 assert.match(env.JWT_SECRET, /^[a-f0-9]{64}$/);
 assert.match(env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET, /^[a-f0-9]{64}$/);
 assert.notStrictEqual(env.JWT_SECRET, env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET);
@@ -124,10 +129,22 @@ const repeatedEnv = {};
 applyRuntimeConfigToEnv(readBack, repeatedEnv);
 assert.strictEqual(repeatedEnv.JWT_SECRET, env.JWT_SECRET, 'derived local JWT secret must be stable across restarts');
 assert.strictEqual(repeatedEnv.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET, env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET, 'derived artifact secret must be stable across restarts');
-const explicitEnv = { JWT_SECRET: 'externally-managed-jwt', GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET: 'externally-managed-artifact' };
+const explicitEnv = {
+  JWT_SECRET: 'externally-managed-jwt',
+  GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET: 'externally-managed-artifact',
+  GEWU_CLOUD_RELAY_HOST_TOKEN: 'externally-managed-relay',
+};
 applyRuntimeConfigToEnv(readBack, explicitEnv);
 assert.strictEqual(explicitEnv.JWT_SECRET, 'externally-managed-jwt');
 assert.strictEqual(explicitEnv.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET, 'externally-managed-artifact');
+assert.strictEqual(explicitEnv.GEWU_CLOUD_RELAY_HOST_TOKEN, 'externally-managed-relay');
+const ordinaryEnv = {};
+applyRuntimeConfigToEnv(ordinaryWrite, ordinaryEnv);
+assert.strictEqual(
+  ordinaryEnv.GEWU_CLOUD_RELAY_HOST_TOKEN,
+  undefined,
+  'an ordinary desktop must never receive the primary-host relay assertion capability'
+);
 
 const fallback = normalizeRuntimeConfig({}, { userDataPath: dir });
 assert.ok(fallback.deviceId.startsWith('desktop_'));

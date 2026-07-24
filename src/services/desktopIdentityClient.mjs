@@ -426,12 +426,34 @@ export function createDesktopIdentityClient({
     if (typeof desktopIdentity.completeRegistration !== 'function') {
       throw identityError('DESKTOP_IDENTITY_REGISTRATION_UNAVAILABLE');
     }
-    const vaultStatus = await desktopIdentity.completeRegistration({
-      password,
-      authorization: result.authorization,
-      profile: result.profile,
-      offlineLease: result.offlineLease,
-    });
+    let vaultStatus = null;
+    const resultCredentialVersion = Number(result.authorization.credentialVersion);
+    if (result.authorization.deviceId
+      && Number.isSafeInteger(resultCredentialVersion)
+      && typeof desktopIdentity.status === 'function') {
+      let currentVault = await desktopIdentity.status();
+      if (currentVault?.state === 'sealed'
+        && currentVault.deviceId === result.authorization.deviceId
+        && typeof desktopIdentity.unlock === 'function') {
+        currentVault = await desktopIdentity.unlock({ password });
+      }
+      if (currentVault?.state === 'unlocked') {
+        const matchesPersistedPairing = currentVault.authorizationSource === 'single_user_pairing'
+          && currentVault.authorizationId === result.authorization.id
+          && currentVault.deviceId === result.authorization.deviceId
+          && Number(currentVault.credentialVersion) === resultCredentialVersion;
+        if (!matchesPersistedPairing) throw identityError('DESKTOP_PAIRING_VAULT_MISMATCH');
+        vaultStatus = currentVault;
+      }
+    }
+    if (!vaultStatus) {
+      vaultStatus = await desktopIdentity.completeRegistration({
+        password,
+        authorization: result.authorization,
+        profile: result.profile,
+        offlineLease: result.offlineLease,
+      });
+    }
     activePassword = password;
     await sessionStore.clear();
     if (online) {

@@ -50,6 +50,8 @@ const LazyPage: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 );
 
 const DEFAULT_PAGE: PageKey = 'today';
+const HOST_CLOUD_TASK_POLL_INTERVAL_MS = 5 * 1000;
+const HOST_CLOUD_HEARTBEAT_INTERVAL_MS = 60 * 1000;
 
 let dbService: any = null;
 
@@ -101,24 +103,53 @@ const App: React.FC = () => {
 
   useEffect(() => {
     let stopped = false;
-    let timer: ReturnType<typeof setInterval> | null = null;
+    let taskRunning = false;
+    let taskTimer: ReturnType<typeof setInterval> | null = null;
+    let maintenanceTimer: ReturnType<typeof setInterval> | null = null;
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
-    const runHostCloudLoop = async () => {
+    const hostConfig = async () => {
+      const config = await getRuntimeConfig();
+      return config.nodeRole === 'primary-host' && config.cloudBaseUrl ? config : null;
+    };
+    const runHostHeartbeat = async () => {
       try {
-        const config = await getRuntimeConfig();
-        if (config.nodeRole !== 'primary-host' || !config.cloudBaseUrl) return;
+        if (!await hostConfig()) return;
         await publishCloudHeartbeat();
-        await processMiniappCloudTasks();
+      } catch (error) {
+        if (!stopped) console.warn('[cloud-relay-host] heartbeat skipped', error);
+      }
+    };
+    const runHostTasks = async (skipMaintenance: boolean) => {
+      if (taskRunning) return;
+      taskRunning = true;
+      try {
+        if (!await hostConfig()) return;
+        if (skipMaintenance) await processMiniappCloudTasks({ skipMaintenance: true });
+        else await processMiniappCloudTasks();
       } catch (error) {
         if (!stopped) console.warn('[cloud-relay-host] background poll skipped', error);
+      } finally {
+        taskRunning = false;
       }
     };
 
-    runHostCloudLoop();
-    timer = setInterval(runHostCloudLoop, 60 * 1000);
+    void runHostHeartbeat();
+    void runHostTasks(false);
+    taskTimer = setInterval(
+      () => { void runHostTasks(true); },
+      HOST_CLOUD_TASK_POLL_INTERVAL_MS
+    );
+    maintenanceTimer = setInterval(
+      () => { void runHostTasks(false); },
+      HOST_CLOUD_HEARTBEAT_INTERVAL_MS
+    );
+    heartbeatTimer = setInterval(runHostHeartbeat, HOST_CLOUD_HEARTBEAT_INTERVAL_MS);
     return () => {
       stopped = true;
-      if (timer) clearInterval(timer);
+      if (taskTimer) clearInterval(taskTimer);
+      if (maintenanceTimer) clearInterval(maintenanceTimer);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
     };
   }, []);
 

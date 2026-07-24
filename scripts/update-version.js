@@ -46,6 +46,13 @@ function analyzeVersionBump(context = readChangeContext()) {
   const files = context.files || [];
   const diff = context.diff || '';
   const corpus = `${files.join('\n')}\n${diff}`;
+  const addedChangeText = /(?:^|\n)diff --git |(?:^|\n)@@ /.test(diff)
+    ? diff
+      .split(/\r?\n/)
+      .filter(line => line.startsWith('+') && !line.startsWith('+++'))
+      .map(line => line.slice(1))
+      .join('\n')
+    : diff;
 
   const majorSignals = [
     /BREAKING[\s_-]?CHANGE/i,
@@ -70,14 +77,14 @@ function analyzeVersionBump(context = readChangeContext()) {
     /^modules\/.+/,
   ];
   const minorContentSignals = [
-    /新增|增加|支持|新功能|feature|add(ed)?|create(d)?|router\.(get|post|put|delete|patch)/i,
+    /新增|增加|支持|新功能|\b(?:feature|add(?:ed)?|create(?:d)?)\b|router\.(get|post|put|delete|patch)/i,
     /^\+\s*CREATE TABLE/im,
     /^\+\s*ALTER TABLE/im,
     /^\+\s*app\.use\('/m,
   ];
   if (hasAny(corpus, patchSignals) && !hasAny(corpus, minorContentSignals)) return 'patch';
-  if (files.some(file => minorPathSignals.some(pattern => pattern.test(file))) && hasAny(corpus, minorContentSignals)) return 'minor';
-  if (hasAny(corpus, minorContentSignals)) return 'minor';
+  if (files.some(file => minorPathSignals.some(pattern => pattern.test(file))) && hasAny(addedChangeText, minorContentSignals)) return 'minor';
+  if (hasAny(addedChangeText, minorContentSignals)) return 'minor';
 
   return 'patch';
 }

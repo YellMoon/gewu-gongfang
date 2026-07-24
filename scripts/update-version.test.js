@@ -20,6 +20,28 @@ assert.strictEqual(
 );
 assert.strictEqual(
   version.analyzeVersionBump({
+    files: ['backend/src/routes/cloudRelayHost.js'],
+    diff: [
+      'diff --git a/backend/src/routes/cloudRelayHost.js b/backend/src/routes/cloudRelayHost.js',
+      '@@ -613,7 +619,9 @@ router' + '.post(\'/tasks/process\', async (req, res, next) => {',
+      ' router' + '.post(\'/tasks/process\', async (req, res, next) => {',
+      '+  const relayAssertionSecret = process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || \'\';',
+      '+  if (!relayAssertionSecret) throw new Error(\'RELAY_ASSERTION_SECRET_REQUIRED\');',
+    ].join('\n'),
+  }),
+  'patch',
+  'context lines from an existing route must not make a relay bug fix look like a new public API'
+);
+assert.strictEqual(
+  version.analyzeVersionBump({
+    files: ['src/services/desktopIdentityClient.mjs'],
+    diff: '+  const retryablePairingClient = createDesktopIdentityClient({',
+  }),
+  'patch',
+  'existing identifiers containing create must not be treated as feature declarations'
+);
+assert.strictEqual(
+  version.analyzeVersionBump({
     files: ['scripts/update-version.test.js'],
     diff: "assert.ok(source.includes('--bump=major'), 'update-version should document --bump=major');\n修复自动版本分类误判",
   }),

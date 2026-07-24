@@ -130,6 +130,31 @@ const path = require('path');
       expectedRowVersion: 1,
     }],
   ]);
+  const previousRelaySecret = process.env.GEWU_CLOUD_RELAY_HOST_TOKEN;
+  delete process.env.GEWU_CLOUD_RELAY_HOST_TOKEN;
+  const exchangesBeforeMissingSecret = calls.filter(call => call[0] === 'exchange').length;
+  try {
+    await assert.rejects(
+      () => processMiniappTask({
+        id: 'relay-exchange-missing-secret',
+        task_type: 'desktop-session-challenge-exchange',
+        payload: {
+          challengeId: 'relay-session-challenge-1',
+          signature: Buffer.alloc(64, 5).toString('base64'),
+          expectedRowVersion: 1,
+        },
+      }, {}, { desktopDeviceChallengeService }),
+      error => error.code === 'RELAY_ASSERTION_SECRET_REQUIRED'
+    );
+    assert.strictEqual(
+      calls.filter(call => call[0] === 'exchange').length,
+      exchangesBeforeMissingSecret,
+      'a missing relay assertion secret must fail before creating an orphan desktop session'
+    );
+  } finally {
+    if (previousRelaySecret === undefined) delete process.env.GEWU_CLOUD_RELAY_HOST_TOKEN;
+    else process.env.GEWU_CLOUD_RELAY_HOST_TOKEN = previousRelaySecret;
+  }
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;

@@ -23,6 +23,11 @@ const assert = require('assert');
     desktopIdentityErrorMessage(invalidRuntimeRole),
     '\u6570\u636e\u4e3b\u673a\u521d\u59cb\u5316\u6d41\u7a0b\u672a\u5b8c\u6210\uff0c\u672a\u4fee\u6539\u672c\u673a\u6570\u636e\u3002\u8bf7\u66f4\u65b0\u5e94\u7528\u540e\u91cd\u8bd5\u3002'
   );
+  const missingRelayAssertionSecret = new Error('RELAY_ASSERTION_SECRET_REQUIRED');
+  assert.strictEqual(
+    desktopIdentityErrorMessage(missingRelayAssertionSecret),
+    '\u6570\u636e\u4e3b\u673a\u7f3a\u5c11\u4e91\u4e2d\u7ee7\u7b7e\u540d\u914d\u7f6e\uff0c\u8bf7\u66f4\u65b0\u5e76\u91cd\u542f\u6570\u636e\u4e3b\u673a\u540e\u91cd\u8bd5\u3002'
+  );
   const unknown = desktopIdentityErrorMessage(new Error('Error invoking remote method unlock: C:\\private\\vault'));
   assert.strictEqual(unknown, '\u8eab\u4efd\u9a8c\u8bc1\u672a\u5b8c\u6210\uff0c\u8bf7\u91cd\u8bd5\u3002');
   assert.ok(!unknown.includes('remote method') && !unknown.includes('private'));
