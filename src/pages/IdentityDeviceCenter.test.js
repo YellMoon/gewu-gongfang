@@ -64,6 +64,10 @@ assert.ok(decoded.includes('普通桌面端一次性配对'));
 assert.ok(decoded.includes('生成一次性配对码') && decoded.includes('撤销当前配对码'));
 assert.ok(source.includes('singleUserRuntime.issuePairingCode'));
 assert.ok(source.includes('singleUserRuntime.revokePairingCode'));
+assert.ok(
+  source.includes('publishCloudHeartbeat') && source.includes('await publishCloudHeartbeat()'),
+  'a newly issued pairing capability must be published immediately instead of waiting for the minute background loop'
+);
 assert.ok(source.includes("desktopIdentityMode === 'single-user'"));
 assert.ok(
   source.includes('resolveDesktopIdentityBaseUrl(runtimeConfig)'),

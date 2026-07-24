@@ -388,17 +388,21 @@ const path = require('path');
   assert.strictEqual(legacy.answerPosition, 'after-each', 'legacy input must return the canonical artifact answer position');
 
   const claimedQueue = [
-    { task: { id: 'v2-ok', task_type: 'paper-export-word', protocol_version: 2, row_version: 1, payload: {} }, claimToken: 'claim-ok' },
+    {
+      task: { id: 'v2-ok', task_type: 'paper-export-word', protocol_version: 2, row_version: 1, payload: {} },
+      claimToken: 'claim-ok',
+      relayBaseUrl: 'https://relay.example',
+    },
     { task: { id: 'v2-fail', task_type: 'paper-export-pdf', protocol_version: 2, row_version: 1, payload: {} }, claimToken: 'claim-fail' },
   ];
   const lifecycle = [];
   const claimedResults = await processClaimedV2Tasks({}, { hostToken: 'trusted' }, {
     hostDeviceId: () => 'host-a',
     claimMiniappTask: async () => ({ success: true, ...(claimedQueue.shift() || { task: null, claimToken: null }) }),
-    updateMiniappTaskProgress: async (id, body) => { lifecycle.push(['progress', id, body]); return { task: { row_version: 2 } }; },
+    updateMiniappTaskProgress: async (id, body, options) => { lifecycle.push(['progress', id, body, options]); return { task: { row_version: 2 } }; },
     processMiniappTask: async task => { if (task.id === 'v2-fail') throw Object.assign(new Error('boom'), { code: 'BOOM' }); return { fileName: 'paper.docx' }; },
-    completeMiniappTask: async (id, body) => { lifecycle.push(['complete', id, body]); return { success: true }; },
-    failMiniappTask: async (id, body) => { lifecycle.push(['fail', id, body]); return { success: true }; },
+    completeMiniappTask: async (id, body, options) => { lifecycle.push(['complete', id, body, options]); return { success: true }; },
+    failMiniappTask: async (id, body, options) => { lifecycle.push(['fail', id, body, options]); return { success: true }; },
   });
   assert.deepStrictEqual(claimedResults.map(row => [row.id, row.success]), [['v2-ok', true], ['v2-fail', false]]);
   assert.ok(lifecycle.some(([kind, id, body]) => kind === 'complete'
@@ -407,6 +411,10 @@ const path = require('path');
     && body.expectedRowVersion === 2
     && body.operationId === 'host-task:v2-ok'
     && body.resultHash === hashTaskResult({ fileName: 'paper.docx' })));
+  assert.ok(lifecycle.some(([kind, id, _body, options]) => kind === 'complete'
+    && id === 'v2-ok'
+    && options.relayBaseUrl === 'https://relay.example'),
+  'Gateway pairing tasks must complete against the relay that issued the claim');
   assert.ok(lifecycle.some(([kind, id, body]) => kind === 'fail' && id === 'v2-fail' && body.claimToken === 'claim-fail' && body.expectedRowVersion === 2 && body.errorCode === 'BOOM'));
 
   let durableClaimed = true; let durableCalls = 0; let legacyExportCalls = 0;

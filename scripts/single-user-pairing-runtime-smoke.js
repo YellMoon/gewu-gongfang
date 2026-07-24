@@ -63,6 +63,15 @@ function runCheck(file) {
     'backend/src/services/singleUserDesktopIdentityService.test.js',
     'public/desktopIdentityVault.test.js',
     'src/services/singleUserPairingClient.test.js',
+    'gateway/src/routes/cloudRelay.http.test.js',
+    'backend/src/services/cloudRelayClient.test.js',
+    'backend/src/routes/cloudRelayHostTasks.test.js',
+    'backend/src/services/desktopDeviceChallengeService.test.js',
+    'backend/src/services/desktopSessionRelayService.test.js',
+    'src/services/desktopSessionRelayClient.test.js',
+    'src/services/desktopIdentityClient.test.js',
+    'src/components/DesktopIdentityGate.test.js',
+    'src/pages/IdentityDeviceCenter.test.js',
     'backend/src/services/syncBatchBackupService.test.js',
   ].map(runCheck);
   if (checks.some(check => check.exitCode !== 0)) throw new Error('SINGLE_USER_RUNTIME_CHECK_FAILED');

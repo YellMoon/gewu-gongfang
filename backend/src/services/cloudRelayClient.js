@@ -67,6 +67,14 @@ function gatewayBaseUrl() {
   }
 }
 
+function taskOperationBaseUrl(options = {}) {
+  return String(options.relayBaseUrl || options.relay_base_url || baseUrl()).replace(/\/+$/, '');
+}
+
+function taskClaimBaseUrls() {
+  return Array.from(new Set([gatewayBaseUrl(), baseUrl()].filter(Boolean)));
+}
+
 function skipped(reason, extra = {}) {
   return { success: false, skipped: true, reason, ...extra };
 }
@@ -107,31 +115,37 @@ async function fetchPendingTasks(options = {}) {
 }
 
 async function completeMiniappTask(taskId, payload = {}, options = {}) {
-  const base = baseUrl();
+  const base = taskOperationBaseUrl(options);
   if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured');
   return postJson(`${base}/api/cloud/tasks/${taskId}/complete`, payload, options);
 }
 
 async function claimMiniappTask(payload = {}, options = {}) {
-  const base = baseUrl();
-  if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured', { task: null });
-  return postJson(`${base}/api/cloud/tasks/claim`, payload, options);
+  const bases = taskClaimBaseUrls();
+  if (!bases.length) return skipped('GEWU_CLOUD_BASE_URL is not configured', { task: null });
+  let empty = null;
+  for (const base of bases) {
+    const claimed = await postJson(`${base}/api/cloud/tasks/claim`, payload, options);
+    if (claimed?.task) return { ...claimed, relayBaseUrl: base };
+    empty = claimed;
+  }
+  return empty || { success: true, task: null };
 }
 
 async function updateMiniappTaskProgress(taskId, payload = {}, options = {}) {
-  const base = baseUrl();
+  const base = taskOperationBaseUrl(options);
   if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured');
   return postJson(`${base}/api/cloud/tasks/${taskId}/progress`, payload, options);
 }
 
 async function failMiniappTask(taskId, payload = {}, options = {}) {
-  const base = baseUrl();
+  const base = taskOperationBaseUrl(options);
   if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured');
   return postJson(`${base}/api/cloud/tasks/${taskId}/fail`, payload, options);
 }
 
 async function queryMiniappTaskState(taskId, options = {}) {
-  const base = baseUrl();
+  const base = taskOperationBaseUrl(options);
   if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured', { task: null });
   const query = new URLSearchParams({ hostDeviceId: String(options.hostDeviceId || options.host_device_id || '') });
   const res = await fetch(`${base}/api/cloud/tasks/${encodeURIComponent(taskId)}/state?${query}`, { headers: buildHeaders(options) });

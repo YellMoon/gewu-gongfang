@@ -450,6 +450,9 @@ async function processClaimedV2Tasks(db, authOptions, dependencies = {}) {
     const claimed = await claimTask({ hostDeviceId: resolveHostDeviceId(), leaseMs }, authOptions);
     if (!claimed?.success || !claimed.task) break;
     const { task, claimToken } = claimed;
+    const taskAuthOptions = claimed.relayBaseUrl
+      ? { ...authOptions, relayBaseUrl: claimed.relayBaseUrl }
+      : authOptions;
     let rowVersion = Number(task.row_version || 0);
     let heartbeat = null;
     let generatedResult = null;
@@ -461,7 +464,7 @@ async function processClaimedV2Tasks(db, authOptions, dependencies = {}) {
         phase: 'processing',
         progress: 5,
         leaseMs,
-      }, authOptions));
+      }, taskAuthOptions));
       rowVersion = Number(progress?.task?.row_version ?? rowVersion + 1);
       heartbeat = startSerialLeaseHeartbeat({
         intervalMs: heartbeatIntervalMs,
@@ -472,7 +475,7 @@ async function processClaimedV2Tasks(db, authOptions, dependencies = {}) {
             phase: 'processing',
             progress: Number(progress?.task?.progress || 5),
             leaseMs,
-          }, authOptions));
+          }, taskAuthOptions));
           rowVersion = Number(renewed?.task?.row_version ?? rowVersion + 1);
         },
       });
@@ -509,7 +512,7 @@ async function processClaimedV2Tasks(db, authOptions, dependencies = {}) {
         operationId: `host-task:${task.id}`,
         resultHash: hashTaskResult(result),
         result,
-      }, authOptions));
+      }, taskAuthOptions));
       results.push({ id: task.id, success: true, completed });
     } catch (error) {
       try { await heartbeat?.stop(); } catch (_heartbeatError) { /* preserve the first processing error */ }
@@ -533,7 +536,7 @@ async function processClaimedV2Tasks(db, authOptions, dependencies = {}) {
           expectedRowVersion: rowVersion,
           errorCode: error.code || 'TASK_PROCESSING_FAILED',
           error: error.message,
-        }, authOptions));
+        }, taskAuthOptions));
       } catch (taskFailError) {
         failError = { code: taskFailError.code || 'TASK_FAIL_REPORT_FAILED', message: taskFailError.message };
       }

@@ -63,6 +63,7 @@ assert.deepStrictEqual(client.buildHeaders({
     assert.deepStrictEqual(calls.map(call => call.url), [
       'https://relay.example/api/cloud/host/heartbeat',
       'https://relay.example/api/cloud/desktop-pairing/capability',
+      'https://relay.example/api/cloud/tasks/claim',
       'https://relay.example/scheduling/api/cloud/tasks/claim',
       'https://relay.example/scheduling/api/cloud/tasks/task-1/progress',
       'https://relay.example/scheduling/api/cloud/tasks/task-1/complete',
@@ -78,6 +79,42 @@ assert.deepStrictEqual(client.buildHeaders({
     }, 'pairing publication should first register a fresh Gateway heartbeat');
     assert.strictEqual(calls[1].body.capability.id, 'capability-a');
     assert.strictEqual(calls[2].body.hostDeviceId, 'host-a');
+    assert.strictEqual(calls[3].body.hostDeviceId, 'host-a');
+
+    const gatewayCalls = [];
+    global.fetch = async (url, options = {}) => {
+      gatewayCalls.push({ url, options });
+      if (url.endsWith('/api/cloud/tasks/claim')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            task: { id: 'desktop-pairing-1', task_type: 'desktop-pairing', row_version: 1 },
+            claimToken: 'pairing-claim',
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({ success: true }) };
+    };
+    const gatewayPairingClaim = await client.claimMiniappTask(
+      { hostDeviceId: 'host-a', leaseMs: 5000 },
+      auth
+    );
+    assert.strictEqual(
+      gatewayPairingClaim.relayBaseUrl,
+      'https://relay.example',
+      'Gateway pairing tasks must retain their source relay for progress and completion callbacks'
+    );
+    await client.completeMiniappTask(
+      gatewayPairingClaim.task.id,
+      { claimToken: gatewayPairingClaim.claimToken, expectedRowVersion: 1, result: { ok: true } },
+      { ...auth, relayBaseUrl: gatewayPairingClaim.relayBaseUrl }
+    );
+    assert.deepStrictEqual(gatewayCalls.map(call => call.url), [
+      'https://relay.example/api/cloud/tasks/claim',
+      'https://relay.example/api/cloud/tasks/desktop-pairing-1/complete',
+    ]);
 
     global.fetch = async () => ({
       ok: false,

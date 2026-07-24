@@ -4,6 +4,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { getRuntimeConfig } from '../services/runtimeConfigClient';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 import { resolveDesktopIdentityBaseUrl } from '../services/managedSyncConfig.mjs';
+import { publishCloudHeartbeat } from '../services/cloudRelayHostApi';
 import {
   approveDesktopChallenge,
   activatePrimaryHostTransfer,
@@ -145,7 +146,18 @@ const IdentityDeviceCenter: React.FC = () => {
       if (!singleUserRuntime?.issuePairingCode) throw Object.assign(new Error('SINGLE_USER_MODE_DISABLED'), { code: 'SINGLE_USER_MODE_DISABLED' });
       const response = await singleUserRuntime.issuePairingCode();
       setSingleUserPairingGrant(response.grant);
-      message.success('\u4e00\u6b21\u6027\u914d\u5bf9\u7801\u5df2\u751f\u6210');
+      let cloudPublished = false;
+      try {
+        const heartbeat = await publishCloudHeartbeat();
+        cloudPublished = heartbeat?.success !== false;
+      } catch (_cloudError) {
+        cloudPublished = false;
+      }
+      if (cloudPublished) {
+        message.success('\u4e00\u6b21\u6027\u914d\u5bf9\u7801\u5df2\u751f\u6210\uff0c\u4e91\u4e2d\u7ee7\u5df2\u5c31\u7eea');
+      } else {
+        message.warning('\u914d\u5bf9\u7801\u5df2\u751f\u6210\uff0c\u4f46\u4e91\u4e2d\u7ee7\u6682\u672a\u5c31\u7eea\uff1b\u5c40\u57df\u7f51\u53ef\u76f4\u63a5\u4f7f\u7528\uff0c\u4e91\u7aef\u5c06\u81ea\u52a8\u91cd\u8bd5');
+      }
     } catch (error: any) {
       setErrorCode(error?.code || 'DESKTOP_PAIRING_GRANT_FAILED');
     } finally {
