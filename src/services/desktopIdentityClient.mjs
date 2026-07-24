@@ -421,7 +421,17 @@ export function createDesktopIdentityClient({
 
   async function unlock({ baseUrl, password, online = true } = {}) {
     const vaultStatus = await desktopIdentity.unlock({ password });
-    if (!online) {
+    // A one-time paired ordinary device only holds a `single_user_pairing`
+    // authorization that lives in the data host's database. It is never present
+    // in this device's own backend or in the cloud relay, and the paired client
+    // does not retain the host LAN address, so an online session challenge can
+    // never succeed after a restart. Per the single-user design, the paired
+    // client's daily unlock is carried by its offline lease; synchronization
+    // stays a separate manual action. Treat such devices as offline on unlock so
+    // entering the local password enters the workspace instead of failing with a
+    // spurious online re-authentication prompt.
+    const pairedSingleUserDevice = vaultStatus?.authorizationSource === 'single_user_pairing';
+    if (!online || pairedSingleUserDevice) {
       await sessionStore.clear();
       return {
         offline: true,

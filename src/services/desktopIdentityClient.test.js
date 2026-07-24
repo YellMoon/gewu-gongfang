@@ -570,6 +570,36 @@ async function main() {
   assert.strictEqual(singleUserSealCalls[0].password, 'paired-local-password');
   assert.strictEqual(singleUserSealCalls[0].offlineLease.id, validLease.id);
 
+  // A restarted paired ordinary device must enter with its offline lease even
+  // when the browser is online: its `single_user_pairing` authorization only
+  // exists on the data host, so an online session challenge against the cloud
+  // can never succeed and must not be attempted.
+  const pairedUnlockFetches = [];
+  const pairedUnlockClient = createDesktopIdentityClient({
+    desktopIdentity: {
+      status: async () => unlockedVault,
+      unlock: async () => ({
+        ...unlockedVault,
+        authorizationSource: 'single_user_pairing',
+        offlineLease: validLease,
+      }),
+    },
+    fetchImpl: async (...args) => {
+      pairedUnlockFetches.push(args);
+      throw new Error('paired single-user unlock must not call the cloud identity API');
+    },
+    now: () => new Date(at),
+    sessionStore: { save: async value => value, clear: async () => {} },
+  });
+  const pairedDailyUnlock = await pairedUnlockClient.unlock({
+    baseUrl: 'https://identity.example/scheduling',
+    password: 'paired-local-password',
+    online: true,
+  });
+  assert.strictEqual(pairedDailyUnlock.gateState.kind, 'offline-unlocked');
+  assert.strictEqual(pairedDailyUnlock.offline, true);
+  assert.strictEqual(pairedUnlockFetches.length, 0);
+
   console.log('desktop identity client checks passed');
 }
 
