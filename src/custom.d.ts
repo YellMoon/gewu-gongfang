@@ -21,6 +21,7 @@ declare module './services/desktopAuthorizationSession.mjs' {
 }
 declare module './services/pairingApiBase.mjs' {
   export const resolveOnlineSyncActor: any;
+  export const resolveRenewableOnlineSyncActor: any;
   export const resolvePairingApiBase: any;
 }
 declare module './services/identityDeviceCenterPolicy.mjs' {

@@ -153,6 +153,7 @@ const DesktopIdentityGate: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
+    let installedProvider: any = null;
     (async () => {
       try {
         if (!window.desktopIdentity) throw new Error('DESKTOP_IDENTITY_BRIDGE_REQUIRED');
@@ -167,6 +168,18 @@ const DesktopIdentityGate: React.FC = () => {
         const vaultStatus = await client.status();
         if (cancelled) return;
         clientRef.current = client;
+        installedProvider = {
+          ensureOnline: async () => {
+            const result = await client.ensureOnlineSession({
+              baseUrl: identityBaseUrl,
+              hostBaseUrl: config.hostBaseUrl,
+              cloudBaseUrl: config.cloudBaseUrl,
+            });
+            if (!cancelled) acceptRuntime(result);
+            return result;
+          },
+        };
+        (window as any).desktopIdentitySessionProvider = installedProvider;
         setBaseUrl(identityBaseUrl);
         setDeviceName(String((config as any).deviceName || (
           config.buildFlavor === 'primary-host' ? '本地数据主机' : '这台电脑'
@@ -217,7 +230,12 @@ const DesktopIdentityGate: React.FC = () => {
         if (!cancelled) setError(messageForError(caught));
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if ((window as any).desktopIdentitySessionProvider === installedProvider) {
+        delete (window as any).desktopIdentitySessionProvider;
+      }
+    };
   }, [acceptRuntime, suspendBusinessMemory]);
 
   const pollRegistration = useCallback(async () => {
@@ -424,15 +442,17 @@ const DesktopIdentityGate: React.FC = () => {
     const result = await clientRef.current.completeSingleUserPairing({
       password,
       result: completed.result,
-      baseUrl: completed.channel === 'direct' ? completed.baseUrl : undefined,
-      online: completed.channel === 'direct',
+      baseUrl: completed.channel === 'direct' ? completed.baseUrl : baseUrl,
+      hostBaseUrl: completed.channel === 'direct' ? completed.baseUrl : runtimeConfig?.hostBaseUrl,
+      cloudBaseUrl: runtimeConfig?.cloudBaseUrl,
+      online: browserOnline(),
     });
     setPairingPending(null);
     setPairingCode('');
     setPassword('');
     setPasswordAgain('');
     acceptRuntime(result);
-  }, [acceptRuntime, password]);
+  }, [acceptRuntime, baseUrl, password, runtimeConfig?.cloudBaseUrl, runtimeConfig?.hostBaseUrl]);
 
   const beginSingleUserPairing = async () => {
     if (!localPasswordValid(password)) {
@@ -542,7 +562,13 @@ const DesktopIdentityGate: React.FC = () => {
     setBusy(true);
     setError('');
     try {
-      const result = await clientRef.current.unlock({ baseUrl, password, online: browserOnline() });
+      const result = await clientRef.current.unlock({
+        baseUrl,
+        hostBaseUrl: runtimeConfig?.hostBaseUrl,
+        cloudBaseUrl: runtimeConfig?.cloudBaseUrl,
+        password,
+        online: browserOnline(),
+      });
       setPassword('');
       acceptRuntime(result);
     } catch (caught: any) {

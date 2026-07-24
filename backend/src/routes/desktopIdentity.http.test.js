@@ -385,7 +385,7 @@ function generateDeviceKey() {
       assert.ok(
         Date.parse(response.body.data.offlineLease.expiresAt)
           - Date.parse(response.body.data.offlineLease.issuedAt)
-          <= 72 * 60 * 60 * 1000
+          <= 14 * 24 * 60 * 60 * 1000
       );
       return response.body.data;
     }

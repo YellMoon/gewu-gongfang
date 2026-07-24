@@ -57,6 +57,20 @@ assert.ok(appSource.includes('publishCloudHeartbeat'));
 assert.ok(gateSource.includes('discoverPairingCapability') && gateSource.includes('submitPairingRequest'));
 assert.ok(gateSource.includes('pollPairingResult') && gateSource.includes('normalizePairingCode'));
 assert.ok(decodedGateSource.includes('输入一次性配对码'));
+assert.ok(
+  gateSource.includes('hostBaseUrl: runtimeConfig?.hostBaseUrl')
+    && gateSource.includes('cloudBaseUrl: runtimeConfig?.cloudBaseUrl'),
+  'paired desktop unlock must receive both the direct host and managed cloud relay bases'
+);
+assert.ok(
+  gateSource.includes('online: browserOnline()'),
+  'pairing completion must obtain an online session when connectivity is available'
+);
+assert.ok(
+  gateSource.includes('desktopIdentitySessionProvider')
+    && gateSource.includes('ensureOnlineSession'),
+  'the unlocked gate must expose an in-memory online-session renewal provider for manual sync'
+);
 assert.match(
   gateSource,
   /<Input\.Password\s+visibilityToggle\s+value=\{pairingCode\}/,

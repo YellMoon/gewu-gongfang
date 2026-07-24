@@ -12,6 +12,7 @@ const { createPrimaryHostIdentityService } = require('../services/primaryHostIde
 const taskService = require('../services/cloudRelayTaskService');
 const { createMiniappProvisioningReconciler } = require('../services/miniappProvisioningReconciler');
 const { buildQuestionPreviewIndex, safeHostBaseUrl } = require('../services/questionPreviewIndex');
+const { createDesktopSessionRelayService } = require('../services/desktopSessionRelayService');
 
 const router = Router();
 
@@ -124,7 +125,8 @@ function requireDesktopSyncAccess(req, res, next) {
   const actor = req.authz || {};
   const headerDeviceId = String(req.headers['x-device-id'] || '').trim();
   const expiresAt = Date.parse(String(actor.sessionExpiresAt || ''));
-  if (actor.clientType !== 'desktop' || actor.tokenUse !== 'desktop-session'
+  if (actor.clientType !== 'desktop'
+    || !['desktop-session', 'desktop-relay-session'].includes(actor.tokenUse)
     || !actor.userId || !actor.deviceId || !actor.sessionId || !actor.activeRole
     || !Number.isSafeInteger(Number(actor.authVersion)) || Number(actor.authVersion) < 1
     || !Number.isSafeInteger(Number(actor.credentialVersion)) || Number(actor.credentialVersion) < 1
@@ -136,6 +138,14 @@ function requireDesktopSyncAccess(req, res, next) {
   }
   req.syncActor = actor;
   return next();
+}
+
+function desktopSessionRelayService(db) {
+  return createDesktopSessionRelayService({
+    db,
+    relayAssertionSecret: process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '',
+    jwtSecret: process.env.JWT_SECRET || '',
+  });
 }
 
 function requireSnapshotRead(req, res, next) {
@@ -197,6 +207,48 @@ router.post('/host/heartbeat', requireHostWrite, (req, res) => {
   );
 
   res.json({ success: true, serverTime: time });
+});
+
+router.post('/desktop-session/challenges/start', (req, res) => {
+  try {
+    const db = getInstance().db;
+    const request = desktopSessionRelayService(db).createStartRequest({
+      authorizationId: req.body.authorizationId,
+      deviceId: req.body.deviceId,
+      requestSecretHash: req.body.requestSecretHash,
+      targetHostDeviceId: targetHostForTask(db, req.body.targetHostDeviceId),
+    });
+    return res.json({ success: true, request });
+  } catch (error) {
+    return taskRouteError(res, error);
+  }
+});
+
+router.get('/desktop-session/requests/:id', (req, res) => {
+  try {
+    const request = desktopSessionRelayService(getInstance().db).readRequest({
+      requestId: req.params.id,
+      requestSecret: req.headers['x-desktop-session-request-secret'],
+    });
+    return res.json({ success: true, request });
+  } catch (error) {
+    return taskRouteError(res, error);
+  }
+});
+
+router.post('/desktop-session/challenges/:id/exchange', (req, res) => {
+  try {
+    const request = desktopSessionRelayService(getInstance().db).createExchangeRequest({
+      startRequestId: req.body.startRequestId,
+      challengeId: req.params.id,
+      signature: req.body.signature,
+      expectedRowVersion: req.body.expectedRowVersion,
+      requestSecret: req.headers['x-desktop-session-request-secret'],
+    });
+    return res.json({ success: true, request });
+  } catch (error) {
+    return taskRouteError(res, error);
+  }
 });
 
 router.get('/host/status', requireDesktopSyncAccess, (_req, res) => {

@@ -2,8 +2,9 @@ import {
   clearDesktopAuthorizationSession,
   saveDesktopAuthorizationSession,
 } from './desktopAuthorizationSession.mjs';
+import { exchangeDesktopSessionThroughRelay } from './desktopSessionRelayClient.mjs';
 
-export const OFFLINE_LEASE_MAX_MS = 72 * 60 * 60 * 1000;
+export const OFFLINE_LEASE_MAX_MS = 14 * 24 * 60 * 60 * 1000;
 const CLOCK_SKEW_MS = 30 * 1000;
 const PRIVILEGED_ROLES = new Set(['super_admin', 'admin']);
 
@@ -181,7 +182,18 @@ export function desktopIdentityExpiryDelay(gateState, now = new Date()) {
 export function isDesktopIdentityNetworkFailure(error) {
   const causeCode = String(error?.cause?.code || error?.code || '');
   return error?.name === 'TypeError'
-    || ['ECONNREFUSED', 'ECONNRESET', 'ENETUNREACH', 'ETIMEDOUT', 'EAI_AGAIN'].includes(causeCode);
+    || [
+      'ECONNREFUSED',
+      'ECONNRESET',
+      'ENETUNREACH',
+      'ETIMEDOUT',
+      'EAI_AGAIN',
+      'DESKTOP_SESSION_RELAY_UNREACHABLE',
+      'DESKTOP_SESSION_RELAY_TIMEOUT',
+      'DESKTOP_SESSION_RELAY_REQUEST_EXPIRED',
+      'TARGET_HOST_REQUIRED',
+      'TARGET_HOST_NOT_FOUND',
+    ].includes(causeCode);
 }
 
 export function registrationViewForChallenge(challenge = {}) {
@@ -245,6 +257,7 @@ function onlineSessionValue({ token, session, profile }) {
 export function createDesktopIdentityClient({
   desktopIdentity = globalThis.window?.desktopIdentity,
   fetchImpl = globalThis.fetch,
+  relaySessionExchange = exchangeDesktopSessionThroughRelay,
   now = () => new Date(),
   sessionStore = defaultSessionStore(),
   clearRoleCache = async () => {},
@@ -253,6 +266,7 @@ export function createDesktopIdentityClient({
     throw identityError('DESKTOP_IDENTITY_BRIDGE_REQUIRED');
   }
   if (typeof fetchImpl !== 'function') throw identityError('DESKTOP_IDENTITY_FETCH_REQUIRED');
+  let activePassword = null;
 
   function currentDate() {
     const current = now();
@@ -383,6 +397,7 @@ export function createDesktopIdentityClient({
       offlineLease: lease,
       sessionToken: exchanged.token,
     });
+    activePassword = password;
     const stored = onlineSessionValue({ token: exchanged.token, session: exchanged.session, profile });
     await sessionStore.save(stored);
     return {
@@ -397,7 +412,14 @@ export function createDesktopIdentityClient({
     };
   }
 
-  async function completeSingleUserPairing({ password, result, baseUrl, online = false } = {}) {
+  async function completeSingleUserPairing({
+    password,
+    result,
+    baseUrl,
+    hostBaseUrl,
+    cloudBaseUrl,
+    online = false,
+  } = {}) {
     if (!result?.authorization || !result?.profile || !result?.offlineLease) {
       throw identityError('PAIRING_RESULT_INVALID');
     }
@@ -410,8 +432,17 @@ export function createDesktopIdentityClient({
       profile: result.profile,
       offlineLease: result.offlineLease,
     });
+    activePassword = password;
     await sessionStore.clear();
-    if (online) return unlock({ baseUrl, password, online: true });
+    if (online) {
+      return unlock({
+        baseUrl,
+        hostBaseUrl,
+        cloudBaseUrl,
+        password,
+        online: true,
+      });
+    }
     return {
       offline: true,
       vaultStatus,
@@ -419,26 +450,7 @@ export function createDesktopIdentityClient({
     };
   }
 
-  async function unlock({ baseUrl, password, online = true } = {}) {
-    const vaultStatus = await desktopIdentity.unlock({ password });
-    // A one-time paired ordinary device only holds a `single_user_pairing`
-    // authorization that lives in the data host's database. It is never present
-    // in this device's own backend or in the cloud relay, and the paired client
-    // does not retain the host LAN address, so an online session challenge can
-    // never succeed after a restart. Per the single-user design, the paired
-    // client's daily unlock is carried by its offline lease; synchronization
-    // stays a separate manual action. Treat such devices as offline on unlock so
-    // entering the local password enters the workspace instead of failing with a
-    // spurious online re-authentication prompt.
-    const pairedSingleUserDevice = vaultStatus?.authorizationSource === 'single_user_pairing';
-    if (!online || pairedSingleUserDevice) {
-      await sessionStore.clear();
-      return {
-        offline: true,
-        vaultStatus,
-        gateState: resolveDesktopGateState({ vaultStatus, online: false, now: currentDate() }),
-      };
-    }
+  async function exchangeDirectSession(baseUrl, vaultStatus) {
     const challengeData = await request(
       fetchImpl,
       baseUrl,
@@ -460,7 +472,7 @@ export function createDesktopIdentityClient({
       nonce: challenge.nonce,
       nonceIssuedAt: challenge.nonceIssuedAt,
     });
-    const exchanged = await request(
+    return request(
       fetchImpl,
       baseUrl,
       `/api/desktop-identity/session/challenges/${encodeURIComponent(challenge.id)}/exchange`,
@@ -469,24 +481,27 @@ export function createDesktopIdentityClient({
         body: { signature: proof.signature, expectedRowVersion: challenge.rowVersion },
       }
     );
-    if (!exchanged.profile) throw identityError('DESKTOP_SESSION_PROFILE_REQUIRED');
+  }
+
+  async function saveIssuedSession({ issued, password, vaultStatus }) {
+    if (!issued.profile) throw identityError('DESKTOP_SESSION_PROFILE_REQUIRED');
     const profile = profileFrom({
-      identity: exchanged.profile,
-      session: exchanged.session,
+      identity: issued.profile,
+      session: issued.session,
       authorization: {
         id: vaultStatus.authorizationId,
         userId: vaultStatus.user?.id,
       },
-      fallback: exchanged.profile || vaultStatus,
+      fallback: issued.profile || vaultStatus,
     });
-    const stored = onlineSessionValue({ token: exchanged.token, session: exchanged.session, profile });
-    if (!exchanged.offlineLease) throw identityError('DESKTOP_OFFLINE_LEASE_REQUIRED');
+    const stored = onlineSessionValue({ token: issued.token, session: issued.session, profile });
+    if (!issued.offlineLease) throw identityError('DESKTOP_OFFLINE_LEASE_REQUIRED');
     if (!desktopIdentity.refreshOfflineLease) {
       throw identityError('DESKTOP_IDENTITY_OFFLINE_LEASE_REFRESH_UNAVAILABLE');
     }
     await desktopIdentity.refreshOfflineLease({
       password,
-      offlineLease: exchanged.offlineLease,
+      offlineLease: issued.offlineLease,
     });
     await sessionStore.save(stored);
     return {
@@ -499,6 +514,97 @@ export function createDesktopIdentityClient({
         now: currentDate(),
       }),
     };
+  }
+
+  function usableDirectHostBase(value) {
+    const normalized = String(value || '').trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//i.test(normalized)) return '';
+    try {
+      const hostname = new URL(normalized).hostname.toLowerCase();
+      if (['127.0.0.1', 'localhost', '::1', '[::1]'].includes(hostname)) return '';
+    } catch (_error) {
+      return '';
+    }
+    return normalized;
+  }
+
+  async function unlock({
+    baseUrl,
+    hostBaseUrl,
+    cloudBaseUrl,
+    password,
+    online = true,
+  } = {}) {
+    const vaultStatus = await desktopIdentity.unlock({ password });
+    activePassword = password;
+    const pairedSingleUserDevice = vaultStatus?.authorizationSource === 'single_user_pairing';
+    if (!online) {
+      await sessionStore.clear();
+      return {
+        offline: true,
+        vaultStatus,
+        gateState: resolveDesktopGateState({ vaultStatus, online: false, now: currentDate() }),
+      };
+    }
+    if (!pairedSingleUserDevice) {
+      return saveIssuedSession({
+        issued: await exchangeDirectSession(baseUrl, vaultStatus),
+        password,
+        vaultStatus,
+      });
+    }
+
+    const errors = [];
+    const directBaseUrl = usableDirectHostBase(hostBaseUrl);
+    if (directBaseUrl) {
+      try {
+        return await saveIssuedSession({
+          issued: await exchangeDirectSession(directBaseUrl, vaultStatus),
+          password,
+          vaultStatus,
+        });
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    const relayBaseUrl = String(cloudBaseUrl || baseUrl || '').trim();
+    if (relayBaseUrl) {
+      try {
+        const issued = await relaySessionExchange({
+          baseUrl: relayBaseUrl,
+          authorizationId: vaultStatus.authorizationId,
+          deviceId: vaultStatus.deviceId,
+          fetchImpl,
+          signChallenge: input => desktopIdentity.signChallenge(input),
+        });
+        return await saveIssuedSession({ issued, password, vaultStatus });
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    const authoritativeError = errors.find(error => !isDesktopIdentityNetworkFailure(error));
+    if (authoritativeError) throw authoritativeError;
+    await sessionStore.clear();
+    const gateState = resolveDesktopGateState({
+      vaultStatus,
+      online: false,
+      now: currentDate(),
+    });
+    if (!canStartBusinessRuntime({ gateState })) {
+      throw errors.at(-1) || identityError('DESKTOP_SESSION_RELAY_UNREACHABLE');
+    }
+    return { offline: true, vaultStatus, gateState };
+  }
+
+  async function ensureOnlineSession({ baseUrl, hostBaseUrl, cloudBaseUrl } = {}) {
+    if (!activePassword) throw identityError('DESKTOP_IDENTITY_LOCAL_PASSWORD_REQUIRED');
+    return unlock({
+      baseUrl: baseUrl || cloudBaseUrl || hostBaseUrl,
+      hostBaseUrl,
+      cloudBaseUrl,
+      password: activePassword,
+      online: true,
+    });
   }
 
   async function switchRole({ baseUrl, currentSession, activeRole, password } = {}) {
@@ -544,6 +650,7 @@ export function createDesktopIdentityClient({
   }
 
   async function lock() {
+    activePassword = null;
     await sessionStore.clear();
     return desktopIdentity.lock();
   }
@@ -553,6 +660,7 @@ export function createDesktopIdentityClient({
     beginRegistration,
     completeRegistration,
     completeSingleUserPairing,
+    ensureOnlineSession,
     lock,
     pollRegistration,
     status: () => desktopIdentity.status(),

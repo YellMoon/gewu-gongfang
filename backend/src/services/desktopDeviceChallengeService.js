@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 
 const CHALLENGE_TTL_MS = 2 * 60 * 1000;
-const OFFLINE_LEASE_MAX_MS = 72 * 60 * 60 * 1000;
+const OFFLINE_LEASE_MAX_MS = 14 * 24 * 60 * 60 * 1000;
 
 function serviceError(code, cause) {
   const error = new Error(code);

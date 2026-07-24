@@ -11,7 +11,7 @@ import { processMiniappCloudTasks, publishCloudHeartbeat, publishCloudSnapshot }
 import { runOneClickSync } from '../services/oneClickSyncService.mjs';
 import { createCloudRelaySyncTransport, createDirectSyncTransport, discoverLanDirectSyncTransports } from '../services/oneClickSyncTransports.mjs';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
-import { resolveOnlineSyncActor } from '../services/pairingApiBase.mjs';
+import { resolveRenewableOnlineSyncActor } from '../services/pairingApiBase.mjs';
 import { resolveManagedSyncConfig, syncFailureMessage } from '../services/managedSyncConfig.mjs';
 
 const CloudSync: React.FC = () => {
@@ -97,7 +97,10 @@ const CloudSync: React.FC = () => {
     setSyncLoading(true);
     try {
       const config: any = resolveManagedSyncConfig(runtimeConfig || await getRuntimeConfig());
-      const requireOnlineSession = () => resolveOnlineSyncActor(readDesktopAuthorizationSession());
+      const requireOnlineSession = () => resolveRenewableOnlineSyncActor({
+        readSession: () => readDesktopAuthorizationSession(),
+        ensureOnline: () => (window as any).desktopIdentitySessionProvider?.ensureOnline?.(),
+      });
       const transports = [];
       if (config?.cloudBaseUrl) {
         try {

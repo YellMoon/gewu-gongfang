@@ -12,6 +12,8 @@ assert.ok(route.includes("task.task_type === 'question-paper'"), 'host should pr
 assert.ok(route.includes("task.task_type === 'paper-export-word'"), 'host should process miniapp Word export tasks');
 assert.ok(route.includes("task.task_type === 'paper-export-pdf'"), 'host should process miniapp PDF export tasks');
 assert.ok(route.includes("task.task_type === 'identity-provisioning'"), 'host should process internal identity provisioning tasks');
+assert.ok(route.includes("task.task_type === 'desktop-session-challenge-start'"), 'host should process relayed desktop session challenge starts');
+assert.ok(route.includes("task.task_type === 'desktop-session-challenge-exchange'"), 'host should process relayed desktop session challenge exchanges');
 assert.ok(route.includes('requestHash: task.request_hash'), 'host must pass the cloud request hash into the receipt boundary');
 assert.ok(route.includes('capabilities: hostCapabilities()'), 'host heartbeat must advertise its authoritative provisioning capability');
 assert.ok(route.includes('writePaperArtifact'), 'host should write paper export artifacts');
@@ -61,6 +63,77 @@ const { createDesktopSessionService } = require('../services/desktopSessionServi
 const { issueRelayAssertion } = require('../services/relayAssertionService');
 const os = require('os');
 const path = require('path');
+
+(async () => {
+  const calls = [];
+  const desktopDeviceChallengeService = {
+    startChallenge(input) {
+      calls.push(['start', input]);
+      return {
+        id: 'relay-session-challenge-1',
+        authorizationId: input.authorizationId,
+        deviceId: input.deviceId,
+        nonce: 'relay-nonce',
+        nonceIssuedAt: '2026-07-25T08:00:00.000Z',
+        credentialVersion: 1,
+        rowVersion: 1,
+      };
+    },
+    exchangeChallenge(input) {
+      calls.push(['exchange', input]);
+      return {
+        token: 'host-issued-session-token',
+        session: {
+          id: 'host-issued-session',
+          userId: 'relay-user',
+          deviceId: 'relay-device',
+          activeRole: 'teacher',
+          teacherId: 'relay-teacher',
+          authVersion: 2,
+          credentialVersion: 3,
+          issuedAt: '2026-07-25T08:00:00.000Z',
+          expiresAt: '2026-07-25T16:00:00.000Z',
+        },
+        offlineLease: { id: 'host-issued-lease' },
+        profile: { userId: 'relay-user' },
+      };
+    },
+  };
+  const start = await processMiniappTask({
+    id: 'relay-start-task',
+    task_type: 'desktop-session-challenge-start',
+    payload: { authorizationId: 'relay-auth', deviceId: 'relay-device' },
+  }, {}, { desktopDeviceChallengeService });
+  assert.strictEqual(start.challenge.id, 'relay-session-challenge-1');
+  const exchange = await processMiniappTask({
+    id: 'relay-exchange-task',
+    task_type: 'desktop-session-challenge-exchange',
+    payload: {
+      challengeId: 'relay-session-challenge-1',
+      signature: Buffer.alloc(64, 4).toString('base64'),
+      expectedRowVersion: 1,
+    },
+  }, {}, {
+    desktopDeviceChallengeService,
+    issueRelaySessionAssertion(claims) {
+      return { ...claims, signature: 'relay-session-signature' };
+    },
+  });
+  assert.strictEqual(Object.hasOwn(exchange, 'token'), false);
+  assert.strictEqual(exchange.relayAssertion.taskId, 'relay-exchange-task');
+  assert.strictEqual(exchange.relayAssertion.sessionId, 'host-issued-session');
+  assert.deepStrictEqual(calls, [
+    ['start', { authorizationId: 'relay-auth', deviceId: 'relay-device' }],
+    ['exchange', {
+      challengeId: 'relay-session-challenge-1',
+      signature: Buffer.alloc(64, 4).toString('base64'),
+      expectedRowVersion: 1,
+    }],
+  ]);
+})().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});
 
 {
   const names = ['GEWU_CLOUD_RELAY_HOST_TOKEN', 'GEWU_DESKTOP_SYNC_TOKEN', 'GEWU_PRIMARY_HOST_CREDENTIAL', 'GEWU_PRIMARY_HOST_GENERATION', 'GEWU_DEVICE_ID', 'GEWU_DESKTOP_IDENTITY_MODE'];

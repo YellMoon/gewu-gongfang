@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const jwt = require('jsonwebtoken');
+const { issueRelayAssertion } = require('../services/relayAssertionService');
 
 assert.ok(fs.readFileSync('package.json', 'utf8').includes('backend/src/routes/cloudRelay.http.test.js'), 'backend HTTP relay contract test must run in test:backend');
 
@@ -95,6 +96,109 @@ const token = id => jwt.sign({ id }, process.env.JWT_SECRET, { algorithm: 'HS256
       JSON.parse(service.db.prepare("SELECT capabilities FROM host_heartbeats WHERE host_device_id='backend-host'").get().capabilities),
       ['identity-provisioning-v1'],
     );
+    const relaySecret = 'desktop-session-request-secret';
+    const relaySecretHash = crypto.createHash('sha256').update(relaySecret).digest('hex');
+    const relayStartResponse = await call('/desktop-session/challenges/start', {
+      method: 'POST',
+      body: JSON.stringify({
+        authorizationId: 'relay-authorization-1',
+        deviceId: 'relay-device-1',
+        requestSecretHash: relaySecretHash,
+      }),
+    });
+    assert.strictEqual(relayStartResponse.status, 200);
+    const relayStart = (await relayStartResponse.json()).request;
+    const storedRelayStart = service.db.prepare('SELECT * FROM miniapp_tasks WHERE id=?').get(relayStart.id);
+    assert.strictEqual(storedRelayStart.task_type, 'desktop-session-challenge-start');
+    assert.ok(!storedRelayStart.payload.includes(relaySecret));
+    assert.strictEqual((await call(`/desktop-session/requests/${relayStart.id}`, {
+      headers: { 'x-desktop-session-request-secret': 'wrong-secret' },
+    })).status, 403);
+    assert.strictEqual((await call(`/desktop-session/requests/${relayStart.id}`, {
+      headers: { 'x-desktop-session-request-secret': relaySecret },
+    })).status, 200);
+    service.db.prepare(`UPDATE miniapp_tasks
+      SET status='completed', result_payload=?, updated_at=?, row_version=row_version+1
+      WHERE id=?`).run(JSON.stringify({
+      challenge: {
+        id: 'relay-challenge-1',
+        authorizationId: 'relay-authorization-1',
+        deviceId: 'relay-device-1',
+        credentialVersion: 2,
+        nonce: 'relay-nonce',
+        nonceIssuedAt: now,
+        rowVersion: 1,
+      },
+    }), now, relayStart.id);
+    const relayExchangeResponse = await call('/desktop-session/challenges/relay-challenge-1/exchange', {
+      method: 'POST',
+      headers: { 'x-desktop-session-request-secret': relaySecret },
+      body: JSON.stringify({
+        startRequestId: relayStart.id,
+        signature: Buffer.alloc(64, 3).toString('base64'),
+        expectedRowVersion: 1,
+      }),
+    });
+    assert.strictEqual(relayExchangeResponse.status, 200);
+    const relayExchange = (await relayExchangeResponse.json()).request;
+    assert.strictEqual(
+      service.db.prepare('SELECT task_type FROM miniapp_tasks WHERE id=?').get(relayExchange.id).task_type,
+      'desktop-session-challenge-exchange'
+    );
+    const relayAssertion = issueRelayAssertion({
+      taskId: relayExchange.id,
+      actorUserId: 'desktop-relay-u1',
+      deviceId: 'relay-device-1',
+      sessionId: 'relay-host-session-1',
+      activeRole: 'teacher',
+      teacherId: 'relay-teacher-1',
+      authVersion: 4,
+      credentialVersion: 2,
+      issuedAt: Date.parse(now),
+      expiresAt: Date.parse(now) + 8 * 60 * 60 * 1000,
+    }, process.env.GEWU_CLOUD_RELAY_HOST_TOKEN);
+    service.db.prepare(`UPDATE miniapp_tasks
+      SET status='completed', result_payload=?, updated_at=?, row_version=row_version+1
+      WHERE id=?`).run(JSON.stringify({
+      session: {
+        id: 'relay-host-session-1',
+        userId: 'desktop-relay-u1',
+        deviceId: 'relay-device-1',
+        activeRole: 'teacher',
+        eligibleRoles: ['teacher'],
+        teacherId: 'relay-teacher-1',
+        authVersion: 4,
+        credentialVersion: 2,
+        expiresAt: new Date(Date.parse(now) + 8 * 60 * 60 * 1000).toISOString(),
+      },
+      profile: {
+        userId: 'desktop-relay-u1',
+        user: { id: 'desktop-relay-u1', name: 'Desktop Relay Teacher' },
+        activeRole: 'teacher',
+        eligibleRoles: ['teacher'],
+        teacherId: 'relay-teacher-1',
+      },
+      offlineLease: { id: 'relay-lease-1' },
+      relayAssertion,
+    }), now, relayExchange.id);
+    const relayResultResponse = await call(`/desktop-session/requests/${relayExchange.id}`, {
+      headers: { 'x-desktop-session-request-secret': relaySecret },
+    });
+    assert.strictEqual(relayResultResponse.status, 200);
+    const relayedSessionToken = (await relayResultResponse.json()).request.result.token;
+    assert.ok(relayedSessionToken);
+    assert.strictEqual((await call('/host/status', {
+      headers: {
+        authorization: `Bearer ${relayedSessionToken}`,
+        'x-device-id': 'relay-device-1',
+      },
+    })).status, 200);
+    assert.strictEqual((await fetch(`${origin}/api/permissions/my`, {
+      headers: {
+        authorization: `Bearer ${relayedSessionToken}`,
+        'x-device-id': 'relay-device-1',
+      },
+    })).status, 401, 'relay desktop sessions must be scoped to /api/cloud only');
     assert.strictEqual((await call('/host/status', { headers: userHeaders('relay-u1') })).status, 401,
       'miniapp/legacy user tokens must not be used for desktop sync discovery');
     assert.strictEqual((await call('/host/status', { headers: desktopHeaders() })).status, 200);

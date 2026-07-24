@@ -51,7 +51,8 @@ function verifyToken(token) {
     error.code = 'LEGACY_MINIAPP_TOKEN_RELOGIN_REQUIRED';
     throw error;
   }
-  if (decoded.token_use === 'desktop-session' && (decoded.iss !== 'gewu-auth' || decoded.aud !== 'gewu-api')) {
+  if (['desktop-session', 'desktop-relay-session'].includes(decoded.token_use)
+    && (decoded.iss !== 'gewu-auth' || decoded.aud !== 'gewu-api')) {
     throw new Error('TOKEN_AUDIENCE_INVALID');
   }
   if (decoded.token_use === FORMAL_TOKEN_USE && (decoded.iss !== TOKEN_ISSUER || decoded.aud !== FORMAL_AUDIENCE)) {
@@ -84,7 +85,106 @@ function getBearerToken(req) {
   return authHeader.split(' ')[1];
 }
 
+function attachRelayedDesktopAuthorizationContext(req, tokenUser) {
+  if (tokenUser?.token_use !== 'desktop-relay-session') return false;
+  const requestScope = String(req.originalUrl || req.baseUrl || '').split('?')[0];
+  if (requestScope !== '/api/cloud' && !requestScope.startsWith('/api/cloud/')) {
+    const error = new Error('DESKTOP_RELAY_SESSION_SCOPE_INVALID');
+    error.code = 'DESKTOP_RELAY_SESSION_SCOPE_INVALID';
+    throw error;
+  }
+  const allowedRoles = new Set(['super_admin', 'admin', 'teacher', 'student']);
+  const userId = String(tokenUser.sub || '').trim();
+  const sessionId = String(tokenUser.sid || '').trim();
+  const deviceId = String(tokenUser.device_id || '').trim();
+  const activeRole = String(tokenUser.active_role || '').trim();
+  const eligibleRoles = Array.isArray(tokenUser.eligible_roles)
+    ? Array.from(new Set(tokenUser.eligible_roles.map(role => String(role || '').trim())))
+    : [];
+  const teacherId = tokenUser.teacher_id ? String(tokenUser.teacher_id).trim() : null;
+  const studentId = tokenUser.student_id ? String(tokenUser.student_id).trim() : null;
+  const authVersion = Number(tokenUser.auth_version);
+  const credentialVersion = Number(tokenUser.credential_version);
+  const sessionExpiresAt = Number.isFinite(Number(tokenUser.exp))
+    ? new Date(Number(tokenUser.exp) * 1000).toISOString()
+    : null;
+  const valid = userId && userId.length <= 128
+    && sessionId && sessionId.length <= 128
+    && deviceId && deviceId.length <= 128
+    && allowedRoles.has(activeRole)
+    && eligibleRoles.length > 0
+    && eligibleRoles.every(role => allowedRoles.has(role))
+    && eligibleRoles.includes(activeRole)
+    && Number.isSafeInteger(authVersion) && authVersion >= 1
+    && Number.isSafeInteger(credentialVersion) && credentialVersion >= 1
+    && sessionExpiresAt
+    && (activeRole !== 'teacher' || Boolean(teacherId))
+    && (activeRole !== 'student' || Boolean(studentId));
+  if (!valid) {
+    const error = new Error('DESKTOP_RELAY_SESSION_CLAIMS_INVALID');
+    error.code = 'DESKTOP_RELAY_SESSION_CLAIMS_INVALID';
+    throw error;
+  }
+  const headerDeviceId = String(req.headers['x-device-id'] || '').trim();
+  if (headerDeviceId && headerDeviceId !== deviceId) {
+    const error = new Error('DESKTOP_DEVICE_HEADER_MISMATCH');
+    error.code = 'DESKTOP_DEVICE_HEADER_MISMATCH';
+    throw error;
+  }
+  const user = {
+    id: userId,
+    role: activeRole,
+    user_type: activeRole,
+    activeRole,
+    eligibleRoles,
+    teacher_id: teacherId,
+    teacherId,
+    student_id: studentId,
+    studentId,
+    status: 1,
+    login_enabled: 1,
+    review_status: 'approved',
+    deleted: 0,
+    is_super_admin_identity: activeRole === 'super_admin',
+  };
+  req.user = user;
+  req.authz = {
+    userId,
+    phone: null,
+    role: activeRole,
+    activeRole,
+    eligibleRoles,
+    scope: scopeForUser(user),
+    teacherId,
+    studentId,
+    deviceId,
+    tokenDeviceId: deviceId,
+    tokenUse: 'desktop-relay-session',
+    authVersion,
+    sessionId,
+    sessionExpiresAt,
+    authTime: Number.isFinite(Number(tokenUser.iat))
+      ? new Date(Number(tokenUser.iat) * 1000).toISOString()
+      : null,
+    credentialVersion,
+    authorizationId: null,
+    authorizationRowVersion: null,
+    deviceKind: 'desktop-client',
+    identityKind: 'desktop-relay',
+    accountState: 'formal',
+    runtimeNodeRole: process.env.GEWU_NODE_ROLE || 'desktop-client',
+    deviceTrusted: true,
+    deviceActive: true,
+    deviceOwnerUserId: userId,
+    userApproved: true,
+    clientType: 'desktop',
+    isPrimaryHost: false,
+  };
+  return true;
+}
+
 function attachAuthorizationContext(req, tokenUser) {
+  if (attachRelayedDesktopAuthorizationContext(req, tokenUser)) return true;
   let user = null;
   const database = getInstance().db;
   const miniappToken = tokenUser?.token_use === FORMAL_TOKEN_USE || tokenUser?.token_use === UNRECOGNIZED_TOKEN_USE;
@@ -252,7 +352,8 @@ function optionalAuth(req, res, next) {
       if (error?.code === 'REVIEW_TOKEN_NOT_ACCEPTED_BY_BACKEND'
         || tokenHint.token_use === FORMAL_TOKEN_USE
         || tokenHint.token_use === UNRECOGNIZED_TOKEN_USE
-        || tokenHint.token_use === 'desktop-session') {
+        || tokenHint.token_use === 'desktop-session'
+        || tokenHint.token_use === 'desktop-relay-session') {
         return sendAuthError(res, 401, 'Invalid or expired authentication token', 'TOKEN_INVALID');
       }
       // Optional auth keeps old behavior: invalid tokens do not block reads.

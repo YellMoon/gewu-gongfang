@@ -315,7 +315,7 @@ Run: `git add public/desktopIdentityVault.js public/desktopIdentityVault.test.js
 
 - [x] **Step 1: 写启动顺序和状态机 RED 测试**
 
-断言 locked 时不导入 browserDatabase、不启动 host heartbeat/task poll、不构造同步传输；无凭证显示二维码注册；手机号已确认显示待管理员批准；获批后要求设置密码；重启要求本机密码；在线失败只在 72 小时有效离线租约内进入 scoped offline；租约过期阻断；多角色默认 teacher，升 super_admin 必须再次 unlock。
+断言 locked 时不导入 browserDatabase、不启动 host heartbeat/task poll、不构造同步传输；无凭证显示二维码注册；手机号已确认显示待管理员批准；获批后要求设置密码；重启要求本机密码；在线失败只在 14 天有效离线租约内进入 scoped offline；租约过期阻断；多角色默认 teacher，升 super_admin 必须再次 unlock。
 
 ```js
 const state = await resolveDesktopGateState({ vaultStatus: { sealed: true }, online: false, offlineLease });

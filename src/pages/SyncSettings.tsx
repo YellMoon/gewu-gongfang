@@ -12,7 +12,7 @@ import type { CloudSyncContext } from '../navigation/navigationContext';
 import { runOneClickSync } from '../services/oneClickSyncService.mjs';
 import { createCloudRelaySyncTransport, createDirectSyncTransport, discoverLanDirectSyncTransports } from '../services/oneClickSyncTransports.mjs';
 import { hydrateDesktopAuthorizationSession, readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
-import { resolveOnlineSyncActor } from '../services/pairingApiBase.mjs';
+import { resolveRenewableOnlineSyncActor } from '../services/pairingApiBase.mjs';
 import { getSyncPresentation } from '../services/syncPresentation.mjs';
 import { resolveManagedSyncConfig, syncFailureMessage } from '../services/managedSyncConfig.mjs';
 
@@ -178,7 +178,10 @@ const SyncSettings: React.FC<SyncSettingsProps> = ({ context, variant = 'advance
     setOneClickLoading(true);
     try {
       const config: any = resolveManagedSyncConfig(runtimeConfig || await getRuntimeConfig());
-      const requireOnlineSession = () => resolveOnlineSyncActor(readDesktopAuthorizationSession());
+      const requireOnlineSession = () => resolveRenewableOnlineSyncActor({
+        readSession: () => readDesktopAuthorizationSession(),
+        ensureOnline: () => (window as any).desktopIdentitySessionProvider?.ensureOnline?.(),
+      });
       const transports = [];
       if (config?.cloudBaseUrl) {
         try {

@@ -1,7 +1,11 @@
 const crypto = require('crypto');
 
 const PROGRESS_PHASES = new Set(['processing', 'selecting', 'rendering', 'exporting', 'uploading', 'finalizing']);
-const INTERNAL_TASK_TYPES = new Set(['identity-provisioning']);
+const INTERNAL_TASK_TYPES = new Set([
+  'identity-provisioning',
+  'desktop-session-challenge-start',
+  'desktop-session-challenge-exchange',
+]);
 
 function taskError(code, message, statusCode = 409) {
   return Object.assign(new Error(message), { code, statusCode });

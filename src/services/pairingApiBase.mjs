@@ -24,3 +24,20 @@ export function resolveOnlineSyncActor(session, options = {}) {
   }
   return session;
 }
+
+export async function resolveRenewableOnlineSyncActor({
+  readSession,
+  ensureOnline,
+  now = Date.now(),
+} = {}) {
+  if (typeof readSession !== 'function') throw onlineSessionError();
+  try {
+    return resolveOnlineSyncActor(readSession(), { now });
+  } catch (error) {
+    if (error?.code !== 'ONLINE_DESKTOP_SESSION_REQUIRED' || typeof ensureOnline !== 'function') {
+      throw error;
+    }
+  }
+  await ensureOnline();
+  return resolveOnlineSyncActor(readSession(), { now });
+}

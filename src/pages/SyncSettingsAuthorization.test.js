@@ -3,8 +3,10 @@ const fs = require('fs');
 const source = fs.readFileSync('src/pages/SyncSettings.tsx','utf8');
 const cloudSyncSource = fs.readFileSync('src/pages/CloudSync.tsx','utf8');
 assert.ok(source.includes('readDesktopAuthorizationSession') && source.includes('hydrateDesktopAuthorizationSession'));
-assert.ok(source.includes('resolveOnlineSyncActor') && source.includes('requireOnlineSession'),
+assert.ok(source.includes('resolveRenewableOnlineSyncActor') && source.includes('requireOnlineSession'),
   'one-click sync must resolve a current online V2 desktop session before transport selection');
+assert.ok(source.includes('desktopIdentitySessionProvider?.ensureOnline?.()'),
+  'one-click sync must renew a missing or expired paired-device session through the startup identity gate');
 assert.ok(!source.includes('pairingPhone') && !source.includes("phone: pairing"), 'desktop pairing must never accept a phone number');
 assert.ok(!source.includes('message="\\u') && !source.includes('description="\\u'), 'escaped CJK copy must be evaluated instead of rendered literally');
 assert.ok((source.match(/sessionResolver: requireOnlineSession/g) || []).length >= 3,
@@ -17,7 +19,7 @@ assert.ok(source.includes('桌面启动身份门统一完成'),
   'SyncSettings must direct identity management to the startup identity gate');
 for (const pageSource of [source, cloudSyncSource]) {
   assert.ok(pageSource.includes('runOneClickSync'), 'every desktop sync entry must use the V2 one-click orchestrator');
-  assert.ok(pageSource.includes('readDesktopAuthorizationSession') && pageSource.includes('resolveOnlineSyncActor'),
+  assert.ok(pageSource.includes('readDesktopAuthorizationSession') && pageSource.includes('resolveRenewableOnlineSyncActor'),
     'every desktop sync entry must use the current V2 desktop session');
   assert.ok(!pageSource.includes('requestSyncAuthorization') && !pageSource.includes('registerSyncDevice'),
     'legacy per-sync authorization requests must not remain in desktop sync pages');

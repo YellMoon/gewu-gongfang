@@ -160,7 +160,7 @@ assert.strictEqual(exchanged.offlineLease.teacherId, teacherId);
 assert.strictEqual(exchanged.offlineLease.scope.kind, 'teacher');
 assert.strictEqual(
   Date.parse(exchanged.offlineLease.expiresAt) - Date.parse(exchanged.offlineLease.issuedAt),
-  72 * 60 * 60 * 1000
+  14 * 24 * 60 * 60 * 1000
 );
 const consumed = db.prepare(
   'SELECT status, issued_session_id, row_version FROM desktop_device_session_challenges WHERE id=?'
@@ -231,7 +231,7 @@ const nonWechatLease = createDesktopOfflineLease({
 });
 assert.strictEqual(
   Date.parse(nonWechatLease.expiresAt) - Date.parse(nonWechatLease.issuedAt),
-  72 * 60 * 60 * 1000,
+  14 * 24 * 60 * 60 * 1000,
   'single-user pairing leases must not be shortened by the legacy WeChat phone deadline'
 );
 db.prepare(`UPDATE desktop_device_authorizations

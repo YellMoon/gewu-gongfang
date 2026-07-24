@@ -17,9 +17,11 @@ const {
 const { getSingleUserDesktopIdentityService } = require('../services/singleUserDesktopIdentityService');
 const { roleContextForUser } = require('../services/userRoleGrantService');
 const {
+  createDesktopDeviceChallengeService,
   createDesktopOfflineLease,
   createDesktopSessionProfile,
 } = require('../services/desktopDeviceChallengeService');
+const { createDesktopSessionService } = require('../services/desktopSessionService');
 const { createIdentityProvisioningService } = require('../services/identityProvisioningService');
 const { resultHash: hashTaskResult } = require('../services/cloudRelayTaskService');
 const questionBank = require('../services/questionBankService');
@@ -27,7 +29,11 @@ const { resolveQuestionAssetPath, resolveBoundQuestionBankRoot } = require('../s
 const { updateCommittedQuestion, createTrustedInternalStorageUpdateContext } = require('../services/questionBankStorageService');
 const { createLocalQuestionImageResolver, writePaperArtifact } = require('../services/paperArtifactService');
 const { resolveLegacyQuestionSelection, resolveTaskQuestionSelection } = require('../services/paperExportSelectionService');
-const { resolveRelaySessionActorContext, verifyRelayAssertion } = require('../services/relayAssertionService');
+const {
+  issueRelayAssertion,
+  resolveRelaySessionActorContext,
+  verifyRelayAssertion,
+} = require('../services/relayAssertionService');
 const { createSyncBatchBackupService } = require('../services/syncBatchBackupService');
 const { runAuthorizedSyncBatchPreflight } = require('../services/primaryHostSyncPreflightService');
 const { bindPaperCompletionClaim, processDurablePaperTask, replayPaperCompletionOutbox } = require('../services/paperJobProcessor');
@@ -104,6 +110,60 @@ async function processMiniappTask(task, db, dependencies = {}) {
     { questionBank: dependencies.questionBank || questionBank }
   ));
   const writeTaskArtifact = dependencies.writePaperArtifact || writePaperArtifact;
+  if (task.task_type === 'desktop-session-challenge-start') {
+    const sqlite = db.db || db;
+    const desktopDeviceChallengeService = dependencies.desktopDeviceChallengeService
+      || createDesktopDeviceChallengeService({
+        db: sqlite,
+        sessionService: createDesktopSessionService({
+          db: sqlite,
+          jwtSecret: process.env.JWT_SECRET,
+        }),
+      });
+    return {
+      challenge: desktopDeviceChallengeService.startChallenge({
+        authorizationId: payload.authorizationId,
+        deviceId: payload.deviceId,
+      }),
+    };
+  }
+  if (task.task_type === 'desktop-session-challenge-exchange') {
+    const sqlite = db.db || db;
+    const desktopDeviceChallengeService = dependencies.desktopDeviceChallengeService
+      || createDesktopDeviceChallengeService({
+        db: sqlite,
+        sessionService: createDesktopSessionService({
+          db: sqlite,
+          jwtSecret: process.env.JWT_SECRET,
+        }),
+      });
+    const issued = desktopDeviceChallengeService.exchangeChallenge({
+      challengeId: payload.challengeId,
+      signature: payload.signature,
+      expectedRowVersion: payload.expectedRowVersion,
+    });
+    const issueDesktopRelayAssertion = dependencies.issueRelaySessionAssertion || issueRelayAssertion;
+    const issuedAt = Date.parse(String(issued.session?.issuedAt || ''));
+    const expiresAt = Date.parse(String(issued.session?.expiresAt || ''));
+    const relayAssertion = issueDesktopRelayAssertion({
+      taskId: task.id,
+      actorUserId: issued.session?.userId,
+      deviceId: issued.session?.deviceId,
+      sessionId: issued.session?.id,
+      activeRole: issued.session?.activeRole,
+      teacherId: issued.session?.teacherId || null,
+      authVersion: Number(issued.session?.authVersion),
+      credentialVersion: Number(issued.session?.credentialVersion),
+      issuedAt,
+      expiresAt,
+    }, process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '');
+    return {
+      session: issued.session,
+      offlineLease: issued.offlineLease,
+      profile: issued.profile,
+      relayAssertion,
+    };
+  }
   if (task.task_type === 'desktop-pairing') {
     const sqlite = db.db || db;
     const singleUserIdentity = dependencies.singleUserIdentityService

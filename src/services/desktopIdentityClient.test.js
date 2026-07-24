@@ -14,7 +14,7 @@ async function main() {
   } = await import('./desktopIdentityClient.mjs');
 
   const at = new Date('2026-07-17T10:00:00.000Z');
-  assert.strictEqual(OFFLINE_LEASE_MAX_MS, 72 * 60 * 60 * 1000);
+  assert.strictEqual(OFFLINE_LEASE_MAX_MS, 14 * 24 * 60 * 60 * 1000);
   assert.strictEqual(isDesktopIdentityNetworkFailure(new TypeError('fetch failed')), true);
   assert.strictEqual(isDesktopIdentityNetworkFailure({ cause: { code: 'ECONNREFUSED' } }), true);
   assert.strictEqual(isDesktopIdentityNetworkFailure({ code: 'DESKTOP_DEVICE_NOT_ACTIVE' }), false);
@@ -100,13 +100,13 @@ async function main() {
       ...unlockedVault,
       offlineLease: {
         ...validLease,
-        issuedAt: '2026-07-17T08:59:59.000Z',
+        issuedAt: '2026-07-06T08:59:59.000Z',
         expiresAt: '2026-07-20T09:00:00.000Z',
       },
     },
     online: false,
     now: at,
-  }).kind, 'offline-blocked', 'leases longer than 72 hours must fail closed');
+  }).kind, 'offline-blocked', 'leases longer than 14 days must fail closed');
   assert.strictEqual(resolveDesktopGateState({
     vaultStatus: unlockedVault,
     online: true,
@@ -570,11 +570,11 @@ async function main() {
   assert.strictEqual(singleUserSealCalls[0].password, 'paired-local-password');
   assert.strictEqual(singleUserSealCalls[0].offlineLease.id, validLease.id);
 
-  // A restarted paired ordinary device must enter with its offline lease even
-  // when the browser is online: its `single_user_pairing` authorization only
-  // exists on the data host, so an online session challenge against the cloud
-  // can never succeed and must not be attempted.
-  const pairedUnlockFetches = [];
+  // A restarted paired ordinary device must ask the authoritative host through
+  // the relay, save the returned online session, and refresh its offline lease.
+  const pairedLeaseRefreshes = [];
+  const pairedSessionSaves = [];
+  const pairedRelayCalls = [];
   const pairedUnlockClient = createDesktopIdentityClient({
     desktopIdentity: {
       status: async () => unlockedVault,
@@ -583,22 +583,103 @@ async function main() {
         authorizationSource: 'single_user_pairing',
         offlineLease: validLease,
       }),
+      signChallenge: async () => ({ signature: 'paired-signature' }),
+      refreshOfflineLease: async input => {
+        pairedLeaseRefreshes.push(input);
+        return { ...unlockedVault, offlineLease: input.offlineLease };
+      },
     },
-    fetchImpl: async (...args) => {
-      pairedUnlockFetches.push(args);
-      throw new Error('paired single-user unlock must not call the cloud identity API');
+    relaySessionExchange: async input => {
+      pairedRelayCalls.push(input);
+      return {
+        token: onlineSession.token,
+        session: onlineSession.session,
+        profile: serverProfile,
+        offlineLease: validLease,
+      };
+    },
+    now: () => new Date(at),
+    sessionStore: {
+      save: async value => {
+        pairedSessionSaves.push(value);
+        return value;
+      },
+      clear: async () => {},
+    },
+  });
+  const pairedDailyUnlock = await pairedUnlockClient.unlock({
+    baseUrl: 'https://identity.example/scheduling',
+    cloudBaseUrl: 'https://identity.example/scheduling',
+    hostBaseUrl: 'http://127.0.0.1:3001',
+    password: 'paired-local-password',
+    online: true,
+  });
+  assert.strictEqual(pairedDailyUnlock.gateState.kind, 'online-unlocked');
+  assert.strictEqual(pairedDailyUnlock.offline, undefined);
+  assert.strictEqual(pairedRelayCalls.length, 1);
+  assert.strictEqual(pairedRelayCalls[0].authorizationId, unlockedVault.authorizationId);
+  assert.strictEqual(pairedRelayCalls[0].deviceId, unlockedVault.deviceId);
+  assert.strictEqual(pairedLeaseRefreshes[0].password, 'paired-local-password');
+  assert.strictEqual(pairedLeaseRefreshes[0].offlineLease.id, validLease.id);
+  assert.strictEqual(pairedSessionSaves[0].token, onlineSession.token);
+
+  const offlineFallbackClient = createDesktopIdentityClient({
+    desktopIdentity: {
+      status: async () => unlockedVault,
+      unlock: async () => ({
+        ...unlockedVault,
+        authorizationSource: 'single_user_pairing',
+        offlineLease: validLease,
+      }),
+    },
+    relaySessionExchange: async () => {
+      const error = new Error('DESKTOP_SESSION_RELAY_UNREACHABLE');
+      error.code = 'DESKTOP_SESSION_RELAY_UNREACHABLE';
+      throw error;
     },
     now: () => new Date(at),
     sessionStore: { save: async value => value, clear: async () => {} },
   });
-  const pairedDailyUnlock = await pairedUnlockClient.unlock({
-    baseUrl: 'https://identity.example/scheduling',
+  const pairedOfflineFallback = await offlineFallbackClient.unlock({
+    cloudBaseUrl: 'https://identity.example/scheduling',
     password: 'paired-local-password',
     online: true,
   });
-  assert.strictEqual(pairedDailyUnlock.gateState.kind, 'offline-unlocked');
-  assert.strictEqual(pairedDailyUnlock.offline, true);
-  assert.strictEqual(pairedUnlockFetches.length, 0);
+  assert.strictEqual(pairedOfflineFallback.gateState.kind, 'offline-unlocked');
+
+  const renewableClient = createDesktopIdentityClient({
+    desktopIdentity: {
+      status: async () => ({
+        ...unlockedVault,
+        authorizationSource: 'single_user_pairing',
+        offlineLease: validLease,
+      }),
+      unlock: async () => ({
+        ...unlockedVault,
+        authorizationSource: 'single_user_pairing',
+        offlineLease: validLease,
+      }),
+      signChallenge: async () => ({ signature: 'renewed-signature' }),
+      refreshOfflineLease: async input => ({ ...unlockedVault, offlineLease: input.offlineLease }),
+    },
+    relaySessionExchange: async () => ({
+      token: onlineSession.token,
+      session: onlineSession.session,
+      profile: serverProfile,
+      offlineLease: validLease,
+    }),
+    now: () => new Date(at),
+    sessionStore: { save: async value => value, clear: async () => {} },
+  });
+  await renewableClient.unlock({
+    cloudBaseUrl: 'https://identity.example/scheduling',
+    password: 'paired-local-password',
+    online: false,
+  });
+  const renewedForSync = await renewableClient.ensureOnlineSession({
+    cloudBaseUrl: 'https://identity.example/scheduling',
+  });
+  assert.strictEqual(renewedForSync.gateState.kind, 'online-unlocked');
 
   console.log('desktop identity client checks passed');
 }
