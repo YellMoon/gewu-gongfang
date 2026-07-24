@@ -93,3 +93,16 @@ release_status: partial-published
 - 普通端 OSS feed 与主机专属 OSS feed 均已公网回读为 6.4.5；普通端安装包为 150698144 bytes，主机端安装包为 150706764 bytes。其他普通电脑继续按既定规则通过普通端 OSS feed 自助更新。
 - 本机数据主机安装前备份位于 `D:\GewuDataHost\backups\release-6.4.5-20260724-173520`，覆盖安装后复核备份位于 `D:\GewuDataHost\backups\release-6.4.5-20260724-175545`；源库与备份库 `quick_check=ok`。真实安装版健康接口返回 6.4.5，配置仍为 `primary-host/single-user`，设备 ID、D 盘权威库和 I 盘题库路径均未改变。
 - 微信小程序按用户“申请企业主体前保持不动”的要求未重新上传；本次未修改小程序代码，完整小程序兼容性与页面覆盖测试已随根项目回归通过。第二台真实普通电脑更新到 6.4.5 后的实际配对登录仍需在该设备上验收，因此整体结论保持“部分发布”。
+
+## 2026-07-25 6.4.6 云配对路由修复与整链路复核
+
+- 根因定位为云端两个入口使用了彼此独立的 SQLite 队列：普通端把配对申请提交到 Gateway 的 `/api/cloud/desktop-pairing/requests`，数据主机却只从 Backend 的 `/api/cloud/tasks/claim` 拉取，因此主机看不到也不可能处理该申请。6.4.6 改为数据主机优先从 Gateway 领取任务，并把领取任务的中继来源贯穿进度、完成、失败和查询回调，避免回调再次写错服务。
+- 新配对码原先只等待 60 秒后台心跳发布能力，普通端可能在心跳前读到旧状态。6.4.6 在数据主机生成配对码后立即发布配对能力；后台心跳继续作为断线恢复兜底。
+- 当前单人模式是“普通端手动发起、数据主机自动批准”。因此成功流程不会产生需要人工点击的“待审设备申请”；数据主机自动校验一次性配对码、设备签名和密文后直接建档，成功设备随后出现在设备列表。没有有效的一次性配对码时，公网能力接口返回 `PAIRING_HOST_OFFLINE` 属于预期的关闭暴露状态。
+- 聚焦 RED→GREEN 覆盖 Gateway 优先领取、Backend 兼容回退、回调同源、主机任务路由和生成配对码后立即发布能力；`npm test` 与 `npm run typecheck` 均退出码 0。用真实权威库的只读副本执行单人模式运行时冒烟共 13 项全部通过，源库和副本 `quick_check=ok`，数据计数未变化。
+- 真实公网负向验收使用临时设备、临时本机 vault 和故意错误但格式合法的配对码，验证 Gateway 收件、6.4.6 数据主机领取处理、Gateway 收到 `PAIRING_CODE_INVALID` 回调三段均通过；未创建桌面授权，临时配对 grant 已撤销，临时 vault 已删除，证据不记录配对码、密钥或令牌。验收脚本为 `scripts/live-cloud-pairing-route-smoke.js`。
+- 正式代码提交为 `c137d59`。发布前云备份位于 `/root/scheduling-backups/release/20260724-185415-v6.4.6`，Backend/Gateway 数据库完整性检查均为 `ok`；公网 Backend 与 Gateway 健康接口均返回 6.4.6。
+- 普通端 OSS feed 已发布 `GewuGongfang-Desktop-6.4.6-x64.exe`（150699405 bytes），主机专属 feed 已发布 `GewuGongfang-PrimaryHost-6.4.6-x64.exe`（150707455 bytes），两条公网 `latest.yml` 的版本、文件名、大小和 SHA-512 均已回读核对。普通包 flavor 为 `desktop-client` 且不含主机专属模块，主机包 flavor 为 `primary-host`。
+- 本机数据主机安装前备份位于 `D:\GewuDataHost\backups\release-6.4.6-20260724-185603`。安装后程序版本为 6.4.6，仍为 `primary-host/single-user`，设备 ID、`D:\GewuDataHost\data\scheduling.db` 和 `I:/GewuQuestionBank` 均保持不变；本地健康接口返回 6.4.6，权威库 `quick_check=ok`。
+- 14 天离线租约在 Backend、renderer 客户端和 Electron vault 三处常量及边界测试保持一致；体系管理的影响数量二次确认、事务级联删除、标注清理、备份、审计和恢复测试通过；小程序手动手机号输入及既有手机号绑定保护测试通过；OSS 更新入口和普通端/主机端构建隔离测试通过。
+- 微信小程序继续按用户决定保持不上传、不发布，等待企业主体后再恢复平台侧工作。第二台真实普通电脑需要先更新到 6.4.6，再使用数据主机新生成的一次性配对码完成正向验收；旧版本请求或旧配对码不会被迁移复用，因此整体发布状态在该正向验收前仍记为“部分发布”。
