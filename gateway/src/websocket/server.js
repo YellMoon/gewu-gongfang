@@ -61,6 +61,7 @@ class CloudWebSocketServer {
           
           switch (message.type) {
             case 'heartbeat':
+            case 'ping':
               this.handleHeartbeat(ws, message);
               break;
             case 'task_ack':
@@ -77,11 +78,11 @@ class CloudWebSocketServer {
   }
 
   handleHeartbeat(ws, message) {
-    const deviceId = message.deviceId;
+    const deviceId = message.deviceId || message.payload?.deviceId;
     this.connectionManager.updateHeartbeat(deviceId);
     
     ws.send(JSON.stringify({
-      type: 'heartbeat_ack',
+      type: 'pong',
       serverTime: Date.now(),
     }));
   }
@@ -93,11 +94,10 @@ class CloudWebSocketServer {
     // 这里可以添加任务确认逻辑
   }
 
-  // 通知主机有新任务
   notifyHostNewTask(hostDeviceId, taskInfo) {
     const sent = this.connectionManager.sendToDevice(hostDeviceId, {
       type: 'new_task',
-      task: taskInfo,
+      payload: taskInfo,
       timestamp: Date.now(),
     });
     
@@ -108,11 +108,10 @@ class CloudWebSocketServer {
     return sent;
   }
 
-  // 通知桌面客户端任务完成
   notifyDesktopTaskComplete(deviceId, taskResult) {
     const sent = this.connectionManager.sendToDevice(deviceId, {
       type: 'task_complete',
-      result: taskResult,
+      payload: taskResult,
       timestamp: Date.now(),
     });
     

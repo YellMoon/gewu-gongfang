@@ -1,30 +1,56 @@
 const jwt = require('jsonwebtoken');
 
+/**
+ * WebSocket 认证中间件
+ * 支持两种认证方式：
+ * 1. 桌面端：JWT token（clientType=desktop, tokenUse=desktop-session）
+ * 2. 主机端：plain-text host token（通过 x-gewu-host-token 验证）
+ */
 function authenticateWebSocket(req, socket, next) {
   try {
-    // 从查询参数或头部获取token
     const token = req.query.token || req.headers.authorization?.replace('Bearer ', '');
-    
-    if (!token) {
+    const role = req.query.role;
+    const deviceId = req.query.deviceId;
+
+    if (!token || !deviceId) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
     }
 
-    // 验证token
+    // 主机端：plain-text host token
+    if (role === 'host') {
+      const hostToken = process.env.GEWU_CLOUD_RELAY_HOST_TOKEN;
+      if (!hostToken || token !== hostToken) {
+        console.error('[WebSocket] Host token mismatch');
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      req.user = {
+        userId: null,
+        deviceId,
+        sessionId: null,
+        activeRole: 'host',
+        teacherId: null,
+        authVersion: null,
+        credentialVersion: null,
+      };
+      return next();
+    }
+
+    // 桌面端：JWT token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    // 检查是否为桌面端会话
+
     if (decoded.clientType !== 'desktop' || decoded.tokenUse !== 'desktop-session') {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
       return;
     }
 
-    // 将用户信息附加到请求对象
     req.user = {
       userId: decoded.userId,
-      deviceId: decoded.deviceId,
+      deviceId: decoded.deviceId || deviceId,
       sessionId: decoded.sessionId,
       activeRole: decoded.activeRole,
       teacherId: decoded.teacherId,

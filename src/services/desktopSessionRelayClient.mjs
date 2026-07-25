@@ -1,5 +1,5 @@
 const DEFAULT_POLL_INTERVAL_MS = 1000;
-const DEFAULT_MAX_POLLS = 90;
+const DEFAULT_MAX_POLLS = 300;
 
 function relayError(code, cause, statusCode) {
   const error = new Error(code);

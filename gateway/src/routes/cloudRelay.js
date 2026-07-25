@@ -644,7 +644,7 @@ router.post('/tasks/:id/cancel', requireApprovedSnapshotUser, (req, res) => {
 
 router.post('/tasks/:id/complete', requireHostToken, (req, res) => {
   const db = getDb();
-  const existing = db.prepare('SELECT protocol_version,task_type,created_by FROM miniapp_tasks WHERE id=?').get(req.params.id);
+  const existing = db.prepare('SELECT protocol_version,task_type,created_by,payload FROM miniapp_tasks WHERE id=?').get(req.params.id);
   if (Number(existing?.protocol_version || 1) >= 2) {
     try {
       const completionInput = existing.task_type === 'desktop-pairing'
@@ -652,11 +652,12 @@ router.post('/tasks/:id/complete', requireHostToken, (req, res) => {
         : (req.body || {});
       const task = taskService.completeV2Task(db, req.params.id, completionInput);
       
-      // 通过WebSocket通知桌面客户端任务完成
       if (existing.task_type === 'desktop-sync' && existing.created_by) {
         const wsServer = req.app.get('wsServer');
         if (wsServer) {
-          wsServer.notifyDesktopTaskComplete(existing.created_by, {
+          const payload = JSON.parse(existing.payload || '{}');
+          const targetDeviceId = payload.deviceId || existing.created_by;
+          wsServer.notifyDesktopTaskComplete(targetDeviceId, {
             taskId: req.params.id,
             taskType: existing.task_type,
             result: task.result_payload,

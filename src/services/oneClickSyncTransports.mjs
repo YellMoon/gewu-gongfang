@@ -221,10 +221,8 @@ export function createCloudRelaySyncTransport(options = {}) {
       const ws = getWsClient();
       if (ws) {
         try {
-          // 连接 WebSocket
           ws.connect();
 
-          // 等待任务完成通知（最多 30 秒）
           const result = await new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
               ws.removeAllListeners('task_complete');
@@ -252,6 +250,7 @@ export function createCloudRelaySyncTransport(options = {}) {
           };
         } catch (error) {
           console.log('[CloudTransport] WebSocket 轮询失败，回退到 HTTP:', error.message);
+          ws.disconnect();
           // 回退到 HTTP 轮询
         }
       }
