@@ -314,10 +314,43 @@ async function publicIdentityRequest({ baseUrl, fetchImpl = globalThis.fetch }, 
 }
 
 export async function loadIdentityDeviceCenter({
-  baseUrl, runtimeConfig, session, hostRuntimeStatus = null, fetchImpl = globalThis.fetch,
+  baseUrl, relayBaseUrl = '', runtimeConfig, session, hostRuntimeStatus = null, fetchImpl = globalThis.fetch,
+  relaySleep, relayPollIntervalMs, relayMaxPolls,
 } = {}) {
   const access = identityDeviceCenterAccess({ runtimeConfig, session });
   if (!access.visible) throw policyError('AUTHORIZATION_CONTEXT_REQUIRED');
+  const directUsable = /^https?:\/\//i.test(text(baseUrl));
+  const relayUsable = /^https?:\/\//i.test(text(relayBaseUrl));
+  if (!directUsable && !relayUsable) throw policyError('DESKTOP_IDENTITY_BASE_URL_REQUIRED');
+  if (directUsable) {
+    try {
+      return await loadIdentityDeviceCenterDirect({
+        baseUrl, runtimeConfig, session, hostRuntimeStatus, fetchImpl, access,
+      });
+    } catch (error) {
+      // 局域网直连的业务级拒绝（会话失效、权限不足等）是权威结论；
+      // 只有网络层不可达时才切换到云中继，避免掩盖真实错误。
+      if (!relayUsable || !isNetworkLevelFailure(error)) throw error;
+    }
+  }
+  const items = await loadDevicesThroughRelay({
+    relayBaseUrl, session, fetchImpl,
+    sleep: relaySleep, pollIntervalMs: relayPollIntervalMs, maxPolls: relayMaxPolls,
+  });
+  return projectIdentityDeviceCenterSnapshot({
+    mine: items,
+    pending: [],
+    all: [],
+    hostControl: null,
+    hostRuntimeStatus,
+    runtimeConfig,
+    session,
+  });
+}
+
+async function loadIdentityDeviceCenterDirect({
+  baseUrl, runtimeConfig, session, hostRuntimeStatus, fetchImpl, access,
+}) {
   const ownPromise = identityRequest({ baseUrl, session, fetchImpl }, '/api/desktop-identity/devices');
   const pendingPromise = access.canReview
     ? identityRequest({ baseUrl, session, fetchImpl }, '/api/desktop-identity/authorizations/pending')
@@ -341,6 +374,75 @@ export async function loadIdentityDeviceCenter({
     runtimeConfig,
     session,
   });
+}
+
+function isNetworkLevelFailure(error) {
+  return error?.name === 'TypeError'
+    || error?.name === 'AbortError'
+    || error?.code === 'DESKTOP_DEVICE_CENTER_RESPONSE_INVALID';
+}
+
+const RELAY_POLL_INTERVAL_MS = 1000;
+// 与 desktopSessionRelayClient 保持一致：主机轮询任务存在延迟，给足等待窗口。
+const RELAY_MAX_POLLS = 90;
+
+async function relayPayload(response) {
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (cause) {
+    throw policyError('DESKTOP_DEVICE_CENTER_RESPONSE_INVALID', cause);
+  }
+  if (!response.ok || payload?.success !== true) {
+    throw policyError(payload?.code || 'DESKTOP_DEVICE_CENTER_REQUEST_FAILED');
+  }
+  return payload;
+}
+
+export async function loadDevicesThroughRelay({
+  relayBaseUrl,
+  session,
+  fetchImpl = globalThis.fetch,
+  sleep = delay => new Promise(resolve => setTimeout(resolve, delay)),
+  pollIntervalMs = RELAY_POLL_INTERVAL_MS,
+  maxPolls = RELAY_MAX_POLLS,
+} = {}) {
+  if (typeof fetchImpl !== 'function') throw policyError('DESKTOP_IDENTITY_FETCH_REQUIRED');
+  const authorization = text(session?.authorization);
+  if (!authorization.startsWith('Bearer ')) throw policyError('AUTHORIZATION_CONTEXT_REQUIRED');
+  const normalizedMaxPolls = Number(maxPolls) || RELAY_MAX_POLLS;
+  const normalizedInterval = Number(pollIntervalMs) || RELAY_POLL_INTERVAL_MS;
+  const base = apiBase(relayBaseUrl);
+  const headers = {
+    Accept: 'application/json',
+    Authorization: authorization,
+    ...(text(session?.authContext?.deviceId) ? { 'x-device-id': text(session.authContext.deviceId) } : {}),
+  };
+  const started = await relayPayload(await fetchImpl(`${base}/api/cloud/desktop-identity/requests`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: 'devices' }),
+  }));
+  const requestId = text(started.request?.id);
+  if (!requestId) throw policyError('DESKTOP_DEVICE_CENTER_RESPONSE_INVALID');
+  for (let attempt = 0; attempt < normalizedMaxPolls; attempt += 1) {
+    const polled = await relayPayload(await fetchImpl(
+      `${base}/api/cloud/desktop-identity/requests/${encodeURIComponent(requestId)}/result`,
+      { method: 'GET', headers }
+    ));
+    const request = polled.request || {};
+    const status = text(request.status);
+    if (status === 'completed') {
+      const items = request.result_payload?.items;
+      if (!Array.isArray(items)) throw policyError('DESKTOP_DEVICE_CENTER_RESPONSE_INVALID');
+      return items;
+    }
+    if (['failed', 'cancelled'].includes(status)) {
+      throw policyError(request.error_code || 'DESKTOP_DEVICE_CENTER_REQUEST_FAILED');
+    }
+    if (attempt + 1 < normalizedMaxPolls) await sleep(normalizedInterval);
+  }
+  throw policyError('DESKTOP_IDENTITY_RELAY_TIMEOUT');
 }
 
 export async function startPrimaryHostOperation({ baseUrl, session, request, fetchImpl = globalThis.fetch } = {}) {
@@ -495,5 +597,6 @@ export function identityDeviceCenterErrorMessage(code) {
     DESKTOP_CHALLENGE_VERSION_STALE: '\u7533\u8bf7\u5df2\u88ab\u5176\u4ed6\u64cd\u4f5c\u66f4\u65b0\uff0c\u8bf7\u5237\u65b0\u5217\u8868\u3002',
     DESKTOP_DEVICE_VERSION_STALE: '\u8bbe\u5907\u72b6\u6001\u5df2\u88ab\u5176\u4ed6\u64cd\u4f5c\u66f4\u65b0\uff0c\u8bf7\u5237\u65b0\u5217\u8868\u3002',
     DESKTOP_DEVICE_REPLACEMENT_INVALID: '\u66ff\u6362\u5173\u7cfb\u65e0\u6548\uff0c\u8bf7\u9009\u62e9\u540c\u4e00\u7528\u6237\u7684\u53e6\u4e00\u53f0\u6709\u6548\u8bbe\u5907\u3002',
+    DESKTOP_IDENTITY_RELAY_TIMEOUT: '\u6570\u636e\u4e3b\u673a\u6682\u672a\u54cd\u5e94\uff0c\u8bf7\u786e\u8ba4\u4e3b\u673a\u5df2\u5f00\u673a\u8054\u7f51\u540e\u91cd\u8bd5\u3002',
   })[text(code)] || '\u8eab\u4efd\u4e0e\u8bbe\u5907\u670d\u52a1\u6682\u65f6\u4e0d\u53ef\u7528\uff0c\u8bf7\u68c0\u67e5\u4e3b\u673a\u8fde\u63a5\u540e\u91cd\u8bd5\u3002';
 }

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-07-15T14:29:44.3457128Z",
+  "reason": "user-requested continuation after source task system error",
+  "goal": {
+    "source_thread_id": "019f5904-1ebc-7bf3-84dc-a9f1b62585f2",
+    "goal_id": "019f6107-9b05-74e3-894a-bd622486fd72",
+    "status": "active",
+    "inherited_from_thread_id": "019f5904-1ebc-7bf3-84dc-a9f1b62585f2",
+    "inherited_from_goal_id": "019f5904-1ebc-7bf3-84dc-a9f1b62585f2",
+    "generation": 2,
+    "owner_thread_id": "019f6107-9b05-74e3-894a-bd622486fd72"
+  },
+  "handoff": {
+    "incident_id": null,
+    "successor_thread_id": null
+  }
+}

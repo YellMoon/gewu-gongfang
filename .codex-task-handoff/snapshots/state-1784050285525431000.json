@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "phase": "protected",
+  "project_path": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system",
+  "source_thread_id": "019f55f4-d8c2-7290-a95f-ca0581de4b23",
+  "updated_at": "2026-07-14T11:28:24.275934Z",
+  "current_step": "Formula pipeline goal completed and released to all currently applicable endpoints",
+  "completed_steps": [
+    "Task 12 desktop and miniapp runtime QA committed and pushed as 72c65db",
+    "Task 13 formula render matrix committed and pushed as a6ba9c9",
+    "Task 14 unified release matrix completed and documented as dc9741d"
+  ],
+  "next_step": "Merge the two explicitly requested worktree pull requests, then implement the miniapp review-experience login solution as the final task",
+  "wait_state": "none",
+  "goal_id": "019f5904-1ebc-7bf3-84dc-a9f1b62585f2",
+  "inherited_from_thread_id": "019f55f4-d8c2-7290-a95f-ca0581de4b23",
+  "inherited_from_goal_id": "c58d1032-f4ee-49e4-9dec-e8e8ad9555c8",
+  "validation_evidence": [
+    "full npm test, production build, packaged smoke, formula dependency gates, and Node ABI verification passed for 5.14.3",
+    "16 formula artifacts and 32 rendered pages were visually audited with all seven formulas visible in each output",
+    "cloud backup completed and public health reports 5.14.3; host relay protocol and anonymous boundary checks passed",
+    "OSS latest.yml and installer report 5.14.3 with matching size and SHA-512",
+    "WeChat developer build 5.14.3 uploaded successfully; production review intentionally deferred to the user-requested login-review task",
+    "local data host upgraded to 5.14.3 with preserved D/I drive authority binding; installed-app DOCX and PDF exports verified with two formulas and zero fallbacks",
+    "gewu/master advanced to dc9741d"
+  ]
+}

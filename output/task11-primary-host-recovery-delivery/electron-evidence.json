@@ -1,0 +1,72 @@
+{
+  "verificationStatus": "passed",
+  "capturedAt": "2026-07-19T14:41:25.829Z",
+  "electronVersion": "28.3.3",
+  "chromiumVersion": "120.0.6099.291",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "fixture": {
+    "transport": "loopback-only",
+    "userData": "temporary-isolated-directory",
+    "epochId": "fixture-epoch-1",
+    "deliveryId": "fixture-delivery-1",
+    "recoveryCode": "synthetic-redacted-in-metadata",
+    "managedIdentityUrlInterceptedToLoopback": true
+  },
+  "assertions": {
+    "noCloseAffordance": true,
+    "escapeCannotClose": true,
+    "maskClickCannotClose": true,
+    "reloadRetainsPendingDelivery": true,
+    "processRelaunchRetainsPendingDelivery": true,
+    "acknowledgementOutageRetainsSecret": true,
+    "acknowledgementRetryClearsPending": true,
+    "ossUpdateCardCheckReturnsFeedUrl": true,
+    "passwordResetEntryVisible": true,
+    "passwordResetPhoneVerificationVisible": true,
+    "passwordResetApprovalAndNewPasswordVisible": true,
+    "passwordResetCompletesIntoBusinessRuntime": true,
+    "teacherRoleNarrowRuntimeVisible": true,
+    "narrowRuntimeHasNoHorizontalOverflow": true,
+    "offlineLeaseNarrowRuntimeVisible": true,
+    "primaryHostWideDeviceCenterVisible": true,
+    "rendererErrors": 0,
+    "mainProcessErrors": 0,
+    "expectedAcknowledgementOutageDiagnostics": 4
+  },
+  "networkFailures": [],
+  "expectedMainProcessDiagnostics": [
+    {
+      "launch": "relaunch",
+      "message": "Error occurred in handler for 'primary-host:acknowledge-recovery-package': Error: PRIMARY_HOST_RECOVERY_DELIVERY_ACK_NETWORK"
+    },
+    {
+      "launch": "relaunch",
+      "message": "at C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system\\output\\task11-primary-host-recovery-delivery\\electron-fixture-main.js:364:13"
+    },
+    {
+      "launch": "relaunch",
+      "message": "at WebContents.<anonymous> (node:electron/js2c/browser_init:2:77979)"
+    },
+    {
+      "launch": "relaunch",
+      "message": "at WebContents.emit (node:events:517:28)"
+    }
+  ],
+  "screenshots": [
+    "00-password-reset-entry.png",
+    "00a-password-reset-phone-verification.png",
+    "00b-password-reset-approved.png",
+    "01-pending-before-reveal.png",
+    "02-revealed-package-and-copy.png",
+    "02b-process-relaunch-pending.png",
+    "03-ack-outage-retains-modal-and-secret.png",
+    "04-acknowledged-high-risk-unblocked.png",
+    "04a-teacher-narrow-runtime.png",
+    "05-system-settings-oss-update-check.png",
+    "06-offline-lease-narrow-runtime.png",
+    "07-primary-host-wide-device-center.png"
+  ]
+}

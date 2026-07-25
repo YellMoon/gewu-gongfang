@@ -1,0 +1,9 @@
+Wxml Console Sources Network Performance Memory                      top       Filter  Default levels      9 hidden     3  TypeError: Cannot read property '__subPageFrameEndTime__' of null
+    at t.<anonymous> (<anonymous>:1:1736327)
+    at :61146/appservice/<s… callback function>
+    at VM28 WAServiceMainContext.js:1
+    at VM28 WAServiceMainContext.js:1 (env: Windows,mp,2.01.2510290; lib: 3.15.2)   [system] WeChatLib: 3.15.2 (2026.5.6 18:15:20)  [system] Subpackages: N/A  [system] LazyCodeLoading: false  Tue Jul 14 2026 01:52:24 GMT+0800 (中国标准时间) 文章推荐     getSystemInfo API 提示    小程序基础库从 3.7.0 起正式支持 HarmonyOS 平台，开发者可通过 wx.getDeviceInfo() 判断平台进行兼容处理，让小程序在 HarmonyOS 也获得最佳体验，查看指引[https://developers.weixin.qq.com/community/develop/doc/00008e0…]    关于上述警告，点击查看更多信息：https://developers.weixin.qq.com/community/develop/doc/00008e0…]  app.js? [sm]:2 教育综合服务平台 v1.6.0   [Deprecation] SharedArrayBuffer will require cross-origin isolation as of M92, around July 2021. See https://developer.chrome.com/blog/enabling-shared-array-buffer/ for more details.    taro.js? [sm]:1 GET https://physicsedu.xyz/scheduling/api/permissions/my?_t=1783965146171 401 (Unauthorized) (env: Windows,mp,2.01.2510290; lib: 3.15.2)      taro.js? [sm]:1 POST https://physicsedu.xyz/scheduling/api/auth/refresh 401 (Unauthorized) (env: Windows,mp,2.01.2510290; lib: 3.15.2)    [system] Launch Time: 18683 ms   Error: timeout
+    at Function.<anonymous> (WAServiceMainContext…t=wechat&v=3.15.2:1)
+    at p (WAServiceMainContext…t=wechat&v=3.15.2:1)
+    at WAServiceMainContext…t=wechat&v=3.15.2:1
+    at WAServiceMainContext…t=wechat&v=3.15.2:1 (env: Windows,mp,2.01.2510290; lib: 3.15.2)              ​

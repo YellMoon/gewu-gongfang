@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "phase": "protected",
+  "project_path": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system",
+  "source_thread_id": "019f55f4-d8c2-7290-a95f-ca0581de4b23",
+  "updated_at": "2026-07-16T18:35:11.945677Z",
+  "current_step": "Execute desktop identity Task 3 with TDD: Backend HTTP control plane, trusted-device approval, signed exchange, and revocable short sessions",
+  "completed_steps": [
+    "Formula pipeline unified release completed as version 5.14.3",
+    "Unrecognized-student implementation Tasks 1 through 6 completed in local commits 63ea39d through 0f4b9be",
+    "Task 6 reconciler focused tests and a fresh full npm test passed before commit 0f4b9be",
+    "User approved the hybrid desktop identity scheme and confirmed one human uses the primary host plus additional replaceable computers",
+    "Desktop identity multi-role, multi-device, host migration, and recovery design and file-level TDD plan were approved",
+    "Desktop identity Task 1 completed in 9c0c30f: schema 3103, additive role grants, canonical teacher recovery, active-role scopes, and revocation persistence",
+    "Desktop identity Task 2 completed in 792e562: schema 3104, Ed25519 device challenges, fresh verified-phone claimant binding, device-key uniqueness, event replay prevention, and login-event retention compatibility"
+  ],
+  "next_step": "Write real HTTP and desktopSessionService RED tests for start, fresh WeChat confirmation, fixed claimant projections, self-approval denial, trusted super-admin approval, signed one-time exchange, multi-device ownership, revocation, and session version checks",
+  "wait_state": "none; no push, packaging, upload, deployment, real host bootstrap, or host migration before the unified compatibility matrix",
+  "goal_id": "019f66df-8926-7750-a29e-acddb786ea23",
+  "inherited_from_thread_id": "019f6628-8e10-71d1-b211-3ebcbdfbcd03",
+  "inherited_from_goal_id": "019f6628-8e10-71d1-b211-3ebcbdfbcd03",
+  "validation_evidence": [
+    "Actual Git HEAD is 792e562 on master; gewu/master remains intentionally unchanged until the unified release task",
+    "Protected tracked and untracked user artifacts remain untouched and were excluded from both desktop identity commits",
+    "Fresh full npm test passed after final Task 2 changes: exit 0 in 138.2 seconds with 560 output lines",
+    "Schema status and SQLite user_version report 3104",
+    "The challenge service rejects claimant, role, primary-host, raw WeChat credential, client secret, and private-key injection",
+    "The challenge service stores only a SHA-256 challenge secret hash and a public Ed25519 key; each key fingerprint is bound to one independently revocable device",
+    "A fresh formal miniapp login event can confirm exactly one challenge; stale, replayed, mismatched, unrecognized, expired, and stale-row-version proofs fail closed",
+    "Login-event retention deletes old events with historical challenge references set to null instead of blocking cleanup",
+    "No external side effects were performed"
+  ],
+  "goal_status": "active",
+  "last_completed_step": "Desktop identity Task 2 committed locally as 792e562",
+  "last_validation_evidence": "Fresh full npm test passed after all Task 2 changes; exact staged scope excluded every protected user-owned file"
+}

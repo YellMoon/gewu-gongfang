@@ -1,0 +1,72 @@
+[
+  {
+    "questionId": "matrix-choice-rich",
+    "location": "stem",
+    "index": 0,
+    "canonicalLatex": "\\frac{v_0^2}{2g}",
+    "requestedMode": "word-native",
+    "effectiveMode": "word-native",
+    "fallbackUsed": false,
+    "diagnostics": []
+  },
+  {
+    "questionId": "matrix-choice-rich",
+    "location": "stem",
+    "index": 1,
+    "canonicalLatex": "\\sqrt{a^2+b^2}",
+    "requestedMode": "word-native",
+    "effectiveMode": "word-native",
+    "fallbackUsed": false,
+    "diagnostics": []
+  },
+  {
+    "questionId": "matrix-choice-rich",
+    "location": "options[0]",
+    "index": 2,
+    "canonicalLatex": "\\alpha+\\beta",
+    "requestedMode": "word-native",
+    "effectiveMode": "word-native",
+    "fallbackUsed": false,
+    "diagnostics": []
+  },
+  {
+    "questionId": "matrix-choice-rich",
+    "location": "options[1]",
+    "index": 3,
+    "canonicalLatex": "\\int_0^t v\\,dt",
+    "requestedMode": "word-native",
+    "effectiveMode": "word-native",
+    "fallbackUsed": false,
+    "diagnostics": []
+  },
+  {
+    "questionId": "matrix-choice-rich",
+    "location": "subQuestions[0].content",
+    "index": 4,
+    "canonicalLatex": "f(x)=\\begin{cases}x^2,&x\\ge0\\\\-x,&x<0\\end{cases}",
+    "requestedMode": "word-native",
+    "effectiveMode": "word-native",
+    "fallbackUsed": false,
+    "diagnostics": []
+  },
+  {
+    "questionId": "matrix-choice-rich",
+    "location": "subQuestions[0].answer",
+    "index": 5,
+    "canonicalLatex": "f(2)=4",
+    "requestedMode": "word-native",
+    "effectiveMode": "word-native",
+    "fallbackUsed": false,
+    "diagnostics": []
+  },
+  {
+    "questionId": "matrix-choice-rich",
+    "location": "answer",
+    "index": 6,
+    "canonicalLatex": "\\frac{v_0^2}{2g}",
+    "requestedMode": "word-native",
+    "effectiveMode": "word-native",
+    "fallbackUsed": false,
+    "diagnostics": []
+  }
+]

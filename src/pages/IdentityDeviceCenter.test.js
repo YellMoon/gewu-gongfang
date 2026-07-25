@@ -70,8 +70,16 @@ assert.ok(
 );
 assert.ok(source.includes("desktopIdentityMode === 'single-user'"));
 assert.ok(
-  source.includes('resolveDesktopIdentityBaseUrl(runtimeConfig)'),
+  source.includes('resolveDesktopIdentityBaseUrl(runtimeConfig, { authorizationSource })'),
   'single-user primary host device management must use the protected local identity control plane'
+);
+assert.ok(
+  source.includes('vaultStatus?.authorizationSource'),
+  'paired single-user clients must route identity requests to the host that issued their session'
+);
+assert.ok(
+  source.includes('relayBaseUrl') && source.includes("authorizationSource === 'single_user_pairing'"),
+  'paired single-user clients must fall back to the cloud relay so device data stays reachable off-LAN'
 );
 assert.strictEqual(
   source.includes('resolvePairingApiBase(runtimeConfig, window.location)'),

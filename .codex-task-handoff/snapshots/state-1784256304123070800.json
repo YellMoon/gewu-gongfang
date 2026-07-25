@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "phase": "protected",
+  "project_path": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system",
+  "source_thread_id": "019f55f4-d8c2-7290-a95f-ca0581de4b23",
+  "updated_at": "2026-07-17T01:15:46.252755Z",
+  "current_step": "Execute desktop identity Task 4 with TDD: propagate active role through permissions and sync scopes, then add the trusted local role-switch endpoint",
+  "completed_steps": [
+    "Formula pipeline unified release completed as version 5.14.3",
+    "Unrecognized-student implementation Tasks 1 through 6 completed in local commits 63ea39d through 0f4b9be",
+    "Task 6 reconciler focused tests and a fresh full npm test passed before commit 0f4b9be",
+    "User approved the hybrid desktop identity scheme and confirmed one human uses the primary host plus additional replaceable computers",
+    "Desktop identity multi-role, multi-device, host migration, and recovery design and file-level TDD plan were approved",
+    "Desktop identity Task 1 completed in 9c0c30f: schema 3103, additive role grants, canonical teacher recovery, active-role scopes, and revocation persistence",
+    "Desktop identity Task 2 completed in 792e562: schema 3104, Ed25519 device challenges, fresh verified-phone claimant binding, device-key uniqueness, event replay prevention, and login-event retention compatibility",
+    "Desktop identity Task 3 completed in 68e945d: schema 3105, fixed-claimant HTTP approval, Ed25519 signed exchange, database-backed eight-hour sessions, per-device revocation, and primary-host device-duty enforcement"
+  ],
+  "next_step": "Write desktopRoleSession HTTP RED tests for the canonical super-admin teacher identity, teacher-scoped reads and writes, full super-admin scope, self-reported role rejection, safe downgrade, and recent local-elevation-only upgrade",
+  "wait_state": "none; no push, packaging, upload, deployment, real host bootstrap, or host migration before the unified compatibility matrix",
+  "goal_id": "019f66df-8926-7750-a29e-acddb786ea23",
+  "inherited_from_thread_id": "019f6628-8e10-71d1-b211-3ebcbdfbcd03",
+  "inherited_from_goal_id": "019f6628-8e10-71d1-b211-3ebcbdfbcd03",
+  "validation_evidence": [
+    "Actual Git HEAD is 68e945d on master; gewu/master remains intentionally unchanged until the unified release task",
+    "Protected tracked and untracked user artifacts remain untouched and were excluded from Task 3",
+    "Fresh full npm test passed after final Task 3 code: exit 0 in 126.6 seconds with 563 output lines",
+    "Focused desktop identity suite passed after adding the concurrent approval contract",
+    "Schema status and SQLite user_version report 3105",
+    "One of two concurrent approval requests succeeds and the other returns 409 through row-version and state CAS",
+    "Signed exchange requires both the server-generated one-time challenge secret and the target device Ed25519 signature",
+    "Every desktop request validates persisted sid, auth_version, credential_version, active_role, role grants, phone re-verification due date, and device status",
+    "Revoking one device invalidates only that device sessions; other devices owned by the same human stay active",
+    "Remote desktop-client authorization cannot acquire primary-host write authority merely by connecting to the host server",
+    "No external side effects were performed"
+  ],
+  "goal_status": "active",
+  "last_completed_step": "Desktop identity Task 3 committed locally as 68e945d",
+  "last_validation_evidence": "Fresh full npm test and focused concurrent approval suite passed; exact staged scope excluded every protected user-owned file"
+}

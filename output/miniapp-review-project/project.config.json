@@ -1,0 +1,18 @@
+{
+  "miniprogramRoot": "dist/",
+  "projectname": "scheduling-miniapp-review-capture",
+  "description": "Review UI evidence capture",
+  "appid": "wx3d570539bbe6ba1b",
+  "setting": {
+    "urlCheck": false,
+    "es6": false,
+    "enhance": true,
+    "postcss": false,
+    "minified": false,
+    "compileHotReLoad": false,
+    "uploadWithSourceMap": false,
+    "minifyWXML": true
+  },
+  "compileType": "miniprogram",
+  "libVersion": "3.15.2"
+}

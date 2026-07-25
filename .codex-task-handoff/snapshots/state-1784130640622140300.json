@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "phase": "protected",
+  "project_path": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system",
+  "source_thread_id": "019f55f4-d8c2-7290-a95f-ca0581de4b23",
+  "updated_at": "2026-07-15T14:31:56.794359Z",
+  "current_step": "Miniapp review experience Task 7: teacher-list blank-page RED/GREEN and full role/page screenshot verification",
+  "completed_steps": [
+    "Formula pipeline unified release completed as version 5.14.3",
+    "Miniapp review experience Tasks 1 through 6 completed and independently reviewed",
+    "Version 5.14.4 full tests, desktop build, miniapp production build and release checks passed",
+    "Version 5.14.4 code pushed to gewu/master through commit 613c20e",
+    "Cloud Backend and Gateway deployed with exact 5.14.4 health and public review smoke",
+    "Miniapp 5.14.4 built and uploaded; administrator screenshot validation reached teacher-list blank-page defect",
+    "Recovered source task 019f6107 after system error and created successor active goal"
+  ],
+  "next_step": "Add a failing teacher-page layout visibility test, implement the minimal flex-column fix, rebuild/reupload the miniapp, then continue every administrator/student page and state screenshot check",
+  "wait_state": "none",
+  "goal_id": "019f6628-8e10-71d1-b211-3ebcbdfbcd03",
+  "inherited_from_thread_id": "019f6107-9b05-74e3-894a-bd622486fd72",
+  "inherited_from_goal_id": "019f6107-9b05-74e3-894a-bd622486fd72",
+  "validation_evidence": [
+    "git HEAD and gewu/master match at 613c20e",
+    "Only tracked dirty file is generated build timestamp src/generated/version.ts; pre-existing untracked handoff/playwright/output/template-inspection files preserved",
+    "Source task recorded npm test exit 0 after review routing and Backend review-token isolation fixes",
+    "Source task recorded production miniapp release check and upload success for 5.14.4",
+    "Real WeChat developer-tool review session reproduced teacher page blank after more than 10 seconds",
+    "Root-cause comparison found students page flex-column parent layout present while teachers page omitted it, collapsing the shared 100%-height pull-refresh scroller"
+  ]
+}

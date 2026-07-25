@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-07-15T17:50:30Z",
+  "reason": "user-requested continuation after source task context-compaction system error",
+  "rollback_scope": [
+    ".codex-task-handoff/state.json",
+    ".codex-task-handoff/goal.json",
+    ".codex-task-handoff/lease.json",
+    ".codex-task-handoff/handoff.json"
+  ],
+  "workspace": {
+    "project_path": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system",
+    "head": "485cf63",
+    "source_thread_status": "systemError",
+    "source_interrupted_turn_id": "f61e762d-e101-4f4f-b89e-6a09b5fe99b6",
+    "source_interrupted_at": 1784137331,
+    "current_thread_id": "019f66df-8926-7750-a29e-acddb786ea23",
+    "incident_id": "f32a74c4aedcf93dfe735ba6"
+  },
+  "state": {
+    "phase": "protected",
+    "current_step": "Write and self-review the implementation plan for the approved unrecognized-student, verified-phone login, dual-phone identity, authoritative-host provisioning, and membership design",
+    "next_step": "Commit the approved design baseline, invoke writing-plans, produce a detailed file-by-file implementation plan, self-review it, then start RED-GREEN implementation without further routine questions",
+    "goal_status": "active",
+    "goal_id": "019f6628-8e10-71d1-b211-3ebcbdfbcd03"
+  },
+  "goal": {
+    "schema_version": 1,
+    "source_thread_id": "019f6628-8e10-71d1-b211-3ebcbdfbcd03",
+    "goal_id": "019f6628-8e10-71d1-b211-3ebcbdfbcd03",
+    "status": "active",
+    "inherited_from_thread_id": "019f6107-9b05-74e3-894a-bd622486fd72",
+    "inherited_from_goal_id": "019f6107-9b05-74e3-894a-bd622486fd72",
+    "generation": 3,
+    "owner_thread_id": "019f6628-8e10-71d1-b211-3ebcbdfbcd03"
+  },
+  "lease": {
+    "schema_version": 1,
+    "incident_id": null,
+    "owner": null
+  },
+  "handoff": {
+    "schema_version": 1,
+    "incident_id": null,
+    "successor_thread_id": "019f6628-8e10-71d1-b211-3ebcbdfbcd03"
+  }
+}

@@ -1,0 +1,30 @@
+[    1355ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/static/js/bundle.js:157094
+[    1991ms] [LOG] Database service loaded successfully @ http://127.0.0.1:3000/static/js/bundle.js:157
+[   92412ms] [ERROR] Warning: [antd: Input] `bordered` is deprecated. Please use `variant` instead. @ http://127.0.0.1:3000/static/js/bundle.js:129099
+[  133979ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/static/js/bundle.js:157094
+[  134338ms] [LOG] Database service loaded successfully @ http://127.0.0.1:3000/static/js/bundle.js:157
+[  208804ms] [ERROR] Warning: [antd: Input] `bordered` is deprecated. Please use `variant` instead. @ http://127.0.0.1:3000/static/js/bundle.js:129099
+[  209360ms] [ERROR] Warning: [antd: Card] `bodyStyle` is deprecated. Please use `styles.body` instead. @ http://127.0.0.1:3000/static/js/bundle.js:129099
+[  209378ms] [ERROR] Warning: [antd: Input] `addonBefore` is deprecated. Please use `Space.Compact` instead. @ http://127.0.0.1:3000/static/js/bundle.js:129099
+[  209380ms] [ERROR] Warning: [antd: InputNumber] `addonBefore` is deprecated. Please use `Space.Compact` instead. @ http://127.0.0.1:3000/static/js/bundle.js:129099
+[  234269ms] [ERROR] Connecting to 'http://cloud.test/api/cloud/tasks' violates the following Content Security Policy directive: "connect-src 'self' https: http://localhost:3001 http://127.0.0.1:3001". The action has been blocked. @ http://127.0.0.1:3000/static/js/src_pages_QuestionBankPaper_tsx.chunk.js:1840
+[  234270ms] [ERROR] Fetch API cannot load http://cloud.test/api/cloud/tasks. Refused to connect because it violates the document's Content Security Policy. @ http://127.0.0.1:3000/static/js/src_pages_QuestionBankPaper_tsx.chunk.js:1840
+[  234291ms] [ERROR] Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead. @ http://127.0.0.1:3000/static/js/bundle.js:129099
+[  259701ms] [ERROR] Connecting to 'http://cloud.test/api/cloud/tasks' violates the following Content Security Policy directive: "connect-src 'self' https: http://localhost:3001 http://127.0.0.1:3001". The action has been blocked. @ http://127.0.0.1:3000/static/js/src_pages_QuestionBankPaper_tsx.chunk.js:1840
+[  259701ms] [ERROR] Fetch API cannot load http://cloud.test/api/cloud/tasks. Refused to connect because it violates the document's Content Security Policy. @ http://127.0.0.1:3000/static/js/src_pages_QuestionBankPaper_tsx.chunk.js:1840
+[  381611ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/static/js/bundle.js:157094
+[  386453ms] [LOG] Database service loaded successfully @ http://127.0.0.1:3000/static/js/bundle.js:157
+[  430956ms] [ERROR] Warning: [antd: Input] `bordered` is deprecated. Please use `variant` instead. @ http://127.0.0.1:3000/static/js/bundle.js:129099
+[  431143ms] [ERROR] Warning: [antd: Card] `bodyStyle` is deprecated. Please use `styles.body` instead. @ http://127.0.0.1:3000/static/js/bundle.js:129099
+[  431167ms] [ERROR] Warning: [antd: Input] `addonBefore` is deprecated. Please use `Space.Compact` instead. @ http://127.0.0.1:3000/static/js/bundle.js:129099
+[  431168ms] [ERROR] Warning: [antd: InputNumber] `addonBefore` is deprecated. Please use `Space.Compact` instead. @ http://127.0.0.1:3000/static/js/bundle.js:129099
+[  459514ms] [ERROR] Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead. @ http://127.0.0.1:3000/static/js/bundle.js:129099
+[ 1061368ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/static/js/bundle.js:158299
+[ 1062258ms] [LOG] Database service loaded successfully @ http://127.0.0.1:3000/static/js/bundle.js:157
+[62641613ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/static/js/bundle.js:158299
+[62646770ms] [LOG] Database service loaded successfully @ http://127.0.0.1:3000/static/js/bundle.js:157
+[62674562ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/static/js/bundle.js:158299
+[62675056ms] [LOG] Database service loaded successfully @ http://127.0.0.1:3000/static/js/bundle.js:157
+[65106498ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/static/js/bundle.js:158549
+[65108229ms] [LOG] Database service loaded successfully @ http://127.0.0.1:3000/static/js/bundle.js:157
+[65477674ms] [LOG] Database service loaded successfully @ http://127.0.0.1:3000/static/js/bundle.js:157

@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "source_thread_id": "019f66df-8926-7750-a29e-acddb786ea23",
+  "source_goal_id": "019f66df-8926-7750-a29e-acddb786ea23",
+  "goal_started_at": "2026-07-15T17:42:38Z",
+  "collected_at": "2026-07-18T05:10:01.007704Z",
+  "inherited_from": null,
+  "items": [
+    {
+      "id": "desktop-identity-before-sync",
+      "category": "requirement",
+      "summary": "补齐桌面端身份注册、身份验证和当前数据主机的可见审核入口，其他电脑的同步申请必须绑定真实用户身份，不能只依赖设备信息。",
+      "source_thread_id": "019f66df-8926-7750-a29e-acddb786ea23",
+      "source_order": 1,
+      "generation": 4,
+      "inherited": false
+    },
+    {
+      "id": "wechat-phone-proof",
+      "category": "decision",
+      "summary": "采用微信手机号证明人类身份；扫码进入小程序时必须通过微信能力重新核验手机号，不能用设备信息或缓存身份代替。",
+      "source_thread_id": "019f66df-8926-7750-a29e-acddb786ea23",
+      "source_order": 2,
+      "generation": 4,
+      "inherited": false
+    },
+    {
+      "id": "local-password-unlock",
+      "category": "decision",
+      "summary": "桌面可信设备采用本机密码解锁，微信扫码手机号核验用于首次注册和需要重新证明身份的流程，不要求每次普通启动都重新扫码。",
+      "source_thread_id": "019f66df-8926-7750-a29e-acddb786ea23",
+      "source_order": 3,
+      "generation": 4,
+      "inherited": false
+    },
+    {
+      "id": "admin-teacher-multi-device",
+      "category": "requirement",
+      "summary": "同一 canonical 用户同时保留超级管理员和老师角色，覆盖当前数据主机、第二台电脑以及未来更换电脑；设备新增、撤销和主机迁移不能破坏老师身份或其他设备。",
+      "source_thread_id": "019f66df-8926-7750-a29e-acddb786ea23",
+      "source_order": 4,
+      "generation": 4,
+      "inherited": false
+    }
+  ],
+  "conflicts": [],
+  "summary": "- [requirement] 补齐桌面端身份注册、身份验证和当前数据主机的可见审核入口，其他电脑的同步申请必须绑定真实用户身份，不能只依赖设备信息。\n- [decision] 采用微信手机号证明人类身份；扫码进入小程序时必须通过微信能力重新核验手机号，不能用设备信息或缓存身份代替。\n- [decision] 桌面可信设备采用本机密码解锁，微信扫码手机号核验用于首次注册和需要重新证明身份的流程，不要求每次普通启动都重新扫码。\n- [requirement] 同一 canonical 用户同时保留超级管理员和老师角色，覆盖当前数据主机、第二台电脑以及未来更换电脑；设备新增、撤销和主机迁移不能破坏老师身份或其他设备。",
+  "content_hash": "dfb2e1947383ea002bdd6a0959ec27f1726823891ea61c37ba542f381b31623d"
+}

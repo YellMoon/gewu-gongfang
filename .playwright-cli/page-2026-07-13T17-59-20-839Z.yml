@@ -1,0 +1,113 @@
+- generic [ref=e4]:
+  - complementary [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]: 格
+        - generic [ref=e10]:
+          - generic [ref=e11]: 格物工坊
+          - generic [ref=e12]: 运营工作台
+      - menu [ref=e13]:
+        - menuitem "appstore 今日工作台" [ref=e14] [cursor=pointer]:
+          - img "appstore" [ref=e15]
+          - generic [ref=e18]: 今日工作台
+        - menuitem "calendar 教务" [ref=e19] [cursor=pointer]:
+          - img "calendar" [ref=e20]
+          - generic [ref=e23]: 教务
+        - menuitem "database 题库" [ref=e24] [cursor=pointer]:
+          - img "database" [ref=e25]
+          - generic [ref=e28]: 题库
+        - menuitem "dollar 财务" [ref=e29] [cursor=pointer]:
+          - img "dollar" [ref=e30]
+          - generic [ref=e33]: 财务
+        - menuitem "team 资源" [ref=e34] [cursor=pointer]:
+          - img "team" [ref=e35]
+          - generic [ref=e38]: 资源
+        - menuitem "setting 系统与数据" [ref=e39] [cursor=pointer]:
+          - img "setting" [ref=e40]
+          - generic [ref=e43]: 系统与数据
+  - generic [ref=e44]:
+    - generic [ref=e45]:
+      - button [ref=e46] [cursor=pointer]:
+        - img "menu-unfold" [ref=e48]
+      - generic [ref=e51]:
+        - generic [ref=e52]:
+          - generic [ref=e53]:
+            - heading "今日工作台" [level=1] [ref=e54]
+            - button "cloud-sync 数据主机正常运行" [ref=e56] [cursor=pointer]:
+              - img "cloud-sync" [ref=e58]
+              - generic [ref=e62]: 数据主机正常运行
+          - generic [ref=e63]: 处理今日提醒和常用入口
+        - button "reload 刷新" [ref=e66] [cursor=pointer]:
+          - img "reload" [ref=e68]
+          - generic [ref=e71]: 刷新
+    - main [ref=e72]:
+      - generic [ref=e74]:
+        - generic [ref=e75]:
+          - generic [ref=e76]:
+            - strong [ref=e78]: 2026年7月14日
+            - text: 高频入口和待处理提醒
+          - generic [ref=e79]:
+            - img "sync" [ref=e80]
+            - text: 云同步正常
+        - generic [ref=e83]:
+          - button "calendar 课程表 进入当日所在周，今日列高亮" [ref=e84] [cursor=pointer]:
+            - img "calendar" [ref=e85]
+            - strong [ref=e88]: 课程表
+            - generic [ref=e89]: 进入当日所在周，今日列高亮
+          - button "dollar 费用统计 主动核对学费、课时费和明细" [ref=e90] [cursor=pointer]:
+            - img "dollar" [ref=e91]
+            - strong [ref=e94]: 费用统计
+            - generic [ref=e95]: 主动核对学费、课时费和明细
+          - button "database 题库 试题库、导入与知识树、组卷 试题库 · 导入与知识树 · 组卷" [ref=e96] [cursor=pointer]:
+            - img "database" [ref=e97]
+            - strong [ref=e100]: 题库
+            - generic [ref=e101]: 试题库、导入与知识树、组卷
+            - generic [ref=e102]: 试题库 · 导入与知识树 · 组卷
+          - button "cloud-sync 云同步 查看同步设置和本地队列" [ref=e103] [cursor=pointer]:
+            - img "cloud-sync" [ref=e104]
+            - strong [ref=e108]: 云同步
+            - generic [ref=e109]: 查看同步设置和本地队列
+        - generic [ref=e110]:
+          - generic [ref=e111]:
+            - generic [ref=e112]: 今日课程信息提示
+            - generic [ref=e115]:
+              - generic [ref=e116]: 默认首位老师：暂无老师 · 0 节
+              - generic [ref=e117]:
+                - img "暂无数据" [ref=e119]
+                - generic [ref=e125]: 今日暂无课程
+          - generic [ref=e126]:
+            - button "学生费用欠缴 0 人 当前没有需要处理的欠缴学生。 点击仅提示，不跳转" [ref=e127] [cursor=pointer]:
+              - generic [ref=e128]:
+                - strong [ref=e129]: 学生费用欠缴
+                - generic [ref=e130]: 0 人
+              - generic [ref=e131]: 当前没有需要处理的欠缴学生。
+              - generic [ref=e132]: 点击仅提示，不跳转
+            - button "结课学生学费剩余 0 人 当前没有结课余额异常。 点击仅提示，不跳转" [ref=e133] [cursor=pointer]:
+              - generic [ref=e134]:
+                - strong [ref=e135]: 结课学生学费剩余
+                - generic [ref=e136]: 0 人
+              - generic [ref=e137]: 当前没有结课余额异常。
+              - generic [ref=e138]: 点击仅提示，不跳转
+            - button "题库问题试题编辑 0 题 当前没有未确认的问题试题。 点击仅提示，不跳转" [ref=e139] [cursor=pointer]:
+              - generic [ref=e140]:
+                - strong [ref=e141]: 题库问题试题编辑
+                - generic [ref=e142]: 0 题
+              - generic [ref=e143]: 当前没有未确认的问题试题。
+              - generic [ref=e144]: 点击仅提示，不跳转
+            - button "云同步情况 正常 最近同步状态正常。 点击仅提示，不跳转" [ref=e145] [cursor=pointer]:
+              - generic [ref=e146]:
+                - strong [ref=e147]: 云同步情况
+                - generic [ref=e148]: 正常
+              - generic [ref=e149]: 最近同步状态正常。
+              - generic [ref=e150]: 点击仅提示，不跳转
+        - generic [ref=e151]:
+          - generic [ref=e152]: 题库常用入口：
+          - button [ref=e154] [cursor=pointer]:
+            - img "file-search" [ref=e155]
+            - text: 试题库
+          - button [ref=e159] [cursor=pointer]:
+            - img "import" [ref=e160]
+            - text: 导入与知识树
+          - button [ref=e164] [cursor=pointer]:
+            - text: 组卷
+            - img "right" [ref=e165]

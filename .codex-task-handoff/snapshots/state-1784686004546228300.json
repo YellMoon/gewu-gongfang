@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "phase": "protected",
+  "project_path": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system",
+  "source_thread_id": "019f7578-5fa3-7690-8e28-39db131cdee9",
+  "updated_at": "2026-07-21T17:35:08.869620Z",
+  "current_step": "Audit OpenCode PR 3 and local optimization commit before multi-system and desktop build-flavor design",
+  "completed_steps": [
+    "Resolved the actual GitHub scope: PR 3 is open against gewu master and local commit f6c7cac is not yet in the remote PR",
+    "Ran focused backend experience, schedule filter, UI inventory, and paper job repository tests",
+    "Ran root and miniapp TypeScript checks and recorded the miniapp test-file compilation failure",
+    "Compared the OpenCode frontend against the approved unrecognized-student plan and live backend routes"
+  ],
+  "next_step": "Obtain the one remaining taxonomy deletion decision, present architecture options and design, then repair PR 3 by TDD before implementing the approved new features",
+  "wait_state": "waiting for the user to choose cascade-delete versus archive semantics for a taxonomy already used by questions",
+  "goal_id": "019f7578-5fa3-7690-8e28-39db131cdee9",
+  "inherited_from_thread_id": "019f7393-53b6-78b3-b892-f51522c89316",
+  "inherited_from_goal_id": "019f7393-53b6-78b3-b892-f51522c89316",
+  "validation_evidence": [
+    "backend unrecognized data, sandbox, and HTTP tests exited 0",
+    "root TypeScript check exited 0",
+    "miniapp TypeScript check exited 1 because the new Jest-style test has no test-runner globals",
+    "the new frontend routes do not match the backend task-result, artifact, and application route contracts",
+    "the unrecognized login branch stores a separate token that the shared API client does not send",
+    "PR 3 has no GitHub status checks and remains unmergeable pending corrections"
+  ],
+  "goal_status": "active",
+  "last_completed_step": "Task 10 prescribed GREEN matrix and aggregate primary-host suite",
+  "last_validation_evidence": "npm run test:primary-host exited 0; Task 10 exact Step 4 matrix exited 0"
+}

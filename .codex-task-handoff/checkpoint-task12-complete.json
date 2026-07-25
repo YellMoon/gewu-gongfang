@@ -1,0 +1,7 @@
+{
+  "current_step": "Task 13 document render matrix",
+  "completed_steps": ["Task 12 desktop and miniapp runtime QA committed and pushed as 72c65db"],
+  "next_step": "Generate and inspect four formula modes across DOCX/PDF and both answer positions",
+  "wait_state": "none",
+  "validation_evidence": ["npm test exit 0 in 248.2s", "craco build exit 0", "miniapp release-check exit 0", "Playwright cancel and 720px no-overflow passed", "WeChat DevTools offline state rendered"]
+}

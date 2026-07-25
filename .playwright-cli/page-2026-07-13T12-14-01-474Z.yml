@@ -1,0 +1,546 @@
+- generic [ref=f10e1]:
+  - generic [ref=f10e3]:
+    - complementary [ref=f10e5]:
+      - generic [ref=f10e6]:
+        - generic [ref=f10e7]:
+          - generic [ref=f10e8]: 格
+          - generic [ref=f10e9]:
+            - generic [ref=f10e10]: 格物工坊
+            - generic [ref=f10e11]: 运营工作台
+        - menu [ref=f10e12]:
+          - menuitem "appstore 今日工作台" [ref=f10e13] [cursor=pointer]:
+            - img "appstore" [ref=f10e14]
+            - generic [ref=f10e17]: 今日工作台
+          - menuitem "calendar 教务" [ref=f10e18] [cursor=pointer]:
+            - img "calendar" [ref=f10e19]
+            - generic [ref=f10e22]: 教务
+          - menuitem "database 题库" [ref=f10e23] [cursor=pointer]:
+            - img "database" [ref=f10e24]
+            - generic [ref=f10e27]: 题库
+          - menuitem "dollar 财务" [ref=f10e28] [cursor=pointer]:
+            - img "dollar" [ref=f10e29]
+            - generic [ref=f10e32]: 财务
+          - menuitem "team 资源" [ref=f10e33] [cursor=pointer]:
+            - img "team" [ref=f10e34]
+            - generic [ref=f10e37]: 资源
+          - menuitem "setting 系统与数据" [ref=f10e38] [cursor=pointer]:
+            - img "setting" [ref=f10e39]
+            - generic [ref=f10e42]: 系统与数据
+    - generic [ref=f10e43]:
+      - generic [ref=f10e44]:
+        - button [ref=f10e45] [cursor=pointer]:
+          - img "menu-unfold" [ref=f10e47]
+        - generic [ref=f10e50]:
+          - generic [ref=f10e51]:
+            - generic [ref=f10e52]:
+              - heading "试题编辑" [level=1] [ref=f10e167]
+              - button "cloud-sync 数据已是最新" [ref=f10e55] [cursor=pointer]:
+                - img "cloud-sync" [ref=f10e57]
+                - generic [ref=f10e61]: 数据已是最新
+            - generic [ref=f10e62]: 编辑已导入的试题
+          - button "reload 刷新" [ref=f10e65] [cursor=pointer]:
+            - img "reload" [ref=f10e67]
+            - generic [ref=f10e70]: 刷新
+      - main [ref=f10e71]:
+        - generic [ref=f10e169]:
+          - generic [ref=f10e171]:
+            - generic [ref=f10e172]: 试题编辑
+            - generic [ref=f10e174]:
+              - button "回收站" [ref=f10e176] [cursor=pointer]
+              - generic [ref=f10e178]: 待编辑 1 题
+          - generic [ref=f10e181]:
+            - generic [ref=f10e183]:
+              - generic [ref=f10e184]: 批量标注
+              - generic [ref=f10e188]:
+                - generic [ref=f10e190]:
+                  - generic "知识点" [ref=f10e192]: "知识点 :"
+                  - 'combobox "知识点 : 知识点" [ref=f10e361]'
+                - generic [ref=f10e204]:
+                  - generic "模型" [ref=f10e206]: "模型 :"
+                  - 'combobox "模型 : 模型" [ref=f10e362]'
+                - generic [ref=f10e218]:
+                  - generic "学年" [ref=f10e220]: "学年 :"
+                  - 'textbox "学年 : 学年" [ref=f10e363]':
+                    - /placeholder: 2025-2026
+                - generic [ref=f10e226]:
+                  - generic "考试类型" [ref=f10e228]: "考试类型 :"
+                  - 'combobox "考试类型 : 考试类型" [ref=f10e364]'
+                - button "tags 批量应用" [disabled] [ref=f10e242]:
+                  - generic:
+                    - img "tags"
+                  - generic: 批量应用
+            - generic [ref=f10e246]:
+              - generic [ref=f10e247]:
+                - generic [ref=f10e249] [cursor=pointer]:
+                  - checkbox "全选本页" [ref=f10e251]
+                  - generic [ref=f10e253]: 全选本页
+                - generic [ref=f10e254]: 已选 0 题
+                - button "delete 批量删除" [disabled] [ref=f10e257]:
+                  - generic:
+                    - img "delete"
+                  - generic: 批量删除
+              - generic [ref=f10e258]: 共 1 题，第 1/1 页
+            - generic [ref=f10e262]:
+              - article [ref=f10e268]:
+                - generic [ref=f10e269]:
+                  - checkbox [ref=f10e272] [cursor=pointer]
+                  - generic [ref=f10e274]: "1"
+                  - generic [ref=f10e276]:
+                    - paragraph [ref=f10e277]:
+                      - text: "Runtime editor QA: solve"
+                      - generic [ref=f10e279]:
+                        - math [ref=f10e281]:
+                          - generic [ref=f10e284]:
+                            - generic [ref=f10e285]: a
+                            - generic [ref=f10e286]: b
+                        - generic [ref=f10e293]:
+                          - generic [ref=f10e294]: b
+                          - generic [ref=f10e297]: a
+                      - text: and inspect image.
+                    - paragraph [ref=f10e302]:
+                      - img "QA diagram" [ref=f10e303]
+                    - generic [ref=f10e304]:
+                      - generic [ref=f10e305]:
+                        - strong [ref=f10e306]: A.
+                        - paragraph [ref=f10e307]: Option alpha
+                      - generic [ref=f10e308]:
+                        - strong [ref=f10e309]: B.
+                        - paragraph [ref=f10e310]: Option beta
+                    - generic [ref=f10e311]:
+                      - strong [ref=f10e312]: (1)
+                      - paragraph [ref=f10e313]: Explain the fraction.
+                      - generic:
+                        - paragraph
+                    - generic [ref=f10e314]:
+                      - strong [ref=f10e315]: 答案：
+                      - paragraph [ref=f10e316]: A
+                    - generic [ref=f10e317]:
+                      - strong [ref=f10e318]: 解析：
+                      - paragraph [ref=f10e319]: Runtime analysis.
+                - generic [ref=f10e320]:
+                  - generic [ref=f10e321]:
+                    - generic [ref=f10e322]: 来源：其他
+                    - generic [ref=f10e323]: 知识点：知识点未标注
+                  - generic [ref=f10e324]:
+                    - button "delete 删除" [ref=f10e326] [cursor=pointer]:
+                      - img "delete" [ref=f10e328]
+                      - generic [ref=f10e331]: 删除
+                    - button "edit 编辑" [ref=f10e333] [cursor=pointer]:
+                      - img "edit" [ref=f10e335]
+                      - generic [ref=f10e338]: 编辑
+              - list [ref=f10e341]:
+                - listitem [ref=f10e342]: 共 1 题
+                - listitem "上一页" [ref=f10e343]:
+                  - button [disabled] [ref=f10e344]:
+                    - img "left" [ref=f10e345]
+                - listitem "1" [ref=f10e348] [cursor=pointer]
+                - listitem "下一页" [ref=f10e350]:
+                  - button [disabled] [ref=f10e351]:
+                    - img "right" [ref=f10e352]
+        - button "打开试题篮" [ref=f10e355]:
+          - img "shopping-cart" [ref=f10e357]
+          - generic [ref=f10e360]: 试题篮
+  - generic [ref=f10e365]:
+    - dialog "编辑试题":
+      - generic [ref=f10e366]:
+        - button "Close" [ref=f10e367] [cursor=pointer]:
+          - generic "关闭" [ref=f10e368]:
+            - img "close" [ref=f10e369]
+        - generic [ref=f10e372]: 编辑试题
+        - generic [ref=f10e375]:
+          - generic [ref=f10e376]:
+            - generic [ref=f10e377]:
+              - generic [ref=f10e378]: 题干
+              - generic [ref=f10e382]:
+                - toolbar "富文本格式工具栏" [ref=f10e383]:
+                  - generic [ref=f10e384]:
+                    - button "撤销" [ref=f10e386] [cursor=pointer]:
+                      - img "undo" [ref=f10e388]
+                    - button "重做" [disabled] [ref=f10e392]:
+                      - generic:
+                        - img "redo"
+                    - generic "字体" [ref=f10e396] [cursor=pointer]:
+                      - generic [ref=f10e398]:
+                        - combobox "字体" [ref=f10e400]
+                        - generic "默认字体" [ref=f10e401]
+                    - generic "字号" [ref=f10e403] [cursor=pointer]:
+                      - generic [ref=f10e405]:
+                        - combobox "字号" [ref=f10e407]
+                        - generic: 字号
+                    - generic "行距" [ref=f10e409] [cursor=pointer]:
+                      - generic [ref=f10e411]:
+                        - combobox "行距" [ref=f10e413]
+                        - generic: 行距
+                    - button "H1" [ref=f10e415] [cursor=pointer]
+                    - button "H2" [ref=f10e418] [cursor=pointer]
+                    - button "H3" [ref=f10e421] [cursor=pointer]
+                    - button "加粗" [ref=f10e424] [cursor=pointer]:
+                      - img "bold" [ref=f10e426]
+                    - button "斜体" [ref=f10e430] [cursor=pointer]:
+                      - img "italic" [ref=f10e432]
+                    - button "下划线" [ref=f10e436] [cursor=pointer]:
+                      - img "underline" [ref=f10e438]
+                    - button "删除线" [ref=f10e442] [cursor=pointer]:
+                      - img "strikethrough" [ref=f10e444]
+                    - button "X 2" [ref=f10e448] [cursor=pointer]:
+                      - generic [ref=f10e449]: X
+                      - subscript [ref=f10e450]: "2"
+                    - button "X 2" [ref=f10e452] [cursor=pointer]:
+                      - generic [ref=f10e453]: X
+                      - superscript [ref=f10e454]: "2"
+                    - button "文字颜色" [ref=f10e456] [cursor=pointer]:
+                      - img "font-colors" [ref=f10e458]
+                    - button "文本高亮" [ref=f10e464] [cursor=pointer]:
+                      - generic [ref=f10e465]: 高 亮
+                    - button "左对齐" [ref=f10e467] [cursor=pointer]:
+                      - img "align-left" [ref=f10e469]
+                    - button "居中" [ref=f10e473] [cursor=pointer]:
+                      - img "align-center" [ref=f10e475]
+                    - button "右对齐" [ref=f10e479] [cursor=pointer]:
+                      - img "align-right" [ref=f10e481]
+                    - button "项目符号" [ref=f10e485] [cursor=pointer]:
+                      - img "unordered-list" [ref=f10e487]
+                    - button "编号列表" [ref=f10e491] [cursor=pointer]:
+                      - img "ordered-list" [ref=f10e493]
+                    - button "增加缩进" [disabled] [ref=f10e497]:
+                      - generic: +\u7f29\u8fdb
+                    - button "减少缩进" [disabled] [ref=f10e499]:
+                      - generic: "-\\u7f29\\u8fdb"
+                    - button "增加段落缩进" [ref=f10e501] [cursor=pointer]:
+                      - generic [ref=f10e502]: \u6bb5+
+                    - button "减少段落缩进" [ref=f10e504] [cursor=pointer]:
+                      - generic [ref=f10e505]: \u6bb5-
+                    - button "引 用" [ref=f10e507] [cursor=pointer]
+                    - button "清除格式" [ref=f10e510] [cursor=pointer]
+                    - button "function 公式" [ref=f10e513] [cursor=pointer]:
+                      - img "function" [ref=f10e515]
+                      - generic [ref=f10e518]: 公式
+                    - button "file-image 图片" [ref=f10e523] [cursor=pointer]:
+                      - img "file-image" [ref=f10e525]
+                      - generic [ref=f10e528]: 图片
+                    - button "图片宽度 320 像素" [disabled] [ref=f10e530]:
+                      - generic: 320px
+                    - button "图片宽度 640 像素" [disabled] [ref=f10e532]:
+                      - generic: 640px
+                    - button "图片左对齐" [disabled] [ref=f10e534]:
+                      - generic:
+                        - img "align-left"
+                    - button "图片居中" [disabled] [ref=f10e536]:
+                      - generic:
+                        - img "align-center"
+                    - button "图片右对齐" [disabled] [ref=f10e538]:
+                      - generic:
+                        - img "align-right"
+                    - button "删除图片" [disabled] [ref=f10e540]:
+                      - generic:
+                        - img "delete"
+                    - textbox "图片替代文本" [disabled] [ref=f10e542]
+                - generic "输入题干，可编辑文字、公式和图片" [ref=f10e545]:
+                  - paragraph [ref=f10e546]:
+                    - text: "Runtime editor QA: solve"
+                    - generic [ref=f10e550] [cursor=pointer]:
+                      - math [ref=f10e552]:
+                        - generic [ref=f10e555]:
+                          - generic [ref=f10e556]: a
+                          - generic [ref=f10e557]: b
+                      - generic [ref=f10e564]:
+                        - generic [ref=f10e565]: b
+                        - generic [ref=f10e568]: a
+                    - text: and inspect image.
+                  - paragraph [ref=f10e573]:
+                    - figure [ref=f10e575]:
+                      - img "QA diagram" [ref=f10e576] [cursor=pointer]
+            - generic [ref=f10e577]:
+              - tablist [ref=f10e578]:
+                - generic [ref=f10e580]:
+                  - tab "选项 (2)" [selected] [ref=f10e582] [cursor=pointer]
+                  - tab "小题 (1)" [ref=f10e584] [cursor=pointer]
+                  - tab "主答案" [ref=f10e586] [cursor=pointer]
+                  - tab "解析" [ref=f10e588] [cursor=pointer]
+              - tabpanel "选项 (2)" [ref=f10e591]:
+                - generic [ref=f10e592]:
+                  - generic [ref=f10e594]:
+                    - generic [ref=f10e595]:
+                      - button "expanded A 正确答案 move option A up move option A down delete option A" [expanded] [ref=f10e596] [cursor=pointer]:
+                        - img "expanded" [ref=f10e598]
+                        - generic [ref=f10e602]:
+                          - strong [ref=f10e605]: A
+                          - generic [ref=f10e607]:
+                            - checkbox "正确答案" [checked] [ref=f10e609]
+                            - generic [ref=f10e611]: 正确答案
+                        - generic [ref=f10e613]:
+                          - button "move option A up" [disabled] [ref=f10e615]:
+                            - generic:
+                              - img "arrow-up"
+                          - button "move option A down" [ref=f10e617]:
+                            - img "arrow-down" [ref=f10e619]
+                          - button "delete option A" [ref=f10e623]:
+                            - img "delete" [ref=f10e625]
+                      - generic [ref=f10e630]:
+                        - generic [ref=f10e633]:
+                          - generic [ref=f10e634]: 选项标签
+                          - textbox [ref=f10e635]: A
+                        - generic [ref=f10e637]:
+                          - toolbar "富文本格式工具栏" [ref=f10e638]:
+                            - generic [ref=f10e639]:
+                              - button "撤销" [ref=f10e641] [cursor=pointer]:
+                                - img "undo" [ref=f10e643]
+                              - button "重做" [disabled] [ref=f10e647]:
+                                - generic:
+                                  - img "redo"
+                              - generic "字体" [ref=f10e651] [cursor=pointer]:
+                                - generic [ref=f10e653]:
+                                  - combobox "字体" [ref=f10e655]
+                                  - generic "默认字体" [ref=f10e656]
+                              - generic "字号" [ref=f10e658] [cursor=pointer]:
+                                - generic [ref=f10e660]:
+                                  - combobox "字号" [ref=f10e662]
+                                  - generic: 字号
+                              - generic "行距" [ref=f10e664] [cursor=pointer]:
+                                - generic [ref=f10e666]:
+                                  - combobox "行距" [ref=f10e668]
+                                  - generic: 行距
+                              - button "H1" [ref=f10e670] [cursor=pointer]
+                              - button "H2" [ref=f10e673] [cursor=pointer]
+                              - button "H3" [ref=f10e676] [cursor=pointer]
+                              - button "加粗" [ref=f10e679] [cursor=pointer]:
+                                - img "bold" [ref=f10e681]
+                              - button "斜体" [ref=f10e685] [cursor=pointer]:
+                                - img "italic" [ref=f10e687]
+                              - button "下划线" [ref=f10e691] [cursor=pointer]:
+                                - img "underline" [ref=f10e693]
+                              - button "删除线" [ref=f10e697] [cursor=pointer]:
+                                - img "strikethrough" [ref=f10e699]
+                              - button "X 2" [ref=f10e703] [cursor=pointer]:
+                                - generic [ref=f10e704]: X
+                                - subscript [ref=f10e705]: "2"
+                              - button "X 2" [ref=f10e707] [cursor=pointer]:
+                                - generic [ref=f10e708]: X
+                                - superscript [ref=f10e709]: "2"
+                              - button "文字颜色" [ref=f10e711] [cursor=pointer]:
+                                - img "font-colors" [ref=f10e713]
+                              - button "文本高亮" [ref=f10e719] [cursor=pointer]:
+                                - generic [ref=f10e720]: 高 亮
+                              - button "左对齐" [ref=f10e722] [cursor=pointer]:
+                                - img "align-left" [ref=f10e724]
+                              - button "居中" [ref=f10e728] [cursor=pointer]:
+                                - img "align-center" [ref=f10e730]
+                              - button "右对齐" [ref=f10e734] [cursor=pointer]:
+                                - img "align-right" [ref=f10e736]
+                              - button "项目符号" [ref=f10e740] [cursor=pointer]:
+                                - img "unordered-list" [ref=f10e742]
+                              - button "编号列表" [ref=f10e746] [cursor=pointer]:
+                                - img "ordered-list" [ref=f10e748]
+                              - button "增加缩进" [disabled] [ref=f10e752]:
+                                - generic: +\u7f29\u8fdb
+                              - button "减少缩进" [disabled] [ref=f10e754]:
+                                - generic: "-\\u7f29\\u8fdb"
+                              - button "增加段落缩进" [ref=f10e756] [cursor=pointer]:
+                                - generic [ref=f10e757]: \u6bb5+
+                              - button "减少段落缩进" [ref=f10e759] [cursor=pointer]:
+                                - generic [ref=f10e760]: \u6bb5-
+                              - button "引 用" [ref=f10e762] [cursor=pointer]
+                              - button "清除格式" [ref=f10e765] [cursor=pointer]
+                              - button "function 公式" [ref=f10e768] [cursor=pointer]:
+                                - img "function" [ref=f10e770]
+                                - generic [ref=f10e773]: 公式
+                              - button "file-image 图片" [ref=f10e778] [cursor=pointer]:
+                                - img "file-image" [ref=f10e780]
+                                - generic [ref=f10e783]: 图片
+                              - button "图片宽度 320 像素" [disabled] [ref=f10e785]:
+                                - generic: 320px
+                              - button "图片宽度 640 像素" [disabled] [ref=f10e787]:
+                                - generic: 640px
+                              - button "图片左对齐" [disabled] [ref=f10e789]:
+                                - generic:
+                                  - img "align-left"
+                              - button "图片居中" [disabled] [ref=f10e791]:
+                                - generic:
+                                  - img "align-center"
+                              - button "图片右对齐" [disabled] [ref=f10e793]:
+                                - generic:
+                                  - img "align-right"
+                              - button "删除图片" [disabled] [ref=f10e795]:
+                                - generic:
+                                  - img "delete"
+                              - textbox "图片替代文本" [disabled] [ref=f10e797]
+                          - generic "输入选项内容" [ref=f10e800]:
+                            - paragraph [ref=f10e801]: Option alpha
+                    - generic [ref=f10e802]:
+                      - button "expanded B 正确答案 move option B up move option B down delete option B" [expanded] [ref=f10e803] [cursor=pointer]:
+                        - img "expanded" [ref=f10e805]
+                        - generic [ref=f10e809]:
+                          - strong [ref=f10e812]: B
+                          - generic [ref=f10e814]:
+                            - checkbox "正确答案" [ref=f10e816]
+                            - generic [ref=f10e818]: 正确答案
+                        - generic [ref=f10e820]:
+                          - button "move option B up" [ref=f10e822]:
+                            - img "arrow-up" [ref=f10e824]
+                          - button "move option B down" [disabled] [ref=f10e828]:
+                            - generic:
+                              - img "arrow-down"
+                          - button "delete option B" [ref=f10e830]:
+                            - img "delete" [ref=f10e832]
+                      - generic [ref=f10e837]:
+                        - generic [ref=f10e840]:
+                          - generic [ref=f10e841]: 选项标签
+                          - textbox [ref=f10e842]: B
+                        - generic [ref=f10e844]:
+                          - toolbar "富文本格式工具栏" [ref=f10e845]:
+                            - generic [ref=f10e846]:
+                              - button "撤销" [ref=f10e848] [cursor=pointer]:
+                                - img "undo" [ref=f10e850]
+                              - button "重做" [disabled] [ref=f10e854]:
+                                - generic:
+                                  - img "redo"
+                              - generic "字体" [ref=f10e858] [cursor=pointer]:
+                                - generic [ref=f10e860]:
+                                  - combobox "字体" [ref=f10e862]
+                                  - generic "默认字体" [ref=f10e863]
+                              - generic "字号" [ref=f10e865] [cursor=pointer]:
+                                - generic [ref=f10e867]:
+                                  - combobox "字号" [ref=f10e869]
+                                  - generic: 字号
+                              - generic "行距" [ref=f10e871] [cursor=pointer]:
+                                - generic [ref=f10e873]:
+                                  - combobox "行距" [ref=f10e875]
+                                  - generic: 行距
+                              - button "H1" [ref=f10e877] [cursor=pointer]
+                              - button "H2" [ref=f10e880] [cursor=pointer]
+                              - button "H3" [ref=f10e883] [cursor=pointer]
+                              - button "加粗" [ref=f10e886] [cursor=pointer]:
+                                - img "bold" [ref=f10e888]
+                              - button "斜体" [ref=f10e892] [cursor=pointer]:
+                                - img "italic" [ref=f10e894]
+                              - button "下划线" [ref=f10e898] [cursor=pointer]:
+                                - img "underline" [ref=f10e900]
+                              - button "删除线" [ref=f10e904] [cursor=pointer]:
+                                - img "strikethrough" [ref=f10e906]
+                              - button "X 2" [ref=f10e910] [cursor=pointer]:
+                                - generic [ref=f10e911]: X
+                                - subscript [ref=f10e912]: "2"
+                              - button "X 2" [ref=f10e914] [cursor=pointer]:
+                                - generic [ref=f10e915]: X
+                                - superscript [ref=f10e916]: "2"
+                              - button "文字颜色" [ref=f10e918] [cursor=pointer]:
+                                - img "font-colors" [ref=f10e920]
+                              - button "文本高亮" [ref=f10e926] [cursor=pointer]:
+                                - generic [ref=f10e927]: 高 亮
+                              - button "左对齐" [ref=f10e929] [cursor=pointer]:
+                                - img "align-left" [ref=f10e931]
+                              - button "居中" [ref=f10e935] [cursor=pointer]:
+                                - img "align-center" [ref=f10e937]
+                              - button "右对齐" [ref=f10e941] [cursor=pointer]:
+                                - img "align-right" [ref=f10e943]
+                              - button "项目符号" [ref=f10e947] [cursor=pointer]:
+                                - img "unordered-list" [ref=f10e949]
+                              - button "编号列表" [ref=f10e953] [cursor=pointer]:
+                                - img "ordered-list" [ref=f10e955]
+                              - button "增加缩进" [disabled] [ref=f10e959]:
+                                - generic: +\u7f29\u8fdb
+                              - button "减少缩进" [disabled] [ref=f10e961]:
+                                - generic: "-\\u7f29\\u8fdb"
+                              - button "增加段落缩进" [ref=f10e963] [cursor=pointer]:
+                                - generic [ref=f10e964]: \u6bb5+
+                              - button "减少段落缩进" [ref=f10e966] [cursor=pointer]:
+                                - generic [ref=f10e967]: \u6bb5-
+                              - button "引 用" [ref=f10e969] [cursor=pointer]
+                              - button "清除格式" [ref=f10e972] [cursor=pointer]
+                              - button "function 公式" [ref=f10e975] [cursor=pointer]:
+                                - img "function" [ref=f10e977]
+                                - generic [ref=f10e980]: 公式
+                              - button "file-image 图片" [ref=f10e985] [cursor=pointer]:
+                                - img "file-image" [ref=f10e987]
+                                - generic [ref=f10e990]: 图片
+                              - button "图片宽度 320 像素" [disabled] [ref=f10e992]:
+                                - generic: 320px
+                              - button "图片宽度 640 像素" [disabled] [ref=f10e994]:
+                                - generic: 640px
+                              - button "图片左对齐" [disabled] [ref=f10e996]:
+                                - generic:
+                                  - img "align-left"
+                              - button "图片居中" [disabled] [ref=f10e998]:
+                                - generic:
+                                  - img "align-center"
+                              - button "图片右对齐" [disabled] [ref=f10e1000]:
+                                - generic:
+                                  - img "align-right"
+                              - button "删除图片" [disabled] [ref=f10e1002]:
+                                - generic:
+                                  - img "delete"
+                              - textbox "图片替代文本" [disabled] [ref=f10e1004]
+                          - generic "输入选项内容" [ref=f10e1007]:
+                            - paragraph [ref=f10e1008]: Option beta
+                  - button "plus 添加选项" [ref=f10e1010] [cursor=pointer]:
+                    - img "plus" [ref=f10e1012]
+                    - generic [ref=f10e1016]: 添加选项
+          - generic [ref=f10e1017]:
+            - generic [ref=f10e1020]:
+              - generic "科目" [ref=f10e1022]
+              - generic [ref=f10e1028]:
+                - combobox "科目" [ref=f10e1030]
+                - generic "Physics" [ref=f10e1031]
+            - generic [ref=f10e1034]:
+              - generic "题型" [ref=f10e1036]
+              - generic [ref=f10e1042]:
+                - combobox "题型" [ref=f10e1044]
+                - generic "解答题" [ref=f10e1045]
+            - generic [ref=f10e1048]:
+              - generic "难度" [ref=f10e1050]
+              - generic [ref=f10e1054]:
+                - generic:
+                  - button "Increase Value" [ref=f10e1055] [cursor=pointer]:
+                    - img "up" [ref=f10e1056]
+                  - button "Decrease Value" [ref=f10e1059] [cursor=pointer]:
+                    - img "down" [ref=f10e1060]
+                - spinbutton "难度" [ref=f10e1064]: "3"
+            - generic [ref=f10e1067]:
+              - generic "学年" [ref=f10e1069]
+              - textbox "2025-2026" [ref=f10e1073]
+            - generic [ref=f10e1076]:
+              - generic "年级" [ref=f10e1078]
+              - combobox "年级" [ref=f10e1086]
+            - generic [ref=f10e1089]:
+              - generic "学期" [ref=f10e1091]
+              - combobox "学期" [ref=f10e1099]
+            - generic [ref=f10e1102]:
+              - generic "考试类型" [ref=f10e1104]
+              - generic [ref=f10e1110]:
+                - combobox [ref=f10e1112]
+                - generic "其他" [ref=f10e1113]
+          - generic [ref=f10e1114]:
+            - generic [ref=f10e1117]:
+              - generic "地区" [ref=f10e1119]
+              - textbox "地区" [ref=f10e1123]
+            - generic [ref=f10e1126]:
+              - generic "学校" [ref=f10e1128]
+              - textbox "学校" [ref=f10e1132]
+            - generic [ref=f10e1135]:
+              - generic "来源" [ref=f10e1137]
+              - textbox "来源" [ref=f10e1141]
+          - generic [ref=f10e1143]:
+            - generic "知识点" [ref=f10e1145]
+            - combobox [ref=f10e1154]
+          - generic [ref=f10e1156]:
+            - generic "模型" [ref=f10e1158]
+            - combobox [ref=f10e1167]
+          - generic [ref=f10e1169]:
+            - generic [ref=f10e1172]:
+              - img "file-image" [ref=f10e1173]
+              - text: 图片
+            - button "上传图片" [ref=f10e1182] [cursor=pointer]
+        - generic [ref=f10e1184]:
+          - button "取 消" [ref=f10e1185] [cursor=pointer]
+          - button "保 存" [ref=f10e1187] [cursor=pointer]
+  - generic [ref=f10e1189]:
+    - dialog "尚有未保存的修改":
+      - generic [ref=f10e1192]:
+        - generic [ref=f10e1193]:
+          - img "exclamation-circle" [ref=f10e1194]
+          - generic [ref=f10e1197]:
+            - generic [ref=f10e1198]: 尚有未保存的修改
+            - generic [ref=f10e1199]: 离开后本次修改将丢失，确定离开吗？
+        - generic [ref=f10e1200]:
+          - button "继续编辑" [ref=f10e1201] [cursor=pointer]
+          - button "离 开" [active] [ref=f10e1203] [cursor=pointer]

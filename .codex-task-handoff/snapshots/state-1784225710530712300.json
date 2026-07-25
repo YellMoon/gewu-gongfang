@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "phase": "protected",
+  "project_path": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system",
+  "source_thread_id": "019f55f4-d8c2-7290-a95f-ca0581de4b23",
+  "updated_at": "2026-07-16T16:34:36.799452Z",
+  "current_step": "Execute desktop identity Task 1 with TDD: preserve the canonical super administrator teacher binding and add additive role grants",
+  "completed_steps": [
+    "Formula pipeline unified release completed as version 5.14.3",
+    "Unrecognized-student implementation Tasks 1 through 6 completed in local commits 63ea39d through 0f4b9be",
+    "Task 6 reconciler focused tests and a fresh full npm test passed before commit 0f4b9be",
+    "User approved the hybrid desktop identity scheme: WeChat verified phone for first/new/recovery flows and local password or PIN for daily trusted-device unlock",
+    "User confirmed the canonical super administrator is also a teacher, currently uses the primary host and a second computer, and may replace devices later",
+    "Current implementation audit proved there is no startup identity gate, pairing requests prove only a device, reviewers can select any account, the review panel is hidden under permission management, and canonical super-admin convergence clears teacher_id",
+    "Desktop human identity, multi-role, multi-device, host bootstrap, planned migration, and emergency recovery design written and approved",
+    "File-level TDD plan added as desktop identity Task 6A in the existing unified plan"
+  ],
+  "next_step": "Write and run the failing userRoleGrantService tests, including the regression that canonical super-admin convergence must not clear a valid teacher_id",
+  "wait_state": "none; no push, packaging, upload, deployment, real host bootstrap, or host migration before the unified compatibility matrix",
+  "goal_id": "019f66df-8926-7750-a29e-acddb786ea23",
+  "inherited_from_thread_id": "019f6628-8e10-71d1-b211-3ebcbdfbcd03",
+  "inherited_from_goal_id": "019f6628-8e10-71d1-b211-3ebcbdfbcd03",
+  "validation_evidence": [
+    "Actual Git HEAD is 0f4b9be on master; gewu/master remains intentionally unchanged until the unified release task",
+    "Protected tracked user changes remain in the teacher stylesheet, miniapp access-policy test, and generated version file; protected untracked runtime and inspection artifacts remain untouched",
+    "Fresh focused baseline passed for backend pairing service, pairing parity, gateway pairing service, pairing API base, desktop authorization session, SyncSettings authorization wiring, and Electron credential store",
+    "The current backend pairing approval endpoint accepts an arbitrary userId and the current PairingReviewPanel renders an account selector, proving the reported identity weakness",
+    "The current canonical super-admin enforcement SQL explicitly writes teacher_id NULL, proving the multi-role defect",
+    "The approved design and implementation plan are stored in project documentation and referenced from task.md and the unified plan"
+  ],
+  "goal_status": "active",
+  "last_completed_step": "Desktop identity architecture and file-level TDD plan approved and persisted",
+  "last_validation_evidence": "Seven focused pre-change desktop pairing and credential tests passed; Git state and protected user changes were re-verified"
+}

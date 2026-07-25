@@ -1,0 +1,170 @@
+- generic [ref=e4]:
+  - complementary [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]: 格
+        - generic [ref=e10]:
+          - generic [ref=e11]: 格物工坊
+          - generic [ref=e12]: 运营工作台
+      - menu [ref=e13]:
+        - menuitem "appstore 今日工作台" [ref=e14] [cursor=pointer]:
+          - img "appstore" [ref=e15]
+          - generic [ref=e18]: 今日工作台
+        - menuitem "calendar 教务" [ref=e19] [cursor=pointer]:
+          - img "calendar" [ref=e20]
+          - generic [ref=e23]: 教务
+        - menuitem "database 题库" [ref=e24] [cursor=pointer]:
+          - img "database" [ref=e25]
+          - generic [ref=e28]: 题库
+        - menuitem "dollar 财务" [ref=e29] [cursor=pointer]:
+          - img "dollar" [ref=e30]
+          - generic [ref=e33]: 财务
+        - menuitem "team 资源" [ref=e34] [cursor=pointer]:
+          - img "team" [ref=e35]
+          - generic [ref=e38]: 资源
+        - menuitem "setting 系统与数据" [ref=e39] [cursor=pointer]:
+          - img "setting" [ref=e40]
+          - generic [ref=e43]: 系统与数据
+  - generic [ref=e44]:
+    - generic [ref=e45]:
+      - button [ref=e46] [cursor=pointer]:
+        - img "menu-unfold" [ref=e48]
+      - generic [ref=e51]:
+        - generic [ref=e52]:
+          - generic [ref=e53]:
+            - heading "组卷" [level=1] [ref=e54]
+            - button "cloud-sync 数据已是最新" [ref=e56] [cursor=pointer]:
+              - img "cloud-sync" [ref=e58]
+              - generic [ref=e62]: 数据已是最新
+          - generic [ref=e63]: 从题篮生成试卷
+        - button "reload 刷新" [ref=e66] [cursor=pointer]:
+          - img "reload" [ref=e68]
+          - generic [ref=e71]: 刷新
+    - main [ref=e72]:
+      - generic [ref=e74]:
+        - generic [ref=e76]:
+          - generic [ref=e78]:
+            - textbox [ref=e80]: 2026-07-13试卷
+            - generic [ref=e82]:
+              - generic [ref=e86]:
+                - combobox [ref=e88]
+                - generic "Word 自带公式" [ref=e89]
+              - generic [ref=e91] [cursor=pointer]:
+                - checkbox "包含草稿/待审核题" [checked] [ref=e93]
+                - generic [ref=e95]: 包含草稿/待审核题
+              - generic [ref=e97]:
+                - generic [ref=e99]:
+                  - generic [ref=e100] [cursor=pointer]:
+                    - generic [ref=e101]:
+                      - radio "答案集中附后" [checked]
+                    - text: 答案集中附后
+                  - generic [ref=e102] [cursor=pointer]:
+                    - generic [ref=e103]:
+                      - radio "逐题显示答案"
+                    - text: 逐题显示答案
+                - generic [ref=e104]: 答案集中附在试题后，含选择题汇总、知识点和解析。
+              - button "split-cells 按题型分组" [ref=e106] [cursor=pointer]:
+                - img "split-cells" [ref=e108]
+                - generic [ref=e111]: 按题型分组
+              - button "提交 PDF 到数据主机" [ref=e113] [cursor=pointer]
+              - button "提交到数据主机" [ref=e116] [cursor=pointer]:
+                - generic:
+                  - img "file-word"
+                - generic: 导出试卷
+                - text: 提交到数据主机
+          - generic [ref=e118]:
+            - alert [ref=e119]:
+              - img "info-circle" [ref=e120]
+              - generic [ref=e123]: 当前是普通电脑，导出任务将经阿里云中继提交到指定数据主机。
+            - generic [ref=e125]:
+              - generic [ref=e127]:
+                - generic [ref=e128]: 题目数
+                - generic [ref=e129]:
+                  - generic [ref=e130]: "1"
+                  - generic [ref=e131]: 题
+              - generic [ref=e133]:
+                - generic [ref=e134]: 总分
+                - generic [ref=e135]:
+                  - generic [ref=e136]: "3"
+                  - generic [ref=e137]: 分
+              - generic [ref=e139]:
+                - text: 题型分布
+                - generic [ref=e140]: 单选题 1
+              - generic [ref=e143]:
+                - text: 难度分布
+                - generic [ref=e144]: 难度2 1
+        - generic [ref=e147]:
+          - generic [ref=e149]:
+            - generic [ref=e150]: 导出任务记录
+            - button "reload 刷新状态" [ref=e152] [cursor=pointer]:
+              - img "reload" [ref=e154]
+              - generic [ref=e157]: 刷新状态
+          - generic [ref=e161]:
+            - generic [ref=e162]:
+              - generic [ref=e163]: 已取消
+              - strong [ref=e167]: 取消流程验证
+              - generic [ref=e168]: WORD
+              - generic [ref=e170]: 1 题
+            - progressbar [ref=e172]:
+              - generic "55%" [ref=e176]
+            - text: 任务已取消
+        - generic [ref=e186]:
+          - generic [ref=e188]:
+            - generic [ref=e189]: 一、单选题
+            - generic [ref=e190]: 1 题
+          - generic [ref=e195]:
+            - generic [ref=e196]: "1"
+            - generic [ref=e197]:
+              - generic [ref=e198]:
+                - generic [ref=e199]: 物理
+                - generic [ref=e201]: 单选题
+                - generic [ref=e203]: published
+                - generic [ref=e205]: 难度2
+                - generic [ref=e207]: 其他
+              - generic [ref=e210]:
+                - generic [ref=e211]: x^2+y^2
+                - generic [ref=e212]:
+                  - generic [ref=e213]:
+                    - generic [ref=e214]: A.
+                    - generic [ref=e215]: A
+                  - generic [ref=e216]:
+                    - generic [ref=e217]: B.
+                    - generic [ref=e218]: B
+            - generic [ref=e219]:
+              - generic [ref=e223]:
+                - combobox [ref=e225]
+                - generic "一、单选题" [ref=e226]
+              - generic [ref=e228]:
+                - generic [ref=e229]: 新分组
+                - textbox "输入后回车" [ref=e230]
+              - generic [ref=e232]:
+                - generic [ref=e233]: 分值
+                - generic [ref=e234]:
+                  - generic:
+                    - button "Increase Value" [ref=e235] [cursor=pointer]:
+                      - img "up" [ref=e236]
+                    - button "Decrease Value" [ref=e239] [cursor=pointer]:
+                      - img "down" [ref=e240]
+                  - spinbutton [ref=e244]: "3.0"
+            - generic [ref=e245]:
+              - button "arrow-up" [disabled] [ref=e247]:
+                - generic:
+                  - img "arrow-up"
+              - button "arrow-down" [disabled] [ref=e249]:
+                - generic:
+                  - img "arrow-down"
+              - button "plus 综合" [ref=e251] [cursor=pointer]:
+                - img "plus" [ref=e253]
+                - generic [ref=e257]: 综合
+        - generic [ref=e259]:
+          - generic [ref=e260]: 参考答案与解析
+          - generic [ref=e266]:
+            - generic [ref=e267]: "1."
+            - generic [ref=e268]: 答案：A
+            - generic [ref=e269]: 解析：analysis
+      - button "打开试题篮" [ref=e270]:
+        - generic [ref=e271]:
+          - img "shopping-cart" [ref=e272]
+          - superscript [ref=e275]:
+            - generic [ref=e276]: "1"
+        - generic [ref=e278]: 试题篮

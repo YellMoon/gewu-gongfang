@@ -1,0 +1,221 @@
+- generic [ref=f2e3]:
+  - complementary [ref=f2e5]:
+    - generic [ref=f2e6]:
+      - generic [ref=f2e7]:
+        - generic [ref=f2e8]: 格
+        - generic [ref=f2e9]:
+          - generic [ref=f2e10]: 格物工坊
+          - generic [ref=f2e11]: 运营工作台
+      - menu [ref=f2e12]:
+        - menuitem "appstore 今日工作台" [ref=f2e13] [cursor=pointer]:
+          - img "appstore" [ref=f2e14]
+          - generic [ref=f2e17]: 今日工作台
+        - menuitem "calendar 教务" [ref=f2e18] [cursor=pointer]:
+          - img "calendar" [ref=f2e19]
+          - generic [ref=f2e22]: 教务
+        - menuitem "database 题库" [ref=f2e23] [cursor=pointer]:
+          - img "database" [ref=f2e24]
+          - generic [ref=f2e27]: 题库
+        - menuitem "dollar 财务" [ref=f2e28] [cursor=pointer]:
+          - img "dollar" [ref=f2e29]
+          - generic [ref=f2e32]: 财务
+        - menuitem "team 资源" [ref=f2e33] [cursor=pointer]:
+          - img "team" [ref=f2e34]
+          - generic [ref=f2e37]: 资源
+        - menuitem "setting 系统与数据" [ref=f2e38] [cursor=pointer]:
+          - img "setting" [ref=f2e39]
+          - generic [ref=f2e42]: 系统与数据
+  - generic [ref=f2e43]:
+    - generic [ref=f2e44]:
+      - button [ref=f2e45] [cursor=pointer]:
+        - img "menu-unfold" [ref=f2e47]
+      - generic [ref=f2e50]:
+        - generic [ref=f2e51]:
+          - generic [ref=f2e52]:
+            - heading "组卷" [level=1] [ref=f2e167]
+            - button "cloud-sync 数据已是最新" [ref=f2e55] [cursor=pointer]:
+              - img "cloud-sync" [ref=f2e57]
+              - generic [ref=f2e61]: 数据已是最新
+          - generic [ref=f2e62]: 从题篮生成试卷
+        - button "reload 刷新" [ref=f2e65] [cursor=pointer]:
+          - img "reload" [ref=f2e67]
+          - generic [ref=f2e70]: 刷新
+    - main [ref=f2e71]:
+      - generic [ref=f2e169]:
+        - generic [ref=f2e171]:
+          - generic [ref=f2e173]:
+            - textbox [ref=f2e175]: 2026-07-13试卷
+            - generic [ref=f2e177]:
+              - generic [ref=f2e181]:
+                - combobox [ref=f2e183]
+                - generic "Word 自带公式" [ref=f2e184]
+              - generic [ref=f2e186] [cursor=pointer]:
+                - checkbox "包含草稿/待审核题" [checked] [ref=f2e188]
+                - generic [ref=f2e190]: 包含草稿/待审核题
+              - generic [ref=f2e192]:
+                - generic [ref=f2e194]:
+                  - generic [ref=f2e195] [cursor=pointer]:
+                    - generic [ref=f2e196]:
+                      - radio "答案集中附后" [checked]
+                    - text: 答案集中附后
+                  - generic [ref=f2e197] [cursor=pointer]:
+                    - generic [ref=f2e198]:
+                      - radio "逐题显示答案"
+                    - text: 逐题显示答案
+                - generic [ref=f2e199]: 答案集中附在试题后，含选择题汇总、知识点和解析。
+              - button "split-cells 按题型分组" [ref=f2e201] [cursor=pointer]:
+                - img "split-cells" [ref=f2e203]
+                - generic [ref=f2e206]: 按题型分组
+              - button "提交 PDF 到数据主机" [ref=f2e208] [cursor=pointer]
+              - button "提交到数据主机" [ref=f2e211] [cursor=pointer]:
+                - generic:
+                  - img "file-word"
+                - generic: 导出试卷
+                - text: 提交到数据主机
+          - generic [ref=f2e213]:
+            - alert [ref=f2e214]:
+              - img "info-circle" [ref=f2e215]
+              - generic [ref=f2e218]: 当前是普通电脑，导出任务将经阿里云中继提交到指定数据主机。
+            - generic [ref=f2e220]:
+              - generic [ref=f2e222]:
+                - generic [ref=f2e223]: 题目数
+                - generic [ref=f2e224]:
+                  - generic [ref=f2e225]: "2"
+                  - generic [ref=f2e226]: 题
+              - generic [ref=f2e228]:
+                - generic [ref=f2e229]: 总分
+                - generic [ref=f2e230]:
+                  - generic [ref=f2e231]: "9"
+                  - generic [ref=f2e232]: 分
+              - generic [ref=f2e234]:
+                - text: 题型分布
+                - generic [ref=f2e235]:
+                  - generic [ref=f2e236]: 单选题 1
+                  - generic [ref=f2e237]: 解答题 1
+              - generic [ref=f2e239]:
+                - text: 难度分布
+                - generic [ref=f2e240]:
+                  - generic [ref=f2e241]: 难度2 1
+                  - generic [ref=f2e242]: 难度3 1
+        - generic [ref=f2e415]:
+          - generic [ref=f2e417]:
+            - generic [ref=f2e418]: 导出任务记录
+            - button "reload 刷新状态" [ref=f2e420] [cursor=pointer]:
+              - img "reload" [ref=f2e422]
+              - generic [ref=f2e425]: 刷新状态
+          - generic [ref=f2e427]:
+            - generic [ref=f2e475]:
+              - generic [ref=f2e476]:
+                - generic [ref=f2e477]: 已取消
+                - strong [ref=f2e481]: 2026-07-13试卷
+                - generic [ref=f2e482]: PDF
+                - generic [ref=f2e484]: 2 题
+              - progressbar [ref=f2e486]:
+                - generic "55%" [ref=f2e490]
+            - generic [ref=f2e428]:
+              - generic [ref=f2e429]:
+                - generic [ref=f2e430]:
+                  - generic [ref=f2e431]: 已完成
+                  - strong [ref=f2e435]: 2026-07-13试卷
+                  - generic [ref=f2e436]: WORD
+                  - generic [ref=f2e438]: 2 题
+                - progressbar [ref=f2e440]:
+                  - img "check-circle" [ref=f2e460]
+              - button "download 刷新并下载" [ref=f2e464] [cursor=pointer]:
+                - img "download" [ref=f2e471]
+                - generic [ref=f2e469]: 刷新并下载
+        - generic [ref=f2e244]:
+          - generic [ref=f2e246]:
+            - generic [ref=f2e247]: 一、单选题
+            - generic [ref=f2e248]: 1 题
+          - generic [ref=f2e253]:
+            - generic [ref=f2e254]: "1"
+            - generic [ref=f2e255]:
+              - generic [ref=f2e256]:
+                - generic [ref=f2e257]: Physics
+                - generic [ref=f2e259]: 单选题
+                - generic [ref=f2e261]: published
+                - generic [ref=f2e263]: 难度2
+                - generic [ref=f2e265]: 其他
+              - generic [ref=f2e267]: Question one
+            - generic [ref=f2e270]:
+              - generic [ref=f2e274]:
+                - combobox [ref=f2e276]
+                - generic "一、单选题" [ref=f2e277]
+              - generic [ref=f2e280]:
+                - generic [ref=f2e281]: 新分组
+                - textbox "输入后回车" [ref=f2e282]
+              - generic [ref=f2e285]:
+                - generic [ref=f2e286]: 分值
+                - generic [ref=f2e287]:
+                  - generic:
+                    - button "Increase Value" [ref=f2e288] [cursor=pointer]:
+                      - img "up" [ref=f2e289]
+                    - button "Decrease Value" [ref=f2e292] [cursor=pointer]:
+                      - img "down" [ref=f2e293]
+                  - spinbutton [ref=f2e297]: "3.0"
+            - generic [ref=f2e298]:
+              - button "arrow-up" [disabled] [ref=f2e300]:
+                - generic:
+                  - img "arrow-up"
+              - button [ref=f2e302] [cursor=pointer]:
+                - img "arrow-down" [ref=f2e304]
+              - button "plus 综合" [ref=f2e308] [cursor=pointer]:
+                - img "plus" [ref=f2e310]
+                - generic [ref=f2e314]: 综合
+        - generic [ref=f2e316]:
+          - generic [ref=f2e318]:
+            - generic [ref=f2e319]: 五、解答题
+            - generic [ref=f2e320]: 1 题
+          - generic [ref=f2e325]:
+            - generic [ref=f2e326]: "2"
+            - generic [ref=f2e327]:
+              - generic [ref=f2e328]:
+                - generic [ref=f2e329]: Physics
+                - generic [ref=f2e331]: 解答题
+                - generic [ref=f2e333]: published
+                - generic [ref=f2e335]: 难度3
+                - generic [ref=f2e337]: 其他
+              - generic [ref=f2e339]: Question two
+            - generic [ref=f2e342]:
+              - generic [ref=f2e346]:
+                - combobox [ref=f2e348]
+                - generic "五、解答题" [ref=f2e349]
+              - generic [ref=f2e352]:
+                - generic [ref=f2e353]: 新分组
+                - textbox "输入后回车" [ref=f2e354]
+              - generic [ref=f2e357]:
+                - generic [ref=f2e358]: 分值
+                - generic [ref=f2e359]:
+                  - generic:
+                    - button "Increase Value" [ref=f2e360] [cursor=pointer]:
+                      - img "up" [ref=f2e361]
+                    - button "Decrease Value" [ref=f2e364] [cursor=pointer]:
+                      - img "down" [ref=f2e365]
+                  - spinbutton [ref=f2e369]: "6.0"
+            - generic [ref=f2e370]:
+              - button [ref=f2e372] [cursor=pointer]:
+                - img "arrow-up" [ref=f2e374]
+              - button "arrow-down" [disabled] [ref=f2e378]:
+                - generic:
+                  - img "arrow-down"
+              - button "plus 综合" [ref=f2e380] [cursor=pointer]:
+                - img "plus" [ref=f2e382]
+                - generic [ref=f2e386]: 综合
+        - generic [ref=f2e388]:
+          - generic [ref=f2e389]: 参考答案与解析
+          - generic [ref=f2e393]:
+            - generic [ref=f2e395]:
+              - generic [ref=f2e396]: "1."
+              - generic [ref=f2e397]: 答案：A
+              - generic [ref=f2e398]: 解析：Analysis one
+            - generic [ref=f2e400]:
+              - generic [ref=f2e401]: "2."
+              - generic [ref=f2e402]: 答案：42
+              - generic [ref=f2e403]: 解析：Analysis two
+      - button "打开试题篮" [ref=f2e404]:
+        - generic [ref=f2e405]:
+          - img "shopping-cart" [ref=f2e406]
+          - superscript [ref=f2e409]:
+            - generic [ref=f2e410]: "2"
+        - generic [ref=f2e412]: 试题篮

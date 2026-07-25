@@ -1,0 +1,16 @@
+{
+  "createdAt": "2026-07-22T22:09:17.028624+00:00",
+  "backupDir": "/root/scheduling-backups/formula-pipeline/20260722-220910",
+  "backendDatabaseSource": "/root/scheduling-data/prod/scheduling.db",
+  "gatewayDatabaseSource": "/root/education-platform/gateway/data/gateway.db",
+  "evidence": [
+    "0dc3c58eeb3c2d38e96d08069c511bc07a1671ccad768f7c7c34a7e7672f7f5b  /root/scheduling-backups/formula-pipeline/20260722-220910/backend-code.tar.gz",
+    "4c3f36c19c1c36c409f2344848908802900ee4299dccfac0db9a268b03416543  /root/scheduling-backups/formula-pipeline/20260722-220910/gateway-code.tar.gz",
+    "e766d59d1492494dfb454ebd88b1f2df73a95cc92cdfc97be66bbc1d3ba94c9a  /root/scheduling-backups/formula-pipeline/20260722-220910/scheduling.db",
+    "9a9ea5a6986411c7a970f5462170b43e2b016516e69798358612521977a97aa1  /root/scheduling-backups/formula-pipeline/20260722-220910/gateway.db",
+    "/root/scheduling-backups/formula-pipeline/20260722-220910/backend-code.tar.gz 14051832",
+    "/root/scheduling-backups/formula-pipeline/20260722-220910/gateway-code.tar.gz 13683735",
+    "/root/scheduling-backups/formula-pipeline/20260722-220910/scheduling.db 1265664",
+    "/root/scheduling-backups/formula-pipeline/20260722-220910/gateway.db 176128"
+  ]
+}

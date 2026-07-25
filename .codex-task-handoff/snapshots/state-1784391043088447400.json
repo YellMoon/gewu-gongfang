@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "phase": "protected",
+  "project_path": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system",
+  "source_thread_id": "019f7578-5fa3-7690-8e28-39db131cdee9",
+  "updated_at": "2026-07-18T14:02:47.451415Z",
+  "current_step": "Task 10 code-quality remediation after spec approval: investigate and fix atomic host credential handoff Critical, then bounded preflight, backup lifecycle, and schema-version Important findings",
+  "completed_steps": [
+    "Desktop identity Tasks 1 through 6 committed locally as 9c0c30f through b74e3c0",
+    "Task 7 miniapp public desktop identity verification committed locally as 982e21a",
+    "Task 8 identity and device review center committed locally as c8309cd",
+    "Task 9 unified online V2 sync identity and permanent Backend/Gateway V1 tombstones committed locally as 25d0e0a",
+    "Task 10 server-authoritative two-sided preflight proof, real loopback SQLite backup validation, activation transaction integration, and old-host HTTP rejection matrix implemented and specification-reviewed"
+  ],
+  "next_step": "Reproduce the credential-persistence lockout root cause with a failing test, implement a failure-safe staged credential handoff, then address the three remaining Important quality findings one by one under TDD",
+  "wait_state": "none; no push, packaging, upload, deployment, real host bootstrap, or release before the unified compatibility matrix",
+  "goal_id": "019f7578-5fa3-7690-8e28-39db131cdee9",
+  "inherited_from_thread_id": "019f7393-53b6-78b3-b892-f51522c89316",
+  "inherited_from_goal_id": "019f7393-53b6-78b3-b892-f51522c89316",
+  "validation_evidence": [
+    "Task 9 sync identity regression, full npm test, TypeScript checks, and production builds passed before commit 25d0e0a",
+    "Source Task 10 focused suites and full npm test passed after preflight proof and real HTTP migration matrix implementation",
+    "Source Task 10 specification rereview passed after the HTTP test was changed to use the real loopback SQLite backup and signing chain",
+    "2026-07-18 successor fresh npm run test:primary-host passed all 13 primary-host commands",
+    "User guidance content hash recomputed and matched dfb2e1947383ea002bdd6a0959ec27f1726823891ea61c37ba542f381b31623d",
+    "Code-quality review still blocks completion on one Critical and three Important findings; none are marked fixed"
+  ],
+  "goal_status": "active",
+  "last_completed_step": "Generation 6 successor acquisition and fresh primary-host baseline verification",
+  "last_validation_evidence": "npm run test:primary-host exited 0 after handoff; actual source state is ahead of the stale generation-5 checkpoint"
+}

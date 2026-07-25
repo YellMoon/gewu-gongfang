@@ -316,5 +316,79 @@ const assert = require('assert');
   assert.ok(calls[0].url.endsWith('/api/desktop-identity/primary-host/recover'));
   assert.strictEqual(JSON.parse(calls[0].options.body).preflightProof.id, 'proof-recovery');
 
+  // 云中继回退：局域网直连网络失败时，经 /api/cloud/desktop-identity 中继查询设备清单
+  const clientRuntime = { nodeRole: 'desktop-client', primaryHostCapable: false, deviceId: 'device-2', hostBaseUrl: 'http://192.168.1.8:3001' };
+  const clientSession = {
+    authorization: 'Bearer relay-session-token',
+    authContext: {
+      userId: 'canonical-user', deviceId: 'device-2', activeRole: 'teacher',
+      eligibleRoles: ['teacher'], teacherId: 'teacher-self',
+    },
+  };
+  const relayCalls = [];
+  let relayPolls = 0;
+  const relayFetch = async (url, options = {}) => {
+    const target = String(url);
+    relayCalls.push({ url: target, options });
+    if (target.startsWith('http://192.168.1.8:3001')) {
+      throw new TypeError('fetch failed');
+    }
+    if (target.endsWith('/api/cloud/desktop-identity/requests')) {
+      return { ok: true, json: async () => ({ success: true, request: { id: 'relay-req-1', status: 'pending_host' } }) };
+    }
+    relayPolls += 1;
+    if (relayPolls === 1) {
+      return { ok: true, json: async () => ({ success: true, request: { id: 'relay-req-1', status: 'pending_host', result_payload: null } }) };
+    }
+    return { ok: true, json: async () => ({ success: true, request: {
+      id: 'relay-req-1', status: 'completed', result_payload: { items: [mine[1]] },
+    } }) };
+  };
+  const relayLoaded = await loadIdentityDeviceCenter({
+    baseUrl: 'http://192.168.1.8:3001',
+    relayBaseUrl: 'https://cloud.example/scheduling',
+    runtimeConfig: clientRuntime,
+    session: clientSession,
+    fetchImpl: relayFetch,
+    relaySleep: async () => {},
+  });
+  assert.strictEqual(relayLoaded.mine.length, 1);
+  assert.strictEqual(relayLoaded.mine[0].deviceId, 'device-2');
+  assert.strictEqual(relayLoaded.pending.length, 0);
+  const relayStart = relayCalls.find(call => call.url.endsWith('/api/cloud/desktop-identity/requests'));
+  assert.ok(relayStart, 'relay fallback must submit a cloud desktop-identity request');
+  assert.strictEqual(relayStart.options.headers.Authorization, 'Bearer relay-session-token');
+  assert.strictEqual(relayStart.options.headers['x-device-id'], 'device-2');
+  assert.deepStrictEqual(JSON.parse(relayStart.options.body), { query: 'devices' });
+
+  // 没有可用局域网直连地址时直接走云中继
+  relayCalls.length = 0;
+  relayPolls = 1;
+  const relayOnly = await loadIdentityDeviceCenter({
+    baseUrl: '',
+    relayBaseUrl: 'https://cloud.example/scheduling',
+    runtimeConfig: clientRuntime,
+    session: clientSession,
+    fetchImpl: relayFetch,
+    relaySleep: async () => {},
+  });
+  assert.strictEqual(relayOnly.mine.length, 1);
+  assert.ok(relayCalls.every(call => call.url.startsWith('https://cloud.example')),
+    'relay-only load must not touch the LAN base');
+
+  // 直连返回的权威业务错误（如会话失效）不得被中继掩盖
+  await assert.rejects(loadIdentityDeviceCenter({
+    baseUrl: 'http://192.168.1.8:3001',
+    relayBaseUrl: 'https://cloud.example/scheduling',
+    runtimeConfig: clientRuntime,
+    session: clientSession,
+    fetchImpl: async url => {
+      if (String(url).startsWith('http://192.168.1.8:3001')) {
+        return { ok: false, json: async () => ({ success: false, code: 'AUTHORIZATION_CONTEXT_REQUIRED' }) };
+      }
+      throw new Error('relay must not be attempted for authoritative direct errors');
+    },
+  }), error => error.code === 'AUTHORIZATION_CONTEXT_REQUIRED');
+
   console.log('identity device center policy checks passed');
 })().catch(error => { console.error(error); process.exit(1); });

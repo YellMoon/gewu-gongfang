@@ -1,0 +1,27 @@
+{
+  "phase": "protected",
+  "current_step": "Restore current-version real WeChat runtime evidence before unified release",
+  "completed_steps": [
+    "Audited production identity state and confirmed no active host epoch or desktop identity authorizations",
+    "Reproduced installed desktop registration failure WECHAT_URL_LINK_FAILED",
+    "Diagnosed WeChat provider response: access token succeeds, URL Link fails with permission code 85407, so registered IP allowlist is not the cause",
+    "Verified the same production miniapp account can generate an official mini-program code image through wxa/getwxacode",
+    "Added RED tests, implemented URL-Link-to-mini-program-code fallback for code 85407, and passed six focused backend/client/UI tests",
+    "Re-ran unrecognized-student Tasks 7-11 exact matrices, full npm test, desktop/miniapp typechecks, and production WeApp release check with exit code 0",
+    "Created truthful partial verification records and local commit 7771777 without pushing or publishing"
+  ],
+  "next_step": "Obtain current-version 17-page real WeChat runtime evidence, then perform coordinated cloud backup/deploy, host package/install/bootstrap, second-PC registration, miniapp upload, OSS publication, and final matrix",
+  "wait_state": "Current WeChat DevTools Stable 2.01.2510290 opens automation listeners, but miniprogram-automator 0.12.1 stalls during IPv4 and IPv6 protocol handshake; no current-version screenshot was claimed",
+  "validation_evidence": [
+    "production access token request succeeded while URL Link returned WeChat permission code 85407",
+    "production wxa/getwxacode diagnostic returned a JPEG payload without exposing credentials",
+    "npm test exited 0 on 2026-07-22",
+    "root and miniapp TypeScript checks exited 0",
+    "production WeApp build and miniapp release smoke exited 0",
+    "desktop identity, primary-host, identity-device-center, and sync-identity suites exited 0",
+    "gewu/master already contains PR 5; local commit 7771777 is intentionally not pushed"
+  ],
+  "goal_status": "active",
+  "last_completed_step": "Official mini-program-code fallback, complete local regression/build matrix, and truthful plan/document reconciliation",
+  "last_validation_evidence": "npm test, production WeApp release check, desktop/miniapp typechecks, identity/primary-host/sync suites, docs gates, and git diff checks exited 0; local commit 7771777"
+}

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "phase": "protected",
+  "project_path": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system",
+  "source_thread_id": "019f7578-5fa3-7690-8e28-39db131cdee9",
+  "updated_at": "2026-07-18T16:10:43.089023Z",
+  "current_step": "Task 10 local structured review and selective commit preparation after protocol GREEN",
+  "completed_steps": [
+    "Desktop identity Tasks 1 through 9 are preserved through local commit 25d0e0a",
+    "Restored the ordinary desktop System Settings OSS update check, download, and install panel without changing the existing Aliyun OSS main-process feed",
+    "Replaced cloud-returned plaintext host credentials with a locally generated DPAPI-encrypted staged credential and verified crash-resume adoption",
+    "Added visible crash-resume adoption and retired-host runtime demotion flows",
+    "Bound bootstrap policy transport to the signed operation manifest and removed the final idempotent hostCredential response field",
+    "Bound primary-host sync preflight sampling, added validation backup retention, and advanced the database schema marker to 3107",
+    "Completed Task 10 plan Steps 3 and 4"
+  ],
+  "next_step": "Finish Task 10 diff and invariant review, rerun affected regressions, then prepare the narrow Task 10 local commit without push, package, or deployment",
+  "wait_state": "none; unified compatibility matrix still forbids push, packaging, OSS publication, deployment, and real host migration",
+  "goal_id": "019f7578-5fa3-7690-8e28-39db131cdee9",
+  "inherited_from_thread_id": "019f7393-53b6-78b3-b892-f51522c89316",
+  "inherited_from_goal_id": "019f7393-53b6-78b3-b892-f51522c89316",
+  "validation_evidence": [
+    "OSS updater UI regression, publish-feed test, TypeScript check, and production build passed",
+    "Task 10 exact six-command GREEN matrix passed with schema 3107",
+    "npm run test:primary-host passed all 13 primary-host commands after credential staging and quality remediation",
+    "Identity device policy, page source, runtime manager, and runtime config client regressions passed after crash-resume and retired-host demotion changes",
+    "git diff --check passed; no plaintext hostCredential response remains in service, route, policy, or renderer flows"
+  ],
+  "goal_status": "active",
+  "last_completed_step": "Task 10 prescribed GREEN matrix and aggregate primary-host suite",
+  "last_validation_evidence": "npm run test:primary-host exited 0; Task 10 exact Step 4 matrix exited 0"
+}

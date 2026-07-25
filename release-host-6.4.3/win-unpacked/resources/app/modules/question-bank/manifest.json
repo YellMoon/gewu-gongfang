@@ -1,0 +1,10 @@
+{
+  "id": "question-bank",
+  "name": "题库管理",
+  "route_prefix": "/question-bank",
+  "entry": "src/index.js",
+  "permission": {
+    "module": "question-bank",
+    "action": "view"
+  }
+}

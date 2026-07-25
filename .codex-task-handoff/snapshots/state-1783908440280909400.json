@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "phase": "protected",
+  "project_path": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system",
+  "source_thread_id": "019f55f4-d8c2-7290-a95f-ca0581de4b23",
+  "updated_at": "2026-07-13T01:26:54.710207Z",
+  "current_step": "Task 6: end-to-end Word import quality gate",
+  "completed_steps": [
+    "Recovered actual Git/process/plan state read-only",
+    "Created successor active goal and recorded lineage",
+    "Verified current focused parser tests: 2 passed",
+    "Verified production frontend build: compiled successfully",
+    "Task 6 first implementation passed parser/route/build tests but failed independent spec review"
+  ],
+  "next_step": "Repair Task 6 to use one token-derived stream with formula-id/source-coordinate placement, table cell ownership, exam answer metadata and actionable locations; then repeat spec review",
+  "wait_state": "none",
+  "goal_id": "019f5904-1ebc-7bf3-84dc-a9f1b62585f2",
+  "inherited_from_thread_id": "019f55f4-d8c2-7290-a95f-ca0581de4b23",
+  "inherited_from_goal_id": "c58d1032-f4ee-49e4-9dec-e8e8ad9555c8",
+  "validation_evidence": [
+    "python modules/question-bank/parsers/tests/test_parse_word_formulas.py -v: 2 tests OK",
+    "npm run build: exit 0, Compiled successfully",
+    "Independent Task 6 spec review: failed due to dual reader path, latex-value dedupe, table/answer metadata gaps and insufficient real DOCX fixtures",
+    "node src/uiRegression.test.js: failed WYSIWYG editor contract at line 526 (recorded for Task 8)"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "phase": "protected",
+  "project_path": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system",
+  "source_thread_id": "019f55f4-d8c2-7290-a95f-ca0581de4b23",
+  "updated_at": "2026-07-14T23:13:58.705167Z",
+  "current_step": "Miniapp review experience Task 4 completed; Task 5 in progress",
+  "completed_steps": [
+    "Formula pipeline unified release completed as version 5.14.3",
+    "Merged the two explicitly requested worktree pull requests into master",
+    "Review experience Task 1 authentication committed as ddfe4fc",
+    "Review experience Task 2 static data and mutation firewall committed as 14fe6a5",
+    "Review experience Task 3 in-memory DOCX/PDF sandbox completed through final reviews as 3c78960",
+    "Review experience Task 4 miniapp runtime, login, authorization, and session isolation completed through final reviews as 612d509",
+    "Task 3 and Task 4 plan checkboxes committed as 4579335"
+  ],
+  "next_step": "Implement Task 5 read-only UI, review sandbox workflow, and exit cleanup",
+  "wait_state": "none",
+  "goal_id": "019f6107-9b05-74e3-894a-bd622486fd72",
+  "inherited_from_thread_id": "019f5904-1ebc-7bf3-84dc-a9f1b62585f2",
+  "inherited_from_goal_id": "019f5904-1ebc-7bf3-84dc-a9f1b62585f2",
+  "validation_evidence": [
+    "Task 4 final specification review passed",
+    "Task 4 final code quality review passed with no Critical or Important issues",
+    "Full npm test suite passed after the Task 4 session-isolation fixes",
+    "Miniapp TypeScript checks and WeApp/H5 builds passed",
+    "Review and normal identities use generation-bound, identity-bound sessions and cache scopes",
+    "No Task 4 changes have been pushed or released; unified push and release remain Task 7"
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "phase": "protected",
+  "project_path": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system",
+  "source_thread_id": "019f7578-5fa3-7690-8e28-39db131cdee9",
+  "updated_at": "2026-07-22T03:47:16.334876Z",
+  "current_step": "Restart blank WeChat DevTools runtime and capture the current registered-page UI matrix",
+  "completed_steps": [
+    "Audited production identity state and confirmed no active host epoch or desktop identity authorizations",
+    "Reproduced installed desktop registration failure WECHAT_URL_LINK_FAILED",
+    "Diagnosed WeChat provider response: access token succeeds, URL Link fails with permission code 85407, so registered IP allowlist is not the cause",
+    "Verified the same production miniapp account can generate an official mini-program code image through wxa/getwxacode",
+    "Added RED tests, implemented URL-Link-to-mini-program-code fallback for code 85407, and passed six focused backend/client/UI tests",
+    "Re-ran unrecognized-student Tasks 7-11 exact matrices, full npm test, desktop/miniapp typechecks, and production WeApp release check with exit code 0",
+    "Created truthful partial verification records and local commit 7771777 without pushing or publishing"
+  ],
+  "next_step": "After explicit restart approval, reopen the current production WeApp, verify the fixed home greeting, and capture every registered page and role/state branch before unified release",
+  "wait_state": "WeChat DevTools Stable 2.01.2510290 now renders a blank white main window. Tool RPC succeeds but App RPC has no runtime context. Restart is required and was not performed without explicit approval because unsaved IDE state may exist.",
+  "goal_id": "019f7578-5fa3-7690-8e28-39db131cdee9",
+  "inherited_from_thread_id": "019f7393-53b6-78b3-b892-f51522c89316",
+  "inherited_from_goal_id": "019f7393-53b6-78b3-b892-f51522c89316",
+  "validation_evidence": [
+    "production access token request succeeded while URL Link returned WeChat permission code 85407",
+    "production wxa/getwxacode diagnostic returned a JPEG payload without exposing credentials",
+    "npm test exited 0 on 2026-07-22",
+    "root and miniapp TypeScript checks exited 0",
+    "production WeApp build and miniapp release smoke exited 0",
+    "desktop identity, primary-host, identity-device-center, and sync-identity suites exited 0",
+    "gewu/master already contains PR 5; local commit 7771777 is intentionally not pushed"
+  ],
+  "goal_status": "active",
+  "last_completed_step": "Production unrecognized-token security probe, home display-name runtime bug fix, current WeApp build, and full local regression",
+  "last_validation_evidence": "Production probe had zero mismatches and no token/header leakage; miniapp release check, miniapp typecheck, focused RED/GREEN home test, and full npm test all exited 0; local commits 8a93d89 and 615b622 are intentionally not pushed"
+}

@@ -1,0 +1,99 @@
+[    1215ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:3000/static/js/bundle.js:157094
+[    1747ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110)
+    at http://localhost:3000/static/js/bundle.js:180:5
+    at commitHookEffectListMount (http://localhost:3000/static/js/bundle.js:151389:30)
+    at commitPassiveMountOnFiber (http://localhost:3000/static/js/bundle.js:152882:17)
+    at commitPassiveMountEffects_complete (http://localhost:3000/static/js/bundle.js:152854:13)
+    at commitPassiveMountEffects_begin (http://localhost:3000/static/js/bundle.js:152844:11)
+    at commitPassiveMountEffects (http://localhost:3000/static/js/bundle.js:152834:7)
+    at flushPassiveEffectsImpl (http://localhost:3000/static/js/bundle.js:154717:7) @ http://localhost:3000/static/js/bundle.js:176
+[    1747ms] [LOG] Database service loaded successfully @ http://localhost:3000/static/js/bundle.js:157
+[   32758ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:3000/static/js/bundle.js:157094
+[   32939ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110)
+    at http://localhost:3000/static/js/bundle.js:180:5
+    at commitHookEffectListMount (http://localhost:3000/static/js/bundle.js:151389:30)
+    at commitPassiveMountOnFiber (http://localhost:3000/static/js/bundle.js:152882:17)
+    at commitPassiveMountEffects_complete (http://localhost:3000/static/js/bundle.js:152854:13)
+    at commitPassiveMountEffects_begin (http://localhost:3000/static/js/bundle.js:152844:11)
+    at commitPassiveMountEffects (http://localhost:3000/static/js/bundle.js:152834:7)
+    at flushPassiveEffectsImpl (http://localhost:3000/static/js/bundle.js:154717:7) @ http://localhost:3000/static/js/bundle.js:176
+[   32939ms] [LOG] Database service loaded successfully @ http://localhost:3000/static/js/bundle.js:157
+[   92941ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176
+[  152951ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176
+[  212966ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176
+[  272943ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176
+[  332942ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176
+[  392955ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176
+[  452953ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176
+[  512956ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176
+[  572963ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176
+[  620500ms] [ERROR] Warning: [antd: Modal] Static function can not consume context like dynamic theme. Please use 'App' component instead. @ http://localhost:3000/static/js/bundle.js:129099
+[  632960ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176
+[  692963ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176
+[  752960ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176
+[  812954ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176
+[  872963ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176
+[  932956ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176
+[  992958ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176
+[ 1052959ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176
+[ 1112962ms] [WARNING] [cloud-relay-host] background poll skipped Error: Electron API is not available
+    at requireApi (http://localhost:3000/static/js/bundle.js:21134:62)
+    at getRuntimeConfig (http://localhost:3000/static/js/bundle.js:21138:10)
+    at runHostCloudLoop (http://localhost:3000/static/js/bundle.js:172:110) @ http://localhost:3000/static/js/bundle.js:176

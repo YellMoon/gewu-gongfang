@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "phase": "protected",
+  "project_path": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system",
+  "source_thread_id": "019f55f4-d8c2-7290-a95f-ca0581de4b23",
+  "updated_at": "2026-07-15T16:06:49.838743Z",
+  "current_step": "Design the approved server-isolated unrecognized-student review flow and select fixed sample questions from an authorized local test paper",
+  "completed_steps": [
+    "Formula pipeline unified release completed as version 5.14.3",
+    "Miniapp review experience Tasks 1 through 6 completed and independently reviewed",
+    "Version 5.14.4 full tests, desktop build, miniapp production build and release checks passed",
+    "Version 5.14.4 code pushed to gewu/master through commit 613c20e",
+    "Cloud Backend and Gateway deployed with exact 5.14.4 health and public review smoke",
+    "Miniapp 5.14.4 built and uploaded; administrator screenshot validation reached teacher-list blank-page defect",
+    "Recovered source task 019f6107 after system error and created successor active goal",
+    "Teacher-list blank page reproduced, covered by a failing layout test, fixed with the minimal flex-column layout, rebuilt, and verified in the real WeChat runtime",
+    "Official miniprogram-automator proved the administrator stats route renders complete review banner, revenue, course-type, and monthly content with no runtime exception; the earlier manual blank view was stale developer-tool rendering rather than an application defect",
+    "User approved option 1: remove the visible review-role/code entry, automatically place unapproved users in a server-isolated student experience, keep real course data empty, and retain sanitized sample-question paper export in the isolated sandbox",
+    "Eight local physics test papers were compared read-only; the selected Ningbo mock-exam source parsed 19 questions and 278 formulas with zero formula items needing review"
+  ],
+  "next_step": "Confirm the approved-user upgrade interaction for an unknown WeChat identity, then present and write the complete unrecognized-student design before implementation",
+  "wait_state": "awaiting user choice for phone-verification upgrade interaction",
+  "goal_id": "019f6628-8e10-71d1-b211-3ebcbdfbcd03",
+  "inherited_from_thread_id": "019f6107-9b05-74e3-894a-bd622486fd72",
+  "inherited_from_goal_id": "019f6107-9b05-74e3-894a-bd622486fd72",
+  "validation_evidence": [
+    "git HEAD and gewu/master match at 613c20e",
+    "Tracked dirty files are the teacher layout fix, its focused access-policy test, and the generated build timestamp; pre-existing untracked handoff/playwright/output/template-inspection files preserved",
+    "Source task recorded npm test exit 0 after review routing and Backend review-token isolation fixes",
+    "Source task recorded production miniapp release check and upload success for 5.14.4",
+    "Real WeChat developer-tool review session reproduced teacher page blank after more than 10 seconds",
+    "Root-cause comparison found students page flex-column parent layout present while teachers page omitted it, collapsing the shared 100%-height pull-refresh scroller",
+    "Focused miniapp access-policy test passed after the teacher-page layout fix, and the fixed teacher page was captured with one visible demo teacher",
+    "Official automator inspected pages/stats/index: .container, .review-demo-banner, .revenue-card, and statistic cards all had non-zero layout; admin-stats-automator-before.png shows the fully rendered page",
+    "Current authorization code confirms pending users receive no token, normal students always receive question-bank:view, and the existing review-demo identity already provides the required server-enforced isolation primitives",
+    "Selected source questions are 1, 2, 4, and 11 from one local mock exam; questions 1, 4, and 11 are self-contained, while question 2 can be made text-only by removing its nonessential athlete-photo reference without changing the physics statements or answer",
+    "The local paper remains read-only and outside runtime dependencies; only a minimal sanitized fixed question subset will be copied into Gateway constants, with no local path or source document shipped"
+  ]
+}

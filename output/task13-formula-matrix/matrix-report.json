@@ -1,0 +1,226 @@
+[
+  {
+    "formulaMode": "word-native",
+    "answerPosition": "end",
+    "format": "word",
+    "fileName": "word-native__end.docx",
+    "target": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system\\output\\task13-formula-matrix\\word-native__end.docx",
+    "sha256": "cbce1b05aeac03f6ee92564362e02847b14d12f96ae6545775d14d151693f81c",
+    "pageCount": null,
+    "formulaCount": 7,
+    "fallbackCount": 0,
+    "effectiveFormulaModes": [
+      "word-native"
+    ]
+  },
+  {
+    "formulaMode": "word-native",
+    "answerPosition": "end",
+    "format": "pdf",
+    "fileName": "word-native__end.pdf",
+    "target": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system\\output\\task13-formula-matrix\\word-native__end.pdf",
+    "sha256": "764a08f67e3f0caab90f71d1f1ebb5ea89afb4858931419fa046e261333fa851",
+    "pageCount": 2,
+    "formulaCount": 7,
+    "fallbackCount": 7,
+    "effectiveFormulaModes": [
+      "latex-vector"
+    ]
+  },
+  {
+    "formulaMode": "word-native",
+    "answerPosition": "after-each",
+    "format": "word",
+    "fileName": "word-native__after-each.docx",
+    "target": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system\\output\\task13-formula-matrix\\word-native__after-each.docx",
+    "sha256": "6c85f32887a2463c754675170733ce37d1d090122f99b7ae0c9e83ec7a56b45d",
+    "pageCount": null,
+    "formulaCount": 7,
+    "fallbackCount": 0,
+    "effectiveFormulaModes": [
+      "word-native"
+    ]
+  },
+  {
+    "formulaMode": "word-native",
+    "answerPosition": "after-each",
+    "format": "pdf",
+    "fileName": "word-native__after-each.pdf",
+    "target": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system\\output\\task13-formula-matrix\\word-native__after-each.pdf",
+    "sha256": "236103511982bb3b827bb22ab5b3eb6d05355bc9975b2653051ae0233c642e2c",
+    "pageCount": 2,
+    "formulaCount": 7,
+    "fallbackCount": 7,
+    "effectiveFormulaModes": [
+      "latex-vector"
+    ]
+  },
+  {
+    "formulaMode": "eq-field",
+    "answerPosition": "end",
+    "format": "word",
+    "fileName": "eq-field__end.docx",
+    "target": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system\\output\\task13-formula-matrix\\eq-field__end.docx",
+    "sha256": "52c9ca9da1b43a0e05b35bf27eaafdc7cb060fc14b4f8a7efc391f32796e5212",
+    "pageCount": null,
+    "formulaCount": 7,
+    "fallbackCount": 0,
+    "effectiveFormulaModes": [
+      "eq-field"
+    ]
+  },
+  {
+    "formulaMode": "eq-field",
+    "answerPosition": "end",
+    "format": "pdf",
+    "fileName": "eq-field__end.pdf",
+    "target": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system\\output\\task13-formula-matrix\\eq-field__end.pdf",
+    "sha256": "372da7cd0720138d94cb354b1d473ca74be6f0142586f1ddad56fe00fb149132",
+    "pageCount": 2,
+    "formulaCount": 7,
+    "fallbackCount": 7,
+    "effectiveFormulaModes": [
+      "latex-vector"
+    ]
+  },
+  {
+    "formulaMode": "eq-field",
+    "answerPosition": "after-each",
+    "format": "word",
+    "fileName": "eq-field__after-each.docx",
+    "target": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system\\output\\task13-formula-matrix\\eq-field__after-each.docx",
+    "sha256": "3ad8be47bd4cb3911c8b43d4f22c4e12dfa5833d66b872b10c7ee1c624efe20c",
+    "pageCount": null,
+    "formulaCount": 7,
+    "fallbackCount": 0,
+    "effectiveFormulaModes": [
+      "eq-field"
+    ]
+  },
+  {
+    "formulaMode": "eq-field",
+    "answerPosition": "after-each",
+    "format": "pdf",
+    "fileName": "eq-field__after-each.pdf",
+    "target": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system\\output\\task13-formula-matrix\\eq-field__after-each.pdf",
+    "sha256": "0fdebdbc4888110535df89f7c7f0d89d57178fa8fd9fd01118c293d0328225f3",
+    "pageCount": 2,
+    "formulaCount": 7,
+    "fallbackCount": 7,
+    "effectiveFormulaModes": [
+      "latex-vector"
+    ]
+  },
+  {
+    "formulaMode": "mathtype-compatible",
+    "answerPosition": "end",
+    "format": "word",
+    "fileName": "mathtype-compatible__end.docx",
+    "target": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system\\output\\task13-formula-matrix\\mathtype-compatible__end.docx",
+    "sha256": "3c29b47dfbd8f7c8a6224351d13d26b6f0da324a1776f80ff62f28c1168009f2",
+    "pageCount": null,
+    "formulaCount": 7,
+    "fallbackCount": 7,
+    "effectiveFormulaModes": [
+      "latex-vector"
+    ]
+  },
+  {
+    "formulaMode": "mathtype-compatible",
+    "answerPosition": "end",
+    "format": "pdf",
+    "fileName": "mathtype-compatible__end.pdf",
+    "target": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system\\output\\task13-formula-matrix\\mathtype-compatible__end.pdf",
+    "sha256": "f3b2b61b12f7db8cff43749584a39bea0e2d9f241d20ac218882363831907ab5",
+    "pageCount": 2,
+    "formulaCount": 7,
+    "fallbackCount": 7,
+    "effectiveFormulaModes": [
+      "latex-vector"
+    ]
+  },
+  {
+    "formulaMode": "mathtype-compatible",
+    "answerPosition": "after-each",
+    "format": "word",
+    "fileName": "mathtype-compatible__after-each.docx",
+    "target": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system\\output\\task13-formula-matrix\\mathtype-compatible__after-each.docx",
+    "sha256": "f59734a56bc604438737a6e41492c85a17d4789f169812f03aa1ad37b401081a",
+    "pageCount": null,
+    "formulaCount": 7,
+    "fallbackCount": 7,
+    "effectiveFormulaModes": [
+      "latex-vector"
+    ]
+  },
+  {
+    "formulaMode": "mathtype-compatible",
+    "answerPosition": "after-each",
+    "format": "pdf",
+    "fileName": "mathtype-compatible__after-each.pdf",
+    "target": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system\\output\\task13-formula-matrix\\mathtype-compatible__after-each.pdf",
+    "sha256": "20c113fdd5ffc23f230d8fb51613fda0ca6cd6c2d964c852c2c07b90b0a55509",
+    "pageCount": 2,
+    "formulaCount": 7,
+    "fallbackCount": 7,
+    "effectiveFormulaModes": [
+      "latex-vector"
+    ]
+  },
+  {
+    "formulaMode": "latex-vector",
+    "answerPosition": "end",
+    "format": "word",
+    "fileName": "latex-vector__end.docx",
+    "target": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system\\output\\task13-formula-matrix\\latex-vector__end.docx",
+    "sha256": "9a63a791ae26526c8028c504ca7ef1b713d6ca7fe0febf479037da39c58a35a0",
+    "pageCount": null,
+    "formulaCount": 7,
+    "fallbackCount": 0,
+    "effectiveFormulaModes": [
+      "latex-vector"
+    ]
+  },
+  {
+    "formulaMode": "latex-vector",
+    "answerPosition": "end",
+    "format": "pdf",
+    "fileName": "latex-vector__end.pdf",
+    "target": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system\\output\\task13-formula-matrix\\latex-vector__end.pdf",
+    "sha256": "b2b27bb37796357b8a725c81fdc41dcda855cfd75c5ea1a1cba6fd7f22a467bf",
+    "pageCount": 2,
+    "formulaCount": 7,
+    "fallbackCount": 0,
+    "effectiveFormulaModes": [
+      "latex-vector"
+    ]
+  },
+  {
+    "formulaMode": "latex-vector",
+    "answerPosition": "after-each",
+    "format": "word",
+    "fileName": "latex-vector__after-each.docx",
+    "target": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system\\output\\task13-formula-matrix\\latex-vector__after-each.docx",
+    "sha256": "cd4412e9e47ca0488c3334cdd93c303ae5968d77f32036699b53e79c80c2d4bb",
+    "pageCount": null,
+    "formulaCount": 7,
+    "fallbackCount": 0,
+    "effectiveFormulaModes": [
+      "latex-vector"
+    ]
+  },
+  {
+    "formulaMode": "latex-vector",
+    "answerPosition": "after-each",
+    "format": "pdf",
+    "fileName": "latex-vector__after-each.pdf",
+    "target": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system\\output\\task13-formula-matrix\\latex-vector__after-each.pdf",
+    "sha256": "b94b47ee63b52ae879d563cfb44ffc7dffd74ffca9fd367c822425fd821042ee",
+    "pageCount": 2,
+    "formulaCount": 7,
+    "fallbackCount": 0,
+    "effectiveFormulaModes": [
+      "latex-vector"
+    ]
+  }
+]

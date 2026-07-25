@@ -1,0 +1,3 @@
+provider: generic
+url: https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop/host/
+updaterCacheDirName: gewu-gongfang-updater

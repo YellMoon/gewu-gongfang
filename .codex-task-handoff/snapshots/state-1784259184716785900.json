@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "phase": "protected",
+  "project_path": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system",
+  "source_thread_id": "019f55f4-d8c2-7290-a95f-ca0581de4b23",
+  "updated_at": "2026-07-17T02:45:04.127003Z",
+  "current_step": "Execute desktop identity Task 5 with TDD: Electron device-key vault, local password/PIN envelope, daily trusted-device unlock, and restricted signing IPC",
+  "completed_steps": [
+    "Formula pipeline unified release completed as version 5.14.3",
+    "Unrecognized-student implementation Tasks 1 through 6 completed in local commits 63ea39d through 0f4b9be",
+    "Task 6 reconciler focused tests and a fresh full npm test passed before commit 0f4b9be",
+    "User approved the hybrid desktop identity scheme and confirmed one human uses the primary host plus additional replaceable computers",
+    "Desktop identity multi-role, multi-device, host migration, and recovery design and file-level TDD plan were approved",
+    "Desktop identity Task 1 completed in 9c0c30f: schema 3103, additive role grants, canonical teacher recovery, active-role scopes, and revocation persistence",
+    "Desktop identity Task 2 completed in 792e562: schema 3104, Ed25519 device challenges, fresh verified-phone claimant binding, device-key uniqueness, event replay prevention, and login-event retention compatibility",
+    "Desktop identity Task 3 completed in 68e945d: schema 3105, fixed-claimant HTTP approval, Ed25519 signed exchange, database-backed eight-hour sessions, per-device revocation, and primary-host device-duty enforcement",
+    "Desktop identity Task 4 completed in 92ec666: persisted active-role authorization, teacher/super-admin scope isolation, signed elevation, safe downgrade, session rotation, and legacy single-role sync compatibility"
+  ],
+  "next_step": "Inspect the existing Electron main/preload/renderer credential and IPC boundaries, then write RED tests for encrypted device-key storage, password/PIN unlock, no plaintext private-key exposure, and purpose-bound role-elevation signing",
+  "wait_state": "none; no push, packaging, upload, deployment, real host bootstrap, or host migration before the unified compatibility matrix",
+  "goal_id": "019f66df-8926-7750-a29e-acddb786ea23",
+  "inherited_from_thread_id": "019f6628-8e10-71d1-b211-3ebcbdfbcd03",
+  "inherited_from_goal_id": "019f6628-8e10-71d1-b211-3ebcbdfbcd03",
+  "validation_evidence": [
+    "Actual Git HEAD is 92ec666 on master; gewu/master remains intentionally unchanged until the unified release task",
+    "Protected tracked and untracked user artifacts remain untouched and were excluded from Task 4",
+    "Fresh full npm test passed after final Task 4 code: exit 0 in 275 seconds with 583 output lines",
+    "Desktop identity aggregate suite including role-switch and legacy sync compatibility passed",
+    "Teacher active sessions remain teacher-scoped even when the same canonical human is eligible for super_admin",
+    "Elevation requires a two-minute Ed25519 proof bound to sid, device, target role, and session row version",
+    "Successful elevation and downgrade atomically rotate the session and revoke the prior token",
+    "Role switching preserves the original session expiry and records an authorization audit entry",
+    "Legacy single-role desktop tokens retain their persisted sync scope while desktop-session tokens use only persisted activeRole scope",
+    "No external side effects were performed"
+  ],
+  "goal_status": "active",
+  "last_completed_step": "Desktop identity Task 4 committed locally as 92ec666",
+  "last_validation_evidence": "Fresh full npm test and desktop identity aggregate suite passed; exact staged scope excluded every protected user-owned file"
+}

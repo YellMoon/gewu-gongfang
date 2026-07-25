@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "protection_ratio": 0.75,
+  "stall_confirmations_required": 3,
+  "supervision_interval_seconds": 120,
+  "max_create_retries": 3
+}

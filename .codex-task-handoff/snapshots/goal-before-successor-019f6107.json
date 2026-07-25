@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "source_thread_id": "019f55f4-d8c2-7290-a95f-ca0581de4b23",
+  "goal_id": "019f5904-1ebc-7bf3-84dc-a9f1b62585f2",
+  "status": "active",
+  "inherited_from_thread_id": "019f55f4-d8c2-7290-a95f-ca0581de4b23",
+  "inherited_from_goal_id": "c58d1032-f4ee-49e4-9dec-e8e8ad9555c8",
+  "generation": 1,
+  "owner_thread_id": "019f5904-1ebc-7bf3-84dc-a9f1b62585f2"
+}

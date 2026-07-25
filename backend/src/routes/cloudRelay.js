@@ -381,6 +381,61 @@ router.get('/desktop-sync/requests/:id/result', requireDesktopSyncAccess, (req, 
   });
 });
 
+// 外网（云中继）身份与设备查询：客户端建任务，数据主机轮询处理后回填结果。
+// 设备数据只存在主机本地库，云端仅做转发，不落任何设备明细。
+router.post('/desktop-identity/requests', requireDesktopSyncAccess, (req, res) => {
+  const query = String(req.body.query || '').trim();
+  if (query !== 'devices') {
+    return res.status(400).json({ success: false, code: 'DESKTOP_IDENTITY_RELAY_QUERY_UNSUPPORTED' });
+  }
+  const db = getInstance().db;
+  const taskId = id('desktop_identity');
+  const time = now();
+  const actor = req.syncActor;
+  let relayAssertion;
+  try {
+    relayAssertion = issueRelayAssertion({
+      taskId, actorUserId:actor.userId, deviceId:actor.deviceId, sessionId:actor.sessionId,
+      activeRole:actor.activeRole, teacherId:actor.teacherId || null,
+      authVersion:Number(actor.authVersion), credentialVersion:Number(actor.credentialVersion),
+      issuedAt:Date.now(), expiresAt:Date.parse(actor.sessionExpiresAt),
+    }, process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '');
+  } catch (error) { return sendForbidden(res, error.code || 'RELAY_ASSERTION_SECRET_REQUIRED'); }
+  const payload = {
+    deviceId: actor.deviceId,
+    query,
+    submittedAt: time,
+    actorUserId: actor.userId,
+    relayAssertion,
+  };
+  db.prepare(
+    `INSERT INTO miniapp_tasks (id, task_type, status, payload, created_by, created_at, updated_at)
+     VALUES (?, ?, 'pending_host', ?, ?, ?, ?)`
+  ).run(taskId, 'desktop-identity', JSON.stringify(payload), actor.userId, time, time);
+  res.json({
+    success: true,
+    request: { id: taskId, taskType: 'desktop-identity', status: 'pending_host' },
+  });
+});
+
+router.get('/desktop-identity/requests/:id/result', requireDesktopSyncAccess, (req, res) => {
+  const db = getInstance().db;
+  const actor = req.syncActor;
+  // 设备清单属于个人数据：只允许创建者本人读取，不给管理员放行通道。
+  const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ? AND task_type = ? AND CAST(created_by AS TEXT)=?')
+    .get(req.params.id, 'desktop-identity', String(actor.userId));
+  if (!row) return res.status(404).json({ success: false, code: 'DESKTOP_IDENTITY_REQUEST_NOT_FOUND' });
+  res.json({
+    success: true,
+    request: {
+      id: row.id,
+      status: row.status,
+      error_code: row.error_code || null,
+      result_payload: parseJson(row.result_payload, null),
+    },
+  });
+});
+
 router.post('/tasks', requireMiniappTaskAccess, (req, res) => {
   const db = getInstance().db;
   if (Number(req.body.protocolVersion || req.body.protocol_version || 1) >= 2) {

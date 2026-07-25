@@ -11,13 +11,29 @@ export function resolveManagedSyncConfig(config = {}, env = {}) {
   };
 }
 
+function usableLanHostBaseUrl(value) {
+  const normalized = String(value || '').trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(normalized)) return '';
+  try {
+    const hostname = new URL(normalized).hostname.toLowerCase();
+    if (['127.0.0.1', 'localhost', '::1', '[::1]'].includes(hostname)) return '';
+  } catch (_error) {
+    return '';
+  }
+  return normalized;
+}
+
 export function resolveDesktopIdentityBaseUrl(config = {}, env = {}) {
   const managed = resolveManagedSyncConfig(config, env);
   const useLocalSingleUserHost = config.buildFlavor === 'primary-host'
     && config.desktopIdentityMode === 'single-user';
-  return String(
-    (useLocalSingleUserHost ? config.hostBaseUrl : managed.cloudBaseUrl) || ''
-  ).replace(/\/+$/, '');
+  if (useLocalSingleUserHost) return String(config.hostBaseUrl || '').replace(/\/+$/, '');
+  // 单人配对客户端的会话由数据主机签发，云端直连永远不认；
+  // 直连目标只能是局域网主机，取不到就返回空串，由云中继（relayBaseUrl）兜底。
+  if (config.buildFlavor === 'desktop-client' && env.authorizationSource === 'single_user_pairing') {
+    return usableLanHostBaseUrl(config.hostBaseUrl);
+  }
+  return String(managed.cloudBaseUrl || '').replace(/\/+$/, '');
 }
 
 export function syncFailureMessage(code) {

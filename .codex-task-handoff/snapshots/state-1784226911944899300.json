@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "phase": "protected",
+  "project_path": "C:\\Users\\83423\\.openclaw\\workspace\\scheduling-system",
+  "source_thread_id": "019f55f4-d8c2-7290-a95f-ca0581de4b23",
+  "updated_at": "2026-07-16T18:15:10.532180Z",
+  "current_step": "Execute desktop identity Task 2 with TDD: bind each device challenge to a fresh WeChat-verified human claimant",
+  "completed_steps": [
+    "Formula pipeline unified release completed as version 5.14.3",
+    "Unrecognized-student implementation Tasks 1 through 6 completed in local commits 63ea39d through 0f4b9be",
+    "Task 6 reconciler focused tests and a fresh full npm test passed before commit 0f4b9be",
+    "User approved the hybrid desktop identity scheme: WeChat verified phone for first, new-device, recovery, and high-risk flows; local password or PIN for daily trusted-device unlock",
+    "User confirmed the canonical super administrator is also a teacher, uses the primary host and a second computer, and may replace devices later",
+    "Desktop human identity, multi-role, multi-device, host bootstrap, planned migration, and emergency recovery design was written and approved",
+    "File-level TDD plan was added as desktop identity Task 6A in the unified implementation plan",
+    "Desktop identity Task 1 completed and committed locally as 9c0c30f: schema 3103, additive role grants, canonical teacher binding recovery, active-role scopes, and explicit-revocation persistence"
+  ],
+  "next_step": "Write desktopIdentityService RED tests for forbidden claimant injection, fresh verified-phone claimant binding, challenge secret hashing, short-code uniqueness, expiry, idempotency, conflict, and row-version CAS",
+  "wait_state": "none; no push, packaging, upload, deployment, real host bootstrap, or host migration before the unified compatibility matrix",
+  "goal_id": "019f66df-8926-7750-a29e-acddb786ea23",
+  "inherited_from_thread_id": "019f6628-8e10-71d1-b211-3ebcbdfbcd03",
+  "inherited_from_goal_id": "019f6628-8e10-71d1-b211-3ebcbdfbcd03",
+  "validation_evidence": [
+    "Actual Git HEAD is 9c0c30f on master; gewu/master remains intentionally unchanged until the unified release task",
+    "Protected tracked user changes remain in the teacher stylesheet, miniapp access-policy test, and generated version file; protected untracked runtime and inspection artifacts remain untouched",
+    "Fresh full npm test passed after the final Task 1 production changes: exit 0 in 178.4 seconds with 559 output lines",
+    "Focused role, authorization, database, miniapp identity schema, admin seed, identity, and application tests passed",
+    "The schema status and SQLite user_version both report 3103 for the additive role-grant migration",
+    "An old-host upgrade regression proves a previously cleared canonical teacher_id is recovered from the unique authoritative teacher profile and the teacher grant is reconstructed",
+    "A role-grant regression proves an explicitly revoked teacher grant stays revoked across compatibility startup",
+    "Synthetic review-demo identities and non-canonical fixed-phone identities receive no formal role grants",
+    "No external side effects were performed"
+  ],
+  "goal_status": "active",
+  "last_completed_step": "Desktop identity Task 1 committed locally as 9c0c30f",
+  "last_validation_evidence": "Fresh full npm test passed after all Task 1 changes; exact staged scope excluded every protected user-owned file"
+}

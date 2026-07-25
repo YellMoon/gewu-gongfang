@@ -73,7 +73,16 @@ const IdentityDeviceCenter: React.FC = () => {
       const runtimeConfig = await getRuntimeConfig();
       setRuntimeConfigState(runtimeConfig);
       const session = readDesktopAuthorizationSession();
-      const baseUrl = resolveDesktopIdentityBaseUrl(runtimeConfig);
+      let authorizationSource = '';
+      try {
+        const vaultStatus = await window.desktopIdentity?.status?.();
+        authorizationSource = String(vaultStatus?.authorizationSource || '');
+      } catch (_vaultError) { /* fall back to the managed cloud identity plane */ }
+      const baseUrl = resolveDesktopIdentityBaseUrl(runtimeConfig, { authorizationSource });
+      // 配对客户端在外网时局域网主机不可达，改经云中继由主机代为查询设备清单。
+      const relayBaseUrl = authorizationSource === 'single_user_pairing'
+        ? String((runtimeConfig as any)?.cloudBaseUrl || '')
+        : '';
       const primaryHostRuntime = (window as any).primaryHostRuntime;
       let hostRuntimeStatus = null;
       try {
@@ -82,7 +91,7 @@ const IdentityDeviceCenter: React.FC = () => {
           : null;
       } catch (_error) { /* cloud state remains readable when local runtime status is unavailable */ }
       requestContextRef.current = { runtimeConfig, session, baseUrl };
-      const next = await loadIdentityDeviceCenter({ runtimeConfig, session, baseUrl, hostRuntimeStatus });
+      const next = await loadIdentityDeviceCenter({ runtimeConfig, session, baseUrl, relayBaseUrl, hostRuntimeStatus });
       const localRecoveryDelivery = hostRuntimeStatus?.credential?.recoveryDelivery;
       if (localRecoveryDelivery?.pending) {
         setPendingRecoveryDelivery(localRecoveryDelivery);

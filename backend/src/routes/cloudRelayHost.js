@@ -22,6 +22,7 @@ const {
   createDesktopSessionProfile,
 } = require('../services/desktopDeviceChallengeService');
 const { createDesktopSessionService } = require('../services/desktopSessionService');
+const { createDesktopIdentityService } = require('../services/desktopIdentityService');
 const { createIdentityProvisioningService } = require('../services/identityProvisioningService');
 const { resultHash: hashTaskResult } = require('../services/cloudRelayTaskService');
 const questionBank = require('../services/questionBankService');
@@ -287,6 +288,38 @@ async function processMiniappTask(task, db, dependencies = {}) {
       errors: result.errors || [],
       backupId: result.backupId,
       counts: result.counts,
+    };
+  }
+
+  if (task.task_type === 'desktop-identity') {
+    // 外网客户端经云中继查询自己的设备清单。与 desktop-sync 一致：
+    // 校验云端签发的中继断言并消费一次性 nonce，再按主机本地会话解析操作者。
+    let claims = null;
+    let authz = null;
+    try {
+      claims = verifyRelayAssertion(payload.relayAssertion, process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '');
+      const validClaims = claims.taskId === task.id && claims.actorUserId === payload.actorUserId
+        && claims.deviceId === (payload.deviceId || payload.device_id);
+      if (validClaims) {
+        authz = resolveRelaySessionActorContext(db, claims);
+        if (!db.consumeRelayAuthorizationNonce(claims)) authz = null;
+      }
+    } catch (_error) {
+      claims = null;
+      authz = null;
+    }
+    if (!authz) {
+      const error = new Error('AUTHORIZATION_CONTEXT_REQUIRED'); error.code = 'AUTHORIZATION_CONTEXT_REQUIRED'; throw error;
+    }
+    if (String(payload.query || '') !== 'devices') {
+      const error = new Error('DESKTOP_IDENTITY_RELAY_QUERY_UNSUPPORTED'); error.code = 'DESKTOP_IDENTITY_RELAY_QUERY_UNSUPPORTED'; throw error;
+    }
+    const identityService = dependencies.desktopIdentityService
+      || createDesktopIdentityService({ db: db.db || db });
+    return {
+      taskType: task.task_type,
+      query: 'devices',
+      items: identityService.listDevicesForUser(authz.userId).map(item => ({ ...item })),
     };
   }
 

@@ -1,0 +1,125 @@
+- generic [ref=e1]:
+  - generic [ref=e4]:
+    - complementary [ref=e6]:
+      - generic [ref=e7]:
+        - generic [ref=e8]:
+          - generic [ref=e9]: 格
+          - generic [ref=e10]:
+            - generic [ref=e11]: 格物工坊
+            - generic [ref=e12]: 运营工作台
+        - menu [ref=e13]:
+          - menuitem "appstore 今日工作台" [ref=e14] [cursor=pointer]:
+            - img "appstore" [ref=e15]
+            - generic [ref=e18]: 今日工作台
+          - menuitem "calendar 教务" [ref=e19] [cursor=pointer]:
+            - img "calendar" [ref=e20]
+            - generic [ref=e23]: 教务
+          - menuitem "database 题库" [ref=e24] [cursor=pointer]:
+            - img "database" [ref=e25]
+            - generic [ref=e28]: 题库
+          - menuitem "dollar 财务" [ref=e29] [cursor=pointer]:
+            - img "dollar" [ref=e30]
+            - generic [ref=e33]: 财务
+          - menuitem "team 资源" [ref=e34] [cursor=pointer]:
+            - img "team" [ref=e35]
+            - generic [ref=e38]: 资源
+          - menuitem "setting 系统与数据" [ref=e39] [cursor=pointer]:
+            - img "setting" [ref=e40]
+            - generic [ref=e43]: 系统与数据
+    - generic [ref=e44]:
+      - generic [ref=e45]:
+        - button [ref=e46] [cursor=pointer]:
+          - img "menu-unfold" [ref=e48]
+        - generic [ref=e51]:
+          - generic [ref=e52]:
+            - generic [ref=e53]:
+              - heading "组卷" [level=1] [ref=e54]
+              - button "cloud-sync 数据已是最新" [ref=e56] [cursor=pointer]:
+                - img "cloud-sync" [ref=e58]
+                - generic [ref=e62]: 数据已是最新
+            - generic [ref=e63]: 从题篮生成试卷
+          - button "reload 刷新" [ref=e66] [cursor=pointer]:
+            - img "reload" [ref=e68]
+            - generic [ref=e71]: 刷新
+      - main [ref=e72]:
+        - generic [ref=e74]:
+          - generic [ref=e76]:
+            - generic [ref=e78]:
+              - textbox [ref=e80]: 2026-07-13试卷
+              - generic [ref=e82]:
+                - generic [ref=e86]:
+                  - combobox [ref=e88]
+                  - generic "Word 自带公式" [ref=e89]
+                - generic [ref=e91] [cursor=pointer]:
+                  - checkbox "包含草稿/待审核题" [checked] [ref=e93]
+                  - generic [ref=e95]: 包含草稿/待审核题
+                - generic [ref=e97]:
+                  - generic [ref=e99]:
+                    - generic [ref=e100] [cursor=pointer]:
+                      - generic [ref=e101]:
+                        - radio "答案集中附后" [checked]
+                      - text: 答案集中附后
+                    - generic [ref=e102] [cursor=pointer]:
+                      - generic [ref=e103]:
+                        - radio "逐题显示答案"
+                      - text: 逐题显示答案
+                  - generic [ref=e104]: 答案集中附在试题后，含选择题汇总、知识点和解析。
+                - button "split-cells 按题型分组" [disabled] [ref=e106]:
+                  - generic:
+                    - img "split-cells"
+                  - generic: 按题型分组
+                - button "提交 PDF 到数据主机" [disabled] [ref=e108]
+                - button "提交到数据主机" [disabled] [ref=e110]:
+                  - generic:
+                    - img "file-word"
+                  - generic: 导出试卷
+                  - text: 提交到数据主机
+            - generic [ref=e111]:
+              - alert [ref=e112]:
+                - img "info-circle" [ref=e113]
+                - generic [ref=e116]: 当前是普通电脑，导出任务将经阿里云中继提交到指定数据主机。
+              - generic [ref=e118]:
+                - generic [ref=e120]:
+                  - generic [ref=e121]: 题目数
+                  - generic [ref=e122]:
+                    - generic [ref=e123]: "0"
+                    - generic [ref=e124]: 题
+                - generic [ref=e126]:
+                  - generic [ref=e127]: 总分
+                  - generic [ref=e128]:
+                    - generic [ref=e129]: "0"
+                    - generic [ref=e130]: 分
+                - generic [ref=e132]:
+                  - text: 题型分布
+                  - generic [ref=e133]: 暂无
+                - generic [ref=e136]:
+                  - text: 难度分布
+                  - generic [ref=e137]: 暂无
+          - generic [ref=e140]:
+            - generic [ref=e142]:
+              - generic [ref=e143]: 导出任务记录
+              - button "reload 刷新状态" [ref=e145] [cursor=pointer]:
+                - img "reload" [ref=e147]
+                - generic [ref=e150]: 刷新状态
+            - generic [ref=e153]:
+              - generic [ref=e154]:
+                - generic [ref=e155]:
+                  - generic [ref=e156]: 正在生成文档
+                  - strong [ref=e160]: 取消流程验证
+                  - generic [ref=e161]: WORD
+                  - generic [ref=e163]: 1 题
+                - progressbar [ref=e165]:
+                  - generic "55%" [ref=e169]
+                - text: 正在生成文档
+              - button "stop 取消任务" [active] [ref=e172] [cursor=pointer]:
+                - img "stop" [ref=e223]
+                - generic [ref=e177]: 取消任务
+          - generic [ref=e181]:
+            - img "暂无数据" [ref=e183]
+            - generic [ref=e195]: 试题篮中暂无已选试题，请先从试题库加入试题篮后再组卷
+        - button "打开试题篮" [ref=e196]:
+          - img "shopping-cart" [ref=e198]
+          - generic [ref=e201]: 试题篮
+  - generic [ref=e227]:
+    - img "close-circle" [ref=e228]
+    - generic [ref=e231]: Failed to fetch
