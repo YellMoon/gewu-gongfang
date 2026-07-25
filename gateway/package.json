@@ -18,7 +18,8 @@
     "jsonwebtoken": "^9.0.2",
     "pdfkit": "^0.17.2",
     "uuid": "^10.0.0",
-    "bcryptjs": "^2.4.3"
+    "bcryptjs": "^2.4.3",
+    "ws": "^8.16.0"
   },
   "devDependencies": {
     "fflate": "^0.8.3",

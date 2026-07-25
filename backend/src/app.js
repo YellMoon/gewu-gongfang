@@ -2,6 +2,7 @@
  * Express 搴旂敤閰嶇疆
  */
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
@@ -11,6 +12,7 @@ const { unrecognizedStudentGuard } = require('./middleware/unrecognizedStudentGu
 const { buildErrorPayload, errorHandler } = require('./middleware/errorHandler');
 const { getInstance } = require('./database');
 const { createMiniappProvisioningReconciler } = require('./services/miniappProvisioningReconciler');
+const HostWebSocketClient = require('./websocket/client');
 
 const studentsRouter = require('./routes/students');
 const coursesRouter = require('./routes/courses');
@@ -363,4 +365,4 @@ function createApp(options = {}) {
   return app;
 }
 
-module.exports = { createApp, getAppVersion, resolvePackageVersion };
+module.exports = { createApp, getAppVersion, resolvePackageVersion, HostWebSocketClient };

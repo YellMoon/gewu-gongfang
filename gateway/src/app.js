@@ -3,6 +3,7 @@
  * 统一入口：认证 → 权限校验 → 路由分发
  */
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const path = require('path');
 const proxyaddr = require('proxy-addr');
@@ -11,6 +12,7 @@ const { authMiddleware, optionalAuth } = require('./middleware/auth');
 const { errorHandler } = require('./middleware/errorHandler');
 const { loadModules } = require('./config/moduleLoader');
 const { loadUserPermissions } = require('./middleware/permission');
+const CloudWebSocketServer = require('./websocket/server');
 
 // 路由
 const authRouter = require('./routes/auth');
@@ -107,11 +109,17 @@ async function main() {
   console.log('[Gateway] 数据库初始化完成');
 
   const app = createApp();
+  const server = http.createServer(app);
   const PORT = process.env.GATEWAY_PORT || 3001;
 
-  app.listen(PORT, () => {
+  // 初始化WebSocket服务器
+  const wsServer = new CloudWebSocketServer(server);
+  app.set('wsServer', wsServer);
+
+  server.listen(PORT, () => {
     console.log(`[Gateway] 教育综合服务平台已启动 → http://localhost:${PORT}`);
     console.log(`[Gateway] 健康检查: http://localhost:${PORT}/api/health`);
+    console.log(`[Gateway] WebSocket服务器已启动 → ws://localhost:${PORT}`);
   });
 }
 
@@ -121,3 +129,4 @@ if (require.main === module) main().catch(err => {
 });
 
 module.exports = createApp;
+module.exports.CloudWebSocketServer = CloudWebSocketServer;

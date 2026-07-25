@@ -512,6 +512,22 @@ router.post('/desktop-sync/requests', requireOnlineDesktopSession, (req, res) =>
   catch (error) { return res.status(403).json({ success:false, code:error.code }); }
   const payload = { deviceId, tenantId:req.body.tenantId || 'default', pendingChanges:req.body.pendingChanges, actorUserId:actor.userId, relayAssertion:assertion, submittedAt:time };
   db.prepare("INSERT INTO miniapp_tasks(id,task_type,status,payload,created_by,created_at,updated_at) VALUES(?,'desktop-sync','pending_host',?,?,?,?)").run(taskId, JSON.stringify(payload), actor.userId, time, time);
+
+  // 通过WebSocket通知主机有新任务
+  const wsServer = req.app.get('wsServer');
+  if (wsServer) {
+    // 获取主机设备ID（从数据库）
+    const host = db.prepare("SELECT host_device_id FROM host_heartbeats WHERE status='online' ORDER BY updated_at DESC LIMIT 1").get();
+    if (host) {
+      wsServer.notifyHostNewTask(host.host_device_id, {
+        taskId,
+        taskType: 'desktop-sync',
+        deviceId,
+        createdAt: time,
+      });
+    }
+  }
+
   return res.json({ success:true, request:{ id:taskId, status:'pending_host', acceptedChanges:payload.pendingChanges.length } });
 });
 router.get('/desktop-sync/requests/:id/result', requireOnlineDesktopSession, (req, res) => {
@@ -628,13 +644,27 @@ router.post('/tasks/:id/cancel', requireApprovedSnapshotUser, (req, res) => {
 
 router.post('/tasks/:id/complete', requireHostToken, (req, res) => {
   const db = getDb();
-  const existing = db.prepare('SELECT protocol_version,task_type FROM miniapp_tasks WHERE id=?').get(req.params.id);
+  const existing = db.prepare('SELECT protocol_version,task_type,created_by FROM miniapp_tasks WHERE id=?').get(req.params.id);
   if (Number(existing?.protocol_version || 1) >= 2) {
     try {
       const completionInput = existing.task_type === 'desktop-pairing'
         ? { ...(req.body || {}), result: sanitizePairingResult(req.body?.result) }
         : (req.body || {});
       const task = taskService.completeV2Task(db, req.params.id, completionInput);
+      
+      // 通过WebSocket通知桌面客户端任务完成
+      if (existing.task_type === 'desktop-sync' && existing.created_by) {
+        const wsServer = req.app.get('wsServer');
+        if (wsServer) {
+          wsServer.notifyDesktopTaskComplete(existing.created_by, {
+            taskId: req.params.id,
+            taskType: existing.task_type,
+            result: task.result_payload,
+            completedAt: now(),
+          });
+        }
+      }
+      
       if (task.task_type === 'desktop-pairing') {
         db.prepare(`UPDATE desktop_pairing_relay_requests
           SET status='completed',result_payload=?,error_code=NULL,updated_at=?,completed_at=?
