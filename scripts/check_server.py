@@ -1,42 +1,39 @@
-import os
-import sys
-
 import paramiko
+import os
 
-sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-
-
-def env(name, default=None):
-    value = os.environ.get(name, default)
-    if value is None or value == "":
-        raise SystemExit(f"Missing required environment variable: {name}")
-    return value
-
-
-host = env("SERVER_HOST")
-port = int(os.environ.get("SERVER_PORT", "22"))
-user = env("SERVER_USER", "root")
-password = os.environ.get("SERVER_PASSWORD")
-key_file = os.environ.get("SERVER_KEY_FILE")
-base_url = os.environ.get("HEALTH_BASE_URL", "http://localhost:3001")
+HOST = "39.106.172.132"
+USER = "root"
+PASS = "***REMOVED_CREDENTIAL***"
+LOCAL_PROJECT = r"C:\Users\83423\.openclaw\workspace\scheduling-system"
 
 ssh = paramiko.SSHClient()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect(host, port, user, password=password, key_filename=key_file, timeout=10)
-
+ssh.connect(HOST, port=22, username=USER, password=PASS, timeout=10)
 
 def run(cmd, timeout=30):
-    _stdin, stdout, stderr = ssh.exec_command(cmd, timeout=timeout)
-    out = stdout.read().decode("utf-8", errors="replace")
-    err = stderr.read().decode("utf-8", errors="replace")
-    print(f"$ {cmd}")
-    if out.strip():
-        print(out[:3000])
-    if err.strip():
-        print("ERR:", err[:1000])
+    stdin, stdout, stderr = ssh.exec_command(cmd, timeout=timeout)
+    out = stdout.read().decode()
+    err = stderr.read().decode()
+    if out.strip(): print(out.strip())
+    if err.strip(): print(f"STDERR: {err.strip()}")
+    return stdout.channel.recv_exit_status()
 
+# Find actual paths
+print("=== Gateway websocket ===")
+run("ls -la /root/education-platform/gateway/src/websocket/")
 
-run("pm2 status 2>&1 || true")
-run(f"curl -s -H 'x-trace-id: check-server' {base_url}/api/health 2>&1 || echo FAIL")
-run(f"curl -s -H 'x-trace-id: check-server-deep' {base_url}/api/ops/health/deep 2>&1 || echo FAIL")
+print("\n=== Backend directory ===")
+run("find /root/education-platform -maxdepth 4 -type d -name 'backend' 2>/dev/null")
+run("find /root/education-platform -maxdepth 5 -name 'client.js' -path '*/websocket/*' 2>/dev/null")
+
+print("\n=== Shared directory ===")
+run("ls -la /root/education-platform/gateway/shared/")
+
+print("\n=== Desktop services ===")
+run("find /root/education-platform -maxdepth 4 -name 'websocketClient.mjs' 2>/dev/null")
+run("find /root/education-platform -maxdepth 4 -name 'desktopSessionRelayClient.mjs' 2>/dev/null")
+
+print("\n=== Root structure ===")
+run("ls -la /root/education-platform/")
+
 ssh.close()

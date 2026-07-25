@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const url = require('url');
 
 /**
  * WebSocket 认证中间件
@@ -8,9 +9,12 @@ const jwt = require('jsonwebtoken');
  */
 function authenticateWebSocket(req, socket, next) {
   try {
-    const token = req.query.token || req.headers.authorization?.replace('Bearer ', '');
-    const role = req.query.role;
-    const deviceId = req.query.deviceId;
+    // HTTP upgrade 时 req.query 未解析，需手动解析 URL
+    const parsed = url.parse(req.url, true);
+    const query = parsed.query || {};
+    const token = query.token || req.headers.authorization?.replace('Bearer ', '');
+    const role = query.role;
+    const deviceId = query.deviceId;
 
     if (!token || !deviceId) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');

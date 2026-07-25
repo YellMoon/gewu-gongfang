@@ -3,7 +3,8 @@
  */
 require('dotenv').config();
 const http = require('http');
-const { createApp, HostWebSocketClient } = require('./src/app');
+const { createApp } = require('./src/app');
+const HostWebSocketClient = require('./src/websocket/client');
 const { resolveBackendPort } = require('./src/runtimePort');
 
 const PORT = resolveBackendPort();
