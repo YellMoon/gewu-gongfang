@@ -6,7 +6,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL_GATEWAY = ROOT / "gateway"
+LOCAL_SHARED = ROOT / "shared"
 REMOTE_GATEWAY = "/root/education-platform/gateway"
+REMOTE_SHARED = "/root/education-platform/shared"
 SERVICE_NAME = "edu-gateway"
 
 spec = importlib.util.spec_from_file_location("backend_deploy", ROOT / "scripts" / "deploy.py")
@@ -31,6 +33,16 @@ def upload_dir(sftp, ssh, local_dir, remote_dir):
       print(f"  OK: {Path(remote_path).relative_to(REMOTE_GATEWAY)}")
 
 
+def upload_shared(sftp, ssh):
+  """Upload shared directory to remote server."""
+  mkdir_p(ssh, REMOTE_SHARED)
+  for item in LOCAL_SHARED.iterdir():
+    if item.is_file():
+      remote_path = f"{REMOTE_SHARED}/{item.name}"
+      sftp.put(str(item), remote_path)
+      print(f"  OK: shared/{item.name}")
+
+
 def restart_gateway(ssh, path_factory=None):
   command = (
     f"cd '{REMOTE_GATEWAY}' && "
@@ -50,6 +62,7 @@ def main():
     sftp = ssh.open_sftp()
     try:
       upload_dir(sftp, ssh, LOCAL_GATEWAY, REMOTE_GATEWAY)
+      upload_shared(sftp, ssh)
     finally:
       sftp.close()
     backend_deploy.run(ssh, f"cd '{REMOTE_GATEWAY}' && npm install --production 2>&1", timeout=180)
