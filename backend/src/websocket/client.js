@@ -13,11 +13,15 @@ class HostWebSocketClient extends EventEmitter {
     this.hostToken = options.hostToken || process.env.GEWU_CLOUD_RELAY_HOST_TOKEN;
     this.reconnectInterval = options.reconnectInterval || 5000;
     this.heartbeatInterval = options.heartbeatInterval || 30000;
+    this.maxReconnectAttempts = options.maxReconnectAttempts || 10;
     this.ws = null;
     this.isConnected = false;
     this.reconnectTimer = null;
     this.heartbeatTimer = null;
     this.messageQueue = [];
+    this.reconnectAttempts = 0;
+    // 防止未捕获的错误事件导致进程崩溃
+    this.on('error', () => {});
   }
 
   connect() {
@@ -39,6 +43,7 @@ class HostWebSocketClient extends EventEmitter {
     this.ws.on('open', () => {
       console.log('[HostWS] 连接成功');
       this.isConnected = true;
+      this.reconnectAttempts = 0;
       this.startHeartbeat();
       this.flushMessageQueue();
       this.emit('connected');
@@ -126,7 +131,13 @@ class HostWebSocketClient extends EventEmitter {
 
   scheduleReconnect() {
     if (this.reconnectTimer) return;
-    console.log(`[HostWS] ${this.reconnectInterval / 1000}秒后重连...`);
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.log(`[HostWS] 已达到最大重连次数 ${this.maxReconnectAttempts}，停止重连`);
+      this.emit('max_reconnect_attempts');
+      return;
+    }
+    this.reconnectAttempts++;
+    console.log(`[HostWS] ${this.reconnectInterval / 1000}秒后重连... (尝试 ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();

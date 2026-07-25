@@ -2,7 +2,7 @@
  * 桌面端 WebSocket 客户端
  * 连接到 Gateway WebSocket 服务器，接收主机任务通知
  */
-import { WebSocket } from 'ws';
+import WebSocket from 'ws';
 import { EventEmitter } from 'events';
 
 class DesktopWebSocketClient extends EventEmitter {
@@ -13,11 +13,15 @@ class DesktopWebSocketClient extends EventEmitter {
     this.sessionToken = options.sessionToken;
     this.reconnectInterval = options.reconnectInterval || 5000;
     this.heartbeatInterval = options.heartbeatInterval || 30000;
+    this.maxReconnectAttempts = options.maxReconnectAttempts || 10;
     this.ws = null;
     this.isConnected = false;
     this.reconnectTimer = null;
     this.heartbeatTimer = null;
     this.messageQueue = [];
+    this.reconnectAttempts = 0;
+    // 防止未捕获的错误事件导致进程崩溃
+    this.on('error', () => {});
   }
 
   connect() {
@@ -39,6 +43,7 @@ class DesktopWebSocketClient extends EventEmitter {
     this.ws.on('open', () => {
       console.log('[DesktopWS] 连接成功');
       this.isConnected = true;
+      this.reconnectAttempts = 0;
       this.startHeartbeat();
       this.flushMessageQueue();
       this.emit('connected');
@@ -64,6 +69,7 @@ class DesktopWebSocketClient extends EventEmitter {
 
     this.ws.on('error', (error) => {
       console.error('[DesktopWS] 连接错误:', error.message);
+      // 防止未捕获的错误事件导致进程崩溃
       this.emit('error', error);
     });
   }
@@ -126,7 +132,13 @@ class DesktopWebSocketClient extends EventEmitter {
 
   scheduleReconnect() {
     if (this.reconnectTimer) return;
-    console.log(`[DesktopWS] ${this.reconnectInterval / 1000}秒后重连...`);
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.log(`[DesktopWS] 已达到最大重连次数 ${this.maxReconnectAttempts}，停止重连`);
+      this.emit('max_reconnect_attempts');
+      return;
+    }
+    this.reconnectAttempts++;
+    console.log(`[DesktopWS] ${this.reconnectInterval / 1000}秒后重连... (尝试 ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
