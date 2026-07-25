@@ -1,3 +1,5 @@
+const { requestHash, resultHash, taskRow, parseJson } = require('../../../shared/cloudRelayLogic');
+
 const IDENTITY_PROVISIONING_CAPABILITY = 'identity-provisioning-v1';
 const DESKTOP_PAIRING_CAPABILITY = 'desktop-pairing-v1';
 
@@ -167,4 +169,9 @@ module.exports = {
   queryMiniappTaskState,
   buildHeaders,
   readJsonResponse,
+  // 共享逻辑
+  requestHash,
+  resultHash,
+  taskRow,
+  parseJson,
 };

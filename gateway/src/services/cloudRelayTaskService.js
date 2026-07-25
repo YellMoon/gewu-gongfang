@@ -1,55 +1,18 @@
 const crypto = require('crypto');
+const {
+  TASK_STATUS,
+  INTERNAL_TASK_TYPES,
+  stableValue,
+  requestHash,
+  canonicalResultJson,
+  resultHash,
+  taskError,
+  isInternalTaskType,
+  parseJson,
+  taskRow,
+} = require('../../../shared/cloudRelayLogic');
 
 const PROGRESS_PHASES = new Set(['processing', 'selecting', 'rendering', 'exporting', 'uploading', 'finalizing']);
-
-function taskError(code, message, statusCode = 409) {
-  return Object.assign(new Error(message), { code, statusCode });
-}
-
-function stableValue(value) {
-  if (Array.isArray(value)) return value.map(stableValue);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableValue(value[key])]));
-  }
-  return value;
-}
-
-function requestHash(input) {
-  const canonical = stableValue({
-    taskType: input.taskType,
-    payload: input.payload || {},
-    tenantId: input.tenantId || 'default',
-    actorRole: input.actorRole || '',
-    allowDraft: Boolean(input.allowDraft),
-    targetHostDeviceId: input.targetHostDeviceId,
-    maxAttempts: Math.max(1, Number(input.maxAttempts || 3)),
-    deadlineAt: input.deadlineAt || null,
-    resultExpiresAt: input.resultExpiresAt || null,
-  });
-  return crypto.createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
-}
-
-function canonicalResultJson(input) {
-  return JSON.stringify(stableValue(input || {}));
-}
-
-function resultHash(input) {
-  return crypto.createHash('sha256').update(canonicalResultJson(input)).digest('hex');
-}
-
-function parseJson(value, fallback) {
-  try { return value === null || value === undefined ? fallback : JSON.parse(value); } catch (_error) { return fallback; }
-}
-
-function taskRow(row) {
-  if (!row) return null;
-  return {
-    ...row,
-    payload: parseJson(row.payload, {}),
-    result_payload: parseJson(row.result_payload, null),
-    selection_context: parseJson(row.selection_context, {}),
-  };
-}
 
 function createV2Task(db, input, options = {}) {
   const idempotencyKey = String(input.idempotencyKey || '').trim();
@@ -260,9 +223,12 @@ module.exports = {
   createV2Task,
   failV2Task,
   listLegacyPending,
+  updateV2TaskProgress,
+  // 共享逻辑
+  TASK_STATUS,
   requestHash,
   resultHash,
   taskError,
   taskRow,
-  updateV2TaskProgress,
+  parseJson,
 };
