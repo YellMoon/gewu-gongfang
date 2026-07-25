@@ -91,7 +91,7 @@ const IdentityDeviceCenter: React.FC = () => {
           : null;
       } catch (_error) { /* cloud state remains readable when local runtime status is unavailable */ }
       requestContextRef.current = { runtimeConfig, session, baseUrl };
-      const next = await loadIdentityDeviceCenter({ runtimeConfig, session, baseUrl, relayBaseUrl, hostRuntimeStatus });
+      const next = await loadIdentityDeviceCenter({ runtimeConfig, session, baseUrl, relayBaseUrl, hostRuntimeStatus, relaySleep: 2000, relayPollIntervalMs: 1000, relayMaxPolls: 30 });
       const localRecoveryDelivery = hostRuntimeStatus?.credential?.recoveryDelivery;
       if (localRecoveryDelivery?.pending) {
         setPendingRecoveryDelivery(localRecoveryDelivery);
