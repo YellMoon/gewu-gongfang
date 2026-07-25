@@ -1,4 +1,5 @@
 import { resolveOnlineSyncActor } from './pairingApiBase.mjs';
+import DesktopWebSocketClient from './websocketClient.mjs';
 
 export function normalizeApiBaseUrl(baseUrl) {
   const trimmed = String(baseUrl || '').replace(/\/+$/, '');
@@ -146,6 +147,28 @@ export function createCloudRelaySyncTransport(options = {}) {
     ...(session?.authorization ? { Authorization: session.authorization } : {}),
     ...(session?.authContext?.deviceId ? { 'x-device-id': session.authContext.deviceId } : {}),
   });
+
+  // WebSocket 客户端实例（延迟初始化）
+  let wsClient = null;
+
+  function getWsClient() {
+    if (wsClient) return wsClient;
+    if (!baseUrl) return null;
+
+    try {
+      const wsUrl = baseUrl.replace(/^http/, 'ws');
+      wsClient = new DesktopWebSocketClient({
+        deviceId,
+        gatewayUrl: wsUrl,
+        sessionToken: desktopSyncToken,
+      });
+      return wsClient;
+    } catch (error) {
+      console.error('[CloudTransport] WebSocket 客户端初始化失败:', error);
+      return null;
+    }
+  }
+
   return {
     name: 'cloud',
     label: 'Cloud relay',
@@ -194,6 +217,46 @@ export function createCloudRelaySyncTransport(options = {}) {
       };
     },
     async pollSyncRequest(requestId) {
+      // 尝试使用 WebSocket 获取实时通知
+      const ws = getWsClient();
+      if (ws) {
+        try {
+          // 连接 WebSocket
+          ws.connect();
+
+          // 等待任务完成通知（最多 30 秒）
+          const result = await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              ws.removeAllListeners('task_complete');
+              ws.removeAllListeners('error');
+              reject(new Error('WS_TIMEOUT'));
+            }, 30000);
+
+            ws.once('task_complete', (payload) => {
+              clearTimeout(timeout);
+              ws.removeAllListeners('error');
+              resolve(payload);
+            });
+
+            ws.once('error', (error) => {
+              clearTimeout(timeout);
+              ws.removeAllListeners('task_complete');
+              reject(error);
+            });
+          });
+
+          return {
+            id: requestId,
+            status: 'completed',
+            result_payload: result.result,
+          };
+        } catch (error) {
+          console.log('[CloudTransport] WebSocket 轮询失败，回退到 HTTP:', error.message);
+          // 回退到 HTTP 轮询
+        }
+      }
+
+      // HTTP 轮询（回退方案）
       const session = await resolveSession();
       const data = await readJsonResponse(await fetchImpl(`${baseUrl}/api/cloud/desktop-sync/requests/${encodeURIComponent(requestId)}/result`, {
         method: 'GET',
