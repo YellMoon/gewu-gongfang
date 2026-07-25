@@ -150,6 +150,7 @@ export function createCloudRelaySyncTransport(options = {}) {
 
   // WebSocket 客户端实例（延迟初始化）
   let wsClient = null;
+  let wsSessionResolver = null;
 
   function getWsClient() {
     if (wsClient) return wsClient;
@@ -157,14 +158,30 @@ export function createCloudRelaySyncTransport(options = {}) {
 
     try {
       const wsUrl = baseUrl.replace(/^http/, 'ws');
+      wsSessionResolver = resolveSession;
       wsClient = new DesktopWebSocketClient({
         deviceId,
         gatewayUrl: wsUrl,
-        sessionToken: desktopSyncToken,
+        sessionToken: '',
       });
       return wsClient;
     } catch (error) {
       console.error('[CloudTransport] WebSocket 客户端初始化失败:', error);
+      return null;
+    }
+  }
+
+  async function connectWs() {
+    const ws = getWsClient();
+    if (!ws) return null;
+    try {
+      const session = await resolveSession();
+      const jwt = session?.authorization?.replace('Bearer ', '') || '';
+      if (!jwt) return null;
+      ws.sessionToken = jwt;
+      ws.connect();
+      return ws;
+    } catch {
       return null;
     }
   }
@@ -218,11 +235,9 @@ export function createCloudRelaySyncTransport(options = {}) {
     },
     async pollSyncRequest(requestId) {
       // 尝试使用 WebSocket 获取实时通知
-      const ws = getWsClient();
+      const ws = await connectWs();
       if (ws) {
         try {
-          ws.connect();
-
           const result = await new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
               ws.removeAllListeners('task_complete');
@@ -245,13 +260,14 @@ export function createCloudRelaySyncTransport(options = {}) {
 
           return {
             id: requestId,
+            task_type: 'desktop-sync',
             status: 'completed',
-            result_payload: result.result,
+            result_payload: result,
+            payload: result,
           };
         } catch (error) {
           console.log('[CloudTransport] WebSocket 轮询失败，回退到 HTTP:', error.message);
           ws.disconnect();
-          // 回退到 HTTP 轮询
         }
       }
 
