@@ -141,6 +141,8 @@ export function createCloudRelaySyncTransport(options = {}) {
   const deviceId = options.deviceId || 'desktop';
   const desktopSyncToken = options.desktopSyncToken || '';
   const resolveSession = async () => requireOnlineSession(options);
+  const webSocketClientFactory = options.webSocketClientFactory
+    || (clientOptions => new DesktopWebSocketClient(clientOptions));
   const headers = session => ({
     'Content-Type': 'application/json',
     ...(desktopSyncToken ? { 'x-gewu-desktop-sync-token': desktopSyncToken } : {}),
@@ -159,7 +161,7 @@ export function createCloudRelaySyncTransport(options = {}) {
     try {
       const wsUrl = baseUrl.replace(/^http/, 'ws');
       wsSessionResolver = resolveSession;
-      wsClient = new DesktopWebSocketClient({
+      wsClient = webSocketClientFactory({
         deviceId,
         gatewayUrl: wsUrl,
         sessionToken: '',
@@ -239,31 +241,34 @@ export function createCloudRelaySyncTransport(options = {}) {
       if (ws) {
         try {
           const result = await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-              ws.removeAllListeners('task_complete');
-              ws.removeAllListeners('error');
-              reject(new Error('WS_TIMEOUT'));
-            }, 30000);
-
-            ws.once('task_complete', (payload) => {
+            let settled = false;
+            const cleanup = () => {
               clearTimeout(timeout);
-              ws.removeAllListeners('error');
-              resolve(payload);
-            });
-
-            ws.once('error', (error) => {
-              clearTimeout(timeout);
-              ws.removeAllListeners('task_complete');
-              reject(error);
-            });
+              ws.removeListener?.('task_complete', onTaskComplete);
+              ws.removeListener?.('error', onError);
+            };
+            const finish = (callback, value) => {
+              if (settled) return;
+              settled = true;
+              cleanup();
+              callback(value);
+            };
+            const onTaskComplete = payload => {
+              if (String(payload?.taskId || '') !== String(requestId)) return;
+              finish(resolve, payload);
+            };
+            const onError = error => finish(reject, error);
+            const timeout = setTimeout(() => finish(reject, new Error('WS_TIMEOUT')), 30000);
+            ws.on('task_complete', onTaskComplete);
+            ws.on('error', onError);
           });
 
           return {
             id: requestId,
             task_type: 'desktop-sync',
             status: 'completed',
-            result_payload: result,
-            payload: result,
+            result_payload: result?.result ?? result,
+            payload: result?.result ?? result,
           };
         } catch (error) {
           console.log('[CloudTransport] WebSocket 轮询失败，回退到 HTTP:', error.message);

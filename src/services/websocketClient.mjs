@@ -14,18 +14,21 @@ class DesktopWebSocketClient extends EventEmitter {
     this.reconnectInterval = options.reconnectInterval || 5000;
     this.heartbeatInterval = options.heartbeatInterval || 30000;
     this.maxReconnectAttempts = options.maxReconnectAttempts || 10;
+    this.WebSocket = options.WebSocketImpl || WebSocket;
     this.ws = null;
     this.isConnected = false;
     this.reconnectTimer = null;
     this.heartbeatTimer = null;
     this.messageQueue = [];
     this.reconnectAttempts = 0;
+    this.shouldReconnect = true;
     // 防止未捕获的错误事件导致进程崩溃
     this.on('error', () => {});
   }
 
   connect() {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    this.shouldReconnect = true;
+    if (this.ws && this.ws.readyState === this.WebSocket.OPEN) {
       console.log('[DesktopWS] 已连接');
       return;
     }
@@ -38,7 +41,7 @@ class DesktopWebSocketClient extends EventEmitter {
 
     console.log(`[DesktopWS] 连接到 ${url.toString()}`);
 
-    this.ws = new WebSocket(url.toString());
+    this.ws = new this.WebSocket(url.toString());
 
     this.ws.on('open', () => {
       console.log('[DesktopWS] 连接成功');
@@ -64,7 +67,7 @@ class DesktopWebSocketClient extends EventEmitter {
       this.isConnected = false;
       this.stopHeartbeat();
       this.emit('disconnected', code, reason);
-      this.scheduleReconnect();
+      if (this.shouldReconnect) this.scheduleReconnect();
     });
 
     this.ws.on('error', (error) => {
@@ -98,7 +101,7 @@ class DesktopWebSocketClient extends EventEmitter {
 
   send(type, payload) {
     const message = JSON.stringify({ type, payload, timestamp: Date.now() });
-    if (this.isConnected && this.ws.readyState === WebSocket.OPEN) {
+    if (this.isConnected && this.ws.readyState === this.WebSocket.OPEN) {
       this.ws.send(message);
     } else {
       this.messageQueue.push(message);
@@ -108,7 +111,7 @@ class DesktopWebSocketClient extends EventEmitter {
   flushMessageQueue() {
     while (this.messageQueue.length > 0) {
       const message = this.messageQueue.shift();
-      if (this.ws.readyState === WebSocket.OPEN) {
+      if (this.ws.readyState === this.WebSocket.OPEN) {
         this.ws.send(message);
       }
     }
@@ -117,7 +120,7 @@ class DesktopWebSocketClient extends EventEmitter {
   startHeartbeat() {
     this.stopHeartbeat();
     this.heartbeatTimer = setInterval(() => {
-      if (this.isConnected && this.ws.readyState === WebSocket.OPEN) {
+      if (this.isConnected && this.ws.readyState === this.WebSocket.OPEN) {
         this.send('ping', { deviceId: this.deviceId });
       }
     }, this.heartbeatInterval);
@@ -146,6 +149,7 @@ class DesktopWebSocketClient extends EventEmitter {
   }
 
   disconnect() {
+    this.shouldReconnect = false;
     this.stopHeartbeat();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);

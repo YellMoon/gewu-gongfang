@@ -75,6 +75,7 @@ process.on('uncaughtException', (err) => {
 
 let mainWindow;
 let backendServer = null;
+let hostTaskWakeup = null;
 let desktopIdentityVault = null;
 let primaryHostRuntimeManager = null;
 
@@ -511,6 +512,15 @@ function startBackendService() {
     const listenHost = runtimeConfig.nodeRole === 'primary-host' ? '0.0.0.0' : '127.0.0.1';
     backendServer = backendApp.listen(Number(process.env.PORT), listenHost, () => {
       log(`Embedded backend listening on ${listenHost}:${process.env.PORT}`);
+      if (runtimeConfig.nodeRole === 'primary-host') {
+        const { createHostTaskWakeup } = require('../backend/src/websocket/hostTaskWakeup');
+        hostTaskWakeup = createHostTaskWakeup({
+          runtimeConfig,
+          localPort: Number(process.env.PORT),
+          log,
+        });
+        hostTaskWakeup?.start();
+      }
     });
     backendServer.on('error', err => log('Embedded backend error: ' + err.message));
   } catch (err) {
@@ -648,6 +658,8 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   lockDesktopIdentityVault();
+  hostTaskWakeup?.stop();
+  hostTaskWakeup = null;
   if (backendServer) {
     backendServer.close();
     backendServer = null;
@@ -657,6 +669,8 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   lockDesktopIdentityVault();
+  hostTaskWakeup?.stop();
+  hostTaskWakeup = null;
   if (backendServer) {
     backendServer.close();
     backendServer = null;

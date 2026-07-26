@@ -18,7 +18,7 @@ process.env.DB_PATH = path.join(tempRoot, 'relay.db');
 process.env.READ_DB_PATH = process.env.DB_PATH;
 const database = new DatabaseService();
 const db = database.db;
-const now = new Date('2026-07-25T08:00:00.000Z');
+const now = new Date();
 db.prepare(`INSERT INTO host_heartbeats
   (id, host_device_id, status, base_url, lan_urls, capabilities, created_at, updated_at)
   VALUES ('host-1', 'host-1', 'online', 'http://host.lan:3001', '[]', '[]', ?, ?)`)
@@ -86,7 +86,7 @@ const relayAssertion = issueRelayAssertion({
   authVersion: 4,
   credentialVersion: 3,
   issuedAt: now.getTime(),
-  expiresAt: now.getTime() + 8 * 60 * 60 * 1000,
+    expiresAt: now.getTime() + 2 * 60 * 60 * 1000,
 }, relayAssertionSecret);
 db.prepare(`UPDATE miniapp_tasks
   SET status='completed', result_payload=?, updated_at=?, row_version=row_version+1
@@ -100,7 +100,7 @@ db.prepare(`UPDATE miniapp_tasks
     teacherId: 'teacher-1',
     authVersion: 4,
     credentialVersion: 3,
-    expiresAt: '2026-07-25T16:00:00.000Z',
+    expiresAt: new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString(),
   },
   profile: {
     userId: 'user-1',
@@ -144,7 +144,7 @@ assert.throws(
 
 const expiredRelay = createDesktopSessionRelayService({
   db,
-  now: () => new Date('2026-07-25T08:06:00.000Z'),
+  now: () => new Date(now.getTime() + 10 * 60 * 1000),
 });
 assert.throws(
   () => expiredRelay.readRequest({ requestId: started.id, requestSecret: secret }),

@@ -1,4 +1,5 @@
 const assert = require('assert');
+const { EventEmitter } = require('events');
 
 async function main() {
   const {
@@ -65,11 +66,18 @@ async function main() {
     'every direct push must use the live V2 desktop session');
 
   const cloudCalls = [];
+  const failFastWebSocketFactory = () => {
+    const client = new EventEmitter();
+    client.connect = () => setTimeout(() => client.emit('error', new Error('test websocket unavailable')), 0);
+    client.disconnect = () => {};
+    return client;
+  };
   const cloud = createCloudRelaySyncTransport({
     baseUrl: 'https://cloud.example.com/scheduling',
     deviceId: 'desktop_test',
     desktopSyncToken: 'sync_secret_test',
     sessionResolver,
+    webSocketClientFactory: failFastWebSocketFactory,
     fetchImpl: async (url, options = {}) => {
       cloudCalls.push({ url, options });
       if (String(url).includes('/api/cloud/host/status')) return jsonResponse({ success: true, online: true });
@@ -92,6 +100,37 @@ async function main() {
   assert.ok(cloudCalls.every(call => call.options.headers['x-gewu-desktop-sync-token'] === 'sync_secret_test'), 'cloud requests should include desktop sync token');
   await assert.rejects(() => createCloudRelaySyncTransport({ baseUrl: 'https://cloud.example.com', fetchImpl: async () => jsonResponse({}) })
     .submitSyncRequest({ pendingChanges: [{}] }), error => error.code === 'ONLINE_DESKTOP_SESSION_REQUIRED');
+
+  // A notification for another queued sync must never settle this request.
+  class FakeWebSocketClient extends EventEmitter {
+    constructor() { super(); this.sessionToken = ''; this.connected = false; }
+    connect() { this.connected = true; }
+    disconnect() { this.connected = false; }
+  }
+  const realtimeClient = new FakeWebSocketClient();
+  const realtimeCloud = createCloudRelaySyncTransport({
+    baseUrl: 'https://cloud.example.com/scheduling',
+    deviceId: 'desktop_test',
+    sessionResolver,
+    webSocketClientFactory: () => realtimeClient,
+    fetchImpl: async url => {
+      if (String(url).includes('/api/cloud/desktop-sync/requests/desktop_sync_expected/result')) {
+        return jsonResponse({ success: true, request: { id: 'desktop_sync_expected', status: 'pending_host' } });
+      }
+      throw new Error(`unexpected realtime fallback url ${url}`);
+    },
+  });
+  const realtimeResult = realtimeCloud.pollSyncRequest('desktop_sync_expected');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  realtimeClient.emit('task_complete', { taskId: 'desktop_sync_other', result: { applied: 99 } });
+  let settled = false;
+  void realtimeResult.then(() => { settled = true; });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.strictEqual(settled, false, 'another request completion must not settle the active sync request');
+  realtimeClient.emit('task_complete', { taskId: 'desktop_sync_expected', result: { applied: 1, conflicts: 0 } });
+  const realtimeCompleted = await realtimeResult;
+  assert.strictEqual(realtimeCompleted.status, 'completed');
+  assert.deepStrictEqual(realtimeCompleted.result_payload, { applied: 1, conflicts: 0 });
 
   const discovered = await discoverLanDirectSyncTransports({
     baseUrl: 'https://cloud.example.com/scheduling',
