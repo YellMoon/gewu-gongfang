@@ -6,6 +6,7 @@ const path = require('path');
 
 const source = fs.readFileSync(path.join(__dirname, 'real-two-desktop-e2e.js'), 'utf8');
 const governanceSource = fs.readFileSync(path.join(__dirname, 'realTwoDesktopProcessGovernance.js'), 'utf8');
+const windowRestoreSource = fs.readFileSync(path.join(__dirname, 'restoreProcessWindow.ps1'), 'utf8');
 
 assert(source.includes('async function loopbackHealth'), 'LOOPBACK_HEALTH_PROBE_REQUIRED');
 assert(source.includes("childProcess.execFile('curl.exe'"), 'LOOPBACK_HEALTH_CURL_CLIENT_REQUIRED');
@@ -73,11 +74,15 @@ assert.ok(source.includes('HOST_MENU_GROUP_REOPEN_REQUIRED')
   && source.includes("getAttribute('aria-expanded') === 'false'"),
   'a height-zero submenu left open by a background refresh must be closed and reopened through the rendered group control');
 assert.ok(source.includes('function activateDesktopWindow')
-  && source.includes('WScript.Shell')
-  && source.includes('AppActivate')
+  && source.includes('restoreProcessWindow.ps1')
+  && windowRestoreSource.includes('WScript.Shell')
+  && windowRestoreSource.includes('AppActivate')
+  && windowRestoreSource.includes('ShowWindowAsync')
+  && windowRestoreSource.includes('SW_RESTORE')
+  && windowRestoreSource.includes('SetForegroundWindow')
   && source.includes('HOST_WINDOW_ACTIVATION_REQUIRED')
   && source.includes('CLIENT_WINDOW_ACTIVATION_REQUIRED'),
-  'real UI switching must foreground the exact packaged desktop process so background throttling cannot freeze AntD motion');
+  'real UI switching must restore and foreground the exact packaged desktop window so a minimized/hidden renderer cannot freeze AntD motion');
 assert.ok(source.includes('MENU_GROUP_PAINT_DIAGNOSTIC')
   && source.includes('document.visibilityState')
   && source.includes('document.hasFocus()')

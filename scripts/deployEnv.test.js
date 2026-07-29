@@ -22,6 +22,22 @@ assert.ok(!deployPy.includes('load_dotenv = None'), 'deploy should not silently 
 assert.ok(deployPy.includes('def upload_shared(ssh):'), 'backend deployment must upload its sibling shared runtime modules');
 assert.ok(deployPy.includes('upload_shared(ssh)'), 'backend deployment must invoke shared runtime upload before restart');
 assert.ok(deployPy.includes('posixpath.join(posixpath.dirname(REMOTE_DIR), "shared")'), 'remote shared paths must stay POSIX when deploying from Windows');
+assert.ok(deployGatewayPy.includes('def backup_gateway_release(')
+  && deployGatewayPy.includes("source.backup(")
+  && deployGatewayPy.includes("pragma('quick_check'")
+  && deployGatewayPy.includes('gateway.db')
+  && deployGatewayPy.indexOf('backup_gateway_release(ssh, backup_dir)') < deployGatewayPy.indexOf('upload_dir(sftp, ssh, LOCAL_GATEWAY, REMOTE_GATEWAY)'),
+  'gateway deployment must make and integrity-check a live SQLite backup before uploading or restarting code');
+assert.ok(deployGatewayPy.includes('LEGACY_SERVICE_NAMES = ("gateway",)')
+  && deployGatewayPy.includes('def stop_legacy_gateway_services(')
+  && deployGatewayPy.includes('pm2 delete {service_name}')
+  && deployGatewayPy.indexOf('stop_legacy_gateway_services(ssh)') < deployGatewayPy.indexOf('restart_gateway(ssh)'),
+  'gateway deployment must retire the legacy PM2 name before starting edu-gateway on the same port');
+assert.ok(deployGatewayPy.includes('LOCAL_BACKEND = ROOT / "backend"')
+  && deployGatewayPy.includes('REMOTE_BACKEND = "/root/education-platform/backend"')
+  && deployGatewayPy.includes('upload_backend_support(sftp, ssh)')
+  && deployGatewayPy.includes("cd '{REMOTE_BACKEND}' && npm install --production"),
+  'gateway deployment must mirror and install its declared backend/src runtime dependency on the remote monorepo layout');
 
 const envFixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-deploy-env-'));
 const envFixturePath = path.join(envFixtureDir, '.env.local');
@@ -40,14 +56,14 @@ for (const name of ['APP_ENV', 'SCHEDULE_ENV', 'PORT', 'DEPLOY_HOST', 'DEPLOY_PA
 cleanEnv.DOTENV_CONFIG_PATH = envFixturePath;
 const deployProbe = spawnSync('python', [
   '-c',
-  'import scripts.deploy as d; values=d.remote_env_values(); print(d.APP_ENV); print(d.HOST); print(d.APP_PORT); print(values["GEWU_HOST_BASE_URL"] == "http://127.0.0.1:3002"); print("MINIAPP_REVIEW_EXPERIENCE_CODE" not in values); d.require_remote_env(); print("account-config-ok")',
+  'import scripts.deploy as d; values=d.remote_env_values(); print(d.APP_ENV); print(d.HOST); print(d.APP_PORT); print(values["GEWU_NODE_ROLE"]); print(values["GEWU_HOST_BASE_URL"] == "http://127.0.0.1:3002"); print("MINIAPP_REVIEW_EXPERIENCE_CODE" not in values); d.require_remote_env(); print("account-config-ok")',
 ], { cwd: process.cwd(), env: cleanEnv, encoding: 'utf-8' });
 fs.rmSync(envFixtureDir, { recursive: true, force: true });
 assert.strictEqual(deployProbe.status, 0, deployProbe.stderr || 'deploy env probe should succeed');
 assert.deepStrictEqual(
   deployProbe.stdout.trim().split(/\r?\n/),
-  ['prod', 'deploy-env-test-host', '3002', 'True', 'True', 'account-config-ok'],
-  'deploy.py should load APP_ENV and host from DOTENV_CONFIG_PATH and resolve the prod port'
+  ['prod', 'deploy-env-test-host', '3002', 'cloud-relay', 'True', 'True', 'account-config-ok'],
+  'deploy.py should load APP_ENV and host from DOTENV_CONFIG_PATH, resolve the prod port, and never default the cloud backend to primary-host authority'
 );
 
 const missingReviewEnv = {

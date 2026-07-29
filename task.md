@@ -552,7 +552,7 @@ receipt 必含 `commandId`、输入 hash、状态、稳定 result hash、authori
 
 ### 2026-07-30 checkpoint 27: unified multi-end production release plan
 
-Status: in progress
+Status: partial release; production acceptance remains incomplete
 
 Goal:
 
@@ -568,16 +568,16 @@ Release classification and assumptions:
 
 Execution checklist:
 
-- [ ] Run version-script regression and automatic major-bump analysis; bump exactly once to `7.0.0` and synchronize generated version sources.
-- [ ] Run full source tests, authority architecture tests, type checking, deploy readiness, miniapp release/review readiness, and build checks before commit.
-- [ ] Stage only formal source/config/schema/tests/docs plus intentional deletions. Exclude `dist-host`, `output`, `tmp-*`, logs, local databases, credentials, and generated disposable packages.
-- [ ] Commit the release source and push the exact commit to `gewu/master`.
-- [ ] Build the Windows installer/update metadata without a second version bump; verify packaged version and native Electron ABI, then restore the Node ABI and rerun Node verification.
-- [ ] Publish immutable desktop release objects and `desktop/latest.yml`; read them back and verify version, filename, size/hash/availability.
-- [ ] Create a local-primary-host rollback backup, upgrade while preserving the real data/profile configuration, and verify installed host backend, authority runtime, question-store boundary, and version.
-- [ ] Create append-only Alibaba Cloud backend database/code backup and gateway code backup before mutation; deploy backend/shared and gateway/shared, run idempotent migration, restart PM2 services, and verify internal plus public health/authority contracts at `7.0.0`.
-- [ ] Build the production WeChat miniapp, upload `7.0.0`, and retain a successful platform upload receipt; if platform upload is blocked, mark the release partial.
-- [ ] Recheck `gewu/master`, OSS feed, local host, cloud backend/gateway, and miniapp receipt as one version matrix. Record rollback locations and publish a final evidence commit.
+- [x] Run version-script regression and automatic major-bump analysis; bump exactly once to `7.0.0` and synchronize generated version sources.
+- [x] Run full source tests, authority architecture tests, type checking, deploy readiness, miniapp release/review readiness, and build checks before commit.
+- [x] Stage only formal source/config/schema/tests/docs plus intentional deletions. Exclude `dist-host`, `output`, `tmp-*`, logs, local databases, credentials, and generated disposable packages.
+- [x] Commit the release source and push the exact commit to `gewu/master`.
+- [x] Build the Windows installer/update metadata without a second version bump; verify packaged version and native Electron ABI, then restore the Node ABI and rerun Node verification.
+- [x] Publish immutable desktop release objects and `desktop/latest.yml`; read them back and verify version, filename, size/hash/availability.
+- [ ] Create a local-primary-host rollback backup, upgrade while preserving the real data/profile configuration, and verify installed host backend, authority runtime, question-store boundary, and version. Runtime promotion and rollback backup are complete; final real-host health and production-package two-desktop acceptance are blocked by the missing managed firewall rule for the actual host port.
+- [x] Create append-only Alibaba Cloud backend database/code backup and gateway code backup before mutation; deploy backend/shared and gateway/shared, run idempotent migration, restart PM2 services, and verify internal plus public health/authority contracts at `7.0.0`.
+- [ ] Build the production WeChat miniapp, upload `7.0.0`, and retain a successful platform upload receipt; the build/package checks passed, but WeChat rejected the upload because the current CI public IP is not in the platform whitelist.
+- [ ] Recheck `gewu/master`, OSS feed, local host, cloud backend/gateway, and miniapp receipt as one version matrix. Record rollback locations and publish a final evidence commit. Git, OSS, and cloud are current; local-host terminal acceptance and the miniapp receipt remain missing.
 
 Rollback:
 
@@ -592,3 +592,16 @@ Non-goals:
 - No Quark Drive upload.
 - No manual installation on every ordinary desktop.
 - No claim that WeChat review or public production rollout occurred merely because a development upload succeeded.
+
+### 2026-07-30 checkpoint 28: 7.0.0 partial production release evidence
+
+Status: partial release; acceptance incomplete
+
+- Source: release commit `461346e` was pushed to `gewu/master`. The pre-release full `npm test` run passed, and the focused authority/deployment/version regressions passed before the evidence follow-up.
+- Desktop packages: both ordinary-desktop and primary-host 7.0.0 packages were rebuilt from the committed source. The installed primary-host runtime was promoted to 7.0.0 only after creating the rollback runtime at `%LOCALAPPDATA%\Programs\gewu-gongfang.rollback` and the append-only data/config/question-store backup at `D:\GewuDataHost\backups\release-7.0.0-20260729-211725`; source and backup SQLite `quick_check` results were `ok`.
+- OSS: `desktop/GewuGongfang-Desktop-7.0.0-x64.exe`, its immutable release copy, and both `latest.yml` locations uploaded successfully. The read-back feed reports version `7.0.0`; remote size `150901507` and ETag `"95DE425BE13157B4401347264696E948"` match the local installer size and MD5.
+- Alibaba Cloud: the backend backup is `/root/scheduling-backups/backend/20260729-212939`. Gateway database/code backups were created before each gateway mutation, including `/root/scheduling-backups/gateway/20260729-214929`; the source and backup database checks passed. PM2 now reports `scheduling-backend-prod` and `edu-gateway` version `7.0.0`. Both public health endpoints report `7.0.0`, protected authority HTTP routes reject unauthenticated requests, and `wss://physicsedu.xyz/ws/authority` returns the `gewu.authority-socket.v1` ready frame.
+- WeChat miniapp: the 7.0.0 production build, release smoke check, compilation, and package generation passed. The platform upload itself failed with `-10008 invalid ip`; there is no upload receipt, so the miniapp is not reported as deployed.
+- Desktop acceptance correction: the governed production-package E2E attempts never reached the visible device-approval action because Windows displayed a firewall security prompt and the managed private-network rule still targets obsolete port `60462`, while the installed host configuration uses port `3001`; port `60462` is also inside a Windows excluded range on this machine. Therefore the reported “批准后仍为待处理” production behavior has not yet been reproduced or disproved with the new 7.0.0 package. No claim of a fix is made.
+- Process governance: after the failed attempts, no E2E runner, Electron test process, or packaged test application remained alive. Only one governed package pair may run at a time; exact PIDs, a lock, a guardian, and bounded timeouts are mandatory. The preserved failed disposable profile remains isolated for diagnosis and is not deleted before a terminal pass.
+- Final boundary: Git, OSS, and Alibaba Cloud are released at 7.0.0. The local primary-host runtime is upgraded but not terminally accepted, and the miniapp upload is externally blocked. Overall status is **partial release / acceptance incomplete**.

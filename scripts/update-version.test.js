@@ -78,6 +78,7 @@ assert.ok(source.includes('--bump=minor'), 'update-version should document --bum
 assert.ok(source.includes('--bump=patch'), 'update-version should document --bump=patch');
 assert.ok(source.includes('VERSION_BUMP_LEVEL'), 'update-version should support env-driven bump level');
 assert.ok(source.includes('syncBackendPackageVersion'), 'update-version should sync backend/package.json with the root package version');
+assert.ok(source.includes('syncGatewayPackageVersion'), 'update-version should sync gateway/package.json with the unified root release version');
 const lockFixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-version-lock-'));
 const lockFixturePath = path.join(lockFixtureDir, 'package-lock.json');
 fs.writeFileSync(lockFixturePath, JSON.stringify({ version: '1.2.3', packages: { '': { version: '1.2.3' } } }, null, 2));

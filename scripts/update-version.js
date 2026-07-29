@@ -145,6 +145,15 @@ function syncBackendPackageVersion(version) {
   return writePackageVersion(backendPkgPath, version);
 }
 
+function syncGatewayPackageVersion(version) {
+  const gatewayRoot = path.join(__dirname, '..', 'gateway');
+  const gatewayPkgPath = path.join(gatewayRoot, 'package.json');
+  if (!fs.existsSync(gatewayPkgPath)) return null;
+  const result = writePackageVersion(gatewayPkgPath, version);
+  syncPackageLockVersion(path.join(gatewayRoot, 'package-lock.json'), version);
+  return result;
+}
+
 function syncPackageLockVersion(lockPath, version) {
   if (!fs.existsSync(lockPath)) return null;
   const lock = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
@@ -180,11 +189,13 @@ function main() {
     const pkgContent = writePackageVersion(pkgPath, newVersion);
     syncPackageLockVersion(lockPath, newVersion);
     syncBackendPackageVersion(newVersion);
+    syncGatewayPackageVersion(newVersion);
     writeGeneratedVersion(pkgContent);
     console.log(`Version bumped (${bumpLevel}): ${pkg.version} → ${newVersion}`);
   } else {
     syncPackageLockVersion(lockPath, pkg.version);
     syncBackendPackageVersion(pkg.version);
+    syncGatewayPackageVersion(pkg.version);
     writeGeneratedVersion(pkg);
   }
 }
@@ -199,5 +210,6 @@ module.exports = {
   readChangeContext,
   resolveBumpLevel,
   syncBackendPackageVersion,
+  syncGatewayPackageVersion,
   syncPackageLockVersion,
 };

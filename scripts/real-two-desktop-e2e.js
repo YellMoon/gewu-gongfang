@@ -371,9 +371,15 @@ function startDesktop(exe, root, backendPort, cdpPort, { websocketDisabled = fal
 function activateDesktopWindow(child, code) {
   const pid = Number(child?.pid);
   if (!Number.isSafeInteger(pid) || pid <= 0) fail(code);
-  const activationScript = `$shell = New-Object -ComObject WScript.Shell; if (-not $shell.AppActivate(${pid})) { exit 3 }`;
+  const activationScript = path.join(__dirname, 'restoreProcessWindow.ps1');
   try {
-    childProcess.execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', activationScript], {
+    childProcess.execFileSync('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy', 'Bypass',
+      '-File', activationScript,
+      '-ProcessId', String(pid),
+    ], {
       stdio: 'ignore',
       windowsHide: true,
     });
