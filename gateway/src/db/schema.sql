@@ -188,3 +188,210 @@ CREATE TABLE IF NOT EXISTS desktop_pairing_relay_requests (
 
 CREATE INDEX IF NOT EXISTS idx_desktop_pairing_relay_requests_target_status
   ON desktop_pairing_relay_requests(target_host_device_id, status, created_at);
+
+-- Authority control plane. These are control records and never canonical
+-- course, schedule, finance, or question-bank business data.
+CREATE TABLE IF NOT EXISTS authority_accounts (
+  user_id TEXT NOT NULL,
+  authority_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, authority_id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS authority_migration_ledger (
+  name TEXT PRIMARY KEY,
+  source_fingerprint TEXT NOT NULL,
+  report_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS authority_scoped_projections (
+  authority_id TEXT NOT NULL,
+  host_epoch_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('visitor', 'student', 'teacher', 'admin', 'super_admin')),
+  source_version INTEGER NOT NULL CHECK (source_version >= 0),
+  payload_hash TEXT NOT NULL,
+  document_json TEXT NOT NULL,
+  signature TEXT NOT NULL,
+  generated_at TEXT NOT NULL,
+  PRIMARY KEY (authority_id, user_id, role)
+);
+
+CREATE INDEX IF NOT EXISTS idx_gateway_authority_projections_epoch_version
+  ON authority_scoped_projections(authority_id, host_epoch_id, source_version);
+
+CREATE TABLE IF NOT EXISTS authority_role_mirror_versions (
+  authority_id TEXT PRIMARY KEY,
+  host_epoch_id TEXT NOT NULL,
+  source_version INTEGER NOT NULL CHECK (source_version >= 0),
+  payload_hash TEXT NOT NULL,
+  projection_signature TEXT NOT NULL,
+  generated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS role_application_mirrors (
+  authority_id TEXT NOT NULL,
+  application_id TEXT NOT NULL,
+  host_epoch_id TEXT NOT NULL,
+  source_version INTEGER NOT NULL CHECK (source_version >= 0),
+  user_id TEXT NOT NULL,
+  requested_role TEXT NOT NULL CHECK (requested_role IN ('student', 'teacher')),
+  status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'withdrawn')),
+  payload_json TEXT NOT NULL,
+  projection_signature TEXT NOT NULL,
+  generated_at TEXT NOT NULL,
+  PRIMARY KEY (authority_id, application_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_role_application_mirrors_status
+  ON role_application_mirrors(authority_id, status, source_version);
+
+CREATE TABLE IF NOT EXISTS role_grant_mirrors (
+  authority_id TEXT NOT NULL,
+  binding_id TEXT NOT NULL,
+  host_epoch_id TEXT NOT NULL,
+  source_version INTEGER NOT NULL CHECK (source_version >= 0),
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('student', 'teacher', 'admin', 'super_admin')),
+  grant_version INTEGER NOT NULL CHECK (grant_version >= 1),
+  status TEXT NOT NULL CHECK (status IN ('active', 'revoked', 'pending')),
+  payload_json TEXT NOT NULL,
+  projection_signature TEXT NOT NULL,
+  generated_at TEXT NOT NULL,
+  PRIMARY KEY (authority_id, binding_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_role_grant_mirrors_user
+  ON role_grant_mirrors(authority_id, user_id, role, status);
+
+CREATE TABLE IF NOT EXISTS authority_role_bindings (
+  binding_id TEXT PRIMARY KEY,
+  authority_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('student', 'teacher', 'admin', 'super_admin')),
+  subject_type TEXT,
+  subject_id TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked', 'pending')),
+  grant_version INTEGER NOT NULL DEFAULT 1 CHECK (grant_version >= 1),
+  granted_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  revoked_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_gateway_authority_role_bindings_user
+  ON authority_role_bindings(authority_id, user_id, role, status);
+
+CREATE TABLE IF NOT EXISTS authority_device_control_mirror_versions (
+  authority_id TEXT PRIMARY KEY,
+  host_epoch_id TEXT NOT NULL,
+  host_generation INTEGER NOT NULL CHECK (host_generation >= 1),
+  source_version INTEGER NOT NULL CHECK (source_version >= 0),
+  snapshot_hash TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS device_grants (
+  grant_id TEXT PRIMARY KEY,
+  authority_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  host_generation INTEGER NOT NULL CHECK (host_generation >= 1),
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'active', 'revoked', 'expired')),
+  grant_version INTEGER NOT NULL DEFAULT 1 CHECK (grant_version >= 1),
+  approved_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  revoked_at TEXT,
+  UNIQUE(authority_id, device_id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS device_activations (
+  activation_id TEXT PRIMARY KEY,
+  authority_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  package_hash TEXT NOT NULL,
+  status TEXT NOT NULL
+    CHECK (status IN ('activation_pending', 'active', 'expired', 'cancelled')),
+  expires_at TEXT NOT NULL,
+  finalized_at TEXT,
+  receipt_hash TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS device_leases (
+  lease_id TEXT PRIMARY KEY,
+  grant_id TEXT NOT NULL,
+  authority_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  active_role TEXT NOT NULL
+    CHECK (active_role IN ('visitor', 'student', 'teacher', 'admin', 'super_admin')),
+  grant_version INTEGER NOT NULL CHECK (grant_version >= 1),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'expired', 'revoked')),
+  issued_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  revoked_at TEXT,
+  FOREIGN KEY (grant_id) REFERENCES device_grants(grant_id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_leases_active
+  ON device_leases(authority_id, device_id, user_id, status, expires_at);
+
+CREATE TABLE IF NOT EXISTS primary_host_epochs (
+    id TEXT PRIMARY KEY,
+    db_authority_id TEXT NOT NULL,
+    generation INTEGER NOT NULL CHECK (generation >= 1),
+    device_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('active', 'retired', 'recovery_superseded')),
+    host_credential_hash TEXT NOT NULL,
+    host_public_key TEXT NOT NULL,
+    credential_version INTEGER NOT NULL DEFAULT 1 CHECK (credential_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  activated_at TEXT NOT NULL,
+  retired_at TEXT,
+  UNIQUE(db_authority_id, generation)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_gateway_primary_host_active_authority
+  ON primary_host_epochs(db_authority_id) WHERE status='active';
+
+CREATE TABLE IF NOT EXISTS host_commands (
+  command_id TEXT PRIMARY KEY,
+  target_host_id TEXT NOT NULL,
+  actor_user_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  envelope_json TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'claimed', 'completed', 'rejected')),
+  claim_token TEXT,
+  claim_until TEXT,
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(actor_user_id, device_id, idempotency_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_host_commands_claimable
+  ON host_commands(target_host_id, status, claim_until, created_at);
+
+CREATE TABLE IF NOT EXISTS host_receipts (
+  command_id TEXT PRIMARY KEY,
+  result_hash TEXT NOT NULL,
+  receipt_json TEXT NOT NULL,
+  completed_at TEXT NOT NULL,
+  FOREIGN KEY (command_id) REFERENCES host_commands(command_id)
+);

@@ -6,18 +6,6 @@ import { useLaunch } from '@tarojs/taro';
 import Taro from '@tarojs/taro';
 import './app.scss';
 
-type SyncEngineInstance = import('./utils/syncEngine').MiniSyncEngine;
-
-let syncEnginePromise: Promise<SyncEngineInstance> | null = null;
-let disposeNetworkSyncListener: (() => void) | null = null;
-
-function getSyncEngine(): Promise<SyncEngineInstance> {
-  if (!syncEnginePromise) {
-    syncEnginePromise = import('./utils/syncEngine').then(({ MiniSyncEngine }) => new MiniSyncEngine());
-  }
-  return syncEnginePromise;
-}
-
 let App: React.FC<PropsWithChildren<any>>;
 
 App = function App({ children }: PropsWithChildren<any>) {
@@ -53,27 +41,25 @@ async function initializeAuthenticatedApp(launchOptions: any = {}) {
     Taro.reLaunch({ url: '/pages/login/index' });
     return;
   }
-  await initApp(session, authSessionRuntime, captureTrustedAuthSession);
+  await initApp(session, authSessionRuntime);
 }
 
-async function initApp(startupSession: any, authSessionRuntime: any, captureTrustedAuthSession: any) {
-  disposeNetworkSyncListener?.();
-  disposeNetworkSyncListener = null;
-
+async function initApp(startupSession: any, authSessionRuntime: any) {
   const [
     { fetchPermissions },
     { clearBusinessCache, setBusinessCacheIdentity },
-    { isUnrecognizedIdentity },
-    { createSessionBoundNetworkSyncListener },
+    { isUnrecognizedIdentity, isVisitorIdentity },
   ] = await Promise.all([
     import('./utils/permission'),
     import('./utils/storage'),
     import('./utils/accountExperience'),
-    import('./utils/miniappStartupSyncRuntime'),
   ]);
 
   if (!authSessionRuntime.isSameSession(startupSession)) return;
-  if (isUnrecognizedIdentity(startupSession.identity)) {
+  const isLimitedIdentity = (identity: any) => (
+    isUnrecognizedIdentity(identity) || isVisitorIdentity(identity)
+  );
+  if (isLimitedIdentity(startupSession.identity)) {
     clearBusinessCache();
     return;
   }
@@ -86,42 +72,7 @@ async function initApp(startupSession: any, authSessionRuntime: any, captureTrus
   }
 
   if (!authSessionRuntime.isSameSession(startupSession)) return;
-  if (isUnrecognizedIdentity(startupSession.identity)) return;
-
-  const syncEngine = await getSyncEngine();
-  if (!authSessionRuntime.isSameSession(startupSession)) return;
-
-  const pendingCount = syncEngine.getPendingCount();
-  if (pendingCount > 0) {
-    console.log(`[Sync] \u6709 ${pendingCount} \u6761\u5f85\u540c\u6b65\u53d8\u66f4`);
-    const session = captureTrustedAuthSession(authSessionRuntime);
-    if (!session
-      || !authSessionRuntime.isSameSession(startupSession)
-      || isUnrecognizedIdentity(session.identity)) return;
-    syncEngine.push('', session.token).then((result) => {
-      if (result.success) console.log(`[Sync] \u81ea\u52a8\u63a8\u9001 ${result.pushed} \u6761\u6210\u529f`);
-    });
-  }
-
-  disposeNetworkSyncListener = createSessionBoundNetworkSyncListener({
-    startupSession,
-    isSameSession: (session: any) => authSessionRuntime.isSameSession(session),
-    captureTrustedAuthSession: () => captureTrustedAuthSession(authSessionRuntime),
-    isExperienceOnlyIdentity: isUnrecognizedIdentity,
-    onNetworkStatusChange: (listener: any) => Taro.onNetworkStatusChange(listener),
-    offNetworkStatusChange: (listener: any) => (Taro as any).offNetworkStatusChange?.(listener),
-    pull: (token: string) => syncEngine.pull('', token),
-    onConnected: () => console.log('[App] \u7f51\u7edc\u5df2\u6062\u590d'),
-    onDisconnected: () => console.log('[App] \u7f51\u7edc\u5df2\u65ad\u5f00\uff0c\u8fdb\u5165\u79bb\u7ebf\u6a21\u5f0f'),
-    onMissingSession: () => Taro.reLaunch({ url: '/pages/login/index' }),
-    onPullSuccess: (result: any) => {
-      if (result.success && result.operations.length > 0) {
-        console.log(`[Sync] \u81ea\u52a8\u62c9\u53d6 ${result.operations.length} \u6761\u53d8\u66f4`);
-      }
-    },
-    onPullFailure: (err: any) => console.warn('[Sync] \u81ea\u52a8\u62c9\u53d6\u5931\u8d25:', err),
-  });
+  if (isLimitedIdentity(startupSession.identity)) return;
 }
 
-export { getSyncEngine };
 export default App;

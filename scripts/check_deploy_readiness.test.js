@@ -9,6 +9,16 @@ assert.ok(fs.existsSync(scriptPath), 'deploy readiness script should exist');
 
 const source = fs.readFileSync(scriptPath, 'utf-8');
 
+assert.strictEqual(
+  source.includes("readText('src/services/oneClickSyncTransports.mjs')"),
+  false,
+  'deploy readiness must not require the retired one-click transport source'
+);
+assert.ok(
+  source.includes("readText('src/services/authorityTransports.mjs')"),
+  'deploy readiness must inspect the formal authority transport source'
+);
+
 for (const name of ['DEPLOY_HOST', 'DEPLOY_PASSWORD', 'DEPLOY_KEY_PATH', 'BACKEND_JWT_SECRET', 'WECHAT_APPID', 'WECHAT_APPSECRET']) {
   assert.ok(source.includes(name), `deploy readiness should check ${name}`);
 }

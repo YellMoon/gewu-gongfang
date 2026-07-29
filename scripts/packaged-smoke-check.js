@@ -8,7 +8,8 @@ const productExe = process.env.PACKAGED_EXE || path.join(process.cwd(), 'dist', 
 const debugPort = Number(process.env.PACKAGED_DEBUG_PORT || 9333);
 const debugUrl = `http://127.0.0.1:${debugPort}`;
 const packagedAppRoot = path.join(path.dirname(productExe), 'resources', 'app');
-const embeddedBackendDependencies = ['fflate', 'katex', 'mathjax-full', 'pdfkit', 'sharp', 'svg-to-pdfkit'];
+const embeddedBackendDependencies = ['fflate', 'katex', 'mathjax-full', 'pdfkit', 'sharp', 'svg-to-pdfkit', 'ws'];
+const embeddedBackendRuntimeFiles = ['shared/cloudRelayLogic.js'];
 const hostOnlyRuntimeFiles = [
   'public/primaryHostCredentialStore.js',
   'public/primaryHostOperationValidation.js',
@@ -81,6 +82,10 @@ async function main() {
   ));
   if (missingDependencies.length > 0) {
     throw new Error(`Packaged embedded backend dependencies are missing: ${missingDependencies.join(', ')}`);
+  }
+  const missingRuntimeFiles = embeddedBackendRuntimeFiles.filter(file => !fs.existsSync(path.join(packagedAppRoot, ...file.split('/'))));
+  if (missingRuntimeFiles.length > 0) {
+    throw new Error(`Packaged embedded backend runtime files are missing: ${missingRuntimeFiles.join(', ')}`);
   }
 
   const isolatedUserDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-packaged-smoke-'));

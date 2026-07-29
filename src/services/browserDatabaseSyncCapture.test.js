@@ -5,10 +5,17 @@ const source = fs.readFileSync('src/services/browserDatabase.ts', 'utf-8');
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 const { applyQuestionSyncRecords, buildBrowserQuestionSearchText, mergeBrowserQuestionUpdate } = require('./questionRichContent.ts');
 
-assert.ok(source.includes('recordSyncChange'), 'browser database should define local sync change capture');
-assert.ok(source.includes('sync_engine_sync_pending_changes'), 'browser database should write to SyncEngine pending changes');
-assert.ok(source.includes('sourceDeviceId'), 'browser capture should retain a display-only source device candidate');
-assert.ok(source.includes('sourceOperationId'), 'browser capture should retain a display-only source operation candidate');
+assert.ok(source.includes('recordAuthorityDraft'), 'browser database should define typed authority draft capture');
+assert.ok(source.includes('createAuthorityDraftFromLocalMutation'), 'browser database should use the field-whitelisting typed adapter');
+assert.ok(source.includes('window.desktopAuthority.appendDraftSync'), 'typed drafts must be encrypted before a synchronous local edit returns');
+assert.ok(source.includes('window.desktopAuthority.appendDraftBatchSync'), 'multi-command edits must append one atomic encrypted draft batch');
+assert.ok(
+  !/this\.saveData\(\);\s*this\.recordAuthorityDraft(?:Batch)?\(/.test(source),
+  'authority drafts must be durably appended before the derived browser cache is saved',
+);
+assert.ok(!source.includes('sync_engine_sync_pending_changes'), 'browser database must not write raw-row pending changes');
+assert.ok(!source.includes('sync_engine_sync_pending_ops'), 'browser database must not write the legacy raw pending queue');
+assert.ok(!source.includes('sourceOperationId'), 'browser drafts must not invent legacy raw sync operation ids');
 
 for (const table of [
   'students',
@@ -24,7 +31,7 @@ for (const table of [
   'assetCategories',
   'questions',
 ]) {
-  assert.ok(source.includes(`this.recordSyncChange('${table}'`), `browser database should queue changes for ${table}`);
+  assert.ok(source.includes(`this.recordAuthorityDraft('${table}'`), `browser database should queue typed drafts for ${table}`);
 }
 
 assert.ok(source.includes(", 'create',"), 'browser database should queue create operations');

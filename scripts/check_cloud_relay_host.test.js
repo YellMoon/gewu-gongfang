@@ -7,7 +7,7 @@ const packageJson = fs.readFileSync('package.json', 'utf-8');
 assert.ok(script.includes('GEWU_HOST_BASE_URL'), 'host smoke should read host base URL from env');
 assert.ok(script.includes('/api/cloud-relay-host/heartbeat'), 'host smoke should publish heartbeat through host route');
 assert.ok(script.includes('/api/cloud-relay-host/snapshot'), 'host smoke should publish snapshot through host route');
-assert.ok(script.includes('/api/cloud-relay-host/tasks/pending'), 'host smoke should list pending cloud tasks through host route');
+assert.ok(!script.includes('/api/cloud-relay-host/tasks/pending'), 'host smoke must not use retired pending-task polling');
 assert.ok(script.includes('/api/cloud-relay-host/tasks/process'), 'host smoke should process pending cloud tasks through host route');
 assert.ok(script.includes('SMOKE_JWT'), 'host smoke should support authenticated production writes with SMOKE_JWT');
 assert.ok(script.includes('Authorization'), 'host smoke should send Authorization header when SMOKE_JWT is set');

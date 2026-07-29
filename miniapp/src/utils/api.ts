@@ -290,29 +290,19 @@ function accountPath(operation: string, resourceId?: string): string {
 
 export const applicationApi = {
   mine: () => api.get<any>('/api/miniapp/applications/me'),
-  submit: (applicationType: 'student' | 'teacher', payload: any, idempotencyKey: string) =>
+  submit: (
+    request: { requestedRole: 'student' | 'teacher'; bindingHint?: string },
+    idempotencyKey: string,
+  ) =>
     api.postWithHeaders<any>(
       '/api/miniapp/applications',
-      { applicationType, payload },
+      request,
       { 'x-idempotency-key': idempotencyKey },
     ),
-  withdraw: (applicationId: string) =>
-    api.post<any>(`/api/miniapp/applications/${encodeURIComponent(applicationId)}/withdraw`, {}),
-  adminList: (status = '') => api.get<any>(
-    `/api/miniapp/applications/admin${status ? `?status=${encodeURIComponent(status)}` : ''}`,
-  ),
-  approveApplication: (applicationId: string, expectedRevision: number) => api.post<any>(
-    `/api/miniapp/applications/${encodeURIComponent(applicationId)}/approve`,
-    { expectedRevision },
-  ),
-  rejectApplication: (applicationId: string, expectedRevision: number, reason: string) => api.post<any>(
-    `/api/miniapp/applications/${encodeURIComponent(applicationId)}/reject`,
-    { expectedRevision, reason },
-  ),
-  retryApplication: (applicationId: string, expectedRevision: number) => api.post<any>(
-    `/api/miniapp/applications/${encodeURIComponent(applicationId)}/retry`,
-    { expectedRevision },
-  ),
+};
+
+export const authorityProjectionApi = {
+  readCurrent: () => api.get<any>('/api/miniapp/projection'),
 };
 
 export const wechatBindingApi = {
@@ -397,9 +387,4 @@ export const gradeApi = {
 export const statsApi = {
   getRevenue: (start: string, end: string) =>
     api.get<any>(`/api/stats/revenue?start=${start}&end=${end}`),
-};
-
-export const syncApi = {
-  pull: (lastSyncTs: number) => api.post<any>('/api/sync/pull', { lastSyncTimestamp: lastSyncTs }),
-  push: (changes: any[]) => api.post<any>('/api/sync/push', { changes }),
 };

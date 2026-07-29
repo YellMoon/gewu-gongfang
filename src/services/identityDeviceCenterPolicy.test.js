@@ -6,6 +6,7 @@ const assert = require('assert');
     buildApprovalBody,
     buildRejectionBody,
     buildRevocationBody,
+    identityDeviceCenterErrorMessage,
     identityDeviceCenterAccess,
     activatePrimaryHostTransfer,
     beginPrimaryHostTransfer,
@@ -29,6 +30,10 @@ const assert = require('assert');
       teacherId: 'teacher-self',
     },
   };
+  assert.ok(
+    identityDeviceCenterErrorMessage('DESKTOP_IDENTITY_LOCAL_PASSWORD_REQUIRED').includes('\u91cd\u65b0\u8f93\u5165\u672c\u673a\u5bc6\u7801'),
+    'a missing in-memory unlock password must explain the recovery action instead of showing a generic service error'
+  );
   const hostRuntime = { nodeRole: 'primary-host', primaryHostCapable: true, deviceId: 'device-host', hostBaseUrl: 'http://127.0.0.1:3001' };
 
   assert.deepStrictEqual(identityDeviceCenterAccess({ runtimeConfig: hostRuntime, session: canonicalSession }), {
@@ -51,7 +56,7 @@ const assert = require('assert');
   }).canReview, false, 'teacher active role must not review even when the same user also has super_admin');
   assert.strictEqual(identityDeviceCenterAccess({
     runtimeConfig: { ...hostRuntime, nodeRole: 'desktop-client' }, session: canonicalSession,
-  }).canReview, false, 'ordinary desktop must not expose review actions');
+  }).canReview, true, 'another authenticated super-admin desktop must be able to approve a locked primary-host password reset');
   assert.strictEqual(identityDeviceCenterAccess({
     runtimeConfig: { ...hostRuntime, nodeRole: 'desktop-client', primaryHostCapable: false }, session: canonicalSession,
   }).canManageHost, false, 'ordinary build must not expose primary-host migration or recovery operations');
@@ -117,6 +122,17 @@ const assert = require('assert');
   assert.strictEqual(snapshot.host.requiresRuntimeAdoption, true);
   assert.strictEqual(snapshot.host.canResumeRuntimeAdoption, true);
   assert.strictEqual(snapshot.host.pendingCredentialStage.stageId, 'bootstrap:host-challenge');
+  const approvedPendingSnapshot = projectIdentityDeviceCenterSnapshot({
+    mine: [{
+      deviceId: 'device-approved-pending', deviceName: '已审批的新电脑', userId: 'canonical-user',
+      status: 'pending', approvedAt: '2026-07-29T12:00:00.000Z', rowVersion: 1,
+      createdAt: '2026-07-29T11:00:00.000Z', updatedAt: '2026-07-29T12:00:00.000Z',
+    }],
+    runtimeConfig: hostRuntime,
+    session: canonicalSession,
+  });
+  assert.strictEqual(approvedPendingSnapshot.mine[0].approvedAt, '2026-07-29T12:00:00.000Z',
+    'a host-approved device must retain its approval timestamp through the device-center projection');
 
   const pendingRecoveryDelivery = {
     id: 'delivery-1',
@@ -290,10 +306,14 @@ const assert = require('assert');
     challengeId: 'host-challenge', expectedChallengeRowVersion: 2,
     localReceipt: { receipt: { version: 2 }, signature: 'signed' },
     operationManifest: { credentialStage: { id: 'bootstrap:host-challenge' } },
+    recoveryDeliveryKey: { publicKeyPem: 'bootstrap-public-key' },
   } });
   assert.ok(calls[0].url.endsWith('/api/desktop-identity/primary-host/bootstrap'));
   assert.deepStrictEqual(JSON.parse(calls[0].options.body).operationManifest, {
     credentialStage: { id: 'bootstrap:host-challenge' },
+  });
+  assert.deepStrictEqual(JSON.parse(calls[0].options.body).recoveryDeliveryKey, {
+    publicKeyPem: 'bootstrap-public-key',
   });
   calls.length = 0;
   await beginPrimaryHostTransfer({ ...operationContext, request: {
@@ -357,9 +377,14 @@ const assert = require('assert');
   assert.strictEqual(relayLoaded.pending.length, 0);
   const relayStart = relayCalls.find(call => call.url.endsWith('/api/cloud/desktop-identity/requests'));
   assert.ok(relayStart, 'relay fallback must submit a cloud desktop-identity request');
+  assert.strictEqual(relayStart.url, 'https://cloud.example/scheduling/api/cloud/desktop-identity/requests',
+    'a managed /scheduling URL must retain its reverse-proxy application prefix for relay requests');
   assert.strictEqual(relayStart.options.headers.Authorization, 'Bearer relay-session-token');
   assert.strictEqual(relayStart.options.headers['x-device-id'], 'device-2');
-  assert.deepStrictEqual(JSON.parse(relayStart.options.body), { query: 'devices' });
+  const relayStartPayload = JSON.parse(relayStart.options.body);
+  assert.strictEqual(relayStartPayload.query, 'devices');
+  assert.ok(relayStartPayload.requestId);
+  assert.strictEqual(relayStart.options.headers['x-idempotency-key'], relayStartPayload.requestId);
 
   // 没有可用局域网直连地址时直接走云中继
   relayCalls.length = 0;

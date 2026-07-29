@@ -51,8 +51,13 @@ assert.deepStrictEqual(staged, {
   deviceId: 'desktop-host-a',
   generation: 2,
   credentialCommitment: staged.credentialCommitment,
+  hostSigningKey: staged.hostSigningKey,
 });
 assert.match(staged.credentialCommitment, /^[a-f0-9]{64}$/);
+assert.equal(staged.hostSigningKey.algorithm, 'Ed25519');
+assert.match(staged.hostSigningKey.publicKeyFingerprint, /^[a-f0-9]{64}$/);
+assert.equal(Object.hasOwn(staged.hostSigningKey, 'privateKey'), false);
+assert.equal(Object.hasOwn(staged.hostSigningKey, 'privateKeyPem'), false);
 assert.strictEqual(store.read().credential, 'locally-generated-host-secret-generation-2');
 assert.ok(!Object.prototype.hasOwnProperty.call(store.status(), 'credential'));
 assert.ok(!fs.readFileSync(filePath).toString('utf8').includes('locally-generated-host-secret-generation-2'));
@@ -173,8 +178,10 @@ assert.deepStrictEqual(metadata, {
   deviceId: 'desktop-host-a',
   userId: 'canonical-owner',
   activatedAt: '2026-07-18T01:00:00.000Z',
+  hostSigningKey: metadata.hostSigningKey,
   recoveryDelivery: { pending: false },
 });
+assert.equal(metadata.hostSigningKey.algorithm, 'Ed25519');
 assert.deepStrictEqual(store.status(), metadata);
 const raw = fs.readFileSync(filePath);
 assert.ok(!raw.toString('utf8').includes('host-secret-generation-1'));

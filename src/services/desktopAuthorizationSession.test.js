@@ -30,6 +30,12 @@ async function main() {
     },
     profile: { userId: 'u1', user: { id: 'u1', name: '教师甲' }, teacherId: 'teacher-1' },
   };
+  assert.strictEqual(typeof service.normalizeDesktopAuthorizationSession, 'function',
+    'a host-issued sync session must be normalized without replacing the cloud runtime session');
+  assert.strictEqual(
+    service.normalizeDesktopAuthorizationSession(value).authContext.deviceId,
+    'd1'
+  );
   await service.saveDesktopAuthorizationSession(value, { storage, desktopIdentity });
   assert.strictEqual(service.readDesktopAuthorizationSession(storage).authorization, 'Bearer short-session-token');
   assert.strictEqual(service.readDesktopAuthorizationSession(storage).authContext.activeRole, 'teacher');

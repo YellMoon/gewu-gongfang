@@ -35,7 +35,10 @@ assert.ok(permission.includes('studentModules'), 'miniapp permission should defi
 assert.ok(permission.includes('getMiniappRolePolicy'), 'miniapp permission should expose role-specific policy');
 assert.ok(permission.includes('accountExperiencePolicy(user)') && permission.includes('canUserSubmitMiniappWrite'), 'miniapp permission boundary must delegate the real account experience policy and generic write checks to the tested runtime');
 assert.ok(permission.includes('createPermissionFetchBoundary') && permission.includes('sanitizeCapabilities: sanitizeCapabilitiesForIdentity'), 'fetchPermissions and persistent session cache must use the behavior-tested sanitizer boundary');
-assert.ok(permission.includes("'super_admin' | 'admin' | 'teacher' | 'student' | 'pending'"), 'miniapp user contract should include every unified authorization role');
+assert.ok(
+  permission.includes("'super_admin' | 'admin' | 'teacher' | 'student' | 'visitor' | 'pending'"),
+  'miniapp user contract should include every unified authorization role',
+);
 for (const scopeField of ['tenant_id?: string', 'tenantId?: string', 'teacher_id?: string', 'teacherId?: string', 'active?: number | boolean', 'deleted?: number | boolean', 'disabled?: number | boolean']) {
   assert.ok(permission.includes(scopeField), `miniapp user contract must retain the verified normal-scope field ${scopeField}`);
 }
@@ -73,6 +76,7 @@ assert.ok(!loginPage.includes('教学工具') && !loginPage.includes('teaching-t
 assert.ok(!adminUsersPage.includes('teaching-tools') && !adminUsersPage.includes('教学工具'), 'admin user permissions should not mention removed teaching tools module');
 assert.ok(adminUsersPage.includes('users:review'), 'review workbench should gate mutations on the server capability');
 assert.ok(adminUsersPage.includes('adminApi.disableUser'), 'review workbench should call the real disable endpoint');
+assert.ok(!adminUsersPage.includes('adminApi.reviewUser'), 'miniapp must not mutate legacy scalar roles');
 assert.ok(adminUsersPage.includes('review_status'), 'review workbench should render review status');
 assert.ok(adminUsersPage.includes('teacher_id'), 'teacher review should display the unique teacher binding');
 assert.ok(adminUsersPage.includes('SUPER_ADMIN_PHONE'), 'review workbench should visibly protect the fixed super administrator');
@@ -80,10 +84,13 @@ assert.ok(adminUsersPage.includes('loading') && adminUsersPage.includes('empty')
 assert.ok(adminUsersPage.includes('lockedKeys'), 'review workbench should expose per-user and per-pairing saving state');
 assert.ok(adminUsersPage.includes('createLatestRequestCoordinator'), 'review workbench should reject stale load responses');
 assert.ok(adminUsersPage.includes('createOperationLocks'), 'review workbench should lock duplicate mutations by entity key');
-assert.ok(api.includes('adminList:') && api.includes('approveApplication:') && api.includes('rejectApplication:') && api.includes('retryApplication:'), 'miniapp API must expose the real application review workflow');
-assert.ok(adminUsersPage.includes("capabilities.includes('applications:review')"), 'ordinary and super administrators must use the server application-review capability');
-assert.ok(adminUsersPage.includes('applicationApi.adminList') && adminUsersPage.includes('applicationApi.approveApplication') && adminUsersPage.includes('applicationApi.rejectApplication') && adminUsersPage.includes('applicationApi.retryApplication'), 'administrator UI must cover listing, approval, rejection and provisioning retry');
-assert.ok(adminUsersPage.includes('applicantIdentityKind') && adminUsersPage.includes('hostTaskId') && adminUsersPage.includes('rejectionReason'), 'application cards must expose applicant identity and truthful workflow status');
+assert.ok(!api.includes('approveApplication:')
+  && !api.includes('rejectApplication:')
+  && !api.includes('retryApplication:')
+  && !api.includes('/api/miniapp/applications/admin'),
+'miniapp API must not retain legacy role-review mutations');
+assert.ok(!adminUsersPage.includes("capabilities.includes('applications:review')"), 'miniapp role review moved to the host signed-projection workbench');
+assert.ok(!adminUsersPage.includes('applicationApi.'), 'miniapp administrator UI must not call legacy role application routes');
 assert.ok(adminUsersPage.includes('read-only-notice'), 'ordinary administrators should receive an explicit read-only state');
 assert.ok(api.includes('disableUser:'), 'miniapp admin API should expose the real disable endpoint');
 assert.ok(api.includes('review_status'), 'miniapp user listing API should support review-status filtering');
@@ -106,6 +113,10 @@ assert.ok(!loginPage.includes('createReviewSessionCommitter') && !loginPage.incl
 assert.ok(miniappHome.includes('isUnrecognizedIdentity') && miniappHome.includes('AccountStatusBanner'), 'home must isolate the real unrecognized identity before formal API loading');
 assert.ok(schedulePage.includes('isUnrecognizedIdentity') && schedulePage.includes('AccountStatusBanner'), 'schedule must render a real empty state without calling formal APIs for unrecognized identities');
 assert.ok(
+  schedulePage.includes('isVisitorIdentity') && schedulePage.includes('isLimitedIdentity'),
+  'visitor schedule route must fail closed before reading raw business caches',
+);
+assert.ok(
   questionBankPage.includes('isUnrecognizedIdentity')
     && questionBankPage.includes("Taro.reLaunch({ url: '/pages/unrecognized-experience/index' })"),
   'question bank must route unrecognized identities to the isolated registered four-question experience',
@@ -115,8 +126,10 @@ assert.ok(
   'formal question bank must not bundle the isolated experience page implementation',
 );
 assert.ok(
-  questionBankPage.includes('if (isUnrecognized) return; loadQuestions(); refreshAll();'),
-  'unrecognized identities must not trigger formal question-bank loading while redirecting',
+  questionBankPage.includes('if (isUnrecognized) return;')
+    && questionBankPage.includes('loadQuestions();')
+    && questionBankPage.includes('if (!isVisitor) refreshAll();'),
+  'unrecognized identities must not load questions, and visitors must not load legacy task state',
 );
 assert.ok(customTabBar.includes('EXPERIENCE_TABS') && customTabBar.includes("navigationMode === 'unrecognized'"), 'unrecognized identities need the four-tab restricted shell');
 assert.ok(loginPage.includes('createAuthenticationEntryBoundary') && loginPage.includes('loginBoundary.run(() => Taro.login())'), 'normal platform login must remain bound to its starting session before any WeChat request or commit');

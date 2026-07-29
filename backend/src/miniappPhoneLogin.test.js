@@ -107,6 +107,8 @@ async function refreshToken(baseUrl, token) {
   const { getInstance } = require('./database');
   const app = createApp();
   const seededAt = new Date().toISOString();
+  getInstance().db.prepare(`INSERT INTO authority_metadata(key,value,updated_at)
+    VALUES('database_authority_id','authority-miniapp-http',?)`).run(seededAt);
   getInstance().db.prepare(`INSERT INTO users
     (id, phone, phone_normalized, name, role, identity_kind, status, login_enabled,
      review_status, auth_version, deleted, created_at, updated_at)
@@ -137,7 +139,9 @@ async function refreshToken(baseUrl, token) {
     });
     assert.strictEqual(manualFresh.status, 200);
     assert.strictEqual(manualFresh.body.success, true);
-    assert.strictEqual(manualFresh.body.data.user.account_state, 'unrecognized');
+    assert.strictEqual(manualFresh.body.data.user.account_state, 'visitor');
+    assert.strictEqual(manualFresh.body.data.user.role, 'visitor');
+    assert.strictEqual(manualFresh.body.data.user.authority_id, 'authority-miniapp-http');
 
     const manualFormal = await postJson(baseUrl, {
       code: 'login-code-manual-formal',
@@ -238,39 +242,40 @@ async function refreshToken(baseUrl, token) {
       miniappVersion: '5.15.0',
       platform: 'android',
     });
-    assert.strictEqual(unknownPhone.status, 200, 'verified new phone should enter the unrecognized student experience');
+    assert.strictEqual(unknownPhone.status, 200, 'verified new phone should enter visitor scope');
     assert.strictEqual(unknownPhone.body.success, true);
-    assert.ok(unknownPhone.body.data.token, 'unrecognized users should receive a restricted token');
-    assert.strictEqual(unknownPhone.body.data.user.role, 'student');
-    assert.strictEqual(unknownPhone.body.data.user.account_state, 'unrecognized');
-    assert.strictEqual(unknownPhone.body.data.user.token_use, 'unrecognized-student');
+    assert.ok(unknownPhone.body.data.token, 'visitors should receive a restricted token');
+    assert.strictEqual(unknownPhone.body.data.user.role, 'visitor');
+    assert.strictEqual(unknownPhone.body.data.user.account_state, 'visitor');
+    assert.strictEqual(unknownPhone.body.data.user.token_use, 'miniapp-visitor');
     assert.deepStrictEqual(unknownPhone.body.data.user.capabilities, [
-      'experience:read',
-      'profile-application:read',
-      'profile-application:submit',
-      'sample-questions:view',
-      'sample-paper-export',
+      'projection:read',
+      'role-application:read',
+      'role-application:submit',
+      'question-preview:read',
     ]);
-    const unrecognizedClaims = jwt.verify(unknownPhone.body.data.token, process.env.JWT_SECRET, {
+    const visitorClaims = jwt.verify(unknownPhone.body.data.token, process.env.JWT_SECRET, {
       algorithms: ['HS256'],
       issuer: 'gewu-miniapp-auth',
-      audience: 'gewu-miniapp-experience',
+      audience: 'gewu-api',
     });
-    assert.strictEqual(unrecognizedClaims.token_use, 'unrecognized-student');
-    assert.ok(!('phone' in unrecognizedClaims));
-    assert.ok(!('openid' in unrecognizedClaims));
-    const unrecognizedRefresh = await refreshToken(baseUrl, unknownPhone.body.data.token);
-    assert.strictEqual(unrecognizedRefresh.status, 200);
-    const unrecognizedRefreshClaims = jwt.verify(unrecognizedRefresh.body.token, process.env.JWT_SECRET, {
+    assert.strictEqual(visitorClaims.token_use, 'miniapp-visitor');
+    assert.strictEqual(visitorClaims.role, 'visitor');
+    assert.strictEqual(visitorClaims.authority_id, 'authority-miniapp-http');
+    assert.ok(!('phone' in visitorClaims));
+    assert.ok(!('openid' in visitorClaims));
+    const visitorRefresh = await refreshToken(baseUrl, unknownPhone.body.data.token);
+    assert.strictEqual(visitorRefresh.status, 200);
+    const visitorRefreshClaims = jwt.verify(visitorRefresh.body.token, process.env.JWT_SECRET, {
       algorithms: ['HS256'],
       issuer: 'gewu-miniapp-auth',
-      audience: 'gewu-miniapp-experience',
+      audience: 'gewu-api',
     });
-    assert.strictEqual(unrecognizedRefreshClaims.sid, unrecognizedClaims.sid);
-    assert.strictEqual(unrecognizedRefreshClaims.token_use, 'unrecognized-student');
+    assert.strictEqual(visitorRefreshClaims.sid, visitorClaims.sid);
+    assert.strictEqual(visitorRefreshClaims.token_use, 'miniapp-visitor');
     const pending = getInstance().db.prepare('SELECT * FROM users WHERE phone = ?').get('13900000000');
-    assert.strictEqual(pending.review_status, 'pending');
-    assert.strictEqual(pending.login_enabled, 0);
+    assert.strictEqual(pending.review_status, 'approved');
+    assert.strictEqual(pending.login_enabled, 1);
     assert.strictEqual(pending.wechat_openid, 'openid-unknown-phone');
 
     const pendingRepeat = await postJson(baseUrl, { code: 'login-code-pending' });
@@ -282,7 +287,7 @@ async function refreshToken(baseUrl, token) {
       phoneCode: 'phone-code-unknown',
     });
     assert.strictEqual(pendingVerified.status, 200);
-    assert.strictEqual(pendingVerified.body.data.user.account_state, 'unrecognized');
+    assert.strictEqual(pendingVerified.body.data.user.account_state, 'visitor');
 
     getInstance().reviewUser({ actorPhone: '13732250653', userId: pending.id, role: 'admin' });
     assert.strictEqual(
@@ -291,7 +296,7 @@ async function refreshToken(baseUrl, token) {
       'an unrecognized token must not gain formal access after account approval',
     );
     assert.strictEqual(
-      (await refreshToken(baseUrl, unrecognizedRefresh.body.token)).status,
+      (await refreshToken(baseUrl, visitorRefresh.body.token)).status,
       401,
       'refresh must not upgrade an unrecognized session after approval',
     );
@@ -312,7 +317,7 @@ async function refreshToken(baseUrl, token) {
       FROM miniapp_login_events ORDER BY rowid`).all();
     assert.strictEqual(events.length, 8, 'successful identity decisions and binding outcomes should create audit events');
     assert.ok(events.some(event => event.result_code === 'WECHAT_BINDING_REVIEW_REQUIRED'));
-    assert.ok(events.some(event => event.result_code === 'UNRECOGNIZED_LOGIN_SUCCESS'));
+    assert.ok(events.some(event => event.result_code === 'VISITOR_LOGIN_SUCCESS'));
     assert.ok(events.some(event => event.result_code === 'FORMAL_LOGIN_SUCCESS'));
     assert.ok(events.some(event => event.miniapp_version === '5.15.0' && event.platform === 'devtools'));
     assert.ok(events.some(event => event.miniapp_version === '5.15.0' && event.platform === 'android'));
@@ -328,7 +333,7 @@ async function refreshToken(baseUrl, token) {
       legacyMiniappToken,
       firstRefresh.body.token,
       unknownPhone.body.data.token,
-      unrecognizedRefresh.body.token,
+      visitorRefresh.body.token,
       approved.body.data.token,
     ];
     assert.ok(

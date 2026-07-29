@@ -3,11 +3,12 @@ const crypto = require('crypto');
 const { getDb } = require('../db/database');
 const { scopeBusinessSnapshot } = require('../services/dataScopeService');
 const { isApprovedActive, roleForUser } = require('../services/authorizationPolicy');
-const { issueRelayAssertion } = require('../services/relayAssertionService');
 const taskService = require('../services/cloudRelayTaskService');
 const { buildQuestionPreviewIndex, safeHostBaseUrl } = require('../services/questionPreviewIndex');
+const { createLegacyArchitectureGate } = require('../services/legacyArchitectureGate');
 
 const router = express.Router();
+router.use('/desktop-sync', createLegacyArchitectureGate({ db: getDb(), hardRetire: true }));
 const PAIRING_PROTOCOL = 'gewu-single-user-pairing/v1';
 const PAIRING_ENVELOPE_KEYS = new Set([
   'protocolVersion', 'capabilityId', 'clientEphemeralPublicKey', 'iv', 'ciphertext', 'tag',
@@ -26,6 +27,10 @@ function taskRouteError(res, error) {
   return res.status(Number(error.statusCode) || 500).json({ success: false, code: error.code || 'TASK_OPERATION_FAILED', error: error.message });
 }
 
+function legacyTaskRetired(res) {
+  return res.status(410).json({ success: false, error: { code: 'LEGACY_ARCHITECTURE_RETIRED' } });
+}
+
 function targetHostForTask(db, requested) {
   const target = String(requested || process.env.GEWU_PRIMARY_HOST_DEVICE_ID || '').trim();
   if (target) {
@@ -37,23 +42,6 @@ function targetHostForTask(db, requested) {
   if (!latest) throw taskService.taskError('TARGET_HOST_REQUIRED', 'no target host is available', 409);
   return latest.host_device_id;
 }
-function validateDesktopSyncInput(req, res) {
-  const deviceId = String(req.headers['x-device-id'] || req.body.deviceId || '');
-  const name = String(req.body.deviceName || '');
-  if (!deviceId || deviceId.length > 128 || name.length > 128) return res.status(400).json({ success: false, code: 'INVALID_SYNC_REQUEST' });
-  const changes = req.body.pendingChanges;
-  if (!Array.isArray(changes) || changes.length > 500) return res.status(changes?.length > 500 ? 413 : 400).json({ success: false, code: changes?.length > 500 ? 'SYNC_REQUEST_TOO_LARGE' : 'INVALID_SYNC_REQUEST' });
-  if (Buffer.byteLength(JSON.stringify(req.body)) > 2 * 1024 * 1024) return res.status(413).json({ success: false, code: 'SYNC_REQUEST_TOO_LARGE' });
-  for (const operation of changes) {
-    if (!operation || typeof operation !== 'object' || !operation.id || !operation.table
-      || !['create', 'update', 'delete'].includes(operation.action)
-      || Buffer.byteLength(JSON.stringify(operation)) > 128 * 1024) {
-      return res.status(400).json({ success: false, code: 'INVALID_SYNC_REQUEST' });
-    }
-  }
-  return null;
-}
-
 function secureEqual(left, right) {
   const a = Buffer.from(String(left || ''));
   const b = Buffer.from(String(right || ''));
@@ -407,19 +395,6 @@ router.post('/host/heartbeat', requireHostToken, (req, res) => {
   res.json({ success: true, serverTime: time });
 });
 
-router.get('/host/status', requireOnlineDesktopSession, (_req, res) => {
-  const row = getDb().prepare('SELECT * FROM host_heartbeats ORDER BY updated_at DESC LIMIT 1').get();
-  const updatedAt = row?.updated_at ? Date.parse(row.updated_at) : 0;
-  const ttl = Number(process.env.GEWU_HOST_HEARTBEAT_TTL_MS || 5 * 60 * 1000);
-  let lanUrls = [];
-  try { lanUrls = JSON.parse(row?.lan_urls || '[]'); } catch (_error) { lanUrls = []; }
-  return res.json({
-    success: true,
-    online: Boolean(row && row.status !== 'offline' && Date.now() - updatedAt <= ttl),
-    host: row ? { baseUrl: row.base_url || '', lanUrls: Array.isArray(lanUrls) ? lanUrls : [], updatedAt: row.updated_at } : null,
-  });
-});
-
 router.post('/snapshots/publish', requireHostToken, (req, res) => {
   const db = getDb();
   const snapshotId = id('snap');
@@ -446,24 +421,6 @@ function requireApprovedSnapshotUser(req, res, next) {
   return next();
 }
 
-function requireOnlineDesktopSession(req, res, next) {
-  const actor = req.authz || {};
-  const headerDeviceId = String(req.headers['x-device-id'] || '').trim();
-  const expiresAt = Date.parse(String(actor.sessionExpiresAt || ''));
-  if (actor.clientType !== 'desktop' || actor.tokenUse !== 'desktop-session'
-    || !actor.userId || !actor.deviceId || !actor.sessionId || !actor.activeRole
-    || !Number.isSafeInteger(Number(actor.authVersion)) || Number(actor.authVersion) < 1
-    || !Number.isSafeInteger(Number(actor.credentialVersion)) || Number(actor.credentialVersion) < 1
-    || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
-    return res.status(401).json({ success:false, code:'ONLINE_DESKTOP_SESSION_REQUIRED' });
-  }
-  if (headerDeviceId && headerDeviceId !== actor.deviceId) {
-    return res.status(403).json({ success:false, code:'DESKTOP_DEVICE_HEADER_MISMATCH' });
-  }
-  req.syncActor = actor;
-  return next();
-}
-
 router.get('/snapshots/read', requireApprovedSnapshotUser, (req, res) => {
   const db = getDb();
   const snapshotType = req.query.snapshotType || 'full';
@@ -486,112 +443,29 @@ router.get('/snapshots/questions', requireApprovedSnapshotUser, (req, res) => {
   res.json({ success: true, ...buildQuestionPreviewIndex(snapshot, req.user), hostAvailable, targetHostDeviceId: hostAvailable ? host.host_device_id : null, hostBaseUrl: hostAvailable ? safeHostBaseUrl(host.base_url) : null });
 });
 
-router.post('/desktop-sync/devices/register', requireOnlineDesktopSession, (req,res)=>{
-  const actor=req.syncActor,deviceId=actor.deviceId;
-  const db=getDb(),existing=db.prepare('SELECT * FROM cloud_devices WHERE id=?').get(deviceId);
-  if(existing?.owner_user_id&&existing.owner_user_id!==actor.userId)return res.status(403).json({success:false,code:'SYNC_DEVICE_OWNER_MISMATCH'});
-  const time=now();db.prepare(`INSERT INTO cloud_devices(id,device_name,role,status,owner_user_id,active,created_at,updated_at)VALUES(?,?,?,'active',?,1,?,?)ON CONFLICT(id)DO UPDATE SET owner_user_id=COALESCE(cloud_devices.owner_user_id,excluded.owner_user_id),active=1,updated_at=excluded.updated_at`).run(deviceId,req.body.deviceName||deviceId,'desktop-client',actor.userId,time,time);res.json({success:true,device:{id:deviceId}});
-});
-router.post('/desktop-sync/requests', requireOnlineDesktopSession, (req, res) => {
-  const invalid = validateDesktopSyncInput(req, res);
-  if (invalid) return invalid;
-  const db = getDb();
-  const actor = req.syncActor;
-  const deviceId = actor.deviceId;
-  const device = db.prepare('SELECT * FROM cloud_devices WHERE id=? AND active=1').get(deviceId);
-  if (!device || device.owner_user_id !== actor.userId) return res.status(403).json({ success:false, code:'SYNC_DEVICE_OWNER_MISMATCH' });
-  const taskId = id('desktop_sync');
-  const time = now();
-  let assertion;
-  try { assertion = issueRelayAssertion({
-    taskId, actorUserId:actor.userId, deviceId, sessionId:actor.sessionId,
-    activeRole:actor.activeRole, teacherId:actor.teacherId || null,
-    authVersion:Number(actor.authVersion), credentialVersion:Number(actor.credentialVersion),
-    issuedAt:Date.now(), expiresAt:Date.parse(actor.sessionExpiresAt),
-  }, process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || ''); }
-  catch (error) { return res.status(403).json({ success:false, code:error.code }); }
-  const payload = { deviceId, tenantId:req.body.tenantId || 'default', pendingChanges:req.body.pendingChanges, actorUserId:actor.userId, relayAssertion:assertion, submittedAt:time };
-  db.prepare("INSERT INTO miniapp_tasks(id,task_type,status,payload,created_by,created_at,updated_at) VALUES(?,'desktop-sync','pending_host',?,?,?,?)").run(taskId, JSON.stringify(payload), actor.userId, time, time);
-
-  // 通过WebSocket通知主机有新任务
-  const wsServer = req.app.get('wsServer');
-  if (wsServer) {
-    // 获取主机设备ID（从数据库）
-    const host = db.prepare("SELECT host_device_id FROM host_heartbeats WHERE status='online' ORDER BY updated_at DESC LIMIT 1").get();
-    if (host) {
-      wsServer.notifyHostNewTask(host.host_device_id, {
-        taskId,
-        taskType: 'desktop-sync',
-        deviceId,
-        createdAt: time,
-      });
-    }
-  }
-
-  return res.json({ success:true, request:{ id:taskId, status:'pending_host', acceptedChanges:payload.pendingChanges.length } });
-});
-router.get('/desktop-sync/requests/:id/result', requireOnlineDesktopSession, (req, res) => {
-  const db = getDb();
-  const actor = req.syncActor;
-  const admin = ['super_admin','admin'].includes(actor.activeRole);
-  const row = admin ? db.prepare("SELECT * FROM miniapp_tasks WHERE id=? AND task_type='desktop-sync'").get(req.params.id) : db.prepare("SELECT * FROM miniapp_tasks WHERE id=? AND task_type='desktop-sync' AND CAST(created_by AS TEXT)=?").get(req.params.id, String(actor.userId));
-  if (!row) return res.status(404).json({ success:false, code:'DESKTOP_SYNC_REQUEST_NOT_FOUND' });
-  return res.json({ success:true, request:{ ...row, payload:JSON.parse(row.payload || '{}'), result_payload:row.result_payload ? JSON.parse(row.result_payload) : null } });
-});
-
 router.post('/tasks', requireApprovedSnapshotUser, (req, res) => {
   const db = getDb();
   const allowed = allowedTasksForUser(req.user);
   if (!allowed.has(req.body.taskType)) return res.status(403).json({ success: false, error: 'task type is not allowed' });
-  if (Number(req.body.protocolVersion || req.body.protocol_version || 1) >= 2) {
-    try {
-      const actorRole = roleForUser(req.user);
-      const created = taskService.createV2Task(db, {
-        taskType: req.body.taskType,
-        payload: req.body.payload || {},
-        createdBy: req.user.id,
-        tenantId: req.user.tenant_id || req.user.tenantId || 'default',
-        actorRole,
-        allowDraft: ['super_admin', 'admin'].includes(actorRole),
-        targetHostDeviceId: targetHostForTask(db, req.body.targetHostDeviceId || req.body.target_host_device_id),
-        idempotencyKey: req.headers['x-idempotency-key'] || req.body.idempotencyKey || req.body.idempotency_key,
-      });
-      return res.json({ success: true, task: created.task, replayed: created.replayed });
-    } catch (error) { return taskRouteError(res, error); }
-  }
-  const taskId = id('task');
-  const time = now();
-  db.prepare(
-    `INSERT INTO miniapp_tasks (id, task_type, status, payload, created_by, created_at, updated_at)
-     VALUES (?, ?, 'pending_host', ?, ?, ?, ?)`
-  ).run(taskId, req.body.taskType, JSON.stringify(req.body.payload || {}), req.user.id, time, time);
-  res.json({ success: true, task: { id: taskId, status: 'pending_host' } });
+  if (Number(req.body.protocolVersion || req.body.protocol_version || 1) < 2) return legacyTaskRetired(res);
+  try {
+    const actorRole = roleForUser(req.user);
+    const created = taskService.createV2Task(db, {
+      taskType: req.body.taskType,
+      payload: req.body.payload || {},
+      createdBy: req.user.id,
+      tenantId: req.user.tenant_id || req.user.tenantId || 'default',
+      actorRole,
+      allowDraft: ['super_admin', 'admin'].includes(actorRole),
+      targetHostDeviceId: targetHostForTask(db, req.body.targetHostDeviceId || req.body.target_host_device_id),
+      idempotencyKey: req.headers['x-idempotency-key'] || req.body.idempotencyKey || req.body.idempotency_key,
+    });
+    return res.json({ success: true, task: created.task, replayed: created.replayed });
+  } catch (error) { return taskRouteError(res, error); }
 });
 
 router.get('/tasks', requireHostToken, (req, res) => {
-  const db = getDb();
-  const status = req.query.status || 'pending_host';
-  const rows = status === 'pending_host' ? (() => {
-    const claimed = [];
-    const hostDeviceId = String(req.query.hostDeviceId || req.query.host_device_id || 'legacy-shared');
-    const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 100));
-    for (let index = 0; index < limit; index += 1) {
-      const next = taskService.claimNextLegacyTask(db, { hostDeviceId, leaseMs: req.query.leaseMs || req.query.lease_ms });
-      if (!next) break;
-      claimed.push({ ...next.task, claimToken: next.claimToken });
-    }
-    return claimed;
-  })() : db.prepare(
-    `SELECT * FROM miniapp_tasks WHERE status = ? AND COALESCE(protocol_version,1)<2 ORDER BY created_at ASC LIMIT 100`
-  ).all(status);
-  res.json({
-    success: true,
-    tasks: rows.map(row => ({
-      ...row,
-      payload: typeof row.payload === 'string' ? JSON.parse(row.payload || '{}') : (row.payload || {}),
-      result_payload: typeof row.result_payload === 'string' ? JSON.parse(row.result_payload) : (row.result_payload || null),
-    })),
-  });
+  return legacyTaskRetired(res);
 });
 
 router.post('/tasks/claim', requireHostToken, (req, res) => {
@@ -645,26 +519,13 @@ router.post('/tasks/:id/cancel', requireApprovedSnapshotUser, (req, res) => {
 router.post('/tasks/:id/complete', requireHostToken, (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT protocol_version,task_type,created_by,payload FROM miniapp_tasks WHERE id=?').get(req.params.id);
+  if (!existing) return taskRouteError(res, taskService.taskError('TASK_NOT_FOUND', 'task not found', 404));
   if (Number(existing?.protocol_version || 1) >= 2) {
     try {
       const completionInput = existing.task_type === 'desktop-pairing'
         ? { ...(req.body || {}), result: sanitizePairingResult(req.body?.result) }
         : (req.body || {});
       const task = taskService.completeV2Task(db, req.params.id, completionInput);
-      
-      if (existing.task_type === 'desktop-sync' && existing.created_by) {
-        const wsServer = req.app.get('wsServer');
-        if (wsServer) {
-          const payload = JSON.parse(existing.payload || '{}');
-          const targetDeviceId = payload.deviceId || existing.created_by;
-          wsServer.notifyDesktopTaskComplete(targetDeviceId, {
-            taskId: req.params.id,
-            taskType: existing.task_type,
-            result: task.result_payload,
-            completedAt: now(),
-          });
-        }
-      }
       
       if (task.task_type === 'desktop-pairing') {
         db.prepare(`UPDATE desktop_pairing_relay_requests
@@ -675,20 +536,7 @@ router.post('/tasks/:id/complete', requireHostToken, (req, res) => {
       return res.json({ success: true, task });
     } catch (error) { return taskRouteError(res, error); }
   }
-  const resultPayload = {
-    ...(req.body.result || req.body.resultPayload || {}),
-    completedBy: req.body.completedBy || req.body.hostDeviceId || 'primary-host',
-    completedAt: now(),
-  };
-  let row;
-  try {
-    row = taskService.completeLegacyTask(db, req.params.id, resultPayload, req.body.success !== false, {
-      claimToken: req.body.claimToken || req.body.claim_token,
-      expectedRowVersion: req.body.expectedRowVersion ?? req.body.expected_row_version,
-      hostDeviceId: req.body.hostDeviceId || req.body.host_device_id,
-    });
-  } catch (error) { return taskRouteError(res, error); }
-  res.json({ success: true, task: row });
+  return legacyTaskRetired(res);
 });
 
 router.get('/tasks/:id/state', requireHostToken, (req, res) => {

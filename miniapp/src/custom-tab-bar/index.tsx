@@ -33,6 +33,12 @@ const EXPERIENCE_TABS: TabItem[] = [
   { pagePath: 'pages/settings/index', label: '我的', iconText: '我' },
 ];
 
+const VISITOR_TABS: TabItem[] = [
+  { pagePath: 'pages/index/index', label: '\u9996\u9875', iconText: '\u9996' },
+  { pagePath: 'pages/question-bank/index', label: '\u9898\u5e93', iconText: '\u9898' },
+  { pagePath: 'pages/settings/index', label: '\u6211\u7684', iconText: '\u6211' },
+];
+
 const LIMITED_TABS: TabItem[] = [
   { pagePath: 'pages/index/index', label: '\u9996\u9875', iconText: '\u9996' },
   { pagePath: 'pages/settings/index', label: '\u6211\u7684', iconText: '\u6211' },
@@ -61,10 +67,20 @@ export default function RoleTabBar() {
     setCurrentRoute(getCurrentRoute());
     setUserType('pending');
     setNavigationMode('limited');
+    const localAccess = getEffectiveMiniappAccess();
+    if (localAccess.role === 'visitor' && localAccess.modules.length > 0) {
+      setUserType('visitor');
+      setNavigationMode('visitor');
+      return;
+    }
     void fetchPermissions().then(() => {
       const access = getEffectiveMiniappAccess();
       setUserType(access.modules.length > 0 ? access.role : 'pending');
-      setNavigationMode(access.experienceOnly ? 'unrecognized' : (access.modules.length > 0 ? 'formal' : 'limited'));
+      setNavigationMode(
+        access.role === 'visitor'
+          ? 'visitor'
+          : (access.experienceOnly ? 'unrecognized' : (access.modules.length > 0 ? 'formal' : 'limited')),
+      );
     }).catch(() => {
       setUserType('pending');
       setNavigationMode('limited');
@@ -72,7 +88,9 @@ export default function RoleTabBar() {
   });
 
   const tabs = useMemo(() => (
-    navigationMode === 'unrecognized'
+    navigationMode === 'visitor'
+      ? VISITOR_TABS
+      : navigationMode === 'unrecognized'
       ? EXPERIENCE_TABS
       : (userType === 'pending' ? LIMITED_TABS : (userType === 'student' ? STUDENT_TABS : ADMIN_TABS))
   ), [navigationMode, userType]);

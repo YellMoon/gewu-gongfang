@@ -18,6 +18,7 @@ const {
   signRecoveryDeliveryAcknowledgement,
 } = require('../services/primaryHostRecoveryDeliveryProtocol');
 const { buildPrimaryHostOperationManifest } = require('../../../public/primaryHostOperationValidation');
+const { derivePrimaryHostSigningKey } = require('../../../shared/primaryHostSigningKey');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-primary-host-http-'));
 const previous = {
@@ -68,11 +69,17 @@ function decryptRecoveryDelivery(result, operation, deviceId) {
 }
 function credentialStage(operation, challengeId, deviceId, targetGeneration) {
   const credential = stagedHostCredentials[operation];
+  const signingKey = derivePrimaryHostSigningKey(credential);
   return {
     id: `${operation}:${challengeId}`,
     deviceId,
     targetGeneration,
     commitment: crypto.createHash('sha256').update(credential).digest('hex'),
+    hostSigningKey: {
+      algorithm: signingKey.algorithm,
+      publicKeyPem: signingKey.publicKeyPem,
+      publicKeyFingerprint: signingKey.publicKeyFingerprint,
+    },
   };
 }
 const questionBankRoot = path.join(root, 'question-bank');
@@ -177,7 +184,7 @@ const hostService = createPrimaryHostIdentityService({
   localEvidenceProvider: () => ({
     runtimeNodeRole: 'primary-host',
     dbInstanceDigest: '1'.repeat(64),
-    schemaVersion: 3120,
+    schemaVersion: databaseService.schemaVersion,
     storeId: 'http-store-1',
     dbAuthorityId: 'http-db-authority-1',
     quickCheck: 'ok',
@@ -219,6 +226,7 @@ app.use('/api/desktop-identity', createDesktopIdentityRouter({
   },
   createDesktopAuthorizationQrCode: async ({ challengeId }) => `data:image/jpeg;base64,${Buffer.from(`host-${challengeId}`).toString('base64')}`,
   localBridgeSecret: 'electron-local-bridge-secret-for-http-tests',
+  localDeviceId: actor.deviceId,
 }));
 app.use('/api/cloud', cloudRelayRouter);
 
@@ -273,6 +281,22 @@ app.use('/api/cloud', cloudRelayRouter);
       method: 'POST', body: JSON.stringify({ purpose: 'bootstrap' }),
     });
     assert.strictEqual(blockedEvidence.status, 401);
+    const missingBridgeEvidence = await call('/api/desktop-identity/primary-host/local-evidence', {
+      method: 'POST', headers: desktopHeaders, body: JSON.stringify({ purpose: 'bootstrap' }),
+    });
+    assert.strictEqual(missingBridgeEvidence.status, 403);
+    assert.strictEqual((await missingBridgeEvidence.json()).code, 'PRIMARY_HOST_LOCAL_BRIDGE_REQUIRED');
+    const bridgedCloudSessionEvidence = await call('/api/desktop-identity/primary-host/local-evidence', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer cloud-session-signed-by-another-control-plane',
+        'x-gewu-electron-local-bridge': 'electron-local-bridge-secret-for-http-tests',
+      },
+      body: JSON.stringify({ purpose: 'bootstrap' }),
+    });
+    const bridgedCloudSessionEvidenceBody = await bridgedCloudSessionEvidence.json();
+    assert.strictEqual(bridgedCloudSessionEvidence.status, 200,
+      `bootstrap evidence must not require the cloud token to be signed by the local host JWT secret: ${JSON.stringify(bridgedCloudSessionEvidenceBody)}`);
     const evidenceResponse = await call('/api/desktop-identity/primary-host/local-evidence', {
       method: 'POST',
       headers: {
@@ -346,6 +370,10 @@ app.use('/api/cloud', cloudRelayRouter);
     assert.strictEqual(bootstrapResponse.status, 200);
     const bootstrap = (await bootstrapResponse.json()).data;
     assert.strictEqual(bootstrap.epoch.generation, 1);
+    assert.strictEqual(
+      bootstrap.epoch.hostPublicKey,
+      credentialStage('bootstrap', started.id, actor.deviceId, 1).hostSigningKey.publicKeyPem
+    );
     assert.strictEqual(Object.hasOwn(bootstrap, 'hostCredential'), false);
     assert.strictEqual(Object.hasOwn(bootstrap, 'recoveryPackage'), false);
     const bootstrapRecoveryPackage = decryptRecoveryDelivery(
@@ -536,7 +564,10 @@ app.use('/api/cloud', cloudRelayRouter);
     const backupDb = new (require('better-sqlite3'))(backupPath, { readonly: true, fileMustExist: true });
     try {
       assert.strictEqual(backupDb.pragma('quick_check', { simple: true }), 'ok');
-      assert.strictEqual(backupDb.pragma('user_version', { simple: true }), 3120);
+      assert.strictEqual(
+        backupDb.pragma('user_version', { simple: true }),
+        databaseService.schemaVersion
+      );
     } finally {
       backupDb.close();
     }
@@ -607,6 +638,15 @@ app.use('/api/cloud', cloudRelayRouter);
     const activation = (await activationResponse.json()).data;
     assert.strictEqual(activation.epoch.generation, 2);
     assert.strictEqual(activation.epoch.deviceId, 'http-target-device');
+    assert.strictEqual(
+      activation.epoch.hostPublicKey,
+      credentialStage(
+        'transfer',
+        transferConfirmed.id,
+        targetActor.deviceId,
+        2
+      ).hostSigningKey.publicKeyPem
+    );
     assert.strictEqual(Object.hasOwn(activation, 'hostCredential'), false);
     assert.strictEqual(Object.hasOwn(activation, 'recoveryPackage'), false);
     const transferRecoveryPackage = decryptRecoveryDelivery(

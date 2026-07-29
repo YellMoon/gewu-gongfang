@@ -6,7 +6,6 @@ const { spawnSync } = require('child_process');
 
 const deployPy = fs.readFileSync('scripts/deploy.py', 'utf-8');
 const deployGatewayPy = fs.readFileSync('scripts/deploy_gateway.py', 'utf-8');
-const grayDeployPy = fs.readFileSync('scripts/docker_deploy_gray.py', 'utf-8');
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 const backendPackage = fs.readFileSync('backend/package.json', 'utf-8');
 const taskDoc = fs.readFileSync('task.md', 'utf-8');
@@ -20,6 +19,9 @@ const deployRequirements = fs.readFileSync(deployRequirementsPath, 'utf-8');
 assert.ok(deployRequirements.includes('paramiko'), 'deploy requirements should include paramiko');
 assert.ok(deployRequirements.includes('python-dotenv'), 'deploy requirements should include python-dotenv');
 assert.ok(!deployPy.includes('load_dotenv = None'), 'deploy should not silently skip .env.local when python-dotenv is missing');
+assert.ok(deployPy.includes('def upload_shared(ssh):'), 'backend deployment must upload its sibling shared runtime modules');
+assert.ok(deployPy.includes('upload_shared(ssh)'), 'backend deployment must invoke shared runtime upload before restart');
+assert.ok(deployPy.includes('posixpath.join(posixpath.dirname(REMOTE_DIR), "shared")'), 'remote shared paths must stay POSIX when deploying from Windows');
 
 const envFixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-deploy-env-'));
 const envFixturePath = path.join(envFixtureDir, '.env.local');
@@ -124,7 +126,7 @@ paths = [
 d.migrate(ssh, path_factory=lambda: paths[0])
 d.start_backend_service(ssh, "scheduling-backend-prod", path_factory=lambda: paths[1])
 g.restart_gateway(ssh, path_factory=lambda: paths[2])
-runtime_secrets = [d.BACKEND_JWT_SECRET, d.WECHAT_APPSECRET, d.os.getenv("GEWU_DESKTOP_SYNC_TOKEN"), d.os.getenv("GEWU_CLOUD_RELAY_HOST_TOKEN")]
+runtime_secrets = [d.BACKEND_JWT_SECRET, d.WECHAT_APPSECRET]
 all_secrets = [d.PASSWORD] + runtime_secrets
 secure_commands = ssh.commands[1:]
 print(all(secret not in command for command in ssh.commands for secret in all_secrets if secret))
@@ -141,8 +143,6 @@ for (const secret of [
   deploySecurityEnv.DEPLOY_PASSWORD,
   deploySecurityEnv.BACKEND_JWT_SECRET,
   deploySecurityEnv.WECHAT_APPSECRET,
-  deploySecurityEnv.GEWU_DESKTOP_SYNC_TOKEN,
-  deploySecurityEnv.GEWU_CLOUD_RELAY_HOST_TOKEN,
 ]) {
   assert.ok(!deploySecurityOutput.includes(secret), 'deploy stdout/stderr must not expose fixture secrets');
 }
@@ -385,7 +385,6 @@ for (const name of [
   'GEWU_APP_VERSION',
 ]) {
   assert.ok(deployPy.includes(name), `pm2 deploy should pass ${name}`);
-  assert.ok(grayDeployPy.includes(name), `docker gray deploy should pass ${name}`);
 }
 
 for (const name of ['WECHAT_APPID', 'WECHAT_APPSECRET']) {

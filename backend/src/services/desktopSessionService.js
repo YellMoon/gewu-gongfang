@@ -7,7 +7,7 @@ const { scopeForUser } = require('./authorizationPolicy');
 const TOKEN_ISSUER = 'gewu-auth';
 const TOKEN_AUDIENCE = 'gewu-api';
 const TOKEN_USE = 'desktop-session';
-const MAX_SESSION_MS = 8 * 60 * 60 * 1000;
+const MAX_SESSION_MS = 14 * 24 * 60 * 60 * 1000;
 const RECENT_ELEVATION_MS = 15 * 60 * 1000;
 const ELEVATION_PROOF_MAX_AGE_MS = 2 * 60 * 1000;
 const PRIVILEGED_ROLES = new Set(['super_admin', 'admin']);
@@ -114,9 +114,6 @@ function createDesktopSessionService({
   now = function () { return new Date(); },
   uuid = uuidv4,
   maxSessionMs = MAX_SESSION_MS,
-  isSingleUserModeActive = function () {
-    return process.env.GEWU_DESKTOP_IDENTITY_MODE === 'single-user';
-  },
 } = {}) {
   if (!db || typeof db.prepare !== 'function' || typeof db.transaction !== 'function') {
     throw serviceError('DESKTOP_SESSION_DB_REQUIRED');
@@ -162,26 +159,7 @@ function createDesktopSessionService({
       }
       return authorization;
     }
-    if (source !== 'single_user_pairing' && source !== 'single_user_local_bootstrap') {
-      throw serviceError('DESKTOP_AUTHORIZATION_SOURCE_INVALID');
-    }
-    if (isSingleUserModeActive() !== true) {
-      throw serviceError('DESKTOP_SINGLE_USER_AUTHORIZATION_DISABLED');
-    }
-    if (source === 'single_user_pairing') {
-      if (authorization.device_kind !== 'desktop-client') {
-        throw serviceError('DESKTOP_SINGLE_USER_AUTHORIZATION_KIND_INVALID');
-      }
-      return authorization;
-    }
-    const epoch = findActiveHostEpoch.get();
-    if (authorization.device_kind !== 'primary-host' || !epoch
-      || epoch.device_id !== authorization.device_id
-      || epoch.user_id !== authorization.user_id
-      || epoch.authorization_id !== authorization.id) {
-      throw serviceError('DESKTOP_SINGLE_USER_HOST_EPOCH_MISMATCH');
-    }
-    return authorization;
+    throw serviceError('DESKTOP_AUTHORIZATION_SOURCE_INVALID');
   }
 
   function assertAuthorizationActive(authorization, userId, at) {

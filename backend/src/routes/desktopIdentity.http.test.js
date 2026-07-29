@@ -10,6 +10,7 @@ const {
   desktopExchangeSigningPayload,
 } = require('../services/desktopIdentityService');
 const { createDesktopSessionService } = require('../services/desktopSessionService');
+const { activationReceiptSigningPayload } = require('../services/deviceActivationService');
 const {
   desktopDeviceSessionSigningPayload,
 } = require('../services/desktopDeviceChallengeService');
@@ -168,49 +169,7 @@ function generateDeviceKey() {
     };
 
     const app = express();
-    const localBridgeSecret = 'desktop-identity-http-local-bridge-secret';
-    const singleUserCalls = [];
-    const pairingCapability = Object.freeze({
-      protocolVersion: 'gewu-single-user-pairing/v1',
-      id: 'a'.repeat(32),
-      publicKey: 'test-x25519-public-key',
-      issuedAt: clock.toISOString(),
-      expiresAt: '2026-07-17T09:10:00.000Z',
-    });
-    const singleUserIdentityService = {
-      bootstrapLocalHost: async input => {
-        singleUserCalls.push(['bootstrap', input]);
-        return { authorization: { id: 'single-host-auth' }, epoch: { id: 'single-host-epoch' } };
-      },
-      resetLocalHostCredential: input => {
-        singleUserCalls.push(['reset', input]);
-        return { authorization: { id: 'single-host-auth', credentialVersion: 2 } };
-      },
-      issuePairingGrant: input => {
-        singleUserCalls.push(['grant', input]);
-        return { id: 'grant-1', code: '0123456789ABCDEF', capability: pairingCapability };
-      },
-      revokePairingGrant: input => {
-        singleUserCalls.push(['revoke', input]);
-        return { id: input.grantId, status: 'revoked' };
-      },
-      currentPairingCapability: () => pairingCapability,
-      consumeEncryptedPairingRequest: input => {
-        singleUserCalls.push(['pair', input]);
-        return { requestId: 'pair-request-1', authorization: { id: 'ordinary-auth-1' } };
-      },
-      disableSingleUserAuthorizations: input => {
-        singleUserCalls.push(['disable', input]);
-        return { revokedAuthorizations: 1 };
-      },
-    };
     app.use(express.json({ limit: '64kb' }));
-    const singleUserRuntime = {
-      deviceId: 'device-http-host',
-      nodeRole: 'desktop-client',
-      epochId: null,
-      generation: null,
-    };
     app.use('/api/desktop-identity', createDesktopIdentityRouter({
       db,
       jwtSecret,
@@ -223,95 +182,19 @@ function generateDeviceKey() {
       resolveWechatPhoneNumber,
       createDesktopAuthorizationUrlLink,
       createDesktopAuthorizationQrCode,
-      singleUserIdentityService,
-      localBridgeSecret,
-      desktopBuildFlavor: 'primary-host',
-      desktopIdentityMode: 'single-user',
-      runtimeContext: () => ({ ...singleUserRuntime }),
+      resolveActivationAuthority: () => Object.freeze({
+        authorityId: 'authority-http-1',
+        hostEpochId: 'epoch-http-1',
+        hostGeneration: 7,
+        hostPublicKey: 'test-host-public-key',
+      }),
     }));
     server = app.listen(0);
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const localHeaders = { 'x-gewu-electron-local-bridge': localBridgeSecret };
-    const bootstrapPayload = {
-      publicIdentity: {
-        deviceId: 'device-http-host',
-        deviceName: 'Current Host',
-        deviceKind: 'primary-host',
-        publicKey: 'test-public-key',
-      },
-      confirmation: 'SET_LOCAL_PASSWORD_CONFIRMED',
-    };
-    const deniedBootstrap = await requestJson(
-      baseUrl,
-      'POST',
-      '/api/desktop-identity/single-user/bootstrap',
-      { body: bootstrapPayload }
-    );
-    assert.strictEqual(deniedBootstrap.status, 403);
-    const localBootstrap = await requestJson(
-      baseUrl,
-      'POST',
-      '/api/desktop-identity/single-user/bootstrap',
-      { body: bootstrapPayload, headers: localHeaders }
-    );
-    assert.strictEqual(localBootstrap.status, 200);
-    assert.strictEqual(singleUserCalls[0][1].localBridgeVerified, true);
-    assert.strictEqual(singleUserCalls[0][1].bootstrapCandidateVerified, true);
-    assert.strictEqual(singleUserCalls[0][1].runtime.nodeRole, 'desktop-client');
-    const repeatedLocalBootstrap = await requestJson(
-      baseUrl,
-      'POST',
-      '/api/desktop-identity/single-user/bootstrap',
-      { body: bootstrapPayload, headers: localHeaders }
-    );
-    assert.strictEqual(repeatedLocalBootstrap.status, 200,
-      'bootstrap must remain retryable after the database transaction but before runtime adoption');
-    singleUserRuntime.nodeRole = 'primary-host';
-    singleUserRuntime.epochId = 'single-host-epoch';
-    singleUserRuntime.generation = 1;
-    const deniedGrant = await requestJson(
-      baseUrl,
-      'POST',
-      '/api/desktop-identity/single-user/grants',
-      { body: {} }
-    );
-    assert.strictEqual(deniedGrant.status, 403);
-    const capabilityResponse = await requestJson(
-      baseUrl,
-      'GET',
-      '/api/desktop-identity/single-user/pairing-capability'
-    );
-    assert.strictEqual(capabilityResponse.status, 200);
-    assert.strictEqual(capabilityResponse.body.capability.id, pairingCapability.id);
-    const encryptedEnvelope = {
-      protocolVersion: 'gewu-single-user-pairing/v1',
-      capabilityId: pairingCapability.id,
-      clientEphemeralPublicKey: 'ephemeral-public-key',
-      iv: 'AAAAAAAAAAAAAAAA',
-      ciphertext: 'ciphertext',
-      tag: 'AAAAAAAAAAAAAAAAAAAAAA==',
-    };
-    db.prepare(`INSERT INTO desktop_device_authorizations
-      (id,device_id,device_name,device_kind,user_id,public_key,key_fingerprint,status,
-       source_challenge_id,authorization_source,last_phone_verified_at,phone_reverify_due_at,
-       credential_version,row_version,created_at,updated_at)
-      VALUES ('ordinary-auth-1','ordinary-device-1','Ordinary PC','desktop-client',?,
-        'ordinary-public-key',?,'active','single-user-pair-request-1','single_user_pairing',
-        ?,?,1,1,?,?)`)
-      .run(canonicalId, 'b'.repeat(64), clock.toISOString(), '2036-07-17T09:00:00.000Z',
-        clock.toISOString(), clock.toISOString());
-    const pairResponse = await requestJson(
-      baseUrl,
-      'POST',
-      '/api/desktop-identity/single-user/pairing-requests',
-      { body: encryptedEnvelope }
-    );
-    assert.strictEqual(pairResponse.status, 200);
-    assert.strictEqual(pairResponse.body.authorization.id, 'ordinary-auth-1');
-    assert.strictEqual(pairResponse.body.profile.userId, canonicalId);
-    assert.strictEqual(pairResponse.body.offlineLease.authorizationId, 'ordinary-auth-1');
-    assert.deepStrictEqual(Object.keys(singleUserCalls.at(-1)[1].envelope).sort(), Object.keys(encryptedEnvelope).sort());
-    db.prepare("DELETE FROM desktop_device_authorizations WHERE id='ordinary-auth-1'").run();
+    const retiredRoute = await fetch(`${baseUrl}/api/desktop-identity/single-user/bootstrap`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    });
+    assert.strictEqual(retiredRoute.status, 404, 'legacy single-user routes must not remain registered');
 
     async function startDevice(deviceId, deviceName, key) {
       const response = await requestJson(
@@ -643,6 +526,76 @@ function generateDeviceKey() {
     const thirdExchange = await exchangeDevice(thirdApproved, thirdKey, thirdStarted.challengeSecret);
     assert.strictEqual(sessionService.verifySessionToken(thirdExchange.token).deviceId, 'device-http-third');
 
+    const activationKey = generateDeviceKey();
+    const activationStarted = await startDevice('device-http-activation', 'Activation PC', activationKey);
+    const activationConfirmed = await confirmDevice(activationStarted.id, 'activation');
+    const activationApproved = await approveDevice(activationConfirmed.challenge, elevatedHost.token);
+    const activationExchangeProof = crypto.sign(
+      null,
+      Buffer.from(desktopExchangeSigningPayload({
+        challengeId: activationApproved.id,
+        deviceId: activationApproved.deviceId,
+        rowVersion: activationApproved.rowVersion,
+        challengeSecret: activationStarted.challengeSecret,
+      }), 'utf8'),
+      activationKey.privateKey
+    ).toString('base64');
+    const activationPending = await requestJson(
+      baseUrl,
+      'POST',
+      `/api/desktop-identity/challenges/${activationApproved.id}/activation/exchange`,
+      { body: { challengeSecret: activationStarted.challengeSecret, signature: activationExchangeProof, expectedRowVersion: activationApproved.rowVersion } }
+    );
+    assert.strictEqual(activationPending.status, 200, JSON.stringify(activationPending.body));
+    assert.strictEqual(activationPending.body.data.activation.status, 'activation_pending');
+    assert.strictEqual(activationPending.body.data.activationPackage.authorization.status, 'active');
+    assert.strictEqual(activationPending.body.data.activationPackage.authorityId, 'authority-http-1');
+    assert.strictEqual(activationPending.body.data.activationPackage.hostEpochId, 'epoch-http-1');
+    assert.strictEqual(activationPending.body.data.activationPackage.hostGeneration, 7);
+    assert.strictEqual(activationPending.body.data.activationPackage.grant.version, 1);
+    assert.strictEqual(activationPending.body.data.activationPackage.lease.activeRole, 'teacher');
+    assert.strictEqual(
+      Date.parse(activationPending.body.data.activationPackage.lease.expiresAt)
+        - Date.parse(activationPending.body.data.activationPackage.lease.issuedAt),
+      14 * 24 * 60 * 60 * 1000
+    );
+    assert.strictEqual(
+      db.prepare('SELECT status FROM desktop_device_authorizations WHERE device_id=?').get('device-http-activation').status,
+      'pending'
+    );
+    const activationFinalizeProof = crypto.sign(
+      null,
+      Buffer.from(activationReceiptSigningPayload({
+        activationId: activationPending.body.data.activation.id,
+        packageHash: activationPending.body.data.activation.packageHash,
+      }), 'utf8'),
+      activationKey.privateKey
+    ).toString('base64');
+    const activationFinalized = await requestJson(
+      baseUrl,
+      'POST',
+      `/api/desktop-identity/activations/${activationPending.body.data.activation.id}/finalize`,
+      { body: { signature: activationFinalizeProof } }
+    );
+    assert.strictEqual(activationFinalized.status, 200);
+    assert.strictEqual(activationFinalized.body.data.authorization.status, 'active');
+    assert.ok(activationFinalized.body.data.token);
+    assert.strictEqual(activationFinalized.body.data.offlineLease.deviceId, 'device-http-activation');
+    assert.strictEqual(
+      db.prepare("SELECT status FROM device_grants WHERE device_id='device-http-activation'").get().status,
+      'active'
+    );
+    assert.strictEqual(
+      db.prepare("SELECT status FROM device_leases WHERE device_id='device-http-activation'").get().status,
+      'active'
+    );
+    assert.strictEqual(
+      db.prepare(`SELECT version FROM authority_projection_versions
+        WHERE authority_id='authority-http-1' AND host_epoch_id='epoch-http-1'`).get().version,
+      1,
+      'activation finalize must advance the control/projection source version atomically',
+    );
+
     const injectedDailyStart = await requestJson(
       baseUrl,
       'POST',
@@ -789,7 +742,7 @@ function generateDeviceKey() {
     assert.strictEqual(devices.status, 200);
     assert.deepStrictEqual(
       devices.body.data.items.map(function (item) { return item.deviceId; }).sort(),
-      ['device-http-host', 'device-http-second', 'device-http-third']
+      ['device-http-activation', 'device-http-host', 'device-http-second', 'device-http-third']
     );
     assert.ok(devices.body.data.items.every(function (item) { return item.userId === canonicalId; }));
 
@@ -802,7 +755,7 @@ function generateDeviceKey() {
     assert.strictEqual(allDevices.status, 200);
     assert.deepStrictEqual(
       allDevices.body.data.items.map(function (item) { return item.deviceId; }).sort(),
-      ['device-http-host', 'device-http-other', 'device-http-second', 'device-http-third']
+      ['device-http-activation', 'device-http-host', 'device-http-other', 'device-http-second', 'device-http-third']
     );
     assert.strictEqual(allDevices.body.data.items.find(function (item) {
       return item.deviceId === 'device-http-host';

@@ -4,7 +4,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { getRuntimeConfig } from '../services/runtimeConfigClient';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 import { resolveDesktopIdentityBaseUrl } from '../services/managedSyncConfig.mjs';
-import { publishCloudHeartbeat } from '../services/cloudRelayHostApi';
+import { deviceStatusPresentation } from '../services/deviceStatusPresentation.mjs';
 import {
   approveDesktopChallenge,
   activatePrimaryHostTransfer,
@@ -21,6 +21,7 @@ import {
   revokeDesktopDevice,
   startPrimaryHostOperation,
 } from '../services/identityDeviceCenterPolicy.mjs';
+import AuthorityRoleApplicationsPanel from '../components/AuthorityRoleApplicationsPanel';
 import './IdentityDeviceCenter.css';
 
 type ViewState = 'loading' | 'ready' | 'empty' | 'offline' | 'expired' | 'conflict' | 'concurrent' | 'revoked' | 'error';
@@ -61,10 +62,10 @@ const IdentityDeviceCenter: React.FC = () => {
   const [pendingRecoveryDelivery, setPendingRecoveryDelivery] = useState<any>(null);
   const [revealedRecoveryPackage, setRevealedRecoveryPackage] = useState<any>(null);
   const [runtimeConfigState, setRuntimeConfigState] = useState<any>(null);
-  const [singleUserPairingGrant, setSingleUserPairingGrant] = useState<any>(null);
-  const [pairingSecondsRemaining, setPairingSecondsRemaining] = useState(0);
   const operationRef = useRef('');
   const requestContextRef = useRef<any>(null);
+
+  useEffect(() => () => { Modal.destroyAll(); }, []);
 
   const load = useCallback(async () => {
     setViewState('loading');
@@ -72,17 +73,19 @@ const IdentityDeviceCenter: React.FC = () => {
     try {
       const runtimeConfig = await getRuntimeConfig();
       setRuntimeConfigState(runtimeConfig);
-      const session = readDesktopAuthorizationSession();
-      let authorizationSource = '';
+      let session;
       try {
-        const vaultStatus = await window.desktopIdentity?.status?.();
-        authorizationSource = String(vaultStatus?.authorizationSource || '');
-      } catch (_vaultError) { /* fall back to the managed cloud identity plane */ }
-      const baseUrl = resolveDesktopIdentityBaseUrl(runtimeConfig, { authorizationSource });
-      // 配对客户端在外网时局域网主机不可达，改经云中继由主机代为查询设备清单。
-      const relayBaseUrl = authorizationSource === 'single_user_pairing'
-        ? String((runtimeConfig as any)?.cloudBaseUrl || '')
-        : '';
+        session = readDesktopAuthorizationSession();
+      } catch (sessionError) {
+        // Online sessions are intentionally memory-only. A page entered after an
+        // ordinary unlock can therefore need one local signed challenge before
+        // it requests the protected device list.
+        const provider = (window as any).desktopIdentitySessionProvider;
+        if (!provider?.ensureOnline) throw sessionError;
+        await provider.ensureOnline();
+        session = readDesktopAuthorizationSession();
+      }
+      const baseUrl = resolveDesktopIdentityBaseUrl(runtimeConfig);
       const primaryHostRuntime = (window as any).primaryHostRuntime;
       let hostRuntimeStatus = null;
       try {
@@ -91,7 +94,9 @@ const IdentityDeviceCenter: React.FC = () => {
           : null;
       } catch (_error) { /* cloud state remains readable when local runtime status is unavailable */ }
       requestContextRef.current = { runtimeConfig, session, baseUrl };
-      const next = await loadIdentityDeviceCenter({ runtimeConfig, session, baseUrl, relayBaseUrl, hostRuntimeStatus, relaySleep: 2000, relayPollIntervalMs: 1000, relayMaxPolls: 30 });
+      const next = await loadIdentityDeviceCenter({
+        runtimeConfig, session, baseUrl, hostRuntimeStatus,
+      });
       const localRecoveryDelivery = hostRuntimeStatus?.credential?.recoveryDelivery;
       if (localRecoveryDelivery?.pending) {
         setPendingRecoveryDelivery(localRecoveryDelivery);
@@ -112,20 +117,6 @@ const IdentityDeviceCenter: React.FC = () => {
 
   useEffect(() => { void load(); }, [load]);
 
-  useEffect(() => {
-    if (!singleUserPairingGrant?.expiresAt) {
-      setPairingSecondsRemaining(0);
-      return undefined;
-    }
-    const update = () => setPairingSecondsRemaining(Math.max(
-      0,
-      Math.ceil((Date.parse(singleUserPairingGrant.expiresAt) - Date.now()) / 1000)
-    ));
-    update();
-    const timer = window.setInterval(update, 1000);
-    return () => window.clearInterval(timer);
-  }, [singleUserPairingGrant?.expiresAt]);
-
   const runOperation = async (key: string, work: () => Promise<any>, successText: string) => {
     if (operationRef.current) return;
     operationRef.current = key;
@@ -145,60 +136,6 @@ const IdentityDeviceCenter: React.FC = () => {
     }
   };
 
-  const issueSingleUserPairingCode = async () => {
-    if (operationRef.current) return;
-    operationRef.current = 'single-user:pairing:issue';
-    setOperationKey(operationRef.current);
-    setErrorCode('');
-    try {
-      const singleUserRuntime = (window as any).singleUserRuntime;
-      if (!singleUserRuntime?.issuePairingCode) throw Object.assign(new Error('SINGLE_USER_MODE_DISABLED'), { code: 'SINGLE_USER_MODE_DISABLED' });
-      const response = await singleUserRuntime.issuePairingCode();
-      setSingleUserPairingGrant(response.grant);
-      let cloudPublished = false;
-      try {
-        const heartbeat = await publishCloudHeartbeat();
-        cloudPublished = heartbeat?.success !== false;
-      } catch (_cloudError) {
-        cloudPublished = false;
-      }
-      if (cloudPublished) {
-        message.success('\u4e00\u6b21\u6027\u914d\u5bf9\u7801\u5df2\u751f\u6210\uff0c\u4e91\u4e2d\u7ee7\u5df2\u5c31\u7eea');
-      } else {
-        message.warning('\u914d\u5bf9\u7801\u5df2\u751f\u6210\uff0c\u4f46\u4e91\u4e2d\u7ee7\u6682\u672a\u5c31\u7eea\uff1b\u5c40\u57df\u7f51\u53ef\u76f4\u63a5\u4f7f\u7528\uff0c\u4e91\u7aef\u5c06\u81ea\u52a8\u91cd\u8bd5');
-      }
-    } catch (error: any) {
-      setErrorCode(error?.code || 'DESKTOP_PAIRING_GRANT_FAILED');
-    } finally {
-      operationRef.current = '';
-      setOperationKey('');
-    }
-  };
-
-  const revokeSingleUserPairingCode = async () => {
-    if (operationRef.current || !singleUserPairingGrant?.id) return;
-    operationRef.current = 'single-user:pairing:revoke';
-    setOperationKey(operationRef.current);
-    try {
-      const singleUserRuntime = (window as any).singleUserRuntime;
-      if (!singleUserRuntime?.revokePairingCode) throw Object.assign(new Error('SINGLE_USER_MODE_DISABLED'), { code: 'SINGLE_USER_MODE_DISABLED' });
-      await singleUserRuntime.revokePairingCode({ grantId: singleUserPairingGrant.id });
-      setSingleUserPairingGrant(null);
-      message.success('\u5f53\u524d\u914d\u5bf9\u7801\u5df2\u64a4\u9500');
-    } catch (error: any) {
-      setErrorCode(error?.code || 'DESKTOP_PAIRING_GRANT_REVOKE_FAILED');
-    } finally {
-      operationRef.current = '';
-      setOperationKey('');
-    }
-  };
-
-  const copySingleUserPairingCode = async () => {
-    if (!singleUserPairingGrant?.code) return;
-    await navigator.clipboard.writeText(singleUserPairingGrant.code);
-    message.success('\u914d\u5bf9\u7801\u5df2\u590d\u5236');
-  };
-
   const confirmApproval = (row: any) => {
     Modal.confirm({
       title: `\u6279\u51c6 ${row.deviceName}`,
@@ -212,9 +149,13 @@ const IdentityDeviceCenter: React.FC = () => {
       okText: '\u6279\u51c6\u6b64\u8bbe\u5907', cancelText: '\u53d6\u6d88',
       async onOk() {
         const context = requestContextRef.current;
-        await runOperation(`approve:${row.id}`, () => approveDesktopChallenge({
-          ...context, request: buildApprovalBody(row),
-        }), '\u8bbe\u5907\u7533\u8bf7\u5df2\u6279\u51c6');
+        try {
+          await runOperation(`approve:${row.id}`, () => approveDesktopChallenge({
+            ...context, request: buildApprovalBody(row),
+          }), '\u8bbe\u5907\u7533\u8bf7\u5df2\u6279\u51c6');
+        } catch (_operationError) {
+          // Modal confirmation must resolve after runOperation has rendered the error.
+        }
       },
     });
   };
@@ -226,9 +167,13 @@ const IdentityDeviceCenter: React.FC = () => {
       okText: '\u786e\u8ba4\u62d2\u7edd', okButtonProps: { danger: true }, cancelText: '\u53d6\u6d88',
       async onOk() {
         const context = requestContextRef.current;
-        await runOperation(`reject:${row.id}`, () => rejectDesktopChallenge({
-          ...context, request: buildRejectionBody(row, '\u7ba1\u7406\u5458\u6838\u5bf9\u540e\u62d2\u7edd'),
-        }), '\u8bbe\u5907\u7533\u8bf7\u5df2\u62d2\u7edd');
+        try {
+          await runOperation(`reject:${row.id}`, () => rejectDesktopChallenge({
+            ...context, request: buildRejectionBody(row, '\u7ba1\u7406\u5458\u6838\u5bf9\u540e\u62d2\u7edd'),
+          }), '\u8bbe\u5907\u7533\u8bf7\u5df2\u62d2\u7edd');
+        } catch (_operationError) {
+          // Modal confirmation must resolve after runOperation has rendered the error.
+        }
       },
     });
   };
@@ -250,11 +195,15 @@ const IdentityDeviceCenter: React.FC = () => {
         const options = replacement
           ? { reason: 'replaced', replacementDeviceId }
           : { reason: 'user_request' };
-        await runOperation(`revoke:${device.deviceId}`, () => revokeDesktopDevice({
-          ...context, request: buildRevocationBody(device, options),
-        }), replacement
-          ? '\u6362\u673a\u5173\u7cfb\u5df2\u4fdd\u5b58\uff0c\u65e7\u7535\u8111\u5df2\u64a4\u9500'
-          : '\u8bbe\u5907\u5df2\u64a4\u9500');
+        try {
+          await runOperation(`revoke:${device.deviceId}`, () => revokeDesktopDevice({
+            ...context, request: buildRevocationBody(device, options),
+          }), replacement
+            ? '\u6362\u673a\u5173\u7cfb\u5df2\u4fdd\u5b58\uff0c\u65e7\u7535\u8111\u5df2\u64a4\u9500'
+            : '\u8bbe\u5907\u5df2\u64a4\u9500');
+        } catch (_operationError) {
+          // Modal confirmation must resolve after runOperation has rendered the error.
+        }
       },
     });
   };
@@ -676,11 +625,14 @@ const IdentityDeviceCenter: React.FC = () => {
 
   const deviceColumns: ColumnsType<any> = [
     { title: '\u8bbe\u5907', render: (_, row) => <div><Space wrap><strong>{row.deviceName}</strong>{row.isHost && <Tag color="blue">{'\u6570\u636e\u4e3b\u673a'}</Tag>}{row.isCurrent && <Tag color="green">{'\u5f53\u524d\u7535\u8111'}</Tag>}</Space><div className="identity-device-center__muted">{row.deviceId}</div></div> },
-    { title: '\u72b6\u6001', render: (_, row) => <div>
-      <Tag color={row.status === 'active' ? 'green' : row.status === 'replaced' ? 'gold' : 'default'}>{deviceStatusLabels[row.status] || row.status}</Tag>
+    { title: '\u72b6\u6001', render: (_, row) => {
+      const presentation = deviceStatusPresentation(row);
+      return <div>
+      <Tag color={presentation.color}>{presentation.label}</Tag>
       {row.replacedByName && <div className="identity-device-center__relation">{'\u5df2\u7531 '}{row.replacedByName}{' \u66ff\u6362'}</div>}
       {row.replacesDeviceIds.length > 0 && <div className="identity-device-center__relation">{'\u66ff\u6362\u65e7\u8bbe\u5907\uff1a'}{row.replacesDeviceIds.join(' / ')}</div>}
-    </div> },
+    </div>;
+    } },
     { title: '\u5bc6\u94a5\u6307\u7eb9', dataIndex: 'keyFingerprintSummary', responsive: ['lg'] },
     { title: '\u6700\u8fd1\u6d3b\u52a8', render: (_, row) => localTime(row.lastSeenAt || row.updatedAt) },
     { title: '\u64cd\u4f5c', render: (_, row) => row.canRevoke ? <Space direction="vertical" size={4}>
@@ -712,33 +664,6 @@ const IdentityDeviceCenter: React.FC = () => {
     {viewState === 'concurrent' && <Alert className="identity-device-center__alert" showIcon type="info" message={'\u72b6\u6001\u5df2\u88ab\u53e6\u4e00\u9879\u64cd\u4f5c\u66f4\u65b0\uff0c\u8bf7\u5237\u65b0'} />}
     {viewState === 'revoked' && <Alert className="identity-device-center__alert" showIcon type="error" message={'\u5f53\u524d\u8bbe\u5907\u6388\u6743\u5df2\u64a4\u9500\uff0c\u8bf7\u91cd\u65b0\u8fdb\u5165\u767b\u5f55\u6d41\u7a0b'} />}
 
-    {runtimeConfigState?.buildFlavor === 'primary-host'
-      && runtimeConfigState?.desktopIdentityMode === 'single-user' && (
-      <Card className="identity-device-center__section" title={'\u666e\u901a\u684c\u9762\u7aef\u4e00\u6b21\u6027\u914d\u5bf9'}>
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Typography.Paragraph type="secondary">
-            {'\u6bcf\u6b21\u53ea\u751f\u6210\u4e00\u4e2a 10 \u5206\u949f\u6709\u6548\u7684\u914d\u5bf9\u7801\uff1b\u65b0\u7801\u4f1a\u64a4\u9500\u65e7\u7801\u3002\u666e\u901a\u7aef\u914d\u5bf9\u6210\u529f\u540e\u4ecd\u9700\u624b\u52a8\u53d1\u8d77\u540c\u6b65\u3002'}
-          </Typography.Paragraph>
-          {singleUserPairingGrant && pairingSecondsRemaining > 0 ? (
-            <>
-              <Typography.Title level={3} copyable={false} style={{ margin: 0, letterSpacing: 3 }}>
-                {String(singleUserPairingGrant.code).match(/.{1,4}/g)?.join('-')}
-              </Typography.Title>
-              <Tag color="orange">{Math.floor(pairingSecondsRemaining / 60)}:{String(pairingSecondsRemaining % 60).padStart(2, '0')} {'\u540e\u8fc7\u671f'}</Tag>
-              <Space wrap>
-                <Button onClick={() => void copySingleUserPairingCode()}>{'\u590d\u5236\u914d\u5bf9\u7801'}</Button>
-                <Button danger loading={operationKey === 'single-user:pairing:revoke'} onClick={() => void revokeSingleUserPairingCode()}>{'\u64a4\u9500\u5f53\u524d\u914d\u5bf9\u7801'}</Button>
-              </Space>
-            </>
-          ) : (
-            <Button type="primary" loading={operationKey === 'single-user:pairing:issue'} onClick={() => void issueSingleUserPairingCode()}>
-              {'\u751f\u6210\u4e00\u6b21\u6027\u914d\u5bf9\u7801'}
-            </Button>
-          )}
-        </Space>
-      </Card>
-    )}
-
     {viewState === 'loading' && !snapshot && <Card className="identity-device-center__loading"><Spin /><span>{'\u6b63\u5728\u8bfb\u53d6\u8eab\u4efd\u4e0e\u8bbe\u5907\u72b6\u6001\u2026'}</span></Card>}
     {viewState === 'empty' && <Card><Empty description={'\u6ca1\u6709\u53ef\u663e\u793a\u7684\u8bbe\u5907\u8bb0\u5f55'} /></Card>}
 
@@ -756,7 +681,7 @@ const IdentityDeviceCenter: React.FC = () => {
         {!snapshot.access.canReview
           ? <Alert showIcon type="info" message={'\u5f53\u524d\u8eab\u4efd\u4e0d\u663e\u793a\u5ba1\u6279\u64cd\u4f5c'} description={snapshot.access.isPrimaryHost
             ? '\u8bf7\u5207\u6362\u5230\u8d85\u7ea7\u7ba1\u7406\u5458\u89d2\u8272\uff1b\u8001\u5e08\u6216\u666e\u901a\u7ba1\u7406\u5458\u89d2\u8272\u53ea\u67e5\u770b\u672c\u4eba\u8bbe\u5907\u3002'
-            : '\u8bbe\u5907\u5ba1\u6279\u53ea\u5728\u672c\u5730\u6570\u636e\u4e3b\u673a\u7684\u8d85\u7ea7\u7ba1\u7406\u5458\u8eab\u4efd\u4e2d\u663e\u793a\u3002'} />
+            : '\u8bf7\u5728\u53e6\u4e00\u53f0\u5df2\u6388\u6743\u7684\u8d85\u7ea7\u7ba1\u7406\u5458\u8bbe\u5907\u4e0a\u5ba1\u6838\uff1b\u5ba1\u6838\u8bbe\u5907\u4e0d\u80fd\u662f\u7533\u8bf7\u8bbe\u5907\u672c\u8eab\u3002'} />
           : <Table rowKey="id" dataSource={snapshot.pending} columns={pendingColumns} pagination={false} locale={{ emptyText: <Empty description={'\u6682\u65e0\u5df2\u5b8c\u6210\u624b\u673a\u53f7\u9a8c\u8bc1\u7684\u5f85\u5ba1\u7533\u8bf7'} /> }} />}
       </Card>
 
@@ -851,6 +776,8 @@ const IdentityDeviceCenter: React.FC = () => {
         />}
       </Card>
     </>}
+
+    <AuthorityRoleApplicationsPanel />
 
     <Modal
       open={Boolean(hostOperation)}

@@ -64,44 +64,11 @@ function insertAuthorization(
 
 insertAuthorization('authorization-host', 'device-host', '1'.repeat(64));
 insertAuthorization('authorization-second', 'device-second', '2'.repeat(64));
-insertAuthorization(
-  'authorization-paired',
-  'device-paired',
-  '3'.repeat(64),
-  'single_user_pairing',
-  'desktop-client',
-  '2026-07-17T07:00:00.000Z'
-);
-insertAuthorization(
-  'authorization-single-host',
-  'device-single-host',
-  '4'.repeat(64),
-  'single_user_local_bootstrap',
-  'primary-host',
-  '2026-07-17T07:00:00.000Z'
-);
-db.prepare(`INSERT INTO primary_host_operation_challenges
-  (id,operation,requested_by_user_id,requested_by_device_id,target_device_id,status,
-   expires_at,row_version,created_at,updated_at,consumed_at)
-  VALUES ('single-user-session-challenge','bootstrap',?, 'device-single-host','device-single-host',
-    'consumed','2026-07-17T09:00:00.000Z',1,?,?,?)`)
-  .run(canonicalId, clock.toISOString(), clock.toISOString(), clock.toISOString());
-db.prepare(`INSERT INTO primary_host_epochs
-  (id,generation,device_id,user_id,authorization_id,status,activation_reason,challenge_id,
-   db_instance_digest,schema_version,store_id,db_authority_id,host_credential_hash,
-   credential_version,row_version,created_at,updated_at,activated_at)
-  VALUES ('single-user-session-epoch',1,'device-single-host',?,'authorization-single-host',
-    'active','bootstrap','single-user-session-challenge',?,3120,'store-1','authority-1',?,1,1,?,?,?)`)
-  .run(canonicalId, 'a'.repeat(64), 'b'.repeat(64), clock.toISOString(), clock.toISOString(), clock.toISOString());
-
-let singleUserMode = true;
-
 const service = createDesktopSessionService({
   db,
   jwtSecret,
   now: function () { return new Date(clock); },
   uuid: function () { sequence += 1; return `desktop-session-${sequence}`; },
-  isSingleUserModeActive: function () { return singleUserMode; },
 });
 
 assert.ok(db.prepare(
@@ -119,30 +86,8 @@ assert.strictEqual(teacherSession.session.authVersion, 7);
 assert.strictEqual(teacherSession.session.credentialVersion, 1);
 assert.strictEqual(teacherSession.session.authorizationId, 'authorization-host');
 assert.strictEqual(teacherSession.session.authTime, null);
-assert.ok(Date.parse(teacherSession.session.expiresAt) - clock.getTime() <= 8 * 60 * 60 * 1000);
+assert.ok(Date.parse(teacherSession.session.expiresAt) - clock.getTime() <= 14 * 24 * 60 * 60 * 1000);
 assert.ok(!teacherSession.token.includes(jwtSecret));
-
-const pairedSession = service.issueSession({
-  userId: canonicalId,
-  deviceId: 'device-paired',
-});
-assert.strictEqual(service.verifySessionToken(pairedSession.token).deviceKind, 'desktop-client');
-const singleHostSession = service.issueSession({
-  userId: canonicalId,
-  deviceId: 'device-single-host',
-  activeRole: 'super_admin',
-});
-assert.strictEqual(service.verifySessionToken(singleHostSession.token).deviceKind, 'primary-host');
-singleUserMode = false;
-assert.throws(
-  function () { service.verifySessionToken(pairedSession.token); },
-  function (error) { return error && error.code === 'DESKTOP_SINGLE_USER_AUTHORIZATION_DISABLED'; }
-);
-assert.throws(
-  function () { service.issueSession({ userId: canonicalId, deviceId: 'device-single-host' }); },
-  function (error) { return error && error.code === 'DESKTOP_SINGLE_USER_AUTHORIZATION_DISABLED'; }
-);
-singleUserMode = true;
 
 const teacherContext = service.verifySessionToken(teacherSession.token);
 assert.strictEqual(teacherContext.userId, canonicalId);
@@ -203,7 +148,7 @@ assert.throws(
     service.issueSession({
       userId: canonicalId,
       deviceId: 'device-host',
-      durationMs: 8 * 60 * 60 * 1000 + 1,
+      durationMs: 14 * 24 * 60 * 60 * 1000 + 1,
     });
   },
   function (error) { return error && error.code === 'DESKTOP_SESSION_DURATION_INVALID'; }
@@ -294,7 +239,7 @@ assert.throws(
   function (error) { return error && error.code === 'DESKTOP_DEVICE_VERSION_STALE'; }
 );
 
-clock = new Date('2026-07-17T16:00:01.000Z');
+clock = new Date('2026-07-31T08:00:01.000Z');
 assert.throws(
   function () { service.verifySessionToken(teacherSession.token); },
   function (error) { return error && error.code === 'DESKTOP_SESSION_EXPIRED'; }

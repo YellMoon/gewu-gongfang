@@ -3,18 +3,6 @@ declare module '*.json' {
   export default value;
 }
 
-declare module './services/oneClickSyncService.mjs' {
-  export const buildOneClickSyncPreview: any;
-  export const chooseSyncTransport: any;
-  export const runOneClickSync: any;
-}
-
-declare module './services/oneClickSyncTransports.mjs' {
-  export const createCloudRelaySyncTransport: any;
-  export const createDirectSyncTransport: any;
-  export const discoverLanDirectSyncTransports: any;
-  export const normalizeApiBaseUrl: any;
-}
 declare module './services/desktopAuthorizationSession.mjs' {
   export const readDesktopAuthorizationSession: any;
   export const hydrateDesktopAuthorizationSession: any;
@@ -64,12 +52,6 @@ declare module './services/managedSyncConfig.mjs' {
   export const resolveManagedSyncConfig: any;
   export const syncFailureMessage: any;
 }
-declare module './services/singleUserPairingClient.mjs' {
-  export const discoverPairingCapability: any;
-  export const normalizePairingCode: any;
-  export const pollPairingResult: any;
-  export const submitPairingRequest: any;
-}
 declare module './services/systemSettingsRolePolicy.mjs' { export const systemSettingsRolePolicy: any; }
 
 interface Window {
@@ -80,11 +62,6 @@ interface Window {
   desktopIdentity?: {
     status(): Promise<any>;
     beginRegistration(input?: { deviceName?: string }): Promise<any>;
-    beginSingleUserEnrollment(input?: { deviceName?: string; deviceKind?: string }): Promise<any>;
-    createPairingEnvelope(input: {
-      capability: Record<string, any>;
-      pairingCode: string;
-    }): Promise<Record<string, any>>;
     beginPasswordReset(): Promise<any>;
     completeRegistration(input: {
       password: string;
@@ -103,16 +80,51 @@ interface Window {
     refreshOfflineLease(input: Record<string, any>): Promise<any>;
     signChallenge(input: Record<string, any>): Promise<any>;
   };
-  singleUserRuntime?: {
-    enableMode(input: { confirmation: 'ENABLE_SINGLE_USER_MODE' }): Promise<any>;
-    disableMode(input: { confirmation: 'DISABLE_SINGLE_USER_MODE' }): Promise<any>;
-    status(): Promise<any>;
-    bootstrap(input: Record<string, any>): Promise<any>;
-    resetHostPassword(input: Record<string, any>): Promise<any>;
-    issuePairingCode(): Promise<any>;
-    revokePairingCode(input: { grantId: string }): Promise<any>;
+  desktopAuthority?: {
+    appendDraft(input: {
+      type: string;
+      payload: Record<string, unknown>;
+      preview?: Record<string, unknown>;
+    }): Promise<any>;
+    appendDraftSync(input: {
+      type: string;
+      payload: Record<string, unknown>;
+      preview?: Record<string, unknown>;
+    }): any;
+    appendDraftBatchSync(inputs: Array<{
+      type: string;
+      payload: Record<string, unknown>;
+      preview?: Record<string, unknown>;
+    }>): any[];
+    list(): Promise<Array<{
+      id: string;
+      type: string;
+      status: 'awaiting_confirmation' | 'confirmed' | 'submitted' | 'completed' | 'conflict';
+      updatedAt?: string;
+      preview?: Record<string, unknown>;
+      submission?: { transportUsed?: string } | null;
+      receipt?: { projectionVersion?: number } | null;
+      conflict?: { code?: string } | null;
+      [key: string]: any;
+    }>>;
+    readProjection(input?: { minSourceVersion?: number }): Promise<{
+      protocol: 'gewu.authority-projection.v1';
+      authorityId: string;
+      hostEpochId: string;
+      userId: string;
+      role: string;
+      sourceVersion: number;
+      payload: Record<string, any>;
+      payloadHash: string;
+      signature: string;
+    }>;
+    submit(id: string): Promise<any>;
+    confirmAndSubmit(id: string): Promise<any>;
   };
   primaryHostRuntime?: {
     restart(): Promise<any>;
+    runtimeStatus(): Promise<any>;
+    relaunchReadiness(): Promise<any>;
+    executeLocalDraft(draft: { type: string; payload: Record<string, any> }): Promise<any>;
   };
 }

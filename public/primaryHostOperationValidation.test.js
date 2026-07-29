@@ -10,6 +10,7 @@ const {
   generateRecoveryDeliveryKeyPair,
 } = require('../backend/src/services/primaryHostRecoveryDeliveryProtocol');
 const { buildPrimaryHostOperationManifest } = require('./primaryHostOperationValidation');
+const { derivePrimaryHostSigningKey } = require('./primaryHostSigningKey');
 
 assert.ok(!packageJson.build.files.includes('public/primaryHostOperationValidation.js'));
 assert.ok(hostBuilderConfig.files.includes('public/primaryHostOperationValidation.js'));
@@ -30,11 +31,18 @@ const localPreflight = {
   sourceRowCounts: {}, visibleRowCounts: {},
 };
 const localPrepared = { evidence, localValidation: { backup, localPreflight } };
+const derivedHostSigningKey = derivePrimaryHostSigningKey('operation-validation-host-credential');
+const hostSigningKey = {
+  algorithm: derivedHostSigningKey.algorithm,
+  publicKeyPem: derivedHostSigningKey.publicKeyPem,
+  publicKeyFingerprint: derivedHostSigningKey.publicKeyFingerprint,
+};
 const credentialStage = {
   id: 'transfer:challenge-transfer-1',
   deviceId: 'new-host',
   targetGeneration: 2,
   commitment: 'c'.repeat(64),
+  hostSigningKey,
 };
 const recoveryDeliveryKeyPair = generateRecoveryDeliveryKeyPair();
 const recoveryDeliveryKey = {
@@ -132,6 +140,16 @@ assert.throws(() => buildPrimaryHostOperationManifest({
   credentialStage: { ...credentialStage, id: 'bootstrap:challenge-bootstrap-1', targetGeneration: 1 },
   recoveryDeliveryKey: { ...recoveryDeliveryKey, publicKeyFingerprint: '0'.repeat(64) },
 }), error => error.code === 'PRIMARY_HOST_RECOVERY_DELIVERY_KEY_INVALID');
+assert.throws(() => buildPrimaryHostOperationManifest({
+  operation: 'bootstrap', deviceId: 'new-host', targetGeneration: 1,
+  credentialStage: {
+    ...credentialStage,
+    id: 'bootstrap:challenge-bootstrap-1',
+    targetGeneration: 1,
+    hostSigningKey: { ...hostSigningKey, publicKeyFingerprint: '0'.repeat(64) },
+  },
+  recoveryDeliveryKey,
+}), error => error.code === 'PRIMARY_HOST_SIGNING_PUBLIC_KEY_INVALID');
 assert.throws(() => buildPrimaryHostOperationManifest({
   operation: 'recovery', deviceId: 'new-host', sourceGeneration: 1, targetGeneration: 2,
   localPrepared, controlStatus, credentialStage: { ...credentialStage, id: 'recovery:challenge-recovery-1' },

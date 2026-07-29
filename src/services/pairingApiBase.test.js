@@ -22,4 +22,12 @@ const renewed=await resolveRenewableOnlineSyncActor({
 });
 assert.deepStrictEqual(renewed,online);
 assert.strictEqual(renewalCalls,1);
+let missingContextSession=null;let missingContextRenewals=0;
+const renewedFromMissingContext=await resolveRenewableOnlineSyncActor({
+  readSession:()=>{if(!missingContextSession){const e=new Error('AUTHORIZATION_CONTEXT_REQUIRED');e.code='AUTHORIZATION_CONTEXT_REQUIRED';throw e;}return missingContextSession;},
+  ensureOnline:async()=>{missingContextRenewals+=1;missingContextSession=online;},
+  now:'2026-07-17T10:00:00.000Z',
+});
+assert.deepStrictEqual(renewedFromMissingContext,online);
+assert.strictEqual(missingContextRenewals,1,'a fresh desktop process must renew an absent in-memory authorization context');
 console.log('pairing API base tests passed');})().catch(e=>{console.error(e);process.exit(1);});

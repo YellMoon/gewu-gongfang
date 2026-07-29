@@ -6,6 +6,7 @@ const {
   RECOVERY_DELIVERY_KEY_ALGORITHM,
   validateRecoveryDeliveryPublicKey,
 } = require('../backend/src/services/primaryHostRecoveryDeliveryProtocol');
+const { derivePrimaryHostSigningKey } = require('./primaryHostSigningKey');
 
 const STORE_VERSION = 1;
 const STAGED_STORE_VERSION = 2;
@@ -235,6 +236,12 @@ function normalizeAdoption(value = {}) {
 
 function publicStatus(credential) {
   if (!credential) return Object.freeze({ state: 'empty', active: false });
+  const derivedSigningKey = derivePrimaryHostSigningKey(credential.credential);
+  const hostSigningKey = Object.freeze({
+    algorithm: derivedSigningKey.algorithm,
+    publicKeyPem: derivedSigningKey.publicKeyPem,
+    publicKeyFingerprint: derivedSigningKey.publicKeyFingerprint,
+  });
   if (credential.state === 'staged') {
     const result = {
       state: 'staged',
@@ -244,6 +251,7 @@ function publicStatus(credential) {
       deviceId: credential.deviceId,
       generation: credential.generation,
       credentialCommitment: credential.credentialCommitment,
+      hostSigningKey,
     };
     if (credential.version === RECOVERY_DELIVERY_STORE_VERSION) {
       result.recoveryDeliveryKey = Object.freeze({
@@ -263,6 +271,7 @@ function publicStatus(credential) {
     deviceId: credential.deviceId,
     userId: credential.userId,
     activatedAt: credential.activatedAt,
+    hostSigningKey,
     recoveryDelivery: credential.pendingRecoveryDelivery
       ? Object.freeze({
         pending: true,

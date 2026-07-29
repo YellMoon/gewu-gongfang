@@ -1,38 +1,53 @@
 const assert = require('assert');
 const fs = require('fs');
-const source = fs.readFileSync('src/pages/SyncSettings.tsx','utf8');
-const cloudSyncSource = fs.readFileSync('src/pages/CloudSync.tsx','utf8');
-assert.ok(source.includes('readDesktopAuthorizationSession') && source.includes('hydrateDesktopAuthorizationSession'));
-assert.ok(source.includes('resolveRenewableOnlineSyncActor') && source.includes('requireOnlineSession'),
-  'one-click sync must resolve a current online V2 desktop session before transport selection');
-assert.ok(source.includes('desktopIdentitySessionProvider?.ensureOnline?.()'),
-  'one-click sync must renew a missing or expired paired-device session through the startup identity gate');
-assert.ok(!source.includes('pairingPhone') && !source.includes("phone: pairing"), 'desktop pairing must never accept a phone number');
-assert.ok(!source.includes('message="\\u') && !source.includes('description="\\u'), 'escaped CJK copy must be evaluated instead of rendered literally');
-assert.ok((source.match(/sessionResolver: requireOnlineSession/g) || []).length >= 3,
-  'discovered LAN, manual LAN, and cloud transports must share the same online V2 session resolver');
-assert.ok(source.includes('requireOnlineSession,\n        buildLocalDataMaps'),
-  'the sync orchestrator must fail before discovery when only an offline lease is available');
-assert.ok(!source.includes('startPairing') && !source.includes('pollOrExchange'),
-  'SyncSettings must not expose the removed V1 pairing flow after the startup identity gate');
-assert.ok(source.includes('桌面启动身份门统一完成'),
-  'SyncSettings must direct identity management to the startup identity gate');
-for (const pageSource of [source, cloudSyncSource]) {
-  assert.ok(pageSource.includes('runOneClickSync'), 'every desktop sync entry must use the V2 one-click orchestrator');
-  assert.ok(pageSource.includes('readDesktopAuthorizationSession') && pageSource.includes('resolveRenewableOnlineSyncActor'),
-    'every desktop sync entry must use the current V2 desktop session');
-  assert.ok(!pageSource.includes('requestSyncAuthorization') && !pageSource.includes('registerSyncDevice'),
-    'legacy per-sync authorization requests must not remain in desktop sync pages');
-  assert.ok(!pageSource.includes('authorizationToken'), 'legacy sync authorization tokens must not remain in desktop sync pages');
-  assert.ok(pageSource.includes('backupId'), 'sync results must expose the durable backup identifier');
+
+const syncSettings = fs.readFileSync('src/pages/SyncSettings.tsx', 'utf8');
+const cloudSync = fs.readFileSync('src/pages/CloudSync.tsx', 'utf8');
+const outboxPanel = fs.readFileSync('src/components/AuthorityOutboxPanel.tsx', 'utf8');
+const todayWorkbench = fs.readFileSync('src/pages/TodayWorkbench.tsx', 'utf8');
+const syncQuickPanel = fs.readFileSync('src/components/sync/SyncQuickPanel.tsx', 'utf8');
+const preload = fs.readFileSync('public/preload.js', 'utf8');
+const customTypes = fs.readFileSync('src/custom.d.ts', 'utf8');
+
+for (const pageSource of [syncSettings, cloudSync]) {
+  assert.ok(pageSource.includes('AuthorityOutboxPanel'),
+    'each former sync page must render the authority outbox facade');
+  for (const legacy of [
+    'oneClickSync',
+    'desktopAuthorizationSession',
+    'desktopSessionRelayClient',
+    'pairingApiBase',
+    'SyncEngine',
+    'browserDatabase',
+    '/api/sync',
+  ]) {
+    assert.ok(!pageSource.includes(legacy), `${legacy} must not remain in a renderer sync page`);
+  }
 }
-const permissionManager=fs.readFileSync('src/pages/PermissionManager.tsx','utf8');
-const appNavigation=fs.readFileSync('src/navigation/appNavigation.tsx','utf8');
-const identityDeviceCenter=fs.readFileSync('src/pages/IdentityDeviceCenter.tsx','utf8');
-const identityDeviceCenterPolicy=fs.readFileSync('src/services/identityDeviceCenterPolicy.mjs','utf8');
-const miniappUsers=fs.readFileSync('miniapp/src/pages/admin/users/index.tsx','utf8');
-const miniappApi=fs.readFileSync('miniapp/src/utils/api.ts','utf8');
-assert.strictEqual(fs.existsSync('src/components/PairingReviewPanel.tsx'), false, 'legacy V1 pairing review panel must be removed');
+
+assert.ok(outboxPanel.includes('requireBridge().list()'));
+assert.ok(outboxPanel.includes('requireBridge().confirmAndSubmit(item.id)'));
+assert.ok(outboxPanel.includes('requireBridge().submit(item.id)'));
+assert.ok(outboxPanel.includes('Modal.confirm'));
+assert.ok(outboxPanel.includes('item.preview'));
+assert.ok(!outboxPanel.includes('fetch('), 'renderer authority UI must never bypass the preload facade');
+assert.ok(preload.includes("contextBridge.exposeInMainWorld('desktopAuthority'"));
+assert.ok(customTypes.includes('desktopAuthority?:'));
+for (const statusSurface of [todayWorkbench, syncQuickPanel]) {
+  assert.ok(!statusSurface.includes('SyncEngine'),
+    'desktop status surfaces must not read the retired raw-row sync engine');
+  assert.ok(statusSurface.includes('desktopAuthority'),
+    'desktop status surfaces must derive pending state from the authority outbox bridge');
+}
+
+const permissionManager = fs.readFileSync('src/pages/PermissionManager.tsx', 'utf8');
+const appNavigation = fs.readFileSync('src/navigation/appNavigation.tsx', 'utf8');
+const identityDeviceCenter = fs.readFileSync('src/pages/IdentityDeviceCenter.tsx', 'utf8');
+const identityDeviceCenterPolicy = fs.readFileSync('src/services/identityDeviceCenterPolicy.mjs', 'utf8');
+const miniappUsers = fs.readFileSync('miniapp/src/pages/admin/users/index.tsx', 'utf8');
+const miniappApi = fs.readFileSync('miniapp/src/utils/api.ts', 'utf8');
+assert.strictEqual(fs.existsSync('src/components/PairingReviewPanel.tsx'), false,
+  'legacy V1 pairing review panel must be removed');
 assert.ok(!permissionManager.includes('PairingReviewPanel'));
 assert.ok(appNavigation.includes("'identity-devices'") && appNavigation.includes('identityDeviceNavItem'));
 assert.ok(identityDeviceCenterPolicy.includes('/api/desktop-identity/authorizations/pending'));
@@ -40,5 +55,7 @@ assert.ok(!identityDeviceCenter.includes('selectedUsers') && !identityDeviceCent
 assert.ok(!miniappUsers.includes('getPendingPairings') && !miniappUsers.includes('reviewPairingCode')
   && !miniappUsers.includes('pairingUsers') && !miniappUsers.includes('选择绑定账号'),
   'miniapp user review must not retain the V1 arbitrary account selector');
-assert.ok(!miniappApi.includes('/api/desktop-pairing'), 'miniapp API must not call the removed V1 pairing control plane');
-console.log('SyncSettings authorization wiring tests passed');
+assert.ok(!miniappApi.includes('/api/desktop-pairing'),
+  'miniapp API must not call the removed V1 pairing control plane');
+
+console.log('SyncSettings authority facade wiring tests passed');

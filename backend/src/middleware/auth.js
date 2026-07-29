@@ -10,6 +10,7 @@ const {
   FORMAL_TOKEN_USE,
   TOKEN_ISSUER,
   UNRECOGNIZED_TOKEN_USE,
+  VISITOR_TOKEN_USE,
   createMiniappIdentityService,
 } = require('../services/miniappIdentityService');
 const { createDesktopSessionService } = require('../services/desktopSessionService');
@@ -60,6 +61,10 @@ function verifyToken(token) {
   }
   if (decoded.token_use === UNRECOGNIZED_TOKEN_USE
     && (decoded.iss !== TOKEN_ISSUER || decoded.aud !== EXPERIENCE_AUDIENCE)) {
+    throw new Error('TOKEN_AUDIENCE_INVALID');
+  }
+  if (decoded.token_use === VISITOR_TOKEN_USE
+    && (decoded.iss !== TOKEN_ISSUER || decoded.aud !== FORMAL_AUDIENCE)) {
     throw new Error('TOKEN_AUDIENCE_INVALID');
   }
   return decoded;
@@ -187,7 +192,9 @@ function attachAuthorizationContext(req, tokenUser) {
   if (attachRelayedDesktopAuthorizationContext(req, tokenUser)) return true;
   let user = null;
   const database = getInstance().db;
-  const miniappToken = tokenUser?.token_use === FORMAL_TOKEN_USE || tokenUser?.token_use === UNRECOGNIZED_TOKEN_USE;
+  const miniappToken = tokenUser?.token_use === FORMAL_TOKEN_USE
+    || tokenUser?.token_use === VISITOR_TOKEN_USE
+    || tokenUser?.token_use === UNRECOGNIZED_TOKEN_USE;
   const desktopToken = tokenUser?.token_use === 'desktop-session';
   let desktopContext = null;
   if (desktopToken) {
@@ -256,7 +263,10 @@ function attachAuthorizationContext(req, tokenUser) {
     authorizationRowVersion: desktopContext?.authorizationRowVersion || null,
     deviceKind: desktopContext?.deviceKind || null,
     identityKind: user?.identity_kind || null,
-    accountState: tokenUser?.token_use === UNRECOGNIZED_TOKEN_USE ? 'unrecognized' : 'formal',
+    accountState: tokenUser?.token_use === UNRECOGNIZED_TOKEN_USE
+      ? 'unrecognized'
+      : tokenUser?.token_use === VISITOR_TOKEN_USE ? 'visitor' : 'formal',
+    authorityId: tokenUser?.authority_id || null,
     runtimeNodeRole: process.env.GEWU_NODE_ROLE || 'desktop-client',
     deviceTrusted: desktopContext?.deviceTrusted || device?.trusted === 1,
     deviceActive: desktopContext?.deviceActive || device?.active === 1,
@@ -331,6 +341,15 @@ function authMiddleware(req, res, next) {
   }
 }
 
+function isElectronLocalEvidenceBridgeRequest(req) {
+  const route = String(req?.originalUrl || req?.url || req?.path || '')
+    .split('?')[0];
+  const bridge = String(req?.headers?.['x-gewu-electron-local-bridge'] || '').trim();
+  return String(req?.method || '').toUpperCase() === 'POST'
+    && route === '/api/desktop-identity/primary-host/local-evidence'
+    && bridge.length > 0;
+}
+
 function optionalAuth(req, res, next) {
   if (isDevAuthBypassed()) {
     req.user = {
@@ -339,6 +358,16 @@ function optionalAuth(req, res, next) {
       tenantId: req.requestedTenantId || process.env.DEFAULT_TENANT_ID || 'default',
     };
     applyAuthenticatedTenant(req, res);
+    return next();
+  }
+
+  // A newly adopted data host has a local JWT issuer distinct from the
+  // managed cloud issuer.  Let this one Electron-main-only request reach the
+  // route-level loopback + constant-time bridge-secret check; it remains
+  // unusable to ordinary HTTP callers and its signed receipt is verified by
+  // the cloud before any host epoch is activated.
+  if (isElectronLocalEvidenceBridgeRequest(req)) {
+    if (!req.tenantId) req.tenantId = req.requestedTenantId || process.env.DEFAULT_TENANT_ID || 'default';
     return next();
   }
 
@@ -351,6 +380,7 @@ function optionalAuth(req, res, next) {
       const tokenHint = jwt.decode(token) || {};
       if (error?.code === 'REVIEW_TOKEN_NOT_ACCEPTED_BY_BACKEND'
         || tokenHint.token_use === FORMAL_TOKEN_USE
+        || tokenHint.token_use === VISITOR_TOKEN_USE
         || tokenHint.token_use === UNRECOGNIZED_TOKEN_USE
         || tokenHint.token_use === 'desktop-session'
         || tokenHint.token_use === 'desktop-relay-session') {
@@ -371,11 +401,6 @@ function requireWriteAccess(req, res, next) {
       role: 'admin',
       tenantId: req.tenantId || process.env.DEFAULT_TENANT_ID || 'default',
     };
-    return next();
-  }
-  const expectedDesktopSyncToken = process.env.GEWU_DESKTOP_SYNC_TOKEN || '';
-  const providedDesktopSyncToken = req.headers['x-gewu-desktop-sync-token'] || '';
-  if (req.baseUrl === '/api/cloud-relay-host' && expectedDesktopSyncToken && providedDesktopSyncToken === expectedDesktopSyncToken) {
     return next();
   }
   if (!req.user) return sendAuthError(res, 401, '未登录', 'UNAUTHORIZED');

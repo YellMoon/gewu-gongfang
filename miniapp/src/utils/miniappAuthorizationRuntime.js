@@ -2,13 +2,15 @@ const {
   accountCapabilities,
   hasLegacyReviewMarker,
   isUnrecognizedIdentity,
+  isVisitorIdentity,
 } = require('./accountExperience');
 
 const ADMIN_MODULES = ['scheduling', 'question-bank', 'assets', 'students', 'courses', 'teachers', 'payments', 'stats', 'admin'];
 const TEACHER_MODULES = ADMIN_MODULES.filter(moduleId => moduleId !== 'admin');
 const STUDENT_MODULES = ['scheduling', 'question-bank'];
 const UNRECOGNIZED_MODULES = ['scheduling', 'question-bank', 'settings'];
-const VALID_ROLES = new Set(['super_admin', 'admin', 'teacher', 'student', 'pending']);
+const VISITOR_MODULES = ['question-bank', 'settings'];
+const VALID_ROLES = new Set(['super_admin', 'admin', 'teacher', 'student', 'visitor', 'pending']);
 
 function roleOf(user) {
   const role = user && (user.user_type || user.role);
@@ -48,6 +50,9 @@ function normalizedIdentityIds(...values) {
 function permissionIdentityKey(user) {
   if (!user || !user.id) return '';
   if (hasLegacyReviewMarker(user)) return '';
+  if (isVisitorIdentity(user)) {
+    return `visitor:${normalizedIdentityValue(user.id)}:${normalizedIdentityValue(user.authority_id)}`;
+  }
   if (isUnrecognizedIdentity(user)) return `unrecognized:${normalizedIdentityValue(user.id)}`;
   return JSON.stringify([
     normalizedIdentityValue(user.id),
@@ -74,14 +79,14 @@ function permissionIdentityKey(user) {
 function businessCacheIdentityKey(user) {
   const role = roleOf(user);
   if (!user || !user.id || role === 'pending') return '';
-  if (hasLegacyReviewMarker(user) || isUnrecognizedIdentity(user)) return '';
+  if (hasLegacyReviewMarker(user) || isUnrecognizedIdentity(user) || isVisitorIdentity(user)) return '';
   if (role === 'teacher' && !(user.teacher_id || user.teacherId)) return '';
   const scope = permissionIdentityKey(user);
   return scope ? `normal:${scope}` : '';
 }
 
 function questionPaperTaskCacheKey(user) {
-  if (hasLegacyReviewMarker(user) || isUnrecognizedIdentity(user)) return '';
+  if (hasLegacyReviewMarker(user) || isUnrecognizedIdentity(user) || isVisitorIdentity(user)) return '';
   const scope = businessCacheIdentityKey(user);
   return scope ? `question_paper_tasks_v2_${encodeURIComponent(scope)}` : '';
 }
@@ -122,13 +127,15 @@ function sanitizeCapabilitiesForIdentity(user, capabilities) {
   const stringCapabilities = Array.isArray(capabilities)
     ? capabilities.filter(capability => typeof capability === 'string') : [];
   if (hasLegacyReviewMarker(user)) return [];
+  if (isVisitorIdentity(user)) return accountCapabilities(user);
   if (isUnrecognizedIdentity(user)) return accountCapabilities(user);
   return stringCapabilities;
 }
 
 function deriveAccess(user, permissionState) {
   const role = roleOf(user);
-  const experienceOnly = isUnrecognizedIdentity(user);
+  const visitor = isVisitorIdentity(user);
+  const experienceOnly = visitor || isUnrecognizedIdentity(user);
   const identityKey = permissionIdentityKey(user);
   const loadedForIdentity = permissionState && permissionState.status === 'loaded'
     && identityKey && permissionState.identityKey === identityKey;
@@ -136,7 +143,8 @@ function deriveAccess(user, permissionState) {
     ? permissionState.capabilities : [];
   const capabilities = sanitizeCapabilitiesForIdentity(user, loadedCapabilities);
   let modules = [];
-  if (experienceOnly && capabilities.includes('experience:read')) modules = UNRECOGNIZED_MODULES.slice();
+  if (visitor && capabilities.includes('projection:read')) modules = VISITOR_MODULES.slice();
+  else if (experienceOnly && capabilities.includes('experience:read')) modules = UNRECOGNIZED_MODULES.slice();
   else if (!experienceOnly && capabilities.includes('business:all')) modules = ADMIN_MODULES.slice();
   else if (capabilities.includes('business:teacher-scope') && role === 'teacher') modules = TEACHER_MODULES.slice();
   else if (!experienceOnly && capabilities.includes('question-bank:view') && role === 'student') modules = STUDENT_MODULES.slice();
@@ -161,6 +169,19 @@ function accountExperiencePolicy(user) {
       canReviewUsers: false, canEditQuestionBank: false,
     };
   }
+  if (isVisitorIdentity(user)) {
+    return {
+      role: 'visitor',
+      modules: VISITOR_MODULES.slice(),
+      readonlyScope: 'authority-projection',
+      linkedStudentIds: [],
+      allowedWriteTasks: [],
+      canReadAllSnapshots: false,
+      capabilities: accountCapabilities(user),
+      canReviewUsers: false,
+      canEditQuestionBank: false,
+    };
+  }
   if (!isUnrecognizedIdentity(user)) return null;
   return {
     role: 'unrecognized-student',
@@ -176,7 +197,7 @@ function accountExperiencePolicy(user) {
 }
 
 function canUserSubmitMiniappWrite(user, target, allowedTargets) {
-  if (hasLegacyReviewMarker(user) || isUnrecognizedIdentity(user)) return false;
+  if (hasLegacyReviewMarker(user) || isUnrecognizedIdentity(user) || isVisitorIdentity(user)) return false;
   return Array.isArray(allowedTargets) && allowedTargets.includes(target);
 }
 
@@ -196,7 +217,9 @@ function scopeDashboardCollections(user, collections = {}) {
   const courses = Array.isArray(collections.courses) ? collections.courses : [];
   const schedules = Array.isArray(collections.schedules) ? collections.schedules : [];
   const role = roleOf(user);
-  if (hasLegacyReviewMarker(user) || isUnrecognizedIdentity(user)) return { students: [], courses: [], schedules: [] };
+  if (hasLegacyReviewMarker(user) || isUnrecognizedIdentity(user) || isVisitorIdentity(user)) {
+    return { students: [], courses: [], schedules: [] };
+  }
   if (role === 'pending') return { students: [], courses: [], schedules: [] };
   if (role === 'teacher') {
     const teacherId = user && (user.teacher_id || user.teacherId);
@@ -228,6 +251,7 @@ module.exports = {
   TEACHER_MODULES,
   STUDENT_MODULES,
   UNRECOGNIZED_MODULES,
+  VISITOR_MODULES,
   canUserSubmitMiniappWrite,
   roleOf,
   permissionIdentityKey,

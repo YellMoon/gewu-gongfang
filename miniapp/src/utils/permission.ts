@@ -58,7 +58,7 @@ export const studentWriteTasks = [
 
 export const teacherModules = adminModules.filter(moduleId => moduleId !== 'admin');
 
-export type MiniappRole = 'super_admin' | 'admin' | 'teacher' | 'student' | 'pending';
+export type MiniappRole = 'super_admin' | 'admin' | 'teacher' | 'student' | 'visitor' | 'pending';
 export type MiniappCapability =
   | 'users:review'
   | 'applications:review'
@@ -67,6 +67,10 @@ export type MiniappCapability =
   | 'question-bank:view'
   | 'question-bank:edit'
   | 'experience:read'
+  | 'projection:read'
+  | 'role-application:read'
+  | 'role-application:submit'
+  | 'question-preview:read'
   | 'profile-application:read'
   | 'profile-application:submit'
   | 'sample-questions:view'
@@ -101,8 +105,10 @@ export interface UserInfo {
   is_review_demo?: boolean;
   read_only?: boolean;
   review_demo_session_id?: string;
-  account_state?: 'formal' | 'unrecognized';
-  token_use?: 'miniapp-session' | 'unrecognized-student';
+  account_state?: 'formal' | 'visitor' | 'unrecognized';
+  token_use?: 'miniapp-session' | 'miniapp-visitor' | 'unrecognized-student';
+  identity_kind?: string;
+  authority_id?: string;
   capabilities?: MiniappCapability[];
   review_status?: string;
   reviewStatus?: string;

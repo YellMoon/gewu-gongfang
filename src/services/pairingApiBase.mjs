@@ -34,7 +34,12 @@ export async function resolveRenewableOnlineSyncActor({
   try {
     return resolveOnlineSyncActor(readSession(), { now });
   } catch (error) {
-    if (error?.code !== 'ONLINE_DESKTOP_SESSION_REQUIRED' || typeof ensureOnline !== 'function') {
+    // The desktop authorization session is deliberately process-memory only.
+    // After an app restart, its reader reports an absent authorization context
+    // before it can report an expired online session. Both cases must renew
+    // through the unlocked device's challenge flow.
+    if (!['ONLINE_DESKTOP_SESSION_REQUIRED', 'AUTHORIZATION_CONTEXT_REQUIRED'].includes(error?.code)
+      || typeof ensureOnline !== 'function') {
       throw error;
     }
   }

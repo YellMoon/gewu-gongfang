@@ -7,10 +7,19 @@ const decoded = source.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) => String.f
 
 assert.ok(decoded.includes('待审设备申请') && decoded.includes('我的设备') && decoded.includes('全部设备') && decoded.includes('本地数据主机'));
 assert.ok(decoded.includes('申请人与审批人相同，但审批来自另一台可信设备'));
+assert.ok(
+  source.includes('useEffect(() => () => { Modal.destroyAll(); }, []);'),
+  'unmounting the identity-device center must close static approval dialogs so a locked-and-unlocked session cannot retain a stale approval operation'
+);
 assert.ok(source.includes('loading') && source.includes('empty') && source.includes('offline'));
 assert.ok(source.includes('expired') && source.includes('conflict') && source.includes('concurrent') && source.includes('revoked'));
 assert.ok(source.includes('operationRef') && source.includes('Modal.confirm'), 'all mutations need a synchronous operation lock and confirmation');
 assert.ok(source.includes('approveDesktopChallenge') && source.includes('rejectDesktopChallenge') && source.includes('revokeDesktopDevice'));
+assert.strictEqual(
+  (source.match(/Modal confirmation must resolve after runOperation has rendered the error/g) || []).length,
+  3,
+  'failed approval, rejection, and revocation requests must release their confirmation modal instead of leaving it loading'
+);
 assert.ok(source.includes('startPrimaryHostOperation') && source.includes('bootstrapPrimaryHost'));
 assert.ok(source.includes('beginPrimaryHostTransfer') && source.includes('activatePrimaryHostTransfer'));
 assert.ok(source.includes('recoverPrimaryHost'));
@@ -60,31 +69,9 @@ assert.strictEqual(decoded.includes('选择设备绑定账号'), false);
 assert.strictEqual(source.includes('userId:'), false, 'review page must not submit or select a claimant user id');
 assert.ok(style.includes(':focus-visible') && style.includes('@media (max-width: 900px)'));
 assert.ok(style.includes('.recovery-delivery-secret') && style.includes('user-select: all'));
-assert.ok(decoded.includes('普通桌面端一次性配对'));
-assert.ok(decoded.includes('生成一次性配对码') && decoded.includes('撤销当前配对码'));
-assert.ok(source.includes('singleUserRuntime.issuePairingCode'));
-assert.ok(source.includes('singleUserRuntime.revokePairingCode'));
 assert.ok(
-  source.includes('publishCloudHeartbeat') && source.includes('await publishCloudHeartbeat()'),
-  'a newly issued pairing capability must be published immediately instead of waiting for the minute background loop'
-);
-assert.ok(source.includes("desktopIdentityMode === 'single-user'"));
-assert.ok(
-  source.includes('resolveDesktopIdentityBaseUrl(runtimeConfig, { authorizationSource })'),
-  'single-user primary host device management must use the protected local identity control plane'
-);
-assert.ok(
-  source.includes('vaultStatus?.authorizationSource'),
-  'paired single-user clients must route identity requests to the host that issued their session'
-);
-assert.ok(
-  source.includes('relayBaseUrl') && source.includes("authorizationSource === 'single_user_pairing'"),
-  'paired single-user clients must fall back to the cloud relay so device data stays reachable off-LAN'
-);
-assert.strictEqual(
-  source.includes('resolvePairingApiBase(runtimeConfig, window.location)'),
-  false,
-  'device management must not send single-user host requests to the managed /scheduling cloud base'
+  source.includes('provider?.ensureOnline') && source.includes('await provider.ensureOnline()'),
+  'identity and device management must establish an online desktop session before requesting protected device state'
 );
 
 console.log('identity device center page source checks passed');

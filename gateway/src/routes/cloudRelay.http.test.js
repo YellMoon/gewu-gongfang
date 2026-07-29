@@ -151,8 +151,8 @@ const pairingRouter = require('./desktopPairing');
   assert.strictEqual((await offlineCapability.json()).code, 'PAIRING_HOST_OFFLINE');
   const now = new Date().toISOString();
   getDb().prepare("INSERT INTO miniapp_tasks (id,task_type,status,payload,created_by,created_at,updated_at) VALUES ('task1','question-paper','pending_host','{}','u1',?,?)").run(now, now);
-  assert.strictEqual((await call('/tasks', { headers: { 'x-gewu-host-token': 'test-host-secret' } })).status, 200);
-  assert.strictEqual((await call('/tasks/task1/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: '{}' })).status, 200);
+  assert.strictEqual((await call('/tasks', { headers: { 'x-gewu-host-token': 'test-host-secret' } })).status, 410);
+  assert.strictEqual((await call('/tasks/task1/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: '{}' })).status, 410);
   const approved = id => JSON.stringify({ id, user_type: 'student', student_id: id, tenant_id: 'tenant-a', review_status: 'approved', status: 1, login_enabled: 1 });
   const admin = id => JSON.stringify({ id, user_type: 'admin', tenant_id: 'tenant-a', review_status: 'approved', status: 1, login_enabled: 1 });
   assert.strictEqual(
@@ -185,31 +185,16 @@ const pairingRouter = require('./desktopPairing');
     userApproved:true,deviceActive:true,deviceTrusted:true,...overrides,
   });
   const desktopHeaders=(id,deviceId,overrides={})=>({'x-test-user':teacher(id),'x-test-authz':desktopAuthz(id,deviceId,overrides),'x-device-id':deviceId});
-  assert.strictEqual((await call('/desktop-sync/devices/register',{method:'POST',headers:desktopHeaders('teacher1','cloud-d1'),body:'{}'})).status,200);
-  const legalChanges=[{id:'op1',table:'courses',action:'update',data:{id:'c1'}}];
-  assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:desktopHeaders('teacher1','cloud-d1'),body:JSON.stringify({pendingChanges:legalChanges})})).status,200);
-  const desktopTask=getDb().prepare("SELECT * FROM miniapp_tasks WHERE task_type='desktop-sync'").get();
-  const relayPayload=JSON.parse(desktopTask.payload);
-  const verifiedAssertion=verifyRelayAssertion(relayPayload.relayAssertion,'test-host-secret');
-  assert.deepStrictEqual({
-    actorUserId:verifiedAssertion.actorUserId,deviceId:verifiedAssertion.deviceId,sessionId:verifiedAssertion.sessionId,
-    activeRole:verifiedAssertion.activeRole,teacherId:verifiedAssertion.teacherId,authVersion:verifiedAssertion.authVersion,
-    credentialVersion:verifiedAssertion.credentialVersion,
-  },{actorUserId:'teacher1',deviceId:'cloud-d1',sessionId:'sid-teacher1-cloud-d1',activeRole:'teacher',teacherId:'t1',authVersion:4,credentialVersion:2});
-  assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:{'x-test-user':teacher('teacher1'),'x-device-id':'cloud-d1'},body:JSON.stringify({pendingChanges:legalChanges})})).status,401,
-    'legacy approved user context must not replace an online V2 desktop session');
-  const pendingPoll=await call(`/desktop-sync/requests/${desktopTask.id}/result`,{headers:desktopHeaders('teacher1','cloud-d1')});assert.strictEqual(pendingPoll.status,200);assert.strictEqual((await pendingPoll.json()).request.status,'pending_host');
-  getDb().prepare("UPDATE miniapp_tasks SET status='completed',result_payload=? WHERE id=?").run(JSON.stringify({applied:1}),desktopTask.id);
-  const completedPoll=await call(`/desktop-sync/requests/${desktopTask.id}/result`,{headers:desktopHeaders('teacher1','cloud-d1')});assert.strictEqual((await completedPoll.json()).request.result_payload.applied,1);
-  assert.strictEqual((await call(`/desktop-sync/requests/${desktopTask.id}/result`,{headers:desktopHeaders('teacher2','cloud-d2')})).status,404);
-  assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',body:JSON.stringify({deviceId:'cloud-d1'})})).status,401);
-  assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:desktopHeaders('teacher2','cloud-d1'),body:JSON.stringify({pendingChanges:legalChanges})})).status,403);
-  delete process.env.GEWU_CLOUD_RELAY_HOST_TOKEN;
-  assert.strictEqual((await call('/desktop-sync/devices/register',{method:'POST',headers:desktopHeaders('teacher1','cloud-d2'),body:'{}'})).status,200);
-  assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:desktopHeaders('teacher1','cloud-d2'),body:JSON.stringify({pendingChanges:legalChanges})})).status,403);
-  const tooMany=Array.from({length:501},(_,i)=>({id:`op${i}`,table:'courses',action:'update',data:{id:`c${i}`}}));
-  assert.strictEqual((await call('/desktop-sync/requests',{method:'POST',headers:desktopHeaders('teacher1','cloud-d1'),body:JSON.stringify({pendingChanges:tooMany})})).status,413);
-  process.env.GEWU_CLOUD_RELAY_HOST_TOKEN='test-host-secret';
+  const legacyDesktopSync = await call('/desktop-sync/devices/register', {
+    method: 'POST', headers: desktopHeaders('teacher1', 'cloud-d1'), body: '{}',
+  });
+  assert.strictEqual(legacyDesktopSync.status, 410);
+  assert.strictEqual((await legacyDesktopSync.json()).error.code, 'LEGACY_ARCHITECTURE_RETIRED');
+  assert.strictEqual(
+    getDb().prepare("SELECT COUNT(*) AS count FROM miniapp_tasks WHERE task_type='desktop-sync'").get().count,
+    0,
+    'legacy desktop sync must not enqueue a task before cutover',
+  );
   assert.strictEqual((await call('/tasks/task1/result', { headers: { 'x-test-user': approved('u2') } })).status, 404);
   assert.strictEqual((await call('/tasks/task1/result', { headers: { 'x-test-user': approved('u1') } })).status, 200);
   const v2Body = JSON.stringify({ protocolVersion: 2, taskType: 'paper-export-pdf', targetHostDeviceId: 'host1', payload: { questionIds: ['q2', 'q1'], title: 'paper' } });
@@ -222,27 +207,24 @@ const pairingRouter = require('./desktopPairing');
   assert.strictEqual((await v2Replay.json()).task.id, v2Created.task.id, 'HTTP idempotency replay must return the original task');
   assert.strictEqual((await call('/tasks', { method: 'POST', headers: { 'x-test-user': approved('u1'), 'x-idempotency-key': 'idem-http-1' }, body: JSON.stringify({ ...JSON.parse(v2Body), payload: { questionIds: ['q1'] } }) })).status, 409);
 
-  getDb().prepare("INSERT INTO miniapp_tasks (id,task_type,status,payload,created_by,created_at,updated_at,protocol_version) VALUES ('legacy-claimed-http','paper-export-pdf','pending_host','{}','u1',?,?,1)").run(now, now);
-  const legacyClaimPoll = await call('/tasks?status=pending_host&hostDeviceId=host1&leaseMs=1000', { headers: { 'x-gewu-host-token': 'test-host-secret' } });
-  const legacyClaimedTask = (await legacyClaimPoll.json()).tasks.find(task => task.id === 'legacy-claimed-http');
-  assert.ok(legacyClaimedTask?.claimToken, 'new host polling must atomically claim V1 tasks and receive a claim token');
-  const competingLegacyPoll = await call('/tasks?status=pending_host&hostDeviceId=host2&leaseMs=1000', { headers: { 'x-gewu-host-token': 'test-host-secret' } });
-  assert.ok(!(await competingLegacyPoll.json()).tasks.some(task => task.id === 'legacy-claimed-http'), 'an active V1 lease must hide the task from another host');
-  assert.strictEqual((await call('/tasks/legacy-claimed-http/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ success: true, hostDeviceId: 'host2', claimToken: 'wrong', expectedRowVersion: legacyClaimedTask.row_version, result: {} }) })).status, 409);
-  assert.strictEqual((await call('/tasks/legacy-claimed-http/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ success: true, hostDeviceId: 'host1', claimToken: legacyClaimedTask.claimToken, expectedRowVersion: legacyClaimedTask.row_version, result: {} }) })).status, 200);
-
-  getDb().prepare("INSERT INTO miniapp_tasks (id,task_type,status,payload,created_by,created_at,updated_at,protocol_version) VALUES ('legacy-shared-http','paper-export-word','pending_host','{}','u1',?,?,1)").run(now, now);
-  const [legacySharedA, legacySharedB] = await Promise.all([
-    call('/tasks?status=pending_host', { headers: { 'x-gewu-host-token': 'test-host-secret' } }),
-    call('/tasks?status=pending_host', { headers: { 'x-gewu-host-token': 'test-host-secret' } }),
-  ]);
-  const sharedAppearances = [await legacySharedA.json(), await legacySharedB.json()]
-    .flatMap(body => body.tasks).filter(task => task.id === 'legacy-shared-http');
-  assert.strictEqual(sharedAppearances.length, 1, 'concurrent legacy polling without hostDeviceId must atomically return a V1 task only once');
-  assert.strictEqual((await call('/tasks/legacy-shared-http/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ success: true, result: {} }) })).status, 200, 'legacy shared claims remain completable by old trusted hosts during their lease');
-
+  const legacyCreate = await call('/tasks', {
+    method: 'POST',
+    headers: { 'x-test-user': approved('u1') },
+    body: JSON.stringify({ taskType: 'paper-export-pdf', payload: {} }),
+  });
+  assert.strictEqual(legacyCreate.status, 410, 'V1 task creation must be permanently retired');
+  assert.strictEqual((await legacyCreate.json()).error.code, 'LEGACY_ARCHITECTURE_RETIRED');
   const legacyPending = await call('/tasks', { headers: { 'x-gewu-host-token': 'test-host-secret' } });
-  assert.ok(!(await legacyPending.json()).tasks.some(task => task.id === v2Created.task.id), 'V1 polling must not return V2 tasks');
+  assert.strictEqual(legacyPending.status, 410, 'V1 task polling must be permanently retired');
+  assert.strictEqual((await legacyPending.json()).error.code, 'LEGACY_ARCHITECTURE_RETIRED');
+  getDb().prepare("INSERT INTO miniapp_tasks (id,task_type,status,payload,created_by,created_at,updated_at,protocol_version) VALUES ('legacy-complete-http','paper-export-pdf','pending_host','{}','u1',?,?,1)").run(now, now);
+  const legacyComplete = await call('/tasks/legacy-complete-http/complete', {
+    method: 'POST',
+    headers: { 'x-gewu-host-token': 'test-host-secret' },
+    body: JSON.stringify({ success: true, result: {} }),
+  });
+  assert.strictEqual(legacyComplete.status, 410, 'V1 task completion must be permanently retired');
+  assert.strictEqual((await legacyComplete.json()).error.code, 'LEGACY_ARCHITECTURE_RETIRED');
   const claimResponse = await call('/tasks/claim', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: JSON.stringify({ hostDeviceId: 'host1', leaseMs: 1000 }) });
   const claimed = await claimResponse.json();
   assert.strictEqual(claimed.task.id, v2Created.task.id);

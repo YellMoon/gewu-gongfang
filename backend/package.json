@@ -1,6 +1,6 @@
 {
   "name": "scheduling-system-backend",
-  "version": "6.5.0",
+  "version": "7.0.0",
   "description": "教务管理系统后端API — 阿里云ECS部署",
   "main": "server.js",
   "scripts": {

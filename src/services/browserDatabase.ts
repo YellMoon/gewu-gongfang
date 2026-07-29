@@ -22,6 +22,8 @@ import { cacheQuestionTrees, clearQuestionLocalStore, removeQuestionLocalRecord,
 import { applyQuestionSyncRecords, buildBrowserQuestionSearchText, mergeBrowserQuestionUpdate, normalizeBrowserQuestionRecord } from './questionRichContent';
 import { projectDesktopCacheForIdentity } from './desktopCacheProjection.mjs';
 import { readDesktopAuthorizationSession } from './desktopAuthorizationSession.mjs';
+import { createAuthorityDraftFromLocalMutation } from './authorityDraftAdapter.mjs';
+import { buildAuthorityBackedBrowserCache } from './authorityProjectionCacheAdapter.mjs';
 import {
   partitionedStorageKey,
   migrateLegacyStorageValue,
@@ -140,6 +142,51 @@ class BrowserDatabaseService {
     this.storageKey = partitionedStorageKey('scheduling_system_db_v3');
     this.prepareIdentityPartitionChange();
     this.loadData();
+    void this.refreshAuthorityProjection().catch(error => {
+      window.dispatchEvent(new CustomEvent('authority-projection-refresh-failed', {
+        detail: { code: error?.code || error?.message || 'AUTHORITY_PROJECTION_REFRESH_FAILED' },
+      }));
+    });
+  }
+
+  public async refreshAuthorityProjection({
+    minSourceVersion = 0,
+  }: { minSourceVersion?: number } = {}): Promise<void> {
+    if (!window.desktopAuthority?.readProjection || !window.desktopAuthority?.list) {
+      throw Object.assign(new Error('DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE'), {
+        code: 'DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE',
+      });
+    }
+    const [projection, outbox] = await Promise.all([
+      window.desktopAuthority.readProjection({ minSourceVersion }),
+      window.desktopAuthority.list(),
+    ]);
+    const next = buildAuthorityBackedBrowserCache({
+      projection,
+      outbox,
+      localOnly: {
+        questionBasketIds: this.data.questionBasketIds,
+        questionVersions: this.data.questionVersions,
+        importTasks: this.data.importTasks,
+        importTaskItems: this.data.importTaskItems,
+      },
+    });
+    this.data = {
+      ...emptyDatabase(),
+      ...next,
+    } as Database;
+    this.hydrateTaxonomiesFromSyncRows();
+    this.migrateLegacyQuestionData();
+    this.migrateLegacyTagData();
+    this.migrateQuestionVersionData();
+    this.migrateImportTaskData();
+    this.rebuildQuestionIndexes();
+    this.saveData();
+    window.dispatchEvent(new CustomEvent('authority-projection-refreshed', {
+      detail: {
+        sourceVersion: Number((projection as any).sourceVersion || 0),
+      },
+    }));
   }
 
   private loadData(): void {
@@ -352,41 +399,93 @@ class BrowserDatabaseService {
     }
   }
 
-  private recordSyncChange(table: SyncTable, action: SyncAction, recordId: string, payload: Record<string, any> = {}, baseVersion: string | null = null): void {
-    try {
-      const key = this.identityStorageKey('sync_engine_sync_pending_changes');
-      const legacyKey = this.identityStorageKey('sync_engine_sync_pending_ops');
-      const now = new Date().toISOString();
-      const existingRaw = migrateLegacyStorageValue(
-        localStorage,
-        'sync_engine_sync_pending_changes',
-        { allowRoles: ['super_admin', 'admin'] }
-      );
-      const existing = JSON.parse(existingRaw || '[]');
-      const sourceOperationId = `chg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-      const sourceDeviceId = this.getSyncDeviceId();
-      const change = {
-        id: sourceOperationId,
-        table,
-        action,
-        data: {
-          ...payload,
-          id: recordId,
-          _base_version: baseVersion,
-        },
-        version: payload.updated_at || now,
-        updatedAt: payload.updated_at || now,
-        tenantId: payload.tenant_id || 'default',
-        deviceId: sourceDeviceId,
-        sourceDeviceId,
-        sourceOperationId,
-      };
-      const next = [...existing, change];
-      localStorage.setItem(key, JSON.stringify(next));
-      localStorage.setItem(legacyKey, JSON.stringify(next));
-    } catch (error) {
-      console.error('[browserDatabase] record sync change failed:', table, action, recordId, error);
+  private recordAuthorityDraft(
+    collection: SyncTable,
+    action: SyncAction,
+    recordId: string,
+    value: Record<string, any> = {},
+    baseVersion: string | null = null,
+  ): void {
+    const draft = createAuthorityDraftFromLocalMutation({
+      collection,
+      action,
+      recordId,
+      value,
+      baseVersion,
+    });
+    if (window.primaryHostRuntime?.executeLocalDraft) {
+      this.executePrimaryHostDraft(draft);
+      return;
     }
+    if (!window.desktopAuthority?.appendDraftSync) {
+      throw Object.assign(new Error('DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE'), {
+        code: 'DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE',
+      });
+    }
+    window.desktopAuthority.appendDraftSync(draft);
+  }
+
+  private recordAuthorityDraftBatch(changes: Array<{
+    collection: SyncTable;
+    action: SyncAction;
+    recordId: string;
+    value?: Record<string, any>;
+    baseVersion?: string | null;
+  }>): void {
+    if (changes.length === 0) return;
+    const drafts = changes.map(change => createAuthorityDraftFromLocalMutation({
+      collection: change.collection,
+      action: change.action,
+      recordId: change.recordId,
+      value: change.value || {},
+      baseVersion: change.baseVersion || null,
+    }));
+    if (window.primaryHostRuntime?.executeLocalDraft) {
+      this.executePrimaryHostDraftBatch(drafts);
+      return;
+    }
+    if (!window.desktopAuthority?.appendDraftBatchSync) {
+      throw Object.assign(new Error('DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE'), {
+        code: 'DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE',
+      });
+    }
+    window.desktopAuthority.appendDraftBatchSync(drafts);
+  }
+
+  private executePrimaryHostDraft(draft: { type: string; payload: Record<string, any> }): void {
+    this.executePrimaryHostDraftBatch([draft]);
+  }
+
+  private executePrimaryHostDraftBatch(drafts: Array<{ type: string; payload: Record<string, any> }>): void {
+    void (async () => {
+      let projectionVersion = 0;
+      const commandIds: string[] = [];
+      for (const draft of drafts) {
+        const result = await window.primaryHostRuntime?.executeLocalDraft?.(draft);
+        const receipt = result?.receipt;
+        if (receipt?.status !== 'committed') {
+          throw Object.assign(new Error(receipt?.error?.code || 'AUTHORITY_COMMAND_REJECTED'), {
+            code: receipt?.error?.code || 'AUTHORITY_COMMAND_REJECTED',
+          });
+        }
+        projectionVersion = Math.max(projectionVersion, Number(receipt.projectionVersion || 0));
+        if (receipt.commandId) commandIds.push(String(receipt.commandId));
+      }
+      await this.refreshAuthorityProjection({ minSourceVersion: projectionVersion });
+      window.dispatchEvent(new CustomEvent(drafts.length === 1 ? 'authority-local-draft-executed' : 'authority-local-drafts-executed', {
+        detail: { commandIds, projectionVersion },
+      }));
+    })().catch(error => {
+      console.error('PRIMARY_HOST_LOCAL_DRAFT_EXECUTION_FAILED', error);
+      window.dispatchEvent(new CustomEvent('authority-local-draft-execution-failed', {
+        detail: { code: error?.code || error?.message || 'PRIMARY_HOST_LOCAL_DRAFT_EXECUTION_FAILED' },
+      }));
+      void this.refreshAuthorityProjection().catch(refreshError => {
+        window.dispatchEvent(new CustomEvent('authority-projection-refresh-failed', {
+          detail: { code: refreshError?.code || refreshError?.message || 'AUTHORITY_PROJECTION_REFRESH_FAILED' },
+        }));
+      });
+    });
   }
 
   private compactLargeQuestionPayloads(): void {
@@ -804,7 +903,7 @@ class BrowserDatabaseService {
       existing.count++;
       existing.updated_at = new Date().toISOString();
       if (address) existing.address = address;
-      this.recordSyncChange('rooms', 'update', existing.id, existing);
+      this.recordAuthorityDraft('rooms', 'update', existing.id, existing);
     } else {
       const room = {
         id: this.generateId(),
@@ -815,7 +914,7 @@ class BrowserDatabaseService {
         updated_at: new Date().toISOString()
       };
       this.data.rooms.push(room);
-      this.recordSyncChange('rooms', 'create', room.id, room);
+      this.recordAuthorityDraft('rooms', 'create', room.id, room);
     }
     this.saveData();
   }
@@ -824,8 +923,8 @@ class BrowserDatabaseService {
     const index = this.data.rooms.findIndex(r => r.id === id);
     if (index === -1) return undefined;
     this.data.rooms[index] = { ...this.data.rooms[index], ...updates, updated_at: new Date().toISOString() };
+    this.recordAuthorityDraft('rooms', 'update', id, this.data.rooms[index]);
     this.saveData();
-    this.recordSyncChange('rooms', 'update', id, this.data.rooms[index]);
     return this.data.rooms[index];
   }
 
@@ -833,8 +932,8 @@ class BrowserDatabaseService {
     const index = this.data.rooms.findIndex(r => r.id === id);
     if (index === -1) return false;
     this.data.rooms.splice(index, 1);
+    this.recordAuthorityDraft('rooms', 'delete', id, { id });
     this.saveData();
-    this.recordSyncChange('rooms', 'delete', id, { id });
     return true;
   }
 
@@ -876,8 +975,8 @@ class BrowserDatabaseService {
     };
     this.data.institutions.push(newInstitution);
     this.ensureInstitutionStudents();
+    this.recordAuthorityDraft('institutions', 'create', newInstitution.id, newInstitution);
     this.saveData();
-    this.recordSyncChange('institutions', 'create', newInstitution.id, newInstitution);
     return newInstitution;
   }
 
@@ -886,8 +985,8 @@ class BrowserDatabaseService {
     if (index === -1) return undefined;
     this.data.institutions[index] = { ...this.data.institutions[index], ...updates };
     this.ensureInstitutionStudents();
+    this.recordAuthorityDraft('institutions', 'update', id, this.data.institutions[index]);
     this.saveData();
-    this.recordSyncChange('institutions', 'update', id, this.data.institutions[index]);
     return this.data.institutions[index];
   }
 
@@ -906,8 +1005,8 @@ class BrowserDatabaseService {
     const index = this.data.institutions.findIndex(i => i.id === id);
     if (index === -1) return false;
     this.data.institutions.splice(index, 1);
+    this.recordAuthorityDraft('institutions', 'delete', id, { id });
     this.saveData();
-    this.recordSyncChange('institutions', 'delete', id, { id });
     return true;
   }
 
@@ -937,8 +1036,8 @@ class BrowserDatabaseService {
     }
     
     this.data.students.push(newStudent);
+    this.recordAuthorityDraft('students', 'create', newStudent.id, newStudent);
     this.saveData();
-    this.recordSyncChange('students', 'create', newStudent.id, newStudent);
     return newStudent;
   }
 
@@ -963,8 +1062,8 @@ class BrowserDatabaseService {
     }
     
     this.data.students[index] = updated;
+    this.recordAuthorityDraft('students', 'update', id, updated);
     this.saveData();
-    this.recordSyncChange('students', 'update', id, updated);
     return updated;
   }
 
@@ -972,8 +1071,8 @@ class BrowserDatabaseService {
     const index = this.data.students.findIndex(s => s.id === id);
     if (index === -1) return false;
     this.data.students.splice(index, 1);
+    this.recordAuthorityDraft('students', 'delete', id, { id });
     this.saveData();
-    this.recordSyncChange('students', 'delete', id, { id });
     return true;
   }
 
@@ -1000,8 +1099,8 @@ class BrowserDatabaseService {
       this.addOrUpdateRoom(newCourse.room_name);
     }
     this.data.courses.push(newCourse);
+    this.recordAuthorityDraft('courses', 'create', newCourse.id, newCourse);
     this.saveData();
-    this.recordSyncChange('courses', 'create', newCourse.id, newCourse);
     return newCourse;
   }
 
@@ -1018,8 +1117,8 @@ class BrowserDatabaseService {
     if (updates.room_name && !this.data.rooms.find(r => r.name === updates.room_name)) {
       this.addOrUpdateRoom(updates.room_name);
     }
+    this.recordAuthorityDraft('courses', 'update', id, this.data.courses[index]);
     this.saveData();
-    this.recordSyncChange('courses', 'update', id, this.data.courses[index]);
     return this.data.courses[index];
   }
 
@@ -1027,8 +1126,8 @@ class BrowserDatabaseService {
     const index = this.data.courses.findIndex(c => c.id === id);
     if (index === -1) return false;
     this.data.courses.splice(index, 1);
+    this.recordAuthorityDraft('courses', 'delete', id, { id });
     this.saveData();
-    this.recordSyncChange('courses', 'delete', id, { id });
     return true;
   }
 
@@ -1051,8 +1150,8 @@ class BrowserDatabaseService {
       updated_at: now
     };
     this.data.schedules.push(newSchedule);
+    this.recordAuthorityDraft('schedules', 'create', newSchedule.id, newSchedule);
     this.saveData();
-    this.recordSyncChange('schedules', 'create', newSchedule.id, newSchedule);
     return newSchedule;
   }
 
@@ -1065,8 +1164,8 @@ class BrowserDatabaseService {
       ...updates,
       updated_at: new Date().toISOString()
     };
+    this.recordAuthorityDraft('schedules', 'update', id, this.data.schedules[index]);
     this.saveData();
-    this.recordSyncChange('schedules', 'update', id, this.data.schedules[index]);
     return this.data.schedules[index];
   }
 
@@ -1080,8 +1179,8 @@ class BrowserDatabaseService {
         updated_at: schedule.updated_at || now
       } as Schedule;
       this.data.schedules.push(newSchedule);
+      this.recordAuthorityDraft('schedules', 'create', newSchedule.id, newSchedule);
       this.saveData();
-      this.recordSyncChange('schedules', 'create', newSchedule.id, newSchedule);
       return newSchedule;
     }
 
@@ -1091,8 +1190,8 @@ class BrowserDatabaseService {
       updated_at: schedule.updated_at || now
     } as Schedule;
     this.data.schedules[index] = updated;
+    this.recordAuthorityDraft('schedules', 'update', updated.id, updated);
     this.saveData();
-    this.recordSyncChange('schedules', 'update', updated.id, updated);
     return updated;
   }
 
@@ -1131,8 +1230,13 @@ class BrowserDatabaseService {
 
     this.createBusinessDataSafetyBackup('before-replaceSchedules');
     this.data.schedules = Array.from(nextById.values());
+    this.recordAuthorityDraftBatch(changes.map(change => ({
+      collection: 'schedules',
+      action: change.action,
+      recordId: change.id,
+      value: change.payload,
+    })));
     this.saveData();
-    changes.forEach(change => this.recordSyncChange('schedules', change.action, change.id, change.payload));
     return this.data.schedules;
   }
 
@@ -1141,8 +1245,8 @@ class BrowserDatabaseService {
     if (index === -1) return false;
     this.createBusinessDataSafetyBackup('before-deleteSchedule');
     this.data.schedules.splice(index, 1);
+    this.recordAuthorityDraft('schedules', 'delete', id, { id });
     this.saveData();
-    this.recordSyncChange('schedules', 'delete', id, { id });
     return true;
   }
 
@@ -1297,8 +1401,8 @@ class BrowserDatabaseService {
       updated_at: now
     };
     this.data.teachers.push(newTeacher);
+    this.recordAuthorityDraft('teachers', 'create', newTeacher.id, newTeacher);
     this.saveData();
-    this.recordSyncChange('teachers', 'create', newTeacher.id, newTeacher);
     return newTeacher;
   }
 
@@ -1310,8 +1414,8 @@ class BrowserDatabaseService {
         ...updates,
         updated_at: new Date().toISOString()
       };
+      this.recordAuthorityDraft('teachers', 'update', id, this.data.teachers[index]);
       this.saveData();
-      this.recordSyncChange('teachers', 'update', id, this.data.teachers[index]);
       return this.data.teachers[index];
     }
     return undefined;
@@ -1319,8 +1423,8 @@ class BrowserDatabaseService {
 
   deleteTeacher(id: string): void {
     this.data.teachers = this.data.teachers.filter(t => t.id !== id);
+    this.recordAuthorityDraft('teachers', 'delete', id, { id });
     this.saveData();
-    this.recordSyncChange('teachers', 'delete', id, { id });
   }
 
   // ========== 缴费记录管理 ==========
@@ -1345,8 +1449,8 @@ class BrowserDatabaseService {
       created_at: now
     };
     this.data.payments.push(newPayment);
+    this.recordAuthorityDraft('payments', 'create', newPayment.id, newPayment);
     this.saveData();
-    this.recordSyncChange('payments', 'create', newPayment.id, newPayment);
     return newPayment;
   }
 
@@ -1357,8 +1461,8 @@ class BrowserDatabaseService {
         ...this.data.payments[index],
         ...updates
       };
+      this.recordAuthorityDraft('payments', 'update', id, this.data.payments[index]);
       this.saveData();
-      this.recordSyncChange('payments', 'update', id, this.data.payments[index]);
       return this.data.payments[index];
     }
     return undefined;
@@ -1366,8 +1470,8 @@ class BrowserDatabaseService {
 
   deletePayment(id: string): void {
     this.data.payments = this.data.payments.filter(p => p.id !== id);
+    this.recordAuthorityDraft('payments', 'delete', id, { id });
     this.saveData();
-    this.recordSyncChange('payments', 'delete', id, { id });
   }
 
   // ========== 课时消耗记录管理 ==========
@@ -1392,8 +1496,8 @@ class BrowserDatabaseService {
       created_at: now
     };
     this.data.consumptions.push(newConsumption);
+    this.recordAuthorityDraft('consumptions', 'create', newConsumption.id, newConsumption);
     this.saveData();
-    this.recordSyncChange('consumptions', 'create', newConsumption.id, newConsumption);
     return newConsumption;
   }
 
@@ -1404,8 +1508,8 @@ class BrowserDatabaseService {
         ...this.data.consumptions[index],
         ...updates
       };
+      this.recordAuthorityDraft('consumptions', 'update', id, this.data.consumptions[index]);
       this.saveData();
-      this.recordSyncChange('consumptions', 'update', id, this.data.consumptions[index]);
       return this.data.consumptions[index];
     }
     return undefined;
@@ -1413,8 +1517,8 @@ class BrowserDatabaseService {
 
   deleteConsumption(id: string): void {
     this.data.consumptions = this.data.consumptions.filter(c => c.id !== id);
+    this.recordAuthorityDraft('consumptions', 'delete', id, { id });
     this.saveData();
-    this.recordSyncChange('consumptions', 'delete', id, { id });
   }
 
   // ========== 数据导出/导入 ==========
@@ -1506,8 +1610,8 @@ class BrowserDatabaseService {
       updated_at: now
     };
     this.data.assetRecords.push(newRecord);
+    this.recordAuthorityDraft('assetRecords', 'create', newRecord.id, newRecord);
     this.saveData();
-    this.recordSyncChange('assetRecords', 'create', newRecord.id, newRecord);
     return newRecord;
   }
 
@@ -1515,8 +1619,8 @@ class BrowserDatabaseService {
     const idx = this.data.assetRecords.findIndex(r => r.id === id);
     if (idx === -1) return false;
     this.data.assetRecords[idx] = { ...this.data.assetRecords[idx], ...updates, updated_at: new Date().toISOString() };
+    this.recordAuthorityDraft('assetRecords', 'update', id, this.data.assetRecords[idx]);
     this.saveData();
-    this.recordSyncChange('assetRecords', 'update', id, this.data.assetRecords[idx]);
     return true;
   }
 
@@ -1524,8 +1628,8 @@ class BrowserDatabaseService {
     const idx = this.data.assetRecords.findIndex(r => r.id === id);
     if (idx === -1) return false;
     this.data.assetRecords.splice(idx, 1);
+    this.recordAuthorityDraft('assetRecords', 'delete', id, { id });
     this.saveData();
-    this.recordSyncChange('assetRecords', 'delete', id, { id });
     return true;
   }
 
@@ -1548,8 +1652,8 @@ class BrowserDatabaseService {
       updated_at: now
     };
     this.data.assetCategories.push(newCat);
+    this.recordAuthorityDraft('assetCategories', 'create', newCat.id, newCat);
     this.saveData();
-    this.recordSyncChange('assetCategories', 'create', newCat.id, newCat);
     return newCat;
   }
 
@@ -1558,8 +1662,8 @@ class BrowserDatabaseService {
     const idx = this.data.assetCategories.findIndex(c => c.id === id);
     if (idx === -1) return false;
     this.data.assetCategories.splice(idx, 1);
+    this.recordAuthorityDraft('assetCategories', 'delete', id, { id });
     this.saveData();
-    this.recordSyncChange('assetCategories', 'delete', id, { id });
     return true;
   }
 
@@ -1619,8 +1723,8 @@ class BrowserDatabaseService {
     const id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
     const newGrade: Grade = { ...grade, id, created_at: now };
     this.data.grades.push(newGrade);
+    this.recordAuthorityDraft('grades', 'create', newGrade.id, newGrade);
     this.saveData();
-    this.recordSyncChange('grades', 'create', newGrade.id, newGrade);
     return newGrade;
   }
 
@@ -1628,8 +1732,8 @@ class BrowserDatabaseService {
     const idx = this.data.grades.findIndex(g => g.id === id);
     if (idx === -1) return false;
     this.data.grades.splice(idx, 1);
+    this.recordAuthorityDraft('grades', 'delete', id, { id });
     this.saveData();
-    this.recordSyncChange('grades', 'delete', id, { id });
     return true;
   }
 
@@ -1703,8 +1807,8 @@ class BrowserDatabaseService {
       status,
       updated_at: new Date().toISOString()
     });
+    this.recordAuthorityDraft('questions', 'update', id, this.data.questions[idx]);
     this.saveData();
-    this.recordSyncChange('questions', 'update', id, this.data.questions[idx]);
     return this.data.questions[idx];
   }
 
@@ -1859,11 +1963,11 @@ class BrowserDatabaseService {
     };
     this.data.taxonomySystems.push(system);
     this.syncTaxonomySyncRowsFromCanonical();
-    this.saveData();
-    this.recordSyncChange('taxonomy_systems', 'create', system.id, {
+    this.recordAuthorityDraft('taxonomy_systems', 'create', system.id, {
       subject: system.subject, name: system.name, sort_order: system.sort_no,
       deleted: 0, created_at: system.created_at, updated_at: system.updated_at,
     });
+    this.saveData();
     return system;
   }
 
@@ -1883,12 +1987,12 @@ class BrowserDatabaseService {
       updated_at: new Date().toISOString(),
     };
     this.syncTaxonomySyncRowsFromCanonical();
-    this.saveData();
     const updated = this.data.taxonomySystems[index];
-    this.recordSyncChange('taxonomy_systems', 'update', id, {
+    this.recordAuthorityDraft('taxonomy_systems', 'update', id, {
       subject: updated.subject, name: updated.name, sort_order: updated.sort_no,
       deleted: 0, created_at: updated.created_at, updated_at: updated.updated_at,
     });
+    this.saveData();
     return this.data.taxonomySystems[index];
   }
 
@@ -2016,6 +2120,14 @@ class BrowserDatabaseService {
         }
       }
       this.syncTaxonomySyncRowsFromCanonical();
+      this.recordAuthorityDraft('taxonomy_systems', 'delete', id, {
+        subject: system.subject, name: system.name, sort_order: system.sort_no,
+        deleted: 1, created_at: system.created_at, updated_at: new Date().toISOString(),
+        _taxonomy_delete_confirmation: {
+          confirmed: true,
+          expected_affected_question_count: impact.affected_question_count,
+        },
+      });
       this.saveData();
       this.appendTaxonomyDeletionAudit(backupId, 'success');
     } catch (error) {
@@ -2024,23 +2136,6 @@ class BrowserDatabaseService {
       try { this.appendTaxonomyDeletionAudit(backupId, 'failed', error); } catch (_auditError) {}
       throw error;
     }
-    for (const question of this.data.questions.filter(item => affectedQuestionIds.has(item.id))) {
-      this.syncQuestionLocalRecord(question);
-      this.recordSyncChange('questions', 'update', question.id, question);
-    }
-    this.recordSyncChange('taxonomy_systems', 'delete', id, {
-      subject: system.subject, name: system.name, sort_order: system.sort_no,
-      deleted: 1, created_at: system.created_at, updated_at: new Date().toISOString(),
-      _taxonomy_delete_confirmation: {
-        confirmed: true,
-        expected_affected_question_count: impact.affected_question_count,
-        backup_id: backupId,
-      },
-    });
-    for (const node of nodes) this.recordSyncChange('taxonomy_nodes', 'delete', node.id, {
-      system_id: id, parent_id: node.parent_id || null, name: node.tag_name,
-      sort_order: node.sort_no, deleted: 1, created_at: node.created_at, updated_at: new Date().toISOString(),
-    }, node.updated_at);
     return { deleted: true, backup_id: backupId, ...impact };
   }
 
@@ -2067,12 +2162,13 @@ class BrowserDatabaseService {
       subject: system.subject,
       sort_no: created.order,
       status: 1,
-    });
+    }, false);
     this.syncTaxonomySyncRowsFromCanonical();
-    this.recordSyncChange('taxonomy_nodes', 'create', created.id, {
+    this.recordAuthorityDraft('taxonomy_nodes', 'create', created.id, {
       system_id: systemId, parent_id: created.parent_id || null, name: created.name,
       sort_order: created.order, deleted: 0, created_at: created.created_at, updated_at: created.updated_at,
     });
+    this.saveData();
     return created;
   }
 
@@ -2082,13 +2178,14 @@ class BrowserDatabaseService {
       ...(updates.name === undefined ? {} : { tag_name: String(updates.name).trim() }),
       ...(updates.parent_id === undefined ? {} : { parent_id: updates.parent_id }),
       ...(updates.order === undefined ? {} : { sort_no: updates.order }),
-    }, systemId);
+    }, systemId, false);
     if (updated) {
       this.syncTaxonomySyncRowsFromCanonical();
-      this.recordSyncChange('taxonomy_nodes', 'update', id, {
+      this.recordAuthorityDraft('taxonomy_nodes', 'update', id, {
         system_id: systemId, parent_id: updated.parent_id || null, name: updated.tag_name,
         sort_order: updated.sort_no, deleted: 0, created_at: updated.created_at, updated_at: updated.updated_at,
       }, current?.updated_at || null);
+      this.saveData();
     }
     return Boolean(updated);
   }
@@ -2126,6 +2223,17 @@ class BrowserDatabaseService {
       this.syncAllQuestionLegacyTagFields();
       for (const question of this.data.questions.filter(item => affectedQuestionIds.has(item.id))) question.updated_at = new Date().toISOString();
       this.syncTaxonomySyncRowsFromCanonical();
+      const root = rows.find(tag => tag.id === id);
+      this.recordAuthorityDraft('taxonomy_nodes', 'delete', id, {
+        system_id: systemId,
+        parent_id: root?.parent_id || null,
+        name: root?.tag_name || '',
+        sort_order: root?.sort_no || 0,
+        _taxonomy_delete_confirmation: {
+          confirmed: true,
+          expected_affected_question_count: impact.affected_question_count,
+        },
+      }, root?.updated_at || null);
       this.saveData();
       this.appendTaxonomyDeletionAudit(backupId, 'success');
     } catch (error) {
@@ -2133,24 +2241,6 @@ class BrowserDatabaseService {
       try { this.saveData(); } catch (_rollbackError) {}
       try { this.appendTaxonomyDeletionAudit(backupId, 'failed', error); } catch (_auditError) {}
       throw error;
-    }
-    for (const question of this.data.questions.filter(item => affectedQuestionIds.has(item.id))) {
-      this.syncQuestionLocalRecord(question);
-      this.recordSyncChange('questions', 'update', question.id, question);
-    }
-    for (const tag of rows) {
-      this.recordSyncChange('taxonomy_nodes', 'delete', tag.id, {
-        system_id: systemId, parent_id: tag.parent_id || null, name: tag.tag_name,
-        sort_order: tag.sort_no, deleted: 1, created_at: tag.created_at, updated_at: new Date().toISOString(),
-        ...(tag.id === id ? {
-          _taxonomy_delete_confirmation: {
-            confirmed: true,
-            expected_affected_question_count: impact.affected_question_count,
-            cascade_node_ids: rows.map(row => row.id),
-            backup_id: backupId,
-          },
-        } : {}),
-      }, tag.updated_at);
     }
     return { deleted: true, backup_id: backupId, ...impact };
   }
@@ -2203,6 +2293,55 @@ class BrowserDatabaseService {
       this.syncLegacyTreesFromTags();
       this.syncAllQuestionLegacyTagFields();
       this.syncTaxonomySyncRowsFromCanonical();
+      const restoreChanges: Array<{
+        collection: SyncTable;
+        action: SyncAction;
+        recordId: string;
+        value: Record<string, any>;
+      }> = [];
+      if (backup.entity_type === 'system') {
+        restoreChanges.push({
+          collection: 'taxonomy_systems',
+          action: 'create',
+          recordId: snapshot.system.id,
+          value: {
+            subject: snapshot.system.subject,
+            name: snapshot.system.name,
+            sort_order: snapshot.system.sort_no,
+            deleted: 0,
+            created_at: snapshot.system.created_at,
+            updated_at: new Date().toISOString(),
+          },
+        });
+      }
+      for (const node of snapshot.nodes || []) {
+        restoreChanges.push({
+          collection: 'taxonomy_nodes',
+          action: 'create',
+          recordId: node.id,
+          value: {
+            system_id: node.tag_type,
+            parent_id: node.parent_id || null,
+            name: node.tag_name,
+            sort_order: node.sort_no,
+            deleted: 0,
+            created_at: node.created_at,
+            updated_at: new Date().toISOString(),
+          },
+        });
+      }
+      for (const annotation of snapshot.annotations || []) {
+        const question = this.data.questions.find(item => item.id === annotation.question_id);
+        if (question) {
+          restoreChanges.push({
+            collection: 'questions',
+            action: 'update',
+            recordId: question.id,
+            value: question,
+          });
+        }
+      }
+      this.recordAuthorityDraftBatch(restoreChanges);
       this.saveData();
     } catch (error) {
       this.data = before;
@@ -2217,20 +2356,6 @@ class BrowserDatabaseService {
       ],
     };
     localStorage.setItem(this.identityStorageKey(TAXONOMY_DELETION_BACKUP_KEY), JSON.stringify(backups));
-    if (backup.entity_type === 'system') {
-      this.recordSyncChange('taxonomy_systems', 'create', snapshot.system.id, {
-        subject: snapshot.system.subject, name: snapshot.system.name, sort_order: snapshot.system.sort_no,
-        deleted: 0, created_at: snapshot.system.created_at, updated_at: new Date().toISOString(),
-      });
-    }
-    for (const node of snapshot.nodes || []) this.recordSyncChange('taxonomy_nodes', 'create', node.id, {
-      system_id: node.tag_type, parent_id: node.parent_id || null, name: node.tag_name,
-      sort_order: node.sort_no, deleted: 0, created_at: node.created_at, updated_at: new Date().toISOString(),
-    });
-    for (const annotation of snapshot.annotations || []) {
-      const question = this.data.questions.find(item => item.id === annotation.question_id);
-      if (question) this.recordSyncChange('questions', 'update', question.id, question);
-    }
     return { restored: true, backup_id: backupId, affected_question_count: backup.affected_question_count };
   }
 
@@ -2249,7 +2374,7 @@ class BrowserDatabaseService {
     return tagType ? tags.filter(tag => tag.tag_type === tagType) : tags;
   }
 
-  createTag(tag: Omit<Tag, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Tag {
+  createTag(tag: Omit<Tag, 'id' | 'created_at' | 'updated_at'> & { id?: string }, persist = true): Tag {
     const now = new Date().toISOString();
     const id = tag.id || this.generateId();
     const newTag: Tag = {
@@ -2263,17 +2388,17 @@ class BrowserDatabaseService {
     };
     this.data.tags = [...(this.data.tags || []).filter(item => !(item.id === newTag.id && item.tag_type === newTag.tag_type)), newTag];
     this.syncLegacyTreesFromTags();
-    this.saveData();
+    if (persist) this.saveData();
     return newTag;
   }
 
-  updateTag(id: string, updates: Partial<Omit<Tag, 'id' | 'created_at'>>, tagType?: TagType): Tag | undefined {
+  updateTag(id: string, updates: Partial<Omit<Tag, 'id' | 'created_at'>>, tagType?: TagType, persist = true): Tag | undefined {
     const idx = (this.data.tags || []).findIndex(tag => tag.id === id && (!tagType || tag.tag_type === tagType));
     if (idx === -1) return undefined;
     this.data.tags[idx] = { ...this.data.tags[idx], ...updates, updated_at: new Date().toISOString() };
     this.syncLegacyTreesFromTags();
     this.syncAllQuestionLegacyTagFields();
-    this.saveData();
+    if (persist) this.saveData();
     return this.data.tags[idx];
   }
 
@@ -2288,12 +2413,27 @@ class BrowserDatabaseService {
     this.data.questionTagRels = (this.data.questionTagRels || []).filter(rel => !deleteKeys.has(`${rel.tag_type}__${rel.tag_id}`));
     this.syncLegacyTreesFromTags();
     this.syncAllQuestionLegacyTagFields();
+    const questionChanges: Array<{
+      collection: SyncTable;
+      action: SyncAction;
+      recordId: string;
+      value: Record<string, any>;
+    }> = [];
     for (const questionId of affectedQuestionIds) {
       const question = this.data.questions.find(item => item.id === questionId);
       if (!question) continue;
       question.updated_at = new Date().toISOString();
-      this.syncQuestionLocalRecord(question);
-      this.recordSyncChange('questions', 'update', questionId, question);
+      questionChanges.push({
+        collection: 'questions',
+        action: 'update',
+        recordId: questionId,
+        value: question,
+      });
+    }
+    this.recordAuthorityDraftBatch(questionChanges);
+    for (const questionId of affectedQuestionIds) {
+      const question = this.data.questions.find(item => item.id === questionId);
+      if (question) this.syncQuestionLocalRecord(question);
     }
     this.saveData();
     return true;
@@ -2311,9 +2451,9 @@ class BrowserDatabaseService {
     if (!question) return null;
     this.replaceQuestionTagRels(questionId, tagType, tagIds);
     question.updated_at = new Date().toISOString();
+    this.recordAuthorityDraft('questions', 'update', questionId, question);
     this.syncQuestionLocalRecord(question);
     this.saveData();
-    this.recordSyncChange('questions', 'update', questionId, question);
     return question;
   }
 
@@ -2364,9 +2504,9 @@ class BrowserDatabaseService {
     const normalizedQuestion = this.normalizeQuestionRecord(newQuestion);
     this.data.questions.push(normalizedQuestion);
     this.syncQuestionRelsFromLegacyFields(normalizedQuestion);
+    this.recordAuthorityDraft('questions', 'create', normalizedQuestion.id, normalizedQuestion);
     this.syncQuestionLocalRecord(normalizedQuestion);
     this.saveData();
-    this.recordSyncChange('questions', 'create', normalizedQuestion.id, normalizedQuestion);
     return normalizedQuestion;
   }
 
@@ -2414,9 +2554,9 @@ class BrowserDatabaseService {
       updated_at: now,
     });
     this.syncQuestionRelsFromLegacyFields(this.data.questions[idx]);
+    this.recordAuthorityDraft('questions', 'update', questionId, this.data.questions[idx]);
     this.syncQuestionLocalRecord(this.data.questions[idx]);
     this.saveData();
-    this.recordSyncChange('questions', 'update', questionId, this.data.questions[idx]);
     return this.data.questions[idx];
   }
 
@@ -2439,9 +2579,9 @@ class BrowserDatabaseService {
     ) {
       this.syncQuestionRelsFromLegacyFields(this.data.questions[idx]);
     }
+    this.recordAuthorityDraft('questions', 'update', id, this.data.questions[idx]);
     this.syncQuestionLocalRecord(this.data.questions[idx]);
     this.saveData();
-    this.recordSyncChange('questions', 'update', id, this.data.questions[idx]);
     return true;
   }
 
@@ -2467,10 +2607,10 @@ class BrowserDatabaseService {
       updated_at: new Date().toISOString(),
     } as Question);
     this.data.questionBasketIds = (this.data.questionBasketIds || []).filter(questionId => questionId !== id);
+    this.recordAuthorityDraft('questions', 'delete', id, this.data.questions[idx]);
     this.syncQuestionLocalRecord(this.data.questions[idx]);
     this.syncTreeCache();
     this.saveData();
-    this.recordSyncChange('questions', 'delete', id, this.data.questions[idx]);
     return true;
   }
 
@@ -2483,9 +2623,9 @@ class BrowserDatabaseService {
       deleted_at: '',
       updated_at: new Date().toISOString(),
     } as Question);
+    this.recordAuthorityDraft('questions', 'update', id, this.data.questions[idx]);
     this.syncQuestionLocalRecord(this.data.questions[idx]);
     this.saveData();
-    this.recordSyncChange('questions', 'update', id, this.data.questions[idx]);
     return true;
   }
 
@@ -2512,9 +2652,9 @@ class BrowserDatabaseService {
     question.knowledge_point = primary?.name || '';
     question.updated_at = new Date().toISOString();
     this.replaceQuestionTagRels(questionId, 'knowledge', nextIds);
+    this.recordAuthorityDraft('questions', 'update', questionId, question);
     this.syncQuestionLocalRecord(question);
     this.saveData();
-    this.recordSyncChange('questions', 'update', questionId, question);
     return question;
   }
 
@@ -2774,9 +2914,9 @@ class BrowserDatabaseService {
     question.model_point = primary?.name || '';
     question.updated_at = new Date().toISOString();
     this.replaceQuestionTagRels(questionId, 'model', nextIds);
+    this.recordAuthorityDraft('questions', 'update', questionId, question);
     this.syncQuestionLocalRecord(question);
     this.saveData();
-    this.recordSyncChange('questions', 'update', questionId, question);
     return question;
   }
 

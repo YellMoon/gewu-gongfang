@@ -68,8 +68,8 @@ function generateDeviceCredential() {
   };
 }
 
-const primaryDeviceKey = generateDeviceKey();
-const { publicKey, keyFingerprint } = primaryDeviceKey;
+const primaryDeviceKey = generateDeviceCredential();
+const { publicKey, keyFingerprint, privateKey } = primaryDeviceKey;
 assert.strictEqual(fingerprintPublicKey(publicKey), keyFingerprint);
 
 for (const table of ['desktop_identity_challenges', 'desktop_device_authorizations']) {
@@ -130,7 +130,6 @@ for (const forbidden of [
   { userId: canonicalId },
   { role: 'super_admin' },
   { teacherId: 'teacher-self' },
-  { deviceKind: 'primary-host' },
   { isPrimaryHost: true },
   { primaryHost: true },
   { challengeSecret: 'client-selected' },
@@ -192,17 +191,47 @@ assert.strictEqual(authorization.user_id, canonicalId);
 assert.strictEqual(authorization.status, 'pending');
 assert.strictEqual(authorization.device_kind, 'desktop-client');
 assert.strictEqual(authorization.key_fingerprint, keyFingerprint);
-assert.strictEqual(authorization.credential_version, 1);
-assert.strictEqual(authorization.last_phone_verified_at, currentTime);
+  assert.strictEqual(authorization.credential_version, 1);
+  assert.strictEqual(authorization.last_phone_verified_at, currentTime);
 
-const idempotent = service.confirmVerifiedIdentity({
-  challengeId: started.id,
-  identity: { id: canonicalId },
-  loginEventId: 'login-canonical-1',
-  expectedRowVersion: 1,
-});
-assert.strictEqual(idempotent.authorizationId, confirmed.authorizationId);
-assert.strictEqual(idempotent.rowVersion, 2);
+  const approvedRegistration = service.approveChallenge({
+    challengeId: started.id,
+    actorContext: {
+      activeRole: 'super_admin', userId: canonicalId, deviceId: 'approver-device', authTime: currentTime,
+    },
+    expectedRowVersion: confirmed.rowVersion,
+  });
+  const registrationSignature = crypto.sign(
+    null,
+    Buffer.from(desktopExchangeSigningPayload({
+      challengeId: started.id,
+      deviceId: 'device-2',
+      rowVersion: approvedRegistration.rowVersion,
+      challengeSecret: started.challengeSecret,
+    }), 'utf8'),
+    privateKey
+  ).toString('base64');
+  const pendingActivation = service.beginActivation({
+    challengeId: started.id,
+    challengeSecret: started.challengeSecret,
+    signature: registrationSignature,
+    expectedRowVersion: approvedRegistration.rowVersion,
+  });
+  assert.strictEqual(pendingActivation.authorization.status, 'pending');
+  assert.strictEqual(
+    db.prepare('SELECT status FROM desktop_device_authorizations WHERE id=?').get(confirmed.authorizationId).status,
+    'pending',
+    'challenge proof must not activate a device before its local vault receipt is finalized'
+  );
+
+  const idempotent = service.beginActivation({
+    challengeId: started.id,
+    challengeSecret: started.challengeSecret,
+    signature: registrationSignature,
+    expectedRowVersion: approvedRegistration.rowVersion,
+  });
+  assert.strictEqual(idempotent.authorization.id, confirmed.authorizationId);
+  assert.strictEqual(idempotent.authorization.status, 'pending');
 assert.strictEqual(
   db.prepare('SELECT COUNT(*) count FROM desktop_device_authorizations WHERE device_id=?').get('device-2').count,
   1
@@ -367,6 +396,49 @@ assert.strictEqual(
   0
 );
 
+currentTime = '2026-07-17T00:04:10.000Z';
+const approvalExpiredDeviceKey = generateDeviceKey();
+const approvalExpiredChallenge = expiringService.startChallenge({
+  deviceId: 'device-approval-expired', deviceName: 'Approval Expired PC', ...approvalExpiredDeviceKey, purpose: 'register',
+});
+insertLoginEvent('login-canonical-approval-expired', canonicalId, '13732250653', currentTime);
+const approvalExpiredConfirmed = expiringService.confirmVerifiedIdentity({
+  challengeId: approvalExpiredChallenge.id,
+  identity: { id: canonicalId },
+  loginEventId: 'login-canonical-approval-expired',
+});
+assert.strictEqual(approvalExpiredConfirmed.status, 'identity_verified_pending_approval');
+currentTime = '2026-07-17T00:04:12.000Z';
+expiringService.readPublicChallenge(approvalExpiredChallenge.id);
+assert.strictEqual(
+  db.prepare('SELECT status FROM desktop_identity_challenges WHERE id=?').get(approvalExpiredChallenge.id).status,
+  'expired'
+);
+assert.strictEqual(
+  db.prepare('SELECT status FROM desktop_device_authorizations WHERE id=?').get(approvalExpiredConfirmed.authorizationId).status,
+  'revoked',
+  'an expired approval request must not leave a non-actionable pending device authorization behind'
+);
+db.prepare(`UPDATE desktop_device_authorizations
+  SET status='pending', revoked_at=NULL, row_version=row_version+1
+  WHERE id=?`).run(approvalExpiredConfirmed.authorizationId);
+currentTime = '2026-07-17T00:04:13.000Z';
+const retriedExpiredChallenge = expiringService.startChallenge({
+  deviceId: 'device-approval-expired', deviceName: 'Approval Expired PC', ...approvalExpiredDeviceKey, purpose: 'register',
+});
+insertLoginEvent('login-canonical-approval-retry', canonicalId, '13732250653', currentTime);
+const retriedExpiredConfirmed = expiringService.confirmVerifiedIdentity({
+  challengeId: retriedExpiredChallenge.id,
+  identity: { id: canonicalId },
+  loginEventId: 'login-canonical-approval-retry',
+});
+assert.strictEqual(retriedExpiredConfirmed.authorizationId, approvalExpiredConfirmed.authorizationId,
+  'a retry after expiration must reuse the revoked device record instead of violating unique device constraints');
+assert.strictEqual(
+  db.prepare('SELECT status FROM desktop_device_authorizations WHERE id=?').get(retriedExpiredConfirmed.authorizationId).status,
+  'pending'
+);
+
 const originalResetCredential = generateDeviceCredential();
 db.prepare(`INSERT INTO desktop_device_authorizations
   (id, device_id, device_name, device_kind, user_id, public_key, key_fingerprint,
@@ -390,6 +462,43 @@ db.prepare(`INSERT INTO desktop_device_authorizations
     currentTime,
     currentTime
   );
+const originalPrimaryHostResetCredential = generateDeviceCredential();
+db.prepare(`INSERT INTO desktop_device_authorizations
+  (id, device_id, device_name, device_kind, user_id, public_key, key_fingerprint,
+   status, source_challenge_id, approved_by_user_id, approved_by_device_id, approved_at,
+   last_phone_verified_at, phone_reverify_due_at, credential_version, row_version,
+   created_at, updated_at)
+  VALUES (?, ?, ?, 'primary-host', ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)`)
+  .run(
+    'authorization-primary-host-password-reset',
+    'device-primary-host-password-reset',
+    'Primary Host Password Reset',
+    canonicalId,
+    originalPrimaryHostResetCredential.publicKey,
+    originalPrimaryHostResetCredential.keyFingerprint,
+    'initial-registration-primary-host-password-reset',
+    canonicalId,
+    'approver-device',
+    currentTime,
+    currentTime,
+    '2026-08-16T00:04:02.000Z',
+    currentTime,
+    currentTime
+  );
+const nextPrimaryHostResetCredential = generateDeviceCredential();
+const primaryHostResetStarted = service.startChallenge({
+  deviceId: 'device-primary-host-password-reset',
+  deviceName: 'Primary Host Password Reset',
+  deviceKind: 'primary-host',
+  publicKey: nextPrimaryHostResetCredential.publicKey,
+  keyFingerprint: nextPrimaryHostResetCredential.keyFingerprint,
+  purpose: 'password_reset',
+});
+assert.strictEqual(
+  primaryHostResetStarted.status,
+  'pending_phone',
+  'a primary host must be able to reset its local password after the same WeChat and peer approval checks'
+);
 const nextResetCredential = generateDeviceCredential();
 const resetStarted = service.startChallenge({
   deviceId: 'device-password-reset',
@@ -501,6 +610,17 @@ const allColumnNames = [
 for (const forbiddenColumn of ['wechat_code', 'phone_code', 'challenge_token', 'private_key']) {
   assert.ok(!allColumnNames.includes(forbiddenColumn), `${forbiddenColumn} must never be persisted`);
 }
+
+const primaryHostKey = crypto.generateKeyPairSync('ed25519');
+const primaryHostPublicKey = primaryHostKey.publicKey.export({ type: 'spki', format: 'pem' });
+const primaryHostStarted = service.startChallenge({
+  deviceId: 'primary-host-registration', deviceName: 'Primary Host', publicKey: primaryHostPublicKey,
+  keyFingerprint: fingerprintPublicKey(primaryHostPublicKey), purpose: 'register', deviceKind: 'primary-host',
+});
+assert.strictEqual(
+  db.prepare('SELECT device_kind FROM desktop_identity_challenges WHERE id=?').get(primaryHostStarted.id).device_kind,
+  'primary-host'
+);
 
 db.close();
 console.log('desktop identity service tests passed');

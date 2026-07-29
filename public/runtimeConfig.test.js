@@ -12,6 +12,7 @@ const {
   writeManagedClientRuntimeConfig,
   writeManagedDesktopIdentityMode,
   applyRuntimeConfigToEnv,
+  MANAGED_CLOUD_BASE_URL,
 } = require('./runtimeConfig');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-runtime-config-'));
@@ -25,17 +26,32 @@ assert.ok(fs.existsSync(firstLaunchPath), 'first launch must persist the generat
 assert.strictEqual(repeatedFirstLaunchConfig.deviceId, firstLaunchConfig.deviceId, 'device id must stay stable across reads');
 assert.strictEqual(firstLaunchConfig.desktopIdentityMode, 'full', 'desktop identity mode must default to full');
 
-const ordinarySingleUserAttempt = normalizeRuntimeConfig({ desktopIdentityMode: 'single-user' }, {
+const retiredSingleUserAttempt = normalizeRuntimeConfig({ desktopIdentityMode: 'single-user' }, {
   userDataPath: firstLaunchDir,
   primaryHostCapable: false,
 });
-assert.strictEqual(ordinarySingleUserAttempt.desktopIdentityMode, 'full', 'ordinary flavor must reject single-user mode');
+assert.strictEqual(retiredSingleUserAttempt.desktopIdentityMode, 'full', 'single-user mode must be retired');
 
-const hostSingleUserConfig = normalizeRuntimeConfig({ desktopIdentityMode: 'single-user' }, {
-  userDataPath: firstLaunchDir,
-  primaryHostCapable: true,
-});
-assert.strictEqual(hostSingleUserConfig.desktopIdentityMode, 'single-user');
+const previousE2eAuthorityDataMode = process.env.GEWU_E2E_NO_AUTHORITY_DATA;
+const previousE2eManagedCloud = process.env.GEWU_E2E_MANAGED_CLOUD_BASE_URL;
+try {
+  process.env.GEWU_E2E_NO_AUTHORITY_DATA = '1';
+  process.env.GEWU_E2E_MANAGED_CLOUD_BASE_URL = 'http://127.0.0.1:48123';
+  assert.strictEqual(normalizeRuntimeConfig({ nodeRole: 'desktop-client' }, {
+    userDataPath: firstLaunchDir,
+  }).cloudBaseUrl, 'http://127.0.0.1:48123',
+  'an explicit no-real-data E2E run must use its isolated loopback control plane');
+  process.env.GEWU_E2E_MANAGED_CLOUD_BASE_URL = 'https://untrusted.example';
+  assert.strictEqual(normalizeRuntimeConfig({ nodeRole: 'desktop-client' }, {
+    userDataPath: firstLaunchDir,
+  }).cloudBaseUrl, MANAGED_CLOUD_BASE_URL,
+  'the E2E override must reject a non-loopback cloud endpoint');
+} finally {
+  if (previousE2eAuthorityDataMode === undefined) delete process.env.GEWU_E2E_NO_AUTHORITY_DATA;
+  else process.env.GEWU_E2E_NO_AUTHORITY_DATA = previousE2eAuthorityDataMode;
+  if (previousE2eManagedCloud === undefined) delete process.env.GEWU_E2E_MANAGED_CLOUD_BASE_URL;
+  else process.env.GEWU_E2E_MANAGED_CLOUD_BASE_URL = previousE2eManagedCloud;
+}
 
 const normalized = normalizeRuntimeConfig({
   nodeRole: 'primary-host',
@@ -46,7 +62,6 @@ const normalized = normalizeRuntimeConfig({
   questionBankStoreId: 'qb_test_store',
   localCachePath: 'D:/GewuQuestionBankCache/',
   nasBackupPath: '//NAS/GewuQuestionBankBackup/',
-  desktopSyncToken: 'ab'.repeat(32),
   cloudBaseUrl: 'https://cloud.example.com/',
 });
 
@@ -60,7 +75,7 @@ assert.deepStrictEqual(
 assert.strictEqual(normalized.questionBankStoreId, 'qb_test_store');
 assert.strictEqual(normalized.localCachePath.replace(/\\/g, '/'), 'D:/GewuQuestionBankCache');
 assert.strictEqual(normalized.nasBackupPath.replace(/\\/g, '/'), '//NAS/GewuQuestionBankBackup');
-assert.strictEqual(normalized.desktopSyncToken, 'ab'.repeat(32));
+assert.strictEqual(Object.hasOwn(normalized, 'desktopSyncToken'), false, 'shared relay secrets must be removed from runtime configuration');
 assert.strictEqual(normalized.cloudBaseUrl, 'https://cloud.example.com');
 
 const ordinaryWrite = writeRuntimeConfig(configPath, normalized, { userDataPath: dir });
@@ -78,13 +93,8 @@ assert.strictEqual(readBack.primaryHostEpochId, 'primary-host-epoch-1');
 assert.strictEqual(readBack.primaryHostGeneration, 1);
 assert.throws(() => writeManagedDesktopIdentityMode(configPath, 'single-user', {
   userDataPath: dir,
-  primaryHostCapable: false,
-}), /DESKTOP_IDENTITY_MODE_HOST_FLAVOR_REQUIRED/);
-const singleUserHost = writeManagedDesktopIdentityMode(configPath, 'single-user', {
-  userDataPath: dir,
   primaryHostCapable: true,
-});
-assert.strictEqual(singleUserHost.desktopIdentityMode, 'single-user');
+}), /DESKTOP_IDENTITY_MODE_RETIRED/);
 
 const attemptedRoleTamper = writeRuntimeConfig(configPath, {
   ...readBack,
@@ -105,9 +115,6 @@ assert.strictEqual(env.GEWU_DEVICE_ID, 'desktop_test');
 assert.strictEqual(env.GEWU_PRIMARY_HOST_EPOCH_ID, 'primary-host-epoch-1');
 assert.strictEqual(env.GEWU_DESKTOP_IDENTITY_MODE, 'full');
 
-const singleUserEnv = {};
-applyRuntimeConfigToEnv(singleUserHost, singleUserEnv);
-assert.strictEqual(singleUserEnv.GEWU_DESKTOP_IDENTITY_MODE, 'single-user');
 assert.strictEqual(env.GEWU_PRIMARY_HOST_GENERATION, '1');
 assert.strictEqual(env.DB_PATH.replace(/\\/g, '/'), 'D:/GewuData/scheduling.db');
 assert.strictEqual(env.QUESTION_BANK_ROOT.replace(/\\/g, '/'), 'E:/GewuQuestionBank');
@@ -116,28 +123,17 @@ assert.strictEqual(env.QUESTION_BANK_CANDIDATE_ROOTS.replace(/\\/g, '/'), 'E:/Ge
 assert.strictEqual(env.QUESTION_BANK_STORE_ID, 'qb_test_store');
 assert.strictEqual(env.GEWU_LOCAL_CACHE_PATH.replace(/\\/g, '/'), 'D:/GewuQuestionBankCache');
 assert.strictEqual(env.GEWU_NAS_BACKUP_PATH.replace(/\\/g, '/'), '//NAS/GewuQuestionBankBackup');
-assert.strictEqual(env.GEWU_DESKTOP_SYNC_TOKEN, 'ab'.repeat(32));
-assert.strictEqual(
-  env.GEWU_CLOUD_RELAY_HOST_TOKEN,
-  'ab'.repeat(32),
-  'the embedded primary-host backend must sign desktop relay assertions with the configured cloud host token'
-);
-assert.match(env.JWT_SECRET, /^[a-f0-9]{64}$/);
-assert.match(env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET, /^[a-f0-9]{64}$/);
-assert.notStrictEqual(env.JWT_SECRET, env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET);
 const repeatedEnv = {};
 applyRuntimeConfigToEnv(readBack, repeatedEnv);
-assert.strictEqual(repeatedEnv.JWT_SECRET, env.JWT_SECRET, 'derived local JWT secret must be stable across restarts');
-assert.strictEqual(repeatedEnv.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET, env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET, 'derived artifact secret must be stable across restarts');
 const explicitEnv = {
   JWT_SECRET: 'externally-managed-jwt',
   GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET: 'externally-managed-artifact',
-  GEWU_CLOUD_RELAY_HOST_TOKEN: 'externally-managed-relay',
+  GEWU_CLOUD_RELAY_HOST_TOKEN: 'retired-relay-secret',
 };
 applyRuntimeConfigToEnv(readBack, explicitEnv);
 assert.strictEqual(explicitEnv.JWT_SECRET, 'externally-managed-jwt');
 assert.strictEqual(explicitEnv.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET, 'externally-managed-artifact');
-assert.strictEqual(explicitEnv.GEWU_CLOUD_RELAY_HOST_TOKEN, 'externally-managed-relay');
+assert.strictEqual(explicitEnv.GEWU_CLOUD_RELAY_HOST_TOKEN, undefined);
 const ordinaryEnv = {};
 applyRuntimeConfigToEnv(ordinaryWrite, ordinaryEnv);
 assert.strictEqual(

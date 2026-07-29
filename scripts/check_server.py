@@ -31,7 +31,6 @@ run("ls -la /root/education-platform/gateway/shared/")
 
 print("\n=== Desktop services ===")
 run("find /root/education-platform -maxdepth 4 -name 'websocketClient.mjs' 2>/dev/null")
-run("find /root/education-platform -maxdepth 4 -name 'desktopSessionRelayClient.mjs' 2>/dev/null")
 
 print("\n=== Root structure ===")
 run("ls -la /root/education-platform/")

@@ -78,10 +78,13 @@ assert.strictEqual(studentScoped.students[0].phone, undefined);
 assert.strictEqual(studentScoped.students[0].balance_money, undefined);
 assert.strictEqual(studentScoped.courses[0].price_tuition, undefined);
 assert.strictEqual(studentScoped.schedules[0].calculated_tuition, undefined);
+assert.strictEqual(studentScoped.schedules[0].calculated_teacher_fee, undefined);
+assert.strictEqual(studentScoped.schedules[0].tuition, 500, 'student receives only their own tuition, never the group aggregate');
 assert.strictEqual(studentScoped.teachers[0].hourly_rate, undefined);
-assert.deepStrictEqual(studentScoped.payments, []);
+assert.deepStrictEqual(studentScoped.payments.map(x => x.id), ['p1']);
 assert.deepStrictEqual(studentScoped.consumptions, []);
-assert.deepStrictEqual(studentScoped.assetRecords, []);
+assert.deepStrictEqual(studentScoped.assetRecords.map(x => x.id), ['a1']);
+assert.deepStrictEqual(studentScoped.scopedFinancials, { tuition: 500, teacherFees: 0, payments: 50, assets: 10 });
 
 assertRecordReadable('courses', snapshot.courses[0], { kind: 'teacher', teacherId: 't1' });
 assert.throws(() => assertRecordReadable('courses', snapshot.courses[1], { kind: 'teacher', teacherId: 't1' }), err => err.code === 'TEACHER_SCOPE_VIOLATION');

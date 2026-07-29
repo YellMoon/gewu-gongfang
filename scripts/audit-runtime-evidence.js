@@ -30,7 +30,6 @@ try {
     identity: {
       activeDesktopAuthorizations: count('desktop_device_authorizations', "WHERE status='active'"),
       activeEpoch,
-      singleUserGrants: count('desktop_single_user_pairing_grants'),
     },
     businessCounts: {
       users: count('users', 'WHERE deleted=0'),

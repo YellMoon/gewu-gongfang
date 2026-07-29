@@ -1,5 +1,5 @@
 const { permissionIdentityKey } = require('./miniappAuthorizationRuntime');
-const { isUnrecognizedIdentity } = require('./accountExperience');
+const { isUnrecognizedIdentity, isVisitorIdentity } = require('./accountExperience');
 
 const AUTH_SESSION_GENERATION_KEY = 'auth_session_generation';
 const AUTH_SESSION_STATE_KEY = 'auth_session_state_v1';
@@ -167,7 +167,8 @@ function createAuthSessionRuntime(dependencies) {
       generation: generationState.generation,
       identity: authenticatedStateUsable && candidateIdentityKey ? identity : null,
       identityKey: authenticatedStateUsable ? candidateIdentityKey : '',
-      experienceOnly: authenticatedStateUsable && isUnrecognizedIdentity(identity),
+      experienceOnly: authenticatedStateUsable
+        && (isUnrecognizedIdentity(identity) || isVisitorIdentity(identity)),
       trusted,
       invalidated: trusted ? invalidated : true,
     };
@@ -372,7 +373,10 @@ function validatedNormalSession(responseData) {
     || user?.is_review_demo === true
     || Boolean(user?.review_demo_session_id);
   const malformedUnrecognized = user?.account_state === 'unrecognized' && !isUnrecognizedIdentity(user);
-  if (!token || !user || !user.id || legacyReviewMarker || malformedUnrecognized) return null;
+  const malformedVisitor = user?.account_state === 'visitor' && !isVisitorIdentity(user);
+  if (!token || !user || !user.id || legacyReviewMarker || malformedUnrecognized || malformedVisitor) {
+    return null;
+  }
   return { token, user };
 }
 

@@ -62,7 +62,10 @@ export const unrecognizedExperienceApi = {
 
   async submitApplication(applicationType: 'student' | 'teacher', payload: any, idempotencyKey: string): Promise<any> {
     const response: any = requireSuccess(
-      await applicationApi.submit(applicationType, payload, idempotencyKey),
+      await applicationApi.submit({
+        requestedRole: applicationType,
+        bindingHint: String(payload?.bindingHint || payload?.profileId || '').trim() || undefined,
+      }, idempotencyKey),
       'Failed to submit application',
     );
     return response.data || response;
@@ -73,8 +76,4 @@ export const unrecognizedExperienceApi = {
     return response.data || response;
   },
 
-  async withdrawApplication(applicationId: string): Promise<any> {
-    const response: any = requireSuccess(await applicationApi.withdraw(applicationId), 'Failed to withdraw application');
-    return response.data || response;
-  },
 };

@@ -1,6 +1,11 @@
 module.exports = {
   webpack: {
     configure: (webpackConfig) => {
+      if (process.env.GEWU_E2E_SKIP_TYPECHECK === '1') {
+        webpackConfig.plugins = webpackConfig.plugins.filter(plugin => (
+          plugin?.constructor?.name !== 'ForkTsCheckerWebpackPlugin'
+        ));
+      }
       const oneOfRule = webpackConfig.module.rules.find(r => r.oneOf);
       if (oneOfRule) {
         const babelLoaderRule = oneOfRule.oneOf.find(

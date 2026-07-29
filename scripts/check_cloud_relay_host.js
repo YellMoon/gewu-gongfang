@@ -22,19 +22,12 @@ async function post(path) {
   }).then(response => readJson(response, path));
 }
 
-async function get(path) {
-  return fetch(`${base}${path}`, { headers: headers() }).then(response => readJson(response, path));
-}
-
 async function main() {
   const heartbeat = await post('/api/cloud-relay-host/heartbeat');
   if (!heartbeat.success && !heartbeat.skipped) throw new Error('host heartbeat failed');
 
   const snapshot = await post('/api/cloud-relay-host/snapshot');
   if (!snapshot.success && !snapshot.skipped) throw new Error('host snapshot failed');
-
-  const pending = await get('/api/cloud-relay-host/tasks/pending');
-  if (!pending.success && !pending.skipped) throw new Error('host pending task fetch failed');
 
   const processed = await post('/api/cloud-relay-host/tasks/process');
   if (!processed.success && !processed.skipped) throw new Error('host task process failed');

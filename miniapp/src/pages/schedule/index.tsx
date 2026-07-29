@@ -6,7 +6,7 @@ import { getCachedList, setCachedList } from '../../utils/storage';
 import { scheduleApi } from '../../utils/api';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
 import AccountStatusBanner from '../../components/AccountStatusBanner';
-import { isUnrecognizedIdentity } from '../../utils/accountExperience';
+import { isUnrecognizedIdentity, isVisitorIdentity } from '../../utils/accountExperience';
 import './index.scss';
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
@@ -21,7 +21,10 @@ interface ScheduleWithCourse extends Schedule {
 }
 
 export default function SchedulePage() {
-  const isUnrecognized = isUnrecognizedIdentity(Taro.getStorageSync('user_info'));
+  const identity = Taro.getStorageSync('user_info');
+  const isUnrecognized = isUnrecognizedIdentity(identity);
+  const isVisitor = isVisitorIdentity(identity);
+  const isLimitedIdentity = isUnrecognized || isVisitor;
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [schedules, setSchedules] = useState<ScheduleWithCourse[]>([]);
@@ -36,7 +39,7 @@ export default function SchedulePage() {
   }, [currentDate]);
 
   const loadData = () => {
-    if (isUnrecognized) {
+    if (isLimitedIdentity) {
       setSchedules([]);
       setCourses([]);
       setStudents([]);
@@ -59,7 +62,7 @@ export default function SchedulePage() {
   };
 
   const handleRefresh = useCallback(async () => {
-    if (isUnrecognized) {
+    if (isLimitedIdentity) {
       setSchedules([]);
       setCourses([]);
       setStudents([]);
@@ -175,11 +178,11 @@ export default function SchedulePage() {
     </View>
   );
 
-  if (isUnrecognized) {
+  if (isLimitedIdentity) {
     return (
       <View className='schedule-page'>
         <AccountStatusBanner />
-        <EmptyState icon={'\u8bfe'} text={'\u5f53\u524d\u4f53\u9a8c\u8d26\u53f7\u6682\u65e0\u6b63\u5f0f\u8bfe\u7a0b\u6570\u636e'} />
+        <EmptyState icon={'\u8bfe'} text={'\u5f53\u524d\u8d26\u53f7\u6682\u65e0\u5df2\u6388\u6743\u7684\u8bfe\u7a0b\u6295\u5f71'} />
       </View>
     );
   }

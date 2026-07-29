@@ -195,7 +195,6 @@ const accountExperienceRoutes = [
   'pages/question-bank/index',
   'pages/settings/index',
   'pages/unrecognized-experience/index',
-  'pages/account-application/index',
 ];
 for (const route of accountExperienceRoutes) {
   const entry = pageInventory.find(item => item.route === route);
@@ -207,9 +206,9 @@ for (const entry of pageInventory) {
 }
 
 const applicationEntry = pageInventory.find(item => item.route === 'pages/account-application/index');
+assert.ok(applicationEntry?.roleViews.includes('visitor'), 'role application belongs to the signed visitor identity');
 for (const state of [
-  'loading', 'not-submitted', 'invalid', 'submitting', 'submitted', 'provisioning',
-  'manual-resolution-required', 'rejected', 'withdrawn', 'approved-relogin-required',
+  'loading', 'not-submitted', 'invalid', 'submitting', 'submitted', 'rejected', 'approved',
   'offline', 'network-error',
 ]) {
   assert.ok(applicationEntry?.verificationStates.includes(state), `account application inventory missing ${state}`);

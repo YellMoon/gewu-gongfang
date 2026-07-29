@@ -15,6 +15,7 @@ Optional env:
 """
 import os
 import json
+import posixpath
 import re
 import secrets
 import shlex
@@ -49,6 +50,11 @@ ENV_CONFIG = {
         "db_path": "/root/scheduling-data/staging/scheduling.db",
         "app_port": "3001",
     },
+    "relay-e2e": {
+        "remote_dir": "/root/scheduling-backend-relay-e2e",
+        "db_path": "/root/scheduling-data/relay-e2e/scheduling.db",
+        "app_port": "3011",
+    },
     "prod": {
         "remote_dir": "/root/scheduling-backend",
         "db_path": "/root/scheduling-data/prod/scheduling.db",
@@ -64,7 +70,7 @@ def normalize_env(value):
     if raw == "development":
         return "dev"
     if raw not in ENV_CONFIG:
-        raise SystemExit(f"Unsupported APP_ENV={raw}. Use dev, staging, or prod.")
+        raise SystemExit(f"Unsupported APP_ENV={raw}. Use dev, staging, relay-e2e, or prod.")
     return raw
 
 
@@ -84,6 +90,7 @@ REMOTE_DIR = os.getenv("DEPLOY_REMOTE_DIR", DEFAULTS["remote_dir"])
 DB_PATH = os.getenv("DB_PATH", DEFAULTS["db_path"])
 READ_DB_PATH = os.getenv("READ_DB_PATH", DB_PATH)
 LOCAL_DIR = Path(os.getenv("DEPLOY_LOCAL_DIR", Path(__file__).resolve().parents[1] / "backend"))
+LOCAL_SHARED_DIR = PROJECT_ROOT / "shared"
 
 
 def read_root_version():
@@ -139,6 +146,8 @@ def redaction_candidates():
         PASSWORD,
         BACKEND_JWT_SECRET,
         WECHAT_APPSECRET,
+        # Redact historical environment names as well, even though deployment no
+        # longer accepts them for relay authentication.
         os.getenv("GEWU_DESKTOP_SYNC_TOKEN"),
         os.getenv("GEWU_CLOUD_RELAY_HOST_TOKEN"),
     ]:
@@ -256,6 +265,24 @@ def upload_backend(ssh):
     sftp.close()
 
 
+def upload_shared(ssh):
+    """Keep backend's sibling shared runtime modules deployable with it."""
+    if not LOCAL_SHARED_DIR.is_dir():
+        raise RuntimeError("Shared runtime directory is missing")
+    # REMOTE_DIR is a POSIX path even when this deployment helper runs on
+    # Windows; pathlib.Path would otherwise create backslash paths remotely.
+    remote_shared_dir = posixpath.join(posixpath.dirname(REMOTE_DIR), "shared")
+    run(ssh, f"mkdir -p '{remote_shared_dir}'")
+    sftp = ssh.open_sftp()
+    try:
+        for item in LOCAL_SHARED_DIR.iterdir():
+            if item.is_file():
+                sftp.put(str(item), f"{remote_shared_dir}/{item.name}")
+                print(f"  OK: shared/{item.name}")
+    finally:
+        sftp.close()
+
+
 def remote_env_values():
     return {
         "NODE_ENV": "production" if APP_ENV == "prod" else APP_ENV,
@@ -271,8 +298,6 @@ def remote_env_values():
         "GEWU_DEVICE_ID": os.getenv("GEWU_DEVICE_ID", "desktop_host_001"),
         "GEWU_HOST_BASE_URL": os.getenv("GEWU_HOST_BASE_URL", f"http://127.0.0.1:{APP_PORT}"),
         "GEWU_CLOUD_BASE_URL": os.getenv("GEWU_CLOUD_BASE_URL", "https://your-domain.example.com"),
-        "GEWU_DESKTOP_SYNC_TOKEN": os.getenv("GEWU_DESKTOP_SYNC_TOKEN", ""),
-        "GEWU_CLOUD_RELAY_HOST_TOKEN": os.getenv("GEWU_CLOUD_RELAY_HOST_TOKEN", os.getenv("GEWU_DESKTOP_SYNC_TOKEN", "")),
         "GEWU_APP_VERSION": os.getenv("GEWU_APP_VERSION", read_root_version()),
         "QUESTION_BANK_ROOT": os.getenv("QUESTION_BANK_ROOT", "/root/GewuQuestionBank"),
         "QUESTION_BANK_UPLOAD_DIR": os.getenv("QUESTION_BANK_UPLOAD_DIR", "/root/GewuQuestionBank/assets"),
@@ -469,6 +494,7 @@ def main():
         elif mode == "deploy":
             run(ssh, f"mkdir -p '{REMOTE_DIR}' '{os.path.dirname(DB_PATH)}'")
             upload_backend(ssh)
+            upload_shared(ssh)
             run(ssh, f"cd '{REMOTE_DIR}' && npm install --production 2>&1", timeout=300)
             run(ssh, "which pm2 || npm install -g pm2 2>/dev/null || echo 'pm2 install skipped'", timeout=120)
             migrate(ssh)

@@ -23,17 +23,26 @@ function runGit(args) {
 
 function readChangeContext() {
   const diffNameOnly = runGit(['diff', '--name-only', 'HEAD']);
+  const diffNameStatus = runGit(['diff', '--name-status', 'HEAD']);
   const diff = runGit(['diff', 'HEAD']);
   const files = diffNameOnly
     ? diffNameOnly.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
     : [];
+  const deletedFiles = diffNameStatus
+    ? diffNameStatus
+      .split(/\r?\n/)
+      .map(line => line.split(/\t+/))
+      .filter(parts => parts[0]?.includes('D') && parts[1])
+      .map(parts => parts[1].trim())
+    : [];
 
-  if (files.length > 0 || diff) return { files, diff };
+  if (files.length > 0 || diff) return { files, deletedFiles, diff };
 
   const lastCommitFiles = runGit(['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD']);
   const lastCommitMessage = runGit(['log', '-1', '--pretty=%B']);
   return {
     files: lastCommitFiles ? lastCommitFiles.split(/\r?\n/).map(line => line.trim()).filter(Boolean) : [],
+    deletedFiles: [],
     diff: lastCommitMessage,
   };
 }
@@ -44,6 +53,7 @@ function hasAny(text, patterns) {
 
 function analyzeVersionBump(context = readChangeContext()) {
   const files = context.files || [];
+  const deletedFiles = context.deletedFiles || [];
   const diff = context.diff || '';
   const corpus = `${files.join('\n')}\n${diff}`;
   const addedChangeText = /(?:^|\n)diff --git |(?:^|\n)@@ /.test(diff)
@@ -62,6 +72,13 @@ function analyzeVersionBump(context = readChangeContext()) {
     /^\s*-\s*ALTER TABLE/im,
     /DROP\s+(TABLE|COLUMN|INDEX)/i,
   ];
+  const executablePublicApiPaths = [
+    /^backend\/src\/routes\/(?!.*\.test\.js$).+\.js$/,
+    /^gateway\/src\/routes\/(?!.*\.test\.js$).+\.js$/,
+    /^src\/services\/(?!.*\.test\.js$).+\.(?:mjs|js|ts)$/,
+    /^public\/(?!.*\.test\.js$).+\.js$/,
+  ];
+  if (deletedFiles.some(file => executablePublicApiPaths.some(pattern => pattern.test(file)))) return 'major';
   if (hasAny(corpus, majorSignals)) return 'major';
 
   const patchSignals = [
@@ -116,6 +133,7 @@ function nextVersion(currentVersion, bumpLevel) {
 
 function writePackageVersion(pkgPath, version) {
   const pkgContent = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+  if (pkgContent.version === version) return pkgContent;
   pkgContent.version = version;
   fs.writeFileSync(pkgPath, JSON.stringify(pkgContent, null, 2) + '\n');
   return pkgContent;
@@ -130,6 +148,9 @@ function syncBackendPackageVersion(version) {
 function syncPackageLockVersion(lockPath, version) {
   if (!fs.existsSync(lockPath)) return null;
   const lock = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
+  if (lock.version === version && (!lock.packages || !lock.packages[''] || lock.packages[''].version === version)) {
+    return lock;
+  }
   lock.version = version;
   if (lock.packages && lock.packages['']) lock.packages[''].version = version;
   fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');

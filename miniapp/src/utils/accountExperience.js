@@ -7,6 +7,12 @@ const UNRECOGNIZED_CAPABILITIES = Object.freeze([
   'sample-questions:view',
   'sample-paper-export',
 ]);
+const VISITOR_CAPABILITIES = Object.freeze([
+  'projection:read',
+  'role-application:read',
+  'role-application:submit',
+  'question-preview:read',
+]);
 
 const SESSION_CLEANUP_KEYS = Object.freeze([
   'auth_token',
@@ -18,11 +24,11 @@ const SESSION_CLEANUP_KEYS = Object.freeze([
   'review_demo_code',
 ]);
 
-function hasExactCapabilities(value) {
-  if (!Array.isArray(value) || value.length !== UNRECOGNIZED_CAPABILITIES.length) return false;
+function hasExactCapabilities(value, expected = UNRECOGNIZED_CAPABILITIES) {
+  if (!Array.isArray(value) || value.length !== expected.length) return false;
   const received = new Set(value.map(String));
-  return received.size === UNRECOGNIZED_CAPABILITIES.length
-    && UNRECOGNIZED_CAPABILITIES.every(capability => received.has(capability));
+  return received.size === expected.length
+    && expected.every(capability => received.has(capability));
 }
 
 function isUnrecognizedIdentity(identity) {
@@ -31,6 +37,19 @@ function isUnrecognizedIdentity(identity) {
     && identity.account_state === 'unrecognized'
     && identity.token_use === 'unrecognized-student'
     && hasExactCapabilities(identity.capabilities));
+}
+
+function isVisitorIdentity(identity) {
+  return Boolean(identity
+    && typeof identity === 'object'
+    && identity.role === 'visitor'
+    && identity.user_type === 'visitor'
+    && identity.identity_kind === 'visitor'
+    && identity.account_state === 'visitor'
+    && identity.token_use === 'miniapp-visitor'
+    && typeof identity.authority_id === 'string'
+    && identity.authority_id.trim()
+    && hasExactCapabilities(identity.capabilities, VISITOR_CAPABILITIES));
 }
 
 function hasLegacyReviewMarker(identity) {
@@ -44,6 +63,7 @@ function hasLegacyReviewMarker(identity) {
 }
 
 function accountCapabilities(identity) {
+  if (isVisitorIdentity(identity)) return [...VISITOR_CAPABILITIES];
   return isUnrecognizedIdentity(identity) ? [...UNRECOGNIZED_CAPABILITIES] : [];
 }
 
@@ -83,10 +103,12 @@ function accountSessionCleanupStorageKeys() {
 
 module.exports = {
   UNRECOGNIZED_CAPABILITIES,
+  VISITOR_CAPABILITIES,
   accountCapabilities,
   accountExperienceArtifactRequest,
   accountExperiencePath,
   accountSessionCleanupStorageKeys,
   hasLegacyReviewMarker,
   isUnrecognizedIdentity,
+  isVisitorIdentity,
 };

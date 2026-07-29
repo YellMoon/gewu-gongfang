@@ -10,8 +10,11 @@ class HostWebSocketClient extends EventEmitter {
     super();
     this.hostDeviceId = options.hostDeviceId;
     this.gatewayUrl = options.gatewayUrl || process.env.GATEWAY_WS_URL || 'ws://localhost:3001';
-    this.hostToken = options.hostToken || process.env.GEWU_CLOUD_RELAY_HOST_TOKEN;
+    this.hostCredential = options.hostCredential || process.env.GEWU_PRIMARY_HOST_CREDENTIAL || '';
+    this.hostGeneration = Number(options.hostGeneration || process.env.GEWU_PRIMARY_HOST_GENERATION || 0);
     this.reconnectInterval = options.reconnectInterval || 5000;
+    this.reconnectMaxMs = options.reconnectMaxMs || 60000;
+    this.reconnectJitter = options.reconnectJitter || Math.random;
     this.heartbeatInterval = options.heartbeatInterval || 30000;
     this.maxReconnectAttempts = options.maxReconnectAttempts || 10;
     this.WebSocket = options.WebSocketImpl || WebSocket;
@@ -22,6 +25,12 @@ class HostWebSocketClient extends EventEmitter {
     this.messageQueue = [];
     this.reconnectAttempts = 0;
     this.shouldReconnect = true;
+    this.nextRetryAt = null;
+    this.lastError = null;
+    this.now = options.now || (() => Date.now());
+    this.setTimeoutImpl = options.setTimeoutImpl || setTimeout;
+    this.clearTimeoutImpl = options.clearTimeoutImpl || clearTimeout;
+    this.log = typeof options.log === 'function' ? options.log : () => {};
     // 防止未捕获的错误事件导致进程崩溃
     this.on('error', () => {});
   }
@@ -29,24 +38,37 @@ class HostWebSocketClient extends EventEmitter {
   connect() {
     this.shouldReconnect = true;
     if (this.ws && this.ws.readyState === this.WebSocket.OPEN) {
-      console.log('[HostWS] 已连接');
+      this.log('[HostWS] already connected');
       return;
     }
 
     const url = new URL(this.gatewayUrl);
     url.pathname = '/ws/cloud-relay';
-    url.searchParams.set('token', this.hostToken);
     url.searchParams.set('deviceId', this.hostDeviceId);
     url.searchParams.set('role', 'host');
+    if (!this.hostCredential || !this.hostDeviceId || !Number.isSafeInteger(this.hostGeneration) || this.hostGeneration < 1) {
+      const error = Object.assign(new Error('MANAGED_HOST_IDENTITY_INCOMPLETE'), { code: 'MANAGED_HOST_IDENTITY_INCOMPLETE' });
+      this.lastError = error.code;
+      this.emit('error', error);
+      return;
+    }
 
-    console.log(`[HostWS] 连接到 ${url.toString()}`);
+    this.log('[HostWS] connecting');
 
-    this.ws = new this.WebSocket(url.toString());
+    this.ws = new this.WebSocket(url.toString(), {
+      headers: {
+        'x-gewu-host-device-id': this.hostDeviceId,
+        'x-gewu-host-generation': String(this.hostGeneration),
+        'x-gewu-host-credential': this.hostCredential,
+      },
+    });
 
     this.ws.on('open', () => {
-      console.log('[HostWS] 连接成功');
+      this.log('[HostWS] connected');
       this.isConnected = true;
       this.reconnectAttempts = 0;
+      this.nextRetryAt = null;
+      this.lastError = null;
       this.startHeartbeat();
       this.flushMessageQueue();
       this.emit('connected');
@@ -55,15 +77,16 @@ class HostWebSocketClient extends EventEmitter {
     this.ws.on('message', (data) => {
       try {
         const message = JSON.parse(data);
-        console.log('[HostWS] 收到消息:', message.type);
+        this.log(`[HostWS] message ${message.type}`);
         this.handleMessage(message);
       } catch (error) {
-        console.error('[HostWS] 消息解析失败:', error);
+        this.lastError = error?.code || error?.message || 'HOST_WEBSOCKET_MESSAGE_INVALID';
+        this.emit('error', error);
       }
     });
 
     this.ws.on('close', (code, reason) => {
-      console.log(`[HostWS] 连接关闭: ${code} ${reason}`);
+      this.log(`[HostWS] closed ${code}`);
       this.isConnected = false;
       this.stopHeartbeat();
       this.emit('disconnected', code, reason);
@@ -71,7 +94,7 @@ class HostWebSocketClient extends EventEmitter {
     });
 
     this.ws.on('error', (error) => {
-      console.error('[HostWS] 连接错误:', error.message);
+      this.lastError = error?.code || error?.message || 'HOST_WEBSOCKET_ERROR';
       this.emit('error', error);
     });
   }
@@ -90,11 +113,14 @@ class HostWebSocketClient extends EventEmitter {
       case 'host_status':
         this.emit('host_status', message.payload);
         break;
+      case 'authority_command_forward':
+        this.emit('authority_command_forward', message.payload);
+        break;
       case 'pong':
         // 心跳响应
         break;
       default:
-        console.log('[HostWS] 未知消息类型:', message.type);
+        this.log(`[HostWS] unknown message ${message.type}`);
     }
   }
 
@@ -135,23 +161,28 @@ class HostWebSocketClient extends EventEmitter {
   scheduleReconnect() {
     if (this.reconnectTimer) return;
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.log(`[HostWS] 已达到最大重连次数 ${this.maxReconnectAttempts}，停止重连`);
+      this.nextRetryAt = null;
+      this.log('[HostWS] reconnect disabled');
       this.emit('max_reconnect_attempts');
       return;
     }
     this.reconnectAttempts++;
-    console.log(`[HostWS] ${this.reconnectInterval / 1000}秒后重连... (尝试 ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-    this.reconnectTimer = setTimeout(() => {
+    const baseDelay = Math.min(this.reconnectMaxMs, this.reconnectInterval * (2 ** Math.max(0, this.reconnectAttempts - 1)));
+    const jitter = Math.max(0, Math.min(0.25, Number(this.reconnectJitter()) || 0));
+    const delay = Math.min(this.reconnectMaxMs, Math.round(baseDelay * (1 + jitter)));
+    this.nextRetryAt = Number(this.now()) + delay;
+    this.log(`[HostWS] reconnect scheduled ${delay}`);
+    this.reconnectTimer = this.setTimeoutImpl(() => {
       this.reconnectTimer = null;
       this.connect();
-    }, this.reconnectInterval);
+    }, delay);
   }
 
   disconnect() {
     this.shouldReconnect = false;
     this.stopHeartbeat();
     if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
+      this.clearTimeoutImpl(this.reconnectTimer);
       this.reconnectTimer = null;
     }
     if (this.ws) {
@@ -162,11 +193,15 @@ class HostWebSocketClient extends EventEmitter {
   }
 
   getStatus() {
-    return {
+    return Object.freeze({
       connected: this.isConnected,
       hostDeviceId: this.hostDeviceId,
       gatewayUrl: this.gatewayUrl,
-    };
+      state: this.isConnected ? 'connected' : (this.nextRetryAt ? 'backoff' : (this.shouldReconnect ? 'connecting' : 'disabled')),
+      nextRetryAt: this.nextRetryAt,
+      reconnectAttempts: this.reconnectAttempts,
+      lastError: this.lastError,
+    });
   }
 }
 

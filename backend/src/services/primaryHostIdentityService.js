@@ -1,4 +1,7 @@
 const crypto = require('crypto');
+const {
+  validatePrimaryHostSigningPublicKey,
+} = require('../../../shared/primaryHostSigningKey');
 const { v4: uuidv4 } = require('uuid');
 const {
   CANONICAL_SUPER_ADMIN_ID,
@@ -23,6 +26,7 @@ const {
 const CHALLENGE_TTL_MS = 10 * 60 * 1000;
 const MIN_UNREACHABLE_DURATION_MS = 15 * 60 * 1000;
 const DEFAULT_HOST_HEARTBEAT_TTL_MS = 5 * 60 * 1000;
+const PRIMARY_HOST_LEASE_MS = 14 * 24 * 60 * 60 * 1000;
 
 function hostError(code) {
   const error = new Error(code);
@@ -76,19 +80,20 @@ function insertPrimaryHostEpochRow({
   storeId,
   dbAuthorityId,
   credentialHash,
+  hostPublicKey,
   credentialVersion = 1,
   timestamp,
 }) {
   db.prepare(`INSERT INTO primary_host_epochs
     (id, generation, device_id, user_id, authorization_id, status, activation_reason,
      source_epoch_id, challenge_id, db_instance_digest, schema_version, store_id,
-     db_authority_id, host_credential_hash, credential_version, row_version,
+     db_authority_id, host_credential_hash, host_public_key, credential_version, row_version,
      created_at, updated_at, activated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`)
     .run(
       id, generation, deviceId, userId, authorizationId, status, activationReason,
       sourceEpochId, challengeId, dbInstanceDigest, schemaVersion, storeId, dbAuthorityId,
-      credentialHash, credentialVersion, timestamp, timestamp, timestamp
+      credentialHash, hostPublicKey, credentialVersion, timestamp, timestamp, timestamp
     );
   return db.prepare('SELECT * FROM primary_host_epochs WHERE id=?').get(id);
 }
@@ -128,6 +133,7 @@ function presentEpoch(row) {
     storeId: row.store_id,
     dbAuthorityId: row.db_authority_id,
     credentialVersion: Number(row.credential_version),
+    hostPublicKey: row.host_public_key,
     rowVersion: Number(row.row_version),
     activatedAt: row.activated_at,
     retiredAt: row.retired_at || null,
@@ -467,7 +473,16 @@ function createPrimaryHostIdentityService({
       || !/^[a-f0-9]{64}$/.test(commitment)) {
       throw hostError('PRIMARY_HOST_CREDENTIAL_STAGE_INVALID');
     }
-    return Object.freeze({ commitment });
+    let hostSigningKey;
+    try {
+      hostSigningKey = validatePrimaryHostSigningPublicKey(stage.hostSigningKey);
+    } catch (error) {
+      throw hostError(error?.code || 'PRIMARY_HOST_SIGNING_PUBLIC_KEY_INVALID');
+    }
+    return Object.freeze({
+      commitment,
+      hostPublicKey: hostSigningKey.publicKeyPem,
+    });
   }
 
   function prepareEpochSecrets({
@@ -493,12 +508,17 @@ function createPrimaryHostIdentityService({
       deliveryKey: recoveryDeliveryKey,
       recoveryDeliveryDescriptor: operationManifest?.recoveryDelivery,
     });
-    return { hostCredentialHash: staged.commitment, recovery, delivery };
+    return {
+      hostCredentialHash: staged.commitment,
+      hostPublicKey: staged.hostPublicKey,
+      recovery,
+      delivery,
+    };
   }
 
   function insertEpoch({
     id, generation, actor, status = 'active', activationReason, sourceEpochId = null,
-    challenge, receipt, credentialHash, credentialVersion = 1, timestamp,
+    challenge, receipt, credentialHash, hostPublicKey, credentialVersion = 1, timestamp,
   }) {
     insertPrimaryHostEpochRow({
       db,
@@ -516,9 +536,64 @@ function createPrimaryHostIdentityService({
       storeId: receipt.storeId,
       dbAuthorityId: receipt.dbAuthorityId,
       credentialHash,
+      hostPublicKey,
       credentialVersion,
       timestamp,
     });
+  }
+
+  function revokeHostAuthorityControl({ authorityId, deviceId, timestamp }) {
+    const authority = requiredText(authorityId, 'PRIMARY_HOST_AUTHORITY_REQUIRED');
+    const device = requiredText(deviceId, 'PRIMARY_HOST_DEVICE_REQUIRED');
+    db.prepare(`UPDATE device_leases SET status='revoked', revoked_at=?
+      WHERE authority_id=? AND device_id=? AND status='active'`).run(timestamp, authority, device);
+    db.prepare(`UPDATE device_grants SET status='revoked', revoked_at=?, updated_at=?
+      WHERE authority_id=? AND device_id=? AND status='active'`).run(timestamp, timestamp, authority, device);
+  }
+
+  function activateHostAuthorityControl({ actor, authorityId, generation, timestamp }) {
+    const authority = requiredText(authorityId, 'PRIMARY_HOST_AUTHORITY_REQUIRED');
+    const hostGeneration = safeInteger(generation, 'PRIMARY_HOST_GENERATION_REQUIRED');
+    const publicKey = requiredText(actor?.authorization?.public_key, 'PRIMARY_HOST_DEVICE_KEY_REQUIRED', 16384);
+    db.prepare(`INSERT INTO authority_accounts
+      (user_id,authority_id,status,created_at,updated_at)
+      VALUES(?,?, 'active',?,?)
+      ON CONFLICT(user_id) DO UPDATE SET authority_id=excluded.authority_id,
+        status='active',updated_at=excluded.updated_at`)
+      .run(actor.userId, authority, timestamp, timestamp);
+    const existingGrant = db.prepare(`SELECT grant_id, grant_version FROM device_grants
+      WHERE authority_id=? AND device_id=?`).get(authority, actor.deviceId);
+    revokeHostAuthorityControl({ authorityId: authority, deviceId: actor.deviceId, timestamp });
+    const grantId = existingGrant?.grant_id || requiredText(uuid(), 'PRIMARY_HOST_GRANT_ID_INVALID');
+    const grantVersion = existingGrant ? safeInteger(Number(existingGrant.grant_version) + 1, 'PRIMARY_HOST_GRANT_VERSION_INVALID') : 1;
+    const leaseId = requiredText(uuid(), 'PRIMARY_HOST_LEASE_ID_INVALID');
+    const expiresAt = new Date(Date.parse(timestamp) + PRIMARY_HOST_LEASE_MS).toISOString();
+    if (existingGrant) {
+      db.prepare(`UPDATE device_grants SET user_id=?, public_key=?, host_generation=?, status='active',
+        grant_version=?, approved_by=?, updated_at=?, revoked_at=NULL WHERE grant_id=?`)
+        .run(actor.userId, publicKey, hostGeneration, grantVersion, actor.userId, timestamp, grantId);
+    } else {
+      db.prepare(`INSERT INTO device_grants
+        (grant_id,authority_id,device_id,user_id,public_key,host_generation,status,grant_version,
+         approved_by,created_at,updated_at,revoked_at)
+        VALUES(?,?,?,?,?,?,'active',?,?,?,?,NULL)`)
+        .run(grantId, authority, actor.deviceId, actor.userId, publicKey, hostGeneration,
+          grantVersion, actor.userId, timestamp, timestamp);
+    }
+    db.prepare(`INSERT INTO device_leases
+      (lease_id,grant_id,authority_id,device_id,user_id,active_role,grant_version,status,
+       issued_at,expires_at,revoked_at)
+      VALUES(?,?,?,?,?, 'super_admin',?,'active',?,?,NULL)`)
+      .run(leaseId, grantId, authority, actor.deviceId, actor.userId, grantVersion, timestamp, expiresAt);
+    db.prepare(`INSERT INTO authority_role_bindings
+      (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,
+       granted_by,created_at,updated_at,revoked_at)
+      VALUES(?,?,?,'super_admin',NULL,NULL,'active',?,?,?, ?,NULL)
+      ON CONFLICT(authority_id,user_id,role) WHERE status='active' DO UPDATE SET
+        grant_version=excluded.grant_version,granted_by=excluded.granted_by,
+        updated_at=excluded.updated_at,revoked_at=NULL`)
+      .run(`primary-host:${grantId}:super_admin`, authority, actor.userId,
+        grantVersion, actor.userId, timestamp, timestamp);
   }
 
   function consumeChallenge(challenge, timestamp) {
@@ -597,7 +672,11 @@ function createPrimaryHostIdentityService({
       if (getActiveEpochRow()) throw hostError('PRIMARY_HOST_ALREADY_BOOTSTRAPPED');
       insertEpoch({
         id: epochId, generation: 1, actor, activationReason: 'bootstrap',
-        challenge, receipt, credentialHash: prepared.hostCredentialHash, timestamp,
+        challenge, receipt, credentialHash: prepared.hostCredentialHash,
+        hostPublicKey: prepared.hostPublicKey, timestamp,
+      });
+      activateHostAuthorityControl({
+        actor, authorityId: receipt.dbAuthorityId, generation: 1, timestamp,
       });
       consumeChallenge(challenge, timestamp);
       db.prepare(`UPDATE desktop_device_authorizations
@@ -778,7 +857,12 @@ function createPrimaryHostIdentityService({
         id: epochId, generation: transfer.target_generation, actor,
         activationReason: 'transfer', sourceEpochId: active.id, challenge,
         receipt, credentialHash: prepared.hostCredentialHash,
+        hostPublicKey: prepared.hostPublicKey,
         credentialVersion: Number(active.credential_version) + 1, timestamp,
+      });
+      revokeHostAuthorityControl({ authorityId: active.db_authority_id, deviceId: active.device_id, timestamp });
+      activateHostAuthorityControl({
+        actor, authorityId: receipt.dbAuthorityId, generation: transfer.target_generation, timestamp,
       });
       const activated = db.prepare(`UPDATE host_transfers
         SET status='activated', validation_manifest_hash=?, activated_at=?,
@@ -900,7 +984,12 @@ function createPrimaryHostIdentityService({
         id: epochId, generation: nextGeneration, actor,
         activationReason: 'recovery', sourceEpochId: active.id, challenge,
         receipt, credentialHash: prepared.hostCredentialHash,
+        hostPublicKey: prepared.hostPublicKey,
         credentialVersion: Number(active.credential_version) + 1, timestamp,
+      });
+      revokeHostAuthorityControl({ authorityId: active.db_authority_id, deviceId: active.device_id, timestamp });
+      activateHostAuthorityControl({
+        actor, authorityId: receipt.dbAuthorityId, generation: nextGeneration, timestamp,
       });
       consumeChallenge(challenge, timestamp);
       db.prepare(`UPDATE desktop_device_authorizations

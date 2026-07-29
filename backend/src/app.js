@@ -26,7 +26,6 @@ const institutionsRouter = require('./routes/institutions');
 const statsRouter = require('./routes/stats');
 const dataRouter = require('./routes/export');
 const billImportRouter = require('./routes/billImport');
-const syncRouter = require('./routes/sync');
 const authRouter = require('./routes/auth');
 const questionBankRouter = require('./routes/questionBank');
 const opsRouter = require('./routes/ops');
@@ -36,15 +35,28 @@ const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
 const permissionsRouter = require('./routes/permissions');
 const adminUsersRouter = require('./routes/adminUsers');
-const desktopPairingRouter = require('./routes/desktopPairing');
 const { createDesktopIdentityRouter } = require('./routes/desktopIdentity');
 const { createPrimaryHostIdentityService } = require('./services/primaryHostIdentityService');
 const { createPrimaryHostLocalValidationService } = require('./services/primaryHostLocalValidationService');
-const { getSingleUserDesktopIdentityService } = require('./services/singleUserDesktopIdentityService');
-const miniappApplicationsRouter = require('./routes/miniappApplications');
+const {
+  createMiniappAuthorityApplicationsRouter,
+} = require('./routes/miniappAuthorityApplications');
 const miniappWechatBindingsRouter = require('./routes/miniappWechatBindings');
 const { createUnrecognizedExperienceRouter } = require('./routes/unrecognizedExperience');
 const { createUnrecognizedExperienceSandbox } = require('./services/unrecognizedExperienceSandbox');
+const { createAuthorityProtocolRouter } = require('./routes/authorityProtocol');
+const { createAuthorityCommandInboxService } = require('./services/authorityCommandInboxService');
+const { createAuthorityCommandAuthorizationService } = require('./services/authorityCommandAuthorizationService');
+const { createAuthorityCommandPolicy } = require('./services/authorityCommandRegistry');
+const { createAuthorityDeviceRequestAuth } = require('./services/authorityDeviceRequestAuth');
+const { createAuthorityProjectionStoreService } = require('./services/authorityProjectionStoreService');
+const {
+  verifySignedAuthorityProjection,
+} = require('../../shared/authorityProjectionProtocol');
+const {
+  FORMAL_TOKEN_USE,
+  VISITOR_TOKEN_USE,
+} = require('./services/miniappIdentityService');
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const writeRateLimitStore = new Map();
@@ -279,10 +291,30 @@ function createApp(options = {}) {
       ? path.join(process.env.GEWU_LOCAL_CACHE_PATH, 'primary-host-validation')
       : undefined,
   });
-  const singleUserIdentityService = getSingleUserDesktopIdentityService({
+  const authorityCommandInbox = createAuthorityCommandInboxService({
     db: database,
-    localValidationService: primaryHostLocalValidationService,
+    targetHostIdFor: envelope => {
+      const { createAuthorityRuntimeHostEpochService } = require('./services/authorityRuntimeHostEpochService');
+      const epoch = createAuthorityRuntimeHostEpochService({ db: database }).find(envelope.hostEpochId);
+      if (!epoch || epoch.authority_id !== envelope.authorityId) {
+        throw Object.assign(new Error('AUTHORITY_HOST_EPOCH_INACTIVE'), {
+          code: 'AUTHORITY_HOST_EPOCH_INACTIVE',
+          statusCode: 403,
+        });
+      }
+      return epoch.device_id;
+    },
   });
+  const authorityCommandAuthorization = createAuthorityCommandAuthorizationService({
+    db: database,
+    commandPolicy: options.authorityCommandPolicy || createAuthorityCommandPolicy(),
+  });
+  const authorityDeviceRequestAuth = createAuthorityDeviceRequestAuth({ db: database });
+  const authorityProjectionStore = createAuthorityProjectionStoreService({ db: database });
+  app.locals.authorityCommandInbox = authorityCommandInbox;
+  app.locals.authorityCommandAuthorization = authorityCommandAuthorization;
+  app.locals.authorityDeviceRequestAuth = authorityDeviceRequestAuth;
+  app.locals.authorityProjectionStore = authorityProjectionStore;
 
   try {
     createMiniappProvisioningReconciler({ db: database }).reconcilePendingCompletedTasks();
@@ -330,17 +362,184 @@ function createApp(options = {}) {
     db: database,
     primaryHostIdentityService,
     primaryHostLocalValidationService,
-    singleUserIdentityService,
   }));
-  app.use('/api/desktop-pairing', desktopPairingRouter);
-  app.use('/api/sync', optionalAuth, syncRouter);
+  const authorityApiRouter = express.Router();
+  const authenticateAuthorityDevice = (req, res, next) => {
+    try {
+      req.authorityActor = authorityDeviceRequestAuth.authenticate(req);
+      next();
+    } catch (error) {
+      res.status(error?.statusCode || 401).json({
+        success: false,
+        error: { code: error?.code || 'AUTHORITY_DEVICE_AUTH_FAILED' },
+      });
+    }
+  };
+  authorityApiRouter.post('/commands', authenticateAuthorityDevice);
+  authorityApiRouter.get('/commands/:id/receipt', authenticateAuthorityDevice);
+  authorityApiRouter.get('/projections/current', authenticateAuthorityDevice, (req, res) => {
+    try {
+      const authorityId = String(req.headers['x-gewu-authority-id'] || '').trim();
+      const projection = authorityProjectionStore.read({
+        authorityId,
+        userId: req.authorityActor.userId,
+        role: req.authorityActor.role,
+      });
+      if (!projection) {
+        throw Object.assign(new Error('AUTHORITY_PROJECTION_NOT_FOUND'), {
+          code: 'AUTHORITY_PROJECTION_NOT_FOUND',
+          statusCode: 404,
+        });
+      }
+      authorityCommandAuthorization.authorize({
+        authorityId,
+        hostEpochId: projection.hostEpochId,
+        actor: req.authorityActor,
+        lease: {
+          id: String(req.headers['x-gewu-authority-lease-id'] || '').trim(),
+          grantVersion: Number(req.headers['x-gewu-authority-grant-version']),
+        },
+        type: 'projection.read.v1',
+        payload: {},
+      });
+      res.json({ success: true, projection });
+    } catch (error) {
+      res.status(error?.statusCode || 403).json({
+        success: false,
+        error: { code: error?.code || 'AUTHORITY_PROJECTION_READ_FAILED' },
+      });
+    }
+  });
+  authorityApiRouter.use(createAuthorityProtocolRouter({
+    authorizeCommand: ({ envelope }) => authorityCommandAuthorization.authorize(envelope),
+    enqueueCommand: envelope => authorityCommandInbox.enqueue(envelope),
+    findReceipt: input => authorityCommandInbox.findReceipt(input),
+    authorizeHostRequest: req => {
+      try {
+        return primaryHostIdentityService.assertActiveHostCredential({
+          deviceId: req.headers['x-gewu-host-device-id'],
+          generation: req.headers['x-gewu-host-generation'],
+          credential: req.headers['x-gewu-host-credential'],
+        });
+      } catch (error) {
+        error.statusCode = 403;
+        throw error;
+      }
+    },
+    claimCommands: input => authorityCommandInbox.claim(input),
+    renewCommandClaim: input => authorityCommandInbox.renew(input),
+    publishHostReceipt: (receipt, claim) => authorityCommandInbox.publishReceipt(receipt, claim),
+    onCommandQueued: ({ envelope, queued, request }) => {
+      const epoch = database.prepare(`SELECT device_id FROM primary_host_epochs
+        WHERE id=? AND status='active'`).get(envelope.hostEpochId);
+      if (epoch?.device_id) {
+        request.app?.get('cloudRelaySocketServer')?.notifyHostNewTask(epoch.device_id, {
+          id: queued.id,
+          task_type: 'authority-command-v1',
+        });
+      }
+    },
+  }));
+  app.use('/api/authority', authorityApiRouter);
   app.use('/api/cloud-relay-host/artifacts', optionalAuth, paperArtifactAccessRouter);
   app.use('/api/cloud-relay-host', optionalAuth, requireWriteAccess, cloudRelayHostRouter);
   app.use('/api/modules', optionalAuth, modulesRouter);
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);
   app.use('/api/admin/users', authMiddleware, adminUsersRouter);
   app.use('/api/permissions', authMiddleware, permissionsRouter);
-  app.use('/api/miniapp/applications', authMiddleware, miniappApplicationsRouter);
+  app.get('/api/miniapp/projection', authMiddleware, (req, res) => {
+    try {
+      let authorityId = '';
+      let role = '';
+      if (req.authz?.tokenUse === VISITOR_TOKEN_USE
+        && req.authz?.accountState === 'visitor'
+        && req.authz?.authorityId) {
+        authorityId = req.authz.authorityId;
+        role = 'visitor';
+      } else if (req.authz?.tokenUse === FORMAL_TOKEN_USE
+        && req.authz?.accountState === 'formal'
+        && ['student', 'teacher', 'admin', 'super_admin'].includes(req.authz?.activeRole)) {
+        const rows = database.prepare(`SELECT DISTINCT a.authority_id AS authorityId
+          FROM authority_accounts a
+          JOIN authority_role_bindings b
+            ON b.authority_id=a.authority_id AND b.user_id=a.user_id
+          WHERE a.user_id=? AND a.status='active'
+            AND b.user_id=? AND b.role=? AND b.status='active'
+          ORDER BY a.authority_id`)
+          .all(req.authz.userId, req.authz.userId, req.authz.activeRole);
+        if (rows.length === 1) {
+          authorityId = rows[0].authorityId;
+          role = req.authz.activeRole;
+        } else if (rows.length > 1) {
+          return res.status(409).json({
+            success: false,
+            code: 'MINIAPP_AUTHORITY_SCOPE_AMBIGUOUS',
+            error: 'MINIAPP_AUTHORITY_SCOPE_AMBIGUOUS',
+          });
+        }
+      }
+      if (!authorityId || !role) {
+        return res.status(403).json({
+          success: false,
+          code: 'MINIAPP_AUTHORITY_PROJECTION_SESSION_REQUIRED',
+          error: 'MINIAPP_AUTHORITY_PROJECTION_SESSION_REQUIRED',
+        });
+      }
+      const projection = authorityProjectionStore.read({
+        authorityId,
+        userId: req.authz.userId,
+        role,
+      });
+      if (!projection) {
+        return res.status(404).json({
+          success: false,
+          code: 'AUTHORITY_PROJECTION_NOT_FOUND',
+          error: 'AUTHORITY_PROJECTION_NOT_FOUND',
+        });
+      }
+      const epoch = database.prepare(`SELECT id,db_authority_id,host_public_key
+        FROM primary_host_epochs
+        WHERE id=? AND db_authority_id=? AND status='active'`)
+        .get(projection.hostEpochId, authorityId);
+      if (!epoch?.host_public_key) {
+        return res.status(409).json({
+          success: false,
+          code: 'AUTHORITY_PROJECTION_HOST_EPOCH_INACTIVE',
+          error: 'AUTHORITY_PROJECTION_HOST_EPOCH_INACTIVE',
+        });
+      }
+      const verifiedProjection = verifySignedAuthorityProjection({
+        projection,
+        publicKey: epoch.host_public_key,
+      });
+      return res.json({
+        success: true,
+        projection: verifiedProjection,
+        data: { projection: verifiedProjection },
+      });
+    } catch (error) {
+      return res.status(error?.statusCode || 400).json({
+        success: false,
+        code: error?.code || 'MINIAPP_AUTHORITY_PROJECTION_READ_FAILED',
+        error: error?.code || 'MINIAPP_AUTHORITY_PROJECTION_READ_FAILED',
+      });
+    }
+  });
+  app.use('/api/miniapp/applications', authMiddleware, createMiniappAuthorityApplicationsRouter({
+    db: database,
+    commandInbox: authorityCommandInbox,
+    commandAuthorization: authorityCommandAuthorization,
+    onCommandQueued: ({ envelope, queued, request }) => {
+      const epoch = database.prepare(`SELECT device_id FROM primary_host_epochs
+        WHERE id=? AND status='active'`).get(envelope.hostEpochId);
+      if (epoch?.device_id) {
+        request.app?.get('cloudRelaySocketServer')?.notifyHostNewTask(epoch.device_id, {
+          id: queued.id,
+          task_type: 'authority-command-v1',
+        });
+      }
+    },
+  }));
   app.use('/api/miniapp/wechat-bindings', authMiddleware, miniappWechatBindingsRouter);
 
   // 鍗婂叕寮€璺敱锛堝彲閫夎璇侊級

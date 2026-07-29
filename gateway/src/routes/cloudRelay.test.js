@@ -15,9 +15,9 @@ assert.ok(route.includes('/host/heartbeat'), 'cloud relay should expose host hea
 assert.ok(route.includes('/snapshots/publish'), 'cloud relay should expose snapshot publish');
 assert.ok(route.includes('/snapshots/read'), 'cloud relay should expose snapshot read');
 assert.ok(route.includes('/tasks'), 'cloud relay should expose miniapp tasks');
-assert.ok(route.includes("router.get('/tasks'"), 'cloud relay should let host fetch pending miniapp tasks');
+assert.ok(route.includes("router.get('/tasks'"), 'cloud relay should retain an explicit V1 polling tombstone');
 assert.ok(route.includes("router.post('/tasks/:id/complete'"), 'cloud relay should let host complete miniapp tasks');
-assert.ok(route.includes('taskService.completeLegacyTask') && route.includes('taskService.completeV2Task'), 'cloud relay should store terminal task state through protocol-aware services');
+assert.ok(!route.includes('taskService.completeLegacyTask') && route.includes('taskService.completeV2Task'), 'cloud relay should store terminal state only through the V2 task service');
 assert.ok(route.includes('allowedTasksForUser'), 'cloud relay should apply role-specific task permissions');
 assert.ok(route.includes("user?.user_type === 'student'"), 'cloud relay should distinguish student task permissions');
 assert.ok(route.includes("['super_admin', 'admin'].includes(user?.user_type)"), 'cloud relay should grant super admin the existing admin task permissions');
@@ -62,8 +62,10 @@ assert.strictEqual(studentSnapshot.payload.students[0].phone, undefined);
 assert.strictEqual(studentSnapshot.payload.courses[0].price_tuition, undefined);
 assert.strictEqual(studentSnapshot.payload.courses[0].notes, undefined);
 assert.strictEqual(studentSnapshot.payload.schedules[0].calculated_tuition, undefined);
+assert.strictEqual(studentSnapshot.payload.schedules[0].tuition, undefined, 'course membership alone must not attribute a group schedule tuition');
 assert.strictEqual(studentSnapshot.payload.teachers[0].hourly_rate, undefined);
-assert.deepStrictEqual(studentSnapshot.payload.payments, []);
+assert.deepStrictEqual(studentSnapshot.payload.payments.map(row => row.id), ['p1']);
+assert.deepStrictEqual(studentSnapshot.payload.scopedFinancials, { tuition: 0, teacherFees: 0, payments: 999, assets: 0 });
 assert.strictEqual(studentSnapshot.payload.questions.length, 1);
 function hostStatus(token, configured = 'test-host-secret') {
   const previous = process.env.GEWU_CLOUD_RELAY_HOST_TOKEN;
@@ -78,6 +80,7 @@ assert.deepStrictEqual(hostStatus('wrong'), { status: 403, nextCalled: false });
 assert.deepStrictEqual(hostStatus('test-host-secret'), { status: 200, nextCalled: true });
 assert.deepStrictEqual(hostStatus('anything', ''), { status: 403, nextCalled: false });
 assert.ok(route.includes("router.get('/tasks', requireHostToken"));
+assert.ok(route.includes('return legacyTaskRetired(res)'), 'V1 task polling and completion should be explicit 410 tombstones');
 assert.ok(route.includes("router.post('/tasks/:id/complete', requireHostToken"));
 assert.ok(route.includes("router.post('/tasks', requireApprovedSnapshotUser"));
 

@@ -6,6 +6,7 @@ const {
   DESKTOP_CLIENT_FLAVOR,
   PRIMARY_HOST_FLAVOR,
   resolveDesktopBuildFlavor,
+  validateDesktopCapabilityManifest,
   updateFeedForFlavor,
 } = require('./desktopBuildFlavor');
 
@@ -19,6 +20,18 @@ assert.strictEqual(resolveDesktopBuildFlavor({
   isPackaged: true,
   metadata: { desktopBuildFlavor: PRIMARY_HOST_FLAVOR },
 }), PRIMARY_HOST_FLAVOR);
+assert.strictEqual(resolveDesktopBuildFlavor({
+  isPackaged: false,
+  metadata: { desktopBuildFlavor: PRIMARY_HOST_FLAVOR },
+  env: { GEWU_DESKTOP_BUILD_FLAVOR: DESKTOP_CLIENT_FLAVOR },
+}), PRIMARY_HOST_FLAVOR, 'host package metadata must not be downgraded by inherited environment');
+assert.throws(
+  () => validateDesktopCapabilityManifest({
+    metadata: { desktopBuildFlavor: PRIMARY_HOST_FLAVOR, desktopCapabilityManifest: { flavor: PRIMARY_HOST_FLAVOR, revision: 1 } },
+    runtimeFlavor: DESKTOP_CLIENT_FLAVOR,
+  }),
+  error => error && error.code === 'PRIMARY_HOST_CAPABILITY_MISMATCH'
+);
 assert.strictEqual(resolveDesktopBuildFlavor({
   isPackaged: false,
   metadata: { desktopBuildFlavor: DESKTOP_CLIENT_FLAVOR },
@@ -42,33 +55,47 @@ const hostBuild = require('../electron-builder.host.config.cjs');
 const electronSource = fs.readFileSync('public/electron.js', 'utf8');
 const preloadSource = fs.readFileSync('public/preload.js', 'utf8');
 assert.strictEqual(packageJson.desktopBuildFlavor, DESKTOP_CLIENT_FLAVOR);
+assert.strictEqual(
+  packageJson.build.npmRebuild,
+  false,
+  'ordinary packaging must use the Electron ABI prepared by rebuild:electron instead of rebuilding it a second time',
+);
 assert.strictEqual(hostBuild.extraMetadata.desktopBuildFlavor, PRIMARY_HOST_FLAVOR);
 assert.strictEqual(hostBuild.directories.output, 'dist-host');
+assert.strictEqual(
+  hostBuild.npmRebuild,
+  false,
+  'the host build must use the Electron ABI prepared by rebuild:electron instead of rebuilding it a second time',
+);
 assert.ok(hostBuild.publish.some(entry => entry.url.endsWith('/desktop/host/')));
 assert.ok(electronSource.includes('if (PRIMARY_HOST_CAPABLE)'));
 assert.ok(electronSource.includes("config.nodeRole !== 'desktop-client'"));
 assert.ok(preloadSource.includes("if (desktopBuildFlavor === 'primary-host')"));
-assert.ok(preloadSource.includes('createPairingEnvelope'));
-assert.ok(preloadSource.includes("exposeInMainWorld('singleUserRuntime'"));
 assert.ok(!preloadSource.includes('GEWU_ELECTRON_LOCAL_BRIDGE_SECRET'));
 assert.ok(!preloadSource.includes('signPairingEnvelope'));
 assert.ok(electronSource.includes("'x-gewu-electron-local-bridge': electronLocalBridgeSecret"));
-assert.ok(electronSource.includes("ipcMain.handle('single-user:bootstrap'"));
 assert.ok(packageJson.build.files.includes('public/desktopBuildFlavor.js'));
 assert.ok(packageJson.build.files.includes('public/electronShellPolicy.js'),
   'both packaged flavors must include the production menu and updater error policy');
+assert.ok(packageJson.build.files.includes('public/localSessionSigningSecret.js'),
+  'both packaged flavors must include the local session-signing fallback');
+assert.ok(packageJson.build.files.includes('public/windowsHostFirewall.js'),
+  'the firewall planner must be packaged with both desktop flavors');
+assert.ok(hostBuild.files.includes('public/windowsHostFirewallElevated.ps1'),
+  'the primary-host installer must contain the elevated firewall helper');
+assert.ok(electronSource.includes("require('./windowsHostFirewall')"));
+assert.ok(electronSource.includes("ipcMain.handle('primary-host:firewall-status'"));
+assert.ok(electronSource.includes("ipcMain.handle('primary-host:firewall-enable-lan'"));
+assert.ok(electronSource.includes("ipcMain.handle('primary-host:worker-status'"));
+assert.ok(preloadSource.includes("ipcRenderer.invoke('primary-host:firewall-status')"));
+assert.ok(preloadSource.includes("ipcRenderer.invoke('primary-host:firewall-enable-lan')"));
+assert.ok(preloadSource.includes("ipcRenderer.invoke('primary-host:worker-status')"));
+assert.ok(packageJson.scripts['test:desktop-build-flavor'].includes('localSessionSigningSecret.test.js'),
+  'the local session-signing fallback must run in the packaged desktop test suite');
 assert.strictEqual(
   packageJson.build.artifactName,
   'GewuGongfang-Desktop-${version}-${arch}.${ext}',
   'ordinary releases must have a stable flavor-specific installer name',
-);
-assert.ok(
-  packageJson.build.files.includes('public/singleUserPairingEnvelope.js'),
-  'ordinary package must include the opaque pairing protocol client'
-);
-assert.ok(
-  hostBuild.files.includes('public/singleUserPairingEnvelope.js'),
-  'primary-host package must include the opaque pairing protocol endpoint'
 );
 for (const hostOnlyFile of [
   'public/primaryHostCredentialStore.js',

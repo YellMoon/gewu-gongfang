@@ -52,8 +52,8 @@ assert.ok(
 const syncSettings = read('src/pages/SyncSettings.tsx');
 const syncQuickPanel = read('src/components/sync/SyncQuickPanel.tsx');
 const cloudSync = read('src/pages/CloudSync.tsx');
+const authorityOutboxPanel = read('src/components/AuthorityOutboxPanel.tsx');
 const operateLog = read('src/pages/OperateLog.tsx');
-const syncApi = read('src/services/syncApi.ts');
 const cloudRelayHostApi = read('src/services/cloudRelayHostApi.ts');
 const permissionManager = read('src/pages/PermissionManager.tsx');
 const permissionManagerCss = read('src/pages/PermissionManager.css');
@@ -101,8 +101,9 @@ assert(
   miniappUnrecognizedExperience.includes('cancelTask(taskId: string)') &&
   miniappUnrecognizedExperience.includes('downloadArtifact(artifactId: string)') &&
   miniappUnrecognizedExperience.includes('submitApplication') &&
-  miniappUnrecognizedExperience.includes('withdrawApplication'),
-  'unrecognized students should have the fixed-question task and identity-application API surface'
+  miniappUnrecognizedExperience.includes('getApplicationStatus') &&
+  !miniappUnrecognizedExperience.includes('withdrawApplication'),
+  'unrecognized students should have the fixed-question task and authority-owned role-application API surface'
 );
 
 assert(
@@ -123,12 +124,12 @@ assert(
 );
 
 assert(
-  miniappAccountApplication.includes('verifiedPhone') &&
-  miniappAccountApplication.includes('submitApplication') &&
-  miniappAccountApplication.includes('withdrawApplication') &&
-  miniappAccountApplication.includes('撤回申请') &&
-  miniappAccountApplication.includes('修改并重新提交'),
-  'identity applications should bind the verified phone and support submit, withdraw, and resubmit states'
+  miniappAccountApplication.includes('buildRoleApplicationRequest') &&
+  miniappAccountApplication.includes('authority_role_application_key') &&
+  miniappAccountApplication.includes('applicationApi.submit') &&
+  miniappAccountApplication.includes("['not_submitted', 'invalid', 'rejected']") &&
+  !miniappAccountApplication.includes('withdrawApplication'),
+  'role applications should use the authority command contract and allow a rejected request to be corrected and resubmitted'
 );
 
 assert(
@@ -293,52 +294,16 @@ assert(
   'question bank import and preview should warn when the removable question-bank drive is unavailable'
 );
 
-assert(
-  syncSettings.includes('runOneClickSync') &&
-  syncSettings.includes('confirmOneClickPreview') &&
-  syncSettings.includes('backupId') &&
-  !syncSettings.includes('requestSyncAuthorization'),
-  'sync settings should use the V2 one-click confirmation and show its durable backup id'
-);
-
-assert(
-  cloudSync.includes('runOneClickSync') &&
-  cloudSync.includes('readDesktopAuthorizationSession') &&
-  cloudSync.includes('Modal.confirm') &&
-  cloudSync.includes('backupId') &&
-  !cloudSync.includes('requestSyncAuthorization') &&
-  !cloudSync.includes('authorizationToken'),
-  'cloud sync dashboard should share the V2 one-click sync contract'
-);
-
-assert(
-  cloudRelayHostApi.includes('publishCloudSnapshot') &&
-  cloudRelayHostApi.includes('/api/cloud-relay-host/snapshot') &&
-  cloudRelayHostApi.includes('getRuntimeConfig') &&
-  cloudRelayHostApi.includes('hostBaseUrl') &&
-  cloudRelayHostApi.includes('cloudBaseUrl') &&
-  cloudSync.includes('handlePublishCloudSnapshot') &&
-  cloudSync.includes('发布云端快照') &&
-  cloudSync.includes("runtimeConfig?.nodeRole !== 'primary-host'"),
-  'desktop primary host should expose a manual cloud snapshot publish action backed by runtime host/cloud config'
-);
-
-assert(
-  syncApi.includes('getRuntimeConfig') &&
-  syncApi.includes('hostBaseUrl') &&
-  syncApi.includes('getSyncBaseUrl') &&
-  syncApi.includes('getSyncUrl') &&
-  !syncApi.includes('const SYNC_URL ='),
-  'desktop sync API should resolve the local data host address from runtime config instead of a build-time constant'
-);
-
-assert(
-  syncSettings.includes('同步审核中心') &&
-  syncSettings.includes('主机优先') &&
-  syncSettings.includes('客户端优先') &&
-  syncSettings.includes('拒绝'),
-  'sync settings should expose host conflict review actions'
-);
+assert(syncSettings.includes('AuthorityOutboxPanel'));
+assert(cloudSync.includes('AuthorityOutboxPanel'));
+assert(authorityOutboxPanel.includes('requireBridge().list()'));
+assert(authorityOutboxPanel.includes('confirmAndSubmit(item.id)'));
+assert(authorityOutboxPanel.includes('submit(item.id)'));
+assert(authorityOutboxPanel.includes('Modal.confirm'));
+assert(authorityOutboxPanel.includes("item.status === 'conflict'"));
+assert(!authorityOutboxPanel.includes('fetch('));
+assert(!syncSettings.includes('runOneClickSync'));
+assert(!cloudSync.includes('runOneClickSync'));
 
 assert(
   appShell.includes('SyncQuickPanel') &&
@@ -361,16 +326,18 @@ assert(
 
 assert(
   syncSettings.includes("variant?: 'quick' | 'advanced'") &&
-  syncSettings.includes('\\u5f00\\u59cb\\u540c\\u6b65') &&
-  syncSettings.includes('\\u5904\\u7406\\u5f85\\u540c\\u6b65\\u8bf7\\u6c42') &&
+  syncSettings.includes('AuthorityOutboxPanel') &&
+  authorityOutboxPanel.includes('confirmAndSubmit') &&
+  authorityOutboxPanel.includes('projectionVersion') &&
   systemSettings.includes('id="sync-settings"') &&
   systemSettings.includes('sync-advanced'),
-  'sync UI should expose the manual start action and role-aware advanced host management'
+  'sync UI should expose the authority outbox and explicit confirmation'
 );
 
 assert(
-  syncSettings.includes("confirmTitle: '\\u786e\\u8ba4\\u5f00\\u59cb\\u540c\\u6b65'"),
-  'sync confirmation dialog should use the approved manual start wording'
+  authorityOutboxPanel.includes('Modal.confirm') &&
+  authorityOutboxPanel.includes('copy.safetyText'),
+  'authority command confirmation must show an impact and safety preview'
 );
 
 assert(

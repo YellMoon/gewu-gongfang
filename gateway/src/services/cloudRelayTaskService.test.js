@@ -24,6 +24,13 @@ function createDb() {
 }
 
 for (const [name, service] of implementations) {
+  for (const retiredExport of ['listLegacyPending', 'claimNextLegacyTask', 'completeLegacyTask']) {
+    assert.strictEqual(
+      service[retiredExport],
+      undefined,
+      `${name}: retired V1 task service export must not remain: ${retiredExport}`,
+    );
+  }
   const db = createDb();
   const input = {
     taskType: 'paper-export-pdf', payload: { questionIds: ['q2', 'q1'], title: 'paper' },
@@ -107,47 +114,6 @@ for (const [name, service] of implementations) {
   const cancelled = service.cancelV2Task(db, 'task-cancel', { actorUserId: 'user-1', isAdmin: false });
   assert.deepStrictEqual([cancelled.status, cancelled.phase], ['cancelled', 'cancelled']);
 
-  db.prepare(`INSERT INTO miniapp_tasks(id,task_type,status,payload,created_by,created_at,updated_at,protocol_version)
-    VALUES('legacy-1','paper-export-word','pending_host','{}','user-1','t','t',1)`).run();
-  assert.deepStrictEqual(service.listLegacyPending(db).map(row => row.id), ['legacy-1'], `${name}: V1 polling must not return V2 tasks`);
-  assert.strictEqual(service.completeLegacyTask(db, 'legacy-1', { ok: true }).status, 'completed');
-
-  db.prepare(`INSERT INTO miniapp_tasks(id,task_type,status,payload,created_by,created_at,updated_at,protocol_version)
-    VALUES('legacy-claim','paper-export-pdf','pending_host','{}','user-1','2026-07-13T00:00:00.000Z','t',1)`).run();
-  const legacyFirstClaim = service.claimNextLegacyTask(db, {
-    hostDeviceId: 'host-a', now: '2026-07-13T00:00:01.000Z', leaseMs: 1000, tokenFactory: () => 'legacy-old',
-  });
-  assert.strictEqual(legacyFirstClaim.task.id, 'legacy-claim');
-  assert.strictEqual(legacyFirstClaim.task.row_version, 1);
-  assert.strictEqual(service.claimNextLegacyTask(db, { hostDeviceId: 'host-b', now: '2026-07-13T00:00:01.500Z' }), null, `${name}: active V1 lease prevents another host claim`);
-  const legacySecondClaim = service.claimNextLegacyTask(db, {
-    hostDeviceId: 'host-b', now: '2026-07-13T00:00:03.000Z', leaseMs: 1000, tokenFactory: () => 'legacy-new',
-  });
-  assert.strictEqual(legacySecondClaim.task.row_version, 2, `${name}: expired V1 lease can be reclaimed atomically`);
-  assert.throws(
-    () => service.completeLegacyTask(db, 'legacy-claim', { ok: true }, true, { claimToken: 'legacy-old', expectedRowVersion: 2, hostDeviceId: 'host-a', now: '2026-07-13T00:00:03.100Z' }),
-    error => error.code === 'TASK_CLAIM_INVALID',
-    `${name}: stale V1 claim token cannot complete another host's work`
-  );
-  assert.strictEqual(service.completeLegacyTask(db, 'legacy-claim', { ok: true }, true, {
-    claimToken: 'legacy-new', expectedRowVersion: 2, hostDeviceId: 'host-b', now: '2026-07-13T00:00:03.500Z',
-  }).status, 'completed');
-
-  db.prepare(`INSERT INTO miniapp_tasks(id,task_type,status,payload,created_by,created_at,updated_at,protocol_version)
-    VALUES('legacy-expired','paper-export-pdf','pending_host','{}','user-1','2026-07-13T00:00:04.000Z','t',1)`).run();
-  const expiringClaim = service.claimNextLegacyTask(db, {
-    hostDeviceId: 'host-a', now: '2026-07-13T00:00:04.000Z', leaseMs: 1000, tokenFactory: () => 'legacy-expiring',
-  });
-  assert.throws(
-    () => service.completeLegacyTask(db, 'legacy-expired', { ok: true }, true, { claimToken: expiringClaim.claimToken, expectedRowVersion: expiringClaim.task.row_version, hostDeviceId: 'host-a', now: '2026-07-13T00:00:06.000Z' }),
-    error => error.code === 'TASK_LEASE_EXPIRED',
-    `${name}: an expired V1 claim cannot complete without a valid lease`
-  );
-  assert.throws(
-    () => service.completeLegacyTask(db, 'task-v2', { ok: true }),
-    error => error.code === 'TASK_PROTOCOL_MISMATCH',
-    `${name}: legacy completion cannot mutate a V2 task`
-  );
   db.close();
 }
 

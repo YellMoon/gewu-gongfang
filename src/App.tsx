@@ -21,8 +21,6 @@ import QuestionBasket from './components/QuestionBasket';
 import AppShell from './layout/AppShell';
 import { PageKey, questionBankPages } from './navigation/appNavigation';
 import { NavigationContext, NavigationInput, normalizeNavigationTarget } from './navigation/navigationContext';
-import { getRuntimeConfig } from './services/runtimeConfigClient';
-import { processMiniappCloudTasks, publishCloudHeartbeat } from './services/cloudRelayHostApi';
 import { requestEditorSpaNavigation } from './components/question-editor/questionEditorSession';
 
 const ScheduleCalendar = React.lazy(() => import('./pages/ScheduleCalendar'));
@@ -50,8 +48,6 @@ const LazyPage: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 );
 
 const DEFAULT_PAGE: PageKey = 'today';
-const HOST_CLOUD_TASK_POLL_INTERVAL_MS = 5 * 1000;
-const HOST_CLOUD_HEARTBEAT_INTERVAL_MS = 60 * 1000;
 
 let dbService: any = null;
 
@@ -84,11 +80,22 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const onProjectionRefreshed = () => setRefreshKey(key => key + 1);
+    window.addEventListener('authority-projection-refreshed', onProjectionRefreshed);
+    return () => window.removeEventListener('authority-projection-refreshed', onProjectionRefreshed);
+  }, []);
+
+  useEffect(() => {
     const loadDb = async () => {
       try {
         if (!dbService) {
           const dbModule = await import('./services/browserDatabase');
           dbService = dbModule.default;
+        }
+        try {
+          await dbService.refreshAuthorityProjection();
+        } catch (error) {
+          console.warn('Authority projection refresh unavailable; using last verified local cache:', error);
         }
         (window as any).dbService = dbService;
         console.log('Database service loaded successfully');
@@ -99,58 +106,6 @@ const App: React.FC = () => {
       }
     };
     loadDb();
-  }, []);
-
-  useEffect(() => {
-    let stopped = false;
-    let taskRunning = false;
-    let taskTimer: ReturnType<typeof setInterval> | null = null;
-    let maintenanceTimer: ReturnType<typeof setInterval> | null = null;
-    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-
-    const hostConfig = async () => {
-      const config = await getRuntimeConfig();
-      return config.nodeRole === 'primary-host' && config.cloudBaseUrl ? config : null;
-    };
-    const runHostHeartbeat = async () => {
-      try {
-        if (!await hostConfig()) return;
-        await publishCloudHeartbeat();
-      } catch (error) {
-        if (!stopped) console.warn('[cloud-relay-host] heartbeat skipped', error);
-      }
-    };
-    const runHostTasks = async (skipMaintenance: boolean) => {
-      if (taskRunning) return;
-      taskRunning = true;
-      try {
-        if (!await hostConfig()) return;
-        if (skipMaintenance) await processMiniappCloudTasks({ skipMaintenance: true });
-        else await processMiniappCloudTasks();
-      } catch (error) {
-        if (!stopped) console.warn('[cloud-relay-host] background poll skipped', error);
-      } finally {
-        taskRunning = false;
-      }
-    };
-
-    void runHostHeartbeat();
-    void runHostTasks(false);
-    taskTimer = setInterval(
-      () => { void runHostTasks(true); },
-      HOST_CLOUD_TASK_POLL_INTERVAL_MS
-    );
-    maintenanceTimer = setInterval(
-      () => { void runHostTasks(false); },
-      HOST_CLOUD_HEARTBEAT_INTERVAL_MS
-    );
-    heartbeatTimer = setInterval(runHostHeartbeat, HOST_CLOUD_HEARTBEAT_INTERVAL_MS);
-    return () => {
-      stopped = true;
-      if (taskTimer) clearInterval(taskTimer);
-      if (maintenanceTimer) clearInterval(maintenanceTimer);
-      if (heartbeatTimer) clearInterval(heartbeatTimer);
-    };
   }, []);
 
   const navigateTo = (input: NavigationInput) => {

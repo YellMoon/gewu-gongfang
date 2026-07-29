@@ -1,4 +1,5 @@
 import { getRuntimeConfig } from './runtimeConfigClient';
+import { readDesktopAuthorizationSession } from './desktopAuthorizationSession.mjs';
 
 function trimTrailingSlash(value: string): string {
   return String(value || '').replace(/\/+$/, '');
@@ -19,11 +20,23 @@ async function postHost(path: string, body: Record<string, any> = {}) {
     };
   }
 
+  const session = runtimeConfig.nodeRole === 'primary-host'
+    ? await (window as any).desktopIdentitySessionProvider?.ensureHostSync?.({
+      hostBaseUrl: runtimeConfig.hostBaseUrl,
+    })
+    : readDesktopAuthorizationSession();
+  if (!session?.authorization || !session?.authContext?.deviceId) {
+    const error: any = new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
+    error.code = 'ONLINE_DESKTOP_SESSION_REQUIRED';
+    throw error;
+  }
+
   const res = await fetch(hostApiUrl(runtimeConfig.hostBaseUrl, path), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(runtimeConfig.desktopSyncToken ? { 'x-gewu-desktop-sync-token': runtimeConfig.desktopSyncToken } : {}),
+      Authorization: session.authorization,
+      'x-device-id': session.authContext.deviceId,
     },
     body: JSON.stringify(body),
   });

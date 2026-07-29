@@ -7,7 +7,7 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { api, readCloudSnapshot } from '../../utils/api';
 import { authSessionRuntime } from '../../utils/authSession';
 import { captureTrustedAuthSession, clearAuthenticatedSession } from '../../utils/miniappApiSessionRuntime';
-import { accountSessionCleanupStorageKeys, isUnrecognizedIdentity } from '../../utils/accountExperience';
+import { accountSessionCleanupStorageKeys, isUnrecognizedIdentity, isVisitorIdentity } from '../../utils/accountExperience';
 import {
   fetchPermissions,
   getPermittedModules,
@@ -35,8 +35,8 @@ interface UserInfo {
   nickname?: string;
   user_type: MiniappRole;
   avatar?: string;
-  account_state?: 'formal' | 'unrecognized';
-  token_use?: 'miniapp-session' | 'unrecognized-student';
+  account_state?: 'formal' | 'visitor' | 'unrecognized';
+  token_use?: 'miniapp-session' | 'miniapp-visitor' | 'unrecognized-student';
   capabilities?: MiniappCapability[];
   membership?: { status?: string } | null;
 }
@@ -110,14 +110,15 @@ export default function Index() {
 
     const savedUser = session.identity as UserInfo;
     setUser({ ...savedUser, name: getMiniappHomeDisplayName(savedUser) });
-    if (isUnrecognizedIdentity(savedUser)) {
-      await fetchPermissions();
+    if (isUnrecognizedIdentity(savedUser) || isVisitorIdentity(savedUser)) {
       const nextAccess = getEffectiveMiniappAccess(savedUser);
       setAccess(nextAccess);
-      setModules([
-        { id: 'scheduling', name: '\u8bfe\u7a0b\u8868', description: '', icon: '' },
-        { id: 'question-bank', name: '\u793a\u4f8b\u9898', description: '', icon: '' },
-      ]);
+      setModules(isVisitorIdentity(savedUser)
+        ? [{ id: 'question-bank', name: '\u9898\u76ee\u9884\u89c8', description: '', icon: '' }]
+        : [
+          { id: 'scheduling', name: '\u8bfe\u7a0b\u8868', description: '', icon: '' },
+          { id: 'question-bank', name: '\u793a\u4f8b\u9898', description: '', icon: '' },
+        ]);
       setSnapshot(null);
       setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
       setLoading(false);
@@ -289,6 +290,7 @@ export default function Index() {
   const greeting = isStudent ? '学习面板' : '运营面板';
   const snapshotLabel = formatSnapshotTime(snapshot?.created_at);
   const userDisplayName = user ? getMiniappHomeDisplayName(user) : '';
+  const visitor = isVisitorIdentity(user);
   const moduleActions = useMemo(() => (
     modules
       .filter((mod) => MODULE_CONFIG[mod.id])
@@ -299,27 +301,29 @@ export default function Index() {
   if (access.experienceOnly && user) {
     return (
       <View className='home-page'>
-        <AccountStatusBanner />
+        {!visitor ? <AccountStatusBanner /> : null}
         <View className='home-hero'>
           <View className='home-hero__topline'>
             <Text className='home-brand'>{'\u683c\u7269\u5de5\u574a'}</Text>
-            <View className='home-role-pill'><Text className='home-role-pill__text'>{'\u4f53\u9a8c\u8d26\u53f7'}</Text></View>
+            <View className='home-role-pill'><Text className='home-role-pill__text'>{visitor ? '\u8bbf\u5ba2' : '\u4f53\u9a8c\u8d26\u53f7'}</Text></View>
           </View>
           <View className='home-hero__body'>
             <View className='home-avatar'><Text className='home-avatar__text'>{userDisplayName.charAt(0) || '\u683c'}</Text></View>
             <View className='home-hero__copy'>
               <Text className='home-hero__title'>{userDisplayName}</Text>
-              <Text className='home-hero__subtitle'>{'\u53ef\u67e5\u770b\u7a7a\u8bfe\u8868\u3001\u4f7f\u7528\u56db\u9053\u793a\u4f8b\u9898\u5e76\u63d0\u4ea4\u6b63\u5f0f\u8d26\u53f7\u7533\u8bf7\u3002'}</Text>
+              <Text className='home-hero__subtitle'>{visitor
+                ? '\u53ef\u67e5\u770b\u6570\u636e\u4e3b\u673a\u7b7e\u540d\u7684\u5341\u9053\u8131\u654f\u9898\u76ee\u9884\u89c8\uff0c\u5e76\u7533\u8bf7\u8001\u5e08\u6216\u5b66\u751f\u89d2\u8272\u3002'
+                : '\u53ef\u67e5\u770b\u7a7a\u8bfe\u8868\u3001\u4f7f\u7528\u56db\u9053\u793a\u4f8b\u9898\u5e76\u63d0\u4ea4\u6b63\u5f0f\u8d26\u53f7\u7533\u8bf7\u3002'}</Text>
             </View>
             <View className='home-logout' onClick={handleLogout}><Text className='home-logout__text'>{'\u9000\u51fa'}</Text></View>
           </View>
         </View>
         <View className='home-section'>
-          <View className='home-section__header'><Text className='home-section__title'>{'\u53ef\u7528\u529f\u80fd'}</Text><Text className='home-section__meta'>3</Text></View>
+          <View className='home-section__header'><Text className='home-section__title'>{'\u53ef\u7528\u529f\u80fd'}</Text><Text className='home-section__meta'>{visitor ? '2' : '3'}</Text></View>
           <View className='home-action-list'>
-            <View className='home-action-card tone-teal' onClick={() => Taro.switchTab({ url: '/pages/schedule/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u8bfe'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{'\u8bfe\u7a0b\u8868'}</Text><Text className='home-action-card__desc'>{'\u5f53\u524d\u8d26\u53f7\u6682\u65e0\u6b63\u5f0f\u8bfe\u7a0b\u6570\u636e'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View>
-            <View className='home-action-card tone-indigo' onClick={() => Taro.navigateTo({ url: '/pages/question-bank/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u9898'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{'\u793a\u4f8b\u9898\u4e0e\u7ec4\u5377'}</Text><Text className='home-action-card__desc'>{'\u56db\u9053\u793a\u4f8b\u9898\u4e0d\u5c5e\u4e8e\u6b63\u5f0f\u9898\u5e93'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View>
-            <View className='home-action-card tone-amber' onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u7533'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{'\u7533\u8bf7\u6b63\u5f0f\u8d26\u53f7'}</Text><Text className='home-action-card__desc'>{'\u67e5\u770b\u7533\u8bf7\u72b6\u6001\u6216\u63d0\u4ea4\u771f\u5b9e\u8d44\u6599'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View>
+            {!visitor ? <View className='home-action-card tone-teal' onClick={() => Taro.switchTab({ url: '/pages/schedule/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u8bfe'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{'\u8bfe\u7a0b\u8868'}</Text><Text className='home-action-card__desc'>{'\u5f53\u524d\u8d26\u53f7\u6682\u65e0\u6b63\u5f0f\u8bfe\u7a0b\u6570\u636e'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View> : null}
+            <View className='home-action-card tone-indigo' onClick={() => Taro.navigateTo({ url: '/pages/question-bank/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u9898'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{visitor ? '\u5341\u9053\u8131\u654f\u9898\u76ee\u9884\u89c8' : '\u793a\u4f8b\u9898\u4e0e\u7ec4\u5377'}</Text><Text className='home-action-card__desc'>{visitor ? '\u53ea\u8bfb\u53d6\u4e3b\u673a\u7b7e\u540d\u6295\u5f71\uff0c\u4e0d\u5305\u542b\u7b54\u6848\u548c\u89e3\u6790' : '\u56db\u9053\u793a\u4f8b\u9898\u4e0d\u5c5e\u4e8e\u6b63\u5f0f\u9898\u5e93'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View>
+            <View className='home-action-card tone-amber' onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u7533'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{visitor ? '\u7533\u8bf7\u8001\u5e08/\u5b66\u751f\u89d2\u8272' : '\u7533\u8bf7\u6b63\u5f0f\u8d26\u53f7'}</Text><Text className='home-action-card__desc'>{visitor ? '\u7533\u8bf7\u4f5c\u4e3a\u6301\u4e45\u547d\u4ee4\u4ea4\u7531\u6570\u636e\u4e3b\u673a\u5ba1\u6838' : '\u67e5\u770b\u7533\u8bf7\u72b6\u6001\u6216\u63d0\u4ea4\u771f\u5b9e\u8d44\u6599'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View>
           </View>
         </View>
       </View>

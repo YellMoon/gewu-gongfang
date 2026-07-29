@@ -4,12 +4,14 @@ const assert = require('assert');
 const fs = require('fs');
 const {
   UNRECOGNIZED_CAPABILITIES,
+  VISITOR_CAPABILITIES,
   accountCapabilities,
   accountExperienceArtifactRequest,
   accountExperiencePath,
   accountSessionCleanupStorageKeys,
   hasLegacyReviewMarker,
   isUnrecognizedIdentity,
+  isVisitorIdentity,
 } = require('./accountExperience');
 
 const identity = {
@@ -22,6 +24,27 @@ const identity = {
 
 assert.strictEqual(isUnrecognizedIdentity(identity), true);
 assert.deepStrictEqual(accountCapabilities(identity), [...UNRECOGNIZED_CAPABILITIES]);
+
+const visitor = {
+  id: 'visitor-1',
+  role: 'visitor',
+  user_type: 'visitor',
+  identity_kind: 'visitor',
+  account_state: 'visitor',
+  token_use: 'miniapp-visitor',
+  authority_id: 'authority-1',
+  capabilities: [...VISITOR_CAPABILITIES],
+};
+assert.strictEqual(isVisitorIdentity(visitor), true);
+assert.deepStrictEqual(accountCapabilities(visitor), [...VISITOR_CAPABILITIES]);
+for (const invalid of [
+  { ...visitor, account_state: 'formal' },
+  { ...visitor, token_use: 'unrecognized-student' },
+  { ...visitor, authority_id: '' },
+  { ...visitor, capabilities: [...visitor.capabilities, 'business:all'] },
+]) {
+  assert.strictEqual(isVisitorIdentity(invalid), false);
+}
 
 for (const invalid of [
   null,

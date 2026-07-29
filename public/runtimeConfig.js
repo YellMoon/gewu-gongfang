@@ -3,11 +3,24 @@ const path = require('path');
 const crypto = require('crypto');
 
 const VALID_ROLES = new Set(['primary-host', 'desktop-client']);
-const DESKTOP_IDENTITY_MODES = new Set(['full', 'single-user']);
 const MANAGED_CLOUD_BASE_URL = 'https://physicsedu.xyz/scheduling';
 
 function trimTrailingSlash(value) {
   return String(value || '').replace(/[\\/]+$/, '');
+}
+
+function isolatedE2EManagedCloudBaseUrl() {
+  if (process.env.GEWU_E2E_NO_AUTHORITY_DATA !== '1') return '';
+  const raw = String(process.env.GEWU_E2E_MANAGED_CLOUD_BASE_URL || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    const loopback = url.hostname === '127.0.0.1' || url.hostname === '::1' || url.hostname === 'localhost';
+    if (!loopback || url.protocol !== 'http:' || !url.port) return '';
+    return trimTrailingSlash(url.toString());
+  } catch (_error) {
+    return '';
+  }
 }
 
 function makeDeviceId() {
@@ -23,7 +36,6 @@ function defaultConfig(userDataPath) {
     primaryHostGeneration: null,
     hostBaseUrl: 'http://127.0.0.1:3001',
     cloudBaseUrl: MANAGED_CLOUD_BASE_URL,
-    desktopSyncToken: '',
     mainDbPath: path.join(userDataPath, 'data', 'scheduling.db'),
     questionBankPath: '',
     questionAssetPath: '',
@@ -40,10 +52,7 @@ function normalizeRuntimeConfig(input = {}, options = {}) {
   const next = { ...defaults, ...(input || {}) };
 
   next.nodeRole = VALID_ROLES.has(next.nodeRole) ? next.nodeRole : 'desktop-client';
-  next.desktopIdentityMode = options.primaryHostCapable === true
-    && DESKTOP_IDENTITY_MODES.has(next.desktopIdentityMode)
-    ? next.desktopIdentityMode
-    : 'full';
+  next.desktopIdentityMode = 'full';
   next.deviceId = next.deviceId || defaults.deviceId;
   next.primaryHostEpochId = String(next.primaryHostEpochId || '').trim();
   const primaryHostGeneration = Number(next.primaryHostGeneration);
@@ -56,9 +65,12 @@ function normalizeRuntimeConfig(input = {}, options = {}) {
   }
   next.hostBaseUrl = trimTrailingSlash(next.hostBaseUrl || defaults.hostBaseUrl);
   next.cloudBaseUrl = next.nodeRole === 'desktop-client'
-    ? trimTrailingSlash(options.managedCloudBaseUrl || MANAGED_CLOUD_BASE_URL)
+    ? trimTrailingSlash(options.managedCloudBaseUrl || isolatedE2EManagedCloudBaseUrl() || MANAGED_CLOUD_BASE_URL)
     : trimTrailingSlash(next.cloudBaseUrl || MANAGED_CLOUD_BASE_URL);
-  next.desktopSyncToken = String(next.desktopSyncToken || '').trim();
+  // The former desktopSyncToken was a shared relay secret.  Managed host
+  // credentials live only in the OS protected credential store; never keep a
+  // relay secret in the editable runtime configuration.
+  delete next.desktopSyncToken;
   next.mainDbPath = next.mainDbPath || defaults.mainDbPath;
   next.questionBankPath = trimTrailingSlash(next.questionBankPath || '');
   next.questionBankCandidatePaths = Array.from(new Set(
@@ -186,9 +198,7 @@ function writeManagedDesktopIdentityMode(configPath, mode, options = {}) {
     throw runtimeConfigError('DESKTOP_IDENTITY_MODE_HOST_FLAVOR_REQUIRED');
   }
   const normalizedMode = String(mode || '').trim();
-  if (!DESKTOP_IDENTITY_MODES.has(normalizedMode)) {
-    throw runtimeConfigError('DESKTOP_IDENTITY_MODE_INVALID');
-  }
+  if (normalizedMode !== 'full') throw runtimeConfigError('DESKTOP_IDENTITY_MODE_RETIRED');
   const current = readRuntimeConfig(configPath, options);
   return persistRuntimeConfig(configPath, normalizeRuntimeConfig({
     ...current,
@@ -196,15 +206,9 @@ function writeManagedDesktopIdentityMode(configPath, mode, options = {}) {
   }, options));
 }
 
-function deriveScopedSecret(seed, scope) {
-  return crypto.createHmac('sha256', seed).update(`gewu-desktop-runtime:${scope}`).digest('hex');
-}
-
 function applyRuntimeConfigToEnv(config, env = process.env) {
   env.GEWU_NODE_ROLE = config.nodeRole;
-  env.GEWU_DESKTOP_IDENTITY_MODE = DESKTOP_IDENTITY_MODES.has(config.desktopIdentityMode)
-    ? config.desktopIdentityMode
-    : 'full';
+  env.GEWU_DESKTOP_IDENTITY_MODE = 'full';
   env.GEWU_DEVICE_ID = config.deviceId;
   delete env.GEWU_PRIMARY_HOST_EPOCH_ID;
   delete env.GEWU_PRIMARY_HOST_GENERATION;
@@ -214,18 +218,8 @@ function applyRuntimeConfigToEnv(config, env = process.env) {
   }
   env.GEWU_HOST_BASE_URL = config.hostBaseUrl || '';
   env.GEWU_CLOUD_BASE_URL = config.cloudBaseUrl || '';
-  if (config.desktopSyncToken) {
-    env.GEWU_DESKTOP_SYNC_TOKEN = config.desktopSyncToken;
-    if (config.nodeRole === 'primary-host' && !env.GEWU_CLOUD_RELAY_HOST_TOKEN) {
-      env.GEWU_CLOUD_RELAY_HOST_TOKEN = config.desktopSyncToken;
-    }
-    if (Buffer.byteLength(config.desktopSyncToken, 'utf8') >= 32) {
-      if (!env.JWT_SECRET) env.JWT_SECRET = deriveScopedSecret(config.desktopSyncToken, 'jwt');
-      if (!env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET) {
-        env.GEWU_ARTIFACT_DOWNLOAD_HMAC_SECRET = deriveScopedSecret(config.desktopSyncToken, 'artifact-download');
-      }
-    }
-  }
+  delete env.GEWU_DESKTOP_SYNC_TOKEN;
+  delete env.GEWU_CLOUD_RELAY_HOST_TOKEN;
   env.DB_PATH = config.mainDbPath;
   if (config.questionBankPath) env.QUESTION_BANK_ROOT = config.questionBankPath;
   if (config.questionAssetPath) env.QUESTION_BANK_UPLOAD_DIR = config.questionAssetPath;

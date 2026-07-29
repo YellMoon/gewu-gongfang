@@ -13,7 +13,6 @@ import {
 import dayjs from 'dayjs';
 import { Course, Payment, Question, Student, Teacher } from '../types';
 import type { NavigationInput } from '../navigation/navigationContext';
-import { SyncEngine } from '../services/syncEngine';
 import {
   StudentAlertRow,
   SyncSnapshot,
@@ -69,10 +68,11 @@ const TodayWorkbench: React.FC<TodayWorkbenchProps> = ({ onNavigate }) => {
   const [data, setData] = useState<WorkbenchData>(EMPTY_DATA);
 
   useEffect(() => {
-    const loadData = () => {
+    let stopped = false;
+    const loadData = async () => {
       const dbService = (window as any).dbService;
       if (!dbService) {
-        setData(EMPTY_DATA);
+        if (!stopped) setData(EMPTY_DATA);
         return;
       }
 
@@ -89,18 +89,24 @@ const TodayWorkbench: React.FC<TodayWorkbenchProps> = ({ onNavigate }) => {
 
         let syncSnapshot: SyncSnapshot = { pendingCount: 0, hasIssues: false, lastSyncTime: null };
         try {
-          const engine = new SyncEngine();
-          const status = engine.getStatus();
+          if (!window.desktopAuthority) throw new Error('DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE');
+          const items = await window.desktopAuthority.list();
+          const pending = items.filter(item => item.status !== 'completed');
+          const completed = items
+            .filter(item => item.status === 'completed')
+            .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
           syncSnapshot = {
-            pendingCount: status.pendingCount || 0,
-            hasIssues: !status.online,
-            lastSyncTime: status.lastSyncTime,
+            pendingCount: pending.length,
+            hasIssues: items.some(item => item.status === 'conflict'),
+            lastSyncTime: completed[0]?.updatedAt
+              ? Date.parse(completed[0].updatedAt)
+              : null,
           };
         } catch {
           syncSnapshot = { pendingCount: 0, hasIssues: true, lastSyncTime: null };
         }
 
-        setData({
+        if (!stopped) setData({
           todayRows,
           arrears: financialAlerts.arrears,
           closedBalances: financialAlerts.closedBalances,
@@ -109,13 +115,16 @@ const TodayWorkbench: React.FC<TodayWorkbenchProps> = ({ onNavigate }) => {
         });
       } catch (error) {
         console.error('今日工作台数据加载失败', error);
-        setData(EMPTY_DATA);
+        if (!stopped) setData(EMPTY_DATA);
       }
     };
 
-    loadData();
-    const timer = window.setInterval(loadData, 30000);
-    return () => window.clearInterval(timer);
+    void loadData();
+    const timer = window.setInterval(() => void loadData(), 30000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
   }, []);
 
   const todayGroup = useMemo(() => groupTodayRowsByFirstTeacher(data.todayRows), [data.todayRows]);

@@ -12,6 +12,14 @@ const unrecognized = {
     'sample-questions:view', 'sample-paper-export',
   ],
 };
+const visitor = {
+  id: 'visitor-1', role: 'visitor', user_type: 'visitor', identity_kind: 'visitor',
+  account_state: 'visitor', token_use: 'miniapp-visitor', authority_id: 'authority-test',
+  capabilities: [
+    'projection:read', 'role-application:read', 'role-application:submit',
+    'question-preview:read',
+  ],
+};
 const normalAdmin = {
   id: 'admin-1', role: 'admin', user_type: 'admin', review_status: 'approved',
   status: 1, login_enabled: 1,
@@ -53,6 +61,12 @@ async function main() {
   });
   assert.strictEqual(experience.remoteCalls, 0, 'unrecognized identity must not call the forbidden formal permission endpoint');
   assert.deepStrictEqual(experience.persistentWrites, [], 'experience capabilities come from the signed identity and need no persistent formal cache');
+
+  const visitorAccess = await runFetch(visitor, ['business:all', 'users:review']);
+  assert.deepStrictEqual(visitorAccess.result.capabilities, visitor.capabilities);
+  assert.deepStrictEqual(visitorAccess.memoryCache.capabilities, visitor.capabilities);
+  assert.strictEqual(visitorAccess.remoteCalls, 0, 'visitor identity must not call the legacy formal permission endpoint');
+  assert.deepStrictEqual(visitorAccess.persistentWrites, [], 'visitor capabilities come from the signed visitor session');
 
   const normalCapabilities = ['users:review', 'business:all', 'question-bank:view', 'question-bank:edit'];
   const normal = await runFetch(normalAdmin, normalCapabilities);

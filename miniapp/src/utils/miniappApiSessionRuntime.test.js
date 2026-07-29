@@ -33,6 +33,15 @@ const unrecognizedIdentity = {
     'sample-questions:view', 'sample-paper-export',
   ],
 };
+const visitorIdentity = {
+  id: 'visitor-1', role: 'visitor', user_type: 'visitor',
+  identity_kind: 'visitor', account_state: 'visitor', token_use: 'miniapp-visitor',
+  authority_id: 'authority-1',
+  capabilities: [
+    'projection:read', 'role-application:read', 'role-application:submit',
+    'question-preview:read',
+  ],
+};
 
 function createSessionState(overrides = {}) {
   const state = { token: 'normal-a', identity: normalIdentity, generation: 7, ...overrides };
@@ -241,6 +250,11 @@ async function main() {
   });
   assert.deepStrictEqual(await experienceCoordinator.handleResponse(experienceRequest, 401), { action: 'retry' });
   assert.strictEqual(experienceRefreshCalls, 1, 'unrecognized sessions must refresh through the shared Backend session flow');
+
+  const visitorState = createSessionState({ token: 'visitor-a', identity: visitorIdentity });
+  const visitorRequest = visitorState.runtime.capture();
+  assert.strictEqual(visitorRequest.experienceOnly, true, 'signed visitors must stay on the limited projection-only session path');
+  assert.strictEqual(visitorRequest.identityKey.includes('visitor:'), true);
 
   const identityCases = [
     {

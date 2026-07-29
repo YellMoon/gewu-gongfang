@@ -9,6 +9,7 @@ const decodedGateSource = gateSource.replace(/\\u([0-9a-fA-F]{4})/g, (_match, he
 ));
 const gateStyle = fs.readFileSync('src/components/DesktopIdentityGate.css', 'utf8');
 const appSource = fs.readFileSync('src/App.tsx', 'utf8');
+const electronSource = fs.readFileSync('public/electron.js', 'utf8');
 
 assert.ok(!indexSource.includes("import App from './App'"), 'locked startup must not statically import the business App');
 assert.ok(indexSource.includes("import DesktopIdentityGate from './components/DesktopIdentityGate'"));
@@ -52,58 +53,53 @@ assert.ok(gateSource.includes('离线身份租约已过期'));
 assert.ok(gateSource.includes('desktop-identity-runtime--offline'));
 assert.ok(gateStyle.includes('.desktop-identity-runtime--offline > .app-shell'));
 assert.ok(gateStyle.includes('.desktop-identity-runtime--offline .desktop-identity-runtime-bar'));
-assert.ok(appSource.includes('processMiniappCloudTasks'));
-assert.ok(appSource.includes('publishCloudHeartbeat'));
-assert.ok(gateSource.includes('discoverPairingCapability') && gateSource.includes('submitPairingRequest'));
-assert.ok(gateSource.includes('pollPairingResult') && gateSource.includes('normalizePairingCode'));
-assert.ok(decodedGateSource.includes('输入一次性配对码'));
+assert.ok(
+  !appSource.includes('processMiniappCloudTasks'),
+  'business renderer must not own primary-host cloud task execution'
+);
+assert.ok(
+  !appSource.includes('publishCloudHeartbeat'),
+  'business renderer must not own primary-host heartbeat publication'
+);
+assert.ok(
+  electronSource.includes('createHostCommandWorker')
+    && electronSource.includes('createAuthorityProjectionWorker'),
+  'primary-host authority workers must run independently in the Electron main process'
+);
 assert.ok(
   gateSource.includes('hostBaseUrl: runtimeConfig?.hostBaseUrl')
     && gateSource.includes('cloudBaseUrl: runtimeConfig?.cloudBaseUrl'),
-  'paired desktop unlock must receive both the direct host and managed cloud relay bases'
+  'managed desktop unlock must receive both the direct host and managed cloud relay bases'
 );
 assert.ok(
   gateSource.includes('online: browserOnline()'),
   'pairing completion must obtain an online session when connectivity is available'
 );
-assert.ok(
-  gateSource.includes('desktopIdentitySessionProvider')
-    && gateSource.includes('ensureOnlineSession'),
-  'the unlocked gate must expose an in-memory online-session renewal provider for manual sync'
-);
-assert.match(
-  gateSource,
-  /<Input\.Password\s+visibilityToggle\s+value=\{pairingCode\}/,
-  'the one-time device pairing code must be masked by default and only revealed explicitly'
-);
+assert.ok(gateSource.includes('ensureOnlineSession'));
+assert.ok(!gateSource.includes('ensureHostSync'));
+assert.ok(!gateSource.includes('ensureHostSyncSession'));
+assert.ok(!gateSource.includes('normalizeDesktopAuthorizationSession'));
 assert.ok(
   !gateSource.includes('config.deviceId ||'),
   'identity verification must not expose the immutable device id as an editable device name'
 );
-assert.ok(decodedGateSource.includes('单人模式初始化'));
-assert.ok(decodedGateSource.includes('初始化前会备份，不会删除数据'));
-assert.ok(decodedGateSource.includes('启用临时单人模式'));
-assert.ok(gateSource.includes("buildFlavor === 'primary-host'") && gateSource.includes("desktopIdentityMode === 'single-user'"));
-assert.ok(
-  gateSource.indexOf("if (vaultStatus.state === 'empty')") < gateSource.indexOf('await window.singleUserRuntime.status()'),
-  'an empty single-user host vault must enter bootstrap before querying the post-bootstrap host status endpoint'
-);
-assert.ok(gateSource.includes("initialized.runtime?.restartRequired") && gateSource.includes('window.primaryHostRuntime?.restart()'),
-  'single-user bootstrap must restart after the vault and managed host runtime are committed');
-assert.ok(
-  gateSource.includes('window.primaryHostRuntime?.restart()'),
-  'single-user mode changes must restart through the primary-host preload bridge'
-);
-assert.ok(
-  !gateSource.includes("window.api?.invoke('primary-host:restart')"),
-  'single-user mode changes must not use the generic IPC allowlist for host restart'
-);
+for (const legacyMarker of [
+  'singleUserRuntime', 'beginSingleUserEnrollment', 'single-user-',
+  'singleUserPairingClient', 'discoverPairingCapability', 'submitPairingRequest',
+  'pollPairingResult', 'normalizePairingCode', 'pairingCode', 'pairingPending',
+  '输入一次性配对码', '启用临时单人模式',
+]) assert.ok(!gateSource.includes(legacyMarker) && !decodedGateSource.includes(legacyMarker),
+  `managed identity gate must not retain legacy single-user flow: ${legacyMarker}`);
 for (const code of [
   'PAIRING_CODE_EXPIRED', 'PAIRING_CODE_USED', 'PAIRING_CODE_LOCKED', 'PAIRING_HOST_OFFLINE',
   'PAIRING_CAPABILITY_STALE', 'DESKTOP_DEVICE_FINGERPRINT_MISMATCH',
   'SINGLE_USER_MODE_DISABLED', 'LOCAL_BACKUP_FAILED',
-]) assert.ok(identityErrorSource.includes(code), `gate must map ${code}`);
+]) assert.ok(!identityErrorSource.includes(code), `managed identity error catalog must not retain legacy code: ${code}`);
 assert.ok(gateSource.includes('desktopIdentityErrorMessage(error)'));
 assert.ok(!identityErrorSource.includes('Error invoking remote method'));
+assert.ok(
+  gateSource.includes("console.error('[desktop-identity:registration]', String((caught as any)?.code || 'DESKTOP_IDENTITY_REGISTRATION_FAILED'))"),
+  'registration failures must retain only a stable local error code for Electron support diagnostics'
+);
 
 console.log('desktop identity gate source checks passed');

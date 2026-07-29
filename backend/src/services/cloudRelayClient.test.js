@@ -3,31 +3,24 @@ const fs = require('fs');
 
 const source = fs.readFileSync('backend/src/services/cloudRelayClient.js', 'utf-8');
 const backendRoute = fs.readFileSync('backend/src/routes/cloudRelay.js', 'utf-8');
-const gatewayRoute = fs.readFileSync('gateway/src/routes/cloudRelay.js', 'utf-8');
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 const client = require('./cloudRelayClient');
 
 assert.strictEqual(client.IDENTITY_PROVISIONING_CAPABILITY, 'identity-provisioning-v1');
-assert.strictEqual(client.DESKTOP_PAIRING_CAPABILITY, 'desktop-pairing-v1');
-assert.deepStrictEqual(client.hostCapabilities(), ['identity-provisioning-v1', 'desktop-pairing-v1']);
+assert.deepStrictEqual(client.hostCapabilities(), ['identity-provisioning-v1']);
 
 assert.ok(source.includes('publishHeartbeat'), 'cloud relay client should publish heartbeat');
 assert.ok(source.includes('publishSnapshot'), 'cloud relay client should publish snapshot');
-assert.ok(source.includes('fetchPendingTasks'), 'cloud relay client should fetch pending tasks');
+assert.ok(!source.includes('fetchPendingTasks'), 'cloud relay client must not retain V1 task polling');
 assert.ok(source.includes('completeMiniappTask'), 'cloud relay client should complete miniapp tasks');
 assert.ok(source.includes('/api/cloud/tasks/${taskId}/complete'), 'cloud relay client should call task completion endpoint');
 assert.ok(source.includes('buildHeaders'), 'cloud relay client should build authenticated headers');
 assert.ok(source.includes('Authorization'), 'cloud relay client should forward Authorization when provided');
 assert.ok(packageJson.includes('backend/src/services/cloudRelayClient.test.js'), 'cloud relay client test should run in npm test');
 assert.ok(backendRoute.includes("router.get('/tasks/:id/state'"));
-assert.ok(gatewayRoute.includes("router.get('/tasks/:id/state'"));
 
-assert.deepStrictEqual(client.buildHeaders({ hostToken: 'bootstrap-root-token' }), {
-  'Content-Type': 'application/json',
-  'x-gewu-host-token': 'bootstrap-root-token',
-});
+assert.throws(() => client.buildHeaders({}), error => error.code === 'MANAGED_HOST_IDENTITY_INCOMPLETE');
 assert.deepStrictEqual(client.buildHeaders({
-  hostToken: 'must-not-leak-after-bootstrap',
   hostCredential: 'managed-host-credential',
   hostDeviceId: 'host-managed-a',
   hostGeneration: 2,
@@ -36,7 +29,7 @@ assert.deepStrictEqual(client.buildHeaders({
   'x-gewu-host-device-id': 'host-managed-a',
   'x-gewu-host-generation': '2',
   'x-gewu-host-credential': 'managed-host-credential',
-}, 'managed host credentials must replace the bootstrap root token on network requests');
+}, 'managed host credentials are the only host network authentication');
 
 (async () => {
   const originalFetch = global.fetch;
@@ -47,74 +40,70 @@ assert.deepStrictEqual(client.buildHeaders({
     return { json: async () => ({ success: true, task: null }) };
   };
   try {
-    const auth = { hostToken: 'trusted-host-token' };
-    await client.publishDesktopPairingCapability({
-      hostDeviceId: 'host-a',
-      epochId: 'epoch-a',
-      generation: 1,
-      capability: { id: 'capability-a' },
-    }, auth);
+    const auth = { hostCredential: 'managed-host-credential', hostDeviceId: 'host-a', hostGeneration: 1 };
     await client.claimMiniappTask({ hostDeviceId: 'host-a', leaseMs: 5000 }, auth);
     await client.updateMiniappTaskProgress('task-1', { claimToken: 'claim', expectedRowVersion: 1, progress: 40, phase: 'rendering' }, auth);
     await client.completeMiniappTask('task-1', { claimToken: 'claim', expectedRowVersion: 2, result: { ok: true } }, auth);
     await client.failMiniappTask('task-2', { claimToken: 'claim-2', expectedRowVersion: 1, errorCode: 'FAILED' }, auth);
     await client.queryMiniappTaskState('task-1', { ...auth, hostDeviceId: 'host-a' });
-    await client.fetchPendingTasks({ ...auth, hostDeviceId: 'host-a', leaseMs: 5000 });
+    await client.readRelayTaskActorGrant('task-1', auth);
+    await client.claimAuthorityCommands({ claimToken: 'authority-claim', leaseMs: 30000, limit: 5 }, auth);
+    await client.renewAuthorityCommand('authority-command-1', { claimToken: 'authority-claim', leaseMs: 30000 }, auth);
+    await client.publishAuthorityReceipt('authority-command-1', {
+      claimToken: 'authority-claim',
+      receipt: { commandId: 'authority-command-1', resultHash: 'result-hash' },
+    }, auth);
+    await client.publishAuthorityHostEpoch({
+      id: 'epoch-1',
+      authorityId: 'authority-1',
+      generation: 1,
+      deviceId: 'host-a',
+      hostSigningKey: {
+        algorithm: 'Ed25519',
+        publicKeyPem: 'host-public-key',
+        publicKeyFingerprint: 'a'.repeat(64),
+      },
+    }, auth);
+    await client.publishAuthorityControlRecords({
+      authorityId: 'authority-1',
+      hostEpochId: 'epoch-1',
+      hostGeneration: 1,
+      sourceVersion: 1,
+      accounts: [],
+      grants: [],
+      leases: [],
+    }, auth);
+    await client.readAuthorityControlRecords(auth);
+    await client.publishAuthorityProjection({
+      authorityId: 'authority-1',
+      hostEpochId: 'epoch-1',
+      userId: 'user-1',
+      role: 'visitor',
+      sourceVersion: 1,
+      signature: 'projection-signature',
+    }, auth);
     assert.deepStrictEqual(calls.map(call => call.url), [
-      'https://relay.example/api/cloud/host/heartbeat',
-      'https://relay.example/api/cloud/desktop-pairing/capability',
-      'https://relay.example/api/cloud/tasks/claim',
       'https://relay.example/scheduling/api/cloud/tasks/claim',
       'https://relay.example/scheduling/api/cloud/tasks/task-1/progress',
       'https://relay.example/scheduling/api/cloud/tasks/task-1/complete',
       'https://relay.example/scheduling/api/cloud/tasks/task-2/fail',
       'https://relay.example/scheduling/api/cloud/tasks/task-1/state?hostDeviceId=host-a',
-      'https://relay.example/scheduling/api/cloud/tasks?status=pending_host&hostDeviceId=host-a&leaseMs=5000',
+      'https://relay.example/scheduling/api/cloud/tasks/task-1/actor-grant',
+      'https://relay.example/scheduling/api/authority/host/commands/claim',
+      'https://relay.example/scheduling/api/authority/host/commands/authority-command-1/renew',
+      'https://relay.example/scheduling/api/authority/host/commands/authority-command-1/receipt',
+      'https://relay.example/scheduling/api/authority/host/epoch',
+      'https://relay.example/scheduling/api/authority/host/control-records',
+      'https://relay.example/scheduling/api/authority/host/control-records',
+      'https://relay.example/scheduling/api/authority/host/projections',
     ]);
-    assert.ok(calls.every(call => call.options.headers['x-gewu-host-token'] === 'trusted-host-token'));
-    assert.deepStrictEqual(calls[0].body, {
-      hostDeviceId: 'host-a',
-      status: 'online',
-      capabilities: ['identity-provisioning-v1', 'desktop-pairing-v1'],
-    }, 'pairing publication should first register a fresh Gateway heartbeat');
-    assert.strictEqual(calls[1].body.capability.id, 'capability-a');
-    assert.strictEqual(calls[2].body.hostDeviceId, 'host-a');
-    assert.strictEqual(calls[3].body.hostDeviceId, 'host-a');
-
-    const gatewayCalls = [];
-    global.fetch = async (url, options = {}) => {
-      gatewayCalls.push({ url, options });
-      if (url.endsWith('/api/cloud/tasks/claim')) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            success: true,
-            task: { id: 'desktop-pairing-1', task_type: 'desktop-pairing', row_version: 1 },
-            claimToken: 'pairing-claim',
-          }),
-        };
-      }
-      return { ok: true, status: 200, json: async () => ({ success: true }) };
-    };
-    const gatewayPairingClaim = await client.claimMiniappTask(
-      { hostDeviceId: 'host-a', leaseMs: 5000 },
-      auth
-    );
-    assert.strictEqual(
-      gatewayPairingClaim.relayBaseUrl,
-      'https://relay.example',
-      'Gateway pairing tasks must retain their source relay for progress and completion callbacks'
-    );
-    await client.completeMiniappTask(
-      gatewayPairingClaim.task.id,
-      { claimToken: gatewayPairingClaim.claimToken, expectedRowVersion: 1, result: { ok: true } },
-      { ...auth, relayBaseUrl: gatewayPairingClaim.relayBaseUrl }
-    );
-    assert.deepStrictEqual(gatewayCalls.map(call => call.url), [
-      'https://relay.example/api/cloud/tasks/claim',
-      'https://relay.example/api/cloud/tasks/desktop-pairing-1/complete',
-    ]);
+    assert.ok(calls.every(call => call.options.headers['x-gewu-host-credential'] === 'managed-host-credential'));
+    assert.strictEqual(calls[11].options.method, undefined, 'control cache read must be an authenticated GET');
+    assert.strictEqual(calls[0].body.hostDeviceId, 'host-a');
+    const authoritySource = client.createAuthorityCommandSource(auth);
+    assert.strictEqual(typeof authoritySource.claim, 'function');
+    assert.strictEqual(typeof authoritySource.renew, 'function');
+    assert.strictEqual(typeof authoritySource.publishReceipt, 'function');
 
     global.fetch = async () => ({
       ok: false,
@@ -133,7 +122,7 @@ assert.deepStrictEqual(client.buildHeaders({
       json: async () => ({ success: false, code: 'TASK_REJECTED', error: 'relay rejected task' }),
     });
     await assert.rejects(
-      () => client.fetchPendingTasks(auth),
+      () => client.readRelayTaskActorGrant('task-1', auth),
       error => error.code === 'TASK_REJECTED' && error.statusCode === 200,
       'HTTP 200 responses with success=false must reject instead of being treated as success'
     );

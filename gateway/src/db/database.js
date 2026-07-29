@@ -30,6 +30,7 @@ function initDatabase() {
   database.exec(schema);
   ensureUserColumns(database);
   ensureMiniappTaskColumns(database);
+  ensureAuthorityHostColumns(database);
   const deviceColumns = new Set(database.prepare('PRAGMA table_info(cloud_devices)').all().map(c=>c.name));
   if(!deviceColumns.has('owner_user_id')) database.prepare('ALTER TABLE cloud_devices ADD COLUMN owner_user_id TEXT').run();
   if(!deviceColumns.has('active')) database.prepare('ALTER TABLE cloud_devices ADD COLUMN active INTEGER NOT NULL DEFAULT 1').run();
@@ -40,6 +41,17 @@ function initDatabase() {
   database.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_gateway_pairing_pending_code ON desktop_device_pairings(pairing_code) WHERE status='pending'").run();
   console.log('[DB] Gateway 数据库表已创建/更新');
   return database;
+}
+
+function ensureAuthorityHostColumns(database) {
+  const columns = new Set(database.prepare('PRAGMA table_info(primary_host_epochs)').all()
+    .map(row => row.name));
+  if (!columns.has('host_credential_hash')) {
+    database.prepare('ALTER TABLE primary_host_epochs ADD COLUMN host_credential_hash TEXT').run();
+  }
+  if (!columns.has('host_public_key')) {
+    database.prepare('ALTER TABLE primary_host_epochs ADD COLUMN host_public_key TEXT').run();
+  }
 }
 
 function ensureMiniappTaskColumns(database) {

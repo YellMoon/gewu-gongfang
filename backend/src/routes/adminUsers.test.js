@@ -37,7 +37,10 @@ async function request(server, method, url, auth, body, headers = {}) {
     ...(auth ? { authorization: `Bearer ${auth}` } : {}),
     ...(body ? { 'content-type': 'application/json' } : {}), ...headers,
   }, body: body ? JSON.stringify(body) : undefined });
-  return { status: response.status, body: await response.json() };
+  const raw = await response.text();
+  let parsed = raw;
+  try { parsed = JSON.parse(raw); } catch (_error) {}
+  return { status: response.status, body: parsed };
 }
 
 (async () => {
@@ -104,7 +107,7 @@ async function request(server, method, url, auth, body, headers = {}) {
       (id, name, display_name, type, source_type, created_at, updated_at)
       VALUES ('legacy-sync-course', 'Legacy Sync Course', 'Legacy Sync Course', 1, 1, ?, ?)`)
       .run(now, now);
-    const legacySync = await request(
+    const retiredSync = await request(
       base,
       'GET',
       '/api/sync?since=0&deviceId=known-trusted-host',
@@ -112,11 +115,7 @@ async function request(server, method, url, auth, body, headers = {}) {
       null,
       { 'x-device-id': 'known-trusted-host' }
     );
-    assert.strictEqual(legacySync.status, 200, 'legacy single-role desktop sync keeps its persisted admin scope');
-    assert.ok(
-      legacySync.body.changes.some(change => change.table === 'courses' && change.data.id === 'legacy-sync-course'),
-      'legacy single-role desktop sync must keep reading its persisted admin data scope'
-    );
+    assert.strictEqual(retiredSync.status, 404, 'raw legacy sync endpoint must be removed after authority cutover');
     assert.ok(list.body.users.every(user => !('wechat_openid' in user) && !('wechat_unionid' in user)), 'admin list must not leak identity provider secrets');
   } finally {
     await new Promise(resolve => listener.close(resolve));

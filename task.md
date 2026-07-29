@@ -1,806 +1,594 @@
-# Task: 2026-07-23 桌面单人模式、一次性配对与统一收尾
+﻿# 格物工坊：权威数据主机架构重写与真实双端验收
 
-## 2026-07-26 通信架构审查与 OSS 发布追踪
+> **最新节点（2026-07-28，已冻结）**
+>
+> 当前项目**尚未完成架构重写**。工作树中的两阶段设备激活、共享 authority 协议、部分角色/投影服务、主机 worker 和隔离 Electron 脚本，只是未完成原型。旧 `/api/sync`、`desktop-session`、`oneClickSync` 与旧 cloud-relay 仍在正常运行路径中。因此，任何局部测试、构建成功或 UI 修复都不能称为“架构切换完成”。
+>
+> 最近的隔离双端 E2E 停在数据主机“身份与设备”页：`HOST_IDENTITY_UI_MISSING`。该运行没有完成普通端审批、LAN、中继或双向同步。本文件规定：下一会话先完成架构替换，之后以新运行时重新做真实双端验收；不得绕过该失败来修补旧链路。
+
+## 1. 目标、范围和硬约束
+
+### 最终结果
+
+把格物工坊改为“**指定本地数据主机是唯一权威业务写入者**”的多端系统，并在同一台 Windows 主机上用两个独立打包 Electron 应用，完成以下真实 UI 驱动的验证：
+
+1. 普通桌面端与数据主机端各有独立 `userData`、设备 ID、临时数据库、端口和进程，不共享真实用户 profile。
+2. 普通端经真实 UI 发起绑定，数据主机在真实“身份与设备”页审批，客户端完成本机密码 vault 封存并取得 active lease。
+3. 同一条签名业务命令在 LAN WebSocket、云中继 WebSocket、持久中继三种传输下，使用完全相同的授权、幂等、回执和投影语义。
+4. 普通端→主机和主机→普通端各做一次隔离测试数据变更，双方 UI、命令 ledger、回执和受限 projection 均确认一致。
+5. 测试绝不修改真实权威数据库、题库移动硬盘、真实设备授权、生产云数据或用户现有配置。
+
+### 禁止事项
+
+- 不得继续把旧 `/api/sync`、旧 `desktop-session`、旧单人配对、旧 long-poll 同步修补成最终方案。
+- 云端不得成为课程、排课、题库、财务、资产或角色的权威数据库。
+- 普通端、小程序和 renderer 不得直写数据主机业务库或题库盘。
+- WebSocket 只能降低延迟，不能是命令唯一送达/执行方式；掉线后持久命令和主机轮询必须恢复。
+- 本地 vault 未封存并签收前，设备不得被任何服务标为 active。
+- 不得用路由直调、mock renderer、伪造 UI 成功或改真实数据库，替代真实双端测试。
+- 切换门槛未通过前，禁止 Git push、合并 PR、版本递增、正式打包和 OSS 发布。
+
+### 工作树与安全
+
+- 工作树已有大量用户/OpenCode 改动；不得 `reset --hard`、`checkout --`、`clean`、批量暂存或覆盖无关文件。
+- 每个修改先写可复现失败测试（RED），确认失败原因后实施最小修复（GREEN）。
+- 临时 E2E 使用随机端口、临时 profile、临时 SQLite、测试账号和带唯一前缀的数据；清理前必须核对绝对路径及临时标记。
+- Electron 打包后必须运行 `npm run rebuild:node` 并确认 native ABI 已恢复。
+
+## 2. 为什么要重写
+
+旧系统有多个竞争的“谁来授权、谁来写入、何时完成”的实现：
+
+| 旧路径 | 结构问题 | 最终处置 |
+| --- | --- | --- |
+| LAN `/api/sync` 原始记录同步 | 客户端提交行级变更，客户端、主机、同步层各自解释权限和合并。 | 新协议上线后终止并删除。 |
+| cloud relay `desktop-sync` 任务 | WebSocket、HTTP 轮询与任务结果有不同完成语义。 | 收敛为同一命令信封的传输 adapter；旧任务类型删除。 |
+| `desktop-session` / 旧配对 | 服务端 active 与本地凭据封存不是可靠同一状态机。 | 用两阶段 activation 替代并删除。 |
+| renderer direct fetch / main 特例 | 同一功能在不同 UI 状态走不同网络、授权和错误路径。 | 一个 Electron bridge facade；renderer 不自行选协议。 |
+
+重写不是在真实数据上破坏性 big-bang：新模块并行实现 → 在权威库副本迁移、回放、比对 → 原子切客户端和主机 → 真实矩阵通过 → 删除旧正常运行路径。迁移可读取旧记录作为一次性输入；最终运行时不保留旧授权或同步 fallback。
+
+## 3. 三平面目标架构
+
+```mermaid
+flowchart LR
+  D["普通桌面端\nElectron bridge + 加密 vault + 命令 outbox"]
+  M["微信小程序\n受限 projection + 有限命令草稿"]
+  C["云控制面\n账户、设备授权/租约、命令邮箱、中继、回执、投影"]
+  H["数据主机\nauthority engine + 唯一业务库 + 题库盘"]
+  D -->|"同一签名命令：LAN WS"| H
+  D -->|"同一签名命令：relay WS"| C
+  D -->|"同一命令：durable relay"| C
+  C -->|"持久命令 + wakeup"| H
+  H -->|"签名 receipt + 受限 projection"| C
+  C -->|"receipt / projection"| D
+  M -->|"受限读取 / 有限命令"| C
+```
+
+### 3.1 云控制面：控制记录，不是业务权威库
+
+云端负责账户、手机验证、设备授权/撤销、14 天可续 lease、主机发现、命令邮箱、relay、不可变 receipt 及主机签名 projection。云端不直接写课程、排课、题库基础数据、财务明细或题库盘。
+
+最小控制模型：
+
+- `accounts(user_id, phone, status)`：稳定底层用户主体；手机号仅登录属性。
+- `device_grants(device_id, user_id, public_key, host_generation, status, grant_version, approved_by)`。
+- `device_activations(activation_id, device_id, package_hash, status, expires_at, finalized_at, receipt_hash)`。
+- `device_leases(lease_id, device_id, user_id, grant_version, expires_at, revoked_at)`。
+- `host_commands(command_id, target_host_id, envelope, payload_hash, status, claim_token, claim_until, row_version)`。
+- `host_receipts(command_id, result_hash, result_payload, completed_at)`；相同命令重试必须回放同一回执。
+- 主机签名的 `role_grant_mirrors`、`role_application_mirrors` 和 scope projection；每项含 `authority_id`、`host_epoch` 与 source version。
+
+### 3.2 数据主机：唯一 authority plane
+
+数据主机拥有权威业务库、角色授予、老师/学生档案绑定、冲突裁决、导出、题库盘写入和投影发布。它的 command worker 必须独立于 Electron renderer：renderer 关闭或 WebSocket 失联时仍定期 claim 持久命令。
+
+主机只接受同时满足全部条件的信封：
+
+1. `authorityId`、`hostEpochId` 分别匹配当前 authority 与活动 epoch；
+2. 设备 grant active，lease 未过期/未撤销，且 `grantVersion` 当前；
+3. 发起 `user_id` 在当前 authority 有匹配的活动角色 grant；
+4. 命令类型/版本和 payload 通过主机 schema 与 scope policy；
+5. `(user_id, device_id, idempotency_key)` 没有不同 payload hash；同 hash 回放既有 receipt；
+6. 领域变更、命令 ledger、receipt、projection version 在一个主机事务内提交。
+
+题库移动硬盘仅主机进程可写。客户端离线编辑只是受控 outbox 草稿，绝不写权威库。
+
+### 3.3 客户端：一个 facade、一个 outbox、三种 transport
+
+普通端由 Electron main 处理 vault、设备签名、控制面请求与网络策略；renderer 仅调用 `desktopAuthorityClient` 的受限 preload bridge。客户端有加密 typed outbox：离线编辑先保存草稿，联网后显示影响预览，用户确认前不得发送。
+
+`transport selector` 的固定顺序为：**LAN WebSocket → relay WebSocket → durable relay**。三者传输同一 envelope，业务区别仅写入 `transportUsed`。客户端只应用已验证 receipt 授权的 projection，不能合并不受信任的远端原始行。
+
+小程序也属于 client plane：手动填写手机号即注册 visitor；可从“我的”提交老师/学生角色申请。未来自动手机号保留独立 adapter，但当前不得调用。小程序只读为主，有限写入仅包括个人资产导入、题库选题组卷、Word/PDF 导出等任务，不能修改核心教务或题库基础数据。
+
+## 4. 用户、角色、档案、资产与权限
+
+### 4.1 用户主体和角色
+
+`user_id` 是不可变的唯一身份主体；`role_grants` / `user_roles` 是可叠加标签，不是账户类型。
+
+| 标签 | 来源 | 权限边界 |
+| --- | --- | --- |
+| visitor（默认） | 普通端或小程序注册 | 仅自身账户；最多十题脱敏预览；不见其他绑定数据。 |
+| student | 申请，经数据主机超级管理员审核；可选绑定 student profile | 只看自己课表和学费；不看同班/一对一其他学生、课程其它明细或课时费。 |
+| teacher | 申请并审核；可选绑定 teacher profile | 只看绑定课程明细、学费与课时费；费用统计只筛本人绑定课程。 |
+| admin | 不可自助设置；由数据主机审核并绑定用户后产生 | authority 范围内全量数据和筛选。 |
+| super_admin | 受控 bootstrap / 严格提升 | admin 权限加角色申请审核与授权。 |
+
+`teacher_id`、`student_id` 只是可选业务档案关联；管理员不以它们为前置条件，撤销角色不删除档案。课程、财务、资产和 projection 都由 `user_id` 与 role grant 决定。
+
+### 4.2 两阶段设备 activation
+
+1. 客户端本地生成设备密钥、开始手机身份验证；数据主机在真实 UI 审批 pending 设备。
+2. `exchange` 只创建限时 `activation_pending` package，绝不 active 设备或签发可用 lease。
+3. Electron main 校验 package，以本机密码封存 vault，并用设备私钥签 activation receipt。
+4. `finalize` 校验 receipt 后，在一个控制事务中将 grant 改为 active 并签发/续期 lease。
+5. vault 封存后崩溃可用 `resume` 幂等重放；封存前崩溃或过期不会产生 active 设备。
+
+已有有效 vault 与未撤销离线 lease 可进入允许的读取态；业务写必须等待可达的 authority transport。身份 UI 必须表达 pending、已审待封存、active、expired、revoked，不能一概显示“身份验证未完成”。
+
+### 4.3 资产与 projection
+
+`asset_accounts` 绑定 `user_id`，可有按银行拆分的储蓄卡、信用卡、支付宝、微信和自定义账户。手工创建或流水识别只能生成该用户的账户/分类建议，不能泄露完整卡号或其他用户资产。
+
+主机签名并发布最小化 projection：visitor 仅账户与十条题目预览；student 仅本人课表/学费；teacher 仅绑定课程；admin/super_admin 全 authority，后者还能审核角色申请。UI 隐藏不是安全边界；读取 API、命令 executor、projection、导出均须在主机/服务端复核 scope。
+
+## 5. 唯一命令/回执契约
+
+禁止原始数据库变更。每个业务写入使用版本化信封：
+
+```json
+{
+  "protocol": "gewu.authority-command.v1",
+  "commandId": "uuid",
+  "idempotencyKey": "uuid",
+  "authorityId": "authority-id",
+  "hostEpochId": "host-epoch",
+  "actor": { "userId": "user-id", "deviceId": "device-id", "role": "teacher" },
+  "lease": { "id": "lease-id", "grantVersion": 1 },
+  "type": "schedule.update.v1",
+  "payload": {},
+  "payloadHash": "sha256",
+  "createdAt": "ISO-8601"
+}
+```
+
+receipt 必含 `commandId`、输入 hash、状态、稳定 result hash、authority/epoch、projection version、完成时间及标准错误码。相同幂等键且同 hash 只回放；相同幂等键且不同 hash 必须拒绝。命令白名单如 `schedule.update.v1`、`course.update.v1`、`asset.import.v1`、`question.export.v1`；未知类型、过期版本、scope 不足、失效 epoch 都必须产生可审计拒绝回执。
+
+## 6. 实施与切换顺序
+
+每一步先 RED 再 GREEN，并在“执行状态”记录实际命令与输出。文件存在不代表已接入正式运行时。
+
+### A. 协议与 activation（已有原型，必须重验）
+
+- 验证 `shared/authorityProtocol.js` 跨 CJS/ESM 的 stable hash、envelope、receipt。
+- 验证 `deviceActivationService` 的 exchange 非 active、finalize/resume 幂等、crash recovery。
+- 普通端和主机端均使用同一 activation 状态机；不改变原侧栏设计。
+
+### B. 主机 authority command executor
+
+- 完成 `backend/src/routes/authorityProtocol.js` 和 HTTP 契约测试。
+- `authorityCommandService` 在单一事务中执行领域命令、ledger、receipt、projection version。
+- `hostCommandWorker` 实现 claim/renew/expired-claim recovery；WebSocket 只能 `wake()`，不可在 socket 回调做业务变更。
+- cloud relay 仅变为新协议 transport adapter；禁止再创建 legacy `desktop-sync`/`desktop-session` 业务任务。
+
+### C. 桌面 facade 与统一 transport
+
+- 完成 `desktopAuthorityClient.mjs`、`desktopCommandOutbox.mjs`、`authorityTransports.mjs` 与测试。
+- renderer 只经 preload facade 提交、查 receipt、读 projection；移除 direct fetch/legacy session 分支。
+- LAN capability/handshake、relay WS opaque forwarding、durable inbox 传同一信封，回执语义相同。
+- 离线更改无用户明确确认不得送出。
+
+### D. 用户角色、投影和小程序
+
+- 旧 `users.role` 与旧绑定字段降为只读迁移输入；正式授权只读 `role_grants`。
+- 角色申请与 super_admin 审核；admin 永不自助授予。
+- user-owned asset account、导入识别候选账户与分类建议。
+- 小程序手填手机号 visitor 注册、“我的”角色申请；自动手机号能力仅保留，不调用。
+
+### E. 副本迁移、原子切换、旧路径删除
+
+- `authorityMigrationService` 只允许权威库副本路径，必须拒绝源库路径。
+- 记录源/副本 fingerprint、backup marker、migration ledger、角色/档案转换、scope parity、command replay。
+- 任何重复绑定、角色歧义、epoch 不一致、scope/replay 差异均失败，不猜测修复。
+- 副本演练通过后，先部署新控制面与新主机 executor，再原子切普通端/小程序到新 facade。
+- 真实矩阵通过后，旧路由返回 `LEGACY_ARCHITECTURE_RETIRED` 并删除实现和旧测试；不得永久保留 compatibility fallback。
+
+## 7. 切换、回滚和发布
+
+### 切换前置条件
+
+权威库已备份且可验证；演练仅在副本。新 schema/ledger/projection/version 表完整。所有新客户端写只走新 facade。云、数据主机、普通桌面、小程序的版本兼容矩阵已验证。
+
+### 原子切换
+
+1. 置旧写入为维护拒绝并记录 source fingerprint。
+2. 运行最后一次副本演练；失败即停止切换。
+3. 部署新控制面和主机 authority engine，证明 worker 在 renderer/WS 不可用时仍工作。
+4. 切普通端和小程序到新 facade；有效旧设备以 activation receipt 迁移，不完整记录要求重新验证。
+5. 完成真实双端矩阵后终止并删除旧 sync/session/relay 业务路径。
+
+### 回滚
+
+只允许代码/feature-gate 回滚；不删除 audit、receipt、migration ledger 或备份；不恢复已撤销凭据，不静默重启旧授权。真实权威库恢复只能由明确的停机维护流程执行，测试脚本绝不能自动恢复。
+
+### 发布
+
+所有门槛通过后才可：选择性 `git add` → commit → `git push gewu master` → `npm run dist:win` → `npm run publish:desktop-update` → `npm run rebuild:node` → 回读 OSS `latest.yml` 与安装包。此前一律不发布。
+
+## 8. 切换后的真实双端验收矩阵
+
+### 测试隔离
+
+- 同一 Windows 物理主机，两个独立打包应用、独立 `userData`/device ID/临时 SQLite、随机端口。
+- 使用 disposable control plane 或隔离云测试租户；不要求用户输入本机密码、阿里云/中继 token，不使用真实 profile。
+- 普通端审批必须在数据主机**渲染 UI**完成。首次空白测试主机 bootstrap 可使用隔离 control-plane helper；普通端审批绝不允许用 HTTP endpoint 伪代替。
+- 测试记录使用唯一 E2E 前缀；只检查临时 DB 和 profile。
+
+| 场景 | 真实操作 | 证据 |
+| --- | --- | --- |
+| 主机启动 | 启动打包主机、完成隔离身份初始化/解锁 | 后端健康、worker running、主机运行态 UI。 |
+| 设备绑定 | 普通端注册，主机身份页点击批准 | pending→active、主机审批 UI、vault finalize、lease active。 |
+| LAN 命令 | LAN capability 成功，普通端 UI 预览后确认无害命令 | 主机 ledger/receipt、普通端 receipt、两端 projection/UI 更新，标记 LAN。 |
+| relay WS | 禁用/隔离 LAN，连接云 relay | 同一 envelope/receipt、两端更新，标记 relay WebSocket。 |
+| durable relay | 关闭 relay socket、延迟或重启主机 | worker 轮询 claim、恰一次执行、重试同一回执、恢复后 UI 更新。 |
+| 反向同步 | 主机 UI/authority 发出第二个隔离变更 | 普通端只得到其 scope projection，无越权数据。 |
+| 离线确认 | 普通端离线编辑后联网 | 预览/确认前不送；确认后一次；冲突/拒绝可见且 outbox 不丢。 |
+| 角色边界 | visitor/student/teacher/admin/super_admin fixture | API、command、projection、桌面、小程序均遵守最小可见性。 |
+
+验收必须使用真正 Electron DevTools Protocol 和原生输入操作可见 UI；不可用 mock renderer 或路由直调替代。每次失败保留错误码、最小日志、临时 profile 路径与去敏页面证据，并先添加回归测试再修复。
+
+## 9. 当前执行状态与下一会话入口
+
+### 2026-07-28 架构切换清单（文件存在不等于完成）
+
+| 架构单元 | 文件存在 | 已测试（本轮 fresh 证据） | 已接入正式路径 | 旧路径已删除 |
+| --- | --- | --- | --- | --- |
+| 共享 authority envelope | 是：`shared/authorityProtocol.js`、`authorityHttpAuth.js` | 是：协议、稳定 hash、HTTP Ed25519 签名测试均通过 | 是（新路径）：主机 executor、LAN/relay WS、durable relay 和桌面 main facade 均传同一 envelope；旧写路径尚未删除 | 否 |
+| 两阶段 activation | 是：`deviceActivationService` 及测试 | 是：服务测试及 `node backend/src/routes/desktopIdentity.http.test.js` 通过；尚无本轮打包 UI 证据 | 部分：正式 exchange 已生成 authority/epoch/canonical grant/14 天 lease，finalize 后才 active；旧 `desktop-session` 仍是正常路径 | 否 |
+| authority command executor | 是：executor、projection version、registry、host runtime/processor | 是：`npm run test:authority-architecture` 的事务、回放、claim recovery 与正式运行时测试通过 | 部分：schedule/course 命令已走 lease/epoch/role scope 与单事务 projection version；LAN/relay 等价与其余白名单未闭合 | 否 |
+| authority HTTP 契约 | 是：主机/云 route、inbox、authorization gate、设备签名与 HTTP 测试 | 是：正式主机 app 与 gateway 均验证签名入队、篡改拒绝、managed host claim/receipt | 是（新路径）：主机与 gateway 均挂 `/api/authority`；旧 HTTP 写入口仍待阶段 E 删除 | 否 |
+| 独立 host worker | 是：`hostCommandWorker`、`authorityHostRuntime`、`authorityHostCommandProcessor` | 是：renderer/WS 无关的 polling、过期 claim recovery、稳定 receipt 回放测试通过 | 是（新 worker）：`backend/server.js` 与 Electron host runtime 已改为 authority processor；旧 cloud-relay 业务路由仍另行存在 | 否 |
+| 桌面 facade / typed outbox / 三 transport | 是：facade、加密 outbox、selector、WebSocket adapter、Electron main/preload bridge | 是：未确认不发送、断线重用同 envelope、LAN→relay WS→durable 顺序、统一 receipt、签名 projection 读取与回退测试通过 | 部分：同步页/状态读取已改为 `window.desktopAuthority`，renderer 主机维护循环和旧 session relay 已终止；`browserDatabase` 仍捕获 raw-row pending changes，旧实现/路由待阶段 E 删除 | 否 |
+| user/role/projection/assets | 是：additive role binding、role application、personal asset、scope projection、签名协议/store/publisher/worker | 是：visitor/student/teacher/admin 边界、可选档案绑定、资产所有者隔离、主机/云 projection HTTP、不可变失败重试和独立 worker 均有 fresh 测试 | 部分：Electron 主机已接独立 projection worker；小程序 visitor/角色申请、云控制面正式 epoch/grant/role mirror 与无需 renderer 解锁的主机签名生命周期尚未闭合 | 否 |
+| copy-only migration/cutover | 否：`authorityMigrationService` 不存在 | 否 | 否 | 否 |
+| 旧 raw sync / desktop-session / desktop-sync relay | 是：仍可在 `backend/src/app.js`、cloud relay、React 和 miniapp 正常路径检出 | 旧测试仍在运行，不是新架构证据 | 是：仍属正式路径，构成切换阻断 | 否 |
+| 真实双端 E2E | 脚本存在 | 冻结；最近一次失败为 `HOST_IDENTITY_UI_MISSING` | 脚本仍针对旧 session/sync 链路，不能作为新运行时验收 | 不适用 |
+
+### 2026-07-28 阶段 B 执行记录 1：authority HTTP 契约
+
+- 修改文件：`backend/src/routes/authorityProtocol.http.test.js`、`backend/src/routes/authorityProtocol.js`、`shared/authorityProtocol.js`、`shared/authorityProtocol.test.js`、`backend/src/services/authorityCommandService.js`、`backend/src/services/authorityCommandService.test.js`。
+- RED 1：`node backend/src/routes/authorityProtocol.http.test.js`，退出码 1，预期原因 `Cannot find module './authorityProtocol'`。
+- GREEN 中间发现：HTTP 测试仍失败，校验器丢弃规范要求的 `payloadHash` 与 `createdAt`；未放宽测试。
+- RED 2：`node shared/authorityProtocol.test.js`，退出码 1，`validated.payloadHash` 为 `undefined`。
+- RED 3：`node backend/src/services/authorityCommandService.test.js`，退出码 1，tampered payload hash 未被拒绝。
+- GREEN：共享协议现在要求并保留 `payloadHash`、ISO `createdAt`；executor 核对实际 payload digest。上述三个测试均退出码 0。
+- 风险：当前 HTTP router 仅完成独立契约，尚未挂入正式 app，也没有 durable `host_commands` inbox；executor 回执字段、lease/epoch/scope/projection 单事务仍不完整。
+- 下一步：为 `app.js` 正式路由接入和 durable inbox/receipt ownership 写 RED；保持 E2E 与发布冻结。
+
+### 2026-07-28 阶段 B 执行记录 2：durable inbox、授权门与正式 app 接入
+
+- 修改文件：`authorityCommandInboxService.js/.test.js`、`authorityCommandAuthorizationService.js/.test.js`、`authorityCommandInboxSchema.test.js`、`authorityProtocol.js/.http.test.js`、`authorityProtocolApp.http.test.js`、`schema.sql`、`app.js`、`package.json`。
+- RED：inbox service 因模块缺失退出 1；canonical schema 因缺少 `host_commands`、`host_receipts`、`device_grants`、`device_leases` 退出 1；authorization service 因模块缺失退出 1；HTTP lease 拒绝最初错误返回 202；正式 app 路由在认证请求下为 404；CI 接线测试因 `package.json` 未收录退出 1。
+- GREEN：durable inbox 对 `(user, device, idempotency)` 幂等，冲突拒绝；receipt 所有者隔离；authorization gate 校验 active epoch、grant、lease、grantVersion、role scope；`/api/authority` 已正式挂载且未认证设备不能入队。
+- 验证：`npm run test:authority-architecture`，9 个脚本全部退出码 0；临时 app HTTP 测试确认 `host_commands` 写入数为 0。
+- 安全：所有数据库验证均使用 `:memory:` 或 `os.tmpdir()` 下 `gewu-authority-app-http-*` 临时库；没有读取或修改真实权威业务数据。
+- 风险：activation finalize 尚未在同一事务写 `device_grants`/`device_leases`；production command policy 仍 fail-closed；worker 尚未 claim 新 `host_commands`；旧 `/api/sync`、`desktop-session`、`desktop-sync` 全部仍在。
+- 下一步：先用 RED 补 activation finalize 的 canonical grant/lease 原子结果，再完成新 worker claim/renew/expired recovery；继续冻结 E2E 与发布。
+
+### 2026-07-28 阶段 B 执行记录 3：activation 与 canonical control records 原子闭合（服务层）
+
+- RED：扩展 `deviceActivationService.test.js` 后，finalize 未写 `device_grants`，断言得到 `undefined`，退出码 1。
+- GREEN：带 canonical grant/lease 的 activation package 只有在 device-key receipt 验证后，才在 finalize 同一 SQLite transaction 中激活旧授权并写 active grant/lease；exchange 阶段两表行数均为 0；重复 finalize 仍幂等。
+- 兼容回归：`node backend/src/routes/desktopIdentity.http.test.js` 退出码 0。旧 route 生成的 activation package 尚不含 canonical control records，因此新 `/api/authority` 对旧激活设备继续 fail-closed，不会误授权。
+- fresh 验证：`npm run test:authority-architecture` 全部退出码 0；相关文件 `git diff --check` 退出码 0（仅换行符提示，无 whitespace error）。
+- 风险：正式 activation route 尚未生成 authority/epoch/grant/lease package；canonical lease 续期、撤销和 14 天策略尚未完成；worker claim/recovery 尚未开始。
+- 下一步：从 `authorityCommandInboxService` 的 claim/renew/expired-claim recovery RED 开始，使 `hostCommandWorker` 脱离旧 `cloudRelayHost` processor。
+
+### 2026-07-28 阶段 B 执行记录 4：claim recovery、主机 executor 正式生命周期与 activation route
+
+- RED/GREEN（durable inbox）：先扩展 `authorityCommandInboxService.test.js`，RED 为 `service.claim is not a function`；实现 claim/renew、未过期不可抢占、过期 claim CAS recovery。随后增加 stale claim-token receipt RED，要求仅当前未过期 claim 可发布回执。
+- RED/GREEN（单事务 executor）：先要求 receipt 含完整协议、输入 hash、authority/epoch、projection version；补 `authority_projection_versions` 与 SQLite UPSERT 计数器。`authorityHostCommandProcessor.test.js` 模拟“领域事务已提交、回执上传断线、claim 过期、进程重启”，证明领域写一次、持久 receipt 回放一次。
+- RED/GREEN（正式命令与 worker）：新增 `authorityCommandRegistry` 的 `schedule.update.v1` / `course.update.v1` 白名单及 teacher/admin scope；主机再次授权发生在领域事务内。`backend/server.js` 与 `public/electron.js` 已从旧 `processHostTaskCycle` 切到 `authorityHostRuntime` + 新 command source；静态接线测试禁止旧 processor 回流。
+- RED/GREEN（host HTTP 与 wake-only）：`/api/authority/host/commands/claim`、`renew`、`receipt` 先由 404 RED 起步；完成 host credential gate 与 cloud client adapter。durable enqueue 后只发送 wake metadata，通知失败不影响持久队列；`node backend/src/websocket/hostTaskWakeup.test.js` 退出码 0。
+- RED/GREEN（正式 activation package）：扩展 `desktopIdentity.http.test.js` 后，RED 为 package 缺 `authorityId`；正式 exchange 现在要求活动 authority/epoch，生成 canonical grant 和精确 14 天 lease，finalize 后才原子写 active grant/lease。该 HTTP 测试退出码 0。
+- 旧库增量升级：`authorityDatabaseMigration.test.js` 先证明既有 `authority_command_receipts` 缺列，RED 退出码 1；`DatabaseService` 现原位增加 `projection_version NOT NULL DEFAULT 0` 并保留旧回执，所有操作仅针对 `os.tmpdir()` 副本。
+- fresh 验证：`npm.cmd run test:authority-architecture` 共 17 个脚本退出码 0；`npm.cmd run test:primary-host` 退出码 0；`node backend/src/websocket/hostTaskWakeup.test.js` 退出码 0。期间 `test:primary-host` 暴露夹具硬编码 schema `3120`，实际运行时为 `3121`；将夹具/断言改为读取 `databaseService.schemaVersion` 后全套通过。
+- 安全：测试数据库均为 `:memory:` 或 `os.tmpdir()` 临时文件；没有读取、迁移或修改真实权威数据。未提交、未推送、未递增本轮版本、未构建、未部署、未发布 OSS。
+- 当前风险：阶段 B 仍未满足“全部写入口已收敛”；cloud gateway 尚未挂新 control-plane route，LAN/relay WebSocket 还没有同 envelope/receipt 等价证据，旧 `desktop-sync`、`desktop-session`、raw `/api/sync` 仍在正式路径。E2E 与发布继续冻结。
+- 下一步：为云 gateway authority inbox/receipt 接线及设备签名身份写 RED；随后进入阶段 C 的 typed outbox、统一 transport selector 与 preload facade，禁止扩展旧同步链路。
+
+### 2026-07-28 阶段 B/C 执行记录 5：云控制面、加密 outbox 与三种正式 transport
+
+- RED/GREEN（云控制面）：新增 gateway authority schema/HTTP 契约，先由缺表、404、未校验签名失败；现已具备 control-only account/role/grant/lease/epoch/inbox/receipt 表、设备 Ed25519 请求签名、幂等入队、managed host claim/renew/publish 与设备所有者 receipt 读取。篡改签名在入队前返回 401。
+- RED/GREEN（主机正式 HTTP）：正式 backend `/api/authority` 从仅接受旧 `req.authz` 改为活动 device grant 的 Ed25519 签名；临时完整 schema 测试证明 Bearer 旧身份不能替代 authority device signature，合法签名返回 202。
+- RED/GREEN（桌面 main）：新增 `desktopCommandOutbox.mjs`、`desktopAuthorityClient.mjs`、`authorityTransports.mjs`、`authorityWebSocketTransport.mjs` 与 `desktopAuthorityRuntime.js`。outbox 用 Electron `safeStorage` 加密并原子落盘；草稿初始为 `awaiting_confirmation`，未确认时零网络请求；确认/重试始终复用持久化 envelope 和幂等键。
+- RED/GREEN（三 transport）：Electron main 现按固定顺序实例化 LAN WebSocket、relay WebSocket、durable HTTP；socket 不可用错误才允许降级，业务拒绝不会被另一 transport 绕过；三者均验证 command/payload/authority/epoch/result/projection 一致的标准 receipt。
+- RED/GREEN（LAN）：主机新增 `/ws/authority`，使用同一设备签名和授权服务，只做 durable local inbox 入队及 `worker.wake()`；本地和云 inbox 由 composite command source 交给同一独立 executor，socket 回调不直接修改业务数据。
+- RED/GREEN（relay WebSocket）：gateway `/ws/authority` 对签名帧做 grant/lease/scope 检查后，将原帧不改形转发给活动主机；主机仍经本地 inbox/独立 worker 执行并返回标准 receipt。主机 WebSocket 认证改为活动 epoch 的专属 managed credential 请求头，旧共享 host token 不再能认证新 authority HTTP/WS。
+- fresh 验证：`npm.cmd run test:authority-architecture` 共 31 个脚本退出码 0；另有 `node public/desktopIdentityVault.test.js`、`node src/services/desktopIdentityClient.test.js`、`npm.cmd run test:primary-host` 全部退出码 0。`git diff --check` 对本记录涉及文件无 whitespace error，仅报告既有 Windows 行尾转换提示。
+- 安全：数据库测试只使用 `:memory:` 或 `os.tmpdir()` 临时文件；未读取或修改真实权威业务库。未提交、未推送、未递增版本、未打包、未部署、未发布 OSS。
+- 当前风险：阶段 C 尚未完成 React 正常路径切换；`CloudSync`/`SyncSettings`、`desktopSessionRelayClient`、`oneClickSync` 和 raw `/api/sync` 仍可达。gateway 活动 epoch/grant 的正式激活镜像与角色投影尚需阶段 D 闭合；copy-only migration 与旧路径删除尚未开始。E2E 与发布继续冻结。
+- 下一步：先用静态/行为 RED 测试将两个 React 同步页切到 `window.desktopAuthority` 的受限 facade，并把 `desktopSessionRelayClient` 降为 migration-only terminal rejection；随后完成阶段 D 角色/投影与阶段 E copy-only cutover。
+
+### 2026-07-28 阶段 C/D 执行记录 6：renderer 退出主机维护、角色/资产与签名 projection
+
+- RED/GREEN（renderer 正常路径）：删除 `App.tsx` 中 `processMiniappCloudTasks`/`publishCloudHeartbeat` 定时维护；`CloudSync`、`SyncSettings`、`TodayWorkbench`、`SyncQuickPanel` 改读 `window.desktopAuthority`，`desktopSessionRelayClient` 固定返回 410。静态授权测试和 TypeScript typecheck 通过。
+- RED/GREEN（角色与资产）：新增 `roleApplicationService` 和 `personalAssetAccountService`；仅 student/teacher 可自助申请，仅 super_admin 可审核，teacher/student 档案绑定可为空；资产严格按 `user_id` 隔离并拒绝完整卡号。
+- RED/GREEN（projection 协议与读取）：新增 Ed25519 签名 projection 协议、主机/云不可变 store、gateway epoch/public-key 校验、主机与 gateway `/api/authority/projections/current`、Electron main/preload `readProjection`。LAN 失败后可读云副本，并再次验证 authority/epoch/user/role 与主机签名。
+- RED/GREEN（发布生命周期）：新增权威库 projection source（仅 active authority、当前 tenant、已提交题目预览、active user-owned assets）、publisher 和独立 worker。先复现“本地已落盘、云上传失败后同 version 重签导致永久冲突”，再改为复用同一不可变签名文档重试；Electron 主机 worker 已定时发布并在命令提交/身份解锁后唤醒。
+- 正式接线修复：Electron 主机 cloud source 原先错误读取不存在的 `runtimeConfig.hostCredential/hostGeneration`；现改为 OS 保护凭据注入的 `GEWU_PRIMARY_HOST_CREDENTIAL` 和 `runtimeConfig.primaryHostGeneration`。
+- fresh 验证：`npm.cmd run test:authority-architecture` 共 44 个脚本退出码 0；本地 app projection HTTP 由 404 RED 转 200；所有数据库测试仍使用 `:memory:` 或 `os.tmpdir()`。
+- 安全：未读取或修改真实权威业务库/题库盘；未提交、未推送、未递增版本、未构建、未部署、未发布 OSS；E2E 继续冻结。
+- 当前风险：`browserDatabase` 仍写旧 raw-row pending 表；小程序仍走旧未识别用户体验/旧 auth；gateway 正式 epoch/grant/role mirror 尚未接 activation；主机 projection 签名当前需 Electron main 中 vault 已解锁，尚未满足重启后完全无人值守。
+- 下一步：先以 RED 契约闭合云控制面 epoch/grant/role mirror 和主机持久签名生命周期，再迁移小程序 visitor/角色申请；之后将 `browserDatabase` 改为 typed authority drafts，并进入阶段 E copy-only migration 与旧路径删除。
+
+### 已证实但未完成
+
+- 规格：`docs/superpowers/specs/2026-07-27-runtime-architecture.md` 和 `docs/superpowers/specs/2026-07-28-authority-architecture-cutover.md`。
+- 未完成执行计划：`docs/superpowers/plans/2026-07-28-authority-architecture-cutover-execution.md`；Task 1–7 未按证据勾选完成。
+- 原型存在：`shared/authorityProtocol.js`、`deviceActivationService`、`authorityCommandService`、`hostCommandWorker` 及测试；必须逐条核查是否已测试、是否接入正式路径、是否已移除旧路径。
+- 已发现旧架构结构故障：exchange 曾提前 active；原型已改为 exchange→本地封存→finalize，但仍需最终 UI 与新 facade 验证。
+- 隔离 Electron 曾验证主机 bootstrap、普通端进入注册和隔离 control-plane CORS；没有完整审批、LAN sync 或 public relay sync 成功证据。
+
+### 当前阻断
+
+最近 E2E 在 `scripts/real-two-desktop-e2e.js` 的 `openHostIdentity()` 等待“我的设备”失败：`HOST_IDENTITY_UI_MISSING`。这不是外部权限问题，也不允许通过改侧栏、直调审批接口或伪造结果绕过。当前优先级是完成 B–E，之后按新 facade 重建真实验收。
+
+### 新会话第一轮（严格顺序）
+
+1. 阅读本文件、两份 spec、execution plan；运行 `git status --short`，保护脏工作树。
+2. 创建“文件存在 / 已测试 / 已接入正式路径 / 旧路径已删除”四列清单；不接受存在即完成。
+3. 从阶段 B authority HTTP 契约 RED 测试开始；禁止继续扩展旧 sync/session。
+4. 每完成一个可验证步骤，写入本文件：修改文件、RED/GREEN 命令、输出、风险和下一步。
+5. 阶段 E 未通过前不运行发布；真实双端测试只对切换后的新运行时执行。
+
+## 10. 完成判定
+
+仅当以下所有项目均有当前证据时，才可称“架构重写与真实双端验收完成”：
+
+- [ ] 新协议是唯一业务写入口；旧 raw sync/session/relay 已删除或 terminal retirement 拒绝。
+- [ ] 两阶段 activation 在 unit、HTTP、打包 Electron UI 中证明无 vault receipt 即无 active device。
+- [ ] 主机在 renderer 关闭、WebSocket 关闭、重启恢复下仍恰一次处理持久命令并返回稳定 receipt。
+- [ ] LAN、relay WS、durable relay 同 envelope/receipt，双向命令与 projection 有持久化和 UI 证据。
+- [ ] user_id、多角色、可选 teacher/student 档案、资产账户与完整 scope 在主机/API/桌面/小程序通过。
+- [ ] 副本迁移 source fingerprint 不变，scope parity 与 command replay 零差异，cutover ledger 已写入。
+- [ ] 两个隔离打包 Electron UI 完成绑定、身份设备页审批、LAN、云中继、离线确认、重启恢复与双向 projection。
+- [ ] 云、数据主机、普通桌面、小程序兼容矩阵通过；之后才允许 Git/OSS 发布。
+
+### 2026-07-28 checkpoint 7: explicit business commands, atomic typed drafts, full scoped projections
+
+- RED/GREEN: explicit authority business handlers now cover academic, finance, question, taxonomy, and owner-scoped personal-asset commands. Unknown types, disallowed fields, stale versions, role violations, and cross-owner mutations fail closed. Valid rejections persist stable rejected receipts and replay without domain re-execution.
+- RED/GREEN: remote question commands execute only inside the primary-host executor against a temporary bound question store. Create, update, delete, host-committed state, exactly-once replay, and command-id trash paths have integration evidence. Stage B remains open until the SQLite/filesystem crash-recovery journal is complete.
+- RED/GREEN: role projections now cover academic, finance, question/taxonomy, and personal-asset data with visitor/student/teacher/admin/super_admin scope reduction. Desktop refresh accepts only signed authority projections and waits for sourceVersion >= receipt.projectionVersion.
+- RED/GREEN: browserDatabase no longer writes the raw pending-change keys or sourceOperationId. Field-whitelisted typed drafts are synchronously encrypted in Electron main; multi-command edits append as one atomic batch before the derived browser cache is saved. An invalid batch leaves the encrypted outbox unchanged.
+- Formal wiring: gateway epoch/device/role mirrors, miniapp visitor/application authority adapter, persistent host projection signing, business command tests, projection cache/cutover tests, and typed-draft tests are included in test:authority-architecture.
+- Fresh evidence: npm run test:authority-architecture, browserDatabaseSyncCapture, browserAuthorityProjectionCutover, desktopAuthorityRuntime, and npm run typecheck all exited 0.
+- Safety: every database and question-store test used :memory: or os.tmpdir(). No real authority database or removable question store was read, migrated, or modified.
+- Freeze remains: no git add/commit/push, version bump, build, deployment, OSS publication, or real dual-desktop E2E.
+- Next: close the durable question-filesystem crash-recovery journal, then implement copy-only migration, fingerprint/parity/cutover ledger, rollback rehearsal, and delete the legacy normal paths before E2E.
+
+### 2026-07-28 checkpoint 8: question-store crash recovery journal
+
+- RED: an outer SQLite rollback after question-store create left question.json and manifest state without a ledger record; recoverAuthorityQuestionStorageOperations was absent.
+- GREEN: command-scoped write-ahead journals now cover create, update, and delete. A failed outer transaction restores the question directory and manifest; startup recovery performs the same repair after a process crash. A committed authority ledger record retains the filesystem state and removes the journal (and update backup).
+- Lifecycle wiring: authority host runtime scans journals at startup and after both committed and rolled-back executor outcomes. Non-command local host calls do not create authority journals.
+- Fresh evidence: authorityQuestionCommandIntegration reproduces and repairs create/update/delete crash windows using only an os.tmpdir store; npm run test:authority-architecture exited 0.
+- Next: stage E copy-only migration, source fingerprints and scope parity, cutover ledger/rollback rehearsal, then legacy normal-path deletion. E2E and release remain frozen.
+
+### 2026-07-28 checkpoint 9: copy-only migration rehearsal and cutover gate
+
+- RED: authorityMigrationService did not exist, so no test could reject source-as-copy, role-binding ambiguity, scope mismatch, replay mismatch, or an unverified cutover marker.
+- GREEN: the service copies only to a nonexistent distinct target, fingerprints source before/after, seeds auditable authority accounts/bindings on the copy, rejects ambiguous teacher/student binding, verifies parity and supplied command replay, and writes only a rehearsal ledger to the copy. A cutover marker requires a successful report and matching source fingerprint; all coverage uses os.tmpdir databases.
+- runtime-architecture-rehearsal now delegates to the service and is included in test:authority-architecture. No production marker was written and no real authority database was opened.
+- Next: complete the pre-marker read-only legacy gate, migrate remaining miniapp/desktop normal paths to the facade, then perform an explicit copy rehearsal and authorized real cutover marker before deleting legacy implementations. E2E remains frozen.
+
+### 2026-07-28 checkpoint 10: normal-path removal inventory
+
+| Item | Exists | Tested | Formal path | Legacy normal path removed |
+|---|---|---|---|---|
+| Authority HTTP / host executor / projection | yes | `npm run test:authority-architecture` | yes | n/a |
+| Desktop typed facade / encrypted outbox / transport selector | yes | authority suite | yes | yes: oneClick and raw sync implementations removed |
+| Miniapp authority projection cache | yes | HTTP and cache tests | yes | yes: MiniSyncEngine, startup listener, and sync API exports removed |
+| Backend raw sync router | no | admin route 404 regression | n/a | yes: mount and implementation deleted |
+| Cloud desktop-session and desktop-sync relay | tombstone only | backend and gateway relay HTTP tests | no | yes: every method returns `410 LEGACY_ARCHITECTURE_RETIRED` |
+
+- Fresh evidence: `npm run test:authority-architecture`, `npm run typecheck`, backend/gateway cloud relay HTTP checks, legacy gate checks, retired miniapp application route check, and desktop retirement checks passed using only temporary databases.
+- Safety: no real authority database, removable question store, deployment, package, publication, or E2E runtime was opened.
+- E2E remains frozen pending the authorized real cutover marker and isolated two-desktop fixture preparation.
+
+### 2026-07-29 checkpoint 11: executable legacy relay removal and isolated authority control-plane
+
+- Removed the executable backend/gateway raw desktop-session and desktop-sync handlers, the host task executor branches, the retired service/client modules, and obsolete live relay diagnostic scripts. The terminal retirement gates remain the only `/api/cloud/desktop-session` and `/api/cloud/desktop-sync` surface and do not enqueue tasks.
+- Replaced the disposable packaged-Electron identity cloud's old desktop-session relay surface with the formal gateway authority protocol router, including signed authority command/receipt, host claim, epoch/control-record mirror, and projection routes. Its process-level test starts an isolated temporary database, proves unsigned authority writes are rejected by the formal actor gate, and proves the retired session URL is 404 in that disposable plane.
+- Fresh evidence: backend retirement HTTP checks, gateway relay checks, host task retirement checks, `desktop-architecture-cutover`, isolated authority control-plane, real-two-desktop static contract, `npm run typecheck`, and `npm run test:authority-architecture` exited 0. All test databases were temporary.
+- The discovered `tmp-e2e-*-cutover-*` Electron packages still contain executable old relay handlers and lack `desktopAuthorityRuntime`; they are stale and explicitly excluded from new-runtime E2E evidence.
+- Safety and freeze: no real authority database or question store was opened; no real cutover ledger marker, build, deployment, publication, commit, or push was performed. E2E remains frozen until an authorized real cutover marker exists and a current isolated package pair can be prepared.
+
+### 2026-07-29 checkpoint 12: isolated packaged two-desktop identity/bootstrap acceptance
+
+- Fresh runtime evidence: a current isolated host/client package pair completed primary-host bootstrap, recovery-package acknowledgement and relaunch, post-relaunch local-password unlock, host worker start, ordinary desktop registration, rendered host-side device approval, and ordinary desktop activation finalization. The run used two distinct temporary Electron profiles and device IDs, random loopback control-plane/desktop ports, native CDP pointer input, and no real authority database or question store. Its result was `{"success":true,"transport":"managed-identity-lan-cloud-relay","websocketDisabled":true,"isolatedCutoverMarker":true,"deviceApprovedThroughVisibleHostUi":true,"hostWorkerObserved":true,"activationFinalized":true}`.
+- The temporary E2E root was deleted after the run; no real cutover marker was written. The approval was rendered and clicked in the host UI, not substituted with a direct approval endpoint.
+- Exact boundary: this proves the packaged identity/bootstrap/worker path only. It does **not** yet satisfy every row in section 8: the harness must still drive a harmless signed authority command over LAN, relay WebSocket, and durable relay recovery; verify reverse scoped projection, offline confirmation/outbox behavior, and role fixtures. Do not mark section 10 complete or release/push/build/deploy until those rows have current evidence.
+
+### 2026-07-29 checkpoint 13: isolated forward LAN and durable-relay command acceptance
+
+- RED/GREEN (E2E input): the initial harness could mistake an AntD asynchronous confirmation modal for a failed click by waiting for the modal to close before it polled the authority receipt. A RED contract then required a visible modal-button click without that false precondition; GREEN uses the receipt/outbox state as the authority result. Native CDP clicks now issue target hover, press, and release in sequence, and host identity navigation keeps the sidebar pinned until the target page has rendered before retracting it.
+- Fresh packaged evidence: the normal run returned `{"success":true,"transport":"managed-identity-lan-cloud-relay","websocketDisabled":false,"isolatedCutoverMarker":true,"deviceApprovedThroughVisibleHostUi":true,"hostWorkerObserved":true,"activationFinalized":true}` after the client visibly previewed and confirmed an isolated `personal-asset-account.create.v1` command; its receipt transport assertion is `lan-websocket`.
+- Fresh packaged evidence: with both authority WebSocket paths explicitly disabled, the same visible client confirmation returned `{"success":true,"transport":"managed-identity-lan-cloud-relay","websocketDisabled":true,"isolatedCutoverMarker":true,"deviceApprovedThroughVisibleHostUi":true,"hostWorkerObserved":true,"activationFinalized":true}` and asserted `durable-relay`. The host worker refreshed the canonical device-control snapshot before it authorized each claimed durable command, preventing the pre-approval `DEVICE_GRANT_INACTIVE` race.
+- Verification: `node scripts/realTwoDesktopE2e.test.js`, `node public/runtimeConfig.test.js`, `node build/runtimeConfig.test.js`, `node public/desktopAuthorityRuntime.test.js`, `node build/desktopAuthorityRuntime.test.js`, and syntax/diff checks passed. Every run used two temporary packaged profiles, temporary control-plane SQLite, random loopback ports, and E2E-only records. The exact temporary roots were checked for live processes and deleted after each run; no real authority data, question store, marker, deployment, package build, commit, push, version bump, or OSS publication was touched.
+- Exact boundary: relay WebSocket (with LAN isolated), reverse scoped projection, offline-confirmation recovery, and the visitor/student/teacher/admin/super_admin UI/API/miniapp matrix remain unproven. The architecture rewrite and release remain incomplete and frozen.
+
+### 2026-07-29 checkpoint 14: data-host synchronization responsibility correction
+
+- Corrected the data-host synchronization surface: a primary host no longer presents the ordinary-desktop outbox as a self-sync action. It exposes an execution/worker/projection monitor instead. Ordinary desktops remain the only outbox owners and require explicit confirmation before submission.
+- Corrected local host business writes: primary-host browser mutations call the Electron `executeLocalDraft` bridge, which refreshes canonical control records, signs the typed authority command, executes it through the authority executor, and wakes the projection worker only for a committed receipt. The renderer then refreshes the signed projection at the returned source version. A rejection or refresh failure emits a visible failure event and re-reads the last authoritative projection; it is not retained as a silent optimistic success.
+- Corrected local host batch semantics: a batch now executes its typed commands in source order and refreshes once from the highest committed projection version. It no longer starts dependent host commands concurrently. A mid-batch rejection stops the remaining commands and re-reads the authoritative projection.
+- Corrected the reverse-projection acceptance contract: the host side now invokes `primaryHostRuntime.executeLocalDraft` for a harmless isolated `personal-asset-record.create.v1` and requires a committed receipt. It no longer submits a host-originated client outbox command or treats a browser cache mutation as an authority write. The ordinary desktop must then find the record only after signed projection refresh.
+- The reverse-projection refresh now requires the precise projection version returned by the host receipt, rather than accepting an arbitrary cached projection version.
+- Fresh source-level evidence: `npm run test:authority-architecture`, `npm run typecheck`, `npm run test:desktop-authorization`, migration self-test, relay retirement HTTP tests, host local executor runtime test, sync-surface UI tests, and the real-two-desktop contract test passed. All databases used by these checks were memory or temporary paths.
+- Offline outbox recovery evidence: `desktopAuthorityClient.test.js` now seals an unconfirmed draft, recreates the outbox as a restart simulation, verifies it remains `awaiting_confirmation` with zero submissions, then permits exactly one durable-relay submission only after explicit post-restart confirmation.
+- Copy-only replay gate hardening: `authorityMigrationService` no longer defaults `commandReplay` to an empty success. Every rehearsal caller must provide an explicit verifier or receives `AUTHORITY_MIGRATION_COMMAND_REPLAY_REQUIRED`; the isolated E2E fixture verifies its copied canonical account and super-admin grant before its temporary marker. This is a fixture-level migration verifier, not a claim that a real authority database has replayed business commands.
+- Exact boundary: no current isolated package pair contains this renderer/main-process change, so no fresh packaged reverse/LAN/relay-WebSocket/durable matrix result exists for checkpoint 14. Do not interpret earlier package runs or this static contract as that evidence. No real authority data, cutover marker, build, package, deployment, release, commit, or push was touched.
+
+### 2026-07-29 checkpoint 15: approval-state projection and isolated menu evidence
+
+| Item | Exists | Tested | Formal path | Legacy normal path removed |
+|---|---|---|---|---|
+| Approved-pending device presentation | yes: `deviceStatusPresentation` plus device-center projection | `identityDeviceCenterPolicy` and `deviceStatusPresentation` pass | identity service → policy projection → identity device center | n/a |
+| Isolated host visible approval | yes | native-CDP host bootstrap and approval reaches the rendered approval result | isolated packaged host/client only | n/a |
+| LAN offline-restart matrix | harness exists | not complete; client restart preserved an unconfirmed draft, then a later navigation step failed | isolated package only | n/a |
+
+- RED/GREEN (approval state): `desktopIdentityService` already persists `approvedAt`, and `deviceStatusPresentation` already distinguishes an approved pending device. The device-center projection dropped that field, so the rendered table fell back to “待处理”. A new policy test first failed with `actual undefined`; `projectDevice` now retains `approvedAt`/`approved_at`. `node src/services/identityDeviceCenterPolicy.test.js`, `node src/services/deviceStatusPresentation.test.js`, and `node src/pages/IdentityDeviceCenter.test.js` pass.
+- Isolated packaged acceptance evidence: host identity page rendered, visible approval succeeded, client completed local registration, and an offline typed draft survived a real client-process restart without submission. All profiles, SQLite databases, and question stores were under `%TEMP%\\tmp-real-desktop-two-app-*`; no real authority data or removable store was opened.
+- Current blocker: the next run failed before approval with `HOST_MENU_ITEM_VISIBLE_REQUIRED`; the rendered “身份与设备” item existed but its final rectangle was off-screen after the hover-only sidebar retracted. The harness now records top-level menu candidate/sider diagnostics before any further behavioral change. This is an isolated UI-driver failure, not evidence that legacy paths or the full matrix pass.
+- Freeze remains: no add/commit/push, version increment, packaging, deployment, or OSS publication.
+
+### 2026-07-29 checkpoint 16: center-hit sidebar routing correction
+
+- Root-cause evidence: a failed isolated client navigation reported a pinned and open sidebar, but the expanded AntD `system-data` item had `left=-18.4`, `right=193.6`; its center was inside the viewport and hit its own descendant. The E2E driver incorrectly required `left >= 0`, rejecting a real clickable target as hidden.
+- RED/GREEN: the E2E static contract first failed when it required center-point visibility. `markVisibleMenuTarget` now accepts only nodes whose center is inside the viewport and passes `elementFromPoint`, while still rejecting truly offscreen or obscured items. `node scripts/realTwoDesktopE2e.test.js` and `node --check scripts/real-two-desktop-e2e.js` pass.
+- Verification boundary: a subsequent normal LAN run did not emit its terminal result; it is invalid as acceptance evidence. The full LAN/offline-restart row remains unpassed and must be rerun to a recorded terminal success before starting the relay rows.
+- Safety/freeze: every E2E attempt used a new `%TEMP%\\tmp-real-desktop-two-app-*` root; no real authority data, package, deployment, commit, push, or OSS publication was touched.
+
+### 2026-07-29 checkpoint 17: normal LAN/offline-restart terminal evidence
+
+- A new isolated packaged run completed with terminal result `{"success":true,"transport":"managed-identity-lan-cloud-relay","websocketDisabled":false,"relayWebSocket":false,"isolatedCutoverMarker":true,"deviceApprovedThroughVisibleHostUi":true,"hostWorkerObserved":true,"activationFinalized":true}`. It used a newly-created `%TEMP%\\tmp-real-desktop-two-app-*` profile root, temporary control-plane SQLite, random loopback ports, and E2E-only records.
+- The exact run traversed host bootstrap and visible host-side device approval, client local registration and unlock, offline draft sealing, a real client process restart, and post-restart proof that the draft remained unsubmitted before the authoritative command/receipt assertion completed. The former sidebar failure is closed for this row: menu selection is now accepted only when the corresponding `.app-shell__content--<page>` is actually rendered.
+- RED/GREEN: the static E2E contract first rejected acceptance based solely on AntD's selected menu class. `openMenuItem` now requires both `ant-menu-item-selected` and the requested content-page class after the real native click. `node scripts/realTwoDesktopE2e.test.js` and `node --check scripts/real-two-desktop-e2e.js` pass.
+- Boundary: this satisfies only the normal LAN/offline-restart row. Durable relay with authority WebSockets disabled, relay WebSocket, reverse scoped projection, and the cross-role desktop/API/miniapp matrix still require new terminal evidence. Windows left this temporary profile root for deferred cleanup with `EPERM`; it is not manually deleted while any related process may exist.
+
+### 2026-07-30 checkpoint 18: approval-state acceptance correction
+
+- Correction: checkpoint 15 proved only the source projection and checkpoint 17 proved approval action/result under the then-current E2E contract. Neither proved that the packaged host table changed from “待处理” to “已批准，等待新设备完成设置”. Therefore the packaged approval-state row and the current normal-LAN row are reopened; checkpoint 17 is historical partial evidence, not current terminal acceptance.
+- Root cause boundary: source `projectDevice` now retains `approvedAt`/`approved_at`, but the frozen reusable package pair predates that source change. Packaging remains forbidden, so a running old package can still render “待处理”. This is not a production-data defect diagnosis and no real authority data was opened.
+- RED/GREEN: `scripts/realTwoDesktopE2e.test.js` first failed because the real driver accepted only the approval-result message. `approvePendingDeviceThroughHostUi` now additionally requires the rendered text “已批准，等待新设备完成设置” via `HOST_DEVICE_APPROVED_PENDING_STATUS_REQUIRED`. Static E2E, syntax, policy, presentation, and page-source tests pass.
+- Current gate: a new isolated packaged run must fail at that status requirement when using the stale package, or pass only if a genuinely current package already contains the projection change. Until that terminal evidence exists, do not describe the approval-state defect or the full LAN row as fixed.
+
+### 2026-07-30 checkpoint 19: real-E2E process governance
+
+- Resource evidence: one active two-desktop row created nine packaged Electron/main/renderer/GPU/network processes using about 914 MB working set, plus a roughly 119 MB Node runner. Multiple EPERM-leaked rows could therefore materially increase memory, handle, and CPU pressure and contribute to Codex/UI stalls. This is a contributing-risk finding, not proof that it was the sole cause of the Codex shutdown.
+- The approval-status rerun stopped making progress after host renderer refresh. Its exact runner and the single verified `%TEMP%\tmp-real-desktop-two-app-rWN6vj` process set were terminated by explicit PID/profile matching; no broad process-tree kill was used. A subsequent audit reported `LIVE_REAL_TWO_DESKTOP_PROCESSES=0` and no run lock. The interrupted row is invalid acceptance evidence.
+- RED/GREEN: new `realTwoDesktopProcessGovernance.test.js` first failed because no governance module existed, and the E2E contract first failed because Electron diagnostics retained Node pipe streams. The implemented governance now provides an exclusive run lease, rejects stale temporary desktops before creating a new profile, enforces a 12-process packaged-desktop ceiling, and waits for exact PIDs to exit.
+- The packaged desktop launcher now sends stdout/stderr directly to an inherited append-only file descriptor and closes the parent descriptor immediately; it no longer keeps two Node pipe streams per desktop. Profile cleanup is attempted only after exact process-exit confirmation; live-process contention is recorded and the isolated root is preserved.
+- Fresh verification: `node scripts/realTwoDesktopProcessGovernance.test.js`, `node scripts/realTwoDesktopE2e.test.js`, syntax checks for both governance and E2E scripts, and relevant diff checks pass. No package, deployment, commit, push, version bump, OSS publication, or real authority data was touched.
+- Operating rule: only one real two-desktop row may run at a time; no authority/unit suite or second Electron row runs concurrently; a new row is forbidden while any `tmp-real-desktop-two-app-*` process exists; every row must end with a zero-live-process audit before the next row starts.
+
+### 2026-07-30 checkpoint 20: runner-loss cleanup and bounded UI diagnostics
+
+- A governed approval-status row reproduced the resource-risk condition: the Node runner disappeared without an error stack while one packaged Electron process and its run lease remained. This proves that runner-local `finally` cleanup alone is insufficient when Codex/the runner is externally terminated. The one verified stale PID and lease were removed explicitly; a later audit showed zero live real-two-desktop processes and no lease.
+- RED/GREEN: `realTwoDesktopProcessGuardian.test.js` first failed because the guardian did not exist, and the E2E contract first failed because no guardian was started. A lightweight pipe guardian now starts after the disposable root and lease are created but before any Electron process. If the runner pipe closes, it validates the exact `%TEMP%\tmp-real-desktop-two-app-*` root, terminates only processes whose `--user-data-dir` belongs to that root, and removes only the lease owned by that runner.
+- Normal teardown still remains runner-owned: it closes CDP, terminates exact profile PIDs, waits for process exit, stops the isolated control plane, and then closes/joins the guardian. The guardian is a failure backstop, not permission for concurrent rows or broad task-tree termination.
+- Resource-bound navigation: menu visibility and route waits are now capped at 8 s and 12 s, with at most two identity-navigation attempts. The previous nested default 45 s retries are no longer allowed to hold two Electron applications for several minutes.
+- Fresh isolated evidence: the bounded row failed and returned to zero processes. The target “身份与设备” item reported a normal visible rectangle and `pointer-events:auto`, but `elementFromPoint` hit `.ant-layout-sider-children` rather than the menu item. This closes the “hidden item” hypothesis; the next diagnostic/fix must address ancestor clipping or AntD submenu motion before the approval-state assertion can run.
+- Verification: guardian, governance, E2E contract, and syntax checks pass. The approval-state packaged UI, current LAN row, relay rows, reverse projection, and role matrix remain incomplete. Release remains frozen and no real authority data was touched.
+- Guardian integration evidence: a lightweight dummy process carrying an exact disposable `--user-data-dir` marker was discovered, then terminated when the guardian stdin pipe closed; the guardian exited, released only its owned lease, and left zero real-two-desktop/guardian processes. This verifies the runner-loss backstop without launching Electron.
+
+### 2026-07-30 checkpoint 21: current-source package and real approved-pending UI evidence
+
+- Correction to checkpoint 18: the stale package pair is retired from the approval-state evidence chain. Two test-only unpacked applications were rebuilt from the current source without changing version `6.6.0` and without installer/feed creation, deployment, OSS publication, staging, commit, or push:
+  - primary host: `tmp-e2e-host-cutover-20260730-sourcefix-hostflavor\win-unpacked\格物工坊.exe`
+  - ordinary desktop: `tmp-e2e-client-cutover-20260730-sourcefix\win-unpacked\格物工坊.exe`
+  Both packaged renderers and the workspace build have SHA-256 `41539FF6D31AE3BFB4625A854681B1F0CE16CBA3A718DB4CE5E5863F9D84ECC5`.
+- Real visible acceptance used Windows-level Computer interaction against exactly those two package paths and the preserved disposable root `%TEMP%\tmp-real-desktop-two-app-x0lWSh`. The client started a new registration, the isolated phone-confirmation endpoint advanced it, and the primary-host window visibly approved the refreshed request. Immediately after approval, the host device table rendered `已批准，等待新设备完成设置`; the isolated control plane independently reported challenge `approved_pending_exchange` and authorization `pending`.
+- The first approval click in this resumed environment correctly failed with `DESKTOP_CHALLENGE_VERSION_STALE`: the page still held the previous request snapshot while the client had generated a newer request/key. After the visible `刷新状态` action, the host rendered the new fingerprint and expiry, and approval succeeded. This failed click is not counted as approval evidence; the refreshed request and its subsequent state transition are.
+- The ordinary desktop then visibly rendered `设备审核已通过`, accepted its own disposable local password, and entered the real workbench. The isolated control plane reported its authorization `active`. After a visible host refresh, the same device rendered `可信` and exposed `撤销此设备`.
+- Process audit during this proof found exactly one isolated control-plane process and one Electron process group per package (main, renderer, GPU, network utility): nine persistent processes total for the row, with no second runner or second desktop row. The root remains preserved because the full LAN/relay/offline matrix is not complete; no real profile, authority database, or removable question-store path was opened.
+- Boundary: this closes only the packaged approval-state and activation presentation defect. Normal LAN full offline restart, durable relay, relay WebSocket, reverse scoped projection, the full synchronization matrix, role matrix, phase B-E formal-path/legacy deletion audit, and final temporary-root cleanup remain incomplete. Release remains frozen.
+
+### 2026-07-30 checkpoint 22: current-source normal LAN full offline-restart terminal evidence
+
+- A fresh governed run used the checkpoint-21 current-source host/client package pair and disposable root `%TEMP%\tmp-real-desktop-two-app-EpGBOL`. Windows-level Computer interaction opened the real primary-host navigation, entered `身份与设备`, approved the current ordinary-desktop request, and visibly rendered `已批准，等待新设备完成设置`. CDP was read-only for this external approval gate; it did not route or click the hidden AntD menu.
+- The same run then completed client local-password setup, entered the real workbench, sealed an offline authority draft without submission, terminated and relaunched the exact client profile, unlocked it again, and proved the draft remained `awaiting_confirmation` with no submission until explicit confirmation.
+- Terminal result: `{"success":true,"transport":"managed-identity-lan-cloud-relay","websocketDisabled":false,"relayWebSocket":false,"isolatedCutoverMarker":true,"deviceApprovedThroughVisibleHostUi":true,"hostWorkerObserved":true,"activationFinalized":true}`. The row also executed two harmless isolated authority commands, exact receipt assertions, a host-originated harmless business write, and ordinary-desktop reverse-projection refresh at the committed source version.
+- Process governance held: after terminal success there were zero Electron/control-plane processes for this root, the exclusive run lock was absent, and the root remained preserved only because later matrix rows are still pending.
+- This re-closes the normal LAN/full offline-restart row against the current approval-presentation source. Durable relay, relay WebSocket, remaining synchronization/role matrices, phase B-E formal-path/legacy deletion audit, and final isolated-root cleanup remain incomplete. Release remains frozen.
+
+### 2026-07-30 checkpoint 23: current-source durable-relay full offline-restart terminal evidence
+
+- A separate governed run used the same current-source package pair, `--websocket-disabled`, and disposable root `%TEMP%\tmp-real-desktop-two-app-OgUWw4`. The primary-host approval again occurred through Windows-level visible interaction and rendered `已批准，等待新设备完成设置`.
+- Terminal result: `{"success":true,"transport":"managed-identity-lan-cloud-relay","websocketDisabled":true,"relayWebSocket":false,"isolatedCutoverMarker":true,"deviceApprovedThroughVisibleHostUi":true,"hostWorkerObserved":true,"activationFinalized":true}`.
+- The row proved the same offline-draft/no-submission rule, exact client-process restart, post-restart explicit confirmation, two harmless command receipts, host worker wake, host-originated harmless write, and reverse projection while authority WebSockets were disabled; submission therefore used the durable relay path.
+- After terminal success the exact disposable root had zero live Electron/control-plane processes and no run lock. Its data remains preserved pending completion of all rows.
+- Relay WebSocket, remaining synchronization/role matrices, phase B-E formal-path/legacy deletion audit, and final isolated-root cleanup remain incomplete. Release remains frozen.
+
+### 2026-07-30 checkpoint 24: current-source relay-WebSocket full offline-restart terminal evidence
+
+- A third separate governed run used the same current-source package pair, `--relay-websocket`, and disposable root `%TEMP%\tmp-real-desktop-two-app-XIIEMT`. The harness assigned an unreachable isolated LAN endpoint and proved it unavailable before command submission; the visible primary-host approval again rendered the approved-pending label.
+- Terminal result: `{"success":true,"transport":"managed-identity-lan-cloud-relay","websocketDisabled":false,"relayWebSocket":true,"isolatedCutoverMarker":true,"deviceApprovedThroughVisibleHostUi":true,"hostWorkerObserved":true,"activationFinalized":true}`.
+- The row also passed offline draft sealing, exact client-process restart, post-restart no-submission proof, explicit confirmation, duplicate command/receipt assertions, host worker wake, host-originated harmless write, and reverse projection.
+- After terminal success the exact root had zero live Electron/control-plane processes and no run lock. All three current-source transport rows are now terminally green and their isolated data roots remain preserved.
+- Remaining gates are the visitor/student/teacher/admin/super_admin API/Desktop/Miniapp role matrix, phase B-E file/formal-path/legacy deletion audit, consolidated source verification, and then cleanup of only the verified disposable roots. Release remains frozen.
+
+### 2026-07-30 checkpoint 25: current B-E checklist and isolated five-role integration matrix
+
+| Architecture unit | File exists | Freshly tested | Wired to formal path | Legacy normal path removed |
+|---|---|---|---|---|
+| Signed envelope + authority HTTP | yes | full authority suite plus formal host/gateway HTTP and signature-tamper tests pass | `/api/authority` on host and gateway; one envelope/receipt on all transports | yes for business writes: raw `/api/sync` route file is deleted; cloud `desktop-sync` is terminal hard-retire only |
+| Two-phase activation | yes | service/HTTP tests and three current packaged UI rows pass | challenge exchange → sealed local vault receipt → finalize → active grant/lease | yes: single-user identity/pairing files and executable session-relay business route are deleted |
+| Executor + independent worker | yes | replay, expired-claim recovery, restart, renderer/WS-independent worker, and three real transport rows pass | backend server and Electron primary-host runtime use the authority processor/worker | yes: old cloud task business processor is absent from formal host cycle |
+| Desktop facade + encrypted typed outbox | yes | facade, encrypted outbox, no-send-before-confirm, offline restart, exact receipt, and reverse projection pass | renderer uses `window.desktopAuthority`; host local writes use `executeLocalDraft` | yes: `syncApi`, one-click raw transports/service, and desktop session relay client are deleted |
+| Signed scoped projection + role/asset boundary | yes | formal HTTP role matrix below plus projection/store/publisher/worker tests pass | host/gateway projection routes, desktop cache facade, and miniapp cache/access runtime | yes for client data reads: startup/raw-row sync path is absent; browser pending rows no longer own business submission |
+| Copy-only migration/cutover | yes | migration service, self-test, unchanged source fingerprint, zero parity/replay failures, and every real row cutover marker pass | isolated cutover gate runs before current two-desktop commands | yes: desktop architecture cutover check proves retired pairing/session-relay files absent and hard-retired endpoints non-executable |
+| Current-source real two-desktop rows | yes | normal LAN, durable relay, and relay WebSocket all terminally pass with offline restart | current host/client test packages only; stale package pair is retired | n/a |
+
+- New `scripts/authority-role-matrix-e2e.js` starts the formal backend against an isolated SQLite database, creates independent signed devices/leases for `visitor`, `student`, `teacher`, `admin`, and `super_admin`, and fetches each signed document through `/api/authority/projections/current`.
+- Every returned HTTP projection is materialized through the real desktop `buildAuthorityBackedBrowserCache`, the real miniapp `projectionCacheEntries`, and the miniapp runtime `deriveAccess`/`permissionIdentityKey` capability gate. The matrix checks peer identifiers, full account numbers, full question answers, and role-review records for cross-scope leakage.
+- Terminal matrix result: all five rows reported `api=true`, `desktop=true`, `miniapp=true`, and `miniappAccess=true`. The latest preserved acceptance root is `%TEMP%\gewu-authority-role-matrix-IjsmB4`; earlier failed/successful role-matrix roots are also intentionally retained until all acceptance cleanup gates are satisfied.
+- Fresh consolidated verification after wiring the matrix: `npm run test:authority-architecture` passed with the matrix included; `npm run typecheck` passed; `node scripts/desktop-architecture-cutover.test.js`, `node scripts/runtime-architecture-rehearsal.js --self-test`, and `node backend/src/services/authorityMigrationService.test.js` passed. The rehearsal source fingerprint was unchanged and reported zero parity/command-replay failures with `legacyRoutesSafeToRemove=true`.
+- Residual `desktop-session` strings are limited to identity/session introspection, vault migration compatibility, question provenance, and tests; they are not an executable raw business synchronization route. Backend and gateway cloud-relay `desktop-session`/`desktop-sync` prefixes are terminal retirement gates.
+- Boundary: this is an actual isolated HTTP + desktop facade + miniapp runtime integration matrix, not five rendered role-specific desktop/WeChat UI screenshots. No real authority data was touched. Release remains frozen; isolated cleanup and the final completion audit remain pending.
+
+### 2026-07-30 checkpoint 26: final current-package verification and isolated-data cleanup
+
+- The stale 2026-07-29 package pair remains excluded from acceptance. A fresh fingerprint check resolved the workspace build, current-source primary-host package, and current-source ordinary-desktop package through their own `asset-manifest.json`; all three renderer bundles have SHA-256 `41539FF6D31AE3BFB4625A854681B1F0CE16CBA3A718DB4CE5E5863F9D84ECC5`.
+- Fresh completion verification passed: `npm run test:authority-architecture` exited `0`, including the five-role formal HTTP/Desktop/Miniapp matrix; `npm run typecheck` exited `0`; `node scripts/desktop-architecture-cutover.test.js` passed; and `node scripts/runtime-architecture-rehearsal.js --self-test` reported unchanged source fingerprint, empty parity/command-replay failures, `legacyRoutesSafeToRemove=true`, and `sourceMutated=false`.
+- The three current-source packaged rows remain the real Windows-level acceptance evidence: normal LAN, durable relay with authority WebSocket disabled, and relay WebSocket with LAN deliberately unavailable. Each row included visible primary-host approval, the rendered approved-pending status, activation finalization, offline sealing, exact ordinary-desktop restart, no submission before confirmation, receipts, worker wake, host-originated write, and reverse projection.
+- Before cleanup, the audit found no related Electron, packaged-app, control-plane, or role-matrix process and no `gewu-real-two-desktop-e2e.lock`. It validated 112 exact `%TEMP%\tmp-real-desktop-two-app-[A-Za-z0-9]+` roots (100 with host/client/control-plane markers and 12 empty roots left before subdirectory initialization) plus 6 exact `%TEMP%\gewu-authority-role-matrix-[A-Za-z0-9]+` roots containing `authority-role-matrix.db`.
+- The 118 validated disposable roots were removed individually with native PowerShell after absolute-path, basename, marker, lock, and live-process checks. Removal failures: `0`. A post-cleanup audit reported `desktopRoots=0`, `roleRoots=0`, `liveProcesses=0`, and `lockExists=false`.
+- Test-only current-source unpacked packages and the source evidence remain in the workspace; only disposable `%TEMP%` profiles and role-matrix databases were removed. No real profile, real authority database, removable question-store data, staging area, commit, branch, version, installer feed, deployment, or OSS object was touched. Release remains frozen.
+- Acceptance boundary: the authority architecture cutover, formal-path/legacy-removal audit, three real two-desktop transport/offline-restart rows, reverse projection, and isolated five-role API/Desktop/Miniapp runtime matrix are complete. This does not claim five role-specific rendered desktop/WeChat UI screenshot journeys or any production deployment.
+
+### 2026-07-30 checkpoint 27: unified multi-end production release plan
 
 Status: in progress
 
-### Objective
-
-审查 OpenCode 最新的普通桌面端与数据主机通信架构改动，以真实本机服务、真实网关与本地数据库完成局域网和云中继闭环复测；修复可复现的通信问题后，按统一版本矩阵发布到 `gewu/master` 和 OSS 桌面更新 feed。
-
-### Execution checklist
-
-- [x] 基于真实 HTTP/任务队列完成设备注册、云中继数据同步与一次性配对闭环；确认同步和配对结果均从网关持久化状态回读。
-- [ ] 审查 OpenCode 自 6.4.11 后的所有通信架构提交及未提交改动，逐项建立变更清单、风险判断和验证证据。
-- [ ] 核验 14 天桌面登录/离线租约的签发、续期、撤销、凭证版本轮换与过期拒绝边界。
-- [ ] 核验 WebSocket 主通道的 JWT/主机凭证认证、心跳、任务通知、重连/退避，以及 HTTP 轮询回退。
-- [ ] 比对 Gateway 与 Backend 的云中继共享逻辑、路由契约、任务 V2（目标主机、租约、幂等、行版本、结果哈希）和数据迁移的一致性。
-- [ ] 核验普通桌面端与主机桌面端启动、后台任务处理和局域网/云中继回退的运行时配置兼容性。
-- [ ] 复现并修复普通端“身份与设备”页的“服务不可用，请检查主机连接后重试”状态，验证正常、离线和无授权状态。
-- [ ] 复现并修复题库加载中的 ESM/CJS 导出边界错误，验证真实题库页面加载。
-- [ ] 对确定缺陷先建立失败回归，再做最小修复并复测真实链路。
-- [ ] 运行通信聚焦测试、全量测试、类型检查、构建和发布前静态检查。
-- [ ] 自动判定并只递增一次发布版本；提交本次相关版本与修复改动，推送 `gewu/master`。
-- [ ] 构建 Windows 包，发布 OSS feed，回读 `latest.yml` 和安装包；恢复 Node native ABI 并复验。
-
-### Validation and rollback
-
-- 真实通信验证不使用 mock：本地端与网关各自通过真实 HTTP 服务、JWT/设备凭据、网关任务队列和 SQLite 持久化状态完成绑定、同步和配对确认。
-- 发布前不清理既有脏文件；仅暂存本次明确关联的代码、测试、版本与发布产物元数据。
-- 如发布需要回滚，使用 `npm run publish:desktop-rollback` 回退 OSS feed，不删除安装包、权威库、网关数据库或用户工作区文件。
-
-Status: implementation complete; release verification in progress
-
-## Objective
-
-冻结当前微信小程序身份改造，在仅一位桌面使用者的阶段，以“数据主机本地初始化 + 一次性配对普通设备 + 手动发起同步、主机自动批准”恢复安全可用的桌面身份与同步链路；完成后核对此前任务，合并、统一发布桌面与云端，并上传最终安装包到夸克网盘。
-
-## Confirmed decisions
-
-- 微信小程序保持不动，待企业/非个人主体具备手机号能力后再恢复完整身份架构。
-- 单人模式只允许数据主机显式开启，普通安装包默认且永久不具备数据主机权限。
-- 主机可在本机建立 owner 身份并设置/重设本机密码；密码重设不删除本机或同步数据。
-- 新普通设备通过短时一次性配对码绑定，不在安装包中放置共享密钥。
-- 同步由普通端手动发起并确认预览，数据主机自动批准；冲突不自动覆盖。
-- 关闭单人模式后，所有由该模式签发的普通端授权与会话失效，业务数据和审计保留。
-
-## Execution checklist
-
-- [x] 复核现有身份、设备授权、主机保护、云中继与同步流程。
-- [x] 比较临时放行、共享密钥、一次性配对方案并确认采用一次性配对。
-- [x] 确认“手动发起、自动批准”、小程序冻结和模式关闭后的失效边界。
-- [x] 写出并自检书面设计规格。
-- [x] 用户复核书面设计规格。
-- [x] 编写文件级 TDD 实施计划。
-- [x] 按测试先行实现单人模式、主机初始化、配对与撤销。
-- [x] 实现手动同步预览、主机自动处理、备份/审计/冲突保留。
-- [x] 验证并修复窗口默认菜单、密码重设入口和 OSS 更新模块。
-- [x] 审计 OpenCode PR 与此前体系、主机 flavor 隔离等任务完成度，补齐缺口。
-- [x] 运行全量测试、构建、Electron 真实运行时与多端兼容验证。
-- [ ] 备份并部署阿里云，升级当前数据主机，发布普通端/主机端 OSS feed。
-- [ ] 提交、合并并推送 `gewu/master`，上传夸克网盘并核验产物。
-
-## Bottom-level logic
-
-- `GEWU_DESKTOP_IDENTITY_MODE` 默认 `full`，只有不可变 `primary-host` flavor 可在部署配置中启用 `single-user`。
-- 单人模式复用 canonical 超级管理员、设备公私钥、V2 桌面会话和主机 epoch，不创建匿名用户或新角色系统。
-- 配对码只存摘要，绑定 owner/epoch/generation，10 分钟过期、一次性原子消费、限次限速；云端只中继，主机最终裁决。
-- 每个非空同步批次先预检和备份，再事务写入；失败保留客户端队列，冲突进入可见待处理状态。
-- 临时授权带 `single_user_pairing` 来源，模式关闭或设备撤销时通过撤销/凭证版本轮换立即失效。
-
-## Validation and rollback
-
-- 测试覆盖配置边界、主机本地初始化、并发配对消费、云端不可自行授权、普通端不可晋升主机、模式关闭撤销、同步备份/审计/冲突。
-- 真实验证覆盖主机初始化、普通端配对、重启解锁、同步预览/自动批准、离线/冲突、撤销和 OSS 更新。
-- 发布前备份云端数据库/代码和本地主机数据；回滚先关闭单人模式并撤销临时授权，再回退应用，禁止删除业务数据。
-- 微信小程序本阶段冻结，不构建、不上传；未完成的端必须报告“部分发布”或“受阻”。
-
-## 2026-07-23 fresh evidence
-
-- 单人身份、主机、设备中心和同步聚焦矩阵全部退出 0；`npm test`、`npm run typecheck`、`npm run build`、`npm run check:desktop-identity-release` 均退出 0。
-- 只读 SQLite 在线副本来自当前权威库；复制前后 `users=2`、`questions=0`、身份与主机新表均为 0，`quick_check=ok`，副本 SHA-256 为 `3b9f19014ef29594335f25ef815b8aa039c747106e467fdcfa0fc52fc9be55ca`。生产库未被测试写入。
-- `node scripts/single-user-pairing-runtime-smoke.js` 在隔离副本上通过身份服务、vault、普通端配对客户端和同步批次备份四组运行检查，输出确认 `secretsRecorded=false`。
-- `npm run test:ui-smoke` 的隔离浏览器身份 fixture 已适配当前身份门；题库体系页、统一筛选和二次删除确认均完成真实渲染检查，截图位于 `tmp/ui-smoke/question-bank-preview.png` 与 `tmp/ui-smoke/question-bank-taxonomy-delete-confirm.png`。
-- GitHub PR #3、#4、#5 均为 merged；合并提交 `5356cfa`、`9a79ca2`、`3c4df4e` 全部是当前分支祖先。SSH fetch 因本机到 GitHub 22 端口断开失败，PR 状态另由 GitHub API 核验；没有据此伪造 fetch 成功。
-- 6.3.0 ordinary/host 安装包均已构建并完成实际启动冒烟；普通包输出 `flavor=desktop-client` 且不含主机私有模块，主机包输出 `flavor=primary-host`。
-- 阿里云发布前代码/数据库备份位于 `/root/scheduling-backups/formula-pipeline/20260722-220910`，本地主机一致性备份位于 `D:\GewuDataHost\backups\release-6.3.0-20260722-220909`；两端 SQLite `quick_check=ok`。
-- Backend/Gateway 已部署 6.3.0，内网与公网 health 通过；ordinary/host OSS 双 feed 已公网回读验证文件名、大小和 SHA-512。普通安装包已在夸克 `codex项目/2026-07-23` 同页确认上传完成。
-- fresh `npm test`、`npm run typecheck`、`npm run check:desktop-identity-release`、Node ABI 137/SQLite 3.53.1 和 `git diff --check` 均通过。测试专用网关本地 HTTP fixture 从 3 秒放宽到 10 秒以消除全量高负载假失败，生产超时不变。
-- 当前安装 flavor 虽为 `primary-host`，生产 runtime config 实际仍是 `desktop-client/full`，且权威库没有 active host epoch/authorization；6.3.0 系统级覆盖安装与真实单人主机 bootstrap 仍待 UAC/用户本机密码步骤完成，因此统一发布仍是“部分发布”。
-- 6.3.0 覆盖安装已成功，但安装后生产核验发现“开启单人模式后 runtime 仍为 desktop-client，而 bootstrap 又强制要求 primary-host”的前置条件循环；已停止真实身份写入并以测试驱动修复为两阶段 bootstrap，包含本地桥/主机 flavor/单人模式门禁、数据库事务后受管 runtime 收尾、失败重试和初始化后强制重启。
-- 6.3.1 fresh `npm test`、`npm run typecheck`、普通/主机真实 Electron 隔离启动冒烟、Node ABI 137/SQLite 3.53.1 均通过；普通包 `150673468` 字节，主机包 `150682142` 字节。
-- 6.3.1 发布前本地主机备份位于 `D:\GewuDataHost\backups\release-6.3.1-20260722-234718`，云端备份位于 `/root/scheduling-backups/formula-pipeline/20260722-234905`；本地权威库及云端 Backend/Gateway 两库均 `quick_check=ok`。
-- Backend/Gateway 已部署 6.3.1，内网与公网 health 均返回 6.3.1；ordinary/host OSS 双 feed 已公网回读验证版本和字节数。普通安装包已在夸克 `codex项目/2026-07-23` 同页确认上传完成。
-- 6.3.1 主机专版已成功覆盖安装，应用名变化没有改变 userData、D 盘权威库、I 盘题库或设备标识；生产配置与数据仍保持 `desktop-client/full`、`users=2`、`questions=0`、无 active epoch/authorization。
-- 真实点击“启用临时单人模式”复现 `PRIMARY_HOST_RUNTIME_MANAGER_CONFIG_REQUIRED`：`primaryHostRuntimeManager` 已新增身份模式写入依赖，但 Electron 主进程漏掉导入和注入。6.3.2 以失败回归测试锁定后完成最小接线修复；固定设备 ID 同时从验证页和普通设置移除，仅在“身份与设备”中心只读显示，一次性配对码默认掩码。
-- 6.3.2 fresh `npm test`、`npm run typecheck`、普通/主机隔离真实 Electron 冒烟均通过；普通包 `150673858` 字节，主机包 `150682220` 字节。安装前备份位于 `D:\GewuDataHost\backups\release-6.3.2-20260723-093743`，源库与备份库均 `quick_check=ok`、`users=2`、`questions=0`。
-- 6.3.2 已覆盖安装并完成真实单人主机 bootstrap；配置为 `primary-host/single-user`，第 1 代主机 epoch、`primary-host` 设备授权、本机 vault 和登录会话均有效。权威库 `quick_check=ok`、`users=2`、`questions=0`，D 盘数据库、I 盘题库与 storeId 均保持不变。
-- 重启后的真实密码登录挑战与交换均返回 200；修复单人模式误走托管主机凭据后，云端心跳和任务轮询持续返回 200。数据主机系统参数页也已恢复 host 专用 OSS 更新面板；公网 host `latest.yml` 返回 200、当前版本 6.3.1。
-- fresh `npm test` 全量通过；更新面板补挂载后 `node src/uiRegression.test.js`、`npm run typecheck`、`npm run build` 再次退出 0。当前缺口转为提交合并、云端部署、6.3.3 双 feed/安装包发布、主机升级与夸克交付。
-
----
-
-# Task: 2026-07-12 机构学生统一费用链路
-
-Status: implementation in progress
-
-## 2026-07-12 evidence
-
-- RED: institutionStudent module missing; course pricing candidate API missing; legacy UI regression required direct pure-institution totals.
-- GREEN: `npm run test:institution-student` passed lifecycle, idempotency, rename, candidate filtering, and real-student financial refresh checks.
-- Build: `npm run build` completed successfully after removing new financial fallback generation.
-- Full suite: reached an unrelated existing WYSIWYG assertion in `src/uiRegression.test.js`; all institution pricing and financial tests passed before that point.
-- Runtime: localhost:3001 created an institution, showed exactly one generated institution student, and exposed that student in the institution-course student selector.
-- Visual evidence record: direction=calm-operational/guided-confident; viewport=1280x720; path=institution create -> student list -> course add -> institution source -> institution student selector; states=disabled institution selector before source, enabled selector after source, generated student option, readonly totals; limitations=no complete schedule fixture, browser-only Electron warnings and existing Ant Design deprecations.
-
-## Objective
-
-为每个机构自动维护唯一的“机构名称+学生”机构学生，让机构排课和混合班通过真实学生定价承载课时收入、教师课时支出与出勤，并删除纯机构课程直接费用编辑和课表独立机构费用窗口。
-
-## Execution checklist
-
-- [x] 检查当前机构、学生、课程定价、课表费用和财务汇总路径。
-- [x] 写明设计规格、底层逻辑、验证和回滚边界。
-- [x] 写出文件级 TDD 实施计划并建立专用分支。
-- [ ] 新增机构学生领域规则与失败测试。
-- [ ] 实现机构创建、历史补齐、改名联动和删除保护。
-- [ ] 统一机构课程学生候选与学生定价编辑。
-- [ ] 删除虚拟纯机构费用兜底与独立机构费用窗口。
-- [ ] 运行相关测试、构建和桌面运行时 UI 验证。
-- [ ] 审计需求覆盖，提交并推送专用分支。
-
-## Bottom-level logic
-
-- 机构学生是 `students` 中的真实记录，具有机构来源、机构外键和明确自动身份标记。
-- 每机构最多一个自动机构学生；创建和补齐幂等，机构改名同步自动名称。
-- 机构课程收入、支出和出勤只走 `student_pricings` 与课表费用快照，不再生成虚拟机构费用学生。
-- 历史快照保持可读；新建和刷新课表使用真实机构学生 ID。
-
-## Validation and rollback
-
-- 以 Node 失败/通过测试证明生命周期、候选过滤、费用快照和财务汇总行为。
-- 运行生产构建与真实桌面主路径，检查空态、禁用态、焦点、裁切和控制台错误。
-- 回滚使用本专用分支提交反向提交；迁移只新增可识别记录和字段，不删除历史费用快照。
-- 本任务只推送 `codex/institution-student-fees` 供其他会话合并，不直接发布多端或 OSS。
-
----
-
-# Task: 2026-07-11 Unified Role and Data Scope Authorization
-
-Status: implementation in progress
-
-## Objective
-
-Replace the disconnected desktop, miniapp, invitation, and module-permission systems with one enforced role and data-scope model for super administrators, administrators, teachers, students, and pending users. Remove menu structure management, isolate teacher-owned business data across desktop/miniapp/sync, protect host-committed question-bank deletion, verify both runtimes, and publish the completed desktop update.
-
-## Confirmed constraints
-
-- Phone `13732250653` is the fixed super administrator; only super administrators may review users or change roles and teacher bindings.
-- Ordinary administrators retain full business-data access but no user-review authority.
-- Teacher accounts bind by normalized phone to exactly one `teacher_id` and have the same functional permissions on desktop and miniapp.
-- Teacher business data is limited to their own courses and input; question-bank content is not teacher-scoped.
-- Only the primary local data host desktop may delete questions already committed to the question-bank drive.
-- Other devices may freely modify only their own unsynchronized local question drafts; host writes are revalidated and source-attributed.
-- Students retain the current own-data read and limited-task model.
-- Remove invitee/invited, invitation authorization, local module grants, and all other old permission systems.
-- Preserve the local host as business-data authority and require explicit user confirmation before client changes sync upward.
-
-## Execution checklist
-
-- [x] Inspect current desktop, miniapp, gateway, backend, database, and sync permission paths.
-- [x] Confirm roles, teacher identity binding, administrator boundary, teacher parity across clients, and question-bank exception.
-- [x] Write and self-review the design specification.
-- [x] Obtain review of the written design specification.
-- [x] Write a file-level TDD implementation plan.
-- [x] Create a database rollback snapshot before schema migration.
-- [x] Add failing tests for the shared role and approval policy.
-- [ ] Implement role migration, fixed super-admin enforcement, pending state, and unique teacher binding.
-- [ ] Add failing tests for teacher row/data scope and source attribution.
-- [ ] Implement authoritative read/write data scoping and filtered aggregation.
-- [x] Add failing tests for scoped host download and validated client upload.
-- [x] Implement sync scoping, source metadata, rejection, and review queue behavior.
-- [ ] Add failing tests for question local-draft versus host-committed deletion rules.
-- [ ] Implement question storage-state and host-desktop-only committed deletion protection.
-- [ ] Add failing UI/navigation regression tests.
-- [ ] Remove menu structure management and all obsolete permission/invitation surfaces.
-- [ ] Build desktop and miniapp review workbenches from the real authorization APIs.
-- [ ] Run targeted tests, `npm test`, desktop build, miniapp typecheck, and release checks.
-- [ ] Verify real desktop and miniapp/H5 UI for all roles and key failure/empty states, retaining screenshots or check records.
-- [ ] Commit and push `gewu/master`.
-- [ ] Bump/package the Windows desktop app, publish the OSS update feed, rebuild Node native dependencies, and verify artifacts.
-
-## Bottom-level logic
-
-- Construct authorization context from authenticated server state, never request-body role or ownership fields.
-- Resolve teachers only when one normalized phone maps to one teacher record; otherwise leave the user pending.
-- Apply teacher scope at repository/query and write-validation boundaries, before aggregation.
-- Derive course-related ownership through `courses.teacher_id`; use explicit owner/source fields for user-entered non-course data.
-- Revalidate every uploaded mutation against current host relationships and record actor/device/operation provenance.
-- Distinguish device-local question drafts from host-committed question records.
-- Require both primary-host identity and desktop client identity for committed-question deletion.
-- Enforce all sensitive rules server-side; UI visibility is not an authorization mechanism.
-
-## Validation plan
-
-- Prove each new policy with a failing test before implementation and a passing test afterward.
-- Test super-admin-only review from desktop and miniapp API paths.
-- Test teacher cross-scope reads, writes, aggregates, downloads, and uploads are rejected or excluded.
-- Test source metadata and conflict/rejection records survive persistence and reload.
-- Test question deletion across local draft, host desktop, client desktop, miniapp, and relay contexts.
-- Search for and reject residual menu-manage, invitee/invited authorization, invitation UI, and `permissions_data` runtime references.
-- Render and exercise affected pages at desktop and narrow widths with console inspection.
-
-## Rollback and publish notes
-
-- Authoritative production database backup verified before schema or migration mutations: `/root/scheduling-data/prod/scheduling-pre-unified-auth-20260711-204817.db` (692,224 bytes; `test -s` and `stat` passed). Restore it to `/root/scheduling-data/prod/scheduling.db` while the service is stopped if rollback is required.
-- Use additive schema changes; do not delete legacy browser storage keys during migration so code rollback remains possible.
-- Keep implementation commits scoped so identity, data scope, sync, question bank, and UI can be audited and reverted independently.
-- Follow the project default `gewu/master` push, Windows package, OSS feed publication, and post-package native dependency verification workflow only after the full implementation is verified.
-
-### Task 1 evidence: backup and pure authorization policy
-
-- [x] Locate the authoritative database path and create a non-destructive timestamped backup.
-- [x] Add failing tests for fixed super-admin promotion/review, normalized unique teacher binding, roles, and data scopes.
-- [x] Implement the pure authorization policy without schema or database migration.
-- [x] Verify the focused test and the existing full test suite.
-- RED: `node backend/src/services/authorizationPolicy.test.js` exited 1 with `Cannot find module './authorizationPolicy'` before implementation.
-- GREEN: `node backend/src/services/authorizationPolicy.test.js` exited 0 with `authorization policy checks passed`.
-- Full regression: `npm test` exited 0 on 2026-07-11.
-- Review RED: after requiring structured teacher-binding results and deleted-teacher exclusion, `node backend/src/services/authorizationPolicy.test.js` exited 1 because the implementation still returned the raw teacher record.
-- Review GREEN: the same focused command exited 0 after `resolveTeacherBinding` returned `{ ok, teacherId/code }` without throwing and ignored teachers with `deleted` set to `true` or `1`.
-- Quality RED: boundary tests made `node backend/src/services/authorizationPolicy.test.js` exit 1 with a `TypeError` from `roleForUser(null)` before hardening.
-- Quality GREEN: the focused command exited 0 after rejecting empty phones and invalid teacher IDs, safely handling null/non-object inputs and invalid teacher collections, and preserving explicit invalid-role precedence over `user_type`.
-
-### Task 2 evidence: authorization schema and database persistence
-
-- [x] Add additive user review/binding columns plus authorization audit and sync rejection tables.
-- [x] Migrate legacy roles safely, promote only the fixed super-admin, and bind teachers only on one active phone match.
-- [x] Add review/list/context/audit/rejection DatabaseService methods with parameterized SQL and stable error codes.
-- [x] Preserve fixed super-admin miniapp login compatibility and update affected seed/login expectations.
-- [x] Add the focused database authorization test to `test:backend` and run all requested regressions.
-- RED: `node backend/src/databaseAuthorization.test.js` exited 1 with `users should include teacher_id` before schema/database implementation.
-- GREEN: `node backend/src/databaseAuthorization.test.js` exited 0 with `database authorization checks passed`.
-- Focused regressions: authorization, `databaseMiniappAdminSeed`, `databaseImportSafety`, and `miniappPhoneLogin` all exited 0 on 2026-07-11.
-- Full regression: `npm test` exited 0 in 37.1 seconds on 2026-07-11.
-- Quality review RED: the focused authorization database test exited 1 because a normalized duplicate fixed phone remained `admin/approved`; miniapp access and cloud relay tests also exited 1 because `super_admin` lacked existing admin abilities.
-- Quality review GREEN: focused database, miniapp access/auth, cloud relay client/host/route, seed, import, phone login, and pure authorization policy tests all exited 0 after canonical identity hardening.
-- Canonical evidence: the seed ID is preferred, duplicate fixed-phone rows become pending/disabled, inactive or unreviewed canonical identity cannot review, and ambiguous non-seed identities return `SUPER_ADMIN_IDENTITY_CONFLICT`.
-- One-time migration evidence: `authorization_migrations` records `legacy-users-v1`; restart tests preserve post-migration rejected status, role, and manual teacher binding while reasserting only the fixed super-admin safety invariant.
-- Boundary evidence: caller device authorization flags are discarded with `trusted: false`; object and JSON-string audit/rejection inputs persist as single-layer valid JSON.
-- Quality full regression: `npm test` exited 0 in 14.6 seconds on 2026-07-11.
-- Identity closure RED: pure policy lacked the canonical ID export, and a persisted duplicate fixed-phone context incorrectly resolved to `super_admin/all`.
-- Identity closure GREEN: persisted-role classification now requires canonical ID plus active/enabled/approved state; duplicate context resolves to `pending/none`, while canonical context resolves to `super_admin/all`.
-- The canonical super-admin identity is non-transferable and non-revocable through application state: startup atomically demotes duplicate fixed-phone identities and restores the canonical account to active, enabled, approved `super_admin`; `reviewUser` still rejects downgrade attempts.
-- Legacy identity compatibility RED: a single formatted fixed-phone row with a historical noncanonical ID was joined by the exact-phone seed and became locked in a conflict.
-- Legacy identity compatibility GREEN: `is_super_admin_identity` plus a partial unique index persists exactly one selected identity; normalized seeding reuses a single legacy fixed-phone row, which remains canonical across restart and can review users.
-- Selection order is fixed seed ID, then one persisted identity flag, then one unambiguous fixed-phone legacy row; multiple unflagged noncanonical candidates remain a conflict and are never arbitrarily promoted.
-- Index-order RED: a historical database containing two identity flags failed during startup with `UNIQUE constraint failed` before identity recovery could run.
-- Index-order GREEN: startup now performs additive schema work, migration, and atomic identity recovery before creating the partial unique index; canonical conflicts retain only the canonical flag, while ambiguous noncanonical conflicts clear all flags and disable every candidate.
-
-### Task 5 evidence: scoped synchronization and provenance
-
-- [x] Validate every direct and relay-host mutation inside `applySyncChanges` before the business write transaction commits.
-- [x] Persist rejection reasons and additive record provenance with the business write transaction.
-- [x] Scope incremental pulls for approved administrators and teachers; reject missing authorization context.
-- [x] Bind one-time sync authorization tokens to user, teacher, device, scope, and expiry.
-- [x] Preserve explicit preview confirmation and prove cancellation performs no push.
-- [x] Keep legacy queued operations readable while adding actor/device/operation candidate fields; server identity always overrides them.
-- Security default: the current desktop shell has no unified persisted login-session provider. Direct and relay upload therefore fail with `AUTHORIZATION_CONTEXT_REQUIRED` unless the caller injects a Bearer session and authenticated device context; local phone/role fields are never used as authority.
-- RED: `node backend/src/services/syncScopeService.test.js` initially exited 1 because `syncScopeService` did not exist.
-- GREEN: sync scope pure/integration, incremental sync, transports, mutation queue, one-click confirmation, and cloud relay path checks pass.
-- Typecheck note: standalone TypeScript 4.9 cannot parse the installed newer `@types/node/ffi.d.ts`; the production build is used as the project compilation check.
-- Authorization closure: relay payload role/teacher claims are never trusted. The host reloads the approved active user and owned active device, verifies the current teacher binding, and atomically consumes a host-issued user/device/teacher/scope token. Queued work fails closed after revocation, rebinding, device spoofing, expiry, or token reuse.
-- Delivery-removal closure: additive `sync_delivery_scope` records only IDs actually delivered to each actor/device. Later pulls emit minimal delete tombstones for deleted or relationship-transferred records, including after process restart; records never visible to that recipient produce no tombstone.
-- Shared question-bank scope is intentional: teachers may create/update shared questions and delete unsynchronized local drafts. Task 6, not teacher ownership, distinguishes and protects host-committed deletion.
-- Review RED: the integration test exited 1 because unauthenticated `applySyncChanges` still wrote; tombstone and token-consumption assertions were then added before implementation.
-- Review GREEN: focused sync scope, relay-path, atomic token reuse, revocation/rebinding/device mismatch, provenance, and restart-persistent tombstone tests exit 0.
-- Reachable direct authorization: `SyncSettings` resolves the current structured desktop session at call time; each direct push registers the session device, requests a fresh host one-time token with its Bearer session, and immediately consumes it. Missing session data fails with `AUTHORIZATION_CONTEXT_REQUIRED`.
-- Relay assertion closure: cloud relay binds devices to its persisted approved user, creates a short-lived HMAC assertion from the server-side user/task/device plus nonce, and the host timing-safe verifies and uniquely consumes that nonce before reloading its own user/device authorization. Clients never receive a host database token or supply a signature.
-- Tenant ledger migration: `sync_delivery_scope` now keys tenant plus actor/device/table/record. Startup transactionally migrates legacy rows to tenant `default`; tests preserve legacy rows and prove another tenant cannot emit or lose tombstones during a default-tenant pull.
-- Desktop pairing closure: backend and formal gateway expose identical public-limited start/exchange and super-admin-only approve/reject paths. Only a client-generated secret hash is stored; pairing codes cannot exchange sessions, raw secrets are timing-safe verified, exchange is single-use, and successful approval binds the device owner before issuing a 30-minute session.
-- Reachable desktop flow: SyncSettings provides a minimal phone/start/code/manual-refresh interaction. Successful exchange writes the structured session consumed by direct and cloud transports; approval is never automatic.
-- Formal gateway relay closure: gateway now owns the production cloud device registration and desktop-sync request paths, verifies persisted approved identity plus device ownership, and stores a server-generated HMAC assertion. Anonymous, cross-owner, and missing-secret requests are rejected in the HTTP suite.
-- Device review closure: backend and gateway expose super-admin-only safe pending pairing lists and current-code approve/reject actions without returning secret hashes. Desktop PermissionManager and miniapp admin users use these real APIs; first approval relies on the existing verified-phone miniapp canonical super-admin and no HTTP bootstrap bypass exists.
-- Cloud polling/provision closure: formal gateway polling returns pending/completed state only to the creator or an administrator. Gateway signs the approved pairing identifier into relay assertions; after verification and nonce consumption, the host may provision the first owner-bound trusted device and records an audit, while tampering, unapproved devices, and owner conflicts cannot create or rebind devices.
-- Approval reachability: desktop pairing review resolves the configured host first and cloud second, producing an absolute HTTP(S) API URL under Electron `file:`; browser HTTP(S) uses its origin. No localhost is hardcoded.
-- Durable approval semantics: an approved gateway pairing remains device approval evidence after the original exchange window, while pending pairings cannot relay and exchange still enforces expiry. Gateway approval rejects a conflicting existing device owner before any pairing/device/audit mutation and idempotently preserves the same owner.
-- Upload ownership hardening: host validation checks existing ownership before candidate payloads, ignores delete ownership claims, and rejects immutable ownership-link changes. Teacher-created courses receive the authenticated teacher binding server-side; shared questions remain the documented exception.
-- Pairing/security hardening: pending approval uses compare-and-set state/expiry conditions, pending pairing codes have a collision-cleaned partial unique index with bounded random retry, and pairing/device/sync payload inputs have explicit length/count/byte limits. Desktop session JWTs require configured secrets and strict HS256 issuer/audience/token-use claims while legacy non-desktop sessions retain compatibility.
-- Gateway pairing quality closure: the gateway phone validator uses the real `/^1\d{10}$/` regex and has a direct service plus HTTP start test. Both exchange routes verify configured JWT signing, pairing state, and persisted active user before timing-safe secret verification and CAS consumption, so configuration or user failures never burn the one-time pairing.
-
-### Task 3 evidence: unified local and gateway review authorization
-
-- [x] Add authenticated local user listing and canonical-super-only review endpoints with stable error codes.
-- [x] Build `req.authz` from persisted identity; body role/actor/teacher claims are ignored and a node-role header alone never proves primary-host status.
-- [x] Return one effective capability contract for pending, student, teacher, admin, and super-admin; gateway never grants committed-question deletion.
-- [x] Mirror additive review columns and canonical authorization policy in gateway while retaining legacy grant tables for rollback without consulting them at runtime.
-- RED: local route test exited 1 because the old write middleware returned `FORBIDDEN`; gateway policy test exited 1 because the policy module did not exist.
-- GREEN: `node backend/src/routes/adminUsers.test.js` and `node gateway/src/services/authorizationPolicy.test.js` exited 0 on 2026-07-11.
-- Security evidence: unauthenticated review returns 401; ordinary admin returns 403 `SUPER_ADMIN_REQUIRED`; forged body actor/host and `x-node-role` do not elevate; pending capabilities are empty.
-- Host evidence: committed-question deletion defaults denied and is available locally only when server config explicitly enables trusted-host resolution and the registered `sync_devices` record is trusted host plus desktop client context.
-- Regression evidence: pure authorization, database authorization, miniapp auth/access, and gateway cloud-relay tests exited 0 on 2026-07-11.
-- Full regression: `npm test` exited 0 in 14.1 seconds on 2026-07-11 after updating the permissions-route security assertion from optional to required authentication.
-- Bypass-review RED: ghost canonical JWT returned 403 instead of 401, pending gateway roles still had capabilities, and legacy role/grant endpoints returned 200 and performed writes.
-- Bypass-review GREEN: required auth now rejects identities missing from persistent storage with 401; optional auth yields no identity/capabilities; gateway requires approved, active, login-enabled persisted state for every role.
-- Legacy endpoint closure: `PUT /users/:id/type` returns 410 `LEGACY_ROLE_ENDPOINT_DISABLED`; grant/revoke endpoints return 410 `LEGACY_PERMISSION_GRANTS_DISABLED` and tests prove zero writes to `user_permissions`.
-- Review regression: ordinary gateway admin receives 403 `SUPER_ADMIN_REQUIRED`, canonical super succeeds through `PATCH /api/admin/users/:id/review`, and approved ordinary admin retains read-only user-list access.
-- Closure verification: focused backend route, gateway policy, gateway legacy-endpoint, authorization/database/cloud-relay tests passed; `npm test` exited 0 in 13.4 seconds on 2026-07-11.
-- Quality-hardening RED: persisted pending/disabled local roles retained capabilities; compatibility permissions exceeded the capability contract; gateway legacy fixed-phone rows were not promoted; review wrote no audit record.
-- Quality-hardening GREEN: persisted local roles now require approved, active, login-enabled state; pure no-id policy fixtures remain compatible but cannot review; permissions are a direct capability projection.
-- Device replay closure: even a known trusted `sync_devices` host ID plus desktop header cannot produce `question-bank:delete-committed`; request host authorization remains hard-false until Task 6 introduces a non-replayable request credential.
-- User-list closure: backend and gateway select explicit management fields, omit OpenID/UnionID, validate filters, cap search/page size, and return `items/total/page/pageSize` with a `users` compatibility alias.
-- Gateway identity closure: additive startup migration normalizes the fixed phone, preserves one unambiguous legacy identity, refuses arbitrary conflict selection, restores active approved canonical state, and creates a single-identity partial unique index.
-- Gateway review closure: fixed/canonical identity is immutable; role update and `authorization_audit_log` insertion execute in one database transaction.
-- Quality verification: focused local policy/routes/database and gateway migration/hydration/policy/admin/cloud-relay tests passed; `npm test` exited 0 in 15.6 seconds on 2026-07-11.
-
----
-
-# Task: 2026-07-12 受管普通桌面端同步与角色隔离
-
-Status: implemented and locally verified — awaiting merge confirmation and unified release
-
-## Objective
-
-修复普通桌面端 `NO_SYNC_TRANSPORT_AVAILABLE`，将任意手机号自助绑定改为管理员批准的设备到账户绑定与持久凭证，并把普通端系统参数收敛为不暴露数据主机敏感信息的简易模式。
-
-## Execution checklist
-
-- [x] 核对工作树、近期同步改动和上一版简化设计。
-- [x] 定位空传输根因、临时授权会话和普通端角色隔离缺口。
-- [x] 与用户确认普通端不得选择账号或填写手机号，由管理员绑定设备申请。
-- [x] 写出安全、同步、UI、迁移、验证和回滚设计。
-- [x] 写出实施级 TDD 计划与文件清单。
-- [x] 先增加失败测试：托管传输、无账号自报、管理员绑定和持久凭证。
-- [x] 实现服务端设备申请、管理员绑定、凭证签发和权限契约。
-- [x] 实现 Electron 安全凭证存储、启动恢复和旧会话一次性迁移。
-- [x] 实现托管云入口、传输诊断和可处理错误提示。
-- [x] 实现普通端简易系统参数及前后端主机敏感能力隔离。
-- [x] 运行相关测试、完整测试、生产构建、小程序构建、Electron 目录打包、打包烟测和 native ABI 恢复验证。
-- [x] 在真实浏览器运行时验证普通端桌面/窄窗口并保存安全检查记录；正式 Electron 重启留待打包安装阶段。
-- [x] 检查桌面端、数据主机、阿里云和小程序管理入口兼容矩阵。
-- [x] 在当前工作树提交；等待用户确认后再合并，不干扰另一运行任务。
-
-## Bottom-level logic
-
-- 普通端只提交设备证明，不提交或选择手机号、账号、角色、`teacher_id`。
-- 只有超级管理员能把待配对设备绑定到数据库中的真实账号。
-- 设备凭证绑定账号与设备 ID，可撤销并跨重启安全恢复；渲染进程不持有长期明文秘密。
-- 正式云中继入口由发布配置托管，普通端不填写地址或密钥，空用户配置也必须有传输候选。
-- 普通端既不请求也不显示主机数据库、题库盘、附件、备份、地址、密钥和危险维护信息。
-- 同步前继续预览和确认；任何失败都保留本地数据和待同步队列。
-
-## Validation plan
-
-- 单元/契约：伪造身份、并发批准、撤销、过期/重放、跨重启、空配置传输和错误分类。
-- UI：未配对、待批准、已批准、拒绝、撤销、断云、主机离线、成功与失败。
-- 运行时：普通端和数据主机两个角色，桌面及窄窗口，交互、控制台和截图。
-- 发布：生产构建、Electron 打包、Node native 依赖恢复、OSS feed、云端健康、主机安装和适用小程序入口。
-
-## Rollback and publish notes
-
-- 数据库迁移前创建数据库和代码备份，只做增量 schema 变更。
-- 不覆盖现有主机运行配置，不删除普通端本地数据或待同步队列。
-- 各层保持可独立回滚提交；任一端未验证不得声明统一发布完成。
-- 当前仅在本工作树修改与提交，合并前再次取得用户确认。
-
----
-
-# Task: 2026-07-10 miniapp publish and business fixes
-
-## Goal
-
-Complete the current release after WeChat upload whitelist is ready:
-- Check whether a useful WeChat miniapp development skill exists and install it only if it is clearly relevant.
-- Change fee/revenue statistics course filter options to cover all courses, not only unsettled/current courses.
-- Reduce exported schedule-list weekly course cell width so the exported table is closer to the course text width.
-- Seed miniapp admin login access for phone numbers `13732250653` and `18257136756`.
-- Rebuild, deploy, upload miniapp, publish desktop update if version changes, commit and push `gewu/master`.
-
-## Constraints
-
-- Do not expose `.env.local` secrets or private keys.
-- Keep student miniapp permissions scoped to own schedule and question-bank limited operations.
-- Preserve the local-data-host architecture: desktop host is authoritative; Aliyun is relay/API/snapshot.
-- Follow existing project patterns and tests.
-
-## Implementation Checklist
-
-- [x] Inspect installable skills for miniapp-specific support.
-- [x] Locate revenue/fee filter option source and add a failing regression test.
-- [x] Locate schedule-list export sizing and add a failing regression test.
-- [x] Locate miniapp auth/admin bootstrap path and add a failing regression test.
-- [x] Implement the three fixes.
-- [x] Run targeted tests, `npm test`, miniapp build/release check.
-- [x] Upload miniapp after whitelist confirmation.
-- [x] Bump/package if needed, deploy cloud/backend/desktop update feed, install local host.
-- [x] Commit and push `gewu/master`.
-
-## Review Follow-up (2026-07-11)
-
-- [x] Add verified WeChat phone binding for preauthorized miniapp admins.
-- [x] Preserve explicit account disable/delete state across backend restarts.
-- [x] Align production backend port defaults and harden deploy env loading.
-- [x] Sync root/backend versions and build desktop version `5.12.0`.
-- [x] Re-run full tests, TypeScript checks, and miniapp release build.
-- [x] Add `WECHAT_APPSECRET` to `.env.local` without sharing it in chat.
-- [x] Deploy backend `5.12.0`, upload miniapp `5.12.0`, and publish/install the desktop update.
-- [x] Commit and push the final release to `gewu/master`.
-
-## Validation
-
-- Targeted tests for each changed behavior pass.
-- `npm test` passes.
-- `npm --prefix miniapp run typecheck` and `npm run miniapp:release-check` pass.
-- Public `/scheduling/api/health` reports the final version.
-- Miniapp upload succeeds or any remaining platform-side blocker is clearly reported.
-
-## Rollback Notes
-
-- Code rollback is normal git revert of the release commit.
-- Cloud backend rollback should restore previous PM2 code and keep DB snapshot policy unchanged.
-- Desktop update rollback can republish the previous `latest.yml` if needed.
-
----
-
-# Task: 2026-07-11 Desktop Sync Page Simplification
-
-Status: implemented, verified, packaged, published, and pushed
-
-## Objective
-
-Simplify the desktop data-sync page by adapting its default content to the configured device role and replacing the ambiguous group of sync controls with one clearly explained primary workflow.
-
-## Execution checklist
-
-- [x] Inspect the current sync page and underlying one-click sync behavior.
-- [x] Confirm role-aware information architecture.
-- [x] Confirm the client-side primary action and its data-direction wording.
-- [x] Write and review the design specification.
-- [x] Write an implementation plan.
-- [x] Add focused tests before changing production behavior.
-- [x] Implement the role-aware simplified page.
-- [x] Verify unit tests, build, desktop and narrow rendered layouts, and primary interactions.
-- [x] Commit and push to `gewu/master`.
-- [x] Bump the desktop version, package Windows installer, publish the OSS update feed, rebuild Node native dependencies, and verify the release output.
-
-## Bottom-level logic
-
-- Reuse the existing `runOneClickSync` workflow: preview, confirm, upload pending local operations, pull host operations, merge/apply locally.
-- Determine the surface from `runtimeConfig.nodeRole`.
-- Client devices get one primary bidirectional-sync action.
-- The primary host gets request-processing and conflict-review entry points.
-- Directional and destructive maintenance actions remain accessible only in a collapsed advanced section.
-- Do not change synchronization protocols, conflict policy, authorization requirements, queue retention, or cloud-relay behavior.
-
-## Validation plan
-
-- Unit-test role presentation and primary-action copy where practical.
-- Run sync service tests and the production build.
-- Render the affected desktop route and verify client/host states, desktop/narrow viewports, console health, and at least one primary interaction.
-- Check loading, offline/waiting, empty, error, disabled, conflict, and confirmation states supported by available fixtures/runtime state.
-
-## Rollback and publish notes
-
-- Preserve unrelated user changes and inspect the worktree before each commit.
-- The implementation can be rolled back as a single focused commit if needed.
-- Follow project policy for `gewu/master`, Windows packaging, OSS desktop update publication, and post-package native dependency restoration.
-
-## Question deletion cleanup and teacher import attribution
-
-- [x] Removed unreachable legacy single-delete and batch-delete branches from both question-bank pages.
-- [x] Added a real HTTP import check/commit test using a temporary database and an approved teacher paired-desktop JWT.
-- [x] Verified unauthenticated commit is rejected without inserting questions and authenticated commit persists token-derived source device and owner user IDs.
-- [x] Added the focused HTTP test to `test:question-deletion`.
-# 2026-07-11 老师业务数据域隔离证据
-
-- `node backend/src/services/dataScopeService.test.js`：老师课程依赖链、支付安全默认、个人资产、公共题库、读写断言通过。当前真实 host snapshot 构造未包含用户作答表，因此不将合成作答字段作为完成证据。
-- `node gateway/src/routes/cloudRelay.test.js`：真实 cloud relay 过滤函数 teacher snapshot 通过。
-- 统计输入证据：裁剪后的 schedules/assetRecords 汇总仅包含 t1（课时费 100、学费 500、资产 10）。桌面 UI 会话接入不在本任务范围，未声称桌面 UI 已完成隔离。
-- 审查修复：gateway/backend snapshot read 强制持久化 approved active 用户；unknown/pending fail closed。学生与老师均使用明确字段 allowlist，未知数组和预聚合 stats 不透传；`scopedFinancials` 从裁剪后的 schedules/payments/assets 重算。
-- 学生快照统一：真实 enrollment 以 `schedule_id + student_id` 经允许排课过滤（兼容 `course_id`）；学生、课程、排课、老师由共享 service 做安全字段白名单脱敏，payments/consumptions/assets 继续按原学生策略清空。unknown/pending 返回空 payload，仅 approved student（包括未绑定学生）保留公共题库。
-- 云中继加固：gateway 主机 heartbeat/snapshot publish/task list/task complete 使用 timing-safe host token 且缺配置 fail closed；真实 HTTP 测试覆盖匿名、错误 token、正确 token及任务 owner 边界。gateway 内置独立 scope service，并以 parity test 防止与 backend 行为漂移。公共题库和关联基础数据逐表投影；金额忽略非有限值、保留负数并按 id 去重；同时出现 course/schedule 时以 schedule 归属为准并拒绝冲突。
-- 资源投影补全：题库图片资源保留渲染所需 URL/data URL、mime/type、尺寸和 alt 的 snake/camel 字段，继续排除对象键、内部路径及 hash；学生关联 room/institution/school 只保留安全名称字段。普通用户任务结果查询在 SQL 层附加规范化 owner 条件，跨用户返回不可枚举的 404。
-
----
-
-# Task: 2026-07-11 统一角色、审核与老师数据权限
-
-Status: implemented, verified, packaged, published, and pushed
-
-- [x] 删除菜单结构管理、邀请页面、邀请码授权和任意模块授权矩阵运行时。
-- [x] 建立超级管理员、普通管理员、老师、学生、待审核五角色契约。
-- [x] 固定 `13732250653` 为不可停用超级管理员，只有超级管理员可审核、分类、停用和审批设备。
-- [x] 老师唯一绑定 `teacher_id`，桌面端和小程序能力一致，业务数据与同步范围仅限本人。
-- [x] 老师拥有公共题库查看/编辑；已提交试题仅可信本地数据主机桌面端可删除。
-- [x] 桌面端和小程序端重建用户审核工作台，普通管理员只读。
-- [x] 手机号验证登录改为待审核流程并补齐并发、超时、缺配置和审核后令牌测试。
-- [x] 权限缓存 fail closed，冷启动/前台恢复强制刷新，身份或 `teacher_id` 改变时清除旧业务缓存。
-- [x] `npm test`、桌面构建、小程序 typecheck、微信发布检查和 H5 构建通过。
-- [x] 真实桌面/H5 运行时复验并留下截图；发现并修复桌面 Unicode 字面转义显示缺陷。
-- [x] 完成残留审计和验证记录：`docs/verification-2026-07-12-unified-authorization.md`。
-- [x] 合并并推送 `gewu/master`。
-- [x] 自动递增至 `5.13.0`、构建 Windows 安装包并发布 OSS 更新 feed。
-- [x] 修复 packaged smoke 发现的 CommonJS/ESM 空白页，重新打包并覆盖发布。
-- [x] 恢复 Node ABI 并验证 `better-sqlite3`。
-
----
-
-# Task: 2026-07-12 同步与线上小程序认证故障修复
-
-Status: implemented, verified, deployed, packaged, uploaded, and pushed
-
-## Objective
-
-修复桌面“双向同步”失败，以及线上微信小程序仍显示邀请码入口、一键登录返回“无权限访问”的问题，使桌面、本地后端、云端网关和小程序使用同一套 5.13 授权与同步契约。
-
-## Execution checklist
-
-- [x] 采集桌面同步/系统参数错误日志，定位系统参数空白页为题库绑定状态加载期 `null` 崩溃。
-- [x] 核对本地桌面版本、本地后端版本、线上健康检查、云端代码版本和小程序已上传版本。
-- [x] 验证线上登录页/登录 API 是否仍走旧邀请码和旧 openid 授权流程；源码和云端均已移除运行时邀请码入口，手机端正式线上版生效取决于微信平台发布。
-- [x] 为确认的同步与登录根因增加失败回归测试。
-- [x] 实现最小根因修复，并确保未审核用户得到明确待审核状态。
-- [x] 运行同步、认证、权限、桌面和小程序相关测试与构建。
-- [x] 部署云端 backend/gateway，上传新的微信小程序 `5.13.2` 开发版本。
-- [x] 在真实桌面/打包运行时复验主流程并记录限制；本机新安装路径健康检查返回 `5.13.2`，正式线上小程序发布状态仍以微信平台为准。
-- [x] 提交并推送 `gewu/master`；桌面代码变化已重新发布 OSS 更新包，并按用户本次明确要求上传夸克网盘 `5.13.2`。
-- [x] 尝试自动查询/提交微信小程序审核；当前普通小程序凭据返回 `86000 should be called only from third party`，已记录为微信后台/第三方平台权限限制。
-
-## Bottom-level logic
-
-- 微信登录只信任微信官方手机号交换结果；首次用户进入 pending，不签发业务 token。
-- 只有超级管理员审核后，用户才按数据库中的角色和绑定身份获得 token/capabilities。
-- 桌面同步必须使用持久身份、配对设备和作用域令牌，不接受客户端自报角色或 teacher_id。
-- 客户端错误提示必须保留后端稳定错误码，区分未审核、未配对、凭据过期、云端不可达和数据冲突。
-
-## Validation and rollback
-
-- 验证包含真实 HTTP 契约、并发/超时、同步预览与传输、微信小程序构建及线上健康检查。
-- 部署前保留现有生产数据库和远端代码备份；云端失败时回滚前一 PM2/容器版本，小程序失败时不提交新审核版本。
-
-## Persistent release matrix
-
-- 微信小程序：Codex 构建、上传、核验。
-- 阿里云：Codex 备份、部署、迁移、重启、核验。
-- 本地数据主机：Codex 安装/升级并验证本地同步。
-- 其他电脑桌面端：Codex 发布 OSS 更新，用户自行更新；不默认上传夸克网盘或另行交付安装包。
-- 四端未统一前不得标记完成。
-# Task: 2026-07-12 题库公式全链路与所见即所得编辑
-
-Status: completed — implementation, render verification and applicable release matrix finished; miniapp production review is explicitly deferred to the appended login-audit task
-
-## Objective
-
-统一解析正文和批注中的 OMML、EQ 域与 MathType 为可编辑 LaTeX；建设覆盖题干、选项、小题、答案和解析的所见即所得富文本编辑器；由本地数据主机按用户选择生成公式全部可见、排版稳定的 Word 自带公式、EQ 域、MathType兼容或 LaTeX矢量公式 DOCX/PDF。
-
-## Execution checklist
-
-- [x] 审计现有解析、显示、存储和导出链路。
-- [x] 学习 D 盘讲义答案提取项目的 MathType OLE → MathML → EQ/OMML实现。
-- [x] 调研合法 MathType SDK与开放 MTEF/OLE生成方案。
-- [x] 确认数据主机集中导出、LaTeX权威编辑格式和显示优先回退规则。
-- [x] 写出完整设计规范。
-- [x] 写出逐步 TDD 实施计划。
-- [x] 建立 Word 公式解析样本与自动化测试基座。
-- [x] 实现正文/批注共用内容遍历器与 EQ 域状态机。
-- [x] 实现 OMML、EQ、MathType → 规范化 LaTeX转换及质量报告。
-- [x] 迁移题库富文本与公式数据模型，验证保存、重载和同步兼容性。
-- [x] 实现专业桌面所见即所得编辑器并完成真实运行时视觉/交互验证。
-- [x] 实现数据主机四格式导出适配器、显示优先回退和失败阻断。
-- [x] 将 `C:\Users\83423\Desktop\组卷导出模板.docx` 固化为 Word/PDF 默认组卷模板，支持“答案统一置后”和“每题后紧跟答案块”两种模式。
-- [x] 答案置后模式在参考答案开头汇总选择题答案，随后逐题输出答案、【知识点】和【解析】；逐题模式按题目→答案/知识点/解析交错输出。
-- [x] 生成并渲染四类 DOCX/PDF，验证公式数量、字号、基线、裁切和分页。
-- [x] 完成多端任务契约、权限、同步、构建与回归测试。
-- [x] 按统一版本矩阵备份、发布、上传、安装主机并验证 OSS feed。
-
-## Bottom-level logic
-
-- 编辑只修改 `canonicalLatex` 和结构化富文本，不实时维护四种导出格式。
-- 原始 OMML/EQ/OLE/预览保留用于追溯和可见兜底，用户编辑后 LaTeX 为权威语义。
-- 输出不得出现任何源码或空白公式；所有可见路径失败时阻止整份文档交付。
-- 非主机端只提交任务并下载产物，阿里云只作中继，数据主机从权威快照生成文档。
-- 保留旧数据读取兼容，不删除用户原始公式载荷。
-
-## Validation plan
-
-- 解析：正文、批注和表格 × OMML、EQ、MathType × 常见及复杂公式结构。
-- 状态：导入 → 持久化 → 重载 → 编辑 → 再保存 → 同步 → UI刷新。
-- 文档：四种模式 DOCX/PDF真实渲染与页面截图检查；公式数与模型一致且无裁切、源码或断链图片。
-- UI：Electron/浏览器桌面及窄窗口、键盘、焦点、粘贴、图片、公式、保存错误与恢复。
-- 发布：桌面、小程序、阿里云、本地数据主机和 OSS feed版本/健康/运行时证据齐全。
-
-## Rollback and publish notes
-
-- 开始前检查并保护脏工作树，不覆盖用户文件。
-- 数据迁移只做增量，保留旧字段和原始载荷；部署前备份数据库与代码。
-- 各阶段保持可独立回滚提交。发布失败回滚云端版本和 OSS feed，不删除已生成原始题库资源。
-
-### Task 6 验证证据（2026-07-13）
-
-- 唯一 token-derived Word 内容流已替代主流程双读取路径，公式按稳定 ID 与源坐标原位插入。
-- 真实 lecture/exam DOCX 覆盖 OMML、EQ、MathType preview-only OLE、批注、表格、选项、小题、子答案、答案与解析。
-- 质量报告按 source/status 统计，并包含题号、字段、段落、表格单元格与批注位置；未挂载公式明确标记为 `unknown`。
-- Parser discovery 32/32、multipart 路由集成、Node 语法检查与生产构建通过；独立规格审查和代码质量审查通过。
-
-### Task 7 验证证据（2026-07-13）
-
-- 前后端采用一致的 TipTap 节点、标记与属性白名单，拒绝危险 URL 和任意 HTML 属性。
-- rich-only 保存、数据库重载、旧客户端字段投影、选项/小题/答案/解析搜索与 derived flags 已通过行为测试。
-- 浏览器同步先完整验证再原子应用；非法记录不会造成部分写入，旧客户端局部更新保留未修改 section 的公式、图片、marks 与稳定 ID。
-- 增量 `search_text` 迁移按批次短事务回填，使用与新写入相同的纯文本投影并支持重启幂等。
-- 聚焦后端/浏览器/同步测试与生产构建通过；独立规格审查和代码质量审查通过。
-
-### Task 9 验证证据（2026-07-13）
-
-- 题干、选项、选项正确性、小题及小题答案、主答案和解析均使用稳定 ID 的结构化 TipTap 编辑器；三处旧的重复公式文本域与重复题干/答案编辑入口已移除。
-- 旧题型别名、旧答案与旧公式可投影到新结构；保存、重试、双击保存、未保存离开、TipTap 水合默认值及资源引用 roundtrip 均有行为测试。
-- 内部 `question-asset://` 引用在进入 TipTap 前使用安全占位并在持久化输出时恢复，初始化阶段和 React NodeView 阶段均不再触发 CSP 错误或丢失原始资源引用。
-- fresh Playwright 真实链路验证：干净取消不弹确认，真实修改后可见确认框计数为 1；公式双击值为 `\\frac{a}{b}`；单选切换、选项上移、小题公式、图片和 720px 窄窗口均通过，console errors 为 0。
-- 视觉截图已生成于本地验证目录；其中脏确认截图未可靠呈现确认框，因此该项只采用可见 DOM 计数证据，不把截图误报为视觉证据。
-- `test:rich-content`、TypeScript、UI regression、整仓 `npm test` 与生产构建均通过。
-
-### Task 10 验证证据（2026-07-13）
-
-- Word native 与 EQ 模式仅在有真实 OMML 证据时声明成功；项目没有经审计的 MathType writer/fixture，因此 MathType 请求明确回退到 LaTeX 矢量公式并报告 `MATHTYPE_WRITER_UNAVAILABLE`，不伪造 OLE/MTEF。
-- 公式准备的 MathML→OMML、manifest policy、KaTeX/MathML/Sharp worker 使用同一硬截止时间；阻塞 worker 与 Python 子进程可终止，Node 事件循环不被同步转换阻塞。
-- 最终产物门禁按每个公式索引核对 DOCX 关系、extent/crop、OMML/EQ 容器与 PDF 页、annotation、绘制区域；源码残留、空白公式、断链媒体或索引集合不一致会阻止交付。
-- SVG、PNG 与 PDF 对抗覆盖透明/隐藏/零面积、`tRNS` 灰度/RGB/调色板及 1-bit padding、CTM、clip `W n/W f`、框外/页外、无字体资源、开放退化填充与组合 fill/stroke；最终 Python 套件 38/38 通过。
-- `paperArtifactService`、整仓 `npm test`、生产构建、独立规格/质量复审与 `git diff --check` 通过。
-
-### Task 11 第一阶段验证证据（2026-07-13）
-
-- 直接导出与 relay host 共用有序、唯一、全量命中的 `questionIds` 解析；重复、缺失、跨租户和无权限草稿选择整体失败，不静默替换题目。
-- Backend/Gateway 双 schema 可迁移旧表，V2 任务支持 durable idempotency/request hash、指定 host、原子 claim、lease、claim token、`row_version` CAS、进度、失败、取消与 V1/V2 隔离。
-- V2 长渲染使用串行 heartbeat 持续续租并以最新版本完成；续租失败禁止完成并清理孤儿产物。V1（含无 hostId 的旧轮询）也原子领取，旧主机仅在 shared lease 有效期内兼容无 token 完成。
-- Cloud client 对非 2xx 与 `success:false` 结构化抛错；backend 完整 HTTP 合同验证同幂等键不同 body 返回 409、missing/non-owner 返回 404、错误 host token 返回 403，测试 bypass 仅可在显式 test 环境启用。
-- Backend/Gateway 任务服务文件哈希一致；定向 HTTP/service/schema/client/host 测试、完整 `test:backend`、整仓 `npm test`、生产构建及独立对抗复审通过。
-- 第一阶段验收时尚未完成不可变题目快照、artifact repository/授权下载、崩溃恢复与保留清理；这些内容已转入下列 Task 11 第二阶段继续实施，不能仅据第一阶段声明完整任务链路完成。
-
-### Task 11 第二阶段验证证据（2026-07-14）
-
-- 本地主机 writer DB 新增 durable paper job、artifact 与 completion outbox；`relay_scope + cloud_task_id` 唯一，直接导出也使用 actor/tenant/idempotency 派生的本地 durable job，不再绕过仓储链路。
-- Claim 后冻结题目顺序、rich JSON、公式、实际模板 SHA 和 renderer/gate 版本；本地、允许的 HTTPS 与 data 图片经既有 SSRF/重定向/magic/大小/超时门禁后复制为内容寻址 blob，复制后再次核对题目与源资产哈希。
-- 整卷渲染在可终止 Worker 中运行，父进程独立轮询 cancel/deadline；最终发布采用任务临时目录、可见性 gate、文件与目录 fsync、identity-bound sidecar、发布前 DB CAS 和同卷原子 rename。
-- Artifact `staged→verified` 与 job `→completed` 位于同一 immediate transaction；启动对账覆盖 temp-only、staged+temp、final+sidecar、verified 文件缺失及 verified artifact/job processing 等崩溃窗。
-- Completion outbox 持久 claim/version/operation/canonical result hash；云端校验 canonical hash并按 operation/hash 幂等 ACK，响应丢失可查询 host-scoped 终态；late cancel 会原子收口为 local cancelled、artifact revoked、outbox terminal_cancelled。
-- 下载只接受 DB verified artifactId；独立高熵 HMAC、kid 轮换、`now >= exp` 失效，JWT owner/同租户管理员与 header token 双校验。认证 GET access endpoint 可刷新短 token，URL、outbox、cloud result 与日志均不含 token；旧 filename 匿名读盘路径返回 404。
-- Cleanup 保护 active temp 与 pending outbox，处理过期 verified/revoked artifact 与 sidecar，并逐父链拒绝 Windows junction/reparse；retry/outbox 均有最大次数、cap 与 jitter。
-- Direct Word/PDF 真实 HTTP 走 bound root→immutable snapshot→Worker→repo，重复幂等键复用同 artifactId；桌面客户端下载使用认证 Blob，410 时换签一次并在 finally revoke object URL。
-- Round5 独立锁定复审通过；`test:paper-jobs` 已接入整仓门禁，fresh `npm test`、TypeScript、生产 `craco build`、双 schema/service/HTTP、Node 语法与 diff 检查全部通过。
-
-### Task 11A 验证证据（2026-07-13）
-
-- 默认模板已作为应用资源固化，SHA-256 与用户提供原件一致；运行时不依赖桌面文件路径，并保留模板主题、样式、A4 分节和页脚页码字段，移除了样例教师身份信息。
-- “答案统一置后”会先汇总全部选择题答案，再按题号逐题输出答案、【知识点】和【解析】；“逐题显示答案”按题目与对应答案块交错输出。
-- Word/PDF、本地主机直出与 relay 任务使用同一答案位置契约；正式桌面请求携带持久化认证会话和设备标识。
-- 图片本地优先，受目录边界、junction/symlink、magic bytes、读取前大小、DNS/私网、重定向、流式上限与超时中止门禁保护；必需图片无法安全解析时阻止产物交付。
-- PDF 两种答案布局已逐页栅格检查，且长选择题表、图片和公式有页底分页保护；DOCX 已验证 ZIP/关系/媒体/模板保留结构。
-- `npm test`、生产构建、四组聚焦测试、独立规格审查及四轮代码质量审查通过。
-- 环境限制：LibreOffice 不可用，Word COM 转 PDF 超时，因此 DOCX 尚未完成真实 Word 逐页视觉验收；该项保留在文档渲染矩阵中，不能据此宣称全链路完成。
-
-### Task 12 验证证据（2026-07-14）
-
-- 桌面普通电脑可经云中继提交精确有序的 V2 组卷任务；未获云确认时只保留本地草稿。任务历史持久化，重启后恢复轮询，并支持取消、新幂等键重试、刷新和鉴权下载。
-- Playwright 新鲜会话验证完成下载、55% 渲染任务取消、720px 响应式和控制台健康；取消后显示“已取消”，窄屏 `documentWidth = viewportWidth = 720`，0 error、0 warning。
-- 小程序使用不含答案/解析/富文本/OLE 的最小预览索引，按同租户角色裁剪；只提交真实、有序题目 ID、答案位置、公式模式、目标主机和幂等键。
-- 微信开发者工具真实编译并进入 `pages/question-bank/index`，离线态正确呈现题库组卷、两种答案位置、四种公式模式、真实任务入口和任务记录；本地 `127.0.0.1:3999` 被合法域名校验拒绝，已作为发布前域名配置检查项记录，未误报为云端联通。
-- 桌面聚焦测试、relay/preview/workflow/权限聚焦测试、TypeScript、小程序 typecheck 与 WeApp 构建均通过；完整命令与边界记录见 `docs/verification-2026-07-14-question-formula-editor.md`。
-
-### Task 13 验证证据（2026-07-14）
-
-- 同一复杂富文本题目生成四种公式模式、两种答案位置、DOCX/PDF 共 16 份产物；每份均含 7 个受索引公式并通过最终可见性门禁。
-- 8 份 DOCX 均由 Microsoft Word 无修复打开并导出 PDF，Word 渲染 16 页与直出 PDF 16 页均以 150 DPI 栅格化逐页检查；分式、根式、积分、分段函数、希腊字母、图片、表格、页脚和分页均可见且无裁切。
-- 修复了选择题汇总泄漏 LaTeX、合法复杂 OMML 被白名单误拒、模板页脚关系被公式图片关系覆盖、OPC 内容类型顺序非法，以及逐题答案块跨页拆分五类真实渲染缺陷。
-- Word native/EQ DOCX 保持可编辑且零回退；MathType 因无经审计 MTEF/OLE writer 明确回退 LaTeX 矢量，不伪造 OLE；PDF 对不可保留的可编辑 Word 模式同样如实报告矢量回退。
-- 复现样本、模式边界和命令见 `modules/question-bank/export/tests/fixtures/README.md` 与 `docs/verification-2026-07-14-question-formula-editor.md`。
-
-### Task 14 验证证据（2026-07-14）
-
-- 最终统一版本为 `5.14.3`；fresh `npm test`、生产构建、包内六项公式运行时依赖门禁、打包 UI smoke 与 Node ABI 137/SQLite 3.53.1 验证通过。
-- 阿里云部署前再次备份 backend/gateway 代码和两套 SQLite，目录 `/root/scheduling-backups/formula-pipeline/20260714-111058`，两库 `quick_check=ok`；公网 `/api/health` 返回 `5.14.3`，host relay 协议和匿名用户边界 smoke 通过。
-- OSS `desktop/latest.yml` 与归档 feed 均为 `5.14.3`；远端安装包 HTTP 200、`138655690` 字节，SHA-512 与 feed 一致。其他桌面电脑可按更新 feed 自助升级。
-- 微信开发者工具以 AppID `wx3d570539bbe6ba1b` 成功上传 `5.14.3` 开发版（772309 字节）。因用户已将手机号白名单导致的审核阻断指定为当前目标之后的独立任务，本阶段不提交审核、不声称线上版已发布。
-- 本地数据主机在一致性备份 `D:\GewuDataHost\backups\release-5.14.0-20260714-100729` 后安装 `5.14.3`；D 盘权威库、I 盘题库、缓存和备份目标在线，原 storeId `qb_mqukr4y6_9c27e660` 保持不变并完成 authority binding。
-- 已安装应用的 `127.0.0.1:3001/api/health` 返回 `5.14.3`。实际鉴权导出生成 Word-native/答案置后 DOCX 与 LaTeX-vector/逐题答案 PDF，各 2 个公式、0 回退、`storage_status=verified`；下载签名、大小与 SHA-256 校验通过，临时验收题已物理清理，题库恢复为空。
-
-## 当前目标完成后的追加任务
-
-执行顺序固定如下：先完成并验收本公式全链路目标，再合并另外两个工作树的 PR，最后处理本节任务。
-
-### 小程序登录审核阻断
-
-- [x] 2026-07-16 用户已明确废弃“体验码 + 可选择管理员/学生演示角色”的产品方案；既有安全沙箱只作为后续“未认可学生”固定示例题与 Word/PDF 导出的隔离实现基础，不再暴露审核专用角色或体验码入口。
-- [x] 改为所有用户每次登录都由微信按钮强制验证手机号；未审核或未通过审核的真实账号签发严格受限的“未认可学生”会话，已通过审核的账号按学生、老师、管理员等真实角色进入对应界面。
-- [x] 未认可学生只能看到体验账号说明、申请状态、空课程/空真实题库及明确标注的固定示例题；不得读取真实学员、课程、财务、手机号、题库快照，不得向本地数据主机提交核心业务写入。
-- [x] 完成安全回归、小程序构建上传和审核版本核验；6.2.0 已由阿里云固定白名单公网 IP 上传成功，微信审核状态接口返回 `86000 should be called only from third party`，当前明确为“部分发布”，不宣称正式发布完成。
-- [x] 2026-07-22 完成未认可学生生产安全探针：允许范围 3/3 为 200，正式 Backend 范围 9/9 为 403，Gateway 2/2 为 401，旧审核入口 2/2 为 410；PM2 日志增量和登录事件表结构未发现临时令牌、Authorization 头或微信临时凭证落盘。小程序 6.2.0 上传已完成，审核状态阻断见上一条。
-
----
-### Superseded review-experience evidence (2026-07-22)
-
-- The former experience-code and synthetic admin/student review flow is removed. It is retained in history only and must not be restored as a production entry point.
-- WeChat review now uses the same verified-phone login as every user. An unknown phone receives a real, restricted unrecognized-student identity with four fixed sample questions, isolated DOCX/PDF export, and a real account-application path.
-- Release readiness and deployment no longer accept or require `MINIAPP_REVIEW_EXPERIENCE_CODE`; the miniapp uses the single Backend base URL. Gateway review-demo routes remain tombstones solely to invalidate old clients and tokens.
-- The review guide documents collected fields, purpose, server-side isolation and 180-day redaction. Final public smoke and release evidence remain pending.
-- Production deployment now requires a strong Gateway-compatible backend JWT secret, rejects unknown SSH host keys using system or an explicitly configured known-hosts file, aborts on remote nonzero exit status, and accepts health responses only when their HTTP and JSON contracts pass.
-- Backend and Gateway deployment health checks require the exact root unified version; Gateway reports `GEWU_APP_VERSION` in deployed environments and uses its package version only as a local fallback.
-- Secret staging failure-injection checks cover flush, remote-file close, SFTP close, and removal errors while preserving the primary failure and attempting cleanup.
-- Focused local tests and syntax checks pass. No real code has been recorded or configured; no public smoke, cloud deployment, miniapp upload, WeChat submission, or public release is claimed at this stage.
-
-Release-related unchecked items above remain pending until Task 12 has current-version real WeChat runtime evidence.
-
----
-
-### 2026-07-16 未认可学生、公开申请与双手机号学生账户
-
-#### 目标与已确认约束
-
-- 状态：`design_approved`。用户已确认推荐账户模型、老师申请不采集课时费，并授权后续不再就一般实现细节询问；完成设计自审和实施计划后按 TDD 执行。
-- 所有登录必须使用微信 `getPhoneNumber` 获取的动态凭证验证当前手机号；不得只凭客户端填写手机号或复用未重新验证的静默登录路径。
-- 每一次服务端登录结果都必须留痕，包括已验证手机号、关联用户、结果码、时间和必要版本信息；不保存微信登录 code、手机号 code、JWT 或其他临时凭证。
-- 未获审核通过的真实用户统一进入“未认可学生”界面。界面只说明当前为体验账号并引导提交真实资料；课程、财务、真实题库和其他敏感数据均为空或不可达。
-- 公开申请只允许 `student` 与 `teacher`；管理员永远不可自助申请。普通管理员可审核学生/老师公开申请，固定超级管理员继续负责管理员身份、设备绑定等高权限操作。
-- 学生申请强制字段：学生姓名、学生手机号、学校、当前年级、家长角色（爸爸或妈妈）、家长手机号。学生手机号和家长手机号必须不同，当前微信验证手机号必须等于二者之一；其他现有学生基本信息选填。
-- 当前年级使用高一、高二、高三、高复；服务端按每年 9 月切换学年，将当前年级反算为高一入学年份并保存 `grade_year`，`grade_current` 由该年份统一计算。
-- 一个学生业务档案最多绑定两个登录身份：学生本人一个、唯一家长一个。二者分别拥有独立微信身份与登录审计记录，但共享同一个 `student_id`、学生数据范围和会员状态；家长仍呈现为学生用户，不新增家长业务角色。
-- 老师申请复用现有老师基本字段中的姓名、手机号、科目、备注；不采集课时费。姓名和已验证手机号必填，科目、备注按现有字段规则选填。审核通过后绑定唯一 `teacher_id`。
-- 审核通过只在账号名称旁显示“会员”标记，不提供定价、购买、订阅或虚构付费入口。会员状态与角色/审核状态分离，为未来收费渠道预留扩展空间；现有已审核用户迁移为有效会员。
-- 未认可学生可查看的示例题固定取自 `D:\题库测试文件\试卷格式\2026届浙江宁波市高三第二学期高考与选考模拟考试（二模）物理试卷.docx` 的少量脱敏题目（计划题号 1、2、4、11）。生产运行时不得访问 D 盘或携带原始整卷，只发布人工核对后的固定最小示例集合；第 2 题移除非必要照片引用并保持物理陈述与答案不变。
-
-#### 实施级检查清单
-
-- [x] 向用户提交 2–3 种账户/绑定方案并采用“一个学生业务档案 + 学生/家长两条独立认证身份”的推荐设计；用户已确认。
-- [x] 将确认后的完整设计写入 `docs/superpowers/specs/2026-07-16-unrecognized-student-membership-design.md`，并按生产路由自审为 Backend 单一认证/申请源；用户已授权自行继续，无需再次等待复核。
-- [x] 编写逐文件实施计划，明确数据库迁移、兼容期、幂等键、失败恢复、回滚和统一发布顺序。
-- [x] 阿里云 Backend（`/scheduling`）作为唯一小程序认证/申请源，增加真实未认可会话、公开申请、登录事件、双手机号身份绑定、独立会员状态及审核审计；不得与 Gateway 镜像用户或双重签发令牌。
-- [x] Backend 对未认可会话采用服务端能力白名单，只允许读取自身申请/状态、固定示例题及隔离 Word/PDF 沙箱；真实快照、正式云任务、设备配对和所有核心写入必须 fail closed。Gateway 对该令牌一律拒绝，旧体验码与合成角色入口返回 410。
-- [x] 本地数据主机增加学生家长手机号/关系所需业务字段与跨身份唯一性校验，并增加幂等的学生/老师建档或绑定任务处理；阿里云不得直接创建权威学生/老师业务记录。
-- [x] 管理员批准后先进入 `provisioning`，通过 `/scheduling` Backend 现有 V2 云任务 owner 让指定数据主机创建或复用唯一 `student_id`/`teacher_id`；主机成功回传后 Backend 才原子启用正式账号和会员。失败、超时、重复回调和重启恢复均不得产生重复档案或越权账号。
-- [x] 学生获批时为学生手机号和唯一家长手机号分别建立/复用一条认证身份，二者共享同一 `student_id`；尚未登录的另一手机号只作为待绑定身份，首次使用微信验证该手机号后才绑定 openid。
-- [x] 小程序登录页改成唯一的手机号授权登录动作；新增未认可学生资料申请/状态 UI，并让待审核老师在获批前仍停留在未认可学生壳层，获批后重新登录进入老师界面。
-- [x] 在账号名称旁实现真实会员标记；不得新增价格、购买、续费、权益承诺或其他尚未实现的商业功能文案。
-- [x] 用固定示例题替换当前虚构题目，验证示例列表、组卷、取消、Word、PDF、会话隔离、资源大小限制和无 D 盘运行依赖。
-- [x] 用 RED→GREEN 测试覆盖手机号每次验证、申请字段/年级反算、双手机号冲突、同学生最大两个身份、老师唯一绑定、普通管理员审核边界、主机任务幂等、令牌不自动提权、登录留痕和隐私字段投影。
-- [x] 维护并验证 `miniapp/src/app.config.ts` 全部 20 个注册页面；`miniappUiCoverage` 与微信开发者工具运行时矩阵均已通过，已留下 guest、未认可学生、正式学生、家长、老师、普通管理员、超级管理员及空态/缺记录/无权限/有限写入关键状态的当前版本截图。
-- [x] 更新小程序隐私保护指引及登录前告知：说明手机号、学生/家长/老师申请资料的用途、处理方式、保存期限和权利入口；按最小必要原则限制后台可见范围。
-- [ ] 完成版本递增、全量测试、构建、提交与 `gewu/master` 推送，并按统一发布矩阵执行阿里云备份/迁移/部署/健康检查、本地数据主机升级与真实链路验证、小程序上传、OSS 桌面更新发布及 Node ABI 恢复验证。除真实主机 bootstrap/恢复交付、第二台电脑验证外均已完成；当前保持未勾选。
-- [x] 尝试微信审核/发布并留存结果；审核状态接口返回 `86000 should be called only from third party`，已按“部分发布/受阻”记录，需微信后台人工提交审核与发布。
-
-#### 底层不变量
-
-- 认证身份与学生业务档案分离：一个手机号只属于一个登录身份；一个学生档案最多有 `student`、`parent` 两种身份各一条；两个身份共享业务范围但不共享 openid、令牌或登录事件。
-- 申请提交不等于认可，管理员点击通过也不立即开放正式权限；只有指定本地数据主机完成权威建档/绑定并由 Backend 幂等收敛后才可签发正式角色令牌。
-- 未认可令牌不能因后台状态变化而原地升级权限；获批后必须重新登录获得正式令牌，旧令牌在整个有效期内始终受限。
-- 会员状态不授予角色权限，角色权限也不伪造付费状态；当前“审核通过赠予有效会员”作为明确来源记录，未来付费扩展不得改变已有权限审计语义。
-- 登录事件保存真实验证手机号以满足运营审计，但只有受控后台可见；禁止记录微信临时 code、JWT、环境密钥、体验码或完整请求体。
-- 固定示例题属于公开体验资源，不属于权威题库快照；所有真实题库查询对未认可身份返回空集合或 403，绝不靠前端隐藏实现隔离。
-
-#### 验证、回滚与发布说明
-
-- 数据迁移必须先备份阿里云 Backend/Gateway 与本地权威数据库，新增表/列/索引采用向前兼容迁移；任何身份冲突只记录脱敏审计并停止自动合并，不覆盖原用户或学生档案。
-- 发布顺序暂定为兼容服务端 → 本地数据主机 → 小程序 → OSS 桌面端；最终顺序以已确认设计和实施计划为准。任一步失败时保留旧客户端可登录能力，但不得回退到体验码或放开未审核权限。
-- 验收证据至少包括单元/HTTP/集成/迁移测试、真实微信运行时截图、Backend/Gateway 公网权限探针、本地主机任务与题库盘检查、阿里云/OSS/小程序上传版本记录及微信平台状态。
-
----
-
-### 2026-07-17 桌面人类身份、多角色、多设备与数据主机换机
-
-#### 状态与已确认约束
-
-- 状态：`design_approved`。用户批准“微信手机号负责首次/新设备身份，本机密码/PIN负责已授权电脑日常解锁”的混合方案。
-- 固定超级管理员同时是一名老师，必须由同一个 `users` 身份同时持有 `super_admin` 与 `teacher` 授权并绑定唯一 `teacher_id`；不得复制用户或老师档案。现有 `_enforceCanonicalSuperAdmin()` 清空 `teacher_id` 的行为必须删除并回归验证。
-- 用户当前同时使用本数据主机和另一台普通电脑，未来还可能新增或更换电脑。设备授权是一对多，每台设备独立验证、批准、撤销和审计，但都指向同一人类身份。
-- “数据主机”是唯一设备职责，不是用户角色；同一人可在主机和普通电脑登录，但任一时刻只能有一台激活的权威数据主机。
-- 新电脑、首次注册、换机和身份恢复必须微信扫码进入正式小程序，重新验证微信手机号并确认设备；审核员不能再为未验证申请任意选择账号。
-- 已批准电脑每次应用启动先输入本机密码/PIN。密码只解锁当前设备的加密凭证，不能在另一台电脑登录，也不能替代微信手机号注册/找回。
-- 数据主机增加顶级“身份与设备”审核中心、待审角标和主机迁移/恢复入口，解决当前主机没有明显审核窗口和初始管理员会话死锁。
-
-#### 实施级检查清单
-
-- [x] 完成现状审计：桌面无启动身份门、申请只含设备信息、审核员可任意选择用户、审核面板隐藏且依赖既有超级管理员会话、固定超级管理员初始化清空 `teacher_id`。
-- [x] 用户批准混合身份方案及多角色、多设备、未来换机补充；正式设计写入 `docs/superpowers/specs/2026-07-17-desktop-human-identity-multi-device-design.md`。
-- [x] 编写逐文件 TDD 实施计划 `docs/superpowers/plans/2026-07-17-desktop-human-identity-multi-device.md`，并作为原总计划 Task 6A 加入统一发布矩阵。
-- [ ] 新增角色授权集合和当前工作身份；迁移固定超级管理员为 `super_admin + teacher`，保留唯一 `teacher_id`，老师/管理员服务端数据范围可切换且缓存隔离。
-- [ ] 新增微信手机号桌面挑战、固定声明人、耐久设备授权、短会话、撤销和复核时限；删除审批接口的任意 `userId` 选择。
-- [x] Electron 主进程实现设备密钥、本机密码/PIN加密信封、启动身份门、在线短会话和有限离线身份租约；业务页面和主机轮询必须在解锁后启动。
-- [x] 新增顶级身份与设备审核中心及小程序确认入口；覆盖两台设备、第三台换机、丢失撤销、同一人批准自己新设备但待审设备不能自批。
-- [x] 实现当前主机一次性 bootstrap、两阶段计划换机、离线恢复因子与紧急恢复；任何时刻只有一个 `primary_host_epoch`。
-- [x] Backend 成为唯一桌面身份/设备控制面；Gateway V1 配对入口 410，主机继续作为业务数据和题库最高权威。
-- [x] 用 RED→GREEN 覆盖角色迁移、teacher scope、二维码重放、用户注入、跨设备秘密、密码限速、撤销、离线租约、主机换机和恢复失败矩阵。
-- [ ] 完成真实 Electron 主机/普通电脑/窄窗口验证，并随当前目标统一执行小程序、阿里云、本地主机和 OSS 发布核验。当前 6.2.0 主机安装与 20 页小程序运行时已验证；真实主机 bootstrap、恢复交付和第二台普通电脑仍待完成。
-
-#### 底层不变量
-
-- 人、角色、业务主体和设备四层分离：一个人可多角色、多设备；一台设备只属于一人；一个老师角色只绑定一个权威 `teacher_id`。
-- `active_role=teacher` 必须执行老师范围，即使该用户也拥有超级管理员授权；高权限操作要求近期本机提权且来自已激活设备。
-- 本机密码不是云账号密码；设备信息不是人类身份；微信扫码本身也不是身份，必须由用户主动完成手机号验证。
-- 旧主机存在时从旧主机签发计划迁移；旧主机损坏时同时要求规范手机号、离线恢复因子、权威备份和题库绑定，云端不得单因素提升新主机。
-- 设备撤销、用户停用、角色版本变化和主机 generation 变化必须使旧会话或旧主机能力失效，但不得删除普通端本地数据或待同步队列。
-
-#### 验证、回滚与发布说明
-
-- 迁移先增表和双读，不删除旧 `role/teacher_id/desktop_device_pairings`；旧设备除当前主机受控 bootstrap 外均需重新扫码，不能把缺少人类验证的旧 approved pairing 直接升级。
-- 发布顺序纳入当前总目标：兼容 Backend、本地主机 bootstrap/升级、小程序桌面确认入口、OSS 桌面端、最后关闭 Gateway V1；中间版本不得推送或外部发布。
-- 回滚只回滚代码/功能开关，不删除角色授权、设备授权、会话、主机 generation 或审计；不得恢复审核员任意选账号。
-
----
+Goal:
+
+- Publish the verified authority architecture as one traceable multi-end release: source control, desktop OSS update, installed local primary host, Alibaba Cloud backend/gateway, and WeChat miniapp.
+- Treat an externally blocked or stale endpoint as partial release; do not report unified completion until every applicable endpoint has independent version/health evidence.
+
+Release classification and assumptions:
+
+- Current version is `6.6.0`. The release adds formal public authority APIs and persistent schema, requires an idempotent migration, and deletes executable legacy sync/pairing APIs. Automatic semantic-version policy therefore selects `major`; the intended next version is `7.0.0`.
+- Protected `.env.local` is the credential source. It selects `APP_ENV=prod` and contains the required deployment, backend JWT, WeChat, and OSS values. Evidence records must contain only presence/status, never secrets.
+- The configured OSS CDN/bucket remains the project release target. Other ordinary desktop computers update only through its feed; they are not installed manually.
+- The configured miniapp project AppID, CI private key, WeChat DevTools CLI, and `miniprogram-ci` runtime are available.
+
+Execution checklist:
+
+- [ ] Run version-script regression and automatic major-bump analysis; bump exactly once to `7.0.0` and synchronize generated version sources.
+- [ ] Run full source tests, authority architecture tests, type checking, deploy readiness, miniapp release/review readiness, and build checks before commit.
+- [ ] Stage only formal source/config/schema/tests/docs plus intentional deletions. Exclude `dist-host`, `output`, `tmp-*`, logs, local databases, credentials, and generated disposable packages.
+- [ ] Commit the release source and push the exact commit to `gewu/master`.
+- [ ] Build the Windows installer/update metadata without a second version bump; verify packaged version and native Electron ABI, then restore the Node ABI and rerun Node verification.
+- [ ] Publish immutable desktop release objects and `desktop/latest.yml`; read them back and verify version, filename, size/hash/availability.
+- [ ] Create a local-primary-host rollback backup, upgrade while preserving the real data/profile configuration, and verify installed host backend, authority runtime, question-store boundary, and version.
+- [ ] Create append-only Alibaba Cloud backend database/code backup and gateway code backup before mutation; deploy backend/shared and gateway/shared, run idempotent migration, restart PM2 services, and verify internal plus public health/authority contracts at `7.0.0`.
+- [ ] Build the production WeChat miniapp, upload `7.0.0`, and retain a successful platform upload receipt; if platform upload is blocked, mark the release partial.
+- [ ] Recheck `gewu/master`, OSS feed, local host, cloud backend/gateway, and miniapp receipt as one version matrix. Record rollback locations and publish a final evidence commit.
+
+Rollback:
+
+- Git: the pre-release remote commit is `4adc767`; no history rewrite is allowed.
+- Desktop OSS: keep the prior immutable release and prior feed data so `latest.yml` can be repointed with the supported rollback command.
+- Local host: restore only from the release backup as a coordinated code/data rollback; never roll code back alone after schema migration.
+- Alibaba Cloud: stop affected PM2 services, restore the append-only SQLite/code snapshots, restore the previous gateway archive, restart the previous code, and verify health before reopening traffic.
+- Miniapp: an uploaded development version is not a production release; retain the previous platform version if upload/review fails.
+
+Non-goals:
+
+- No Quark Drive upload.
+- No manual installation on every ordinary desktop.
+- No claim that WeChat review or public production rollout occurred merely because a development upload succeeded.

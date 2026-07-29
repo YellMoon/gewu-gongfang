@@ -155,74 +155,13 @@ function cancelV2Task(db, id, input = {}) {
   return taskRow(db.prepare('SELECT * FROM miniapp_tasks WHERE id=?').get(id));
 }
 
-function listLegacyPending(db, limit = 100) {
-  return db.prepare(`SELECT * FROM miniapp_tasks
-    WHERE status='pending_host' AND COALESCE(protocol_version,1)<2
-    ORDER BY created_at ASC LIMIT ?`).all(Math.max(1, Math.min(200, Number(limit) || 100))).map(taskRow);
-}
-
-function claimNextLegacyTask(db, input = {}) {
-  const hostDeviceId = String(input.hostDeviceId || '').trim();
-  if (!hostDeviceId) throw taskError('HOST_DEVICE_ID_REQUIRED', 'hostDeviceId is required', 400);
-  const now = input.now || new Date().toISOString();
-  const leaseMs = Math.max(100, Number(input.leaseMs || 60000));
-  const leaseExpiresAt = new Date(new Date(now).getTime() + leaseMs).toISOString();
-  const claimToken = (input.tokenFactory || (() => crypto.randomBytes(32).toString('hex')))();
-  const claimTokenHash = crypto.createHash('sha256').update(claimToken).digest('hex');
-  const execute = db.transaction(() => {
-    const candidate = db.prepare(`SELECT * FROM miniapp_tasks
-      WHERE COALESCE(protocol_version,1)<2
-        AND (status='pending_host' OR (status='processing' AND lease_expires_at IS NOT NULL AND lease_expires_at<=?))
-      ORDER BY created_at ASC LIMIT 1`).get(now);
-    if (!candidate) return null;
-    const info = db.prepare(`UPDATE miniapp_tasks
-      SET status='processing',phase='claimed',claimed_by=?,claim_token_hash=?,lease_expires_at=?,updated_at=?,row_version=row_version+1
-      WHERE id=? AND row_version=? AND COALESCE(protocol_version,1)<2
-        AND (status='pending_host' OR (status='processing' AND lease_expires_at IS NOT NULL AND lease_expires_at<=?))`)
-      .run(hostDeviceId, claimTokenHash, leaseExpiresAt, now, candidate.id, candidate.row_version, now);
-    if (info.changes !== 1) return null;
-    return { task: taskRow(db.prepare('SELECT * FROM miniapp_tasks WHERE id=?').get(candidate.id)), claimToken };
-  });
-  return execute.immediate();
-}
-
-function completeLegacyTask(db, id, result = {}, success = true, claim = {}) {
-  const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id=?').get(id);
-  if (!row) throw taskError('TASK_NOT_FOUND', 'task not found', 404);
-  if (Number(row.protocol_version || 1) >= 2) throw taskError('TASK_PROTOCOL_MISMATCH', 'legacy completion cannot mutate a V2 task', 409);
-  const now = claim.now || new Date().toISOString();
-  if (row.claimed_by) {
-    if (row.status !== 'processing') throw taskError('TASK_STATE_CONFLICT', 'legacy task is not processing', 409);
-    const sharedLegacyCompatibility = row.claimed_by === 'legacy-shared' && !claim.claimToken;
-    if (!sharedLegacyCompatibility) {
-      const tokenHash = crypto.createHash('sha256').update(String(claim.claimToken || '')).digest('hex');
-      if (!claim.claimToken || tokenHash !== row.claim_token_hash || (claim.hostDeviceId && String(claim.hostDeviceId) !== String(row.claimed_by))) {
-        throw taskError('TASK_CLAIM_INVALID', 'legacy claim token is invalid or stale', 409);
-      }
-      if (Number(claim.expectedRowVersion) !== Number(row.row_version)) throw taskError('TASK_VERSION_CONFLICT', 'legacy task row version is stale', 409);
-    }
-    if (!row.lease_expires_at || row.lease_expires_at <= now) throw taskError('TASK_LEASE_EXPIRED', 'legacy task lease has expired', 409);
-  } else if (row.status !== 'pending_host') {
-    throw taskError('TASK_STATE_CONFLICT', 'legacy task cannot be completed from its current state', 409);
-  }
-  const status = success ? 'completed' : 'failed';
-  const info = db.prepare(`UPDATE miniapp_tasks SET status=?,phase=?,progress=?,result_payload=?,lease_expires_at=NULL,updated_at=?,row_version=row_version+1
-    WHERE id=? AND row_version=? AND status IN ('pending_host','processing')`)
-    .run(status, status, success ? 100 : Number(row.progress || 0), JSON.stringify(result || {}), now, id, row.row_version);
-  if (info.changes !== 1) throw taskError('TASK_VERSION_CONFLICT', 'legacy task row version is stale', 409);
-  return taskRow(db.prepare('SELECT * FROM miniapp_tasks WHERE id=?').get(id));
-}
-
 module.exports = {
   cancelV2Task,
   canonicalResultJson,
-  claimNextLegacyTask,
   claimNextV2Task,
-  completeLegacyTask,
   completeV2Task,
   createV2Task,
   failV2Task,
-  listLegacyPending,
   updateV2TaskProgress,
   // 共享逻辑
   TASK_STATUS,

@@ -13,6 +13,7 @@ const {
   FORMAL_TOKEN_USE,
   TOKEN_ISSUER,
   UNRECOGNIZED_TOKEN_USE,
+  VISITOR_TOKEN_USE,
   createMiniappIdentityService,
 } = require('../services/miniappIdentityService');
 const {
@@ -179,6 +180,7 @@ router.post('/refresh', (req, res) => {
     const claims = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'], ignoreExpiration: true });
     const audience = claims.token_use === FORMAL_TOKEN_USE
       ? FORMAL_AUDIENCE
+      : claims.token_use === VISITOR_TOKEN_USE ? FORMAL_AUDIENCE
       : claims.token_use === UNRECOGNIZED_TOKEN_USE ? EXPERIENCE_AUDIENCE : null;
     const configuredGraceSeconds = Number(process.env.MINIAPP_REFRESH_GRACE_SECONDS || 86_400);
     const graceSeconds = Number.isFinite(configuredGraceSeconds) && configuredGraceSeconds >= 0
@@ -193,7 +195,9 @@ router.post('/refresh', (req, res) => {
     const user = service.readIdentityForToken(claims);
     const issued = claims.token_use === FORMAL_TOKEN_USE
       ? service.issueFormalToken(user, claims.sid)
-      : service.issueUnrecognizedToken(user, claims.sid);
+      : claims.token_use === VISITOR_TOKEN_USE
+        ? service.issueVisitorToken(user, claims.sid)
+        : service.issueUnrecognizedToken(user, claims.sid);
     return res.json({ success: true, token: issued.token });
   } catch (_error) {
     return res.status(401).json({ success: false, code: 'TOKEN_REFRESH_REQUIRES_RELOGIN' });

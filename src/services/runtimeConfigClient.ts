@@ -4,13 +4,12 @@ export type RuntimeConfig = {
   buildFlavor: NodeRole;
   primaryHostCapable: boolean;
   nodeRole: NodeRole;
-  desktopIdentityMode: 'full' | 'single-user';
+  desktopIdentityMode: 'full';
   deviceId: string;
   primaryHostEpochId: string;
   primaryHostGeneration: number | null;
   hostBaseUrl: string;
   cloudBaseUrl: string;
-  desktopSyncToken: string;
   mainDbPath: string;
   questionBankPath: string;
   questionAssetPath: string;

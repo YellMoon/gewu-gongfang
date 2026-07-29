@@ -5,7 +5,12 @@ const {
   createPrimaryHostLocalReceipt,
   primaryHostReceiptSigningPayload,
 } = require('../backend/src/services/primaryHostReceiptProtocol');
-const singleUserPairingEnvelope = require('./singleUserPairingEnvelope');
+const {
+  activationReceiptSigningPayload,
+} = require('../backend/src/services/deviceActivationService');
+const { validateEnvelope, stableJson } = require('../shared/authorityProtocol');
+const { authorityHttpSigningPayload } = require('../shared/authorityHttpAuth');
+const { createSignedAuthorityProjection } = require('../shared/authorityProjectionProtocol');
 
 const VAULT_VERSION = 2;
 const PRIVATE_PAYLOAD_VERSION = 1;
@@ -17,7 +22,7 @@ const SCRYPT_MAX_MEMORY = 64 * 1024 * 1024;
 const RECENT_UNLOCK_MS = 2 * 60 * 1000;
 const OFFLINE_LEASE_MAX_MS = 14 * 24 * 60 * 60 * 1000;
 const MAX_ENVELOPE_BYTES = 256 * 1024;
-const ROLE_SET = new Set(['super_admin', 'admin', 'teacher', 'student']);
+const ROLE_SET = new Set(['visitor', 'super_admin', 'admin', 'teacher', 'student']);
 const DEVICE_KIND_SET = new Set(['primary-host', 'desktop-client']);
 const FORBIDDEN_PERSISTED_KEYS = new Set([
   'password',
@@ -295,6 +300,42 @@ function normalizeOfflineLease(value, profile, authorization) {
   return Object.freeze(lease);
 }
 
+function normalizeAuthorityContext(value, profile, authorization) {
+  if (value == null) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw vaultError('DESKTOP_AUTHORITY_CONTEXT_INVALID');
+  }
+  assertNoForbiddenSecrets(value);
+  const issuedAt = isoTimestamp(value.lease?.issuedAt, 'DESKTOP_AUTHORITY_CONTEXT_INVALID');
+  const expiresAt = isoTimestamp(value.lease?.expiresAt, 'DESKTOP_AUTHORITY_CONTEXT_INVALID');
+  const context = {
+    userId: stringField(value.userId, 'DESKTOP_AUTHORITY_CONTEXT_INVALID', 128),
+    deviceId: stringField(value.deviceId, 'DESKTOP_AUTHORITY_CONTEXT_INVALID', 128),
+    authorityId: stringField(value.authorityId, 'DESKTOP_AUTHORITY_CONTEXT_INVALID', 128),
+    hostEpochId: stringField(value.hostEpochId, 'DESKTOP_AUTHORITY_CONTEXT_INVALID', 128),
+    hostGeneration: safeInteger(value.hostGeneration, 'DESKTOP_AUTHORITY_CONTEXT_INVALID'),
+    hostPublicKey: stringField(value.hostPublicKey, 'DESKTOP_AUTHORITY_CONTEXT_INVALID', 8192),
+    grant: Object.freeze({
+      id: stringField(value.grant?.id, 'DESKTOP_AUTHORITY_CONTEXT_INVALID', 128),
+      version: safeInteger(value.grant?.version, 'DESKTOP_AUTHORITY_CONTEXT_INVALID'),
+    }),
+    lease: Object.freeze({
+      id: stringField(value.lease?.id, 'DESKTOP_AUTHORITY_CONTEXT_INVALID', 128),
+      activeRole: stringField(value.lease?.activeRole, 'DESKTOP_AUTHORITY_CONTEXT_INVALID', 32),
+      issuedAt,
+      expiresAt,
+    }),
+  };
+  if (context.userId !== authorization.userId
+    || context.deviceId !== authorization.deviceId
+    || context.lease.activeRole !== profile.activeRole
+    || Date.parse(expiresAt) <= Date.parse(issuedAt)
+    || Date.parse(expiresAt) - Date.parse(issuedAt) > OFFLINE_LEASE_MAX_MS) {
+    throw vaultError('DESKTOP_AUTHORITY_CONTEXT_INVALID');
+  }
+  return Object.freeze(context);
+}
+
 function passwordBuffer(value, creating) {
   const password = typeof value === 'string' ? value : '';
   const bytes = Buffer.byteLength(password, 'utf8');
@@ -555,6 +596,11 @@ function createDesktopIdentityVault({
     const authorization = normalizeAuthorization(value.authorization, publicIdentity);
     const profile = normalizeProfile(value.profile, authorization);
     const offlineLease = normalizeOfflineLease(value.offlineLease, profile, authorization);
+    const authorityContext = normalizeAuthorityContext(
+      value.authorityContext,
+      profile,
+      authorization
+    );
     const secret = Object.freeze({
       version: PRIVATE_PAYLOAD_VERSION,
       publicIdentity,
@@ -562,6 +608,7 @@ function createDesktopIdentityVault({
       authorization,
       profile,
       offlineLease,
+      authorityContext,
       sealedAt: isoTimestamp(value.sealedAt, 'DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED'),
     });
     privateKeyForSecret(secret);
@@ -601,7 +648,15 @@ function createDesktopIdentityVault({
     }
   }
 
-  function buildEnvelope({ password, publicIdentity, privateKey, authorization, profile, offlineLease }) {
+  function buildEnvelope({
+    password,
+    publicIdentity,
+    privateKey,
+    authorization,
+    profile,
+    offlineLease,
+    authorityContext,
+  }) {
     const passwordBytes = passwordBuffer(password, true);
     const salt = crypto.randomBytes(16);
     const iv = crypto.randomBytes(12);
@@ -621,6 +676,7 @@ function createDesktopIdentityVault({
       authorization,
       profile,
       offlineLease,
+      authorityContext,
       sealedAt,
     };
     let key;
@@ -709,43 +765,6 @@ function createDesktopIdentityVault({
     return Object.freeze({ ...publicIdentity });
   }
 
-  function beginSingleUserEnrollment(input = {}) {
-    return beginRegistration({
-      ...input,
-      deviceKind: input.deviceKind || 'desktop-client',
-    });
-  }
-
-  function signPairingEnvelope(input = {}) {
-    if (!pendingRegistration || pendingRegistration.purpose !== 'register') {
-      throw vaultError('DESKTOP_IDENTITY_REGISTRATION_NOT_PENDING');
-    }
-    if (typeof input.payload !== 'string' || !input.payload || input.payload.length > 64 * 1024) {
-      throw vaultError('DESKTOP_IDENTITY_PAIRING_PAYLOAD_INVALID');
-    }
-    const privateKey = privateKeyForSecret(pendingRegistration);
-    return crypto.sign(null, Buffer.from(input.payload, 'utf8'), privateKey).toString('base64');
-  }
-
-  function createPairingEnvelope(input = {}) {
-    if (!pendingRegistration || pendingRegistration.purpose !== 'register') {
-      throw vaultError('DESKTOP_IDENTITY_REGISTRATION_NOT_PENDING');
-    }
-    const publicIdentity = pendingRegistration.publicIdentity;
-    return singleUserPairingEnvelope.encryptPairingRequest({
-      capability: input.capability,
-      pairingCode: input.pairingCode,
-      device: {
-        deviceId: publicIdentity.deviceId,
-        deviceName: publicIdentity.deviceName,
-        deviceKind: publicIdentity.deviceKind,
-        publicKey: publicIdentity.publicKey,
-      },
-      sign: payload => signPairingEnvelope({ payload }),
-      now,
-    });
-  }
-
   function beginPasswordReset() {
     if (!fsImpl.existsSync(filePath)) throw vaultError('DESKTOP_IDENTITY_VAULT_NOT_FOUND');
     if (pendingRegistration) throw vaultError('DESKTOP_IDENTITY_REGISTRATION_ALREADY_PENDING');
@@ -770,6 +789,11 @@ function createDesktopIdentityVault({
     const authorization = normalizeAuthorization(input.authorization, publicIdentity);
     const profile = normalizeProfile(input.profile, authorization);
     const offlineLease = normalizeOfflineLease(input.offlineLease, profile, authorization);
+    const authorityContext = normalizeAuthorityContext(
+      input.authorityContext === undefined ? source.authorityContext : input.authorityContext,
+      profile,
+      authorization
+    );
     const built = buildEnvelope({
       password: input.password,
       publicIdentity,
@@ -777,6 +801,7 @@ function createDesktopIdentityVault({
       authorization,
       profile,
       offlineLease,
+      authorityContext,
     });
     writeEnvelope(built.envelope);
     unlockedSecret = built.secret;
@@ -837,6 +862,7 @@ function createDesktopIdentityVault({
       authorization: verified.authorization,
       profile: verified.profile,
       offlineLease,
+      authorityContext: verified.authorityContext,
     });
     writeEnvelope(built.envelope);
     unlockedSecret = built.secret;
@@ -886,13 +912,18 @@ function createDesktopIdentityVault({
       if (!pendingRegistration) throw vaultError('DESKTOP_IDENTITY_REGISTRATION_NOT_PENDING');
       return pendingRegistration;
     }
+    if (purpose === 'activation-finalize') {
+      if (pendingRegistration) return pendingRegistration;
+      if (unlockedSecret) return unlockedSecret;
+      throw vaultError('DESKTOP_IDENTITY_VAULT_LOCKED');
+    }
     if (!unlockedSecret) throw vaultError('DESKTOP_IDENTITY_VAULT_LOCKED');
     return unlockedSecret;
   }
 
   function signChallenge(input = {}) {
     const purpose = String(input.purpose || '').trim();
-    if (!['exchange', 'session', 'role-elevation', 'primary-host-receipt'].includes(purpose)) {
+    if (!['exchange', 'activation-finalize', 'session', 'role-elevation', 'primary-host-receipt'].includes(purpose)) {
       throw vaultError('DESKTOP_IDENTITY_SIGNING_PURPOSE_INVALID');
     }
     const source = signingSource(purpose);
@@ -906,6 +937,12 @@ function createDesktopIdentityVault({
         rowVersion: input.rowVersion,
         challengeSecret: input.challengeSecret,
       });
+    } else if (purpose === 'activation-finalize') {
+      payload = activationReceiptSigningPayload({
+        activationId: input.activationId,
+        packageHash: input.packageHash,
+      });
+      responseExtra = { activationId: String(input.activationId || '').trim() };
     } else if (purpose === 'session') {
       const authorizationId = unlockedSecret.authorization.id;
       if (input.authorizationId && input.authorizationId !== authorizationId) {
@@ -975,6 +1012,105 @@ function createDesktopIdentityVault({
     });
   }
 
+  function signAuthorityHttpRequest(input = {}) {
+    if (!unlockedSecret) throw vaultError('DESKTOP_IDENTITY_VAULT_LOCKED');
+    const context = unlockedSecret.authorityContext;
+    if (!context) throw vaultError('DESKTOP_AUTHORITY_CONTEXT_REQUIRED');
+    const current = currentDate(now);
+    if (Date.parse(context.lease.expiresAt) <= current.getTime()) {
+      throw vaultError('DEVICE_LEASE_EXPIRED');
+    }
+    const actor = Object.freeze({
+      userId: unlockedSecret.profile.userId,
+      deviceId: unlockedSecret.publicIdentity.deviceId,
+      role: context.lease.activeRole,
+    });
+    const payload = authorityHttpSigningPayload({
+      method: input.method,
+      path: input.path,
+      actor,
+      body: input.body === undefined ? null : input.body,
+    });
+    const signature = crypto.sign(
+      null,
+      Buffer.from(payload, 'utf8'),
+      privateKeyForSecret(unlockedSecret)
+    ).toString('base64');
+    return Object.freeze({
+      actor,
+      authorityId: context.authorityId,
+      hostEpochId: context.hostEpochId,
+      hostPublicKey: context.hostPublicKey,
+      grantVersion: context.grant.version,
+      leaseId: context.lease.id,
+      signature,
+      headers: Object.freeze({
+        'x-gewu-authority-user-id': actor.userId,
+        'x-gewu-authority-device-id': actor.deviceId,
+        'x-gewu-authority-role': actor.role,
+        'x-gewu-device-signature': signature,
+      }),
+    });
+  }
+
+  function createAuthorityCommand(input = {}) {
+    if (!unlockedSecret) throw vaultError('DESKTOP_IDENTITY_VAULT_LOCKED');
+    const context = unlockedSecret.authorityContext;
+    if (!context) throw vaultError('DESKTOP_AUTHORITY_CONTEXT_REQUIRED');
+    const type = String(input.type || '').trim();
+    const payload = input.payload && typeof input.payload === 'object' && !Array.isArray(input.payload)
+      ? cloneJson(input.payload)
+      : null;
+    if (!/^[a-z][a-z0-9_.-]*\.v[1-9][0-9]*$/.test(type) || !payload) {
+      throw vaultError('AUTHORITY_DRAFT_INVALID');
+    }
+    const actor = Object.freeze({
+      userId: unlockedSecret.profile.userId,
+      deviceId: unlockedSecret.publicIdentity.deviceId,
+      role: context.lease.activeRole,
+    });
+    const envelope = validateEnvelope({
+      protocol: 'gewu.authority-command.v1',
+      commandId: stringField(input.commandId || crypto.randomUUID(), 'AUTHORITY_COMMAND_ID_INVALID', 128),
+      idempotencyKey: stringField(
+        input.idempotencyKey || crypto.randomUUID(),
+        'AUTHORITY_COMMAND_IDEMPOTENCY_KEY_INVALID',
+        128
+      ),
+      authorityId: context.authorityId,
+      hostEpochId: context.hostEpochId,
+      actor,
+      lease: { id: context.lease.id, grantVersion: context.grant.version },
+      type,
+      payload,
+      payloadHash: sha256(stableJson(payload)),
+      createdAt: currentDate(now).toISOString(),
+    });
+    const requestAuth = signAuthorityHttpRequest({
+      method: 'POST',
+      path: '/api/authority/commands',
+      body: envelope,
+    });
+    return Object.freeze({ envelope, requestAuth });
+  }
+
+  function signAuthorityProjection(input = {}) {
+    if (!unlockedSecret) throw vaultError('DESKTOP_IDENTITY_VAULT_LOCKED');
+    const context = unlockedSecret.authorityContext;
+    if (!context) throw vaultError('DESKTOP_AUTHORITY_CONTEXT_REQUIRED');
+    if (input.authorityId !== context.authorityId || input.hostEpochId !== context.hostEpochId) {
+      throw vaultError('AUTHORITY_PROJECTION_HOST_EPOCH_MISMATCH');
+    }
+    try {
+      return createSignedAuthorityProjection({
+        ...input,
+        privateKey: privateKeyForSecret(unlockedSecret),
+      });
+    } catch (error) {
+      throw vaultError(error?.code || 'AUTHORITY_PROJECTION_SIGNING_FAILED', error);
+    }
+  }
+
   function clear() {
     pendingRegistration = null;
     unlockedSecret = null;
@@ -993,16 +1129,16 @@ function createDesktopIdentityVault({
   return Object.freeze({
     beginPasswordReset,
     beginRegistration,
-    beginSingleUserEnrollment,
     clear,
     completePasswordReset,
     completeRegistration,
+    createAuthorityCommand,
     lock,
     refreshOfflineLease,
-    createPairingEnvelope,
     seal,
+    signAuthorityProjection,
+    signAuthorityHttpRequest,
     signChallenge,
-    signPairingEnvelope,
     status,
     unlock,
   });

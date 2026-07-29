@@ -58,6 +58,16 @@ assert.strictEqual(
   'major',
   'breaking changes should auto bump major'
 );
+
+assert.strictEqual(
+  version.analyzeVersionBump({
+    files: ['src/services/syncApi.ts'],
+    deletedFiles: ['src/services/syncApi.ts'],
+    diff: '',
+  }),
+  'major',
+  'deleting an executable public API path should auto bump major'
+);
 assert.strictEqual(
   version.resolveBumpLevel(['--bump'], {}, { files: ['miniapp/src/pages/new-page/index.tsx'], diff: '新增页面' }),
   'minor',
@@ -75,6 +85,18 @@ version.syncPackageLockVersion(lockFixturePath, '2.0.0');
 const syncedLock = JSON.parse(fs.readFileSync(lockFixturePath, 'utf8'));
 assert.strictEqual(syncedLock.version, '2.0.0', 'version bump should sync package-lock top-level version');
 assert.strictEqual(syncedLock.packages[''].version, '2.0.0', 'version bump should sync package-lock root package version');
+const originalWriteFileSync = fs.writeFileSync;
+let redundantLockWrites = 0;
+fs.writeFileSync = (targetPath, ...args) => {
+  if (targetPath === lockFixturePath) redundantLockWrites += 1;
+  return originalWriteFileSync(targetPath, ...args);
+};
+try {
+  version.syncPackageLockVersion(lockFixturePath, '2.0.0');
+} finally {
+  fs.writeFileSync = originalWriteFileSync;
+}
+assert.strictEqual(redundantLockWrites, 0, 'version sync must not rewrite an already-current lockfile');
 assert.ok(packageJson.includes('version:bump:major'), 'package scripts should expose major version bump');
 assert.ok(packageJson.includes('version:bump:minor'), 'package scripts should expose minor version bump');
 assert.ok(packageJson.includes('version:bump:patch'), 'package scripts should expose patch version bump');

@@ -90,15 +90,14 @@ process.env.NODE_ENV = 'production';
 
 try {
   const service = new DatabaseService();
-  assert.strictEqual(service.getSchemaStatus().schemaVersion, 3120);
-  assert.strictEqual(service.getSchemaStatus().sqliteUserVersion, 3120);
+  assert.strictEqual(service.getSchemaStatus().schemaVersion, 3121);
+  assert.strictEqual(service.getSchemaStatus().sqliteUserVersion, 3121);
   const columns = service.db.prepare('PRAGMA table_info(users)').all().map(row => row.name);
   ['teacher_id', 'review_status', 'reviewed_by', 'reviewed_at'].forEach(column => {
     assert.ok(columns.includes(column), `users should include ${column}`);
   });
   ['authorization_audit_log', 'sync_rejections', 'user_role_grants',
-    'desktop_single_user_pairing_grants', 'desktop_single_user_pairing_requests',
-    'desktop_sync_batch_backups'].forEach(table => {
+    'desktop_sync_batch_backups', 'desktop_device_activations'].forEach(table => {
     assert.ok(service.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table));
   });
   const desktopAuthorizationColumns = service.db.prepare(

@@ -7,9 +7,16 @@ const TOKEN_ISSUER = 'gewu-miniapp-auth';
 const FORMAL_AUDIENCE = 'gewu-api';
 const EXPERIENCE_AUDIENCE = 'gewu-miniapp-experience';
 const FORMAL_TOKEN_USE = 'miniapp-session';
+const VISITOR_TOKEN_USE = 'miniapp-visitor';
 const UNRECOGNIZED_TOKEN_USE = 'unrecognized-student';
 const FORMAL_ROLES = new Set(['super_admin', 'admin', 'teacher', 'student']);
 const LOGIN_EVENT_RETENTION_MS = 180 * 24 * 60 * 60 * 1000;
+const VISITOR_CAPABILITIES = Object.freeze([
+  'projection:read',
+  'role-application:read',
+  'role-application:submit',
+  'question-preview:read',
+]);
 const UNRECOGNIZED_CAPABILITIES = Object.freeze([
   'experience:read',
   'profile-application:read',
@@ -50,6 +57,7 @@ function createMiniappIdentityService({
   now = () => new Date(),
   uuid = uuidv4,
   tokenExpiresIn = '7d',
+  authorityId = '',
 } = {}) {
   if (!db || typeof db.prepare !== 'function' || typeof db.transaction !== 'function') {
     throw serviceError('MINIAPP_IDENTITY_DB_REQUIRED');
@@ -59,6 +67,13 @@ function createMiniappIdentityService({
   const findByPhone = db.prepare('SELECT * FROM users WHERE phone_normalized = ? AND deleted = 0');
   const findByOpenid = db.prepare('SELECT * FROM users WHERE wechat_openid = ? AND deleted = 0');
   const findById = db.prepare('SELECT * FROM users WHERE id = ? AND deleted = 0');
+  const findAuthorityAccount = db.prepare(`SELECT user_id,authority_id,status
+    FROM authority_accounts WHERE user_id=?`);
+  const readConfiguredAuthority = db.prepare(
+    "SELECT value FROM authority_metadata WHERE key='database_authority_id'"
+  );
+  const readActiveAuthorities = db.prepare(`SELECT DISTINCT db_authority_id
+    FROM primary_host_epochs WHERE status='active' ORDER BY db_authority_id`);
   const studentExists = db.prepare('SELECT 1 FROM students WHERE id = ? AND deleted = 0');
   const teacherExists = db.prepare('SELECT 1 FROM teachers WHERE id = ? AND deleted = 0');
   const findMembership = db.prepare(`SELECT status, ends_at FROM account_memberships
@@ -71,6 +86,12 @@ function createMiniappIdentityService({
     (id, wechat_openid, wechat_unionid, phone, phone_normalized, name, nickname, avatar_url,
      role, identity_kind, status, login_enabled, review_status, auth_version, deleted, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unrecognized', 1, 0, 'pending', 1, 0, ?, ?)`);
+  const insertVisitorUser = db.prepare(`INSERT INTO users
+    (id, wechat_openid, wechat_unionid, phone, phone_normalized, name, nickname, avatar_url,
+     role, identity_kind, status, login_enabled, review_status, auth_version, deleted, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'visitor', 'visitor', 1, 1, 'approved', 1, 0, ?, ?)`);
+  const insertAuthorityAccount = db.prepare(`INSERT INTO authority_accounts
+    (user_id,authority_id,status,created_at,updated_at) VALUES (?,?,'active',?,?)`);
   const bindingService = createMiniappWechatBindingService({ db, now, uuid });
 
   function timestamp() {
@@ -118,19 +139,53 @@ function createMiniappIdentityService({
   }
 
   function hasEnabledFormalState(user) {
-    return user?.review_status === 'approved' && isEnabled(user?.login_enabled);
+    return Boolean(formalRole(user))
+      && user?.review_status === 'approved'
+      && isEnabled(user?.login_enabled);
+  }
+
+  function authorityAccountFor(user) {
+    return user?.id ? findAuthorityAccount.get(user.id) || null : null;
+  }
+
+  function isVisitor(user) {
+    if (isDisabled(user) || user.review_status !== 'approved' || !isEnabled(user.login_enabled)) return false;
+    if (String(user.role || '') !== 'visitor' || String(user.identity_kind || '') !== 'visitor') return false;
+    return authorityAccountFor(user)?.status === 'active';
+  }
+
+  function authorityIdForNewVisitor() {
+    const explicit = String(authorityId || '').trim();
+    if (explicit) return explicit;
+    const configured = String(readConfiguredAuthority.get()?.value || '').trim();
+    if (configured) return configured;
+    const active = readActiveAuthorities.all().map(row => String(row.db_authority_id || '').trim()).filter(Boolean);
+    if (active.length !== 1) throw serviceError('MINIAPP_VISITOR_AUTHORITY_UNAVAILABLE');
+    return active[0];
+  }
+
+  function accountStateFor(user) {
+    if (isFormal(user)) return 'formal';
+    if (isVisitor(user)) return 'visitor';
+    return 'unrecognized';
   }
 
   function identityKind(user, accountState) {
+    if (accountState === 'visitor') return 'visitor';
     if (accountState === 'unrecognized') return 'unrecognized';
     return user.identity_kind || formalRole(user) || 'unrecognized';
   }
 
   function presentUser(user, accountState) {
-    const role = accountState === 'formal' ? formalRole(user) : 'student';
+    const role = accountState === 'formal'
+      ? formalRole(user)
+      : accountState === 'visitor' ? 'visitor' : 'student';
     const membership = accountState === 'formal' ? membershipFor(user, role) : null;
     const member = isActiveMembership(membership);
-    const tokenUse = accountState === 'formal' ? FORMAL_TOKEN_USE : UNRECOGNIZED_TOKEN_USE;
+    const tokenUse = accountState === 'formal'
+      ? FORMAL_TOKEN_USE
+      : accountState === 'visitor' ? VISITOR_TOKEN_USE : UNRECOGNIZED_TOKEN_USE;
+    const authorityAccount = accountState === 'visitor' ? authorityAccountFor(user) : null;
     return {
       id: user.id,
       name: user.name || user.nickname || '',
@@ -143,6 +198,10 @@ function createMiniappIdentityService({
       identity_kind: identityKind(user, accountState),
       account_state: accountState,
       token_use: tokenUse,
+      ...(accountState === 'visitor' ? {
+        authority_id: authorityAccount?.authority_id || null,
+        capabilities: [...VISITOR_CAPABILITIES],
+      } : {}),
       ...(accountState === 'unrecognized' ? { capabilities: [...UNRECOGNIZED_CAPABILITIES] } : {}),
       student_id: accountState === 'formal' ? user.student_id || null : null,
       teacher_id: accountState === 'formal' ? user.teacher_id || null : null,
@@ -166,6 +225,12 @@ function createMiniappIdentityService({
     if (tokenUse === FORMAL_TOKEN_USE) {
       claims.role = formalRole(user);
       claims.identity_kind = identityKind(user, 'formal');
+    } else if (tokenUse === VISITOR_TOKEN_USE) {
+      const account = authorityAccountFor(user);
+      if (!account || account.status !== 'active') throw serviceError('MINIAPP_VISITOR_ACCOUNT_INACTIVE');
+      claims.role = 'visitor';
+      claims.identity_kind = 'visitor';
+      claims.authority_id = account.authority_id;
     }
     const token = jwt.sign(claims, jwtSecret, {
       algorithm: 'HS256',
@@ -185,13 +250,18 @@ function createMiniappIdentityService({
     return issueToken(user, sessionId, UNRECOGNIZED_TOKEN_USE, EXPERIENCE_AUDIENCE);
   }
 
+  function issueVisitorToken(user, sessionId = uuid()) {
+    if (!isVisitor(user)) throw serviceError('MINIAPP_VISITOR_NOT_ELIGIBLE');
+    return issueToken(user, sessionId, VISITOR_TOKEN_USE, FORMAL_AUDIENCE);
+  }
+
   function writeEvent({ user, phone, resultCode, sessionId = null, miniappVersion = null, platform = null }) {
     const eventId = uuid();
     insertEvent.run(
       eventId,
       user?.id || null,
       phone,
-      user ? identityKind(user, isFormal(user) ? 'formal' : 'unrecognized') : null,
+      user ? identityKind(user, accountStateFor(user)) : null,
       resultCode,
       sessionId,
       miniappVersion ? String(miniappVersion).slice(0, 64) : null,
@@ -229,19 +299,47 @@ function createMiniappIdentityService({
     return findById.get(userId);
   }
 
+  function createVisitorUser(input, currentTime = timestamp()) {
+    const userId = uuid();
+    insertVisitorUser.run(
+      userId,
+      input.openid,
+      input.unionid,
+      input.phone,
+      input.phone,
+      input.nickname || '\u8bbf\u5ba2',
+      input.nickname,
+      input.avatarUrl,
+      currentTime,
+      currentTime,
+    );
+    insertAuthorityAccount.run(
+      userId,
+      authorityIdForNewVisitor(),
+      currentTime,
+      currentTime,
+    );
+    return findById.get(userId);
+  }
+
   function loginOutcomeForUser(user, input) {
-    if (user.review_status === 'approved' && isEnabled(user.login_enabled) && !isFormal(user)) {
+    if (user.review_status === 'approved' && isEnabled(user.login_enabled)
+      && !isFormal(user) && !isVisitor(user)) {
       return conflictOutcome('FORMAL_IDENTITY_MAPPING_INVALID', user, input);
     }
-    const accountState = isFormal(user) ? 'formal' : 'unrecognized';
+    const accountState = accountStateFor(user);
     const sessionId = uuid();
     const issued = accountState === 'formal'
       ? issueFormalToken(user, sessionId)
-      : issueUnrecognizedToken(user, sessionId);
+      : accountState === 'visitor'
+        ? issueVisitorToken(user, sessionId)
+        : issueUnrecognizedToken(user, sessionId);
     const loginEventId = writeEvent({
       user,
       phone: input.phone,
-      resultCode: accountState === 'formal' ? 'FORMAL_LOGIN_SUCCESS' : 'UNRECOGNIZED_LOGIN_SUCCESS',
+      resultCode: accountState === 'formal'
+        ? 'FORMAL_LOGIN_SUCCESS'
+        : accountState === 'visitor' ? 'VISITOR_LOGIN_SUCCESS' : 'UNRECOGNIZED_LOGIN_SUCCESS',
       sessionId,
       miniappVersion: input.miniappVersion,
       platform: input.platform,
@@ -270,7 +368,7 @@ function createMiniappIdentityService({
 
     const currentTime = timestamp();
     if (!phoneOwner) {
-      phoneOwner = createUnrecognizedUser(input, currentTime);
+      phoneOwner = createVisitorUser(input, currentTime);
     } else if (!phoneOwner.wechat_openid) {
       const result = db.prepare(`UPDATE users
         SET wechat_openid = ?, wechat_unionid = COALESCE(wechat_unionid, ?),
@@ -316,7 +414,7 @@ function createMiniappIdentityService({
     if (phoneOwner) {
       return { bindingTarget: phoneOwner };
     }
-    return loginOutcomeForUser(createUnrecognizedUser(input), input);
+    return loginOutcomeForUser(createVisitorUser(input), input);
   });
 
   function normalizedLoginInput(input, phone, openid) {
@@ -429,6 +527,17 @@ function createMiniappIdentityService({
       }
       return user;
     }
+    if (claims.token_use === VISITOR_TOKEN_USE) {
+      if (claims.aud !== FORMAL_AUDIENCE || !isVisitor(user)) {
+        throw serviceError('MINIAPP_VISITOR_NOT_ELIGIBLE');
+      }
+      const account = authorityAccountFor(user);
+      if (claims.role !== 'visitor' || claims.identity_kind !== 'visitor'
+        || claims.authority_id !== account?.authority_id) {
+        throw serviceError('MINIAPP_VISITOR_CLAIMS_INVALID');
+      }
+      return user;
+    }
     throw serviceError('MINIAPP_TOKEN_USE_INVALID');
   }
 
@@ -445,6 +554,7 @@ function createMiniappIdentityService({
     expireLoginEvents,
     issueFormalToken,
     issueUnrecognizedToken,
+    issueVisitorToken,
     loginWithClaimedWechat,
     loginWithVerifiedWechat,
     readIdentityForToken,
@@ -457,5 +567,6 @@ module.exports = {
   FORMAL_TOKEN_USE,
   TOKEN_ISSUER,
   UNRECOGNIZED_TOKEN_USE,
+  VISITOR_TOKEN_USE,
   createMiniappIdentityService,
 };

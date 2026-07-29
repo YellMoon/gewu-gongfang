@@ -2,7 +2,6 @@ import {
   clearDesktopAuthorizationSession,
   saveDesktopAuthorizationSession,
 } from './desktopAuthorizationSession.mjs';
-import { exchangeDesktopSessionThroughRelay } from './desktopSessionRelayClient.mjs';
 
 export const OFFLINE_LEASE_MAX_MS = 14 * 24 * 60 * 60 * 1000;
 const CLOCK_SKEW_MS = 30 * 1000;
@@ -168,7 +167,8 @@ export function resolveDesktopGateState({ vaultStatus, online, onlineSession = n
 }
 
 export function canStartBusinessRuntime({ gateState } = {}) {
-  return gateState?.kind === 'online-unlocked' || gateState?.kind === 'offline-unlocked';
+  return gateState?.kind === 'online-unlocked'
+    || gateState?.kind === 'offline-unlocked';
 }
 
 export function desktopIdentityExpiryDelay(gateState, now = new Date()) {
@@ -188,9 +188,6 @@ export function isDesktopIdentityNetworkFailure(error) {
       'ENETUNREACH',
       'ETIMEDOUT',
       'EAI_AGAIN',
-      'DESKTOP_SESSION_RELAY_UNREACHABLE',
-      'DESKTOP_SESSION_RELAY_TIMEOUT',
-      'DESKTOP_SESSION_RELAY_REQUEST_EXPIRED',
       'TARGET_HOST_REQUIRED',
       'TARGET_HOST_NOT_FOUND',
     ].includes(causeCode);
@@ -257,7 +254,6 @@ function onlineSessionValue({ token, session, profile }) {
 export function createDesktopIdentityClient({
   desktopIdentity = globalThis.window?.desktopIdentity,
   fetchImpl = globalThis.fetch,
-  relaySessionExchange = exchangeDesktopSessionThroughRelay,
   now = () => new Date(),
   sessionStore = defaultSessionStore(),
   clearRoleCache = async () => {},
@@ -283,6 +279,7 @@ export function createDesktopIdentityClient({
       body: {
         deviceId: publicIdentity.deviceId,
         deviceName: publicIdentity.deviceName,
+        deviceKind,
         publicKey: publicIdentity.publicKey,
         keyFingerprint: publicIdentity.keyFingerprint,
         purpose: 'register',
@@ -313,6 +310,7 @@ export function createDesktopIdentityClient({
       body: {
         deviceId: publicIdentity.deviceId,
         deviceName: publicIdentity.deviceName,
+        deviceKind: publicIdentity.deviceKind,
         publicKey: publicIdentity.publicKey,
         keyFingerprint: publicIdentity.keyFingerprint,
         purpose: 'password_reset',
@@ -359,6 +357,90 @@ export function createDesktopIdentityClient({
       challengeSecret: pending.challengeSecret,
       rowVersion: pending.challenge.rowVersion,
     });
+    const passwordReset = pending.challenge.purpose === 'password_reset';
+    const bootstrapHostEnrollment = !passwordReset
+      && pending?.bootstrapHostEnrollment === true
+      && pending?.publicIdentity?.deviceKind === 'primary-host';
+    if (!passwordReset && !bootstrapHostEnrollment) {
+      const activation = await request(
+        fetchImpl,
+        pending.baseUrl,
+        `/api/desktop-identity/challenges/${encodeURIComponent(pending.challenge.id)}/activation/exchange`,
+        {
+          method: 'POST',
+          body: {
+            challengeSecret: pending.challengeSecret,
+            signature: proof.signature,
+            expectedRowVersion: pending.challenge.rowVersion,
+          },
+        }
+      );
+      const activationId = String(activation?.activation?.id || '').trim();
+      const packageHash = String(activation?.activation?.packageHash || '').trim();
+      const pendingPackage = activation?.activationPackage;
+      const authorityContext = pendingPackage && {
+        userId: pendingPackage.userId,
+        deviceId: pendingPackage.deviceId,
+        authorityId: pendingPackage.authorityId,
+        hostEpochId: pendingPackage.hostEpochId,
+        hostGeneration: pendingPackage.hostGeneration,
+        hostPublicKey: pendingPackage.hostPublicKey,
+        grant: pendingPackage.grant,
+        lease: pendingPackage.lease,
+      };
+      if (!activationId || !packageHash || !pendingPackage?.authorization || !pendingPackage?.profile
+        || !authorityContext?.userId || !authorityContext?.deviceId
+        || !authorityContext?.authorityId || !authorityContext?.hostEpochId
+        || !authorityContext?.hostGeneration || !authorityContext?.hostPublicKey
+        || !authorityContext?.grant?.id
+        || !authorityContext?.grant?.version || !authorityContext?.lease?.id
+        || !authorityContext?.lease?.activeRole || !authorityContext?.lease?.issuedAt
+        || !authorityContext?.lease?.expiresAt) {
+        throw identityError('DESKTOP_ACTIVATION_PACKAGE_INVALID');
+      }
+      const profile = profileFrom({
+        identity: pendingPackage.profile,
+        authorization: pendingPackage.authorization,
+        fallback: pendingPackage.profile,
+      });
+      if (typeof desktopIdentity.completeRegistration !== 'function'
+        || typeof desktopIdentity.refreshOfflineLease !== 'function') {
+        throw identityError('DESKTOP_IDENTITY_REGISTRATION_UNAVAILABLE');
+      }
+      await desktopIdentity.completeRegistration({
+        password,
+        authorization: pendingPackage.authorization,
+        profile,
+        offlineLease: null,
+        authorityContext,
+      });
+      const activationProof = await desktopIdentity.signChallenge({
+        purpose: 'activation-finalize', activationId, packageHash,
+      });
+      const finalized = await request(
+        fetchImpl,
+        pending.baseUrl,
+        `/api/desktop-identity/activations/${encodeURIComponent(activationId)}/finalize`,
+        { method: 'POST', body: { signature: activationProof.signature } }
+      );
+      if (!finalized.token || !finalized.session || !finalized.offlineLease || !finalized.profile) {
+        throw identityError('DESKTOP_ACTIVATION_FINALIZE_INVALID');
+      }
+      const vaultStatus = await desktopIdentity.refreshOfflineLease({
+        password,
+        authorization: finalized.authorization,
+        profile: finalized.profile,
+        offlineLease: finalized.offlineLease,
+      });
+      activePassword = password;
+      const stored = onlineSessionValue({ token: finalized.token, session: finalized.session, profile: finalized.profile });
+      await sessionStore.save(stored);
+      return {
+        ...stored,
+        vaultStatus,
+        gateState: resolveDesktopGateState({ vaultStatus, online: true, onlineSession: stored, now: currentDate() }),
+      };
+    }
     const exchanged = await request(
       fetchImpl,
       pending.baseUrl,
@@ -381,7 +463,6 @@ export function createDesktopIdentityClient({
     });
     const lease = exchanged.offlineLease;
     if (!lease) throw identityError('DESKTOP_OFFLINE_LEASE_REQUIRED');
-    const passwordReset = pending.challenge.purpose === 'password_reset';
     const commitVault = passwordReset
       ? desktopIdentity.completePasswordReset?.bind(desktopIdentity)
       : desktopIdentity.completeRegistration?.bind(desktopIdentity);
@@ -409,66 +490,6 @@ export function createDesktopIdentityClient({
         onlineSession: stored,
         now: currentDate(),
       }),
-    };
-  }
-
-  async function completeSingleUserPairing({
-    password,
-    result,
-    baseUrl,
-    hostBaseUrl,
-    cloudBaseUrl,
-    online = false,
-  } = {}) {
-    if (!result?.authorization || !result?.profile || !result?.offlineLease) {
-      throw identityError('PAIRING_RESULT_INVALID');
-    }
-    if (typeof desktopIdentity.completeRegistration !== 'function') {
-      throw identityError('DESKTOP_IDENTITY_REGISTRATION_UNAVAILABLE');
-    }
-    let vaultStatus = null;
-    const resultCredentialVersion = Number(result.authorization.credentialVersion);
-    if (result.authorization.deviceId
-      && Number.isSafeInteger(resultCredentialVersion)
-      && typeof desktopIdentity.status === 'function') {
-      let currentVault = await desktopIdentity.status();
-      if (currentVault?.state === 'sealed'
-        && currentVault.deviceId === result.authorization.deviceId
-        && typeof desktopIdentity.unlock === 'function') {
-        currentVault = await desktopIdentity.unlock({ password });
-      }
-      if (currentVault?.state === 'unlocked') {
-        const matchesPersistedPairing = currentVault.authorizationSource === 'single_user_pairing'
-          && currentVault.authorizationId === result.authorization.id
-          && currentVault.deviceId === result.authorization.deviceId
-          && Number(currentVault.credentialVersion) === resultCredentialVersion;
-        if (!matchesPersistedPairing) throw identityError('DESKTOP_PAIRING_VAULT_MISMATCH');
-        vaultStatus = currentVault;
-      }
-    }
-    if (!vaultStatus) {
-      vaultStatus = await desktopIdentity.completeRegistration({
-        password,
-        authorization: result.authorization,
-        profile: result.profile,
-        offlineLease: result.offlineLease,
-      });
-    }
-    activePassword = password;
-    await sessionStore.clear();
-    if (online) {
-      return unlock({
-        baseUrl,
-        hostBaseUrl,
-        cloudBaseUrl,
-        password,
-        online: true,
-      });
-    }
-    return {
-      offline: true,
-      vaultStatus,
-      gateState: resolveDesktopGateState({ vaultStatus, online: false, now: currentDate() }),
     };
   }
 
@@ -538,28 +559,13 @@ export function createDesktopIdentityClient({
     };
   }
 
-  function usableDirectHostBase(value) {
-    const normalized = String(value || '').trim().replace(/\/+$/, '');
-    if (!/^https?:\/\//i.test(normalized)) return '';
-    try {
-      const hostname = new URL(normalized).hostname.toLowerCase();
-      if (['127.0.0.1', 'localhost', '::1', '[::1]'].includes(hostname)) return '';
-    } catch (_error) {
-      return '';
-    }
-    return normalized;
-  }
-
   async function unlock({
     baseUrl,
-    hostBaseUrl,
-    cloudBaseUrl,
     password,
     online = true,
   } = {}) {
     const vaultStatus = await desktopIdentity.unlock({ password });
     activePassword = password;
-    const pairedSingleUserDevice = vaultStatus?.authorizationSource === 'single_user_pairing';
     if (!online) {
       await sessionStore.clear();
       return {
@@ -568,62 +574,17 @@ export function createDesktopIdentityClient({
         gateState: resolveDesktopGateState({ vaultStatus, online: false, now: currentDate() }),
       };
     }
-    if (!pairedSingleUserDevice) {
-      return saveIssuedSession({
-        issued: await exchangeDirectSession(baseUrl, vaultStatus),
-        password,
-        vaultStatus,
-      });
-    }
-
-    const errors = [];
-    const directBaseUrl = usableDirectHostBase(hostBaseUrl);
-    if (directBaseUrl) {
-      try {
-        return await saveIssuedSession({
-          issued: await exchangeDirectSession(directBaseUrl, vaultStatus),
-          password,
-          vaultStatus,
-        });
-      } catch (error) {
-        errors.push(error);
-      }
-    }
-    const relayBaseUrl = String(cloudBaseUrl || baseUrl || '').trim();
-    if (relayBaseUrl) {
-      try {
-        const issued = await relaySessionExchange({
-          baseUrl: relayBaseUrl,
-          authorizationId: vaultStatus.authorizationId,
-          deviceId: vaultStatus.deviceId,
-          fetchImpl,
-          signChallenge: input => desktopIdentity.signChallenge(input),
-        });
-        return await saveIssuedSession({ issued, password, vaultStatus });
-      } catch (error) {
-        errors.push(error);
-      }
-    }
-    const authoritativeError = errors.find(error => !isDesktopIdentityNetworkFailure(error));
-    if (authoritativeError) throw authoritativeError;
-    await sessionStore.clear();
-    const gateState = resolveDesktopGateState({
+    return saveIssuedSession({
+      issued: await exchangeDirectSession(baseUrl, vaultStatus),
+      password,
       vaultStatus,
-      online: false,
-      now: currentDate(),
     });
-    if (!canStartBusinessRuntime({ gateState })) {
-      throw errors.at(-1) || identityError('DESKTOP_SESSION_RELAY_UNREACHABLE');
-    }
-    return { offline: true, vaultStatus, gateState };
   }
 
-  async function ensureOnlineSession({ baseUrl, hostBaseUrl, cloudBaseUrl } = {}) {
+  async function ensureOnlineSession({ baseUrl } = {}) {
     if (!activePassword) throw identityError('DESKTOP_IDENTITY_LOCAL_PASSWORD_REQUIRED');
     return unlock({
-      baseUrl: baseUrl || cloudBaseUrl || hostBaseUrl,
-      hostBaseUrl,
-      cloudBaseUrl,
+      baseUrl,
       password: activePassword,
       online: true,
     });
@@ -681,7 +642,6 @@ export function createDesktopIdentityClient({
     beginPasswordReset,
     beginRegistration,
     completeRegistration,
-    completeSingleUserPairing,
     ensureOnlineSession,
     lock,
     pollRegistration,

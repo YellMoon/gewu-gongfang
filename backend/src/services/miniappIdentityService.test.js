@@ -31,6 +31,8 @@ try {
     uuid: () => `identity-test-${++sequence}`,
   });
   const now = clock.toISOString();
+  db.prepare(`INSERT INTO authority_metadata(key,value,updated_at)
+    VALUES('database_authority_id','authority-miniapp-test',?)`).run(now);
 
   db.prepare(`INSERT INTO users
     (id, phone, phone_normalized, name, role, identity_kind, status, login_enabled,
@@ -73,7 +75,25 @@ try {
     miniappVersion: '6.4.0',
     platform: 'wechat',
   });
-  assert.strictEqual(manualFresh.user.account_state, 'unrecognized');
+  assert.strictEqual(manualFresh.user.account_state, 'visitor');
+  assert.strictEqual(manualFresh.user.role, 'visitor');
+  assert.strictEqual(manualFresh.user.user_type, 'visitor');
+  assert.strictEqual(manualFresh.user.identity_kind, 'visitor');
+  assert.strictEqual(manualFresh.user.token_use, 'miniapp-visitor');
+  assert.strictEqual(manualFresh.user.authority_id, 'authority-miniapp-test');
+  assert.strictEqual(manualFresh.claims.token_use, 'miniapp-visitor');
+  assert.strictEqual(manualFresh.claims.role, 'visitor');
+  assert.strictEqual(manualFresh.claims.authority_id, 'authority-miniapp-test');
+  assert.deepStrictEqual(
+    db.prepare(`SELECT role,identity_kind,review_status,login_enabled
+      FROM users WHERE id=?`).get(manualFresh.user.id),
+    { role: 'visitor', identity_kind: 'visitor', review_status: 'approved', login_enabled: 1 },
+  );
+  assert.deepStrictEqual(
+    db.prepare(`SELECT authority_id,status FROM authority_accounts
+      WHERE user_id=?`).get(manualFresh.user.id),
+    { authority_id: 'authority-miniapp-test', status: 'active' },
+  );
   assert.strictEqual(manualFresh.user.phone, '13800138006');
   assert.strictEqual(
     identity.loginWithClaimedWechat({
@@ -176,6 +196,13 @@ try {
     audience: 'gewu-api',
   }).sub, 'formal-admin');
 
+  const repeatedFormalLogin = identity.loginWithVerifiedWechat({
+    openid: 'wx-formal',
+    phone: '13800138001',
+  });
+  assert.strictEqual(repeatedFormalLogin.user.id, formal.user.id,
+    'the same verified WeChat identity must be reusable for another desktop authorization');
+
   const formalTeacher = identity.loginWithVerifiedWechat({
     openid: 'wx-formal-teacher',
     phone: '13800138004',
@@ -184,32 +211,31 @@ try {
   assert.strictEqual(formalTeacher.user.teacher_id, 'teacher-formal-record');
   assert.strictEqual(formalTeacher.claims.token_use, 'miniapp-session');
 
-  const unrecognized = identity.loginWithVerifiedWechat({
+  const visitor = identity.loginWithVerifiedWechat({
     openid: 'wx-new',
     phone: '13800138000',
     miniappVersion: '5.15.0',
     platform: 'android',
   });
-  assert.strictEqual(unrecognized.user.role, 'student');
-  assert.strictEqual(unrecognized.user.account_state, 'unrecognized');
-  assert.strictEqual(unrecognized.user.token_use, 'unrecognized-student');
-  assert.strictEqual(Object.prototype.hasOwnProperty.call(unrecognized.user, 'membership'), false);
-  assert.deepStrictEqual(unrecognized.user.capabilities, [
-    'experience:read',
-    'profile-application:read',
-    'profile-application:submit',
-    'sample-questions:view',
-    'sample-paper-export',
+  assert.strictEqual(visitor.user.role, 'visitor');
+  assert.strictEqual(visitor.user.account_state, 'visitor');
+  assert.strictEqual(visitor.user.token_use, 'miniapp-visitor');
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(visitor.user, 'membership'), false);
+  assert.deepStrictEqual(visitor.user.capabilities, [
+    'projection:read',
+    'role-application:read',
+    'role-application:submit',
+    'question-preview:read',
   ]);
-  assert.strictEqual(unrecognized.claims.token_use, 'unrecognized-student');
-  assert.strictEqual(unrecognized.claims.iss, 'gewu-miniapp-auth');
-  assert.strictEqual(unrecognized.claims.aud, 'gewu-miniapp-experience');
-  assert.ok(!('phone' in unrecognized.claims));
-  assert.ok(!('openid' in unrecognized.claims));
-  const pending = db.prepare('SELECT * FROM users WHERE id=?').get(unrecognized.user.id);
+  assert.strictEqual(visitor.claims.token_use, 'miniapp-visitor');
+  assert.strictEqual(visitor.claims.iss, 'gewu-miniapp-auth');
+  assert.strictEqual(visitor.claims.aud, 'gewu-api');
+  assert.ok(!('phone' in visitor.claims));
+  assert.ok(!('openid' in visitor.claims));
+  const pending = db.prepare('SELECT * FROM users WHERE id=?').get(visitor.user.id);
   assert.deepStrictEqual(
     [pending.role, pending.identity_kind, pending.review_status, pending.login_enabled],
-    ['pending', 'unrecognized', 'pending', 0],
+    ['visitor', 'visitor', 'approved', 1],
   );
 
   const firstBinding = identity.loginWithVerifiedWechat({
@@ -239,9 +265,9 @@ try {
   assert.deepStrictEqual(concurrent.map(item => item.status).sort(), ['fulfilled', 'rejected']);
   assert.strictEqual(db.prepare('SELECT COUNT(*) count FROM users WHERE phone_normalized=?').get('13800138888').count, 1);
 
-  db.prepare('UPDATE users SET auth_version=auth_version+1 WHERE id=?').run(unrecognized.user.id);
+  db.prepare('UPDATE users SET auth_version=auth_version+1 WHERE id=?').run(visitor.user.id);
   assert.throws(
-    () => identity.readIdentityForToken(unrecognized.claims),
+    () => identity.readIdentityForToken(visitor.claims),
     error => error?.code === 'AUTH_VERSION_MISMATCH',
   );
 
@@ -253,14 +279,14 @@ try {
     .run(mappingGuard.user.id);
   assert.throws(
     () => identity.readIdentityForToken(mappingGuard.claims),
-    error => error?.code === 'UNRECOGNIZED_IDENTITY_NOT_ELIGIBLE',
-    'an enabled formal-state flag must revoke an unrecognized token even when the business mapping is corrupt',
+    error => error?.code === 'MINIAPP_VISITOR_NOT_ELIGIBLE',
+    'changing a visitor into an invalid formal mapping must revoke the visitor token',
   );
 
   const events = db.prepare(`SELECT user_id, phone_normalized, result_code, session_id,
     miniapp_version, platform FROM miniapp_login_events ORDER BY created_at, rowid`).all();
   assert.ok(events.some(event => event.result_code === 'FORMAL_LOGIN_SUCCESS' && event.user_id === 'formal-admin'));
-  assert.ok(events.some(event => event.result_code === 'UNRECOGNIZED_LOGIN_SUCCESS' && event.user_id === unrecognized.user.id));
+  assert.ok(events.some(event => event.result_code === 'VISITOR_LOGIN_SUCCESS' && event.user_id === visitor.user.id));
   assert.ok(events.some(event => event.result_code === 'PHONE_WECHAT_BINDING_CONFLICT'));
   assert.ok(events.some(event => event.result_code === 'OPENID_PHONE_BINDING_CONFLICT'));
   assert.ok(events.some(event => event.result_code === 'MINIAPP_LOGIN_DISABLED'));

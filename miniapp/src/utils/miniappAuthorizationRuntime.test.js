@@ -1,6 +1,7 @@
 const assert = require('assert');
 const {
   UNRECOGNIZED_MODULES,
+  VISITOR_MODULES,
   canUserSubmitMiniappWrite,
   deriveAccess,
   permissionIdentityKey,
@@ -111,6 +112,29 @@ assert.deepStrictEqual(unrecognizedPolicy.modules, UNRECOGNIZED_MODULES);
 assert.strictEqual(unrecognizedPolicy.readonlyScope, 'account-experience');
 assert.deepStrictEqual(unrecognizedPolicy.allowedWriteTasks, []);
 assert.strictEqual(canUserSubmitMiniappWrite(unrecognized, 'asset-import', ['asset-import']), false);
+
+const visitor = {
+  id: 'visitor-1', user_type: 'visitor', role: 'visitor', identity_kind: 'visitor',
+  account_state: 'visitor', token_use: 'miniapp-visitor', authority_id: 'authority-1',
+  capabilities: [
+    'projection:read', 'role-application:read', 'role-application:submit', 'question-preview:read',
+  ],
+};
+const visitorAccess = deriveAccess(visitor, {
+  status: 'idle', identityKey: '', capabilities: [],
+});
+assert.strictEqual(visitorAccess.role, 'visitor');
+assert.deepStrictEqual(visitorAccess.modules, VISITOR_MODULES);
+assert.strictEqual(visitorAccess.experienceOnly, true);
+assert.strictEqual(visitorAccess.canReadUsers, false);
+assert.strictEqual(visitorAccess.canEditQuestionBank, false);
+assert.strictEqual(businessCacheIdentityKey(visitor), '', 'visitor must never open a raw business cache');
+assert.ok(permissionIdentityKey(visitor).startsWith('visitor:visitor-1:authority-1'));
+const visitorPolicy = accountExperiencePolicy(visitor);
+assert.strictEqual(visitorPolicy.readonlyScope, 'authority-projection');
+assert.deepStrictEqual(visitorPolicy.modules, VISITOR_MODULES);
+assert.deepStrictEqual(visitorPolicy.allowedWriteTasks, []);
+assert.strictEqual(canUserSubmitMiniappWrite(visitor, 'asset-import', ['asset-import']), false);
 
 const legacyReview = { id: 'review-demo:admin:legacy', user_type: 'admin', is_review_demo: true };
 const legacyAccess = deriveAccess(legacyReview, {

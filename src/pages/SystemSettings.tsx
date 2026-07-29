@@ -10,9 +10,11 @@ import {
   type RuntimeConfig,
 } from '../services/runtimeConfigClient';
 import SyncSettings from './SyncSettings';
+import HostAuthorityExecutionMonitor from '../components/HostAuthorityExecutionMonitor';
 import type { CloudSyncContext } from '../navigation/navigationContext';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 import { systemSettingsRolePolicy } from '../services/systemSettingsRolePolicy.mjs';
+import { authoritySyncSurfacePolicy } from '../services/authoritySyncSurfacePolicy.mjs';
 import {
   desktopUpdateStateAfterCheck,
   desktopUpdateErrorMessage,
@@ -81,6 +83,13 @@ type DesktopUpdateState = {
   error?: string;
 };
 
+type WindowsHostFirewallStatus = {
+  state: string;
+  code?: string | null;
+  managed?: boolean;
+  localPort?: number;
+};
+
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:3001/api';
 const QUESTION_BANK_STORAGE_STATUS_PATH = '/api/question-bank/storage/status';
 const apiOrigin = API_BASE.replace(/\/api\/?$/, '');
@@ -102,6 +111,8 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
     downloaded: false,
     progress: 0,
   });
+  const [windowsHostFirewallStatus, setWindowsHostFirewallStatus] = useState<WindowsHostFirewallStatus | null>(null);
+  const [windowsHostFirewallLoading, setWindowsHostFirewallLoading] = useState(false);
 
   const loadBackupJobs = async () => {
     try {
@@ -196,6 +207,42 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
       message.warning(error.message || '运行配置暂不可用');
     }
   };
+
+  const loadWindowsHostFirewallStatus = async () => {
+    const primaryHostRuntime = (window as any).primaryHostRuntime;
+    if (!primaryHostRuntime?.firewallStatus) return;
+    setWindowsHostFirewallLoading(true);
+    try {
+      setWindowsHostFirewallStatus(await primaryHostRuntime.firewallStatus());
+    } catch (error: any) {
+      setWindowsHostFirewallStatus({ state: 'error', code: error?.code || 'WINDOWS_FIREWALL_AUDIT_FAILED' });
+    } finally {
+      setWindowsHostFirewallLoading(false);
+    }
+  };
+
+  const requestWindowsHostLanFirewall = async () => {
+    const primaryHostRuntime = (window as any).primaryHostRuntime;
+    if (!primaryHostRuntime?.enableLanFirewall) return;
+    setWindowsHostFirewallLoading(true);
+    try {
+      const result = await primaryHostRuntime.enableLanFirewall();
+      setWindowsHostFirewallStatus(result);
+      if (result?.state === 'elevation-requested') {
+        message.info('Windows administrator approval was requested. Recheck after it completes.');
+      } else {
+        message.warning(result?.code || 'LAN access approval was not completed');
+      }
+    } catch (error: any) {
+      message.error(error?.message || 'LAN access approval was not completed');
+    } finally {
+      setWindowsHostFirewallLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (runtimeConfig?.nodeRole === 'primary-host') void loadWindowsHostFirewallStatus();
+  }, [runtimeConfig?.nodeRole]);
 
   const handleSaveRuntimeConfig = async () => {
     setRuntimeLoading(true);
@@ -482,6 +529,7 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
   };
 
   const settingsPolicy = systemSettingsRolePolicy(runtimeConfig?.nodeRole);
+  const authoritySurface = authoritySyncSurfacePolicy(runtimeConfig?.nodeRole);
   if (!settingsPolicy.isPrimaryHost) {
     let accountLabel = '\u7b49\u5f85\u7ba1\u7406\u5458\u6279\u51c6';
     try {
@@ -514,6 +562,31 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
           style={{ marginBottom: 16 }}
           message={runtimeConfig?.nodeRole === 'primary-host' ? '当前配置为本地数据主机' : '当前配置为普通离线客户端'}
           description="本地数据主机保存权威数据和题库移动硬盘；普通离线客户端可断网修改，联网后经确认同步到主机。"
+        />
+        <Alert
+          type={windowsHostFirewallStatus?.state === 'enabled' ? 'success' : 'info'}
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="LAN access"
+          description={(
+            <Space direction="vertical" size={2}>
+              <span>Default is loopback only. Enable access only for the installed host program on the private local subnet.</span>
+              <span>LocalSubnet / Private / TCP {windowsHostFirewallStatus?.localPort || '-'}</span>
+              <span>State: {windowsHostFirewallStatus?.state || 'not checked'}</span>
+            </Space>
+          )}
+          action={(
+            <Space>
+              <Button size="small" loading={windowsHostFirewallLoading} onClick={() => void loadWindowsHostFirewallStatus()}>
+                Check
+              </Button>
+              {windowsHostFirewallStatus?.state !== 'enabled' && (
+                <Button size="small" type="primary" loading={windowsHostFirewallLoading} onClick={() => void requestWindowsHostLanFirewall()}>
+                  Enable LAN access
+                </Button>
+              )}
+            </Space>
+          )}
         />
         <Alert
           type={questionBankStorageStatus?.available ? 'success' : 'warning'}
@@ -605,11 +678,6 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
           <Form.Item name="cloudBaseUrl" label="阿里云服务地址">
             <Input placeholder="https://your-domain.example.com" />
           </Form.Item>
-          {false && (
-          <Form.Item hidden name="retiredDesktopSyncToken" label={'\u684c\u9762\u7aef\u540c\u6b65\u5bc6\u94a5'}>
-            <Input.Password placeholder="same token on host, clients, and cloud env GEWU_DESKTOP_SYNC_TOKEN" />
-          </Form.Item>
-          )}
           <Form.Item name="questionBankCandidatePaths" label="题库盘候选路径（支持热插拔/盘符变化）">
             <Select mode="tags" tokenSeparators={[';']} placeholder="例如 I:/GewuQuestionBank；换 Type-C 后可加入 J:/GewuQuestionBank" />
           </Form.Item>
@@ -646,7 +714,7 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
           items={[{
             key: 'sync-advanced',
             label: String.fromCodePoint(25968, 25454, 21516, 27493, 65306, 39640, 32423, 25805, 20316, 19982, 31995, 32479, 35814, 24773),
-            children: <SyncSettings variant="advanced" />,
+            children: authoritySurface.showsHostExecutionMonitor ? <HostAuthorityExecutionMonitor /> : <SyncSettings variant="advanced" />,
           }]}
         />
       </section>

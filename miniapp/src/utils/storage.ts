@@ -6,7 +6,7 @@ const PREFIX = 'sch_';
 const CACHE_IDENTITY_KEY = 'cache_identity';
 const BUSINESS_TABLES: SyncTable[] = [
   'students', 'courses', 'schedules', 'teachers', 'payments', 'consumptions',
-  'assetRecords', 'assetCategories', 'questions', 'grades',
+  'assetRecords', 'assetCategories', 'questions', 'grades', 'rooms', 'institutions',
 ];
 let activeCacheIdentity = '';
 

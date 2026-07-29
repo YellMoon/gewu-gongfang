@@ -5,7 +5,7 @@ import { onNetworkStatusChange, offNetworkStatusChange } from '@tarojs/taro'
 import { getApiBaseUrl, setApiBaseUrl } from '../../utils/api'
 import { authSessionRuntime } from '../../utils/authSession'
 import { clearAuthenticatedSession } from '../../utils/miniappApiSessionRuntime'
-import { accountSessionCleanupStorageKeys, isUnrecognizedIdentity } from '../../utils/accountExperience'
+import { accountSessionCleanupStorageKeys, isUnrecognizedIdentity, isVisitorIdentity } from '../../utils/accountExperience'
 import { isOnline, getPendingChanges, clearPendingChanges, getLastSyncTimestamp, clearBusinessCache } from '../../utils/storage'
 import { clearPermissionCache } from '../../utils/permission'
 import { triggerSync, pullFromCloud } from '../../utils/sync'
@@ -16,6 +16,8 @@ import './index.scss'
 export default function Settings() {
   const currentIdentity = Taro.getStorageSync('user_info')
   const isUnrecognized = isUnrecognizedIdentity(currentIdentity)
+  const isVisitor = isVisitorIdentity(currentIdentity)
+  const isLimitedIdentity = isUnrecognized || isVisitor
   const [online, setOnline] = useState(true)
   const [pendingCount, setPendingCount] = useState(0)
   const [syncing, setSyncing] = useState(false)
@@ -36,7 +38,7 @@ export default function Settings() {
 
   const refreshStatus = () => {
     setOnline(isOnline())
-    if (isUnrecognized) {
+    if (isLimitedIdentity) {
       setPendingCount(0)
       setLastSync(0)
       return
@@ -47,7 +49,7 @@ export default function Settings() {
   }
 
   const handleSyncNow = async () => {
-    if (isUnrecognized) {
+    if (isLimitedIdentity) {
       Taro.showToast({ title: '\u5ba1\u6838\u4f53\u9a8c\u4e2d\u4e0d\u53ef\u540c\u6b65\u4e1a\u52a1\u6570\u636e', icon: 'none' })
       return
     }
@@ -73,13 +75,13 @@ export default function Settings() {
   }
 
   const handleEditUrl = () => {
-    if (isUnrecognized) return
+    if (isLimitedIdentity) return
     setTempUrl(serverUrl)
     setEditingUrl(true)
   }
 
   const handleSaveUrl = () => {
-    if (isUnrecognized) {
+    if (isLimitedIdentity) {
       setEditingUrl(false)
       return
     }
@@ -92,7 +94,7 @@ export default function Settings() {
   }
 
   const handleClearPending = () => {
-    if (isUnrecognized) return
+    if (isLimitedIdentity) return
     Taro.showModal({
       title: '确认清空',
       content: `确定要清空 ${pendingCount} 条待同步数据？`,
@@ -119,7 +121,7 @@ export default function Settings() {
       success: (res) => {
         if (res.confirm) {
           const currentUser = Taro.getStorageSync('user_info')
-          const exitingExperience = isUnrecognizedIdentity(currentUser)
+          const exitingExperience = isUnrecognizedIdentity(currentUser) || isVisitorIdentity(currentUser)
           clearAuthenticatedSession({
             invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance(),
             clearPermissionCache,
@@ -134,7 +136,7 @@ export default function Settings() {
     })
   }
 
-  if (isUnrecognized) {
+  if (isLimitedIdentity) {
     return (
       <View className='settings-page'>
         <AccountStatusBanner />
@@ -146,7 +148,7 @@ export default function Settings() {
         </View>
         <View className='section'>
           <View className='setting-item' onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}>
-            <View className='item-left'><View className='item-icon info'>{'\u7533'}</View><Text className='item-label'>{'\u7533\u8bf7\u6b63\u5f0f\u8d26\u53f7'}</Text></View>
+            <View className='item-left'><View className='item-icon info'>{'\u7533'}</View><Text className='item-label'>{isVisitor ? '\u7533\u8bf7\u8001\u5e08/\u5b66\u751f\u89d2\u8272' : '\u7533\u8bf7\u6b63\u5f0f\u8d26\u53f7'}</Text></View>
             <View className='item-right'><Text className='arrow'>{'\u203a'}</Text></View>
           </View>
         </View>

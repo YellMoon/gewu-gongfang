@@ -79,7 +79,19 @@ async function main() {
     'loopback local preflight must resolve the current authenticated V2 actor');
   assert.ok(electronSource.includes('GEWU_ELECTRON_LOCAL_BRIDGE_SECRET'));
   assert.ok(electronSource.includes("purpose: 'primary-host-receipt'"));
-  assert.ok(electronSource.includes('MANAGED_CLOUD_BASE_URL'), 'host credential verification must use the pinned identity control plane');
+  assert.ok(electronSource.includes('function getManagedCloudBaseUrl()'),
+    'host credential verification must resolve the same managed control plane as the runtime configuration');
+  assert.ok(electronSource.includes('const controlPlaneBaseUrl = getManagedCloudBaseUrl()')
+    && electronSource.includes('`${controlPlaneBaseUrl}/api/desktop-identity/primary-host/credentials/verify`'),
+    'host credential adoption verification must not fall back to a different compiled-in cloud endpoint');
+  assert.ok(electronSource.includes("require('./managedControlPlaneRequest')")
+    && electronSource.includes('requestManagedControlPlane(`${controlPlaneBaseUrl}/api/desktop-identity/primary-host/credentials/verify`'),
+  'Electron main must use the direct managed-control-plane transport instead of its browser-network fetch stack');
+  assert.ok(electronSource.includes("[primary-host:adopt] ${String(error?.code || 'PRIMARY_HOST_ADOPTION_FAILED')}"),
+    'the Electron main process must retain a non-secret adoption failure code for local diagnosis');
+  assert.ok(electronSource.includes("log('[primary-host:adopt] requested')")
+    && electronSource.includes("log('[primary-host:adopt] committed')"),
+  'the Electron main process must distinguish an uninvoked action from a completed local adoption');
   assert.ok(preloadSource.includes("contextBridge.exposeInMainWorld('primaryHostRuntime'"));
   assert.ok(preloadSource.includes("ipcRenderer.invoke('primary-host:local-receipt'"));
   assert.ok(preloadSource.includes("ipcRenderer.invoke('primary-host:prepare-operation'"));
@@ -135,47 +147,6 @@ async function main() {
   assert.strictEqual(initialized.config.nodeRole, 'desktop-client');
   assert.deepStrictEqual(initialized.credential, { state: 'empty', active: false });
   assert.ok(!env.GEWU_PRIMARY_HOST_CREDENTIAL);
-  assert.throws(() => manager.setIdentityMode({
-    mode: 'single-user', confirmation: 'WRONG_CONFIRMATION',
-  }), error => error.code === 'DESKTOP_IDENTITY_MODE_CONFIRMATION_REQUIRED');
-  const enabledMode = manager.setIdentityMode({
-    mode: 'single-user', confirmation: 'ENABLE_SINGLE_USER_MODE',
-  });
-  assert.strictEqual(enabledMode.config.desktopIdentityMode, 'single-user');
-  assert.strictEqual(enabledMode.restartRequired, true);
-  assert.strictEqual(env.GEWU_DESKTOP_IDENTITY_MODE, 'single-user');
-
-  const singleUserBootstrapEpoch = {
-    id: 'single-user-epoch-1', generation: 1, deviceId: 'desktop-target-a',
-    userId: 'canonical-owner', activatedAt: '2026-07-23T04:00:00.000Z',
-  };
-  const failedRuntimeWriteManager = createPrimaryHostRuntimeManager({
-    ...dependencies,
-    writeManagedHostRuntimeConfig() {
-      const error = new Error('simulated managed runtime write failure');
-      error.code = 'PRIMARY_HOST_RUNTIME_CONFIG_FAILED';
-      throw error;
-    },
-  });
-  assert.throws(() => failedRuntimeWriteManager.completeSingleUserBootstrap({
-    epoch: singleUserBootstrapEpoch,
-  }), error => error.code === 'PRIMARY_HOST_RUNTIME_CONFIG_FAILED');
-  const completedSingleUserBootstrap = manager.completeSingleUserBootstrap({
-    epoch: singleUserBootstrapEpoch,
-  });
-  assert.strictEqual(completedSingleUserBootstrap.config.nodeRole, 'primary-host');
-  assert.strictEqual(completedSingleUserBootstrap.config.primaryHostEpochId, singleUserBootstrapEpoch.id);
-  assert.strictEqual(completedSingleUserBootstrap.restartRequired, true);
-  assert.strictEqual(env.GEWU_NODE_ROLE, 'primary-host');
-  assert.ok(!env.GEWU_PRIMARY_HOST_CREDENTIAL);
-  const resumedSingleUser = createPrimaryHostRuntimeManager({ ...dependencies, env: {} }).initialize();
-  assert.strictEqual(resumedSingleUser.config.nodeRole, 'primary-host');
-  assert.strictEqual(resumedSingleUser.credential.state, 'empty');
-  manager.demote({ expectedEpochId: singleUserBootstrapEpoch.id });
-  manager.setIdentityMode({
-    mode: 'single-user', confirmation: 'ENABLE_SINGLE_USER_MODE',
-  });
-
   const epoch = {
     id: 'epoch-target-2', generation: 2, deviceId: 'desktop-target-a', userId: 'canonical-owner',
     activatedAt: '2026-07-18T03:00:00.000Z',
@@ -246,6 +217,7 @@ async function main() {
   assert.deepStrictEqual(adopted, {
     state: 'active', active: true, epochId: epoch.id, generation: 2,
     deviceId: epoch.deviceId, userId: epoch.userId, activatedAt: epoch.activatedAt,
+    hostSigningKey: adopted.hostSigningKey,
     recoveryDelivery: { pending: true, deliveryId: 'delivery-2', epochId: epoch.id, rowVersion: 1 },
     restartRequired: true,
   });

@@ -7,7 +7,7 @@ const ACTIVE_CHALLENGE_STATUSES = Object.freeze([
   'identity_verified_pending_approval',
   'approved_pending_exchange',
 ]);
-const START_KEYS = new Set(['deviceId', 'deviceName', 'publicKey', 'keyFingerprint', 'purpose']);
+const START_KEYS = new Set(['deviceId', 'deviceName', 'deviceKind', 'publicKey', 'keyFingerprint', 'purpose']);
 const CONFIRM_KEYS = new Set(['challengeId', 'identity', 'loginEventId', 'expectedRowVersion']);
 const VERIFY_SECRET_KEYS = new Set(['challengeId', 'challengeSecret']);
 const APPROVE_KEYS = new Set(['challengeId', 'actorContext', 'expectedRowVersion']);
@@ -286,11 +286,13 @@ function createDesktopIdentityService({
     assertAllowedKeys(input, START_KEYS);
     const deviceId = String(input.deviceId || '').trim();
     let deviceName = String(input.deviceName || '').trim();
+    const deviceKind = String(input.deviceKind || 'desktop-client').trim();
     const purpose = String(input.purpose || 'register').trim();
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(deviceId)) {
       throw serviceError('DESKTOP_DEVICE_ID_INVALID');
     }
     if (!deviceName || deviceName.length > 128) throw serviceError('DESKTOP_DEVICE_NAME_INVALID');
+    if (!['desktop-client', 'primary-host'].includes(deviceKind)) throw serviceError('DESKTOP_DEVICE_KIND_INVALID');
     if (!PUBLIC_PURPOSES.has(purpose)) throw serviceError('DESKTOP_CHALLENGE_PURPOSE_INVALID');
     if (String(input.publicKey || '').length > 4096) throw serviceError('DESKTOP_DEVICE_PUBLIC_KEY_INVALID');
 
@@ -300,22 +302,35 @@ function createDesktopIdentityService({
     if (!/^[a-f0-9]{64}$/.test(providedFingerprint) || providedFingerprint !== actualFingerprint) {
       throw serviceError('DESKTOP_DEVICE_FINGERPRINT_MISMATCH');
     }
+    // Repair records created by versions that expired the challenge but left its
+    // provisional authorization pending. A pending row from an expired request
+    // must never permanently prevent the same computer from starting over.
+    const repairTime = timestamp();
+    db.prepare(`UPDATE desktop_device_authorizations
+      SET status='revoked', revoked_at=COALESCE(revoked_at, ?),
+          row_version=row_version+1, updated_at=?
+      WHERE status='pending' AND (device_id=? OR key_fingerprint=?)
+        AND EXISTS (SELECT 1 FROM desktop_identity_challenges challenge
+          WHERE challenge.id=desktop_device_authorizations.source_challenge_id
+            AND challenge.status='expired')`)
+      .run(repairTime, repairTime, deviceId, actualFingerprint);
     const existingDeviceAuthorization = findAuthorizationByDevice.get(deviceId);
     if (purpose === 'password_reset') {
       if (!existingDeviceAuthorization || existingDeviceAuthorization.status !== 'active') {
         throw serviceError('DESKTOP_PASSWORD_RESET_DEVICE_NOT_ACTIVE');
       }
-      if (existingDeviceAuthorization.device_kind !== 'desktop-client') {
+      if (existingDeviceAuthorization.device_kind !== deviceKind) {
         throw serviceError('DESKTOP_PASSWORD_RESET_DEVICE_KIND_INVALID');
       }
       deviceName = existingDeviceAuthorization.device_name;
       if (existingDeviceAuthorization.key_fingerprint === actualFingerprint) {
         throw serviceError('DESKTOP_PASSWORD_RESET_KEY_UNCHANGED');
       }
-    } else if (existingDeviceAuthorization) {
+    } else if (existingDeviceAuthorization && existingDeviceAuthorization.status !== 'revoked') {
       throw serviceError('DESKTOP_DEVICE_ALREADY_REGISTERED');
     }
-    if (findAuthorizationByFingerprint.get(actualFingerprint)) {
+    const existingFingerprintAuthorization = findAuthorizationByFingerprint.get(actualFingerprint);
+    if (existingFingerprintAuthorization && existingFingerprintAuthorization.status !== 'revoked') {
       throw serviceError('DESKTOP_DEVICE_KEY_ALREADY_REGISTERED');
     }
     const activeChallenge = db.prepare(`SELECT id FROM desktop_identity_challenges
@@ -342,7 +357,7 @@ function createDesktopIdentityService({
     const insert = db.prepare(`INSERT INTO desktop_identity_challenges
       (id, device_id, device_name, device_kind, public_key, key_fingerprint, purpose,
        challenge_token_hash, short_code, status, row_version, expires_at, created_at, updated_at)
-      VALUES (?, ?, ?, 'desktop-client', ?, ?, ?, ?, ?, 'pending_phone', 1, ?, ?, ?)`);
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_phone', 1, ?, ?, ?)`);
 
     let shortCode = null;
     let lastConstraint = null;
@@ -357,6 +372,7 @@ function createDesktopIdentityService({
           challengeId,
           deviceId,
           deviceName,
+          deviceKind,
           publicKey,
           actualFingerprint,
           purpose,
@@ -387,11 +403,18 @@ function createDesktopIdentityService({
   function expireChallengeIfNeeded(row, currentTime) {
     if (!ACTIVE_CHALLENGE_STATUSES.includes(row.status)) return false;
     if (Date.parse(row.expires_at) > Date.parse(currentTime)) return false;
-    db.prepare(`UPDATE desktop_identity_challenges
+    const expired = db.prepare(`UPDATE desktop_identity_challenges
       SET status='expired', row_version=row_version+1, updated_at=?
       WHERE id=? AND row_version=? AND status IN
         ('pending_phone','identity_verified_pending_approval','approved_pending_exchange')`)
       .run(currentTime, row.id, row.row_version);
+    if (expired.changes !== 1) return false;
+    if (row.authorization_id) {
+      db.prepare(`UPDATE desktop_device_authorizations
+        SET status='revoked', revoked_at=?, row_version=row_version+1, updated_at=?
+        WHERE id=? AND status='pending'`)
+        .run(currentTime, currentTime, row.authorization_id);
+    }
     return true;
   }
 
@@ -499,28 +522,52 @@ function createDesktopIdentityService({
         if (existingAuthorization.user_id !== identityId) {
           throw serviceError('DESKTOP_DEVICE_OWNER_CONFLICT');
         }
-        throw serviceError('DESKTOP_DEVICE_ALREADY_REGISTERED');
+        if (existingAuthorization.status !== 'revoked') {
+          throw serviceError('DESKTOP_DEVICE_ALREADY_REGISTERED');
+        }
+        const restored = db.prepare(`UPDATE desktop_device_authorizations
+          SET device_name=?, device_kind=?, public_key=?, key_fingerprint=?, status='pending',
+              source_challenge_id=?, approved_by_user_id=NULL, approved_by_device_id=NULL,
+              approved_at=NULL, last_phone_verified_at=?, phone_reverify_due_at=?,
+              credential_version=credential_version+1, row_version=row_version+1,
+              revoked_at=NULL, retired_at=NULL, updated_at=?
+          WHERE id=? AND status='revoked' AND row_version=?`)
+          .run(
+            row.device_name,
+            row.device_kind,
+            row.public_key,
+            row.key_fingerprint,
+            row.id,
+            loginEvent.created_at,
+            phoneReverifyDueAt,
+            currentTime,
+            existingAuthorization.id,
+            existingAuthorization.row_version
+          );
+        if (restored.changes !== 1) throw serviceError('DESKTOP_AUTHORIZATION_VERSION_STALE');
+        authorizationId = existingAuthorization.id;
+      } else {
+        authorizationId = uuid();
+        db.prepare(`INSERT INTO desktop_device_authorizations
+          (id, device_id, device_name, device_kind, user_id, public_key, key_fingerprint,
+           status, source_challenge_id, last_phone_verified_at, phone_reverify_due_at,
+           credential_version, row_version, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, 1, 1, ?, ?)`)
+          .run(
+            authorizationId,
+            row.device_id,
+            row.device_name,
+            row.device_kind,
+            identityId,
+            row.public_key,
+            row.key_fingerprint,
+            row.id,
+            loginEvent.created_at,
+            phoneReverifyDueAt,
+            currentTime,
+            currentTime
+          );
       }
-      authorizationId = uuid();
-      db.prepare(`INSERT INTO desktop_device_authorizations
-        (id, device_id, device_name, device_kind, user_id, public_key, key_fingerprint,
-         status, source_challenge_id, last_phone_verified_at, phone_reverify_due_at,
-         credential_version, row_version, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, 1, 1, ?, ?)`)
-        .run(
-          authorizationId,
-          row.device_id,
-          row.device_name,
-          row.device_kind,
-          identityId,
-          row.public_key,
-          row.key_fingerprint,
-          row.id,
-          loginEvent.created_at,
-          phoneReverifyDueAt,
-          currentTime,
-          currentTime
-        );
     }
     const updated = db.prepare(`UPDATE desktop_identity_challenges
       SET status='identity_verified_pending_approval', claimed_user_id=?,
@@ -704,7 +751,8 @@ function createDesktopIdentityService({
     return presentChallenge(outcome.row);
   }
 
-  const exchangeTransaction = db.transaction(function (input) {
+  const exchangeTransaction = db.transaction(function (input, options = {}) {
+    const deferActivation = options?.deferActivation === true;
     const challengeId = String(input.challengeId || '').trim();
     const row = findChallenge.get(challengeId);
     if (!row) throw serviceError('DESKTOP_CHALLENGE_NOT_FOUND');
@@ -765,6 +813,9 @@ function createDesktopIdentityService({
       }
       return { challenge: row, authorization };
     }
+    if (deferActivation) {
+      return { challenge: row, authorization };
+    }
     const challengeUpdate = db.prepare(`UPDATE desktop_identity_challenges
       SET status='exchanged', exchanged_at=?, row_version=row_version+1, updated_at=?
       WHERE id=? AND status='approved_pending_exchange' AND row_version=?`)
@@ -816,6 +867,16 @@ function createDesktopIdentityService({
     });
   }
 
+  function beginActivation(input = {}) {
+    assertAllowedKeys(input, EXCHANGE_KEYS);
+    const outcome = exchangeTransaction(input, { deferActivation: true });
+    if (outcome.errorCode) throw serviceError(outcome.errorCode);
+    return Object.freeze({
+      challenge: presentChallenge(outcome.challenge),
+      authorization: presentAuthorization(outcome.authorization),
+    });
+  }
+
   function listPendingAuthorizations() {
     const rows = db.prepare(`SELECT * FROM desktop_identity_challenges
       WHERE status='identity_verified_pending_approval'
@@ -843,6 +904,7 @@ function createDesktopIdentityService({
   return Object.freeze({
     abandonPendingChallenge,
     approveChallenge,
+    beginActivation,
     confirmVerifiedIdentity,
     exchangeChallenge,
     listAllDevices,

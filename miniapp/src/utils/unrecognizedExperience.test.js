@@ -15,7 +15,7 @@ assert.ok(source.includes('experienceApi.cancelTask(taskId)'));
 assert.ok(source.includes('experienceApi.downloadArtifact(artifactId)'));
 assert.ok(source.includes('applicationApi.mine()'));
 assert.ok(source.includes('applicationApi.submit('));
-assert.ok(source.includes('applicationApi.withdraw(applicationId)'));
+assert.ok(!source.includes('applicationApi.withdraw('));
 for (const removedPath of [
   '/api/experience/tasks/${taskId}',
   '/api/experience/tasks/${taskId}/artifacts/${artifactId}',

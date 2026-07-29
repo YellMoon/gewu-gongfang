@@ -147,6 +147,8 @@ const exchanged = service.exchangeChallenge({
 assert.strictEqual(exchanged.session.activeRole, 'teacher');
 assert.deepStrictEqual(exchanged.session.eligibleRoles, ['super_admin', 'teacher']);
 assert.strictEqual(exchanged.session.teacherId, teacherId);
+assert.strictEqual(exchanged.session.authTime, clock.toISOString(),
+  'a session challenge signed after locally unlocking the device must count as recent local elevation');
 assert.strictEqual(exchanged.profile.userId, userId);
 assert.strictEqual(exchanged.profile.user.name, 'Canonical Human');
 assert.strictEqual(exchanged.profile.activeRole, 'teacher');
@@ -205,37 +207,7 @@ assert.strictEqual(
 );
 
 db.prepare(`UPDATE desktop_device_authorizations
-  SET authorization_source='single_user_pairing',
-      phone_reverify_due_at='2026-07-17T10:02:00.000Z'
-  WHERE id=?`).run(authorizationId);
-const nonWechatChallenge = service.startChallenge({ authorizationId, deviceId });
-assert.strictEqual(nonWechatChallenge.status, 'pending');
-const nonWechatLease = createDesktopOfflineLease({
-  authorization: {
-    id: authorizationId,
-    deviceId,
-    userId,
-    credentialVersion: 3,
-    authorizationSource: 'single_user_pairing',
-    phoneReverifyDueAt: '2026-07-17T10:02:00.000Z',
-  },
-  session: {
-    id: 'single-user-session',
-    userId,
-    deviceId,
-    activeRole: 'teacher',
-    eligibleRoles: ['super_admin', 'teacher'],
-    teacherId,
-  },
-  issuedAt: clock,
-});
-assert.strictEqual(
-  Date.parse(nonWechatLease.expiresAt) - Date.parse(nonWechatLease.issuedAt),
-  14 * 24 * 60 * 60 * 1000,
-  'single-user pairing leases must not be shortened by the legacy WeChat phone deadline'
-);
-db.prepare(`UPDATE desktop_device_authorizations
-  SET authorization_source='wechat_phone'
+  SET phone_reverify_due_at='2026-07-17T10:02:00.000Z'
   WHERE id=?`).run(authorizationId);
 assert.throws(
   function () { service.startChallenge({ authorizationId, deviceId }); },

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Input, Button, ScrollView, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { cancelMiniappTask, createPaperTaskV2, getMiniappTaskResult, readQuestionPreview } from '../../utils/api';
+import { authorityProjectionApi, cancelMiniappTask, createPaperTaskV2, getMiniappTaskResult, readQuestionPreview } from '../../utils/api';
 import { authSessionRuntime } from '../../utils/authSession';
 import { createSessionBoundOperation, openSessionBoundDocument } from '../../utils/miniappApiSessionRuntime';
 import { createQuestionPaperTaskCacheRuntime } from '../../utils/miniappAuthorizationRuntime';
 import { storage } from '../../utils/storage';
-import { isUnrecognizedIdentity } from '../../utils/accountExperience';
+import { isUnrecognizedIdentity, isVisitorIdentity } from '../../utils/accountExperience';
 // @ts-ignore CommonJS workflow module has no TypeScript declarations.
 import * as workflow from '../../utils/questionPaperWorkflow';
 import './index.scss';
@@ -25,7 +25,9 @@ function absoluteHostUrl(base: string, endpoint: string) { return `${base.replac
 function authHeader(token: string, extra: Record<string, string> = {}) { return { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extra }; }
 
 export default function QuestionBankPage() {
-  const isUnrecognized = isUnrecognizedIdentity(Taro.getStorageSync('user_info'));
+  const identity = Taro.getStorageSync('user_info');
+  const isUnrecognized = isUnrecognizedIdentity(identity);
+  const isVisitor = isVisitorIdentity(identity);
   useEffect(() => {
     if (isUnrecognized) Taro.reLaunch({ url: '/pages/unrecognized-experience/index' });
   }, [isUnrecognized]);
@@ -66,6 +68,24 @@ export default function QuestionBankPage() {
   const loadQuestions = async () => {
     setPreviewState('loading'); setPreviewMessage('');
     try {
+      if (isVisitor) {
+        const response: any = await authorityProjectionApi.readCurrent();
+        if (!response.success) {
+          setPreviewState(response.code === 'AUTHORITY_PROJECTION_NOT_FOUND' ? 'empty' : 'offline');
+          setPreviewMessage(response.error || '\u6743\u5a01\u6295\u5f71\u6682\u4e0d\u53ef\u7528');
+          return;
+        }
+        const projection = response.data?.projection || response.projection;
+        const list = Array.isArray(projection?.payload?.questionPreviews)
+          ? projection.payload.questionPreviews.slice(0, 10)
+          : [];
+        setQuestions(list);
+        setHostAvailable(false);
+        setTargetHostDeviceId('');
+        setHostBaseUrl('');
+        setPreviewState(list.length ? 'ready' : 'empty');
+        return;
+      }
       const response: any = await readQuestionPreview();
       if (!response.success) { setPreviewState(['USER_NOT_APPROVED', 'FORBIDDEN'].includes(String(response.code)) ? 'forbidden' : 'offline'); setPreviewMessage(response.error || 'unavailable'); return; }
       const list = response.questions || response.data?.questions || [];
@@ -87,7 +107,11 @@ export default function QuestionBankPage() {
     } catch { return { ...task, error: 'refresh failed' }; }
   };
   const refreshAll = async () => { if (!synchronizeTaskScope()) return; persist(await Promise.all(tasks.map(refreshTask))); };
-  useEffect(() => { if (isUnrecognized) return; loadQuestions(); refreshAll(); }, [isUnrecognized]);
+  useEffect(() => {
+    if (isUnrecognized) return;
+    loadQuestions();
+    if (!isVisitor) refreshAll();
+  }, [isUnrecognized, isVisitor]);
   useEffect(() => {
     const current = taskCacheRuntime.snapshot();
     if (current.scopeKey !== taskState.scopeKey) setTaskState(current);
@@ -147,6 +171,28 @@ export default function QuestionBankPage() {
     return <View className='question-bank-page'>
       <View className='preview-card'>
         <Text className='preview-title'>{'\u6b63\u5728\u8fdb\u5165\u4f53\u9a8c\u9898\u5e93'}</Text>
+      </View>
+    </View>;
+  }
+  if (isVisitor) {
+    return <View className='question-bank-page'>
+      <View className='hero-card'>
+        <Text className='hero-title'>{'\u8bbf\u5ba2\u9898\u76ee\u9884\u89c8'}</Text>
+        <Text className='hero-subtitle'>{'\u4ec5\u663e\u793a\u6570\u636e\u4e3b\u673a\u7b7e\u540d\u6295\u5f71\u4e2d\u7684\u6700\u591a\u5341\u9053\u8131\u654f\u9898\u76ee'}</Text>
+      </View>
+      <View className='preview-card'>
+        <View className='preview-header'>
+          <Text className='preview-title'>{'\u9898\u76ee\u9884\u89c8'}</Text>
+          <Button className='preview-refresh' onClick={loadQuestions}>{'\u5237\u65b0'}</Button>
+        </View>
+        {previewState !== 'ready'
+          ? <View className={`question-preview-empty state-${previewState}`}><Text>{stateText}</Text><Text>{previewMessage}</Text></View>
+          : <ScrollView className='question-preview-list' scrollY>
+            {questions.map(question => <View key={question.id} className='question-preview-item'>
+              <View className='question-preview-meta'><Text>{question.type || '\u9898\u76ee'}</Text></View>
+              <Text className='question-preview-stem'>{question.stemPreview}</Text>
+            </View>)}
+          </ScrollView>}
       </View>
     </View>;
   }

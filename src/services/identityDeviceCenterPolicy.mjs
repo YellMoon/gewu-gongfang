@@ -39,8 +39,11 @@ export function identityDeviceCenterAccess({ runtimeConfig = {}, session = {} } 
   const eligibleRoles = uniqueRoles(context.eligibleRoles);
   const isPrimaryHost = runtimeConfig.nodeRole === 'primary-host';
   const primaryHostCapable = runtimeConfig.primaryHostCapable === true;
+  // A locked primary host cannot approve its own password reset. Any other
+  // authenticated super-admin device may review device requests; primary-host
+  // migration and recovery remain restricted to the primary-host build below.
   const canReview = Boolean(
-    userId && deviceId && isPrimaryHost && activeRole === 'super_admin' && eligibleRoles.includes('super_admin')
+    userId && deviceId && activeRole === 'super_admin' && eligibleRoles.includes('super_admin')
   );
   const canManageHost = Boolean(
     primaryHostCapable && userId && deviceId && activeRole === 'super_admin' && eligibleRoles.includes('super_admin')
@@ -150,6 +153,7 @@ function projectDevice(device, { access, runtimeConfig, replacementNames, replac
     ownerId: text(device.userId || device.user_id),
     keyFingerprintSummary: fingerprintSummary(device.keyFingerprint || device.key_fingerprint),
     status,
+    approvedAt: text(device.approvedAt || device.approved_at) || null,
     rowVersion: safeVersion(device.rowVersion ?? device.row_version),
     createdAt: text(device.createdAt || device.created_at),
     updatedAt: text(device.updatedAt || device.updated_at),
@@ -275,6 +279,13 @@ function apiBase(value) {
   return base;
 }
 
+function cloudRelayApiBase(value) {
+  // Cloud relay routes are mounted below the configured application prefix
+  // (for example https://host/scheduling/api/cloud).  Keep that prefix: only
+  // a trailing /api belongs to the API-base normalisation in apiBase().
+  return apiBase(value);
+}
+
 async function responsePayload(response) {
   let payload;
   try {
@@ -315,7 +326,9 @@ async function publicIdentityRequest({ baseUrl, fetchImpl = globalThis.fetch }, 
 
 export async function loadIdentityDeviceCenter({
   baseUrl, relayBaseUrl = '', runtimeConfig, session, hostRuntimeStatus = null, fetchImpl = globalThis.fetch,
-  relaySleep, relayPollIntervalMs, relayMaxPolls,
+  relaySleep = delay => new Promise(resolve => setTimeout(resolve, delay)),
+  relayPollIntervalMs = RELAY_POLL_INTERVAL_MS,
+  relayMaxPolls = RELAY_MAX_POLLS,
 } = {}) {
   const access = identityDeviceCenterAccess({ runtimeConfig, session });
   if (!access.visible) throw policyError('AUTHORIZATION_CONTEXT_REQUIRED');
@@ -383,7 +396,6 @@ function isNetworkLevelFailure(error) {
 }
 
 const RELAY_POLL_INTERVAL_MS = 1000;
-// 与 desktopSessionRelayClient 保持一致：主机轮询任务存在延迟，给足等待窗口。
 const RELAY_MAX_POLLS = 90;
 
 async function relayPayload(response) {
@@ -412,16 +424,17 @@ export async function loadDevicesThroughRelay({
   if (!authorization.startsWith('Bearer ')) throw policyError('AUTHORIZATION_CONTEXT_REQUIRED');
   const normalizedMaxPolls = Number(maxPolls) || RELAY_MAX_POLLS;
   const normalizedInterval = Number(pollIntervalMs) || RELAY_POLL_INTERVAL_MS;
-  const base = apiBase(relayBaseUrl);
+  const base = cloudRelayApiBase(relayBaseUrl);
   const headers = {
     Accept: 'application/json',
     Authorization: authorization,
     ...(text(session?.authContext?.deviceId) ? { 'x-device-id': text(session.authContext.deviceId) } : {}),
   };
+  const idempotencyKey = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const started = await relayPayload(await fetchImpl(`${base}/api/cloud/desktop-identity/requests`, {
     method: 'POST',
-    headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: 'devices' }),
+    headers: { ...headers, 'Content-Type': 'application/json', 'x-idempotency-key': idempotencyKey },
+    body: JSON.stringify({ query: 'devices', requestId: idempotencyKey }),
   }));
   const requestId = text(started.request?.id);
   if (!requestId) throw policyError('DESKTOP_DEVICE_CENTER_RESPONSE_INVALID');
@@ -479,6 +492,7 @@ export async function bootstrapPrimaryHost({ baseUrl, session, request, fetchImp
       expectedChallengeRowVersion: safeVersion(request.expectedChallengeRowVersion),
       localReceipt: request.localReceipt,
       operationManifest: request.operationManifest,
+      recoveryDeliveryKey: request.recoveryDeliveryKey,
     } }
   );
 }
@@ -589,6 +603,7 @@ export async function revokeDesktopDevice({ baseUrl, session, request, fetchImpl
 export function identityDeviceCenterErrorMessage(code) {
   return ({
     AUTHORIZATION_CONTEXT_REQUIRED: '\u684c\u9762\u8eab\u4efd\u4f1a\u8bdd\u5df2\u5931\u6548\uff0c\u8bf7\u91cd\u65b0\u89e3\u9501\u3002',
+    DESKTOP_IDENTITY_LOCAL_PASSWORD_REQUIRED: '\u8bf7\u5148\u9501\u5b9a\uff0c\u91cd\u65b0\u8f93\u5165\u672c\u673a\u5bc6\u7801\u540e\u518d\u67e5\u770b\u8eab\u4efd\u4e0e\u8bbe\u5907\u3002',
     DESKTOP_SUPER_ADMIN_ROLE_REQUIRED: '\u8bf7\u5148\u5207\u6362\u5230\u8d85\u7ea7\u7ba1\u7406\u5458\u8eab\u4efd\u3002',
     DESKTOP_RECENT_ELEVATION_REQUIRED: '\u7ba1\u7406\u5458\u9a8c\u8bc1\u5df2\u8d85\u65f6\uff0c\u8bf7\u70b9\u51fb\u9876\u90e8\u201c\u9501\u5b9a\u201d\uff0c\u518d\u7528\u672c\u673a\u5bc6\u7801\u91cd\u65b0\u8fdb\u5165\u8d85\u7ea7\u7ba1\u7406\u5458\u8eab\u4efd\u3002',
     DESKTOP_DEVICE_SELF_APPROVAL_FORBIDDEN: '\u7533\u8bf7\u8bbe\u5907\u4e0d\u80fd\u5ba1\u6279\u81ea\u5df1\uff0c\u8bf7\u4f7f\u7528\u53e6\u4e00\u53f0\u53ef\u4fe1\u8bbe\u5907\u3002',

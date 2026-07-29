@@ -7,7 +7,7 @@ const http = require('http');
 const cors = require('cors');
 const path = require('path');
 const proxyaddr = require('proxy-addr');
-const { initDatabase } = require('./db/database');
+const { getDb, initDatabase } = require('./db/database');
 const { authMiddleware, optionalAuth } = require('./middleware/auth');
 const { errorHandler } = require('./middleware/errorHandler');
 const { loadModules } = require('./config/moduleLoader');
@@ -20,7 +20,7 @@ const adminRouter = require('./routes/admin');
 const permissionsRouter = require('./routes/permissions');
 const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
-const desktopPairingRouter = require('./routes/desktopPairing');
+const { createGatewayAuthorityProtocolRouter } = require('./routes/authorityProtocol');
 const gatewayPackage = require('../package.json');
 
 function reviewDemoRemoved(_req, res) {
@@ -39,6 +39,7 @@ function getHealthVersion() {
 
 function createApp(options = {}) {
   const app = express();
+  const database = options.db || initDatabase();
   const trustedCidrs = ['loopback', ...String(process.env.TRUST_PROXY_CIDRS || '').split(',').map(value => value.trim()).filter(Boolean)];
   app.set('trust proxy', proxyaddr.compile(trustedCidrs));
 
@@ -70,7 +71,11 @@ function createApp(options = {}) {
   // ===================== 公开路由（无需认证） =====================
   app.use('/api/auth', authRouter);
   app.use('/api', optionalAuth);
-  app.use('/api/desktop-pairing', desktopPairingRouter);
+  app.use('/api/authority', createGatewayAuthorityProtocolRouter({
+    db: database,
+    commandPolicy: options.authorityCommandPolicy,
+    hostToken: options.authorityHostToken,
+  }));
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);
 
   // ===================== 需要认证的路由 =====================
@@ -113,7 +118,7 @@ async function main() {
   const PORT = process.env.GATEWAY_PORT || 3001;
 
   // 初始化WebSocket服务器
-  const wsServer = new CloudWebSocketServer(server);
+  const wsServer = new CloudWebSocketServer(server, { db: getDb() });
   app.set('wsServer', wsServer);
 
   server.listen(PORT, () => {

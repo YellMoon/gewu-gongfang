@@ -1,8 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button, Popover } from 'antd';
 import { CloudSyncOutlined } from '@ant-design/icons';
 import SyncSettings from '../../pages/SyncSettings';
-import { SyncEngine } from '../../services/syncEngine';
 import { getRuntimeConfig } from '../../services/runtimeConfigClient';
 import { getSyncPresentation } from '../../services/syncPresentation.mjs';
 import type { NavigationInput } from '../../navigation/navigationContext';
@@ -15,24 +14,31 @@ type Props = {
 const SyncQuickPanel: React.FC<Props> = ({ onNavigate }) => {
   const [open, setOpen] = useState(false);
   const [nodeRole, setNodeRole] = useState('desktop-client');
-  const [status, setStatus] = useState({ online: true, pendingCount: 0 });
-  const engine = useMemo(() => {
-    try {
-      return new SyncEngine();
-    } catch {
-      return null;
-    }
-  }, []);
+  const [status, setStatus] = useState({ online: true, pendingCount: 0, conflictCount: 0 });
 
   useEffect(() => {
+    let stopped = false;
     getRuntimeConfig().then(config => setNodeRole(config.nodeRole || 'desktop-client')).catch(() => undefined);
-    const refresh = () => {
-      if (engine) setStatus(engine.getStatus());
+    const refresh = async () => {
+      try {
+        if (!window.desktopAuthority) throw new Error('DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE');
+        const items = await window.desktopAuthority.list();
+        if (!stopped) setStatus({
+          online: true,
+          pendingCount: items.filter(item => item.status !== 'completed').length,
+          conflictCount: items.filter(item => item.status === 'conflict').length,
+        });
+      } catch {
+        if (!stopped) setStatus(current => ({ ...current, online: false }));
+      }
     };
-    refresh();
-    const timer = window.setInterval(refresh, 5000);
-    return () => window.clearInterval(timer);
-  }, [engine]);
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 5000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   const presentation = getSyncPresentation(nodeRole, status);
   const navigateToSettings = (mode?: 'issues' | 'pending') => {

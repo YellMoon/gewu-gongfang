@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { canDeleteQuestion, committedDeleteError } = require('./questionDeletionPolicy');
 const internalStorageUpdateCredentials = new WeakSet();
+const authorityExecutorStorageCredentials = new WeakSet();
 
 function createTrustedInternalStorageUpdateContext({ validatedAuthz = {}, hostRuntime = {} }) {
   const nodeRole = hostRuntime.runtimeNodeRole || hostRuntime.nodeRole;
@@ -15,6 +16,68 @@ function createTrustedInternalStorageUpdateContext({ validatedAuthz = {}, hostRu
   const credential = Object.freeze({ actor: { ...validatedAuthz }, runtime: { ...hostRuntime, runtimeNodeRole: 'primary-host' } });
   internalStorageUpdateCredentials.add(credential);
   return credential;
+}
+
+function createTrustedAuthorityExecutorStorageContext({
+  envelope = {},
+  authorization = {},
+} = {}) {
+  const scope = authorization.scope || {};
+  const actor = envelope.actor || {};
+  if (!['admin', 'super_admin'].includes(String(scope.kind || ''))
+    || !authorization.authorityId
+    || authorization.authorityId !== envelope.authorityId
+    || authorization.hostEpochId !== envelope.hostEpochId
+    || !authorization.hostDeviceId
+    || !scope.userId
+    || scope.userId !== actor.userId
+    || scope.kind !== actor.role
+    || !actor.deviceId
+    || !envelope.commandId) {
+    throw authorityError(
+      'validated authority executor context required',
+      'TRUSTED_AUTHORITY_EXECUTOR_CONTEXT_REQUIRED',
+    );
+  }
+  const credential = Object.freeze({
+    actor: Object.freeze({
+      userId: scope.userId,
+      role: scope.kind,
+      userApproved: true,
+      isPrimaryHost: true,
+      deviceId: authorization.hostDeviceId,
+      sourceActorDeviceId: actor.deviceId,
+      deviceTrusted: true,
+      deviceActive: true,
+      deviceOwnerUserId: scope.userId,
+    }),
+    runtime: Object.freeze({
+      runtimeNodeRole: 'primary-host',
+      nodeRole: 'primary-host',
+      clientType: 'desktop',
+      tokenUse: 'desktop-session',
+      deviceId: authorization.hostDeviceId,
+      tokenDeviceId: authorization.hostDeviceId,
+    }),
+    command: Object.freeze({
+      commandId: envelope.commandId,
+      authorityId: envelope.authorityId,
+      hostEpochId: envelope.hostEpochId,
+      sourceActorDeviceId: actor.deviceId,
+    }),
+  });
+  authorityExecutorStorageCredentials.add(credential);
+  return credential;
+}
+
+function authorityExecutorContext(context = {}) {
+  const credential = context.internalCredential;
+  if (!authorityExecutorStorageCredentials.has(credential)) return null;
+  return {
+    authz: credential.actor,
+    runtime: credential.runtime,
+    command: credential.command,
+  };
 }
 
 function now() {
@@ -31,6 +94,83 @@ function ensureDir(dir) {
 
 function manifestPath(root) {
   return path.join(root, 'manifest.json');
+}
+
+function storageOperationDir(root) {
+  return path.join(root, '.authority-operations');
+}
+
+function storageOperationPath(root, operationId) {
+  const safeId = String(operationId || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safeId) throw authorityError('question storage operation id required', 'QUESTION_STORAGE_OPERATION_ID_REQUIRED');
+  return path.join(storageOperationDir(root), `${safeId}.json`);
+}
+
+function writeStorageOperation(root, operation) {
+  ensureDir(storageOperationDir(root));
+  writeJsonAtomic(storageOperationPath(root, operation.operationId), operation);
+}
+
+function removeStorageOperation(root, operationId) {
+  const file = storageOperationPath(root, operationId);
+  if (fs.existsSync(file)) fs.unlinkSync(file);
+}
+
+function authorityCommandCommitted(db, operationId) {
+  const row = db.prepare('SELECT status FROM authority_command_ledger WHERE command_id=?').get(operationId);
+  return row?.status === 'committed';
+}
+
+function recoverAuthorityQuestionStorageOperations({ db } = {}) {
+  const binding = activeBinding(db);
+  if (!binding) return { completed: 0, rolledBack: 0 };
+  verifyBinding(db, binding);
+  const root = binding.root_path;
+  const dir = storageOperationDir(root);
+  if (!fs.existsSync(dir)) return { completed: 0, rolledBack: 0 };
+  let completed = 0;
+  let rolledBack = 0;
+  for (const name of fs.readdirSync(dir)) {
+    if (!/^[a-zA-Z0-9_-]+\.json$/.test(name)) continue;
+    const file = path.join(dir, name);
+    let operation;
+    try { operation = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { continue; }
+    if (operation?.protocol !== 'gewu.question-storage-operation.v1') continue;
+    const operationId = String(operation.operationId || '');
+    if (!operationId) continue;
+    if (authorityCommandCommitted(db, operationId)) {
+      if (operation.action === 'update' && operation.backupRelativePath) {
+        const backup = safeInside(root, path.join(root, String(operation.backupRelativePath)));
+        if (fs.existsSync(backup)) fs.rmSync(backup, { recursive: true, force: true });
+      }
+      removeStorageOperation(root, operationId);
+      completed += 1;
+      continue;
+    }
+    if (operation.action === 'create') {
+      const target = safeInside(root, path.join(root, String(operation.targetRelativePath || '')));
+      if (operation.createdTarget && fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+      fs.writeFileSync(manifestPath(root), Buffer.from(String(operation.manifestBefore || ''), 'base64'));
+      removeStorageOperation(root, operationId);
+      rolledBack += 1;
+    } else if (operation.action === 'update') {
+      const target = safeInside(root, path.join(root, String(operation.targetRelativePath || '')));
+      const backup = safeInside(root, path.join(root, String(operation.backupRelativePath || '')));
+      fs.writeFileSync(manifestPath(root), Buffer.from(String(operation.manifestBefore || ''), 'base64'));
+      if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+      if (fs.existsSync(backup)) { ensureDir(path.dirname(target)); fs.renameSync(backup, target); }
+      removeStorageOperation(root, operationId);
+      rolledBack += 1;
+    } else if (operation.action === 'delete') {
+      const source = safeInside(root, path.join(root, String(operation.sourceRelativePath || '')));
+      const trash = safeInside(root, path.join(root, String(operation.trashRelativePath || '')));
+      fs.writeFileSync(manifestPath(root), Buffer.from(String(operation.manifestBefore || ''), 'base64'));
+      if (fs.existsSync(trash) && !fs.existsSync(source)) { ensureDir(path.dirname(source)); fs.renameSync(trash, source); }
+      removeStorageOperation(root, operationId);
+      rolledBack += 1;
+    }
+  }
+  return { completed, rolledBack };
 }
 
 function requiredDirs(root) {
@@ -206,7 +346,13 @@ function restoreDeletedFlagsFromSnapshot(db, snapshot, timestamp) {
 }
 
 function commitQuestionToBoundStore(questionId, context = {}) {
-  const { db, authz = {}, runtime = {}, tenantId = 'default' } = context;
+  const internal = authorityExecutorContext(context);
+  const {
+    db,
+    tenantId = 'default',
+  } = context;
+  const authz = internal?.authz || context.authz || {};
+  const runtime = internal?.runtime || context.runtime || {};
   const binding = activeBinding(db); verifyBinding(db, binding);
   assertTrustedHost(authz, runtime);
   const bundle = questionBundle(db, questionId, tenantId);
@@ -215,6 +361,19 @@ function commitQuestionToBoundStore(questionId, context = {}) {
   const created = !fs.existsSync(dir);
   const manifestFile = manifestPath(binding.root_path);
   const originalManifest = fs.readFileSync(manifestFile);
+  const operationId = String(context.operationId || '').trim();
+  if (operationId) {
+    writeStorageOperation(binding.root_path, {
+      protocol: 'gewu.question-storage-operation.v1',
+      operationId,
+      action: 'create',
+      questionId,
+      targetRelativePath: path.relative(binding.root_path, dir),
+      createdTarget: created,
+      manifestBefore: originalManifest.toString('base64'),
+      preparedAt: now(),
+    });
+  }
   try {
     ensureDir(dir);
     assertSafeStorePath(binding.root_path, dir);
@@ -244,15 +403,17 @@ function commitQuestionToBoundStore(questionId, context = {}) {
   } catch (error) {
     fs.writeFileSync(manifestFile, originalManifest);
     if (created) fs.rmSync(dir, { recursive: true, force: true });
+    if (operationId) removeStorageOperation(binding.root_path, operationId);
     throw error;
   }
 }
 
 function updateCommittedQuestion(questionId, context = {}) {
   const { db, tenantId = 'default', payload = {} } = context;
+  const executor = authorityExecutorContext(context);
   const internal = internalStorageUpdateCredentials.has(context.internalCredential);
-  const authz = internal ? context.internalCredential.actor : (context.authz || {});
-  const runtime = internal ? context.internalCredential.runtime : (context.runtime || {});
+  const authz = executor?.authz || (internal ? context.internalCredential.actor : (context.authz || {}));
+  const runtime = executor?.runtime || (internal ? context.internalCredential.runtime : (context.runtime || {}));
   if (!internal && !canDeleteQuestion({ ...authz, ...runtime, runtimeNodeRole: runtime.runtimeNodeRole || runtime.nodeRole, storageState: 'host_committed' })) {
     const error = new Error('committed question update requires trusted primary-host desktop'); error.code = 'HOST_DESKTOP_REQUIRED_FOR_COMMITTED_UPDATE'; error.status = 403; throw error;
   }
@@ -265,6 +426,12 @@ function updateCommittedQuestion(questionId, context = {}) {
   const backup = safeInside(binding.root_path, path.join(binding.root_path, 'backups', `update-${crypto.randomUUID()}`));
   const manifestFile = manifestPath(binding.root_path); const manifestBefore = fs.readFileSync(manifestFile);
   fs.cpSync(dir, backup, { recursive: true, errorOnExist: true });
+  const operationId = String(context.operationId || '').trim();
+  if (operationId) writeStorageOperation(binding.root_path, {
+    protocol: 'gewu.question-storage-operation.v1', operationId, action: 'update', questionId,
+    targetRelativePath: path.relative(binding.root_path, dir), backupRelativePath: path.relative(binding.root_path, backup),
+    manifestBefore: manifestBefore.toString('base64'), preparedAt: now(),
+  });
   try {
     let updated;
     db.transaction(() => {
@@ -278,12 +445,13 @@ function updateCommittedQuestion(questionId, context = {}) {
       db.prepare(`INSERT INTO question_bank_storage_audit (id,operation_id,actor_user_id,action,store_id,question_id,details_json,created_at) VALUES (?,?,?,?,?,?,?,?)`)
         .run(crypto.randomUUID(), context.operationId || null, authz.userId, 'update_committed_question', binding.store_id, questionId, JSON.stringify({ deviceId: authz.deviceId }), now());
     })();
-    fs.rmSync(backup, { recursive: true, force: true });
+    if (!operationId) fs.rmSync(backup, { recursive: true, force: true });
     return updated;
   } catch (error) {
     fs.writeFileSync(manifestFile, manifestBefore);
     if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
     fs.renameSync(backup, dir);
+    if (operationId) removeStorageOperation(binding.root_path, operationId);
     throw error;
   }
 }
@@ -293,7 +461,13 @@ function safeInside(root, target) {
 }
 
 function deleteCommittedQuestion(questionId, context = {}) {
-  const { db, authz = {}, runtime = {}, tenantId = 'default' } = context;
+  const internal = authorityExecutorContext(context);
+  const {
+    db,
+    tenantId = 'default',
+  } = context;
+  const authz = internal?.authz || context.authz || {};
+  const runtime = internal?.runtime || context.runtime || {};
   if (!canDeleteQuestion({ ...authz, ...runtime, runtimeNodeRole: runtime.runtimeNodeRole || runtime.nodeRole, storageState: 'host_committed' })) throw committedDeleteError();
   assertTrustedHost(authz, runtime);
   const binding = activeBinding(db); verifyBinding(db, binding);
@@ -305,6 +479,11 @@ function deleteCommittedQuestion(questionId, context = {}) {
   const trash = safeInside(binding.root_path, path.join(binding.root_path, '.trash', operationId, path.basename(questionId)));
   if (!fs.existsSync(source)) throw authorityError('committed question files missing', 'QUESTION_FILES_MISSING');
   const manifestBefore = fs.readFileSync(manifestPath(binding.root_path), 'utf-8');
+  if (operationId) writeStorageOperation(binding.root_path, {
+    protocol: 'gewu.question-storage-operation.v1', operationId, action: 'delete', questionId,
+    sourceRelativePath: path.relative(binding.root_path, source), trashRelativePath: path.relative(binding.root_path, trash),
+    manifestBefore: Buffer.from(manifestBefore).toString('base64'), preparedAt: now(),
+  });
   ensureDir(path.dirname(trash)); fs.renameSync(source, trash);
   let dbChanged = false;
   try {
@@ -334,7 +513,7 @@ function deleteCommittedQuestion(questionId, context = {}) {
         db.prepare('DELETE FROM question_bank_delete_operations WHERE operation_id=?').run(operationId);
       })();
     }
-    ensureDir(path.dirname(source)); if (fs.existsSync(trash)) fs.renameSync(trash, source); throw error;
+    ensureDir(path.dirname(source)); if (fs.existsSync(trash)) fs.renameSync(trash, source); if (operationId) removeStorageOperation(binding.root_path, operationId); throw error;
   }
 }
 
@@ -487,6 +666,7 @@ function resolveQuestionAssetPath(root, category, fileName) {
 }
 
 module.exports = {
+  createTrustedAuthorityExecutorStorageContext,
   initQuestionBankStore,
   inspectQuestionBankStore,
   assertQuestionBankWritable,
@@ -496,6 +676,7 @@ module.exports = {
   ensureQuestionBankAuthoritySchema,
   bindQuestionBankStoreToDatabase,
   commitQuestionToBoundStore,
+  recoverAuthorityQuestionStorageOperations,
   deleteCommittedQuestion,
   migrateBoundLegacyQuestions,
   restoreCommittedQuestion,

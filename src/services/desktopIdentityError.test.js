@@ -10,11 +10,11 @@ const assert = require('assert');
   );
   assert.strictEqual(
     extractDesktopIdentityErrorCode(invalidHostKind),
-    'DESKTOP_SINGLE_USER_DEVICE_KIND_INVALID'
+    'DESKTOP_IDENTITY_FAILED'
   );
   assert.strictEqual(
     desktopIdentityErrorMessage(invalidHostKind),
-    '\u6570\u636e\u4e3b\u673a\u8eab\u4efd\u521d\u59cb\u5316\u53c2\u6570\u5f02\u5e38\uff0c\u672a\u4fee\u6539\u672c\u673a\u6570\u636e\u3002\u8bf7\u66f4\u65b0\u5e94\u7528\u540e\u91cd\u8bd5\u3002'
+    '\u8eab\u4efd\u9a8c\u8bc1\u672a\u5b8c\u6210\uff0c\u8bf7\u91cd\u8bd5\u3002'
   );
   const invalidRuntimeRole = new Error(
     "Error invoking remote method 'single-user:bootstrap': Error: PRIMARY_HOST_RUNTIME_ROLE_REQUIRED"
@@ -23,10 +23,21 @@ const assert = require('assert');
     desktopIdentityErrorMessage(invalidRuntimeRole),
     '\u6570\u636e\u4e3b\u673a\u521d\u59cb\u5316\u6d41\u7a0b\u672a\u5b8c\u6210\uff0c\u672a\u4fee\u6539\u672c\u673a\u6570\u636e\u3002\u8bf7\u66f4\u65b0\u5e94\u7528\u540e\u91cd\u8bd5\u3002'
   );
+  const missingQuestionBankBinding = new Error('PRIMARY_HOST_QUESTION_BANK_BINDING_REQUIRED');
+  assert.strictEqual(
+    desktopIdentityErrorMessage(missingQuestionBankBinding),
+    '\u8bf7\u5148\u5728\u6570\u636e\u4e3b\u673a\u4e0a\u8fde\u63a5\u5e76\u7ed1\u5b9a\u9898\u5e93\u79fb\u52a8\u786c\u76d8\uff0c\u518d\u5b8c\u6210\u8eab\u4efd\u521d\u59cb\u5316\u3002'
+  );
   const missingRelayAssertionSecret = new Error('RELAY_ASSERTION_SECRET_REQUIRED');
   assert.strictEqual(
     desktopIdentityErrorMessage(missingRelayAssertionSecret),
-    '\u6570\u636e\u4e3b\u673a\u7f3a\u5c11\u4e91\u4e2d\u7ee7\u7b7e\u540d\u914d\u7f6e\uff0c\u8bf7\u66f4\u65b0\u5e76\u91cd\u542f\u6570\u636e\u4e3b\u673a\u540e\u91cd\u8bd5\u3002'
+    '\u8eab\u4efd\u9a8c\u8bc1\u672a\u5b8c\u6210\uff0c\u8bf7\u91cd\u8bd5\u3002'
+  );
+  const wrappedRelayFailure = new Error('DESKTOP_IDENTITY_REQUEST_FAILED');
+  wrappedRelayFailure.cause = missingRelayAssertionSecret;
+  assert.strictEqual(
+    desktopIdentityErrorMessage(wrappedRelayFailure),
+    '\u8eab\u4efd\u9a8c\u8bc1\u672a\u5b8c\u6210\uff0c\u8bf7\u91cd\u8bd5\u3002'
   );
   const unknown = desktopIdentityErrorMessage(new Error('Error invoking remote method unlock: C:\\private\\vault'));
   assert.strictEqual(unknown, '\u8eab\u4efd\u9a8c\u8bc1\u672a\u5b8c\u6210\uff0c\u8bf7\u91cd\u8bd5\u3002');

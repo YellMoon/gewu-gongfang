@@ -248,6 +248,250 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_user_role_grants_active_teacher
 CREATE INDEX IF NOT EXISTS idx_user_role_grants_user_status
   ON user_role_grants(user_id, status, role);
 
+-- Runtime architecture reset: additive authority records. Legacy users.role is compatibility-only.
+CREATE TABLE IF NOT EXISTS authority_accounts (
+  user_id TEXT PRIMARY KEY,
+  authority_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS authority_role_bindings (
+  binding_id TEXT PRIMARY KEY,
+  authority_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('student', 'teacher', 'admin', 'super_admin')),
+  subject_type TEXT,
+  subject_id TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked', 'pending')),
+  grant_version INTEGER NOT NULL DEFAULT 1,
+  granted_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  revoked_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  CHECK (
+    (role IN ('student', 'teacher') AND (
+      (subject_type IS NULL AND subject_id IS NULL)
+      OR (subject_type = role AND subject_id IS NOT NULL)
+    ))
+    OR (role IN ('admin', 'super_admin') AND subject_type IS NULL AND subject_id IS NULL)
+  )
+);
+
+CREATE INDEX IF NOT EXISTS idx_authority_role_bindings_user
+  ON authority_role_bindings(authority_id, user_id, role, status);
+
+CREATE TABLE IF NOT EXISTS authority_role_applications (
+  application_id TEXT PRIMARY KEY,
+  authority_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  requested_role TEXT NOT NULL CHECK (requested_role IN ('student', 'teacher')),
+  binding_hint TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'withdrawn')),
+  reviewed_by TEXT,
+  reviewed_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_authority_role_applications_pending
+  ON authority_role_applications(authority_id, user_id, requested_role)
+  WHERE status = 'pending';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_authority_role_bindings_active
+  ON authority_role_bindings(authority_id, user_id, role)
+  WHERE status = 'active';
+
+CREATE TABLE IF NOT EXISTS asset_accounts (
+  account_id TEXT PRIMARY KEY,
+  authority_id TEXT NOT NULL,
+  owner_user_id TEXT NOT NULL,
+  account_type TEXT NOT NULL
+    CHECK (account_type IN ('saving_card', 'credit_card', 'alipay', 'wechat', 'custom')),
+  provider TEXT,
+  label TEXT NOT NULL,
+  masked_identifier TEXT,
+  balance REAL NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'CNY',
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (owner_user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_asset_accounts_owner
+  ON asset_accounts(authority_id, owner_user_id, status);
+
+CREATE TABLE IF NOT EXISTS personal_asset_categories (
+  category_id TEXT PRIMARY KEY,
+  authority_id TEXT NOT NULL,
+  owner_user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  category_type TEXT NOT NULL CHECK (category_type IN ('income', 'expense')),
+  color TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'deleted')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (owner_user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_personal_asset_categories_owner
+  ON personal_asset_categories(authority_id, owner_user_id, status);
+
+CREATE TABLE IF NOT EXISTS personal_asset_records (
+  record_id TEXT PRIMARY KEY,
+  authority_id TEXT NOT NULL,
+  owner_user_id TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  record_date TEXT NOT NULL,
+  record_type TEXT NOT NULL CHECK (record_type IN ('income', 'expense')),
+  category_id TEXT,
+  category_name TEXT,
+  amount REAL NOT NULL,
+  student_id TEXT,
+  student_name TEXT,
+  note TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'deleted')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (owner_user_id) REFERENCES users(id),
+  FOREIGN KEY (account_id) REFERENCES asset_accounts(account_id),
+  FOREIGN KEY (category_id) REFERENCES personal_asset_categories(category_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_personal_asset_records_owner
+  ON personal_asset_records(authority_id, owner_user_id, status, record_date);
+
+CREATE TABLE IF NOT EXISTS authority_migration_ledger (
+  name TEXT PRIMARY KEY,
+  source_fingerprint TEXT NOT NULL,
+  applied_at TEXT NOT NULL,
+  report_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS device_grants (
+  grant_id TEXT PRIMARY KEY,
+  authority_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  host_generation INTEGER NOT NULL CHECK (host_generation >= 1),
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'active', 'revoked', 'expired')),
+  grant_version INTEGER NOT NULL DEFAULT 1 CHECK (grant_version >= 1),
+  approved_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  revoked_at TEXT,
+  UNIQUE(authority_id, device_id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS device_leases (
+  lease_id TEXT PRIMARY KEY,
+  grant_id TEXT NOT NULL,
+  authority_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  active_role TEXT NOT NULL
+    CHECK (active_role IN ('visitor', 'student', 'teacher', 'admin', 'super_admin')),
+  grant_version INTEGER NOT NULL CHECK (grant_version >= 1),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'expired', 'revoked')),
+  issued_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  revoked_at TEXT,
+  FOREIGN KEY (grant_id) REFERENCES device_grants(grant_id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_leases_active
+  ON device_leases(authority_id, device_id, user_id, status, expires_at);
+
+CREATE TABLE IF NOT EXISTS host_commands (
+  command_id TEXT PRIMARY KEY,
+  target_host_id TEXT NOT NULL,
+  actor_user_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  envelope_json TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'claimed', 'completed', 'rejected')),
+  claim_token TEXT,
+  claim_until TEXT,
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(actor_user_id, device_id, idempotency_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_host_commands_claimable
+  ON host_commands(target_host_id, status, claim_until, created_at);
+
+CREATE TABLE IF NOT EXISTS host_receipts (
+  command_id TEXT PRIMARY KEY,
+  result_hash TEXT NOT NULL,
+  receipt_json TEXT NOT NULL,
+  completed_at TEXT NOT NULL,
+  FOREIGN KEY (command_id) REFERENCES host_commands(command_id)
+);
+
+CREATE TABLE IF NOT EXISTS authority_command_ledger (
+  command_id TEXT PRIMARY KEY,
+  authority_id TEXT NOT NULL,
+  host_epoch_id TEXT NOT NULL,
+  actor_user_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  command_type TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('committed', 'rejected')),
+  result_hash TEXT,
+  created_at TEXT NOT NULL,
+  committed_at TEXT,
+  UNIQUE(actor_user_id, device_id, idempotency_key)
+);
+
+CREATE TABLE IF NOT EXISTS authority_command_receipts (
+  command_id TEXT PRIMARY KEY,
+  result_hash TEXT NOT NULL,
+  result_payload TEXT NOT NULL,
+  projection_version INTEGER NOT NULL DEFAULT 0 CHECK (projection_version >= 0),
+  completed_at TEXT NOT NULL,
+  FOREIGN KEY (command_id) REFERENCES authority_command_ledger(command_id)
+);
+
+CREATE TABLE IF NOT EXISTS authority_projection_versions (
+  authority_id TEXT NOT NULL,
+  host_epoch_id TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 0 CHECK (version >= 0),
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (authority_id, host_epoch_id)
+);
+
+CREATE TABLE IF NOT EXISTS authority_scoped_projections (
+  authority_id TEXT NOT NULL,
+  host_epoch_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('visitor', 'student', 'teacher', 'admin', 'super_admin')),
+  source_version INTEGER NOT NULL CHECK (source_version >= 0),
+  payload_hash TEXT NOT NULL,
+  document_json TEXT NOT NULL,
+  signature TEXT NOT NULL,
+  generated_at TEXT NOT NULL,
+  PRIMARY KEY (authority_id, user_id, role)
+);
+
+CREATE INDEX IF NOT EXISTS idx_authority_scoped_projections_epoch_version
+  ON authority_scoped_projections(authority_id, host_epoch_id, source_version);
+
+CREATE INDEX IF NOT EXISTS idx_authority_command_ledger_host
+  ON authority_command_ledger(authority_id, host_epoch_id, status, created_at);
+
 CREATE TABLE IF NOT EXISTS authorization_audit_log (
   id TEXT PRIMARY KEY,
   actor_user_id TEXT,
@@ -433,12 +677,6 @@ CREATE TABLE IF NOT EXISTS relay_authorization_nonces (
   device_id TEXT NOT NULL,
   consumed_at TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS desktop_device_pairings (
-  id TEXT PRIMARY KEY, device_id TEXT NOT NULL, device_name TEXT, phone TEXT, secret_hash TEXT NOT NULL,
-  pairing_code TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', expires_at TEXT NOT NULL,
-  approved_by TEXT, user_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, exchanged_at TEXT
-);
-
 CREATE TABLE IF NOT EXISTS desktop_device_authorizations (
   id TEXT PRIMARY KEY,
   device_id TEXT NOT NULL UNIQUE,
@@ -452,7 +690,7 @@ CREATE TABLE IF NOT EXISTS desktop_device_authorizations (
     CHECK (status IN ('pending', 'active', 'revoked', 'replaced', 'retired')),
   source_challenge_id TEXT NOT NULL UNIQUE,
   authorization_source TEXT NOT NULL DEFAULT 'wechat_phone'
-    CHECK (authorization_source IN ('wechat_phone', 'single_user_local_bootstrap', 'single_user_pairing')),
+    CHECK (authorization_source = 'wechat_phone'),
   approved_by_user_id TEXT,
   approved_by_device_id TEXT,
   approved_at TEXT,
@@ -520,53 +758,24 @@ CREATE INDEX IF NOT EXISTS idx_desktop_identity_claimant_status
 CREATE INDEX IF NOT EXISTS idx_desktop_device_authorizations_user_status
   ON desktop_device_authorizations(user_id, status, updated_at);
 
-CREATE TABLE IF NOT EXISTS desktop_single_user_pairing_grants (
+CREATE TABLE IF NOT EXISTS desktop_device_activations (
   id TEXT PRIMARY KEY,
-  owner_user_id TEXT NOT NULL,
-  epoch_id TEXT NOT NULL,
-  generation INTEGER NOT NULL CHECK (generation >= 1),
-  capability_id TEXT NOT NULL,
-  code_salt TEXT NOT NULL,
-  code_digest TEXT NOT NULL UNIQUE,
-  status TEXT NOT NULL DEFAULT 'pending'
-    CHECK (status IN ('pending', 'consumed', 'revoked', 'expired', 'locked')),
-  failed_attempts INTEGER NOT NULL DEFAULT 0 CHECK (failed_attempts >= 0),
-  max_attempts INTEGER NOT NULL DEFAULT 5 CHECK (max_attempts >= 1),
+  challenge_id TEXT NOT NULL UNIQUE,
+  authorization_id TEXT NOT NULL,
+  package_hash TEXT NOT NULL,
+  package_json TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('activation_pending', 'active', 'expired', 'cancelled')),
   expires_at TEXT NOT NULL,
+  finalized_at TEXT,
+  receipt_hash TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  consumed_at TEXT,
-  revoked_at TEXT,
-  locked_at TEXT,
-  FOREIGN KEY (owner_user_id) REFERENCES users(id),
-  FOREIGN KEY (epoch_id) REFERENCES primary_host_epochs(id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_single_user_pairing_grants_status_expiry
-  ON desktop_single_user_pairing_grants(status, expires_at);
-
-CREATE TABLE IF NOT EXISTS desktop_single_user_pairing_requests (
-  id TEXT PRIMARY KEY,
-  grant_id TEXT,
-  channel TEXT NOT NULL CHECK (channel IN ('direct', 'cloud')),
-  envelope_hash TEXT NOT NULL UNIQUE,
-  device_id TEXT,
-  device_name TEXT,
-  public_key TEXT,
-  key_fingerprint TEXT,
-  status TEXT NOT NULL DEFAULT 'pending'
-    CHECK (status IN ('pending', 'authorized', 'rejected', 'expired')),
-  authorization_id TEXT,
-  error_code TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  completed_at TEXT,
-  FOREIGN KEY (grant_id) REFERENCES desktop_single_user_pairing_grants(id),
+  FOREIGN KEY (challenge_id) REFERENCES desktop_identity_challenges(id),
   FOREIGN KEY (authorization_id) REFERENCES desktop_device_authorizations(id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_single_user_pairing_requests_status_created
-  ON desktop_single_user_pairing_requests(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_desktop_device_activations_authorization_status
+  ON desktop_device_activations(authorization_id, status, updated_at);
 
 CREATE TABLE IF NOT EXISTS desktop_sync_batch_backups (
   id TEXT PRIMARY KEY,
@@ -685,6 +894,7 @@ CREATE TABLE IF NOT EXISTS primary_host_epochs (
   store_id TEXT NOT NULL,
   db_authority_id TEXT NOT NULL,
   host_credential_hash TEXT NOT NULL,
+  host_public_key TEXT,
   credential_version INTEGER NOT NULL DEFAULT 1 CHECK (credential_version >= 1),
   row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
   created_at TEXT NOT NULL,

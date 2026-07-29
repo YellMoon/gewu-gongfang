@@ -11,7 +11,7 @@ function authError(code = 'AUTHORIZATION_CONTEXT_REQUIRED') {
   return error;
 }
 
-function normalizeSession(value) {
+export function normalizeDesktopAuthorizationSession(value) {
   const token = value?.token || value?.accessToken;
   const session = value?.session || {};
   const profile = value?.profile || {};
@@ -53,7 +53,7 @@ export const desktopAuthorizationSessionKey = SESSION_KEY;
 
 export function readDesktopAuthorizationSession(_storage = globalThis.sessionStorage) {
   if (!cachedSession) throw authError();
-  return normalizeSession(cachedSession);
+  return normalizeDesktopAuthorizationSession(cachedSession);
 }
 
 export async function hydrateDesktopAuthorizationSession(deps = {}) {
@@ -70,13 +70,13 @@ export async function hydrateDesktopAuthorizationSession(deps = {}) {
     throw authError('DESKTOP_IDENTITY_UPGRADE_REQUIRED');
   }
   if (!cachedSession) throw authError();
-  return normalizeSession(cachedSession);
+  return normalizeDesktopAuthorizationSession(cachedSession);
 }
 
 export async function saveDesktopAuthorizationSession(value, _deps = {}) {
-  normalizeSession(value);
+  normalizeDesktopAuthorizationSession(value);
   cachedSession = structuredClone(value);
-  return normalizeSession(cachedSession);
+  return normalizeDesktopAuthorizationSession(cachedSession);
 }
 
 export async function clearDesktopAuthorizationSession(deps = {}) {

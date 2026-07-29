@@ -23,6 +23,7 @@ const {
   openRecoveryPackage,
   signRecoveryDeliveryAcknowledgement,
 } = require('./primaryHostRecoveryDeliveryProtocol');
+const { derivePrimaryHostSigningKey } = require('../../../shared/primaryHostSigningKey');
 
 const db = new Database(':memory:');
 assert.strictEqual(typeof insertPrimaryHostEpochRow, 'function');
@@ -247,11 +248,17 @@ function acknowledgeRecoveryDelivery(result, operation, actorContext) {
 }
 
 function credentialStage(operation, challengeId, deviceId, targetGeneration) {
+  const signingKey = derivePrimaryHostSigningKey(stagedHostCredentials[operation]);
   return {
     id: `${operation}:${challengeId}`,
     deviceId,
     targetGeneration,
     commitment: credentialCommitment(stagedHostCredentials[operation]),
+    hostSigningKey: {
+      algorithm: signingKey.algorithm,
+      publicKeyPem: signingKey.publicKeyPem,
+      publicKeyFingerprint: signingKey.publicKeyFingerprint,
+    },
   };
 }
 
@@ -410,6 +417,25 @@ const bootstrapped = service.bootstrap({
 assert.strictEqual(bootstrapped.epoch.generation, 1);
 assert.strictEqual(bootstrapped.epoch.status, 'active');
 assert.strictEqual(bootstrapped.epoch.deviceId, 'host-device-1');
+const bootstrapHostGrant = db.prepare(`SELECT * FROM device_grants
+  WHERE authority_id=? AND device_id=? AND status='active'`).get(bootstrapped.epoch.dbAuthorityId, 'host-device-1');
+const bootstrapHostLease = bootstrapHostGrant && db.prepare(`SELECT * FROM device_leases
+  WHERE grant_id=? AND status='active'`).get(bootstrapHostGrant.grant_id);
+const bootstrapHostAccount = db.prepare(`SELECT * FROM authority_accounts
+  WHERE authority_id=? AND user_id=? AND status='active'`).get(
+  bootstrapped.epoch.dbAuthorityId,
+  CANONICAL_SUPER_ADMIN_ID,
+);
+assert.ok(bootstrapHostGrant, 'primary-host bootstrap must create an active authority device grant for the host itself');
+assert.ok(bootstrapHostLease, 'primary-host bootstrap must create an active authority lease for the host itself');
+assert.ok(bootstrapHostAccount, 'primary-host bootstrap must create an active authority account for projection publication');
+assert.strictEqual(bootstrapHostGrant.user_id, CANONICAL_SUPER_ADMIN_ID);
+assert.strictEqual(bootstrapHostLease.active_role, 'super_admin');
+assert.strictEqual(
+  bootstrapped.epoch.hostPublicKey,
+  credentialStage('bootstrap', verifiedBootstrap.id, 'host-device-1', 1)
+    .hostSigningKey.publicKeyPem
+);
 assert.strictEqual(Object.hasOwn(bootstrapped, 'hostCredential'), false);
 assert.strictEqual(Object.hasOwn(bootstrapped, 'recoveryPackage'), false);
 const bootstrapRecoveryPackage = decryptRecoveryDelivery(bootstrapped, 'bootstrap', 'host-device-1');
@@ -551,6 +577,11 @@ const activatedTransfer = service.activateTransfer({
 });
 assert.strictEqual(activatedTransfer.epoch.generation, 2);
 assert.strictEqual(activatedTransfer.epoch.deviceId, 'host-device-2');
+assert.strictEqual(
+  activatedTransfer.epoch.hostPublicKey,
+  credentialStage('transfer', verifiedTransfer.id, 'host-device-2', 2)
+    .hostSigningKey.publicKeyPem
+);
 assert.strictEqual(Object.hasOwn(activatedTransfer, 'hostCredential'), false);
 assert.strictEqual(Object.hasOwn(activatedTransfer, 'recoveryPackage'), false);
 const transferRecoveryPackage = decryptRecoveryDelivery(

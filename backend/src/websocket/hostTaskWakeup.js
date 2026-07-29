@@ -17,53 +17,90 @@ function gatewayWebSocketUrl(cloudBaseUrl) {
 
 function createHostTaskWakeup({
   runtimeConfig = {},
-  hostToken = process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '',
   localPort = Number(process.env.PORT || 3001),
   HostWebSocketClient: Client = HostWebSocketClient,
-  fetchImpl = globalThis.fetch,
+  worker = null,
+  authorityFrameHandler = null,
   log = () => {},
 } = {}) {
-  if (runtimeConfig.nodeRole !== 'primary-host' || !runtimeConfig.deviceId || !hostToken) return null;
+  const hostCredential = runtimeConfig.hostCredential || process.env.GEWU_PRIMARY_HOST_CREDENTIAL || '';
+  const hostGeneration = Number(runtimeConfig.hostGeneration || process.env.GEWU_PRIMARY_HOST_GENERATION || 0);
+  if (runtimeConfig.nodeRole !== 'primary-host' || !runtimeConfig.deviceId || !hostCredential
+    || !Number.isSafeInteger(hostGeneration) || hostGeneration < 1 || !worker || typeof worker.wake !== 'function') return null;
   const gatewayUrl = gatewayWebSocketUrl(runtimeConfig.cloudBaseUrl || process.env.GEWU_CLOUD_BASE_URL);
-  if (!gatewayUrl || typeof fetchImpl !== 'function') return null;
+  if (!gatewayUrl) return null;
   const client = new Client({
     hostDeviceId: runtimeConfig.deviceId,
     gatewayUrl,
-    hostToken,
+    hostCredential,
+    hostGeneration,
   });
   let stopped = false;
   let processing = null;
+  const cloud = {
+    state: 'configured',
+    lastError: null,
+    lastConnectedAt: null,
+    lastEventAt: null,
+    nextRetryAt: null,
+  };
+  function cloudStatus(state, error = null) {
+    cloud.state = state;
+    cloud.lastEventAt = new Date().toISOString();
+    if (error) cloud.lastError = error?.code || error?.message || 'CLOUD_CONTROL_UNAVAILABLE';
+    const status = client.getStatus?.();
+    cloud.nextRetryAt = status?.nextRetryAt || null;
+    if (state === 'connected') {
+      cloud.lastError = null;
+      cloud.lastConnectedAt = cloud.lastEventAt;
+    }
+  }
   const wake = () => {
     if (stopped || processing) return processing;
-    processing = Promise.resolve(fetchImpl(`http://127.0.0.1:${Number(localPort)}/api/cloud-relay-host/tasks/process`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(runtimeConfig.desktopSyncToken ? { 'x-gewu-desktop-sync-token': runtimeConfig.desktopSyncToken } : {}),
-      },
-      body: JSON.stringify({ skipMaintenance: true }),
-    })).then(async response => {
-      if (!response?.ok) throw new Error(`HOST_TASK_WAKE_HTTP_${response?.status || 0}`);
-      const payload = await response.json();
-      if (payload?.success === false) throw new Error(payload.code || 'HOST_TASK_WAKE_REJECTED');
-      return payload;
-    }).catch(error => {
+    processing = Promise.resolve(worker.wake())
+      .catch(error => {
       log(`Host WebSocket task wake failed: ${error.message}`);
       return null;
-    }).finally(() => { processing = null; });
+      }).finally(() => { processing = null; });
     return processing;
   };
   client.on('new_task', wake);
-  client.on('error', error => log(`Host WebSocket error: ${error.message}`));
+  const handleAuthorityForward = async payload => {
+    const relayRequestId = String(payload?.relayRequestId || '');
+    if (!relayRequestId || typeof authorityFrameHandler?.handle !== 'function') return;
+    const response = await authorityFrameHandler.handle(payload.frame);
+    client.send('authority_command_result', { relayRequestId, response });
+  };
+  client.on('authority_command_forward', handleAuthorityForward);
+  client.on('connected', () => cloudStatus('connected'));
+  client.on('disconnected', () => cloudStatus('degraded'));
+  client.on('error', error => cloudStatus('degraded', error));
+  client.on('max_reconnect_attempts', () => cloudStatus('disabled'));
   return Object.freeze({
     client,
-    start() { if (!stopped) client.connect(); },
+    start() {
+      if (stopped) return;
+      cloudStatus('connecting');
+      client.connect();
+    },
     stop() {
       stopped = true;
       client.removeListener?.('new_task', wake);
+      client.removeListener?.('authority_command_forward', handleAuthorityForward);
       client.disconnect();
     },
     wake,
+    status() {
+      const clientStatus = client.getStatus?.();
+      return Object.freeze({
+        running: !stopped,
+        cloud: Object.freeze({
+          ...cloud,
+          nextRetryAt: clientStatus?.nextRetryAt || cloud.nextRetryAt,
+          state: clientStatus?.connected ? 'connected' : cloud.state,
+        }),
+      });
+    },
   });
 }
 

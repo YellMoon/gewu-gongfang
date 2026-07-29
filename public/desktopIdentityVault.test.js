@@ -14,13 +14,17 @@ const {
   desktopDeviceSessionSigningPayload,
 } = require('../backend/src/services/desktopDeviceChallengeService');
 const {
+  activationReceiptSigningPayload,
+} = require('../backend/src/services/deviceActivationService');
+const {
   PHYSICAL_CONFIRMATION,
   verifyPrimaryHostLocalReceiptSignature,
 } = require('../backend/src/services/primaryHostReceiptProtocol');
 const {
   createDesktopIdentityVault,
 } = require('./desktopIdentityVault');
-const pairingProtocol = require('./singleUserPairingEnvelope');
+const { authorityHttpSigningPayload } = require('../shared/authorityHttpAuth');
+const { verifySignedAuthorityProjection } = require('../shared/authorityProjectionProtocol');
 const packageJson = require('../package.json');
 
 function mockSafeStorage() {
@@ -85,6 +89,24 @@ function offlineLease() {
   };
 }
 
+function authorityContext(hostPublicKey) {
+  return {
+    userId: 'canonical-human',
+    deviceId: 'device-2',
+    authorityId: 'authority-1',
+    hostEpochId: 'epoch-1',
+    hostGeneration: 1,
+    hostPublicKey,
+    grant: { id: 'grant-1', version: 1 },
+    lease: {
+      id: 'authority-lease-1',
+      activeRole: 'teacher',
+      issuedAt: '2026-07-17T10:00:00.000Z',
+      expiresAt: '2026-07-31T10:00:00.000Z',
+    },
+  };
+}
+
 function verifySignature(publicKey, payload, signature) {
   return crypto.verify(
     null,
@@ -123,7 +145,7 @@ async function main() {
     legacyUpgradeRequired: false,
   });
 
-  const publicIdentity = vault.beginSingleUserEnrollment({
+  const publicIdentity = vault.beginRegistration({
     deviceId: 'device-2',
     deviceName: '第二台电脑',
     deviceKind: 'desktop-client',
@@ -140,25 +162,6 @@ async function main() {
     'keyFingerprint',
     'publicKey',
   ]);
-
-  const hostCapability = pairingProtocol.createHostCapability({
-    now: () => new Date(clock),
-    ttlMs: 10 * 60 * 1000,
-  });
-  const pairingEnvelope = vault.createPairingEnvelope({
-    capability: hostCapability.publicCapability,
-    pairingCode: '0123-4567-89AB-CDEF',
-  });
-  assert.strictEqual(JSON.stringify(pairingEnvelope).includes('0123456789ABCDEF'), false);
-  assert.strictEqual(Object.hasOwn(pairingEnvelope, 'privateKey'), false);
-  const openedPairing = pairingProtocol.decryptPairingRequest({
-    envelope: pairingEnvelope,
-    capabilityPrivateKey: hostCapability.privateKey,
-    expectedCapabilityId: hostCapability.publicCapability.id,
-    now: () => new Date(clock),
-  });
-  assert.strictEqual(openedPairing.device.deviceId, publicIdentity.deviceId);
-  assert.strictEqual(openedPairing.device.publicKey, publicIdentity.publicKey.trim());
 
   const exchange = vault.signChallenge({
     purpose: 'exchange',
@@ -177,6 +180,20 @@ async function main() {
       challengeSecret: 'one-time-exchange-secret',
     }),
     exchange.signature
+  ));
+  const activationFinalize = vault.signChallenge({
+    purpose: 'activation-finalize',
+    activationId: 'activation-device-2',
+    packageHash: 'a'.repeat(64),
+  });
+  assert.strictEqual(activationFinalize.purpose, 'activation-finalize');
+  assert.ok(verifySignature(
+    publicIdentity.publicKey,
+    activationReceiptSigningPayload({
+      activationId: 'activation-device-2',
+      packageHash: 'a'.repeat(64),
+    }),
+    activationFinalize.signature
   ));
   assert.throws(
     () => vault.signChallenge({ purpose: 'raw', payload: 'sign-anything' }),
@@ -198,6 +215,7 @@ async function main() {
     authorization,
     profile: approvedProfile(),
     offlineLease: offlineLease(),
+    authorityContext: authorityContext(publicIdentity.publicKey),
     sessionToken: 'short-session-token',
   });
   assert.strictEqual(completed.state, 'unlocked');
@@ -206,6 +224,56 @@ async function main() {
   assert.strictEqual(completed.teacherId, 'teacher-self');
   assert.ok(!JSON.stringify(completed).includes('PRIVATE KEY'));
   assert.ok(!JSON.stringify(completed).includes('local-password-1'));
+  const authorityCommand = vault.createAuthorityCommand({
+    type: 'schedule.update.v1',
+    payload: { id: 'schedule-1', changes: { notes: 'safe' } },
+    commandId: 'authority-command-1',
+    idempotencyKey: 'authority-key-1',
+  });
+  assert.strictEqual(authorityCommand.envelope.authorityId, 'authority-1');
+  assert.strictEqual(authorityCommand.envelope.hostEpochId, 'epoch-1');
+  assert.strictEqual(authorityCommand.envelope.lease.id, 'authority-lease-1');
+  assert.strictEqual(authorityCommand.envelope.actor.role, 'teacher');
+  assert.ok(verifySignature(
+    publicIdentity.publicKey,
+    authorityHttpSigningPayload({
+      method: 'POST',
+      path: '/api/authority/commands',
+      actor: authorityCommand.envelope.actor,
+      body: authorityCommand.envelope,
+    }),
+    authorityCommand.requestAuth.signature
+  ));
+  const authorityProjection = vault.signAuthorityProjection({
+    protocol: 'gewu.authority-projection.v1',
+    authorityId: 'authority-1',
+    hostEpochId: 'epoch-1',
+    userId: 'canonical-human',
+    role: 'teacher',
+    sourceVersion: 1,
+    generatedAt: clock.toISOString(),
+    payload: { schedules: [], courses: [], assets: [], questionPreviews: [] },
+  });
+  assert.deepStrictEqual(
+    verifySignedAuthorityProjection({
+      projection: authorityProjection,
+      publicKey: publicIdentity.publicKey,
+    }),
+    authorityProjection
+  );
+  const sealedActivationFinalize = vault.signChallenge({
+    purpose: 'activation-finalize',
+    activationId: 'activation-device-2',
+    packageHash: 'b'.repeat(64),
+  });
+  assert.ok(verifySignature(
+    publicIdentity.publicKey,
+    activationReceiptSigningPayload({
+      activationId: 'activation-device-2',
+      packageHash: 'b'.repeat(64),
+    }),
+    sealedActivationFinalize.signature
+  ), 'a sealed local vault must retain the device key needed to finalize activation');
 
   const signedHostReceipt = vault.signChallenge({
     purpose: 'primary-host-receipt',
@@ -551,8 +619,8 @@ async function main() {
   assert.deepStrictEqual(
     Array.from(Object.keys(exposed.desktopIdentity)).sort(),
     [
-      'beginPasswordReset', 'beginRegistration', 'beginSingleUserEnrollment',
-      'completePasswordReset', 'completeRegistration', 'createPairingEnvelope',
+      'beginPasswordReset', 'beginRegistration',
+      'completePasswordReset', 'completeRegistration',
       'lock', 'refreshOfflineLease', 'signChallenge', 'status', 'unlock',
     ]
   );
@@ -569,8 +637,6 @@ async function main() {
   for (const channel of [
     'desktop-identity:status',
     'desktop-identity:begin-registration',
-    'desktop-identity:begin-single-user-enrollment',
-    'desktop-identity:create-pairing-envelope',
     'desktop-identity:begin-password-reset',
     'desktop-identity:complete-registration',
     'desktop-identity:complete-password-reset',
@@ -583,6 +649,11 @@ async function main() {
   }
   assert.ok(!electronSource.includes("ipcMain.handle('desktop-auth:get'"));
   assert.ok(!electronSource.includes("ipcMain.handle('desktop-auth:set'"));
+  for (const legacyMarker of [
+    'beginSingleUserEnrollment', 'createPairingEnvelope', 'singleUserPairingEnvelope',
+    'signPairingEnvelope', 'single-user-pairing',
+  ]) assert.ok(!fs.readFileSync(path.join(__dirname, 'desktopIdentityVault.js'), 'utf8').includes(legacyMarker),
+    `desktop vault must not retain legacy pairing behavior: ${legacyMarker}`);
 
   fs.rmSync(workspace, { recursive: true, force: true });
   console.log('desktop identity vault checks passed');

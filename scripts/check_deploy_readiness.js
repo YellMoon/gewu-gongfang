@@ -200,7 +200,6 @@ function checkPrimaryHostRecoveryDelivery() {
   const issues = [];
   const required = [
     ['backend/src/schema.sql', 'CREATE TABLE IF NOT EXISTS host_recovery_deliveries'],
-    ['backend/src/database.js', 'const SCHEMA_VERSION = 3120'],
     ['backend/src/services/primaryHostRecoveryDeliveryProtocol.js', 'RSA_PKCS1_OAEP_PADDING'],
     ['backend/src/services/primaryHostRecoveryDeliveryProtocol.js', 'RSA_PKCS1_PSS_PADDING'],
     ['backend/src/services/primaryHostIdentityService.js', 'PRIMARY_HOST_RECOVERY_DELIVERY_KEY_REQUIRED'],
@@ -221,6 +220,14 @@ function checkPrimaryHostRecoveryDelivery() {
       status: found ? 'present' : 'missing',
     });
   });
+  const databaseSource = readText('backend/src/database.js');
+  const schemaVersion = Number(databaseSource.match(/const SCHEMA_VERSION = (\d+)/)?.[1] || 0);
+  const schemaVersionPresent = schemaVersion >= 3120;
+  if (!schemaVersionPresent) issues.push('backend/src/database.js requires SCHEMA_VERSION >= 3120');
+  evidence.push(Object.freeze({
+    key: 'backend/src/database.js:SCHEMA_VERSION>=3120',
+    status: schemaVersionPresent ? 'present' : 'missing',
+  }));
   const identityService = readText('backend/src/services/primaryHostIdentityService.js');
   const deviceCenter = readText('src/pages/IdentityDeviceCenter.tsx');
   if (identityService.includes('recoveryPackage: prepared.recovery.recoveryPackage')) {
@@ -398,11 +405,8 @@ function checkDesktopReleaseBoundary() {
   const hostConfig = require(path.join(process.cwd(), 'electron-builder.host.config.cjs'));
   const runtimeConfig = readText('public/runtimeConfig.js');
   const buildFlavor = readText('public/desktopBuildFlavor.js');
-  const directTransport = readText('src/services/oneClickSyncTransports.mjs');
-  const schema = readText('backend/src/schema.sql');
+  const directTransport = readText('src/services/authorityTransports.mjs');
   const relayRoute = readText('gateway/src/routes/cloudRelay.js');
-  const backendSingleUserService = readText('backend/src/services/singleUserDesktopIdentityService.js');
-  const backendPairingProtocol = readText('backend/src/services/singleUserPairingEnvelope.js');
   const ordinaryFiles = packageJson.build?.files || [];
   const hostFiles = hostConfig.files || [];
   const hostOnlyFiles = [
@@ -424,14 +428,16 @@ function checkDesktopReleaseBoundary() {
   if (!runtimeConfig.includes("desktopIdentityMode: 'full'")) {
     issues.push('desktop identity mode must default to full');
   }
-  const grantStart = schema.indexOf('CREATE TABLE IF NOT EXISTS desktop_single_user_pairing_grants');
-  const grantEnd = schema.indexOf('CREATE TABLE IF NOT EXISTS desktop_single_user_pairing_requests', grantStart);
-  const grantSchema = grantStart >= 0 && grantEnd > grantStart ? schema.slice(grantStart, grantEnd) : '';
-  if (!grantSchema.includes('code_salt') || !grantSchema.includes('code_digest')) {
-    issues.push('single-user pairing grants must persist only salted code digests');
-  }
-  if (/pairing_code\s+TEXT/i.test(grantSchema)) {
-    issues.push('single-user pairing grant schema contains a plaintext pairing code');
+  for (const retiredPath of [
+    'src/services/oneClickSyncTransports.mjs',
+    'src/services/oneClickSyncService.mjs',
+    'src/services/syncApi.ts',
+    'src/services/desktopSessionRelayClient.mjs',
+    'backend/src/routes/sync.js',
+  ]) {
+    if (fs.existsSync(path.join(process.cwd(), retiredPath))) {
+      issues.push(`retired sync path still exists: ${retiredPath}`);
+    }
   }
   for (const forbidden of ['/api/sync/authorize', 'x-sync-authorization', 'syncAuthorizationToken']) {
     if (directTransport.includes(forbidden)) {
@@ -440,11 +446,6 @@ function checkDesktopReleaseBoundary() {
   }
   if (!relayRoute.includes("'pairingcode'") || !relayRoute.includes("'pairing_code'")) {
     issues.push('cloud relay must reject pairing-code response fields');
-  }
-  if (backendSingleUserService.includes('../../../public/')
-    || !backendSingleUserService.includes("require('./singleUserPairingEnvelope')")
-    || !backendPairingProtocol.includes("const PROTOCOL_VERSION = 'gewu-single-user-pairing/v1'")) {
-    issues.push('standalone backend pairing protocol must not depend on desktop public files');
   }
   const clientFeed = /desktop\/['"]/.test(buildFlavor);
   const hostFeed = /desktop\/host\/['"]/.test(buildFlavor);

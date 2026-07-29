@@ -3,8 +3,6 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { DatabaseService } = require('../database');
-const { createDesktopSessionService } = require('./desktopSessionService');
-const { issueRelayAssertion, resolveRelaySessionActorContext, verifyRelayAssertion } = require('./relayAssertionService');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-sync-scope-'));
 process.env.DB_PATH = path.join(dir, 'test.db');
@@ -86,10 +84,6 @@ try {
       'relay-challenge-1',?,'2026-08-11T00:00:00.000Z',3,1,?,?)`)
     .run('b'.repeat(64),now,now,now);
   db.registerSyncDevice('relay-d1', { ownerUserId:'relay-u1' });
-  const relaySessions = createDesktopSessionService({
-    db: db.db, jwtSecret: 'relay-session-secret', now: () => new Date(now), uuid: () => 'relay-session-1',
-  });
-  const relaySession = relaySessions.issueSession({ userId:'relay-u1', deviceId:'relay-d1' });
   const relayToken = db.issueSyncAuthorization('relay-d1', { actorUserId:'relay-u1', actorTeacherId:'t1' });
   assert.deepStrictEqual(db.consumeSyncAuthorizationContext('relay-d1', relayToken.token, 'relay-u1'),
     { kind:'teacher', role:'teacher', userId:'relay-u1', teacherId:'t1', studentId:null, deviceId:'relay-d1',
@@ -106,24 +100,8 @@ try {
   assert.strictEqual(db.consumeSyncAuthorizationContext('relay-d1', reboundToken.token, 'relay-u1'), false,
     'teacher binding changes must invalidate queued relay authorization');
   db.db.prepare("UPDATE users SET teacher_id='t1' WHERE id='relay-u1'").run();
-  const relayClaims = verifyRelayAssertion(issueRelayAssertion({
-    taskId:'task-real', actorUserId:'relay-u1', deviceId:'relay-d1', sessionId:relaySession.session.id,
-    activeRole:'teacher', teacherId:'t1', authVersion:1, credentialVersion:3,
-    issuedAt:Date.parse(now), expiresAt:Date.parse(relaySession.session.expiresAt), nonce:'relay-nonce-1',
-  }, 'shared'), 'shared', { now:Date.parse(now)+1000 });
-  assert.ok(db.consumeRelayAuthorizationNonce(relayClaims));
-  assert.strictEqual(db.consumeRelayAuthorizationNonce(relayClaims), false, 'relay nonce replay must fail CAS/unique consumption');
-  assert.strictEqual(resolveRelaySessionActorContext(db, relayClaims, { now:Date.parse(now)+1000 }).teacherId,'t1');
-  assert.throws(() => resolveRelaySessionActorContext(db, { ...relayClaims, teacherId:'t2' }, { now:Date.parse(now)+1000 }),
-    error => error.code === 'RELAY_SESSION_ROLE_MISMATCH');
-  db.db.prepare("UPDATE desktop_device_authorizations SET credential_version=4 WHERE device_id='relay-d1'").run();
-  assert.throws(() => resolveRelaySessionActorContext(db, relayClaims, { now:Date.parse(now)+1000 }),
-    error => error.code === 'RELAY_SESSION_CREDENTIAL_VERSION_MISMATCH');
-  db.db.prepare("UPDATE desktop_device_authorizations SET credential_version=3 WHERE device_id='relay-d1'").run();
-  db.db.prepare("UPDATE desktop_sessions SET status='revoked' WHERE sid='relay-session-1'").run();
-  assert.throws(() => resolveRelaySessionActorContext(db, relayClaims, { now:Date.parse(now)+1000 }),
-    error => error.code === 'RELAY_SESSION_NOT_ACTIVE');
-  db.db.prepare("UPDATE desktop_sessions SET status='active' WHERE sid='relay-session-1'").run();
+  // Cloud tasks now receive the actor grant only from the authenticated host endpoint;
+  // local scope enforcement still re-checks the durable device/user binding.
   assert.strictEqual(db.resolveSyncActorContext('relay-d1','relay-u1').teacherId, 't1');
   db.registerSyncDevice('other-owner-device', { ownerUserId:'other-user' });
   assert.strictEqual(db.resolveSyncActorContext('other-owner-device','relay-u1'), false, 'cross-owner device must fail');
