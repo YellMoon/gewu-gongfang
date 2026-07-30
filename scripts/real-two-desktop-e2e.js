@@ -1225,7 +1225,7 @@ function configuredLanHostPort() {
 function fixedLanHostPort() { return configuredLanHostPort() || 60462; }
 function usesIsolatedTemporaryHostPackage(executablePath) {
   const normalized = path.resolve(String(executablePath || '')).replace(/\\/g, '/').toLowerCase();
-  return /\/tmp-e2e-host-cutover-[a-z0-9-]+\/win-unpacked\/[^/]+\.exe$/.test(normalized);
+  return /\/tmp-e2e-host-[a-z0-9-]+\/win-unpacked\/[^/]+\.exe$/.test(normalized);
 }
 async function runAcceptance(acceptance) {
   assert(HOST_EXE && fs.existsSync(HOST_EXE), 'GEWU_PACKAGED_HOST_EXE_REQUIRED');
