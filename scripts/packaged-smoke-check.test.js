@@ -31,5 +31,25 @@ assert.match(
   /await\s+waitForProcessExit\(/,
   'packaged smoke must wait for the Electron process to exit before deleting user data',
 );
+assert.match(
+  source,
+  /function verifyPackagedNativeAbi\(/,
+  'packaged smoke must verify the embedded native database module with Electron before launch',
+);
+assert.match(
+  source,
+  /ELECTRON_RUN_AS_NODE/,
+  'packaged smoke must use the Electron runtime for native ABI verification',
+);
+assert.match(
+  source,
+  /better-sqlite3/,
+  'packaged smoke must verify the embedded better-sqlite3 module',
+);
+assert.match(
+  source,
+  /verifyPackagedNativeAbi\(\);/,
+  'packaged smoke must run native ABI verification before the renderer smoke flow',
+);
 
 console.log('packaged smoke isolation checks passed');

@@ -34,6 +34,32 @@ function verifyPackagedFlavorBoundary() {
   return flavor;
 }
 
+function verifyPackagedNativeAbi() {
+  const electronExe = path.join(process.cwd(), 'node_modules', 'electron', 'dist', 'electron.exe');
+  const nativeModule = path.join(packagedAppRoot, 'node_modules', 'better-sqlite3');
+  if (!fs.existsSync(electronExe)) {
+    throw new Error(`Electron runtime for packaged native ABI verification is missing: ${electronExe}`);
+  }
+  if (!fs.existsSync(nativeModule)) {
+    throw new Error(`Packaged native database module is missing: ${nativeModule}`);
+  }
+  const script = [
+    'const Database = require(process.argv[1]);',
+    "const db = new Database(':memory:');",
+    "try { db.prepare('SELECT 1 AS ok').get(); } finally { db.close(); }",
+  ].join(' ');
+  try {
+    execFileSync(electronExe, ['-e', script, nativeModule], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      stdio: 'pipe',
+      windowsHide: true,
+    });
+  } catch (error) {
+    const detail = String(error?.stderr || error?.message || error).trim();
+    throw new Error(`Packaged native ABI verification failed: ${detail}`);
+  }
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -87,6 +113,7 @@ async function main() {
   if (missingRuntimeFiles.length > 0) {
     throw new Error(`Packaged embedded backend runtime files are missing: ${missingRuntimeFiles.join(', ')}`);
   }
+  verifyPackagedNativeAbi();
 
   const isolatedUserDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-packaged-smoke-'));
   const child = spawn(productExe, [
@@ -150,4 +177,4 @@ main().catch(error => {
   process.exitCode = 1;
 });
 
-module.exports = { verifyPackagedFlavorBoundary };
+module.exports = { verifyPackagedFlavorBoundary, verifyPackagedNativeAbi };
