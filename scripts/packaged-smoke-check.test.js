@@ -51,5 +51,20 @@ assert.match(
   /verifyPackagedNativeAbi\(\);/,
   'packaged smoke must run native ABI verification before the renderer smoke flow',
 );
+assert.doesNotMatch(
+  source,
+  /taskkill', \['\/PID', String\(pid\), '\/T'/,
+  'packaged smoke must stop only its exact Electron PID and never traverse unrelated process trees',
+);
+assert.match(
+  source,
+  /function findUserDataProcessIds\(/,
+  'packaged smoke must locate only processes tied to its random user-data directory before cleanup',
+);
+assert.match(
+  source,
+  /stopUserDataProcesses\(isolatedUserDataDir\)/,
+  'packaged smoke must clean up any exact renderer PID that outlives the launched main process',
+);
 
 console.log('packaged smoke isolation checks passed');

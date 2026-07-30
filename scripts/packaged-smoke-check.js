@@ -78,12 +78,55 @@ async function waitForDebugPort(timeoutMs = 30000) {
   throw new Error(`Packaged app debug port did not open: ${debugUrl}`);
 }
 
-function stopProcessTree(pid) {
+function stopExactProcess(pid) {
   if (!pid) return;
   try {
-    execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+    execFileSync('taskkill', ['/PID', String(pid), '/F'], { stdio: 'ignore' });
   } catch (_) {
     // The process may already have exited.
+  }
+}
+
+function findUserDataProcessIds(userDataDir, executableName = path.basename(productExe)) {
+  const quotedUserDataDir = String(userDataDir).replace(/'/g, "''");
+  const quotedExecutableName = String(executableName).replace(/'/g, "''");
+  const script = [
+    `$userDataDir = '${quotedUserDataDir}'`,
+    `$executableName = '${quotedExecutableName}'`,
+    'Get-CimInstance Win32_Process | Where-Object {',
+    '  $_.Name -eq $executableName -and $_.CommandLine -and $_.CommandLine.IndexOf($userDataDir, [System.StringComparison]::OrdinalIgnoreCase) -ge 0',
+    '} | ForEach-Object { $_.ProcessId }',
+  ].join('; ');
+  try {
+    return String(execFileSync('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      script,
+    ], {
+      encoding: 'utf8',
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }))
+      .split(/\r?\n/)
+      .map(value => Number(value.trim()))
+      .filter(Number.isInteger)
+      .filter(pid => pid > 0);
+  } catch (_) {
+    return [];
+  }
+}
+
+async function stopUserDataProcesses(userDataDir) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const pids = findUserDataProcessIds(userDataDir);
+    if (pids.length === 0) return;
+    pids.forEach(stopExactProcess);
+    await sleep(250);
+  }
+  const remaining = findUserDataProcessIds(userDataDir);
+  if (remaining.length > 0) {
+    throw new Error(`Packaged smoke cleanup left exact user-data processes: ${remaining.join(', ')}`);
   }
 }
 
@@ -160,8 +203,9 @@ async function main() {
     if (browser) {
       await browser.close().catch(() => {});
     }
-    stopProcessTree(child.pid);
+    stopExactProcess(child.pid);
     await waitForProcessExit(child);
+    await stopUserDataProcesses(isolatedUserDataDir);
     await sleep(500);
     fs.rmSync(isolatedUserDataDir, {
       recursive: true,

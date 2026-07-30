@@ -173,6 +173,17 @@ assert.ok(source.includes('HOST_IDENTITY_GATE_REQUIRED'),
   'the harness must wait for the identity gate instead of sampling the renderer during its loading transition');
 assert.ok(source.includes('HOST_DEVICE_APPROVE_ACTION_REQUIRED'),
   'ordinary device approval must click the rendered host approval action');
+assert.ok(source.includes('HOST_DEVICE_APPROVE_MODAL_OR_RESULT_REQUIRED')
+  && source.includes("return modalOpen || approved ? { modalOpen, approved } : null;"),
+  'a rendered approval click must wait for either its confirmation modal or a rendered approval result; an unpainted modal is not success');
+assert.ok(source.includes('HOST_DEVICE_APPROVE_CONFIRMATION_DISPATCH_REQUIRED')
+  && source.includes('await clickVisibleModalText(page,')
+  && source.includes("}, 'HOST_DEVICE_APPROVE_CONFIRMATION_DISPATCH_REQUIRED', 30_000);"),
+  'the approval confirmation must dispatch exactly once before its independently-rendered result is asserted');
+assert.ok(source.includes('function clickPaintedText(page, text)')
+  && source.includes('const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);')
+  && source.includes('return Boolean(hit && (hit === item || item.contains(hit)));'),
+  'text actions must choose a painted, topmost control instead of reporting a click on a hidden duplicate');
 assert.ok(source.includes("waitBody(page, '\\u5df2\\u6279\\u51c6\\uff0c\\u7b49\\u5f85\\u65b0\\u8bbe\\u5907\\u5b8c\\u6210\\u8bbe\\u7f6e'") && source.includes('HOST_DEVICE_APPROVED_PENDING_STATUS_REQUIRED'),
   'approval acceptance must prove that the host UI projects the approved-pending status, not merely that an approval action returned');
 assert.ok(source.includes('HOST_BOOTSTRAP_IDENTITY_CHALLENGE_REQUIRED') && source.includes('\\b[0-9]{6}\\b'),

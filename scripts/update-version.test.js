@@ -13,6 +13,16 @@ assert.strictEqual(
   'patch',
   'bug/style fixes should auto bump patch'
 );
+assert.deepStrictEqual(
+  version.filterReleaseArtifactPaths([
+    'dist-host/win-unpacked/resources/app/backend/src/routes/sync.js',
+    'tmp-e2e-host-connectivity-20260730c/win-unpacked/resources/app/package.json',
+    'output/task14-release/cloud-backup-latest.json',
+    'src/pages/SystemSettings.tsx',
+  ]),
+  ['src/pages/SystemSettings.tsx'],
+  'generated packages, disposable E2E roots, and release evidence must not affect automatic version classification'
+);
 assert.strictEqual(
   version.analyzeVersionBump({ files: ['src/pages/ScheduleCalendar.tsx'], diff: '修复批量删除确认弹窗乱码，并确保删除后课程不再恢复' }),
   'patch',
@@ -98,6 +108,24 @@ try {
   fs.writeFileSync = originalWriteFileSync;
 }
 assert.strictEqual(redundantLockWrites, 0, 'version sync must not rewrite an already-current lockfile');
+let generatedWriteAttempts = 0;
+const generatedVersionPath = path.join(lockFixtureDir, 'generated-version.ts');
+version.writeFileUtf8WithRetry(generatedVersionPath, 'export const APP_VERSION = "9.9.9";\n', {
+  retries: 1,
+  retryDelayMs: 0,
+  sleep: () => {},
+  writeFileSync: (...args) => {
+    generatedWriteAttempts += 1;
+    if (generatedWriteAttempts === 1) {
+      const error = new Error('transient Windows file open failure');
+      error.code = 'UNKNOWN';
+      throw error;
+    }
+    return originalWriteFileSync(...args);
+  },
+});
+assert.strictEqual(generatedWriteAttempts, 2, 'generated version writes should retry a transient Windows open failure once');
+assert.match(fs.readFileSync(generatedVersionPath, 'utf8'), /9\.9\.9/, 'retry should preserve the generated version content');
 assert.ok(packageJson.includes('version:bump:major'), 'package scripts should expose major version bump');
 assert.ok(packageJson.includes('version:bump:minor'), 'package scripts should expose minor version bump');
 assert.ok(packageJson.includes('version:bump:patch'), 'package scripts should expose patch version bump');

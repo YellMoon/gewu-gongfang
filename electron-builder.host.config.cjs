@@ -15,7 +15,7 @@ module.exports = {
   ],
   directories: {
     ...base.directories,
-    output: 'dist-host',
+    output: process.env.ELECTRON_BUILDER_OUTPUT_DIR || 'dist-host',
   },
   extraMetadata: {
     desktopBuildFlavor: 'primary-host',

@@ -8,6 +8,15 @@ const childProcess = require('child_process');
 // Patch: Bug 修复、样式、文档、测试、小调整
 
 const VALID_BUMP_LEVELS = new Set(['major', 'minor', 'patch']);
+const RELEASE_ARTIFACT_PATH_PATTERNS = [
+  /^(?:dist|dist-host|output)\//,
+  /^tmp[-_]/,
+  /^src\/generated\/version\.ts$/,
+];
+
+function filterReleaseArtifactPaths(paths = []) {
+  return paths.filter(file => !RELEASE_ARTIFACT_PATH_PATTERNS.some(pattern => pattern.test(String(file).replace(/\\/g, '/'))));
+}
 
 function runGit(args) {
   try {
@@ -22,11 +31,20 @@ function runGit(args) {
 }
 
 function readChangeContext() {
-  const diffNameOnly = runGit(['diff', '--name-only', 'HEAD']);
-  const diffNameStatus = runGit(['diff', '--name-status', 'HEAD']);
-  const diff = runGit(['diff', 'HEAD']);
+  const releasePathspec = [
+    '.',
+    ':(exclude)dist/**',
+    ':(exclude)dist-host/**',
+    ':(exclude)output/**',
+    ':(exclude)tmp-*/**',
+    ':(exclude)tmp_*/**',
+    ':(exclude)src/generated/version.ts',
+  ];
+  const diffNameOnly = runGit(['diff', '--name-only', 'HEAD', '--', ...releasePathspec]);
+  const diffNameStatus = runGit(['diff', '--name-status', 'HEAD', '--', ...releasePathspec]);
+  const diff = runGit(['diff', 'HEAD', '--', ...releasePathspec]);
   const files = diffNameOnly
-    ? diffNameOnly.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+    ? filterReleaseArtifactPaths(diffNameOnly.split(/\r?\n/).map(line => line.trim()).filter(Boolean))
     : [];
   const deletedFiles = diffNameStatus
     ? diffNameStatus
@@ -41,7 +59,7 @@ function readChangeContext() {
   const lastCommitFiles = runGit(['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD']);
   const lastCommitMessage = runGit(['log', '-1', '--pretty=%B']);
   return {
-    files: lastCommitFiles ? lastCommitFiles.split(/\r?\n/).map(line => line.trim()).filter(Boolean) : [],
+    files: lastCommitFiles ? filterReleaseArtifactPaths(lastCommitFiles.split(/\r?\n/).map(line => line.trim()).filter(Boolean)) : [],
     deletedFiles: [],
     diff: lastCommitMessage,
   };
@@ -166,13 +184,35 @@ function syncPackageLockVersion(lockPath, version) {
   return lock;
 }
 
+function sleepSync(delayMs) {
+  if (delayMs <= 0) return;
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+}
+
+function writeFileUtf8WithRetry(targetPath, contents, {
+  retries = 4,
+  retryDelayMs = 120,
+  writeFileSync = fs.writeFileSync,
+  sleep = sleepSync,
+} = {}) {
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return writeFileSync(targetPath, contents, 'utf8');
+    } catch (error) {
+      const transient = ['UNKNOWN', 'EBUSY', 'EPERM'].includes(String(error?.code || ''));
+      if (!transient || attempt === retries) throw error;
+      sleep(retryDelayMs * (attempt + 1));
+    }
+  }
+}
+
 function writeGeneratedVersion(pkg, now = new Date()) {
   const outDir = path.join(__dirname, '..', 'src', 'generated');
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
   const buildTag = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
-  fs.writeFileSync(
+  writeFileUtf8WithRetry(
     path.join(outDir, 'version.ts'),
-    `// Auto-generated - do not edit\n// Updated: ${now.toISOString()}\n// Build: ${buildTag}\nexport const APP_VERSION = "${pkg.version}";\nexport const BUILD_TAG = "${buildTag}";\n`
+    `// Auto-generated - do not edit\n// Updated: ${now.toISOString()}\n// Build: ${buildTag}\nexport const APP_VERSION = "${pkg.version}";\nexport const BUILD_TAG = "${buildTag}";\n`,
   );
   console.log(`Generated version.ts: ${pkg.version} (build ${buildTag})`);
 }
@@ -206,10 +246,12 @@ if (require.main === module) {
 
 module.exports = {
   analyzeVersionBump,
+  filterReleaseArtifactPaths,
   nextVersion,
   readChangeContext,
   resolveBumpLevel,
   syncBackendPackageVersion,
   syncGatewayPackageVersion,
   syncPackageLockVersion,
+  writeFileUtf8WithRetry,
 };

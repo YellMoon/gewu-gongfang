@@ -633,3 +633,24 @@ Status: partial release; acceptance incomplete
 - A third single-pair temporary-package row used `%TEMP%\\tmp-real-desktop-two-app-fKBVyR` and returned `{"success":true,"transport":"managed-identity-lan-cloud-relay","websocketDisabled":false,"relayWebSocket":false,"isolatedCutoverMarker":true,"deviceApprovedThroughVisibleHostUi":true,"hostWorkerObserved":true,"activationFinalized":true}`.
 - It reported `TEMPORARY_PACKAGE_FIREWALL_AUDIT_BYPASSED` on random port `55215`: no Windows firewall rule was queried, created, or changed. Visible host approval, activation, offline draft sealing, exact client restart, restart-time no-submission proof, LAN receipt and final activation all passed.
 - The runner exited and no process for this exact root remained. The root is retained with the other verified temporary roots pending the final installed-package and cleanup audit. This does not establish installed-primary-host acceptance or change real authority data.
+
+### 2026-07-30 checkpoint 32: 7.0.1 final-package authority acceptance and release gate
+
+Status: acceptance complete; release publication pending
+
+| Architecture unit | File exists | Freshly tested | Wired to formal path | Old normal path deleted/retired |
+|---|---|---|---|---|
+| Authority HTTP, facade and signed outbox | yes | `npm run test:authority-architecture` | host/gateway `/api/authority`, renderer `window.desktopAuthority` | raw business `/api/sync` and pairing path remain absent/hard-retired |
+| Host approval and activation UI | yes | three final 7.0.1 packaged rows | host `IdentityDeviceCenter` -> authority challenge approval -> client sealed local credential | no single-user enrollment or direct pairing execution |
+| LAN / relay WebSocket / durable relay | yes | final 7.0.1 terminal rows, each with offline draft restart and exact receipt | LAN authority socket, relay WebSocket, durable worker fallback | no raw-row synchronization fallback |
+| Scoped projection and five-role boundary | yes | formal isolated visitor/student/teacher/admin/super_admin API/Desktop/Miniapp runtime matrix | signed host projection -> desktop cache facade -> miniapp access runtime | client startup no longer owns business-row synchronization |
+| Copy-only cutover and legacy audit | yes | rehearsal self-test, cutover check and source audit | migration marker and formal authority routes | parity/replay failures zero; retired endpoints are terminal gates |
+
+- Final isolated 7.0.1 evidence used rebuilt primary-host and ordinary-desktop packages. All three rows completed visible host approval, rendered approved-pending status, client activation, offline draft sealing, exact client-process restart, explicit confirmation, exact receipt, worker wake, host-originated harmless write, and reverse projection.
+  - LAN WebSocket: `websocketDisabled:false`, `relayWebSocket:false`.
+  - Relay WebSocket with LAN deliberately unavailable: `websocketDisabled:false`, `relayWebSocket:true`.
+  - Durable relay with authority WebSocket disabled: `websocketDisabled:true`, `relayWebSocket:false`.
+- The former false negative was in the harness: it treated an unpainted AntD confirmation dialog as resolved, then retried confirmation after the real operation had completed. The current harness requires a painted action, requires a confirmation dialog or rendered approval result, dispatches confirmation once, then independently requires both approval result and approved-pending status.
+- The LAN row used only a temporary exact package link and an isolated profile; it did not create, enable, or modify a Windows firewall rule. It exercised final host package code, not an installed real profile or authority data.
+- Fresh consolidation passed: `npm run test:authority-architecture`, `npm run typecheck`, `npm run test:desktop-build-flavor`, `node scripts/runtime-architecture-rehearsal.js --self-test`, and `node scripts/desktop-architecture-cutover.test.js`. The rehearsal reported no parity or command-replay failure and `legacyRoutesSafeToRemove=true`.
+- Remaining release work is mechanical: rebuild current 7.0.1 ordinary/host installers, smoke-test them, remove only verified isolated acceptance roots after all runs have exited, commit only named source/config/test/doc files, push `gewu/master`, publish ordinary and host OSS feeds, and read both feeds back. No real authority data, installed profile, cloud service, or miniapp state changed during this checkpoint.

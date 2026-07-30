@@ -517,6 +517,28 @@ async function clickText(page, text) {
   if (!selector) fail('REAL_DESKTOP_UI_ACTION_MISSING');
   await page.nativeClick(selector);
 }
+async function clickPaintedText(page, text) {
+  const actionKey = `real-painted-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const selector = await page.evaluate(`(() => {
+    const text = ${literal(text)}.replace(/\\s+/g, '');
+    const key = ${literal(actionKey)};
+    const painted = item => {
+      const style = window.getComputedStyle(item);
+      const rect = item.getBoundingClientRect();
+      if (style.display === 'none' || style.visibility === 'hidden' || rect.width <= 0 || rect.height <= 0) return false;
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return Boolean(hit && (hit === item || item.contains(hit)));
+    };
+    const button = Array.from(document.querySelectorAll('button,[role="button"]')).find(item => (
+      (item.innerText || '').replace(/\\s+/g, '') === text && !item.closest('[aria-disabled="true"]') && painted(item)
+    ));
+    if (!button) return null;
+    button.dataset.realDesktopAction = key;
+    return '[data-real-desktop-action="' + key + '"]';
+  })()`);
+  if (!selector) fail('REAL_DESKTOP_PAINTED_ACTION_MISSING');
+  await page.nativeClick(selector);
+}
 async function clickTextWhenAvailable(page, text, code, timeoutMs = 15_000) {
   return waitFor(async () => {
     try {
@@ -936,28 +958,44 @@ async function approvePendingDeviceThroughHostUi(page) {
   console.log('[e2e] host pending-device UI rendered');
   await waitFor(async () => {
     try {
-      await clickText(page, '\u6279\u51c6');
+      await clickPaintedText(page, '\u6279\u51c6');
       console.log('[e2e] host visible approve action clicked');
       return true;
     } catch (error) {
-      if (error?.code !== 'REAL_DESKTOP_UI_ACTION_MISSING') throw error;
+      if (error?.code !== 'REAL_DESKTOP_PAINTED_ACTION_MISSING') throw error;
       await clickText(page, '\u5237\u65b0\u72b6\u6001');
       await sleep(700);
       return null;
     }
   }, 'HOST_DEVICE_APPROVE_ACTION_REQUIRED');
-  await waitFor(async () => {
-    const modalOpen = await page.evaluate(`(() => Array.from(document.querySelectorAll('.ant-modal-wrap')).some(item => { const style = window.getComputedStyle(item); const rect = item.getBoundingClientRect(); return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0 && (item.innerText || '').replace(/\\s+/g, '').includes('\u6279\u51c6\u6b64\u8bbe\u5907'); }))()`);
-    if (!modalOpen) return true;
-    try {
-      await clickVisibleModalText(page, '\u6279\u51c6\u6b64\u8bbe\u5907');
-      await sleep(700);
-      return null;
-    } catch (error) {
-      if (error?.code === 'REAL_DESKTOP_VISIBLE_MODAL_ACTION_MISSING') return null;
-      throw error;
-    }
-  }, 'HOST_DEVICE_APPROVE_MODAL_DISMISS_REQUIRED', 30_000);
+  const approvalUiState = await waitFor(async () => {
+    const state = await page.evaluate(`(() => {
+      const modalOpen = Array.from(document.querySelectorAll('.ant-modal-wrap')).some(item => {
+        const style = window.getComputedStyle(item);
+        const rect = item.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+          && (item.innerText || '').replace(/\\s+/g, '').includes('\u6279\u51c6\u6b64\u8bbe\u5907');
+      });
+      const rendered = (document.body?.innerText || '').replace(/\\s+/g, '');
+      const approved = rendered.includes('\u8bbe\u5907\u7533\u8bf7\u5df2\u6279\u51c6')
+        || rendered.includes('\u5df2\u6279\u51c6\uff0c\u7b49\u5f85\u65b0\u8bbe\u5907\u5b8c\u6210\u8bbe\u7f6e');
+      return { modalOpen, approved };
+    })()`);
+    const { modalOpen, approved } = state;
+    return modalOpen || approved ? { modalOpen, approved } : null;
+  }, 'HOST_DEVICE_APPROVE_MODAL_OR_RESULT_REQUIRED', 15_000);
+  if (approvalUiState.modalOpen) {
+    await waitFor(async () => {
+      try {
+        await clickVisibleModalText(page, '\u6279\u51c6\u6b64\u8bbe\u5907');
+        await sleep(700);
+        return true;
+      } catch (error) {
+        if (error?.code === 'REAL_DESKTOP_VISIBLE_MODAL_ACTION_MISSING') return null;
+        throw error;
+      }
+    }, 'HOST_DEVICE_APPROVE_CONFIRMATION_DISPATCH_REQUIRED', 30_000);
+  }
   console.log('[e2e] host approve modal resolved');
   await waitBody(page, '\u8bbe\u5907\u7533\u8bf7\u5df2\u6279\u51c6', 'HOST_DEVICE_APPROVE_RESULT_REQUIRED');
   await waitBody(page, '\u5df2\u6279\u51c6\uff0c\u7b49\u5f85\u65b0\u8bbe\u5907\u5b8c\u6210\u8bbe\u7f6e', 'HOST_DEVICE_APPROVED_PENDING_STATUS_REQUIRED');
