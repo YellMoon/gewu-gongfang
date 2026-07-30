@@ -23,7 +23,7 @@
     "package:host-runtime-contract": "node scripts/package-host-runtime-contract.js",
     "dist": "npm run build && npm run prepare:python && npm run rebuild:electron && electron-builder && npm run rebuild:node",
     "pack": "npm run build && npm run prepare:python && npm run rebuild:electron && electron-builder --dir && npm run rebuild:node",
-    "dist:win": "node scripts/release-matrix.js assert --target desktop && node scripts/prepare-ruby-runtime.js && node scripts/prepare-python-runtime.js && craco build && npm run rebuild:electron && electron-builder --win && npm run rebuild:node",
+    "dist:win": "node scripts/release-matrix.js assert --target desktop && node scripts/prepare-ruby-runtime.js && node scripts/prepare-python-runtime.js && craco build && node scripts/wait-for-renderer-build.js && npm run rebuild:electron && electron-builder --win && npm run rebuild:node",
     "dist:win:host": "node scripts/release-matrix.js assert --target local_host && npm run build && node scripts/wait-for-renderer-build.js && npm run prepare:python && npm run rebuild:electron && npm run verify:electron-native-abi && electron-builder --win --config electron-builder.host.config.cjs && npm run rebuild:node",
     "version:bump:major": "node scripts/update-version.js --bump=major",
     "version:bump:minor": "node scripts/update-version.js --bump=minor",

@@ -27,5 +27,10 @@ assert.match(
   /node scripts[\\/]wait-for-renderer-build\.js/,
   'the host release command must wait for the full renderer build before packaging',
 );
+assert.match(
+  packageJson.scripts['dist:win'],
+  /node scripts[\\/]wait-for-renderer-build\.js/,
+  'the ordinary desktop release command must wait for the full renderer build before packaging',
+);
 
 console.log('primary-host builder output override checks passed');
