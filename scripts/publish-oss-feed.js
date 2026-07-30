@@ -32,6 +32,8 @@ const releasePrefix = (process.env.OSS_RELEASES_PREFIX || [objectPrefix, 'releas
 const dryRun = process.argv.includes('--dry-run') || process.env.DRY_RUN === '1';
 const writeFeed = process.argv.includes('--write-feed') || process.env.WRITE_FEED === '1' || !dryRun;
 const skipUpload = process.argv.includes('--skip-upload') || process.env.SKIP_UPLOAD === '1' || dryRun;
+const releaseTarget = process.env.RELEASE_MATRIX_TARGET || 'desktop';
+const recordReleaseReceipt = process.env.RELEASE_MATRIX_RECORD !== '0';
 
 function getArgValue(name) {
   const prefix = `--${name}=`;
@@ -225,7 +227,7 @@ async function runUploadPlan(items) {
 async function publishRelease() {
   const release = dryRun ? null : releaseMatrix.assertReleaseTarget({
     rootDir: path.resolve(__dirname, '..'),
-    target: 'desktop',
+    target: releaseTarget,
     requestedVersion: packageJson.version,
   });
   const installer = findInstaller();
@@ -274,9 +276,9 @@ async function publishRelease() {
     },
   ];
   const upload = await runUploadPlan(uploadItems);
-  if (release && !skipUpload) {
+  if (release && !skipUpload && recordReleaseReceipt) {
     releaseMatrix.recordReceipt(release.manifest, {
-      target: 'desktop',
+      target: releaseTarget,
       version: packageJson.version,
       evidence: `OSS latest.yml and installer upload: ${objectUrl(feedObjectKey)}`,
     });

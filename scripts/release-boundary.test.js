@@ -15,7 +15,10 @@ assert.doesNotMatch(packageJson.scripts['dist:win'], /update-version\.js --bump/
 assert.match(packageJson.scripts['dist:win:host'], /release-matrix\.js assert --target local_host/, 'data-host packaging must require the unified release manifest');
 assert.ok(uploadMiniapp.includes('assertReleaseTarget({') && uploadMiniapp.includes("target: 'miniapp'"), 'miniapp upload must require the unified release manifest');
 assert.ok(uploadMiniapp.includes("recordReceipt"), 'a successful miniapp upload must write a version receipt');
-assert.ok(publishDesktop.includes("target: 'desktop'"), 'OSS publication must require the unified release manifest');
+assert.ok(
+  publishDesktop.includes('assertReleaseTarget({') && publishDesktop.includes('target: releaseTarget'),
+  'OSS publication must require the unified release manifest for its declared artifact target'
+);
 assert.ok(publishDesktop.includes("recordReceipt"), 'a successful OSS publication must write a version receipt');
 assert.ok(deployBackend.includes('require_release_manifest'), 'backend deployment must require the unified release manifest');
 assert.ok(deployBackend.includes("record_release_receipt('backend'"), 'backend health success must write an exact-version receipt');

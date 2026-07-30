@@ -12,6 +12,7 @@ const {
   updateFeedForFlavor,
 } = require('../public/desktopBuildFlavor');
 const publishScript = fs.readFileSync(path.join(__dirname, 'publish-oss-feed.js'), 'utf8');
+const hostPublishScript = fs.readFileSync(path.join(__dirname, 'publish-desktop-host-update.js'), 'utf8');
 const electronMain = fs.readFileSync(path.join(__dirname, '..', 'public', 'electron.js'), 'utf8');
 const quarkUpload = fs.readFileSync(path.join(__dirname, 'upload-quark-clean.js'), 'utf8');
 const beijingUpdateBaseUrl = 'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop';
@@ -51,6 +52,16 @@ assert.ok(
 assert.ok(
   publishScript.includes('retryTransientNetwork(() => putOssObject'),
   'OSS publish script should retry transient network failures for each individual object upload'
+);
+assert.ok(
+  publishScript.includes("process.env.RELEASE_MATRIX_TARGET || 'desktop'") &&
+  publishScript.includes("process.env.RELEASE_MATRIX_RECORD !== '0'"),
+  'OSS publishing should distinguish the artifact release target from whether a runtime acceptance receipt is allowed'
+);
+assert.ok(
+  hostPublishScript.includes("process.env.RELEASE_MATRIX_TARGET = process.env.RELEASE_MATRIX_TARGET || 'local_host'") &&
+  hostPublishScript.includes("process.env.RELEASE_MATRIX_RECORD = process.env.RELEASE_MATRIX_RECORD || '0'"),
+  'primary-host feed publication must assert the host artifact target without falsely recording the local runtime as accepted'
 );
 assert.ok(
   quarkUpload.includes(beijingUpdateBaseUrl),
