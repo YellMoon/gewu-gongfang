@@ -657,9 +657,13 @@ Status: acceptance complete; release publication pending
 
 ### 2026-07-30 checkpoint 33: manual-phone miniapp login correction
 
-Status: in progress
+Status: released with version split recorded
 
 - Miniapp login uses a manually entered mainland-China phone number. Existing enabled records must establish a session; unknown numbers create a restricted visitor account; disabled or conflicting identities are rejected.
 - All production miniapp paths, including desktop identity confirmation, must stop invoking WeChat automatic phone retrieval.
 - Completion requires RED/GREEN tests, build validation, push, cloud deployment, and a verified Alibaba-Cloud-egress upload of version `7.0.1`.
 - A development upload is not a WeChat review submission.
+- Verification passed: `npm test`, `npm run test:authority-architecture`, `npm run typecheck`, `npm run miniapp:release-check`, deploy-readiness, and OSS-feed contract checks.
+- Aliyun backend backup: `/root/scheduling-backups/backend/20260730-111817` before the 7.0.1 backend release and `/root/scheduling-backups/backend/20260730-115043` before the 7.1.1 desktop/backend release. Both SQLite backups passed quick-check and have paired code archives.
+- The WeChat development upload received `success:true` for version `7.0.1`, with 75 code files and a 904599-byte full package. The upload used an Aliyun fixed-egress temporary directory, then removed that directory and its one-time private key. It was not submitted for WeChat review or published online.
+- Desktop update feed was published and read back from OSS as 7.1.1 with `GewuGongfang-Desktop-7.1.1-x64.exe` (150909638 bytes); the artifact HTTP HEAD returned 200. Desktop/backend are 7.1.1 so deployed clients can receive the new desktop behavior, while the explicitly requested WeChat development package remains 7.0.1.
