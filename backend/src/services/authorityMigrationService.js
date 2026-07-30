@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
+const { listCanonicalAuthorityRoleGrants } = require('./authorityRoleGrantAdapter');
 
 function migrationError(code) {
   return Object.assign(new Error(code), { code });
@@ -21,9 +22,65 @@ function ensureMigrationSchema(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS authority_accounts (user_id TEXT PRIMARY KEY, authority_id TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS authority_role_bindings (binding_id TEXT PRIMARY KEY, authority_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL, subject_type TEXT, subject_id TEXT, status TEXT NOT NULL, grant_version INTEGER NOT NULL, granted_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, revoked_at TEXT);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_authority_role_bindings_active ON authority_role_bindings(authority_id,user_id,role) WHERE status='active';
     CREATE TABLE IF NOT EXISTS authority_migration_ledger (name TEXT PRIMARY KEY, source_fingerprint TEXT NOT NULL, applied_at TEXT NOT NULL, report_json TEXT NOT NULL);
   `);
+}
+
+function ensureCanonicalBindingUniqueness(db) {
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_authority_role_bindings_active
+    ON authority_role_bindings(authority_id,user_id,role) WHERE status='active';`);
+}
+
+function tableExists(db, tableName) {
+  return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(tableName));
+}
+
+function roleSubject(role, source = {}) {
+  const subjectId = role === 'teacher' ? source.teacher_id || source.subject_id
+    : role === 'student' ? source.student_id || source.subject_id : null;
+  const subjectType = role === 'teacher' || role === 'student' ? role : null;
+  if ((role === 'teacher' || role === 'student') && !String(subjectId || '').trim()) {
+    throw migrationError('AUTHORITY_MIGRATION_ROLE_BINDING_AMBIGUOUS');
+  }
+  if (source.subject_type && source.subject_type !== subjectType) {
+    throw migrationError('AUTHORITY_MIGRATION_ROLE_BINDING_AMBIGUOUS');
+  }
+  return { subjectType, subjectId: subjectId || null };
+}
+
+function legacyRoleInputs(db, user) {
+  const inputs = new Map();
+  function add(role, source) {
+    if (!['teacher', 'student', 'admin', 'super_admin'].includes(role)) return;
+    const next = roleSubject(role, source);
+    const existing = inputs.get(role);
+    if (existing && (existing.subjectType !== next.subjectType || existing.subjectId !== next.subjectId)) {
+      throw migrationError('AUTHORITY_MIGRATION_ROLE_BINDING_AMBIGUOUS');
+    }
+    inputs.set(role, next);
+  }
+  const scalarRole = activeLegacyRole(user);
+  if (scalarRole) add(scalarRole, user);
+  if (tableExists(db, 'user_role_grants')) {
+    const grants = db.prepare(`SELECT * FROM user_role_grants
+      WHERE user_id=? AND status='active' ORDER BY role`).all(user.id);
+    for (const grant of grants) add(String(grant.role || '').trim(), grant);
+  }
+  return [...inputs.entries()].map(([role, subject]) => ({ role, ...subject }));
+}
+
+function assertCanonicalBindingsUnambiguous(db, authorityId) {
+  const users = db.prepare(`SELECT DISTINCT user_id FROM authority_role_bindings
+    WHERE authority_id=? AND status='active' ORDER BY user_id`).all(authorityId);
+  for (const row of users) {
+    try {
+      listCanonicalAuthorityRoleGrants(db, { authorityId, userId: row.user_id });
+    } catch (error) {
+      if (error.code === 'AUTHORITY_ROLE_BINDING_DUPLICATE') throw migrationError('AUTHORITY_MIGRATION_ROLE_BINDING_DUPLICATE');
+      if (error.code === 'AUTHORITY_ROLE_BINDING_AMBIGUOUS') throw migrationError('AUTHORITY_MIGRATION_ROLE_BINDING_AMBIGUOUS');
+      throw error;
+    }
+  }
 }
 
 function assertCopyOnly(sourcePath, copyPath) {
@@ -45,36 +102,50 @@ function rehearseAuthorityMigration({ sourceDb, copyDb, authorityId = 'default',
   const db = new Database(copyPath);
   try {
     ensureMigrationSchema(db);
+    assertCanonicalBindingsUnambiguous(db, authorityId);
     const users = db.prepare('SELECT * FROM users ORDER BY id').all();
     const parityFailures = [];
     const seed = db.transaction(() => {
       for (const user of users) {
-        const role = activeLegacyRole(user);
+        const desiredRoles = legacyRoleInputs(db, user);
         db.prepare('INSERT OR IGNORE INTO authority_accounts(user_id,authority_id,status,created_at,updated_at) VALUES(?,?,?,?,?)')
-          .run(user.id, authorityId, role ? 'active' : 'disabled', now, now);
-        if (!role) continue;
-        const subjectId = role === 'teacher' ? user.teacher_id : role === 'student' ? user.student_id : null;
-        if ((role === 'teacher' || role === 'student') && !subjectId) {
-          throw migrationError('AUTHORITY_MIGRATION_ROLE_BINDING_AMBIGUOUS');
+          .run(user.id, authorityId, desiredRoles.length ? 'active' : 'disabled', now, now);
+        for (const desired of desiredRoles) {
+          const existing = db.prepare('SELECT * FROM authority_role_bindings WHERE authority_id=? AND user_id=? AND role=? AND status=?').all(authorityId, user.id, desired.role, 'active');
+          if (existing.length > 1) {
+            throw migrationError('AUTHORITY_MIGRATION_ROLE_BINDING_DUPLICATE');
+          }
+          if (existing.length === 1
+            && ((existing[0].subject_type || null) !== desired.subjectType || (existing[0].subject_id || null) !== desired.subjectId)) {
+            throw migrationError('AUTHORITY_MIGRATION_ROLE_BINDING_AMBIGUOUS');
+          }
+          if (!existing.length) db.prepare(`INSERT INTO authority_role_bindings
+            (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,granted_by,created_at,updated_at,revoked_at)
+            VALUES(?,?,?,?,? ,?,'active',1,'copy-only-rehearsal',?,?,NULL)`)
+            .run(`legacy:${user.id}:${desired.role}`, authorityId, user.id, desired.role, desired.subjectType, desired.subjectId, now, now);
         }
-        const existing = db.prepare('SELECT * FROM authority_role_bindings WHERE authority_id=? AND user_id=? AND role=? AND status=?').all(authorityId, user.id, role, 'active');
-        if (existing.length > 1 || (existing.length === 1 && (existing[0].subject_id || null) !== (subjectId || null))) {
-          throw migrationError('AUTHORITY_MIGRATION_ROLE_BINDING_AMBIGUOUS');
-        }
-        if (!existing.length) db.prepare(`INSERT INTO authority_role_bindings
-          (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,granted_by,created_at,updated_at,revoked_at)
-          VALUES(?,?,?,?,? ,?,'active',1,'copy-only-rehearsal',?,?,NULL)`)
-          .run(`legacy:${user.id}:${role}`, authorityId, user.id, role, role === 'teacher' || role === 'student' ? role : null, subjectId || null, now, now);
       }
     });
     seed();
     for (const user of users) {
-      const role = activeLegacyRole(user);
-      if (!role) continue;
-      const binding = db.prepare('SELECT * FROM authority_role_bindings WHERE authority_id=? AND user_id=? AND role=? AND status=?').get(authorityId, user.id, role, 'active');
-      const expectedSubject = role === 'teacher' ? user.teacher_id : role === 'student' ? user.student_id : null;
-      if (!binding || (binding.subject_id || null) !== (expectedSubject || null)) parityFailures.push({ userId: user.id, role, code: 'AUTHORITY_MIGRATION_SCOPE_PARITY_FAILED' });
+      const desiredRoles = legacyRoleInputs(db, user);
+      if (!desiredRoles.length) continue;
+      let canonical;
+      try {
+        canonical = listCanonicalAuthorityRoleGrants(db, { authorityId, userId: user.id });
+      } catch (error) {
+        if (error.code === 'AUTHORITY_ROLE_BINDING_DUPLICATE') throw migrationError('AUTHORITY_MIGRATION_ROLE_BINDING_DUPLICATE');
+        if (error.code === 'AUTHORITY_ROLE_BINDING_AMBIGUOUS') throw migrationError('AUTHORITY_MIGRATION_ROLE_BINDING_AMBIGUOUS');
+        throw error;
+      }
+      for (const desired of desiredRoles) {
+        const binding = canonical.find(candidate => candidate.role === desired.role);
+        if (!binding || binding.subjectType !== desired.subjectType || binding.subjectId !== desired.subjectId) {
+          parityFailures.push({ userId: user.id, role: desired.role, code: 'AUTHORITY_MIGRATION_SCOPE_PARITY_FAILED' });
+        }
+      }
     }
+    ensureCanonicalBindingUniqueness(db);
     const replayResult = commandReplay({ db, authorityId });
     const commandReplayFailures = Array.isArray(replayResult) ? replayResult : ['AUTHORITY_MIGRATION_COMMAND_REPLAY_INVALID'];
     const sourceFingerprintAfter = fingerprint(sourcePath);

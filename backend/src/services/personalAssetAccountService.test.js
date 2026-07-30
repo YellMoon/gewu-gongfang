@@ -64,4 +64,39 @@ assert.equal(service.list({
   ownerUserId: 'user-2',
 }).length, 1);
 
+const candidateFirst = service.recognizeOrCreate({
+  actor: { userId: 'user-1', roles: ['student'] },
+  authorityId: 'authority-1',
+  accountType: 'savings',
+  provider: 'Example Bank',
+  label: 'Savings card',
+  maskedIdentifier: '**** 4321',
+});
+assert.equal(candidateFirst.created, true);
+assert.equal(candidateFirst.account.accountType, 'saving_card');
+assert.equal(candidateFirst.account.ownerUserId, 'user-1');
+
+const candidateDuplicate = service.recognizeOrCreate({
+  actor: { userId: 'user-1', roles: ['student'] },
+  authorityId: 'authority-1',
+  accountType: 'debit',
+  provider: 'Example Bank',
+  label: 'Imported statement',
+  maskedIdentifier: '**** 4321',
+});
+assert.equal(candidateDuplicate.created, false, 'the same owner/type/provider/masked identifier must not create a second account');
+assert.equal(candidateDuplicate.account.accountId, candidateFirst.account.accountId);
+assert.throws(
+  () => service.recognizeOrCreate({
+    actor: { userId: 'user-1', roles: ['student'] },
+    authorityId: 'authority-1',
+    accountType: 'credit',
+    provider: 'Example Bank',
+    label: 'unsafe import',
+    maskedIdentifier: '6222123412341234',
+  }),
+  error => error.code === 'ASSET_ACCOUNT_SECRET_FORBIDDEN',
+  'candidate recognition must reject full identifiers rather than persisting or using them for deduplication',
+);
+
 console.log('personalAssetAccountService tests passed');

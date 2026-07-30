@@ -1,6 +1,11 @@
 const crypto = require('crypto');
 
 const ACCOUNT_TYPES = new Set(['saving_card', 'credit_card', 'alipay', 'wechat', 'custom']);
+const ACCOUNT_TYPE_ALIASES = new Map([
+  ['savings', 'saving_card'], ['debit', 'saving_card'], ['saving_card', 'saving_card'],
+  ['credit', 'credit_card'], ['credit_card', 'credit_card'], ['alipay', 'alipay'],
+  ['wechat', 'wechat'], ['custom', 'custom'],
+]);
 const SENSITIVE_KEYS = new Set(['accountNumber', 'account_number', 'cardNumber', 'card_number', 'fullIdentifier']);
 
 function assetAccountError(code, statusCode = 400) {
@@ -29,6 +34,12 @@ function assertNoSecret(input = {}) {
   }
   const masked = String(input.maskedIdentifier || input.masked_identifier || '');
   if (/\d{8,}/.test(masked)) throw assetAccountError('ASSET_ACCOUNT_SECRET_FORBIDDEN', 400);
+}
+
+function canonicalAccountType(value) {
+  const accountType = ACCOUNT_TYPE_ALIASES.get(String(value || '').trim());
+  if (!accountType || !ACCOUNT_TYPES.has(accountType)) throw assetAccountError('ASSET_ACCOUNT_TYPE_INVALID');
+  return accountType;
 }
 
 function project(row) {
@@ -73,8 +84,7 @@ function createPersonalAssetAccountService({
     assertNoSecret(input);
     const owner = actorId(input.actor);
     const authorityId = text(input.authorityId, 'ASSET_ACCOUNT_AUTHORITY_REQUIRED');
-    const accountType = String(input.accountType || '').trim();
-    if (!ACCOUNT_TYPES.has(accountType)) throw assetAccountError('ASSET_ACCOUNT_TYPE_INVALID');
+    const accountType = canonicalAccountType(input.accountType);
     const accountId = text(createId(), 'ASSET_ACCOUNT_ID_INVALID');
     const timestamp = currentTime();
     const balance = Number(input.balance || 0);
@@ -143,7 +153,27 @@ function createPersonalAssetAccountService({
     return project(find.get(id));
   }
 
-  return Object.freeze({ create, list, update });
+  function recognizeOrCreate(input = {}) {
+    assertNoSecret(input);
+    const owner = actorId(input.actor);
+    const authorityId = text(input.authorityId, 'ASSET_ACCOUNT_AUTHORITY_REQUIRED');
+    const accountType = canonicalAccountType(input.accountType);
+    const provider = text(input.provider, 'ASSET_ACCOUNT_PROVIDER_INVALID', 128);
+    const maskedIdentifier = text(input.maskedIdentifier, 'ASSET_ACCOUNT_MASK_REQUIRED', 64);
+    if (!/[\*\u2022]/.test(maskedIdentifier)) throw assetAccountError('ASSET_ACCOUNT_MASK_REQUIRED');
+    const matches = db.prepare(`SELECT * FROM asset_accounts
+      WHERE authority_id=? AND owner_user_id=? AND account_type=? AND provider IS ?
+        AND masked_identifier=? AND status='active' ORDER BY account_id`)
+      .all(authorityId, owner, accountType, provider, maskedIdentifier);
+    if (matches.length > 1) throw assetAccountError('ASSET_ACCOUNT_CANDIDATE_AMBIGUOUS', 409);
+    if (matches.length === 1) return Object.freeze({ account: project(matches[0]), created: false });
+    return Object.freeze({
+      account: create({ ...input, accountType, provider, maskedIdentifier }),
+      created: true,
+    });
+  }
+
+  return Object.freeze({ create, list, update, recognizeOrCreate });
 }
 
 module.exports = { createPersonalAssetAccountService, assetAccountError };

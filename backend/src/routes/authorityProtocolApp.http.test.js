@@ -61,6 +61,10 @@ database.db.prepare(`INSERT INTO authority_role_bindings
   (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,created_at,updated_at)
   VALUES('binding-app-1',?,?,'teacher','teacher','teacher-app-1','active',1,?,?)`)
   .run(envelope.authorityId, actor.userId, envelope.createdAt, envelope.createdAt);
+database.db.prepare(`INSERT INTO authority_accounts
+  (user_id,authority_id,status,created_at,updated_at)
+  VALUES(?,?,'active',?,?)`)
+  .run(actor.userId, envelope.authorityId, envelope.createdAt, envelope.createdAt);
 database.db.prepare(`INSERT INTO device_grants
   (grant_id,authority_id,device_id,user_id,public_key,host_generation,status,grant_version,created_at,updated_at)
   VALUES('grant-app-1',?,?,?,?,1,'active',1,?,?)`)
@@ -70,6 +74,22 @@ database.db.prepare(`INSERT INTO device_leases
   (lease_id,grant_id,authority_id,device_id,user_id,active_role,grant_version,status,issued_at,expires_at)
   VALUES(?,'grant-app-1',?,?,?,'teacher',1,'active',?,'2026-08-11T00:00:00.000Z')`)
   .run(envelope.lease.id, envelope.authorityId, actor.deviceId, actor.userId, envelope.createdAt);
+database.db.prepare(`INSERT INTO authority_role_bindings
+  (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,created_at,updated_at)
+  VALUES('binding-super-app-1',?,?,'super_admin',NULL,NULL,'active',1,?,?)`)
+  .run(envelope.authorityId, actor.userId, envelope.createdAt, envelope.createdAt);
+database.db.prepare(`INSERT INTO device_leases
+  (lease_id,grant_id,authority_id,device_id,user_id,active_role,grant_version,status,issued_at,expires_at)
+  VALUES('lease-super-app-1','grant-app-1',?,?,?,'super_admin',1,'active',?,'2026-08-11T00:00:00.000Z')`)
+  .run(envelope.authorityId, actor.deviceId, actor.userId, envelope.createdAt);
+database.db.prepare(`INSERT INTO users
+  (id,name,role,status,login_enabled,review_status,created_at,updated_at)
+  VALUES('admin-target-app-1','Admin target','visitor',1,1,'approved',?,?)`)
+  .run(envelope.createdAt, envelope.createdAt);
+database.db.prepare(`INSERT INTO authority_accounts
+  (user_id,authority_id,status,created_at,updated_at)
+  VALUES('admin-target-app-1',?,'active',?,?)`)
+  .run(envelope.authorityId, envelope.createdAt, envelope.createdAt);
 database.db.pragma('foreign_keys = ON');
 const databaseModule = require('../database');
 databaseModule.getInstance = () => database;
@@ -121,6 +141,65 @@ const { createApp } = require('../app');
     assert.strictEqual(signedResponse.status, 202, JSON.stringify(signedBody));
     assert.strictEqual(signedBody.command.id, envelope.commandId);
     assert.strictEqual(database.db.prepare('SELECT COUNT(*) AS count FROM host_commands').get().count, 1);
+
+    const directGrantPayload = Object.freeze({ userId: 'admin-target-app-1' });
+    const directGrant = Object.freeze({
+      ...envelope,
+      commandId: 'app-command-direct-admin-1',
+      idempotencyKey: 'app-key-direct-admin-1',
+      type: 'role-admin.grant.v1',
+      payload: directGrantPayload,
+      payloadHash: crypto.createHash('sha256').update(stableJson(directGrantPayload)).digest('hex'),
+    });
+    const forbiddenGrantSignature = crypto.sign(null, Buffer.from(authorityHttpSigningPayload({
+      method: 'POST', path: requestPath, actor, body: directGrant,
+    }), 'utf8'), keyPair.privateKey).toString('base64');
+    const forbiddenGrant = await fetch(`${baseUrl}${requestPath}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-gewu-authority-user-id': actor.userId,
+        'x-gewu-authority-device-id': actor.deviceId,
+        'x-gewu-authority-role': actor.role,
+        'x-gewu-device-signature': forbiddenGrantSignature,
+      },
+      body: JSON.stringify(directGrant),
+    });
+    const forbiddenGrantBody = await forbiddenGrant.json();
+    assert.strictEqual(forbiddenGrant.status, 403);
+    assert.strictEqual(forbiddenGrantBody.error.code, 'AUTHORITY_COMMAND_SCOPE_FORBIDDEN');
+
+    const superActor = Object.freeze({ ...actor, role: 'super_admin' });
+    const superGrant = Object.freeze({
+      ...directGrant,
+      commandId: 'app-command-direct-admin-2',
+      idempotencyKey: 'app-key-direct-admin-2',
+      actor: superActor,
+      lease: Object.freeze({ id: 'lease-super-app-1', grantVersion: 1 }),
+    });
+    const superGrantSignature = crypto.sign(null, Buffer.from(authorityHttpSigningPayload({
+      method: 'POST', path: requestPath, actor: superActor, body: superGrant,
+    }), 'utf8'), keyPair.privateKey).toString('base64');
+    const superGrantResponse = await fetch(`${baseUrl}${requestPath}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-gewu-authority-user-id': superActor.userId,
+        'x-gewu-authority-device-id': superActor.deviceId,
+        'x-gewu-authority-role': superActor.role,
+        'x-gewu-device-signature': superGrantSignature,
+      },
+      body: JSON.stringify(superGrant),
+    });
+    const superGrantBody = await superGrantResponse.json();
+    assert.strictEqual(superGrantResponse.status, 202, JSON.stringify(superGrantBody));
+    assert.strictEqual(superGrantBody.command.id, superGrant.commandId);
+    assert.strictEqual(
+      JSON.parse(database.db.prepare('SELECT envelope_json FROM host_commands WHERE command_id=?')
+        .get(superGrant.commandId).envelope_json).type,
+      'role-admin.grant.v1',
+      'only a signed super-admin device can queue a direct admin grant to the authority host',
+    );
     const projection = createSignedAuthorityProjection({
       authorityId: envelope.authorityId,
       hostEpochId: envelope.hostEpochId,

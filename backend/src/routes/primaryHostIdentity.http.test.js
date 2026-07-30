@@ -210,14 +210,21 @@ app.use('/api/desktop-identity', createDesktopIdentityRouter({
   miniappIdentityService: (() => {
     const loginEvents = ['host-http-phone-event', 'host-http-transfer-phone-event'];
     return {
-      loginWithVerifiedWechat: () => ({
-      user: { id: CANONICAL_SUPER_ADMIN_ID },
-      loginEventId: loginEvents.shift(),
-    }),
+      loginWithClaimedWechat: ({ phone }) => {
+        if (phone === '13600136000') {
+          return { user: { id: 'visitor-http-user', role: 'visitor', account_state: 'visitor' }, loginEventId: 'visitor-http-event' };
+        }
+        if (phone === '13900139000') {
+          throw Object.assign(new Error('PHONE_WECHAT_BINDING_CONFLICT'), { code: 'PHONE_WECHAT_BINDING_CONFLICT' });
+        }
+        return {
+          user: { id: CANONICAL_SUPER_ADMIN_ID, role: 'super_admin', account_state: 'formal' },
+          loginEventId: loginEvents.shift(),
+        };
+      },
     };
   })(),
   resolveWechatIdentity: async () => ({ openid: 'host-http-openid', unionid: null }),
-  resolveWechatPhoneNumber: async () => SUPER_ADMIN_PHONE,
   createDesktopAuthorizationUrlLink: async () => {
     const error = new Error('url link permission unavailable');
     error.code = 'WECHAT_URL_LINK_FAILED';
@@ -270,8 +277,20 @@ app.use('/api/cloud', cloudRelayRouter);
       'rowVersion',
     ].sort());
 
+    const retiredPhoneCode = await call(`/api/desktop-identity/challenges/${started.id}/confirm`, {
+      method: 'POST', body: JSON.stringify({ code: 'wechat-code-retired', phone: SUPER_ADMIN_PHONE, phoneCode: 'phone-code' }),
+    });
+    assert.strictEqual(retiredPhoneCode.status, 400);
+    assert.strictEqual((await retiredPhoneCode.json()).code, 'DESKTOP_IDENTITY_INPUT_FORBIDDEN');
+
+    const visitorConfirm = await call(`/api/desktop-identity/challenges/${started.id}/confirm`, {
+      method: 'POST', body: JSON.stringify({ code: 'wechat-code-visitor', phone: '13600136000', expectedRowVersion: started.rowVersion }),
+    });
+    assert.strictEqual(visitorConfirm.status, 403);
+    assert.strictEqual((await visitorConfirm.json()).code, 'DESKTOP_IDENTITY_VISITOR_FORBIDDEN');
+
     const confirmedResponse = await call(`/api/desktop-identity/challenges/${started.id}/confirm`, {
-      method: 'POST', body: JSON.stringify({ code: 'wechat-code', phoneCode: 'phone-code', expectedRowVersion: started.rowVersion }),
+      method: 'POST', body: JSON.stringify({ code: 'wechat-code', phone: SUPER_ADMIN_PHONE, expectedRowVersion: started.rowVersion }),
     });
     assert.strictEqual(confirmedResponse.status, 200);
     const confirmed = (await confirmedResponse.json()).data.challenge;
@@ -491,12 +510,24 @@ app.use('/api/cloud', cloudRelayRouter);
     });
     assert.strictEqual(transferStartedResponse.status, 200);
     const transferStarted = (await transferStartedResponse.json()).data.challenge;
+    const transferConflictResponse = await call(
+      `/api/desktop-identity/challenges/${transferStarted.id}/confirm`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          code: 'wechat-code-transfer-conflict', phone: '13900139000',
+          expectedRowVersion: transferStarted.rowVersion,
+        }),
+      }
+    );
+    assert.strictEqual(transferConflictResponse.status, 409);
+    assert.strictEqual((await transferConflictResponse.json()).code, 'PHONE_WECHAT_BINDING_CONFLICT');
     const transferConfirmedResponse = await call(
       `/api/desktop-identity/challenges/${transferStarted.id}/confirm`,
       {
         method: 'POST',
         body: JSON.stringify({
-          code: 'wechat-code-transfer', phoneCode: 'phone-code-transfer',
+          code: 'wechat-code-transfer', phone: SUPER_ADMIN_PHONE,
           expectedRowVersion: transferStarted.rowVersion,
         }),
       }

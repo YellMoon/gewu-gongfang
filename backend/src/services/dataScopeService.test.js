@@ -20,7 +20,9 @@ const snapshot = {
   ],
   institutions: [{ id: 'i1' }, { id: 'i2' }], rooms: [{ id: 'r1' }, { id: 'r2' }], schools: [{ id: 'school1' }, { id: 'school2' }],
   assetRecords: [{ id: 'a1', owner_user_id: 'u1', amount: 10 }, { id: 'a2', owner_user_id: 'u2', amount: 999 }],
-  assetCategories: [{ id: 'ac1' }],
+  assetCategories: [{ id: 'ac1', owner_user_id: 'u1' }, { id: 'ac2', owner_user_id: 'u2' }],
+  assets: [{ id: 'aa1', owner_user_id: 'u1', masked_identifier: '**** 1234' }, { id: 'aa2', owner_user_id: 'u2', masked_identifier: '**** 9876' }],
+  questionPreviews: Array.from({ length: 11 }, (_, index) => ({ id: `preview-${index + 1}`, stemPreview: `preview ${index + 1}`, answer: 'forbidden' })),
   subjects: [{ id: 'sub1' }], questions: [{ id: 'q1' }, { id: 'q2' }], question_assets: [{ id: 'qa1' }],
   revenueStats: { tuition: 999999 }, secretRows: [{ id: 'leak' }], secretObject: { leak: true }, version: 'v1',
 };
@@ -36,6 +38,7 @@ assert.deepStrictEqual(scoped.institutions.map(x => x.id), ['i1']);
 assert.deepStrictEqual(scoped.rooms.map(x => x.id), ['r1']);
 assert.deepStrictEqual(scoped.schools.map(x => x.id), ['school1']);
 assert.deepStrictEqual(scoped.assetRecords.map(x => x.id), ['a1']);
+assert.deepStrictEqual(scoped.assetCategories.map(x => x.id), ['ac1']);
 assert.strictEqual(scoped.questions.length, 2, 'public question bank remains complete');
 assert.strictEqual(scoped.revenueStats, undefined);
 assert.strictEqual(scoped.secretRows, undefined);
@@ -62,6 +65,14 @@ assert.strictEqual(snapshot.courses.length, 2, 'input must not be mutated');
 assert.strictEqual(scopeBusinessSnapshot(snapshot, { kind: 'admin' }).courses.length, 2);
 assert.strictEqual(scopeBusinessSnapshot(snapshot, { kind: 'all' }).courses.length, 2);
 assert.deepStrictEqual(scopeBusinessSnapshot(snapshot, { kind: 'pending' }), {});
+const visitorScoped = scopeBusinessSnapshot(snapshot, { kind: 'visitor', userId: 'u1' });
+assert.deepStrictEqual(visitorScoped.courses, []);
+assert.deepStrictEqual(visitorScoped.payments, []);
+assert.deepStrictEqual(visitorScoped.assetRecords.map(x => x.id), ['a1']);
+assert.deepStrictEqual(visitorScoped.assetCategories.map(x => x.id), ['ac1']);
+assert.deepStrictEqual(visitorScoped.assets.map(x => x.id), ['aa1']);
+assert.strictEqual(visitorScoped.questionPreviews.length, 10);
+assert.strictEqual(visitorScoped.questionPreviews[0].answer, undefined);
 const emptyStudent = scopeBusinessSnapshot(snapshot, { kind: 'student', studentIds: [] });
 assert.deepStrictEqual(emptyStudent.courses, []);
 assert.strictEqual(emptyStudent.questions.length, 2);
@@ -84,6 +95,7 @@ assert.strictEqual(studentScoped.teachers[0].hourly_rate, undefined);
 assert.deepStrictEqual(studentScoped.payments.map(x => x.id), ['p1']);
 assert.deepStrictEqual(studentScoped.consumptions, []);
 assert.deepStrictEqual(studentScoped.assetRecords.map(x => x.id), ['a1']);
+assert.deepStrictEqual(studentScoped.assetCategories.map(x => x.id), ['ac1']);
 assert.deepStrictEqual(studentScoped.scopedFinancials, { tuition: 500, teacherFees: 0, payments: 50, assets: 10 });
 
 assertRecordReadable('courses', snapshot.courses[0], { kind: 'teacher', teacherId: 't1' });

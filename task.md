@@ -654,3 +654,12 @@ Status: acceptance complete; release publication pending
 - The LAN row used only a temporary exact package link and an isolated profile; it did not create, enable, or modify a Windows firewall rule. It exercised final host package code, not an installed real profile or authority data.
 - Fresh consolidation passed: `npm run test:authority-architecture`, `npm run typecheck`, `npm run test:desktop-build-flavor`, `node scripts/runtime-architecture-rehearsal.js --self-test`, and `node scripts/desktop-architecture-cutover.test.js`. The rehearsal reported no parity or command-replay failure and `legacyRoutesSafeToRemove=true`.
 - Remaining release work is mechanical: rebuild current 7.0.1 ordinary/host installers, smoke-test them, remove only verified isolated acceptance roots after all runs have exited, commit only named source/config/test/doc files, push `gewu/master`, publish ordinary and host OSS feeds, and read both feeds back. No real authority data, installed profile, cloud service, or miniapp state changed during this checkpoint.
+
+### 2026-07-30 checkpoint 33: manual-phone miniapp login correction
+
+Status: in progress
+
+- Miniapp login uses a manually entered mainland-China phone number. Existing enabled records must establish a session; unknown numbers create a restricted visitor account; disabled or conflicting identities are rejected.
+- All production miniapp paths, including desktop identity confirmation, must stop invoking WeChat automatic phone retrieval.
+- Completion requires RED/GREEN tests, build validation, push, cloud deployment, and a verified Alibaba-Cloud-egress upload of version `7.0.1`.
+- A development upload is not a WeChat review submission.

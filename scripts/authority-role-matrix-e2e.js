@@ -274,6 +274,9 @@ async function main() {
   const insertRoleBinding = database.db.prepare(`INSERT INTO authority_role_bindings
     (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,created_at,updated_at)
     VALUES(?,?,?,?,?,?,'active',1,?,?)`);
+  const insertAuthorityAccount = database.db.prepare(`INSERT INTO authority_accounts
+    (user_id,authority_id,status,created_at,updated_at)
+    VALUES(?,?,'active',?,?)`);
   for (const fixture of fixtures) {
     const grantId = `grant-${fixture.role.replace('_', '-')}`;
     const publicKey = fixture.keyPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
@@ -283,6 +286,7 @@ async function main() {
     insertLease.run(
       fixture.leaseId, grantId, AUTHORITY_ID, fixture.deviceId, fixture.userId, fixture.role, CREATED_AT,
     );
+    insertAuthorityAccount.run(fixture.userId, AUTHORITY_ID, CREATED_AT, CREATED_AT);
     if (fixture.role !== 'visitor') {
       insertRoleBinding.run(
         `binding-${fixture.role.replace('_', '-')}`,

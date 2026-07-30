@@ -70,4 +70,19 @@ export function buildRoleReviewDraft(application, decision) {
   });
 }
 
+export function buildAdminGrantDraft(userId) {
+  const targetUserId = requiredText(
+    userId,
+    'AUTHORITY_ROLE_APPLICATION_USER_INVALID',
+  );
+  return Object.freeze({
+    type: 'role-admin.grant.v1',
+    payload: Object.freeze({ userId: targetUserId }),
+    preview: Object.freeze({
+      title: '\u6388\u4e88\u7ba1\u7406\u5458\u89d2\u8272',
+      summary: targetUserId,
+    }),
+  });
+}
+
 export { reviewError };

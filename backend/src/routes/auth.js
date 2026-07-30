@@ -18,7 +18,6 @@ const {
 } = require('../services/miniappIdentityService');
 const {
   resolveWechatIdentity,
-  resolveWechatPhoneNumber,
 } = require('../services/wechatMiniappService');
 
 const router = Router();
@@ -48,7 +47,7 @@ router.get('/desktop-session', authMiddleware, (req, res) => {
  * POST /api/auth/wechat-login
  * 微信小程序登录
  * 
- * Body: { code: "微信登录code", phone?: "手填手机号", phoneCode?: "微信手机号动态码" }
+ * Body: { code: "微信登录code", phone: "手填手机号" }
  * Response: { token: "jwt...", user: { id, nickname, ... } }
  */
 router.post('/wechat-login', async (req, res) => {
@@ -63,7 +62,13 @@ router.post('/wechat-login', async (req, res) => {
       });
     }
 
-    if (!phoneCode && !normalizePhone(phone)) {
+    if (phoneCode) {
+      const error = new Error('Automatic WeChat phone retrieval is retired');
+      error.code = 'MINIAPP_AUTOMATIC_PHONE_RETRIEVAL_RETIRED';
+      throw error;
+    }
+
+    if (!normalizePhone(phone)) {
       return res.status(400).json({
         success: false,
         code: 'MANUAL_PHONE_REQUIRED',
@@ -85,40 +90,14 @@ router.post('/wechat-login', async (req, res) => {
     const profile = { nickname: profileNickname, avatarUrl };
 
     const db = getInstance();
-    let login;
-    if (phoneCode) {
-      let verifiedPhone;
-      try {
-        verifiedPhone = await resolveWechatPhoneNumber(phoneCode);
-      } catch (_error) {
-        const error = new Error('WeChat phone exchange failed');
-        error.code = 'WECHAT_PHONE_EXCHANGE_FAILED';
-        throw error;
-      }
-      const claimedPhone = normalizePhone(phone);
-      if (claimedPhone && claimedPhone !== normalizePhone(verifiedPhone)) {
-        const error = new Error('WeChat verified phone does not match the claimed phone');
-        error.code = 'WECHAT_PHONE_MISMATCH';
-        throw error;
-      }
-      login = identityServiceFor(db).loginWithVerifiedWechat({
-        openid,
-        unionid,
-        phone: verifiedPhone,
-        profile,
-        miniappVersion,
-        platform,
-      });
-    } else {
-      login = identityServiceFor(db).loginWithClaimedWechat({
-        openid,
-        unionid,
-        phone,
-        profile,
-        miniappVersion,
-        platform,
-      });
-    }
+    const login = identityServiceFor(db).loginWithClaimedWechat({
+      openid,
+      unionid,
+      phone,
+      profile,
+      miniappVersion,
+      platform,
+    });
 
     return res.json({
       success: true,
@@ -147,11 +126,11 @@ router.post('/wechat-login', async (req, res) => {
       'OPENID_PHONE_BINDING_CONFLICT',
       'FORMAL_IDENTITY_MAPPING_INVALID',
       'WECHAT_BINDING_REQUEST_CONFLICT',
-      'WECHAT_PHONE_MISMATCH',
     ]);
     const validationCodes = new Set([
       'MANUAL_PHONE_REQUIRED',
       'MANUAL_PHONE_INVALID',
+      'MINIAPP_AUTOMATIC_PHONE_RETRIEVAL_RETIRED',
       'WECHAT_LOGIN_CODE_REQUIRED',
     ]);
     const status = conflictCodes.has(code) ? 409

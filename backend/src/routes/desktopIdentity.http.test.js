@@ -63,12 +63,18 @@ function generateDeviceKey() {
     let clock = new Date('2026-07-17T09:00:00.000Z');
     const now = function () { return new Date(clock); };
 
+    db.prepare(`INSERT INTO authority_metadata(key,value,updated_at)
+      VALUES('database_authority_id','authority-desktop-identity-http',?)`)
+      .run(clock.toISOString());
+
     db.prepare(`INSERT INTO teachers
       (id, name, phone, deleted, created_at, updated_at)
       VALUES ('teacher-http-self', 'HTTP Canonical Teacher', '13732250653', 0, ?, ?)`)
       .run(clock.toISOString(), clock.toISOString());
     db.prepare('UPDATE users SET teacher_id=? WHERE id=?')
       .run('teacher-http-self', canonicalId);
+    db.prepare('UPDATE users SET wechat_openid=?, wechat_unionid=? WHERE id=?')
+      .run('wx-http-canonical', 'union-http-canonical', canonicalId);
     db.prepare(`INSERT INTO users
       (id, phone, name, role, status, login_enabled, review_status,
        auth_version, deleted, created_at, updated_at)
@@ -109,7 +115,6 @@ function generateDeviceKey() {
     const sessionService = createDesktopSessionService({ db, jwtSecret, now });
     const miniappIdentityService = createMiniappIdentityService({ db, jwtSecret, now });
     const usedLoginCodes = new Set();
-    const usedPhoneCodes = new Set();
     const generatedUrlLinks = [];
     let failNextUrlLink = null;
     let failNextQrCode = false;
@@ -141,16 +146,9 @@ function generateDeviceKey() {
         throw error;
       }
       usedLoginCodes.add(code);
+      if (code.includes('visitor')) return { openid: 'wx-http-visitor', unionid: 'union-http-visitor' };
+      if (code.includes('conflict')) return { openid: 'wx-http-conflict', unionid: 'union-http-conflict' };
       return { openid: 'wx-http-canonical', unionid: 'union-http-canonical' };
-    };
-    const resolveWechatPhoneNumber = async function (phoneCode) {
-      if (!phoneCode || usedPhoneCodes.has(phoneCode)) {
-        const error = new Error('WECHAT_PHONE_EXCHANGE_FAILED');
-        error.code = 'WECHAT_PHONE_EXCHANGE_FAILED';
-        throw error;
-      }
-      usedPhoneCodes.add(phoneCode);
-      return '13732250653';
     };
 
     let targetDeviceIdForSelfTest = null;
@@ -179,7 +177,6 @@ function generateDeviceKey() {
       miniappIdentityService,
       authenticateDesktop,
       resolveWechatIdentity,
-      resolveWechatPhoneNumber,
       createDesktopAuthorizationUrlLink,
       createDesktopAuthorizationQrCode,
       resolveActivationAuthority: () => Object.freeze({
@@ -215,7 +212,7 @@ function generateDeviceKey() {
         baseUrl,
         'POST',
         `/api/desktop-identity/challenges/${challengeId}/confirm`,
-        { body: { code: `fresh-login-${suffix}`, phoneCode: `fresh-phone-${suffix}` } }
+        { body: { code: `fresh-login-${suffix}`, phone: '13732250653' } }
       );
       assert.strictEqual(response.status, 200);
       assert.strictEqual(response.body.data.challenge.status, 'identity_verified_pending_approval');
@@ -349,11 +346,47 @@ function generateDeviceKey() {
     assert.ok(!('deviceId' in miniappProjection.body.data.challenge));
     assert.strictEqual(miniappProjection.body.data.challenge.rowVersion, secondStarted.rowVersion);
 
+    const retiredPhoneCode = await requestJson(
+      baseUrl,
+      'POST',
+      `/api/desktop-identity/challenges/${secondStarted.id}/confirm`,
+      { body: { code: 'retired-phone-code-login', phone: '13732250653', phoneCode: 'retired-phone-code' } }
+    );
+    assert.strictEqual(retiredPhoneCode.status, 400);
+    assert.strictEqual(retiredPhoneCode.body.code, 'DESKTOP_IDENTITY_INPUT_FORBIDDEN');
+
+    const visitorKey = generateDeviceKey();
+    const visitorStarted = await startDevice('device-http-visitor', 'Visitor PC', visitorKey);
+    const visitorConfirm = await requestJson(
+      baseUrl,
+      'POST',
+      `/api/desktop-identity/challenges/${visitorStarted.id}/confirm`,
+      { body: { code: 'fresh-login-visitor', phone: '13600136000', expectedRowVersion: visitorStarted.rowVersion } }
+    );
+    assert.strictEqual(visitorConfirm.status, 403);
+    assert.strictEqual(visitorConfirm.body.code, 'DESKTOP_IDENTITY_VISITOR_FORBIDDEN');
+    assert.strictEqual(
+      (await requestJson(baseUrl, 'GET', `/api/desktop-identity/challenges/${visitorStarted.id}/public`)).body.data.challenge.status,
+      'pending_phone',
+      'a visitor login must not advance a privileged desktop authorization challenge'
+    );
+
+    const conflictKey = generateDeviceKey();
+    const conflictStarted = await startDevice('device-http-conflict', 'Conflict PC', conflictKey);
+    const conflictConfirm = await requestJson(
+      baseUrl,
+      'POST',
+      `/api/desktop-identity/challenges/${conflictStarted.id}/confirm`,
+      { body: { code: 'fresh-login-conflict', phone: '13732250653', expectedRowVersion: conflictStarted.rowVersion } }
+    );
+    assert.strictEqual(conflictConfirm.status, 409);
+    assert.strictEqual(conflictConfirm.body.code, 'PHONE_WECHAT_BINDING_CONFLICT');
+
     const injectedConfirm = await requestJson(
       baseUrl,
       'POST',
       `/api/desktop-identity/challenges/${secondStarted.id}/confirm`,
-      { body: { code: 'injected-code', phoneCode: 'injected-phone', userId: canonicalId } }
+      { body: { code: 'injected-code', phone: '13732250653', userId: canonicalId } }
     );
     assert.strictEqual(injectedConfirm.status, 400);
     assert.strictEqual(injectedConfirm.body.code, 'DESKTOP_IDENTITY_INPUT_FORBIDDEN');

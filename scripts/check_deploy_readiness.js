@@ -90,7 +90,7 @@ const IDENTITY_EVIDENCE_CHECKS = Object.freeze([
         'pages/desktop-authorization/index',
       ]) }),
       Object.freeze({ path: 'miniapp/src/pages/desktop-authorization/index.tsx', markers: Object.freeze([
-        'openType="getPhoneNumber"',
+        'phone-input',
         'desktopAuthorizationApi.confirm',
         'operation-confirmed',
       ]) }),

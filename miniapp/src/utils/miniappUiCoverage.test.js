@@ -165,7 +165,8 @@ assert.ok(coveredRoles.has('guest'), 'miniapp UI inventory must cover login/gues
 const desktopAuthorizationEntry = pageInventory.find(entry => entry.route === 'pages/desktop-authorization/index');
 assert.ok(desktopAuthorizationEntry?.roleViews.includes('guest'), 'desktop authorization must be a public guest entry');
 assert.ok(!desktopAuthorizationEntry?.roleViews.some(role => role.startsWith('review-')), 'review identities must not become desktop claimants');
-assert.ok(desktopAuthorizationEntry?.verificationStates.includes('phone-cancelled'), 'desktop authorization must cover cancelled phone consent');
+assert.ok(desktopAuthorizationEntry?.verificationStates.includes('manual-phone-entry'), 'desktop authorization must cover manual phone entry');
+assert.ok(desktopAuthorizationEntry?.verificationStates.includes('manual-phone-invalid'), 'desktop authorization must cover invalid manual phone input');
 assert.ok(desktopAuthorizationEntry?.verificationStates.includes('operation-confirmed'), 'desktop authorization must cover completed high-risk host verification');
 
 const uiFilesToScan = [

@@ -19,6 +19,10 @@ function optionalText(value, maxLength = 128) {
   return normalized;
 }
 
+function tableExists(db, tableName) {
+  return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(tableName));
+}
+
 function actorRoles(actor = {}) {
   return new Set(Array.isArray(actor.roles) ? actor.roles.map(String) : [String(actor.role || '')]);
 }
@@ -70,11 +74,43 @@ function createRoleApplicationService({
   );
   const findActiveGrant = db.prepare(`SELECT * FROM authority_role_bindings
     WHERE authority_id=? AND user_id=? AND role=? AND status='active'`);
+  const findActiveProfileBinding = db.prepare(`SELECT * FROM authority_role_bindings
+    WHERE authority_id=? AND role=? AND subject_type=? AND subject_id=? AND status='active'`);
+  const insertAuthorizationAudit = tableExists(db, 'authorization_audit_log')
+    ? db.prepare(`INSERT INTO authorization_audit_log
+      (id,actor_user_id,actor_phone,target_user_id,action,before_json,after_json,created_at)
+      VALUES(?,?,NULL,?,?,?,?,?)`)
+    : null;
+  const profileLookup = Object.freeze({
+    student: tableExists(db, 'students')
+      ? db.prepare('SELECT id FROM students WHERE id=? AND deleted=0')
+      : null,
+    teacher: tableExists(db, 'teachers')
+      ? db.prepare('SELECT id FROM teachers WHERE id=? AND deleted=0')
+      : null,
+  });
 
   function currentTime() {
     const value = new Date(now());
     if (!Number.isFinite(value.getTime())) throw roleApplicationError('ROLE_APPLICATION_CLOCK_INVALID', 500);
     return value.toISOString();
+  }
+
+  function validatedProfileId(role, bindingHint) {
+    const subjectId = optionalText(bindingHint);
+    if (!subjectId) throw roleApplicationError('ROLE_APPLICATION_BINDING_HINT_REQUIRED');
+    const lookup = profileLookup[role];
+    if (!lookup) throw roleApplicationError('ROLE_APPLICATION_PROFILE_TABLE_REQUIRED', 500);
+    if (!lookup.get(subjectId)) throw roleApplicationError('ROLE_APPLICATION_BINDING_PROFILE_NOT_FOUND', 404);
+    return subjectId;
+  }
+
+  function assertProfileUnclaimed({ authorityId, role, subjectId, userId }) {
+    const existing = findActiveProfileBinding.get(authorityId, role, role, subjectId);
+    if (existing && existing.user_id !== userId) {
+      throw roleApplicationError('ROLE_APPLICATION_BINDING_ALREADY_CLAIMED', 409);
+    }
+    return existing;
   }
 
   function submit({ authorityId, userId, requestedRole, bindingHint } = {}) {
@@ -87,13 +123,15 @@ function createRoleApplicationService({
     if (findActiveGrant.get(authority, user, role)) {
       throw roleApplicationError('ROLE_ALREADY_GRANTED', 409);
     }
+    const subjectId = validatedProfileId(role, bindingHint);
+    assertProfileUnclaimed({ authorityId: authority, role, subjectId, userId: user });
     const timestamp = currentTime();
     const applicationId = requiredText(createId('role-application'), 'ROLE_APPLICATION_ID_INVALID');
     try {
       db.prepare(`INSERT INTO authority_role_applications
         (application_id,authority_id,user_id,requested_role,binding_hint,status,reviewed_by,reviewed_at,created_at,updated_at)
         VALUES(?,?,?,?,?,'pending',NULL,NULL,?,?)`)
-        .run(applicationId, authority, user, role, optionalText(bindingHint), timestamp, timestamp);
+        .run(applicationId, authority, user, role, subjectId, timestamp, timestamp);
     } catch (error) {
       if (String(error?.code || '').startsWith('SQLITE_CONSTRAINT')) {
         throw roleApplicationError('ROLE_APPLICATION_ALREADY_PENDING', 409);
@@ -103,19 +141,25 @@ function createRoleApplicationService({
     return rowApplication(findApplication.get(applicationId));
   }
 
-  function requireReviewer(actor = {}) {
+  function requireHostSuperAdmin(actor = {}, authorityId, { forbiddenCode, hostCode }) {
     const reviewer = requiredText(actor.userId || actor.id, 'ROLE_APPLICATION_REVIEWER_REQUIRED');
     if (!actorRoles(actor).has('super_admin')) {
-      throw roleApplicationError('ROLE_APPLICATION_REVIEW_FORBIDDEN', 403);
+      throw roleApplicationError(forbiddenCode, 403);
+    }
+    if (String(actor.authorityId || '').trim() !== authorityId || actor.isAuthorityHost !== true) {
+      throw roleApplicationError(hostCode, 403);
     }
     return reviewer;
   }
 
   const approveTransaction = db.transaction(({ actor, applicationId }) => {
-    const reviewer = requireReviewer(actor);
     const id = requiredText(applicationId, 'ROLE_APPLICATION_ID_REQUIRED');
     const application = findApplication.get(id);
     if (!application) throw roleApplicationError('ROLE_APPLICATION_NOT_FOUND', 404);
+    const reviewer = requireHostSuperAdmin(actor, application.authority_id, {
+      forbiddenCode: 'ROLE_APPLICATION_REVIEW_FORBIDDEN',
+      hostCode: 'ROLE_APPLICATION_HOST_REVIEW_REQUIRED',
+    });
     if (application.status === 'approved') {
       return Object.freeze({
         application: rowApplication(application),
@@ -132,7 +176,13 @@ function createRoleApplicationService({
     let binding = existing;
     if (!binding) {
       const bindingId = requiredText(createId('role-binding'), 'ROLE_BINDING_ID_INVALID');
-      const subjectId = optionalText(application.binding_hint);
+      const subjectId = validatedProfileId(application.requested_role, application.binding_hint);
+      assertProfileUnclaimed({
+        authorityId: application.authority_id,
+        role: application.requested_role,
+        subjectId,
+        userId: application.user_id,
+      });
       db.prepare(`INSERT INTO authority_role_bindings
         (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,granted_by,created_at,updated_at,revoked_at)
         VALUES(?,?,?,?,?,?,'active',1,?,?,?,NULL)`)
@@ -141,7 +191,7 @@ function createRoleApplicationService({
           application.authority_id,
           application.user_id,
           application.requested_role,
-          subjectId ? application.requested_role : null,
+          application.requested_role,
           subjectId,
           reviewer,
           timestamp,
@@ -163,10 +213,13 @@ function createRoleApplicationService({
   });
 
   const rejectTransaction = db.transaction(({ actor, applicationId }) => {
-    const reviewer = requireReviewer(actor);
     const id = requiredText(applicationId, 'ROLE_APPLICATION_ID_REQUIRED');
     const application = findApplication.get(id);
     if (!application) throw roleApplicationError('ROLE_APPLICATION_NOT_FOUND', 404);
+    const reviewer = requireHostSuperAdmin(actor, application.authority_id, {
+      forbiddenCode: 'ROLE_APPLICATION_REVIEW_FORBIDDEN',
+      hostCode: 'ROLE_APPLICATION_HOST_REVIEW_REQUIRED',
+    });
     if (application.status === 'rejected') return rowApplication(application);
     if (application.status !== 'pending') throw roleApplicationError('ROLE_APPLICATION_NOT_PENDING', 409);
     const timestamp = currentTime();
@@ -177,8 +230,11 @@ function createRoleApplicationService({
   });
 
   function list({ authorityId, actor, status } = {}) {
-    requireReviewer(actor);
     const authority = requiredText(authorityId, 'ROLE_APPLICATION_AUTHORITY_REQUIRED');
+    requireHostSuperAdmin(actor, authority, {
+      forbiddenCode: 'ROLE_APPLICATION_REVIEW_FORBIDDEN',
+      hostCode: 'ROLE_APPLICATION_HOST_REVIEW_REQUIRED',
+    });
     const normalizedStatus = String(status || '').trim();
     const rows = normalizedStatus
       ? db.prepare('SELECT * FROM authority_role_applications WHERE authority_id=? AND status=? ORDER BY created_at')
@@ -188,8 +244,42 @@ function createRoleApplicationService({
     return Object.freeze(rows.map(rowApplication));
   }
 
+  const grantAdminTransaction = db.transaction(({ actor, authorityId, userId }) => {
+    const authority = requiredText(authorityId, 'ROLE_APPLICATION_AUTHORITY_REQUIRED');
+    const user = requiredText(userId, 'ROLE_APPLICATION_USER_REQUIRED');
+    const reviewer = requireHostSuperAdmin(actor, authority, {
+      forbiddenCode: 'ROLE_ADMIN_GRANT_FORBIDDEN',
+      hostCode: 'ROLE_ADMIN_HOST_GRANT_REQUIRED',
+    });
+    const account = findAccount.get(authority, user);
+    if (!account || account.status !== 'active') throw roleApplicationError('ROLE_ADMIN_ACCOUNT_INACTIVE', 403);
+    const active = findActiveGrant.get(authority, user, 'admin');
+    if (active) return rowGrant(active);
+    if (!insertAuthorizationAudit) {
+      throw roleApplicationError('ROLE_APPLICATION_AUDIT_TABLE_REQUIRED', 500);
+    }
+    const timestamp = currentTime();
+    const bindingId = requiredText(createId('role-binding'), 'ROLE_BINDING_ID_INVALID');
+    db.prepare(`INSERT INTO authority_role_bindings
+      (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,granted_by,created_at,updated_at,revoked_at)
+      VALUES(?,?,?,'admin',NULL,NULL,'active',1,?,?,?,NULL)`)
+      .run(bindingId, authority, user, reviewer, timestamp, timestamp);
+    const grant = rowGrant(findActiveGrant.get(authority, user, 'admin'));
+    insertAuthorizationAudit.run(
+      requiredText(createId('authorization-audit'), 'ROLE_APPLICATION_AUDIT_ID_INVALID'),
+      reviewer,
+      user,
+      'authority_role_admin_granted',
+      JSON.stringify({ authorityId: authority, role: 'visitor' }),
+      JSON.stringify({ authorityId: authority, role: 'admin', bindingId: grant.bindingId }),
+      timestamp,
+    );
+    return grant;
+  });
+
   return Object.freeze({
     approve: input => approveTransaction(input || {}),
+    grantAdmin: input => grantAdminTransaction(input || {}),
     list,
     reject: input => rejectTransaction(input || {}),
     submit,

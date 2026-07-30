@@ -93,6 +93,10 @@ try {
     VALUES('lease-1','grant-1',?,'ordinary-device','admin-1','admin',1,
       'active',?,'2026-07-29T00:00:00.000Z',NULL)`)
     .run(binding.dbAuthorityId, timestamp);
+  db.prepare(`INSERT INTO authority_accounts
+    (user_id,authority_id,status,created_at,updated_at)
+    VALUES('admin-1',?,'active',?,?)`)
+    .run(binding.dbAuthorityId, timestamp, timestamp);
   db.prepare(`INSERT INTO authority_role_bindings
     (binding_id,authority_id,user_id,role,subject_type,subject_id,status,
      grant_version,granted_by,created_at,updated_at)

@@ -57,7 +57,10 @@ const snapshot = {
     ],
     payments: [{ id: 'pay-1', student_id: 'stu-1', amount: 300 }],
     consumptions: [{ id: 'con-1', student_id: 'stu-1', amount: 300, hours: 2 }],
-    assetRecords: [{ id: 'asset-1', amount: 100 }],
+    assets: [{ id: 'account-own', owner_user_id: 'visitor-1', masked_identifier: '**** 1234' }, { id: 'account-other', owner_user_id: 'other-user', masked_identifier: '**** 9999' }],
+    assetRecords: [{ id: 'asset-own', owner_user_id: 'visitor-1', amount: 100 }, { id: 'asset-other', owner_user_id: 'other-user', amount: 999 }],
+    assetCategories: [{ id: 'category-own', owner_user_id: 'visitor-1' }, { id: 'category-other', owner_user_id: 'other-user' }],
+    questionPreviews: Array.from({ length: 11 }, (_, index) => ({ id: `preview-${index + 1}`, stemPreview: `preview ${index + 1}`, answer: 'secret' })),
     revenueStats: { total: 9999 },
     subjects: [{ id: 'subject-physics', name: '物理' }],
   },
@@ -97,6 +100,14 @@ const superAdminSnapshot = filterSnapshotForUser(snapshot, { id: 'super-1', role
 assert.deepStrictEqual(superAdminSnapshot, adminSnapshot, 'super admin should retain the existing admin snapshot scope');
 const pendingSnapshot = filterSnapshotForUser(snapshot, { id: 'pending-1', role: 'pending' });
 assert.deepStrictEqual(pendingSnapshot.payload, {}, 'pending users must fail closed');
+const visitorSnapshot = filterSnapshotForUser(snapshot, { id: 'visitor-1', role: 'visitor' });
+assert.strictEqual(visitorSnapshot.payload.redactedForRole, 'visitor');
+assert.deepStrictEqual(visitorSnapshot.payload.courses, []);
+assert.deepStrictEqual(visitorSnapshot.payload.assetRecords.map(item => item.id), ['asset-own']);
+assert.deepStrictEqual(visitorSnapshot.payload.assetCategories.map(item => item.id), ['category-own']);
+assert.deepStrictEqual(visitorSnapshot.payload.assets.map(item => item.id), ['account-own']);
+assert.strictEqual(visitorSnapshot.payload.questionPreviews.length, 10);
+assert.strictEqual(visitorSnapshot.payload.questionPreviews[0].answer, undefined);
 const invitedAdminSnapshot = filterSnapshotForUser(snapshot, { id: 'invited-admin', role: 'admin', review_status: 'invited', status: 1, login_enabled: 1 });
 assert.deepStrictEqual(invitedAdminSnapshot.payload, {}, 'unapproved persisted admin must not receive a full snapshot');
 

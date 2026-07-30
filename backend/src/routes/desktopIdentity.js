@@ -17,13 +17,12 @@ const {
 const { createMiniappIdentityService } = require('../services/miniappIdentityService');
 const {
   resolveWechatIdentity: defaultResolveWechatIdentity,
-  resolveWechatPhoneNumber: defaultResolveWechatPhoneNumber,
   createDesktopAuthorizationQrCode: defaultCreateDesktopAuthorizationQrCode,
   createDesktopAuthorizationUrlLink: defaultCreateDesktopAuthorizationUrlLink,
 } = require('../services/wechatMiniappService');
 
 const START_KEYS = new Set(['deviceId', 'deviceName', 'deviceKind', 'publicKey', 'keyFingerprint', 'purpose']);
-const CONFIRM_KEYS = new Set(['code', 'phoneCode', 'expectedRowVersion']);
+const CONFIRM_KEYS = new Set(['code', 'phone', 'expectedRowVersion']);
 const APPROVE_KEYS = new Set(['expectedRowVersion']);
 const REJECT_KEYS = new Set(['expectedRowVersion', 'reason']);
 const EXCHANGE_KEYS = new Set(['challengeSecret', 'signature', 'expectedRowVersion']);
@@ -37,7 +36,7 @@ const ROLE_SWITCH_KEYS = new Set([
 const SESSION_CHALLENGE_START_KEYS = new Set(['authorizationId', 'deviceId']);
 const SESSION_CHALLENGE_EXCHANGE_KEYS = new Set(['signature', 'expectedRowVersion']);
 const PRIMARY_HOST_CHALLENGE_START_KEYS = new Set(['operation', 'targetDeviceId']);
-const PRIMARY_HOST_CHALLENGE_CONFIRM_KEYS = new Set(['code', 'phoneCode', 'expectedRowVersion']);
+const PRIMARY_HOST_CHALLENGE_CONFIRM_KEYS = new Set(['code', 'phone', 'expectedRowVersion']);
 const PRIMARY_HOST_LOCAL_EVIDENCE_KEYS = new Set(['purpose', 'sourceGeneration', 'targetGeneration']);
 const PRIMARY_HOST_PREFLIGHT_PROOF_KEYS = new Set([
   'operation', 'challengeId', 'transferId', 'sourceEpochId', 'sourceGeneration',
@@ -172,7 +171,6 @@ function createDesktopIdentityRouter({
   miniappIdentityService,
   authenticateDesktop,
   resolveWechatIdentity = defaultResolveWechatIdentity,
-  resolveWechatPhoneNumber = defaultResolveWechatPhoneNumber,
   createDesktopAuthorizationQrCode = defaultCreateDesktopAuthorizationQrCode,
   createDesktopAuthorizationUrlLink = defaultCreateDesktopAuthorizationUrlLink,
   localBridgeSecret = process.env.GEWU_ELECTRON_LOCAL_BRIDGE_SECRET,
@@ -284,6 +282,27 @@ function createDesktopIdentityRouter({
       miniappIdentities = createMiniappIdentityService({ db: database, jwtSecret, now });
     }
     return miniappIdentities;
+  }
+
+  async function manualMiniappIdentity({ code, phone, platform }) {
+    const loginCode = String(code || '').trim();
+    if (!loginCode) throw routeError('WECHAT_IDENTITY_REQUIRED');
+    const wechat = await resolveWechatIdentity(loginCode);
+    return miniappIdentity().loginWithClaimedWechat({
+      openid: wechat.openid,
+      unionid: wechat.unionid,
+      phone,
+      platform,
+    });
+  }
+
+  function assertDesktopIdentityEligible(login) {
+    const user = login?.user || {};
+    if (user.account_state === 'visitor' || user.role === 'visitor' || user.identity_kind === 'visitor') {
+      throw routeError('DESKTOP_IDENTITY_VISITOR_FORBIDDEN');
+    }
+    if (!user.id) throw routeError('DESKTOP_IDENTITY_NOT_ELIGIBLE');
+    return login;
   }
   const verifyDesktop = authenticateDesktop || function (token) {
     return session().verifySessionToken(token);
@@ -405,21 +424,17 @@ function createDesktopIdentityRouter({
     try {
       assertBodyKeys(req.body, CONFIRM_KEYS);
       const code = String(req.body.code || '').trim();
-      const phoneCode = String(req.body.phoneCode || '').trim();
-      if (!code || !phoneCode) throw routeError('VERIFIED_WECHAT_IDENTITY_REQUIRED');
+      const phone = String(req.body.phone || '').trim();
       const hostChallenge = hostChallengeOrNull(req.params.id);
       if (hostChallenge) {
         if (hostChallenge.status !== 'pending_phone') {
           throw routeError('PRIMARY_HOST_CHALLENGE_STATE_INVALID');
         }
-        const wechat = await resolveWechatIdentity(code);
-        const phone = await resolveWechatPhoneNumber(phoneCode);
-        const login = miniappIdentity().loginWithVerifiedWechat({
-          openid: wechat.openid,
-          unionid: wechat.unionid,
+        const login = assertDesktopIdentityEligible(await manualMiniappIdentity({
+          code,
           phone,
           platform: `desktop-primary-host-${hostChallenge.operation}`,
-        });
+        }));
         primaryHost().confirmOperationChallenge({
           challengeId: req.params.id,
           identity: login.user,
@@ -433,16 +448,13 @@ function createDesktopIdentityRouter({
       if (publicChallenge.status !== 'pending_phone') {
         throw routeError('DESKTOP_CHALLENGE_STATE_INVALID');
       }
-      const wechat = await resolveWechatIdentity(code);
-      const phone = await resolveWechatPhoneNumber(phoneCode);
-      const login = miniappIdentity().loginWithVerifiedWechat({
-        openid: wechat.openid,
-        unionid: wechat.unionid,
+      const login = assertDesktopIdentityEligible(await manualMiniappIdentity({
+        code,
         phone,
         platform: publicChallenge.purpose === 'password_reset'
           ? 'desktop-password-reset'
           : 'desktop-device-registration',
-      });
+      }));
       const challenge = identity().confirmVerifiedIdentity({
         challengeId: req.params.id,
         identity: login.user,
@@ -624,20 +636,16 @@ function createDesktopIdentityRouter({
     try {
       assertBodyKeys(req.body, PRIMARY_HOST_CHALLENGE_CONFIRM_KEYS);
       const code = String(req.body.code || '').trim();
-      const phoneCode = String(req.body.phoneCode || '').trim();
-      if (!code || !phoneCode) throw routeError('VERIFIED_WECHAT_IDENTITY_REQUIRED');
+      const phone = String(req.body.phone || '').trim();
       const publicChallenge = primaryHost().readOperationChallenge(req.params.id);
       if (publicChallenge.status !== 'pending_phone') {
         throw routeError('PRIMARY_HOST_CHALLENGE_STATE_INVALID');
       }
-      const wechat = await resolveWechatIdentity(code);
-      const phone = await resolveWechatPhoneNumber(phoneCode);
-      const login = miniappIdentity().loginWithVerifiedWechat({
-        openid: wechat.openid,
-        unionid: wechat.unionid,
+      const login = assertDesktopIdentityEligible(await manualMiniappIdentity({
+        code,
         phone,
         platform: `desktop-primary-host-${publicChallenge.operation}`,
-      });
+      }));
       primaryHost().confirmOperationChallenge({
         challengeId: req.params.id,
         identity: login.user,

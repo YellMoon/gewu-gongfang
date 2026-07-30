@@ -24,7 +24,7 @@ const fixture = {
     { id: 'g2', student_id: 's2', score: 88 },
   ],
   payments: [
-    { id: 'p1', student_id: 's1', amount: 100 },
+    { id: 'p1', student_id: 's1', schedule_id: 'schedule-s1', amount: 100 },
     { id: 'p2', student_id: 's2', amount: 999 },
   ],
   consumptions: [
@@ -59,10 +59,14 @@ const fixture = {
   ],
 };
 
-const visitor = projectAuthorityData({ kind: 'visitor', userId: 'v1' }, fixture);
+const visitor = projectAuthorityData({ kind: 'visitor', userId: 'u1' }, fixture);
 assert.equal(visitor.questionPreviews.length, 10);
 assert.equal(visitor.questionPreviews[0].answer, undefined);
 assert.equal(visitor.courses.length, 0);
+assert.deepStrictEqual(visitor.assets.map(item => item.id), ['a1'], 'visitor keeps only accounts owned by the current user');
+assert.deepStrictEqual(visitor.assetRecords.map(item => item.id), ['ar1'], 'visitor keeps only ledger records owned by the current user');
+assert.deepStrictEqual(visitor.assetCategories.map(item => item.id), ['ac1'], 'visitor keeps only categories owned by the current user');
+assert.equal(visitor.assets[0].accountNumber, undefined, 'visitor asset payload must never reveal a full account number');
 assert.equal(visitor.roleApplications, undefined);
 assert.equal(visitor.roleGrants, undefined);
 
@@ -84,8 +88,9 @@ const teacher = projectAuthorityData({ kind: 'teacher', userId: 'u2', teacherId:
 assert.deepStrictEqual(teacher.courses.map(item => item.id), ['course-t1']);
 assert.equal(teacher.courses[0].lessonPay, 50);
 assert.deepStrictEqual(teacher.students.map(item => item.id), ['s1', 's2']);
-assert.deepStrictEqual(teacher.payments, []);
+assert.deepStrictEqual(teacher.payments.map(item => item.id), ['p1'], 'teacher financial records are limited to bound-course schedules');
 assert.deepStrictEqual(teacher.consumptions.map(item => item.id), ['x1']);
+assert.deepStrictEqual(teacher.assetCategories.map(item => item.id), ['ac2'], 'teacher must not receive another user\'s asset categories');
 assert.deepStrictEqual(
   projectAuthorityData({ kind: 'teacher', userId: 'u2', teacherId: null }, fixture).courses,
   [],

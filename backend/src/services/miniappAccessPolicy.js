@@ -129,6 +129,11 @@ function filterSnapshotForUser(snapshot, user) {
     }) };
   }
   if (isAdminUser(user)) return snapshot;
+  if (roleOf(user) === 'visitor') {
+    return { ...snapshot, payload: scopeBusinessSnapshot(snapshot.payload || {}, {
+      kind: 'visitor', userId: user.id || user.user_id || user.userId,
+    }) };
+  }
   if (!isStudentUser(user)) return { ...snapshot, payload: {} };
 
   const linkedStudentIds = getLinkedStudentIds(user);

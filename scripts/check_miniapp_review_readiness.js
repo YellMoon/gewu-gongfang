@@ -9,8 +9,8 @@ const REVIEW_DOC_PATH = path.join(ROOT_DIR, 'docs', 'miniapp-review-guide.md');
 function buildDefaultReviewInfo() {
   return {
     version: require(path.join(ROOT_DIR, 'package.json')).version,
-    versionDesc: '登录页由用户手动填写手机号；已有档案首次绑定当前微信需超级管理员审核，未建档用户进入受限体验账号，可查看四道示例题、体验隔离组卷导出并提交正式身份申请。',
-    testRemark: '点击“验证手机号并登录”并授权审核员本人的微信手机号。未建档手机号会进入体验账号：可查看四道示例题、体验 Word/PDF 导出和提交身份申请；不会读取或修改正式教务数据。',
+    versionDesc: '登录页由用户手填手机号并与已有资料核对；未建档号码会自动创建游客账号，只能查看前十道脱敏题目并提交学生或教师身份申请。已有档案首次绑定当前微信需超级管理员审核。',
+    testRemark: '点击“验证手机号并登录”后手填审核员本人的手机号。未建档号码会自动创建游客账号：只能查看前十道脱敏题目、体验 Word/PDF 导出和提交身份申请；不会读取或修改正式教务数据。',
     orderCenterPath: '',
     expeditedAudit: false,
     privacyCollection: true,
@@ -20,9 +20,11 @@ function buildDefaultReviewInfo() {
 function validateReviewGuide(doc) {
   const required = [
     '验证手机号并登录',
+    '手填手机号',
+    '游客',
+    '自动创建',
     '不需要体验码',
-    '未认可学生',
-    '四道示例题',
+    '前十道脱敏题目',
     'Word/PDF',
     '身份申请',
     '不会读取或修改正式业务数据',
@@ -38,6 +40,12 @@ function validateReviewGuide(doc) {
     .map(copy => `review guide missing required contract: ${copy}`);
   for (const removed of ['<review experience code>', 'MINIAPP_REVIEW_EXPERIENCE_CODE', '独立的“审核体验”入口']) {
     if (doc.includes(removed)) errors.push(`review guide retains removed review-demo contract: ${removed}`);
+  }
+  for (const retired of [
+    String.fromCodePoint(0x6388, 0x6743, 0x5ba1, 0x6838, 0x5458, 0x672c, 0x4eba, 0x7684, 0x5fae, 0x4fe1, 0x624b, 0x673a, 0x53f7),
+    String.fromCodePoint(0x5141, 0x8bb8, 0x5fae, 0x4fe1, 0x63d0, 0x4f9b, 0x624b, 0x673a, 0x53f7),
+  ]) {
+    if (doc.includes(retired)) errors.push('review guide retains retired automatic-phone contract');
   }
   return { ok: errors.length === 0, errors };
 }

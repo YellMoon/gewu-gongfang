@@ -1,5 +1,6 @@
 const { resolveActingScope } = require('./authorityAccessService');
 const { createAuthorityRuntimeHostEpochService } = require('./authorityRuntimeHostEpochService');
+const { resolveCanonicalAuthorityRoleContext } = require('./authorityRoleGrantAdapter');
 
 function authorizationError(code, statusCode = 403) {
   return Object.assign(new Error(code), { code, statusCode });
@@ -54,21 +55,30 @@ function createAuthorityCommandAuthorizationService({
       throw authorizationError('DEVICE_LEASE_SCOPE_MISMATCH');
     }
 
-    const roleRows = db.prepare(`SELECT role, status, authority_id, subject_id, grant_version
-      FROM authority_role_bindings WHERE authority_id=? AND user_id=?`)
-      .all(envelope.authorityId, envelope.actor.userId);
+    let roleContext;
+    try {
+      roleContext = resolveCanonicalAuthorityRoleContext(db, {
+        authorityId: envelope.authorityId,
+        userId: envelope.actor.userId,
+      });
+    } catch (error) {
+      throw authorizationError(error?.code || 'ACTING_ROLE_NOT_GRANTED');
+    }
+    if (roleContext.accountStatus !== 'active') {
+      throw authorizationError('ACTING_ROLE_NOT_GRANTED');
+    }
     let scope;
     try {
       scope = resolveActingScope({
         userId: envelope.actor.userId,
         actingRole: envelope.actor.role,
         authorityId: envelope.authorityId,
-        grants: roleRows.map(row => ({
-          role: row.role,
-          status: row.status,
-          authorityId: row.authority_id,
-          bindingId: row.subject_id,
-          grantVersion: row.grant_version,
+        grants: roleContext.grants.map(grant => ({
+          role: grant.role,
+          status: grant.status,
+          authorityId: grant.authorityId,
+          bindingId: grant.subjectId,
+          grantVersion: grant.grantVersion,
         })),
       });
     } catch (error) {

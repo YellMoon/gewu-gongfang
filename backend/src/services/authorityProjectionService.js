@@ -39,6 +39,10 @@ function assetProjection(row = {}) {
   };
 }
 
+function belongsToUser(row = {}, userId) {
+  return String(row.ownerUserId || row.owner_user_id || '') === String(userId || '');
+}
+
 function studentCourseProjection(course = {}) {
   const {
     lessonPay,
@@ -99,9 +103,9 @@ function projectAuthorityData(scope = {}, source = {}) {
     questionPreviews: questions.slice(0, 10),
     schedules: [],
     courses: [],
-    assets: [],
-    assetRecords: [],
-    assetCategories: [],
+    assets: assets.filter(asset => belongsToUser(asset, scope.userId)),
+    assetRecords: assetRecords.filter(row => belongsToUser(row, scope.userId)),
+    assetCategories: assetCategories.filter(row => belongsToUser(row, scope.userId)),
   };
   if (kind === 'student') {
     const studentId = String(scope.studentId || '');
@@ -118,7 +122,7 @@ function projectAuthorityData(scope = {}, source = {}) {
       questionPreviews: questions,
       schedules: allowedSchedules.map(studentScheduleProjection),
       courses: allowedCourses.map(studentCourseProjection),
-      assets: assets.filter(asset => String(asset.ownerUserId || '') === String(scope.userId || '')),
+      assets: assets.filter(asset => belongsToUser(asset, scope.userId)),
       students: students.filter(student => String(student.id || '') === studentId),
       grades: grades.filter(grade => String(grade.student_id || grade.studentId || '') === studentId),
       enrollments: enrollments.filter(row => String(row.student_id || row.studentId || '') === studentId),
@@ -131,8 +135,8 @@ function projectAuthorityData(scope = {}, source = {}) {
       questions: [],
       taxonomySystems: [],
       taxonomyNodes: [],
-      assetRecords: assetRecords.filter(row => String(row.ownerUserId || row.owner_user_id || '') === String(scope.userId || '')),
-      assetCategories: assetCategories.filter(row => String(row.ownerUserId || row.owner_user_id || '') === String(scope.userId || '')),
+      assetRecords: assetRecords.filter(row => belongsToUser(row, scope.userId)),
+      assetCategories: assetCategories.filter(row => belongsToUser(row, scope.userId)),
     };
   }
   if (kind === 'teacher') {
@@ -152,14 +156,17 @@ function projectAuthorityData(scope = {}, source = {}) {
       questionPreviews: questions,
       schedules: allowedSchedules,
       courses: allowedCourses,
-      assets: assets.filter(asset => String(asset.ownerUserId || '') === String(scope.userId || '')),
+      assets: assets.filter(asset => belongsToUser(asset, scope.userId)),
       students: students.filter(student => allowedStudentIds.has(String(student.id || ''))),
       grades: grades.filter(grade => allowedStudentIds.has(String(grade.student_id || grade.studentId || ''))),
       enrollments: enrollments.filter(row => (
         allowedStudentIds.has(String(row.student_id || row.studentId || ''))
         && allowedScheduleIds.has(String(row.schedule_id || row.scheduleId || ''))
       )),
-      payments: [],
+      payments: payments.filter(row => (
+        allowedCourseIds.has(String(row.courseId || row.course_id || ''))
+        || allowedScheduleIds.has(String(row.scheduleId || row.schedule_id || ''))
+      )),
       consumptions: consumptions.filter(row => allowedScheduleIds.has(String(row.schedule_id || row.scheduleId || ''))),
       teachers: teachers.filter(teacher => String(teacher.id || '') === teacherId),
       rooms,
@@ -168,8 +175,8 @@ function projectAuthorityData(scope = {}, source = {}) {
       questions: [],
       taxonomySystems: [],
       taxonomyNodes: [],
-      assetRecords: assetRecords.filter(row => String(row.ownerUserId || row.owner_user_id || '') === String(scope.userId || '')),
-      assetCategories: assetCategories.filter(row => String(row.ownerUserId || row.owner_user_id || '') === String(scope.userId || '')),
+      assetRecords: assetRecords.filter(row => belongsToUser(row, scope.userId)),
+      assetCategories: assetCategories.filter(row => belongsToUser(row, scope.userId)),
     };
   }
   const adminProjection = {

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import Taro, { useLoad } from '@tarojs/taro';
-import { Button, Text, View } from '@tarojs/components';
+import { Button, Input, Text, View } from '@tarojs/components';
 import { desktopAuthorizationApi } from '../../utils/api';
 import {
   buildDesktopConfirmationPayload,
@@ -8,9 +8,9 @@ import {
   desktopAuthorizationPurposePresentation,
   desktopAuthorizationView,
   parseDesktopAuthorizationChallengeId,
-  phoneCodeFromAuthorizationEvent,
   projectDesktopAuthorizationChallenge,
 } from '../../utils/desktopAuthorizationRuntime';
+import { normalizeManualPhone, validateManualPhone } from '../login/manualPhoneLoginRuntime';
 import './index.scss';
 
 type Challenge = {
@@ -37,6 +37,7 @@ export default function DesktopAuthorizationPage() {
   const [challenge, setChallenge] = useState<Challenge | null>(null);
   const [viewState, setViewState] = useState<ViewState>('loading');
   const [message, setMessage] = useState('');
+  const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
   const operationRef = useRef(false);
 
@@ -77,12 +78,11 @@ export default function DesktopAuthorizationPage() {
     }
   });
 
-  const confirmPhoneIdentity = async (event: any) => {
-    let phoneCode;
-    try {
-      phoneCode = phoneCodeFromAuthorizationEvent(event);
-    } catch (error: any) {
-      setMessage(desktopAuthorizationErrorMessage(error?.code || error?.message));
+  const confirmPhoneIdentity = async () => {
+    const normalizedPhone = normalizeManualPhone(phone);
+    const validationError = validateManualPhone(normalizedPhone);
+    if (validationError) {
+      setMessage(validationError);
       return;
     }
     if (operationRef.current || !challengeId) return;
@@ -94,7 +94,7 @@ export default function DesktopAuthorizationPage() {
       const payload = buildDesktopConfirmationPayload({
         challengeId,
         loginCode: code,
-        phoneCode,
+        phone: normalizedPhone,
         expectedRowVersion: challenge?.rowVersion,
       });
       const response = await desktopAuthorizationApi.confirm(payload);
@@ -121,16 +121,27 @@ export default function DesktopAuthorizationPage() {
         <View className="privacy-note">
           <Text className="privacy-title">{'\u786e\u8ba4\u7684\u662f\u4f60\u672c\u4eba'}</Text>
           <Text>{purposePresentation.isHostOperation
-            ? purposePresentation.phoneCopy
-            : '\u4e8c\u7ef4\u7801\u53ea\u5efa\u7acb\u4e00\u6b21\u6027\u901a\u9053\uff0c\u5fae\u4fe1\u624b\u673a\u53f7\u7528\u4e8e\u786e\u8ba4\u7533\u8bf7\u4eba\u3002\u672c\u9875\u4e0d\u4f7f\u7528\u7f13\u5b58\u8d26\u53f7\u66ff\u4f60\u786e\u8ba4\u3002'}</Text>
+            ? '\u8fd9\u662f\u9ad8\u98ce\u9669\u64cd\u4f5c\uff1a\u624b\u586b\u624b\u673a\u53f7\u53ea\u7528\u4e8e\u4e0e\u5df2\u6709\u8d44\u6599\u5e93\u6838\u5bf9\uff0c\u4ecd\u9700\u6570\u636e\u4e3b\u673a\u8d85\u7ea7\u7ba1\u7406\u5458\u5ba1\u6838\u3002'
+            : '\u4e8c\u7ef4\u7801\u53ea\u5efa\u7acb\u4e00\u6b21\u6027\u901a\u9053\uff0c\u8bf7\u624b\u586b\u624b\u673a\u53f7\u4e0e\u5df2\u6709\u8d44\u6599\u6838\u5bf9\u3002\u672c\u9875\u4e0d\u4f7f\u7528\u7f13\u5b58\u8d26\u53f7\u66ff\u4f60\u786e\u8ba4\u3002'}</Text>
+        </View>
+        <View className="phone-field">
+          <Text className="phone-prefix">+86</Text>
+          <Input
+            className="phone-input"
+            type="number"
+            maxlength={11}
+            value={phone}
+            placeholder={'\u8bf7\u8f93\u5165\u624b\u673a\u53f7'}
+            disabled={busy}
+            onInput={event => setPhone(normalizeManualPhone(event.detail.value))}
+          />
         </View>
         <Button
           className="phone-confirm-button"
-          openType="getPhoneNumber"
-          onGetPhoneNumber={confirmPhoneIdentity}
+          onClick={() => void confirmPhoneIdentity()}
           loading={busy}
           disabled={busy}
-        >{'\u9a8c\u8bc1\u5fae\u4fe1\u624b\u673a\u53f7\u5e76\u786e\u8ba4'}</Button>
+        >{'\u6838\u5bf9\u624b\u673a\u53f7\u5e76\u786e\u8ba4'}</Button>
       </>;
     }
     if (viewState === 'approval-pending') {
@@ -173,7 +184,7 @@ export default function DesktopAuthorizationPage() {
       <View className="hero-icon"><Text>{'\u8bbe'}</Text></View>
       <Text className="hero-kicker">{'\u683c\u7269\u5de5\u574a\u00b7\u7535\u8111\u8eab\u4efd'}</Text>
       <Text className="hero-title">{purposePresentation.title}</Text>
-      <Text className="hero-copy">{'\u624b\u673a\u53f7\u53ea\u5728\u5fae\u4fe1\u548c\u670d\u52a1\u7aef\u5b8c\u6210\u6838\u9a8c\uff0c\u4e0d\u4f1a\u4fdd\u5b58\u5230\u5f85\u6388\u6743\u7535\u8111\u3002'}</Text>
+      <Text className="hero-copy">{'\u624b\u586b\u624b\u673a\u53f7\u4ec5\u7528\u4e8e\u4e0e\u5df2\u6709\u8d44\u6599\u6838\u5bf9\uff0c\u4e0d\u4f1a\u4fdd\u5b58\u5230\u5f85\u6388\u6743\u7535\u8111\u3002'}</Text>
     </View>
 
     {challenge && <View className="device-card">

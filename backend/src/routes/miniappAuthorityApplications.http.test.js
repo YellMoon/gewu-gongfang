@@ -175,6 +175,14 @@ const { createApp } = require('../app');
     assert.strictEqual(forbidden.status, 403);
     assert.strictEqual(forbidden.body.code, 'MINIAPP_ROLE_APPLICATION_FORBIDDEN');
 
+    const miniappAdminGrant = await requestJson(origin, '/api/miniapp/applications/admin', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ userId: 'visitor-http' }),
+    });
+    assert.strictEqual(miniappAdminGrant.status, 403);
+    assert.strictEqual(miniappAdminGrant.body.code, 'MINIAPP_VISITOR_SESSION_REQUIRED');
+
     const projection = await requestJson(origin, '/api/miniapp/projection', {
       headers: { authorization: `Bearer ${token}` },
     });
