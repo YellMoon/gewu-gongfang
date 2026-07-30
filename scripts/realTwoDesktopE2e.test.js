@@ -83,6 +83,10 @@ assert.ok(source.includes('function activateDesktopWindow')
   && source.includes('HOST_WINDOW_ACTIVATION_REQUIRED')
   && source.includes('CLIENT_WINDOW_ACTIVATION_REQUIRED'),
   'real UI switching must restore and foreground the exact packaged desktop window so a minimized/hidden renderer cannot freeze AntD motion');
+assert.ok(source.includes("bringToFront: () => withFreshCdpPage")
+  && source.includes("page.send('Page.bringToFront')")
+  && source.includes('await page.bringToFront();'),
+  'host approval navigation must explicitly foreground every freshly connected CDP page before waiting for AntD motion');
 assert.ok(source.includes('MENU_GROUP_PAINT_DIAGNOSTIC')
   && source.includes('document.visibilityState')
   && source.includes('document.hasFocus()')
@@ -92,7 +96,7 @@ assert.ok(source.includes('openMenuItem'),
   'the harness must select nested pages through their rendered menu items');
 assert.ok(source.includes("openMenuItem(page, 'identity-devices', 'HOST_IDENTITY_ROUTE_REQUIRED')"),
   'identity navigation must select the rendered nested identity-devices menu item rather than only click its text node');
-assert.ok(source.includes("async function openHostIdentity(page) {\n  try {")
+assert.ok(source.includes("async function openHostIdentity(page) {\n  await page.bringToFront();\n  try {")
   && source.includes("  } finally {\n    await releaseNavigationOverlay(page);\n  }\n"),
   'identity navigation must always close the expanded sidebar overlay after completing or aborting navigation');
 const openHostIdentityStart = source.indexOf('async function openHostIdentity(page) {');

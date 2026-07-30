@@ -459,7 +459,11 @@ async function nativeClickDirect(page, selector) {
 }
 function actionPage(cdpPort, profileRoot) {
   return Object.freeze({
-    evaluate: expression => withFreshCdpPage(cdpPort, profileRoot, `evaluate:${String(expression).replace(/\s+/g, ' ').slice(0, 160)}`, page => page.evaluate(expression)),
+    bringToFront: () => withFreshCdpPage(cdpPort, profileRoot, 'bring-to-front', page => page.send('Page.bringToFront')),
+    evaluate: expression => withFreshCdpPage(cdpPort, profileRoot, `evaluate:${String(expression).replace(/\s+/g, ' ').slice(0, 160)}`, async page => {
+      await page.send('Page.bringToFront');
+      return page.evaluate(expression);
+    }),
     networkOffline: () => withFreshCdpPage(cdpPort, profileRoot, 'network-offline', async page => {
       await page.send('Network.enable');
       await page.send('Network.emulateNetworkConditions', {
@@ -743,6 +747,7 @@ async function openMenuItem(page, itemKey, code) {
   }, code, HOST_MENU_ROUTE_TIMEOUT_MS);
 }
 async function openHostIdentity(page) {
+  await page.bringToFront();
   try {
     let lastError = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
