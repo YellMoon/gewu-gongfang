@@ -229,12 +229,12 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
       const result = await primaryHostRuntime.enableLanFirewall();
       setWindowsHostFirewallStatus(result);
       if (result?.state === 'elevation-requested') {
-        message.info('Windows administrator approval was requested. Recheck after it completes.');
+        message.info('\u5df2\u8bf7\u6c42 Windows \u7ba1\u7406\u5458\u6388\u6743\uff0c\u5b8c\u6210\u540e\u53ef\u70b9\u51fb\u68c0\u67e5\u72b6\u6001\u3002\u4e91\u4e2d\u7ee7\u4ecd\u53ef\u6b63\u5e38\u4f7f\u7528\u3002');
       } else {
-        message.warning(result?.code || 'LAN access approval was not completed');
+        message.warning(result?.code || '\u672a\u5b8c\u6210\u5c40\u57df\u7f51\u76f4\u8fde\u6388\u6743\uff0c\u5c06\u7ee7\u7eed\u4f7f\u7528\u4e91\u4e2d\u7ee7\u3002');
       }
     } catch (error: any) {
-      message.error(error?.message || 'LAN access approval was not completed');
+      message.error(error?.message || '\u5c40\u57df\u7f51\u76f4\u8fde\u6388\u6743\u672a\u5b8c\u6210\uff0c\u4e91\u4e2d\u7ee7\u4ecd\u53ef\u6b63\u5e38\u4f7f\u7528\u3002');
     } finally {
       setWindowsHostFirewallLoading(false);
     }
@@ -567,23 +567,34 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
           type={windowsHostFirewallStatus?.state === 'enabled' ? 'success' : 'info'}
           showIcon
           style={{ marginBottom: 16 }}
-          message="LAN access"
+          message={'\u5c40\u57df\u7f51\u76f4\u8fde\uff08\u53ef\u9009\uff09'}
           description={(
             <Space direction="vertical" size={2}>
-              <span>Default is loopback only. Enable access only for the installed host program on the private local subnet.</span>
-              <span>LocalSubnet / Private / TCP {windowsHostFirewallStatus?.localPort || '-'}</span>
-              <span>State: {windowsHostFirewallStatus?.state || 'not checked'}</span>
+              <span>{'\u4e91\u4e2d\u7ee7\u59cb\u7ec8\u53ef\u7528\uff0c\u65e0\u9700\u8bbe\u7f6e Windows \u9632\u706b\u5899\u3002'}</span>
+              <span>{'\u5c40\u57df\u7f51\u76f4\u8fde\u4ec5\u7528\u4e8e\u52a0\u5feb\u540c\u4e00\u4e13\u7528\u7f51\u7edc\u5185\u5df2\u6388\u6743\u8bbe\u5907\u8bbf\u95ee\u672c\u673a\u6570\u636e\u4e3b\u673a\u7684\u901f\u5ea6\u3002'}</span>
+              <span>{windowsHostFirewallStatus?.state === 'enabled'
+                ? `\u5df2\u542f\u7528\uff1a\u4ec5\u4e13\u7528\u7f51\u7edc\u3001\u672c\u5730\u5b50\u7f51\u3001TCP ${windowsHostFirewallStatus.localPort || '-'}`
+                : '\u672a\u542f\u7528\u5c40\u57df\u7f51\u76f4\u8fde\u65f6\uff0c\u8f6f\u4ef6\u4f1a\u7ee7\u7eed\u901a\u8fc7\u4e91\u4e2d\u7ee7\u5de5\u4f5c\u3002'}</span>
+              <span>{'\u4e0d\u9700\u8981\u624b\u5de5\u521b\u5efa\u9632\u706b\u5899\u89c4\u5219\u3002'}</span>
             </Space>
           )}
           action={(
             <Space>
               <Button size="small" loading={windowsHostFirewallLoading} onClick={() => void loadWindowsHostFirewallStatus()}>
-                Check
+                {'\u68c0\u67e5\u72b6\u6001'}
               </Button>
               {windowsHostFirewallStatus?.state !== 'enabled' && (
-                <Button size="small" type="primary" loading={windowsHostFirewallLoading} onClick={() => void requestWindowsHostLanFirewall()}>
-                  Enable LAN access
-                </Button>
+                <Popconfirm
+                  title={'\u662f\u5426\u542f\u7528\u5c40\u57df\u7f51\u76f4\u8fde\uff1f'}
+                  description={'\u5c06\u8bf7\u6c42\u4e00\u6b21 Windows \u7ba1\u7406\u5458\u6388\u6743\uff0c\u4ec5\u5141\u8bb8\u672c\u673a\u5df2\u5b89\u88c5\u7684\u6570\u636e\u4e3b\u673a\u7a0b\u5e8f\u5728\u4e13\u7528\u7f51\u7edc\u7684\u672c\u5730\u5b50\u7f51\u901a\u8fc7\u6307\u5b9a TCP \u7aef\u53e3\u63a5\u6536\u8fde\u63a5\u3002\u62d2\u7edd\u6388\u6743\u4e0d\u4f1a\u5f71\u54cd\u4e91\u4e2d\u7ee7\u3002'}
+                  okText={'\u8bf7\u6c42\u6388\u6743'}
+                  cancelText={'\u7ee7\u7eed\u4f7f\u7528\u4e91\u4e2d\u7ee7'}
+                  onConfirm={() => void requestWindowsHostLanFirewall()}
+                >
+                  <Button size="small" type="primary" loading={windowsHostFirewallLoading}>
+                    {'\u542f\u7528\u5c40\u57df\u7f51\u76f4\u8fde'}
+                  </Button>
+                </Popconfirm>
               )}
             </Space>
           )}

@@ -20,6 +20,7 @@ const stableHost = {
 
 const plan = buildWindowsHostFirewallPlan(stableHost);
 assert.strictEqual(plan.allowed, true);
+assert.strictEqual(plan.requiresExplicitAction, true);
 assert.strictEqual(plan.rule.direction, 'in');
 assert.strictEqual(plan.rule.profile, 'private');
 assert.strictEqual(plan.rule.remoteAddress, 'LocalSubnet');
@@ -41,6 +42,7 @@ for (const input of [
 
 const elevated = buildElevatedFirewallRequest({ ...stableHost, action: 'ensure' });
 assert.strictEqual(elevated.allowed, true);
+assert.strictEqual(elevated.action, 'ensure');
 assert.strictEqual(elevated.command, 'powershell.exe');
 assert.ok(elevated.args.includes('-EncodedCommand'));
 assert.ok(!elevated.args.join(' ').includes(stableHost.executablePath), 'paths must remain inside the encoded command boundary');
