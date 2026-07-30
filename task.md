@@ -616,3 +616,12 @@ Status: partial release; acceptance incomplete
 - The run visibly rendered the host pending-device page, clicked the approval action, resolved its modal, rendered the approval result, finalized the client local identity, sealed an offline draft without submission, restarted the exact client profile, unlocked again, and proved that the draft survived without submission. This is a durable-relay row because authority WebSockets were explicitly disabled; the firewall preflight was correctly skipped and no manual Windows firewall rule was required.
 - Process discipline: exactly one runner and one host/client pair ran; terminal teardown left no process for this root. The root remains preserved with other verified `tmp-real-desktop-two-app-*` roots until all current acceptance rows are audited, then only those exact marked roots may be removed.
 - Boundary: this is fresh temporary-package durable-relay evidence, not terminal acceptance of the installed real primary-host package. Normal LAN, relay WebSocket, the installed-package acceptance matrix, remaining role/UI evidence, and final verified temporary-root cleanup still require current terminal evidence. No real authority data, real profile, removable question-store data, deployment, OSS object, or miniapp state was modified.
+
+### 2026-07-30 checkpoint 30: rebuilt-package relay-WebSocket offline-restart evidence
+
+Status: partial release; acceptance incomplete
+
+- A separate single-pair run used the same rebuilt temporary packages and isolated root `%TEMP%\\tmp-real-desktop-two-app-XDewYP`, with `--relay-websocket`. The harness deliberately used an unreachable isolated LAN endpoint; firewall preflight was skipped because this is a relay-only row.
+- Terminal result: `{"success":true,"transport":"managed-identity-lan-cloud-relay","websocketDisabled":false,"relayWebSocket":true,"isolatedCutoverMarker":true,"deviceApprovedThroughVisibleHostUi":true,"hostWorkerObserved":true,"activationFinalized":true}`.
+- The run visibly approved the pending device on the host, completed activation, sealed an offline draft, restarted and unlocked the exact client profile, proved the draft remained unsubmitted until confirmation, and completed relay-WebSocket receipt, worker, and activation assertions. No real authority data or firewall configuration was touched.
+- Boundary: normal LAN and installed-package acceptance remain unproven by this row; all preserved roots remain isolated until the current matrix and cleanup audit are complete.
