@@ -348,7 +348,14 @@ function startDesktop(exe, root, backendPort, cdpPort, { websocketDisabled = fal
   const diagnosticFd = fs.openSync(diagnosticLog, 'a');
   let child;
   try {
-    child = childProcess.spawn(exe, [`--user-data-dir=${root}`, `--remote-debugging-port=${cdpPort}`, '--enable-logging=stderr'], {
+    child = childProcess.spawn(exe, [
+      `--user-data-dir=${root}`,
+      `--remote-debugging-port=${cdpPort}`,
+      '--enable-logging=stderr',
+      '--disable-background-timer-throttling',
+      '--disable-renderer-backgrounding',
+      '--disable-backgrounding-occluded-windows',
+    ], {
       cwd: path.dirname(exe), detached: false, windowsHide: false, stdio: ['ignore', diagnosticFd, diagnosticFd],
       env: {
         ...process.env,

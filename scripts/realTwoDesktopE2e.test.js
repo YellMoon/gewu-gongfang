@@ -149,6 +149,10 @@ assert.ok(startDesktopSource.includes('e2e-packaged-desktop.log')
   && startDesktopSource.includes('fs.closeSync(diagnosticFd)')
   && !startDesktopSource.includes('child.stderr.pipe(diagnosticStream)'),
   'packaged desktop diagnostics must use inherited file descriptors without retaining Node pipe streams and handles');
+assert.ok(startDesktopSource.includes('--disable-background-timer-throttling')
+  && startDesktopSource.includes('--disable-renderer-backgrounding')
+  && startDesktopSource.includes('--disable-backgrounding-occluded-windows'),
+  'the two-desktop harness must keep the real host renderer responsive while the client window is foregrounded for approval');
 assert.ok(source.includes('acquireRunLease') && governanceSource.includes('REAL_TWO_DESKTOP_E2E_ALREADY_RUNNING'),
   'the harness must enforce a single active two-desktop acceptance runner');
 assert.ok(governanceSource.includes('STALE_REAL_TWO_DESKTOP_PROCESSES_REQUIRED_CLEANUP')
