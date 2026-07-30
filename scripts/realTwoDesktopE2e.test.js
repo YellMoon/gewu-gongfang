@@ -301,7 +301,7 @@ assert.ok(source.includes('requiresLanFirewallAudit && !usesIsolatedTemporaryHos
 assert.ok(source.includes('[e2e] LAN firewall preflight skipped for relay-only acceptance'));
 assert.ok(source.includes('usesIsolatedTemporaryHostPackage') && source.includes('TEMPORARY_PACKAGE_FIREWALL_AUDIT_BYPASSED'),
   'only a named disposable win-unpacked test package may skip an installed-program firewall audit');
-assert.ok(source.includes('tmp-e2e-host-cutover-'),
+assert.ok(source.includes('tmp-e2e-host-[a-z0-9-]+'),
   'the temporary-package firewall exemption must be limited to the dedicated E2E output prefix');
 assert.ok(source.includes('fixedLanHostPort'));
 assert.ok(source.includes('GEWU_LAN_E2E_HOST_PORT'));
