@@ -22,6 +22,7 @@ export function desktopUpdateStateAfterCheck(previous, result = {}) {
   return {
     ...previous,
     checking: false,
+    available: result.updateAvailable === true,
     feedUrl: result.feedUrl || previous.feedUrl,
     latestVersion: result.updateInfo?.version || previous.latestVersion,
   };

@@ -14,5 +14,10 @@ assert.ok(
   sourceBuildIndex < publicTemplateIndex,
   'Electron must prefer build/index.html over the empty CRA public/index.html template',
 );
+assert.match(
+  source,
+  /<meta charset="UTF-8">/,
+  'Electron startup error pages must declare UTF-8 so Chinese diagnostics never render as mojibake',
+);
 
 console.log('electron renderer entry resolution tests passed');

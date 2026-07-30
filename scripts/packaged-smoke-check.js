@@ -34,6 +34,14 @@ function verifyPackagedFlavorBoundary() {
   return flavor;
 }
 
+function verifyPackagedRendererBundle() {
+  const rendererEntry = path.join(packagedAppRoot, 'build', 'index.html');
+  if (!fs.existsSync(rendererEntry)) {
+    throw new Error(`Packaged renderer entry is missing: ${rendererEntry}`);
+  }
+  return rendererEntry;
+}
+
 function verifyPackagedNativeAbi() {
   const electronExe = path.join(process.cwd(), 'node_modules', 'electron', 'dist', 'electron.exe');
   const nativeModule = path.join(packagedAppRoot, 'node_modules', 'better-sqlite3');
@@ -146,6 +154,7 @@ async function main() {
     throw new Error(`Packaged executable not found: ${productExe}`);
   }
   const packagedFlavor = verifyPackagedFlavorBoundary();
+  verifyPackagedRendererBundle();
   const missingDependencies = embeddedBackendDependencies.filter(dependency => (
     !fs.existsSync(path.join(packagedAppRoot, 'node_modules', dependency, 'package.json'))
   ));
@@ -221,4 +230,4 @@ main().catch(error => {
   process.exitCode = 1;
 });
 
-module.exports = { verifyPackagedFlavorBoundary, verifyPackagedNativeAbi };
+module.exports = { verifyPackagedFlavorBoundary, verifyPackagedRendererBundle, verifyPackagedNativeAbi };

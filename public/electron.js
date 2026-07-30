@@ -943,7 +943,7 @@ function createWindow() {
 }
 
 function showErrorPage(msg) {
-  const html = `<html><body style="font-family:sans-serif;padding:50px;background:#fff">
+  const html = `<html><head><meta charset="UTF-8"></head><body style="font-family:sans-serif;padding:50px;background:#fff">
     <h2>⚠️ ${msg}</h2>
     <p>请尝试用命令行启动查看详细日志：</p>
     <code>"${process.execPath}"</code>
@@ -1162,6 +1162,7 @@ ipcMain.handle('check-for-updates', async () => {
     );
     return {
       success: true,
+      updateAvailable: result?.isUpdateAvailable === true,
       updateInfo: result?.updateInfo || null,
       feedUrl: updateFeedUrl,
     };

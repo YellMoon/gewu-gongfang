@@ -40,6 +40,28 @@ const assert = require('assert');
     },
   );
 
+  assert.deepStrictEqual(
+    desktopUpdateStateAfterCheck(
+      { checking: true, available: false, downloading: false, downloaded: false, progress: 0 },
+      {
+        success: true,
+        feedUrl: 'https://oss.example/desktop/host/',
+        updateAvailable: true,
+        updateInfo: { version: '7.2.1' },
+      },
+    ),
+    {
+      checking: false,
+      available: true,
+      downloading: false,
+      downloaded: false,
+      progress: 0,
+      feedUrl: 'https://oss.example/desktop/host/',
+      latestVersion: '7.2.1',
+    },
+    'a successful updater IPC result must enable download even when the renderer event arrives late',
+  );
+
   console.log('desktop update client tests passed');
 })().catch(error => {
   console.error(error);

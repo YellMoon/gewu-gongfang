@@ -51,6 +51,21 @@ assert.match(
   /verifyPackagedNativeAbi\(\);/,
   'packaged smoke must run native ABI verification before the renderer smoke flow',
 );
+assert.match(
+  source,
+  /function verifyPackagedRendererBundle\(/,
+  'packaged smoke must verify that the packaged renderer bundle is present before launch',
+);
+assert.match(
+  source,
+  /build['"],\s*['"]index\.html/,
+  'packaged smoke must require the renderer entry file inside the packaged app',
+);
+assert.match(
+  source,
+  /verifyPackagedRendererBundle\(\);/,
+  'packaged smoke must run renderer-bundle verification before the renderer smoke flow',
+);
 assert.doesNotMatch(
   source,
   /taskkill', \['\/PID', String\(pid\), '\/T'/,
