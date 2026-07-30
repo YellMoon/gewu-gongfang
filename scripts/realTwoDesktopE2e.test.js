@@ -286,6 +286,9 @@ assert.ok(source.includes('REAL_DESKTOP_CDP_ACTION_FAILED'));
 assert.ok(source.includes('ACTION='));
 assert.ok(source.includes('runLanE2ePreflight'));
 assert.ok(source.includes('LAN firewall preflight enabled'));
+assert.ok(source.includes('const requiresLanFirewallAudit = !acceptance.websocketDisabled && !acceptance.relayWebSocket;'));
+assert.ok(source.includes('requiresLanFirewallAudit && !usesIsolatedTemporaryHostPackage(HOST_EXE)'));
+assert.ok(source.includes('[e2e] LAN firewall preflight skipped for relay-only acceptance'));
 assert.ok(source.includes('usesIsolatedTemporaryHostPackage') && source.includes('TEMPORARY_PACKAGE_FIREWALL_AUDIT_BYPASSED'),
   'only a named disposable win-unpacked test package may skip an installed-program firewall audit');
 assert.ok(source.includes('tmp-e2e-host-cutover-'),

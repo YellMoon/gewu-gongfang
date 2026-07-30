@@ -1220,19 +1220,23 @@ async function runAcceptance(acceptance) {
   assert(CLIENT_EXE && fs.existsSync(CLIENT_EXE), 'GEWU_PACKAGED_CLIENT_EXE_REQUIRED');
   const coldStartTimeoutMs = packagedColdStartTimeoutMs();
   const hostPort = configuredLanHostPort() || await freePort(); const isolatedLanPort = acceptance.relayWebSocket ? await freePort() : null; const clientPort = await freePort(); const hostCdp = await freePort(); const clientCdp = await freePort(); const cloudPort = await freePort();
-  // This is intentionally audit-only. A real LAN run must use an already-installed
-  // host executable with its exact narrow rule; tests never request Windows elevation.
-  const firewallAudit = usesIsolatedTemporaryHostPackage(HOST_EXE)
-    ? { localPort: hostPort, testOnly: true }
-    : runLanE2ePreflight({
+  // This is intentionally audit-only. Only an explicit LAN row needs an
+  // installed-host rule; relay-only rows must remain usable without one.
+  // Tests never request Windows elevation.
+  const requiresLanFirewallAudit = !acceptance.websocketDisabled && !acceptance.relayWebSocket;
+  const firewallAudit = requiresLanFirewallAudit && !usesIsolatedTemporaryHostPackage(HOST_EXE)
+    ? runLanE2ePreflight({
       hostExe: HOST_EXE,
       hostPort,
       helperPath: path.join(path.dirname(HOST_EXE), 'resources', 'app', 'public', 'windowsHostFirewallElevated.ps1'),
       clientBackendUrl: `http://127.0.0.1:${clientPort}`,
-    });
-  console.log(firewallAudit.testOnly
-    ? `[e2e] TEMPORARY_PACKAGE_FIREWALL_AUDIT_BYPASSED port ${firewallAudit.localPort}`
-    : `[e2e] LAN firewall preflight enabled for port ${firewallAudit.localPort}`);
+    })
+    : (requiresLanFirewallAudit ? { localPort: hostPort, testOnly: true } : null);
+  console.log(firewallAudit
+    ? (firewallAudit.testOnly
+      ? `[e2e] TEMPORARY_PACKAGE_FIREWALL_AUDIT_BYPASSED port ${firewallAudit.localPort}`
+      : `[e2e] LAN firewall preflight enabled for port ${firewallAudit.localPort}`)
+    : '[e2e] LAN firewall preflight skipped for relay-only acceptance');
   let cloud = null; let host = null; let client = null; let hostPage = null; let clientPage = null;
   try {
     cloud = startIdentityCloud({ port: cloudPort });
