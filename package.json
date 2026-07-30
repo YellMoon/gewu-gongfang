@@ -1,6 +1,6 @@
 {
   "name": "gewu-gongfang",
-  "version": "7.0.1",
+  "version": "7.1.1",
   "desktopBuildFlavor": "desktop-client",
   "description": "格物工坊（综合教育平台）",
   "main": "public/electron.js",
@@ -23,7 +23,7 @@
     "package:host-runtime-contract": "node scripts/package-host-runtime-contract.js",
     "dist": "npm run build && npm run prepare:python && npm run rebuild:electron && electron-builder && npm run rebuild:node",
     "pack": "npm run build && npm run prepare:python && npm run rebuild:electron && electron-builder --dir && npm run rebuild:node",
-    "dist:win": "node scripts/update-version.js --bump && npm run build && npm run prepare:python && npm run rebuild:electron && electron-builder --win && npm run rebuild:node",
+    "dist:win": "node scripts/update-version.js --bump && node scripts/prepare-ruby-runtime.js && node scripts/prepare-python-runtime.js && craco build && npm run rebuild:electron && electron-builder --win && npm run rebuild:node",
     "dist:win:host": "npm run build && npm run prepare:python && npm run rebuild:electron && npm run verify:electron-native-abi && electron-builder --win --config electron-builder.host.config.cjs && npm run rebuild:node",
     "version:bump:major": "node scripts/update-version.js --bump=major",
     "version:bump:minor": "node scripts/update-version.js --bump=minor",

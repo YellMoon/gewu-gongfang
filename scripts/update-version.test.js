@@ -6,6 +6,16 @@ const version = require('./update-version');
 
 const source = fs.readFileSync('scripts/update-version.js', 'utf-8');
 const packageJson = fs.readFileSync('package.json', 'utf-8');
+const desktopDistCommand = JSON.parse(packageJson).scripts['dist:win'];
+
+assert.ok(desktopDistCommand, 'desktop packaging command must exist');
+assert.strictEqual(
+  (desktopDistCommand.match(/scripts\/update-version\.js/g) || []).length,
+  1,
+  'desktop packaging must generate the version file exactly once per build',
+);
+assert.ok(!desktopDistCommand.includes('npm run build'),
+  'desktop packaging must not call the build script that regenerates the version file a second time');
 
 assert.ok(source.includes('resolveBumpLevel'), 'update-version should resolve an explicit bump level');
 assert.strictEqual(
