@@ -625,3 +625,11 @@ Status: partial release; acceptance incomplete
 - Terminal result: `{"success":true,"transport":"managed-identity-lan-cloud-relay","websocketDisabled":false,"relayWebSocket":true,"isolatedCutoverMarker":true,"deviceApprovedThroughVisibleHostUi":true,"hostWorkerObserved":true,"activationFinalized":true}`.
 - The run visibly approved the pending device on the host, completed activation, sealed an offline draft, restarted and unlocked the exact client profile, proved the draft remained unsubmitted until confirmation, and completed relay-WebSocket receipt, worker, and activation assertions. No real authority data or firewall configuration was touched.
 - Boundary: normal LAN and installed-package acceptance remain unproven by this row; all preserved roots remain isolated until the current matrix and cleanup audit are complete.
+
+### 2026-07-30 checkpoint 31: rebuilt-package LAN offline-restart evidence
+
+Status: partial release; acceptance incomplete
+
+- A third single-pair temporary-package row used `%TEMP%\\tmp-real-desktop-two-app-fKBVyR` and returned `{"success":true,"transport":"managed-identity-lan-cloud-relay","websocketDisabled":false,"relayWebSocket":false,"isolatedCutoverMarker":true,"deviceApprovedThroughVisibleHostUi":true,"hostWorkerObserved":true,"activationFinalized":true}`.
+- It reported `TEMPORARY_PACKAGE_FIREWALL_AUDIT_BYPASSED` on random port `55215`: no Windows firewall rule was queried, created, or changed. Visible host approval, activation, offline draft sealing, exact client restart, restart-time no-submission proof, LAN receipt and final activation all passed.
+- The runner exited and no process for this exact root remained. The root is retained with the other verified temporary roots pending the final installed-package and cleanup audit. This does not establish installed-primary-host acceptance or change real authority data.
