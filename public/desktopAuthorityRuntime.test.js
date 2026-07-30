@@ -141,6 +141,8 @@ function response(status, body) {
   assert.deepStrictEqual(completed.receipt, receipt);
   assert.strictEqual((await runtime.get(draft.id)).status, 'completed');
   assert.deepStrictEqual(await runtime.readProjection(), projection);
+  assert.ok(calls.some(call => call.url === 'http://host.lan/api/authority/projections/current'));
+  assert.ok(calls.some(call => call.url === 'https://control.example/api/authority/projections/current'));
   assert.deepStrictEqual(
     await runtime.readProjection({ minSourceVersion: receipt.projectionVersion }),
     projection,

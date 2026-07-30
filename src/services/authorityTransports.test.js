@@ -93,6 +93,27 @@ const assert = require('assert');
     code: 'AUTHORITY_SOCKET_UNAVAILABLE',
   }]);
 
+  const durableCalls = [];
+  const durableFallback = createAuthorityTransportSelector({
+    lanTransport: { name: 'lan-websocket', isReady: async () => false },
+    relayWebSocketTransport: { name: 'relay-websocket', isReady: async () => false },
+    durableRelayTransport: {
+      name: 'durable-relay',
+      isReady: async () => true,
+      submit: async value => {
+        durableCalls.push(value);
+        return receipt;
+      },
+    },
+  });
+  const durableDelivered = await durableFallback.submit(envelope);
+  assert.strictEqual(durableDelivered.transportUsed, 'durable-relay');
+  assert.deepStrictEqual(durableCalls, [envelope]);
+  assert.deepStrictEqual(durableDelivered.diagnostics, [
+    { name: 'lan-websocket', code: 'TRANSPORT_UNAVAILABLE' },
+    { name: 'relay-websocket', code: 'TRANSPORT_UNAVAILABLE' },
+  ]);
+
   console.log('authority transport tests passed');
 })().catch(error => {
   console.error(error);
