@@ -101,6 +101,7 @@ assert.ok(source.includes('--bump=patch'), 'update-version should document --bum
 assert.ok(source.includes('VERSION_BUMP_LEVEL'), 'update-version should support env-driven bump level');
 assert.ok(source.includes('syncBackendPackageVersion'), 'update-version should sync backend/package.json with the root package version');
 assert.ok(source.includes('syncGatewayPackageVersion'), 'update-version should sync gateway/package.json with the unified root release version');
+assert.ok(source.includes('syncMiniappPackageVersion'), 'update-version should sync miniapp/package.json with the unified root release version');
 const lockFixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-version-lock-'));
 const lockFixturePath = path.join(lockFixtureDir, 'package-lock.json');
 fs.writeFileSync(lockFixturePath, JSON.stringify({ version: '1.2.3', packages: { '': { version: '1.2.3' } } }, null, 2));
@@ -120,6 +121,15 @@ try {
   fs.writeFileSync = originalWriteFileSync;
 }
 assert.strictEqual(redundantLockWrites, 0, 'version sync must not rewrite an already-current lockfile');
+const miniappFixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-miniapp-version-'));
+const miniappFixturePath = path.join(miniappFixtureDir, 'package.json');
+fs.writeFileSync(miniappFixturePath, JSON.stringify({ version: '1.0.0' }, null, 2));
+version.syncMiniappPackageVersion('2.0.0', { packagePath: miniappFixturePath });
+assert.strictEqual(
+  JSON.parse(fs.readFileSync(miniappFixturePath, 'utf8')).version,
+  '2.0.0',
+  'version sync must update the miniapp package version'
+);
 let generatedWriteAttempts = 0;
 const generatedVersionPath = path.join(lockFixtureDir, 'generated-version.ts');
 version.writeFileUtf8WithRetry(generatedVersionPath, 'export const APP_VERSION = "9.9.9";\n', {

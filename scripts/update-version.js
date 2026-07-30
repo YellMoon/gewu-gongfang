@@ -172,6 +172,14 @@ function syncGatewayPackageVersion(version) {
   return result;
 }
 
+function syncMiniappPackageVersion(version, { packagePath } = {}) {
+  const miniappPkgPath = packagePath || path.join(__dirname, '..', 'miniapp', 'package.json');
+  if (!fs.existsSync(miniappPkgPath)) return null;
+  const result = writePackageVersion(miniappPkgPath, version);
+  syncPackageLockVersion(path.join(path.dirname(miniappPkgPath), 'package-lock.json'), version);
+  return result;
+}
+
 function syncPackageLockVersion(lockPath, version) {
   if (!fs.existsSync(lockPath)) return null;
   const lock = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
@@ -230,12 +238,14 @@ function main() {
     syncPackageLockVersion(lockPath, newVersion);
     syncBackendPackageVersion(newVersion);
     syncGatewayPackageVersion(newVersion);
+    syncMiniappPackageVersion(newVersion);
     writeGeneratedVersion(pkgContent);
     console.log(`Version bumped (${bumpLevel}): ${pkg.version} → ${newVersion}`);
   } else {
     syncPackageLockVersion(lockPath, pkg.version);
     syncBackendPackageVersion(pkg.version);
     syncGatewayPackageVersion(pkg.version);
+    syncMiniappPackageVersion(pkg.version);
     writeGeneratedVersion(pkg);
   }
 }
@@ -252,6 +262,7 @@ module.exports = {
   resolveBumpLevel,
   syncBackendPackageVersion,
   syncGatewayPackageVersion,
+  syncMiniappPackageVersion,
   syncPackageLockVersion,
   writeFileUtf8WithRetry,
 };

@@ -41,12 +41,17 @@ assert.strictEqual(matrix.isReleaseComplete(manifest), true, 'all exact-version 
 
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-release-matrix-'));
 try {
-  for (const relativePath of ['package.json', 'backend/package.json', 'gateway/package.json']) {
+  for (const relativePath of ['package.json', 'backend/package.json', 'gateway/package.json', 'miniapp/package.json']) {
     const absolutePath = path.join(fixtureRoot, relativePath);
     fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
     fs.writeFileSync(absolutePath, JSON.stringify({ version: relativePath === 'gateway/package.json' ? '7.1.9' : '7.2.0' }), 'utf8');
   }
   const localMatrix = matrix.readSourceVersionMatrix({ rootDir: fixtureRoot });
+  assert.strictEqual(
+    localMatrix.miniapp,
+    '7.2.0',
+    'the miniapp source package must participate in the unified version matrix'
+  );
   assert.throws(
     () => matrix.assertSourceVersionMatrix(localMatrix, '7.2.0'),
     /gateway.*7\.1\.9/i,

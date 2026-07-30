@@ -81,6 +81,7 @@ function readSourceVersionMatrix({ rootDir = path.resolve(__dirname, '..') } = {
     ['desktop', 'package.json'],
     ['backend', path.join('backend', 'package.json')],
     ['gateway', path.join('gateway', 'package.json')],
+    ['miniapp', path.join('miniapp', 'package.json')],
   ];
   return Object.fromEntries(entries.map(([name, relativePath]) => {
     const absolutePath = path.join(rootDir, relativePath);
