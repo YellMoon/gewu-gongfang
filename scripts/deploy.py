@@ -21,6 +21,7 @@ import secrets
 import shlex
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import paramiko
@@ -99,6 +100,58 @@ def read_root_version():
         return json.loads(root_package.read_text(encoding="utf-8")).get("version") or ""
     except Exception:
         return ""
+
+
+RELEASE_MATRIX_PATH = Path(os.getenv("GEWU_RELEASE_MANIFEST_PATH", PROJECT_ROOT / "output" / "release-matrix" / "active.json"))
+RELEASE_MATRIX_SCHEMA = "gewu.unified-release.v1"
+RELEASE_MATRIX_TARGETS = ("desktop", "local_host", "backend", "gateway", "miniapp")
+
+
+def require_release_manifest(target):
+    """Fail closed unless this deployment belongs to the one prepared release."""
+    if target not in RELEASE_MATRIX_TARGETS:
+        raise SystemExit(f"Unknown unified release target: {target}")
+    if not RELEASE_MATRIX_PATH.is_file():
+        raise SystemExit(f"Unified release manifest is required before deploy: {RELEASE_MATRIX_PATH}")
+    try:
+        manifest = json.loads(RELEASE_MATRIX_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit("Unified release manifest is unreadable") from error
+    expected_version = read_root_version()
+    if manifest.get("schema") != RELEASE_MATRIX_SCHEMA or manifest.get("version") != expected_version:
+        raise SystemExit("Unified release manifest does not match the checked-out source version")
+    package_paths = {
+        "backend": PROJECT_ROOT / "backend" / "package.json",
+        "gateway": PROJECT_ROOT / "gateway" / "package.json",
+    }
+    stale = []
+    for name, package_path in package_paths.items():
+        try:
+            version = json.loads(package_path.read_text(encoding="utf-8")).get("version")
+        except (OSError, json.JSONDecodeError) as error:
+            raise SystemExit(f"Unable to read {name} package version for unified release") from error
+        if version != expected_version:
+            stale.append(f"{name}={version or '<empty>'}")
+    if stale:
+        raise SystemExit(f"Unified source version mismatch: {', '.join(stale)}; expected {expected_version}")
+    target_state = (manifest.get("targets") or {}).get(target)
+    if not isinstance(target_state, dict) or target_state.get("status") != "pending":
+        raise SystemExit(f"Unified release target {target} is not pending")
+    return manifest
+
+
+def record_release_receipt(target, evidence):
+    manifest = require_release_manifest(target)
+    manifest["targets"][target] = {
+        "status": "verified",
+        "receipt": {
+            "version": manifest["version"],
+            "verifiedAt": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+            "evidence": str(evidence),
+        },
+    }
+    RELEASE_MATRIX_PATH.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return manifest
 
 
 def require_remote_env():
@@ -482,6 +535,9 @@ def main():
         rollback_plan()
         return
 
+    if mode == "deploy":
+        require_release_manifest('backend')
+
     ssh = connect()
     try:
         if mode == "check":
@@ -507,6 +563,7 @@ def main():
             run(ssh, "pm2 status")
             health_port = APP_PORT
             check_remote_health(ssh, health_port, "backend", read_root_version())
+            record_release_receipt('backend', f"backend health /api/health on port {health_port}")
         elif mode == "status":
             run(ssh, "pm2 status")
             health_port = APP_PORT

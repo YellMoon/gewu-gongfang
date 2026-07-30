@@ -11,9 +11,11 @@ const desktopDistCommand = JSON.parse(packageJson).scripts['dist:win'];
 assert.ok(desktopDistCommand, 'desktop packaging command must exist');
 assert.strictEqual(
   (desktopDistCommand.match(/scripts\/update-version\.js/g) || []).length,
-  1,
-  'desktop packaging must generate the version file exactly once per build',
+  0,
+  'desktop packaging must consume the prepared release version and never bump it again',
 );
+assert.ok(desktopDistCommand.includes('scripts/release-matrix.js assert --target desktop'),
+  'desktop packaging must require the prepared unified release manifest');
 assert.ok(!desktopDistCommand.includes('npm run build'),
   'desktop packaging must not call the build script that regenerates the version file a second time');
 

@@ -111,6 +111,7 @@ def stop_legacy_gateway_services(ssh):
 
 
 def main():
+  backend_deploy.require_release_manifest('gateway')
   ssh = backend_deploy.connect()
   try:
     stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
@@ -138,6 +139,7 @@ def main():
       attempts=12,
       delay_seconds=1,
     )
+    backend_deploy.record_release_receipt('gateway', 'gateway health /api/health on port 3001')
   finally:
     ssh.close()
 

@@ -2,6 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const childProcess = require('child_process');
+const releaseMatrix = require('./release-matrix');
 
 function parseOption(argv, name) {
   const prefix = `--${name}=`;
@@ -17,6 +18,12 @@ function parseOption(argv, name) {
 function resolveUploadVersion(options = {}) {
   const argv = options.argv || process.argv.slice(2);
   const explicitVersion = parseOption(argv, 'version');
+  if (options.releaseManifest) {
+    return releaseMatrix.resolveManifestVersion({
+      manifest: options.releaseManifest,
+      requestedVersion: explicitVersion,
+    });
+  }
   if (explicitVersion) return explicitVersion;
 
   const pkg = options.packageJson || require(path.join(__dirname, '..', 'package.json'));
@@ -144,7 +151,12 @@ function buildUploadCommand(options) {
 async function main() {
   const argv = process.argv.slice(2);
   const rootDir = path.resolve(__dirname, '..');
-  const version = resolveUploadVersion({ argv });
+  const release = releaseMatrix.assertReleaseTarget({
+    rootDir,
+    target: 'miniapp',
+    requestedVersion: parseOption(argv, 'version'),
+  });
+  const version = resolveUploadVersion({ argv, releaseManifest: release.manifest });
   const desc = parseOption(argv, 'desc') || parseOption(argv, 'description') || `格物工坊小程序发布 ${new Date().toISOString().slice(0, 10)}`;
   const infoOutput = parseOption(argv, 'info-output') || path.join(os.tmpdir(), 'gewu-miniapp-upload-info.json');
   const uploadMode = parseOption(argv, 'upload-mode') || process.env.MINIAPP_UPLOAD_MODE || 'auto';
@@ -172,6 +184,12 @@ async function main() {
       desc,
       robot: parseOption(argv, 'robot'),
     });
+    releaseMatrix.recordReceipt(release.manifest, {
+      target: 'miniapp',
+      version,
+      evidence: `miniprogram-ci development upload for ${appid}`,
+    });
+    releaseMatrix.writeManifest(release.manifestPath, release.manifest);
     console.log(JSON.stringify({ success: true, uploadMode: 'miniprogram-ci', result }, null, 2));
     return;
   }
@@ -194,6 +212,13 @@ async function main() {
 
   const command = buildUploadCommand({ cliPath, args });
   childProcess.execFileSync(command.file, command.args, buildUploadExecOptions({ cwd: rootDir }));
+
+  releaseMatrix.recordReceipt(release.manifest, {
+    target: 'miniapp',
+    version,
+    evidence: `wechat-devtools development upload for ${appid}`,
+  });
+  releaseMatrix.writeManifest(release.manifestPath, release.manifest);
 
   if (fs.existsSync(infoOutput)) {
     console.log(fs.readFileSync(infoOutput, 'utf-8'));

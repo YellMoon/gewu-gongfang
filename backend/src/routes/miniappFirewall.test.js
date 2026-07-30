@@ -11,14 +11,16 @@ const gatewaySchema = fs.readFileSync('gateway/src/db/schema.sql', 'utf-8');
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 
 assert.ok(authRoute.includes('createMiniappIdentityService'), 'backend WeChat login should use the authoritative identity service');
-assert.ok(authRoute.includes('loginWithVerifiedWechat'), 'backend WeChat login should create formal or isolated unrecognized sessions');
+assert.ok(authRoute.includes('loginWithClaimedWechat'), 'backend WeChat login should create a conflict-aware manual-phone visitor or formal session');
 assert.ok(authRoute.includes('loginWithClaimedWechat'), 'manual-phone login must use the conflict-aware identity claim path');
-assert.ok(authRoute.includes('if (!phoneCode && !normalizePhone(phone))'),
-  'every backend miniapp login must require either a manual phone claim or a verified-phone code');
+assert.ok(authRoute.includes('if (!normalizePhone(phone))'),
+  'every backend miniapp login must require a manual phone claim');
 assert.ok(authRoute.includes('resolveWechatIdentity(code)'),
   'both phone paths must still require a fresh WeChat login code');
-assert.ok(authRoute.includes('if (phoneCode)') && authRoute.includes('resolveWechatPhoneNumber(phoneCode)'),
-  'the compatible verified-phone path must exchange its phone code server-side');
+assert.ok(authRoute.includes("MINIAPP_AUTOMATIC_PHONE_RETRIEVAL_RETIRED"),
+  'the retired automatic phone path must be rejected explicitly');
+assert.ok(!authRoute.includes('resolveWechatPhoneNumber(phoneCode)'),
+  'manual-phone release flow must not exchange a WeChat phone code');
 assert.ok(!authRoute.includes('getMiniappUserByWechat(openid)'), 'an existing openid must not bypass verified-phone login');
 assert.ok(database.includes('_ensureMiniappUserColumns'), 'backend database should migrate miniapp login guard columns');
 assert.ok(database.includes('_migrateMiniappMemberships'), 'backend database should migrate formal identities and memberships safely');

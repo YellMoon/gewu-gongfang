@@ -4,6 +4,7 @@ const https = require('https');
 const path = require('path');
 const { URL } = require('url');
 const { retryTransientNetwork } = require('./oss-upload-retry');
+const releaseMatrix = require('./release-matrix');
 
 try {
   const dotenv = require('dotenv');
@@ -222,6 +223,11 @@ async function runUploadPlan(items) {
 }
 
 async function publishRelease() {
+  const release = dryRun ? null : releaseMatrix.assertReleaseTarget({
+    rootDir: path.resolve(__dirname, '..'),
+    target: 'desktop',
+    requestedVersion: packageJson.version,
+  });
   const installer = findInstaller();
   if (!installer) {
     throw new Error(`Windows installer for version ${packageJson.version} was not found in ${distDir}`);
@@ -268,6 +274,14 @@ async function publishRelease() {
     },
   ];
   const upload = await runUploadPlan(uploadItems);
+  if (release && !skipUpload) {
+    releaseMatrix.recordReceipt(release.manifest, {
+      target: 'desktop',
+      version: packageJson.version,
+      evidence: `OSS latest.yml and installer upload: ${objectUrl(feedObjectKey)}`,
+    });
+    releaseMatrix.writeManifest(release.manifestPath, release.manifest);
+  }
 
   console.log(JSON.stringify({
     mode: 'publish',

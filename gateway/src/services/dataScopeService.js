@@ -21,6 +21,9 @@ const redactTeacher = row => pick(row, ['id', 'name', 'subject']);
 const redactInstitution = row => pick(row, ['id', 'name']);
 const redactRoom = row => pick(row, ['id', 'name', 'display_name', 'displayName']);
 const redactSchool = row => pick(row, ['id', 'name']);
+const redactAsset = row => pick(row, ['id', 'account_id', 'accountId', 'account_type', 'accountType', 'provider', 'label', 'masked_identifier', 'maskedIdentifier', 'balance', 'currency']);
+const redactQuestionPreview = row => pick(row, ['id', 'type', 'subject', 'difficulty', 'stemPreview']);
+const belongsToUser = (row, userId) => String(value(row, 'owner_user_id', 'ownerUserId') || '') === String(userId || '');
 const studentLinks = row => [
   ...array(value(row, 'student_ids', 'studentIds')),
   ...array(value(row, 'student_pricings', 'studentPricings')).map(item => typeof item === 'object' ? value(item, 'student_id', 'studentId') : item),
@@ -75,8 +78,9 @@ function scopeStudent(snapshot, context) {
     consumptions: [],
     payments: copyRows(snapshot.payments).filter(row => inSet(allowedStudents, value(row, 'student_id', 'studentId'))
       && (inSet(scheduleIds, value(row, 'schedule_id', 'scheduleId')) || inSet(courseIds, value(row, 'course_id', 'courseId')))),
-    assetRecords: copyRows(snapshot.assetRecords || snapshot.asset_records).filter(row => String(value(row, 'owner_user_id', 'ownerUserId') || '') === String(userId || '')),
-    assetCategories: copyRows(snapshot.assetCategories || snapshot.asset_categories),
+    assets: copyRows(snapshot.assets).filter(row => belongsToUser(row, userId)).map(redactAsset),
+    assetRecords: copyRows(snapshot.assetRecords || snapshot.asset_records).filter(row => belongsToUser(row, userId)),
+    assetCategories: copyRows(snapshot.assetCategories || snapshot.asset_categories).filter(row => belongsToUser(row, userId)),
   });
   result.scopedFinancials = buildScopedFinancialSnapshot(result);
   return result;
@@ -143,17 +147,34 @@ function scopeTeacher(snapshot, context) {
     rooms: copyRows(snapshot.rooms).filter(row => inSet(roomIds, id(row))).map(redactRoom),
     schools: copyRows(snapshot.schools).filter(row => inSet(schoolIds, id(row))).map(redactSchool),
     teachers: copyRows(snapshot.teachers).filter(row => String(id(row)) === String(teacherId)).map(redactTeacher),
-    assetRecords: copyRows(snapshot.assetRecords || snapshot.asset_records).filter(row => String(value(row, 'owner_user_id', 'ownerUserId') || '') === String(context.userId || '')),
-    assetCategories: copyRows(snapshot.assetCategories || snapshot.asset_categories),
+    assets: copyRows(snapshot.assets).filter(row => belongsToUser(row, context.userId)).map(redactAsset),
+    assetRecords: copyRows(snapshot.assetRecords || snapshot.asset_records).filter(row => belongsToUser(row, context.userId)),
+    assetCategories: copyRows(snapshot.assetCategories || snapshot.asset_categories).filter(row => belongsToUser(row, context.userId)),
   });
   result.scopedFinancials = buildScopedFinancialSnapshot(result);
   return result;
 }
 
+function scopeVisitor(snapshot, context) {
+  const userId = String(context.userId || '').trim();
+  if (!userId) return {};
+  return {
+    redactedForRole: 'visitor',
+    questionPreviews: copyRows(snapshot.questionPreviews || snapshot.question_previews)
+      .map(redactQuestionPreview).slice(0, 10),
+    courses: [], schedules: [], students: [], grades: [], enrollments: [], payments: [], consumptions: [],
+    teachers: [], rooms: [], institutions: [], schools: [],
+    assets: copyRows(snapshot.assets).filter(row => belongsToUser(row, userId)).map(redactAsset),
+    assetRecords: copyRows(snapshot.assetRecords || snapshot.asset_records).filter(row => belongsToUser(row, userId)),
+    assetCategories: copyRows(snapshot.assetCategories || snapshot.asset_categories).filter(row => belongsToUser(row, userId)),
+  };
+}
+
 function scopeBusinessSnapshot(snapshot = {}, context = {}) {
-  if (context.kind === 'admin') return { ...snapshot, ...Object.fromEntries(Object.entries(snapshot).map(([k, v]) => [k, Array.isArray(v) ? v.map(x => ({ ...x })) : v])) };
+  if (context.kind === 'admin' || context.kind === 'all') return { ...snapshot, ...Object.fromEntries(Object.entries(snapshot).map(([k, v]) => [k, Array.isArray(v) ? v.map(x => ({ ...x })) : v])) };
   if (context.kind === 'teacher') return scopeTeacher(snapshot, context);
   if (context.kind === 'student') return scopeStudent(snapshot, context);
+  if (context.kind === 'visitor') return scopeVisitor(snapshot, context);
   return {};
 }
 

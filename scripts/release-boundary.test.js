@@ -1,0 +1,25 @@
+const assert = require('assert');
+const fs = require('fs');
+
+const packageJson = require('../package.json');
+const uploadMiniapp = fs.readFileSync('scripts/upload-miniapp.js', 'utf8');
+const publishDesktop = fs.readFileSync('scripts/publish-oss-feed.js', 'utf8');
+const deployBackend = fs.readFileSync('scripts/deploy.py', 'utf8');
+const deployGateway = fs.readFileSync('scripts/deploy_gateway.py', 'utf8');
+
+assert.ok(packageJson.scripts['release:prepare'], 'formal releases must create one manifest before build or publish');
+assert.ok(packageJson.scripts['release:status'], 'operators must be able to inspect a partial release');
+assert.ok(packageJson.scripts['release:complete'], 'operators must have an exact-receipt completion gate');
+assert.match(packageJson.scripts['dist:win'], /release-matrix\.js assert --target desktop/, 'desktop packaging must require the unified release manifest');
+assert.doesNotMatch(packageJson.scripts['dist:win'], /update-version\.js --bump/, 'desktop packaging must never create a second version');
+assert.match(packageJson.scripts['dist:win:host'], /release-matrix\.js assert --target local_host/, 'data-host packaging must require the unified release manifest');
+assert.ok(uploadMiniapp.includes('assertReleaseTarget({') && uploadMiniapp.includes("target: 'miniapp'"), 'miniapp upload must require the unified release manifest');
+assert.ok(uploadMiniapp.includes("recordReceipt"), 'a successful miniapp upload must write a version receipt');
+assert.ok(publishDesktop.includes("target: 'desktop'"), 'OSS publication must require the unified release manifest');
+assert.ok(publishDesktop.includes("recordReceipt"), 'a successful OSS publication must write a version receipt');
+assert.ok(deployBackend.includes('require_release_manifest'), 'backend deployment must require the unified release manifest');
+assert.ok(deployBackend.includes("record_release_receipt('backend'"), 'backend health success must write an exact-version receipt');
+assert.ok(deployGateway.includes('require_release_manifest'), 'gateway deployment must require the unified release manifest');
+assert.ok(deployGateway.includes("record_release_receipt('gateway'"), 'gateway health success must write an exact-version receipt');
+
+console.log('release boundary checks passed');
