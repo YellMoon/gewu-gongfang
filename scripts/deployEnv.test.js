@@ -48,6 +48,7 @@ fs.writeFileSync(envFixturePath, [
   `BACKEND_JWT_SECRET="${STRONG_JWT_FIXTURE}"`,
   'WECHAT_APPID="wx-review-env-test"',
   'WECHAT_APPSECRET="wechat-review-env-secret"',
+  'WECHAT_MINIAPP_ENV_VERSION=develop',
 ].join('\n'), 'utf-8');
 const cleanEnv = { ...process.env, DOTENV_CONFIG_PATH: envFixturePath };
 for (const name of ['APP_ENV', 'SCHEDULE_ENV', 'PORT', 'DEPLOY_HOST', 'DEPLOY_PASSWORD', 'DEPLOY_KEY_PATH', 'BACKEND_JWT_SECRET', 'WECHAT_APPID', 'WECHAT_APPSECRET']) {
@@ -56,13 +57,13 @@ for (const name of ['APP_ENV', 'SCHEDULE_ENV', 'PORT', 'DEPLOY_HOST', 'DEPLOY_PA
 cleanEnv.DOTENV_CONFIG_PATH = envFixturePath;
 const deployProbe = spawnSync('python', [
   '-c',
-  'import scripts.deploy as d; values=d.remote_env_values(); print(d.APP_ENV); print(d.HOST); print(d.APP_PORT); print(values["GEWU_NODE_ROLE"]); print(values["GEWU_HOST_BASE_URL"] == "http://127.0.0.1:3002"); print("MINIAPP_REVIEW_EXPERIENCE_CODE" not in values); d.require_remote_env(); print("account-config-ok")',
+  'import scripts.deploy as d; values=d.remote_env_values(); print(d.APP_ENV); print(d.HOST); print(d.APP_PORT); print(values["GEWU_NODE_ROLE"]); print(values["GEWU_HOST_BASE_URL"] == "http://127.0.0.1:3002"); print(values["WECHAT_MINIAPP_ENV_VERSION"]); print("MINIAPP_REVIEW_EXPERIENCE_CODE" not in values); d.require_remote_env(); print("account-config-ok")',
 ], { cwd: process.cwd(), env: cleanEnv, encoding: 'utf-8' });
 fs.rmSync(envFixtureDir, { recursive: true, force: true });
 assert.strictEqual(deployProbe.status, 0, deployProbe.stderr || 'deploy env probe should succeed');
 assert.deepStrictEqual(
   deployProbe.stdout.trim().split(/\r?\n/),
-  ['prod', 'deploy-env-test-host', '3002', 'cloud-relay', 'True', 'True', 'account-config-ok'],
+  ['prod', 'deploy-env-test-host', '3002', 'cloud-relay', 'True', 'develop', 'True', 'account-config-ok'],
   'deploy.py should load APP_ENV and host from DOTENV_CONFIG_PATH, resolve the prod port, and never default the cloud backend to primary-host authority'
 );
 
