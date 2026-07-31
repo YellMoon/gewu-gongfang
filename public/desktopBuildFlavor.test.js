@@ -60,6 +60,18 @@ assert.strictEqual(
   false,
   'ordinary packaging must use the Electron ABI prepared by rebuild:electron instead of rebuilding it a second time',
 );
+assert.ok(
+  packageJson.scripts['verify:packaged-electron-native-abi'],
+  'a packaged Electron runtime ABI verifier must exist'
+);
+assert.ok(
+  packageJson.scripts['dist:win'].includes('verify:packaged-electron-native-abi'),
+  'ordinary Windows packaging must load native modules from the unpacked artifact before rebuilding them for Node'
+);
+assert.ok(
+  packageJson.scripts['dist:win:host'].includes('verify:packaged-electron-native-abi'),
+  'primary-host packaging must load native modules from the unpacked artifact before rebuilding them for Node'
+);
 assert.strictEqual(hostBuild.extraMetadata.desktopBuildFlavor, PRIMARY_HOST_FLAVOR);
 assert.strictEqual(hostBuild.directories.output, 'dist-host');
 assert.strictEqual(
@@ -92,6 +104,8 @@ assert.ok(preloadSource.includes("ipcRenderer.invoke('primary-host:firewall-enab
 assert.ok(preloadSource.includes("ipcRenderer.invoke('primary-host:worker-status')"));
 assert.ok(packageJson.scripts['test:desktop-build-flavor'].includes('localSessionSigningSecret.test.js'),
   'the local session-signing fallback must run in the packaged desktop test suite');
+assert.ok(packageJson.scripts['test:desktop-build-flavor'].includes('verify-packaged-electron-native-abi.test.js'),
+  'the packaged ABI verifier contract must run in the desktop packaging test suite');
 assert.strictEqual(
   packageJson.build.artifactName,
   'GewuGongfang-Desktop-${version}-${arch}.${ext}',
