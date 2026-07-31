@@ -287,7 +287,7 @@ assert.ok(source.includes("replace(/\\\\s+/g, '') === text"),
   'real UI actions must ignore typography whitespace inserted inside button labels');
 assert.ok(source.includes('windowsHide: false'),
   'a real visible-desktop acceptance run must not hide either Electron window');
-assert.ok(/async function nativeClickDirect\(page, selector\) \{\s*await page\.send\('Page\.bringToFront'\);\s*const \{ x, y \} = await nativeTargetCenter\(page, selector\);[\s\S]*?await page\.send\('Input\.dispatchMouseEvent', \{ type: 'mouseMoved', x, y, button: 'none', buttons: 0 \}\);\s*await sleep\(80\);\s*await page\.send\('Input\.dispatchMouseEvent', \{ type: 'mousePressed'/s.test(source),
+assert.ok(/async function nativeClickDirect\(page, selector\) \{\s*await page\.send\('Page\.bringToFront'\);[\s\S]*?const \{ x, y \} = await nativeTargetCenter\(page, selector\);[\s\S]*?await page\.send\('Input\.dispatchMouseEvent', \{ type: 'mouseMoved', x, y, button: 'none', buttons: 0 \}\);\s*await sleep\(80\);\s*await page\.send\('Input\.dispatchMouseEvent', \{ type: 'mousePressed'/s.test(source),
   'native menu clicks must focus the target page and let Electron process hover before the press event');
 assert.ok(source.includes('document.elementFromPoint') && source.includes('REAL_DESKTOP_CDP_TARGET_OBSCURED'),
   'native desktop clicks must prove their coordinate is not covered by an overlay before accepting the interaction');
@@ -295,6 +295,8 @@ assert.ok(source.includes('buttons: 1') && source.includes('buttons: 0'),
   'native CDP pointer events must carry pressed and released button state');
 assert.ok(source.includes('REAL_DESKTOP_CDP_CLICK_EVENT_MISSING'),
   'native desktop clicks must distinguish an undelivered CDP pointer event from a visible UI handler failure');
+assert.ok(source.includes('REAL_DESKTOP_CDP_CLICK_RETRY_REQUIRED') && source.includes('attempt < 2'),
+  'a visible target with one undelivered native click must receive one fresh-coordinate retry before the E2E row fails');
 assert.ok(source.includes('HOST_MENU_ITEM_VISIBLE_REQUIRED MENU_STATE='),
   'a hidden host navigation item must preserve the menu and sidebar geometry needed for root-cause diagnosis');
 assert.ok(source.includes('rect.right > 0 && rect.bottom > 0 && rect.top < window.innerHeight')
@@ -314,6 +316,8 @@ assert.ok(source.includes('usesIsolatedTemporaryHostPackage') && source.includes
   'only a named disposable win-unpacked test package may skip an installed-program firewall audit');
 assert.ok(source.includes('tmp-e2e-host-[a-z0-9-]+'),
   'the temporary-package firewall exemption must be limited to the dedicated E2E output prefix');
+assert.ok(source.includes('tmp-host-acceptance-'),
+  'the separately named isolated host acceptance package must not be mistaken for an installed host requiring a user firewall rule');
 assert.ok(source.includes('fixedLanHostPort'));
 assert.ok(source.includes('GEWU_LAN_E2E_HOST_PORT'));
 assert.ok(source.includes('configuredLanHostPort') && source.includes('await freePort()'),

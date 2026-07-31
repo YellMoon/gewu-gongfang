@@ -435,34 +435,41 @@ async function nativeTargetCenter(page, selector) {
 }
 async function nativeClickDirect(page, selector) {
   await page.send('Page.bringToFront');
-  const { x, y } = await nativeTargetCenter(page, selector);
-  const clickProbe = `real-click-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  await page.evaluate(`(() => {
-    const key = ${literal(clickProbe)};
-    const target = document.querySelector(${literal(selector)});
-    if (!target) throw new Error('REAL_DESKTOP_CDP_CLICK_TARGET_LOST');
-    target.dataset.realDesktopNativeClickProbe = key;
-    window.__realDesktopClickProbe = { key, observed: false };
-    document.addEventListener('click', event => {
-      if (event.target instanceof Element && event.target.closest('[data-real-desktop-native-click-probe]')?.dataset.realDesktopNativeClickProbe === key) {
-        window.__realDesktopClickProbe.observed = true;
-      }
-    }, { capture: true, once: true });
-  })()`);
-  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none', buttons: 0 });
-  await sleep(80);
-  await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 });
-  await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1 });
-  await sleep(50);
-  const observed = await page.evaluate(`(() => {
-    const value = window.__realDesktopClickProbe?.key === ${literal(clickProbe)}
-      ? window.__realDesktopClickProbe.observed
-      : false;
-    delete window.__realDesktopClickProbe;
-    document.querySelector(${literal(selector)})?.removeAttribute('data-real-desktop-native-click-probe');
-    return value;
-  })()`);
-  if (!observed) throw new Error('REAL_DESKTOP_CDP_CLICK_EVENT_MISSING');
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const { x, y } = await nativeTargetCenter(page, selector);
+    const clickProbe = `real-click-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    await page.evaluate(`(() => {
+      const key = ${literal(clickProbe)};
+      const target = document.querySelector(${literal(selector)});
+      if (!target) throw new Error('REAL_DESKTOP_CDP_CLICK_TARGET_LOST');
+      target.dataset.realDesktopNativeClickProbe = key;
+      window.__realDesktopClickProbe = { key, observed: false };
+      document.addEventListener('click', event => {
+        if (event.target instanceof Element && event.target.closest('[data-real-desktop-native-click-probe]')?.dataset.realDesktopNativeClickProbe === key) {
+          window.__realDesktopClickProbe.observed = true;
+        }
+      }, { capture: true, once: true });
+    })()`);
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none', buttons: 0 });
+    await sleep(80);
+    await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 });
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1 });
+    await sleep(50);
+    const observed = await page.evaluate(`(() => {
+      const value = window.__realDesktopClickProbe?.key === ${literal(clickProbe)}
+        ? window.__realDesktopClickProbe.observed
+        : false;
+      delete window.__realDesktopClickProbe;
+      document.querySelector(${literal(selector)})?.removeAttribute('data-real-desktop-native-click-probe');
+      return value;
+    })()`);
+    if (observed) return;
+    if (attempt === 0) {
+      console.warn('[e2e] REAL_DESKTOP_CDP_CLICK_RETRY_REQUIRED');
+      await sleep(250);
+    }
+  }
+  throw new Error('REAL_DESKTOP_CDP_CLICK_EVENT_MISSING');
 }
 function actionPage(cdpPort, profileRoot) {
   return Object.freeze({
@@ -1263,7 +1270,9 @@ function configuredLanHostPort() {
 function fixedLanHostPort() { return configuredLanHostPort() || 60462; }
 function usesIsolatedTemporaryHostPackage(executablePath) {
   const normalized = path.resolve(String(executablePath || '')).replace(/\\/g, '/').toLowerCase();
-  return /\/tmp-e2e-host-[a-z0-9-]+\/win-unpacked\/[^/]+\.exe$/.test(normalized);
+  const e2ePackage = /\/tmp-e2e-host-[a-z0-9-]+\/win-unpacked\/[^/]+\.exe$/;
+  const acceptancePackage = /\/tmp-host-acceptance-[a-z0-9.-]+\/win-unpacked\/[^/]+\.exe$/;
+  return e2ePackage.test(normalized) || acceptancePackage.test(normalized);
 }
 async function runAcceptance(acceptance) {
   assert(HOST_EXE && fs.existsSync(HOST_EXE), 'GEWU_PACKAGED_HOST_EXE_REQUIRED');

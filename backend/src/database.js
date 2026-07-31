@@ -104,6 +104,7 @@ class DatabaseService {
 
     const schemaPath = path.join(__dirname, 'schema.sql');
     const schema = fs.readFileSync(schemaPath, 'utf-8');
+    this._prepareLegacyTenantColumns();
     this.db.exec(schema);
     this._recordSchemaVersion(schemaPath);
     this._ensureTenantColumns();
@@ -192,6 +193,12 @@ class DatabaseService {
       this.db.prepare(`ALTER TABLE ${table} ADD COLUMN tenant_id TEXT DEFAULT 'default'`).run();
     }
     this.db.prepare(`UPDATE ${table} SET tenant_id = 'default' WHERE tenant_id IS NULL OR tenant_id = ''`).run();
+  }
+
+  _prepareLegacyTenantColumns() {
+    for (const table of this._tenantScopedTables()) {
+      this._ensureTenantColumnForTable(table);
+    }
   }
 
   _ensureTenantColumns() {
