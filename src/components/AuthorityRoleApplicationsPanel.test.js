@@ -13,6 +13,9 @@ assert.ok(source.includes('buildAdminGrantDraft'), 'the host role-review workben
 assert.ok(source.includes('existingUserId'), 'a direct administrator grant must require an explicit existing immutable user id');
 assert.ok(!source.includes('confirmAndSubmit('), 'a review button must not silently submit without the shared confirmation step');
 assert.ok(source.includes('<AuthorityOutboxPanel compact focus=\"pending\" />'), 'the explicit confirmation queue must be visible beside review');
-assert.ok(page.includes('<AuthorityRoleApplicationsPanel />'), 'the host/device center must mount the host-owned role review workbench');
+assert.ok(
+  page.includes('snapshot?.host?.runtimeMatchesActiveEpoch && <AuthorityRoleApplicationsPanel />'),
+  'role review must mount only after the local host has an active authority context'
+);
 
 console.log('authority role applications panel checks passed');

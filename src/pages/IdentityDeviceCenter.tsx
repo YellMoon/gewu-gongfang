@@ -777,7 +777,7 @@ const IdentityDeviceCenter: React.FC = () => {
       </Card>
     </>}
 
-    <AuthorityRoleApplicationsPanel />
+    {snapshot?.host?.runtimeMatchesActiveEpoch && <AuthorityRoleApplicationsPanel />}
 
     <Modal
       open={Boolean(hostOperation)}
