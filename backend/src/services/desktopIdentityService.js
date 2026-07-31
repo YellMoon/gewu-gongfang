@@ -224,6 +224,9 @@ function createDesktopIdentityService({
   const findActivePrimaryHostEpoch = db.prepare(`SELECT id FROM primary_host_epochs
     WHERE status='active' AND device_id=? AND user_id=? AND authorization_id=?
     LIMIT 1`);
+  const countActivePrimaryHostAuthorizations = db.prepare(`SELECT COUNT(*) count
+    FROM desktop_device_authorizations
+    WHERE device_kind='primary-host' AND status='active'`);
   const insertAudit = db.prepare(`INSERT INTO authorization_audit_log
     (id, actor_user_id, target_user_id, action, before_json, after_json, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)`);
@@ -521,10 +524,16 @@ function createDesktopIdentityService({
         throw serviceError('DESKTOP_PASSWORD_RESET_IDENTITY_MISMATCH');
       }
       authorizationId = existingAuthorization.id;
+      const activePrimaryHostEpoch = findActivePrimaryHostEpoch.get(
+        row.device_id,
+        identityId,
+        existingAuthorization.id
+      );
+      const soleLegacyPrimaryHost = Number(countActivePrimaryHostAuthorizations.get().count) === 1;
       primaryHostSelfRecovery = row.device_kind === 'primary-host'
         && existingAuthorization.device_kind === 'primary-host'
         && findActiveGrants.all(identityId).some(function (grant) { return grant.role === 'super_admin'; })
-        && Boolean(findActivePrimaryHostEpoch.get(row.device_id, identityId, existingAuthorization.id));
+        && (Boolean(activePrimaryHostEpoch) || soleLegacyPrimaryHost);
     } else {
       if (existingAuthorization) {
         if (existingAuthorization.user_id !== identityId) {
