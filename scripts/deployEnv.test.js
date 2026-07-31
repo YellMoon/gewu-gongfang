@@ -22,6 +22,7 @@ assert.ok(!deployPy.includes('load_dotenv = None'), 'deploy should not silently 
 assert.ok(deployPy.includes('def upload_shared(ssh):'), 'backend deployment must upload its sibling shared runtime modules');
 assert.ok(deployPy.includes('upload_shared(ssh)'), 'backend deployment must invoke shared runtime upload before restart');
 assert.ok(deployPy.includes('posixpath.join(posixpath.dirname(REMOTE_DIR), "shared")'), 'remote shared paths must stay POSIX when deploying from Windows');
+assert.ok(deployPy.includes('pm2 restart {service_name} --update-env'), 'existing backend processes must reload the generated environment instead of failing pm2 start');
 assert.ok(deployGatewayPy.includes('def backup_gateway_release(')
   && deployGatewayPy.includes("source.backup(")
   && deployGatewayPy.includes("pragma('quick_check'")

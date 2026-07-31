@@ -476,7 +476,12 @@ def migrate(ssh, path_factory=None):
 
 
 def start_backend_service(ssh, service_name, path_factory=None):
-    command = f"cd '{REMOTE_DIR}' && pm2 start server.js --name {service_name} --update-env"
+    command = (
+        f"cd '{REMOTE_DIR}' && "
+        f"(pm2 describe {service_name} >/dev/null 2>&1 "
+        f"&& pm2 restart {service_name} --update-env "
+        f"|| pm2 start server.js --name {service_name} --update-env)"
+    )
     return run_with_remote_env(ssh, command, timeout=30, path_factory=path_factory)
 
 
