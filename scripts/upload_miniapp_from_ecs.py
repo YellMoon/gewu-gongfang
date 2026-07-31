@@ -12,6 +12,7 @@ import os
 import posixpath
 import re
 import shlex
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -64,6 +65,13 @@ def is_uploadable_relative_path(relative_path):
     return posixpath.basename(normalized) != "project.private.config.json"
 
 
+def is_release_bundle_relative_path(relative_path):
+    normalized = str(relative_path or "").replace("\\", "/").strip("/")
+    if normalized.startswith("miniapp/dist/"):
+        return not normalized.endswith((".db", ".db-wal", ".db-shm"))
+    return is_uploadable_relative_path(normalized)
+
+
 def read_appid():
     config_path = PROJECT_ROOT / "miniapp" / "project.config.json"
     try:
@@ -105,8 +113,11 @@ def build_remote_upload_command(layout, *, version, desc, robot):
         f"cd {root}",
         f"tar -xzf {shlex.quote(layout['archive'])}",
         f"rm -f -- {shlex.quote(layout['archive'])}",
-        "npm ci --prefix miniapp --include=dev",
-        "npm --prefix miniapp run build:weapp",
+        "test -f miniapp/dist/app.json",
+        "mkdir -p ci-runtime",
+        "printf '{\"private\":true}' > ci-runtime/package.json",
+        "NODE_OPTIONS=--max-old-space-size=384 npm_config_jobs=1 npm --prefix ci-runtime install --no-save --no-audit --no-fund --omit=optional miniprogram-ci@2.1.31",
+        "ln -s ../ci-runtime/node_modules miniapp/node_modules",
         f"WECHAT_MINIAPP_PRIVATE_KEY_PATH={key} node scripts/upload-miniapp.js --upload-mode=miniprogram-ci --version {shlex.quote(str(version))} --desc {shlex.quote(str(desc))} --robot {int(robot)}",
     ])
 
@@ -135,9 +146,16 @@ def iter_upload_files():
         if not source.is_file():
             continue
         relative = source.relative_to(PROJECT_ROOT).as_posix()
-        if is_uploadable_relative_path(relative):
+        if is_release_bundle_relative_path(relative):
             yield source, relative
-    for relative in ("package.json", "scripts/upload-miniapp.js"):
+    for relative in (
+        "package.json",
+        "backend/package.json",
+        "gateway/package.json",
+        "scripts/upload-miniapp.js",
+        "scripts/release-matrix.js",
+        "output/release-matrix/active.json",
+    ):
         source = PROJECT_ROOT / relative
         if not source.is_file():
             raise RuntimeError("ECS_UPLOAD_SOURCE_REQUIRED")
@@ -160,6 +178,23 @@ def create_source_archive():
     except Exception:
         archive_path.unlink(missing_ok=True)
         raise
+
+
+def npm_executable(platform_name=os.name):
+    return "npm.cmd" if platform_name == "nt" else "npm"
+
+
+def build_local_miniapp_bundle():
+    """Build locally so the constrained ECS performs only fixed-egress upload."""
+    result = subprocess.run(
+        [npm_executable(), "--prefix", "miniapp", "run", "build:weapp"],
+        cwd=PROJECT_ROOT,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("ECS_UPLOAD_LOCAL_MINIAPP_BUILD_FAILED")
+    if not (PROJECT_ROOT / "miniapp" / "dist" / "app.json").is_file():
+        raise RuntimeError("ECS_UPLOAD_LOCAL_MINIAPP_DIST_REQUIRED")
 
 
 def stage_release(ssh, layout, private_key, source_archive):
@@ -220,6 +255,7 @@ def main(argv=None):
         raise SystemExit("ECS_UPLOAD_METADATA_REQUIRED")
     layout = build_remote_layout(f"{REMOTE_RELEASE_PREFIX}{uuid.uuid4().hex}")
     private_key = resolve_private_key(options.private_key)
+    build_local_miniapp_bundle()
     ssh = deploy.connect()
     source_archive = create_source_archive()
     started = False

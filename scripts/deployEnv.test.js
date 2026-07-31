@@ -68,6 +68,21 @@ assert.deepStrictEqual(
   'deploy.py should load APP_ENV and host from DOTENV_CONFIG_PATH, resolve the prod port, and never default the cloud backend to primary-host authority'
 );
 
+const staleUnifiedVersionProbe = spawnSync('python', [
+  '-c',
+  'import scripts.deploy as d; print(d.remote_env_values()["GEWU_APP_VERSION"]); print(d.read_root_version())',
+], {
+  cwd: process.cwd(),
+  env: { ...cleanEnv, GEWU_APP_VERSION: '4.0.0' },
+  encoding: 'utf-8',
+});
+assert.strictEqual(staleUnifiedVersionProbe.status, 0, staleUnifiedVersionProbe.stderr || 'stale unified-version probe should run');
+assert.deepStrictEqual(
+  staleUnifiedVersionProbe.stdout.trim().split(/\r?\n/),
+  [rootPkg.version, rootPkg.version],
+  'release deployment must always inject the checked-out unified version, never a stale environment override',
+);
+
 const missingReviewEnv = {
   ...cleanEnv,
   APP_ENV: 'prod',
@@ -151,7 +166,7 @@ print(all(secret not in command for command in ssh.commands for secret in all_se
 print(ssh.sftp.modes == [(path, 0o600) for path in paths] and all(ssh.sftp.events.index("chmod:" + path) < ssh.sftp.events.index("write:" + path) for path in paths))
 print(ssh.sftp.removed == paths)
 print(len(ssh.commands) == 4 and "mkdir -p" in ssh.commands[0] and all("trap" in command and path in command for command, path in zip(secure_commands, paths)))
-print("node -e" in secure_commands[0] and "pm2 start" in secure_commands[1] and "--update-env" in secure_commands[1] and "pm2 restart" in secure_commands[2] and "--update-env" in secure_commands[2])
+print("node -e" in secure_commands[0] and "pm2 start" in secure_commands[1] and "--update-env" in secure_commands[1] and "pm2 delete edu-gateway" in secure_commands[2] and "pm2 start" in secure_commands[2] and "--update-env" in secure_commands[2])
 print(all(all(secret in ssh.sftp.contents[path] for secret in runtime_secrets if secret) for path in paths))
 `], { cwd: process.cwd(), env: deploySecurityEnv, encoding: 'utf-8' });
 assert.strictEqual(deploySecurityProbe.status, 0, deploySecurityProbe.stderr || 'secret-safe gateway deploy probe should run');
@@ -431,6 +446,15 @@ assert.ok(
     && deployGatewayPy.includes('backend_deploy.read_root_version()'),
   'Gateway deploy should poll for startup and require the exact root unified version',
 );
+const restartGatewaySource = deployGatewayPy.slice(
+  deployGatewayPy.indexOf('def restart_gateway('),
+  deployGatewayPy.indexOf('def stop_legacy_gateway_services('),
+);
+assert.ok(restartGatewaySource.includes('pm2 delete {SERVICE_NAME}')
+  && restartGatewaySource.includes('pm2 start src/app.js --name {SERVICE_NAME} --update-env'),
+  'Gateway deploy must replace an existing same-name PM2 process so it cannot keep an obsolete script path or environment');
+assert.ok(!restartGatewaySource.includes('pm2 restart {SERVICE_NAME}'),
+  'Gateway deploy must not restart a same-name PM2 process in place');
 assert.ok(!deployPy.includes("/api/health || echo"), 'backend deploy health must never turn a failure into success');
 assert.ok(!deployGatewayPy.includes("/api/health || echo"), 'gateway deploy health must never turn a failure into success');
 assert.ok(deployPy.includes('recv_exit_status'), 'remote command execution must inspect the Paramiko exit status');

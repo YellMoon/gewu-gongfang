@@ -1,6 +1,10 @@
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { normalizePhone, roleForUser } = require('./authorizationPolicy');
+const {
+  FORMAL_ROLE_ORDER,
+  resolveCanonicalAuthorityRoleContext,
+} = require('./authorityRoleGrantAdapter');
 
 const TOKEN_ISSUER = 'gewu-miniapp-auth';
 const FORMAL_AUDIENCE = 'gewu-api';
@@ -96,17 +100,41 @@ function createMiniappIdentityService({
     return asIso(now());
   }
 
+  function canonicalFormalGrant(user) {
+    const account = authorityAccountFor(user);
+    if (!account || account.status !== 'active') return null;
+    const context = resolveCanonicalAuthorityRoleContext(db, {
+      authorityId: account.authority_id,
+      userId: user.id,
+    });
+    const legacyRole = roleForUser(user);
+    return context.grants.find(grant => grant.role === legacyRole)
+      || [...context.grants]
+        .sort((left, right) => FORMAL_ROLE_ORDER.indexOf(right.role)
+          - FORMAL_ROLE_ORDER.indexOf(left.role))[0]
+      || null;
+  }
+
   function formalRole(user) {
-    const role = roleForUser(user);
-    return FORMAL_ROLES.has(role) ? role : null;
+    const account = authorityAccountFor(user);
+    if (account) return canonicalFormalGrant(user)?.role || null;
+    const legacyRole = roleForUser(user);
+    return FORMAL_ROLES.has(legacyRole) ? legacyRole : null;
+  }
+
+  function formalSubjectId(user, role = formalRole(user)) {
+    const canonicalGrant = canonicalFormalGrant(user);
+    if (canonicalGrant?.role === role) return canonicalGrant.subjectId || null;
+    if (role === 'student') return user?.student_id || null;
+    if (role === 'teacher') return user?.teacher_id || null;
+    return user?.id || null;
   }
 
   function membershipFor(user, role = formalRole(user)) {
     const subjectType = role === 'student' ? 'student'
       : role === 'teacher' ? 'teacher'
         : role === 'admin' || role === 'super_admin' ? 'user' : null;
-    const subjectId = role === 'student' ? user?.student_id
-      : role === 'teacher' ? user?.teacher_id : user?.id;
+    const subjectId = formalSubjectId(user, role);
     if (!subjectType || !subjectId) return null;
     return findMembership.get(subjectType, subjectId) || null;
   }
@@ -121,11 +149,12 @@ function createMiniappIdentityService({
   function hasValidFormalMapping(user, role = formalRole(user)) {
     if (!role) return false;
     const reconciledMembership = isActiveMembership(membershipFor(user, role));
+    const subjectId = formalSubjectId(user, role);
     if (role === 'student') {
-      return Boolean(user.student_id && (studentExists.get(user.student_id) || reconciledMembership));
+      return Boolean(subjectId && (studentExists.get(subjectId) || reconciledMembership));
     }
     if (role === 'teacher') {
-      return Boolean(user.teacher_id && (teacherExists.get(user.teacher_id) || reconciledMembership));
+      return Boolean(subjectId && (teacherExists.get(subjectId) || reconciledMembership));
     }
     return role === 'admin' || role === 'super_admin';
   }
@@ -148,6 +177,7 @@ function createMiniappIdentityService({
 
   function isVisitor(user) {
     if (isDisabled(user) || user.review_status !== 'approved' || !isEnabled(user.login_enabled)) return false;
+    if (formalRole(user)) return false;
     if (String(user.role || '') !== 'visitor' || String(user.identity_kind || '') !== 'visitor') return false;
     return authorityAccountFor(user)?.status === 'active';
   }
@@ -171,7 +201,7 @@ function createMiniappIdentityService({
   function identityKind(user, accountState) {
     if (accountState === 'visitor') return 'visitor';
     if (accountState === 'unrecognized') return 'unrecognized';
-    return user.identity_kind || formalRole(user) || 'unrecognized';
+    return formalRole(user) || user.identity_kind || 'unrecognized';
   }
 
   function presentUser(user, accountState) {
@@ -201,8 +231,10 @@ function createMiniappIdentityService({
         capabilities: [...VISITOR_CAPABILITIES],
       } : {}),
       ...(accountState === 'unrecognized' ? { capabilities: [...UNRECOGNIZED_CAPABILITIES] } : {}),
-      student_id: accountState === 'formal' ? user.student_id || null : null,
-      teacher_id: accountState === 'formal' ? user.teacher_id || null : null,
+      student_id: accountState === 'formal' && role === 'student'
+        ? formalSubjectId(user, role) : null,
+      teacher_id: accountState === 'formal' && role === 'teacher'
+        ? formalSubjectId(user, role) : null,
       is_member: member,
       membership_status: membership?.status || null,
       ...(accountState === 'formal' ? {
@@ -469,7 +501,18 @@ function createMiniappIdentityService({
     if (claims.iss !== TOKEN_ISSUER) throw serviceError('TOKEN_ISSUER_INVALID');
     if (claims.token_use === FORMAL_TOKEN_USE) {
       if (claims.aud !== FORMAL_AUDIENCE || !isFormal(user)) throw serviceError('FORMAL_IDENTITY_NOT_ELIGIBLE');
-      return user;
+      const role = formalRole(user);
+      if (claims.role !== role || claims.identity_kind !== role) {
+        throw serviceError('FORMAL_IDENTITY_CLAIMS_INVALID');
+      }
+      return {
+        ...user,
+        role,
+        user_type: role,
+        identity_kind: role,
+        student_id: role === 'student' ? formalSubjectId(user, role) : null,
+        teacher_id: role === 'teacher' ? formalSubjectId(user, role) : null,
+      };
     }
     if (claims.token_use === UNRECOGNIZED_TOKEN_USE) {
       if (claims.aud !== EXPERIENCE_AUDIENCE || isFormal(user) || hasEnabledFormalState(user)) {

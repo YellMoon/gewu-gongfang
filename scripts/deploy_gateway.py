@@ -98,8 +98,8 @@ source.backup({json.dumps(backup_db)})
 def restart_gateway(ssh, path_factory=None):
   command = (
     f"cd '{REMOTE_GATEWAY}' && "
-    f"(pm2 restart {SERVICE_NAME} --update-env 2>&1 "
-    f"|| pm2 start src/app.js --name {SERVICE_NAME} --update-env)"
+    f"pm2 delete {SERVICE_NAME} 2>/dev/null || true; "
+    f"pm2 start src/app.js --name {SERVICE_NAME} --update-env"
   )
   return backend_deploy.run_with_remote_env(ssh, command, timeout=120, path_factory=path_factory)
 

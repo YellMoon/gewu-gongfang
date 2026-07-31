@@ -22,8 +22,13 @@ command = MODULE.build_remote_upload_command(
     desc="7.0.0 ECS upload",
     robot=1,
 )
-assert "npm ci --prefix miniapp --include=dev" in command
-assert "npm --prefix miniapp run build:weapp" in command
+assert "miniapp/dist" in command
+assert "miniprogram-ci@" in command
+assert "NODE_OPTIONS=--max-old-space-size=384" in command
+assert '{"private":true}' in command
+assert chr(92) not in command
+assert "npm ci --prefix miniapp --include=dev" not in command
+assert "npm --prefix miniapp run build:weapp" not in command
 assert "WECHAT_MINIAPP_PRIVATE_KEY_PATH=" in command
 assert "node scripts/upload-miniapp.js" in command
 assert "7.0.0" in command
@@ -46,6 +51,13 @@ assert not MODULE.is_uploadable_relative_path("miniapp/dist/app.js")
 assert not MODULE.is_uploadable_relative_path(".git/config")
 assert not MODULE.is_uploadable_relative_path("miniapp/project.private.config.json")
 
+upload_sources = {relative for _, relative in MODULE.iter_upload_files()}
+assert "scripts/release-matrix.js" in upload_sources
+assert "output/release-matrix/active.json" in upload_sources
+assert "backend/package.json" in upload_sources
+assert "gateway/package.json" in upload_sources
+assert "miniapp/dist/app.js" in upload_sources
+
 assert MODULE.safe_cleanup_command(layout["root"]) == "rm -rf -- /root/.cache/gewu-miniapp-ci/release-20260730-test"
 try:
     MODULE.safe_cleanup_command("/root")
@@ -53,5 +65,8 @@ except ValueError as error:
     assert str(error) == "ECS_UPLOAD_CLEANUP_PATH_INVALID"
 else:
     raise AssertionError("cleanup must reject a broad remote path")
+
+assert MODULE.npm_executable("nt") == "npm.cmd"
+assert MODULE.npm_executable("posix") == "npm"
 
 print("ECS miniapp upload checks passed")

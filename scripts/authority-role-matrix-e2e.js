@@ -20,9 +20,27 @@ const ROLES = Object.freeze(['visitor', 'student', 'teacher', 'admin', 'super_ad
 const AUTHORITY_ID = 'authority-role-matrix';
 const EPOCH_ID = 'epoch-role-matrix';
 const CREATED_AT = '2026-07-30T00:00:00.000Z';
+const TEMP_ROOT_PATTERN = /^gewu-authority-role-matrix-[A-Za-z0-9]+$/;
+const TEMP_ROOT_MARKER = '.gewu-isolated-authority-role-matrix';
 
 function matrixError(code, detail = '') {
   return Object.assign(new Error(`${code}${detail ? `:${detail}` : ''}`), { code });
+}
+
+function removeDisposableRoot(tempRoot) {
+  const resolved = path.resolve(tempRoot);
+  if (path.dirname(resolved) !== path.resolve(os.tmpdir())) {
+    throw matrixError('ROLE_MATRIX_TEMP_PARENT_REQUIRED');
+  }
+  if (!TEMP_ROOT_PATTERN.test(path.basename(resolved))) {
+    throw matrixError('ROLE_MATRIX_TEMP_ROOT_REQUIRED');
+  }
+  if (!fs.existsSync(path.join(resolved, TEMP_ROOT_MARKER))) {
+    throw matrixError('ROLE_MATRIX_TEMP_MARKER_REQUIRED');
+  }
+  // SAFE_RECURSIVE_DELETE_OK: exact OS temp child, strict basename, and run-owned marker verified above.
+  fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  if (fs.existsSync(resolved)) throw matrixError('ROLE_MATRIX_TEMP_CLEANUP_FAILED');
 }
 
 function assertNoLeak(value, forbidden, role, surface) {
@@ -248,6 +266,7 @@ function assertRoleProjection(role, projection, desktopCache, miniappCache, mini
 
 async function main() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-authority-role-matrix-'));
+  fs.writeFileSync(path.join(tempRoot, TEMP_ROOT_MARKER), `${process.pid}\n`, 'utf8');
   process.env.NODE_ENV = 'test';
   process.env.DB_PATH = path.join(tempRoot, 'authority-role-matrix.db');
   process.env.READ_DB_PATH = process.env.DB_PATH;
@@ -324,6 +343,7 @@ async function main() {
   const server = createApp().listen(0);
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   const results = [];
+  let completed = false;
   try {
     for (const fixture of fixtures) {
       const actor = {
@@ -369,16 +389,19 @@ async function main() {
         sourceVersion: projection.sourceVersion,
       });
     }
-    console.log(JSON.stringify({
-      success: true,
-      matrix: results,
-      isolatedRoot: tempRoot,
-      preserved: true,
-    }));
+    completed = true;
   } finally {
     await new Promise(resolve => server.close(resolve));
     database.close();
+    if (completed) removeDisposableRoot(tempRoot);
+    else console.error(`[role-matrix] preserved failed isolated root: ${tempRoot}`);
   }
+  console.log(JSON.stringify({
+    success: true,
+    matrix: results,
+    isolatedRoot: tempRoot,
+    isolatedDataRemoved: true,
+  }));
 }
 
 main().catch(error => {

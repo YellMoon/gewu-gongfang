@@ -102,6 +102,52 @@ try {
     }).user.id,
     manualFresh.user.id,
   );
+  db.prepare(`INSERT INTO teachers
+    (id, name, phone, deleted, created_at, updated_at)
+    VALUES ('teacher-canonical-grant', 'Canonical Grant Teacher', '13800138006', 0, ?, ?)`)
+    .run(now, now);
+  db.prepare(`INSERT INTO authority_role_bindings
+    (binding_id, authority_id, user_id, role, subject_type, subject_id, status,
+     grant_version, granted_by, created_at, updated_at)
+    VALUES ('binding-canonical-teacher', 'authority-miniapp-test', ?, 'teacher', 'teacher',
+      'teacher-canonical-grant', 'active', 1, 'host-super-admin', ?, ?)`)
+    .run(manualFresh.user.id, now, now);
+  const canonicalGrantLogin = identity.loginWithClaimedWechat({
+    openid: 'wx-manual-fresh',
+    phone: '13800138006',
+  });
+  assert.strictEqual(canonicalGrantLogin.user.account_state, 'formal');
+  assert.strictEqual(canonicalGrantLogin.user.role, 'teacher');
+  assert.strictEqual(canonicalGrantLogin.user.teacher_id, 'teacher-canonical-grant');
+  assert.strictEqual(canonicalGrantLogin.claims.token_use, 'miniapp-session');
+  assert.strictEqual(canonicalGrantLogin.claims.role, 'teacher');
+  assert.deepStrictEqual(
+    (() => {
+      const tokenUser = identity.readIdentityForToken(canonicalGrantLogin.claims);
+      return {
+        role: tokenUser.role,
+        identityKind: tokenUser.identity_kind,
+        teacherId: tokenUser.teacher_id,
+      };
+    })(),
+    {
+      role: 'teacher',
+      identityKind: 'teacher',
+      teacherId: 'teacher-canonical-grant',
+    },
+    'formal middleware identity must expose the canonical grant instead of stale visitor scalars',
+  );
+  assert.throws(
+    () => identity.readIdentityForToken(manualFresh.claims),
+    error => error?.code === 'MINIAPP_VISITOR_NOT_ELIGIBLE',
+    'approving a canonical formal grant must invalidate the previous visitor session',
+  );
+  assert.deepStrictEqual(
+    db.prepare('SELECT role, identity_kind, teacher_id FROM users WHERE id=?')
+      .get(manualFresh.user.id),
+    { role: 'visitor', identity_kind: 'visitor', teacher_id: null },
+    'canonical role approval must not rewrite the immutable account through legacy scalar role fields',
+  );
   assert.throws(
     () => identity.loginWithClaimedWechat({
       openid: 'wx-manual-fresh',

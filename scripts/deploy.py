@@ -353,7 +353,11 @@ def remote_env_values():
         "GEWU_DEVICE_ID": os.getenv("GEWU_DEVICE_ID", "cloud_backend_prod"),
         "GEWU_HOST_BASE_URL": os.getenv("GEWU_HOST_BASE_URL", f"http://127.0.0.1:{APP_PORT}"),
         "GEWU_CLOUD_BASE_URL": os.getenv("GEWU_CLOUD_BASE_URL", "https://your-domain.example.com"),
-        "GEWU_APP_VERSION": os.getenv("GEWU_APP_VERSION", read_root_version()),
+        # A release deployment is versioned by the checked-out source and its
+        # release manifest.  Carrying an old operator environment value here
+        # makes a newly deployed gateway report a stale version, defeating the
+        # unified-release health gate.
+        "GEWU_APP_VERSION": read_root_version(),
         "QUESTION_BANK_ROOT": os.getenv("QUESTION_BANK_ROOT", "/root/GewuQuestionBank"),
         "QUESTION_BANK_UPLOAD_DIR": os.getenv("QUESTION_BANK_UPLOAD_DIR", "/root/GewuQuestionBank/assets"),
         "GEWU_LOCAL_CACHE_PATH": os.getenv("GEWU_LOCAL_CACHE_PATH", "/root/GewuQuestionBankCache"),
