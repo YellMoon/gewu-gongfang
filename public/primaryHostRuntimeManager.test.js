@@ -242,7 +242,7 @@ async function main() {
   const resumedAfterCrash = createPrimaryHostRuntimeManager({ ...dependencies, env: resumedEnv });
   const stagedAfterCrash = resumedAfterCrash.initialize();
   assert.strictEqual(stagedAfterCrash.credential.state, 'staged');
-  assert.strictEqual(stagedAfterCrash.config.nodeRole, 'desktop-client');
+  assert.strictEqual(stagedAfterCrash.config.nodeRole, 'primary-host');
   const adopted = await resumedAfterCrash.adopt({
     authorization: 'Bearer current-online-session',
     epoch,
@@ -365,6 +365,36 @@ async function main() {
     error => error.code === 'PRIMARY_HOST_CREDENTIAL_STAGE_REQUIRED'
   );
   assert.strictEqual(failedStore.read(), null, 'rejected credentials must never reach DPAPI storage');
+
+  const missingCredentialRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-primary-host-missing-credential-'));
+  const missingCredentialConfigPath = path.join(missingCredentialRoot, 'gewugongfang.config.json');
+  writeRuntimeConfig(missingCredentialConfigPath, {
+    deviceId: 'desktop-target-missing-credential',
+    mainDbPath: path.join(missingCredentialRoot, 'scheduling.db'),
+  }, { userDataPath: missingCredentialRoot });
+  writeManagedHostRuntimeConfig(missingCredentialConfigPath, {
+    deviceId: 'desktop-target-missing-credential',
+    epochId: 'legacy-host-epoch',
+    generation: 1,
+  }, { userDataPath: missingCredentialRoot, primaryHostCapable: true });
+  const missingCredentialEnv = {};
+  const missingCredentialManager = createPrimaryHostRuntimeManager({
+    ...dependencies,
+    credentialStore: createPrimaryHostCredentialStore({
+      filePath: path.join(missingCredentialRoot, 'primary-host-credential-v1.bin'),
+      safeStorage: safeStorage(),
+    }),
+    configPath: missingCredentialConfigPath,
+    userDataPath: missingCredentialRoot,
+    env: missingCredentialEnv,
+  });
+  const missingCredentialState = missingCredentialManager.initialize();
+  assert.strictEqual(missingCredentialState.config.nodeRole, 'primary-host',
+    'a missing host credential must preserve the host recovery surface instead of downgrading to a desktop client');
+  assert.strictEqual(missingCredentialState.credential.code, 'PRIMARY_HOST_CREDENTIAL_MISSING');
+  assert.ok(!missingCredentialEnv.GEWU_PRIMARY_HOST_CREDENTIAL,
+    'a missing host credential must never enable authority writes');
+  fs.rmSync(missingCredentialRoot, { recursive: true, force: true });
 
   fs.rmSync(root, { recursive: true, force: true });
   console.log('primary host runtime manager checks passed');

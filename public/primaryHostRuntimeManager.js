@@ -57,7 +57,7 @@ function createPrimaryHostRuntimeManager({
   function failClosed(config, code) {
     const effectiveConfig = {
       ...config,
-      nodeRole: 'desktop-client',
+      nodeRole: 'primary-host',
       primaryHostEpochId: '',
       primaryHostGeneration: null,
     };
@@ -98,7 +98,7 @@ function createPrimaryHostRuntimeManager({
     if (credential.state === 'staged') {
       const effectiveConfig = {
         ...config,
-        nodeRole: 'desktop-client',
+        nodeRole: 'primary-host',
         primaryHostEpochId: '',
         primaryHostGeneration: null,
       };

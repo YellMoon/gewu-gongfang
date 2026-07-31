@@ -1,6 +1,6 @@
 {
   "name": "gewu-gongfang",
-  "version": "7.2.8",
+  "version": "7.2.9",
   "desktopBuildFlavor": "desktop-client",
   "description": "格物工坊（综合教育平台）",
   "main": "public/electron.js",
