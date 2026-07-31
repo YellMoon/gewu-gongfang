@@ -51,6 +51,9 @@ assert.strictEqual(runtime.desktopAuthorizationView(projected, new Date('2026-07
 
 const pageSource = fs.readFileSync('miniapp/src/pages/desktop-authorization/index.tsx', 'utf8');
 const runtimeSource = fs.readFileSync('miniapp/src/utils/desktopAuthorizationRuntime.js', 'utf8');
+const hostPurpose = runtime.desktopAuthorizationPurposePresentation('primary-host-bootstrap');
+assert.ok(hostPurpose.phoneCopy.includes('\u9ad8\u98ce\u9669\u64cd\u4f5c'));
+assert.ok(!hostPurpose.phoneCopy.includes('\u8d85\u7ea7\u7ba1\u7406\u5458\u5ba1\u6838'));
 assert.ok(!pageSource.includes('getPhoneNumber'), 'desktop confirmation must not invoke automatic phone retrieval');
 assert.ok(!pageSource.includes('phoneCodeFromAuthorizationEvent'));
 assert.ok(!runtimeSource.includes('phoneCode'), 'desktop authorization runtime must not retain the retired automatic phone code path');
@@ -61,6 +64,8 @@ assert.ok(pageSource.includes('Taro.login()'));
 assert.ok(pageSource.includes('buildDesktopConfirmationPayload'));
 assert.ok(pageSource.includes('desktopAuthorizationApi.confirm'));
 assert.ok(pageSource.includes('expectedRowVersion'));
+assert.ok(pageSource.includes('purposePresentation.phoneCopy'), 'the page must show purpose-specific phone confirmation copy');
+assert.ok(!pageSource.includes('\\u4ecd\\u9700\\u6570\\u636e\\u4e3b\\u673a\\u8d85\\u7ea7\\u7ba1\\u7406\\u5458\\u5ba1\\u6838'));
 assert.ok(!pageSource.includes('openid'));
 
 const appConfig = fs.readFileSync('miniapp/src/app.config.ts', 'utf8');

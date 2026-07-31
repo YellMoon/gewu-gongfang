@@ -120,9 +120,7 @@ export default function DesktopAuthorizationPage() {
       return <>
         <View className="privacy-note">
           <Text className="privacy-title">{'\u786e\u8ba4\u7684\u662f\u4f60\u672c\u4eba'}</Text>
-          <Text>{purposePresentation.isHostOperation
-            ? '\u8fd9\u662f\u9ad8\u98ce\u9669\u64cd\u4f5c\uff1a\u624b\u586b\u624b\u673a\u53f7\u53ea\u7528\u4e8e\u4e0e\u5df2\u6709\u8d44\u6599\u5e93\u6838\u5bf9\uff0c\u4ecd\u9700\u6570\u636e\u4e3b\u673a\u8d85\u7ea7\u7ba1\u7406\u5458\u5ba1\u6838\u3002'
-            : '\u4e8c\u7ef4\u7801\u53ea\u5efa\u7acb\u4e00\u6b21\u6027\u901a\u9053\uff0c\u8bf7\u624b\u586b\u624b\u673a\u53f7\u4e0e\u5df2\u6709\u8d44\u6599\u6838\u5bf9\u3002\u672c\u9875\u4e0d\u4f7f\u7528\u7f13\u5b58\u8d26\u53f7\u66ff\u4f60\u786e\u8ba4\u3002'}</Text>
+          <Text>{purposePresentation.phoneCopy}</Text>
         </View>
         <View className="phone-field">
           <Text className="phone-prefix">+86</Text>
