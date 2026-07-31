@@ -357,6 +357,26 @@ function createPrimaryHostCredentialStore({ filePath, safeStorage, fsImpl = fs }
       writeEncrypted(candidate);
       return publicStatus(candidate);
     },
+    replaceStaged(value) {
+      assertEncryptionAvailable();
+      const expectedStageId = requiredText(value?.expectedStageId, 256);
+      const candidate = normalizeStagedCredential({
+        ...value,
+        version: value?.recoveryDeliveryKey
+          ? RECOVERY_DELIVERY_STORE_VERSION
+          : STAGED_STORE_VERSION,
+        state: 'staged',
+        credential: value?.hostCredential,
+      });
+      const existing = read();
+      if (candidate.operation !== 'bootstrap' || existing?.state !== 'staged'
+        || existing.stageId !== expectedStageId || existing.operation !== 'bootstrap'
+        || existing.deviceId !== candidate.deviceId || existing.generation !== candidate.generation) {
+        throw credentialError('PRIMARY_HOST_CREDENTIAL_STAGE_MISMATCH');
+      }
+      writeEncrypted(candidate);
+      return publicStatus(candidate);
+    },
     commit({ stageId, epoch, pendingRecoveryDelivery } = {}) {
       assertEncryptionAvailable();
       const existing = read();

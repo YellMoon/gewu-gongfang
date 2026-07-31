@@ -75,6 +75,39 @@ assert.strictEqual(store.read().state, 'staged', 'failed post-activation commit 
 assert.strictEqual(store.read().credential, 'locally-generated-host-secret-generation-2');
 store.clear();
 
+const staleBootstrap = store.stage({
+  stageId: 'bootstrap:challenge-old',
+  operation: 'bootstrap',
+  deviceId: 'desktop-host-a',
+  targetGeneration: 1,
+  hostCredential: 'locally-generated-bootstrap-secret-old',
+  recoveryDeliveryKey: generateRecoveryDeliveryKeyPair(),
+});
+const replacementBootstrap = store.replaceStaged({
+  expectedStageId: staleBootstrap.stageId,
+  stageId: 'bootstrap:challenge-current',
+  operation: 'bootstrap',
+  deviceId: 'desktop-host-a',
+  targetGeneration: 1,
+  hostCredential: 'locally-generated-bootstrap-secret-current',
+  recoveryDeliveryKey: generateRecoveryDeliveryKeyPair(),
+});
+assert.strictEqual(replacementBootstrap.stageId, 'bootstrap:challenge-current');
+assert.strictEqual(replacementBootstrap.operation, 'bootstrap');
+assert.throws(
+  () => store.replaceStaged({
+    expectedStageId: staleBootstrap.stageId,
+    stageId: 'bootstrap:challenge-third',
+    operation: 'bootstrap',
+    deviceId: 'desktop-host-a',
+    targetGeneration: 1,
+    hostCredential: 'locally-generated-bootstrap-secret-third',
+    recoveryDeliveryKey: generateRecoveryDeliveryKeyPair(),
+  }),
+  error => error?.code === 'PRIMARY_HOST_CREDENTIAL_STAGE_MISMATCH'
+);
+store.clear();
+
 const deliveryKey = generateRecoveryDeliveryKeyPair();
 const stagedWithKey = store.stage({
   stageId: 'transfer:challenge-delivery-1',

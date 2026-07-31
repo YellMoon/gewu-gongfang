@@ -7,6 +7,10 @@ assert.ok(
   source.includes("log(`[desktop-identity:complete-registration] ${String(error?.code || 'DESKTOP_IDENTITY_REGISTRATION_FAILED')}`);"),
   'local vault registration failures must retain only a stable main-process diagnostic code'
 );
+assert.ok(
+  source.includes("log(`[primary-host:prepare-operation] ${String(error?.code || 'PRIMARY_HOST_PREPARE_OPERATION_FAILED')}`);"),
+  'host bootstrap preparation failures must retain a stable main-process diagnostic code'
+);
 assert.strictEqual(
   source.includes('Desktop identity local request failed:'),
   false,

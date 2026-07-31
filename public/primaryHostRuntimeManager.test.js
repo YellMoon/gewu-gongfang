@@ -70,6 +70,10 @@ async function main() {
     'Electron must persist the candidate host credential before any cloud activation request');
   assert.ok(electronSource.includes('credentialStage'));
   assert.ok(electronSource.includes('recoveryDeliveryKey: stagedCredential.recoveryDeliveryKey'));
+  assert.ok(
+    electronSource.includes("replaceStaleBootstrapStage: input.operation === 'bootstrap'"),
+    'only a password-proven bootstrap operation may replace a stale, unactivated bootstrap credential'
+  );
   assert.ok(electronSource.includes("const credential = String(input.credential || '')"),
     'the adoption verifier must consume the manager-only credential without a renderer plaintext field');
   assert.strictEqual(electronSource.includes("const credential = String(input.hostCredential || '')"), false);
@@ -147,6 +151,38 @@ async function main() {
   assert.strictEqual(initialized.config.nodeRole, 'desktop-client');
   assert.deepStrictEqual(initialized.credential, { state: 'empty', active: false });
   assert.ok(!env.GEWU_PRIMARY_HOST_CREDENTIAL);
+
+  const bootstrapStore = createPrimaryHostCredentialStore({
+    filePath: path.join(root, 'bootstrap-primary-host.bin'), safeStorage: safeStorage(),
+  });
+  const bootstrapManager = createPrimaryHostRuntimeManager({ ...dependencies, credentialStore: bootstrapStore });
+  const staleBootstrap = bootstrapManager.stageAdoption({
+    operation: 'bootstrap', challengeId: 'challenge-bootstrap-old', targetGeneration: 1,
+  });
+  assert.throws(
+    () => bootstrapManager.stageAdoption({
+      operation: 'bootstrap', challengeId: 'challenge-bootstrap-current', targetGeneration: 1,
+    }),
+    error => error?.code === 'PRIMARY_HOST_CREDENTIAL_STAGE_CONFLICT'
+  );
+  const resumedBootstrap = bootstrapManager.stageAdoption({
+    operation: 'bootstrap',
+    challengeId: 'challenge-bootstrap-current',
+    targetGeneration: 1,
+    replaceStaleBootstrapStage: true,
+  });
+  assert.strictEqual(resumedBootstrap.stageId, 'bootstrap:challenge-bootstrap-current');
+  assert.notStrictEqual(resumedBootstrap.credentialCommitment, staleBootstrap.credentialCommitment);
+  assert.throws(
+    () => bootstrapManager.stageAdoption({
+      operation: 'transfer',
+      challengeId: 'challenge-transfer-blocked',
+      targetGeneration: 2,
+      replaceStaleBootstrapStage: true,
+    }),
+    error => error?.code === 'PRIMARY_HOST_CREDENTIAL_STAGE_CONFLICT'
+  );
+
   const epoch = {
     id: 'epoch-target-2', generation: 2, deviceId: 'desktop-target-a', userId: 'canonical-owner',
     activatedAt: '2026-07-18T03:00:00.000Z',

@@ -392,6 +392,8 @@ async function preparePrimaryHostOperation(input = {}) {
     operation: input.operation,
     challengeId: input.challengeId,
     targetGeneration: input.targetGeneration,
+    replaceStaleBootstrapStage: input.operation === 'bootstrap'
+      && input.physicalConfirmation === 'I_AM_PHYSICALLY_AT_THIS_DEVICE',
   });
   const credentialStage = Object.freeze({
     id: stagedCredential.stageId,
@@ -1050,7 +1052,14 @@ if (PRIMARY_HOST_CAPABLE) {
     }
     return primaryHostLocalDraftExecutor(draft);
   });
-  ipcMain.handle('primary-host:prepare-operation', async (_event, input) => preparePrimaryHostOperation(input));
+  ipcMain.handle('primary-host:prepare-operation', async (_event, input) => {
+    try {
+      return await preparePrimaryHostOperation(input);
+    } catch (error) {
+      log(`[primary-host:prepare-operation] ${String(error?.code || 'PRIMARY_HOST_PREPARE_OPERATION_FAILED')}`);
+      throw error;
+    }
+  });
   ipcMain.handle('primary-host:reveal-recovery-package', async (_event, input) => (
     getPrimaryHostRuntimeManager().revealRecoveryPackage(input)
   ));

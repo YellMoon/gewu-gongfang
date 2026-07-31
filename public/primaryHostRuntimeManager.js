@@ -233,14 +233,26 @@ function createPrimaryHostRuntimeManager({
     const hostCredential = Buffer.from(randomBytes(32)).toString('base64url');
     if (hostCredential.length < 32) throw runtimeError('PRIMARY_HOST_CREDENTIAL_GENERATION_FAILED');
     const recoveryDeliveryKey = generateRecoveryDeliveryKeyPair();
-    return credentialStore.stage({
+    const candidate = {
       stageId,
       operation,
       deviceId: config.deviceId,
       targetGeneration: generation,
       hostCredential,
       recoveryDeliveryKey,
-    });
+    };
+    if (input.replaceStaleBootstrapStage === true
+      && operation === 'bootstrap'
+      && existing?.state === 'staged'
+      && existing.operation === 'bootstrap'
+      && existing.deviceId === config.deviceId
+      && existing.generation === generation) {
+      return credentialStore.replaceStaged({
+        ...candidate,
+        expectedStageId: existing.stageId,
+      });
+    }
+    return credentialStore.stage(candidate);
   }
 
   function revealRecoveryPackage({ deliveryId } = {}) {
