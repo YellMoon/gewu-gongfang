@@ -121,6 +121,22 @@ function assertReleaseTarget({ rootDir = path.resolve(__dirname, '..'), manifest
   return { manifest, version, manifestPath };
 }
 
+function assertHostRuntimeAccepted({
+  rootDir = path.resolve(__dirname, '..'),
+  manifestPath = defaultManifestPath(rootDir),
+  manifest: suppliedManifest,
+  requestedVersion,
+} = {}) {
+  const manifest = suppliedManifest || readManifest(manifestPath);
+  const version = resolveManifestVersion({ manifest, requestedVersion });
+  assertSourceVersionMatrix(readSourceVersionMatrix({ rootDir }), version);
+  const host = manifest.targets.local_host;
+  if (host?.status !== 'verified' || host.receipt?.version !== version) {
+    throw new Error(`Release ${version} cannot publish OSS updates until local_host has a verified exact-version installed runtime receipt`);
+  }
+  return { manifest, version, manifestPath };
+}
+
 function recordReceipt(manifest, { target, version, verifiedAt = new Date().toISOString(), evidence } = {}) {
   if (!DEFAULT_TARGETS.includes(target)) throw new Error(`Unknown release target: ${target || '<empty>'}`);
   const expectedVersion = resolveManifestVersion({ manifest, requestedVersion: version });
@@ -217,6 +233,7 @@ if (require.main === module) {
 module.exports = {
   DEFAULT_TARGETS,
   MANIFEST_SCHEMA,
+  assertHostRuntimeAccepted,
   assertReleaseTarget,
   assertSourceVersionMatrix,
   createReleaseManifest,

@@ -18,6 +18,7 @@ assert.ok(Object.values(manifest.targets).every(target => target.status === 'pen
 assert.deepStrictEqual(matrix.validateManifest(manifest).issues, []);
 assert.strictEqual(matrix.isReleaseComplete(manifest), false, 'a planned release is never complete before receipts');
 
+
 assert.throws(
   () => matrix.recordReceipt(manifest, { target: 'miniapp', version: '7.2.1', verifiedAt: '2026-07-30T01:00:00.000Z' }),
   /version mismatch/i,
@@ -65,6 +66,25 @@ try {
     () => matrix.assertReleaseTarget({ rootDir: fixtureRoot, target: 'desktop' }),
     /gateway.*7\.1\.9/i,
     'every release entrypoint must reject a stale source component'
+  );
+
+  for (const relativePath of ['gateway/package.json']) {
+    const absolutePath = path.join(fixtureRoot, relativePath);
+    fs.writeFileSync(absolutePath, JSON.stringify({ version: '7.2.0' }), 'utf8');
+  }
+  const hostAcceptanceManifest = matrix.createReleaseManifest({ version: '7.2.0', commit: 'abc123' });
+  assert.throws(
+    () => matrix.assertHostRuntimeAccepted({ rootDir: fixtureRoot, manifest: hostAcceptanceManifest }),
+    /local_host.*verified/i,
+    'OSS publication must fail closed before an exact-version installed host acceptance exists'
+  );
+  matrix.recordReceipt(hostAcceptanceManifest, {
+    target: 'local_host', version: '7.2.0', evidence: 'installed isolated host acceptance',
+  });
+  assert.strictEqual(
+    matrix.assertHostRuntimeAccepted({ rootDir: fixtureRoot, manifest: hostAcceptanceManifest }).version,
+    '7.2.0',
+    'an exact-version installed host acceptance should permit publication checks'
   );
 } finally {
   fs.rmSync(fixtureRoot, { recursive: true, force: true });

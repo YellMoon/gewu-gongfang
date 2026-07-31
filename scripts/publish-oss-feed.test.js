@@ -59,6 +59,10 @@ assert.ok(
   'OSS publishing should distinguish the artifact release target from whether a runtime acceptance receipt is allowed'
 );
 assert.ok(
+  publishScript.includes('assertHostRuntimeAccepted'),
+  'OSS publishing must require an exact-version installed primary-host acceptance before updating either desktop feed'
+);
+assert.ok(
   hostPublishScript.includes("process.env.RELEASE_MATRIX_TARGET = process.env.RELEASE_MATRIX_TARGET || 'local_host'") &&
   hostPublishScript.includes("process.env.RELEASE_MATRIX_RECORD = process.env.RELEASE_MATRIX_RECORD || '0'"),
   'primary-host feed publication must assert the host artifact target without falsely recording the local runtime as accepted'

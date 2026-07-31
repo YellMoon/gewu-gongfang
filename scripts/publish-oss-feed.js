@@ -225,11 +225,25 @@ async function runUploadPlan(items) {
 }
 
 async function publishRelease() {
-  const release = dryRun ? null : releaseMatrix.assertReleaseTarget({
-    rootDir: path.resolve(__dirname, '..'),
-    target: releaseTarget,
-    requestedVersion: packageJson.version,
-  });
+  const releaseRoot = path.resolve(__dirname, '..');
+  const release = dryRun
+    ? null
+    : recordReleaseReceipt
+      ? releaseMatrix.assertReleaseTarget({
+        rootDir: releaseRoot,
+        target: releaseTarget,
+        requestedVersion: packageJson.version,
+      })
+      : releaseMatrix.assertHostRuntimeAccepted({
+        rootDir: releaseRoot,
+        requestedVersion: packageJson.version,
+      });
+  if (!dryRun && recordReleaseReceipt) {
+    releaseMatrix.assertHostRuntimeAccepted({
+      rootDir: releaseRoot,
+      requestedVersion: packageJson.version,
+    });
+  }
   const installer = findInstaller();
   if (!installer) {
     throw new Error(`Windows installer for version ${packageJson.version} was not found in ${distDir}`);
