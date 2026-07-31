@@ -117,37 +117,22 @@ try {
     error => error?.code === 'PHONE_WECHAT_BINDING_CONFLICT',
   );
 
-  let bindingRequestId = '';
-  assert.throws(
-    () => identity.loginWithClaimedWechat({
-      openid: 'wx-manual-existing',
-      unionid: 'union-manual-existing',
-      phone: '13800138005',
-    }),
-    error => {
-      bindingRequestId = error?.details?.requestId || '';
-      return error?.code === 'WECHAT_BINDING_REVIEW_REQUIRED'
-        && error?.details?.status === 'submitted'
-        && Boolean(bindingRequestId);
-    },
-  );
-  assert.throws(
-    () => identity.loginWithClaimedWechat({
-      openid: 'wx-manual-existing',
-      phone: '13800138005',
-    }),
-    error => error?.code === 'WECHAT_BINDING_REVIEW_REQUIRED'
-      && error?.details?.requestId === bindingRequestId,
-    'repeated claimed login should reuse the active binding request',
-  );
+  const manualExisting = identity.loginWithClaimedWechat({
+    openid: 'wx-manual-existing',
+    unionid: 'union-manual-existing',
+    phone: '13800138005',
+  });
+  assert.strictEqual(manualExisting.user.id, 'manual-existing');
+  assert.strictEqual(manualExisting.user.role, 'admin');
+  assert.strictEqual(manualExisting.user.account_state, 'formal');
   assert.strictEqual(
     db.prepare('SELECT COUNT(*) count FROM miniapp_wechat_binding_requests WHERE target_user_id=?').get('manual-existing').count,
-    1,
+    0,
   );
-  assert.strictEqual(
-    db.prepare("SELECT wechat_openid FROM users WHERE id='manual-existing'").get().wechat_openid,
-    null,
-    'manual phone entry must not bind an existing account before review',
+  assert.deepStrictEqual(
+    db.prepare("SELECT wechat_openid, wechat_unionid FROM users WHERE id='manual-existing'").get(),
+    { wechat_openid: 'wx-manual-existing', wechat_unionid: 'union-manual-existing' },
+    'manual phone entry must bind the matching existing account directly',
   );
   assert.throws(
     () => identity.loginWithClaimedWechat({

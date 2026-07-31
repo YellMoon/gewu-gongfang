@@ -1,7 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { normalizePhone, roleForUser } = require('./authorizationPolicy');
-const { createMiniappWechatBindingService } = require('./miniappWechatBindingService');
 
 const TOKEN_ISSUER = 'gewu-miniapp-auth';
 const FORMAL_AUDIENCE = 'gewu-api';
@@ -92,7 +91,6 @@ function createMiniappIdentityService({
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'visitor', 'visitor', 1, 1, 'approved', 1, 0, ?, ?)`);
   const insertAuthorityAccount = db.prepare(`INSERT INTO authority_accounts
     (user_id,authority_id,status,created_at,updated_at) VALUES (?,?,'active',?,?)`);
-  const bindingService = createMiniappWechatBindingService({ db, now, uuid });
 
   function timestamp() {
     return asIso(now());
@@ -388,35 +386,6 @@ function createMiniappIdentityService({
     return loginOutcomeForUser(phoneOwner, input);
   });
 
-  const performClaimedLogin = db.transaction(input => {
-    let openidOwner = findByOpenid.get(input.openid);
-    const phoneOwner = findByPhone.get(input.phone);
-    if (openidOwner) {
-      if (!phoneOwner || phoneOwner.id !== openidOwner.id) {
-        return conflictOutcome('OPENID_PHONE_BINDING_CONFLICT', openidOwner, input);
-      }
-      if (isDisabled(openidOwner)) {
-        return conflictOutcome('MINIAPP_LOGIN_DISABLED', openidOwner, input);
-      }
-      if (input.unionid && !openidOwner.wechat_unionid) {
-        db.prepare('UPDATE users SET wechat_unionid=?, updated_at=? WHERE id=? AND wechat_unionid IS NULL')
-          .run(input.unionid, timestamp(), openidOwner.id);
-        openidOwner = findById.get(openidOwner.id);
-      }
-      return loginOutcomeForUser(openidOwner, input);
-    }
-    if (phoneOwner?.wechat_openid) {
-      return conflictOutcome('PHONE_WECHAT_BINDING_CONFLICT', phoneOwner, input);
-    }
-    if (phoneOwner && isDisabled(phoneOwner)) {
-      return conflictOutcome('MINIAPP_LOGIN_DISABLED', phoneOwner, input);
-    }
-    if (phoneOwner) {
-      return { bindingTarget: phoneOwner };
-    }
-    return loginOutcomeForUser(createVisitorUser(input), input);
-  });
-
   function normalizedLoginInput(input, phone, openid) {
     return {
       phone,
@@ -438,7 +407,7 @@ function createMiniappIdentityService({
     const normalizedInput = normalizedLoginInput(input, phone, openid);
     let outcome;
     try {
-      outcome = performClaimedLogin.immediate(normalizedInput);
+      outcome = performLogin.immediate(normalizedInput);
     } catch (error) {
       if (error?.code !== 'SQLITE_CONSTRAINT_UNIQUE') throw error;
       const phoneOwner = findByPhone.get(phone);
@@ -456,25 +425,6 @@ function createMiniappIdentityService({
       throw serviceError(code);
     }
     if (outcome.error) throw serviceError(outcome.error.code);
-    if (outcome.bindingTarget) {
-      const request = bindingService.requestBinding({
-        targetUserId: outcome.bindingTarget.id,
-        phone,
-        openid,
-        unionid: normalizedInput.unionid,
-      });
-      writeEvent({
-        user: outcome.bindingTarget,
-        phone,
-        resultCode: 'WECHAT_BINDING_REVIEW_REQUIRED',
-        miniappVersion: normalizedInput.miniappVersion,
-        platform: normalizedInput.platform,
-      });
-      throw serviceError('WECHAT_BINDING_REVIEW_REQUIRED', {
-        requestId: request.id,
-        status: request.status,
-      });
-    }
     return outcome.login;
   }
 
