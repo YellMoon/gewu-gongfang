@@ -221,6 +221,9 @@ function createDesktopIdentityService({
   );
   const findActiveGrants = db.prepare(`SELECT role FROM user_role_grants
     WHERE user_id=? AND status='active'`);
+  const findActivePrimaryHostEpoch = db.prepare(`SELECT id FROM primary_host_epochs
+    WHERE status='active' AND device_id=? AND user_id=? AND authorization_id=?
+    LIMIT 1`);
   const insertAudit = db.prepare(`INSERT INTO authorization_audit_log
     (id, actor_user_id, target_user_id, action, before_json, after_json, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)`);
@@ -509,6 +512,7 @@ function createDesktopIdentityService({
     const phoneReverifyDueAt = new Date(eventTime + PHONE_REVERIFY_MS).toISOString();
     const existingAuthorization = findAuthorizationByDevice.get(row.device_id);
     let authorizationId;
+    let primaryHostSelfRecovery = false;
     if (row.purpose === 'password_reset') {
       if (!existingAuthorization || existingAuthorization.status !== 'active') {
         throw serviceError('DESKTOP_PASSWORD_RESET_DEVICE_NOT_ACTIVE');
@@ -517,6 +521,10 @@ function createDesktopIdentityService({
         throw serviceError('DESKTOP_PASSWORD_RESET_IDENTITY_MISMATCH');
       }
       authorizationId = existingAuthorization.id;
+      primaryHostSelfRecovery = row.device_kind === 'primary-host'
+        && existingAuthorization.device_kind === 'primary-host'
+        && findActiveGrants.all(identityId).some(function (grant) { return grant.role === 'super_admin'; })
+        && Boolean(findActivePrimaryHostEpoch.get(row.device_id, identityId, existingAuthorization.id));
     } else {
       if (existingAuthorization) {
         if (existingAuthorization.user_id !== identityId) {
@@ -569,29 +577,53 @@ function createDesktopIdentityService({
           );
       }
     }
+    const nextStatus = primaryHostSelfRecovery
+      ? 'approved_pending_exchange'
+      : 'identity_verified_pending_approval';
     const updated = db.prepare(`UPDATE desktop_identity_challenges
-      SET status='identity_verified_pending_approval', claimed_user_id=?,
-          verified_login_event_id=?, authorization_id=?, phone_verified_at=?,
+      SET status=?, claimed_user_id=?, verified_login_event_id=?, authorization_id=?, phone_verified_at=?,
+          approved_at=CASE WHEN ?='approved_pending_exchange' THEN ? ELSE approved_at END,
           row_version=row_version+1, updated_at=?
       WHERE id=? AND status='pending_phone' AND row_version=?`)
       .run(
+        nextStatus,
         identityId,
         loginEventId,
         authorizationId,
         loginEvent.created_at,
+        nextStatus,
+        currentTime,
         currentTime,
         row.id,
         row.row_version
       );
     if (updated.changes !== 1) throw serviceError('DESKTOP_CHALLENGE_VERSION_STALE');
+    if (primaryHostSelfRecovery) {
+      const authorizationUpdate = db.prepare(`UPDATE desktop_device_authorizations
+        SET approved_by_user_id=?, approved_by_device_id=?, approved_at=?,
+            row_version=row_version+1, updated_at=?
+        WHERE id=? AND status='active' AND row_version=?`)
+        .run(
+          identityId,
+          row.device_id,
+          currentTime,
+          currentTime,
+          authorizationId,
+          existingAuthorization.row_version
+        );
+      if (authorizationUpdate.changes !== 1) throw serviceError('DESKTOP_AUTHORIZATION_VERSION_STALE');
+    }
     appendAudit({
+      actorUserId: primaryHostSelfRecovery ? identityId : null,
       targetUserId: identityId,
-      action: 'desktop_identity_phone_verified',
+      action: primaryHostSelfRecovery
+        ? 'desktop_primary_host_password_reset_phone_approved'
+        : 'desktop_identity_phone_verified',
       before: { challengeId: row.id, status: row.status, rowVersion: Number(row.row_version) },
       after: {
         challengeId: row.id,
         deviceId: row.device_id,
-        status: 'identity_verified_pending_approval',
+        status: nextStatus,
         rowVersion: Number(row.row_version) + 1,
       },
       at: currentTime,

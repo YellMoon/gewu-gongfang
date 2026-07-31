@@ -485,6 +485,34 @@ db.prepare(`INSERT INTO desktop_device_authorizations
     currentTime,
     currentTime
   );
+db.prepare(`INSERT INTO primary_host_operation_challenges
+  (id, operation, requested_by_user_id, requested_by_device_id, target_device_id,
+   status, expires_at, row_version, created_at, updated_at)
+  VALUES (?, 'bootstrap', ?, 'bootstrap-device', ?, 'consumed', ?, 1, ?, ?)`)
+  .run(
+    'primary-host-bootstrap-password-reset',
+    canonicalId,
+    'device-primary-host-password-reset',
+    '2026-08-16T00:04:02.000Z',
+    currentTime,
+    currentTime
+  );
+db.prepare(`INSERT INTO primary_host_epochs
+  (id, generation, device_id, user_id, authorization_id, status, activation_reason,
+   challenge_id, db_instance_digest, schema_version, store_id, db_authority_id,
+   host_credential_hash, credential_version, row_version, created_at, updated_at, activated_at)
+  VALUES (?, 1, ?, ?, ?, 'active', 'bootstrap', ?, 'test-db-digest', 1, 'test-store',
+   'test-authority', 'test-credential-hash', 1, 1, ?, ?, ?)`)
+  .run(
+    'primary-host-epoch-password-reset',
+    'device-primary-host-password-reset',
+    canonicalId,
+    'authorization-primary-host-password-reset',
+    'primary-host-bootstrap-password-reset',
+    currentTime,
+    currentTime,
+    currentTime
+  );
 const nextPrimaryHostResetCredential = generateDeviceCredential();
 const primaryHostResetStarted = service.startChallenge({
   deviceId: 'device-primary-host-password-reset',
@@ -497,7 +525,25 @@ const primaryHostResetStarted = service.startChallenge({
 assert.strictEqual(
   primaryHostResetStarted.status,
   'pending_phone',
-  'a primary host must be able to reset its local password after the same WeChat and peer approval checks'
+  'a primary host password reset must begin with a new manual phone verification'
+);
+currentTime = '2026-07-17T00:04:30.000Z';
+insertLoginEvent('login-primary-host-reset-owner', canonicalId, '13732250653', currentTime);
+const primaryHostResetConfirmed = service.confirmVerifiedIdentity({
+  challengeId: primaryHostResetStarted.id,
+  identity: { id: canonicalId },
+  loginEventId: 'login-primary-host-reset-owner',
+  expectedRowVersion: primaryHostResetStarted.rowVersion,
+});
+assert.strictEqual(
+  primaryHostResetConfirmed.status,
+  'approved_pending_exchange',
+  'the active primary host owner must not need a second desktop to approve a local password reset'
+);
+assert.strictEqual(
+  db.prepare('SELECT approved_by_user_id FROM desktop_device_authorizations WHERE id=?')
+    .get('authorization-primary-host-password-reset').approved_by_user_id,
+  canonicalId
 );
 const nextResetCredential = generateDeviceCredential();
 const resetStarted = service.startChallenge({
