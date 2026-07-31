@@ -14,6 +14,7 @@ const { createPrimaryHostCredentialStore } = require('./primaryHostCredentialSto
 const {
   readRuntimeConfig,
   writeRuntimeConfig,
+  writeManagedHostBootstrapRuntimeConfig,
   writeManagedHostRuntimeConfig,
   writeManagedClientRuntimeConfig,
   writeManagedDesktopIdentityMode,
@@ -122,6 +123,7 @@ async function main() {
     userDataPath: root,
     env,
     readRuntimeConfig,
+    writeManagedHostBootstrapRuntimeConfig,
     writeManagedHostRuntimeConfig,
     writeManagedClientRuntimeConfig,
     writeManagedDesktopIdentityMode,
@@ -148,7 +150,7 @@ async function main() {
   };
   const manager = createPrimaryHostRuntimeManager(dependencies);
   const initialized = manager.initialize();
-  assert.strictEqual(initialized.config.nodeRole, 'desktop-client');
+  assert.strictEqual(initialized.config.nodeRole, 'primary-host');
   assert.deepStrictEqual(initialized.credential, { state: 'empty', active: false });
   assert.ok(!env.GEWU_PRIMARY_HOST_CREDENTIAL);
 

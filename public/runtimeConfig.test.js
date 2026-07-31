@@ -8,6 +8,7 @@ const {
   readRuntimeConfig,
   ensureRuntimeConfig,
   writeRuntimeConfig,
+  writeManagedHostBootstrapRuntimeConfig,
   writeManagedHostRuntimeConfig,
   writeManagedClientRuntimeConfig,
   writeManagedDesktopIdentityMode,
@@ -81,6 +82,12 @@ assert.strictEqual(normalized.cloudBaseUrl, 'https://cloud.example.com');
 const ordinaryWrite = writeRuntimeConfig(configPath, normalized, { userDataPath: dir });
 assert.strictEqual(ordinaryWrite.nodeRole, 'desktop-client', 'ordinary settings must not self-promote a device to primary host');
 assert.strictEqual(ordinaryWrite.deviceId, 'desktop_test');
+const hostBootstrap = writeManagedHostBootstrapRuntimeConfig(configPath, {
+  deviceId: 'desktop_test',
+}, { userDataPath: dir, primaryHostCapable: true });
+assert.strictEqual(hostBootstrap.nodeRole, 'primary-host', 'a primary-host package must retain its host bootstrap role');
+assert.strictEqual(hostBootstrap.primaryHostEpochId, '');
+assert.strictEqual(hostBootstrap.primaryHostGeneration, null);
 writeManagedHostRuntimeConfig(configPath, {
   deviceId: 'desktop_test',
   epochId: 'primary-host-epoch-1',

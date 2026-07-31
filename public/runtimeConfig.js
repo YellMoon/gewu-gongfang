@@ -153,6 +153,26 @@ function runtimeConfigError(code) {
   return error;
 }
 
+function writeManagedHostBootstrapRuntimeConfig(configPath, identity = {}, options = {}) {
+  if (options.primaryHostCapable !== true) {
+    throw runtimeConfigError('PRIMARY_HOST_RUNTIME_HOST_FLAVOR_REQUIRED');
+  }
+  const current = readRuntimeConfig(configPath, options);
+  const deviceId = String(identity.deviceId || '').trim();
+  if (!deviceId || current.deviceId !== deviceId) {
+    throw runtimeConfigError('PRIMARY_HOST_RUNTIME_DEVICE_MISMATCH');
+  }
+  if (current.primaryHostEpochId || current.primaryHostGeneration) {
+    throw runtimeConfigError('PRIMARY_HOST_RUNTIME_BOOTSTRAP_CONFLICT');
+  }
+  return persistRuntimeConfig(configPath, normalizeRuntimeConfig({
+    ...current,
+    nodeRole: 'primary-host',
+    primaryHostEpochId: '',
+    primaryHostGeneration: null,
+  }, options));
+}
+
 function writeManagedHostRuntimeConfig(configPath, identity = {}, options = {}) {
   const current = fs.existsSync(configPath)
     ? readRuntimeConfig(configPath, options)
@@ -237,6 +257,7 @@ module.exports = {
   readRuntimeConfig,
   ensureRuntimeConfig,
   writeRuntimeConfig,
+  writeManagedHostBootstrapRuntimeConfig,
   writeManagedHostRuntimeConfig,
   writeManagedClientRuntimeConfig,
   writeManagedDesktopIdentityMode,

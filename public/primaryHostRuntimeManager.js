@@ -25,6 +25,7 @@ function createPrimaryHostRuntimeManager({
   userDataPath,
   env = process.env,
   readRuntimeConfig,
+  writeManagedHostBootstrapRuntimeConfig,
   writeManagedHostRuntimeConfig,
   writeManagedClientRuntimeConfig,
   writeManagedDesktopIdentityMode,
@@ -38,7 +39,7 @@ function createPrimaryHostRuntimeManager({
   randomBytes = crypto.randomBytes,
 }) {
   if (!credentialStore || !configPath || !readRuntimeConfig
-    || !writeManagedHostRuntimeConfig || !writeManagedClientRuntimeConfig
+    || !writeManagedHostBootstrapRuntimeConfig || !writeManagedHostRuntimeConfig || !writeManagedClientRuntimeConfig
     || !writeManagedDesktopIdentityMode
     || !applyRuntimeConfigToEnv) {
     throw runtimeError('PRIMARY_HOST_RUNTIME_MANAGER_CONFIG_REQUIRED');
@@ -81,9 +82,17 @@ function createPrimaryHostRuntimeManager({
       if (config.primaryHostEpochId || config.primaryHostGeneration) {
         return failClosed(config, 'PRIMARY_HOST_CREDENTIAL_MISSING');
       }
-      applyRuntimeConfigToEnv(config, env);
+      let bootstrapConfig;
+      try {
+        bootstrapConfig = writeManagedHostBootstrapRuntimeConfig(configPath, {
+          deviceId: config.deviceId,
+        }, configOptions);
+      } catch (error) {
+        return failClosed(config, error.code || 'PRIMARY_HOST_RUNTIME_BOOTSTRAP_FAILED', error);
+      }
+      applyRuntimeConfigToEnv(bootstrapConfig, env);
       delete env.GEWU_PRIMARY_HOST_CREDENTIAL;
-      lastState = Object.freeze({ config, credential: credentialStore.status() });
+      lastState = Object.freeze({ config: bootstrapConfig, credential: credentialStore.status() });
       return lastState;
     }
     if (credential.state === 'staged') {
