@@ -1,8 +1,8 @@
 'use strict';
 
 const assert = require('assert');
-
 const verifier = require('./verify-packaged-electron-native-abi');
+const packageJson = require('../package.json');
 
 assert.throws(
   () => verifier.resolvePackagedPaths({ appRoot: '', executable: '' }),
@@ -21,5 +21,14 @@ assert.strictEqual(
   true,
   'the verifier must distinguish the child that runs under the packaged Electron runtime'
 );
+
+for (const scriptName of ['dist', 'pack', 'dist:win', 'dist:win:host']) {
+  const command = packageJson.scripts[scriptName];
+  assert.match(
+    command,
+    /PACKAGED_APP_ROOT=[^&]*\\win-unpacked\\resources\\app/i,
+    `${scriptName} must pass the packaged resources/app directory to the ABI verifier`
+  );
+}
 
 console.log('packaged Electron native ABI verifier checks passed');
