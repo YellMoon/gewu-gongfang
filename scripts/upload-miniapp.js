@@ -81,10 +81,44 @@ function buildCiProjectOptions(options = {}) {
   };
 }
 
+function resolveCiUploadThreads(options = {}) {
+  const env = options.env || process.env;
+  const rawThreads = options.threads !== undefined && options.threads !== ''
+    ? options.threads
+    : env.MINIAPP_UPLOAD_THREADS;
+  const threads = rawThreads === undefined || rawThreads === '' ? 1 : Number(rawThreads);
+  if (!Number.isInteger(threads) || threads < 1 || threads > 8) {
+    throw new Error('miniapp upload threads must be an integer between 1 and 8');
+  }
+  return threads;
+}
+
+function resolveCiProxyUrl(options = {}) {
+  const env = options.env || process.env;
+  const proxyUrl = options.proxyUrl || env.MINIAPP_UPLOAD_PROXY_URL || '';
+  if (!proxyUrl) return '';
+
+  let parsedProxyUrl;
+  try {
+    parsedProxyUrl = new URL(proxyUrl);
+  } catch {
+    throw new Error('miniapp upload proxy URL must use http: or https: and include a hostname');
+  }
+  if (!['http:', 'https:'].includes(parsedProxyUrl.protocol) || !parsedProxyUrl.hostname) {
+    throw new Error('miniapp upload proxy URL must use http: or https: and include a hostname');
+  }
+  return proxyUrl;
+}
+
 async function uploadWithMiniprogramCi(options = {}) {
+  const proxyUrl = resolveCiProxyUrl(options);
+  const threads = resolveCiUploadThreads(options);
   const rootDir = options.rootDir || path.resolve(__dirname, '..');
   const ciPath = path.join(rootDir, 'miniapp', 'node_modules', 'miniprogram-ci');
-  const ci = require(ciPath);
+  const ci = options.ci || require(ciPath);
+  if (proxyUrl) {
+    ci.proxy(proxyUrl);
+  }
   const project = new ci.Project(buildCiProjectOptions(options));
   return ci.upload({
     project,
@@ -94,6 +128,7 @@ async function uploadWithMiniprogramCi(options = {}) {
       useProjectConfig: true,
     },
     robot: Number(options.robot || process.env.WECHAT_MINIAPP_ROBOT || 1),
+    threads,
     onProgressUpdate: options.onProgressUpdate || ((event) => {
       if (event && typeof event === 'object') {
         const status = event.message || event.status || event.percent;
@@ -160,6 +195,8 @@ async function main() {
   const desc = parseOption(argv, 'desc') || parseOption(argv, 'description') || `格物工坊小程序发布 ${new Date().toISOString().slice(0, 10)}`;
   const infoOutput = parseOption(argv, 'info-output') || path.join(os.tmpdir(), 'gewu-miniapp-upload-info.json');
   const uploadMode = parseOption(argv, 'upload-mode') || process.env.MINIAPP_UPLOAD_MODE || 'auto';
+  const proxyUrl = parseOption(argv, 'proxy');
+  const threads = parseOption(argv, 'threads');
   const appid = readMiniappAppid({ rootDir });
   const privateKeyPath = parseOption(argv, 'private-key') || resolveMiniappPrivateKeyPath({ rootDir, appid });
 
@@ -183,6 +220,8 @@ async function main() {
       version,
       desc,
       robot: parseOption(argv, 'robot'),
+      proxyUrl,
+      threads,
     });
     releaseMatrix.recordReceipt(release.manifest, {
       target: 'miniapp',

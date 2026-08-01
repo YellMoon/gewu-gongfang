@@ -16,6 +16,7 @@
 - Create `scripts/miniapp_fixed_egress.test.py`: isolated proxy/lifecycle contract tests using fake SSH transports and local sockets.
 - Modify `scripts/upload-miniapp.js`: explicit CI proxy, one compiler thread, injectable CI module for behavior tests.
 - Modify `scripts/upload-miniapp.test.js`: asynchronous behavior tests that observe `ci.proxy` and the real `ci.upload` options.
+- Modify `miniapp/package.json`, `miniapp/package-lock.json`: pin `miniprogram-ci` exactly to `2.1.31`.
 - Modify `package.json`: make `miniapp:upload` use the fixed-egress orchestrator and include its test in the backend suite.
 - Delete `scripts/upload_miniapp_from_ecs.py`: remove the production-ECS compiler implementation.
 - Delete `scripts/upload_miniapp_from_ecs.test.py`: remove tests that asserted the unsafe remote compiler command.
@@ -74,7 +75,8 @@ assert acquire_upload_lock(lock_path).pid == os.getpid()
 ```
 
 Also require egress mismatch, unhealthy endpoint, oversize header, concurrent
-lock, and cleanup-after-child-failure to produce stable error codes.
+lock, CONNECT-only enforcement, destination allowlist, header-tail forwarding,
+bounded concurrency, and cleanup-after-child-failure to produce stable error codes.
 
 - [ ] **Step 2: Run RED**
 
@@ -97,23 +99,28 @@ one bounded HTTP header, validates CONNECT authority, opens
 - [ ] **Step 2: Implement fail-closed preflight**
 
 Load the existing protected deployment environment through `scripts/deploy.py`.
-Verify the release version, production health URLs, local key existence,
-expected fixed-egress IP, and an exclusive temp lock before invoking CI.
+Acquire an OS-level file lock before building. Verify the release version,
+production health URLs without inherited proxies, local key existence, the
+explicit valid IPv4 `WECHAT_MINIAPP_FIXED_EGRESS_IP`, exact local CI package
+version, and SSH transport state before invoking CI.
 
 - [ ] **Step 3: Implement synchronous local upload and unconditional cleanup**
 
-Start the proxy, verify egress through it, then execute:
+While holding the lock, run the local Taro production build/release check.
+Start the proxy, verify egress and a TLS handshake to
+`servicewechat.com:443` through it, then execute:
 
 ```python
 subprocess.run([
     node_executable(), "scripts/upload-miniapp.js",
     "--upload-mode=miniprogram-ci",
     f"--proxy={proxy.url}",
-    "--threads=1",
+    "--threads=1", "--defer-receipt",
 ], cwd=PROJECT_ROOT, env=child_env, check=True, timeout=UPLOAD_TIMEOUT)
 ```
 
-Always close the proxy, SSH connection, and lock in `finally`; do not create a
+Always terminate/wait only the exact child PID, close tracked proxy channels,
+proxy server, SSH connection, and lock in `finally`; do not create a
 remote file, detached process, package install, or compiler process.
 
 - [ ] **Step 4: Run GREEN**
@@ -143,8 +150,12 @@ command still calls `upload-miniapp.js` directly.
 
 - [ ] **Step 3: Delete and rewire**
 
-Delete the two retired files. Change `miniapp:upload` to run the production
-release check followed by `python scripts/miniapp_fixed_egress.py`. Add the
+Before deletion, run a bounded remote audit of exact
+`/root/.cache/gewu-miniapp-ci/release-*` roots. Stop an old process only after
+its pidfile and command line match that exact root, then remove each validated
+root/private key individually. Delete the two retired source files. Change
+`miniapp:upload` to invoke only `python scripts/miniapp_fixed_egress.py`, which
+owns the lock before the release check. Add the
 Python test to the relevant release/backend verification command.
 
 - [ ] **Step 4: Run GREEN and source audit**
@@ -180,7 +191,8 @@ Expected: all checks pass and `miniapp/dist/app.json` exists.
 
 - [ ] **Step 2: Run a fixed-egress probe only**
 
-Run the orchestrator in probe mode. Expected: the reported egress equals the
+Run the orchestrator in `--probe-only` mode; it must not build, upload, or write
+a receipt. Expected: the reported egress equals the
 configured WeChat-whitelisted ECS address; production health remains 7.2.10;
 proxy/SSH/lock cleanup is zero-residue.
 
@@ -205,7 +217,9 @@ fixed-egress orchestrator. Expected: zero before start.
 Run: `npm run miniapp:upload`
 
 Expected: local Taro build succeeds, fixed egress matches, WeChat returns
-`success:true` for 7.2.10, and the unified miniapp receipt becomes verified.
+`success:true` for 7.2.10, post-upload Backend/Gateway health passes, and only
+then the unified miniapp receipt becomes verified. Automatic retry after a
+possibly-successful WeChat response is forbidden.
 
 - [ ] **Step 3: Verify production and cleanup**
 

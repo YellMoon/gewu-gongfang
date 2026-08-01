@@ -62,18 +62,27 @@ system proxy state or `NO_PROXY` behavior.
 `scripts/miniapp_fixed_egress.py` owns the entire lifecycle:
 
 - acquire an exclusive upload lock;
+- while holding that lock, run the local Taro production build and release
+  check so two uploads cannot race through `miniapp/dist`;
 - confirm that no retired ECS upload process is being started locally;
 - verify the configured production health endpoints before upload;
 - open the existing verified Paramiko SSH connection;
 - start a loopback-only HTTP proxy backed by SSH `direct-tcpip` channels;
-- query a public IP-check endpoint through that proxy and compare it with the
-  configured fixed egress address;
+- query a TLS-verified public IP-check endpoint through that proxy and compare
+  it with the explicit `WECHAT_MINIAPP_FIXED_EGRESS_IP` whitelist value;
+- prove a TLS connection to `servicewechat.com:443` through the same CONNECT
+  path before starting the compiler;
 - invoke the existing local `scripts/upload-miniapp.js` synchronously;
-- verify the release receipt and production health after upload;
+- defer release-matrix receipt recording until the WeChat upload has succeeded
+  and production health has passed again;
 - stop the proxy, close the SSH connection, and release the lock in `finally`.
 
-The proxy accepts local connections only, limits request-header size and
-connection lifetime, and is never exposed through the ECS security group.
+The proxy accepts local connections only, allows CONNECT only, limits request
+headers to 16 KiB, validates ASCII authority/port syntax, rejects userinfo,
+CRLF and unapproved destinations, limits concurrent connections, and tracks
+every client/channel for deterministic shutdown. It is never exposed through
+the ECS security group. Its allowlist contains only the WeChat endpoint and
+the configured TLS IP-check endpoint on port 443.
 
 ### Local WeChat uploader
 
@@ -82,14 +91,18 @@ connection lifetime, and is never exposed through the ECS security group.
 
 - explicit proxy injection through `ci.proxy`;
 - one local compiler thread by default;
+- exact `miniprogram-ci` version `2.1.31` in package and lock files plus a
+  runtime version assertion;
+- a deferred-receipt mode used only by the fixed-egress orchestrator;
 - validation that fixed-egress orchestration supplies a loopback HTTP proxy;
 - no remote path, private-key copy, dependency installation, or detached
   process behavior.
 
 ### Release command
 
-`npm run miniapp:upload` performs the local production build/release check and
-then invokes the fixed-egress orchestrator. The former remote compiler script
+`npm run miniapp:upload` enters the fixed-egress orchestrator immediately. The
+orchestrator acquires its OS-level lock before performing the local production
+build/release check, proxy probe, upload and receipt finalization. The former remote compiler script
 and its remote run/status/cleanup mechanism are removed so it cannot be used
 accidentally.
 
@@ -102,7 +115,10 @@ accidentally.
 - A fixed-egress mismatch blocks upload before `miniprogram-ci` starts.
 - A concurrent upload is rejected by the exclusive lock.
 - Upload failure does not record a release receipt.
-- Proxy, SSH transport, child process, and lock cleanup run for success,
+- WeChat upload success followed by failed post-upload production health is
+  reported as an indeterminate/blocked release and is not automatically
+  uploaded again; its receipt remains deferred for operator-safe reconciliation.
+- Proxy, active SSH channels, SSH transport, exact child process, and lock cleanup run for success,
   failure, interruption, and timeout paths.
 - ECS receives network forwarding traffic only; no npm, Node compiler, tar
   extraction, temporary upload key, or detached CI process runs there.
@@ -123,6 +139,11 @@ accidentally.
 7. Backend and Gateway public health must remain available at the expected
    version before, during, and after the upload, and no upload/proxy process or
    lock may remain afterward.
+8. Before deleting the retired uploader, a bounded ECS audit checks only
+   `/root/.cache/gewu-miniapp-ci/release-*`; an old PID is stopped only after
+   its pidfile and command line match that exact release root, then each
+   validated release directory/private key is removed individually. No broad
+   process kill or cache-root deletion is allowed.
 
 ## Rollback
 
