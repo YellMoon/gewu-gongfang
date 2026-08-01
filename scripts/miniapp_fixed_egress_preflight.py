@@ -29,7 +29,7 @@ from miniapp_fixed_egress_proxy import MAX_HEADER_BYTES
 HEALTH_TIMEOUT = 5.0
 PROBE_TIMEOUT = 8.0
 EXPECTED_MINIPROGRAM_CI_VERSION = "2.1.31"
-DEFAULT_ECHO_URL = "https://api.ipify.org?format=json"
+DEFAULT_ECHO_URL = "https://checkip.amazonaws.com/"
 DEFAULT_HEALTH_URLS = (
     "https://physicsedu.xyz/scheduling/api/health",
     "https://physicsedu.xyz/api/health",

@@ -217,7 +217,29 @@ try {
   assert.strictEqual(formalParent.user.account_state, 'formal');
   assert.strictEqual(formalParent.user.role, 'student');
   assert.strictEqual(formalParent.user.student_id, 'host-student-1');
-  assert.strictEqual(formalParent.user.identity_kind, 'parent');
+  const formalParentTokenUser = identity.readIdentityForToken(formalParent.claims);
+  const formalParentLoginEvent = db.prepare(`SELECT identity_kind FROM miniapp_login_events
+    WHERE id=?`).get(formalParent.loginEventId);
+  assert.deepStrictEqual(
+    {
+      responseIdentityKind: formalParent.user.identity_kind,
+      claimIdentityKind: formalParent.claims.identity_kind,
+      tokenUserIdentityKind: formalParentTokenUser.identity_kind,
+      loginEventIdentityKind: formalParentLoginEvent.identity_kind,
+    },
+    {
+      responseIdentityKind: 'parent',
+      claimIdentityKind: 'parent',
+      tokenUserIdentityKind: 'parent',
+      loginEventIdentityKind: 'parent',
+    },
+    'parent login response, JWT, token projection and audit event must retain the parent identity kind',
+  );
+  assert.strictEqual(
+    identity.readIdentityForToken({ ...formalParent.claims, identity_kind: 'student' }).identity_kind,
+    'parent',
+    'already-issued parent JWTs with the legacy student identity claim remain valid without changing student scope',
+  );
   assert.strictEqual(formalParent.user.is_member, true);
   assert.strictEqual(formalParent.user.membership_status, 'active');
   const formalStudent = identity.loginWithVerifiedWechat({ openid: 'wx-student', phone: '13800138500' });

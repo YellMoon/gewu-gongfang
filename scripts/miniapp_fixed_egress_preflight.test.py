@@ -59,6 +59,13 @@ class ConfigurationHealthAndProbeTests(unittest.TestCase):
                 with self.assertRaises(FixedEgressError):
                     target.config_from_env(environment, expected_version="7.2.10")
 
+    def test_default_echo_url_uses_reachable_aws_checkip_endpoint(self):
+        environment = self.base_env()
+        environment.pop("WECHAT_MINIAPP_FIXED_EGRESS_ECHO_URL")
+        config = target.config_from_env(environment, expected_version="7.2.10")
+        self.assertEqual(config.echo_url, "https://checkip.amazonaws.com/")
+        self.assertIn(("checkip.amazonaws.com", 443), config.allowlist)
+
     def test_health_requires_ok_true_and_exact_version(self):
         target.check_health(
             "https://health.example/check",

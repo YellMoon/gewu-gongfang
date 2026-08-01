@@ -118,6 +118,10 @@ accidentally.
 - WeChat upload success followed by failed post-upload production health is
   reported as an indeterminate/blocked release and is not automatically
   uploaded again; its receipt remains deferred for operator-safe reconciliation.
+- Deferred receipt markers bind the exact release version, manifest commit,
+  miniapp AppID and upload mode. `--reconcile-receipt` reacquires the same lock,
+  validates that context, rechecks both production health endpoints, performs no
+  build/upload/SSH operation, and only then finalizes the receipt.
 - Proxy, active SSH channels, SSH transport, exact child process, and lock cleanup run for success,
   failure, interruption, and timeout paths.
 - ECS receives network forwarding traffic only; no npm, Node compiler, tar
@@ -135,7 +139,7 @@ accidentally.
 4. `npm run miniapp:release-check` builds the production miniapp locally.
 5. A controlled proxy probe proves that the public address observed through
    the tunnel equals the configured WeChat-whitelisted ECS egress.
-6. One real 7.2.10 development upload must return a WeChat success receipt.
+6. One real 7.2.11 development upload must return a WeChat success receipt.
 7. Backend and Gateway public health must remain available at the expected
    version before, during, and after the upload, and no upload/proxy process or
    lock may remain afterward.

@@ -309,6 +309,40 @@ def _cleanup_lifecycle(upload_lock, ssh, proxy) -> None:
         raise FixedEgressError(MINIAPP_FIXED_EGRESS_CLEANUP_FAILED)
 
 
+def run_receipt_reconciliation(
+    config: FixedEgressConfig,
+    *,
+    env: Mapping[str, str],
+    lock_path: Path = DEFAULT_LOCK_PATH,
+    lock_factory=acquire_upload_lock,
+    health_checker=check_health,
+    receipt_validator: Optional[Callable[[], None]] = None,
+    receipt_finalizer: Optional[Callable[[], None]] = None,
+) -> None:
+    """Validate and finalize one deferred receipt without any upload network path."""
+    if receipt_validator is None or receipt_finalizer is None:
+        raise TypeError("receipt_validator and receipt_finalizer are required")
+    del env
+    upload_lock = None
+    primary_error = None
+    try:
+        upload_lock = lock_factory(lock_path)
+        receipt_validator()
+        for health_url in config.health_urls:
+            health_checker(health_url, config.expected_version)
+        receipt_finalizer()
+    except BaseException as error:
+        primary_error = error
+        raise
+    finally:
+        try:
+            _cleanup_lifecycle(upload_lock, None, None)
+        except FixedEgressError:
+            if primary_error is None:
+                raise
+            raise _with_cleanup_failure(primary_error) from primary_error
+
+
 def run_lifecycle(
     config: FixedEgressConfig,
     *,

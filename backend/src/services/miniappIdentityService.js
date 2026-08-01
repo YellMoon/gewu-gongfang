@@ -201,7 +201,9 @@ function createMiniappIdentityService({
   function identityKind(user, accountState) {
     if (accountState === 'visitor') return 'visitor';
     if (accountState === 'unrecognized') return 'unrecognized';
-    return formalRole(user) || user.identity_kind || 'unrecognized';
+    const role = formalRole(user);
+    if (role === 'student' && String(user?.identity_kind || '').trim() === 'parent') return 'parent';
+    return role || user.identity_kind || 'unrecognized';
   }
 
   function presentUser(user, accountState) {
@@ -502,14 +504,16 @@ function createMiniappIdentityService({
     if (claims.token_use === FORMAL_TOKEN_USE) {
       if (claims.aud !== FORMAL_AUDIENCE || !isFormal(user)) throw serviceError('FORMAL_IDENTITY_NOT_ELIGIBLE');
       const role = formalRole(user);
-      if (claims.role !== role || claims.identity_kind !== role) {
+      const kind = identityKind(user, 'formal');
+      const legacyParentClaim = role === 'student' && kind === 'parent' && claims.identity_kind === 'student';
+      if (claims.role !== role || (claims.identity_kind !== kind && !legacyParentClaim)) {
         throw serviceError('FORMAL_IDENTITY_CLAIMS_INVALID');
       }
       return {
         ...user,
         role,
         user_type: role,
-        identity_kind: role,
+        identity_kind: kind,
         student_id: role === 'student' ? formalSubjectId(user, role) : null,
         teacher_id: role === 'teacher' ? formalSubjectId(user, role) : null,
       };

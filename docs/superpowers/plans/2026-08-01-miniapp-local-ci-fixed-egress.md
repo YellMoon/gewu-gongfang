@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Run all miniapp compilation locally while using the existing ECS only as a temporary authenticated fixed-IP network exit, then complete a safe 7.2.10 development upload without degrading production services.
+**Goal:** Run all miniapp compilation locally while using the existing ECS only as a temporary authenticated fixed-IP network exit, then complete a safe 7.2.11 development upload without degrading production services.
 
 **Architecture:** A loopback-only Python HTTP CONNECT proxy opens destination channels through the existing Paramiko SSH transport. `miniprogram-ci` receives that proxy explicitly, compiles with one local thread, keeps its key local, and records the normal unified-release receipt only on success. Health, egress, concurrency, timeout, and cleanup gates fail closed.
 
@@ -12,8 +12,8 @@
 
 ## File map
 
-- Create `scripts/miniapp_fixed_egress.py`: upload lifecycle, loopback proxy, SSH channel forwarding, egress/health checks, lock and cleanup.
-- Create `scripts/miniapp_fixed_egress.test.py`: isolated proxy/lifecycle contract tests using fake SSH transports and local sockets.
+- Create `scripts/miniapp_fixed_egress.py`, `scripts/miniapp_fixed_egress_common.py`, `scripts/miniapp_fixed_egress_proxy.py`, `scripts/miniapp_fixed_egress_preflight.py`, and `scripts/miniapp_fixed_egress_runtime.py`: protected environment loading, upload/reconciliation lifecycle, loopback proxy, SSH channel forwarding, egress/health checks, lock and cleanup.
+- Create the `scripts/miniapp_fixed_egress*.test.py` suite: isolated proxy/lifecycle/CLI/reconciliation contract tests using fake SSH transports, local sockets, and real local Node child processes.
 - Modify `scripts/upload-miniapp.js`: explicit CI proxy, one compiler thread, injectable CI module for behavior tests.
 - Modify `scripts/upload-miniapp.test.js`: asynchronous behavior tests that observe `ci.proxy` and the real `ci.upload` options.
 - Modify `miniapp/package.json`, `miniapp/package-lock.json`: pin `miniprogram-ci` exactly to `2.1.31`.
@@ -193,7 +193,7 @@ Expected: all checks pass and `miniapp/dist/app.json` exists.
 
 Run the orchestrator in `--probe-only` mode; it must not build, upload, or write
 a receipt. Expected: the reported egress equals the
-configured WeChat-whitelisted ECS address; production health remains 7.2.10;
+configured WeChat-whitelisted ECS address; production health remains 7.2.11;
 proxy/SSH/lock cleanup is zero-residue.
 
 - [ ] **Step 3: Record evidence**
@@ -217,7 +217,7 @@ fixed-egress orchestrator. Expected: zero before start.
 Run: `npm run miniapp:upload`
 
 Expected: local Taro build succeeds, fixed egress matches, WeChat returns
-`success:true` for 7.2.10, post-upload Backend/Gateway health passes, and only
+`success:true` for 7.2.11, post-upload Backend/Gateway health passes, and only
 then the unified miniapp receipt becomes verified. Automatic retry after a
 possibly-successful WeChat response is forbidden.
 
@@ -256,5 +256,5 @@ unpacked packages. Commit and push to `gewu/master` after verification.
 
 - [ ] **Step 4: Final matrix statement**
 
-Report desktop, host, Backend, Gateway, OSS, and miniapp 7.2.10 evidence. A
+Report desktop, host, Backend, Gateway, OSS, and miniapp 7.2.11 evidence. A
 development upload is not a WeChat review submission or production rollout.

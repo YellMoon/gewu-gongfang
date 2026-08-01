@@ -95,21 +95,18 @@ delete require.cache[require.resolve('../app')];
 const { createApp } = require('../app');
 const { createDesktopSessionService } = require('../services/desktopSessionService');
 const desktopSessions = createDesktopSessionService({ db: service.db, jwtSecret: process.env.JWT_SECRET });
+const { createMiniappIdentityService } = require('../services/miniappIdentityService');
+const miniappIdentity = createMiniappIdentityService({
+  db: service.db,
+  jwtSecret: process.env.JWT_SECRET,
+});
 const questionBank = require('../services/questionBankService');
 const { commitQuestionToBoundStore, updateCommittedQuestion, createTrustedInternalStorageUpdateContext, deleteCommittedQuestion } = require('../services/questionBankStorageService');
 
 function token(id, deviceId, tokenUse = 'desktop-session') {
   if (tokenUse === 'miniapp-session') {
-    const user = service.db.prepare('SELECT auth_version, role FROM users WHERE id=?').get(id);
-    return jwt.sign({
-      sub: id,
-      sid: `miniapp-test-${id}`,
-      token_use: tokenUse,
-      auth_version: Number(user.auth_version || 1),
-      role: user.role,
-      iss: 'gewu-miniapp-auth',
-      aud: 'gewu-api',
-    }, process.env.JWT_SECRET, { algorithm: 'HS256' });
+    const user = service.db.prepare('SELECT * FROM users WHERE id=?').get(id);
+    return miniappIdentity.issueFormalToken(user, `miniapp-test-${id}`).token;
   }
   if (id === 'pending-user') {
     return jwt.sign({ id, deviceId, token_use: tokenUse }, process.env.JWT_SECRET,

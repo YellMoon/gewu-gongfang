@@ -142,6 +142,24 @@ class LifecycleCleanupTests(unittest.TestCase):
             ],
         )
 
+    def test_probe_only_never_finalizes_a_receipt(self):
+        events = []
+        ssh = RecordingSsh(events)
+        proxy = TwoPhaseProxy(events)
+        target.run_lifecycle(
+            self.config(),
+            probe_only=True,
+            env={},
+            lock_path=Path("unused.lock"),
+            lock_factory=lambda _path: RecordingLock(events),
+            health_checker=lambda *_args: events.append("health"),
+            ssh_connector=lambda: ssh,
+            proxy_factory=lambda *_args: proxy,
+            proxy_prober=lambda *_args: events.append("probe"),
+            receipt_finalizer=lambda: events.append("receipt"),
+        )
+        self.assertNotIn("receipt", events)
+
     def test_cleanup_failure_on_success_returns_stable_error(self):
         events = []
         with self.assertRaises(FixedEgressError) as caught:
@@ -464,6 +482,95 @@ class FullLifecycleUnitTests(unittest.TestCase):
                 "lock-release",
             ],
         )
+
+
+class ReceiptReconciliationTests(unittest.TestCase):
+    def config(self):
+        return FixedEgressConfig(
+            fixed_egress_ip="203.0.113.17",
+            echo_url="https://echo.example/ip",
+            allowlist=frozenset({("echo.example", 443)}),
+            health_urls=(
+                "https://health.example/backend",
+                "https://health.example/gateway",
+            ),
+            expected_version="7.2.10",
+        )
+
+    def test_reconciliation_holds_lock_validates_then_checks_dual_health_and_finalizes(self):
+        events = []
+
+        def lock_factory(_path):
+            events.append("lock")
+            return RecordingLock(events)
+
+        target.run_receipt_reconciliation(
+            self.config(),
+            env={},
+            lock_path=Path("unused.lock"),
+            lock_factory=lock_factory,
+            health_checker=lambda url, _version: events.append(f"health:{url}"),
+            receipt_validator=lambda: events.append("validate"),
+            receipt_finalizer=lambda: events.append("finalize"),
+        )
+        self.assertEqual(
+            events,
+            [
+                "lock",
+                "validate",
+                "health:https://health.example/backend",
+                "health:https://health.example/gateway",
+                "finalize",
+                "lock-release",
+            ],
+        )
+
+    def test_reconciliation_validation_or_health_failure_never_finalizes(self):
+        for failure_stage in ("validate", "health"):
+            events = []
+
+            def validate():
+                events.append("validate")
+                if failure_stage == "validate":
+                    raise RuntimeError("invalid marker")
+
+            def health(*_args):
+                events.append("health")
+                if failure_stage == "health":
+                    raise RuntimeError("production unhealthy")
+
+            with self.subTest(failure_stage=failure_stage):
+                with self.assertRaises(RuntimeError):
+                    target.run_receipt_reconciliation(
+                        self.config(),
+                        env={},
+                        lock_path=Path("unused.lock"),
+                        lock_factory=lambda _path: RecordingLock(events),
+                        health_checker=health,
+                        receipt_validator=validate,
+                        receipt_finalizer=lambda: events.append("finalize"),
+                    )
+                self.assertNotIn("finalize", events)
+                self.assertEqual(events[-1], "lock-release")
+
+    def test_reconciliation_rejects_concurrent_use_of_the_upload_lock(self):
+        events = []
+        with tempfile.TemporaryDirectory() as temp_dir:
+            lock_path = Path(temp_dir) / "fixed-egress.lock"
+            held_lock = target.acquire_upload_lock(lock_path)
+            try:
+                with self.assertRaises(FixedEgressError):
+                    target.run_receipt_reconciliation(
+                        self.config(),
+                        env={},
+                        lock_path=lock_path,
+                        health_checker=lambda *_args: events.append("health"),
+                        receipt_validator=lambda: events.append("validate"),
+                        receipt_finalizer=lambda: events.append("finalize"),
+                    )
+            finally:
+                held_lock.release()
+        self.assertEqual(events, [])
 
     def test_post_health_failure_skips_receipt_and_still_cleans_up(self):
         events = []
