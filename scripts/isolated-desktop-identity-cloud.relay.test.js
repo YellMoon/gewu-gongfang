@@ -25,6 +25,10 @@ assert.match(source, /app\.post\('\/api\/cloud\/tasks\/claim'/, 'isolated cloud 
 assert.match(source, /createAuthorityProtocolRouter/, 'isolated cloud must exercise the backend authority control plane');
 assert.doesNotMatch(source, /createGatewayAuthorityProtocolRouter/, 'isolated cloud must not create a second gateway inbox');
 assert.match(source, /app\.use\('\/api\/authority'/, 'isolated cloud must mount the formal authority command and projection routes');
+assert.match(source, /authorityApiRouter\.get\('\/projections\/current', authenticateAuthorityDevice/,
+  'isolated cloud must expose the signed projection read route used when LAN is unavailable');
+assert.match(source, /res\.status\(error\?\.statusCode \|\| 403\)/,
+  'isolated projection reads must preserve the formal fail-closed error status');
 assert.match(source, /CloudRelaySocketServer/, 'isolated cloud must run the backend authority WebSocket relay on the same database');
 assert.doesNotMatch(source, /gateway\/src\/websocket\/server/, 'isolated acceptance must not revive the split gateway WebSocket database');
 assert.match(source, /http\.createServer\(app\)/, 'the isolated backend WebSocket server must share the formal HTTP control-plane listener');

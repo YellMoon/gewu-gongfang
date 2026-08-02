@@ -352,6 +352,39 @@ const authenticateAuthorityDevice = (req, res, next) => {
 };
 authorityApiRouter.post('/commands', authenticateAuthorityDevice);
 authorityApiRouter.get('/commands/:id/receipt', authenticateAuthorityDevice);
+authorityApiRouter.get('/projections/current', authenticateAuthorityDevice, (req, res) => {
+  try {
+    const authorityId = String(req.headers['x-gewu-authority-id'] || '').trim();
+    const projection = authorityProjectionStore.read({
+      authorityId,
+      userId: req.authorityActor.userId,
+      role: req.authorityActor.role,
+    });
+    if (!projection) {
+      throw Object.assign(new Error('AUTHORITY_PROJECTION_NOT_FOUND'), {
+        code: 'AUTHORITY_PROJECTION_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    miniappCommandAuthorization.authorize({
+      authorityId,
+      hostEpochId: projection.hostEpochId,
+      actor: req.authorityActor,
+      lease: {
+        id: String(req.headers['x-gewu-authority-lease-id'] || '').trim(),
+        grantVersion: Number(req.headers['x-gewu-authority-grant-version']),
+      },
+      type: 'projection.read.v1',
+      payload: {},
+    });
+    return res.json({ success: true, projection });
+  } catch (error) {
+    return res.status(error?.statusCode || 403).json({
+      success: false,
+      error: { code: error?.code || 'AUTHORITY_PROJECTION_READ_FAILED' },
+    });
+  }
+});
 authorityApiRouter.use(createAuthorityProtocolRouter({
   authorizeCommand: ({ envelope }) => miniappCommandAuthorization.authorize(envelope),
   enqueueCommand: envelope => miniappCommandInbox.enqueue(envelope),
