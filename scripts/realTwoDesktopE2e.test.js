@@ -49,8 +49,13 @@ assert.ok(source.includes('/api/authority/commands'),
 assert.ok(source.includes("'--lan'") && source.includes("'--cloud-relay'") && source.includes("'--restart'")
   && source.includes("'--websocket-disabled'") && source.includes("'--no-authority-data'"),
   'the isolated acceptance invocation must explicitly declare its LAN, relay, restart, WebSocket, and no-real-data modes');
-assert.ok(source.includes('authorizeIsolatedCutoverFixture') && source.includes('writeAuthorityCutoverMarker'),
-  'the disposable authority fixture must verify a copy-only rehearsal before it writes its temporary cutover marker');
+assert.ok(source.includes('authorizeIsolatedCutoverFixture') && source.includes('promoteAuthorityCutover'),
+  'the disposable authority fixture must atomically promote a verified migration copy before testing the cutover runtime');
+assert.strictEqual(source.includes('writeAuthorityCutoverMarker'), false,
+  'the harness must not write a marker into an unmigrated source or double-write after atomic promotion');
+assert.ok(source.includes('ISOLATED_CUTOVER_ACTIVE_ACCOUNT_REQUIRED')
+  && source.includes('ISOLATED_CUTOVER_ACTIVE_GRANT_REQUIRED'),
+  'the promoted active database must prove the current authority account and canonical super-admin binding before desktop startup');
 assert.ok(source.includes('ISOLATED_CUTOVER_REPLAY_ACCOUNT_REQUIRED')
   && source.includes('ISOLATED_CUTOVER_REPLAY_GRANT_REQUIRED')
   && !source.includes('commandReplay: () => []'),

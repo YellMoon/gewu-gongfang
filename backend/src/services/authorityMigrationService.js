@@ -89,7 +89,18 @@ function assertCopyOnly(sourcePath, copyPath) {
   }
 }
 
-function rehearseAuthorityMigration({ sourceDb, copyDb, authorityId = 'default', now = new Date().toISOString(), commandReplay } = {}) {
+function resolveMigrationAuthority(db, requestedAuthorityId) {
+  const requested = String(requestedAuthorityId || '').trim();
+  const metadata = tableExists(db, 'authority_metadata')
+    ? String(db.prepare("SELECT value FROM authority_metadata WHERE key='database_authority_id'").get()?.value || '').trim()
+    : '';
+  if (metadata && requested && metadata !== requested) {
+    throw migrationError('AUTHORITY_MIGRATION_AUTHORITY_MISMATCH');
+  }
+  return metadata || requested || 'default';
+}
+
+function rehearseAuthorityMigration({ sourceDb, copyDb, authorityId: requestedAuthorityId, now = new Date().toISOString(), commandReplay } = {}) {
   const sourcePath = path.resolve(String(sourceDb || ''));
   const copyPath = path.resolve(String(copyDb || ''));
   assertCopyOnly(sourcePath, copyPath);
@@ -100,8 +111,10 @@ function rehearseAuthorityMigration({ sourceDb, copyDb, authorityId = 'default',
   fs.mkdirSync(path.dirname(copyPath), { recursive: true });
   fs.copyFileSync(sourcePath, copyPath, fs.constants.COPYFILE_EXCL);
   const db = new Database(copyPath);
+  let report;
   try {
     ensureMigrationSchema(db);
+    const authorityId = resolveMigrationAuthority(db, requestedAuthorityId);
     assertCanonicalBindingsUnambiguous(db, authorityId);
     const users = db.prepare('SELECT * FROM users ORDER BY id').all();
     const parityFailures = [];
@@ -149,34 +162,103 @@ function rehearseAuthorityMigration({ sourceDb, copyDb, authorityId = 'default',
     const replayResult = commandReplay({ db, authorityId });
     const commandReplayFailures = Array.isArray(replayResult) ? replayResult : ['AUTHORITY_MIGRATION_COMMAND_REPLAY_INVALID'];
     const sourceFingerprintAfter = fingerprint(sourcePath);
-    const report = {
-      sourceFingerprintBefore, sourceFingerprintAfter, copyFingerprint: fingerprint(copyPath),
+    report = {
+      authorityId, sourceFingerprintBefore, sourceFingerprintAfter,
       parityFailures, commandReplayFailures,
       legacyRoutesSafeToRemove: sourceFingerprintBefore === sourceFingerprintAfter && parityFailures.length === 0 && commandReplayFailures.length === 0,
     };
     if (!report.legacyRoutesSafeToRemove) throw migrationError('AUTHORITY_MIGRATION_REHEARSAL_FAILED');
     db.prepare('INSERT INTO authority_migration_ledger(name,source_fingerprint,applied_at,report_json) VALUES(?,?,?,?)')
       .run('authority_protocol_v1_rehearsal', sourceFingerprintBefore, now, JSON.stringify(report));
-    return report;
+    db.pragma('wal_checkpoint(TRUNCATE)');
   } finally { db.close(); }
+  report.copyFingerprint = fingerprint(copyPath);
+  return report;
 }
 
-function writeAuthorityCutoverMarker({ authorityDb, report, now = new Date().toISOString() } = {}) {
+function assertCutoverArtifactReady(db, authorityId) {
+  const authority = String(authorityId || '').trim();
+  if (!authority) throw migrationError('AUTHORITY_CUTOVER_AUTHORITY_REQUIRED');
+  const metadata = tableExists(db, 'authority_metadata')
+    ? String(db.prepare("SELECT value FROM authority_metadata WHERE key='database_authority_id'").get()?.value || '').trim()
+    : '';
+  if (metadata && metadata !== authority) throw migrationError('AUTHORITY_CUTOVER_AUTHORITY_MISMATCH');
+  const superAdmin = db.prepare(`SELECT b.binding_id FROM authority_role_bindings b
+    INNER JOIN authority_accounts a ON a.user_id=b.user_id AND a.authority_id=b.authority_id
+    WHERE b.authority_id=? AND b.role='super_admin' AND b.status='active'
+      AND b.subject_type IS NULL AND b.subject_id IS NULL AND a.status='active' LIMIT 1`).get(authority);
+  if (!superAdmin) throw migrationError('AUTHORITY_CUTOVER_CANONICAL_SUPER_ADMIN_REQUIRED');
+  const orphan = db.prepare(`SELECT b.binding_id FROM authority_role_bindings b
+    LEFT JOIN authority_accounts a ON a.user_id=b.user_id AND a.authority_id=b.authority_id AND a.status='active'
+    WHERE b.status='active' AND a.user_id IS NULL LIMIT 1`).get();
+  if (orphan) throw migrationError('AUTHORITY_CUTOVER_ORPHAN_BINDING');
+}
+
+function promoteAuthorityCutover({
+  authorityDb,
+  migratedCopyDb,
+  rollbackDb,
+  report,
+  now = new Date().toISOString(),
+} = {}) {
   if (!report?.legacyRoutesSafeToRemove || !report.sourceFingerprintBefore
     || report.sourceFingerprintBefore !== report.sourceFingerprintAfter
+    || !report.copyFingerprint
     || (report.parityFailures || []).length || (report.commandReplayFailures || []).length) {
     throw migrationError('AUTHORITY_CUTOVER_REHEARSAL_REQUIRED');
   }
   const target = path.resolve(String(authorityDb || ''));
+  const migratedCopy = path.resolve(String(migratedCopyDb || ''));
+  const rollback = path.resolve(String(rollbackDb || ''));
+  const staged = `${target}.cutover-next`;
+  if (!target || !migratedCopy || !rollback
+    || target === migratedCopy || target === rollback || migratedCopy === rollback) {
+    throw migrationError('AUTHORITY_CUTOVER_PATHS_INVALID');
+  }
   if (!fs.existsSync(target) || fingerprint(target) !== report.sourceFingerprintBefore) {
     throw migrationError('AUTHORITY_CUTOVER_SOURCE_FINGERPRINT_MISMATCH');
   }
-  const db = new Database(target);
+  if (!fs.existsSync(migratedCopy) || fingerprint(migratedCopy) !== report.copyFingerprint) {
+    throw migrationError('AUTHORITY_CUTOVER_COPY_FINGERPRINT_MISMATCH');
+  }
+  if (fs.existsSync(rollback) || fs.existsSync(staged)) {
+    throw migrationError('AUTHORITY_CUTOVER_TARGET_EXISTS');
+  }
+  for (const sidecar of [`${target}-wal`, `${target}-shm`, `${migratedCopy}-wal`, `${migratedCopy}-shm`]) {
+    if (fs.existsSync(sidecar)) throw migrationError('AUTHORITY_CUTOVER_DATABASE_NOT_QUIESCENT');
+  }
+
   try {
-    ensureMigrationSchema(db);
-    db.prepare('INSERT INTO authority_migration_ledger(name,source_fingerprint,applied_at,report_json) VALUES(?,?,?,?)')
-      .run('authority_protocol_v1_cutover', report.sourceFingerprintBefore, now, JSON.stringify(report));
-  } finally { db.close(); }
+    fs.copyFileSync(migratedCopy, staged, fs.constants.COPYFILE_EXCL);
+    const stagedDb = new Database(staged);
+    try {
+      ensureMigrationSchema(stagedDb);
+      assertCutoverArtifactReady(stagedDb, report.authorityId);
+      stagedDb.prepare(`INSERT INTO authority_migration_ledger
+        (name,source_fingerprint,applied_at,report_json) VALUES(?,?,?,?)`)
+        .run('authority_protocol_v1_cutover', report.sourceFingerprintBefore, now, JSON.stringify(report));
+    } finally {
+      stagedDb.close();
+    }
+    if (fingerprint(target) !== report.sourceFingerprintBefore) {
+      throw migrationError('AUTHORITY_CUTOVER_SOURCE_FINGERPRINT_MISMATCH');
+    }
+    const activeFingerprint = fingerprint(staged);
+    fs.copyFileSync(target, rollback, fs.constants.COPYFILE_EXCL);
+    if (fingerprint(rollback) !== report.sourceFingerprintBefore) {
+      throw migrationError('AUTHORITY_CUTOVER_ROLLBACK_FINGERPRINT_MISMATCH');
+    }
+    fs.renameSync(staged, target);
+    return Object.freeze({
+      authorityDb: target,
+      rollbackDb: rollback,
+      sourceFingerprint: report.sourceFingerprintBefore,
+      activeFingerprint,
+    });
+  } catch (error) {
+    if (fs.existsSync(staged)) fs.rmSync(staged, { force: true });
+    throw error;
+  }
 }
 
 function hasAuthorityCutoverMarker({ authorityDb, sourceFingerprint } = {}) {
@@ -190,4 +272,10 @@ function hasAuthorityCutoverMarker({ authorityDb, sourceFingerprint } = {}) {
   } finally { db.close(); }
 }
 
-module.exports = { activeLegacyRole, fingerprint, rehearseAuthorityMigration, writeAuthorityCutoverMarker, hasAuthorityCutoverMarker };
+module.exports = {
+  activeLegacyRole,
+  fingerprint,
+  rehearseAuthorityMigration,
+  promoteAuthorityCutover,
+  hasAuthorityCutoverMarker,
+};

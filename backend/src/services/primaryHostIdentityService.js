@@ -555,6 +555,9 @@ function createPrimaryHostIdentityService({
     const authority = requiredText(authorityId, 'PRIMARY_HOST_AUTHORITY_REQUIRED');
     const hostGeneration = safeInteger(generation, 'PRIMARY_HOST_GENERATION_REQUIRED');
     const publicKey = requiredText(actor?.authorization?.public_key, 'PRIMARY_HOST_DEVICE_KEY_REQUIRED', 16384);
+    db.prepare(`UPDATE authority_role_bindings SET status='revoked',revoked_at=?,updated_at=?
+      WHERE user_id=? AND authority_id<>? AND status='active'`)
+      .run(timestamp, timestamp, actor.userId, authority);
     db.prepare(`INSERT INTO authority_accounts
       (user_id,authority_id,status,created_at,updated_at)
       VALUES(?,?, 'active',?,?)

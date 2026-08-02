@@ -8,6 +8,7 @@ const fs = require('fs');
 const net = require('net');
 const os = require('os');
 const path = require('path');
+const Database = require('better-sqlite3');
 const WebSocket = require('ws');
 const { DatabaseService } = require('../backend/src/database');
 const { bindQuestionBankStoreToDatabase, initQuestionBankStore } = require('../backend/src/services/questionBankStorageService');
@@ -22,7 +23,7 @@ const { runLanE2ePreflight } = require('./windowsFirewallE2ePreflight');
 const { createIsolatedPrimaryHostProfile } = require('./isolated-primary-host-profile');
 const {
   rehearseAuthorityMigration,
-  writeAuthorityCutoverMarker,
+  promoteAuthorityCutover,
   hasAuthorityCutoverMarker,
 } = require('../backend/src/services/authorityMigrationService');
 
@@ -222,10 +223,10 @@ function prepareClient({ hostBaseUrl, cloudBaseUrl }) {
 function authorizeIsolatedCutoverFixture() {
   const authorityDb = path.join(HOST_ROOT, 'data', 'scheduling.db');
   const copyDb = path.join(ROOT, 'isolated-authority-cutover-copy.db');
+  const rollbackDb = path.join(ROOT, 'isolated-authority-pre-cutover.db');
   const report = rehearseAuthorityMigration({
     sourceDb: authorityDb,
     copyDb,
-    authorityId: 'isolated-two-desktop-acceptance',
     commandReplay: ({ db, authorityId }) => {
       const failures = [];
       const account = db.prepare("SELECT status FROM authority_accounts WHERE authority_id=? AND user_id=?")
@@ -237,9 +238,20 @@ function authorizeIsolatedCutoverFixture() {
       return failures;
     },
   });
-  writeAuthorityCutoverMarker({ authorityDb, report });
+  promoteAuthorityCutover({ authorityDb, migratedCopyDb: copyDb, rollbackDb, report });
   assert.strictEqual(hasAuthorityCutoverMarker({ authorityDb, sourceFingerprint: report.sourceFingerprintBefore }), true,
     'ISOLATED_CUTOVER_MARKER_REQUIRED');
+  const activeDb = new Database(authorityDb, { readonly: true });
+  try {
+    const account = activeDb.prepare(`SELECT status FROM authority_accounts
+      WHERE authority_id=? AND user_id=?`).get(report.authorityId, CANONICAL_SUPER_ADMIN_ID);
+    const binding = activeDb.prepare(`SELECT status FROM authority_role_bindings
+      WHERE authority_id=? AND user_id=? AND role='super_admin'`).get(report.authorityId, CANONICAL_SUPER_ADMIN_ID);
+    assert.strictEqual(account?.status, 'active', 'ISOLATED_CUTOVER_ACTIVE_ACCOUNT_REQUIRED');
+    assert.strictEqual(binding?.status, 'active', 'ISOLATED_CUTOVER_ACTIVE_GRANT_REQUIRED');
+  } finally {
+    activeDb.close();
+  }
   return report;
 }
 function startIdentityCloud({ port }) {

@@ -3,7 +3,16 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const Database = require('better-sqlite3');
-const { rehearseAuthorityMigration, writeAuthorityCutoverMarker, hasAuthorityCutoverMarker } = require('./authorityMigrationService');
+const serviceSource = fs.readFileSync(path.join(__dirname, 'authorityMigrationService.js'), 'utf8');
+assert.doesNotMatch(serviceSource, /renameSync\(target,\s*rollback\)/,
+  'atomic promotion must never move the live authority path away before the replacement is ready');
+assert.match(serviceSource, /copyFileSync\(target, rollback, fs\.constants\.COPYFILE_EXCL\)/,
+  'promotion must finish a separate rollback copy before atomically replacing the live authority path');
+const {
+  rehearseAuthorityMigration,
+  promoteAuthorityCutover,
+  hasAuthorityCutoverMarker,
+} = require('./authorityMigrationService');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-authority-migration-service-'));
 try {
@@ -16,6 +25,7 @@ try {
   );`);
   db.prepare("INSERT INTO users VALUES ('teacher-1','teacher',1,1,'approved',0,'teacher-record-1',NULL)").run();
   db.prepare("INSERT INTO users VALUES ('admin-1','admin',1,1,'approved',0,NULL,NULL)").run();
+  db.prepare("INSERT INTO users VALUES ('super-1','super_admin',1,1,'approved',0,NULL,NULL)").run();
   db.close();
 
   const before = fs.readFileSync(source);
@@ -41,6 +51,23 @@ try {
   assert.strictEqual(copyDb.prepare("SELECT status FROM authority_role_bindings WHERE user_id='teacher-1'").get().status, 'active');
   assert.strictEqual(copyDb.prepare("SELECT name FROM authority_migration_ledger WHERE name='authority_protocol_v1_rehearsal'").get().name, 'authority_protocol_v1_rehearsal');
   copyDb.close();
+  assert.strictEqual(report.copyFingerprint, require('./authorityMigrationService').fingerprint(copy),
+    'the report must fingerprint the closed, checkpointed migration artifact after writing its rehearsal ledger');
+
+  const metadataSource = path.join(root, 'metadata-source.db');
+  fs.copyFileSync(source, metadataSource);
+  const metadataDb = new Database(metadataSource);
+  metadataDb.exec('CREATE TABLE authority_metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at TEXT NOT NULL);');
+  metadataDb.prepare("INSERT INTO authority_metadata VALUES('database_authority_id','database-authority-1',?)")
+    .run('2026-07-28T00:00:00.000Z');
+  metadataDb.close();
+  assert.throws(() => rehearseAuthorityMigration({
+    sourceDb: metadataSource,
+    copyDb: path.join(root, 'metadata-mismatch-copy.db'),
+    authorityId: 'wrong-authority',
+    commandReplay: () => [],
+  }), /AUTHORITY_MIGRATION_AUTHORITY_MISMATCH/,
+  'copy migration must reject a requested authority that differs from the database authority metadata');
 
   const ambiguous = path.join(root, 'ambiguous.db');
   fs.copyFileSync(source, ambiguous);
@@ -124,12 +151,68 @@ try {
   );
   assert.deepStrictEqual(fs.readFileSync(source), before, 'a failed command-replay rehearsal must still preserve the source authority database');
 
-  const markerDb = path.join(root, 'marker.db');
-  fs.copyFileSync(source, markerDb);
-  assert.throws(() => writeAuthorityCutoverMarker({ authorityDb: markerDb, report: { legacyRoutesSafeToRemove: false } }), /AUTHORITY_CUTOVER_REHEARSAL_REQUIRED/);
-  writeAuthorityCutoverMarker({ authorityDb: markerDb, report, now: '2026-07-28T00:05:00.000Z' });
-  assert.strictEqual(hasAuthorityCutoverMarker({ authorityDb: markerDb, sourceFingerprint: report.sourceFingerprintBefore }), true);
-  assert.strictEqual(hasAuthorityCutoverMarker({ authorityDb: markerDb, sourceFingerprint: 'wrong-fingerprint' }), false);
+  const unpromotedDb = path.join(root, 'unpromoted.db');
+  fs.copyFileSync(source, unpromotedDb);
+  assert.strictEqual(hasAuthorityCutoverMarker({
+    authorityDb: unpromotedDb,
+    sourceFingerprint: report.sourceFingerprintBefore,
+  }), false, 'an unchanged rehearsal source must never be considered cut over');
+
+  const noSuperCopy = path.join(root, 'no-super-copy.db');
+  fs.copyFileSync(copy, noSuperCopy);
+  const noSuperDb = new Database(noSuperCopy);
+  noSuperDb.prepare("DELETE FROM authority_role_bindings WHERE role='super_admin'").run();
+  noSuperDb.prepare("DELETE FROM authority_accounts WHERE user_id='super-1'").run();
+  noSuperDb.pragma('wal_checkpoint(TRUNCATE)');
+  noSuperDb.close();
+  const noSuperSource = path.join(root, 'no-super-source.db');
+  fs.copyFileSync(source, noSuperSource);
+  assert.throws(() => promoteAuthorityCutover({
+    authorityDb: noSuperSource,
+    migratedCopyDb: noSuperCopy,
+    rollbackDb: path.join(root, 'no-super.rollback.db'),
+    report: { ...report, copyFingerprint: require('./authorityMigrationService').fingerprint(noSuperCopy) },
+  }), /AUTHORITY_CUTOVER_CANONICAL_SUPER_ADMIN_REQUIRED/,
+  'promotion must fail closed when the verified artifact lacks an active canonical super-admin binding');
+
+  const promotedDb = path.join(root, 'promoted.db');
+  const rollbackDb = path.join(root, 'promoted.rollback.db');
+  fs.copyFileSync(source, promotedDb);
+  const promoted = promoteAuthorityCutover({
+    authorityDb: promotedDb,
+    migratedCopyDb: copy,
+    rollbackDb,
+    report,
+    now: '2026-07-28T00:06:00.000Z',
+  });
+  assert.strictEqual(promoted.sourceFingerprint, report.sourceFingerprintBefore);
+  assert.strictEqual(fs.existsSync(rollbackDb), true, 'atomic cutover must retain the exact pre-cutover authority database');
+  assert.strictEqual(hasAuthorityCutoverMarker({
+    authorityDb: promotedDb,
+    sourceFingerprint: report.sourceFingerprintBefore,
+  }), true, 'the promoted migration copy must carry the cutover marker');
+  const promotedRead = new Database(promotedDb, { readonly: true });
+  assert.strictEqual(promotedRead.prepare(
+    "SELECT status FROM authority_role_bindings WHERE authority_id='authority-test' AND user_id='teacher-1' AND role='teacher'"
+  ).get().status, 'active', 'the active database must be the verified migrated copy, not the unchanged rehearsal source');
+  promotedRead.close();
+  assert.deepStrictEqual(fs.readFileSync(rollbackDb), before,
+    'the rollback database must preserve the exact pre-cutover bytes');
+
+  const mismatchSource = path.join(root, 'mismatch-source.db');
+  const mismatchBackup = path.join(root, 'mismatch.rollback.db');
+  fs.copyFileSync(source, mismatchSource);
+  const mismatchBefore = fs.readFileSync(mismatchSource);
+  assert.throws(() => promoteAuthorityCutover({
+    authorityDb: mismatchSource,
+    migratedCopyDb: copy,
+    rollbackDb: mismatchBackup,
+    report: { ...report, copyFingerprint: 'wrong-copy-fingerprint' },
+  }), /AUTHORITY_CUTOVER_COPY_FINGERPRINT_MISMATCH/);
+  assert.deepStrictEqual(fs.readFileSync(mismatchSource), mismatchBefore,
+    'a rejected promotion must not mutate the active authority database');
+  assert.strictEqual(fs.existsSync(mismatchBackup), false,
+    'a rejected promotion must not create a rollback artifact');
 
   console.log('authorityMigrationService tests passed');
 } finally {

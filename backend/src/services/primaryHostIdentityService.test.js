@@ -332,6 +332,14 @@ insertDevice('host-device-2', CANONICAL_SUPER_ADMIN_ID);
 insertUser('other-super-admin', '13000000009', 'Other admin');
 insertGrant('other-super-admin', 'super_admin');
 insertDevice('other-device', 'other-super-admin');
+db.prepare(`INSERT INTO authority_accounts(user_id,authority_id,status,created_at,updated_at)
+  VALUES(?,'previous-authority','active',?,?)`).run(CANONICAL_SUPER_ADMIN_ID, currentTime, currentTime);
+db.prepare(`INSERT INTO authority_role_bindings
+  (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,
+   granted_by,created_at,updated_at,revoked_at)
+  VALUES('previous-authority-super-admin','previous-authority',?,'super_admin',NULL,NULL,
+    'active',1,?,?,?,NULL)`)
+  .run(CANONICAL_SUPER_ADMIN_ID, CANONICAL_SUPER_ADMIN_ID, currentTime, currentTime);
 
 for (const table of [
   'primary_host_operation_challenges', 'primary_host_epochs', 'host_transfers', 'host_recovery_factors',
@@ -429,6 +437,11 @@ const bootstrapHostAccount = db.prepare(`SELECT * FROM authority_accounts
 assert.ok(bootstrapHostGrant, 'primary-host bootstrap must create an active authority device grant for the host itself');
 assert.ok(bootstrapHostLease, 'primary-host bootstrap must create an active authority lease for the host itself');
 assert.ok(bootstrapHostAccount, 'primary-host bootstrap must create an active authority account for projection publication');
+assert.strictEqual(
+  db.prepare("SELECT status FROM authority_role_bindings WHERE binding_id='previous-authority-super-admin'").get().status,
+  'revoked',
+  'moving the canonical account to a new database authority must revoke orphaned active bindings from its previous authority',
+);
 assert.strictEqual(bootstrapHostGrant.user_id, CANONICAL_SUPER_ADMIN_ID);
 assert.strictEqual(bootstrapHostLease.active_role, 'super_admin');
 assert.strictEqual(
