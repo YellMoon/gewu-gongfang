@@ -10,13 +10,26 @@ const { createSignedAuthorityProjection } = require('../shared/authorityProjecti
 const { resolveActingScope } = require('../backend/src/services/authorityAccessService');
 const { projectAuthorityData } = require('../backend/src/services/authorityProjectionService');
 const { createAuthorityProjectionStoreService } = require('../backend/src/services/authorityProjectionStoreService');
+const { createAuthorityCommandPolicy } = require('../backend/src/services/authorityCommandRegistry');
 const { projectionCacheEntries } = require('../miniapp/src/utils/authorityProjectionCache');
 const {
   deriveAccess,
   permissionIdentityKey,
 } = require('../miniapp/src/utils/miniappAuthorizationRuntime');
 
-const ROLES = Object.freeze(['visitor', 'student', 'teacher', 'admin', 'super_admin']);
+const ROLE_SCENARIOS = Object.freeze([
+  Object.freeze({ id: 'visitor', role: 'visitor', userId: 'user-visitor', subjectId: null }),
+  Object.freeze({ id: 'student-bound', role: 'student', userId: 'user-student', subjectId: 'student-1' }),
+  Object.freeze({ id: 'student-unbound', role: 'student', userId: 'user-student-unbound', subjectId: null }),
+  Object.freeze({ id: 'teacher-bound', role: 'teacher', userId: 'user-teacher', subjectId: 'teacher-1' }),
+  Object.freeze({ id: 'teacher-unbound', role: 'teacher', userId: 'user-teacher-unbound', subjectId: null }),
+  Object.freeze({ id: 'admin', role: 'admin', userId: 'user-admin', subjectId: null }),
+  Object.freeze({ id: 'super-admin', role: 'super_admin', userId: 'user-super-admin', subjectId: null }),
+]);
+const SUBJECT_BUSINESS_COLLECTIONS = Object.freeze([
+  'schedules', 'courses', 'students', 'grades', 'payments', 'consumptions',
+  'teachers', 'rooms', 'institutions',
+]);
 const AUTHORITY_ID = 'authority-role-matrix';
 const EPOCH_ID = 'epoch-role-matrix';
 const CREATED_AT = '2026-07-30T00:00:00.000Z';
@@ -153,11 +166,11 @@ function fixtureData() {
   };
 }
 
-function roleFixture(role) {
-  const userId = `user-${role.replace('_', '-')}`;
+function roleFixture(scenario) {
+  const { id, role, userId, subjectId } = scenario;
   const grant = role === 'visitor' ? null : {
     role,
-    bindingId: role === 'student' ? 'student-1' : (role === 'teacher' ? 'teacher-1' : ''),
+    bindingId: subjectId || '',
     status: 'active',
     authorityId: AUTHORITY_ID,
   };
@@ -167,16 +180,19 @@ function roleFixture(role) {
     grants: grant ? [grant] : [],
   });
   return Object.freeze({
+    scenarioId: id,
     role,
     userId,
-    deviceId: `device-${role.replace('_', '-')}`,
-    leaseId: `lease-${role.replace('_', '-')}`,
+    subjectId,
+    subjectBound: ['student', 'teacher'].includes(role) ? Boolean(subjectId) : null,
+    deviceId: `device-${id}`,
+    leaseId: `lease-${id}`,
     scope,
     keyPair: crypto.generateKeyPairSync('ed25519'),
   });
 }
 
-function miniappAccessFor(fixture) {
+function miniappRuntimeFor(fixture) {
   const capabilities = {
     visitor: ['projection:read', 'role-application:read', 'role-application:submit', 'question-preview:read'],
     student: ['question-bank:view'],
@@ -189,8 +205,12 @@ function miniappAccessFor(fixture) {
     role: fixture.role,
     user_type: fixture.role,
     authority_id: AUTHORITY_ID,
-    teacher_id: fixture.role === 'teacher' ? 'teacher-1' : undefined,
-    student_id: fixture.role === 'student' ? 'student-1' : undefined,
+    teacher_id: fixture.role === 'teacher' ? fixture.subjectId || undefined : undefined,
+    student_id: fixture.role === 'student' ? fixture.subjectId || undefined : undefined,
+    ...(['student', 'teacher'].includes(fixture.role) ? {
+      account_state: 'formal',
+      subject_binding: fixture.subjectBound ? 'bound' : 'unbound',
+    } : {}),
     ...(fixture.role === 'visitor' ? {
       identity_kind: 'visitor',
       account_state: 'visitor',
@@ -198,15 +218,20 @@ function miniappAccessFor(fixture) {
       capabilities,
     } : {}),
   };
-  return deriveAccess(user, {
-    status: 'loaded',
-    identityKey: permissionIdentityKey(user),
-    capabilities,
-  });
+  return {
+    identity: user,
+    access: deriveAccess(user, {
+      status: 'loaded',
+      identityKey: permissionIdentityKey(user),
+      capabilities,
+    }),
+  };
 }
 
-function assertRoleProjection(role, projection, desktopCache, miniappCache, miniappAccess) {
+function assertRoleProjection(fixture, projection, desktopCache, miniappCache, miniappRuntime) {
+  const { role } = fixture;
   const payload = projection.payload;
+  const { identity: miniappIdentity, access: miniappAccess } = miniappRuntime;
   assert.strictEqual(projection.role, role);
   assert.strictEqual(desktopCache.authorityCacheMetadata.role, role);
   assert.strictEqual(miniappAccess.role, role);
@@ -218,6 +243,32 @@ function assertRoleProjection(role, projection, desktopCache, miniappCache, mini
     assert.strictEqual(miniappAccess.experienceOnly, false);
     assert.ok(miniappAccess.modules.length > 0, `${role}:MINIAPP_MODULE_SCOPE_REQUIRED`);
   }
+  if (['student', 'teacher'].includes(role)) {
+    const identitySubjectId = role === 'student'
+      ? miniappIdentity.student_id
+      : miniappIdentity.teacher_id;
+    assert.strictEqual(identitySubjectId || null, fixture.subjectId,
+      `${fixture.scenarioId}:MINIAPP_MUST_NOT_SYNTHESIZE_SUBJECT`);
+    assert.strictEqual(miniappIdentity.subject_binding, fixture.subjectBound ? 'bound' : 'unbound');
+    if (!fixture.subjectBound) {
+      assert.strictEqual(payload.questionPreviews.length, 10,
+        `${fixture.scenarioId}:LIMITED_QUESTION_PREVIEW_REQUIRED`);
+      for (const collection of SUBJECT_BUSINESS_COLLECTIONS) {
+        assert.deepStrictEqual(payload[collection], [],
+          `${fixture.scenarioId}:API_BUSINESS_DATA_MUST_FAIL_CLOSED:${collection}`);
+        assert.deepStrictEqual(desktopCache[collection], [],
+          `${fixture.scenarioId}:DESKTOP_BUSINESS_DATA_MUST_FAIL_CLOSED:${collection}`);
+        assert.deepStrictEqual(miniappCache[collection], [],
+          `${fixture.scenarioId}:MINIAPP_BUSINESS_DATA_MUST_FAIL_CLOSED:${collection}`);
+      }
+      assertNoLeak([payload, desktopCache, miniappCache, miniappIdentity], [
+        'student-1', 'student-2', 'teacher-1', 'teacher-2',
+        'payment-1', 'payment-2', 'course-teacher-1', 'course-teacher-2',
+        'role-application-secret', 'role-grant-secret',
+      ], fixture.scenarioId, 'all');
+      return { businessDataFailClosed: true };
+    }
+  }
   if (role === 'visitor') {
     assert.strictEqual(payload.questionPreviews.length, 10);
     assert.strictEqual(payload.courses.length, 0);
@@ -225,7 +276,7 @@ function assertRoleProjection(role, projection, desktopCache, miniappCache, mini
       'preview-secret-answer', 'full-question-secret', 'role-application-secret',
       'role-grant-secret', 'student-1', 'student-2',
     ], role, 'all');
-    return;
+    return { businessDataFailClosed: true };
   }
   if (role === 'student') {
     assert.deepStrictEqual(payload.students.map(row => row.id), ['student-1']);
@@ -234,7 +285,7 @@ function assertRoleProjection(role, projection, desktopCache, miniappCache, mini
       'student-2', 'payment-2', 'record-peer-owner', 'full-account-student-secret',
       'full-account-peer-secret', 'role-application-secret', 'role-grant-secret',
     ], role, 'all');
-    return;
+    return { businessDataFailClosed: false };
   }
   if (role === 'teacher') {
     assert.deepStrictEqual(payload.courses.map(row => row.id), ['course-teacher-1']);
@@ -243,7 +294,7 @@ function assertRoleProjection(role, projection, desktopCache, miniappCache, mini
       'course-teacher-2', 'payment-1', 'payment-2', 'full-account-peer-secret',
       'role-application-secret', 'role-grant-secret',
     ], role, 'all');
-    return;
+    return { businessDataFailClosed: false };
   }
   if (role === 'admin') {
     assert.strictEqual(payload.courses.length, 2);
@@ -254,7 +305,7 @@ function assertRoleProjection(role, projection, desktopCache, miniappCache, mini
       'full-account-student-secret', 'full-account-peer-secret',
       'role-application-secret', 'role-grant-secret',
     ], role, 'all');
-    return;
+    return { businessDataFailClosed: false };
   }
   assert.strictEqual(role, 'super_admin');
   assert.strictEqual(payload.roleApplications[0].applicationId, 'role-application-secret');
@@ -262,6 +313,7 @@ function assertRoleProjection(role, projection, desktopCache, miniappCache, mini
   assertNoLeak([payload, desktopCache, miniappCache], [
     'full-account-student-secret', 'full-account-peer-secret',
   ], role, 'all');
+  return { businessDataFailClosed: false };
 }
 
 async function main() {
@@ -273,7 +325,7 @@ async function main() {
   process.env.JWT_SECRET = 'isolated-role-matrix-secret';
   const { DatabaseService } = require('../backend/src/database');
   const database = new DatabaseService();
-  const fixtures = ROLES.map(roleFixture);
+  const fixtures = ROLE_SCENARIOS.map(roleFixture);
   const hostKeyPair = crypto.generateKeyPairSync('ed25519');
   database.db.pragma('foreign_keys = OFF');
   database.db.prepare(`INSERT INTO primary_host_epochs
@@ -297,7 +349,7 @@ async function main() {
     (user_id,authority_id,status,created_at,updated_at)
     VALUES(?,?,'active',?,?)`);
   for (const fixture of fixtures) {
-    const grantId = `grant-${fixture.role.replace('_', '-')}`;
+    const grantId = `grant-${fixture.scenarioId}`;
     const publicKey = fixture.keyPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
     insertGrant.run(
       grantId, AUTHORITY_ID, fixture.deviceId, fixture.userId, publicKey, CREATED_AT, CREATED_AT,
@@ -308,12 +360,12 @@ async function main() {
     insertAuthorityAccount.run(fixture.userId, AUTHORITY_ID, CREATED_AT, CREATED_AT);
     if (fixture.role !== 'visitor') {
       insertRoleBinding.run(
-        `binding-${fixture.role.replace('_', '-')}`,
+        `binding-${fixture.scenarioId}`,
         AUTHORITY_ID,
         fixture.userId,
         fixture.role,
-        fixture.role === 'student' ? 'student' : (fixture.role === 'teacher' ? 'teacher' : null),
-        fixture.role === 'student' ? 'student-1' : (fixture.role === 'teacher' ? 'teacher-1' : null),
+        fixture.subjectId ? fixture.role : null,
+        fixture.subjectId,
         CREATED_AT,
         CREATED_AT,
       );
@@ -343,6 +395,16 @@ async function main() {
   const server = createApp().listen(0);
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   const results = [];
+  const commandPolicy = createAuthorityCommandPolicy();
+  assert.strictEqual(commandPolicy({
+    type: 'role-application.submit.v1', scope: { kind: 'admin', userId: 'user-admin' },
+  }), false, 'ADMIN_SELF_APPLICATION_MUST_BE_FORBIDDEN');
+  assert.strictEqual(commandPolicy({
+    type: 'role-application.review.v1', scope: { kind: 'admin', userId: 'user-admin' },
+  }), false, 'ADMIN_ROLE_REVIEW_MUST_BE_FORBIDDEN');
+  assert.strictEqual(commandPolicy({
+    type: 'role-application.review.v1', scope: { kind: 'super_admin', userId: 'user-super-admin' },
+  }), true, 'SUPER_ADMIN_ROLE_REVIEW_MUST_BE_ALLOWED');
   let completed = false;
   try {
     for (const fixture of fixtures) {
@@ -378,14 +440,19 @@ async function main() {
         localOnly: {},
       });
       const miniappCache = Object.fromEntries(projectionCacheEntries(projection.payload));
-      const miniappAccess = miniappAccessFor(fixture);
-      assertRoleProjection(fixture.role, projection, desktopCache, miniappCache, miniappAccess);
+      const miniappRuntime = miniappRuntimeFor(fixture);
+      const assertion = assertRoleProjection(
+        fixture, projection, desktopCache, miniappCache, miniappRuntime,
+      );
       results.push({
+        scenario: fixture.scenarioId,
         role: fixture.role,
+        subjectBound: fixture.subjectBound,
         api: true,
         desktop: true,
         miniapp: true,
         miniappAccess: true,
+        businessDataFailClosed: assertion.businessDataFailClosed,
         sourceVersion: projection.sourceVersion,
       });
     }
@@ -399,6 +466,11 @@ async function main() {
   console.log(JSON.stringify({
     success: true,
     matrix: results,
+    roleApplicationPolicy: {
+      adminSelfApplicationForbidden: true,
+      adminReviewForbidden: true,
+      superAdminReviewAllowed: true,
+    },
     isolatedRoot: tempRoot,
     isolatedDataRemoved: true,
   }));

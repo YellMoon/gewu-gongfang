@@ -789,6 +789,7 @@ function startBackendService() {
         primaryHostLocalProjectionReader = createPrimaryHostLocalProjectionReader({
           refreshControlRecords,
           hostAuthorityContext,
+          resolveHostEpoch: hostEpochId => runtimeHostEpochs.find(hostEpochId),
           materializeProjections: target => projectionPublisher.materializeAll(target),
           projectionStore: createAuthorityProjectionStoreService({ db: getInstance().db }),
           db: getInstance().db,

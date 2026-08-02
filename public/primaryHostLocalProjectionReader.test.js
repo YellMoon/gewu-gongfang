@@ -1,6 +1,9 @@
 const assert = require('node:assert/strict');
 const Database = require('better-sqlite3');
 const { createPrimaryHostLocalProjectionReader } = require('./primaryHostLocalProjectionReader');
+const {
+  createAuthorityRuntimeHostEpochService,
+} = require('../backend/src/services/authorityRuntimeHostEpochService');
 
 async function run() {
   const db = new Database(':memory:');
@@ -36,7 +39,10 @@ async function run() {
     '2026-08-03T00:00:00.000Z',NULL)`).run();
   db.prepare(`INSERT INTO device_grants VALUES(
     'grant-1','authority-1','host-1','super-1',9,'active',3,NULL)`).run();
-  db.prepare("INSERT INTO primary_host_epochs VALUES('epoch-1','authority-1','host-1',9,'active')").run();
+  const runtimeHostEpochs = createAuthorityRuntimeHostEpochService({ db });
+  db.prepare(`INSERT INTO authority_runtime_host_epochs
+    (host_epoch_id,authority_id,host_generation,host_device_id,host_public_key,status,verified_at)
+    VALUES('epoch-1','authority-1',9,'host-1','host-public-key','active','2026-08-02T00:00:00.000Z')`).run();
   const calls = [];
   let actorRole = 'super_admin';
   let materializeMutation = null;
@@ -62,6 +68,7 @@ async function run() {
         lease: { id: 'lease-1', grantVersion: 3 },
       };
     },
+    resolveHostEpoch: hostEpochId => runtimeHostEpochs.find(hostEpochId),
     materializeProjections: async target => {
       calls.push(['materialize', target]);
       projection = {
@@ -98,6 +105,13 @@ async function run() {
     userId: 'super-1',
     role: 'super_admin',
   }]);
+  db.prepare("UPDATE authority_runtime_host_epochs SET status='retired' WHERE host_epoch_id='epoch-1'").run();
+  await assert.rejects(
+    () => read(),
+    error => error?.code === 'AUTHORITY_PROJECTION_HOST_EPOCH_INACTIVE',
+    'a retired runtime host epoch must fail closed even when the rest of the control context remains active',
+  );
+  db.prepare("UPDATE authority_runtime_host_epochs SET status='active' WHERE host_epoch_id='epoch-1'").run();
   await assert.rejects(
     () => read({ minSourceVersion: 8 }),
     error => error?.code === 'AUTHORITY_PROJECTION_VERSION_PENDING',

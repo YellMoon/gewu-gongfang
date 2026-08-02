@@ -8,9 +8,12 @@ const net = require('net');
 const os = require('os');
 const path = require('path');
 const WebSocket = require('ws');
+const Database = require('better-sqlite3');
 const {
   createSignedAuthorityProjection,
 } = require('../shared/authorityProjectionProtocol');
+
+const NATIVE_MINIAPP_OPENID = 'isolated-native-miniapp-relay-user';
 
 const source = fs.readFileSync(path.join(__dirname, 'isolated-desktop-identity-cloud.js'), 'utf8');
 
@@ -36,6 +39,11 @@ assert.doesNotMatch(source, /\/api\/cloud\/desktop-session\//, 'isolated cloud m
 assert.doesNotMatch(source, /createDesktopSessionRelayService/, 'isolated cloud must not instantiate the retired desktop-session relay service');
 assert.match(source, /hostState/, 'isolated cloud state endpoint must report primary-host bootstrap state for real desktop E2E diagnosis');
 assert.match(source, /__e2e\/confirm-latest-primary-host/, 'isolated cloud must confirm the primary-host WeChat identity step during disposable UI E2E');
+assert.match(source, /process\.env\.GEWU_E2E_WECHAT_OPENID/,
+  'isolated cloud must allow each native miniapp acceptance identity to use a distinct disposable openid');
+assert.match(source,
+  /process\.env\.WECHAT_DEV_OPENID = process\.env\.GEWU_E2E_WECHAT_OPENID\s*\|\|/,
+  'the disposable openid override must reach the miniapp login resolver before auth routes load');
 assert.ok(
   source.indexOf('process.env.JWT_SECRET = jwtSecret')
     < source.indexOf("require('../backend/src/routes/desktopIdentity')"),
@@ -59,6 +67,30 @@ async function waitForCloud(baseUrl) {
     await sleep(100);
   }
   throw new Error('ISOLATED_AUTHORITY_CONTROL_PLANE_START_REQUIRED');
+}
+
+function spawnCloud(root, port, onOutput) {
+  const child = childProcess.spawn(process.execPath, [
+    path.join(__dirname, 'isolated-desktop-identity-cloud.js'), root, String(port),
+  ], {
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, GEWU_E2E_WECHAT_OPENID: NATIVE_MINIAPP_OPENID },
+  });
+  child.stdout.on('data', data => onOutput(data.toString('utf8')));
+  child.stderr.on('data', data => onOutput(data.toString('utf8')));
+  return child;
+}
+
+async function stopCloud(child) {
+  if (!child || child.exitCode !== null) return;
+  try { childProcess.execFileSync('taskkill', ['/PID', String(child.pid), '/F'], { stdio: 'ignore' }); } catch (_error) { /* child already exited */ }
+  if (child.exitCode === null) {
+    await new Promise(resolve => {
+      const timer = setTimeout(resolve, 1000);
+      child.once('exit', () => { clearTimeout(timer); resolve(); });
+    });
+  }
 }
 
 async function requestJson(baseUrl, pathname, options = {}) {
@@ -127,14 +159,11 @@ async function rejectUnauthenticatedAuthoritySocket(baseUrl) {
 
 (async function verifyRunningControlPlane() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tmp-real-desktop-identity-cloud-test-'));
-  const port = await freePort();
-  const child = childProcess.spawn(process.execPath, [
-    path.join(__dirname, 'isolated-desktop-identity-cloud.js'), root, String(port),
-  ], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  let port = await freePort();
+  let child;
   let childOutput = '';
-  child.stdout.on('data', data => { childOutput += data.toString('utf8'); });
-  child.stderr.on('data', data => { childOutput += data.toString('utf8'); });
-  const baseUrl = `http://127.0.0.1:${port}`;
+  child = spawnCloud(root, port, output => { childOutput += output; });
+  let baseUrl = `http://127.0.0.1:${port}`;
   try {
     await waitForCloud(baseUrl);
     const bootstrapKey = generateDeviceKey();
@@ -336,15 +365,60 @@ async function rejectUnauthenticatedAuthoritySocket(baseUrl) {
     });
     assert.strictEqual(legacy.status, 404, 'the retired desktop-session route must not be reachable');
     await rejectUnauthenticatedAuthoritySocket(baseUrl);
+
+    const realAuthorityId = 'real-dba-authority-after-host-bootstrap';
+    const restartTimestamp = '2026-08-03T00:00:00.000Z';
+    const persistentDb = new Database(path.join(root, 'identity-cloud.db'));
+    try {
+      persistentDb.transaction(() => {
+        persistentDb.prepare(`UPDATE authority_accounts SET authority_id=?,updated_at=?
+          WHERE user_id=?`).run(realAuthorityId, restartTimestamp, authorityFixture.hostUserId);
+        persistentDb.prepare(`UPDATE authority_role_bindings SET status='revoked',revoked_at=?,updated_at=?
+          WHERE user_id=? AND status='active'`)
+          .run(restartTimestamp, restartTimestamp, authorityFixture.hostUserId);
+        persistentDb.prepare(`INSERT INTO authority_role_bindings
+          (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,
+           granted_by,created_at,updated_at,revoked_at)
+          VALUES('real-dba-super-admin-binding',?,?,'super_admin',NULL,NULL,'active',2,?,?,?,NULL)`)
+          .run(realAuthorityId, authorityFixture.hostUserId, authorityFixture.hostUserId,
+            restartTimestamp, restartTimestamp);
+      })();
+    } finally {
+      persistentDb.close();
+    }
+
+    await stopCloud(child);
+    port = await freePort();
+    baseUrl = `http://127.0.0.1:${port}`;
+    child = spawnCloud(root, port, output => { childOutput += output; });
+    try {
+      await waitForCloud(baseUrl);
+    } catch (error) {
+      error.message = `${error.message}: ${childOutput.slice(-4000)}`;
+      throw error;
+    }
+    const restartedState = await requestJson(baseUrl, '/__e2e/state');
+    assert.strictEqual(restartedState.status, 200, JSON.stringify(restartedState.body));
+    const restartedAdminAccount = restartedState.body.data.authorityAccounts.find(row => (
+      row.userId === authorityFixture.hostUserId
+    ));
+    assert.strictEqual(restartedAdminAccount?.authorityId, realAuthorityId,
+      'a persistent isolated-cloud restart must not move an active admin account back to the bootstrap authority');
+    const restartedAdminBindings = restartedState.body.data.authorityRoleBindings.filter(row => (
+      row.userId === authorityFixture.hostUserId && row.status === 'active'
+    ));
+    assert.deepStrictEqual(restartedAdminBindings.map(row => ({
+      bindingId: row.bindingId,
+      authorityId: row.authorityId,
+      role: row.role,
+    })), [{
+      bindingId: 'real-dba-super-admin-binding',
+      authorityId: realAuthorityId,
+      role: 'super_admin',
+    }], 'a persistent isolated-cloud restart must not revive the cross-authority bootstrap role binding');
     console.log('isolated desktop identity authority control plane verified');
   } finally {
-    try { childProcess.execFileSync('taskkill', ['/PID', String(child.pid), '/F'], { stdio: 'ignore' }); } catch (_error) { /* child already exited */ }
-    if (child.exitCode === null) {
-      await new Promise(resolve => {
-        const timer = setTimeout(resolve, 1000);
-        child.once('exit', () => { clearTimeout(timer); resolve(); });
-      });
-    }
+    await stopCloud(child);
     assert.ok(path.resolve(root).startsWith(path.resolve(os.tmpdir()) + path.sep));
     for (let attempt = 0; attempt < 10; attempt += 1) {
       try {

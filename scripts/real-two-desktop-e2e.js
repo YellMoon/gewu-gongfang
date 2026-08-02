@@ -497,6 +497,68 @@ async function nativeClickDirect(page, selector) {
   }
   throw new Error('REAL_DESKTOP_CDP_CLICK_EVENT_MISSING');
 }
+async function nativeClickVisibleModalTextDirect(page, text) {
+  await page.send('Page.bringToFront');
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const target = await page.evaluate(`(() => {
+      const wanted = ${literal(text)}.replace(/\\s+/g, '');
+      const visible = item => {
+        const style = window.getComputedStyle(item);
+        const rect = item.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden'
+          && rect.width > 0 && rect.height > 0;
+      };
+      const modal = Array.from(document.querySelectorAll('.ant-modal-wrap')).reverse()
+        .find(item => visible(item) && (item.innerText || '').replace(/\\s+/g, '').includes(wanted));
+      const button = modal && Array.from(modal.querySelectorAll('button,[role="button"]'))
+        .find(item => (item.innerText || '').replace(/\\s+/g, '') === wanted
+          && !item.closest('[aria-disabled="true"]') && visible(item));
+      if (!button) return null;
+      button.scrollIntoView({ block: 'center', inline: 'center' });
+      const rect = button.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      const hit = document.elementFromPoint(x, y);
+      if (!hit || !(hit === button || button.contains(hit))) return { obscured: true };
+      window.__realDesktopModalClickProbe = { wanted, observed: false };
+      document.addEventListener('click', event => {
+        const clicked = event.target instanceof Element
+          ? event.target.closest('button,[role="button"]')
+          : null;
+        if (clicked && (clicked.innerText || '').replace(/\\s+/g, '') === wanted
+          && clicked.closest('.ant-modal-wrap')) {
+          window.__realDesktopModalClickProbe.observed = true;
+        }
+      }, { capture: true, once: true });
+      return { x, y, obscured: false };
+    })()`);
+    if (!target) {
+      const error = new Error('REAL_DESKTOP_VISIBLE_MODAL_ACTION_MISSING');
+      error.code = 'REAL_DESKTOP_VISIBLE_MODAL_ACTION_MISSING';
+      throw error;
+    }
+    if (target.obscured) {
+      if (attempt === 0) { await sleep(250); continue; }
+      throw new Error('REAL_DESKTOP_CDP_TARGET_OBSCURED');
+    }
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: target.x, y: target.y, button: 'none', buttons: 0 });
+    await sleep(80);
+    await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: target.x, y: target.y, button: 'left', buttons: 1, clickCount: 1 });
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: target.x, y: target.y, button: 'left', buttons: 0, clickCount: 1 });
+    await sleep(50);
+    const observed = await page.evaluate(`(() => {
+      const observed = window.__realDesktopModalClickProbe?.observed === true;
+      delete window.__realDesktopModalClickProbe;
+      return observed;
+    })()`);
+    if (observed) return;
+    if (attempt === 0) {
+      console.warn('[e2e] REAL_DESKTOP_CDP_CLICK_RETRY_REQUIRED');
+      await sleep(250);
+    }
+  }
+  throw new Error('REAL_DESKTOP_CDP_CLICK_EVENT_MISSING');
+}
 function actionPage(cdpPort, profileRoot) {
   return Object.freeze({
     bringToFront: () => withFreshCdpPage(cdpPort, profileRoot, 'bring-to-front', page => page.send('Page.bringToFront')),
@@ -533,6 +595,7 @@ function actionPage(cdpPort, profileRoot) {
       if (current !== String(value)) throw new Error('REAL_DESKTOP_CDP_NATIVE_FILL_FAILED');
     }),
     nativeClick: selector => withFreshCdpPage(cdpPort, profileRoot, `native-click:${selector}`, page => nativeClickDirect(page, selector)),
+    nativeClickModalText: text => withFreshCdpPage(cdpPort, profileRoot, `native-modal-click:${text}`, page => nativeClickVisibleModalTextDirect(page, text)),
     nativeMove: ({ x, y }) => withFreshCdpPage(cdpPort, profileRoot, 'native-move', page => page.send('Input.dispatchMouseEvent', {
       type: 'mouseMoved', x, y, button: 'none', buttons: 0,
     })),
@@ -584,25 +647,14 @@ async function clickTextWhenAvailable(page, text, code, timeoutMs = 15_000) {
   }, code, timeoutMs);
 }
 async function clickVisibleModalText(page, text) {
-  const actionKey = `real-modal-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const selector = await page.evaluate(`(() => {
-    const text = ${literal(text)}.replace(/\\s+/g, '');
-    const key = ${literal(actionKey)};
-    const visible = item => {
-      const style = window.getComputedStyle(item);
-      const rect = item.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    };
-    const modal = Array.from(document.querySelectorAll('.ant-modal-wrap')).reverse().find(item => visible(item)
-      && (item.innerText || '').replace(/\\s+/g, '').includes(text));
-    const button = modal && Array.from(modal.querySelectorAll('button,[role="button"]'))
-      .find(item => (item.innerText || '').replace(/\\s+/g, '') === text && !item.closest('[aria-disabled="true"]'));
-    if (!button) return null;
-    button.dataset.realDesktopAction = key;
-    return '[data-real-desktop-action="' + key + '"]';
-  })()`);
-  if (!selector) fail('REAL_DESKTOP_VISIBLE_MODAL_ACTION_MISSING');
-  await page.nativeClick(selector);
+  try {
+    await page.nativeClickModalText(text);
+  } catch (error) {
+    if (String(error?.message || '').includes('REAL_DESKTOP_VISIBLE_MODAL_ACTION_MISSING')) {
+      fail('REAL_DESKTOP_VISIBLE_MODAL_ACTION_MISSING');
+    }
+    throw error;
+  }
 }
 async function waitBody(page, text, code, timeoutMs) {
   return waitFor(async () => (await body(page)).includes(text), code, timeoutMs);

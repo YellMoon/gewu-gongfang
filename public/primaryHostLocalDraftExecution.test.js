@@ -13,6 +13,7 @@ assert.ok(electron.includes("require('./primaryHostLocalDraftExecutor')")
   && electron.includes('authorityExecutor: authorityRuntime.executor')
   && electron.includes('const hostAuthorityContext = () =>')
   && electron.includes('hostAuthorityContext,')
+  && electron.includes('resolveHostEpoch: hostEpochId => runtimeHostEpochs.find(hostEpochId)')
   && electron.includes('PRIMARY_HOST_LOCAL_OPERATOR_UNLOCK_REQUIRED')
   && electron.includes('projectionWorker: authorityProjectionWorker'),
   'the Electron main process must wire local drafts to the isolated authority executor');

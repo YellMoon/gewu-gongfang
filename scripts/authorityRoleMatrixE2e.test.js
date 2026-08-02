@@ -11,6 +11,18 @@ const source = fs.readFileSync(matrixPath, 'utf8');
 for (const role of ['visitor', 'student', 'teacher', 'admin', 'super_admin']) {
   assert.ok(source.includes(`'${role}'`), `role matrix must include ${role}`);
 }
+for (const scenario of [
+  'student-bound',
+  'student-unbound',
+  'teacher-bound',
+  'teacher-unbound',
+]) {
+  assert.ok(source.includes(`'${scenario}'`), `role matrix must include ${scenario}`);
+}
+assert.ok(source.includes('subjectBound') && source.includes('businessDataFailClosed'),
+  'the matrix result must distinguish subject binding and prove unbound business data fails closed');
+assert.ok(source.includes('createAuthorityCommandPolicy'),
+  'the same matrix must enforce that admins cannot self-apply while superadmins can review');
 assert.ok(source.includes('/api/authority/projections/current'),
   'role matrix must fetch each signed projection through the formal authority HTTP route');
 assert.ok(source.includes('buildAuthorityBackedBrowserCache'),

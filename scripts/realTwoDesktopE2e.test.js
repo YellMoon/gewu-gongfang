@@ -206,6 +206,10 @@ assert.ok(source.includes('HOST_DEVICE_APPROVE_CONFIRMATION_DISPATCH_REQUIRED')
   && source.includes('await clickVisibleModalText(page,')
   && source.includes("}, 'HOST_DEVICE_APPROVE_CONFIRMATION_DISPATCH_REQUIRED', 30_000);"),
   'the approval confirmation must dispatch exactly once before its independently-rendered result is asserted');
+assert.ok(source.includes('nativeClickModalText: text => withFreshCdpPage('),
+  'modal confirmation must resolve and click the visible button within one CDP session');
+assert.ok(source.includes('await page.nativeClickModalText(text);'),
+  'modal confirmation must not carry a transient React data selector across CDP sessions');
 assert.ok(source.includes('function clickPaintedText(page, text)')
   && source.includes('const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);')
   && source.includes('return Boolean(hit && (hit === item || item.contains(hit)));'),

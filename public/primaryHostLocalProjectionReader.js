@@ -9,6 +9,7 @@ function localProjectionError(code) {
 function createPrimaryHostLocalProjectionReader({
   refreshControlRecords,
   hostAuthorityContext,
+  resolveHostEpoch,
   materializeProjections,
   projectionStore,
   db,
@@ -16,6 +17,7 @@ function createPrimaryHostLocalProjectionReader({
 } = {}) {
   if (typeof refreshControlRecords !== 'function'
     || typeof hostAuthorityContext !== 'function'
+    || typeof resolveHostEpoch !== 'function'
     || typeof materializeProjections !== 'function'
     || !db || typeof db.prepare !== 'function'
     || typeof now !== 'function'
@@ -41,11 +43,9 @@ function createPrimaryHostLocalProjectionReader({
     if (role !== 'visitor' && !roleContext.grants.some(grant => grant.role === role)) {
       throw localProjectionError('AUTHORITY_PROJECTION_ROLE_NOT_GRANTED');
     }
-    const epoch = db.prepare(`SELECT id,db_authority_id,device_id,generation,status
-      FROM primary_host_epochs WHERE id=?`).get(String(context.hostEpochId || '').trim());
+    const epoch = resolveHostEpoch(String(context.hostEpochId || '').trim());
     if (!epoch
-      || epoch.status !== 'active'
-      || epoch.db_authority_id !== authorityId
+      || epoch.authority_id !== authorityId
       || epoch.device_id !== deviceId
       || !Number.isSafeInteger(Number(epoch.generation))
       || Number(epoch.generation) < 1) {

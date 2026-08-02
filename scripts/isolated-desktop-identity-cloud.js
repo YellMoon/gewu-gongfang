@@ -19,7 +19,9 @@ process.env.NODE_ENV = 'test';
 process.env.APP_ENV = 'dev';
 process.env.WECHAT_USE_MOCK_LOGIN = 'true';
 process.env.ALLOW_DEV_WECHAT_LOGIN = 'true';
-process.env.WECHAT_DEV_OPENID = process.env.WECHAT_DEV_OPENID || 'isolated-miniapp-visitor';
+process.env.WECHAT_DEV_OPENID = process.env.GEWU_E2E_WECHAT_OPENID
+  || process.env.WECHAT_DEV_OPENID
+  || 'isolated-miniapp-visitor';
 const jwtSecret = 'isolated-desktop-identity-cloud-test-secret';
 // Authentication modules capture this value when they are required, so the
 // disposable secret must be installed before loading any backend route.
@@ -42,20 +44,17 @@ function ensureE2eBootstrapAuthority(db) {
   if (!admin) throw new Error('E2E_BOOTSTRAP_ADMIN_REQUIRED');
   const now = new Date().toISOString();
   db.transaction(() => {
-    db.prepare(`INSERT INTO authority_accounts(user_id,authority_id,status,created_at,updated_at)
+    const inserted = db.prepare(`INSERT INTO authority_accounts(user_id,authority_id,status,created_at,updated_at)
       VALUES(?,?,'active',?,?)
-      ON CONFLICT(user_id) DO UPDATE SET authority_id=excluded.authority_id,
-        status='active',updated_at=excluded.updated_at`)
+      ON CONFLICT(user_id) DO NOTHING`)
       .run(admin.id, E2E_BOOTSTRAP_AUTHORITY_ID, now, now);
+    if (inserted.changes !== 1) return;
     db.prepare(`INSERT INTO authority_role_bindings
       (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,
        granted_by,created_at,updated_at,revoked_at)
       VALUES('isolated-bootstrap-super-admin-binding',?,?,'super_admin',NULL,NULL,
         'active',1,?,?,?,NULL)
-      ON CONFLICT(binding_id) DO UPDATE SET authority_id=excluded.authority_id,
-        user_id=excluded.user_id,role='super_admin',subject_type=NULL,subject_id=NULL,
-        status='active',grant_version=excluded.grant_version,granted_by=excluded.granted_by,
-        updated_at=excluded.updated_at,revoked_at=NULL`)
+      ON CONFLICT DO NOTHING`)
       .run(E2E_BOOTSTRAP_AUTHORITY_ID, admin.id, admin.id, now, now);
   })();
 }
@@ -142,7 +141,8 @@ const authorityDeviceRequestAuth = createAuthorityDeviceRequestAuth({ db: databa
 const cloudControls = createAuthorityCloudControlService({ db: database });
 const authorityProjectionStore = createAuthorityProjectionStoreService({ db: database });
 const e2eWechatIdentity = {
-  openid: 'isolated-desktop-confirmation-user',
+  openid: String(process.env.GEWU_E2E_DESKTOP_OPENID || '').trim()
+    || 'isolated-desktop-confirmation-user',
   phone: '13732250653',
 };
 function currentE2eWechatIdentity() {
@@ -555,12 +555,17 @@ app.get('/__e2e/state', (_req, res) => {
   const loginEvents = database.prepare(`SELECT user_id AS userId, result_code AS resultCode,
     created_at AS createdAt FROM miniapp_login_events ORDER BY created_at DESC`).all();
   const e2eUsers = database.prepare(`SELECT id,
-    CASE wechat_openid
-      WHEN 'isolated-miniapp-visitor' THEN 'miniapp_visitor'
-      WHEN 'isolated-desktop-confirmation-user' THEN 'desktop_confirmation_admin'
+    CASE
+      WHEN wechat_openid=? THEN 'miniapp_visitor'
+      WHEN wechat_openid=? THEN 'desktop_confirmation_admin'
     END AS identityKind
-    FROM users WHERE wechat_openid IN ('isolated-miniapp-visitor','isolated-desktop-confirmation-user')
-    ORDER BY id ASC`).all();
+    FROM users WHERE wechat_openid IN (?,?)
+    ORDER BY id ASC`).all(
+    process.env.WECHAT_DEV_OPENID,
+    e2eWechatIdentity.openid,
+    process.env.WECHAT_DEV_OPENID,
+    e2eWechatIdentity.openid,
+  );
   const hostState = {
     tables: database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'primary_host_%' ORDER BY name")
       .all().map(row => row.name),
