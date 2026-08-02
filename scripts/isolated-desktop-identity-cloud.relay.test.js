@@ -7,7 +7,6 @@ const fs = require('fs');
 const net = require('net');
 const os = require('os');
 const path = require('path');
-const Database = require('better-sqlite3');
 const WebSocket = require('ws');
 const {
   createSignedAuthorityProjection,
@@ -77,48 +76,18 @@ function generateDeviceKey() {
   };
 }
 
-function seedAuthority(root) {
-  const db = new Database(path.join(root, 'identity-cloud.db'));
-  const now = '2026-08-02T00:00:00.000Z';
-  const authorityId = 'isolated-authority-1';
+function createAuthorityFixture() {
+  const authorityId = 'isolated-two-desktop-acceptance';
   const hostEpochId = 'isolated-host-epoch-1';
   const hostDeviceId = 'isolated-host-device-1';
   const hostCredential = 'isolated-host-credential-for-tests-only';
   const hostCredentialHash = crypto.createHash('sha256').update(hostCredential).digest('hex');
   const hostKey = crypto.generateKeyPairSync('ed25519');
   const hostPublicKey = hostKey.publicKey.export({ type: 'spki', format: 'pem' }).toString();
-  let hostUser = db.prepare('SELECT id FROM users WHERE phone_normalized=? AND deleted=0')
-    .get('13732250653');
-  if (!hostUser) {
-    db.prepare(`INSERT INTO users
-      (id,phone,phone_normalized,name,role,identity_kind,status,login_enabled,review_status,
-       auth_version,deleted,created_at,updated_at)
-      VALUES('isolated-host-admin','13732250653','13732250653','Isolated Host Admin',
-        'super_admin','admin',1,1,'approved',1,0,?,?)`).run(now, now);
-    hostUser = { id: 'isolated-host-admin' };
-  }
-  db.prepare(`UPDATE users SET role='super_admin',identity_kind='admin',status=1,
-    login_enabled=1,review_status='approved',is_super_admin_identity=1,deleted=0,updated_at=? WHERE id=?`)
-    .run(now, hostUser.id);
-  db.prepare(`INSERT INTO authority_accounts(user_id,authority_id,status,created_at,updated_at)
-    VALUES(?,?,'active',?,?)
-    ON CONFLICT(user_id) DO UPDATE SET authority_id=excluded.authority_id,
-      status='active',updated_at=excluded.updated_at`).run(hostUser.id, authorityId, now, now);
-  db.prepare(`INSERT INTO authority_role_bindings
-    (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,created_at,updated_at)
-    VALUES('isolated-host-admin-binding',?,?,'super_admin',NULL,NULL,
-      'active',1,?,?)`).run(authorityId, hostUser.id, now, now);
-  db.pragma('foreign_keys = OFF');
-  db.prepare(`INSERT INTO primary_host_epochs
-    (id,generation,device_id,user_id,authorization_id,status,activation_reason,source_epoch_id,
-     challenge_id,db_instance_digest,schema_version,store_id,db_authority_id,host_credential_hash,
-     host_public_key,credential_version,row_version,created_at,updated_at,activated_at,retired_at)
-    VALUES(?,1,?,?,'isolated-host-authorization','active','bootstrap',NULL,
-      'isolated-host-challenge','isolated-db-digest',1,'isolated-store',?,?,?,1,1,?,?,?,NULL)`)
-    .run(hostEpochId, hostDeviceId, hostUser.id, authorityId, hostCredentialHash, hostPublicKey, now, now, now);
-  db.pragma('foreign_keys = ON');
-  db.close();
-  return { authorityId, hostEpochId, hostDeviceId, hostCredential, hostKey, hostUserId: hostUser.id };
+  return {
+    authorityId, hostEpochId, hostDeviceId, hostCredential, hostCredentialHash,
+    hostKey, hostPublicKey, hostUserId: 'miniapp-admin-13732250653',
+  };
 }
 
 function collect(socket) {
@@ -164,7 +133,71 @@ async function rejectUnauthenticatedAuthoritySocket(baseUrl) {
   const baseUrl = `http://127.0.0.1:${port}`;
   try {
     await waitForCloud(baseUrl);
-    const authorityFixture = seedAuthority(root);
+    const bootstrapKey = generateDeviceKey();
+    const bootstrapChallenge = await requestJson(baseUrl, '/api/desktop-identity/challenges/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        deviceId: 'isolated-bootstrap-confirmation-device',
+        deviceName: 'Isolated Bootstrap Confirmation',
+        publicKey: bootstrapKey.publicKey,
+        keyFingerprint: bootstrapKey.keyFingerprint,
+      }),
+    });
+    assert.strictEqual(bootstrapChallenge.status, 200, JSON.stringify(bootstrapChallenge.body));
+    const bootstrapConfirmed = await requestJson(baseUrl, '/__e2e/confirm-latest', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    });
+    assert.strictEqual(bootstrapConfirmed.status, 200, JSON.stringify(bootstrapConfirmed.body));
+    const bootstrapState = await requestJson(baseUrl, '/__e2e/state');
+    assert.strictEqual(bootstrapState.status, 200, JSON.stringify(bootstrapState.body));
+    const bootstrapAccount = bootstrapState.body.data.authorityAccounts.find(row => (
+      row.userId === 'miniapp-admin-13732250653' && row.authorityId === 'isolated-two-desktop-acceptance'
+    ));
+    const bootstrapBinding = bootstrapState.body.data.authorityRoleBindings.find(row => (
+      row.userId === 'miniapp-admin-13732250653'
+      && row.authorityId === 'isolated-two-desktop-acceptance'
+      && row.role === 'super_admin'
+    ));
+    const bootstrapLogin = bootstrapState.body.data.loginEvents.find(row => (
+      row.userId === 'miniapp-admin-13732250653'
+    ));
+    assert.deepStrictEqual({
+      accountStatus: bootstrapAccount?.status,
+      bindingStatus: bootstrapBinding?.status,
+      subjectType: bootstrapBinding?.subjectType,
+      subjectId: bootstrapBinding?.subjectId,
+    }, {
+      accountStatus: 'active',
+      bindingStatus: 'active',
+      subjectType: null,
+      subjectId: null,
+    });
+    assert.strictEqual(bootstrapLogin?.resultCode, 'FORMAL_LOGIN_SUCCESS');
+    const authorityFixture = createAuthorityFixture();
+    const seededAuthority = await requestJson(baseUrl, '/__e2e/seed-authority', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        authorityId: authorityFixture.authorityId,
+        hostEpochId: authorityFixture.hostEpochId,
+        hostDeviceId: authorityFixture.hostDeviceId,
+        hostCredentialHash: authorityFixture.hostCredentialHash,
+        hostPublicKey: authorityFixture.hostPublicKey,
+      }),
+    });
+    assert.strictEqual(seededAuthority.status, 200, JSON.stringify(seededAuthority.body));
+    const seededState = await requestJson(baseUrl, '/__e2e/state');
+    assert.strictEqual(seededState.status, 200, JSON.stringify(seededState.body));
+    const activeAccounts = new Set(seededState.body.data.authorityAccounts
+      .filter(row => row.status === 'active')
+      .map(row => `${row.userId}:${row.authorityId}`));
+    const orphanedBindings = seededState.body.data.authorityRoleBindings.filter(row => (
+      row.userId === authorityFixture.hostUserId
+      && row.status === 'active'
+      && !activeAccounts.has(`${row.userId}:${row.authorityId}`)
+    ));
+    assert.strictEqual(orphanedBindings.length, 0, 'isolated authority fixture must not leave cross-authority active bindings');
     const projection = createSignedAuthorityProjection({
       authorityId: authorityFixture.authorityId,
       hostEpochId: authorityFixture.hostEpochId,
@@ -240,17 +273,14 @@ async function rejectUnauthenticatedAuthoritySocket(baseUrl) {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
     });
     assert.strictEqual(confirmed.status, 200, JSON.stringify(confirmed.body));
-    const identityDb = new Database(path.join(root, 'identity-cloud.db'), { readonly: true });
-    const miniappUser = identityDb.prepare('SELECT id,wechat_openid FROM users WHERE phone_normalized=?')
-      .get('19972110031');
-    const desktopConfirmationUser = identityDb.prepare('SELECT id,wechat_openid FROM users WHERE phone_normalized=?')
-      .get('13732250653');
-    identityDb.close();
+    const identityState = await requestJson(baseUrl, '/__e2e/state');
+    assert.strictEqual(identityState.status, 200, JSON.stringify(identityState.body));
+    const miniappUser = identityState.body.data.e2eUsers.find(row => row.identityKind === 'miniapp_visitor');
+    const desktopConfirmationUser = identityState.body.data.e2eUsers.find(
+      row => row.identityKind === 'desktop_confirmation_admin'
+    );
     assert.strictEqual(miniappUser.id, miniappLogin.body.data.userId);
-    assert.strictEqual(miniappUser.wechat_openid, 'isolated-miniapp-visitor');
-    assert.strictEqual(desktopConfirmationUser.wechat_openid, 'isolated-desktop-confirmation-user');
     assert.notStrictEqual(miniappUser.id, desktopConfirmationUser.id);
-    assert.notStrictEqual(miniappUser.wechat_openid, desktopConfirmationUser.wechat_openid);
 
     const hostSocket = new WebSocket(
       baseUrl.replace(/^http:/, 'ws:') + '/ws/cloud-relay?role=host',

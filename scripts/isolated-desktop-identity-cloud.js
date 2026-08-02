@@ -34,6 +34,32 @@ const taskService = require('../backend/src/services/cloudRelayTaskService');
 const { createAuthorityProtocolRouter } = require('../backend/src/routes/authorityProtocol');
 const { CloudRelaySocketServer } = require('../backend/src/websocket/cloudRelayServer');
 const database = new DatabaseService().db;
+const E2E_BOOTSTRAP_AUTHORITY_ID = 'isolated-two-desktop-acceptance';
+const E2E_BOOTSTRAP_ADMIN_ID = 'miniapp-admin-13732250653';
+function ensureE2eBootstrapAuthority(db) {
+  const admin = db.prepare(`SELECT id FROM users
+    WHERE id=? AND status=1 AND login_enabled=1 AND deleted=0`).get(E2E_BOOTSTRAP_ADMIN_ID);
+  if (!admin) throw new Error('E2E_BOOTSTRAP_ADMIN_REQUIRED');
+  const now = new Date().toISOString();
+  db.transaction(() => {
+    db.prepare(`INSERT INTO authority_accounts(user_id,authority_id,status,created_at,updated_at)
+      VALUES(?,?,'active',?,?)
+      ON CONFLICT(user_id) DO UPDATE SET authority_id=excluded.authority_id,
+        status='active',updated_at=excluded.updated_at`)
+      .run(admin.id, E2E_BOOTSTRAP_AUTHORITY_ID, now, now);
+    db.prepare(`INSERT INTO authority_role_bindings
+      (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,
+       granted_by,created_at,updated_at,revoked_at)
+      VALUES('isolated-bootstrap-super-admin-binding',?,?,'super_admin',NULL,NULL,
+        'active',1,?,?,?,NULL)
+      ON CONFLICT(binding_id) DO UPDATE SET authority_id=excluded.authority_id,
+        user_id=excluded.user_id,role='super_admin',subject_type=NULL,subject_id=NULL,
+        status='active',grant_version=excluded.grant_version,granted_by=excluded.granted_by,
+        updated_at=excluded.updated_at,revoked_at=NULL`)
+      .run(E2E_BOOTSTRAP_AUTHORITY_ID, admin.id, admin.id, now, now);
+  })();
+}
+ensureE2eBootstrapAuthority(database);
 function ensureGatewayAuthorityMirrorTables(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS authority_role_mirror_versions (
     authority_id TEXT PRIMARY KEY, host_epoch_id TEXT NOT NULL,
@@ -436,12 +462,72 @@ app.post('/__e2e/reset-credential-verification-trace', (_req, res) => {
   latestCredentialVerification = null;
   return res.json({ success: true });
 });
+app.post('/__e2e/seed-authority', (req, res) => {
+  const {
+    authorityId, hostEpochId, hostDeviceId, hostCredentialHash, hostPublicKey,
+  } = req.body || {};
+  if (authorityId !== E2E_BOOTSTRAP_AUTHORITY_ID
+      || hostEpochId !== 'isolated-host-epoch-1'
+      || hostDeviceId !== 'isolated-host-device-1'
+      || !/^[a-f0-9]{64}$/.test(String(hostCredentialHash || ''))
+      || !String(hostPublicKey || '').startsWith('-----BEGIN PUBLIC KEY-----')) {
+    return res.status(400).json({ success: false, code: 'E2E_AUTHORITY_FIXTURE_INVALID' });
+  }
+  const now = '2026-08-02T00:00:00.000Z';
+  database.pragma('foreign_keys = OFF');
+  try {
+    database.transaction(() => {
+    database.prepare(`UPDATE users SET role='super_admin',identity_kind='admin',status=1,
+      login_enabled=1,review_status='approved',is_super_admin_identity=1,deleted=0,updated_at=?
+      WHERE id=?`).run(now, E2E_BOOTSTRAP_ADMIN_ID);
+    database.prepare(`INSERT INTO authority_accounts(user_id,authority_id,status,created_at,updated_at)
+      VALUES(?,?,'active',?,?)
+      ON CONFLICT(user_id) DO UPDATE SET authority_id=excluded.authority_id,
+        status='active',updated_at=excluded.updated_at`)
+      .run(E2E_BOOTSTRAP_ADMIN_ID, authorityId, now, now);
+    database.prepare(`UPDATE authority_role_bindings SET subject_type=NULL,subject_id=NULL,
+      status='active',grant_version=1,granted_by=?,updated_at=?,revoked_at=NULL
+      WHERE authority_id=? AND user_id=? AND role='super_admin'`)
+      .run(E2E_BOOTSTRAP_ADMIN_ID, now, authorityId, E2E_BOOTSTRAP_ADMIN_ID);
+    database.prepare(`INSERT INTO primary_host_epochs
+      (id,generation,device_id,user_id,authorization_id,status,activation_reason,source_epoch_id,
+       challenge_id,db_instance_digest,schema_version,store_id,db_authority_id,host_credential_hash,
+       host_public_key,credential_version,row_version,created_at,updated_at,activated_at,retired_at)
+      VALUES(?,1,?,?,'isolated-host-authorization','active','bootstrap',NULL,
+       'isolated-host-challenge','isolated-db-digest',1,'isolated-store',?,?,?,1,1,?,?,?,NULL)
+      ON CONFLICT(id) DO UPDATE SET device_id=excluded.device_id,user_id=excluded.user_id,
+        status='active',db_authority_id=excluded.db_authority_id,
+        host_credential_hash=excluded.host_credential_hash,host_public_key=excluded.host_public_key,
+        updated_at=excluded.updated_at,activated_at=excluded.activated_at,retired_at=NULL`)
+      .run(hostEpochId, hostDeviceId, E2E_BOOTSTRAP_ADMIN_ID, authorityId,
+        hostCredentialHash, hostPublicKey, now, now, now);
+    })();
+  } finally {
+    database.pragma('foreign_keys = ON');
+  }
+  return res.json({ success: true });
+});
 app.get('/__e2e/state', (_req, res) => {
   const challenges = database.prepare(`SELECT device_id AS deviceId, device_kind AS deviceKind,
     status, claimed_user_id AS claimedUserId, row_version AS rowVersion
     FROM desktop_identity_challenges ORDER BY created_at ASC`).all();
   const authorizations = database.prepare(`SELECT device_id AS deviceId, device_kind AS deviceKind,
     status, user_id AS userId FROM desktop_device_authorizations ORDER BY created_at ASC`).all();
+  const authorityAccounts = database.prepare(`SELECT user_id AS userId, authority_id AS authorityId,
+    status FROM authority_accounts ORDER BY user_id ASC`).all();
+  const authorityRoleBindings = database.prepare(`SELECT binding_id AS bindingId,
+    authority_id AS authorityId, user_id AS userId, role, subject_type AS subjectType,
+    subject_id AS subjectId, status, grant_version AS grantVersion
+    FROM authority_role_bindings ORDER BY binding_id ASC`).all();
+  const loginEvents = database.prepare(`SELECT user_id AS userId, result_code AS resultCode,
+    created_at AS createdAt FROM miniapp_login_events ORDER BY created_at DESC`).all();
+  const e2eUsers = database.prepare(`SELECT id,
+    CASE wechat_openid
+      WHEN 'isolated-miniapp-visitor' THEN 'miniapp_visitor'
+      WHEN 'isolated-desktop-confirmation-user' THEN 'desktop_confirmation_admin'
+    END AS identityKind
+    FROM users WHERE wechat_openid IN ('isolated-miniapp-visitor','isolated-desktop-confirmation-user')
+    ORDER BY id ASC`).all();
   const hostState = {
     tables: database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'primary_host_%' ORDER BY name")
       .all().map(row => row.name),
@@ -454,7 +540,8 @@ app.get('/__e2e/state', (_req, res) => {
       FROM primary_host_epochs ORDER BY created_at ASC`).all(),
   };
   return res.json({ success: true, data: {
-    challenges, authorizations, hostState, latestBootstrapAttempt, latestCredentialVerification,
+    challenges, authorizations, authorityAccounts, authorityRoleBindings, loginEvents, e2eUsers,
+    hostState, latestBootstrapAttempt, latestCredentialVerification,
   } });
 });
 app.get('/__e2e/health', (_req, res) => res.json({ success: true }));
