@@ -46,6 +46,16 @@ function createMiniappProvisioningReconciler({
   const findStudentUsers = db.prepare('SELECT * FROM users WHERE student_id=?');
   const findTeacherUsers = db.prepare('SELECT * FROM users WHERE teacher_id=?');
   const findMembership = db.prepare('SELECT * FROM account_memberships WHERE subject_type=? AND subject_id=?');
+  const findAuthorityAccount = db.prepare(`SELECT user_id,authority_id,status
+    FROM authority_accounts WHERE user_id=?`);
+  const readConfiguredAuthority = db.prepare(
+    "SELECT value FROM authority_metadata WHERE key='database_authority_id'"
+  );
+  const readActiveHostEpochs = db.prepare(`SELECT id,db_authority_id
+    FROM primary_host_epochs WHERE status='active' ORDER BY generation DESC,id`);
+  const findActiveCanonicalBindings = db.prepare(`SELECT * FROM authority_role_bindings
+    WHERE authority_id=? AND user_id=? AND role=? AND status='active'
+    ORDER BY binding_id`);
   const insertUser = db.prepare(`INSERT INTO users
     (id, wechat_openid, phone, phone_normalized, name, role, identity_kind, status,
      login_enabled, student_id, teacher_id, review_status, reviewed_by, reviewed_at,
@@ -61,6 +71,13 @@ function createMiniappProvisioningReconciler({
     VALUES (?, ?, ?, 'active', 'admin_approval', ?, NULL, ?, ?)
     ON CONFLICT(subject_type, subject_id) DO UPDATE SET
       status='active', source='admin_approval', ends_at=NULL, updated_at=excluded.updated_at`);
+  const insertAuthorityAccount = db.prepare(`INSERT INTO authority_accounts
+    (user_id,authority_id,status,created_at,updated_at)
+    VALUES (?,?,'active',?,?)`);
+  const insertAuthorityBinding = db.prepare(`INSERT INTO authority_role_bindings
+    (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,
+     granted_by,created_at,updated_at,revoked_at)
+    VALUES (?,?,?,?,?,?,'active',1,?,?,?,NULL)`);
   const approveApplication = db.prepare(`UPDATE miniapp_role_applications
     SET status='approved', host_entity_id=?, rejection_reason=NULL, updated_at=?
     WHERE id=? AND revision=? AND host_task_id=? AND status='provisioning'`);
@@ -234,6 +251,68 @@ function createMiniappProvisioningReconciler({
     return user;
   }
 
+  function resolveProvisioningAuthority(users) {
+    const sources = [];
+    for (const user of users) {
+      const account = findAuthorityAccount.get(user.id);
+      if (account) {
+        const authorityId = String(account.authority_id || '').trim();
+        if (!authorityId) throw reconciliationError('PROVISIONING_AUTHORITY_CONFLICT');
+        sources.push(authorityId);
+      }
+    }
+    const configured = String(readConfiguredAuthority.get()?.value || '').trim();
+    if (configured) sources.push(configured);
+    const activeEpochs = readActiveHostEpochs.all();
+    if (activeEpochs.length > 1) throw reconciliationError('PROVISIONING_AUTHORITY_CONFLICT');
+    if (activeEpochs.length === 1) {
+      const epochAuthority = String(activeEpochs[0].db_authority_id || '').trim();
+      if (!epochAuthority) throw reconciliationError('PROVISIONING_AUTHORITY_CONFLICT');
+      sources.push(epochAuthority);
+    }
+    if (!sources.length) throw reconciliationError('PROVISIONING_AUTHORITY_UNAVAILABLE');
+    if (new Set(sources).size !== 1) {
+      throw reconciliationError('PROVISIONING_AUTHORITY_CONFLICT');
+    }
+    return sources[0];
+  }
+
+  function ensureCanonicalAuthority({ users, role, entityId, reviewer, at }) {
+    const authorityId = resolveProvisioningAuthority(users);
+    for (const user of users) {
+      const account = findAuthorityAccount.get(user.id);
+      if (account) {
+        if (account.status !== 'active' || account.authority_id !== authorityId) {
+          throw reconciliationError('AUTHORITY_ACCOUNT_CONFLICT');
+        }
+      } else {
+        insertAuthorityAccount.run(user.id, authorityId, at, at);
+      }
+      const bindings = findActiveCanonicalBindings.all(authorityId, user.id, role);
+      if (bindings.length > 1) {
+        throw reconciliationError('AUTHORITY_ROLE_BINDING_CONFLICT');
+      }
+      const existing = bindings[0];
+      if (existing) {
+        if (existing.subject_type !== role || existing.subject_id !== entityId) {
+          throw reconciliationError('AUTHORITY_ROLE_BINDING_CONFLICT');
+        }
+        continue;
+      }
+      insertAuthorityBinding.run(
+        uuid('authority-role-binding'),
+        authorityId,
+        user.id,
+        role,
+        role,
+        entityId,
+        reviewer,
+        at,
+        at,
+      );
+    }
+  }
+
   function reconcileStudent(application, context, at) {
     const { payload, result, applicationPayload } = context;
     const studentPhone = normalizePhone(application.student_phone_normalized || applicationPayload.studentPhone);
@@ -283,6 +362,7 @@ function createMiniappProvisioningReconciler({
       || bound.filter(user => user.identity_kind === 'parent').length !== 1) {
       throw reconciliationError('IDENTITY_ENTITY_CONFLICT');
     }
+    return { users: [student, parent], role: 'student', reviewer };
   }
 
   function reconcileTeacher(application, context, at) {
@@ -309,12 +389,23 @@ function createMiniappProvisioningReconciler({
     if (bound.length !== 1 || bound[0].id !== teacher.id) {
       throw reconciliationError('IDENTITY_ENTITY_CONFLICT');
     }
+    return {
+      users: [teacher],
+      role: 'teacher',
+      reviewer: application.reviewed_by || payload.reviewedBy || null,
+    };
   }
 
   const reconcileTransaction = db.transaction((task, application, context) => {
     const at = timestamp();
-    if (application.application_type === 'student') reconcileStudent(application, context, at);
-    else reconcileTeacher(application, context, at);
+    const identities = application.application_type === 'student'
+      ? reconcileStudent(application, context, at)
+      : reconcileTeacher(application, context, at);
+    ensureCanonicalAuthority({
+      ...identities,
+      entityId: context.result.entityId,
+      at,
+    });
     const membership = findMembership.get(context.result.entityType, context.result.entityId);
     if (!membership || membership.status !== 'active' || membership.source !== 'admin_approval') {
       insertMembership.run(

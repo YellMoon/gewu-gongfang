@@ -9,6 +9,8 @@ function canUseDevWechatIdentity() {
 }
 
 function makeDevOpenid(code) {
+  const configured = String(process.env.WECHAT_DEV_OPENID || '').trim();
+  if (configured) return configured;
   return `dev_${String(code || 'mock').replace(/[^a-zA-Z0-9]/g, '').slice(0, 32)}`;
 }
 

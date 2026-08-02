@@ -82,6 +82,17 @@ db.prepare(`INSERT INTO authority_role_bindings
   (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,created_at,updated_at)
   VALUES('binding-admin-http','authority-miniapp-http','admin-http','admin',NULL,NULL,'active',1,?,?)`)
   .run(now, now);
+db.prepare(`INSERT INTO users
+  (id,phone,phone_normalized,name,role,identity_kind,status,login_enabled,
+   review_status,auth_version,deleted,created_at,updated_at)
+  VALUES('student-http','13900139001','13900139001','Student','student','student',1,1,
+    'approved',1,0,?,?)`).run(now, now);
+db.prepare(`INSERT INTO authority_accounts(user_id,authority_id,status,created_at,updated_at)
+  VALUES('student-http','authority-miniapp-http','active',?,?)`).run(now, now);
+db.prepare(`INSERT INTO authority_role_bindings
+  (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,created_at,updated_at)
+  VALUES('binding-student-http','authority-miniapp-http','student-http','student',NULL,
+    NULL,'active',1,?,?)`).run(now, now);
 const signedAdminProjection = createSignedAuthorityProjection({
   authorityId: 'authority-miniapp-http',
   hostEpochId: 'epoch-miniapp-http',
@@ -107,6 +118,12 @@ const adminToken = createMiniappIdentityService({
   now: () => new Date(now),
   uuid: () => 'miniapp-session-admin-http',
 }).issueFormalToken(db.prepare("SELECT * FROM users WHERE id='admin-http'").get()).token;
+const studentToken = createMiniappIdentityService({
+  db,
+  jwtSecret: process.env.JWT_SECRET,
+  now: () => new Date(now),
+  uuid: () => 'miniapp-session-student-http',
+}).issueFormalToken(db.prepare("SELECT * FROM users WHERE id='student-http'").get()).token;
 
 const databaseModule = require('../database');
 databaseModule.getInstance = () => database;
@@ -167,6 +184,42 @@ const { createApp } = require('../app');
     assert.strictEqual(mine.body.state, 'submitted');
     assert.strictEqual(mine.body.application.commandId, submitted.body.command.id);
 
+    const visitorTeacherApplication = await requestJson(origin, '/api/miniapp/applications', {
+      method: 'POST',
+      headers: { ...headers, 'x-idempotency-key': 'miniapp-role-http-visitor-teacher' },
+      body: JSON.stringify({ requestedRole: 'teacher' }),
+    });
+    assert.strictEqual(visitorTeacherApplication.status, 202, JSON.stringify(visitorTeacherApplication.body));
+    assert.strictEqual(visitorTeacherApplication.body.application.requestedRole, 'teacher');
+
+    const formalSubmitted = await requestJson(origin, '/api/miniapp/applications', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${studentToken}`,
+        'content-type': 'application/json',
+        'x-idempotency-key': 'miniapp-role-http-formal-student',
+      },
+      body: JSON.stringify({ requestedRole: 'teacher' }),
+    });
+    assert.strictEqual(formalSubmitted.status, 202, JSON.stringify(formalSubmitted.body));
+    const formalEnvelope = JSON.parse(db.prepare('SELECT envelope_json FROM host_commands WHERE command_id=?')
+      .get(formalSubmitted.body.command.id).envelope_json);
+    assert.strictEqual(formalEnvelope.actor.userId, 'student-http');
+    assert.strictEqual(formalEnvelope.actor.role, 'student');
+    assert.strictEqual(formalEnvelope.payload.requestedRole, 'teacher');
+
+    const adminSelfApplication = await requestJson(origin, '/api/miniapp/applications', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${adminToken}`,
+        'content-type': 'application/json',
+        'x-idempotency-key': 'miniapp-role-http-admin-self',
+      },
+      body: JSON.stringify({ requestedRole: 'student' }),
+    });
+    assert.strictEqual(adminSelfApplication.status, 403);
+    assert.strictEqual(adminSelfApplication.body.code, 'MINIAPP_ROLE_APPLICATION_SESSION_FORBIDDEN');
+
     const forbidden = await requestJson(origin, '/api/miniapp/applications', {
       method: 'POST',
       headers: { ...headers, 'x-idempotency-key': 'miniapp-role-http-admin' },
@@ -181,7 +234,7 @@ const { createApp } = require('../app');
       body: JSON.stringify({ userId: 'visitor-http' }),
     });
     assert.strictEqual(miniappAdminGrant.status, 403);
-    assert.strictEqual(miniappAdminGrant.body.code, 'MINIAPP_VISITOR_SESSION_REQUIRED');
+    assert.strictEqual(miniappAdminGrant.body.code, 'MINIAPP_ROLE_APPLICATION_SESSION_FORBIDDEN');
 
     const projection = await requestJson(origin, '/api/miniapp/projection', {
       headers: { authorization: `Bearer ${token}` },

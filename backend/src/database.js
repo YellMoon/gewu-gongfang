@@ -22,7 +22,7 @@ const {
   scopeForUser,
 } = require('./services/authorizationPolicy');
 
-const SCHEMA_VERSION = 3121;
+const SCHEMA_VERSION = 3122;
 const MINIAPP_ADMIN_SEED_USERS = [
   { id: 'miniapp-admin-13732250653', phone: '13732250653', name: 'Miniapp Admin 0653' },
   { id: 'miniapp-admin-18257136756', phone: '18257136756', name: 'Miniapp Admin 6756' },
@@ -106,6 +106,7 @@ class DatabaseService {
     const schema = fs.readFileSync(schemaPath, 'utf-8');
     this._prepareLegacyTenantColumns();
     this.db.exec(schema);
+    this._ensureDesktopVisitorSessions();
     this._recordSchemaVersion(schemaPath);
     this._ensureTenantColumns();
     this._ensureInstitutionStudentColumns();
@@ -198,6 +199,54 @@ class DatabaseService {
   _prepareLegacyTenantColumns() {
     for (const table of this._tenantScopedTables()) {
       this._ensureTenantColumnForTable(table);
+    }
+  }
+
+  _ensureDesktopVisitorSessions() {
+    const table = this.db.prepare(`SELECT sql FROM sqlite_master
+      WHERE type='table' AND name='desktop_sessions'`).get();
+    if (!table?.sql || /active_role[\s\S]*?'visitor'/.test(table.sql)) return;
+    this.db.pragma('foreign_keys = OFF');
+    try {
+      this.db.transaction(() => {
+        this.db.exec(`
+          CREATE TABLE desktop_sessions_visitor_migration (
+            sid TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            authorization_id TEXT NOT NULL,
+            active_role TEXT NOT NULL CHECK (active_role IN ('visitor', 'super_admin', 'admin', 'teacher', 'student')),
+            eligible_roles_json TEXT NOT NULL,
+            auth_version INTEGER NOT NULL CHECK (auth_version >= 1),
+            credential_version INTEGER NOT NULL CHECK (credential_version >= 1),
+            auth_time TEXT,
+            status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked', 'expired')),
+            issued_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            last_seen_at TEXT,
+            revoke_reason TEXT,
+            revoked_at TEXT,
+            row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (authorization_id) REFERENCES desktop_device_authorizations(id)
+          );
+          INSERT INTO desktop_sessions_visitor_migration SELECT * FROM desktop_sessions;
+          DROP TABLE desktop_sessions;
+          ALTER TABLE desktop_sessions_visitor_migration RENAME TO desktop_sessions;
+          CREATE INDEX idx_desktop_sessions_device_status
+            ON desktop_sessions(device_id, status, expires_at);
+          CREATE INDEX idx_desktop_sessions_user_status
+            ON desktop_sessions(user_id, status, expires_at);
+        `);
+      })();
+    } finally {
+      this.db.pragma('foreign_keys = ON');
+    }
+    const foreignKeyErrors = this.db.pragma('foreign_key_check(desktop_sessions)');
+    if (foreignKeyErrors.length > 0) {
+      throw new Error('DESKTOP_VISITOR_SESSION_MIGRATION_FOREIGN_KEY_INVALID');
     }
   }
 

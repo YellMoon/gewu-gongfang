@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
-const { roleContextForUser } = require('./userRoleGrantService');
+const { resolveActiveAuthorityRoleContext } = require('./authorityRoleGrantAdapter');
 const { scopeForUser } = require('./authorizationPolicy');
 
 const TOKEN_ISSUER = 'gewu-auth';
@@ -11,6 +11,8 @@ const MAX_SESSION_MS = 14 * 24 * 60 * 60 * 1000;
 const RECENT_ELEVATION_MS = 15 * 60 * 1000;
 const ELEVATION_PROOF_MAX_AGE_MS = 2 * 60 * 1000;
 const PRIVILEGED_ROLES = new Set(['super_admin', 'admin']);
+const ROLE_DISPLAY_ORDER = Object.freeze(['super_admin', 'admin', 'teacher', 'student']);
+const DEFAULT_ACTIVE_ROLE_ORDER = Object.freeze(['teacher', 'student', 'admin', 'super_admin']);
 
 function serviceError(code) {
   const error = new Error(code);
@@ -45,6 +47,34 @@ function sameStringArray(left, right) {
     && Array.isArray(right)
     && left.length === right.length
     && left.every(function (value, index) { return value === right[index]; });
+}
+
+function roleContextForUser(db, userId, requestedRole) {
+  let authorityContext;
+  try {
+    authorityContext = resolveActiveAuthorityRoleContext(db, { userId });
+  } catch (_error) {
+    throw serviceError('ACTIVE_ROLE_NOT_GRANTED');
+  }
+  const roleSet = new Set(authorityContext.grants.map(function (grant) { return grant.role; }));
+  const formalRoles = ROLE_DISPLAY_ORDER.filter(function (role) { return roleSet.has(role); });
+  const eligibleRoles = formalRoles.length > 0 ? formalRoles : ['visitor'];
+  const activeRole = String(requestedRole || '').trim()
+    || DEFAULT_ACTIVE_ROLE_ORDER.find(function (role) { return roleSet.has(role); })
+    || 'visitor';
+  const grant = authorityContext.grants.find(function (candidate) {
+    return candidate.role === activeRole;
+  });
+  if (activeRole !== 'visitor' && !grant) throw serviceError('ACTIVE_ROLE_NOT_GRANTED');
+  if (activeRole === 'visitor' && formalRoles.length > 0) throw serviceError('ACTIVE_ROLE_NOT_GRANTED');
+  return Object.freeze({
+    userId: String(userId),
+    authorityId: authorityContext.authorityId,
+    activeRole,
+    eligibleRoles: Object.freeze(eligibleRoles),
+    teacherId: activeRole === 'teacher' ? grant.subjectId : null,
+    studentId: activeRole === 'student' ? grant.subjectId : null,
+  });
 }
 
 function desktopRoleElevationSigningPayload({
@@ -564,4 +594,5 @@ module.exports = {
   TOKEN_USE,
   createDesktopSessionService,
   desktopRoleElevationSigningPayload,
+  resolveDesktopRoleContext: roleContextForUser,
 };

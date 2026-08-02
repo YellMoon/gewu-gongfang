@@ -7,10 +7,27 @@ const path = require('path');
 const source = fs.readFileSync(path.join(__dirname, 'real-two-desktop-e2e.js'), 'utf8');
 const governanceSource = fs.readFileSync(path.join(__dirname, 'realTwoDesktopProcessGovernance.js'), 'utf8');
 const windowRestoreSource = fs.readFileSync(path.join(__dirname, 'restoreProcessWindow.ps1'), 'utf8');
+const isolatedCloudSource = fs.readFileSync(path.join(__dirname, 'isolated-desktop-identity-cloud.js'), 'utf8');
+
+assert.ok(isolatedCloudSource.includes("app.use('/api/auth', authRouter)"),
+  'the disposable cloud must expose the real miniapp manual-phone login router');
+assert.ok(isolatedCloudSource.includes("app.use('/api/miniapp/applications', authMiddleware"),
+  'the disposable cloud must expose the real miniapp role-application command router');
+assert.ok(isolatedCloudSource.includes('createAuthorityCloudControlService'),
+  'the disposable cloud must use the production cloud-owned account/host-owned role control service');
+assert.ok(isolatedCloudSource.indexOf("app.get('/api/authority/host/control-records'")
+  < isolatedCloudSource.indexOf("app.use('/api/authority', authorityApiRouter)"),
+  'production-style cloud control routes must intercept the shared backend authority router in isolated acceptance');
+assert.ok(isolatedCloudSource.includes('createAuthorityProtocolRouter({')
+  && isolatedCloudSource.includes('enqueueCommand: envelope => miniappCommandInbox.enqueue(envelope)')
+  && isolatedCloudSource.includes('claimCommands: input => miniappCommandInbox.claim(input)'),
+  'isolated acceptance must use one production authority router and inbox for enqueue and host claim');
 
 assert(source.includes('async function loopbackHealth'), 'LOOPBACK_HEALTH_PROBE_REQUIRED');
 assert(source.includes("childProcess.execFile('curl.exe'"), 'LOOPBACK_HEALTH_CURL_CLIENT_REQUIRED');
 assert(source.includes('IDENTITY_CLOUD_LISTEN_READY_REQUIRED'), 'IDENTITY_CLOUD_LISTEN_EVENT_REQUIRED');
+assert.ok(source.includes('GEWU_PACKAGED_EXECUTABLE_REQUIRED'),
+  'packaged E2E must reject an empty executable setting before path.resolve turns it into the workspace directory');
 assert(source.includes('let cloud = null;'), 'IDENTITY_CLOUD_LIFECYCLE_GUARD_REQUIRED');
 assert(source.includes("cloud?.child?.pid"), 'IDENTITY_CLOUD_FAILURE_CLEANUP_REQUIRED');
 assert(source.includes('HOST_DEVICE_APPROVE_DIAGNOSTIC_FAILED'), 'HOST_APPROVAL_ORIGINAL_FAILURE_PRESERVATION_REQUIRED');

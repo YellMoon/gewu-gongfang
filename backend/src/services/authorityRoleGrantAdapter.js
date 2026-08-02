@@ -89,10 +89,25 @@ function resolveCanonicalAuthorityRoleContext(db, { authorityId, userId } = {}) 
   });
 }
 
+function resolveActiveAuthorityRoleContext(db, { userId } = {}) {
+  assertAuthorityRoleTables(db);
+  const user = requiredText(userId, 'AUTHORITY_ROLE_USER_REQUIRED');
+  const account = db.prepare(`SELECT authority_id,status FROM authority_accounts
+    WHERE user_id=?`).get(user);
+  if (!account || account.status !== 'active') {
+    throw authorityRoleError('AUTHORITY_ACCOUNT_NOT_ACTIVE');
+  }
+  return resolveCanonicalAuthorityRoleContext(db, {
+    authorityId: account.authority_id,
+    userId: user,
+  });
+}
+
 module.exports = {
   FORMAL_ROLE_ORDER,
   authorityRoleError,
   assertCanonicalGrantRows,
   listCanonicalAuthorityRoleGrants,
+  resolveActiveAuthorityRoleContext,
   resolveCanonicalAuthorityRoleContext,
 };

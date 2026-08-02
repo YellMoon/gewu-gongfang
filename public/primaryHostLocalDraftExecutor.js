@@ -31,8 +31,8 @@ function createPrimaryHostLocalDraftExecutor({
     if (!payload) throw primaryHostLocalDraftError('AUTHORITY_DRAFT_INVALID');
     const envelope = validateEnvelope({
       protocol: PROTOCOL,
-      commandId: crypto.randomUUID(),
-      idempotencyKey: crypto.randomUUID(),
+      commandId: draft.commandId || crypto.randomUUID(),
+      idempotencyKey: draft.idempotencyKey || crypto.randomUUID(),
       authorityId: context?.authorityId,
       hostEpochId: context?.hostEpochId,
       actor: context?.actor,
@@ -44,7 +44,7 @@ function createPrimaryHostLocalDraftExecutor({
     });
     const result = await authorityExecutor.execute(envelope);
     if (result?.receipt?.status === 'committed') void projectionWorker?.wake?.();
-    return result;
+    return Object.freeze({ ...result, envelope });
   };
 }
 

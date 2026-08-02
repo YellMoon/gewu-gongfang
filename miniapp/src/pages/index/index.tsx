@@ -4,7 +4,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
-import { api, readCloudSnapshot } from '../../utils/api';
+import { api, authorityProjectionApi } from '../../utils/api';
 import { authSessionRuntime } from '../../utils/authSession';
 import { captureTrustedAuthSession, clearAuthenticatedSession } from '../../utils/miniappApiSessionRuntime';
 import { accountSessionCleanupStorageKeys, isUnrecognizedIdentity, isVisitorIdentity } from '../../utils/accountExperience';
@@ -148,14 +148,18 @@ export default function Index() {
   const loadSnapshot = async (currentUser: UserInfo) => {
     if (currentUser.user_type === 'pending') return;
     try {
-      const res = await readCloudSnapshot('full');
+      const res = await authorityProjectionApi.readCurrent();
       const payload = res as any;
       if (res.success) {
-        const nextSnapshot = payload.snapshot || payload.data?.snapshot || null;
-        cacheSnapshotPayload(nextSnapshot?.payload);
-        setSnapshot(nextSnapshot);
+        const nextProjection = payload.projection || payload.data?.projection || null;
+        cacheSnapshotPayload(nextProjection?.payload);
+        setSnapshot(nextProjection ? {
+          ...nextProjection,
+          created_at: nextProjection.generatedAt || nextProjection.generated_at,
+        } : null);
       }
-    } catch {
+    } catch (error) {
+      console.warn('[AUTHORITY_PROJECTION_LOAD_FAILED]', error);
       setSnapshot(null);
     }
   };

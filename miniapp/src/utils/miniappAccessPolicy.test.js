@@ -42,6 +42,10 @@ assert.ok(
 for (const scopeField of ['tenant_id?: string', 'tenantId?: string', 'teacher_id?: string', 'teacherId?: string', 'active?: number | boolean', 'deleted?: number | boolean', 'disabled?: number | boolean']) {
   assert.ok(permission.includes(scopeField), `miniapp user contract must retain the verified normal-scope field ${scopeField}`);
 }
+assert.ok(
+  !permission.includes("user.user_type === 'student' ? user.id : undefined"),
+  'the account user id must never be treated as a fallback student profile id',
+);
 assert.ok(permission.includes("'users:review'"), 'super admin policy should expose the review capability');
 assert.ok(permission.includes("'business:all'"), 'administrator policy should consume the shared business capability');
 assert.ok(permission.includes("'business:teacher-scope'"), 'teacher policy should consume the shared teacher scope capability');
@@ -55,7 +59,15 @@ assert.ok(permission.includes('capabilities:'), 'role policy should surface back
 assert.ok(permission.includes('isStudentUser'), 'miniapp permission should distinguish student users');
 assert.ok(permission.includes('getLinkedStudentIds'), 'miniapp permission should expose linked student ids');
 assert.ok(api.includes('createMiniappTask'), 'miniapp API should create allowed cloud tasks');
-assert.ok(api.includes('readCloudSnapshot'), 'miniapp API should read cloud snapshots');
+assert.ok(api.includes('authorityProjectionApi'), 'miniapp API should expose the authority projection facade');
+assert.ok(
+  miniappHome.includes('authorityProjectionApi.readCurrent()') && !miniappHome.includes("readCloudSnapshot('full')"),
+  'miniapp home must read the signed authority projection facade instead of the legacy cloud snapshot path',
+);
+assert.ok(
+  miniappHome.includes("console.warn('[AUTHORITY_PROJECTION_LOAD_FAILED]', error)"),
+  'miniapp home must keep authority projection load failures observable',
+);
 assert.ok(api.includes('readQuestionPreview'), 'miniapp must consume the answer-free question preview contract');
 assert.ok(api.includes('protocolVersion: 2') && api.includes('targetHostDeviceId') && api.includes('idempotencyKey'), 'paper tasks must use the V2 target-host idempotency contract');
 assert.ok(api.includes('cancelMiniappTask'), 'miniapp must support cancelling confirmed V2 tasks');

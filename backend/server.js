@@ -32,9 +32,13 @@ const { createAuthorityCompositeCommandSource } = require('./src/services/author
 const { createAuthoritySocketCommandHandler } = require('./src/services/authoritySocketCommandHandler');
 
 const PORT = resolveBackendPort();
+const runtimeConfig = runtimeConfigFromEnv();
 const app = createApp();
 const server = http.createServer(app);
-app.set('cloudRelaySocketServer', new CloudRelaySocketServer(server));
+app.set('cloudRelaySocketServer', new CloudRelaySocketServer(server, {
+  db: app.locals.authorityDatabase,
+  authorityEnabled: runtimeConfig.nodeRole !== 'primary-host',
+}));
 let hostTaskWakeup = null;
 let hostCommandWorker = null;
 let authorityProjectionWorker = null;
@@ -51,7 +55,6 @@ function runtimeConfigFromEnv() {
 }
 
 server.listen(PORT, () => {
-  const runtimeConfig = runtimeConfigFromEnv();
   if (runtimeConfig.nodeRole === 'primary-host') {
     const managedHostAuth = Object.freeze({
       hostCredential: runtimeConfig.hostCredential,

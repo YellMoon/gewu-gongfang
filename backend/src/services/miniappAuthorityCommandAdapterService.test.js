@@ -30,6 +30,27 @@ try {
       1,1,'approved',1,0,?,?)`).run(now, now);
   db.prepare(`INSERT INTO authority_accounts(user_id,authority_id,status,created_at,updated_at)
     VALUES('visitor-1','authority-1','active',?,?)`).run(now, now);
+  db.prepare(`INSERT INTO users
+    (id,phone,phone_normalized,name,role,identity_kind,status,login_enabled,review_status,
+     auth_version,deleted,created_at,updated_at)
+    VALUES('student-1','13800138001','13800138001','Student','student','student',
+      1,1,'approved',1,0,?,?)`).run(now, now);
+  db.prepare(`INSERT INTO authority_accounts(user_id,authority_id,status,created_at,updated_at)
+    VALUES('student-1','authority-1','active',?,?)`).run(now, now);
+  db.prepare(`INSERT INTO authority_role_bindings
+    (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,created_at,updated_at)
+    VALUES('binding-student-1','authority-1','student-1','student','student','student-profile-1',
+      'active',1,?,?)`).run(now, now);
+  db.prepare(`INSERT INTO users
+    (id,phone,phone_normalized,name,role,identity_kind,status,login_enabled,review_status,
+     auth_version,deleted,created_at,updated_at)
+    VALUES('admin-1','13800138002','13800138002','Admin','admin','admin',
+      1,1,'approved',1,0,?,?)`).run(now, now);
+  db.prepare(`INSERT INTO authority_accounts(user_id,authority_id,status,created_at,updated_at)
+    VALUES('admin-1','authority-1','active',?,?)`).run(now, now);
+  db.prepare(`INSERT INTO authority_role_bindings
+    (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,created_at,updated_at)
+    VALUES('binding-admin-1','authority-1','admin-1','admin',NULL,NULL,'active',1,?,?)`).run(now, now);
   db.pragma('foreign_keys = OFF');
   db.prepare(`INSERT INTO primary_host_epochs
     (id,generation,device_id,user_id,authorization_id,status,activation_reason,source_epoch_id,
@@ -86,6 +107,44 @@ try {
     commandPolicy: createAuthorityCommandPolicy(),
   });
   assert.strictEqual(authorization.authorize(first.envelope).scope.kind, 'visitor');
+
+  const formal = adapter.createRoleApplicationEnvelope({
+    userId: 'student-1',
+    sessionId: 'miniapp-formal-session-1',
+    authorityId: 'authority-1',
+    activeRole: 'student',
+    requestedRole: 'teacher',
+    idempotencyKey: 'miniapp-formal-role-request-1',
+  });
+  assert.strictEqual(formal.envelope.actor.role, 'student');
+  assert.strictEqual(
+    db.prepare('SELECT active_role FROM device_leases WHERE lease_id=?').get(formal.session.leaseId).active_role,
+    'student',
+  );
+  assert.strictEqual(authorization.authorize(formal.envelope).scope.kind, 'student');
+
+  assert.throws(
+    () => adapter.createRoleApplicationEnvelope({
+      userId: 'student-1',
+      sessionId: 'miniapp-formal-session-wrong-scope',
+      authorityId: 'authority-1',
+      activeRole: 'teacher',
+      requestedRole: 'student',
+      idempotencyKey: 'miniapp-formal-role-request-wrong-scope',
+    }),
+    error => error?.code === 'MINIAPP_AUTHORITY_SCOPE_INVALID',
+  );
+  assert.throws(
+    () => adapter.createRoleApplicationEnvelope({
+      userId: 'admin-1',
+      sessionId: 'miniapp-admin-session-1',
+      authorityId: 'authority-1',
+      activeRole: 'admin',
+      requestedRole: 'student',
+      idempotencyKey: 'miniapp-admin-role-request-1',
+    }),
+    error => error?.code === 'MINIAPP_ROLE_APPLICATION_SESSION_FORBIDDEN',
+  );
 
   const inbox = createAuthorityCommandInboxService({
     db,

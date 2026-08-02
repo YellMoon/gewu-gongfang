@@ -41,6 +41,9 @@ const { createPrimaryHostLocalValidationService } = require('./services/primaryH
 const {
   createMiniappAuthorityApplicationsRouter,
 } = require('./routes/miniappAuthorityApplications');
+const {
+  createAuthorityCloudControlService,
+} = require('./services/authorityCloudControlService');
 const miniappWechatBindingsRouter = require('./routes/miniappWechatBindings');
 const { createUnrecognizedExperienceRouter } = require('./routes/unrecognizedExperience');
 const { createUnrecognizedExperienceSandbox } = require('./services/unrecognizedExperienceSandbox');
@@ -51,12 +54,8 @@ const { createAuthorityCommandPolicy } = require('./services/authorityCommandReg
 const { createAuthorityDeviceRequestAuth } = require('./services/authorityDeviceRequestAuth');
 const { createAuthorityProjectionStoreService } = require('./services/authorityProjectionStoreService');
 const {
-  verifySignedAuthorityProjection,
-} = require('../../shared/authorityProjectionProtocol');
-const {
-  FORMAL_TOKEN_USE,
-  VISITOR_TOKEN_USE,
-} = require('./services/miniappIdentityService');
+  createMiniappAuthorityProjectionHandler,
+} = require('./routes/miniappAuthorityProjection');
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const writeRateLimitStore = new Map();
@@ -311,6 +310,8 @@ function createApp(options = {}) {
   });
   const authorityDeviceRequestAuth = createAuthorityDeviceRequestAuth({ db: database });
   const authorityProjectionStore = createAuthorityProjectionStoreService({ db: database });
+  const authorityCloudControl = createAuthorityCloudControlService({ db: database });
+  app.locals.authorityDatabase = database;
   app.locals.authorityCommandInbox = authorityCommandInbox;
   app.locals.authorityCommandAuthorization = authorityCommandAuthorization;
   app.locals.authorityDeviceRequestAuth = authorityDeviceRequestAuth;
@@ -410,6 +411,91 @@ function createApp(options = {}) {
       });
     }
   });
+  const authorizeAuthorityHost = req => {
+    const epoch = primaryHostIdentityService.assertActiveHostCredential({
+      deviceId: req.headers['x-gewu-host-device-id'],
+      generation: req.headers['x-gewu-host-generation'],
+      credential: req.headers['x-gewu-host-credential'],
+    });
+    return Object.freeze({
+      id: epoch.id,
+      dbAuthorityId: epoch.dbAuthorityId,
+      deviceId: epoch.deviceId,
+      generation: Number(epoch.generation),
+    });
+  };
+  authorityApiRouter.post('/host/epoch', (req, res) => {
+    try {
+      const epoch = authorityCloudControl.publishEpoch({
+        host: authorizeAuthorityHost(req),
+        epoch: req.body?.epoch,
+      });
+      return res.json({ success: true, epoch });
+    } catch (error) {
+      return res.status(error?.statusCode || 400).json({
+        success: false,
+        error: { code: error?.code || 'AUTHORITY_HOST_EPOCH_MIRROR_FAILED' },
+      });
+    }
+  });
+  authorityApiRouter.get('/host/epoch', (req, res) => {
+    try {
+      return res.json({
+        success: true,
+        epoch: authorityCloudControl.readEpoch({ host: authorizeAuthorityHost(req) }),
+      });
+    } catch (error) {
+      return res.status(error?.statusCode || 400).json({
+        success: false,
+        error: { code: error?.code || 'AUTHORITY_HOST_EPOCH_READ_FAILED' },
+      });
+    }
+  });
+  authorityApiRouter.post('/host/control-records', (req, res) => {
+    try {
+      return res.json({
+        success: true,
+        result: authorityCloudControl.publishControlRecords({
+          host: authorizeAuthorityHost(req),
+          snapshot: req.body?.snapshot,
+        }),
+      });
+    } catch (error) {
+      return res.status(error?.statusCode || 400).json({
+        success: false,
+        error: { code: error?.code || 'AUTHORITY_DEVICE_CONTROL_MIRROR_FAILED' },
+      });
+    }
+  });
+  authorityApiRouter.get('/host/control-records', (req, res) => {
+    try {
+      return res.json({
+        success: true,
+        snapshot: authorityCloudControl.readControlRecords({ host: authorizeAuthorityHost(req) }),
+      });
+    } catch (error) {
+      return res.status(error?.statusCode || 400).json({
+        success: false,
+        error: { code: error?.code || 'AUTHORITY_DEVICE_CONTROL_MIRROR_READ_FAILED' },
+      });
+    }
+  });
+  authorityApiRouter.post('/host/projections', (req, res) => {
+    try {
+      return res.json({
+        success: true,
+        projection: authorityCloudControl.publishProjection({
+          host: authorizeAuthorityHost(req),
+          projection: req.body?.projection,
+        }),
+      });
+    } catch (error) {
+      return res.status(error?.statusCode || 400).json({
+        success: false,
+        error: { code: error?.code || 'AUTHORITY_PROJECTION_PUBLISH_FAILED' },
+      });
+    }
+  });
   authorityApiRouter.use(createAuthorityProtocolRouter({
     authorizeCommand: ({ envelope }) => authorityCommandAuthorization.authorize(envelope),
     enqueueCommand: envelope => authorityCommandInbox.enqueue(envelope),
@@ -447,84 +533,10 @@ function createApp(options = {}) {
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);
   app.use('/api/admin/users', authMiddleware, adminUsersRouter);
   app.use('/api/permissions', authMiddleware, permissionsRouter);
-  app.get('/api/miniapp/projection', authMiddleware, (req, res) => {
-    try {
-      let authorityId = '';
-      let role = '';
-      if (req.authz?.tokenUse === VISITOR_TOKEN_USE
-        && req.authz?.accountState === 'visitor'
-        && req.authz?.authorityId) {
-        authorityId = req.authz.authorityId;
-        role = 'visitor';
-      } else if (req.authz?.tokenUse === FORMAL_TOKEN_USE
-        && req.authz?.accountState === 'formal'
-        && ['student', 'teacher', 'admin', 'super_admin'].includes(req.authz?.activeRole)) {
-        const rows = database.prepare(`SELECT DISTINCT a.authority_id AS authorityId
-          FROM authority_accounts a
-          JOIN authority_role_bindings b
-            ON b.authority_id=a.authority_id AND b.user_id=a.user_id
-          WHERE a.user_id=? AND a.status='active'
-            AND b.user_id=? AND b.role=? AND b.status='active'
-          ORDER BY a.authority_id`)
-          .all(req.authz.userId, req.authz.userId, req.authz.activeRole);
-        if (rows.length === 1) {
-          authorityId = rows[0].authorityId;
-          role = req.authz.activeRole;
-        } else if (rows.length > 1) {
-          return res.status(409).json({
-            success: false,
-            code: 'MINIAPP_AUTHORITY_SCOPE_AMBIGUOUS',
-            error: 'MINIAPP_AUTHORITY_SCOPE_AMBIGUOUS',
-          });
-        }
-      }
-      if (!authorityId || !role) {
-        return res.status(403).json({
-          success: false,
-          code: 'MINIAPP_AUTHORITY_PROJECTION_SESSION_REQUIRED',
-          error: 'MINIAPP_AUTHORITY_PROJECTION_SESSION_REQUIRED',
-        });
-      }
-      const projection = authorityProjectionStore.read({
-        authorityId,
-        userId: req.authz.userId,
-        role,
-      });
-      if (!projection) {
-        return res.status(404).json({
-          success: false,
-          code: 'AUTHORITY_PROJECTION_NOT_FOUND',
-          error: 'AUTHORITY_PROJECTION_NOT_FOUND',
-        });
-      }
-      const epoch = database.prepare(`SELECT id,db_authority_id,host_public_key
-        FROM primary_host_epochs
-        WHERE id=? AND db_authority_id=? AND status='active'`)
-        .get(projection.hostEpochId, authorityId);
-      if (!epoch?.host_public_key) {
-        return res.status(409).json({
-          success: false,
-          code: 'AUTHORITY_PROJECTION_HOST_EPOCH_INACTIVE',
-          error: 'AUTHORITY_PROJECTION_HOST_EPOCH_INACTIVE',
-        });
-      }
-      const verifiedProjection = verifySignedAuthorityProjection({
-        projection,
-        publicKey: epoch.host_public_key,
-      });
-      return res.json({
-        success: true,
-        projection: verifiedProjection,
-        data: { projection: verifiedProjection },
-      });
-    } catch (error) {
-      return res.status(error?.statusCode || 400).json({
-        success: false,
-        code: error?.code || 'MINIAPP_AUTHORITY_PROJECTION_READ_FAILED',
-        error: error?.code || 'MINIAPP_AUTHORITY_PROJECTION_READ_FAILED',
-      });
-    }
-  });
+  app.get('/api/miniapp/projection', authMiddleware, createMiniappAuthorityProjectionHandler({
+    db: database,
+    projectionStore: authorityProjectionStore,
+  }));
   app.use('/api/miniapp/applications', authMiddleware, createMiniappAuthorityApplicationsRouter({
     db: database,
     commandInbox: authorityCommandInbox,

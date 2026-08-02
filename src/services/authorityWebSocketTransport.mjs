@@ -29,7 +29,10 @@ export function authorityWebSocketUrl(baseUrl) {
   if (!['ws:', 'wss:'].includes(url.protocol)) {
     throw socketError('AUTHORITY_SOCKET_URL_INVALID');
   }
-  url.pathname = '/ws/authority';
+  const basePath = url.pathname.replace(/\/+$/, '');
+  url.pathname = basePath.endsWith('/ws/authority')
+    ? basePath
+    : `${basePath}/ws/authority`;
   url.search = '';
   url.hash = '';
   return url.toString();
@@ -99,6 +102,22 @@ export function createAuthorityWebSocketTransport({
       };
       bind(candidate, 'error', fail);
       bind(candidate, 'close', () => fail());
+      bind(candidate, 'open', () => {
+        Promise.resolve(signRequest({
+          method: 'GET',
+          path: '/ws/authority',
+          body: null,
+        })).then(signed => {
+          const auth = signed?.headers && typeof signed.headers === 'object'
+            ? { ...signed.headers }
+            : {};
+          candidate.send(JSON.stringify({
+            protocol: 'gewu.authority-socket.v1',
+            type: 'connection.authenticate',
+            auth,
+          }));
+        }).catch(fail);
+      });
       bind(candidate, 'message', raw => {
         let frame;
         try {

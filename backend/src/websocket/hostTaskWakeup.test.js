@@ -3,9 +3,9 @@ const { EventEmitter } = require('events');
 
 const { createHostTaskWakeup, gatewayWebSocketUrl } = require('./hostTaskWakeup');
 
-assert.strictEqual(gatewayWebSocketUrl('https://physicsedu.xyz/scheduling'), 'wss://physicsedu.xyz');
-assert.strictEqual(gatewayWebSocketUrl('http://127.0.0.1:3003/api'), 'ws://127.0.0.1:3003');
-assert.strictEqual(gatewayWebSocketUrl('wss://physicsedu.xyz/ws/cloud-relay'), 'wss://physicsedu.xyz');
+assert.strictEqual(gatewayWebSocketUrl('https://physicsedu.xyz/scheduling'), 'wss://physicsedu.xyz/scheduling');
+assert.strictEqual(gatewayWebSocketUrl('http://127.0.0.1:3003/api'), 'ws://127.0.0.1:3003/api');
+assert.strictEqual(gatewayWebSocketUrl('wss://physicsedu.xyz/ws/cloud-relay'), 'wss://physicsedu.xyz/ws/cloud-relay');
 assert.strictEqual(gatewayWebSocketUrl('not a url'), '');
 
 class FakeHostWebSocketClient extends EventEmitter {
@@ -23,7 +23,7 @@ class FakeHostWebSocketClient extends EventEmitter {
     worker: { wake: async () => { workerWakes += 1; } },
   });
   assert.ok(wakeup, 'a configured primary host must create a task wakeup client');
-  assert.strictEqual(wakeup.client.options.gatewayUrl, 'wss://physicsedu.xyz');
+  assert.strictEqual(wakeup.client.options.gatewayUrl, 'wss://physicsedu.xyz/scheduling');
   assert.strictEqual(wakeup.client.options.hostDeviceId, 'host-1');
   wakeup.start();
   assert.strictEqual(wakeup.client.connectCount, 1);

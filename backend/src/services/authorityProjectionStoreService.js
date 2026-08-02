@@ -30,13 +30,12 @@ function createAuthorityProjectionStoreService({ db } = {}) {
     const document = Object.freeze({ ...normalized, signature });
     const existing = find.get(normalized.authorityId, normalized.userId, normalized.role);
     if (existing) {
-      if (Number(existing.source_version) > normalized.sourceVersion) {
+      const sameEpoch = existing.host_epoch_id === normalized.hostEpochId;
+      if (sameEpoch && Number(existing.source_version) > normalized.sourceVersion) {
         throw projectionStoreError('AUTHORITY_PROJECTION_VERSION_STALE');
       }
-      if (Number(existing.source_version) === normalized.sourceVersion) {
-        if (existing.payload_hash !== normalized.payloadHash
-          || existing.host_epoch_id !== normalized.hostEpochId
-          || existing.signature !== signature) {
+      if (sameEpoch && Number(existing.source_version) === normalized.sourceVersion) {
+        if (existing.payload_hash !== normalized.payloadHash || existing.signature !== signature) {
           throw projectionStoreError('AUTHORITY_PROJECTION_VERSION_CONFLICT');
         }
         return Object.freeze({ ...document, replayed: true });

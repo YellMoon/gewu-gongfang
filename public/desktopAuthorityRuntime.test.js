@@ -147,6 +147,37 @@ function response(status, body) {
     await runtime.readProjection({ minSourceVersion: receipt.projectionVersion }),
     projection,
   );
+  const localDraft = await runtime.appendDraft({
+    type: 'role-application.review.v1',
+    payload: { applicationId: 'application-local-1', decision: 'approve' },
+    preview: { title: 'Local host role approval' },
+  });
+  const localExecutionCalls = [];
+  const localCompleted = await runtime.confirmAndExecuteLocal(localDraft.id, async draftInput => {
+    localExecutionCalls.push(draftInput);
+    const localEnvelope = {
+      ...envelope,
+      commandId: draftInput.commandId,
+      idempotencyKey: draftInput.idempotencyKey,
+      type: draftInput.type,
+      payload: draftInput.payload,
+      payloadHash: 'local-payload-hash-1',
+    };
+    return {
+      envelope: localEnvelope,
+      receipt: {
+        ...receipt,
+        commandId: localEnvelope.commandId,
+        payloadHash: localEnvelope.payloadHash,
+        status: 'committed',
+      },
+    };
+  });
+  assert.equal(localExecutionCalls.length, 1);
+  assert.equal(localExecutionCalls[0].commandId, localDraft.id);
+  assert.equal(localExecutionCalls[0].idempotencyKey, localDraft.id);
+  assert.equal(localCompleted.transportUsed, 'primary-host-local');
+  assert.equal((await runtime.get(localDraft.id)).status, 'completed');
   const syncDraft = runtime.appendDraftSync({
     type: 'student.update.v1',
     payload: { id: 'student-1', changes: { notes: 'synchronous encrypted draft' } },

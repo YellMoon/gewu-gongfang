@@ -102,6 +102,7 @@ let hostTaskWakeup = null;
 let hostCommandWorker = null;
 let authorityProjectionWorker = null;
 let primaryHostLocalDraftExecutor = null;
+let primaryHostLocalProjectionReader = null;
 let desktopIdentityVault = null;
 let desktopAuthorityRuntime = null;
 let primaryHostRuntimeManager = null;
@@ -752,39 +753,49 @@ function startBackendService() {
         hostCommandWorker.start();
         void authorityProjectionWorker.wake();
         const { createPrimaryHostLocalDraftExecutor } = require('./primaryHostLocalDraftExecutor');
+        const { createPrimaryHostLocalProjectionReader } = require('./primaryHostLocalProjectionReader');
+        const { createAuthorityProjectionStoreService } = require('../backend/src/services/authorityProjectionStoreService');
+        const hostAuthorityContext = () => {
+          const vaultStatus = getDesktopIdentityVault().status();
+          if (!vaultStatus?.unlocked) {
+            throw Object.assign(new Error('PRIMARY_HOST_LOCAL_OPERATOR_UNLOCK_REQUIRED'), { code: 'PRIMARY_HOST_LOCAL_OPERATOR_UNLOCK_REQUIRED' });
+          }
+          const epoch = runtimeHostEpochs.findForDevice(runtimeConfig.deviceId);
+          if (!epoch?.id || !epoch?.authority_id || !epoch?.device_id) {
+            throw Object.assign(new Error('PRIMARY_HOST_LOCAL_EPOCH_REQUIRED'), { code: 'PRIMARY_HOST_LOCAL_EPOCH_REQUIRED' });
+          }
+          const control = getInstance().db.prepare(`SELECT g.user_id, g.device_id, g.grant_version, l.lease_id, l.active_role
+            FROM device_grants g JOIN device_leases l ON l.grant_id=g.grant_id
+            WHERE g.authority_id=? AND g.device_id=? AND g.status='active'
+              AND l.authority_id=? AND l.status='active' AND l.revoked_at IS NULL
+            ORDER BY l.expires_at DESC LIMIT 1`)
+            .get(epoch.authority_id, epoch.device_id, epoch.authority_id);
+          if (!control?.user_id || !control?.device_id || !control?.lease_id || !control?.active_role) {
+            throw Object.assign(new Error('PRIMARY_HOST_LOCAL_CONTROL_REQUIRED'), { code: 'PRIMARY_HOST_LOCAL_CONTROL_REQUIRED' });
+          }
+          if (String(vaultStatus?.user?.id || '') !== String(control.user_id)) {
+            throw Object.assign(new Error('PRIMARY_HOST_LOCAL_OPERATOR_USER_MISMATCH'), { code: 'PRIMARY_HOST_LOCAL_OPERATOR_USER_MISMATCH' });
+          }
+          if (String(vaultStatus?.activeRole || '') !== String(control.active_role)) {
+            throw Object.assign(new Error('PRIMARY_HOST_LOCAL_OPERATOR_ROLE_MISMATCH'), { code: 'PRIMARY_HOST_LOCAL_OPERATOR_ROLE_MISMATCH' });
+          }
+          return Object.freeze({
+            authorityId: epoch.authority_id,
+            hostEpochId: epoch.id,
+            actor: Object.freeze({ userId: control.user_id, deviceId: control.device_id, role: control.active_role }),
+            lease: Object.freeze({ id: control.lease_id, grantVersion: Number(control.grant_version) }),
+          });
+        };
+        primaryHostLocalProjectionReader = createPrimaryHostLocalProjectionReader({
+          refreshControlRecords,
+          hostAuthorityContext,
+          materializeProjections: target => projectionPublisher.materializeAll(target),
+          projectionStore: createAuthorityProjectionStoreService({ db: getInstance().db }),
+          db: getInstance().db,
+        });
         primaryHostLocalDraftExecutor = createPrimaryHostLocalDraftExecutor({
           refreshControlRecords,
-          hostAuthorityContext: () => {
-            const vaultStatus = getDesktopIdentityVault().status();
-            if (!vaultStatus?.unlocked) {
-              throw Object.assign(new Error('PRIMARY_HOST_LOCAL_OPERATOR_UNLOCK_REQUIRED'), { code: 'PRIMARY_HOST_LOCAL_OPERATOR_UNLOCK_REQUIRED' });
-            }
-            const epoch = runtimeHostEpochs.findForDevice(runtimeConfig.deviceId);
-            if (!epoch?.id || !epoch?.authority_id || !epoch?.device_id) {
-              throw Object.assign(new Error('PRIMARY_HOST_LOCAL_EPOCH_REQUIRED'), { code: 'PRIMARY_HOST_LOCAL_EPOCH_REQUIRED' });
-            }
-            const control = getInstance().db.prepare(`SELECT g.user_id, g.device_id, g.grant_version, l.lease_id, l.active_role
-              FROM device_grants g JOIN device_leases l ON l.grant_id=g.grant_id
-              WHERE g.authority_id=? AND g.device_id=? AND g.status='active'
-                AND l.authority_id=? AND l.status='active' AND l.revoked_at IS NULL
-              ORDER BY l.expires_at DESC LIMIT 1`)
-              .get(epoch.authority_id, epoch.device_id, epoch.authority_id);
-            if (!control?.user_id || !control?.device_id || !control?.lease_id || !control?.active_role) {
-              throw Object.assign(new Error('PRIMARY_HOST_LOCAL_CONTROL_REQUIRED'), { code: 'PRIMARY_HOST_LOCAL_CONTROL_REQUIRED' });
-            }
-            if (String(vaultStatus?.user?.id || '') !== String(control.user_id)) {
-              throw Object.assign(new Error('PRIMARY_HOST_LOCAL_OPERATOR_USER_MISMATCH'), { code: 'PRIMARY_HOST_LOCAL_OPERATOR_USER_MISMATCH' });
-            }
-            if (String(vaultStatus?.activeRole || '') !== String(control.active_role)) {
-              throw Object.assign(new Error('PRIMARY_HOST_LOCAL_OPERATOR_ROLE_MISMATCH'), { code: 'PRIMARY_HOST_LOCAL_OPERATOR_ROLE_MISMATCH' });
-            }
-            return Object.freeze({
-              authorityId: epoch.authority_id,
-              hostEpochId: epoch.id,
-              actor: Object.freeze({ userId: control.user_id, deviceId: control.device_id, role: control.active_role }),
-              lease: Object.freeze({ id: control.lease_id, grantVersion: Number(control.grant_version) }),
-            });
-          },
+          hostAuthorityContext,
           authorityExecutor: authorityRuntime.executor,
           projectionWorker: authorityProjectionWorker,
         });
@@ -1141,13 +1152,19 @@ ipcMain.on('desktop-authority:append-draft-batch-sync', (event, inputs) => {
 ipcMain.handle('desktop-authority:get', async (_event, id) => getDesktopAuthorityRuntime().get(id));
 ipcMain.handle('desktop-authority:list', async () => getDesktopAuthorityRuntime().list());
 ipcMain.handle('desktop-authority:read-projection', async (_event, input) => (
-  getDesktopAuthorityRuntime().readProjection(input)
+  typeof primaryHostLocalProjectionReader === 'function'
+    ? primaryHostLocalProjectionReader(input)
+    : getDesktopAuthorityRuntime().readProjection(input)
 ));
 ipcMain.handle('desktop-authority:submit', async (_event, id) => (
-  getDesktopAuthorityRuntime().submit(id)
+  typeof primaryHostLocalDraftExecutor === 'function'
+    ? getDesktopAuthorityRuntime().submitLocal(id, primaryHostLocalDraftExecutor)
+    : getDesktopAuthorityRuntime().submit(id)
 ));
 ipcMain.handle('desktop-authority:confirm-and-submit', async (_event, id) => (
-  getDesktopAuthorityRuntime().confirmAndSubmit(id)
+  typeof primaryHostLocalDraftExecutor === 'function'
+    ? getDesktopAuthorityRuntime().confirmAndExecuteLocal(id, primaryHostLocalDraftExecutor)
+    : getDesktopAuthorityRuntime().confirmAndSubmit(id)
 ));
 ipcMain.handle('dialog:select-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {

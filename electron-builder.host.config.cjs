@@ -11,6 +11,8 @@ module.exports = {
     'public/primaryHostRuntimeManager.js',
     'public/primaryHostRuntimeStatus.js',
     'public/primaryHostRelaunchReadiness.js',
+    'public/primaryHostLocalDraftExecutor.js',
+    'public/primaryHostLocalProjectionReader.js',
     'public/windowsHostFirewallElevated.ps1',
   ],
   directories: {

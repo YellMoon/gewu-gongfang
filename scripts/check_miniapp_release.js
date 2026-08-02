@@ -38,6 +38,12 @@ function parseProdApiBase(prodSource) {
 function containsRemovedReviewClientFlow(source) {
   return /reviewDemoApi|\/api\/auth\/review-demo|REVIEW_API_BASE_URL/.test(String(source || ''));
 }
+function containsRetiredBindingReviewLoginFlow(source) {
+  return /WECHAT_BINDING_REVIEW_REQUIRED|pending-binding|pendingBinding|binding-review-notice/.test(String(source || ''));
+}
+function containsRetiredWechatBindingReviewUi(source) {
+  return /wechatBindingApi|binding-review-section|wechat-binding-review|wechat-binding-read-only/.test(String(source || ''));
+}
 function checkProjectConfig() {
   const config = readJson(path.join(miniappDir, 'project.config.json'), 'miniapp/project.config.json');
   if (config.appid !== EXPECTED_APPID) fail(`project.config.json appid should be ${EXPECTED_APPID}`);
@@ -51,8 +57,34 @@ function checkBuiltDist() {
   }
   if (!fs.existsSync(path.join(miniappDir, 'dist', 'app.js'))) fail('miniapp/dist/app.js missing; build the miniapp first');
   const common = readText(path.join(miniappDir, 'dist', 'common.js'), 'miniapp/dist/common.js');
+  const loginPage = readText(path.join(miniappDir, 'dist', 'pages', 'login', 'index.js'), 'miniapp/dist/pages/login/index.js');
+  const loginStyles = readText(path.join(miniappDir, 'dist', 'pages', 'login', 'index.wxss'), 'miniapp/dist/pages/login/index.wxss');
+  const adminUsersPage = readText(path.join(miniappDir, 'dist', 'pages', 'admin', 'users', 'index.js'), 'miniapp/dist/pages/admin/users/index.js');
+  const adminUsersStyles = readText(path.join(miniappDir, 'dist', 'pages', 'admin', 'users', 'index.wxss'), 'miniapp/dist/pages/admin/users/index.wxss');
   if (!common.includes(JSON.stringify(DEFAULT_API_BASE_URL))) fail('miniapp/dist/common.js should contain the Backend base');
   if (containsRemovedReviewClientFlow(common)) fail('built miniapp must not contain the removed review-demo client flow');
+  if (containsRetiredBindingReviewLoginFlow(`${common}\n${loginPage}\n${loginStyles}`)) {
+    fail('built miniapp must not contain the retired binding-review login flow');
+  }
+  if (containsRetiredWechatBindingReviewUi(`${common}\n${adminUsersPage}\n${adminUsersStyles}`)) {
+    fail('built miniapp must not contain the retired administrator binding-review UI');
+  }
+}
+function checkLoginContract() {
+  const loginSource = readText(path.join(miniappDir, 'src', 'pages', 'login', 'index.tsx'), 'miniapp login page');
+  const runtimeSource = readText(path.join(miniappDir, 'src', 'pages', 'login', 'manualPhoneLoginRuntime.js'), 'miniapp login runtime');
+  const backendAuthSource = readText(path.join(rootDir, 'backend', 'src', 'routes', 'auth.js'), 'backend auth route');
+  if (containsRetiredBindingReviewLoginFlow(`${loginSource}\n${runtimeSource}\n${backendAuthSource}`)) {
+    fail('manual-phone login must not contain the retired binding-review outcome');
+  }
+}
+function checkRetiredBindingReviewUi() {
+  const apiSource = readText(path.join(miniappDir, 'src', 'utils', 'api.ts'), 'miniapp API client');
+  const adminUsersSource = readText(path.join(miniappDir, 'src', 'pages', 'admin', 'users', 'index.tsx'), 'miniapp administrator users page');
+  const inventorySource = readText(path.join(miniappDir, 'src', 'utils', 'miniappUiPageInventory.js'), 'miniapp UI inventory');
+  if (containsRetiredWechatBindingReviewUi(`${apiSource}\n${adminUsersSource}\n${inventorySource}`)) {
+    fail('miniapp source must not contain the retired administrator binding-review UI');
+  }
 }
 function checkApiConfig() {
   const apiSource = readText(path.join(miniappDir, 'src', 'utils', 'api.ts'), 'miniapp/src/utils/api.ts');
@@ -64,9 +96,21 @@ function checkApiConfig() {
 }
 function main() {
   checkProjectConfig();
+  checkLoginContract();
+  checkRetiredBindingReviewUi();
   checkBuiltDist();
   checkApiConfig();
   console.log('miniapp release smoke checks passed');
 }
 if (require.main === module) main();
-module.exports = { checkApiConfig, checkBuiltDist, checkProjectConfig, containsRemovedReviewClientFlow, parseProdApiBase };
+module.exports = {
+  checkApiConfig,
+  checkBuiltDist,
+  checkLoginContract,
+  checkRetiredBindingReviewUi,
+  checkProjectConfig,
+  containsRemovedReviewClientFlow,
+  containsRetiredBindingReviewLoginFlow,
+  containsRetiredWechatBindingReviewUi,
+  parseProdApiBase,
+};

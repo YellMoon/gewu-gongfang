@@ -40,7 +40,37 @@ function assetProjection(row = {}) {
 }
 
 function belongsToUser(row = {}, userId) {
-  return String(row.ownerUserId || row.owner_user_id || '') === String(userId || '');
+  const expectedUserId = String(userId || '').trim();
+  const ownerUserId = String(row.ownerUserId || row.owner_user_id || '').trim();
+  return Boolean(expectedUserId && ownerUserId && ownerUserId === expectedUserId);
+}
+
+function unboundSubjectProjection({
+  questions,
+  assets,
+  assetRecords,
+  assetCategories,
+}, userId) {
+  return {
+    questionPreviews: questions.slice(0, 10),
+    schedules: [],
+    courses: [],
+    assets: assets.filter(asset => belongsToUser(asset, userId)),
+    students: [],
+    grades: [],
+    enrollments: [],
+    payments: [],
+    consumptions: [],
+    teachers: [],
+    rooms: [],
+    institutions: [],
+    schools: [],
+    questions: [],
+    taxonomySystems: [],
+    taxonomyNodes: [],
+    assetRecords: assetRecords.filter(row => belongsToUser(row, userId)),
+    assetCategories: assetCategories.filter(row => belongsToUser(row, userId)),
+  };
 }
 
 function studentCourseProjection(course = {}) {
@@ -108,7 +138,10 @@ function projectAuthorityData(scope = {}, source = {}) {
     assetCategories: assetCategories.filter(row => belongsToUser(row, scope.userId)),
   };
   if (kind === 'student') {
-    const studentId = String(scope.studentId || '');
+    const studentId = String(scope.studentId || '').trim();
+    if (!studentId) {
+      return unboundSubjectProjection({ questions, assets, assetRecords, assetCategories }, scope.userId);
+    }
     const allowedSchedules = schedules
       .filter(schedule => ids(schedule.studentIds || schedule.student_ids).includes(studentId));
     const allowedCourseIds = new Set(
@@ -140,7 +173,10 @@ function projectAuthorityData(scope = {}, source = {}) {
     };
   }
   if (kind === 'teacher') {
-    const teacherId = String(scope.teacherId || '');
+    const teacherId = String(scope.teacherId || '').trim();
+    if (!teacherId) {
+      return unboundSubjectProjection({ questions, assets, assetRecords, assetCategories }, scope.userId);
+    }
     const allowedCourses = courses.filter(course => String(course.teacherId || course.teacher_id || '') === teacherId);
     const allowedCourseIds = new Set(allowedCourses.map(course => String(course.id || '')));
     const allowedSchedules = schedules.filter(schedule => (

@@ -43,7 +43,10 @@ class HostWebSocketClient extends EventEmitter {
     }
 
     const url = new URL(this.gatewayUrl);
-    url.pathname = '/ws/cloud-relay';
+    const basePath = url.pathname.replace(/\/+$/, '');
+    url.pathname = basePath.endsWith('/ws/cloud-relay')
+      ? basePath
+      : `${basePath}/ws/cloud-relay`;
     url.searchParams.set('deviceId', this.hostDeviceId);
     url.searchParams.set('role', 'host');
     if (!this.hostCredential || !this.hostDeviceId || !Number.isSafeInteger(this.hostGeneration) || this.hostGeneration < 1) {

@@ -66,10 +66,25 @@ async function requestJson(baseUrl, method, pathname, { token, body, headers = {
       VALUES (?, 'Canonical Working Teacher', '13732250653', 0, ?, ?)`)
       .run(teacherId, clock.toISOString(), clock.toISOString());
     db.prepare('UPDATE users SET teacher_id=? WHERE id=?').run(teacherId, userId);
-    db.prepare(`INSERT OR REPLACE INTO user_role_grants
-      (user_id, role, subject_type, subject_id, status, source, created_at, updated_at)
-      VALUES (?, 'teacher', 'teacher', ?, 'active', 'test', ?, ?)`)
-      .run(userId, teacherId, clock.toISOString(), clock.toISOString());
+    const authorityId = db.prepare(
+      'SELECT authority_id AS authorityId FROM authority_accounts WHERE user_id=?'
+    ).get(userId)?.authorityId || 'authority-role-session-test';
+    db.prepare(`INSERT OR IGNORE INTO authority_accounts
+      (user_id, authority_id, status, created_at, updated_at)
+      VALUES (?, ?, 'active', ?, ?)`)
+      .run(userId, authorityId, clock.toISOString(), clock.toISOString());
+    db.prepare(`INSERT INTO authority_role_bindings
+      (binding_id, authority_id, user_id, role, subject_type, subject_id, status,
+       grant_version, granted_by, created_at, updated_at)
+      VALUES ('binding-role-session-teacher', ?, ?, 'teacher', 'teacher', ?,
+        'active', 1, 'test', ?, ?)`)
+      .run(authorityId, userId, teacherId, clock.toISOString(), clock.toISOString());
+    db.prepare(`INSERT INTO authority_role_bindings
+      (binding_id, authority_id, user_id, role, subject_type, subject_id, status,
+       grant_version, granted_by, created_at, updated_at)
+      VALUES ('binding-role-session-super-admin', ?, ?, 'super_admin', NULL, NULL,
+        'active', 1, 'test', ?, ?)`)
+      .run(authorityId, userId, clock.toISOString(), clock.toISOString());
     db.prepare(`INSERT INTO desktop_device_authorizations
       (id, device_id, device_name, device_kind, user_id, public_key, key_fingerprint,
        status, source_challenge_id, last_phone_verified_at, phone_reverify_due_at,

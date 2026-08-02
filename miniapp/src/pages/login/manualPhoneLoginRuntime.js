@@ -1,3 +1,14 @@
+const { isUnrecognizedIdentity } = require('../../utils/accountExperience');
+
+const DEFAULT_FORMAL_HOME = '/pages/index/index';
+const DEFAULT_UNRECOGNIZED_HOME = '/pages/unrecognized-experience/index';
+
+function homeForIdentity(identity, routes = {}) {
+  return isUnrecognizedIdentity(identity)
+    ? routes.unrecognizedHome || DEFAULT_UNRECOGNIZED_HOME
+    : routes.formalHome || DEFAULT_FORMAL_HOME;
+}
+
 function normalizeManualPhone(value = '') {
   return String(value)
     .trim()
@@ -20,12 +31,6 @@ function loginResultState(response = {}) {
       user: response.data.user,
     };
   }
-  if (response.code === 'WECHAT_BINDING_REVIEW_REQUIRED') {
-    return {
-      kind: 'pending-binding',
-      requestId: String(response.data?.requestId || ''),
-    };
-  }
   return {
     kind: 'error',
     code: String(response.code || ''),
@@ -34,6 +39,7 @@ function loginResultState(response = {}) {
 }
 
 module.exports = {
+  homeForIdentity,
   normalizeManualPhone,
   validateManualPhone,
   loginResultState,

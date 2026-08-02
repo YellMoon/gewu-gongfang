@@ -13,9 +13,12 @@ const rootPackage = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'pack
 for (const testFile of [
   'backend/src/routes/authorityProtocol.http.test.js',
   'backend/src/routes/authorityProtocolApp.http.test.js',
+  'backend/src/routes/authorityCloudControl.http.test.js',
   'backend/src/services/authorityCommandInboxService.test.js',
   'backend/src/services/authorityCommandAuthorizationService.test.js',
   'backend/src/services/authorityCommandInboxSchema.test.js',
+  'backend/src/services/authorityDeviceControlCache.test.js',
+  'backend/src/websocket/cloudRelayAuthorityServer.test.js',
 ]) {
   assert.ok(rootPackage.includes(testFile), `${testFile} must run in the root backend test command`);
 }

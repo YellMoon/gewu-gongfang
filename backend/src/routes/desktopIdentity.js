@@ -4,9 +4,11 @@ const { v4: uuidv4 } = require('uuid');
 const { getInstance } = require('../database');
 const { JWT_SECRET } = require('../middleware/auth');
 const { createDesktopIdentityService } = require('../services/desktopIdentityService');
-const { createDesktopSessionService } = require('../services/desktopSessionService');
+const {
+  createDesktopSessionService,
+  resolveDesktopRoleContext,
+} = require('../services/desktopSessionService');
 const { createDeviceActivationService } = require('../services/deviceActivationService');
-const { roleContextForUser } = require('../services/userRoleGrantService');
 const { createPrimaryHostIdentityService } = require('../services/primaryHostIdentityService');
 const { createPrimaryHostLocalValidationService } = require('../services/primaryHostLocalValidationService');
 const {
@@ -219,7 +221,7 @@ function createDesktopIdentityRouter({
   function activationPackage(authorization) {
     const user = database.prepare('SELECT id, name FROM users WHERE id=? AND deleted=0').get(authorization.userId);
     if (!user) throw routeError('DESKTOP_SESSION_USER_NOT_ACTIVE');
-    const roleContext = roleContextForUser(database, authorization.userId);
+    const roleContext = resolveDesktopRoleContext(database, authorization.userId);
     const authority = activationAuthority(authorization);
     const issuedAt = new Date(typeof now === 'function' ? now() : new Date());
     if (!Number.isFinite(issuedAt.getTime())) throw routeError('DESKTOP_ACTIVATION_CLOCK_INVALID');
@@ -296,9 +298,12 @@ function createDesktopIdentityRouter({
     });
   }
 
-  function assertDesktopIdentityEligible(login) {
+  function assertDesktopIdentityEligible(login, { allowVisitor = false } = {}) {
     const user = login?.user || {};
-    if (user.account_state === 'visitor' || user.role === 'visitor' || user.identity_kind === 'visitor') {
+    const visitor = user.account_state === 'visitor'
+      || user.role === 'visitor'
+      || user.identity_kind === 'visitor';
+    if (visitor && !allowVisitor) {
       throw routeError('DESKTOP_IDENTITY_VISITOR_FORBIDDEN');
     }
     if (!user.id) throw routeError('DESKTOP_IDENTITY_NOT_ELIGIBLE');
@@ -448,13 +453,16 @@ function createDesktopIdentityRouter({
       if (publicChallenge.status !== 'pending_phone') {
         throw routeError('DESKTOP_CHALLENGE_STATE_INVALID');
       }
-      const login = assertDesktopIdentityEligible(await manualMiniappIdentity({
-        code,
-        phone,
-        platform: publicChallenge.purpose === 'password_reset'
-          ? 'desktop-password-reset'
-          : 'desktop-device-registration',
-      }));
+      const login = assertDesktopIdentityEligible(
+        await manualMiniappIdentity({
+          code,
+          phone,
+          platform: publicChallenge.purpose === 'password_reset'
+            ? 'desktop-password-reset'
+            : 'desktop-device-registration',
+        }),
+        { allowVisitor: true },
+      );
       const challenge = identity().confirmVerifiedIdentity({
         challengeId: req.params.id,
         identity: login.user,

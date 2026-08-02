@@ -23,8 +23,15 @@ async function run() {
     projectionWorker: { wake: () => calls.push('wake') },
   });
 
-  const committed = await executor({ type: 'personal-asset-record.create.v1', payload: { record: { id: 'asset-1' } } });
+  const committed = await executor({
+    type: 'personal-asset-record.create.v1',
+    payload: { record: { id: 'asset-1' } },
+    commandId: 'host-local-command-1',
+    idempotencyKey: 'host-local-idempotency-1',
+  });
   assert.equal(committed.receipt.status, 'committed');
+  assert.equal(committed.envelope.commandId, 'host-local-command-1');
+  assert.equal(committed.envelope.idempotencyKey, 'host-local-idempotency-1');
   assert.deepEqual(calls.slice(0, 2), ['refresh', 'host-context']);
   assert.equal(calls[2][0], 'execute');
   assert.deepEqual(calls[2][1].actor, { userId: 'host-user', deviceId: 'host-device', role: 'super_admin' });

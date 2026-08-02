@@ -5,6 +5,25 @@ const express = require('express');
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
+
+const root = path.resolve(process.argv[2] || '');
+const port = Number(process.argv[3] || 0);
+const ISOLATED_JSON_BODY_LIMIT = '50mb';
+if (!path.basename(root).startsWith('tmp-real-desktop-identity-cloud-') || !Number.isSafeInteger(port)) {
+  throw new Error('ISOLATED_IDENTITY_CLOUD_ARGUMENTS_REQUIRED');
+}
+fs.mkdirSync(root, { recursive: true });
+process.env.DB_PATH = path.join(root, 'identity-cloud.db');
+process.env.READ_DB_PATH = process.env.DB_PATH;
+process.env.NODE_ENV = 'test';
+process.env.APP_ENV = 'dev';
+process.env.WECHAT_USE_MOCK_LOGIN = 'true';
+process.env.ALLOW_DEV_WECHAT_LOGIN = 'true';
+process.env.WECHAT_DEV_OPENID = process.env.WECHAT_DEV_OPENID || 'isolated-miniapp-visitor';
+const jwtSecret = 'isolated-desktop-identity-cloud-test-secret';
+// Authentication modules capture this value when they are required, so the
+// disposable secret must be installed before loading any backend route.
+process.env.JWT_SECRET = jwtSecret;
 const { DatabaseService } = require('../backend/src/database');
 const { createDesktopIdentityService } = require('../backend/src/services/desktopIdentityService');
 const { createDesktopSessionService } = require('../backend/src/services/desktopSessionService');
@@ -12,17 +31,8 @@ const { createMiniappIdentityService } = require('../backend/src/services/miniap
 const { createPrimaryHostIdentityService } = require('../backend/src/services/primaryHostIdentityService');
 const { createDesktopIdentityRouter } = require('../backend/src/routes/desktopIdentity');
 const taskService = require('../backend/src/services/cloudRelayTaskService');
-const { createGatewayAuthorityProtocolRouter } = require('../gateway/src/routes/authorityProtocol');
-const CloudWebSocketServer = require('../gateway/src/websocket/server');
-
-const root = path.resolve(process.argv[2] || '');
-const port = Number(process.argv[3] || 0);
-if (!path.basename(root).startsWith('tmp-real-desktop-identity-cloud-') || !Number.isSafeInteger(port)) {
-  throw new Error('ISOLATED_IDENTITY_CLOUD_ARGUMENTS_REQUIRED');
-}
-fs.mkdirSync(root, { recursive: true });
-process.env.DB_PATH = path.join(root, 'identity-cloud.db');
-process.env.READ_DB_PATH = process.env.DB_PATH;
+const { createAuthorityProtocolRouter } = require('../backend/src/routes/authorityProtocol');
+const { CloudRelaySocketServer } = require('../backend/src/websocket/cloudRelayServer');
 const database = new DatabaseService().db;
 function ensureGatewayAuthorityMirrorTables(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS authority_role_mirror_versions (
@@ -51,15 +61,64 @@ function ensureGatewayAuthorityMirrorTables(db) {
   );`);
 }
 ensureGatewayAuthorityMirrorTables(database);
-const jwtSecret = 'isolated-desktop-identity-cloud-test-secret';
 // The formal cloud-relay WebSocket server verifies desktop session tokens with
-// this process-level value.  This is only the disposable isolated plane.
-process.env.JWT_SECRET = jwtSecret;
+// this process-level value. This is only the disposable isolated plane.
 const identity = createDesktopIdentityService({ db: database });
 const sessions = createDesktopSessionService({ db: database, jwtSecret });
 const miniapp = createMiniappIdentityService({ db: database, jwtSecret });
 const primaryHost = createPrimaryHostIdentityService({ db: database });
-const e2eWechatIdentity = { openid: 'e2e-shared-user', phone: '13732250653' };
+const authRouter = require('../backend/src/routes/auth');
+const { authMiddleware } = require('../backend/src/middleware/auth');
+const permissionsRouter = require('../backend/src/routes/permissions');
+const modulesRouter = require('../backend/src/routes/modules');
+const {
+  createAuthorityProjectionStoreService,
+} = require('../backend/src/services/authorityProjectionStoreService');
+const {
+  createMiniappAuthorityProjectionHandler,
+} = require('../backend/src/routes/miniappAuthorityProjection');
+const {
+  createMiniappAuthorityApplicationsRouter,
+} = require('../backend/src/routes/miniappAuthorityApplications');
+const {
+  createAuthorityCommandInboxService,
+} = require('../backend/src/services/authorityCommandInboxService');
+const {
+  createAuthorityCommandAuthorizationService,
+} = require('../backend/src/services/authorityCommandAuthorizationService');
+const {
+  createAuthorityCommandPolicy,
+} = require('../backend/src/services/authorityCommandRegistry');
+const {
+  createAuthorityDeviceRequestAuth,
+} = require('../backend/src/services/authorityDeviceRequestAuth');
+const {
+  createAuthorityCloudControlService,
+} = require('../backend/src/services/authorityCloudControlService');
+const miniappCommandInbox = createAuthorityCommandInboxService({
+  db: database,
+  targetHostIdFor: envelope => {
+    const epoch = database.prepare(`SELECT device_id,db_authority_id FROM primary_host_epochs
+      WHERE id=? AND status='active'`).get(envelope.hostEpochId);
+    if (!epoch || epoch.db_authority_id !== envelope.authorityId) {
+      throw Object.assign(new Error('AUTHORITY_HOST_EPOCH_INACTIVE'), {
+        code: 'AUTHORITY_HOST_EPOCH_INACTIVE', statusCode: 403,
+      });
+    }
+    return epoch.device_id;
+  },
+});
+const miniappCommandAuthorization = createAuthorityCommandAuthorizationService({
+  db: database,
+  commandPolicy: createAuthorityCommandPolicy(),
+});
+const authorityDeviceRequestAuth = createAuthorityDeviceRequestAuth({ db: database });
+const cloudControls = createAuthorityCloudControlService({ db: database });
+const authorityProjectionStore = createAuthorityProjectionStoreService({ db: database });
+const e2eWechatIdentity = {
+  openid: 'isolated-desktop-confirmation-user',
+  phone: '13732250653',
+};
 function currentE2eWechatIdentity() {
   const existing = database.prepare('SELECT wechat_openid FROM users WHERE phone_normalized=? LIMIT 1')
     .get(e2eWechatIdentity.phone);
@@ -129,7 +188,7 @@ app.use((_req, res, next) => {
   next();
 });
 app.options('/{*splat}', (_req, res) => res.status(204).end());
-app.use(express.json({ limit: '64kb' }));
+app.use(express.json({ limit: ISOLATED_JSON_BODY_LIMIT }));
 app.use((req, res, next) => {
   if (!String(req.path || '').startsWith('/api/authority/')) return next();
   res.once('finish', () => {
@@ -180,9 +239,106 @@ app.use('/api/desktop-identity', createDesktopIdentityRouter({
   createDesktopAuthorizationUrlLink: async ({ challengeId }) => `http://127.0.0.1:${port}/miniapp/${challengeId}`,
   createDesktopAuthorizationQrCode: async ({ challengeId }) => `data:image/png;base64,${Buffer.from(challengeId).toString('base64')}`,
 }));
-// The isolated control plane uses the same signed authority router as the
-// gateway.  It intentionally has no desktop-session relay compatibility path.
-app.use('/api/authority', createGatewayAuthorityProtocolRouter({ db: database }));
+app.use('/api/auth', authRouter);
+app.use('/api/permissions', authMiddleware, permissionsRouter);
+app.use('/api/modules', authMiddleware, modulesRouter);
+app.get('/api/miniapp/projection', authMiddleware, createMiniappAuthorityProjectionHandler({
+  db: database,
+  projectionStore: authorityProjectionStore,
+}));
+function notifyAuthorityHost({ envelope, queued, request }) {
+  const epoch = database.prepare(`SELECT device_id FROM primary_host_epochs
+    WHERE id=? AND status='active'`).get(envelope.hostEpochId);
+  if (epoch?.device_id) {
+    request.app?.get('cloudRelaySocketServer')?.notifyHostNewTask(epoch.device_id, {
+      id: queued.id,
+      task_type: 'authority-command-v1',
+    });
+  }
+}
+app.use('/api/miniapp/applications', authMiddleware, createMiniappAuthorityApplicationsRouter({
+  db: database,
+  commandInbox: miniappCommandInbox,
+  commandAuthorization: miniappCommandAuthorization,
+  onCommandQueued: notifyAuthorityHost,
+}));
+function authorityHost(req) {
+  const epoch = primaryHost.assertActiveHostCredential({
+    deviceId: req.headers['x-gewu-host-device-id'],
+    generation: req.headers['x-gewu-host-generation'],
+    credential: req.headers['x-gewu-host-credential'],
+  });
+  return Object.freeze({
+    id: epoch.id,
+    dbAuthorityId: epoch.dbAuthorityId,
+    deviceId: epoch.deviceId,
+    generation: Number(epoch.generation),
+  });
+}
+function authorityFailure(res, error, fallback) {
+  return res.status(error?.statusCode || 400).json({
+    success: false,
+    error: { code: error?.code || fallback },
+  });
+}
+app.post('/api/authority/host/epoch', (req, res) => {
+  try {
+    return res.json({ success: true, epoch: cloudControls.publishEpoch({
+      host: authorityHost(req), epoch: req.body?.epoch,
+    }) });
+  } catch (error) { return authorityFailure(res, error, 'AUTHORITY_HOST_EPOCH_MIRROR_FAILED'); }
+});
+app.get('/api/authority/host/epoch', (req, res) => {
+  try {
+    return res.json({ success: true, epoch: cloudControls.readEpoch({ host: authorityHost(req) }) });
+  } catch (error) { return authorityFailure(res, error, 'AUTHORITY_HOST_EPOCH_READ_FAILED'); }
+});
+app.post('/api/authority/host/control-records', (req, res) => {
+  try {
+    return res.json({ success: true, result: cloudControls.publishControlRecords({
+      host: authorityHost(req), snapshot: req.body?.snapshot,
+    }) });
+  } catch (error) { return authorityFailure(res, error, 'AUTHORITY_DEVICE_CONTROL_MIRROR_FAILED'); }
+});
+app.get('/api/authority/host/control-records', (req, res) => {
+  try {
+    return res.json({ success: true, snapshot: cloudControls.readControlRecords({ host: authorityHost(req) }) });
+  } catch (error) { return authorityFailure(res, error, 'AUTHORITY_DEVICE_CONTROL_MIRROR_READ_FAILED'); }
+});
+app.post('/api/authority/host/projections', (req, res) => {
+  try {
+    return res.json({ success: true, projection: cloudControls.publishProjection({
+      host: authorityHost(req), projection: req.body?.projection,
+    }) });
+  } catch (error) { return authorityFailure(res, error, 'AUTHORITY_PROJECTION_PUBLISH_FAILED'); }
+});
+const authorityApiRouter = express.Router();
+const authenticateAuthorityDevice = (req, res, next) => {
+  try {
+    req.authorityActor = authorityDeviceRequestAuth.authenticate(req);
+    return next();
+  } catch (error) {
+    return res.status(error?.statusCode || 401).json({
+      success: false,
+      error: { code: error?.code || 'AUTHORITY_DEVICE_AUTH_FAILED' },
+    });
+  }
+};
+authorityApiRouter.post('/commands', authenticateAuthorityDevice);
+authorityApiRouter.get('/commands/:id/receipt', authenticateAuthorityDevice);
+authorityApiRouter.use(createAuthorityProtocolRouter({
+  authorizeCommand: ({ envelope }) => miniappCommandAuthorization.authorize(envelope),
+  enqueueCommand: envelope => miniappCommandInbox.enqueue(envelope),
+  findReceipt: input => miniappCommandInbox.findReceipt(input),
+  authorizeHostRequest: req => authorityHost(req),
+  claimCommands: input => miniappCommandInbox.claim(input),
+  renewCommandClaim: input => miniappCommandInbox.renew(input),
+  publishHostReceipt: (receipt, claim) => miniappCommandInbox.publishReceipt(receipt, claim),
+  onCommandQueued: notifyAuthorityHost,
+}));
+// The isolated control plane uses the same backend authority router, inbox and
+// socket instance. It intentionally has no desktop-session relay compatibility path.
+app.use('/api/authority', authorityApiRouter);
 app.post('/api/cloud/host/heartbeat', requireTestHost, (req, res) => {
   const deviceId = hostDeviceId(req);
   const time = new Date().toISOString();
@@ -303,5 +459,5 @@ app.get('/__e2e/state', (_req, res) => {
 });
 app.get('/__e2e/health', (_req, res) => res.json({ success: true }));
 const server = http.createServer(app);
-new CloudWebSocketServer(server, { db: database });
+app.set('cloudRelaySocketServer', new CloudRelaySocketServer(server, { db: database }));
 server.listen(port, '127.0.0.1', () => console.log(JSON.stringify({ ready: true, port })));

@@ -5,12 +5,14 @@ const electron = fs.readFileSync('public/electron.js', 'utf8');
 const preload = fs.readFileSync('public/preload.js', 'utf8');
 const browserDatabase = fs.readFileSync('src/services/browserDatabase.ts', 'utf8');
 const localDraftExecutor = fs.readFileSync('public/primaryHostLocalDraftExecutor.js', 'utf8');
+const hostBuilder = fs.readFileSync('electron-builder.host.config.cjs', 'utf8');
 
 assert.ok(electron.includes("primary-host:execute-local-draft"),
   'the primary host must expose a dedicated local authority-draft executor');
 assert.ok(electron.includes("require('./primaryHostLocalDraftExecutor')")
   && electron.includes('authorityExecutor: authorityRuntime.executor')
-  && electron.includes('hostAuthorityContext: () =>')
+  && electron.includes('const hostAuthorityContext = () =>')
+  && electron.includes('hostAuthorityContext,')
   && electron.includes('PRIMARY_HOST_LOCAL_OPERATOR_UNLOCK_REQUIRED')
   && electron.includes('projectionWorker: authorityProjectionWorker'),
   'the Electron main process must wire local drafts to the isolated authority executor');
@@ -20,6 +22,13 @@ assert.ok(localDraftExecutor.includes('hostAuthorityContext()')
   && localDraftExecutor.includes("result?.receipt?.status === 'committed'")
   && localDraftExecutor.includes('projectionWorker?.wake?.()'),
   'a local host draft must use the active host grant and lease, execute through the authority executor, and wake projection publication');
+assert.ok(hostBuilder.includes("'public/primaryHostLocalDraftExecutor.js'")
+  && hostBuilder.includes("'public/primaryHostLocalProjectionReader.js'"),
+  'the packaged primary-host build must include both local authority runtime modules');
+assert.ok(electron.includes('primaryHostLocalProjectionReader(input)')
+  && electron.includes('confirmAndExecuteLocal(id, primaryHostLocalDraftExecutor)')
+  && electron.includes('submitLocal(id, primaryHostLocalDraftExecutor)'),
+  'the primary-host bridge must read local signed projections and execute confirmed drafts locally');
 assert.ok(preload.includes("executeLocalDraft: draft => ipcRenderer.invoke('primary-host:execute-local-draft', draft)"),
   'the renderer host bridge must expose only the dedicated local-draft operation');
 assert.ok(browserDatabase.includes('window.primaryHostRuntime?.executeLocalDraft?.(draft)')

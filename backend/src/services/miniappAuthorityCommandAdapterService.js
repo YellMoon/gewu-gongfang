@@ -1,7 +1,11 @@
 const crypto = require('crypto');
 const { PROTOCOL, stableJson, validateEnvelope } = require('../../../shared/authorityProtocol');
+const {
+  resolveCanonicalAuthorityRoleContext,
+} = require('./authorityRoleGrantAdapter');
 
 const REQUESTABLE_ROLES = new Set(['student', 'teacher']);
+const APPLICATION_ACTOR_ROLES = new Set(['visitor', 'student', 'teacher']);
 const LEASE_DURATION_MS = 14 * 24 * 60 * 60 * 1000;
 
 function adapterError(code, statusCode = 400) {
@@ -40,14 +44,31 @@ function createMiniappAuthorityCommandAdapterService({
     return value;
   }
 
-  function ensureSession({ userId, sessionId, authorityId }) {
+  function ensureSession(input = {}) {
+    const { userId, sessionId, authorityId } = input;
     const user = requiredText(userId, 'MINIAPP_AUTHORITY_USER_REQUIRED');
     const session = requiredText(sessionId, 'MINIAPP_AUTHORITY_SESSION_REQUIRED');
     const authority = requiredText(authorityId, 'MINIAPP_AUTHORITY_ID_REQUIRED');
+    const activeRole = String(input.activeRole || 'visitor').trim();
+    if (!APPLICATION_ACTOR_ROLES.has(activeRole)) {
+      throw adapterError('MINIAPP_ROLE_APPLICATION_SESSION_FORBIDDEN', 403);
+    }
     const account = db.prepare(`SELECT user_id,authority_id,status FROM authority_accounts
       WHERE authority_id=? AND user_id=?`).get(authority, user);
     if (!account || account.status !== 'active') {
       throw adapterError('MINIAPP_AUTHORITY_ACCOUNT_INACTIVE', 403);
+    }
+    if (activeRole !== 'visitor') {
+      let context;
+      try {
+        context = resolveCanonicalAuthorityRoleContext(db, { authorityId: authority, userId: user });
+      } catch (_error) {
+        throw adapterError('MINIAPP_AUTHORITY_SCOPE_INVALID', 403);
+      }
+      if (context.accountStatus !== 'active'
+        || !context.grants.some(grant => grant.role === activeRole && grant.status === 'active')) {
+        throw adapterError('MINIAPP_AUTHORITY_SCOPE_INVALID', 403);
+      }
     }
     const epoch = db.prepare(`SELECT id,device_id,generation FROM primary_host_epochs
       WHERE db_authority_id=? AND status='active'`).get(authority);
@@ -91,13 +112,13 @@ function createMiniappAuthorityCommandAdapterService({
       db.prepare(`INSERT INTO device_leases
         (lease_id,grant_id,authority_id,device_id,user_id,active_role,grant_version,status,
          issued_at,expires_at,revoked_at)
-        VALUES(?,?,?,?,?,'visitor',?,'active',?,?,NULL)
+        VALUES(?,?,?,?,?,?,?,'active',?,?,NULL)
         ON CONFLICT(lease_id) DO UPDATE SET
           grant_id=excluded.grant_id,
           authority_id=excluded.authority_id,
           device_id=excluded.device_id,
           user_id=excluded.user_id,
-          active_role='visitor',
+          active_role=excluded.active_role,
           grant_version=excluded.grant_version,
           status='active',
           issued_at=excluded.issued_at,
@@ -109,6 +130,7 @@ function createMiniappAuthorityCommandAdapterService({
           authority,
           deviceId,
           user,
+          activeRole,
           Number(grant.grant_version),
           timestampIso,
           expiresAt,
@@ -121,6 +143,7 @@ function createMiniappAuthorityCommandAdapterService({
         grantId: grant.grant_id,
         grantVersion: Number(grant.grant_version),
         leaseId,
+        activeRole,
         expiresAt,
       });
     });
@@ -156,7 +179,7 @@ function createMiniappAuthorityCommandAdapterService({
       actor: {
         userId: requiredText(input.userId, 'MINIAPP_AUTHORITY_USER_REQUIRED'),
         deviceId: session.deviceId,
-        role: 'visitor',
+        role: session.activeRole,
       },
       lease: {
         id: session.leaseId,

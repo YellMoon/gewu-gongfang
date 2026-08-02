@@ -34,7 +34,7 @@ db.exec(`
   );
 `);
 const now = '2026-07-28T08:00:00.000Z';
-for (const userId of ['user-1', 'user-2', 'super-1', 'admin-1']) {
+for (const userId of ['user-1', 'user-2', 'user-3', 'super-1', 'admin-1']) {
   db.prepare('INSERT INTO users(id,name) VALUES(?,?)').run(userId, `User ${userId}`);
   db.prepare(`INSERT INTO authority_accounts
     (user_id,authority_id,status,created_at,updated_at) VALUES(?,?,?,?,?)`)
@@ -54,11 +54,28 @@ const service = createRoleApplicationService({
   createId: prefix => `${prefix}-${++sequence}`,
 });
 
-assert.throws(
-  () => service.submit({ authorityId: 'authority-1', userId: 'user-1', requestedRole: 'teacher' }),
-  error => error.code === 'ROLE_APPLICATION_BINDING_HINT_REQUIRED',
-  'student/teacher applications must identify an existing profile before review'
-);
+const businessSubjectCountsBefore = {
+  students: db.prepare('SELECT COUNT(*) AS count FROM students').get().count,
+  teachers: db.prepare('SELECT COUNT(*) AS count FROM teachers').get().count,
+};
+const unboundPending = service.submit({
+  authorityId: 'authority-1',
+  userId: 'user-3',
+  requestedRole: 'teacher',
+});
+assert.equal(unboundPending.status, 'pending');
+assert.equal(unboundPending.bindingHint, null);
+const unboundApproved = service.approve({
+  actor: { userId: 'super-1', roles: ['super_admin'], authorityId: 'authority-1', isAuthorityHost: true },
+  applicationId: unboundPending.applicationId,
+});
+assert.equal(unboundApproved.grant.role, 'teacher');
+assert.equal(unboundApproved.grant.subjectType, null);
+assert.equal(unboundApproved.grant.subjectId, null);
+assert.deepStrictEqual({
+  students: db.prepare('SELECT COUNT(*) AS count FROM students').get().count,
+  teachers: db.prepare('SELECT COUNT(*) AS count FROM teachers').get().count,
+}, businessSubjectCountsBefore, 'approving an unbound account role must not create a local business subject');
 assert.throws(
   () => service.submit({
     authorityId: 'authority-1', userId: 'user-1', requestedRole: 'teacher', bindingHint: 'teacher-missing',

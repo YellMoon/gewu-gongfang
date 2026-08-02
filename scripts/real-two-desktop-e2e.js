@@ -36,8 +36,22 @@ const EXTERNAL_VISIBLE_APPROVAL = process.env.GEWU_E2E_EXTERNAL_VISIBLE_APPROVAL
 let ROOT = '';
 let HOST_ROOT = '';
 let CLIENT_ROOT = '';
-const HOST_EXE = path.resolve(process.env.GEWU_PACKAGED_HOST_EXE || '');
-const CLIENT_EXE = path.resolve(process.env.GEWU_PACKAGED_CLIENT_EXE || '');
+function packagedExecutable(envName) {
+  const configured = String(process.env[envName] || '').trim();
+  return configured ? path.resolve(configured) : '';
+}
+
+function isPackagedExecutable(filePath) {
+  try {
+    return Boolean(filePath) && path.extname(filePath).toLowerCase() === '.exe'
+      && fs.statSync(filePath).isFile();
+  } catch (_error) {
+    return false;
+  }
+}
+
+const HOST_EXE = packagedExecutable('GEWU_PACKAGED_HOST_EXE');
+const CLIENT_EXE = packagedExecutable('GEWU_PACKAGED_CLIENT_EXE');
 const REQUIRED_ACCEPTANCE_FLAGS = new Set(['--lan', '--cloud-relay', '--restart', '--no-authority-data']);
 const OPTIONAL_ACCEPTANCE_FLAGS = new Set(['--websocket-disabled', '--relay-websocket']);
 
@@ -1275,8 +1289,8 @@ function usesIsolatedTemporaryHostPackage(executablePath) {
   return e2ePackage.test(normalized) || acceptancePackage.test(normalized);
 }
 async function runAcceptance(acceptance) {
-  assert(HOST_EXE && fs.existsSync(HOST_EXE), 'GEWU_PACKAGED_HOST_EXE_REQUIRED');
-  assert(CLIENT_EXE && fs.existsSync(CLIENT_EXE), 'GEWU_PACKAGED_CLIENT_EXE_REQUIRED');
+  assert(isPackagedExecutable(HOST_EXE), 'GEWU_PACKAGED_EXECUTABLE_REQUIRED: GEWU_PACKAGED_HOST_EXE');
+  assert(isPackagedExecutable(CLIENT_EXE), 'GEWU_PACKAGED_EXECUTABLE_REQUIRED: GEWU_PACKAGED_CLIENT_EXE');
   const coldStartTimeoutMs = packagedColdStartTimeoutMs();
   const hostPort = configuredLanHostPort() || await freePort(); const isolatedLanPort = acceptance.relayWebSocket ? await freePort() : null; const clientPort = await freePort(); const hostCdp = await freePort(); const clientCdp = await freePort(); const cloudPort = await freePort();
   // This is intentionally audit-only. Only an explicit LAN row needs an

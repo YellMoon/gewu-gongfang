@@ -102,6 +102,69 @@ assert.deepStrictEqual(
   'an unbound student grant is valid but reveals no student profile data'
 );
 
+const unboundSubjectFixture = {
+  questionPreviews: Array.from({ length: 12 }, (_, index) => ({
+    id: `unbound-q${index + 1}`,
+    stemPreview: `unbound question ${index + 1}`,
+    answer: 'must-not-project',
+  })),
+  schedules: [
+    { id: '', studentIds: [''], teacherId: '', courseId: '' },
+    { id: null, studentIds: [null], teacherId: null, courseId: null },
+    { id: undefined, studentIds: [undefined], teacherId: undefined, courseId: undefined },
+  ],
+  courses: [
+    { id: '', studentIds: [''], teacherId: '' },
+    { id: null, studentIds: [null], teacherId: null },
+    { id: undefined, studentIds: [undefined], teacherId: undefined },
+  ],
+  students: [{ id: '' }, { id: null }, { id: undefined }],
+  teachers: [{ id: '' }, { id: null }, { id: undefined }],
+  grades: [{ studentId: '' }, { studentId: null }, { studentId: undefined }],
+  enrollments: [{ studentId: '', scheduleId: '' }, { studentId: null, scheduleId: null }],
+  payments: [{ studentId: '', courseId: '', scheduleId: '' }, { studentId: null, courseId: null, scheduleId: null }],
+  consumptions: [{ studentId: '', scheduleId: '' }, { studentId: null, scheduleId: null }],
+  rooms: [{ id: 'unbound-room' }],
+  institutions: [{ id: 'unbound-institution' }],
+  schools: [{ id: 'unbound-school' }],
+  questions: [{ id: 'unbound-full-question', answer: 'must-not-project' }],
+  taxonomySystems: [{ id: 'unbound-taxonomy' }],
+  taxonomyNodes: [{ id: 'unbound-taxonomy-node' }],
+  assets: [
+    { id: 'unbound-own-asset', ownerUserId: 'unbound-user', accountNumber: 'full-secret', maskedIdentifier: '****0001' },
+    { id: 'unbound-peer-asset', ownerUserId: 'peer-user', accountNumber: 'peer-secret', maskedIdentifier: '****0002' },
+  ],
+  assetRecords: [
+    { id: 'unbound-own-record', ownerUserId: 'unbound-user' },
+    { id: 'unbound-peer-record', ownerUserId: 'peer-user' },
+  ],
+  assetCategories: [
+    { id: 'unbound-own-category', ownerUserId: 'unbound-user' },
+    { id: 'unbound-peer-category', ownerUserId: 'peer-user' },
+  ],
+};
+const failClosedBusinessArrays = [
+  'schedules', 'courses', 'students', 'teachers', 'grades', 'enrollments',
+  'payments', 'consumptions', 'rooms', 'institutions', 'schools', 'questions',
+  'taxonomySystems', 'taxonomyNodes',
+];
+for (const scope of [
+  { kind: 'student', userId: 'unbound-user', studentId: null },
+  { kind: 'teacher', userId: 'unbound-user', teacherId: undefined },
+]) {
+  const unbound = projectAuthorityData(scope, unboundSubjectFixture);
+  assert.strictEqual(unbound.questionPreviews.length, 10, `${scope.kind} preview access remains capped at ten`);
+  assert.strictEqual(unbound.questionPreviews[0].answer, undefined, `${scope.kind} previews remain redacted`);
+  assert.deepStrictEqual(unbound.assets.map(row => row.id), ['unbound-own-asset'], `${scope.kind} keeps only its own asset`);
+  assert.deepStrictEqual(unbound.assetRecords.map(row => row.id), ['unbound-own-record'], `${scope.kind} keeps only its own asset record`);
+  assert.deepStrictEqual(unbound.assetCategories.map(row => row.id), ['unbound-own-category'], `${scope.kind} keeps only its own asset category`);
+  assert.strictEqual(unbound.assets[0].accountNumber, undefined, `${scope.kind} asset remains redacted`);
+  for (const key of failClosedBusinessArrays) {
+    assert.deepStrictEqual(unbound[key], [], `${scope.kind} without a subject binding must fail closed for ${key}`);
+  }
+  assert.strictEqual(JSON.stringify(unbound).includes('peer-user'), false, `${scope.kind} must not reveal peer asset ownership`);
+}
+
 const admin = projectAuthorityData({ kind: 'admin', userId: 'admin', authorityId: 'authority-1' }, fixture);
 assert.equal(admin.courses.length, 2);
 assert.equal(admin.assets.length, 2);

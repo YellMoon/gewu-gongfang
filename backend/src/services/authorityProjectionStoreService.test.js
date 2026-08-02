@@ -40,5 +40,21 @@ assert.throws(
   () => store.publish({ ...projection, signature: Buffer.from('different').toString('base64') }),
   error => error.code === 'AUTHORITY_PROJECTION_VERSION_CONFLICT'
 );
+const recoveredProjection = createSignedAuthorityProjection({
+  authorityId: 'authority-1',
+  hostEpochId: 'epoch-2',
+  userId: 'user-1',
+  role: 'student',
+  sourceVersion: 0,
+  generatedAt: '2026-07-28T09:00:00.000Z',
+  payload: { schedules: [], courses: [], assets: [], questionPreviews: [] },
+  privateKey: keyPair.privateKey,
+});
+assert.equal(store.publish(recoveredProjection).sourceVersion, 0,
+  'an authenticated replacement host epoch must be allowed to restart its projection counter');
+assert.throws(
+  () => store.publish({ ...recoveredProjection, sourceVersion: -1 }),
+  error => error.code === 'AUTHORITY_PROJECTION_VERSION_INVALID'
+);
 
 console.log('authorityProjectionStoreService tests passed');

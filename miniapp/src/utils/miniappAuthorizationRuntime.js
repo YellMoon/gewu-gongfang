@@ -76,11 +76,24 @@ function permissionIdentityKey(user) {
   ]);
 }
 
+function studentSubjectIds(user) {
+  if (!user) return [];
+  return normalizedIdentityIds(
+    user.student_id,
+    user.studentId,
+    user.linked_student_id,
+    user.linkedStudentId,
+    user.linked_student_ids,
+    user.linkedStudentIds,
+  );
+}
+
 function businessCacheIdentityKey(user) {
   const role = roleOf(user);
   if (!user || !user.id || role === 'pending') return '';
   if (hasLegacyReviewMarker(user) || isUnrecognizedIdentity(user) || isVisitorIdentity(user)) return '';
   if (role === 'teacher' && !(user.teacher_id || user.teacherId)) return '';
+  if (role === 'student' && studentSubjectIds(user).length === 0) return '';
   const scope = permissionIdentityKey(user);
   return scope ? `normal:${scope}` : '';
 }
@@ -233,10 +246,8 @@ function scopeDashboardCollections(user, collections = {}) {
     return { students: students.filter(student => studentIds.has(student.id)), courses: scopedCourses, schedules: scopedSchedules };
   }
   if (role === 'student') {
-    const linkedIds = new Set([
-      user.student_id, user.studentId, user.linked_student_id, user.linkedStudentId,
-      ...(user.linked_student_ids || []), ...(user.linkedStudentIds || []), user.id,
-    ].filter(Boolean));
+    const linkedIds = new Set(studentSubjectIds(user));
+    if (linkedIds.size === 0) return { students: [], courses: [], schedules: [] };
     const scopedCourses = courses.filter(course => [...relatedStudentIds([course])].some(id => linkedIds.has(id)));
     const courseIds = new Set(scopedCourses.map(course => course.id));
     const scopedSchedules = schedules.filter(schedule => courseIds.has(schedule.course_id || schedule.courseId)
@@ -257,6 +268,7 @@ module.exports = {
   permissionIdentityKey,
   accountExperiencePolicy,
   sanitizeCapabilitiesForIdentity,
+  studentSubjectIds,
   businessCacheIdentityKey,
   createQuestionPaperTaskCacheRuntime,
   questionPaperTaskCacheKey,

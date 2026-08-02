@@ -98,7 +98,7 @@ function createRoleApplicationService({
 
   function validatedProfileId(role, bindingHint) {
     const subjectId = optionalText(bindingHint);
-    if (!subjectId) throw roleApplicationError('ROLE_APPLICATION_BINDING_HINT_REQUIRED');
+    if (!subjectId) return null;
     const lookup = profileLookup[role];
     if (!lookup) throw roleApplicationError('ROLE_APPLICATION_PROFILE_TABLE_REQUIRED', 500);
     if (!lookup.get(subjectId)) throw roleApplicationError('ROLE_APPLICATION_BINDING_PROFILE_NOT_FOUND', 404);
@@ -124,7 +124,9 @@ function createRoleApplicationService({
       throw roleApplicationError('ROLE_ALREADY_GRANTED', 409);
     }
     const subjectId = validatedProfileId(role, bindingHint);
-    assertProfileUnclaimed({ authorityId: authority, role, subjectId, userId: user });
+    if (subjectId) {
+      assertProfileUnclaimed({ authorityId: authority, role, subjectId, userId: user });
+    }
     const timestamp = currentTime();
     const applicationId = requiredText(createId('role-application'), 'ROLE_APPLICATION_ID_INVALID');
     try {
@@ -177,12 +179,14 @@ function createRoleApplicationService({
     if (!binding) {
       const bindingId = requiredText(createId('role-binding'), 'ROLE_BINDING_ID_INVALID');
       const subjectId = validatedProfileId(application.requested_role, application.binding_hint);
-      assertProfileUnclaimed({
-        authorityId: application.authority_id,
-        role: application.requested_role,
-        subjectId,
-        userId: application.user_id,
-      });
+      if (subjectId) {
+        assertProfileUnclaimed({
+          authorityId: application.authority_id,
+          role: application.requested_role,
+          subjectId,
+          userId: application.user_id,
+        });
+      }
       db.prepare(`INSERT INTO authority_role_bindings
         (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,granted_by,created_at,updated_at,revoked_at)
         VALUES(?,?,?,?,?,?,'active',1,?,?,?,NULL)`)
@@ -191,7 +195,7 @@ function createRoleApplicationService({
           application.authority_id,
           application.user_id,
           application.requested_role,
-          application.requested_role,
+          subjectId ? application.requested_role : null,
           subjectId,
           reviewer,
           timestamp,

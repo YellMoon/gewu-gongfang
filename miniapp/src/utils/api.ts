@@ -271,8 +271,6 @@ export const adminApi = {
 };
 
 export const cloudRelayApi = {
-  readCloudSnapshot: (snapshotType = 'full') =>
-    api.get<any>(`/api/cloud/snapshots/read?snapshotType=${snapshotType}`),
   createMiniappTask: (taskType: string, payload: any) =>
     api.post<any>('/api/cloud/tasks', { taskType, payload }),
   getMiniappTaskResult: (taskId: string) =>
@@ -305,20 +303,6 @@ export const authorityProjectionApi = {
   readCurrent: () => api.get<any>('/api/miniapp/projection'),
 };
 
-export const wechatBindingApi = {
-  adminList: (status = 'submitted') => api.get<any>(
-    `/api/miniapp/wechat-bindings/admin?status=${encodeURIComponent(status)}`,
-  ),
-  approve: (requestId: string, expectedRevision: number) => api.post<any>(
-    `/api/miniapp/wechat-bindings/${encodeURIComponent(requestId)}/approve`,
-    { expectedRevision },
-  ),
-  reject: (requestId: string, expectedRevision: number, reason: string) => api.post<any>(
-    `/api/miniapp/wechat-bindings/${encodeURIComponent(requestId)}/reject`,
-    { expectedRevision, reason },
-  ),
-};
-
 export const experienceApi = {
   questions: () => api.get<any>('/api/experience/questions'),
   createTask: (taskType: string, payload: any) =>
@@ -345,7 +329,6 @@ export const experienceApi = {
   },
 };
 
-export const readCloudSnapshot = cloudRelayApi.readCloudSnapshot;
 export const createMiniappTask = cloudRelayApi.createMiniappTask;
 export const getMiniappTaskResult = cloudRelayApi.getMiniappTaskResult;
 export const readQuestionPreview = cloudRelayApi.readQuestionPreview;

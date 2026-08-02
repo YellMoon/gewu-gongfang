@@ -1,5 +1,11 @@
 const { Router } = require('express');
-const { VISITOR_TOKEN_USE } = require('../services/miniappIdentityService');
+const {
+  FORMAL_TOKEN_USE,
+  VISITOR_TOKEN_USE,
+} = require('../services/miniappIdentityService');
+const {
+  resolveCanonicalAuthorityRoleContext,
+} = require('../services/authorityRoleGrantAdapter');
 const {
   createMiniappAuthorityCommandAdapterService,
 } = require('../services/miniappAuthorityCommandAdapterService');
@@ -39,12 +45,47 @@ function createMiniappAuthorityApplicationsRouter({
   const router = Router();
   const adapter = createMiniappAuthorityCommandAdapterService({ db, now, createId });
 
-  function requireVisitorSession(req, res, next) {
+  function requireApplicationSession(req, res, next) {
     if (req.authz?.tokenUse === VISITOR_TOKEN_USE
       && req.authz?.accountState === 'visitor'
       && req.authz?.userId
       && req.authz?.sessionId
       && req.authz?.authorityId) {
+      req.authorityApplicationSession = Object.freeze({
+        authorityId: req.authz.authorityId,
+        activeRole: 'visitor',
+      });
+      return next();
+    }
+    if (req.authz?.tokenUse === FORMAL_TOKEN_USE
+      && req.authz?.accountState === 'formal'
+      && req.authz?.userId
+      && req.authz?.sessionId) {
+      const activeRole = String(req.authz.activeRole || '').trim();
+      if (!['student', 'teacher'].includes(activeRole)) {
+        return sendRouteError(res, routeError('MINIAPP_ROLE_APPLICATION_SESSION_FORBIDDEN', 403));
+      }
+      const account = db.prepare(`SELECT authority_id FROM authority_accounts
+        WHERE user_id=? AND status='active'`).get(req.authz.userId);
+      if (!account?.authority_id) {
+        return sendRouteError(res, routeError('MINIAPP_AUTHORITY_SCOPE_INVALID', 403));
+      }
+      try {
+        const context = resolveCanonicalAuthorityRoleContext(db, {
+          authorityId: account.authority_id,
+          userId: req.authz.userId,
+        });
+        if (context.accountStatus !== 'active'
+          || !context.grants.some(grant => grant.role === activeRole && grant.status === 'active')) {
+          throw routeError('MINIAPP_AUTHORITY_SCOPE_INVALID', 403);
+        }
+      } catch (error) {
+        return sendRouteError(res, routeError(error?.code || 'MINIAPP_AUTHORITY_SCOPE_INVALID', 403));
+      }
+      req.authorityApplicationSession = Object.freeze({
+        authorityId: account.authority_id,
+        activeRole,
+      });
       return next();
     }
     return sendRouteError(res, routeError('MINIAPP_VISITOR_SESSION_REQUIRED', 403));
@@ -59,8 +100,7 @@ function createMiniappAuthorityApplicationsRouter({
     for (const row of rows) {
       const envelope = parseJson(row.envelope_json);
       if (envelope?.type === 'role-application.submit.v1'
-        && envelope.authorityId === authorityId
-        && envelope.actor?.role === 'visitor') {
+        && envelope.authorityId === authorityId) {
         return { row, envelope, receipt: parseJson(row.receipt_json) };
       }
     }
@@ -97,11 +137,14 @@ function createMiniappAuthorityApplicationsRouter({
     };
   }
 
-  router.use(requireVisitorSession);
+  router.use(requireApplicationSession);
 
   router.get('/me', (req, res) => {
     try {
-      const result = presentApplication(latestFor(req.authz.userId, req.authz.authorityId));
+      const result = presentApplication(latestFor(
+        req.authz.userId,
+        req.authorityApplicationSession.authorityId,
+      ));
       return res.json({ success: true, ...result, data: result });
     } catch (error) {
       return sendRouteError(res, error);
@@ -114,7 +157,8 @@ function createMiniappAuthorityApplicationsRouter({
       const created = adapter.createRoleApplicationEnvelope({
         userId: req.authz.userId,
         sessionId: req.authz.sessionId,
-        authorityId: req.authz.authorityId,
+        authorityId: req.authorityApplicationSession.authorityId,
+        activeRole: req.authorityApplicationSession.activeRole,
         requestedRole,
         bindingHint: req.body?.bindingHint,
         idempotencyKey: req.get('x-idempotency-key'),

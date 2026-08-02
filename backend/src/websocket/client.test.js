@@ -23,14 +23,14 @@ async function main() {
   hostDeviceId: 'host-test',
   hostCredential: 'managed-credential',
   hostGeneration: 3,
-  gatewayUrl: 'wss://physicsedu.xyz',
+  gatewayUrl: 'wss://physicsedu.xyz/scheduling',
   reconnectInterval: 1,
   WebSocketImpl: FakeWebSocket,
   });
   client.connect();
   assert.strictEqual(
     FakeWebSocket.lastUrl,
-    'wss://physicsedu.xyz/ws/cloud-relay?deviceId=host-test&role=host',
+    'wss://physicsedu.xyz/scheduling/ws/cloud-relay?deviceId=host-test&role=host',
     'the WebSocket endpoint must never put a host credential in its URL'
   );
   assert.deepStrictEqual(FakeWebSocket.lastOptions.headers, {

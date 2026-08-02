@@ -10,6 +10,8 @@ assert.ok(source.includes('createAuthorityCommandSource'));
 assert.ok(source.includes('createAuthorityCompositeCommandSource'));
 assert.ok(source.includes('createAuthoritySocketCommandHandler'));
 assert.ok(source.includes('new AuthoritySocketServer'));
+assert.ok(source.includes("authorityEnabled: runtimeConfig.nodeRole !== 'primary-host'"),
+  'a primary host must reserve /ws/authority for its local AuthoritySocketServer');
 assert.ok(source.includes('createAuthorityProjectionPublisherService'));
 assert.ok(source.includes('createAuthorityProjectionSourceService'));
 assert.ok(source.includes('createAuthorityProjectionWorker'));

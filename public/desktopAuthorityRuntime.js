@@ -332,11 +332,17 @@ function createDesktopAuthorityRuntime({
     appendDraft: async input => (await getClient()).appendDraft(input),
     appendDraftSync,
     appendDraftBatchSync,
+    confirmAndExecuteLocal: async (id, executeLocalDraft) => (
+      (await getClient()).confirmAndExecuteLocal(id, executeLocalDraft)
+    ),
     confirmAndSubmit: async id => (await getClient()).confirmAndSubmit(id),
     get: async id => (await getClient()).get(id),
     list: async () => (await getClient()).list(),
     readProjection,
     submit: async id => (await getClient()).submit(id),
+    submitLocal: async (id, executeLocalDraft) => (
+      (await getClient()).submitLocal(id, executeLocalDraft)
+    ),
   });
 }
 

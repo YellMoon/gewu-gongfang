@@ -6,7 +6,7 @@ function gatewayWebSocketUrl(cloudBaseUrl) {
     if (!['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol)) return '';
     if (url.protocol === 'https:') url.protocol = 'wss:';
     if (url.protocol === 'http:') url.protocol = 'ws:';
-    url.pathname = '';
+    url.pathname = url.pathname.replace(/\/+$/, '');
     url.search = '';
     url.hash = '';
     return url.toString().replace(/\/$/, '');

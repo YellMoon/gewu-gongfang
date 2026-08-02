@@ -53,8 +53,21 @@ for (const relativePath of [
   'scripts/inspect-single-user-pairing-state.js',
   'scripts/live-cloud-pairing-route-smoke.js',
   'scripts/single-user-pairing-runtime-smoke.js',
+  'scripts/deploy_ws_token_fix.py',
+  'scripts/check_backend.py',
+  'scripts/check_gw_status.py',
+  'scripts/check_network.py',
+  'scripts/check_processes.py',
+  'scripts/check_server.py',
+  'scripts/check_tokens.py',
+  'scripts/deploy_server_fix.py',
+  'scripts/deploy_ws_fix.py',
+  'scripts/final_verify.py',
+  'scripts/fix_backend_import.py',
   'backend/src/services/desktopSessionRelayService.js',
   'src/services/desktopSessionRelayClient.mjs',
+  'src/services/websocketClient.mjs',
+  'src/services/websocketClient.test.js',
 ].forEach(absent);
 
 console.log('desktop architecture cutover checks passed');

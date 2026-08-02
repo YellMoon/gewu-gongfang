@@ -13,17 +13,18 @@ class FakeWebSocket extends EventEmitter {
     FakeWebSocket.instances.push(this);
     queueMicrotask(() => {
       this.emit('open');
-      this.emit('message', JSON.stringify({
-        protocol: 'gewu.authority-socket.v1',
-        type: 'ready',
-      }));
     });
   }
 
   send(raw) {
     const frame = JSON.parse(raw);
     this.sent.push(frame);
-    if (frame.type === 'command.submit') {
+    if (frame.type === 'connection.authenticate') {
+      queueMicrotask(() => this.emit('message', JSON.stringify({
+        protocol: 'gewu.authority-socket.v1',
+        type: 'ready',
+      })));
+    } else if (frame.type === 'command.submit') {
       queueMicrotask(() => this.emit('message', JSON.stringify({
         protocol: 'gewu.authority-socket.v1',
         type: 'command.receipt',
@@ -50,7 +51,17 @@ class FakeWebSocket extends EventEmitter {
 (async function main() {
   const {
     createAuthorityWebSocketTransport,
+    authorityWebSocketUrl,
   } = await import('./authorityWebSocketTransport.mjs');
+  assert.strictEqual(
+    authorityWebSocketUrl('https://physicsedu.xyz/scheduling'),
+    'wss://physicsedu.xyz/scheduling/ws/authority',
+    'the authority socket must stay inside the backend control-plane base path',
+  );
+  assert.strictEqual(
+    authorityWebSocketUrl('wss://physicsedu.xyz/scheduling/ws/authority'),
+    'wss://physicsedu.xyz/scheduling/ws/authority',
+  );
   const envelope = Object.freeze({
     protocol: 'gewu.authority-command.v1',
     commandId: 'command-ws-1',
@@ -77,6 +88,7 @@ class FakeWebSocket extends EventEmitter {
           'x-gewu-authority-user-id': 'user-1',
           'x-gewu-authority-device-id': 'device-1',
           'x-gewu-authority-role': 'teacher',
+          'x-gewu-authority-id': 'authority-1',
           'x-gewu-device-signature': 'signature-1',
         },
       };
@@ -88,7 +100,11 @@ class FakeWebSocket extends EventEmitter {
   const receipt = await transport.submit(envelope);
   assert.strictEqual(receipt.commandId, envelope.commandId);
   assert.strictEqual(FakeWebSocket.instances.length, 1, 'capability and submit must share one socket');
-  const submitFrame = FakeWebSocket.instances[0].sent[0];
+  const authenticateFrame = FakeWebSocket.instances[0].sent[0];
+  assert.strictEqual(authenticateFrame.protocol, 'gewu.authority-socket.v1');
+  assert.strictEqual(authenticateFrame.type, 'connection.authenticate');
+  assert.strictEqual(authenticateFrame.auth['x-gewu-authority-id'], 'authority-1');
+  const submitFrame = FakeWebSocket.instances[0].sent[1];
   assert.strictEqual(submitFrame.protocol, 'gewu.authority-socket.v1');
   assert.strictEqual(submitFrame.type, 'command.submit');
   assert.strictEqual(submitFrame.requestId, 'request-ws-1');
@@ -98,9 +114,14 @@ class FakeWebSocket extends EventEmitter {
     'x-gewu-authority-user-id': 'user-1',
     'x-gewu-authority-device-id': 'device-1',
     'x-gewu-authority-role': 'teacher',
+    'x-gewu-authority-id': 'authority-1',
     'x-gewu-device-signature': 'signature-1',
   });
   assert.deepStrictEqual(signingCalls, [{
+    method: 'GET',
+    path: '/ws/authority',
+    body: null,
+  }, {
     method: 'POST',
     path: '/api/authority/commands',
     body: envelope,

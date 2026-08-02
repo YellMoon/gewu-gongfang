@@ -66,6 +66,13 @@ const packageJson = read('package.json');
 const packageManifest = JSON.parse(packageJson);
 const miniappApi = read('miniapp/src/utils/api.ts');
 const miniappLogin = read('miniapp/src/pages/login/index.tsx');
+const {
+  homeForIdentity: miniappHomeForIdentity,
+} = require('../miniapp/src/pages/login/manualPhoneLoginRuntime');
+const {
+  UNRECOGNIZED_CAPABILITIES,
+  VISITOR_CAPABILITIES,
+} = require('../miniapp/src/utils/accountExperience');
 const miniappLoginCss = read('miniapp/src/pages/login/index.scss');
 const miniappUnrecognizedExperience = read('miniapp/src/utils/unrecognizedExperience.ts');
 const miniappUnrecognizedPage = read('miniapp/src/pages/unrecognized-experience/index.tsx');
@@ -80,12 +87,56 @@ assert(
   miniappLogin.includes("api.post<any>('/api/auth/wechat-login'") &&
   miniappLogin.includes('phone: normalizedPhone') &&
   miniappLogin.includes('validateManualPhone') &&
-  miniappLogin.includes('WECHAT_BINDING_REVIEW_REQUIRED') &&
-  miniappLogin.includes("'/pages/unrecognized-experience/index'") &&
+  miniappLogin.includes('homeForIdentity as resolveHomeForIdentity') &&
+  miniappLogin.includes('return resolveHomeForIdentity(identity') &&
+  miniappLogin.includes('Taro.reLaunch({ url: homeForIdentity(') &&
+  !miniappLogin.includes('WECHAT_BINDING_REVIEW_REQUIRED') &&
+  !miniappLogin.includes('pendingBinding') &&
   !miniappLogin.includes('openType="getPhoneNumber"') &&
   !miniappLogin.includes('reviewDemo'),
-  'miniapp login should use the reviewed manual-phone identity path and route unrecognized students to the real limited experience'
+  'miniapp login should use the shared manual-phone identity router without the retired binding-review state'
 );
+
+assert.strictEqual(
+  miniappHomeForIdentity({
+    id: 'unrecognized-ui-regression',
+    role: 'student',
+    user_type: 'student',
+    account_state: 'unrecognized',
+    token_use: 'unrecognized-student',
+    capabilities: [...UNRECOGNIZED_CAPABILITIES],
+  }),
+  '/pages/unrecognized-experience/index',
+  'only the exact unrecognized identity contract should enter the limited experience',
+);
+assert.strictEqual(
+  miniappHomeForIdentity({
+    id: 'visitor-ui-regression',
+    role: 'visitor',
+    user_type: 'visitor',
+    identity_kind: 'visitor',
+    account_state: 'visitor',
+    token_use: 'miniapp-visitor',
+    authority_id: 'authority-ui-regression',
+    capabilities: [...VISITOR_CAPABILITIES],
+  }),
+  '/pages/index/index',
+  'a canonical visitor should enter the normal role-aware home',
+);
+for (const role of ['student', 'teacher']) {
+  assert.strictEqual(
+    miniappHomeForIdentity({
+      id: `${role}-unbound-ui-regression`,
+      role,
+      user_type: role,
+      account_state: 'formal',
+      student_id: null,
+      teacher_id: null,
+    }),
+    '/pages/index/index',
+    `an unbound formal ${role} should enter the normal role-aware home`,
+  );
+}
 
 assert(
   miniappLoginCss.includes('.login-page') &&

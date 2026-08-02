@@ -11,6 +11,10 @@ db.exec(fs.readFileSync(path.join(__dirname, '..', 'schema.sql'), 'utf8'));
 let clock = new Date('2026-07-17T08:00:00.000Z');
 let sequence = 0;
 const canonicalId = 'miniapp-admin-13732250653';
+const unboundTeacherUserId = 'unbound-teacher-desktop';
+const legacyOnlyUserId = 'legacy-only-desktop-session';
+const visitorOnlyUserId = 'visitor-only-desktop-session';
+const authorityId = 'authority-desktop-session-test';
 const jwtSecret = 'desktop-session-service-test-secret';
 
 db.prepare(`INSERT INTO teachers
@@ -23,15 +27,68 @@ db.prepare(`INSERT INTO users
   VALUES (?, '13732250653', 'Canonical User', 'super_admin', 1, 1, 'teacher-self',
     'approved', 7, 0, ?, ?)`)
   .run(canonicalId, clock.toISOString(), clock.toISOString());
+db.prepare(`INSERT INTO authority_accounts
+  (user_id, authority_id, status, created_at, updated_at)
+  VALUES (?, ?, 'active', ?, ?)`)
+  .run(canonicalId, authorityId, clock.toISOString(), clock.toISOString());
+for (const grant of [
+  ['super_admin', null, null],
+  ['teacher', 'teacher', 'teacher-self'],
+  ['student', null, null],
+]) {
+  db.prepare(`INSERT INTO authority_role_bindings
+    (binding_id, authority_id, user_id, role, subject_type, subject_id, status,
+     grant_version, granted_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'active', 1, 'test', ?, ?)`)
+    .run(
+      `binding-${canonicalId}-${grant[0]}`,
+      authorityId,
+      canonicalId,
+      grant[0],
+      grant[1],
+      grant[2],
+      clock.toISOString(),
+      clock.toISOString(),
+    );
+}
 for (const grant of [
   ['super_admin', null, null],
   ['teacher', 'teacher', 'teacher-self'],
 ]) {
   db.prepare(`INSERT INTO user_role_grants
     (user_id, role, subject_type, subject_id, status, source, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'active', 'test', ?, ?)`)
+    VALUES (?, ?, ?, ?, 'active', 'legacy-test-fixture', ?, ?)`)
     .run(canonicalId, grant[0], grant[1], grant[2], clock.toISOString(), clock.toISOString());
 }
+for (const [userId, role, phone] of [
+  [unboundTeacherUserId, 'teacher', '13000000008'],
+  [legacyOnlyUserId, 'admin', '13000000009'],
+  [visitorOnlyUserId, 'admin', '13000000010'],
+]) {
+  db.prepare(`INSERT INTO users
+    (id, phone, name, role, status, login_enabled, review_status,
+     auth_version, deleted, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 1, 1, 'approved', 1, 0, ?, ?)`)
+    .run(userId, phone, userId, role, clock.toISOString(), clock.toISOString());
+}
+db.prepare(`INSERT INTO authority_accounts
+  (user_id, authority_id, status, created_at, updated_at)
+  VALUES (?, ?, 'active', ?, ?)`)
+  .run(unboundTeacherUserId, authorityId, clock.toISOString(), clock.toISOString());
+db.prepare(`INSERT INTO authority_accounts
+  (user_id, authority_id, status, created_at, updated_at)
+  VALUES (?, ?, 'active', ?, ?)`)
+  .run(visitorOnlyUserId, authorityId, clock.toISOString(), clock.toISOString());
+db.prepare(`INSERT INTO authority_role_bindings
+  (binding_id, authority_id, user_id, role, subject_type, subject_id, status,
+   grant_version, granted_by, created_at, updated_at)
+  VALUES ('binding-unbound-teacher', ?, ?, 'teacher', NULL, NULL, 'active', 1,
+    'test', ?, ?)`)
+  .run(authorityId, unboundTeacherUserId, clock.toISOString(), clock.toISOString());
+db.prepare(`INSERT INTO user_role_grants
+  (user_id, role, subject_type, subject_id, status, source, created_at, updated_at)
+  VALUES (?, 'admin', NULL, NULL, 'active', 'legacy-test', ?, ?)`)
+  .run(legacyOnlyUserId, clock.toISOString(), clock.toISOString());
 
 function insertAuthorization(
   id,
@@ -39,7 +96,8 @@ function insertAuthorization(
   fingerprint,
   authorizationSource = 'wechat_phone',
   deviceKind = 'desktop-client',
-  phoneReverifyDueAt = '2026-08-16T08:00:00.000Z'
+  phoneReverifyDueAt = '2026-08-16T08:00:00.000Z',
+  userId = canonicalId,
 ) {
   db.prepare(`INSERT INTO desktop_device_authorizations
     (id, device_id, device_name, device_kind, user_id, public_key, key_fingerprint,
@@ -51,7 +109,7 @@ function insertAuthorization(
       deviceId,
       deviceId,
       deviceKind,
-      canonicalId,
+      userId,
       fingerprint,
       `challenge-${deviceId}`,
       authorizationSource,
@@ -64,6 +122,33 @@ function insertAuthorization(
 
 insertAuthorization('authorization-host', 'device-host', '1'.repeat(64));
 insertAuthorization('authorization-second', 'device-second', '2'.repeat(64));
+insertAuthorization(
+  'authorization-unbound-teacher',
+  'device-unbound-teacher',
+  '3'.repeat(64),
+  'wechat_phone',
+  'desktop-client',
+  '2026-08-16T08:00:00.000Z',
+  unboundTeacherUserId,
+);
+insertAuthorization(
+  'authorization-legacy-only',
+  'device-legacy-only',
+  '4'.repeat(64),
+  'wechat_phone',
+  'desktop-client',
+  '2026-08-16T08:00:00.000Z',
+  legacyOnlyUserId,
+);
+insertAuthorization(
+  'authorization-visitor-only',
+  'device-visitor-only',
+  '5'.repeat(64),
+  'wechat_phone',
+  'desktop-client',
+  '2026-08-16T08:00:00.000Z',
+  visitorOnlyUserId,
+);
 const service = createDesktopSessionService({
   db,
   jwtSecret,
@@ -80,7 +165,7 @@ const teacherSession = service.issueSession({
   deviceId: 'device-host',
 });
 assert.strictEqual(teacherSession.session.activeRole, 'teacher');
-assert.deepStrictEqual(teacherSession.session.eligibleRoles, ['super_admin', 'teacher']);
+assert.deepStrictEqual(teacherSession.session.eligibleRoles, ['super_admin', 'teacher', 'student']);
 assert.strictEqual(teacherSession.session.teacherId, 'teacher-self');
 assert.strictEqual(teacherSession.session.authVersion, 7);
 assert.strictEqual(teacherSession.session.credentialVersion, 1);
@@ -96,6 +181,61 @@ assert.strictEqual(teacherContext.activeRole, 'teacher');
 assert.strictEqual(teacherContext.scope.kind, 'teacher');
 assert.strictEqual(teacherContext.scope.teacherId, 'teacher-self');
 assert.ok(Object.isFrozen(teacherContext));
+
+const unboundStudentSession = service.issueSession({
+  userId: canonicalId,
+  deviceId: 'device-host',
+  activeRole: 'student',
+});
+assert.strictEqual(unboundStudentSession.session.studentId, null);
+const unboundStudentContext = service.verifySessionToken(unboundStudentSession.token);
+assert.strictEqual(unboundStudentContext.activeRole, 'student');
+assert.strictEqual(unboundStudentContext.studentId, null);
+assert.deepStrictEqual(unboundStudentContext.scope, { kind: 'none' },
+  'a null-subject student grant may create a desktop role session but has no business scope');
+
+const unboundTeacherSession = service.issueSession({
+  userId: unboundTeacherUserId,
+  deviceId: 'device-unbound-teacher',
+  activeRole: 'teacher',
+});
+assert.strictEqual(unboundTeacherSession.session.teacherId, null);
+const unboundTeacherContext = service.verifySessionToken(unboundTeacherSession.token);
+assert.strictEqual(unboundTeacherContext.activeRole, 'teacher');
+assert.strictEqual(unboundTeacherContext.teacherId, null);
+assert.deepStrictEqual(unboundTeacherContext.scope, { kind: 'none' },
+  'a null-subject teacher grant may create a desktop role session but has no business scope');
+
+assert.throws(
+  () => service.issueSession({
+    userId: legacyOnlyUserId,
+    deviceId: 'device-legacy-only',
+    activeRole: 'admin',
+  }),
+  error => error?.code === 'ACTIVE_ROLE_NOT_GRANTED',
+  'legacy user_role_grants rows alone must not authorize a desktop role session',
+);
+
+const visitorOnlySession = service.issueSession({
+  userId: visitorOnlyUserId,
+  deviceId: 'device-visitor-only',
+});
+assert.strictEqual(visitorOnlySession.session.activeRole, 'visitor');
+assert.deepStrictEqual(visitorOnlySession.session.eligibleRoles, ['visitor']);
+const visitorOnlyContext = service.verifySessionToken(visitorOnlySession.token);
+assert.deepStrictEqual(visitorOnlyContext.scope, {
+  kind: 'visitor',
+  userId: visitorOnlyUserId,
+});
+assert.throws(
+  () => service.issueSession({
+    userId: visitorOnlyUserId,
+    deviceId: 'device-visitor-only',
+    activeRole: 'admin',
+  }),
+  error => error?.code === 'ACTIVE_ROLE_NOT_GRANTED',
+  'users.role must not lend admin privileges to a canonical visitor account',
+);
 
 const elevated = service.issueSession({
   userId: canonicalId,
@@ -138,7 +278,7 @@ assert.throws(
     service.issueSession({
       userId: canonicalId,
       deviceId: 'device-host',
-      activeRole: 'student',
+      activeRole: 'admin',
     });
   },
   function (error) { return error && error.code === 'ACTIVE_ROLE_NOT_GRANTED'; }

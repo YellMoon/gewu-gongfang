@@ -284,6 +284,17 @@ CREATE TABLE IF NOT EXISTS authority_role_bindings (
 CREATE INDEX IF NOT EXISTS idx_authority_role_bindings_user
   ON authority_role_bindings(authority_id, user_id, role, status);
 
+-- Cloud-owned account/device controls are read by the host; only the host-owned
+-- role-binding portion is versioned here when the host publishes its mirror.
+CREATE TABLE IF NOT EXISTS authority_device_control_mirror_versions (
+  authority_id TEXT PRIMARY KEY,
+  host_epoch_id TEXT NOT NULL,
+  host_generation INTEGER NOT NULL CHECK (host_generation >= 1),
+  source_version INTEGER NOT NULL CHECK (source_version >= 0),
+  snapshot_hash TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS authority_role_applications (
   application_id TEXT PRIMARY KEY,
   authority_id TEXT NOT NULL,
@@ -488,6 +499,50 @@ CREATE TABLE IF NOT EXISTS authority_scoped_projections (
 
 CREATE INDEX IF NOT EXISTS idx_authority_scoped_projections_epoch_version
   ON authority_scoped_projections(authority_id, host_epoch_id, source_version);
+
+CREATE TABLE IF NOT EXISTS authority_role_mirror_versions (
+  authority_id TEXT PRIMARY KEY,
+  host_epoch_id TEXT NOT NULL,
+  source_version INTEGER NOT NULL CHECK (source_version >= 0),
+  payload_hash TEXT NOT NULL,
+  projection_signature TEXT NOT NULL,
+  generated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS role_application_mirrors (
+  authority_id TEXT NOT NULL,
+  application_id TEXT NOT NULL,
+  host_epoch_id TEXT NOT NULL,
+  source_version INTEGER NOT NULL CHECK (source_version >= 0),
+  user_id TEXT NOT NULL,
+  requested_role TEXT NOT NULL CHECK (requested_role IN ('student', 'teacher')),
+  status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'withdrawn')),
+  payload_json TEXT NOT NULL,
+  projection_signature TEXT NOT NULL,
+  generated_at TEXT NOT NULL,
+  PRIMARY KEY (authority_id, application_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_role_application_mirrors_status
+  ON role_application_mirrors(authority_id, status, source_version);
+
+CREATE TABLE IF NOT EXISTS role_grant_mirrors (
+  authority_id TEXT NOT NULL,
+  binding_id TEXT NOT NULL,
+  host_epoch_id TEXT NOT NULL,
+  source_version INTEGER NOT NULL CHECK (source_version >= 0),
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('student', 'teacher', 'admin', 'super_admin')),
+  grant_version INTEGER NOT NULL CHECK (grant_version >= 1),
+  status TEXT NOT NULL CHECK (status IN ('active', 'revoked', 'pending')),
+  payload_json TEXT NOT NULL,
+  projection_signature TEXT NOT NULL,
+  generated_at TEXT NOT NULL,
+  PRIMARY KEY (authority_id, binding_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_role_grant_mirrors_user
+  ON role_grant_mirrors(authority_id, user_id, role, status);
 
 CREATE INDEX IF NOT EXISTS idx_authority_command_ledger_host
   ON authority_command_ledger(authority_id, host_epoch_id, status, created_at);
@@ -827,7 +882,7 @@ CREATE TABLE IF NOT EXISTS desktop_sessions (
   user_id TEXT NOT NULL,
   device_id TEXT NOT NULL,
   authorization_id TEXT NOT NULL,
-  active_role TEXT NOT NULL CHECK (active_role IN ('super_admin', 'admin', 'teacher', 'student')),
+  active_role TEXT NOT NULL CHECK (active_role IN ('visitor', 'super_admin', 'admin', 'teacher', 'student')),
   eligible_roles_json TEXT NOT NULL,
   auth_version INTEGER NOT NULL CHECK (auth_version >= 1),
   credential_version INTEGER NOT NULL CHECK (credential_version >= 1),

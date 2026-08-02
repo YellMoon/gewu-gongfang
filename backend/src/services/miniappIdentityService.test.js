@@ -68,6 +68,41 @@ try {
     VALUES ('manual-existing', '13800138005', '13800138005', 'Manual Existing', 'admin', 'admin',
       1, 1, 'approved', 7, 0, ?, ?)`
   ).run(now, now);
+  db.prepare(`INSERT INTO authority_accounts
+    (user_id, authority_id, status, created_at, updated_at) VALUES
+    ('formal-admin', 'authority-miniapp-test', 'active', ?, ?),
+    ('formal-teacher', 'authority-miniapp-test', 'active', ?, ?),
+    ('manual-existing', 'authority-miniapp-test', 'active', ?, ?)`)
+    .run(now, now, now, now, now, now);
+  db.prepare(`INSERT INTO authority_role_bindings
+    (binding_id, authority_id, user_id, role, subject_type, subject_id, status,
+     grant_version, granted_by, created_at, updated_at) VALUES
+    ('binding-formal-admin', 'authority-miniapp-test', 'formal-admin', 'admin', NULL, NULL,
+      'active', 1, 'host-super-admin', ?, ?),
+    ('binding-formal-teacher', 'authority-miniapp-test', 'formal-teacher', 'teacher', 'teacher',
+      'teacher-formal-record', 'active', 1, 'host-super-admin', ?, ?),
+    ('binding-manual-existing', 'authority-miniapp-test', 'manual-existing', 'admin', NULL, NULL,
+      'active', 1, 'host-super-admin', ?, ?)`)
+    .run(now, now, now, now, now, now);
+  db.prepare(`INSERT INTO students
+    (id, name, phone, deleted, created_at, updated_at)
+    VALUES ('legacy-only-student-record', 'Legacy Only Student', '13800138009', 0, ?, ?)`)
+    .run(now, now);
+  db.prepare(`INSERT INTO users
+    (id, phone, phone_normalized, name, role, identity_kind, student_id, status, login_enabled,
+     review_status, auth_version, deleted, created_at, updated_at)
+    VALUES ('legacy-only-student', '13800138009', '13800138009', 'Legacy Only Student',
+      'student', 'student', 'legacy-only-student-record', 1, 1, 'approved', 1, 0, ?, ?)`)
+    .run(now, now);
+
+  assert.throws(
+    () => identity.loginWithVerifiedWechat({
+      openid: 'wx-legacy-only-student',
+      phone: '13800138009',
+    }),
+    error => error?.code === 'FORMAL_IDENTITY_MAPPING_INVALID',
+    'legacy role and subject scalars alone must never authorize a formal miniapp session',
+  );
 
   const manualFresh = identity.loginWithClaimedWechat({
     openid: 'wx-manual-fresh',
@@ -147,6 +182,35 @@ try {
       .get(manualFresh.user.id),
     { role: 'visitor', identity_kind: 'visitor', teacher_id: null },
     'canonical role approval must not rewrite the immutable account through legacy scalar role fields',
+  );
+  const unboundStudentAccount = identity.loginWithClaimedWechat({
+    openid: 'wx-unbound-student',
+    phone: '13800138008',
+  });
+  db.prepare(`INSERT INTO authority_role_bindings
+    (binding_id, authority_id, user_id, role, subject_type, subject_id, status,
+     grant_version, granted_by, created_at, updated_at)
+    VALUES ('binding-unbound-student', 'authority-miniapp-test', ?, 'student', NULL,
+      NULL, 'active', 1, 'host-super-admin', ?, ?)`)
+    .run(unboundStudentAccount.user.id, now, now);
+  const unboundStudentLogin = identity.loginWithClaimedWechat({
+    openid: 'wx-unbound-student',
+    phone: '13800138008',
+  });
+  assert.strictEqual(unboundStudentLogin.user.account_state, 'formal');
+  assert.strictEqual(unboundStudentLogin.user.role, 'student');
+  assert.strictEqual(unboundStudentLogin.user.student_id, null,
+    'a canonical student role may exist before a local student subject is linked');
+  assert.strictEqual(unboundStudentLogin.claims.token_use, 'miniapp-session');
+  assert.strictEqual(
+    identity.readIdentityForToken(unboundStudentLogin.claims).student_id,
+    null,
+    'formal token verification must retain an intentionally unbound student role',
+  );
+  assert.strictEqual(
+    db.prepare('SELECT COUNT(*) count FROM students WHERE phone=?').get('13800138008').count,
+    0,
+    'logging in with an unbound role must not synthesize a local subject record',
   );
   assert.throws(
     () => identity.loginWithClaimedWechat({
@@ -339,6 +403,34 @@ try {
   assert.throws(
     () => identity.loginWithClaimedWechat({ openid: 'wx-invalid-phone', phone: '123' }),
     error => error?.code === 'MANUAL_PHONE_INVALID',
+  );
+  for (const [openid, phone] of [
+    ['wx-invalid-prefix-12', '12800138000'],
+    ['wx-invalid-prefix-10', '10800138000'],
+  ]) {
+    const usersBefore = db.prepare('SELECT COUNT(*) count FROM users').get().count;
+    assert.throws(
+      () => identity.loginWithClaimedWechat({ openid, phone }),
+      error => error?.code === 'MANUAL_PHONE_INVALID',
+      `${phone} must be rejected by the mainland mobile contract`,
+    );
+    assert.strictEqual(db.prepare('SELECT COUNT(*) count FROM users').get().count, usersBefore);
+    assert.strictEqual(db.prepare('SELECT id FROM users WHERE wechat_openid=?').get(openid), undefined);
+    assert.strictEqual(
+      db.prepare('SELECT COUNT(*) count FROM miniapp_login_events WHERE phone_normalized=?').get(phone).count,
+      0,
+      'invalid input must not create a login event or bind an openid',
+    );
+  }
+  const usersBeforeInvalidVerifiedPhone = db.prepare('SELECT COUNT(*) count FROM users').get().count;
+  assert.throws(
+    () => identity.loginWithVerifiedWechat({ openid: 'wx-invalid-verified-prefix', phone: '12800138001' }),
+    error => error?.code === 'VERIFIED_WECHAT_IDENTITY_REQUIRED',
+  );
+  assert.strictEqual(db.prepare('SELECT COUNT(*) count FROM users').get().count, usersBeforeInvalidVerifiedPhone);
+  assert.strictEqual(
+    db.prepare("SELECT id FROM users WHERE wechat_openid='wx-invalid-verified-prefix'").get(),
+    undefined,
   );
   console.log('miniapp identity service checks passed');
 } finally {

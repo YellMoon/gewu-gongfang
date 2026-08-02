@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { normalizePhone } = require('./authorizationPolicy');
+const { resolveActiveAuthorityRoleContext } = require('./authorityRoleGrantAdapter');
 
 const ACTIVE_CHALLENGE_STATUSES = Object.freeze([
   'pending_phone',
@@ -213,14 +214,9 @@ function createDesktopIdentityService({
   const findUsedLoginEvent = db.prepare(
     'SELECT id FROM desktop_identity_challenges WHERE verified_login_event_id=? AND id!=?'
   );
-  const countActiveGrants = db.prepare(
-    "SELECT COUNT(*) count FROM user_role_grants WHERE user_id=? AND status='active'"
-  );
   const findAuthorizationById = db.prepare(
     'SELECT * FROM desktop_device_authorizations WHERE id=?'
   );
-  const findActiveGrants = db.prepare(`SELECT role FROM user_role_grants
-    WHERE user_id=? AND status='active'`);
   const findActivePrimaryHostEpoch = db.prepare(`SELECT id FROM primary_host_epochs
     WHERE status='active' AND device_id=? AND user_id=? AND authorization_id=?
     LIMIT 1`);
@@ -261,8 +257,14 @@ function createDesktopIdentityService({
   }
 
   function eligibleRolesForUser(userId) {
-    const roleSet = new Set(findActiveGrants.all(userId).map(function (grant) { return grant.role; }));
-    return Object.freeze(ROLE_ORDER.filter(function (role) { return roleSet.has(role); }));
+    try {
+      const context = resolveActiveAuthorityRoleContext(db, { userId });
+      const roleSet = new Set(context.grants.map(function (grant) { return grant.role; }));
+      const formalRoles = ROLE_ORDER.filter(function (role) { return roleSet.has(role); });
+      return Object.freeze(formalRoles.length > 0 ? formalRoles : ['visitor']);
+    } catch (_error) {
+      return Object.freeze([]);
+    }
   }
 
   function presentClaimant(userId) {
@@ -486,11 +488,15 @@ function createDesktopIdentityService({
     }
 
     const user = findUser.get(identityId);
-    if (!isApprovedIdentity(user) || countActiveGrants.get(identityId).count < 1) {
+    const eligibleRoles = eligibleRolesForUser(identityId);
+    if (!isApprovedIdentity(user) || eligibleRoles.length < 1) {
       throw serviceError('DESKTOP_IDENTITY_NOT_ELIGIBLE');
     }
     const loginEvent = findLoginEvent.get(loginEventId);
-    if (!loginEvent || loginEvent.result_code !== 'FORMAL_LOGIN_SUCCESS') {
+    const expectedLoginResult = eligibleRoles.length === 1 && eligibleRoles[0] === 'visitor'
+      ? 'VISITOR_LOGIN_SUCCESS'
+      : 'FORMAL_LOGIN_SUCCESS';
+    if (!loginEvent || loginEvent.result_code !== expectedLoginResult) {
       throw serviceError('DESKTOP_VERIFIED_LOGIN_EVENT_REQUIRED');
     }
     if (loginEvent.user_id !== identityId) {
@@ -532,7 +538,7 @@ function createDesktopIdentityService({
       const soleLegacyPrimaryHost = Number(countActivePrimaryHostAuthorizations.get().count) === 1;
       primaryHostSelfRecovery = row.device_kind === 'primary-host'
         && existingAuthorization.device_kind === 'primary-host'
-        && findActiveGrants.all(identityId).some(function (grant) { return grant.role === 'super_admin'; })
+        && eligibleRolesForUser(identityId).includes('super_admin')
         && (Boolean(activePrimaryHostEpoch) || soleLegacyPrimaryHost);
     } else {
       if (existingAuthorization) {

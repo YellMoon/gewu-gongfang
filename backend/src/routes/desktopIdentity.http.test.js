@@ -81,10 +81,30 @@ function generateDeviceKey() {
       VALUES ('approved-admin-other', '13000000001', 'Other Admin', 'admin',
         1, 1, 'approved', 1, 0, ?, ?)`)
       .run(clock.toISOString(), clock.toISOString());
-    db.prepare(`INSERT INTO user_role_grants
-      (user_id, role, subject_type, subject_id, status, source, created_at, updated_at)
-      VALUES (?, 'teacher', 'teacher', 'teacher-http-self', 'active', 'test', ?, ?)`)
-      .run(canonicalId, clock.toISOString(), clock.toISOString());
+    db.prepare(`INSERT INTO users
+      (id, wechat_openid, wechat_unionid, phone, phone_normalized, name, role, status, login_enabled,
+       review_status, auth_version, deleted, created_at, updated_at)
+      VALUES ('legacy-role-only-http', 'wx-http-legacy', 'union-http-legacy',
+        '13500135000', '13500135000', 'Legacy Role Only', 'admin', 1, 1, 'approved', 1, 0, ?, ?)`)
+      .run(clock.toISOString(), clock.toISOString());
+    for (const user of [canonicalId, 'approved-admin-other']) {
+      db.prepare(`INSERT OR IGNORE INTO authority_accounts
+        (user_id, authority_id, status, created_at, updated_at)
+        VALUES (?, 'authority-desktop-identity-http', 'active', ?, ?)`)
+        .run(user, clock.toISOString(), clock.toISOString());
+    }
+    for (const binding of [
+      ['binding-http-super-admin', canonicalId, 'super_admin', null, null],
+      ['binding-http-teacher', canonicalId, 'teacher', 'teacher', 'teacher-http-self'],
+      ['binding-http-other-admin', 'approved-admin-other', 'admin', null, null],
+    ]) {
+      db.prepare(`INSERT INTO authority_role_bindings
+        (binding_id, authority_id, user_id, role, subject_type, subject_id, status,
+         grant_version, granted_by, created_at, updated_at)
+        VALUES (?, 'authority-desktop-identity-http', ?, ?, ?, ?, 'active', 1, 'test', ?, ?)`)
+        .run(binding[0], binding[1], binding[2], binding[3], binding[4],
+          clock.toISOString(), clock.toISOString());
+    }
 
     const hostKey = generateDeviceKey();
     db.prepare(`INSERT INTO desktop_device_authorizations
@@ -147,6 +167,7 @@ function generateDeviceKey() {
       }
       usedLoginCodes.add(code);
       if (code.includes('visitor')) return { openid: 'wx-http-visitor', unionid: 'union-http-visitor' };
+      if (code.includes('legacy')) return { openid: 'wx-http-legacy', unionid: 'union-http-legacy' };
       if (code.includes('conflict')) return { openid: 'wx-http-conflict', unionid: 'union-http-conflict' };
       return { openid: 'wx-http-canonical', unionid: 'union-http-canonical' };
     };
@@ -234,7 +255,7 @@ function generateDeviceKey() {
       return response.body.data.challenge;
     }
 
-    async function exchangeDevice(challenge, key, secret) {
+    async function exchangeRequest(challenge, key, secret) {
       const payload = desktopExchangeSigningPayload({
         challengeId: challenge.id,
         deviceId: challenge.deviceId,
@@ -242,7 +263,7 @@ function generateDeviceKey() {
         challengeSecret: secret,
       });
       const signature = crypto.sign(null, Buffer.from(payload, 'utf8'), key.privateKey).toString('base64');
-      const response = await requestJson(
+      return requestJson(
         baseUrl,
         'POST',
         `/api/desktop-identity/challenges/${challenge.id}/exchange`,
@@ -254,14 +275,23 @@ function generateDeviceKey() {
           },
         }
       );
+    }
+
+    async function exchangeDevice(
+      challenge,
+      key,
+      secret,
+      { activeRole = 'teacher', eligibleRoles = ['super_admin', 'teacher'] } = {},
+    ) {
+      const response = await exchangeRequest(challenge, key, secret);
       assert.strictEqual(response.status, 200);
       assert.strictEqual(response.body.data.authorization.status, 'active');
       assert.ok(response.body.data.token);
       assert.strictEqual(response.body.data.offlineLease.authorizationId, response.body.data.authorization.id);
       assert.strictEqual(response.body.data.offlineLease.deviceId, challenge.deviceId);
       assert.strictEqual(response.body.data.profile.userId, response.body.data.authorization.userId);
-      assert.strictEqual(response.body.data.profile.activeRole, 'teacher');
-      assert.deepStrictEqual(response.body.data.profile.eligibleRoles, ['super_admin', 'teacher']);
+      assert.strictEqual(response.body.data.profile.activeRole, activeRole);
+      assert.deepStrictEqual(response.body.data.profile.eligibleRoles, eligibleRoles);
       assert.ok(
         Date.parse(response.body.data.offlineLease.expiresAt)
           - Date.parse(response.body.data.offlineLease.issuedAt)
@@ -357,18 +387,51 @@ function generateDeviceKey() {
 
     const visitorKey = generateDeviceKey();
     const visitorStarted = await startDevice('device-http-visitor', 'Visitor PC', visitorKey);
+    const visitorUnverifiedExchange = await exchangeRequest(
+      { ...visitorStarted, deviceId: 'device-http-visitor' },
+      visitorKey,
+      visitorStarted.challengeSecret,
+    );
+    assert.strictEqual(visitorUnverifiedExchange.status, 409);
+    assert.strictEqual(visitorUnverifiedExchange.body.code, 'DESKTOP_CHALLENGE_STATE_INVALID');
     const visitorConfirm = await requestJson(
       baseUrl,
       'POST',
       `/api/desktop-identity/challenges/${visitorStarted.id}/confirm`,
       { body: { code: 'fresh-login-visitor', phone: '13600136000', expectedRowVersion: visitorStarted.rowVersion } }
     );
-    assert.strictEqual(visitorConfirm.status, 403);
-    assert.strictEqual(visitorConfirm.body.code, 'DESKTOP_IDENTITY_VISITOR_FORBIDDEN');
+    assert.strictEqual(visitorConfirm.status, 200);
+    assert.strictEqual(visitorConfirm.body.data.challenge.status, 'identity_verified_pending_approval');
+    assert.deepStrictEqual(visitorConfirm.body.data.claimant.eligibleRoles, ['visitor']);
+    const visitorUserId = visitorConfirm.body.data.claimant.id;
+    const visitorConfirmed = visitorConfirm.body.data.challenge;
+    const visitorUnapprovedExchange = await exchangeRequest(
+      visitorConfirmed,
+      visitorKey,
+      visitorStarted.challengeSecret,
+    );
+    assert.strictEqual(visitorUnapprovedExchange.status, 409);
+    assert.strictEqual(visitorUnapprovedExchange.body.code, 'DESKTOP_CHALLENGE_STATE_INVALID');
     assert.strictEqual(
       (await requestJson(baseUrl, 'GET', `/api/desktop-identity/challenges/${visitorStarted.id}/public`)).body.data.challenge.status,
+      'identity_verified_pending_approval',
+      'a verified canonical visitor must still wait for explicit host approval'
+    );
+
+    const legacyKey = generateDeviceKey();
+    const legacyStarted = await startDevice('device-http-legacy-role', 'Legacy Role PC', legacyKey);
+    const legacyConfirm = await requestJson(
+      baseUrl,
+      'POST',
+      `/api/desktop-identity/challenges/${legacyStarted.id}/confirm`,
+      { body: { code: 'fresh-login-legacy', phone: '13500135000', expectedRowVersion: legacyStarted.rowVersion } },
+    );
+    assert.strictEqual(legacyConfirm.status, 400);
+    assert.strictEqual(legacyConfirm.body.code, 'FORMAL_IDENTITY_MAPPING_INVALID');
+    assert.strictEqual(
+      (await requestJson(baseUrl, 'GET', `/api/desktop-identity/challenges/${legacyStarted.id}/public`)).body.data.challenge.status,
       'pending_phone',
-      'a visitor login must not advance a privileged desktop authorization challenge'
+      'legacy users.role must not advance an ungranted desktop identity challenge',
     );
 
     const conflictKey = generateDeviceKey();
@@ -412,6 +475,27 @@ function generateDeviceKey() {
       activeRole: 'super_admin',
       authTime: new Date(clock.getTime() - 60 * 60 * 1000),
     });
+
+    const visitorApproved = await approveDevice(visitorConfirmed, elevatedHost.token);
+    const visitorExchange = await exchangeDevice(
+      visitorApproved,
+      visitorKey,
+      visitorStarted.challengeSecret,
+      { activeRole: 'visitor', eligibleRoles: ['visitor'] },
+    );
+    const visitorContext = sessionService.verifySessionToken(visitorExchange.token);
+    assert.strictEqual(visitorContext.userId, visitorUserId);
+    assert.strictEqual(visitorContext.activeRole, 'visitor');
+    assert.deepStrictEqual(visitorContext.scope, { kind: 'visitor', userId: visitorUserId });
+    assert.throws(
+      () => sessionService.issueSession({
+        userId: visitorUserId,
+        deviceId: 'device-http-visitor',
+        activeRole: 'admin',
+      }),
+      error => error?.code === 'ACTIVE_ROLE_NOT_GRANTED',
+      'a canonical visitor desktop must fail closed instead of borrowing users.role',
+    );
 
     const pending = await requestJson(
       baseUrl,
@@ -788,7 +872,10 @@ function generateDeviceKey() {
     assert.strictEqual(allDevices.status, 200);
     assert.deepStrictEqual(
       allDevices.body.data.items.map(function (item) { return item.deviceId; }).sort(),
-      ['device-http-activation', 'device-http-host', 'device-http-other', 'device-http-second', 'device-http-third']
+      [
+        'device-http-activation', 'device-http-host', 'device-http-other',
+        'device-http-second', 'device-http-third', 'device-http-visitor',
+      ]
     );
     assert.strictEqual(allDevices.body.data.items.find(function (item) {
       return item.deviceId === 'device-http-host';

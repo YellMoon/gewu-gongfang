@@ -3,25 +3,32 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { View, Text, Button, Input } from '@tarojs/components';
 import { api } from '../../utils/api';
 import { authSessionRuntime } from '../../utils/authSession';
-import { accountSessionCleanupStorageKeys, isUnrecognizedIdentity } from '../../utils/accountExperience';
+import { accountSessionCleanupStorageKeys } from '../../utils/accountExperience';
 import { clearPermissionCache } from '../../utils/permission';
 import { clearBusinessCache, setBusinessCacheIdentity } from '../../utils/storage';
 import { createAuthenticationEntryBoundary, createNormalSessionCommitter } from '../../utils/miniappApiSessionRuntime';
-import { loginResultState, normalizeManualPhone, validateManualPhone } from './manualPhoneLoginRuntime';
+import {
+  homeForIdentity as resolveHomeForIdentity,
+  loginResultState,
+  normalizeManualPhone,
+  validateManualPhone,
+} from './manualPhoneLoginRuntime';
 import './index.scss';
 
 const FORMAL_HOME = '/pages/index/index';
 const UNRECOGNIZED_HOME = '/pages/unrecognized-experience/index';
 
 function homeForIdentity(identity: any): string {
-  return isUnrecognizedIdentity(identity) ? UNRECOGNIZED_HOME : FORMAL_HOME;
+  return resolveHomeForIdentity(identity, {
+    formalHome: FORMAL_HOME,
+    unrecognizedHome: UNRECOGNIZED_HOME,
+  });
 }
 
 function loginErrorMessage(code?: string, fallback?: string): string {
   const messages: Record<string, string> = {
     MANUAL_PHONE_REQUIRED: '\u8bf7\u8f93\u5165\u624b\u673a\u53f7\u540e\u767b\u5f55',
     MANUAL_PHONE_INVALID: '\u8bf7\u8f93\u5165\u6b63\u786e\u7684\u4e2d\u56fd\u5927\u9646\u624b\u673a\u53f7',
-    WECHAT_BINDING_REVIEW_REQUIRED: '\u8be5\u624b\u673a\u53f7\u5df2\u6709\u6863\u6848\uff0c\u5fae\u4fe1\u7ed1\u5b9a\u7533\u8bf7\u5df2\u63d0\u4ea4\uff0c\u8bf7\u7b49\u5f85\u8d85\u7ea7\u7ba1\u7406\u5458\u5ba1\u6838',
     PHONE_VERIFICATION_REQUIRED: '请授权微信绑定手机号后登录',
     PHONE_AUTHORIZATION_REQUIRED: '请授权微信绑定手机号后登录',
     WECHAT_PHONE_EXCHANGE_FAILED: '手机号验证失败，请重新授权',
@@ -38,7 +45,6 @@ function loginErrorMessage(code?: string, fallback?: string): string {
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [phone, setPhone] = useState('');
-  const [pendingBinding, setPendingBinding] = useState(false);
   const loginBusyRef = useRef(false);
   const sessionCommitterRef = useRef<ReturnType<typeof createNormalSessionCommitter> | null>(null);
 
@@ -83,10 +89,6 @@ export default function LoginPage() {
         phone: normalizedPhone,
       }));
       const result = loginResultState(response);
-      if (result.kind === 'pending-binding') {
-        setPendingBinding(true);
-        return;
-      }
       if (result.kind !== 'authenticated') {
         Taro.showToast({ title: loginErrorMessage(String(response.code || ''), response.error), icon: 'none' });
         return;
@@ -115,7 +117,7 @@ export default function LoginPage() {
       <Text className="login-title">格物工坊</Text>
     </View>
     <View className="login-form">
-      <Text className="login-description">{'\u8bf7\u8f93\u5165\u624b\u673a\u53f7\u767b\u5f55\u3002\u624b\u673a\u53f7\u4ec5\u7528\u4e8e\u67e5\u627e\u8d26\u53f7\uff1b\u5df2\u6709\u6863\u6848\u9996\u6b21\u7ed1\u5b9a\u5f53\u524d\u5fae\u4fe1\u65f6\uff0c\u9700\u8981\u8d85\u7ea7\u7ba1\u7406\u5458\u5ba1\u6838\u3002'}</Text>
+      <Text className="login-description">{'\u8bf7\u8f93\u5165\u624b\u673a\u53f7\u767b\u5f55\u3002\u5df2\u6709\u8d26\u53f7\u5c06\u6309\u5f53\u524d\u6743\u9650\u8fdb\u5165\uff0c\u672a\u5339\u914d\u8d26\u53f7\u5c06\u4ee5\u8bbf\u5ba2\u8eab\u4efd\u8fdb\u5165\uff1b\u7ed1\u5b9a\u4fe1\u606f\u51b2\u7a81\u65f6\u4e0d\u4f1a\u8986\u76d6\u539f\u8d26\u53f7\u3002'}</Text>
       <View className="phone-field">
         <Text className="phone-prefix">+86</Text>
         <Input
@@ -127,7 +129,6 @@ export default function LoginPage() {
           disabled={loading}
           onInput={event => {
             setPhone(normalizeManualPhone(event.detail.value));
-            setPendingBinding(false);
           }}
         />
       </View>
@@ -137,10 +138,6 @@ export default function LoginPage() {
         loading={loading}
         disabled={loading}
       >{'\u767b\u5f55'}</Button>
-      {pendingBinding ? <View className="binding-review-notice">
-        <Text className="binding-review-title">{'\u5fae\u4fe1\u7ed1\u5b9a\u7533\u8bf7\u5df2\u63d0\u4ea4'}</Text>
-        <Text className="binding-review-description">{'\u4e3a\u9632\u6b62\u624b\u673a\u53f7\u88ab\u5192\u7528\uff0c\u9700\u8981\u8d85\u7ea7\u7ba1\u7406\u5458\u6838\u9a8c\u3002\u5ba1\u6838\u901a\u8fc7\u540e\uff0c\u8bf7\u5728\u672c\u9875\u91cd\u65b0\u767b\u5f55\u3002'}</Text>
-      </View> : null}
     </View>
     <View className="privacy-entry">
       <Text className="privacy-text">登录前请阅读</Text>

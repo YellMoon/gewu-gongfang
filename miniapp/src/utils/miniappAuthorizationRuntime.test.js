@@ -54,6 +54,24 @@ assert.deepStrictEqual(teacherScoped.courses.map(item => item.id), ['course-1'])
 assert.deepStrictEqual(teacherScoped.students.map(item => item.id), ['student-1']);
 const pendingScoped = scopeDashboardCollections({ id: 'pending-user', user_type: 'pending' }, collections);
 assert.deepStrictEqual(pendingScoped, { students: [], courses: [], schedules: [] }, 'pending users must not read business cache');
+const unboundStudent = { id: 'student-1', user_type: 'student', student_id: null, studentId: '' };
+assert.strictEqual(
+  businessCacheIdentityKey(unboundStudent),
+  '',
+  'an unbound student must not receive a business cache namespace even when the account id equals a student profile id',
+);
+assert.deepStrictEqual(
+  scopeDashboardCollections(unboundStudent, collections),
+  { students: [], courses: [], schedules: [] },
+  'an account id must never be used as a fallback student profile id',
+);
+const unboundTeacher = { id: 'teacher-1', user_type: 'teacher', teacher_id: null, teacherId: '' };
+assert.strictEqual(businessCacheIdentityKey(unboundTeacher), '', 'an unbound teacher must not receive a business cache namespace');
+assert.deepStrictEqual(
+  scopeDashboardCollections(unboundTeacher, collections),
+  { students: [], courses: [], schedules: [] },
+  'an unbound teacher must not read cached courses or schedules',
+);
 assert.ok(businessCacheIdentityKey({ id: 'teacher-user', user_type: 'teacher', teacher_id: 'teacher-1' }).includes('teacher-1'));
 assert.strictEqual(businessCacheIdentityKey({ id: 'pending-user', user_type: 'pending' }), '', 'pending users must not have a business cache namespace');
 const normalStudentScope = { id: 'student-user', user_type: 'student', tenant_id: 'tenant-a', student_id: 'student-a', linked_student_ids: ['student-c', 'student-b'], review_status: 'approved', status: 1, login_enabled: 1 };

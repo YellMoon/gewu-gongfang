@@ -1,4 +1,4 @@
-const { permissionIdentityKey } = require('./miniappAuthorizationRuntime');
+const { businessCacheIdentityKey, permissionIdentityKey } = require('./miniappAuthorizationRuntime');
 const { isUnrecognizedIdentity, isVisitorIdentity } = require('./accountExperience');
 
 const AUTH_SESSION_GENERATION_KEY = 'auth_session_generation';
@@ -401,7 +401,9 @@ function createNormalSessionCommitter(dependencies) {
       dependencies.clearPermissionCache();
       for (const key of cleanupStorageKeys(dependencies, identities)) dependencies.removeStorage(key);
       dependencies.writeUser(session.user);
-      dependencies.setBusinessCacheIdentity(session.user);
+      if (businessCacheIdentityKey(session.user)) {
+        dependencies.setBusinessCacheIdentity(session.user);
+      }
       dependencies.writeToken(session.token);
       if (typeof dependencies.activateSession === 'function') dependencies.activateSession();
       await dependencies.relaunch(session.user);

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, Button, Input, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { adminApi, wechatBindingApi } from '../../../utils/api';
+import { adminApi } from '../../../utils/api';
 import { fetchPermissions, getCurrentUser } from '../../../utils/permission';
 import { createLatestRequestCoordinator, createOperationLocks } from './adminReviewCoordinator';
 import './index.scss';
@@ -27,7 +27,6 @@ function errorMessage(result: any, fallback: string) {
 export default function AdminUsersPage() {
   const currentUser = getCurrentUser();
   const [users, setUsers] = useState<any[]>([]);
-  const [wechatBindings, setWechatBindings] = useState<any[]>([]);
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -50,27 +49,23 @@ export default function AdminUsersPage() {
       const canRead = nextCapabilities.includes('business:all');
       if (!canRead) throw new Error('\u5f53\u524d\u8d26\u53f7\u65e0\u6743\u67e5\u770b\u7528\u6237\u5206\u7c7b');
       const query = queryRef.current;
-      const [userResult, bindingResult] = await Promise.all([
-        adminApi.getUsers({ page: 1, search: query.submittedSearch, review_status: query.status }),
-        wechatBindingApi.adminList(),
-      ]);
+      const userResult = await adminApi.getUsers({
+        page: 1,
+        search: query.submittedSearch,
+        review_status: query.status,
+      });
       if (!userResult.success) throw new Error(errorMessage(userResult, '\u7528\u6237\u52a0\u8f7d\u5931\u8d25'));
-      if (!bindingResult.success) throw new Error(errorMessage(bindingResult, '\u5fae\u4fe1\u7ed1\u5b9a\u7533\u8bf7\u52a0\u8f7d\u5931\u8d25'));
-      const bindingResponse: any = bindingResult;
       return {
         nextCapabilities,
         users: userResult.data?.users || [],
-        wechatBindings: bindingResponse.data?.items || bindingResponse.items || [],
       };
     }, result => {
       setCapabilities(result.nextCapabilities);
       setUsers(result.users);
-      setWechatBindings(result.wechatBindings);
     }, (caught: any) => {
       setCapabilities([]);
       setError(caught?.message || '\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5');
       setUsers([]);
-      setWechatBindings([]);
     }, () => {
       setLoading(false);
     });
@@ -100,71 +95,10 @@ export default function AdminUsersPage() {
     });
   };
 
-  const reviewBinding = async (binding: any, action: 'approve' | 'reject') => {
-    if (!canReview) return;
-    await runLocked(`binding:${binding.id}`, async () => {
-      let reason = '';
-      if (action === 'reject') {
-        const modal: any = await Taro.showModal({
-          title: '\u62d2\u7edd\u5fae\u4fe1\u7ed1\u5b9a',
-          content: '',
-          editable: true,
-          placeholderText: '\u8bf7\u586b\u5199\u62d2\u7edd\u539f\u56e0',
-        } as any);
-        if (!modal.confirm) return;
-        reason = String(modal.content || '').trim();
-        if (reason.length < 2) {
-          Taro.showToast({ title: '\u8bf7\u586b\u5199\u81f3\u5c11 2 \u4e2a\u5b57\u7684\u62d2\u7edd\u539f\u56e0', icon: 'none' });
-          return;
-        }
-      } else {
-        const modal = await Taro.showModal({
-          title: '\u6279\u51c6\u5fae\u4fe1\u7ed1\u5b9a',
-          content: `\u786e\u8ba4\u5c06 ${binding.phoneMasked || '\u8be5\u624b\u673a\u53f7'} \u7684\u8d26\u53f7\u7ed1\u5b9a\u5230\u672c\u6b21\u7533\u8bf7\u7684\u5fae\u4fe1\uff1f`,
-        });
-        if (!modal.confirm) return;
-      }
-      const result: any = action === 'approve'
-        ? await wechatBindingApi.approve(binding.id, binding.revision)
-        : await wechatBindingApi.reject(binding.id, binding.revision, reason);
-      if (!result.success) {
-        Taro.showToast({ title: errorMessage(result, '\u5fae\u4fe1\u7ed1\u5b9a\u5ba1\u6838\u5931\u8d25'), icon: 'none' });
-        return;
-      }
-      Taro.showToast({ title: action === 'approve' ? '\u5df2\u6279\u51c6\u7ed1\u5b9a' : '\u5df2\u62d2\u7edd\u7ed1\u5b9a', icon: 'success' });
-      await load();
-    });
-  };
-
   const currentRole = currentUser?.user_type;
   return <View className="admin-page">
-    <View className="admin-header"><View><Text className="admin-title">{'\u7528\u6237\u4e0e\u5fae\u4fe1\u7ed1\u5b9a'}</Text><Text className="admin-subtitle">{'\u89d2\u8272\u7533\u8bf7\u5df2\u8f6c\u79fb\u5230\u6570\u636e\u4e3b\u673a\u7684\u7b7e\u540d\u5ba1\u6838\u5de5\u4f5c\u53f0'}</Text></View></View>
-    {currentRole === 'admin' && !canReview ? <View className="read-only-notice">{'\u666e\u901a\u7ba1\u7406\u5458\u53ef\u67e5\u770b\u8131\u654f\u7528\u6237\u4e0e\u7ed1\u5b9a\u72b6\u6001\uff0c\u4ec5\u8d85\u7ea7\u7ba1\u7406\u5458\u53ef\u5904\u7406\u8d26\u53f7\u63a7\u5236\u64cd\u4f5c\u3002'}</View> : null}
-    <View className="binding-review-section">
-      <View className="application-review-heading">
-        <Text className="application-review-title">{'\u5fae\u4fe1\u7ed1\u5b9a\u7533\u8bf7'}</Text>
-        <Text className="application-review-count">{wechatBindings.length}</Text>
-      </View>
-      {currentRole === 'admin' && !canReview ? <Text className="binding-read-only">{'\u666e\u901a\u7ba1\u7406\u5458\u53ef\u67e5\u770b\u8131\u654f\u7533\u8bf7\uff0c\u4ec5\u8d85\u7ea7\u7ba1\u7406\u5458\u53ef\u6279\u51c6\u6216\u62d2\u7edd\u3002'}</Text> : null}
-      {!loading && !error && wechatBindings.length === 0 ? <View className="empty compact">{'\u6682\u65e0\u5f85\u5ba1\u6838\u7684\u5fae\u4fe1\u7ed1\u5b9a\u7533\u8bf7'}</View> : null}
-      {!loading && !error ? wechatBindings.map(binding => {
-        const bindingLocked = lockedKeys.includes(`binding:${binding.id}`);
-        return <View key={binding.id} className="binding-card">
-          <View className="application-card-heading">
-            <View>
-              <Text className="application-name">{binding.targetName || '\u672a\u547d\u540d\u7528\u6237'}</Text>
-              <Text className="application-kind">{'\u624b\u673a\u53f7\uff1a'}{binding.phoneMasked}</Text>
-            </View>
-            <Text className="application-status status-submitted">{'\u5f85\u5ba1\u6838'}</Text>
-          </View>
-          <Text className="binding-created-at">{'\u7533\u8bf7\u65f6\u95f4\uff1a'}{binding.createdAt || '\u672a\u77e5'}</Text>
-          {canReview && <View className="application-actions">
-            <Button size="mini" disabled={bindingLocked} onClick={() => void reviewBinding(binding, 'approve')}>{bindingLocked ? '\u5904\u7406\u4e2d\u2026' : '\u6279\u51c6\u7ed1\u5b9a'}</Button>
-            <Button size="mini" className="reject" disabled={bindingLocked} onClick={() => void reviewBinding(binding, 'reject')}>{'\u62d2\u7edd'}</Button>
-          </View>}
-        </View>;
-      }) : null}
-    </View>
+    <View className="admin-header"><View><Text className="admin-title">{'\u7528\u6237\u6743\u9650'}</Text><Text className="admin-subtitle">{'\u89d2\u8272\u7533\u8bf7\u5df2\u8f6c\u79fb\u5230\u6570\u636e\u4e3b\u673a\u7684\u7b7e\u540d\u5ba1\u6838\u5de5\u4f5c\u53f0'}</Text></View></View>
+    {currentRole === 'admin' && !canReview ? <View className="read-only-notice">{'\u666e\u901a\u7ba1\u7406\u5458\u53ef\u67e5\u770b\u8131\u654f\u7528\u6237\u72b6\u6001\uff0c\u4ec5\u8d85\u7ea7\u7ba1\u7406\u5458\u53ef\u5904\u7406\u8d26\u53f7\u63a7\u5236\u64cd\u4f5c\u3002'}</View> : null}
     <View className="search-bar"><Input className="search-input" value={search} placeholder={'\u641c\u7d22\u59d3\u540d\u6216\u624b\u673a\u53f7'} onInput={event => setSearch(event.detail.value)} /><Button className="search-btn" onClick={() => setSubmittedSearch(search.trim())}>{'\u67e5\u8be2'}</Button></View>
     <ScrollView scrollX className="type-tabs">{statusFilters.map(item => <Text key={item || 'all'} className={`type-tab ${status === item ? 'active' : ''}`} onClick={() => setStatus(item)}>{item ? statusLabels[item] : '\u5168\u90e8'}</Text>)}</ScrollView>
     <View className="user-list">

@@ -15,6 +15,7 @@ const {
   UNRECOGNIZED_TOKEN_USE,
   VISITOR_TOKEN_USE,
   createMiniappIdentityService,
+  isValidMainlandMobile,
 } = require('../services/miniappIdentityService');
 const {
   resolveWechatIdentity,
@@ -75,6 +76,13 @@ router.post('/wechat-login', async (req, res) => {
         error: 'Manual phone is required',
       });
     }
+    if (!isValidMainlandMobile(phone)) {
+      return res.status(400).json({
+        success: false,
+        code: 'MANUAL_PHONE_INVALID',
+        error: 'Manual phone is invalid',
+      });
+    }
 
     authRateLimiter.prune();
     const rateLimit = authRateLimiter.consume(req.ip || req.socket?.remoteAddress || 'unknown');
@@ -113,14 +121,6 @@ router.post('/wechat-login', async (req, res) => {
     });
   } catch (err) {
     const code = err.code || 'MINIAPP_LOGIN_FAILED';
-    if (code === 'WECHAT_BINDING_REVIEW_REQUIRED') {
-      return res.status(202).json({
-        success: false,
-        code,
-        data: err.details,
-        error: 'WeChat binding review is required',
-      });
-    }
     const conflictCodes = new Set([
       'PHONE_WECHAT_BINDING_CONFLICT',
       'OPENID_PHONE_BINDING_CONFLICT',

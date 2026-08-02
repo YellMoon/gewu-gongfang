@@ -10,6 +10,7 @@ import {
   deriveAccess,
   accountExperiencePolicy,
   sanitizeCapabilitiesForIdentity,
+  studentSubjectIds,
 } from './miniappAuthorizationRuntime';
 import { createAuthorizationSession } from './miniappAuthorizationSession';
 import { createPermissionFetchBoundary } from './miniappPermissionFetchRuntime';
@@ -215,17 +216,7 @@ export function isStudentUser(user: Partial<UserInfo> | null = getCurrentUser())
 }
 
 export function getLinkedStudentIds(user: Partial<UserInfo> | null = getCurrentUser()): string[] {
-  if (!user) return [];
-  const ids = [
-    user.student_id,
-    user.studentId,
-    user.linked_student_id,
-    user.linkedStudentId,
-    ...(user.linked_student_ids || []),
-    ...(user.linkedStudentIds || []),
-    user.user_type === 'student' ? user.id : undefined,
-  ];
-  return Array.from(new Set(ids.filter((id): id is string => Boolean(id))));
+  return studentSubjectIds(user);
 }
 
 export function getMiniappRolePolicy(user: Partial<UserInfo> | null = getCurrentUser()) {

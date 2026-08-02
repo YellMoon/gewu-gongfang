@@ -11,8 +11,8 @@ const FORMAL_AUDIENCE = 'gewu-api';
 const EXPERIENCE_AUDIENCE = 'gewu-miniapp-experience';
 const FORMAL_TOKEN_USE = 'miniapp-session';
 const VISITOR_TOKEN_USE = 'miniapp-visitor';
+const MAINLAND_MOBILE_PATTERN = /^1[3-9]\d{9}$/;
 const UNRECOGNIZED_TOKEN_USE = 'unrecognized-student';
-const FORMAL_ROLES = new Set(['super_admin', 'admin', 'teacher', 'student']);
 const LOGIN_EVENT_RETENTION_MS = 180 * 24 * 60 * 60 * 1000;
 const VISITOR_CAPABILITIES = Object.freeze([
   'projection:read',
@@ -27,6 +27,10 @@ const UNRECOGNIZED_CAPABILITIES = Object.freeze([
   'sample-questions:view',
   'sample-paper-export',
 ]);
+
+function isValidMainlandMobile(value) {
+  return MAINLAND_MOBILE_PATTERN.test(normalizePhone(value));
+}
 
 function serviceError(code, details) {
   const error = new Error(code);
@@ -116,18 +120,13 @@ function createMiniappIdentityService({
   }
 
   function formalRole(user) {
-    const account = authorityAccountFor(user);
-    if (account) return canonicalFormalGrant(user)?.role || null;
-    const legacyRole = roleForUser(user);
-    return FORMAL_ROLES.has(legacyRole) ? legacyRole : null;
+    return canonicalFormalGrant(user)?.role || null;
   }
 
   function formalSubjectId(user, role = formalRole(user)) {
     const canonicalGrant = canonicalFormalGrant(user);
     if (canonicalGrant?.role === role) return canonicalGrant.subjectId || null;
-    if (role === 'student') return user?.student_id || null;
-    if (role === 'teacher') return user?.teacher_id || null;
-    return user?.id || null;
+    return null;
   }
 
   function membershipFor(user, role = formalRole(user)) {
@@ -148,12 +147,15 @@ function createMiniappIdentityService({
 
   function hasValidFormalMapping(user, role = formalRole(user)) {
     if (!role) return false;
+    const canonicalGrant = canonicalFormalGrant(user);
     const reconciledMembership = isActiveMembership(membershipFor(user, role));
     const subjectId = formalSubjectId(user, role);
     if (role === 'student') {
+      if (canonicalGrant?.role === role && !subjectId) return true;
       return Boolean(subjectId && (studentExists.get(subjectId) || reconciledMembership));
     }
     if (role === 'teacher') {
+      if (canonicalGrant?.role === role && !subjectId) return true;
       return Boolean(subjectId && (teacherExists.get(subjectId) || reconciledMembership));
     }
     return role === 'admin' || role === 'super_admin';
@@ -436,7 +438,7 @@ function createMiniappIdentityService({
     const phone = normalizePhone(input.phone);
     const openid = String(input.openid || '').trim();
     if (!phone) throw serviceError('MANUAL_PHONE_REQUIRED');
-    if (!/^1\d{10}$/.test(phone)) throw serviceError('MANUAL_PHONE_INVALID');
+    if (!isValidMainlandMobile(phone)) throw serviceError('MANUAL_PHONE_INVALID');
     if (!openid) throw serviceError('WECHAT_IDENTITY_REQUIRED');
     const normalizedInput = normalizedLoginInput(input, phone, openid);
     let outcome;
@@ -465,7 +467,7 @@ function createMiniappIdentityService({
   function loginWithVerifiedWechat(input = {}) {
     const phone = normalizePhone(input.phone);
     const openid = String(input.openid || '').trim();
-    if (!openid || !/^1\d{10}$/.test(phone)) {
+    if (!openid || !isValidMainlandMobile(phone)) {
       throw serviceError('VERIFIED_WECHAT_IDENTITY_REQUIRED');
     }
     const normalizedInput = normalizedLoginInput(input, phone, openid);
@@ -566,4 +568,5 @@ module.exports = {
   UNRECOGNIZED_TOKEN_USE,
   VISITOR_TOKEN_USE,
   createMiniappIdentityService,
+  isValidMainlandMobile,
 };

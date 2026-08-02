@@ -635,6 +635,45 @@ async function main() {
   assert.ok(commitEvents.indexOf('advance-generation') < commitEvents.indexOf('write-token'), 'token must be the last durable session credential');
   assert.ok(commitEvents.indexOf('write-token') < commitEvents.indexOf('activate-session'), 'a switched session becomes trusted only after its token is durable');
 
+  for (const role of ['student', 'teacher']) {
+    const unboundIdentity = {
+      id: `${role}-unbound`,
+      role,
+      user_type: role,
+      account_state: 'formal',
+      token_use: 'miniapp-session',
+      student_id: null,
+      teacher_id: null,
+    };
+    const values = new Map();
+    const cacheActivations = [];
+    const relaunched = [];
+    const committer = createNormalSessionCommitter({
+      readUser: () => values.get('user_info'),
+      invalidateAndAdvance: () => {},
+      clearBusinessCache: () => values.set('business_cache', []),
+      clearPermissionCache: () => {},
+      removeStorage: key => values.delete(key),
+      writeUser: user => values.set('user_info', user),
+      setBusinessCacheIdentity: user => cacheActivations.push(user),
+      writeToken: token => values.set('auth_token', token),
+      activateSession: () => {},
+      relaunch: async user => relaunched.push(user),
+    });
+    assert.deepStrictEqual(
+      await committer.commit({ token: `${role}-token`, user: unboundIdentity }),
+      { success: true },
+      `an unbound formal ${role} session must still commit`,
+    );
+    assert.strictEqual(values.get('auth_token'), `${role}-token`);
+    assert.deepStrictEqual(values.get('user_info'), unboundIdentity);
+    assert.deepStrictEqual(values.get('business_cache'), [], 'unbound business cache must remain empty');
+    assert.deepStrictEqual(cacheActivations, [], 'an unbound formal identity must not synthesize or activate a subject cache namespace');
+    assert.deepStrictEqual(relaunched, [unboundIdentity], `an unbound formal ${role} must enter its role-aware home`);
+    assert.strictEqual(values.get('user_info').student_id, null);
+    assert.strictEqual(values.get('user_info').teacher_id, null);
+  }
+
   const failedValues = new Map([['auth_token', 'old-token'], ['user_info', normalIdentity]]);
   let rollbackGeneration = 20;
   const failedCommitter = createNormalSessionCommitter({

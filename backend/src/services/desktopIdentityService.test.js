@@ -15,7 +15,9 @@ db.exec(fs.readFileSync(path.join(__dirname, '..', 'schema.sql'), 'utf8'));
 
 const baseTime = '2026-07-17T00:00:00.000Z';
 let currentTime = baseTime;
-const shortCodes = [123456, 123456, 234567, 345678, 456789, 567890, 678901, 789012, 890123];
+const shortCodes = [
+  123456, 123456, 234567, 345678, 456789, 567890, 678901, 789012, 890123, 901235, 912346,
+];
 let shortCodeIndex = 0;
 const service = createDesktopIdentityService({
   db,
@@ -25,6 +27,7 @@ const service = createDesktopIdentityService({
 
 const canonicalId = 'miniapp-admin-13732250653';
 const otherUserId = 'approved-admin-other';
+const authorityId = 'authority-desktop-identity-test';
 
 function insertApprovedUser(id, phone, role) {
   db.prepare(`INSERT INTO users
@@ -32,9 +35,18 @@ function insertApprovedUser(id, phone, role) {
      auth_version, deleted, created_at, updated_at)
     VALUES (?, ?, ?, ?, 1, 1, 'approved', 1, 0, ?, ?)`)
     .run(id, phone, id, role, baseTime, baseTime);
+  db.prepare(`INSERT INTO authority_accounts
+    (user_id, authority_id, status, created_at, updated_at)
+    VALUES (?, ?, 'active', ?, ?)`)
+    .run(id, authorityId, baseTime, baseTime);
+  db.prepare(`INSERT INTO authority_role_bindings
+    (binding_id, authority_id, user_id, role, subject_type, subject_id, status,
+     grant_version, granted_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, NULL, NULL, 'active', 1, 'test', ?, ?)`)
+    .run(`binding-${id}-${role}`, authorityId, id, role, baseTime, baseTime);
   db.prepare(`INSERT INTO user_role_grants
     (user_id, role, subject_type, subject_id, status, source, created_at, updated_at)
-    VALUES (?, ?, NULL, NULL, 'active', 'test', ?, ?)`)
+    VALUES (?, ?, NULL, NULL, 'active', 'legacy-test-fixture', ?, ?)`)
     .run(id, role, baseTime, baseTime);
 }
 
@@ -638,6 +650,36 @@ const primaryHostStarted = service.startChallenge({
 assert.strictEqual(
   db.prepare('SELECT device_kind FROM desktop_identity_challenges WHERE id=?').get(primaryHostStarted.id).device_kind,
   'primary-host'
+);
+
+const legacyOnlyUserId = 'legacy-only-desktop-identity';
+db.prepare(`INSERT INTO users
+  (id, phone, name, role, status, login_enabled, review_status,
+   auth_version, deleted, created_at, updated_at)
+  VALUES (?, '13000000009', 'Legacy Only Desktop Identity', 'admin', 1, 1,
+    'approved', 1, 0, ?, ?)`)
+  .run(legacyOnlyUserId, baseTime, baseTime);
+db.prepare(`INSERT INTO user_role_grants
+  (user_id, role, subject_type, subject_id, status, source, created_at, updated_at)
+  VALUES (?, 'admin', NULL, NULL, 'active', 'legacy-test', ?, ?)`)
+  .run(legacyOnlyUserId, baseTime, baseTime);
+const legacyOnlyKey = generateDeviceKey();
+const legacyOnlyChallenge = service.startChallenge({
+  deviceId: 'legacy-only-device',
+  deviceName: 'Legacy Only Device',
+  ...legacyOnlyKey,
+  purpose: 'register',
+});
+insertLoginEvent('login-legacy-only-desktop', legacyOnlyUserId, '13000000009', currentTime);
+assert.throws(
+  () => service.confirmVerifiedIdentity({
+    challengeId: legacyOnlyChallenge.id,
+    identity: { id: legacyOnlyUserId },
+    loginEventId: 'login-legacy-only-desktop',
+    expectedRowVersion: legacyOnlyChallenge.rowVersion,
+  }),
+  error => error?.code === 'DESKTOP_IDENTITY_NOT_ELIGIBLE',
+  'legacy user_role_grants rows alone must not authorize a desktop identity',
 );
 
 db.close();

@@ -55,12 +55,61 @@ export function createDesktopAuthorityClient({
     return submit(id);
   }
 
+  function requireLocalExecutor(executeLocalDraft) {
+    if (typeof executeLocalDraft !== 'function') {
+      throw authorityClientError('PRIMARY_HOST_LOCAL_DRAFT_EXECUTOR_REQUIRED');
+    }
+    return executeLocalDraft;
+  }
+
+  async function submitLocal(id, executeLocalDraft) {
+    const execute = requireLocalExecutor(executeLocalDraft);
+    const draft = await outbox.get(id);
+    if (!['confirmed', 'submitted'].includes(draft.status)) {
+      throw authorityClientError('AUTHORITY_DRAFT_NOT_SUBMITTABLE');
+    }
+    const executed = await execute({
+      type: draft.type,
+      payload: draft.payload,
+      commandId: draft.id,
+      idempotencyKey: draft.id,
+    });
+    const command = executed?.envelope;
+    const receipt = executed?.receipt;
+    if (!command?.commandId || !command?.payloadHash || !receipt) {
+      throw authorityClientError('PRIMARY_HOST_LOCAL_DRAFT_RESULT_INVALID');
+    }
+    verifyAuthorityReceipt(command, receipt);
+    if (draft.status === 'confirmed') {
+      await outbox.markSubmitted(id, {
+        commandId: command.commandId,
+        payloadHash: command.payloadHash,
+        transportUsed: 'primary-host-local',
+        command,
+      });
+    }
+    const acknowledged = await outbox.acknowledge(id, receipt);
+    return Object.freeze({
+      command,
+      receipt,
+      transportUsed: 'primary-host-local',
+      rejected: acknowledged?.status === 'conflict' && receipt.status === 'rejected',
+    });
+  }
+
+  async function confirmAndExecuteLocal(id, executeLocalDraft) {
+    await outbox.confirm(id);
+    return submitLocal(id, executeLocalDraft);
+  }
+
   return Object.freeze({
     appendDraft,
+    confirmAndExecuteLocal,
     confirmAndSubmit,
     get: id => outbox.get(id),
     list: () => outbox.list(),
     submit,
+    submitLocal,
   });
 }
 

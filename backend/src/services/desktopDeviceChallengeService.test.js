@@ -38,14 +38,21 @@ db.prepare(`INSERT INTO users
   VALUES (?, '13732250653', 'Canonical Human', 'super_admin', 1, 1, ?,
     'approved', 1, 0, ?, ?)`)
   .run(userId, teacherId, clock.toISOString(), clock.toISOString());
+const authorityId = 'authority-desktop-device-challenge-test';
+db.prepare(`INSERT INTO authority_accounts
+  (user_id, authority_id, status, created_at, updated_at)
+  VALUES (?, ?, 'active', ?, ?)`)
+  .run(userId, authorityId, clock.toISOString(), clock.toISOString());
 for (const grant of [
   ['super_admin', null, null],
   ['teacher', 'teacher', teacherId],
 ]) {
-  db.prepare(`INSERT INTO user_role_grants
-    (user_id, role, subject_type, subject_id, status, source, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'active', 'test', ?, ?)`)
-    .run(userId, grant[0], grant[1], grant[2], clock.toISOString(), clock.toISOString());
+  db.prepare(`INSERT INTO authority_role_bindings
+    (binding_id, authority_id, user_id, role, subject_type, subject_id, status,
+     grant_version, granted_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'active', 1, 'test', ?, ?)`)
+    .run(`binding-${grant[0]}`, authorityId, userId, grant[0], grant[1], grant[2],
+      clock.toISOString(), clock.toISOString());
 }
 db.prepare(`INSERT INTO desktop_device_authorizations
   (id, device_id, device_name, device_kind, user_id, public_key, key_fingerprint,
