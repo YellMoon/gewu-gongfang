@@ -119,7 +119,7 @@ async function waitFor(check, code, timeoutMs = 45_000) {
     try { const value = await check(); if (value) return value; } catch (error) { last = error; }
     await sleep(250);
   }
-  const error = new Error(`${code}${last ? `: ${last.code || last.message}` : ''}`);
+  const error = new Error(`${code}${last ? `: ${last.code || 'CHECK_FAILED'}: ${last.message || ''}` : ''}`);
   error.code = code;
   throw error;
 }
@@ -1286,6 +1286,12 @@ function packagedColdStartTimeoutMs() {
   const configured = Number(process.env.GEWU_PACKAGED_COLD_START_TIMEOUT_MS || 150_000);
   return Number.isFinite(configured) ? Math.max(45_000, Math.min(configured, 180_000)) : 150_000;
 }
+function configuredCloudRelayConnectTimeoutMs(env = process.env) {
+  const configured = Number(env.E2E_CLOUD_RELAY_CONNECT_TIMEOUT_MS || 90_000);
+  return Number.isFinite(configured) && configured >= 1_000
+    ? Math.min(configured, 180_000)
+    : 90_000;
+}
 function configuredLanHostPort() {
   const configured = String(process.env.GEWU_LAN_E2E_HOST_PORT || '').trim();
   if (!configured) return null;
@@ -1443,9 +1449,12 @@ async function runAcceptance(acceptance) {
     if (acceptance.relayWebSocket) {
       await assertLanIsolated(`http://127.0.0.1:${isolatedLanPort}`);
       await waitFor(async () => {
-        const status = await hostPage.evaluate('window.primaryHostRuntime.workerStatus()');
-        return status?.cloud?.state === 'connected' ? status : null;
-      }, 'HOST_CLOUD_RELAY_CONNECTED_REQUIRED', 90_000);
+        const status = await hostPage.evaluate('window.primaryHostRuntime.runtimeStatus()');
+        if (status?.cloud?.state === 'connected') return status;
+        const diagnostic = new Error(`cloud=${JSON.stringify(status?.cloud || null)}`);
+        diagnostic.code = 'HOST_CLOUD_RELAY_NOT_CONNECTED';
+        throw diagnostic;
+      }, 'HOST_CLOUD_RELAY_CONNECTED_REQUIRED', configuredCloudRelayConnectTimeoutMs(process.env));
     } else if (!acceptance.websocketDisabled) {
       await probeAuthoritySocket(`http://${lanAddress()}:${hostPort}`);
     }

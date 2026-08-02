@@ -25,6 +25,8 @@ function createDesktopAuthorityRuntime({
   relayWebSocketTransport,
   WebSocketImpl,
   fetchImpl = fetch,
+  requestTimeoutMs = 5_000,
+  AbortControllerImpl = globalThis.AbortController,
   sleep = delay => new Promise(resolve => setTimeout(resolve, delay)),
   receiptPollAttempts = 30,
   receiptPollIntervalMs = 1000,
@@ -155,12 +157,31 @@ function createDesktopAuthorityRuntime({
   }
 
   async function requestJson(url, options) {
-    const response = await fetchImpl(url, options);
+    const timeoutMs = Math.max(1, Number(requestTimeoutMs) || 5_000);
+    const controller = typeof AbortControllerImpl === 'function'
+      ? new AbortControllerImpl()
+      : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    let response;
     let body = null;
     try {
-      body = await response.json();
-    } catch (_error) {
-      body = null;
+      response = await fetchImpl(url, {
+        ...(options || {}),
+        ...(controller ? { signal: controller.signal } : {}),
+      });
+      try {
+        body = await response.json();
+      } catch (error) {
+        if (controller?.signal?.aborted || error?.name === 'AbortError') throw error;
+        body = null;
+      }
+    } catch (error) {
+      if (controller?.signal?.aborted || error?.name === 'AbortError') {
+        throw runtimeError('AUTHORITY_HTTP_TIMEOUT');
+      }
+      throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
     if (!response.ok) {
       const error = runtimeError(
@@ -185,14 +206,21 @@ function createDesktopAuthorityRuntime({
           path: submitPath,
           body: envelope,
         });
-        await requestJson(`${baseUrl}${submitPath}`, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            ...(submitAuth.headers || {}),
-          },
-          body: JSON.stringify(envelope),
-        });
+        try {
+          await requestJson(`${baseUrl}${submitPath}`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              ...(submitAuth.headers || {}),
+            },
+            body: JSON.stringify(envelope),
+          });
+        } catch (error) {
+          // A timeout can happen after the cloud has durably accepted the
+          // idempotent command. Continue by reading its receipt; never submit
+          // a second envelope from inside this transport attempt.
+          if (error?.code !== 'AUTHORITY_HTTP_TIMEOUT') throw error;
+        }
         const receiptPath = `/api/authority/commands/${encodeURIComponent(envelope.commandId)}/receipt`;
         const attempts = Math.max(1, Number(receiptPollAttempts) || 1);
         for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -208,7 +236,7 @@ function createDesktopAuthorityRuntime({
             });
             if (body?.receipt) return body.receipt;
           } catch (error) {
-            if (error?.statusCode !== 404) throw error;
+            if (error?.statusCode !== 404 && error?.code !== 'AUTHORITY_HTTP_TIMEOUT') throw error;
           }
           if (attempt + 1 < attempts) await sleep(receiptPollIntervalMs);
         }

@@ -18,6 +18,20 @@ function response(status, body) {
   };
 }
 
+async function withTimeout(promise, timeoutMs, message) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 (async function main() {
   for (const packagedFile of [
     'public/desktopAuthorityRuntime.js',
@@ -147,6 +161,114 @@ function response(status, body) {
     await runtime.readProjection({ minSourceVersion: receipt.projectionVersion }),
     projection,
   );
+  const timeoutRuntime = createDesktopAuthorityRuntime({
+    filePath: path.join(workspace, 'authority-timeout-outbox.bin'),
+    safeStorage: {
+      isEncryptionAvailable: () => true,
+      encryptString: value => Buffer.from(`safe:${Buffer.from(value).toString('base64')}`),
+      decryptString: value => Buffer.from(Buffer.from(value).toString().slice(5), 'base64').toString(),
+    },
+    vault,
+    lanBaseUrl: 'http://unreachable-host.lan',
+    durableRelayBaseUrl: 'https://control.example',
+    requestTimeoutMs: 5,
+    fetchImpl: async (url, options = {}) => {
+      if (url.startsWith('http://unreachable-host.lan')) {
+        return new Promise((_resolve, reject) => {
+          options.signal?.addEventListener('abort', () => {
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+          }, { once: true });
+        });
+      }
+      if (url === 'https://control.example/api/authority/projections/current') {
+        return response(200, { success: true, projection });
+      }
+      throw new Error(`unexpected request ${url}`);
+    },
+  });
+  assert.deepStrictEqual(await Promise.race([
+    timeoutRuntime.readProjection(),
+    new Promise((_resolve, reject) => setTimeout(() => reject(new Error('projection fallback timed out')), 100)),
+  ]), projection, 'an unreachable LAN projection endpoint must time out and fall back to the cloud relay');
+  const bodyTimeoutRuntime = createDesktopAuthorityRuntime({
+    filePath: path.join(workspace, 'authority-body-timeout-outbox.bin'),
+    safeStorage: {
+      isEncryptionAvailable: () => true,
+      encryptString: value => Buffer.from(`safe:${Buffer.from(value).toString('base64')}`),
+      decryptString: value => Buffer.from(Buffer.from(value).toString().slice(5), 'base64').toString(),
+    },
+    vault,
+    lanBaseUrl: 'http://slow-body-host.lan',
+    durableRelayBaseUrl: 'https://control.example',
+    requestTimeoutMs: 5,
+    fetchImpl: async (url, options = {}) => {
+      if (url.startsWith('http://slow-body-host.lan')) {
+        return {
+          ok: true,
+          status: 200,
+          json: () => new Promise((_resolve, reject) => {
+            options.signal?.addEventListener('abort', () => {
+              reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+            }, { once: true });
+          }),
+        };
+      }
+      if (url === 'https://control.example/api/authority/projections/current') {
+        return response(200, { success: true, projection });
+      }
+      throw new Error(`unexpected request ${url}`);
+    },
+  });
+  assert.deepStrictEqual(await Promise.race([
+    bodyTimeoutRuntime.readProjection(),
+    new Promise((_resolve, reject) => setTimeout(() => reject(new Error('projection body fallback timed out')), 100)),
+  ]), projection, 'a stalled LAN response body must time out and fall back to the cloud relay');
+
+  let durableReceiptCalls = 0;
+  const durableTimeoutRuntime = createDesktopAuthorityRuntime({
+    filePath: path.join(workspace, 'authority-durable-timeout-outbox.bin'),
+    safeStorage: {
+      isEncryptionAvailable: () => true,
+      encryptString: value => Buffer.from(`safe:${Buffer.from(value).toString('base64')}`),
+      decryptString: value => Buffer.from(Buffer.from(value).toString().slice(5), 'base64').toString(),
+    },
+    vault,
+    durableRelayBaseUrl: 'https://control.example',
+    lanTransport: { name: 'lan', isReady: async () => false },
+    relayWebSocketTransport: { name: 'relay-websocket', isReady: async () => false },
+    requestTimeoutMs: 5,
+    receiptPollAttempts: 3,
+    receiptPollIntervalMs: 0,
+    fetchImpl: async (url, options = {}) => {
+      const stalledBody = () => new Promise((_resolve, reject) => {
+        options.signal?.addEventListener('abort', () => {
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        }, { once: true });
+      });
+      if (url.endsWith('/api/authority/commands') && options.method === 'POST') {
+        return { ok: true, status: 202, json: stalledBody };
+      }
+      if (url.endsWith(`/api/authority/commands/${envelope.commandId}/receipt`)) {
+        durableReceiptCalls += 1;
+        if (durableReceiptCalls === 1) return { ok: true, status: 200, json: stalledBody };
+        return response(200, { success: true, receipt });
+      }
+      throw new Error(`unexpected request ${url}`);
+    },
+  });
+  const durableTimeoutDraft = await durableTimeoutRuntime.appendDraft({
+    type: envelope.type,
+    payload: envelope.payload,
+    preview: { title: 'Durable timeout recovery' },
+  });
+  const durableTimeoutResult = await withTimeout(
+    durableTimeoutRuntime.confirmAndSubmit(durableTimeoutDraft.id),
+    10_000,
+    'durable timeout recovery timed out',
+  );
+  assert.deepStrictEqual(durableTimeoutResult.receipt, receipt,
+    'an accepted POST timeout and a transient receipt timeout must continue with idempotent receipt polling');
+  assert.strictEqual(durableReceiptCalls, 2);
   const localDraft = await runtime.appendDraft({
     type: 'role-application.review.v1',
     payload: { applicationId: 'application-local-1', decision: 'approve' },
