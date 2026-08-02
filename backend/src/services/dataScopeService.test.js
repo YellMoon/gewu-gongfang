@@ -73,11 +73,18 @@ assert.deepStrictEqual(visitorScoped.assetCategories.map(x => x.id), ['ac1']);
 assert.deepStrictEqual(visitorScoped.assets.map(x => x.id), ['aa1']);
 assert.strictEqual(visitorScoped.questionPreviews.length, 10);
 assert.strictEqual(visitorScoped.questionPreviews[0].answer, undefined);
-const emptyStudent = scopeBusinessSnapshot(snapshot, { kind: 'student', studentIds: [] });
+const emptyStudent = scopeBusinessSnapshot(snapshot, { kind: 'student', studentIds: [], userId: 'u1' });
 assert.deepStrictEqual(emptyStudent.courses, []);
-assert.strictEqual(emptyStudent.questions.length, 2);
+assert.strictEqual(emptyStudent.questions, undefined, 'an unbound subject must not inherit the full public question tables');
+assert.strictEqual(emptyStudent.questionPreviews.length, 10);
+assert.strictEqual(emptyStudent.questionPreviews[0].answer, undefined);
+assert.deepStrictEqual(emptyStudent.assetRecords.map(item => item.id), ['a1']);
 assert.strictEqual(emptyStudent.secretRows, undefined);
 assert.strictEqual(emptyStudent.revenueStats, undefined);
+const emptyTeacher = scopeBusinessSnapshot(snapshot, { kind: 'teacher', teacherId: null, userId: 'u1' });
+assert.deepStrictEqual(emptyTeacher.courses, []);
+assert.strictEqual(emptyTeacher.questions, undefined);
+assert.strictEqual(emptyTeacher.questionPreviews.length, 10);
 const studentScoped = scopeBusinessSnapshot({ ...snapshot,
   students: [{ id: 's1', name: 'A', phone: 'secret', balance_money: 999 }],
   courses: [{ ...snapshot.courses[0], price_tuition: 999, notes: 'safe course note' }],

@@ -56,6 +56,7 @@ function redactStudentSchedule(row, allowedStudents) {
 
 function scopeStudent(snapshot, context) {
   const allowedStudents = new Set(array(context.studentIds || context.linkedStudentIds).map(String));
+  if (allowedStudents.size === 0) return scopeUnboundSubject(snapshot, context);
   const courses = copyRows(snapshot.courses).filter(row => studentLinks(row).some(x => allowedStudents.has(x)));
   const courseIds = ids(courses);
   const schedules = copyRows(snapshot.schedules).filter(row => inSet(courseIds, value(row, 'course_id', 'courseId')) || studentLinks(row).some(x => allowedStudents.has(x)));
@@ -126,7 +127,7 @@ function buildScopedFinancialSnapshot(scoped = {}) {
 
 function scopeTeacher(snapshot, context) {
   const teacherId = context.teacherId;
-  if (!teacherId) return {};
+  if (!teacherId) return scopeUnboundSubject(snapshot, context);
   const courses = copyRows(snapshot.courses).filter(row => String(value(row, 'teacher_id', 'teacherId') || '') === String(teacherId));
   const courseIds = ids(courses);
   const schedules = copyRows(snapshot.schedules).filter(row => inSet(courseIds, value(row, 'course_id', 'courseId')));
@@ -155,11 +156,12 @@ function scopeTeacher(snapshot, context) {
   return result;
 }
 
-function scopeVisitor(snapshot, context) {
+function scopeUnboundSubject(snapshot, context) {
   const userId = String(context.userId || '').trim();
   if (!userId) return {};
   return {
-    redactedForRole: 'visitor',
+    redactedForRole: context.kind || 'visitor',
+    subjectBinding: context.kind === 'visitor' ? 'not-applicable' : 'unbound',
     questionPreviews: copyRows(snapshot.questionPreviews || snapshot.question_previews)
       .map(redactQuestionPreview).slice(0, 10),
     courses: [], schedules: [], students: [], grades: [], enrollments: [], payments: [], consumptions: [],
@@ -168,6 +170,10 @@ function scopeVisitor(snapshot, context) {
     assetRecords: copyRows(snapshot.assetRecords || snapshot.asset_records).filter(row => belongsToUser(row, userId)),
     assetCategories: copyRows(snapshot.assetCategories || snapshot.asset_categories).filter(row => belongsToUser(row, userId)),
   };
+}
+
+function scopeVisitor(snapshot, context) {
+  return scopeUnboundSubject(snapshot, { ...context, kind: 'visitor' });
 }
 
 function scopeBusinessSnapshot(snapshot = {}, context = {}) {

@@ -16,7 +16,7 @@ const {
 
 assert.strictEqual(SUPER_ADMIN_PHONE, '13732250653');
 assert.strictEqual(CANONICAL_SUPER_ADMIN_ID, 'miniapp-admin-13732250653');
-assert.deepStrictEqual(ROLES, ['super_admin', 'admin', 'teacher', 'student', 'visitor', 'pending']);
+assert.deepStrictEqual(ROLES, ['super_admin', 'admin', 'operator', 'teacher', 'student', 'visitor', 'pending']);
 assert.strictEqual(normalizePhone('137 3225 0653'), '13732250653');
 
 assert.strictEqual(
@@ -25,6 +25,11 @@ assert.strictEqual(
   'the fixed phone must always be promoted server-side'
 );
 assert.strictEqual(roleForUser({ user_type: 'teacher' }), 'teacher');
+assert.strictEqual(roleForUser({ user_type: 'operator' }), 'operator');
+assert.strictEqual(roleForUser({
+  id: 'operator-1', role: 'operator', status: 1, login_enabled: 1,
+  review_status: 'approved', deleted: 0,
+}), 'operator');
 assert.strictEqual(roleForUser({
   id: 'visitor-1', role: 'visitor', status: 1, login_enabled: 1,
   review_status: 'approved', deleted: 0,
@@ -77,6 +82,7 @@ const canonicalTeacherSession = {
   role: 'teacher',
   activeRole: 'teacher',
   eligibleRoles: ['super_admin', 'teacher'],
+  teacher_id: 'teacher-canonical',
   status: 1,
   login_enabled: 1,
   review_status: 'approved',
@@ -150,6 +156,16 @@ assert.deepStrictEqual(
   { kind: 'teacher', teacherId: 'teacher-1' }
 );
 assert.deepStrictEqual(scopeForUser({ role: 'teacher' }), { kind: 'none' });
+assert.deepStrictEqual(
+  effectiveCapabilities({ role: 'teacher', teacherId: null }),
+  [],
+  'a formal teacher account without a local subject stays logged in but receives no subject-bound business capability'
+);
+assert.deepStrictEqual(
+  effectiveCapabilities({ role: 'student', studentId: null }),
+  [],
+  'a formal student account without a local subject stays logged in but receives no subject-bound business capability'
+);
 assert.deepStrictEqual(scopeForUser({ role: 'pending' }), { kind: 'none' });
 assert.deepStrictEqual(
   scopeForUser({

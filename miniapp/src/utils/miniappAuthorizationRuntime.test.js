@@ -9,6 +9,7 @@ const {
   scopeDashboardCollections,
   businessCacheIdentityKey,
   questionPaperTaskCacheKey,
+  usesLimitedQuestionProjection,
   createQuestionPaperTaskCacheRuntime,
 } = require('./miniappAuthorizationRuntime');
 
@@ -55,6 +56,7 @@ assert.deepStrictEqual(teacherScoped.students.map(item => item.id), ['student-1'
 const pendingScoped = scopeDashboardCollections({ id: 'pending-user', user_type: 'pending' }, collections);
 assert.deepStrictEqual(pendingScoped, { students: [], courses: [], schedules: [] }, 'pending users must not read business cache');
 const unboundStudent = { id: 'student-1', user_type: 'student', student_id: null, studentId: '' };
+assert.strictEqual(usesLimitedQuestionProjection(unboundStudent), true);
 assert.strictEqual(
   businessCacheIdentityKey(unboundStudent),
   '',
@@ -66,6 +68,7 @@ assert.deepStrictEqual(
   'an account id must never be used as a fallback student profile id',
 );
 const unboundTeacher = { id: 'teacher-1', user_type: 'teacher', teacher_id: null, teacherId: '' };
+assert.strictEqual(usesLimitedQuestionProjection(unboundTeacher), true);
 assert.strictEqual(businessCacheIdentityKey(unboundTeacher), '', 'an unbound teacher must not receive a business cache namespace');
 assert.deepStrictEqual(
   scopeDashboardCollections(unboundTeacher, collections),
@@ -73,6 +76,9 @@ assert.deepStrictEqual(
   'an unbound teacher must not read cached courses or schedules',
 );
 assert.ok(businessCacheIdentityKey({ id: 'teacher-user', user_type: 'teacher', teacher_id: 'teacher-1' }).includes('teacher-1'));
+assert.strictEqual(usesLimitedQuestionProjection({ id: 'teacher-user', user_type: 'teacher', teacher_id: 'teacher-1' }), false);
+assert.strictEqual(usesLimitedQuestionProjection({ id: 'visitor-user', user_type: 'visitor' }), true);
+assert.strictEqual(usesLimitedQuestionProjection({ id: 'admin-user', user_type: 'admin' }), false);
 assert.strictEqual(businessCacheIdentityKey({ id: 'pending-user', user_type: 'pending' }), '', 'pending users must not have a business cache namespace');
 const normalStudentScope = { id: 'student-user', user_type: 'student', tenant_id: 'tenant-a', student_id: 'student-a', linked_student_ids: ['student-c', 'student-b'], review_status: 'approved', status: 1, login_enabled: 1 };
 const normalStudentAliasScope = { id: 'student-user', role: 'student', tenantId: 'tenant-a', studentId: 'student-a', linkedStudentIds: ['student-b', 'student-c', 'student-b'], reviewStatus: 'approved', status: true, loginEnabled: true };

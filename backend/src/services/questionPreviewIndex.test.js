@@ -27,6 +27,24 @@ for (const [name, service] of [['backend', backend], ['gateway', gateway]]) {
   assert.ok(!JSON.stringify(student).includes('secret'), `${name}: student preview must not leak secret content`);
   const teacher = service.buildQuestionPreviewIndex(snapshot, { id: 'teacher-a', role: 'teacher', tenantId: 'tenant-a' });
   assert.deepStrictEqual(teacher.questions.map(item => item.id), ['q-a'], `${name}: non-admin teachers also see only committed questions`);
+  const manyCommitted = {
+    ...snapshot,
+    payload: {
+      ...snapshot.payload,
+      questions: Array.from({ length: 12 }, (_, index) => ({
+        id: `unbound-${index + 1}`, tenant_id: 'tenant-a', type: 'choice',
+        stem: `safe ${index + 1}`, answer: 'must-not-leak', storage_state: 'host_committed',
+      })),
+      question_contents: [],
+    },
+  };
+  const unboundStudent = service.buildQuestionPreviewIndex(manyCommitted, { id: 'student-unbound', role: 'student', student_id: null, tenantId: 'tenant-a' });
+  const unboundStudentJson = service.buildQuestionPreviewIndex(manyCommitted, { id: 'student-unbound-json', role: 'student', linked_student_ids: '[]', tenantId: 'tenant-a' });
+  const unboundTeacher = service.buildQuestionPreviewIndex(manyCommitted, { id: 'teacher-unbound', role: 'teacher', teacher_id: null, tenantId: 'tenant-a' });
+  assert.strictEqual(unboundStudent.questions.length, 10, `${name}: unbound student gets only the limited preview`);
+  assert.strictEqual(unboundStudentJson.questions.length, 10, `${name}: serialized empty bindings remain unbound`);
+  assert.strictEqual(unboundTeacher.questions.length, 10, `${name}: unbound teacher gets only the limited preview`);
+  assert.ok(!JSON.stringify(unboundStudent).includes('must-not-leak'));
   const admin = service.buildQuestionPreviewIndex(snapshot, { id: 'admin-a', role: 'admin', tenantId: 'tenant-a' });
   assert.deepStrictEqual(admin.questions.map(item => item.id), ['q-admin-draft', 'q-a'], `${name}: admin sees same-tenant draft and committed questions`);
   assert.deepStrictEqual([admin.snapshotId, admin.version], ['snap-1', 'v1']);

@@ -21,6 +21,12 @@ db.db.prepare(`INSERT INTO users (id, phone, name, role, status, login_enabled, 
  VALUES (?, ?, ?, 'teacher', 1, 1, 'approved', 0, ?, ?)`).run('approved-teacher', '13600000000', 'Teacher', now, now);
 db.db.prepare("UPDATE users SET teacher_id = 'teacher-1' WHERE id = 'approved-teacher'").run();
 db.db.prepare(`INSERT INTO users (id, phone, name, role, status, login_enabled, review_status, deleted, created_at, updated_at)
+ VALUES (?, ?, ?, 'teacher', 1, 1, 'approved', 0, ?, ?)`).run('unbound-teacher', '13400000001', 'Unbound Teacher', now, now);
+db.db.prepare(`INSERT INTO users (id, phone, name, role, status, login_enabled, review_status, deleted, created_at, updated_at)
+ VALUES (?, ?, ?, 'student', 1, 1, 'approved', 0, ?, ?)`).run('unbound-student', '13400000002', 'Unbound Student', now, now);
+db.db.prepare(`INSERT INTO users (id, phone, name, role, status, login_enabled, review_status, deleted, created_at, updated_at)
+ VALUES (?, ?, ?, 'operator', 1, 1, 'approved', 0, ?, ?)`).run('active-operator', '13400000003', 'Operator', now, now);
+db.db.prepare(`INSERT INTO users (id, phone, name, role, status, login_enabled, review_status, deleted, created_at, updated_at)
  VALUES (?, ?, ?, 'admin', 0, 1, 'approved', 0, ?, ?)`).run('disabled-admin', '13500000000', 'Disabled', now, now);
 
 const databaseModule = require('../database');
@@ -71,6 +77,18 @@ async function request(server, method, url, auth, body, headers = {}) {
     );
     assert.ok(teacher.body.identity.authorization_revision, 'permission response should carry an authorization revision');
     assert.ok(teacher.body.permissions.every(item => teacher.body.capabilities.includes(item.id)), 'compat permissions must be a capability projection');
+    for (const id of ['unbound-teacher', 'unbound-student']) {
+      const unbound = await request(base, 'GET', '/api/permissions/my', token(id));
+      assert.strictEqual(unbound.status, 200, 'an unbound formal account must remain authenticated');
+      assert.deepStrictEqual(unbound.body.capabilities, []);
+      assert.strictEqual(unbound.body.identity.subject_scope, 'none');
+      assert.strictEqual(unbound.body.identity.subject_binding, 'unbound');
+    }
+    const operatorQuestionRead = await request(base, 'GET', '/api/question-bank/questions', token('active-operator'));
+    assert.strictEqual(operatorQuestionRead.status, 200, 'a persisted active operator must pass the real authenticated question-bank read chain');
+    const operatorQuestionWrite = await request(base, 'POST', '/api/question-bank/questions', token('active-operator'), {});
+    assert.notStrictEqual(operatorQuestionWrite.status, 401);
+    assert.notStrictEqual(operatorQuestionWrite.status, 403, 'a persisted active operator must reach the question-bank write handler');
 
     const superToken = token('miniapp-admin-13732250653');
     const reviewed = await request(base, 'PATCH', '/api/admin/users/pending-user/review', superToken, { role: 'admin' });

@@ -77,6 +77,27 @@ async function call(method, route, body, token = '') {
     assert.strictEqual(Object.prototype.hasOwnProperty.call(permissions.body.identity, sensitive), false);
   }
 
+  getDb().prepare(`INSERT INTO users
+    (id, name, user_type, status, login_enabled, review_status, created_at, updated_at)
+    VALUES (?, ?, 'student', 1, 1, 'approved', ?, ?)`).run(
+    'student-profile-id-collision',
+    'Unbound Miniapp Account',
+    now,
+    now,
+  );
+  const unboundToken = generateToken({
+    id: 'student-profile-id-collision',
+    user_type: 'student',
+    name: 'Unbound Miniapp Account',
+  });
+  const unboundPermissions = await call('GET', '/api/permissions/my', undefined, unboundToken);
+  assert.strictEqual(unboundPermissions.status, 200, 'an account without a local subject must still authenticate');
+  assert.deepStrictEqual(unboundPermissions.body.capabilities, []);
+  assert.strictEqual(unboundPermissions.body.identity.student_id, null, 'the account id must not be synthesized as a student subject id');
+  assert.deepStrictEqual(unboundPermissions.body.identity.linked_student_ids, []);
+  assert.strictEqual(unboundPermissions.body.identity.subject_scope, 'none');
+  assert.strictEqual(unboundPermissions.body.identity.subject_binding, 'unbound');
+
   console.log('gateway miniapp auth ownership checks passed');
 })().finally(async () => {
   await new Promise(resolve => server.close(resolve));

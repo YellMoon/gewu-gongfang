@@ -18,13 +18,14 @@ class FakeHostWebSocketClient extends EventEmitter {
 (async () => {
   let workerWakes = 0;
   const wakeup = createHostTaskWakeup({
-    runtimeConfig: { nodeRole: 'primary-host', deviceId: 'host-1', cloudBaseUrl: 'https://physicsedu.xyz/scheduling', hostCredential: 'managed-host-credential', hostGeneration: 2 },
+    runtimeConfig: { nodeRole: 'primary-host', deviceId: 'host-1', cloudBaseUrl: 'https://physicsedu.xyz/scheduling', hostCredential: 'managed-host-credential', primaryHostGeneration: 2 },
     HostWebSocketClient: FakeHostWebSocketClient,
     worker: { wake: async () => { workerWakes += 1; } },
   });
   assert.ok(wakeup, 'a configured primary host must create a task wakeup client');
   assert.strictEqual(wakeup.client.options.gatewayUrl, 'wss://physicsedu.xyz/scheduling');
   assert.strictEqual(wakeup.client.options.hostDeviceId, 'host-1');
+  assert.strictEqual(wakeup.client.options.hostGeneration, 2, 'the canonical runtime generation field must reach the relay client');
   wakeup.start();
   assert.strictEqual(wakeup.client.connectCount, 1);
   assert.strictEqual(wakeup.status().cloud.state, 'connecting');

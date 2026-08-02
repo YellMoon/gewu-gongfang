@@ -154,6 +154,7 @@ const pairingRouter = require('./desktopPairing');
   assert.strictEqual((await call('/tasks', { headers: { 'x-gewu-host-token': 'test-host-secret' } })).status, 410);
   assert.strictEqual((await call('/tasks/task1/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: '{}' })).status, 410);
   const approved = id => JSON.stringify({ id, user_type: 'student', student_id: id, tenant_id: 'tenant-a', review_status: 'approved', status: 1, login_enabled: 1 });
+  const approvedUnbound = id => JSON.stringify({ id, user_type: 'student', tenant_id: 'tenant-a', review_status: 'approved', status: 1, login_enabled: 1 });
   const admin = id => JSON.stringify({ id, user_type: 'admin', tenant_id: 'tenant-a', review_status: 'approved', status: 1, login_enabled: 1 });
   assert.strictEqual(
     (await call(`/tasks/${submittedPairingBody.request.id}/result`, {
@@ -198,6 +199,8 @@ const pairingRouter = require('./desktopPairing');
   assert.strictEqual((await call('/tasks/task1/result', { headers: { 'x-test-user': approved('u2') } })).status, 404);
   assert.strictEqual((await call('/tasks/task1/result', { headers: { 'x-test-user': approved('u1') } })).status, 200);
   const v2Body = JSON.stringify({ protocolVersion: 2, taskType: 'paper-export-pdf', targetHostDeviceId: 'host1', payload: { questionIds: ['q2', 'q1'], title: 'paper' } });
+  const unboundTask = await call('/tasks', { method: 'POST', headers: { 'x-test-user': approvedUnbound('unbound-student'), 'x-idempotency-key': 'idem-http-unbound' }, body: v2Body });
+  assert.strictEqual(unboundTask.status, 403, 'an unbound miniapp account must not submit subject-owned paper tasks');
   const v2Create = await call('/tasks', { method: 'POST', headers: { 'x-test-user': approved('u1'), 'x-idempotency-key': 'idem-http-1' }, body: v2Body });
   assert.strictEqual(v2Create.status, 200);
   const v2Created = await v2Create.json();

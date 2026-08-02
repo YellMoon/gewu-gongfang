@@ -1,6 +1,6 @@
 const SUPER_ADMIN_PHONE = '13732250653';
 const CANONICAL_SUPER_ADMIN_ID = 'miniapp-admin-13732250653';
-const ROLES = Object.freeze(['super_admin', 'admin', 'teacher', 'student', 'visitor', 'pending']);
+const ROLES = Object.freeze(['super_admin', 'admin', 'operator', 'teacher', 'student', 'visitor', 'pending']);
 
 function normalizePhone(phone) {
   return String(phone || '').replace(/\D/g, '');
@@ -114,6 +114,8 @@ function effectiveCapabilities(authz = {}, { gateway = false } = {}) {
     ? activeRoleForUser(authz)
     : authz.role || roleForUser(authz);
   if (role === 'pending') return [];
+  if (role === 'teacher' && !(authz.teacher_id || authz.teacherId)) return [];
+  if (role === 'student' && !(authz.student_id || authz.studentId)) return [];
   const capabilities = [];
   if (role === 'super_admin') capabilities.push('users:review');
   if ((['super_admin', 'admin'].includes(role) && authz.userApproved === true)

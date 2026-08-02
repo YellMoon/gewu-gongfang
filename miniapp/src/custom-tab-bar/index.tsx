@@ -1,7 +1,9 @@
 import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { useMemo, useState } from 'react';
-import { fetchPermissions, getEffectiveMiniappAccess } from '../utils/permission';
+import { fetchPermissions, getCurrentUser, getEffectiveMiniappAccess } from '../utils/permission';
+import { usesLimitedQuestionProjection } from '../utils/miniappAuthorizationRuntime';
+import { isUnrecognizedIdentity } from '../utils/accountExperience';
 import './index.scss';
 
 declare const getCurrentPages: (() => Array<{ route?: string }>) | undefined;
@@ -75,6 +77,14 @@ export default function RoleTabBar() {
     }
     void fetchPermissions().then(() => {
       const access = getEffectiveMiniappAccess();
+      const currentUser = getCurrentUser();
+      if (!isUnrecognizedIdentity(currentUser)
+        && usesLimitedQuestionProjection(currentUser)
+        && access.role !== 'visitor') {
+        setUserType(access.role);
+        setNavigationMode('preview');
+        return;
+      }
       setUserType(access.modules.length > 0 ? access.role : 'pending');
       setNavigationMode(
         access.role === 'visitor'
@@ -88,7 +98,7 @@ export default function RoleTabBar() {
   });
 
   const tabs = useMemo(() => (
-    navigationMode === 'visitor'
+    navigationMode === 'visitor' || navigationMode === 'preview'
       ? VISITOR_TABS
       : navigationMode === 'unrecognized'
       ? EXPERIENCE_TABS

@@ -34,6 +34,8 @@ function isApprovedActive(authz = {}) {
 function effectiveCapabilities(authz = {}) {
   const role = authz.role || roleForUser(authz);
   if (role === 'pending' || !isApprovedActive(authz)) return [];
+  if (role === 'teacher' && !(authz.teacher_id || authz.teacherId)) return [];
+  if (role === 'student' && !(authz.student_id || authz.studentId)) return [];
   const result = [];
   if (role === 'super_admin') result.push('users:review');
   if (['super_admin', 'admin'].includes(role)) result.push('business:all');

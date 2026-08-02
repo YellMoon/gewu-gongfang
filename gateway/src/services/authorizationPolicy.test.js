@@ -14,10 +14,12 @@ for (const role of ['admin', 'teacher', 'student']) {
   assert.deepStrictEqual(effectiveCapabilities({ role, reviewStatus: 'approved', status: 1, loginEnabled: 0 }), [], `${role} login-disabled has no capabilities`);
 }
 const active = { reviewStatus: 'approved', status: 1, loginEnabled: 1 };
-assert.deepStrictEqual(effectiveCapabilities({ ...active, role: 'student' }), ['question-bank:view']);
-assert.deepStrictEqual(effectiveCapabilities({ ...active, role: 'teacher' }), [
+assert.deepStrictEqual(effectiveCapabilities({ ...active, role: 'student', studentId: 'student-1' }), ['question-bank:view']);
+assert.deepStrictEqual(effectiveCapabilities({ ...active, role: 'teacher', teacherId: 'teacher-1' }), [
   'business:teacher-scope', 'question-bank:view', 'question-bank:edit',
 ]);
+assert.deepStrictEqual(effectiveCapabilities({ ...active, role: 'student', studentId: null }), [], 'an approved miniapp account may be unbound and must receive no raw business capabilities');
+assert.deepStrictEqual(effectiveCapabilities({ ...active, role: 'teacher', teacherId: null }), [], 'an approved teacher role without a local subject must fail closed');
 assert.deepStrictEqual(effectiveCapabilities({ ...active, role: 'admin' }), [
   'business:all', 'question-bank:view', 'question-bank:edit',
 ]);

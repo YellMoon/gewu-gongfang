@@ -238,6 +238,9 @@ assert.ok(source.includes("'--relay-websocket'")
   && source.includes('relayWebSocket: provided.has(\'--relay-websocket\')')
   && source.includes("acceptance.relayWebSocket ? 'relay-websocket'"),
   'the matrix must provide a distinct relay-WebSocket mode with its own receipt requirement');
+assert.ok(source.includes('HOST_CLOUD_RELAY_CONNECTED_REQUIRED')
+  && source.includes("status?.cloud?.state === 'connected'"),
+  'relay-WebSocket acceptance must wait for the packaged host cloud control socket before submitting');
 assert.ok(source.includes('const isolatedLanPort = acceptance.relayWebSocket ? await freePort() : null;')
   && source.includes('hostBaseUrl: acceptance.relayWebSocket')
   && source.includes('LAN_ISOLATION_REQUIRED'),

@@ -104,6 +104,12 @@ function questionPaperTaskCacheKey(user) {
   return scope ? `question_paper_tasks_v2_${encodeURIComponent(scope)}` : '';
 }
 
+function usesLimitedQuestionProjection(user) {
+  const role = roleOf(user);
+  if (role === 'visitor') return true;
+  return ['student', 'teacher'].includes(role) && !businessCacheIdentityKey(user);
+}
+
 function createQuestionPaperTaskCacheRuntime(dependencies) {
   let current = { scopeKey: null, tasks: [] };
 
@@ -272,6 +278,7 @@ module.exports = {
   businessCacheIdentityKey,
   createQuestionPaperTaskCacheRuntime,
   questionPaperTaskCacheKey,
+  usesLimitedQuestionProjection,
   deriveAccess,
   scopeDashboardCollections,
 };

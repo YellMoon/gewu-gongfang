@@ -7,7 +7,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireCoreReadAccess, requireWriteAccess } = require('./middleware/auth');
+const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireCoreReadAccess, requireQuestionBankReadAccess, requireWriteAccess } = require('./middleware/auth');
 const { unrecognizedStudentGuard } = require('./middleware/unrecognizedStudentGuard');
 const { buildErrorPayload, errorHandler } = require('./middleware/errorHandler');
 const { getInstance } = require('./database');
@@ -565,7 +565,7 @@ function createApp(options = {}) {
   app.use('/api/schools', optionalAuth, requireCoreReadAccess, requireWriteAccess, schoolsRouter);
   app.use('/api/institutions', optionalAuth, requireCoreReadAccess, requireWriteAccess, institutionsRouter);
   app.use('/api/stats', optionalAuth, requireCoreReadAccess, requireWriteAccess, statsRouter);
-  app.use('/api/question-bank', optionalAuth, requireWriteAccess, questionBankRouter);
+  app.use('/api/question-bank', optionalAuth, requireQuestionBankReadAccess, requireWriteAccess, questionBankRouter);
   app.use('/api/ops', optionalAuth, requireWriteAccess, opsRouter);
   app.use('/api', optionalAuth, requireWriteAccess, dataRouter);
   app.use('/api/bill-import', optionalAuth, requireWriteAccess, billImportRouter);

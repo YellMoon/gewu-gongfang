@@ -4,7 +4,7 @@ import Taro from '@tarojs/taro';
 import { authorityProjectionApi, cancelMiniappTask, createPaperTaskV2, getMiniappTaskResult, readQuestionPreview } from '../../utils/api';
 import { authSessionRuntime } from '../../utils/authSession';
 import { createSessionBoundOperation, openSessionBoundDocument } from '../../utils/miniappApiSessionRuntime';
-import { createQuestionPaperTaskCacheRuntime } from '../../utils/miniappAuthorizationRuntime';
+import { createQuestionPaperTaskCacheRuntime, usesLimitedQuestionProjection } from '../../utils/miniappAuthorizationRuntime';
 import { storage } from '../../utils/storage';
 import { isUnrecognizedIdentity, isVisitorIdentity } from '../../utils/accountExperience';
 // @ts-ignore CommonJS workflow module has no TypeScript declarations.
@@ -28,6 +28,7 @@ export default function QuestionBankPage() {
   const identity = Taro.getStorageSync('user_info');
   const isUnrecognized = isUnrecognizedIdentity(identity);
   const isVisitor = isVisitorIdentity(identity);
+  const useLimitedProjection = usesLimitedQuestionProjection(identity);
   useEffect(() => {
     if (isUnrecognized) Taro.reLaunch({ url: '/pages/unrecognized-experience/index' });
   }, [isUnrecognized]);
@@ -68,7 +69,7 @@ export default function QuestionBankPage() {
   const loadQuestions = async () => {
     setPreviewState('loading'); setPreviewMessage('');
     try {
-      if (isVisitor) {
+      if (useLimitedProjection) {
         const response: any = await authorityProjectionApi.readCurrent();
         if (!response.success) {
           setPreviewState(response.code === 'AUTHORITY_PROJECTION_NOT_FOUND' ? 'empty' : 'offline');
@@ -110,8 +111,8 @@ export default function QuestionBankPage() {
   useEffect(() => {
     if (isUnrecognized) return;
     loadQuestions();
-    if (!isVisitor) refreshAll();
-  }, [isUnrecognized, isVisitor]);
+    if (!useLimitedProjection) refreshAll();
+  }, [isUnrecognized, useLimitedProjection]);
   useEffect(() => {
     const current = taskCacheRuntime.snapshot();
     if (current.scopeKey !== taskState.scopeKey) setTaskState(current);
@@ -174,11 +175,11 @@ export default function QuestionBankPage() {
       </View>
     </View>;
   }
-  if (isVisitor) {
+  if (useLimitedProjection) {
     return <View className='question-bank-page'>
       <View className='hero-card'>
-        <Text className='hero-title'>{'\u8bbf\u5ba2\u9898\u76ee\u9884\u89c8'}</Text>
-        <Text className='hero-subtitle'>{'\u4ec5\u663e\u793a\u6570\u636e\u4e3b\u673a\u7b7e\u540d\u6295\u5f71\u4e2d\u7684\u6700\u591a\u5341\u9053\u8131\u654f\u9898\u76ee'}</Text>
+        <Text className='hero-title'>{isVisitor ? '\u8bbf\u5ba2\u9898\u76ee\u9884\u89c8' : '\u9898\u76ee\u9884\u89c8'}</Text>
+        <Text className='hero-subtitle'>{isVisitor ? '\u4ec5\u663e\u793a\u6570\u636e\u4e3b\u673a\u7b7e\u540d\u6295\u5f71\u4e2d\u7684\u6700\u591a\u5341\u9053\u8131\u654f\u9898\u76ee' : '\u5c1a\u672a\u7ed1\u5b9a\u672c\u5730\u4e3b\u4f53\uff0c\u4ec5\u53ef\u67e5\u770b\u524d10\u9898\u9884\u89c8'}</Text>
       </View>
       <View className='preview-card'>
         <View className='preview-header'>

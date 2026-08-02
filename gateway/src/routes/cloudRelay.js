@@ -284,7 +284,7 @@ const adminTaskTypes = new Set(['asset-import', 'question-paper', 'paper-export-
 const studentTaskTypes = new Set(['question-paper', 'paper-export-word', 'paper-export-pdf']);
 
 function allowedTasksForUser(user) {
-  if (user?.user_type === 'student') return studentTaskTypes;
+  if (user?.user_type === 'student' && getLinkedStudentIds(user).length > 0) return studentTaskTypes;
   if (['super_admin', 'admin'].includes(user?.user_type)) return adminTaskTypes;
   return new Set();
 }
@@ -297,7 +297,6 @@ function getLinkedStudentIds(user = {}) {
     user.linkedStudentId,
     ...parseArray(user.linked_student_ids),
     ...parseArray(user.linkedStudentIds),
-    user.user_type === 'student' ? user.id : undefined,
   ];
   return Array.from(new Set(ids.filter(Boolean).map(String)));
 }

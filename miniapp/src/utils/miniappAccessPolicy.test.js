@@ -69,6 +69,24 @@ assert.ok(
   'miniapp home must keep authority projection load failures observable',
 );
 assert.ok(api.includes('readQuestionPreview'), 'miniapp must consume the answer-free question preview contract');
+assert.ok(
+  questionBankPage.includes('if (useLimitedProjection)')
+    && questionBankPage.includes('\\u5c1a\\u672a\\u7ed1\\u5b9a\\u672c\\u5730\\u4e3b\\u4f53')
+    && !questionBankPage.includes('if (isVisitor) {'),
+  'visitor and unbound formal accounts must share the signed limited-preview surface without paper task controls',
+);
+assert.ok(
+  miniappHome.includes('usesLimitedQuestionProjection')
+    && miniappHome.includes('limitedSubject')
+    && miniappHome.includes('\\u5c1a\\u672a\\u7ed1\\u5b9a\\u672c\\u5730\\u4e3b\\u4f53'),
+  'the home page must keep an authenticated unbound account usable through the limited signed-preview experience',
+);
+assert.ok(
+  customTabBar.includes("navigationMode === 'preview'")
+    && customTabBar.includes('usesLimitedQuestionProjection')
+    && customTabBar.includes('!isUnrecognizedIdentity(currentUser)'),
+  'an unbound formal account must retain a visible question-preview navigation entry',
+);
 assert.ok(api.includes('protocolVersion: 2') && api.includes('targetHostDeviceId') && api.includes('idempotencyKey'), 'paper tasks must use the V2 target-host idempotency contract');
 assert.ok(api.includes('cancelMiniappTask'), 'miniapp must support cancelling confirmed V2 tasks');
 assert.ok(api.includes('Cache-Control') && api.includes('no-cache'), 'miniapp API should bypass DevTools 304 caching for JSON endpoints');
@@ -140,8 +158,8 @@ assert.ok(
 assert.ok(
   questionBankPage.includes('if (isUnrecognized) return;')
     && questionBankPage.includes('loadQuestions();')
-    && questionBankPage.includes('if (!isVisitor) refreshAll();'),
-  'unrecognized identities must not load questions, and visitors must not load legacy task state',
+    && questionBankPage.includes('if (!useLimitedProjection) refreshAll();'),
+  'unrecognized identities must not load questions, and limited-preview identities must not load task state',
 );
 assert.ok(customTabBar.includes('EXPERIENCE_TABS') && customTabBar.includes("navigationMode === 'unrecognized'"), 'unrecognized identities need the four-tab restricted shell');
 assert.ok(loginPage.includes('createAuthenticationEntryBoundary') && loginPage.includes('loginBoundary.run(() => Taro.login())'), 'normal platform login must remain bound to its starting session before any WeChat request or commit');

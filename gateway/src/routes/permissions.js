@@ -55,10 +55,14 @@ function linkedStudentIds(req, role) {
     req.authz?.linkedStudentIds,
     req.authz?.linked_student_ids,
   ].flatMap(parseIds);
-  const ids = explicitIds.length > 0
-    ? explicitIds
-    : [role === 'student' ? (req.user?.id || req.authz?.userId) : null].flatMap(parseIds);
-  return Array.from(new Set(ids)).sort();
+  return Array.from(new Set(explicitIds)).sort();
+}
+
+function subjectScope(role, teacherId, studentIds) {
+  if (['super_admin', 'admin'].includes(role)) return 'all';
+  if (role === 'teacher' && teacherId) return 'teacher';
+  if (role === 'student' && studentIds.length > 0) return 'student';
+  return 'none';
 }
 
 /**
@@ -108,13 +112,17 @@ router.get('/my', enforceTenantScope, (req, res) => {
   const disabled = explicitlyDisabled || deleted || !normalizedFlag(status) || !normalizedFlag(loginEnabled);
   const active = normalizedFlag(req.user?.active ?? req.authz?.active, reviewStatus === 'approved' && !disabled) && !disabled;
   const studentIds = linkedStudentIds(req, role);
+  const teacherId = req.user?.teacher_id || req.user?.teacherId || req.authz?.teacherId || req.authz?.teacher_id || null;
+  const resolvedSubjectScope = subjectScope(role, teacherId, studentIds);
   const identity = {
     id: req.user?.id || req.authz?.userId || null,
     role,
     tenant_id: tenantScope(req),
-    teacher_id: req.user?.teacher_id || req.user?.teacherId || req.authz?.teacherId || req.authz?.teacher_id || null,
-    student_id: req.user?.student_id || req.user?.studentId || req.authz?.studentId || req.authz?.student_id || studentIds[0] || null,
+    teacher_id: teacherId,
+    student_id: req.user?.student_id || req.user?.studentId || req.authz?.studentId || req.authz?.student_id || null,
     linked_student_ids: studentIds,
+    subject_scope: resolvedSubjectScope,
+    subject_binding: resolvedSubjectScope === 'none' ? 'unbound' : 'bound',
     review_status: reviewStatus,
     status,
     active,

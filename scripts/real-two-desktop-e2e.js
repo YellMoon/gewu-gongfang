@@ -1442,6 +1442,10 @@ async function runAcceptance(acceptance) {
     console.log('[e2e] offline draft survived restart without submission');
     if (acceptance.relayWebSocket) {
       await assertLanIsolated(`http://127.0.0.1:${isolatedLanPort}`);
+      await waitFor(async () => {
+        const status = await hostPage.evaluate('window.primaryHostRuntime.workerStatus()');
+        return status?.cloud?.state === 'connected' ? status : null;
+      }, 'HOST_CLOUD_RELAY_CONNECTED_REQUIRED', 90_000);
     } else if (!acceptance.websocketDisabled) {
       await probeAuthoritySocket(`http://${lanAddress()}:${hostPort}`);
     }

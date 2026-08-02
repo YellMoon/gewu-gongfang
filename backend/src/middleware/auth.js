@@ -435,6 +435,20 @@ function requireCoreReadAccess(req, res, next) {
   return next();
 }
 
+function requireQuestionBankReadAccess(req, res, next) {
+  if (isDevAuthBypassed()) return next();
+  if (!req.user) return sendAuthError(res, 401, 'Authentication required', 'UNAUTHORIZED');
+  const role = req.authz?.role || req.user?.role || req.user?.user_type;
+  if (['super_admin', 'admin', 'operator'].includes(role)) return next();
+  const scope = scopeForUser({
+    role,
+    teacherId: req.authz?.teacherId || req.user?.teacher_id || req.user?.teacherId,
+    studentId: req.authz?.studentId || req.user?.student_id || req.user?.studentId,
+  });
+  if (['all', 'teacher', 'student'].includes(scope.kind)) return next();
+  return sendAuthError(res, 403, 'Local subject binding required', 'QUESTION_BANK_SUBJECT_REQUIRED');
+}
+
 function generateToken(user) {
   return identityServiceFor(getInstance().db).issueFormalToken(user).token;
 }
@@ -444,6 +458,7 @@ module.exports = {
   optionalAuth,
   tenantScopeMiddleware,
   requireCoreReadAccess,
+  requireQuestionBankReadAccess,
   requireWriteAccess,
   generateToken,
   JWT_SECRET,

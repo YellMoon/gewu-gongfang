@@ -24,7 +24,12 @@ function createHostTaskWakeup({
   log = () => {},
 } = {}) {
   const hostCredential = runtimeConfig.hostCredential || process.env.GEWU_PRIMARY_HOST_CREDENTIAL || '';
-  const hostGeneration = Number(runtimeConfig.hostGeneration || process.env.GEWU_PRIMARY_HOST_GENERATION || 0);
+  const hostGeneration = Number(
+    runtimeConfig.primaryHostGeneration
+    || runtimeConfig.hostGeneration
+    || process.env.GEWU_PRIMARY_HOST_GENERATION
+    || 0
+  );
   if (runtimeConfig.nodeRole !== 'primary-host' || !runtimeConfig.deviceId || !hostCredential
     || !Number.isSafeInteger(hostGeneration) || hostGeneration < 1 || !worker || typeof worker.wake !== 'function') return null;
   const gatewayUrl = gatewayWebSocketUrl(runtimeConfig.cloudBaseUrl || process.env.GEWU_CLOUD_BASE_URL);
