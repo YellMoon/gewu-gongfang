@@ -1045,6 +1045,7 @@ function createDesktopIdentityVault({
       leaseId: context.lease.id,
       signature,
       headers: Object.freeze({
+        'x-gewu-authority-id': context.authorityId,
         'x-gewu-authority-user-id': actor.userId,
         'x-gewu-authority-device-id': actor.deviceId,
         'x-gewu-authority-role': actor.role,

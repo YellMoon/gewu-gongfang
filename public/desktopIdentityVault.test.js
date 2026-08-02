@@ -224,6 +224,16 @@ async function main() {
   assert.strictEqual(completed.teacherId, 'teacher-self');
   assert.ok(!JSON.stringify(completed).includes('PRIVATE KEY'));
   assert.ok(!JSON.stringify(completed).includes('local-password-1'));
+  const authoritySocketHandshake = vault.signAuthorityHttpRequest({
+    method: 'GET',
+    path: '/ws/authority',
+    body: null,
+  });
+  assert.strictEqual(
+    authoritySocketHandshake.headers['x-gewu-authority-id'],
+    'authority-1',
+    'a WebSocket authentication frame must identify the authority whose device grant signs it'
+  );
   const authorityCommand = vault.createAuthorityCommand({
     type: 'schedule.update.v1',
     payload: { id: 'schedule-1', changes: { notes: 'safe' } },
