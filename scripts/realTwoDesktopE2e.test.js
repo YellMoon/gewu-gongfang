@@ -184,6 +184,10 @@ assert.ok(governanceSource.includes('STALE_REAL_TWO_DESKTOP_PROCESSES_REQUIRED_C
   'the harness must reject stale temporary desktops and cap the active packaged process count');
 assert.ok(source.includes('waitForProcessesExit') && governanceSource.includes('REAL_TWO_DESKTOP_PROCESS_EXIT_TIMEOUT'),
   'profile teardown must wait for every exact packaged PID before attempting temporary-root cleanup');
+assert.ok(source.includes("Get-CimInstance Win32_Process -Filter \"Name='格物工坊.exe'\""),
+  'the live-process audit must query only packaged desktop processes instead of scanning every Windows process');
+assert.ok(source.includes('timeout: 45_000'),
+  'the exact packaged-process audit must tolerate a temporarily busy Windows CIM provider');
 assert.ok(!source.includes("const ROOT = fs.mkdtempSync")
   && source.indexOf('acquireRunLease({ lockPath: RUN_LOCK_PATH })') < source.indexOf('initializeDisposableRoots();'),
   'the harness must acquire its single-run lease before creating a temporary profile root');

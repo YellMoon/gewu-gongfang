@@ -301,7 +301,7 @@ async function stopProcessGuardian(child) {
 }
 function listLiveDisposableDesktopProcesses() {
   const command = [
-    '$rows = Get-CimInstance Win32_Process | Where-Object {',
+    `$rows = Get-CimInstance Win32_Process -Filter "Name='格物工坊.exe'" | Where-Object {`,
     '  $_.ProcessId -ne $PID -and',
     "  [string]$_.CommandLine -match '--user-data-dir=' -and",
     "  [string]$_.CommandLine -match 'tmp-real-desktop-two-app-'",
@@ -313,7 +313,7 @@ function listLiveDisposableDesktopProcesses() {
     const output = childProcess.execFileSync('powershell.exe', ['-NoProfile', '-Command', command], {
       encoding: 'utf8',
       windowsHide: true,
-      timeout: 15_000,
+      timeout: 45_000,
     }).trim();
     parsed = output ? JSON.parse(output) : [];
   } catch (error) {
