@@ -219,9 +219,14 @@ function createDesktopIdentityRouter({
     return Object.freeze({ authorityId, hostEpochId, hostGeneration, hostPublicKey });
   }
   function activationPackage(authorization) {
-    const user = database.prepare('SELECT id, name FROM users WHERE id=? AND deleted=0').get(authorization.userId);
+    const user = database.prepare(`SELECT id,name,role,status,deleted,is_super_admin_identity,
+        teacher_id,student_id
+      FROM users WHERE id=? AND deleted=0`).get(authorization.userId);
     if (!user) throw routeError('DESKTOP_SESSION_USER_NOT_ACTIVE');
-    const roleContext = resolveDesktopRoleContext(database, authorization.userId);
+    const roleContext = resolveDesktopRoleContext(database, {
+      user,
+      authorization,
+    });
     const authority = activationAuthority(authorization);
     const issuedAt = new Date(typeof now === 'function' ? now() : new Date());
     if (!Number.isFinite(issuedAt.getTime())) throw routeError('DESKTOP_ACTIVATION_CLOCK_INVALID');
@@ -299,14 +304,26 @@ function createDesktopIdentityRouter({
   }
 
   function assertDesktopIdentityEligible(login, { allowVisitor = false } = {}) {
-    const user = login?.user || {};
-    const visitor = user.account_state === 'visitor'
-      || user.role === 'visitor'
-      || user.identity_kind === 'visitor';
-    if (visitor && !allowVisitor) {
+    const loginUser = login?.user || {};
+    const userId = String(loginUser.id || '').trim();
+    if (!userId) throw routeError('DESKTOP_IDENTITY_NOT_ELIGIBLE');
+    const user = database.prepare('SELECT * FROM users WHERE id=?').get(userId);
+    if (!user) {
+      const identityKind = String(loginUser.identity_kind || '').trim();
+      const explicitVisitor = loginUser.account_state === 'visitor'
+        && loginUser.role === 'visitor'
+        && (!identityKind || identityKind === 'visitor');
+      if (explicitVisitor && !allowVisitor) throw routeError('DESKTOP_IDENTITY_VISITOR_FORBIDDEN');
+      throw routeError('DESKTOP_IDENTITY_NOT_ELIGIBLE');
+    }
+    if (user.deleted || user.status === 0 || user.login_enabled === 0
+      || user.review_status !== 'approved') {
+      throw routeError('DESKTOP_IDENTITY_NOT_ELIGIBLE');
+    }
+    const roleContext = resolveDesktopRoleContext(database, { user });
+    if (roleContext.activeRole === 'visitor' && !allowVisitor) {
       throw routeError('DESKTOP_IDENTITY_VISITOR_FORBIDDEN');
     }
-    if (!user.id) throw routeError('DESKTOP_IDENTITY_NOT_ELIGIBLE');
     return login;
   }
   const verifyDesktop = authenticateDesktop || function (token) {

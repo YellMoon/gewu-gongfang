@@ -14,6 +14,7 @@ const canonicalId = 'miniapp-admin-13732250653';
 const unboundTeacherUserId = 'unbound-teacher-desktop';
 const legacyOnlyUserId = 'legacy-only-desktop-session';
 const visitorOnlyUserId = 'visitor-only-desktop-session';
+const bootstrapSuperUserId = 'legacy-bootstrap-super-desktop-session';
 const authorityId = 'authority-desktop-session-test';
 const jwtSecret = 'desktop-session-service-test-secret';
 
@@ -71,6 +72,16 @@ for (const [userId, role, phone] of [
     VALUES (?, ?, ?, ?, 1, 1, 'approved', 1, 0, ?, ?)`)
     .run(userId, phone, userId, role, clock.toISOString(), clock.toISOString());
 }
+db.prepare(`INSERT INTO users
+  (id, phone, name, role, status, login_enabled, review_status,
+   is_super_admin_identity, auth_version, deleted, created_at, updated_at)
+  VALUES (?, '13732250653', 'Bootstrap Super Admin', 'super_admin', 1, 1,
+    'approved', 1, 1, 0, ?, ?)`)
+  .run(bootstrapSuperUserId, clock.toISOString(), clock.toISOString());
+db.prepare(`INSERT INTO user_role_grants
+  (user_id, role, subject_type, subject_id, status, source, created_at, updated_at)
+  VALUES (?, 'super_admin', NULL, NULL, 'active', 'legacy-bootstrap', ?, ?)`)
+  .run(bootstrapSuperUserId, clock.toISOString(), clock.toISOString());
 db.prepare(`INSERT INTO authority_accounts
   (user_id, authority_id, status, created_at, updated_at)
   VALUES (?, ?, 'active', ?, ?)`)
@@ -149,6 +160,24 @@ insertAuthorization(
   '2026-08-16T08:00:00.000Z',
   visitorOnlyUserId,
 );
+insertAuthorization(
+  'authorization-bootstrap-host',
+  'device-bootstrap-host',
+  '6'.repeat(64),
+  'wechat_phone',
+  'primary-host',
+  '2026-08-16T08:00:00.000Z',
+  bootstrapSuperUserId,
+);
+insertAuthorization(
+  'authorization-bootstrap-client',
+  'device-bootstrap-client',
+  '7'.repeat(64),
+  'wechat_phone',
+  'desktop-client',
+  '2026-08-16T08:00:00.000Z',
+  bootstrapSuperUserId,
+);
 const service = createDesktopSessionService({
   db,
   jwtSecret,
@@ -210,11 +239,34 @@ assert.throws(
   () => service.issueSession({
     userId: legacyOnlyUserId,
     deviceId: 'device-legacy-only',
-    activeRole: 'admin',
+    activeRole: 'teacher',
   }),
   error => error?.code === 'ACTIVE_ROLE_NOT_GRANTED',
-  'legacy user_role_grants rows alone must not authorize a desktop role session',
+  'compatibility may preserve an existing grant but may not invent another role',
 );
+
+const legacyWithoutAuthoritySession = service.issueSession({
+  userId: legacyOnlyUserId,
+  deviceId: 'device-legacy-only',
+});
+assert.strictEqual(legacyWithoutAuthoritySession.session.activeRole, 'admin');
+assert.deepStrictEqual(legacyWithoutAuthoritySession.session.eligibleRoles, ['admin']);
+
+const bootstrapHostSession = service.issueSession({
+  userId: bootstrapSuperUserId,
+  deviceId: 'device-bootstrap-host',
+});
+assert.strictEqual(bootstrapHostSession.session.activeRole, 'super_admin');
+assert.deepStrictEqual(bootstrapHostSession.session.eligibleRoles, ['super_admin']);
+assert.strictEqual(bootstrapHostSession.session.authTime, null);
+
+const bootstrapClientSession = service.issueSession({
+  userId: bootstrapSuperUserId,
+  deviceId: 'device-bootstrap-client',
+});
+assert.strictEqual(bootstrapClientSession.session.activeRole, 'super_admin',
+  'an upgrade must not silently downgrade an existing formal role on another authorized device');
+assert.deepStrictEqual(bootstrapClientSession.session.eligibleRoles, ['super_admin']);
 
 const visitorOnlySession = service.issueSession({
   userId: visitorOnlyUserId,

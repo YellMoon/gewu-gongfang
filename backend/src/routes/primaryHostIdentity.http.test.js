@@ -214,6 +214,9 @@ app.use('/api/desktop-identity', createDesktopIdentityRouter({
         if (phone === '13600136000') {
           return { user: { id: 'visitor-http-user', role: 'visitor', account_state: 'visitor' }, loginEventId: 'visitor-http-event' };
         }
+        if (phone === '13600136001') {
+          return { user: { id: 'missing-formal-http-user', role: 'admin', account_state: 'formal' }, loginEventId: 'missing-formal-http-event' };
+        }
         if (phone === '13900139000') {
           throw Object.assign(new Error('PHONE_WECHAT_BINDING_CONFLICT'), { code: 'PHONE_WECHAT_BINDING_CONFLICT' });
         }
@@ -288,6 +291,13 @@ app.use('/api/cloud', cloudRelayRouter);
     });
     assert.strictEqual(visitorConfirm.status, 403);
     assert.strictEqual((await visitorConfirm.json()).code, 'DESKTOP_IDENTITY_VISITOR_FORBIDDEN');
+
+    const missingFormalConfirm = await call(`/api/desktop-identity/challenges/${started.id}/confirm`, {
+      method: 'POST', body: JSON.stringify({ code: 'wechat-code-missing-formal', phone: '13600136001', expectedRowVersion: started.rowVersion }),
+    });
+    assert.strictEqual(missingFormalConfirm.status, 403);
+    assert.strictEqual((await missingFormalConfirm.json()).code, 'DESKTOP_IDENTITY_NOT_ELIGIBLE',
+      'a DB-missing nonvisitor projection must never synthesize a formal desktop identity');
 
     const confirmedResponse = await call(`/api/desktop-identity/challenges/${started.id}/confirm`, {
       method: 'POST', body: JSON.stringify({ code: 'wechat-code', phone: SUPER_ADMIN_PHONE, expectedRowVersion: started.rowVersion }),

@@ -2,15 +2,17 @@
  * Express 搴旂敤閰嶇疆
  */
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireCoreReadAccess, requireWriteAccess } = require('./middleware/auth');
+const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireCoreReadAccess, requireQuestionBankReadAccess, requireWriteAccess } = require('./middleware/auth');
 const { unrecognizedStudentGuard } = require('./middleware/unrecognizedStudentGuard');
 const { buildErrorPayload, errorHandler } = require('./middleware/errorHandler');
 const { getInstance } = require('./database');
 const { createMiniappProvisioningReconciler } = require('./services/miniappProvisioningReconciler');
+const HostWebSocketClient = require('./websocket/client');
 
 const studentsRouter = require('./routes/students');
 const coursesRouter = require('./routes/courses');
@@ -24,7 +26,6 @@ const institutionsRouter = require('./routes/institutions');
 const statsRouter = require('./routes/stats');
 const dataRouter = require('./routes/export');
 const billImportRouter = require('./routes/billImport');
-const syncRouter = require('./routes/sync');
 const authRouter = require('./routes/auth');
 const questionBankRouter = require('./routes/questionBank');
 const opsRouter = require('./routes/ops');
@@ -34,15 +35,27 @@ const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
 const permissionsRouter = require('./routes/permissions');
 const adminUsersRouter = require('./routes/adminUsers');
-const desktopPairingRouter = require('./routes/desktopPairing');
 const { createDesktopIdentityRouter } = require('./routes/desktopIdentity');
 const { createPrimaryHostIdentityService } = require('./services/primaryHostIdentityService');
 const { createPrimaryHostLocalValidationService } = require('./services/primaryHostLocalValidationService');
-const { getSingleUserDesktopIdentityService } = require('./services/singleUserDesktopIdentityService');
-const miniappApplicationsRouter = require('./routes/miniappApplications');
+const {
+  createMiniappAuthorityApplicationsRouter,
+} = require('./routes/miniappAuthorityApplications');
+const {
+  createAuthorityCloudControlService,
+} = require('./services/authorityCloudControlService');
 const miniappWechatBindingsRouter = require('./routes/miniappWechatBindings');
 const { createUnrecognizedExperienceRouter } = require('./routes/unrecognizedExperience');
 const { createUnrecognizedExperienceSandbox } = require('./services/unrecognizedExperienceSandbox');
+const { createAuthorityProtocolRouter } = require('./routes/authorityProtocol');
+const { createAuthorityCommandInboxService } = require('./services/authorityCommandInboxService');
+const { createAuthorityCommandAuthorizationService } = require('./services/authorityCommandAuthorizationService');
+const { createAuthorityCommandPolicy } = require('./services/authorityCommandRegistry');
+const { createAuthorityDeviceRequestAuth } = require('./services/authorityDeviceRequestAuth');
+const { createAuthorityProjectionStoreService } = require('./services/authorityProjectionStoreService');
+const {
+  createMiniappAuthorityProjectionHandler,
+} = require('./routes/miniappAuthorityProjection');
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const writeRateLimitStore = new Map();
@@ -277,10 +290,32 @@ function createApp(options = {}) {
       ? path.join(process.env.GEWU_LOCAL_CACHE_PATH, 'primary-host-validation')
       : undefined,
   });
-  const singleUserIdentityService = getSingleUserDesktopIdentityService({
+  const authorityCommandInbox = createAuthorityCommandInboxService({
     db: database,
-    localValidationService: primaryHostLocalValidationService,
+    targetHostIdFor: envelope => {
+      const { createAuthorityRuntimeHostEpochService } = require('./services/authorityRuntimeHostEpochService');
+      const epoch = createAuthorityRuntimeHostEpochService({ db: database }).find(envelope.hostEpochId);
+      if (!epoch || epoch.authority_id !== envelope.authorityId) {
+        throw Object.assign(new Error('AUTHORITY_HOST_EPOCH_INACTIVE'), {
+          code: 'AUTHORITY_HOST_EPOCH_INACTIVE',
+          statusCode: 403,
+        });
+      }
+      return epoch.device_id;
+    },
   });
+  const authorityCommandAuthorization = createAuthorityCommandAuthorizationService({
+    db: database,
+    commandPolicy: options.authorityCommandPolicy || createAuthorityCommandPolicy(),
+  });
+  const authorityDeviceRequestAuth = createAuthorityDeviceRequestAuth({ db: database });
+  const authorityProjectionStore = createAuthorityProjectionStoreService({ db: database });
+  const authorityCloudControl = createAuthorityCloudControlService({ db: database });
+  app.locals.authorityDatabase = database;
+  app.locals.authorityCommandInbox = authorityCommandInbox;
+  app.locals.authorityCommandAuthorization = authorityCommandAuthorization;
+  app.locals.authorityDeviceRequestAuth = authorityDeviceRequestAuth;
+  app.locals.authorityProjectionStore = authorityProjectionStore;
 
   try {
     createMiniappProvisioningReconciler({ db: database }).reconcilePendingCompletedTasks();
@@ -328,17 +363,195 @@ function createApp(options = {}) {
     db: database,
     primaryHostIdentityService,
     primaryHostLocalValidationService,
-    singleUserIdentityService,
   }));
-  app.use('/api/desktop-pairing', desktopPairingRouter);
-  app.use('/api/sync', optionalAuth, syncRouter);
+  const authorityApiRouter = express.Router();
+  const authenticateAuthorityDevice = (req, res, next) => {
+    try {
+      req.authorityActor = authorityDeviceRequestAuth.authenticate(req);
+      next();
+    } catch (error) {
+      res.status(error?.statusCode || 401).json({
+        success: false,
+        error: { code: error?.code || 'AUTHORITY_DEVICE_AUTH_FAILED' },
+      });
+    }
+  };
+  authorityApiRouter.post('/commands', authenticateAuthorityDevice);
+  authorityApiRouter.get('/commands/:id/receipt', authenticateAuthorityDevice);
+  authorityApiRouter.get('/projections/current', authenticateAuthorityDevice, (req, res) => {
+    try {
+      const authorityId = String(req.headers['x-gewu-authority-id'] || '').trim();
+      const projection = authorityProjectionStore.read({
+        authorityId,
+        userId: req.authorityActor.userId,
+        role: req.authorityActor.role,
+      });
+      if (!projection) {
+        throw Object.assign(new Error('AUTHORITY_PROJECTION_NOT_FOUND'), {
+          code: 'AUTHORITY_PROJECTION_NOT_FOUND',
+          statusCode: 404,
+        });
+      }
+      authorityCommandAuthorization.authorize({
+        authorityId,
+        hostEpochId: projection.hostEpochId,
+        actor: req.authorityActor,
+        lease: {
+          id: String(req.headers['x-gewu-authority-lease-id'] || '').trim(),
+          grantVersion: Number(req.headers['x-gewu-authority-grant-version']),
+        },
+        type: 'projection.read.v1',
+        payload: {},
+      });
+      res.json({ success: true, projection });
+    } catch (error) {
+      res.status(error?.statusCode || 403).json({
+        success: false,
+        error: { code: error?.code || 'AUTHORITY_PROJECTION_READ_FAILED' },
+      });
+    }
+  });
+  const authorizeAuthorityHost = req => {
+    const epoch = primaryHostIdentityService.assertActiveHostCredential({
+      deviceId: req.headers['x-gewu-host-device-id'],
+      generation: req.headers['x-gewu-host-generation'],
+      credential: req.headers['x-gewu-host-credential'],
+    });
+    return Object.freeze({
+      id: epoch.id,
+      dbAuthorityId: epoch.dbAuthorityId,
+      deviceId: epoch.deviceId,
+      generation: Number(epoch.generation),
+    });
+  };
+  authorityApiRouter.post('/host/epoch', (req, res) => {
+    try {
+      const epoch = authorityCloudControl.publishEpoch({
+        host: authorizeAuthorityHost(req),
+        epoch: req.body?.epoch,
+      });
+      return res.json({ success: true, epoch });
+    } catch (error) {
+      return res.status(error?.statusCode || 400).json({
+        success: false,
+        error: { code: error?.code || 'AUTHORITY_HOST_EPOCH_MIRROR_FAILED' },
+      });
+    }
+  });
+  authorityApiRouter.get('/host/epoch', (req, res) => {
+    try {
+      return res.json({
+        success: true,
+        epoch: authorityCloudControl.readEpoch({ host: authorizeAuthorityHost(req) }),
+      });
+    } catch (error) {
+      return res.status(error?.statusCode || 400).json({
+        success: false,
+        error: { code: error?.code || 'AUTHORITY_HOST_EPOCH_READ_FAILED' },
+      });
+    }
+  });
+  authorityApiRouter.post('/host/control-records', (req, res) => {
+    try {
+      return res.json({
+        success: true,
+        result: authorityCloudControl.publishControlRecords({
+          host: authorizeAuthorityHost(req),
+          snapshot: req.body?.snapshot,
+        }),
+      });
+    } catch (error) {
+      return res.status(error?.statusCode || 400).json({
+        success: false,
+        error: { code: error?.code || 'AUTHORITY_DEVICE_CONTROL_MIRROR_FAILED' },
+      });
+    }
+  });
+  authorityApiRouter.get('/host/control-records', (req, res) => {
+    try {
+      return res.json({
+        success: true,
+        snapshot: authorityCloudControl.readControlRecords({ host: authorizeAuthorityHost(req) }),
+      });
+    } catch (error) {
+      return res.status(error?.statusCode || 400).json({
+        success: false,
+        error: { code: error?.code || 'AUTHORITY_DEVICE_CONTROL_MIRROR_READ_FAILED' },
+      });
+    }
+  });
+  authorityApiRouter.post('/host/projections', (req, res) => {
+    try {
+      return res.json({
+        success: true,
+        projection: authorityCloudControl.publishProjection({
+          host: authorizeAuthorityHost(req),
+          projection: req.body?.projection,
+        }),
+      });
+    } catch (error) {
+      return res.status(error?.statusCode || 400).json({
+        success: false,
+        error: { code: error?.code || 'AUTHORITY_PROJECTION_PUBLISH_FAILED' },
+      });
+    }
+  });
+  authorityApiRouter.use(createAuthorityProtocolRouter({
+    authorizeCommand: ({ envelope }) => authorityCommandAuthorization.authorize(envelope),
+    enqueueCommand: envelope => authorityCommandInbox.enqueue(envelope),
+    findReceipt: input => authorityCommandInbox.findReceipt(input),
+    authorizeHostRequest: req => {
+      try {
+        return primaryHostIdentityService.assertActiveHostCredential({
+          deviceId: req.headers['x-gewu-host-device-id'],
+          generation: req.headers['x-gewu-host-generation'],
+          credential: req.headers['x-gewu-host-credential'],
+        });
+      } catch (error) {
+        error.statusCode = 403;
+        throw error;
+      }
+    },
+    claimCommands: input => authorityCommandInbox.claim(input),
+    renewCommandClaim: input => authorityCommandInbox.renew(input),
+    publishHostReceipt: (receipt, claim) => authorityCommandInbox.publishReceipt(receipt, claim),
+    onCommandQueued: ({ envelope, queued, request }) => {
+      const epoch = database.prepare(`SELECT device_id FROM primary_host_epochs
+        WHERE id=? AND status='active'`).get(envelope.hostEpochId);
+      if (epoch?.device_id) {
+        request.app?.get('cloudRelaySocketServer')?.notifyHostNewTask(epoch.device_id, {
+          id: queued.id,
+          task_type: 'authority-command-v1',
+        });
+      }
+    },
+  }));
+  app.use('/api/authority', authorityApiRouter);
   app.use('/api/cloud-relay-host/artifacts', optionalAuth, paperArtifactAccessRouter);
   app.use('/api/cloud-relay-host', optionalAuth, requireWriteAccess, cloudRelayHostRouter);
   app.use('/api/modules', optionalAuth, modulesRouter);
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);
   app.use('/api/admin/users', authMiddleware, adminUsersRouter);
   app.use('/api/permissions', authMiddleware, permissionsRouter);
-  app.use('/api/miniapp/applications', authMiddleware, miniappApplicationsRouter);
+  app.get('/api/miniapp/projection', authMiddleware, createMiniappAuthorityProjectionHandler({
+    db: database,
+    projectionStore: authorityProjectionStore,
+  }));
+  app.use('/api/miniapp/applications', authMiddleware, createMiniappAuthorityApplicationsRouter({
+    db: database,
+    commandInbox: authorityCommandInbox,
+    commandAuthorization: authorityCommandAuthorization,
+    onCommandQueued: ({ envelope, queued, request }) => {
+      const epoch = database.prepare(`SELECT device_id FROM primary_host_epochs
+        WHERE id=? AND status='active'`).get(envelope.hostEpochId);
+      if (epoch?.device_id) {
+        request.app?.get('cloudRelaySocketServer')?.notifyHostNewTask(epoch.device_id, {
+          id: queued.id,
+          task_type: 'authority-command-v1',
+        });
+      }
+    },
+  }));
   app.use('/api/miniapp/wechat-bindings', authMiddleware, miniappWechatBindingsRouter);
 
   // 鍗婂叕寮€璺敱锛堝彲閫夎璇侊級
@@ -352,7 +565,7 @@ function createApp(options = {}) {
   app.use('/api/schools', optionalAuth, requireCoreReadAccess, requireWriteAccess, schoolsRouter);
   app.use('/api/institutions', optionalAuth, requireCoreReadAccess, requireWriteAccess, institutionsRouter);
   app.use('/api/stats', optionalAuth, requireCoreReadAccess, requireWriteAccess, statsRouter);
-  app.use('/api/question-bank', optionalAuth, requireWriteAccess, questionBankRouter);
+  app.use('/api/question-bank', optionalAuth, requireQuestionBankReadAccess, requireWriteAccess, questionBankRouter);
   app.use('/api/ops', optionalAuth, requireWriteAccess, opsRouter);
   app.use('/api', optionalAuth, requireWriteAccess, dataRouter);
   app.use('/api/bill-import', optionalAuth, requireWriteAccess, billImportRouter);
@@ -363,4 +576,4 @@ function createApp(options = {}) {
   return app;
 }
 
-module.exports = { createApp, getAppVersion, resolvePackageVersion };
+module.exports = { createApp, getAppVersion, resolvePackageVersion, HostWebSocketClient };

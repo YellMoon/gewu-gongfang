@@ -90,11 +90,11 @@ try {
   const normalAdmin = db.prepare("SELECT * FROM users WHERE id='review-admin'").get();
   const superAdmin = db.prepare("SELECT * FROM users WHERE id='miniapp-admin-13732250653'").get();
   const teacherActor = db.prepare("SELECT * FROM users WHERE id='review-teacher-actor'").get();
-  assert.strictEqual(canReviewApplications(normalAdmin), true);
+  assert.strictEqual(canReviewApplications(normalAdmin), false);
   assert.strictEqual(canReviewApplications(superAdmin), true);
   assert.strictEqual(canReviewApplications(teacherActor), false);
   assert.strictEqual(canReviewUsers(normalAdmin), false);
-  assert.ok(effectiveCapabilities(normalAdmin).includes('applications:review'));
+  assert.ok(!effectiveCapabilities(normalAdmin).includes('applications:review'));
   assert.ok(!effectiveCapabilities(normalAdmin).includes('users:review'));
 
   assert.throws(
@@ -118,7 +118,7 @@ try {
   const review = createReview('host-authority');
   const membershipCountBefore = db.prepare('SELECT COUNT(*) count FROM account_memberships').get().count;
   const decision = review.approve({
-    actor: normalAdmin,
+    actor: superAdmin,
     applicationId: student.id,
     expectedRevision: student.revision,
     tenantId: 'default',
@@ -161,7 +161,7 @@ try {
   assert.ok(!approvalAudit.after_json.includes('\u5f20\u540c\u5b66'));
 
   const replayed = review.approve({
-    actor: normalAdmin,
+    actor: superAdmin,
     applicationId: student.id,
     expectedRevision: student.revision,
     tenantId: 'default',
@@ -171,7 +171,7 @@ try {
 
   assert.throws(
     () => createReview('host-old').approve({
-      actor: normalAdmin,
+      actor: superAdmin,
       applicationId: oldHostApplication.id,
       expectedRevision: oldHostApplication.revision,
     }),
@@ -183,7 +183,7 @@ try {
   );
   assert.throws(
     () => createReview('host-offline').approve({
-      actor: normalAdmin,
+      actor: superAdmin,
       applicationId: offlineHostApplication.id,
       expectedRevision: offlineHostApplication.revision,
     }),
@@ -195,7 +195,7 @@ try {
   );
 
   const rejection = review.reject({
-    actor: normalAdmin,
+    actor: superAdmin,
     applicationId: rejectedApplication.id,
     expectedRevision: rejectedApplication.revision,
     reason: '  Please correct the submitted name.  ',
@@ -207,7 +207,7 @@ try {
   assert.strictEqual(rejectionRevisionTwo.revision, 2);
   assert.throws(
     () => review.approve({
-      actor: normalAdmin,
+      actor: superAdmin,
       applicationId: rejectedApplication.id,
       expectedRevision: rejectedApplication.revision,
     }),
@@ -226,11 +226,11 @@ try {
     .run(now, now, now);
   assert.throws(
     () => review.approve({ actor: normalAdmin, applicationId: 'self-review-app', expectedRevision: 1 }),
-    error => error?.code === 'APPLICATION_REVIEW_SELF_FORBIDDEN',
+    error => error?.code === 'APPLICATION_REVIEW_FORBIDDEN',
   );
 
   const teacherDecision = review.approve({
-    actor: normalAdmin,
+    actor: superAdmin,
     applicationId: teacher.id,
     expectedRevision: teacher.revision,
   });
@@ -240,14 +240,14 @@ try {
     .run(teacher.id);
   assert.throws(
     () => review.retry({ actor: normalAdmin, applicationId: teacher.id, expectedRevision: teacher.revision }),
-    error => error?.code === 'SUPER_ADMIN_REQUIRED',
+    error => error?.code === 'APPLICATION_REVIEW_FORBIDDEN',
   );
   const retried = review.retry({ actor: superAdmin, applicationId: teacher.id, expectedRevision: teacher.revision });
   assert.strictEqual(retried.application.status, 'provisioning');
   assert.strictEqual(retried.task.status, 'pending_host');
   assert.strictEqual(retried.task.id, teacherDecision.task.id);
 
-  const adminList = review.list({ actor: normalAdmin, status: 'provisioning' });
+  const adminList = review.list({ actor: superAdmin, status: 'provisioning' });
   assert.ok(adminList.items.some(item => item.id === student.id));
   assert.ok(adminList.items.every(item => !('payload_json' in item)));
   assert.ok(!JSON.stringify(adminList).includes('wechat_openid'));

@@ -13,11 +13,12 @@ const {
   FORMAL_TOKEN_USE,
   TOKEN_ISSUER,
   UNRECOGNIZED_TOKEN_USE,
+  VISITOR_TOKEN_USE,
   createMiniappIdentityService,
+  isValidMainlandMobile,
 } = require('../services/miniappIdentityService');
 const {
   resolveWechatIdentity,
-  resolveWechatPhoneNumber,
 } = require('../services/wechatMiniappService');
 
 const router = Router();
@@ -47,7 +48,7 @@ router.get('/desktop-session', authMiddleware, (req, res) => {
  * POST /api/auth/wechat-login
  * 微信小程序登录
  * 
- * Body: { code: "微信登录code", phone?: "手填手机号", phoneCode?: "微信手机号动态码" }
+ * Body: { code: "微信登录code", phone: "手填手机号" }
  * Response: { token: "jwt...", user: { id, nickname, ... } }
  */
 router.post('/wechat-login', async (req, res) => {
@@ -62,11 +63,24 @@ router.post('/wechat-login', async (req, res) => {
       });
     }
 
-    if (!phoneCode && !normalizePhone(phone)) {
+    if (phoneCode) {
+      const error = new Error('Automatic WeChat phone retrieval is retired');
+      error.code = 'MINIAPP_AUTOMATIC_PHONE_RETRIEVAL_RETIRED';
+      throw error;
+    }
+
+    if (!normalizePhone(phone)) {
       return res.status(400).json({
         success: false,
         code: 'MANUAL_PHONE_REQUIRED',
         error: 'Manual phone is required',
+      });
+    }
+    if (!isValidMainlandMobile(phone)) {
+      return res.status(400).json({
+        success: false,
+        code: 'MANUAL_PHONE_INVALID',
+        error: 'Manual phone is invalid',
       });
     }
 
@@ -84,40 +98,14 @@ router.post('/wechat-login', async (req, res) => {
     const profile = { nickname: profileNickname, avatarUrl };
 
     const db = getInstance();
-    let login;
-    if (phoneCode) {
-      let verifiedPhone;
-      try {
-        verifiedPhone = await resolveWechatPhoneNumber(phoneCode);
-      } catch (_error) {
-        const error = new Error('WeChat phone exchange failed');
-        error.code = 'WECHAT_PHONE_EXCHANGE_FAILED';
-        throw error;
-      }
-      const claimedPhone = normalizePhone(phone);
-      if (claimedPhone && claimedPhone !== normalizePhone(verifiedPhone)) {
-        const error = new Error('WeChat verified phone does not match the claimed phone');
-        error.code = 'WECHAT_PHONE_MISMATCH';
-        throw error;
-      }
-      login = identityServiceFor(db).loginWithVerifiedWechat({
-        openid,
-        unionid,
-        phone: verifiedPhone,
-        profile,
-        miniappVersion,
-        platform,
-      });
-    } else {
-      login = identityServiceFor(db).loginWithClaimedWechat({
-        openid,
-        unionid,
-        phone,
-        profile,
-        miniappVersion,
-        platform,
-      });
-    }
+    const login = identityServiceFor(db).loginWithClaimedWechat({
+      openid,
+      unionid,
+      phone,
+      profile,
+      miniappVersion,
+      platform,
+    });
 
     return res.json({
       success: true,
@@ -133,24 +121,16 @@ router.post('/wechat-login', async (req, res) => {
     });
   } catch (err) {
     const code = err.code || 'MINIAPP_LOGIN_FAILED';
-    if (code === 'WECHAT_BINDING_REVIEW_REQUIRED') {
-      return res.status(202).json({
-        success: false,
-        code,
-        data: err.details,
-        error: 'WeChat binding review is required',
-      });
-    }
     const conflictCodes = new Set([
       'PHONE_WECHAT_BINDING_CONFLICT',
       'OPENID_PHONE_BINDING_CONFLICT',
       'FORMAL_IDENTITY_MAPPING_INVALID',
       'WECHAT_BINDING_REQUEST_CONFLICT',
-      'WECHAT_PHONE_MISMATCH',
     ]);
     const validationCodes = new Set([
       'MANUAL_PHONE_REQUIRED',
       'MANUAL_PHONE_INVALID',
+      'MINIAPP_AUTOMATIC_PHONE_RETRIEVAL_RETIRED',
       'WECHAT_LOGIN_CODE_REQUIRED',
     ]);
     const status = conflictCodes.has(code) ? 409
@@ -179,6 +159,7 @@ router.post('/refresh', (req, res) => {
     const claims = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'], ignoreExpiration: true });
     const audience = claims.token_use === FORMAL_TOKEN_USE
       ? FORMAL_AUDIENCE
+      : claims.token_use === VISITOR_TOKEN_USE ? FORMAL_AUDIENCE
       : claims.token_use === UNRECOGNIZED_TOKEN_USE ? EXPERIENCE_AUDIENCE : null;
     const configuredGraceSeconds = Number(process.env.MINIAPP_REFRESH_GRACE_SECONDS || 86_400);
     const graceSeconds = Number.isFinite(configuredGraceSeconds) && configuredGraceSeconds >= 0
@@ -193,7 +174,9 @@ router.post('/refresh', (req, res) => {
     const user = service.readIdentityForToken(claims);
     const issued = claims.token_use === FORMAL_TOKEN_USE
       ? service.issueFormalToken(user, claims.sid)
-      : service.issueUnrecognizedToken(user, claims.sid);
+      : claims.token_use === VISITOR_TOKEN_USE
+        ? service.issueVisitorToken(user, claims.sid)
+        : service.issueUnrecognizedToken(user, claims.sid);
     return res.json({ success: true, token: issued.token });
   } catch (_error) {
     return res.status(401).json({ success: false, code: 'TOKEN_REFRESH_REQUIRES_RELOGIN' });

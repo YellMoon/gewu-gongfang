@@ -35,7 +35,6 @@ function getLinkedStudentIds(user = {}) {
     user.linkedStudentId,
     ...parseArray(user.linked_student_ids),
     ...parseArray(user.linkedStudentIds),
-    isStudentUser(user) ? user.id : undefined,
   ];
   return Array.from(new Set(ids.filter(Boolean).map(String)));
 }
@@ -129,6 +128,11 @@ function filterSnapshotForUser(snapshot, user) {
     }) };
   }
   if (isAdminUser(user)) return snapshot;
+  if (roleOf(user) === 'visitor') {
+    return { ...snapshot, payload: scopeBusinessSnapshot(snapshot.payload || {}, {
+      kind: 'visitor', userId: user.id || user.user_id || user.userId,
+    }) };
+  }
   if (!isStudentUser(user)) return { ...snapshot, payload: {} };
 
   const linkedStudentIds = getLinkedStudentIds(user);
@@ -139,7 +143,7 @@ function filterSnapshotForUser(snapshot, user) {
 }
 
 function allowedTasksForUser(user) {
-  if (isStudentUser(user)) return STUDENT_TASK_TYPES;
+  if (isStudentUser(user) && getLinkedStudentIds(user).length > 0) return STUDENT_TASK_TYPES;
   if (isAdminUser(user)) return ADMIN_TASK_TYPES;
   return new Set();
 }

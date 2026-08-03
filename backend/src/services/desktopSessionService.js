@@ -2,7 +2,9 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { resolveActiveAuthorityRoleContext } = require('./authorityRoleGrantAdapter');
-const { scopeForUser } = require('./authorizationPolicy');
+const {
+  scopeForUser,
+} = require('./authorizationPolicy');
 
 const TOKEN_ISSUER = 'gewu-auth';
 const TOKEN_AUDIENCE = 'gewu-api';
@@ -49,11 +51,51 @@ function sameStringArray(left, right) {
     && left.every(function (value, index) { return value === right[index]; });
 }
 
-function roleContextForUser(db, userId, requestedRole) {
+function legacyGrantRoleContext(db, { user, requestedRole } = {}) {
+  const requested = String(requestedRole || '').trim();
+  const rows = db.prepare(`SELECT role,subject_type,subject_id FROM user_role_grants
+    WHERE user_id=? AND status='active' ORDER BY role`).all(user.id);
+  const grants = new Map();
+  for (const row of rows) {
+    const role = String(row.role || '').trim();
+    if (!ROLE_DISPLAY_ORDER.includes(role)) continue;
+    const subjectId = role === 'teacher'
+      ? String(row.subject_id || user.teacher_id || '').trim() || null
+      : role === 'student'
+        ? String(row.subject_id || user.student_id || '').trim() || null
+        : null;
+    const existing = grants.get(role);
+    if (existing && existing.subjectId !== subjectId) throw serviceError('ACTIVE_ROLE_NOT_GRANTED');
+    grants.set(role, { role, subjectId });
+  }
+  const formalRoles = ROLE_DISPLAY_ORDER.filter(role => grants.has(role));
+  const eligibleRoles = formalRoles.length ? formalRoles : ['visitor'];
+  const activeRole = requested
+    || DEFAULT_ACTIVE_ROLE_ORDER.find(role => grants.has(role))
+    || 'visitor';
+  const grant = grants.get(activeRole);
+  if (activeRole !== 'visitor' && !grant) throw serviceError('ACTIVE_ROLE_NOT_GRANTED');
+  if (activeRole === 'visitor' && formalRoles.length) throw serviceError('ACTIVE_ROLE_NOT_GRANTED');
+  return Object.freeze({
+    userId: String(user.id),
+    authorityId: null,
+    activeRole,
+    eligibleRoles: Object.freeze(eligibleRoles),
+    teacherId: activeRole === 'teacher' ? grant.subjectId : null,
+    studentId: activeRole === 'student' ? grant.subjectId : null,
+  });
+}
+
+function roleContextForUser(db, { user, authorization, requestedRole } = {}) {
+  const userId = String(user?.id || '').trim();
+  const authorityAccount = db.prepare(`SELECT authority_id,status FROM authority_accounts
+    WHERE user_id=?`).get(userId);
+  if (!authorityAccount) return legacyGrantRoleContext(db, { user, requestedRole });
+  if (authorityAccount.status !== 'active') throw serviceError('ACTIVE_ROLE_NOT_GRANTED');
   let authorityContext;
   try {
     authorityContext = resolveActiveAuthorityRoleContext(db, { userId });
-  } catch (_error) {
+  } catch (error) {
     throw serviceError('ACTIVE_ROLE_NOT_GRANTED');
   }
   const roleSet = new Set(authorityContext.grants.map(function (grant) { return grant.role; }));
@@ -211,7 +253,11 @@ function createDesktopSessionService({
     const user = findUser.get(userId);
     if (!approvedUser(user)) throw serviceError('DESKTOP_SESSION_USER_NOT_ACTIVE');
     const authorization = assertAuthorizationActive(findAuthorization.get(deviceId), userId, current);
-    const roleContext = roleContextForUser(db, userId, input.activeRole);
+    const roleContext = roleContextForUser(db, {
+      user,
+      authorization,
+      requestedRole: input.activeRole,
+    });
     const authTime = normalizeAuthTime(input.authTime, current);
     const issuedAt = current.toISOString();
     const expiresAt = new Date(current.getTime() + durationMs).toISOString();
@@ -311,7 +357,11 @@ function createDesktopSessionService({
       throw serviceError('DESKTOP_SESSION_CREDENTIAL_VERSION_MISMATCH');
     }
     assertAuthorizationSource(authorization, current);
-    const roleContext = roleContextForUser(db, userId, row.active_role);
+    const roleContext = roleContextForUser(db, {
+      user,
+      authorization,
+      requestedRole: row.active_role,
+    });
     const persistedEligibleRoles = parseJsonArray(row.eligible_roles_json);
     if (!sameStringArray(roleContext.eligibleRoles, persistedEligibleRoles)
       || !sameStringArray(roleContext.eligibleRoles, claims.eligible_roles)) {
@@ -431,7 +481,11 @@ function createDesktopSessionService({
       throw serviceError('DESKTOP_ROLE_SWITCH_INPUT_INVALID');
     }
     if (context.activeRole === activeRole) throw serviceError('DESKTOP_ACTIVE_ROLE_UNCHANGED');
-    const roleContext = roleContextForUser(db, context.userId, activeRole);
+    const roleContext = roleContextForUser(db, {
+      user: findUser.get(context.userId),
+      authorization: findAuthorization.get(context.deviceId),
+      requestedRole: activeRole,
+    });
     const current = currentDate();
     const authorization = assertAuthorizationActive(
       findAuthorization.get(context.deviceId),

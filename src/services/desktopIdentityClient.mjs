@@ -45,11 +45,12 @@ export function partitionKeyForIdentity(identity = {}) {
   const activeRole = String(identity.activeRole || identity.active_role || '').trim();
   if (!userId || !activeRole) throw identityError('DESKTOP_IDENTITY_PARTITION_INVALID');
   let subjectId = 'all';
-  if (activeRole === 'teacher') subjectId = String(identity.teacherId || identity.teacher_id || '').trim();
-  if (activeRole === 'student' || activeRole === 'parent') {
-    subjectId = String(identity.studentId || identity.student_id || '').trim();
+  if (activeRole === 'teacher') {
+    subjectId = String(identity.teacherId || identity.teacher_id || '').trim() || 'unbound';
   }
-  if (!subjectId) throw identityError('DESKTOP_IDENTITY_PARTITION_INVALID');
+  if (activeRole === 'student' || activeRole === 'parent') {
+    subjectId = String(identity.studentId || identity.student_id || '').trim() || 'unbound';
+  }
   return `${userId}:${activeRole}:${subjectId}`;
 }
 

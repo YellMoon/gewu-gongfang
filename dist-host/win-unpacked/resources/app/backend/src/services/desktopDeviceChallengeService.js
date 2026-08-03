@@ -380,6 +380,11 @@ function createDesktopDeviceChallengeService({
     const issued = sessionService.issueSession({
       userId: authorization.user_id,
       deviceId: authorization.device_id,
+      // The signature is produced only after the local vault has been unlocked
+      // for this session challenge. Preserve that fresh local proof so a newly
+      // unlocked super administrator can approve a device without a dead-end
+      // second unlock step.
+      authTime: current,
     });
     attachSession.run(issued.session.id, current.toISOString(), challenge.id);
     return {

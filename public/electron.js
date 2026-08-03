@@ -1,4 +1,21 @@
 const { app, BrowserWindow, Menu, ipcMain, dialog, screen, shell, safeStorage } = require('electron');
+const { acquireDesktopSingleInstance } = require('./electronSingleInstance');
+const { createCrossInstallInstanceLock } = require('./electronCrossInstallLock');
+let mainWindow;
+const DESKTOP_SINGLE_INSTANCE_OWNER = acquireDesktopSingleInstance({ app, getWindow: () => mainWindow });
+function activateMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+const crossInstallInstanceLock = DESKTOP_SINGLE_INSTANCE_OWNER
+  ? createCrossInstallInstanceLock({
+    app,
+    userDataPath: app.getPath('userData'),
+    activateWindow: activateMainWindow,
+  })
+  : null;
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
@@ -96,7 +113,6 @@ process.on('uncaughtException', (err) => {
   log('UNCAUGHT: ' + err.message + '\n' + err.stack);
 });
 
-let mainWindow;
 let backendServer = null;
 let hostTaskWakeup = null;
 let hostCommandWorker = null;
@@ -969,15 +985,21 @@ function showErrorPage(msg) {
   mainWindow.show();
 }
 
-app.whenReady().then(() => {
-  log('whenReady');
-  if (PRIMARY_HOST_CAPABLE) getPrimaryHostRelaunchReadiness().beginLaunch();
-  startBackendService();
-  createWindow();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+if (DESKTOP_SINGLE_INSTANCE_OWNER) {
+  Promise.all([app.whenReady(), crossInstallInstanceLock.ready]).then(([, crossInstallOwner]) => {
+    if (!crossInstallOwner) return;
+    log('whenReady');
+    if (PRIMARY_HOST_CAPABLE) getPrimaryHostRelaunchReadiness().beginLaunch();
+    startBackendService();
+    createWindow();
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  }).catch(error => {
+    log(`CROSS_INSTALL_INSTANCE_LOCK_FAILED ${String(error?.code || error?.message || 'UNKNOWN')}`);
+    app.quit();
   });
-});
+}
 
 app.on('window-all-closed', () => {
   lockDesktopIdentityVault();
@@ -995,6 +1017,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  void crossInstallInstanceLock?.close();
   lockDesktopIdentityVault();
   hostTaskWakeup?.stop();
   hostTaskWakeup = null;

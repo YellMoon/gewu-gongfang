@@ -28,6 +28,21 @@ assert(source.includes("childProcess.execFile('curl.exe'"), 'LOOPBACK_HEALTH_CUR
 assert(source.includes('IDENTITY_CLOUD_LISTEN_READY_REQUIRED'), 'IDENTITY_CLOUD_LISTEN_EVENT_REQUIRED');
 assert.ok(source.includes('GEWU_PACKAGED_EXECUTABLE_REQUIRED'),
   'packaged E2E must reject an empty executable setting before path.resolve turns it into the workspace directory');
+assert.ok(source.includes("packagedExecutable('GEWU_PACKAGED_HOST_RESTART_EXE')")
+  && source.includes("packagedExecutable('GEWU_PACKAGED_CLIENT_RESTART_EXE')"),
+  'upgrade acceptance must allow an old package to create the profile and a new package to restart the same profile');
+assert.ok(source.includes('HOST_RESTART_EXE || HOST_EXE')
+  && source.includes('CLIENT_RESTART_EXE || CLIENT_EXE'),
+  'normal acceptance must retain same-package restart while upgrade acceptance switches only at the restart boundary');
+assert.ok(source.includes('hostRestartExecutable')
+  && source.includes('clientRestartExecutable'),
+  'the success evidence must identify the executable version boundary used for each restarted profile');
+assert.ok(source.includes('function packagedVersion(')
+  && source.includes('hostInitialVersion: packagedVersion(HOST_EXE)')
+  && source.includes('hostRestartVersion: packagedVersion(hostRestartExecutable)')
+  && source.includes('clientInitialVersion: packagedVersion(CLIENT_EXE)')
+  && source.includes('clientRestartVersion: packagedVersion(clientRestartExecutable)'),
+  'upgrade evidence must record embedded package versions rather than ambiguous win-unpacked directory names');
 assert(source.includes('let cloud = null;'), 'IDENTITY_CLOUD_LIFECYCLE_GUARD_REQUIRED');
 assert(source.includes("cloud?.child?.pid"), 'IDENTITY_CLOUD_FAILURE_CLEANUP_REQUIRED');
 assert(source.includes('HOST_DEVICE_APPROVE_DIAGNOSTIC_FAILED'), 'HOST_APPROVAL_ORIGINAL_FAILURE_PRESERVATION_REQUIRED');
@@ -184,6 +199,37 @@ assert.ok(governanceSource.includes('STALE_REAL_TWO_DESKTOP_PROCESSES_REQUIRED_C
   'the harness must reject stale temporary desktops and cap the active packaged process count');
 assert.ok(source.includes('waitForProcessesExit') && governanceSource.includes('REAL_TWO_DESKTOP_PROCESS_EXIT_TIMEOUT'),
   'profile teardown must wait for every exact packaged PID before attempting temporary-root cleanup');
+assert.ok(source.includes('async function stopProfileBeforeRestart(root, child, code)'),
+  'restart paths must not ignore a deferred exact-profile stop');
+const restartStopGuardSource = source.slice(
+  source.indexOf('async function stopProfileBeforeRestart(root, child, code)'),
+  source.indexOf('function literal(value)'),
+);
+assert.ok(restartStopGuardSource.includes('const stopped = await stopProfile(root, child)')
+  && restartStopGuardSource.includes('const normalizedRoot = path.resolve(root).toLowerCase()')
+  && restartStopGuardSource.includes('listLiveDisposableDesktopProcesses()')
+  && restartStopGuardSource.includes("path.resolve(row.profileRoot || '').toLowerCase() === normalizedRoot")
+  && restartStopGuardSource.includes('stopped ? 15_000 : 45_000')
+  && restartStopGuardSource.includes('return remaining.length === 0 ? true : null'),
+  'a restart must wait on the bounded exact normalized profile-process condition even when stopProfile returns false');
+assert.strictEqual(restartStopGuardSource.includes('taskkill'), false,
+  'the restart guard may observe only exact-profile processes and must not introduce a broad kill retry');
+const hostAuthorityRestartSource = source.slice(
+  source.indexOf('async function bootstrapHostAuthorityThroughUi('),
+  source.indexOf('async function beginClientIdentityRegistration('),
+);
+assert.ok(hostAuthorityRestartSource.includes("await stopProfileBeforeRestart(HOST_ROOT, hostProcess, 'HOST_AUTHORITY_PROFILE_PROCESS_EXIT_REQUIRED')")
+  && hostAuthorityRestartSource.indexOf('await stopProfileBeforeRestart(')
+    < hostAuthorityRestartSource.indexOf('startDesktop(hostRestartExecutable'),
+  'host authority recovery must prove the exact profile process set empty before starting the restart executable');
+const clientRestartSource = source.slice(
+  source.indexOf('async function restartClientForOfflineDraft('),
+  source.indexOf('async function submitHarmlessLanCommandThroughUi('),
+);
+assert.ok(clientRestartSource.includes("await stopProfileBeforeRestart(CLIENT_ROOT, client, 'CLIENT_OFFLINE_DRAFT_PROFILE_PROCESS_EXIT_REQUIRED')")
+  && clientRestartSource.indexOf('await stopProfileBeforeRestart(')
+    < clientRestartSource.indexOf('startDesktop(clientRestartExecutable'),
+  'client offline-draft recovery must prove the exact profile process set empty before starting the restart executable');
 assert.ok(source.includes("Get-CimInstance Win32_Process -Filter \"Name='格物工坊.exe'\""),
   'the live-process audit must query only packaged desktop processes instead of scanning every Windows process');
 assert.ok(source.includes('timeout: 45_000'),
@@ -210,6 +256,14 @@ assert.ok(source.includes('nativeClickModalText: text => withFreshCdpPage('),
   'modal confirmation must resolve and click the visible button within one CDP session');
 assert.ok(source.includes('await page.nativeClickModalText(text);'),
   'modal confirmation must not carry a transient React data selector across CDP sessions');
+assert.ok(source.includes('REAL_DESKTOP_MODAL_KEYBOARD_FALLBACK_REQUIRED')
+  && source.includes("type: 'keyDown', key: 'Enter'")
+  && source.includes("type: 'keyUp', key: 'Enter'"),
+  'a hit-tested modal button whose mouse event is lost to Windows focus changes must receive a bounded real Enter-key fallback');
+assert.ok(source.includes('REAL_DESKTOP_MODAL_TARGET_SETTLED_REQUIRED')
+  && source.includes('async function settledVisibleModalTarget(')
+  && source.includes('const settledTarget = await settledVisibleModalTarget(page, text);'),
+  'modal input must recompute and hit-test the animated button after mouse movement before pressing it');
 assert.ok(source.includes('function clickPaintedText(page, text)')
   && source.includes('const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);')
   && source.includes('return Boolean(hit && (hit === item || item.contains(hit)));'),

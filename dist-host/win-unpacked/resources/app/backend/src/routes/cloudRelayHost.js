@@ -5,37 +5,21 @@ const { getInstance } = require('../database');
 const {
   publishHeartbeat,
   publishSnapshot,
-  publishDesktopPairingCapability,
-  fetchPendingTasks,
   claimMiniappTask,
   updateMiniappTaskProgress,
   completeMiniappTask,
   failMiniappTask,
   queryMiniappTaskState,
+  readRelayTaskActorGrant,
   hostCapabilities,
 } = require('../services/cloudRelayClient');
-const { getSingleUserDesktopIdentityService } = require('../services/singleUserDesktopIdentityService');
-const { roleContextForUser } = require('../services/userRoleGrantService');
-const {
-  createDesktopDeviceChallengeService,
-  createDesktopOfflineLease,
-  createDesktopSessionProfile,
-} = require('../services/desktopDeviceChallengeService');
-const { createDesktopSessionService } = require('../services/desktopSessionService');
+const { createDesktopIdentityService } = require('../services/desktopIdentityService');
 const { createIdentityProvisioningService } = require('../services/identityProvisioningService');
 const { resultHash: hashTaskResult } = require('../services/cloudRelayTaskService');
 const questionBank = require('../services/questionBankService');
 const { resolveQuestionAssetPath, resolveBoundQuestionBankRoot } = require('../services/questionBankStorageService');
-const { updateCommittedQuestion, createTrustedInternalStorageUpdateContext } = require('../services/questionBankStorageService');
 const { createLocalQuestionImageResolver, writePaperArtifact } = require('../services/paperArtifactService');
 const { resolveLegacyQuestionSelection, resolveTaskQuestionSelection } = require('../services/paperExportSelectionService');
-const {
-  issueRelayAssertion,
-  resolveRelaySessionActorContext,
-  verifyRelayAssertion,
-} = require('../services/relayAssertionService');
-const { createSyncBatchBackupService } = require('../services/syncBatchBackupService');
-const { runAuthorizedSyncBatchPreflight } = require('../services/primaryHostSyncPreflightService');
 const { bindPaperCompletionClaim, processDurablePaperTask, replayPaperCompletionOutbox } = require('../services/paperJobProcessor');
 const { recoverStalePaperJobs } = require('../services/paperJobRepository');
 const { cleanupPaperStorage, reconcilePaperArtifacts } = require('../services/paperStorageCleanup');
@@ -65,8 +49,6 @@ function authOptionsFromRequest(req) {
     hostCredential: process.env.GEWU_PRIMARY_HOST_CREDENTIAL || '',
     hostDeviceId: process.env.GEWU_DEVICE_ID || '',
     hostGeneration: process.env.GEWU_PRIMARY_HOST_GENERATION || '',
-    hostToken: process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || process.env.GEWU_DESKTOP_SYNC_TOKEN || '',
-    identityMode: process.env.GEWU_DESKTOP_IDENTITY_MODE || 'full',
   });
 }
 
@@ -110,113 +92,6 @@ async function processMiniappTask(task, db, dependencies = {}) {
     { questionBank: dependencies.questionBank || questionBank }
   ));
   const writeTaskArtifact = dependencies.writePaperArtifact || writePaperArtifact;
-  if (task.task_type === 'desktop-session-challenge-start') {
-    const sqlite = db.db || db;
-    const desktopDeviceChallengeService = dependencies.desktopDeviceChallengeService
-      || createDesktopDeviceChallengeService({
-        db: sqlite,
-        sessionService: createDesktopSessionService({
-          db: sqlite,
-          jwtSecret: process.env.JWT_SECRET,
-        }),
-      });
-    return {
-      challenge: desktopDeviceChallengeService.startChallenge({
-        authorizationId: payload.authorizationId,
-        deviceId: payload.deviceId,
-      }),
-    };
-  }
-  if (task.task_type === 'desktop-session-challenge-exchange') {
-    const relayAssertionSecret = process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '';
-    if (!relayAssertionSecret && !dependencies.issueRelaySessionAssertion) {
-      const error = new Error('RELAY_ASSERTION_SECRET_REQUIRED');
-      error.code = 'RELAY_ASSERTION_SECRET_REQUIRED';
-      throw error;
-    }
-    const sqlite = db.db || db;
-    const desktopDeviceChallengeService = dependencies.desktopDeviceChallengeService
-      || createDesktopDeviceChallengeService({
-        db: sqlite,
-        sessionService: createDesktopSessionService({
-          db: sqlite,
-          jwtSecret: process.env.JWT_SECRET,
-        }),
-      });
-    const issued = desktopDeviceChallengeService.exchangeChallenge({
-      challengeId: payload.challengeId,
-      signature: payload.signature,
-      expectedRowVersion: payload.expectedRowVersion,
-    });
-    const issueDesktopRelayAssertion = dependencies.issueRelaySessionAssertion || issueRelayAssertion;
-    const issuedAt = Date.parse(String(issued.session?.issuedAt || ''));
-    const expiresAt = Date.parse(String(issued.session?.expiresAt || ''));
-    const relayAssertion = issueDesktopRelayAssertion({
-      taskId: task.id,
-      actorUserId: issued.session?.userId,
-      deviceId: issued.session?.deviceId,
-      sessionId: issued.session?.id,
-      activeRole: issued.session?.activeRole,
-      teacherId: issued.session?.teacherId || null,
-      authVersion: Number(issued.session?.authVersion),
-      credentialVersion: Number(issued.session?.credentialVersion),
-      issuedAt,
-      expiresAt,
-    }, relayAssertionSecret);
-    return {
-      session: issued.session,
-      offlineLease: issued.offlineLease,
-      profile: issued.profile,
-      relayAssertion,
-    };
-  }
-  if (task.task_type === 'desktop-pairing') {
-    const sqlite = db.db || db;
-    const singleUserIdentity = dependencies.singleUserIdentityService
-      || getSingleUserDesktopIdentityService({ db: sqlite });
-    const authorized = singleUserIdentity.consumeEncryptedPairingRequest({
-      requestId: task.id || payload.requestId,
-      envelope: payload.envelope,
-      channel: 'cloud',
-    });
-    if (typeof dependencies.buildDesktopPairingResult === 'function') {
-      return dependencies.buildDesktopPairingResult(authorized);
-    }
-    const authorizationRow = sqlite.prepare(
-      'SELECT * FROM desktop_device_authorizations WHERE id=? AND status=\'active\''
-    ).get(authorized.authorization.id);
-    const user = authorizationRow && sqlite.prepare('SELECT * FROM users WHERE id=? AND deleted=0')
-      .get(authorizationRow.user_id);
-    if (!authorizationRow || !user) {
-      const error = new Error('DESKTOP_PAIRING_AUTHORIZATION_PROJECTION_FAILED');
-      error.code = 'DESKTOP_PAIRING_AUTHORIZATION_PROJECTION_FAILED';
-      throw error;
-    }
-    const roleContext = roleContextForUser(sqlite, user.id);
-    const sessionProjection = {
-      id: `desktop-pairing:${task.id || authorized.requestId}`,
-      userId: user.id,
-      deviceId: authorizationRow.device_id,
-      activeRole: roleContext.activeRole,
-      eligibleRoles: roleContext.eligibleRoles,
-      teacherId: roleContext.teacherId,
-      studentId: roleContext.studentId,
-    };
-    return Object.freeze({
-      authorization: authorized.authorization,
-      profile: createDesktopSessionProfile({ session: sessionProjection, user }),
-      offlineLease: createDesktopOfflineLease({
-        authorization: authorizationRow,
-        session: sessionProjection,
-        leaseId: `desktop-pairing-offline:${task.id || authorized.requestId}`,
-      }),
-      authorizationSummary: Object.freeze({
-        id: authorized.authorization.id,
-        deviceId: authorized.authorization.deviceId,
-        credentialVersion: authorized.authorization.credentialVersion,
-      }),
-    });
-  }
   if (task.task_type === 'identity-provisioning') {
     const identityProvisioningService = dependencies.identityProvisioningService
       || createIdentityProvisioningService({ db: db.db || db });
@@ -225,68 +100,23 @@ async function processMiniappTask(task, db, dependencies = {}) {
       requestHash: task.request_hash,
     });
   }
-  if (task.task_type === 'desktop-sync') {
-    const changes = payload.pendingChanges || payload.changes || [];
-    let claims = null;
-    let authz = null;
-    try {
-      claims = verifyRelayAssertion(payload.relayAssertion, process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '');
-      const validClaims = claims.taskId === task.id && claims.actorUserId === payload.actorUserId
-        && claims.deviceId === (payload.deviceId || payload.device_id);
-      if (validClaims) {
-        authz = resolveRelaySessionActorContext(db, claims);
-        if (!db.consumeRelayAuthorizationNonce(claims)) authz = null;
-      }
-    } catch (_error) {
-      claims = null;
-      authz = null;
-    }
+  if (task.task_type === 'desktop-identity') {
+    const grant = dependencies.resolveRelayTaskActorGrant
+      ? await dependencies.resolveRelayTaskActorGrant(task.id)
+      : null;
+    const authz = grant?.actor || null;
     if (!authz) {
       const error = new Error('AUTHORIZATION_CONTEXT_REQUIRED'); error.code = 'AUTHORIZATION_CONTEXT_REQUIRED'; throw error;
     }
-    const batchService = dependencies.syncBatchBackupService || createSyncBatchBackupService({
-      db,
-      backupRoot: process.env.GEWU_LOCAL_CACHE_PATH
-        ? path.join(process.env.GEWU_LOCAL_CACHE_PATH, 'sync-batch-backups')
-        : undefined,
-      validateActor: input => runAuthorizedSyncBatchPreflight({
-        db: db.db || db,
-        actorContext: input.authz,
-        changes: input.changes,
-      }).actor,
-    });
-    const result = await batchService.applyAuthorizedSyncBatch({
-      batchId: task.id,
-      requestId: payload.requestId || task.id,
-      changes,
-      authz,
-      applyOptions: {
-        tenantId: payload.tenantId || payload.tenant_id || 'default',
-        storageHooks: {
-          updateCommittedQuestion: ({ change, tenantId, authz: validatedAuthz }) => updateCommittedQuestion(
-            change.data.id,
-            {
-              db: db.db || db,
-              tenantId,
-              internalCredential: createTrustedInternalStorageUpdateContext({
-                validatedAuthz,
-                hostRuntime: { runtimeNodeRole: process.env.GEWU_NODE_ROLE || 'desktop-client' },
-              }),
-              payload: change.data,
-            }
-          ),
-        },
-      },
-    });
+    if (String(payload.query || '') !== 'devices') {
+      const error = new Error('DESKTOP_IDENTITY_RELAY_QUERY_UNSUPPORTED'); error.code = 'DESKTOP_IDENTITY_RELAY_QUERY_UNSUPPORTED'; throw error;
+    }
+    const identityService = dependencies.desktopIdentityService
+      || createDesktopIdentityService({ db: db.db || db });
     return {
       taskType: task.task_type,
-      deviceId: payload.deviceId || payload.device_id || 'unknown',
-      acceptedChanges: changes.length,
-      applied: result.applied || 0,
-      conflicts: result.conflicts || 0,
-      errors: result.errors || [],
-      backupId: result.backupId,
-      counts: result.counts,
+      query: 'devices',
+      items: identityService.listDevicesForUser(authz.userId).map(item => ({ ...item })),
     };
   }
 
@@ -497,7 +327,9 @@ async function processClaimedV2Tasks(db, authOptions, dependencies = {}) {
             { questionBank: dependencies.questionBank || questionBank }
           ),
         })
-        : await processTask(task, db);
+        : await processTask(task, db, {
+          resolveRelayTaskActorGrant: taskId => readRelayTaskActorGrant(taskId, taskAuthOptions),
+        });
       generatedResult = result;
       durableArtifactReady = Boolean(durableExport && result?.artifactReady);
       await heartbeat.stop();
@@ -552,6 +384,23 @@ async function processClaimedV2Tasks(db, authOptions, dependencies = {}) {
   return results;
 }
 
+async function processHostTaskCycle(db, authOptions, dependencies = {}) {
+  const processClaimed = dependencies.processClaimedV2Tasks || processClaimedV2Tasks;
+  const results = await processClaimed(db, authOptions, {
+    skipMaintenance: dependencies.skipMaintenance === true,
+  });
+  return { success: true, processed: results.length, results };
+}
+
+function authOptionsFromEnvironment(env = process.env) {
+  return resolveCloudRelayHostAuthOptions({
+    authorization: '',
+    hostCredential: env.GEWU_PRIMARY_HOST_CREDENTIAL || '',
+    hostDeviceId: env.GEWU_DEVICE_ID || '',
+    hostGeneration: env.GEWU_PRIMARY_HOST_GENERATION || '',
+  });
+}
+
 router.post('/heartbeat', async (req, res, next) => {
   try {
     const authOptions = authOptionsFromRequest(req);
@@ -562,29 +411,7 @@ router.post('/heartbeat', async (req, res, next) => {
       lanUrls: hostLanUrls(),
       capabilities: hostCapabilities(),
     }, authOptions);
-    let pairingCapability = null;
-    if (process.env.GEWU_DESKTOP_IDENTITY_MODE === 'single-user') {
-      try {
-        const sqlite = getInstance().db;
-        const singleUserIdentity = getSingleUserDesktopIdentityService({ db: sqlite });
-        const capability = singleUserIdentity.currentPairingCapability();
-        const epoch = sqlite.prepare(
-          "SELECT id,generation,device_id FROM primary_host_epochs WHERE status='active' LIMIT 1"
-        ).get();
-        if (epoch && epoch.device_id === hostDeviceId()) {
-          pairingCapability = await publishDesktopPairingCapability({
-            hostDeviceId: epoch.device_id,
-            epochId: epoch.id,
-            generation: Number(epoch.generation),
-            capability,
-          }, authOptions);
-        }
-      } catch (error) {
-        if (!['DESKTOP_PAIRING_CAPABILITY_UNAVAILABLE', 'DESKTOP_SINGLE_USER_MODE_DISABLED']
-          .includes(error?.code)) throw error;
-      }
-    }
-    res.json({ ...result, pairingCapability });
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -605,50 +432,14 @@ router.post('/snapshot', async (req, res, next) => {
   }
 });
 
-router.get('/tasks/pending', async (req, res, next) => {
-  try {
-    const authOptions = authOptionsFromRequest(req);
-    const result = await fetchPendingTasks({ ...authOptions, hostDeviceId: hostDeviceId(), leaseMs: 60000 });
-    res.json(result);
-  } catch (err) {
-    next(err);
-  }
-});
-
 router.post('/tasks/process', async (req, res, next) => {
   try {
     const db = getInstance();
     const authOptions = authOptionsFromRequest(req);
-    const claimedResults = await processClaimedV2Tasks(db, authOptions, {
+    const cycle = await processHostTaskCycle(db, authOptions, {
       skipMaintenance: req.body?.skipMaintenance === true,
     });
-    const pending = await fetchPendingTasks({ ...authOptions, hostDeviceId: hostDeviceId(), leaseMs: 60000 });
-    if (!pending.success) return res.json(claimedResults.length ? { success: true, processed: claimedResults.length, results: claimedResults, legacy: pending } : pending);
-    const tasks = pending.tasks || [];
-    const results = [...claimedResults];
-    for (const task of tasks) {
-      try {
-        const result = await processMiniappTask(task, db);
-        const completed = await completeMiniappTask(task.id, {
-          success: true,
-          hostDeviceId: hostDeviceId(),
-          claimToken: task.claimToken,
-          expectedRowVersion: task.row_version,
-          result,
-        }, authOptions);
-        results.push({ id: task.id, success: true, completed });
-      } catch (err) {
-        const completed = await completeMiniappTask(task.id, {
-          success: false,
-          hostDeviceId: hostDeviceId(),
-          claimToken: task.claimToken,
-          expectedRowVersion: task.row_version,
-          result: { error: err.message },
-        }, authOptions);
-        results.push({ id: task.id, success: false, error: err.message, completed });
-      }
-    }
-    res.json({ success: true, processed: results.length, results });
+    res.json(cycle);
   } catch (err) {
     next(err);
   }
@@ -661,3 +452,5 @@ module.exports.selectQuestions = selectQuestions;
 module.exports.startSerialLeaseHeartbeat = startSerialLeaseHeartbeat;
 module.exports.cleanupGeneratedTaskResult = cleanupGeneratedTaskResult;
 module.exports.authOptionsFromRequest = authOptionsFromRequest;
+module.exports.authOptionsFromEnvironment = authOptionsFromEnvironment;
+module.exports.processHostTaskCycle = processHostTaskCycle;

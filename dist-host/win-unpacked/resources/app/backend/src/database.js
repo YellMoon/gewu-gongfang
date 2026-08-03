@@ -22,7 +22,7 @@ const {
   scopeForUser,
 } = require('./services/authorizationPolicy');
 
-const SCHEMA_VERSION = 3120;
+const SCHEMA_VERSION = 3122;
 const MINIAPP_ADMIN_SEED_USERS = [
   { id: 'miniapp-admin-13732250653', phone: '13732250653', name: 'Miniapp Admin 0653' },
   { id: 'miniapp-admin-18257136756', phone: '18257136756', name: 'Miniapp Admin 6756' },
@@ -40,6 +40,18 @@ function normalizeJson(value) {
     try { return JSON.stringify(JSON.parse(value)); } catch (_error) { return JSON.stringify(value); }
   }
   return JSON.stringify(value);
+}
+
+function authorityCreateId(data = {}, options = {}) {
+  if (!options.authorityCommand) return uuidv4();
+  const id = String(data.id || '').trim();
+  if (!id) {
+    throw Object.assign(new Error('AUTHORITY_COMMAND_CREATE_ID_REQUIRED'), {
+      code: 'AUTHORITY_COMMAND_CREATE_ID_REQUIRED',
+      statusCode: 400,
+    });
+  }
+  return id;
 }
 
 function resolveEnvironment() {
@@ -92,7 +104,9 @@ class DatabaseService {
 
     const schemaPath = path.join(__dirname, 'schema.sql');
     const schema = fs.readFileSync(schemaPath, 'utf-8');
+    this._prepareLegacyTenantColumns();
     this.db.exec(schema);
+    this._ensureDesktopVisitorSessions();
     this._recordSchemaVersion(schemaPath);
     this._ensureTenantColumns();
     this._ensureInstitutionStudentColumns();
@@ -107,6 +121,8 @@ class DatabaseService {
     this._migrateMiniappMemberships();
     this._ensureRoleGrantPersistence();
     this._ensureHostHeartbeatColumns();
+    this._ensurePrimaryHostEpochColumns();
+    this._ensureAuthorityCommandPersistence();
     runMiniappPrivacyRetention(this.db);
     console.log(`[DB] initialized env=${this.environment} schema=${this.schemaVersion} path=${this.dbPath}`);
   }
@@ -178,6 +194,60 @@ class DatabaseService {
       this.db.prepare(`ALTER TABLE ${table} ADD COLUMN tenant_id TEXT DEFAULT 'default'`).run();
     }
     this.db.prepare(`UPDATE ${table} SET tenant_id = 'default' WHERE tenant_id IS NULL OR tenant_id = ''`).run();
+  }
+
+  _prepareLegacyTenantColumns() {
+    for (const table of this._tenantScopedTables()) {
+      this._ensureTenantColumnForTable(table);
+    }
+  }
+
+  _ensureDesktopVisitorSessions() {
+    const table = this.db.prepare(`SELECT sql FROM sqlite_master
+      WHERE type='table' AND name='desktop_sessions'`).get();
+    if (!table?.sql || /active_role[\s\S]*?'visitor'/.test(table.sql)) return;
+    this.db.pragma('foreign_keys = OFF');
+    try {
+      this.db.transaction(() => {
+        this.db.exec(`
+          CREATE TABLE desktop_sessions_visitor_migration (
+            sid TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            authorization_id TEXT NOT NULL,
+            active_role TEXT NOT NULL CHECK (active_role IN ('visitor', 'super_admin', 'admin', 'teacher', 'student')),
+            eligible_roles_json TEXT NOT NULL,
+            auth_version INTEGER NOT NULL CHECK (auth_version >= 1),
+            credential_version INTEGER NOT NULL CHECK (credential_version >= 1),
+            auth_time TEXT,
+            status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked', 'expired')),
+            issued_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            last_seen_at TEXT,
+            revoke_reason TEXT,
+            revoked_at TEXT,
+            row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (authorization_id) REFERENCES desktop_device_authorizations(id)
+          );
+          INSERT INTO desktop_sessions_visitor_migration SELECT * FROM desktop_sessions;
+          DROP TABLE desktop_sessions;
+          ALTER TABLE desktop_sessions_visitor_migration RENAME TO desktop_sessions;
+          CREATE INDEX idx_desktop_sessions_device_status
+            ON desktop_sessions(device_id, status, expires_at);
+          CREATE INDEX idx_desktop_sessions_user_status
+            ON desktop_sessions(user_id, status, expires_at);
+        `);
+      })();
+    } finally {
+      this.db.pragma('foreign_keys = ON');
+    }
+    const foreignKeyErrors = this.db.pragma('foreign_key_check(desktop_sessions)');
+    if (foreignKeyErrors.length > 0) {
+      throw new Error('DESKTOP_VISITOR_SESSION_MIGRATION_FOREIGN_KEY_INVALID');
+    }
   }
 
   _ensureTenantColumns() {
@@ -492,9 +562,6 @@ class DatabaseService {
     }
     this.db.prepare(`CREATE INDEX IF NOT EXISTS idx_desktop_device_authorizations_source_status
       ON desktop_device_authorizations(authorization_source, status, updated_at)`).run();
-    this.db.prepare(`UPDATE desktop_device_pairings SET status='rejected' WHERE status='pending' AND id NOT IN
-      (SELECT MIN(id) FROM desktop_device_pairings WHERE status='pending' GROUP BY pairing_code)`).run();
-    this.db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_pairing_pending_code ON desktop_device_pairings(pairing_code) WHERE status='pending'").run();
     const deliveryColumns = new Set(this.db.prepare('PRAGMA table_info(sync_delivery_scope)').all().map(column => column.name));
     if (!deliveryColumns.has('tenant_id')) this.db.transaction(() => {
       this.db.exec(`CREATE TABLE sync_delivery_scope_v2 (
@@ -689,6 +756,41 @@ class DatabaseService {
     if (!columns.has('capabilities')) {
       this.db.prepare('ALTER TABLE host_heartbeats ADD COLUMN capabilities TEXT').run();
     }
+  }
+
+  _ensurePrimaryHostEpochColumns() {
+    const exists = this.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'primary_host_epochs'"
+    ).get();
+    if (!exists) return;
+    const columns = new Set(
+      this.db.prepare('PRAGMA table_info(primary_host_epochs)').all().map(column => column.name)
+    );
+    if (!columns.has('host_public_key')) {
+      this.db.prepare('ALTER TABLE primary_host_epochs ADD COLUMN host_public_key TEXT').run();
+    }
+  }
+
+  _ensureAuthorityCommandPersistence() {
+    const receiptTable = this.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'authority_command_receipts'"
+    ).get();
+    if (!receiptTable) return;
+    const receiptColumns = new Set(
+      this.db.prepare('PRAGMA table_info(authority_command_receipts)').all().map(column => column.name)
+    );
+    if (!receiptColumns.has('projection_version')) {
+      this.db.prepare(
+        'ALTER TABLE authority_command_receipts ADD COLUMN projection_version INTEGER NOT NULL DEFAULT 0 CHECK (projection_version >= 0)'
+      ).run();
+    }
+    this.db.exec(`CREATE TABLE IF NOT EXISTS authority_projection_versions (
+      authority_id TEXT NOT NULL,
+      host_epoch_id TEXT NOT NULL,
+      version INTEGER NOT NULL DEFAULT 0 CHECK (version >= 0),
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (authority_id, host_epoch_id)
+    )`);
   }
 
   _migrateMiniappMemberships() {
@@ -968,7 +1070,7 @@ class DatabaseService {
   }
 
   createStudent(data, options = {}) {
-    const id = uuidv4();
+    const id = authorityCreateId(data, options);
     return this._insert('students', {
       id,
       name: data.name,
@@ -1014,11 +1116,19 @@ class DatabaseService {
   }
 
   createGrade(data, options = {}) {
-    const id = uuidv4();
+    const id = authorityCreateId(data, options);
     return this._insert('grades', {
       id, student_id: data.student_id, subject: data.subject,
       score: data.score, exam_date: data.exam_date || null, notes: data.notes || null
     }, options);
+  }
+
+  getGradeById(id, options = {}) {
+    return this._get('grades', id, options);
+  }
+
+  deleteGrade(id, options = {}) {
+    return this._softDelete('grades', id, options);
   }
 
   // ==================== 璇剧▼绠＄悊 ====================
@@ -1032,7 +1142,7 @@ class DatabaseService {
   }
 
   createCourse(data, options = {}) {
-    const id = uuidv4();
+    const id = authorityCreateId(data, options);
     return this._insert('courses', {
       id, name: data.name, year: data.year || null, semester: data.semester || null,
       display_name: data.display_name || data.name, type: data.type, source_type: data.source_type,
@@ -1051,7 +1161,7 @@ class DatabaseService {
   updateCourse(id, updates, options = {}) {
     const allowed = ['name', 'year', 'semester', 'display_name', 'type', 'source_type',
       'institution_id', 'price_tuition', 'price_teacher', 'billing_unit', 'teacher_fee_mode',
-      'room_id', 'room_name', 'teacher_id', 'teacher_name', 'active',
+      'student_pricings', 'room_id', 'room_name', 'teacher_id', 'teacher_name', 'active',
       'default_duration_minutes', 'notes'];
     const filtered = {};
     for (const k of allowed) if (updates[k] !== undefined) {
@@ -1082,7 +1192,7 @@ class DatabaseService {
   }
 
   createSchedule(data, options = {}) {
-    const id = uuidv4();
+    const id = authorityCreateId(data, options);
     return this._insert('schedules', {
       id, course_id: data.course_id, start_time: data.start_time, end_time: data.end_time,
       recurring_rule: data.recurring_rule || null,
@@ -1160,13 +1270,17 @@ class DatabaseService {
     ).all(studentId, this._tenantId(options));
   }
 
+  getPaymentById(id, options = {}) {
+    return this._get('payments', id, options);
+  }
+
   createPayment(data, options = {}) {
-    const id = uuidv4();
+    const id = authorityCreateId(data, options);
     const payment = this._insert('payments', {
       id, student_id: data.student_id, amount: data.amount,
       payment_type: data.payment_type, payment_date: data.payment_date,
       payment_method: data.payment_method || null, notes: data.notes || null
-    });
+    }, options);
     // 鏇存柊瀛︾敓浣欓
     const student = this._get('students', data.student_id, options);
     if (student) {
@@ -1179,6 +1293,48 @@ class DatabaseService {
     return payment;
   }
 
+  updatePayment(id, updates, options = {}) {
+    const existing = this._get('payments', id, options);
+    if (!existing) return null;
+    const allowed = ['student_id', 'amount', 'payment_type', 'payment_date', 'payment_method', 'notes'];
+    const filtered = {};
+    for (const key of allowed) if (updates[key] !== undefined) filtered[key] = updates[key];
+    if (Object.keys(filtered).length === 0) return existing;
+    const next = { ...existing, ...filtered };
+    return this.db.transaction(() => {
+      const reverseStudent = this._get('students', existing.student_id, options);
+      if (reverseStudent) {
+        const reverseField = Number(existing.payment_type) === 2 ? 'balance_hours' : 'balance_money';
+        this._update('students', existing.student_id, {
+          [reverseField]: Number(reverseStudent[reverseField] || 0) - Number(existing.amount || 0),
+        }, options);
+      }
+      const applyStudent = this._get('students', next.student_id, options);
+      if (applyStudent) {
+        const applyField = Number(next.payment_type) === 2 ? 'balance_hours' : 'balance_money';
+        this._update('students', next.student_id, {
+          [applyField]: Number(applyStudent[applyField] || 0) + Number(next.amount || 0),
+        }, options);
+      }
+      return this._update('payments', id, filtered, options);
+    })();
+  }
+
+  deletePayment(id, options = {}) {
+    const existing = this._get('payments', id, options);
+    if (!existing) return false;
+    return this.db.transaction(() => {
+      const student = this._get('students', existing.student_id, options);
+      if (student) {
+        const field = Number(existing.payment_type) === 2 ? 'balance_hours' : 'balance_money';
+        this._update('students', existing.student_id, {
+          [field]: Number(student[field] || 0) - Number(existing.amount || 0),
+        }, options);
+      }
+      return this._softDelete('payments', id, options);
+    })();
+  }
+
   // ==================== 璇炬椂娑堣€?====================
 
   getAllConsumptions(options = {}) { return this._list('consumptions', 'consumption_date DESC', options); }
@@ -1189,8 +1345,12 @@ class DatabaseService {
     ).all(studentId, this._tenantId(options));
   }
 
+  getConsumptionById(id, options = {}) {
+    return this._get('consumptions', id, options);
+  }
+
   createConsumption(data, options = {}) {
-    const id = uuidv4();
+    const id = authorityCreateId(data, options);
     const consumption = this._insert('consumptions', {
       id, schedule_id: data.schedule_id, student_id: data.student_id,
       hours: data.hours, amount: data.amount, consumption_date: data.consumption_date,
@@ -1207,13 +1367,55 @@ class DatabaseService {
     return consumption;
   }
 
+  updateConsumption(id, updates, options = {}) {
+    const existing = this._get('consumptions', id, options);
+    if (!existing) return null;
+    const allowed = ['schedule_id', 'student_id', 'hours', 'amount', 'consumption_date', 'notes'];
+    const filtered = {};
+    for (const key of allowed) if (updates[key] !== undefined) filtered[key] = updates[key];
+    if (Object.keys(filtered).length === 0) return existing;
+    const next = { ...existing, ...filtered };
+    return this.db.transaction(() => {
+      const reverseStudent = this._get('students', existing.student_id, options);
+      if (reverseStudent) {
+        this._update('students', existing.student_id, {
+          balance_hours: Number(reverseStudent.balance_hours || 0) + Number(existing.hours || 0),
+          balance_money: Number(reverseStudent.balance_money || 0) + Number(existing.amount || 0),
+        }, options);
+      }
+      const applyStudent = this._get('students', next.student_id, options);
+      if (applyStudent) {
+        this._update('students', next.student_id, {
+          balance_hours: Number(applyStudent.balance_hours || 0) - Number(next.hours || 0),
+          balance_money: Number(applyStudent.balance_money || 0) - Number(next.amount || 0),
+        }, options);
+      }
+      return this._update('consumptions', id, filtered, options);
+    })();
+  }
+
+  deleteConsumption(id, options = {}) {
+    const existing = this._get('consumptions', id, options);
+    if (!existing) return false;
+    return this.db.transaction(() => {
+      const student = this._get('students', existing.student_id, options);
+      if (student) {
+        this._update('students', existing.student_id, {
+          balance_hours: Number(student.balance_hours || 0) + Number(existing.hours || 0),
+          balance_money: Number(student.balance_money || 0) + Number(existing.amount || 0),
+        }, options);
+      }
+      return this._softDelete('consumptions', id, options);
+    })();
+  }
+
   // ==================== 鑰佸笀绠＄悊 ====================
 
   getAllTeachers(options = {}) { return this._list('teachers', 'created_at DESC', options); }
   getTeacherById(id, options = {}) { return this._get('teachers', id, options); }
 
   createTeacher(data, options = {}) {
-    const id = uuidv4();
+    const id = authorityCreateId(data, options);
     return this._insert('teachers', {
       id, name: data.name, phone: data.phone || null,
       subject: data.subject || null, hourly_rate: data.hourly_rate || null,
@@ -1237,7 +1439,7 @@ class DatabaseService {
   getRoomById(id, options = {}) { return this._get('rooms', id, options); }
 
   createRoom(data, options = {}) {
-    const id = uuidv4();
+    const id = authorityCreateId(data, options);
     return this._insert('rooms', {
       id, name: data.name, address: data.address || '', count: 1
     }, options);
@@ -1292,7 +1494,7 @@ class DatabaseService {
   }
 
   createInstitution(data, options = {}) {
-    const id = uuidv4();
+    const id = authorityCreateId(data, options);
     return this.db.transaction(() => {
       const institution = this._insert('institutions', { id, name: data.name, contact_person: data.contact_person || null,
         contact_phone: data.contact_phone || null, revenue_share: data.revenue_share || null, notes: data.notes || null }, options);

@@ -1,6 +1,6 @@
 const SUPER_ADMIN_PHONE = '13732250653';
 const CANONICAL_SUPER_ADMIN_ID = 'miniapp-admin-13732250653';
-const ROLES = Object.freeze(['super_admin', 'admin', 'teacher', 'student', 'pending']);
+const ROLES = Object.freeze(['super_admin', 'admin', 'operator', 'teacher', 'student', 'visitor', 'pending']);
 
 function normalizePhone(phone) {
   return String(phone || '').replace(/\D/g, '');
@@ -59,7 +59,7 @@ function canReviewUsers(user) {
 }
 
 function canReviewApplications(user) {
-  return ['super_admin', 'admin'].includes(activeRoleForUser(user));
+  return canReviewUsers(user);
 }
 
 function resolveTeacherBinding(user, teachers) {
@@ -97,6 +97,9 @@ function scopeForUser(user) {
   const studentId = user.student_id || user.studentId;
 
   if (role === 'super_admin' || role === 'admin') return { kind: 'all' };
+  if (role === 'visitor' && user.id != null && String(user.id).trim()) {
+    return { kind: 'visitor', userId: String(user.id).trim() };
+  }
   if (role === 'teacher' && teacherId) {
     return { kind: 'teacher', teacherId };
   }
@@ -111,6 +114,8 @@ function effectiveCapabilities(authz = {}, { gateway = false } = {}) {
     ? activeRoleForUser(authz)
     : authz.role || roleForUser(authz);
   if (role === 'pending') return [];
+  if (role === 'teacher' && !(authz.teacher_id || authz.teacherId)) return [];
+  if (role === 'student' && !(authz.student_id || authz.studentId)) return [];
   const capabilities = [];
   if (role === 'super_admin') capabilities.push('users:review');
   if ((['super_admin', 'admin'].includes(role) && authz.userApproved === true)

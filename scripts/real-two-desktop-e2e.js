@@ -51,8 +51,21 @@ function isPackagedExecutable(filePath) {
   }
 }
 
+function packagedVersion(filePath) {
+  const metadataPath = path.join(path.dirname(String(filePath || '')), 'resources', 'app', 'package.json');
+  try {
+    const version = String(JSON.parse(fs.readFileSync(metadataPath, 'utf8')).version || '').trim();
+    if (version) return version;
+  } catch (_error) { /* the executable validation below reports the definitive failure */ }
+  fail(`GEWU_PACKAGED_VERSION_REQUIRED: ${metadataPath}`);
+}
+
 const HOST_EXE = packagedExecutable('GEWU_PACKAGED_HOST_EXE');
 const CLIENT_EXE = packagedExecutable('GEWU_PACKAGED_CLIENT_EXE');
+const HOST_RESTART_EXE = packagedExecutable('GEWU_PACKAGED_HOST_RESTART_EXE');
+const CLIENT_RESTART_EXE = packagedExecutable('GEWU_PACKAGED_CLIENT_RESTART_EXE');
+const hostRestartExecutable = HOST_RESTART_EXE || HOST_EXE;
+const clientRestartExecutable = CLIENT_RESTART_EXE || CLIENT_EXE;
 const REQUIRED_ACCEPTANCE_FLAGS = new Set(['--lan', '--cloud-relay', '--restart', '--no-authority-data']);
 const OPTIONAL_ACCEPTANCE_FLAGS = new Set(['--websocket-disabled', '--relay-websocket']);
 
@@ -69,6 +82,7 @@ function showUsage() {
     '',
     'Runs an isolated visible packaged primary-host and ordinary-desktop acceptance test.',
     'Required: GEWU_PACKAGED_HOST_EXE and GEWU_PACKAGED_CLIENT_EXE.',
+    'Optional upgrade boundary: GEWU_PACKAGED_HOST_RESTART_EXE and GEWU_PACKAGED_CLIENT_RESTART_EXE.',
     'A disposable loopback control plane is started automatically; no cloud credential is required.',
     'The harness audits an existing narrow LAN firewall rule; it never requests elevation.',
   ].join('\n'));
@@ -440,6 +454,16 @@ async function stopProfile(root, child) {
     return false;
   }
 }
+async function stopProfileBeforeRestart(root, child, code) {
+  const stopped = await stopProfile(root, child);
+  const normalizedRoot = path.resolve(root).toLowerCase();
+  return waitFor(() => {
+    const remaining = listLiveDisposableDesktopProcesses().filter(row => (
+      path.resolve(row.profileRoot || '').toLowerCase() === normalizedRoot
+    ));
+    return remaining.length === 0 ? true : null;
+  }, code, stopped ? 15_000 : 45_000);
+}
 function literal(value) { return JSON.stringify(value); }
 async function withFreshCdpPage(cdpPort, profileRoot, label, action) {
   let page;
@@ -497,6 +521,28 @@ async function nativeClickDirect(page, selector) {
   }
   throw new Error('REAL_DESKTOP_CDP_CLICK_EVENT_MISSING');
 }
+async function settledVisibleModalTarget(page, text) {
+  return page.evaluate(`(() => {
+    const wanted = ${literal(text)}.replace(/\\s+/g, '');
+    const visible = item => {
+      const style = window.getComputedStyle(item);
+      const rect = item.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden'
+        && rect.width > 0 && rect.height > 0;
+    };
+    const modal = Array.from(document.querySelectorAll('.ant-modal-wrap')).reverse()
+      .find(item => visible(item) && (item.innerText || '').replace(/\\s+/g, '').includes(wanted));
+    const button = modal && Array.from(modal.querySelectorAll('button,[role="button"]'))
+      .find(item => (item.innerText || '').replace(/\\s+/g, '') === wanted
+        && !item.disabled && item.getAttribute('aria-disabled') !== 'true' && visible(item));
+    if (!button) return null;
+    const rect = button.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    return { x, y, hitTarget: Boolean(hit && (hit === button || button.contains(hit))) };
+  })()`);
+}
 async function nativeClickVisibleModalTextDirect(page, text) {
   await page.send('Page.bringToFront');
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -512,7 +558,7 @@ async function nativeClickVisibleModalTextDirect(page, text) {
         .find(item => visible(item) && (item.innerText || '').replace(/\\s+/g, '').includes(wanted));
       const button = modal && Array.from(modal.querySelectorAll('button,[role="button"]'))
         .find(item => (item.innerText || '').replace(/\\s+/g, '') === wanted
-          && !item.closest('[aria-disabled="true"]') && visible(item));
+          && !item.disabled && item.getAttribute('aria-disabled') !== 'true' && visible(item));
       if (!button) return null;
       button.scrollIntoView({ block: 'center', inline: 'center' });
       const rect = button.getBoundingClientRect();
@@ -543,8 +589,19 @@ async function nativeClickVisibleModalTextDirect(page, text) {
     }
     await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: target.x, y: target.y, button: 'none', buttons: 0 });
     await sleep(80);
-    await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: target.x, y: target.y, button: 'left', buttons: 1, clickCount: 1 });
-    await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: target.x, y: target.y, button: 'left', buttons: 0, clickCount: 1 });
+    const settledTarget = await settledVisibleModalTarget(page, text);
+    if (!settledTarget || !settledTarget.hitTarget) {
+      await page.evaluate('delete window.__realDesktopModalClickProbe');
+      if (attempt === 0) {
+        console.warn('[e2e] REAL_DESKTOP_MODAL_TARGET_SETTLED_REQUIRED');
+        await sleep(250);
+        continue;
+      }
+      throw new Error('REAL_DESKTOP_CDP_TARGET_OBSCURED');
+    }
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: settledTarget.x, y: settledTarget.y, button: 'none', buttons: 0 });
+    await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: settledTarget.x, y: settledTarget.y, button: 'left', buttons: 1, clickCount: 1 });
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: settledTarget.x, y: settledTarget.y, button: 'left', buttons: 0, clickCount: 1 });
     await sleep(50);
     const observed = await page.evaluate(`(() => {
       const observed = window.__realDesktopModalClickProbe?.observed === true;
@@ -557,6 +614,44 @@ async function nativeClickVisibleModalTextDirect(page, text) {
       await sleep(250);
     }
   }
+  const keyboardTargetReady = await page.evaluate(`(() => {
+    const wanted = ${literal(text)}.replace(/\\s+/g, '');
+    const visible = item => {
+      const style = window.getComputedStyle(item);
+      const rect = item.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden'
+        && rect.width > 0 && rect.height > 0;
+    };
+    const modal = Array.from(document.querySelectorAll('.ant-modal-wrap')).reverse()
+      .find(item => visible(item) && (item.innerText || '').replace(/\\s+/g, '').includes(wanted));
+    const button = modal && Array.from(modal.querySelectorAll('button,[role="button"]'))
+      .find(item => (item.innerText || '').replace(/\\s+/g, '') === wanted
+        && !item.disabled && item.getAttribute('aria-disabled') !== 'true' && visible(item));
+    if (!button) return false;
+    window.__realDesktopModalClickProbe = { wanted, observed: false };
+    document.addEventListener('click', event => {
+      const clicked = event.target instanceof Element
+        ? event.target.closest('button,[role="button"]')
+        : null;
+      if (clicked && (clicked.innerText || '').replace(/\\s+/g, '') === wanted
+        && clicked.closest('.ant-modal-wrap')) {
+        window.__realDesktopModalClickProbe.observed = true;
+      }
+    }, { capture: true, once: true });
+    button.focus({ preventScroll: true });
+    return document.activeElement === button;
+  })()`);
+  if (!keyboardTargetReady) throw new Error('REAL_DESKTOP_CDP_CLICK_EVENT_MISSING');
+  console.warn('[e2e] REAL_DESKTOP_MODAL_KEYBOARD_FALLBACK_REQUIRED');
+  await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  await sleep(100);
+  const keyboardObserved = await page.evaluate(`(() => {
+    const observed = window.__realDesktopModalClickProbe?.observed === true;
+    delete window.__realDesktopModalClickProbe;
+    return observed;
+  })()`);
+  if (keyboardObserved) return;
   throw new Error('REAL_DESKTOP_CDP_CLICK_EVENT_MISSING');
 }
 function actionPage(cdpPort, profileRoot) {
@@ -1002,9 +1097,9 @@ async function bootstrapHostAuthorityThroughUi(page, hostPort, hostCdpPort, clou
   await clickTextWhenAvailable(page, '\u6211\u5df2\u79bb\u7ebf\u4fdd\u5b58\uff0c\u786e\u8ba4\u4ea4\u4ed8\u5e76\u91cd\u542f', 'HOST_RECOVERY_RESTART_REQUIRED');
   await waitFor(() => (hostProcess?.exitCode !== null || hostProcess?.killed === true) ? true : null,
     'HOST_AUTHORITY_RESTART_EXIT_REQUIRED', 45_000);
-  await stopProfile(HOST_ROOT, hostProcess);
+  await stopProfileBeforeRestart(HOST_ROOT, hostProcess, 'HOST_AUTHORITY_PROFILE_PROCESS_EXIT_REQUIRED');
   await waitFor(() => canBindLoopbackPort(hostPort), 'HOST_AUTHORITY_RESTART_PORT_RELEASE_REQUIRED', 45_000);
-  const relaunchedHost = startDesktop(HOST_EXE, HOST_ROOT, hostPort, hostCdpPort, acceptance);
+  const relaunchedHost = startDesktop(hostRestartExecutable, HOST_ROOT, hostPort, hostCdpPort, acceptance);
   await waitFor(async () => {
     const probe = await connectRealDesktopPage({ cdpPort: hostCdpPort, profileRoot: HOST_ROOT });
     await probe.close();
@@ -1179,14 +1274,14 @@ async function appendOfflineDraft(page) {
   return draft;
 }
 async function restartClientForOfflineDraft(client, clientPort, clientCdp, acceptance) {
-  await stopProfile(CLIENT_ROOT, client);
+  await stopProfileBeforeRestart(CLIENT_ROOT, client, 'CLIENT_OFFLINE_DRAFT_PROFILE_PROCESS_EXIT_REQUIRED');
   await waitFor(() => (client?.exitCode !== null || client?.killed === true) ? true : null,
     'CLIENT_OFFLINE_DRAFT_PROCESS_STOPPED_REQUIRED', 30_000);
   await waitFor(async () => {
     return !(await loopbackHealth(`http://127.0.0.1:${clientPort}/api/health`));
   }, 'CLIENT_OFFLINE_DRAFT_STOP_REQUIRED', 30_000);
   await waitFor(() => canBindLoopbackPort(clientPort), 'CLIENT_OFFLINE_DRAFT_PROFILE_RELEASE_REQUIRED', 30_000);
-  const relaunched = startDesktop(CLIENT_EXE, CLIENT_ROOT, clientPort, clientCdp, acceptance);
+  const relaunched = startDesktop(clientRestartExecutable, CLIENT_ROOT, clientPort, clientCdp, acceptance);
   await waitFor(() => loopbackHealth(`http://127.0.0.1:${clientPort}/api/health`), 'CLIENT_OFFLINE_DRAFT_RESTART_REQUIRED', 90_000);
   await waitFor(async () => {
     const probe = await connectRealDesktopPage({ cdpPort: clientCdp, profileRoot: CLIENT_ROOT });
@@ -1361,6 +1456,8 @@ function usesIsolatedTemporaryHostPackage(executablePath) {
 async function runAcceptance(acceptance) {
   assert(isPackagedExecutable(HOST_EXE), 'GEWU_PACKAGED_EXECUTABLE_REQUIRED: GEWU_PACKAGED_HOST_EXE');
   assert(isPackagedExecutable(CLIENT_EXE), 'GEWU_PACKAGED_EXECUTABLE_REQUIRED: GEWU_PACKAGED_CLIENT_EXE');
+  assert(isPackagedExecutable(hostRestartExecutable), 'GEWU_PACKAGED_EXECUTABLE_REQUIRED: GEWU_PACKAGED_HOST_RESTART_EXE');
+  assert(isPackagedExecutable(clientRestartExecutable), 'GEWU_PACKAGED_EXECUTABLE_REQUIRED: GEWU_PACKAGED_CLIENT_RESTART_EXE');
   const coldStartTimeoutMs = packagedColdStartTimeoutMs();
   const hostPort = configuredLanHostPort() || await freePort(); const isolatedLanPort = acceptance.relayWebSocket ? await freePort() : null; const clientPort = await freePort(); const hostCdp = await freePort(); const clientCdp = await freePort(); const cloudPort = await freePort();
   // This is intentionally audit-only. Only an explicit LAN row needs an
@@ -1533,7 +1630,22 @@ async function runAcceptance(acceptance) {
     }, 'HOST_WORKER_NOT_RUNNING');
     assert(worker.running === true, 'HOST_WORKER_NOT_RUNNING');
     assert(worker.wakeCount > 0, 'CLOUD_WORKER_WAKE_NOT_OBSERVED');
-    console.log(JSON.stringify({ success: true, transport: 'managed-identity-lan-cloud-relay', websocketDisabled: acceptance.websocketDisabled, relayWebSocket: acceptance.relayWebSocket, isolatedCutoverMarker: true, deviceApprovedThroughVisibleHostUi: true, hostWorkerObserved: true, activationFinalized: true }));
+    console.log(JSON.stringify({
+      success: true,
+      transport: 'managed-identity-lan-cloud-relay',
+      websocketDisabled: acceptance.websocketDisabled,
+      relayWebSocket: acceptance.relayWebSocket,
+      hostInitialVersion: packagedVersion(HOST_EXE),
+      hostRestartVersion: packagedVersion(hostRestartExecutable),
+      clientInitialVersion: packagedVersion(CLIENT_EXE),
+      clientRestartVersion: packagedVersion(clientRestartExecutable),
+      hostRestartExecutable: path.basename(path.dirname(hostRestartExecutable)),
+      clientRestartExecutable: path.basename(path.dirname(clientRestartExecutable)),
+      isolatedCutoverMarker: true,
+      deviceApprovedThroughVisibleHostUi: true,
+      hostWorkerObserved: true,
+      activationFinalized: true,
+    }));
   } finally {
     await clientPage?.close().catch(() => {}); await hostPage?.close().catch(() => {});
     const clientStopped = await stopProfile(CLIENT_ROOT, client);

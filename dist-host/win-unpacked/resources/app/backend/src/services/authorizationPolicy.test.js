@@ -16,7 +16,7 @@ const {
 
 assert.strictEqual(SUPER_ADMIN_PHONE, '13732250653');
 assert.strictEqual(CANONICAL_SUPER_ADMIN_ID, 'miniapp-admin-13732250653');
-assert.deepStrictEqual(ROLES, ['super_admin', 'admin', 'teacher', 'student', 'pending']);
+assert.deepStrictEqual(ROLES, ['super_admin', 'admin', 'operator', 'teacher', 'student', 'visitor', 'pending']);
 assert.strictEqual(normalizePhone('137 3225 0653'), '13732250653');
 
 assert.strictEqual(
@@ -25,6 +25,15 @@ assert.strictEqual(
   'the fixed phone must always be promoted server-side'
 );
 assert.strictEqual(roleForUser({ user_type: 'teacher' }), 'teacher');
+assert.strictEqual(roleForUser({ user_type: 'operator' }), 'operator');
+assert.strictEqual(roleForUser({
+  id: 'operator-1', role: 'operator', status: 1, login_enabled: 1,
+  review_status: 'approved', deleted: 0,
+}), 'operator');
+assert.strictEqual(roleForUser({
+  id: 'visitor-1', role: 'visitor', status: 1, login_enabled: 1,
+  review_status: 'approved', deleted: 0,
+}), 'visitor');
 for (const role of ['admin', 'teacher', 'student']) {
   assert.strictEqual(roleForUser({ id: `persisted-${role}`, role, status: 1, login_enabled: 1, review_status: 'pending', deleted: 0 }), 'pending');
   assert.strictEqual(roleForUser({ id: `disabled-${role}`, role, status: 0, login_enabled: 1, review_status: 'approved', deleted: 0 }), 'pending');
@@ -62,6 +71,10 @@ assert.strictEqual(canReviewUsers({
   status: 1, login_enabled: 1, review_status: 'approved', deleted: 0,
 }), true);
 assert.strictEqual(canReviewUsers({ phone: '18257136756', role: 'admin' }), false);
+assert.strictEqual(canReviewApplications({
+  id: 'ordinary-admin', phone: '18257136756', role: 'admin', status: 1,
+  login_enabled: 1, review_status: 'approved', deleted: 0,
+}), false, 'role applications may be approved only by an active super administrator');
 assert.strictEqual(canReviewUsers(null), false);
 const canonicalTeacherSession = {
   id: CANONICAL_SUPER_ADMIN_ID,
@@ -69,6 +82,7 @@ const canonicalTeacherSession = {
   role: 'teacher',
   activeRole: 'teacher',
   eligibleRoles: ['super_admin', 'teacher'],
+  teacher_id: 'teacher-canonical',
   status: 1,
   login_enabled: 1,
   review_status: 'approved',
@@ -142,7 +156,24 @@ assert.deepStrictEqual(
   { kind: 'teacher', teacherId: 'teacher-1' }
 );
 assert.deepStrictEqual(scopeForUser({ role: 'teacher' }), { kind: 'none' });
+assert.deepStrictEqual(
+  effectiveCapabilities({ role: 'teacher', teacherId: null }),
+  [],
+  'a formal teacher account without a local subject stays logged in but receives no subject-bound business capability'
+);
+assert.deepStrictEqual(
+  effectiveCapabilities({ role: 'student', studentId: null }),
+  [],
+  'a formal student account without a local subject stays logged in but receives no subject-bound business capability'
+);
 assert.deepStrictEqual(scopeForUser({ role: 'pending' }), { kind: 'none' });
+assert.deepStrictEqual(
+  scopeForUser({
+    id: 'visitor-1', role: 'visitor', status: 1, login_enabled: 1,
+    review_status: 'approved', deleted: 0,
+  }),
+  { kind: 'visitor', userId: 'visitor-1' },
+);
 assert.deepStrictEqual(scopeForUser(null), { kind: 'none' });
 assert.deepStrictEqual(scopeForUser({ role: 'admin' }), { kind: 'all' });
 assert.deepStrictEqual(

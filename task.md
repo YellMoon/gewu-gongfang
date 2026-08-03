@@ -1,5 +1,18 @@
 ﻿# 格物工坊：权威数据主机架构重写与真实双端验收
 
+> **当前规划审计任务（2026-08-02，已完成）**
+>
+> 目标：仅对账户、权限、教师注册自动建档、档案匹配、持久设备信任、30 天离线、授权快照、题库、学校和家庭权限的前版规划做最后审计，生成细致、可真实落地的最终版；本任务不修改业务代码、不部署、不发布。
+>
+> 成功标准：正常教学端注册在数据主机在线且无精确联系方式候选时，原子完成账户、teacher 角色、教师档案和绑定；存在精确候选时不重复建档并进入超级管理员匹配流程；页面路由使用缓存的签名权限上下文，后端每次数据请求统一鉴权且不信任客户端 ID；所有模块都有真实入口、正式接口、权威事务/回执、迁移、回滚和真实业务测试。
+>
+> 执行清单：
+> - [x] 审计现有 V2 与实际文件路径/旧实现
+> - [x] 修正注册、建档、候选匹配与业务页面状态机
+> - [x] 统一权限上下文、路由守卫、API 鉴权和离线数据层
+> - [x] 生成最终实施规划并完成独立复核
+> - [x] 校验结构、路径、测试、发布和回滚后交付
+
 > **最新节点（2026-07-28，已冻结）**
 >
 > 当前项目**尚未完成架构重写**。工作树中的两阶段设备激活、共享 authority 协议、部分角色/投影服务、主机 worker 和隔离 Electron 脚本，只是未完成原型。旧 `/api/sync`、`desktop-session`、`oneClickSync` 与旧 cloud-relay 仍在正常运行路径中。因此，任何局部测试、构建成功或 UI 修复都不能称为“架构切换完成”。
@@ -705,3 +718,95 @@ The identity contract is now explicit: an active global account and canonical ro
 - Real native miniapp evidence used only `%TEMP%\tmp-real-desktop-identity-cloud-ddc928b0456a479b83ce0c502d95bf50` on random loopback port `58494`. The tested unbound student had `studentId:null`, `teacherId:null`, an active token, no business-cache identity, reached the student home, and received an empty schedule. The isolated server remains intentionally alive until packaged three-end acceptance completes; it must then be stopped by exact PID and only this marked temporary root may be deleted.
 - Semantic analysis selected one major bump because the executable legacy client/API path was removed and the authority control plane became the only formal path. All source version surfaces are now 8.0.0. No second bump is permitted for retries of this release.
 - Release boundary remains closed: no 8.0.0 source commit, push, package, OSS update, Alibaba Cloud deployment, local-host upgrade, or WeChat development upload has occurred at this checkpoint. Before release, both desktop flavors must be rebuilt from the committed 8.0.0 source and the LAN, relay-WebSocket and durable-relay offline-restart rows must pass one process chain at a time with isolated data.
+
+### 2026-08-03 checkpoint 36: 8.0.1 existing-profile password verification regression
+
+Status: root-cause investigation in progress; 8.0.1 acceptance reopened
+
+Goal: make an existing data-host profile and an existing ordinary-desktop profile survive the 8.0.1 upgrade, accept the previously configured local password, establish the correct authority context, and enter the permitted runtime without modifying authoritative business records.
+
+Confirmed evidence:
+
+- The user desktop shortcut targets the installed 8.0.1 primary-host runtime under `LocalAppData\\Programs`; a second public-desktop shortcut still targets the legacy install under `LocalAppData`.
+- Both installations share the same roaming identity/vault directory and host port. The real log records both executable roots starting against the same device/profile, duplicate host starts, `EADDRINUSE` on port 3001, and repeated `AUTHORITY_RUNTIME_DEFERRED_UNTIL_HOST_CREDENTIAL`.
+- Another computer updated to 8.0.1 also rejects the existing local password, so the legacy shortcut collision is not a sufficient root cause. Credential migration/unlock/challenge behavior must be tested independently.
+- Previous completion evidence used isolated temporary profiles and newly created test passwords. It did not prove compatibility with an existing encrypted identity vault or with the user's two installed executable roots.
+
+Execution checklist:
+
+- [ ] Trace the exact UI message through renderer, preload, Electron IPC, identity vault, host credential store, cloud challenge, and authority-context activation; record the first failing boundary and stable error code without logging secrets.
+- [ ] Reproduce with a copy of an existing-format encrypted profile and both upgrade paths (ordinary desktop and primary host); never use the real profile for password guesses or mutation.
+- [ ] Add a RED regression test proving that a pre-8.0.1 valid local password remains valid after upgrading and that a missing cloud/host context is not falsely reported as a wrong password.
+- [ ] Implement one root-cause fix at the failing boundary; preserve fail-closed permissions and do not synthesize authority or subject bindings.
+- [ ] Remove or neutralize the stale legacy shortcut/install-path collision through a reversible, version-aware migration; preserve an explicit rollback path.
+- [ ] Rebuild both flavors and run sequential packaged existing-profile acceptance, wrong-password rejection, offline-contract entry, online authority activation, restart, and second-machine-equivalent tests using isolated cloned profiles.
+- [ ] Run the full authority/release regression, verify no stray processes or isolated data remain, then version, commit, push, deploy and update both OSS feeds only after the real upgrade acceptance passes.
+
+Bottom-level logic and success criteria:
+
+- Password verification proves only possession of the local vault secret. Network, cloud challenge, host credential, projection, or authority-context failures must have distinct states and messages.
+- A correct existing password must never be rejected because the cloud is temporarily unavailable; offline entry is allowed only when a valid, unexpired offline identity contract exists.
+- A successful local unlock must not imply elevated authority. Business access remains constrained by the signed projection and optional subject binding.
+- Exactly one installed flavor/path may own a given profile and local host port at a time. A stale shortcut must not launch a second incompatible runtime.
+- Completion requires evidence from cloned existing profiles and both packaged flavors, not only fresh-profile unit tests or API harnesses.
+
+Safety, rollback and release notes:
+
+- Read-only inspection of the real logs/config/vault metadata is allowed; do not decrypt, reset, overwrite or migrate the real vault during diagnosis.
+- All password-path reproduction uses copied encrypted fixtures or isolated generated legacy-format profiles. Delete only test roots carrying the explicit temporary marker after all exact PIDs exit.
+- Before any installed-path or shortcut change, record the exact targets and preserve the legacy shortcut/install tree as a rollback artifact. No broad process termination or filesystem cleanup.
+- Release remains blocked until the existing-profile packaged matrix passes. A source test, package hash, health check, or fresh-profile login alone is not sufficient.
+
+### 2026-08-03 checkpoint 37: 8.0.2 final precommit matrix and cross-install follow-up
+
+Status: 8.0.2 final precommit source checks, both package-flavor smoke/single-instance checks, real same-flavor cross-install execution and all three transport E2E rows are green; commit and release remain pending
+
+Root cause and compatibility policy:
+
+- The local password was verified successfully before the failure. The failing boundary was cloud desktop-session issuance: the deployed control database had active legacy `user_role_grants` but empty canonical `authority_accounts` / `authority_role_bindings`, so challenge exchange returned 403 and the renderer collapsed that authority-context failure into “身份验证未通过”.
+- During the controlled compatibility window, a missing canonical account preserves every active formal legacy grant; only an active account with no formal grant derives `visitor`. A disabled canonical account never falls back. `users.role` alone never grants a session role. Teacher/student grants without a local subject remain formal roles with a null subject and fail closed for subject-owned data.
+- Copy-only migration rehearsal against consistent snapshots of both the local-host and cloud databases preserved the source fingerprint, role parity and replay result. No real database, vault or password was changed.
+- Two installed executable roots sharing one profile caused a separate `EADDRINUSE` failure. New packages now use an Electron lock plus a profile-bound loopback handshake lock. The lock never listens on LAN and requires no Windows firewall rule.
+
+Current four-column cutover checklist:
+
+| Architecture unit | File exists | Freshly tested | Wired to formal path | Old path deleted/retired |
+| --- | --- | --- | --- | --- |
+| Authority HTTP / command / receipt / signed projection | yes | `npm run test:authority-architecture`, HTTP signature/tamper, worker replay and projection suites passed | backend, gateway, host worker and Electron preload facade use `/api/authority` | raw sync/session business implementations are absent or terminally return retirement errors |
+| Activation and desktop session issuance | yes | service, HTTP and packaged visible-UI approval passed | exchange → sealed vault → finalize → active grant/lease is the formal path | scalar `users.role` is not an authorization fallback; legacy grants are migration-only compatibility input |
+| Role preservation and optional subject binding | yes | visitor, bound/unbound student, bound/unbound teacher, admin and super_admin matrices passed | canonical authority account/role bindings drive the active session and scope | no upgrade path silently converts a formal role to visitor or synthesizes a subject ID |
+| Copy-only migration and cutover ledger | yes | local/cloud snapshot rehearsal, fingerprint parity, scope parity and command replay passed | `authorityMigrationService` rejects source-path mutation and writes the cutover marker only on the copy | ambiguous/conflicting rows fail closed; source databases remain unchanged |
+| Desktop facade, encrypted outbox and three transports | yes | 8.0.2 durable relay, relay-WebSocket and direct-LAN E2E rows passed, including offline/restart, host execution and receipt | renderer uses `window.desktopAuthority`; host execution remains independent of renderer and socket | obsolete packaged host prototype test and temporary identity diagnostic were removed under the cutover gate |
+| Historical existing-profile 7.2.10 → 8.0.1 upgrade | yes | two consecutive isolated packaged runs preserved password unlock, approval, offline draft, restart and final receipt | historical compatibility evidence only; it is not 8.0.2 cross-install evidence | fresh-profile-only evidence is no longer accepted as an upgrade result |
+| Current existing-profile 8.0.1 → 8.0.2 upgrade | yes | one isolated packaged run started both host/client on 8.0.1, reused their vaults, databases and generated passwords on 8.0.2, then completed visible approval, offline draft restart, host execution and receipt | authority bootstrap relaunch and client offline restart both switch executable versions only after the exact profile process set reaches zero | no password reset, synthetic role downgrade or real-profile mutation occurred |
+| Cross-install single instance | yes | same-executable 8.0.2 checks passed for ordinary and host flavors; two consecutive ordinary-flavor runs from distinct executable roots returned `crossInstall:true`, retained one browser process and kept the first backend healthy | Electron startup is gated before vault/backend/window use; the second root reused the first launch's isolated profile and backend port | test-only copied executable root and disposable profiles were removed only after exact-process checks |
+| Direct LAN WebSocket | yes | installed 8.0.2 host plus 8.0.2 client completed visible approval, offline restart, host execution and receipt over LAN | stable installed host path uses the private-profile, LocalSubnet-only TCP 60462 managed rule | no temporary firewall rule was created; relay fallback remains independently verified |
+
+Fresh packaged evidence:
+
+- Version surfaces for the desktop app, backend, gateway and miniapp are already bumped to `8.0.2`; this checkpoint does not perform a second bump.
+- The final precommit ordinary and primary-host 8.0.2 unpacked packages both passed Electron ABI 119 verification, package-flavor smoke and same-executable single-instance checks; the development tree was restored to the Node native ABI afterward.
+- Durable relay result: visible host bootstrap and device approval, client password registration/unlock, offline draft sealing, exact client restart, draft persistence, worker execution and stable receipt all passed with `websocketDisabled:true`.
+- Relay WebSocket result: the same full sequence passed with `relayWebSocket:true` and LAN deliberately unavailable.
+- Historical upgrade result (not current 8.0.2 cross-install evidence): initial host/client version `7.2.10`, restart host/client version `8.0.1`; both consecutive diagnostic runs preserved the existing-format vault password, active role, device approval and offline draft. One earlier restart timed out at the immediate Windows process-release boundary; the following two independent roots passed and logs proved the 8.0.1 backend reused the same profile database and port without resetting credentials.
+- Current upgrade result: initial host/client version `8.0.1`, restart host/client version `8.0.2`; the same isolated profiles and generated pre-upgrade passwords survived both executable switches, the host authority context was established through the visible recovery flow, the ordinary client retained its offline draft through restart, and the host worker produced the final receipt. A first diagnostic run exposed that the harness ignored a deferred exact-profile stop; a RED/GREEN guard now requires the normalized profile process set to reach zero before either restart, and the fresh rerun passed end to end.
+- Same-executable single-instance result for both 8.0.2 flavors: `secondInstanceExited:true`, `persistentBrowserProcesses:1`. This proves duplicate-start rejection within each unpacked root, not cross-install locking between different roots.
+- Cross-install support accepts an optional `GEWU_PACKAGED_SECOND_EXE`, requires a different executable root and the same `desktopBuildFlavor`, and reuses the first launch's isolated profile and backend port. Two consecutive real ordinary-flavor executions from distinct roots returned `crossInstall:true`, `secondInstanceExited:true` and `persistentBrowserProcesses:1`; the first backend remained healthy after the handoff. The final health proof uses bounded condition polling so a transient loopback handoff cannot create a false negative while a permanently lost backend still fails closed.
+- Installed-path LAN result: stable primary-host 8.0.2 listened on `0.0.0.0:60462`; the pre-existing managed firewall rule was audited as enabled; visible approval, client restart, offline-draft survival, host worker execution and final receipt passed with `websocketDisabled:false` and `relayWebSocket:false`.
+
+Remaining release gates:
+
+- [x] Trace and separate password verification from authority-context failure.
+- [x] Add RED/GREEN role-preservation, migration and existing-profile regressions.
+- [x] Rebuild both flavors and pass durable relay, relay WebSocket, restart and existing-profile upgrade acceptance with disposable data.
+- [x] Prevent duplicate new-package processes from sharing one profile.
+- [x] Run the final candidate from the stable installed primary-host path and complete direct LAN WebSocket acceptance against the existing narrow firewall rule.
+- [x] Run the final precommit ordinary/primary-host smoke and same-executable single-instance checks plus durable-relay, relay-WebSocket and direct-LAN E2E rows.
+- [x] Bump the unified source version once from 8.0.1 to 8.0.2.
+- [x] Run the packaged single-instance acceptance with a caller-provided same-flavor 8.0.2 executable copied to a genuinely different allowed root; two consecutive runs recorded `crossInstall:true` while retaining exactly one browser process and the first backend.
+- [ ] Commit/push, back up and deploy cloud services, install/verify the local host, upload the unified miniapp development version, publish/read back both OSS feeds, and complete the release matrix.
+
+Safety:
+
+- All packaged acceptance used `tmp-real-desktop-two-app-*` or `tmp-packaged-single-instance-*` roots and generated passwords. A strict cleanup helper accepts only explicit `%TEMP%` top-level allowlisted markers and refuses live processes. It removed eight verified test roots, including the preserved migration/upgrade evidence roots, after terminating exactly one historical isolated fixture PID.
+- Real authority databases, the real identity vault, real passwords and the removable question store were not mutated. The release is not complete: the commit/deploy/publish matrix remains pending.

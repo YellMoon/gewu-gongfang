@@ -42,8 +42,6 @@ contextBridge.exposeInMainWorld('api', {
 contextBridge.exposeInMainWorld('desktopIdentity', Object.freeze({
   status: () => ipcRenderer.invoke('desktop-identity:status'),
   beginRegistration: input => ipcRenderer.invoke('desktop-identity:begin-registration', input),
-  beginSingleUserEnrollment: input => ipcRenderer.invoke('desktop-identity:begin-single-user-enrollment', input),
-  createPairingEnvelope: input => ipcRenderer.invoke('desktop-identity:create-pairing-envelope', input),
   beginPasswordReset: () => ipcRenderer.invoke('desktop-identity:begin-password-reset'),
   completeRegistration: input => ipcRenderer.invoke('desktop-identity:complete-registration', input),
   completePasswordReset: input => ipcRenderer.invoke('desktop-identity:complete-password-reset', input),
@@ -53,26 +51,50 @@ contextBridge.exposeInMainWorld('desktopIdentity', Object.freeze({
   signChallenge: input => ipcRenderer.invoke('desktop-identity:sign-challenge', input),
 }));
 
+contextBridge.exposeInMainWorld('desktopAuthority', Object.freeze({
+  appendDraft: input => ipcRenderer.invoke('desktop-authority:append-draft', input),
+  appendDraftSync: input => {
+    const result = ipcRenderer.sendSync('desktop-authority:append-draft-sync', input);
+    if (!result?.ok) {
+      const error = new Error(result?.error?.code || 'AUTHORITY_DRAFT_APPEND_FAILED');
+      error.code = result?.error?.code || 'AUTHORITY_DRAFT_APPEND_FAILED';
+      throw error;
+    }
+    return result.item;
+  },
+  appendDraftBatchSync: inputs => {
+    const result = ipcRenderer.sendSync('desktop-authority:append-draft-batch-sync', inputs);
+    if (!result?.ok) {
+      const error = new Error(result?.error?.code || 'AUTHORITY_DRAFT_BATCH_APPEND_FAILED');
+      error.code = result?.error?.code || 'AUTHORITY_DRAFT_BATCH_APPEND_FAILED';
+      throw error;
+    }
+    return result.items;
+  },
+  get: id => ipcRenderer.invoke('desktop-authority:get', id),
+  list: () => ipcRenderer.invoke('desktop-authority:list'),
+  readProjection: input => ipcRenderer.invoke('desktop-authority:read-projection', input),
+  submit: id => ipcRenderer.invoke('desktop-authority:submit', id),
+  confirmAndSubmit: id => ipcRenderer.invoke('desktop-authority:confirm-and-submit', id),
+}));
+
 contextBridge.exposeInMainWorld('desktopBuild', Object.freeze({
   flavor: desktopBuildFlavor,
   primaryHostCapable: desktopBuildFlavor === 'primary-host',
 }));
 
 if (desktopBuildFlavor === 'primary-host') {
-  contextBridge.exposeInMainWorld('singleUserRuntime', Object.freeze({
-    enableMode: input => ipcRenderer.invoke('single-user:enable-mode', input),
-    disableMode: input => ipcRenderer.invoke('single-user:disable-mode', input),
-    status: () => ipcRenderer.invoke('single-user:status'),
-    bootstrap: input => ipcRenderer.invoke('single-user:bootstrap', input),
-    resetHostPassword: input => ipcRenderer.invoke('single-user:reset-host-password', input),
-    issuePairingCode: () => ipcRenderer.invoke('single-user:issue-pairing-code'),
-    revokePairingCode: input => ipcRenderer.invoke('single-user:revoke-pairing-code', input),
-  }));
   contextBridge.exposeInMainWorld('primaryHostRuntime', Object.freeze({
     status: () => ipcRenderer.invoke('primary-host:status'),
+    firewallStatus: () => ipcRenderer.invoke('primary-host:firewall-status'),
+    enableLanFirewall: () => ipcRenderer.invoke('primary-host:firewall-enable-lan'),
+    workerStatus: () => ipcRenderer.invoke('primary-host:worker-status'),
+    runtimeStatus: () => ipcRenderer.invoke('primary-host:runtime-status'),
+    relaunchReadiness: () => ipcRenderer.invoke('primary-host:relaunch-readiness'),
     adopt: input => ipcRenderer.invoke('primary-host:adopt', input),
     demote: input => ipcRenderer.invoke('primary-host:demote', input),
     issueLocalReceipt: input => ipcRenderer.invoke('primary-host:local-receipt', input),
+    executeLocalDraft: draft => ipcRenderer.invoke('primary-host:execute-local-draft', draft),
     prepareOperation: input => ipcRenderer.invoke('primary-host:prepare-operation', input),
     revealRecoveryPackage: input => ipcRenderer.invoke('primary-host:reveal-recovery-package', input),
     acknowledgeRecoveryPackage: input => ipcRenderer.invoke('primary-host:acknowledge-recovery-package', input),

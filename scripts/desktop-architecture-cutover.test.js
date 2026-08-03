@@ -68,6 +68,7 @@ for (const relativePath of [
   'src/services/desktopSessionRelayClient.mjs',
   'src/services/websocketClient.mjs',
   'src/services/websocketClient.test.js',
+  'scripts/packaged-host-identity-ui.test.js',
 ].forEach(absent);
 
 console.log('desktop architecture cutover checks passed');

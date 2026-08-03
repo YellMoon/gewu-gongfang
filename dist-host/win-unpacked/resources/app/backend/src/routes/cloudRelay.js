@@ -7,14 +7,17 @@ const {
   isAllowedMiniappTaskForUser,
 } = require('../services/miniappAccessPolicy');
 const { roleForUser } = require('../services/authorizationPolicy');
-const { issueRelayAssertion } = require('../services/relayAssertionService');
+const { actorGrantFromSyncActor, resolveTaskActorGrant } = require('../services/cloudRelayActorGrant');
 const { createPrimaryHostIdentityService } = require('../services/primaryHostIdentityService');
 const taskService = require('../services/cloudRelayTaskService');
 const { createMiniappProvisioningReconciler } = require('../services/miniappProvisioningReconciler');
 const { buildQuestionPreviewIndex, safeHostBaseUrl } = require('../services/questionPreviewIndex');
-const { createDesktopSessionRelayService } = require('../services/desktopSessionRelayService');
+const { createLegacyArchitectureGate } = require('../services/legacyArchitectureGate');
 
 const router = Router();
+router.use(['/desktop-session', '/desktop-sync'], (req, res, next) => (
+  createLegacyArchitectureGate({ db: getInstance().db, hardRetire: true })(req, res, next)
+));
 
 function now() {
   return new Date().toISOString();
@@ -38,6 +41,27 @@ function targetHostForTask(db, requested) {
   const latest = db.prepare("SELECT host_device_id FROM host_heartbeats WHERE status='online' ORDER BY updated_at DESC LIMIT 1").get();
   if (!latest) throw taskService.taskError('TARGET_HOST_REQUIRED', 'no target host is available', 409);
   return latest.host_device_id;
+}
+
+function notifyHostTask(req, task, fallbackHostDeviceId = '') {
+  const hostDeviceId = String(task?.target_host_device_id || fallbackHostDeviceId || '').trim();
+  if (hostDeviceId) req.app?.get('cloudRelaySocketServer')?.notifyHostNewTask(hostDeviceId, task);
+}
+
+function createDesktopRelayTask(db, req, input) {
+  const idempotencyKey = String(
+    req.headers['x-idempotency-key'] || input.requestId || input.payload?.requestId || id(`request_${input.taskType}`)
+  ).trim();
+  return taskService.createV2Task(db, {
+    taskType: input.taskType,
+    payload: input.payload,
+    createdBy: input.createdBy,
+    tenantId: input.tenantId || 'default',
+    actorRole: input.actorRole,
+    allowDraft: false,
+    targetHostDeviceId: targetHostForTask(db, input.targetHostDeviceId),
+    idempotencyKey,
+  }, { internal: true });
 }
 
 function parseJson(value, fallback) {
@@ -68,21 +92,6 @@ function normalizeCapabilities(value) {
 function sendForbidden(res, code, message = 'Forbidden') {
   return res.status(code === 'UNAUTHORIZED' ? 401 : 403).json({ success: false, code, error: message });
 }
-function validateDesktopSyncInput(req,res){const deviceId=String(req.headers['x-device-id']||req.body.deviceId||'');const name=String(req.body.deviceName||'');if(!deviceId||deviceId.length>128||name.length>128)return res.status(400).json({success:false,code:'INVALID_SYNC_REQUEST'});const changes=req.body.pendingChanges;if(!Array.isArray(changes)||changes.length>500)return res.status(changes?.length>500?413:400).json({success:false,code:changes?.length>500?'SYNC_REQUEST_TOO_LARGE':'INVALID_SYNC_REQUEST'});if(Buffer.byteLength(JSON.stringify(req.body))>2*1024*1024)return res.status(413).json({success:false,code:'SYNC_REQUEST_TOO_LARGE'});for(const op of changes){if(!op||typeof op!=='object'||!op.id||!op.table||!['create','update','delete'].includes(op.action)||Buffer.byteLength(JSON.stringify(op))>128*1024)return res.status(400).json({success:false,code:'INVALID_SYNC_REQUEST'});}return null;}
-
-function isHostTokenValid(req) {
-  const active = getInstance().db.prepare(
-    "SELECT 1 FROM primary_host_epochs WHERE status='active' LIMIT 1"
-  ).get();
-  if (active) return false;
-  const expected = process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '';
-  if (!expected) return false;
-  const provided = req.headers['x-gewu-host-token'] || req.headers['x-host-token'] || '';
-  const expectedBuffer = Buffer.from(String(expected));
-  const providedBuffer = Buffer.from(String(provided));
-  return expectedBuffer.length === providedBuffer.length && crypto.timingSafeEqual(expectedBuffer, providedBuffer);
-}
-
 function requireManagedHostCredential(req) {
   const deviceId = String(req.headers['x-gewu-host-device-id'] || '').trim();
   const generation = Number(req.headers['x-gewu-host-generation']);
@@ -109,7 +118,7 @@ function requireHostWrite(req, res, next) {
   const active = getInstance().db.prepare(
     "SELECT 1 FROM primary_host_epochs WHERE status='active' LIMIT 1"
   ).get();
-  if (!active && (isAdminUser(req.user) || isHostTokenValid(req))) return next();
+  if (!active && isAdminUser(req.user)) return next();
   if (active) {
     try {
       req.hostEpoch = requireManagedHostCredential(req);
@@ -138,14 +147,6 @@ function requireDesktopSyncAccess(req, res, next) {
   }
   req.syncActor = actor;
   return next();
-}
-
-function desktopSessionRelayService(db) {
-  return createDesktopSessionRelayService({
-    db,
-    relayAssertionSecret: process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '',
-    jwtSecret: process.env.JWT_SECRET || '',
-  });
 }
 
 function requireSnapshotRead(req, res, next) {
@@ -209,48 +210,6 @@ router.post('/host/heartbeat', requireHostWrite, (req, res) => {
   res.json({ success: true, serverTime: time });
 });
 
-router.post('/desktop-session/challenges/start', (req, res) => {
-  try {
-    const db = getInstance().db;
-    const request = desktopSessionRelayService(db).createStartRequest({
-      authorizationId: req.body.authorizationId,
-      deviceId: req.body.deviceId,
-      requestSecretHash: req.body.requestSecretHash,
-      targetHostDeviceId: targetHostForTask(db, req.body.targetHostDeviceId),
-    });
-    return res.json({ success: true, request });
-  } catch (error) {
-    return taskRouteError(res, error);
-  }
-});
-
-router.get('/desktop-session/requests/:id', (req, res) => {
-  try {
-    const request = desktopSessionRelayService(getInstance().db).readRequest({
-      requestId: req.params.id,
-      requestSecret: req.headers['x-desktop-session-request-secret'],
-    });
-    return res.json({ success: true, request });
-  } catch (error) {
-    return taskRouteError(res, error);
-  }
-});
-
-router.post('/desktop-session/challenges/:id/exchange', (req, res) => {
-  try {
-    const request = desktopSessionRelayService(getInstance().db).createExchangeRequest({
-      startRequestId: req.body.startRequestId,
-      challengeId: req.params.id,
-      signature: req.body.signature,
-      expectedRowVersion: req.body.expectedRowVersion,
-      requestSecret: req.headers['x-desktop-session-request-secret'],
-    });
-    return res.json({ success: true, request });
-  } catch (error) {
-    return taskRouteError(res, error);
-  }
-});
-
 router.get('/host/status', requireDesktopSyncAccess, (_req, res) => {
   const db = getInstance().db;
   const row = db.prepare(
@@ -310,72 +269,62 @@ router.get('/snapshots/questions', requireSnapshotRead, (req, res) => {
   res.json({ success: true, ...buildQuestionPreviewIndex(snapshot, { ...req.user, tenantId: req.tenantId }), hostAvailable, targetHostDeviceId: hostAvailable ? host.host_device_id : null, hostBaseUrl: hostAvailable ? safeHostBaseUrl(host.base_url) : null });
 });
 
-router.post('/desktop-sync/requests', requireDesktopSyncAccess, (req, res) => {
-  const invalid=validateDesktopSyncInput(req,res);if(invalid)return invalid;
+router.get('/tasks/:id/actor-grant', requireHostWrite, (req, res) => {
+  try {
+    const actor = resolveTaskActorGrant(getInstance().db, {
+      taskId: req.params.id,
+      hostDeviceId: req.hostEpoch?.deviceId,
+    });
+    return res.json({ success: true, actor });
+  } catch (error) {
+    return taskRouteError(res, error);
+  }
+});
+
+// 外网（云中继）身份与设备查询：客户端建任务，数据主机轮询处理后回填结果。
+// 设备数据只存在主机本地库，云端仅做转发，不落任何设备明细。
+router.post('/desktop-identity/requests', requireDesktopSyncAccess, (req, res) => {
+  const query = String(req.body.query || '').trim();
+  if (query !== 'devices') {
+    return res.status(400).json({ success: false, code: 'DESKTOP_IDENTITY_RELAY_QUERY_UNSUPPORTED' });
+  }
   const db = getInstance().db;
-  const taskId = id('desktop_sync');
   const time = now();
   const actor = req.syncActor;
-  const deviceId = actor.deviceId;
-  const device = db.prepare('SELECT * FROM sync_devices WHERE id=? AND active=1').get(deviceId);
-  if (!device || device.owner_user_id !== actor.userId) return sendForbidden(res, 'SYNC_DEVICE_OWNER_MISMATCH');
-  let relayAssertion;
-  try {
-    relayAssertion = issueRelayAssertion({
-      taskId, actorUserId:actor.userId, deviceId, sessionId:actor.sessionId,
-      activeRole:actor.activeRole, teacherId:actor.teacherId || null,
-      authVersion:Number(actor.authVersion), credentialVersion:Number(actor.credentialVersion),
-      issuedAt:Date.now(), expiresAt:Date.parse(actor.sessionExpiresAt),
-    },
-      process.env.GEWU_CLOUD_RELAY_HOST_TOKEN || '');
-  } catch (error) { return sendForbidden(res, error.code || 'RELAY_ASSERTION_SECRET_REQUIRED'); }
   const payload = {
-    deviceId,
-    tenantId: req.body.tenantId || req.body.tenant_id || 'default',
-    pendingChanges: req.body.pendingChanges || req.body.changes || [],
-    preview: req.body.preview || null,
+    deviceId: actor.deviceId,
+    query,
     submittedAt: time,
-    actorUserId: actor.userId,
-    relayAssertion,
+    actorGrant: actorGrantFromSyncActor(actor),
   };
-  db.prepare(
-    `INSERT INTO miniapp_tasks (id, task_type, status, payload, created_by, created_at, updated_at)
-     VALUES (?, ?, 'pending_host', ?, ?, ?, ?)`
-  ).run(taskId, 'desktop-sync', JSON.stringify(payload), actor.userId, time, time);
+  let created;
+  try {
+    created = createDesktopRelayTask(db, req, {
+      taskType: 'desktop-identity', payload, createdBy: actor.userId, actorRole: actor.activeRole,
+      tenantId: req.tenantId || 'default', targetHostDeviceId: req.body.targetHostDeviceId || req.body.target_host_device_id,
+      requestId: req.body.requestId || req.body.request_id,
+    });
+  } catch (error) { return taskRouteError(res, error); }
+  notifyHostTask(req, created.task);
   res.json({
     success: true,
-    request: {
-      id: taskId,
-      taskType: 'desktop-sync',
-      status: 'pending_host',
-      acceptedChanges: payload.pendingChanges.length,
-    },
+    request: { id: created.task.id, taskType: 'desktop-identity', status: 'pending_host' },
   });
 });
 
-router.post('/desktop-sync/devices/register', requireDesktopSyncAccess, (req, res) => {
-  const actor = req.syncActor;
-  const deviceId = actor.deviceId;
-  try {
-    const device = getInstance().registerSyncDevice(deviceId, { ownerUserId:actor.userId,
-      deviceName:req.body.deviceName || deviceId, role:'desktop-client' });
-    return res.json({ success:true, device:{ id:device.id, ownerUserId:device.owner_user_id } });
-  } catch (error) { return sendForbidden(res, error.code || 'SYNC_DEVICE_OWNER_MISMATCH'); }
-});
-
-router.get('/desktop-sync/requests/:id/result', requireDesktopSyncAccess, (req, res) => {
+router.get('/desktop-identity/requests/:id/result', requireDesktopSyncAccess, (req, res) => {
   const db = getInstance().db;
   const actor = req.syncActor;
-  const admin = ['super_admin','admin'].includes(actor.activeRole);
-  const row = admin
-    ? db.prepare('SELECT * FROM miniapp_tasks WHERE id = ? AND task_type = ?').get(req.params.id, 'desktop-sync')
-    : db.prepare('SELECT * FROM miniapp_tasks WHERE id = ? AND task_type = ? AND CAST(created_by AS TEXT)=?').get(req.params.id, 'desktop-sync', String(actor.userId));
-  if (!row) return res.status(404).json({ success: false, error: 'desktop sync request not found' });
+  // 设备清单属于个人数据：只允许创建者本人读取，不给管理员放行通道。
+  const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ? AND task_type = ? AND CAST(created_by AS TEXT)=?')
+    .get(req.params.id, 'desktop-identity', String(actor.userId));
+  if (!row) return res.status(404).json({ success: false, code: 'DESKTOP_IDENTITY_REQUEST_NOT_FOUND' });
   res.json({
     success: true,
     request: {
-      ...row,
-      payload: parseJson(row.payload, {}),
+      id: row.id,
+      status: row.status,
+      error_code: row.error_code || null,
       result_payload: parseJson(row.result_payload, null),
     },
   });
@@ -383,53 +332,21 @@ router.get('/desktop-sync/requests/:id/result', requireDesktopSyncAccess, (req, 
 
 router.post('/tasks', requireMiniappTaskAccess, (req, res) => {
   const db = getInstance().db;
-  if (Number(req.body.protocolVersion || req.body.protocol_version || 1) >= 2) {
-    try {
-      const actorRole = roleForUser(req.user || {});
-      const created = taskService.createV2Task(db, {
-        taskType: req.body.taskType,
-        payload: req.body.payload || {},
-        createdBy: req.user?.id || 'miniapp',
-        tenantId: req.tenantId || req.user?.tenant_id || req.user?.tenantId || 'default',
-        actorRole,
-        allowDraft: ['super_admin', 'admin'].includes(actorRole),
-        targetHostDeviceId: targetHostForTask(db, req.body.targetHostDeviceId || req.body.target_host_device_id),
-        idempotencyKey: req.headers['x-idempotency-key'] || req.body.idempotencyKey || req.body.idempotency_key,
-      });
-      return res.json({ success: true, task: created.task, replayed: created.replayed });
-    } catch (error) { return taskRouteError(res, error); }
-  }
-  const taskId = id('task');
-  const time = now();
-  db.prepare(
-    `INSERT INTO miniapp_tasks (id, task_type, status, payload, created_by, created_at, updated_at)
-     VALUES (?, ?, 'pending_host', ?, ?, ?, ?)`
-  ).run(taskId, req.body.taskType, JSON.stringify(req.body.payload || {}), req.user?.id || 'miniapp', time, time);
-  res.json({ success: true, task: { id: taskId, status: 'pending_host' } });
-});
-
-router.get('/tasks', (req, res) => {
-  const db = getInstance().db;
-  const status = req.query.status || 'pending_host';
-  const rows = status === 'pending_host' ? (() => {
-    const claimed = [];
-    const hostDeviceId = String(req.query.hostDeviceId || req.query.host_device_id || 'legacy-shared');
-    const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 200));
-    for (let index = 0; index < limit; index += 1) {
-      const next = taskService.claimNextLegacyTask(db, { hostDeviceId, leaseMs: req.query.leaseMs || req.query.lease_ms });
-      if (!next) break;
-      claimed.push({ ...next.task, claimToken: next.claimToken });
-    }
-    return claimed;
-  })() : db.prepare(
-    `SELECT * FROM miniapp_tasks WHERE status = ? AND COALESCE(protocol_version,1)<2 ORDER BY created_at DESC LIMIT 200`
-  ).all(status);
-  const tasks = rows.map(row => ({
-    ...row,
-    payload: parseJson(row.payload, {}),
-    result_payload: parseJson(row.result_payload, null),
-  }));
-  res.json({ success: true, tasks });
+  try {
+    const actorRole = roleForUser(req.user || {});
+    const created = taskService.createV2Task(db, {
+      taskType: req.body.taskType,
+      payload: req.body.payload || {},
+      createdBy: req.user?.id || 'miniapp',
+      tenantId: req.tenantId || req.user?.tenant_id || req.user?.tenantId || 'default',
+      actorRole,
+      allowDraft: ['super_admin', 'admin'].includes(actorRole),
+      targetHostDeviceId: targetHostForTask(db, req.body.targetHostDeviceId || req.body.target_host_device_id),
+      idempotencyKey: req.headers['x-idempotency-key'] || req.body.idempotencyKey || req.body.idempotency_key,
+    });
+    notifyHostTask(req, created.task);
+    return res.json({ success: true, task: created.task, replayed: created.replayed });
+  } catch (error) { return taskRouteError(res, error); }
 });
 
 router.post('/tasks/claim', requireHostWrite, (req, res) => {
@@ -462,7 +379,7 @@ router.post('/tasks/:id/cancel', (req, res) => {
   } catch (error) { return taskRouteError(res, error); }
 });
 
-router.post('/tasks/:id/complete', (req, res) => {
+router.post('/tasks/:id/complete', requireHostWrite, (req, res) => {
   const db = getInstance().db;
   const row = db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ success: false, error: 'task not found' });
@@ -478,22 +395,7 @@ router.post('/tasks/:id/complete', (req, res) => {
     catch (error) { return taskRouteError(res, error); }
   }
 
-  let updated;
-  try {
-    updated = taskService.completeLegacyTask(db, req.params.id, req.body.result || req.body.resultPayload || req.body || {}, req.body.success !== false, {
-      claimToken: req.body.claimToken || req.body.claim_token,
-      expectedRowVersion: req.body.expectedRowVersion ?? req.body.expected_row_version,
-      hostDeviceId: req.body.hostDeviceId || req.body.host_device_id,
-    });
-  } catch (error) { return taskRouteError(res, error); }
-  res.json({
-    success: true,
-    task: {
-      ...updated,
-      payload: parseJson(updated.payload, {}),
-      result_payload: parseJson(updated.result_payload, null),
-    },
-  });
+  return taskRouteError(res, taskService.taskError('TASK_PROTOCOL_RETIRED', 'only V2 cloud relay tasks are supported', 410));
 });
 
 router.get('/tasks/:id/state', requireHostWrite, (req, res) => {

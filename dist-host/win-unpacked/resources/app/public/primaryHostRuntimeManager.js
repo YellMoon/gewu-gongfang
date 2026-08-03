@@ -25,6 +25,7 @@ function createPrimaryHostRuntimeManager({
   userDataPath,
   env = process.env,
   readRuntimeConfig,
+  writeManagedHostBootstrapRuntimeConfig,
   writeManagedHostRuntimeConfig,
   writeManagedClientRuntimeConfig,
   writeManagedDesktopIdentityMode,
@@ -38,7 +39,7 @@ function createPrimaryHostRuntimeManager({
   randomBytes = crypto.randomBytes,
 }) {
   if (!credentialStore || !configPath || !readRuntimeConfig
-    || !writeManagedHostRuntimeConfig || !writeManagedClientRuntimeConfig
+    || !writeManagedHostBootstrapRuntimeConfig || !writeManagedHostRuntimeConfig || !writeManagedClientRuntimeConfig
     || !writeManagedDesktopIdentityMode
     || !applyRuntimeConfigToEnv) {
     throw runtimeError('PRIMARY_HOST_RUNTIME_MANAGER_CONFIG_REQUIRED');
@@ -56,7 +57,7 @@ function createPrimaryHostRuntimeManager({
   function failClosed(config, code) {
     const effectiveConfig = {
       ...config,
-      nodeRole: 'desktop-client',
+      nodeRole: 'primary-host',
       primaryHostEpochId: '',
       primaryHostGeneration: null,
     };
@@ -79,26 +80,25 @@ function createPrimaryHostRuntimeManager({
     }
     if (!credential) {
       if (config.primaryHostEpochId || config.primaryHostGeneration) {
-        if (config.desktopIdentityMode === 'single-user'
-          && config.nodeRole === 'primary-host'
-          && config.primaryHostEpochId
-          && config.primaryHostGeneration) {
-          applyRuntimeConfigToEnv(config, env);
-          delete env.GEWU_PRIMARY_HOST_CREDENTIAL;
-          lastState = Object.freeze({ config, credential: credentialStore.status() });
-          return lastState;
-        }
         return failClosed(config, 'PRIMARY_HOST_CREDENTIAL_MISSING');
       }
-      applyRuntimeConfigToEnv(config, env);
+      let bootstrapConfig;
+      try {
+        bootstrapConfig = writeManagedHostBootstrapRuntimeConfig(configPath, {
+          deviceId: config.deviceId,
+        }, configOptions);
+      } catch (error) {
+        return failClosed(config, error.code || 'PRIMARY_HOST_RUNTIME_BOOTSTRAP_FAILED', error);
+      }
+      applyRuntimeConfigToEnv(bootstrapConfig, env);
       delete env.GEWU_PRIMARY_HOST_CREDENTIAL;
-      lastState = Object.freeze({ config, credential: credentialStore.status() });
+      lastState = Object.freeze({ config: bootstrapConfig, credential: credentialStore.status() });
       return lastState;
     }
     if (credential.state === 'staged') {
       const effectiveConfig = {
         ...config,
-        nodeRole: 'desktop-client',
+        nodeRole: 'primary-host',
         primaryHostEpochId: '',
         primaryHostGeneration: null,
       };
@@ -242,14 +242,26 @@ function createPrimaryHostRuntimeManager({
     const hostCredential = Buffer.from(randomBytes(32)).toString('base64url');
     if (hostCredential.length < 32) throw runtimeError('PRIMARY_HOST_CREDENTIAL_GENERATION_FAILED');
     const recoveryDeliveryKey = generateRecoveryDeliveryKeyPair();
-    return credentialStore.stage({
+    const candidate = {
       stageId,
       operation,
       deviceId: config.deviceId,
       targetGeneration: generation,
       hostCredential,
       recoveryDeliveryKey,
-    });
+    };
+    if (input.replaceStaleBootstrapStage === true
+      && operation === 'bootstrap'
+      && existing?.state === 'staged'
+      && existing.operation === 'bootstrap'
+      && existing.deviceId === config.deviceId
+      && existing.generation === generation) {
+      return credentialStore.replaceStaged({
+        ...candidate,
+        expectedStageId: existing.stageId,
+      });
+    }
+    return credentialStore.stage(candidate);
   }
 
   function revealRecoveryPackage({ deliveryId } = {}) {
@@ -308,56 +320,12 @@ function createPrimaryHostRuntimeManager({
     return lastState;
   }
 
-  function setIdentityMode({ mode, confirmation } = {}) {
-    const normalizedMode = String(mode || '').trim();
-    const requiredConfirmation = normalizedMode === 'single-user'
-      ? 'ENABLE_SINGLE_USER_MODE'
-      : normalizedMode === 'full'
-        ? 'DISABLE_SINGLE_USER_MODE'
-        : '';
-    if (!requiredConfirmation) throw runtimeError('DESKTOP_IDENTITY_MODE_INVALID');
-    if (confirmation !== requiredConfirmation) {
-      throw runtimeError('DESKTOP_IDENTITY_MODE_CONFIRMATION_REQUIRED');
-    }
-    const config = writeManagedDesktopIdentityMode(configPath, normalizedMode, configOptions);
-    applyRuntimeConfigToEnv(config, env);
-    const credential = lastState?.credential || credentialStore.status();
-    lastState = Object.freeze({ config, credential });
-    return Object.freeze({ config, credential, restartRequired: true });
-  }
-
-  function completeSingleUserBootstrap({ epoch } = {}) {
-    const config = readRuntimeConfig(configPath, configOptions);
-    const normalizedEpoch = epoch && typeof epoch === 'object' ? epoch : {};
-    if (config.desktopIdentityMode !== 'single-user') {
-      throw runtimeError('DESKTOP_SINGLE_USER_MODE_DISABLED');
-    }
-    if (!normalizedEpoch.deviceId || normalizedEpoch.deviceId !== config.deviceId) {
-      throw runtimeError('PRIMARY_HOST_RUNTIME_DEVICE_MISMATCH');
-    }
-    if (credentialStore.read()) {
-      throw runtimeError('DESKTOP_SINGLE_USER_PRIMARY_HOST_CREDENTIAL_CONFLICT');
-    }
-    const managedConfig = writeManagedHostRuntimeConfig(configPath, {
-      deviceId: normalizedEpoch.deviceId,
-      epochId: normalizedEpoch.id,
-      generation: normalizedEpoch.generation,
-    }, configOptions);
-    applyRuntimeConfigToEnv(managedConfig, env);
-    delete env.GEWU_PRIMARY_HOST_CREDENTIAL;
-    const credential = credentialStore.status();
-    lastState = Object.freeze({ config: managedConfig, credential });
-    return Object.freeze({ config: managedConfig, credential, restartRequired: true });
-  }
-
   return Object.freeze({
     initialize,
     stageAdoption,
     adopt,
     acknowledgeRecoveryPackage,
     demote,
-    setIdentityMode,
-    completeSingleUserBootstrap,
     revealRecoveryPackage,
     status() {
       return lastState || initialize();

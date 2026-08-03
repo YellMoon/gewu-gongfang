@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const jwt = require('jsonwebtoken');
+const { seedCanonicalDesktopActor } = require('../testFixtures/canonicalDesktopAuthority');
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-question-delete-http-'));
 const qbRoot = path.join(tempRoot, 'question-bank');
@@ -49,14 +50,6 @@ service.db.prepare(`INSERT INTO teachers
   .run(now, now);
 service.db.prepare("UPDATE users SET student_id='host-student-profile' WHERE id='host-student'").run();
 service.db.prepare("UPDATE users SET teacher_id='approved-teacher-profile' WHERE id='approved-teacher'").run();
-const insertGrant = service.db.prepare(`INSERT OR IGNORE INTO user_role_grants
-  (user_id, role, subject_type, subject_id, status, source, created_at, updated_at)
-  VALUES (?, ?, ?, ?, 'active', 'test', ?, ?)`);
-insertGrant.run('host-admin', 'admin', null, null, now, now);
-insertGrant.run('client-super', 'super_admin', null, null, now, now);
-insertGrant.run('mini-super', 'super_admin', null, null, now, now);
-insertGrant.run('host-student', 'student', 'student', 'host-student-profile', now, now);
-insertGrant.run('approved-teacher', 'teacher', 'teacher', 'approved-teacher-profile', now, now);
 service.registerSyncDevice('host-device', { deviceName: 'Host', role: 'primary-host', trusted: true, ownerUserId: 'host-admin' });
 service.registerSyncDevice('client-device', { deviceName: 'Client', role: 'desktop-client', trusted: true, ownerUserId: 'client-super' });
 service.registerSyncDevice('student-device', { deviceName: 'Student host session', role: 'primary-host', trusted: true, ownerUserId: 'host-student' });
@@ -88,6 +81,15 @@ for (const [deviceId, userId, deviceKind] of [
     now
   );
 }
+for (const actor of [
+  { userId: 'host-admin', role: 'admin', deviceId: 'host-device' },
+  { userId: 'client-super', role: 'super_admin', deviceId: 'client-device' },
+  { userId: 'host-student', role: 'student', subjectId: 'host-student-profile', deviceId: 'student-device' },
+  { userId: 'approved-teacher', role: 'teacher', subjectId: 'approved-teacher-profile', deviceId: 'teacher-device' },
+  { userId: 'miniapp-admin-13732250653', role: 'super_admin', deviceId: 'super-host-device' },
+]) {
+  seedCanonicalDesktopActor({ db: service.db, authorityId, now, ...actor });
+}
 
 const databaseModule = require('../database');
 databaseModule.getInstance = () => service;
@@ -95,21 +97,18 @@ delete require.cache[require.resolve('../app')];
 const { createApp } = require('../app');
 const { createDesktopSessionService } = require('../services/desktopSessionService');
 const desktopSessions = createDesktopSessionService({ db: service.db, jwtSecret: process.env.JWT_SECRET });
+const { createMiniappIdentityService } = require('../services/miniappIdentityService');
+const miniappIdentity = createMiniappIdentityService({
+  db: service.db,
+  jwtSecret: process.env.JWT_SECRET,
+});
 const questionBank = require('../services/questionBankService');
 const { commitQuestionToBoundStore, updateCommittedQuestion, createTrustedInternalStorageUpdateContext, deleteCommittedQuestion } = require('../services/questionBankStorageService');
 
 function token(id, deviceId, tokenUse = 'desktop-session') {
   if (tokenUse === 'miniapp-session') {
-    const user = service.db.prepare('SELECT auth_version, role FROM users WHERE id=?').get(id);
-    return jwt.sign({
-      sub: id,
-      sid: `miniapp-test-${id}`,
-      token_use: tokenUse,
-      auth_version: Number(user.auth_version || 1),
-      role: user.role,
-      iss: 'gewu-miniapp-auth',
-      aud: 'gewu-api',
-    }, process.env.JWT_SECRET, { algorithm: 'HS256' });
+    const user = service.db.prepare('SELECT * FROM users WHERE id=?').get(id);
+    return miniappIdentity.issueFormalToken(user, `miniapp-test-${id}`).token;
   }
   if (id === 'pending-user') {
     return jwt.sign({ id, deviceId, token_use: tokenUse }, process.env.JWT_SECRET,

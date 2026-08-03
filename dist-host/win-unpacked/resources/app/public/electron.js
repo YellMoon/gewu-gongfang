@@ -1,13 +1,33 @@
 const { app, BrowserWindow, Menu, ipcMain, dialog, screen, shell, safeStorage } = require('electron');
+const { acquireDesktopSingleInstance } = require('./electronSingleInstance');
+const { createCrossInstallInstanceLock } = require('./electronCrossInstallLock');
+let mainWindow;
+const DESKTOP_SINGLE_INSTANCE_OWNER = acquireDesktopSingleInstance({ app, getWindow: () => mainWindow });
+function activateMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+const crossInstallInstanceLock = DESKTOP_SINGLE_INSTANCE_OWNER
+  ? createCrossInstallInstanceLock({
+    app,
+    userDataPath: app.getPath('userData'),
+    activateWindow: activateMainWindow,
+  })
+  : null;
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+const WebSocket = require('ws');
+const { spawn } = require('child_process');
 const { QuestionDraftProvenanceRegistry } = require('./questionDraftProvenanceRegistry');
 const fs = require('fs');
 const {
   readRuntimeConfig,
   ensureRuntimeConfig,
   writeRuntimeConfig,
+  writeManagedHostBootstrapRuntimeConfig,
   writeManagedHostRuntimeConfig,
   writeManagedClientRuntimeConfig,
   writeManagedDesktopIdentityMode,
@@ -15,24 +35,39 @@ const {
   MANAGED_CLOUD_BASE_URL,
 } = require('./runtimeConfig');
 const { buildLanHostUrls } = require('./lanDiscovery');
+const { resolveEmbeddedListenHost } = require('./primaryHostListenPolicy');
 const { createDesktopIdentityVault } = require('./desktopIdentityVault');
+const { createDesktopAuthorityRuntime } = require('./desktopAuthorityRuntime');
 const {
   PRIMARY_HOST_FLAVOR,
   resolveDesktopBuildFlavor,
   updateFeedForFlavor,
+  validateDesktopCapabilityManifest,
 } = require('./desktopBuildFlavor');
 const { resolveConfiguredDesktopIdentityKind } = require('./desktopIdentityKind');
+const {
+  buildFirewallAuditRequest,
+  buildElevatedFirewallRequest,
+  parseFirewallAudit,
+} = require('./windowsHostFirewall');
 const desktopPackage = require('../package.json');
 const DESKTOP_BUILD_FLAVOR = resolveDesktopBuildFlavor({
   isPackaged: app.isPackaged,
   metadata: desktopPackage,
   env: process.env,
 });
+validateDesktopCapabilityManifest({ metadata: desktopPackage, runtimeFlavor: DESKTOP_BUILD_FLAVOR });
 process.env.GEWU_DESKTOP_BUILD_FLAVOR = DESKTOP_BUILD_FLAVOR;
 const PRIMARY_HOST_CAPABLE = DESKTOP_BUILD_FLAVOR === PRIMARY_HOST_FLAVOR;
+const AUTHORITY_WEBSOCKET_ENABLED = process.env.GEWU_AUTHORITY_WEBSOCKET_DISABLED !== '1';
+process.on('unhandledRejection', error => {
+  log(`AUTHORITY_RUNTIME_UNHANDLED_REJECTION ${String(error?.code || error?.message || 'UNKNOWN')}`);
+});
 let createPrimaryHostCredentialStore;
 let buildPrimaryHostOperationManifest;
 let createPrimaryHostRuntimeManager;
+let createPrimaryHostRuntimeStatus;
+let createPrimaryHostRelaunchReadiness;
 let generateRecoveryDeliveryKeyPair;
 let openRecoveryPackage;
 let signRecoveryDeliveryAcknowledgement;
@@ -40,6 +75,8 @@ if (PRIMARY_HOST_CAPABLE) {
   ({ createPrimaryHostCredentialStore } = require('./primaryHostCredentialStore'));
   ({ buildPrimaryHostOperationManifest } = require('./primaryHostOperationValidation'));
   ({ createPrimaryHostRuntimeManager } = require('./primaryHostRuntimeManager'));
+  ({ createPrimaryHostRuntimeStatus } = require('./primaryHostRuntimeStatus'));
+  ({ createPrimaryHostRelaunchReadiness } = require('./primaryHostRelaunchReadiness'));
   ({
     generateRecoveryDeliveryKeyPair,
     openRecoveryPackage,
@@ -47,7 +84,10 @@ if (PRIMARY_HOST_CAPABLE) {
   } = require('../backend/src/services/primaryHostRecoveryDeliveryProtocol'));
 }
 const { withOperationTimeout } = require('./updateCheckTimeout');
+const { requestManagedControlPlane } = require('./managedControlPlaneRequest');
 const { buildApplicationMenu, desktopUpdaterErrorMessage, desktopWindowChrome } = require('./electronShellPolicy');
+const { ensureLocalSessionSigningSecret } = require('./localSessionSigningSecret');
+const { buildRelaunchArguments } = require('./electronRelaunch');
 const electronLocalBridgeSecret = crypto.randomBytes(32).toString('base64url');
 process.env.GEWU_ELECTRON_LOCAL_BRIDGE_SECRET = electronLocalBridgeSecret;
 let autoUpdater = null;
@@ -73,13 +113,106 @@ process.on('uncaughtException', (err) => {
   log('UNCAUGHT: ' + err.message + '\n' + err.stack);
 });
 
-let mainWindow;
 let backendServer = null;
+let hostTaskWakeup = null;
+let hostCommandWorker = null;
+let authorityProjectionWorker = null;
+let primaryHostLocalDraftExecutor = null;
+let primaryHostLocalProjectionReader = null;
 let desktopIdentityVault = null;
+let desktopAuthorityRuntime = null;
 let primaryHostRuntimeManager = null;
+let primaryHostRuntimeStatus = null;
+let primaryHostRelaunchReadiness = null;
 
 function getRuntimeConfigPath() {
   return path.join(app.getPath('userData'), 'gewugongfang.config.json');
+}
+
+// The renderer and Electron main process must use the same control plane.  In
+// particular, a host may be operating against an explicitly configured
+// managed-cloud endpoint during bootstrap; using the compiled-in production
+// URL here would let the cloud create an epoch while local credential adoption
+// fails against a different control plane.
+function getManagedCloudBaseUrl() {
+  const runtimeConfig = ensureRuntimeConfig(getRuntimeConfigPath(), {
+    userDataPath: app.getPath('userData'),
+    primaryHostCapable: PRIMARY_HOST_CAPABLE,
+  });
+  return String(runtimeConfig.cloudBaseUrl || MANAGED_CLOUD_BASE_URL).replace(/\/+$/, '');
+}
+
+function resolveEmbeddedRuntimePort(runtimeConfig = {}) {
+  if (runtimeConfig.nodeRole === 'primary-host') {
+    const configured = String(runtimeConfig.hostBaseUrl || '').trim();
+    const match = configured.match(/^https?:\/\/[^/:]+:(\d+)(?:\/|$)/i);
+    const port = Number(match?.[1]);
+    if (Number.isInteger(port) && port > 0 && port <= 65535) return port;
+  }
+  return Number(process.env.PORT || 3001);
+}
+
+function canStartAuthorityHostRuntime(runtimeConfig = {}) {
+  const hostCredential = String(process.env.GEWU_PRIMARY_HOST_CREDENTIAL || '');
+  const generation = Number(runtimeConfig.primaryHostGeneration);
+  return runtimeConfig.nodeRole === 'primary-host'
+    && hostCredential.length >= 16
+    && hostCredential.length <= 1024
+    && Number.isSafeInteger(generation)
+    && generation >= 1;
+}
+
+function currentWindowsHostFirewallInput() {
+  const runtimeConfig = ensureRuntimeConfig(getRuntimeConfigPath(), {
+    userDataPath: app.getPath('userData'),
+    primaryHostCapable: PRIMARY_HOST_CAPABLE,
+  });
+  return {
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    nodeRole: runtimeConfig.nodeRole,
+    executablePath: process.execPath,
+    port: resolveEmbeddedRuntimePort(runtimeConfig),
+    helperPath: path.join(__dirname, 'windowsHostFirewallElevated.ps1'),
+  };
+}
+
+function runWindowsFirewallRequest(request) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(request.command, request.args, { windowsHide: true });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', chunk => { stdout += String(chunk); });
+    child.stderr.on('data', chunk => { stderr += String(chunk); });
+    child.once('error', reject);
+    child.once('close', code => resolve({ code, stdout, stderr }));
+  });
+}
+
+async function readWindowsHostFirewallStatus() {
+  const request = buildFirewallAuditRequest(currentWindowsHostFirewallInput());
+  if (!request.allowed) return Object.freeze({ state: 'not-available', code: request.reason });
+  try {
+    const result = await runWindowsFirewallRequest(request);
+    const audit = parseFirewallAudit(result.stdout);
+    return Object.freeze({ ...audit, exitCode: result.code });
+  } catch (error) {
+    return Object.freeze({ state: 'error', code: error.code || 'WINDOWS_FIREWALL_AUDIT_FAILED' });
+  }
+}
+
+async function requestWindowsHostLanFirewall() {
+  const request = buildElevatedFirewallRequest({ ...currentWindowsHostFirewallInput(), action: 'ensure' });
+  if (!request.allowed) return Object.freeze({ state: 'not-available', code: request.reason });
+  try {
+    const result = await runWindowsFirewallRequest(request);
+    return Object.freeze({
+      state: result.code === 0 ? 'elevation-requested' : 'elevation-not-completed',
+      code: result.code === 0 ? null : 'WINDOWS_FIREWALL_ELEVATION_NOT_COMPLETED',
+    });
+  } catch (error) {
+    return Object.freeze({ state: 'elevation-not-completed', code: error.code || 'WINDOWS_FIREWALL_ELEVATION_NOT_COMPLETED' });
+  }
 }
 
 function getDesktopIdentityVault() {
@@ -92,31 +225,22 @@ function getDesktopIdentityVault() {
   return desktopIdentityVault;
 }
 
-async function localDesktopIdentityRequest(pathname, { method = 'GET', body } = {}) {
-  const port = Number(process.env.PORT || 3001);
-  const headers = {
-    Accept: 'application/json',
-    'x-gewu-electron-local-bridge': electronLocalBridgeSecret,
-  };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const response = await fetch(`http://127.0.0.1:${port}/api/desktop-identity${pathname}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(30000),
+function getDesktopAuthorityRuntime() {
+  if (desktopAuthorityRuntime) return desktopAuthorityRuntime;
+  const runtimeConfig = ensureRuntimeConfig(getRuntimeConfigPath(), {
+    userDataPath: app.getPath('userData'),
+    primaryHostCapable: PRIMARY_HOST_CAPABLE,
   });
-  let payload;
-  try {
-    payload = await response.json();
-  } catch (_error) {
-    payload = null;
-  }
-  if (!response.ok || !payload?.success) {
-    const error = new Error(payload?.code || 'DESKTOP_SINGLE_USER_LOCAL_REQUEST_FAILED');
-    error.code = payload?.code || 'DESKTOP_SINGLE_USER_LOCAL_REQUEST_FAILED';
-    throw error;
-  }
-  return payload;
+  desktopAuthorityRuntime = createDesktopAuthorityRuntime({
+    filePath: path.join(app.getPath('userData'), 'desktop-authority-outbox.bin'),
+    safeStorage,
+    vault: getDesktopIdentityVault(),
+    lanBaseUrl: runtimeConfig.hostBaseUrl,
+    relayWebSocketBaseUrl: runtimeConfig.cloudBaseUrl,
+    durableRelayBaseUrl: runtimeConfig.cloudBaseUrl,
+    WebSocketImpl: AUTHORITY_WEBSOCKET_ENABLED ? WebSocket : undefined,
+  });
+  return desktopAuthorityRuntime;
 }
 
 async function verifyPrimaryHostAdoption(input = {}) {
@@ -128,7 +252,9 @@ async function verifyPrimaryHostAdoption(input = {}) {
     error.code = 'PRIMARY_HOST_ADOPTION_AUTHORIZATION_REQUIRED';
     throw error;
   }
-  const response = await fetch(`${MANAGED_CLOUD_BASE_URL}/api/desktop-identity/primary-host/credentials/verify`, {
+  const controlPlaneBaseUrl = getManagedCloudBaseUrl();
+  log(`[primary-host:adopt] control-plane-port=${new URL(controlPlaneBaseUrl).port || 'default'}`);
+  const response = await requestManagedControlPlane(`${controlPlaneBaseUrl}/api/desktop-identity/primary-host/credentials/verify`, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
@@ -141,7 +267,7 @@ async function verifyPrimaryHostAdoption(input = {}) {
       generation: epoch.generation,
       credential,
     }),
-    signal: AbortSignal.timeout(15000),
+    timeoutMs: 15000,
   });
   let payload;
   try {
@@ -172,8 +298,8 @@ async function acknowledgePrimaryHostRecoveryDelivery(input = {}) {
     throw error;
   }
   const { deliveryId: _pathDeliveryId, ...acknowledgementBody } = acknowledgement;
-  const response = await fetch(
-    `${MANAGED_CLOUD_BASE_URL}/api/desktop-identity/primary-host/recovery-deliveries/${encodeURIComponent(deliveryId)}/acknowledge`,
+  const response = await requestManagedControlPlane(
+    `${getManagedCloudBaseUrl()}/api/desktop-identity/primary-host/recovery-deliveries/${encodeURIComponent(deliveryId)}/acknowledge`,
     {
       method: 'POST',
       headers: {
@@ -182,7 +308,7 @@ async function acknowledgePrimaryHostRecoveryDelivery(input = {}) {
         Authorization: authorization,
       },
       body: JSON.stringify({ ...acknowledgementBody, signature: input.signature }),
-      signal: AbortSignal.timeout(15000),
+      timeoutMs: 15000,
     }
   );
   let payload;
@@ -220,6 +346,7 @@ function getPrimaryHostRuntimeManager() {
     userDataPath,
     env: process.env,
     readRuntimeConfig: ensureRuntimeConfig,
+    writeManagedHostBootstrapRuntimeConfig,
     writeManagedHostRuntimeConfig,
     writeManagedClientRuntimeConfig,
     writeManagedDesktopIdentityMode,
@@ -233,6 +360,18 @@ function getPrimaryHostRuntimeManager() {
   return primaryHostRuntimeManager;
 }
 
+function getPrimaryHostRuntimeStatus() {
+  if (!PRIMARY_HOST_CAPABLE) throw Object.assign(new Error('PRIMARY_HOST_BUILD_REQUIRED'), { code: 'PRIMARY_HOST_BUILD_REQUIRED' });
+  if (!primaryHostRuntimeStatus) primaryHostRuntimeStatus = createPrimaryHostRuntimeStatus();
+  return primaryHostRuntimeStatus;
+}
+
+function getPrimaryHostRelaunchReadiness() {
+  if (!PRIMARY_HOST_CAPABLE) throw Object.assign(new Error('PRIMARY_HOST_BUILD_REQUIRED'), { code: 'PRIMARY_HOST_BUILD_REQUIRED' });
+  if (!primaryHostRelaunchReadiness) primaryHostRelaunchReadiness = createPrimaryHostRelaunchReadiness({ userDataPath: app.getPath('userData') });
+  return primaryHostRelaunchReadiness;
+}
+
 async function readPrimaryHostControlStatus(authorization) {
   const normalizedAuthorization = String(authorization || '').trim();
   if (!normalizedAuthorization.startsWith('Bearer ') || normalizedAuthorization.length > 16384) {
@@ -240,9 +379,9 @@ async function readPrimaryHostControlStatus(authorization) {
     error.code = 'PRIMARY_HOST_CONTROL_AUTHORIZATION_REQUIRED';
     throw error;
   }
-  const response = await fetch(`${MANAGED_CLOUD_BASE_URL}/api/desktop-identity/primary-host/status`, {
+  const response = await requestManagedControlPlane(`${getManagedCloudBaseUrl()}/api/desktop-identity/primary-host/status`, {
     headers: { Accept: 'application/json', Authorization: normalizedAuthorization },
-    signal: AbortSignal.timeout(15000),
+    timeoutMs: 15000,
   });
   let payload;
   try {
@@ -272,12 +411,15 @@ async function preparePrimaryHostOperation(input = {}) {
     operation: input.operation,
     challengeId: input.challengeId,
     targetGeneration: input.targetGeneration,
+    replaceStaleBootstrapStage: input.operation === 'bootstrap'
+      && input.physicalConfirmation === 'I_AM_PHYSICALLY_AT_THIS_DEVICE',
   });
   const credentialStage = Object.freeze({
     id: stagedCredential.stageId,
     deviceId: stagedCredential.deviceId,
     targetGeneration: stagedCredential.generation,
     commitment: stagedCredential.credentialCommitment,
+    hostSigningKey: stagedCredential.hostSigningKey,
   });
   const port = Number(process.env.PORT || 3001);
   const response = await fetch(`http://127.0.0.1:${port}/api/desktop-identity/primary-host/local-evidence`, {
@@ -347,8 +489,8 @@ async function preparePrimaryHostOperation(input = {}) {
       preflightProof: null,
     });
   }
-  const proofResponse = await fetch(
-    `${MANAGED_CLOUD_BASE_URL}/api/desktop-identity/primary-host/preflight-proofs`,
+  const proofResponse = await requestManagedControlPlane(
+    `${getManagedCloudBaseUrl()}/api/desktop-identity/primary-host/preflight-proofs`,
     {
       method: 'POST',
       headers: {
@@ -366,7 +508,7 @@ async function preparePrimaryHostOperation(input = {}) {
         operationManifest,
         localReceipt,
       }),
-      signal: AbortSignal.timeout(15000),
+      timeoutMs: 15000,
     }
   );
   let proofPayload;
@@ -417,7 +559,6 @@ function configuredDesktopIdentity(input = {}, options = {}) {
       primaryHostCapable: PRIMARY_HOST_CAPABLE,
       nodeRole: runtimeConfig.nodeRole,
       desktopIdentityMode: runtimeConfig.desktopIdentityMode,
-      singleUserHostEnrollment: options.singleUserHostEnrollment === true,
     }),
   };
 }
@@ -487,10 +628,19 @@ function startBackendService() {
   }
   try {
     const runtimeConfig = loadAndApplyRuntimeConfig();
+    ensureLocalSessionSigningSecret(process.env, electronLocalBridgeSecret);
     log('Runtime config loaded: role=' + runtimeConfig.nodeRole + ' device=' + runtimeConfig.deviceId);
     process.env.NODE_ENV = process.env.NODE_ENV || 'production';
-    process.env.PORT = process.env.PORT || '3001';
     if (runtimeConfig.nodeRole === 'primary-host') {
+      const embeddedPort = resolveEmbeddedRuntimePort(runtimeConfig);
+      log(`Primary host embedded port: hostBaseUrl=${String(runtimeConfig.hostBaseUrl || '')} resolved=${embeddedPort}`);
+      process.env.PORT = String(embeddedPort);
+    } else {
+      process.env.PORT = process.env.PORT || '3001';
+    }
+    const listenHost = resolveEmbeddedListenHost({ nodeRole: runtimeConfig.nodeRole, config: runtimeConfig });
+    log(`Primary host listener scope: role=${runtimeConfig.nodeRole} configured=${String(runtimeConfig.primaryHostListenScope || 'lan')} resolved=${listenHost}`);
+    if (runtimeConfig.nodeRole === 'primary-host' && listenHost !== '127.0.0.1') {
       const lanUrls = buildLanHostUrls({ port: process.env.PORT });
       process.env.GEWU_HOST_LAN_URLS = JSON.stringify(lanUrls);
       log('Host LAN URLs: ' + lanUrls.join(','));
@@ -508,13 +658,211 @@ function startBackendService() {
     require('module').Module._initPaths();
     const { createApp } = require(appPath);
     const backendApp = createApp();
-    const listenHost = runtimeConfig.nodeRole === 'primary-host' ? '0.0.0.0' : '127.0.0.1';
-    backendServer = backendApp.listen(Number(process.env.PORT), listenHost, () => {
+    backendServer = backendApp.listen(Number(process.env.PORT), listenHost, async () => {
       log(`Embedded backend listening on ${listenHost}:${process.env.PORT}`);
+      if (canStartAuthorityHostRuntime(runtimeConfig)) {
+        const { getInstance } = require('../backend/src/database');
+        const { createAuthorityHostRuntime } = require('../backend/src/services/authorityHostRuntime');
+        const {
+          createAuthorityCommandSource,
+          publishAuthorityControlRecords,
+          readAuthorityControlRecords,
+          readAuthorityHostEpoch,
+          publishAuthorityHostEpoch,
+          publishAuthorityProjection,
+        } = require('../backend/src/services/cloudRelayClient');
+        const { createAuthorityCompositeCommandSource } = require('../backend/src/services/authorityCompositeCommandSource');
+        const { createAuthoritySocketCommandHandler } = require('../backend/src/services/authoritySocketCommandHandler');
+        const { createAuthorityDeviceControlCache } = require('../backend/src/services/authorityDeviceControlCache');
+        const { createAuthorityRuntimeHostEpochService } = require('../backend/src/services/authorityRuntimeHostEpochService');
+        const { createAuthorityProjectionPublisherService } = require('../backend/src/services/authorityProjectionPublisherService');
+        const { createAuthorityProjectionSourceService } = require('../backend/src/services/authorityProjectionSourceService');
+        const {
+          createAuthorityControlMirrorSourceService,
+        } = require('../backend/src/services/authorityControlMirrorSourceService');
+        const { createAuthorityProjectionWorker } = require('../backend/src/services/authorityProjectionWorker');
+        const {
+          derivePrimaryHostSigningKey,
+          signPrimaryHostProjection,
+        } = require('./primaryHostSigningKey');
+        const { AuthoritySocketServer } = require('../backend/src/websocket/authoritySocketServer');
+        const { createHostCommandWorker } = require('../backend/src/services/hostCommandWorker');
+        const managedHostAuth = Object.freeze({
+          hostCredential: process.env.GEWU_PRIMARY_HOST_CREDENTIAL,
+          hostDeviceId: runtimeConfig.deviceId,
+          hostGeneration: runtimeConfig.primaryHostGeneration,
+        });
+        const derivedHostSigningKey = derivePrimaryHostSigningKey(managedHostAuth.hostCredential);
+        const hostSigningKey = Object.freeze({
+          algorithm: derivedHostSigningKey.algorithm,
+          publicKeyPem: derivedHostSigningKey.publicKeyPem,
+          publicKeyFingerprint: derivedHostSigningKey.publicKeyFingerprint,
+        });
+        const runtimeHostEpochs = createAuthorityRuntimeHostEpochService({ db: getInstance().db });
+        const remoteEpoch = await readAuthorityHostEpoch(managedHostAuth);
+        runtimeHostEpochs.install({ epoch: remoteEpoch?.epoch, hostSigningKey });
+        const cloudSource = createAuthorityCommandSource(managedHostAuth);
+        const commandSource = createAuthorityCompositeCommandSource({
+          sources: [
+            { id: 'local', source: backendApp.locals.authorityCommandInbox },
+            { id: 'cloud', source: cloudSource },
+          ],
+        });
+        const controlCache = createAuthorityDeviceControlCache({ db: getInstance().db });
+        const refreshControlRecords = async () => {
+          const response = await readAuthorityControlRecords(managedHostAuth);
+          if (!response?.snapshot) throw Object.assign(new Error('AUTHORITY_DEVICE_CONTROL_MIRROR_UNAVAILABLE'), { code: 'AUTHORITY_DEVICE_CONTROL_MIRROR_UNAVAILABLE' });
+          return controlCache.replace(response.snapshot);
+        };
+        const authorityRuntime = createAuthorityHostRuntime({
+          database: getInstance(),
+          targetHostId: runtimeConfig.deviceId,
+          commandSource,
+        });
+        const projectionSource = createAuthorityProjectionSourceService({
+          db: getInstance().db,
+        });
+        const controlMirrorSource = createAuthorityControlMirrorSourceService({
+          db: getInstance().db,
+        });
+        const projectionPublisher = createAuthorityProjectionPublisherService({
+          db: getInstance().db,
+          loadSource: input => projectionSource.load(input),
+          prepareRemote: async target => {
+            await publishAuthorityHostEpoch({
+              id: target.hostEpochId,
+              authorityId: target.authorityId,
+              generation: runtimeConfig.primaryHostGeneration,
+              deviceId: runtimeConfig.deviceId,
+              hostSigningKey,
+            }, managedHostAuth);
+            return publishAuthorityControlRecords(controlMirrorSource.load(target), managedHostAuth);
+          },
+          signProjection: input => signPrimaryHostProjection({
+            hostCredential: managedHostAuth.hostCredential,
+            projection: input,
+          }),
+          publishRemote: projection => publishAuthorityProjection(projection, managedHostAuth),
+        });
+        // The cloud owns the bootstrap grant/lease record. Pull it into the
+        // host's copy before the projection worker is allowed to publish any
+        // snapshot, otherwise a pre-bootstrap local copy could overwrite that
+        // newly issued control record on its first wake.
+        await refreshControlRecords();
+        authorityProjectionWorker = createAuthorityProjectionWorker({
+          db: getInstance().db,
+          publisher: projectionPublisher,
+          targetHostId: runtimeConfig.deviceId,
+          intervalMs: 15000,
+          log,
+        });
+        authorityProjectionWorker.start();
+        hostCommandWorker = createHostCommandWorker({
+          processOnce: async () => {
+            await refreshControlRecords();
+            const result = await authorityRuntime.processor.processOnce();
+            if (Number(result?.processed || 0) > 0) void authorityProjectionWorker?.wake();
+            return result;
+          },
+          log,
+        });
+        hostCommandWorker.start();
+        void authorityProjectionWorker.wake();
+        const { createPrimaryHostLocalDraftExecutor } = require('./primaryHostLocalDraftExecutor');
+        const { createPrimaryHostLocalProjectionReader } = require('./primaryHostLocalProjectionReader');
+        const { createAuthorityProjectionStoreService } = require('../backend/src/services/authorityProjectionStoreService');
+        const hostAuthorityContext = () => {
+          const vaultStatus = getDesktopIdentityVault().status();
+          if (!vaultStatus?.unlocked) {
+            throw Object.assign(new Error('PRIMARY_HOST_LOCAL_OPERATOR_UNLOCK_REQUIRED'), { code: 'PRIMARY_HOST_LOCAL_OPERATOR_UNLOCK_REQUIRED' });
+          }
+          const epoch = runtimeHostEpochs.findForDevice(runtimeConfig.deviceId);
+          if (!epoch?.id || !epoch?.authority_id || !epoch?.device_id) {
+            throw Object.assign(new Error('PRIMARY_HOST_LOCAL_EPOCH_REQUIRED'), { code: 'PRIMARY_HOST_LOCAL_EPOCH_REQUIRED' });
+          }
+          const control = getInstance().db.prepare(`SELECT g.user_id, g.device_id, g.grant_version, l.lease_id, l.active_role
+            FROM device_grants g JOIN device_leases l ON l.grant_id=g.grant_id
+            WHERE g.authority_id=? AND g.device_id=? AND g.status='active'
+              AND l.authority_id=? AND l.status='active' AND l.revoked_at IS NULL
+            ORDER BY l.expires_at DESC LIMIT 1`)
+            .get(epoch.authority_id, epoch.device_id, epoch.authority_id);
+          if (!control?.user_id || !control?.device_id || !control?.lease_id || !control?.active_role) {
+            throw Object.assign(new Error('PRIMARY_HOST_LOCAL_CONTROL_REQUIRED'), { code: 'PRIMARY_HOST_LOCAL_CONTROL_REQUIRED' });
+          }
+          if (String(vaultStatus?.user?.id || '') !== String(control.user_id)) {
+            throw Object.assign(new Error('PRIMARY_HOST_LOCAL_OPERATOR_USER_MISMATCH'), { code: 'PRIMARY_HOST_LOCAL_OPERATOR_USER_MISMATCH' });
+          }
+          if (String(vaultStatus?.activeRole || '') !== String(control.active_role)) {
+            throw Object.assign(new Error('PRIMARY_HOST_LOCAL_OPERATOR_ROLE_MISMATCH'), { code: 'PRIMARY_HOST_LOCAL_OPERATOR_ROLE_MISMATCH' });
+          }
+          return Object.freeze({
+            authorityId: epoch.authority_id,
+            hostEpochId: epoch.id,
+            actor: Object.freeze({ userId: control.user_id, deviceId: control.device_id, role: control.active_role }),
+            lease: Object.freeze({ id: control.lease_id, grantVersion: Number(control.grant_version) }),
+          });
+        };
+        primaryHostLocalProjectionReader = createPrimaryHostLocalProjectionReader({
+          refreshControlRecords,
+          hostAuthorityContext,
+          resolveHostEpoch: hostEpochId => runtimeHostEpochs.find(hostEpochId),
+          materializeProjections: target => projectionPublisher.materializeAll(target),
+          projectionStore: createAuthorityProjectionStoreService({ db: getInstance().db }),
+          db: getInstance().db,
+        });
+        primaryHostLocalDraftExecutor = createPrimaryHostLocalDraftExecutor({
+          refreshControlRecords,
+          hostAuthorityContext,
+          authorityExecutor: authorityRuntime.executor,
+          projectionWorker: authorityProjectionWorker,
+        });
+        const socketHandler = createAuthoritySocketCommandHandler({
+          deviceAuth: backendApp.locals.authorityDeviceRequestAuth,
+          authorizeCommand: envelope => backendApp.locals.authorityCommandAuthorization.authorize(envelope),
+          inbox: backendApp.locals.authorityCommandInbox,
+          worker: hostCommandWorker,
+          refreshControlRecords,
+        });
+        if (AUTHORITY_WEBSOCKET_ENABLED) {
+          backendApp.set('authoritySocketServer', new AuthoritySocketServer(backendServer, {
+            handler: socketHandler,
+          }));
+        }
+        const { createHostTaskWakeup } = require('../backend/src/websocket/hostTaskWakeup');
+        hostTaskWakeup = createHostTaskWakeup({
+          runtimeConfig,
+          localPort: Number(process.env.PORT),
+          worker: hostCommandWorker,
+          authorityFrameHandler: socketHandler,
+          log,
+        });
+        hostTaskWakeup?.start();
+        const runtimeStatus = getPrimaryHostRuntimeStatus();
+        runtimeStatus.bindWorker(hostCommandWorker);
+        runtimeStatus.bindProjectionWorker(authorityProjectionWorker);
+        runtimeStatus.bindWakeup(hostTaskWakeup);
+        runtimeStatus.markBackendListening({ host: listenHost, port: Number(process.env.PORT) });
+        getPrimaryHostRelaunchReadiness().markReady({ host: listenHost, port: Number(process.env.PORT) });
+      } else if (runtimeConfig.nodeRole === 'primary-host') {
+        log('AUTHORITY_RUNTIME_DEFERRED_UNTIL_HOST_CREDENTIAL');
+        const runtimeStatus = getPrimaryHostRuntimeStatus();
+        runtimeStatus.markBackendListening({ host: listenHost, port: Number(process.env.PORT) });
+        getPrimaryHostRelaunchReadiness().markReady({ host: listenHost, port: Number(process.env.PORT) });
+      }
     });
-    backendServer.on('error', err => log('Embedded backend error: ' + err.message));
+    backendServer.on('error', err => {
+      log('Embedded backend error: ' + err.message);
+      if (runtimeConfig.nodeRole === 'primary-host') {
+        getPrimaryHostRuntimeStatus().markBackendFailed(err);
+        getPrimaryHostRelaunchReadiness().markFailed(err);
+      }
+    });
   } catch (err) {
     log('Embedded backend start failed: ' + err.message + '\n' + err.stack);
+    if (PRIMARY_HOST_CAPABLE) {
+      getPrimaryHostRuntimeStatus().markBackendFailed(err);
+      getPrimaryHostRelaunchReadiness().markFailed(err);
+    }
   }
 }
 
@@ -627,7 +975,7 @@ function createWindow() {
 }
 
 function showErrorPage(msg) {
-  const html = `<html><body style="font-family:sans-serif;padding:50px;background:#fff">
+  const html = `<html><head><meta charset="UTF-8"></head><body style="font-family:sans-serif;padding:50px;background:#fff">
     <h2>⚠️ ${msg}</h2>
     <p>请尝试用命令行启动查看详细日志：</p>
     <code>"${process.execPath}"</code>
@@ -637,17 +985,30 @@ function showErrorPage(msg) {
   mainWindow.show();
 }
 
-app.whenReady().then(() => {
-  log('whenReady');
-  startBackendService();
-  createWindow();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+if (DESKTOP_SINGLE_INSTANCE_OWNER) {
+  Promise.all([app.whenReady(), crossInstallInstanceLock.ready]).then(([, crossInstallOwner]) => {
+    if (!crossInstallOwner) return;
+    log('whenReady');
+    if (PRIMARY_HOST_CAPABLE) getPrimaryHostRelaunchReadiness().beginLaunch();
+    startBackendService();
+    createWindow();
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  }).catch(error => {
+    log(`CROSS_INSTALL_INSTANCE_LOCK_FAILED ${String(error?.code || error?.message || 'UNKNOWN')}`);
+    app.quit();
   });
-});
+}
 
 app.on('window-all-closed', () => {
   lockDesktopIdentityVault();
+  hostTaskWakeup?.stop();
+  hostTaskWakeup = null;
+  hostCommandWorker?.stop();
+  hostCommandWorker = null;
+  authorityProjectionWorker?.stop();
+  authorityProjectionWorker = null;
   if (backendServer) {
     backendServer.close();
     backendServer = null;
@@ -656,7 +1017,14 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  void crossInstallInstanceLock?.close();
   lockDesktopIdentityVault();
+  hostTaskWakeup?.stop();
+  hostTaskWakeup = null;
+  hostCommandWorker?.stop();
+  hostCommandWorker = null;
+  authorityProjectionWorker?.stop();
+  authorityProjectionWorker = null;
   if (backendServer) {
     backendServer.close();
     backendServer = null;
@@ -693,10 +1061,42 @@ ipcMain.handle('runtime-config:set', async (_event, config) => {
 });
 if (PRIMARY_HOST_CAPABLE) {
   ipcMain.handle('primary-host:status', async () => getPrimaryHostRuntimeManager().status());
-  ipcMain.handle('primary-host:adopt', async (_event, input) => getPrimaryHostRuntimeManager().adopt(input));
+  ipcMain.handle('primary-host:firewall-status', async () => readWindowsHostFirewallStatus());
+  ipcMain.handle('primary-host:firewall-enable-lan', async () => requestWindowsHostLanFirewall());
+  ipcMain.handle('primary-host:worker-status', async () => (
+    getPrimaryHostRuntimeStatus().status().worker
+  ));
+  ipcMain.handle('primary-host:runtime-status', async () => getPrimaryHostRuntimeStatus().status());
+  ipcMain.handle('primary-host:relaunch-readiness', async () => getPrimaryHostRelaunchReadiness().read());
+  ipcMain.handle('primary-host:adopt', async (_event, input) => {
+    log('[primary-host:adopt] requested');
+    try {
+      const adopted = await getPrimaryHostRuntimeManager().adopt(input);
+      log('[primary-host:adopt] committed');
+      return adopted;
+    } catch (error) {
+      // Keep the renderer's generic security-safe wording, while retaining the
+      // stable error code in the local main-process log for support diagnosis.
+      log(`[primary-host:adopt] ${String(error?.code || 'PRIMARY_HOST_ADOPTION_FAILED')}`);
+      throw error;
+    }
+  });
   ipcMain.handle('primary-host:demote', async (_event, input) => getPrimaryHostRuntimeManager().demote(input));
   ipcMain.handle('primary-host:local-receipt', async (_event, input) => issuePrimaryHostLocalReceipt(input));
-  ipcMain.handle('primary-host:prepare-operation', async (_event, input) => preparePrimaryHostOperation(input));
+  ipcMain.handle('primary-host:execute-local-draft', async (_event, draft) => {
+    if (typeof primaryHostLocalDraftExecutor !== 'function') {
+      throw Object.assign(new Error('PRIMARY_HOST_LOCAL_EXECUTOR_UNAVAILABLE'), { code: 'PRIMARY_HOST_LOCAL_EXECUTOR_UNAVAILABLE' });
+    }
+    return primaryHostLocalDraftExecutor(draft);
+  });
+  ipcMain.handle('primary-host:prepare-operation', async (_event, input) => {
+    try {
+      return await preparePrimaryHostOperation(input);
+    } catch (error) {
+      log(`[primary-host:prepare-operation] ${String(error?.code || 'PRIMARY_HOST_PREPARE_OPERATION_FAILED')}`);
+      throw error;
+    }
+  });
   ipcMain.handle('primary-host:reveal-recovery-package', async (_event, input) => (
     getPrimaryHostRuntimeManager().revealRecoveryPackage(input)
   ));
@@ -705,103 +1105,37 @@ if (PRIMARY_HOST_CAPABLE) {
   ));
   ipcMain.handle('primary-host:restart', async () => {
     setTimeout(() => {
-      app.relaunch();
+      getPrimaryHostRelaunchReadiness().requestRelaunch();
+      app.relaunch({ args: buildRelaunchArguments(process.argv) });
       app.exit(0);
     }, 100);
     return true;
   });
-  ipcMain.handle('single-user:enable-mode', async (_event, input) => (
-    getPrimaryHostRuntimeManager().setIdentityMode({
-      mode: 'single-user',
-      confirmation: input?.confirmation,
-    })
-  ));
-  ipcMain.handle('single-user:disable-mode', async (_event, input) => {
-    const disabled = await localDesktopIdentityRequest('/single-user/disable', {
-      method: 'POST',
-      body: {},
-    });
-    const runtime = getPrimaryHostRuntimeManager().setIdentityMode({
-      mode: 'full',
-      confirmation: input?.confirmation,
-    });
-    return Object.freeze({ disabled, runtime });
-  });
-  ipcMain.handle('single-user:status', async () => {
-    const runtime = getPrimaryHostRuntimeManager().status();
-    if (runtime?.config?.desktopIdentityMode !== 'single-user') {
-      return Object.freeze({ mode: runtime?.config?.desktopIdentityMode || 'full', runtime });
-    }
-    const local = await localDesktopIdentityRequest('/single-user/status');
-    return Object.freeze({ ...local, runtime });
-  });
-  ipcMain.handle('single-user:bootstrap', async (_event, input = {}) => {
-    if (Object.hasOwn(input, 'password')) {
-      const error = new Error('DESKTOP_SINGLE_USER_PASSWORD_FORBIDDEN');
-      error.code = 'DESKTOP_SINGLE_USER_PASSWORD_FORBIDDEN';
-      throw error;
-    }
-    const initialized = await localDesktopIdentityRequest('/single-user/bootstrap', {
-      method: 'POST',
-      body: {
-        publicIdentity: input.publicIdentity,
-        confirmation: input.confirmation,
-        operationManifest: input.operationManifest,
-      },
-    });
-    const runtime = getPrimaryHostRuntimeManager().completeSingleUserBootstrap({
-      epoch: initialized.epoch,
-    });
-    return Object.freeze({ ...initialized, runtime });
-  });
-  ipcMain.handle('single-user:reset-host-password', async (_event, input = {}) => {
-    if (Object.hasOwn(input, 'password')) {
-      const error = new Error('DESKTOP_SINGLE_USER_PASSWORD_FORBIDDEN');
-      error.code = 'DESKTOP_SINGLE_USER_PASSWORD_FORBIDDEN';
-      throw error;
-    }
-    return localDesktopIdentityRequest('/single-user/reset-host-password', {
-      method: 'POST',
-      body: {
-        publicIdentity: input.publicIdentity,
-        confirmation: input.confirmation,
-        expectedCredentialVersion: input.expectedCredentialVersion,
-      },
-    });
-  });
-  ipcMain.handle('single-user:issue-pairing-code', async () => (
-    localDesktopIdentityRequest('/single-user/grants', { method: 'POST', body: {} })
-  ));
-  ipcMain.handle('single-user:revoke-pairing-code', async (_event, input = {}) => (
-    localDesktopIdentityRequest(
-      `/single-user/grants/${encodeURIComponent(String(input.grantId || ''))}/revoke`,
-      { method: 'POST', body: {} }
-    )
-  ));
 }
 ipcMain.handle('desktop-identity:status', async () => getDesktopIdentityVault().status());
 ipcMain.handle('desktop-identity:begin-registration', async (_event, input) => {
   return getDesktopIdentityVault().beginRegistration(configuredDesktopIdentity(input));
 });
-ipcMain.handle('desktop-identity:begin-single-user-enrollment', async (_event, input) => {
-  return getDesktopIdentityVault().beginSingleUserEnrollment(configuredDesktopIdentity(input, {
-    singleUserHostEnrollment: true,
-  }));
-});
-ipcMain.handle('desktop-identity:create-pairing-envelope', async (_event, input) => {
-  return getDesktopIdentityVault().createPairingEnvelope(input);
-});
 ipcMain.handle('desktop-identity:begin-password-reset', async () => {
   return getDesktopIdentityVault().beginPasswordReset();
 });
 ipcMain.handle('desktop-identity:complete-registration', async (_event, input) => {
-  return getDesktopIdentityVault().completeRegistration(input);
+  try {
+    return getDesktopIdentityVault().completeRegistration(input);
+  } catch (error) {
+    // Retain only the stable code locally. The renderer deliberately presents
+    // a generic security-safe message and must never receive vault details.
+    log(`[desktop-identity:complete-registration] ${String(error?.code || 'DESKTOP_IDENTITY_REGISTRATION_FAILED')}`);
+    throw error;
+  }
 });
 ipcMain.handle('desktop-identity:complete-password-reset', async (_event, input) => {
   return getDesktopIdentityVault().completePasswordReset(input);
 });
 ipcMain.handle('desktop-identity:unlock', async (_event, input) => {
-  return getDesktopIdentityVault().unlock(input);
+  const unlocked = getDesktopIdentityVault().unlock(input);
+  void authorityProjectionWorker?.wake();
+  return unlocked;
 });
 ipcMain.handle('desktop-identity:lock', async () => getDesktopIdentityVault().lock());
 ipcMain.handle('desktop-identity:refresh-offline-lease', async (_event, input) => {
@@ -810,6 +1144,52 @@ ipcMain.handle('desktop-identity:refresh-offline-lease', async (_event, input) =
 ipcMain.handle('desktop-identity:sign-challenge', async (_event, input) => {
   return getDesktopIdentityVault().signChallenge(input);
 });
+ipcMain.handle('desktop-authority:append-draft', async (_event, input) => (
+  getDesktopAuthorityRuntime().appendDraft(input)
+));
+ipcMain.on('desktop-authority:append-draft-sync', (event, input) => {
+  try {
+    event.returnValue = {
+      ok: true,
+      item: getDesktopAuthorityRuntime().appendDraftSync(input),
+    };
+  } catch (error) {
+    event.returnValue = {
+      ok: false,
+      error: { code: error?.code || 'AUTHORITY_DRAFT_APPEND_FAILED' },
+    };
+  }
+});
+ipcMain.on('desktop-authority:append-draft-batch-sync', (event, inputs) => {
+  try {
+    event.returnValue = {
+      ok: true,
+      items: getDesktopAuthorityRuntime().appendDraftBatchSync(inputs),
+    };
+  } catch (error) {
+    event.returnValue = {
+      ok: false,
+      error: { code: error?.code || 'AUTHORITY_DRAFT_BATCH_APPEND_FAILED' },
+    };
+  }
+});
+ipcMain.handle('desktop-authority:get', async (_event, id) => getDesktopAuthorityRuntime().get(id));
+ipcMain.handle('desktop-authority:list', async () => getDesktopAuthorityRuntime().list());
+ipcMain.handle('desktop-authority:read-projection', async (_event, input) => (
+  typeof primaryHostLocalProjectionReader === 'function'
+    ? primaryHostLocalProjectionReader(input)
+    : getDesktopAuthorityRuntime().readProjection(input)
+));
+ipcMain.handle('desktop-authority:submit', async (_event, id) => (
+  typeof primaryHostLocalDraftExecutor === 'function'
+    ? getDesktopAuthorityRuntime().submitLocal(id, primaryHostLocalDraftExecutor)
+    : getDesktopAuthorityRuntime().submit(id)
+));
+ipcMain.handle('desktop-authority:confirm-and-submit', async (_event, id) => (
+  typeof primaryHostLocalDraftExecutor === 'function'
+    ? getDesktopAuthorityRuntime().confirmAndExecuteLocal(id, primaryHostLocalDraftExecutor)
+    : getDesktopAuthorityRuntime().confirmAndSubmit(id)
+));
 ipcMain.handle('dialog:select-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openDirectory', 'createDirectory'],
@@ -834,6 +1214,7 @@ ipcMain.handle('check-for-updates', async () => {
     );
     return {
       success: true,
+      updateAvailable: result?.isUpdateAvailable === true,
       updateInfo: result?.updateInfo || null,
       feedUrl: updateFeedUrl,
     };

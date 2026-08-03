@@ -48,6 +48,32 @@ try {
   assert.strictEqual(optionalReq.user, undefined);
   assert.strictEqual(optionalReq.authz, undefined);
 
+  const localBridgeReq = {
+    method: 'POST',
+    originalUrl: '/api/desktop-identity/primary-host/local-evidence',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'x-gewu-electron-local-bridge': 'nonempty-bridge-proof',
+    },
+  };
+  const localBridgeRes = responseRecorder();
+  let localBridgeNext = false;
+  optionalAuth(localBridgeReq, localBridgeRes, () => { localBridgeNext = true; });
+  assert.strictEqual(localBridgeNext, true,
+    'the Electron-only local evidence route must reach its own loopback/secret verifier even with a cloud desktop JWT');
+  assert.strictEqual(localBridgeRes.statusCode, null);
+
+  const unbridgedEvidenceReq = {
+    method: 'POST',
+    originalUrl: '/api/desktop-identity/primary-host/local-evidence',
+    headers: { authorization: `Bearer ${token}` },
+  };
+  const unbridgedEvidenceRes = responseRecorder();
+  let unbridgedEvidenceNext = false;
+  optionalAuth(unbridgedEvidenceReq, unbridgedEvidenceRes, () => { unbridgedEvidenceNext = true; });
+  assert.strictEqual(unbridgedEvidenceNext, false);
+  assert.strictEqual(unbridgedEvidenceRes.body.code, 'TOKEN_INVALID');
+
   console.log('backend review token isolation checks passed');
 } finally {
   if (previousSecret === undefined) delete process.env.JWT_SECRET;

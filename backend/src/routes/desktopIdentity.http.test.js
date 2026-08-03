@@ -87,12 +87,38 @@ function generateDeviceKey() {
       VALUES ('legacy-role-only-http', 'wx-http-legacy', 'union-http-legacy',
         '13500135000', '13500135000', 'Legacy Role Only', 'admin', 1, 1, 'approved', 1, 0, ?, ?)`)
       .run(clock.toISOString(), clock.toISOString());
+    for (const fixture of [
+      ['legacy-formal-http', 'wx-http-legacy-grant', 'union-http-legacy-grant', '13500135001', '13500135001', 'Legacy Formal', 'visitor'],
+      ['disabled-canonical-http', 'wx-http-disabled-canonical', 'union-http-disabled-canonical', '13500135002', '13500135002', 'Disabled Canonical', 'visitor'],
+      ['canonical-visitor-http', 'wx-http-canonical-visitor', 'union-http-canonical-visitor', '13500135003', '13500135003', 'Canonical Visitor', 'visitor'],
+    ]) {
+      db.prepare(`INSERT INTO users
+        (id,wechat_openid,wechat_unionid,phone,phone_normalized,name,role,identity_kind,status,
+         login_enabled,review_status,auth_version,deleted,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,'visitor',1,1,'approved',1,0,?,?)`)
+        .run(...fixture, clock.toISOString(), clock.toISOString());
+    }
+    for (const grant of [
+      ['legacy-formal-http', 'teacher', 'teacher', 'legacy-formal-teacher-record'],
+      ['legacy-formal-http', 'admin', null, null],
+      ['disabled-canonical-http', 'admin', null, null],
+    ]) {
+      db.prepare(`INSERT INTO user_role_grants
+        (user_id,role,subject_type,subject_id,status,source,created_at,updated_at)
+        VALUES (?,?,?,?,'active','desktop-identity-http-test',?,?)`)
+        .run(grant[0], grant[1], grant[2], grant[3], clock.toISOString(), clock.toISOString());
+    }
     for (const user of [canonicalId, 'approved-admin-other']) {
       db.prepare(`INSERT OR IGNORE INTO authority_accounts
         (user_id, authority_id, status, created_at, updated_at)
         VALUES (?, 'authority-desktop-identity-http', 'active', ?, ?)`)
         .run(user, clock.toISOString(), clock.toISOString());
     }
+    db.prepare(`INSERT INTO authority_accounts
+      (user_id,authority_id,status,created_at,updated_at) VALUES
+      ('disabled-canonical-http','authority-desktop-identity-http','disabled',?,?),
+      ('canonical-visitor-http','authority-desktop-identity-http','active',?,?)`)
+      .run(clock.toISOString(), clock.toISOString(), clock.toISOString(), clock.toISOString());
     for (const binding of [
       ['binding-http-super-admin', canonicalId, 'super_admin', null, null],
       ['binding-http-teacher', canonicalId, 'teacher', 'teacher', 'teacher-http-self'],
@@ -134,6 +160,47 @@ function generateDeviceKey() {
     const identityService = createDesktopIdentityService({ db, now });
     const sessionService = createDesktopSessionService({ db, jwtSecret, now });
     const miniappIdentityService = createMiniappIdentityService({ db, jwtSecret, now });
+    const challengeEligibilityUsers = new Map([
+      ['wx-http-legacy-grant', 'legacy-formal-http'],
+      ['wx-http-disabled-canonical', 'disabled-canonical-http'],
+      ['wx-http-canonical-visitor', 'canonical-visitor-http'],
+    ]);
+    const challengeMiniappIdentityService = {
+      ...miniappIdentityService,
+      loginWithClaimedWechat(input) {
+        const userId = challengeEligibilityUsers.get(input.openid);
+        if (!userId) return miniappIdentityService.loginWithClaimedWechat(input);
+        return {
+          loginEventId: `login-event-${userId}`,
+          user: {
+            id: userId,
+            role: 'visitor',
+            identity_kind: 'visitor',
+            account_state: 'visitor',
+          },
+        };
+      },
+    };
+    let confirmedLegacyFormalIdentity = null;
+    const challengeEligibilityIds = new Set([
+      'legacy-formal-challenge', 'disabled-canonical-challenge', 'canonical-visitor-challenge',
+    ]);
+    const primaryHostIdentityService = {
+      readOperationChallenge(challengeId) {
+        if (!challengeEligibilityIds.has(challengeId)) {
+          const error = new Error('PRIMARY_HOST_CHALLENGE_NOT_FOUND');
+          error.code = 'PRIMARY_HOST_CHALLENGE_NOT_FOUND';
+          throw error;
+        }
+        return { id: challengeId, operation: 'bootstrap', status: 'pending_phone', rowVersion: 1 };
+      },
+      confirmOperationChallenge(input) {
+        confirmedLegacyFormalIdentity = input.identity;
+      },
+      readPublicOperationChallenge(challengeId) {
+        return { id: challengeId, operation: 'bootstrap', status: 'identity_verified', rowVersion: 2 };
+      },
+    };
     const usedLoginCodes = new Set();
     const generatedUrlLinks = [];
     let failNextUrlLink = null;
@@ -167,6 +234,9 @@ function generateDeviceKey() {
       }
       usedLoginCodes.add(code);
       if (code.includes('visitor')) return { openid: 'wx-http-visitor', unionid: 'union-http-visitor' };
+      if (code.includes('legacy-grant')) return { openid: 'wx-http-legacy-grant', unionid: 'union-http-legacy-grant' };
+      if (code.includes('disabled-canonical')) return { openid: 'wx-http-disabled-canonical', unionid: 'union-http-disabled-canonical' };
+      if (code.includes('canonical-no-grant')) return { openid: 'wx-http-canonical-visitor', unionid: 'union-http-canonical-visitor' };
       if (code.includes('legacy')) return { openid: 'wx-http-legacy', unionid: 'union-http-legacy' };
       if (code.includes('conflict')) return { openid: 'wx-http-conflict', unionid: 'union-http-conflict' };
       return { openid: 'wx-http-canonical', unionid: 'union-http-canonical' };
@@ -195,7 +265,8 @@ function generateDeviceKey() {
       now,
       identityService,
       sessionService,
-      miniappIdentityService,
+      miniappIdentityService: challengeMiniappIdentityService,
+      primaryHostIdentityService,
       authenticateDesktop,
       resolveWechatIdentity,
       createDesktopAuthorizationUrlLink,
@@ -209,6 +280,33 @@ function generateDeviceKey() {
     }));
     server = app.listen(0);
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const legacyFormalChallenge = await requestJson(
+      baseUrl,
+      'POST',
+      '/api/desktop-identity/challenges/legacy-formal-challenge/confirm',
+      { body: { code: 'legacy-grant-login', phone: '13500135001', expectedRowVersion: 1 } },
+    );
+    assert.strictEqual(legacyFormalChallenge.status, 200,
+      'an active legacy formal grant must reach the challenge resolver even when the scalar role is visitor');
+    assert.strictEqual(confirmedLegacyFormalIdentity.id, 'legacy-formal-http');
+    const disabledCanonicalChallenge = await requestJson(
+      baseUrl,
+      'POST',
+      '/api/desktop-identity/challenges/disabled-canonical-challenge/confirm',
+      { body: { code: 'disabled-canonical-login', phone: '13500135002', expectedRowVersion: 1 } },
+    );
+    assert.strictEqual(disabledCanonicalChallenge.status, 403);
+    assert.strictEqual(disabledCanonicalChallenge.body.code, 'ACTIVE_ROLE_NOT_GRANTED',
+      'a disabled canonical account must fail closed instead of falling back to an active legacy grant');
+    const canonicalVisitorChallenge = await requestJson(
+      baseUrl,
+      'POST',
+      '/api/desktop-identity/challenges/canonical-visitor-challenge/confirm',
+      { body: { code: 'canonical-no-grant-login', phone: '13500135003', expectedRowVersion: 1 } },
+    );
+    assert.strictEqual(canonicalVisitorChallenge.status, 403);
+    assert.strictEqual(canonicalVisitorChallenge.body.code, 'DESKTOP_IDENTITY_VISITOR_FORBIDDEN',
+      'an active account without a formal grant remains visitor-only');
     const retiredRoute = await fetch(`${baseUrl}/api/desktop-identity/single-user/bootstrap`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
     });

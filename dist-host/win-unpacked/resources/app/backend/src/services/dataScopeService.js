@@ -21,14 +21,42 @@ const redactTeacher = row => pick(row, ['id', 'name', 'subject']);
 const redactInstitution = row => pick(row, ['id', 'name']);
 const redactRoom = row => pick(row, ['id', 'name', 'display_name', 'displayName']);
 const redactSchool = row => pick(row, ['id', 'name']);
+const redactAsset = row => pick(row, ['id', 'account_id', 'accountId', 'account_type', 'accountType', 'provider', 'label', 'masked_identifier', 'maskedIdentifier', 'balance', 'currency']);
+const redactQuestionPreview = row => pick(row, ['id', 'type', 'subject', 'difficulty', 'stemPreview']);
+const belongsToUser = (row, userId) => String(value(row, 'owner_user_id', 'ownerUserId') || '') === String(userId || '');
 const studentLinks = row => [
   ...array(value(row, 'student_ids', 'studentIds')),
   ...array(value(row, 'student_pricings', 'studentPricings')).map(item => typeof item === 'object' ? value(item, 'student_id', 'studentId') : item),
   value(row, 'student_id', 'studentId'),
 ].filter(Boolean).map(String);
 
+function ownStudentTuition(row, allowedStudents) {
+  const matches = array(value(row, 'student_pricings', 'studentPricings')).filter(item => {
+    const studentId = typeof item === 'object' ? value(item, 'student_id', 'studentId') : null;
+    return studentId && allowedStudents.has(String(studentId));
+  });
+  if (matches.length === 1) {
+    const amount = Number(value(matches[0], 'tuition', 'price_tuition', 'priceTuition', 'calculated_tuition', 'calculatedTuition'));
+    return Number.isFinite(amount) ? amount : undefined;
+  }
+  const linkedStudents = studentLinks(row);
+  if (linkedStudents.length === 1 && allowedStudents.has(String(linkedStudents[0]))) {
+    const amount = Number(value(row, 'calculated_tuition', 'calculatedTuition'));
+    return Number.isFinite(amount) ? amount : undefined;
+  }
+  return undefined;
+}
+
+function redactStudentSchedule(row, allowedStudents) {
+  const safe = redactSchedule(row);
+  const tuition = ownStudentTuition(row, allowedStudents);
+  if (tuition !== undefined) safe.tuition = tuition;
+  return safe;
+}
+
 function scopeStudent(snapshot, context) {
   const allowedStudents = new Set(array(context.studentIds || context.linkedStudentIds).map(String));
+  if (allowedStudents.size === 0) return scopeUnboundSubject(snapshot, context);
   const courses = copyRows(snapshot.courses).filter(row => studentLinks(row).some(x => allowedStudents.has(x)));
   const courseIds = ids(courses);
   const schedules = copyRows(snapshot.schedules).filter(row => inSet(courseIds, value(row, 'course_id', 'courseId')) || studentLinks(row).some(x => allowedStudents.has(x)));
@@ -39,17 +67,24 @@ function scopeStudent(snapshot, context) {
   const institutionIds = new Set(courses.map(row => value(row, 'institution_id', 'institutionId')).filter(Boolean).map(String));
   const scopedStudents = copyRows(snapshot.students).filter(row => inSet(allowedStudents, id(row)));
   const schoolIds = new Set(scopedStudents.map(row => value(row, 'school_id', 'schoolId')).filter(Boolean).map(String));
-  return withSafePublic(snapshot, {
+  const result = withSafePublic(snapshot, {
     redactedForRole: 'student', linkedStudentIds: [...allowedStudents],
-    courses: courses.map(redactCourse), schedules: schedules.map(redactSchedule),
+    courses: courses.map(redactCourse), schedules: schedules.map(row => redactStudentSchedule(row, allowedStudents)),
     students: scopedStudents.map(redactStudent),
     teachers: copyRows(snapshot.teachers).filter(row => inSet(teacherIds, id(row))).map(redactTeacher),
     rooms: copyRows(snapshot.rooms).filter(row => inSet(roomIds, id(row))).map(redactRoom),
     institutions: copyRows(snapshot.institutions).filter(row => inSet(institutionIds, id(row))).map(redactInstitution),
     schools: copyRows(snapshot.schools).filter(row => inSet(schoolIds, id(row))).map(redactSchool),
     enrollments: copyRows(snapshot.enrollments).filter(row => (inSet(scheduleIds, value(row, 'schedule_id', 'scheduleId')) || inSet(courseIds, value(row, 'course_id', 'courseId'))) && inSet(allowedStudents, value(row, 'student_id', 'studentId'))),
-    consumptions: [], payments: [], assetRecords: [], assetCategories: [],
+    consumptions: [],
+    payments: copyRows(snapshot.payments).filter(row => inSet(allowedStudents, value(row, 'student_id', 'studentId'))
+      && (inSet(scheduleIds, value(row, 'schedule_id', 'scheduleId')) || inSet(courseIds, value(row, 'course_id', 'courseId')))),
+    assets: copyRows(snapshot.assets).filter(row => belongsToUser(row, userId)).map(redactAsset),
+    assetRecords: copyRows(snapshot.assetRecords || snapshot.asset_records).filter(row => belongsToUser(row, userId)),
+    assetCategories: copyRows(snapshot.assetCategories || snapshot.asset_categories).filter(row => belongsToUser(row, userId)),
   });
+  result.scopedFinancials = buildScopedFinancialSnapshot(result);
+  return result;
 }
 
 const PUBLIC_TABLES = new Set(['subjects', 'chapters', 'knowledge_points', 'knowledgePoints', 'taxonomy_systems', 'taxonomy_nodes', 'question_taxonomy_nodes', 'questions', 'question_contents', 'questionContents', 'question_assets', 'questionAssets', 'question_bank_assets', 'questionBankAssets']);
@@ -83,7 +118,7 @@ function buildScopedFinancialSnapshot(scoped = {}) {
     }, 0);
   };
   return {
-    tuition: sum(scoped.schedules, ['calculated_tuition', 'calculatedTuition']),
+    tuition: sum(scoped.schedules, ['tuition', 'calculated_tuition', 'calculatedTuition']),
     teacherFees: sum(scoped.schedules, ['calculated_teacher_fee', 'calculatedTeacherFee']),
     payments: sum(scoped.payments, ['amount', 'payment_amount', 'paymentAmount']),
     assets: sum(scoped.assetRecords, ['amount', 'value']),
@@ -92,7 +127,7 @@ function buildScopedFinancialSnapshot(scoped = {}) {
 
 function scopeTeacher(snapshot, context) {
   const teacherId = context.teacherId;
-  if (!teacherId) return {};
+  if (!teacherId) return scopeUnboundSubject(snapshot, context);
   const courses = copyRows(snapshot.courses).filter(row => String(value(row, 'teacher_id', 'teacherId') || '') === String(teacherId));
   const courseIds = ids(courses);
   const schedules = copyRows(snapshot.schedules).filter(row => inSet(courseIds, value(row, 'course_id', 'courseId')));
@@ -113,17 +148,39 @@ function scopeTeacher(snapshot, context) {
     rooms: copyRows(snapshot.rooms).filter(row => inSet(roomIds, id(row))).map(redactRoom),
     schools: copyRows(snapshot.schools).filter(row => inSet(schoolIds, id(row))).map(redactSchool),
     teachers: copyRows(snapshot.teachers).filter(row => String(id(row)) === String(teacherId)).map(redactTeacher),
-    assetRecords: copyRows(snapshot.assetRecords || snapshot.asset_records).filter(row => String(value(row, 'owner_user_id', 'ownerUserId') || '') === String(context.userId || '')),
-    assetCategories: copyRows(snapshot.assetCategories || snapshot.asset_categories),
+    assets: copyRows(snapshot.assets).filter(row => belongsToUser(row, context.userId)).map(redactAsset),
+    assetRecords: copyRows(snapshot.assetRecords || snapshot.asset_records).filter(row => belongsToUser(row, context.userId)),
+    assetCategories: copyRows(snapshot.assetCategories || snapshot.asset_categories).filter(row => belongsToUser(row, context.userId)),
   });
   result.scopedFinancials = buildScopedFinancialSnapshot(result);
   return result;
+}
+
+function scopeUnboundSubject(snapshot, context) {
+  const userId = String(context.userId || '').trim();
+  if (!userId) return {};
+  return {
+    redactedForRole: context.kind || 'visitor',
+    subjectBinding: context.kind === 'visitor' ? 'not-applicable' : 'unbound',
+    questionPreviews: copyRows(snapshot.questionPreviews || snapshot.question_previews)
+      .map(redactQuestionPreview).slice(0, 10),
+    courses: [], schedules: [], students: [], grades: [], enrollments: [], payments: [], consumptions: [],
+    teachers: [], rooms: [], institutions: [], schools: [],
+    assets: copyRows(snapshot.assets).filter(row => belongsToUser(row, userId)).map(redactAsset),
+    assetRecords: copyRows(snapshot.assetRecords || snapshot.asset_records).filter(row => belongsToUser(row, userId)),
+    assetCategories: copyRows(snapshot.assetCategories || snapshot.asset_categories).filter(row => belongsToUser(row, userId)),
+  };
+}
+
+function scopeVisitor(snapshot, context) {
+  return scopeUnboundSubject(snapshot, { ...context, kind: 'visitor' });
 }
 
 function scopeBusinessSnapshot(snapshot = {}, context = {}) {
   if (context.kind === 'admin' || context.kind === 'all') return { ...snapshot, ...Object.fromEntries(Object.entries(snapshot).map(([k, v]) => [k, Array.isArray(v) ? v.map(x => ({ ...x })) : v])) };
   if (context.kind === 'teacher') return scopeTeacher(snapshot, context);
   if (context.kind === 'student') return scopeStudent(snapshot, context);
+  if (context.kind === 'visitor') return scopeVisitor(snapshot, context);
   return {};
 }
 

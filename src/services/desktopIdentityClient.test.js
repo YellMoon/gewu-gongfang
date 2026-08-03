@@ -6,6 +6,7 @@ async function main() {
   const {
     canStartBusinessRuntime,
     createDesktopIdentityClient,
+    partitionKeyForIdentity,
     resolveDesktopGateState,
   } = await import('./desktopIdentityClient.mjs');
   assert.ok(!source.includes('desktopSessionRelayClient'));
@@ -43,6 +44,16 @@ async function main() {
   assert.strictEqual(offline.partitionKey, 'user-1:teacher:teacher-1');
   assert.strictEqual(canStartBusinessRuntime({ gateState: offline }), true);
   assert.strictEqual(canStartBusinessRuntime({ gateState: { kind: 'registration-required' } }), false);
+  assert.strictEqual(
+    partitionKeyForIdentity({ userId: 'unbound-teacher', activeRole: 'teacher', teacherId: null }),
+    'unbound-teacher:teacher:unbound',
+    'a role may exist before a local teacher profile is bound',
+  );
+  assert.strictEqual(
+    partitionKeyForIdentity({ userId: 'unbound-student', activeRole: 'student', studentId: null }),
+    'unbound-student:student:unbound',
+    'a role may exist before a local student profile is bound',
+  );
 
   const client = createDesktopIdentityClient({
     desktopIdentity: { status: async () => ({ state: 'empty' }) },

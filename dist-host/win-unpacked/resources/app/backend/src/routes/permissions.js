@@ -1,7 +1,7 @@
 const { Router } = require('express');
 
 const router = Router();
-const { effectiveCapabilities } = require('../services/authorizationPolicy');
+const { effectiveCapabilities, scopeForUser } = require('../services/authorizationPolicy');
 
 const moduleIds = [
   'scheduling',
@@ -35,6 +35,7 @@ function permission(id, action) {
 router.get('/my', (req, res) => {
   const role = req.authz?.role || roleOf(req.user);
   const capabilities = effectiveCapabilities({ ...req.authz, role });
+  const subjectScope = scopeForUser({ ...req.authz, role });
   const eligibleRoles = Array.isArray(req.authz?.eligibleRoles)
     ? req.authz.eligibleRoles.slice()
     : [role];
@@ -49,6 +50,10 @@ router.get('/my', (req, res) => {
     status: req.user?.status ?? 0,
     login_enabled: req.user?.login_enabled ?? 0,
     authorization_revision: req.user?.updated_at || req.user?.reviewed_at || null,
+    subject_scope: subjectScope.kind,
+    subject_binding: ['teacher', 'student'].includes(role)
+      ? (subjectScope.kind === 'none' ? 'unbound' : 'bound')
+      : 'not-applicable',
   };
   const permissions = capabilities.map(id => {
     const separator = id.indexOf(':');

@@ -38,14 +38,21 @@ db.prepare(`INSERT INTO users
   VALUES (?, '13732250653', 'Canonical Human', 'super_admin', 1, 1, ?,
     'approved', 1, 0, ?, ?)`)
   .run(userId, teacherId, clock.toISOString(), clock.toISOString());
+const authorityId = 'authority-desktop-device-challenge-test';
+db.prepare(`INSERT INTO authority_accounts
+  (user_id, authority_id, status, created_at, updated_at)
+  VALUES (?, ?, 'active', ?, ?)`)
+  .run(userId, authorityId, clock.toISOString(), clock.toISOString());
 for (const grant of [
   ['super_admin', null, null],
   ['teacher', 'teacher', teacherId],
 ]) {
-  db.prepare(`INSERT INTO user_role_grants
-    (user_id, role, subject_type, subject_id, status, source, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'active', 'test', ?, ?)`)
-    .run(userId, grant[0], grant[1], grant[2], clock.toISOString(), clock.toISOString());
+  db.prepare(`INSERT INTO authority_role_bindings
+    (binding_id, authority_id, user_id, role, subject_type, subject_id, status,
+     grant_version, granted_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'active', 1, 'test', ?, ?)`)
+    .run(`binding-${grant[0]}`, authorityId, userId, grant[0], grant[1], grant[2],
+      clock.toISOString(), clock.toISOString());
 }
 db.prepare(`INSERT INTO desktop_device_authorizations
   (id, device_id, device_name, device_kind, user_id, public_key, key_fingerprint,
@@ -147,6 +154,8 @@ const exchanged = service.exchangeChallenge({
 assert.strictEqual(exchanged.session.activeRole, 'teacher');
 assert.deepStrictEqual(exchanged.session.eligibleRoles, ['super_admin', 'teacher']);
 assert.strictEqual(exchanged.session.teacherId, teacherId);
+assert.strictEqual(exchanged.session.authTime, clock.toISOString(),
+  'a session challenge signed after locally unlocking the device must count as recent local elevation');
 assert.strictEqual(exchanged.profile.userId, userId);
 assert.strictEqual(exchanged.profile.user.name, 'Canonical Human');
 assert.strictEqual(exchanged.profile.activeRole, 'teacher');
@@ -205,37 +214,7 @@ assert.strictEqual(
 );
 
 db.prepare(`UPDATE desktop_device_authorizations
-  SET authorization_source='single_user_pairing',
-      phone_reverify_due_at='2026-07-17T10:02:00.000Z'
-  WHERE id=?`).run(authorizationId);
-const nonWechatChallenge = service.startChallenge({ authorizationId, deviceId });
-assert.strictEqual(nonWechatChallenge.status, 'pending');
-const nonWechatLease = createDesktopOfflineLease({
-  authorization: {
-    id: authorizationId,
-    deviceId,
-    userId,
-    credentialVersion: 3,
-    authorizationSource: 'single_user_pairing',
-    phoneReverifyDueAt: '2026-07-17T10:02:00.000Z',
-  },
-  session: {
-    id: 'single-user-session',
-    userId,
-    deviceId,
-    activeRole: 'teacher',
-    eligibleRoles: ['super_admin', 'teacher'],
-    teacherId,
-  },
-  issuedAt: clock,
-});
-assert.strictEqual(
-  Date.parse(nonWechatLease.expiresAt) - Date.parse(nonWechatLease.issuedAt),
-  14 * 24 * 60 * 60 * 1000,
-  'single-user pairing leases must not be shortened by the legacy WeChat phone deadline'
-);
-db.prepare(`UPDATE desktop_device_authorizations
-  SET authorization_source='wechat_phone'
+  SET phone_reverify_due_at='2026-07-17T10:02:00.000Z'
   WHERE id=?`).run(authorizationId);
 assert.throws(
   function () { service.startChallenge({ authorizationId, deviceId }); },

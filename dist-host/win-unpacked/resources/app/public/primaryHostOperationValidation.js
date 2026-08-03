@@ -6,6 +6,7 @@ const {
   RECOVERY_DELIVERY_KEY_ALGORITHM,
   validateRecoveryDeliveryPublicKey,
 } = require('../backend/src/services/primaryHostRecoveryDeliveryProtocol');
+const { validatePrimaryHostSigningPublicKey } = require('./primaryHostSigningKey');
 
 const MIN_OLD_HOST_UNREACHABLE_MS = 15 * 60 * 1000;
 
@@ -77,6 +78,7 @@ function normalizeCredentialStage(value, { deviceId, targetGeneration }) {
     deviceId: String(deviceId),
     targetGeneration: Number(targetGeneration),
     commitment,
+    hostSigningKey: validatePrimaryHostSigningPublicKey(stage.hostSigningKey),
   });
 }
 

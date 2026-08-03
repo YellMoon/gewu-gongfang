@@ -18,6 +18,7 @@ const {
   signRecoveryDeliveryAcknowledgement,
 } = require('../services/primaryHostRecoveryDeliveryProtocol');
 const { buildPrimaryHostOperationManifest } = require('../../../public/primaryHostOperationValidation');
+const { derivePrimaryHostSigningKey } = require('../../../shared/primaryHostSigningKey');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-primary-host-http-'));
 const previous = {
@@ -68,11 +69,17 @@ function decryptRecoveryDelivery(result, operation, deviceId) {
 }
 function credentialStage(operation, challengeId, deviceId, targetGeneration) {
   const credential = stagedHostCredentials[operation];
+  const signingKey = derivePrimaryHostSigningKey(credential);
   return {
     id: `${operation}:${challengeId}`,
     deviceId,
     targetGeneration,
     commitment: crypto.createHash('sha256').update(credential).digest('hex'),
+    hostSigningKey: {
+      algorithm: signingKey.algorithm,
+      publicKeyPem: signingKey.publicKeyPem,
+      publicKeyFingerprint: signingKey.publicKeyFingerprint,
+    },
   };
 }
 const questionBankRoot = path.join(root, 'question-bank');
@@ -177,7 +184,7 @@ const hostService = createPrimaryHostIdentityService({
   localEvidenceProvider: () => ({
     runtimeNodeRole: 'primary-host',
     dbInstanceDigest: '1'.repeat(64),
-    schemaVersion: 3120,
+    schemaVersion: databaseService.schemaVersion,
     storeId: 'http-store-1',
     dbAuthorityId: 'http-db-authority-1',
     quickCheck: 'ok',
@@ -203,14 +210,24 @@ app.use('/api/desktop-identity', createDesktopIdentityRouter({
   miniappIdentityService: (() => {
     const loginEvents = ['host-http-phone-event', 'host-http-transfer-phone-event'];
     return {
-      loginWithVerifiedWechat: () => ({
-      user: { id: CANONICAL_SUPER_ADMIN_ID },
-      loginEventId: loginEvents.shift(),
-    }),
+      loginWithClaimedWechat: ({ phone }) => {
+        if (phone === '13600136000') {
+          return { user: { id: 'visitor-http-user', role: 'visitor', account_state: 'visitor' }, loginEventId: 'visitor-http-event' };
+        }
+        if (phone === '13600136001') {
+          return { user: { id: 'missing-formal-http-user', role: 'admin', account_state: 'formal' }, loginEventId: 'missing-formal-http-event' };
+        }
+        if (phone === '13900139000') {
+          throw Object.assign(new Error('PHONE_WECHAT_BINDING_CONFLICT'), { code: 'PHONE_WECHAT_BINDING_CONFLICT' });
+        }
+        return {
+          user: { id: CANONICAL_SUPER_ADMIN_ID, role: 'super_admin', account_state: 'formal' },
+          loginEventId: loginEvents.shift(),
+        };
+      },
     };
   })(),
   resolveWechatIdentity: async () => ({ openid: 'host-http-openid', unionid: null }),
-  resolveWechatPhoneNumber: async () => SUPER_ADMIN_PHONE,
   createDesktopAuthorizationUrlLink: async () => {
     const error = new Error('url link permission unavailable');
     error.code = 'WECHAT_URL_LINK_FAILED';
@@ -219,6 +236,7 @@ app.use('/api/desktop-identity', createDesktopIdentityRouter({
   },
   createDesktopAuthorizationQrCode: async ({ challengeId }) => `data:image/jpeg;base64,${Buffer.from(`host-${challengeId}`).toString('base64')}`,
   localBridgeSecret: 'electron-local-bridge-secret-for-http-tests',
+  localDeviceId: actor.deviceId,
 }));
 app.use('/api/cloud', cloudRelayRouter);
 
@@ -262,8 +280,27 @@ app.use('/api/cloud', cloudRelayRouter);
       'rowVersion',
     ].sort());
 
+    const retiredPhoneCode = await call(`/api/desktop-identity/challenges/${started.id}/confirm`, {
+      method: 'POST', body: JSON.stringify({ code: 'wechat-code-retired', phone: SUPER_ADMIN_PHONE, phoneCode: 'phone-code' }),
+    });
+    assert.strictEqual(retiredPhoneCode.status, 400);
+    assert.strictEqual((await retiredPhoneCode.json()).code, 'DESKTOP_IDENTITY_INPUT_FORBIDDEN');
+
+    const visitorConfirm = await call(`/api/desktop-identity/challenges/${started.id}/confirm`, {
+      method: 'POST', body: JSON.stringify({ code: 'wechat-code-visitor', phone: '13600136000', expectedRowVersion: started.rowVersion }),
+    });
+    assert.strictEqual(visitorConfirm.status, 403);
+    assert.strictEqual((await visitorConfirm.json()).code, 'DESKTOP_IDENTITY_VISITOR_FORBIDDEN');
+
+    const missingFormalConfirm = await call(`/api/desktop-identity/challenges/${started.id}/confirm`, {
+      method: 'POST', body: JSON.stringify({ code: 'wechat-code-missing-formal', phone: '13600136001', expectedRowVersion: started.rowVersion }),
+    });
+    assert.strictEqual(missingFormalConfirm.status, 403);
+    assert.strictEqual((await missingFormalConfirm.json()).code, 'DESKTOP_IDENTITY_NOT_ELIGIBLE',
+      'a DB-missing nonvisitor projection must never synthesize a formal desktop identity');
+
     const confirmedResponse = await call(`/api/desktop-identity/challenges/${started.id}/confirm`, {
-      method: 'POST', body: JSON.stringify({ code: 'wechat-code', phoneCode: 'phone-code', expectedRowVersion: started.rowVersion }),
+      method: 'POST', body: JSON.stringify({ code: 'wechat-code', phone: SUPER_ADMIN_PHONE, expectedRowVersion: started.rowVersion }),
     });
     assert.strictEqual(confirmedResponse.status, 200);
     const confirmed = (await confirmedResponse.json()).data.challenge;
@@ -273,6 +310,22 @@ app.use('/api/cloud', cloudRelayRouter);
       method: 'POST', body: JSON.stringify({ purpose: 'bootstrap' }),
     });
     assert.strictEqual(blockedEvidence.status, 401);
+    const missingBridgeEvidence = await call('/api/desktop-identity/primary-host/local-evidence', {
+      method: 'POST', headers: desktopHeaders, body: JSON.stringify({ purpose: 'bootstrap' }),
+    });
+    assert.strictEqual(missingBridgeEvidence.status, 403);
+    assert.strictEqual((await missingBridgeEvidence.json()).code, 'PRIMARY_HOST_LOCAL_BRIDGE_REQUIRED');
+    const bridgedCloudSessionEvidence = await call('/api/desktop-identity/primary-host/local-evidence', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer cloud-session-signed-by-another-control-plane',
+        'x-gewu-electron-local-bridge': 'electron-local-bridge-secret-for-http-tests',
+      },
+      body: JSON.stringify({ purpose: 'bootstrap' }),
+    });
+    const bridgedCloudSessionEvidenceBody = await bridgedCloudSessionEvidence.json();
+    assert.strictEqual(bridgedCloudSessionEvidence.status, 200,
+      `bootstrap evidence must not require the cloud token to be signed by the local host JWT secret: ${JSON.stringify(bridgedCloudSessionEvidenceBody)}`);
     const evidenceResponse = await call('/api/desktop-identity/primary-host/local-evidence', {
       method: 'POST',
       headers: {
@@ -346,6 +399,10 @@ app.use('/api/cloud', cloudRelayRouter);
     assert.strictEqual(bootstrapResponse.status, 200);
     const bootstrap = (await bootstrapResponse.json()).data;
     assert.strictEqual(bootstrap.epoch.generation, 1);
+    assert.strictEqual(
+      bootstrap.epoch.hostPublicKey,
+      credentialStage('bootstrap', started.id, actor.deviceId, 1).hostSigningKey.publicKeyPem
+    );
     assert.strictEqual(Object.hasOwn(bootstrap, 'hostCredential'), false);
     assert.strictEqual(Object.hasOwn(bootstrap, 'recoveryPackage'), false);
     const bootstrapRecoveryPackage = decryptRecoveryDelivery(
@@ -463,12 +520,24 @@ app.use('/api/cloud', cloudRelayRouter);
     });
     assert.strictEqual(transferStartedResponse.status, 200);
     const transferStarted = (await transferStartedResponse.json()).data.challenge;
+    const transferConflictResponse = await call(
+      `/api/desktop-identity/challenges/${transferStarted.id}/confirm`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          code: 'wechat-code-transfer-conflict', phone: '13900139000',
+          expectedRowVersion: transferStarted.rowVersion,
+        }),
+      }
+    );
+    assert.strictEqual(transferConflictResponse.status, 409);
+    assert.strictEqual((await transferConflictResponse.json()).code, 'PHONE_WECHAT_BINDING_CONFLICT');
     const transferConfirmedResponse = await call(
       `/api/desktop-identity/challenges/${transferStarted.id}/confirm`,
       {
         method: 'POST',
         body: JSON.stringify({
-          code: 'wechat-code-transfer', phoneCode: 'phone-code-transfer',
+          code: 'wechat-code-transfer', phone: SUPER_ADMIN_PHONE,
           expectedRowVersion: transferStarted.rowVersion,
         }),
       }
@@ -536,7 +605,10 @@ app.use('/api/cloud', cloudRelayRouter);
     const backupDb = new (require('better-sqlite3'))(backupPath, { readonly: true, fileMustExist: true });
     try {
       assert.strictEqual(backupDb.pragma('quick_check', { simple: true }), 'ok');
-      assert.strictEqual(backupDb.pragma('user_version', { simple: true }), 3120);
+      assert.strictEqual(
+        backupDb.pragma('user_version', { simple: true }),
+        databaseService.schemaVersion
+      );
     } finally {
       backupDb.close();
     }
@@ -607,6 +679,15 @@ app.use('/api/cloud', cloudRelayRouter);
     const activation = (await activationResponse.json()).data;
     assert.strictEqual(activation.epoch.generation, 2);
     assert.strictEqual(activation.epoch.deviceId, 'http-target-device');
+    assert.strictEqual(
+      activation.epoch.hostPublicKey,
+      credentialStage(
+        'transfer',
+        transferConfirmed.id,
+        targetActor.deviceId,
+        2
+      ).hostSigningKey.publicKeyPem
+    );
     assert.strictEqual(Object.hasOwn(activation, 'hostCredential'), false);
     assert.strictEqual(Object.hasOwn(activation, 'recoveryPackage'), false);
     const transferRecoveryPackage = decryptRecoveryDelivery(

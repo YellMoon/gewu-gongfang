@@ -38,6 +38,9 @@ try {
   database = new DatabaseService();
   const db = database.db;
   const now = '2026-09-02T02:00:00.000Z';
+  const authorityId = 'authority-provisioning-test';
+  db.prepare(`INSERT INTO authority_metadata(key,value,updated_at)
+    VALUES('database_authority_id',?,?)`).run(authorityId, now);
   let sequence = 0;
   const uuid = prefix => `${prefix || 'reconcile'}-${++sequence}`;
   const reconciler = createMiniappProvisioningReconciler({
@@ -133,6 +136,8 @@ try {
     name: 'Experience Parent',
     authVersion: 5,
   });
+  db.prepare(`INSERT INTO authority_accounts(user_id,authority_id,status,created_at,updated_at)
+    VALUES('student-parent-applicant',?,'active',?,?)`).run(authorityId, now, now);
   const studentPayload = {
     studentName: '\u5f20\u540c\u5b66',
     studentPhone: '13800138500',
@@ -200,6 +205,46 @@ try {
   assert.ok(studentIdentities.every(row => row.review_status === 'approved' && row.login_enabled === 1));
   assert.strictEqual(studentIdentities.find(row => row.identity_kind === 'parent').auth_version, 6);
   assert.deepStrictEqual(
+    db.prepare(`SELECT users.identity_kind, accounts.authority_id, accounts.status
+      FROM users
+      INNER JOIN authority_accounts accounts ON accounts.user_id=users.id
+      WHERE users.student_id=? ORDER BY users.identity_kind`).all('host-student-1'),
+    [
+      { identity_kind: 'parent', authority_id: authorityId, status: 'active' },
+      { identity_kind: 'student', authority_id: authorityId, status: 'active' },
+    ],
+    'student and parent identities must both receive active canonical authority accounts',
+  );
+  assert.deepStrictEqual(
+    db.prepare(`SELECT users.identity_kind, bindings.authority_id, bindings.role,
+        bindings.subject_type, bindings.subject_id, bindings.status, bindings.grant_version
+      FROM users
+      INNER JOIN authority_role_bindings bindings ON bindings.user_id=users.id
+      WHERE users.student_id=? AND bindings.status='active'
+      ORDER BY users.identity_kind, bindings.binding_id`).all('host-student-1'),
+    [
+      {
+        identity_kind: 'parent',
+        authority_id: authorityId,
+        role: 'student',
+        subject_type: 'student',
+        subject_id: 'host-student-1',
+        status: 'active',
+        grant_version: 1,
+      },
+      {
+        identity_kind: 'student',
+        authority_id: authorityId,
+        role: 'student',
+        subject_type: 'student',
+        subject_id: 'host-student-1',
+        status: 'active',
+        grant_version: 1,
+      },
+    ],
+    'student and parent identities must both receive canonical student bindings scoped to the host entity',
+  );
+  assert.deepStrictEqual(
     db.prepare(`SELECT status, host_entity_id FROM miniapp_role_applications
       WHERE id='student-application'`).get(),
     { status: 'approved', host_entity_id: 'host-student-1' },
@@ -217,7 +262,29 @@ try {
   assert.strictEqual(formalParent.user.account_state, 'formal');
   assert.strictEqual(formalParent.user.role, 'student');
   assert.strictEqual(formalParent.user.student_id, 'host-student-1');
-  assert.strictEqual(formalParent.user.identity_kind, 'parent');
+  const formalParentTokenUser = identity.readIdentityForToken(formalParent.claims);
+  const formalParentLoginEvent = db.prepare(`SELECT identity_kind FROM miniapp_login_events
+    WHERE id=?`).get(formalParent.loginEventId);
+  assert.deepStrictEqual(
+    {
+      responseIdentityKind: formalParent.user.identity_kind,
+      claimIdentityKind: formalParent.claims.identity_kind,
+      tokenUserIdentityKind: formalParentTokenUser.identity_kind,
+      loginEventIdentityKind: formalParentLoginEvent.identity_kind,
+    },
+    {
+      responseIdentityKind: 'parent',
+      claimIdentityKind: 'parent',
+      tokenUserIdentityKind: 'parent',
+      loginEventIdentityKind: 'parent',
+    },
+    'parent login response, JWT, token projection and audit event must retain the parent identity kind',
+  );
+  assert.strictEqual(
+    identity.readIdentityForToken({ ...formalParent.claims, identity_kind: 'student' }).identity_kind,
+    'parent',
+    'already-issued parent JWTs with the legacy student identity claim remain valid without changing student scope',
+  );
   assert.strictEqual(formalParent.user.is_member, true);
   assert.strictEqual(formalParent.user.membership_status, 'active');
   const formalStudent = identity.loginWithVerifiedWechat({ openid: 'wx-student', phone: '13800138500' });
@@ -227,6 +294,16 @@ try {
 
   const versionsBeforeReplay = db.prepare(`SELECT id, auth_version FROM users
     WHERE student_id='host-student-1' ORDER BY id`).all();
+  const canonicalRowsBeforeReplay = {
+    accounts: db.prepare(`SELECT COUNT(*) count FROM authority_accounts
+      WHERE authority_id=? AND user_id IN (
+        SELECT id FROM users WHERE student_id='host-student-1'
+      )`).get(authorityId).count,
+    bindings: db.prepare(`SELECT COUNT(*) count FROM authority_role_bindings
+      WHERE authority_id=? AND role='student' AND status='active' AND user_id IN (
+        SELECT id FROM users WHERE student_id='host-student-1'
+      )`).get(authorityId).count,
+  };
   const replay = reconciler.reconcileCompletedTask('student-task');
   assert.strictEqual(replay.status, 'approved');
   assert.strictEqual(replay.replayed, true);
@@ -236,6 +313,16 @@ try {
   );
   assert.strictEqual(db.prepare(`SELECT COUNT(*) count FROM account_memberships
     WHERE subject_type='student' AND subject_id='host-student-1'`).get().count, 1);
+  assert.deepStrictEqual({
+    accounts: db.prepare(`SELECT COUNT(*) count FROM authority_accounts
+      WHERE authority_id=? AND user_id IN (
+        SELECT id FROM users WHERE student_id='host-student-1'
+      )`).get(authorityId).count,
+    bindings: db.prepare(`SELECT COUNT(*) count FROM authority_role_bindings
+      WHERE authority_id=? AND role='student' AND status='active' AND user_id IN (
+        SELECT id FROM users WHERE student_id='host-student-1'
+      )`).get(authorityId).count,
+  }, canonicalRowsBeforeReplay, 'approved-task replay must not duplicate canonical authority rows');
   assert.strictEqual(db.prepare(`SELECT COUNT(*) count FROM authorization_audit_log
     WHERE action='application_provisioning_reconciled' AND target_user_id='student-parent-applicant'`).get().count, 1);
 
@@ -283,6 +370,25 @@ try {
     db.prepare(`SELECT subject_type, subject_id, status, source FROM account_memberships
       WHERE subject_type='teacher' AND subject_id='host-teacher-1'`).get(),
     { subject_type: 'teacher', subject_id: 'host-teacher-1', status: 'active', source: 'admin_approval' },
+  );
+  assert.deepStrictEqual(
+    db.prepare(`SELECT accounts.authority_id, accounts.status, bindings.role,
+        bindings.subject_type, bindings.subject_id, bindings.status AS binding_status,
+        bindings.grant_version
+      FROM authority_accounts accounts
+      INNER JOIN authority_role_bindings bindings
+        ON bindings.authority_id=accounts.authority_id AND bindings.user_id=accounts.user_id
+      WHERE accounts.user_id='teacher-applicant' AND bindings.status='active'`).get(),
+    {
+      authority_id: authorityId,
+      status: 'active',
+      role: 'teacher',
+      subject_type: 'teacher',
+      subject_id: 'host-teacher-1',
+      binding_status: 'active',
+      grant_version: 1,
+    },
+    'teacher provisioning must create an active canonical account and host-scoped teacher binding',
   );
   const formalTeacher = identity.loginWithVerifiedWechat({ openid: 'wx-teacher', phone: '13800138510' });
   assert.strictEqual(formalTeacher.user.account_state, 'formal');
@@ -369,6 +475,120 @@ try {
   );
   assert.strictEqual(db.prepare(`SELECT COUNT(*) count FROM account_memberships
     WHERE subject_id='wrong-student-entity'`).get().count, 0);
+
+  db.prepare("DELETE FROM authority_metadata WHERE key='database_authority_id'").run();
+  insertPendingUser({
+    id: 'missing-authority-applicant',
+    phone: '13800138540',
+    openid: 'wx-missing-authority',
+  });
+  insertProvisioning({
+    applicationId: 'missing-authority-application',
+    taskId: 'missing-authority-task',
+    applicantUserId: 'missing-authority-applicant',
+    applicationType: 'teacher',
+    applicantIdentityKind: 'teacher',
+    payload: { ...teacherPayload, phone: '13800138540' },
+    result: hostReceipt('host-teacher-missing-authority', 'teacher', 'host-receipt-missing-authority'),
+    requestHash: 'e'.repeat(64),
+  });
+  const missingAuthorityResult = reconciler.reconcileCompletedTask('missing-authority-task');
+  assert.deepStrictEqual({ status: missingAuthorityResult.status, code: missingAuthorityResult.code }, {
+    status: 'manual_resolution_required',
+    code: 'PROVISIONING_AUTHORITY_UNAVAILABLE',
+  });
+  assert.deepStrictEqual(
+    db.prepare(`SELECT role, identity_kind, teacher_id, review_status, login_enabled
+      FROM users WHERE id='missing-authority-applicant'`).get(),
+    {
+      role: 'pending',
+      identity_kind: 'unrecognized',
+      teacher_id: null,
+      review_status: 'pending',
+      login_enabled: 0,
+    },
+    'missing authority resolution must roll back legacy compatibility projection changes',
+  );
+  assert.strictEqual(
+    db.prepare("SELECT COUNT(*) count FROM authority_accounts WHERE user_id='missing-authority-applicant'").get().count,
+    0,
+  );
+
+  db.pragma('foreign_keys = OFF');
+  db.prepare(`INSERT INTO primary_host_epochs
+    (id,generation,device_id,user_id,authorization_id,status,activation_reason,source_epoch_id,
+     challenge_id,db_instance_digest,schema_version,store_id,db_authority_id,
+     host_credential_hash,host_public_key,credential_version,row_version,
+     created_at,updated_at,activated_at,retired_at)
+    VALUES('fallback-epoch',1,'fallback-host','epoch-owner','fallback-authorization','active',
+      'bootstrap',NULL,'fallback-challenge','digest',3122,'fallback-store',
+      'authority-from-epoch','credential-hash',NULL,1,1,?,?,?,NULL)`).run(now, now, now);
+  db.pragma('foreign_keys = ON');
+  insertPendingUser({
+    id: 'epoch-authority-applicant',
+    phone: '13800138541',
+    openid: 'wx-epoch-authority',
+  });
+  insertProvisioning({
+    applicationId: 'epoch-authority-application',
+    taskId: 'epoch-authority-task',
+    applicantUserId: 'epoch-authority-applicant',
+    applicationType: 'teacher',
+    applicantIdentityKind: 'teacher',
+    payload: { ...teacherPayload, phone: '13800138541' },
+    result: hostReceipt('host-teacher-epoch-authority', 'teacher', 'host-receipt-epoch-authority'),
+    requestHash: 'f'.repeat(64),
+  });
+  assert.strictEqual(reconciler.reconcileCompletedTask('epoch-authority-task').status, 'approved');
+  assert.deepStrictEqual(
+    db.prepare(`SELECT accounts.authority_id, bindings.role, bindings.subject_type, bindings.subject_id
+      FROM authority_accounts accounts
+      INNER JOIN authority_role_bindings bindings
+        ON bindings.authority_id=accounts.authority_id AND bindings.user_id=accounts.user_id
+      WHERE accounts.user_id='epoch-authority-applicant' AND bindings.status='active'`).get(),
+    {
+      authority_id: 'authority-from-epoch',
+      role: 'teacher',
+      subject_type: 'teacher',
+      subject_id: 'host-teacher-epoch-authority',
+    },
+    'a unique active host epoch is the final fail-closed authority source',
+  );
+
+  db.prepare(`INSERT INTO authority_metadata(key,value,updated_at)
+    VALUES('database_authority_id',?,?)`).run(authorityId, now);
+  insertPendingUser({
+    id: 'conflicting-authority-applicant',
+    phone: '13800138542',
+    openid: 'wx-conflicting-authority',
+  });
+  db.prepare(`INSERT INTO authority_accounts(user_id,authority_id,status,created_at,updated_at)
+    VALUES('conflicting-authority-applicant','other-authority','active',?,?)`).run(now, now);
+  insertProvisioning({
+    applicationId: 'conflicting-authority-application',
+    taskId: 'conflicting-authority-task',
+    applicantUserId: 'conflicting-authority-applicant',
+    applicationType: 'teacher',
+    applicantIdentityKind: 'teacher',
+    payload: { ...teacherPayload, phone: '13800138542' },
+    result: hostReceipt('host-teacher-conflicting-authority', 'teacher', 'host-receipt-conflicting-authority'),
+    requestHash: '1'.repeat(64),
+  });
+  const conflictingAuthorityResult = reconciler.reconcileCompletedTask('conflicting-authority-task');
+  assert.deepStrictEqual({ status: conflictingAuthorityResult.status, code: conflictingAuthorityResult.code }, {
+    status: 'manual_resolution_required',
+    code: 'PROVISIONING_AUTHORITY_CONFLICT',
+  });
+  assert.deepStrictEqual(
+    db.prepare(`SELECT authority_id,status FROM authority_accounts
+      WHERE user_id='conflicting-authority-applicant'`).get(),
+    { authority_id: 'other-authority', status: 'active' },
+    'authority conflicts must not rewrite an existing account',
+  );
+  assert.strictEqual(
+    db.prepare("SELECT COUNT(*) count FROM authority_role_bindings WHERE user_id='conflicting-authority-applicant'").get().count,
+    0,
+  );
 
   console.log('miniapp provisioning reconciler checks passed');
 } finally {

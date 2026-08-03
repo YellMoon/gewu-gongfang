@@ -1,6 +1,6 @@
 {
   "name": "gewu-gongfang",
-  "version": "6.4.7",
+  "version": "8.0.2",
   "desktopBuildFlavor": "primary-host",
   "description": "格物工坊（综合教育平台）",
   "main": "build/electron.js",
@@ -29,6 +29,7 @@
     "sharp": "^0.34.5",
     "svg-to-pdfkit": "^0.1.8",
     "uuid": "^9.0.1",
+    "ws": "^8.16.0",
     "xlsx": "^0.18.5",
     "xlsx-js-style": "^1.2.0"
   },
@@ -43,5 +44,9 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "desktopCapabilityManifest": {
+    "flavor": "primary-host",
+    "revision": 1
   }
 }

@@ -125,60 +125,15 @@ node server.js
 | GET | `/api/export` | 导出全部数据（JSON） |
 | POST | `/api/import` | 导入数据 |
 
-### 同步 API（核心）
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/sync/pull` | 拉取服务端变更 |
-| POST | `/api/sync/push` | 推送本地变更 |
-| POST | `/api/sync/status` | 检查同步状态 |
-
 ### 认证
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/auth/wechat-login` | 微信小程序登录 |
 | GET | `/api/auth/me` | 获取当前用户 |
 
-## 🔄 同步协议
+## Authority protocol
 
-### Pull（拉取变更）
-
-```json
-// 请求
-POST /api/sync/pull
-{ "last_sync_time": "2026-05-04T00:00:00.000Z", "client_id": "electron-abc123" }
-
-// 响应
-{
-  "success": true,
-  "changes": {
-    "students": [{ "id": "...", "updated_at": "...", "deleted": 0, ... }],
-    "courses": [...],
-    ...
-  },
-  "server_time": "2026-05-04T08:30:00.000Z"
-}
-```
-
-### Push（推送变更）
-
-```json
-// 请求
-POST /api/sync/push
-{
-  "client_id": "electron-abc123",
-  "changes": {
-    "students": [{ "id": "...", "name": "张三", "updated_at": "...", "deleted": 0 }],
-    ...
-  }
-}
-
-// 响应
-{ "success": true, "applied": 5, "conflicts": 0, "errors": [] }
-```
-
-### 冲突处理
-
-服务端基于 `updated_at` 时间戳判断：如果记录在服务端的更新时间比客户端推送的新，则标记为冲突，不覆盖。
+Core business mutations use the signed authority command protocol. The local data host is the authority; cloud services relay commands, receipts, and scoped signed projections only. Raw `/api/sync` endpoints are retired.
 
 ## 🐳 Docker 部署（推荐）
 
@@ -347,15 +302,6 @@ backend/
 4. **定期备份**：`cp data/scheduling.db data/scheduling-backup-$(date +%Y%m%d).db`
 5. **配置防火墙**：`ufw allow 22 && ufw allow 80 && ufw allow 443 && ufw enable`
 6. **数据库不要暴露在 Web 目录**：data/ 目录在 Nginx 配置中禁止访问
-
-## 📝 与桌面端同步工作流
-
-1. 桌面端启动时检查网络连接
-2. 在线 → POST `/api/sync/pull` 拉取云端变更 → 合并到本地
-3. 用户操作 → 本地保存 → 标记为待同步
-4. 在线时 → POST `/api/sync/push` 推送变更 → 清空待同步队列
-5. 离线时 → 本地操作继续，变更入待同步队列
-6. 恢复在线 → 弹出提示"有N条待同步变更，是否更新到云端？" → 用户确认 → 推送
 
 ---
 

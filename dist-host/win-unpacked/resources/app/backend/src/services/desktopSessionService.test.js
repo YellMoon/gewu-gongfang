@@ -11,6 +11,11 @@ db.exec(fs.readFileSync(path.join(__dirname, '..', 'schema.sql'), 'utf8'));
 let clock = new Date('2026-07-17T08:00:00.000Z');
 let sequence = 0;
 const canonicalId = 'miniapp-admin-13732250653';
+const unboundTeacherUserId = 'unbound-teacher-desktop';
+const legacyOnlyUserId = 'legacy-only-desktop-session';
+const visitorOnlyUserId = 'visitor-only-desktop-session';
+const bootstrapSuperUserId = 'legacy-bootstrap-super-desktop-session';
+const authorityId = 'authority-desktop-session-test';
 const jwtSecret = 'desktop-session-service-test-secret';
 
 db.prepare(`INSERT INTO teachers
@@ -23,15 +28,78 @@ db.prepare(`INSERT INTO users
   VALUES (?, '13732250653', 'Canonical User', 'super_admin', 1, 1, 'teacher-self',
     'approved', 7, 0, ?, ?)`)
   .run(canonicalId, clock.toISOString(), clock.toISOString());
+db.prepare(`INSERT INTO authority_accounts
+  (user_id, authority_id, status, created_at, updated_at)
+  VALUES (?, ?, 'active', ?, ?)`)
+  .run(canonicalId, authorityId, clock.toISOString(), clock.toISOString());
+for (const grant of [
+  ['super_admin', null, null],
+  ['teacher', 'teacher', 'teacher-self'],
+  ['student', null, null],
+]) {
+  db.prepare(`INSERT INTO authority_role_bindings
+    (binding_id, authority_id, user_id, role, subject_type, subject_id, status,
+     grant_version, granted_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'active', 1, 'test', ?, ?)`)
+    .run(
+      `binding-${canonicalId}-${grant[0]}`,
+      authorityId,
+      canonicalId,
+      grant[0],
+      grant[1],
+      grant[2],
+      clock.toISOString(),
+      clock.toISOString(),
+    );
+}
 for (const grant of [
   ['super_admin', null, null],
   ['teacher', 'teacher', 'teacher-self'],
 ]) {
   db.prepare(`INSERT INTO user_role_grants
     (user_id, role, subject_type, subject_id, status, source, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'active', 'test', ?, ?)`)
+    VALUES (?, ?, ?, ?, 'active', 'legacy-test-fixture', ?, ?)`)
     .run(canonicalId, grant[0], grant[1], grant[2], clock.toISOString(), clock.toISOString());
 }
+for (const [userId, role, phone] of [
+  [unboundTeacherUserId, 'teacher', '13000000008'],
+  [legacyOnlyUserId, 'admin', '13000000009'],
+  [visitorOnlyUserId, 'admin', '13000000010'],
+]) {
+  db.prepare(`INSERT INTO users
+    (id, phone, name, role, status, login_enabled, review_status,
+     auth_version, deleted, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 1, 1, 'approved', 1, 0, ?, ?)`)
+    .run(userId, phone, userId, role, clock.toISOString(), clock.toISOString());
+}
+db.prepare(`INSERT INTO users
+  (id, phone, name, role, status, login_enabled, review_status,
+   is_super_admin_identity, auth_version, deleted, created_at, updated_at)
+  VALUES (?, '13732250653', 'Bootstrap Super Admin', 'super_admin', 1, 1,
+    'approved', 1, 1, 0, ?, ?)`)
+  .run(bootstrapSuperUserId, clock.toISOString(), clock.toISOString());
+db.prepare(`INSERT INTO user_role_grants
+  (user_id, role, subject_type, subject_id, status, source, created_at, updated_at)
+  VALUES (?, 'super_admin', NULL, NULL, 'active', 'legacy-bootstrap', ?, ?)`)
+  .run(bootstrapSuperUserId, clock.toISOString(), clock.toISOString());
+db.prepare(`INSERT INTO authority_accounts
+  (user_id, authority_id, status, created_at, updated_at)
+  VALUES (?, ?, 'active', ?, ?)`)
+  .run(unboundTeacherUserId, authorityId, clock.toISOString(), clock.toISOString());
+db.prepare(`INSERT INTO authority_accounts
+  (user_id, authority_id, status, created_at, updated_at)
+  VALUES (?, ?, 'active', ?, ?)`)
+  .run(visitorOnlyUserId, authorityId, clock.toISOString(), clock.toISOString());
+db.prepare(`INSERT INTO authority_role_bindings
+  (binding_id, authority_id, user_id, role, subject_type, subject_id, status,
+   grant_version, granted_by, created_at, updated_at)
+  VALUES ('binding-unbound-teacher', ?, ?, 'teacher', NULL, NULL, 'active', 1,
+    'test', ?, ?)`)
+  .run(authorityId, unboundTeacherUserId, clock.toISOString(), clock.toISOString());
+db.prepare(`INSERT INTO user_role_grants
+  (user_id, role, subject_type, subject_id, status, source, created_at, updated_at)
+  VALUES (?, 'admin', NULL, NULL, 'active', 'legacy-test', ?, ?)`)
+  .run(legacyOnlyUserId, clock.toISOString(), clock.toISOString());
 
 function insertAuthorization(
   id,
@@ -39,7 +107,8 @@ function insertAuthorization(
   fingerprint,
   authorizationSource = 'wechat_phone',
   deviceKind = 'desktop-client',
-  phoneReverifyDueAt = '2026-08-16T08:00:00.000Z'
+  phoneReverifyDueAt = '2026-08-16T08:00:00.000Z',
+  userId = canonicalId,
 ) {
   db.prepare(`INSERT INTO desktop_device_authorizations
     (id, device_id, device_name, device_kind, user_id, public_key, key_fingerprint,
@@ -51,7 +120,7 @@ function insertAuthorization(
       deviceId,
       deviceId,
       deviceKind,
-      canonicalId,
+      userId,
       fingerprint,
       `challenge-${deviceId}`,
       authorizationSource,
@@ -65,43 +134,55 @@ function insertAuthorization(
 insertAuthorization('authorization-host', 'device-host', '1'.repeat(64));
 insertAuthorization('authorization-second', 'device-second', '2'.repeat(64));
 insertAuthorization(
-  'authorization-paired',
-  'device-paired',
+  'authorization-unbound-teacher',
+  'device-unbound-teacher',
   '3'.repeat(64),
-  'single_user_pairing',
+  'wechat_phone',
   'desktop-client',
-  '2026-07-17T07:00:00.000Z'
+  '2026-08-16T08:00:00.000Z',
+  unboundTeacherUserId,
 );
 insertAuthorization(
-  'authorization-single-host',
-  'device-single-host',
+  'authorization-legacy-only',
+  'device-legacy-only',
   '4'.repeat(64),
-  'single_user_local_bootstrap',
-  'primary-host',
-  '2026-07-17T07:00:00.000Z'
+  'wechat_phone',
+  'desktop-client',
+  '2026-08-16T08:00:00.000Z',
+  legacyOnlyUserId,
 );
-db.prepare(`INSERT INTO primary_host_operation_challenges
-  (id,operation,requested_by_user_id,requested_by_device_id,target_device_id,status,
-   expires_at,row_version,created_at,updated_at,consumed_at)
-  VALUES ('single-user-session-challenge','bootstrap',?, 'device-single-host','device-single-host',
-    'consumed','2026-07-17T09:00:00.000Z',1,?,?,?)`)
-  .run(canonicalId, clock.toISOString(), clock.toISOString(), clock.toISOString());
-db.prepare(`INSERT INTO primary_host_epochs
-  (id,generation,device_id,user_id,authorization_id,status,activation_reason,challenge_id,
-   db_instance_digest,schema_version,store_id,db_authority_id,host_credential_hash,
-   credential_version,row_version,created_at,updated_at,activated_at)
-  VALUES ('single-user-session-epoch',1,'device-single-host',?,'authorization-single-host',
-    'active','bootstrap','single-user-session-challenge',?,3120,'store-1','authority-1',?,1,1,?,?,?)`)
-  .run(canonicalId, 'a'.repeat(64), 'b'.repeat(64), clock.toISOString(), clock.toISOString(), clock.toISOString());
-
-let singleUserMode = true;
-
+insertAuthorization(
+  'authorization-visitor-only',
+  'device-visitor-only',
+  '5'.repeat(64),
+  'wechat_phone',
+  'desktop-client',
+  '2026-08-16T08:00:00.000Z',
+  visitorOnlyUserId,
+);
+insertAuthorization(
+  'authorization-bootstrap-host',
+  'device-bootstrap-host',
+  '6'.repeat(64),
+  'wechat_phone',
+  'primary-host',
+  '2026-08-16T08:00:00.000Z',
+  bootstrapSuperUserId,
+);
+insertAuthorization(
+  'authorization-bootstrap-client',
+  'device-bootstrap-client',
+  '7'.repeat(64),
+  'wechat_phone',
+  'desktop-client',
+  '2026-08-16T08:00:00.000Z',
+  bootstrapSuperUserId,
+);
 const service = createDesktopSessionService({
   db,
   jwtSecret,
   now: function () { return new Date(clock); },
   uuid: function () { sequence += 1; return `desktop-session-${sequence}`; },
-  isSingleUserModeActive: function () { return singleUserMode; },
 });
 
 assert.ok(db.prepare(
@@ -113,36 +194,14 @@ const teacherSession = service.issueSession({
   deviceId: 'device-host',
 });
 assert.strictEqual(teacherSession.session.activeRole, 'teacher');
-assert.deepStrictEqual(teacherSession.session.eligibleRoles, ['super_admin', 'teacher']);
+assert.deepStrictEqual(teacherSession.session.eligibleRoles, ['super_admin', 'teacher', 'student']);
 assert.strictEqual(teacherSession.session.teacherId, 'teacher-self');
 assert.strictEqual(teacherSession.session.authVersion, 7);
 assert.strictEqual(teacherSession.session.credentialVersion, 1);
 assert.strictEqual(teacherSession.session.authorizationId, 'authorization-host');
 assert.strictEqual(teacherSession.session.authTime, null);
-assert.ok(Date.parse(teacherSession.session.expiresAt) - clock.getTime() <= 8 * 60 * 60 * 1000);
+assert.ok(Date.parse(teacherSession.session.expiresAt) - clock.getTime() <= 14 * 24 * 60 * 60 * 1000);
 assert.ok(!teacherSession.token.includes(jwtSecret));
-
-const pairedSession = service.issueSession({
-  userId: canonicalId,
-  deviceId: 'device-paired',
-});
-assert.strictEqual(service.verifySessionToken(pairedSession.token).deviceKind, 'desktop-client');
-const singleHostSession = service.issueSession({
-  userId: canonicalId,
-  deviceId: 'device-single-host',
-  activeRole: 'super_admin',
-});
-assert.strictEqual(service.verifySessionToken(singleHostSession.token).deviceKind, 'primary-host');
-singleUserMode = false;
-assert.throws(
-  function () { service.verifySessionToken(pairedSession.token); },
-  function (error) { return error && error.code === 'DESKTOP_SINGLE_USER_AUTHORIZATION_DISABLED'; }
-);
-assert.throws(
-  function () { service.issueSession({ userId: canonicalId, deviceId: 'device-single-host' }); },
-  function (error) { return error && error.code === 'DESKTOP_SINGLE_USER_AUTHORIZATION_DISABLED'; }
-);
-singleUserMode = true;
 
 const teacherContext = service.verifySessionToken(teacherSession.token);
 assert.strictEqual(teacherContext.userId, canonicalId);
@@ -151,6 +210,84 @@ assert.strictEqual(teacherContext.activeRole, 'teacher');
 assert.strictEqual(teacherContext.scope.kind, 'teacher');
 assert.strictEqual(teacherContext.scope.teacherId, 'teacher-self');
 assert.ok(Object.isFrozen(teacherContext));
+
+const unboundStudentSession = service.issueSession({
+  userId: canonicalId,
+  deviceId: 'device-host',
+  activeRole: 'student',
+});
+assert.strictEqual(unboundStudentSession.session.studentId, null);
+const unboundStudentContext = service.verifySessionToken(unboundStudentSession.token);
+assert.strictEqual(unboundStudentContext.activeRole, 'student');
+assert.strictEqual(unboundStudentContext.studentId, null);
+assert.deepStrictEqual(unboundStudentContext.scope, { kind: 'none' },
+  'a null-subject student grant may create a desktop role session but has no business scope');
+
+const unboundTeacherSession = service.issueSession({
+  userId: unboundTeacherUserId,
+  deviceId: 'device-unbound-teacher',
+  activeRole: 'teacher',
+});
+assert.strictEqual(unboundTeacherSession.session.teacherId, null);
+const unboundTeacherContext = service.verifySessionToken(unboundTeacherSession.token);
+assert.strictEqual(unboundTeacherContext.activeRole, 'teacher');
+assert.strictEqual(unboundTeacherContext.teacherId, null);
+assert.deepStrictEqual(unboundTeacherContext.scope, { kind: 'none' },
+  'a null-subject teacher grant may create a desktop role session but has no business scope');
+
+assert.throws(
+  () => service.issueSession({
+    userId: legacyOnlyUserId,
+    deviceId: 'device-legacy-only',
+    activeRole: 'teacher',
+  }),
+  error => error?.code === 'ACTIVE_ROLE_NOT_GRANTED',
+  'compatibility may preserve an existing grant but may not invent another role',
+);
+
+const legacyWithoutAuthoritySession = service.issueSession({
+  userId: legacyOnlyUserId,
+  deviceId: 'device-legacy-only',
+});
+assert.strictEqual(legacyWithoutAuthoritySession.session.activeRole, 'admin');
+assert.deepStrictEqual(legacyWithoutAuthoritySession.session.eligibleRoles, ['admin']);
+
+const bootstrapHostSession = service.issueSession({
+  userId: bootstrapSuperUserId,
+  deviceId: 'device-bootstrap-host',
+});
+assert.strictEqual(bootstrapHostSession.session.activeRole, 'super_admin');
+assert.deepStrictEqual(bootstrapHostSession.session.eligibleRoles, ['super_admin']);
+assert.strictEqual(bootstrapHostSession.session.authTime, null);
+
+const bootstrapClientSession = service.issueSession({
+  userId: bootstrapSuperUserId,
+  deviceId: 'device-bootstrap-client',
+});
+assert.strictEqual(bootstrapClientSession.session.activeRole, 'super_admin',
+  'an upgrade must not silently downgrade an existing formal role on another authorized device');
+assert.deepStrictEqual(bootstrapClientSession.session.eligibleRoles, ['super_admin']);
+
+const visitorOnlySession = service.issueSession({
+  userId: visitorOnlyUserId,
+  deviceId: 'device-visitor-only',
+});
+assert.strictEqual(visitorOnlySession.session.activeRole, 'visitor');
+assert.deepStrictEqual(visitorOnlySession.session.eligibleRoles, ['visitor']);
+const visitorOnlyContext = service.verifySessionToken(visitorOnlySession.token);
+assert.deepStrictEqual(visitorOnlyContext.scope, {
+  kind: 'visitor',
+  userId: visitorOnlyUserId,
+});
+assert.throws(
+  () => service.issueSession({
+    userId: visitorOnlyUserId,
+    deviceId: 'device-visitor-only',
+    activeRole: 'admin',
+  }),
+  error => error?.code === 'ACTIVE_ROLE_NOT_GRANTED',
+  'users.role must not lend admin privileges to a canonical visitor account',
+);
 
 const elevated = service.issueSession({
   userId: canonicalId,
@@ -193,7 +330,7 @@ assert.throws(
     service.issueSession({
       userId: canonicalId,
       deviceId: 'device-host',
-      activeRole: 'student',
+      activeRole: 'admin',
     });
   },
   function (error) { return error && error.code === 'ACTIVE_ROLE_NOT_GRANTED'; }
@@ -203,7 +340,7 @@ assert.throws(
     service.issueSession({
       userId: canonicalId,
       deviceId: 'device-host',
-      durationMs: 8 * 60 * 60 * 1000 + 1,
+      durationMs: 14 * 24 * 60 * 60 * 1000 + 1,
     });
   },
   function (error) { return error && error.code === 'DESKTOP_SESSION_DURATION_INVALID'; }
@@ -294,7 +431,7 @@ assert.throws(
   function (error) { return error && error.code === 'DESKTOP_DEVICE_VERSION_STALE'; }
 );
 
-clock = new Date('2026-07-17T16:00:01.000Z');
+clock = new Date('2026-07-31T08:00:01.000Z');
 assert.throws(
   function () { service.verifySessionToken(teacherSession.token); },
   function (error) { return error && error.code === 'DESKTOP_SESSION_EXPIRED'; }

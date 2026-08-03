@@ -82,19 +82,38 @@ function selfTest() {
     const source = path.join(root, 'source.db');
     const copy = path.join(root, 'copy.db');
     const db = new Database(source);
-    db.exec("CREATE TABLE users(id TEXT PRIMARY KEY, role TEXT, status INTEGER, login_enabled INTEGER, review_status TEXT, deleted INTEGER, teacher_id TEXT, student_id TEXT);");
+    db.exec(`CREATE TABLE users(id TEXT PRIMARY KEY, role TEXT, status INTEGER, login_enabled INTEGER, review_status TEXT, deleted INTEGER, teacher_id TEXT, student_id TEXT);
+      CREATE TABLE user_role_grants(user_id TEXT, role TEXT, subject_type TEXT, subject_id TEXT, status TEXT, source TEXT, granted_by TEXT, created_at TEXT, updated_at TEXT, revoked_at TEXT);`);
     db.prepare("INSERT INTO users VALUES ('self-test-user','teacher',1,1,'approved',0,'self-test-teacher',NULL)").run();
+    db.prepare("INSERT INTO users VALUES ('self-test-student-user','student',1,1,'approved',0,NULL,'self-test-student')").run();
+    db.prepare("INSERT INTO users VALUES ('self-test-visitor','visitor',1,1,'approved',0,NULL,NULL)").run();
+    const insertGrant = db.prepare(`INSERT INTO user_role_grants
+      (user_id,role,subject_type,subject_id,status,source,granted_by,created_at,updated_at,revoked_at)
+      VALUES (?,?,?,?,'active','runtime-rehearsal-self-test',NULL,?,?,NULL)`);
+    insertGrant.run('self-test-user', 'teacher', 'teacher', 'self-test-teacher',
+      '2026-07-27T00:00:00.000Z', '2026-07-27T00:00:00.000Z');
+    insertGrant.run('self-test-student-user', 'student', 'student', 'self-test-student',
+      '2026-07-27T00:00:00.000Z', '2026-07-27T00:00:00.000Z');
     db.close();
     const report = rehearse({
       sourceDb: source,
       copyDb: copy,
       now: '2026-07-27T00:00:00.000Z',
-      commandReplay: ({ db, authorityId }) => (
-        db.prepare("SELECT 1 AS ok FROM authority_role_bindings WHERE authority_id=? AND user_id='self-test-user' AND role='teacher' AND status='active'")
-          .get(authorityId)
-          ? []
-          : ['self-test-role-fixture-missing']
-      ),
+      commandReplay: ({ db, authorityId }) => {
+        const failures = [];
+        const scopedBinding = db.prepare(`SELECT 1 AS ok FROM authority_role_bindings
+          WHERE authority_id=? AND user_id=? AND role=? AND subject_type=? AND subject_id=? AND status='active'`);
+        if (!scopedBinding.get(authorityId, 'self-test-user', 'teacher', 'teacher', 'self-test-teacher')) {
+          failures.push('self-test-teacher-fixture-missing');
+        }
+        if (!scopedBinding.get(authorityId, 'self-test-student-user', 'student', 'student', 'self-test-student')) {
+          failures.push('self-test-student-fixture-missing');
+        }
+        if (db.prepare("SELECT COUNT(*) AS count FROM authority_role_bindings WHERE authority_id=? AND user_id='self-test-visitor' AND status='active'").get(authorityId).count !== 0) {
+          failures.push('self-test-visitor-unexpected-role');
+        }
+        return failures;
+      },
     });
     if (report.sourceMutated || report.parityFailures.length || report.commandReplayFailures.length) throw new Error('REHEARSAL_SELF_TEST_FAILED');
     return report;

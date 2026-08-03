@@ -81,11 +81,18 @@ async function requestJson(baseUrl, method, pathname, { token, body } = {}) {
       403,
     );
 
-    const listed = await requestJson(
+    const ordinaryAdminList = await requestJson(
       baseUrl,
       'GET',
       '/api/miniapp/wechat-bindings/admin?status=submitted',
       { token: tokens.admin },
+    );
+    assert.strictEqual(ordinaryAdminList.status, 403);
+    const listed = await requestJson(
+      baseUrl,
+      'GET',
+      '/api/miniapp/wechat-bindings/admin?status=submitted',
+      { token: tokens.superAdmin },
     );
     assert.strictEqual(listed.status, 200);
     assert.strictEqual(listed.body.data.items[0].phoneMasked, '138****8100');

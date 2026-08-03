@@ -57,7 +57,10 @@ const snapshot = {
     ],
     payments: [{ id: 'pay-1', student_id: 'stu-1', amount: 300 }],
     consumptions: [{ id: 'con-1', student_id: 'stu-1', amount: 300, hours: 2 }],
-    assetRecords: [{ id: 'asset-1', amount: 100 }],
+    assets: [{ id: 'account-own', owner_user_id: 'visitor-1', masked_identifier: '**** 1234' }, { id: 'account-other', owner_user_id: 'other-user', masked_identifier: '**** 9999' }],
+    assetRecords: [{ id: 'asset-own', owner_user_id: 'visitor-1', amount: 100 }, { id: 'asset-other', owner_user_id: 'other-user', amount: 999 }],
+    assetCategories: [{ id: 'category-own', owner_user_id: 'visitor-1' }, { id: 'category-other', owner_user_id: 'other-user' }],
+    questionPreviews: Array.from({ length: 11 }, (_, index) => ({ id: `preview-${index + 1}`, stemPreview: `preview ${index + 1}`, answer: 'secret' })),
     revenueStats: { total: 9999 },
     subjects: [{ id: 'subject-physics', name: '物理' }],
   },
@@ -69,7 +72,7 @@ const studentUser = {
   student_id: 'stu-1',
 };
 
-assert.deepStrictEqual(getLinkedStudentIds(studentUser), ['stu-1', 'miniapp-user-1']);
+assert.deepStrictEqual(getLinkedStudentIds(studentUser), ['stu-1'], 'an account id is never a student subject id');
 
 const filtered = filterSnapshotForUser(snapshot, studentUser);
 assert.strictEqual(filtered.payload.redactedForRole, 'student');
@@ -97,11 +100,38 @@ const superAdminSnapshot = filterSnapshotForUser(snapshot, { id: 'super-1', role
 assert.deepStrictEqual(superAdminSnapshot, adminSnapshot, 'super admin should retain the existing admin snapshot scope');
 const pendingSnapshot = filterSnapshotForUser(snapshot, { id: 'pending-1', role: 'pending' });
 assert.deepStrictEqual(pendingSnapshot.payload, {}, 'pending users must fail closed');
+const visitorSnapshot = filterSnapshotForUser(snapshot, { id: 'visitor-1', role: 'visitor' });
+assert.strictEqual(visitorSnapshot.payload.redactedForRole, 'visitor');
+assert.deepStrictEqual(visitorSnapshot.payload.courses, []);
+assert.deepStrictEqual(visitorSnapshot.payload.assetRecords.map(item => item.id), ['asset-own']);
+assert.deepStrictEqual(visitorSnapshot.payload.assetCategories.map(item => item.id), ['category-own']);
+assert.deepStrictEqual(visitorSnapshot.payload.assets.map(item => item.id), ['account-own']);
+assert.strictEqual(visitorSnapshot.payload.questionPreviews.length, 10);
+assert.strictEqual(visitorSnapshot.payload.questionPreviews[0].answer, undefined);
 const invitedAdminSnapshot = filterSnapshotForUser(snapshot, { id: 'invited-admin', role: 'admin', review_status: 'invited', status: 1, login_enabled: 1 });
 assert.deepStrictEqual(invitedAdminSnapshot.payload, {}, 'unapproved persisted admin must not receive a full snapshot');
+const collisionSnapshot = filterSnapshotForUser({
+  id: 'collision-snapshot',
+  payload: {
+    students: [{ id: 'collision-account', name: 'must stay hidden' }],
+    courses: [{ id: 'collision-course', student_ids: ['collision-account'] }],
+    schedules: [{ id: 'collision-schedule', student_ids: ['collision-account'] }],
+    payments: [{ id: 'collision-payment', student_id: 'collision-account', amount: 999 }],
+    assets: [{ id: 'collision-own-asset', owner_user_id: 'collision-account' }],
+    questionPreviews: [{ id: 'preview-safe', stemPreview: 'safe', answer: 'hidden' }],
+  },
+}, { id: 'collision-account', role: 'student', student_id: null, status: 1, login_enabled: 1, review_status: 'approved' });
+assert.deepStrictEqual(getLinkedStudentIds({ id: 'collision-account', role: 'student', student_id: null }), []);
+assert.deepStrictEqual(collisionSnapshot.payload.students, []);
+assert.deepStrictEqual(collisionSnapshot.payload.courses, []);
+assert.deepStrictEqual(collisionSnapshot.payload.schedules, []);
+assert.deepStrictEqual(collisionSnapshot.payload.payments, []);
+assert.deepStrictEqual(collisionSnapshot.payload.assets.map(item => item.id), ['collision-own-asset']);
+assert.strictEqual(collisionSnapshot.payload.questionPreviews[0].answer, undefined);
 
-assert.strictEqual(isAllowedMiniappTaskForUser({ user_type: 'student' }, 'question-paper'), true);
-assert.strictEqual(isAllowedMiniappTaskForUser({ user_type: 'student' }, 'asset-import'), false);
+assert.strictEqual(isAllowedMiniappTaskForUser({ user_type: 'student', student_id: 'student-subject-1' }, 'question-paper'), true);
+assert.strictEqual(isAllowedMiniappTaskForUser({ user_type: 'student', student_id: null }, 'question-paper'), false, 'an unbound miniapp account must not submit subject-owned tasks');
+assert.strictEqual(isAllowedMiniappTaskForUser({ user_type: 'student', student_id: 'student-subject-1' }, 'asset-import'), false);
 assert.strictEqual(isAllowedMiniappTaskForUser({ role: 'admin' }, 'asset-import'), true);
 assert.strictEqual(isAllowedMiniappTaskForUser({ role: 'super_admin' }, 'asset-import'), true);
 assert.strictEqual(isAllowedMiniappTaskForUser({ role: 'teacher' }, 'asset-import'), false);
