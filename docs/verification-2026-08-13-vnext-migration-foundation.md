@@ -59,6 +59,10 @@ The sixth finding—cryptographic source authenticity and independently controll
 - Phase 1 is inventory-only. It does not yet create a recoverable source snapshot, signed evidence, independently controlled immutable storage, canonical row export, shadow cloud import, or migration injection package; those are Phase 2 gates.
 - Existing desktop data, NAS files, and the disconnected removable disk remain the rollback sources. Neither real evidence bundle is committed. No runtime path, business writer, version, installer, cloud service, or miniapp was changed in Phase 1, so no desktop release was produced.
 
+## Phase 2 snapshot follow-up
+
+The first Phase 2 online-backup rehearsal created an external authority snapshot with 99 tables and 93 total rows. Source and snapshot inventories matched table-by-table; the snapshot had `quick_check=ok`, zero foreign-key findings, and its own SHA-256. Source DB/WAL hashes and SHM existence/size were unchanged. The unredacted snapshot and path remain outside the repository and were not uploaded. This proves local snapshot mechanics, not yet separate-failure-domain backup or signed-bundle recovery.
+
 ## Review gate
 
 Phase 1 has completed the requested independent `GPT-5.6-sol/high` audit and post-audit corrections. Phase 2 starts with recoverable snapshots, evidence authenticity, target schema selection, and shadow import; disconnected critical question sources remain a fail-closed import prerequisite.

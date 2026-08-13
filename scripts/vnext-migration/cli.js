@@ -13,6 +13,7 @@ const {
 } = require('./pathSafety');
 const { discoverSources } = require('./sourceDiscovery');
 const { inventorySqlite } = require('./sqliteInventory');
+const { createSqliteSnapshot, verifySqliteSnapshot } = require('./sqliteSnapshot');
 
 function cliError(code) {
   return Object.assign(new Error(code), { code });
@@ -23,7 +24,10 @@ function parseArguments(argv) {
   const options = {};
   const allowed = command === 'inventory'
     ? new Set(['json', 'runtime-config', 'db', 'files', 'question-assets', 'desktop-export', 'offline-export', 'local-cache', 'nas-backup', 'output', 'max-files', 'max-bytes'])
-    : command === 'verify' ? new Set(['json', 'bundle']) : new Set();
+    : command === 'verify' ? new Set(['json', 'bundle'])
+      : command === 'snapshot' ? new Set(['json', 'db', 'output', 'minimum-free-bytes'])
+        : command === 'verify-snapshot' ? new Set(['json', 'snapshot', 'expected-hash'])
+          : new Set();
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
     if (token === '--json') {
@@ -149,10 +153,35 @@ function verifyCommand(options) {
   return { ok: true, command: 'verify', ...result };
 }
 
+async function snapshotCommand(options) {
+  if (!options.db) throw cliError('MIGRATION_SQLITE_SOURCE_MISSING');
+  if (!options.output) throw cliError('MIGRATION_SNAPSHOT_PATH_REQUIRED');
+  const minimumFreeBytes = options['minimum-free-bytes'] === undefined
+    ? undefined
+    : positiveInteger(options['minimum-free-bytes'], undefined, 'MIGRATION_SNAPSHOT_SPACE_REQUIREMENT_INVALID');
+  const result = await createSqliteSnapshot({
+    sourcePath: options.db,
+    snapshotPath: options.output,
+    minimumFreeBytes,
+  });
+  return { ok: true, command: 'snapshot', ...result };
+}
+
+function verifySnapshotCommand(options) {
+  if (!options.snapshot) throw cliError('MIGRATION_SNAPSHOT_PATH_REQUIRED');
+  const result = verifySqliteSnapshot({
+    snapshotPath: options.snapshot,
+    expectedSnapshotHash: options['expected-hash'],
+  });
+  return { ok: true, command: 'verify-snapshot', ...result };
+}
+
 async function main(argv = process.argv.slice(2)) {
   const { command, options } = parseArguments(argv);
   if (command === 'inventory') return inventoryCommand(options);
   if (command === 'verify') return verifyCommand(options);
+  if (command === 'snapshot') return snapshotCommand(options);
+  if (command === 'verify-snapshot') return verifySnapshotCommand(options);
   throw cliError('MIGRATION_COMMAND_INVALID');
 }
 

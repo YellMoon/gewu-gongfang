@@ -93,6 +93,27 @@ function inventoryTable(db, name, includeRowHashes) {
   return report;
 }
 
+function inventoryOpenSqlite(db, { includeRowHashes = false } = {}) {
+  const quickCheck = db.pragma('quick_check', { simple: true });
+  if (quickCheck !== 'ok') throw inventoryError('MIGRATION_SQLITE_INTEGRITY_FAILED');
+  const foreignKeyCheckCount = db.pragma('foreign_key_check').length;
+  const objects = db.prepare(`SELECT type,name,tbl_name AS tableName
+    FROM sqlite_master
+    WHERE type IN ('table','index','trigger') AND name NOT LIKE 'sqlite_%'
+    ORDER BY type,name`).all();
+  const tableNames = objects.filter(row => row.type === 'table').map(row => String(row.name)).sort();
+  const tables = {};
+  for (const tableName of tableNames) tables[tableName] = inventoryTable(db, tableName, includeRowHashes);
+  const indexes = objects.filter(row => row.type === 'index').map(row => ({
+    name: String(row.name), tableName: String(row.tableName),
+  }));
+  const triggers = objects.filter(row => row.type === 'trigger').map(row => ({
+    name: String(row.name), tableName: String(row.tableName),
+  }));
+  const baseReport = { schemaVersion: 1, quickCheck, foreignKeyCheckCount, tableCount: tableNames.length, tables, indexes, triggers };
+  return Object.freeze({ ...baseReport, inventoryHash: sha256Text(canonicalJson(baseReport)) });
+}
+
 function inventorySqlite({ dbPath, includeRowHashes = false, testHooks = {} } = {}) {
   const source = path.resolve(String(dbPath || ''));
   if (!dbPath || !fs.existsSync(source) || !fs.statSync(source).isFile()) {
@@ -110,38 +131,9 @@ function inventorySqlite({ dbPath, includeRowHashes = false, testHooks = {} } = 
     db.pragma('query_only = ON');
     db.exec('BEGIN');
     transactionOpen = true;
-    const quickCheck = db.pragma('quick_check', { simple: true });
-    if (quickCheck !== 'ok') throw inventoryError('MIGRATION_SQLITE_INTEGRITY_FAILED');
+    db.pragma('schema_version', { simple: true });
     if (typeof testHooks.afterSnapshotEstablished === 'function') testHooks.afterSnapshotEstablished();
-    const foreignKeyCheckCount = db.pragma('foreign_key_check').length;
-    const objects = db.prepare(`SELECT type,name,tbl_name AS tableName
-      FROM sqlite_master
-      WHERE type IN ('table','index','trigger') AND name NOT LIKE 'sqlite_%'
-      ORDER BY type,name`).all();
-    const tableNames = objects.filter(row => row.type === 'table').map(row => String(row.name)).sort();
-    const tables = {};
-    for (const tableName of tableNames) tables[tableName] = inventoryTable(db, tableName, includeRowHashes);
-    const indexes = objects.filter(row => row.type === 'index').map(row => ({
-      name: String(row.name),
-      tableName: String(row.tableName),
-    }));
-    const triggers = objects.filter(row => row.type === 'trigger').map(row => ({
-      name: String(row.name),
-      tableName: String(row.tableName),
-    }));
-    const baseReport = {
-      schemaVersion: 1,
-      quickCheck,
-      foreignKeyCheckCount,
-      tableCount: tableNames.length,
-      tables,
-      indexes,
-      triggers,
-    };
-    return Object.freeze({
-      ...baseReport,
-      inventoryHash: sha256Text(canonicalJson(baseReport)),
-    });
+    return inventoryOpenSqlite(db, { includeRowHashes });
   } catch (error) {
     if (error && String(error.code || '').startsWith('MIGRATION_SQLITE_')) throw error;
     throw inventoryError('MIGRATION_SQLITE_OPEN_FAILED', error);
@@ -155,4 +147,4 @@ function inventorySqlite({ dbPath, includeRowHashes = false, testHooks = {} } = 
   }
 }
 
-module.exports = { inventorySqlite };
+module.exports = { inventoryOpenSqlite, inventorySqlite };

@@ -56,6 +56,18 @@ try {
   assert.strictEqual(verify.body.command, 'verify');
   assert.strictEqual(verify.body.bundleHash, inventory.body.bundleHash);
 
+  const snapshotPath = path.join(outputWorkspace, 'source-snapshot.sqlite');
+  const snapshot = run(['snapshot', '--db', dbPath, '--output', snapshotPath]);
+  assert.strictEqual(snapshot.status, 0);
+  assert.strictEqual(snapshot.body.command, 'snapshot');
+  assert.match(snapshot.body.snapshotHash, /^[a-f0-9]{64}$/);
+  assert.deepStrictEqual({ db: hashFile(dbPath), file: hashFile(questionFile) }, before);
+  const snapshotVerify = run([
+    'verify-snapshot', '--snapshot', snapshotPath, '--expected-hash', snapshot.body.snapshotHash,
+  ]);
+  assert.strictEqual(snapshotVerify.status, 0);
+  assert.strictEqual(snapshotVerify.body.inventoryHash, snapshot.body.inventoryHash);
+
   const missingOutput = run(['inventory', '--db', dbPath]);
   assert.notStrictEqual(missingOutput.status, 0);
   assert.strictEqual(missingOutput.body.error.code, 'MIGRATION_OUTPUT_REQUIRED');

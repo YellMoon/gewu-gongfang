@@ -44,6 +44,24 @@ npm run vnext:migration:verify -- --bundle "C:\migration-evidence\inventory-2026
 
 Verification checks the manifest protocol, the exact payload file set, every SHA-256 checksum, the aggregate bundle hash, and closed coverage across logical source declarations, physical inventories, ledger entries, and unavailable-source records. It is read-only. Any changed, missing, added, or semantically inconsistent payload entry fails verification.
 
+## Create and verify a recoverable SQLite snapshot
+
+Create a brand-new external snapshot path:
+
+```powershell
+npm run vnext:migration:snapshot -- --db "D:\data\scheduling.db" --output "C:\migration-evidence\authority-snapshot.sqlite" --json
+```
+
+The command uses SQLite online backup from one established read transaction. It compares every source/snapshot table row count, primary-key-set hash, and canonical-row hash before atomically renaming the `.partial` snapshot. It checks free space, rejects overlap/reparse ancestors/existing or interrupted outputs, and never checkpoints or copies the source WAL/SHM files.
+
+Verify the snapshot later with the hash returned by creation:
+
+```powershell
+npm run vnext:migration:verify-snapshot -- --snapshot "C:\migration-evidence\authority-snapshot.sqlite" --expected-hash "<sha256>" --json
+```
+
+Keep snapshot and source on separate failure domains before calling the snapshot recoverable. Phase 2 additionally encrypts/signs closed migration bundles and performs a real restore rehearsal; a single local copy is evidence, not a complete backup policy.
+
 ## Bundle contents
 
 - `manifest.json`: bundle identity, mode, all logical source labels/kinds/path hashes, availability, and physical inventory mappings.
