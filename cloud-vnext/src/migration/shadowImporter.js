@@ -313,7 +313,9 @@ async function importShadowBundle({
         [SCHEMA_VERSION, expectedSchemaContractHash, now]);
       await tx.query(`insert into migration.batches(
         id,environment,source_bundle_hash,source_inventory_hash,catalog_hash,importer_version,mode,status,started_at
-      ) values($1,$2,$3,$4,$5,$6,'shadow','running',$7) on conflict(environment,source_bundle_hash,importer_version) do nothing`,
+      ) values($1,$2,$3,$4,$5,$6,'shadow','running',$7)
+      on conflict(environment,source_bundle_hash,importer_version) do update
+        set status='running',completed_at=null`,
       [batchId, expectedEnvironment, verified.bundleHash, verified.sourceInventoryHash, verified.catalogHash, IMPORTER_VERSION, now]);
     });
 
@@ -330,6 +332,10 @@ async function importShadowBundle({
       where id=$1 and status in ('running','verified')`, [batchId, new Date().toISOString()]));
     return Object.freeze(summary);
   } catch (error) {
+    try {
+      await withTransaction(client, tx => tx.query(`update migration.batches set status='failed',completed_at=$2
+        where id=$1 and status='running'`, [batchId, new Date().toISOString()]));
+    } catch (_) { /* preserve the original failure */ }
     throw error && String(error.code || '').startsWith('VNEXT_') ? error : importError('VNEXT_IMPORT_FAILED', error);
   } finally {
     try { await client.query('select pg_advisory_unlock(hashtextextended($1, 0))', [`gewu-vnext:${authorityId}`]); } catch (_) { /* connection closes */ }
