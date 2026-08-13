@@ -57,6 +57,16 @@ create index if not exists audit_outbox_events_tenant_id_idx on audit.outbox_eve
 create index if not exists audit_outbox_events_dispatch_idx on audit.outbox_events (status, available_at);
 create index if not exists audit_outbox_events_aggregate_idx on audit.outbox_events (aggregate_type, aggregate_id);
 
+create table if not exists audit.legacy_authorization_events (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  occurred_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
+
 create table if not exists audit.identity_provisioning_events (
   id text primary key,
   source_table text not null,
@@ -119,6 +129,20 @@ create table if not exists migration.batches (
   started_at timestamptz not null,
   completed_at timestamptz,
   unique(environment, source_bundle_hash, importer_version)
+);
+
+create table if not exists migration.environment_guard (
+  singleton boolean primary key default true check (singleton),
+  environment text not null check (environment in ('development','shadow','production')),
+  authority_id text not null,
+  initialized_at timestamptz not null,
+  check (environment <> 'production' or authority_id <> 'disposable')
+);
+
+create table if not exists migration.schema_versions (
+  version integer primary key check (version > 0),
+  contract_hash char(64) not null check (contract_hash ~ '^[0-9a-f]{64}$'),
+  applied_at timestamptz not null
 );
 
 create table if not exists migration.source_snapshots (
@@ -275,6 +299,7 @@ grant select, insert, update on audit.outbox_events to gewu_vnext_runtime;
 
 grant select, insert, update on all tables in schema identity, access, business, question, storage to gewu_vnext_migrator;
 grant select, insert on all tables in schema audit, migration to gewu_vnext_migrator;
+grant update(status, completed_at) on migration.batches to gewu_vnext_migrator;
 
 grant select on all tables in schema audit, migration to gewu_vnext_auditor;
 

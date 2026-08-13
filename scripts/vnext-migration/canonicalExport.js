@@ -73,26 +73,34 @@ function exportCanonicalSnapshot({ snapshotPath, outputRoot, catalog, plaintextF
       const escaped = quoteIdentifier(entry.sourceTable);
       const columns = db.prepare(`PRAGMA table_info(${escaped})`).all()
         .sort((left, right) => Number(left.cid) - Number(right.cid))
-        .map(column => String(column.name));
+        .map(column => ({ name: String(column.name), primaryKeyPosition: Number(column.pk || 0) }));
+      const columnNames = columns.map(column => column.name);
+      const primaryKeyColumns = columns.filter(column => column.primaryKeyPosition > 0)
+        .sort((left, right) => left.primaryKeyPosition - right.primaryKeyPosition)
+        .map(column => column.name);
       const rows = db.prepare(`SELECT * FROM ${escaped}`).all();
       counts.sourceRowCount += rows.length;
       let records;
       if (entry.disposition === 'archive' || entry.disposition === 'rebuildable_cache') {
         records = rows.map(row => ({
           sourceTable: entry.sourceTable,
-          recordHash: hashCanonicalRecord(canonicalSourceRow(row, columns)),
+          recordHash: hashCanonicalRecord(canonicalSourceRow(row, columnNames)),
         }));
       } else {
+        if (entry.disposition === 'canonical' && primaryKeyColumns.length === 0 && rows.length > 0) {
+          throw exportError('MIGRATION_CANONICAL_PRIMARY_KEY_REQUIRED');
+        }
         records = rows.map(row => {
-          const record = canonicalSourceRow(row, columns);
+          const record = canonicalSourceRow(row, columnNames);
           return {
             sourceTable: entry.sourceTable,
+            sourceRecordKey: canonicalJson(canonicalSourceRow(row, primaryKeyColumns)),
             target: entry.target,
             transformerId: entry.transformerId,
             recordHash: hashCanonicalRecord(record),
             record,
           };
-        });
+        }).sort((left, right) => left.sourceRecordKey.localeCompare(right.sourceRecordKey));
       }
       const directory = entry.disposition === 'quarantine_only' ? 'quarantine' : entry.disposition;
       const fileName = `${entry.sourceTable}.ndjson`;

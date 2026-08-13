@@ -43,7 +43,7 @@
     {"sourceTable":"data_archive_jobs","target":"storage.archive_jobs","dependencyOrder":31,"transformerId":"storage.archive-job"},
     {"sourceTable":"question_bank_delete_operations","target":"audit.question_delete_events","dependencyOrder":40,"transformerId":"audit.question-delete-event"},
     {"sourceTable":"question_bank_storage_audit","target":"audit.storage_events","dependencyOrder":40,"transformerId":"audit.storage-event"},
-    {"sourceTable":"authorization_audit_log","target":"audit.authorization_events","dependencyOrder":40,"transformerId":"audit.authorization-event"},
+    {"sourceTable":"authorization_audit_log","target":"audit.legacy_authorization_events","dependencyOrder":40,"transformerId":"audit.authorization-event"},
     {"sourceTable":"operation_audit_log","target":"audit.operation_events","dependencyOrder":40,"transformerId":"audit.operation-event"},
     {"sourceTable":"sync_audit_log","target":"audit.legacy_sync_events","dependencyOrder":40,"transformerId":"audit.legacy-sync-event"},
     {"sourceTable":"sync_rejections","target":"audit.legacy_sync_rejections","dependencyOrder":40,"transformerId":"audit.legacy-sync-rejection"},

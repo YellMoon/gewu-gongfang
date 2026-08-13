@@ -54,6 +54,7 @@ try {
   assert.strictEqual(tenantLines.length, 1);
   const tenant = JSON.parse(tenantLines[0]);
   assert.strictEqual(tenant.sourceTable, 'tenants');
+  assert.strictEqual(tenant.sourceRecordKey, '{"id":{"type":"text","value":"tenant-1"}}');
   assert.deepStrictEqual(tenant.record.id, { type: 'text', value: 'tenant-1' });
   assert.deepStrictEqual(tenant.record.name, { type: 'text', value: '\u683c\u7269' });
 
