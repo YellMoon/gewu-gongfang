@@ -1,5 +1,7 @@
 # Cloud Authority vNext Phase 2: Schema and Shadow Import Plan
 
+> **Deferred (2026-08-13):** This full-business shadow-import plan is not executable until a specific business domain has passed the active control-plane-first plan's repository, schema-parity, shadow, catch-up, restore, and rollback gates.
+
 > **Execution policy:** The primary agent implements serially. Each task starts with a failing test, ends with focused verification and an atomic commit, then Phase 2 receives primary self-audit and independent GPT-5.6-sol/high review before Phase 3.
 
 **Goal:** Convert the verified legacy SQLite/file inventory into recoverable, signed, canonical migration inputs; create an isolated PostgreSQL 17 cloud-authority schema; import twice into a clean shadow environment without duplicates; and prove data, aggregate, file-reference, restore, and rollback invariants without touching production writers.

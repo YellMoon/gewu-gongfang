@@ -1,5 +1,7 @@
 # Cloud Authority vNext Implementation Roadmap
 
+> **Superseded execution order (2026-08-13):** This file describes the final destination, but its full-business migration steps are not the next executable phase. The active order is in `2026-08-13-vnext-control-plane-first.md`: control plane first, then one business domain at a time after explicit parity gates.
+
 > **Execution policy:** The user requires direct serial execution by the primary agent. Do not dispatch parallel agents. Each phase receives its own file-level plan, tests, commits, and evidence.
 
 **Goal:** Preserve all business logic and existing desktop/question-bank data while moving Gewu Workshop to a cloud-authoritative architecture with one desktop build and a NAS or storage agent that handles files but never business authorization.
