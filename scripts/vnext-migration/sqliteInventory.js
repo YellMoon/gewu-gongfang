@@ -102,6 +102,7 @@ function inventorySqlite({ dbPath, includeRowHashes = false } = {}) {
   let db;
   try {
     db = new Database(source, { readonly: true, fileMustExist: true });
+    db.defaultSafeIntegers(true);
     db.pragma('query_only = ON');
     const quickCheck = db.pragma('quick_check', { simple: true });
     if (quickCheck !== 'ok') throw inventoryError('MIGRATION_SQLITE_INTEGRITY_FAILED');

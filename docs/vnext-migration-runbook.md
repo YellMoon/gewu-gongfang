@@ -18,13 +18,15 @@ PowerShell example:
 npm run vnext:migration:inventory -- --db "D:\data\scheduling.db" --files "I:\GewuQuestionBank" --output "C:\migration-evidence\inventory-20260813" --json
 ```
 
-Runtime configuration can provide `mainDbPath`, `questionBankPath`, `questionAssetPath`, `desktopExportPath`, and `offlineExportPath`:
+Runtime configuration can provide `mainDbPath`, `questionBankPath`, `questionAssetPath`, `desktopExportPath`, `offlineExportPath`, `localCachePath`, and `nasBackupPath`:
 
 ```powershell
 npm run vnext:migration:inventory -- --runtime-config "C:\explicit-profile\gewugongfang.config.json" --output "C:\migration-evidence\inventory-20260813" --json
 ```
 
 An explicit command-line source overrides the matching runtime configuration field. Empty configuration values are ignored; they never resolve to the current directory. Duplicate real directories are inventoried once.
+
+Configured optional file roots that are currently offline (for example, a disconnected removable question disk) are recorded as redacted unresolved sources and do not prevent the online database, local cache, or NAS backup from being inventoried. An explicitly supplied missing path still fails immediately so typing mistakes cannot be silently accepted.
 
 Optional bounds:
 

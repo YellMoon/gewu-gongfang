@@ -21,20 +21,20 @@
 
 ## Phase 0: Freeze the old direction and preserve evidence
 
-- [ ] Record the paused worktree HEAD, dirty paths, untracked paths, and reusable module map without storing private data.
-- [ ] Prevent the paused worktree from being released to `gewu/master`.
+- [x] Record the paused worktree HEAD, dirty paths, untracked paths, and reusable module map without storing private data.
+- [x] Prevent the paused worktree from being released to `gewu/master`.
 - [ ] Add vNext feature flags and phase gates on stable master.
-- [ ] Record only redacted production/local source summaries; never commit secrets or private absolute paths.
+- [x] Record only redacted production/local source summaries; never commit secrets or private absolute paths.
 
 ## Phase 1: Read-only inventory and migration bundle
 
-- [ ] Inventory SQLite consistently and read-only, including schema, counts, keys, and hashes.
-- [ ] Inventory question-bank files and assets with size, SHA-256, orphan, and collision reports.
-- [ ] Define manifest, source inventory, migration ledger, unresolved report, and checksums.
-- [ ] Accept explicit runtime config, database, file roots, desktop export roots, and output paths.
-- [ ] Never read private keys, copy tokens, write source paths, or upload automatically.
-- [ ] Test WAL, corrupt databases, reruns, interrupted writes, overlapping paths, and CJK filenames.
-- [ ] Run a real inventory-only dry-run without copying business payloads.
+- [x] Inventory SQLite consistently and read-only, including schema, counts, keys, and hashes.
+- [x] Inventory online question/NAS/cache files with size, SHA-256, and collision reports; retain disconnected removable roots as unresolved prerequisites.
+- [x] Define manifest, source inventory, migration ledger, unresolved report, and checksums.
+- [x] Accept explicit runtime config, database, file roots, desktop export roots, and output paths.
+- [x] Never read private keys, copy tokens, write source paths, or upload automatically.
+- [x] Test WAL, corrupt databases, reruns, interrupted writes, overlapping paths, CJK filenames, 64-bit integers, and bundle semantic consistency.
+- [x] Run two real inventory-only dry-runs without copying business payloads; evidence is in `docs/verification-2026-08-13-vnext-migration-foundation.md`.
 
 ## Phase 2: Cloud vNext schema and shadow import
 

@@ -15,6 +15,16 @@ function hashFile(filePath) {
     : null;
 }
 
+function expectedPrimaryKeySetHash(values) {
+  const hashes = values.map(value => crypto.createHash('sha256')
+    .update(JSON.stringify({ id: { type: 'bigint', value } }), 'utf8')
+    .digest('hex'))
+    .sort();
+  const digest = crypto.createHash('sha256');
+  for (const hash of hashes) digest.update(hash, 'ascii').update('\n', 'ascii');
+  return digest.digest('hex');
+}
+
 function sourceState(dbPath) {
   return [dbPath, `${dbPath}-wal`, `${dbPath}-shm`].map(filePath => ({
     suffix: filePath.slice(dbPath.length),
@@ -36,6 +46,7 @@ try {
     CREATE TABLE users(id TEXT PRIMARY KEY, name TEXT NOT NULL, payload BLOB);
     CREATE TABLE students(id TEXT PRIMARY KEY, user_id TEXT REFERENCES users(id), balance REAL NOT NULL);
     CREATE TABLE audit_without_pk(event TEXT NOT NULL, value INTEGER NOT NULL);
+    CREATE TABLE large_ids(id INTEGER PRIMARY KEY, note TEXT NOT NULL);
     CREATE INDEX idx_students_user ON students(user_id);
     CREATE TRIGGER trg_students_insert AFTER INSERT ON students BEGIN
       INSERT INTO audit_without_pk(event,value) VALUES('student-created',NEW.balance);
@@ -44,6 +55,7 @@ try {
   db.prepare('INSERT INTO users(id,name,payload) VALUES(?,?,?)').run('u2', '老师乙', Buffer.from([1, 2, 3]));
   db.prepare('INSERT INTO users(id,name,payload) VALUES(?,?,?)').run('u1', '老师甲', Buffer.from('private-payload'));
   db.prepare('INSERT INTO students(id,user_id,balance) VALUES(?,?,?)').run('s1', 'u1', 123.5);
+  db.exec("INSERT INTO large_ids(id,note) VALUES(9007199254740992,'first'),(9007199254740993,'second')");
 
   const before = sourceState(dbPath);
   const report = inventorySqlite({ dbPath, includeRowHashes: true });
@@ -54,6 +66,14 @@ try {
   assert.strictEqual(report.tables.users.rowCount, 2);
   assert.strictEqual(report.tables.students.rowCount, 1);
   assert.strictEqual(report.tables.audit_without_pk.rowCount, 1);
+  assert.strictEqual(report.tables.large_ids.rowCount, 2);
+  assert.match(report.tables.large_ids.primaryKeySetHash, /^[a-f0-9]{64}$/);
+  assert.strictEqual(
+    report.tables.large_ids.primaryKeySetHash,
+    expectedPrimaryKeySetHash(['9007199254740992', '9007199254740993']),
+    'adjacent 64-bit primary keys must remain distinct and exact',
+  );
+  const largeIdBaseline = report.tables.large_ids.primaryKeySetHash;
   assert.deepStrictEqual(report.tables.users.primaryKeyColumns, ['id']);
   assert.deepStrictEqual(report.tables.audit_without_pk.primaryKeyColumns, []);
   assert.match(report.tables.users.primaryKeySetHash, /^[a-f0-9]{64}$/);
@@ -84,6 +104,7 @@ try {
   const repeated = inventorySqlite({ dbPath, includeRowHashes: true });
   assert.strictEqual(repeated.inventoryHash, report.inventoryHash);
   assert.strictEqual(repeated.tables.users.canonicalRowsHash, report.tables.users.canonicalRowsHash);
+  assert.strictEqual(repeated.tables.large_ids.primaryKeySetHash, largeIdBaseline);
 
   db.close();
   db = null;

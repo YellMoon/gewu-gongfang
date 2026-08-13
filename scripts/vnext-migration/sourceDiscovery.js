@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
 const {
   resolveExistingDirectory,
   resolveExistingFile,
@@ -13,6 +14,8 @@ const SOURCE_DEFINITIONS = Object.freeze([
   { sourceId: 'question-assets', kind: 'filesystem', explicitKey: 'questionAssets', configKey: 'questionAssetPath', type: 'directory' },
   { sourceId: 'desktop-export', kind: 'desktop-export', explicitKey: 'desktopExport', configKey: 'desktopExportPath', type: 'directory' },
   { sourceId: 'offline-export', kind: 'desktop-export', explicitKey: 'offlineExport', configKey: 'offlineExportPath', type: 'directory' },
+  { sourceId: 'local-cache', kind: 'filesystem', explicitKey: 'localCache', configKey: 'localCachePath', type: 'directory' },
+  { sourceId: 'nas-backup', kind: 'filesystem', explicitKey: 'nasBackup', configKey: 'nasBackupPath', type: 'directory' },
 ]);
 
 function discoveryError(code) {
@@ -51,6 +54,11 @@ function addPrivateProperty(target, key, value) {
   });
 }
 
+function comparablePath(value) {
+  const normalized = path.normalize(value).replace(/[\\/]+$/, '');
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
 function discoverSources({ runtimeConfigPath, explicit = {} } = {}) {
   const hasRuntimeConfig = Boolean(optionalText(runtimeConfigPath));
   const hasExplicitSource = Object.values(explicit || {}).some(value => Boolean(optionalText(value)));
@@ -60,17 +68,31 @@ function discoverSources({ runtimeConfigPath, explicit = {} } = {}) {
 
   const config = readRuntimeConfig(runtimeConfigPath);
   const sources = [];
+  const unavailable = [];
   const byRealPath = new Map();
 
   for (const definition of SOURCE_DEFINITIONS) {
-    const candidate = optionalText(explicit?.[definition.explicitKey])
-      || optionalText(config[definition.configKey]);
+    const explicitCandidate = optionalText(explicit?.[definition.explicitKey]);
+    const candidate = explicitCandidate || optionalText(config[definition.configKey]);
     if (!candidate) continue;
+
+    if (!explicitCandidate && definition.sourceId !== 'authority-db'
+      && (!fs.existsSync(candidate))) {
+      const summary = summarizePath(candidate, definition.sourceId);
+      unavailable.push({
+        sourceId: definition.sourceId,
+        kind: definition.kind,
+        label: summary.label,
+        pathHash: summary.pathHash,
+        code: 'MIGRATION_CONFIGURED_SOURCE_UNAVAILABLE',
+      });
+      continue;
+    }
 
     const resolvedPath = definition.type === 'file'
       ? resolveExistingFile(candidate)
       : resolveExistingDirectory(candidate);
-    const dedupeKey = process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath;
+    const dedupeKey = comparablePath(resolvedPath);
     const existing = byRealPath.get(dedupeKey);
     if (existing) {
       existing.aliases.push(definition.sourceId);
@@ -91,7 +113,11 @@ function discoverSources({ runtimeConfigPath, explicit = {} } = {}) {
   }
 
   sources.sort((left, right) => left.sourceId.localeCompare(right.sourceId));
-  return Object.freeze({ sources: Object.freeze(sources) });
+  unavailable.sort((left, right) => left.sourceId.localeCompare(right.sourceId));
+  return Object.freeze({
+    sources: Object.freeze(sources),
+    unavailable: Object.freeze(unavailable),
+  });
 }
 
 module.exports = { discoverSources };

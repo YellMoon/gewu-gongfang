@@ -25,7 +25,7 @@ try {
   const result = writeInventoryBundle({
     bundlePath,
     manifest: manifest(),
-    inventory: { sources: { 'authority-db': { quickCheck: 'ok', inventoryHash: 'b'.repeat(64) } } },
+    inventory: { schemaVersion: 1, sources: { 'authority-db': { quickCheck: 'ok', inventoryHash: 'b'.repeat(64) } } },
     ledger: [{
       sourceId: 'authority-db', sourceType: 'sqlite', sourceRecordId: null,
       sourceHash: 'b'.repeat(64), status: 'discovered', targetType: null,
@@ -47,6 +47,47 @@ try {
   assert.strictEqual(verified.bundleHash, result.bundleHash);
   assert.strictEqual(verified.fileCount, 4);
 
+  const extraBundlePath = path.join(workspace, 'extra-bundle');
+  writeInventoryBundle({
+    bundlePath: extraBundlePath,
+    manifest: manifest('bundle-extra'),
+    inventory: { schemaVersion: 1, sources: { 'authority-db': { quickCheck: 'ok', inventoryHash: 'b'.repeat(64) } } },
+    ledger: [{
+      sourceId: 'authority-db', sourceType: 'sqlite', sourceRecordId: null,
+      sourceHash: 'b'.repeat(64), status: 'discovered', targetType: null,
+      targetRecordId: null, targetHash: null, conflictCode: null,
+    }],
+    unresolved: [],
+  });
+  fs.writeFileSync(path.join(extraBundlePath, 'reports', 'unexpected.json'), '{}\n', 'utf8');
+  assert.throws(
+    () => verifyInventoryBundle({ bundlePath: extraBundlePath }),
+    error => error && error.code === 'MIGRATION_BUNDLE_UNEXPECTED_FILE',
+  );
+  fs.rmSync(path.join(extraBundlePath, 'reports', 'unexpected.json'));
+  fs.mkdirSync(path.join(extraBundlePath, 'empty-extra'));
+  assert.throws(
+    () => verifyInventoryBundle({ bundlePath: extraBundlePath }),
+    error => error && error.code === 'MIGRATION_BUNDLE_UNEXPECTED_FILE',
+  );
+
+  const inconsistentPath = path.join(workspace, 'inconsistent-bundle');
+  assert.throws(
+    () => writeInventoryBundle({
+      bundlePath: inconsistentPath,
+      manifest: manifest('bundle-inconsistent'),
+      inventory: { schemaVersion: 1, sources: {} },
+      ledger: [{
+        sourceId: 'authority-db', sourceType: 'sqlite', sourceRecordId: null,
+        sourceHash: 'b'.repeat(64), status: 'discovered', targetType: null,
+        targetRecordId: null, targetHash: null, conflictCode: null,
+      }],
+      unresolved: [],
+    }),
+    error => error && error.code === 'MIGRATION_BUNDLE_SOURCE_COVERAGE_INVALID',
+  );
+  assert.ok(!fs.existsSync(inconsistentPath));
+
   assert.throws(
     () => writeInventoryBundle({ bundlePath, manifest: manifest('bundle-test-2'), inventory: {}, ledger: [], unresolved: [] }),
     error => error && error.code === 'MIGRATION_BUNDLE_ALREADY_EXISTS',
@@ -57,7 +98,7 @@ try {
     () => writeInventoryBundle({
       bundlePath: badBundlePath,
       manifest: { ...manifest('bundle-bad'), status: 'partial' },
-      inventory: {}, ledger: [], unresolved: [],
+      inventory: { schemaVersion: 1, sources: { 'authority-db': { inventoryHash: 'b'.repeat(64) } } }, ledger: [], unresolved: [],
     }),
     error => error && error.code === 'MIGRATION_BUNDLE_STATUS_INVALID',
   );

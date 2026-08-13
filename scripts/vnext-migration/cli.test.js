@@ -74,6 +74,10 @@ try {
   assert.notStrictEqual(existing.status, 0);
   assert.strictEqual(existing.body.error.code, 'MIGRATION_OUTPUT_ALREADY_EXISTS');
 
+  const unknownOption = run(['inventory', '--db', dbPath, '--ouptut', path.join(outputWorkspace, 'typo')]);
+  assert.notStrictEqual(unknownOption.status, 0);
+  assert.strictEqual(unknownOption.body.error.code, 'MIGRATION_ARGUMENT_UNKNOWN');
+
   console.log('vNext migration CLI process checks passed');
 } finally {
   fs.rmSync(workspace, { recursive: true, force: true });

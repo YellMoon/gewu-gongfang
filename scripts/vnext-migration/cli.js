@@ -21,6 +21,9 @@ function cliError(code) {
 function parseArguments(argv) {
   const [command, ...tokens] = argv;
   const options = {};
+  const allowed = command === 'inventory'
+    ? new Set(['json', 'runtime-config', 'db', 'files', 'question-assets', 'desktop-export', 'offline-export', 'local-cache', 'nas-backup', 'output', 'max-files', 'max-bytes'])
+    : command === 'verify' ? new Set(['json', 'bundle']) : new Set();
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
     if (token === '--json') {
@@ -29,6 +32,7 @@ function parseArguments(argv) {
     }
     if (!token.startsWith('--')) throw cliError('MIGRATION_ARGUMENT_INVALID');
     const key = token.slice(2);
+    if (!allowed.has(key)) throw cliError('MIGRATION_ARGUMENT_UNKNOWN');
     const value = tokens[index + 1];
     if (!value || value.startsWith('--')) throw cliError('MIGRATION_ARGUMENT_VALUE_REQUIRED');
     if (Object.prototype.hasOwnProperty.call(options, key)) throw cliError('MIGRATION_ARGUMENT_DUPLICATE');
@@ -69,6 +73,8 @@ async function inventoryCommand(options) {
       questionAssets: options['question-assets'],
       desktopExport: options['desktop-export'],
       offlineExport: options['offline-export'],
+      localCache: options['local-cache'],
+      nasBackup: options['nas-backup'],
     },
   });
   if (!discovery.sources.length) throw cliError('MIGRATION_SOURCES_REQUIRED');
@@ -82,7 +88,11 @@ async function inventoryCommand(options) {
   const maxFiles = positiveInteger(options['max-files'], 100000, 'MIGRATION_FILE_COUNT_LIMIT_INVALID');
   const maxBytes = positiveInteger(options['max-bytes'], 1024 ** 4, 'MIGRATION_FILE_BYTES_LIMIT_INVALID');
   const reports = {};
-  const unresolved = [];
+  const unresolved = discovery.unavailable.map(source => ({
+    sourceId: source.sourceId,
+    code: source.code,
+    pathHash: source.pathHash,
+  }));
   const ledger = [];
 
   for (const source of discovery.sources) {

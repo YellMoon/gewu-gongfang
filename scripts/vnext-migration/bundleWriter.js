@@ -15,6 +15,8 @@ const PAYLOAD_FILES = Object.freeze([
   'reports/migration-ledger.json',
   'reports/unresolved.json',
 ]);
+const BUNDLE_FILES = Object.freeze([...PAYLOAD_FILES, 'checksums/sha256sums.json']);
+const BUNDLE_DIRECTORIES = Object.freeze(['checksums', 'reports']);
 
 function bundleError(code, cause) {
   return Object.assign(new Error(code), { code, cause });
@@ -44,8 +46,48 @@ function ensureDirectory(value, code) {
   return resolved;
 }
 
+function listBundleFiles(root, relative = '') {
+  const files = [];
+  for (const entry of fs.readdirSync(path.join(root, relative), { withFileTypes: true })) {
+    const child = relative ? `${relative}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      if (!BUNDLE_DIRECTORIES.includes(child)) throw bundleError('MIGRATION_BUNDLE_UNEXPECTED_FILE');
+      files.push(...listBundleFiles(root, child));
+    }
+    else if (entry.isFile()) files.push(child);
+    else throw bundleError('MIGRATION_BUNDLE_UNEXPECTED_FILE');
+  }
+  return files.sort();
+}
+
+function validateSemanticCoverage({ manifest, inventory, ledger }) {
+  if (!inventory || inventory.schemaVersion !== 1 || !inventory.sources
+    || typeof inventory.sources !== 'object' || Array.isArray(inventory.sources)) {
+    throw bundleError('MIGRATION_BUNDLE_INVENTORY_INVALID');
+  }
+  if (!Array.isArray(ledger)) throw bundleError('MIGRATION_BUNDLE_LEDGER_INVALID');
+  const manifestIds = manifest.sources.map(source => source.sourceId).sort();
+  const inventoryIds = Object.keys(inventory.sources).sort();
+  const ledgerIds = ledger.map(entry => entry.sourceId).sort();
+  if (canonicalJson(manifestIds) !== canonicalJson(inventoryIds)
+    || canonicalJson(manifestIds) !== canonicalJson(ledgerIds)) {
+    throw bundleError('MIGRATION_BUNDLE_SOURCE_COVERAGE_INVALID');
+  }
+  for (const source of manifest.sources) {
+    const report = inventory.sources[source.sourceId];
+    const entry = ledger.find(item => item.sourceId === source.sourceId);
+    if (!report || !entry || entry.sourceType !== source.kind
+      || entry.sourceHash !== report.inventoryHash || entry.status !== 'discovered') {
+      throw bundleError('MIGRATION_BUNDLE_SOURCE_COVERAGE_INVALID');
+    }
+  }
+}
+
 function verifyInventoryBundle({ bundlePath } = {}) {
   const root = ensureDirectory(bundlePath, 'MIGRATION_BUNDLE_MISSING');
+  if (canonicalJson(listBundleFiles(root)) !== canonicalJson([...BUNDLE_FILES].sort())) {
+    throw bundleError('MIGRATION_BUNDLE_UNEXPECTED_FILE');
+  }
   const manifest = validateManifest(readJson(path.join(root, 'manifest.json'), 'MIGRATION_BUNDLE_MANIFEST_INVALID'));
   const checksumPath = path.join(root, 'checksums', 'sha256sums.json');
   const checksumDocument = readJson(checksumPath, 'MIGRATION_BUNDLE_CHECKSUMS_INVALID');
@@ -75,6 +117,10 @@ function verifyInventoryBundle({ bundlePath } = {}) {
   if (checksumDocument.bundleHash !== bundleHash) {
     throw bundleError('MIGRATION_BUNDLE_CHECKSUM_MISMATCH');
   }
+  const inventory = readJson(path.join(root, 'reports', 'inventory.json'), 'MIGRATION_BUNDLE_INVENTORY_INVALID');
+  const ledger = readJson(path.join(root, 'reports', 'migration-ledger.json'), 'MIGRATION_BUNDLE_LEDGER_INVALID')
+    .map(validateLedgerEntry);
+  validateSemanticCoverage({ manifest, inventory, ledger });
   return Object.freeze({
     bundleId: manifest.bundleId,
     bundleHash,
@@ -103,6 +149,7 @@ function writeInventoryBundle({ bundlePath, manifest, inventory, ledger, unresol
     'reports/migration-ledger.json': validatedLedger,
     'reports/unresolved.json': unresolved,
   };
+  validateSemanticCoverage({ manifest: validatedManifest, inventory: payloads['reports/inventory.json'], ledger: validatedLedger });
 
   let renamed = false;
   try {
