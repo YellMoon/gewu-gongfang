@@ -17,7 +17,7 @@
     {"sourceTable":"rooms","target":"business.rooms","dependencyOrder":11,"transformerId":"business.room"},
     {"sourceTable":"subjects","target":"business.subjects","dependencyOrder":11,"transformerId":"business.subject"},
     {"sourceTable":"courses","target":"business.courses","dependencyOrder":12,"transformerId":"business.course"},
-    {"sourceTable":"enrollments","target":"business.enrollments","dependencyOrder":13,"transformerId":"business.enrollment"},
+    {"sourceTable":"enrollments","target":"business.enrollments","dependencyOrder":15,"transformerId":"business.enrollment"},
     {"sourceTable":"schedules","target":"business.schedules","dependencyOrder":14,"transformerId":"business.schedule","aggregateInvariants":["row_count","primary_key_set","canonical_hash","scheduled_hours"]},
     {"sourceTable":"payments","target":"business.payments","dependencyOrder":15,"transformerId":"business.payment","aggregateInvariants":["row_count","primary_key_set","canonical_hash","payment_amount"]},
     {"sourceTable":"consumptions","target":"business.consumptions","dependencyOrder":15,"transformerId":"business.consumption","aggregateInvariants":["row_count","primary_key_set","canonical_hash","consumed_hours","consumed_amount"]},

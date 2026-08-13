@@ -14,6 +14,7 @@ const fixturePath = path.join(__dirname, 'fixtures', 'phase1-authority-schema.js
 const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
 const catalog = loadSourceTableCatalog(path.join(__dirname, 'source-table-catalog.json'));
 const result = validateSourceTableCatalog({ inventory: fixture, catalog });
+const bySourceTable = new Map(catalog.tables.map(entry => [entry.sourceTable, entry]));
 
 assert.strictEqual(fixture.schemaVersion, 1);
 assert.strictEqual(fixture.tables.length, 99);
@@ -25,6 +26,10 @@ assert.deepStrictEqual(result.unclassified, []);
 assert.deepStrictEqual(result.unknownCatalogTables, []);
 assert.strictEqual(result.catalogHash.length, 64);
 assert.ok(Object.isFrozen(result));
+assert.ok(
+  bySourceTable.get('enrollments').dependencyOrder > bySourceTable.get('schedules').dependencyOrder,
+  'legacy enrollments depend on schedule-to-course reconciliation',
+);
 
 for (const entry of catalog.tables) {
   assert.ok(DISPOSITIONS.includes(entry.disposition), entry.sourceTable);
