@@ -128,6 +128,11 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - The resolver requires active online session and parent state, all nine current version-vector matches, session time validity, highest authority-local V4 publication whose policy JSON re-canonicalizes to exactly its stored bytes and hash, and the existing policy contract's deny/surface/time rules. No publication and any inconsistency fail closed; it never falls back to the default policy.
 - The V4 publication manifest is the resolver's sole policy truth. The capability catalog remains an override FK/writer-validation vocabulary, so a catalog mutation cannot silently rewrite a published policy while it is read. This remains in-memory reference-only: no token/API/runtime/database path, cache, profile binding, audit/outbox write, business data or deployment integration.
 
+### File object lifecycle reference evidence (2026-08-14)
+
+- `shared/vNextFileObjectLifecycleReference.js` now freezes the pure current-state contract for question-file object identity, queued storage, matched write and independent-read verification receipts, terminal inspection state and separate NAS/removable-backup receipt chains. It uses opaque location references only and performs no file, NAS, Docker, cloud, database or task-worker I/O.
+- `verified` is therefore not a real-copy claim: production storage workers must later supply these receipts only after actual I/O and preserve audit history independently of this current-state snapshot. A retryable/missing retry clears stale current evidence rather than presenting old backups as proof of the new upload cycle.
+
 ### First-authority trust-root decision gate (2026-08-14)
 
 - The initialization writer is intentionally not implemented. A vNext authority with no policy cannot authorize its first policy publication, and a temporary first-call exemption, legacy administrator mapping, default seed, host-only bypass, device claim or client session claim would violate the cloud-authority design.
