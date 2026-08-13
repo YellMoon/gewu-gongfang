@@ -6,6 +6,7 @@ const {
   V_NEXT_CONTROL_PLANE_REFERENCE_TABLES,
   bootstrapVNextControlPlaneReference,
 } = require('./vNextControlPlaneReferenceKernel');
+const HASH = 'a'.repeat(64);
 
 function vNextTables(db) {
   return db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'vNext_%' ORDER BY name")
@@ -17,15 +18,23 @@ try {
   db.exec('CREATE TABLE legacy_guard(id TEXT PRIMARY KEY, value TEXT NOT NULL); INSERT INTO legacy_guard VALUES(\'legacy-1\',\'unchanged\');');
   const beforeLegacySql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='legacy_guard'").get().sql;
   const result = bootstrapVNextControlPlaneReference(db);
+  assert.strictEqual(result.schemaVersion, 2);
   assert.deepStrictEqual(result.tables, V_NEXT_CONTROL_PLANE_REFERENCE_TABLES);
   assert.deepStrictEqual(vNextTables(db), V_NEXT_CONTROL_PLANE_REFERENCE_TABLES);
+  assert.deepStrictEqual(
+    db.prepare('PRAGMA table_info(vNext_authorization_audit_events)').all().map(row => row.name),
+    ['event_id','authority_id','receipt_id','reason_code','context_sha256','created_at'],
+    'audit must derive command identity and outcome from its immutable receipt',
+  );
   assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_authorities').get().count, 0);
   assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_accounts').get().count, 0);
   assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_role_grants').get().count, 0);
   assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_authorization_audit_events').get().count, 0);
+  assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_authorization_command_receipts').get().count, 0);
+  assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_authorization_outbox_events').get().count, 0);
   assert.deepStrictEqual(
     db.prepare('SELECT schema_key,schema_version FROM vNext_schema_meta').all(),
-    [{ schema_key: 'control-plane-reference', schema_version: 1 }],
+    [{ schema_key: 'control-plane-reference', schema_version: 2 }],
   );
   assert.strictEqual(db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='legacy_guard'").get().sql, beforeLegacySql);
   assert.deepStrictEqual(db.prepare('SELECT * FROM legacy_guard').all(), [{ id: 'legacy-1', value: 'unchanged' }]);
@@ -81,13 +90,48 @@ try {
     () => db.prepare("INSERT INTO vNext_verified_contacts(contact_id,authority_id,account_id,contact_type,normalized_value_hash,verification_state,verification_evidence_hash,row_version,created_at,updated_at) VALUES('contact-invalid','authority-1','account-1','phone','contact-hash','verified','evidence',1,'2026-08-14T00:00:00.000Z','2026-08-14T00:00:00.000Z')").run(),
     /CHECK constraint failed/,
   );
-  db.prepare("INSERT INTO vNext_authorization_audit_events(event_id,authority_id,actor_key,actor_account_id,action,reason_code,idempotency_key,outcome,created_at) VALUES('audit-1','authority-1','account:account-1','account-1','access.grant','operator_reason','key-1','accepted','2026-08-14T00:00:00.000Z')").run();
-  assert.throws(() => db.prepare("UPDATE vNext_authorization_audit_events SET outcome='rejected' WHERE event_id='audit-1'").run(), /vNext audit is append-only/);
-  assert.throws(() => db.prepare("DELETE FROM vNext_authorization_audit_events WHERE event_id='audit-1'").run(), /vNext audit is append-only/);
-  db.prepare("INSERT INTO vNext_authorization_audit_events(event_id,authority_id,actor_key,action,reason_code,idempotency_key,outcome,created_at) VALUES('audit-system-1','authority-1','system','access.revoke','system_reason','key-2','accepted','2026-08-14T00:00:00.000Z')").run();
   assert.throws(
-    () => db.prepare("INSERT INTO vNext_authorization_audit_events(event_id,authority_id,actor_key,action,reason_code,idempotency_key,outcome,created_at) VALUES('audit-system-2','authority-1','system','access.revoke','system_reason','key-2','accepted','2026-08-14T00:00:00.000Z')").run(),
+    () => db.prepare("INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,actor_account_id,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,created_at) VALUES('receipt-bad-hash','authority-1','account:account-1','account-1','bad-key','role.grant','account','account-1','not-a-sha256',0,'accepted','ROLE_GRANTED','{}','not-a-sha256','2026-08-14T00:00:00.000Z')").run(),
+    /CHECK constraint failed/,
+  );
+  assert.throws(
+    () => db.prepare("INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,outcome,result_code,canonical_result_json,canonical_result_sha256,created_at) VALUES('receipt-upper-hash','authority-1','system','upper-key','role.grant','account','account-1',?, 'accepted','ROLE_GRANTED','{}',?,'2026-08-14T00:00:00.000Z')").run('A'.repeat(64), 'A'.repeat(64)),
+    /CHECK constraint failed/,
+  );
+  assert.throws(
+    () => db.prepare("INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,outcome,result_code,canonical_result_json,canonical_result_sha256,created_at) VALUES('receipt-blob-hash','authority-1','system','blob-key','role.grant','account','account-1',?, 'accepted','ROLE_GRANTED','{}',?,'2026-08-14T00:00:00.000Z')").run(Buffer.alloc(64), Buffer.alloc(64)),
+    /CHECK constraint failed/,
+  );
+  assert.throws(
+    () => db.prepare("INSERT INTO vNext_accounts(account_id,authority_id,status,auth_version,access_version,revocation_version,row_version,created_at,updated_at) VALUES('account-fraction','authority-1','active',1.5,1,1,1,'2026-08-14T00:00:00.000Z','2026-08-14T00:00:00.000Z')").run(),
+    /CHECK constraint failed/,
+  );
+  db.prepare(`INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,actor_account_id,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,created_at) VALUES('receipt-1','authority-1','account:account-1','account-1','key-1','role.grant','account','account-1','${HASH}',0,'accepted','ROLE_GRANTED','{}','${HASH}','2026-08-14T00:00:00.000Z')`).run();
+  db.prepare(`INSERT INTO vNext_authorization_audit_events(event_id,authority_id,receipt_id,reason_code,context_sha256,created_at) VALUES('audit-1','authority-1','receipt-1','operator_reason','${HASH}','2026-08-14T00:00:00.000Z')`).run();
+  assert.throws(() => db.prepare("UPDATE vNext_authorization_audit_events SET reason_code='other_reason' WHERE event_id='audit-1'").run(), /vNext audit is append-only/);
+  assert.throws(() => db.prepare("DELETE FROM vNext_authorization_audit_events WHERE event_id='audit-1'").run(), /vNext audit is append-only/);
+  assert.throws(() => db.prepare("UPDATE vNext_authorization_command_receipts SET outcome='rejected' WHERE receipt_id='receipt-1'").run(), /vNext command receipt is append-only/);
+  assert.throws(() => db.prepare("DELETE FROM vNext_authorization_command_receipts WHERE receipt_id='receipt-1'").run(), /vNext command receipt is append-only/);
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,actor_account_id,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,outcome,result_code,canonical_result_json,canonical_result_sha256,created_at) VALUES('receipt-duplicate','authority-1','account:account-1','account-1','key-1','role.grant','account','account-1','${HASH}','accepted','ROLE_GRANTED','{}','${HASH}','2026-08-14T00:00:00.000Z')`).run(),
     /UNIQUE constraint failed/,
+  );
+  db.prepare(`INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,outcome,result_code,canonical_result_json,canonical_result_sha256,created_at) VALUES('receipt-system','authority-1','system','key-1','link.revoke','account_device_link','link-1','${HASH}','accepted','LINK_REVOKED','{}','${HASH}','2026-08-14T00:00:00.000Z')`).run();
+  db.prepare(`INSERT INTO vNext_authorization_outbox_events(event_id,authority_id,receipt_id,event_type,aggregate_kind,aggregate_id,aggregate_version,canonical_payload_json,payload_sha256,occurred_at) VALUES('outbox-1','authority-1','receipt-1','authorization.changed','account','account-1',1,'{}','${HASH}','2026-08-14T00:00:00.000Z')`).run();
+  assert.throws(() => db.prepare("UPDATE vNext_authorization_outbox_events SET canonical_payload_json='{\"forged\":true}' WHERE event_id='outbox-1'").run(), /vNext outbox event is append-only/);
+  assert.throws(() => db.prepare("DELETE FROM vNext_authorization_outbox_events WHERE event_id='outbox-1'").run(), /vNext outbox event is append-only/);
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_authorization_outbox_events(event_id,authority_id,receipt_id,event_type,aggregate_kind,aggregate_id,aggregate_version,canonical_payload_json,payload_sha256,occurred_at) VALUES('outbox-bad-json','authority-1','receipt-1','authorization.changed','account','account-1',1,'not-json','${HASH}','2026-08-14T00:00:00.000Z')`).run(),
+    /CHECK constraint failed/,
+  );
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_authorization_outbox_events(event_id,authority_id,receipt_id,event_type,aggregate_kind,aggregate_id,aggregate_version,canonical_payload_json,payload_sha256,occurred_at) VALUES('outbox-bad-version','authority-1','receipt-1','authorization.invalid','account','account-1',1.5,'{}','${HASH}','2026-08-14T00:00:00.000Z')`).run(),
+    /CHECK constraint failed/,
+  );
+  db.prepare("INSERT INTO vNext_authorities(authority_id,status,created_at,updated_at) VALUES('authority-2','active','2026-08-14T00:00:00.000Z','2026-08-14T00:00:00.000Z')").run();
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_authorization_outbox_events(event_id,authority_id,receipt_id,event_type,aggregate_kind,aggregate_id,aggregate_version,canonical_payload_json,payload_sha256,occurred_at) VALUES('outbox-cross-authority','authority-2','receipt-1','authorization.changed','account','account-1',1,'{}','${HASH}','2026-08-14T00:00:00.000Z')`).run(),
+    /FOREIGN KEY constraint failed/,
   );
   const allSql = db.prepare("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND name LIKE 'vNext_%'").all().map(row => row.sql).join('\n');
   assert.ok(!/token|secret|password|refresh|session|license|primary_host|host_receipt/i.test(allSql));
@@ -125,6 +169,15 @@ try {
   semanticDrift.close();
 }
 
+const v1Reference = new Database(':memory:');
+try {
+  v1Reference.exec("CREATE TABLE vNext_schema_meta(schema_key TEXT NOT NULL PRIMARY KEY CHECK(length(trim(schema_key))>0) CHECK(schema_key='control-plane-reference'), schema_version INTEGER NOT NULL CHECK(schema_version=1), applied_at TEXT NOT NULL CHECK(julianday(applied_at) IS NOT NULL)); INSERT INTO vNext_schema_meta VALUES('control-plane-reference',1,'2026-08-14T00:00:00.000Z')");
+  assert.throws(() => bootstrapVNextControlPlaneReference(v1Reference), /VNEXT_REFERENCE_SCHEMA_DRIFT/);
+  assert.deepStrictEqual(vNextTables(v1Reference), ['vNext_schema_meta'], 'v1 must be explicitly rejected rather than silently upgraded');
+} finally {
+  v1Reference.close();
+}
+
 const indexDrift = new Database(':memory:');
 try {
   bootstrapVNextControlPlaneReference(indexDrift);
@@ -132,6 +185,15 @@ try {
   assert.throws(() => bootstrapVNextControlPlaneReference(indexDrift), /VNEXT_REFERENCE_SCHEMA_DRIFT/);
 } finally {
   indexDrift.close();
+}
+
+const foreignNamedObjectDrift = new Database(':memory:');
+try {
+  bootstrapVNextControlPlaneReference(foreignNamedObjectDrift);
+  foreignNamedObjectDrift.exec("CREATE INDEX foreign_named_index ON vNext_accounts(status); CREATE TRIGGER foreign_named_trigger BEFORE INSERT ON vNext_authorization_outbox_events BEGIN SELECT 1; END");
+  assert.throws(() => bootstrapVNextControlPlaneReference(foreignNamedObjectDrift), /VNEXT_REFERENCE_SCHEMA_DRIFT/);
+} finally {
+  foreignNamedObjectDrift.close();
 }
 
 const triggerDrift = new Database(':memory:');
