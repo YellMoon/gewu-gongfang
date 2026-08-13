@@ -143,7 +143,7 @@ for (const [label, outbox] of [
 ]) {
   const replayDb = seededDb();
   try {
-    insertAcceptedGrantReplayFixture(replayDb, { idempotencyKey: `forged-${label}` }, outbox);
+    insertAcceptedGrantReplayFixture(replayDb, { idempotencyKey: `forged-${label}`, outbox });
     const replay = createVNextRoleGrantMutationReference({ db: replayDb, now: () => NOW, authorize: () => ({ allowed: true, authorityId: 'authority-1', actorAccountId: 'actor-1', context: {} }) });
     assert.throws(() => replay.execute({ type: 'role.grant', targetAccountId: 'target-1', role: 'teacher', expectedTargetRowVersion: 0, idempotencyKey: `forged-${label}`, reasonCode: 'test' }), error => error.code === 'IDEMPOTENCY_RECEIPT_INVALID', `forged ${label} must fail closed`);
   } finally { replayDb.close(); }
