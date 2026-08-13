@@ -17,16 +17,18 @@ const manifest = createInventoryManifest({
   createdAt: '2026-08-13T00:00:00.000Z',
   sourceVersion: '8.0.2',
   sources: [
-    { sourceId: 'question-files', kind: 'filesystem', pathHash: 'b'.repeat(64), label: 'question-files' },
-    { sourceId: 'authority-db', kind: 'sqlite', pathHash: 'a'.repeat(64), label: 'authority-db' },
+    { sourceId: 'question-files', kind: 'filesystem', pathHash: 'b'.repeat(64), label: 'question-files', availability: 'unavailable', inventoryId: null },
+    { sourceId: 'authority-db', kind: 'sqlite', pathHash: 'a'.repeat(64), label: 'authority-db', availability: 'available', inventoryId: 'authority-db' },
   ],
 });
 
-assert.strictEqual(BUNDLE_SCHEMA_VERSION, 1);
-assert.strictEqual(manifest.schemaVersion, 1);
+assert.strictEqual(BUNDLE_SCHEMA_VERSION, 2);
+assert.strictEqual(manifest.schemaVersion, 2);
 assert.strictEqual(manifest.mode, 'inventory-only');
 assert.strictEqual(manifest.status, 'complete');
 assert.deepStrictEqual(manifest.sources.map(source => source.sourceId), ['authority-db', 'question-files']);
+assert.strictEqual(manifest.sources[0].inventoryId, 'authority-db');
+assert.strictEqual(manifest.sources[1].availability, 'unavailable');
 assert.deepStrictEqual(validateManifest(manifest), manifest);
 assert.ok(Object.isFrozen(manifest));
 assert.ok(Object.isFrozen(manifest.sources));
@@ -39,6 +41,7 @@ assert.deepStrictEqual(LEDGER_STATUSES, [
   'migrated',
   'archived',
   'quarantined',
+  'unavailable',
   'intentionally_excluded',
 ]);
 
@@ -79,8 +82,8 @@ assert.throws(
     createdAt: '2026-08-13T00:00:00.000Z',
     sourceVersion: '8.0.2',
     sources: [
-      { sourceId: 'same', kind: 'sqlite', pathHash: 'a'.repeat(64) },
-      { sourceId: 'same', kind: 'filesystem', pathHash: 'b'.repeat(64) },
+      { sourceId: 'same', kind: 'sqlite', pathHash: 'a'.repeat(64), availability: 'available', inventoryId: 'same' },
+      { sourceId: 'same', kind: 'filesystem', pathHash: 'b'.repeat(64), availability: 'available', inventoryId: 'same' },
     ],
   }),
   error => error && error.code === 'MIGRATION_SOURCE_ID_DUPLICATE',
@@ -90,12 +93,21 @@ assert.throws(
     bundleId: 'bundle-raw-path',
     createdAt: '2026-08-13T00:00:00.000Z',
     sourceVersion: '8.0.2',
-    sources: [{ sourceId: 'db', kind: 'sqlite', pathHash: 'a'.repeat(64), path: 'C:\\Users\\private\\db.sqlite' }],
+    sources: [{ sourceId: 'db', kind: 'sqlite', pathHash: 'a'.repeat(64), availability: 'available', inventoryId: 'db', path: 'C:\\Users\\private\\db.sqlite' }],
   }),
   error => error && error.code === 'MIGRATION_SOURCE_FIELD_FORBIDDEN',
 );
 assert.throws(
-  () => validateManifest({ ...manifest, schemaVersion: 2 }),
+  () => createInventoryManifest({
+    bundleId: 'bundle-availability',
+    createdAt: '2026-08-13T00:00:00.000Z',
+    sourceVersion: '8.0.2',
+    sources: [{ sourceId: 'db', kind: 'sqlite', pathHash: 'a'.repeat(64), availability: 'unavailable', inventoryId: 'db' }],
+  }),
+  error => error && error.code === 'MIGRATION_SOURCE_INVENTORY_MAPPING_INVALID',
+);
+assert.throws(
+  () => validateManifest({ ...manifest, schemaVersion: 3 }),
   error => error && error.code === 'MIGRATION_BUNDLE_SCHEMA_UNSUPPORTED',
 );
 

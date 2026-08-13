@@ -42,17 +42,17 @@ The output directory appears only after all payload JSON files have been written
 npm run vnext:migration:verify -- --bundle "C:\migration-evidence\inventory-20260813" --json
 ```
 
-Verification checks the manifest protocol, the exact payload file set, every SHA-256 checksum, and the aggregate bundle hash. It is read-only. Any changed, missing, or added payload entry fails verification.
+Verification checks the manifest protocol, the exact payload file set, every SHA-256 checksum, the aggregate bundle hash, and closed coverage across logical source declarations, physical inventories, ledger entries, and unavailable-source records. It is read-only. Any changed, missing, added, or semantically inconsistent payload entry fails verification.
 
 ## Bundle contents
 
-- `manifest.json`: bundle identity, mode, source labels, source kinds, and path hashes.
+- `manifest.json`: bundle identity, mode, all logical source labels/kinds/path hashes, availability, and physical inventory mappings.
 - `reports/inventory.json`: SQLite integrity/schema/count/hash evidence and filesystem count/size/hash evidence.
 - `reports/migration-ledger.json`: phase-one `discovered` entries only.
 - `reports/unresolved.json`: skipped reparse points, unsupported entries, or files changed during scanning.
 - `checksums/sha256sums.json`: payload checksums and aggregate bundle hash.
 
-No database row plaintext or question-file content is stored. Absolute paths are retained only in process memory long enough to open explicitly selected sources.
+No database row plaintext or question-file content is stored. Absolute paths are retained only in process memory long enough to open explicitly selected sources. Available SQLite sources are inventoried in one read transaction. WAL sources without an existing SHM file are rejected before opening; Phase 2 must create a controlled online-backup snapshot instead of relaxing this rule.
 
 ## Failure handling
 

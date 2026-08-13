@@ -28,13 +28,33 @@ function safeExtension(relativePath) {
   return /^\.[a-z0-9]{1,16}$/.test(extension) ? extension : '';
 }
 
-async function inventoryFiles({ root, maxFiles = 100000, maxBytes = 1024 ** 4 } = {}) {
+function comparablePath(value) {
+  const normalized = path.normalize(value).replace(/[\\/]+$/, '');
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function isWithinRoot(root, candidate) {
+  const rootPath = comparablePath(root);
+  const candidatePath = comparablePath(candidate);
+  return candidatePath === rootPath || candidatePath.startsWith(`${rootPath}${path.sep}`);
+}
+
+function assertEntryBoundary(sourceRoot, absolutePath) {
+  const metadata = fs.lstatSync(absolutePath);
+  if (metadata.isSymbolicLink()) throw fileError('MIGRATION_FILE_BOUNDARY_VIOLATION');
+  const realPath = fs.realpathSync(absolutePath);
+  if (!isWithinRoot(sourceRoot, realPath)) throw fileError('MIGRATION_FILE_BOUNDARY_VIOLATION');
+  return { metadata, realPath };
+}
+
+async function inventoryFiles({ root, maxFiles = 100000, maxBytes = 1024 ** 4, testHooks = {} } = {}) {
   const sourceRoot = path.resolve(String(root || ''));
   if (!root || !fs.existsSync(sourceRoot) || !fs.statSync(sourceRoot).isDirectory()) {
     throw fileError('MIGRATION_FILE_ROOT_MISSING');
   }
   if (!Number.isSafeInteger(maxFiles) || maxFiles < 1) throw fileError('MIGRATION_FILE_COUNT_LIMIT_INVALID');
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw fileError('MIGRATION_FILE_BYTES_LIMIT_INVALID');
+  const realSourceRoot = fs.realpathSync(sourceRoot);
 
   const candidates = [];
   const unresolved = [];
@@ -42,6 +62,7 @@ async function inventoryFiles({ root, maxFiles = 100000, maxBytes = 1024 ** 4 } 
   while (queue.length) {
     const relativeDirectory = queue.shift();
     const absoluteDirectory = path.join(sourceRoot, relativeDirectory);
+    assertEntryBoundary(realSourceRoot, absoluteDirectory);
     const entries = fs.readdirSync(absoluteDirectory, { withFileTypes: true })
       .sort((left, right) => left.name.localeCompare(right.name));
     for (const entry of entries) {
@@ -56,6 +77,7 @@ async function inventoryFiles({ root, maxFiles = 100000, maxBytes = 1024 ** 4 } 
       }
       if (entry.isDirectory()) {
         queue.push(relativePath);
+        if (typeof testHooks.afterDirectoryQueued === 'function') testHooks.afterDirectoryQueued(relativePath);
         continue;
       }
       if (!entry.isFile()) {
@@ -74,11 +96,15 @@ async function inventoryFiles({ root, maxFiles = 100000, maxBytes = 1024 ** 4 } 
   const files = [];
   let totalBytes = 0;
   for (const candidate of candidates) {
-    const before = fs.statSync(candidate.absolutePath);
+    const opened = assertEntryBoundary(realSourceRoot, candidate.absolutePath);
+    if (!opened.metadata.isFile()) throw fileError('MIGRATION_FILE_BOUNDARY_VIOLATION');
+    const before = fs.statSync(opened.realPath);
     totalBytes += before.size;
     if (totalBytes > maxBytes) throw fileError('MIGRATION_FILE_BYTES_LIMIT_EXCEEDED');
-    const contentHash = await hashFile(candidate.absolutePath);
-    const after = fs.statSync(candidate.absolutePath);
+    const contentHash = await hashFile(opened.realPath);
+    const afterBoundary = assertEntryBoundary(realSourceRoot, candidate.absolutePath);
+    if (afterBoundary.realPath !== opened.realPath) throw fileError('MIGRATION_FILE_BOUNDARY_VIOLATION');
+    const after = fs.statSync(afterBoundary.realPath);
     const relative = candidate.relativePath.replace(/\\/g, '/');
     if (before.size !== after.size || before.mtimeMs !== after.mtimeMs) {
       unresolved.push({ code: 'MIGRATION_FILE_CHANGED_DURING_SCAN', relativePathHash: sha256Text(relative) });

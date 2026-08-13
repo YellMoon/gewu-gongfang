@@ -68,6 +68,7 @@ function discoverSources({ runtimeConfigPath, explicit = {} } = {}) {
 
   const config = readRuntimeConfig(runtimeConfigPath);
   const sources = [];
+  const declarations = [];
   const unavailable = [];
   const byRealPath = new Map();
 
@@ -86,6 +87,14 @@ function discoverSources({ runtimeConfigPath, explicit = {} } = {}) {
         pathHash: summary.pathHash,
         code: 'MIGRATION_CONFIGURED_SOURCE_UNAVAILABLE',
       });
+      declarations.push({
+        sourceId: definition.sourceId,
+        kind: definition.kind,
+        label: summary.label,
+        pathHash: summary.pathHash,
+        availability: 'unavailable',
+        inventoryId: null,
+      });
       continue;
     }
 
@@ -96,6 +105,14 @@ function discoverSources({ runtimeConfigPath, explicit = {} } = {}) {
     const existing = byRealPath.get(dedupeKey);
     if (existing) {
       existing.aliases.push(definition.sourceId);
+      declarations.push({
+        sourceId: definition.sourceId,
+        kind: definition.kind,
+        label: definition.sourceId,
+        pathHash: existing.pathHash,
+        availability: 'available',
+        inventoryId: existing.sourceId,
+      });
       continue;
     }
 
@@ -109,13 +126,23 @@ function discoverSources({ runtimeConfigPath, explicit = {} } = {}) {
     addPrivateProperty(source, 'resolvedPath', resolvedPath);
     addPrivateProperty(source, 'aliases', []);
     sources.push(source);
+    declarations.push({
+      sourceId: definition.sourceId,
+      kind: definition.kind,
+      label: summary.label,
+      pathHash: summary.pathHash,
+      availability: 'available',
+      inventoryId: definition.sourceId,
+    });
     byRealPath.set(dedupeKey, source);
   }
 
   sources.sort((left, right) => left.sourceId.localeCompare(right.sourceId));
   unavailable.sort((left, right) => left.sourceId.localeCompare(right.sourceId));
+  declarations.sort((left, right) => left.sourceId.localeCompare(right.sourceId));
   return Object.freeze({
     sources: Object.freeze(sources),
+    declarations: Object.freeze(declarations),
     unavailable: Object.freeze(unavailable),
   });
 }

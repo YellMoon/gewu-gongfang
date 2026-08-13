@@ -1,16 +1,20 @@
 'use strict';
 
-const BUNDLE_SCHEMA_VERSION = 1;
+const BUNDLE_SCHEMA_VERSION = 2;
 const SOURCE_KINDS = Object.freeze(['sqlite', 'filesystem', 'desktop-export', 'cloud-control']);
 const LEDGER_STATUSES = Object.freeze([
   'discovered',
   'migrated',
   'archived',
   'quarantined',
+  'unavailable',
   'intentionally_excluded',
 ]);
 
-const SOURCE_FIELDS = Object.freeze(new Set(['sourceId', 'kind', 'pathHash', 'label']));
+const SOURCE_FIELDS = Object.freeze(new Set([
+  'sourceId', 'kind', 'pathHash', 'label', 'availability', 'inventoryId',
+]));
+const SOURCE_AVAILABILITIES = Object.freeze(['available', 'unavailable']);
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
@@ -40,7 +44,17 @@ function normalizeSource(source = {}) {
   const label = source.label === undefined
     ? sourceId
     : requireText(source.label, 'MIGRATION_SOURCE_LABEL_INVALID', ID_PATTERN);
-  return { sourceId, kind, pathHash, label };
+  const availability = requireText(source.availability, 'MIGRATION_SOURCE_AVAILABILITY_INVALID');
+  if (!SOURCE_AVAILABILITIES.includes(availability)) {
+    throw protocolError('MIGRATION_SOURCE_AVAILABILITY_INVALID');
+  }
+  const inventoryId = source.inventoryId === null || source.inventoryId === undefined
+    ? null
+    : requireText(source.inventoryId, 'MIGRATION_SOURCE_INVENTORY_MAPPING_INVALID', ID_PATTERN);
+  if ((availability === 'available') !== Boolean(inventoryId)) {
+    throw protocolError('MIGRATION_SOURCE_INVENTORY_MAPPING_INVALID');
+  }
+  return { sourceId, kind, pathHash, label, availability, inventoryId };
 }
 
 function deepFreeze(value) {

@@ -64,6 +64,33 @@ function hashFile(filePath) {
 
     const repeated = await inventoryFiles({ root, maxFiles: 10, maxBytes: 1024 });
     assert.strictEqual(repeated.inventoryHash, report.inventoryHash);
+    const raceRoot = path.join(root, 'race-root');
+    const raceNested = path.join(raceRoot, 'nested');
+    const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-vnext-outside-'));
+    fs.mkdirSync(raceNested, { recursive: true });
+    fs.writeFileSync(path.join(raceNested, 'inside.txt'), 'inside', 'utf8');
+    fs.writeFileSync(path.join(outsideRoot, 'outside.txt'), 'outside', 'utf8');
+    let raceCreated = false;
+    try {
+      await assert.rejects(
+        () => inventoryFiles({
+          root: raceRoot,
+          maxFiles: 10,
+          maxBytes: 1024,
+          testHooks: {
+            afterDirectoryQueued(relativePath) {
+              if (relativePath !== 'nested' || raceCreated) return;
+              fs.rmSync(raceNested, { recursive: true });
+              fs.symlinkSync(outsideRoot, raceNested, 'junction');
+              raceCreated = true;
+            },
+          },
+        }),
+        error => error && error.code === 'MIGRATION_FILE_BOUNDARY_VIOLATION',
+      );
+    } finally {
+      fs.rmSync(outsideRoot, { recursive: true, force: true });
+    }
     await assert.rejects(() => inventoryFiles({ root, maxFiles: 2, maxBytes: 1024 }),
       error => error && error.code === 'MIGRATION_FILE_COUNT_LIMIT_EXCEEDED');
     await assert.rejects(() => inventoryFiles({ root, maxFiles: 10, maxBytes: 7 }),

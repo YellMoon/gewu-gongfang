@@ -93,19 +93,26 @@ function inventoryTable(db, name, includeRowHashes) {
   return report;
 }
 
-function inventorySqlite({ dbPath, includeRowHashes = false } = {}) {
+function inventorySqlite({ dbPath, includeRowHashes = false, testHooks = {} } = {}) {
   const source = path.resolve(String(dbPath || ''));
   if (!dbPath || !fs.existsSync(source) || !fs.statSync(source).isFile()) {
     throw inventoryError('MIGRATION_SQLITE_SOURCE_MISSING');
   }
+  if (fs.existsSync(`${source}-wal`) && !fs.existsSync(`${source}-shm`)) {
+    throw inventoryError('MIGRATION_SQLITE_WAL_REQUIRES_SHM');
+  }
 
   let db;
+  let transactionOpen = false;
   try {
     db = new Database(source, { readonly: true, fileMustExist: true });
     db.defaultSafeIntegers(true);
     db.pragma('query_only = ON');
+    db.exec('BEGIN');
+    transactionOpen = true;
     const quickCheck = db.pragma('quick_check', { simple: true });
     if (quickCheck !== 'ok') throw inventoryError('MIGRATION_SQLITE_INTEGRITY_FAILED');
+    if (typeof testHooks.afterSnapshotEstablished === 'function') testHooks.afterSnapshotEstablished();
     const foreignKeyCheckCount = db.pragma('foreign_key_check').length;
     const objects = db.prepare(`SELECT type,name,tbl_name AS tableName
       FROM sqlite_master
@@ -139,7 +146,12 @@ function inventorySqlite({ dbPath, includeRowHashes = false } = {}) {
     if (error && String(error.code || '').startsWith('MIGRATION_SQLITE_')) throw error;
     throw inventoryError('MIGRATION_SQLITE_OPEN_FAILED', error);
   } finally {
-    if (db) db.close();
+    if (db) {
+      if (transactionOpen) {
+        try { db.exec('ROLLBACK'); } catch (_) { /* The read connection is closing anyway. */ }
+      }
+      db.close();
+    }
   }
 }
 

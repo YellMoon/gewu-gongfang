@@ -72,6 +72,21 @@ try {
   );
   assert.strictEqual(assertSafeOutputRoot(output), path.resolve(output));
 
+  const junction = path.join(root, 'source-alias');
+  let junctionCreated = false;
+  try {
+    fs.symlinkSync(source, junction, 'junction');
+    junctionCreated = true;
+  } catch (_) {
+    junctionCreated = false;
+  }
+  if (junctionCreated) {
+    assert.throws(
+      () => assertSafeOutputRoot(path.join(junction, 'bundle')),
+      error => error && error.code === 'MIGRATION_OUTPUT_REPARSE_ANCESTOR',
+    );
+  }
+
   const summary = summarizePath(sourceFile, 'authority-db');
   assert.strictEqual(summary.label, 'authority-db');
   assert.match(summary.pathHash, /^[a-f0-9]{64}$/);

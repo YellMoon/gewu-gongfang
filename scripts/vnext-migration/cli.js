@@ -60,6 +60,8 @@ function publicSource(source) {
     kind: source.kind,
     pathHash: source.pathHash,
     label: source.label,
+    availability: source.availability,
+    inventoryId: source.inventoryId,
   };
 }
 
@@ -90,36 +92,39 @@ async function inventoryCommand(options) {
   const reports = {};
   const unresolved = discovery.unavailable.map(source => ({
     sourceId: source.sourceId,
+    kind: source.kind,
     code: source.code,
     pathHash: source.pathHash,
   }));
-  const ledger = [];
+  const inventoryHashes = new Map();
 
   for (const source of discovery.sources) {
     const report = source.kind === 'sqlite'
       ? inventorySqlite({ dbPath: source.resolvedPath, includeRowHashes: true })
       : await inventoryFiles({ root: source.resolvedPath, maxFiles, maxBytes });
     reports[source.sourceId] = report;
-    for (const item of report.unresolved || []) unresolved.push({ sourceId: source.sourceId, ...item });
-    ledger.push(validateLedgerEntry({
-      sourceId: source.sourceId,
-      sourceType: source.kind,
-      sourceRecordId: null,
-      sourceHash: report.inventoryHash,
-      status: 'discovered',
-      targetType: null,
-      targetRecordId: null,
-      targetHash: null,
-      conflictCode: null,
-    }));
+    inventoryHashes.set(source.sourceId, report.inventoryHash);
+    if ((report.unresolved || []).length) throw cliError('MIGRATION_FILE_INVENTORY_UNRESOLVED');
   }
+
+  const ledger = discovery.declarations.map(source => validateLedgerEntry({
+    sourceId: source.sourceId,
+    sourceType: source.kind,
+    sourceRecordId: null,
+    sourceHash: source.availability === 'available' ? inventoryHashes.get(source.inventoryId) : null,
+    status: source.availability === 'available' ? 'discovered' : 'unavailable',
+    targetType: null,
+    targetRecordId: null,
+    targetHash: null,
+    conflictCode: source.availability === 'available' ? null : source.code || 'MIGRATION_CONFIGURED_SOURCE_UNAVAILABLE',
+  }));
 
   const now = new Date();
   const manifest = createInventoryManifest({
     bundleId: bundleId(now),
     createdAt: now.toISOString(),
     sourceVersion: `scheduling-system-${version}`,
-    sources: discovery.sources.map(publicSource),
+    sources: discovery.declarations.map(publicSource),
   });
   const result = writeInventoryBundle({
     bundlePath: output,

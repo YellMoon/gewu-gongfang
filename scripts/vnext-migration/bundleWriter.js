@@ -26,6 +26,17 @@ function sha256Buffer(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex');
 }
 
+function comparablePath(value) {
+  const normalized = path.normalize(path.resolve(value)).replace(/[\\/]+$/, '');
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function assertCreatedAtExpectedPath(createdPath, expectedPath) {
+  if (comparablePath(fs.realpathSync(createdPath)) !== comparablePath(expectedPath)) {
+    throw bundleError('MIGRATION_BUNDLE_PATH_REDIRECTED');
+  }
+}
+
 function canonicalBuffer(value) {
   return Buffer.from(`${canonicalJson(value)}\n`, 'utf8');
 }
@@ -60,27 +71,60 @@ function listBundleFiles(root, relative = '') {
   return files.sort();
 }
 
-function validateSemanticCoverage({ manifest, inventory, ledger }) {
+function validateUnresolvedEntry(input = {}) {
+  const fields = Object.keys(input).sort();
+  if (canonicalJson(fields) !== canonicalJson(['code', 'kind', 'pathHash', 'sourceId'])) {
+    throw bundleError('MIGRATION_BUNDLE_UNRESOLVED_INVALID');
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(String(input.sourceId || ''))
+    || !/^[a-f0-9]{64}$/.test(String(input.pathHash || ''))
+    || input.code !== 'MIGRATION_CONFIGURED_SOURCE_UNAVAILABLE'
+    || typeof input.kind !== 'string' || !input.kind) {
+    throw bundleError('MIGRATION_BUNDLE_UNRESOLVED_INVALID');
+  }
+  return { sourceId: input.sourceId, kind: input.kind, pathHash: input.pathHash, code: input.code };
+}
+
+function validateSemanticCoverage({ manifest, inventory, ledger, unresolved }) {
   if (!inventory || inventory.schemaVersion !== 1 || !inventory.sources
     || typeof inventory.sources !== 'object' || Array.isArray(inventory.sources)) {
     throw bundleError('MIGRATION_BUNDLE_INVENTORY_INVALID');
   }
   if (!Array.isArray(ledger)) throw bundleError('MIGRATION_BUNDLE_LEDGER_INVALID');
+  if (!Array.isArray(unresolved)) throw bundleError('MIGRATION_BUNDLE_UNRESOLVED_INVALID');
+  const validatedUnresolved = unresolved.map(validateUnresolvedEntry);
   const manifestIds = manifest.sources.map(source => source.sourceId).sort();
   const inventoryIds = Object.keys(inventory.sources).sort();
   const ledgerIds = ledger.map(entry => entry.sourceId).sort();
-  if (canonicalJson(manifestIds) !== canonicalJson(inventoryIds)
-    || canonicalJson(manifestIds) !== canonicalJson(ledgerIds)) {
+  const declaredInventoryIds = [...new Set(manifest.sources
+    .filter(source => source.availability === 'available')
+    .map(source => source.inventoryId))].sort();
+  if (canonicalJson(manifestIds) !== canonicalJson(ledgerIds)
+    || canonicalJson(declaredInventoryIds) !== canonicalJson(inventoryIds)) {
     throw bundleError('MIGRATION_BUNDLE_SOURCE_COVERAGE_INVALID');
   }
   for (const source of manifest.sources) {
-    const report = inventory.sources[source.sourceId];
     const entry = ledger.find(item => item.sourceId === source.sourceId);
-    if (!report || !entry || entry.sourceType !== source.kind
-      || entry.sourceHash !== report.inventoryHash || entry.status !== 'discovered') {
+    const unresolvedEntry = validatedUnresolved.find(item => item.sourceId === source.sourceId);
+    if (!entry || entry.sourceType !== source.kind) {
+      throw bundleError('MIGRATION_BUNDLE_SOURCE_COVERAGE_INVALID');
+    }
+    if (source.availability === 'available') {
+      const report = inventory.sources[source.inventoryId];
+      if (!report || unresolvedEntry || entry.sourceHash !== report.inventoryHash || entry.status !== 'discovered') {
+        throw bundleError('MIGRATION_BUNDLE_SOURCE_COVERAGE_INVALID');
+      }
+    } else if (!unresolvedEntry || unresolvedEntry.kind !== source.kind
+      || unresolvedEntry.pathHash !== source.pathHash || entry.sourceHash !== null
+      || entry.status !== 'unavailable'
+      || entry.conflictCode !== 'MIGRATION_CONFIGURED_SOURCE_UNAVAILABLE') {
       throw bundleError('MIGRATION_BUNDLE_SOURCE_COVERAGE_INVALID');
     }
   }
+  if (validatedUnresolved.length !== manifest.sources.filter(source => source.availability === 'unavailable').length) {
+    throw bundleError('MIGRATION_BUNDLE_SOURCE_COVERAGE_INVALID');
+  }
+  return validatedUnresolved;
 }
 
 function verifyInventoryBundle({ bundlePath } = {}) {
@@ -120,7 +164,8 @@ function verifyInventoryBundle({ bundlePath } = {}) {
   const inventory = readJson(path.join(root, 'reports', 'inventory.json'), 'MIGRATION_BUNDLE_INVENTORY_INVALID');
   const ledger = readJson(path.join(root, 'reports', 'migration-ledger.json'), 'MIGRATION_BUNDLE_LEDGER_INVALID')
     .map(validateLedgerEntry);
-  validateSemanticCoverage({ manifest, inventory, ledger });
+  const unresolved = readJson(path.join(root, 'reports', 'unresolved.json'), 'MIGRATION_BUNDLE_UNRESOLVED_INVALID');
+  validateSemanticCoverage({ manifest, inventory, ledger, unresolved });
   return Object.freeze({
     bundleId: manifest.bundleId,
     bundleHash,
@@ -128,7 +173,7 @@ function verifyInventoryBundle({ bundlePath } = {}) {
   });
 }
 
-function writeInventoryBundle({ bundlePath, manifest, inventory, ledger, unresolved } = {}) {
+function writeInventoryBundle({ bundlePath, manifest, inventory, ledger, unresolved, testHooks = {} } = {}) {
   const finalPath = path.resolve(String(bundlePath || ''));
   if (!bundlePath) throw bundleError('MIGRATION_BUNDLE_PATH_REQUIRED');
   const partialPath = `${finalPath}.partial`;
@@ -149,11 +194,24 @@ function writeInventoryBundle({ bundlePath, manifest, inventory, ledger, unresol
     'reports/migration-ledger.json': validatedLedger,
     'reports/unresolved.json': unresolved,
   };
-  validateSemanticCoverage({ manifest: validatedManifest, inventory: payloads['reports/inventory.json'], ledger: validatedLedger });
+  const validatedUnresolved = validateSemanticCoverage({
+    manifest: validatedManifest,
+    inventory: payloads['reports/inventory.json'],
+    ledger: validatedLedger,
+    unresolved,
+  });
+  payloads['reports/unresolved.json'] = validatedUnresolved;
 
   let renamed = false;
+  let safePartial = false;
   try {
+    if (typeof testHooks.beforePartialCreate === 'function') testHooks.beforePartialCreate();
+    if (comparablePath(path.dirname(finalPath)) !== comparablePath(fs.realpathSync(path.dirname(finalPath)))) {
+      throw bundleError('MIGRATION_BUNDLE_PATH_REDIRECTED');
+    }
     fs.mkdirSync(path.join(partialPath, 'reports'), { recursive: true });
+    assertCreatedAtExpectedPath(partialPath, partialPath);
+    safePartial = true;
     fs.mkdirSync(path.join(partialPath, 'checksums'));
     const hashes = {};
     for (const relativePath of PAYLOAD_FILES) {
@@ -179,7 +237,7 @@ function writeInventoryBundle({ bundlePath, manifest, inventory, ledger, unresol
     if (error && String(error.code || '').startsWith('MIGRATION_')) throw error;
     throw bundleError('MIGRATION_BUNDLE_WRITE_FAILED', error);
   } finally {
-    if (!renamed && fs.existsSync(partialPath)) {
+    if (!renamed && safePartial && fs.existsSync(partialPath)) {
       try {
         fs.writeFileSync(path.join(partialPath, 'FAILED'), 'incomplete\n', { encoding: 'utf8', flag: 'wx' });
       } catch (_) {

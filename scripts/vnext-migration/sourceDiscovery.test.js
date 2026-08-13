@@ -50,6 +50,17 @@ try {
   assert.strictEqual(result.sources[0].resolvedPath, fs.realpathSync(overrideDb));
   assert.strictEqual(result.sources[4].resolvedPath, fs.realpathSync(filesRoot));
   assert.deepStrictEqual(result.sources[4].aliases, ['desktop-export']);
+  assert.deepStrictEqual(
+    result.declarations.map(source => [source.sourceId, source.inventoryId]),
+    [
+      ['authority-db', 'authority-db'],
+      ['desktop-export', 'question-files'],
+      ['local-cache', 'local-cache'],
+      ['nas-backup', 'nas-backup'],
+      ['question-assets', 'question-assets'],
+      ['question-files', 'question-files'],
+    ],
+  );
   assert.ok(result.sources.every(source => /^[a-f0-9]{64}$/.test(source.pathHash)));
 
   const serialized = JSON.stringify(result);
@@ -65,6 +76,10 @@ try {
   const missingOptionalResult = discoverSources({ runtimeConfigPath: missingOptionalConfig });
   assert.deepStrictEqual(missingOptionalResult.sources.map(source => source.sourceId), ['authority-db']);
   assert.deepStrictEqual(missingOptionalResult.unavailable.map(source => source.sourceId), ['question-files']);
+  assert.deepStrictEqual(
+    missingOptionalResult.declarations.map(source => [source.sourceId, source.availability, source.inventoryId]),
+    [['authority-db', 'available', 'authority-db'], ['question-files', 'unavailable', null]],
+  );
   assert.strictEqual(missingOptionalResult.unavailable[0].code, 'MIGRATION_CONFIGURED_SOURCE_UNAVAILABLE');
   assert.match(missingOptionalResult.unavailable[0].pathHash, /^[a-f0-9]{64}$/);
   assert.ok(!JSON.stringify(missingOptionalResult).includes(missingOptional));
@@ -79,6 +94,7 @@ try {
   const empty = discoverSources({ runtimeConfigPath: emptyConfig });
   assert.deepStrictEqual(empty.sources, []);
   assert.deepStrictEqual(empty.unavailable, []);
+  assert.deepStrictEqual(empty.declarations, []);
   assert.ok(!empty.sources.some(source => source.resolvedPath === process.cwd()));
 
   assert.throws(

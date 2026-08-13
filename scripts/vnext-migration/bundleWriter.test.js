@@ -15,7 +15,7 @@ function manifest(bundleId = 'bundle-test-1') {
     createdAt: '2026-08-13T00:00:00.000Z',
     sourceVersion: 'legacy-desktop',
     sources: [
-      { sourceId: 'authority-db', kind: 'sqlite', pathHash: 'a'.repeat(64), label: 'authority-db' },
+      { sourceId: 'authority-db', kind: 'sqlite', pathHash: 'a'.repeat(64), label: 'authority-db', availability: 'available', inventoryId: 'authority-db' },
     ],
   });
 }
@@ -46,6 +46,42 @@ try {
   const verified = verifyInventoryBundle({ bundlePath });
   assert.strictEqual(verified.bundleHash, result.bundleHash);
   assert.strictEqual(verified.fileCount, 4);
+
+  const unavailableBundlePath = path.join(workspace, 'unavailable-bundle');
+  const unavailableManifest = createInventoryManifest({
+    bundleId: 'bundle-unavailable',
+    createdAt: '2026-08-13T00:00:00.000Z',
+    sourceVersion: 'legacy-desktop',
+    sources: [
+      { sourceId: 'authority-db', kind: 'sqlite', pathHash: 'a'.repeat(64), label: 'authority-db', availability: 'available', inventoryId: 'authority-db' },
+      { sourceId: 'question-files', kind: 'filesystem', pathHash: 'c'.repeat(64), label: 'question-files', availability: 'unavailable', inventoryId: null },
+    ],
+  });
+  writeInventoryBundle({
+    bundlePath: unavailableBundlePath,
+    manifest: unavailableManifest,
+    inventory: { schemaVersion: 1, sources: { 'authority-db': { quickCheck: 'ok', inventoryHash: 'b'.repeat(64) } } },
+    ledger: [
+      { sourceId: 'authority-db', sourceType: 'sqlite', sourceRecordId: null, sourceHash: 'b'.repeat(64), status: 'discovered', targetType: null, targetRecordId: null, targetHash: null, conflictCode: null },
+      { sourceId: 'question-files', sourceType: 'filesystem', sourceRecordId: null, sourceHash: null, status: 'unavailable', targetType: null, targetRecordId: null, targetHash: null, conflictCode: 'MIGRATION_CONFIGURED_SOURCE_UNAVAILABLE' },
+    ],
+    unresolved: [{ sourceId: 'question-files', kind: 'filesystem', pathHash: 'c'.repeat(64), code: 'MIGRATION_CONFIGURED_SOURCE_UNAVAILABLE' }],
+  });
+  assert.strictEqual(verifyInventoryBundle({ bundlePath: unavailableBundlePath }).bundleId, 'bundle-unavailable');
+  const missingUnresolvedPath = path.join(workspace, 'missing-unresolved');
+  assert.throws(
+    () => writeInventoryBundle({
+      bundlePath: missingUnresolvedPath,
+      manifest: unavailableManifest,
+      inventory: { schemaVersion: 1, sources: { 'authority-db': { quickCheck: 'ok', inventoryHash: 'b'.repeat(64) } } },
+      ledger: [
+        { sourceId: 'authority-db', sourceType: 'sqlite', sourceRecordId: null, sourceHash: 'b'.repeat(64), status: 'discovered', targetType: null, targetRecordId: null, targetHash: null, conflictCode: null },
+        { sourceId: 'question-files', sourceType: 'filesystem', sourceRecordId: null, sourceHash: null, status: 'unavailable', targetType: null, targetRecordId: null, targetHash: null, conflictCode: 'MIGRATION_CONFIGURED_SOURCE_UNAVAILABLE' },
+      ],
+      unresolved: [],
+    }),
+    error => error && error.code === 'MIGRATION_BUNDLE_SOURCE_COVERAGE_INVALID',
+  );
 
   const extraBundlePath = path.join(workspace, 'extra-bundle');
   writeInventoryBundle({

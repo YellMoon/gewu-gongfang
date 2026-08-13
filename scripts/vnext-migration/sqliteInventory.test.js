@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const Database = require('better-sqlite3');
 
 const { inventorySqlite } = require('./sqliteInventory');
@@ -106,6 +107,20 @@ try {
   assert.strictEqual(repeated.tables.users.canonicalRowsHash, report.tables.users.canonicalRowsHash);
   assert.strictEqual(repeated.tables.large_ids.primaryKeySetHash, largeIdBaseline);
 
+  const snapshotBefore = report.tables.users.rowCount;
+  const concurrent = inventorySqlite({
+    dbPath,
+    includeRowHashes: true,
+    testHooks: {
+      afterSnapshotEstablished() {
+        const script = "const Database=require('better-sqlite3');const db=new Database(process.argv[1]);db.prepare('INSERT INTO users(id,name,payload) VALUES(?,?,?)').run('u3','writer',Buffer.alloc(0));db.close();";
+        const child = spawnSync(process.execPath, ['-e', script, dbPath], { encoding: 'utf8' });
+        assert.strictEqual(child.status, 0, child.stderr);
+      },
+    },
+  });
+  assert.strictEqual(concurrent.tables.users.rowCount, snapshotBefore, 'all inventory queries must share the established snapshot');
+
   db.close();
   db = null;
 
@@ -115,6 +130,15 @@ try {
     () => inventorySqlite({ dbPath: corruptPath }),
     error => error && error.code === 'MIGRATION_SQLITE_OPEN_FAILED',
   );
+  const walWithoutShm = path.join(root, 'wal-without-shm.sqlite');
+  fs.copyFileSync(dbPath, walWithoutShm);
+  fs.writeFileSync(`${walWithoutShm}-wal`, 'wal-present', 'utf8');
+  assert.strictEqual(fs.existsSync(`${walWithoutShm}-shm`), false);
+  assert.throws(
+    () => inventorySqlite({ dbPath: walWithoutShm }),
+    error => error && error.code === 'MIGRATION_SQLITE_WAL_REQUIRES_SHM',
+  );
+  assert.strictEqual(fs.existsSync(`${walWithoutShm}-shm`), false, 'preflight must not create SHM');
   assert.throws(
     () => inventorySqlite({ dbPath: path.join(root, 'missing.sqlite') }),
     error => error && error.code === 'MIGRATION_SQLITE_SOURCE_MISSING',

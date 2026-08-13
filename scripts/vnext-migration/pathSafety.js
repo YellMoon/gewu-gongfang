@@ -44,7 +44,31 @@ function containsPath(parent, child) {
 
 function resolveForComparison(value) {
   const resolved = requirePath(value, 'MIGRATION_PATH_REQUIRED');
-  return fs.existsSync(resolved) ? fs.realpathSync(resolved) : resolved;
+  if (fs.existsSync(resolved)) return fs.realpathSync(resolved);
+  const suffix = [];
+  let ancestor = resolved;
+  while (!fs.existsSync(ancestor)) {
+    const parent = path.dirname(ancestor);
+    if (parent === ancestor) break;
+    suffix.unshift(path.basename(ancestor));
+    ancestor = parent;
+  }
+  return path.join(fs.realpathSync(ancestor), ...suffix);
+}
+
+function assertNoReparseAncestor(value) {
+  const resolved = requirePath(value, 'MIGRATION_PATH_REQUIRED');
+  let current = fs.existsSync(resolved) ? resolved : path.dirname(resolved);
+  while (!fs.existsSync(current)) {
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  const root = path.parse(current).root;
+  while (comparable(current) !== comparable(root)) {
+    if (fs.lstatSync(current).isSymbolicLink()) throw pathError('MIGRATION_OUTPUT_REPARSE_ANCESTOR');
+    current = path.dirname(current);
+  }
 }
 
 function assertDisjointPaths({ sources = [], output } = {}) {
@@ -64,11 +88,12 @@ function assertSafeOutputRoot(value) {
   const parsed = path.parse(output);
   if (comparable(output) === comparable(parsed.root)) throw pathError('MIGRATION_OUTPUT_ROOT_FORBIDDEN');
   if (fs.existsSync(output)) throw pathError('MIGRATION_OUTPUT_ALREADY_EXISTS');
+  assertNoReparseAncestor(output);
   const parent = path.dirname(output);
   if (!fs.existsSync(parent) || !fs.statSync(parent).isDirectory()) {
     throw pathError('MIGRATION_OUTPUT_PARENT_MISSING');
   }
-  return output;
+  return resolveForComparison(output);
 }
 
 function summarizePath(value, label) {
@@ -84,6 +109,7 @@ function summarizePath(value, label) {
 module.exports = {
   assertDisjointPaths,
   assertSafeOutputRoot,
+  assertNoReparseAncestor,
   resolveExistingDirectory,
   resolveExistingFile,
   summarizePath,
