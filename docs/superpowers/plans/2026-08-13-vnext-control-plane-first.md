@@ -78,3 +78,10 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - The contract records a disposition and a complete admitted/denied column partition for every source table. Unknown, host-authority, challenge, token, session, cache, business, and storage tables fail closed into explicit exclusion.
 - Legacy role evidence remains restricted; legacy device authorization and session evidence remain inert archives requiring future reauthentication, never active cloud grants.
 - Synthetic contract and full migration foundation tests are required before advancing to the control-plane schema/API task.
+
+### Reference control-plane kernel evidence (2026-08-14)
+
+- Implemented `shared/vNextControlPlaneReferenceKernel.js` only as an executable SQLite reference contract. It accepts an explicitly injected SQLite handle, has no path or environment fallback, and is never imported by gateway initialization, HTTP, WebSocket, desktop, cloud, NAS, or migration runtime paths.
+- Every object is `vNext_`-prefixed and isolated from legacy schema. Bootstrap creates no authority, account, grant, device, installation, link, credential, session, offline-license, or business record. It rejects legacy `admin`; visitor remains the derived absence of a formal role.
+- The reference contract models authority-scoped opaque accounts, verified-contact evidence, time-bounded role/capability/scope records, opaque profile-binding evidence, device-installation-account links, and append-only authorization audit metadata. It contains no bearer token, refresh token, secret, password, session, offline license, primary-host, or host-receipt field.
+- Bootstrap is transactional, idempotent only for the exact same schema, requires enforced SQLite foreign keys, and fail-closes on table, column, named-index, trigger, or schema-version drift. This is not a selected cloud target schema or production initializer; target-engine selection and target DDL remain required before any cloud integration or shadow import.
