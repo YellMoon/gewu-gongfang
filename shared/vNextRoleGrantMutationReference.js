@@ -2,6 +2,8 @@
 
 const crypto = require('crypto');
 const { assertVNextControlPlaneReferenceSchema } = require('./vNextControlPlaneReferenceKernel');
+const { isVNextAccessContextResolverReferenceForDatabase } = require('./vNextAccessContextResolverReference');
+const { types } = require('node:util');
 
 const ROLES = new Set(['super_admin', 'teacher', 'student']);
 const INPUT_KEYS = Object.freeze({
@@ -32,8 +34,8 @@ function parseCanonicalResult(json, expectedHash) {
   if (sha256(json) !== expectedHash) throw mutationError('IDEMPOTENCY_RECEIPT_INVALID');
   let result;
   try { result = JSON.parse(json); } catch (_error) { throw mutationError('IDEMPOTENCY_RECEIPT_INVALID'); }
-  if (!result || Object.getPrototypeOf(result) !== Object.prototype || Object.keys(result).some(key => !['code', 'grantId', 'status'].includes(key))) throw mutationError('IDEMPOTENCY_RECEIPT_INVALID');
-  if (typeof result.code !== 'string' || typeof result.status !== 'string' || ('grantId' in result && typeof result.grantId !== 'string')) throw mutationError('IDEMPOTENCY_RECEIPT_INVALID');
+  if (!result || Object.getPrototypeOf(result) !== Object.prototype || Object.keys(result).some(key => !['code', 'grantId', 'status', 'context'].includes(key))) throw mutationError('IDEMPOTENCY_RECEIPT_INVALID');
+  if (typeof result.code !== 'string' || typeof result.status !== 'string' || ('grantId' in result && typeof result.grantId !== 'string') || !result.context || Object.getPrototypeOf(result.context) !== Object.prototype || Object.keys(result.context).length !== 3 || typeof result.context.accountId !== 'string' || typeof result.context.linkId !== 'string' || !Number.isInteger(result.context.policyRevision) || result.context.policyRevision < 1) throw mutationError('IDEMPOTENCY_RECEIPT_INVALID');
   if (stableJson(result) !== json) throw mutationError('IDEMPOTENCY_RECEIPT_INVALID');
   return result;
 }
@@ -48,51 +50,76 @@ function validReplayResult(type, selector, result, receipt) {
   return result.status === 'rejected' && !Object.hasOwn(result, 'grantId') && ['ROLE_GRANT_NOT_ACTIVE', 'ROLE_GRANT_VERSION_CONFLICT', 'LAST_SUPER_ADMIN_REVOKE_FORBIDDEN'].includes(result.code) && receipt.target_kind === 'role_grant' && receipt.target_id === selector.targetGrantId;
 }
 
-function createVNextRoleGrantMutationReference({ db, authorize, now = () => new Date().toISOString(), idFactory = kind => `${kind}-${crypto.randomUUID()}`, testHooks = {} } = {}) {
-  if (typeof authorize !== 'function') throw mutationError('AUTHORIZATION_GUARD_REQUIRED');
+function exactConfig(config) {
+  if (!config || typeof config !== 'object' || types.isProxy(config) || Object.getPrototypeOf(config) !== Object.prototype) return null;
+  const allowed = new Set(['db', 'resolver', 'now', 'idFactory', 'testHooks']); const keys = Reflect.ownKeys(config);
+  if (keys.some(key => typeof key !== 'string' || !allowed.has(key)) || !['db', 'resolver'].every(key => keys.includes(key))) return null;
+  const values = {};
+  for (const key of keys) { const descriptor = Object.getOwnPropertyDescriptor(config, key); if (!descriptor || !Object.hasOwn(descriptor, 'value')) return null; values[key] = descriptor.value; }
+  return values;
+}
+function exactInput(value) {
+  if (!value || typeof value !== 'object' || types.isProxy(value) || Object.getPrototypeOf(value) !== Object.prototype) throw mutationError('MUTATION_INPUT_INVALID');
+  const keys = Reflect.ownKeys(value);
+  if (keys.some(key => typeof key !== 'string')) throw mutationError('MUTATION_INPUT_INVALID');
+  const snapshot = {};
+  for (const key of keys) { const descriptor = Object.getOwnPropertyDescriptor(value, key); if (!descriptor || !Object.hasOwn(descriptor, 'value')) throw mutationError('MUTATION_INPUT_INVALID'); snapshot[key] = descriptor.value; }
+  return snapshot;
+}
+
+function createVNextRoleGrantMutationReference(config) {
+  const values = exactConfig(config);
+  const { db, resolver, now = () => new Date().toISOString(), idFactory = kind => `${kind}-${crypto.randomUUID()}`, testHooks = {} } = values || {};
+  if (!db || ['prepare', 'transaction', 'pragma', 'exec'].some(key => typeof db[key] !== 'function') || !isVNextAccessContextResolverReferenceForDatabase(resolver, db) || typeof now !== 'function' || typeof idFactory !== 'function' || !testHooks || types.isProxy(testHooks) || Object.getPrototypeOf(testHooks) !== Object.prototype) throw mutationError('ROLE_MUTATION_CONFIGURATION_INVALID');
   const nextId = kind => cleanText(idFactory(kind), 'ID_FACTORY_INVALID');
-  const execute = db.transaction(input => {
+  const execute = db.transaction((assertion, input) => {
     assertVNextControlPlaneReferenceSchema(db);
-    if (!input || Object.getPrototypeOf(input) !== Object.prototype) throw mutationError('MUTATION_INPUT_INVALID');
-    const type = cleanText(input.type, 'MUTATION_TYPE_REQUIRED');
+    const snapshot = exactInput(input);
+    const type = cleanText(snapshot.type, 'MUTATION_TYPE_REQUIRED');
     if (!['role.grant', 'role.revoke'].includes(type)) throw mutationError('MUTATION_TYPE_UNSUPPORTED');
-    if (Object.keys(input).some(key => !INPUT_KEYS[type].has(key))) throw mutationError('MUTATION_INPUT_INVALID');
-    const idempotencyKey = cleanText(input.idempotencyKey, 'IDEMPOTENCY_KEY_REQUIRED');
-    const reasonCode = cleanText(input.reasonCode, 'REASON_CODE_REQUIRED');
+    if (Reflect.ownKeys(snapshot).length !== INPUT_KEYS[type].size || [...INPUT_KEYS[type]].some(key => !Object.hasOwn(snapshot, key))) throw mutationError('MUTATION_INPUT_INVALID');
+    const idempotencyKey = cleanText(snapshot.idempotencyKey, 'IDEMPOTENCY_KEY_REQUIRED');
+    const reasonCode = cleanText(snapshot.reasonCode, 'REASON_CODE_REQUIRED');
     const selector = type === 'role.grant'
-      ? { targetAccountId: cleanText(input.targetAccountId, 'TARGET_ACCOUNT_REQUIRED'), role: cleanText(input.role, 'ROLE_REQUIRED'), expectedTargetRowVersion: input.expectedTargetRowVersion }
-      : { targetGrantId: cleanText(input.targetGrantId, 'TARGET_GRANT_REQUIRED'), expectedTargetRowVersion: input.expectedTargetRowVersion };
+      ? { targetAccountId: cleanText(snapshot.targetAccountId, 'TARGET_ACCOUNT_REQUIRED'), role: cleanText(snapshot.role, 'ROLE_REQUIRED'), expectedTargetRowVersion: snapshot.expectedTargetRowVersion }
+      : { targetGrantId: cleanText(snapshot.targetGrantId, 'TARGET_GRANT_REQUIRED'), expectedTargetRowVersion: snapshot.expectedTargetRowVersion };
     if (!isInteger(selector.expectedTargetRowVersion, type === 'role.grant' ? 0 : 1) || (type === 'role.grant' && (!ROLES.has(selector.role) || selector.expectedTargetRowVersion !== 0))) throw mutationError('MUTATION_INPUT_INVALID');
-    let guard;
-    try { guard = authorize(frozen({ type, selector: frozen({ ...selector }) })); } catch (_error) { throw mutationError('AUTHORIZATION_DENIED'); }
-    if (!guard || typeof guard.then === 'function' || Object.getPrototypeOf(guard) !== Object.prototype || guard.allowed !== true) throw mutationError('AUTHORIZATION_DENIED');
-    const authorityId = cleanText(guard.authorityId, 'AUTHORIZATION_DENIED');
-    const actorAccountId = cleanText(guard.actorAccountId, 'AUTHORIZATION_DENIED');
+    let context;
+    try { context = resolver.resolve(assertion); } catch (_error) { throw mutationError('AUTHORIZATION_DENIED'); }
+    const timestamp = now();
+    if (typeof timestamp !== 'string' || !timestamp || Number.isNaN(Date.parse(timestamp))) throw mutationError('AUTHORIZATION_DENIED');
+    if (!context || context.surface !== 'desktop' || !Array.isArray(context.roles) || !context.roles.includes('super_admin') || !Array.isArray(context.capabilityIds) || !context.capabilityIds.includes('access.manage') || typeof context.reauthenticatedUntil !== 'string' || Number.isNaN(Date.parse(context.reauthenticatedUntil)) || Date.parse(context.reauthenticatedUntil) <= Date.parse(timestamp)) throw mutationError('AUTHORIZATION_DENIED');
+    const authorityId = cleanText(context.authorityId, 'AUTHORIZATION_DENIED');
+    const actorAccountId = cleanText(context.accountId, 'AUTHORIZATION_DENIED');
     const authority = db.prepare("SELECT authority_id FROM vNext_authorities WHERE authority_id=? AND status='active'").get(authorityId);
     const actor = db.prepare("SELECT account_id FROM vNext_accounts WHERE authority_id=? AND account_id=? AND status='active'").get(authorityId, actorAccountId);
     if (!authority || !actor) throw mutationError('AUTHORIZATION_DENIED');
     const actorKey = `account:${actor.account_id}`;
+    const executionContext = { accountId: actorAccountId, linkId: cleanText(context.linkId, 'AUTHORIZATION_DENIED'), policyRevision: context.policyRevision };
+    if (!Number.isInteger(executionContext.policyRevision) || executionContext.policyRevision < 1) throw mutationError('AUTHORIZATION_DENIED');
+    const contextHash = sha256(stableJson(executionContext));
     const requestJson = stableJson({ type, ...selector, reasonCode });
     const requestHash = sha256(requestJson);
     const existing = db.prepare("SELECT receipt_id,canonical_request_sha256,canonical_result_json,canonical_result_sha256,actor_account_id,command_type,target_kind,target_id,result_code,outcome,committed_auth_version,committed_access_version,committed_revocation_version,committed_target_row_version FROM vNext_authorization_command_receipts WHERE authority_id=? AND actor_key=? AND idempotency_key=?").get(authorityId, actorKey, idempotencyKey);
     if (existing) {
       if (existing.canonical_request_sha256 !== requestHash) throw mutationError('IDEMPOTENCY_KEY_CONFLICT');
       const parsedResult = parseCanonicalResult(existing.canonical_result_json, existing.canonical_result_sha256);
-      const audits = db.prepare("SELECT reason_code FROM vNext_authorization_audit_events WHERE authority_id=? AND receipt_id=?").all(authorityId, existing.receipt_id);
+      const audits = db.prepare("SELECT reason_code,context_sha256 FROM vNext_authorization_audit_events WHERE authority_id=? AND receipt_id=?").all(authorityId, existing.receipt_id);
       const outbox = db.prepare("SELECT event_type,aggregate_kind,aggregate_id,aggregate_version,canonical_payload_json,payload_sha256 FROM vNext_authorization_outbox_events WHERE authority_id=? AND receipt_id=?").all(authorityId, existing.receipt_id);
       const acceptedVersions = type === 'role.grant'
         ? existing.committed_auth_version !== null && existing.committed_access_version !== null && existing.committed_revocation_version === null && existing.committed_target_row_version === 1
         : existing.committed_auth_version !== null && existing.committed_access_version !== null && existing.committed_revocation_version !== null && existing.committed_target_row_version !== null;
       let outboxValid = outbox.length === 0 && existing.committed_auth_version === null && existing.committed_access_version === null && existing.committed_revocation_version === null && existing.committed_target_row_version === null;
       if (parsedResult.status === 'accepted') {
-        const accountId = type === 'role.grant'
-          ? selector.targetAccountId
-          : db.prepare('SELECT account_id FROM vNext_role_grants WHERE authority_id=? AND grant_id=?').get(authorityId, parsedResult.grantId)?.account_id;
+        const grant = db.prepare('SELECT authority_id,account_id,role,status,grant_version,row_version FROM vNext_role_grants WHERE authority_id=? AND grant_id=?').get(authorityId, parsedResult.grantId);
+        const accountId = grant?.account_id;
+        const account = accountId ? db.prepare('SELECT auth_version,access_version,revocation_version FROM vNext_accounts WHERE authority_id=? AND account_id=?').get(authorityId, accountId) : null;
         const expectedPayload = type === 'role.grant'
           ? { accountId, accessVersion: existing.committed_access_version, authVersion: existing.committed_auth_version, grantId: parsedResult.grantId, role: selector.role }
           : { accessVersion: existing.committed_access_version, accountId, grantId: parsedResult.grantId, revocationVersion: existing.committed_revocation_version };
         const expectedPayloadJson = stableJson(expectedPayload);
-        outboxValid = Boolean(accountId) && outbox.length === 1
+        const targetValid = Boolean(grant && account) && grant.authority_id === authorityId && (type === 'role.grant' ? grant.account_id === selector.targetAccountId && grant.role === selector.role && grant.status === 'active' : ROLES.has(grant.role) && grant.status === 'revoked') && grant.row_version >= existing.committed_target_row_version && grant.grant_version >= existing.committed_target_row_version && account.auth_version >= existing.committed_auth_version && account.access_version >= existing.committed_access_version && (type === 'role.grant' ? existing.committed_revocation_version === null : account.revocation_version >= existing.committed_revocation_version);
+        outboxValid = targetValid && outbox.length === 1
           && outbox[0].event_type === (type === 'role.grant' ? 'authorization.role_granted' : 'authorization.role_revoked')
           && outbox[0].aggregate_kind === 'role_grant'
           && outbox[0].aggregate_id === parsedResult.grantId
@@ -100,13 +127,13 @@ function createVNextRoleGrantMutationReference({ db, authorize, now = () => new 
           && outbox[0].canonical_payload_json === expectedPayloadJson
           && outbox[0].payload_sha256 === sha256(expectedPayloadJson);
       }
-      if (existing.actor_account_id !== actorAccountId || existing.command_type !== type || !validReplayResult(type, selector, parsedResult, existing) || audits.length !== 1 || audits[0].reason_code !== reasonCode || !outboxValid || (parsedResult.status === 'accepted' && !acceptedVersions)) throw mutationError('IDEMPOTENCY_RECEIPT_INVALID');
-      return frozen({ ...parsedResult, replayed: true });
+      if (existing.actor_account_id !== actorAccountId || existing.command_type !== type || !validReplayResult(type, selector, parsedResult, existing) || audits.length !== 1 || audits[0].reason_code !== reasonCode || audits[0].context_sha256 !== sha256(stableJson(parsedResult.context)) || !outboxValid || (parsedResult.status === 'accepted' && !acceptedVersions)) throw mutationError('IDEMPOTENCY_RECEIPT_INVALID');
+      const { context: _context, ...output } = parsedResult;
+      return frozen({ ...output, replayed: true });
     }
-    const timestamp = String(now());
-    const contextHash = sha256(stableJson(guard.context || {}));
     const record = ({ outcome, code, targetKind, targetId, result, versions = null, outbox = null }) => {
-      const resultJson = stableJson(result);
+      const storedResult = { ...result, context: executionContext };
+      const resultJson = stableJson(storedResult);
       const receiptId = nextId('receipt');
       db.prepare("INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,actor_account_id,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,committed_auth_version,committed_access_version,committed_revocation_version,committed_target_row_version,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
         .run(receiptId, authorityId, actorKey, actorAccountId, idempotencyKey, type, targetKind, targetId, requestHash, selector.expectedTargetRowVersion, outcome, code, resultJson, sha256(resultJson), versions?.authVersion || null, versions?.accessVersion || null, versions?.revocationVersion || null, versions?.targetRowVersion || null, timestamp);

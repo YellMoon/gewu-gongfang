@@ -145,6 +145,12 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - It rejects the current link and every cross-authority/non-active target. A successful compare-and-swap changes only the target link to `revoked`, increments its auth/access/row vectors, and atomically writes a command receipt, receipt-bound audit, and one immutable invalidation outbox intent. Target account auth/access/revocation versions deliberately remain unchanged; resolver current-link checks invalidate the target's captured sessions.
 - An already revoked target is a version-independent noop. Replays revalidate the frozen command result, original policy audit context, target state/vectors/timestamps, audit, and outbox payload/hash; every branch remains `:memory:` reference-only and has no API/runtime/cloud database/source data/real storage/business migration/deployment integration.
 
+### Existing-authority role mutation AccessContext evidence (2026-08-14)
+
+- `shared/vNextRoleGrantMutationReference.js` no longer accepts an injectable authorization callback. Its only authorization path is an opaque assertion resolved through a resolver branded and bound to the same exact V4 reference database.
+- A role grant or revoke requires the current desktop context to carry `super_admin`, `access.manage`, and an unexpired recent reauthentication. Actor and authority are derived exclusively from that context; commands cannot claim or override them.
+- Existing role CAS, account-version changes, last-effective-super-admin protection, receipt/audit/outbox atomicity and replay semantics remain reference-only. Accepted replay cross-checks frozen context evidence, actual role-grant/account versions and immutable outbox payloads so internally self-consistent but durable-state-inconsistent companion tampering fails closed.
+
 ### First-authority trust-root decision gate (2026-08-14)
 
 - The initialization writer is intentionally not implemented. A vNext authority with no policy cannot authorize its first policy publication, and a temporary first-call exemption, legacy administrator mapping, default seed, host-only bypass, device claim or client session claim would violate the cloud-authority design.
