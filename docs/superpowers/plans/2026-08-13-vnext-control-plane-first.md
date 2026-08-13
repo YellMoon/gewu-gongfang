@@ -115,3 +115,9 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - V4 adds an authority-scoped, append-only policy-publication ledger. Its current policy is the highest contiguous authority-local revision; there is no mutable current pointer and no automatic default-policy row.
 - Each publication persists canonical policy JSON plus a SHA-256 identity and is bound to an accepted, typed `authorization_policy.publish` receipt with exact authority, publication, contract/hash, revision and time semantics. Adjacent identical policy content is rejected as a noop; A→B→A is a new valid revision.
 - This remains reference-only. A later trusted writer and resolver must re-canonicalize stored JSON, recompute its hash and fail closed; policy publication does not mass-update account/session versions, issue credentials, or expose an API.
+
+### Trusted-session verifier boundary evidence (2026-08-14)
+
+- `shared/vNextTrustedSessionVerifierBoundaryReference.js` turns only an exact `{ sessionId }` result from an explicitly injected deployment verifier into a closure-branded opaque assertion. Object shape, JSON, a copied assertion and another boundary's assertion never establish trust.
+- This is deliberately not a token, credential, cryptographic verifier, session issuer, API or database reader. It does not accept a client-provided session ID as authentication and it never return the original presentation or a verifier-internal failure.
+- A later read-only AccessContext resolver must unwrap only this boundary's assertion and then independently reload current V3 session/parent state and the current V4 publication. It must fail closed for every stale or inconsistent record.
