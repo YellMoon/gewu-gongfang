@@ -138,6 +138,56 @@ create table if not exists storage.backup_members (
 create index if not exists storage_backup_members_backup_set_id_idx on storage.backup_members (backup_set_id);
 create index if not exists storage_backup_members_file_version_id_idx on storage.backup_members (file_version_id);
 
+create table if not exists storage.question_assets (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  verification_status text not null default 'unverified' check (verification_status in ('unverified','verified','missing','quarantined')),
+  file_version_id text references storage.file_versions(id), -- fk-index: storage.question_assets(file_version_id)
+  imported_at timestamptz not null,
+  unique(source_table, source_record_key),
+  check (verification_status <> 'verified' or file_version_id is not null)
+);
+create index if not exists storage_question_assets_file_version_id_idx on storage.question_assets (file_version_id);
+
+create table if not exists storage.paper_artifacts (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  verification_status text not null default 'unverified' check (verification_status in ('unverified','verified','missing','quarantined')),
+  file_version_id text references storage.file_versions(id), -- fk-index: storage.paper_artifacts(file_version_id)
+  imported_at timestamptz not null,
+  unique(source_table, source_record_key),
+  check (verification_status <> 'verified' or file_version_id is not null)
+);
+create index if not exists storage_paper_artifacts_file_version_id_idx on storage.paper_artifacts (file_version_id);
+
+create table if not exists storage.paper_jobs (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  import_status text not null default 'historical' check (import_status in ('historical','quarantined')),
+  imported_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
+
+create table if not exists storage.archive_jobs (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  import_status text not null default 'historical' check (import_status in ('historical','quarantined')),
+  imported_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
+
 create table if not exists question.taxonomy_systems (
   id text primary key,
   tenant_id text not null references identity.tenants(id), -- fk-index: question.taxonomy_systems(tenant_id)

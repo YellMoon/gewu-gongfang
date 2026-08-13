@@ -79,6 +79,7 @@ function validateSchemaContract(migrations) {
   return Object.freeze({
     schemas: Object.freeze(uniqueSchemas),
     tableCount: tables.length,
+    tables: Object.freeze([...tableSet].sort()),
     missingRequiredTables: Object.freeze(missingRequiredTables),
     unindexedForeignKeys: Object.freeze(unindexedForeignKeys),
     forbiddenPatterns: Object.freeze(forbiddenPatterns),

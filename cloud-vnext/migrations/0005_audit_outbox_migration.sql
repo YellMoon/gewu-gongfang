@@ -57,6 +57,56 @@ create index if not exists audit_outbox_events_tenant_id_idx on audit.outbox_eve
 create index if not exists audit_outbox_events_dispatch_idx on audit.outbox_events (status, available_at);
 create index if not exists audit_outbox_events_aggregate_idx on audit.outbox_events (aggregate_type, aggregate_id);
 
+create table if not exists audit.identity_provisioning_events (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  occurred_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
+
+create table if not exists audit.legacy_sync_events (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  occurred_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
+
+create table if not exists audit.legacy_sync_rejections (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  occurred_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
+
+create table if not exists audit.question_delete_events (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  occurred_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
+
+create table if not exists audit.storage_events (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  occurred_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
+
 create table if not exists migration.batches (
   id text primary key,
   environment text not null,
@@ -140,6 +190,46 @@ create table if not exists migration.restore_receipts (
 );
 create index if not exists migration_restore_receipts_migration_batch_id_idx on migration.restore_receipts (migration_batch_id);
 create index if not exists migration_restore_receipts_backup_set_id_idx on migration.restore_receipts (backup_set_id);
+
+create table if not exists migration.legacy_record_ledger (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  imported_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
+
+create table if not exists migration.legacy_schema_events (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  imported_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
+
+create table if not exists migration.source_metadata (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  imported_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
+
+create table if not exists migration.source_provenance (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  imported_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
 
 create or replace function audit.reject_immutable_mutation()
 returns trigger

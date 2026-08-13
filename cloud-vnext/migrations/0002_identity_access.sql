@@ -69,6 +69,28 @@ create table if not exists identity.external_identities (
 );
 create index if not exists identity_external_identities_account_id_idx on identity.external_identities (account_id);
 
+create table if not exists identity.legacy_account_evidence (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  review_status text not null default 'pending_review' check (review_status in ('pending_review','accepted','rejected')),
+  imported_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
+
+create table if not exists identity.external_identity_requests (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  review_status text not null default 'pending_review' check (review_status in ('pending_review','accepted','rejected')),
+  imported_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
+
 create table if not exists access.roles (
   id text primary key,
   tenant_id text references identity.tenants(id), -- fk-index: access.roles(tenant_id)
@@ -191,5 +213,49 @@ create table if not exists access.offline_licenses (
   revoked_at timestamptz
 );
 create index if not exists access_offline_licenses_account_device_link_id_idx on access.offline_licenses (account_device_link_id);
+
+create table if not exists access.account_memberships (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  review_status text not null default 'pending_review' check (review_status in ('pending_review','accepted','rejected')),
+  imported_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
+
+create table if not exists access.role_applications (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  review_status text not null default 'pending_review' check (review_status in ('pending_review','accepted','rejected')),
+  imported_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
+
+create table if not exists access.role_bindings (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  review_status text not null default 'pending_review' check (review_status in ('pending_review','accepted','rejected')),
+  imported_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
+
+create table if not exists access.legacy_role_evidence (
+  id text primary key,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  evidence_payload jsonb not null,
+  review_status text not null default 'pending_review' check (review_status in ('pending_review','accepted','rejected')),
+  imported_at timestamptz not null,
+  unique(source_table, source_record_key)
+);
 
 commit;

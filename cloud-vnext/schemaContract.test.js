@@ -11,6 +11,7 @@ const {
 const migrationsDir = path.join(__dirname, 'migrations');
 const migrations = loadMigrations(migrationsDir);
 const result = validateSchemaContract(migrations);
+const sourceCatalog = require('../migration/vnext/source-table-catalog.json');
 
 assert.deepStrictEqual(migrations.map(item => item.name), [
   '0001_extensions_roles.sql',
@@ -24,6 +25,12 @@ assert.deepStrictEqual(result.schemas, [
 ]);
 assert.ok(result.tableCount >= 45);
 assert.deepStrictEqual(result.missingRequiredTables, []);
+assert.deepStrictEqual(
+  [...new Set(sourceCatalog.canonical.map(entry => entry.target))]
+    .filter(target => !result.tables.includes(target))
+    .sort(),
+  [],
+);
 assert.deepStrictEqual(result.unindexedForeignKeys, []);
 assert.deepStrictEqual(result.forbiddenPatterns, []);
 assert.ok(result.contractHash.match(/^[a-f0-9]{64}$/));
