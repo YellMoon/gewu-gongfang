@@ -3,6 +3,7 @@
 const { types } = require('node:util');
 
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+const trustedBoundaries = new WeakSet();
 
 function boundaryError(code) {
   return Object.assign(new Error(code), { code });
@@ -22,7 +23,7 @@ function createVNextTrustedSessionVerifierBoundary(config) {
   if (typeof verifyPresentation !== 'function') throw boundaryError('VNEXT_TRUSTED_VERIFIER_INVALID');
   const assertions = new WeakMap();
 
-  return Object.freeze({
+  const boundary = Object.freeze({
     async verify(presentation) {
       let result;
       try {
@@ -43,6 +44,12 @@ function createVNextTrustedSessionVerifierBoundary(config) {
       return trustedSession;
     },
   });
+  trustedBoundaries.add(boundary);
+  return boundary;
 }
 
-module.exports = Object.freeze({ createVNextTrustedSessionVerifierBoundary });
+function isVNextTrustedSessionVerifierBoundary(value) {
+  return !!value && typeof value === 'object' && trustedBoundaries.has(value);
+}
+
+module.exports = Object.freeze({ createVNextTrustedSessionVerifierBoundary, isVNextTrustedSessionVerifierBoundary });
