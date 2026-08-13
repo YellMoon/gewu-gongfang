@@ -91,3 +91,9 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - The reference contract now defines an append-only command receipt as the sole idempotency authority, a receipt-bound append-only audit record, and an immutable receipt-bound authorization outbox intent. V2 stores only writer-supplied JSON and SHA-256-shaped request/result/payload metadata needed for a later mutation contract; it does not send events or issue credentials.
 - The accompanying v2 plan freezes the version/CAS effects of role, capability, scope, and device-link changes before a mutation handler exists. Reference v1 is explicitly rejected rather than silently upgraded; no real database migration is implemented.
 - This remains an injected in-memory SQLite contract only. It is not production cloud DDL, a selected target database, an authorization API, session/reauth resolver, delivery worker, real-data importer, or business writer.
+
+### Reference role-mutation vertical slice evidence (2026-08-14)
+
+- Implemented `shared/vNextRoleGrantMutationReference.js` as the first executable control-plane transaction reference. It supports only immediate `role.grant` and `role.revoke` against an explicitly injected, prevalidated V2 SQLite handle; it never bootstraps or repairs schema.
+- An injected synchronous guard must explicitly return `allowed: true`; authority and actor identity are then reloaded from active authority/account rows. Caller-supplied authority, actor, or unknown fields are rejected. This artifact does not resolve sessions, tokens, reauthentication, primary-host authority, or production policy.
+- Target state, account-version invalidation, command receipt, receipt-bound audit, and immutable outbox intent are one transaction. Replays validate receipt semantics and every companion record; rejected/noop commands retain receipt/audit evidence but have no outbox intent. The last currently effective super-admin on an active account cannot be revoked.

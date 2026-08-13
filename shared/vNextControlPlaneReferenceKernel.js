@@ -88,8 +88,11 @@ const REQUIRED_TRIGGER_SQL = Object.freeze({
 });
 
 function kernelError(code) { return Object.assign(new Error(code), { code }); }
-function assertConnection(db) {
+function assertConnectionShape(db) {
   if (!db || typeof db.exec !== 'function' || typeof db.prepare !== 'function' || typeof db.transaction !== 'function' || typeof db.pragma !== 'function') throw kernelError('VNEXT_REFERENCE_SQLITE_CONNECTION_REQUIRED');
+}
+function enableAndAssertForeignKeys(db) {
+  assertConnectionShape(db);
   db.pragma('foreign_keys = ON');
   if (Number(db.pragma('foreign_keys', { simple: true })) !== 1) throw kernelError('VNEXT_REFERENCE_FOREIGN_KEYS_REQUIRED');
 }
@@ -108,7 +111,7 @@ function assertSchema(db) {
   if (triggers.length !== Object.keys(REQUIRED_TRIGGER_SQL).length || triggers.some(trigger => normalizeSql(trigger.sql) !== `CREATE TRIGGER ${trigger.name} ${REQUIRED_TRIGGER_SQL[trigger.name]}`)) throw kernelError('VNEXT_REFERENCE_SCHEMA_DRIFT');
 }
 function bootstrapVNextControlPlaneReference(db, { now = () => new Date().toISOString(), testHooks = {} } = {}) {
-  assertConnection(db);
+  enableAndAssertForeignKeys(db);
   const hasMetaTable = db.prepare("SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name='vNext_schema_meta'").get();
   if (hasMetaTable) assertSchema(db);
   const apply = db.transaction(() => {
@@ -121,4 +124,14 @@ function bootstrapVNextControlPlaneReference(db, { now = () => new Date().toISOS
   apply();
   return Object.freeze({ schemaVersion: 2, tables: V_NEXT_CONTROL_PLANE_REFERENCE_TABLES });
 }
-module.exports = { V_NEXT_CONTROL_PLANE_REFERENCE_TABLES, bootstrapVNextControlPlaneReference };
+module.exports = {
+  V_NEXT_CONTROL_PLANE_REFERENCE_TABLES,
+  assertVNextControlPlaneReferenceSchema(db) {
+    assertConnectionShape(db);
+    if (Number(db.pragma('foreign_keys', { simple: true })) !== 1) throw kernelError('VNEXT_REFERENCE_FOREIGN_KEYS_REQUIRED');
+    const meta = db.prepare("SELECT schema_version FROM vNext_schema_meta WHERE schema_key='control-plane-reference'").get();
+    if (!meta || Number(meta.schema_version) !== 2) throw kernelError('VNEXT_REFERENCE_SCHEMA_DRIFT');
+    assertSchema(db);
+  },
+  bootstrapVNextControlPlaneReference,
+};
