@@ -29,6 +29,7 @@ function canonicalRecord({ sourceTable, target, transformerId, record, sourceRec
 
 async function run() {
   const connectionString = String(process.env.VNEXT_POSTGRES_TEST_URL || '').trim();
+  const setupConnectionString = String(process.env.VNEXT_POSTGRES_SETUP_URL || connectionString).trim();
   const expectedDatabase = String(process.env.VNEXT_POSTGRES_TEST_DATABASE || '').trim();
   if (!/^gewu_vnext_shadow_[a-z0-9_]+$/.test(expectedDatabase)) throw new Error('VNEXT_POSTGRES_TEST_DATABASE_INVALID');
   const migrations = loadMigrations(path.join(__dirname, '..', '..', 'migrations'));
@@ -36,7 +37,7 @@ async function run() {
   const catalog = loadSourceTableCatalog(path.join(__dirname, '..', '..', '..', 'migration', 'vnext', 'source-table-catalog.json'));
   const catalogHash = validateSourceTableCatalog({ inventory: sourceInventory, catalog }).catalogHash;
 
-  const setup = new Client({ connectionString });
+  const setup = new Client({ connectionString: setupConnectionString });
   await setup.connect();
   try {
     const identity = await setup.query("select current_database() as database, current_setting('server_version_num') as version_num");
@@ -100,6 +101,10 @@ async function run() {
 
   const pool = createVnextPool({ connectionString, applicationName: 'gewu-vnext-shadow-import-test' });
   try {
+    const executionIdentity = await pool.query('select current_user as current_user, rolsuper from pg_roles where rolname=current_user');
+    if (process.env.VNEXT_EXPECT_MIGRATOR === '1') {
+      assert.deepStrictEqual(executionIdentity.rows[0], { current_user: 'gewu_vnext_migrator', rolsuper: false });
+    }
     const options = {
       pool, bundlePath: firstBundle, signingPublicKey: publicKey, allowedPublicKeyFingerprints: [fingerprint],
       encryptionKey, expectedEnvironment: 'shadow', authorityId: 'shadow-authority-20260813',
