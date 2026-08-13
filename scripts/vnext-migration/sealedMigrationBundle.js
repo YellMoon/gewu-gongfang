@@ -253,6 +253,10 @@ function verifySealedMigrationBundle(options = {}) {
     bundleId: loaded.manifest.bundleId,
     bundleHash: loaded.bundleHash,
     publicKeyFingerprint: loaded.manifest.publicKeyFingerprint,
+    environment: loaded.manifest.environment,
+    sourceSnapshotHash: loaded.manifest.sourceSnapshotHash,
+    sourceInventoryHash: loaded.manifest.sourceInventoryHash,
+    catalogHash: loaded.manifest.catalogHash,
     payloads: Object.freeze(loaded.manifest.payloads.map(Object.freeze)),
   });
 }
