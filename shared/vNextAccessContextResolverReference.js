@@ -6,6 +6,8 @@ const { isVNextTrustedSessionVerifierBoundary } = require('./vNextTrustedSession
 const { types } = require('node:util');
 
 const UNAVAILABLE = 'VNEXT_ACCESS_CONTEXT_UNAVAILABLE';
+const trustedResolvers = new WeakSet();
+const resolverDatabases = new WeakMap();
 const error = () => Object.assign(new Error(UNAVAILABLE), { code: UNAVAILABLE });
 const active = value => value === 'active';
 
@@ -93,7 +95,18 @@ function createVNextAccessContextResolverReference(config) {
     }
   }
 
-  return frozen({ resolve });
+  const resolver = frozen({ resolve });
+  trustedResolvers.add(resolver);
+  resolverDatabases.set(resolver, db);
+  return resolver;
 }
 
-module.exports = frozen({ createVNextAccessContextResolverReference });
+function isVNextAccessContextResolverReference(value) {
+  return !!value && typeof value === 'object' && trustedResolvers.has(value);
+}
+
+function isVNextAccessContextResolverReferenceForDatabase(value, db) {
+  return isVNextAccessContextResolverReference(value) && resolverDatabases.get(value) === db;
+}
+
+module.exports = frozen({ createVNextAccessContextResolverReference, isVNextAccessContextResolverReference, isVNextAccessContextResolverReferenceForDatabase });

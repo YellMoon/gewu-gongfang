@@ -133,6 +133,12 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - `shared/vNextFileObjectLifecycleReference.js` now freezes the pure current-state contract for question-file object identity, queued storage, matched write and independent-read verification receipts, terminal inspection state and separate NAS/removable-backup receipt chains. It uses opaque location references only and performs no file, NAS, Docker, cloud, database or task-worker I/O.
 - `verified` is therefore not a real-copy claim: production storage workers must later supply these receipts only after actual I/O and preserve audit history independently of this current-state snapshot. A retryable/missing retry clears stale current evidence rather than presenting old backups as proof of the new upload cycle.
 
+### Existing-authority policy publication mutation reference evidence (2026-08-14)
+
+- `shared/vNextPolicyPublicationMutationReference.js` completes the existing-authority V4 publish vertical slice only. It consumes a real opaque assertion through a resolver branded and bound to the same injected database; only a current desktop `super_admin` with `access.manage` and a valid recent reauthentication can publish a later policy revision.
+- Revision zero remains `FIRST_POLICY_BOOTSTRAP_REQUIRED`, so this writer does not create an authority, first policy, first administrator or bootstrap bypass. Every candidate is recursively snapshotted and canonicalized before hashing; it must retain active desktop `access.manage` for `super_admin`, preventing policy self-lock before a separately approved recovery design exists.
+- Success atomically records receipt, publication, audit and outbox. Replay rechecks all associated canonical request/result, publication, audit and outbox evidence. This is still `:memory:` reference code: no API/runtime/cloud database/source data/real storage/business migration/deployment integration.
+
 ### First-authority trust-root decision gate (2026-08-14)
 
 - The initialization writer is intentionally not implemented. A vNext authority with no policy cannot authorize its first policy publication, and a temporary first-call exemption, legacy administrator mapping, default seed, host-only bypass, device claim or client session claim would violate the cloud-authority design.

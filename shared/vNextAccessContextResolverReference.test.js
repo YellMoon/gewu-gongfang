@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const { bootstrapVNextControlPlaneReference } = require('./vNextControlPlaneReferenceKernel');
 const policy = require('./vNextAuthorizationPolicyReference');
 const { createVNextTrustedSessionVerifierBoundary } = require('./vNextTrustedSessionVerifierBoundaryReference');
-const { createVNextAccessContextResolverReference } = require('./vNextAccessContextResolverReference');
+const { createVNextAccessContextResolverReference, isVNextAccessContextResolverReference } = require('./vNextAccessContextResolverReference');
 
 const NOW = '2026-08-14T01:00:00.000Z';
 const HASH = text => crypto.createHash('sha256').update(text, 'utf8').digest('hex');
@@ -52,6 +52,10 @@ function createFixture({ sessionKind = 'online', sessionStatus = 'active', publi
 (async () => {
   const { db, boundary, resolver } = createFixture();
   const assertion = await boundary.verify({ neverReturned: 'presentation' });
+  assert.strictEqual(isVNextAccessContextResolverReference(resolver), true, 'only the real resolver factory output is branded');
+  assert.strictEqual(isVNextAccessContextResolverReference({ resolve: resolver.resolve }), false, 'a copied resolve method is not a resolver');
+  assert.strictEqual(isVNextAccessContextResolverReference({ resolve() {} }), false, 'a look-alike resolver is not trusted');
+  assert.strictEqual(isVNextAccessContextResolverReference(createVNextAccessContextResolverReference({ db, verifierBoundary: boundary, surface: 'desktop', now: () => NOW })), true, 'a second real factory output is branded');
   const before = { changes: db.totalChanges, fingerprint: vNextFingerprint(db) };
   const context = resolver.resolve(assertion);
   assert.deepStrictEqual(context, {
