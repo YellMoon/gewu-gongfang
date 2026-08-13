@@ -139,6 +139,12 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - Revision zero remains `FIRST_POLICY_BOOTSTRAP_REQUIRED`, so this writer does not create an authority, first policy, first administrator or bootstrap bypass. Every candidate is recursively snapshotted and canonicalized before hashing; it must retain active desktop `access.manage` for `super_admin`, preventing policy self-lock before a separately approved recovery design exists.
 - Success atomically records receipt, publication, audit and outbox. Replay rechecks all associated canonical request/result, publication, audit and outbox evidence. This is still `:memory:` reference code: no API/runtime/cloud database/source data/real storage/business migration/deployment integration.
 
+### Existing-authority account-device-link revocation reference evidence (2026-08-14)
+
+- `shared/vNextAccountDeviceLinkRevocationMutationReference.js` defines only `account_device_link.revoke` for an existing authority. It consumes an opaque assertion through the same injected V4 database's branded resolver and requires a current desktop `super_admin`, `device.revoke`, and unexpired recent reauthentication.
+- It rejects the current link and every cross-authority/non-active target. A successful compare-and-swap changes only the target link to `revoked`, increments its auth/access/row vectors, and atomically writes a command receipt, receipt-bound audit, and one immutable invalidation outbox intent. Target account auth/access/revocation versions deliberately remain unchanged; resolver current-link checks invalidate the target's captured sessions.
+- An already revoked target is a version-independent noop. Replays revalidate the frozen command result, original policy audit context, target state/vectors/timestamps, audit, and outbox payload/hash; every branch remains `:memory:` reference-only and has no API/runtime/cloud database/source data/real storage/business migration/deployment integration.
+
 ### First-authority trust-root decision gate (2026-08-14)
 
 - The initialization writer is intentionally not implemented. A vNext authority with no policy cannot authorize its first policy publication, and a temporary first-call exemption, legacy administrator mapping, default seed, host-only bypass, device claim or client session claim would violate the cloud-authority design.
