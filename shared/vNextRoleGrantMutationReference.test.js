@@ -108,4 +108,45 @@ try {
   assert.deepStrictEqual(service.execute(missing), { code: 'TARGET_ACCOUNT_NOT_ACTIVE', replayed: true, status: 'rejected' });
 } finally { rejectedReplayDb.close(); }
 
+function insertAcceptedGrantReplayFixture(value, { idempotencyKey, auditReasonCode = 'test', includeAudit = true, includeOutbox = true, outbox = {} }) {
+  const requestJson = '{"expectedTargetRowVersion":0,"reasonCode":"test","role":"teacher","targetAccountId":"target-1","type":"role.grant"}';
+  const resultJson = '{"code":"ROLE_GRANTED","grantId":"fixture-grant","status":"accepted"}';
+  const payloadJson = '{"accountId":"target-1","accessVersion":2,"authVersion":2,"grantId":"fixture-grant","role":"teacher"}';
+  value.prepare("INSERT INTO vNext_role_grants(grant_id,authority_id,account_id,role,status,grant_version,row_version,starts_at,created_at,updated_at,granted_by_account_id) VALUES('fixture-grant','authority-1','target-1','teacher','active',1,1,?,?,?,'actor-1')").run(NOW, NOW, NOW);
+  value.prepare("INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,actor_account_id,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,committed_auth_version,committed_access_version,committed_target_row_version,created_at) VALUES('fixture-receipt','authority-1','account:actor-1','actor-1',?,'role.grant','role_grant','fixture-grant',?,0,'accepted','ROLE_GRANTED',?,?,2,2,1,?)")
+    .run(idempotencyKey, HASH(requestJson), resultJson, HASH(resultJson), NOW);
+  if (includeAudit) value.prepare("INSERT INTO vNext_authorization_audit_events(event_id,authority_id,receipt_id,reason_code,context_sha256,created_at) VALUES('fixture-audit','authority-1','fixture-receipt',?,?,?)").run(auditReasonCode, HASH('{}'), NOW);
+  if (includeOutbox) value.prepare("INSERT INTO vNext_authorization_outbox_events(event_id,authority_id,receipt_id,event_type,aggregate_kind,aggregate_id,aggregate_version,canonical_payload_json,payload_sha256,occurred_at) VALUES('fixture-outbox','authority-1','fixture-receipt',?,?,?,?,?,?,?)")
+    .run(outbox.eventType || 'authorization.role_granted', outbox.aggregateKind || 'role_grant', outbox.aggregateId || 'fixture-grant', outbox.aggregateVersion || 1, outbox.payloadJson || payloadJson, outbox.payloadHash || HASH(payloadJson), NOW);
+}
+
+for (const [label, fixture] of [
+  ['missing audit', { includeAudit: false }],
+  ['missing outbox', { includeOutbox: false }],
+  ['wrong audit reason', { auditReasonCode: 'forged' }],
+  ['extra outbox', { outbox: {}, extraOutbox: true }],
+]) {
+  const replayDb = seededDb();
+  try {
+    insertAcceptedGrantReplayFixture(replayDb, { idempotencyKey: `companion-${label}`, ...fixture });
+    if (fixture.extraOutbox) replayDb.prepare("INSERT INTO vNext_authorization_outbox_events(event_id,authority_id,receipt_id,event_type,aggregate_kind,aggregate_id,aggregate_version,canonical_payload_json,payload_sha256,occurred_at) VALUES('fixture-extra','authority-1','fixture-receipt','authorization.extra','role_grant','fixture-grant',1,'{}',?,?)").run(HASH('{}'), NOW);
+    const replay = createVNextRoleGrantMutationReference({ db: replayDb, now: () => NOW, authorize: () => ({ allowed: true, authorityId: 'authority-1', actorAccountId: 'actor-1', context: {} }) });
+    assert.throws(() => replay.execute({ type: 'role.grant', targetAccountId: 'target-1', role: 'teacher', expectedTargetRowVersion: 0, idempotencyKey: `companion-${label}`, reasonCode: 'test' }), error => error.code === 'IDEMPOTENCY_RECEIPT_INVALID', `invalid ${label} must fail closed`);
+  } finally { replayDb.close(); }
+}
+
+for (const [label, outbox] of [
+  ['aggregate kind', { aggregateKind: 'forged_kind' }],
+  ['payload hash', { payloadHash: HASH('forged') }],
+  ['payload', { payloadJson: '{"accountId":"target-1","accessVersion":2,"authVersion":2,"grantId":"fixture-grant","role":"student"}' }],
+  ['aggregate version', { aggregateVersion: 2 }],
+]) {
+  const replayDb = seededDb();
+  try {
+    insertAcceptedGrantReplayFixture(replayDb, { idempotencyKey: `forged-${label}` }, outbox);
+    const replay = createVNextRoleGrantMutationReference({ db: replayDb, now: () => NOW, authorize: () => ({ allowed: true, authorityId: 'authority-1', actorAccountId: 'actor-1', context: {} }) });
+    assert.throws(() => replay.execute({ type: 'role.grant', targetAccountId: 'target-1', role: 'teacher', expectedTargetRowVersion: 0, idempotencyKey: `forged-${label}`, reasonCode: 'test' }), error => error.code === 'IDEMPOTENCY_RECEIPT_INVALID', `forged ${label} must fail closed`);
+  } finally { replayDb.close(); }
+}
+
 console.log('vNext role mutation reference checks passed');

@@ -78,15 +78,29 @@ function createVNextRoleGrantMutationReference({ db, authorize, now = () => new 
     if (existing) {
       if (existing.canonical_request_sha256 !== requestHash) throw mutationError('IDEMPOTENCY_KEY_CONFLICT');
       const parsedResult = parseCanonicalResult(existing.canonical_result_json, existing.canonical_result_sha256);
-      const auditCount = db.prepare("SELECT COUNT(*) AS count FROM vNext_authorization_audit_events WHERE authority_id=? AND receipt_id=?").get(authorityId, existing.receipt_id).count;
-      const outbox = db.prepare("SELECT event_type,aggregate_id,aggregate_version FROM vNext_authorization_outbox_events WHERE authority_id=? AND receipt_id=?").all(authorityId, existing.receipt_id);
+      const audits = db.prepare("SELECT reason_code FROM vNext_authorization_audit_events WHERE authority_id=? AND receipt_id=?").all(authorityId, existing.receipt_id);
+      const outbox = db.prepare("SELECT event_type,aggregate_kind,aggregate_id,aggregate_version,canonical_payload_json,payload_sha256 FROM vNext_authorization_outbox_events WHERE authority_id=? AND receipt_id=?").all(authorityId, existing.receipt_id);
       const acceptedVersions = type === 'role.grant'
         ? existing.committed_auth_version !== null && existing.committed_access_version !== null && existing.committed_revocation_version === null && existing.committed_target_row_version === 1
         : existing.committed_auth_version !== null && existing.committed_access_version !== null && existing.committed_revocation_version !== null && existing.committed_target_row_version !== null;
-      const outboxValid = parsedResult.status === 'accepted'
-        ? outbox.length === 1 && outbox[0].event_type === (type === 'role.grant' ? 'authorization.role_granted' : 'authorization.role_revoked') && outbox[0].aggregate_id === parsedResult.grantId && outbox[0].aggregate_version === existing.committed_target_row_version
-        : outbox.length === 0 && existing.committed_auth_version === null && existing.committed_access_version === null && existing.committed_revocation_version === null && existing.committed_target_row_version === null;
-      if (existing.actor_account_id !== actorAccountId || existing.command_type !== type || !validReplayResult(type, selector, parsedResult, existing) || auditCount !== 1 || !outboxValid || (parsedResult.status === 'accepted' && !acceptedVersions)) throw mutationError('IDEMPOTENCY_RECEIPT_INVALID');
+      let outboxValid = outbox.length === 0 && existing.committed_auth_version === null && existing.committed_access_version === null && existing.committed_revocation_version === null && existing.committed_target_row_version === null;
+      if (parsedResult.status === 'accepted') {
+        const accountId = type === 'role.grant'
+          ? selector.targetAccountId
+          : db.prepare('SELECT account_id FROM vNext_role_grants WHERE authority_id=? AND grant_id=?').get(authorityId, parsedResult.grantId)?.account_id;
+        const expectedPayload = type === 'role.grant'
+          ? { accountId, accessVersion: existing.committed_access_version, authVersion: existing.committed_auth_version, grantId: parsedResult.grantId, role: selector.role }
+          : { accessVersion: existing.committed_access_version, accountId, grantId: parsedResult.grantId, revocationVersion: existing.committed_revocation_version };
+        const expectedPayloadJson = stableJson(expectedPayload);
+        outboxValid = Boolean(accountId) && outbox.length === 1
+          && outbox[0].event_type === (type === 'role.grant' ? 'authorization.role_granted' : 'authorization.role_revoked')
+          && outbox[0].aggregate_kind === 'role_grant'
+          && outbox[0].aggregate_id === parsedResult.grantId
+          && outbox[0].aggregate_version === existing.committed_target_row_version
+          && outbox[0].canonical_payload_json === expectedPayloadJson
+          && outbox[0].payload_sha256 === sha256(expectedPayloadJson);
+      }
+      if (existing.actor_account_id !== actorAccountId || existing.command_type !== type || !validReplayResult(type, selector, parsedResult, existing) || audits.length !== 1 || audits[0].reason_code !== reasonCode || !outboxValid || (parsedResult.status === 'accepted' && !acceptedVersions)) throw mutationError('IDEMPOTENCY_RECEIPT_INVALID');
       return frozen({ ...parsedResult, replayed: true });
     }
     const timestamp = String(now());
