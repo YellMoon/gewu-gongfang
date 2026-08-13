@@ -14,6 +14,11 @@ const {
 const { discoverSources } = require('./sourceDiscovery');
 const { inventorySqlite } = require('./sqliteInventory');
 const { createSqliteSnapshot, verifySqliteSnapshot } = require('./sqliteSnapshot');
+const {
+  createSourceRecoveryPackage,
+  verifySourceRecoveryPackage,
+  restoreSourceRecoveryPackage,
+} = require('./sourceRecoveryPackage');
 
 function cliError(code) {
   return Object.assign(new Error(code), { code });
@@ -27,6 +32,9 @@ function parseArguments(argv) {
     : command === 'verify' ? new Set(['json', 'bundle'])
       : command === 'snapshot' ? new Set(['json', 'db', 'output', 'minimum-free-bytes'])
         : command === 'verify-snapshot' ? new Set(['json', 'snapshot', 'expected-hash'])
+          : command === 'recover-package' ? new Set(['json', 'db', 'user-data', 'question-files', 'output', 'application-exited'])
+            : command === 'verify-recover-package' ? new Set(['json', 'package'])
+              : command === 'restore-recover-package' ? new Set(['json', 'package', 'output'])
           : new Set();
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
@@ -176,12 +184,40 @@ function verifySnapshotCommand(options) {
   return { ok: true, command: 'verify-snapshot', ...result };
 }
 
+async function recoverPackageCommand(options) {
+  if (!options.db) throw cliError('MIGRATION_SQLITE_SOURCE_MISSING');
+  if (!options['user-data']) throw cliError('SOURCE_RECOVERY_USER_DATA_REQUIRED');
+  if (!options.output) throw cliError('MIGRATION_OUTPUT_REQUIRED');
+  const result = await createSourceRecoveryPackage({
+    sourceDb: options.db,
+    sourceUserData: options['user-data'],
+    sourceQuestionRoot: options['question-files'],
+    packagePath: options.output,
+    sourceApplicationExited: options['application-exited'] === 'yes',
+  });
+  return { ok: true, command: 'recover-package', ...result };
+}
+
+function verifyRecoverPackageCommand(options) {
+  if (!options.package) throw cliError('SOURCE_RECOVERY_PACKAGE_REQUIRED');
+  return { ok: true, command: 'verify-recover-package', ...verifySourceRecoveryPackage({ packagePath: options.package }) };
+}
+
+function restoreRecoverPackageCommand(options) {
+  if (!options.package) throw cliError('SOURCE_RECOVERY_PACKAGE_REQUIRED');
+  if (!options.output) throw cliError('MIGRATION_OUTPUT_REQUIRED');
+  return { ok: true, command: 'restore-recover-package', ...restoreSourceRecoveryPackage({ packagePath: options.package, restorePath: options.output }) };
+}
+
 async function main(argv = process.argv.slice(2)) {
   const { command, options } = parseArguments(argv);
   if (command === 'inventory') return inventoryCommand(options);
   if (command === 'verify') return verifyCommand(options);
   if (command === 'snapshot') return snapshotCommand(options);
   if (command === 'verify-snapshot') return verifySnapshotCommand(options);
+  if (command === 'recover-package') return recoverPackageCommand(options);
+  if (command === 'verify-recover-package') return verifyRecoverPackageCommand(options);
+  if (command === 'restore-recover-package') return restoreRecoverPackageCommand(options);
   throw cliError('MIGRATION_COMMAND_INVALID');
 }
 

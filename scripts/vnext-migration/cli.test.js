@@ -68,6 +68,39 @@ try {
   assert.strictEqual(snapshotVerify.status, 0);
   assert.strictEqual(snapshotVerify.body.inventoryHash, snapshot.body.inventoryHash);
 
+  const recoverySource = path.join(workspace, 'desktop-data');
+  fs.mkdirSync(recoverySource);
+  fs.copyFileSync(dbPath, path.join(recoverySource, 'scheduling.db'));
+  fs.writeFileSync(path.join(recoverySource, 'gewugongfang.config.json'), '{"safe":true}', 'utf8');
+  const recoveryPath = path.join(outputWorkspace, 'recovery-package');
+  const recoveryMissingConfirmation = run([
+    'recover-package', '--db', path.join(recoverySource, 'scheduling.db'), '--user-data', recoverySource,
+    '--output', recoveryPath,
+  ]);
+  assert.notStrictEqual(recoveryMissingConfirmation.status, 0);
+  assert.strictEqual(recoveryMissingConfirmation.body.error.code, 'SOURCE_RECOVERY_EXIT_CONFIRMATION_REQUIRED');
+
+  const recovery = run([
+    'recover-package', '--db', path.join(recoverySource, 'scheduling.db'), '--user-data', recoverySource,
+    '--output', recoveryPath, '--application-exited', 'yes',
+  ]);
+  assert.strictEqual(recovery.status, 0);
+  assert.strictEqual(recovery.body.command, 'recover-package');
+  assert.match(recovery.body.packageHash, /^[a-f0-9]{64}$/);
+  const recoveryVerify = run(['verify-recover-package', '--package', recoveryPath]);
+  assert.strictEqual(recoveryVerify.status, 0);
+  assert.strictEqual(recoveryVerify.body.packageHash, recovery.body.packageHash);
+  const restoredPath = path.join(outputWorkspace, 'recovered-data');
+  const recoveryRestore = run(['restore-recover-package', '--package', recoveryPath, '--output', restoredPath]);
+  assert.strictEqual(recoveryRestore.status, 0);
+  assert.strictEqual(recoveryRestore.body.packageHash, recovery.body.packageHash);
+  const invalidRecoveryConfirmation = run([
+    'recover-package', '--db', path.join(recoverySource, 'scheduling.db'), '--user-data', recoverySource,
+    '--output', path.join(outputWorkspace, 'bad-recovery'), '--application-exited', 'true',
+  ]);
+  assert.notStrictEqual(invalidRecoveryConfirmation.status, 0);
+  assert.strictEqual(invalidRecoveryConfirmation.body.error.code, 'SOURCE_RECOVERY_EXIT_CONFIRMATION_REQUIRED');
+
   const missingOutput = run(['inventory', '--db', dbPath]);
   assert.notStrictEqual(missingOutput.status, 0);
   assert.strictEqual(missingOutput.body.error.code, 'MIGRATION_OUTPUT_REQUIRED');

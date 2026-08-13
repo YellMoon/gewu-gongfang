@@ -117,6 +117,16 @@ async function createSqliteSnapshot({ sourcePath, snapshotPath, minimumFreeBytes
     db.close();
     db = null;
 
+    // A SQLite backup may retain WAL journal mode. Normalize the new, disposable
+    // snapshot only, so its data lives in one portable file before hashing.
+    const portableSnapshot = new Database(partialPath);
+    try {
+      portableSnapshot.pragma('wal_checkpoint(TRUNCATE)');
+      portableSnapshot.pragma('journal_mode = DELETE');
+    } finally {
+      portableSnapshot.close();
+    }
+
     const partialVerification = verifySqliteSnapshot({ snapshotPath: partialPath });
     const snapshotInventory = inventorySqlite({ dbPath: partialPath, includeRowHashes: true });
     assertEquivalentInventories(sourceInventory, snapshotInventory);
