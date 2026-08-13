@@ -94,6 +94,12 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 
 ### Reference role-mutation vertical slice evidence (2026-08-14)
 
-- Implemented `shared/vNextRoleGrantMutationReference.js` as the first executable control-plane transaction reference. It supports only immediate `role.grant` and `role.revoke` against an explicitly injected, prevalidated V2 SQLite handle; it never bootstraps or repairs schema.
+- Implemented `shared/vNextRoleGrantMutationReference.js` as the first executable control-plane transaction reference. It supports only immediate `role.grant` and `role.revoke` against an explicitly injected, prevalidated current exact V3 SQLite handle; it never bootstraps or repairs schema.
 - An injected synchronous guard must explicitly return `allowed: true`; authority and actor identity are then reloaded from active authority/account rows. Caller-supplied authority, actor, or unknown fields are rejected. This artifact does not resolve sessions, tokens, reauthentication, primary-host authority, or production policy.
 - Target state, account-version invalidation, command receipt, receipt-bound audit, and immutable outbox intent are one transaction. Replays validate receipt semantics and every companion record; rejected/noop commands retain receipt/audit evidence but have no outbox intent. The last currently effective super-admin on an active account cannot be revoked.
+
+### Reference session and reauthentication V3 evidence (2026-08-14)
+
+- The injected SQLite-only reference contract now records opaque online/initialization session state and append-only recent-reauthentication evidence. It contains no bearer, refresh token, password hash, one-time code, challenge, secret, private key, credential issuer/verifier, session API, runtime import, cloud database connection, source-data access, or business writer.
+- A session is authority-scoped and compositionally bound to its active-account/device/installation/link identity with captured authorization versions. Reauthentication is allowed only against an active online parent session, its evidence lifetime must lie within the parent session window, and its complete captured version vector must match; device-only proof is not a supported factor.
+- V3 is still not an AccessContext resolver. Before that can be built, the project must freeze role-default capability mapping, normalized surface semantics, authority policy versioning, deny precedence, canonical scope/hash rules, and a trusted verifier boundary that never treats client-supplied session IDs as authentication.

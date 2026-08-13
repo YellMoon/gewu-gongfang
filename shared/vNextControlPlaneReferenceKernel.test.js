@@ -4,6 +4,7 @@ const assert = require('assert');
 const Database = require('better-sqlite3');
 const {
   V_NEXT_CONTROL_PLANE_REFERENCE_TABLES,
+  assertVNextControlPlaneReferenceSchema,
   bootstrapVNextControlPlaneReference,
 } = require('./vNextControlPlaneReferenceKernel');
 const HASH = 'a'.repeat(64);
@@ -18,7 +19,7 @@ try {
   db.exec('CREATE TABLE legacy_guard(id TEXT PRIMARY KEY, value TEXT NOT NULL); INSERT INTO legacy_guard VALUES(\'legacy-1\',\'unchanged\');');
   const beforeLegacySql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='legacy_guard'").get().sql;
   const result = bootstrapVNextControlPlaneReference(db);
-  assert.strictEqual(result.schemaVersion, 2);
+  assert.strictEqual(result.schemaVersion, 3);
   assert.deepStrictEqual(result.tables, V_NEXT_CONTROL_PLANE_REFERENCE_TABLES);
   assert.deepStrictEqual(vNextTables(db), V_NEXT_CONTROL_PLANE_REFERENCE_TABLES);
   assert.deepStrictEqual(
@@ -32,9 +33,11 @@ try {
   assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_authorization_audit_events').get().count, 0);
   assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_authorization_command_receipts').get().count, 0);
   assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_authorization_outbox_events').get().count, 0);
+  assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_sessions').get().count, 0, 'bootstrap must not seed sessions');
+  assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_recent_reauthentication_events').get().count, 0, 'bootstrap must not seed reauth events');
   assert.deepStrictEqual(
     db.prepare('SELECT schema_key,schema_version FROM vNext_schema_meta').all(),
-    [{ schema_key: 'control-plane-reference', schema_version: 2 }],
+    [{ schema_key: 'control-plane-reference', schema_version: 3 }],
   );
   assert.strictEqual(db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='legacy_guard'").get().sql, beforeLegacySql);
   assert.deepStrictEqual(db.prepare('SELECT * FROM legacy_guard').all(), [{ id: 'legacy-1', value: 'unchanged' }]);
@@ -69,6 +72,102 @@ try {
     /FOREIGN KEY constraint failed/,
   );
   db.prepare("INSERT INTO vNext_account_device_links(link_id,authority_id,account_id,device_id,installation_id,status,auth_version,access_version,row_version,created_at,updated_at) VALUES('link-1','authority-1','account-1','device-1','install-1','active',1,1,1,'2026-08-14T00:00:00.000Z','2026-08-14T00:00:00.000Z')").run();
+  const sessionColumns = 'session_id,authority_id,account_id,device_id,installation_id,link_id,session_kind,status,issued_at,expires_at,account_auth_version,account_access_version,account_revocation_version,device_credential_version,device_risk_version,installation_credential_version,link_auth_version,link_access_version,link_row_version,row_version,created_at,updated_at';
+  const sessionValues = "'session-online','authority-1','account-1','device-1','install-1','link-1','online','active','2026-08-14T00:00:00.000Z','2026-08-14T08:00:00.000Z',1,1,1,1,1,1,1,1,1,1,'2026-08-14T00:00:00.000Z','2026-08-14T00:00:00.000Z'";
+  db.prepare(`INSERT INTO vNext_sessions(${sessionColumns}) VALUES(${sessionValues})`).run();
+  assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_sessions').get().count, 1, 'bootstrap must never seed session rows');
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_sessions(${sessionColumns}) VALUES(${sessionValues.replace("'authority-1'", "'authority-2'").replace("'session-online'", "'session-cross-authority'")})`).run(),
+    /(FOREIGN KEY constraint failed|VNEXT_SESSION_PARENT_STATE_INVALID)/,
+  );
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_sessions(${sessionColumns}) VALUES(${sessionValues.replace("'session-online'", "'session-forged-parent-version'").replace(',1,1,1,1,1,1,1,1,1,1,', ',999,1,1,1,1,1,1,1,1,1,')})`).run(),
+    /VNEXT_SESSION_PARENT_STATE_INVALID/,
+  );
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_sessions(${sessionColumns}) VALUES(${sessionValues.replace("'session-online'", "'session-fractional'").replace(',1,1,1,1,1,1,1,1,1,1,', ',1.5,1,1,1,1,1,1,1,1,1,')})`).run(),
+    /(CHECK constraint failed|VNEXT_SESSION_PARENT_STATE_INVALID)/,
+  );
+  db.prepare(`INSERT INTO vNext_sessions(${sessionColumns}) VALUES(${sessionValues.replace("'session-online'", "'session-initialization'").replace("'online'", "'initialization'")})`).run();
+  const reauthColumns = 'reauth_event_id,authority_id,session_id,factor_class,evidence_sha256,account_auth_version,account_access_version,account_revocation_version,device_credential_version,device_risk_version,installation_credential_version,link_auth_version,link_access_version,link_row_version,verified_at,expires_at,created_at';
+  const reauthValues = `'reauth-1','authority-1','session-online','passkey','${HASH}',1,1,1,1,1,1,1,1,1,'2026-08-14T00:01:00.000Z','2026-08-14T00:16:00.000Z','2026-08-14T00:01:00.000Z'`;
+  db.prepare(`INSERT INTO vNext_recent_reauthentication_events(${reauthColumns}) VALUES(${reauthValues})`).run();
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_recent_reauthentication_events(${reauthColumns}) VALUES(${reauthValues.replace("'reauth-1'", "'reauth-initialization'").replace("'session-online'", "'session-initialization'")})`).run(),
+    /VNEXT_REAUTH_ONLINE_SESSION_REQUIRED/,
+  );
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_recent_reauthentication_events(${reauthColumns}) VALUES(${reauthValues.replace("'reauth-1'", "'reauth-device-proof'").replace("'passkey'", "'device_proof'")})`).run(),
+    /CHECK constraint failed/,
+  );
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_recent_reauthentication_events(${reauthColumns}) VALUES(${reauthValues.replace("'reauth-1'", "'reauth-uppercase'").replace(`'${HASH}'`, `'${'A'.repeat(64)}'`)})`).run(),
+    /CHECK constraint failed/,
+  );
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_recent_reauthentication_events(${reauthColumns}) VALUES(${reauthValues.replace("'reauth-1'", "'reauth-short-hash'").replace(`'${HASH}'`, `'${'a'.repeat(63)}'`)})`).run(),
+    /CHECK constraint failed/,
+  );
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_recent_reauthentication_events(${reauthColumns}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run('reauth-blob','authority-1','session-online','passkey',Buffer.alloc(64),1,1,1,1,1,1,1,1,1,'2026-08-14T00:01:00.000Z','2026-08-14T00:16:00.000Z','2026-08-14T00:01:00.000Z'),
+    /CHECK constraint failed/,
+  );
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_recent_reauthentication_events(${reauthColumns}) VALUES(${reauthValues.replace("'reauth-1'", "'reauth-fractional'").replace(',1,1,1,1,1,1,1,1,1,', ',1.5,1,1,1,1,1,1,1,1,')})`).run(),
+    /(CHECK constraint failed|VNEXT_REAUTH_SESSION_STATE_INVALID)/,
+  );
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_recent_reauthentication_events(${reauthColumns}) VALUES(${reauthValues.replace("'reauth-1'", "'reauth-before-session'").replace("'2026-08-14T00:01:00.000Z'", "'2026-08-13T23:59:00.000Z'")})`).run(),
+    /VNEXT_REAUTH_SESSION_STATE_INVALID/,
+  );
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_recent_reauthentication_events(${reauthColumns}) VALUES(${reauthValues.replace("'reauth-1'", "'reauth-after-session'").replace("'2026-08-14T00:16:00.000Z'", "'2026-08-14T09:00:00.000Z'")})`).run(),
+    /VNEXT_REAUTH_SESSION_STATE_INVALID/,
+  );
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_recent_reauthentication_events(${reauthColumns}) VALUES(${reauthValues.replace("'reauth-1'", "'reauth-reversed-window'").replace("'2026-08-14T00:16:00.000Z'", "'2026-08-14T00:00:30.000Z'")})`).run(),
+    /CHECK constraint failed/,
+  );
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_recent_reauthentication_events(${reauthColumns}) VALUES(${reauthValues.replace("'reauth-1'", "'reauth-version-mismatch'").replace(',1,1,1,1,1,1,1,1,1,', ',2,1,1,1,1,1,1,1,1,')})`).run(),
+    /VNEXT_REAUTH_SESSION_STATE_INVALID/,
+  );
+  db.prepare("UPDATE vNext_accounts SET status='disabled',auth_version=2,row_version=2,updated_at='2026-08-14T00:02:00.000Z' WHERE account_id='account-1'").run();
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_recent_reauthentication_events(${reauthColumns}) VALUES(${reauthValues.replace("'reauth-1'", "'reauth-disabled-parent'")})`).run(),
+    /VNEXT_REAUTH_CURRENT_PARENT_INVALID/,
+  );
+  db.prepare("UPDATE vNext_accounts SET status='active',auth_version=1,row_version=1,updated_at='2026-08-14T00:00:00.000Z' WHERE account_id='account-1'").run();
+  db.prepare("UPDATE vNext_sessions SET status='revoked',revoked_at='2026-08-14T00:02:00.000Z',row_version=2,updated_at='2026-08-14T00:02:00.000Z' WHERE session_id='session-online'").run();
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_recent_reauthentication_events(${reauthColumns}) VALUES(${reauthValues.replace("'reauth-1'", "'reauth-revoked-session'")})`).run(),
+    /VNEXT_REAUTH_SESSION_STATE_INVALID/,
+  );
+  assert.throws(
+    () => db.prepare("UPDATE vNext_sessions SET session_kind='online' WHERE session_id='session-initialization'").run(),
+    /vNext session identity is immutable/,
+  );
+  assert.throws(
+    () => db.prepare("UPDATE vNext_sessions SET link_row_version=999 WHERE session_id='session-online'").run(),
+    /vNext session identity is immutable/,
+  );
+  assert.throws(
+    () => db.prepare("UPDATE vNext_sessions SET created_at='2026-08-14T00:01:00.000Z' WHERE session_id='session-online'").run(),
+    /vNext session identity is immutable/,
+  );
+  assert.throws(
+    () => db.prepare("UPDATE vNext_sessions SET status='active',revoked_at=NULL,row_version=3,updated_at='2026-08-14T00:03:00.000Z' WHERE session_id='session-online'").run(),
+    /vNext session lifecycle is immutable/,
+  );
+  assert.throws(
+    () => db.prepare("DELETE FROM vNext_sessions WHERE session_id='session-initialization'").run(),
+    /vNext session is append-only/,
+  );
+  const beforeAssert = { foreignKeys: db.pragma('foreign_keys', { simple: true }), sessions: db.prepare('SELECT COUNT(*) AS count FROM vNext_sessions').get().count, reauth: db.prepare('SELECT COUNT(*) AS count FROM vNext_recent_reauthentication_events').get().count };
+  assertVNextControlPlaneReferenceSchema(db);
+  assert.deepStrictEqual({ foreignKeys: db.pragma('foreign_keys', { simple: true }), sessions: db.prepare('SELECT COUNT(*) AS count FROM vNext_sessions').get().count, reauth: db.prepare('SELECT COUNT(*) AS count FROM vNext_recent_reauthentication_events').get().count }, beforeAssert, 'public assertion must be read-only');
+  assert.throws(() => db.prepare("UPDATE vNext_recent_reauthentication_events SET factor_class='password' WHERE reauth_event_id='reauth-1'").run(), /vNext reauth event is append-only/);
+  assert.throws(() => db.prepare("DELETE FROM vNext_recent_reauthentication_events WHERE reauth_event_id='reauth-1'").run(), /vNext reauth event is append-only/);
   assert.throws(
     () => db.prepare("INSERT INTO vNext_capability_overrides(override_id,authority_id,account_id,capability_id,effect,status,starts_at,row_version,created_at,updated_at) VALUES('override-unknown','authority-1','account-1','access.manage','deny','active','2026-08-14T00:00:00.000Z',1,'2026-08-14T00:00:00.000Z','2026-08-14T00:00:00.000Z')").run(),
     /FOREIGN KEY constraint failed/,
@@ -134,7 +233,7 @@ try {
     /FOREIGN KEY constraint failed/,
   );
   const allSql = db.prepare("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND name LIKE 'vNext_%'").all().map(row => row.sql).join('\n');
-  assert.ok(!/token|secret|password|refresh|session|license|primary_host|host_receipt/i.test(allSql));
+  assert.ok(!/token|secret|password_hash|refresh|bearer|license|primary_host|host_receipt/i.test(allSql));
 } finally {
   db.close();
 }
@@ -176,6 +275,26 @@ try {
   assert.deepStrictEqual(vNextTables(v1Reference), ['vNext_schema_meta'], 'v1 must be explicitly rejected rather than silently upgraded');
 } finally {
   v1Reference.close();
+}
+
+const v2Reference = new Database(':memory:');
+try {
+  v2Reference.exec("CREATE TABLE vNext_schema_meta(schema_key TEXT NOT NULL PRIMARY KEY CHECK(length(trim(schema_key))>0) CHECK(schema_key='control-plane-reference'), schema_version INTEGER NOT NULL CHECK(schema_version=2), applied_at TEXT NOT NULL CHECK(julianday(applied_at) IS NOT NULL)); INSERT INTO vNext_schema_meta VALUES('control-plane-reference',2,'2026-08-14T00:00:00.000Z')");
+  assert.throws(() => bootstrapVNextControlPlaneReference(v2Reference), /VNEXT_REFERENCE_SCHEMA_DRIFT/);
+  assert.deepStrictEqual(vNextTables(v2Reference), ['vNext_schema_meta'], 'v2 must be explicitly rejected rather than silently upgraded');
+} finally {
+  v2Reference.close();
+}
+
+const sessionSemanticDrift = new Database(':memory:');
+try {
+  bootstrapVNextControlPlaneReference(sessionSemanticDrift);
+  sessionSemanticDrift.pragma('foreign_keys = OFF');
+  const sessionSql = sessionSemanticDrift.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='vNext_sessions'").get().sql;
+  sessionSemanticDrift.exec('DROP TABLE vNext_sessions; ' + sessionSql.replace(", FOREIGN KEY(link_id,authority_id,account_id,device_id,installation_id) REFERENCES vNext_account_device_links(link_id,authority_id,account_id,device_id,installation_id)", ''));
+  assert.throws(() => bootstrapVNextControlPlaneReference(sessionSemanticDrift), /VNEXT_REFERENCE_SCHEMA_DRIFT/);
+} finally {
+  sessionSemanticDrift.close();
 }
 
 const indexDrift = new Database(':memory:');
@@ -222,6 +341,19 @@ try {
   assert.deepStrictEqual(vNextTables(outerTransaction), []);
 } finally {
   outerTransaction.close();
+}
+
+const readonlyAssertion = new Database(':memory:');
+try {
+  bootstrapVNextControlPlaneReference(readonlyAssertion);
+  readonlyAssertion.pragma('foreign_keys = OFF');
+  const before = readonlyAssertion.pragma('foreign_keys', { simple: true });
+  assert.throws(() => assertVNextControlPlaneReferenceSchema(readonlyAssertion), /VNEXT_REFERENCE_FOREIGN_KEYS_REQUIRED/);
+  assert.strictEqual(readonlyAssertion.pragma('foreign_keys', { simple: true }), before, 'public assertion must not enable foreign keys');
+  assert.strictEqual(readonlyAssertion.prepare('SELECT COUNT(*) AS count FROM vNext_sessions').get().count, 0);
+  assert.strictEqual(readonlyAssertion.prepare('SELECT COUNT(*) AS count FROM vNext_recent_reauthentication_events').get().count, 0);
+} finally {
+  readonlyAssertion.close();
 }
 
 console.log('vNext control-plane reference kernel checks passed');
