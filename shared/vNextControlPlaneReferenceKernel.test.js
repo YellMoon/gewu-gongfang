@@ -19,7 +19,7 @@ try {
   db.exec('CREATE TABLE legacy_guard(id TEXT PRIMARY KEY, value TEXT NOT NULL); INSERT INTO legacy_guard VALUES(\'legacy-1\',\'unchanged\');');
   const beforeLegacySql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='legacy_guard'").get().sql;
   const result = bootstrapVNextControlPlaneReference(db);
-  assert.strictEqual(result.schemaVersion, 3);
+  assert.strictEqual(result.schemaVersion, 4);
   assert.deepStrictEqual(result.tables, V_NEXT_CONTROL_PLANE_REFERENCE_TABLES);
   assert.deepStrictEqual(vNextTables(db), V_NEXT_CONTROL_PLANE_REFERENCE_TABLES);
   assert.deepStrictEqual(
@@ -37,7 +37,7 @@ try {
   assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_recent_reauthentication_events').get().count, 0, 'bootstrap must not seed reauth events');
   assert.deepStrictEqual(
     db.prepare('SELECT schema_key,schema_version FROM vNext_schema_meta').all(),
-    [{ schema_key: 'control-plane-reference', schema_version: 3 }],
+    [{ schema_key: 'control-plane-reference', schema_version: 4 }],
   );
   assert.strictEqual(db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='legacy_guard'").get().sql, beforeLegacySql);
   assert.deepStrictEqual(db.prepare('SELECT * FROM legacy_guard').all(), [{ id: 'legacy-1', value: 'unchanged' }]);
@@ -206,6 +206,29 @@ try {
     /CHECK constraint failed/,
   );
   db.prepare(`INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,actor_account_id,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,created_at) VALUES('receipt-1','authority-1','account:account-1','account-1','key-1','role.grant','account','account-1','${HASH}',0,'accepted','ROLE_GRANTED','{}','${HASH}','2026-08-14T00:00:00.000Z')`).run();
+  const policyResult = `{"authorityId":"authority-1","code":"POLICY_PUBLISHED","policyContractVersion":1,"policyManifestSha256":"${HASH}","policyRevision":1,"publicationId":"policy-publication-1","status":"accepted"}`;
+  db.prepare(`INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,committed_target_row_version,created_at) VALUES('policy-receipt-1','authority-1','system','policy-key-1','authorization_policy.publish','authorization_policy','authority-1','${HASH}',0,'accepted','POLICY_PUBLISHED',?,'${HASH}',1,'2026-08-14T00:00:00.000Z')`).run(policyResult);
+  db.prepare(`INSERT INTO vNext_authorization_policy_publications(publication_id,authority_id,receipt_id,policy_revision,policy_contract_version,canonical_manifest_json,policy_manifest_sha256,published_at) VALUES('policy-publication-1','authority-1','policy-receipt-1',1,1,'{}','${HASH}','2026-08-14T00:00:00.000Z')`).run();
+  assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_authorization_policy_publications').get().count, 1);
+  const policyResult2 = `{"authorityId":"authority-1","code":"POLICY_PUBLISHED","policyContractVersion":1,"policyManifestSha256":"${'b'.repeat(64)}","policyRevision":2,"publicationId":"policy-publication-2","status":"accepted"}`;
+  db.prepare(`INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,committed_target_row_version,created_at) VALUES('policy-receipt-2','authority-1','system','policy-key-2','authorization_policy.publish','authorization_policy','authority-1','${HASH}',1,'accepted','POLICY_PUBLISHED',?,'${HASH}',2,'2026-08-14T00:01:00.000Z')`).run(policyResult2);
+  db.prepare(`INSERT INTO vNext_authorization_policy_publications(publication_id,authority_id,receipt_id,policy_revision,policy_contract_version,canonical_manifest_json,policy_manifest_sha256,published_at) VALUES('policy-publication-2','authority-1','policy-receipt-2',2,1,'{"revision":2}','${'b'.repeat(64)}','2026-08-14T00:01:00.000Z')`).run();
+  const policyResult3 = `{"authorityId":"authority-1","code":"POLICY_PUBLISHED","policyContractVersion":1,"policyManifestSha256":"${HASH}","policyRevision":3,"publicationId":"policy-publication-3","status":"accepted"}`;
+  db.prepare(`INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,committed_target_row_version,created_at) VALUES('policy-receipt-3','authority-1','system','policy-key-3','authorization_policy.publish','authorization_policy','authority-1','${HASH}',2,'accepted','POLICY_PUBLISHED',?,'${HASH}',3,'2026-08-14T00:02:00.000Z')`).run(policyResult3);
+  db.prepare(`INSERT INTO vNext_authorization_policy_publications(publication_id,authority_id,receipt_id,policy_revision,policy_contract_version,canonical_manifest_json,policy_manifest_sha256,published_at) VALUES('policy-publication-3','authority-1','policy-receipt-3',3,1,'{}','${HASH}','2026-08-14T00:02:00.000Z')`).run();
+  assert.strictEqual(db.prepare('SELECT MAX(policy_revision) AS revision FROM vNext_authorization_policy_publications WHERE authority_id=?').get('authority-1').revision, 3, 'current policy derives from highest revision');
+  const policyResult4 = `{"authorityId":"authority-1","code":"POLICY_PUBLISHED","policyContractVersion":1,"policyManifestSha256":"${HASH}","policyRevision":4,"publicationId":"policy-publication-4","status":"accepted"}`;
+  db.prepare(`INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,committed_target_row_version,created_at) VALUES('policy-receipt-4','authority-1','system','policy-key-4','authorization_policy.publish','authorization_policy','authority-1','${HASH}',3,'accepted','POLICY_PUBLISHED',?,'${HASH}',4,'2026-08-14T00:03:00.000Z')`).run(policyResult4);
+  assert.throws(() => db.prepare(`INSERT INTO vNext_authorization_policy_publications(publication_id,authority_id,receipt_id,policy_revision,policy_contract_version,canonical_manifest_json,policy_manifest_sha256,published_at) VALUES('policy-publication-4','authority-1','policy-receipt-4',4,1,'{}','${HASH}','2026-08-14T00:03:00.000Z')`).run(), /VNEXT_POLICY_UNCHANGED/);
+  const booleanPolicyResult = `{"authorityId":"authority-1","code":"POLICY_PUBLISHED","policyContractVersion":true,"policyManifestSha256":"${'c'.repeat(64)}","policyRevision":true,"publicationId":"policy-publication-boolean","status":"accepted"}`;
+  db.prepare(`INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,committed_target_row_version,created_at) VALUES('policy-receipt-boolean','authority-1','system','policy-key-boolean','authorization_policy.publish','authorization_policy','authority-1','${HASH}',3,'accepted','POLICY_PUBLISHED',?,'${HASH}',4,'2026-08-14T00:03:00.000Z')`).run(booleanPolicyResult);
+  assert.throws(() => db.prepare(`INSERT INTO vNext_authorization_policy_publications(publication_id,authority_id,receipt_id,policy_revision,policy_contract_version,canonical_manifest_json,policy_manifest_sha256,published_at) VALUES('policy-publication-boolean','authority-1','policy-receipt-boolean',4,1,'{}','${'c'.repeat(64)}','2026-08-14T00:03:00.000Z')`).run(), /VNEXT_POLICY_PUBLICATION_RECEIPT_INVALID/);
+  const stringPolicyResult = `{"authorityId":"authority-1","code":"POLICY_PUBLISHED","policyContractVersion":"1","policyManifestSha256":"${'d'.repeat(64)}","policyRevision":"4","publicationId":"policy-publication-string","status":"accepted"}`;
+  db.prepare(`INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,committed_target_row_version,created_at) VALUES('policy-receipt-string','authority-1','system','policy-key-string','authorization_policy.publish','authorization_policy','authority-1','${HASH}',3,'accepted','POLICY_PUBLISHED',?,'${HASH}',4,'2026-08-14T00:03:00.000Z')`).run(stringPolicyResult);
+  assert.throws(() => db.prepare(`INSERT INTO vNext_authorization_policy_publications(publication_id,authority_id,receipt_id,policy_revision,policy_contract_version,canonical_manifest_json,policy_manifest_sha256,published_at) VALUES('policy-publication-string','authority-1','policy-receipt-string',4,1,'{}','${'d'.repeat(64)}','2026-08-14T00:03:00.000Z')`).run(), /VNEXT_POLICY_PUBLICATION_RECEIPT_INVALID/);
+  assert.throws(() => db.prepare(`INSERT INTO vNext_authorization_policy_publications(publication_id,authority_id,receipt_id,policy_revision,policy_contract_version,canonical_manifest_json,policy_manifest_sha256,published_at) VALUES('policy-publication-jump','authority-1','receipt-1',5,1,'{}','${HASH}','2026-08-14T00:03:00.000Z')`).run(), /VNEXT_POLICY_REVISION_CONFLICT/);
+  assert.throws(() => db.prepare("UPDATE vNext_authorization_policy_publications SET policy_revision=2 WHERE publication_id='policy-publication-1'").run(), /vNext policy publication is append-only/);
+  assert.throws(() => db.prepare("DELETE FROM vNext_authorization_policy_publications WHERE publication_id='policy-publication-1'").run(), /vNext policy publication is append-only/);
   db.prepare(`INSERT INTO vNext_authorization_audit_events(event_id,authority_id,receipt_id,reason_code,context_sha256,created_at) VALUES('audit-1','authority-1','receipt-1','operator_reason','${HASH}','2026-08-14T00:00:00.000Z')`).run();
   assert.throws(() => db.prepare("UPDATE vNext_authorization_audit_events SET reason_code='other_reason' WHERE event_id='audit-1'").run(), /vNext audit is append-only/);
   assert.throws(() => db.prepare("DELETE FROM vNext_authorization_audit_events WHERE event_id='audit-1'").run(), /vNext audit is append-only/);
@@ -284,6 +307,15 @@ try {
   assert.deepStrictEqual(vNextTables(v2Reference), ['vNext_schema_meta'], 'v2 must be explicitly rejected rather than silently upgraded');
 } finally {
   v2Reference.close();
+}
+
+const v3Reference = new Database(':memory:');
+try {
+  v3Reference.exec("CREATE TABLE vNext_schema_meta(schema_key TEXT NOT NULL PRIMARY KEY CHECK(length(trim(schema_key))>0) CHECK(schema_key='control-plane-reference'), schema_version INTEGER NOT NULL CHECK(schema_version=3), applied_at TEXT NOT NULL CHECK(julianday(applied_at) IS NOT NULL)); INSERT INTO vNext_schema_meta VALUES('control-plane-reference',3,'2026-08-14T00:00:00.000Z')");
+  assert.throws(() => bootstrapVNextControlPlaneReference(v3Reference), /VNEXT_REFERENCE_SCHEMA_DRIFT/);
+  assert.deepStrictEqual(vNextTables(v3Reference), ['vNext_schema_meta'], 'v3 must be explicitly rejected rather than silently upgraded');
+} finally {
+  v3Reference.close();
 }
 
 const sessionSemanticDrift = new Database(':memory:');

@@ -64,7 +64,8 @@ function normalizedManifest(manifest) {
   if (!manifest || Object.getPrototypeOf(manifest) !== Object.prototype || Object.keys(manifest).some(key => !['contractVersion','capabilities','roleDefaults'].includes(key)) || manifest.contractVersion !== 1) throw error();
   return createPolicyManifest({ capabilities: manifest.capabilities, roleDefaults: manifest.roleDefaults });
 }
-function policyManifestSha256(manifest) { return hash(stableJson(normalizedManifest(manifest))); }
+function canonicalizePolicyManifest(manifest) { return stableJson(normalizedManifest(manifest)); }
+function policyManifestSha256(manifest) { return hash(canonicalizePolicyManifest(manifest)); }
 function resolveEffectiveCapabilityIds({ manifest, roles, overrides = [], surface, at }) {
   const policy = normalizedManifest(manifest);
   if (!Array.isArray(roles) || !Array.isArray(overrides) || !SURFACES.has(surface)) throw error();
@@ -91,4 +92,4 @@ function canonicalizeEffectiveScopes(scopes, at) {
   return freeze([...allow].filter(key => !deny.has(key)).map(key => { const [scopeType, scopeValueHash] = key.split(':'); return freeze({ scopeType, scopeValueHash }); }).sort((a, b) => { const left = stableJson(a); const right = stableJson(b); return left < right ? -1 : left > right ? 1 : 0; }));
 }
 function scopeSha256(scopes, at) { return hash(stableJson(canonicalizeEffectiveScopes(scopes, at))); }
-module.exports = freeze({ POLICY_CONTRACT_VERSION: 1, DEFAULT_POLICY_MANIFEST, createPolicyManifest, policyManifestSha256, resolveEffectiveCapabilityIds, canonicalizeEffectiveScopes, scopeSha256 });
+module.exports = freeze({ POLICY_CONTRACT_VERSION: 1, DEFAULT_POLICY_MANIFEST, createPolicyManifest, canonicalizePolicyManifest, policyManifestSha256, resolveEffectiveCapabilityIds, canonicalizeEffectiveScopes, scopeSha256 });

@@ -109,3 +109,9 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - `shared/vNextAuthorizationPolicyReference.js` is a pure, versioned and deeply frozen policy-definition contract. Its V1 baseline grants only `user.review`, `access.manage`, and `device.revoke` to `super_admin`, all desktop-only; teacher, student and derived visitor receive no default control-plane capability.
 - It resolves only already trusted, loaded evidence with surface filtering and final deny precedence, and emits deterministic code-unit-sorted capability/scope hashes. It performs no database I/O, token/session validation, route integration, business owner evaluation or production policy activation.
 - Authority-specific policy publication/version/CAS evidence remains a separately audited next task. Only after that and a trusted verifier boundary may a read-only AccessContext resolver be introduced.
+
+### Reference authorization-policy publication V4 evidence (2026-08-14)
+
+- V4 adds an authority-scoped, append-only policy-publication ledger. Its current policy is the highest contiguous authority-local revision; there is no mutable current pointer and no automatic default-policy row.
+- Each publication persists canonical policy JSON plus a SHA-256 identity and is bound to an accepted, typed `authorization_policy.publish` receipt with exact authority, publication, contract/hash, revision and time semantics. Adjacent identical policy content is rejected as a noop; A→B→A is a new valid revision.
+- This remains reference-only. A later trusted writer and resolver must re-canonicalize stored JSON, recompute its hash and fail closed; policy publication does not mass-update account/session versions, issue credentials, or expose an API.
