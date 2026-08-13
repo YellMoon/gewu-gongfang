@@ -23,6 +23,11 @@ const EVIDENCE_TARGETS = new Set([
   'migration.legacy_record_ledger', 'migration.legacy_schema_events', 'migration.source_metadata',
   'migration.source_provenance',
 ]);
+const LEDGER_DISPOSITION = Object.freeze({
+  archive: 'archived',
+  local_partition: 'local_partition',
+  rebuildable_cache: 'rebuildable_cache',
+});
 
 function importError(code, cause) {
   return Object.assign(new Error(code), { code, cause });
@@ -222,6 +227,42 @@ async function importRecord(client, context, source) {
   return { outcome: inserted ? 'inserted' : 'linked' };
 }
 
+async function preserveRecord(client, context, source, disposition) {
+  if (!source || !source.sourceTable || !source.sourceRecordKey || source.disposition !== disposition
+    || !/^[a-f0-9]{64}$/.test(String(source.recordHash || ''))
+    || sha256(canonicalJson(source.record)) !== source.recordHash) {
+    throw importError('VNEXT_IMPORT_PRESERVED_RECORD_INVALID');
+  }
+  const contract = context.catalogBySource.get(source.sourceTable);
+  if (!contract || contract.disposition !== disposition || !['archive', 'local_partition', 'rebuildable_cache'].includes(disposition)) {
+    throw importError('VNEXT_IMPORT_RECORD_CONTRACT_MISMATCH');
+  }
+  const ledgerDisposition = LEDGER_DISPOSITION[disposition];
+  if (!ledgerDisposition) throw importError('VNEXT_IMPORT_RECORD_CONTRACT_MISMATCH');
+  const existing = await client.query(`select source_row_hash from migration.record_ledger
+    where migration_batch_id=$1 and logical_source_id='authority-db' and source_table=$2 and source_record_key=$3`,
+  [context.batchId, source.sourceTable, source.sourceRecordKey]);
+  if (existing.rowCount) {
+    if (existing.rows[0].source_row_hash !== source.recordHash) throw importError('VNEXT_IMPORT_REPLAY_HASH_CONFLICT');
+    return { outcome: 'noop' };
+  }
+  const id = `preserved_${sha256(`${context.batchId}\n${source.sourceTable}\n${source.sourceRecordKey}`).slice(0, 40)}`;
+  const encrypted = encryptQuarantine(source.record, context.encryptionKey, `${context.bundleHash}:${id}`);
+  await client.query(`insert into migration.preserved_records(
+    id,migration_batch_id,logical_source_id,source_table,source_record_key,source_row_hash,
+    preservation_class,encrypted_payload,preserved_at
+  ) values($1,$2,'authority-db',$3,$4,$5,$6,$7::jsonb,$8)`,
+  [id, context.batchId, source.sourceTable, source.sourceRecordKey, source.recordHash,
+    disposition, JSON.stringify(encrypted), context.now]);
+  await client.query(`insert into migration.record_ledger(
+    id,migration_batch_id,logical_source_id,source_table,source_record_key,source_row_hash,
+    target_table,target_record_id,target_row_hash,disposition,recorded_at
+  ) values($1,$2,'authority-db',$3,$4,$5,'migration.preserved_records',$6,$5,$7,$8)`,
+  [`ledger_${sha256(`${context.batchId}\n${source.sourceTable}\n${source.sourceRecordKey}`).slice(0, 40)}`,
+    context.batchId, source.sourceTable, source.sourceRecordKey, source.recordHash, id, ledgerDisposition, context.now]);
+  return { outcome: 'preserved' };
+}
+
 async function importShadowBundle({
   pool, bundlePath, signingPublicKey, allowedPublicKeyFingerprints, encryptionKey,
   expectedEnvironment = 'shadow', authorityId, expectedSchemaContractHash,
@@ -235,26 +276,28 @@ async function importShadowBundle({
   });
   if (verified.catalogHash !== catalogValidation.catalogHash) throw importError('VNEXT_IMPORT_CATALOG_HASH_MISMATCH');
   if (!/^[a-f0-9]{64}$/.test(String(expectedSchemaContractHash || ''))) throw importError('VNEXT_IMPORT_SCHEMA_HASH_REQUIRED');
-  const records = [];
-  for (const payload of verified.payloads.filter(item => item.classification === 'business')) {
+  const workItems = [];
+  for (const payload of verified.payloads.filter(item => ['business', 'archive', 'offline'].includes(item.classification))) {
     const bytes = decryptBundleFile({
       bundlePath, relativePath: payload.relativePath, encryptionKey, signingPublicKey,
       allowedPublicKeyFingerprints, expectedEnvironment,
     });
-    records.push(...parseNdjson(bytes));
+    const disposition = payload.classification === 'business' ? 'canonical'
+      : payload.classification === 'offline' ? 'local_partition' : null;
+    workItems.push(...parseNdjson(bytes).map(record => ({ record, disposition: disposition || record.disposition })));
   }
-  records.sort((left, right) => {
-    const leftEntry = catalog.tables.find(entry => entry.sourceTable === left.sourceTable);
-    const rightEntry = catalog.tables.find(entry => entry.sourceTable === right.sourceTable);
+  workItems.sort((left, right) => {
+    const leftEntry = catalog.tables.find(entry => entry.sourceTable === left.record.sourceTable);
+    const rightEntry = catalog.tables.find(entry => entry.sourceTable === right.record.sourceTable);
     return (leftEntry?.dependencyOrder ?? 999) - (rightEntry?.dependencyOrder ?? 999)
-      || String(left.sourceTable).localeCompare(String(right.sourceTable))
-      || String(left.sourceRecordKey).localeCompare(String(right.sourceRecordKey));
+      || String(left.record.sourceTable).localeCompare(String(right.record.sourceTable))
+      || String(left.record.sourceRecordKey).localeCompare(String(right.record.sourceRecordKey));
   });
 
   const client = await pool.connect();
   const batchId = `batch_${sha256(`${expectedEnvironment}\n${verified.bundleHash}\n${IMPORTER_VERSION}`).slice(0, 40)}`;
   const now = new Date().toISOString();
-  const summary = { batchId, inserted: 0, linked: 0, noop: 0, quarantined: 0, ledgerInserted: 0 };
+  const summary = { batchId, inserted: 0, linked: 0, preserved: 0, noop: 0, quarantined: 0, ledgerInserted: 0 };
   try {
     await client.query('select pg_advisory_lock(hashtextextended($1, 0))', [`gewu-vnext:${authorityId}`]);
     await withTransaction(client, async tx => {
@@ -274,11 +317,12 @@ async function importShadowBundle({
       [batchId, expectedEnvironment, verified.bundleHash, verified.sourceInventoryHash, verified.catalogHash, IMPORTER_VERSION, now]);
     });
 
-    for (const source of records) {
-      const result = await withTransaction(client, tx => importRecord(tx, {
-        batchId, now, encryptionKey, bundleHash: verified.bundleHash,
-        catalogBySource: new Map(catalog.tables.map(entry => [entry.sourceTable, entry])),
-      }, source));
+    const recordContext = { batchId, now, encryptionKey, bundleHash: verified.bundleHash,
+      catalogBySource: new Map(catalog.tables.map(entry => [entry.sourceTable, entry])) };
+    for (const item of workItems) {
+      const result = await withTransaction(client, tx => item.disposition === 'canonical'
+        ? importRecord(tx, recordContext, item.record)
+        : preserveRecord(tx, recordContext, item.record, item.disposition));
       summary[result.outcome] += 1;
       if (result.outcome !== 'noop') summary.ledgerInserted += 1;
     }

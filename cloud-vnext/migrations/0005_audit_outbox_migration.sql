@@ -190,6 +190,20 @@ create table if not exists migration.quarantine_records (
 );
 create index if not exists migration_quarantine_records_migration_batch_id_idx on migration.quarantine_records (migration_batch_id);
 
+create table if not exists migration.preserved_records (
+  id text primary key,
+  migration_batch_id text not null references migration.batches(id), -- fk-index: migration.preserved_records(migration_batch_id)
+  logical_source_id text not null,
+  source_table text not null,
+  source_record_key text not null,
+  source_row_hash char(64) not null check (source_row_hash ~ '^[0-9a-f]{64}$'),
+  preservation_class text not null check (preservation_class in ('archive','local_partition','rebuildable_cache')),
+  encrypted_payload jsonb not null,
+  preserved_at timestamptz not null,
+  unique(migration_batch_id, logical_source_id, source_table, source_record_key)
+);
+create index if not exists migration_preserved_records_migration_batch_id_idx on migration.preserved_records (migration_batch_id);
+
 create table if not exists migration.quarantine_resolution_events (
   id text primary key,
   quarantine_record_id text not null references migration.quarantine_records(id), -- fk-index: migration.quarantine_resolution_events(quarantine_record_id)

@@ -129,6 +129,7 @@ function evaluateCriticalSourceReadiness({ declarations, criticalSourceIds } = {
 
 module.exports = {
   DISPOSITIONS,
+  expandCatalog,
   loadSourceTableCatalog,
   evaluateCriticalSourceReadiness,
   validateSourceTableCatalog,

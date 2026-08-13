@@ -74,9 +74,29 @@ async function run() {
       record: { user_id: 'user-1', role: 'super_admin', status: 'active', created_at: '2026-08-13T00:00:00.000Z' },
     }),
   ];
+  const preservedRecords = [
+    canonicalRecord({
+      sourceTable: 'desktop_sessions', target: null, transformerId: null,
+      sourceRecordKey: { sid: 'session-1' }, record: { sid: 'session-1', token: 'inactive-secret' },
+    }),
+    canonicalRecord({
+      sourceTable: 'sync_conflicts', target: null, transformerId: null,
+      sourceRecordKey: { id: 'conflict-1' }, record: { id: 'conflict-1', payload: 'offline-pending-review' },
+    }),
+  ];
+  preservedRecords[0].disposition = 'archive';
+  preservedRecords[1].disposition = 'local_partition';
+  delete preservedRecords[0].target;
+  delete preservedRecords[0].transformerId;
+  delete preservedRecords[1].target;
+  delete preservedRecords[1].transformerId;
   const firstBundle = path.join(root, 'bundle-one');
   createSealedMigrationBundle({ ...common, bundlePath: firstBundle, bundleId: 'shadow-import-one',
-    payloads: [{ relativePath: 'business/canonical.ndjson', classification: 'business', records }] });
+    payloads: [
+      { relativePath: 'business/canonical.ndjson', classification: 'business', records },
+      { relativePath: 'archive/desktop_sessions.ndjson', classification: 'archive', records: [preservedRecords[0]] },
+      { relativePath: 'offline/sync_conflicts.ndjson', classification: 'offline', records: [preservedRecords[1]] },
+    ] });
 
   const pool = createVnextPool({ connectionString, applicationName: 'gewu-vnext-shadow-import-test' });
   try {
@@ -87,10 +107,10 @@ async function run() {
     };
     const first = await importShadowBundle(options);
     assert.deepStrictEqual({ inserted: first.inserted, noop: first.noop, quarantined: first.quarantined, ledgerInserted: first.ledgerInserted },
-      { inserted: 3, noop: 0, quarantined: 0, ledgerInserted: 3 });
+      { inserted: 3, noop: 0, quarantined: 0, ledgerInserted: 5 });
     const second = await importShadowBundle(options);
     assert.deepStrictEqual({ inserted: second.inserted, noop: second.noop, quarantined: second.quarantined, ledgerInserted: second.ledgerInserted },
-      { inserted: 0, noop: 3, quarantined: 0, ledgerInserted: 0 });
+      { inserted: 0, noop: 5, quarantined: 0, ledgerInserted: 0 });
 
     const state = await pool.query(`select
       (select count(*)::integer from identity.tenants) as tenants,
@@ -98,8 +118,11 @@ async function run() {
       (select count(*)::integer from access.legacy_role_evidence) as legacy_roles,
       (select count(*)::integer from identity.accounts) as active_accounts,
       (select count(*)::integer from access.account_roles) as active_roles,
-      (select count(*)::integer from migration.record_ledger) as ledger`);
-    assert.deepStrictEqual(state.rows[0], { tenants: 1, legacy_accounts: 1, legacy_roles: 1, active_accounts: 0, active_roles: 0, ledger: 3 });
+      (select count(*)::integer from migration.record_ledger) as ledger,
+      (select count(*)::integer from migration.preserved_records) as preserved`);
+    assert.deepStrictEqual(state.rows[0], { tenants: 1, legacy_accounts: 1, legacy_roles: 1, active_accounts: 0, active_roles: 0, ledger: 5, preserved: 2 });
+    const preservedClasses = await pool.query('select preservation_class from migration.preserved_records order by preservation_class');
+    assert.deepStrictEqual(preservedClasses.rows.map(row => row.preservation_class), ['archive', 'local_partition']);
     const evidence = await pool.query("select review_status from identity.legacy_account_evidence where id='user-1'");
     assert.strictEqual(evidence.rows[0].review_status, 'pending_review');
 
