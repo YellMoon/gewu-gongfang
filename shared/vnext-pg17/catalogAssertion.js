@@ -69,6 +69,12 @@ const FOUNDATION_COLUMNS = Object.freeze({
     Object.freeze({ name: 'created_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
     Object.freeze({ name: 'updated_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
   ]),
+  vnext_capability_catalog: Object.freeze([
+    Object.freeze({ name: 'capability_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'status', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'surface_mask', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'created_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
+  ]),
   vnext_trusted_devices: Object.freeze([
     Object.freeze({ name: 'device_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
     Object.freeze({ name: 'authority_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
@@ -129,6 +135,7 @@ const FOUNDATION_CONSTRAINTS = Object.freeze({
   vnext_schema_meta: Object.freeze({ count: 4, required: Object.freeze(['vnext_schema_meta_pkey', 'vnext_schema_meta_schema_key_check', 'vnext_schema_meta_schema_version_check', 'vnext_schema_meta_applied_at_check']) }),
   vnext_authorities: Object.freeze({ count: 6, required: Object.freeze(['vnext_authorities_pkey', 'vnext_authorities_status_check', 'vnext_authorities_check']) }),
   vnext_accounts: Object.freeze({ count: 13, required: Object.freeze(['vnext_accounts_pkey', 'vnext_accounts_account_id_authority_id_key', 'vnext_accounts_authority_id_fkey', 'vnext_accounts_status_check', 'vnext_accounts_check']) }),
+  vnext_capability_catalog: Object.freeze({ count: 5, required: Object.freeze(['vnext_capability_catalog_pkey', 'vnext_capability_catalog_capability_id_check', 'vnext_capability_catalog_status_check', 'vnext_capability_catalog_surface_mask_check', 'vnext_capability_catalog_created_at_check']) }),
   vnext_trusted_devices: Object.freeze({ count: 16, required: Object.freeze(['vnext_trusted_devices_pkey', 'vnext_trusted_devices_device_id_authority_id_key', 'vnext_trusted_devices_authority_id_fkey', 'vnext_trusted_devices_status_check', 'vnext_trusted_devices_check1']) }),
   vnext_device_installations: Object.freeze({ count: 17, required: Object.freeze(['vnext_device_installations_pkey', 'vnext_device_installations_authority_id_key_fingerprint_key', 'vnext_device_installations_installation_id_device_id_author_key', 'vnext_device_installations_device_id_authority_id_fkey', 'vnext_device_installations_check1']) }),
   vnext_account_device_links: Object.freeze({ count: 20, required: Object.freeze(['vnext_account_device_links_pkey', 'vnext_account_device_links_authority_id_account_id_installa_key', 'vnext_account_device_links_link_id_authority_id_account_id__key', 'vnext_account_device_links_account_id_authority_id_fkey', 'vnext_account_device_links_device_id_authority_id_fkey', 'vnext_account_device_links_installation_id_device_id_autho_fkey', 'vnext_account_device_links_check1']) }),
@@ -153,8 +160,8 @@ const FOUNDATION_CONSTRAINT_DEFINITIONS = Object.freeze({
   vnext_role_grants_granted_by_account_id_check: "CHECK (granted_by_account_id IS NULL OR btrim(granted_by_account_id) <> ''::text)",
   vnext_role_grants_check2: "CHECK (status = 'active'::text AND revoked_at IS NULL OR status = 'revoked'::text AND revoked_at IS NOT NULL OR status = 'expired'::text AND ends_at IS NOT NULL AND revoked_at IS NULL)",
 });
-const FOUNDATION_CONSTRAINT_CATALOG_SHA256 = 'a59c0372020e38bcb1444e33cadea3ffe8b2b93eda7ae51df831e3bcaeaa906c';
-const FOUNDATION_INDEX_CATALOG_SHA256 = '7bd08ce22c6353b750fcf98de84ddccacb5ca077a0f27126881c0e4c3d38fb66';
+const FOUNDATION_CONSTRAINT_CATALOG_SHA256 = '474d95127d161657eefd4ca0167a0b6da94ee7e0f5aed854ea1fc380e9c4f51f';
+const FOUNDATION_INDEX_CATALOG_SHA256 = '4fdd11fbc4ae46a00f96d3aba976b84b53a1b1c4144e6301ca5f760b648b1f71';
 const FOUNDATION_INDEX_DEFINITIONS = Object.freeze({
   vnext_role_grants_one_active_role: "CREATE UNIQUE INDEX vnext_role_grants_one_active_role ON vnext_control_plane.vnext_role_grants USING btree (authority_id, account_id, role) WHERE (status = 'active'::text)",
 });

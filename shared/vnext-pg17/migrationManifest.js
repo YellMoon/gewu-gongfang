@@ -229,10 +229,29 @@ const ROLE_GRANTS_MIGRATION = Object.freeze({
   manifestSha256: sha256(ROLE_GRANTS_SQL),
 });
 
+const CAPABILITY_CATALOG_SQL = `CREATE TABLE vnext_control_plane.vnext_capability_catalog (
+  capability_id text COLLATE "C" PRIMARY KEY CHECK (btrim(capability_id) <> ''),
+  status text COLLATE "C" NOT NULL CHECK (status IN ('active', 'retired')),
+  surface_mask text COLLATE "C" NOT NULL CHECK (btrim(surface_mask) <> ''),
+  created_at timestamptz NOT NULL CHECK (
+    created_at <> 'infinity'::timestamptz
+    AND created_at <> '-infinity'::timestamptz
+  )
+);
+GRANT SELECT ON TABLE vnext_control_plane.vnext_capability_catalog TO vnext_pg17_verifier;`;
+
+const CAPABILITY_CATALOG_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-capability-catalog-4',
+  semanticVersion: 4,
+  sql: CAPABILITY_CATALOG_SQL,
+  manifestSha256: sha256(CAPABILITY_CATALOG_SQL),
+});
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
   ROLE_GRANTS_MIGRATION,
+  CAPABILITY_CATALOG_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -284,6 +303,7 @@ const expectedCatalog = Object.freeze({
     'vnext_control_plane.vnext_account_device_links',
     'vnext_control_plane.vnext_accounts',
     'vnext_control_plane.vnext_authorities',
+    'vnext_control_plane.vnext_capability_catalog',
     'vnext_control_plane.vnext_device_installations',
     'vnext_control_plane.vnext_role_grants',
     'vnext_control_plane.vnext_schema_meta',
@@ -303,6 +323,7 @@ module.exports = {
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
   ROLE_GRANTS_MIGRATION,
+  CAPABILITY_CATALOG_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

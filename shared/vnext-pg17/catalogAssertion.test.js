@@ -6,6 +6,7 @@ const { createVNextPg17CatalogBoundary } = require('./catalogAssertion');
 const {
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
+  ROLE_GRANTS_MIGRATION,
 } = require('./migrationManifest');
 
 const FOUNDATION_INSTANT = '2026-08-15T00:00:00.000Z';
@@ -168,6 +169,55 @@ async function assertRoleGrantSemantics(handle) {
   });
 }
 
+async function assertCapabilityCatalogSemantics(handle) {
+  await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+    const insertCapability = ({
+      capabilityId,
+      status = 'active',
+      surfaceMask = 'desktop',
+      createdAt = FOUNDATION_INSTANT,
+    }) => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_capability_catalog (capability_id, status, surface_mask, created_at) VALUES ($1, $2, $3, $4)',
+      [capabilityId, status, surfaceMask, createdAt],
+    );
+
+    await insertCapability({ capabilityId: 'access.manage' });
+    await insertCapability({ capabilityId: 'access.retired', status: 'retired' });
+    await assert.rejects(() => insertCapability({ capabilityId: 'access.manage' }), /duplicate key/);
+    await assert.rejects(
+      () => insertCapability({ capabilityId: '   ' }),
+      error => error && error.constraint === 'vnext_capability_catalog_capability_id_check',
+    );
+    await assert.rejects(
+      () => insertCapability({ capabilityId: 'access.blank-surface', surfaceMask: '   ' }),
+      error => error && error.constraint === 'vnext_capability_catalog_surface_mask_check',
+    );
+    await assert.rejects(
+      () => insertCapability({ capabilityId: 'access.invalid-status', status: 'pending' }),
+      error => error && error.constraint === 'vnext_capability_catalog_status_check',
+    );
+    await assert.rejects(
+      () => insertCapability({ capabilityId: 'access.infinite-created', createdAt: 'infinity' }),
+      error => error && error.constraint === 'vnext_capability_catalog_created_at_check',
+    );
+    await assert.rejects(
+      () => insertCapability({ capabilityId: 'access.negative-infinite-created', createdAt: '-infinity' }),
+      error => error && error.constraint === 'vnext_capability_catalog_created_at_check',
+    );
+  });
+  await assert.rejects(
+    () => withVNextPg17SyntheticQuery(handle, 'verifier', facade => facade.query(
+      "INSERT INTO vnext_control_plane.vnext_capability_catalog (capability_id, status, surface_mask, created_at) VALUES ('verifier-write', 'active', 'desktop', $1)",
+      [FOUNDATION_INSTANT],
+    )),
+  );
+  await assert.rejects(
+    () => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query(
+      'SELECT * FROM vnext_control_plane.vnext_capability_catalog',
+    )),
+  );
+}
+
 async function runCatalogAssertionCases(runtime) {
   const catalog = createVNextPg17CatalogBoundary(runtime);
   let priorHandle;
@@ -232,6 +282,37 @@ async function runCatalogAssertionCases(runtime) {
       () => catalog.assert(foundationPrefixHandle),
       error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
     );
+    const roleGrantPrefixHandle = await createHandle();
+    await withVNextPg17SyntheticQuery(roleGrantPrefixHandle, 'fixture-provisioner', async facade => {
+      for (const migration of [FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION, ROLE_GRANTS_MIGRATION]) {
+        await facade.query(migration.sql);
+        if (migration.postApply) {
+          await facade.query(migration.postApply.text, migration.postApply.values(migrationInput.appliedAt));
+        }
+        await facade.query(
+          'INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
+          [migration.migrationId, migration.semanticVersion, migration.manifestSha256, migrationInput.appliedAt, migrationInput.appliedBy],
+        );
+      }
+    });
+    await assert.rejects(
+      () => catalog.apply(roleGrantPrefixHandle, migrationInput),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+    await withVNextPg17SyntheticQuery(roleGrantPrefixHandle, 'fixture-provisioner', async facade => {
+      const ledgerRows = await facade.query(
+        'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version',
+      );
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }]);
+      const capabilityRelation = await facade.query(
+        "SELECT to_regclass('vnext_control_plane.vnext_capability_catalog') AS relation",
+      );
+      assert.strictEqual(capabilityRelation.rows[0].relation, null);
+    });
+    await assert.rejects(
+      () => catalog.assert(roleGrantPrefixHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
     const handle = await createHandle();
     await assert.rejects(
       () => catalog.assert(handle),
@@ -242,17 +323,20 @@ async function runCatalogAssertionCases(runtime) {
       const ledgerRows = await facade.query(
         'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version',
       );
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }]);
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }]);
       const schemaMetaRows = await facade.query(
         'SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta',
       );
       assert.deepStrictEqual(schemaMetaRows.rows, [{ schema_key: 'control-plane-reference', schema_version: '5' }]);
       const roleGrantCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_role_grants');
       assert.deepStrictEqual(roleGrantCount.rows, [{ count: '0' }]);
+      const capabilityCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_capability_catalog');
+      assert.deepStrictEqual(capabilityCount.rows, [{ count: '0' }]);
     });
     await assert.doesNotReject(() => catalog.assert(handle));
     await assertFoundationSemantics(handle);
     await assertRoleGrantSemantics(handle);
+    await assertCapabilityCatalogSemantics(handle);
     assert.deepStrictEqual(await catalog.apply(handle, migrationInput), { applied: false });
     await withVNextPg17SyntheticQuery(handle, 'verifier', async facade => {
       await facade.query('BEGIN READ ONLY');
@@ -268,7 +352,7 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(
       () => withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
-        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 5, repeat('a', 64), now(), 'fixture')",
+        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 6, repeat('a', 64), now(), 'fixture')",
       )),
     );
     await assert.rejects(
@@ -590,6 +674,77 @@ async function runCatalogAssertionCases(runtime) {
     ));
     await assert.rejects(
       () => catalog.assert(roleGrantPublicShadowHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const capabilityVerifierAclHandle = await createHandle();
+    await catalog.apply(capabilityVerifierAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(capabilityVerifierAclHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT INSERT ON vnext_control_plane.vnext_capability_catalog TO vnext_pg17_verifier',
+    ));
+    await assert.rejects(
+      () => catalog.assert(capabilityVerifierAclHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const capabilityRuntimeAclHandle = await createHandle();
+    await catalog.apply(capabilityRuntimeAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(capabilityRuntimeAclHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT SELECT ON vnext_control_plane.vnext_capability_catalog TO vnext_pg17_runtime',
+    ));
+    await assert.rejects(
+      () => catalog.assert(capabilityRuntimeAclHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const capabilityTriggerHandle = await createHandle();
+    await catalog.apply(capabilityTriggerHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(capabilityTriggerHandle, 'fixture-provisioner', facade => facade.query(
+      'CREATE TRIGGER unapproved_capability_catalog_delete BEFORE DELETE ON vnext_control_plane.vnext_capability_catalog FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_schema_migrations_no_delete()',
+    ));
+    await assert.rejects(
+      () => catalog.assert(capabilityTriggerHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const capabilityDefaultHandle = await createHandle();
+    await catalog.apply(capabilityDefaultHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(capabilityDefaultHandle, 'fixture-provisioner', facade => facade.query(
+      "ALTER TABLE vnext_control_plane.vnext_capability_catalog ALTER COLUMN status SET DEFAULT 'active'",
+    ));
+    await assert.rejects(
+      () => catalog.assert(capabilityDefaultHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const capabilityPublicShadowHandle = await createHandle();
+    await catalog.apply(capabilityPublicShadowHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(capabilityPublicShadowHandle, 'fixture-provisioner', facade => facade.query(
+      'CREATE TABLE public.vnext_capability_catalog (id integer)',
+    ));
+    await assert.rejects(
+      () => catalog.assert(capabilityPublicShadowHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const capabilityIndexHandle = await createHandle();
+    await catalog.apply(capabilityIndexHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(capabilityIndexHandle, 'fixture-provisioner', facade => facade.query(
+      'CREATE INDEX unapproved_capability_catalog_status_index ON vnext_control_plane.vnext_capability_catalog (status)',
+    ));
+    await assert.rejects(
+      () => catalog.assert(capabilityIndexHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const capabilityStatusConstraintHandle = await createHandle();
+    await catalog.apply(capabilityStatusConstraintHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(capabilityStatusConstraintHandle, 'fixture-provisioner', async facade => {
+      await facade.query('ALTER TABLE vnext_control_plane.vnext_capability_catalog DROP CONSTRAINT vnext_capability_catalog_status_check');
+      await facade.query("ALTER TABLE vnext_control_plane.vnext_capability_catalog ADD CONSTRAINT vnext_capability_catalog_status_check CHECK (status IN ('active', 'retired', 'pending'))");
+    });
+    await assert.rejects(
+      () => catalog.assert(capabilityStatusConstraintHandle),
       error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
     );
 

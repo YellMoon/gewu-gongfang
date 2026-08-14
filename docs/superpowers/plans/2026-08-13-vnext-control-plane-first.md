@@ -175,3 +175,9 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - Migration 3 adds only `vnext_role_grants` and its active-role partial unique index. It creates no role, super-admin, capability, policy, session, receipt, or business-data seed.
 - The disposable catalog verifies both authority-scoped account/grantor foreign keys, nullable-but-nonblank grantor semantics, strict lifecycle/version/finite-time constraints, revoked-history behavior, the exact partial-index predicate, verifier-only access, and the absence of role-table triggers. Constraint, index, ACL, trigger, public-shadow, default, and migration-prefix drift fail closed.
 - Focused PG17 checks and the control-plane target aggregate were rerun after review. This remains a synthetic local PostgreSQL validation only: no real RDS/ECS DDL, data import, runtime writer, API, business row, or deployment was performed.
+
+### PostgreSQL 17 capability-catalog evidence (2026-08-15)
+
+- Migration 4 adds only `vnext_capability_catalog`. It has no capability seed, authority ownership field, policy/default mapping, override, extra index, foreign key, or trigger.
+- Disposable PostgreSQL 17 checks verify C-collated nonblank IDs and surface masks, active/retired status, finite creation times, owner/verifier-only access, no runtime rights, no table trigger, and fail-closed relation, constraint, index, ACL, public-shadow, and migration-prefix drift.
+- Focused PG17 checks and the control-plane target aggregate were rerun after independent necessity and quality review. This is synthetic local validation only: no real RDS/ECS DDL, data import, writer/API, business row, deployment, or desktop data access occurred.
