@@ -8,6 +8,7 @@ const {
   CAPABILITY_CATALOG_MIGRATION,
   CAPABILITY_OVERRIDES_MIGRATION,
   DATA_SCOPE_GRANTS_MIGRATION,
+  PROFILE_BINDINGS_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,
@@ -25,7 +26,7 @@ async function runManifestCases() {
     'vnext_schema_migrations_no_update',
   ]);
   assert.strictEqual(sha256(FIRST_MIGRATION.sql), FIRST_MIGRATION.manifestSha256);
-  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6]);
+  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7]);
   assert.strictEqual(FOUNDATION_IDENTITY_DEVICE_MIGRATION.migrationId, 'vnext-pg17-foundation-identity-device-2');
   assert.match(FOUNDATION_IDENTITY_DEVICE_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
   assert.strictEqual(
@@ -62,6 +63,14 @@ async function runManifestCases() {
   assert.match(DATA_SCOPE_GRANTS_MIGRATION.sql, /CREATE TABLE vnext_control_plane\.vnext_data_scope_grants/);
   assert.match(DATA_SCOPE_GRANTS_MIGRATION.sql, /CREATE UNIQUE INDEX vnext_data_scope_grants_one_active_scope/);
   assert.match(DATA_SCOPE_GRANTS_MIGRATION.sql, /FOREIGN KEY \(account_id, authority_id\)/);
+  assert.ok(Object.isFrozen(PROFILE_BINDINGS_MIGRATION));
+  assert.strictEqual(PROFILE_BINDINGS_MIGRATION.migrationId, 'vnext-pg17-profile-bindings-7');
+  assert.strictEqual(PROFILE_BINDINGS_MIGRATION.semanticVersion, 7);
+  assert.match(PROFILE_BINDINGS_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
+  assert.strictEqual(sha256(PROFILE_BINDINGS_MIGRATION.sql), PROFILE_BINDINGS_MIGRATION.manifestSha256);
+  assert.match(PROFILE_BINDINGS_MIGRATION.sql, /CREATE TABLE vnext_control_plane\.vnext_profile_bindings/);
+  assert.match(PROFILE_BINDINGS_MIGRATION.sql, /CREATE UNIQUE INDEX vnext_profile_bindings_one_active_account_type/);
+  assert.match(PROFILE_BINDINGS_MIGRATION.sql, /CREATE UNIQUE INDEX vnext_profile_bindings_one_active_profile/);
   assert.deepStrictEqual(expectedCatalog.relations, [
     'vnext_control_plane.vnext_account_device_links',
     'vnext_control_plane.vnext_accounts',
@@ -70,6 +79,7 @@ async function runManifestCases() {
     'vnext_control_plane.vnext_capability_overrides',
     'vnext_control_plane.vnext_data_scope_grants',
     'vnext_control_plane.vnext_device_installations',
+    'vnext_control_plane.vnext_profile_bindings',
     'vnext_control_plane.vnext_role_grants',
     'vnext_control_plane.vnext_schema_meta',
     'vnext_control_plane.vnext_schema_migrations',

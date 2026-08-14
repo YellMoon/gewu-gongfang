@@ -9,6 +9,7 @@ const {
   ROLE_GRANTS_MIGRATION,
   CAPABILITY_CATALOG_MIGRATION,
   CAPABILITY_OVERRIDES_MIGRATION,
+  DATA_SCOPE_GRANTS_MIGRATION,
 } = require('./migrationManifest');
 
 const FOUNDATION_INSTANT = '2026-08-15T00:00:00.000Z';
@@ -443,6 +444,65 @@ async function assertDataScopeGrantSemantics(handle) {
   );
 }
 
+async function assertProfileBindingSemantics(handle) {
+  await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+    await facade.query("INSERT INTO vnext_control_plane.vnext_accounts (account_id, authority_id, status, auth_version, access_version, revocation_version, row_version, created_at, updated_at) VALUES ('account-profile-2', 'authority-1', 'active', 1, 1, 1, 1, $1, $1)", [FOUNDATION_INSTANT]);
+    const insertBinding = ({
+      bindingId,
+      authorityId = 'authority-1',
+      accountId = 'account-1',
+      profileType = 'teacher',
+      profileId = 'profile-teacher-1',
+      status = 'active',
+      evidenceHash = 'opaque-evidence',
+      rowVersion = 1,
+      createdAt = FOUNDATION_INSTANT,
+      updatedAt = FOUNDATION_INSTANT,
+      revokedAt = null,
+    }) => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_profile_bindings (binding_id, authority_id, account_id, profile_type, profile_id, status, evidence_hash, row_version, created_at, updated_at, revoked_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
+      [bindingId, authorityId, accountId, profileType, profileId, status, evidenceHash, rowVersion, createdAt, updatedAt, revokedAt],
+    );
+    await insertBinding({ bindingId: 'binding-teacher' });
+    await assert.rejects(() => insertBinding({ bindingId: 'binding-account-type-conflict', profileId: 'profile-teacher-2' }), error => error && error.constraint === 'vnext_profile_bindings_one_active_account_type');
+    await assert.rejects(() => insertBinding({ bindingId: 'binding-profile-conflict', accountId: 'account-profile-2' }), error => error && error.constraint === 'vnext_profile_bindings_one_active_profile');
+    await insertBinding({ bindingId: 'binding-student', profileType: 'student', profileId: 'profile-teacher-1' });
+    await insertBinding({ bindingId: 'binding-pending-1', status: 'pending' });
+    await insertBinding({ bindingId: 'binding-pending-2', status: 'pending' });
+    await facade.query("UPDATE vnext_control_plane.vnext_profile_bindings SET status = 'revoked', revoked_at = $1 WHERE binding_id = 'binding-teacher'", [FOUNDATION_INSTANT]);
+    await insertBinding({ bindingId: 'binding-active-replacement' });
+    await assert.rejects(() => insertBinding({ bindingId: 'binding-cross-authority', accountId: 'account-2', profileId: 'profile-cross-authority' }), /foreign key/);
+    for (const [bindingId, field, constraint] of [
+      ['binding-blank-id', 'bindingId', 'vnext_profile_bindings_binding_id_check'],
+      ['binding-blank-authority', 'authorityId', 'vnext_profile_bindings_authority_id_check'],
+      ['binding-blank-account', 'accountId', 'vnext_profile_bindings_account_id_check'],
+      ['binding-blank-profile', 'profileId', 'vnext_profile_bindings_profile_id_check'],
+      ['binding-blank-evidence', 'evidenceHash', 'vnext_profile_bindings_evidence_hash_check'],
+    ]) {
+      const input = { bindingId, status: 'revoked', revokedAt: FOUNDATION_INSTANT };
+      input[field] = '   ';
+      await assert.rejects(() => insertBinding(input), error => error && error.constraint === constraint);
+    }
+    await assert.rejects(() => insertBinding({ bindingId: 'binding-invalid-type', profileType: 'other', status: 'revoked', revokedAt: FOUNDATION_INSTANT }), error => error && error.constraint === 'vnext_profile_bindings_profile_type_check');
+    await facade.query('ALTER TABLE vnext_control_plane.vnext_profile_bindings DROP CONSTRAINT vnext_profile_bindings_check1');
+    await assert.rejects(() => insertBinding({ bindingId: 'binding-invalid-status', status: 'other' }), error => error && error.constraint === 'vnext_profile_bindings_status_check');
+    await facade.query("ALTER TABLE vnext_control_plane.vnext_profile_bindings ADD CONSTRAINT vnext_profile_bindings_check1 CHECK ((status = 'revoked' AND revoked_at IS NOT NULL) OR (status IN ('active', 'pending') AND revoked_at IS NULL))");
+    await assert.rejects(() => insertBinding({ bindingId: 'binding-zero-version', status: 'revoked', revokedAt: FOUNDATION_INSTANT, rowVersion: 0 }), error => error && error.constraint === 'vnext_profile_bindings_row_version_check');
+    await assert.rejects(() => insertBinding({ bindingId: 'binding-fractional-version', status: 'revoked', revokedAt: FOUNDATION_INSTANT, rowVersion: 1.5 }), /invalid input syntax for type bigint/);
+    await assert.rejects(() => insertBinding({ bindingId: 'binding-updated-before-created', status: 'revoked', revokedAt: FOUNDATION_INSTANT, updatedAt: '2026-08-14T23:59:59.000Z' }), error => error && error.constraint === 'vnext_profile_bindings_check');
+    for (const [bindingId, input] of [['binding-active-revoked', { revokedAt: FOUNDATION_INSTANT }], ['binding-pending-revoked', { status: 'pending', revokedAt: FOUNDATION_INSTANT }], ['binding-revoked-missing-time', { status: 'revoked' }]]) {
+      await assert.rejects(() => insertBinding({ bindingId, ...input }), error => error && error.constraint === 'vnext_profile_bindings_check1');
+    }
+    for (const [bindingId, field, value, constraint] of [['binding-infinite-created', 'createdAt', '-infinity', 'vnext_profile_bindings_created_at_check'], ['binding-infinite-updated', 'updatedAt', 'infinity', 'vnext_profile_bindings_updated_at_check'], ['binding-infinite-revoked', 'revokedAt', '-infinity', 'vnext_profile_bindings_revoked_at_check']]) {
+      const input = { bindingId, status: 'revoked', revokedAt: FOUNDATION_INSTANT };
+      input[field] = value;
+      await assert.rejects(() => insertBinding(input), error => error && error.constraint === constraint);
+    }
+  });
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'verifier', facade => facade.query("INSERT INTO vnext_control_plane.vnext_profile_bindings (binding_id, authority_id, account_id, profile_type, profile_id, status, evidence_hash, row_version, created_at, updated_at) VALUES ('verifier-write', 'authority-1', 'account-1', 'teacher', 'profile', 'active', 'opaque', 1, $1, $1)", [FOUNDATION_INSTANT])));
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_profile_bindings')));
+}
+
 async function runCatalogAssertionCases(runtime) {
   const catalog = createVNextPg17CatalogBoundary(runtime);
   let priorHandle;
@@ -600,6 +660,27 @@ async function runCatalogAssertionCases(runtime) {
       () => catalog.assert(dataScopePrefixHandle),
       error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
     );
+    const profileBindingPrefixHandle = await createHandle();
+    await withVNextPg17SyntheticQuery(profileBindingPrefixHandle, 'fixture-provisioner', async facade => {
+      for (const migration of [FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION, ROLE_GRANTS_MIGRATION, CAPABILITY_CATALOG_MIGRATION, CAPABILITY_OVERRIDES_MIGRATION, DATA_SCOPE_GRANTS_MIGRATION]) {
+        await facade.query(migration.sql);
+        if (migration.postApply) {
+          await facade.query(migration.postApply.text, migration.postApply.values(migrationInput.appliedAt));
+        }
+        await facade.query(
+          'INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
+          [migration.migrationId, migration.semanticVersion, migration.manifestSha256, migrationInput.appliedAt, migrationInput.appliedBy],
+        );
+      }
+    });
+    await assert.rejects(() => catalog.apply(profileBindingPrefixHandle, migrationInput), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+    await withVNextPg17SyntheticQuery(profileBindingPrefixHandle, 'fixture-provisioner', async facade => {
+      const ledgerRows = await facade.query('SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version');
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }]);
+      const relation = await facade.query("SELECT to_regclass('vnext_control_plane.vnext_profile_bindings') AS relation");
+      assert.strictEqual(relation.rows[0].relation, null);
+    });
+    await assert.rejects(() => catalog.assert(profileBindingPrefixHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
     const handle = await createHandle();
     await assert.rejects(
       () => catalog.assert(handle),
@@ -610,7 +691,7 @@ async function runCatalogAssertionCases(runtime) {
       const ledgerRows = await facade.query(
         'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version',
       );
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }]);
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }]);
       const schemaMetaRows = await facade.query(
         'SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta',
       );
@@ -623,6 +704,8 @@ async function runCatalogAssertionCases(runtime) {
       assert.deepStrictEqual(overrideCount.rows, [{ count: '0' }]);
       const scopeGrantCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_data_scope_grants');
       assert.deepStrictEqual(scopeGrantCount.rows, [{ count: '0' }]);
+      const profileBindingCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_profile_bindings');
+      assert.deepStrictEqual(profileBindingCount.rows, [{ count: '0' }]);
     });
     await assert.doesNotReject(() => catalog.assert(handle));
     await assertFoundationSemantics(handle);
@@ -630,6 +713,7 @@ async function runCatalogAssertionCases(runtime) {
     await assertCapabilityCatalogSemantics(handle);
     await assertCapabilityOverrideSemantics(handle);
     await assertDataScopeGrantSemantics(handle);
+    await assertProfileBindingSemantics(handle);
     assert.deepStrictEqual(await catalog.apply(handle, migrationInput), { applied: false });
     await withVNextPg17SyntheticQuery(handle, 'verifier', async facade => {
       await facade.query('BEGIN READ ONLY');
@@ -645,7 +729,7 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(
       () => withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
-        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 8, repeat('a', 64), now(), 'fixture')",
+        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 9, repeat('a', 64), now(), 'fixture')",
       )),
     );
     await assert.rejects(
@@ -1238,6 +1322,48 @@ async function runCatalogAssertionCases(runtime) {
       () => catalog.assert(scopePublicShadowHandle),
       error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
     );
+
+    for (const [name, sql] of [
+      ['account-type-index', "DROP INDEX vnext_control_plane.vnext_profile_bindings_one_active_account_type; CREATE UNIQUE INDEX vnext_profile_bindings_one_active_account_type ON vnext_control_plane.vnext_profile_bindings (authority_id, account_id, profile_type) WHERE status = 'pending'"],
+      ['profile-index', "DROP INDEX vnext_control_plane.vnext_profile_bindings_one_active_profile; CREATE UNIQUE INDEX vnext_profile_bindings_one_active_profile ON vnext_control_plane.vnext_profile_bindings (authority_id, profile_type, profile_id) WHERE status = 'pending'"],
+      ['profile-type-check', "ALTER TABLE vnext_control_plane.vnext_profile_bindings DROP CONSTRAINT vnext_profile_bindings_profile_type_check; ALTER TABLE vnext_control_plane.vnext_profile_bindings ADD CONSTRAINT vnext_profile_bindings_profile_type_check CHECK (profile_type IN ('teacher', 'student', 'other'))"],
+      ['status-check', "ALTER TABLE vnext_control_plane.vnext_profile_bindings DROP CONSTRAINT vnext_profile_bindings_status_check; ALTER TABLE vnext_control_plane.vnext_profile_bindings ADD CONSTRAINT vnext_profile_bindings_status_check CHECK (status IN ('active', 'revoked', 'pending', 'other'))"],
+    ]) {
+      const driftHandle = await createHandle();
+      await catalog.apply(driftHandle, migrationInput);
+      await withVNextPg17SyntheticQuery(driftHandle, 'fixture-provisioner', facade => facade.query(sql));
+      await assert.rejects(() => catalog.assert(driftHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT', name);
+    }
+
+    const profileExtraIndexHandle = await createHandle();
+    await catalog.apply(profileExtraIndexHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(profileExtraIndexHandle, 'fixture-provisioner', facade => facade.query('CREATE INDEX unapproved_profile_binding_status_index ON vnext_control_plane.vnext_profile_bindings (status)'));
+    await assert.rejects(() => catalog.assert(profileExtraIndexHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const profileForeignKeyHandle = await createHandle();
+    await catalog.apply(profileForeignKeyHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(profileForeignKeyHandle, 'fixture-provisioner', facade => facade.query('ALTER TABLE vnext_control_plane.vnext_profile_bindings DROP CONSTRAINT vnext_profile_bindings_account_id_authority_id_fkey'));
+    await assert.rejects(() => catalog.assert(profileForeignKeyHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const profileDefaultHandle = await createHandle();
+    await catalog.apply(profileDefaultHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(profileDefaultHandle, 'fixture-provisioner', facade => facade.query("ALTER TABLE vnext_control_plane.vnext_profile_bindings ALTER COLUMN status SET DEFAULT 'pending'"));
+    await assert.rejects(() => catalog.assert(profileDefaultHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const profileAclHandle = await createHandle();
+    await catalog.apply(profileAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(profileAclHandle, 'fixture-provisioner', facade => facade.query('GRANT INSERT ON vnext_control_plane.vnext_profile_bindings TO vnext_pg17_verifier'));
+    await assert.rejects(() => catalog.assert(profileAclHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const profileTriggerHandle = await createHandle();
+    await catalog.apply(profileTriggerHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(profileTriggerHandle, 'fixture-provisioner', facade => facade.query('CREATE TRIGGER unapproved_profile_binding_delete BEFORE DELETE ON vnext_control_plane.vnext_profile_bindings FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_schema_migrations_no_delete()'));
+    await assert.rejects(() => catalog.assert(profileTriggerHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const profilePublicShadowHandle = await createHandle();
+    await catalog.apply(profilePublicShadowHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(profilePublicShadowHandle, 'fixture-provisioner', facade => facade.query('CREATE TABLE public.vnext_profile_bindings (id integer)'));
+    await assert.rejects(() => catalog.assert(profilePublicShadowHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
 
     const schemaMetaHandle = await createHandle();
     await catalog.apply(schemaMetaHandle, migrationInput);

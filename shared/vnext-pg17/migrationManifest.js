@@ -317,6 +317,37 @@ const DATA_SCOPE_GRANTS_MIGRATION = Object.freeze({
   manifestSha256: sha256(DATA_SCOPE_GRANTS_SQL),
 });
 
+const PROFILE_BINDINGS_SQL = `CREATE TABLE vnext_control_plane.vnext_profile_bindings (
+  binding_id text COLLATE "C" PRIMARY KEY CHECK (btrim(binding_id) <> ''),
+  authority_id text COLLATE "C" NOT NULL CHECK (btrim(authority_id) <> ''),
+  account_id text COLLATE "C" NOT NULL CHECK (btrim(account_id) <> ''),
+  profile_type text COLLATE "C" NOT NULL CHECK (profile_type IN ('teacher', 'student')),
+  profile_id text COLLATE "C" NOT NULL CHECK (btrim(profile_id) <> ''),
+  status text COLLATE "C" NOT NULL CHECK (status IN ('active', 'revoked', 'pending')),
+  evidence_hash text COLLATE "C" NOT NULL CHECK (btrim(evidence_hash) <> ''),
+  row_version bigint NOT NULL CHECK (row_version >= 1),
+  created_at timestamptz NOT NULL CHECK (created_at <> 'infinity'::timestamptz AND created_at <> '-infinity'::timestamptz),
+  updated_at timestamptz NOT NULL CHECK (updated_at <> 'infinity'::timestamptz AND updated_at <> '-infinity'::timestamptz),
+  revoked_at timestamptz CHECK (revoked_at <> 'infinity'::timestamptz AND revoked_at <> '-infinity'::timestamptz),
+  CHECK (updated_at >= created_at),
+  CHECK ((status = 'revoked' AND revoked_at IS NOT NULL) OR (status IN ('active', 'pending') AND revoked_at IS NULL)),
+  FOREIGN KEY (account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+);
+CREATE UNIQUE INDEX vnext_profile_bindings_one_active_account_type
+  ON vnext_control_plane.vnext_profile_bindings (authority_id, account_id, profile_type)
+  WHERE status = 'active';
+CREATE UNIQUE INDEX vnext_profile_bindings_one_active_profile
+  ON vnext_control_plane.vnext_profile_bindings (authority_id, profile_type, profile_id)
+  WHERE status = 'active';
+GRANT SELECT ON TABLE vnext_control_plane.vnext_profile_bindings TO vnext_pg17_verifier;`;
+
+const PROFILE_BINDINGS_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-profile-bindings-7',
+  semanticVersion: 7,
+  sql: PROFILE_BINDINGS_SQL,
+  manifestSha256: sha256(PROFILE_BINDINGS_SQL),
+});
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -324,6 +355,7 @@ const MIGRATIONS = Object.freeze([
   CAPABILITY_CATALOG_MIGRATION,
   CAPABILITY_OVERRIDES_MIGRATION,
   DATA_SCOPE_GRANTS_MIGRATION,
+  PROFILE_BINDINGS_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -379,6 +411,7 @@ const expectedCatalog = Object.freeze({
     'vnext_control_plane.vnext_capability_overrides',
     'vnext_control_plane.vnext_data_scope_grants',
     'vnext_control_plane.vnext_device_installations',
+    'vnext_control_plane.vnext_profile_bindings',
     'vnext_control_plane.vnext_role_grants',
     'vnext_control_plane.vnext_schema_meta',
     'vnext_control_plane.vnext_schema_migrations',
@@ -400,6 +433,7 @@ module.exports = {
   CAPABILITY_CATALOG_MIGRATION,
   CAPABILITY_OVERRIDES_MIGRATION,
   DATA_SCOPE_GRANTS_MIGRATION,
+  PROFILE_BINDINGS_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,
