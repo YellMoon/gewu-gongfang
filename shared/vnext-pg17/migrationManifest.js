@@ -437,6 +437,46 @@ const AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION = Object.freeze({
   manifestSha256: sha256(AUTHORIZATION_COMMAND_RECEIPTS_SQL),
 });
 
+const AUTHORIZATION_AUDIT_EVENTS_SQL = `CREATE TABLE vnext_control_plane.vnext_authorization_audit_events (
+  event_id text COLLATE "C" PRIMARY KEY CHECK (btrim(event_id) <> ''),
+  authority_id text COLLATE "C" NOT NULL CHECK (btrim(authority_id) <> ''),
+  receipt_id text COLLATE "C" NOT NULL CHECK (btrim(receipt_id) <> ''),
+  reason_code text COLLATE "C" NOT NULL CHECK (btrim(reason_code) <> ''),
+  context_sha256 text COLLATE "C" NOT NULL CHECK (context_sha256 ~ '^[0-9a-f]{64}$'),
+  created_at timestamptz NOT NULL CHECK (created_at <> 'infinity'::timestamptz AND created_at <> '-infinity'::timestamptz),
+  UNIQUE(authority_id, receipt_id),
+  FOREIGN KEY(authority_id) REFERENCES vnext_control_plane.vnext_authorities(authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  FOREIGN KEY(receipt_id, authority_id) REFERENCES vnext_control_plane.vnext_authorization_command_receipts(receipt_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+);
+CREATE FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_update()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+BEGIN
+  RAISE EXCEPTION 'vNext authorization audit event is append-only' USING ERRCODE = 'P0001';
+END;
+$$;
+CREATE FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_delete()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+BEGIN
+  RAISE EXCEPTION 'vNext authorization audit event is append-only' USING ERRCODE = 'P0001';
+END;
+$$;
+CREATE TRIGGER vnext_authorization_audit_events_no_update
+BEFORE UPDATE ON vnext_control_plane.vnext_authorization_audit_events
+FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_update();
+CREATE TRIGGER vnext_authorization_audit_events_no_delete
+BEFORE DELETE ON vnext_control_plane.vnext_authorization_audit_events
+FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_delete();
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_update() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_delete() FROM PUBLIC;
+GRANT SELECT ON TABLE vnext_control_plane.vnext_authorization_audit_events TO vnext_pg17_verifier;`;
+
+const AUTHORIZATION_AUDIT_EVENTS_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-authorization-audit-events-10',
+  semanticVersion: 10,
+  sql: AUTHORIZATION_AUDIT_EVENTS_SQL,
+  manifestSha256: sha256(AUTHORIZATION_AUDIT_EVENTS_SQL),
+});
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -447,6 +487,7 @@ const MIGRATIONS = Object.freeze([
   PROFILE_BINDINGS_MIGRATION,
   VERIFIED_CONTACTS_MIGRATION,
   AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION,
+  AUTHORIZATION_AUDIT_EVENTS_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -512,6 +553,28 @@ BEGIN
 END;
 $function$
 `),
+  vnext_authorization_audit_events_no_update: sha256(`CREATE OR REPLACE FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_update()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'pg_temp'
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'vNext authorization audit event is append-only' USING ERRCODE = 'P0001';
+END;
+$function$
+`),
+  vnext_authorization_audit_events_no_delete: sha256(`CREATE OR REPLACE FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_delete()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'pg_temp'
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'vNext authorization audit event is append-only' USING ERRCODE = 'P0001';
+END;
+$function$
+`),
 });
 
 const expectedCatalog = Object.freeze({
@@ -520,6 +583,7 @@ const expectedCatalog = Object.freeze({
     'vnext_control_plane.vnext_account_device_links',
     'vnext_control_plane.vnext_accounts',
     'vnext_control_plane.vnext_authorities',
+    'vnext_control_plane.vnext_authorization_audit_events',
     'vnext_control_plane.vnext_authorization_command_receipts',
     'vnext_control_plane.vnext_capability_catalog',
     'vnext_control_plane.vnext_capability_overrides',
@@ -538,6 +602,8 @@ const expectedCatalog = Object.freeze({
     'vnext_schema_migrations_no_update',
     'vnext_authorization_command_receipts_no_delete',
     'vnext_authorization_command_receipts_no_update',
+    'vnext_authorization_audit_events_no_delete',
+    'vnext_authorization_audit_events_no_update',
   ]),
   owners: Object.freeze({ database: 'vnext_pg17_owner', schema: 'vnext_pg17_owner', table: 'vnext_pg17_owner' }),
   functionDefinitionSha256: FUNCTION_DEFINITION_SHA256,
@@ -553,6 +619,7 @@ module.exports = {
   PROFILE_BINDINGS_MIGRATION,
   VERIFIED_CONTACTS_MIGRATION,
   AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION,
+  AUTHORIZATION_AUDIT_EVENTS_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

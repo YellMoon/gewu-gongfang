@@ -12,6 +12,7 @@ const {
   DATA_SCOPE_GRANTS_MIGRATION,
   PROFILE_BINDINGS_MIGRATION,
   VERIFIED_CONTACTS_MIGRATION,
+  AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION,
 } = require('./migrationManifest');
 
 const FOUNDATION_INSTANT = '2026-08-15T00:00:00.000Z';
@@ -664,6 +665,61 @@ async function assertAuthorizationCommandReceiptSemantics(handle) {
   await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_authorization_command_receipts')));
 }
 
+async function assertAuthorizationAuditEventSemantics(handle) {
+  await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+    const insertReceipt = ({
+      receiptId,
+      authorityId = 'authority-1',
+      actorKey = 'audit-actor',
+      idempotencyKey = 'audit-idempotency',
+    }) => facade.query(
+      "INSERT INTO vnext_control_plane.vnext_authorization_command_receipts (receipt_id, authority_id, actor_key, actor_account_id, idempotency_key, command_type, target_kind, target_id, canonical_request_sha256, outcome, result_code, canonical_result_json, canonical_result_sha256, created_at) VALUES ($1, $2, $3, 'account-1', $4, 'generic.command', 'generic_target', 'target-audit', repeat('a', 64), 'accepted', 'GENERIC_ACCEPTED', '{}', repeat('b', 64), $5)",
+      [receiptId, authorityId, actorKey, idempotencyKey, FOUNDATION_INSTANT],
+    );
+    const insertAudit = ({
+      eventId,
+      authorityId = 'authority-1',
+      receiptId = 'audit-receipt-1',
+      reasonCode = 'generic.reason',
+      contextHash = 'c'.repeat(64),
+      createdAt = FOUNDATION_INSTANT,
+    }) => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_authorization_audit_events (event_id, authority_id, receipt_id, reason_code, context_sha256, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
+      [eventId, authorityId, receiptId, reasonCode, contextHash, createdAt],
+    );
+    await insertReceipt({ receiptId: 'audit-receipt-1' });
+    await insertAudit({ eventId: 'audit-event-1' });
+    await assert.rejects(() => insertAudit({ eventId: 'audit-event-1', receiptId: 'receipt-array' }), error => error && error.constraint === 'vnext_authorization_audit_events_pkey');
+    await assert.rejects(() => insertAudit({ eventId: 'audit-event-duplicate-receipt' }), error => error && error.constraint === 'vnext_authorization_audit_events_authority_id_receipt_id_key');
+    await facade.query("INSERT INTO vnext_control_plane.vnext_authorities (authority_id, status, created_at, updated_at) VALUES ('authority-audit-2', 'active', $1, $1)", [FOUNDATION_INSTANT]);
+    await assert.rejects(() => insertAudit({ eventId: 'audit-event-cross-authority', authorityId: 'authority-audit-2' }), /foreign key/);
+    await assert.rejects(() => insertAudit({ eventId: 'audit-event-missing-authority', authorityId: 'authority-audit-missing', receiptId: 'receipt-array' }), /foreign key/);
+    await assert.rejects(() => insertAudit({ eventId: 'audit-event-missing-receipt', receiptId: 'audit-receipt-missing' }), /foreign key/);
+    for (const [eventId, field, constraint] of [
+      ['audit-blank-event', 'eventId', 'vnext_authorization_audit_events_event_id_check'],
+      ['audit-blank-authority', 'authorityId', 'vnext_authorization_audit_events_authority_id_check'],
+      ['audit-blank-receipt', 'receiptId', 'vnext_authorization_audit_events_receipt_id_check'],
+      ['audit-blank-reason', 'reasonCode', 'vnext_authorization_audit_events_reason_code_check'],
+    ]) {
+      const input = { eventId, receiptId: 'receipt-array' };
+      input[field] = '   ';
+      await assert.rejects(() => insertAudit(input), error => error && error.constraint === constraint);
+    }
+    await assert.rejects(() => insertAudit({ eventId: 'audit-short-hash', receiptId: 'receipt-array', contextHash: 'c'.repeat(63) }), error => error && error.constraint === 'vnext_authorization_audit_events_context_sha256_check');
+    await assert.rejects(() => insertAudit({ eventId: 'audit-upper-hash', receiptId: 'receipt-array', contextHash: 'C'.repeat(64) }), error => error && error.constraint === 'vnext_authorization_audit_events_context_sha256_check');
+    for (const [eventId, createdAt] of [['audit-infinite-created', 'infinity'], ['audit-negative-infinite-created', '-infinity']]) {
+      await assert.rejects(() => insertAudit({ eventId, receiptId: 'receipt-array', createdAt }), error => error && error.constraint === 'vnext_authorization_audit_events_created_at_check');
+    }
+    const before = await facade.query("SELECT event_id, reason_code, context_sha256 FROM vnext_control_plane.vnext_authorization_audit_events WHERE event_id = 'audit-event-1'");
+    await assert.rejects(() => facade.query("UPDATE vnext_control_plane.vnext_authorization_audit_events SET reason_code = 'changed' WHERE event_id = 'audit-event-1'"), error => error && error.code === 'P0001');
+    await assert.rejects(() => facade.query("DELETE FROM vnext_control_plane.vnext_authorization_audit_events WHERE event_id = 'audit-event-1'"), error => error && error.code === 'P0001');
+    const after = await facade.query("SELECT event_id, reason_code, context_sha256 FROM vnext_control_plane.vnext_authorization_audit_events WHERE event_id = 'audit-event-1'");
+    assert.deepStrictEqual(after.rows, before.rows);
+  });
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'verifier', facade => facade.query("INSERT INTO vnext_control_plane.vnext_authorization_audit_events (event_id, authority_id, receipt_id, reason_code, context_sha256, created_at) VALUES ('audit-verifier-write', 'authority-1', 'receipt-array', 'generic.reason', repeat('c', 64), $1)", [FOUNDATION_INSTANT])));
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_authorization_audit_events')));
+}
+
 async function runCatalogAssertionCases(runtime) {
   const catalog = createVNextPg17CatalogBoundary(runtime);
   let priorHandle;
@@ -747,7 +803,7 @@ async function runCatalogAssertionCases(runtime) {
     );
     await withVNextPg17SyntheticQuery(roleGrantPrefixHandle, 'fixture-provisioner', async facade => {
       const ledgerRows = await facade.query(
-        'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version',
+        'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint',
       );
       assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }]);
       const capabilityRelation = await facade.query(
@@ -821,9 +877,9 @@ async function runCatalogAssertionCases(runtime) {
       () => catalog.assert(dataScopePrefixHandle),
       error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
     );
-    const profileBindingPrefixHandle = await createHandle();
-    await withVNextPg17SyntheticQuery(profileBindingPrefixHandle, 'fixture-provisioner', async facade => {
-      for (const migration of [FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION, ROLE_GRANTS_MIGRATION, CAPABILITY_CATALOG_MIGRATION, CAPABILITY_OVERRIDES_MIGRATION, DATA_SCOPE_GRANTS_MIGRATION, PROFILE_BINDINGS_MIGRATION, VERIFIED_CONTACTS_MIGRATION]) {
+    const receiptPrefixHandle = await createHandle();
+    await withVNextPg17SyntheticQuery(receiptPrefixHandle, 'fixture-provisioner', async facade => {
+      for (const migration of [FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION, ROLE_GRANTS_MIGRATION, CAPABILITY_CATALOG_MIGRATION, CAPABILITY_OVERRIDES_MIGRATION, DATA_SCOPE_GRANTS_MIGRATION, PROFILE_BINDINGS_MIGRATION, VERIFIED_CONTACTS_MIGRATION, AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION]) {
         await facade.query(migration.sql);
         if (migration.postApply) {
           await facade.query(migration.postApply.text, migration.postApply.values(migrationInput.appliedAt));
@@ -834,16 +890,16 @@ async function runCatalogAssertionCases(runtime) {
         );
       }
     });
-    await assert.rejects(() => catalog.apply(profileBindingPrefixHandle, migrationInput), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
-    await withVNextPg17SyntheticQuery(profileBindingPrefixHandle, 'fixture-provisioner', async facade => {
+    await assert.rejects(() => catalog.apply(receiptPrefixHandle, migrationInput), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+    await withVNextPg17SyntheticQuery(receiptPrefixHandle, 'fixture-provisioner', async facade => {
       const ledgerRows = await facade.query('SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version');
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }]);
-      const relation = await facade.query("SELECT to_regclass('vnext_control_plane.vnext_authorization_command_receipts') AS relation, to_regprocedure('vnext_control_plane.vnext_authorization_command_receipts_no_update()') AS update_function, to_regprocedure('vnext_control_plane.vnext_authorization_command_receipts_no_delete()') AS delete_function");
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }]);
+      const relation = await facade.query("SELECT to_regclass('vnext_control_plane.vnext_authorization_audit_events') AS relation, to_regprocedure('vnext_control_plane.vnext_authorization_audit_events_no_update()') AS update_function, to_regprocedure('vnext_control_plane.vnext_authorization_audit_events_no_delete()') AS delete_function");
       assert.strictEqual(relation.rows[0].relation, null);
       assert.strictEqual(relation.rows[0].update_function, null);
       assert.strictEqual(relation.rows[0].delete_function, null);
     });
-    await assert.rejects(() => catalog.assert(profileBindingPrefixHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+    await assert.rejects(() => catalog.assert(receiptPrefixHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
     const handle = await createHandle();
     await assert.rejects(
       () => catalog.assert(handle),
@@ -852,9 +908,9 @@ async function runCatalogAssertionCases(runtime) {
     await catalog.apply(handle, migrationInput);
     await withVNextPg17SyntheticQuery(handle, 'verifier', async facade => {
       const ledgerRows = await facade.query(
-        'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version',
+        'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint',
       );
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }]);
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }]);
       const schemaMetaRows = await facade.query(
         'SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta',
       );
@@ -873,6 +929,8 @@ async function runCatalogAssertionCases(runtime) {
     assert.deepStrictEqual(verifiedContactCount.rows, [{ count: '0' }]);
     const receiptCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_authorization_command_receipts');
     assert.deepStrictEqual(receiptCount.rows, [{ count: '0' }]);
+    const auditCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_authorization_audit_events');
+    assert.deepStrictEqual(auditCount.rows, [{ count: '0' }]);
     });
     await assert.doesNotReject(() => catalog.assert(handle));
     await assertFoundationSemantics(handle);
@@ -883,6 +941,7 @@ async function runCatalogAssertionCases(runtime) {
     await assertProfileBindingSemantics(handle);
     await assertVerifiedContactSemantics(handle);
     await assertAuthorizationCommandReceiptSemantics(handle);
+    await assertAuthorizationAuditEventSemantics(handle);
     assert.deepStrictEqual(await catalog.apply(handle, migrationInput), { applied: false });
     await withVNextPg17SyntheticQuery(handle, 'verifier', async facade => {
       await facade.query('BEGIN READ ONLY');
@@ -898,7 +957,7 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(
       () => withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
-        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 11, repeat('a', 64), now(), 'fixture')",
+        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 12, repeat('a', 64), now(), 'fixture')",
       )),
     );
     await assert.rejects(
@@ -1587,7 +1646,7 @@ async function runCatalogAssertionCases(runtime) {
 
     const receiptUniqueHandle = await createHandle();
     await catalog.apply(receiptUniqueHandle, migrationInput);
-    await withVNextPg17SyntheticQuery(receiptUniqueHandle, 'fixture-provisioner', facade => facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts DROP CONSTRAINT vnext_authorization_command_receipt_receipt_id_authority_id_key; ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts ADD CONSTRAINT vnext_authorization_command_receipt_receipt_id_authority_id_key UNIQUE (receipt_id, authority_id, actor_key)'));
+    await withVNextPg17SyntheticQuery(receiptUniqueHandle, 'fixture-provisioner', facade => facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts DROP CONSTRAINT vnext_authorization_command_receipt_receipt_id_authority_id_key CASCADE'));
     await assert.rejects(() => catalog.assert(receiptUniqueHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
 
     const receiptResultConstraintHandle = await createHandle();
@@ -1684,6 +1743,40 @@ async function runCatalogAssertionCases(runtime) {
     await catalog.apply(receiptPublicShadowHandle, migrationInput);
     await withVNextPg17SyntheticQuery(receiptPublicShadowHandle, 'fixture-provisioner', facade => facade.query('CREATE TABLE public.vnext_authorization_command_receipts (id integer)'));
     await assert.rejects(() => catalog.assert(receiptPublicShadowHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const auditUniqueHandle = await createHandle();
+    await catalog.apply(auditUniqueHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(auditUniqueHandle, 'fixture-provisioner', facade => facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_audit_events DROP CONSTRAINT vnext_authorization_audit_events_authority_id_receipt_id_key; ALTER TABLE vnext_control_plane.vnext_authorization_audit_events ADD CONSTRAINT vnext_authorization_audit_events_authority_id_receipt_id_key UNIQUE (authority_id, receipt_id, reason_code)'));
+    await assert.rejects(() => catalog.assert(auditUniqueHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    for (const [name, sql] of [
+      ['auditAuthorityForeignKeyHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_audit_events DROP CONSTRAINT vnext_authorization_audit_events_authority_id_fkey'],
+      ['auditReceiptForeignKeyHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_audit_events DROP CONSTRAINT vnext_authorization_audit_events_receipt_id_authority_id_fkey'],
+      ['auditHashConstraintHandle', "ALTER TABLE vnext_control_plane.vnext_authorization_audit_events DROP CONSTRAINT vnext_authorization_audit_events_context_sha256_check; ALTER TABLE vnext_control_plane.vnext_authorization_audit_events ADD CONSTRAINT vnext_authorization_audit_events_context_sha256_check CHECK (context_sha256 ~ '^[0-9a-f]+$')"],
+      ['auditFiniteConstraintHandle', "ALTER TABLE vnext_control_plane.vnext_authorization_audit_events DROP CONSTRAINT vnext_authorization_audit_events_created_at_check; ALTER TABLE vnext_control_plane.vnext_authorization_audit_events ADD CONSTRAINT vnext_authorization_audit_events_created_at_check CHECK (created_at <> 'infinity')"],
+      ['auditDefaultHandle', "ALTER TABLE vnext_control_plane.vnext_authorization_audit_events ALTER COLUMN reason_code SET DEFAULT 'generic.reason'"],
+      ['auditNullabilityHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_audit_events ALTER COLUMN reason_code DROP NOT NULL'],
+      ['auditOwnerHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_audit_events OWNER TO vnext_pg17_migrator'],
+      ['auditVerifierAclHandle', 'GRANT INSERT ON vnext_control_plane.vnext_authorization_audit_events TO vnext_pg17_verifier'],
+      ['auditRuntimeAclHandle', 'GRANT SELECT ON vnext_control_plane.vnext_authorization_audit_events TO vnext_pg17_runtime'],
+      ['auditFunctionHandle', "CREATE OR REPLACE FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_delete() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN RETURN OLD; END; $$"],
+      ['auditFunctionInvokerHandle', 'ALTER FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_update() SECURITY INVOKER'],
+      ['auditFunctionOwnerHandle', 'ALTER FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_update() OWNER TO vnext_pg17_migrator'],
+      ['auditFunctionPathHandle', 'ALTER FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_update() SET search_path = public, pg_temp'],
+      ['auditFunctionPublicExecuteHandle', 'GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_update() TO PUBLIC'],
+      ['auditFunctionVerifierExecuteHandle', 'GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_update() TO vnext_pg17_verifier'],
+      ['auditFunctionRuntimeExecuteHandle', 'GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_update() TO vnext_pg17_runtime'],
+      ['auditExtraTriggerHandle', 'CREATE TRIGGER unapproved_audit_delete BEFORE DELETE ON vnext_control_plane.vnext_authorization_audit_events FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_schema_migrations_no_delete()'],
+      ['auditWrongTriggerHandle', 'DROP TRIGGER vnext_authorization_audit_events_no_update ON vnext_control_plane.vnext_authorization_audit_events; CREATE TRIGGER vnext_authorization_audit_events_no_update BEFORE DELETE ON vnext_control_plane.vnext_authorization_audit_events FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_update()'],
+      ['auditMissingTriggerHandle', 'DROP TRIGGER vnext_authorization_audit_events_no_delete ON vnext_control_plane.vnext_authorization_audit_events'],
+      ['auditPublicShadowHandle', 'CREATE TABLE public.vnext_authorization_audit_events (id integer)'],
+      ['auditExtraIndexHandle', 'CREATE INDEX unapproved_audit_reason_index ON vnext_control_plane.vnext_authorization_audit_events (reason_code)'],
+    ]) {
+      const driftHandle = await createHandle();
+      await catalog.apply(driftHandle, migrationInput);
+      await withVNextPg17SyntheticQuery(driftHandle, 'fixture-provisioner', facade => facade.query(sql));
+      await assert.rejects(() => catalog.assert(driftHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT', name);
+    }
 
     const schemaMetaHandle = await createHandle();
     await catalog.apply(schemaMetaHandle, migrationInput);

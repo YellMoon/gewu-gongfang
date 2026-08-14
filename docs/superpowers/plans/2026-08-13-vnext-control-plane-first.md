@@ -215,3 +215,10 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - The catalog assertion fails closed for missing M9 after an exact M1-M8 prefix, changed or extra index/constraint/FK/default/ACL/function/trigger/public shadow, and function owner, SECURITY DEFINER, search-path, and execution-privilege drift. The evidence is synthetic local PostgreSQL 17 only; it is not a real RDS/ECS receipt deployment.
 - The immutable catalog rejects a migration-7 prefix without writes, altered contact uniqueness, extra indexes, altered contact-type/state/lifecycle checks, missing account foreign keys, ACL/default/trigger/public-shadow drift, and unexpected relation objects. Focused manifest/catalog checks, the complete control-plane target aggregate, and a clean diff check passed after independent necessity and quality review.
 - This remains synthetic local validation only: no RDS/ECS DDL, source/business-data import, runtime writer, API, deployment, desktop-data, NAS, removable-media, or real contact access occurred.
+
+### PostgreSQL 17 authorization-audit-events evidence (2026-08-15)
+
+- Migration 10 adds only `vnext_authorization_audit_events` and its two table-local append-only trigger functions. It records generic receipt-bound audit evidence, but does not introduce an audit writer, reason taxonomy, context payload contract, outbox, policy, trust-root consumer, seed, API, or runtime DML.
+- Disposable PostgreSQL 17 checks verify C-collated nonblank event/authority/receipt/reason fields, lower-case context hashes, finite timestamps, primary and authority/receipt uniqueness, both RESTRICT foreign keys, verifier-only SELECT, runtime-zero access, and failed update/delete preservation.
+- The exact catalog fails closed on an M9 prefix without writes, changed unique/FK/check/default/nullability/owner/ACL/function/trigger/public-shadow/index drift. The independent necessity and quality review passed after focused and aggregate target verification.
+- This is synthetic local validation only: no real RDS/ECS DDL, audit data, audit writer, API, production deployment, business data, desktop data, NAS, or removable-media access occurred.

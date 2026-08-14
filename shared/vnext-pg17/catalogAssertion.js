@@ -20,6 +20,8 @@ const LEDGER_TRIGGERS = Object.freeze([
   'vnext_schema_migrations_no_update',
 ]);
 const LEDGER_FUNCTIONS = Object.freeze([
+  'vnext_authorization_audit_events_no_delete',
+  'vnext_authorization_audit_events_no_update',
   'vnext_authorization_command_receipts_no_delete',
   'vnext_authorization_command_receipts_no_update',
   'vnext_schema_migrations_insert_guard',
@@ -70,6 +72,14 @@ const FOUNDATION_COLUMNS = Object.freeze({
     Object.freeze({ name: 'row_version', dataType: 'bigint', udtName: 'int8', nullable: 'NO', collation: null }),
     Object.freeze({ name: 'created_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
     Object.freeze({ name: 'updated_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
+  ]),
+  vnext_authorization_audit_events: Object.freeze([
+    Object.freeze({ name: 'event_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'authority_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'receipt_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'reason_code', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'context_sha256', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'created_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
   ]),
   vnext_authorization_command_receipts: Object.freeze([
     Object.freeze({ name: 'receipt_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
@@ -214,6 +224,7 @@ const FOUNDATION_CONSTRAINTS = Object.freeze({
   vnext_schema_meta: Object.freeze({ count: 4, required: Object.freeze(['vnext_schema_meta_pkey', 'vnext_schema_meta_schema_key_check', 'vnext_schema_meta_schema_version_check', 'vnext_schema_meta_applied_at_check']) }),
   vnext_authorities: Object.freeze({ count: 6, required: Object.freeze(['vnext_authorities_pkey', 'vnext_authorities_status_check', 'vnext_authorities_check']) }),
   vnext_accounts: Object.freeze({ count: 13, required: Object.freeze(['vnext_accounts_pkey', 'vnext_accounts_account_id_authority_id_key', 'vnext_accounts_authority_id_fkey', 'vnext_accounts_status_check', 'vnext_accounts_check']) }),
+  vnext_authorization_audit_events: Object.freeze({ count: 10, required: Object.freeze(['vnext_authorization_audit_events_pkey', 'vnext_authorization_audit_events_event_id_check', 'vnext_authorization_audit_events_authority_id_check', 'vnext_authorization_audit_events_receipt_id_check', 'vnext_authorization_audit_events_reason_code_check', 'vnext_authorization_audit_events_context_sha256_check', 'vnext_authorization_audit_events_created_at_check', 'vnext_authorization_audit_events_authority_id_receipt_id_key', 'vnext_authorization_audit_events_authority_id_fkey', 'vnext_authorization_audit_events_receipt_id_authority_id_fkey']) }),
   vnext_authorization_command_receipts: Object.freeze({ count: 24, required: Object.freeze(['vnext_authorization_command_receipts_pkey', 'vnext_authorization_command_receipt_receipt_id_authority_id_key', 'vnext_authorization_command_r_authority_id_actor_key_idempo_key', 'vnext_authorization_command_receipts_authority_id_fkey', 'vnext_authorization_command_r_actor_account_id_authority_i_fkey', 'vnext_authorization_command_receipts_outcome_check', 'vnext_authorization_command_receipt_canonical_result_json_check']) }),
   vnext_capability_catalog: Object.freeze({ count: 5, required: Object.freeze(['vnext_capability_catalog_pkey', 'vnext_capability_catalog_capability_id_check', 'vnext_capability_catalog_status_check', 'vnext_capability_catalog_surface_mask_check', 'vnext_capability_catalog_created_at_check']) }),
   vnext_capability_overrides: Object.freeze({ count: 18, required: Object.freeze(['vnext_capability_overrides_pkey', 'vnext_capability_overrides_account_id_authority_id_fkey', 'vnext_capability_overrides_capability_id_fkey', 'vnext_capability_overrides_effect_check', 'vnext_capability_overrides_status_check', 'vnext_capability_overrides_row_version_check', 'vnext_capability_overrides_check2']) }),
@@ -251,12 +262,14 @@ const FOUNDATION_CONSTRAINT_DEFINITIONS = Object.freeze({
   vnext_profile_bindings_account_id_authority_id_fkey: 'FOREIGN KEY (account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
   vnext_profile_bindings_check1: "CHECK (status = 'revoked'::text AND revoked_at IS NOT NULL OR (status = ANY (ARRAY['active'::text, 'pending'::text])) AND revoked_at IS NULL)",
   vnext_authorization_command_receipts_authority_id_fkey: 'FOREIGN KEY (authority_id) REFERENCES vnext_control_plane.vnext_authorities(authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
+  vnext_authorization_audit_events_authority_id_fkey: 'FOREIGN KEY (authority_id) REFERENCES vnext_control_plane.vnext_authorities(authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
+  vnext_authorization_audit_events_receipt_id_authority_id_fkey: 'FOREIGN KEY (receipt_id, authority_id) REFERENCES vnext_control_plane.vnext_authorization_command_receipts(receipt_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
   vnext_authorization_command_r_actor_account_id_authority_i_fkey: 'FOREIGN KEY (actor_account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
   vnext_verified_contacts_account_id_authority_id_fkey: 'FOREIGN KEY (account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
   vnext_verified_contacts_check1: "CHECK (verification_state = 'verified'::text AND verified_at IS NOT NULL AND revoked_at IS NULL OR verification_state = 'revoked'::text AND verified_at IS NOT NULL AND revoked_at IS NOT NULL)",
 });
-const FOUNDATION_CONSTRAINT_CATALOG_SHA256 = '1c2865dfce8fc55418842466a1011af2418be0a0b82641e91c097cc15b533289';
-const FOUNDATION_INDEX_CATALOG_SHA256 = 'fea0b0273e67ab3ccef8bdeca0bf7c23e5c0fa3c2b78396330010cc3925eea14';
+const FOUNDATION_CONSTRAINT_CATALOG_SHA256 = 'b91bea44f7ab9bd8e698b9feb157b09a821aab6b40db5b8f98692f51c043a018';
+const FOUNDATION_INDEX_CATALOG_SHA256 = 'cb438cdec093dbc4319c2cd635f92e065c9aaba749601e6ad91b9477a71c5693';
 const FOUNDATION_INDEX_DEFINITIONS = Object.freeze({
   vnext_capability_overrides_one_active_capability: "CREATE UNIQUE INDEX vnext_capability_overrides_one_active_capability ON vnext_control_plane.vnext_capability_overrides USING btree (authority_id, account_id, capability_id) WHERE (status = 'active'::text)",
   vnext_data_scope_grants_one_active_scope: "CREATE UNIQUE INDEX vnext_data_scope_grants_one_active_scope ON vnext_control_plane.vnext_data_scope_grants USING btree (authority_id, account_id, scope_type, scope_value_hash) WHERE (status = 'active'::text)",
@@ -271,6 +284,8 @@ const TARGET_RELATION_NAMES = Object.freeze([
 ]);
 const TARGET_TABLE_NAMES = Object.freeze([...TARGET_RELATION_NAMES].sort());
 const TARGET_TRIGGERS = Object.freeze([
+  Object.freeze({ tableName: 'vnext_authorization_audit_events', triggerName: 'vnext_authorization_audit_events_no_delete', functionSchema: 'vnext_control_plane', functionName: 'vnext_authorization_audit_events_no_delete', enabled: 'O', definition: 'CREATE TRIGGER vnext_authorization_audit_events_no_delete BEFORE DELETE ON vnext_control_plane.vnext_authorization_audit_events FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_delete()' }),
+  Object.freeze({ tableName: 'vnext_authorization_audit_events', triggerName: 'vnext_authorization_audit_events_no_update', functionSchema: 'vnext_control_plane', functionName: 'vnext_authorization_audit_events_no_update', enabled: 'O', definition: 'CREATE TRIGGER vnext_authorization_audit_events_no_update BEFORE UPDATE ON vnext_control_plane.vnext_authorization_audit_events FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_update()' }),
   Object.freeze({ tableName: 'vnext_authorization_command_receipts', triggerName: 'vnext_authorization_command_receipts_no_delete', functionSchema: 'vnext_control_plane', functionName: 'vnext_authorization_command_receipts_no_delete', enabled: 'O', definition: 'CREATE TRIGGER vnext_authorization_command_receipts_no_delete BEFORE DELETE ON vnext_control_plane.vnext_authorization_command_receipts FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_delete()' }),
   Object.freeze({ tableName: 'vnext_authorization_command_receipts', triggerName: 'vnext_authorization_command_receipts_no_update', functionSchema: 'vnext_control_plane', functionName: 'vnext_authorization_command_receipts_no_update', enabled: 'O', definition: 'CREATE TRIGGER vnext_authorization_command_receipts_no_update BEFORE UPDATE ON vnext_control_plane.vnext_authorization_command_receipts FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_update()' }),
   Object.freeze({ tableName: 'vnext_schema_migrations', triggerName: 'vnext_schema_migrations_insert_guard', functionSchema: 'vnext_control_plane', functionName: 'vnext_schema_migrations_insert_guard', enabled: 'O', definition: 'CREATE TRIGGER vnext_schema_migrations_insert_guard BEFORE INSERT ON vnext_control_plane.vnext_schema_migrations FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_schema_migrations_insert_guard()' }),
