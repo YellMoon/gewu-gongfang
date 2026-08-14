@@ -189,7 +189,51 @@ const FOUNDATION_IDENTITY_DEVICE_MIGRATION = Object.freeze({
   }),
 });
 
-const MIGRATIONS = Object.freeze([FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION]);
+const ROLE_GRANTS_SQL = `CREATE TABLE vnext_control_plane.vnext_role_grants (
+  grant_id text COLLATE "C" PRIMARY KEY CHECK (btrim(grant_id) <> ''),
+  authority_id text COLLATE "C" NOT NULL CHECK (btrim(authority_id) <> ''),
+  account_id text COLLATE "C" NOT NULL CHECK (btrim(account_id) <> ''),
+  role text COLLATE "C" NOT NULL CHECK (role IN ('super_admin', 'teacher', 'student')),
+  status text COLLATE "C" NOT NULL CHECK (status IN ('active', 'revoked', 'expired')),
+  grant_version bigint NOT NULL CHECK (grant_version >= 1),
+  row_version bigint NOT NULL CHECK (row_version >= 1),
+  starts_at timestamptz NOT NULL CHECK (starts_at <> 'infinity'::timestamptz AND starts_at <> '-infinity'::timestamptz),
+  ends_at timestamptz CHECK (ends_at <> 'infinity'::timestamptz AND ends_at <> '-infinity'::timestamptz),
+  revoked_at timestamptz CHECK (revoked_at <> 'infinity'::timestamptz AND revoked_at <> '-infinity'::timestamptz),
+  granted_by_account_id text COLLATE "C" CHECK (granted_by_account_id IS NULL OR btrim(granted_by_account_id) <> ''),
+  created_at timestamptz NOT NULL CHECK (created_at <> 'infinity'::timestamptz AND created_at <> '-infinity'::timestamptz),
+  updated_at timestamptz NOT NULL CHECK (updated_at <> 'infinity'::timestamptz AND updated_at <> '-infinity'::timestamptz),
+  FOREIGN KEY (account_id, authority_id)
+    REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
+  FOREIGN KEY (granted_by_account_id, authority_id)
+    REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CHECK (updated_at >= created_at),
+  CHECK (ends_at IS NULL OR ends_at > starts_at),
+  CHECK (
+    (status = 'active' AND revoked_at IS NULL)
+    OR (status = 'revoked' AND revoked_at IS NOT NULL)
+    OR (status = 'expired' AND ends_at IS NOT NULL AND revoked_at IS NULL)
+  )
+);
+CREATE UNIQUE INDEX vnext_role_grants_one_active_role
+  ON vnext_control_plane.vnext_role_grants(authority_id, account_id, role)
+  WHERE status = 'active';
+GRANT SELECT ON TABLE vnext_control_plane.vnext_role_grants TO vnext_pg17_verifier;`;
+
+const ROLE_GRANTS_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-role-grants-3',
+  semanticVersion: 3,
+  sql: ROLE_GRANTS_SQL,
+  manifestSha256: sha256(ROLE_GRANTS_SQL),
+});
+
+const MIGRATIONS = Object.freeze([
+  FIRST_MIGRATION,
+  FOUNDATION_IDENTITY_DEVICE_MIGRATION,
+  ROLE_GRANTS_MIGRATION,
+]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
   vnext_schema_migrations_insert_guard: sha256(`CREATE OR REPLACE FUNCTION vnext_control_plane.vnext_schema_migrations_insert_guard()
@@ -241,6 +285,7 @@ const expectedCatalog = Object.freeze({
     'vnext_control_plane.vnext_accounts',
     'vnext_control_plane.vnext_authorities',
     'vnext_control_plane.vnext_device_installations',
+    'vnext_control_plane.vnext_role_grants',
     'vnext_control_plane.vnext_schema_meta',
     'vnext_control_plane.vnext_schema_migrations',
     'vnext_control_plane.vnext_trusted_devices',
@@ -257,6 +302,7 @@ const expectedCatalog = Object.freeze({
 module.exports = {
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
+  ROLE_GRANTS_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

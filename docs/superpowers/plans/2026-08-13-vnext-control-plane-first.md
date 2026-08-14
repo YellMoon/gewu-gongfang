@@ -169,3 +169,9 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - Migration 2 adds only the V5 foundation: schema metadata plus authorities, accounts, trusted devices, device installations, and account-device links. It creates no authority, account, device, session, role, policy, capability, or business-data seed.
 - The disposable PostgreSQL 17 catalog now verifies the foundation’s composite foreign keys, authority-local uniqueness, lifecycle checks, strict lower-case SHA-256 fingerprints and hardware evidence, ownership, verifier-only read access, and exact trigger definitions. Missing, altered, or extra catalog objects fail closed.
 - Fresh focused checks, the control-plane target aggregate, the existing repository suite, and a clean diff check were rerun locally. This remains synthetic disposable validation only: it does not apply DDL to RDS/ECS, access desktop or business data, introduce writers/APIs, or perform a migration or deployment.
+
+### PostgreSQL 17 role-grants evidence (2026-08-15)
+
+- Migration 3 adds only `vnext_role_grants` and its active-role partial unique index. It creates no role, super-admin, capability, policy, session, receipt, or business-data seed.
+- The disposable catalog verifies both authority-scoped account/grantor foreign keys, nullable-but-nonblank grantor semantics, strict lifecycle/version/finite-time constraints, revoked-history behavior, the exact partial-index predicate, verifier-only access, and the absence of role-table triggers. Constraint, index, ACL, trigger, public-shadow, default, and migration-prefix drift fail closed.
+- Focused PG17 checks and the control-plane target aggregate were rerun after review. This remains a synthetic local PostgreSQL validation only: no real RDS/ECS DDL, data import, runtime writer, API, business row, or deployment was performed.

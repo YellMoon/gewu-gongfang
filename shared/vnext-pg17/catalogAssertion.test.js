@@ -3,7 +3,10 @@
 const assert = require('assert');
 const { createDisposablePg17Runtime, withVNextPg17SyntheticQuery } = require('./disposableRuntime');
 const { createVNextPg17CatalogBoundary } = require('./catalogAssertion');
-const { FIRST_MIGRATION } = require('./migrationManifest');
+const {
+  FIRST_MIGRATION,
+  FOUNDATION_IDENTITY_DEVICE_MIGRATION,
+} = require('./migrationManifest');
 
 const FOUNDATION_INSTANT = '2026-08-15T00:00:00.000Z';
 const HARDWARE_EVIDENCE_HASH = 'a'.repeat(64);
@@ -97,6 +100,74 @@ async function assertFoundationSemantics(handle) {
   });
 }
 
+async function assertRoleGrantSemantics(handle) {
+  await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+    const insertGrant = async ({
+      grantId,
+      authorityId = 'authority-1',
+      accountId = 'account-1',
+      role = 'teacher',
+      status = 'active',
+      grantVersion = 1,
+      rowVersion = 1,
+      startsAt = FOUNDATION_INSTANT,
+      endsAt = null,
+      revokedAt = null,
+      grantedByAccountId = null,
+      createdAt = FOUNDATION_INSTANT,
+      updatedAt = FOUNDATION_INSTANT,
+    }) => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_role_grants (grant_id, authority_id, account_id, role, status, grant_version, row_version, starts_at, ends_at, revoked_at, granted_by_account_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)',
+      [grantId, authorityId, accountId, role, status, grantVersion, rowVersion, startsAt, endsAt, revokedAt, grantedByAccountId, createdAt, updatedAt],
+    );
+
+    await insertGrant({ grantId: 'grant-1', grantedByAccountId: 'account-1' });
+    await assert.rejects(() => insertGrant({ grantId: 'grant-duplicate' }), /duplicate key/);
+    await insertGrant({ grantId: 'grant-revoked-history', status: 'revoked', revokedAt: FOUNDATION_INSTANT });
+    await facade.query("UPDATE vnext_control_plane.vnext_role_grants SET status = 'revoked', revoked_at = $1 WHERE grant_id = 'grant-1'", [FOUNDATION_INSTANT]);
+    await insertGrant({ grantId: 'grant-replacement' });
+
+    await facade.query(
+      'INSERT INTO vnext_control_plane.vnext_authorities (authority_id, status, created_at, updated_at) VALUES ($1, $2, $3, $3)',
+      ['authority-2', 'active', FOUNDATION_INSTANT],
+    );
+    await facade.query(
+      'INSERT INTO vnext_control_plane.vnext_accounts (account_id, authority_id, status, auth_version, access_version, revocation_version, row_version, created_at, updated_at) VALUES ($1, $2, $3, 1, 1, 1, 1, $4, $4)',
+      ['account-2', 'authority-2', 'active', FOUNDATION_INSTANT],
+    );
+    await assert.rejects(() => insertGrant({ grantId: 'grant-cross-account', accountId: 'account-2' }), /foreign key/);
+    await assert.rejects(() => insertGrant({ grantId: 'grant-cross-grantor', role: 'student', grantedByAccountId: 'account-2' }), /foreign key/);
+    await assert.rejects(
+      () => insertGrant({ grantId: '   ', role: 'student' }),
+      error => error && error.constraint === 'vnext_role_grants_grant_id_check',
+    );
+    await assert.rejects(
+      () => insertGrant({ grantId: 'grant-blank-grantor', role: 'super_admin', grantedByAccountId: '   ' }),
+      error => error && error.constraint === 'vnext_role_grants_granted_by_account_id_check',
+    );
+    await assert.rejects(() => insertGrant({ grantId: 'grant-invalid-role', role: 'admin' }));
+    await assert.rejects(() => insertGrant({ grantId: 'grant-invalid-status', status: 'pending' }));
+    await assert.rejects(() => insertGrant({ grantId: 'grant-zero-version', role: 'student', grantVersion: 0 }));
+    await assert.rejects(() => insertGrant({ grantId: 'grant-fractional-version', role: 'super_admin', rowVersion: 1.5 }));
+    await assert.rejects(() => insertGrant({ grantId: 'grant-end-before-start', role: 'student', endsAt: FOUNDATION_INSTANT }));
+    await assert.rejects(() => insertGrant({ grantId: 'grant-active-revoked', role: 'super_admin', revokedAt: FOUNDATION_INSTANT }));
+    await assert.rejects(() => insertGrant({ grantId: 'grant-revoked-missing-time', status: 'revoked' }));
+    await assert.rejects(() => insertGrant({ grantId: 'grant-expired-missing-end', status: 'expired' }));
+    await assert.rejects(
+      () => insertGrant({ grantId: 'grant-infinite-start', role: 'student', startsAt: 'infinity' }),
+      error => error && error.constraint === 'vnext_role_grants_starts_at_check',
+    );
+    await assert.rejects(
+      () => insertGrant({ grantId: 'grant-infinite-end', role: 'super_admin', endsAt: 'infinity' }),
+      error => error && error.constraint === 'vnext_role_grants_ends_at_check',
+    );
+    await assert.rejects(
+      () => insertGrant({ grantId: 'grant-infinite-revocation', role: 'student', status: 'revoked', revokedAt: '-infinity' }),
+      error => error && error.constraint === 'vnext_role_grants_revoked_at_check',
+    );
+  });
+}
+
 async function runCatalogAssertionCases(runtime) {
   const catalog = createVNextPg17CatalogBoundary(runtime);
   let priorHandle;
@@ -140,6 +211,27 @@ async function runCatalogAssertionCases(runtime) {
       () => catalog.apply(legacyLedgerHandle, migrationInput),
       error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
     );
+    const foundationPrefixHandle = await createHandle();
+    await withVNextPg17SyntheticQuery(foundationPrefixHandle, 'fixture-provisioner', async facade => {
+      for (const migration of [FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION]) {
+        await facade.query(migration.sql);
+        if (migration.postApply) {
+          await facade.query(migration.postApply.text, migration.postApply.values(migrationInput.appliedAt));
+        }
+        await facade.query(
+          'INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
+          [migration.migrationId, migration.semanticVersion, migration.manifestSha256, migrationInput.appliedAt, migrationInput.appliedBy],
+        );
+      }
+    });
+    await assert.rejects(
+      () => catalog.apply(foundationPrefixHandle, migrationInput),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+    await assert.rejects(
+      () => catalog.assert(foundationPrefixHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
     const handle = await createHandle();
     await assert.rejects(
       () => catalog.assert(handle),
@@ -150,14 +242,17 @@ async function runCatalogAssertionCases(runtime) {
       const ledgerRows = await facade.query(
         'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version',
       );
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }]);
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }]);
       const schemaMetaRows = await facade.query(
         'SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta',
       );
       assert.deepStrictEqual(schemaMetaRows.rows, [{ schema_key: 'control-plane-reference', schema_version: '5' }]);
+      const roleGrantCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_role_grants');
+      assert.deepStrictEqual(roleGrantCount.rows, [{ count: '0' }]);
     });
     await assert.doesNotReject(() => catalog.assert(handle));
     await assertFoundationSemantics(handle);
+    await assertRoleGrantSemantics(handle);
     assert.deepStrictEqual(await catalog.apply(handle, migrationInput), { applied: false });
     await withVNextPg17SyntheticQuery(handle, 'verifier', async facade => {
       await facade.query('BEGIN READ ONLY');
@@ -173,7 +268,7 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(
       () => withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
-        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 4, repeat('a', 64), now(), 'fixture')",
+        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 5, repeat('a', 64), now(), 'fixture')",
       )),
     );
     await assert.rejects(
@@ -414,6 +509,87 @@ async function runCatalogAssertionCases(runtime) {
     ));
     await assert.rejects(
       () => catalog.assert(foundationIndexHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const roleGrantIndexHandle = await createHandle();
+    await catalog.apply(roleGrantIndexHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(roleGrantIndexHandle, 'fixture-provisioner', facade => facade.query(
+      'DROP INDEX vnext_control_plane.vnext_role_grants_one_active_role',
+    ));
+    await assert.rejects(
+      () => catalog.assert(roleGrantIndexHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const roleGrantForeignKeyHandle = await createHandle();
+    await catalog.apply(roleGrantForeignKeyHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(roleGrantForeignKeyHandle, 'fixture-provisioner', facade => facade.query(
+      'ALTER TABLE vnext_control_plane.vnext_role_grants DROP CONSTRAINT vnext_role_grants_granted_by_account_id_authority_id_fkey',
+    ));
+    await assert.rejects(
+      () => catalog.assert(roleGrantForeignKeyHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const roleGrantPredicateHandle = await createHandle();
+    await catalog.apply(roleGrantPredicateHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(roleGrantPredicateHandle, 'fixture-provisioner', async facade => {
+      await facade.query('DROP INDEX vnext_control_plane.vnext_role_grants_one_active_role');
+      await facade.query('CREATE UNIQUE INDEX vnext_role_grants_one_active_role ON vnext_control_plane.vnext_role_grants(authority_id, account_id, role)');
+    });
+    await assert.rejects(
+      () => catalog.assert(roleGrantPredicateHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const roleGrantVerifierAclHandle = await createHandle();
+    await catalog.apply(roleGrantVerifierAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(roleGrantVerifierAclHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT INSERT ON vnext_control_plane.vnext_role_grants TO vnext_pg17_verifier',
+    ));
+    await assert.rejects(
+      () => catalog.assert(roleGrantVerifierAclHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const roleGrantRuntimeAclHandle = await createHandle();
+    await catalog.apply(roleGrantRuntimeAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(roleGrantRuntimeAclHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT SELECT ON vnext_control_plane.vnext_role_grants TO vnext_pg17_runtime',
+    ));
+    await assert.rejects(
+      () => catalog.assert(roleGrantRuntimeAclHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const roleGrantTriggerHandle = await createHandle();
+    await catalog.apply(roleGrantTriggerHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(roleGrantTriggerHandle, 'fixture-provisioner', facade => facade.query(
+      'CREATE TRIGGER unapproved_role_grant_delete BEFORE DELETE ON vnext_control_plane.vnext_role_grants FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_schema_migrations_no_delete()',
+    ));
+    await assert.rejects(
+      () => catalog.assert(roleGrantTriggerHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const roleGrantDefaultHandle = await createHandle();
+    await catalog.apply(roleGrantDefaultHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(roleGrantDefaultHandle, 'fixture-provisioner', facade => facade.query(
+      "ALTER TABLE vnext_control_plane.vnext_role_grants ALTER COLUMN role SET DEFAULT 'teacher'",
+    ));
+    await assert.rejects(
+      () => catalog.assert(roleGrantDefaultHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const roleGrantPublicShadowHandle = await createHandle();
+    await catalog.apply(roleGrantPublicShadowHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(roleGrantPublicShadowHandle, 'fixture-provisioner', facade => facade.query(
+      'CREATE TABLE public.vnext_role_grants (id integer)',
+    ));
+    await assert.rejects(
+      () => catalog.assert(roleGrantPublicShadowHandle),
       error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
     );
 
