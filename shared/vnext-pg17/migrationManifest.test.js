@@ -9,6 +9,7 @@ const {
   CAPABILITY_OVERRIDES_MIGRATION,
   DATA_SCOPE_GRANTS_MIGRATION,
   PROFILE_BINDINGS_MIGRATION,
+  VERIFIED_CONTACTS_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,
@@ -26,7 +27,7 @@ async function runManifestCases() {
     'vnext_schema_migrations_no_update',
   ]);
   assert.strictEqual(sha256(FIRST_MIGRATION.sql), FIRST_MIGRATION.manifestSha256);
-  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7]);
+  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8]);
   assert.strictEqual(FOUNDATION_IDENTITY_DEVICE_MIGRATION.migrationId, 'vnext-pg17-foundation-identity-device-2');
   assert.match(FOUNDATION_IDENTITY_DEVICE_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
   assert.strictEqual(
@@ -71,6 +72,14 @@ async function runManifestCases() {
   assert.match(PROFILE_BINDINGS_MIGRATION.sql, /CREATE TABLE vnext_control_plane\.vnext_profile_bindings/);
   assert.match(PROFILE_BINDINGS_MIGRATION.sql, /CREATE UNIQUE INDEX vnext_profile_bindings_one_active_account_type/);
   assert.match(PROFILE_BINDINGS_MIGRATION.sql, /CREATE UNIQUE INDEX vnext_profile_bindings_one_active_profile/);
+  assert.ok(Object.isFrozen(VERIFIED_CONTACTS_MIGRATION));
+  assert.strictEqual(VERIFIED_CONTACTS_MIGRATION.migrationId, 'vnext-pg17-verified-contacts-8');
+  assert.strictEqual(VERIFIED_CONTACTS_MIGRATION.semanticVersion, 8);
+  assert.match(VERIFIED_CONTACTS_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
+  assert.strictEqual(sha256(VERIFIED_CONTACTS_MIGRATION.sql), VERIFIED_CONTACTS_MIGRATION.manifestSha256);
+  assert.match(VERIFIED_CONTACTS_MIGRATION.sql, /CREATE TABLE vnext_control_plane\.vnext_verified_contacts/);
+  assert.match(VERIFIED_CONTACTS_MIGRATION.sql, /UNIQUE \(authority_id, contact_type, normalized_value_hash\)/);
+  assert.match(VERIFIED_CONTACTS_MIGRATION.sql, /FOREIGN KEY \(account_id, authority_id\)/);
   assert.deepStrictEqual(expectedCatalog.relations, [
     'vnext_control_plane.vnext_account_device_links',
     'vnext_control_plane.vnext_accounts',
@@ -84,6 +93,7 @@ async function runManifestCases() {
     'vnext_control_plane.vnext_schema_meta',
     'vnext_control_plane.vnext_schema_migrations',
     'vnext_control_plane.vnext_trusted_devices',
+    'vnext_control_plane.vnext_verified_contacts',
   ]);
 }
 

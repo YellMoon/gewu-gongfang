@@ -348,6 +348,33 @@ const PROFILE_BINDINGS_MIGRATION = Object.freeze({
   manifestSha256: sha256(PROFILE_BINDINGS_SQL),
 });
 
+const VERIFIED_CONTACTS_SQL = `CREATE TABLE vnext_control_plane.vnext_verified_contacts (
+  contact_id text COLLATE "C" PRIMARY KEY CHECK (btrim(contact_id) <> ''),
+  authority_id text COLLATE "C" NOT NULL CHECK (btrim(authority_id) <> ''),
+  account_id text COLLATE "C" NOT NULL CHECK (btrim(account_id) <> ''),
+  contact_type text COLLATE "C" NOT NULL CHECK (contact_type IN ('phone', 'wechat_openid', 'wechat_unionid')),
+  normalized_value_hash text COLLATE "C" NOT NULL CHECK (btrim(normalized_value_hash) <> ''),
+  verification_state text COLLATE "C" NOT NULL CHECK (verification_state IN ('verified', 'revoked')),
+  verification_evidence_hash text COLLATE "C" NOT NULL CHECK (btrim(verification_evidence_hash) <> ''),
+  verified_at timestamptz CHECK (verified_at <> 'infinity'::timestamptz AND verified_at <> '-infinity'::timestamptz),
+  revoked_at timestamptz CHECK (revoked_at <> 'infinity'::timestamptz AND revoked_at <> '-infinity'::timestamptz),
+  row_version bigint NOT NULL CHECK (row_version >= 1),
+  created_at timestamptz NOT NULL CHECK (created_at <> 'infinity'::timestamptz AND created_at <> '-infinity'::timestamptz),
+  updated_at timestamptz NOT NULL CHECK (updated_at <> 'infinity'::timestamptz AND updated_at <> '-infinity'::timestamptz),
+  CHECK (updated_at >= created_at),
+  CHECK ((verification_state = 'verified' AND verified_at IS NOT NULL AND revoked_at IS NULL) OR (verification_state = 'revoked' AND verified_at IS NOT NULL AND revoked_at IS NOT NULL)),
+  UNIQUE (authority_id, contact_type, normalized_value_hash),
+  FOREIGN KEY (account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+);
+GRANT SELECT ON TABLE vnext_control_plane.vnext_verified_contacts TO vnext_pg17_verifier;`;
+
+const VERIFIED_CONTACTS_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-verified-contacts-8',
+  semanticVersion: 8,
+  sql: VERIFIED_CONTACTS_SQL,
+  manifestSha256: sha256(VERIFIED_CONTACTS_SQL),
+});
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -356,6 +383,7 @@ const MIGRATIONS = Object.freeze([
   CAPABILITY_OVERRIDES_MIGRATION,
   DATA_SCOPE_GRANTS_MIGRATION,
   PROFILE_BINDINGS_MIGRATION,
+  VERIFIED_CONTACTS_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -416,6 +444,7 @@ const expectedCatalog = Object.freeze({
     'vnext_control_plane.vnext_schema_meta',
     'vnext_control_plane.vnext_schema_migrations',
     'vnext_control_plane.vnext_trusted_devices',
+    'vnext_control_plane.vnext_verified_contacts',
   ]),
   triggers: Object.freeze([
     'vnext_schema_migrations_insert_guard',
@@ -434,6 +463,7 @@ module.exports = {
   CAPABILITY_OVERRIDES_MIGRATION,
   DATA_SCOPE_GRANTS_MIGRATION,
   PROFILE_BINDINGS_MIGRATION,
+  VERIFIED_CONTACTS_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

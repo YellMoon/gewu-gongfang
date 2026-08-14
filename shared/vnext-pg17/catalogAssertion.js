@@ -117,6 +117,20 @@ const FOUNDATION_COLUMNS = Object.freeze({
     Object.freeze({ name: 'updated_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
     Object.freeze({ name: 'revoked_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'YES', collation: null }),
   ]),
+  vnext_verified_contacts: Object.freeze([
+    Object.freeze({ name: 'contact_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'authority_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'account_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'contact_type', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'normalized_value_hash', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'verification_state', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'verification_evidence_hash', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'verified_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'YES', collation: null }),
+    Object.freeze({ name: 'revoked_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'YES', collation: null }),
+    Object.freeze({ name: 'row_version', dataType: 'bigint', udtName: 'int8', nullable: 'NO', collation: null }),
+    Object.freeze({ name: 'created_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
+    Object.freeze({ name: 'updated_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
+  ]),
   vnext_trusted_devices: Object.freeze([
     Object.freeze({ name: 'device_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
     Object.freeze({ name: 'authority_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
@@ -181,6 +195,7 @@ const FOUNDATION_CONSTRAINTS = Object.freeze({
   vnext_capability_overrides: Object.freeze({ count: 18, required: Object.freeze(['vnext_capability_overrides_pkey', 'vnext_capability_overrides_account_id_authority_id_fkey', 'vnext_capability_overrides_capability_id_fkey', 'vnext_capability_overrides_effect_check', 'vnext_capability_overrides_status_check', 'vnext_capability_overrides_row_version_check', 'vnext_capability_overrides_check2']) }),
   vnext_data_scope_grants: Object.freeze({ count: 18, required: Object.freeze(['vnext_data_scope_grants_pkey', 'vnext_data_scope_grants_account_id_authority_id_fkey', 'vnext_data_scope_grants_scope_type_check', 'vnext_data_scope_grants_effect_check', 'vnext_data_scope_grants_status_check', 'vnext_data_scope_grants_row_version_check', 'vnext_data_scope_grants_check2']) }),
   vnext_profile_bindings: Object.freeze({ count: 15, required: Object.freeze(['vnext_profile_bindings_pkey', 'vnext_profile_bindings_account_id_authority_id_fkey', 'vnext_profile_bindings_profile_type_check', 'vnext_profile_bindings_status_check', 'vnext_profile_bindings_row_version_check', 'vnext_profile_bindings_check1']) }),
+  vnext_verified_contacts: Object.freeze({ count: 17, required: Object.freeze(['vnext_verified_contacts_pkey', 'vnext_verified_contacts_authority_id_contact_type_normalize_key', 'vnext_verified_contacts_account_id_authority_id_fkey', 'vnext_verified_contacts_contact_type_check', 'vnext_verified_contacts_verification_state_check', 'vnext_verified_contacts_row_version_check', 'vnext_verified_contacts_check1']) }),
   vnext_trusted_devices: Object.freeze({ count: 16, required: Object.freeze(['vnext_trusted_devices_pkey', 'vnext_trusted_devices_device_id_authority_id_key', 'vnext_trusted_devices_authority_id_fkey', 'vnext_trusted_devices_status_check', 'vnext_trusted_devices_check1']) }),
   vnext_device_installations: Object.freeze({ count: 17, required: Object.freeze(['vnext_device_installations_pkey', 'vnext_device_installations_authority_id_key_fingerprint_key', 'vnext_device_installations_installation_id_device_id_author_key', 'vnext_device_installations_device_id_authority_id_fkey', 'vnext_device_installations_check1']) }),
   vnext_account_device_links: Object.freeze({ count: 20, required: Object.freeze(['vnext_account_device_links_pkey', 'vnext_account_device_links_authority_id_account_id_installa_key', 'vnext_account_device_links_link_id_authority_id_account_id__key', 'vnext_account_device_links_account_id_authority_id_fkey', 'vnext_account_device_links_device_id_authority_id_fkey', 'vnext_account_device_links_installation_id_device_id_autho_fkey', 'vnext_account_device_links_check1']) }),
@@ -211,9 +226,11 @@ const FOUNDATION_CONSTRAINT_DEFINITIONS = Object.freeze({
   vnext_data_scope_grants_check2: "CHECK (status = 'active'::text AND revoked_at IS NULL OR status = 'revoked'::text AND revoked_at IS NOT NULL OR status = 'expired'::text AND ends_at IS NOT NULL AND revoked_at IS NULL)",
   vnext_profile_bindings_account_id_authority_id_fkey: 'FOREIGN KEY (account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
   vnext_profile_bindings_check1: "CHECK (status = 'revoked'::text AND revoked_at IS NOT NULL OR (status = ANY (ARRAY['active'::text, 'pending'::text])) AND revoked_at IS NULL)",
+  vnext_verified_contacts_account_id_authority_id_fkey: 'FOREIGN KEY (account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
+  vnext_verified_contacts_check1: "CHECK (verification_state = 'verified'::text AND verified_at IS NOT NULL AND revoked_at IS NULL OR verification_state = 'revoked'::text AND verified_at IS NOT NULL AND revoked_at IS NOT NULL)",
 });
-const FOUNDATION_CONSTRAINT_CATALOG_SHA256 = 'df2b7a6c43403b8fe27e1760b2fefccd529c59401a4b5a26d04d514e2c10daa4';
-const FOUNDATION_INDEX_CATALOG_SHA256 = 'e590a674f10a5fb6d9e5ab47f6912703a4f53a5ffacb6c663a09be3780bc971d';
+const FOUNDATION_CONSTRAINT_CATALOG_SHA256 = '0db78ac17b798e3df0a4965a5566d3a676ab8e6f0258785e696d63aa23d3c552';
+const FOUNDATION_INDEX_CATALOG_SHA256 = '72dac61f5915a80daa7cbeed1e376a9b601ba67440d9dc74c804b35b443f955a';
 const FOUNDATION_INDEX_DEFINITIONS = Object.freeze({
   vnext_capability_overrides_one_active_capability: "CREATE UNIQUE INDEX vnext_capability_overrides_one_active_capability ON vnext_control_plane.vnext_capability_overrides USING btree (authority_id, account_id, capability_id) WHERE (status = 'active'::text)",
   vnext_data_scope_grants_one_active_scope: "CREATE UNIQUE INDEX vnext_data_scope_grants_one_active_scope ON vnext_control_plane.vnext_data_scope_grants USING btree (authority_id, account_id, scope_type, scope_value_hash) WHERE (status = 'active'::text)",

@@ -10,6 +10,7 @@ const {
   CAPABILITY_CATALOG_MIGRATION,
   CAPABILITY_OVERRIDES_MIGRATION,
   DATA_SCOPE_GRANTS_MIGRATION,
+  PROFILE_BINDINGS_MIGRATION,
 } = require('./migrationManifest');
 
 const FOUNDATION_INSTANT = '2026-08-15T00:00:00.000Z';
@@ -503,6 +504,75 @@ async function assertProfileBindingSemantics(handle) {
   await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_profile_bindings')));
 }
 
+async function assertVerifiedContactSemantics(handle) {
+  await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+    await facade.query("INSERT INTO vnext_control_plane.vnext_accounts (account_id, authority_id, status, auth_version, access_version, revocation_version, row_version, created_at, updated_at) VALUES ('account-contact-2', 'authority-1', 'active', 1, 1, 1, 1, $1, $1)", [FOUNDATION_INSTANT]);
+    await facade.query("INSERT INTO vnext_control_plane.vnext_authorities (authority_id, status, created_at, updated_at) VALUES ('authority-contact-2', 'active', $1, $1)", [FOUNDATION_INSTANT]);
+    await facade.query("INSERT INTO vnext_control_plane.vnext_accounts (account_id, authority_id, status, auth_version, access_version, revocation_version, row_version, created_at, updated_at) VALUES ('account-contact-foreign', 'authority-contact-2', 'active', 1, 1, 1, 1, $1, $1)", [FOUNDATION_INSTANT]);
+    const insertContact = ({
+      contactId,
+      authorityId = 'authority-1',
+      accountId = 'account-1',
+      contactType = 'phone',
+      normalizedValueHash = 'opaque-contact-value',
+      verificationState = 'verified',
+      verificationEvidenceHash = 'opaque-contact-evidence',
+      verifiedAt = FOUNDATION_INSTANT,
+      revokedAt = null,
+      rowVersion = 1,
+      createdAt = FOUNDATION_INSTANT,
+      updatedAt = FOUNDATION_INSTANT,
+    }) => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_verified_contacts (contact_id, authority_id, account_id, contact_type, normalized_value_hash, verification_state, verification_evidence_hash, verified_at, revoked_at, row_version, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)',
+      [contactId, authorityId, accountId, contactType, normalizedValueHash, verificationState, verificationEvidenceHash, verifiedAt, revokedAt, rowVersion, createdAt, updatedAt],
+    );
+    await insertContact({ contactId: 'contact-phone' });
+    await insertContact({ contactId: 'contact-openid', contactType: 'wechat_openid' });
+    await insertContact({ contactId: 'contact-unionid', contactType: 'wechat_unionid' });
+    await assert.rejects(() => insertContact({ contactId: 'contact-identity-conflict', accountId: 'account-contact-2' }), error => error && error.constraint === 'vnext_verified_contacts_authority_id_contact_type_normalize_key');
+    await facade.query("UPDATE vnext_control_plane.vnext_verified_contacts SET verification_state = 'revoked', revoked_at = $1 WHERE contact_id = 'contact-phone'", [FOUNDATION_INSTANT]);
+    await assert.rejects(() => insertContact({ contactId: 'contact-revoked-identity-conflict', accountId: 'account-contact-2' }), error => error && error.constraint === 'vnext_verified_contacts_authority_id_contact_type_normalize_key');
+    await insertContact({ contactId: 'contact-other-authority', authorityId: 'authority-contact-2', accountId: 'account-contact-foreign' });
+    await assert.rejects(() => insertContact({ contactId: 'contact-cross-authority', authorityId: 'authority-1', accountId: 'account-contact-foreign', normalizedValueHash: 'opaque-cross-authority' }), /foreign key/);
+    for (const [contactId, field, constraint] of [
+      ['contact-blank-id', 'contactId', 'vnext_verified_contacts_contact_id_check'],
+      ['contact-blank-authority', 'authorityId', 'vnext_verified_contacts_authority_id_check'],
+      ['contact-blank-account', 'accountId', 'vnext_verified_contacts_account_id_check'],
+      ['contact-blank-value', 'normalizedValueHash', 'vnext_verified_contacts_normalized_value_hash_check'],
+      ['contact-blank-evidence', 'verificationEvidenceHash', 'vnext_verified_contacts_verification_evidence_hash_check'],
+    ]) {
+      const input = { contactId, verificationState: 'revoked', revokedAt: FOUNDATION_INSTANT };
+      input[field] = '   ';
+      await assert.rejects(() => insertContact(input), error => error && error.constraint === constraint);
+    }
+    await assert.rejects(() => insertContact({ contactId: 'contact-invalid-type', contactType: 'other', verificationState: 'revoked', revokedAt: FOUNDATION_INSTANT }), error => error && error.constraint === 'vnext_verified_contacts_contact_type_check');
+    await facade.query('ALTER TABLE vnext_control_plane.vnext_verified_contacts DROP CONSTRAINT vnext_verified_contacts_check1');
+    await assert.rejects(() => insertContact({ contactId: 'contact-invalid-state', verificationState: 'other' }), error => error && error.constraint === 'vnext_verified_contacts_verification_state_check');
+    await facade.query("ALTER TABLE vnext_control_plane.vnext_verified_contacts ADD CONSTRAINT vnext_verified_contacts_check1 CHECK ((verification_state = 'verified' AND verified_at IS NOT NULL AND revoked_at IS NULL) OR (verification_state = 'revoked' AND verified_at IS NOT NULL AND revoked_at IS NOT NULL))");
+    await assert.rejects(() => insertContact({ contactId: 'contact-zero-version', rowVersion: 0, verificationState: 'revoked', revokedAt: FOUNDATION_INSTANT }), error => error && error.constraint === 'vnext_verified_contacts_row_version_check');
+    await assert.rejects(() => insertContact({ contactId: 'contact-updated-before-created', verificationState: 'revoked', revokedAt: FOUNDATION_INSTANT, updatedAt: '2026-08-14T23:59:59.000Z' }), error => error && error.constraint === 'vnext_verified_contacts_check');
+    for (const [contactId, input] of [
+      ['contact-verified-missing-time', { verifiedAt: null }],
+      ['contact-verified-revoked-time', { revokedAt: FOUNDATION_INSTANT }],
+      ['contact-revoked-missing-time', { verificationState: 'revoked', revokedAt: null }],
+    ]) {
+      await assert.rejects(() => insertContact({ contactId, ...input }), error => error && error.constraint === 'vnext_verified_contacts_check1');
+    }
+    for (const [contactId, field, value, constraint] of [
+      ['contact-infinite-created', 'createdAt', '-infinity', 'vnext_verified_contacts_created_at_check'],
+      ['contact-infinite-updated', 'updatedAt', 'infinity', 'vnext_verified_contacts_updated_at_check'],
+      ['contact-infinite-verified', 'verifiedAt', 'infinity', 'vnext_verified_contacts_verified_at_check'],
+      ['contact-infinite-revoked', 'revokedAt', '-infinity', 'vnext_verified_contacts_revoked_at_check'],
+    ]) {
+      const input = { contactId, verificationState: 'revoked', revokedAt: FOUNDATION_INSTANT };
+      input[field] = value;
+      await assert.rejects(() => insertContact(input), error => error && error.constraint === constraint);
+    }
+  });
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'verifier', facade => facade.query("INSERT INTO vnext_control_plane.vnext_verified_contacts (contact_id, authority_id, account_id, contact_type, normalized_value_hash, verification_state, verification_evidence_hash, verified_at, row_version, created_at, updated_at) VALUES ('verifier-write', 'authority-1', 'account-1', 'phone', 'opaque', 'verified', 'opaque', $1, 1, $1, $1)", [FOUNDATION_INSTANT])));
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_verified_contacts')));
+}
+
 async function runCatalogAssertionCases(runtime) {
   const catalog = createVNextPg17CatalogBoundary(runtime);
   let priorHandle;
@@ -662,7 +732,7 @@ async function runCatalogAssertionCases(runtime) {
     );
     const profileBindingPrefixHandle = await createHandle();
     await withVNextPg17SyntheticQuery(profileBindingPrefixHandle, 'fixture-provisioner', async facade => {
-      for (const migration of [FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION, ROLE_GRANTS_MIGRATION, CAPABILITY_CATALOG_MIGRATION, CAPABILITY_OVERRIDES_MIGRATION, DATA_SCOPE_GRANTS_MIGRATION]) {
+      for (const migration of [FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION, ROLE_GRANTS_MIGRATION, CAPABILITY_CATALOG_MIGRATION, CAPABILITY_OVERRIDES_MIGRATION, DATA_SCOPE_GRANTS_MIGRATION, PROFILE_BINDINGS_MIGRATION]) {
         await facade.query(migration.sql);
         if (migration.postApply) {
           await facade.query(migration.postApply.text, migration.postApply.values(migrationInput.appliedAt));
@@ -676,8 +746,8 @@ async function runCatalogAssertionCases(runtime) {
     await assert.rejects(() => catalog.apply(profileBindingPrefixHandle, migrationInput), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
     await withVNextPg17SyntheticQuery(profileBindingPrefixHandle, 'fixture-provisioner', async facade => {
       const ledgerRows = await facade.query('SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version');
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }]);
-      const relation = await facade.query("SELECT to_regclass('vnext_control_plane.vnext_profile_bindings') AS relation");
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }]);
+      const relation = await facade.query("SELECT to_regclass('vnext_control_plane.vnext_verified_contacts') AS relation");
       assert.strictEqual(relation.rows[0].relation, null);
     });
     await assert.rejects(() => catalog.assert(profileBindingPrefixHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
@@ -691,7 +761,7 @@ async function runCatalogAssertionCases(runtime) {
       const ledgerRows = await facade.query(
         'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version',
       );
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }]);
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }]);
       const schemaMetaRows = await facade.query(
         'SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta',
       );
@@ -704,8 +774,10 @@ async function runCatalogAssertionCases(runtime) {
       assert.deepStrictEqual(overrideCount.rows, [{ count: '0' }]);
       const scopeGrantCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_data_scope_grants');
       assert.deepStrictEqual(scopeGrantCount.rows, [{ count: '0' }]);
-      const profileBindingCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_profile_bindings');
-      assert.deepStrictEqual(profileBindingCount.rows, [{ count: '0' }]);
+    const profileBindingCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_profile_bindings');
+    assert.deepStrictEqual(profileBindingCount.rows, [{ count: '0' }]);
+    const verifiedContactCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_verified_contacts');
+    assert.deepStrictEqual(verifiedContactCount.rows, [{ count: '0' }]);
     });
     await assert.doesNotReject(() => catalog.assert(handle));
     await assertFoundationSemantics(handle);
@@ -714,6 +786,7 @@ async function runCatalogAssertionCases(runtime) {
     await assertCapabilityOverrideSemantics(handle);
     await assertDataScopeGrantSemantics(handle);
     await assertProfileBindingSemantics(handle);
+    await assertVerifiedContactSemantics(handle);
     assert.deepStrictEqual(await catalog.apply(handle, migrationInput), { applied: false });
     await withVNextPg17SyntheticQuery(handle, 'verifier', async facade => {
       await facade.query('BEGIN READ ONLY');
@@ -729,7 +802,7 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(
       () => withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
-        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 9, repeat('a', 64), now(), 'fixture')",
+        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 10, repeat('a', 64), now(), 'fixture')",
       )),
     );
     await assert.rejects(
@@ -1364,6 +1437,57 @@ async function runCatalogAssertionCases(runtime) {
     await catalog.apply(profilePublicShadowHandle, migrationInput);
     await withVNextPg17SyntheticQuery(profilePublicShadowHandle, 'fixture-provisioner', facade => facade.query('CREATE TABLE public.vnext_profile_bindings (id integer)'));
     await assert.rejects(() => catalog.assert(profilePublicShadowHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const contactUniqueHandle = await createHandle();
+    await catalog.apply(contactUniqueHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(contactUniqueHandle, 'fixture-provisioner', facade => facade.query('ALTER TABLE vnext_control_plane.vnext_verified_contacts DROP CONSTRAINT vnext_verified_contacts_authority_id_contact_type_normalize_key; ALTER TABLE vnext_control_plane.vnext_verified_contacts ADD CONSTRAINT vnext_verified_contacts_authority_id_contact_type_normalize_key UNIQUE (authority_id, account_id, contact_type, normalized_value_hash)'));
+    await assert.rejects(() => catalog.assert(contactUniqueHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    for (const [name, sql] of [
+      ['contact-type', "ALTER TABLE vnext_control_plane.vnext_verified_contacts DROP CONSTRAINT vnext_verified_contacts_contact_type_check; ALTER TABLE vnext_control_plane.vnext_verified_contacts ADD CONSTRAINT vnext_verified_contacts_contact_type_check CHECK (contact_type IN ('phone', 'wechat_openid', 'wechat_unionid', 'other'))"],
+      ['contact-state', "ALTER TABLE vnext_control_plane.vnext_verified_contacts DROP CONSTRAINT vnext_verified_contacts_verification_state_check; ALTER TABLE vnext_control_plane.vnext_verified_contacts ADD CONSTRAINT vnext_verified_contacts_verification_state_check CHECK (verification_state IN ('verified', 'revoked', 'pending'))"],
+      ['contact-lifecycle', "ALTER TABLE vnext_control_plane.vnext_verified_contacts DROP CONSTRAINT vnext_verified_contacts_check1; ALTER TABLE vnext_control_plane.vnext_verified_contacts ADD CONSTRAINT vnext_verified_contacts_check1 CHECK (verification_state IN ('verified', 'revoked'))"],
+    ]) {
+      const driftHandle = await createHandle();
+      await catalog.apply(driftHandle, migrationInput);
+      await withVNextPg17SyntheticQuery(driftHandle, 'fixture-provisioner', facade => facade.query(sql));
+      await assert.rejects(() => catalog.assert(driftHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT', name);
+    }
+
+    const contactExtraIndexHandle = await createHandle();
+    await catalog.apply(contactExtraIndexHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(contactExtraIndexHandle, 'fixture-provisioner', facade => facade.query('CREATE INDEX unapproved_verified_contact_state_index ON vnext_control_plane.vnext_verified_contacts (verification_state)'));
+    await assert.rejects(() => catalog.assert(contactExtraIndexHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const contactForeignKeyHandle = await createHandle();
+    await catalog.apply(contactForeignKeyHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(contactForeignKeyHandle, 'fixture-provisioner', facade => facade.query('ALTER TABLE vnext_control_plane.vnext_verified_contacts DROP CONSTRAINT vnext_verified_contacts_account_id_authority_id_fkey'));
+    await assert.rejects(() => catalog.assert(contactForeignKeyHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const contactDefaultHandle = await createHandle();
+    await catalog.apply(contactDefaultHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(contactDefaultHandle, 'fixture-provisioner', facade => facade.query("ALTER TABLE vnext_control_plane.vnext_verified_contacts ALTER COLUMN verification_state SET DEFAULT 'verified'"));
+    await assert.rejects(() => catalog.assert(contactDefaultHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const contactVerifierAclHandle = await createHandle();
+    await catalog.apply(contactVerifierAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(contactVerifierAclHandle, 'fixture-provisioner', facade => facade.query('GRANT INSERT ON vnext_control_plane.vnext_verified_contacts TO vnext_pg17_verifier'));
+    await assert.rejects(() => catalog.assert(contactVerifierAclHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const contactRuntimeAclHandle = await createHandle();
+    await catalog.apply(contactRuntimeAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(contactRuntimeAclHandle, 'fixture-provisioner', facade => facade.query('GRANT SELECT ON vnext_control_plane.vnext_verified_contacts TO vnext_pg17_runtime'));
+    await assert.rejects(() => catalog.assert(contactRuntimeAclHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const contactTriggerHandle = await createHandle();
+    await catalog.apply(contactTriggerHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(contactTriggerHandle, 'fixture-provisioner', facade => facade.query('CREATE TRIGGER unapproved_verified_contact_delete BEFORE DELETE ON vnext_control_plane.vnext_verified_contacts FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_schema_migrations_no_delete()'));
+    await assert.rejects(() => catalog.assert(contactTriggerHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const contactPublicShadowHandle = await createHandle();
+    await catalog.apply(contactPublicShadowHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(contactPublicShadowHandle, 'fixture-provisioner', facade => facade.query('CREATE TABLE public.vnext_verified_contacts (id integer)'));
+    await assert.rejects(() => catalog.assert(contactPublicShadowHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
 
     const schemaMetaHandle = await createHandle();
     await catalog.apply(schemaMetaHandle, migrationInput);
