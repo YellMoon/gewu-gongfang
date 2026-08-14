@@ -499,4 +499,20 @@ try {
   readonlyAssertion.close();
 }
 
+const orphanBootstrapPublication = new Database(':memory:');
+try {
+  bootstrapVNextControlPlaneReference(orphanBootstrapPublication);
+  const timestamp = '2026-08-14T00:00:00.000Z';
+  const result = `{"authorityId":"authority-bootstrap","code":"AUTHORITY_BOOTSTRAPPED","policyContractVersion":1,"policyManifestSha256":"${HASH}","policyRevision":1,"publicationId":"publication-bootstrap","status":"accepted"}`;
+  orphanBootstrapPublication.prepare("INSERT INTO vNext_authorities(authority_id,status,created_at,updated_at) VALUES(?,?,?,?)").run('authority-bootstrap', 'active', timestamp, timestamp);
+  orphanBootstrapPublication.prepare('INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,committed_target_row_version,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run('bootstrap-receipt-orphan', 'authority-bootstrap', 'bootstrap:bootstrap-intent-orphan', 'bootstrap-key-orphan', 'authority.bootstrap', 'authority', 'authority-bootstrap', HASH, 0, 'accepted', 'AUTHORITY_BOOTSTRAPPED', result, HASH, 1, timestamp);
+  assert.throws(
+    () => orphanBootstrapPublication.prepare('INSERT INTO vNext_authorization_policy_publications(publication_id,authority_id,receipt_id,policy_revision,policy_contract_version,canonical_manifest_json,policy_manifest_sha256,published_at) VALUES(?,?,?,?,?,?,?,?)').run('publication-bootstrap', 'authority-bootstrap', 'bootstrap-receipt-orphan', 1, 1, '{}', HASH, timestamp),
+    /VNEXT_POLICY_PUBLICATION_RECEIPT_INVALID/,
+    'a bootstrap publication requires the immutable matching marker, not merely a bootstrap-shaped receipt',
+  );
+} finally {
+  orphanBootstrapPublication.close();
+}
+
 console.log('vNext control-plane reference kernel checks passed');

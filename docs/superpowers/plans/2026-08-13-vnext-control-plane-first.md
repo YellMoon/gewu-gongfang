@@ -151,7 +151,8 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - A role grant or revoke requires the current desktop context to carry `super_admin`, `access.manage`, and an unexpired recent reauthentication. Actor and authority are derived exclusively from that context; commands cannot claim or override them.
 - Existing role CAS, account-version changes, last-effective-super-admin protection, receipt/audit/outbox atomicity and replay semantics remain reference-only. Accepted replay cross-checks frozen context evidence, actual role-grant/account versions and immutable outbox payloads so internally self-consistent but durable-state-inconsistent companion tampering fails closed.
 
-### First-authority trust-root decision gate (2026-08-14)
+### First-authority trust-root reference evidence (2026-08-14)
 
-- The initialization writer is intentionally not implemented. A vNext authority with no policy cannot authorize its first policy publication, and a temporary first-call exemption, legacy administrator mapping, default seed, host-only bypass, device claim or client session claim would violate the cloud-authority design.
-- `docs/superpowers/specs/2026-08-14-vnext-first-authority-trust-root-decision.md` records the owner decision required before implementation. It freezes an owner-controlled, one-time, out-of-band assertion model and explicitly keeps recovery packages as preservation evidence rather than credentials.
+- `shared/vNextFirstAuthorityBootstrapReference.js` is an isolated `:memory:` V5 reference writer, not a server deployment, credential issuer, cloud migration, or real initialization operation. It accepts only a branded, same-database deployment bootstrap assertion and writes the first authority atomically.
+- Its dedicated policy-publication trigger branch accepts only the matching accepted `AUTHORITY_BOOTSTRAPPED` receipt at revision `1`; it does not introduce a first-call exemption, legacy-administrator mapping, default seed, host-only bypass, device claim, or client-session claim.
+- `docs/superpowers/specs/2026-08-14-vnext-first-authority-trust-root-decision.md` remains the owner-approved trust-root contract. Recovery packages remain preservation evidence rather than credentials; emergency recovery is still a later, separately audited reference task.
