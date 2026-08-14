@@ -13,6 +13,7 @@ const {
   AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION,
   AUTHORIZATION_AUDIT_EVENTS_MIGRATION,
   AUTHORIZATION_OUTBOX_EVENTS_MIGRATION,
+  BOOTSTRAP_CONSUMPTIONS_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,
@@ -34,9 +35,12 @@ async function runManifestCases() {
     'vnext_authorization_audit_events_no_update',
     'vnext_authorization_outbox_events_no_delete',
     'vnext_authorization_outbox_events_no_update',
+    'vnext_bootstrap_consumptions_insert_guard',
+    'vnext_bootstrap_consumptions_no_delete',
+    'vnext_bootstrap_consumptions_no_update',
   ]);
   assert.strictEqual(sha256(FIRST_MIGRATION.sql), FIRST_MIGRATION.manifestSha256);
-  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   assert.strictEqual(FOUNDATION_IDENTITY_DEVICE_MIGRATION.migrationId, 'vnext-pg17-foundation-identity-device-2');
   assert.match(FOUNDATION_IDENTITY_DEVICE_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
   assert.strictEqual(
@@ -117,6 +121,23 @@ async function runManifestCases() {
   assert.match(AUTHORIZATION_OUTBOX_EVENTS_MIGRATION.sql, /FOREIGN KEY\(receipt_id, authority_id\)/);
   assert.match(AUTHORIZATION_OUTBOX_EVENTS_MIGRATION.sql, /CREATE TRIGGER vnext_authorization_outbox_events_no_update/);
   assert.match(AUTHORIZATION_OUTBOX_EVENTS_MIGRATION.sql, /CREATE TRIGGER vnext_authorization_outbox_events_no_delete/);
+  assert.ok(Object.isFrozen(BOOTSTRAP_CONSUMPTIONS_MIGRATION));
+  assert.strictEqual(BOOTSTRAP_CONSUMPTIONS_MIGRATION.migrationId, 'vnext-pg17-bootstrap-consumptions-12');
+  assert.strictEqual(BOOTSTRAP_CONSUMPTIONS_MIGRATION.semanticVersion, 12);
+  assert.match(BOOTSTRAP_CONSUMPTIONS_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
+  assert.strictEqual(sha256(BOOTSTRAP_CONSUMPTIONS_MIGRATION.sql), BOOTSTRAP_CONSUMPTIONS_MIGRATION.manifestSha256);
+  assert.match(BOOTSTRAP_CONSUMPTIONS_MIGRATION.sql, /CREATE TABLE vnext_control_plane\.vnext_bootstrap_consumptions/);
+  for (const column of ['marker_key', 'bootstrap_intent_id', 'authority_id', 'installation_key_fingerprint', 'policy_manifest_sha256', 'receipt_id', 'consumed_at']) {
+    assert.match(BOOTSTRAP_CONSUMPTIONS_MIGRATION.sql, new RegExp(`\\b${column}\\b`));
+  }
+  assert.match(BOOTSTRAP_CONSUMPTIONS_MIGRATION.sql, /marker_key = 'single-authority-bootstrap'/);
+  assert.doesNotMatch(BOOTSTRAP_CONSUMPTIONS_MIGRATION.sql, /FOREIGN KEY/);
+  assert.match(BOOTSTRAP_CONSUMPTIONS_MIGRATION.sql, /json_object_keys/);
+  assert.match(BOOTSTRAP_CONSUMPTIONS_MIGRATION.sql, /policyContractVersion/);
+  assert.match(BOOTSTRAP_CONSUMPTIONS_MIGRATION.sql, /policyRevision/);
+  assert.match(BOOTSTRAP_CONSUMPTIONS_MIGRATION.sql, /CREATE TRIGGER vnext_bootstrap_consumptions_insert_guard/);
+  assert.match(BOOTSTRAP_CONSUMPTIONS_MIGRATION.sql, /CREATE TRIGGER vnext_bootstrap_consumptions_no_update/);
+  assert.match(BOOTSTRAP_CONSUMPTIONS_MIGRATION.sql, /CREATE TRIGGER vnext_bootstrap_consumptions_no_delete/);
   assert.deepStrictEqual(expectedCatalog.relations, [
     'vnext_control_plane.vnext_account_device_links',
     'vnext_control_plane.vnext_accounts',
@@ -124,6 +145,7 @@ async function runManifestCases() {
     'vnext_control_plane.vnext_authorization_audit_events',
     'vnext_control_plane.vnext_authorization_command_receipts',
     'vnext_control_plane.vnext_authorization_outbox_events',
+    'vnext_control_plane.vnext_bootstrap_consumptions',
     'vnext_control_plane.vnext_capability_catalog',
     'vnext_control_plane.vnext_capability_overrides',
     'vnext_control_plane.vnext_data_scope_grants',

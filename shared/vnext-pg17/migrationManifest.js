@@ -521,6 +521,29 @@ const AUTHORIZATION_OUTBOX_EVENTS_MIGRATION = Object.freeze({
   manifestSha256: sha256(AUTHORIZATION_OUTBOX_EVENTS_SQL),
 });
 
+const BOOTSTRAP_CONSUMPTIONS_SQL = `CREATE TABLE vnext_control_plane.vnext_bootstrap_consumptions (
+  marker_key text COLLATE "C" PRIMARY KEY CHECK (marker_key = 'single-authority-bootstrap'),
+  bootstrap_intent_id text COLLATE "C" NOT NULL UNIQUE CHECK (btrim(bootstrap_intent_id) <> ''),
+  authority_id text COLLATE "C" NOT NULL UNIQUE CHECK (btrim(authority_id) <> ''),
+  installation_key_fingerprint text COLLATE "C" NOT NULL CHECK (installation_key_fingerprint ~ '^[0-9a-f]{64}$'),
+  policy_manifest_sha256 text COLLATE "C" NOT NULL CHECK (policy_manifest_sha256 ~ '^[0-9a-f]{64}$'),
+  receipt_id text COLLATE "C" NOT NULL UNIQUE CHECK (btrim(receipt_id) <> ''),
+  consumed_at timestamptz NOT NULL CHECK (consumed_at <> 'infinity'::timestamptz AND consumed_at <> '-infinity'::timestamptz)
+);
+CREATE FUNCTION vnext_control_plane.vnext_bootstrap_consumptions_insert_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM vnext_control_plane.vnext_authorization_command_receipts r WHERE r.receipt_id=NEW.receipt_id AND r.authority_id=NEW.authority_id AND r.actor_key='bootstrap:' || NEW.bootstrap_intent_id AND r.actor_account_id IS NULL AND r.command_type='authority.bootstrap' AND r.target_kind='authority' AND r.target_id=NEW.authority_id AND r.outcome='accepted' AND r.result_code='AUTHORITY_BOOTSTRAPPED' AND r.expected_row_version=0 AND r.committed_target_row_version=1 AND r.committed_auth_version IS NULL AND r.committed_access_version IS NULL AND r.committed_revocation_version IS NULL AND NEW.consumed_at>=r.created_at AND json_typeof(r.canonical_result_json::json)='object' AND (SELECT count(*) FROM json_object_keys(r.canonical_result_json::json))=7 AND json_typeof(r.canonical_result_json::json->'authorityId')='string' AND json_typeof(r.canonical_result_json::json->'code')='string' AND json_typeof(r.canonical_result_json::json->'policyContractVersion')='number' AND json_typeof(r.canonical_result_json::json->'policyManifestSha256')='string' AND json_typeof(r.canonical_result_json::json->'policyRevision')='number' AND json_typeof(r.canonical_result_json::json->'publicationId')='string' AND json_typeof(r.canonical_result_json::json->'status')='string' AND r.canonical_result_json::json->>'authorityId'=NEW.authority_id AND r.canonical_result_json::json->>'code'='AUTHORITY_BOOTSTRAPPED' AND r.canonical_result_json::json->>'policyContractVersion'='1' AND r.canonical_result_json::json->>'policyManifestSha256'=NEW.policy_manifest_sha256 AND r.canonical_result_json::json->>'policyRevision'='1' AND r.canonical_result_json::json->>'status'='accepted') THEN RAISE EXCEPTION 'VNEXT_BOOTSTRAP_MARKER_RECEIPT_INVALID' USING ERRCODE='P0001'; END IF; RETURN NEW; END; $$;
+CREATE FUNCTION vnext_control_plane.vnext_bootstrap_consumptions_no_update() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN RAISE EXCEPTION 'vNext bootstrap consumption is append-only' USING ERRCODE='P0001'; END; $$;
+CREATE FUNCTION vnext_control_plane.vnext_bootstrap_consumptions_no_delete() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN RAISE EXCEPTION 'vNext bootstrap consumption is append-only' USING ERRCODE='P0001'; END; $$;
+CREATE TRIGGER vnext_bootstrap_consumptions_insert_guard BEFORE INSERT ON vnext_control_plane.vnext_bootstrap_consumptions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_bootstrap_consumptions_insert_guard();
+CREATE TRIGGER vnext_bootstrap_consumptions_no_update BEFORE UPDATE ON vnext_control_plane.vnext_bootstrap_consumptions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_bootstrap_consumptions_no_update();
+CREATE TRIGGER vnext_bootstrap_consumptions_no_delete BEFORE DELETE ON vnext_control_plane.vnext_bootstrap_consumptions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_bootstrap_consumptions_no_delete();
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_bootstrap_consumptions_insert_guard() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_bootstrap_consumptions_no_update() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_bootstrap_consumptions_no_delete() FROM PUBLIC;
+GRANT SELECT ON TABLE vnext_control_plane.vnext_bootstrap_consumptions TO vnext_pg17_verifier;`;
+
+const BOOTSTRAP_CONSUMPTIONS_MIGRATION = Object.freeze({ migrationId: 'vnext-pg17-bootstrap-consumptions-12', semanticVersion: 12, sql: BOOTSTRAP_CONSUMPTIONS_SQL, manifestSha256: sha256(BOOTSTRAP_CONSUMPTIONS_SQL) });
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -533,6 +556,7 @@ const MIGRATIONS = Object.freeze([
   AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION,
   AUTHORIZATION_AUDIT_EVENTS_MIGRATION,
   AUTHORIZATION_OUTBOX_EVENTS_MIGRATION,
+  BOOTSTRAP_CONSUMPTIONS_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -642,6 +666,9 @@ BEGIN
 END;
 $function$
 `),
+  vnext_bootstrap_consumptions_insert_guard: '79d847c9285a91fe49a72afb79b2b67dffd8042177df3dde6a9db154fdfe2d82',
+  vnext_bootstrap_consumptions_no_delete: '78211e1091e81e3ec8a52b853bc564c07fb1525ba30cdf5c04dd2c8e9a56f2a2',
+  vnext_bootstrap_consumptions_no_update: '70eb96f8bb41027dc1ce6aa2ea4665046cc0c52d22a98fc25a57cf91ad5aaf53',
 });
 
 const expectedCatalog = Object.freeze({
@@ -653,6 +680,7 @@ const expectedCatalog = Object.freeze({
     'vnext_control_plane.vnext_authorization_audit_events',
     'vnext_control_plane.vnext_authorization_command_receipts',
     'vnext_control_plane.vnext_authorization_outbox_events',
+    'vnext_control_plane.vnext_bootstrap_consumptions',
     'vnext_control_plane.vnext_capability_catalog',
     'vnext_control_plane.vnext_capability_overrides',
     'vnext_control_plane.vnext_data_scope_grants',
@@ -674,6 +702,9 @@ const expectedCatalog = Object.freeze({
     'vnext_authorization_audit_events_no_update',
     'vnext_authorization_outbox_events_no_delete',
     'vnext_authorization_outbox_events_no_update',
+    'vnext_bootstrap_consumptions_insert_guard',
+    'vnext_bootstrap_consumptions_no_delete',
+    'vnext_bootstrap_consumptions_no_update',
   ]),
   owners: Object.freeze({ database: 'vnext_pg17_owner', schema: 'vnext_pg17_owner', table: 'vnext_pg17_owner' }),
   functionDefinitionSha256: FUNCTION_DEFINITION_SHA256,
@@ -691,6 +722,7 @@ module.exports = {
   AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION,
   AUTHORIZATION_AUDIT_EVENTS_MIGRATION,
   AUTHORIZATION_OUTBOX_EVENTS_MIGRATION,
+  BOOTSTRAP_CONSUMPTIONS_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

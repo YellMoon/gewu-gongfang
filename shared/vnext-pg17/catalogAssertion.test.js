@@ -14,6 +14,8 @@ const {
   VERIFIED_CONTACTS_MIGRATION,
   AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION,
   AUTHORIZATION_AUDIT_EVENTS_MIGRATION,
+  AUTHORIZATION_OUTBOX_EVENTS_MIGRATION,
+  BOOTSTRAP_CONSUMPTIONS_MIGRATION,
 } = require('./migrationManifest');
 
 const FOUNDATION_INSTANT = '2026-08-15T00:00:00.000Z';
@@ -761,6 +763,125 @@ async function assertAuthorizationOutboxEventSemantics(handle) {
   await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_authorization_outbox_events')));
 }
 
+async function assertBootstrapConsumptionSemantics(handle) {
+  await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+    const policyManifestSha256 = 'a'.repeat(64);
+    const installationKeyFingerprint = 'd'.repeat(64);
+    const resultJson = JSON.stringify({
+      authorityId: 'authority-1',
+      code: 'AUTHORITY_BOOTSTRAPPED',
+      policyContractVersion: 1,
+      policyManifestSha256,
+      policyRevision: 1,
+      publicationId: 'publication-1',
+      status: 'accepted',
+    });
+    const insertReceipt = ({
+      receiptId,
+      authorityId = 'authority-1',
+      actorKey = 'bootstrap:bootstrap-intent-1',
+      actorAccountId = null,
+      idempotencyKey,
+      commandType = 'authority.bootstrap',
+      targetKind = 'authority',
+      targetId = authorityId,
+      expectedRowVersion = 0,
+      outcome = 'accepted',
+      resultCode = 'AUTHORITY_BOOTSTRAPPED',
+      committedAuthVersion = null,
+      committedAccessVersion = null,
+      committedRevocationVersion = null,
+      committedTargetRowVersion = 1,
+      canonicalResultJson = resultJson,
+      createdAt = FOUNDATION_INSTANT,
+    }) => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_authorization_command_receipts (receipt_id, authority_id, actor_key, actor_account_id, idempotency_key, command_type, target_kind, target_id, canonical_request_sha256, expected_row_version, outcome, result_code, canonical_result_json, canonical_result_sha256, committed_auth_version, committed_access_version, committed_revocation_version, committed_target_row_version, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)',
+      [receiptId, authorityId, actorKey, actorAccountId, idempotencyKey, commandType, targetKind, targetId, 'b'.repeat(64), expectedRowVersion, outcome, resultCode, canonicalResultJson, 'c'.repeat(64), committedAuthVersion, committedAccessVersion, committedRevocationVersion, committedTargetRowVersion, createdAt],
+    );
+    const insertMarker = ({
+      markerKey = 'single-authority-bootstrap',
+      intentId,
+      receiptId,
+      consumedAt = FOUNDATION_INSTANT,
+      authorityId = 'authority-1',
+      fingerprint = installationKeyFingerprint,
+      policyHash = policyManifestSha256,
+    }) => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_bootstrap_consumptions (marker_key, bootstrap_intent_id, authority_id, installation_key_fingerprint, policy_manifest_sha256, receipt_id, consumed_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [markerKey, intentId, authorityId, fingerprint, policyHash, receiptId, consumedAt],
+    );
+
+    await insertReceipt({ receiptId: 'bootstrap-ordinary-receipt', actorKey: 'ordinary-actor', idempotencyKey: 'ordinary-key' });
+    await assert.rejects(
+      () => insertMarker({ intentId: 'ordinary-intent', receiptId: 'bootstrap-ordinary-receipt' }),
+      error => error && error.code === 'P0001' && error.message === 'VNEXT_BOOTSTRAP_MARKER_RECEIPT_INVALID',
+    );
+    assert.deepStrictEqual((await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_bootstrap_consumptions')).rows, [{ count: '0' }]);
+
+    await insertReceipt({ receiptId: 'bootstrap-time-receipt', actorKey: 'bootstrap:time-intent', idempotencyKey: 'time-key' });
+    await assert.rejects(
+      () => insertMarker({ intentId: 'time-intent', receiptId: 'bootstrap-time-receipt', consumedAt: '2026-08-14T23:59:59.999Z' }),
+      error => error && error.code === 'P0001',
+    );
+    assert.deepStrictEqual((await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_bootstrap_consumptions')).rows, [{ count: '0' }]);
+
+    for (const [suffix, canonicalResultJson] of [
+      ['missing-status', JSON.stringify({ authorityId: 'authority-1', code: 'AUTHORITY_BOOTSTRAPPED', policyContractVersion: 1, policyManifestSha256, policyRevision: 1, publicationId: 'publication-1' })],
+      ['extra-key', JSON.stringify({ authorityId: 'authority-1', code: 'AUTHORITY_BOOTSTRAPPED', policyContractVersion: 1, policyManifestSha256, policyRevision: 1, publicationId: 'publication-1', status: 'accepted', extra: true })],
+      ['boolean-version', JSON.stringify({ authorityId: 'authority-1', code: 'AUTHORITY_BOOTSTRAPPED', policyContractVersion: true, policyManifestSha256, policyRevision: 1, publicationId: 'publication-1', status: 'accepted' })],
+      ['string-version', JSON.stringify({ authorityId: 'authority-1', code: 'AUTHORITY_BOOTSTRAPPED', policyContractVersion: '1', policyManifestSha256, policyRevision: 1, publicationId: 'publication-1', status: 'accepted' })],
+      ['fractional-version', resultJson.replace('"policyRevision":1', '"policyRevision":1.0')],
+    ]) {
+      const intentId = `result-${suffix}`;
+      const receiptId = `bootstrap-result-${suffix}`;
+      await insertReceipt({ receiptId, actorKey: `bootstrap:${intentId}`, idempotencyKey: `result-key-${suffix}`, canonicalResultJson });
+      await assert.rejects(() => insertMarker({ intentId, receiptId }), error => error && error.code === 'P0001');
+      assert.deepStrictEqual((await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_bootstrap_consumptions')).rows, [{ count: '0' }]);
+    }
+
+    for (const [suffix, receiptOverrides, markerOverrides] of [
+      ['actor', { actorKey: 'ordinary-actor' }, {}],
+      ['actor-account', { actorAccountId: 'account-1' }, {}],
+      ['command', { commandType: 'other.command' }, {}],
+      ['target-kind', { targetKind: 'other_target' }, {}],
+      ['target-id', { targetId: 'other-authority' }, {}],
+      ['outcome', { outcome: 'rejected' }, {}],
+      ['result-code', { resultCode: 'OTHER_RESULT' }, {}],
+      ['expected-version', { expectedRowVersion: 1 }, {}],
+      ['committed-target-version', { committedTargetRowVersion: 2 }, {}],
+      ['committed-auth-version', { committedAuthVersion: 1 }, {}],
+      ['policy-hash', {}, { policyHash: 'e'.repeat(64) }],
+      ['authority', {}, { authorityId: 'authority-2' }],
+      ['intent', { actorKey: 'bootstrap:source-intent' }, { intentId: 'different-intent' }],
+    ]) {
+      const intentId = markerOverrides.intentId || `bound-${suffix}`;
+      const receiptId = `bootstrap-bound-${suffix}`;
+      await insertReceipt({ receiptId, actorKey: `bootstrap:${intentId}`, idempotencyKey: `bound-key-${suffix}`, ...receiptOverrides });
+      await assert.rejects(() => insertMarker({ intentId, receiptId, ...markerOverrides }), error => error && error.code === 'P0001');
+      assert.deepStrictEqual((await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_bootstrap_consumptions')).rows, [{ count: '0' }]);
+    }
+
+    await insertReceipt({ receiptId: 'bootstrap-receipt-1', actorKey: 'bootstrap:bootstrap-intent-1', idempotencyKey: 'bootstrap-key-1' });
+    await insertMarker({ intentId: 'bootstrap-intent-1', receiptId: 'bootstrap-receipt-1' });
+    assert.deepStrictEqual((await facade.query('SELECT marker_key, bootstrap_intent_id, authority_id, receipt_id FROM vnext_control_plane.vnext_bootstrap_consumptions')).rows, [{ marker_key: 'single-authority-bootstrap', bootstrap_intent_id: 'bootstrap-intent-1', authority_id: 'authority-1', receipt_id: 'bootstrap-receipt-1' }]);
+    const foreignKeys = await facade.query("SELECT COUNT(*)::text AS count FROM pg_constraint WHERE conrelid = 'vnext_control_plane.vnext_bootstrap_consumptions'::regclass AND contype = 'f'");
+    assert.deepStrictEqual(foreignKeys.rows, [{ count: '0' }]);
+    const before = await facade.query('SELECT * FROM vnext_control_plane.vnext_bootstrap_consumptions');
+    await assert.rejects(() => facade.query("UPDATE vnext_control_plane.vnext_bootstrap_consumptions SET bootstrap_intent_id = 'changed'"), error => error && error.code === 'P0001');
+    await assert.rejects(() => facade.query('DELETE FROM vnext_control_plane.vnext_bootstrap_consumptions'), error => error && error.code === 'P0001');
+    assert.deepStrictEqual((await facade.query('SELECT * FROM vnext_control_plane.vnext_bootstrap_consumptions')).rows, before.rows);
+    await facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts DISABLE TRIGGER ALL');
+    try {
+      await facade.query("DELETE FROM vnext_control_plane.vnext_authorization_command_receipts WHERE receipt_id = 'bootstrap-receipt-1'");
+    } finally {
+      await facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts ENABLE TRIGGER ALL');
+    }
+    assert.deepStrictEqual((await facade.query('SELECT * FROM vnext_control_plane.vnext_bootstrap_consumptions')).rows, before.rows);
+  });
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'verifier', facade => facade.query("INSERT INTO vnext_control_plane.vnext_bootstrap_consumptions (marker_key, bootstrap_intent_id, authority_id, installation_key_fingerprint, policy_manifest_sha256, receipt_id, consumed_at) VALUES ('single-authority-bootstrap', 'verifier-intent', 'authority-1', repeat('d', 64), repeat('a', 64), 'bootstrap-receipt-1', $1)", [FOUNDATION_INSTANT])));
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_bootstrap_consumptions')));
+}
+
 async function runCatalogAssertionCases(runtime) {
   const catalog = createVNextPg17CatalogBoundary(runtime);
   let priorHandle;
@@ -957,6 +1078,22 @@ async function runCatalogAssertionCases(runtime) {
       assert.deepStrictEqual(absent.rows, [{ relation: null, update_function: null, delete_function: null }]);
     });
     await assert.rejects(() => catalog.assert(auditPrefixHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+    const outboxPrefixHandle = await createHandle();
+    await withVNextPg17SyntheticQuery(outboxPrefixHandle, 'fixture-provisioner', async facade => {
+      for (const migration of [FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION, ROLE_GRANTS_MIGRATION, CAPABILITY_CATALOG_MIGRATION, CAPABILITY_OVERRIDES_MIGRATION, DATA_SCOPE_GRANTS_MIGRATION, PROFILE_BINDINGS_MIGRATION, VERIFIED_CONTACTS_MIGRATION, AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION, AUTHORIZATION_AUDIT_EVENTS_MIGRATION, AUTHORIZATION_OUTBOX_EVENTS_MIGRATION]) {
+        await facade.query(migration.sql);
+        if (migration.postApply) await facade.query(migration.postApply.text, migration.postApply.values(migrationInput.appliedAt));
+        await facade.query('INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)', [migration.migrationId, migration.semanticVersion, migration.manifestSha256, migrationInput.appliedAt, migrationInput.appliedBy]);
+      }
+    });
+    await assert.rejects(() => catalog.apply(outboxPrefixHandle, migrationInput), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+    await withVNextPg17SyntheticQuery(outboxPrefixHandle, 'fixture-provisioner', async facade => {
+      const ledgerRows = await facade.query('SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint');
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }]);
+      const absent = await facade.query("SELECT to_regclass('vnext_control_plane.vnext_bootstrap_consumptions') AS relation, to_regprocedure('vnext_control_plane.vnext_bootstrap_consumptions_insert_guard()') AS insert_function, to_regprocedure('vnext_control_plane.vnext_bootstrap_consumptions_no_update()') AS update_function, to_regprocedure('vnext_control_plane.vnext_bootstrap_consumptions_no_delete()') AS delete_function");
+      assert.deepStrictEqual(absent.rows, [{ relation: null, insert_function: null, update_function: null, delete_function: null }]);
+    });
+    await assert.rejects(() => catalog.assert(outboxPrefixHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
     const handle = await createHandle();
     await assert.rejects(
       () => catalog.assert(handle),
@@ -967,7 +1104,7 @@ async function runCatalogAssertionCases(runtime) {
       const ledgerRows = await facade.query(
         'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint',
       );
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }]);
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }]);
       const schemaMetaRows = await facade.query(
         'SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta',
       );
@@ -990,6 +1127,8 @@ async function runCatalogAssertionCases(runtime) {
     assert.deepStrictEqual(auditCount.rows, [{ count: '0' }]);
     const outboxCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_authorization_outbox_events');
     assert.deepStrictEqual(outboxCount.rows, [{ count: '0' }]);
+    const bootstrapConsumptionCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_bootstrap_consumptions');
+    assert.deepStrictEqual(bootstrapConsumptionCount.rows, [{ count: '0' }]);
     });
     await assert.doesNotReject(() => catalog.assert(handle));
     await assertFoundationSemantics(handle);
@@ -1002,6 +1141,7 @@ async function runCatalogAssertionCases(runtime) {
     await assertAuthorizationCommandReceiptSemantics(handle);
     await assertAuthorizationAuditEventSemantics(handle);
     await assertAuthorizationOutboxEventSemantics(handle);
+    await assertBootstrapConsumptionSemantics(handle);
     assert.deepStrictEqual(await catalog.apply(handle, migrationInput), { applied: false });
     await withVNextPg17SyntheticQuery(handle, 'verifier', async facade => {
       await facade.query('BEGIN READ ONLY');
@@ -1017,7 +1157,7 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(
       () => withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
-        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 13, repeat('a', 64), now(), 'fixture')",
+        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 14, repeat('a', 64), now(), 'fixture')",
       )),
     );
     await assert.rejects(
@@ -1868,6 +2008,23 @@ async function runCatalogAssertionCases(runtime) {
       ['outboxWrongTriggerHandle', 'DROP TRIGGER vnext_authorization_outbox_events_no_update ON vnext_control_plane.vnext_authorization_outbox_events; CREATE TRIGGER vnext_authorization_outbox_events_no_update BEFORE DELETE ON vnext_control_plane.vnext_authorization_outbox_events FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_outbox_events_no_update()'],
       ['outboxMissingTriggerHandle', 'DROP TRIGGER vnext_authorization_outbox_events_no_delete ON vnext_control_plane.vnext_authorization_outbox_events'],
       ['outboxPublicShadowHandle', 'CREATE TABLE public.vnext_authorization_outbox_events (id integer)'],
+    ]) {
+      const driftHandle = await createHandle();
+      await catalog.apply(driftHandle, migrationInput);
+      await withVNextPg17SyntheticQuery(driftHandle, 'fixture-provisioner', facade => facade.query(sql));
+      await assert.rejects(() => catalog.assert(driftHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT', name);
+    }
+
+    for (const [name, sql] of [
+      ['bootstrapMarkerConstraintHandle', "ALTER TABLE vnext_control_plane.vnext_bootstrap_consumptions DROP CONSTRAINT vnext_bootstrap_consumptions_marker_key_check; ALTER TABLE vnext_control_plane.vnext_bootstrap_consumptions ADD CONSTRAINT vnext_bootstrap_consumptions_marker_key_check CHECK (marker_key IN ('single-authority-bootstrap', 'other'))"],
+      ['bootstrapAuthorityForeignKeyHandle', 'ALTER TABLE vnext_control_plane.vnext_bootstrap_consumptions ADD CONSTRAINT unapproved_bootstrap_authority_fkey FOREIGN KEY (authority_id) REFERENCES vnext_control_plane.vnext_authorities (authority_id)'],
+      ['bootstrapExtraIndexHandle', 'CREATE INDEX unapproved_bootstrap_receipt_index ON vnext_control_plane.vnext_bootstrap_consumptions (receipt_id)'],
+      ['bootstrapVerifierAclHandle', 'GRANT INSERT ON vnext_control_plane.vnext_bootstrap_consumptions TO vnext_pg17_verifier'],
+      ['bootstrapRuntimeAclHandle', 'GRANT SELECT ON vnext_control_plane.vnext_bootstrap_consumptions TO vnext_pg17_runtime'],
+      ['bootstrapFunctionInvokerHandle', 'ALTER FUNCTION vnext_control_plane.vnext_bootstrap_consumptions_no_update() SECURITY INVOKER'],
+      ['bootstrapFunctionPublicExecuteHandle', 'GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_bootstrap_consumptions_no_update() TO PUBLIC'],
+      ['bootstrapWrongTriggerHandle', 'DROP TRIGGER vnext_bootstrap_consumptions_no_update ON vnext_control_plane.vnext_bootstrap_consumptions; CREATE TRIGGER vnext_bootstrap_consumptions_no_update BEFORE DELETE ON vnext_control_plane.vnext_bootstrap_consumptions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_bootstrap_consumptions_no_update()'],
+      ['bootstrapPublicShadowHandle', 'CREATE TABLE public.vnext_bootstrap_consumptions (id integer)'],
     ]) {
       const driftHandle = await createHandle();
       await catalog.apply(driftHandle, migrationInput);
