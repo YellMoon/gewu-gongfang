@@ -78,19 +78,7 @@ CREATE TABLE vNext_trust_root_evidence (
 
 Use existing `id`, `NONEMPTY`, `SHA256`, and `time` helpers in real DDL. Add update/delete abort triggers. The marker intentionally has no FK and therefore still blocks bootstrap if authority rows are damaged. Public schema assertion remains read-only.
 
-- [ ] **Step 4: Add only the permitted bootstrap publication branch**
-
-Keep the current policy-writer branch. Add one exact branch requiring accepted `AUTHORITY_BOOTSTRAPPED`, command `authority.bootstrap`, authority target, expected version `0`, committed target version `1`, null account versions, and this seven-key result:
-
-```js
-{ authorityId: NEW.authority_id, code: 'AUTHORITY_BOOTSTRAPPED', policyContractVersion: 1,
-  policyManifestSha256: NEW.policy_manifest_sha256, policyRevision: 1,
-  publicationId: NEW.publication_id, status: 'accepted' }
-```
-
-Apply existing JSON key-count/type/value checks; reject all other bootstrap-like receipts.
-
-- [ ] **Step 5: Verify and commit**
+- [ ] **Step 4: Verify and commit**
 
 Run:
 
@@ -209,7 +197,7 @@ Expected: module-not-found.
 
 - [ ] **Step 3: Implement one atomic writer**
 
-`createVNextFirstAuthorityBootstrapReference({ db, verifier, now, idFactory, testHooks })` requires exact own-data config, V5 schema, ISO clock, and branded verifier. `execute(assertion, command)` unwraps bootstrap assertion; canonicalizes the manifest with `createPolicyManifest`; requires equality of all bound IDs/key/fingerprint/intent and hash; requires zero authorities plus absent marker; creates rows at version `1` with null `granted_by_account_id`; writes receipt with `actor_key='bootstrap:' + bootstrapIntentId` and null actor; writes marker/publication/bootstrap evidence/audit/one `authorization.authority_bootstrapped` outbox; and replay-validates every companion.
+`createVNextFirstAuthorityBootstrapReference({ db, verifier, now, idFactory, testHooks })` requires exact own-data config, V5 schema, ISO clock, and branded verifier. Before the writer test can go green, extend the policy-publication trigger with one exact branch requiring accepted `AUTHORITY_BOOTSTRAPPED`, command `authority.bootstrap`, authority target, expected version `0`, committed target version `1`, null account versions, and the seven-key result `{ authorityId, code, policyContractVersion: 1, policyManifestSha256, policyRevision: 1, publicationId, status: 'accepted' }`; retain the current policy-writer branch and reject every other bootstrap-like receipt. Then `execute(assertion, command)` unwraps bootstrap assertion; canonicalizes the manifest with `createPolicyManifest`; requires equality of all bound IDs/key/fingerprint/intent and hash; requires zero authorities plus absent marker; creates rows at version `1` with null `granted_by_account_id`; writes receipt with `actor_key='bootstrap:' + bootstrapIntentId` and null actor; writes marker/publication/bootstrap evidence/audit/one `authorization.authority_bootstrapped` outbox; and replay-validates every companion.
 
 Use the Task 1 seven-key result and return only frozen `{ authorityId, code: 'AUTHORITY_BOOTSTRAPPED', replayed, status: 'accepted' }`.
 

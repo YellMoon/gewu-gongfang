@@ -19,7 +19,7 @@ try {
   db.exec('CREATE TABLE legacy_guard(id TEXT PRIMARY KEY, value TEXT NOT NULL); INSERT INTO legacy_guard VALUES(\'legacy-1\',\'unchanged\');');
   const beforeLegacySql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='legacy_guard'").get().sql;
   const result = bootstrapVNextControlPlaneReference(db);
-  assert.strictEqual(result.schemaVersion, 4);
+  assert.strictEqual(result.schemaVersion, 5);
   assert.deepStrictEqual(result.tables, V_NEXT_CONTROL_PLANE_REFERENCE_TABLES);
   assert.deepStrictEqual(vNextTables(db), V_NEXT_CONTROL_PLANE_REFERENCE_TABLES);
   assert.deepStrictEqual(
@@ -33,11 +33,13 @@ try {
   assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_authorization_audit_events').get().count, 0);
   assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_authorization_command_receipts').get().count, 0);
   assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_authorization_outbox_events').get().count, 0);
+  assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_bootstrap_consumptions').get().count, 0, 'bootstrap must not consume the one-time authority marker');
+  assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_trust_root_evidence').get().count, 0, 'bootstrap must not seed trust-root evidence');
   assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_sessions').get().count, 0, 'bootstrap must not seed sessions');
   assert.strictEqual(db.prepare('SELECT COUNT(*) AS count FROM vNext_recent_reauthentication_events').get().count, 0, 'bootstrap must not seed reauth events');
   assert.deepStrictEqual(
     db.prepare('SELECT schema_key,schema_version FROM vNext_schema_meta').all(),
-    [{ schema_key: 'control-plane-reference', schema_version: 4 }],
+    [{ schema_key: 'control-plane-reference', schema_version: 5 }],
   );
   assert.strictEqual(db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='legacy_guard'").get().sql, beforeLegacySql);
   assert.deepStrictEqual(db.prepare('SELECT * FROM legacy_guard').all(), [{ id: 'legacy-1', value: 'unchanged' }]);
@@ -230,6 +232,16 @@ try {
   assert.throws(() => db.prepare("UPDATE vNext_authorization_policy_publications SET policy_revision=2 WHERE publication_id='policy-publication-1'").run(), /vNext policy publication is append-only/);
   assert.throws(() => db.prepare("DELETE FROM vNext_authorization_policy_publications WHERE publication_id='policy-publication-1'").run(), /vNext policy publication is append-only/);
   db.prepare(`INSERT INTO vNext_authorization_audit_events(event_id,authority_id,receipt_id,reason_code,context_sha256,created_at) VALUES('audit-1','authority-1','receipt-1','operator_reason','${HASH}','2026-08-14T00:00:00.000Z')`).run();
+  db.prepare(`INSERT INTO vNext_bootstrap_consumptions(marker_key,bootstrap_intent_id,authority_id,installation_key_fingerprint,policy_manifest_sha256,receipt_id,consumed_at) VALUES('single-authority-bootstrap','bootstrap-intent-1','authority-1','${HASH}','${HASH}','receipt-1','2026-08-14T00:00:00.000Z')`).run();
+  assert.throws(() => db.prepare("UPDATE vNext_bootstrap_consumptions SET authority_id='authority-2' WHERE marker_key='single-authority-bootstrap'").run(), /vNext bootstrap consumption is append-only/);
+  assert.throws(() => db.prepare("DELETE FROM vNext_bootstrap_consumptions WHERE marker_key='single-authority-bootstrap'").run(), /vNext bootstrap consumption is append-only/);
+  db.prepare(`INSERT INTO vNext_trust_root_evidence(evidence_id,authority_id,receipt_id,actor_kind,event_id,assertion_evidence_sha256,created_at) VALUES('trust-root-bootstrap-1','authority-1','receipt-1','deployment_bootstrap','bootstrap-intent-1','${HASH}','2026-08-14T00:00:00.000Z')`).run();
+  assert.throws(() => db.prepare("UPDATE vNext_trust_root_evidence SET event_id='changed' WHERE evidence_id='trust-root-bootstrap-1'").run(), /vNext trust-root evidence is append-only/);
+  assert.throws(() => db.prepare("DELETE FROM vNext_trust_root_evidence WHERE evidence_id='trust-root-bootstrap-1'").run(), /vNext trust-root evidence is append-only/);
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_trust_root_evidence(evidence_id,authority_id,receipt_id,actor_kind,event_id,assertion_evidence_sha256,created_at) VALUES('trust-root-recovery-invalid','authority-1','policy-receipt-1','owner_recovery_event','recovery-event-invalid','${HASH}','2026-08-14T00:00:00.000Z')`).run(),
+    /CHECK constraint failed/,
+  );
   assert.throws(() => db.prepare("UPDATE vNext_authorization_audit_events SET reason_code='other_reason' WHERE event_id='audit-1'").run(), /vNext audit is append-only/);
   assert.throws(() => db.prepare("DELETE FROM vNext_authorization_audit_events WHERE event_id='audit-1'").run(), /vNext audit is append-only/);
   assert.throws(() => db.prepare("UPDATE vNext_authorization_command_receipts SET outcome='rejected' WHERE receipt_id='receipt-1'").run(), /vNext command receipt is append-only/);
@@ -316,6 +328,15 @@ try {
   assert.deepStrictEqual(vNextTables(v3Reference), ['vNext_schema_meta'], 'v3 must be explicitly rejected rather than silently upgraded');
 } finally {
   v3Reference.close();
+}
+
+const v4Reference = new Database(':memory:');
+try {
+  v4Reference.exec("CREATE TABLE vNext_schema_meta(schema_key TEXT NOT NULL PRIMARY KEY CHECK(length(trim(schema_key))>0) CHECK(schema_key='control-plane-reference'), schema_version INTEGER NOT NULL CHECK(schema_version=4), applied_at TEXT NOT NULL CHECK(julianday(applied_at) IS NOT NULL)); INSERT INTO vNext_schema_meta VALUES('control-plane-reference',4,'2026-08-14T00:00:00.000Z')");
+  assert.throws(() => bootstrapVNextControlPlaneReference(v4Reference), /VNEXT_REFERENCE_SCHEMA_DRIFT/);
+  assert.deepStrictEqual(vNextTables(v4Reference), ['vNext_schema_meta'], 'v4 must be explicitly rejected rather than silently upgraded');
+} finally {
+  v4Reference.close();
 }
 
 const sessionSemanticDrift = new Database(':memory:');
