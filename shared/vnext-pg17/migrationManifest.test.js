@@ -7,6 +7,7 @@ const {
   ROLE_GRANTS_MIGRATION,
   CAPABILITY_CATALOG_MIGRATION,
   CAPABILITY_OVERRIDES_MIGRATION,
+  DATA_SCOPE_GRANTS_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,
@@ -24,7 +25,7 @@ async function runManifestCases() {
     'vnext_schema_migrations_no_update',
   ]);
   assert.strictEqual(sha256(FIRST_MIGRATION.sql), FIRST_MIGRATION.manifestSha256);
-  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5]);
+  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6]);
   assert.strictEqual(FOUNDATION_IDENTITY_DEVICE_MIGRATION.migrationId, 'vnext-pg17-foundation-identity-device-2');
   assert.match(FOUNDATION_IDENTITY_DEVICE_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
   assert.strictEqual(
@@ -53,12 +54,21 @@ async function runManifestCases() {
   assert.match(CAPABILITY_OVERRIDES_MIGRATION.sql, /CREATE UNIQUE INDEX vnext_capability_overrides_one_active_capability/);
   assert.match(CAPABILITY_OVERRIDES_MIGRATION.sql, /FOREIGN KEY \(account_id, authority_id\)/);
   assert.match(CAPABILITY_OVERRIDES_MIGRATION.sql, /FOREIGN KEY \(capability_id\)/);
+  assert.ok(Object.isFrozen(DATA_SCOPE_GRANTS_MIGRATION));
+  assert.strictEqual(DATA_SCOPE_GRANTS_MIGRATION.migrationId, 'vnext-pg17-data-scope-grants-6');
+  assert.strictEqual(DATA_SCOPE_GRANTS_MIGRATION.semanticVersion, 6);
+  assert.match(DATA_SCOPE_GRANTS_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
+  assert.strictEqual(sha256(DATA_SCOPE_GRANTS_MIGRATION.sql), DATA_SCOPE_GRANTS_MIGRATION.manifestSha256);
+  assert.match(DATA_SCOPE_GRANTS_MIGRATION.sql, /CREATE TABLE vnext_control_plane\.vnext_data_scope_grants/);
+  assert.match(DATA_SCOPE_GRANTS_MIGRATION.sql, /CREATE UNIQUE INDEX vnext_data_scope_grants_one_active_scope/);
+  assert.match(DATA_SCOPE_GRANTS_MIGRATION.sql, /FOREIGN KEY \(account_id, authority_id\)/);
   assert.deepStrictEqual(expectedCatalog.relations, [
     'vnext_control_plane.vnext_account_device_links',
     'vnext_control_plane.vnext_accounts',
     'vnext_control_plane.vnext_authorities',
     'vnext_control_plane.vnext_capability_catalog',
     'vnext_control_plane.vnext_capability_overrides',
+    'vnext_control_plane.vnext_data_scope_grants',
     'vnext_control_plane.vnext_device_installations',
     'vnext_control_plane.vnext_role_grants',
     'vnext_control_plane.vnext_schema_meta',

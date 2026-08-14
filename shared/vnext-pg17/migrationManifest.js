@@ -282,12 +282,48 @@ const CAPABILITY_OVERRIDES_MIGRATION = Object.freeze({
   manifestSha256: sha256(CAPABILITY_OVERRIDES_SQL),
 });
 
+const DATA_SCOPE_GRANTS_SQL = `CREATE TABLE vnext_control_plane.vnext_data_scope_grants (
+  scope_grant_id text COLLATE "C" PRIMARY KEY CHECK (btrim(scope_grant_id) <> ''),
+  authority_id text COLLATE "C" NOT NULL CHECK (btrim(authority_id) <> ''),
+  account_id text COLLATE "C" NOT NULL CHECK (btrim(account_id) <> ''),
+  scope_type text COLLATE "C" NOT NULL CHECK (scope_type IN ('teacher_profile', 'student_profile', 'school', 'household', 'resource_owner')),
+  scope_value_hash text COLLATE "C" NOT NULL CHECK (btrim(scope_value_hash) <> ''),
+  effect text COLLATE "C" NOT NULL CHECK (effect IN ('allow', 'deny')),
+  status text COLLATE "C" NOT NULL CHECK (status IN ('active', 'revoked', 'expired')),
+  starts_at timestamptz NOT NULL CHECK (starts_at <> 'infinity'::timestamptz AND starts_at <> '-infinity'::timestamptz),
+  ends_at timestamptz CHECK (ends_at <> 'infinity'::timestamptz AND ends_at <> '-infinity'::timestamptz),
+  row_version bigint NOT NULL CHECK (row_version >= 1),
+  created_at timestamptz NOT NULL CHECK (created_at <> 'infinity'::timestamptz AND created_at <> '-infinity'::timestamptz),
+  updated_at timestamptz NOT NULL CHECK (updated_at <> 'infinity'::timestamptz AND updated_at <> '-infinity'::timestamptz),
+  revoked_at timestamptz CHECK (revoked_at <> 'infinity'::timestamptz AND revoked_at <> '-infinity'::timestamptz),
+  CHECK (updated_at >= created_at),
+  CHECK (ends_at IS NULL OR ends_at > starts_at),
+  CHECK (
+    (status = 'active' AND revoked_at IS NULL)
+    OR (status = 'revoked' AND revoked_at IS NOT NULL)
+    OR (status = 'expired' AND ends_at IS NOT NULL AND revoked_at IS NULL)
+  ),
+  FOREIGN KEY (account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+);
+CREATE UNIQUE INDEX vnext_data_scope_grants_one_active_scope
+  ON vnext_control_plane.vnext_data_scope_grants (authority_id, account_id, scope_type, scope_value_hash)
+  WHERE status = 'active';
+GRANT SELECT ON TABLE vnext_control_plane.vnext_data_scope_grants TO vnext_pg17_verifier;`;
+
+const DATA_SCOPE_GRANTS_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-data-scope-grants-6',
+  semanticVersion: 6,
+  sql: DATA_SCOPE_GRANTS_SQL,
+  manifestSha256: sha256(DATA_SCOPE_GRANTS_SQL),
+});
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
   ROLE_GRANTS_MIGRATION,
   CAPABILITY_CATALOG_MIGRATION,
   CAPABILITY_OVERRIDES_MIGRATION,
+  DATA_SCOPE_GRANTS_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -341,6 +377,7 @@ const expectedCatalog = Object.freeze({
     'vnext_control_plane.vnext_authorities',
     'vnext_control_plane.vnext_capability_catalog',
     'vnext_control_plane.vnext_capability_overrides',
+    'vnext_control_plane.vnext_data_scope_grants',
     'vnext_control_plane.vnext_device_installations',
     'vnext_control_plane.vnext_role_grants',
     'vnext_control_plane.vnext_schema_meta',
@@ -362,6 +399,7 @@ module.exports = {
   ROLE_GRANTS_MIGRATION,
   CAPABILITY_CATALOG_MIGRATION,
   CAPABILITY_OVERRIDES_MIGRATION,
+  DATA_SCOPE_GRANTS_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

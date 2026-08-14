@@ -8,6 +8,7 @@ const {
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
   ROLE_GRANTS_MIGRATION,
   CAPABILITY_CATALOG_MIGRATION,
+  CAPABILITY_OVERRIDES_MIGRATION,
 } = require('./migrationManifest');
 
 const FOUNDATION_INSTANT = '2026-08-15T00:00:00.000Z';
@@ -335,6 +336,113 @@ async function assertCapabilityOverrideSemantics(handle) {
   );
 }
 
+async function assertDataScopeGrantSemantics(handle) {
+  await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+    const insertScope = ({
+      scopeGrantId,
+      authorityId = 'authority-1',
+      accountId = 'account-1',
+      scopeType = 'teacher_profile',
+      scopeValueHash = 'opaque-scope-value',
+      effect = 'allow',
+      status = 'active',
+      startsAt = FOUNDATION_INSTANT,
+      endsAt = null,
+      rowVersion = 1,
+      createdAt = FOUNDATION_INSTANT,
+      updatedAt = FOUNDATION_INSTANT,
+      revokedAt = null,
+    }) => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_data_scope_grants (scope_grant_id, authority_id, account_id, scope_type, scope_value_hash, effect, status, starts_at, ends_at, row_version, created_at, updated_at, revoked_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)',
+      [scopeGrantId, authorityId, accountId, scopeType, scopeValueHash, effect, status, startsAt, endsAt, rowVersion, createdAt, updatedAt, revokedAt],
+    );
+
+    await insertScope({ scopeGrantId: 'scope-teacher' });
+    await assert.rejects(() => insertScope({ scopeGrantId: 'scope-same-tuple-deny', effect: 'deny' }), /duplicate key/);
+    await insertScope({ scopeGrantId: 'scope-student', scopeType: 'student_profile', scopeValueHash: 'opaque-student', effect: 'deny' });
+    await insertScope({ scopeGrantId: 'scope-school', scopeType: 'school', scopeValueHash: 'opaque-school' });
+    await insertScope({ scopeGrantId: 'scope-household', scopeType: 'household', scopeValueHash: 'opaque-household' });
+    await insertScope({ scopeGrantId: 'scope-resource-owner', scopeType: 'resource_owner', scopeValueHash: 'opaque-resource' });
+    await insertScope({ scopeGrantId: 'scope-revoked-history', status: 'revoked', revokedAt: FOUNDATION_INSTANT });
+    await insertScope({ scopeGrantId: 'scope-expired-history', status: 'expired', scopeValueHash: 'opaque-expired', endsAt: '2026-08-15T00:01:00.000Z' });
+    await facade.query("UPDATE vnext_control_plane.vnext_data_scope_grants SET status = 'revoked', revoked_at = $1 WHERE scope_grant_id = 'scope-teacher'", [FOUNDATION_INSTANT]);
+    await insertScope({ scopeGrantId: 'scope-active-replacement' });
+
+    await assert.rejects(() => insertScope({ scopeGrantId: 'scope-cross-authority', accountId: 'account-2' }), /foreign key/);
+    for (const [scopeGrantId, field, constraint] of [
+      ['scope-blank-id', 'scopeGrantId', 'vnext_data_scope_grants_scope_grant_id_check'],
+      ['scope-blank-authority', 'authorityId', 'vnext_data_scope_grants_authority_id_check'],
+      ['scope-blank-account', 'accountId', 'vnext_data_scope_grants_account_id_check'],
+      ['scope-blank-value', 'scopeValueHash', 'vnext_data_scope_grants_scope_value_hash_check'],
+    ]) {
+      const input = { scopeGrantId, status: 'revoked', revokedAt: FOUNDATION_INSTANT };
+      input[field] = '   ';
+      await assert.rejects(() => insertScope(input), error => error && error.constraint === constraint);
+    }
+    await assert.rejects(
+      () => insertScope({ scopeGrantId: 'scope-invalid-type', scopeType: 'other', status: 'revoked', revokedAt: FOUNDATION_INSTANT }),
+      error => error && error.constraint === 'vnext_data_scope_grants_scope_type_check',
+    );
+    await assert.rejects(
+      () => insertScope({ scopeGrantId: 'scope-invalid-effect', effect: 'grant', status: 'revoked', revokedAt: FOUNDATION_INSTANT }),
+      error => error && error.constraint === 'vnext_data_scope_grants_effect_check',
+    );
+    await facade.query('ALTER TABLE vnext_control_plane.vnext_data_scope_grants DROP CONSTRAINT vnext_data_scope_grants_check2');
+    await assert.rejects(
+      () => insertScope({ scopeGrantId: 'scope-invalid-status', status: 'pending' }),
+      error => error && error.constraint === 'vnext_data_scope_grants_status_check',
+    );
+    await facade.query("ALTER TABLE vnext_control_plane.vnext_data_scope_grants ADD CONSTRAINT vnext_data_scope_grants_check2 CHECK ((status = 'active' AND revoked_at IS NULL) OR (status = 'revoked' AND revoked_at IS NOT NULL) OR (status = 'expired' AND ends_at IS NOT NULL AND revoked_at IS NULL))");
+    await assert.rejects(
+      () => insertScope({ scopeGrantId: 'scope-zero-version', status: 'revoked', revokedAt: FOUNDATION_INSTANT, rowVersion: 0 }),
+      error => error && error.constraint === 'vnext_data_scope_grants_row_version_check',
+    );
+    await assert.rejects(
+      () => insertScope({ scopeGrantId: 'scope-fractional-version', status: 'revoked', revokedAt: FOUNDATION_INSTANT, rowVersion: 1.5 }),
+      /invalid input syntax for type bigint/,
+    );
+    await assert.rejects(
+      () => insertScope({ scopeGrantId: 'scope-updated-before-created', status: 'revoked', revokedAt: FOUNDATION_INSTANT, updatedAt: '2026-08-14T23:59:59.000Z' }),
+      error => error && error.constraint === 'vnext_data_scope_grants_check',
+    );
+    await assert.rejects(
+      () => insertScope({ scopeGrantId: 'scope-end-at-start', status: 'expired', endsAt: FOUNDATION_INSTANT }),
+      error => error && error.constraint === 'vnext_data_scope_grants_check1',
+    );
+    for (const [scopeGrantId, input] of [
+      ['scope-active-revoked', { revokedAt: FOUNDATION_INSTANT }],
+      ['scope-revoked-missing-time', { status: 'revoked' }],
+      ['scope-expired-missing-end', { status: 'expired' }],
+      ['scope-expired-revoked', { status: 'expired', endsAt: '2026-08-15T00:01:00.000Z', revokedAt: FOUNDATION_INSTANT }],
+    ]) {
+      await assert.rejects(() => insertScope({ scopeGrantId, ...input }), error => error && error.constraint === 'vnext_data_scope_grants_check2');
+    }
+    await assert.rejects(
+      () => insertScope({ scopeGrantId: 'scope-negative-infinite-created', status: 'revoked', revokedAt: FOUNDATION_INSTANT, createdAt: '-infinity' }),
+      error => error && error.constraint === 'vnext_data_scope_grants_created_at_check',
+    );
+    for (const [scopeGrantId, field, value, constraint] of [
+      ['scope-infinite-start', 'startsAt', 'infinity', 'vnext_data_scope_grants_starts_at_check'],
+      ['scope-infinite-end', 'endsAt', 'infinity', 'vnext_data_scope_grants_ends_at_check'],
+      ['scope-infinite-updated', 'updatedAt', 'infinity', 'vnext_data_scope_grants_updated_at_check'],
+      ['scope-infinite-revoked', 'revokedAt', '-infinity', 'vnext_data_scope_grants_revoked_at_check'],
+    ]) {
+      const input = { scopeGrantId, status: 'revoked', revokedAt: FOUNDATION_INSTANT };
+      input[field] = value;
+      await assert.rejects(() => insertScope(input), error => error && error.constraint === constraint);
+    }
+  });
+  await assert.rejects(
+    () => withVNextPg17SyntheticQuery(handle, 'verifier', facade => facade.query(
+      "INSERT INTO vnext_control_plane.vnext_data_scope_grants (scope_grant_id, authority_id, account_id, scope_type, scope_value_hash, effect, status, starts_at, row_version, created_at, updated_at) VALUES ('verifier-write', 'authority-1', 'account-1', 'teacher_profile', 'opaque', 'allow', 'active', $1, 1, $1, $1)",
+      [FOUNDATION_INSTANT],
+    )),
+  );
+  await assert.rejects(
+    () => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_data_scope_grants')),
+  );
+}
+
 async function runCatalogAssertionCases(runtime) {
   const catalog = createVNextPg17CatalogBoundary(runtime);
   let priorHandle;
@@ -461,6 +569,37 @@ async function runCatalogAssertionCases(runtime) {
       () => catalog.assert(capabilityCatalogPrefixHandle),
       error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
     );
+    const dataScopePrefixHandle = await createHandle();
+    await withVNextPg17SyntheticQuery(dataScopePrefixHandle, 'fixture-provisioner', async facade => {
+      for (const migration of [FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION, ROLE_GRANTS_MIGRATION, CAPABILITY_CATALOG_MIGRATION, CAPABILITY_OVERRIDES_MIGRATION]) {
+        await facade.query(migration.sql);
+        if (migration.postApply) {
+          await facade.query(migration.postApply.text, migration.postApply.values(migrationInput.appliedAt));
+        }
+        await facade.query(
+          'INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
+          [migration.migrationId, migration.semanticVersion, migration.manifestSha256, migrationInput.appliedAt, migrationInput.appliedBy],
+        );
+      }
+    });
+    await assert.rejects(
+      () => catalog.apply(dataScopePrefixHandle, migrationInput),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+    await withVNextPg17SyntheticQuery(dataScopePrefixHandle, 'fixture-provisioner', async facade => {
+      const ledgerRows = await facade.query(
+        'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version',
+      );
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }]);
+      const scopeRelation = await facade.query(
+        "SELECT to_regclass('vnext_control_plane.vnext_data_scope_grants') AS relation",
+      );
+      assert.strictEqual(scopeRelation.rows[0].relation, null);
+    });
+    await assert.rejects(
+      () => catalog.assert(dataScopePrefixHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
     const handle = await createHandle();
     await assert.rejects(
       () => catalog.assert(handle),
@@ -471,7 +610,7 @@ async function runCatalogAssertionCases(runtime) {
       const ledgerRows = await facade.query(
         'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version',
       );
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }]);
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }]);
       const schemaMetaRows = await facade.query(
         'SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta',
       );
@@ -482,12 +621,15 @@ async function runCatalogAssertionCases(runtime) {
       assert.deepStrictEqual(capabilityCount.rows, [{ count: '0' }]);
       const overrideCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_capability_overrides');
       assert.deepStrictEqual(overrideCount.rows, [{ count: '0' }]);
+      const scopeGrantCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_data_scope_grants');
+      assert.deepStrictEqual(scopeGrantCount.rows, [{ count: '0' }]);
     });
     await assert.doesNotReject(() => catalog.assert(handle));
     await assertFoundationSemantics(handle);
     await assertRoleGrantSemantics(handle);
     await assertCapabilityCatalogSemantics(handle);
     await assertCapabilityOverrideSemantics(handle);
+    await assertDataScopeGrantSemantics(handle);
     assert.deepStrictEqual(await catalog.apply(handle, migrationInput), { applied: false });
     await withVNextPg17SyntheticQuery(handle, 'verifier', async facade => {
       await facade.query('BEGIN READ ONLY');
@@ -503,7 +645,7 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(
       () => withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
-        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 7, repeat('a', 64), now(), 'fixture')",
+        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 8, repeat('a', 64), now(), 'fixture')",
       )),
     );
     await assert.rejects(
@@ -1009,6 +1151,91 @@ async function runCatalogAssertionCases(runtime) {
     ));
     await assert.rejects(
       () => catalog.assert(overrideAccountForeignKeyHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const scopeIndexHandle = await createHandle();
+    await catalog.apply(scopeIndexHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(scopeIndexHandle, 'fixture-provisioner', async facade => {
+      await facade.query('DROP INDEX vnext_control_plane.vnext_data_scope_grants_one_active_scope');
+      await facade.query("CREATE UNIQUE INDEX vnext_data_scope_grants_one_active_scope ON vnext_control_plane.vnext_data_scope_grants (authority_id, account_id, scope_type, scope_value_hash) WHERE status = 'expired'");
+    });
+    await assert.rejects(
+      () => catalog.assert(scopeIndexHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const scopeExtraIndexHandle = await createHandle();
+    await catalog.apply(scopeExtraIndexHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(scopeExtraIndexHandle, 'fixture-provisioner', facade => facade.query(
+      'CREATE INDEX unapproved_scope_grant_status_index ON vnext_control_plane.vnext_data_scope_grants (status)',
+    ));
+    await assert.rejects(
+      () => catalog.assert(scopeExtraIndexHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    for (const [name, sql] of [
+      ['scope-type', "ALTER TABLE vnext_control_plane.vnext_data_scope_grants DROP CONSTRAINT vnext_data_scope_grants_scope_type_check; ALTER TABLE vnext_control_plane.vnext_data_scope_grants ADD CONSTRAINT vnext_data_scope_grants_scope_type_check CHECK (scope_type IN ('teacher_profile', 'student_profile', 'school', 'household', 'resource_owner', 'other'))"],
+      ['scope-status', "ALTER TABLE vnext_control_plane.vnext_data_scope_grants DROP CONSTRAINT vnext_data_scope_grants_status_check; ALTER TABLE vnext_control_plane.vnext_data_scope_grants ADD CONSTRAINT vnext_data_scope_grants_status_check CHECK (status IN ('active', 'revoked', 'expired', 'pending'))"],
+    ]) {
+      const driftHandle = await createHandle();
+      await catalog.apply(driftHandle, migrationInput);
+      await withVNextPg17SyntheticQuery(driftHandle, 'fixture-provisioner', async facade => facade.query(sql));
+      await assert.rejects(
+        () => catalog.assert(driftHandle),
+        error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+        name,
+      );
+    }
+
+    const scopeForeignKeyHandle = await createHandle();
+    await catalog.apply(scopeForeignKeyHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(scopeForeignKeyHandle, 'fixture-provisioner', facade => facade.query(
+      'ALTER TABLE vnext_control_plane.vnext_data_scope_grants DROP CONSTRAINT vnext_data_scope_grants_account_id_authority_id_fkey',
+    ));
+    await assert.rejects(
+      () => catalog.assert(scopeForeignKeyHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const scopeVerifierAclHandle = await createHandle();
+    await catalog.apply(scopeVerifierAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(scopeVerifierAclHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT INSERT ON vnext_control_plane.vnext_data_scope_grants TO vnext_pg17_verifier',
+    ));
+    await assert.rejects(
+      () => catalog.assert(scopeVerifierAclHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const scopeTriggerHandle = await createHandle();
+    await catalog.apply(scopeTriggerHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(scopeTriggerHandle, 'fixture-provisioner', facade => facade.query(
+      'CREATE TRIGGER unapproved_scope_grant_delete BEFORE DELETE ON vnext_control_plane.vnext_data_scope_grants FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_schema_migrations_no_delete()',
+    ));
+    await assert.rejects(
+      () => catalog.assert(scopeTriggerHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const scopeDefaultHandle = await createHandle();
+    await catalog.apply(scopeDefaultHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(scopeDefaultHandle, 'fixture-provisioner', facade => facade.query(
+      "ALTER TABLE vnext_control_plane.vnext_data_scope_grants ALTER COLUMN effect SET DEFAULT 'allow'",
+    ));
+    await assert.rejects(
+      () => catalog.assert(scopeDefaultHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const scopePublicShadowHandle = await createHandle();
+    await catalog.apply(scopePublicShadowHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(scopePublicShadowHandle, 'fixture-provisioner', facade => facade.query(
+      'CREATE TABLE public.vnext_data_scope_grants (id integer)',
+    ));
+    await assert.rejects(
+      () => catalog.assert(scopePublicShadowHandle),
       error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
     );
 
