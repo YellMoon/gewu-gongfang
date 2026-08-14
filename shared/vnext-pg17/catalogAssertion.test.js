@@ -7,6 +7,7 @@ const {
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
   ROLE_GRANTS_MIGRATION,
+  CAPABILITY_CATALOG_MIGRATION,
 } = require('./migrationManifest');
 
 const FOUNDATION_INSTANT = '2026-08-15T00:00:00.000Z';
@@ -218,6 +219,122 @@ async function assertCapabilityCatalogSemantics(handle) {
   );
 }
 
+async function assertCapabilityOverrideSemantics(handle) {
+  await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+    const insertOverride = ({
+      overrideId,
+      authorityId = 'authority-1',
+      accountId = 'account-1',
+      capabilityId = 'access.manage',
+      effect = 'allow',
+      status = 'active',
+      startsAt = FOUNDATION_INSTANT,
+      endsAt = null,
+      rowVersion = 1,
+      createdAt = FOUNDATION_INSTANT,
+      updatedAt = FOUNDATION_INSTANT,
+      revokedAt = null,
+    }) => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_capability_overrides (override_id, authority_id, account_id, capability_id, effect, status, starts_at, ends_at, row_version, created_at, updated_at, revoked_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)',
+      [overrideId, authorityId, accountId, capabilityId, effect, status, startsAt, endsAt, rowVersion, createdAt, updatedAt, revokedAt],
+    );
+
+    await insertOverride({ overrideId: 'override-allow' });
+    await assert.rejects(() => insertOverride({ overrideId: 'override-duplicate' }), /duplicate key/);
+    await insertOverride({ overrideId: 'override-retired-capability', capabilityId: 'access.retired', effect: 'deny' });
+    await insertOverride({ overrideId: 'override-revoked-history', status: 'revoked', revokedAt: FOUNDATION_INSTANT });
+    await insertOverride({ overrideId: 'override-expired-history', status: 'expired', endsAt: '2026-08-15T00:01:00.000Z' });
+    await facade.query("UPDATE vnext_control_plane.vnext_capability_overrides SET status = 'revoked', revoked_at = $1 WHERE override_id = 'override-allow'", [FOUNDATION_INSTANT]);
+    await insertOverride({ overrideId: 'override-active-replacement' });
+
+    await assert.rejects(() => insertOverride({ overrideId: 'override-cross-authority-account', accountId: 'account-2', capabilityId: 'access.retired' }), /foreign key/);
+    await assert.rejects(() => insertOverride({ overrideId: 'override-unknown-capability', capabilityId: 'access.unknown', status: 'revoked', revokedAt: FOUNDATION_INSTANT }), /foreign key/);
+    await assert.rejects(
+      () => insertOverride({ overrideId: '   ', capabilityId: 'access.retired', status: 'revoked', revokedAt: FOUNDATION_INSTANT }),
+      error => error && error.constraint === 'vnext_capability_overrides_override_id_check',
+    );
+    await assert.rejects(
+      () => insertOverride({ overrideId: 'override-blank-authority', authorityId: '   ', capabilityId: 'access.retired', status: 'revoked', revokedAt: FOUNDATION_INSTANT }),
+      error => error && error.constraint === 'vnext_capability_overrides_authority_id_check',
+    );
+    await assert.rejects(
+      () => insertOverride({ overrideId: 'override-blank-account', accountId: '   ', capabilityId: 'access.retired', status: 'revoked', revokedAt: FOUNDATION_INSTANT }),
+      error => error && error.constraint === 'vnext_capability_overrides_account_id_check',
+    );
+    await assert.rejects(
+      () => insertOverride({ overrideId: 'override-blank-capability', capabilityId: '   ', status: 'revoked', revokedAt: FOUNDATION_INSTANT }),
+      error => error && error.constraint === 'vnext_capability_overrides_capability_id_check',
+    );
+    await assert.rejects(
+      () => insertOverride({ overrideId: 'override-invalid-effect', capabilityId: 'access.retired', effect: 'grant', status: 'revoked', revokedAt: FOUNDATION_INSTANT }),
+      error => error && error.constraint === 'vnext_capability_overrides_effect_check',
+    );
+    await facade.query('ALTER TABLE vnext_control_plane.vnext_capability_overrides DROP CONSTRAINT vnext_capability_overrides_check2');
+    await assert.rejects(
+      () => insertOverride({ overrideId: 'override-invalid-status', capabilityId: 'access.retired', status: 'pending' }),
+      error => error && error.constraint === 'vnext_capability_overrides_status_check',
+    );
+    await facade.query("ALTER TABLE vnext_control_plane.vnext_capability_overrides ADD CONSTRAINT vnext_capability_overrides_check2 CHECK ((status = 'active' AND revoked_at IS NULL) OR (status = 'revoked' AND revoked_at IS NOT NULL) OR (status = 'expired' AND ends_at IS NOT NULL AND revoked_at IS NULL))");
+    await assert.rejects(
+      () => insertOverride({ overrideId: 'override-zero-version', capabilityId: 'access.retired', status: 'revoked', revokedAt: FOUNDATION_INSTANT, rowVersion: 0 }),
+      error => error && error.constraint === 'vnext_capability_overrides_row_version_check',
+    );
+    await assert.rejects(
+      () => insertOverride({ overrideId: 'override-fractional-version', capabilityId: 'access.retired', status: 'revoked', revokedAt: FOUNDATION_INSTANT, rowVersion: 1.5 }),
+      /invalid input syntax for type bigint/,
+    );
+    await assert.rejects(
+      () => insertOverride({ overrideId: 'override-updated-before-created', capabilityId: 'access.retired', status: 'revoked', revokedAt: FOUNDATION_INSTANT, updatedAt: '2026-08-14T23:59:59.000Z' }),
+      error => error && error.constraint === 'vnext_capability_overrides_check',
+    );
+    await assert.rejects(
+      () => insertOverride({ overrideId: 'override-end-at-start', capabilityId: 'access.retired', status: 'expired', endsAt: FOUNDATION_INSTANT }),
+      error => error && error.constraint === 'vnext_capability_overrides_check1',
+    );
+    await assert.rejects(
+      () => insertOverride({ overrideId: 'override-active-revoked', capabilityId: 'access.retired', revokedAt: FOUNDATION_INSTANT }),
+      error => error && error.constraint === 'vnext_capability_overrides_check2',
+    );
+    await assert.rejects(
+      () => insertOverride({ overrideId: 'override-revoked-missing-time', capabilityId: 'access.retired', status: 'revoked' }),
+      error => error && error.constraint === 'vnext_capability_overrides_check2',
+    );
+    await assert.rejects(
+      () => insertOverride({ overrideId: 'override-expired-missing-end', capabilityId: 'access.retired', status: 'expired' }),
+      error => error && error.constraint === 'vnext_capability_overrides_check2',
+    );
+    await assert.rejects(
+      () => insertOverride({ overrideId: 'override-expired-revoked', capabilityId: 'access.retired', status: 'expired', endsAt: '2026-08-15T00:01:00.000Z', revokedAt: FOUNDATION_INSTANT }),
+      error => error && error.constraint === 'vnext_capability_overrides_check2',
+    );
+    await assert.rejects(
+      () => insertOverride({ overrideId: 'override-negative-infinite-created', capabilityId: 'access.retired', status: 'revoked', revokedAt: FOUNDATION_INSTANT, createdAt: '-infinity' }),
+      error => error && error.constraint === 'vnext_capability_overrides_created_at_check',
+    );
+    for (const [overrideId, field, value, constraint] of [
+      ['override-infinite-start', 'startsAt', 'infinity', 'vnext_capability_overrides_starts_at_check'],
+      ['override-infinite-end', 'endsAt', 'infinity', 'vnext_capability_overrides_ends_at_check'],
+      ['override-infinite-updated', 'updatedAt', 'infinity', 'vnext_capability_overrides_updated_at_check'],
+      ['override-infinite-revoked', 'revokedAt', '-infinity', 'vnext_capability_overrides_revoked_at_check'],
+    ]) {
+      const input = { overrideId, capabilityId: 'access.retired', status: 'revoked', revokedAt: FOUNDATION_INSTANT };
+      input[field] = value;
+      await assert.rejects(() => insertOverride(input), error => error && error.constraint === constraint);
+    }
+  });
+  await assert.rejects(
+    () => withVNextPg17SyntheticQuery(handle, 'verifier', facade => facade.query(
+      "INSERT INTO vnext_control_plane.vnext_capability_overrides (override_id, authority_id, account_id, capability_id, effect, status, starts_at, row_version, created_at, updated_at) VALUES ('verifier-write', 'authority-1', 'account-1', 'access.manage', 'allow', 'active', $1, 1, $1, $1)",
+      [FOUNDATION_INSTANT],
+    )),
+  );
+  await assert.rejects(
+    () => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query(
+      'SELECT * FROM vnext_control_plane.vnext_capability_overrides',
+    )),
+  );
+}
+
 async function runCatalogAssertionCases(runtime) {
   const catalog = createVNextPg17CatalogBoundary(runtime);
   let priorHandle;
@@ -313,6 +430,37 @@ async function runCatalogAssertionCases(runtime) {
       () => catalog.assert(roleGrantPrefixHandle),
       error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
     );
+    const capabilityCatalogPrefixHandle = await createHandle();
+    await withVNextPg17SyntheticQuery(capabilityCatalogPrefixHandle, 'fixture-provisioner', async facade => {
+      for (const migration of [FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION, ROLE_GRANTS_MIGRATION, CAPABILITY_CATALOG_MIGRATION]) {
+        await facade.query(migration.sql);
+        if (migration.postApply) {
+          await facade.query(migration.postApply.text, migration.postApply.values(migrationInput.appliedAt));
+        }
+        await facade.query(
+          'INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
+          [migration.migrationId, migration.semanticVersion, migration.manifestSha256, migrationInput.appliedAt, migrationInput.appliedBy],
+        );
+      }
+    });
+    await assert.rejects(
+      () => catalog.apply(capabilityCatalogPrefixHandle, migrationInput),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+    await withVNextPg17SyntheticQuery(capabilityCatalogPrefixHandle, 'fixture-provisioner', async facade => {
+      const ledgerRows = await facade.query(
+        'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version',
+      );
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }]);
+      const overrideRelation = await facade.query(
+        "SELECT to_regclass('vnext_control_plane.vnext_capability_overrides') AS relation",
+      );
+      assert.strictEqual(overrideRelation.rows[0].relation, null);
+    });
+    await assert.rejects(
+      () => catalog.assert(capabilityCatalogPrefixHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
     const handle = await createHandle();
     await assert.rejects(
       () => catalog.assert(handle),
@@ -323,7 +471,7 @@ async function runCatalogAssertionCases(runtime) {
       const ledgerRows = await facade.query(
         'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version',
       );
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }]);
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }]);
       const schemaMetaRows = await facade.query(
         'SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta',
       );
@@ -332,11 +480,14 @@ async function runCatalogAssertionCases(runtime) {
       assert.deepStrictEqual(roleGrantCount.rows, [{ count: '0' }]);
       const capabilityCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_capability_catalog');
       assert.deepStrictEqual(capabilityCount.rows, [{ count: '0' }]);
+      const overrideCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_capability_overrides');
+      assert.deepStrictEqual(overrideCount.rows, [{ count: '0' }]);
     });
     await assert.doesNotReject(() => catalog.assert(handle));
     await assertFoundationSemantics(handle);
     await assertRoleGrantSemantics(handle);
     await assertCapabilityCatalogSemantics(handle);
+    await assertCapabilityOverrideSemantics(handle);
     assert.deepStrictEqual(await catalog.apply(handle, migrationInput), { applied: false });
     await withVNextPg17SyntheticQuery(handle, 'verifier', async facade => {
       await facade.query('BEGIN READ ONLY');
@@ -352,7 +503,7 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(
       () => withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
-        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 6, repeat('a', 64), now(), 'fixture')",
+        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 7, repeat('a', 64), now(), 'fixture')",
       )),
     );
     await assert.rejects(
@@ -745,6 +896,119 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(
       () => catalog.assert(capabilityStatusConstraintHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const overrideVerifierAclHandle = await createHandle();
+    await catalog.apply(overrideVerifierAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(overrideVerifierAclHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT INSERT ON vnext_control_plane.vnext_capability_overrides TO vnext_pg17_verifier',
+    ));
+    await assert.rejects(
+      () => catalog.assert(overrideVerifierAclHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const overrideRuntimeAclHandle = await createHandle();
+    await catalog.apply(overrideRuntimeAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(overrideRuntimeAclHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT SELECT ON vnext_control_plane.vnext_capability_overrides TO vnext_pg17_runtime',
+    ));
+    await assert.rejects(
+      () => catalog.assert(overrideRuntimeAclHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const overrideTriggerHandle = await createHandle();
+    await catalog.apply(overrideTriggerHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(overrideTriggerHandle, 'fixture-provisioner', facade => facade.query(
+      'CREATE TRIGGER unapproved_capability_override_delete BEFORE DELETE ON vnext_control_plane.vnext_capability_overrides FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_schema_migrations_no_delete()',
+    ));
+    await assert.rejects(
+      () => catalog.assert(overrideTriggerHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const overrideDefaultHandle = await createHandle();
+    await catalog.apply(overrideDefaultHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(overrideDefaultHandle, 'fixture-provisioner', facade => facade.query(
+      "ALTER TABLE vnext_control_plane.vnext_capability_overrides ALTER COLUMN effect SET DEFAULT 'allow'",
+    ));
+    await assert.rejects(
+      () => catalog.assert(overrideDefaultHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const overridePublicShadowHandle = await createHandle();
+    await catalog.apply(overridePublicShadowHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(overridePublicShadowHandle, 'fixture-provisioner', facade => facade.query(
+      'CREATE TABLE public.vnext_capability_overrides (id integer)',
+    ));
+    await assert.rejects(
+      () => catalog.assert(overridePublicShadowHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const overrideIndexHandle = await createHandle();
+    await catalog.apply(overrideIndexHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(overrideIndexHandle, 'fixture-provisioner', async facade => {
+      await facade.query('DROP INDEX vnext_control_plane.vnext_capability_overrides_one_active_capability');
+      await facade.query("CREATE UNIQUE INDEX vnext_capability_overrides_one_active_capability ON vnext_control_plane.vnext_capability_overrides (authority_id, account_id, capability_id) WHERE status = 'expired'");
+    });
+    await assert.rejects(
+      () => catalog.assert(overrideIndexHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const overrideExtraIndexHandle = await createHandle();
+    await catalog.apply(overrideExtraIndexHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(overrideExtraIndexHandle, 'fixture-provisioner', facade => facade.query(
+      'CREATE INDEX unapproved_capability_override_status_index ON vnext_control_plane.vnext_capability_overrides (status)',
+    ));
+    await assert.rejects(
+      () => catalog.assert(overrideExtraIndexHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const overrideEffectConstraintHandle = await createHandle();
+    await catalog.apply(overrideEffectConstraintHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(overrideEffectConstraintHandle, 'fixture-provisioner', async facade => {
+      await facade.query('ALTER TABLE vnext_control_plane.vnext_capability_overrides DROP CONSTRAINT vnext_capability_overrides_effect_check');
+      await facade.query("ALTER TABLE vnext_control_plane.vnext_capability_overrides ADD CONSTRAINT vnext_capability_overrides_effect_check CHECK (effect IN ('allow', 'deny', 'grant'))");
+    });
+    await assert.rejects(
+      () => catalog.assert(overrideEffectConstraintHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const overrideStatusConstraintHandle = await createHandle();
+    await catalog.apply(overrideStatusConstraintHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(overrideStatusConstraintHandle, 'fixture-provisioner', async facade => {
+      await facade.query('ALTER TABLE vnext_control_plane.vnext_capability_overrides DROP CONSTRAINT vnext_capability_overrides_status_check');
+      await facade.query("ALTER TABLE vnext_control_plane.vnext_capability_overrides ADD CONSTRAINT vnext_capability_overrides_status_check CHECK (status IN ('active', 'revoked', 'expired', 'pending'))");
+    });
+    await assert.rejects(
+      () => catalog.assert(overrideStatusConstraintHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const overrideForeignKeyHandle = await createHandle();
+    await catalog.apply(overrideForeignKeyHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(overrideForeignKeyHandle, 'fixture-provisioner', facade => facade.query(
+      'ALTER TABLE vnext_control_plane.vnext_capability_overrides DROP CONSTRAINT vnext_capability_overrides_capability_id_fkey',
+    ));
+    await assert.rejects(
+      () => catalog.assert(overrideForeignKeyHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const overrideAccountForeignKeyHandle = await createHandle();
+    await catalog.apply(overrideAccountForeignKeyHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(overrideAccountForeignKeyHandle, 'fixture-provisioner', facade => facade.query(
+      'ALTER TABLE vnext_control_plane.vnext_capability_overrides DROP CONSTRAINT vnext_capability_overrides_account_id_authority_id_fkey',
+    ));
+    await assert.rejects(
+      () => catalog.assert(overrideAccountForeignKeyHandle),
       error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
     );
 

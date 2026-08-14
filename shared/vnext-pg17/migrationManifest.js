@@ -247,11 +247,47 @@ const CAPABILITY_CATALOG_MIGRATION = Object.freeze({
   manifestSha256: sha256(CAPABILITY_CATALOG_SQL),
 });
 
+const CAPABILITY_OVERRIDES_SQL = `CREATE TABLE vnext_control_plane.vnext_capability_overrides (
+  override_id text COLLATE "C" PRIMARY KEY CHECK (btrim(override_id) <> ''),
+  authority_id text COLLATE "C" NOT NULL CHECK (btrim(authority_id) <> ''),
+  account_id text COLLATE "C" NOT NULL CHECK (btrim(account_id) <> ''),
+  capability_id text COLLATE "C" NOT NULL CHECK (btrim(capability_id) <> ''),
+  effect text COLLATE "C" NOT NULL CHECK (effect IN ('allow', 'deny')),
+  status text COLLATE "C" NOT NULL CHECK (status IN ('active', 'revoked', 'expired')),
+  starts_at timestamptz NOT NULL CHECK (starts_at <> 'infinity'::timestamptz AND starts_at <> '-infinity'::timestamptz),
+  ends_at timestamptz CHECK (ends_at <> 'infinity'::timestamptz AND ends_at <> '-infinity'::timestamptz),
+  row_version bigint NOT NULL CHECK (row_version >= 1),
+  created_at timestamptz NOT NULL CHECK (created_at <> 'infinity'::timestamptz AND created_at <> '-infinity'::timestamptz),
+  updated_at timestamptz NOT NULL CHECK (updated_at <> 'infinity'::timestamptz AND updated_at <> '-infinity'::timestamptz),
+  revoked_at timestamptz CHECK (revoked_at <> 'infinity'::timestamptz AND revoked_at <> '-infinity'::timestamptz),
+  CHECK (updated_at >= created_at),
+  CHECK (ends_at IS NULL OR ends_at > starts_at),
+  CHECK (
+    (status = 'active' AND revoked_at IS NULL)
+    OR (status = 'revoked' AND revoked_at IS NOT NULL)
+    OR (status = 'expired' AND ends_at IS NOT NULL AND revoked_at IS NULL)
+  ),
+  FOREIGN KEY (account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  FOREIGN KEY (capability_id) REFERENCES vnext_control_plane.vnext_capability_catalog(capability_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+);
+CREATE UNIQUE INDEX vnext_capability_overrides_one_active_capability
+  ON vnext_control_plane.vnext_capability_overrides (authority_id, account_id, capability_id)
+  WHERE status = 'active';
+GRANT SELECT ON TABLE vnext_control_plane.vnext_capability_overrides TO vnext_pg17_verifier;`;
+
+const CAPABILITY_OVERRIDES_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-capability-overrides-5',
+  semanticVersion: 5,
+  sql: CAPABILITY_OVERRIDES_SQL,
+  manifestSha256: sha256(CAPABILITY_OVERRIDES_SQL),
+});
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
   ROLE_GRANTS_MIGRATION,
   CAPABILITY_CATALOG_MIGRATION,
+  CAPABILITY_OVERRIDES_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -304,6 +340,7 @@ const expectedCatalog = Object.freeze({
     'vnext_control_plane.vnext_accounts',
     'vnext_control_plane.vnext_authorities',
     'vnext_control_plane.vnext_capability_catalog',
+    'vnext_control_plane.vnext_capability_overrides',
     'vnext_control_plane.vnext_device_installations',
     'vnext_control_plane.vnext_role_grants',
     'vnext_control_plane.vnext_schema_meta',
@@ -324,6 +361,7 @@ module.exports = {
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
   ROLE_GRANTS_MIGRATION,
   CAPABILITY_CATALOG_MIGRATION,
+  CAPABILITY_OVERRIDES_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

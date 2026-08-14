@@ -181,3 +181,10 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - Migration 4 adds only `vnext_capability_catalog`. It has no capability seed, authority ownership field, policy/default mapping, override, extra index, foreign key, or trigger.
 - Disposable PostgreSQL 17 checks verify C-collated nonblank IDs and surface masks, active/retired status, finite creation times, owner/verifier-only access, no runtime rights, no table trigger, and fail-closed relation, constraint, index, ACL, public-shadow, and migration-prefix drift.
 - Focused PG17 checks and the control-plane target aggregate were rerun after independent necessity and quality review. This is synthetic local validation only: no real RDS/ECS DDL, data import, writer/API, business row, deployment, or desktop data access occurred.
+
+### PostgreSQL 17 capability-overrides evidence (2026-08-15)
+
+- Migration 5 adds only `vnext_capability_overrides` and its `active` partial-unique index. It has no override seed, default role mapping, authority policy field, trigger, function, writer, API, business relation, or real-resource access.
+- Disposable PostgreSQL 17 checks verify C-collated IDs, allow/deny and active/revoked/expired lifecycle rules, finite timestamps, positive row versions, both RESTRICT foreign keys, retired-capability structural references, active-record uniqueness with revoked history, verifier-only SELECT, and no runtime access.
+- The exact catalog fails closed on migration-4 prefix apply, altered ACL/default/constraint/FK/index/partial-predicate/trigger/public-shadow drift, and unexpected table objects. Independent necessity and quality review passed, followed by focused checks, the complete control-plane target aggregate, and a clean diff check.
+- This remains synthetic local validation only: no RDS/ECS DDL, source or business-data import, runtime writer, API, deployment, desktop-data, NAS, or removable-media access occurred.
