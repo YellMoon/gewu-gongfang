@@ -14,6 +14,12 @@ function vNextTables(db) {
     .all().map(row => row.name);
 }
 
+function referenceSnapshot(db) {
+  const schema = db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name LIKE 'vNext_%' ORDER BY type,name").all();
+  const rows = Object.fromEntries(vNextTables(db).map(table => [table, db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]));
+  return JSON.stringify({ foreignKeys: db.pragma('foreign_keys', { simple: true }), inTransaction: db.inTransaction, schema, rows });
+}
+
 const db = new Database(':memory:');
 try {
   db.exec('CREATE TABLE legacy_guard(id TEXT PRIMARY KEY, value TEXT NOT NULL); INSERT INTO legacy_guard VALUES(\'legacy-1\',\'unchanged\');');
@@ -165,9 +171,9 @@ try {
     () => db.prepare("DELETE FROM vNext_sessions WHERE session_id='session-initialization'").run(),
     /vNext session is append-only/,
   );
-  const beforeAssert = { foreignKeys: db.pragma('foreign_keys', { simple: true }), sessions: db.prepare('SELECT COUNT(*) AS count FROM vNext_sessions').get().count, reauth: db.prepare('SELECT COUNT(*) AS count FROM vNext_recent_reauthentication_events').get().count };
+  const beforeAssert = referenceSnapshot(db);
   assertVNextControlPlaneReferenceSchema(db);
-  assert.deepStrictEqual({ foreignKeys: db.pragma('foreign_keys', { simple: true }), sessions: db.prepare('SELECT COUNT(*) AS count FROM vNext_sessions').get().count, reauth: db.prepare('SELECT COUNT(*) AS count FROM vNext_recent_reauthentication_events').get().count }, beforeAssert, 'public assertion must be read-only');
+  assert.strictEqual(referenceSnapshot(db), beforeAssert, 'public assertion must be read-only across all V5 schema and records');
   assert.throws(() => db.prepare("UPDATE vNext_recent_reauthentication_events SET factor_class='password' WHERE reauth_event_id='reauth-1'").run(), /vNext reauth event is append-only/);
   assert.throws(() => db.prepare("DELETE FROM vNext_recent_reauthentication_events WHERE reauth_event_id='reauth-1'").run(), /vNext reauth event is append-only/);
   assert.throws(
@@ -232,16 +238,92 @@ try {
   assert.throws(() => db.prepare("UPDATE vNext_authorization_policy_publications SET policy_revision=2 WHERE publication_id='policy-publication-1'").run(), /vNext policy publication is append-only/);
   assert.throws(() => db.prepare("DELETE FROM vNext_authorization_policy_publications WHERE publication_id='policy-publication-1'").run(), /vNext policy publication is append-only/);
   db.prepare(`INSERT INTO vNext_authorization_audit_events(event_id,authority_id,receipt_id,reason_code,context_sha256,created_at) VALUES('audit-1','authority-1','receipt-1','operator_reason','${HASH}','2026-08-14T00:00:00.000Z')`).run();
-  db.prepare(`INSERT INTO vNext_bootstrap_consumptions(marker_key,bootstrap_intent_id,authority_id,installation_key_fingerprint,policy_manifest_sha256,receipt_id,consumed_at) VALUES('single-authority-bootstrap','bootstrap-intent-1','authority-1','${HASH}','${HASH}','receipt-1','2026-08-14T00:00:00.000Z')`).run();
-  assert.throws(() => db.prepare("UPDATE vNext_bootstrap_consumptions SET authority_id='authority-2' WHERE marker_key='single-authority-bootstrap'").run(), /vNext bootstrap consumption is append-only/);
-  assert.throws(() => db.prepare("DELETE FROM vNext_bootstrap_consumptions WHERE marker_key='single-authority-bootstrap'").run(), /vNext bootstrap consumption is append-only/);
-  db.prepare(`INSERT INTO vNext_trust_root_evidence(evidence_id,authority_id,receipt_id,actor_kind,event_id,assertion_evidence_sha256,created_at) VALUES('trust-root-bootstrap-1','authority-1','receipt-1','deployment_bootstrap','bootstrap-intent-1','${HASH}','2026-08-14T00:00:00.000Z')`).run();
-  assert.throws(() => db.prepare("UPDATE vNext_trust_root_evidence SET event_id='changed' WHERE evidence_id='trust-root-bootstrap-1'").run(), /vNext trust-root evidence is append-only/);
-  assert.throws(() => db.prepare("DELETE FROM vNext_trust_root_evidence WHERE evidence_id='trust-root-bootstrap-1'").run(), /vNext trust-root evidence is append-only/);
   assert.throws(
-    () => db.prepare(`INSERT INTO vNext_trust_root_evidence(evidence_id,authority_id,receipt_id,actor_kind,event_id,assertion_evidence_sha256,created_at) VALUES('trust-root-recovery-invalid','authority-1','policy-receipt-1','owner_recovery_event','recovery-event-invalid','${HASH}','2026-08-14T00:00:00.000Z')`).run(),
+    () => db.prepare(`INSERT INTO vNext_bootstrap_consumptions(marker_key,bootstrap_intent_id,authority_id,installation_key_fingerprint,policy_manifest_sha256,receipt_id,consumed_at) VALUES('single-authority-bootstrap','bootstrap-intent-ordinary','authority-1','${HASH}','${HASH}','receipt-1','2026-08-14T00:00:00.000Z')`).run(),
+    /VNEXT_BOOTSTRAP_MARKER_RECEIPT_INVALID/,
+  );
+  const bootstrapResult = `{"authorityId":"authority-1","code":"AUTHORITY_BOOTSTRAPPED","policyContractVersion":1,"policyManifestSha256":"${HASH}","policyRevision":1,"publicationId":"bootstrap-policy-publication-1","status":"accepted"}`;
+  db.prepare(`INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,committed_target_row_version,created_at) VALUES('bootstrap-receipt-1','authority-1','bootstrap:bootstrap-intent-1','bootstrap-key-1','authority.bootstrap','authority','authority-1','${HASH}',0,'accepted','AUTHORITY_BOOTSTRAPPED',?,'${HASH}',1,'2026-08-14T00:00:00.000Z')`).run(bootstrapResult);
+  db.prepare(`INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,committed_target_row_version,created_at) VALUES('bootstrap-receipt-buffer','authority-1','bootstrap:bootstrap-intent-buffer','bootstrap-key-buffer','authority.bootstrap','authority','authority-1','${HASH}',0,'accepted','AUTHORITY_BOOTSTRAPPED',?,'${HASH}',1,'2026-08-14T00:00:00.000Z')`).run(bootstrapResult);
+  assert.throws(
+    () => db.prepare('INSERT INTO vNext_bootstrap_consumptions(marker_key,bootstrap_intent_id,authority_id,installation_key_fingerprint,policy_manifest_sha256,receipt_id,consumed_at) VALUES(?,?,?,?,?,?,?)').run('single-authority-bootstrap', 'bootstrap-intent-buffer', 'authority-1', Buffer.alloc(64), HASH, 'bootstrap-receipt-buffer', '2026-08-14T00:00:00.000Z'),
     /CHECK constraint failed/,
   );
+  db.prepare(`INSERT INTO vNext_bootstrap_consumptions(marker_key,bootstrap_intent_id,authority_id,installation_key_fingerprint,policy_manifest_sha256,receipt_id,consumed_at) VALUES('single-authority-bootstrap','bootstrap-intent-1','authority-1','${HASH}','${HASH}','bootstrap-receipt-1','2026-08-14T00:00:00.000Z')`).run();
+  assert.deepStrictEqual(db.prepare('PRAGMA foreign_key_list(vNext_bootstrap_consumptions)').all(), [], 'bootstrap marker must remain deployment-global when authority rows are damaged');
+  db.prepare(`INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,committed_target_row_version,created_at) VALUES('bootstrap-receipt-wrong-marker','authority-1','bootstrap:bootstrap-intent-2','bootstrap-key-2','authority.bootstrap','authority','authority-1','${HASH}',0,'accepted','AUTHORITY_BOOTSTRAPPED',?,'${HASH}',1,'2026-08-14T00:00:00.000Z')`).run(bootstrapResult);
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_bootstrap_consumptions(marker_key,bootstrap_intent_id,authority_id,installation_key_fingerprint,policy_manifest_sha256,receipt_id,consumed_at) VALUES('wrong-marker','bootstrap-intent-2','authority-1','${HASH}','${HASH}','bootstrap-receipt-wrong-marker','2026-08-14T00:00:00.000Z')`).run(),
+    /CHECK constraint failed/,
+  );
+  db.prepare(`INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,committed_target_row_version,created_at) VALUES('bootstrap-receipt-second-marker','authority-1','bootstrap:bootstrap-intent-3','bootstrap-key-3','authority.bootstrap','authority','authority-1','${HASH}',0,'accepted','AUTHORITY_BOOTSTRAPPED',?,'${HASH}',1,'2026-08-14T00:00:00.000Z')`).run(bootstrapResult);
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_bootstrap_consumptions(marker_key,bootstrap_intent_id,authority_id,installation_key_fingerprint,policy_manifest_sha256,receipt_id,consumed_at) VALUES('single-authority-bootstrap','bootstrap-intent-3','authority-1','${HASH}','${HASH}','bootstrap-receipt-second-marker','2026-08-14T00:00:00.000Z')`).run(),
+    /UNIQUE constraint failed/,
+  );
+  for (const [suffix, result] of [
+    ['boolean-version', `{"authorityId":"authority-1","code":"AUTHORITY_BOOTSTRAPPED","policyContractVersion":true,"policyManifestSha256":"${HASH}","policyRevision":1,"publicationId":"bootstrap-policy-publication-json-1","status":"accepted"}`],
+    ['string-version', `{"authorityId":"authority-1","code":"AUTHORITY_BOOTSTRAPPED","policyContractVersion":"1","policyManifestSha256":"${HASH}","policyRevision":1,"publicationId":"bootstrap-policy-publication-json-2","status":"accepted"}`],
+    ['extra-key', `{"authorityId":"authority-1","code":"AUTHORITY_BOOTSTRAPPED","extra":"forged","policyContractVersion":1,"policyManifestSha256":"${HASH}","policyRevision":1,"publicationId":"bootstrap-policy-publication-json-3","status":"accepted"}`],
+  ]) {
+    const intent = `bootstrap-intent-${suffix}`;
+    db.prepare('INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,committed_target_row_version,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(`bootstrap-receipt-${suffix}`, 'authority-1', `bootstrap:${intent}`, `bootstrap-key-${suffix}`, 'authority.bootstrap', 'authority', 'authority-1', HASH, 0, 'accepted', 'AUTHORITY_BOOTSTRAPPED', result, HASH, 1, '2026-08-14T00:00:00.000Z');
+    assert.throws(
+      () => db.prepare('INSERT INTO vNext_bootstrap_consumptions(marker_key,bootstrap_intent_id,authority_id,installation_key_fingerprint,policy_manifest_sha256,receipt_id,consumed_at) VALUES(?,?,?,?,?,?,?)').run('single-authority-bootstrap', intent, 'authority-1', HASH, HASH, `bootstrap-receipt-${suffix}`, '2026-08-14T00:00:00.000Z'),
+      /VNEXT_BOOTSTRAP_MARKER_RECEIPT_INVALID/,
+    );
+  }
+  assert.throws(() => db.prepare("UPDATE vNext_bootstrap_consumptions SET authority_id='authority-2' WHERE marker_key='single-authority-bootstrap'").run(), /vNext bootstrap consumption is append-only/);
+  assert.throws(() => db.prepare("DELETE FROM vNext_bootstrap_consumptions WHERE marker_key='single-authority-bootstrap'").run(), /vNext bootstrap consumption is append-only/);
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_trust_root_evidence(evidence_id,authority_id,receipt_id,actor_kind,event_id,assertion_evidence_sha256,created_at) VALUES('trust-root-bootstrap-ordinary','authority-1','receipt-1','deployment_bootstrap','bootstrap-intent-1','${HASH}','2026-08-14T00:00:00.000Z')`).run(),
+    /VNEXT_TRUST_ROOT_EVIDENCE_RECEIPT_INVALID/,
+  );
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_trust_root_evidence(evidence_id,authority_id,receipt_id,actor_kind,event_id,assertion_evidence_sha256,created_at) VALUES('trust-root-bootstrap-before-marker','authority-1','bootstrap-receipt-1','deployment_bootstrap','bootstrap-intent-1','${HASH}','2026-08-13T23:59:59.000Z')`).run(),
+    /VNEXT_TRUST_ROOT_EVIDENCE_RECEIPT_INVALID/,
+  );
+  db.prepare(`INSERT INTO vNext_trust_root_evidence(evidence_id,authority_id,receipt_id,actor_kind,event_id,assertion_evidence_sha256,created_at) VALUES('trust-root-bootstrap-1','authority-1','bootstrap-receipt-1','deployment_bootstrap','bootstrap-intent-1','${HASH}','2026-08-14T00:00:00.000Z')`).run();
+  assert.throws(() => db.prepare("UPDATE vNext_trust_root_evidence SET event_id='changed' WHERE evidence_id='trust-root-bootstrap-1'").run(), /vNext trust-root evidence is append-only/);
+  assert.throws(() => db.prepare("DELETE FROM vNext_trust_root_evidence WHERE evidence_id='trust-root-bootstrap-1'").run(), /vNext trust-root evidence is append-only/);
+  const recoveryResult = '{"authorityId":"authority-1","code":"OWNER_RECOVERY_COMPLETED","replacementAccountId":"replacement-account-1","status":"accepted"}';
+  db.prepare(`INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,outcome,result_code,canonical_result_json,canonical_result_sha256,created_at) VALUES('recovery-receipt-1','authority-1','recovery:recovery-event-1','recovery-key-1','authority.owner_recover','authority','authority-1','${HASH}','accepted','OWNER_RECOVERY_COMPLETED',?,'${HASH}','2026-08-14T00:00:00.000Z')`).run(recoveryResult);
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_trust_root_evidence(evidence_id,authority_id,receipt_id,actor_kind,event_id,assertion_evidence_sha256,created_at) VALUES('trust-root-recovery-invalid','authority-1','recovery-receipt-1','owner_recovery_event','recovery-event-1','${HASH}','2026-08-14T00:00:00.000Z')`).run(),
+    /CHECK constraint failed/,
+  );
+  db.prepare(`INSERT INTO vNext_trust_root_evidence(evidence_id,authority_id,receipt_id,actor_kind,event_id,assertion_evidence_sha256,backup_id,backup_manifest_sha256,created_at) VALUES('trust-root-recovery-1','authority-1','recovery-receipt-1','owner_recovery_event','recovery-event-1','${HASH}','backup-1','${HASH}','2026-08-14T00:00:00.000Z')`).run();
+  for (const [suffix, commandType, result] of [
+    ['numeric-replacement', 'authority.owner_recover', '{"authorityId":"authority-1","code":"OWNER_RECOVERY_COMPLETED","replacementAccountId":1,"status":"accepted"}'],
+    ['extra-key', 'authority.owner_recover', '{"authorityId":"authority-1","code":"OWNER_RECOVERY_COMPLETED","extra":"forged","replacementAccountId":"replacement-account-2","status":"accepted"}'],
+    ['ordinary-command', 'role.grant', recoveryResult],
+  ]) {
+    const eventId = `recovery-event-${suffix}`;
+    db.prepare('INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,outcome,result_code,canonical_result_json,canonical_result_sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').run(`recovery-receipt-${suffix}`, 'authority-1', `recovery:${eventId}`, `recovery-key-${suffix}`, commandType, 'authority', 'authority-1', HASH, 'accepted', 'OWNER_RECOVERY_COMPLETED', result, HASH, '2026-08-14T00:00:00.000Z');
+    assert.throws(
+      () => db.prepare('INSERT INTO vNext_trust_root_evidence(evidence_id,authority_id,receipt_id,actor_kind,event_id,assertion_evidence_sha256,backup_id,backup_manifest_sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?)').run(`trust-root-recovery-${suffix}`, 'authority-1', `recovery-receipt-${suffix}`, 'owner_recovery_event', eventId, HASH, `backup-${suffix}`, HASH, '2026-08-14T00:00:00.000Z'),
+      /VNEXT_TRUST_ROOT_EVIDENCE_RECEIPT_INVALID/,
+    );
+  }
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_trust_root_evidence(evidence_id,authority_id,receipt_id,actor_kind,event_id,assertion_evidence_sha256,backup_id,backup_manifest_sha256,created_at) VALUES('trust-root-bootstrap-backup','authority-1','bootstrap-receipt-1','deployment_bootstrap','bootstrap-intent-1','${HASH}','backup-1','${HASH}','2026-08-14T00:00:00.000Z')`).run(),
+    /CHECK constraint failed/,
+  );
+  for (const [suffix, backupId, backupHash] of [
+    ['id-only', 'backup-2', null],
+    ['hash-only', null, HASH],
+    ['blank-id', ' ', HASH],
+    ['short-hash', 'backup-3', 'a'.repeat(63)],
+    ['uppercase-hash', 'backup-4', 'A'.repeat(64)],
+    ['blob-hash', 'backup-5', Buffer.alloc(64)],
+  ]) {
+    const eventId = `recovery-event-${suffix}`;
+    db.prepare('INSERT INTO vNext_authorization_command_receipts(receipt_id,authority_id,actor_key,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,outcome,result_code,canonical_result_json,canonical_result_sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').run(`recovery-receipt-${suffix}`, 'authority-1', `recovery:${eventId}`, `recovery-key-${suffix}`, 'authority.owner_recover', 'authority', 'authority-1', HASH, 'accepted', 'OWNER_RECOVERY_COMPLETED', recoveryResult, HASH, '2026-08-14T00:00:00.000Z');
+    assert.throws(
+      () => db.prepare('INSERT INTO vNext_trust_root_evidence(evidence_id,authority_id,receipt_id,actor_kind,event_id,assertion_evidence_sha256,backup_id,backup_manifest_sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?)').run(`trust-root-recovery-${suffix}`, 'authority-1', `recovery-receipt-${suffix}`, 'owner_recovery_event', eventId, HASH, backupId, backupHash, '2026-08-14T00:00:00.000Z'),
+      /CHECK constraint failed/,
+    );
+  }
   assert.throws(() => db.prepare("UPDATE vNext_authorization_audit_events SET reason_code='other_reason' WHERE event_id='audit-1'").run(), /vNext audit is append-only/);
   assert.throws(() => db.prepare("DELETE FROM vNext_authorization_audit_events WHERE event_id='audit-1'").run(), /vNext audit is append-only/);
   assert.throws(() => db.prepare("UPDATE vNext_authorization_command_receipts SET outcome='rejected' WHERE receipt_id='receipt-1'").run(), /vNext command receipt is append-only/);
@@ -267,6 +349,14 @@ try {
     () => db.prepare(`INSERT INTO vNext_authorization_outbox_events(event_id,authority_id,receipt_id,event_type,aggregate_kind,aggregate_id,aggregate_version,canonical_payload_json,payload_sha256,occurred_at) VALUES('outbox-cross-authority','authority-2','receipt-1','authorization.changed','account','account-1',1,'{}','${HASH}','2026-08-14T00:00:00.000Z')`).run(),
     /FOREIGN KEY constraint failed/,
   );
+  assert.throws(
+    () => db.prepare(`INSERT INTO vNext_trust_root_evidence(evidence_id,authority_id,receipt_id,actor_kind,event_id,assertion_evidence_sha256,backup_id,backup_manifest_sha256,created_at) VALUES('trust-root-cross-authority','authority-2','recovery-receipt-1','owner_recovery_event','recovery-event-cross','${HASH}','backup-cross','${HASH}','2026-08-14T00:00:00.000Z')`).run(),
+    /VNEXT_TRUST_ROOT_EVIDENCE_RECEIPT_INVALID/,
+  );
+  db.pragma('foreign_keys = OFF');
+  db.prepare("DELETE FROM vNext_authorities WHERE authority_id='authority-1'").run();
+  assert.strictEqual(db.prepare("SELECT COUNT(*) AS count FROM vNext_bootstrap_consumptions WHERE marker_key='single-authority-bootstrap'").get().count, 1, 'damaged authority records must not reopen bootstrap');
+  db.pragma('foreign_keys = ON');
   const allSql = db.prepare("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND name LIKE 'vNext_%'").all().map(row => row.sql).join('\n');
   assert.ok(!/token|secret|password_hash|refresh|bearer|license|primary_host|host_receipt/i.test(allSql));
 } finally {

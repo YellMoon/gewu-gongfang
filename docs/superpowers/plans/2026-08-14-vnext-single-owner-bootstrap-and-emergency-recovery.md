@@ -76,7 +76,7 @@ CREATE TABLE vNext_trust_root_evidence (
 );
 ```
 
-Use existing `id`, `NONEMPTY`, `SHA256`, and `time` helpers in real DDL. Add update/delete abort triggers. The marker intentionally has no FK and therefore still blocks bootstrap if authority rows are damaged. Public schema assertion remains read-only.
+Use existing `id`, `NONEMPTY`, `SHA256`, and `time` helpers in real DDL. Add update/delete abort triggers plus exact insert guards: a marker must reference an accepted null-actor `authority.bootstrap` receipt with `actor_key='bootstrap:'+intent`, authority target, expected/committed `0/1`, and the exact seven-key bootstrap result; bootstrap evidence must match that marker; recovery evidence must reference an accepted null-actor `authority.owner_recover` receipt with `actor_key='recovery:'+event`, authority target, null aggregate versions, an exact recovery result, and mandatory backup fields. The marker intentionally has no FK and therefore still blocks bootstrap if authority rows are damaged. Public schema assertion remains read-only.
 
 - [ ] **Step 4: Verify and commit**
 
