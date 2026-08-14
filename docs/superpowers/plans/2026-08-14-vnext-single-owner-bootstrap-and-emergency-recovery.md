@@ -134,7 +134,7 @@ Require exact verifier results:
   reasonCode, expiresAt, approvalVersion, assertionEvidenceSha256 }
 ```
 
-Reject fake/spread/JSON/cross-boundary assertions, proxy/accessor/symbol/non-enumerable outputs, invalid hashes/dates/kinds, and verifier errors without leaking source messages. Assert deep freeze and no raw presentation return.
+The exact factory input is `{ databaseBinding, verifyBootstrapPresentation, verifyRecoveryPresentation, now }`: `databaseBinding` is compared only by object identity and is never read or called. Reject fake/spread/JSON/cross-boundary/wrong-kind assertions, proxy/accessor/symbol/non-enumerable outputs, invalid IDs/hashes/dates/kinds, approval version other than integer `1`, expiry at or before `now`, expiry more than five minutes ahead, and verifier/clock errors without leaking source messages. Test native Promise success, reject thenables, assert deep snapshots/freeze/no raw presentation return, cross-binding rejection, repeat unwrap stability, and a verifier result mutated after return.
 
 - [ ] **Step 2: Confirm red test**
 
@@ -147,7 +147,7 @@ Expected: module-not-found.
 Follow the trusted-session boundary pattern:
 
 ```js
-const boundaryBrand = new WeakSet();
+const boundaryBrand = new WeakMap();
 const assertions = new WeakMap();
 function createVNextTrustRootVerifierBoundaryReference(config) { return createExactBoundary(config); }
 function verifyBootstrap(presentation) { return issue('deployment_bootstrap', presentation); }
@@ -155,7 +155,7 @@ function verifyRecovery(presentation) { return issue('owner_recovery_event', pre
 function unwrap(assertion, expectedKind) { return requireMatchingAssertion(assertions, assertion, expectedKind); }
 ```
 
-Use own-data-descriptor snapshots, `types.isProxy`, `Reflect.ownKeys`, strict ID/SHA-256/instant validation, and map verifier/parsing failures to `VNEXT_TRUST_ROOT_PRESENTATION_REJECTED`.
+Also export an identity-only `isVNextTrustRootVerifierBoundaryReferenceForDatabase(boundary, databaseBinding)` for writers. Use own-data-descriptor snapshots, `types.isProxy`, `Reflect.ownKeys`, strict ID/SHA-256/canonical-instant validation, a single clock read, and map verifier/parsing failures to `VNEXT_TRUST_ROOT_PRESENTATION_REJECTED`. The boundary does not create keys/nonces/signatures, inspect a database, consume an assertion, or implement nonce/command replay; deployment verifier and future writers respectively own those responsibilities.
 
 - [ ] **Step 4: Register, verify, commit**
 
