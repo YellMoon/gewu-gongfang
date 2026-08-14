@@ -375,6 +375,68 @@ const VERIFIED_CONTACTS_MIGRATION = Object.freeze({
   manifestSha256: sha256(VERIFIED_CONTACTS_SQL),
 });
 
+const AUTHORIZATION_COMMAND_RECEIPTS_SQL = `CREATE TABLE vnext_control_plane.vnext_authorization_command_receipts (
+  receipt_id text COLLATE "C" PRIMARY KEY CHECK (btrim(receipt_id) <> ''),
+  authority_id text COLLATE "C" NOT NULL CHECK (btrim(authority_id) <> ''),
+  actor_key text COLLATE "C" NOT NULL CHECK (btrim(actor_key) <> ''),
+  actor_account_id text COLLATE "C" CHECK (actor_account_id IS NULL OR btrim(actor_account_id) <> ''),
+  idempotency_key text COLLATE "C" NOT NULL CHECK (btrim(idempotency_key) <> ''),
+  command_type text COLLATE "C" NOT NULL CHECK (btrim(command_type) <> ''),
+  target_kind text COLLATE "C" NOT NULL CHECK (btrim(target_kind) <> ''),
+  target_id text COLLATE "C" NOT NULL CHECK (btrim(target_id) <> ''),
+  canonical_request_sha256 text COLLATE "C" NOT NULL CHECK (canonical_request_sha256 ~ '^[0-9a-f]{64}$'),
+  expected_row_version bigint CHECK (expected_row_version IS NULL OR expected_row_version >= 0),
+  outcome text COLLATE "C" NOT NULL CHECK (outcome IN ('accepted', 'rejected', 'noop')),
+  result_code text COLLATE "C" NOT NULL CHECK (btrim(result_code) <> ''),
+  canonical_result_json text COLLATE "C" NOT NULL CHECK (canonical_result_json IS JSON WITH UNIQUE KEYS),
+  canonical_result_sha256 text COLLATE "C" NOT NULL CHECK (canonical_result_sha256 ~ '^[0-9a-f]{64}$'),
+  committed_auth_version bigint CHECK (committed_auth_version IS NULL OR committed_auth_version >= 1),
+  committed_access_version bigint CHECK (committed_access_version IS NULL OR committed_access_version >= 1),
+  committed_revocation_version bigint CHECK (committed_revocation_version IS NULL OR committed_revocation_version >= 1),
+  committed_target_row_version bigint CHECK (committed_target_row_version IS NULL OR committed_target_row_version >= 1),
+  created_at timestamptz NOT NULL CHECK (created_at <> 'infinity'::timestamptz AND created_at <> '-infinity'::timestamptz),
+  UNIQUE (receipt_id, authority_id),
+  UNIQUE (authority_id, actor_key, idempotency_key),
+  FOREIGN KEY (authority_id) REFERENCES vnext_control_plane.vnext_authorities(authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  FOREIGN KEY (actor_account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+);
+CREATE FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_update()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  RAISE EXCEPTION 'vNext authorization command receipt is append-only' USING ERRCODE = 'P0001';
+END;
+$$;
+CREATE FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  RAISE EXCEPTION 'vNext authorization command receipt is append-only' USING ERRCODE = 'P0001';
+END;
+$$;
+CREATE TRIGGER vnext_authorization_command_receipts_no_update
+BEFORE UPDATE ON vnext_control_plane.vnext_authorization_command_receipts
+FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_update();
+CREATE TRIGGER vnext_authorization_command_receipts_no_delete
+BEFORE DELETE ON vnext_control_plane.vnext_authorization_command_receipts
+FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_delete();
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_update() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_delete() FROM PUBLIC;
+GRANT SELECT ON TABLE vnext_control_plane.vnext_authorization_command_receipts TO vnext_pg17_verifier;`;
+
+const AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-authorization-command-receipts-9',
+  semanticVersion: 9,
+  sql: AUTHORIZATION_COMMAND_RECEIPTS_SQL,
+  manifestSha256: sha256(AUTHORIZATION_COMMAND_RECEIPTS_SQL),
+});
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -384,6 +446,7 @@ const MIGRATIONS = Object.freeze([
   DATA_SCOPE_GRANTS_MIGRATION,
   PROFILE_BINDINGS_MIGRATION,
   VERIFIED_CONTACTS_MIGRATION,
+  AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -427,6 +490,28 @@ BEGIN
 END;
 $function$
 `),
+  vnext_authorization_command_receipts_no_update: sha256(`CREATE OR REPLACE FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_update()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'pg_temp'
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'vNext authorization command receipt is append-only' USING ERRCODE = 'P0001';
+END;
+$function$
+`),
+  vnext_authorization_command_receipts_no_delete: sha256(`CREATE OR REPLACE FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_delete()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'pg_temp'
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'vNext authorization command receipt is append-only' USING ERRCODE = 'P0001';
+END;
+$function$
+`),
 });
 
 const expectedCatalog = Object.freeze({
@@ -435,6 +520,7 @@ const expectedCatalog = Object.freeze({
     'vnext_control_plane.vnext_account_device_links',
     'vnext_control_plane.vnext_accounts',
     'vnext_control_plane.vnext_authorities',
+    'vnext_control_plane.vnext_authorization_command_receipts',
     'vnext_control_plane.vnext_capability_catalog',
     'vnext_control_plane.vnext_capability_overrides',
     'vnext_control_plane.vnext_data_scope_grants',
@@ -450,6 +536,8 @@ const expectedCatalog = Object.freeze({
     'vnext_schema_migrations_insert_guard',
     'vnext_schema_migrations_no_delete',
     'vnext_schema_migrations_no_update',
+    'vnext_authorization_command_receipts_no_delete',
+    'vnext_authorization_command_receipts_no_update',
   ]),
   owners: Object.freeze({ database: 'vnext_pg17_owner', schema: 'vnext_pg17_owner', table: 'vnext_pg17_owner' }),
   functionDefinitionSha256: FUNCTION_DEFINITION_SHA256,
@@ -464,6 +552,7 @@ module.exports = {
   DATA_SCOPE_GRANTS_MIGRATION,
   PROFILE_BINDINGS_MIGRATION,
   VERIFIED_CONTACTS_MIGRATION,
+  AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

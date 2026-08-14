@@ -11,6 +11,7 @@ const {
   CAPABILITY_OVERRIDES_MIGRATION,
   DATA_SCOPE_GRANTS_MIGRATION,
   PROFILE_BINDINGS_MIGRATION,
+  VERIFIED_CONTACTS_MIGRATION,
 } = require('./migrationManifest');
 
 const FOUNDATION_INSTANT = '2026-08-15T00:00:00.000Z';
@@ -573,6 +574,96 @@ async function assertVerifiedContactSemantics(handle) {
   await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_verified_contacts')));
 }
 
+async function assertAuthorizationCommandReceiptSemantics(handle) {
+  await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+    const insertReceipt = ({
+      receiptId,
+      authorityId = 'authority-1',
+      actorKey = 'actor-1',
+      actorAccountId = 'account-1',
+      idempotencyKey = 'idempotency-1',
+      commandType = 'generic.command',
+      targetKind = 'generic_target',
+      targetId = 'target-1',
+      requestHash = 'a'.repeat(64),
+      expectedRowVersion = null,
+      outcome = 'accepted',
+      resultCode = 'GENERIC_ACCEPTED',
+      resultJson = '{"ok":true}',
+      resultHash = 'b'.repeat(64),
+      committedAuthVersion = null,
+      committedAccessVersion = null,
+      committedRevocationVersion = null,
+      committedTargetRowVersion = null,
+      createdAt = FOUNDATION_INSTANT,
+    }) => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_authorization_command_receipts (receipt_id, authority_id, actor_key, actor_account_id, idempotency_key, command_type, target_kind, target_id, canonical_request_sha256, expected_row_version, outcome, result_code, canonical_result_json, canonical_result_sha256, committed_auth_version, committed_access_version, committed_revocation_version, committed_target_row_version, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)',
+      [receiptId, authorityId, actorKey, actorAccountId, idempotencyKey, commandType, targetKind, targetId, requestHash, expectedRowVersion, outcome, resultCode, resultJson, resultHash, committedAuthVersion, committedAccessVersion, committedRevocationVersion, committedTargetRowVersion, createdAt],
+    );
+    await insertReceipt({ receiptId: 'receipt-object' });
+    await insertReceipt({ receiptId: 'receipt-array', actorKey: 'actor-array', idempotencyKey: 'idempotency-array', outcome: 'rejected', resultJson: '[]', expectedRowVersion: 0 });
+    await insertReceipt({ receiptId: 'receipt-scalar', actorKey: 'actor-scalar', idempotencyKey: 'idempotency-scalar', outcome: 'noop', resultJson: 'true', actorAccountId: null, committedAuthVersion: 1, committedAccessVersion: 1, committedRevocationVersion: 1, committedTargetRowVersion: 1 });
+    await assert.rejects(() => insertReceipt({ receiptId: 'receipt-duplicate-idempotency' }), error => error && error.constraint === 'vnext_authorization_command_r_authority_id_actor_key_idempo_key');
+    await assert.rejects(() => insertReceipt({ receiptId: 'receipt-cross-authority', authorityId: 'authority-1', actorAccountId: 'account-contact-foreign', actorKey: 'actor-cross', idempotencyKey: 'idempotency-cross' }), /foreign key/);
+    await assert.rejects(() => insertReceipt({ receiptId: 'receipt-missing-authority', authorityId: 'authority-missing', actorAccountId: null, actorKey: 'actor-missing-authority', idempotencyKey: 'key-missing-authority' }), /foreign key/);
+    await assert.rejects(() => insertReceipt({ receiptId: 'receipt-missing-account', actorAccountId: 'account-missing', actorKey: 'actor-missing-account', idempotencyKey: 'key-missing-account' }), /foreign key/);
+    for (const [receiptId, field, constraint] of [
+      ['receipt-blank-id', 'receiptId', 'vnext_authorization_command_receipts_receipt_id_check'],
+      ['receipt-blank-authority', 'authorityId', 'vnext_authorization_command_receipts_authority_id_check'],
+      ['receipt-blank-actor', 'actorKey', 'vnext_authorization_command_receipts_actor_key_check'],
+      ['receipt-blank-actor-account', 'actorAccountId', 'vnext_authorization_command_receipts_actor_account_id_check'],
+      ['receipt-blank-idempotency', 'idempotencyKey', 'vnext_authorization_command_receipts_idempotency_key_check'],
+      ['receipt-blank-command', 'commandType', 'vnext_authorization_command_receipts_command_type_check'],
+      ['receipt-blank-kind', 'targetKind', 'vnext_authorization_command_receipts_target_kind_check'],
+      ['receipt-blank-target', 'targetId', 'vnext_authorization_command_receipts_target_id_check'],
+      ['receipt-blank-code', 'resultCode', 'vnext_authorization_command_receipts_result_code_check'],
+    ]) {
+      const input = { receiptId, actorKey: `actor-${receiptId}`, idempotencyKey: `key-${receiptId}` };
+      input[field] = '   ';
+      await assert.rejects(() => insertReceipt(input), error => error && error.constraint === constraint);
+    }
+    await assert.rejects(() => insertReceipt({ receiptId: 'receipt-invalid-outcome', actorKey: 'actor-outcome', idempotencyKey: 'key-outcome', outcome: 'other' }), error => error && error.constraint === 'vnext_authorization_command_receipts_outcome_check');
+    await assert.rejects(() => insertReceipt({ receiptId: 'receipt-invalid-json', actorKey: 'actor-json', idempotencyKey: 'key-json', resultJson: '{' }), error => error && error.constraint === 'vnext_authorization_command_receipt_canonical_result_json_check');
+    await assert.rejects(() => insertReceipt({ receiptId: 'receipt-duplicate-json', actorKey: 'actor-duplicate-json', idempotencyKey: 'key-duplicate-json', resultJson: '{"a":1,"a":2}' }), error => error && error.constraint === 'vnext_authorization_command_receipt_canonical_result_json_check');
+    await assert.rejects(() => insertReceipt({ receiptId: 'receipt-short-request-hash', actorKey: 'actor-request-hash', idempotencyKey: 'key-request-hash', requestHash: 'a'.repeat(63) }), error => error && error.constraint === 'vnext_authorization_command_rece_canonical_request_sha256_check');
+    await assert.rejects(() => insertReceipt({ receiptId: 'receipt-upper-request-hash', actorKey: 'actor-upper-request-hash', idempotencyKey: 'key-upper-request-hash', requestHash: 'A'.repeat(64) }), error => error && error.constraint === 'vnext_authorization_command_rece_canonical_request_sha256_check');
+    await assert.rejects(() => insertReceipt({ receiptId: 'receipt-short-result-hash', actorKey: 'actor-short-result-hash', idempotencyKey: 'key-short-result-hash', resultHash: 'b'.repeat(63) }), error => error && error.constraint === 'vnext_authorization_command_recei_canonical_result_sha256_check');
+    await assert.rejects(() => insertReceipt({ receiptId: 'receipt-upper-result-hash', actorKey: 'actor-result-hash', idempotencyKey: 'key-result-hash', resultHash: 'B'.repeat(64) }), error => error && error.constraint === 'vnext_authorization_command_recei_canonical_result_sha256_check');
+    await assert.rejects(() => insertReceipt({ receiptId: 'receipt-negative-expected', actorKey: 'actor-expected', idempotencyKey: 'key-expected', expectedRowVersion: -1 }), error => error && error.constraint === 'vnext_authorization_command_receipts_expected_row_version_check');
+    await assert.rejects(() => insertReceipt({ receiptId: 'receipt-fractional-expected', actorKey: 'actor-fractional-expected', idempotencyKey: 'key-fractional-expected', expectedRowVersion: 1.5 }), error => error && error.code === '22P02');
+    for (const [receiptId, field, constraint] of [
+      ['receipt-zero-auth', 'committedAuthVersion', 'vnext_authorization_command_receip_committed_auth_version_check'],
+      ['receipt-zero-access', 'committedAccessVersion', 'vnext_authorization_command_rece_committed_access_version_check'],
+      ['receipt-zero-revocation', 'committedRevocationVersion', 'vnext_authorization_command__committed_revocation_version_check'],
+      ['receipt-zero-target', 'committedTargetRowVersion', 'vnext_authorization_command__committed_target_row_version_check'],
+    ]) {
+      const input = { receiptId, actorKey: `actor-${receiptId}`, idempotencyKey: `key-${receiptId}` };
+      input[field] = 0;
+      await assert.rejects(() => insertReceipt(input), error => error && error.constraint === constraint);
+    }
+    for (const [receiptId, field] of [
+      ['receipt-fractional-auth', 'committedAuthVersion'],
+      ['receipt-fractional-access', 'committedAccessVersion'],
+      ['receipt-fractional-revocation', 'committedRevocationVersion'],
+      ['receipt-fractional-target', 'committedTargetRowVersion'],
+    ]) {
+      const input = { receiptId, actorKey: `actor-${receiptId}`, idempotencyKey: `key-${receiptId}` };
+      input[field] = 1.5;
+      await assert.rejects(() => insertReceipt(input), error => error && error.code === '22P02');
+    }
+    for (const [receiptId, createdAt] of [['receipt-infinite-created', 'infinity'], ['receipt-negative-infinite-created', '-infinity']]) {
+      await assert.rejects(() => insertReceipt({ receiptId, actorKey: `actor-${receiptId}`, idempotencyKey: `key-${receiptId}`, createdAt }), error => error && error.constraint === 'vnext_authorization_command_receipts_created_at_check');
+    }
+    const before = await facade.query("SELECT receipt_id, outcome, canonical_result_json FROM vnext_control_plane.vnext_authorization_command_receipts WHERE receipt_id = 'receipt-object'");
+    await assert.rejects(() => facade.query("UPDATE vnext_control_plane.vnext_authorization_command_receipts SET outcome = 'noop' WHERE receipt_id = 'receipt-object'"), error => error && error.code === 'P0001');
+    await assert.rejects(() => facade.query("DELETE FROM vnext_control_plane.vnext_authorization_command_receipts WHERE receipt_id = 'receipt-object'"), error => error && error.code === 'P0001');
+    const after = await facade.query("SELECT receipt_id, outcome, canonical_result_json FROM vnext_control_plane.vnext_authorization_command_receipts WHERE receipt_id = 'receipt-object'");
+    assert.deepStrictEqual(after.rows, before.rows);
+  });
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'verifier', facade => facade.query("INSERT INTO vnext_control_plane.vnext_authorization_command_receipts (receipt_id, authority_id, actor_key, idempotency_key, command_type, target_kind, target_id, canonical_request_sha256, outcome, result_code, canonical_result_json, canonical_result_sha256, created_at) VALUES ('verifier-write', 'authority-1', 'actor-verifier', 'key-verifier', 'generic', 'target', 'target', repeat('a', 64), 'accepted', 'OK', '{}', repeat('b', 64), $1)", [FOUNDATION_INSTANT])));
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_authorization_command_receipts')));
+}
+
 async function runCatalogAssertionCases(runtime) {
   const catalog = createVNextPg17CatalogBoundary(runtime);
   let priorHandle;
@@ -732,7 +823,7 @@ async function runCatalogAssertionCases(runtime) {
     );
     const profileBindingPrefixHandle = await createHandle();
     await withVNextPg17SyntheticQuery(profileBindingPrefixHandle, 'fixture-provisioner', async facade => {
-      for (const migration of [FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION, ROLE_GRANTS_MIGRATION, CAPABILITY_CATALOG_MIGRATION, CAPABILITY_OVERRIDES_MIGRATION, DATA_SCOPE_GRANTS_MIGRATION, PROFILE_BINDINGS_MIGRATION]) {
+      for (const migration of [FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION, ROLE_GRANTS_MIGRATION, CAPABILITY_CATALOG_MIGRATION, CAPABILITY_OVERRIDES_MIGRATION, DATA_SCOPE_GRANTS_MIGRATION, PROFILE_BINDINGS_MIGRATION, VERIFIED_CONTACTS_MIGRATION]) {
         await facade.query(migration.sql);
         if (migration.postApply) {
           await facade.query(migration.postApply.text, migration.postApply.values(migrationInput.appliedAt));
@@ -746,9 +837,11 @@ async function runCatalogAssertionCases(runtime) {
     await assert.rejects(() => catalog.apply(profileBindingPrefixHandle, migrationInput), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
     await withVNextPg17SyntheticQuery(profileBindingPrefixHandle, 'fixture-provisioner', async facade => {
       const ledgerRows = await facade.query('SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version');
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }]);
-      const relation = await facade.query("SELECT to_regclass('vnext_control_plane.vnext_verified_contacts') AS relation");
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }]);
+      const relation = await facade.query("SELECT to_regclass('vnext_control_plane.vnext_authorization_command_receipts') AS relation, to_regprocedure('vnext_control_plane.vnext_authorization_command_receipts_no_update()') AS update_function, to_regprocedure('vnext_control_plane.vnext_authorization_command_receipts_no_delete()') AS delete_function");
       assert.strictEqual(relation.rows[0].relation, null);
+      assert.strictEqual(relation.rows[0].update_function, null);
+      assert.strictEqual(relation.rows[0].delete_function, null);
     });
     await assert.rejects(() => catalog.assert(profileBindingPrefixHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
     const handle = await createHandle();
@@ -761,7 +854,7 @@ async function runCatalogAssertionCases(runtime) {
       const ledgerRows = await facade.query(
         'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version',
       );
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }]);
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }]);
       const schemaMetaRows = await facade.query(
         'SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta',
       );
@@ -778,6 +871,8 @@ async function runCatalogAssertionCases(runtime) {
     assert.deepStrictEqual(profileBindingCount.rows, [{ count: '0' }]);
     const verifiedContactCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_verified_contacts');
     assert.deepStrictEqual(verifiedContactCount.rows, [{ count: '0' }]);
+    const receiptCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_authorization_command_receipts');
+    assert.deepStrictEqual(receiptCount.rows, [{ count: '0' }]);
     });
     await assert.doesNotReject(() => catalog.assert(handle));
     await assertFoundationSemantics(handle);
@@ -787,6 +882,7 @@ async function runCatalogAssertionCases(runtime) {
     await assertDataScopeGrantSemantics(handle);
     await assertProfileBindingSemantics(handle);
     await assertVerifiedContactSemantics(handle);
+    await assertAuthorizationCommandReceiptSemantics(handle);
     assert.deepStrictEqual(await catalog.apply(handle, migrationInput), { applied: false });
     await withVNextPg17SyntheticQuery(handle, 'verifier', async facade => {
       await facade.query('BEGIN READ ONLY');
@@ -802,7 +898,7 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(
       () => withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
-        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 10, repeat('a', 64), now(), 'fixture')",
+        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 11, repeat('a', 64), now(), 'fixture')",
       )),
     );
     await assert.rejects(
@@ -1488,6 +1584,106 @@ async function runCatalogAssertionCases(runtime) {
     await catalog.apply(contactPublicShadowHandle, migrationInput);
     await withVNextPg17SyntheticQuery(contactPublicShadowHandle, 'fixture-provisioner', facade => facade.query('CREATE TABLE public.vnext_verified_contacts (id integer)'));
     await assert.rejects(() => catalog.assert(contactPublicShadowHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptUniqueHandle = await createHandle();
+    await catalog.apply(receiptUniqueHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptUniqueHandle, 'fixture-provisioner', facade => facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts DROP CONSTRAINT vnext_authorization_command_receipt_receipt_id_authority_id_key; ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts ADD CONSTRAINT vnext_authorization_command_receipt_receipt_id_authority_id_key UNIQUE (receipt_id, authority_id, actor_key)'));
+    await assert.rejects(() => catalog.assert(receiptUniqueHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptResultConstraintHandle = await createHandle();
+    await catalog.apply(receiptResultConstraintHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptResultConstraintHandle, 'fixture-provisioner', facade => facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts DROP CONSTRAINT vnext_authorization_command_receipt_canonical_result_json_check; ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts ADD CONSTRAINT vnext_authorization_command_receipt_canonical_result_json_check CHECK (canonical_result_json IS JSON)'));
+    await assert.rejects(() => catalog.assert(receiptResultConstraintHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptOutcomeConstraintHandle = await createHandle();
+    await catalog.apply(receiptOutcomeConstraintHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptOutcomeConstraintHandle, 'fixture-provisioner', facade => facade.query("ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts DROP CONSTRAINT vnext_authorization_command_receipts_outcome_check; ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts ADD CONSTRAINT vnext_authorization_command_receipts_outcome_check CHECK (outcome IN ('accepted', 'rejected', 'noop', 'pending'))"));
+    await assert.rejects(() => catalog.assert(receiptOutcomeConstraintHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptVersionConstraintHandle = await createHandle();
+    await catalog.apply(receiptVersionConstraintHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptVersionConstraintHandle, 'fixture-provisioner', facade => facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts DROP CONSTRAINT vnext_authorization_command_receipts_expected_row_version_check; ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts ADD CONSTRAINT vnext_authorization_command_receipts_expected_row_version_check CHECK (expected_row_version IS NULL OR expected_row_version >= -1)'));
+    await assert.rejects(() => catalog.assert(receiptVersionConstraintHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptForeignKeyHandle = await createHandle();
+    await catalog.apply(receiptForeignKeyHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptForeignKeyHandle, 'fixture-provisioner', facade => facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts DROP CONSTRAINT vnext_authorization_command_r_actor_account_id_authority_i_fkey'));
+    await assert.rejects(() => catalog.assert(receiptForeignKeyHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptExtraIndexHandle = await createHandle();
+    await catalog.apply(receiptExtraIndexHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptExtraIndexHandle, 'fixture-provisioner', facade => facade.query('CREATE INDEX unapproved_receipt_outcome_index ON vnext_control_plane.vnext_authorization_command_receipts (outcome)'));
+    await assert.rejects(() => catalog.assert(receiptExtraIndexHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptDefaultHandle = await createHandle();
+    await catalog.apply(receiptDefaultHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptDefaultHandle, 'fixture-provisioner', facade => facade.query("ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts ALTER COLUMN outcome SET DEFAULT 'accepted'"));
+    await assert.rejects(() => catalog.assert(receiptDefaultHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptVerifierAclHandle = await createHandle();
+    await catalog.apply(receiptVerifierAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptVerifierAclHandle, 'fixture-provisioner', facade => facade.query('GRANT INSERT ON vnext_control_plane.vnext_authorization_command_receipts TO vnext_pg17_verifier'));
+    await assert.rejects(() => catalog.assert(receiptVerifierAclHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptRuntimeAclHandle = await createHandle();
+    await catalog.apply(receiptRuntimeAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptRuntimeAclHandle, 'fixture-provisioner', facade => facade.query('GRANT SELECT ON vnext_control_plane.vnext_authorization_command_receipts TO vnext_pg17_runtime'));
+    await assert.rejects(() => catalog.assert(receiptRuntimeAclHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptFunctionHandle = await createHandle();
+    await catalog.apply(receiptFunctionHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptFunctionHandle, 'fixture-provisioner', facade => facade.query("CREATE OR REPLACE FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_delete() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN RETURN OLD; END; $$"));
+    await assert.rejects(() => catalog.assert(receiptFunctionHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptFunctionAclHandle = await createHandle();
+    await catalog.apply(receiptFunctionAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptFunctionAclHandle, 'fixture-provisioner', facade => facade.query('GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_update() TO vnext_pg17_runtime'));
+    await assert.rejects(() => catalog.assert(receiptFunctionAclHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptFunctionPathHandle = await createHandle();
+    await catalog.apply(receiptFunctionPathHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptFunctionPathHandle, 'fixture-provisioner', facade => facade.query('ALTER FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_update() SET search_path = public, pg_temp'));
+    await assert.rejects(() => catalog.assert(receiptFunctionPathHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptFunctionInvokerHandle = await createHandle();
+    await catalog.apply(receiptFunctionInvokerHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptFunctionInvokerHandle, 'fixture-provisioner', facade => facade.query('ALTER FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_update() SECURITY INVOKER'));
+    await assert.rejects(() => catalog.assert(receiptFunctionInvokerHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptFunctionOwnerHandle = await createHandle();
+    await catalog.apply(receiptFunctionOwnerHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptFunctionOwnerHandle, 'fixture-provisioner', facade => facade.query('ALTER FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_update() OWNER TO vnext_pg17_migrator'));
+    await assert.rejects(() => catalog.assert(receiptFunctionOwnerHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptVerifierFunctionAclHandle = await createHandle();
+    await catalog.apply(receiptVerifierFunctionAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptVerifierFunctionAclHandle, 'fixture-provisioner', facade => facade.query('GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_update() TO vnext_pg17_verifier'));
+    await assert.rejects(() => catalog.assert(receiptVerifierFunctionAclHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptPublicFunctionAclHandle = await createHandle();
+    await catalog.apply(receiptPublicFunctionAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptPublicFunctionAclHandle, 'fixture-provisioner', facade => facade.query('GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_update() TO PUBLIC'));
+    await assert.rejects(() => catalog.assert(receiptPublicFunctionAclHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptTriggerHandle = await createHandle();
+    await catalog.apply(receiptTriggerHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptTriggerHandle, 'fixture-provisioner', facade => facade.query('CREATE TRIGGER unapproved_receipt_delete BEFORE DELETE ON vnext_control_plane.vnext_authorization_command_receipts FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_schema_migrations_no_delete()'));
+    await assert.rejects(() => catalog.assert(receiptTriggerHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptAlteredTriggerHandle = await createHandle();
+    await catalog.apply(receiptAlteredTriggerHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptAlteredTriggerHandle, 'fixture-provisioner', facade => facade.query('DROP TRIGGER vnext_authorization_command_receipts_no_update ON vnext_control_plane.vnext_authorization_command_receipts; CREATE TRIGGER vnext_authorization_command_receipts_no_update BEFORE DELETE ON vnext_control_plane.vnext_authorization_command_receipts FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_update()'));
+    await assert.rejects(() => catalog.assert(receiptAlteredTriggerHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptMissingTriggerHandle = await createHandle();
+    await catalog.apply(receiptMissingTriggerHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptMissingTriggerHandle, 'fixture-provisioner', facade => facade.query('DROP TRIGGER vnext_authorization_command_receipts_no_delete ON vnext_control_plane.vnext_authorization_command_receipts'));
+    await assert.rejects(() => catalog.assert(receiptMissingTriggerHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const receiptPublicShadowHandle = await createHandle();
+    await catalog.apply(receiptPublicShadowHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(receiptPublicShadowHandle, 'fixture-provisioner', facade => facade.query('CREATE TABLE public.vnext_authorization_command_receipts (id integer)'));
+    await assert.rejects(() => catalog.assert(receiptPublicShadowHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
 
     const schemaMetaHandle = await createHandle();
     await catalog.apply(schemaMetaHandle, migrationInput);

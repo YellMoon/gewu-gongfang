@@ -10,6 +10,7 @@ const {
   DATA_SCOPE_GRANTS_MIGRATION,
   PROFILE_BINDINGS_MIGRATION,
   VERIFIED_CONTACTS_MIGRATION,
+  AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,
@@ -25,9 +26,11 @@ async function runManifestCases() {
     'vnext_schema_migrations_insert_guard',
     'vnext_schema_migrations_no_delete',
     'vnext_schema_migrations_no_update',
+    'vnext_authorization_command_receipts_no_delete',
+    'vnext_authorization_command_receipts_no_update',
   ]);
   assert.strictEqual(sha256(FIRST_MIGRATION.sql), FIRST_MIGRATION.manifestSha256);
-  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
   assert.strictEqual(FOUNDATION_IDENTITY_DEVICE_MIGRATION.migrationId, 'vnext-pg17-foundation-identity-device-2');
   assert.match(FOUNDATION_IDENTITY_DEVICE_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
   assert.strictEqual(
@@ -80,10 +83,20 @@ async function runManifestCases() {
   assert.match(VERIFIED_CONTACTS_MIGRATION.sql, /CREATE TABLE vnext_control_plane\.vnext_verified_contacts/);
   assert.match(VERIFIED_CONTACTS_MIGRATION.sql, /UNIQUE \(authority_id, contact_type, normalized_value_hash\)/);
   assert.match(VERIFIED_CONTACTS_MIGRATION.sql, /FOREIGN KEY \(account_id, authority_id\)/);
+  assert.ok(Object.isFrozen(AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION));
+  assert.strictEqual(AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION.migrationId, 'vnext-pg17-authorization-command-receipts-9');
+  assert.strictEqual(AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION.semanticVersion, 9);
+  assert.match(AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
+  assert.strictEqual(sha256(AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION.sql), AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION.manifestSha256);
+  assert.match(AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION.sql, /CREATE TABLE vnext_control_plane\.vnext_authorization_command_receipts/);
+  assert.match(AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION.sql, /IS JSON WITH UNIQUE KEYS/);
+  assert.match(AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION.sql, /CREATE TRIGGER vnext_authorization_command_receipts_no_update/);
+  assert.match(AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION.sql, /CREATE TRIGGER vnext_authorization_command_receipts_no_delete/);
   assert.deepStrictEqual(expectedCatalog.relations, [
     'vnext_control_plane.vnext_account_device_links',
     'vnext_control_plane.vnext_accounts',
     'vnext_control_plane.vnext_authorities',
+    'vnext_control_plane.vnext_authorization_command_receipts',
     'vnext_control_plane.vnext_capability_catalog',
     'vnext_control_plane.vnext_capability_overrides',
     'vnext_control_plane.vnext_data_scope_grants',

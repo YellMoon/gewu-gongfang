@@ -207,5 +207,11 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 
 - Migration 8 adds only `vnext_verified_contacts`. Contact identity and verification evidence remain opaque C-collated text: this target contract stores no plaintext phone or WeChat identifier, normalization rule, verification channel, seed, trigger, function, writer, or API.
 - Disposable PostgreSQL 17 checks verify all three contact types, verified/revoked lifecycle, finite nullable timestamps, positive row versions, the composite RESTRICT account reference, and the non-partial authority/type/hash uniqueness rule that continues to reserve a revoked contact identity. Verifier access is SELECT-only and runtime has no table access.
+
+### PostgreSQL 17 authorization-command-receipts evidence (2026-08-15)
+
+- Migration 9 adds only `vnext_authorization_command_receipts` and its two table-local append-only trigger functions. It stores generic idempotency receipt structure; it does not add an audit, outbox, policy, trust-root consumer, command vocabulary, writer, API, seed, or runtime DML.
+- Disposable PostgreSQL 17 checks verify all 19 columns, both RESTRICT foreign keys, nullable actor/version fields, all three outcomes, generic canonical JSON text with duplicate-key rejection, finite time and SHA/version bounds, verifier-only SELECT, runtime-zero access, and failed update/delete preservation.
+- The catalog assertion fails closed for missing M9 after an exact M1-M8 prefix, changed or extra index/constraint/FK/default/ACL/function/trigger/public shadow, and function owner, SECURITY DEFINER, search-path, and execution-privilege drift. The evidence is synthetic local PostgreSQL 17 only; it is not a real RDS/ECS receipt deployment.
 - The immutable catalog rejects a migration-7 prefix without writes, altered contact uniqueness, extra indexes, altered contact-type/state/lifecycle checks, missing account foreign keys, ACL/default/trigger/public-shadow drift, and unexpected relation objects. Focused manifest/catalog checks, the complete control-plane target aggregate, and a clean diff check passed after independent necessity and quality review.
 - This remains synthetic local validation only: no RDS/ECS DDL, source/business-data import, runtime writer, API, deployment, desktop-data, NAS, removable-media, or real contact access occurred.
