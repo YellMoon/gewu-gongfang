@@ -243,7 +243,7 @@ From synthetic bootstrapped authority, create two old super-admin grants, ordina
   backupId, backupManifestSha256, reasonCode, idempotencyKey }
 ```
 
-Assert: exactly one replacement super-admin; old grants/sessions revoked; distinct old-admin accounts bump once; ordinary/profile/scope/business rows byte-identical; one backup-bound evidence/receipt/audit/outbox; fake/cross-db/expired/wrong-bound assertion and changed backup reject; event/key replay rules; no-admin rejection; every write hook rollback; companion tampering rejects replay.
+Assert: exactly one replacement super-admin even when the captured old-super-admin set is empty; old grants/sessions revoked when present; distinct old-admin accounts bump once; ordinary/profile/scope/business rows byte-identical; one backup-bound evidence/receipt/audit/outbox; fake/cross-db/expired/wrong-bound assertion and changed backup reject; event/key replay rules; every write hook rollback; companion tampering rejects replay.
 
 - [ ] **Step 3: Confirm red test**
 
@@ -255,7 +255,7 @@ Expected: module-not-found.
 
 `createVNextEmergencyRecoveryReference({ db, verifier, now, idFactory, testHooks })` requires V5 schema and branded recovery assertion. Require command/assertion equality for authority, replacement IDs/key/fingerprint, event, backup ID/hash, reason, and expiry. Use `actor_key='recovery:' + recoveryEventId`, never replacement account.
 
-Sort/capture active old super-admin grants and sessions. Reject no-admin with receipt/audit and no outbox. Create replacement chain at version `1`; CAS-revoke grants; bump each distinct old-admin account once; CAS-revoke sessions; add new grant at version `1`; assert final active-super-admin count `1`. Write `OWNER_RECOVERY_COMPLETED` receipt, backup-bound evidence, audit, and one `authorization.owner_recovered` outbox with only authority/replacement IDs, event hash, and revoked-ID count/hash. Replay validates every companion and final invariant. Return only frozen `{ authorityId, code, replacementAccountId, replayed, status }`.
+Sort/capture the zero-or-more active old super-admin grants and sessions. Create a replacement chain at version `1`; CAS-revoke every captured grant; bump each distinct old-admin account once; CAS-revoke every captured session; add one new grant at version `1`; assert final active-super-admin count `1` on the replacement account. A zero-grant capture is a valid lockout-recovery case, not a rejection. Write `OWNER_RECOVERY_COMPLETED` receipt, backup-bound evidence, audit, and one `authorization.owner_recovered` outbox with only authority/replacement IDs, event hash, and revoked-ID count/hash. Replay validates every companion and final invariant. Return only frozen `{ authorityId, code, replacementAccountId, replayed, status }`.
 
 - [ ] **Step 5: Register, verify, commit**
 
