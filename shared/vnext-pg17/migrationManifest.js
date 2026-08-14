@@ -75,6 +75,122 @@ const FIRST_MIGRATION = Object.freeze({
   manifestSha256: sha256(sql),
 });
 
+const FOUNDATION_IDENTITY_DEVICE_SQL = `CREATE TABLE vnext_control_plane.vnext_schema_meta (
+  schema_key text COLLATE "C" PRIMARY KEY
+    CHECK (btrim(schema_key) <> '' AND schema_key = 'control-plane-reference'),
+  schema_version bigint NOT NULL CHECK (schema_version = 5),
+  applied_at timestamptz NOT NULL
+    CHECK (applied_at <> 'infinity'::timestamptz AND applied_at <> '-infinity'::timestamptz)
+);
+CREATE TABLE vnext_control_plane.vnext_authorities (
+  authority_id text COLLATE "C" PRIMARY KEY CHECK (btrim(authority_id) <> ''),
+  status text COLLATE "C" NOT NULL CHECK (status IN ('active', 'disabled', 'revoked')),
+  created_at timestamptz NOT NULL CHECK (created_at <> 'infinity'::timestamptz AND created_at <> '-infinity'::timestamptz),
+  updated_at timestamptz NOT NULL CHECK (updated_at <> 'infinity'::timestamptz AND updated_at <> '-infinity'::timestamptz),
+  CHECK (updated_at >= created_at)
+);
+CREATE TABLE vnext_control_plane.vnext_accounts (
+  account_id text COLLATE "C" PRIMARY KEY CHECK (btrim(account_id) <> ''),
+  authority_id text COLLATE "C" NOT NULL CHECK (btrim(authority_id) <> ''),
+  status text COLLATE "C" NOT NULL CHECK (status IN ('active', 'disabled', 'revoked')),
+  auth_version bigint NOT NULL CHECK (auth_version >= 1),
+  access_version bigint NOT NULL CHECK (access_version >= 1),
+  revocation_version bigint NOT NULL CHECK (revocation_version >= 1),
+  row_version bigint NOT NULL CHECK (row_version >= 1),
+  created_at timestamptz NOT NULL CHECK (created_at <> 'infinity'::timestamptz AND created_at <> '-infinity'::timestamptz),
+  updated_at timestamptz NOT NULL CHECK (updated_at <> 'infinity'::timestamptz AND updated_at <> '-infinity'::timestamptz),
+  UNIQUE (account_id, authority_id),
+  FOREIGN KEY (authority_id) REFERENCES vnext_control_plane.vnext_authorities(authority_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CHECK (updated_at >= created_at)
+);
+CREATE TABLE vnext_control_plane.vnext_trusted_devices (
+  device_id text COLLATE "C" PRIMARY KEY CHECK (btrim(device_id) <> ''),
+  authority_id text COLLATE "C" NOT NULL CHECK (btrim(authority_id) <> ''),
+  status text COLLATE "C" NOT NULL CHECK (status IN ('active', 'risk_limited', 'revoked', 'retired')),
+  hardware_evidence_hash text COLLATE "C" CHECK (hardware_evidence_hash IS NULL OR hardware_evidence_hash ~ '^[0-9a-f]{64}$'),
+  risk_code text COLLATE "C" CHECK (risk_code IS NULL OR btrim(risk_code) <> ''),
+  credential_version bigint NOT NULL CHECK (credential_version >= 1),
+  risk_version bigint NOT NULL CHECK (risk_version >= 1),
+  row_version bigint NOT NULL CHECK (row_version >= 1),
+  created_at timestamptz NOT NULL CHECK (created_at <> 'infinity'::timestamptz AND created_at <> '-infinity'::timestamptz),
+  updated_at timestamptz NOT NULL CHECK (updated_at <> 'infinity'::timestamptz AND updated_at <> '-infinity'::timestamptz),
+  revoked_at timestamptz CHECK (revoked_at <> 'infinity'::timestamptz AND revoked_at <> '-infinity'::timestamptz),
+  UNIQUE (device_id, authority_id),
+  FOREIGN KEY (authority_id) REFERENCES vnext_control_plane.vnext_authorities(authority_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CHECK (updated_at >= created_at),
+  CHECK ((status = 'revoked' AND revoked_at IS NOT NULL) OR (status <> 'revoked' AND revoked_at IS NULL))
+);
+CREATE TABLE vnext_control_plane.vnext_device_installations (
+  installation_id text COLLATE "C" PRIMARY KEY CHECK (btrim(installation_id) <> ''),
+  authority_id text COLLATE "C" NOT NULL CHECK (btrim(authority_id) <> ''),
+  device_id text COLLATE "C" NOT NULL CHECK (btrim(device_id) <> ''),
+  installation_public_key text COLLATE "C" NOT NULL CHECK (btrim(installation_public_key) <> ''),
+  key_fingerprint text COLLATE "C" NOT NULL CHECK (key_fingerprint ~ '^[0-9a-f]{64}$'),
+  status text COLLATE "C" NOT NULL CHECK (status IN ('active', 'revoked', 'retired')),
+  credential_version bigint NOT NULL CHECK (credential_version >= 1),
+  row_version bigint NOT NULL CHECK (row_version >= 1),
+  created_at timestamptz NOT NULL CHECK (created_at <> 'infinity'::timestamptz AND created_at <> '-infinity'::timestamptz),
+  updated_at timestamptz NOT NULL CHECK (updated_at <> 'infinity'::timestamptz AND updated_at <> '-infinity'::timestamptz),
+  revoked_at timestamptz CHECK (revoked_at <> 'infinity'::timestamptz AND revoked_at <> '-infinity'::timestamptz),
+  UNIQUE (installation_id, device_id, authority_id),
+  UNIQUE (authority_id, key_fingerprint),
+  FOREIGN KEY (device_id, authority_id)
+    REFERENCES vnext_control_plane.vnext_trusted_devices(device_id, authority_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CHECK (updated_at >= created_at),
+  CHECK ((status = 'revoked' AND revoked_at IS NOT NULL) OR (status <> 'revoked' AND revoked_at IS NULL))
+);
+CREATE TABLE vnext_control_plane.vnext_account_device_links (
+  link_id text COLLATE "C" PRIMARY KEY CHECK (btrim(link_id) <> ''),
+  authority_id text COLLATE "C" NOT NULL CHECK (btrim(authority_id) <> ''),
+  account_id text COLLATE "C" NOT NULL CHECK (btrim(account_id) <> ''),
+  device_id text COLLATE "C" NOT NULL CHECK (btrim(device_id) <> ''),
+  installation_id text COLLATE "C" NOT NULL CHECK (btrim(installation_id) <> ''),
+  status text COLLATE "C" NOT NULL CHECK (status IN ('active', 'revoked', 'expired')),
+  auth_version bigint NOT NULL CHECK (auth_version >= 1),
+  access_version bigint NOT NULL CHECK (access_version >= 1),
+  row_version bigint NOT NULL CHECK (row_version >= 1),
+  created_at timestamptz NOT NULL CHECK (created_at <> 'infinity'::timestamptz AND created_at <> '-infinity'::timestamptz),
+  updated_at timestamptz NOT NULL CHECK (updated_at <> 'infinity'::timestamptz AND updated_at <> '-infinity'::timestamptz),
+  revoked_at timestamptz CHECK (revoked_at <> 'infinity'::timestamptz AND revoked_at <> '-infinity'::timestamptz),
+  UNIQUE (authority_id, account_id, installation_id),
+  UNIQUE (link_id, authority_id, account_id, device_id, installation_id),
+  FOREIGN KEY (account_id, authority_id)
+    REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
+  FOREIGN KEY (device_id, authority_id)
+    REFERENCES vnext_control_plane.vnext_trusted_devices(device_id, authority_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
+  FOREIGN KEY (installation_id, device_id, authority_id)
+    REFERENCES vnext_control_plane.vnext_device_installations(installation_id, device_id, authority_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CHECK (updated_at >= created_at),
+  CHECK ((status = 'revoked' AND revoked_at IS NOT NULL) OR (status = 'expired' AND revoked_at IS NULL) OR status = 'active')
+);
+GRANT SELECT ON TABLE
+  vnext_control_plane.vnext_schema_meta,
+  vnext_control_plane.vnext_authorities,
+  vnext_control_plane.vnext_accounts,
+  vnext_control_plane.vnext_trusted_devices,
+  vnext_control_plane.vnext_device_installations,
+  vnext_control_plane.vnext_account_device_links
+TO vnext_pg17_verifier;`;
+
+const FOUNDATION_IDENTITY_DEVICE_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-foundation-identity-device-2',
+  semanticVersion: 2,
+  sql: FOUNDATION_IDENTITY_DEVICE_SQL,
+  manifestSha256: sha256(FOUNDATION_IDENTITY_DEVICE_SQL),
+  postApply: Object.freeze({
+    text: 'INSERT INTO vnext_control_plane.vnext_schema_meta (schema_key, schema_version, applied_at) VALUES ($1, $2, $3)',
+    values: appliedAt => ['control-plane-reference', '5', appliedAt],
+  }),
+});
+
+const MIGRATIONS = Object.freeze([FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION]);
+
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
   vnext_schema_migrations_insert_guard: sha256(`CREATE OR REPLACE FUNCTION vnext_control_plane.vnext_schema_migrations_insert_guard()
  RETURNS trigger
@@ -120,7 +236,15 @@ $function$
 
 const expectedCatalog = Object.freeze({
   schema: 'vnext_control_plane',
-  relations: Object.freeze(['vnext_control_plane.vnext_schema_migrations']),
+  relations: Object.freeze([
+    'vnext_control_plane.vnext_account_device_links',
+    'vnext_control_plane.vnext_accounts',
+    'vnext_control_plane.vnext_authorities',
+    'vnext_control_plane.vnext_device_installations',
+    'vnext_control_plane.vnext_schema_meta',
+    'vnext_control_plane.vnext_schema_migrations',
+    'vnext_control_plane.vnext_trusted_devices',
+  ]),
   triggers: Object.freeze([
     'vnext_schema_migrations_insert_guard',
     'vnext_schema_migrations_no_delete',
@@ -130,4 +254,10 @@ const expectedCatalog = Object.freeze({
   functionDefinitionSha256: FUNCTION_DEFINITION_SHA256,
 });
 
-module.exports = { FIRST_MIGRATION, expectedCatalog, sha256 };
+module.exports = {
+  FIRST_MIGRATION,
+  FOUNDATION_IDENTITY_DEVICE_MIGRATION,
+  MIGRATIONS,
+  expectedCatalog,
+  sha256,
+};

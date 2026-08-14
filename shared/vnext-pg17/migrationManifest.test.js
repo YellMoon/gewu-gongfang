@@ -3,20 +3,40 @@
 const assert = require('assert');
 const {
   FIRST_MIGRATION,
+  FOUNDATION_IDENTITY_DEVICE_MIGRATION,
+  MIGRATIONS,
   expectedCatalog,
   sha256,
 } = require('./migrationManifest');
 
 async function runManifestCases() {
   assert.strictEqual(FIRST_MIGRATION.semanticVersion, 1);
+  assert.ok(Object.isFrozen(MIGRATIONS));
+  assert.ok(Object.isFrozen(FOUNDATION_IDENTITY_DEVICE_MIGRATION));
   assert.match(FIRST_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
-  assert.deepStrictEqual(expectedCatalog.relations, ['vnext_control_plane.vnext_schema_migrations']);
+  assert.ok(expectedCatalog.relations.includes('vnext_control_plane.vnext_schema_migrations'));
   assert.deepStrictEqual(expectedCatalog.triggers, [
     'vnext_schema_migrations_insert_guard',
     'vnext_schema_migrations_no_delete',
     'vnext_schema_migrations_no_update',
   ]);
   assert.strictEqual(sha256(FIRST_MIGRATION.sql), FIRST_MIGRATION.manifestSha256);
+  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2]);
+  assert.strictEqual(FOUNDATION_IDENTITY_DEVICE_MIGRATION.migrationId, 'vnext-pg17-foundation-identity-device-2');
+  assert.match(FOUNDATION_IDENTITY_DEVICE_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
+  assert.strictEqual(
+    sha256(FOUNDATION_IDENTITY_DEVICE_MIGRATION.sql),
+    FOUNDATION_IDENTITY_DEVICE_MIGRATION.manifestSha256,
+  );
+  assert.deepStrictEqual(expectedCatalog.relations, [
+    'vnext_control_plane.vnext_account_device_links',
+    'vnext_control_plane.vnext_accounts',
+    'vnext_control_plane.vnext_authorities',
+    'vnext_control_plane.vnext_device_installations',
+    'vnext_control_plane.vnext_schema_meta',
+    'vnext_control_plane.vnext_schema_migrations',
+    'vnext_control_plane.vnext_trusted_devices',
+  ]);
 }
 
 if (require.main === module) {

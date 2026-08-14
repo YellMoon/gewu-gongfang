@@ -3,6 +3,99 @@
 const assert = require('assert');
 const { createDisposablePg17Runtime, withVNextPg17SyntheticQuery } = require('./disposableRuntime');
 const { createVNextPg17CatalogBoundary } = require('./catalogAssertion');
+const { FIRST_MIGRATION } = require('./migrationManifest');
+
+const FOUNDATION_INSTANT = '2026-08-15T00:00:00.000Z';
+const HARDWARE_EVIDENCE_HASH = 'a'.repeat(64);
+const KEY_FINGERPRINT = 'b'.repeat(64);
+
+async function assertFoundationSemantics(handle) {
+  await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+    const tables = [
+      'vnext_authorities',
+      'vnext_accounts',
+      'vnext_trusted_devices',
+      'vnext_device_installations',
+      'vnext_account_device_links',
+    ];
+    for (const table of tables) {
+      const count = await facade.query(`SELECT COUNT(*)::text AS count FROM vnext_control_plane.${table}`);
+      assert.deepStrictEqual(count.rows, [{ count: '0' }]);
+    }
+    const meta = await facade.query('SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta');
+    assert.deepStrictEqual(meta.rows, [{ schema_key: 'control-plane-reference', schema_version: '5' }]);
+
+    await facade.query(
+      'INSERT INTO vnext_control_plane.vnext_authorities (authority_id, status, created_at, updated_at) VALUES ($1, $2, $3, $3)',
+      ['authority-1', 'active', FOUNDATION_INSTANT],
+    );
+    await facade.query(
+      'INSERT INTO vnext_control_plane.vnext_accounts (account_id, authority_id, status, auth_version, access_version, revocation_version, row_version, created_at, updated_at) VALUES ($1, $2, $3, 1, 1, 1, 1, $4, $4)',
+      ['account-1', 'authority-1', 'active', FOUNDATION_INSTANT],
+    );
+    await facade.query(
+      'INSERT INTO vnext_control_plane.vnext_trusted_devices (device_id, authority_id, status, hardware_evidence_hash, risk_code, credential_version, risk_version, row_version, created_at, updated_at, revoked_at) VALUES ($1, $2, $3, $4, $5, 1, 1, 1, $6, $6, NULL)',
+      ['device-1', 'authority-1', 'active', HARDWARE_EVIDENCE_HASH, 'normal', FOUNDATION_INSTANT],
+    );
+    await facade.query(
+      'INSERT INTO vnext_control_plane.vnext_device_installations (installation_id, authority_id, device_id, installation_public_key, key_fingerprint, status, credential_version, row_version, created_at, updated_at, revoked_at) VALUES ($1, $2, $3, $4, $5, $6, 1, 1, $7, $7, NULL)',
+      ['installation-1', 'authority-1', 'device-1', 'public-key-1', KEY_FINGERPRINT, 'active', FOUNDATION_INSTANT],
+    );
+    await facade.query(
+      'INSERT INTO vnext_control_plane.vnext_account_device_links (link_id, authority_id, account_id, device_id, installation_id, status, auth_version, access_version, row_version, created_at, updated_at, revoked_at) VALUES ($1, $2, $3, $4, $5, $6, 1, 1, 1, $7, $7, NULL)',
+      ['link-1', 'authority-1', 'account-1', 'device-1', 'installation-1', 'active', FOUNDATION_INSTANT],
+    );
+
+    await assert.rejects(() => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_accounts (account_id, authority_id, status, auth_version, access_version, revocation_version, row_version, created_at, updated_at) VALUES ($1, $2, $3, 1, 1, 1, 1, $4, $4)',
+      ['other-account', 'other-authority', 'active', FOUNDATION_INSTANT],
+    ));
+    await assert.rejects(() => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_device_installations (installation_id, authority_id, device_id, installation_public_key, key_fingerprint, status, credential_version, row_version, created_at, updated_at, revoked_at) VALUES ($1, $2, $3, $4, $5, $6, 1, 1, $7, $7, NULL)',
+      ['installation-duplicate', 'authority-1', 'device-1', 'public-key-2', KEY_FINGERPRINT, 'active', FOUNDATION_INSTANT],
+    ));
+    await assert.rejects(() => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_account_device_links (link_id, authority_id, account_id, device_id, installation_id, status, auth_version, access_version, row_version, created_at, updated_at, revoked_at) VALUES ($1, $2, $3, $4, $5, $6, 1, 1, 1, $7, $7, NULL)',
+      ['link-wrong-authority', 'other-authority', 'account-1', 'device-1', 'installation-1', 'active', FOUNDATION_INSTANT],
+    ));
+    await assert.rejects(() => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_trusted_devices (device_id, authority_id, status, credential_version, risk_version, row_version, created_at, updated_at, revoked_at) VALUES ($1, $2, $3, 1, 1, 1, $4, $4, NULL)',
+      ['device-revoked-invalid', 'authority-1', 'revoked', FOUNDATION_INSTANT],
+    ));
+    await assert.rejects(() => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_device_installations (installation_id, authority_id, device_id, installation_public_key, key_fingerprint, status, credential_version, row_version, created_at, updated_at, revoked_at) VALUES ($1, $2, $3, $4, $5, $6, 1, 1, $7, $7, $7)',
+      ['installation-active-invalid', 'authority-1', 'device-1', 'public-key-3', 'c'.repeat(64), 'active', FOUNDATION_INSTANT],
+    ), error => error && error.constraint === 'vnext_device_installations_check1');
+    await facade.query(
+      'INSERT INTO vnext_control_plane.vnext_device_installations (installation_id, authority_id, device_id, installation_public_key, key_fingerprint, status, credential_version, row_version, created_at, updated_at, revoked_at) VALUES ($1, $2, $3, $4, $5, $6, 1, 1, $7, $7, NULL)',
+      ['installation-2', 'authority-1', 'device-1', 'public-key-4', 'd'.repeat(64), 'active', FOUNDATION_INSTANT],
+    );
+    await assert.rejects(() => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_account_device_links (link_id, authority_id, account_id, device_id, installation_id, status, auth_version, access_version, row_version, created_at, updated_at, revoked_at) VALUES ($1, $2, $3, $4, $5, $6, 1, 1, 1, $7, $7, $7)',
+      ['link-expired-invalid', 'authority-1', 'account-1', 'device-1', 'installation-2', 'expired', FOUNDATION_INSTANT],
+    ), error => error && error.constraint === 'vnext_account_device_links_check1');
+    await assert.rejects(() => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_accounts (account_id, authority_id, status, auth_version, access_version, revocation_version, row_version, created_at, updated_at) VALUES ($1, $2, $3, 0, 1, 1, 1, $4, $4)',
+      ['account-zero-version', 'authority-1', 'active', FOUNDATION_INSTANT],
+    ));
+    await assert.rejects(() => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_authorities (authority_id, status, created_at, updated_at) VALUES ($1, $2, $3, $3)',
+      ['   ', 'active', FOUNDATION_INSTANT],
+    ));
+    await assert.rejects(() => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_device_installations (installation_id, authority_id, device_id, installation_public_key, key_fingerprint, status, credential_version, row_version, created_at, updated_at, revoked_at) VALUES ($1, $2, $3, $4, $5, $6, 1, 1, $7, $7, NULL)',
+      ['installation-blank-fingerprint', 'authority-1', 'device-1', 'public-key-5', '   ', 'active', FOUNDATION_INSTANT],
+    ), error => error && error.constraint === 'vnext_device_installations_key_fingerprint_check');
+    await assert.rejects(() => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_device_installations (installation_id, authority_id, device_id, installation_public_key, key_fingerprint, status, credential_version, row_version, created_at, updated_at, revoked_at) VALUES ($1, $2, $3, $4, $5, $6, 1, 1, $7, $7, NULL)',
+      ['installation-uppercase-fingerprint', 'authority-1', 'device-1', 'public-key-6', 'E'.repeat(64), 'active', FOUNDATION_INSTANT],
+    ), error => error && error.constraint === 'vnext_device_installations_key_fingerprint_check');
+    await assert.rejects(() => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_trusted_devices (device_id, authority_id, status, hardware_evidence_hash, credential_version, risk_version, row_version, created_at, updated_at, revoked_at) VALUES ($1, $2, $3, $4, 1, 1, 1, $5, $5, NULL)',
+      ['device-invalid-hash', 'authority-1', 'active', 'not-a-sha256', FOUNDATION_INSTANT],
+    ), error => error && error.constraint === 'vnext_trusted_devices_hardware_evidence_hash_check');
+  });
+}
 
 async function runCatalogAssertionCases(runtime) {
   const catalog = createVNextPg17CatalogBoundary(runtime);
@@ -35,13 +128,36 @@ async function runCatalogAssertionCases(runtime) {
       const target = await facade.query("SELECT to_regclass('vnext_control_plane.vnext_schema_migrations') AS relation");
       assert.strictEqual(target.rows[0].relation, null);
     });
+    const legacyLedgerHandle = await createHandle();
+    await withVNextPg17SyntheticQuery(legacyLedgerHandle, 'fixture-provisioner', async facade => {
+      await facade.query(FIRST_MIGRATION.sql);
+      await facade.query(
+        'INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
+        [FIRST_MIGRATION.migrationId, FIRST_MIGRATION.semanticVersion, FIRST_MIGRATION.manifestSha256, migrationInput.appliedAt, migrationInput.appliedBy],
+      );
+    });
+    await assert.rejects(
+      () => catalog.apply(legacyLedgerHandle, migrationInput),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
     const handle = await createHandle();
     await assert.rejects(
       () => catalog.assert(handle),
       error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
     );
     await catalog.apply(handle, migrationInput);
+    await withVNextPg17SyntheticQuery(handle, 'verifier', async facade => {
+      const ledgerRows = await facade.query(
+        'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version',
+      );
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }]);
+      const schemaMetaRows = await facade.query(
+        'SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta',
+      );
+      assert.deepStrictEqual(schemaMetaRows.rows, [{ schema_key: 'control-plane-reference', schema_version: '5' }]);
+    });
     await assert.doesNotReject(() => catalog.assert(handle));
+    await assertFoundationSemantics(handle);
     assert.deepStrictEqual(await catalog.apply(handle, migrationInput), { applied: false });
     await withVNextPg17SyntheticQuery(handle, 'verifier', async facade => {
       await facade.query('BEGIN READ ONLY');
@@ -57,7 +173,7 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(
       () => withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
-        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 3, repeat('a', 64), now(), 'fixture')",
+        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 4, repeat('a', 64), now(), 'fixture')",
       )),
     );
     await assert.rejects(
@@ -161,6 +277,177 @@ async function runCatalogAssertionCases(runtime) {
     ));
     await assert.rejects(
       () => catalog.assert(extraRelationHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const accountForeignKeyHandle = await createHandle();
+    await catalog.apply(accountForeignKeyHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(accountForeignKeyHandle, 'fixture-provisioner', facade => facade.query(
+      'ALTER TABLE vnext_control_plane.vnext_accounts DROP CONSTRAINT vnext_accounts_authority_id_fkey',
+    ));
+    await assert.rejects(
+      () => catalog.assert(accountForeignKeyHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const installationUniqueHandle = await createHandle();
+    await catalog.apply(installationUniqueHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(installationUniqueHandle, 'fixture-provisioner', facade => facade.query(
+      'ALTER TABLE vnext_control_plane.vnext_device_installations DROP CONSTRAINT vnext_device_installations_authority_id_key_fingerprint_key',
+    ));
+    await assert.rejects(
+      () => catalog.assert(installationUniqueHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const foundationAclHandle = await createHandle();
+    await catalog.apply(foundationAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(foundationAclHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT INSERT ON vnext_control_plane.vnext_account_device_links TO vnext_pg17_verifier',
+    ));
+    await assert.rejects(
+      () => catalog.assert(foundationAclHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const runtimeFoundationAclHandle = await createHandle();
+    await catalog.apply(runtimeFoundationAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(runtimeFoundationAclHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT INSERT ON vnext_control_plane.vnext_accounts TO vnext_pg17_runtime',
+    ));
+    await assert.rejects(
+      () => catalog.assert(runtimeFoundationAclHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const runtimeSchemaUsageHandle = await createHandle();
+    await catalog.apply(runtimeSchemaUsageHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(runtimeSchemaUsageHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT USAGE ON SCHEMA vnext_control_plane TO vnext_pg17_runtime',
+    ));
+    await assert.rejects(
+      () => catalog.assert(runtimeSchemaUsageHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const runtimeTriggerAclHandle = await createHandle();
+    await catalog.apply(runtimeTriggerAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(runtimeTriggerAclHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT TRIGGER ON vnext_control_plane.vnext_accounts TO vnext_pg17_runtime',
+    ));
+    await assert.rejects(
+      () => catalog.assert(runtimeTriggerAclHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const foundationTriggerHandle = await createHandle();
+    await catalog.apply(foundationTriggerHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(foundationTriggerHandle, 'fixture-provisioner', facade => facade.query(
+      'CREATE TRIGGER unapproved_foundation_no_delete BEFORE DELETE ON vnext_control_plane.vnext_authorities FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_schema_migrations_no_delete()',
+    ));
+    await assert.rejects(
+      () => catalog.assert(foundationTriggerHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const alteredLedgerTriggerHandle = await createHandle();
+    await catalog.apply(alteredLedgerTriggerHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(alteredLedgerTriggerHandle, 'fixture-provisioner', async facade => {
+      await facade.query('DROP TRIGGER vnext_schema_migrations_no_delete ON vnext_control_plane.vnext_schema_migrations');
+      await facade.query('CREATE TRIGGER vnext_schema_migrations_no_delete BEFORE UPDATE ON vnext_control_plane.vnext_schema_migrations FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_schema_migrations_no_delete()');
+    });
+    await assert.rejects(
+      () => catalog.assert(alteredLedgerTriggerHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const foreignSchemaTriggerHandle = await createHandle();
+    await catalog.apply(foreignSchemaTriggerHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(foreignSchemaTriggerHandle, 'fixture-provisioner', async facade => {
+      await facade.query('CREATE FUNCTION public.vnext_schema_migrations_no_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN OLD; END; $$');
+      await facade.query('DROP TRIGGER vnext_schema_migrations_no_delete ON vnext_control_plane.vnext_schema_migrations');
+      await facade.query('CREATE TRIGGER vnext_schema_migrations_no_delete BEFORE DELETE ON vnext_control_plane.vnext_schema_migrations FOR EACH ROW EXECUTE FUNCTION public.vnext_schema_migrations_no_delete()');
+    });
+    await assert.rejects(
+      () => catalog.assert(foreignSchemaTriggerHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const verifierPublicAclHandle = await createHandle();
+    await catalog.apply(verifierPublicAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(verifierPublicAclHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT CREATE ON SCHEMA public TO vnext_pg17_verifier',
+    ));
+    await assert.rejects(
+      () => catalog.assert(verifierPublicAclHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const verifierTemporaryAclHandle = await createHandle();
+    await catalog.apply(verifierTemporaryAclHandle, migrationInput);
+    const verifierTemporaryDatabase = await withVNextPg17SyntheticQuery(verifierTemporaryAclHandle, 'fixture-provisioner', facade => facade.query(
+      'SELECT current_database() AS database_name',
+    ));
+    assert.match(verifierTemporaryDatabase.rows[0].database_name, /^vnextpg17_[a-z0-9]+$/);
+    await withVNextPg17SyntheticQuery(verifierTemporaryAclHandle, 'fixture-provisioner', facade => facade.query(
+      `GRANT TEMPORARY ON DATABASE "${verifierTemporaryDatabase.rows[0].database_name}" TO vnext_pg17_verifier`,
+    ));
+    await assert.rejects(
+      () => catalog.assert(verifierTemporaryAclHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const foundationPublicShadowHandle = await createHandle();
+    await catalog.apply(foundationPublicShadowHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(foundationPublicShadowHandle, 'fixture-provisioner', facade => facade.query(
+      'CREATE TABLE public.vnext_accounts (id integer)',
+    ));
+    await assert.rejects(
+      () => catalog.assert(foundationPublicShadowHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const foundationIndexHandle = await createHandle();
+    await catalog.apply(foundationIndexHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(foundationIndexHandle, 'fixture-provisioner', facade => facade.query(
+      'CREATE INDEX unapproved_foundation_account_status_index ON vnext_control_plane.vnext_accounts (status)',
+    ));
+    await assert.rejects(
+      () => catalog.assert(foundationIndexHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const schemaMetaHandle = await createHandle();
+    await catalog.apply(schemaMetaHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(schemaMetaHandle, 'fixture-provisioner', facade => facade.query(
+      'DELETE FROM vnext_control_plane.vnext_schema_meta',
+    ));
+    await assert.rejects(
+      () => catalog.assert(schemaMetaHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+    await assert.rejects(
+      () => catalog.apply(schemaMetaHandle, migrationInput),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const schemaMetaTimestampHandle = await createHandle();
+    await catalog.apply(schemaMetaTimestampHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(schemaMetaTimestampHandle, 'fixture-provisioner', facade => facade.query(
+      "UPDATE vnext_control_plane.vnext_schema_meta SET applied_at = '2026-08-15T00:00:01.000Z'",
+    ));
+    await assert.rejects(
+      () => catalog.assert(schemaMetaTimestampHandle),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+
+    const foundationDefaultHandle = await createHandle();
+    await catalog.apply(foundationDefaultHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(foundationDefaultHandle, 'fixture-provisioner', facade => facade.query(
+      "ALTER TABLE vnext_control_plane.vnext_authorities ALTER COLUMN status SET DEFAULT 'active'",
+    ));
+    await assert.rejects(
+      () => catalog.assert(foundationDefaultHandle),
       error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
     );
 
