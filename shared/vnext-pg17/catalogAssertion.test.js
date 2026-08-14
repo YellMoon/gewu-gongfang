@@ -13,6 +13,7 @@ const {
   PROFILE_BINDINGS_MIGRATION,
   VERIFIED_CONTACTS_MIGRATION,
   AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION,
+  AUTHORIZATION_AUDIT_EVENTS_MIGRATION,
 } = require('./migrationManifest');
 
 const FOUNDATION_INSTANT = '2026-08-15T00:00:00.000Z';
@@ -720,6 +721,46 @@ async function assertAuthorizationAuditEventSemantics(handle) {
   await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_authorization_audit_events')));
 }
 
+async function assertAuthorizationOutboxEventSemantics(handle) {
+  await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+    const insert = ({ eventId, authorityId = 'authority-1', receiptId = 'audit-receipt-1', eventType = 'generic.event', aggregateKind = 'generic_kind', aggregateId = 'aggregate-1', aggregateVersion = 1, payload = '{}', payloadHash = 'd'.repeat(64), occurredAt = FOUNDATION_INSTANT }) => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_authorization_outbox_events (event_id, authority_id, receipt_id, event_type, aggregate_kind, aggregate_id, aggregate_version, canonical_payload_json, payload_sha256, occurred_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
+      [eventId, authorityId, receiptId, eventType, aggregateKind, aggregateId, aggregateVersion, payload, payloadHash, occurredAt],
+    );
+    await insert({ eventId: 'outbox-object' });
+    await insert({ eventId: 'outbox-array', eventType: 'array.event', payload: '[]' });
+    await insert({ eventId: 'outbox-scalar', eventType: 'scalar.event', payload: 'true' });
+    await assert.rejects(() => insert({ eventId: 'outbox-object', eventType: 'duplicate.id' }), error => error && error.constraint === 'vnext_authorization_outbox_events_pkey');
+    await assert.rejects(() => insert({ eventId: 'outbox-duplicate-tuple' }), error => error && error.constraint === 'vnext_authorization_outbox_ev_authority_id_receipt_id_event_key');
+    await insert({ eventId: 'outbox-different-receipt', receiptId: 'receipt-array' });
+    await insert({ eventId: 'outbox-different-type', eventType: 'generic.event.second' });
+    await insert({ eventId: 'outbox-different-kind', aggregateKind: 'generic_kind_second' });
+    await insert({ eventId: 'outbox-different-aggregate', aggregateId: 'aggregate-second' });
+    await facade.query("INSERT INTO vnext_control_plane.vnext_authorities (authority_id, status, created_at, updated_at) VALUES ('authority-outbox-2', 'active', $1, $1)", [FOUNDATION_INSTANT]);
+    await assert.rejects(() => insert({ eventId: 'outbox-missing-authority', authorityId: 'authority-outbox-missing', eventType: 'missing-authority' }), /foreign key/);
+    await assert.rejects(() => insert({ eventId: 'outbox-cross-authority', authorityId: 'authority-outbox-2', eventType: 'cross-authority' }), /foreign key/);
+    await assert.rejects(() => insert({ eventId: 'outbox-missing-receipt', receiptId: 'receipt-outbox-missing', eventType: 'missing-receipt' }), /foreign key/);
+    for (const [eventId, field, constraint] of [['outbox-blank-id', 'eventId', 'vnext_authorization_outbox_events_event_id_check'], ['outbox-blank-authority', 'authorityId', 'vnext_authorization_outbox_events_authority_id_check'], ['outbox-blank-receipt', 'receiptId', 'vnext_authorization_outbox_events_receipt_id_check'], ['outbox-blank-type', 'eventType', 'vnext_authorization_outbox_events_event_type_check'], ['outbox-blank-kind', 'aggregateKind', 'vnext_authorization_outbox_events_aggregate_kind_check'], ['outbox-blank-aggregate', 'aggregateId', 'vnext_authorization_outbox_events_aggregate_id_check']]) {
+      const input = { eventId, eventType: `event-${eventId}` }; input[field] = '   ';
+      await assert.rejects(() => insert(input), error => error && error.constraint === constraint);
+    }
+    await assert.rejects(() => insert({ eventId: 'outbox-zero-version', eventType: 'zero.event', aggregateVersion: 0 }), error => error && error.constraint === 'vnext_authorization_outbox_events_aggregate_version_check');
+    await assert.rejects(() => insert({ eventId: 'outbox-negative-version', eventType: 'negative.event', aggregateVersion: -1 }), error => error && error.constraint === 'vnext_authorization_outbox_events_aggregate_version_check');
+    await assert.rejects(() => insert({ eventId: 'outbox-fractional-version', eventType: 'fractional.event', aggregateVersion: 1.5 }), error => error && error.code === '22P02');
+    await assert.rejects(() => insert({ eventId: 'outbox-bad-json', eventType: 'json.event', payload: '{' }), error => error && error.constraint === 'vnext_authorization_outbox_events_canonical_payload_json_check');
+    await assert.rejects(() => insert({ eventId: 'outbox-duplicate-json', eventType: 'dup-json.event', payload: '{"a":1,"a":2}' }), error => error && error.constraint === 'vnext_authorization_outbox_events_canonical_payload_json_check');
+    await assert.rejects(() => insert({ eventId: 'outbox-short-hash', eventType: 'short-hash.event', payloadHash: 'd'.repeat(63) }), error => error && error.constraint === 'vnext_authorization_outbox_events_payload_sha256_check');
+    await assert.rejects(() => insert({ eventId: 'outbox-upper-hash', eventType: 'upper-hash.event', payloadHash: 'D'.repeat(64) }), error => error && error.constraint === 'vnext_authorization_outbox_events_payload_sha256_check');
+    for (const [eventId, occurredAt] of [['outbox-infinity', 'infinity'], ['outbox-negative-infinity', '-infinity']]) await assert.rejects(() => insert({ eventId, eventType: eventId, occurredAt }), error => error && error.constraint === 'vnext_authorization_outbox_events_occurred_at_check');
+    const before = await facade.query("SELECT event_id, aggregate_version FROM vnext_control_plane.vnext_authorization_outbox_events WHERE event_id = 'outbox-object'");
+    await assert.rejects(() => facade.query("UPDATE vnext_control_plane.vnext_authorization_outbox_events SET aggregate_version = 2 WHERE event_id = 'outbox-object'"), error => error && error.code === 'P0001');
+    await assert.rejects(() => facade.query("DELETE FROM vnext_control_plane.vnext_authorization_outbox_events WHERE event_id = 'outbox-object'"), error => error && error.code === 'P0001');
+    assert.deepStrictEqual((await facade.query("SELECT event_id, aggregate_version FROM vnext_control_plane.vnext_authorization_outbox_events WHERE event_id = 'outbox-object'")).rows, before.rows);
+  });
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'verifier', facade => facade.query("INSERT INTO vnext_control_plane.vnext_authorization_outbox_events (event_id, authority_id, receipt_id, event_type, aggregate_kind, aggregate_id, aggregate_version, canonical_payload_json, payload_sha256, occurred_at) VALUES ('outbox-verifier', 'authority-1', 'audit-receipt-1', 'event', 'kind', 'id', 1, '{}', repeat('d', 64), $1)", [FOUNDATION_INSTANT])));
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_authorization_outbox_events')));
+}
+
 async function runCatalogAssertionCases(runtime) {
   const catalog = createVNextPg17CatalogBoundary(runtime);
   let priorHandle;
@@ -900,6 +941,22 @@ async function runCatalogAssertionCases(runtime) {
       assert.strictEqual(relation.rows[0].delete_function, null);
     });
     await assert.rejects(() => catalog.assert(receiptPrefixHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+    const auditPrefixHandle = await createHandle();
+    await withVNextPg17SyntheticQuery(auditPrefixHandle, 'fixture-provisioner', async facade => {
+      for (const migration of [FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION, ROLE_GRANTS_MIGRATION, CAPABILITY_CATALOG_MIGRATION, CAPABILITY_OVERRIDES_MIGRATION, DATA_SCOPE_GRANTS_MIGRATION, PROFILE_BINDINGS_MIGRATION, VERIFIED_CONTACTS_MIGRATION, AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION, AUTHORIZATION_AUDIT_EVENTS_MIGRATION]) {
+        await facade.query(migration.sql);
+        if (migration.postApply) await facade.query(migration.postApply.text, migration.postApply.values(migrationInput.appliedAt));
+        await facade.query('INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)', [migration.migrationId, migration.semanticVersion, migration.manifestSha256, migrationInput.appliedAt, migrationInput.appliedBy]);
+      }
+    });
+    await assert.rejects(() => catalog.apply(auditPrefixHandle, migrationInput), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+    await withVNextPg17SyntheticQuery(auditPrefixHandle, 'fixture-provisioner', async facade => {
+      const ledgerRows = await facade.query('SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint');
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }]);
+      const absent = await facade.query("SELECT to_regclass('vnext_control_plane.vnext_authorization_outbox_events') AS relation, to_regprocedure('vnext_control_plane.vnext_authorization_outbox_events_no_update()') AS update_function, to_regprocedure('vnext_control_plane.vnext_authorization_outbox_events_no_delete()') AS delete_function");
+      assert.deepStrictEqual(absent.rows, [{ relation: null, update_function: null, delete_function: null }]);
+    });
+    await assert.rejects(() => catalog.assert(auditPrefixHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
     const handle = await createHandle();
     await assert.rejects(
       () => catalog.assert(handle),
@@ -910,7 +967,7 @@ async function runCatalogAssertionCases(runtime) {
       const ledgerRows = await facade.query(
         'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint',
       );
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }]);
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }]);
       const schemaMetaRows = await facade.query(
         'SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta',
       );
@@ -931,6 +988,8 @@ async function runCatalogAssertionCases(runtime) {
     assert.deepStrictEqual(receiptCount.rows, [{ count: '0' }]);
     const auditCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_authorization_audit_events');
     assert.deepStrictEqual(auditCount.rows, [{ count: '0' }]);
+    const outboxCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_authorization_outbox_events');
+    assert.deepStrictEqual(outboxCount.rows, [{ count: '0' }]);
     });
     await assert.doesNotReject(() => catalog.assert(handle));
     await assertFoundationSemantics(handle);
@@ -942,6 +1001,7 @@ async function runCatalogAssertionCases(runtime) {
     await assertVerifiedContactSemantics(handle);
     await assertAuthorizationCommandReceiptSemantics(handle);
     await assertAuthorizationAuditEventSemantics(handle);
+    await assertAuthorizationOutboxEventSemantics(handle);
     assert.deepStrictEqual(await catalog.apply(handle, migrationInput), { applied: false });
     await withVNextPg17SyntheticQuery(handle, 'verifier', async facade => {
       await facade.query('BEGIN READ ONLY');
@@ -957,7 +1017,7 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(
       () => withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
-        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 12, repeat('a', 64), now(), 'fixture')",
+        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 13, repeat('a', 64), now(), 'fixture')",
       )),
     );
     await assert.rejects(
@@ -1771,6 +1831,43 @@ async function runCatalogAssertionCases(runtime) {
       ['auditMissingTriggerHandle', 'DROP TRIGGER vnext_authorization_audit_events_no_delete ON vnext_control_plane.vnext_authorization_audit_events'],
       ['auditPublicShadowHandle', 'CREATE TABLE public.vnext_authorization_audit_events (id integer)'],
       ['auditExtraIndexHandle', 'CREATE INDEX unapproved_audit_reason_index ON vnext_control_plane.vnext_authorization_audit_events (reason_code)'],
+    ]) {
+      const driftHandle = await createHandle();
+      await catalog.apply(driftHandle, migrationInput);
+      await withVNextPg17SyntheticQuery(driftHandle, 'fixture-provisioner', facade => facade.query(sql));
+      await assert.rejects(() => catalog.assert(driftHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT', name);
+    }
+
+    const outboxUniqueHandle = await createHandle();
+    await catalog.apply(outboxUniqueHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(outboxUniqueHandle, 'fixture-provisioner', facade => facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events DROP CONSTRAINT vnext_authorization_outbox_ev_authority_id_receipt_id_event_key; ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events ADD CONSTRAINT vnext_authorization_outbox_ev_authority_id_receipt_id_event_key UNIQUE (authority_id, receipt_id, event_type, aggregate_kind)'));
+    await assert.rejects(() => catalog.assert(outboxUniqueHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    for (const [name, sql] of [
+      ['outboxAuthorityForeignKeyHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events DROP CONSTRAINT vnext_authorization_outbox_events_authority_id_fkey'],
+      ['outboxReceiptForeignKeyHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events DROP CONSTRAINT vnext_authorization_outbox_events_receipt_id_authority_id_fkey'],
+      ['outboxVersionConstraintHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events DROP CONSTRAINT vnext_authorization_outbox_events_aggregate_version_check; ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events ADD CONSTRAINT vnext_authorization_outbox_events_aggregate_version_check CHECK (aggregate_version >= 0)'],
+      ['outboxJsonConstraintHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events DROP CONSTRAINT vnext_authorization_outbox_events_canonical_payload_json_check; ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events ADD CONSTRAINT vnext_authorization_outbox_events_canonical_payload_json_check CHECK (canonical_payload_json IS JSON)'],
+      ['outboxHashConstraintHandle', "ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events DROP CONSTRAINT vnext_authorization_outbox_events_payload_sha256_check; ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events ADD CONSTRAINT vnext_authorization_outbox_events_payload_sha256_check CHECK (payload_sha256 ~ '^[0-9a-f]+$')"],
+      ['outboxTimeConstraintHandle', "ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events DROP CONSTRAINT vnext_authorization_outbox_events_occurred_at_check; ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events ADD CONSTRAINT vnext_authorization_outbox_events_occurred_at_check CHECK (occurred_at <> 'infinity')"],
+      ['outboxDefaultHandle', "ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events ALTER COLUMN event_type SET DEFAULT 'generic.event'"],
+      ['outboxNullabilityHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events ALTER COLUMN event_type DROP NOT NULL'],
+      ['outboxCollationHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events ALTER COLUMN event_type TYPE text COLLATE "default"'],
+      ['outboxExtraIndexHandle', 'CREATE INDEX unapproved_outbox_event_type_index ON vnext_control_plane.vnext_authorization_outbox_events (event_type)'],
+      ['outboxOwnerHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events OWNER TO vnext_pg17_migrator'],
+      ['outboxVerifierAclHandle', 'GRANT INSERT ON vnext_control_plane.vnext_authorization_outbox_events TO vnext_pg17_verifier'],
+      ['outboxRuntimeAclHandle', 'GRANT SELECT ON vnext_control_plane.vnext_authorization_outbox_events TO vnext_pg17_runtime'],
+      ['outboxFunctionHandle', "CREATE OR REPLACE FUNCTION vnext_control_plane.vnext_authorization_outbox_events_no_delete() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN RETURN OLD; END; $$"],
+      ['outboxFunctionInvokerHandle', 'ALTER FUNCTION vnext_control_plane.vnext_authorization_outbox_events_no_update() SECURITY INVOKER'],
+      ['outboxFunctionOwnerHandle', 'ALTER FUNCTION vnext_control_plane.vnext_authorization_outbox_events_no_update() OWNER TO vnext_pg17_migrator'],
+      ['outboxFunctionPathHandle', 'ALTER FUNCTION vnext_control_plane.vnext_authorization_outbox_events_no_update() SET search_path = public, pg_temp'],
+      ['outboxFunctionPublicExecuteHandle', 'GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_outbox_events_no_update() TO PUBLIC'],
+      ['outboxFunctionVerifierExecuteHandle', 'GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_outbox_events_no_update() TO vnext_pg17_verifier'],
+      ['outboxFunctionRuntimeExecuteHandle', 'GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_outbox_events_no_update() TO vnext_pg17_runtime'],
+      ['outboxExtraTriggerHandle', 'CREATE TRIGGER unapproved_outbox_delete BEFORE DELETE ON vnext_control_plane.vnext_authorization_outbox_events FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_schema_migrations_no_delete()'],
+      ['outboxWrongTriggerHandle', 'DROP TRIGGER vnext_authorization_outbox_events_no_update ON vnext_control_plane.vnext_authorization_outbox_events; CREATE TRIGGER vnext_authorization_outbox_events_no_update BEFORE DELETE ON vnext_control_plane.vnext_authorization_outbox_events FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_outbox_events_no_update()'],
+      ['outboxMissingTriggerHandle', 'DROP TRIGGER vnext_authorization_outbox_events_no_delete ON vnext_control_plane.vnext_authorization_outbox_events'],
+      ['outboxPublicShadowHandle', 'CREATE TABLE public.vnext_authorization_outbox_events (id integer)'],
     ]) {
       const driftHandle = await createHandle();
       await catalog.apply(driftHandle, migrationInput);

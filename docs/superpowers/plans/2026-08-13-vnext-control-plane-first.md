@@ -222,3 +222,10 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - Disposable PostgreSQL 17 checks verify C-collated nonblank event/authority/receipt/reason fields, lower-case context hashes, finite timestamps, primary and authority/receipt uniqueness, both RESTRICT foreign keys, verifier-only SELECT, runtime-zero access, and failed update/delete preservation.
 - The exact catalog fails closed on an M9 prefix without writes, changed unique/FK/check/default/nullability/owner/ACL/function/trigger/public-shadow/index drift. The independent necessity and quality review passed after focused and aggregate target verification.
 - This is synthetic local validation only: no real RDS/ECS DDL, audit data, audit writer, API, production deployment, business data, desktop data, NAS, or removable-media access occurred.
+
+### PostgreSQL 17 authorization-outbox-events evidence (2026-08-15)
+
+- Migration 11 adds only `vnext_authorization_outbox_events` and its two table-local append-only trigger functions. It records generic receipt-bound outbox intent and deliberately adds no dispatcher, queue worker, event vocabulary, payload schema, writer, API, policy, trust-root consumer, seed, or runtime DML.
+- Disposable PostgreSQL 17 checks verify generic object/array/scalar JSON text with duplicate-key rejection, positive aggregate versions, primary and five-field uniqueness, both RESTRICT foreign keys, C-collated nonblank fields, finite timestamps, verifier-only SELECT, runtime-zero access, and failed update/delete preservation.
+- The exact catalog rejects an M10 prefix without writes, changed unique/FK/check/default/nullability/collation/index/owner/ACL/function/trigger/public-shadow drift. Independent necessity and quality review passed after focused and aggregate target verification.
+- This is synthetic local validation only: no real RDS/ECS DDL, outbox payload data, dispatcher, writer, API, production deployment, business data, desktop data, NAS, or removable-media access occurred.
