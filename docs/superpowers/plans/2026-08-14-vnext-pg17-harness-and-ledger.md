@@ -134,7 +134,7 @@ Implement this public surface:
 
 ```js
 function createDisposablePg17Runtime() {
-  return Object.freeze({ start, createIsolatedHandle, createPeerHandle, stop });
+  return Object.freeze({ start, createIsolatedHandle, createPeerHandle, disposeHandle, stop });
 }
 function isVNextPg17DisposableHandle(handle) {}
 async function withVNextPg17SyntheticQuery(handle, purpose, callback) {}
@@ -145,12 +145,12 @@ module.exports = {
 };
 ```
 
-`start()` first rejects populated `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_TLS_VERIFY`, or `DOCKER_CERT_PATH`, then invokes only an explicit local host: `npipe:////./pipe/docker_engine` on Windows and `unix:///var/run/docker.sock` on Unix. Every Docker invocation uses `child_process.spawn`, `shell:false`, an argument array, a timeout, bounded stdout/stderr, and a sanitized environment without `DOCKER_*` overrides. It provisions the five synthetic identities once. `createIsolatedHandle()` uses private provisioning credentials to create one random database with `OWNER vnext_pg17_owner`, apply database ACL revokes, then establish separate private clients as migrator, runtime, verifier, and fixture provisioner. It returns a frozen opaque handle with no own keys. `createPeerHandle(handle)` verifies the original handle and returns a separately connected opaque verifier peer for its same database; it rejects handles from another runtime. A module-private `WeakMap` binds each handle to its four private clients, container ID, unique label, exact database name, fixed schema `vnext_control_plane`, pinned image proof, and port inspection facts. Every `pg.Client` receives explicit `host`, `port`, `user`, `password`, `database`, and `ssl:false` values from that private state; no `PG*` environment fallback is permitted. Do not return a connection string, password, client, host, port, database name, or schema name. `withVNextPg17SyntheticQuery` verifies handle/runtime facts and permits only the literal purposes `migrator`, `runtime`, `verifier`, and `fixture-provisioner`; it gives its callback only a frozen `{ query(text, values) }` facade, never a raw client. Checked-in catalog code may use only `migrator` for apply and `verifier` for assertion; runtime-negative tests use only `runtime`; controlled drift fixtures use only `fixture-provisioner`. `stop()` closes every private client/database then removes only the verified container.
+`start()` first rejects populated `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_TLS_VERIFY`, or `DOCKER_CERT_PATH`, then invokes only an explicit local host: `npipe:////./pipe/docker_engine` on Windows and `unix:///var/run/docker.sock` on Unix. Every Docker invocation uses `child_process.spawn`, `shell:false`, an argument array, a timeout, bounded stdout/stderr, and a sanitized environment without `DOCKER_*` overrides. It provisions the five synthetic identities once. `createIsolatedHandle()` uses private provisioning credentials to create one random database with `OWNER vnext_pg17_owner`, apply database ACL revokes, then establish separate private clients as migrator, runtime, verifier, and fixture provisioner. It returns a frozen opaque handle with no own keys. `createPeerHandle(handle)` verifies the original handle and returns a separately connected opaque verifier peer for its same database; it rejects handles from another runtime. `disposeHandle(handle)` closes only that handle's private clients, drops only its synthetic database after confirming no live peer uses it, and invalidates its brand; every isolated test case must call it in `finally`. A module-private `WeakMap` binds each handle to its four private clients, container ID, unique label, exact database name, fixed schema `vnext_control_plane`, pinned image proof, and port inspection facts. Every `pg.Client` receives explicit `host`, `port`, `user`, `password`, `database`, and `ssl:false` values from that private state; no `PG*` environment fallback is permitted. Do not return a connection string, password, client, host, port, database name, or schema name. `withVNextPg17SyntheticQuery` verifies handle/runtime facts and permits only the literal purposes `migrator`, `runtime`, `verifier`, and `fixture-provisioner`; it gives its callback only a frozen `{ query(text, values) }` facade, never a raw client. Checked-in catalog code may use only `migrator` for apply and `verifier` for assertion; runtime-negative tests use only `runtime`; controlled drift fixtures use only `fixture-provisioner`. `stop()` closes every remaining private client/database then removes only the verified container.
 
 Use `child_process.spawn` with `shell:false`, a fixed argument array, timeout, and bounded output equivalent to:
 
 ```text
-docker run --rm --detach --label <unique-label> --tmpfs /var/lib/postgresql/data:rw,noexec,nosuid,size=128m
+docker run --rm --detach --label <unique-label> --tmpfs /var/lib/postgresql/data:rw,noexec,nosuid,size=512m
   --env POSTGRES_USER=<random> --env POSTGRES_PASSWORD=<random> --env POSTGRES_DB=<random>
   --publish 127.0.0.1::5432 <postgres@sha256:...>
 ```
@@ -330,7 +330,7 @@ Expected: nonzero because the runner module is absent.
 
 - [ ] **Step 3: Implement the CLI-safe orchestrator**
 
-Use `if (require.main === module)` to invoke the exported `run()`. Construct one runtime, enter `try/finally` immediately, start one container, pass that same runtime to manifest then catalog cases, and call `runtime.stop()` exactly once from `finally`; each case obtains its own fresh branded handle through `runtime.createIsolatedHandle()`. Map all expected runtime/validation/catalog errors to sanitized stderr plus a nonzero exit; never throw a raw child-process/database error or print connection strings, passwords, local paths, or Docker output.
+Use `if (require.main === module)` to invoke the exported `run()`. Construct one runtime, enter `try/finally` immediately, start one container, pass that same runtime to manifest then catalog cases, and call `runtime.stop()` exactly once from `finally`; each case obtains a fresh branded handle through `runtime.createIsolatedHandle()` and releases it through `runtime.disposeHandle()` in its own `finally`. Map all expected runtime/validation/catalog errors to sanitized stderr plus a nonzero exit; never throw a raw child-process/database error or print connection strings, passwords, local paths, or Docker output.
 
 - [ ] **Step 4: Run the complete target gate**
 
