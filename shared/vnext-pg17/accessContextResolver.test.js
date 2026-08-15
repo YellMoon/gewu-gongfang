@@ -9,6 +9,7 @@ const { createVNextPg17CatalogBoundary } = require('./catalogAssertion');
 const { createVNextPg17FirstAuthorityBootstrapMutation } = require('./firstAuthorityBootstrapMutation');
 const { createVNextPg17TrustedSessionVerifierBoundary } = require('./trustedSessionVerifierBoundary');
 const { createVNextPg17AccessContextResolver } = require('./accessContextResolver');
+const { expectedCatalog } = require('./migrationManifest');
 
 const BOOTSTRAP_NOW = '2026-08-15T00:00:00.000Z';
 const NOW = '2026-08-15T00:01:00.000Z';
@@ -58,6 +59,17 @@ async function expectUnavailable(action) {
   await assert.rejects(action, error => error?.code === 'VNEXT_PG17_ACCESS_CONTEXT_UNAVAILABLE');
 }
 
+async function targetRowsSnapshot(handle) {
+  return withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+    const snapshot = {};
+    for (const relation of expectedCatalog.relations) {
+      const result = await facade.query(`SELECT row_to_json(item)::text AS row FROM ${relation} item ORDER BY row_to_json(item)::text`);
+      snapshot[relation] = result.rows.map(item => item.row);
+    }
+    return snapshot;
+  });
+}
+
 async function runAccessContextResolverCases(runtime) {
   assert.match(
     fs.readFileSync(path.join(__dirname, 'accessContextResolver.js'), 'utf8'),
@@ -66,12 +78,14 @@ async function runAccessContextResolverCases(runtime) {
   const current = await fixture(runtime);
   try {
     const resolver = createVNextPg17AccessContextResolver({ runtime, handle: current.handle, verifierBoundary: current.boundary, surface: 'desktop', now: () => NOW });
+    const before = await targetRowsSnapshot(current.handle);
     const context = await resolver.resolve(current.assertion);
     assert.strictEqual(context.authorityId, 'authority-1');
     assert.deepStrictEqual(context.roles, ['super_admin']);
     assert.deepStrictEqual(context.capabilityIds, ['access.manage', 'device.revoke', 'user.review']);
     assert.strictEqual(context.reauthenticatedUntil, '2026-08-15T00:10:00.000Z');
     assert.strictEqual(Object.isFrozen(context), true);
+    assert.deepStrictEqual(await targetRowsSnapshot(current.handle), before);
   } finally {
     await runtime.disposeHandle(current.handle);
   }
