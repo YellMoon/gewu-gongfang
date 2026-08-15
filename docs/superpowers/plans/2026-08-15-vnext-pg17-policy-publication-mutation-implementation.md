@@ -17,7 +17,7 @@
 - Reference: `shared/vnext-pg17/accessContextResolver.test.js`
 - Reference: `shared/vnext-pg17/firstAuthorityBootstrapMutation.test.js`
 
-- [ ] **Step 1: Build one bootstrap-derived fixture**
+- [x] **Step 1: Build one bootstrap-derived fixture**
 
 Apply M1-M15, use the existing bootstrap mutation to establish revision one, insert an active online session plus matching reauthentication, and expose a same-handle trusted assertion and resolver.
 
@@ -34,7 +34,7 @@ async function expectCode(action, code) {
 }
 ```
 
-- [ ] **Step 2: Add accepted, replay, rejected, and noop expectations**
+- [x] **Step 2: Add accepted, replay, rejected, and noop expectations**
 
 Import the not-yet-existing writer. A desktop super-admin with `access.manage` and fresh reauthentication publishes revision two. Assert one new publication/receipt/audit/outbox row, no account/device/installation/link/session mutation, exact replay with zero new IDs, same-key conflict, revision-zero rejection, stale CAS rejection, adjacent unchanged noop, and A-to-B-to-A later revision.
 
@@ -61,7 +61,7 @@ for (const stage of ['receipt', 'publication', 'audit', 'outbox']) {
 }
 ```
 
-- [ ] **Step 4: Prove red state**
+- [x] **Step 4: Prove red state**
 
 Run: `node shared/vnext-pg17/policyPublicationMutation.test.js`
 
@@ -73,7 +73,7 @@ Expected: `MODULE_NOT_FOUND` for `./policyPublicationMutation`.
 - Create: `shared/vnext-pg17/policyPublicationMutation.js`
 - Test: `shared/vnext-pg17/policyPublicationMutation.test.js`
 
-- [ ] **Step 1: Implement strict factory and snapshots**
+- [x] **Step 1: Implement strict factory and snapshots**
 
 Implement exact own-data config and command snapshots; recursively clone only plain own-data manifests; validate canonical UTC time; hash canonical JSON. The factory accepts only `runtime`, `handle`, `resolver`, `now`, `idFactory`, and optional exact `{ afterWrite }`. Require branded runtime/handle and resolver for the identical handle.
 
@@ -85,7 +85,7 @@ if (!settings || !isVNextPg17DisposableHandleForRuntime(settings.runtime, settin
 }
 ```
 
-- [ ] **Step 2: Implement authorization and self-lock checks**
+- [x] **Step 2: Implement authorization and self-lock checks**
 
 Resolve the opaque assertion once. Require desktop, formal super-admin, `access.manage`, and `reauthenticatedUntil > now`; load active authority/actor inside the transaction. Canonicalize the policy manifest and require active desktop `access.manage` in super-admin defaults. Reject malformed input and revision-zero bootstrap fallback with stable domain errors before writes.
 
@@ -98,7 +98,7 @@ if (context.surface !== 'desktop' || !context.roles.includes('super_admin')
 }
 ```
 
-- [ ] **Step 3: Implement one advisory-lock transaction**
+- [x] **Step 3: Implement one advisory-lock transaction**
 
 Call `catalog.assert(handle)`, then `BEGIN` and take `pg_advisory_xact_lock(hashtextextended('vnext:policy:' || authorityId, 0))`. Lock the idempotency receipt row `FOR UPDATE`; validate exact replay companions. Fresh execution locks/reloads active authority and highest policy revision, then writes rejected/noop receipt+audit or accepted receipt→publication→audit→outbox in dependency order. Call the hook after every durable write. Roll back all failure paths and expose only stable policy/idempotency errors.
 
@@ -109,7 +109,7 @@ await facade.query("SELECT pg_advisory_xact_lock(hashtextextended('vnext:policy:
 await facade.query('COMMIT');
 ```
 
-- [ ] **Step 4: Verify focused writer suite**
+- [x] **Step 4: Verify focused writer suite**
 
 Run: `node shared/vnext-pg17/policyPublicationMutation.test.js`
 
@@ -122,7 +122,7 @@ Expected: `vNext PG17 policy publication mutation checks passed`.
 - Modify: `shared/vnext-pg17/runPg17IntegrationTests.test.js`
 - Modify: `docs/superpowers/plans/2026-08-13-vnext-control-plane-first.md`
 
-- [ ] **Step 1: Register one-runtime execution**
+- [x] **Step 1: Register one-runtime execution**
 
 Import and run `runPolicyPublicationMutationCases(runtime)` after AccessContext and before shutdown. Require the runner sequence:
 
@@ -130,7 +130,7 @@ Import and run `runPolicyPublicationMutationCases(runtime)` after AccessContext 
 // manifest -> catalog -> bootstrap -> recovery -> trusted-session-boundary -> access-context -> policy-publication-mutation -> stop
 ```
 
-- [ ] **Step 2: Add verified evidence**
+- [x] **Step 2: Add verified evidence**
 
 Record only tested facts: same-handle opaque authorization, desktop super-admin/capability/reauth requirements, CAS and durable companions, exact replay, self-lock protection, rollback, and synthetic-only scope. Explicitly exclude RDS/ECS, API, runtime adapter, business/source/desktop data, NAS, removable media, and deployment.
 
