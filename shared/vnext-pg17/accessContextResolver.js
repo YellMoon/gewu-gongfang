@@ -54,7 +54,7 @@ function createVNextPg17AccessContextResolver(config) {
     } catch (_) { throw failure(); }
     return withVNextPg17SyntheticQuery(settings.handle, 'verifier', async facade => {
       try {
-        await facade.query('BEGIN READ ONLY');
+        await facade.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
         const current = await facade.query(`SELECT s.*, au.status AS authority_status, ac.status AS account_status, ac.auth_version AS account_auth_current, ac.access_version AS account_access_current, ac.revocation_version AS account_revocation_current, d.status AS device_status, d.credential_version AS device_credential_current, d.risk_version AS device_risk_current, i.status AS installation_status, i.credential_version AS installation_credential_current, l.status AS link_status, l.auth_version AS link_auth_current, l.access_version AS link_access_current, l.row_version AS link_row_current FROM vnext_control_plane.vnext_sessions s JOIN vnext_control_plane.vnext_authorities au ON au.authority_id=s.authority_id JOIN vnext_control_plane.vnext_accounts ac ON ac.authority_id=s.authority_id AND ac.account_id=s.account_id JOIN vnext_control_plane.vnext_trusted_devices d ON d.authority_id=s.authority_id AND d.device_id=s.device_id JOIN vnext_control_plane.vnext_device_installations i ON i.authority_id=s.authority_id AND i.device_id=s.device_id AND i.installation_id=s.installation_id JOIN vnext_control_plane.vnext_account_device_links l ON l.authority_id=s.authority_id AND l.account_id=s.account_id AND l.device_id=s.device_id AND l.installation_id=s.installation_id AND l.link_id=s.link_id WHERE s.session_id=$1`, [session.sessionId]);
         if (current.rows.length !== 1) throw failure();
         const row = current.rows[0];

@@ -40,7 +40,7 @@ isVNextPg17AccessContextResolverForHandle(resolver, handle)
 
 All factory inputs are exact plain own-data values. Proxy/accessor/symbol/non-enumerable/unknown/missing configuration, unbranded runtime/handle, another-handle boundary, an unsupported surface, or an invalid clock fail closed as `VNEXT_PG17_ACCESS_CONTEXT_UNAVAILABLE`. `surface` is fixed at factory creation to exactly `desktop` or `miniapp`; callers cannot claim it per resolve request.
 
-`resolve` unwraps exactly once, takes one canonical UTC instant from `now`, and first calls the exact M1-M15 catalog assertion. It then runs every SQL read inside one explicit `BEGIN READ ONLY` / `COMMIT` snapshot through the disposable verifier facade. It must not issue DDL, DML, `SET ROLE`, a transaction-control statement outside that read-only block, or an implicit write. Any query, clock, schema, parse, or validation problem rolls back the read-only transaction and maps to the same unavailable error.
+`resolve` unwraps exactly once, takes one canonical UTC instant from `now`, and first calls the exact M1-M15 catalog assertion. It then runs every context-building SQL read inside one explicit `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY` / `COMMIT` snapshot through the disposable verifier facade. It must not issue DDL, DML, `SET ROLE`, a transaction-control statement outside that read-only block, or an implicit write. Any query, clock, schema, parse, or validation problem rolls back the read-only transaction and maps to the same unavailable error.
 
 The resolver reads only the control-plane relations below:
 
@@ -64,7 +64,7 @@ Roles are formal active roles, or derived `visitor` when none exist. Capability 
 
 ## Authorization and concurrency semantics
 
-The resolver is a read model. PostgreSQL `READ ONLY` provides a single statement-snapshot sequence from the first read through the final reauthentication query; no result may splice policy, vector, or grant data from different transactions. A writer using this context must still run its own lock/CAS transaction and revalidate all relevant state. The context carries policy revision/hash and current identity/version observations for freshness comparison; it is not a durable credential.
+The resolver is a read model. PostgreSQL `REPEATABLE READ READ ONLY` provides one stable snapshot from the first read through the final reauthentication query; no result may splice policy, vector, or grant data from different transactions. A writer using this context must still run its own lock/CAS transaction and revalidate all relevant state. The context carries policy revision/hash and current identity/version observations for freshness comparison; it is not a durable credential.
 
 The resolver is branded with a closure-private WeakSet and handle identity WeakMap. Future policy, role, and device-link target writers must accept only a resolver branded for their exact handle and only opaque assertions routed through it. A fake object with `resolve`, a copied resolver, a different-handle resolver, or a raw session ID must never establish authority.
 

@@ -47,6 +47,32 @@ async function main() {
     );
     assert.ok(result.rows[0].version_num >= 170000);
     assert.ok(result.rows[0].version_num < 180000);
+    const peer = await liveRuntime.createPeerHandle(handle);
+    const peerResult = await withVNextPg17SyntheticQuery(peer, 'fixture-provisioner', facade =>
+      facade.query('SELECT 1 AS peer_write_test'),
+    );
+    assert.strictEqual(peerResult.rows[0].peer_write_test, 1);
+    await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
+      'CREATE TABLE public.vnext_pg17_snapshot_probe(value integer NOT NULL)',
+    ));
+    await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
+      'INSERT INTO public.vnext_pg17_snapshot_probe(value) VALUES(1)',
+    ));
+    await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+      await facade.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      try {
+        assert.strictEqual((await facade.query('SELECT value FROM public.vnext_pg17_snapshot_probe')).rows[0].value, 1);
+        await withVNextPg17SyntheticQuery(peer, 'fixture-provisioner', peerFacade => peerFacade.query(
+          'UPDATE public.vnext_pg17_snapshot_probe SET value=2',
+        ));
+        assert.strictEqual((await facade.query('SELECT value FROM public.vnext_pg17_snapshot_probe')).rows[0].value, 1);
+        await facade.query('COMMIT');
+      } catch (error) {
+        await facade.query('ROLLBACK');
+        throw error;
+      }
+    });
+    await liveRuntime.disposeHandle(peer);
     await liveRuntime.disposeHandle(handle);
     assert.strictEqual(isVNextPg17DisposableHandle(handle), false);
     await assert.rejects(

@@ -2,6 +2,8 @@
 
 const assert = require('assert');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const { createDisposablePg17Runtime, withVNextPg17SyntheticQuery } = require('./disposableRuntime');
 const { createVNextPg17CatalogBoundary } = require('./catalogAssertion');
 const { createVNextPg17FirstAuthorityBootstrapMutation } = require('./firstAuthorityBootstrapMutation');
@@ -48,6 +50,10 @@ async function expectUnavailable(action) {
 }
 
 async function runAccessContextResolverCases(runtime) {
+  assert.match(
+    fs.readFileSync(path.join(__dirname, 'accessContextResolver.js'), 'utf8'),
+    /BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY/,
+  );
   const current = await fixture(runtime);
   try {
     const resolver = createVNextPg17AccessContextResolver({ runtime, handle: current.handle, verifierBoundary: current.boundary, surface: 'desktop', now: () => NOW });

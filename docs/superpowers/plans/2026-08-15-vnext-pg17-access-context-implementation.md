@@ -111,9 +111,9 @@ Accept only exact own-data `{ runtime, handle, verifierBoundary, surface, now }`
 - [ ] **Step 2: Implement one explicit snapshot**
 
 ```js
-await facade.query('BEGIN READ ONLY');
+await catalog.assert(handle);
+await facade.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
 try {
-  await catalog.assert(handle);
   // parameterized session/parent, publication, grants/overrides/scopes, and reauth reads
   await facade.query('COMMIT');
   return context;

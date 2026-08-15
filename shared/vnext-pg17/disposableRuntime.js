@@ -233,9 +233,9 @@ async function startRuntime(runtime) {
   await closeClient(adminClient);
 }
 
-async function createHandle(runtime, database, clients) {
+async function createHandle(runtime, database, clients, ownsDatabase = false) {
   const handle = Object.freeze({});
-  handles.set(handle, { runtime, database, clients, closed: false });
+  handles.set(handle, { runtime, database, clients, ownsDatabase, closed: false });
   runtimeState(runtime).handles.add(handle);
   return handle;
 }
@@ -261,7 +261,7 @@ async function createIsolatedHandle(runtime) {
       user: state.admin.user,
       password: state.admin.password,
     });
-    return await createHandle(runtime, database, clients);
+    return await createHandle(runtime, database, clients, true);
   } catch (_) {
     await closeClient(admin);
     await Promise.all(Object.values(clients).map(closeClient));
@@ -275,15 +275,22 @@ async function createPeerHandle(runtime, originalHandle) {
   const original = handles.get(originalHandle);
   if (!original || original.runtime !== runtime || original.closed) throw invalidHandle();
   const state = runtimeState(runtime);
+  const clients = {};
   try {
-    const verifier = await connectClient({
-      ...state.connection,
-      database: original.database,
+    const common = { ...state.connection, database: original.database };
+    clients.verifier = await connectClient({
+      ...common,
       user: 'vnext_pg17_verifier',
       password: state.rolePasswords.verifier,
     });
-    return await createHandle(runtime, original.database, { verifier });
+    clients['fixture-provisioner'] = await connectClient({
+      ...common,
+      user: state.admin.user,
+      password: state.admin.password,
+    });
+    return await createHandle(runtime, original.database, clients);
   } catch (_) {
+    await Promise.all(Object.values(clients).map(closeClient));
     throw unavailable();
   }
 }
@@ -292,14 +299,17 @@ async function disposeHandle(runtime, handle) {
   const handleState = handles.get(handle);
   if (!handleState || handleState.runtime !== runtime || handleState.closed) throw invalidHandle();
   const state = runtimeState(runtime);
-  for (const candidate of state.handles) {
-    const candidateState = handles.get(candidate);
-    if (candidate !== handle && candidateState && !candidateState.closed
-      && candidateState.database === handleState.database) throw invalidHandle();
+  if (handleState.ownsDatabase) {
+    for (const candidate of state.handles) {
+      const candidateState = handles.get(candidate);
+      if (candidate !== handle && candidateState && !candidateState.closed
+        && candidateState.database === handleState.database) throw invalidHandle();
+    }
   }
   handleState.closed = true;
   await Promise.all(Object.values(handleState.clients).map(closeClient));
   state.handles.delete(handle);
+  if (!handleState.ownsDatabase) return;
   let admin;
   try {
     admin = await connectClient({ ...state.connection, ...state.admin });
