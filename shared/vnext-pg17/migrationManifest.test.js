@@ -14,6 +14,7 @@ const {
   AUTHORIZATION_AUDIT_EVENTS_MIGRATION,
   AUTHORIZATION_OUTBOX_EVENTS_MIGRATION,
   BOOTSTRAP_CONSUMPTIONS_MIGRATION,
+  AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,
@@ -38,9 +39,12 @@ async function runManifestCases() {
     'vnext_bootstrap_consumptions_insert_guard',
     'vnext_bootstrap_consumptions_no_delete',
     'vnext_bootstrap_consumptions_no_update',
+    'vnext_authorization_policy_publications_insert_guard',
+    'vnext_authorization_policy_publications_no_delete',
+    'vnext_authorization_policy_publications_no_update',
   ]);
   assert.strictEqual(sha256(FIRST_MIGRATION.sql), FIRST_MIGRATION.manifestSha256);
-  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
   assert.strictEqual(FOUNDATION_IDENTITY_DEVICE_MIGRATION.migrationId, 'vnext-pg17-foundation-identity-device-2');
   assert.match(FOUNDATION_IDENTITY_DEVICE_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
   assert.strictEqual(
@@ -138,6 +142,20 @@ async function runManifestCases() {
   assert.match(BOOTSTRAP_CONSUMPTIONS_MIGRATION.sql, /CREATE TRIGGER vnext_bootstrap_consumptions_insert_guard/);
   assert.match(BOOTSTRAP_CONSUMPTIONS_MIGRATION.sql, /CREATE TRIGGER vnext_bootstrap_consumptions_no_update/);
   assert.match(BOOTSTRAP_CONSUMPTIONS_MIGRATION.sql, /CREATE TRIGGER vnext_bootstrap_consumptions_no_delete/);
+  assert.ok(Object.isFrozen(AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION));
+  assert.strictEqual(AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION.migrationId, 'vnext-pg17-authorization-policy-publications-13');
+  assert.strictEqual(AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION.semanticVersion, 13);
+  assert.match(AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
+  assert.strictEqual(sha256(AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION.sql), AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION.manifestSha256);
+  assert.match(AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION.sql, /CREATE TABLE vnext_control_plane\.vnext_authorization_policy_publications/);
+  for (const column of ['publication_id', 'authority_id', 'receipt_id', 'policy_revision', 'policy_contract_version', 'canonical_manifest_json', 'policy_manifest_sha256', 'published_at']) {
+    assert.match(AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION.sql, new RegExp(`\\b${column}\\b`));
+  }
+  assert.match(AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION.sql, /IS JSON OBJECT WITH UNIQUE KEYS/);
+  assert.match(AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION.sql, /vnext_bootstrap_consumptions/);
+  assert.match(AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION.sql, /CREATE TRIGGER vnext_authorization_policy_publications_insert_guard/);
+  assert.match(AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION.sql, /CREATE TRIGGER vnext_authorization_policy_publications_no_update/);
+  assert.match(AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION.sql, /CREATE TRIGGER vnext_authorization_policy_publications_no_delete/);
   assert.deepStrictEqual(expectedCatalog.relations, [
     'vnext_control_plane.vnext_account_device_links',
     'vnext_control_plane.vnext_accounts',
@@ -145,6 +163,7 @@ async function runManifestCases() {
     'vnext_control_plane.vnext_authorization_audit_events',
     'vnext_control_plane.vnext_authorization_command_receipts',
     'vnext_control_plane.vnext_authorization_outbox_events',
+    'vnext_control_plane.vnext_authorization_policy_publications',
     'vnext_control_plane.vnext_bootstrap_consumptions',
     'vnext_control_plane.vnext_capability_catalog',
     'vnext_control_plane.vnext_capability_overrides',

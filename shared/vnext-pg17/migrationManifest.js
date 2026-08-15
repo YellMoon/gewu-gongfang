@@ -544,6 +544,93 @@ GRANT SELECT ON TABLE vnext_control_plane.vnext_bootstrap_consumptions TO vnext_
 
 const BOOTSTRAP_CONSUMPTIONS_MIGRATION = Object.freeze({ migrationId: 'vnext-pg17-bootstrap-consumptions-12', semanticVersion: 12, sql: BOOTSTRAP_CONSUMPTIONS_SQL, manifestSha256: sha256(BOOTSTRAP_CONSUMPTIONS_SQL) });
 
+const AUTHORIZATION_POLICY_PUBLICATIONS_SQL = `CREATE TABLE vnext_control_plane.vnext_authorization_policy_publications (
+  publication_id text COLLATE "C" PRIMARY KEY CHECK (btrim(publication_id) <> ''),
+  authority_id text COLLATE "C" NOT NULL CHECK (btrim(authority_id) <> ''),
+  receipt_id text COLLATE "C" NOT NULL CHECK (btrim(receipt_id) <> ''),
+  policy_revision bigint NOT NULL CHECK (policy_revision >= 1),
+  policy_contract_version bigint NOT NULL CHECK (policy_contract_version = 1),
+  canonical_manifest_json text COLLATE "C" NOT NULL CHECK (canonical_manifest_json IS JSON OBJECT WITH UNIQUE KEYS),
+  policy_manifest_sha256 text COLLATE "C" NOT NULL CHECK (policy_manifest_sha256 ~ '^[0-9a-f]{64}$'),
+  published_at timestamptz NOT NULL CHECK (published_at <> 'infinity'::timestamptz AND published_at <> '-infinity'::timestamptz),
+  UNIQUE(authority_id, policy_revision),
+  UNIQUE(authority_id, receipt_id),
+  FOREIGN KEY(authority_id) REFERENCES vnext_control_plane.vnext_authorities(authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  FOREIGN KEY(receipt_id, authority_id) REFERENCES vnext_control_plane.vnext_authorization_command_receipts(receipt_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+);
+CREATE FUNCTION vnext_control_plane.vnext_authorization_policy_publications_insert_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+BEGIN
+  IF NEW.policy_revision <> COALESCE((SELECT MAX(policy_revision) FROM vnext_control_plane.vnext_authorization_policy_publications WHERE authority_id = NEW.authority_id), 0) + 1 THEN
+    RAISE EXCEPTION 'VNEXT_POLICY_REVISION_CONFLICT' USING ERRCODE = 'P0001';
+  END IF;
+  IF EXISTS (SELECT 1 FROM vnext_control_plane.vnext_authorization_policy_publications WHERE authority_id = NEW.authority_id AND policy_revision = NEW.policy_revision - 1 AND policy_contract_version = NEW.policy_contract_version AND policy_manifest_sha256 = NEW.policy_manifest_sha256) THEN
+    RAISE EXCEPTION 'VNEXT_POLICY_UNCHANGED' USING ERRCODE = 'P0001';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+      FROM vnext_control_plane.vnext_authorization_command_receipts r
+      JOIN vnext_control_plane.vnext_authorities a ON a.authority_id = r.authority_id
+     WHERE r.receipt_id = NEW.receipt_id
+       AND r.authority_id = NEW.authority_id
+       AND a.status = 'active'
+       AND r.outcome = 'accepted'
+       AND r.committed_auth_version IS NULL
+       AND r.committed_access_version IS NULL
+       AND r.committed_revocation_version IS NULL
+       AND NEW.published_at >= r.created_at
+       AND json_typeof(r.canonical_result_json::json) = 'object'
+       AND (SELECT count(*) FROM json_object_keys(r.canonical_result_json::json)) = 7
+       AND json_typeof(r.canonical_result_json::json->'authorityId') = 'string'
+       AND json_typeof(r.canonical_result_json::json->'code') = 'string'
+       AND json_typeof(r.canonical_result_json::json->'policyContractVersion') = 'number'
+       AND json_typeof(r.canonical_result_json::json->'policyManifestSha256') = 'string'
+       AND json_typeof(r.canonical_result_json::json->'policyRevision') = 'number'
+       AND json_typeof(r.canonical_result_json::json->'publicationId') = 'string'
+       AND json_typeof(r.canonical_result_json::json->'status') = 'string'
+       AND r.canonical_result_json::json->>'authorityId' = NEW.authority_id
+       AND r.canonical_result_json::json->>'policyContractVersion' = NEW.policy_contract_version::text
+       AND r.canonical_result_json::json->>'policyManifestSha256' = NEW.policy_manifest_sha256
+       AND r.canonical_result_json::json->>'policyRevision' = NEW.policy_revision::text
+       AND r.canonical_result_json::json->>'publicationId' = NEW.publication_id
+       AND r.canonical_result_json::json->>'status' = 'accepted'
+       AND (
+         (r.result_code = 'POLICY_PUBLISHED'
+          AND r.command_type = 'authorization_policy.publish'
+          AND r.target_kind = 'authorization_policy'
+          AND r.target_id = NEW.authority_id
+          AND r.expected_row_version = NEW.policy_revision - 1
+          AND r.committed_target_row_version = NEW.policy_revision
+          AND r.canonical_result_json::json->>'code' = 'POLICY_PUBLISHED')
+         OR
+         (r.result_code = 'AUTHORITY_BOOTSTRAPPED'
+          AND r.command_type = 'authority.bootstrap'
+          AND r.target_kind = 'authority'
+          AND r.target_id = NEW.authority_id
+          AND r.actor_account_id IS NULL
+          AND r.expected_row_version = 0
+          AND r.committed_target_row_version = 1
+          AND NEW.policy_revision = 1
+          AND r.canonical_result_json::json->>'code' = 'AUTHORITY_BOOTSTRAPPED'
+          AND EXISTS (SELECT 1 FROM vnext_control_plane.vnext_bootstrap_consumptions m WHERE m.receipt_id = r.receipt_id AND m.authority_id = NEW.authority_id AND m.policy_manifest_sha256 = NEW.policy_manifest_sha256 AND r.actor_key = 'bootstrap:' || m.bootstrap_intent_id AND NEW.published_at >= m.consumed_at))
+       )
+  ) THEN
+    RAISE EXCEPTION 'VNEXT_POLICY_PUBLICATION_RECEIPT_INVALID' USING ERRCODE = 'P0001';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE FUNCTION vnext_control_plane.vnext_authorization_policy_publications_no_update() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN RAISE EXCEPTION 'vNext policy publication is append-only' USING ERRCODE = 'P0001'; END; $$;
+CREATE FUNCTION vnext_control_plane.vnext_authorization_policy_publications_no_delete() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN RAISE EXCEPTION 'vNext policy publication is append-only' USING ERRCODE = 'P0001'; END; $$;
+CREATE TRIGGER vnext_authorization_policy_publications_insert_guard BEFORE INSERT ON vnext_control_plane.vnext_authorization_policy_publications FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_policy_publications_insert_guard();
+CREATE TRIGGER vnext_authorization_policy_publications_no_update BEFORE UPDATE ON vnext_control_plane.vnext_authorization_policy_publications FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_policy_publications_no_update();
+CREATE TRIGGER vnext_authorization_policy_publications_no_delete BEFORE DELETE ON vnext_control_plane.vnext_authorization_policy_publications FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_policy_publications_no_delete();
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_policy_publications_insert_guard() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_policy_publications_no_update() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_policy_publications_no_delete() FROM PUBLIC;
+GRANT SELECT ON TABLE vnext_control_plane.vnext_authorization_policy_publications TO vnext_pg17_verifier;`;
+
+const AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION = Object.freeze({ migrationId: 'vnext-pg17-authorization-policy-publications-13', semanticVersion: 13, sql: AUTHORIZATION_POLICY_PUBLICATIONS_SQL, manifestSha256: sha256(AUTHORIZATION_POLICY_PUBLICATIONS_SQL) });
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -557,6 +644,7 @@ const MIGRATIONS = Object.freeze([
   AUTHORIZATION_AUDIT_EVENTS_MIGRATION,
   AUTHORIZATION_OUTBOX_EVENTS_MIGRATION,
   BOOTSTRAP_CONSUMPTIONS_MIGRATION,
+  AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -666,6 +754,9 @@ BEGIN
 END;
 $function$
 `),
+  vnext_authorization_policy_publications_insert_guard: '7051bdb27fac85b9084fcbb6231394a1734df88a7530c6bcbc3176eff333947d',
+  vnext_authorization_policy_publications_no_delete: 'f8bcb509024883e06fa095670d64414f6a5d86af996dad89b01f0346628449b4',
+  vnext_authorization_policy_publications_no_update: 'efe409fccc1f4e835f2bea76814a7dcd844ba401fd1c5d33de041cd9984f9cd5',
   vnext_bootstrap_consumptions_insert_guard: '79d847c9285a91fe49a72afb79b2b67dffd8042177df3dde6a9db154fdfe2d82',
   vnext_bootstrap_consumptions_no_delete: '78211e1091e81e3ec8a52b853bc564c07fb1525ba30cdf5c04dd2c8e9a56f2a2',
   vnext_bootstrap_consumptions_no_update: '70eb96f8bb41027dc1ce6aa2ea4665046cc0c52d22a98fc25a57cf91ad5aaf53',
@@ -680,6 +771,7 @@ const expectedCatalog = Object.freeze({
     'vnext_control_plane.vnext_authorization_audit_events',
     'vnext_control_plane.vnext_authorization_command_receipts',
     'vnext_control_plane.vnext_authorization_outbox_events',
+    'vnext_control_plane.vnext_authorization_policy_publications',
     'vnext_control_plane.vnext_bootstrap_consumptions',
     'vnext_control_plane.vnext_capability_catalog',
     'vnext_control_plane.vnext_capability_overrides',
@@ -705,6 +797,9 @@ const expectedCatalog = Object.freeze({
     'vnext_bootstrap_consumptions_insert_guard',
     'vnext_bootstrap_consumptions_no_delete',
     'vnext_bootstrap_consumptions_no_update',
+    'vnext_authorization_policy_publications_insert_guard',
+    'vnext_authorization_policy_publications_no_delete',
+    'vnext_authorization_policy_publications_no_update',
   ]),
   owners: Object.freeze({ database: 'vnext_pg17_owner', schema: 'vnext_pg17_owner', table: 'vnext_pg17_owner' }),
   functionDefinitionSha256: FUNCTION_DEFINITION_SHA256,
@@ -723,6 +818,7 @@ module.exports = {
   AUTHORIZATION_AUDIT_EVENTS_MIGRATION,
   AUTHORIZATION_OUTBOX_EVENTS_MIGRATION,
   BOOTSTRAP_CONSUMPTIONS_MIGRATION,
+  AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

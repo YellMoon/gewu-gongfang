@@ -229,3 +229,15 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - Disposable PostgreSQL 17 checks verify generic object/array/scalar JSON text with duplicate-key rejection, positive aggregate versions, primary and five-field uniqueness, both RESTRICT foreign keys, C-collated nonblank fields, finite timestamps, verifier-only SELECT, runtime-zero access, and failed update/delete preservation.
 - The exact catalog rejects an M10 prefix without writes, changed unique/FK/check/default/nullability/collation/index/owner/ACL/function/trigger/public-shadow drift. Independent necessity and quality review passed after focused and aggregate target verification.
 - This is synthetic local validation only: no real RDS/ECS DDL, outbox payload data, dispatcher, writer, API, production deployment, business data, desktop data, NAS, or removable-media access occurred.
+
+### PostgreSQL 17 bootstrap-consumptions evidence (2026-08-15)
+
+- Migration 12 adds only the permanently append-only `vnext_bootstrap_consumptions` marker and its insert/no-update/no-delete guards. The marker intentionally has zero foreign keys so a damaged authority or receipt cannot reopen bootstrap.
+- The insert guard accepts only an exact accepted `authority.bootstrap` receipt with the fixed bootstrap actor, authority, result vector, typed seven-key result, matching policy hash, and nondecreasing time. No bootstrap data, writer, API, policy publication, or trust evidence row is seeded.
+- Catalog and disposable PG17 checks reject M11 prefixes, injected foreign keys, altered constraints/indexes/ACL/functions/triggers/public shadows, malformed JSON values, and attempted updates/deletes. This remains synthetic local validation only.
+
+### PostgreSQL 17 authorization-policy-publications evidence (2026-08-15)
+
+- Migration 13 adds only the authority-local append-only `vnext_authorization_policy_publications` ledger. It stores canonical manifest text plus its writer-supplied SHA-256; it adds no policy seed, current pointer, resolver, writer, API, or capability mapping.
+- Its insert guard requires a contiguous authority-local revision and exact accepted receipt result. The normal path binds `authorization_policy.publish` and its revision vector; the bootstrap path additionally requires the durable M12 marker, matching receipt/actor/authority/hash, and time ordering. Adjacent identical contract/hash revisions reject as unchanged.
+- Exact catalog checks and synthetic PG17 behavior cover M12-prefix fail-closed behavior, JSON/receipt/vector/time/type mismatches, inactive authorities, marker absence, append-only preservation, ACL/function/trigger drift, and no runtime access. No real RDS/ECS, business data, deployment, desktop data, NAS, or removable media was accessed.

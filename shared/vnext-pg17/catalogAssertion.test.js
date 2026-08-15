@@ -16,6 +16,7 @@ const {
   AUTHORIZATION_AUDIT_EVENTS_MIGRATION,
   AUTHORIZATION_OUTBOX_EVENTS_MIGRATION,
   BOOTSTRAP_CONSUMPTIONS_MIGRATION,
+  AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION,
 } = require('./migrationManifest');
 
 const FOUNDATION_INSTANT = '2026-08-15T00:00:00.000Z';
@@ -877,9 +878,98 @@ async function assertBootstrapConsumptionSemantics(handle) {
       await facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts ENABLE TRIGGER ALL');
     }
     assert.deepStrictEqual((await facade.query('SELECT * FROM vnext_control_plane.vnext_bootstrap_consumptions')).rows, before.rows);
+    await facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts DISABLE TRIGGER ALL');
+    try {
+      await facade.query(
+        "INSERT INTO vnext_control_plane.vnext_authorization_command_receipts (receipt_id, authority_id, actor_key, actor_account_id, idempotency_key, command_type, target_kind, target_id, canonical_request_sha256, expected_row_version, outcome, result_code, canonical_result_json, canonical_result_sha256, committed_auth_version, committed_access_version, committed_revocation_version, committed_target_row_version, created_at) VALUES ('bootstrap-receipt-1', 'authority-1', 'bootstrap:bootstrap-intent-1', NULL, 'bootstrap-key-1', 'authority.bootstrap', 'authority', 'authority-1', repeat('b', 64), 0, 'accepted', 'AUTHORITY_BOOTSTRAPPED', $1, repeat('c', 64), NULL, NULL, NULL, 1, $2)",
+        [resultJson, FOUNDATION_INSTANT],
+      );
+    } finally {
+      await facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_command_receipts ENABLE TRIGGER ALL');
+    }
   });
   await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'verifier', facade => facade.query("INSERT INTO vnext_control_plane.vnext_bootstrap_consumptions (marker_key, bootstrap_intent_id, authority_id, installation_key_fingerprint, policy_manifest_sha256, receipt_id, consumed_at) VALUES ('single-authority-bootstrap', 'verifier-intent', 'authority-1', repeat('d', 64), repeat('a', 64), 'bootstrap-receipt-1', $1)", [FOUNDATION_INSTANT])));
   await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_bootstrap_consumptions')));
+}
+
+async function assertAuthorizationPolicyPublicationSemantics(handle) {
+  await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+    const bootstrapHash = 'a'.repeat(64);
+    const insertPublication = ({
+      publicationId,
+      authorityId = 'authority-1',
+      receiptId,
+      policyRevision,
+      policyContractVersion = 1,
+      manifestJson = '{"version":1}',
+      policyManifestSha256,
+      publishedAt = FOUNDATION_INSTANT,
+    }) => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_authorization_policy_publications (publication_id, authority_id, receipt_id, policy_revision, policy_contract_version, canonical_manifest_json, policy_manifest_sha256, published_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [publicationId, authorityId, receiptId, policyRevision, policyContractVersion, manifestJson, policyManifestSha256, publishedAt],
+    );
+    await insertPublication({
+      publicationId: 'publication-1',
+      receiptId: 'bootstrap-receipt-1',
+      policyRevision: 1,
+      policyManifestSha256: bootstrapHash,
+    });
+    assert.deepStrictEqual((await facade.query("SELECT publication_id, policy_revision::text AS policy_revision, policy_manifest_sha256 FROM vnext_control_plane.vnext_authorization_policy_publications WHERE authority_id = 'authority-1'" )).rows, [{ publication_id: 'publication-1', policy_revision: '1', policy_manifest_sha256: bootstrapHash }]);
+    const bootstrapBefore = await facade.query("SELECT * FROM vnext_control_plane.vnext_authorization_policy_publications WHERE publication_id = 'publication-1'");
+    await assert.rejects(() => facade.query("UPDATE vnext_control_plane.vnext_authorization_policy_publications SET policy_revision = 2 WHERE publication_id = 'publication-1'"), error => error && error.code === 'P0001');
+    await assert.rejects(() => facade.query("DELETE FROM vnext_control_plane.vnext_authorization_policy_publications WHERE publication_id = 'publication-1'"), error => error && error.code === 'P0001');
+    assert.deepStrictEqual((await facade.query("SELECT * FROM vnext_control_plane.vnext_authorization_policy_publications WHERE publication_id = 'publication-1'")).rows, bootstrapBefore.rows);
+
+    await facade.query("INSERT INTO vnext_control_plane.vnext_authorities (authority_id, status, created_at, updated_at) VALUES ('authority-policy-2', 'active', $1, $1)", [FOUNDATION_INSTANT]);
+    const insertPolicyReceipt = ({ receiptId, idempotencyKey, publicationId, policyRevision, policyManifestSha256, authorityId = 'authority-policy-2', actorKey = 'policy-actor', actorAccountId = null, resultCode = 'POLICY_PUBLISHED', commandType = 'authorization_policy.publish', targetKind = 'authorization_policy', targetId = authorityId, outcome = 'accepted', expectedRowVersion = policyRevision - 1, committedTargetRowVersion = policyRevision, canonicalResultJson }) => {
+      const resultJson = canonicalResultJson || JSON.stringify({ authorityId, code: resultCode, policyContractVersion: 1, policyManifestSha256, policyRevision, publicationId, status: 'accepted' });
+      return facade.query(
+        'INSERT INTO vnext_control_plane.vnext_authorization_command_receipts (receipt_id, authority_id, actor_key, actor_account_id, idempotency_key, command_type, target_kind, target_id, canonical_request_sha256, expected_row_version, outcome, result_code, canonical_result_json, canonical_result_sha256, committed_auth_version, committed_access_version, committed_revocation_version, committed_target_row_version, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, repeat(\'d\', 64), $9, $10, $11, $12, repeat(\'e\', 64), NULL, NULL, NULL, $13, $14)',
+        [receiptId, authorityId, actorKey, actorAccountId, idempotencyKey, commandType, targetKind, targetId, expectedRowVersion, outcome, resultCode, resultJson, committedTargetRowVersion, FOUNDATION_INSTANT],
+      );
+    };
+    const hashOne = 'b'.repeat(64);
+    await insertPolicyReceipt({ receiptId: 'policy-receipt-1', idempotencyKey: 'policy-key-1', publicationId: 'policy-publication-1', policyRevision: 1, policyManifestSha256: hashOne });
+    await insertPublication({ publicationId: 'policy-publication-1', authorityId: 'authority-policy-2', receiptId: 'policy-receipt-1', policyRevision: 1, policyManifestSha256: hashOne });
+    await insertPolicyReceipt({ receiptId: 'policy-receipt-unchanged', idempotencyKey: 'policy-key-unchanged', publicationId: 'policy-publication-unchanged', policyRevision: 2, policyManifestSha256: hashOne });
+    await assert.rejects(() => insertPublication({ publicationId: 'policy-publication-unchanged', authorityId: 'authority-policy-2', receiptId: 'policy-receipt-unchanged', policyRevision: 2, policyManifestSha256: hashOne }), error => error && error.code === 'P0001' && error.message === 'VNEXT_POLICY_UNCHANGED');
+    const hashTwo = 'c'.repeat(64);
+    await insertPolicyReceipt({ receiptId: 'policy-receipt-2', idempotencyKey: 'policy-key-2', publicationId: 'policy-publication-2', policyRevision: 2, policyManifestSha256: hashTwo });
+    await insertPublication({ publicationId: 'policy-publication-2', authorityId: 'authority-policy-2', receiptId: 'policy-receipt-2', policyRevision: 2, policyManifestSha256: hashTwo });
+    await insertPolicyReceipt({ receiptId: 'policy-receipt-bad', idempotencyKey: 'policy-key-bad', publicationId: 'policy-publication-bad', policyRevision: 3, policyManifestSha256: 'f'.repeat(64), resultCode: 'OTHER_RESULT' });
+    await assert.rejects(() => insertPublication({ publicationId: 'policy-publication-bad', authorityId: 'authority-policy-2', receiptId: 'policy-receipt-bad', policyRevision: 3, policyManifestSha256: 'f'.repeat(64) }), error => error && error.code === 'P0001' && error.message === 'VNEXT_POLICY_PUBLICATION_RECEIPT_INVALID');
+    const publicationCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_authorization_policy_publications');
+    for (const [suffix, receiptOverrides] of [
+      ['command', { commandType: 'other.command' }],
+      ['target-kind', { targetKind: 'other_target' }],
+      ['target-id', { targetId: 'other-target' }],
+      ['outcome', { outcome: 'rejected' }],
+      ['expected-version', { expectedRowVersion: 0 }],
+      ['committed-version', { committedTargetRowVersion: 4 }],
+      ['missing-result-key', { canonicalResultJson: JSON.stringify({ authorityId: 'authority-policy-2', code: 'POLICY_PUBLISHED', policyContractVersion: 1, policyManifestSha256: 'f'.repeat(64), policyRevision: 3, publicationId: 'policy-publication-missing-result-key' }) }],
+      ['extra-result-key', { canonicalResultJson: JSON.stringify({ authorityId: 'authority-policy-2', code: 'POLICY_PUBLISHED', policyContractVersion: 1, policyManifestSha256: 'f'.repeat(64), policyRevision: 3, publicationId: 'policy-publication-extra-result-key', status: 'accepted', extra: true }) }],
+      ['boolean-result-version', { canonicalResultJson: JSON.stringify({ authorityId: 'authority-policy-2', code: 'POLICY_PUBLISHED', policyContractVersion: true, policyManifestSha256: 'f'.repeat(64), policyRevision: 3, publicationId: 'policy-publication-boolean-result-version', status: 'accepted' }) }],
+      ['string-result-version', { canonicalResultJson: JSON.stringify({ authorityId: 'authority-policy-2', code: 'POLICY_PUBLISHED', policyContractVersion: '1', policyManifestSha256: 'f'.repeat(64), policyRevision: 3, publicationId: 'policy-publication-string-result-version', status: 'accepted' }) }],
+      ['fractional-result-version', { canonicalResultJson: '{"authorityId":"authority-policy-2","code":"POLICY_PUBLISHED","policyContractVersion":1,"policyManifestSha256":"' + 'f'.repeat(64) + '","policyRevision":3.0,"publicationId":"policy-publication-fractional-result-version","status":"accepted"}' }],
+    ]) {
+      const publicationId = `policy-publication-${suffix}`;
+      await insertPolicyReceipt({ receiptId: `policy-receipt-${suffix}`, idempotencyKey: `policy-key-${suffix}`, publicationId, policyRevision: 3, policyManifestSha256: 'f'.repeat(64), ...receiptOverrides });
+      await assert.rejects(() => insertPublication({ publicationId, authorityId: 'authority-policy-2', receiptId: `policy-receipt-${suffix}`, policyRevision: 3, policyManifestSha256: 'f'.repeat(64) }), error => error && error.code === 'P0001' && error.message === 'VNEXT_POLICY_PUBLICATION_RECEIPT_INVALID');
+      assert.deepStrictEqual(await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_authorization_policy_publications'), publicationCount);
+    }
+    await insertPolicyReceipt({ receiptId: 'policy-receipt-gap', idempotencyKey: 'policy-key-gap', publicationId: 'policy-publication-gap', policyRevision: 4, policyManifestSha256: 'f'.repeat(64) });
+    await assert.rejects(() => insertPublication({ publicationId: 'policy-publication-gap', authorityId: 'authority-policy-2', receiptId: 'policy-receipt-gap', policyRevision: 4, policyManifestSha256: 'f'.repeat(64) }), error => error && error.code === 'P0001' && error.message === 'VNEXT_POLICY_REVISION_CONFLICT');
+    await facade.query("INSERT INTO vnext_control_plane.vnext_authorities (authority_id, status, created_at, updated_at) VALUES ('authority-policy-inactive', 'disabled', $1, $1)", [FOUNDATION_INSTANT]);
+    await insertPolicyReceipt({ receiptId: 'policy-receipt-inactive', idempotencyKey: 'policy-key-inactive', publicationId: 'policy-publication-inactive', authorityId: 'authority-policy-inactive', policyRevision: 1, policyManifestSha256: 'f'.repeat(64) });
+    await assert.rejects(() => insertPublication({ publicationId: 'policy-publication-inactive', authorityId: 'authority-policy-inactive', receiptId: 'policy-receipt-inactive', policyRevision: 1, policyManifestSha256: 'f'.repeat(64) }), error => error && error.code === 'P0001' && error.message === 'VNEXT_POLICY_PUBLICATION_RECEIPT_INVALID');
+    await facade.query("INSERT INTO vnext_control_plane.vnext_authorities (authority_id, status, created_at, updated_at) VALUES ('authority-policy-bootstrap-orphan', 'active', $1, $1)", [FOUNDATION_INSTANT]);
+    const orphanHash = 'f'.repeat(64);
+    const orphanResult = JSON.stringify({ authorityId: 'authority-policy-bootstrap-orphan', code: 'AUTHORITY_BOOTSTRAPPED', policyContractVersion: 1, policyManifestSha256: orphanHash, policyRevision: 1, publicationId: 'policy-publication-bootstrap-orphan', status: 'accepted' });
+    await insertPolicyReceipt({ receiptId: 'policy-receipt-bootstrap-orphan', idempotencyKey: 'policy-key-bootstrap-orphan', publicationId: 'policy-publication-bootstrap-orphan', authorityId: 'authority-policy-bootstrap-orphan', actorKey: 'bootstrap:orphan-intent', commandType: 'authority.bootstrap', targetKind: 'authority', resultCode: 'AUTHORITY_BOOTSTRAPPED', policyRevision: 1, policyManifestSha256: orphanHash, canonicalResultJson: orphanResult });
+    await assert.rejects(() => insertPublication({ publicationId: 'policy-publication-bootstrap-orphan', authorityId: 'authority-policy-bootstrap-orphan', receiptId: 'policy-receipt-bootstrap-orphan', policyRevision: 1, policyManifestSha256: orphanHash }), error => error && error.code === 'P0001' && error.message === 'VNEXT_POLICY_PUBLICATION_RECEIPT_INVALID');
+  });
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'verifier', facade => facade.query("INSERT INTO vnext_control_plane.vnext_authorization_policy_publications (publication_id, authority_id, receipt_id, policy_revision, policy_contract_version, canonical_manifest_json, policy_manifest_sha256, published_at) VALUES ('verifier-policy', 'authority-1', 'bootstrap-receipt-1', 2, 1, '{}', repeat('a', 64), $1)", [FOUNDATION_INSTANT])));
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_authorization_policy_publications')));
 }
 
 async function runCatalogAssertionCases(runtime) {
@@ -1094,6 +1184,22 @@ async function runCatalogAssertionCases(runtime) {
       assert.deepStrictEqual(absent.rows, [{ relation: null, insert_function: null, update_function: null, delete_function: null }]);
     });
     await assert.rejects(() => catalog.assert(outboxPrefixHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+    const bootstrapPrefixHandle = await createHandle();
+    await withVNextPg17SyntheticQuery(bootstrapPrefixHandle, 'fixture-provisioner', async facade => {
+      for (const migration of [FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION, ROLE_GRANTS_MIGRATION, CAPABILITY_CATALOG_MIGRATION, CAPABILITY_OVERRIDES_MIGRATION, DATA_SCOPE_GRANTS_MIGRATION, PROFILE_BINDINGS_MIGRATION, VERIFIED_CONTACTS_MIGRATION, AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION, AUTHORIZATION_AUDIT_EVENTS_MIGRATION, AUTHORIZATION_OUTBOX_EVENTS_MIGRATION, BOOTSTRAP_CONSUMPTIONS_MIGRATION]) {
+        await facade.query(migration.sql);
+        if (migration.postApply) await facade.query(migration.postApply.text, migration.postApply.values(migrationInput.appliedAt));
+        await facade.query('INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)', [migration.migrationId, migration.semanticVersion, migration.manifestSha256, migrationInput.appliedAt, migrationInput.appliedBy]);
+      }
+    });
+    await assert.rejects(() => catalog.apply(bootstrapPrefixHandle, migrationInput), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+    await withVNextPg17SyntheticQuery(bootstrapPrefixHandle, 'fixture-provisioner', async facade => {
+      const ledgerRows = await facade.query('SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint');
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }]);
+      const absent = await facade.query("SELECT to_regclass('vnext_control_plane.vnext_authorization_policy_publications') AS relation, to_regprocedure('vnext_control_plane.vnext_authorization_policy_publications_insert_guard()') AS insert_function, to_regprocedure('vnext_control_plane.vnext_authorization_policy_publications_no_update()') AS update_function, to_regprocedure('vnext_control_plane.vnext_authorization_policy_publications_no_delete()') AS delete_function");
+      assert.deepStrictEqual(absent.rows, [{ relation: null, insert_function: null, update_function: null, delete_function: null }]);
+    });
+    await assert.rejects(() => catalog.assert(bootstrapPrefixHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
     const handle = await createHandle();
     await assert.rejects(
       () => catalog.assert(handle),
@@ -1104,7 +1210,7 @@ async function runCatalogAssertionCases(runtime) {
       const ledgerRows = await facade.query(
         'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint',
       );
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }]);
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }, { semantic_version: '13' }]);
       const schemaMetaRows = await facade.query(
         'SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta',
       );
@@ -1129,6 +1235,8 @@ async function runCatalogAssertionCases(runtime) {
     assert.deepStrictEqual(outboxCount.rows, [{ count: '0' }]);
     const bootstrapConsumptionCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_bootstrap_consumptions');
     assert.deepStrictEqual(bootstrapConsumptionCount.rows, [{ count: '0' }]);
+    const policyPublicationCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_authorization_policy_publications');
+    assert.deepStrictEqual(policyPublicationCount.rows, [{ count: '0' }]);
     });
     await assert.doesNotReject(() => catalog.assert(handle));
     await assertFoundationSemantics(handle);
@@ -1142,6 +1250,7 @@ async function runCatalogAssertionCases(runtime) {
     await assertAuthorizationAuditEventSemantics(handle);
     await assertAuthorizationOutboxEventSemantics(handle);
     await assertBootstrapConsumptionSemantics(handle);
+    await assertAuthorizationPolicyPublicationSemantics(handle);
     assert.deepStrictEqual(await catalog.apply(handle, migrationInput), { applied: false });
     await withVNextPg17SyntheticQuery(handle, 'verifier', async facade => {
       await facade.query('BEGIN READ ONLY');
@@ -1157,7 +1266,7 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(
       () => withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
-        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 14, repeat('a', 64), now(), 'fixture')",
+        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 15, repeat('a', 64), now(), 'fixture')",
       )),
     );
     await assert.rejects(
@@ -2025,6 +2134,40 @@ async function runCatalogAssertionCases(runtime) {
       ['bootstrapFunctionPublicExecuteHandle', 'GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_bootstrap_consumptions_no_update() TO PUBLIC'],
       ['bootstrapWrongTriggerHandle', 'DROP TRIGGER vnext_bootstrap_consumptions_no_update ON vnext_control_plane.vnext_bootstrap_consumptions; CREATE TRIGGER vnext_bootstrap_consumptions_no_update BEFORE DELETE ON vnext_control_plane.vnext_bootstrap_consumptions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_bootstrap_consumptions_no_update()'],
       ['bootstrapPublicShadowHandle', 'CREATE TABLE public.vnext_bootstrap_consumptions (id integer)'],
+    ]) {
+      const driftHandle = await createHandle();
+      await catalog.apply(driftHandle, migrationInput);
+      await withVNextPg17SyntheticQuery(driftHandle, 'fixture-provisioner', facade => facade.query(sql));
+      await assert.rejects(() => catalog.assert(driftHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT', name);
+    }
+
+    for (const [name, sql] of [
+      ['policyPublicationUniqueHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications DROP CONSTRAINT vnext_authorization_policy_pub_authority_id_policy_revision_key; ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications ADD CONSTRAINT vnext_authorization_policy_pub_authority_id_policy_revision_key UNIQUE (authority_id, policy_revision, policy_contract_version)'],
+      ['policyPublicationAuthorityForeignKeyHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications DROP CONSTRAINT vnext_authorization_policy_publications_authority_id_fkey'],
+      ['policyPublicationReceiptForeignKeyHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications DROP CONSTRAINT vnext_authorization_policy_publica_receipt_id_authority_id_fkey'],
+      ['policyPublicationRevisionConstraintHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications DROP CONSTRAINT vnext_authorization_policy_publications_policy_revision_check; ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications ADD CONSTRAINT vnext_authorization_policy_publications_policy_revision_check CHECK (policy_revision >= 0)'],
+      ['policyPublicationContractConstraintHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications DROP CONSTRAINT vnext_authorization_policy_public_policy_contract_version_check; ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications ADD CONSTRAINT vnext_authorization_policy_public_policy_contract_version_check CHECK (policy_contract_version IN (1, 2))'],
+      ['policyPublicationJsonConstraintHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications DROP CONSTRAINT vnext_authorization_policy_public_canonical_manifest_json_check; ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications ADD CONSTRAINT vnext_authorization_policy_public_canonical_manifest_json_check CHECK (canonical_manifest_json IS JSON)'],
+      ['policyPublicationHashConstraintHandle', "ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications DROP CONSTRAINT vnext_authorization_policy_publica_policy_manifest_sha256_check; ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications ADD CONSTRAINT vnext_authorization_policy_publica_policy_manifest_sha256_check CHECK (policy_manifest_sha256 ~ '^[0-9a-f]+$')"],
+      ['policyPublicationTimeConstraintHandle', "ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications DROP CONSTRAINT vnext_authorization_policy_publications_published_at_check; ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications ADD CONSTRAINT vnext_authorization_policy_publications_published_at_check CHECK (published_at <> 'infinity')"],
+      ['policyPublicationDefaultHandle', "ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications ALTER COLUMN policy_contract_version SET DEFAULT 1"],
+      ['policyPublicationNullabilityHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications ALTER COLUMN canonical_manifest_json DROP NOT NULL'],
+      ['policyPublicationCollationHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications ALTER COLUMN publication_id TYPE text COLLATE "default"'],
+      ['policyPublicationExtraIndexHandle', 'CREATE INDEX unapproved_policy_publication_hash_index ON vnext_control_plane.vnext_authorization_policy_publications (policy_manifest_sha256)'],
+      ['policyPublicationOwnerHandle', 'ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications OWNER TO vnext_pg17_migrator'],
+      ['policyPublicationVerifierAclHandle', 'GRANT INSERT ON vnext_control_plane.vnext_authorization_policy_publications TO vnext_pg17_verifier'],
+      ['policyPublicationRuntimeAclHandle', 'GRANT SELECT ON vnext_control_plane.vnext_authorization_policy_publications TO vnext_pg17_runtime'],
+      ['policyPublicationFunctionHandle', "CREATE OR REPLACE FUNCTION vnext_control_plane.vnext_authorization_policy_publications_no_delete() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN RETURN OLD; END; $$"],
+      ['policyPublicationFunctionInvokerHandle', 'ALTER FUNCTION vnext_control_plane.vnext_authorization_policy_publications_no_update() SECURITY INVOKER'],
+      ['policyPublicationFunctionOwnerHandle', 'ALTER FUNCTION vnext_control_plane.vnext_authorization_policy_publications_no_update() OWNER TO vnext_pg17_migrator'],
+      ['policyPublicationFunctionPathHandle', 'ALTER FUNCTION vnext_control_plane.vnext_authorization_policy_publications_no_update() SET search_path = public, pg_temp'],
+      ['policyPublicationFunctionPublicExecuteHandle', 'GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_policy_publications_no_update() TO PUBLIC'],
+      ['policyPublicationFunctionVerifierExecuteHandle', 'GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_policy_publications_no_update() TO vnext_pg17_verifier'],
+      ['policyPublicationFunctionRuntimeExecuteHandle', 'GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_authorization_policy_publications_no_update() TO vnext_pg17_runtime'],
+      ['policyPublicationExtraTriggerHandle', 'CREATE TRIGGER unapproved_policy_publication_delete BEFORE DELETE ON vnext_control_plane.vnext_authorization_policy_publications FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_schema_migrations_no_delete()'],
+      ['policyPublicationWrongTriggerHandle', 'DROP TRIGGER vnext_authorization_policy_publications_no_update ON vnext_control_plane.vnext_authorization_policy_publications; CREATE TRIGGER vnext_authorization_policy_publications_no_update BEFORE DELETE ON vnext_control_plane.vnext_authorization_policy_publications FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_policy_publications_no_update()'],
+      ['policyPublicationMissingTriggerHandle', 'DROP TRIGGER vnext_authorization_policy_publications_no_delete ON vnext_control_plane.vnext_authorization_policy_publications'],
+      ['policyPublicationPublicShadowHandle', 'CREATE TABLE public.vnext_authorization_policy_publications (id integer)'],
     ]) {
       const driftHandle = await createHandle();
       await catalog.apply(driftHandle, migrationInput);
