@@ -5,6 +5,8 @@ const { runManifestCases } = require('./migrationManifest.test');
 const { runCatalogAssertionCases } = require('./catalogAssertion.test');
 const { runFirstAuthorityBootstrapMutationCases } = require('./firstAuthorityBootstrapMutation.test');
 const { runEmergencyRecoveryMutationCases } = require('./emergencyRecoveryMutation.test');
+const { runTrustedSessionVerifierBoundaryCases } = require('./trustedSessionVerifierBoundary.test');
+const { runAccessContextResolverCases } = require('./accessContextResolver.test');
 
 function sanitizedCode(error) {
   return error && typeof error.code === 'string' && /^VNEXT_PG17_[A-Z_]+$/.test(error.code)
@@ -18,6 +20,8 @@ async function run({
   runCatalog = runCatalogAssertionCases,
   runBootstrap = runFirstAuthorityBootstrapMutationCases,
   runRecovery = runEmergencyRecoveryMutationCases,
+  runTrustedSessionBoundary = runTrustedSessionVerifierBoundaryCases,
+  runAccessContext = runAccessContextResolverCases,
   report = () => {},
 } = {}) {
   const runtime = runtimeFactory();
@@ -27,6 +31,8 @@ async function run({
     await runCatalog(runtime);
     await runBootstrap(runtime);
     await runRecovery(runtime);
+    await runTrustedSessionBoundary(runtime);
+    await runAccessContext(runtime);
     return 0;
   } catch (error) {
     report({ code: sanitizedCode(error) });
