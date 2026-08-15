@@ -145,6 +145,35 @@ async function runAccessContextResolverCases(runtime) {
     }
   }
 
+  const malformedPolicy = await fixture(runtime);
+  try {
+    const resolver = createVNextPg17AccessContextResolver({ runtime, handle: malformedPolicy.handle, verifierBoundary: malformedPolicy.boundary, surface: 'desktop', now: () => NOW });
+    await withVNextPg17SyntheticQuery(malformedPolicy.handle, 'fixture-provisioner', async facade => {
+      await facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications DISABLE TRIGGER vnext_authorization_policy_publications_no_update');
+      try {
+        await facade.query("UPDATE vnext_control_plane.vnext_authorization_policy_publications SET canonical_manifest_json='{}' WHERE authority_id='authority-1' AND policy_revision=1");
+      } finally {
+        await facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications ENABLE TRIGGER vnext_authorization_policy_publications_no_update');
+      }
+    });
+    await expectUnavailable(() => resolver.resolve(malformedPolicy.assertion));
+  } finally {
+    await runtime.disposeHandle(malformedPolicy.handle);
+  }
+
+  const catalogDrift = await fixture(runtime);
+  try {
+    const resolver = createVNextPg17AccessContextResolver({ runtime, handle: catalogDrift.handle, verifierBoundary: catalogDrift.boundary, surface: 'desktop', now: () => NOW });
+    const before = await targetRowsSnapshot(catalogDrift.handle);
+    await withVNextPg17SyntheticQuery(catalogDrift.handle, 'fixture-provisioner', facade => facade.query(
+      'CREATE INDEX vnext_access_context_unexpected_index ON vnext_control_plane.vnext_sessions(session_kind)',
+    ));
+    await expectUnavailable(() => resolver.resolve(catalogDrift.assertion));
+    assert.deepStrictEqual(await targetRowsSnapshot(catalogDrift.handle), before);
+  } finally {
+    await runtime.disposeHandle(catalogDrift.handle);
+  }
+
   const stale = await fixture(runtime);
   try {
     const resolver = createVNextPg17AccessContextResolver({ runtime, handle: stale.handle, verifierBoundary: stale.boundary, surface: 'desktop', now: () => NOW });

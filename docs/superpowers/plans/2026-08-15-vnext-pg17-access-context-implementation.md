@@ -23,7 +23,7 @@
 - Create: `shared/vnext-pg17/trustedSessionVerifierBoundary.test.js`
 - Create: `shared/vnext-pg17/trustedSessionVerifierBoundary.js`
 
-- [ ] **Step 1: Write failing boundary cases**
+- [x] **Step 1: Write failing boundary cases**
 
 ```js
 const boundary = createVNextPg17TrustedSessionVerifierBoundary({
@@ -39,13 +39,13 @@ assert.strictEqual(isVNextPg17TrustedSessionVerifierBoundaryForHandle(boundary, 
 
 Cover copied/JSON/manual/cross-boundary assertions; accessor/symbol/non-enumerable/proxy/class-instance/thenable/invalid-ID results; sync throw/rejected Promise redaction; and exact config accessor/symbol/extra/proxy/function-proxy rejection. Complete valid-shape getters and Proxy traps must have zero reads.
 
-- [ ] **Step 2: Prove red state**
+- [x] **Step 2: Prove red state**
 
 Run: `node shared/vnext-pg17/trustedSessionVerifierBoundary.test.js`
 
 Expected: `MODULE_NOT_FOUND`.
 
-- [ ] **Step 3: Implement minimal opaque boundary**
+- [x] **Step 3: Implement minimal opaque boundary**
 
 ```js
 function exactResult(value) {
@@ -60,7 +60,7 @@ function exactResult(value) {
 
 Snapshot exact own-data `{ databaseBinding, verifyPresentation }`; reject Proxy functions. Await only `types.isPromise(result)`, then descriptor-snapshot the session ID once. Keep assertion data in closure-private WeakMaps; map verifier/result failure to `VNEXT_PG17_SESSION_PRESENTATION_REJECTED` and unknown assertions to `VNEXT_PG17_SESSION_ASSERTION_INVALID`. Export a predicate that first checks `bindings.has(boundary)`.
 
-- [ ] **Step 4: Verify focused boundary suite**
+- [x] **Step 4: Verify focused boundary suite**
 
 Run: `node shared/vnext-pg17/trustedSessionVerifierBoundary.test.js`
 
@@ -71,7 +71,7 @@ Expected: `vNext PG17 trusted session verifier boundary checks passed`.
 **Files:**
 - Create: `shared/vnext-pg17/accessContextResolver.test.js`
 
-- [ ] **Step 1: Create the synthetic M1-M15 fixture**
+- [x] **Step 1: Create the synthetic M1-M15 fixture**
 
 Apply M1-M15 through the catalog boundary; use the existing PG17 bootstrap writer for the sole authority. With only the fixture-provisioner facade, insert one active online session with matching nine vectors, matching recent reauthentication, role/allow/deny/scope rows, and a valid highest policy publication. Use fixed canonical UTC instants.
 
@@ -104,11 +104,11 @@ Expected: `MODULE_NOT_FOUND`.
 - Create: `shared/vnext-pg17/accessContextResolver.js`
 - Test: `shared/vnext-pg17/accessContextResolver.test.js`
 
-- [ ] **Step 1: Implement exact factory and handle-bound resolver brand**
+- [x] **Step 1: Implement exact factory and handle-bound resolver brand**
 
 Accept only exact own-data `{ runtime, handle, verifierBoundary, surface, now }`. Before SQL require a branded handle, boundary for that handle, direct function clock, and `desktop|miniapp` surface. Bind the frozen resolver to the same handle with a WeakMap and export `isVNextPg17AccessContextResolverForHandle`.
 
-- [ ] **Step 2: Implement one explicit snapshot**
+- [x] **Step 2: Implement one explicit snapshot**
 
 ```js
 await catalog.assert(handle);
@@ -125,11 +125,11 @@ try {
 
 Unwrap once and read one canonical UTC clock. Require online active session, active authority/account/device/installation/link, `issued_at <= at < expires_at`, and all nine vectors. Select the highest policy revision, re-canonicalize with the pure policy reference, and require exact canonical text/hash. Do not read capability catalog as a second policy truth.
 
-- [ ] **Step 3: Normalize/freeze exact output and errors**
+- [x] **Step 3: Normalize/freeze exact output and errors**
 
 Map snake_case grant/override/scope rows to policy inputs and use the half-open time window. Derive visitor only when formal roles are absent. Filter reauth by same session, time, and nine vectors; return only its expiry. Deep-freeze exactly `{ authorityId, accountId, deviceId, installationId, linkId, sessionId, surface, policyRevision, policyManifestSha256, roles, capabilityIds, capabilitySha256, scopes, scopeSha256, reauthenticatedUntil }`. Map all factory/assertion/clock/catalog/SQL/parent/vector/policy/reauth errors to `VNEXT_PG17_ACCESS_CONTEXT_UNAVAILABLE` without database or verifier detail.
 
-- [ ] **Step 4: Verify resolver suite**
+- [x] **Step 4: Verify resolver suite**
 
 Run: `node shared/vnext-pg17/accessContextResolver.test.js`
 
@@ -142,7 +142,7 @@ Expected: `vNext PG17 AccessContext resolver checks passed`.
 - Modify: `shared/vnext-pg17/runPg17IntegrationTests.test.js`
 - Modify: `docs/superpowers/plans/2026-08-13-vnext-control-plane-first.md`
 
-- [ ] **Step 1: Register one-runtime suite order**
+- [x] **Step 1: Register one-runtime suite order**
 
 ```js
 const { runTrustedSessionVerifierBoundaryCases } = require('./trustedSessionVerifierBoundary.test');
@@ -152,13 +152,13 @@ const { runAccessContextResolverCases } = require('./accessContextResolver.test'
 
 Extend runner tests to prove this order and exactly one `stop` after either new-suite failure.
 
-- [ ] **Step 2: Run focused and aggregate checks**
+- [x] **Step 2: Run focused and aggregate checks**
 
 Run: `node shared/vnext-pg17/trustedSessionVerifierBoundary.test.js`; `node shared/vnext-pg17/accessContextResolver.test.js`; `node shared/vnext-pg17/runPg17IntegrationTests.test.js`; `npm.cmd run test:vnext-control-plane-target`; `git diff --check`.
 
 Expected: every command exits `0`.
 
-- [ ] **Step 3: Record evidence and final-check**
+- [x] **Step 3: Record evidence and final-check**
 
 Append only verified synthetic evidence to the control-plane plan. Run `npm.cmd test`, `npm.cmd run test:vnext-control-plane-target`, `git diff --check`, and `docker ps -a --format '{{.ID}}|{{.Labels}}' | Select-String -Pattern 'vnext-pg17-' -SimpleMatch`. Tests must exit `0`, diff check must be silent, and no labelled container may remain.
 
