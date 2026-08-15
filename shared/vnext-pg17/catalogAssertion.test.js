@@ -1039,9 +1039,9 @@ async function assertSessionsAndReauthenticationSemantics(handle) {
     const issuedAt = '2026-08-15T01:00:00.000Z';
     const expiresAt = '2026-08-15T02:00:00.000Z';
     const updatedAt = '2026-08-15T01:00:01.000Z';
-    const sessionValues = ({ sessionId, sessionKind = 'online', status = 'active', rowVersion = 1, revokedAt = null, updated = issuedAt } = {}) => [
+    const sessionValues = ({ sessionId, sessionKind = 'online', status = 'active', rowVersion = 1, revokedAt = null, updated = issuedAt, versions = [1, 1, 1, 1, 1, 1, 1, 1, 1] } = {}) => [
       sessionId, 'authority-1', 'account-1', 'device-1', 'installation-1', 'link-1', sessionKind, status, issuedAt, expiresAt, revokedAt,
-      1, 1, 1, 1, 1, 1, 1, 1, 1, rowVersion, issuedAt, updated,
+      ...versions, rowVersion, issuedAt, updated,
     ];
     const insertSession = values => facade.query(
       'INSERT INTO vnext_control_plane.vnext_sessions (session_id, authority_id, account_id, device_id, installation_id, link_id, session_kind, status, issued_at, expires_at, revoked_at, account_auth_version, account_access_version, account_revocation_version, device_credential_version, device_risk_version, installation_credential_version, link_auth_version, link_access_version, link_row_version, row_version, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)',
@@ -1063,13 +1063,26 @@ async function assertSessionsAndReauthenticationSemantics(handle) {
     }
     await assert.rejects(() => insertReauth({ eventId: 'reauth-invalid-factor', sessionId: 'session-online-1', factorClass: 'otp' }), error => error && error.constraint === 'vnext_recent_reauthentication_events_factor_class_check');
     await assert.rejects(() => insertReauth({ eventId: 'reauth-window-invalid', sessionId: 'session-online-1', verifiedAt: expiresAt }), error => error && error.code === 'P0001' && error.message === 'VNEXT_REAUTH_SESSION_STATE_INVALID');
+    await assert.rejects(() => insertReauth({ eventId: 'reauth-equal-window', sessionId: 'session-online-1', reauthExpiresAt: '2026-08-15T01:10:00.000Z' }), error => error && error.constraint === 'vnext_recent_reauthentication_events_check');
+    await assert.rejects(() => insertReauth({ eventId: 'reauth-before-session', sessionId: 'session-online-1', verifiedAt: '2026-08-15T00:59:59.999Z' }), error => error && error.code === 'P0001' && error.message === 'VNEXT_REAUTH_SESSION_STATE_INVALID');
+    await assert.rejects(() => insertSession(sessionValues({ sessionId: ' ', })), error => error && error.constraint === 'vnext_sessions_session_id_check');
+    await assert.rejects(() => insertSession(sessionValues({ sessionId: 'session-bad-kind', sessionKind: 'offline' })), error => error && error.constraint === 'vnext_sessions_session_kind_check');
+    const equalWindow = sessionValues({ sessionId: 'session-equal-window' }); equalWindow[9] = issuedAt;
+    await assert.rejects(() => insertSession(equalWindow), error => error && error.constraint === 'vnext_sessions_check');
+    const revokedWithoutTimestamp = sessionValues({ sessionId: 'session-revoked-without-time', status: 'revoked' });
+    await assert.rejects(() => insertSession(revokedWithoutTimestamp), error => error && error.constraint === 'vnext_sessions_check3');
     await assert.rejects(() => facade.query("UPDATE vnext_control_plane.vnext_sessions SET session_kind='initialization' WHERE session_id='session-online-1'"), error => error && error.code === 'P0001');
     const onlineBefore = await facade.query("SELECT * FROM vnext_control_plane.vnext_sessions WHERE session_id='session-online-1'");
     await facade.query("UPDATE vnext_control_plane.vnext_sessions SET status='revoked', revoked_at=$1, row_version=2, updated_at=$1 WHERE session_id='session-online-1'", [updatedAt]);
+    await assert.rejects(() => insertReauth({ eventId: 'reauth-revoked-session', sessionId: 'session-online-1' }), error => error && error.code === 'P0001' && error.message === 'VNEXT_REAUTH_SESSION_STATE_INVALID');
     await assert.rejects(() => facade.query("UPDATE vnext_control_plane.vnext_sessions SET updated_at='2026-08-15T01:00:02.000Z' WHERE session_id='session-online-1'"), error => error && error.code === 'P0001');
     await assert.rejects(() => facade.query("DELETE FROM vnext_control_plane.vnext_sessions WHERE session_id='session-online-1'"), error => error && error.code === 'P0001');
     assert.strictEqual((await facade.query("SELECT status, row_version::text AS row_version FROM vnext_control_plane.vnext_sessions WHERE session_id='session-online-1'")).rows[0].status, 'revoked');
     assert.strictEqual(onlineBefore.rows[0].status, 'active');
+
+    await insertSession(sessionValues({ sessionId: 'session-expired-1' }));
+    await facade.query("UPDATE vnext_control_plane.vnext_sessions SET status='expired', row_version=2, updated_at=$1 WHERE session_id='session-expired-1'", [updatedAt]);
+    await assert.rejects(() => facade.query("UPDATE vnext_control_plane.vnext_sessions SET status='revoked', revoked_at=$1, row_version=3, updated_at=$1 WHERE session_id='session-expired-1'", ['2026-08-15T01:00:02.000Z']), error => error && error.code === 'P0001');
 
     await insertSession(sessionValues({ sessionId: 'session-initialization-1', sessionKind: 'initialization' }));
     await assert.rejects(() => insertReauth({ eventId: 'reauth-initialization', sessionId: 'session-initialization-1' }), error => error && error.code === 'P0001' && error.message === 'VNEXT_REAUTH_ONLINE_SESSION_REQUIRED');
@@ -1077,6 +1090,20 @@ async function assertSessionsAndReauthenticationSemantics(handle) {
     await facade.query("UPDATE vnext_control_plane.vnext_accounts SET access_version=2, updated_at='2026-08-15T01:00:02.000Z' WHERE account_id='account-1' AND authority_id='authority-1'");
     await assert.rejects(() => insertReauth({ eventId: 'reauth-stale-parent', sessionId: 'session-parent-vector-1' }), error => error && error.code === 'P0001' && error.message === 'VNEXT_REAUTH_CURRENT_PARENT_INVALID');
     await assert.rejects(() => insertSession(sessionValues({ sessionId: 'session-stale-parent-1' })), error => error && error.code === 'P0001' && error.message === 'VNEXT_SESSION_PARENT_STATE_INVALID');
+    const currentVersions = [1, 2, 1, 1, 1, 1, 1, 1, 1];
+    await insertSession(sessionValues({ sessionId: 'session-parent-states-1', versions: currentVersions }));
+    const parentStates = [
+      ["UPDATE vnext_control_plane.vnext_authorities SET status='disabled' WHERE authority_id='authority-1'", "UPDATE vnext_control_plane.vnext_authorities SET status='active' WHERE authority_id='authority-1'"],
+      ["UPDATE vnext_control_plane.vnext_accounts SET status='disabled' WHERE authority_id='authority-1' AND account_id='account-1'", "UPDATE vnext_control_plane.vnext_accounts SET status='active' WHERE authority_id='authority-1' AND account_id='account-1'"],
+      ["UPDATE vnext_control_plane.vnext_trusted_devices SET status='risk_limited' WHERE authority_id='authority-1' AND device_id='device-1'", "UPDATE vnext_control_plane.vnext_trusted_devices SET status='active' WHERE authority_id='authority-1' AND device_id='device-1'"],
+      ["UPDATE vnext_control_plane.vnext_device_installations SET status='retired' WHERE authority_id='authority-1' AND installation_id='installation-1'", "UPDATE vnext_control_plane.vnext_device_installations SET status='active' WHERE authority_id='authority-1' AND installation_id='installation-1'"],
+      ["UPDATE vnext_control_plane.vnext_account_device_links SET status='expired' WHERE authority_id='authority-1' AND link_id='link-1'", "UPDATE vnext_control_plane.vnext_account_device_links SET status='active' WHERE authority_id='authority-1' AND link_id='link-1'"],
+    ];
+    for (let index = 0; index < parentStates.length; index += 1) {
+      await facade.query(parentStates[index][0]);
+      await assert.rejects(() => insertReauth({ eventId: `reauth-parent-state-${index}`, sessionId: 'session-parent-states-1', versions: currentVersions }), error => error && error.code === 'P0001' && error.message === 'VNEXT_REAUTH_CURRENT_PARENT_INVALID');
+      await facade.query(parentStates[index][1]);
+    }
     await assert.rejects(() => facade.query("UPDATE vnext_control_plane.vnext_recent_reauthentication_events SET factor_class='password' WHERE reauth_event_id='reauth-valid-1'"), error => error && error.code === 'P0001');
     await assert.rejects(() => facade.query("DELETE FROM vnext_control_plane.vnext_recent_reauthentication_events WHERE reauth_event_id='reauth-valid-1'"), error => error && error.code === 'P0001');
   });
