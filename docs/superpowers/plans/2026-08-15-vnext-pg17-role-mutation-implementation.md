@@ -17,7 +17,7 @@
 - Reference: `shared/vnext-pg17/policyPublicationMutation.test.js`
 - Reference: `shared/vNextRoleGrantMutationReference.js`
 
-- [ ] **Step 1: Build bootstrap-derived fixtures**
+- [x] **Step 1: Build bootstrap-derived fixtures**
 
 Apply M1-M15, run the existing first-authority bootstrap writer, and add synthetic target identity chains plus active online session and matching reauthentication. Build same-handle desktop resolver/assertion pairs for actor and target.
 
@@ -31,7 +31,7 @@ function revokeCommand(grantId, overrides = {}) {
 async function expectCode(action, code) { await assert.rejects(action, error => error?.code === code); }
 ```
 
-- [ ] **Step 2: Add semantic, replay, and authorization red cases**
+- [x] **Step 2: Add semantic, replay, and authorization red cases**
 
 Import the absent writer. Prove role grant creates one active grant, advances target auth/access/row only, and invalidates the target's old context. Prove revoke advances grant plus all four account vectors and invalidates the target context. Cover replay/no IDs, idempotency conflict, duplicate active role, missing target, stale revoke, noop, final-super-admin rejection, fake/cross-handle assertion, miniapp, absent reauthentication, malformed command, accessor/proxy command, and invalid role.
 
@@ -42,7 +42,7 @@ await assert.rejects(() => targetResolver.resolve(targetAssertion), error => err
 assert.deepStrictEqual(await writer.execute(actorAssertion, grantCommand()), { ...granted, replayed: true });
 ```
 
-- [ ] **Step 3: Add companion and rollback red cases**
+- [x] **Step 3: Add companion and rollback red cases**
 
 Snapshot target role/account/session and receipt/audit/outbox rows. For target, account, receipt, audit, and outbox hook stages, throw after the write and require the snapshot unchanged. Preconstruct malformed accepted receipt, audit, and outbox companions and require `IDEMPOTENCY_RECEIPT_INVALID` on replay.
 
@@ -55,7 +55,7 @@ for (const stage of ['target', 'account', 'receipt', 'audit', 'outbox']) {
 }
 ```
 
-- [ ] **Step 4: Prove red state**
+- [x] **Step 4: Prove red state**
 
 Run: `node shared/vnext-pg17/roleMutation.test.js`
 
@@ -67,7 +67,7 @@ Expected: `MODULE_NOT_FOUND` for `./roleMutation`.
 - Create: `shared/vnext-pg17/roleMutation.js`
 - Test: `shared/vnext-pg17/roleMutation.test.js`
 
-- [ ] **Step 1: Implement strict boundary and authorization**
+- [x] **Step 1: Implement strict boundary and authorization**
 
 Accept exact own-data `{ runtime, handle, resolver, now, idFactory, testHooks? }`, only a resolver branded for the identical handle, and exact own-data commands. Resolve the opaque assertion once and require canonical time, desktop, formal super-admin, `access.manage`, and fresh reauthentication.
 
@@ -77,7 +77,7 @@ const context = await settings.resolver.resolve(assertion);
 if (!contextAllowed(context, timestamp)) throw failure('ROLE_MUTATION_UNAUTHORIZED');
 ```
 
-- [ ] **Step 2: Implement lock-ordered grant and revoke CAS**
+- [x] **Step 2: Implement lock-ordered grant and revoke CAS**
 
 Assert M1-M15, begin a transaction, lock `hashtextextended('vnext:role:' || authorityId, 0)`, then lock receipt, authority, actor, target account, target grant, and active super-admin set in stable order. Grant inserts active grant version one and CAS-updates target auth/access/row. Revoke prevents the final active super-admin, CAS-revokes the grant, and CAS-updates target auth/access/revocation/row.
 
@@ -86,7 +86,7 @@ const changed = await facade.query("UPDATE vnext_control_plane.vnext_role_grants
 if (changed.rowCount !== 1) throw failure('ROLE_GRANT_VERSION_CONFLICT');
 ```
 
-- [ ] **Step 3: Implement immutable companions and replay**
+- [x] **Step 3: Implement immutable companions and replay**
 
 Use canonical request/result JSON plus SHA-256. Rejected/noop commands write receipt plus audit. Accepted grant/revoke commands write receipt, audit, then outbox, calling the hook after target/account/receipt/audit/outbox. Replay validates exact receipt fields, result hash/shape, target grant/account state, audit, and outbox before returning `replayed: true`.
 
@@ -95,7 +95,7 @@ const payload = stable({ accountId: targetAccountId, grantId, role, authVersion:
 await facade.query("INSERT INTO vnext_control_plane.vnext_authorization_outbox_events(event_id,authority_id,receipt_id,event_type,aggregate_kind,aggregate_id,aggregate_version,canonical_payload_json,payload_sha256,occurred_at) VALUES($1,$2,$3,'authorization.role_granted','role_grant',$4,$5,$6,$7,$8)", [outboxId, authorityId, receiptId, grantId, grantVersion, payload, sha256(payload), timestamp]);
 ```
 
-- [ ] **Step 4: Verify focused writer suite**
+- [x] **Step 4: Verify focused writer suite**
 
 Run: `node shared/vnext-pg17/roleMutation.test.js`
 
@@ -109,7 +109,7 @@ Expected: `vNext PG17 role mutation checks passed`.
 - Modify: `docs/superpowers/plans/2026-08-13-vnext-control-plane-first.md`
 - Modify: `docs/superpowers/plans/2026-08-15-vnext-pg17-role-mutation-implementation.md`
 
-- [ ] **Step 1: Register runner execution**
+- [x] **Step 1: Register runner execution**
 
 Import `runRoleMutationCases` and execute it immediately after policy publication. Update the runner test to require the new call order.
 
@@ -118,7 +118,7 @@ await runPolicyPublication(runtime);
 await runRoleMutation(runtime);
 ```
 
-- [ ] **Step 2: Record verified evidence**
+- [x] **Step 2: Record verified evidence**
 
 Document only tested same-handle authorization, final-super-admin protection, CAS, session invalidation, replay, rollback, and synthetic-only boundaries. Mark completed checkboxes only.
 

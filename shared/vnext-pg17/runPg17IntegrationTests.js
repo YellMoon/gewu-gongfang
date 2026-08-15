@@ -8,6 +8,7 @@ const { runEmergencyRecoveryMutationCases } = require('./emergencyRecoveryMutati
 const { runTrustedSessionVerifierBoundaryCases } = require('./trustedSessionVerifierBoundary.test');
 const { runAccessContextResolverCases } = require('./accessContextResolver.test');
 const { runPolicyPublicationMutationCases } = require('./policyPublicationMutation.test');
+const { runRoleMutationCases } = require('./roleMutation.test');
 
 function sanitizedCode(error) {
   return error && typeof error.code === 'string' && /^VNEXT_PG17_[A-Z_]+$/.test(error.code)
@@ -24,6 +25,7 @@ async function run({
   runTrustedSessionBoundary = runTrustedSessionVerifierBoundaryCases,
   runAccessContext = runAccessContextResolverCases,
   runPolicyPublication = runPolicyPublicationMutationCases,
+  runRoleMutation = runRoleMutationCases,
   report = () => {},
 } = {}) {
   const runtime = runtimeFactory();
@@ -36,6 +38,7 @@ async function run({
     await runTrustedSessionBoundary(runtime);
     await runAccessContext(runtime);
     await runPolicyPublication(runtime);
+    await runRoleMutation(runtime);
     return 0;
   } catch (error) {
     report({ code: sanitizedCode(error) });

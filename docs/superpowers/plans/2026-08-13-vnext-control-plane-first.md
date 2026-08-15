@@ -172,6 +172,10 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 
 ### PostgreSQL 17 role-grants evidence (2026-08-15)
 
+- `shared/vnext-pg17/roleMutation.js` is a synthetic-only existing-authority writer for `role.grant` and `role.revoke`. It accepts only a same-handle branded AccessContext resolver and opaque assertion, then requires desktop surface, formal super-admin, `access.manage`, and current reauthentication.
+- Under an authority advisory lock it creates active grants or CAS-revokes grants, preserves the final active super-admin, advances the affected account version vector, and writes receipt/audit/outbox companions atomically. Existing sessions are not rewritten: the resolver rejects their stale captured account vectors.
+- Focused tests cover grant/revoke, rejection/noop/replay, target-session invalidation, fake assertions, and rollback after target, account, receipt, audit, and outbox writes. This remains a local disposable PostgreSQL 17 contract with no RDS/ECS, API/runtime wiring, business data, desktop SQLite, NAS/removable-media, or deployment access.
+
 - Migration 3 adds only `vnext_role_grants` and its active-role partial unique index. It creates no role, super-admin, capability, policy, session, receipt, or business-data seed.
 - The disposable catalog verifies both authority-scoped account/grantor foreign keys, nullable-but-nonblank grantor semantics, strict lifecycle/version/finite-time constraints, revoked-history behavior, the exact partial-index predicate, verifier-only access, and the absence of role-table triggers. Constraint, index, ACL, trigger, public-shadow, default, and migration-prefix drift fail closed.
 - Focused PG17 checks and the control-plane target aggregate were rerun after review. This remains a synthetic local PostgreSQL validation only: no real RDS/ECS DDL, data import, runtime writer, API, business row, or deployment was performed.

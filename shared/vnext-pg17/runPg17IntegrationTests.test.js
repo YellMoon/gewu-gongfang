@@ -23,10 +23,11 @@ async function main() {
     runTrustedSessionBoundary: async received => { assert.strictEqual(received, runtime); calls.push('trusted-session-boundary'); },
     runAccessContext: async received => { assert.strictEqual(received, runtime); calls.push('access-context'); },
     runPolicyPublication: async received => { assert.strictEqual(received, runtime); calls.push('policy-publication'); },
+    runRoleMutation: async received => { assert.strictEqual(received, runtime); calls.push('role-mutation'); },
     report: message => calls.push(`report:${message.code}`),
   });
   assert.strictEqual(exitCode, 0);
-  assert.deepStrictEqual(calls, ['start', 'manifest', 'catalog', 'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication', 'stop']);
+  assert.deepStrictEqual(calls, ['start', 'manifest', 'catalog', 'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication', 'role-mutation', 'stop']);
 
   const failedCalls = [];
   const unavailable = Object.assign(new Error('private detail'), { code: 'VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE' });
@@ -42,6 +43,7 @@ async function main() {
     runTrustedSessionBoundary: async () => failedCalls.push('trusted-session-boundary'),
     runAccessContext: async () => failedCalls.push('access-context'),
     runPolicyPublication: async () => failedCalls.push('policy-publication'),
+    runRoleMutation: async () => failedCalls.push('role-mutation'),
     report: message => failedCalls.push(`report:${message.code}`),
   });
   assert.strictEqual(failedCode, 1);
