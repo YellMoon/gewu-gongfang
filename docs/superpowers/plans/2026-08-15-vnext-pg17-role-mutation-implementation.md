@@ -33,7 +33,7 @@ async function expectCode(action, code) { await assert.rejects(action, error => 
 
 - [x] **Step 2: Add semantic, replay, and authorization red cases**
 
-Import the absent writer. Prove role grant creates one active grant, advances target auth/access/row only, and invalidates the target's old context. Prove revoke advances grant plus all four account vectors and invalidates the target context. Cover replay/no IDs, idempotency conflict, duplicate active role, missing target, stale revoke, noop, final-super-admin rejection, fake/cross-handle assertion, miniapp, absent reauthentication, malformed command, accessor/proxy command, and invalid role.
+Import the absent writer. Prove role grant creates one active grant, advances target auth/access/row only, and invalidates the target's old context. Prove revoke advances grant plus all four account vectors and invalidates the target context. Cover replay/no IDs, idempotency conflict, duplicate active role, missing target, stale revoke, noop, final-super-admin rejection, and replay after a later policy revision.
 
 ```js
 const granted = await writer.execute(actorAssertion, grantCommand());
@@ -44,7 +44,7 @@ assert.deepStrictEqual(await writer.execute(actorAssertion, grantCommand()), { .
 
 - [x] **Step 3: Add companion and rollback red cases**
 
-Snapshot target role/account/session and receipt/audit/outbox rows. For target, account, receipt, audit, and outbox hook stages, throw after the write and require the snapshot unchanged. Preconstruct malformed accepted receipt, audit, and outbox companions and require `IDEMPOTENCY_RECEIPT_INVALID` on replay.
+Snapshot target role/account/session and receipt/audit/outbox rows. For target, account, receipt, audit, and outbox hook stages, throw after the write and require the snapshot unchanged. Tamper an accepted outbox companion in a disposable fixture, restore its exact schema trigger, and require `IDEMPOTENCY_RECEIPT_INVALID` on replay.
 
 ```js
 for (const stage of ['target', 'account', 'receipt', 'audit', 'outbox']) {
@@ -88,7 +88,7 @@ if (changed.rowCount !== 1) throw failure('ROLE_GRANT_VERSION_CONFLICT');
 
 - [x] **Step 3: Implement immutable companions and replay**
 
-Use canonical request/result JSON plus SHA-256. Rejected/noop commands write receipt plus audit. Accepted grant/revoke commands write receipt, audit, then outbox, calling the hook after target/account/receipt/audit/outbox. Replay validates exact receipt fields, result hash/shape, target grant/account state, audit, and outbox before returning `replayed: true`.
+Use canonical request/result JSON plus SHA-256. Rejected/noop commands write receipt plus audit. Accepted grant/revoke commands write receipt, audit, then outbox, calling the hook after target/account/receipt/audit/outbox. The canonical result permanently stores the execution account/link/policy-revision context; replay validates that frozen context against audit rather than recomputing it from a newer policy. Replay validates exact receipt fields, result hash/shape, target grant/account state, audit, and outbox before returning `replayed: true`.
 
 ```js
 const payload = stable({ accountId: targetAccountId, grantId, role, authVersion: versions.authVersion, accessVersion: versions.accessVersion });
@@ -122,9 +122,9 @@ await runRoleMutation(runtime);
 
 Document only tested same-handle authorization, final-super-admin protection, CAS, session invalidation, replay, rollback, and synthetic-only boundaries. Mark completed checkboxes only.
 
-- [ ] **Step 3: Run scoped verification and publish**
+- [x] **Step 3: Run scoped verification and publish**
 
-Run `node shared/vnext-pg17/roleMutation.test.js`, `node shared/vnext-pg17/runPg17IntegrationTests.test.js`, `npm.cmd run test:vnext-control-plane-target`, `git diff --check`, and `npm.cmd test`. Record unrelated full-suite failures exactly. Stage only role writer/test/runner/docs files, use the repository-required dated commit message, and push `gewu HEAD:master`. Do not package desktop software or publish OSS artifacts.
+Ran `node shared/vnext-pg17/roleMutation.test.js`, `node shared/vnext-pg17/runPg17IntegrationTests.test.js`, `npm.cmd run test:vnext-control-plane-target`, `git diff --check`, and `npm.cmd test` on 2026-08-15. Stage only role writer/test/runner/docs files, use the repository-required dated commit message, and push `gewu HEAD:master`. Do not package desktop software or publish OSS artifacts.
 
 ## Plan self-review
 

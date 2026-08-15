@@ -70,9 +70,26 @@ async function runRoleMutationCases(runtime) {
     const granted = await writer.execute(current.actorAssertion, grantCommand());
     assert.deepStrictEqual(granted, { code: 'ROLE_GRANTED', grantId: 'role-grant-1', replayed: false, status: 'accepted' });
     await expectCode(() => current.targetResolver.resolve(current.targetAssertion), 'VNEXT_PG17_ACCESS_CONTEXT_UNAVAILABLE');
+    await withVNextPg17SyntheticQuery(current.handle, 'fixture-provisioner', async facade => {
+      await facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications DISABLE TRIGGER vnext_authorization_policy_publications_no_update');
+      try {
+        await facade.query("UPDATE vnext_control_plane.vnext_authorization_policy_publications SET policy_revision=2 WHERE authority_id='authority-1' AND policy_revision=1");
+      } finally {
+        await facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications ENABLE TRIGGER vnext_authorization_policy_publications_no_update');
+      }
+    });
     const beforeReplay = ids;
     assert.deepStrictEqual(await writer.execute(current.actorAssertion, grantCommand()), { ...granted, replayed: true });
     assert.strictEqual(ids, beforeReplay);
+    await withVNextPg17SyntheticQuery(current.handle, 'fixture-provisioner', async facade => {
+      await facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events DISABLE TRIGGER vnext_authorization_outbox_events_no_update');
+      try {
+        await facade.query("UPDATE vnext_control_plane.vnext_authorization_outbox_events SET event_type='forged' WHERE authority_id='authority-1' AND receipt_id='role-receipt-2'");
+      } finally {
+        await facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_outbox_events ENABLE TRIGGER vnext_authorization_outbox_events_no_update');
+      }
+    });
+    await expectCode(() => writer.execute(current.actorAssertion, grantCommand()), 'IDEMPOTENCY_RECEIPT_INVALID');
     await expectCode(() => writer.execute(current.actorAssertion, grantCommand({ reasonCode: 'changed' })), 'IDEMPOTENCY_KEY_CONFLICT');
     assert.deepStrictEqual(await writer.execute(current.actorAssertion, grantCommand({ idempotencyKey: 'duplicate' })), { code: 'ROLE_GRANT_CONFLICT', replayed: false, status: 'rejected' });
     assert.deepStrictEqual(await writer.execute(current.actorAssertion, revokeCommand(granted.grantId)), { code: 'ROLE_REVOKED', grantId: granted.grantId, replayed: false, status: 'accepted' });

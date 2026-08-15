@@ -68,9 +68,10 @@ function createVNextPg17RoleMutation(config) {
     const authorityId = text(context.authorityId, 'ROLE_MUTATION_UNAUTHORIZED');
     const actorAccountId = text(context.accountId, 'ROLE_MUTATION_UNAUTHORIZED');
     const actorKey = `account:${actorAccountId}`;
+    const executionContext = Object.freeze({ accountId: actorAccountId, linkId: text(context.linkId, 'ROLE_MUTATION_UNAUTHORIZED'), policyRevision: context.policyRevision });
     const selector = command.type === 'role.grant' ? { targetAccountId: command.targetAccountId, role: command.role, expectedTargetRowVersion: command.expectedTargetRowVersion } : { targetGrantId: command.targetGrantId, expectedTargetRowVersion: command.expectedTargetRowVersion };
     const requestHash = hash(stable({ type: command.type, ...selector, reasonCode: command.reasonCode }));
-    const contextHash = hash(stable({ accountId: actorAccountId, linkId: context.linkId, policyRevision: context.policyRevision }));
+    const contextHash = hash(stable(executionContext));
     await catalog.assert(settings.handle);
     return withVNextPg17SyntheticQuery(settings.handle, 'fixture-provisioner', async facade => {
       try {
@@ -81,18 +82,38 @@ function createVNextPg17RoleMutation(config) {
           const receipt = existing.rows[0];
           if (receipt.canonical_request_sha256 !== requestHash) throw failure('IDEMPOTENCY_KEY_CONFLICT');
           let result; try { result = JSON.parse(receipt.canonical_result_json); } catch (_) { throw failure('IDEMPOTENCY_RECEIPT_INVALID'); }
-          if (hash(receipt.canonical_result_json) !== receipt.canonical_result_sha256 || stable(result) !== receipt.canonical_result_json || receipt.actor_account_id !== actorAccountId || receipt.command_type !== command.type) throw failure('IDEMPOTENCY_RECEIPT_INVALID');
+          if (hash(receipt.canonical_result_json) !== receipt.canonical_result_sha256 || stable(result) !== receipt.canonical_result_json || receipt.actor_account_id !== actorAccountId || receipt.command_type !== command.type
+            || !result.context || Object.getPrototypeOf(result.context) !== Object.prototype || Reflect.ownKeys(result.context).length !== 3
+            || result.context.accountId !== actorAccountId || typeof result.context.linkId !== 'string'
+            || !Number.isSafeInteger(result.context.policyRevision) || result.context.policyRevision < 1) throw failure('IDEMPOTENCY_RECEIPT_INVALID');
           const audits = await facade.query('SELECT reason_code,context_sha256 FROM vnext_control_plane.vnext_authorization_audit_events WHERE authority_id=$1 AND receipt_id=$2', [authorityId, receipt.receipt_id]);
-          const outbox = await facade.query('SELECT event_type FROM vnext_control_plane.vnext_authorization_outbox_events WHERE authority_id=$1 AND receipt_id=$2', [authorityId, receipt.receipt_id]);
-          if (audits.rows.length !== 1 || audits.rows[0].reason_code !== command.reasonCode || audits.rows[0].context_sha256 !== contextHash || (result.status === 'accepted' ? outbox.rows.length !== 1 : outbox.rows.length !== 0)) throw failure('IDEMPOTENCY_RECEIPT_INVALID');
+          const outbox = await facade.query('SELECT * FROM vnext_control_plane.vnext_authorization_outbox_events WHERE authority_id=$1 AND receipt_id=$2', [authorityId, receipt.receipt_id]);
+          const publicKeys = Object.keys(result).filter(key => key !== 'context').sort();
+          const expectedResultKeys = result.status === 'accepted' || result.status === 'noop' ? ['code', 'grantId', 'status'] : ['code', 'status'];
+          if (audits.rows.length !== 1 || audits.rows[0].reason_code !== command.reasonCode || audits.rows[0].context_sha256 !== hash(stable(result.context))
+            || result.status !== receipt.outcome || result.code !== receipt.result_code || publicKeys.length !== expectedResultKeys.length || publicKeys.some((key, index) => key !== expectedResultKeys[index])) throw failure('IDEMPOTENCY_RECEIPT_INVALID');
+          if (result.status === 'accepted') {
+            const grants = await facade.query('SELECT g.*,a.auth_version,a.access_version,a.revocation_version FROM vnext_control_plane.vnext_role_grants g JOIN vnext_control_plane.vnext_accounts a ON a.authority_id=g.authority_id AND a.account_id=g.account_id WHERE g.authority_id=$1 AND g.grant_id=$2', [authorityId, result.grantId]);
+            if (outbox.rows.length !== 1 || grants.rows.length !== 1 || receipt.target_kind !== 'role_grant' || receipt.target_id !== result.grantId || String(receipt.committed_target_row_version) === '' || !receipt.committed_auth_version || !receipt.committed_access_version) throw failure('IDEMPOTENCY_RECEIPT_INVALID');
+            const grant = grants.rows[0]; const event = outbox.rows[0]; let payload;
+            if (command.type === 'role.grant') {
+              payload = stable({ accountId: command.targetAccountId, accessVersion: Number(receipt.committed_access_version), authVersion: Number(receipt.committed_auth_version), grantId: result.grantId, role: command.role });
+              if (receipt.expected_row_version !== '0' || receipt.committed_revocation_version !== null || grant.account_id !== command.targetAccountId || grant.role !== command.role || grant.status !== 'active' || String(grant.grant_version) !== String(receipt.committed_target_row_version) || String(grant.row_version) !== String(receipt.committed_target_row_version) || Number(grant.auth_version) < Number(receipt.committed_auth_version) || Number(grant.access_version) < Number(receipt.committed_access_version) || event.event_type !== 'authorization.role_granted') throw failure('IDEMPOTENCY_RECEIPT_INVALID');
+            } else {
+              payload = stable({ accountId: grant.account_id, accessVersion: Number(receipt.committed_access_version), grantId: result.grantId, revocationVersion: Number(receipt.committed_revocation_version) });
+              if (receipt.expected_row_version !== String(command.expectedTargetRowVersion) || !receipt.committed_revocation_version || grant.status !== 'revoked' || Number(grant.grant_version) < Number(receipt.committed_target_row_version) || Number(grant.row_version) < Number(receipt.committed_target_row_version) || Number(grant.auth_version) < Number(receipt.committed_auth_version) || Number(grant.access_version) < Number(receipt.committed_access_version) || Number(grant.revocation_version) < Number(receipt.committed_revocation_version) || event.event_type !== 'authorization.role_revoked') throw failure('IDEMPOTENCY_RECEIPT_INVALID');
+            }
+            if (event.aggregate_kind !== 'role_grant' || event.aggregate_id !== result.grantId || String(event.aggregate_version) !== String(receipt.committed_target_row_version) || event.canonical_payload_json !== payload || event.payload_sha256 !== hash(payload)) throw failure('IDEMPOTENCY_RECEIPT_INVALID');
+          } else if (outbox.rows.length !== 0) throw failure('IDEMPOTENCY_RECEIPT_INVALID');
           await facade.query('COMMIT');
-          return Object.freeze({ ...result, replayed: true });
+          const { context: ignored, ...output } = result;
+          return Object.freeze({ ...output, replayed: true });
         }
         const authority = await facade.query("SELECT authority_id FROM vnext_control_plane.vnext_authorities WHERE authority_id=$1 AND status='active' FOR UPDATE", [authorityId]);
         const actor = await facade.query("SELECT account_id FROM vnext_control_plane.vnext_accounts WHERE authority_id=$1 AND account_id=$2 AND status='active' FOR UPDATE", [authorityId, actorAccountId]);
         if (authority.rows.length !== 1 || actor.rows.length !== 1) throw failure('ROLE_MUTATION_UNAUTHORIZED');
         const record = async ({ outcome, code, result, targetKind, targetId, versions = {}, outbox = null }) => {
-          const receiptId = nextId('role-receipt'); const resultJson = stable(result);
+          const receiptId = nextId('role-receipt'); const storedResult = { ...result, context: executionContext }; const resultJson = stable(storedResult);
           await facade.query('INSERT INTO vnext_control_plane.vnext_authorization_command_receipts(receipt_id,authority_id,actor_key,actor_account_id,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,committed_auth_version,committed_access_version,committed_revocation_version,committed_target_row_version,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)', [receiptId, authorityId, actorKey, actorAccountId, command.idempotencyKey, command.type, targetKind, targetId, requestHash, command.expectedTargetRowVersion, outcome, code, resultJson, hash(resultJson), versions.auth || null, versions.access || null, versions.revocation || null, versions.target || null, timestamp]);
           await hook('receipt');
           await facade.query('INSERT INTO vnext_control_plane.vnext_authorization_audit_events(event_id,authority_id,receipt_id,reason_code,context_sha256,created_at) VALUES($1,$2,$3,$4,$5,$6)', [nextId('role-audit'), authorityId, receiptId, command.reasonCode, contextHash, timestamp]);
