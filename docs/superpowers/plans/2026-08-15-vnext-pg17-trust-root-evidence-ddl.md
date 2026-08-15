@@ -50,4 +50,10 @@
 - Modify: `docs/superpowers/plans/2026-08-13-vnext-control-plane-first.md`
 
 - [x] Rerun focused manifest/catalog, target aggregate, `git diff --check`, and the Docker label query.
-- [ ] Record synthetic-only evidence. Stage only these two plans and the four PG17 manifest/catalog files, commit using the repository-required dated message, and push `gewu HEAD:master` without output artifacts.
+- [x] Record synthetic-only evidence. Stage only these two plans and the four PG17 manifest/catalog files, commit using the repository-required dated message, and push `gewu HEAD:master` without output artifacts.
+
+## Verification evidence
+
+- Focused manifest and disposable PostgreSQL 17 catalog checks passed on 2026-08-15.
+- `npm.cmd run test:vnext-control-plane-target` and `git diff --check` passed before publication. The labelled-container query was empty after cleanup.
+- Published commit: `9284993` (`自动发布 2026-08-15`) to `gewu/master`. This evidence covers synthetic local PostgreSQL only; it does not represent RDS, ECS, backup, signing, recovery, or business-data execution.
