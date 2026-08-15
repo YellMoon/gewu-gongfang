@@ -18,6 +18,7 @@ const {
   BOOTSTRAP_CONSUMPTIONS_MIGRATION,
   AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION,
   TRUST_ROOT_EVIDENCE_MIGRATION,
+  SESSIONS_REAUTHENTICATION_MIGRATION,
 } = require('./migrationManifest');
 
 const FOUNDATION_INSTANT = '2026-08-15T00:00:00.000Z';
@@ -1033,6 +1034,56 @@ async function assertTrustRootEvidenceSemantics(handle) {
   await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_trust_root_evidence')));
 }
 
+async function assertSessionsAndReauthenticationSemantics(handle) {
+  await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+    const issuedAt = '2026-08-15T01:00:00.000Z';
+    const expiresAt = '2026-08-15T02:00:00.000Z';
+    const updatedAt = '2026-08-15T01:00:01.000Z';
+    const sessionValues = ({ sessionId, sessionKind = 'online', status = 'active', rowVersion = 1, revokedAt = null, updated = issuedAt } = {}) => [
+      sessionId, 'authority-1', 'account-1', 'device-1', 'installation-1', 'link-1', sessionKind, status, issuedAt, expiresAt, revokedAt,
+      1, 1, 1, 1, 1, 1, 1, 1, 1, rowVersion, issuedAt, updated,
+    ];
+    const insertSession = values => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_sessions (session_id, authority_id, account_id, device_id, installation_id, link_id, session_kind, status, issued_at, expires_at, revoked_at, account_auth_version, account_access_version, account_revocation_version, device_credential_version, device_risk_version, installation_credential_version, link_auth_version, link_access_version, link_row_version, row_version, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)',
+      values,
+    );
+    const insertReauth = ({ eventId, sessionId, factorClass = 'password', verifiedAt = '2026-08-15T01:10:00.000Z', reauthExpiresAt = '2026-08-15T01:20:00.000Z', versions = [1, 1, 1, 1, 1, 1, 1, 1, 1] } = {}) => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_recent_reauthentication_events (reauth_event_id, authority_id, session_id, factor_class, evidence_sha256, account_auth_version, account_access_version, account_revocation_version, device_credential_version, device_risk_version, installation_credential_version, link_auth_version, link_access_version, link_row_version, verified_at, expires_at, created_at) VALUES ($1,\'authority-1\',$2,$3,repeat(\'a\',64),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$13)',
+      [eventId, sessionId, factorClass, ...versions, verifiedAt, reauthExpiresAt],
+    );
+
+    await insertSession(sessionValues({ sessionId: 'session-online-1' }));
+    await insertReauth({ eventId: 'reauth-valid-1', sessionId: 'session-online-1', factorClass: 'passkey' });
+    await insertReauth({ eventId: 'reauth-valid-password', sessionId: 'session-online-1', factorClass: 'password' });
+    await insertReauth({ eventId: 'reauth-valid-contact', sessionId: 'session-online-1', factorClass: 'verified_contact' });
+    for (let index = 0; index < 9; index += 1) {
+      const versions = [1, 1, 1, 1, 1, 1, 1, 1, 1];
+      versions[index] = 2;
+      await assert.rejects(() => insertReauth({ eventId: `reauth-vector-${index}`, sessionId: 'session-online-1', versions }), error => error && error.code === 'P0001' && error.message === 'VNEXT_REAUTH_SESSION_STATE_INVALID');
+    }
+    await assert.rejects(() => insertReauth({ eventId: 'reauth-invalid-factor', sessionId: 'session-online-1', factorClass: 'otp' }), error => error && error.constraint === 'vnext_recent_reauthentication_events_factor_class_check');
+    await assert.rejects(() => insertReauth({ eventId: 'reauth-window-invalid', sessionId: 'session-online-1', verifiedAt: expiresAt }), error => error && error.code === 'P0001' && error.message === 'VNEXT_REAUTH_SESSION_STATE_INVALID');
+    await assert.rejects(() => facade.query("UPDATE vnext_control_plane.vnext_sessions SET session_kind='initialization' WHERE session_id='session-online-1'"), error => error && error.code === 'P0001');
+    const onlineBefore = await facade.query("SELECT * FROM vnext_control_plane.vnext_sessions WHERE session_id='session-online-1'");
+    await facade.query("UPDATE vnext_control_plane.vnext_sessions SET status='revoked', revoked_at=$1, row_version=2, updated_at=$1 WHERE session_id='session-online-1'", [updatedAt]);
+    await assert.rejects(() => facade.query("UPDATE vnext_control_plane.vnext_sessions SET updated_at='2026-08-15T01:00:02.000Z' WHERE session_id='session-online-1'"), error => error && error.code === 'P0001');
+    await assert.rejects(() => facade.query("DELETE FROM vnext_control_plane.vnext_sessions WHERE session_id='session-online-1'"), error => error && error.code === 'P0001');
+    assert.strictEqual((await facade.query("SELECT status, row_version::text AS row_version FROM vnext_control_plane.vnext_sessions WHERE session_id='session-online-1'")).rows[0].status, 'revoked');
+    assert.strictEqual(onlineBefore.rows[0].status, 'active');
+
+    await insertSession(sessionValues({ sessionId: 'session-initialization-1', sessionKind: 'initialization' }));
+    await assert.rejects(() => insertReauth({ eventId: 'reauth-initialization', sessionId: 'session-initialization-1' }), error => error && error.code === 'P0001' && error.message === 'VNEXT_REAUTH_ONLINE_SESSION_REQUIRED');
+    await insertSession(sessionValues({ sessionId: 'session-parent-vector-1' }));
+    await facade.query("UPDATE vnext_control_plane.vnext_accounts SET access_version=2, updated_at='2026-08-15T01:00:02.000Z' WHERE account_id='account-1' AND authority_id='authority-1'");
+    await assert.rejects(() => insertReauth({ eventId: 'reauth-stale-parent', sessionId: 'session-parent-vector-1' }), error => error && error.code === 'P0001' && error.message === 'VNEXT_REAUTH_CURRENT_PARENT_INVALID');
+    await assert.rejects(() => insertSession(sessionValues({ sessionId: 'session-stale-parent-1' })), error => error && error.code === 'P0001' && error.message === 'VNEXT_SESSION_PARENT_STATE_INVALID');
+    await assert.rejects(() => facade.query("UPDATE vnext_control_plane.vnext_recent_reauthentication_events SET factor_class='password' WHERE reauth_event_id='reauth-valid-1'"), error => error && error.code === 'P0001');
+    await assert.rejects(() => facade.query("DELETE FROM vnext_control_plane.vnext_recent_reauthentication_events WHERE reauth_event_id='reauth-valid-1'"), error => error && error.code === 'P0001');
+  });
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'verifier', facade => facade.query("INSERT INTO vnext_control_plane.vnext_sessions (session_id, authority_id, account_id, device_id, installation_id, link_id, session_kind, status, issued_at, expires_at, revoked_at, account_auth_version, account_access_version, account_revocation_version, device_credential_version, device_risk_version, installation_credential_version, link_auth_version, link_access_version, link_row_version, row_version, created_at, updated_at) VALUES ('verifier-session','authority-1','account-1','device-1','installation-1','link-1','online','active',$1,$2,NULL,1,1,1,1,1,1,1,1,1,1,$1,$1)", [FOUNDATION_INSTANT, '2026-08-15T03:00:00.000Z'])));
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_sessions')));
+}
+
 async function runCatalogAssertionCases(runtime) {
   const catalog = createVNextPg17CatalogBoundary(runtime);
   let priorHandle;
@@ -1277,6 +1328,22 @@ async function runCatalogAssertionCases(runtime) {
       assert.deepStrictEqual(absent.rows, [{ relation: null, insert_function: null, update_function: null, delete_function: null }]);
     });
     await assert.rejects(() => catalog.assert(policyPrefixHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+    const sessionsPrefixHandle = await createHandle();
+    await withVNextPg17SyntheticQuery(sessionsPrefixHandle, 'fixture-provisioner', async facade => {
+      for (const migration of [FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION, ROLE_GRANTS_MIGRATION, CAPABILITY_CATALOG_MIGRATION, CAPABILITY_OVERRIDES_MIGRATION, DATA_SCOPE_GRANTS_MIGRATION, PROFILE_BINDINGS_MIGRATION, VERIFIED_CONTACTS_MIGRATION, AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION, AUTHORIZATION_AUDIT_EVENTS_MIGRATION, AUTHORIZATION_OUTBOX_EVENTS_MIGRATION, BOOTSTRAP_CONSUMPTIONS_MIGRATION, AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION, TRUST_ROOT_EVIDENCE_MIGRATION]) {
+        await facade.query(migration.sql);
+        if (migration.postApply) await facade.query(migration.postApply.text, migration.postApply.values(migrationInput.appliedAt));
+        await facade.query('INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)', [migration.migrationId, migration.semanticVersion, migration.manifestSha256, migrationInput.appliedAt, migrationInput.appliedBy]);
+      }
+    });
+    await assert.rejects(() => catalog.apply(sessionsPrefixHandle, migrationInput), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+    await withVNextPg17SyntheticQuery(sessionsPrefixHandle, 'fixture-provisioner', async facade => {
+      const ledgerRows = await facade.query('SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint');
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }, { semantic_version: '13' }, { semantic_version: '14' }]);
+      const absent = await facade.query("SELECT to_regclass('vnext_control_plane.vnext_sessions') AS sessions, to_regclass('vnext_control_plane.vnext_recent_reauthentication_events') AS reauth, to_regprocedure('vnext_control_plane.vnext_sessions_parent_state_match()') AS session_guard, to_regprocedure('vnext_control_plane.vnext_recent_reauthentication_events_session_state_match()') AS reauth_guard");
+      assert.deepStrictEqual(absent.rows, [{ sessions: null, reauth: null, session_guard: null, reauth_guard: null }]);
+    });
+    await assert.rejects(() => catalog.assert(sessionsPrefixHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
     const handle = await createHandle();
     await assert.rejects(
       () => catalog.assert(handle),
@@ -1287,7 +1354,7 @@ async function runCatalogAssertionCases(runtime) {
       const ledgerRows = await facade.query(
         'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint',
       );
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }, { semantic_version: '13' }, { semantic_version: '14' }]);
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }, { semantic_version: '13' }, { semantic_version: '14' }, { semantic_version: '15' }]);
       const schemaMetaRows = await facade.query(
         'SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta',
       );
@@ -1314,9 +1381,14 @@ async function runCatalogAssertionCases(runtime) {
     assert.deepStrictEqual(bootstrapConsumptionCount.rows, [{ count: '0' }]);
     const policyPublicationCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_authorization_policy_publications');
     assert.deepStrictEqual(policyPublicationCount.rows, [{ count: '0' }]);
+    const sessionCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_sessions');
+    assert.deepStrictEqual(sessionCount.rows, [{ count: '0' }]);
+    const reauthenticationCount = await facade.query('SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_recent_reauthentication_events');
+    assert.deepStrictEqual(reauthenticationCount.rows, [{ count: '0' }]);
     });
     await assert.doesNotReject(() => catalog.assert(handle));
     await assertFoundationSemantics(handle);
+    await assertSessionsAndReauthenticationSemantics(handle);
     await assertRoleGrantSemantics(handle);
     await assertCapabilityCatalogSemantics(handle);
     await assertCapabilityOverrideSemantics(handle);
@@ -1344,7 +1416,7 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(
       () => withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
-        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 16, repeat('a', 64), now(), 'fixture')",
+        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 17, repeat('a', 64), now(), 'fixture')",
       )),
     );
     await assert.rejects(
@@ -2503,6 +2575,34 @@ async function runCatalogAssertionCases(runtime) {
       'ALTER ROLE vnext_pg17_runtime NOCREATEROLE',
     ));
     await assert.doesNotReject(() => catalog.assert(rolePrivilegeHandle));
+
+    const sessionsExtraIndexHandle = await createHandle();
+    await catalog.apply(sessionsExtraIndexHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(sessionsExtraIndexHandle, 'fixture-provisioner', facade => facade.query(
+      'CREATE INDEX unapproved_sessions_status_index ON vnext_control_plane.vnext_sessions (status)',
+    ));
+    await assert.rejects(() => catalog.assert(sessionsExtraIndexHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const reauthForeignKeyHandle = await createHandle();
+    await catalog.apply(reauthForeignKeyHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(reauthForeignKeyHandle, 'fixture-provisioner', facade => facade.query(
+      'ALTER TABLE vnext_control_plane.vnext_recent_reauthentication_events DROP CONSTRAINT vnext_recent_reauthentication_even_session_id_authority_id_fkey',
+    ));
+    await assert.rejects(() => catalog.assert(reauthForeignKeyHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const sessionsRuntimeAclHandle = await createHandle();
+    await catalog.apply(sessionsRuntimeAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(sessionsRuntimeAclHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT SELECT ON vnext_control_plane.vnext_sessions TO vnext_pg17_runtime',
+    ));
+    await assert.rejects(() => catalog.assert(sessionsRuntimeAclHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const reauthTriggerHandle = await createHandle();
+    await catalog.apply(reauthTriggerHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(reauthTriggerHandle, 'fixture-provisioner', facade => facade.query(
+      'ALTER TABLE vnext_control_plane.vnext_recent_reauthentication_events DISABLE TRIGGER vnext_recent_reauthentication_events_no_delete',
+    ));
+    await assert.rejects(() => catalog.assert(reauthTriggerHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
   } finally {
     if (priorHandle) {
       await runtime.disposeHandle(priorHandle);

@@ -16,6 +16,7 @@ const {
   BOOTSTRAP_CONSUMPTIONS_MIGRATION,
   AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION,
   TRUST_ROOT_EVIDENCE_MIGRATION,
+  SESSIONS_REAUTHENTICATION_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,
@@ -46,9 +47,16 @@ async function runManifestCases() {
     'vnext_trust_root_evidence_insert_guard',
     'vnext_trust_root_evidence_no_delete',
     'vnext_trust_root_evidence_no_update',
+    'vnext_sessions_parent_state_match',
+    'vnext_sessions_identity_immutable',
+    'vnext_sessions_lifecycle_monotonic',
+    'vnext_sessions_no_delete',
+    'vnext_recent_reauthentication_events_session_state_match',
+    'vnext_recent_reauthentication_events_no_update',
+    'vnext_recent_reauthentication_events_no_delete',
   ]);
   assert.strictEqual(sha256(FIRST_MIGRATION.sql), FIRST_MIGRATION.manifestSha256);
-  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
   assert.strictEqual(FOUNDATION_IDENTITY_DEVICE_MIGRATION.migrationId, 'vnext-pg17-foundation-identity-device-2');
   assert.match(FOUNDATION_IDENTITY_DEVICE_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
   assert.strictEqual(
@@ -176,6 +184,14 @@ async function runManifestCases() {
   assert.match(TRUST_ROOT_EVIDENCE_MIGRATION.sql, /CREATE TRIGGER vnext_trust_root_evidence_insert_guard/);
   assert.match(TRUST_ROOT_EVIDENCE_MIGRATION.sql, /CREATE TRIGGER vnext_trust_root_evidence_no_update/);
   assert.match(TRUST_ROOT_EVIDENCE_MIGRATION.sql, /CREATE TRIGGER vnext_trust_root_evidence_no_delete/);
+  assert.ok(Object.isFrozen(SESSIONS_REAUTHENTICATION_MIGRATION));
+  assert.strictEqual(SESSIONS_REAUTHENTICATION_MIGRATION.migrationId, 'vnext-pg17-sessions-reauthentication-15');
+  assert.strictEqual(SESSIONS_REAUTHENTICATION_MIGRATION.semanticVersion, 15);
+  assert.match(SESSIONS_REAUTHENTICATION_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
+  assert.strictEqual(sha256(SESSIONS_REAUTHENTICATION_MIGRATION.sql), SESSIONS_REAUTHENTICATION_MIGRATION.manifestSha256);
+  for (const relation of ['vnext_sessions', 'vnext_recent_reauthentication_events']) assert.match(SESSIONS_REAUTHENTICATION_MIGRATION.sql, new RegExp(`CREATE TABLE vnext_control_plane\\.${relation}`));
+  for (const column of ['session_id', 'authority_id', 'account_id', 'device_id', 'installation_id', 'link_id', 'account_auth_version', 'account_access_version', 'account_revocation_version', 'device_credential_version', 'device_risk_version', 'installation_credential_version', 'link_auth_version', 'link_access_version', 'link_row_version', 'reauth_event_id', 'factor_class', 'evidence_sha256', 'verified_at']) assert.match(SESSIONS_REAUTHENTICATION_MIGRATION.sql, new RegExp(`\\b${column}\\b`));
+  for (const trigger of ['vnext_sessions_parent_state_match', 'vnext_sessions_identity_immutable', 'vnext_sessions_lifecycle_monotonic', 'vnext_sessions_no_delete', 'vnext_recent_reauthentication_events_session_state_match', 'vnext_recent_reauthentication_events_no_update', 'vnext_recent_reauthentication_events_no_delete']) assert.match(SESSIONS_REAUTHENTICATION_MIGRATION.sql, new RegExp(`CREATE TRIGGER ${trigger}`));
   assert.deepStrictEqual(expectedCatalog.relations, [
     'vnext_control_plane.vnext_account_device_links',
     'vnext_control_plane.vnext_accounts',
@@ -190,9 +206,11 @@ async function runManifestCases() {
     'vnext_control_plane.vnext_data_scope_grants',
     'vnext_control_plane.vnext_device_installations',
     'vnext_control_plane.vnext_profile_bindings',
+    'vnext_control_plane.vnext_recent_reauthentication_events',
     'vnext_control_plane.vnext_role_grants',
     'vnext_control_plane.vnext_schema_meta',
     'vnext_control_plane.vnext_schema_migrations',
+    'vnext_control_plane.vnext_sessions',
     'vnext_control_plane.vnext_trust_root_evidence',
     'vnext_control_plane.vnext_trusted_devices',
     'vnext_control_plane.vnext_verified_contacts',

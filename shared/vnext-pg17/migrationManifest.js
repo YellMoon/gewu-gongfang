@@ -702,6 +702,34 @@ GRANT SELECT ON TABLE vnext_control_plane.vnext_trust_root_evidence TO vnext_pg1
 
 const TRUST_ROOT_EVIDENCE_MIGRATION = Object.freeze({ migrationId: 'vnext-pg17-trust-root-evidence-14', semanticVersion: 14, sql: TRUST_ROOT_EVIDENCE_SQL, manifestSha256: sha256(TRUST_ROOT_EVIDENCE_SQL) });
 
+const SESSIONS_REAUTHENTICATION_SQL = `CREATE TABLE vnext_control_plane.vnext_sessions (
+  session_id text COLLATE "C" PRIMARY KEY CHECK (btrim(session_id) <> ''), authority_id text COLLATE "C" NOT NULL CHECK (btrim(authority_id) <> ''), account_id text COLLATE "C" NOT NULL CHECK (btrim(account_id) <> ''), device_id text COLLATE "C" NOT NULL CHECK (btrim(device_id) <> ''), installation_id text COLLATE "C" NOT NULL CHECK (btrim(installation_id) <> ''), link_id text COLLATE "C" NOT NULL CHECK (btrim(link_id) <> ''),
+  session_kind text COLLATE "C" NOT NULL CHECK (session_kind IN ('online','initialization')), status text COLLATE "C" NOT NULL CHECK (status IN ('active','revoked','expired')),
+  issued_at timestamptz NOT NULL CHECK (issued_at <> 'infinity'::timestamptz AND issued_at <> '-infinity'::timestamptz), expires_at timestamptz NOT NULL CHECK (expires_at <> 'infinity'::timestamptz AND expires_at <> '-infinity'::timestamptz), revoked_at timestamptz CHECK (revoked_at IS NULL OR (revoked_at <> 'infinity'::timestamptz AND revoked_at <> '-infinity'::timestamptz)),
+  account_auth_version bigint NOT NULL CHECK (account_auth_version >= 1), account_access_version bigint NOT NULL CHECK (account_access_version >= 1), account_revocation_version bigint NOT NULL CHECK (account_revocation_version >= 1), device_credential_version bigint NOT NULL CHECK (device_credential_version >= 1), device_risk_version bigint NOT NULL CHECK (device_risk_version >= 1), installation_credential_version bigint NOT NULL CHECK (installation_credential_version >= 1), link_auth_version bigint NOT NULL CHECK (link_auth_version >= 1), link_access_version bigint NOT NULL CHECK (link_access_version >= 1), link_row_version bigint NOT NULL CHECK (link_row_version >= 1), row_version bigint NOT NULL CHECK (row_version >= 1),
+  created_at timestamptz NOT NULL CHECK (created_at <> 'infinity'::timestamptz AND created_at <> '-infinity'::timestamptz), updated_at timestamptz NOT NULL CHECK (updated_at <> 'infinity'::timestamptz AND updated_at <> '-infinity'::timestamptz),
+  UNIQUE(session_id, authority_id), CHECK (expires_at > issued_at), CHECK (updated_at >= created_at), CHECK (revoked_at IS NULL OR revoked_at >= issued_at), CHECK ((status='revoked' AND revoked_at IS NOT NULL) OR (status IN ('active','expired') AND revoked_at IS NULL)),
+  FOREIGN KEY(account_id,authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id,authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT, FOREIGN KEY(device_id,authority_id) REFERENCES vnext_control_plane.vnext_trusted_devices(device_id,authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT, FOREIGN KEY(installation_id,device_id,authority_id) REFERENCES vnext_control_plane.vnext_device_installations(installation_id,device_id,authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT, FOREIGN KEY(link_id,authority_id,account_id,device_id,installation_id) REFERENCES vnext_control_plane.vnext_account_device_links(link_id,authority_id,account_id,device_id,installation_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+);
+CREATE FUNCTION vnext_control_plane.vnext_sessions_parent_state_match() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN IF NOT EXISTS (SELECT 1 FROM vnext_control_plane.vnext_authorities au JOIN vnext_control_plane.vnext_accounts a ON a.authority_id=au.authority_id JOIN vnext_control_plane.vnext_trusted_devices d ON d.authority_id=au.authority_id JOIN vnext_control_plane.vnext_device_installations i ON i.authority_id=au.authority_id AND i.device_id=d.device_id JOIN vnext_control_plane.vnext_account_device_links l ON l.authority_id=au.authority_id AND l.account_id=a.account_id AND l.device_id=d.device_id AND l.installation_id=i.installation_id WHERE au.authority_id=NEW.authority_id AND au.status='active' AND a.account_id=NEW.account_id AND a.status='active' AND d.device_id=NEW.device_id AND d.status='active' AND i.installation_id=NEW.installation_id AND i.status='active' AND l.link_id=NEW.link_id AND l.status='active' AND NEW.account_auth_version=a.auth_version AND NEW.account_access_version=a.access_version AND NEW.account_revocation_version=a.revocation_version AND NEW.device_credential_version=d.credential_version AND NEW.device_risk_version=d.risk_version AND NEW.installation_credential_version=i.credential_version AND NEW.link_auth_version=l.auth_version AND NEW.link_access_version=l.access_version AND NEW.link_row_version=l.row_version) THEN RAISE EXCEPTION 'VNEXT_SESSION_PARENT_STATE_INVALID' USING ERRCODE='P0001'; END IF; RETURN NEW; END; $$;
+CREATE FUNCTION vnext_control_plane.vnext_sessions_identity_immutable() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN IF ROW(NEW.session_id,NEW.authority_id,NEW.account_id,NEW.device_id,NEW.installation_id,NEW.link_id,NEW.session_kind,NEW.issued_at,NEW.expires_at,NEW.account_auth_version,NEW.account_access_version,NEW.account_revocation_version,NEW.device_credential_version,NEW.device_risk_version,NEW.installation_credential_version,NEW.link_auth_version,NEW.link_access_version,NEW.link_row_version,NEW.created_at) IS DISTINCT FROM ROW(OLD.session_id,OLD.authority_id,OLD.account_id,OLD.device_id,OLD.installation_id,OLD.link_id,OLD.session_kind,OLD.issued_at,OLD.expires_at,OLD.account_auth_version,OLD.account_access_version,OLD.account_revocation_version,OLD.device_credential_version,OLD.device_risk_version,OLD.installation_credential_version,OLD.link_auth_version,OLD.link_access_version,OLD.link_row_version,OLD.created_at) THEN RAISE EXCEPTION 'vNext session identity is immutable' USING ERRCODE='P0001'; END IF; RETURN NEW; END; $$;
+CREATE FUNCTION vnext_control_plane.vnext_sessions_lifecycle_monotonic() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN IF NEW.status IS DISTINCT FROM OLD.status OR NEW.revoked_at IS DISTINCT FROM OLD.revoked_at OR NEW.row_version IS DISTINCT FROM OLD.row_version OR NEW.updated_at IS DISTINCT FROM OLD.updated_at THEN IF OLD.status <> 'active' OR NEW.status NOT IN ('revoked','expired') OR NEW.row_version <> OLD.row_version + 1 OR NEW.updated_at <= OLD.updated_at OR (NEW.status='revoked' AND NEW.revoked_at IS NULL) OR (NEW.status='expired' AND NEW.revoked_at IS NOT NULL) THEN RAISE EXCEPTION 'vNext session lifecycle is immutable' USING ERRCODE='P0001'; END IF; END IF; RETURN NEW; END; $$;
+CREATE FUNCTION vnext_control_plane.vnext_sessions_no_delete() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN RAISE EXCEPTION 'vNext session is append-only' USING ERRCODE='P0001'; END; $$;
+CREATE TRIGGER vnext_sessions_parent_state_match BEFORE INSERT ON vnext_control_plane.vnext_sessions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_sessions_parent_state_match(); CREATE TRIGGER vnext_sessions_identity_immutable BEFORE UPDATE ON vnext_control_plane.vnext_sessions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_sessions_identity_immutable(); CREATE TRIGGER vnext_sessions_lifecycle_monotonic BEFORE UPDATE ON vnext_control_plane.vnext_sessions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_sessions_lifecycle_monotonic(); CREATE TRIGGER vnext_sessions_no_delete BEFORE DELETE ON vnext_control_plane.vnext_sessions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_sessions_no_delete();
+CREATE TABLE vnext_control_plane.vnext_recent_reauthentication_events (reauth_event_id text COLLATE "C" PRIMARY KEY CHECK (btrim(reauth_event_id)<>''), authority_id text COLLATE "C" NOT NULL CHECK (btrim(authority_id)<>''), session_id text COLLATE "C" NOT NULL CHECK (btrim(session_id)<>''), factor_class text COLLATE "C" NOT NULL CHECK (factor_class IN ('password','passkey','verified_contact')), evidence_sha256 text COLLATE "C" NOT NULL CHECK (evidence_sha256 ~ '^[0-9a-f]{64}$'), account_auth_version bigint NOT NULL CHECK (account_auth_version>=1), account_access_version bigint NOT NULL CHECK (account_access_version>=1), account_revocation_version bigint NOT NULL CHECK (account_revocation_version>=1), device_credential_version bigint NOT NULL CHECK (device_credential_version>=1), device_risk_version bigint NOT NULL CHECK (device_risk_version>=1), installation_credential_version bigint NOT NULL CHECK (installation_credential_version>=1), link_auth_version bigint NOT NULL CHECK (link_auth_version>=1), link_access_version bigint NOT NULL CHECK (link_access_version>=1), link_row_version bigint NOT NULL CHECK (link_row_version>=1), verified_at timestamptz NOT NULL CHECK (verified_at<>'infinity'::timestamptz AND verified_at<>'-infinity'::timestamptz), expires_at timestamptz NOT NULL CHECK (expires_at<>'infinity'::timestamptz AND expires_at<>'-infinity'::timestamptz), created_at timestamptz NOT NULL CHECK (created_at<>'infinity'::timestamptz AND created_at<>'-infinity'::timestamptz), CHECK(expires_at>verified_at), FOREIGN KEY(session_id,authority_id) REFERENCES vnext_control_plane.vnext_sessions(session_id,authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT);
+CREATE FUNCTION vnext_control_plane.vnext_recent_reauthentication_events_session_state_match() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM vnext_control_plane.vnext_sessions s WHERE s.session_id=NEW.session_id AND s.authority_id=NEW.authority_id AND s.session_kind='online') THEN RAISE EXCEPTION 'VNEXT_REAUTH_ONLINE_SESSION_REQUIRED' USING ERRCODE='P0001'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM vnext_control_plane.vnext_sessions s WHERE s.session_id=NEW.session_id AND s.authority_id=NEW.authority_id AND s.status='active' AND NEW.verified_at>=s.issued_at AND NEW.verified_at<s.expires_at AND NEW.expires_at<=s.expires_at AND ROW(NEW.account_auth_version,NEW.account_access_version,NEW.account_revocation_version,NEW.device_credential_version,NEW.device_risk_version,NEW.installation_credential_version,NEW.link_auth_version,NEW.link_access_version,NEW.link_row_version)=ROW(s.account_auth_version,s.account_access_version,s.account_revocation_version,s.device_credential_version,s.device_risk_version,s.installation_credential_version,s.link_auth_version,s.link_access_version,s.link_row_version)) THEN RAISE EXCEPTION 'VNEXT_REAUTH_SESSION_STATE_INVALID' USING ERRCODE='P0001'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM vnext_control_plane.vnext_sessions s JOIN vnext_control_plane.vnext_authorities au ON au.authority_id=s.authority_id JOIN vnext_control_plane.vnext_accounts a ON a.authority_id=s.authority_id AND a.account_id=s.account_id JOIN vnext_control_plane.vnext_trusted_devices d ON d.authority_id=s.authority_id AND d.device_id=s.device_id JOIN vnext_control_plane.vnext_device_installations i ON i.authority_id=s.authority_id AND i.device_id=s.device_id AND i.installation_id=s.installation_id JOIN vnext_control_plane.vnext_account_device_links l ON l.authority_id=s.authority_id AND l.account_id=s.account_id AND l.device_id=s.device_id AND l.installation_id=s.installation_id AND l.link_id=s.link_id WHERE s.session_id=NEW.session_id AND s.authority_id=NEW.authority_id AND au.status='active' AND a.status='active' AND d.status='active' AND i.status='active' AND l.status='active' AND ROW(s.account_auth_version,s.account_access_version,s.account_revocation_version,s.device_credential_version,s.device_risk_version,s.installation_credential_version,s.link_auth_version,s.link_access_version,s.link_row_version)=ROW(a.auth_version,a.access_version,a.revocation_version,d.credential_version,d.risk_version,i.credential_version,l.auth_version,l.access_version,l.row_version)) THEN RAISE EXCEPTION 'VNEXT_REAUTH_CURRENT_PARENT_INVALID' USING ERRCODE='P0001'; END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE FUNCTION vnext_control_plane.vnext_recent_reauthentication_events_no_update() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN RAISE EXCEPTION 'vNext reauth event is append-only' USING ERRCODE='P0001'; END; $$; CREATE FUNCTION vnext_control_plane.vnext_recent_reauthentication_events_no_delete() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN RAISE EXCEPTION 'vNext reauth event is append-only' USING ERRCODE='P0001'; END; $$;
+CREATE TRIGGER vnext_recent_reauthentication_events_session_state_match BEFORE INSERT ON vnext_control_plane.vnext_recent_reauthentication_events FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_recent_reauthentication_events_session_state_match(); CREATE TRIGGER vnext_recent_reauthentication_events_no_update BEFORE UPDATE ON vnext_control_plane.vnext_recent_reauthentication_events FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_recent_reauthentication_events_no_update(); CREATE TRIGGER vnext_recent_reauthentication_events_no_delete BEFORE DELETE ON vnext_control_plane.vnext_recent_reauthentication_events FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_recent_reauthentication_events_no_delete();
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_sessions_parent_state_match() FROM PUBLIC; REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_sessions_identity_immutable() FROM PUBLIC; REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_sessions_lifecycle_monotonic() FROM PUBLIC; REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_sessions_no_delete() FROM PUBLIC; REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_recent_reauthentication_events_session_state_match() FROM PUBLIC; REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_recent_reauthentication_events_no_update() FROM PUBLIC; REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_recent_reauthentication_events_no_delete() FROM PUBLIC; GRANT SELECT ON TABLE vnext_control_plane.vnext_sessions, vnext_control_plane.vnext_recent_reauthentication_events TO vnext_pg17_verifier;`;
+const SESSIONS_REAUTHENTICATION_MIGRATION = Object.freeze({ migrationId: 'vnext-pg17-sessions-reauthentication-15', semanticVersion: 15, sql: SESSIONS_REAUTHENTICATION_SQL, manifestSha256: sha256(SESSIONS_REAUTHENTICATION_SQL) });
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -717,6 +745,7 @@ const MIGRATIONS = Object.freeze([
   BOOTSTRAP_CONSUMPTIONS_MIGRATION,
   AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION,
   TRUST_ROOT_EVIDENCE_MIGRATION,
+  SESSIONS_REAUTHENTICATION_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -835,6 +864,13 @@ $function$
   vnext_trust_root_evidence_insert_guard: '8ede7761a86bf42a64c514fc77c7bfaf4542018643d50b2314b0046b275ef270',
   vnext_trust_root_evidence_no_delete: '7f508cfd2370fef9765de72fba3dc2e7f6cd5d9780defea7837b138cb5d1b045',
   vnext_trust_root_evidence_no_update: '444a1f1d73b28c10c003ef154335fe88c67f2a53bf89d076f83c377b2f405997',
+  vnext_recent_reauthentication_events_no_delete: 'e32110fb31f2d25eaa24b0b9892ac3854e09dd031c89dd9f3690dfb463fc38a7',
+  vnext_recent_reauthentication_events_no_update: 'a52caaa0a3ef69dae20bb2b375df2a6cabb78e3da077e25748aa42d6c9e6b051',
+  vnext_recent_reauthentication_events_session_state_match: '32af04ca45eea7a87903e5e9624bea3eb858d9d94491d72efb8d328f27d98f97',
+  vnext_sessions_identity_immutable: '76d9e879b79c11dcdbbc35923fd02aecee9e3872644cc38d84b3f1b94d7caff3',
+  vnext_sessions_lifecycle_monotonic: 'd98f01791b5c6e6ab51a3c815334f7055d57c56bd3eb118723dae6be9c7cd7c6',
+  vnext_sessions_no_delete: '6b7f632dc9141b0bcc00c44b562d7ee50b8b43dec992fbc80f4a5eca7611070c',
+  vnext_sessions_parent_state_match: 'ff2b7ec86eef777566246bd67013efe247706f15b4088ea8dc2025bdc1318cc4',
 });
 
 const expectedCatalog = Object.freeze({
@@ -853,9 +889,11 @@ const expectedCatalog = Object.freeze({
     'vnext_control_plane.vnext_data_scope_grants',
     'vnext_control_plane.vnext_device_installations',
     'vnext_control_plane.vnext_profile_bindings',
+    'vnext_control_plane.vnext_recent_reauthentication_events',
     'vnext_control_plane.vnext_role_grants',
     'vnext_control_plane.vnext_schema_meta',
     'vnext_control_plane.vnext_schema_migrations',
+    'vnext_control_plane.vnext_sessions',
     'vnext_control_plane.vnext_trust_root_evidence',
     'vnext_control_plane.vnext_trusted_devices',
     'vnext_control_plane.vnext_verified_contacts',
@@ -879,6 +917,13 @@ const expectedCatalog = Object.freeze({
     'vnext_trust_root_evidence_insert_guard',
     'vnext_trust_root_evidence_no_delete',
     'vnext_trust_root_evidence_no_update',
+    'vnext_sessions_parent_state_match',
+    'vnext_sessions_identity_immutable',
+    'vnext_sessions_lifecycle_monotonic',
+    'vnext_sessions_no_delete',
+    'vnext_recent_reauthentication_events_session_state_match',
+    'vnext_recent_reauthentication_events_no_update',
+    'vnext_recent_reauthentication_events_no_delete',
   ]),
   owners: Object.freeze({ database: 'vnext_pg17_owner', schema: 'vnext_pg17_owner', table: 'vnext_pg17_owner' }),
   functionDefinitionSha256: FUNCTION_DEFINITION_SHA256,
@@ -899,6 +944,7 @@ module.exports = {
   BOOTSTRAP_CONSUMPTIONS_MIGRATION,
   AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION,
   TRUST_ROOT_EVIDENCE_MIGRATION,
+  SESSIONS_REAUTHENTICATION_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

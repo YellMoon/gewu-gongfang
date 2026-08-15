@@ -247,3 +247,9 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - Migration 14 adds only the append-only `vnext_trust_root_evidence` ledger. Bootstrap evidence binds the durable M12 marker; recovery evidence binds an accepted owner-recovery receipt plus the caller-supplied backup ID and manifest hash. It does not perform backup, signature, nonce, credential, or recovery I/O.
 - The SECURITY DEFINER guard rejects time regressions, ordinary recovery receipts, malformed backup pairing/hashes, and noncanonical recovery receipt state. Catalog and disposable PG17 checks fail closed on M13 prefixes and changed unique/FK/actor/backup/index/ACL/function/trigger/public-shadow facts.
 - This remains synthetic local PostgreSQL 17 verification only. No RDS/ECS, production trust-root procedure, business data, desktop data, NAS, removable media, or deployment was accessed.
+
+### PostgreSQL 17 sessions and recent-reauthentication evidence (2026-08-15)
+
+- Migration 15 adds only `vnext_sessions` and `vnext_recent_reauthentication_events`, together with their seven owner-owned SECURITY DEFINER guards. It creates no issuer, credential verifier, token, API, runtime writer, or production connection.
+- Disposable PostgreSQL 17 checks verify the full captured nine-version vector, online/init session distinction, finite session and reauthentication windows, parent-currentness, session identity immutability, one-way revoke lifecycle, and append-only reauthentication rows. Verifier access remains SELECT-only and runtime has no relation access.
+- The catalog rejects a missing M15 after an exact M1-M14 prefix and rejects M15 index, FK, ACL, and trigger drift. Evidence is synthetic local PostgreSQL 17 only; no RDS/ECS, desktop data, NAS, removable media, or deployment was accessed.
