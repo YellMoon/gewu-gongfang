@@ -117,12 +117,12 @@ Expected: `vNext PG17 account-device-link revocation mutation checks passed`.
 - Modify: `docs/superpowers/plans/2026-08-13-vnext-control-plane-first.md`
 - Modify: this plan
 
-- [ ] **Step 1: Register the focused suite once**
+- [x] **Step 1: Register the focused suite once**
 
 Run the new cases after role mutation in the one disposable runtime. Update the
 runner test to lock the order and its `finally` cleanup.
 
-- [ ] **Step 2: Run verification**
+- [x] **Step 2: Run verification**
 
 Run:
 
@@ -137,7 +137,7 @@ npm.cmd test
 Record only fresh observed results. Do not package a desktop build or publish
 OSS artifacts for this synthetic-only control-plane change.
 
-- [ ] **Step 3: Commit and push task-only files**
+- [x] **Step 3: Commit and push task-only files**
 
 Use the repository-required dated commit message, then push `gewu HEAD:master`.
 
