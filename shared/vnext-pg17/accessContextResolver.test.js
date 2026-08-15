@@ -21,7 +21,16 @@ function manifest() {
   ], roleDefaults: { super_admin: ['access.manage', 'device.revoke', 'user.review'], teacher: [], student: [] } };
 }
 
-async function fixture(runtime, { includeReauthentication = true } = {}) {
+async function fixture(runtime, {
+  includeReauthentication = true,
+  sessionKind = 'online',
+  sessionStatus = 'active',
+  issuedAt = BOOTSTRAP_NOW,
+  expiresAt = '2026-08-15T01:00:00.000Z',
+  revokedAt = null,
+  reauthenticationVerifiedAt = BOOTSTRAP_NOW,
+  reauthenticationExpiresAt = '2026-08-15T00:10:00.000Z',
+} = {}) {
   const handle = await runtime.createIsolatedHandle();
   const catalog = createVNextPg17CatalogBoundary(runtime);
   await catalog.apply(handle, { appliedAt: BOOTSTRAP_NOW, appliedBy: 'access-context-test' });
@@ -36,9 +45,9 @@ async function fixture(runtime, { includeReauthentication = true } = {}) {
   const bootstrap = createVNextPg17FirstAuthorityBootstrapMutation({ runtime, handle, verifierBoundary: bootstrapBoundary, now: () => BOOTSTRAP_NOW, idFactory: kind => `bootstrap-${kind}` });
   await bootstrap.execute(bootstrapAssertion, { type: 'authority.bootstrap', bootstrapIntentId: 'bootstrap-intent-1', authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'installation-1', installationPublicKey: 'public-key-1', installationKeyFingerprint: 'a'.repeat(64), policyManifest: manifest(), idempotencyKey: 'bootstrap-key-1', reasonCode: 'bootstrap' });
   await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
-    await facade.query("INSERT INTO vnext_control_plane.vnext_sessions(session_id,authority_id,account_id,device_id,installation_id,link_id,session_kind,status,issued_at,expires_at,revoked_at,account_auth_version,account_access_version,account_revocation_version,device_credential_version,device_risk_version,installation_credential_version,link_auth_version,link_access_version,link_row_version,row_version,created_at,updated_at) VALUES('session-1','authority-1','account-1','device-1','installation-1','bootstrap-bootstrap-link','online','active',$1,$2,NULL,1,1,1,1,1,1,1,1,1,1,$1,$1)", [BOOTSTRAP_NOW, '2026-08-15T01:00:00.000Z']);
+    await facade.query("INSERT INTO vnext_control_plane.vnext_sessions(session_id,authority_id,account_id,device_id,installation_id,link_id,session_kind,status,issued_at,expires_at,revoked_at,account_auth_version,account_access_version,account_revocation_version,device_credential_version,device_risk_version,installation_credential_version,link_auth_version,link_access_version,link_row_version,row_version,created_at,updated_at) VALUES('session-1','authority-1','account-1','device-1','installation-1','bootstrap-bootstrap-link',$1,$2,$3,$4,$5,1,1,1,1,1,1,1,1,1,1,$3,$3)", [sessionKind, sessionStatus, issuedAt, expiresAt, revokedAt]);
     if (includeReauthentication) {
-      await facade.query("INSERT INTO vnext_control_plane.vnext_recent_reauthentication_events(reauth_event_id,authority_id,session_id,factor_class,evidence_sha256,account_auth_version,account_access_version,account_revocation_version,device_credential_version,device_risk_version,installation_credential_version,link_auth_version,link_access_version,link_row_version,verified_at,expires_at,created_at) VALUES('reauth-1','authority-1','session-1','passkey',repeat('c',64),1,1,1,1,1,1,1,1,1,$1,$2,$1)", [BOOTSTRAP_NOW, '2026-08-15T00:10:00.000Z']);
+      await facade.query("INSERT INTO vnext_control_plane.vnext_recent_reauthentication_events(reauth_event_id,authority_id,session_id,factor_class,evidence_sha256,account_auth_version,account_access_version,account_revocation_version,device_credential_version,device_risk_version,installation_credential_version,link_auth_version,link_access_version,link_row_version,verified_at,expires_at,created_at) VALUES('reauth-1','authority-1','session-1','passkey',repeat('c',64),1,1,1,1,1,1,1,1,1,$1,$2,$1)", [reauthenticationVerifiedAt, reauthenticationExpiresAt]);
     }
   });
   const boundary = createVNextPg17TrustedSessionVerifierBoundary({ databaseBinding: handle, verifyPresentation: () => ({ sessionId: 'session-1' }) });
@@ -85,12 +94,41 @@ async function runAccessContextResolverCases(runtime) {
     await runtime.disposeHandle(withoutReauth.handle);
   }
 
+  for (const options of [
+    { reauthenticationExpiresAt: NOW },
+    { reauthenticationVerifiedAt: '2026-08-15T00:02:00.000Z', reauthenticationExpiresAt: '2026-08-15T00:10:00.000Z' },
+  ]) {
+    const staleReauthentication = await fixture(runtime, options);
+    try {
+      const resolver = createVNextPg17AccessContextResolver({ runtime, handle: staleReauthentication.handle, verifierBoundary: staleReauthentication.boundary, surface: 'desktop', now: () => NOW });
+      const context = await resolver.resolve(staleReauthentication.assertion);
+      assert.strictEqual(context.reauthenticatedUntil, null);
+    } finally {
+      await runtime.disposeHandle(staleReauthentication.handle);
+    }
+  }
+
   const expired = await fixture(runtime);
   try {
     const resolver = createVNextPg17AccessContextResolver({ runtime, handle: expired.handle, verifierBoundary: expired.boundary, surface: 'desktop', now: () => '2026-08-15T01:00:00.000Z' });
     await expectUnavailable(() => resolver.resolve(expired.assertion));
   } finally {
     await runtime.disposeHandle(expired.handle);
+  }
+
+  for (const options of [
+    { includeReauthentication: false, sessionKind: 'initialization' },
+    { includeReauthentication: false, sessionStatus: 'expired' },
+    { includeReauthentication: false, sessionStatus: 'revoked', revokedAt: '2026-08-15T00:01:00.000Z' },
+    { includeReauthentication: false, issuedAt: '2026-08-15T00:02:00.000Z' },
+  ]) {
+    const invalidSession = await fixture(runtime, options);
+    try {
+      const resolver = createVNextPg17AccessContextResolver({ runtime, handle: invalidSession.handle, verifierBoundary: invalidSession.boundary, surface: 'desktop', now: () => NOW });
+      await expectUnavailable(() => resolver.resolve(invalidSession.assertion));
+    } finally {
+      await runtime.disposeHandle(invalidSession.handle);
+    }
   }
 
   const stale = await fixture(runtime);
@@ -101,6 +139,34 @@ async function runAccessContextResolverCases(runtime) {
     await expectUnavailable(() => resolver.resolve(stale.assertion));
   } finally {
     await runtime.disposeHandle(stale.handle);
+  }
+
+  const parentsAndVectors = await fixture(runtime);
+  try {
+    const resolver = createVNextPg17AccessContextResolver({ runtime, handle: parentsAndVectors.handle, verifierBoundary: parentsAndVectors.boundary, surface: 'desktop', now: () => NOW });
+    const cases = [
+      ["UPDATE vnext_control_plane.vnext_authorities SET status='disabled' WHERE authority_id='authority-1'", "UPDATE vnext_control_plane.vnext_authorities SET status='active' WHERE authority_id='authority-1'"],
+      ["UPDATE vnext_control_plane.vnext_accounts SET status='disabled' WHERE authority_id='authority-1' AND account_id='account-1'", "UPDATE vnext_control_plane.vnext_accounts SET status='active' WHERE authority_id='authority-1' AND account_id='account-1'"],
+      ["UPDATE vnext_control_plane.vnext_trusted_devices SET status='risk_limited' WHERE authority_id='authority-1' AND device_id='device-1'", "UPDATE vnext_control_plane.vnext_trusted_devices SET status='active' WHERE authority_id='authority-1' AND device_id='device-1'"],
+      ["UPDATE vnext_control_plane.vnext_device_installations SET status='retired' WHERE authority_id='authority-1' AND device_id='device-1' AND installation_id='installation-1'", "UPDATE vnext_control_plane.vnext_device_installations SET status='active' WHERE authority_id='authority-1' AND device_id='device-1' AND installation_id='installation-1'"],
+      ["UPDATE vnext_control_plane.vnext_account_device_links SET status='expired' WHERE authority_id='authority-1' AND link_id='bootstrap-bootstrap-link'", "UPDATE vnext_control_plane.vnext_account_device_links SET status='active' WHERE authority_id='authority-1' AND link_id='bootstrap-bootstrap-link'"],
+      ["UPDATE vnext_control_plane.vnext_accounts SET auth_version=2 WHERE authority_id='authority-1' AND account_id='account-1'", "UPDATE vnext_control_plane.vnext_accounts SET auth_version=1 WHERE authority_id='authority-1' AND account_id='account-1'"],
+      ["UPDATE vnext_control_plane.vnext_accounts SET access_version=2 WHERE authority_id='authority-1' AND account_id='account-1'", "UPDATE vnext_control_plane.vnext_accounts SET access_version=1 WHERE authority_id='authority-1' AND account_id='account-1'"],
+      ["UPDATE vnext_control_plane.vnext_accounts SET revocation_version=2 WHERE authority_id='authority-1' AND account_id='account-1'", "UPDATE vnext_control_plane.vnext_accounts SET revocation_version=1 WHERE authority_id='authority-1' AND account_id='account-1'"],
+      ["UPDATE vnext_control_plane.vnext_trusted_devices SET credential_version=2 WHERE authority_id='authority-1' AND device_id='device-1'", "UPDATE vnext_control_plane.vnext_trusted_devices SET credential_version=1 WHERE authority_id='authority-1' AND device_id='device-1'"],
+      ["UPDATE vnext_control_plane.vnext_trusted_devices SET risk_version=2 WHERE authority_id='authority-1' AND device_id='device-1'", "UPDATE vnext_control_plane.vnext_trusted_devices SET risk_version=1 WHERE authority_id='authority-1' AND device_id='device-1'"],
+      ["UPDATE vnext_control_plane.vnext_device_installations SET credential_version=2 WHERE authority_id='authority-1' AND device_id='device-1' AND installation_id='installation-1'", "UPDATE vnext_control_plane.vnext_device_installations SET credential_version=1 WHERE authority_id='authority-1' AND device_id='device-1' AND installation_id='installation-1'"],
+      ["UPDATE vnext_control_plane.vnext_account_device_links SET auth_version=2 WHERE authority_id='authority-1' AND link_id='bootstrap-bootstrap-link'", "UPDATE vnext_control_plane.vnext_account_device_links SET auth_version=1 WHERE authority_id='authority-1' AND link_id='bootstrap-bootstrap-link'"],
+      ["UPDATE vnext_control_plane.vnext_account_device_links SET access_version=2 WHERE authority_id='authority-1' AND link_id='bootstrap-bootstrap-link'", "UPDATE vnext_control_plane.vnext_account_device_links SET access_version=1 WHERE authority_id='authority-1' AND link_id='bootstrap-bootstrap-link'"],
+      ["UPDATE vnext_control_plane.vnext_account_device_links SET row_version=2 WHERE authority_id='authority-1' AND link_id='bootstrap-bootstrap-link'", "UPDATE vnext_control_plane.vnext_account_device_links SET row_version=1 WHERE authority_id='authority-1' AND link_id='bootstrap-bootstrap-link'"],
+    ];
+    for (const [change, restore] of cases) {
+      await withVNextPg17SyntheticQuery(parentsAndVectors.handle, 'fixture-provisioner', facade => facade.query(change));
+      await expectUnavailable(() => resolver.resolve(parentsAndVectors.assertion));
+      await withVNextPg17SyntheticQuery(parentsAndVectors.handle, 'fixture-provisioner', facade => facade.query(restore));
+    }
+  } finally {
+    await runtime.disposeHandle(parentsAndVectors.handle);
   }
 }
 
