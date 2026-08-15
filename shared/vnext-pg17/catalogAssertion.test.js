@@ -2630,6 +2630,101 @@ async function runCatalogAssertionCases(runtime) {
       'ALTER TABLE vnext_control_plane.vnext_recent_reauthentication_events DISABLE TRIGGER vnext_recent_reauthentication_events_no_delete',
     ));
     await assert.rejects(() => catalog.assert(reauthTriggerHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const sessionEnumHandle = await createHandle();
+    await catalog.apply(sessionEnumHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(sessionEnumHandle, 'fixture-provisioner', async facade => {
+      await facade.query('ALTER TABLE vnext_control_plane.vnext_sessions DROP CONSTRAINT vnext_sessions_session_kind_check');
+      await facade.query("ALTER TABLE vnext_control_plane.vnext_sessions ADD CONSTRAINT vnext_sessions_session_kind_check CHECK (session_kind IN ('online','initialization','offline'))");
+    });
+    await assert.rejects(() => catalog.assert(sessionEnumHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const reauthWindowHandle = await createHandle();
+    await catalog.apply(reauthWindowHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(reauthWindowHandle, 'fixture-provisioner', async facade => {
+      await facade.query('ALTER TABLE vnext_control_plane.vnext_recent_reauthentication_events DROP CONSTRAINT vnext_recent_reauthentication_events_check');
+      await facade.query('ALTER TABLE vnext_control_plane.vnext_recent_reauthentication_events ADD CONSTRAINT vnext_recent_reauthentication_events_check CHECK (expires_at >= verified_at)');
+    });
+    await assert.rejects(() => catalog.assert(reauthWindowHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const sessionLifecycleHandle = await createHandle();
+    await catalog.apply(sessionLifecycleHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(sessionLifecycleHandle, 'fixture-provisioner', async facade => {
+      await facade.query('ALTER TABLE vnext_control_plane.vnext_sessions DROP CONSTRAINT vnext_sessions_check3');
+      await facade.query('ALTER TABLE vnext_control_plane.vnext_sessions ADD CONSTRAINT vnext_sessions_check3 CHECK (status IN (\'active\',\'revoked\',\'expired\'))');
+    });
+    await assert.rejects(() => catalog.assert(sessionLifecycleHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const reauthDefaultHandle = await createHandle();
+    await catalog.apply(reauthDefaultHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(reauthDefaultHandle, 'fixture-provisioner', facade => facade.query(
+      "ALTER TABLE vnext_control_plane.vnext_recent_reauthentication_events ALTER COLUMN factor_class SET DEFAULT 'password'",
+    ));
+    await assert.rejects(() => catalog.assert(reauthDefaultHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const reauthNullabilityHandle = await createHandle();
+    await catalog.apply(reauthNullabilityHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(reauthNullabilityHandle, 'fixture-provisioner', facade => facade.query(
+      'ALTER TABLE vnext_control_plane.vnext_recent_reauthentication_events ALTER COLUMN evidence_sha256 DROP NOT NULL',
+    ));
+    await assert.rejects(() => catalog.assert(reauthNullabilityHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const sessionsOwnerHandle = await createHandle();
+    await catalog.apply(sessionsOwnerHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(sessionsOwnerHandle, 'fixture-provisioner', facade => facade.query(
+      'ALTER TABLE vnext_control_plane.vnext_sessions OWNER TO vnext_pg17_migrator',
+    ));
+    await assert.rejects(() => catalog.assert(sessionsOwnerHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const sessionFunctionSecurityHandle = await createHandle();
+    await catalog.apply(sessionFunctionSecurityHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(sessionFunctionSecurityHandle, 'fixture-provisioner', facade => facade.query(
+      'ALTER FUNCTION vnext_control_plane.vnext_sessions_no_delete() SECURITY INVOKER',
+    ));
+    await assert.rejects(() => catalog.assert(sessionFunctionSecurityHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const reauthFunctionPathHandle = await createHandle();
+    await catalog.apply(reauthFunctionPathHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(reauthFunctionPathHandle, 'fixture-provisioner', facade => facade.query(
+      'ALTER FUNCTION vnext_control_plane.vnext_recent_reauthentication_events_no_delete() SET search_path TO public',
+    ));
+    await assert.rejects(() => catalog.assert(reauthFunctionPathHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const sessionPublicExecuteHandle = await createHandle();
+    await catalog.apply(sessionPublicExecuteHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(sessionPublicExecuteHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_sessions_no_delete() TO PUBLIC',
+    ));
+    await assert.rejects(() => catalog.assert(sessionPublicExecuteHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const sessionsPublicShadowHandle = await createHandle();
+    await catalog.apply(sessionsPublicShadowHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(sessionsPublicShadowHandle, 'fixture-provisioner', facade => facade.query(
+      'CREATE TABLE public.vnext_sessions (id integer)',
+    ));
+    await assert.rejects(() => catalog.assert(sessionsPublicShadowHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const reauthFunctionBodyHandle = await createHandle();
+    await catalog.apply(reauthFunctionBodyHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(reauthFunctionBodyHandle, 'fixture-provisioner', facade => facade.query(
+      "CREATE OR REPLACE FUNCTION vnext_control_plane.vnext_recent_reauthentication_events_no_delete() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN RETURN OLD; END; $$",
+    ));
+    await assert.rejects(() => catalog.assert(reauthFunctionBodyHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const sessionTriggerEventHandle = await createHandle();
+    await catalog.apply(sessionTriggerEventHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(sessionTriggerEventHandle, 'fixture-provisioner', async facade => {
+      await facade.query('DROP TRIGGER vnext_sessions_no_delete ON vnext_control_plane.vnext_sessions');
+      await facade.query('CREATE TRIGGER vnext_sessions_no_delete BEFORE UPDATE ON vnext_control_plane.vnext_sessions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_sessions_no_delete()');
+    });
+    await assert.rejects(() => catalog.assert(sessionTriggerEventHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const reauthCollationHandle = await createHandle();
+    await catalog.apply(reauthCollationHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(reauthCollationHandle, 'fixture-provisioner', facade => facade.query(
+      'ALTER TABLE vnext_control_plane.vnext_recent_reauthentication_events ALTER COLUMN factor_class TYPE text COLLATE "default"',
+    ));
+    await assert.rejects(() => catalog.assert(reauthCollationHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
   } finally {
     if (priorHandle) {
       await runtime.disposeHandle(priorHandle);
