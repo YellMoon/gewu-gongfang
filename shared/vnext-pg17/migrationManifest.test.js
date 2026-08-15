@@ -15,6 +15,7 @@ const {
   AUTHORIZATION_OUTBOX_EVENTS_MIGRATION,
   BOOTSTRAP_CONSUMPTIONS_MIGRATION,
   AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION,
+  TRUST_ROOT_EVIDENCE_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,
@@ -42,9 +43,12 @@ async function runManifestCases() {
     'vnext_authorization_policy_publications_insert_guard',
     'vnext_authorization_policy_publications_no_delete',
     'vnext_authorization_policy_publications_no_update',
+    'vnext_trust_root_evidence_insert_guard',
+    'vnext_trust_root_evidence_no_delete',
+    'vnext_trust_root_evidence_no_update',
   ]);
   assert.strictEqual(sha256(FIRST_MIGRATION.sql), FIRST_MIGRATION.manifestSha256);
-  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
   assert.strictEqual(FOUNDATION_IDENTITY_DEVICE_MIGRATION.migrationId, 'vnext-pg17-foundation-identity-device-2');
   assert.match(FOUNDATION_IDENTITY_DEVICE_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
   assert.strictEqual(
@@ -156,6 +160,22 @@ async function runManifestCases() {
   assert.match(AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION.sql, /CREATE TRIGGER vnext_authorization_policy_publications_insert_guard/);
   assert.match(AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION.sql, /CREATE TRIGGER vnext_authorization_policy_publications_no_update/);
   assert.match(AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION.sql, /CREATE TRIGGER vnext_authorization_policy_publications_no_delete/);
+  assert.ok(Object.isFrozen(TRUST_ROOT_EVIDENCE_MIGRATION));
+  assert.strictEqual(TRUST_ROOT_EVIDENCE_MIGRATION.migrationId, 'vnext-pg17-trust-root-evidence-14');
+  assert.strictEqual(TRUST_ROOT_EVIDENCE_MIGRATION.semanticVersion, 14);
+  assert.match(TRUST_ROOT_EVIDENCE_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
+  assert.strictEqual(sha256(TRUST_ROOT_EVIDENCE_MIGRATION.sql), TRUST_ROOT_EVIDENCE_MIGRATION.manifestSha256);
+  assert.match(TRUST_ROOT_EVIDENCE_MIGRATION.sql, /CREATE TABLE vnext_control_plane\.vnext_trust_root_evidence/);
+  for (const column of ['evidence_id', 'authority_id', 'receipt_id', 'actor_kind', 'event_id', 'assertion_evidence_sha256', 'backup_id', 'backup_manifest_sha256', 'created_at']) {
+    assert.match(TRUST_ROOT_EVIDENCE_MIGRATION.sql, new RegExp(`\\b${column}\\b`));
+  }
+  assert.match(TRUST_ROOT_EVIDENCE_MIGRATION.sql, /deployment_bootstrap/);
+  assert.match(TRUST_ROOT_EVIDENCE_MIGRATION.sql, /owner_recovery_event/);
+  assert.match(TRUST_ROOT_EVIDENCE_MIGRATION.sql, /vnext_bootstrap_consumptions/);
+  assert.match(TRUST_ROOT_EVIDENCE_MIGRATION.sql, /authority\.owner_recover/);
+  assert.match(TRUST_ROOT_EVIDENCE_MIGRATION.sql, /CREATE TRIGGER vnext_trust_root_evidence_insert_guard/);
+  assert.match(TRUST_ROOT_EVIDENCE_MIGRATION.sql, /CREATE TRIGGER vnext_trust_root_evidence_no_update/);
+  assert.match(TRUST_ROOT_EVIDENCE_MIGRATION.sql, /CREATE TRIGGER vnext_trust_root_evidence_no_delete/);
   assert.deepStrictEqual(expectedCatalog.relations, [
     'vnext_control_plane.vnext_account_device_links',
     'vnext_control_plane.vnext_accounts',
@@ -173,6 +193,7 @@ async function runManifestCases() {
     'vnext_control_plane.vnext_role_grants',
     'vnext_control_plane.vnext_schema_meta',
     'vnext_control_plane.vnext_schema_migrations',
+    'vnext_control_plane.vnext_trust_root_evidence',
     'vnext_control_plane.vnext_trusted_devices',
     'vnext_control_plane.vnext_verified_contacts',
   ]);

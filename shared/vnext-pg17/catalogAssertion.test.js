@@ -17,6 +17,7 @@ const {
   AUTHORIZATION_OUTBOX_EVENTS_MIGRATION,
   BOOTSTRAP_CONSUMPTIONS_MIGRATION,
   AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION,
+  TRUST_ROOT_EVIDENCE_MIGRATION,
 } = require('./migrationManifest');
 
 const FOUNDATION_INSTANT = '2026-08-15T00:00:00.000Z';
@@ -972,6 +973,66 @@ async function assertAuthorizationPolicyPublicationSemantics(handle) {
   await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_authorization_policy_publications')));
 }
 
+async function assertTrustRootEvidenceSemantics(handle) {
+  await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+    const recoveryResult = JSON.stringify({
+      authorityId: 'authority-1',
+      code: 'OWNER_RECOVERY_COMPLETED',
+      replacementAccountId: 'replacement-account-1',
+      status: 'accepted',
+    });
+    const insertReceipt = ({
+      receiptId,
+      actorKey = 'recovery:recovery-event-1',
+      commandType = 'authority.owner_recover',
+      targetKind = 'authority',
+      targetId = 'authority-1',
+      outcome = 'accepted',
+      resultCode = 'OWNER_RECOVERY_COMPLETED',
+      resultJson = recoveryResult,
+      createdAt = FOUNDATION_INSTANT,
+    }) => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_authorization_command_receipts (receipt_id, authority_id, actor_key, actor_account_id, idempotency_key, command_type, target_kind, target_id, canonical_request_sha256, expected_row_version, outcome, result_code, canonical_result_json, canonical_result_sha256, committed_auth_version, committed_access_version, committed_revocation_version, committed_target_row_version, created_at) VALUES ($1, \'authority-1\', $2, NULL, $3, $4, $5, $6, repeat(\'a\', 64), NULL, $7, $8, $9, repeat(\'b\', 64), NULL, NULL, NULL, NULL, $10)',
+      [receiptId, actorKey, `recovery-key-${receiptId}`, commandType, targetKind, targetId, outcome, resultCode, resultJson, createdAt],
+    );
+    const insertEvidence = ({
+      evidenceId,
+      authorityId = 'authority-1',
+      receiptId,
+      actorKind,
+      eventId,
+      assertionHash = 'c'.repeat(64),
+      backupId = null,
+      backupHash = null,
+      createdAt = FOUNDATION_INSTANT,
+    }) => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_trust_root_evidence (evidence_id, authority_id, receipt_id, actor_kind, event_id, assertion_evidence_sha256, backup_id, backup_manifest_sha256, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+      [evidenceId, authorityId, receiptId, actorKind, eventId, assertionHash, backupId, backupHash, createdAt],
+    );
+
+    await insertReceipt({ receiptId: 'recovery-receipt-1' });
+    await assert.rejects(() => insertEvidence({ evidenceId: 'bootstrap-with-backup', receiptId: 'bootstrap-receipt-1', actorKind: 'deployment_bootstrap', eventId: 'bootstrap-intent-1', backupId: 'backup-3', backupHash: 'd'.repeat(64) }), error => error && error.constraint === 'vnext_trust_root_evidence_check');
+    await insertEvidence({ evidenceId: 'bootstrap-evidence-1', receiptId: 'bootstrap-receipt-1', actorKind: 'deployment_bootstrap', eventId: 'bootstrap-intent-1' });
+
+    await assert.rejects(() => insertEvidence({ evidenceId: 'bootstrap-before-marker', receiptId: 'bootstrap-receipt-1', actorKind: 'deployment_bootstrap', eventId: 'bootstrap-intent-1', createdAt: '2026-08-14T23:59:59.999Z' }), error => error && error.code === 'P0001' && error.message === 'VNEXT_TRUST_ROOT_EVIDENCE_RECEIPT_INVALID');
+    await insertReceipt({ receiptId: 'recovery-bad-command', commandType: 'other.command' });
+    await assert.rejects(() => insertEvidence({ evidenceId: 'recovery-bad-command-evidence', receiptId: 'recovery-bad-command', actorKind: 'owner_recovery_event', eventId: 'recovery-event-bad-command', backupId: 'backup-2', backupHash: 'd'.repeat(64) }), error => error && error.code === 'P0001' && error.message === 'VNEXT_TRUST_ROOT_EVIDENCE_RECEIPT_INVALID');
+    await assert.rejects(() => insertEvidence({ evidenceId: 'recovery-missing-backup', receiptId: 'recovery-receipt-1', actorKind: 'owner_recovery_event', eventId: 'recovery-event-1' }), error => error && error.constraint === 'vnext_trust_root_evidence_check');
+    await assert.rejects(() => insertEvidence({ evidenceId: 'recovery-upper-hash', receiptId: 'recovery-receipt-1', actorKind: 'owner_recovery_event', eventId: 'recovery-event-1', backupId: 'backup-4', backupHash: 'D'.repeat(64) }), error => error && error.constraint === 'vnext_trust_root_evidence_backup_manifest_sha256_check');
+    await insertEvidence({ evidenceId: 'recovery-evidence-1', receiptId: 'recovery-receipt-1', actorKind: 'owner_recovery_event', eventId: 'recovery-event-1', backupId: 'backup-1', backupHash: 'd'.repeat(64) });
+    assert.deepStrictEqual((await facade.query('SELECT evidence_id, actor_kind, event_id FROM vnext_control_plane.vnext_trust_root_evidence ORDER BY evidence_id')).rows, [
+      { evidence_id: 'bootstrap-evidence-1', actor_kind: 'deployment_bootstrap', event_id: 'bootstrap-intent-1' },
+      { evidence_id: 'recovery-evidence-1', actor_kind: 'owner_recovery_event', event_id: 'recovery-event-1' },
+    ]);
+    const before = await facade.query("SELECT * FROM vnext_control_plane.vnext_trust_root_evidence WHERE evidence_id = 'recovery-evidence-1'");
+    await assert.rejects(() => facade.query("UPDATE vnext_control_plane.vnext_trust_root_evidence SET event_id = 'changed' WHERE evidence_id = 'recovery-evidence-1'"), error => error && error.code === 'P0001');
+    await assert.rejects(() => facade.query("DELETE FROM vnext_control_plane.vnext_trust_root_evidence WHERE evidence_id = 'recovery-evidence-1'"), error => error && error.code === 'P0001');
+    assert.deepStrictEqual((await facade.query("SELECT * FROM vnext_control_plane.vnext_trust_root_evidence WHERE evidence_id = 'recovery-evidence-1'")).rows, before.rows);
+  });
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'verifier', facade => facade.query("INSERT INTO vnext_control_plane.vnext_trust_root_evidence (evidence_id, authority_id, receipt_id, actor_kind, event_id, assertion_evidence_sha256, backup_id, backup_manifest_sha256, created_at) VALUES ('verifier-evidence', 'authority-1', 'bootstrap-receipt-1', 'deployment_bootstrap', 'bootstrap-intent-1', repeat('c', 64), NULL, NULL, $1)", [FOUNDATION_INSTANT])));
+  await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'runtime', facade => facade.query('SELECT * FROM vnext_control_plane.vnext_trust_root_evidence')));
+}
+
 async function runCatalogAssertionCases(runtime) {
   const catalog = createVNextPg17CatalogBoundary(runtime);
   let priorHandle;
@@ -1200,6 +1261,22 @@ async function runCatalogAssertionCases(runtime) {
       assert.deepStrictEqual(absent.rows, [{ relation: null, insert_function: null, update_function: null, delete_function: null }]);
     });
     await assert.rejects(() => catalog.assert(bootstrapPrefixHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+    const policyPrefixHandle = await createHandle();
+    await withVNextPg17SyntheticQuery(policyPrefixHandle, 'fixture-provisioner', async facade => {
+      for (const migration of [FIRST_MIGRATION, FOUNDATION_IDENTITY_DEVICE_MIGRATION, ROLE_GRANTS_MIGRATION, CAPABILITY_CATALOG_MIGRATION, CAPABILITY_OVERRIDES_MIGRATION, DATA_SCOPE_GRANTS_MIGRATION, PROFILE_BINDINGS_MIGRATION, VERIFIED_CONTACTS_MIGRATION, AUTHORIZATION_COMMAND_RECEIPTS_MIGRATION, AUTHORIZATION_AUDIT_EVENTS_MIGRATION, AUTHORIZATION_OUTBOX_EVENTS_MIGRATION, BOOTSTRAP_CONSUMPTIONS_MIGRATION, AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION]) {
+        await facade.query(migration.sql);
+        if (migration.postApply) await facade.query(migration.postApply.text, migration.postApply.values(migrationInput.appliedAt));
+        await facade.query('INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)', [migration.migrationId, migration.semanticVersion, migration.manifestSha256, migrationInput.appliedAt, migrationInput.appliedBy]);
+      }
+    });
+    await assert.rejects(() => catalog.apply(policyPrefixHandle, migrationInput), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+    await withVNextPg17SyntheticQuery(policyPrefixHandle, 'fixture-provisioner', async facade => {
+      const ledgerRows = await facade.query('SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint');
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }, { semantic_version: '13' }]);
+      const absent = await facade.query("SELECT to_regclass('vnext_control_plane.vnext_trust_root_evidence') AS relation, to_regprocedure('vnext_control_plane.vnext_trust_root_evidence_insert_guard()') AS insert_function, to_regprocedure('vnext_control_plane.vnext_trust_root_evidence_no_update()') AS update_function, to_regprocedure('vnext_control_plane.vnext_trust_root_evidence_no_delete()') AS delete_function");
+      assert.deepStrictEqual(absent.rows, [{ relation: null, insert_function: null, update_function: null, delete_function: null }]);
+    });
+    await assert.rejects(() => catalog.assert(policyPrefixHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
     const handle = await createHandle();
     await assert.rejects(
       () => catalog.assert(handle),
@@ -1210,7 +1287,7 @@ async function runCatalogAssertionCases(runtime) {
       const ledgerRows = await facade.query(
         'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint',
       );
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }, { semantic_version: '13' }]);
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }, { semantic_version: '13' }, { semantic_version: '14' }]);
       const schemaMetaRows = await facade.query(
         'SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta',
       );
@@ -1251,6 +1328,7 @@ async function runCatalogAssertionCases(runtime) {
     await assertAuthorizationOutboxEventSemantics(handle);
     await assertBootstrapConsumptionSemantics(handle);
     await assertAuthorizationPolicyPublicationSemantics(handle);
+    await assertTrustRootEvidenceSemantics(handle);
     assert.deepStrictEqual(await catalog.apply(handle, migrationInput), { applied: false });
     await withVNextPg17SyntheticQuery(handle, 'verifier', async facade => {
       await facade.query('BEGIN READ ONLY');
@@ -1266,7 +1344,7 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(
       () => withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
-        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 15, repeat('a', 64), now(), 'fixture')",
+        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 16, repeat('a', 64), now(), 'fixture')",
       )),
     );
     await assert.rejects(
@@ -2168,6 +2246,26 @@ async function runCatalogAssertionCases(runtime) {
       ['policyPublicationWrongTriggerHandle', 'DROP TRIGGER vnext_authorization_policy_publications_no_update ON vnext_control_plane.vnext_authorization_policy_publications; CREATE TRIGGER vnext_authorization_policy_publications_no_update BEFORE DELETE ON vnext_control_plane.vnext_authorization_policy_publications FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_policy_publications_no_update()'],
       ['policyPublicationMissingTriggerHandle', 'DROP TRIGGER vnext_authorization_policy_publications_no_delete ON vnext_control_plane.vnext_authorization_policy_publications'],
       ['policyPublicationPublicShadowHandle', 'CREATE TABLE public.vnext_authorization_policy_publications (id integer)'],
+    ]) {
+      const driftHandle = await createHandle();
+      await catalog.apply(driftHandle, migrationInput);
+      await withVNextPg17SyntheticQuery(driftHandle, 'fixture-provisioner', facade => facade.query(sql));
+      await assert.rejects(() => catalog.assert(driftHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT', name);
+    }
+
+    for (const [name, sql] of [
+      ['trustEvidenceUniqueHandle', 'ALTER TABLE vnext_control_plane.vnext_trust_root_evidence DROP CONSTRAINT vnext_trust_root_evidence_actor_kind_event_id_key; ALTER TABLE vnext_control_plane.vnext_trust_root_evidence ADD CONSTRAINT vnext_trust_root_evidence_actor_kind_event_id_key UNIQUE (actor_kind, event_id, authority_id)'],
+      ['trustEvidenceAuthorityForeignKeyHandle', 'ALTER TABLE vnext_control_plane.vnext_trust_root_evidence DROP CONSTRAINT vnext_trust_root_evidence_authority_id_fkey'],
+      ['trustEvidenceReceiptForeignKeyHandle', 'ALTER TABLE vnext_control_plane.vnext_trust_root_evidence DROP CONSTRAINT vnext_trust_root_evidence_receipt_id_authority_id_fkey'],
+      ['trustEvidenceActorKindConstraintHandle', "ALTER TABLE vnext_control_plane.vnext_trust_root_evidence DROP CONSTRAINT vnext_trust_root_evidence_actor_kind_check; ALTER TABLE vnext_control_plane.vnext_trust_root_evidence ADD CONSTRAINT vnext_trust_root_evidence_actor_kind_check CHECK (actor_kind IN ('deployment_bootstrap', 'owner_recovery_event', 'other'))"],
+      ['trustEvidenceBackupConstraintHandle', 'ALTER TABLE vnext_control_plane.vnext_trust_root_evidence DROP CONSTRAINT vnext_trust_root_evidence_check; ALTER TABLE vnext_control_plane.vnext_trust_root_evidence ADD CONSTRAINT vnext_trust_root_evidence_check CHECK (true)'],
+      ['trustEvidenceExtraIndexHandle', 'CREATE INDEX unapproved_trust_evidence_event_index ON vnext_control_plane.vnext_trust_root_evidence (event_id)'],
+      ['trustEvidenceVerifierAclHandle', 'GRANT INSERT ON vnext_control_plane.vnext_trust_root_evidence TO vnext_pg17_verifier'],
+      ['trustEvidenceRuntimeAclHandle', 'GRANT SELECT ON vnext_control_plane.vnext_trust_root_evidence TO vnext_pg17_runtime'],
+      ['trustEvidenceFunctionInvokerHandle', 'ALTER FUNCTION vnext_control_plane.vnext_trust_root_evidence_no_update() SECURITY INVOKER'],
+      ['trustEvidenceFunctionPublicExecuteHandle', 'GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_trust_root_evidence_no_update() TO PUBLIC'],
+      ['trustEvidenceWrongTriggerHandle', 'DROP TRIGGER vnext_trust_root_evidence_no_update ON vnext_control_plane.vnext_trust_root_evidence; CREATE TRIGGER vnext_trust_root_evidence_no_update BEFORE DELETE ON vnext_control_plane.vnext_trust_root_evidence FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_trust_root_evidence_no_update()'],
+      ['trustEvidencePublicShadowHandle', 'CREATE TABLE public.vnext_trust_root_evidence (id integer)'],
     ]) {
       const driftHandle = await createHandle();
       await catalog.apply(driftHandle, migrationInput);

@@ -241,3 +241,9 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - Migration 13 adds only the authority-local append-only `vnext_authorization_policy_publications` ledger. It stores canonical manifest text plus its writer-supplied SHA-256; it adds no policy seed, current pointer, resolver, writer, API, or capability mapping.
 - Its insert guard requires a contiguous authority-local revision and exact accepted receipt result. The normal path binds `authorization_policy.publish` and its revision vector; the bootstrap path additionally requires the durable M12 marker, matching receipt/actor/authority/hash, and time ordering. Adjacent identical contract/hash revisions reject as unchanged.
 - Exact catalog checks and synthetic PG17 behavior cover M12-prefix fail-closed behavior, JSON/receipt/vector/time/type mismatches, inactive authorities, marker absence, append-only preservation, ACL/function/trigger drift, and no runtime access. No real RDS/ECS, business data, deployment, desktop data, NAS, or removable media was accessed.
+
+### PostgreSQL 17 trust-root-evidence evidence (2026-08-15)
+
+- Migration 14 adds only the append-only `vnext_trust_root_evidence` ledger. Bootstrap evidence binds the durable M12 marker; recovery evidence binds an accepted owner-recovery receipt plus the caller-supplied backup ID and manifest hash. It does not perform backup, signature, nonce, credential, or recovery I/O.
+- The SECURITY DEFINER guard rejects time regressions, ordinary recovery receipts, malformed backup pairing/hashes, and noncanonical recovery receipt state. Catalog and disposable PG17 checks fail closed on M13 prefixes and changed unique/FK/actor/backup/index/ACL/function/trigger/public-shadow facts.
+- This remains synthetic local PostgreSQL 17 verification only. No RDS/ECS, production trust-root procedure, business data, desktop data, NAS, removable media, or deployment was accessed.

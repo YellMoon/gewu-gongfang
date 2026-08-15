@@ -35,6 +35,9 @@ const LEDGER_FUNCTIONS = Object.freeze([
   'vnext_schema_migrations_insert_guard',
   'vnext_schema_migrations_no_delete',
   'vnext_schema_migrations_no_update',
+  'vnext_trust_root_evidence_insert_guard',
+  'vnext_trust_root_evidence_no_delete',
+  'vnext_trust_root_evidence_no_update',
 ]);
 const LEDGER_CONSTRAINTS = Object.freeze([
   Object.freeze({ name: 'vnext_schema_migrations_applied_at_check', type: 'c', definition: "CHECK (applied_at <> 'infinity'::timestamp with time zone AND applied_at <> '-infinity'::timestamp with time zone)" }),
@@ -119,6 +122,17 @@ const FOUNDATION_COLUMNS = Object.freeze({
     Object.freeze({ name: 'policy_manifest_sha256', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
     Object.freeze({ name: 'receipt_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
     Object.freeze({ name: 'consumed_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
+  ]),
+  vnext_trust_root_evidence: Object.freeze([
+    Object.freeze({ name: 'evidence_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'authority_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'receipt_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'actor_kind', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'event_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'assertion_evidence_sha256', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'backup_id', dataType: 'text', udtName: 'text', nullable: 'YES', collation: 'C' }),
+    Object.freeze({ name: 'backup_manifest_sha256', dataType: 'text', udtName: 'text', nullable: 'YES', collation: 'C' }),
+    Object.freeze({ name: 'created_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
   ]),
   vnext_authorization_command_receipts: Object.freeze([
     Object.freeze({ name: 'receipt_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
@@ -277,6 +291,7 @@ const FOUNDATION_CONSTRAINTS = Object.freeze({
   vnext_device_installations: Object.freeze({ count: 17, required: Object.freeze(['vnext_device_installations_pkey', 'vnext_device_installations_authority_id_key_fingerprint_key', 'vnext_device_installations_installation_id_device_id_author_key', 'vnext_device_installations_device_id_authority_id_fkey', 'vnext_device_installations_check1']) }),
   vnext_account_device_links: Object.freeze({ count: 20, required: Object.freeze(['vnext_account_device_links_pkey', 'vnext_account_device_links_authority_id_account_id_installa_key', 'vnext_account_device_links_link_id_authority_id_account_id__key', 'vnext_account_device_links_account_id_authority_id_fkey', 'vnext_account_device_links_device_id_authority_id_fkey', 'vnext_account_device_links_installation_id_device_id_autho_fkey', 'vnext_account_device_links_check1']) }),
   vnext_role_grants: Object.freeze({ count: 19, required: Object.freeze(['vnext_role_grants_pkey', 'vnext_role_grants_account_id_authority_id_fkey', 'vnext_role_grants_granted_by_account_id_authority_id_fkey', 'vnext_role_grants_granted_by_account_id_check', 'vnext_role_grants_role_check', 'vnext_role_grants_status_check', 'vnext_role_grants_check2']) }),
+  vnext_trust_root_evidence: Object.freeze({ count: 14, required: Object.freeze(['vnext_trust_root_evidence_pkey', 'vnext_trust_root_evidence_authority_id_receipt_id_key', 'vnext_trust_root_evidence_actor_kind_event_id_key', 'vnext_trust_root_evidence_authority_id_fkey', 'vnext_trust_root_evidence_receipt_id_authority_id_fkey', 'vnext_trust_root_evidence_actor_kind_check', 'vnext_trust_root_evidence_check']) }),
 });
 const FOUNDATION_CONSTRAINT_DEFINITIONS = Object.freeze({
   vnext_accounts_authority_id_fkey: 'FOREIGN KEY (authority_id) REFERENCES vnext_control_plane.vnext_authorities(authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
@@ -313,9 +328,11 @@ const FOUNDATION_CONSTRAINT_DEFINITIONS = Object.freeze({
   vnext_authorization_command_r_actor_account_id_authority_i_fkey: 'FOREIGN KEY (actor_account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
   vnext_verified_contacts_account_id_authority_id_fkey: 'FOREIGN KEY (account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
   vnext_verified_contacts_check1: "CHECK (verification_state = 'verified'::text AND verified_at IS NOT NULL AND revoked_at IS NULL OR verification_state = 'revoked'::text AND verified_at IS NOT NULL AND revoked_at IS NOT NULL)",
+  vnext_trust_root_evidence_authority_id_fkey: 'FOREIGN KEY (authority_id) REFERENCES vnext_control_plane.vnext_authorities(authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
+  vnext_trust_root_evidence_receipt_id_authority_id_fkey: 'FOREIGN KEY (receipt_id, authority_id) REFERENCES vnext_control_plane.vnext_authorization_command_receipts(receipt_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
 });
-const FOUNDATION_CONSTRAINT_CATALOG_SHA256 = '3a433e5a46332d7e4a70acb03cbdb6eb20eb0d914ede41bfe8db576e7ea8360b';
-const FOUNDATION_INDEX_CATALOG_SHA256 = '15255ac19da31c52190c59d3a4f2e45679a020228a0037b10754590eca8cf067';
+const FOUNDATION_CONSTRAINT_CATALOG_SHA256 = '1080180d54ebfebae1e7d162021fcc4698bd1814d512f8d72a9124a1704b0824';
+const FOUNDATION_INDEX_CATALOG_SHA256 = 'f157b3d02b08367b929d5a12fde73ec1ffbc295111e289d8b4bdbdcb654c02cb';
 const FOUNDATION_INDEX_DEFINITIONS = Object.freeze({
   vnext_capability_overrides_one_active_capability: "CREATE UNIQUE INDEX vnext_capability_overrides_one_active_capability ON vnext_control_plane.vnext_capability_overrides USING btree (authority_id, account_id, capability_id) WHERE (status = 'active'::text)",
   vnext_data_scope_grants_one_active_scope: "CREATE UNIQUE INDEX vnext_data_scope_grants_one_active_scope ON vnext_control_plane.vnext_data_scope_grants USING btree (authority_id, account_id, scope_type, scope_value_hash) WHERE (status = 'active'::text)",
@@ -345,6 +362,9 @@ const TARGET_TRIGGERS = Object.freeze([
   Object.freeze({ tableName: 'vnext_schema_migrations', triggerName: 'vnext_schema_migrations_insert_guard', functionSchema: 'vnext_control_plane', functionName: 'vnext_schema_migrations_insert_guard', enabled: 'O', definition: 'CREATE TRIGGER vnext_schema_migrations_insert_guard BEFORE INSERT ON vnext_control_plane.vnext_schema_migrations FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_schema_migrations_insert_guard()' }),
   Object.freeze({ tableName: 'vnext_schema_migrations', triggerName: 'vnext_schema_migrations_no_delete', functionSchema: 'vnext_control_plane', functionName: 'vnext_schema_migrations_no_delete', enabled: 'O', definition: 'CREATE TRIGGER vnext_schema_migrations_no_delete BEFORE DELETE ON vnext_control_plane.vnext_schema_migrations FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_schema_migrations_no_delete()' }),
   Object.freeze({ tableName: 'vnext_schema_migrations', triggerName: 'vnext_schema_migrations_no_update', functionSchema: 'vnext_control_plane', functionName: 'vnext_schema_migrations_no_update', enabled: 'O', definition: 'CREATE TRIGGER vnext_schema_migrations_no_update BEFORE UPDATE ON vnext_control_plane.vnext_schema_migrations FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_schema_migrations_no_update()' }),
+  Object.freeze({ tableName: 'vnext_trust_root_evidence', triggerName: 'vnext_trust_root_evidence_insert_guard', functionSchema: 'vnext_control_plane', functionName: 'vnext_trust_root_evidence_insert_guard', enabled: 'O', definition: 'CREATE TRIGGER vnext_trust_root_evidence_insert_guard BEFORE INSERT ON vnext_control_plane.vnext_trust_root_evidence FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_trust_root_evidence_insert_guard()' }),
+  Object.freeze({ tableName: 'vnext_trust_root_evidence', triggerName: 'vnext_trust_root_evidence_no_delete', functionSchema: 'vnext_control_plane', functionName: 'vnext_trust_root_evidence_no_delete', enabled: 'O', definition: 'CREATE TRIGGER vnext_trust_root_evidence_no_delete BEFORE DELETE ON vnext_control_plane.vnext_trust_root_evidence FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_trust_root_evidence_no_delete()' }),
+  Object.freeze({ tableName: 'vnext_trust_root_evidence', triggerName: 'vnext_trust_root_evidence_no_update', functionSchema: 'vnext_control_plane', functionName: 'vnext_trust_root_evidence_no_update', enabled: 'O', definition: 'CREATE TRIGGER vnext_trust_root_evidence_no_update BEFORE UPDATE ON vnext_control_plane.vnext_trust_root_evidence FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_trust_root_evidence_no_update()' }),
 ]);
 
 function codedError(code, message) {
