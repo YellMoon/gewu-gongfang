@@ -19,10 +19,11 @@ async function main() {
     runManifest: async received => { assert.strictEqual(received, runtime); calls.push('manifest'); },
     runCatalog: async received => { assert.strictEqual(received, runtime); calls.push('catalog'); },
     runBootstrap: async received => { assert.strictEqual(received, runtime); calls.push('bootstrap'); },
+    runRecovery: async received => { assert.strictEqual(received, runtime); calls.push('recovery'); },
     report: message => calls.push(`report:${message.code}`),
   });
   assert.strictEqual(exitCode, 0);
-  assert.deepStrictEqual(calls, ['start', 'manifest', 'catalog', 'bootstrap', 'stop']);
+  assert.deepStrictEqual(calls, ['start', 'manifest', 'catalog', 'bootstrap', 'recovery', 'stop']);
 
   const failedCalls = [];
   const unavailable = Object.assign(new Error('private detail'), { code: 'VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE' });
@@ -34,6 +35,7 @@ async function main() {
     runManifest: async () => failedCalls.push('manifest'),
     runCatalog: async () => failedCalls.push('catalog'),
     runBootstrap: async () => failedCalls.push('bootstrap'),
+    runRecovery: async () => failedCalls.push('recovery'),
     report: message => failedCalls.push(`report:${message.code}`),
   });
   assert.strictEqual(failedCode, 1);
