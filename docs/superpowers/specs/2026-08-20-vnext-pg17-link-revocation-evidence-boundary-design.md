@@ -9,16 +9,21 @@ and accepted-only outbox rows after the completed identity lifecycle closure.
 ## Source Contract
 
 The synthetic source supplies a source-only canonical request envelope with
-the fixed revoke command fields: authority, actor key, idempotency key, link
-target, expected target row version, and reason code. The rehearsal recreates
-canonical request bytes and SHA-256, then accepts a receipt only if it matches
-the exact envelope and known link state.
+exactly `{ type, targetLinkId, expectedTargetRowVersion, idempotencyKey,
+reasonCode }`. The rehearsal uses the existing stable link-revoke canonical
+JSON algorithm, not ordinary `JSON.stringify`, to recreate request bytes and
+SHA-256. The receipt actor key must be `account:${actor_account_id}`; actor,
+context link, and target link must all belong to the same mapped authority.
+Historical actors can be inactive without becoming current authorization.
 
-Accepted evidence must reference an already mapped revoked link and match its
-committed versions, canonical result, audit context, outbox canonical payload,
-and payload hash. Noop and rejected evidence have all committed versions null
-and no outbox. Every receipt gets exactly one audit record; accepted gets
-exactly one non-dispatched outbox record.
+Accepted evidence must use `ACCOUNT_DEVICE_LINK_REVOKED`, reference an already
+mapped revoked link, and match positive committed auth/access/target versions
+with null revocation version, canonical result, audit context, outbox canonical
+payload, and payload hash. Noop uses `LINK_ALREADY_REVOKED`; noop and rejected
+evidence have all four committed versions null and no outbox. Rejected evidence
+is limited to the three existing link-revoke rejection codes. Every receipt gets
+exactly one audit record; accepted gets exactly one non-dispatched outbox record.
+Audit context is exactly `{accountId, linkId, policyRevision}`.
 
 ## Safety Boundary
 

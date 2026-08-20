@@ -4,7 +4,7 @@
 
 **Goal:** Copy and structurally verify synthetic historical link-revocation receipt, audit, and accepted-only outbox evidence.
 
-**Architecture:** Extend the completed identity/lifecycle source with source-only canonical revoke envelopes. The source validates exact request/result/companion semantics before static target INSERTs and rereads canonical hashes before commit.
+**Architecture:** Extend the completed identity/lifecycle source with a source-only canonical revoke envelope exactly `{ type, targetLinkId, expectedTargetRowVersion, idempotencyKey, reasonCode }`. Use the existing stable link-revoke canonical JSON algorithm to validate request bytes and SHA-256; validate exact receipt result, audit context, and accepted-only outbox companion semantics before static target INSERTs and rereads.
 
 **Tech Stack:** Node.js CommonJS, in-memory better-sqlite3, pg 8.23.0, disposable PostgreSQL 17 runtime, node assert.
 
@@ -25,7 +25,7 @@
 - Modify: `shared/vnext-pg17/controlPlaneCopyOnlyRehearsal.js`
 
 - [ ] Freeze source-only revoke envelope and exact receipt/audit/outbox field manifests.
-- [ ] Recreate canonical request/result/payload hashes, validate accepted/noop/rejected state rules, and add reread report hashes.
+- [ ] Require `actor_key=account:${actor_account_id}`, same-authority actor/context/target, exact `{accountId,linkId,policyRevision}` audit context, accepted `ACCOUNT_DEVICE_LINK_REVOKED`, noop `LINK_ALREADY_REVOKED`, and null committed versions for non-accepted outcomes.
 - [ ] Keep every other command and evidence type fail-closed.
 
 ### Task 3: Runtime static SQL and audit
