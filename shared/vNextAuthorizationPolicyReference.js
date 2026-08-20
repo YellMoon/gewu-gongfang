@@ -5,7 +5,6 @@ const ROLES = new Set(['super_admin', 'teacher', 'student', 'visitor']);
 const SURFACES = new Set(['desktop', 'miniapp']);
 const SCOPE_TYPES = new Set(['teacher_profile', 'student_profile', 'school', 'household', 'resource_owner']);
 const CAPABILITY_ID = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/;
-const SHA256 = /^[0-9a-f]{64}$/;
 const error = () => Object.assign(new Error('VNEXT_POLICY_INVALID'), { code: 'VNEXT_POLICY_INVALID' });
 const freeze = value => Object.freeze(value);
 const hash = value => crypto.createHash('sha256').update(value, 'utf8').digest('hex');
@@ -84,12 +83,14 @@ function resolveEffectiveCapabilityIds({ manifest, roles, overrides = [], surfac
   return freeze({ capabilityIds: freeze(capabilityIds), capabilitySha256: hash(stableJson(capabilityIds)) });
 }
 function canonicalizeEffectiveScopes(scopes, at) {
-  if (!Array.isArray(scopes)) throw error(); instant(at); const allow = new Set(); const deny = new Set();
+  if (!Array.isArray(scopes)) throw error(); instant(at); const allow = new Map(); const deny = new Set();
   for (const item of scopes) {
-    if (!item || Object.getPrototypeOf(item) !== Object.prototype || Object.keys(item).some(key => !['scopeType','scopeValueHash','effect','status','startsAt','endsAt'].includes(key)) || !SCOPE_TYPES.has(item.scopeType) || typeof item.scopeValueHash !== 'string' || !SHA256.test(item.scopeValueHash) || !['allow','deny'].includes(item.effect) || !['active','revoked','expired'].includes(item.status)) throw error();
-    if (activeAt(item, at)) (item.effect === 'deny' ? deny : allow).add(`${item.scopeType}:${item.scopeValueHash}`);
+    if (!item || Object.getPrototypeOf(item) !== Object.prototype || Object.keys(item).some(key => !['scopeType','scopeValueHash','effect','status','startsAt','endsAt'].includes(key)) || !SCOPE_TYPES.has(item.scopeType) || typeof item.scopeValueHash !== 'string' || !item.scopeValueHash.trim() || !['allow','deny'].includes(item.effect) || !['active','revoked','expired'].includes(item.status)) throw error();
+    const scope = { scopeType: item.scopeType, scopeValueHash: item.scopeValueHash };
+    const key = stableJson(scope);
+    if (activeAt(item, at)) (item.effect === 'deny' ? deny.add(key) : allow.set(key, scope));
   }
-  return freeze([...allow].filter(key => !deny.has(key)).map(key => { const [scopeType, scopeValueHash] = key.split(':'); return freeze({ scopeType, scopeValueHash }); }).sort((a, b) => { const left = stableJson(a); const right = stableJson(b); return left < right ? -1 : left > right ? 1 : 0; }));
+  return freeze([...allow].filter(([key]) => !deny.has(key)).map(([, scope]) => freeze(scope)).sort((a, b) => { const left = stableJson(a); const right = stableJson(b); return left < right ? -1 : left > right ? 1 : 0; }));
 }
 function scopeSha256(scopes, at) { return hash(stableJson(canonicalizeEffectiveScopes(scopes, at))); }
 module.exports = freeze({ POLICY_CONTRACT_VERSION: 1, DEFAULT_POLICY_MANIFEST, createPolicyManifest, canonicalizePolicyManifest, policyManifestSha256, resolveEffectiveCapabilityIds, canonicalizeEffectiveScopes, scopeSha256 });

@@ -75,7 +75,7 @@ Expected: `vNext PG17 trusted session verifier boundary checks passed`.
 
 Apply M1-M15 through the catalog boundary; use the existing PG17 bootstrap writer for the sole authority. With only the fixture-provisioner facade, insert one active online session with matching nine vectors, matching recent reauthentication, role/allow/deny/scope rows, and a valid highest policy publication. Use fixed canonical UTC instants.
 
-- [ ] **Step 2: Write failing success and state matrix tests**
+- [x] **Step 2: Write failing success and state matrix tests**
 
 ```js
 const resolver = createVNextPg17AccessContextResolver({ runtime, handle, verifierBoundary: boundary, surface: 'desktop', now: () => NOW });
@@ -88,7 +88,7 @@ assert.strictEqual(Object.isFrozen(context), true);
 
 Cover desktop/miniapp capability behavior, visitor, fake/cross-handle brands, malformed assertion/config/clock, all five parent states, nine vector mismatches, initialization/revoked/expired/future sessions, policy absence/hash/text/contract failure, role/override time windows, deny precedence, invalid scope, and absent/expired/future reauth. Every failure must be `VNEXT_PG17_ACCESS_CONTEXT_UNAVAILABLE`.
 
-- [ ] **Step 3: Add read-only evidence**
+- [x] **Step 3: Add read-only evidence**
 
 Take before/after sorted logical snapshots of every target relation and catalog facts through a peer verifier facade. Add a controlled peer write after the first resolver read and prove the resulting context is one coherent snapshot, never a mixed vector/policy view. Catalog drift must produce the same public error with no row change.
 

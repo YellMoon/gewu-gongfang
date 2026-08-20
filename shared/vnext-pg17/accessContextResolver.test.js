@@ -37,12 +37,13 @@ async function fixture(runtime, {
   revokedAt = null,
   reauthenticationVerifiedAt = BOOTSTRAP_NOW,
   reauthenticationExpiresAt = '2026-08-15T00:10:00.000Z',
+  policyManifest = manifest(),
 } = {}) {
   const handle = await runtime.createIsolatedHandle();
   const catalog = createVNextPg17CatalogBoundary(runtime);
   await catalog.apply(handle, { appliedAt: BOOTSTRAP_NOW, appliedBy: 'access-context-test' });
   const policy = require('../vNextAuthorizationPolicyReference');
-  const policyHash = crypto.createHash('sha256').update(policy.canonicalizePolicyManifest(manifest()), 'utf8').digest('hex');
+  const policyHash = crypto.createHash('sha256').update(policy.canonicalizePolicyManifest(policyManifest), 'utf8').digest('hex');
   const bootstrapBoundary = require('../vNextTrustRootVerifierBoundaryReference').createVNextTrustRootVerifierBoundaryReference({
     databaseBinding: handle,
     verifyBootstrapPresentation: () => ({ kind: 'deployment_bootstrap', bootstrapIntentId: 'bootstrap-intent-1', authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'installation-1', installationPublicKey: 'public-key-1', installationKeyFingerprint: 'a'.repeat(64), policyManifestSha256: policyHash, expiresAt: '2026-08-15T00:04:00.000Z', approvalVersion: 1, assertionEvidenceSha256: 'b'.repeat(64) }),
@@ -50,7 +51,7 @@ async function fixture(runtime, {
   });
   const bootstrapAssertion = await bootstrapBoundary.verifyBootstrap(null);
   const bootstrap = createVNextPg17FirstAuthorityBootstrapMutation({ runtime, handle, verifierBoundary: bootstrapBoundary, now: () => BOOTSTRAP_NOW, idFactory: kind => `bootstrap-${kind}` });
-  await bootstrap.execute(bootstrapAssertion, { type: 'authority.bootstrap', bootstrapIntentId: 'bootstrap-intent-1', authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'installation-1', installationPublicKey: 'public-key-1', installationKeyFingerprint: 'a'.repeat(64), policyManifest: manifest(), idempotencyKey: 'bootstrap-key-1', reasonCode: 'bootstrap' });
+  await bootstrap.execute(bootstrapAssertion, { type: 'authority.bootstrap', bootstrapIntentId: 'bootstrap-intent-1', authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'installation-1', installationPublicKey: 'public-key-1', installationKeyFingerprint: 'a'.repeat(64), policyManifest, idempotencyKey: 'bootstrap-key-1', reasonCode: 'bootstrap' });
   await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
     await facade.query("INSERT INTO vnext_control_plane.vnext_sessions(session_id,authority_id,account_id,device_id,installation_id,link_id,session_kind,status,issued_at,expires_at,revoked_at,account_auth_version,account_access_version,account_revocation_version,device_credential_version,device_risk_version,installation_credential_version,link_auth_version,link_access_version,link_row_version,row_version,created_at,updated_at) VALUES('session-1','authority-1','account-1','device-1','installation-1','bootstrap-bootstrap-link',$1,$2,$3,$4,$5,1,1,1,1,1,1,1,1,1,1,$3,$3)", [sessionKind, sessionStatus, issuedAt, expiresAt, revokedAt]);
     if (includeReauthentication) {
@@ -80,10 +81,11 @@ function assertResolverReadOnlyQueries(queries, terminal, { requireDomainQueries
   assert.strictEqual(queries.every(isReadOnlyTraceStatement), true);
   assert.strictEqual(queries.some(query => query.includes('WHERE s.session_id=$1')), true);
   if (requireDomainQueries) {
-    assert.strictEqual(queries.some(query => query.includes('vnext_role_grants WHERE authority_id=$1 AND account_id=$2')), true);
-    assert.strictEqual(queries.some(query => query.includes('vnext_capability_overrides WHERE authority_id=$1 AND account_id=$2')), true);
-    assert.strictEqual(queries.some(query => query.includes('vnext_data_scope_grants WHERE authority_id=$1 AND account_id=$2')), true);
+  assert.strictEqual(queries.some(query => query.includes('vnext_role_grants WHERE authority_id=$1 AND account_id=$2')), true);
+  assert.strictEqual(queries.some(query => query.includes('vnext_capability_overrides WHERE authority_id=$1 AND account_id=$2')), true);
+  assert.strictEqual(queries.some(query => query.includes('vnext_data_scope_grants WHERE authority_id=$1 AND account_id=$2')), true);
   }
+  assert.strictEqual(queries.some(query => /\bvnext_control_plane\.vnext_capability_catalog\b/.test(query)), false);
   return queries;
 }
 
@@ -102,6 +104,51 @@ async function targetRowsSnapshot(handle) {
     }
     return snapshot;
   });
+}
+
+async function provisionPolicyReadRows(handle, {
+  revokeBootstrapRole = false,
+  roles = [],
+  capabilities = [],
+  overrides = [],
+  scopes = [],
+} = {}) {
+  await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+    if (revokeBootstrapRole) {
+      await facade.query("UPDATE vnext_control_plane.vnext_role_grants SET status='revoked', revoked_at=$1, updated_at=$1 WHERE authority_id='authority-1' AND account_id='account-1' AND role='super_admin'", [NOW]);
+    }
+    for (const [capabilityId, status = 'active'] of capabilities) {
+      await facade.query('INSERT INTO vnext_control_plane.vnext_capability_catalog(capability_id,status,surface_mask,created_at) VALUES($1,$2,$3,$4)', [capabilityId, status, 'desktop', BOOTSTRAP_NOW]);
+    }
+    for (const { grantId, role, status = 'active', startsAt = BOOTSTRAP_NOW, endsAt = null, revokedAt = null } of roles) {
+      await facade.query('INSERT INTO vnext_control_plane.vnext_role_grants(grant_id,authority_id,account_id,role,status,grant_version,row_version,starts_at,ends_at,revoked_at,granted_by_account_id,created_at,updated_at) VALUES($1,$2,$3,$4,$5,1,1,$6,$7,$8,NULL,$9,$9)', [grantId, 'authority-1', 'account-1', role, status, startsAt, endsAt, revokedAt, BOOTSTRAP_NOW]);
+    }
+    for (const { overrideId, capabilityId, effect, status = 'active', startsAt = BOOTSTRAP_NOW, endsAt = null, revokedAt = null } of overrides) {
+      await facade.query('INSERT INTO vnext_control_plane.vnext_capability_overrides(override_id,authority_id,account_id,capability_id,effect,status,starts_at,ends_at,row_version,created_at,updated_at,revoked_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,1,$9,$9,$10)', [overrideId, 'authority-1', 'account-1', capabilityId, effect, status, startsAt, endsAt, BOOTSTRAP_NOW, revokedAt]);
+    }
+    for (const { scopeGrantId, scopeType = 'teacher_profile', scopeValueHash, effect, status = 'active', startsAt = BOOTSTRAP_NOW, endsAt = null, revokedAt = null } of scopes) {
+      await facade.query('INSERT INTO vnext_control_plane.vnext_data_scope_grants(scope_grant_id,authority_id,account_id,scope_type,scope_value_hash,effect,status,starts_at,ends_at,row_version,created_at,updated_at,revoked_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,1,$10,$10,$11)', [scopeGrantId, 'authority-1', 'account-1', scopeType, scopeValueHash, effect, status, startsAt, endsAt, BOOTSTRAP_NOW, revokedAt]);
+    }
+  });
+}
+
+async function resolvePolicyReadContext(runtime, { fixtureOptions, rows, unavailable = false }) {
+  const current = await fixture(runtime, fixtureOptions);
+  try {
+    await provisionPolicyReadRows(current.handle, rows);
+    const resolver = createVNextPg17AccessContextResolver({ runtime, handle: current.handle, verifierBoundary: current.boundary, surface: 'desktop', now: () => NOW });
+    const before = await targetRowsSnapshot(current.handle);
+    const trace = createVNextPg17SyntheticQueryTrace(runtime, current.handle, 'verifier');
+    armVNextPg17SyntheticQueryTrace(trace);
+    const context = unavailable
+      ? await expectUnavailable(() => resolver.resolve(current.assertion))
+      : await resolver.resolve(current.assertion);
+    assertResolverReadOnlyTrace(trace, unavailable ? 'ROLLBACK' : 'COMMIT');
+    assert.deepStrictEqual(await targetRowsSnapshot(current.handle), before);
+    return context;
+  } finally {
+    await runtime.disposeHandle(current.handle);
+  }
 }
 
 async function runAccessContextResolverCases(runtime) {
@@ -143,6 +190,94 @@ async function runAccessContextResolverCases(runtime) {
   } finally {
     await runtime.disposeHandle(miniapp.handle);
   }
+
+  const opaqueScope = await fixture(runtime);
+  try {
+    const resolver = createVNextPg17AccessContextResolver({ runtime, handle: opaqueScope.handle, verifierBoundary: opaqueScope.boundary, surface: 'desktop', now: () => NOW });
+    await withVNextPg17SyntheticQuery(opaqueScope.handle, 'fixture-provisioner', facade => facade.query(
+      "INSERT INTO vnext_control_plane.vnext_data_scope_grants(scope_grant_id,authority_id,account_id,scope_type,scope_value_hash,effect,status,starts_at,ends_at,row_version,created_at,updated_at,revoked_at) VALUES('scope-opaque-1','authority-1','account-1','teacher_profile','opaque-scope','allow','active',$1,NULL,1,$1,$1,NULL)",
+      [BOOTSTRAP_NOW],
+    ));
+    const context = await resolver.resolve(opaqueScope.assertion);
+    assert.deepStrictEqual(context.scopes, [{ scopeType: 'teacher_profile', scopeValueHash: 'opaque-scope' }]);
+  } finally {
+    await runtime.disposeHandle(opaqueScope.handle);
+  }
+
+  const teacherManifest = { contractVersion: 1, capabilities: [
+    { capabilityId: 'user.review', status: 'active', allowedSurfaces: ['desktop'] },
+  ], roleDefaults: { super_admin: [], teacher: ['user.review'], student: [] } };
+  const activeTeacher = await resolvePolicyReadContext(runtime, {
+    fixtureOptions: { policyManifest: teacherManifest },
+    rows: { revokeBootstrapRole: true, roles: [{ grantId: 'teacher-active-1', role: 'teacher' }] },
+  });
+  assert.deepStrictEqual(activeTeacher.roles, ['teacher']);
+  assert.deepStrictEqual(activeTeacher.capabilityIds, ['user.review']);
+
+  for (const role of [
+    { grantId: 'teacher-revoked-1', role: 'teacher', status: 'revoked', revokedAt: NOW },
+    { grantId: 'teacher-expired-1', role: 'teacher', status: 'expired', endsAt: NOW },
+  ]) {
+    const visitor = await resolvePolicyReadContext(runtime, {
+      fixtureOptions: { policyManifest: teacherManifest },
+      rows: { revokeBootstrapRole: true, roles: [role] },
+    });
+    assert.deepStrictEqual(visitor.roles, ['visitor']);
+    assert.deepStrictEqual(visitor.capabilityIds, []);
+  }
+
+  const deniedCapability = await resolvePolicyReadContext(runtime, {
+    rows: { capabilities: [['access.manage']], overrides: [{ overrideId: 'deny-access-manage-1', capabilityId: 'access.manage', effect: 'deny' }] },
+  });
+  assert.deepStrictEqual(deniedCapability.capabilityIds, ['device.revoke', 'user.review']);
+
+  for (const override of [
+    { overrideId: 'future-allow-1', capabilityId: 'user.review', effect: 'allow', startsAt: '2026-08-15T00:02:00.000Z' },
+    { overrideId: 'ended-allow-1', capabilityId: 'user.review', effect: 'allow', startsAt: BOOTSTRAP_NOW, endsAt: NOW },
+    { overrideId: 'revoked-allow-1', capabilityId: 'user.review', effect: 'allow', status: 'revoked', revokedAt: NOW },
+    { overrideId: 'expired-allow-1', capabilityId: 'user.review', effect: 'allow', status: 'expired', endsAt: NOW },
+  ]) {
+    const ignoredOverride = await resolvePolicyReadContext(runtime, {
+      rows: { revokeBootstrapRole: true, capabilities: [['user.review']], overrides: [override] },
+    });
+    assert.deepStrictEqual(ignoredOverride.roles, ['visitor']);
+    assert.deepStrictEqual(ignoredOverride.capabilityIds, []);
+  }
+
+  const effectiveScope = await resolvePolicyReadContext(runtime, {
+    rows: { scopes: [{ scopeGrantId: 'scope-opaque-current-1', scopeValueHash: 'opaque:scope', effect: 'allow' }] },
+  });
+  assert.deepStrictEqual(effectiveScope.scopes, [{ scopeType: 'teacher_profile', scopeValueHash: 'opaque:scope' }]);
+
+  const scopedDeny = await resolvePolicyReadContext(runtime, {
+    rows: { scopes: [
+      { scopeGrantId: 'scope-opaque-allow-1', scopeValueHash: 'opaque:allow', effect: 'allow' },
+      { scopeGrantId: 'scope-opaque-deny-1', scopeValueHash: 'opaque:deny', effect: 'deny' },
+    ] },
+  });
+  assert.deepStrictEqual(scopedDeny.scopes, [{ scopeType: 'teacher_profile', scopeValueHash: 'opaque:allow' }]);
+
+  for (const scope of [
+    { scopeGrantId: 'scope-future-1', scopeValueHash: 'opaque-future', effect: 'allow', startsAt: '2026-08-15T00:02:00.000Z' },
+    { scopeGrantId: 'scope-ended-1', scopeValueHash: 'opaque-ended', effect: 'allow', startsAt: BOOTSTRAP_NOW, endsAt: NOW },
+    { scopeGrantId: 'scope-revoked-1', scopeValueHash: 'opaque-revoked', effect: 'allow', status: 'revoked', revokedAt: NOW },
+    { scopeGrantId: 'scope-expired-1', scopeValueHash: 'opaque-expired', effect: 'allow', status: 'expired', endsAt: NOW },
+    { scopeGrantId: 'scope-deny-1', scopeValueHash: 'opaque-deny', effect: 'deny' },
+  ]) {
+    const ignoredScope = await resolvePolicyReadContext(runtime, { rows: { scopes: [scope] } });
+    assert.deepStrictEqual(ignoredScope.scopes, []);
+  }
+
+  await resolvePolicyReadContext(runtime, {
+    rows: { capabilities: [['access.unknown']], overrides: [{ overrideId: 'unknown-capability-1', capabilityId: 'access.unknown', effect: 'allow' }] },
+    unavailable: true,
+  });
+
+  const retiredManifest = { contractVersion: 1, capabilities: [
+    { capabilityId: 'access.manage', status: 'retired', allowedSurfaces: ['desktop'] },
+  ], roleDefaults: { super_admin: ['access.manage'], teacher: [], student: [] } };
+  const retiredCapability = await resolvePolicyReadContext(runtime, { fixtureOptions: { policyManifest: retiredManifest }, rows: {} });
+  assert.deepStrictEqual(retiredCapability.capabilityIds, []);
 
   const withoutReauth = await fixture(runtime, { includeReauthentication: false });
   try {
