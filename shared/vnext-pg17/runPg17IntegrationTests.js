@@ -12,6 +12,7 @@ const { runPolicyPublicationMutationCases } = require('./policyPublicationMutati
 const { runRoleMutationCases } = require('./roleMutation.test');
 const { runAccountDeviceLinkRevocationCases } = require('./accountDeviceLinkRevocationMutation.test');
 const { runAccountDeviceLinkRevocationCanonicalParityCases } = require('./accountDeviceLinkRevocationCanonicalParity.test');
+const { runSourceIsolationContractCases } = require('./sourceIsolationContract.test');
 
 function sanitizedCode(error) {
   return error && typeof error.code === 'string' && /^VNEXT_PG17_[A-Z_]+$/.test(error.code)
@@ -21,6 +22,7 @@ function sanitizedCode(error) {
 
 async function run({
   runtimeFactory = createDisposablePg17Runtime,
+  runSourceIsolation = runSourceIsolationContractCases,
   runManifest = runManifestCases,
   runCatalog = runCatalogAssertionCases,
   runProductionVerifierReadiness = runProductionVerifierReadinessCases,
@@ -34,8 +36,10 @@ async function run({
   runLinkRevocationParity = runAccountDeviceLinkRevocationCanonicalParityCases,
   report = () => {},
 } = {}) {
-  const runtime = runtimeFactory();
+  let runtime;
   try {
+    await runSourceIsolation();
+    runtime = runtimeFactory();
     await runtime.start();
     await runManifest(runtime);
     await runCatalog(runtime);
@@ -53,7 +57,7 @@ async function run({
     report({ code: sanitizedCode(error) });
     return 1;
   } finally {
-    await runtime.stop();
+    if (runtime) await runtime.stop();
   }
 }
 
