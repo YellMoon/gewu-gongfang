@@ -15,6 +15,7 @@ NAS/存储代理承载题库富媒体、导入原件、Word/PDF 产物、对象�
 | 目标组成 | 当前证据 | 状态与边界 |
 | --- | --- | --- |
 | PostgreSQL 17 control-plane 基础契约 | M1–M15、精确 catalog/ACL/角色漂移断言、append-only 与 CAS 参考测试位于 `shared/vnext-pg17/` | 仅本地、合成、可销毁 PostgreSQL 17；它是全业务云端 schema 的安全基础，不是最终业务 schema。 |
+| 云端业务基础 DDL | `business` 独立账本与 tenant/institution/school/room 四张空表，精确 catalog、PII 列权限、零 seed、控制面隔离、终端回滚和重放测试位于 `shared/vnext-pg17/` | 仅本地、可销毁 PostgreSQL 17；未读取或写入任何旧业务行，不是 source admission、shadow import、RDS schema 或业务 writer。 |
 | 身份、设备与权限读取 | branded session verifier、AccessContext、策略/范围/近期重认证读取矩阵 | 只读 boundary；没有真实凭据验证器、token、HTTP/API 或生产连接。新设备在线验证成功后自动登记的运行时流程尚未实现。 |
 | 首 authority 与紧急恢复语义 | SQLite 与 PG17 的 bootstrap/recovery reference、备份证据和回滚测试 | 参考实现，不是实际仪式、生产恢复器或云端初始化入口。 |
 | 命令耐久事实 | role、policy publication、device-link revoke 的 receipt/audit/outbox/CAS/replay reference 与 PG17 parity | 语义 oracle；现有 writer 零直接 DML、零 procedure `EXECUTE`，不能承担生产命令。 |
