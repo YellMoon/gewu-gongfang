@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { types } = require('node:util');
 const { assertVNextControlPlaneReferenceSchema } = require('./vNextControlPlaneReferenceKernel');
 const { isVNextAccessContextResolverReferenceForDatabase } = require('./vNextAccessContextResolverReference');
+const { stablePlainObjectJson } = require('./vNextCanonicalJsonReference');
 
 const COMMAND_KEYS = new Set(['type', 'targetLinkId', 'expectedTargetRowVersion', 'idempotencyKey', 'reasonCode']);
 const ERROR = code => Object.assign(new Error(code), { code });
@@ -11,8 +12,9 @@ const sha256 = value => crypto.createHash('sha256').update(value, 'utf8').digest
 const frozen = value => Object.freeze(value);
 
 function stableJson(value) {
-  if (!value || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some(key => value[key] !== null && typeof value[key] !== 'string' && typeof value[key] !== 'number')) throw ERROR('ACCOUNT_DEVICE_LINK_REVOCATION_INPUT_INVALID');
-  return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${JSON.stringify(value[key])}`).join(',')}}`;
+  const json = stablePlainObjectJson(value);
+  if (json === null) throw ERROR('ACCOUNT_DEVICE_LINK_REVOCATION_INPUT_INVALID');
+  return json;
 }
 function text(value, code) { const result = typeof value === 'string' ? value.trim() : ''; if (!result) throw ERROR(code); return result; }
 function at(value) { if (typeof value !== 'string' || !value || Number.isNaN(Date.parse(value))) throw ERROR('ACCOUNT_DEVICE_LINK_REVOCATION_UNAUTHORIZED'); return Date.parse(value); }

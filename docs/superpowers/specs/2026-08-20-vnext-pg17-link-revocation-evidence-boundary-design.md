@@ -19,7 +19,7 @@ Historical actors can be inactive without becoming current authorization.
 Accepted evidence must use `ACCOUNT_DEVICE_LINK_REVOKED`, reference an already
 mapped revoked link, and match positive committed auth/access/target versions
 with null revocation version, canonical result, audit context, outbox canonical
-payload, and payload hash. Noop uses `LINK_ALREADY_REVOKED`; noop and rejected
+payload, and payload hash. Noop uses `ACCOUNT_DEVICE_LINK_ALREADY_REVOKED`; noop and rejected
 evidence have all four committed versions null and no outbox. Rejected evidence
 is limited to the three existing link-revoke rejection codes. Every receipt gets
 exactly one audit record; accepted gets exactly one non-dispatched outbox record.

@@ -3,6 +3,7 @@
 const assert = require('assert');
 const { createDisposablePg17Runtime, withVNextPg17SyntheticQuery, inspectVNextPg17CopyOnlyRehearsalTarget } = require('./disposableRuntime');
 const { createVNextPg17CatalogBoundary } = require('./catalogAssertion');
+const { stablePlainObjectJson: linkRevokeStableJson } = require('../vNextCanonicalJsonReference');
 const {
   createVNextPg17SyntheticControlPlaneSource,
   rehearseVNextPg17ControlPlaneCopy,
@@ -14,6 +15,10 @@ const TARGET_DATA_TABLES = Object.freeze([
   'vnext_verified_contacts', 'vnext_authorization_command_receipts', 'vnext_authorization_audit_events', 'vnext_authorization_outbox_events',
   'vnext_bootstrap_consumptions', 'vnext_authorization_policy_publications', 'vnext_trust_root_evidence', 'vnext_sessions', 'vnext_recent_reauthentication_events',
 ]);
+
+function sha256Text(value) {
+  return require('crypto').createHash('sha256').update(value, 'utf8').digest('hex');
+}
 
 function snapshot() {
   return {
@@ -82,6 +87,88 @@ function identityLifecycleSnapshot() {
   value.links[0] = { ...value.links[0], status: 'expired', updated_at: retiredAt };
   value.links.push({ link_id: 'link-2', authority_id: 'authority-1', account_id: 'account-2', device_id: 'device-2', installation_id: 'installation-2', status: 'revoked', auth_version: 1, access_version: 1, row_version: 1, created_at: createdAt, updated_at: revokedAt, revoked_at: revokedAt });
   return value;
+}
+
+function acceptedLinkRevokeEvidenceSnapshot() {
+  const value = snapshot();
+  const at = '2026-08-20T00:02:00.000Z';
+  value.accounts.push({ account_id: 'account-2', authority_id: 'authority-1', status: 'active', auth_version: 1, access_version: 1, revocation_version: 1, row_version: 1, created_at: '2026-08-20T00:00:00.000Z', updated_at: '2026-08-20T00:00:00.000Z' });
+  value.trustedDevices.push({ device_id: 'device-2', authority_id: 'authority-1', status: 'active', hardware_evidence_hash: null, risk_code: null, credential_version: 1, risk_version: 1, row_version: 1, created_at: '2026-08-20T00:00:00.000Z', updated_at: '2026-08-20T00:00:00.000Z', revoked_at: null });
+  value.installations.push({ installation_id: 'installation-2', authority_id: 'authority-1', device_id: 'device-2', installation_public_key: 'test-key-2', key_fingerprint: 'b'.repeat(64), status: 'active', credential_version: 1, row_version: 1, created_at: '2026-08-20T00:00:00.000Z', updated_at: '2026-08-20T00:00:00.000Z', revoked_at: null });
+  value.links[0] = { ...value.links[0], account_id: 'account-2', device_id: 'device-2', installation_id: 'installation-2', status: 'revoked', auth_version: 2, access_version: 2, row_version: 2, updated_at: at, revoked_at: at };
+  value.links.push({ link_id: 'link-2', authority_id: 'authority-1', account_id: 'account-1', device_id: 'device-1', installation_id: 'installation-1', status: 'active', auth_version: 1, access_version: 1, row_version: 1, created_at: '2026-08-20T00:00:00.000Z', updated_at: '2026-08-20T00:00:00.000Z', revoked_at: null });
+  const canonicalRequest = { type: 'account_device_link.revoke', targetLinkId: 'link-1', expectedTargetRowVersion: 1, idempotencyKey: 'revoke-1', reasonCode: 'owner-request' };
+  const requestJson = linkRevokeStableJson({ expectedTargetRowVersion: 1, reasonCode: 'owner-request', targetLinkId: 'link-1', type: 'account_device_link.revoke' });
+  const resultJson = linkRevokeStableJson({ code: 'ACCOUNT_DEVICE_LINK_REVOKED', linkId: 'link-1', linkRowVersion: 2, policyRevision: 1, revokedAt: at, status: 'accepted', targetStatus: 'revoked' });
+  const auditContext = { accountId: 'account-1', linkId: 'link-2', policyRevision: 1 };
+  const payloadJson = linkRevokeStableJson({ accountId: 'account-2', linkAccessVersion: 2, linkAuthVersion: 2, linkId: 'link-1', linkRowVersion: 2 });
+  value.receipts.push({ receipt_id: 'receipt-link-revoke', authority_id: 'authority-1', actor_key: 'account:account-1', actor_account_id: 'account-1', idempotency_key: 'revoke-1', command_type: 'account_device_link.revoke', target_kind: 'account_device_link', target_id: 'link-1', canonical_request_sha256: sha256Text(requestJson), expected_row_version: 1, outcome: 'accepted', result_code: 'ACCOUNT_DEVICE_LINK_REVOKED', canonical_result_json: resultJson, canonical_result_sha256: sha256Text(resultJson), committed_auth_version: 2, committed_access_version: 2, committed_revocation_version: null, committed_target_row_version: 2, created_at: at, canonicalRequest });
+  value.auditEvents.push({ event_id: 'audit-link-revoke', authority_id: 'authority-1', receipt_id: 'receipt-link-revoke', reason_code: 'owner-request', context_sha256: sha256Text(linkRevokeStableJson(auditContext)), created_at: at, context: auditContext });
+  value.outboxEvents.push({ event_id: 'outbox-link-revoke', authority_id: 'authority-1', receipt_id: 'receipt-link-revoke', event_type: 'authorization.account_device_link_revoked', aggregate_kind: 'account_device_link', aggregate_id: 'link-1', aggregate_version: 2, canonical_payload_json: payloadJson, payload_sha256: sha256Text(payloadJson), occurred_at: at });
+  return value;
+}
+
+function noopLinkRevokeEvidenceSnapshot() {
+  const value = acceptedLinkRevokeEvidenceSnapshot();
+  const receipt = value.receipts[0];
+  const resultJson = linkRevokeStableJson({ code: 'ACCOUNT_DEVICE_LINK_ALREADY_REVOKED', linkId: 'link-1', linkRowVersion: 2, policyRevision: 1, revokedAt: receipt.created_at, status: 'noop', targetStatus: 'revoked' });
+  value.receipts[0] = { ...receipt, outcome: 'noop', result_code: 'ACCOUNT_DEVICE_LINK_ALREADY_REVOKED', canonical_result_json: resultJson, canonical_result_sha256: sha256Text(resultJson), committed_auth_version: null, committed_access_version: null, committed_revocation_version: null, committed_target_row_version: null };
+  value.outboxEvents = [];
+  return value;
+}
+
+function rejectedLinkRevokeEvidenceSnapshot() {
+  const value = acceptedLinkRevokeEvidenceSnapshot();
+  const receipt = value.receipts[0];
+  value.links[0] = { ...value.links[0], status: 'active', auth_version: 1, access_version: 1, row_version: 2, updated_at: '2026-08-20T00:01:00.000Z', revoked_at: null };
+  const resultJson = linkRevokeStableJson({ code: 'ACCOUNT_DEVICE_LINK_VERSION_CONFLICT', linkId: 'link-1', linkRowVersion: 2, policyRevision: 1, revokedAt: null, status: 'rejected', targetStatus: 'active' });
+  value.receipts[0] = { ...receipt, outcome: 'rejected', result_code: 'ACCOUNT_DEVICE_LINK_VERSION_CONFLICT', canonical_result_json: resultJson, canonical_result_sha256: sha256Text(resultJson), committed_auth_version: null, committed_access_version: null, committed_revocation_version: null, committed_target_row_version: null };
+  value.outboxEvents = [];
+  return value;
+}
+
+function missingLinkRevokeEvidenceSnapshot() {
+  const value = acceptedLinkRevokeEvidenceSnapshot();
+  const receipt = value.receipts[0];
+  const canonicalRequest = { ...receipt.canonicalRequest, targetLinkId: 'missing-link' };
+  const requestJson = linkRevokeStableJson({ expectedTargetRowVersion: canonicalRequest.expectedTargetRowVersion, reasonCode: canonicalRequest.reasonCode, targetLinkId: canonicalRequest.targetLinkId, type: canonicalRequest.type });
+  const resultJson = linkRevokeStableJson({ code: 'ACCOUNT_DEVICE_LINK_NOT_ACTIVE', linkId: 'missing-link', linkRowVersion: null, policyRevision: 1, revokedAt: null, status: 'rejected', targetStatus: 'missing' });
+  value.receipts[0] = { ...receipt, target_id: 'missing-link', canonical_request_sha256: sha256Text(requestJson), canonicalRequest, outcome: 'rejected', result_code: 'ACCOUNT_DEVICE_LINK_NOT_ACTIVE', canonical_result_json: resultJson, canonical_result_sha256: sha256Text(resultJson), committed_auth_version: null, committed_access_version: null, committed_revocation_version: null, committed_target_row_version: null };
+  value.outboxEvents = [];
+  return value;
+}
+
+function selfLinkRevokeEvidenceSnapshot() {
+  const value = acceptedLinkRevokeEvidenceSnapshot();
+  const receipt = value.receipts[0];
+  const canonicalRequest = { ...receipt.canonicalRequest, targetLinkId: 'link-2' };
+  const requestJson = linkRevokeStableJson({ expectedTargetRowVersion: canonicalRequest.expectedTargetRowVersion, reasonCode: canonicalRequest.reasonCode, targetLinkId: canonicalRequest.targetLinkId, type: canonicalRequest.type });
+  const resultJson = linkRevokeStableJson({ code: 'ACCOUNT_DEVICE_LINK_SELF_REVOKE_FORBIDDEN', linkId: 'link-2', linkRowVersion: null, policyRevision: 1, revokedAt: null, status: 'rejected', targetStatus: 'self' });
+  value.receipts[0] = { ...receipt, target_id: 'link-2', canonical_request_sha256: sha256Text(requestJson), canonicalRequest, outcome: 'rejected', result_code: 'ACCOUNT_DEVICE_LINK_SELF_REVOKE_FORBIDDEN', canonical_result_json: resultJson, canonical_result_sha256: sha256Text(resultJson), committed_auth_version: null, committed_access_version: null, committed_revocation_version: null, committed_target_row_version: null };
+  value.outboxEvents = [];
+  return value;
+}
+
+function appendNoopEvidence(value, { receiptId, idempotencyKey, auditEventId }) {
+  const extra = noopLinkRevokeEvidenceSnapshot();
+  const receipt = extra.receipts[0];
+  const canonicalRequest = { ...receipt.canonicalRequest, idempotencyKey };
+  extra.receipts[0] = { ...receipt, receipt_id: receiptId, idempotency_key: idempotencyKey, canonicalRequest };
+  extra.auditEvents[0] = { ...extra.auditEvents[0], event_id: auditEventId, receipt_id: receiptId };
+  value.receipts.push(extra.receipts[0]);
+  value.auditEvents.push(extra.auditEvents[0]);
+}
+
+function appendAcceptedEvidence(value, { receiptId, idempotencyKey, auditEventId, outboxEventId }) {
+  const extra = acceptedLinkRevokeEvidenceSnapshot();
+  const receipt = extra.receipts[0];
+  const canonicalRequest = { ...receipt.canonicalRequest, idempotencyKey };
+  extra.receipts[0] = { ...receipt, receipt_id: receiptId, idempotency_key: idempotencyKey, canonicalRequest };
+  extra.auditEvents[0] = { ...extra.auditEvents[0], event_id: auditEventId, receipt_id: receiptId };
+  extra.outboxEvents[0] = { ...extra.outboxEvents[0], event_id: outboxEventId, receipt_id: receiptId };
+  value.receipts.push(extra.receipts[0]);
+  value.auditEvents.push(extra.auditEvents[0]);
+  value.outboxEvents.push(extra.outboxEvents[0]);
 }
 
 async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposablePg17Runtime()) {
@@ -210,6 +297,64 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
       () => createVNextPg17SyntheticControlPlaneSource(authorityExtra),
       error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
     );
+    assert.doesNotThrow(() => createVNextPg17SyntheticControlPlaneSource(acceptedLinkRevokeEvidenceSnapshot()));
+    assert.doesNotThrow(() => createVNextPg17SyntheticControlPlaneSource(noopLinkRevokeEvidenceSnapshot()));
+    assert.doesNotThrow(() => createVNextPg17SyntheticControlPlaneSource(rejectedLinkRevokeEvidenceSnapshot()));
+    assert.doesNotThrow(() => createVNextPg17SyntheticControlPlaneSource(missingLinkRevokeEvidenceSnapshot()));
+    assert.doesNotThrow(() => createVNextPg17SyntheticControlPlaneSource(selfLinkRevokeEvidenceSnapshot()));
+    for (const mutate of [
+      value => { value.receipts[0].command_type = 'unknown.command'; },
+      value => { value.receipts[0].canonical_request_sha256 = '0'.repeat(64); },
+      value => { value.links[0] = { ...value.links[0], status: 'active', revoked_at: null }; },
+      value => { value.auditEvents = []; },
+    ]) {
+      const malformed = acceptedLinkRevokeEvidenceSnapshot();
+      mutate(malformed);
+      assert.throws(
+        () => createVNextPg17SyntheticControlPlaneSource(malformed),
+        error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+      );
+    }
+    const duplicateReceiptIdempotency = acceptedLinkRevokeEvidenceSnapshot();
+    appendNoopEvidence(duplicateReceiptIdempotency, { receiptId: 'receipt-link-revoke-2', idempotencyKey: 'revoke-1', auditEventId: 'audit-link-revoke-2' });
+    const duplicateAuditEvent = acceptedLinkRevokeEvidenceSnapshot();
+    appendNoopEvidence(duplicateAuditEvent, { receiptId: 'receipt-link-revoke-2', idempotencyKey: 'revoke-2', auditEventId: 'audit-link-revoke' });
+    const duplicateOutboxEvent = acceptedLinkRevokeEvidenceSnapshot();
+    appendAcceptedEvidence(duplicateOutboxEvent, { receiptId: 'receipt-link-revoke-2', idempotencyKey: 'revoke-2', auditEventId: 'audit-link-revoke-2', outboxEventId: 'outbox-link-revoke' });
+    for (const duplicate of [duplicateReceiptIdempotency, duplicateAuditEvent, duplicateOutboxEvent]) {
+      assert.throws(
+        () => createVNextPg17SyntheticControlPlaneSource(duplicate),
+        error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+      );
+    }
+    for (const createSnapshot of [noopLinkRevokeEvidenceSnapshot, rejectedLinkRevokeEvidenceSnapshot]) {
+      const malformed = createSnapshot();
+      malformed.outboxEvents = acceptedLinkRevokeEvidenceSnapshot().outboxEvents;
+      assert.throws(
+        () => createVNextPg17SyntheticControlPlaneSource(malformed),
+        error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+      );
+    }
+    for (const mutate of [
+      value => {
+        value.receipts[0].idempotency_key = ' revoke-1 ';
+        value.receipts[0].canonicalRequest = { ...value.receipts[0].canonicalRequest, idempotencyKey: ' revoke-1 ' };
+      },
+      value => {
+        const canonicalRequest = { ...value.receipts[0].canonicalRequest, reasonCode: ' owner-request ' };
+        const requestJson = linkRevokeStableJson({ expectedTargetRowVersion: canonicalRequest.expectedTargetRowVersion, reasonCode: canonicalRequest.reasonCode, targetLinkId: canonicalRequest.targetLinkId, type: canonicalRequest.type });
+        value.receipts[0].canonicalRequest = canonicalRequest;
+        value.receipts[0].canonical_request_sha256 = sha256Text(requestJson);
+        value.auditEvents[0].reason_code = canonicalRequest.reasonCode;
+      },
+    ]) {
+      const nonCanonical = acceptedLinkRevokeEvidenceSnapshot();
+      mutate(nonCanonical);
+      assert.throws(
+        () => createVNextPg17SyntheticControlPlaneSource(nonCanonical),
+        error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+      );
+    }
     const crossAuthorityAccount = snapshot();
     crossAuthorityAccount.accounts[0].authority_id = 'authority-2';
     assert.throws(
@@ -330,6 +475,45 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
         assert.ok(profileTrace.queries.some(text => text.includes('FROM vnext_control_plane.vnext_profile_bindings ORDER BY binding_id')));
         assert.ok(profileTrace.queries.every(text => /^(BEGIN ISOLATION LEVEL REPEATABLE READ|COMMIT|ROLLBACK|SELECT |INSERT INTO vnext_control_plane\.)/.test(text)));
       } finally { await runtime.disposeHandle(profileHandle); }
+      const evidenceHandle = await runtime.createIsolatedHandle();
+      try {
+        await createVNextPg17CatalogBoundary(runtime).apply(evidenceHandle, { appliedAt: '2026-08-20T00:00:00.000Z', appliedBy: 'link-revoke-evidence-test' });
+        const evidenceTarget = runtime.createVNextPg17CopyOnlyRehearsalTarget(evidenceHandle);
+        const evidenceResult = await rehearseVNextPg17ControlPlaneCopy({
+          source: createVNextPg17SyntheticControlPlaneSource(acceptedLinkRevokeEvidenceSnapshot()),
+          target: evidenceTarget,
+        });
+        await withVNextPg17SyntheticQuery(evidenceHandle, 'fixture-provisioner', async facade => {
+          for (const relation of ['vnext_authorization_command_receipts', 'vnext_authorization_audit_events', 'vnext_authorization_outbox_events']) {
+            assert.strictEqual(Number((await facade.query(`SELECT COUNT(*)::int AS count FROM vnext_control_plane.${relation}`)).rows[0].count), 1);
+          }
+        });
+        assert.strictEqual(evidenceResult.receiptCount, 1);
+        assert.strictEqual(evidenceResult.auditEventCount, 1);
+        assert.strictEqual(evidenceResult.outboxEventCount, 1);
+        assert.strictEqual(evidenceResult.sourceLinkRevocationEvidenceLogicalSha256, evidenceResult.targetLinkRevocationEvidenceLogicalSha256);
+        const evidenceTrace = inspectVNextPg17CopyOnlyRehearsalTarget(evidenceTarget);
+        assert.ok(evidenceTrace.queries.some(text => text.startsWith('INSERT INTO vnext_control_plane.vnext_authorization_command_receipts(')));
+        assert.ok(evidenceTrace.queries.some(text => text.startsWith('INSERT INTO vnext_control_plane.vnext_authorization_audit_events(')));
+        assert.ok(evidenceTrace.queries.some(text => text.startsWith('INSERT INTO vnext_control_plane.vnext_authorization_outbox_events(')));
+        assert.ok(evidenceTrace.queries.some(text => text.includes('FROM vnext_control_plane.vnext_authorization_command_receipts ORDER BY receipt_id')));
+      } finally { await runtime.disposeHandle(evidenceHandle); }
+      for (const [label, createSnapshot] of [['noop', noopLinkRevokeEvidenceSnapshot], ['version-conflict', rejectedLinkRevokeEvidenceSnapshot], ['missing', missingLinkRevokeEvidenceSnapshot], ['self', selfLinkRevokeEvidenceSnapshot]]) {
+        const evidenceHandle = await runtime.createIsolatedHandle();
+        try {
+          await createVNextPg17CatalogBoundary(runtime).apply(evidenceHandle, { appliedAt: '2026-08-20T00:00:00.000Z', appliedBy: `link-revoke-${label}-test` });
+          const evidenceTarget = runtime.createVNextPg17CopyOnlyRehearsalTarget(evidenceHandle);
+          const evidenceResult = await rehearseVNextPg17ControlPlaneCopy({ source: createVNextPg17SyntheticControlPlaneSource(createSnapshot()), target: evidenceTarget });
+          await withVNextPg17SyntheticQuery(evidenceHandle, 'fixture-provisioner', async facade => {
+            assert.strictEqual(Number((await facade.query('SELECT COUNT(*)::int AS count FROM vnext_control_plane.vnext_authorization_command_receipts')).rows[0].count), 1);
+            assert.strictEqual(Number((await facade.query('SELECT COUNT(*)::int AS count FROM vnext_control_plane.vnext_authorization_audit_events')).rows[0].count), 1);
+            assert.strictEqual(Number((await facade.query('SELECT COUNT(*)::int AS count FROM vnext_control_plane.vnext_authorization_outbox_events')).rows[0].count), 0);
+          });
+          assert.strictEqual(evidenceResult.receiptCount, 1);
+          assert.strictEqual(evidenceResult.auditEventCount, 1);
+          assert.strictEqual(evidenceResult.outboxEventCount, 0);
+        } finally { await runtime.disposeHandle(evidenceHandle); }
+      }
       const lifecycleHandle = await runtime.createIsolatedHandle();
       try {
         await createVNextPg17CatalogBoundary(runtime).apply(lifecycleHandle, { appliedAt: '2026-08-20T00:00:00.000Z', appliedBy: 'identity-lifecycle-test' });
@@ -405,13 +589,29 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
           }
         });
       } finally { await runtime.disposeHandle(profileMismatchHandle); }
-      for (const stage of ['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants', 'profileBindings']) {
+      const evidenceMismatchHandle = await runtime.createIsolatedHandle();
+      try {
+        await createVNextPg17CatalogBoundary(runtime).apply(evidenceMismatchHandle, { appliedAt: '2026-08-20T00:00:00.000Z', appliedBy: 'link-revoke-copy-only-mismatch-test' });
+        const evidenceMismatchTarget = runtime.createVNextPg17CopyOnlyRehearsalTarget(evidenceMismatchHandle);
+        const faultPlan = runtime.createVNextPg17CopyOnlyRehearsalFaultPlan(evidenceMismatchHandle, 'postReadEvidenceMismatch');
+        await assert.rejects(
+          () => rehearseVNextPg17ControlPlaneCopy({ source: createVNextPg17SyntheticControlPlaneSource(acceptedLinkRevokeEvidenceSnapshot()), target: evidenceMismatchTarget, faultPlan }),
+          error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_LOGICAL_MISMATCH',
+        );
+        await withVNextPg17SyntheticQuery(evidenceMismatchHandle, 'fixture-provisioner', async facade => {
+          for (const table of TARGET_DATA_TABLES) {
+            assert.strictEqual(Number((await facade.query(`SELECT COUNT(*)::int AS count FROM vnext_control_plane.${table}`)).rows[0].count), 0);
+          }
+        });
+      } finally { await runtime.disposeHandle(evidenceMismatchHandle); }
+      for (const stage of ['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants', 'profileBindings', 'receipts', 'auditEvents', 'outboxEvents']) {
         const rollbackHandle = await runtime.createIsolatedHandle();
         try {
           await createVNextPg17CatalogBoundary(runtime).apply(rollbackHandle, { appliedAt: '2026-08-20T00:00:00.000Z', appliedBy: 'copy-only-rollback-test' });
           const rollbackTarget = runtime.createVNextPg17CopyOnlyRehearsalTarget(rollbackHandle);
           const faultPlan = runtime.createVNextPg17CopyOnlyRehearsalFaultPlan(rollbackHandle, stage);
-          const rollbackSource = stage === 'profileBindings' ? createVNextPg17SyntheticControlPlaneSource(profileBindingSnapshot())
+          const rollbackSource = ['receipts', 'auditEvents', 'outboxEvents'].includes(stage) ? createVNextPg17SyntheticControlPlaneSource(acceptedLinkRevokeEvidenceSnapshot())
+            : stage === 'profileBindings' ? createVNextPg17SyntheticControlPlaneSource(profileBindingSnapshot())
             : ['capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants'].includes(stage)
               ? createVNextPg17SyntheticControlPlaneSource(historicalAuthorizationSnapshot()) : source;
           await assert.rejects(

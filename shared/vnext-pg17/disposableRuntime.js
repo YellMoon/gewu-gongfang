@@ -22,7 +22,7 @@ const syntheticQueryTraces = new WeakMap();
 const copyOnlyRehearsalTargets = new WeakMap();
 const copyOnlyRehearsalFaultPlans = new WeakMap();
 const VERIFIER_FAULT_STAGES = new Set(['begin', 'setup', 'identity', 'tls', 'catalog', 'commit', 'rollback', 'release']);
-const COPY_ONLY_REHEARSAL_STAGES = new Set(['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants', 'profileBindings', 'postReadMismatch', 'postReadHistoricalMismatch', 'postReadProfileMismatch', 'commit', 'rollback']);
+const COPY_ONLY_REHEARSAL_STAGES = new Set(['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants', 'profileBindings', 'receipts', 'auditEvents', 'outboxEvents', 'postReadMismatch', 'postReadHistoricalMismatch', 'postReadProfileMismatch', 'postReadEvidenceMismatch', 'commit', 'rollback']);
 const COPY_ONLY_TERMINAL_STAGES = new Set(['commit', 'rollback']);
 const COPY_ONLY_TARGET_DATA_RELATIONS = Object.freeze([
   'vnext_authorities', 'vnext_accounts', 'vnext_trusted_devices', 'vnext_device_installations', 'vnext_account_device_links',
@@ -448,7 +448,10 @@ async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan)
         : text.startsWith('INSERT INTO vnext_control_plane.vnext_capability_overrides') ? 'capabilityOverrides'
           : text.startsWith('INSERT INTO vnext_control_plane.vnext_data_scope_grants') ? 'dataScopeGrants' : null;
     const profileStage = text.startsWith('INSERT INTO vnext_control_plane.vnext_profile_bindings') ? 'profileBindings' : null;
-    const effectiveStage = stage || historicalStage || profileStage;
+    const evidenceStage = text.startsWith('INSERT INTO vnext_control_plane.vnext_authorization_command_receipts') ? 'receipts'
+      : text.startsWith('INSERT INTO vnext_control_plane.vnext_authorization_audit_events') ? 'auditEvents'
+        : text.startsWith('INSERT INTO vnext_control_plane.vnext_authorization_outbox_events') ? 'outboxEvents' : null;
+    const effectiveStage = stage || historicalStage || profileStage || evidenceStage;
     if (effectiveStage && faultState && faultState.stages.delete(effectiveStage)) {
       if (COPY_ONLY_TERMINAL_STAGES.has(effectiveStage)) {
         targetState.poisoned = true;
@@ -471,6 +474,13 @@ async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan)
     const profileFields = Object.freeze({ profileBindings: ['binding_id','authority_id','account_id','profile_type','profile_id','status','evidence_hash','row_version','created_at','updated_at','revoked_at'] });
     const profileRelations = Object.freeze({ profileBindings: 'vnext_profile_bindings' });
     const profileKeys = Object.freeze({ profileBindings: 'binding_id' });
+    const evidenceFields = Object.freeze({
+      receipts: ['receipt_id','authority_id','actor_key','actor_account_id','idempotency_key','command_type','target_kind','target_id','canonical_request_sha256','expected_row_version','outcome','result_code','canonical_result_json','canonical_result_sha256','committed_auth_version','committed_access_version','committed_revocation_version','committed_target_row_version','created_at'],
+      auditEvents: ['event_id','authority_id','receipt_id','reason_code','context_sha256','created_at'],
+      outboxEvents: ['event_id','authority_id','receipt_id','event_type','aggregate_kind','aggregate_id','aggregate_version','canonical_payload_json','payload_sha256','occurred_at'],
+    });
+    const evidenceRelations = Object.freeze({ receipts: 'vnext_authorization_command_receipts', auditEvents: 'vnext_authorization_audit_events', outboxEvents: 'vnext_authorization_outbox_events' });
+    const evidenceKeys = Object.freeze({ receipts: 'receipt_id', auditEvents: 'event_id', outboxEvents: 'event_id' });
     const result = await callback(Object.freeze({
       countAuthorities: async () => Number((await query('SELECT COUNT(*)::int AS count FROM vnext_control_plane.vnext_authorities')).rows[0].count),
       countTargetDataRows: async () => (await query(COPY_ONLY_TARGET_EMPTY_SQL)).rows.map(row => Object.freeze({ relation: row.relation, count: Number(row.count) })),
@@ -510,6 +520,18 @@ async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan)
         }
         return Object.freeze(profile);
       },
+      readLinkRevocationEvidence: async () => {
+        const evidence = {};
+        for (const collection of Object.keys(evidenceFields)) {
+          const columns = evidenceFields[collection];
+          const result = await query(`SELECT row_to_json(record) AS row FROM (SELECT ${columns.join(',')} FROM vnext_control_plane.${evidenceRelations[collection]} ORDER BY ${evidenceKeys[collection]}) AS record`);
+          evidence[collection] = Object.freeze(result.rows.map(row => Object.freeze(row.row)));
+        }
+        if (faultState && faultState.stages.delete('postReadEvidenceMismatch')) {
+          evidence.receipts = Object.freeze([Object.freeze({ ...evidence.receipts[0], result_code: 'rehearsal-mismatch' })]);
+        }
+        return Object.freeze(evidence);
+      },
       insertAuthority: async row => {
         const result = await query('INSERT INTO vnext_control_plane.vnext_authorities(authority_id,status,created_at,updated_at) VALUES($1,$2,$3,$4)', [row.authority_id, row.status, row.created_at, row.updated_at]);
         return result;
@@ -529,6 +551,11 @@ async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan)
         if (!Object.prototype.hasOwnProperty.call(profileFields, collection) || !row || Object.keys(row).sort().join(',') !== [...profileFields[collection]].sort().join(',')) throw invalidHandle();
         const columns = profileFields[collection];
         return query(`INSERT INTO vnext_control_plane.${profileRelations[collection]}(${columns.join(',')}) VALUES(${columns.map((_, index) => '$' + (index + 1)).join(',')})`, columns.map(key => row[key]));
+      },
+      insertLinkRevocationEvidence: async (collection, row) => {
+        if (!Object.prototype.hasOwnProperty.call(evidenceFields, collection) || !row || Object.keys(row).sort().join(',') !== [...evidenceFields[collection]].sort().join(',')) throw invalidHandle();
+        const columns = evidenceFields[collection];
+        return query(`INSERT INTO vnext_control_plane.${evidenceRelations[collection]}(${columns.join(',')}) VALUES(${columns.map((_, index) => '$' + (index + 1)).join(',')})`, columns.map(key => row[key]));
       },
     }));
     commitAttempted = true;
