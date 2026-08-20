@@ -40,7 +40,7 @@ values, account numbers, paths, and persistent rows are prohibited.
 **Files:**
 - Create: `docs/superpowers/inventories/2026-08-20-local-business-repository-synthetic-read-pilot.md`
 
-- [ ] **Step 1: Write the exact inventory**
+- [x] **Step 1: Write the exact inventory**
 
 ```markdown
 # Local Business Repository Synthetic Read Pilot Inventory
@@ -59,7 +59,7 @@ values, account numbers, paths, and persistent rows are prohibited.
   projection, sync, snapshots, exports, task dispatch, runtime wiring, mutators.
 ```
 
-- [ ] **Step 2: Verify source evidence**
+- [x] **Step 2: Verify source evidence**
 
 Run:
 
@@ -70,7 +70,7 @@ node backend/src/services/personalAssetAccountService.test.js
 
 Expected: the source contract is present and the retained focused test exits `0`.
 
-- [ ] **Step 3: Commit the inventory checkpoint**
+- [x] **Step 3: Commit the inventory checkpoint**
 
 ```powershell
 git add docs/superpowers/inventories/2026-08-20-local-business-repository-synthetic-read-pilot.md
@@ -85,7 +85,7 @@ git push gewu HEAD:master
 - Create: `backend/src/services/personalAssetAccountSyntheticReadAdapter.test.js`
 - Create: `backend/src/services/personalAssetAccountSyntheticReadAdapter.js`
 
-- [ ] **Step 1: Create a fictional-only fixture in the test**
+- [x] **Step 1: Create a fictional-only fixture in the test**
 
 Import `assert` and the prospective adapter module only; do not import the
 retained service, `better-sqlite3`, `pg`, `fs`, `path`, `http`, `https`, `net`,
@@ -101,7 +101,7 @@ const fictionalAccounts = [
 ];
 ```
 
-- [ ] **Step 2: Write failing domain-parity tests**
+- [x] **Step 2: Write failing domain-parity tests**
 
 ```js
 const fixture = createSyntheticPersonalAssetAccountFixture({ accounts: fictionalAccounts });
@@ -124,7 +124,7 @@ assert.throws(() => adapter.list({ actor: { userId: 'synthetic-owner-alpha' } })
 Run `node backend/src/services/personalAssetAccountSyntheticReadAdapter.test.js`.
 Expected: FAIL because the module is absent.
 
-- [ ] **Step 3: Add failing boundary tests**
+- [x] **Step 3: Add failing boundary tests**
 
 ```js
 assert.throws(() => createSyntheticPersonalAssetAccountFixture({ accounts: fictionalAccounts, database: {} }), error => error.code === 'SYNTHETIC_ASSET_ACCOUNT_FIXTURE_INVALID');
@@ -170,7 +170,7 @@ Before importing the adapter, temporarily intercept `Module._load` and fail for
 `node:net`, `http`, `node:http`, `https`, `node:https`, `child_process`, and
 `node:child_process`; always restore it in `finally`.
 
-- [ ] **Step 4: Commit the red-test checkpoint**
+- [x] **Step 4: Commit the red-test checkpoint**
 
 ```powershell
 git add backend/src/services/personalAssetAccountSyntheticReadAdapter.test.js
@@ -185,7 +185,7 @@ git push gewu HEAD:master
 - Create: `backend/src/services/personalAssetAccountSyntheticReadAdapter.js`
 - Modify: `backend/src/services/personalAssetAccountSyntheticReadAdapter.test.js`
 
-- [ ] **Step 1: Add private fixture state and descriptor validation**
+- [x] **Step 1: Add private fixture state and descriptor validation**
 
 Use only `node:crypto` and `node:util` (`types.isProxy`):
 
@@ -219,7 +219,7 @@ digit runs, and nonzero balances. Descriptor-snapshot each allowed row, sort by
 `WeakMap`, and return a frozen empty brand. Use error
 `SYNTHETIC_ASSET_ACCOUNT_FIXTURE_INVALID`.
 
-- [ ] **Step 2: Implement retained `list` behavior without a DB import**
+- [x] **Step 2: Implement retained `list` behavior without a DB import**
 
 Use this projection exactly:
 
@@ -252,7 +252,7 @@ array and projected row. `inspect()` must return only frozen
 `{ fixtureSha256, operationCount }`; it never exposes a row, input, handle, or
 result. The hash is deterministic JSON of copied fictional rows.
 
-- [ ] **Step 3: Verify focused behavior**
+- [x] **Step 3: Verify focused behavior**
 
 ```powershell
 node backend/src/services/personalAssetAccountSyntheticReadAdapter.test.js
@@ -263,7 +263,7 @@ git diff --check
 Expected: both tests exit `0`; no whitespace errors. Do not alter the retained
 service/test, runtime registration, `package.json`, or any migration.
 
-- [ ] **Step 4: Commit the implementation checkpoint**
+- [x] **Step 4: Commit the implementation checkpoint**
 
 ```powershell
 git add backend/src/services/personalAssetAccountSyntheticReadAdapter.js backend/src/services/personalAssetAccountSyntheticReadAdapter.test.js
@@ -278,7 +278,7 @@ git push gewu HEAD:master
 - Modify: `backend/src/services/personalAssetAccountSyntheticReadAdapter.test.js`
 - Modify: `docs/superpowers/plans/2026-08-20-vnext-local-business-repository-synthetic-read-adapter-implementation.md`
 
-- [ ] **Step 1: Lock exact exports and prohibited source tokens**
+- [x] **Step 1: Lock exact exports and prohibited source tokens**
 
 ```js
 assert.deepStrictEqual(Object.keys(require('./personalAssetAccountSyntheticReadAdapter')).sort(), [
@@ -292,14 +292,14 @@ if it contains `better-sqlite3`, `require('pg')`, `fetch(`, `http`, `https`,
 `fs`, `path`, `process.env`, `child_process`, `INSERT`, `UPDATE`, `DELETE`,
 `CREATE`, `ALTER`, `DROP`, `COPY`, `sync`, `projection`, or `snapshot`.
 
-- [ ] **Step 2: Record bounded execution evidence**
+- [x] **Step 2: Record bounded execution evidence**
 
 Append an `## Execution Evidence` section after green checks. It must say this
 is one process-local fictional read boundary, not a retained-repository
 replacement, real-data reader, local DB adapter, PG17 source, projection, sync
 feature, cloud release, or desktop release.
 
-- [ ] **Step 3: Final verification and review**
+- [x] **Step 3: Final verification and review**
 
 ```powershell
 node backend/src/services/personalAssetAccountService.test.js
@@ -314,7 +314,7 @@ fallback, network, PG17 operation, runtime import, or control-plane write; that
 the admitted errors/results match; and fixture/result mutation or serialization
 cannot affect later calls.
 
-- [ ] **Step 4: Commit and push verified evidence**
+- [x] **Step 4: Commit and push verified evidence**
 
 ```powershell
 git add -A
@@ -326,3 +326,18 @@ git ls-remote gewu refs/heads/master
 
 Expected: remote `master` equals the local commit. Do not package Electron,
 update OSS, deploy, or claim a multi-endpoint release.
+
+## Execution Evidence
+
+- Inventory checkpoint: `7c2b345`; red-test checkpoint: `787575c`; minimum
+  adapter checkpoint: `0c867d7`.
+- Focused retained-service and synthetic-adapter tests passed after the final
+  no-argument/error-parity and fixture-copy regression.
+- `npm.cmd run test:vnext-control-plane-target` completed its migration suite,
+  and the disposable PG17 runner completed separately with exit code `0`.
+- Independent necessity and quality review found and closed the no-argument
+  error-parity and fixture-snapshot gaps. The resulting boundary imports no
+  database, network, filesystem, environment, or runtime service.
+- This is one process-local fictional read boundary only. It is not a retained
+  repository replacement, real-data reader, local database adapter, PG17
+  source, projection, sync feature, cloud release, or desktop release.

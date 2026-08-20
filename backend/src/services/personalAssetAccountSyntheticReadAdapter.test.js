@@ -68,8 +68,21 @@ assert.deepStrictEqual(adapter.list({
 }), []);
 assert.throws(() => adapter.list({ actor: {}, authorityId: 'synthetic-authority' }),
   error => error.code === 'ASSET_ACCOUNT_ACTOR_REQUIRED');
+assert.throws(() => adapter.list(),
+  error => error.code === 'ASSET_ACCOUNT_ACTOR_REQUIRED');
 assert.throws(() => adapter.list({ actor: { userId: 'synthetic-owner-alpha' } }),
   error => error.code === 'ASSET_ACCOUNT_AUTHORITY_REQUIRED');
+
+const fixtureSha256BeforeSourceMutation = adapter.inspect().fixtureSha256;
+fictionalAccounts[0].label = 'mutated source label';
+fictionalAccounts[0].status = 'archived';
+fictionalAccounts[0].owner_user_id = 'mutated source owner';
+assert.strictEqual(adapter.inspect().fixtureSha256, fixtureSha256BeforeSourceMutation);
+assert.deepStrictEqual(adapter.list({
+  actor: { userId: 'synthetic-owner-alpha' }, authorityId: 'synthetic-authority',
+}).map(row => row.label), [
+  'Earlier Synthetic Account', 'Synthetic Account', 'Tied Synthetic Account',
+]);
 
 assert.throws(() => createSyntheticPersonalAssetAccountFixture({
   accounts: fictionalAccounts, database: {},
@@ -159,5 +172,22 @@ assert.deepStrictEqual(adapter.list({
 }).map(row => row.label), [
   'Earlier Synthetic Account', 'Synthetic Account', 'Tied Synthetic Account',
 ]);
+
+assert.deepStrictEqual(Object.keys(adapterApi).sort(), [
+  'createSyntheticPersonalAssetAccountFixture',
+  'createSyntheticPersonalAssetAccountListAdapter',
+].sort());
+
+const source = require('fs').readFileSync(
+  require.resolve('./personalAssetAccountSyntheticReadAdapter'), 'utf8',
+);
+for (const forbiddenToken of [
+  'better-sqlite3', "require('pg')", 'fetch(', 'http', 'https', 'fs', 'path',
+  'process.env', 'child_process', 'INSERT', 'UPDATE', 'DELETE', 'CREATE',
+  'ALTER', 'DROP', 'COPY', 'sync', 'projection', 'snapshot',
+]) {
+  assert.strictEqual(source.includes(forbiddenToken), false,
+    `synthetic adapter source must not contain ${forbiddenToken}`);
+}
 
 console.log('personal asset account synthetic read adapter tests passed');

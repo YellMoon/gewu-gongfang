@@ -190,7 +190,7 @@ function createSyntheticPersonalAssetAccountListAdapter(value) {
     return Object.freeze({ fixtureSha256: state.fixtureSha256, operationCount });
   }
 
-  function list(value) {
+  function list(value = {}) {
     const inputCode = 'SYNTHETIC_ASSET_ACCOUNT_INPUT_INVALID';
     try {
       const input = exactObject(value, ['actor', 'authorityId', 'ownerUserId'], [], inputCode);
