@@ -4,7 +4,13 @@ const assert = require('assert');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { createDisposablePg17Runtime, withVNextPg17SyntheticQuery } = require('./disposableRuntime');
+const {
+  createDisposablePg17Runtime,
+  withVNextPg17SyntheticQuery,
+  createVNextPg17SyntheticQueryTrace,
+  armVNextPg17SyntheticQueryTrace,
+  inspectVNextPg17SyntheticQueryTrace,
+} = require('./disposableRuntime');
 const { createVNextPg17CatalogBoundary } = require('./catalogAssertion');
 const { createVNextPg17FirstAuthorityBootstrapMutation } = require('./firstAuthorityBootstrapMutation');
 const { createVNextPg17TrustedSessionVerifierBoundary } = require('./trustedSessionVerifierBoundary');
@@ -59,6 +65,34 @@ async function expectUnavailable(action) {
   await assert.rejects(action, error => error?.code === 'VNEXT_PG17_ACCESS_CONTEXT_UNAVAILABLE');
 }
 
+function isReadOnlyTraceStatement(query) {
+  if (['BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', 'COMMIT', 'ROLLBACK'].includes(query)) return true;
+  if (typeof query !== 'string' || !query.startsWith('SELECT ') || query.includes(';')) return false;
+  const withoutStrings = query.replace(/'(?:''|[^'])*'/g, '');
+  return !/\b(?:INSERT|UPDATE|DELETE|TRUNCATE|ALTER|CREATE|DROP|SET\s+ROLE|CALL|DO|COPY)\b/i.test(withoutStrings);
+}
+
+function assertResolverReadOnlyQueries(queries, terminal, { requireDomainQueries = true } = {}) {
+  assert.strictEqual(queries.filter(query => query === 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY').length, 1);
+  assert.strictEqual(queries.at(-1), terminal);
+  assert.strictEqual(queries.filter(query => query === 'COMMIT').length, terminal === 'COMMIT' ? 1 : 0);
+  assert.strictEqual(queries.filter(query => query === 'ROLLBACK').length, terminal === 'ROLLBACK' ? 1 : 0);
+  assert.strictEqual(queries.every(isReadOnlyTraceStatement), true);
+  assert.strictEqual(queries.some(query => query.includes('WHERE s.session_id=$1')), true);
+  if (requireDomainQueries) {
+    assert.strictEqual(queries.some(query => query.includes('vnext_role_grants WHERE authority_id=$1 AND account_id=$2')), true);
+    assert.strictEqual(queries.some(query => query.includes('vnext_capability_overrides WHERE authority_id=$1 AND account_id=$2')), true);
+    assert.strictEqual(queries.some(query => query.includes('vnext_data_scope_grants WHERE authority_id=$1 AND account_id=$2')), true);
+  }
+  return queries;
+}
+
+function assertResolverReadOnlyTrace(trace, terminal, options) {
+  const queries = inspectVNextPg17SyntheticQueryTrace(trace).queries;
+  assert.strictEqual(Object.isFrozen(queries), true);
+  return assertResolverReadOnlyQueries(queries, terminal, options);
+}
+
 async function targetRowsSnapshot(handle) {
   return withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
     const snapshot = {};
@@ -71,6 +105,12 @@ async function targetRowsSnapshot(handle) {
 }
 
 async function runAccessContextResolverCases(runtime) {
+  assert.throws(() => assertResolverReadOnlyQueries([
+    'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', 'ROLLBACK', 'SELECT 1', 'COMMIT',
+  ], 'COMMIT'));
+  assert.throws(() => assertResolverReadOnlyQueries([
+    'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', 'COMMIT', 'SELECT 1', 'ROLLBACK',
+  ], 'ROLLBACK'));
   assert.match(
     fs.readFileSync(path.join(__dirname, 'accessContextResolver.js'), 'utf8'),
     /BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY/,
@@ -79,12 +119,17 @@ async function runAccessContextResolverCases(runtime) {
   try {
     const resolver = createVNextPg17AccessContextResolver({ runtime, handle: current.handle, verifierBoundary: current.boundary, surface: 'desktop', now: () => NOW });
     const before = await targetRowsSnapshot(current.handle);
+    const trace = createVNextPg17SyntheticQueryTrace(runtime, current.handle, 'verifier');
+    armVNextPg17SyntheticQueryTrace(trace);
     const context = await resolver.resolve(current.assertion);
     assert.strictEqual(context.authorityId, 'authority-1');
     assert.deepStrictEqual(context.roles, ['super_admin']);
     assert.deepStrictEqual(context.capabilityIds, ['access.manage', 'device.revoke', 'user.review']);
     assert.strictEqual(context.reauthenticatedUntil, '2026-08-15T00:10:00.000Z');
     assert.strictEqual(Object.isFrozen(context), true);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(context, 'factorClass'), false);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(context, 'evidenceSha256'), false);
+    assertResolverReadOnlyTrace(trace, 'COMMIT');
     assert.deepStrictEqual(await targetRowsSnapshot(current.handle), before);
   } finally {
     await runtime.disposeHandle(current.handle);
@@ -156,7 +201,27 @@ async function runAccessContextResolverCases(runtime) {
         await facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications ENABLE TRIGGER vnext_authorization_policy_publications_no_update');
       }
     });
+    const beforeFailure = await targetRowsSnapshot(malformedPolicy.handle);
+    const failureTrace = createVNextPg17SyntheticQueryTrace(runtime, malformedPolicy.handle, 'verifier');
+    armVNextPg17SyntheticQueryTrace(failureTrace);
     await expectUnavailable(() => resolver.resolve(malformedPolicy.assertion));
+    assertResolverReadOnlyTrace(failureTrace, 'ROLLBACK', { requireDomainQueries: false });
+    assert.deepStrictEqual(await targetRowsSnapshot(malformedPolicy.handle), beforeFailure);
+    const policyModule = require('../vNextAuthorizationPolicyReference');
+    const canonicalManifest = policyModule.canonicalizePolicyManifest(manifest());
+    await withVNextPg17SyntheticQuery(malformedPolicy.handle, 'fixture-provisioner', async facade => {
+      await facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications DISABLE TRIGGER vnext_authorization_policy_publications_no_update');
+      try {
+        await facade.query("UPDATE vnext_control_plane.vnext_authorization_policy_publications SET canonical_manifest_json=$1 WHERE authority_id='authority-1' AND policy_revision=1", [canonicalManifest]);
+      } finally {
+        await facade.query('ALTER TABLE vnext_control_plane.vnext_authorization_policy_publications ENABLE TRIGGER vnext_authorization_policy_publications_no_update');
+      }
+    });
+    const recoveryTrace = createVNextPg17SyntheticQueryTrace(runtime, malformedPolicy.handle, 'verifier');
+    armVNextPg17SyntheticQueryTrace(recoveryTrace);
+    const recovered = await resolver.resolve(malformedPolicy.assertion);
+    assert.strictEqual(recovered.authorityId, 'authority-1');
+    assertResolverReadOnlyTrace(recoveryTrace, 'COMMIT');
   } finally {
     await runtime.disposeHandle(malformedPolicy.handle);
   }
