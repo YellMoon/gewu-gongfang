@@ -152,7 +152,7 @@ State that parity demonstrates only local disposable, read-only compatibility. I
 
 Ask 5.6-sol to assess necessity, cross-project safety, input/identity trust boundaries, SQL trace, parity test quality, local cost, and non-goals. Convert any finding into a failing regression before applying a minimal fix.
 
-- [ ] **Step 3: Commit and push only this slice**
+- [x] **Step 3: Commit and push only this slice**
 
 Run the target gate and `npm.cmd test`; record an unrelated pre-existing failure rather than changing unrelated business logic. Stage only parity source/test/runner/docs, use the repository-required dated commit format, then push `HEAD:master` to `gewu`. Do not package Electron, publish OSS, create cloud resources, or change real credentials.
 
