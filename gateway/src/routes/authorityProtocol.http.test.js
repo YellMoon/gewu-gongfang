@@ -31,6 +31,7 @@ const hostPublicKeyFingerprint = crypto.createHash('sha256')
 const hostCredential = 'managed-host-credential-test-only';
 const hostCredentialHash = crypto.createHash('sha256').update(hostCredential).digest('hex');
 const actor = Object.freeze({ userId: 'user-1', deviceId: 'device-1', role: 'teacher' });
+const activeLeaseExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 const envelope = Object.freeze({
   protocol: 'gewu.authority-command.v1',
   commandId: 'command-1',
@@ -95,8 +96,8 @@ async function requestJson(origin, requestPath, options = {}) {
       .run(publicKey, now, now);
     db.prepare(`INSERT INTO device_leases
       (lease_id,grant_id,authority_id,device_id,user_id,active_role,grant_version,status,issued_at,expires_at)
-      VALUES('lease-1','grant-1','authority-1','device-1','user-1','teacher',1,'active',?,'2026-08-11T00:00:00.000Z')`)
-      .run(now);
+      VALUES('lease-1','grant-1','authority-1','device-1','user-1','teacher',1,'active',?,?)`)
+      .run(now, activeLeaseExpiresAt);
     db.prepare(`INSERT INTO primary_host_epochs
       (id,db_authority_id,generation,device_id,status,host_credential_hash,host_public_key,credential_version,created_at,updated_at,activated_at)
       VALUES('epoch-1','authority-1',1,'host-1','active',?,?,1,?,?,?)`)
@@ -218,7 +219,7 @@ async function requestJson(origin, requestPath, options = {}) {
         leaseId: 'lease-1', grantId: 'grant-1', authorityId: 'authority-1',
         deviceId: 'device-1', userId: 'user-1', activeRole: 'teacher',
         grantVersion: 1, status: 'active', issuedAt: now,
-        expiresAt: '2026-08-11T00:00:00.000Z',
+        expiresAt: activeLeaseExpiresAt,
       }],
       roleBindings: [{ bindingId: 'binding-1', authorityId: 'authority-1', userId: 'user-1', role: 'teacher', subjectType: 'teacher', subjectId: 'teacher-1', status: 'active', grantVersion: 1, createdAt: now, updatedAt: now }],
     };

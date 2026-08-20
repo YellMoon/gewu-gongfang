@@ -36,6 +36,7 @@ const token = jwt.sign({ id: testUser.id }, process.env.JWT_SECRET, { algorithm:
 const keyPair = crypto.generateKeyPairSync('ed25519');
 const publicKey = keyPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
 const actor = Object.freeze({ userId: testUser.id, deviceId: 'device-app-1', role: 'teacher' });
+const activeLeaseExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 const payload = Object.freeze({ id: 'schedule-1', changes: Object.freeze({ notes: 'signed LAN command' }) });
 const envelope = Object.freeze({
   protocol: 'gewu.authority-command.v1',
@@ -75,16 +76,16 @@ database.db.prepare(`INSERT INTO device_grants
     envelope.createdAt, envelope.createdAt);
 database.db.prepare(`INSERT INTO device_leases
   (lease_id,grant_id,authority_id,device_id,user_id,active_role,grant_version,status,issued_at,expires_at)
-  VALUES(?,'grant-app-1',?,?,?,'teacher',1,'active',?,'2026-08-11T00:00:00.000Z')`)
-  .run(envelope.lease.id, envelope.authorityId, actor.deviceId, actor.userId, envelope.createdAt);
+  VALUES(?,'grant-app-1',?,?,?,'teacher',1,'active',?,?)`)
+  .run(envelope.lease.id, envelope.authorityId, actor.deviceId, actor.userId, envelope.createdAt, activeLeaseExpiresAt);
 database.db.prepare(`INSERT INTO authority_role_bindings
   (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,created_at,updated_at)
   VALUES('binding-super-app-1',?,?,'super_admin',NULL,NULL,'active',1,?,?)`)
   .run(envelope.authorityId, actor.userId, envelope.createdAt, envelope.createdAt);
 database.db.prepare(`INSERT INTO device_leases
   (lease_id,grant_id,authority_id,device_id,user_id,active_role,grant_version,status,issued_at,expires_at)
-  VALUES('lease-super-app-1','grant-app-1',?,?,?,'super_admin',1,'active',?,'2026-08-11T00:00:00.000Z')`)
-  .run(envelope.authorityId, actor.deviceId, actor.userId, envelope.createdAt);
+  VALUES('lease-super-app-1','grant-app-1',?,?,?,'super_admin',1,'active',?,?)`)
+  .run(envelope.authorityId, actor.deviceId, actor.userId, envelope.createdAt, activeLeaseExpiresAt);
 database.db.prepare(`INSERT INTO users
   (id,name,role,status,login_enabled,review_status,created_at,updated_at)
   VALUES('admin-target-app-1','Admin target','visitor',1,1,'approved',?,?)`)
