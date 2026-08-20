@@ -11,6 +11,7 @@ const { runAccessContextResolverCases } = require('./accessContextResolver.test'
 const { runPolicyPublicationMutationCases } = require('./policyPublicationMutation.test');
 const { runRoleMutationCases } = require('./roleMutation.test');
 const { runAccountDeviceLinkRevocationCases } = require('./accountDeviceLinkRevocationMutation.test');
+const { runAccountDeviceLinkRevocationCanonicalParityCases } = require('./accountDeviceLinkRevocationCanonicalParity.test');
 
 function sanitizedCode(error) {
   return error && typeof error.code === 'string' && /^VNEXT_PG17_[A-Z_]+$/.test(error.code)
@@ -30,6 +31,7 @@ async function run({
   runPolicyPublication = runPolicyPublicationMutationCases,
   runRoleMutation = runRoleMutationCases,
   runLinkRevocation = runAccountDeviceLinkRevocationCases,
+  runLinkRevocationParity = runAccountDeviceLinkRevocationCanonicalParityCases,
   report = () => {},
 } = {}) {
   const runtime = runtimeFactory();
@@ -45,6 +47,7 @@ async function run({
     await runPolicyPublication(runtime);
     await runRoleMutation(runtime);
     await runLinkRevocation(runtime);
+    await runLinkRevocationParity(runtime);
     return 0;
   } catch (error) {
     report({ code: sanitizedCode(error) });

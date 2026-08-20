@@ -18,6 +18,7 @@ const runtimes = new WeakMap();
 const syntheticVerifierPools = new WeakMap();
 const syntheticTlsBrands = new WeakMap();
 const syntheticVerifierFaultPlans = new WeakMap();
+const syntheticQueryTraces = new WeakMap();
 const VERIFIER_FAULT_STAGES = new Set(['begin', 'setup', 'identity', 'tls', 'catalog', 'commit', 'rollback', 'release']);
 
 function codedError(code, message) {
@@ -148,8 +149,13 @@ async function waitForAdmin(options) {
   throw unavailable();
 }
 
-function makeFacade(client) {
-  return Object.freeze({ query: (text, values) => client.query(text, values) });
+function makeFacade(client, trace = null) {
+  return Object.freeze({
+    query: (text, values) => {
+      if (trace && trace.armed) trace.queries.push(text);
+      return client.query(text, values);
+    },
+  });
 }
 
 function runtimeState(runtime) {
@@ -250,7 +256,7 @@ function createVerifierPool(options) {
 
 async function createHandle(runtime, database, clients, pools = {}, ownsDatabase = false) {
   const handle = Object.freeze({});
-  handles.set(handle, { runtime, database, clients, pools, ownsDatabase, closed: false });
+  handles.set(handle, { runtime, database, clients, pools, ownsDatabase, closed: false, queryTraces: new Map() });
   runtimeState(runtime).handles.add(handle);
   return handle;
 }
@@ -384,7 +390,28 @@ async function withVNextPg17SyntheticQuery(handle, purpose, callback) {
   const state = handles.get(handle);
   const client = state.clients[purpose];
   if (!client) throw invalidHandle();
-  return callback(makeFacade(client));
+  const trace = state.queryTraces.get(purpose);
+  return callback(makeFacade(client, syntheticQueryTraces.get(trace)));
+}
+
+function createVNextPg17SyntheticQueryTrace(runtime, handle, purpose) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle) || purpose !== 'verifier') throw invalidHandle();
+  const trace = Object.freeze({});
+  syntheticQueryTraces.set(trace, { runtime, handle, purpose, armed: false, queries: [] });
+  handles.get(handle).queryTraces.set(purpose, trace);
+  return trace;
+}
+
+function armVNextPg17SyntheticQueryTrace(trace) {
+  const state = syntheticQueryTraces.get(trace);
+  if (!state || !isVNextPg17DisposableHandleForRuntime(state.runtime, state.handle)) throw invalidHandle();
+  state.armed = true;
+}
+
+function inspectVNextPg17SyntheticQueryTrace(trace) {
+  const state = syntheticQueryTraces.get(trace);
+  if (!state) throw invalidHandle();
+  return Object.freeze({ queries: Object.freeze([...state.queries]) });
 }
 
 function createVNextPg17SyntheticVerifierPool(runtime, handle) {
@@ -524,6 +551,9 @@ module.exports = {
   isVNextPg17DisposableHandle,
   isVNextPg17DisposableHandleForRuntime,
   withVNextPg17SyntheticQuery,
+  createVNextPg17SyntheticQueryTrace,
+  armVNextPg17SyntheticQueryTrace,
+  inspectVNextPg17SyntheticQueryTrace,
   createVNextPg17SyntheticVerifierPool,
   issueVNextPg17SyntheticTlsBrand,
   isVNextPg17SyntheticTlsBrandForHandle,

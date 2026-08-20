@@ -28,10 +28,11 @@ async function main() {
     runPolicyPublication: async received => { assert.strictEqual(received, runtime); calls.push('policy-publication'); },
     runRoleMutation: async received => { assert.strictEqual(received, runtime); calls.push('role-mutation'); },
     runLinkRevocation: async received => { assert.strictEqual(received, runtime); calls.push('link-revocation'); },
+    runLinkRevocationParity: async received => { assert.strictEqual(received, runtime); calls.push('link-revocation-parity'); },
     report: message => calls.push(`report:${message.code}`),
   });
   assert.strictEqual(exitCode, 0);
-  assert.deepStrictEqual(calls, ['start', 'manifest', 'catalog', 'production-verifier-readiness', 'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication', 'role-mutation', 'link-revocation', 'stop']);
+  assert.deepStrictEqual(calls, ['start', 'manifest', 'catalog', 'production-verifier-readiness', 'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication', 'role-mutation', 'link-revocation', 'link-revocation-parity', 'stop']);
 
   const failedCalls = [];
   const unavailable = Object.assign(new Error('private detail'), { code: 'VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE' });
@@ -50,6 +51,7 @@ async function main() {
     runPolicyPublication: async () => failedCalls.push('policy-publication'),
     runRoleMutation: async () => failedCalls.push('role-mutation'),
     runLinkRevocation: async () => failedCalls.push('link-revocation'),
+    runLinkRevocationParity: async () => failedCalls.push('link-revocation-parity'),
     report: message => failedCalls.push(`report:${message.code}`),
   });
   assert.strictEqual(failedCode, 1);

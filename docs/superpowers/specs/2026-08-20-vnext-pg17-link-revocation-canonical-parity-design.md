@@ -91,11 +91,12 @@ compared exactly with the existing JavaScript reference output.
 
 ## PostgreSQL read-only contract
 
-Every parity operation uses a verifier lease and one `REPEATABLE READ READ
-ONLY` transaction. It reuses the exact M1-M15 catalog assertion and existing
-resolver boundary. It may issue only transaction control and `SELECT`
-statements; it must not issue DML, DDL, `SET ROLE`, create temporary objects,
-call guard functions, install extensions, or alter grants.
+Every parity *recomputation* uses a verifier lease and one `REPEATABLE READ
+READ ONLY` transaction. Before that recomputation, `inspect` reuses the
+existing AccessContext resolver's separate verifier-only read boundary. Across
+both read paths it may issue only transaction control and `SELECT` statements;
+it must not issue DML, DDL, `SET ROLE`, create temporary objects, call guard
+functions, install extensions, or alter grants.
 
 The existing writer remains `USAGE + SELECT` only. This slice adds no migration
 16, no function, no function `EXECUTE`, no role privilege, no seed, and no
@@ -124,6 +125,7 @@ route, a credential verifier, an RDS/ECS connection, or an operation on desktop
 or business data.
 
 Only after every golden vector's normalized values, JSON bytes, and hashes
-match exactly—and the verifier can independently rebuild authority, actor,
-permissions, reauthentication, target, and version facts—may a new, separately
-audited design consider one command-specific owner-owned write procedure.
+match exactly may a new, separately audited design consider one
+command-specific owner-owned write procedure. That later procedure—not this
+parity harness—must independently rebuild authority, actor, permissions,
+reauthentication, target, and version facts inside its own transaction.

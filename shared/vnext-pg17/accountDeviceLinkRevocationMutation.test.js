@@ -132,4 +132,4 @@ if (require.main === module) {
   const runtime = createDisposablePg17Runtime();
   runtime.start().then(() => runAccountDeviceLinkRevocationCases(runtime)).then(() => process.stdout.write('vNext PG17 account-device-link revocation mutation checks passed\n')).finally(() => runtime.stop()).catch(error => { process.stderr.write(`${error.code || error.message}\n`); process.exitCode = 1; });
 }
-module.exports = { runAccountDeviceLinkRevocationCases };
+module.exports = { runAccountDeviceLinkRevocationCases, fixture, command, manifest, insertSession, NOW };
