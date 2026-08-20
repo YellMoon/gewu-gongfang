@@ -1,6 +1,8 @@
 # vNext PostgreSQL 17 Production Control-Plane Adapter Design
 
-**Status:** owner-delegated design checkpoint, 2026-08-15
+**Status:** read-only deployment-boundary checkpoint. The later 2026-08-20
+identity-bridge feasibility decision supersedes every prospective writer-path
+statement below: no production command adapter is admitted yet.
 
 ## Purpose
 
@@ -51,7 +53,7 @@ configuration:
 | --- | --- | --- |
 | schema owner | non-login owner of schema, tables, and guard functions | login and application use |
 | migrator | explicit operator-run migration command | normal HTTP serving and bootstrap data seed |
-| writer | reviewed control-plane command handlers | DDL, trigger changes, role changes, and arbitrary SQL |
+| writer | reserved deployment identity; currently `USAGE + SELECT` only | every table DML, function `EXECUTE`, DDL, trigger/role changes, and arbitrary SQL |
 | verifier | read-only AccessContext reads | all DML and function execution except explicitly reviewed read helpers |
 
 The runtime obtains a bounded `pg` connection pool through dependency injection.
@@ -78,25 +80,25 @@ ledger in place.
 
 ## Command and read boundary
 
-The writer accepts an opaque assertion only from a same-database trusted
-verifier boundary. It reconstructs the current AccessContext inside the target
-transaction and reloads parent state, vectors, policy publication, and recent
-reauthentication evidence before each command. Caller-supplied account, role,
-capability, scope, device, link, policy, or reauthentication claims are never
-trusted.
+The only admitted production-shaped boundary in the current phase is the
+read-only verifier path. It can rebuild an AccessContext from a separately
+authenticated presentation, but that opaque assertion is a process-local
+boundary rather than a PostgreSQL-verifiable command identity. It must never
+be treated as authority to grant a writer `EXECUTE` or any table DML.
 
-Each approved command uses the existing receipt as its sole idempotency key,
-the existing transaction/lock/CAS ordering, immutable audit evidence, and a
-transactional outbox intent. Transport delivery is outside the first adapter
-slice: the outbox is recorded but no dispatcher, queue worker, or client
-notification is activated by this design.
+The existing receipt, audit, outbox, lock and CAS contracts remain semantic
+oracles for later command-specific work. They do not by themselves identify
+the database caller. Consequently this design neither admits bootstrap,
+recovery, policy publication, role grant/revoke nor account-device-link
+revocation to a production adapter. Bootstrap and recovery remain reference
+operator ceremonies only; no localhost, first-call, existing SQLite-admin,
+desktop-device, or legacy-token bypass is permitted.
 
-The only candidate command set for the first production adapter is the already
-reviewed control-plane set: first-authority bootstrap, owner recovery, policy
-publication, role grant/revoke, and account-device-link revocation. Bootstrap
-and recovery remain operator ceremonies. They require the approved trust-root
-proof and backup gates, respectively; no localhost, first-call, existing
-SQLite-admin, desktop-device, or legacy-token bypass is permitted.
+Before a single command can be admitted, a separately approved identity bridge
+must prove a non-shared, database-verifiable, command-bound and single-use
+execution fact that the writer cannot create, read-and-reuse, swap, or forge
+through session settings. Only then may a separate command-specific procedure
+design consider the existing canonical receipt/audit/outbox and CAS contracts.
 
 ## Environment and data isolation
 
@@ -124,8 +126,9 @@ non-production RDS instance:
    roles and TLS;
 2. negative privilege tests for writer, verifier, and ordinary runtime
    identities;
-3. bootstrap, recovery, policy, role, and device-link command/replay/CAS
-   behavior with synthetic values only;
+3. after the identity bridge and the relevant command-specific procedure have
+   passed their own approval, command/replay/CAS behavior with synthetic values
+   only;
 4. backup and isolated restore of an empty schema and a synthetic populated
    control-plane database;
 5. bounded connection, timeout, failover, and restore behavior compatible with
@@ -141,4 +144,6 @@ local disposable tests remain the only execution path.
 This design does not create RDS/ECS resources, add a connection string, create
 an API, migrate or read real data, provision a first authority, issue a token,
 verify a signature, perform a backup, import a business table, run an outbox
-worker, package a desktop app, or publish a client release.
+worker, package a desktop app, or publish a client release. It also does not
+grant a writer DML or `EXECUTE`, define an identity bridge, or claim that the
+current verifier boundary can authorize a mutation.
