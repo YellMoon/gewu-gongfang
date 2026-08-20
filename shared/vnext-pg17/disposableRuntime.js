@@ -13,6 +13,8 @@ const DOCKER_OVERRIDE_KEYS = ['DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_TLS_VERIF
 const MAX_OUTPUT_BYTES = 64 * 1024;
 const DOCKER_TIMEOUT_MS = 30_000;
 const READINESS_TIMEOUT_MS = 30_000;
+const DISPOSABLE_OWNER_LABEL = 'com.gewu.vnext-pg17-disposable=1';
+const DISPOSABLE_PROCESS_OWNER_LABEL = `com.gewu.vnext-pg17-disposable-owner=${process.pid}`;
 const handles = new WeakMap();
 const runtimes = new WeakMap();
 const syntheticVerifierPools = new WeakMap();
@@ -181,8 +183,23 @@ function runtimeState(runtime) {
 
 async function cleanupContainer(state) {
   if (!state || !state.containerId || state.cleaned) return;
+  try {
+    await runDocker(['rm', '--force', state.containerId]);
+  } catch (_) {
+    // Docker may have auto-removed the --rm container concurrently. Only a
+    // successful, exact absence check can turn that race into a clean state.
+  }
+  let remaining;
+  try {
+    remaining = (await runDocker(['ps', '--all', '--quiet', '--no-trunc', '--filter', `id=${state.containerId}`])).stdout
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean);
+  } catch (_) {
+    throw unavailable();
+  }
+  if (remaining.length !== 0) throw unavailable();
   state.cleaned = true;
-  try { await runDocker(['rm', '--force', state.containerId]); } catch (_) { /* no-op */ }
 }
 
 async function closeHandles(state) {
@@ -225,7 +242,7 @@ async function startRuntime(runtime) {
   let adminClient;
   try {
     const runResult = await runDocker([
-      'run', '--rm', '--detach', '--label', label,
+      'run', '--rm', '--detach', '--label', label, '--label', DISPOSABLE_OWNER_LABEL, '--label', DISPOSABLE_PROCESS_OWNER_LABEL,
       '--tmpfs', '/var/lib/postgresql/data:rw,noexec,nosuid,size=512m',
       '--env', `POSTGRES_USER=${adminUser}`,
       '--env', `POSTGRES_PASSWORD=${adminPassword}`,
@@ -255,7 +272,7 @@ async function startRuntime(runtime) {
     state.started = true;
   } catch (_) {
     await closeClient(adminClient);
-    await cleanupContainer(state);
+    try { await cleanupContainer(state); } catch (_) { /* unavailable below */ }
     throw unavailable();
   }
   await closeClient(adminClient);
@@ -305,8 +322,9 @@ async function createIsolatedHandle(runtime) {
     await closeClient(admin);
     await Promise.all(Object.values(clients).map(closeClient));
     await Promise.all(Object.values(pools).map(pool => pool.end()));
-    await closeHandles(state);
-    await cleanupContainer(state);
+    try { await closeHandles(state); } finally {
+      try { await cleanupContainer(state); } catch (_) { /* unavailable below */ }
+    }
     throw unavailable();
   }
 }
@@ -383,8 +401,18 @@ function createDisposablePg17Runtime() {
     disposeHandle: handle => disposeHandle(publicRuntime, handle),
     stop: async () => {
       const current = runtimeState(publicRuntime);
-      await closeHandles(current);
-      await cleanupContainer(current);
+      let failed = false;
+      try {
+        await closeHandles(current);
+      } catch (_) {
+        failed = true;
+      }
+      try {
+        await cleanupContainer(current);
+      } catch (_) {
+        failed = true;
+      }
+      if (failed) throw unavailable();
     },
   });
   runtimes.set(publicRuntime, state);

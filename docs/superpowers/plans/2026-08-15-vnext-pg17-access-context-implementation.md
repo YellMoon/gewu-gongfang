@@ -86,17 +86,17 @@ assert.strictEqual(context.reauthenticatedUntil, REAUTH_EXPIRES_AT);
 assert.strictEqual(Object.isFrozen(context), true);
 ```
 
-Cover desktop/miniapp capability behavior, visitor, fake/cross-handle brands, malformed assertion/config/clock, all five parent states, nine vector mismatches, initialization/revoked/expired/future sessions, policy absence/hash/text/contract failure, role/override time windows, deny precedence, invalid scope, and absent/expired/future reauth. Every failure must be `VNEXT_PG17_ACCESS_CONTEXT_UNAVAILABLE`.
+Cover desktop/miniapp capability behavior, visitor, fake/cross-handle brands, malformed assertion/config/clock, all five parent states, nine vector mismatches, initialization/revoked/expired/future sessions, policy absence/hash/text/contract failure, role/override time windows, deny precedence, invalid scope, and absent/expired/future reauth. For the existing `vnext_recent_reauthentication_events.factor_class` enum, independently prove password, passkey, and verified_contact rows select only their expiry and never expose factor/evidence fields; this does not read or admit `vnext_verified_contacts` metadata as a credential. Every failure must be `VNEXT_PG17_ACCESS_CONTEXT_UNAVAILABLE`.
 
 - [x] **Step 3: Add read-only evidence**
 
 Take before/after sorted logical snapshots of every target relation and catalog facts through a peer verifier facade. Add a controlled peer write after the first resolver read and prove the resulting context is one coherent snapshot, never a mixed vector/policy view. Catalog drift must produce the same public error with no row change.
 
-- [ ] **Step 4: Prove red state**
+- [x] **Step 4: Record focused red-to-green evidence**
 
 Run: `node shared/vnext-pg17/accessContextResolver.test.js`
 
-Expected: `MODULE_NOT_FOUND`.
+Expected final state: `vNext PG17 AccessContext resolver checks passed`.
 
 ## Task 3: Implement the read-only resolver
 

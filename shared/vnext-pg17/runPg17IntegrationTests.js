@@ -37,6 +37,7 @@ async function run({
   report = () => {},
 } = {}) {
   let runtime;
+  let exitCode = 0;
   try {
     await runSourceIsolation();
     runtime = runtimeFactory();
@@ -52,13 +53,20 @@ async function run({
     await runRoleMutation(runtime);
     await runLinkRevocation(runtime);
     await runLinkRevocationParity(runtime);
-    return 0;
   } catch (error) {
     report({ code: sanitizedCode(error) });
-    return 1;
+    exitCode = 1;
   } finally {
-    if (runtime) await runtime.stop();
+    if (runtime) {
+      try {
+        await runtime.stop();
+      } catch (error) {
+        report({ code: sanitizedCode(error) });
+        exitCode = 1;
+      }
+    }
   }
+  return exitCode;
 }
 
 if (require.main === module) {

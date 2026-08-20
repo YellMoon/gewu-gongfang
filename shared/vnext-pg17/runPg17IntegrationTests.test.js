@@ -70,6 +70,37 @@ async function main() {
   });
   assert.strictEqual(isolationCode, 1);
   assert.deepStrictEqual(isolationCalls, ['source-isolation', 'report:VNEXT_PG17_LEGACY_SOURCE_ISOLATION_VIOLATION']);
+
+  const cleanupCalls = [];
+  const cleanupCode = await run({
+    runtimeFactory: () => ({
+      async start() { cleanupCalls.push('start'); },
+      async stop() {
+        cleanupCalls.push('stop');
+        throw Object.assign(new Error('private cleanup detail'), { code: 'VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE' });
+      },
+    }),
+    runSourceIsolation: async () => cleanupCalls.push('source-isolation'),
+    runManifest: async () => cleanupCalls.push('manifest'),
+    runCatalog: async () => cleanupCalls.push('catalog'),
+    runProductionVerifierReadiness: async () => cleanupCalls.push('production-verifier-readiness'),
+    runBootstrap: async () => cleanupCalls.push('bootstrap'),
+    runRecovery: async () => cleanupCalls.push('recovery'),
+    runTrustedSessionBoundary: async () => cleanupCalls.push('trusted-session-boundary'),
+    runAccessContext: async () => cleanupCalls.push('access-context'),
+    runPolicyPublication: async () => cleanupCalls.push('policy-publication'),
+    runRoleMutation: async () => cleanupCalls.push('role-mutation'),
+    runLinkRevocation: async () => cleanupCalls.push('link-revocation'),
+    runLinkRevocationParity: async () => cleanupCalls.push('link-revocation-parity'),
+    report: message => cleanupCalls.push(`report:${message.code}`),
+  });
+  assert.strictEqual(cleanupCode, 1);
+  assert.deepStrictEqual(cleanupCalls, [
+    'source-isolation', 'start', 'manifest', 'catalog', 'production-verifier-readiness',
+    'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication',
+    'role-mutation', 'link-revocation', 'link-revocation-parity', 'stop',
+    'report:VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE',
+  ]);
   console.log('vNext PG17 runner orchestration checks passed');
 }
 

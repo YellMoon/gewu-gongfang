@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('assert');
+const { execFile } = require('child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -19,6 +20,24 @@ const { expectedCatalog } = require('./migrationManifest');
 
 const BOOTSTRAP_NOW = '2026-08-15T00:00:00.000Z';
 const NOW = '2026-08-15T00:01:00.000Z';
+const LOCAL_DOCKER_HOST = process.platform === 'win32'
+  ? 'npipe:////./pipe/docker_engine'
+  : 'unix:///var/run/docker.sock';
+const DISPOSABLE_OWNER_LABEL = `com.gewu.vnext-pg17-disposable-owner=${process.pid}`;
+
+function runDocker(args) {
+  return new Promise((resolve, reject) => {
+    execFile('docker', ['--host', LOCAL_DOCKER_HOST, ...args], { windowsHide: true }, (error, stdout) => {
+      if (error) reject(error);
+      else resolve(stdout);
+    });
+  });
+}
+
+async function ownedContainerIds() {
+  const output = await runDocker(['ps', '--all', '--quiet', '--no-trunc', '--filter', `label=${DISPOSABLE_OWNER_LABEL}`]);
+  return output.trim() === '' ? [] : output.trim().split(/\r?\n/).sort();
+}
 
 function manifest() {
   return { contractVersion: 1, capabilities: [
@@ -37,6 +56,7 @@ async function fixture(runtime, {
   revokedAt = null,
   reauthenticationVerifiedAt = BOOTSTRAP_NOW,
   reauthenticationExpiresAt = '2026-08-15T00:10:00.000Z',
+  extraReauthenticationEvents = [],
   policyManifest = manifest(),
 } = {}) {
   const handle = await runtime.createIsolatedHandle();
@@ -54,9 +74,12 @@ async function fixture(runtime, {
   await bootstrap.execute(bootstrapAssertion, { type: 'authority.bootstrap', bootstrapIntentId: 'bootstrap-intent-1', authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'installation-1', installationPublicKey: 'public-key-1', installationKeyFingerprint: 'a'.repeat(64), policyManifest, idempotencyKey: 'bootstrap-key-1', reasonCode: 'bootstrap' });
   await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
     await facade.query("INSERT INTO vnext_control_plane.vnext_sessions(session_id,authority_id,account_id,device_id,installation_id,link_id,session_kind,status,issued_at,expires_at,revoked_at,account_auth_version,account_access_version,account_revocation_version,device_credential_version,device_risk_version,installation_credential_version,link_auth_version,link_access_version,link_row_version,row_version,created_at,updated_at) VALUES('session-1','authority-1','account-1','device-1','installation-1','bootstrap-bootstrap-link',$1,$2,$3,$4,$5,1,1,1,1,1,1,1,1,1,1,$3,$3)", [sessionKind, sessionStatus, issuedAt, expiresAt, revokedAt]);
-    if (includeReauthentication) {
-      await facade.query("INSERT INTO vnext_control_plane.vnext_recent_reauthentication_events(reauth_event_id,authority_id,session_id,factor_class,evidence_sha256,account_auth_version,account_access_version,account_revocation_version,device_credential_version,device_risk_version,installation_credential_version,link_auth_version,link_access_version,link_row_version,verified_at,expires_at,created_at) VALUES('reauth-1','authority-1','session-1','passkey',repeat('c',64),1,1,1,1,1,1,1,1,1,$1,$2,$1)", [reauthenticationVerifiedAt, reauthenticationExpiresAt]);
-    }
+    const insertReauthentication = ({ eventId, factorClass = 'passkey', verifiedAt, expiresAt }) => facade.query(
+      'INSERT INTO vnext_control_plane.vnext_recent_reauthentication_events(reauth_event_id,authority_id,session_id,factor_class,evidence_sha256,account_auth_version,account_access_version,account_revocation_version,device_credential_version,device_risk_version,installation_credential_version,link_auth_version,link_access_version,link_row_version,verified_at,expires_at,created_at) VALUES($1,$2,$3,$4,repeat(\'c\',64),1,1,1,1,1,1,1,1,1,$5,$6,$5)',
+      [eventId, 'authority-1', 'session-1', factorClass, verifiedAt, expiresAt],
+    );
+    if (includeReauthentication) await insertReauthentication({ eventId: 'reauth-1', verifiedAt: reauthenticationVerifiedAt, expiresAt: reauthenticationExpiresAt });
+    for (const event of extraReauthenticationEvents) await insertReauthentication(event);
   });
   const boundary = createVNextPg17TrustedSessionVerifierBoundary({ databaseBinding: handle, verifyPresentation: () => ({ sessionId: 'session-1' }) });
   return { handle, boundary, assertion: await boundary.verify(null) };
@@ -81,9 +104,10 @@ function assertResolverReadOnlyQueries(queries, terminal, { requireDomainQueries
   assert.strictEqual(queries.every(isReadOnlyTraceStatement), true);
   assert.strictEqual(queries.some(query => query.includes('WHERE s.session_id=$1')), true);
   if (requireDomainQueries) {
-  assert.strictEqual(queries.some(query => query.includes('vnext_role_grants WHERE authority_id=$1 AND account_id=$2')), true);
-  assert.strictEqual(queries.some(query => query.includes('vnext_capability_overrides WHERE authority_id=$1 AND account_id=$2')), true);
-  assert.strictEqual(queries.some(query => query.includes('vnext_data_scope_grants WHERE authority_id=$1 AND account_id=$2')), true);
+    assert.strictEqual(queries.some(query => query.includes('vnext_role_grants WHERE authority_id=$1 AND account_id=$2')), true);
+    assert.strictEqual(queries.some(query => query.includes('vnext_capability_overrides WHERE authority_id=$1 AND account_id=$2')), true);
+    assert.strictEqual(queries.some(query => query.includes('vnext_data_scope_grants WHERE authority_id=$1 AND account_id=$2')), true);
+    assert.strictEqual(queries.some(query => query.includes('vnext_recent_reauthentication_events WHERE authority_id=$1 AND session_id=$2') && query.includes('ORDER BY expires_at DESC LIMIT 1')), true);
   }
   assert.strictEqual(queries.some(query => /\bvnext_control_plane\.vnext_capability_catalog\b/.test(query)), false);
   return queries;
@@ -143,7 +167,23 @@ async function resolvePolicyReadContext(runtime, { fixtureOptions, rows, unavail
     const context = unavailable
       ? await expectUnavailable(() => resolver.resolve(current.assertion))
       : await resolver.resolve(current.assertion);
-    assertResolverReadOnlyTrace(trace, unavailable ? 'ROLLBACK' : 'COMMIT');
+    assertResolverReadOnlyTrace(trace, unavailable ? 'ROLLBACK' : 'COMMIT', { requireDomainQueries: !unavailable });
+    assert.deepStrictEqual(await targetRowsSnapshot(current.handle), before);
+    return context;
+  } finally {
+    await runtime.disposeHandle(current.handle);
+  }
+}
+
+async function resolveReauthenticationContext(runtime, fixtureOptions) {
+  const current = await fixture(runtime, fixtureOptions);
+  try {
+    const resolver = createVNextPg17AccessContextResolver({ runtime, handle: current.handle, verifierBoundary: current.boundary, surface: 'desktop', now: () => NOW });
+    const before = await targetRowsSnapshot(current.handle);
+    const trace = createVNextPg17SyntheticQueryTrace(runtime, current.handle, 'verifier');
+    armVNextPg17SyntheticQueryTrace(trace);
+    const context = await resolver.resolve(current.assertion);
+    assertResolverReadOnlyTrace(trace, 'COMMIT');
     assert.deepStrictEqual(await targetRowsSnapshot(current.handle), before);
     return context;
   } finally {
@@ -288,6 +328,46 @@ async function runAccessContextResolverCases(runtime) {
     await runtime.disposeHandle(withoutReauth.handle);
   }
 
+  const latestReauthentication = await resolveReauthenticationContext(runtime, {
+    includeReauthentication: false,
+    extraReauthenticationEvents: [
+      { eventId: 'reauth-password-1', factorClass: 'password', verifiedAt: BOOTSTRAP_NOW, expiresAt: '2026-08-15T00:05:00.000Z' },
+      { eventId: 'reauth-passkey-1', factorClass: 'passkey', verifiedAt: NOW, expiresAt: '2026-08-15T00:20:00.000Z' },
+      { eventId: 'reauth-contact-1', factorClass: 'verified_contact', verifiedAt: BOOTSTRAP_NOW, expiresAt: '2026-08-15T00:15:00.000Z' },
+    ],
+  });
+  assert.strictEqual(latestReauthentication.reauthenticatedUntil, '2026-08-15T00:20:00.000Z');
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(latestReauthentication, 'factorClass'), false);
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(latestReauthentication, 'evidenceSha256'), false);
+
+  for (const [factorClass, expiresAt] of [
+    ['password', '2026-08-15T00:05:00.000Z'],
+    ['passkey', '2026-08-15T00:10:00.000Z'],
+    ['verified_contact', '2026-08-15T00:15:00.000Z'],
+  ]) {
+    const context = await resolveReauthenticationContext(runtime, {
+      includeReauthentication: false,
+      extraReauthenticationEvents: [{ eventId: `reauth-${factorClass}-only`, factorClass, verifiedAt: BOOTSTRAP_NOW, expiresAt }],
+    });
+    assert.strictEqual(context.reauthenticatedUntil, expiresAt);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(context, 'factorClass'), false);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(context, 'evidenceSha256'), false);
+  }
+
+  const verifiedAtBoundary = await resolveReauthenticationContext(runtime, { reauthenticationVerifiedAt: NOW });
+  assert.strictEqual(verifiedAtBoundary.reauthenticatedUntil, '2026-08-15T00:10:00.000Z');
+
+  const expiresAtBoundary = await resolveReauthenticationContext(runtime, { reauthenticationExpiresAt: NOW });
+  assert.strictEqual(expiresAtBoundary.reauthenticatedUntil, null);
+
+  const futureOnlyReauthentication = await resolveReauthenticationContext(runtime, {
+    includeReauthentication: false,
+    extraReauthenticationEvents: [
+      { eventId: 'reauth-future-1', factorClass: 'passkey', verifiedAt: '2026-08-15T00:02:00.000Z', expiresAt: '2026-08-15T00:10:00.000Z' },
+    ],
+  });
+  assert.strictEqual(futureOnlyReauthentication.reauthenticatedUntil, null);
+
   for (const options of [
     { reauthenticationExpiresAt: NOW },
     { reauthenticationVerifiedAt: '2026-08-15T00:02:00.000Z', reauthenticationExpiresAt: '2026-08-15T00:10:00.000Z' },
@@ -414,8 +494,25 @@ async function runAccessContextResolverCases(runtime) {
 }
 
 if (require.main === module) {
+  runStandaloneCases().catch(error => { process.stderr.write(`${error.code || error.message}\n`); process.exitCode = 1; });
+}
+
+async function runStandaloneCases() {
+  const containerBaseline = await ownedContainerIds();
   const runtime = createDisposablePg17Runtime();
-  runtime.start().then(() => runAccessContextResolverCases(runtime)).then(() => process.stdout.write('vNext PG17 AccessContext resolver checks passed\n')).finally(() => runtime.stop()).catch(error => { process.stderr.write(`${error.code || error.message}\n`); process.exitCode = 1; });
+  let completed = false;
+  try {
+    await runtime.start();
+    await runAccessContextResolverCases(runtime);
+    completed = true;
+  } finally {
+    try {
+      await runtime.stop();
+    } finally {
+      assert.deepStrictEqual(await ownedContainerIds(), containerBaseline);
+    }
+  }
+  if (completed) process.stdout.write('vNext PG17 AccessContext resolver checks passed\n');
 }
 
 module.exports = { runAccessContextResolverCases };

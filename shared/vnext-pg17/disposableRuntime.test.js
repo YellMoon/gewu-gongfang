@@ -1,12 +1,32 @@
 'use strict';
 
 const assert = require('assert');
+const { execFile } = require('child_process');
 const {
   createDisposablePg17Runtime,
   isVNextPg17DisposableHandle,
   withVNextPg17SyntheticQuery,
 } = require('./disposableRuntime');
 const { createVNextPg17CatalogBoundary } = require('./catalogAssertion');
+
+const LOCAL_DOCKER_HOST = process.platform === 'win32'
+  ? 'npipe:////./pipe/docker_engine'
+  : 'unix:///var/run/docker.sock';
+const DISPOSABLE_OWNER_LABEL = `com.gewu.vnext-pg17-disposable-owner=${process.pid}`;
+
+function runDocker(args) {
+  return new Promise((resolve, reject) => {
+    execFile('docker', ['--host', LOCAL_DOCKER_HOST, ...args], { windowsHide: true }, (error, stdout) => {
+      if (error) reject(error);
+      else resolve(stdout);
+    });
+  });
+}
+
+async function ownedContainerIds() {
+  const output = await runDocker(['ps', '--all', '--quiet', '--no-trunc', '--filter', `label=${DISPOSABLE_OWNER_LABEL}`]);
+  return output.trim() === '' ? [] : output.trim().split(/\r?\n/).sort();
+}
 
 function expectInvalidConfig(fn) {
   assert.throws(fn, error => error && error.code === 'VNEXT_PG17_RUNTIME_CONFIG_INVALID');
@@ -30,6 +50,8 @@ const runtime = createDisposablePg17Runtime();
 assert.ok(Object.isFrozen(runtime));
 assert.deepStrictEqual(Object.keys(runtime).sort(), ['createIsolatedHandle', 'createPeerHandle', 'createVNextPg17CopyOnlyRehearsalFaultPlan', 'createVNextPg17CopyOnlyRehearsalTarget', 'disposeHandle', 'start', 'stop']);
 async function main() {
+  const containerBaseline = await ownedContainerIds();
+  try {
   assert.strictEqual(isVNextPg17DisposableHandle({}), false);
   await assert.rejects(
     () => withVNextPg17SyntheticQuery({}, 'verifier', () => {}),
@@ -39,6 +61,8 @@ async function main() {
   const liveRuntime = createDisposablePg17Runtime();
   try {
     await liveRuntime.start();
+    const duringLiveRuntime = await ownedContainerIds();
+    assert.strictEqual(duringLiveRuntime.length, containerBaseline.length + 1);
     const handle = await liveRuntime.createIsolatedHandle();
     assert.strictEqual(isVNextPg17DisposableHandle(handle), true);
     assert.ok(Object.isFrozen(handle));
@@ -97,6 +121,7 @@ async function main() {
   } finally {
     await liveRuntime.stop();
   }
+  assert.deepStrictEqual(await ownedContainerIds(), containerBaseline);
 
   const failedSetupRuntime = createDisposablePg17Runtime();
   try {
@@ -116,6 +141,10 @@ async function main() {
     );
   } finally {
     await failedSetupRuntime.stop();
+  }
+  assert.deepStrictEqual(await ownedContainerIds(), containerBaseline);
+  } finally {
+    assert.deepStrictEqual(await ownedContainerIds(), containerBaseline);
   }
   console.log('vNext PG17 disposable runtime strict-config checks passed');
 }
