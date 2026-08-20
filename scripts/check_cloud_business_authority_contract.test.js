@@ -6,6 +6,7 @@ const contract = require('./check_cloud_business_authority_contract');
 const DATABASE_DECISION = 'docs/superpowers/specs/2026-08-14-vnext-production-control-plane-database-decision.md';
 const SOURCE_DICTIONARY = 'docs/vnext-source-data-dictionary.md';
 const SHADOW_IMPORT_PLAN = 'docs/superpowers/plans/2026-08-13-vnext-cloud-schema-shadow-import.md';
+const UNIFIED_DESKTOP_ADMISSION = 'docs/superpowers/specs/2026-08-21-unified-desktop-silent-registration-offline-draft-admission-design.md';
 const TASK_CARRIER = 'task.md';
 
 assert.strictEqual(
@@ -22,13 +23,12 @@ assert.ok(
   contract.ACTIVE_DOCUMENTS.includes(DATABASE_DECISION),
   'the still-linked production-database decision must be covered by the architecture gate'
 );
-for (const activeMigrationDocument of [SOURCE_DICTIONARY, SHADOW_IMPORT_PLAN, TASK_CARRIER]) {
+for (const activeMigrationDocument of [SOURCE_DICTIONARY, SHADOW_IMPORT_PLAN, UNIFIED_DESKTOP_ADMISSION, TASK_CARRIER]) {
   assert.ok(
     contract.ACTIVE_DOCUMENTS.includes(activeMigrationDocument),
     `${activeMigrationDocument} must be covered once full-business migration is active`
   );
 }
-
 assert.deepStrictEqual(
   contract.checkCloudBusinessAuthorityContract().issues,
   [],
@@ -40,6 +40,14 @@ const texts = Object.fromEntries(
     relativePath,
     fs.readFileSync(path.join(process.cwd(), relativePath), 'utf8'),
   ])
+);
+const regressedDesktopAdmissionTexts = {
+  ...texts,
+  [UNIFIED_DESKTOP_ADMISSION]: `${texts[UNIFIED_DESKTOP_ADMISSION]}\nHuman device approval is required.\n`,
+};
+assert.ok(
+  contract.checkContractTexts(regressedDesktopAdmissionTexts).issues.some(issue => issue.includes(UNIFIED_DESKTOP_ADMISSION) && issue.includes('desktop-registration contradiction')),
+  'the executable gate must reject reintroducing manual device approval into the active unified-desktop admission design'
 );
 const regressedTexts = {
   ...texts,

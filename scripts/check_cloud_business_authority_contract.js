@@ -10,6 +10,7 @@ const ACTIVE_DOCUMENTS = Object.freeze([
   'docs/superpowers/plans/2026-08-13-vnext-control-plane-first.md',
   'docs/superpowers/specs/2026-08-20-vnext-local-business-repository-retention-and-control-plane-projection-no-export-design.md',
   'docs/superpowers/specs/2026-08-15-vnext-pg17-production-adapter-design.md',
+  'docs/superpowers/specs/2026-08-21-unified-desktop-silent-registration-offline-draft-admission-design.md',
   'docs/vnext-source-data-dictionary.md',
   'docs/superpowers/plans/2026-08-13-vnext-cloud-schema-shadow-import.md',
   'task.md',
@@ -52,6 +53,12 @@ const REQUIRED_MARKERS = Object.freeze({
   'docs/superpowers/specs/2026-08-15-vnext-pg17-production-adapter-design.md': Object.freeze([
     '已降级为本地控制面验证参考',
   ]),
+  'docs/superpowers/specs/2026-08-21-unified-desktop-silent-registration-offline-draft-admission-design.md': Object.freeze([
+    '只保留一种桌面端安装包',
+    '不需要管理员、旧设备或所谓主机人工审批',
+    '离线不是重新登录通道',
+    '当前不准入实现',
+  ]),
   'docs/vnext-source-data-dictionary.md': Object.freeze([
     'Active vNext Full-Business Source Dictionary',
     'cloud-business-authority migration',
@@ -75,6 +82,14 @@ const REQUIRED_MARKERS = Object.freeze({
   'package.json': Object.freeze([
     '"test:cloud-business-authority-contract": "node scripts/check_cloud_business_authority_contract.test.js"',
     'node scripts/check_cloud_business_authority_contract.test.js',
+  ]),
+});
+
+const ACTIVE_DESKTOP_CONTRADICTIONS = Object.freeze({
+  'docs/superpowers/specs/2026-08-21-unified-desktop-silent-registration-offline-draft-admission-design.md': Object.freeze([
+    'Human device approval is required.',
+    'A primary-host desktop package is required.',
+    'Offline login is allowed for a new device.',
   ]),
 });
 
@@ -135,6 +150,9 @@ function checkContractTexts(texts) {
     for (const contradiction of ACTIVE_CONTRADICTIONS[relativePath] || []) {
       if (architectureText.includes(contradiction)) issues.push(`${relativePath}: local-business-authority contradiction: ${contradiction}`);
     }
+    for (const contradiction of ACTIVE_DESKTOP_CONTRADICTIONS[relativePath] || []) {
+      if (architectureText.includes(contradiction)) issues.push(`${relativePath}: desktop-registration contradiction: ${contradiction}`);
+    }
   }
   return Object.freeze({ issues: Object.freeze(issues) });
 }
@@ -160,6 +178,7 @@ if (require.main === module) main();
 
 module.exports = {
   ACTIVE_DOCUMENTS,
+  ACTIVE_DESKTOP_CONTRADICTIONS,
   activeArchitectureText,
   checkCloudBusinessAuthorityContract,
   checkContractTexts,
