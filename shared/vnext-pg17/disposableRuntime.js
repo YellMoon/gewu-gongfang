@@ -3,7 +3,7 @@
 const { spawn } = require('child_process');
 const { randomBytes } = require('crypto');
 const { types } = require('util');
-const { Client } = require('pg');
+const { Client, Pool } = require('pg');
 
 const IMAGE_REFERENCE = 'postgres@sha256:a65e6a841f6c4dbc4abda3d67fa3bc21824e9611064fcd82e87ea67aad60a0c3';
 const LOCAL_DOCKER_HOST = process.platform === 'win32'
@@ -15,6 +15,10 @@ const DOCKER_TIMEOUT_MS = 30_000;
 const READINESS_TIMEOUT_MS = 30_000;
 const handles = new WeakMap();
 const runtimes = new WeakMap();
+const syntheticVerifierPools = new WeakMap();
+const syntheticTlsBrands = new WeakMap();
+const syntheticVerifierFaultPlans = new WeakMap();
+const VERIFIER_FAULT_STAGES = new Set(['begin', 'setup', 'identity', 'tls', 'catalog', 'commit', 'rollback', 'release']);
 
 function codedError(code, message) {
   const error = new Error(message);
@@ -166,6 +170,7 @@ async function closeHandles(state) {
     if (!handleState || handleState.closed) continue;
     handleState.closed = true;
     await Promise.all(Object.values(handleState.clients).map(closeClient));
+    await Promise.all(Object.values(handleState.pools).map(pool => pool.end()));
   }
 }
 
@@ -233,9 +238,17 @@ async function startRuntime(runtime) {
   await closeClient(adminClient);
 }
 
-async function createHandle(runtime, database, clients, ownsDatabase = false) {
+function createVerifierPool(options) {
+  return new Pool({
+    ...explicitClientOptions(options),
+    max: 2,
+    idleTimeoutMillis: 1_000,
+  });
+}
+
+async function createHandle(runtime, database, clients, pools = {}, ownsDatabase = false) {
   const handle = Object.freeze({});
-  handles.set(handle, { runtime, database, clients, ownsDatabase, closed: false });
+  handles.set(handle, { runtime, database, clients, pools, ownsDatabase, closed: false });
   runtimeState(runtime).handles.add(handle);
   return handle;
 }
@@ -246,6 +259,7 @@ async function createIsolatedHandle(runtime) {
   const database = `vnextpg17_${randomToken(8)}`;
   let admin;
   const clients = {};
+  const pools = {};
   try {
     admin = await connectClient({ ...state.connection, ...state.admin });
     await admin.query(`CREATE DATABASE ${quoteIdentifier(database)} OWNER vnext_pg17_owner`);
@@ -261,10 +275,12 @@ async function createIsolatedHandle(runtime) {
       user: state.admin.user,
       password: state.admin.password,
     });
-    return await createHandle(runtime, database, clients, true);
+    pools.verifier = createVerifierPool({ ...common, user: 'vnext_pg17_verifier', password: state.rolePasswords.verifier });
+    return await createHandle(runtime, database, clients, pools, true);
   } catch (_) {
     await closeClient(admin);
     await Promise.all(Object.values(clients).map(closeClient));
+    await Promise.all(Object.values(pools).map(pool => pool.end()));
     await closeHandles(state);
     await cleanupContainer(state);
     throw unavailable();
@@ -276,6 +292,7 @@ async function createPeerHandle(runtime, originalHandle) {
   if (!original || original.runtime !== runtime || original.closed) throw invalidHandle();
   const state = runtimeState(runtime);
   const clients = {};
+  const pools = {};
   try {
     const common = { ...state.connection, database: original.database };
     clients.verifier = await connectClient({
@@ -288,9 +305,11 @@ async function createPeerHandle(runtime, originalHandle) {
       user: state.admin.user,
       password: state.admin.password,
     });
-    return await createHandle(runtime, original.database, clients);
+    pools.verifier = createVerifierPool({ ...common, user: 'vnext_pg17_verifier', password: state.rolePasswords.verifier });
+    return await createHandle(runtime, original.database, clients, pools);
   } catch (_) {
     await Promise.all(Object.values(clients).map(closeClient));
+    await Promise.all(Object.values(pools).map(pool => pool.end()));
     throw unavailable();
   }
 }
@@ -308,6 +327,7 @@ async function disposeHandle(runtime, handle) {
   }
   handleState.closed = true;
   await Promise.all(Object.values(handleState.clients).map(closeClient));
+  await Promise.all(Object.values(handleState.pools).map(pool => pool.end()));
   state.handles.delete(handle);
   if (!handleState.ownsDatabase) return;
   let admin;
@@ -359,9 +379,151 @@ async function withVNextPg17SyntheticQuery(handle, purpose, callback) {
   return callback(makeFacade(client));
 }
 
+function createVNextPg17SyntheticVerifierPool(runtime, handle) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
+  const pool = Object.freeze({});
+  syntheticVerifierPools.set(pool, { runtime, handle });
+  return pool;
+}
+
+function issueVNextPg17SyntheticTlsBrand(runtime, handle) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
+  const brand = Object.freeze({});
+  syntheticTlsBrands.set(brand, { runtime, handle });
+  return brand;
+}
+
+function isVNextPg17SyntheticTlsBrandForHandle(brand, runtime, handle) {
+  const state = syntheticTlsBrands.get(brand);
+  return Boolean(state && state.runtime === runtime && state.handle === handle
+    && isVNextPg17DisposableHandleForRuntime(runtime, handle));
+}
+
+function isVNextPg17SyntheticTlsBrandForPool(brand, pool) {
+  const brandState = syntheticTlsBrands.get(brand);
+  const poolState = syntheticVerifierPools.get(pool);
+  return Boolean(brandState && poolState && brandState.runtime === poolState.runtime
+    && brandState.handle === poolState.handle
+    && isVNextPg17DisposableHandleForRuntime(brandState.runtime, brandState.handle));
+}
+
+function syntheticVerifierPoolDatabase(pool) {
+  const state = syntheticVerifierPools.get(pool);
+  if (!state || !isVNextPg17DisposableHandleForRuntime(state.runtime, state.handle)) throw invalidHandle();
+  return handles.get(state.handle).database;
+}
+
+function isVNextPg17SyntheticVerifierPoolForHandle(pool, handle) {
+  const state = syntheticVerifierPools.get(pool);
+  return Boolean(state && state.handle === handle
+    && isVNextPg17DisposableHandleForRuntime(state.runtime, handle));
+}
+
+function createVNextPg17SyntheticVerifierFaultPlan(runtime, handle, stages) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)
+    || !Array.isArray(stages) || stages.some(stage => typeof stage !== 'string' || !VERIFIER_FAULT_STAGES.has(stage))) {
+    throw invalidHandle();
+  }
+  const plan = Object.freeze({});
+  syntheticVerifierFaultPlans.set(plan, {
+    runtime,
+    handle,
+    pending: new Set(stages),
+    queries: [],
+    stages: [],
+    releaseCount: 0,
+    destroyCount: 0,
+  });
+  return plan;
+}
+
+function armVNextPg17SyntheticVerifierFaultPlan(pool, plan) {
+  const poolState = syntheticVerifierPools.get(pool);
+  const planState = syntheticVerifierFaultPlans.get(plan);
+  if (!poolState || !planState || poolState.runtime !== planState.runtime || poolState.handle !== planState.handle
+    || !isVNextPg17DisposableHandleForRuntime(poolState.runtime, poolState.handle)) throw invalidHandle();
+  poolState.faultPlan = plan;
+}
+
+function inspectVNextPg17SyntheticVerifierFaultPlan(plan) {
+  const state = syntheticVerifierFaultPlans.get(plan);
+  if (!state) throw invalidHandle();
+  return Object.freeze({
+    destroyCount: state.destroyCount,
+    queries: Object.freeze([...state.queries]),
+    releaseCount: state.releaseCount,
+    stages: Object.freeze([...state.stages]),
+  });
+}
+
+function verifierQueryStage(text) {
+  if (typeof text !== 'string') return 'catalog';
+  if (text.startsWith('BEGIN ')) return 'begin';
+  if (text.startsWith("SELECT set_config(")) return 'setup';
+  if (text.startsWith('SELECT current_database()')) return 'identity';
+  if (text.startsWith('SELECT COALESCE((SELECT ssl')) return 'tls';
+  if (text === 'COMMIT') return 'commit';
+  if (text === 'ROLLBACK') return 'rollback';
+  return 'catalog';
+}
+
+function recordVerifierFault(poolState, stage, query) {
+  const planState = syntheticVerifierFaultPlans.get(poolState.faultPlan);
+  if (!planState) return;
+  planState.stages.push(stage);
+  if (typeof query === 'string') planState.queries.push(query);
+  if (stage === 'release') planState.releaseCount += 1;
+  if (stage === 'destroy') planState.destroyCount += 1;
+  if (planState.pending.delete(stage)) throw new Error(`synthetic verifier ${stage} fault`);
+}
+
+async function checkoutVNextPg17SyntheticVerifierLease(poolRef) {
+  const poolState = syntheticVerifierPools.get(poolRef);
+  if (!poolState || !isVNextPg17DisposableHandleForRuntime(poolState.runtime, poolState.handle)) throw invalidHandle();
+  const handle = handles.get(poolState.handle);
+  const pool = handle.pools.verifier;
+  let client;
+  let released = false;
+  try {
+    client = await pool.connect();
+  } catch (_) {
+    throw unavailable();
+  }
+  const release = async () => {
+    if (released) throw invalidHandle();
+    recordVerifierFault(poolState, 'release');
+    released = true;
+    client.release();
+  };
+  return Object.freeze({
+    query: (text, values) => {
+      if (released) throw invalidHandle();
+      recordVerifierFault(poolState, verifierQueryStage(text), text);
+      return client.query(text, values);
+    },
+    release,
+    destroy: async () => {
+      if (released) throw invalidHandle();
+      recordVerifierFault(poolState, 'destroy');
+      released = true;
+      client.release(true);
+    },
+  });
+}
+
 module.exports = {
   createDisposablePg17Runtime,
   isVNextPg17DisposableHandle,
   isVNextPg17DisposableHandleForRuntime,
   withVNextPg17SyntheticQuery,
+  createVNextPg17SyntheticVerifierPool,
+  issueVNextPg17SyntheticTlsBrand,
+  isVNextPg17SyntheticTlsBrandForHandle,
+  isVNextPg17SyntheticTlsBrandForPool,
+  syntheticVerifierPoolDatabase,
+  isVNextPg17SyntheticVerifierPoolForHandle,
+  checkoutVNextPg17SyntheticVerifierLease,
+  createVNextPg17SyntheticVerifierFaultPlan,
+  armVNextPg17SyntheticVerifierFaultPlan,
+  inspectVNextPg17SyntheticVerifierFaultPlan,
 };

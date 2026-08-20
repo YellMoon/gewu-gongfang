@@ -445,6 +445,7 @@ function snapshotApplyInput(value) {
 
 function createVNextPg17CatalogBoundary(runtime) {
   if (!runtime || typeof runtime !== 'object' || types.isProxy(runtime)) throw invalidHandle();
+  const verifierFacadeQueries = new WeakMap();
 
   async function apply(handle, input) {
     if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
@@ -496,10 +497,11 @@ function createVNextPg17CatalogBoundary(runtime) {
     });
   }
 
-  async function assertCatalog(handle) {
-    if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
-    return withVNextPg17SyntheticQuery(handle, 'verifier', async facade => {
-      try {
+  async function assertQueryFacade(verifierFacade) {
+    const query = verifierFacadeQueries.get(verifierFacade);
+    if (typeof query !== 'function') throw invalidHandle();
+    const facade = Object.freeze({ query });
+    try {
         const relation = await facade.query(
           "SELECT to_regclass('vnext_control_plane.vnext_schema_migrations') AS relation, to_regclass('public.vnext_schema_migrations') AS public_shadow",
         );
@@ -675,15 +677,27 @@ function createVNextPg17CatalogBoundary(runtime) {
           || schemaMeta.rows[0].schema_key !== 'control-plane-reference'
           || schemaMeta.rows[0].schema_version !== '5'
           || !schemaMeta.rows[0].applied_at_matches) throw schemaDrift();
-        return Object.freeze({ asserted: true });
-      } catch (error) {
-        if (error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT') throw error;
-        throw schemaDrift();
-      }
-    });
+      return Object.freeze({ asserted: true });
+    } catch (error) {
+      if (error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT') throw error;
+      throw schemaDrift();
+    }
   }
 
-  return Object.freeze({ apply, assert: assertCatalog });
+  function createVerifierQueryFacade(query) {
+    if (typeof query !== 'function' || types.isProxy(query)) throw invalidHandle();
+    const facade = Object.freeze({});
+    verifierFacadeQueries.set(facade, query);
+    return facade;
+  }
+
+  async function assertCatalog(handle) {
+    if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
+    return withVNextPg17SyntheticQuery(handle, 'verifier', facade =>
+      assertQueryFacade(createVerifierQueryFacade((text, values) => facade.query(text, values))));
+  }
+
+  return Object.freeze({ apply, assert: assertCatalog, assertQueryFacade, createVerifierQueryFacade });
 }
 
 module.exports = { createVNextPg17CatalogBoundary };

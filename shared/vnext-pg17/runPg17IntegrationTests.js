@@ -3,6 +3,7 @@
 const { createDisposablePg17Runtime } = require('./disposableRuntime');
 const { runManifestCases } = require('./migrationManifest.test');
 const { runCatalogAssertionCases } = require('./catalogAssertion.test');
+const { runProductionVerifierReadinessCases } = require('./productionVerifierReadiness.test');
 const { runFirstAuthorityBootstrapMutationCases } = require('./firstAuthorityBootstrapMutation.test');
 const { runEmergencyRecoveryMutationCases } = require('./emergencyRecoveryMutation.test');
 const { runTrustedSessionVerifierBoundaryCases } = require('./trustedSessionVerifierBoundary.test');
@@ -21,6 +22,7 @@ async function run({
   runtimeFactory = createDisposablePg17Runtime,
   runManifest = runManifestCases,
   runCatalog = runCatalogAssertionCases,
+  runProductionVerifierReadiness = runProductionVerifierReadinessCases,
   runBootstrap = runFirstAuthorityBootstrapMutationCases,
   runRecovery = runEmergencyRecoveryMutationCases,
   runTrustedSessionBoundary = runTrustedSessionVerifierBoundaryCases,
@@ -35,6 +37,7 @@ async function run({
     await runtime.start();
     await runManifest(runtime);
     await runCatalog(runtime);
+    await runProductionVerifierReadiness(runtime);
     await runBootstrap(runtime);
     await runRecovery(runtime);
     await runTrustedSessionBoundary(runtime);

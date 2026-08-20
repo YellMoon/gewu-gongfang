@@ -1,5 +1,16 @@
 ﻿# 格物工坊：权威数据主机架构重写与真实双端验收
 
+> **Current execution chain (2026-08-15, in progress)**
+>
+> The owner approved the frozen vNext PostgreSQL 17 control-plane and production-adapter specifications. The current minimal slice is a local, disposable, verifier-only production connection/readiness boundary: it reuses the exact M1-M15 catalog assertion in a read-only transaction and validates target identity, TLS, UTC, bounded timeouts, and the migration ledger. It does not connect to RDS/ECS, create credentials or cloud resources, expose HTTP/API, migrate business data, or treat the test-only provisioner, migrator, or owner as a production writer.
+>
+> Execution checklist:
+> - [x] Freeze the PostgreSQL 17 production-adapter boundary and non-goals.
+> - [x] Independent feasibility/necessity/security/cost audit: verifier-only readiness first; writer role/ACL must be a separate audited slice.
+> - [x] Implement the verifier-only production readiness boundary with TDD.
+> - [ ] Run the PG17 aggregate gate, full verification, independent review, commit, and push.
+
+
 > **当前规划审计任务（2026-08-02，已完成）**
 >
 > 目标：仅对账户、权限、教师注册自动建档、档案匹配、持久设备信任、30 天离线、授权快照、题库、学校和家庭权限的前版规划做最后审计，生成细致、可真实落地的最终版；本任务不修改业务代码、不部署、不发布。
