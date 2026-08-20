@@ -67,6 +67,32 @@ async function main() {
     assert.strictEqual(isVNextPg17DisposableHandle(handle), true);
     assert.ok(Object.isFrozen(handle));
     assert.deepStrictEqual(Reflect.ownKeys(handle), []);
+    const businessRoles = await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
+      "SELECT rolname, rolcanlogin, rolinherit, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls FROM pg_roles WHERE rolname IN ('vnext_pg17_business_migrator', 'vnext_pg17_business_owner', 'vnext_pg17_business_verifier') ORDER BY rolname",
+    ));
+    assert.deepStrictEqual(businessRoles.rows, [
+      { rolname: 'vnext_pg17_business_migrator', rolcanlogin: true, rolinherit: false, rolsuper: false, rolcreaterole: false, rolcreatedb: false, rolreplication: false, rolbypassrls: false },
+      { rolname: 'vnext_pg17_business_owner', rolcanlogin: false, rolinherit: false, rolsuper: false, rolcreaterole: false, rolcreatedb: false, rolreplication: false, rolbypassrls: false },
+      { rolname: 'vnext_pg17_business_verifier', rolcanlogin: true, rolinherit: false, rolsuper: false, rolcreaterole: false, rolcreatedb: false, rolreplication: false, rolbypassrls: false },
+    ]);
+    const businessMemberships = await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
+      "SELECT member.rolname AS member_name, role.rolname AS role_name, membership.inherit_option, membership.set_option, membership.admin_option FROM pg_auth_members membership JOIN pg_roles member ON member.oid = membership.member JOIN pg_roles role ON role.oid = membership.roleid WHERE member.rolname IN ('vnext_pg17_business_migrator', 'vnext_pg17_business_owner', 'vnext_pg17_business_verifier') OR role.rolname IN ('vnext_pg17_business_migrator', 'vnext_pg17_business_owner', 'vnext_pg17_business_verifier') ORDER BY member.rolname, role.rolname",
+    ));
+    assert.deepStrictEqual(businessMemberships.rows, [{
+      member_name: 'vnext_pg17_business_migrator',
+      role_name: 'vnext_pg17_business_owner',
+      inherit_option: false,
+      set_option: true,
+      admin_option: false,
+    }]);
+    const businessVerifierIdentity = await withVNextPg17SyntheticQuery(handle, 'business-verifier', facade => facade.query(
+      'SELECT current_user AS current_user',
+    ));
+    assert.strictEqual(businessVerifierIdentity.rows[0].current_user, 'vnext_pg17_business_verifier');
+    await assert.rejects(
+      () => withVNextPg17SyntheticQuery(handle, 'business-migrator', () => {}),
+      error => error && error.code === 'VNEXT_PG17_HANDLE_INVALID',
+    );
     const result = await withVNextPg17SyntheticQuery(handle, 'verifier', facade =>
       facade.query("SELECT current_setting('server_version_num')::int AS version_num"),
     );
@@ -87,6 +113,14 @@ async function main() {
       error => error && error.code === '42501',
     );
     const peer = await liveRuntime.createPeerHandle(handle);
+    const peerBusinessVerifier = await withVNextPg17SyntheticQuery(peer, 'business-verifier', facade => facade.query(
+      'SELECT current_user AS current_user',
+    ));
+    assert.strictEqual(peerBusinessVerifier.rows[0].current_user, 'vnext_pg17_business_verifier');
+    await assert.rejects(
+      () => withVNextPg17SyntheticQuery(peer, 'business-migrator', () => {}),
+      error => error && error.code === 'VNEXT_PG17_HANDLE_INVALID',
+    );
     const peerResult = await withVNextPg17SyntheticQuery(peer, 'fixture-provisioner', facade =>
       facade.query('SELECT 1 AS peer_write_test'),
     );
