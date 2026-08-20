@@ -90,6 +90,7 @@ function positiveInteger(value) { return Number.isSafeInteger(value) && value >=
 function validVersions(row, keys) { return keys.every(key => positiveInteger(row[key])); }
 function validTimestamps(row, keys) { return keys.every(key => finiteInstant(row[key])) && Date.parse(row.updated_at) >= Date.parse(row.created_at); }
 function validNullableInstant(value) { return value === null || finiteInstant(value); }
+function validRevocationState(row, states) { return states.includes(row.status) && validNullableInstant(row.revoked_at) && (row.status === 'revoked' ? row.revoked_at !== null : row.revoked_at === null); }
 function validHistoricalLifecycle(row) {
   return validTimestamps(row, ['starts_at', 'created_at', 'updated_at'])
     && validNullableInstant(row.ends_at) && validNullableInstant(row.revoked_at)
@@ -100,27 +101,27 @@ function validIdentityTopology(snapshot) {
   const authority = snapshot.authorities[0];
   if (!sameKeys(authority, IDENTITY_FIELDS.authorities) || !nonBlank(authority.authority_id) || authority.status !== 'active' || !validTimestamps(authority, ['created_at', 'updated_at'])) return false;
   const authorityId = authority.authority_id;
-  const accounts = new Set();
+  const accounts = new Map();
   for (const row of snapshot.accounts) {
-    if (!sameKeys(row, IDENTITY_FIELDS.accounts) || !nonBlank(row.account_id) || row.authority_id !== authorityId || row.status !== 'active'
+    if (!sameKeys(row, IDENTITY_FIELDS.accounts) || !nonBlank(row.account_id) || row.authority_id !== authorityId || !['active', 'disabled', 'revoked'].includes(row.status)
       || !validVersions(row, ['auth_version', 'access_version', 'revocation_version', 'row_version']) || !validTimestamps(row, ['created_at', 'updated_at']) || accounts.has(row.account_id)) return false;
-    accounts.add(row.account_id);
+    accounts.set(row.account_id, row.status);
   }
-  const devices = new Set();
+  const devices = new Map();
   for (const row of snapshot.trustedDevices) {
-    if (!sameKeys(row, IDENTITY_FIELDS.trustedDevices) || !nonBlank(row.device_id) || row.authority_id !== authorityId || row.status !== 'active' || row.revoked_at !== null
+    if (!sameKeys(row, IDENTITY_FIELDS.trustedDevices) || !nonBlank(row.device_id) || row.authority_id !== authorityId || !validRevocationState(row, ['active', 'risk_limited', 'revoked', 'retired'])
       || ![row.hardware_evidence_hash, row.risk_code].every(value => value === null || nonBlank(value)) || !validVersions(row, ['credential_version', 'risk_version', 'row_version']) || !validTimestamps(row, ['created_at', 'updated_at']) || devices.has(row.device_id)) return false;
-    devices.add(row.device_id);
+    devices.set(row.device_id, row.status);
   }
-  const installations = new Set();
+  const installations = new Map();
   for (const row of snapshot.installations) {
-    if (!sameKeys(row, IDENTITY_FIELDS.installations) || !nonBlank(row.installation_id) || row.authority_id !== authorityId || !devices.has(row.device_id) || row.status !== 'active' || row.revoked_at !== null
+    if (!sameKeys(row, IDENTITY_FIELDS.installations) || !nonBlank(row.installation_id) || row.authority_id !== authorityId || !devices.has(row.device_id) || !validRevocationState(row, ['active', 'revoked', 'retired'])
       || !nonBlank(row.installation_public_key) || !/^[0-9a-f]{64}$/.test(row.key_fingerprint) || !validVersions(row, ['credential_version', 'row_version']) || !validTimestamps(row, ['created_at', 'updated_at']) || installations.has(row.installation_id)) return false;
-    installations.add(row.installation_id);
+    installations.set(row.installation_id, row.status);
   }
   const links = new Set();
   for (const row of snapshot.links) {
-    if (!sameKeys(row, IDENTITY_FIELDS.links) || !nonBlank(row.link_id) || row.authority_id !== authorityId || !accounts.has(row.account_id) || !devices.has(row.device_id) || !installations.has(row.installation_id) || row.status !== 'active' || row.revoked_at !== null
+    if (!sameKeys(row, IDENTITY_FIELDS.links) || !nonBlank(row.link_id) || row.authority_id !== authorityId || !accounts.has(row.account_id) || !devices.has(row.device_id) || !installations.has(row.installation_id) || !validRevocationState(row, ['active', 'revoked', 'expired'])
       || !validVersions(row, ['auth_version', 'access_version', 'row_version']) || !validTimestamps(row, ['created_at', 'updated_at']) || links.has(row.link_id)) return false;
     links.add(row.link_id);
   }
@@ -157,6 +158,7 @@ function validHistoricalAuthorization(snapshot) {
 function validProfileMetadata(snapshot) {
   const authorityId = snapshot.authorities[0].authority_id;
   const accounts = new Set(snapshot.accounts.map(row => row.account_id));
+  const activeAccounts = new Set(snapshot.accounts.filter(row => row.status === 'active').map(row => row.account_id));
   const bindingIds = new Set();
   const activeByAccountType = new Set();
   const activeByProfileType = new Set();
@@ -166,6 +168,7 @@ function validProfileMetadata(snapshot) {
       || !nonBlank(row.evidence_hash) || !positiveInteger(row.row_version) || !validTimestamps(row, ['created_at', 'updated_at'])
       || !validNullableInstant(row.revoked_at) || (row.status === 'revoked' ? row.revoked_at === null : row.revoked_at !== null) || bindingIds.has(row.binding_id)) return false;
     if (row.status === 'active') {
+      if (!activeAccounts.has(row.account_id)) return false;
       const accountType = `${row.authority_id}\u0000${row.account_id}\u0000${row.profile_type}`;
       const profileType = `${row.authority_id}\u0000${row.profile_type}\u0000${row.profile_id}`;
       if (activeByAccountType.has(accountType) || activeByProfileType.has(profileType)) return false;

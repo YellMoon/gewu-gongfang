@@ -8,7 +8,7 @@
 
 **Tech Stack:** Node.js CommonJS、`better-sqlite3` memory database、`pg@8.23.0`、现有 disposable PostgreSQL 17 Docker runtime、node `assert`。
 
-**Current implementation status (2026-08-20):** The delivered scope is `profile-binding metadata boundary-verified`: a synthetic, disposable target atomically verifies the identity topology, the capability plus revoked-or-expired historical authorization closure, and opaque `profileBindings`. Active profile bindings are non-authorizing account-to-profile links. Active role/override/scope input still fails closed and no default capability is generated. Nonempty verified contacts, receipts, audit events, and outbox events fail closed; sessions, reauthentication, policy, and trust evidence are not written. The eight `legacy*` collections remain redacted count/hash inventory only. This is not a complete rehearsal, real-data migration, or release evidence.
+**Current implementation status (2026-08-20):** The delivered scope is `identity lifecycle-state boundary-verified`: a synthetic disposable target preserves the identity topology with exact M2 account, device, installation, and link lifecycle states; historical authorization and opaque profile-binding metadata remain constrained as previously documented. Link parents retain the existing FK-only structural rule; session/resolver admission remains a later, separate boundary. Active profile bindings also require active accounts and remain non-authorizing. Contacts, receipts, audit, outbox, sessions, reauthentication, policy, trust evidence, and every legacy collection remain non-writing boundaries. This is not a complete rehearsal, real-data migration, or release evidence.
 
 ---
 

@@ -65,6 +65,25 @@ function profileBindingSnapshot() {
   return value;
 }
 
+function identityLifecycleSnapshot() {
+  const value = historicalAuthorizationSnapshot();
+  const createdAt = '2026-08-20T00:00:00.000Z';
+  const retiredAt = '2026-08-20T00:01:00.000Z';
+  const revokedAt = '2026-08-20T00:02:00.000Z';
+  value.accounts[0] = { ...value.accounts[0], status: 'disabled', updated_at: retiredAt };
+  value.accounts.push({ account_id: 'account-2', authority_id: 'authority-1', status: 'revoked', auth_version: 1, access_version: 1, revocation_version: 1, row_version: 1, created_at: createdAt, updated_at: revokedAt });
+  value.trustedDevices[0] = { ...value.trustedDevices[0], status: 'risk_limited', updated_at: retiredAt };
+  value.trustedDevices.push(
+    { device_id: 'device-2', authority_id: 'authority-1', status: 'revoked', hardware_evidence_hash: null, risk_code: null, credential_version: 1, risk_version: 1, row_version: 1, created_at: createdAt, updated_at: revokedAt, revoked_at: revokedAt },
+    { device_id: 'device-3', authority_id: 'authority-1', status: 'retired', hardware_evidence_hash: null, risk_code: null, credential_version: 1, risk_version: 1, row_version: 1, created_at: createdAt, updated_at: retiredAt, revoked_at: null },
+  );
+  value.installations[0] = { ...value.installations[0], status: 'retired', updated_at: retiredAt };
+  value.installations.push({ installation_id: 'installation-2', authority_id: 'authority-1', device_id: 'device-2', installation_public_key: 'test-key-2', key_fingerprint: 'b'.repeat(64), status: 'revoked', credential_version: 1, row_version: 1, created_at: createdAt, updated_at: revokedAt, revoked_at: revokedAt });
+  value.links[0] = { ...value.links[0], status: 'expired', updated_at: retiredAt };
+  value.links.push({ link_id: 'link-2', authority_id: 'authority-1', account_id: 'account-2', device_id: 'device-2', installation_id: 'installation-2', status: 'revoked', auth_version: 1, access_version: 1, row_version: 1, created_at: createdAt, updated_at: revokedAt, revoked_at: revokedAt });
+  return value;
+}
+
 async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposablePg17Runtime()) {
   const ownsRuntime = arguments.length === 0;
   if (ownsRuntime) await runtime.start();
@@ -114,6 +133,60 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
     duplicateActiveProfile.profileBindings[1] = { ...duplicateActiveProfile.profileBindings[1], account_id: 'account-2', profile_type: 'teacher', profile_id: 'opaque-teacher-profile', status: 'active' };
     assert.throws(
       () => createVNextPg17SyntheticControlPlaneSource(duplicateActiveProfile),
+      error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+    );
+    const invalidAccountState = snapshot();
+    invalidAccountState.accounts[0].status = 'pending';
+    assert.throws(
+      () => createVNextPg17SyntheticControlPlaneSource(invalidAccountState),
+      error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+    );
+    const invalidDeviceRevocation = snapshot();
+    invalidDeviceRevocation.trustedDevices[0] = { ...invalidDeviceRevocation.trustedDevices[0], status: 'retired', revoked_at: '2026-08-20T00:02:00.000Z' };
+    assert.throws(
+      () => createVNextPg17SyntheticControlPlaneSource(invalidDeviceRevocation),
+      error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+    );
+    const invalidExpiredLink = snapshot();
+    invalidExpiredLink.links[0] = { ...invalidExpiredLink.links[0], status: 'expired', revoked_at: '2026-08-20T00:02:00.000Z' };
+    assert.throws(
+      () => createVNextPg17SyntheticControlPlaneSource(invalidExpiredLink),
+      error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+    );
+    for (const collection of ['trustedDevices', 'installations', 'links']) {
+      const revokedWithoutTime = snapshot();
+      revokedWithoutTime[collection][0] = { ...revokedWithoutTime[collection][0], status: 'revoked', revoked_at: null };
+      assert.throws(
+        () => createVNextPg17SyntheticControlPlaneSource(revokedWithoutTime),
+        error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+      );
+    }
+    for (const [collection, status] of [['trustedDevices', 'active'], ['trustedDevices', 'risk_limited'], ['trustedDevices', 'retired'], ['installations', 'active'], ['installations', 'retired'], ['links', 'active'], ['links', 'expired']]) {
+      const nonRevokedWithTime = snapshot();
+      nonRevokedWithTime[collection][0] = { ...nonRevokedWithTime[collection][0], status, revoked_at: '2026-08-20T00:02:00.000Z' };
+      assert.throws(
+        () => createVNextPg17SyntheticControlPlaneSource(nonRevokedWithTime),
+        error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+      );
+    }
+    for (const collection of ['trustedDevices', 'installations', 'links']) {
+      const invalidStatus = snapshot();
+      invalidStatus[collection][0].status = 'invalid';
+      assert.throws(
+        () => createVNextPg17SyntheticControlPlaneSource(invalidStatus),
+        error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+      );
+    }
+    const activeProfileOnDisabledAccount = profileBindingSnapshot();
+    activeProfileOnDisabledAccount.accounts[0].status = 'disabled';
+    assert.throws(
+      () => createVNextPg17SyntheticControlPlaneSource(activeProfileOnDisabledAccount),
+      error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+    );
+    const activeProfileOnRevokedAccount = profileBindingSnapshot();
+    activeProfileOnRevokedAccount.accounts[0].status = 'revoked';
+    assert.throws(
+      () => createVNextPg17SyntheticControlPlaneSource(activeProfileOnRevokedAccount),
       error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
     );
     const accessorHistorical = historicalAuthorizationSnapshot();
@@ -257,6 +330,19 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
         assert.ok(profileTrace.queries.some(text => text.includes('FROM vnext_control_plane.vnext_profile_bindings ORDER BY binding_id')));
         assert.ok(profileTrace.queries.every(text => /^(BEGIN ISOLATION LEVEL REPEATABLE READ|COMMIT|ROLLBACK|SELECT |INSERT INTO vnext_control_plane\.)/.test(text)));
       } finally { await runtime.disposeHandle(profileHandle); }
+      const lifecycleHandle = await runtime.createIsolatedHandle();
+      try {
+        await createVNextPg17CatalogBoundary(runtime).apply(lifecycleHandle, { appliedAt: '2026-08-20T00:00:00.000Z', appliedBy: 'identity-lifecycle-test' });
+        const lifecycleResult = await rehearseVNextPg17ControlPlaneCopy({
+          source: createVNextPg17SyntheticControlPlaneSource(identityLifecycleSnapshot()),
+          target: runtime.createVNextPg17CopyOnlyRehearsalTarget(lifecycleHandle),
+        });
+        assert.strictEqual(lifecycleResult.accountCount, 2);
+        assert.strictEqual(lifecycleResult.deviceCount, 3);
+        assert.strictEqual(lifecycleResult.installationCount, 2);
+        assert.strictEqual(lifecycleResult.linkCount, 2);
+        assert.strictEqual(lifecycleResult.sourceIdentityLogicalSha256, lifecycleResult.targetIdentityLogicalSha256);
+      } finally { await runtime.disposeHandle(lifecycleHandle); }
       for (const stages of [['commit'], ['accounts', 'rollback']]) {
         const uncertainHandle = await runtime.createIsolatedHandle();
         try {
