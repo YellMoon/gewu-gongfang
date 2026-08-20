@@ -2,7 +2,7 @@
 
 Date: 2026-08-13
 
-Status: active execution baseline
+Status: 已降级为局部安全参考，不是总体执行基线。总体架构以 `docs/superpowers/specs/2026-08-13-cloud-authority-vnext-design.md` 的云端业务权威路线为准；本计划只可复用其账户、设备、权限、审计和 PostgreSQL 验证素材。
 
 ## Decision
 

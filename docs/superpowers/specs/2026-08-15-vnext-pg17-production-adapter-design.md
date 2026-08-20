@@ -1,6 +1,6 @@
 # vNext PostgreSQL 17 Production Control-Plane Adapter Design
 
-**Status:** read-only deployment-boundary checkpoint. The later 2026-08-20
+**Status:** 已降级为本地控制面验证参考，不是总体生产架构或业务数据边界。The later 2026-08-20
 identity-bridge feasibility decision supersedes every prospective writer-path
 statement below: no production command adapter is admitted yet.
 

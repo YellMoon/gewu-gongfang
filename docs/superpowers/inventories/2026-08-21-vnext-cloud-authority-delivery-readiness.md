@@ -4,20 +4,22 @@
 
 ## 目标边界
 
-格物工坊的 vNext 目标是把身份、设备、权限、会话、审计、控制面通信与其耐久证据建立为可验证的云端 control-plane；本地数据主机仍保存完整权威业务数据，移动硬盘题库仍由本地主机统一管理。云端 PostgreSQL 不是业务表、题库文件、个人资产、附件、路径、NAS 或桌面 SQLite 的替代品。
+本记录以[云端业务权威总纲](../specs/2026-08-13-cloud-authority-vnext-design.md)和[强制契约](../specs/2026-08-21-vnext-cloud-business-authority-architecture-contract.md)为唯一总体依据。云端数据库承载适用业务数据和题库结构化文字内容的唯一可写权威；账户、设备、权限、会话、审计、任务与正式业务命令均由云端服务裁决。
 
-因此，“云端权威”在当前已批准架构中只覆盖 control-plane 的授权判断与跨端协调，不把业务事实错误地迁往云端。任何业务域投影、真实源读取或反向写本地都要单独准入。
+NAS/存储代理承载题库富媒体、导入原件、Word/PDF 产物、对象校验与备份，不裁决用户、权限或业务事务。旧桌面 SQLite、题库盘和本地数据是受保护的迁移来源、离线草稿缓存与恢复材料，不是新系统的业务权威。
+
+旧的 control-plane-only 路线已降级为局部安全基础：其 PG17 schema、ACL、审计与设备设计可复用，但不能再作为“业务不得上云”或“本地主机裁决业务”的依据。
 
 ## 当前可验证成果
 
 | 目标组成 | 当前证据 | 状态与边界 |
 | --- | --- | --- |
-| PostgreSQL 17 control-plane 数据契约 | M1–M15、精确 catalog/ACL/角色漂移断言、append-only 与 CAS 参考测试位于 `shared/vnext-pg17/` | 仅本地、合成、可销毁 PostgreSQL 17；尚未应用到 RDS。 |
-| 身份、设备与权限读取 | branded session verifier、AccessContext、策略/范围/近期重认证读取矩阵 | 只读 boundary；没有真实凭据验证器、token、HTTP/API 或生产连接。 |
+| PostgreSQL 17 control-plane 基础契约 | M1–M15、精确 catalog/ACL/角色漂移断言、append-only 与 CAS 参考测试位于 `shared/vnext-pg17/` | 仅本地、合成、可销毁 PostgreSQL 17；它是全业务云端 schema 的安全基础，不是最终业务 schema。 |
+| 身份、设备与权限读取 | branded session verifier、AccessContext、策略/范围/近期重认证读取矩阵 | 只读 boundary；没有真实凭据验证器、token、HTTP/API 或生产连接。新设备在线验证成功后自动登记的运行时流程尚未实现。 |
 | 首 authority 与紧急恢复语义 | SQLite 与 PG17 的 bootstrap/recovery reference、备份证据和回滚测试 | 参考实现，不是实际仪式、生产恢复器或云端初始化入口。 |
 | 命令耐久事实 | role、policy publication、device-link revoke 的 receipt/audit/outbox/CAS/replay reference 与 PG17 parity | 语义 oracle；现有 writer 零直接 DML、零 procedure `EXECUTE`，不能承担生产命令。 |
-| 数据迁移与保留 | synthetic copy-only rehearsal、源隔离、历史权限与 profile/contact 元数据的非激活边界 | 不读取真实 SQLite、业务库、题库、NAS、移动盘或桌面数据；未形成真实迁移证明。 |
-| 既有本地主机/多端路径 | `test:authority-architecture` 覆盖主机命令、协议、relay、单一桌面构建与小程序的本地契约 | 自动化契约不是云 relay、生产主机及小程序发布证据；当前路线不把第二台物理桌面作为默认发布门槛。 |
+| 数据迁移与保留 | synthetic copy-only rehearsal、源隔离、历史权限与 profile/contact 元数据的非激活边界 | 仅证明局部结构；真实业务数据、题库文字、富媒体对象、影子迁移和回滚尚未形成证据。 |
+| 统一桌面与多端路径 | `test:authority-architecture` 覆盖旧主机命令、协议、relay、单一桌面构建与小程序的本地契约 | 一份桌面构建可安装在任意电脑；旧主机裁决链路必须被云端业务服务替换。自动化契约不是实际多设备登录、云 relay、NAS 代理或小程序发布证据。 |
 | 云端目标与成本 | [生产数据库决策](../specs/2026-08-14-vnext-production-control-plane-database-decision.md) 冻结为同区域/VPC、固定规格按量、跨可用区、TLS 的 RDS PostgreSQL 17 HA | 尚未复核目标地域 SKU/价格，也未创建 RDS、账号、网络、密钥或备份策略。 |
 
 ## 未完成且不可替代的交付门禁
@@ -40,27 +42,27 @@
 
 验证必须证明 M1–M15 的迁移及 catalog 在真实 TLS/角色模型下成立，并覆盖只读 verifier、负权限、备份恢复与连接/故障行为。当前本地 Docker 测试不能替代这一步。
 
-### 3. 真实数据迁移与注入
+### 3. 云端完整业务 schema、真实数据迁移与注入
 
-真实迁移只能在逐 relation 准入、脱敏盘点、只读 source snapshot、源/目标指纹、映射 ledger、冲突策略、恢复工件和回滚演练都得到验证之后发生。业务表、题库、附件、个人资产、路径、NAS、移动硬盘和原始联系方式继续默认拒绝；不允许用 synthetic rehearsal 的通过结果暗示真实数据已可导入。
+真实迁移只能在完整业务 schema、逐 relation 准入、脱敏盘点、只读 source snapshot、源/目标指纹、映射 ledger、冲突策略、恢复工件和回滚演练都得到验证之后发生。学生、教师、课程、排课、收费、课耗、资产和题库文字/结构化内容须迁入云端；题库富媒体须经 NAS/存储代理以对象 ID、版本、大小和哈希迁移与核验。不得用 synthetic rehearsal 的通过结果暗示真实数据已可导入。
 
 ### 4. 多端运行矩阵与发布
 
-发布仍需独立验证本地主机、单一桌面构建的已启用运行模式、云 relay/ECS、微信小程序、OSS 更新 feed 与版本兼容。第二台物理桌面不是当前默认验收条件；若未来重新启用多电脑离线编辑，必须以新的端侧准入规格重新加入矩阵。每个适用端都要有当前版本、健康、权限和失败恢复证据；任一端未完成时，交付状态只能是“部分发布”或“受阻”。
+发布仍需独立验证同一桌面构建在多台隔离电脑上的在线登录、自动设备登记、离线草稿与确认提交、云端业务服务、NAS/存储代理、微信小程序、OSS 更新 feed 与版本兼容。这里的“多台电脑”是同一安装包的多设备行为验证，不是两套 host/client 安装包。每个适用端都要有当前版本、健康、权限和失败恢复证据；任一端未完成时，交付状态只能是“部分发布”或“受阻”。
 
 ## 当前执行顺序
 
-1. 持续维护本地 schema、ACL、source-isolation、copy-only 和 authority-protocol 回归门禁。
-2. 在存在已批准的外部身份体系、凭据托管和 non-production 云目标后，先完成身份 bridge 的独立设计与攻击证明；仍只针对一个命令。
-3. 通过该门禁后，进行单命令 procedure 的 disposable 与 non-production RDS 验证；不授予通用 writer DML。
-4. 再进行 control-plane-only 的真实 source 盘点、可回滚迁移和隔离发布矩阵。
+1. 以云端业务权威总纲重建完整业务 schema、迁移与发布实施计划；M1–M15 仅作为可复用安全基础。
+2. 在已批准的外部身份体系、凭据托管和 non-production 云目标中，验证新设备在线登录后的自动登记、云端逐请求鉴权与最小权限业务写入路径。
+3. 按业务域完成云端 schema、影子迁移、增量追赶、空库恢复和回滚演练；题库文字进入云端，富媒体进入 NAS/存储代理。
+4. 迁移统一桌面离线草稿、确认提交、云端同步、NAS 存储任务和小程序受限业务能力。
 5. 只有所有适用端的真实证据完整时，才建立生产 RDS、接入服务、发布桌面/小程序或声明完成。
 
 ## 当前停止条件
 
-截至本记录日期，下一项会改变生产安全边界的工作需要尚不存在的外部身份/会话验证体系和真实 non-production 云环境。继续新增本地写入器、真实数据导入器或部署脚本不会缩小这些缺口，反而会绕过已冻结的安全决策。
+截至本记录日期，完整云端业务 schema、真实业务迁移、NAS 存储代理、外部身份体系、non-production 云环境与真实多端发布仍未完成。旧 control-plane-only 路线已停止作为总体实施路径；任何新工作都必须先证明它推动云端业务权威、迁移安全或存储代理边界，而不是重新把业务裁决放回本地主机。
 
-因此当前允许的自主工作仅限不扩张权限或数据面的契约回归、文档一致性和合成验证维护；一旦新的身份或环境条件实际具备，必须按上述顺序重新进行必要性、成本、安全和质量审计。
+当前可自主推进的是新的云端业务权威实施计划、架构一致性门禁和不触碰真实数据的基础验证；一旦涉及真实身份、云资源、桌面数据、NAS 数据或部署，必须按上述顺序重新进行必要性、成本、安全和质量审计。
 
 ## 可复核入口
 

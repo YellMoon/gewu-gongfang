@@ -1,5 +1,7 @@
 # vNext Local Business Repository Retention and Control-Plane Projection No-Export
 
+**状态：** 已由云端业务权威总纲取代，仅保留为说明旧 control-plane-only 边界为何不再适用的历史 no-go 记录；不得作为当前实现或迁移准入依据。
+
 ## Decision
 
 The local data host remains the authority for all business repositories. The
