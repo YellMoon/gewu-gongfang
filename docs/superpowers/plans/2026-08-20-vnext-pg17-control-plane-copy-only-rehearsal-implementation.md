@@ -8,7 +8,7 @@
 
 **Tech Stack:** Node.js CommonJS、`better-sqlite3` memory database、`pg@8.23.0`、现有 disposable PostgreSQL 17 Docker runtime、node `assert`。
 
-**当前实施状态（2026-08-20）：** 当前交付扩展为 `historical-authorization boundary-verified`：在完全合成、一次性的目标库中原子验证 `authority → account → trusted device → installation → link`，以及 `capabilityCatalog → revoked|expired roleGrants → revoked|expired capabilityOverrides → revoked|expired dataScopeGrants`。任何 active role/override/scope 都失败关闭，且不生成默认 capability；`profileBindings`、`verifiedContacts`、`receipts`、`auditEvents`、`outboxEvents` 只要非空便失败关闭。八项 `legacy*` collection 仅出现在脱敏的 count/hash inventory，绝不写入 PG。它不是完整 copy-only rehearsal、真实数据迁移或任何发布证据；后续 metadata/evidence 闭包须另行红测、审计和提交。
+**Current implementation status (2026-08-20):** The delivered scope is `profile-binding metadata boundary-verified`: a synthetic, disposable target atomically verifies the identity topology, the capability plus revoked-or-expired historical authorization closure, and opaque `profileBindings`. Active profile bindings are non-authorizing account-to-profile links. Active role/override/scope input still fails closed and no default capability is generated. Nonempty verified contacts, receipts, audit events, and outbox events fail closed; sessions, reauthentication, policy, and trust evidence are not written. The eight `legacy*` collections remain redacted count/hash inventory only. This is not a complete rehearsal, real-data migration, or release evidence.
 
 ---
 

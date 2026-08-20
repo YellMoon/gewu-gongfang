@@ -53,6 +53,18 @@ function historicalAuthorizationSnapshot() {
   return value;
 }
 
+function profileBindingSnapshot() {
+  const value = historicalAuthorizationSnapshot();
+  const createdAt = '2026-08-20T00:00:00.000Z';
+  const revokedAt = '2026-08-20T00:02:00.000Z';
+  value.profileBindings.push(
+    { binding_id: 'binding-active', authority_id: 'authority-1', account_id: 'account-1', profile_type: 'teacher', profile_id: 'opaque-teacher-profile', status: 'active', evidence_hash: 'opaque-evidence-a', row_version: 1, created_at: createdAt, updated_at: createdAt, revoked_at: null },
+    { binding_id: 'binding-pending', authority_id: 'authority-1', account_id: 'account-1', profile_type: 'student', profile_id: 'opaque-student-profile', status: 'pending', evidence_hash: 'opaque-evidence-b', row_version: 1, created_at: createdAt, updated_at: createdAt, revoked_at: null },
+    { binding_id: 'binding-revoked', authority_id: 'authority-1', account_id: 'account-1', profile_type: 'teacher', profile_id: 'opaque-revoked-profile', status: 'revoked', evidence_hash: 'opaque-evidence-c', row_version: 1, created_at: createdAt, updated_at: revokedAt, revoked_at: revokedAt },
+  );
+  return value;
+}
+
 async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposablePg17Runtime()) {
   const ownsRuntime = arguments.length === 0;
   if (ownsRuntime) await runtime.start();
@@ -83,6 +95,25 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
     invalidHistoricalLifecycle.dataScopeGrants[0].revoked_at = null;
     assert.throws(
       () => createVNextPg17SyntheticControlPlaneSource(invalidHistoricalLifecycle),
+      error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+    );
+    const invalidProfileLifecycle = profileBindingSnapshot();
+    invalidProfileLifecycle.profileBindings[1].revoked_at = '2026-08-20T00:02:00.000Z';
+    assert.throws(
+      () => createVNextPg17SyntheticControlPlaneSource(invalidProfileLifecycle),
+      error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+    );
+    const duplicateActiveAccountType = profileBindingSnapshot();
+    duplicateActiveAccountType.profileBindings[1] = { ...duplicateActiveAccountType.profileBindings[1], profile_type: 'teacher', profile_id: 'opaque-second-teacher', status: 'active' };
+    assert.throws(
+      () => createVNextPg17SyntheticControlPlaneSource(duplicateActiveAccountType),
+      error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+    );
+    const duplicateActiveProfile = profileBindingSnapshot();
+    duplicateActiveProfile.accounts.push({ account_id: 'account-2', authority_id: 'authority-1', status: 'active', auth_version: 1, access_version: 1, revocation_version: 1, row_version: 1, created_at: '2026-08-20T00:00:00.000Z', updated_at: '2026-08-20T00:00:00.000Z' });
+    duplicateActiveProfile.profileBindings[1] = { ...duplicateActiveProfile.profileBindings[1], account_id: 'account-2', profile_type: 'teacher', profile_id: 'opaque-teacher-profile', status: 'active' };
+    assert.throws(
+      () => createVNextPg17SyntheticControlPlaneSource(duplicateActiveProfile),
       error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
     );
     const accessorHistorical = historicalAuthorizationSnapshot();
@@ -210,6 +241,22 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
         assert.strictEqual(historicalResult.sourceHistoricalLogicalSha256, historicalResult.targetHistoricalLogicalSha256);
         assert.match(historicalResult.sourceHistoricalLogicalSha256, /^[0-9a-f]{64}$/);
       } finally { await runtime.disposeHandle(historicalHandle); }
+      const profileHandle = await runtime.createIsolatedHandle();
+      try {
+        await createVNextPg17CatalogBoundary(runtime).apply(profileHandle, { appliedAt: '2026-08-20T00:00:00.000Z', appliedBy: 'profile-binding-test' });
+        const profileTarget = runtime.createVNextPg17CopyOnlyRehearsalTarget(profileHandle);
+        const profileResult = await rehearseVNextPg17ControlPlaneCopy({
+          source: createVNextPg17SyntheticControlPlaneSource(profileBindingSnapshot()),
+          target: profileTarget,
+        });
+        assert.strictEqual(profileResult.profileBindingCount, 3);
+        assert.strictEqual(profileResult.activeProfileBindingCount, 1);
+        assert.strictEqual(profileResult.sourceProfileBindingLogicalSha256, profileResult.targetProfileBindingLogicalSha256);
+        const profileTrace = inspectVNextPg17CopyOnlyRehearsalTarget(profileTarget);
+        assert.ok(profileTrace.queries.some(text => text.startsWith('INSERT INTO vnext_control_plane.vnext_profile_bindings(')));
+        assert.ok(profileTrace.queries.some(text => text.includes('FROM vnext_control_plane.vnext_profile_bindings ORDER BY binding_id')));
+        assert.ok(profileTrace.queries.every(text => /^(BEGIN ISOLATION LEVEL REPEATABLE READ|COMMIT|ROLLBACK|SELECT |INSERT INTO vnext_control_plane\.)/.test(text)));
+      } finally { await runtime.disposeHandle(profileHandle); }
       for (const stages of [['commit'], ['accounts', 'rollback']]) {
         const uncertainHandle = await runtime.createIsolatedHandle();
         try {
@@ -257,14 +304,30 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
           }
         });
       } finally { await runtime.disposeHandle(historicalMismatchHandle); }
-      for (const stage of ['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants']) {
+      const profileMismatchHandle = await runtime.createIsolatedHandle();
+      try {
+        await createVNextPg17CatalogBoundary(runtime).apply(profileMismatchHandle, { appliedAt: '2026-08-20T00:00:00.000Z', appliedBy: 'profile-copy-only-mismatch-test' });
+        const profileMismatchTarget = runtime.createVNextPg17CopyOnlyRehearsalTarget(profileMismatchHandle);
+        const faultPlan = runtime.createVNextPg17CopyOnlyRehearsalFaultPlan(profileMismatchHandle, 'postReadProfileMismatch');
+        await assert.rejects(
+          () => rehearseVNextPg17ControlPlaneCopy({ source: createVNextPg17SyntheticControlPlaneSource(profileBindingSnapshot()), target: profileMismatchTarget, faultPlan }),
+          error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_LOGICAL_MISMATCH',
+        );
+        await withVNextPg17SyntheticQuery(profileMismatchHandle, 'fixture-provisioner', async facade => {
+          for (const table of TARGET_DATA_TABLES) {
+            assert.strictEqual(Number((await facade.query(`SELECT COUNT(*)::int AS count FROM vnext_control_plane.${table}`)).rows[0].count), 0);
+          }
+        });
+      } finally { await runtime.disposeHandle(profileMismatchHandle); }
+      for (const stage of ['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants', 'profileBindings']) {
         const rollbackHandle = await runtime.createIsolatedHandle();
         try {
           await createVNextPg17CatalogBoundary(runtime).apply(rollbackHandle, { appliedAt: '2026-08-20T00:00:00.000Z', appliedBy: 'copy-only-rollback-test' });
           const rollbackTarget = runtime.createVNextPg17CopyOnlyRehearsalTarget(rollbackHandle);
           const faultPlan = runtime.createVNextPg17CopyOnlyRehearsalFaultPlan(rollbackHandle, stage);
-          const rollbackSource = ['capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants'].includes(stage)
-            ? createVNextPg17SyntheticControlPlaneSource(historicalAuthorizationSnapshot()) : source;
+          const rollbackSource = stage === 'profileBindings' ? createVNextPg17SyntheticControlPlaneSource(profileBindingSnapshot())
+            : ['capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants'].includes(stage)
+              ? createVNextPg17SyntheticControlPlaneSource(historicalAuthorizationSnapshot()) : source;
           await assert.rejects(
             () => rehearseVNextPg17ControlPlaneCopy({ source: rollbackSource, target: rollbackTarget, faultPlan }),
             error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_ROLLED_BACK',

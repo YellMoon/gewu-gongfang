@@ -22,7 +22,7 @@ const syntheticQueryTraces = new WeakMap();
 const copyOnlyRehearsalTargets = new WeakMap();
 const copyOnlyRehearsalFaultPlans = new WeakMap();
 const VERIFIER_FAULT_STAGES = new Set(['begin', 'setup', 'identity', 'tls', 'catalog', 'commit', 'rollback', 'release']);
-const COPY_ONLY_REHEARSAL_STAGES = new Set(['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants', 'postReadMismatch', 'postReadHistoricalMismatch', 'commit', 'rollback']);
+const COPY_ONLY_REHEARSAL_STAGES = new Set(['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants', 'profileBindings', 'postReadMismatch', 'postReadHistoricalMismatch', 'postReadProfileMismatch', 'commit', 'rollback']);
 const COPY_ONLY_TERMINAL_STAGES = new Set(['commit', 'rollback']);
 const COPY_ONLY_TARGET_DATA_RELATIONS = Object.freeze([
   'vnext_authorities', 'vnext_accounts', 'vnext_trusted_devices', 'vnext_device_installations', 'vnext_account_device_links',
@@ -447,7 +447,8 @@ async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan)
       : text.startsWith('INSERT INTO vnext_control_plane.vnext_role_grants') ? 'roleGrants'
         : text.startsWith('INSERT INTO vnext_control_plane.vnext_capability_overrides') ? 'capabilityOverrides'
           : text.startsWith('INSERT INTO vnext_control_plane.vnext_data_scope_grants') ? 'dataScopeGrants' : null;
-    const effectiveStage = stage || historicalStage;
+    const profileStage = text.startsWith('INSERT INTO vnext_control_plane.vnext_profile_bindings') ? 'profileBindings' : null;
+    const effectiveStage = stage || historicalStage || profileStage;
     if (effectiveStage && faultState && faultState.stages.delete(effectiveStage)) {
       if (COPY_ONLY_TERMINAL_STAGES.has(effectiveStage)) {
         targetState.poisoned = true;
@@ -467,6 +468,9 @@ async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan)
     const historicalFields = Object.freeze({ capabilityCatalog: ['capability_id','status','surface_mask','created_at'], roleGrants: ['grant_id','authority_id','account_id','role','status','grant_version','row_version','starts_at','ends_at','revoked_at','granted_by_account_id','created_at','updated_at'], capabilityOverrides: ['override_id','authority_id','account_id','capability_id','effect','status','starts_at','ends_at','row_version','created_at','updated_at','revoked_at'], dataScopeGrants: ['scope_grant_id','authority_id','account_id','scope_type','scope_value_hash','effect','status','starts_at','ends_at','row_version','created_at','updated_at','revoked_at'] });
     const historicalRelations = Object.freeze({ capabilityCatalog: 'vnext_capability_catalog', roleGrants: 'vnext_role_grants', capabilityOverrides: 'vnext_capability_overrides', dataScopeGrants: 'vnext_data_scope_grants' });
     const historicalKeys = Object.freeze({ capabilityCatalog: 'capability_id', roleGrants: 'grant_id', capabilityOverrides: 'override_id', dataScopeGrants: 'scope_grant_id' });
+    const profileFields = Object.freeze({ profileBindings: ['binding_id','authority_id','account_id','profile_type','profile_id','status','evidence_hash','row_version','created_at','updated_at','revoked_at'] });
+    const profileRelations = Object.freeze({ profileBindings: 'vnext_profile_bindings' });
+    const profileKeys = Object.freeze({ profileBindings: 'binding_id' });
     const result = await callback(Object.freeze({
       countAuthorities: async () => Number((await query('SELECT COUNT(*)::int AS count FROM vnext_control_plane.vnext_authorities')).rows[0].count),
       countTargetDataRows: async () => (await query(COPY_ONLY_TARGET_EMPTY_SQL)).rows.map(row => Object.freeze({ relation: row.relation, count: Number(row.count) })),
@@ -494,6 +498,18 @@ async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan)
         }
         return Object.freeze(historical);
       },
+      readProfileMetadata: async () => {
+        const profile = {};
+        for (const collection of Object.keys(profileFields)) {
+          const columns = profileFields[collection];
+          const result = await query(`SELECT row_to_json(record) AS row FROM (SELECT ${columns.join(',')} FROM vnext_control_plane.${profileRelations[collection]} ORDER BY ${profileKeys[collection]}) AS record`);
+          profile[collection] = Object.freeze(result.rows.map(row => Object.freeze(row.row)));
+        }
+        if (faultState && faultState.stages.delete('postReadProfileMismatch')) {
+          profile.profileBindings = Object.freeze([Object.freeze({ ...profile.profileBindings[0], status: 'rehearsal-mismatch' })]);
+        }
+        return Object.freeze(profile);
+      },
       insertAuthority: async row => {
         const result = await query('INSERT INTO vnext_control_plane.vnext_authorities(authority_id,status,created_at,updated_at) VALUES($1,$2,$3,$4)', [row.authority_id, row.status, row.created_at, row.updated_at]);
         return result;
@@ -508,6 +524,11 @@ async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan)
         if (!Object.prototype.hasOwnProperty.call(historicalFields, collection) || !row || Object.keys(row).sort().join(',') !== [...historicalFields[collection]].sort().join(',')) throw invalidHandle();
         const columns = historicalFields[collection];
         return query(`INSERT INTO vnext_control_plane.${historicalRelations[collection]}(${columns.join(',')}) VALUES(${columns.map((_, index) => '$' + (index + 1)).join(',')})`, columns.map(key => row[key]));
+      },
+      insertProfileMetadata: async (collection, row) => {
+        if (!Object.prototype.hasOwnProperty.call(profileFields, collection) || !row || Object.keys(row).sort().join(',') !== [...profileFields[collection]].sort().join(',')) throw invalidHandle();
+        const columns = profileFields[collection];
+        return query(`INSERT INTO vnext_control_plane.${profileRelations[collection]}(${columns.join(',')}) VALUES(${columns.map((_, index) => '$' + (index + 1)).join(',')})`, columns.map(key => row[key]));
       },
     }));
     commitAttempted = true;

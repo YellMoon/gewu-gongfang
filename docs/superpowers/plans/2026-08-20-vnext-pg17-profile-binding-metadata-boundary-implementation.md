@@ -15,18 +15,18 @@
 **Files:**
 - Modify: `shared/vnext-pg17/controlPlaneCopyOnlyRehearsal.test.js`
 
-- [ ] Add active, pending, and revoked profile-binding fixtures; assert target counts, actual hashes, and zero active authorization.
-- [ ] Run focused test; it must reject nonempty `profileBindings` before target writes.
-- [ ] Add red cases for exact fields, FKs, enums, versions, instants, lifecycle, two active keys, excluded rows, post-read mismatch, and profile-stage rollback.
+- [x] Add active, pending, and revoked profile-binding fixtures; assert target counts, actual hashes, and zero active authorization.
+- [x] Run focused test; it must reject nonempty `profileBindings` before target writes.
+- [x] Add red cases for exact fields, FKs, enums, versions, instants, lifecycle, two active keys, excluded rows, post-read mismatch, and profile-stage rollback.
 
 ### Task 2: Source and report mapping
 
 **Files:**
 - Modify: `shared/vnext-pg17/controlPlaneCopyOnlyRehearsal.js`
 
-- [ ] Add the exact eleven-field validator, V5 lifecycle, opaque text rules, and the narrow deferred gate.
-- [ ] Add profile source/target logical hashes and actual counts; mismatch must roll back.
-- [ ] Run focused rehearsal test to green.
+- [x] Add the exact eleven-field validator, V5 lifecycle, opaque text rules, and the narrow deferred gate.
+- [x] Add profile source/target logical hashes and actual counts; mismatch must roll back.
+- [x] Run focused rehearsal test to green.
 
 ### Task 3: Runtime SQL closure
 
@@ -34,9 +34,9 @@
 - Modify: `shared/vnext-pg17/disposableRuntime.js`
 - Modify: `shared/vnext-pg17/disposableRuntime.test.js`
 
-- [ ] Add only static profile INSERT/reread entries behind the opaque facade.
-- [ ] Add opaque `profileBindings` and `postReadProfileMismatch` fault stages.
-- [ ] Verify trace closure and focused runtime/rehearsal tests.
+- [x] Add only static profile INSERT/reread entries behind the opaque facade.
+- [x] Add opaque `profileBindings` and `postReadProfileMismatch` fault stages.
+- [x] Verify trace closure and focused runtime/rehearsal tests.
 
 ### Task 4: Audit and publish
 
@@ -44,6 +44,6 @@
 - Modify: `docs/superpowers/plans/2026-08-20-vnext-pg17-control-plane-copy-only-rehearsal-implementation.md`
 - Modify: this plan
 
-- [ ] Update the current-boundary record without weakening non-claims.
-- [ ] Obtain independent necessity and quality audit; turn every finding into a red test and minimal fix.
+- [x] Update the current-boundary record without weakening non-claims.
+- [x] Obtain independent necessity and quality audit; turn every finding into a red test and minimal fix.
 - [ ] Run focused, catalog, aggregate, and diff checks; commit and push only after all pass.
