@@ -7,6 +7,7 @@ const { runBusinessFoundationManifestCases } = require('./businessFoundationMani
 const { runBusinessFoundationAdmissionBatchRequestCases } = require('./businessFoundationAdmissionBatchRequest.test');
 const { runBusinessFoundationAdmissionCatalogCases } = require('./businessFoundationAdmissionCatalog.test');
 const { runBusinessFoundationCatalogAssertionCases } = require('./businessFoundationCatalogAssertion.test');
+const { runBusinessFoundationShadowAdmissionCases } = require('./businessFoundationShadowAdmission.test');
 const { runProductionVerifierReadinessCases } = require('./productionVerifierReadiness.test');
 const { runFirstAuthorityBootstrapMutationCases } = require('./firstAuthorityBootstrapMutation.test');
 const { runEmergencyRecoveryMutationCases } = require('./emergencyRecoveryMutation.test');
@@ -33,6 +34,7 @@ async function run({
   runBusinessFoundationAdmissionBatchRequest = runBusinessFoundationAdmissionBatchRequestCases,
   runBusinessFoundationAdmissionCatalog = runBusinessFoundationAdmissionCatalogCases,
   runBusinessFoundationCatalog = runBusinessFoundationCatalogAssertionCases,
+  runBusinessFoundationShadowAdmission = runBusinessFoundationShadowAdmissionCases,
   runProductionVerifierReadiness = runProductionVerifierReadinessCases,
   runBootstrap = runFirstAuthorityBootstrapMutationCases,
   runRecovery = runEmergencyRecoveryMutationCases,
@@ -56,6 +58,7 @@ async function run({
     await runBusinessFoundationAdmissionBatchRequest(runtime);
     await runBusinessFoundationAdmissionCatalog(runtime);
     await runBusinessFoundationCatalog(runtime);
+    await runBusinessFoundationShadowAdmission(runtime);
     await runProductionVerifierReadiness(runtime);
     await runBootstrap(runtime);
     await runRecovery(runtime);

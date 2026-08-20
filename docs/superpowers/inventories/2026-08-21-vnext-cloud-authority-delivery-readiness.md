@@ -19,7 +19,7 @@ NAS/存储代理承载题库富媒体、导入原件、Word/PDF 产物、对象�
 | 身份、设备与权限读取 | branded session verifier、AccessContext、策略/范围/近期重认证读取矩阵 | 只读 boundary；没有真实凭据验证器、token、HTTP/API 或生产连接。新设备在线验证成功后自动登记的运行时流程尚未实现。 |
 | 首 authority 与紧急恢复语义 | SQLite 与 PG17 的 bootstrap/recovery reference、备份证据和回滚测试 | 参考实现，不是实际仪式、生产恢复器或云端初始化入口。 |
 | 命令耐久事实 | role、policy publication、device-link revoke 的 receipt/audit/outbox/CAS/replay reference 与 PG17 parity | 语义 oracle；现有 writer 零直接 DML、零 procedure `EXECUTE`，不能承担生产命令。 |
-| 数据迁移与保留 | synthetic copy-only rehearsal、源隔离、历史权限与 profile/contact 元数据的非激活边界 | 仅证明局部结构；真实业务数据、题库文字、富媒体对象、影子迁移和回滚尚未形成证据。 |
+| 数据迁移与保留 | source-isolation gate；tenant/institution/school/room 的 local-disposable synthetic shadow-admission：独立批次/行账本、精确重放、只读对账、终端 poison 与整库销毁式回退 | 只使用闭包自有虚构行；未读取 D 盘、未创建 source snapshot/export、未写 RDS/NAS，也不证明真实影子迁移、真实恢复或 cutover。 |
 | 统一桌面与多端路径 | `test:authority-architecture` 覆盖旧主机命令、协议、relay、单一桌面构建与小程序的本地契约 | 一份桌面构建可安装在任意电脑；旧主机裁决链路必须被云端业务服务替换。自动化契约不是实际多设备登录、云 relay、NAS 代理或小程序发布证据。 |
 | 云端目标与成本 | [生产数据库决策](../specs/2026-08-14-vnext-production-control-plane-database-decision.md) 冻结为同区域/VPC、固定规格按量、跨可用区、TLS 的 RDS PostgreSQL 17 HA | 尚未复核目标地域 SKU/价格，也未创建 RDS、账号、网络、密钥或备份策略。 |
 

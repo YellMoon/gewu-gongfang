@@ -1,7 +1,7 @@
 'use strict';
 
 const { spawn } = require('child_process');
-const { randomBytes } = require('crypto');
+const { randomBytes, createHash } = require('crypto');
 const { types } = require('util');
 const { Client, Pool } = require('pg');
 
@@ -25,6 +25,8 @@ const businessFoundationDdlTraces = new WeakMap();
 const businessFoundationDdlFaultPlans = new WeakMap();
 const businessFoundationAdmissionDdlTraces = new WeakMap();
 const businessFoundationAdmissionDdlFaultPlans = new WeakMap();
+const businessFoundationShadowAdmissionTraces = new WeakMap();
+const businessFoundationShadowAdmissionFaultPlans = new WeakMap();
 const copyOnlyRehearsalTargets = new WeakMap();
 const copyOnlyRehearsalFaultPlans = new WeakMap();
 const VERIFIER_FAULT_STAGES = new Set(['begin', 'setup', 'identity', 'tls', 'catalog', 'commit', 'rollback', 'release']);
@@ -32,6 +34,14 @@ const COPY_ONLY_REHEARSAL_STAGES = new Set(['authorities', 'accounts', 'trustedD
 const COPY_ONLY_TERMINAL_STAGES = new Set(['commit', 'rollback']);
 const BUSINESS_FOUNDATION_DDL_FAULT_STAGES = new Set(['commit', 'rollback']);
 const BUSINESS_FOUNDATION_ADMISSION_DDL_FAULT_STAGES = new Set(['commit', 'rollback', 'revoke']);
+const BUSINESS_FOUNDATION_SHADOW_ADMISSION_FAULT_STAGES = new Set(['preflight', 'preflightCommit', 'writeCommit', 'writeFail', 'rollback', 'reconcileCommit', 'reconcileRollback']);
+const BUSINESS_FOUNDATION_SHADOW_ADMISSION_PREFLIGHT_SQL = "SELECT (SELECT COUNT(*)::text FROM business.tenants) AS tenants, (SELECT COUNT(*)::text FROM business.institutions) AS institutions, (SELECT COUNT(*)::text FROM business.schools) AS schools, (SELECT COUNT(*)::text FROM business.rooms) AS rooms, (SELECT COUNT(*)::text FROM migration_admission.migration_batches) AS batches, (SELECT COUNT(*)::text FROM migration_admission.migration_batch_events) AS events, (SELECT COUNT(*)::text FROM migration_admission.migration_quarantine) AS quarantine, (SELECT COUNT(*)::text FROM migration_admission.migration_row_ledger) AS ledger";
+const BUSINESS_FOUNDATION_SHADOW_RECONCILIATION_SQL = Object.freeze({
+  tenants: 'SELECT id, name, legacy_status AS "legacyStatus", legacy_plan AS "legacyPlan", to_char(legacy_archive_before AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "legacyArchiveBefore", legacy_deleted AS "legacyDeleted", to_char(created_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "createdAt", to_char(updated_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "updatedAt" FROM business.tenants ORDER BY id',
+  institutions: 'SELECT id, tenant_id AS "tenantId", name, contact_person_legacy AS "contactPersonLegacy", contact_phone_legacy AS "contactPhoneLegacy", revenue_share::float8 AS "revenueShare", notes, legacy_deleted AS "legacyDeleted", to_char(created_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "createdAt", to_char(updated_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "updatedAt" FROM business.institutions ORDER BY id',
+  schools: 'SELECT id, tenant_id AS "tenantId", name, legacy_count AS "legacyCount", legacy_deleted AS "legacyDeleted", to_char(created_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "createdAt", to_char(updated_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "updatedAt" FROM business.schools ORDER BY id',
+  rooms: 'SELECT id, tenant_id AS "tenantId", name, address_legacy AS "addressLegacy", legacy_count AS "legacyCount", legacy_deleted AS "legacyDeleted", to_char(created_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "createdAt", to_char(updated_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "updatedAt" FROM business.rooms ORDER BY id',
+});
 const COPY_ONLY_TARGET_DATA_RELATIONS = Object.freeze([
   'vnext_authorities', 'vnext_accounts', 'vnext_trusted_devices', 'vnext_device_installations', 'vnext_account_device_links',
   'vnext_role_grants', 'vnext_capability_catalog', 'vnext_capability_overrides', 'vnext_data_scope_grants', 'vnext_profile_bindings',
@@ -68,6 +78,14 @@ function migrationInputInvalid() {
 
 function businessSchemaDrift() {
   return codedError('VNEXT_PG17_SCHEMA_DRIFT', 'vNext PG17 business schema drift was detected');
+}
+
+function canonicalHashConflict() {
+  return codedError('VNEXT_PG17_ADMISSION_CANONICAL_HASH_CONFLICT', 'vNext PG17 admission source canonical hash conflicts with the stored row ledger');
+}
+
+function reconciliationMismatch() {
+  return codedError('VNEXT_PG17_ADMISSION_RECONCILIATION_MISMATCH', 'vNext PG17 admission reconciliation does not match the target');
 }
 
 function randomToken(bytes = 18) {
@@ -507,7 +525,7 @@ async function executeBusinessFoundationDdlPlan(runtime, handle, input) {
   if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
   const snapshot = snapshotBusinessDdlInput(input);
   const state = handles.get(handle);
-  if (state.businessFoundationDdlPoisoned) throw unavailable();
+  if (state.businessFoundationDdlPoisoned || state.businessFoundationShadowAdmissionPoisoned) throw unavailable();
   if (state.businessFoundationDdlBusy) throw invalidHandle();
   const client = state.clients['business-migrator'];
   if (!client) throw invalidHandle();
@@ -617,11 +635,27 @@ async function poisonBusinessFoundationAdmissionDatabase(runtime, database) {
   await Promise.all(clients.map(closeClient));
 }
 
+async function poisonBusinessFoundationShadowAdmissionDatabase(runtime, database) {
+  const state = runtimeState(runtime);
+  const clients = [];
+  for (const candidate of state.handles) {
+    const candidateState = handles.get(candidate);
+    if (!candidateState || candidateState.closed || candidateState.database !== database) continue;
+    candidateState.businessFoundationShadowAdmissionPoisoned = true;
+    clients.push(candidateState.clients['fixture-provisioner']);
+    clients.push(candidateState.clients['business-migrator']);
+    clients.push(candidateState.clients['business-verifier']);
+    clients.push(candidateState.clients['migration-admission-migrator']);
+    clients.push(candidateState.clients['migration-admission-verifier']);
+  }
+  await Promise.all(clients.map(closeClient));
+}
+
 async function executeBusinessFoundationAdmissionDdlPlan(runtime, handle, input) {
   if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
   const snapshot = snapshotBusinessDdlInput(input);
   const state = handles.get(handle);
-  if (state.businessFoundationAdmissionDdlBusy || state.businessFoundationAdmissionDdlPoisoned) throw unavailable();
+  if (state.businessFoundationAdmissionDdlBusy || state.businessFoundationAdmissionDdlPoisoned || state.businessFoundationShadowAdmissionPoisoned) throw unavailable();
   const client = state.clients['migration-admission-migrator'];
   if (!client) throw invalidHandle();
   const { BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS } = require('./businessFoundationAdmissionManifest');
@@ -719,6 +753,206 @@ async function executeBusinessFoundationAdmissionDdlPlan(runtime, handle, input)
   }
 }
 
+function stableSha256(value) {
+  return createHash('sha256').update(JSON.stringify(value), 'utf8').digest('hex');
+}
+
+async function assertBusinessFoundationShadowTargetMatchesLedger(query, ledgerRows) {
+  if (ledgerRows.some(row => !Object.prototype.hasOwnProperty.call(BUSINESS_FOUNDATION_SHADOW_RECONCILIATION_SQL, row.source_relation))) throw reconciliationMismatch();
+  const relationCounts = {};
+  for (const relation of ['tenants', 'institutions', 'schools', 'rooms']) {
+    const target = await query(BUSINESS_FOUNDATION_SHADOW_RECONCILIATION_SQL[relation]);
+    const expected = ledgerRows.filter(row => row.source_relation === relation);
+    if (target.rows.length !== expected.length) throw reconciliationMismatch();
+    relationCounts[relation] = target.rows.length;
+    for (const row of target.rows) {
+      const sourceKeyHash = stableSha256(`${relation}:${row.id}`);
+      const stored = expected.find(candidate => candidate.source_primary_key_sha256 === sourceKeyHash);
+      const canonical = stableSha256(row);
+      if (!stored || stored.canonical_source_sha256 !== canonical || stored.target_id !== row.id
+        || stored.target_logical_sha256 !== canonical || stored.outcome !== 'admitted' || stored.outcome_code !== 'ADMITTED') throw reconciliationMismatch();
+    }
+  }
+  return Object.freeze(relationCounts);
+}
+
+async function executeBusinessFoundationShadowAdmissionPlan(runtime, handle, snapshot) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle) || !snapshot || typeof snapshot !== 'object') throw invalidHandle();
+  const state = handles.get(handle);
+  if (state.businessFoundationShadowAdmissionBusy || state.businessFoundationShadowAdmissionPoisoned) throw unavailable();
+  const client = state.clients['fixture-provisioner'];
+  if (!client) throw invalidHandle();
+  const trace = state.businessFoundationShadowAdmissionTrace;
+  let writeTransaction = false;
+  const record = text => {
+    const traceState = businessFoundationShadowAdmissionTraces.get(trace);
+    if (traceState && traceState.armed) traceState.queries.push(text);
+  };
+  const query = (text, values) => {
+    record(text);
+    return client.query(text, values).then(result => {
+      const planState = businessFoundationShadowAdmissionFaultPlans.get(state.businessFoundationShadowAdmissionFaultPlan);
+      const stage = text === BUSINESS_FOUNDATION_SHADOW_ADMISSION_PREFLIGHT_SQL ? 'preflight'
+        : text === 'COMMIT' ? (writeTransaction ? 'writeCommit' : 'preflightCommit')
+          : text === 'ROLLBACK' ? 'rollback' : null;
+      if (stage && planState && planState.pending.delete(stage)) throw new Error(`synthetic business shadow admission ${stage} fault`);
+      if (writeTransaction && text.startsWith('INSERT INTO migration_admission.migration_batches ') && planState && planState.pending.delete('writeFail')) {
+        throw new Error('synthetic business shadow admission write fault');
+      }
+      return result;
+    });
+  };
+  state.businessFoundationShadowAdmissionBusy = true;
+  const relations = ['tenants', 'institutions', 'schools', 'rooms'];
+  const relationCounts = Object.freeze(Object.fromEntries(relations.map(relation => [relation, snapshot[relation].length])));
+  const expectedRows = relations.flatMap(relation => snapshot[relation].map(row => Object.freeze({
+    relation,
+    row,
+    sourcePrimaryKeySha256: stableSha256(`${relation}:${row.id}`),
+    canonicalSourceSha256: stableSha256(row),
+  })));
+  let begun = false;
+  let commitAttempted = false;
+  try {
+    await query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    begun = true;
+    await query("SET LOCAL TIME ZONE 'UTC'");
+    const preflight = await query(BUSINESS_FOUNDATION_SHADOW_ADMISSION_PREFLIGHT_SQL);
+    if (preflight.rows.length !== 1) throw businessSchemaDrift();
+    const preflightCounts = preflight.rows[0];
+    const isFresh = Object.values(preflightCounts).every(value => value === '0');
+    if (!isFresh) {
+      const existingBatch = await query(
+        'SELECT batch_request_sha256 FROM migration_admission.migration_batches WHERE batch_id = $1',
+        [snapshot.batch.batchId],
+      );
+      const storedLedger = await query(
+        'SELECT source_relation, source_primary_key_sha256, canonical_source_sha256, target_id, target_logical_sha256, outcome, outcome_code FROM migration_admission.migration_row_ledger WHERE batch_id = $1 ORDER BY source_relation, source_primary_key_sha256',
+        [snapshot.batch.batchId],
+      );
+      if (existingBatch.rows.length !== 1 || existingBatch.rows[0].batch_request_sha256 !== snapshot.batch.batchRequestSha256
+        || preflightCounts.batches !== '1' || preflightCounts.events !== '2' || preflightCounts.quarantine !== '0'
+        || preflightCounts.ledger !== String(expectedRows.length)
+        || relations.some(relation => preflightCounts[relation] !== String(relationCounts[relation]))
+        || storedLedger.rows.length !== expectedRows.length) throw businessSchemaDrift();
+      for (const expected of expectedRows) {
+        const stored = storedLedger.rows.find(row => row.source_relation === expected.relation && row.source_primary_key_sha256 === expected.sourcePrimaryKeySha256);
+        if (!stored) throw businessSchemaDrift();
+        if (stored.canonical_source_sha256 !== expected.canonicalSourceSha256) throw canonicalHashConflict();
+        if (stored.target_id !== expected.row.id || stored.target_logical_sha256 !== expected.canonicalSourceSha256
+          || stored.outcome !== 'admitted' || stored.outcome_code !== 'ADMITTED') throw businessSchemaDrift();
+      }
+      await assertBusinessFoundationShadowTargetMatchesLedger(query, storedLedger.rows);
+      commitAttempted = true;
+      await query('COMMIT');
+      return Object.freeze({ admitted: false, replayed: true, relationCounts });
+    }
+    commitAttempted = true;
+    await query('COMMIT');
+    begun = false;
+    commitAttempted = false;
+    await query('BEGIN');
+    begun = true;
+    writeTransaction = true;
+    await query("SET LOCAL TIME ZONE 'UTC'");
+    const writePreflight = await query(BUSINESS_FOUNDATION_SHADOW_ADMISSION_PREFLIGHT_SQL);
+    if (writePreflight.rows.length !== 1 || Object.values(writePreflight.rows[0]).some(value => value !== '0')) throw businessSchemaDrift();
+    await query('SET LOCAL ROLE vnext_pg17_migration_admission_owner');
+    const batch = snapshot.batch;
+    await query('INSERT INTO migration_admission.migration_batches (batch_id, source_snapshot_sha256, source_inventory_before_sha256, source_inventory_after_sha256, source_catalog_sha256, source_contract_sha256, source_schema_sha256, business_manifest_sha256, mapper_set_sha256, consent_sha256, shadow_target_identity_sha256, batch_request_sha256, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)', [batch.batchId, batch.sourceSnapshotSha256, batch.sourceInventoryBeforeSha256, batch.sourceInventoryAfterSha256, batch.sourceCatalogSha256, batch.sourceContractSha256, batch.sourceSchemaSha256, batch.businessManifestSha256, batch.mapperSetSha256, batch.consentSha256, batch.shadowTargetIdentitySha256, batch.batchRequestSha256, batch.createdAt]);
+    await query('INSERT INTO migration_admission.migration_batch_events (batch_id, event_sequence, status, event_code, event_sha256, created_at) VALUES ($1, 1, \'prepared\', \'PREPARED\', $2, $3)', [batch.batchId, stableSha256({ batchId: batch.batchId, sequence: 1, status: 'prepared', code: 'PREPARED', createdAt: batch.createdAt }), batch.createdAt]);
+    await query('INSERT INTO migration_admission.migration_batch_events (batch_id, event_sequence, status, event_code, event_sha256, created_at) VALUES ($1, 2, \'running\', \'RUNNING\', $2, $3)', [batch.batchId, stableSha256({ batchId: batch.batchId, sequence: 2, status: 'running', code: 'RUNNING', createdAt: batch.createdAt }), batch.createdAt]);
+    await query('SET LOCAL ROLE NONE');
+    await query('SET LOCAL ROLE vnext_pg17_business_owner');
+    for (const row of snapshot.tenants) await query('INSERT INTO business.tenants (id, name, legacy_status, legacy_plan, legacy_archive_before, legacy_deleted, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)', [row.id, row.name, row.legacyStatus, row.legacyPlan, row.legacyArchiveBefore, row.legacyDeleted, row.createdAt, row.updatedAt]);
+    for (const row of snapshot.institutions) await query('INSERT INTO business.institutions (id, tenant_id, name, contact_person_legacy, contact_phone_legacy, revenue_share, notes, legacy_deleted, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)', [row.id, row.tenantId, row.name, row.contactPersonLegacy, row.contactPhoneLegacy, row.revenueShare, row.notes, row.legacyDeleted, row.createdAt, row.updatedAt]);
+    for (const row of snapshot.schools) await query('INSERT INTO business.schools (id, tenant_id, name, legacy_count, legacy_deleted, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)', [row.id, row.tenantId, row.name, row.legacyCount, row.legacyDeleted, row.createdAt, row.updatedAt]);
+    for (const row of snapshot.rooms) await query('INSERT INTO business.rooms (id, tenant_id, name, address_legacy, legacy_count, legacy_deleted, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)', [row.id, row.tenantId, row.name, row.addressLegacy, row.legacyCount, row.legacyDeleted, row.createdAt, row.updatedAt]);
+    await query('SET LOCAL ROLE NONE');
+    await query('SET LOCAL ROLE vnext_pg17_migration_admission_owner');
+    for (const expected of expectedRows) {
+      await query('INSERT INTO migration_admission.migration_row_ledger (batch_id, source_relation, source_primary_key_sha256, canonical_source_sha256, target_id, target_logical_sha256, outcome, outcome_code, created_at) VALUES ($1, $2, $3, $4, $5, $6, \'admitted\', \'ADMITTED\', $7)', [batch.batchId, expected.relation, expected.sourcePrimaryKeySha256, expected.canonicalSourceSha256, expected.row.id, expected.canonicalSourceSha256, batch.createdAt]);
+    }
+    commitAttempted = true;
+    await query('COMMIT');
+    state.businessFoundationShadowAdmissionStarted = true;
+    return Object.freeze({ admitted: true, relationCounts });
+  } catch (error) {
+    if (commitAttempted) {
+      await poisonBusinessFoundationShadowAdmissionDatabase(runtime, state.database);
+      throw unavailable();
+    }
+    if (begun) {
+      try { await query('ROLLBACK'); } catch (_) { await poisonBusinessFoundationShadowAdmissionDatabase(runtime, state.database); throw unavailable(); }
+    }
+    if (error && (error.code === 'VNEXT_PG17_SCHEMA_DRIFT' || error.code === 'VNEXT_PG17_ADMISSION_CANONICAL_HASH_CONFLICT' || error.code === 'VNEXT_PG17_ADMISSION_RECONCILIATION_MISMATCH')) throw error;
+    throw businessSchemaDrift();
+  } finally {
+    state.businessFoundationShadowAdmissionBusy = false;
+  }
+}
+
+async function destroyBusinessFoundationShadowAdmissionTarget(runtime, handle) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
+  const state = handles.get(handle);
+  if (state.businessFoundationShadowAdmissionPoisoned) throw unavailable();
+  if (!state.ownsDatabase || !state.businessFoundationShadowAdmissionStarted) throw invalidHandle();
+  await disposeHandle(runtime, handle);
+  return Object.freeze({ destroyed: true });
+}
+
+async function reconcileBusinessFoundationShadowAdmission(runtime, handle, batchId) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle) || typeof batchId !== 'string' || batchId.trim() === '') throw invalidHandle();
+  const state = handles.get(handle);
+  if (state.businessFoundationShadowAdmissionBusy || state.businessFoundationShadowAdmissionPoisoned) throw unavailable();
+  const client = state.clients['fixture-provisioner'];
+  if (!client) throw invalidHandle();
+  const trace = state.businessFoundationShadowAdmissionTrace;
+  const record = text => {
+    const traceState = businessFoundationShadowAdmissionTraces.get(trace);
+    if (traceState && traceState.armed) traceState.queries.push(text);
+  };
+  const query = (text, values) => {
+    record(text);
+    return client.query(text, values).then(result => {
+      const planState = businessFoundationShadowAdmissionFaultPlans.get(state.businessFoundationShadowAdmissionFaultPlan);
+      const stage = text === 'COMMIT' ? 'reconcileCommit' : text === 'ROLLBACK' ? 'reconcileRollback' : null;
+      if (stage && planState && planState.pending.delete(stage)) throw new Error(`synthetic business shadow reconciliation ${stage} fault`);
+      return result;
+    });
+  };
+  state.businessFoundationShadowAdmissionBusy = true;
+  let begun = false;
+  let commitAttempted = false;
+  try {
+    await query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    begun = true;
+    await query("SET LOCAL TIME ZONE 'UTC'");
+    const batch = await query('SELECT batch_id FROM migration_admission.migration_batches WHERE batch_id = $1', [batchId]);
+    const ledger = await query(
+      'SELECT source_relation, source_primary_key_sha256, canonical_source_sha256, target_id, target_logical_sha256, outcome, outcome_code FROM migration_admission.migration_row_ledger WHERE batch_id = $1 ORDER BY source_relation, source_primary_key_sha256',
+      [batchId],
+    );
+    if (batch.rows.length !== 1 || ledger.rows.length === 0) throw reconciliationMismatch();
+    const relationCounts = await assertBusinessFoundationShadowTargetMatchesLedger(query, ledger.rows);
+    commitAttempted = true;
+    await query('COMMIT');
+    return Object.freeze({ reconciled: true, relationCounts: Object.freeze(relationCounts) });
+  } catch (error) {
+    if (commitAttempted) {
+      await poisonBusinessFoundationShadowAdmissionDatabase(runtime, state.database);
+      throw unavailable();
+    }
+    if (begun) {
+      try { await query('ROLLBACK'); } catch (_) { await poisonBusinessFoundationShadowAdmissionDatabase(runtime, state.database); throw unavailable(); }
+    }
+    if (error && error.code === 'VNEXT_PG17_ADMISSION_RECONCILIATION_MISMATCH') throw error;
+    throw reconciliationMismatch();
+  } finally {
+    state.businessFoundationShadowAdmissionBusy = false;
+  }
+}
+
 function createVNextPg17BusinessFoundationDdlTrace(runtime, handle) {
   if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
   const trace = Object.freeze({});
@@ -787,6 +1021,41 @@ function armVNextPg17BusinessFoundationAdmissionDdlFaultPlan(handle, plan) {
   if (!planState || !isVNextPg17DisposableHandleForRuntime(planState.runtime, handle)
     || planState.handle !== handle || handles.get(handle).runtime !== planState.runtime) throw invalidHandle();
   handles.get(handle).businessFoundationAdmissionDdlFaultPlan = plan;
+}
+
+function createVNextPg17BusinessFoundationShadowAdmissionTrace(runtime, handle) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
+  const trace = Object.freeze({});
+  businessFoundationShadowAdmissionTraces.set(trace, { runtime, handle, armed: false, queries: [] });
+  handles.get(handle).businessFoundationShadowAdmissionTrace = trace;
+  return trace;
+}
+
+function armVNextPg17BusinessFoundationShadowAdmissionTrace(trace) {
+  const state = businessFoundationShadowAdmissionTraces.get(trace);
+  if (!state || !isVNextPg17DisposableHandleForRuntime(state.runtime, state.handle)) throw invalidHandle();
+  state.armed = true;
+}
+
+function inspectVNextPg17BusinessFoundationShadowAdmissionTrace(trace) {
+  const state = businessFoundationShadowAdmissionTraces.get(trace);
+  if (!state) throw invalidHandle();
+  return Object.freeze({ queries: Object.freeze([...state.queries]) });
+}
+
+function createVNextPg17BusinessFoundationShadowAdmissionFaultPlan(runtime, handle, stages) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle) || !Array.isArray(stages)
+    || stages.length === 0 || stages.some(stage => typeof stage !== 'string' || !BUSINESS_FOUNDATION_SHADOW_ADMISSION_FAULT_STAGES.has(stage))) throw invalidHandle();
+  const plan = Object.freeze({});
+  businessFoundationShadowAdmissionFaultPlans.set(plan, { runtime, handle, pending: new Set(stages) });
+  return plan;
+}
+
+function armVNextPg17BusinessFoundationShadowAdmissionFaultPlan(handle, plan) {
+  const planState = businessFoundationShadowAdmissionFaultPlans.get(plan);
+  if (!planState || !isVNextPg17DisposableHandleForRuntime(planState.runtime, handle)
+    || planState.handle !== handle || handles.get(handle).runtime !== planState.runtime) throw invalidHandle();
+  handles.get(handle).businessFoundationShadowAdmissionFaultPlan = plan;
 }
 
 function createVNextPg17CopyOnlyRehearsalTarget(runtime, handle) {
@@ -987,6 +1256,7 @@ async function withVNextPg17SyntheticQuery(handle, purpose, callback) {
   if (!isVNextPg17DisposableHandle(handle) || !['migrator', 'runtime', 'verifier', 'writer', 'business-verifier', 'migration-admission-verifier', 'fixture-provisioner'].includes(purpose)
     || typeof callback !== 'function' || types.isProxy(callback)) throw invalidHandle();
   const state = handles.get(handle);
+  if (state.businessFoundationShadowAdmissionPoisoned) throw unavailable();
   if (purpose === 'migration-admission-verifier' && state.businessFoundationAdmissionDdlPoisoned) throw unavailable();
   const client = state.clients[purpose];
   if (!client) throw invalidHandle();
@@ -1152,6 +1422,9 @@ module.exports = {
   isVNextPg17DisposableHandleForRuntime,
   executeBusinessFoundationDdlPlan,
   executeBusinessFoundationAdmissionDdlPlan,
+  executeBusinessFoundationShadowAdmissionPlan,
+  destroyBusinessFoundationShadowAdmissionTarget,
+  reconcileBusinessFoundationShadowAdmission,
   createVNextPg17BusinessFoundationDdlTrace,
   armVNextPg17BusinessFoundationDdlTrace,
   inspectVNextPg17BusinessFoundationDdlTrace,
@@ -1162,6 +1435,11 @@ module.exports = {
   inspectVNextPg17BusinessFoundationAdmissionDdlTrace,
   createVNextPg17BusinessFoundationAdmissionDdlFaultPlan,
   armVNextPg17BusinessFoundationAdmissionDdlFaultPlan,
+  createVNextPg17BusinessFoundationShadowAdmissionTrace,
+  armVNextPg17BusinessFoundationShadowAdmissionTrace,
+  inspectVNextPg17BusinessFoundationShadowAdmissionTrace,
+  createVNextPg17BusinessFoundationShadowAdmissionFaultPlan,
+  armVNextPg17BusinessFoundationShadowAdmissionFaultPlan,
   createVNextPg17CopyOnlyRehearsalTarget,
   inspectVNextPg17CopyOnlyRehearsalTarget,
   withVNextPg17CopyOnlyRehearsalTarget,

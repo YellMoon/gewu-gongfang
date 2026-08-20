@@ -133,7 +133,7 @@ function createBusinessFoundationCatalogBoundary(runtime) {
         return Object.freeze({ asserted: true });
       } catch (error) {
         try { await facade.query('ROLLBACK'); } catch (_) { /* normalized below */ }
-        if (error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT') throw error;
+        if (error && (error.code === 'VNEXT_PG17_SCHEMA_DRIFT' || error.code === 'VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE')) throw error;
         throw schemaDrift();
       }
     });
@@ -152,7 +152,7 @@ function createBusinessFoundationCatalogBoundary(runtime) {
         return Object.freeze({ zeroSeed: true });
       } catch (error) {
         try { await facade.query('ROLLBACK'); } catch (_) { /* normalized below */ }
-        if (error && error.code === 'VNEXT_PG17_BUSINESS_INITIALIZATION_SEEDED') throw error;
+        if (error && (error.code === 'VNEXT_PG17_BUSINESS_INITIALIZATION_SEEDED' || error.code === 'VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE')) throw error;
         throw schemaDrift();
       }
     });

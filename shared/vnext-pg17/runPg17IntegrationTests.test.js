@@ -10,6 +10,7 @@ const { runBusinessFoundationManifestCases } = require('./businessFoundationMani
 const { runBusinessFoundationAdmissionBatchRequestCases } = require('./businessFoundationAdmissionBatchRequest.test');
 const { runBusinessFoundationAdmissionCatalogCases } = require('./businessFoundationAdmissionCatalog.test');
 const { runBusinessFoundationCatalogAssertionCases } = require('./businessFoundationCatalogAssertion.test');
+const { runBusinessFoundationShadowAdmissionCases } = require('./businessFoundationShadowAdmission.test');
 
 assert.strictEqual(typeof runManifestCases, 'function');
 assert.strictEqual(typeof runCatalogAssertionCases, 'function');
@@ -19,6 +20,7 @@ assert.strictEqual(typeof runBusinessFoundationManifestCases, 'function');
 assert.strictEqual(typeof runBusinessFoundationAdmissionBatchRequestCases, 'function');
 assert.strictEqual(typeof runBusinessFoundationAdmissionCatalogCases, 'function');
 assert.strictEqual(typeof runBusinessFoundationCatalogAssertionCases, 'function');
+assert.strictEqual(typeof runBusinessFoundationShadowAdmissionCases, 'function');
 
 async function main() {
   const calls = [];
@@ -35,6 +37,7 @@ async function main() {
     runBusinessFoundationAdmissionBatchRequest: async received => { assert.strictEqual(received, runtime); calls.push('business-foundation-admission-batch-request'); },
     runBusinessFoundationAdmissionCatalog: async received => { assert.strictEqual(received, runtime); calls.push('business-foundation-admission-catalog'); },
     runBusinessFoundationCatalog: async received => { assert.strictEqual(received, runtime); calls.push('business-foundation-catalog'); },
+    runBusinessFoundationShadowAdmission: async received => { assert.strictEqual(received, runtime); calls.push('business-shadow-admission'); },
     runProductionVerifierReadiness: async received => { assert.strictEqual(received, runtime); calls.push('production-verifier-readiness'); },
     runBootstrap: async received => { assert.strictEqual(received, runtime); calls.push('bootstrap'); },
     runRecovery: async received => { assert.strictEqual(received, runtime); calls.push('recovery'); },
@@ -47,7 +50,7 @@ async function main() {
     report: message => calls.push(`report:${message.code}`),
   });
   assert.strictEqual(exitCode, 0);
-  assert.deepStrictEqual(calls, ['source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-admission-batch-request', 'business-foundation-admission-catalog', 'business-foundation-catalog', 'production-verifier-readiness', 'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication', 'role-mutation', 'link-revocation', 'link-revocation-parity', 'stop']);
+  assert.deepStrictEqual(calls, ['source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-admission-batch-request', 'business-foundation-admission-catalog', 'business-foundation-catalog', 'business-shadow-admission', 'production-verifier-readiness', 'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication', 'role-mutation', 'link-revocation', 'link-revocation-parity', 'stop']);
 
   const failedCalls = [];
   const unavailable = Object.assign(new Error('private detail'), { code: 'VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE' });
@@ -63,6 +66,7 @@ async function main() {
     runBusinessFoundationAdmissionBatchRequest: async () => failedCalls.push('business-foundation-admission-batch-request'),
     runBusinessFoundationAdmissionCatalog: async () => failedCalls.push('business-foundation-admission-catalog'),
     runBusinessFoundationCatalog: async () => failedCalls.push('business-foundation-catalog'),
+    runBusinessFoundationShadowAdmission: async () => failedCalls.push('business-shadow-admission'),
     runProductionVerifierReadiness: async () => failedCalls.push('production-verifier-readiness'),
     runBootstrap: async () => failedCalls.push('bootstrap'),
     runRecovery: async () => failedCalls.push('recovery'),
@@ -104,12 +108,39 @@ async function main() {
     },
     runBusinessFoundationAdmissionCatalog: async () => admissionFailureCalls.push('business-foundation-admission-catalog'),
     runBusinessFoundationCatalog: async () => admissionFailureCalls.push('business-foundation-catalog'),
+    runBusinessFoundationShadowAdmission: async () => admissionFailureCalls.push('business-shadow-admission'),
     report: message => admissionFailureCalls.push(`report:${message.code}`),
   });
   assert.strictEqual(admissionFailureCode, 1);
   assert.deepStrictEqual(admissionFailureCalls, [
     'source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest',
     'business-foundation-admission-batch-request', 'report:VNEXT_PG17_ADMISSION_INPUT_INVALID', 'stop',
+  ]);
+
+  const shadowFailureCalls = [];
+  const shadowFailure = Object.assign(new Error('synthetic shadow admission failure'), { code: 'VNEXT_PG17_ADMISSION_RECONCILIATION_MISMATCH' });
+  const shadowFailureCode = await run({
+    runtimeFactory: () => ({
+      async start() { shadowFailureCalls.push('start'); },
+      async stop() { shadowFailureCalls.push('stop'); },
+    }),
+    runSourceIsolation: async () => shadowFailureCalls.push('source-isolation'),
+    runManifest: async () => shadowFailureCalls.push('manifest'),
+    runCatalog: async () => shadowFailureCalls.push('catalog'),
+    runBusinessFoundationManifest: async () => shadowFailureCalls.push('business-foundation-manifest'),
+    runBusinessFoundationAdmissionBatchRequest: async () => shadowFailureCalls.push('business-foundation-admission-batch-request'),
+    runBusinessFoundationAdmissionCatalog: async () => shadowFailureCalls.push('business-foundation-admission-catalog'),
+    runBusinessFoundationCatalog: async () => shadowFailureCalls.push('business-foundation-catalog'),
+    runBusinessFoundationShadowAdmission: async () => { shadowFailureCalls.push('business-shadow-admission'); throw shadowFailure; },
+    runProductionVerifierReadiness: async () => shadowFailureCalls.push('production-verifier-readiness'),
+    runBootstrap: async () => shadowFailureCalls.push('bootstrap'),
+    report: message => shadowFailureCalls.push(`report:${message.code}`),
+  });
+  assert.strictEqual(shadowFailureCode, 1);
+  assert.deepStrictEqual(shadowFailureCalls, [
+    'source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest',
+    'business-foundation-admission-batch-request', 'business-foundation-admission-catalog', 'business-foundation-catalog',
+    'business-shadow-admission', 'report:VNEXT_PG17_ADMISSION_RECONCILIATION_MISMATCH', 'stop',
   ]);
 
   const cleanupCalls = [];
@@ -128,6 +159,7 @@ async function main() {
     runBusinessFoundationAdmissionBatchRequest: async () => cleanupCalls.push('business-foundation-admission-batch-request'),
     runBusinessFoundationAdmissionCatalog: async () => cleanupCalls.push('business-foundation-admission-catalog'),
     runBusinessFoundationCatalog: async () => cleanupCalls.push('business-foundation-catalog'),
+    runBusinessFoundationShadowAdmission: async () => cleanupCalls.push('business-shadow-admission'),
     runProductionVerifierReadiness: async () => cleanupCalls.push('production-verifier-readiness'),
     runBootstrap: async () => cleanupCalls.push('bootstrap'),
     runRecovery: async () => cleanupCalls.push('recovery'),
@@ -141,7 +173,7 @@ async function main() {
   });
   assert.strictEqual(cleanupCode, 1);
   assert.deepStrictEqual(cleanupCalls, [
-    'source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-admission-batch-request', 'business-foundation-admission-catalog', 'business-foundation-catalog', 'production-verifier-readiness',
+    'source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-admission-batch-request', 'business-foundation-admission-catalog', 'business-foundation-catalog', 'business-shadow-admission', 'production-verifier-readiness',
     'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication',
     'role-mutation', 'link-revocation', 'link-revocation-parity', 'stop',
     'report:VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE',
