@@ -65,7 +65,7 @@ Document that this identity is deliberately read-only. Direct write capability r
 
 Run `node shared/vnext-pg17/disposableRuntime.test.js`, `node shared/vnext-pg17/catalogAssertion.test.js`, `npm.cmd run test:vnext-control-plane-target`, and `git diff --check`. Ask 5.6-sol for a security/cost/quality audit. If it finds a defect, add a failing regression before the minimal fix. Run `npm.cmd test` as a wider check and record any unrelated failure rather than changing unrelated business code.
 
-- [ ] **Step 3: Commit and push**
+- [x] **Step 3: Commit and push**
 
 Stage only this slice, use the repository-required dated commit format, and push `HEAD:master` to `gewu`. Do not package Electron, publish OSS, create cloud resources, or change live credentials.
 
