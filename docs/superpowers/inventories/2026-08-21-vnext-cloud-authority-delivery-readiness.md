@@ -17,7 +17,7 @@
 | 首 authority 与紧急恢复语义 | SQLite 与 PG17 的 bootstrap/recovery reference、备份证据和回滚测试 | 参考实现，不是实际仪式、生产恢复器或云端初始化入口。 |
 | 命令耐久事实 | role、policy publication、device-link revoke 的 receipt/audit/outbox/CAS/replay reference 与 PG17 parity | 语义 oracle；现有 writer 零直接 DML、零 procedure `EXECUTE`，不能承担生产命令。 |
 | 数据迁移与保留 | synthetic copy-only rehearsal、源隔离、历史权限与 profile/contact 元数据的非激活边界 | 不读取真实 SQLite、业务库、题库、NAS、移动盘或桌面数据；未形成真实迁移证明。 |
-| 既有本地主机/多端路径 | `test:authority-architecture` 覆盖主机命令、协议、relay、桌面与小程序的本地契约 | 自动化契约不是两台真实电脑、云 relay、生产主机及小程序发布证据。 |
+| 既有本地主机/多端路径 | `test:authority-architecture` 覆盖主机命令、协议、relay、单一桌面构建与小程序的本地契约 | 自动化契约不是云 relay、生产主机及小程序发布证据；当前路线不把第二台物理桌面作为默认发布门槛。 |
 | 云端目标与成本 | [生产数据库决策](../specs/2026-08-14-vnext-production-control-plane-database-decision.md) 冻结为同区域/VPC、固定规格按量、跨可用区、TLS 的 RDS PostgreSQL 17 HA | 尚未复核目标地域 SKU/价格，也未创建 RDS、账号、网络、密钥或备份策略。 |
 
 ## 未完成且不可替代的交付门禁
@@ -46,7 +46,7 @@
 
 ### 4. 多端运行矩阵与发布
 
-发布仍需独立验证本地主机、至少一台其它桌面端、云 relay/ECS、微信小程序、OSS 更新 feed 与版本兼容。每个适用端都要有当前版本、健康、权限和失败恢复证据；任一端未完成时，交付状态只能是“部分发布”或“受阻”。
+发布仍需独立验证本地主机、单一桌面构建的已启用运行模式、云 relay/ECS、微信小程序、OSS 更新 feed 与版本兼容。第二台物理桌面不是当前默认验收条件；若未来重新启用多电脑离线编辑，必须以新的端侧准入规格重新加入矩阵。每个适用端都要有当前版本、健康、权限和失败恢复证据；任一端未完成时，交付状态只能是“部分发布”或“受阻”。
 
 ## 当前执行顺序
 
