@@ -19,7 +19,18 @@ const syntheticVerifierPools = new WeakMap();
 const syntheticTlsBrands = new WeakMap();
 const syntheticVerifierFaultPlans = new WeakMap();
 const syntheticQueryTraces = new WeakMap();
+const copyOnlyRehearsalTargets = new WeakMap();
+const copyOnlyRehearsalFaultPlans = new WeakMap();
 const VERIFIER_FAULT_STAGES = new Set(['begin', 'setup', 'identity', 'tls', 'catalog', 'commit', 'rollback', 'release']);
+const COPY_ONLY_REHEARSAL_STAGES = new Set(['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'postReadMismatch', 'commit', 'rollback']);
+const COPY_ONLY_TERMINAL_STAGES = new Set(['commit', 'rollback']);
+const COPY_ONLY_TARGET_DATA_RELATIONS = Object.freeze([
+  'vnext_authorities', 'vnext_accounts', 'vnext_trusted_devices', 'vnext_device_installations', 'vnext_account_device_links',
+  'vnext_role_grants', 'vnext_capability_catalog', 'vnext_capability_overrides', 'vnext_data_scope_grants', 'vnext_profile_bindings',
+  'vnext_verified_contacts', 'vnext_authorization_command_receipts', 'vnext_authorization_audit_events', 'vnext_authorization_outbox_events',
+  'vnext_bootstrap_consumptions', 'vnext_authorization_policy_publications', 'vnext_trust_root_evidence', 'vnext_sessions', 'vnext_recent_reauthentication_events',
+]);
+const COPY_ONLY_TARGET_EMPTY_SQL = COPY_ONLY_TARGET_DATA_RELATIONS.map((relation, index) => `SELECT '${relation}'::text AS relation, COUNT(*)::int AS count FROM vnext_control_plane.${relation}${index + 1 === COPY_ONLY_TARGET_DATA_RELATIONS.length ? '' : ' UNION ALL'}`).join(' ');
 
 function codedError(code, message) {
   const error = new Error(message);
@@ -37,6 +48,10 @@ function unavailable() {
 
 function invalidHandle() {
   return codedError('VNEXT_PG17_HANDLE_INVALID', 'vNext PG17 disposable handle is invalid');
+}
+
+function copyOnlyTargetUnavailable() {
+  return codedError('VNEXT_PG17_COPY_REHEARSAL_TARGET_UNAVAILABLE', 'vNext PG17 copy-only rehearsal target is unavailable');
 }
 
 function randomToken(bytes = 18) {
@@ -363,6 +378,8 @@ function createDisposablePg17Runtime() {
     start: () => startRuntime(publicRuntime),
     createIsolatedHandle: () => createIsolatedHandle(publicRuntime),
     createPeerHandle: handle => createPeerHandle(publicRuntime, handle),
+    createVNextPg17CopyOnlyRehearsalTarget: handle => createVNextPg17CopyOnlyRehearsalTarget(publicRuntime, handle),
+    createVNextPg17CopyOnlyRehearsalFaultPlan: (handle, stage) => createVNextPg17CopyOnlyRehearsalFaultPlan(publicRuntime, handle, stage),
     disposeHandle: handle => disposeHandle(publicRuntime, handle),
     stop: async () => {
       const current = runtimeState(publicRuntime);
@@ -382,6 +399,107 @@ function isVNextPg17DisposableHandle(handle) {
 function isVNextPg17DisposableHandleForRuntime(runtime, handle) {
   const state = handles.get(handle);
   return Boolean(state && !state.closed && state.runtime === runtime && runtimes.has(runtime));
+}
+
+function createVNextPg17CopyOnlyRehearsalTarget(runtime, handle) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
+  const target = Object.freeze({});
+  copyOnlyRehearsalTargets.set(target, { runtime, handle, busy: false, poisoned: false, queries: [] });
+  return target;
+}
+
+function inspectVNextPg17CopyOnlyRehearsalTarget(target) {
+  const state = copyOnlyRehearsalTargets.get(target);
+  if (!state) throw invalidHandle();
+  return Object.freeze({ poisoned: state.poisoned, queries: Object.freeze([...state.queries]) });
+}
+
+function createVNextPg17CopyOnlyRehearsalFaultPlan(runtime, handle, stage) {
+  const stages = typeof stage === 'string' ? [stage] : stage;
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle) || !Array.isArray(stages) || stages.length === 0
+    || stages.some(value => !COPY_ONLY_REHEARSAL_STAGES.has(value))) throw invalidHandle();
+  const plan = Object.freeze({});
+  copyOnlyRehearsalFaultPlans.set(plan, { runtime, handle, stages: new Set(stages) });
+  return plan;
+}
+
+async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan) {
+  const targetState = copyOnlyRehearsalTargets.get(target);
+  if (!targetState || !isVNextPg17DisposableHandleForRuntime(targetState.runtime, targetState.handle)
+    || targetState.busy || targetState.poisoned || typeof callback !== 'function' || types.isProxy(callback)) throw invalidHandle();
+  const faultState = faultPlan === undefined ? null : copyOnlyRehearsalFaultPlans.get(faultPlan);
+  if (faultPlan !== undefined && (!faultState || faultState.runtime !== targetState.runtime || faultState.handle !== targetState.handle || faultState.stages.size === 0)) throw invalidHandle();
+  const client = handles.get(targetState.handle).clients['fixture-provisioner'];
+  let begun = false;
+  let commitAttempted = false;
+  targetState.busy = true;
+  const query = async (text, values) => {
+    targetState.queries.push(text);
+    const result = await client.query(text, values);
+    const stage = text === 'COMMIT' ? 'commit'
+      : text === 'ROLLBACK' ? 'rollback'
+        : text.startsWith('INSERT INTO vnext_control_plane.vnext_authorities') ? 'authorities'
+          : text.startsWith('INSERT INTO vnext_control_plane.vnext_accounts') ? 'accounts'
+            : text.startsWith('INSERT INTO vnext_control_plane.vnext_trusted_devices') ? 'trustedDevices'
+              : text.startsWith('INSERT INTO vnext_control_plane.vnext_device_installations') ? 'installations'
+                : text.startsWith('INSERT INTO vnext_control_plane.vnext_account_device_links') ? 'links' : null;
+    if (stage && faultState && faultState.stages.delete(stage)) {
+      if (COPY_ONLY_TERMINAL_STAGES.has(stage)) {
+        targetState.poisoned = true;
+        throw copyOnlyTargetUnavailable();
+      }
+      throw new Error('copy-only rehearsal fault');
+    }
+    return result;
+  };
+  try {
+    await query('BEGIN ISOLATION LEVEL REPEATABLE READ'); begun = true;
+    const catalog = require('./catalogAssertion').createVNextPg17CatalogBoundary(targetState.runtime);
+    await catalog.assertQueryFacade(catalog.createVerifierQueryFacade((text, values) => query(text, values)));
+    const fields = Object.freeze({ authorities: ['authority_id','status','created_at','updated_at'], accounts: ['account_id','authority_id','status','auth_version','access_version','revocation_version','row_version','created_at','updated_at'], trustedDevices: ['device_id','authority_id','status','hardware_evidence_hash','risk_code','credential_version','risk_version','row_version','created_at','updated_at','revoked_at'], installations: ['installation_id','authority_id','device_id','installation_public_key','key_fingerprint','status','credential_version','row_version','created_at','updated_at','revoked_at'], links: ['link_id','authority_id','account_id','device_id','installation_id','status','auth_version','access_version','row_version','created_at','updated_at','revoked_at'] });
+    const relations = Object.freeze({ authorities: 'vnext_authorities', accounts: 'vnext_accounts', trustedDevices: 'vnext_trusted_devices', installations: 'vnext_device_installations', links: 'vnext_account_device_links' });
+    const identityKeys = Object.freeze({ authorities: 'authority_id', accounts: 'account_id', trustedDevices: 'device_id', installations: 'installation_id', links: 'link_id' });
+    const result = await callback(Object.freeze({
+      countAuthorities: async () => Number((await query('SELECT COUNT(*)::int AS count FROM vnext_control_plane.vnext_authorities')).rows[0].count),
+      countTargetDataRows: async () => (await query(COPY_ONLY_TARGET_EMPTY_SQL)).rows.map(row => Object.freeze({ relation: row.relation, count: Number(row.count) })),
+      readIdentityTopology: async () => {
+        const topology = {};
+        for (const collection of Object.keys(fields)) {
+          const columns = fields[collection];
+          const result = await query(`SELECT row_to_json(record) AS row FROM (SELECT ${columns.join(',')} FROM vnext_control_plane.${relations[collection]} ORDER BY ${identityKeys[collection]}) AS record`);
+          topology[collection] = Object.freeze(result.rows.map(row => Object.freeze(row.row)));
+        }
+        if (faultState && faultState.stages.delete('postReadMismatch')) {
+          topology.authorities = Object.freeze([Object.freeze({ ...topology.authorities[0], status: 'rehearsal-mismatch' })]);
+        }
+        return Object.freeze(topology);
+      },
+      insertAuthority: async row => {
+        const result = await query('INSERT INTO vnext_control_plane.vnext_authorities(authority_id,status,created_at,updated_at) VALUES($1,$2,$3,$4)', [row.authority_id, row.status, row.created_at, row.updated_at]);
+        return result;
+      },
+      insertFoundation: async (collection, row) => {
+        if (!Object.prototype.hasOwnProperty.call(fields, collection) || !row || Object.keys(row).sort().join(',') !== [...fields[collection]].sort().join(',')) throw invalidHandle();
+        const columns = fields[collection];
+        const result = await query(`INSERT INTO vnext_control_plane.${relations[collection]}(${columns.join(',')}) VALUES(${columns.map((_, index) => '$' + (index + 1)).join(',')})`, columns.map(key => row[key]));
+        return result;
+      },
+    }));
+    commitAttempted = true;
+    await query('COMMIT'); return result;
+  } catch (error) {
+    if (commitAttempted) targetState.poisoned = true;
+    if (begun && !targetState.poisoned) {
+      try { await query('ROLLBACK'); } catch (_) { targetState.poisoned = true; }
+    }
+    if (targetState.poisoned) {
+      await client.end().catch(() => {});
+      throw copyOnlyTargetUnavailable();
+    }
+    throw error;
+  } finally {
+    targetState.busy = false;
+  }
 }
 
 async function withVNextPg17SyntheticQuery(handle, purpose, callback) {
@@ -550,6 +668,9 @@ module.exports = {
   createDisposablePg17Runtime,
   isVNextPg17DisposableHandle,
   isVNextPg17DisposableHandleForRuntime,
+  createVNextPg17CopyOnlyRehearsalTarget,
+  inspectVNextPg17CopyOnlyRehearsalTarget,
+  withVNextPg17CopyOnlyRehearsalTarget,
   withVNextPg17SyntheticQuery,
   createVNextPg17SyntheticQueryTrace,
   armVNextPg17SyntheticQueryTrace,

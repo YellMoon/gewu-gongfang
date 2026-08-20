@@ -28,7 +28,7 @@ assert.strictEqual(getterReads, 0);
 
 const runtime = createDisposablePg17Runtime();
 assert.ok(Object.isFrozen(runtime));
-assert.deepStrictEqual(Object.keys(runtime).sort(), ['createIsolatedHandle', 'createPeerHandle', 'disposeHandle', 'start', 'stop']);
+assert.deepStrictEqual(Object.keys(runtime).sort(), ['createIsolatedHandle', 'createPeerHandle', 'createVNextPg17CopyOnlyRehearsalFaultPlan', 'createVNextPg17CopyOnlyRehearsalTarget', 'disposeHandle', 'start', 'stop']);
 async function main() {
   assert.strictEqual(isVNextPg17DisposableHandle({}), false);
   await assert.rejects(
