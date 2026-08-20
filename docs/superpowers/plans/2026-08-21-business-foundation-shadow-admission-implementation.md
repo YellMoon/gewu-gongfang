@@ -16,8 +16,12 @@
 
 - Create: `shared/vnext-pg17/businessFoundationAdmissionManifest.js`
 - Create: `shared/vnext-pg17/businessFoundationAdmissionManifest.test.js`
+- Create: `shared/vnext-pg17/businessFoundationAdmissionBatchRequest.js`
+- Create: `shared/vnext-pg17/businessFoundationAdmissionBatchRequest.test.js`
 - Modify: `shared/vnext-pg17/disposableRuntime.js`
 - Test: `shared/vnext-pg17/disposableRuntime.test.js`
+- Modify: `shared/vnext-pg17/runPg17IntegrationTests.js`
+- Test: `shared/vnext-pg17/runPg17IntegrationTests.test.js`
 
 - [ ] **Step 1: Write the failing manifest test**
 
@@ -25,9 +29,11 @@ Require a missing module and assert exactly one migration named `business-founda
 
 ```js
 [
+  'migration_admission.migration_admission_schema_migrations',
   'migration_admission.migration_batches',
-  'migration_admission.migration_row_ledger',
+  'migration_admission.migration_batch_events',
   'migration_admission.migration_quarantine',
+  'migration_admission.migration_row_ledger',
 ]
 ```
 
@@ -41,9 +47,11 @@ Expected: non-zero because the module is absent.
 
 - [ ] **Step 3: Implement immutable migration SQL**
 
-Create `migration_admission` with a new NOLOGIN owner. Add `migration_batches` with nonblank `batch_id`; finite timestamp; the closed states `prepared`, `running`, `reconciled`, `quarantined`, `rolled_back`, `failed`, `abandoned`; and six exact lowercase SHA-256 facts: source snapshot, source catalog, business manifest, mapper set, consent, and result.
+Create `migration_admission` with a new NOLOGIN owner and its own immutable `migration_admission_schema_migrations` apply ledger. The ledger permits only consecutive semantic versions and well-formed manifest hashes through an insert guard; its manifest comparison belongs to the closed apply/assert boundary, not to self-referential SQL.
 
-Add `migration_row_ledger` with primary key `(batch_id, source_relation, source_primary_key_sha256)`, closed relation values `tenants|institutions|schools|rooms`, source/target hashes, target ID, outcome `admitted|quarantined`, normalized outcome code, and a restrictive batch FK. Add `migration_quarantine` keyed by the identical tuple with only a closed reason code and optional sealed-artifact-reference SHA-256; never persist original values. Attach no-update/no-delete and transition-checked batch triggers. Grant only verifier metadata reads; no business PII or DML. Keep clients private in runtime WeakMaps and add no generic migrator facade.
+Add immutable `migration_batches` with nonblank `batch_id`, finite creation time, exact lower-case hashes for source snapshot, separate source-inventory before/after values, source catalog, source table-contract, source schema, business manifest, mapper set, consent binding, shadow target identity, and a unique canonical `batch_request_sha256`. No result or lifecycle field may be updated in that identity row. Add `migration_batch_events` with primary key `(batch_id, event_sequence)`, an event hash, closed event code, strictly consecutive sequence, finite time, and only these transitions: `prepared → running → reconciled|quarantined|failed|abandoned`, with `reconciled → rolled_back` as the only later transition. A deferred guard requires every batch to commit with its sequence-1 `prepared` event; row-ledger inserts lock and require the current batch event to be `running`.
+
+Add `migration_row_ledger` with primary key `(batch_id, source_relation, source_primary_key_sha256)`, closed relation values `tenants|institutions|schools|rooms`, source/target hashes, target ID, outcome `admitted|quarantined`, a closed normalized outcome-code set, and a restrictive batch FK. `admitted` must have a nonblank target ID, target hash, and `ADMITTED` code; `quarantined` must have neither target field and a non-ADMITTED code. Add `migration_quarantine` keyed by the identical tuple with only a closed reason code and optional sealed-artifact-reference SHA-256; deferred pair guards must prove exactly one quarantine record for every quarantined ledger row and none for admitted rows. Never persist original values. Attach no-update/no-delete triggers to every admission relation. Grant only verifier metadata reads; no business PII or DML. Keep clients private in runtime WeakMaps and add no generic migrator facade.
 
 - [ ] **Step 4: Run GREEN**
 
@@ -51,16 +59,18 @@ Run:
 
 ```powershell
 node shared/vnext-pg17/businessFoundationAdmissionManifest.test.js
+node shared/vnext-pg17/businessFoundationAdmissionBatchRequest.test.js
 node shared/vnext-pg17/disposableRuntime.test.js
+node shared/vnext-pg17/runPg17IntegrationTests.test.js
 ```
 
-Expected: both exit 0 and public runtime keys/facade purposes remain closed.
+Expected: all exit 0, the batch-request validation runs in the aggregate after the business manifest and before the business catalog, and public runtime keys/facade purposes remain closed.
 
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add -- shared/vnext-pg17/businessFoundationAdmissionManifest.js shared/vnext-pg17/businessFoundationAdmissionManifest.test.js shared/vnext-pg17/disposableRuntime.js shared/vnext-pg17/disposableRuntime.test.js
-git commit -m "automatic release 2026-08-21"
+git add -- shared/vnext-pg17/businessFoundationAdmissionManifest.js shared/vnext-pg17/businessFoundationAdmissionManifest.test.js shared/vnext-pg17/businessFoundationAdmissionBatchRequest.js shared/vnext-pg17/businessFoundationAdmissionBatchRequest.test.js shared/vnext-pg17/disposableRuntime.js shared/vnext-pg17/disposableRuntime.test.js shared/vnext-pg17/runPg17IntegrationTests.js shared/vnext-pg17/runPg17IntegrationTests.test.js
+git commit -m "自动发布 2026-08-21"
 ```
 
 ### Task 2: Add exact admission catalog and private DDL capability
@@ -129,7 +139,11 @@ Use only closure-owned fictional data:
 
 ```js
 {
-  batch: { batchId, sourceSnapshotSha256, sourceCatalogSha256, businessManifestSha256, mapperSetSha256, consentSha256, createdAt },
+  batch: {
+    batchId, sourceSnapshotSha256, sourceInventoryBeforeSha256, sourceInventoryAfterSha256,
+    sourceCatalogSha256, sourceContractSha256, sourceSchemaSha256, businessManifestSha256,
+    mapperSetSha256, consentSha256, shadowTargetIdentitySha256, batchRequestSha256, createdAt,
+  },
   tenants: [], institutions: [], schools: [], rooms: []
 }
 ```
@@ -153,7 +167,7 @@ await boundary.reconcile(handle, { batchId });
 await boundary.rollbackSyntheticTarget(handle);
 ```
 
-Validate every row before the first target insert. Insert in dependency order `tenants`, `institutions`, `schools`, `rooms`; write the ledger record in the same transaction as each target row. An exact same `(batch, relation, source-key-hash, canonical-hash)` replay returns stored outcome with zero second target insert. Same key with changed hash returns `CANONICAL_HASH_CONFLICT`; validation/dependency failures write only allowed quarantine metadata.
+Validate the closed batch request before any target transaction: exact own-data keys, canonical field order, all required hashes, exact request hash, canonical UTC time, and equal source inventory before/after. A changed source inventory returns `SOURCE_SNAPSHOT_CHANGED` before any business row write. Then validate every row before the first target insert. Insert in dependency order `tenants`, `institutions`, `schools`, `rooms`; write the ledger record in the same transaction as each target row. An exact same `(batch, relation, source-key-hash, canonical-hash)` replay returns stored outcome with zero second target insert. Same key with changed hash returns `CANONICAL_HASH_CONFLICT`; validation/dependency failures write only allowed quarantine metadata.
 
 The executor is same-runtime, same-handle, single-flight, and terminal-uncertainty-safe. It may use fixture-provisioner only behind the runtime closure for a frozen INSERT/SELECT manifest; it exposes no client, facade, SQL, source adapter, or database option.
 

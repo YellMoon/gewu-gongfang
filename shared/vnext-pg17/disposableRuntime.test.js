@@ -93,6 +93,32 @@ async function main() {
       () => withVNextPg17SyntheticQuery(handle, 'business-migrator', () => {}),
       error => error && error.code === 'VNEXT_PG17_HANDLE_INVALID',
     );
+    const admissionRoles = await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
+      "SELECT rolname, rolcanlogin, rolinherit, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls FROM pg_roles WHERE rolname IN ('vnext_pg17_migration_admission_migrator', 'vnext_pg17_migration_admission_owner', 'vnext_pg17_migration_admission_verifier') ORDER BY rolname",
+    ));
+    assert.deepStrictEqual(admissionRoles.rows, [
+      { rolname: 'vnext_pg17_migration_admission_migrator', rolcanlogin: true, rolinherit: false, rolsuper: false, rolcreaterole: false, rolcreatedb: false, rolreplication: false, rolbypassrls: false },
+      { rolname: 'vnext_pg17_migration_admission_owner', rolcanlogin: false, rolinherit: false, rolsuper: false, rolcreaterole: false, rolcreatedb: false, rolreplication: false, rolbypassrls: false },
+      { rolname: 'vnext_pg17_migration_admission_verifier', rolcanlogin: true, rolinherit: false, rolsuper: false, rolcreaterole: false, rolcreatedb: false, rolreplication: false, rolbypassrls: false },
+    ]);
+    const admissionMemberships = await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
+      "SELECT member.rolname AS member_name, role.rolname AS role_name, membership.inherit_option, membership.set_option, membership.admin_option FROM pg_auth_members membership JOIN pg_roles member ON member.oid = membership.member JOIN pg_roles role ON role.oid = membership.roleid WHERE member.rolname IN ('vnext_pg17_migration_admission_migrator', 'vnext_pg17_migration_admission_owner', 'vnext_pg17_migration_admission_verifier') OR role.rolname IN ('vnext_pg17_migration_admission_migrator', 'vnext_pg17_migration_admission_owner', 'vnext_pg17_migration_admission_verifier') ORDER BY member.rolname, role.rolname",
+    ));
+    assert.deepStrictEqual(admissionMemberships.rows, [{
+      member_name: 'vnext_pg17_migration_admission_migrator',
+      role_name: 'vnext_pg17_migration_admission_owner',
+      inherit_option: false,
+      set_option: true,
+      admin_option: false,
+    }]);
+    const admissionVerifierIdentity = await withVNextPg17SyntheticQuery(handle, 'migration-admission-verifier', facade => facade.query(
+      'SELECT current_user AS current_user',
+    ));
+    assert.strictEqual(admissionVerifierIdentity.rows[0].current_user, 'vnext_pg17_migration_admission_verifier');
+    await assert.rejects(
+      () => withVNextPg17SyntheticQuery(handle, 'migration-admission-migrator', () => {}),
+      error => error && error.code === 'VNEXT_PG17_HANDLE_INVALID',
+    );
     const result = await withVNextPg17SyntheticQuery(handle, 'verifier', facade =>
       facade.query("SELECT current_setting('server_version_num')::int AS version_num"),
     );

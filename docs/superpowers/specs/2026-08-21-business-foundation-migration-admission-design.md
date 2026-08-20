@@ -16,7 +16,7 @@
 
 ## 未来边界与身份
 
-未来实现必须新增独立、版本化且可哈希的 `migration_admission` schema/manifest/catalog；不得修改 `vnext_control_plane` M1--M15、`business.business_schema_migrations` 或已冻结四表 migration。其执行器只能接收已验证的合成影子 batch capability，不能接收 SQL、连接串、路径、任意 callback、任意业务 writer 或调用方选定的 relation。
+未来实现必须新增独立、版本化且可哈希的 `migration_admission` schema/manifest/catalog，且由其自身不可变、连续版本的 DDL apply ledger 证明 fresh/reapply 与 manifest 一致；不得复用或修改 `vnext_control_plane` M1--M15、`business.business_schema_migrations` 或已冻结四表 migration。DDL trigger 只保护连续版本与 hash 形状，apply/assert 边界以固定 manifest 比对精确 hash，避免自引用 hash。其执行器只能接收已验证的合成影子 batch capability，不能接收 SQL、连接串、路径、任意 callback、任意业务 writer 或调用方选定的 relation。
 
 影子执行器只可指向每次新建且可销毁的 local disposable PostgreSQL 17 数据库。它必须拒绝非空目标、错误 catalog、错误 manifest、错误 schema、跨 runtime capability、已关闭 capability、并发重入和不确定事务终端。它不能成为 RDS、业务 runtime 或生产导入器的适配器。
 
@@ -24,19 +24,20 @@
 
 每个 batch 必须有不可变、非敏感的 `batch_id`，并精确绑定以下已验证事实：
 
-- source snapshot identity 与 before/after inventory hash；
+- source snapshot identity、分别不可变的 before/after inventory hash 与 source table-contract fingerprint；
 - source-table catalog hash；
 - 四个 relation 各自的 mapper version；
 - 已应用 business DDL manifest hash；
 - 影子目标 identity、创建时间和用户确认事实的最小 hash；
 - canonical bundle hash、签名/密封 envelope identity（如未来启用）；
-- 执行结果的 count、stable-key-set hash 与 canonical logical hash。
+- 影子目标 identity/用户确认绑定、上述全部事实（含 before/after inventory、source schema）的 canonical `batch_request_sha256`（同一目标内唯一且由纯输入合同逐字段重算）；
+- 执行结果的 count、stable-key-set hash 与 canonical logical hash（只进入不可变 event，不回写 batch 身份）。
 
-账本只允许创建下一个状态，不允许更新或删除历史。状态仅可为 `prepared`、`running`、`reconciled`、`quarantined`、`rolled_back`、`failed`、`abandoned`；任何未定义状态都失败关闭。普通日志、receipt、audit/outbox 不得保存源路径、原始行、联系方式、自由文本、密钥或密封 payload。
+batch 身份表本身不可更新或删除。状态由独立、只追加的 batch-event 账本表达；每个 event 记录 batch、严格递增 sequence、闭合状态、闭合 event code、event hash 与有限时间。初始状态只能为 `prepared/PREPARED`，随后只能 `prepared → running → reconciled|quarantined|failed|abandoned`；仅已 reconciled 的 batch 可追加 `rolled_back`。失败 event code 只可为 `SOURCE_SNAPSHOT_CHANGED`、`SOURCE_SCHEMA_DRIFT`、`TARGET_CATALOG_DRIFT`、`TARGET_NONEMPTY`、`RECONCILIATION_MISMATCH` 或 `TRANSACTION_UNCERTAIN`；其他状态使用与状态一一对应的闭合 code。任何未定义状态、跳号或非法转换都失败关闭。普通日志、receipt、audit/outbox 不得保存源路径、原始行、联系方式、自由文本、密钥或密封 payload。
 
 ## 行级准入与重放
 
-每条候选记录的唯一事实为：`batch_id + source_relation + source_primary_key_hash`。行账本至少记录 canonical source hash、目标 stable identity/hash、relation mapper version、归一化 outcome code、quarantine reference 与提交时间。
+每条候选记录的唯一事实为：`batch_id + source_relation + source_primary_key_hash`。行账本至少记录 canonical source hash、目标 stable identity/hash、relation mapper version、归一化 outcome code、quarantine reference 与提交时间。`admitted` 行必须有非空 target identity、target logical hash 和唯一 `ADMITTED` code；`quarantined` 行必须没有 target 字段且使用闭合 quarantine code。每一条 quarantined 行必须恰有一条同键 quarantine，admitted 行则不得有 quarantine；此配对在提交时由延迟约束守卫验证。
 
 - 同一唯一事实且 canonical source hash 相同：只允许返回已有结果，零额外 business 写入。
 - 同一唯一事实但 hash 不同：固定为冲突，不能覆盖、合并或猜测。

@@ -4,6 +4,7 @@ const { createDisposablePg17Runtime } = require('./disposableRuntime');
 const { runManifestCases } = require('./migrationManifest.test');
 const { runCatalogAssertionCases } = require('./catalogAssertion.test');
 const { runBusinessFoundationManifestCases } = require('./businessFoundationManifest.test');
+const { runBusinessFoundationAdmissionBatchRequestCases } = require('./businessFoundationAdmissionBatchRequest.test');
 const { runBusinessFoundationCatalogAssertionCases } = require('./businessFoundationCatalogAssertion.test');
 const { runProductionVerifierReadinessCases } = require('./productionVerifierReadiness.test');
 const { runFirstAuthorityBootstrapMutationCases } = require('./firstAuthorityBootstrapMutation.test');
@@ -28,6 +29,7 @@ async function run({
   runManifest = runManifestCases,
   runCatalog = runCatalogAssertionCases,
   runBusinessFoundationManifest = runBusinessFoundationManifestCases,
+  runBusinessFoundationAdmissionBatchRequest = runBusinessFoundationAdmissionBatchRequestCases,
   runBusinessFoundationCatalog = runBusinessFoundationCatalogAssertionCases,
   runProductionVerifierReadiness = runProductionVerifierReadinessCases,
   runBootstrap = runFirstAuthorityBootstrapMutationCases,
@@ -49,6 +51,7 @@ async function run({
     await runManifest(runtime);
     await runCatalog(runtime);
     await runBusinessFoundationManifest(runtime);
+    await runBusinessFoundationAdmissionBatchRequest(runtime);
     await runBusinessFoundationCatalog(runtime);
     await runProductionVerifierReadiness(runtime);
     await runBootstrap(runtime);

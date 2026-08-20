@@ -7,6 +7,7 @@ const { runCatalogAssertionCases } = require('./catalogAssertion.test');
 const { runProductionVerifierReadinessCases } = require('./productionVerifierReadiness.test');
 const { runSourceIsolationContractCases } = require('./sourceIsolationContract.test');
 const { runBusinessFoundationManifestCases } = require('./businessFoundationManifest.test');
+const { runBusinessFoundationAdmissionBatchRequestCases } = require('./businessFoundationAdmissionBatchRequest.test');
 const { runBusinessFoundationCatalogAssertionCases } = require('./businessFoundationCatalogAssertion.test');
 
 assert.strictEqual(typeof runManifestCases, 'function');
@@ -14,6 +15,7 @@ assert.strictEqual(typeof runCatalogAssertionCases, 'function');
 assert.strictEqual(typeof runProductionVerifierReadinessCases, 'function');
 assert.strictEqual(typeof runSourceIsolationContractCases, 'function');
 assert.strictEqual(typeof runBusinessFoundationManifestCases, 'function');
+assert.strictEqual(typeof runBusinessFoundationAdmissionBatchRequestCases, 'function');
 assert.strictEqual(typeof runBusinessFoundationCatalogAssertionCases, 'function');
 
 async function main() {
@@ -28,6 +30,7 @@ async function main() {
     runManifest: async received => { assert.strictEqual(received, runtime); calls.push('manifest'); },
     runCatalog: async received => { assert.strictEqual(received, runtime); calls.push('catalog'); },
     runBusinessFoundationManifest: async received => { assert.strictEqual(received, runtime); calls.push('business-foundation-manifest'); },
+    runBusinessFoundationAdmissionBatchRequest: async received => { assert.strictEqual(received, runtime); calls.push('business-foundation-admission-batch-request'); },
     runBusinessFoundationCatalog: async received => { assert.strictEqual(received, runtime); calls.push('business-foundation-catalog'); },
     runProductionVerifierReadiness: async received => { assert.strictEqual(received, runtime); calls.push('production-verifier-readiness'); },
     runBootstrap: async received => { assert.strictEqual(received, runtime); calls.push('bootstrap'); },
@@ -41,7 +44,7 @@ async function main() {
     report: message => calls.push(`report:${message.code}`),
   });
   assert.strictEqual(exitCode, 0);
-  assert.deepStrictEqual(calls, ['source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-catalog', 'production-verifier-readiness', 'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication', 'role-mutation', 'link-revocation', 'link-revocation-parity', 'stop']);
+  assert.deepStrictEqual(calls, ['source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-admission-batch-request', 'business-foundation-catalog', 'production-verifier-readiness', 'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication', 'role-mutation', 'link-revocation', 'link-revocation-parity', 'stop']);
 
   const failedCalls = [];
   const unavailable = Object.assign(new Error('private detail'), { code: 'VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE' });
@@ -54,6 +57,7 @@ async function main() {
     runManifest: async () => failedCalls.push('manifest'),
     runCatalog: async () => failedCalls.push('catalog'),
     runBusinessFoundationManifest: async () => failedCalls.push('business-foundation-manifest'),
+    runBusinessFoundationAdmissionBatchRequest: async () => failedCalls.push('business-foundation-admission-batch-request'),
     runBusinessFoundationCatalog: async () => failedCalls.push('business-foundation-catalog'),
     runProductionVerifierReadiness: async () => failedCalls.push('production-verifier-readiness'),
     runBootstrap: async () => failedCalls.push('bootstrap'),
@@ -79,6 +83,30 @@ async function main() {
   assert.strictEqual(isolationCode, 1);
   assert.deepStrictEqual(isolationCalls, ['source-isolation', 'report:VNEXT_PG17_LEGACY_SOURCE_ISOLATION_VIOLATION']);
 
+  const admissionFailureCalls = [];
+  const admissionFailure = Object.assign(new Error('batch request invalid'), { code: 'VNEXT_PG17_ADMISSION_INPUT_INVALID' });
+  const admissionFailureCode = await run({
+    runtimeFactory: () => ({
+      async start() { admissionFailureCalls.push('start'); },
+      async stop() { admissionFailureCalls.push('stop'); },
+    }),
+    runSourceIsolation: async () => admissionFailureCalls.push('source-isolation'),
+    runManifest: async () => admissionFailureCalls.push('manifest'),
+    runCatalog: async () => admissionFailureCalls.push('catalog'),
+    runBusinessFoundationManifest: async () => admissionFailureCalls.push('business-foundation-manifest'),
+    runBusinessFoundationAdmissionBatchRequest: async () => {
+      admissionFailureCalls.push('business-foundation-admission-batch-request');
+      throw admissionFailure;
+    },
+    runBusinessFoundationCatalog: async () => admissionFailureCalls.push('business-foundation-catalog'),
+    report: message => admissionFailureCalls.push(`report:${message.code}`),
+  });
+  assert.strictEqual(admissionFailureCode, 1);
+  assert.deepStrictEqual(admissionFailureCalls, [
+    'source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest',
+    'business-foundation-admission-batch-request', 'report:VNEXT_PG17_ADMISSION_INPUT_INVALID', 'stop',
+  ]);
+
   const cleanupCalls = [];
   const cleanupCode = await run({
     runtimeFactory: () => ({
@@ -92,6 +120,7 @@ async function main() {
     runManifest: async () => cleanupCalls.push('manifest'),
     runCatalog: async () => cleanupCalls.push('catalog'),
     runBusinessFoundationManifest: async () => cleanupCalls.push('business-foundation-manifest'),
+    runBusinessFoundationAdmissionBatchRequest: async () => cleanupCalls.push('business-foundation-admission-batch-request'),
     runBusinessFoundationCatalog: async () => cleanupCalls.push('business-foundation-catalog'),
     runProductionVerifierReadiness: async () => cleanupCalls.push('production-verifier-readiness'),
     runBootstrap: async () => cleanupCalls.push('bootstrap'),
@@ -106,7 +135,7 @@ async function main() {
   });
   assert.strictEqual(cleanupCode, 1);
   assert.deepStrictEqual(cleanupCalls, [
-    'source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-catalog', 'production-verifier-readiness',
+    'source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-admission-batch-request', 'business-foundation-catalog', 'production-verifier-readiness',
     'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication',
     'role-mutation', 'link-revocation', 'link-revocation-parity', 'stop',
     'report:VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE',
