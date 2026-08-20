@@ -9,6 +9,7 @@ const {
   sha256,
 } = require('./businessFoundationManifest');
 
+async function runBusinessFoundationManifestCases() {
 assert.deepStrictEqual(
   BUSINESS_FOUNDATION_MIGRATIONS.map(migration => [migration.migrationId, migration.semanticVersion]),
   [['business-foundation-1', 1]],
@@ -57,5 +58,15 @@ for (const [sourceTable, sourceFields] of Object.entries(expectedSourceTargets))
   assert.strictEqual(entry.mappingState, 'mapped');
   assert.deepStrictEqual(entry.fieldMapping.sourceFields, sourceFields);
 }
+}
 
-console.log('vNext business foundation manifest checks passed');
+if (require.main === module) {
+  runBusinessFoundationManifestCases().then(() => {
+    console.log('vNext business foundation manifest checks passed');
+  }).catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { runBusinessFoundationManifestCases };

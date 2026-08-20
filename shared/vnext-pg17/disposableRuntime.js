@@ -21,11 +21,14 @@ const syntheticVerifierPools = new WeakMap();
 const syntheticTlsBrands = new WeakMap();
 const syntheticVerifierFaultPlans = new WeakMap();
 const syntheticQueryTraces = new WeakMap();
+const businessFoundationDdlTraces = new WeakMap();
+const businessFoundationDdlFaultPlans = new WeakMap();
 const copyOnlyRehearsalTargets = new WeakMap();
 const copyOnlyRehearsalFaultPlans = new WeakMap();
 const VERIFIER_FAULT_STAGES = new Set(['begin', 'setup', 'identity', 'tls', 'catalog', 'commit', 'rollback', 'release']);
 const COPY_ONLY_REHEARSAL_STAGES = new Set(['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants', 'profileBindings', 'verifiedContacts', 'receipts', 'auditEvents', 'outboxEvents', 'postReadMismatch', 'postReadHistoricalMismatch', 'postReadProfileMismatch', 'postReadContactMismatch', 'postReadEvidenceMismatch', 'commit', 'rollback']);
 const COPY_ONLY_TERMINAL_STAGES = new Set(['commit', 'rollback']);
+const BUSINESS_FOUNDATION_DDL_FAULT_STAGES = new Set(['commit', 'rollback']);
 const COPY_ONLY_TARGET_DATA_RELATIONS = Object.freeze([
   'vnext_authorities', 'vnext_accounts', 'vnext_trusted_devices', 'vnext_device_installations', 'vnext_account_device_links',
   'vnext_role_grants', 'vnext_capability_catalog', 'vnext_capability_overrides', 'vnext_data_scope_grants', 'vnext_profile_bindings',
@@ -54,6 +57,14 @@ function invalidHandle() {
 
 function copyOnlyTargetUnavailable() {
   return codedError('VNEXT_PG17_COPY_REHEARSAL_TARGET_UNAVAILABLE', 'vNext PG17 copy-only rehearsal target is unavailable');
+}
+
+function migrationInputInvalid() {
+  return codedError('VNEXT_PG17_MIGRATION_INPUT_INVALID', 'vNext PG17 migration input is invalid');
+}
+
+function businessSchemaDrift() {
+  return codedError('VNEXT_PG17_SCHEMA_DRIFT', 'vNext PG17 business schema drift was detected');
 }
 
 function randomToken(bytes = 18) {
@@ -448,6 +459,164 @@ function isVNextPg17DisposableHandleForRuntime(runtime, handle) {
   return Boolean(state && !state.closed && state.runtime === runtime && runtimes.has(runtime));
 }
 
+function snapshotBusinessDdlInput(value) {
+  if (!value || typeof value !== 'object' || types.isProxy(value)
+    || Object.getPrototypeOf(value) !== Object.prototype) throw migrationInputInvalid();
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== 2 || !keys.includes('appliedAt') || !keys.includes('appliedBy')) throw migrationInputInvalid();
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  for (const key of keys) {
+    const descriptor = descriptors[key];
+    if (!descriptor || !descriptor.enumerable || !('value' in descriptor)) throw migrationInputInvalid();
+  }
+  const { appliedAt, appliedBy } = value;
+  let canonicalInstant;
+  try {
+    canonicalInstant = new Date(appliedAt).toISOString();
+  } catch (_) {
+    throw migrationInputInvalid();
+  }
+  if (typeof appliedAt !== 'string' || canonicalInstant !== appliedAt
+    || typeof appliedBy !== 'string' || appliedBy.trim() === '') throw migrationInputInvalid();
+  return Object.freeze({ appliedAt, appliedBy });
+}
+
+async function executeBusinessFoundationDdlPlan(runtime, handle, input) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
+  const snapshot = snapshotBusinessDdlInput(input);
+  const state = handles.get(handle);
+  if (state.businessFoundationDdlPoisoned) throw unavailable();
+  if (state.businessFoundationDdlBusy) throw invalidHandle();
+  const client = state.clients['business-migrator'];
+  if (!client) throw invalidHandle();
+  const { BUSINESS_FOUNDATION_MIGRATIONS } = require('./businessFoundationManifest');
+  const migration = BUSINESS_FOUNDATION_MIGRATIONS[0];
+  const trace = state.businessFoundationDdlTrace;
+  const record = text => {
+    const traceState = businessFoundationDdlTraces.get(trace);
+    if (traceState && traceState.armed) traceState.queries.push(text);
+  };
+  const query = (text, values) => {
+    record(text);
+    return client.query(text, values).then(result => {
+      const planState = businessFoundationDdlFaultPlans.get(state.businessFoundationDdlFaultPlan);
+      const stage = text === 'COMMIT' ? 'commit' : text === 'ROLLBACK' ? 'rollback' : null;
+      if (stage && planState && planState.pending.delete(stage)) throw new Error(`synthetic business DDL ${stage} fault`);
+      return result;
+    });
+  };
+  state.businessFoundationDdlBusy = true;
+  try {
+    let begun = false;
+    let createGranted = false;
+    let commitAttempted = false;
+    try {
+      await query('BEGIN');
+      begun = true;
+      await query("SET LOCAL TIME ZONE 'UTC'");
+      await query('SELECT pg_advisory_xact_lock(73018, 1)');
+      await query('SET LOCAL ROLE vnext_pg17_business_owner');
+      const stateCheck = await query(
+        "SELECT to_regclass('business.business_schema_migrations') AS ledger, to_regclass('public.business_schema_migrations') AS public_shadow",
+      );
+      const publicShadows = await query(
+        "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind <> 'i' AND c.relname = ANY($1::text[])",
+        [['business_schema_migrations', 'tenants', 'institutions', 'schools', 'rooms']],
+      );
+      if (stateCheck.rows.length !== 1 || stateCheck.rows[0].public_shadow !== null || publicShadows.rows.length !== 0) {
+        throw businessSchemaDrift();
+      }
+      if (stateCheck.rows[0].ledger !== null) {
+        const ledger = await query(
+          'SELECT migration_id, semantic_version, manifest_sha256 FROM business.business_schema_migrations ORDER BY semantic_version',
+        );
+        if (ledger.rows.length !== 1 || ledger.rows[0].migration_id !== migration.migrationId
+          || String(ledger.rows[0].semantic_version) !== String(migration.semanticVersion)
+          || ledger.rows[0].manifest_sha256 !== migration.manifestSha256) throw businessSchemaDrift();
+        commitAttempted = true;
+        await query('COMMIT');
+        return Object.freeze({ applied: false });
+      }
+      const grantCreate = `GRANT CREATE ON DATABASE ${quoteIdentifier(state.database)} TO vnext_pg17_business_owner`;
+      record(grantCreate);
+      await state.clients['fixture-provisioner'].query(grantCreate);
+      createGranted = true;
+      await query(migration.sql);
+      await query(
+        'INSERT INTO business.business_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
+        [migration.migrationId, migration.semanticVersion, migration.manifestSha256, snapshot.appliedAt, snapshot.appliedBy],
+      );
+      const revokeCreate = `REVOKE CREATE ON DATABASE ${quoteIdentifier(state.database)} FROM vnext_pg17_business_owner`;
+      record(revokeCreate);
+      await state.clients['fixture-provisioner'].query(revokeCreate);
+      createGranted = false;
+      commitAttempted = true;
+      await query('COMMIT');
+      return Object.freeze({ applied: true });
+    } catch (error) {
+      let rollbackConfirmed = !begun;
+      let createRevoked = !createGranted;
+      if (begun && !commitAttempted) {
+        try { await query('ROLLBACK'); rollbackConfirmed = true; } catch (_) { /* poisoned below */ }
+      }
+      if (createGranted) {
+        try {
+          const revokeCreate = `REVOKE CREATE ON DATABASE ${quoteIdentifier(state.database)} FROM vnext_pg17_business_owner`;
+          record(revokeCreate);
+          await state.clients['fixture-provisioner'].query(revokeCreate);
+          createGranted = false;
+          createRevoked = true;
+        } catch (_) { /* poisoned below */ }
+      }
+      if (commitAttempted || !rollbackConfirmed || !createRevoked) {
+        state.businessFoundationDdlPoisoned = true;
+        await closeClient(client);
+        throw unavailable();
+      }
+      if (error && (error.code === 'VNEXT_PG17_HANDLE_INVALID' || error.code === 'VNEXT_PG17_MIGRATION_INPUT_INVALID'
+        || error.code === 'VNEXT_PG17_SCHEMA_DRIFT')) throw error;
+      throw businessSchemaDrift();
+    }
+  } finally {
+    state.businessFoundationDdlBusy = false;
+  }
+}
+
+function createVNextPg17BusinessFoundationDdlTrace(runtime, handle) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
+  const trace = Object.freeze({});
+  businessFoundationDdlTraces.set(trace, { runtime, handle, armed: false, queries: [] });
+  handles.get(handle).businessFoundationDdlTrace = trace;
+  return trace;
+}
+
+function armVNextPg17BusinessFoundationDdlTrace(trace) {
+  const state = businessFoundationDdlTraces.get(trace);
+  if (!state || !isVNextPg17DisposableHandleForRuntime(state.runtime, state.handle)) throw invalidHandle();
+  state.armed = true;
+}
+
+function inspectVNextPg17BusinessFoundationDdlTrace(trace) {
+  const state = businessFoundationDdlTraces.get(trace);
+  if (!state) throw invalidHandle();
+  return Object.freeze({ queries: Object.freeze([...state.queries]) });
+}
+
+function createVNextPg17BusinessFoundationDdlFaultPlan(runtime, handle, stages) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle) || !Array.isArray(stages)
+    || stages.length === 0 || stages.some(stage => typeof stage !== 'string' || !BUSINESS_FOUNDATION_DDL_FAULT_STAGES.has(stage))) throw invalidHandle();
+  const plan = Object.freeze({});
+  businessFoundationDdlFaultPlans.set(plan, { runtime, handle, pending: new Set(stages) });
+  return plan;
+}
+
+function armVNextPg17BusinessFoundationDdlFaultPlan(handle, plan) {
+  const planState = businessFoundationDdlFaultPlans.get(plan);
+  if (!planState || !isVNextPg17DisposableHandleForRuntime(planState.runtime, handle)
+    || planState.handle !== handle || handles.get(handle).runtime !== planState.runtime) throw invalidHandle();
+  handles.get(handle).businessFoundationDdlFaultPlan = plan;
+}
+
 function createVNextPg17CopyOnlyRehearsalTarget(runtime, handle) {
   if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
   const target = Object.freeze({});
@@ -808,6 +977,12 @@ module.exports = {
   createDisposablePg17Runtime,
   isVNextPg17DisposableHandle,
   isVNextPg17DisposableHandleForRuntime,
+  executeBusinessFoundationDdlPlan,
+  createVNextPg17BusinessFoundationDdlTrace,
+  armVNextPg17BusinessFoundationDdlTrace,
+  inspectVNextPg17BusinessFoundationDdlTrace,
+  createVNextPg17BusinessFoundationDdlFaultPlan,
+  armVNextPg17BusinessFoundationDdlFaultPlan,
   createVNextPg17CopyOnlyRehearsalTarget,
   inspectVNextPg17CopyOnlyRehearsalTarget,
   withVNextPg17CopyOnlyRehearsalTarget,

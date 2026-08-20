@@ -1,6 +1,6 @@
 # Cloud business foundation target-DDL admission design
 
-**Status:** proposed logical contract; not target DDL, deployed schema, source-row admission, shadow import, restore, rollback, or release evidence.
+**Status:** the four-table target-DDL foundation is implemented and verified only in a local disposable PostgreSQL 17 target with an independent `business` DDL ledger. It is not a deployed schema, source-row admission, shadow import, restore, rollback, or release evidence.
 
 ## Purpose and boundary
 
@@ -13,7 +13,7 @@ This design is the next admission gate for the first four already reviewed legac
 
 It defines only the future cloud `business` schema shape needed by those contracts. The cloud is the sole writable authority for applicable business data. NAS or the storage agent may hold rich-media bytes, import originals, generated artifacts, and backups, but never a second writable business database.
 
-This document does not authorize target SQL, a PostgreSQL connection, RDS creation, a disposable container, source-row reads, canonical export, importer code, seed data, roles, or a cutover. It also does not admit users, teachers, students, schedules, financial records, assets, question-bank data, sessions, credentials, or any legacy device state.
+This document authorized only the bounded local implementation of its empty four-table DDL foundation: a disposable PostgreSQL 17 container, a separate `business` schema and DDL ledger, exact catalog/ACL/zero-seed tests, and no source rows. It does not authorize RDS creation, source-row reads, canonical export, importer code, seed data, an application business writer, or a cutover. It also does not admit users, teachers, students, schedules, financial records, assets, question-bank data, sessions, credentials, or any legacy device state.
 
 ## Identity, ordering, and deletion rules
 
@@ -86,11 +86,11 @@ The two legacy contact columns are restricted business metadata. `contact_person
 
 The eventual migration mechanism must introduce a separate batch/ledger/quarantine model before importing any row. It must record the immutable bundle identity, source stable identity, canonical row hash, target row identity, reconciliation result, and restore/rollback receipt in the same bounded transaction. A source row is admitted only after exact field parsing, tenant dependency validation, duplicate/identity conflict detection, and batch isolation have all passed.
 
-## Required evidence before implementation
+## Required evidence before source admission
 
-The following is required before an implementation plan can create the first SQL migration:
+The first condition below is now satisfied only for the local disposable DDL foundation. The remaining conditions are still required before any source row, shadow import, RDS target, or release work:
 
-1. A disposable PostgreSQL 17 target-DDL test proves fresh apply/reapply, exact columns, primary keys, tenant FKs, supporting indexes, nullability, check constraints, and zero seed rows.
+1. **Completed locally only:** a disposable PostgreSQL 17 target-DDL test proves fresh apply/reapply, exact columns, primary keys, tenant FKs, supporting indexes, nullability, check constraints, PII column restrictions, independent ledger append-only guards, control-plane isolation, and zero seed rows. It does not prove a production target or authorize a row write.
 2. A separately approved migration-batch/ledger/quarantine design proves no target row can be written without a traceable batch and canonical-row hash.
 3. Synthetic source-admission tests prove malformed timestamps, booleans, decimals, integers, blank IDs, duplicate identities, missing tenants, and invalid timestamp ordering fail closed into quarantine.
 4. A shadow-import test proves source-to-target count, stable-key set, and canonical logical hash reconciliation, then proves restore and rollback on disposable targets only.

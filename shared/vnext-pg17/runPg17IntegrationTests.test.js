@@ -6,11 +6,15 @@ const { runManifestCases } = require('./migrationManifest.test');
 const { runCatalogAssertionCases } = require('./catalogAssertion.test');
 const { runProductionVerifierReadinessCases } = require('./productionVerifierReadiness.test');
 const { runSourceIsolationContractCases } = require('./sourceIsolationContract.test');
+const { runBusinessFoundationManifestCases } = require('./businessFoundationManifest.test');
+const { runBusinessFoundationCatalogAssertionCases } = require('./businessFoundationCatalogAssertion.test');
 
 assert.strictEqual(typeof runManifestCases, 'function');
 assert.strictEqual(typeof runCatalogAssertionCases, 'function');
 assert.strictEqual(typeof runProductionVerifierReadinessCases, 'function');
 assert.strictEqual(typeof runSourceIsolationContractCases, 'function');
+assert.strictEqual(typeof runBusinessFoundationManifestCases, 'function');
+assert.strictEqual(typeof runBusinessFoundationCatalogAssertionCases, 'function');
 
 async function main() {
   const calls = [];
@@ -23,6 +27,8 @@ async function main() {
     runSourceIsolation: async () => calls.push('source-isolation'),
     runManifest: async received => { assert.strictEqual(received, runtime); calls.push('manifest'); },
     runCatalog: async received => { assert.strictEqual(received, runtime); calls.push('catalog'); },
+    runBusinessFoundationManifest: async received => { assert.strictEqual(received, runtime); calls.push('business-foundation-manifest'); },
+    runBusinessFoundationCatalog: async received => { assert.strictEqual(received, runtime); calls.push('business-foundation-catalog'); },
     runProductionVerifierReadiness: async received => { assert.strictEqual(received, runtime); calls.push('production-verifier-readiness'); },
     runBootstrap: async received => { assert.strictEqual(received, runtime); calls.push('bootstrap'); },
     runRecovery: async received => { assert.strictEqual(received, runtime); calls.push('recovery'); },
@@ -35,7 +41,7 @@ async function main() {
     report: message => calls.push(`report:${message.code}`),
   });
   assert.strictEqual(exitCode, 0);
-  assert.deepStrictEqual(calls, ['source-isolation', 'start', 'manifest', 'catalog', 'production-verifier-readiness', 'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication', 'role-mutation', 'link-revocation', 'link-revocation-parity', 'stop']);
+  assert.deepStrictEqual(calls, ['source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-catalog', 'production-verifier-readiness', 'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication', 'role-mutation', 'link-revocation', 'link-revocation-parity', 'stop']);
 
   const failedCalls = [];
   const unavailable = Object.assign(new Error('private detail'), { code: 'VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE' });
@@ -47,6 +53,8 @@ async function main() {
     runSourceIsolation: async () => failedCalls.push('source-isolation'),
     runManifest: async () => failedCalls.push('manifest'),
     runCatalog: async () => failedCalls.push('catalog'),
+    runBusinessFoundationManifest: async () => failedCalls.push('business-foundation-manifest'),
+    runBusinessFoundationCatalog: async () => failedCalls.push('business-foundation-catalog'),
     runProductionVerifierReadiness: async () => failedCalls.push('production-verifier-readiness'),
     runBootstrap: async () => failedCalls.push('bootstrap'),
     runRecovery: async () => failedCalls.push('recovery'),
@@ -83,6 +91,8 @@ async function main() {
     runSourceIsolation: async () => cleanupCalls.push('source-isolation'),
     runManifest: async () => cleanupCalls.push('manifest'),
     runCatalog: async () => cleanupCalls.push('catalog'),
+    runBusinessFoundationManifest: async () => cleanupCalls.push('business-foundation-manifest'),
+    runBusinessFoundationCatalog: async () => cleanupCalls.push('business-foundation-catalog'),
     runProductionVerifierReadiness: async () => cleanupCalls.push('production-verifier-readiness'),
     runBootstrap: async () => cleanupCalls.push('bootstrap'),
     runRecovery: async () => cleanupCalls.push('recovery'),
@@ -96,7 +106,7 @@ async function main() {
   });
   assert.strictEqual(cleanupCode, 1);
   assert.deepStrictEqual(cleanupCalls, [
-    'source-isolation', 'start', 'manifest', 'catalog', 'production-verifier-readiness',
+    'source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-catalog', 'production-verifier-readiness',
     'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication',
     'role-mutation', 'link-revocation', 'link-revocation-parity', 'stop',
     'report:VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE',
