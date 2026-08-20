@@ -50,6 +50,86 @@ function add(entries, names, disposition, rationale, targetDomain = null) {
   }
 }
 
+function fieldMapping({ targetEntity, dependencyOrder, transformerId, sourceFields, invariants }) {
+  return Object.freeze({
+    targetSchema: 'business',
+    targetEntity,
+    stableIdStrategy: 'preserve source primary-key text exactly',
+    dependencyOrder,
+    transformerId,
+    sourceFields: Object.freeze({ ...sourceFields }),
+    invariants: Object.freeze([...invariants].sort()),
+    fileReferenceFields: Object.freeze([]),
+    rollbackProof: 'delete only the verified shadow batch after source/target reconciliation',
+  });
+}
+
+function admitMappedCanonical(entries, sourceTable, mapping) {
+  const entry = entries[sourceTable];
+  if (!entry || entry.disposition !== 'canonical') throw catalogError('MIGRATION_CATALOG_MAPPING_TARGET_INVALID');
+  entries[sourceTable] = Object.freeze({ ...entry, mappingState: 'mapped', fieldMapping: mapping });
+}
+
+const APPROVED_MAPPED_CONTRACTS = Object.freeze({
+  tenants: fieldMapping({
+    targetEntity: 'tenants',
+    dependencyOrder: 1,
+    transformerId: 'legacy_tenant_v1',
+    sourceFields: {
+      archive_before: 'legacy_archive_before', created_at: 'created_at', deleted: 'legacy_deleted', id: 'id',
+      name: 'name', plan: 'legacy_plan', status: 'legacy_status', updated_at: 'updated_at',
+    },
+    invariants: [
+      'id is nonblank and stable',
+      'legacy deleted flag is preserved without erasing the row',
+      'timestamps parse as UTC or quarantine the row',
+    ],
+  }),
+  institutions: fieldMapping({
+    targetEntity: 'institutions',
+    dependencyOrder: 2,
+    transformerId: 'legacy_institution_v1',
+    sourceFields: {
+      contact_person: 'contact_person_legacy', contact_phone: 'contact_phone_legacy', created_at: 'created_at',
+      deleted: 'legacy_deleted', id: 'id', name: 'name', notes: 'notes', revenue_share: 'revenue_share',
+      tenant_id: 'tenant_id', updated_at: 'updated_at',
+    },
+    invariants: [
+      'id is nonblank and stable',
+      'tenant_id resolves to an admitted tenant or quarantines the row',
+      'timestamps parse as UTC or quarantine the row',
+    ],
+  }),
+  schools: fieldMapping({
+    targetEntity: 'schools',
+    dependencyOrder: 3,
+    transformerId: 'legacy_school_v1',
+    sourceFields: {
+      count: 'legacy_count', created_at: 'created_at', deleted: 'legacy_deleted', id: 'id', name: 'name',
+      tenant_id: 'tenant_id', updated_at: 'updated_at',
+    },
+    invariants: [
+      'id is nonblank and stable',
+      'legacy count is preserved without inferring its business meaning',
+      'tenant_id resolves to an admitted tenant or quarantines the row',
+    ],
+  }),
+  rooms: fieldMapping({
+    targetEntity: 'rooms',
+    dependencyOrder: 4,
+    transformerId: 'legacy_room_v1',
+    sourceFields: {
+      address: 'address_legacy', count: 'legacy_count', created_at: 'created_at', deleted: 'legacy_deleted',
+      id: 'id', name: 'name', tenant_id: 'tenant_id', updated_at: 'updated_at',
+    },
+    invariants: [
+      'id is nonblank and stable',
+      'legacy count is preserved without inferring its business meaning',
+      'tenant_id resolves to an admitted tenant or quarantines the row',
+    ],
+  }),
+});
+
 function buildCatalogTables() {
   const tables = {};
   add(tables, ['tenants'], 'canonical', 'tenant boundary requires field-level tenancy mapping', 'tenancy');
@@ -93,11 +173,26 @@ function buildCatalogTables() {
     'paper_completion_outbox', 'paper_jobs', 'readonly_snapshots', 'schema_migrations', 'search_index_jobs', 'vector_embeddings',
   ], 'rebuildable_cache', 'derived job, cache, index, export, or prior-import state is rebuilt or separately archived after canonical data is verified');
 
+  for (const [sourceTable, mapping] of Object.entries(APPROVED_MAPPED_CONTRACTS)) {
+    admitMappedCanonical(tables, sourceTable, mapping);
+  }
+
   return Object.freeze(tables);
 }
 
 function isNonBlankText(value) {
   return typeof value === 'string' && value.trim() === value && value.length > 0;
+}
+
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableValue(value[key])]));
+}
+
+function hasApprovedMappingContract(tableName, mapping) {
+  const approved = APPROVED_MAPPED_CONTRACTS[tableName];
+  return Boolean(approved) && JSON.stringify(stableValue(mapping)) === JSON.stringify(stableValue(approved));
 }
 
 function mappingIssues(tableName, mapping) {
@@ -157,7 +252,14 @@ function validateSourceTableCatalog(catalog) {
     if (entry.disposition === 'canonical') {
       if (!String(entry.targetDomain || '').trim()) issues.push(`canonical table missing target domain: ${tableName}`);
       if (!['unmapped', 'mapped'].includes(entry.mappingState)) issues.push(`canonical table has invalid mapping state: ${tableName}`);
-      if (entry.mappingState === 'mapped') issues.push(...mappingIssues(tableName, entry.fieldMapping));
+      if (entry.mappingState === 'mapped') {
+        issues.push(...mappingIssues(tableName, entry.fieldMapping));
+        if (!hasApprovedMappingContract(tableName, entry.fieldMapping)) {
+          issues.push(`canonical table field mapping is not an approved logical contract: ${tableName}`);
+        }
+      } else if (Object.prototype.hasOwnProperty.call(entry, 'fieldMapping')) {
+        issues.push(`unmapped canonical table cannot declare a field mapping: ${tableName}`);
+      }
     } else if (entry.targetDomain !== null || entry.mappingState !== null || Object.prototype.hasOwnProperty.call(entry, 'fieldMapping')) {
       issues.push(`noncanonical table cannot declare a target mapping: ${tableName}`);
     }

@@ -13,7 +13,7 @@
 >
 > The first read-only inventory and verified online SQLite snapshot are complete. The source and snapshot share inventory hash `08460a7fe152f0f9d30c0abac732ee4b57355e3bbf7494024ffe68c6f9e581a2`; the detailed, redacted evidence is in `docs/verification-2026-08-21-vnext-legacy-source-inventory.md`. This is a reversible baseline only, not a migration, cloud upload, or release.
 >
-> The checked-in 99-table source catalog is complete as a structural intake gate. Eighteen core-business candidates remain deliberately `unmapped`; it is impossible to advance them by changing a flag alone. Question-labelled and legacy credential relations are fail-closed, and no shadow import can start until every admitted table has a reviewed field mapping and rollback proof.
+> The checked-in 99-table source catalog is complete as a structural intake gate. The tenant/institution/school/room foundation has four reviewed proposed logical field contracts, not target DDL, admitted source rows, a shadow batch, or rollback evidence; fourteen remaining core-business candidates are deliberately `unmapped`, and it is impossible to advance any of them by changing a flag alone. Question-labelled and legacy credential relations are fail-closed, and no shadow import can start until every admitted table has an exact reviewed logical contract plus separate target-DDL, reconciliation, restore, and rollback proof.
 >
 > Historical content after this block is non-binding. It records older local-host, dual-package, manual-approval, and control-plane-only experiments; it must not guide implementation, testing, release, or migration.
 <!-- current-architecture-contract:end -->

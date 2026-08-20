@@ -45,6 +45,47 @@ assert.deepStrictEqual(
 );
 assert.deepStrictEqual(validateSourceTableCatalog(SOURCE_TABLE_CATALOG), [], 'the checked-in intake catalog must be internally complete');
 
+const expectedFoundationMappings = Object.freeze({
+  tenants: Object.freeze({
+    targetEntity: 'tenants', dependencyOrder: 1, transformerId: 'legacy_tenant_v1',
+    sourceFields: Object.freeze({
+      archive_before: 'legacy_archive_before', created_at: 'created_at', deleted: 'legacy_deleted', id: 'id',
+      name: 'name', plan: 'legacy_plan', status: 'legacy_status', updated_at: 'updated_at',
+    }),
+  }),
+  institutions: Object.freeze({
+    targetEntity: 'institutions', dependencyOrder: 2, transformerId: 'legacy_institution_v1',
+    sourceFields: Object.freeze({
+      contact_person: 'contact_person_legacy', contact_phone: 'contact_phone_legacy', created_at: 'created_at',
+      deleted: 'legacy_deleted', id: 'id', name: 'name', notes: 'notes', revenue_share: 'revenue_share',
+      tenant_id: 'tenant_id', updated_at: 'updated_at',
+    }),
+  }),
+  schools: Object.freeze({
+    targetEntity: 'schools', dependencyOrder: 3, transformerId: 'legacy_school_v1',
+    sourceFields: Object.freeze({
+      count: 'legacy_count', created_at: 'created_at', deleted: 'legacy_deleted', id: 'id', name: 'name',
+      tenant_id: 'tenant_id', updated_at: 'updated_at',
+    }),
+  }),
+  rooms: Object.freeze({
+    targetEntity: 'rooms', dependencyOrder: 4, transformerId: 'legacy_room_v1',
+    sourceFields: Object.freeze({
+      address: 'address_legacy', count: 'legacy_count', created_at: 'created_at', deleted: 'legacy_deleted',
+      id: 'id', name: 'name', tenant_id: 'tenant_id', updated_at: 'updated_at',
+    }),
+  }),
+});
+
+for (const [tableName, expected] of Object.entries(expectedFoundationMappings)) {
+  const mapping = SOURCE_TABLE_CATALOG.tables[tableName].fieldMapping;
+  assert.strictEqual(mapping.targetSchema, 'business', `${tableName} is only a proposed cloud-business logical contract`);
+  assert.strictEqual(mapping.targetEntity, expected.targetEntity, `${tableName} must pin its reviewed target entity`);
+  assert.strictEqual(mapping.dependencyOrder, expected.dependencyOrder, `${tableName} must pin its reviewed dependency order`);
+  assert.strictEqual(mapping.transformerId, expected.transformerId, `${tableName} must pin its reviewed transformer`);
+  assert.deepStrictEqual(mapping.sourceFields, expected.sourceFields, `${tableName} must pin every recorded legacy source-to-target field mapping exactly`);
+}
+
 for (const tableName of ['questions', 'question_contents', 'question_assets', 'question_bank_store_bindings']) {
   assert.strictEqual(
     SOURCE_TABLE_CATALOG.tables[tableName].disposition,
@@ -65,8 +106,13 @@ for (const tableName of [
 ]) {
   const entry = SOURCE_TABLE_CATALOG.tables[tableName];
   assert.strictEqual(entry.disposition, 'canonical', `${tableName} is a cloud-business candidate, not a control-plane exclusion`);
-  assert.strictEqual(entry.mappingState, 'unmapped', `${tableName} cannot be imported before a field-level contract exists`);
+  const foundationMapped = ['tenants', 'institutions', 'schools', 'rooms'].includes(tableName);
+  assert.strictEqual(entry.mappingState, foundationMapped ? 'mapped' : 'unmapped', `${tableName} must have the expected field-mapping admission state`);
   assert.ok(entry.targetDomain, `${tableName} must name its eventual target domain`);
+  if (foundationMapped) {
+    assert.ok(entry.fieldMapping, `${tableName} must carry a field-level contract before it can be marked mapped`);
+    assert.strictEqual(entry.fieldMapping.targetSchema, 'business', `${tableName} must target the cloud business schema`);
+  }
 }
 
 assert.throws(
@@ -87,6 +133,51 @@ assert.throws(
   error => error && error.code === 'MIGRATION_SOURCE_CATALOG_INVALID',
   'changing an editable flag must not substitute for field mapping, stable-ID, dependency, invariant, file-boundary, and rollback evidence'
 );
+
+const forgedMapping = Object.freeze({
+  targetSchema: 'business',
+  targetEntity: 'forged_entity',
+  stableIdStrategy: 'forged stable id',
+  dependencyOrder: 1,
+  transformerId: 'forged_transformer',
+  sourceFields: Object.freeze({ forged: 'forged' }),
+  invariants: Object.freeze(['forged invariant']),
+  fileReferenceFields: Object.freeze([]),
+  rollbackProof: 'forged rollback proof',
+});
+const fullyForgedCatalog = {
+  ...SOURCE_TABLE_CATALOG,
+  tables: Object.fromEntries(Object.entries(SOURCE_TABLE_CATALOG.tables).map(([tableName, entry]) => [
+    tableName,
+    entry.disposition === 'canonical' ? { ...entry, mappingState: 'mapped', fieldMapping: forgedMapping } : entry,
+  ])),
+};
+assert.throws(
+  () => assertShadowImportReady(fullyForgedCatalog),
+  error => error && error.code === 'MIGRATION_SOURCE_CATALOG_INVALID',
+  'an arbitrary complete-looking mapping contract must not admit an unmapped business table or replace a reviewed foundation mapping'
+);
+
+for (const [tableName, fieldMappingMutation] of [
+  ['tenants', mapping => ({ ...mapping, sourceFields: { ...mapping.sourceFields, forged: 'forged' } })],
+  ['institutions', mapping => ({ ...mapping, sourceFields: { ...mapping.sourceFields, contact_phone: 'notes' } })],
+  ['schools', mapping => ({ ...mapping, dependencyOrder: 99 })],
+  ['rooms', mapping => ({ ...mapping, transformerId: 'forged_transformer' })],
+]) {
+  const mapping = SOURCE_TABLE_CATALOG.tables[tableName].fieldMapping;
+  const mutatedFoundationCatalog = {
+    ...SOURCE_TABLE_CATALOG,
+    tables: {
+      ...SOURCE_TABLE_CATALOG.tables,
+      [tableName]: { ...SOURCE_TABLE_CATALOG.tables[tableName], fieldMapping: fieldMappingMutation(mapping) },
+    },
+  };
+  assert.throws(
+    () => assertShadowImportReady(mutatedFoundationCatalog),
+    error => error && error.code === 'MIGRATION_SOURCE_CATALOG_INVALID',
+    `${tableName} must reject a source-column, entity, dependency, or transformer change before any shadow import is allowed`
+  );
+}
 
 for (const tableName of ['desktop_sessions', 'questions']) {
   const targetMappingInjection = {
