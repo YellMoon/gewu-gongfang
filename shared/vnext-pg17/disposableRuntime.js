@@ -179,6 +179,7 @@ async function provisionRoles(admin, rolePasswords) {
   await admin.query(`CREATE ROLE vnext_pg17_migrator LOGIN NOINHERIT PASSWORD ${quoteLiteral(rolePasswords.migrator)}`);
   await admin.query(`CREATE ROLE vnext_pg17_runtime LOGIN NOINHERIT PASSWORD ${quoteLiteral(rolePasswords.runtime)}`);
   await admin.query(`CREATE ROLE vnext_pg17_verifier LOGIN NOINHERIT PASSWORD ${quoteLiteral(rolePasswords.verifier)}`);
+  await admin.query(`CREATE ROLE vnext_pg17_writer LOGIN NOINHERIT PASSWORD ${quoteLiteral(rolePasswords.writer)}`);
   await admin.query('GRANT vnext_pg17_owner TO vnext_pg17_migrator WITH SET OPTION');
   await admin.query('REVOKE INHERIT OPTION FOR vnext_pg17_owner FROM vnext_pg17_migrator');
 }
@@ -198,6 +199,7 @@ async function startRuntime(runtime) {
     migrator: randomToken(24),
     runtime: randomToken(24),
     verifier: randomToken(24),
+    writer: randomToken(24),
   };
   let adminClient;
   try {
@@ -270,6 +272,7 @@ async function createIsolatedHandle(runtime) {
     clients.migrator = await connectClient({ ...common, user: 'vnext_pg17_migrator', password: state.rolePasswords.migrator });
     clients.runtime = await connectClient({ ...common, user: 'vnext_pg17_runtime', password: state.rolePasswords.runtime });
     clients.verifier = await connectClient({ ...common, user: 'vnext_pg17_verifier', password: state.rolePasswords.verifier });
+    clients.writer = await connectClient({ ...common, user: 'vnext_pg17_writer', password: state.rolePasswords.writer });
     clients['fixture-provisioner'] = await connectClient({
       ...common,
       user: state.admin.user,
@@ -299,6 +302,11 @@ async function createPeerHandle(runtime, originalHandle) {
       ...common,
       user: 'vnext_pg17_verifier',
       password: state.rolePasswords.verifier,
+    });
+    clients.writer = await connectClient({
+      ...common,
+      user: 'vnext_pg17_writer',
+      password: state.rolePasswords.writer,
     });
     clients['fixture-provisioner'] = await connectClient({
       ...common,
@@ -371,7 +379,7 @@ function isVNextPg17DisposableHandleForRuntime(runtime, handle) {
 }
 
 async function withVNextPg17SyntheticQuery(handle, purpose, callback) {
-  if (!isVNextPg17DisposableHandle(handle) || !['migrator', 'runtime', 'verifier', 'fixture-provisioner'].includes(purpose)
+  if (!isVNextPg17DisposableHandle(handle) || !['migrator', 'runtime', 'verifier', 'writer', 'fixture-provisioner'].includes(purpose)
     || typeof callback !== 'function' || types.isProxy(callback)) throw invalidHandle();
   const state = handles.get(handle);
   const client = state.clients[purpose];

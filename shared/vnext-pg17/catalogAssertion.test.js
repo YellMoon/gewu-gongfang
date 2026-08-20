@@ -2725,6 +2725,54 @@ async function runCatalogAssertionCases(runtime) {
       'ALTER TABLE vnext_control_plane.vnext_recent_reauthentication_events ALTER COLUMN factor_class TYPE text COLLATE "default"',
     ));
     await assert.rejects(() => catalog.assert(reauthCollationHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const writerRoleHandle = await createHandle();
+    await catalog.apply(writerRoleHandle, migrationInput);
+    try {
+      await withVNextPg17SyntheticQuery(writerRoleHandle, 'fixture-provisioner', facade => facade.query(
+        'ALTER ROLE vnext_pg17_writer INHERIT',
+      ));
+      await assert.rejects(() => catalog.assert(writerRoleHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+    } finally {
+      await withVNextPg17SyntheticQuery(writerRoleHandle, 'fixture-provisioner', facade => facade.query(
+        'ALTER ROLE vnext_pg17_writer NOINHERIT',
+      ));
+    }
+
+    const writerDmlHandle = await createHandle();
+    await catalog.apply(writerDmlHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(writerDmlHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT INSERT ON vnext_control_plane.vnext_authorities TO vnext_pg17_writer',
+    ));
+    await assert.rejects(() => catalog.assert(writerDmlHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const writerFunctionHandle = await createHandle();
+    await catalog.apply(writerFunctionHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(writerFunctionHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_sessions_no_delete() TO vnext_pg17_writer',
+    ));
+    await assert.rejects(() => catalog.assert(writerFunctionHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const writerDefaultAclHandle = await createHandle();
+    await catalog.apply(writerDefaultAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(writerDefaultAclHandle, 'fixture-provisioner', facade => facade.query(
+      'ALTER DEFAULT PRIVILEGES FOR ROLE vnext_pg17_owner IN SCHEMA vnext_control_plane GRANT SELECT ON TABLES TO vnext_pg17_writer',
+    ));
+    await assert.rejects(() => catalog.assert(writerDefaultAclHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const writerPublicDefaultAclHandle = await createHandle();
+    await catalog.apply(writerPublicDefaultAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(writerPublicDefaultAclHandle, 'fixture-provisioner', facade => facade.query(
+      'ALTER DEFAULT PRIVILEGES FOR ROLE vnext_pg17_owner IN SCHEMA vnext_control_plane GRANT INSERT ON TABLES TO PUBLIC',
+    ));
+    await assert.rejects(() => catalog.assert(writerPublicDefaultAclHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const writerGlobalDefaultAclHandle = await createHandle();
+    await catalog.apply(writerGlobalDefaultAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(writerGlobalDefaultAclHandle, 'fixture-provisioner', facade => facade.query(
+      'ALTER DEFAULT PRIVILEGES FOR ROLE vnext_pg17_owner GRANT INSERT ON TABLES TO PUBLIC',
+    ));
+    await assert.rejects(() => catalog.assert(writerGlobalDefaultAclHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
   } finally {
     if (priorHandle) {
       await runtime.disposeHandle(priorHandle);

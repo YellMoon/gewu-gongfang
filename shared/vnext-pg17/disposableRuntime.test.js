@@ -6,6 +6,7 @@ const {
   isVNextPg17DisposableHandle,
   withVNextPg17SyntheticQuery,
 } = require('./disposableRuntime');
+const { createVNextPg17CatalogBoundary } = require('./catalogAssertion');
 
 function expectInvalidConfig(fn) {
   assert.throws(fn, error => error && error.code === 'VNEXT_PG17_RUNTIME_CONFIG_INVALID');
@@ -47,6 +48,20 @@ async function main() {
     );
     assert.ok(result.rows[0].version_num >= 170000);
     assert.ok(result.rows[0].version_num < 180000);
+    await createVNextPg17CatalogBoundary(liveRuntime).apply(handle, {
+      appliedAt: '2026-08-20T00:00:00.000Z',
+      appliedBy: 'writer-zero-dml-test',
+    });
+    const writerRead = await withVNextPg17SyntheticQuery(handle, 'writer', facade => facade.query(
+      'SELECT COUNT(*)::text AS count FROM vnext_control_plane.vnext_authorities',
+    ));
+    assert.strictEqual(writerRead.rows[0].count, '0');
+    await assert.rejects(
+      () => withVNextPg17SyntheticQuery(handle, 'writer', facade => facade.query(
+        "INSERT INTO vnext_control_plane.vnext_authorities (authority_id, status, created_at, updated_at) VALUES ('writer-test', 'active', now(), now())",
+      )),
+      error => error && error.code === '42501',
+    );
     const peer = await liveRuntime.createPeerHandle(handle);
     const peerResult = await withVNextPg17SyntheticQuery(peer, 'fixture-provisioner', facade =>
       facade.query('SELECT 1 AS peer_write_test'),

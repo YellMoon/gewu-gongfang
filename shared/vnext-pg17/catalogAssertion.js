@@ -60,6 +60,7 @@ const SYNTHETIC_ROLES = Object.freeze([
   Object.freeze({ name: 'vnext_pg17_owner', canLogin: false, inherit: false, superuser: false, createRole: false, createDb: false, replication: false, bypassRls: false }),
   Object.freeze({ name: 'vnext_pg17_runtime', canLogin: true, inherit: false, superuser: false, createRole: false, createDb: false, replication: false, bypassRls: false }),
   Object.freeze({ name: 'vnext_pg17_verifier', canLogin: true, inherit: false, superuser: false, createRole: false, createDb: false, replication: false, bypassRls: false }),
+  Object.freeze({ name: 'vnext_pg17_writer', canLogin: true, inherit: false, superuser: false, createRole: false, createDb: false, replication: false, bypassRls: false }),
 ]);
 const SYNTHETIC_MEMBERSHIPS = Object.freeze([
   Object.freeze({ member: 'vnext_pg17_migrator', role: 'vnext_pg17_owner', admin: false, inherit: false, set: true }),
@@ -486,6 +487,8 @@ function createVNextPg17CatalogBoundary(runtime) {
             [migration.migrationId, migration.semanticVersion, migration.manifestSha256, snapshot.appliedAt, snapshot.appliedBy],
           );
         }
+        await facade.query('GRANT USAGE ON SCHEMA vnext_control_plane TO vnext_pg17_writer');
+        await facade.query(`GRANT SELECT ON ${TARGET_TABLE_NAMES.map(name => `vnext_control_plane.${name}`).join(', ')} TO vnext_pg17_writer`);
         await facade.query('COMMIT');
         await assertCatalog(handle);
         return Object.freeze({ applied: true });
@@ -613,7 +616,7 @@ function createVNextPg17CatalogBoundary(runtime) {
           throw schemaDrift();
         }
         const roles = await facade.query(
-          "SELECT rolname, rolcanlogin, rolinherit, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls FROM pg_roles WHERE rolname IN ('vnext_pg17_migrator', 'vnext_pg17_owner', 'vnext_pg17_runtime', 'vnext_pg17_verifier') ORDER BY rolname",
+          "SELECT rolname, rolcanlogin, rolinherit, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls FROM pg_roles WHERE rolname IN ('vnext_pg17_migrator', 'vnext_pg17_owner', 'vnext_pg17_runtime', 'vnext_pg17_verifier', 'vnext_pg17_writer') ORDER BY rolname",
         );
         if (roles.rows.length !== SYNTHETIC_ROLES.length
           || roles.rows.some((row, index) => row.rolname !== SYNTHETIC_ROLES[index].name
@@ -625,7 +628,7 @@ function createVNextPg17CatalogBoundary(runtime) {
             || row.rolreplication !== SYNTHETIC_ROLES[index].replication
             || row.rolbypassrls !== SYNTHETIC_ROLES[index].bypassRls)) throw schemaDrift();
         const memberships = await facade.query(
-          "SELECT member_role.rolname AS member, granted_role.rolname AS role, m.admin_option, m.inherit_option, m.set_option FROM pg_auth_members m JOIN pg_roles member_role ON member_role.oid = m.member JOIN pg_roles granted_role ON granted_role.oid = m.roleid WHERE member_role.rolname IN ('vnext_pg17_migrator', 'vnext_pg17_owner', 'vnext_pg17_runtime', 'vnext_pg17_verifier') ORDER BY member_role.rolname, granted_role.rolname",
+          "SELECT member_role.rolname AS member, granted_role.rolname AS role, m.admin_option, m.inherit_option, m.set_option FROM pg_auth_members m JOIN pg_roles member_role ON member_role.oid = m.member JOIN pg_roles granted_role ON granted_role.oid = m.roleid WHERE member_role.rolname IN ('vnext_pg17_migrator', 'vnext_pg17_owner', 'vnext_pg17_runtime', 'vnext_pg17_verifier', 'vnext_pg17_writer') ORDER BY member_role.rolname, granted_role.rolname",
         );
         if (memberships.rows.length !== SYNTHETIC_MEMBERSHIPS.length
           || memberships.rows.some((row, index) => row.member !== SYNTHETIC_MEMBERSHIPS[index].member
@@ -643,25 +646,37 @@ function createVNextPg17CatalogBoundary(runtime) {
           || privilege.runtime_database_create || privilege.runtime_temporary) {
           throw schemaDrift();
         }
+        const writerPrivileges = await facade.query(
+          "SELECT has_schema_privilege('vnext_pg17_writer', 'vnext_control_plane', 'USAGE') AS schema_usage, has_schema_privilege('vnext_pg17_writer', 'vnext_control_plane', 'CREATE') AS schema_create, has_schema_privilege('vnext_pg17_writer', 'public', 'CREATE') AS public_create, has_database_privilege('vnext_pg17_writer', current_database(), 'CREATE') AS database_create, has_database_privilege('vnext_pg17_writer', current_database(), 'TEMPORARY') AS temporary",
+        );
+        const writerPrivilege = writerPrivileges.rows[0];
+        if (!writerPrivilege.schema_usage || writerPrivilege.schema_create || writerPrivilege.public_create
+          || writerPrivilege.database_create || writerPrivilege.temporary) throw schemaDrift();
+        const writerDefaultAcl = await facade.query(
+          "SELECT COUNT(*)::text AS count FROM pg_default_acl WHERE defaclrole = 'vnext_pg17_owner'::regrole",
+        );
+        if (writerDefaultAcl.rows.length !== 1 || writerDefaultAcl.rows[0].count !== '0') throw schemaDrift();
         const targetPrivileges = await facade.query(
-          "SELECT c.relname AS table_name, has_table_privilege('vnext_pg17_verifier', c.oid, 'SELECT') AS verifier_select, has_table_privilege('vnext_pg17_verifier', c.oid, 'INSERT') AS verifier_insert, has_table_privilege('vnext_pg17_verifier', c.oid, 'UPDATE') AS verifier_update, has_table_privilege('vnext_pg17_verifier', c.oid, 'DELETE') AS verifier_delete, has_table_privilege('vnext_pg17_verifier', c.oid, 'TRUNCATE') AS verifier_truncate, has_table_privilege('vnext_pg17_verifier', c.oid, 'REFERENCES') AS verifier_references, has_table_privilege('vnext_pg17_verifier', c.oid, 'TRIGGER') AS verifier_trigger, has_table_privilege('vnext_pg17_runtime', c.oid, 'SELECT') AS runtime_select, has_table_privilege('vnext_pg17_runtime', c.oid, 'INSERT') AS runtime_insert, has_table_privilege('vnext_pg17_runtime', c.oid, 'UPDATE') AS runtime_update, has_table_privilege('vnext_pg17_runtime', c.oid, 'DELETE') AS runtime_delete, has_table_privilege('vnext_pg17_runtime', c.oid, 'TRUNCATE') AS runtime_truncate, has_table_privilege('vnext_pg17_runtime', c.oid, 'REFERENCES') AS runtime_references, has_table_privilege('vnext_pg17_runtime', c.oid, 'TRIGGER') AS runtime_trigger FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'vnext_control_plane' AND c.relname = ANY($1::text[]) ORDER BY c.relname",
+          "SELECT c.relname AS table_name, has_table_privilege('vnext_pg17_verifier', c.oid, 'SELECT') AS verifier_select, has_table_privilege('vnext_pg17_verifier', c.oid, 'INSERT') AS verifier_insert, has_table_privilege('vnext_pg17_verifier', c.oid, 'UPDATE') AS verifier_update, has_table_privilege('vnext_pg17_verifier', c.oid, 'DELETE') AS verifier_delete, has_table_privilege('vnext_pg17_verifier', c.oid, 'TRUNCATE') AS verifier_truncate, has_table_privilege('vnext_pg17_verifier', c.oid, 'REFERENCES') AS verifier_references, has_table_privilege('vnext_pg17_verifier', c.oid, 'TRIGGER') AS verifier_trigger, has_table_privilege('vnext_pg17_writer', c.oid, 'SELECT') AS writer_select, has_table_privilege('vnext_pg17_writer', c.oid, 'INSERT') AS writer_insert, has_table_privilege('vnext_pg17_writer', c.oid, 'UPDATE') AS writer_update, has_table_privilege('vnext_pg17_writer', c.oid, 'DELETE') AS writer_delete, has_table_privilege('vnext_pg17_writer', c.oid, 'TRUNCATE') AS writer_truncate, has_table_privilege('vnext_pg17_writer', c.oid, 'REFERENCES') AS writer_references, has_table_privilege('vnext_pg17_writer', c.oid, 'TRIGGER') AS writer_trigger, has_table_privilege('vnext_pg17_runtime', c.oid, 'SELECT') AS runtime_select, has_table_privilege('vnext_pg17_runtime', c.oid, 'INSERT') AS runtime_insert, has_table_privilege('vnext_pg17_runtime', c.oid, 'UPDATE') AS runtime_update, has_table_privilege('vnext_pg17_runtime', c.oid, 'DELETE') AS runtime_delete, has_table_privilege('vnext_pg17_runtime', c.oid, 'TRUNCATE') AS runtime_truncate, has_table_privilege('vnext_pg17_runtime', c.oid, 'REFERENCES') AS runtime_references, has_table_privilege('vnext_pg17_runtime', c.oid, 'TRIGGER') AS runtime_trigger FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'vnext_control_plane' AND c.relname = ANY($1::text[]) ORDER BY c.relname",
           [TARGET_TABLE_NAMES],
         );
         if (targetPrivileges.rows.length !== TARGET_TABLE_NAMES.length
           || targetPrivileges.rows.some((row, index) => row.table_name !== TARGET_TABLE_NAMES[index]
             || !row.verifier_select || row.verifier_insert || row.verifier_update || row.verifier_delete
             || row.verifier_truncate || row.verifier_references || row.verifier_trigger
+            || !row.writer_select || row.writer_insert || row.writer_update || row.writer_delete
+            || row.writer_truncate || row.writer_references || row.writer_trigger
             || row.runtime_select || row.runtime_insert || row.runtime_update || row.runtime_delete
             || row.runtime_truncate || row.runtime_references || row.runtime_trigger)) throw schemaDrift();
         const functions = await facade.query(
-          "SELECT p.proname, r.rolname AS owner, p.prosecdef, p.proconfig, pg_get_functiondef(p.oid) AS definition, has_function_privilege('vnext_pg17_runtime', p.oid, 'EXECUTE') AS runtime_execute, has_function_privilege('vnext_pg17_verifier', p.oid, 'EXECUTE') AS verifier_execute FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_roles r ON r.oid = p.proowner WHERE n.nspname = 'vnext_control_plane' ORDER BY p.proname",
+          "SELECT p.proname, r.rolname AS owner, p.prosecdef, p.proconfig, pg_get_functiondef(p.oid) AS definition, has_function_privilege('vnext_pg17_runtime', p.oid, 'EXECUTE') AS runtime_execute, has_function_privilege('vnext_pg17_verifier', p.oid, 'EXECUTE') AS verifier_execute, has_function_privilege('vnext_pg17_writer', p.oid, 'EXECUTE') AS writer_execute FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_roles r ON r.oid = p.proowner WHERE n.nspname = 'vnext_control_plane' ORDER BY p.proname",
         );
         if (functions.rows.length !== LEDGER_FUNCTIONS.length
           || functions.rows.some((row, index) => row.proname !== LEDGER_FUNCTIONS[index]
             || row.owner !== 'vnext_pg17_owner' || !row.prosecdef
             || !Array.isArray(row.proconfig) || row.proconfig.length !== 1
             || row.proconfig[0] !== 'search_path=pg_catalog, pg_temp'
-            || row.runtime_execute || row.verifier_execute
+            || row.runtime_execute || row.verifier_execute || row.writer_execute
             || sha256(row.definition) !== expectedCatalog.functionDefinitionSha256[row.proname])) throw schemaDrift();
         const ledger = await facade.query(
           'SELECT migration_id, semantic_version, manifest_sha256 FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version',

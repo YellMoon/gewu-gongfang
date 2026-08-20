@@ -8,7 +8,8 @@
 > - [x] Freeze the PostgreSQL 17 production-adapter boundary and non-goals.
 > - [x] Independent feasibility/necessity/security/cost audit: verifier-only readiness first; writer role/ACL must be a separate audited slice.
 > - [x] Implement the verifier-only production readiness boundary with TDD.
-> - [ ] Run the PG17 aggregate gate, full verification, independent review, commit, and push.
+> - [x] Run the PG17 aggregate gate, full verification, and independent review for the verifier-only readiness boundary.
+> - [ ] Independently audit, commit, and push the separate local writer zero-direct-DML ACL boundary.
 
 
 > **当前规划审计任务（2026-08-02，已完成）**

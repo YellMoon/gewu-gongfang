@@ -286,6 +286,12 @@ Build and verify a control-plane-only source catalog and migration contract. It 
 - Each check uses one `REPEATABLE READ READ ONLY` transaction with local UTC, bounded statement/lock timeouts, and a fixed application name. Runtime-issued traces lock the exact transaction prefix and prove that the boundary emits only transaction control and `SELECT` statements; no DML, DDL, role switch, temporary object, or function execution is permitted.
 - Plaintext is accepted only for a closure-branded disposable pool/TLS pair. Uncertain `BEGIN`/`COMMIT`, failed rollback, and failed release destroy the lease rather than returning it to the pool. This is not an RDS/ECS connection, production TLS proof, writer role, mutation adapter, HTTP/API, credential creator, migration runner, or deployment. A separately audited writer-role/ACL manifest is still required before any production command can be adapted.
 
+### PostgreSQL 17 writer zero-direct-DML ACL evidence (2026-08-20)
+
+- The disposable runtime now creates a separate `vnext_pg17_writer` login identity with no role membership or elevated role attributes. Its checked-in deployment ACL manifest grants only target-schema `USAGE` and `SELECT` on the exact M1-M15 control-plane relations; it grants no direct table DML, schema/database creation, temporary-object, function-execution, or default privileges.
+- The exact catalog treats any writer role, membership, schema/database/TEMP, table, function-execution, or owner default-ACL drift as fail-closed. It explicitly rejects schema-local and database-global default privilege grants, including `PUBLIC` grants that could otherwise leak into future control-plane relations.
+- This is local disposable configuration evidence only. The identity remains deliberately read-only: no existing synthetic mutation may use it, and a later command-specific, owner-owned procedure or separately audited limited SQL capability is required before any production write path can exist. No RDS/ECS connection, real credential, API, migration deployment, business data, desktop data, NAS, or removable media was used.
+
 ### PostgreSQL 17 account-device-link revocation mutation reference evidence (2026-08-15)
 
 - `shared/vnext-pg17/accountDeviceLinkRevocationMutation.js` is a synthetic-only, same-handle writer for `account_device_link.revoke`. It consumes only an opaque AccessContext assertion and requires desktop `super_admin`, `device.revoke`, and current reauthentication.
