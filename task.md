@@ -11,6 +11,8 @@
 >
 > The approved legacy desktop root is read-only inventory input. A user report that a domain is absent is not proof: the first structural scan found 99 relations, including 80 `questions`, 80 `question_contents`, and 911 `question_assets` rows, while the personal-asset tables scanned so far are empty. The question-labeled rows are quarantined pending provenance and media-boundary review; no missing domain may be invented, searched for in another private location, or declared migrated without evidence. Migration proceeds through inventory, immutable snapshot, signed canonical export, disposable shadow import, restore, rollback, and explicit cutover gates.
 >
+> The first read-only inventory and verified online SQLite snapshot are complete. The source and snapshot share inventory hash `08460a7fe152f0f9d30c0abac732ee4b57355e3bbf7494024ffe68c6f9e581a2`; the detailed, redacted evidence is in `docs/verification-2026-08-21-vnext-legacy-source-inventory.md`. This is a reversible baseline only, not a migration, cloud upload, or release.
+>
 > Historical content after this block is non-binding. It records older local-host, dual-package, manual-approval, and control-plane-only experiments; it must not guide implementation, testing, release, or migration.
 <!-- current-architecture-contract:end -->
 
