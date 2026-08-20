@@ -10,6 +10,9 @@ const ACTIVE_DOCUMENTS = Object.freeze([
   'docs/superpowers/plans/2026-08-13-vnext-control-plane-first.md',
   'docs/superpowers/specs/2026-08-20-vnext-local-business-repository-retention-and-control-plane-projection-no-export-design.md',
   'docs/superpowers/specs/2026-08-15-vnext-pg17-production-adapter-design.md',
+  'docs/vnext-source-data-dictionary.md',
+  'docs/superpowers/plans/2026-08-13-vnext-cloud-schema-shadow-import.md',
+  'task.md',
   'package.json',
 ]);
 
@@ -49,6 +52,26 @@ const REQUIRED_MARKERS = Object.freeze({
   'docs/superpowers/specs/2026-08-15-vnext-pg17-production-adapter-design.md': Object.freeze([
     '已降级为本地控制面验证参考',
   ]),
+  'docs/vnext-source-data-dictionary.md': Object.freeze([
+    'Active vNext Full-Business Source Dictionary',
+    'cloud-business-authority migration',
+    'Business tables are not rejected merely because of their domain.',
+    'A user-declared absence is not a structural inventory result.',
+    'unexpected non-empty question/asset-labeled relations stay quarantined',
+  ]),
+  'docs/superpowers/plans/2026-08-13-vnext-cloud-schema-shadow-import.md': Object.freeze([
+    'Rebased (2026-08-21)',
+    'cloud business authority',
+    'a user-declared absence is not an inventory result',
+  ]),
+  'task.md': Object.freeze([
+    'Current architecture contract (2026-08-21, binding)',
+    'cloud is the sole writable authority for applicable business data',
+    'one desktop build',
+    'online account verification and silently records the device',
+    'Offline work is a local draft until the user confirms submission to the cloud.',
+    'Historical content after this block is non-binding',
+  ]),
   'package.json': Object.freeze([
     '"test:cloud-business-authority-contract": "node scripts/check_cloud_business_authority_contract.test.js"',
     'node scripts/check_cloud_business_authority_contract.test.js',
@@ -70,7 +93,32 @@ const ACTIVE_CONTRADICTIONS = Object.freeze({
     'does not move business authority to the cloud',
     'Control-plane data only',
   ]),
+  'docs/vnext-source-data-dictionary.md': Object.freeze([
+    'It rejects every business-domain table by default.',
+    'control-plane allow-list',
+    'The first approved legacy desktop root is known to contain no question-bank or personal-asset source data.',
+  ]),
+  'docs/superpowers/plans/2026-08-13-vnext-cloud-schema-shadow-import.md': Object.freeze([
+    '> **Deferred (2026-08-13):**',
+    'not executable until a specific business domain has passed the active control-plane-first plan',
+  ]),
+  'task.md': Object.freeze([
+    'The local data host remains the sole business authority.',
+    'two independent packaged Electron applications',
+    'Human device approval is required.',
+  ]),
 });
+
+const TASK_CONTRACT_START = '<!-- current-architecture-contract:start -->';
+const TASK_CONTRACT_END = '<!-- current-architecture-contract:end -->';
+
+function activeArchitectureText(relativePath, text) {
+  if (relativePath !== 'task.md') return text;
+  const start = text.indexOf(TASK_CONTRACT_START);
+  const end = text.indexOf(TASK_CONTRACT_END);
+  if (start < 0 || end < start) return '';
+  return text.slice(start, end + TASK_CONTRACT_END.length);
+}
 
 function checkContractTexts(texts) {
   const issues = [];
@@ -80,11 +128,12 @@ function checkContractTexts(texts) {
       issues.push(`${relativePath}: missing active architecture input`);
       continue;
     }
+    const architectureText = activeArchitectureText(relativePath, text);
     for (const marker of REQUIRED_MARKERS[relativePath] || []) {
-      if (!text.includes(marker)) issues.push(`${relativePath}: missing required cloud-business-authority marker: ${marker}`);
+      if (!architectureText.includes(marker)) issues.push(`${relativePath}: missing required cloud-business-authority marker: ${marker}`);
     }
     for (const contradiction of ACTIVE_CONTRADICTIONS[relativePath] || []) {
-      if (text.includes(contradiction)) issues.push(`${relativePath}: local-business-authority contradiction: ${contradiction}`);
+      if (architectureText.includes(contradiction)) issues.push(`${relativePath}: local-business-authority contradiction: ${contradiction}`);
     }
   }
   return Object.freeze({ issues: Object.freeze(issues) });
@@ -111,6 +160,7 @@ if (require.main === module) main();
 
 module.exports = {
   ACTIVE_DOCUMENTS,
+  activeArchitectureText,
   checkCloudBusinessAuthorityContract,
   checkContractTexts,
 };

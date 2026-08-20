@@ -1,6 +1,20 @@
 ﻿# 格物工坊：权威数据主机架构重写与真实双端验收
 
-> **Current execution chain (2026-08-15, in progress)**
+<!-- current-architecture-contract:start -->
+> **Current architecture contract (2026-08-21, binding)**
+>
+> The cloud is the sole writable authority for applicable business data, structured question-bank text, accounts, permissions, sessions, audit records, and task state. NAS or the controlled storage agent keeps rich-media bytes, import originals, generated artifacts, and backups only; it is never a second business authority.
+>
+> There is one desktop build. It can be installed on any computer. A new device must complete online account verification and silently records the device, installation, and account link after that verification. No human device approval, host edition, or separate ordinary-client installer exists in the current architecture.
+>
+> Offline work is a local draft until the user confirms submission to the cloud. It is not a parallel business authority and cannot silently publish a change. Any offline sign-in is limited to an already-valid local session; new sign-in requires network access to verify the account.
+>
+> The approved legacy desktop root is read-only inventory input. A user report that a domain is absent is not proof: the first structural scan found 99 relations, including 80 `questions`, 80 `question_contents`, and 911 `question_assets` rows, while the personal-asset tables scanned so far are empty. The question-labeled rows are quarantined pending provenance and media-boundary review; no missing domain may be invented, searched for in another private location, or declared migrated without evidence. Migration proceeds through inventory, immutable snapshot, signed canonical export, disposable shadow import, restore, rollback, and explicit cutover gates.
+>
+> Historical content after this block is non-binding. It records older local-host, dual-package, manual-approval, and control-plane-only experiments; it must not guide implementation, testing, release, or migration.
+<!-- current-architecture-contract:end -->
+
+> **Current execution chain (2026-08-15, historical)**
 >
 > The owner approved the frozen vNext PostgreSQL 17 control-plane and production-adapter specifications. The current minimal slice is a local, disposable, verifier-only production connection/readiness boundary: it reuses the exact M1-M15 catalog assertion in a read-only transaction and validates target identity, TLS, UTC, bounded timeouts, and the migration ledger. It does not connect to RDS/ECS, create credentials or cloud resources, expose HTTP/API, migrate business data, or treat the test-only provisioner, migrator, or owner as a production writer.
 >

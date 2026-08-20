@@ -1,11 +1,13 @@
-# Frozen vNext Full-Business Experiment Dictionary
+# Active vNext Full-Business Source Dictionary
 
-Status: frozen on 2026-08-13.
+Status: active migration-contract baseline on 2026-08-21.
 
-The former full-business source catalog is not an active migration input. It described a speculative PostgreSQL transformation for teaching, finance, question, file, and audit data before repository contracts and semantic-parity evidence existed.
+This dictionary is the source-to-target classification contract for the cloud-business-authority migration. The cloud becomes the sole writable authority for applicable business data and structured question-bank text. NAS or the controlled storage agent carries only rich-media bytes, import originals, generated artifacts, and backups; it is not a second business database.
 
-The active vNext phase accepts only a control-plane allow-list: account identity, verified contacts, role/capability/scope evidence, account-profile binding evidence, device/installation/account-link state, session and offline-license state, and related authorization audit evidence. It rejects every business-domain table by default.
+Business tables are not rejected merely because of their domain. Each discovered source relation must instead receive one explicit disposition: `canonical`, `archive`, `local_partition`, `rebuildable_cache`, or `quarantine_only`. A canonical relation needs a source-field mapping, stable identity rule, dependency order, invariant list, target entity, and shadow/restore/rollback evidence before cutover. Unknown relations and critical unavailable sources fail closed; no table is silently ignored or guessed.
 
-The final cloud-authoritative architecture still requires a later migration for every business domain. A domain becomes eligible only after it has a shared repository contract, complete source-field and transaction-invariant mapping, a full shadow import, incremental catch-up, empty-environment restore, rollback rehearsal, and zero unexplained row/key/hash/aggregate differences.
+The first approved legacy desktop root is inventory-only at this stage. A user-declared absence is not a structural inventory result. Its initial read-only inventory found 99 relations, including non-empty `questions`, `question_contents`, and `question_assets` relations, while the personal-asset relations observed so far are empty. Those relation names and counts do not prove that any question-bank or asset source is admissible. The unexpected non-empty question/asset-labeled relations stay quarantined until their schema, provenance, media boundary, canonical mapping, and owner-approved disposition are verified. Nothing may be filled with synthetic rows, located on another disk/NAS/user profile, or declared migrated merely to resolve the mismatch.
 
-The previous catalog and canonical export implementation remain recoverable through Git history and the named vNext experiment stash. They must not be revived as a production command, an npm script, or a default migration path.
+Legacy device/session/offline-license material is not admitted as a current credential. A migrated device may become usable only after the account performs the current online sign-in verification and the cloud silently records the verified device/install/link. Offline edits remain local drafts until the signed-in user confirms submission to the cloud authority.
+
+This document does not claim that a real source table has already been mapped or migrated. The older experimental catalog and export code remain historical references only; they cannot become a default production command, npm script, or data source without the active inventory, shadow-import, restore, rollback, and release gates.
