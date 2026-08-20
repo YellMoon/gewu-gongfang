@@ -15,6 +15,35 @@ The current implementation status is **no admitted mutation operation**. The
 earlier personal-asset-account synthetic adapter is read-only and does not
 authorize a related write operation.
 
+## Current Bounded Candidate Gate and Stop Condition
+
+This gate is deliberately limited to the two currently registered local
+personal-asset-account commands:
+
+- `personal-asset-account.create.v1` is no-go, as recorded in
+  `docs/superpowers/inventories/2026-08-20-local-business-personal-asset-account-create-mutation-no-go.md`
+  (checkpoint `6aea443`).
+- `personal-asset-account.update.v1` is no-go, as recorded in
+  `docs/superpowers/inventories/2026-08-20-local-business-personal-asset-account-update-mutation-no-go.md`
+  (checkpoint `0f6f14c`).
+
+Neither operation may receive a fictional fixture, mutation adapter, new test,
+runtime registration, projection, or alternate write path. Their missing
+idempotency, stored-result/replay, and explicit atomic-failure contracts are
+product facts, not gaps that test-only code may fill.
+
+`personalAssetAccountService.recognizeOrCreate` is not included in this gate.
+It is a retained public helper but has no current registry command surface;
+inventory work on it would add no admission evidence and is not authorized
+solely to extend this list.
+
+This is not a complete inventory of project mutations and makes no claim about
+other services. After this bounded gate is recorded, work must wait rather than
+scan unrelated operations. Reconsideration is allowed only when a changed,
+explicit retained operation is separately designed and documented with a
+testable idempotency key, stored-result/replay behavior, and atomic
+failure/rollback contract.
+
 ## Considered Approaches
 
 1. **Recommended: candidate-specific admission, then a fictional-state-only
