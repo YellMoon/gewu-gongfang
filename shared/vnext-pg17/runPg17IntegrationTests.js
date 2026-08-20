@@ -5,6 +5,7 @@ const { runManifestCases } = require('./migrationManifest.test');
 const { runCatalogAssertionCases } = require('./catalogAssertion.test');
 const { runBusinessFoundationManifestCases } = require('./businessFoundationManifest.test');
 const { runBusinessFoundationAdmissionBatchRequestCases } = require('./businessFoundationAdmissionBatchRequest.test');
+const { runBusinessFoundationAdmissionCatalogCases } = require('./businessFoundationAdmissionCatalog.test');
 const { runBusinessFoundationCatalogAssertionCases } = require('./businessFoundationCatalogAssertion.test');
 const { runProductionVerifierReadinessCases } = require('./productionVerifierReadiness.test');
 const { runFirstAuthorityBootstrapMutationCases } = require('./firstAuthorityBootstrapMutation.test');
@@ -30,6 +31,7 @@ async function run({
   runCatalog = runCatalogAssertionCases,
   runBusinessFoundationManifest = runBusinessFoundationManifestCases,
   runBusinessFoundationAdmissionBatchRequest = runBusinessFoundationAdmissionBatchRequestCases,
+  runBusinessFoundationAdmissionCatalog = runBusinessFoundationAdmissionCatalogCases,
   runBusinessFoundationCatalog = runBusinessFoundationCatalogAssertionCases,
   runProductionVerifierReadiness = runProductionVerifierReadinessCases,
   runBootstrap = runFirstAuthorityBootstrapMutationCases,
@@ -52,6 +54,7 @@ async function run({
     await runCatalog(runtime);
     await runBusinessFoundationManifest(runtime);
     await runBusinessFoundationAdmissionBatchRequest(runtime);
+    await runBusinessFoundationAdmissionCatalog(runtime);
     await runBusinessFoundationCatalog(runtime);
     await runProductionVerifierReadiness(runtime);
     await runBootstrap(runtime);

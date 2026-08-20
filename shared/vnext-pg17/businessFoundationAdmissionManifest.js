@@ -88,6 +88,8 @@ CREATE TRIGGER migration_row_ledger_no_update BEFORE UPDATE ON migration_admissi
 CREATE TRIGGER migration_row_ledger_no_delete BEFORE DELETE ON migration_admission.migration_row_ledger FOR EACH ROW EXECUTE FUNCTION migration_admission.migration_admission_no_delete();
 CREATE TRIGGER migration_quarantine_no_update BEFORE UPDATE ON migration_admission.migration_quarantine FOR EACH ROW EXECUTE FUNCTION migration_admission.migration_admission_no_update();
 CREATE TRIGGER migration_quarantine_no_delete BEFORE DELETE ON migration_admission.migration_quarantine FOR EACH ROW EXECUTE FUNCTION migration_admission.migration_admission_no_delete();
+GRANT USAGE ON SCHEMA migration_admission TO vnext_pg17_migration_admission_verifier;
+GRANT SELECT ON ALL TABLES IN SCHEMA migration_admission TO vnext_pg17_migration_admission_verifier;
 REVOKE EXECUTE ON FUNCTION migration_admission.migration_admission_no_update() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION migration_admission.migration_admission_no_delete() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION migration_admission.migration_admission_schema_migrations_insert_guard() FROM PUBLIC;
@@ -96,7 +98,7 @@ REVOKE EXECUTE ON FUNCTION migration_admission.migration_batch_prepared_pair() F
 REVOKE EXECUTE ON FUNCTION migration_admission.migration_row_ledger_insert_guard() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION migration_admission.migration_row_ledger_quarantine_pair() FROM PUBLIC;`;
 
-const EXPECTED_BUSINESS_FOUNDATION_ADMISSION_MANIFEST_SHA256 = 'c42ce7340fd576c9743bcf1745f0be129992dc388d1200bafc2b71f340fcaa56';
+const EXPECTED_BUSINESS_FOUNDATION_ADMISSION_MANIFEST_SHA256 = 'b2998b5853cf91d3279b1a865f39e76758eafd7e49fe1e020348fcb1c9beb085';
 const BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS = Object.freeze([Object.freeze({
   migrationId: 'business-foundation-admission-1',
   semanticVersion: 1,

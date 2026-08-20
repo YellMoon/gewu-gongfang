@@ -23,7 +23,7 @@
 - Modify: `shared/vnext-pg17/runPg17IntegrationTests.js`
 - Test: `shared/vnext-pg17/runPg17IntegrationTests.test.js`
 
-- [ ] **Step 1: Write the failing manifest test**
+- [x] **Step 1: Write the failing manifest test**
 
 Require a missing module and assert exactly one migration named `business-foundation-admission-1`, an independently written literal SHA-256, and full ordered SQL. Assert exactly these relations:
 
@@ -39,13 +39,13 @@ Require a missing module and assert exactly one migration named `business-founda
 
 Lock append-only functions as owner-owned `SECURITY DEFINER`, `SET search_path = pg_catalog, pg_temp`, dynamic-SQL-free, and not executable by PUBLIC. Reject control-plane SQL, `better-sqlite3`, filesystem imports, source paths, RDS, or application-writer grants.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `node shared/vnext-pg17/businessFoundationAdmissionManifest.test.js`
 
 Expected: non-zero because the module is absent.
 
-- [ ] **Step 3: Implement immutable migration SQL**
+- [x] **Step 3: Implement immutable migration SQL**
 
 Create `migration_admission` with a new NOLOGIN owner and its own immutable `migration_admission_schema_migrations` apply ledger. The ledger permits only consecutive semantic versions and well-formed manifest hashes through an insert guard; its manifest comparison belongs to the closed apply/assert boundary, not to self-referential SQL.
 
@@ -53,7 +53,7 @@ Add immutable `migration_batches` with nonblank `batch_id`, finite creation time
 
 Add `migration_row_ledger` with primary key `(batch_id, source_relation, source_primary_key_sha256)`, closed relation values `tenants|institutions|schools|rooms`, source/target hashes, target ID, outcome `admitted|quarantined`, a closed normalized outcome-code set, and a restrictive batch FK. `admitted` must have a nonblank target ID, target hash, and `ADMITTED` code; `quarantined` must have neither target field and a non-ADMITTED code. Add `migration_quarantine` keyed by the identical tuple with only a closed reason code and optional sealed-artifact-reference SHA-256; deferred pair guards must prove exactly one quarantine record for every quarantined ledger row and none for admitted rows. Never persist original values. Attach no-update/no-delete triggers to every admission relation. Grant only verifier metadata reads; no business PII or DML. Keep clients private in runtime WeakMaps and add no generic migrator facade.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run:
 
@@ -66,7 +66,7 @@ node shared/vnext-pg17/runPg17IntegrationTests.test.js
 
 Expected: all exit 0, the batch-request validation runs in the aggregate after the business manifest and before the business catalog, and public runtime keys/facade purposes remain closed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add -- shared/vnext-pg17/businessFoundationAdmissionManifest.js shared/vnext-pg17/businessFoundationAdmissionManifest.test.js shared/vnext-pg17/businessFoundationAdmissionBatchRequest.js shared/vnext-pg17/businessFoundationAdmissionBatchRequest.test.js shared/vnext-pg17/disposableRuntime.js shared/vnext-pg17/disposableRuntime.test.js shared/vnext-pg17/runPg17IntegrationTests.js shared/vnext-pg17/runPg17IntegrationTests.test.js
@@ -80,8 +80,10 @@ git commit -m "自动发布 2026-08-21"
 - Create: `shared/vnext-pg17/businessFoundationAdmissionCatalog.js`
 - Create: `shared/vnext-pg17/businessFoundationAdmissionCatalog.test.js`
 - Modify: `shared/vnext-pg17/disposableRuntime.js`
+- Modify: `shared/vnext-pg17/runPg17IntegrationTests.js`
+- Test: `shared/vnext-pg17/runPg17IntegrationTests.test.js`
 
-- [ ] **Step 1: Write failing boundary tests**
+- [x] **Step 1: Write failing boundary tests**
 
 Require:
 
@@ -94,19 +96,19 @@ await boundary.assertZeroSeed(handle);
 
 Reject Proxy/accessor/unknown-key/invalid-UTC/blank signer/cross-runtime/closed inputs before SQL. Lock exact relation, column, constraint, index, function, trigger, owner, role-membership, default-ACL, and privilege fingerprints. Assert no control-plane or business ledger change. Add independent drifts for PUBLIC function execute, verifier INSERT, PII read, owner membership, altered row-ledger FK, disabled trigger, and public shadow.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `node shared/vnext-pg17/businessFoundationAdmissionCatalog.test.js`
 
 Expected: non-zero because the boundary is absent.
 
-- [ ] **Step 3: Implement the closed DDL operation**
+- [x] **Step 3: Implement the closed DDL operation**
 
 Implement `executeBusinessFoundationAdmissionDdlPlan(runtime, handle, snapshot)`. It uses a distinct advisory lock, `BEGIN`, UTC, local admission-owner role, frozen SQL, ledger insert, and `COMMIT`. A handle-local busy flag rejects a concurrent call before SQL. An uncertain `COMMIT` or `ROLLBACK` poisons and closes the client; a confirmed schema-drift rollback remains reusable.
 
 `assert` uses only verifier `REPEATABLE READ READ ONLY`; `assertZeroSeed` remains separate. A runtime-issued fresh/reapply trace must exactly match a static command manifest and reject control-plane SQL, business row DML, semicolon chaining, and public query/callback input.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run:
 
@@ -118,11 +120,11 @@ node shared/vnext-pg17/disposableRuntime.test.js
 
 Expected: all exit 0; existing business foundation and control catalogs pass after admission apply/reapply.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add -- shared/vnext-pg17/businessFoundationAdmissionCatalog.js shared/vnext-pg17/businessFoundationAdmissionCatalog.test.js shared/vnext-pg17/disposableRuntime.js
-git commit -m "automatic release 2026-08-21"
+git commit -m "自动发布 2026-08-21"
 ```
 
 ### Task 3: Implement synthetic four-relation shadow admission

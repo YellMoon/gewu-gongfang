@@ -23,12 +23,15 @@ const syntheticVerifierFaultPlans = new WeakMap();
 const syntheticQueryTraces = new WeakMap();
 const businessFoundationDdlTraces = new WeakMap();
 const businessFoundationDdlFaultPlans = new WeakMap();
+const businessFoundationAdmissionDdlTraces = new WeakMap();
+const businessFoundationAdmissionDdlFaultPlans = new WeakMap();
 const copyOnlyRehearsalTargets = new WeakMap();
 const copyOnlyRehearsalFaultPlans = new WeakMap();
 const VERIFIER_FAULT_STAGES = new Set(['begin', 'setup', 'identity', 'tls', 'catalog', 'commit', 'rollback', 'release']);
 const COPY_ONLY_REHEARSAL_STAGES = new Set(['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants', 'profileBindings', 'verifiedContacts', 'receipts', 'auditEvents', 'outboxEvents', 'postReadMismatch', 'postReadHistoricalMismatch', 'postReadProfileMismatch', 'postReadContactMismatch', 'postReadEvidenceMismatch', 'commit', 'rollback']);
 const COPY_ONLY_TERMINAL_STAGES = new Set(['commit', 'rollback']);
 const BUSINESS_FOUNDATION_DDL_FAULT_STAGES = new Set(['commit', 'rollback']);
+const BUSINESS_FOUNDATION_ADMISSION_DDL_FAULT_STAGES = new Set(['commit', 'rollback', 'revoke']);
 const COPY_ONLY_TARGET_DATA_RELATIONS = Object.freeze([
   'vnext_authorities', 'vnext_accounts', 'vnext_trusted_devices', 'vnext_device_installations', 'vnext_account_device_links',
   'vnext_role_grants', 'vnext_capability_catalog', 'vnext_capability_overrides', 'vnext_data_scope_grants', 'vnext_profile_bindings',
@@ -601,6 +604,121 @@ async function executeBusinessFoundationDdlPlan(runtime, handle, input) {
   }
 }
 
+async function poisonBusinessFoundationAdmissionDatabase(runtime, database) {
+  const state = runtimeState(runtime);
+  const clients = [];
+  for (const candidate of state.handles) {
+    const candidateState = handles.get(candidate);
+    if (!candidateState || candidateState.closed || candidateState.database !== database) continue;
+    candidateState.businessFoundationAdmissionDdlPoisoned = true;
+    clients.push(candidateState.clients['migration-admission-migrator']);
+    clients.push(candidateState.clients['migration-admission-verifier']);
+  }
+  await Promise.all(clients.map(closeClient));
+}
+
+async function executeBusinessFoundationAdmissionDdlPlan(runtime, handle, input) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
+  const snapshot = snapshotBusinessDdlInput(input);
+  const state = handles.get(handle);
+  if (state.businessFoundationAdmissionDdlBusy || state.businessFoundationAdmissionDdlPoisoned) throw unavailable();
+  const client = state.clients['migration-admission-migrator'];
+  if (!client) throw invalidHandle();
+  const { BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS } = require('./businessFoundationAdmissionManifest');
+  const migration = BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[0];
+  const trace = state.businessFoundationAdmissionDdlTrace;
+  const record = text => {
+    const traceState = businessFoundationAdmissionDdlTraces.get(trace);
+    if (traceState && traceState.armed) traceState.queries.push(text);
+  };
+  const query = (text, values) => {
+    record(text);
+    return client.query(text, values).then(result => {
+      const planState = businessFoundationAdmissionDdlFaultPlans.get(state.businessFoundationAdmissionDdlFaultPlan);
+      const stage = text === 'COMMIT' ? 'commit' : text === 'ROLLBACK' ? 'rollback' : null;
+      if (stage && planState && planState.pending.delete(stage)) throw new Error(`synthetic admission DDL ${stage} fault`);
+      return result;
+    });
+  };
+  const fixtureQuery = (text, values) => {
+    record(text);
+    return state.clients['fixture-provisioner'].query(text, values).then(result => {
+      const planState = businessFoundationAdmissionDdlFaultPlans.get(state.businessFoundationAdmissionDdlFaultPlan);
+      if (/^REVOKE CREATE ON DATABASE /u.test(text) && planState && planState.pending.delete('revoke')) {
+        throw new Error('synthetic admission DDL revoke fault');
+      }
+      return result;
+    });
+  };
+  state.businessFoundationAdmissionDdlBusy = true;
+  let begun = false;
+  let createGranted = false;
+  let commitAttempted = false;
+  let revokeAttempted = false;
+  try {
+    await query('BEGIN');
+    begun = true;
+    await query("SET LOCAL TIME ZONE 'UTC'");
+    await query('SELECT pg_advisory_xact_lock(73018, 2)');
+    await query('SET LOCAL ROLE vnext_pg17_migration_admission_owner');
+    const stateCheck = await query(
+      "SELECT to_regnamespace('migration_admission') AS schema_name, to_regclass('migration_admission.migration_admission_schema_migrations') AS ledger, to_regclass('public.migration_admission_schema_migrations') AS public_shadow",
+    );
+    const publicShadows = await query(
+      "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind <> 'i' AND c.relname = ANY($1::text[])",
+      [['migration_admission_schema_migrations', 'migration_batches', 'migration_batch_events', 'migration_quarantine', 'migration_row_ledger']],
+    );
+    if (stateCheck.rows.length !== 1 || stateCheck.rows[0].public_shadow !== null || publicShadows.rows.length !== 0) throw businessSchemaDrift();
+    if (stateCheck.rows[0].ledger !== null) {
+      const ledger = await query('SELECT migration_id, semantic_version, manifest_sha256 FROM migration_admission.migration_admission_schema_migrations ORDER BY semantic_version');
+      if (ledger.rows.length !== 1 || ledger.rows[0].migration_id !== migration.migrationId
+        || String(ledger.rows[0].semantic_version) !== String(migration.semanticVersion)
+        || ledger.rows[0].manifest_sha256 !== migration.manifestSha256) throw businessSchemaDrift();
+      commitAttempted = true;
+      await query('COMMIT');
+      return Object.freeze({ applied: false });
+    }
+    if (stateCheck.rows[0].schema_name !== null) throw businessSchemaDrift();
+    const grantCreate = `GRANT CREATE ON DATABASE ${quoteIdentifier(state.database)} TO vnext_pg17_migration_admission_owner`;
+    await fixtureQuery(grantCreate);
+    createGranted = true;
+    await query(migration.sql);
+    await query(
+      'INSERT INTO migration_admission.migration_admission_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
+      [migration.migrationId, migration.semanticVersion, migration.manifestSha256, snapshot.appliedAt, snapshot.appliedBy],
+    );
+    const revokeCreate = `REVOKE CREATE ON DATABASE ${quoteIdentifier(state.database)} FROM vnext_pg17_migration_admission_owner`;
+    revokeAttempted = true;
+    await fixtureQuery(revokeCreate);
+    revokeAttempted = false;
+    createGranted = false;
+    commitAttempted = true;
+    await query('COMMIT');
+    return Object.freeze({ applied: true });
+  } catch (error) {
+    let rollbackConfirmed = !begun;
+    let createRevoked = !createGranted;
+    if (begun && !commitAttempted) {
+      try { await query('ROLLBACK'); rollbackConfirmed = true; } catch (_) { /* poison below */ }
+    }
+    if (createGranted && !revokeAttempted) {
+      try {
+        await fixtureQuery(`REVOKE CREATE ON DATABASE ${quoteIdentifier(state.database)} FROM vnext_pg17_migration_admission_owner`);
+        createGranted = false;
+        createRevoked = true;
+      } catch (_) { /* poison below */ }
+    }
+    if (commitAttempted || revokeAttempted || !rollbackConfirmed || !createRevoked) {
+      await poisonBusinessFoundationAdmissionDatabase(runtime, state.database);
+      throw unavailable();
+    }
+    if (error && (error.code === 'VNEXT_PG17_HANDLE_INVALID' || error.code === 'VNEXT_PG17_MIGRATION_INPUT_INVALID' || error.code === 'VNEXT_PG17_SCHEMA_DRIFT')) throw error;
+    throw businessSchemaDrift();
+  } finally {
+    state.businessFoundationAdmissionDdlBusy = false;
+  }
+}
+
 function createVNextPg17BusinessFoundationDdlTrace(runtime, handle) {
   if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
   const trace = Object.freeze({});
@@ -634,6 +752,41 @@ function armVNextPg17BusinessFoundationDdlFaultPlan(handle, plan) {
   if (!planState || !isVNextPg17DisposableHandleForRuntime(planState.runtime, handle)
     || planState.handle !== handle || handles.get(handle).runtime !== planState.runtime) throw invalidHandle();
   handles.get(handle).businessFoundationDdlFaultPlan = plan;
+}
+
+function createVNextPg17BusinessFoundationAdmissionDdlTrace(runtime, handle) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
+  const trace = Object.freeze({});
+  businessFoundationAdmissionDdlTraces.set(trace, { runtime, handle, armed: false, queries: [] });
+  handles.get(handle).businessFoundationAdmissionDdlTrace = trace;
+  return trace;
+}
+
+function armVNextPg17BusinessFoundationAdmissionDdlTrace(trace) {
+  const state = businessFoundationAdmissionDdlTraces.get(trace);
+  if (!state || !isVNextPg17DisposableHandleForRuntime(state.runtime, state.handle)) throw invalidHandle();
+  state.armed = true;
+}
+
+function inspectVNextPg17BusinessFoundationAdmissionDdlTrace(trace) {
+  const state = businessFoundationAdmissionDdlTraces.get(trace);
+  if (!state) throw invalidHandle();
+  return Object.freeze({ queries: Object.freeze([...state.queries]) });
+}
+
+function createVNextPg17BusinessFoundationAdmissionDdlFaultPlan(runtime, handle, stages) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle) || !Array.isArray(stages)
+    || stages.length === 0 || stages.some(stage => typeof stage !== 'string' || !BUSINESS_FOUNDATION_ADMISSION_DDL_FAULT_STAGES.has(stage))) throw invalidHandle();
+  const plan = Object.freeze({});
+  businessFoundationAdmissionDdlFaultPlans.set(plan, { runtime, handle, pending: new Set(stages) });
+  return plan;
+}
+
+function armVNextPg17BusinessFoundationAdmissionDdlFaultPlan(handle, plan) {
+  const planState = businessFoundationAdmissionDdlFaultPlans.get(plan);
+  if (!planState || !isVNextPg17DisposableHandleForRuntime(planState.runtime, handle)
+    || planState.handle !== handle || handles.get(handle).runtime !== planState.runtime) throw invalidHandle();
+  handles.get(handle).businessFoundationAdmissionDdlFaultPlan = plan;
 }
 
 function createVNextPg17CopyOnlyRehearsalTarget(runtime, handle) {
@@ -834,6 +987,7 @@ async function withVNextPg17SyntheticQuery(handle, purpose, callback) {
   if (!isVNextPg17DisposableHandle(handle) || !['migrator', 'runtime', 'verifier', 'writer', 'business-verifier', 'migration-admission-verifier', 'fixture-provisioner'].includes(purpose)
     || typeof callback !== 'function' || types.isProxy(callback)) throw invalidHandle();
   const state = handles.get(handle);
+  if (purpose === 'migration-admission-verifier' && state.businessFoundationAdmissionDdlPoisoned) throw unavailable();
   const client = state.clients[purpose];
   if (!client) throw invalidHandle();
   const trace = state.queryTraces.get(purpose);
@@ -997,11 +1151,17 @@ module.exports = {
   isVNextPg17DisposableHandle,
   isVNextPg17DisposableHandleForRuntime,
   executeBusinessFoundationDdlPlan,
+  executeBusinessFoundationAdmissionDdlPlan,
   createVNextPg17BusinessFoundationDdlTrace,
   armVNextPg17BusinessFoundationDdlTrace,
   inspectVNextPg17BusinessFoundationDdlTrace,
   createVNextPg17BusinessFoundationDdlFaultPlan,
   armVNextPg17BusinessFoundationDdlFaultPlan,
+  createVNextPg17BusinessFoundationAdmissionDdlTrace,
+  armVNextPg17BusinessFoundationAdmissionDdlTrace,
+  inspectVNextPg17BusinessFoundationAdmissionDdlTrace,
+  createVNextPg17BusinessFoundationAdmissionDdlFaultPlan,
+  armVNextPg17BusinessFoundationAdmissionDdlFaultPlan,
   createVNextPg17CopyOnlyRehearsalTarget,
   inspectVNextPg17CopyOnlyRehearsalTarget,
   withVNextPg17CopyOnlyRehearsalTarget,

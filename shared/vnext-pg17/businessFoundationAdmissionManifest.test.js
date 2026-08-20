@@ -47,6 +47,8 @@ async function runBusinessFoundationAdmissionManifestCases() {
   assert.match(BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[0].sql, /quarantine reason must equal ledger code/);
   assert.match(BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[0].sql, /REVOKE EXECUTE ON FUNCTION migration_admission\.migration_batch_prepared_pair\(\) FROM PUBLIC/);
   assert.match(BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[0].sql, /REVOKE EXECUTE ON FUNCTION migration_admission\.migration_row_ledger_insert_guard\(\) FROM PUBLIC/);
+  assert.match(BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[0].sql, /GRANT USAGE ON SCHEMA migration_admission TO vnext_pg17_migration_admission_verifier/);
+  assert.match(BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[0].sql, /GRANT SELECT ON ALL TABLES IN SCHEMA migration_admission TO vnext_pg17_migration_admission_verifier/);
   assert.match(BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[0].sql, /SECURITY DEFINER/);
   assert.match(BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[0].sql, /SET search_path = pg_catalog, pg_temp/);
   assert.doesNotMatch(BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[0].sql, /vnext_control_plane|better-sqlite3|node:fs|node:path|rds/i);
