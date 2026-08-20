@@ -29,6 +29,30 @@ function snapshot() {
   };
 }
 
+function historicalAuthorizationSnapshot() {
+  const value = snapshot();
+  const startedAt = '2026-08-20T00:00:00.000Z';
+  const endedAt = '2026-08-20T00:01:00.000Z';
+  const revokedAt = '2026-08-20T00:02:00.000Z';
+  value.capabilityCatalog.push(
+    { capability_id: 'capability-active', status: 'active', surface_mask: 'desktop', created_at: startedAt },
+    { capability_id: 'capability-retired', status: 'retired', surface_mask: 'miniapp', created_at: startedAt },
+  );
+  value.roleGrants.push(
+    { grant_id: 'grant-revoked', authority_id: 'authority-1', account_id: 'account-1', role: 'teacher', status: 'revoked', grant_version: 1, row_version: 1, starts_at: startedAt, ends_at: null, revoked_at: revokedAt, granted_by_account_id: null, created_at: startedAt, updated_at: revokedAt },
+    { grant_id: 'grant-expired', authority_id: 'authority-1', account_id: 'account-1', role: 'student', status: 'expired', grant_version: 1, row_version: 1, starts_at: startedAt, ends_at: endedAt, revoked_at: null, granted_by_account_id: null, created_at: startedAt, updated_at: endedAt },
+  );
+  value.capabilityOverrides.push(
+    { override_id: 'override-revoked', authority_id: 'authority-1', account_id: 'account-1', capability_id: 'capability-active', effect: 'deny', status: 'revoked', starts_at: startedAt, ends_at: null, row_version: 1, created_at: startedAt, updated_at: revokedAt, revoked_at: revokedAt },
+    { override_id: 'override-expired', authority_id: 'authority-1', account_id: 'account-1', capability_id: 'capability-retired', effect: 'allow', status: 'expired', starts_at: startedAt, ends_at: endedAt, row_version: 1, created_at: startedAt, updated_at: endedAt, revoked_at: null },
+  );
+  value.dataScopeGrants.push(
+    { scope_grant_id: 'scope-revoked', authority_id: 'authority-1', account_id: 'account-1', scope_type: 'teacher_profile', scope_value_hash: 'opaque-scope-a', effect: 'deny', status: 'revoked', starts_at: startedAt, ends_at: null, row_version: 1, created_at: startedAt, updated_at: revokedAt, revoked_at: revokedAt },
+    { scope_grant_id: 'scope-expired', authority_id: 'authority-1', account_id: 'account-1', scope_type: 'student_profile', scope_value_hash: 'opaque-scope-b', effect: 'allow', status: 'expired', starts_at: startedAt, ends_at: endedAt, row_version: 1, created_at: startedAt, updated_at: endedAt, revoked_at: null },
+  );
+  return value;
+}
+
 async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposablePg17Runtime()) {
   const ownsRuntime = arguments.length === 0;
   if (ownsRuntime) await runtime.start();
@@ -41,6 +65,41 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
         error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
       );
     }
+    for (const [collection, index] of [['roleGrants', 0], ['capabilityOverrides', 0], ['dataScopeGrants', 0]]) {
+      const unsafe = historicalAuthorizationSnapshot();
+      unsafe[collection][index].status = 'active';
+      assert.throws(
+        () => createVNextPg17SyntheticControlPlaneSource(unsafe),
+        error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+      );
+    }
+    const missingCapability = historicalAuthorizationSnapshot();
+    missingCapability.capabilityOverrides[0].capability_id = 'not-present';
+    assert.throws(
+      () => createVNextPg17SyntheticControlPlaneSource(missingCapability),
+      error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+    );
+    const invalidHistoricalLifecycle = historicalAuthorizationSnapshot();
+    invalidHistoricalLifecycle.dataScopeGrants[0].revoked_at = null;
+    assert.throws(
+      () => createVNextPg17SyntheticControlPlaneSource(invalidHistoricalLifecycle),
+      error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+    );
+    const accessorHistorical = historicalAuthorizationSnapshot();
+    const originalRoleGrant = accessorHistorical.roleGrants[0];
+    let accessorReads = 0;
+    Object.defineProperty(accessorHistorical.roleGrants, '0', { enumerable: true, get() { accessorReads += 1; return originalRoleGrant; } });
+    assert.throws(
+      () => createVNextPg17SyntheticControlPlaneSource(accessorHistorical),
+      error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+    );
+    assert.strictEqual(accessorReads, 0);
+    const proxiedHistorical = historicalAuthorizationSnapshot();
+    proxiedHistorical.capabilityCatalog = new Proxy(proxiedHistorical.capabilityCatalog, {});
+    assert.throws(
+      () => createVNextPg17SyntheticControlPlaneSource(proxiedHistorical),
+      error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+    );
     const authorityExtra = snapshot();
     authorityExtra.authorities[0].unexpected = 'must-not-be-dropped';
     assert.throws(
@@ -53,7 +112,7 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
       () => createVNextPg17SyntheticControlPlaneSource(crossAuthorityAccount),
       error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
     );
-    for (const collection of ['roleGrants', 'capabilityCatalog', 'capabilityOverrides', 'dataScopeGrants', 'profileBindings', 'verifiedContacts', 'receipts', 'auditEvents', 'outboxEvents']) {
+    for (const collection of ['profileBindings', 'verifiedContacts', 'receipts', 'auditEvents', 'outboxEvents']) {
       const unsupported = snapshot();
       unsupported[collection].push({ opaque: collection });
       assert.throws(
@@ -134,6 +193,23 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
           error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
         );
       } finally { await runtime.disposeHandle(driftHandle); }
+      const historicalHandle = await runtime.createIsolatedHandle();
+      try {
+        await createVNextPg17CatalogBoundary(runtime).apply(historicalHandle, { appliedAt: '2026-08-20T00:00:00.000Z', appliedBy: 'historical-authorization-test' });
+        const historicalResult = await rehearseVNextPg17ControlPlaneCopy({
+          source: createVNextPg17SyntheticControlPlaneSource(historicalAuthorizationSnapshot()),
+          target: runtime.createVNextPg17CopyOnlyRehearsalTarget(historicalHandle),
+        });
+        assert.strictEqual(historicalResult.capabilityCount, 2);
+        assert.strictEqual(historicalResult.roleGrantCount, 2);
+        assert.strictEqual(historicalResult.capabilityOverrideCount, 2);
+        assert.strictEqual(historicalResult.scopeGrantCount, 2);
+        assert.strictEqual(historicalResult.activeRoleGrantCount, 0);
+        assert.strictEqual(historicalResult.activeCapabilityOverrideCount, 0);
+        assert.strictEqual(historicalResult.activeScopeGrantCount, 0);
+        assert.strictEqual(historicalResult.sourceHistoricalLogicalSha256, historicalResult.targetHistoricalLogicalSha256);
+        assert.match(historicalResult.sourceHistoricalLogicalSha256, /^[0-9a-f]{64}$/);
+      } finally { await runtime.disposeHandle(historicalHandle); }
       for (const stages of [['commit'], ['accounts', 'rollback']]) {
         const uncertainHandle = await runtime.createIsolatedHandle();
         try {
@@ -166,14 +242,31 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
           }
         });
       } finally { await runtime.disposeHandle(mismatchHandle); }
-      for (const stage of ['authorities', 'accounts', 'trustedDevices', 'installations', 'links']) {
+      const historicalMismatchHandle = await runtime.createIsolatedHandle();
+      try {
+        await createVNextPg17CatalogBoundary(runtime).apply(historicalMismatchHandle, { appliedAt: '2026-08-20T00:00:00.000Z', appliedBy: 'historical-copy-only-mismatch-test' });
+        const historicalMismatchTarget = runtime.createVNextPg17CopyOnlyRehearsalTarget(historicalMismatchHandle);
+        const faultPlan = runtime.createVNextPg17CopyOnlyRehearsalFaultPlan(historicalMismatchHandle, 'postReadHistoricalMismatch');
+        await assert.rejects(
+          () => rehearseVNextPg17ControlPlaneCopy({ source: createVNextPg17SyntheticControlPlaneSource(historicalAuthorizationSnapshot()), target: historicalMismatchTarget, faultPlan }),
+          error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_LOGICAL_MISMATCH',
+        );
+        await withVNextPg17SyntheticQuery(historicalMismatchHandle, 'fixture-provisioner', async facade => {
+          for (const table of TARGET_DATA_TABLES) {
+            assert.strictEqual(Number((await facade.query(`SELECT COUNT(*)::int AS count FROM vnext_control_plane.${table}`)).rows[0].count), 0);
+          }
+        });
+      } finally { await runtime.disposeHandle(historicalMismatchHandle); }
+      for (const stage of ['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants']) {
         const rollbackHandle = await runtime.createIsolatedHandle();
         try {
           await createVNextPg17CatalogBoundary(runtime).apply(rollbackHandle, { appliedAt: '2026-08-20T00:00:00.000Z', appliedBy: 'copy-only-rollback-test' });
           const rollbackTarget = runtime.createVNextPg17CopyOnlyRehearsalTarget(rollbackHandle);
           const faultPlan = runtime.createVNextPg17CopyOnlyRehearsalFaultPlan(rollbackHandle, stage);
+          const rollbackSource = ['capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants'].includes(stage)
+            ? createVNextPg17SyntheticControlPlaneSource(historicalAuthorizationSnapshot()) : source;
           await assert.rejects(
-            () => rehearseVNextPg17ControlPlaneCopy({ source, target: rollbackTarget, faultPlan }),
+            () => rehearseVNextPg17ControlPlaneCopy({ source: rollbackSource, target: rollbackTarget, faultPlan }),
             error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_ROLLED_BACK',
           );
           await withVNextPg17SyntheticQuery(rollbackHandle, 'fixture-provisioner', async facade => {

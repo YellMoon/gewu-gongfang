@@ -22,7 +22,7 @@ const syntheticQueryTraces = new WeakMap();
 const copyOnlyRehearsalTargets = new WeakMap();
 const copyOnlyRehearsalFaultPlans = new WeakMap();
 const VERIFIER_FAULT_STAGES = new Set(['begin', 'setup', 'identity', 'tls', 'catalog', 'commit', 'rollback', 'release']);
-const COPY_ONLY_REHEARSAL_STAGES = new Set(['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'postReadMismatch', 'commit', 'rollback']);
+const COPY_ONLY_REHEARSAL_STAGES = new Set(['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants', 'postReadMismatch', 'postReadHistoricalMismatch', 'commit', 'rollback']);
 const COPY_ONLY_TERMINAL_STAGES = new Set(['commit', 'rollback']);
 const COPY_ONLY_TARGET_DATA_RELATIONS = Object.freeze([
   'vnext_authorities', 'vnext_accounts', 'vnext_trusted_devices', 'vnext_device_installations', 'vnext_account_device_links',
@@ -443,8 +443,13 @@ async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan)
             : text.startsWith('INSERT INTO vnext_control_plane.vnext_trusted_devices') ? 'trustedDevices'
               : text.startsWith('INSERT INTO vnext_control_plane.vnext_device_installations') ? 'installations'
                 : text.startsWith('INSERT INTO vnext_control_plane.vnext_account_device_links') ? 'links' : null;
-    if (stage && faultState && faultState.stages.delete(stage)) {
-      if (COPY_ONLY_TERMINAL_STAGES.has(stage)) {
+    const historicalStage = text.startsWith('INSERT INTO vnext_control_plane.vnext_capability_catalog') ? 'capabilityCatalog'
+      : text.startsWith('INSERT INTO vnext_control_plane.vnext_role_grants') ? 'roleGrants'
+        : text.startsWith('INSERT INTO vnext_control_plane.vnext_capability_overrides') ? 'capabilityOverrides'
+          : text.startsWith('INSERT INTO vnext_control_plane.vnext_data_scope_grants') ? 'dataScopeGrants' : null;
+    const effectiveStage = stage || historicalStage;
+    if (effectiveStage && faultState && faultState.stages.delete(effectiveStage)) {
+      if (COPY_ONLY_TERMINAL_STAGES.has(effectiveStage)) {
         targetState.poisoned = true;
         throw copyOnlyTargetUnavailable();
       }
@@ -459,6 +464,9 @@ async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan)
     const fields = Object.freeze({ authorities: ['authority_id','status','created_at','updated_at'], accounts: ['account_id','authority_id','status','auth_version','access_version','revocation_version','row_version','created_at','updated_at'], trustedDevices: ['device_id','authority_id','status','hardware_evidence_hash','risk_code','credential_version','risk_version','row_version','created_at','updated_at','revoked_at'], installations: ['installation_id','authority_id','device_id','installation_public_key','key_fingerprint','status','credential_version','row_version','created_at','updated_at','revoked_at'], links: ['link_id','authority_id','account_id','device_id','installation_id','status','auth_version','access_version','row_version','created_at','updated_at','revoked_at'] });
     const relations = Object.freeze({ authorities: 'vnext_authorities', accounts: 'vnext_accounts', trustedDevices: 'vnext_trusted_devices', installations: 'vnext_device_installations', links: 'vnext_account_device_links' });
     const identityKeys = Object.freeze({ authorities: 'authority_id', accounts: 'account_id', trustedDevices: 'device_id', installations: 'installation_id', links: 'link_id' });
+    const historicalFields = Object.freeze({ capabilityCatalog: ['capability_id','status','surface_mask','created_at'], roleGrants: ['grant_id','authority_id','account_id','role','status','grant_version','row_version','starts_at','ends_at','revoked_at','granted_by_account_id','created_at','updated_at'], capabilityOverrides: ['override_id','authority_id','account_id','capability_id','effect','status','starts_at','ends_at','row_version','created_at','updated_at','revoked_at'], dataScopeGrants: ['scope_grant_id','authority_id','account_id','scope_type','scope_value_hash','effect','status','starts_at','ends_at','row_version','created_at','updated_at','revoked_at'] });
+    const historicalRelations = Object.freeze({ capabilityCatalog: 'vnext_capability_catalog', roleGrants: 'vnext_role_grants', capabilityOverrides: 'vnext_capability_overrides', dataScopeGrants: 'vnext_data_scope_grants' });
+    const historicalKeys = Object.freeze({ capabilityCatalog: 'capability_id', roleGrants: 'grant_id', capabilityOverrides: 'override_id', dataScopeGrants: 'scope_grant_id' });
     const result = await callback(Object.freeze({
       countAuthorities: async () => Number((await query('SELECT COUNT(*)::int AS count FROM vnext_control_plane.vnext_authorities')).rows[0].count),
       countTargetDataRows: async () => (await query(COPY_ONLY_TARGET_EMPTY_SQL)).rows.map(row => Object.freeze({ relation: row.relation, count: Number(row.count) })),
@@ -474,6 +482,18 @@ async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan)
         }
         return Object.freeze(topology);
       },
+      readHistoricalAuthorization: async () => {
+        const historical = {};
+        for (const collection of Object.keys(historicalFields)) {
+          const columns = historicalFields[collection];
+          const result = await query(`SELECT row_to_json(record) AS row FROM (SELECT ${columns.join(',')} FROM vnext_control_plane.${historicalRelations[collection]} ORDER BY ${historicalKeys[collection]}) AS record`);
+          historical[collection] = Object.freeze(result.rows.map(row => Object.freeze(row.row)));
+        }
+        if (faultState && faultState.stages.delete('postReadHistoricalMismatch')) {
+          historical.capabilityCatalog = Object.freeze([Object.freeze({ ...historical.capabilityCatalog[0], status: 'rehearsal-mismatch' })]);
+        }
+        return Object.freeze(historical);
+      },
       insertAuthority: async row => {
         const result = await query('INSERT INTO vnext_control_plane.vnext_authorities(authority_id,status,created_at,updated_at) VALUES($1,$2,$3,$4)', [row.authority_id, row.status, row.created_at, row.updated_at]);
         return result;
@@ -483,6 +503,11 @@ async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan)
         const columns = fields[collection];
         const result = await query(`INSERT INTO vnext_control_plane.${relations[collection]}(${columns.join(',')}) VALUES(${columns.map((_, index) => '$' + (index + 1)).join(',')})`, columns.map(key => row[key]));
         return result;
+      },
+      insertHistoricalAuthorization: async (collection, row) => {
+        if (!Object.prototype.hasOwnProperty.call(historicalFields, collection) || !row || Object.keys(row).sort().join(',') !== [...historicalFields[collection]].sort().join(',')) throw invalidHandle();
+        const columns = historicalFields[collection];
+        return query(`INSERT INTO vnext_control_plane.${historicalRelations[collection]}(${columns.join(',')}) VALUES(${columns.map((_, index) => '$' + (index + 1)).join(',')})`, columns.map(key => row[key]));
       },
     }));
     commitAttempted = true;

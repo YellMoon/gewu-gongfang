@@ -8,7 +8,8 @@ const { withVNextPg17CopyOnlyRehearsalTarget } = require('./disposableRuntime');
 const sources = new WeakMap();
 const COLLECTIONS = Object.freeze(['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'roleGrants', 'capabilityCatalog', 'capabilityOverrides', 'dataScopeGrants', 'profileBindings', 'verifiedContacts', 'receipts', 'auditEvents', 'outboxEvents', 'legacySessions', 'legacyDeviceGrants', 'legacyOfflineLicenses', 'legacyCredentials', 'legacyTokens', 'legacyPasswords', 'legacyPrivateKeys', 'legacyBackups']);
 const IDENTITY_COLLECTIONS = Object.freeze(['authorities', 'accounts', 'trustedDevices', 'installations', 'links']);
-const DEFERRED_MAPPED_COLLECTIONS = Object.freeze(COLLECTIONS.filter(key => !IDENTITY_COLLECTIONS.includes(key) && !key.startsWith('legacy')));
+const HISTORICAL_AUTHORIZATION_COLLECTIONS = Object.freeze(['capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants']);
+const DEFERRED_MAPPED_COLLECTIONS = Object.freeze(COLLECTIONS.filter(key => !IDENTITY_COLLECTIONS.includes(key) && !HISTORICAL_AUTHORIZATION_COLLECTIONS.includes(key) && !key.startsWith('legacy')));
 const INERT_ARCHIVE_COLLECTIONS = Object.freeze(COLLECTIONS.filter(key => key.startsWith('legacy')));
 const IDENTITY_FIELDS = Object.freeze({
   authorities: Object.freeze(['authority_id', 'status', 'created_at', 'updated_at']),
@@ -17,11 +18,30 @@ const IDENTITY_FIELDS = Object.freeze({
   installations: Object.freeze(['installation_id', 'authority_id', 'device_id', 'installation_public_key', 'key_fingerprint', 'status', 'credential_version', 'row_version', 'created_at', 'updated_at', 'revoked_at']),
   links: Object.freeze(['link_id', 'authority_id', 'account_id', 'device_id', 'installation_id', 'status', 'auth_version', 'access_version', 'row_version', 'created_at', 'updated_at', 'revoked_at']),
 });
+const HISTORICAL_FIELDS = Object.freeze({
+  capabilityCatalog: Object.freeze(['capability_id', 'status', 'surface_mask', 'created_at']),
+  roleGrants: Object.freeze(['grant_id', 'authority_id', 'account_id', 'role', 'status', 'grant_version', 'row_version', 'starts_at', 'ends_at', 'revoked_at', 'granted_by_account_id', 'created_at', 'updated_at']),
+  capabilityOverrides: Object.freeze(['override_id', 'authority_id', 'account_id', 'capability_id', 'effect', 'status', 'starts_at', 'ends_at', 'row_version', 'created_at', 'updated_at', 'revoked_at']),
+  dataScopeGrants: Object.freeze(['scope_grant_id', 'authority_id', 'account_id', 'scope_type', 'scope_value_hash', 'effect', 'status', 'starts_at', 'ends_at', 'row_version', 'created_at', 'updated_at', 'revoked_at']),
+});
 
 function fail(code) { const error = new Error(code); error.code = code; return error; }
 function clone(value) {
   if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) return value;
-  if (Array.isArray(value)) return Object.freeze(value.map(clone));
+  if (Array.isArray(value)) {
+    if (types.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype) throw fail('VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID');
+    const length = Object.getOwnPropertyDescriptor(value, 'length');
+    if (!length || !Object.prototype.hasOwnProperty.call(length, 'value') || !Number.isSafeInteger(length.value) || length.value < 0) throw fail('VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID');
+    const expectedKeys = new Set(['length', ...Array.from({ length: length.value }, (_, index) => String(index))]);
+    if (Reflect.ownKeys(value).length !== expectedKeys.size || Reflect.ownKeys(value).some(key => typeof key !== 'string' || !expectedKeys.has(key))) throw fail('VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID');
+    const copy = [];
+    for (let index = 0; index < length.value; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (!descriptor || !descriptor.enumerable || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) throw fail('VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID');
+      copy.push(clone(descriptor.value));
+    }
+    return Object.freeze(copy);
+  }
   if (!value || types.isProxy(value) || Object.getPrototypeOf(value) !== Object.prototype) throw fail('VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID');
   return Object.freeze(Object.fromEntries(Reflect.ownKeys(value).sort().map(key => {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
@@ -50,6 +70,7 @@ function normalizeIdentityRow(row) {
   }));
 }
 function identityLogicalRows(snapshot) { return IDENTITY_COLLECTIONS.map(key => [key, canonicalCollectionRows(snapshot[key].map(normalizeIdentityRow))]); }
+function historicalAuthorizationLogicalRows(snapshot) { return HISTORICAL_AUTHORIZATION_COLLECTIONS.map(key => [key, canonicalCollectionRows(snapshot[key].map(normalizeIdentityRow))]); }
 function fingerprint(value) { return sha256(normalizedSnapshot(value)); }
 function inventory(snapshot) {
   return Object.freeze(Object.fromEntries(INERT_ARCHIVE_COLLECTIONS.map(key => [key, Object.freeze({
@@ -63,6 +84,13 @@ function finiteInstant(value) { return typeof value === 'string' && (() => { try
 function positiveInteger(value) { return Number.isSafeInteger(value) && value >= 1; }
 function validVersions(row, keys) { return keys.every(key => positiveInteger(row[key])); }
 function validTimestamps(row, keys) { return keys.every(key => finiteInstant(row[key])) && Date.parse(row.updated_at) >= Date.parse(row.created_at); }
+function validNullableInstant(value) { return value === null || finiteInstant(value); }
+function validHistoricalLifecycle(row) {
+  return validTimestamps(row, ['starts_at', 'created_at', 'updated_at'])
+    && validNullableInstant(row.ends_at) && validNullableInstant(row.revoked_at)
+    && (row.ends_at === null || Date.parse(row.ends_at) > Date.parse(row.starts_at))
+    && ((row.status === 'revoked' && row.revoked_at !== null) || (row.status === 'expired' && row.ends_at !== null && row.revoked_at === null));
+}
 function validIdentityTopology(snapshot) {
   const authority = snapshot.authorities[0];
   if (!sameKeys(authority, IDENTITY_FIELDS.authorities) || !nonBlank(authority.authority_id) || authority.status !== 'active' || !validTimestamps(authority, ['created_at', 'updated_at'])) return false;
@@ -93,6 +121,34 @@ function validIdentityTopology(snapshot) {
   }
   return true;
 }
+function validHistoricalAuthorization(snapshot) {
+  const authorityId = snapshot.authorities[0].authority_id;
+  const accounts = new Set(snapshot.accounts.map(row => row.account_id));
+  const capabilities = new Set();
+  for (const row of snapshot.capabilityCatalog) {
+    if (!sameKeys(row, HISTORICAL_FIELDS.capabilityCatalog) || !nonBlank(row.capability_id) || !['active', 'retired'].includes(row.status) || !nonBlank(row.surface_mask) || !finiteInstant(row.created_at) || capabilities.has(row.capability_id)) return false;
+    capabilities.add(row.capability_id);
+  }
+  const grants = new Set();
+  for (const row of snapshot.roleGrants) {
+    if (!sameKeys(row, HISTORICAL_FIELDS.roleGrants) || !nonBlank(row.grant_id) || row.authority_id !== authorityId || !accounts.has(row.account_id) || !['super_admin', 'teacher', 'student'].includes(row.role) || !['revoked', 'expired'].includes(row.status)
+      || !validVersions(row, ['grant_version', 'row_version']) || !validHistoricalLifecycle(row) || !(row.granted_by_account_id === null || accounts.has(row.granted_by_account_id)) || grants.has(row.grant_id)) return false;
+    grants.add(row.grant_id);
+  }
+  const overrides = new Set();
+  for (const row of snapshot.capabilityOverrides) {
+    if (!sameKeys(row, HISTORICAL_FIELDS.capabilityOverrides) || !nonBlank(row.override_id) || row.authority_id !== authorityId || !accounts.has(row.account_id) || !capabilities.has(row.capability_id) || !['allow', 'deny'].includes(row.effect) || !['revoked', 'expired'].includes(row.status)
+      || !validVersions(row, ['row_version']) || !validHistoricalLifecycle(row) || overrides.has(row.override_id)) return false;
+    overrides.add(row.override_id);
+  }
+  const scopes = new Set();
+  for (const row of snapshot.dataScopeGrants) {
+    if (!sameKeys(row, HISTORICAL_FIELDS.dataScopeGrants) || !nonBlank(row.scope_grant_id) || row.authority_id !== authorityId || !accounts.has(row.account_id) || !['teacher_profile', 'student_profile', 'school', 'household', 'resource_owner'].includes(row.scope_type) || !nonBlank(row.scope_value_hash) || !['allow', 'deny'].includes(row.effect) || !['revoked', 'expired'].includes(row.status)
+      || !validVersions(row, ['row_version']) || !validHistoricalLifecycle(row) || scopes.has(row.scope_grant_id)) return false;
+    scopes.add(row.scope_grant_id);
+  }
+  return true;
+}
 function sourceTable(collection) { return `legacy_source_${collection}`; }
 function readSnapshot(database) {
   const snapshot = {};
@@ -108,7 +164,7 @@ function createVNextPg17SyntheticControlPlaneSource(snapshot) {
     || COLLECTIONS.some(key => !Array.isArray(copy[key]))
     || copy.authorities.length !== 1 || copy.authorities[0].status !== 'active'
     || DEFERRED_MAPPED_COLLECTIONS.some(key => copy[key].length !== 0)
-    || !validIdentityTopology(copy)) {
+    || !validIdentityTopology(copy) || !validHistoricalAuthorization(copy)) {
     throw fail('VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID');
   }
   const database = new Database(':memory:');
@@ -127,17 +183,23 @@ async function rehearseVNextPg17ControlPlaneCopy({ source, target, faultPlan } =
   const snapshot = readSnapshot(state.database);
   if (before !== fingerprint(snapshot)) throw fail('VNEXT_PG17_COPY_REHEARSAL_SOURCE_CHANGED');
   const sourceIdentityLogicalSha256 = sha256(identityLogicalRows(snapshot));
+  const sourceHistoricalLogicalSha256 = sha256(historicalAuthorizationLogicalRows(snapshot));
   try {
   const report = await withVNextPg17CopyOnlyRehearsalTarget(target, async facade => {
     if ((await facade.countTargetDataRows()).some(row => row.count !== 0)) throw fail('VNEXT_PG17_COPY_REHEARSAL_TARGET_NOT_EMPTY');
     const row = snapshot.authorities[0];
     await facade.insertAuthority(row);
     for (const collection of ['accounts', 'trustedDevices', 'installations', 'links']) for (const item of snapshot[collection]) await facade.insertFoundation(collection, item);
+    for (const collection of HISTORICAL_AUTHORIZATION_COLLECTIONS) for (const item of snapshot[collection]) await facade.insertHistoricalAuthorization(collection, item);
     const targetIdentity = await facade.readIdentityTopology();
+    const targetHistorical = await facade.readHistoricalAuthorization();
     const targetSnapshot = Object.fromEntries(IDENTITY_COLLECTIONS.map(collection => [collection, targetIdentity[collection]]));
     const targetIdentityLogicalSha256 = sha256(identityLogicalRows(targetSnapshot));
     if (targetIdentityLogicalSha256 !== sourceIdentityLogicalSha256) throw fail('VNEXT_PG17_COPY_REHEARSAL_LOGICAL_MISMATCH');
-    return Object.freeze({ status: 'boundary-verified', schemaVersion: 5, migrationVersion: 15, authorityCount: targetSnapshot.authorities.length, accountCount: targetSnapshot.accounts.length, deviceCount: targetSnapshot.trustedDevices.length, installationCount: targetSnapshot.installations.length, linkCount: targetSnapshot.links.length, sourceIdentityLogicalSha256, targetIdentityLogicalSha256, activeRoleGrantCount: 0, activeCapabilityOverrideCount: 0, activeScopeGrantCount: 0, activeSessionCount: 0, activeReauthenticationCount: 0, outboxDispatchedCount: 0, inertInventory: inventory(snapshot), rollback: Object.freeze({ attempted: false, restoredEmpty: false }) });
+    const targetHistoricalSnapshot = Object.fromEntries(HISTORICAL_AUTHORIZATION_COLLECTIONS.map(collection => [collection, targetHistorical[collection]]));
+    const targetHistoricalLogicalSha256 = sha256(historicalAuthorizationLogicalRows(targetHistoricalSnapshot));
+    if (targetHistoricalLogicalSha256 !== sourceHistoricalLogicalSha256) throw fail('VNEXT_PG17_COPY_REHEARSAL_LOGICAL_MISMATCH');
+    return Object.freeze({ status: 'boundary-verified', schemaVersion: 5, migrationVersion: 15, authorityCount: targetSnapshot.authorities.length, accountCount: targetSnapshot.accounts.length, deviceCount: targetSnapshot.trustedDevices.length, installationCount: targetSnapshot.installations.length, linkCount: targetSnapshot.links.length, capabilityCount: targetHistoricalSnapshot.capabilityCatalog.length, roleGrantCount: targetHistoricalSnapshot.roleGrants.length, capabilityOverrideCount: targetHistoricalSnapshot.capabilityOverrides.length, scopeGrantCount: targetHistoricalSnapshot.dataScopeGrants.length, sourceIdentityLogicalSha256, targetIdentityLogicalSha256, sourceHistoricalLogicalSha256, targetHistoricalLogicalSha256, activeRoleGrantCount: targetHistoricalSnapshot.roleGrants.filter(row => row.status === 'active').length, activeCapabilityOverrideCount: targetHistoricalSnapshot.capabilityOverrides.filter(row => row.status === 'active').length, activeScopeGrantCount: targetHistoricalSnapshot.dataScopeGrants.filter(row => row.status === 'active').length, activeSessionCount: 0, activeReauthenticationCount: 0, outboxDispatchedCount: 0, inertInventory: inventory(snapshot), rollback: Object.freeze({ attempted: false, restoredEmpty: false }) });
   }, faultPlan);
   const after = fingerprint(readSnapshot(state.database));
   if (before !== after) throw fail('VNEXT_PG17_COPY_REHEARSAL_SOURCE_CHANGED');
