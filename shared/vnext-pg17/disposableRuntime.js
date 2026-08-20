@@ -22,7 +22,7 @@ const syntheticQueryTraces = new WeakMap();
 const copyOnlyRehearsalTargets = new WeakMap();
 const copyOnlyRehearsalFaultPlans = new WeakMap();
 const VERIFIER_FAULT_STAGES = new Set(['begin', 'setup', 'identity', 'tls', 'catalog', 'commit', 'rollback', 'release']);
-const COPY_ONLY_REHEARSAL_STAGES = new Set(['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants', 'profileBindings', 'receipts', 'auditEvents', 'outboxEvents', 'postReadMismatch', 'postReadHistoricalMismatch', 'postReadProfileMismatch', 'postReadEvidenceMismatch', 'commit', 'rollback']);
+const COPY_ONLY_REHEARSAL_STAGES = new Set(['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants', 'profileBindings', 'verifiedContacts', 'receipts', 'auditEvents', 'outboxEvents', 'postReadMismatch', 'postReadHistoricalMismatch', 'postReadProfileMismatch', 'postReadContactMismatch', 'postReadEvidenceMismatch', 'commit', 'rollback']);
 const COPY_ONLY_TERMINAL_STAGES = new Set(['commit', 'rollback']);
 const COPY_ONLY_TARGET_DATA_RELATIONS = Object.freeze([
   'vnext_authorities', 'vnext_accounts', 'vnext_trusted_devices', 'vnext_device_installations', 'vnext_account_device_links',
@@ -426,7 +426,8 @@ function createVNextPg17CopyOnlyRehearsalFaultPlan(runtime, handle, stage) {
 async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan) {
   const targetState = copyOnlyRehearsalTargets.get(target);
   if (!targetState || !isVNextPg17DisposableHandleForRuntime(targetState.runtime, targetState.handle)
-    || targetState.busy || targetState.poisoned || typeof callback !== 'function' || types.isProxy(callback)) throw invalidHandle();
+    || targetState.busy || typeof callback !== 'function' || types.isProxy(callback)) throw invalidHandle();
+  if (targetState.poisoned) throw copyOnlyTargetUnavailable();
   const faultState = faultPlan === undefined ? null : copyOnlyRehearsalFaultPlans.get(faultPlan);
   if (faultPlan !== undefined && (!faultState || faultState.runtime !== targetState.runtime || faultState.handle !== targetState.handle || faultState.stages.size === 0)) throw invalidHandle();
   const client = handles.get(targetState.handle).clients['fixture-provisioner'];
@@ -447,7 +448,8 @@ async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan)
       : text.startsWith('INSERT INTO vnext_control_plane.vnext_role_grants') ? 'roleGrants'
         : text.startsWith('INSERT INTO vnext_control_plane.vnext_capability_overrides') ? 'capabilityOverrides'
           : text.startsWith('INSERT INTO vnext_control_plane.vnext_data_scope_grants') ? 'dataScopeGrants' : null;
-    const profileStage = text.startsWith('INSERT INTO vnext_control_plane.vnext_profile_bindings') ? 'profileBindings' : null;
+    const profileStage = text.startsWith('INSERT INTO vnext_control_plane.vnext_profile_bindings') ? 'profileBindings'
+      : text.startsWith('INSERT INTO vnext_control_plane.vnext_verified_contacts') ? 'verifiedContacts' : null;
     const evidenceStage = text.startsWith('INSERT INTO vnext_control_plane.vnext_authorization_command_receipts') ? 'receipts'
       : text.startsWith('INSERT INTO vnext_control_plane.vnext_authorization_audit_events') ? 'auditEvents'
         : text.startsWith('INSERT INTO vnext_control_plane.vnext_authorization_outbox_events') ? 'outboxEvents' : null;
@@ -474,6 +476,9 @@ async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan)
     const profileFields = Object.freeze({ profileBindings: ['binding_id','authority_id','account_id','profile_type','profile_id','status','evidence_hash','row_version','created_at','updated_at','revoked_at'] });
     const profileRelations = Object.freeze({ profileBindings: 'vnext_profile_bindings' });
     const profileKeys = Object.freeze({ profileBindings: 'binding_id' });
+    const contactFields = Object.freeze({ verifiedContacts: ['contact_id','authority_id','account_id','contact_type','normalized_value_hash','verification_state','verification_evidence_hash','verified_at','revoked_at','row_version','created_at','updated_at'] });
+    const contactRelations = Object.freeze({ verifiedContacts: 'vnext_verified_contacts' });
+    const contactKeys = Object.freeze({ verifiedContacts: 'contact_id' });
     const evidenceFields = Object.freeze({
       receipts: ['receipt_id','authority_id','actor_key','actor_account_id','idempotency_key','command_type','target_kind','target_id','canonical_request_sha256','expected_row_version','outcome','result_code','canonical_result_json','canonical_result_sha256','committed_auth_version','committed_access_version','committed_revocation_version','committed_target_row_version','created_at'],
       auditEvents: ['event_id','authority_id','receipt_id','reason_code','context_sha256','created_at'],
@@ -520,6 +525,16 @@ async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan)
         }
         return Object.freeze(profile);
       },
+      readVerifiedContacts: async () => {
+        const contacts = {};
+        for (const collection of Object.keys(contactFields)) {
+          const columns = contactFields[collection];
+          const result = await query(`SELECT row_to_json(record) AS row FROM (SELECT ${columns.join(',')} FROM vnext_control_plane.${contactRelations[collection]} ORDER BY ${contactKeys[collection]}) AS record`);
+          contacts[collection] = Object.freeze(result.rows.map(row => Object.freeze(row.row)));
+        }
+        if (faultState && faultState.stages.delete('postReadContactMismatch')) contacts.verifiedContacts = Object.freeze([Object.freeze({ ...contacts.verifiedContacts[0], verification_state: 'rehearsal-mismatch' })]);
+        return Object.freeze(contacts);
+      },
       readLinkRevocationEvidence: async () => {
         const evidence = {};
         for (const collection of Object.keys(evidenceFields)) {
@@ -551,6 +566,11 @@ async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan)
         if (!Object.prototype.hasOwnProperty.call(profileFields, collection) || !row || Object.keys(row).sort().join(',') !== [...profileFields[collection]].sort().join(',')) throw invalidHandle();
         const columns = profileFields[collection];
         return query(`INSERT INTO vnext_control_plane.${profileRelations[collection]}(${columns.join(',')}) VALUES(${columns.map((_, index) => '$' + (index + 1)).join(',')})`, columns.map(key => row[key]));
+      },
+      insertVerifiedContact: async (collection, row) => {
+        if (!Object.prototype.hasOwnProperty.call(contactFields, collection) || !row || Object.keys(row).sort().join(',') !== [...contactFields[collection]].sort().join(',')) throw invalidHandle();
+        const columns = contactFields[collection];
+        return query(`INSERT INTO vnext_control_plane.${contactRelations[collection]}(${columns.join(',')}) VALUES(${columns.map((_, index) => '$' + (index + 1)).join(',')})`, columns.map(key => row[key]));
       },
       insertLinkRevocationEvidence: async (collection, row) => {
         if (!Object.prototype.hasOwnProperty.call(evidenceFields, collection) || !row || Object.keys(row).sort().join(',') !== [...evidenceFields[collection]].sort().join(',')) throw invalidHandle();

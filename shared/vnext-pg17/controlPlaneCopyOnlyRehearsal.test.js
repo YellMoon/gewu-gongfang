@@ -20,6 +20,16 @@ function sha256Text(value) {
   return require('crypto').createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
+const CONTACT_INSERT_SQL = 'INSERT INTO vnext_control_plane.vnext_verified_contacts(contact_id,authority_id,account_id,contact_type,normalized_value_hash,verification_state,verification_evidence_hash,verified_at,revoked_at,row_version,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)';
+const CONTACT_REREAD_SQL = 'SELECT row_to_json(record) AS row FROM (SELECT contact_id,authority_id,account_id,contact_type,normalized_value_hash,verification_state,verification_evidence_hash,verified_at,revoked_at,row_version,created_at,updated_at FROM vnext_control_plane.vnext_verified_contacts ORDER BY contact_id) AS record';
+const APPROVED_INSERT_RELATIONS = Object.freeze(['vnext_authorities', 'vnext_accounts', 'vnext_trusted_devices', 'vnext_device_installations', 'vnext_account_device_links', 'vnext_capability_catalog', 'vnext_role_grants', 'vnext_capability_overrides', 'vnext_data_scope_grants', 'vnext_profile_bindings', 'vnext_authorization_command_receipts', 'vnext_authorization_audit_events', 'vnext_authorization_outbox_events']);
+function approvedCopyOnlyTrace(text) {
+  if (text.includes(';')) return false;
+  if (['BEGIN ISOLATION LEVEL REPEATABLE READ', 'COMMIT', 'ROLLBACK'].includes(text) || text.startsWith('SELECT ')) return true;
+  if (text === CONTACT_INSERT_SQL) return true;
+  return APPROVED_INSERT_RELATIONS.some(relation => text.startsWith(`INSERT INTO vnext_control_plane.${relation}(`));
+}
+
 function snapshot() {
   return {
     authorities: [{ authority_id: 'authority-1', status: 'active', created_at: '2026-08-20T00:00:00.000Z', updated_at: '2026-08-20T00:00:00.000Z' }],
@@ -66,6 +76,16 @@ function profileBindingSnapshot() {
     { binding_id: 'binding-active', authority_id: 'authority-1', account_id: 'account-1', profile_type: 'teacher', profile_id: 'opaque-teacher-profile', status: 'active', evidence_hash: 'opaque-evidence-a', row_version: 1, created_at: createdAt, updated_at: createdAt, revoked_at: null },
     { binding_id: 'binding-pending', authority_id: 'authority-1', account_id: 'account-1', profile_type: 'student', profile_id: 'opaque-student-profile', status: 'pending', evidence_hash: 'opaque-evidence-b', row_version: 1, created_at: createdAt, updated_at: createdAt, revoked_at: null },
     { binding_id: 'binding-revoked', authority_id: 'authority-1', account_id: 'account-1', profile_type: 'teacher', profile_id: 'opaque-revoked-profile', status: 'revoked', evidence_hash: 'opaque-evidence-c', row_version: 1, created_at: createdAt, updated_at: revokedAt, revoked_at: revokedAt },
+  );
+  return value;
+}
+
+function verifiedContactSnapshot() {
+  const value = snapshot();
+  const at = '2026-08-20T00:00:00.000Z';
+  value.verifiedContacts.push(
+    { contact_id: 'contact-phone-1', authority_id: 'authority-1', account_id: 'account-1', contact_type: 'phone', normalized_value_hash: 'opaque-phone-hash', verification_state: 'verified', verification_evidence_hash: 'opaque-evidence-1', verified_at: at, revoked_at: null, row_version: 1, created_at: at, updated_at: at },
+    { contact_id: 'contact-openid-1', authority_id: 'authority-1', account_id: 'account-1', contact_type: 'wechat_openid', normalized_value_hash: 'opaque-openid-hash', verification_state: 'revoked', verification_evidence_hash: 'opaque-evidence-2', verified_at: at, revoked_at: '2026-08-20T00:01:00.000Z', row_version: 2, created_at: at, updated_at: '2026-08-20T00:01:00.000Z' },
   );
   return value;
 }
@@ -175,6 +195,46 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
   const ownsRuntime = arguments.length === 0;
   if (ownsRuntime) await runtime.start();
   try {
+    const verifiedContactSource = createVNextPg17SyntheticControlPlaneSource(verifiedContactSnapshot());
+    assert.ok(verifiedContactSource);
+    const rawContact = verifiedContactSnapshot();
+    rawContact.verifiedContacts[0].phoneNumber = '+8613800000000';
+    assert.throws(
+      () => createVNextPg17SyntheticControlPlaneSource(rawContact),
+      error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+    );
+    for (const mutate of [
+      value => { value.verifiedContacts[0].verification_evidence_hash = ''; },
+      value => { value.verifiedContacts[0].contact_type = 'email'; },
+      value => { value.verifiedContacts[0].row_version = 0; },
+      value => { value.verifiedContacts[0].verified_at = null; },
+      value => { value.verifiedContacts[0].revoked_at = '2026-08-20T00:01:00.000Z'; },
+      value => { value.verifiedContacts[1].verified_at = null; },
+      value => { value.verifiedContacts[1].revoked_at = null; },
+      value => { value.verifiedContacts[0].account_id = 'missing-account-1'; },
+      value => { value.verifiedContacts[0].authority_id = 'authority-2'; },
+      value => { value.verifiedContacts[1] = { ...value.verifiedContacts[1], contact_id: 'contact-duplicate', account_id: 'account-1', contact_type: 'phone', normalized_value_hash: 'opaque-phone-hash' }; },
+      value => { value.verifiedContacts[0].created_at = 'infinity'; },
+    ]) {
+      const invalidContact = verifiedContactSnapshot();
+      mutate(invalidContact);
+      assert.throws(
+        () => createVNextPg17SyntheticControlPlaneSource(invalidContact),
+        error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+      );
+    }
+    for (const status of ['disabled', 'revoked']) {
+      const invalidActiveContact = verifiedContactSnapshot();
+      invalidActiveContact.accounts[0].status = status;
+      assert.throws(
+        () => createVNextPg17SyntheticControlPlaneSource(invalidActiveContact),
+        error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID',
+      );
+      const historicalContact = verifiedContactSnapshot();
+      historicalContact.accounts[0].status = status;
+      historicalContact.verifiedContacts = [historicalContact.verifiedContacts[1]];
+      assert.ok(createVNextPg17SyntheticControlPlaneSource(historicalContact));
+    }
     for (const collection of ['roleGrants', 'capabilityOverrides', 'dataScopeGrants']) {
       const unsafe = snapshot();
       unsafe[collection].push({ status: 'active' });
@@ -475,6 +535,27 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
         assert.ok(profileTrace.queries.some(text => text.includes('FROM vnext_control_plane.vnext_profile_bindings ORDER BY binding_id')));
         assert.ok(profileTrace.queries.every(text => /^(BEGIN ISOLATION LEVEL REPEATABLE READ|COMMIT|ROLLBACK|SELECT |INSERT INTO vnext_control_plane\.)/.test(text)));
       } finally { await runtime.disposeHandle(profileHandle); }
+      const contactHandle = await runtime.createIsolatedHandle();
+      try {
+        await createVNextPg17CatalogBoundary(runtime).apply(contactHandle, { appliedAt: '2026-08-20T00:00:00.000Z', appliedBy: 'verified-contact-test' });
+        const contactTarget = runtime.createVNextPg17CopyOnlyRehearsalTarget(contactHandle);
+        const contactResult = await rehearseVNextPg17ControlPlaneCopy({
+          source: createVNextPg17SyntheticControlPlaneSource(verifiedContactSnapshot()),
+          target: contactTarget,
+        });
+        assert.strictEqual(contactResult.verifiedContactCount, 2);
+        assert.strictEqual(contactResult.sourceVerifiedContactLogicalSha256, contactResult.targetVerifiedContactLogicalSha256);
+        assert.strictEqual(contactResult.activeSessionCount, 0);
+        assert.strictEqual(contactResult.activeReauthenticationCount, 0);
+        assert.strictEqual(contactResult.outboxDispatchedCount, 0);
+        const contactTrace = inspectVNextPg17CopyOnlyRehearsalTarget(contactTarget);
+        assert.ok(contactTrace.queries.includes(CONTACT_INSERT_SQL));
+        assert.ok(contactTrace.queries.includes(CONTACT_REREAD_SQL));
+        assert.ok(contactTrace.queries.every(approvedCopyOnlyTrace));
+        assert.strictEqual(approvedCopyOnlyTrace(`${CONTACT_INSERT_SQL}; DELETE FROM vnext_control_plane.vnext_sessions`), false);
+        assert.strictEqual(approvedCopyOnlyTrace(`${CONTACT_REREAD_SQL}; UPDATE vnext_control_plane.vnext_accounts SET status='disabled'`), false);
+        assert.strictEqual(approvedCopyOnlyTrace('INSERT INTO vnext_control_plane.vnext_sessions(session_id) VALUES($1)'), false);
+      } finally { await runtime.disposeHandle(contactHandle); }
       const evidenceHandle = await runtime.createIsolatedHandle();
       try {
         await createVNextPg17CatalogBoundary(runtime).apply(evidenceHandle, { appliedAt: '2026-08-20T00:00:00.000Z', appliedBy: 'link-revoke-evidence-test' });
@@ -534,13 +615,13 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
           const uncertainTarget = runtime.createVNextPg17CopyOnlyRehearsalTarget(uncertainHandle);
           const faultPlan = runtime.createVNextPg17CopyOnlyRehearsalFaultPlan(uncertainHandle, stages);
           await assert.rejects(
-            () => rehearseVNextPg17ControlPlaneCopy({ source, target: uncertainTarget, faultPlan }),
+            () => rehearseVNextPg17ControlPlaneCopy({ source: createVNextPg17SyntheticControlPlaneSource(verifiedContactSnapshot()), target: uncertainTarget, faultPlan }),
             error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_TARGET_UNAVAILABLE',
           );
           assert.strictEqual(inspectVNextPg17CopyOnlyRehearsalTarget(uncertainTarget).poisoned, true);
           await assert.rejects(
-            () => rehearseVNextPg17ControlPlaneCopy({ source, target: uncertainTarget }),
-            error => error && error.code === 'VNEXT_PG17_HANDLE_INVALID',
+            () => rehearseVNextPg17ControlPlaneCopy({ source: createVNextPg17SyntheticControlPlaneSource(verifiedContactSnapshot()), target: uncertainTarget }),
+            error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_TARGET_UNAVAILABLE',
           );
         } finally { await runtime.disposeHandle(uncertainHandle); }
       }
@@ -589,6 +670,19 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
           }
         });
       } finally { await runtime.disposeHandle(profileMismatchHandle); }
+      const contactMismatchHandle = await runtime.createIsolatedHandle();
+      try {
+        await createVNextPg17CatalogBoundary(runtime).apply(contactMismatchHandle, { appliedAt: '2026-08-20T00:00:00.000Z', appliedBy: 'verified-contact-mismatch-test' });
+        const contactMismatchTarget = runtime.createVNextPg17CopyOnlyRehearsalTarget(contactMismatchHandle);
+        const faultPlan = runtime.createVNextPg17CopyOnlyRehearsalFaultPlan(contactMismatchHandle, 'postReadContactMismatch');
+        await assert.rejects(
+          () => rehearseVNextPg17ControlPlaneCopy({ source: createVNextPg17SyntheticControlPlaneSource(verifiedContactSnapshot()), target: contactMismatchTarget, faultPlan }),
+          error => error && error.code === 'VNEXT_PG17_COPY_REHEARSAL_LOGICAL_MISMATCH',
+        );
+        await withVNextPg17SyntheticQuery(contactMismatchHandle, 'fixture-provisioner', async facade => {
+          for (const table of TARGET_DATA_TABLES) assert.strictEqual(Number((await facade.query(`SELECT COUNT(*)::int AS count FROM vnext_control_plane.${table}`)).rows[0].count), 0);
+        });
+      } finally { await runtime.disposeHandle(contactMismatchHandle); }
       const evidenceMismatchHandle = await runtime.createIsolatedHandle();
       try {
         await createVNextPg17CatalogBoundary(runtime).apply(evidenceMismatchHandle, { appliedAt: '2026-08-20T00:00:00.000Z', appliedBy: 'link-revoke-copy-only-mismatch-test' });
@@ -604,7 +698,7 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
           }
         });
       } finally { await runtime.disposeHandle(evidenceMismatchHandle); }
-      for (const stage of ['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants', 'profileBindings', 'receipts', 'auditEvents', 'outboxEvents']) {
+      for (const stage of ['authorities', 'accounts', 'trustedDevices', 'installations', 'links', 'capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants', 'profileBindings', 'verifiedContacts', 'receipts', 'auditEvents', 'outboxEvents']) {
         const rollbackHandle = await runtime.createIsolatedHandle();
         try {
           await createVNextPg17CatalogBoundary(runtime).apply(rollbackHandle, { appliedAt: '2026-08-20T00:00:00.000Z', appliedBy: 'copy-only-rollback-test' });
@@ -612,6 +706,7 @@ async function runControlPlaneCopyOnlyRehearsalCases(runtime = createDisposableP
           const faultPlan = runtime.createVNextPg17CopyOnlyRehearsalFaultPlan(rollbackHandle, stage);
           const rollbackSource = ['receipts', 'auditEvents', 'outboxEvents'].includes(stage) ? createVNextPg17SyntheticControlPlaneSource(acceptedLinkRevokeEvidenceSnapshot())
             : stage === 'profileBindings' ? createVNextPg17SyntheticControlPlaneSource(profileBindingSnapshot())
+            : stage === 'verifiedContacts' ? createVNextPg17SyntheticControlPlaneSource(verifiedContactSnapshot())
             : ['capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants'].includes(stage)
               ? createVNextPg17SyntheticControlPlaneSource(historicalAuthorizationSnapshot()) : source;
           await assert.rejects(

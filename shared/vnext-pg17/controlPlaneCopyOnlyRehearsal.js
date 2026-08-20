@@ -11,8 +11,9 @@ const COLLECTIONS = Object.freeze(['authorities', 'accounts', 'trustedDevices', 
 const IDENTITY_COLLECTIONS = Object.freeze(['authorities', 'accounts', 'trustedDevices', 'installations', 'links']);
 const HISTORICAL_AUTHORIZATION_COLLECTIONS = Object.freeze(['capabilityCatalog', 'roleGrants', 'capabilityOverrides', 'dataScopeGrants']);
 const PROFILE_METADATA_COLLECTIONS = Object.freeze(['profileBindings']);
+const VERIFIED_CONTACT_COLLECTIONS = Object.freeze(['verifiedContacts']);
 const LINK_REVOCATION_EVIDENCE_COLLECTIONS = Object.freeze(['receipts', 'auditEvents', 'outboxEvents']);
-const DEFERRED_MAPPED_COLLECTIONS = Object.freeze(COLLECTIONS.filter(key => !IDENTITY_COLLECTIONS.includes(key) && !HISTORICAL_AUTHORIZATION_COLLECTIONS.includes(key) && !PROFILE_METADATA_COLLECTIONS.includes(key) && !LINK_REVOCATION_EVIDENCE_COLLECTIONS.includes(key) && !key.startsWith('legacy')));
+const DEFERRED_MAPPED_COLLECTIONS = Object.freeze(COLLECTIONS.filter(key => !IDENTITY_COLLECTIONS.includes(key) && !HISTORICAL_AUTHORIZATION_COLLECTIONS.includes(key) && !PROFILE_METADATA_COLLECTIONS.includes(key) && !VERIFIED_CONTACT_COLLECTIONS.includes(key) && !LINK_REVOCATION_EVIDENCE_COLLECTIONS.includes(key) && !key.startsWith('legacy')));
 const INERT_ARCHIVE_COLLECTIONS = Object.freeze(COLLECTIONS.filter(key => key.startsWith('legacy')));
 const IDENTITY_FIELDS = Object.freeze({
   authorities: Object.freeze(['authority_id', 'status', 'created_at', 'updated_at']),
@@ -29,6 +30,9 @@ const HISTORICAL_FIELDS = Object.freeze({
 });
 const PROFILE_FIELDS = Object.freeze({
   profileBindings: Object.freeze(['binding_id', 'authority_id', 'account_id', 'profile_type', 'profile_id', 'status', 'evidence_hash', 'row_version', 'created_at', 'updated_at', 'revoked_at']),
+});
+const VERIFIED_CONTACT_FIELDS = Object.freeze({
+  verifiedContacts: Object.freeze(['contact_id', 'authority_id', 'account_id', 'contact_type', 'normalized_value_hash', 'verification_state', 'verification_evidence_hash', 'verified_at', 'revoked_at', 'row_version', 'created_at', 'updated_at']),
 });
 const LINK_REVOCATION_EVIDENCE_FIELDS = Object.freeze({
   receipts: Object.freeze(['receipt_id', 'authority_id', 'actor_key', 'actor_account_id', 'idempotency_key', 'command_type', 'target_kind', 'target_id', 'canonical_request_sha256', 'expected_row_version', 'outcome', 'result_code', 'canonical_result_json', 'canonical_result_sha256', 'committed_auth_version', 'committed_access_version', 'committed_revocation_version', 'committed_target_row_version', 'created_at', 'canonicalRequest']),
@@ -94,6 +98,7 @@ function normalizeIdentityRow(row) {
 function identityLogicalRows(snapshot) { return IDENTITY_COLLECTIONS.map(key => [key, canonicalCollectionRows(snapshot[key].map(normalizeIdentityRow))]); }
 function historicalAuthorizationLogicalRows(snapshot) { return HISTORICAL_AUTHORIZATION_COLLECTIONS.map(key => [key, canonicalCollectionRows(snapshot[key].map(normalizeIdentityRow))]); }
 function profileMetadataLogicalRows(snapshot) { return PROFILE_METADATA_COLLECTIONS.map(key => [key, canonicalCollectionRows(snapshot[key].map(normalizeIdentityRow))]); }
+function verifiedContactLogicalRows(snapshot) { return VERIFIED_CONTACT_COLLECTIONS.map(key => [key, canonicalCollectionRows(snapshot[key].map(normalizeIdentityRow))]); }
 function linkRevocationEvidenceLogicalRows(snapshot) {
   return LINK_REVOCATION_EVIDENCE_COLLECTIONS.map(key => {
     const rows = snapshot[key].map(row => normalizeIdentityRow(Object.fromEntries(LINK_REVOCATION_TARGET_FIELDS[key].map(field => [field, row[field]]))));
@@ -204,6 +209,25 @@ function validProfileMetadata(snapshot) {
   }
   return true;
 }
+function validVerifiedContactMetadata(snapshot) {
+  const authorityId = snapshot.authorities[0].authority_id;
+  const accounts = new Map(snapshot.accounts.map(row => [row.account_id, row]));
+  const contactIds = new Set();
+  const identities = new Set();
+  for (const row of snapshot.verifiedContacts) {
+    if (!sameKeys(row, VERIFIED_CONTACT_FIELDS.verifiedContacts) || !nonBlank(row.contact_id) || row.authority_id !== authorityId || !accounts.has(row.account_id)
+      || !['phone', 'wechat_openid', 'wechat_unionid'].includes(row.contact_type) || !nonBlank(row.normalized_value_hash) || !nonBlank(row.verification_evidence_hash)
+      || !['verified', 'revoked'].includes(row.verification_state) || !positiveInteger(row.row_version) || !validTimestamps(row, ['created_at', 'updated_at'])
+      || !validNullableInstant(row.verified_at) || !validNullableInstant(row.revoked_at) || contactIds.has(row.contact_id)) return false;
+    const verified = row.verification_state === 'verified';
+    if ((verified && (row.verified_at === null || row.revoked_at !== null)) || (!verified && (row.verified_at === null || row.revoked_at === null))) return false;
+    if (verified && accounts.get(row.account_id).status !== 'active') return false;
+    const identity = `${row.authority_id}\u0000${row.contact_type}\u0000${row.normalized_value_hash}`;
+    if (identities.has(identity)) return false;
+    contactIds.add(row.contact_id); identities.add(identity);
+  }
+  return true;
+}
 function parseLinkRevokeObject(json, fields) {
   if (typeof json !== 'string') return null;
   try {
@@ -285,7 +309,7 @@ function createVNextPg17SyntheticControlPlaneSource(snapshot) {
     || COLLECTIONS.some(key => !Array.isArray(copy[key]))
     || copy.authorities.length !== 1 || copy.authorities[0].status !== 'active'
     || DEFERRED_MAPPED_COLLECTIONS.some(key => copy[key].length !== 0)
-    || !validIdentityTopology(copy) || !validHistoricalAuthorization(copy) || !validProfileMetadata(copy) || !validLinkRevocationEvidence(copy)) {
+    || !validIdentityTopology(copy) || !validHistoricalAuthorization(copy) || !validProfileMetadata(copy) || !validVerifiedContactMetadata(copy) || !validLinkRevocationEvidence(copy)) {
     throw fail('VNEXT_PG17_COPY_REHEARSAL_SOURCE_INVALID');
   }
   const database = new Database(':memory:');
@@ -306,6 +330,7 @@ async function rehearseVNextPg17ControlPlaneCopy({ source, target, faultPlan } =
   const sourceIdentityLogicalSha256 = sha256(identityLogicalRows(snapshot));
   const sourceHistoricalLogicalSha256 = sha256(historicalAuthorizationLogicalRows(snapshot));
   const sourceProfileBindingLogicalSha256 = sha256(profileMetadataLogicalRows(snapshot));
+  const sourceVerifiedContactLogicalSha256 = sha256(verifiedContactLogicalRows(snapshot));
   const sourceLinkRevocationEvidenceLogicalSha256 = sha256(linkRevocationEvidenceLogicalRows(snapshot));
   try {
   const report = await withVNextPg17CopyOnlyRehearsalTarget(target, async facade => {
@@ -315,6 +340,7 @@ async function rehearseVNextPg17ControlPlaneCopy({ source, target, faultPlan } =
     for (const collection of ['accounts', 'trustedDevices', 'installations', 'links']) for (const item of snapshot[collection]) await facade.insertFoundation(collection, item);
     for (const collection of HISTORICAL_AUTHORIZATION_COLLECTIONS) for (const item of snapshot[collection]) await facade.insertHistoricalAuthorization(collection, item);
     for (const collection of PROFILE_METADATA_COLLECTIONS) for (const item of snapshot[collection]) await facade.insertProfileMetadata(collection, item);
+    for (const collection of VERIFIED_CONTACT_COLLECTIONS) for (const item of snapshot[collection]) await facade.insertVerifiedContact(collection, item);
     for (const collection of LINK_REVOCATION_EVIDENCE_COLLECTIONS) {
       for (const item of snapshot[collection]) {
         const targetRow = Object.fromEntries(LINK_REVOCATION_TARGET_FIELDS[collection].map(field => [field, item[field]]));
@@ -324,6 +350,7 @@ async function rehearseVNextPg17ControlPlaneCopy({ source, target, faultPlan } =
     const targetIdentity = await facade.readIdentityTopology();
     const targetHistorical = await facade.readHistoricalAuthorization();
     const targetProfile = await facade.readProfileMetadata();
+    const targetContacts = await facade.readVerifiedContacts();
     const targetEvidence = await facade.readLinkRevocationEvidence();
     const targetSnapshot = Object.fromEntries(IDENTITY_COLLECTIONS.map(collection => [collection, targetIdentity[collection]]));
     const targetIdentityLogicalSha256 = sha256(identityLogicalRows(targetSnapshot));
@@ -334,9 +361,12 @@ async function rehearseVNextPg17ControlPlaneCopy({ source, target, faultPlan } =
     const targetProfileSnapshot = Object.fromEntries(PROFILE_METADATA_COLLECTIONS.map(collection => [collection, targetProfile[collection]]));
     const targetProfileBindingLogicalSha256 = sha256(profileMetadataLogicalRows(targetProfileSnapshot));
     if (targetProfileBindingLogicalSha256 !== sourceProfileBindingLogicalSha256) throw fail('VNEXT_PG17_COPY_REHEARSAL_LOGICAL_MISMATCH');
+    const targetVerifiedContactSnapshot = Object.fromEntries(VERIFIED_CONTACT_COLLECTIONS.map(collection => [collection, targetContacts[collection]]));
+    const targetVerifiedContactLogicalSha256 = sha256(verifiedContactLogicalRows(targetVerifiedContactSnapshot));
+    if (targetVerifiedContactLogicalSha256 !== sourceVerifiedContactLogicalSha256) throw fail('VNEXT_PG17_COPY_REHEARSAL_LOGICAL_MISMATCH');
     const targetLinkRevocationEvidenceLogicalSha256 = sha256(linkRevocationEvidenceLogicalRows(targetEvidence));
     if (targetLinkRevocationEvidenceLogicalSha256 !== sourceLinkRevocationEvidenceLogicalSha256) throw fail('VNEXT_PG17_COPY_REHEARSAL_LOGICAL_MISMATCH');
-    return Object.freeze({ status: 'boundary-verified', schemaVersion: 5, migrationVersion: 15, authorityCount: targetSnapshot.authorities.length, accountCount: targetSnapshot.accounts.length, deviceCount: targetSnapshot.trustedDevices.length, installationCount: targetSnapshot.installations.length, linkCount: targetSnapshot.links.length, capabilityCount: targetHistoricalSnapshot.capabilityCatalog.length, roleGrantCount: targetHistoricalSnapshot.roleGrants.length, capabilityOverrideCount: targetHistoricalSnapshot.capabilityOverrides.length, scopeGrantCount: targetHistoricalSnapshot.dataScopeGrants.length, profileBindingCount: targetProfileSnapshot.profileBindings.length, receiptCount: targetEvidence.receipts.length, auditEventCount: targetEvidence.auditEvents.length, outboxEventCount: targetEvidence.outboxEvents.length, sourceIdentityLogicalSha256, targetIdentityLogicalSha256, sourceHistoricalLogicalSha256, targetHistoricalLogicalSha256, sourceProfileBindingLogicalSha256, targetProfileBindingLogicalSha256, sourceLinkRevocationEvidenceLogicalSha256, targetLinkRevocationEvidenceLogicalSha256, activeRoleGrantCount: targetHistoricalSnapshot.roleGrants.filter(row => row.status === 'active').length, activeCapabilityOverrideCount: targetHistoricalSnapshot.capabilityOverrides.filter(row => row.status === 'active').length, activeScopeGrantCount: targetHistoricalSnapshot.dataScopeGrants.filter(row => row.status === 'active').length, activeProfileBindingCount: targetProfileSnapshot.profileBindings.filter(row => row.status === 'active').length, activeSessionCount: 0, activeReauthenticationCount: 0, outboxDispatchedCount: 0, inertInventory: inventory(snapshot), rollback: Object.freeze({ attempted: false, restoredEmpty: false }) });
+    return Object.freeze({ status: 'boundary-verified', schemaVersion: 5, migrationVersion: 15, authorityCount: targetSnapshot.authorities.length, accountCount: targetSnapshot.accounts.length, deviceCount: targetSnapshot.trustedDevices.length, installationCount: targetSnapshot.installations.length, linkCount: targetSnapshot.links.length, capabilityCount: targetHistoricalSnapshot.capabilityCatalog.length, roleGrantCount: targetHistoricalSnapshot.roleGrants.length, capabilityOverrideCount: targetHistoricalSnapshot.capabilityOverrides.length, scopeGrantCount: targetHistoricalSnapshot.dataScopeGrants.length, profileBindingCount: targetProfileSnapshot.profileBindings.length, verifiedContactCount: targetVerifiedContactSnapshot.verifiedContacts.length, receiptCount: targetEvidence.receipts.length, auditEventCount: targetEvidence.auditEvents.length, outboxEventCount: targetEvidence.outboxEvents.length, sourceIdentityLogicalSha256, targetIdentityLogicalSha256, sourceHistoricalLogicalSha256, targetHistoricalLogicalSha256, sourceProfileBindingLogicalSha256, targetProfileBindingLogicalSha256, sourceVerifiedContactLogicalSha256, targetVerifiedContactLogicalSha256, sourceLinkRevocationEvidenceLogicalSha256, targetLinkRevocationEvidenceLogicalSha256, activeRoleGrantCount: targetHistoricalSnapshot.roleGrants.filter(row => row.status === 'active').length, activeCapabilityOverrideCount: targetHistoricalSnapshot.capabilityOverrides.filter(row => row.status === 'active').length, activeScopeGrantCount: targetHistoricalSnapshot.dataScopeGrants.filter(row => row.status === 'active').length, activeProfileBindingCount: targetProfileSnapshot.profileBindings.filter(row => row.status === 'active').length, activeSessionCount: 0, activeReauthenticationCount: 0, outboxDispatchedCount: 0, inertInventory: inventory(snapshot), rollback: Object.freeze({ attempted: false, restoredEmpty: false }) });
   }, faultPlan);
   const after = fingerprint(readSnapshot(state.database));
   if (before !== after) throw fail('VNEXT_PG17_COPY_REHEARSAL_SOURCE_CHANGED');
