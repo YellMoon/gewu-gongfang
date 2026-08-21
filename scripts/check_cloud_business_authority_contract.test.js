@@ -7,6 +7,7 @@ const DATABASE_DECISION = 'docs/superpowers/specs/2026-08-14-vnext-production-co
 const SOURCE_DICTIONARY = 'docs/vnext-source-data-dictionary.md';
 const SHADOW_IMPORT_PLAN = 'docs/superpowers/plans/2026-08-13-vnext-cloud-schema-shadow-import.md';
 const UNIFIED_DESKTOP_ADMISSION = 'docs/superpowers/specs/2026-08-21-unified-desktop-silent-registration-offline-draft-admission-design.md';
+const CORE_SCHEDULING_ADMISSION = 'docs/superpowers/specs/2026-08-21-core-scheduling-attendance-fee-migration-design.md';
 const TASK_CARRIER = 'task.md';
 
 assert.strictEqual(
@@ -23,7 +24,7 @@ assert.ok(
   contract.ACTIVE_DOCUMENTS.includes(DATABASE_DECISION),
   'the still-linked production-database decision must be covered by the architecture gate'
 );
-for (const activeMigrationDocument of [SOURCE_DICTIONARY, SHADOW_IMPORT_PLAN, UNIFIED_DESKTOP_ADMISSION, TASK_CARRIER]) {
+for (const activeMigrationDocument of [SOURCE_DICTIONARY, SHADOW_IMPORT_PLAN, UNIFIED_DESKTOP_ADMISSION, CORE_SCHEDULING_ADMISSION, TASK_CARRIER]) {
   assert.ok(
     contract.ACTIVE_DOCUMENTS.includes(activeMigrationDocument),
     `${activeMigrationDocument} must be covered once full-business migration is active`

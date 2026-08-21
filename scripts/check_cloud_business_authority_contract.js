@@ -11,6 +11,7 @@ const ACTIVE_DOCUMENTS = Object.freeze([
   'docs/superpowers/specs/2026-08-20-vnext-local-business-repository-retention-and-control-plane-projection-no-export-design.md',
   'docs/superpowers/specs/2026-08-15-vnext-pg17-production-adapter-design.md',
   'docs/superpowers/specs/2026-08-21-unified-desktop-silent-registration-offline-draft-admission-design.md',
+  'docs/superpowers/specs/2026-08-21-core-scheduling-attendance-fee-migration-design.md',
   'docs/vnext-source-data-dictionary.md',
   'docs/superpowers/plans/2026-08-13-vnext-cloud-schema-shadow-import.md',
   'task.md',
@@ -18,6 +19,13 @@ const ACTIVE_DOCUMENTS = Object.freeze([
 ]);
 
 const REQUIRED_MARKERS = Object.freeze({
+  'docs/superpowers/specs/2026-08-21-core-scheduling-attendance-fee-migration-design.md': Object.freeze([
+    'Core Scheduling Attendance and Fee Migration Design',
+    'legacy course-default pricing/roster semantics',
+    'USER_DECLARED_OBSOLETE_LEGACY_SCHEDULE',
+    'never create a fake student',
+    'reported 3013 device-local changes',
+  ]),
   'AGENTS.md': Object.freeze([
     '云端数据库保存适用业务数据与题库结构化文字内容，并是其唯一可写权威',
     'NAS 或受控存储代理只保存题库富媒体',

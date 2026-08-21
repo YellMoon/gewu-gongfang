@@ -17,6 +17,8 @@
 >
 > The user-confirmed business migration scope includes students, teachers, schools, rooms, courses, and schedules. A schedule's `student_ids`, `student_pricings`, `calculated_tuition`, `calculated_teacher_fee`, `deleted`, `created_at`, and `updated_at` are all required migration facts. `student_pricings` carries per-student attendance status as well as the per-session tuition and teacher-fee values; it must be structurally parsed, validated, and reconciled during any shadow import, never treated as disposable JSON text.
 >
+> A schedule without an explicit `student_pricings` override follows the legacy course-default roster/pricing rule; it is not a missing-detail error. An explicit schedule pricing overrides that default and carries the per-session attendance and money fact. The user has declared the observed `__institution_unbound__` zero-value copied rows obsolete after later course-detail correction and rescheduling: a snapshot-bound exception records their exclusion without creating a fake student or deleting the source rows. The reported 3013 device-local changes are not in this SQLite snapshot and require separately authorized, user-confirmed cloud-command intake rather than raw-row migration.
+>
 > Historical content after this block is non-binding. It records older local-host, dual-package, manual-approval, and control-plane-only experiments; it must not guide implementation, testing, release, or migration.
 <!-- current-architecture-contract:end -->
 
