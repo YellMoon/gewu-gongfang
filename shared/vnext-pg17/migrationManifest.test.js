@@ -204,6 +204,7 @@ async function runManifestCases() {
   assert.match(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.sql, /GRANT EXECUTE ON FUNCTION vnext_control_plane\.vnext_issue_online_identity_assertion[\s\S]*vnext_pg17_identity_verifier/);
   assert.match(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.sql, /GRANT EXECUTE ON FUNCTION vnext_control_plane\.vnext_register_unified_desktop_online[\s\S]*vnext_pg17_writer/);
   assert.doesNotMatch(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.sql, /GRANT (?:INSERT|UPDATE|DELETE) ON TABLE[\s\S]*vnext_pg17_writer/);
+  assert.doesNotMatch(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.sql, /(?:access_token|refresh_token|password|private_key|jwt)/i);
   assert.deepStrictEqual(expectedCatalog.relations, [
     'vnext_control_plane.vnext_account_device_links',
     'vnext_control_plane.vnext_accounts',
