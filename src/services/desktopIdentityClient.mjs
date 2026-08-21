@@ -215,7 +215,7 @@ async function responseData(response) {
   } catch (cause) {
     throw identityError('DESKTOP_IDENTITY_RESPONSE_INVALID', cause);
   }
-  if (!response.ok || payload?.success !== true) {
+  if (!response.ok || (payload?.success !== true && payload?.ok !== true)) {
     throw identityError(payload?.code || 'DESKTOP_IDENTITY_REQUEST_FAILED');
   }
   return payload.data || payload;
@@ -583,6 +583,143 @@ export function createDesktopIdentityClient({
     });
   }
 
+  async function beginUnifiedOnlineRegistration({ baseUrl, deviceName, idempotencyKey } = {}) {
+    if (typeof desktopIdentity.beginUnifiedOnlineRegistration !== 'function') {
+      throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_UNAVAILABLE');
+    }
+    const normalizedUrl = normalizedBaseUrl(baseUrl);
+    const normalizedIdempotencyKey = String(idempotencyKey || '').trim();
+    if (!normalizedIdempotencyKey || normalizedIdempotencyKey.length > 256) {
+      throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_CONTEXT_INVALID');
+    }
+    const publicIdentity = await desktopIdentity.beginUnifiedOnlineRegistration({ deviceName });
+    const started = await request(fetchImpl, normalizedUrl, '/api/desktop/pairing/start', {
+      method: 'POST',
+      body: {
+        installationId: publicIdentity.deviceId,
+        installationPublicKey: publicIdentity.publicKey,
+        idempotencyKey: normalizedIdempotencyKey,
+      },
+    });
+    if (!started?.pairingId || !started?.pairingSecret || !started?.expiresAt) {
+      throw identityError('DESKTOP_UNIFIED_ONLINE_PAIRING_INVALID');
+    }
+    return Object.freeze({
+      baseUrl: normalizedUrl,
+      publicIdentity: Object.freeze({ ...publicIdentity }),
+      idempotencyKey: normalizedIdempotencyKey,
+      pairingId: String(started.pairingId),
+      pairingSecret: String(started.pairingSecret),
+      expiresAt: String(started.expiresAt),
+      qrValue: `gewu://desktop-pairing?pairingId=${encodeURIComponent(started.pairingId)}&secret=${encodeURIComponent(started.pairingSecret)}`,
+    });
+  }
+
+  async function pollUnifiedOnlineRegistration(pending) {
+    if (!pending?.baseUrl || !pending?.pairingId || !pending?.pairingSecret || !pending?.publicIdentity
+      || !pending?.idempotencyKey) {
+      throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_CONTEXT_INVALID');
+    }
+    const data = await request(fetchImpl, pending.baseUrl,
+      `/api/desktop/pairing/${encodeURIComponent(pending.pairingId)}?secret=${encodeURIComponent(pending.pairingSecret)}`);
+    if (data?.status === 'awaiting_online_verification') return Object.freeze({ ...pending, status: data.status });
+    if (data?.status !== 'verified' || !data.verificationToken || !data.deviceChallenge) {
+      throw identityError('DESKTOP_UNIFIED_ONLINE_PAIRING_INVALID');
+    }
+    return Object.freeze({
+      ...pending,
+      status: 'verified',
+      verificationToken: String(data.verificationToken),
+      deviceChallenge: String(data.deviceChallenge),
+    });
+  }
+
+  async function completeUnifiedOnlineRegistration({ pending, password } = {}) {
+    if (!pending?.baseUrl || !pending?.publicIdentity || !pending?.idempotencyKey
+      || !pending?.verificationToken || !pending?.deviceChallenge) {
+      throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_CONTEXT_INVALID');
+    }
+    if (typeof desktopIdentity.signChallenge !== 'function'
+      || typeof desktopIdentity.completeRegistration !== 'function') {
+      throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_UNAVAILABLE');
+    }
+    const proof = await desktopIdentity.signChallenge({
+      purpose: 'unified-online-registration',
+      challenge: pending.deviceChallenge,
+    });
+    if (!proof?.signature) throw identityError('DESKTOP_UNIFIED_ONLINE_PROOF_INVALID');
+    const registered = await request(fetchImpl, pending.baseUrl, '/api/desktop/online-registration', {
+      method: 'POST',
+      body: {
+        verificationToken: pending.verificationToken,
+        installationId: pending.publicIdentity.deviceId,
+        installationPublicKey: pending.publicIdentity.publicKey,
+        deviceProof: proof.signature,
+        idempotencyKey: pending.idempotencyKey,
+      },
+    });
+    if (!registered?.sessionToken || !registered?.sessionId) {
+      throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_INVALID');
+    }
+    const context = await request(fetchImpl, pending.baseUrl, '/api/desktop/session-context', {
+      token: registered.sessionToken,
+    });
+    const eligibleRoles = uniqueRoles(context?.roles);
+    if (!context?.authorityId || !context?.accountId || !context?.deviceId || !context?.installationId
+      || context.sessionId !== registered.sessionId || context.deviceId !== pending.publicIdentity.deviceId
+      || context.installationId !== pending.publicIdentity.deviceId || !context.expiresAt
+      || !eligibleRoles.includes('super_admin')) {
+      throw identityError('DESKTOP_UNIFIED_ONLINE_CONTEXT_INVALID');
+    }
+    const lastPhoneVerifiedAt = currentDate().toISOString();
+    const authorization = {
+      id: context.sessionId,
+      deviceId: context.deviceId,
+      deviceName: pending.publicIdentity.deviceName,
+      deviceKind: pending.publicIdentity.deviceKind,
+      userId: context.accountId,
+      keyFingerprint: pending.publicIdentity.keyFingerprint,
+      status: 'active',
+      authorizationSource: 'wechat_phone',
+      credentialVersion: 1,
+      lastPhoneVerifiedAt,
+      phoneReverifyDueAt: context.expiresAt,
+    };
+    const profile = {
+      userId: context.accountId,
+      user: { id: context.accountId, name: 'Cloud account' },
+      eligibleRoles,
+      activeRole: 'super_admin',
+      teacherId: null,
+      studentId: null,
+    };
+    const vaultStatus = await desktopIdentity.completeRegistration({
+      password,
+      authorization,
+      profile,
+      offlineLease: null,
+    });
+    activePassword = password;
+    const stored = onlineSessionValue({
+      token: registered.sessionToken,
+      session: {
+        id: context.sessionId,
+        userId: context.accountId,
+        deviceId: context.deviceId,
+        activeRole: 'super_admin',
+        eligibleRoles,
+        expiresAt: context.expiresAt,
+      },
+      profile,
+    });
+    await sessionStore.save(stored);
+    return {
+      ...stored,
+      vaultStatus,
+      gateState: resolveDesktopGateState({ vaultStatus, online: true, onlineSession: stored, now: currentDate() }),
+    };
+  }
+
   async function ensureOnlineSession({ baseUrl } = {}) {
     if (!activePassword) throw identityError('DESKTOP_IDENTITY_LOCAL_PASSWORD_REQUIRED');
     return unlock({
@@ -651,10 +788,13 @@ export function createDesktopIdentityClient({
   return Object.freeze({
     beginPasswordReset,
     beginRegistration,
+    beginUnifiedOnlineRegistration,
     completeRegistration,
+    completeUnifiedOnlineRegistration,
     ensureOnlineSession,
     lock,
     pollRegistration,
+    pollUnifiedOnlineRegistration,
     registerUnifiedDesktopOnline,
     status: () => desktopIdentity.status(),
     switchRole,

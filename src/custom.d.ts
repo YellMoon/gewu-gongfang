@@ -62,6 +62,7 @@ interface Window {
   desktopIdentity?: {
     status(): Promise<any>;
     beginRegistration(input?: { deviceName?: string }): Promise<any>;
+    beginUnifiedOnlineRegistration(input?: { deviceName?: string }): Promise<any>;
     beginPasswordReset(): Promise<any>;
     completeRegistration(input: {
       password: string;

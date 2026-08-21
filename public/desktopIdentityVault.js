@@ -765,6 +765,24 @@ function createDesktopIdentityVault({
     return Object.freeze({ ...publicIdentity });
   }
 
+  function beginUnifiedOnlineRegistration(input = {}) {
+    if (fsImpl.existsSync(filePath)) throw vaultError('DESKTOP_IDENTITY_VAULT_ALREADY_SEALED');
+    if (pendingRegistration) throw vaultError('DESKTOP_IDENTITY_REGISTRATION_ALREADY_PENDING');
+    const keyPair = crypto.generateKeyPairSync('ed25519');
+    const publicKey = keyPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+    const keyFingerprint = fingerprintPublicKey(publicKey);
+    const publicIdentity = normalizePublicIdentity({
+      deviceId: `desktop-device-${keyFingerprint.slice(0, 32)}`,
+      deviceName: input.deviceName,
+      deviceKind: 'desktop-client',
+      publicKey,
+      keyFingerprint,
+    });
+    const privateKey = keyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+    pendingRegistration = Object.freeze({ purpose: 'register', publicIdentity, privateKey });
+    return Object.freeze({ ...publicIdentity });
+  }
+
   function beginPasswordReset() {
     if (!fsImpl.existsSync(filePath)) throw vaultError('DESKTOP_IDENTITY_VAULT_NOT_FOUND');
     if (pendingRegistration) throw vaultError('DESKTOP_IDENTITY_REGISTRATION_ALREADY_PENDING');
@@ -1132,6 +1150,7 @@ function createDesktopIdentityVault({
   return Object.freeze({
     beginPasswordReset,
     beginRegistration,
+    beginUnifiedOnlineRegistration,
     clear,
     completePasswordReset,
     completeRegistration,

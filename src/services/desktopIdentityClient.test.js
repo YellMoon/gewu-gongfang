@@ -68,6 +68,96 @@ async function main() {
     && source.includes("purpose: 'activation-finalize'"),
   'registration must seal locally and submit a device-key activation receipt before saving an online session');
 
+  const unifiedCloudRequests = [];
+  const unifiedCloudEvents = [];
+  let unifiedCloudSealed = null;
+  let unifiedCloudStored = null;
+  const unifiedCloudClient = createDesktopIdentityClient({
+    now: () => new Date('2026-08-21T12:00:00.000Z'),
+    desktopIdentity: {
+      status: async () => ({ state: 'empty' }),
+      beginUnifiedOnlineRegistration: async () => ({
+        deviceId: 'desktop-device-a1b2c3d4e5f60708',
+        deviceName: 'Unified cloud desktop',
+        deviceKind: 'desktop-client',
+        publicKey: 'unified-public-key',
+        keyFingerprint: 'a'.repeat(64),
+      }),
+      signChallenge: async input => {
+        unifiedCloudEvents.push(`sign:${input.purpose}`);
+        assert.deepStrictEqual(input, {
+          purpose: 'unified-online-registration',
+          challenge: 'cloud-device-proof-1',
+        });
+        return { signature: 'unified-device-proof' };
+      },
+      completeRegistration: async input => {
+        unifiedCloudEvents.push('seal-unified-cloud-vault');
+        unifiedCloudSealed = input;
+        return {
+          state: 'unlocked', unlocked: true,
+          user: { id: 'account-cloud-1' },
+          deviceId: 'desktop-device-a1b2c3d4e5f60708',
+          authorizationId: 'session-cloud-1', credentialVersion: 1,
+          activeRole: 'super_admin', eligibleRoles: ['super_admin'], offlineLease: null,
+        };
+      },
+    },
+    sessionStore: {
+      save: async value => { unifiedCloudEvents.push('save-unified-cloud-session'); unifiedCloudStored = value; },
+      clear: async () => {},
+    },
+    fetchImpl: async (url, options = {}) => {
+      unifiedCloudRequests.push({ url, method: options.method, body: options.body ? JSON.parse(options.body) : null });
+      if (url === 'https://cloud.test/api/desktop/pairing/start') {
+        return { ok: true, json: async () => ({ ok: true, pairingId: 'pairing-cloud-1', pairingSecret: 'pairing-secret-1', expiresAt: '2026-08-21T12:05:00.000Z' }) };
+      }
+      if (url === 'https://cloud.test/api/desktop/pairing/pairing-cloud-1?secret=pairing-secret-1') {
+        return { ok: true, json: async () => ({ ok: true, status: 'verified', verificationToken: 'verification-token-1', deviceChallenge: 'cloud-device-proof-1' }) };
+      }
+      if (url === 'https://cloud.test/api/desktop/online-registration') {
+        return { ok: true, json: async () => ({ ok: true, receiptId: 'receipt-cloud-1', sessionId: 'session-cloud-1', replayed: false, sessionToken: 'session-token-cloud-1' }) };
+      }
+      if (url === 'https://cloud.test/api/desktop/session-context') {
+        assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+        return { ok: true, json: async () => ({ ok: true,
+          authorityId: 'authority-cloud-1', accountId: 'account-cloud-1',
+          deviceId: 'desktop-device-a1b2c3d4e5f60708', installationId: 'desktop-device-a1b2c3d4e5f60708',
+          sessionId: 'session-cloud-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'],
+        }) };
+      }
+      throw new Error(`unexpected unified cloud request ${url}`);
+    },
+  });
+  const unifiedPending = await unifiedCloudClient.beginUnifiedOnlineRegistration({
+    baseUrl: 'https://cloud.test', deviceName: 'Unified cloud desktop', idempotencyKey: 'unified-registration-1',
+  });
+  assert.strictEqual(unifiedPending.qrValue, 'gewu://desktop-pairing?pairingId=pairing-cloud-1&secret=pairing-secret-1');
+  const unifiedVerified = await unifiedCloudClient.pollUnifiedOnlineRegistration(unifiedPending);
+  const unifiedCompleted = await unifiedCloudClient.completeUnifiedOnlineRegistration({
+    pending: unifiedVerified,
+    password: 'unified-local-password',
+  });
+  assert.deepStrictEqual(unifiedCloudRequests.map(entry => entry.url), [
+    'https://cloud.test/api/desktop/pairing/start',
+    'https://cloud.test/api/desktop/pairing/pairing-cloud-1?secret=pairing-secret-1',
+    'https://cloud.test/api/desktop/online-registration',
+    'https://cloud.test/api/desktop/session-context',
+  ]);
+  assert.deepStrictEqual(unifiedCloudRequests[0].body, {
+    installationId: 'desktop-device-a1b2c3d4e5f60708', installationPublicKey: 'unified-public-key', idempotencyKey: 'unified-registration-1',
+  });
+  assert.deepStrictEqual(unifiedCloudRequests[2].body, {
+    verificationToken: 'verification-token-1', installationId: 'desktop-device-a1b2c3d4e5f60708',
+    installationPublicKey: 'unified-public-key', deviceProof: 'unified-device-proof', idempotencyKey: 'unified-registration-1',
+  });
+  assert.strictEqual(unifiedCloudSealed.offlineLease, null, 'a new unified registration never manufactures an offline lease');
+  assert.strictEqual(unifiedCloudSealed.authorization.userId, 'account-cloud-1');
+  assert.deepStrictEqual(unifiedCloudSealed.profile.eligibleRoles, ['super_admin']);
+  assert.deepStrictEqual(unifiedCloudEvents, ['sign:unified-online-registration', 'seal-unified-cloud-vault', 'save-unified-cloud-session']);
+  assert.strictEqual(unifiedCloudStored.token, 'session-token-cloud-1');
+  assert.strictEqual(unifiedCompleted.gateState.kind, 'online-unlocked');
+
   const registrationRequests = [];
   const registrationEvents = [];
   const finalizedLease = { id: 'lease-after-finalize', expiresAt: '2026-08-11T00:00:00.000Z' };

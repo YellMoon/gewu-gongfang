@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('api', {
 contextBridge.exposeInMainWorld('desktopIdentity', Object.freeze({
   status: () => ipcRenderer.invoke('desktop-identity:status'),
   beginRegistration: input => ipcRenderer.invoke('desktop-identity:begin-registration', input),
+  beginUnifiedOnlineRegistration: input => ipcRenderer.invoke('desktop-identity:begin-unified-online-registration', input),
   beginPasswordReset: () => ipcRenderer.invoke('desktop-identity:begin-password-reset'),
   completeRegistration: input => ipcRenderer.invoke('desktop-identity:complete-registration', input),
   completePasswordReset: input => ipcRenderer.invoke('desktop-identity:complete-password-reset', input),

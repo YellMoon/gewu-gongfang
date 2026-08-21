@@ -1117,6 +1117,9 @@ ipcMain.handle('desktop-identity:status', async () => getDesktopIdentityVault().
 ipcMain.handle('desktop-identity:begin-registration', async (_event, input) => {
   return getDesktopIdentityVault().beginRegistration(configuredDesktopIdentity(input));
 });
+ipcMain.handle('desktop-identity:begin-unified-online-registration', async (_event, input) => {
+  return getDesktopIdentityVault().beginUnifiedOnlineRegistration(input);
+});
 ipcMain.handle('desktop-identity:begin-password-reset', async () => {
   return getDesktopIdentityVault().beginPasswordReset();
 });

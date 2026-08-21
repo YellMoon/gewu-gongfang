@@ -145,6 +145,30 @@ async function main() {
     legacyUpgradeRequired: false,
   });
 
+  const unifiedVault = createDesktopIdentityVault({
+    filePath: path.join(workspace, 'unified-desktop-identity-v2.bin'),
+    safeStorage,
+    now: () => new Date(clock),
+  });
+  const unifiedPublicIdentity = unifiedVault.beginUnifiedOnlineRegistration({
+    deviceName: 'Unified cloud desktop',
+  });
+  assert.strictEqual(
+    unifiedPublicIdentity.deviceId,
+    `desktop-device-${unifiedPublicIdentity.keyFingerprint.slice(0, 32)}`,
+    'a unified desktop registration must derive its stable installation identity from its own key'
+  );
+  assert.strictEqual(unifiedPublicIdentity.deviceKind, 'desktop-client');
+  const unifiedProof = unifiedVault.signChallenge({
+    purpose: 'unified-online-registration',
+    challenge: 'cloud-issued-device-proof',
+  });
+  assert.ok(verifySignature(
+    unifiedPublicIdentity.publicKey,
+    'cloud-issued-device-proof',
+    unifiedProof.signature,
+  ));
+
   const publicIdentity = vault.beginRegistration({
     deviceId: 'device-2',
     deviceName: '第二台电脑',
@@ -639,7 +663,7 @@ async function main() {
   assert.deepStrictEqual(
     Array.from(Object.keys(exposed.desktopIdentity)).sort(),
     [
-      'beginPasswordReset', 'beginRegistration',
+      'beginPasswordReset', 'beginRegistration', 'beginUnifiedOnlineRegistration',
       'completePasswordReset', 'completeRegistration',
       'lock', 'refreshOfflineLease', 'signChallenge', 'status', 'unlock',
     ]
@@ -651,12 +675,15 @@ async function main() {
   assert.strictEqual(exposed.singleUserRuntime, undefined, 'ordinary preload must not expose host controls');
   await exposed.desktopIdentity.status();
   assert.strictEqual(invoked[0][0], 'desktop-identity:status');
+  await exposed.desktopIdentity.beginUnifiedOnlineRegistration({ deviceName: 'Unified cloud desktop' });
+  assert.strictEqual(invoked[1][0], 'desktop-identity:begin-unified-online-registration');
   await assert.rejects(exposed.api.invoke('desktop-auth:get'), /IPC channel not allowed/);
 
   const electronSource = fs.readFileSync(path.join(__dirname, 'electron.js'), 'utf8');
   for (const channel of [
     'desktop-identity:status',
     'desktop-identity:begin-registration',
+    'desktop-identity:begin-unified-online-registration',
     'desktop-identity:begin-password-reset',
     'desktop-identity:complete-registration',
     'desktop-identity:complete-password-reset',

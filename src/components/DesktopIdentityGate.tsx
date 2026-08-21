@@ -210,7 +210,9 @@ const DesktopIdentityGate: React.FC = () => {
     pollingRef.current = true;
     setPolling(true);
     try {
-      const next = await clientRef.current.pollRegistration(pending);
+      const next = pending?.pairingId
+        ? await clientRef.current.pollUnifiedOnlineRegistration(pending)
+        : await clientRef.current.pollRegistration(pending);
       setPending(next);
       setError('');
     } catch (caught) {
@@ -222,11 +224,14 @@ const DesktopIdentityGate: React.FC = () => {
   }, [pending]);
 
   useEffect(() => {
-    const status = pending?.challenge?.status;
-    if (!['pending_phone', 'identity_verified_pending_approval'].includes(status)) return undefined;
+    const status = pending?.pairingId ? pending?.status : pending?.challenge?.status;
+    const waitingForVerification = pending?.pairingId
+      ? status === 'awaiting_online_verification'
+      : status === 'pending_phone';
+    if (!waitingForVerification) return undefined;
     const timer = window.setInterval(() => { void pollRegistration(); }, 3000);
     return () => window.clearInterval(timer);
-  }, [pending?.challenge?.status, pollRegistration]);
+  }, [pending?.pairingId, pending?.status, pending?.challenge?.status, pollRegistration]);
 
   useEffect(() => {
     const remaining = desktopIdentityExpiryDelay(gateState, new Date());
@@ -250,16 +255,12 @@ const DesktopIdentityGate: React.FC = () => {
     setError('');
     try {
       if (gateState.kind === 'registration-interrupted') await clientRef.current.lock();
-      const started = await clientRef.current.beginRegistration({
+      const randomPart = window.crypto?.randomUUID?.() || (String(Date.now()) + '-' + String(Math.random()));
+      const started = await clientRef.current.beginUnifiedOnlineRegistration({
         baseUrl,
         deviceName,
-        deviceKind: runtimeConfig?.nodeRole === 'primary-host' ? 'primary-host' : 'desktop-client',
+        idempotencyKey: 'desktop-registration-' + randomPart,
       });
-      if (runtimeConfig?.nodeRole === 'primary-host'
-        && !runtimeConfig?.primaryHostEpochId
-        && !runtimeConfig?.primaryHostGeneration) {
-        started.bootstrapHostEnrollment = true;
-      }
       setPending(started);
       setGateState({ kind: 'registration-active' });
     } catch (caught) {
@@ -279,7 +280,9 @@ const DesktopIdentityGate: React.FC = () => {
     setBusy(true);
     setError('');
     try {
-      const result = await clientRef.current.completeRegistration({ pending, password });
+      const result = pending?.pairingId
+        ? await clientRef.current.completeUnifiedOnlineRegistration({ pending, password })
+        : await clientRef.current.completeRegistration({ pending, password });
       setPassword('');
       setPasswordAgain('');
       acceptRuntime(result);
@@ -458,6 +461,53 @@ const DesktopIdentityGate: React.FC = () => {
         </>
       );
     }
+    if (pending?.pairingId) {
+      const verified = pending.status === 'verified';
+      return (
+        <>
+          <Paragraph className="desktop-identity-copy">
+            {'\u8bf7\u4f7f\u7528\u5fae\u4fe1\u5c0f\u7a0b\u5e8f\u626b\u7801\u5b8c\u6210\u8d26\u53f7\u6838\u9a8c\u3002\u6838\u9a8c\u901a\u8fc7\u540e\uff0c\u8fd9\u53f0\u7535\u8111\u4f1a\u81ea\u52a8\u767b\u8bb0\uff1b\u4e0d\u9700\u8981\u53e6\u4e00\u53f0\u7535\u8111\u5ba1\u6279\u3002'}
+          </Paragraph>
+          {pending.qrValue ? (
+            <div className="desktop-identity-qr">
+              <QRCode value={pending.qrValue} size={196} bordered={false} />
+            </div>
+          ) : null}
+          {verified ? (
+            <>
+              <Alert type="success" showIcon message={'\u8d26\u53f7\u5df2\u6838\u9a8c'} description={'\u8bf7\u4e3a\u8fd9\u53f0\u7535\u8111\u8bbe\u7f6e\u72ec\u7acb\u7684\u672c\u673a\u5bc6\u7801\u3002'} />
+              <Input.Password
+                prefix={<LockOutlined />}
+                visibilityToggle
+                value={password}
+                onChange={event => setPassword(event.target.value)}
+                placeholder={'\u81f3\u5c11 6 \u4e2a\u5b57\u7b26'}
+                onPressEnter={completeRegistration}
+              />
+              <Input.Password
+                prefix={<LockOutlined />}
+                visibilityToggle
+                value={passwordAgain}
+                onChange={event => setPasswordAgain(event.target.value)}
+                placeholder={'\u518d\u6b21\u8f93\u5165\u672c\u673a\u5bc6\u7801'}
+                onPressEnter={completeRegistration}
+              />
+              <Text type="secondary">{'\u5bc6\u7801\u53ea\u7528\u4e8e\u89e3\u9501\u8fd9\u53f0\u7535\u8111\uff0c\u4e0d\u4e0a\u4f20\u3001\u4e0d\u8de8\u7535\u8111\u540c\u6b65\u3002'}</Text>
+              <Button type="primary" loading={busy} onClick={completeRegistration} block>
+                {'\u4fdd\u5b58\u672c\u673a\u5bc6\u7801\u5e76\u8fdb\u5165'}
+              </Button>
+            </>
+          ) : (
+            <Paragraph>{'\u8bf7\u5728\u5fae\u4fe1\u5c0f\u7a0b\u5e8f\u4e2d\u5b8c\u6210\u624b\u673a\u53f7\u6838\u9a8c\u3002\u672c\u673a\u4e0d\u4f1a\u8bfb\u53d6\u6216\u4fdd\u5b58\u624b\u673a\u53f7\u3002'}</Paragraph>
+          )}
+          {!verified && (
+            <Button icon={<ReloadOutlined />} loading={polling} onClick={pollRegistration} block>
+              {'\u5237\u65b0\u6838\u9a8c\u72b6\u6001'}
+            </Button>
+          )}
+        </>
+      );
+    }
     const view = registrationViewForChallenge(pending.challenge);
     if (view.kind === 'password-setup-required') {
       const resetNotice = passwordReset ? (
@@ -535,8 +585,8 @@ const DesktopIdentityGate: React.FC = () => {
           <Alert
             type="warning"
             showIcon
-            message="等待另一台已授权设备审核"
-            description="审核人只能确认或拒绝这次申请，不能替你选择其他账号。"
+            message={'\u6b63\u5728\u7b49\u5f85\u5fae\u4fe1\u6838\u9a8c\u7ed3\u679c'}
+            description={'\u8bf7\u5728\u5fae\u4fe1\u5c0f\u7a0b\u5e8f\u5b8c\u6210\u672c\u4eba\u8d26\u53f7\u6838\u9a8c\u3002'}
           />
         )}
         <Button icon={<ReloadOutlined />} loading={polling} onClick={pollRegistration} block>
