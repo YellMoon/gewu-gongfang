@@ -882,7 +882,9 @@ function stableSha256(value) {
 
 function projectCoreSchedulingRows(core) {
   const numeric = value => value === null ? null : Number(value);
-  const roster = rows => Object.freeze(rows.map(row => Object.freeze({ studentId: row.studentId, tuition: numeric(row.tuition), teacherFee: numeric(row.teacherFee), attendanceStatus: row.attendanceStatus })));
+  const roster = rows => Object.freeze([...rows]
+    .sort((left, right) => left.studentId.localeCompare(right.studentId))
+    .map(row => Object.freeze({ studentId: row.studentId, tuition: numeric(row.tuition), teacherFee: numeric(row.teacherFee), attendanceStatus: row.attendanceStatus })));
   const teachers = core.teachers.map(source => Object.freeze({
     id: source.id, tenantId: source.tenant_id, name: source.name, phoneLegacy: source.phone, subject: source.subject,
     hourlyRate: numeric(source.hourly_rate), notes: source.notes, legacyDeleted: source.deleted === 1, createdAt: source.created_at, updatedAt: source.updated_at,

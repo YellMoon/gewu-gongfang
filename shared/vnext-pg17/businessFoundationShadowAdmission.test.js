@@ -179,6 +179,25 @@ function fixtureWithApprovedLegacySentinels() {
   return value;
 }
 
+function fixtureWithUnsortedRosters() {
+  const value = fixture();
+  const secondStudent = { ...value.coreScheduling.students[0], id: 'student-synthetic-2', name: 'Synthetic Student 2' };
+  value.coreScheduling.students.push(secondStudent);
+  const defaultRoster = JSON.stringify([
+    { student_id: secondStudent.id, tuition: 120, teacher_fee: 60 },
+    { student_id: 'student-synthetic-1', tuition: 100, teacher_fee: 50 },
+  ]);
+  const overrideRoster = JSON.stringify([
+    { student_id: secondStudent.id, tuition: 150, teacher_fee: 80, status: 3 },
+    { student_id: 'student-synthetic-1', tuition: 120, teacher_fee: 60, status: 1 },
+  ]);
+  value.coreScheduling.courses[1].student_pricings = defaultRoster;
+  value.coreScheduling.schedules[0].student_ids = JSON.stringify([secondStudent.id, 'student-synthetic-1']);
+  value.coreScheduling.schedules[0].student_pricings = overrideRoster;
+  value.coreScheduling.schedules[1].student_ids = JSON.stringify([secondStudent.id, 'student-synthetic-1']);
+  return value;
+}
+
 const accepted = validateBusinessFoundationShadowAdmissionFixture(fixture());
 assert.ok(Object.isFrozen(accepted));
 assert.strictEqual(accepted.tenants[0].id, 'tenant-synthetic-1');
@@ -351,6 +370,22 @@ async function runBusinessFoundationShadowAdmissionCases(runtime) {
     assert.deepStrictEqual(quarantined.rows, [{ schedules: '3', students: '1', ledger: '13', quarantine: '1', generic_sentinel: '1' }]);
   } finally {
     await runtime.disposeHandle(unapprovedSentinelHandle);
+  }
+
+  const unorderedRosterHandle = await runtime.createIsolatedHandle();
+  try {
+    await controlCatalog.apply(unorderedRosterHandle, { appliedAt: '2026-08-21T00:00:00.000Z', appliedBy: 'shadow-admission-test' });
+    await businessCatalog.apply(unorderedRosterHandle, { appliedAt: '2026-08-21T00:00:00.000Z', appliedBy: 'shadow-admission-test' });
+    await admissionCatalog.apply(unorderedRosterHandle, { appliedAt: '2026-08-21T00:00:00.000Z', appliedBy: 'shadow-admission-test' });
+    const unordered = fixtureWithUnsortedRosters();
+    await boundary.admit(unorderedRosterHandle, unordered);
+    assert.deepStrictEqual(
+      await boundary.reconcile(unorderedRosterHandle, { batchId: unordered.batch.batchId }),
+      { reconciled: true, relationCounts: { tenants: 1, institutions: 1, schools: 1, rooms: 1, teachers: 1, students: 2, courses: 3, schedules: 3 } },
+      'logical hashes must be independent of legacy JSON roster order because PostgreSQL re-reads roster rows in canonical student-id order',
+    );
+  } finally {
+    await runtime.disposeHandle(unorderedRosterHandle);
   }
 
   for (const stages of [['writeCommit'], ['writeFail', 'rollback']]) {
