@@ -258,6 +258,7 @@ export function createDesktopIdentityClient({
   now = () => new Date(),
   sessionStore = defaultSessionStore(),
   clearRoleCache = async () => {},
+  onlineRegistrationCommand = null,
 } = {}) {
   if (!desktopIdentity || typeof desktopIdentity.status !== 'function') {
     throw identityError('DESKTOP_IDENTITY_BRIDGE_REQUIRED');
@@ -639,6 +640,14 @@ export function createDesktopIdentityClient({
     return desktopIdentity.lock();
   }
 
+  async function registerUnifiedDesktopOnline(requestValue) {
+    if (!onlineRegistrationCommand
+      || typeof onlineRegistrationCommand.execute !== 'function') {
+      throw identityError('VNEXT_UNIFIED_DESKTOP_REGISTRATION_UNAVAILABLE');
+    }
+    return onlineRegistrationCommand.execute(requestValue);
+  }
+
   return Object.freeze({
     beginPasswordReset,
     beginRegistration,
@@ -646,6 +655,7 @@ export function createDesktopIdentityClient({
     ensureOnlineSession,
     lock,
     pollRegistration,
+    registerUnifiedDesktopOnline,
     status: () => desktopIdentity.status(),
     switchRole,
     unlock,

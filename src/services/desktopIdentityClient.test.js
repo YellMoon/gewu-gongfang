@@ -1,5 +1,8 @@
 const assert = require('assert');
 const fs = require('fs');
+const {
+  createUnifiedDesktopRegistrationCommand,
+} = require('../../shared/vnext-pg17/unifiedDesktopRegistrationCommand');
 
 async function main() {
   const source = fs.readFileSync('src/services/desktopIdentityClient.mjs', 'utf8');
@@ -240,6 +243,44 @@ async function main() {
     'primary-host',
     'a primary-host password reset must preserve its registered device kind'
   );
+
+  let unifiedRegistrationRequest = null;
+  let unexpectedNetworkCalls = 0;
+  const unifiedRegistrationClient = createDesktopIdentityClient({
+    desktopIdentity: { status: async () => ({ state: 'empty' }) },
+    fetchImpl: async () => {
+      unexpectedNetworkCalls += 1;
+      throw new Error('the synthetic command bridge must not invent a network route');
+    },
+    onlineRegistrationCommand: createUnifiedDesktopRegistrationCommand({
+      invoke: async request => {
+        unifiedRegistrationRequest = request;
+        return Object.freeze({
+          receiptId: 'registration-receipt-1',
+          sessionId: 'registration-session-1',
+          replayed: false,
+        });
+      },
+    }),
+  });
+  assert.deepStrictEqual(
+    await unifiedRegistrationClient.registerUnifiedDesktopOnline({
+      assertionId: 'verified-assertion-1',
+      idempotencyKey: 'desktop-registration-1',
+    }),
+    {
+      receiptId: 'registration-receipt-1',
+      sessionId: 'registration-session-1',
+      replayed: false,
+    },
+    'the existing desktop identity client must be able to trigger the new registration command',
+  );
+  assert.deepStrictEqual(unifiedRegistrationRequest, {
+    assertionId: 'verified-assertion-1',
+    idempotencyKey: 'desktop-registration-1',
+  });
+  assert.strictEqual(unexpectedNetworkCalls, 0,
+    'the command bridge must remain transport-injected until a reviewed cloud endpoint exists');
 
   console.log('desktop identity client checks passed');
 }
