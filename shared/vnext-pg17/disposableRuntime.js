@@ -42,6 +42,21 @@ const BUSINESS_FOUNDATION_SHADOW_RECONCILIATION_SQL = Object.freeze({
   schools: 'SELECT id, tenant_id AS "tenantId", name, legacy_count AS "legacyCount", legacy_deleted AS "legacyDeleted", to_char(created_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "createdAt", to_char(updated_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "updatedAt" FROM business.schools ORDER BY id',
   rooms: 'SELECT id, tenant_id AS "tenantId", name, address_legacy AS "addressLegacy", legacy_count AS "legacyCount", legacy_deleted AS "legacyDeleted", to_char(created_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "createdAt", to_char(updated_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "updatedAt" FROM business.rooms ORDER BY id',
 });
+const BUSINESS_FOUNDATION_V1_RELATIONS = Object.freeze([
+  'business_schema_migrations',
+  'institutions',
+  'rooms',
+  'schools',
+  'tenants',
+]);
+const BUSINESS_FOUNDATION_V1_CATALOG_SHA256 = Object.freeze({
+  columns: '7a3052a29ce650240ed271ad8502098ea4a9aa52a047538c88811e373bd78d29',
+  constraints: '4978908ccfd2798a39d1560422b5931113b72df7dfabee3fa07362073e3f6966',
+  indexes: '8d338679bf1506adf51237ca1de8ed5bdd443b3cd1edcea0dd251de89bb04ed3',
+  triggers: '657b4ce9d8f5c3b48b0ae236e5c483d40fefddd29d3feb527ddda9a5df2ab751',
+  functions: 'b839f3a57a4a83f8b4e937bfd84f1e9ddda076b145ddf2f4e6512d159d0c409c',
+});
+const BUSINESS_FOUNDATION_V1_VERIFIER_IDS = new Set(['tenants.id', 'institutions.id', 'schools.id', 'rooms.id']);
 const COPY_ONLY_TARGET_DATA_RELATIONS = Object.freeze([
   'vnext_authorities', 'vnext_accounts', 'vnext_trusted_devices', 'vnext_device_installations', 'vnext_account_device_links',
   'vnext_role_grants', 'vnext_capability_catalog', 'vnext_capability_overrides', 'vnext_data_scope_grants', 'vnext_profile_bindings',
@@ -521,6 +536,50 @@ function snapshotBusinessDdlInput(value) {
   return Object.freeze({ appliedAt, appliedBy });
 }
 
+function catalogSha256(rows) {
+  return createHash('sha256').update(JSON.stringify(rows), 'utf8').digest('hex');
+}
+
+async function assertBusinessFoundationV1Prefix(client) {
+  const relations = await client.query(
+    "SELECT c.relname AS relation FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'business' AND c.relkind = 'r' ORDER BY c.relname",
+  );
+  const ownership = await client.query(
+    "SELECT n.nspname AS schema_name, schema_owner.rolname AS schema_owner, c.relname AS relation, relation_owner.rolname AS relation_owner FROM pg_namespace n JOIN pg_roles schema_owner ON schema_owner.oid = n.nspowner JOIN pg_class c ON c.relnamespace = n.oid JOIN pg_roles relation_owner ON relation_owner.oid = c.relowner WHERE n.nspname = 'business' AND c.relkind = 'r' ORDER BY c.relname",
+  );
+  const catalogQueries = Object.freeze({
+    columns: "SELECT c.relname AS table_name, a.attname AS column_name, format_type(a.atttypid, a.atttypmod) AS data_type, t.typname AS udt_name, CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END AS is_nullable, NULLIF(coll.collname, 'default') AS collation_name, pg_get_expr(ad.adbin, ad.adrelid) AS column_default FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_type t ON t.oid = a.atttypid LEFT JOIN pg_collation coll ON coll.oid = a.attcollation LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum WHERE n.nspname = 'business' AND c.relkind = 'r' AND a.attnum > 0 AND NOT a.attisdropped ORDER BY c.relname, a.attnum",
+    constraints: "SELECT c.relname AS table_name, con.conname, con.contype, pg_get_constraintdef(con.oid, true) AS definition FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'business' ORDER BY c.relname, con.conname",
+    indexes: "SELECT c.relname AS table_name, irel.relname AS index_name, i.indisprimary, i.indisunique, pg_get_indexdef(i.indexrelid) AS definition FROM pg_index i JOIN pg_class c ON c.oid = i.indrelid JOIN pg_class irel ON irel.oid = i.indexrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'business' ORDER BY c.relname, irel.relname",
+    triggers: "SELECT c.relname AS table_name, t.tgname AS trigger_name, pn.nspname AS function_schema, p.proname AS function_name, t.tgenabled, pg_get_triggerdef(t.oid, true) AS definition FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_proc p ON p.oid = t.tgfoid JOIN pg_namespace pn ON pn.oid = p.pronamespace WHERE n.nspname = 'business' AND NOT t.tgisinternal ORDER BY c.relname, t.tgname",
+    functions: "SELECT p.proname, r.rolname AS owner, p.prosecdef, p.proconfig, pg_get_functiondef(p.oid) AS definition FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_roles r ON r.oid = p.proowner WHERE n.nspname = 'business' ORDER BY p.proname",
+  });
+  const catalog = {};
+  for (const [key, text] of Object.entries(catalogQueries)) catalog[key] = (await client.query(text)).rows;
+  const verifierPrivileges = await client.query(
+    "SELECT c.relname AS relation, a.attname AS column_name, has_table_privilege('vnext_pg17_business_verifier', c.oid, 'SELECT') AS table_select, has_table_privilege('vnext_pg17_business_verifier', c.oid, 'INSERT') AS table_insert, has_table_privilege('vnext_pg17_business_verifier', c.oid, 'UPDATE') AS table_update, has_table_privilege('vnext_pg17_business_verifier', c.oid, 'DELETE') AS table_delete, has_table_privilege('vnext_pg17_business_verifier', c.oid, 'TRUNCATE') AS table_truncate, has_table_privilege('vnext_pg17_business_verifier', c.oid, 'REFERENCES') AS table_references, has_table_privilege('vnext_pg17_business_verifier', c.oid, 'TRIGGER') AS table_trigger, has_column_privilege('vnext_pg17_business_verifier', c.oid, a.attname, 'SELECT') AS column_select, has_column_privilege('vnext_pg17_business_verifier', c.oid, a.attname, 'INSERT') AS column_insert, has_column_privilege('vnext_pg17_business_verifier', c.oid, a.attname, 'UPDATE') AS column_update, has_column_privilege('vnext_pg17_business_verifier', c.oid, a.attname, 'REFERENCES') AS column_references FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_attribute a ON a.attrelid = c.oid WHERE n.nspname = 'business' AND c.relkind = 'r' AND a.attnum > 0 AND NOT a.attisdropped ORDER BY c.relname, a.attnum",
+  );
+  const schemaPrivileges = await client.query(
+    "SELECT has_schema_privilege('vnext_pg17_business_verifier', 'business', 'USAGE') AS verifier_usage, has_schema_privilege('vnext_pg17_business_verifier', 'business', 'CREATE') AS verifier_create, has_database_privilege('vnext_pg17_business_verifier', current_database(), 'CREATE') AS verifier_database_create, has_database_privilege('vnext_pg17_business_verifier', current_database(), 'TEMPORARY') AS verifier_temporary, has_database_privilege('vnext_pg17_business_owner', current_database(), 'CREATE') AS owner_database_create",
+  );
+  const defaultAcl = await client.query("SELECT COUNT(*)::text AS count FROM pg_default_acl WHERE defaclrole = 'vnext_pg17_business_owner'::regrole");
+  const relationsMatch = relations.rows.length === BUSINESS_FOUNDATION_V1_RELATIONS.length
+    && relations.rows.every((row, index) => row.relation === BUSINESS_FOUNDATION_V1_RELATIONS[index]);
+  const ownershipMatches = ownership.rows.length === BUSINESS_FOUNDATION_V1_RELATIONS.length
+    && ownership.rows.every(row => row.schema_name === 'business' && row.schema_owner === 'vnext_pg17_business_owner' && row.relation_owner === 'vnext_pg17_business_owner');
+  const catalogMatches = Object.entries(catalog).every(([key, rows]) => catalogSha256(rows) === BUSINESS_FOUNDATION_V1_CATALOG_SHA256[key]);
+  const verifierPrivilegesMatch = verifierPrivileges.rows.every(row => (row.relation === 'business_schema_migrations'
+    ? row.table_select && row.column_select
+    : !row.table_select && row.column_select === BUSINESS_FOUNDATION_V1_VERIFIER_IDS.has(`${row.relation}.${row.column_name}`))
+    && !row.table_insert && !row.table_update && !row.table_delete && !row.table_truncate && !row.table_references && !row.table_trigger
+    && !row.column_insert && !row.column_update && !row.column_references);
+  const schemaPrivilegesMatch = schemaPrivileges.rows.length === 1 && schemaPrivileges.rows[0].verifier_usage
+    && !schemaPrivileges.rows[0].verifier_create && !schemaPrivileges.rows[0].verifier_database_create
+    && !schemaPrivileges.rows[0].verifier_temporary && !schemaPrivileges.rows[0].owner_database_create;
+  if (!relationsMatch || !ownershipMatches || !catalogMatches || !verifierPrivilegesMatch || !schemaPrivilegesMatch
+    || defaultAcl.rows.length !== 1 || defaultAcl.rows[0].count !== '0') throw businessSchemaDrift();
+}
+
 async function executeBusinessFoundationDdlPlan(runtime, handle, input) {
   if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
   const snapshot = snapshotBusinessDdlInput(input);
@@ -530,7 +589,6 @@ async function executeBusinessFoundationDdlPlan(runtime, handle, input) {
   const client = state.clients['business-migrator'];
   if (!client) throw invalidHandle();
   const { BUSINESS_FOUNDATION_MIGRATIONS } = require('./businessFoundationManifest');
-  const migration = BUSINESS_FOUNDATION_MIGRATIONS[0];
   const trace = state.businessFoundationDdlTrace;
   const record = text => {
     const traceState = businessFoundationDdlTraces.get(trace);
@@ -561,35 +619,49 @@ async function executeBusinessFoundationDdlPlan(runtime, handle, input) {
       );
       const publicShadows = await query(
         "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind <> 'i' AND c.relname = ANY($1::text[])",
-        [['business_schema_migrations', 'tenants', 'institutions', 'schools', 'rooms']],
+        [['business_schema_migrations', 'tenants', 'institutions', 'schools', 'rooms', 'teachers', 'students', 'courses', 'course_student_pricings', 'schedules', 'schedule_student_overrides']],
       );
       if (stateCheck.rows.length !== 1 || stateCheck.rows[0].public_shadow !== null || publicShadows.rows.length !== 0) {
         throw businessSchemaDrift();
       }
+      let appliedMigrations = [];
       if (stateCheck.rows[0].ledger !== null) {
         const ledger = await query(
           'SELECT migration_id, semantic_version, manifest_sha256 FROM business.business_schema_migrations ORDER BY semantic_version',
         );
-        if (ledger.rows.length !== 1 || ledger.rows[0].migration_id !== migration.migrationId
-          || String(ledger.rows[0].semantic_version) !== String(migration.semanticVersion)
-          || ledger.rows[0].manifest_sha256 !== migration.manifestSha256) throw businessSchemaDrift();
-        commitAttempted = true;
-        await query('COMMIT');
-        return Object.freeze({ applied: false });
+        if (ledger.rows.length > BUSINESS_FOUNDATION_MIGRATIONS.length
+          || ledger.rows.some((row, index) => row.migration_id !== BUSINESS_FOUNDATION_MIGRATIONS[index].migrationId
+            || String(row.semantic_version) !== String(BUSINESS_FOUNDATION_MIGRATIONS[index].semanticVersion)
+            || row.manifest_sha256 !== BUSINESS_FOUNDATION_MIGRATIONS[index].manifestSha256)) throw businessSchemaDrift();
+        if (ledger.rows.length > 0 && ledger.rows.length < BUSINESS_FOUNDATION_MIGRATIONS.length) {
+          if (ledger.rows.length !== 1) throw businessSchemaDrift();
+          await assertBusinessFoundationV1Prefix(client);
+        }
+        appliedMigrations = ledger.rows;
+        if (ledger.rows.length === BUSINESS_FOUNDATION_MIGRATIONS.length) {
+          commitAttempted = true;
+          await query('COMMIT');
+          return Object.freeze({ applied: false });
+        }
+      } else {
+        const grantCreate = `GRANT CREATE ON DATABASE ${quoteIdentifier(state.database)} TO vnext_pg17_business_owner`;
+        record(grantCreate);
+        await state.clients['fixture-provisioner'].query(grantCreate);
+        createGranted = true;
       }
-      const grantCreate = `GRANT CREATE ON DATABASE ${quoteIdentifier(state.database)} TO vnext_pg17_business_owner`;
-      record(grantCreate);
-      await state.clients['fixture-provisioner'].query(grantCreate);
-      createGranted = true;
-      await query(migration.sql);
-      await query(
-        'INSERT INTO business.business_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
-        [migration.migrationId, migration.semanticVersion, migration.manifestSha256, snapshot.appliedAt, snapshot.appliedBy],
-      );
-      const revokeCreate = `REVOKE CREATE ON DATABASE ${quoteIdentifier(state.database)} FROM vnext_pg17_business_owner`;
-      record(revokeCreate);
-      await state.clients['fixture-provisioner'].query(revokeCreate);
-      createGranted = false;
+      for (const migration of BUSINESS_FOUNDATION_MIGRATIONS.slice(appliedMigrations.length)) {
+        await query(migration.sql);
+        await query(
+          'INSERT INTO business.business_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
+          [migration.migrationId, migration.semanticVersion, migration.manifestSha256, snapshot.appliedAt, snapshot.appliedBy],
+        );
+      }
+      if (createGranted) {
+        const revokeCreate = `REVOKE CREATE ON DATABASE ${quoteIdentifier(state.database)} FROM vnext_pg17_business_owner`;
+        record(revokeCreate);
+        await state.clients['fixture-provisioner'].query(revokeCreate);
+        createGranted = false;
+      }
       commitAttempted = true;
       await query('COMMIT');
       return Object.freeze({ applied: true });
@@ -619,6 +691,44 @@ async function executeBusinessFoundationDdlPlan(runtime, handle, input) {
     }
   } finally {
     state.businessFoundationDdlBusy = false;
+  }
+}
+
+async function readBusinessFoundationZeroSeedCounts(runtime, handle) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
+  const state = handles.get(handle);
+  if (state.businessFoundationDdlPoisoned || state.businessFoundationShadowAdmissionPoisoned) throw unavailable();
+  const client = state.clients['business-migrator'];
+  if (!client) throw invalidHandle();
+  let begun = false;
+  let commitAttempted = false;
+  try {
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    begun = true;
+    await client.query("SET LOCAL TIME ZONE 'UTC'");
+    await client.query('SELECT pg_advisory_xact_lock(73018, 1)');
+    await client.query('SET LOCAL ROLE vnext_pg17_business_owner');
+    const counts = await client.query(
+      "SELECT 'course_student_pricings'::text AS relation, COUNT(*)::text AS count FROM business.course_student_pricings UNION ALL SELECT 'courses'::text AS relation, COUNT(id)::text AS count FROM business.courses UNION ALL SELECT 'institutions'::text AS relation, COUNT(id)::text AS count FROM business.institutions UNION ALL SELECT 'rooms'::text AS relation, COUNT(id)::text AS count FROM business.rooms UNION ALL SELECT 'schedule_student_overrides'::text AS relation, COUNT(*)::text AS count FROM business.schedule_student_overrides UNION ALL SELECT 'schedules'::text AS relation, COUNT(id)::text AS count FROM business.schedules UNION ALL SELECT 'schools'::text AS relation, COUNT(id)::text AS count FROM business.schools UNION ALL SELECT 'students'::text AS relation, COUNT(id)::text AS count FROM business.students UNION ALL SELECT 'teachers'::text AS relation, COUNT(id)::text AS count FROM business.teachers UNION ALL SELECT 'tenants'::text AS relation, COUNT(id)::text AS count FROM business.tenants ORDER BY relation",
+    );
+    commitAttempted = true;
+    await client.query('COMMIT');
+    return Object.freeze(counts.rows.map(row => Object.freeze({ relation: row.relation, count: row.count })));
+  } catch (_) {
+    if (begun && !commitAttempted) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (_) {
+        state.businessFoundationDdlPoisoned = true;
+        await closeClient(client);
+        throw unavailable();
+      }
+    }
+    if (commitAttempted) {
+      state.businessFoundationDdlPoisoned = true;
+      await closeClient(client);
+    }
+    throw unavailable();
   }
 }
 
@@ -1421,6 +1531,7 @@ module.exports = {
   isVNextPg17DisposableHandle,
   isVNextPg17DisposableHandleForRuntime,
   executeBusinessFoundationDdlPlan,
+  readBusinessFoundationZeroSeedCounts,
   executeBusinessFoundationAdmissionDdlPlan,
   executeBusinessFoundationShadowAdmissionPlan,
   destroyBusinessFoundationShadowAdmissionTarget,

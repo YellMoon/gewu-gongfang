@@ -4,17 +4,29 @@ const { types } = require('util');
 const {
   executeBusinessFoundationDdlPlan,
   isVNextPg17DisposableHandleForRuntime,
+  readBusinessFoundationZeroSeedCounts,
   withVNextPg17SyntheticQuery,
 } = require('./disposableRuntime');
 const { BUSINESS_FOUNDATION_MIGRATIONS, expectedBusinessFoundationCatalog, sha256 } = require('./businessFoundationManifest');
 
 const EXPECTED_CATALOG_SHA256 = Object.freeze({
-  columns: '7a3052a29ce650240ed271ad8502098ea4a9aa52a047538c88811e373bd78d29',
-  constraints: '4978908ccfd2798a39d1560422b5931113b72df7dfabee3fa07362073e3f6966',
-  indexes: '8d338679bf1506adf51237ca1de8ed5bdd443b3cd1edcea0dd251de89bb04ed3',
+  columns: '4bc4f88977a57d85d59c67276575d18d254ce659c10c09d439d2cbd35dac1dad',
+  constraints: 'c2df5b48365be4fc34338a0fdb0793087d0c30a37525ea822636c1ca9673ed0e',
+  indexes: 'aa8de02eacfdf1415d17e0c8ed4664ee5c654801de0706b72229a2227e801240',
   triggers: '657b4ce9d8f5c3b48b0ae236e5c483d40fefddd29d3feb527ddda9a5df2ab751',
   functions: 'b839f3a57a4a83f8b4e937bfd84f1e9ddda076b145ddf2f4e6512d159d0c409c',
 });
+
+const BUSINESS_VERIFIER_READABLE_IDENTITIES = new Set([
+  'tenants.id',
+  'institutions.id',
+  'schools.id',
+  'rooms.id',
+  'teachers.id',
+  'students.id',
+  'courses.id',
+  'schedules.id',
+]);
 
 function codedError(code, message) {
   const error = new Error(message);
@@ -98,11 +110,14 @@ function createBusinessFoundationCatalogBoundary(runtime) {
           "SELECT member_role.rolname AS member, granted_role.rolname AS role, m.admin_option, m.inherit_option, m.set_option FROM pg_auth_members m JOIN pg_roles member_role ON member_role.oid = m.member JOIN pg_roles granted_role ON granted_role.oid = m.roleid WHERE member_role.rolname IN ('vnext_pg17_business_migrator', 'vnext_pg17_business_owner', 'vnext_pg17_business_verifier') OR granted_role.rolname IN ('vnext_pg17_business_migrator', 'vnext_pg17_business_owner', 'vnext_pg17_business_verifier') ORDER BY member_role.rolname, granted_role.rolname",
         );
         const privilege = await facade.query(
-          "SELECT has_schema_privilege('vnext_pg17_business_verifier', 'business', 'USAGE') AS verifier_usage, has_schema_privilege('vnext_pg17_business_verifier', 'business', 'CREATE') AS verifier_create, has_schema_privilege('vnext_pg17_verifier', 'business', 'USAGE') AS control_verifier_usage, has_database_privilege('vnext_pg17_business_verifier', current_database(), 'CREATE') AS verifier_database_create, has_database_privilege('vnext_pg17_business_verifier', current_database(), 'TEMPORARY') AS verifier_temporary, has_database_privilege('vnext_pg17_business_owner', current_database(), 'CREATE') AS owner_database_create, has_column_privilege('vnext_pg17_business_verifier', 'business.tenants', 'id', 'SELECT') AS tenants_id_select, has_column_privilege('vnext_pg17_business_verifier', 'business.institutions', 'id', 'SELECT') AS institutions_id_select, has_column_privilege('vnext_pg17_business_verifier', 'business.schools', 'id', 'SELECT') AS schools_id_select, has_column_privilege('vnext_pg17_business_verifier', 'business.rooms', 'id', 'SELECT') AS rooms_id_select, has_column_privilege('vnext_pg17_business_verifier', 'business.institutions', 'contact_person_legacy', 'SELECT') AS contact_person_select, has_column_privilege('vnext_pg17_business_verifier', 'business.institutions', 'contact_phone_legacy', 'SELECT') AS contact_phone_select, has_column_privilege('vnext_pg17_business_verifier', 'business.institutions', 'notes', 'SELECT') AS notes_select",
+          "SELECT has_schema_privilege('vnext_pg17_business_verifier', 'business', 'USAGE') AS verifier_usage, has_schema_privilege('vnext_pg17_business_verifier', 'business', 'CREATE') AS verifier_create, has_schema_privilege('vnext_pg17_verifier', 'business', 'USAGE') AS control_verifier_usage, has_database_privilege('vnext_pg17_business_verifier', current_database(), 'CREATE') AS verifier_database_create, has_database_privilege('vnext_pg17_business_verifier', current_database(), 'TEMPORARY') AS verifier_temporary, has_database_privilege('vnext_pg17_business_owner', current_database(), 'CREATE') AS owner_database_create, has_column_privilege('vnext_pg17_business_verifier', 'business.tenants', 'id', 'SELECT') AS tenants_id_select, has_column_privilege('vnext_pg17_business_verifier', 'business.institutions', 'id', 'SELECT') AS institutions_id_select, has_column_privilege('vnext_pg17_business_verifier', 'business.schools', 'id', 'SELECT') AS schools_id_select, has_column_privilege('vnext_pg17_business_verifier', 'business.rooms', 'id', 'SELECT') AS rooms_id_select, has_column_privilege('vnext_pg17_business_verifier', 'business.teachers', 'id', 'SELECT') AS teachers_id_select, has_column_privilege('vnext_pg17_business_verifier', 'business.students', 'id', 'SELECT') AS students_id_select, has_column_privilege('vnext_pg17_business_verifier', 'business.courses', 'id', 'SELECT') AS courses_id_select, has_column_privilege('vnext_pg17_business_verifier', 'business.schedules', 'id', 'SELECT') AS schedules_id_select, has_column_privilege('vnext_pg17_business_verifier', 'business.institutions', 'contact_person_legacy', 'SELECT') AS contact_person_select, has_column_privilege('vnext_pg17_business_verifier', 'business.institutions', 'contact_phone_legacy', 'SELECT') AS contact_phone_select, has_column_privilege('vnext_pg17_business_verifier', 'business.institutions', 'notes', 'SELECT') AS notes_select, has_column_privilege('vnext_pg17_business_verifier', 'business.students', 'phone_legacy', 'SELECT') AS student_phone_select, has_column_privilege('vnext_pg17_business_verifier', 'business.teachers', 'phone_legacy', 'SELECT') AS teacher_phone_select",
         );
         const defaultAcl = await facade.query("SELECT COUNT(*)::text AS count FROM pg_default_acl WHERE defaclrole = 'vnext_pg17_business_owner'::regrole");
         const tablePrivileges = await facade.query(
           "SELECT c.relname AS relation, has_table_privilege('vnext_pg17_business_verifier', c.oid, 'SELECT') AS verifier_select, has_table_privilege('vnext_pg17_business_verifier', c.oid, 'INSERT') AS verifier_insert, has_table_privilege('vnext_pg17_business_verifier', c.oid, 'UPDATE') AS verifier_update, has_table_privilege('vnext_pg17_business_verifier', c.oid, 'DELETE') AS verifier_delete, has_table_privilege('vnext_pg17_business_verifier', c.oid, 'TRUNCATE') AS verifier_truncate, has_table_privilege('vnext_pg17_business_verifier', c.oid, 'REFERENCES') AS verifier_references, has_table_privilege('vnext_pg17_business_verifier', c.oid, 'TRIGGER') AS verifier_trigger FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'business' AND c.relkind = 'r' ORDER BY c.relname",
+        );
+        const verifierColumnPrivileges = await facade.query(
+          "SELECT c.relname AS relation, a.attname AS column_name, has_column_privilege('vnext_pg17_business_verifier', c.oid, a.attname, 'SELECT') AS column_select, has_column_privilege('vnext_pg17_business_verifier', c.oid, a.attname, 'INSERT') AS column_insert, has_column_privilege('vnext_pg17_business_verifier', c.oid, a.attname, 'UPDATE') AS column_update, has_column_privilege('vnext_pg17_business_verifier', c.oid, a.attname, 'REFERENCES') AS column_references FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_attribute a ON a.attrelid = c.oid WHERE n.nspname = 'business' AND c.relkind = 'r' AND a.attnum > 0 AND NOT a.attisdropped ORDER BY c.relname, a.attnum",
         );
         const functionPrivileges = await facade.query(
           "SELECT p.proname, has_function_privilege('vnext_pg17_business_migrator', p.oid, 'EXECUTE') AS business_migrator_execute, has_function_privilege('vnext_pg17_business_verifier', p.oid, 'EXECUTE') AS business_verifier_execute, has_function_privilege('vnext_pg17_migrator', p.oid, 'EXECUTE') AS control_migrator_execute, has_function_privilege('vnext_pg17_runtime', p.oid, 'EXECUTE') AS control_runtime_execute, has_function_privilege('vnext_pg17_verifier', p.oid, 'EXECUTE') AS control_verifier_execute, has_function_privilege('vnext_pg17_writer', p.oid, 'EXECUTE') AS control_writer_execute FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'business' ORDER BY p.proname",
@@ -113,10 +128,10 @@ function createBusinessFoundationCatalogBoundary(runtime) {
         await facade.query('COMMIT');
         if (relations.rows.length !== expectedBusinessFoundationCatalog.relations.length
           || relations.rows.some((row, index) => row.relation !== expectedBusinessFoundationCatalog.relations[index])
-          || ledger.rows.length !== 1 || ledger.rows[0].migration_id !== BUSINESS_FOUNDATION_MIGRATIONS[0].migrationId
-          || String(ledger.rows[0].semantic_version) !== String(BUSINESS_FOUNDATION_MIGRATIONS[0].semanticVersion)
-          || ledger.rows[0].manifest_sha256 !== BUSINESS_FOUNDATION_MIGRATIONS[0].manifestSha256
-          || ownership.rows.length !== 5 || ownership.rows.some(row => row.schema_name !== 'business' || row.schema_owner !== 'vnext_pg17_business_owner' || row.relation_owner !== 'vnext_pg17_business_owner')
+          || ledger.rows.length !== BUSINESS_FOUNDATION_MIGRATIONS.length || ledger.rows.some((row, index) => row.migration_id !== BUSINESS_FOUNDATION_MIGRATIONS[index].migrationId
+            || String(row.semantic_version) !== String(BUSINESS_FOUNDATION_MIGRATIONS[index].semanticVersion)
+            || row.manifest_sha256 !== BUSINESS_FOUNDATION_MIGRATIONS[index].manifestSha256)
+          || ownership.rows.length !== expectedBusinessFoundationCatalog.relations.length || ownership.rows.some(row => row.schema_name !== 'business' || row.schema_owner !== 'vnext_pg17_business_owner' || row.relation_owner !== 'vnext_pg17_business_owner')
           || Object.entries(catalog).some(([key, rows]) => sha256(JSON.stringify(rows)) !== EXPECTED_CATALOG_SHA256[key])
           || roleRows.rows.length !== 3 || roleRows.rows.some(row => row.rolinherit || row.rolsuper || row.rolcreaterole || row.rolcreatedb || row.rolreplication || row.rolbypassrls)
           || !roleRows.rows.find(row => row.rolname === 'vnext_pg17_business_migrator' && row.rolcanlogin)
@@ -124,12 +139,16 @@ function createBusinessFoundationCatalogBoundary(runtime) {
           || !roleRows.rows.find(row => row.rolname === 'vnext_pg17_business_owner' && !row.rolcanlogin)
           || JSON.stringify(memberships.rows) !== JSON.stringify([{ member: 'vnext_pg17_business_migrator', role: 'vnext_pg17_business_owner', admin_option: false, inherit_option: false, set_option: true }])
           || privilege.rows.length !== 1 || !privilege.rows[0].verifier_usage || privilege.rows[0].verifier_create || privilege.rows[0].control_verifier_usage || privilege.rows[0].verifier_database_create || privilege.rows[0].verifier_temporary || privilege.rows[0].owner_database_create
-          || !privilege.rows[0].tenants_id_select || !privilege.rows[0].institutions_id_select || !privilege.rows[0].schools_id_select || !privilege.rows[0].rooms_id_select || privilege.rows[0].contact_person_select || privilege.rows[0].contact_phone_select || privilege.rows[0].notes_select
+          || !privilege.rows[0].tenants_id_select || !privilege.rows[0].institutions_id_select || !privilege.rows[0].schools_id_select || !privilege.rows[0].rooms_id_select || !privilege.rows[0].teachers_id_select || !privilege.rows[0].students_id_select || !privilege.rows[0].courses_id_select || !privilege.rows[0].schedules_id_select || privilege.rows[0].contact_person_select || privilege.rows[0].contact_phone_select || privilege.rows[0].notes_select || privilege.rows[0].student_phone_select || privilege.rows[0].teacher_phone_select
           || defaultAcl.rows.length !== 1 || defaultAcl.rows[0].count !== '0'
-          || tablePrivileges.rows.length !== 5 || tablePrivileges.rows.some(row => (row.relation === 'business_schema_migrations' ? !row.verifier_select : row.verifier_select)
+          || tablePrivileges.rows.length !== expectedBusinessFoundationCatalog.relations.length || tablePrivileges.rows.some(row => (row.relation === 'business_schema_migrations' ? !row.verifier_select : row.verifier_select)
             || row.verifier_insert || row.verifier_update || row.verifier_delete || row.verifier_truncate || row.verifier_references || row.verifier_trigger)
+          || verifierColumnPrivileges.rows.some(row => (row.relation === 'business_schema_migrations'
+            ? !row.column_select
+            : row.column_select !== BUSINESS_VERIFIER_READABLE_IDENTITIES.has(`${row.relation}.${row.column_name}`))
+            || row.column_insert || row.column_update || row.column_references)
           || functionPrivileges.rows.length !== 3 || functionPrivileges.rows.some(row => row.business_migrator_execute || row.business_verifier_execute || row.control_migrator_execute || row.control_runtime_execute || row.control_verifier_execute || row.control_writer_execute)
-          || controlPrivileges.rows.length !== 20 || controlPrivileges.rows.some(row => row.schema_usage || row.schema_create || row.table_select || row.table_insert || row.table_update || row.table_delete || row.table_truncate || row.table_references || row.table_trigger || row.any_column_select || row.any_column_insert || row.any_column_update || row.any_column_references)) throw schemaDrift();
+          || controlPrivileges.rows.length !== expectedBusinessFoundationCatalog.relations.length * 4 || controlPrivileges.rows.some(row => row.schema_usage || row.schema_create || row.table_select || row.table_insert || row.table_update || row.table_delete || row.table_truncate || row.table_references || row.table_trigger || row.any_column_select || row.any_column_insert || row.any_column_update || row.any_column_references)) throw schemaDrift();
         return Object.freeze({ asserted: true });
       } catch (error) {
         try { await facade.query('ROLLBACK'); } catch (_) { /* normalized below */ }
@@ -141,21 +160,14 @@ function createBusinessFoundationCatalogBoundary(runtime) {
 
   async function assertZeroSeed(handle) {
     if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
-    return withVNextPg17SyntheticQuery(handle, 'business-verifier', async facade => {
-      try {
-        await facade.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-        const counts = await facade.query(
-          "SELECT 'institutions'::text AS relation, COUNT(id)::text AS count FROM business.institutions UNION ALL SELECT 'rooms'::text AS relation, COUNT(id)::text AS count FROM business.rooms UNION ALL SELECT 'schools'::text AS relation, COUNT(id)::text AS count FROM business.schools UNION ALL SELECT 'tenants'::text AS relation, COUNT(id)::text AS count FROM business.tenants ORDER BY relation",
-        );
-        await facade.query('COMMIT');
-        if (counts.rows.length !== 4 || counts.rows.some(row => row.count !== '0')) throw initializationSeeded();
-        return Object.freeze({ zeroSeed: true });
-      } catch (error) {
-        try { await facade.query('ROLLBACK'); } catch (_) { /* normalized below */ }
-        if (error && (error.code === 'VNEXT_PG17_BUSINESS_INITIALIZATION_SEEDED' || error.code === 'VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE')) throw error;
-        throw schemaDrift();
-      }
-    });
+    try {
+      const counts = await readBusinessFoundationZeroSeedCounts(runtime, handle);
+      if (counts.length !== 10 || counts.some(row => row.count !== '0')) throw initializationSeeded();
+      return Object.freeze({ zeroSeed: true });
+    } catch (error) {
+      if (error && (error.code === 'VNEXT_PG17_BUSINESS_INITIALIZATION_SEEDED' || error.code === 'VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE')) throw error;
+      throw schemaDrift();
+    }
   }
 
   return Object.freeze({ apply, assert, assertZeroSeed });

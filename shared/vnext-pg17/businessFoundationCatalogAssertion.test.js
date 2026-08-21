@@ -63,6 +63,20 @@ async function runBusinessFoundationCatalogAssertionCases(runtime) {
     const trace = createVNextPg17BusinessFoundationDdlTrace(runtime, handle);
     armVNextPg17BusinessFoundationDdlTrace(trace);
     assert.deepStrictEqual(await businessCatalog.apply(handle, APPLY_INPUT), Object.freeze({ applied: true }));
+    await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+      const ledger = await facade.query(
+        'SELECT migration_id, semantic_version, manifest_sha256 FROM business.business_schema_migrations ORDER BY semantic_version',
+      );
+      assert.deepStrictEqual(
+        ledger.rows,
+        BUSINESS_FOUNDATION_MIGRATIONS.map(migration => ({
+          migration_id: migration.migrationId,
+          semantic_version: migration.semanticVersion,
+          manifest_sha256: migration.manifestSha256,
+        })),
+        'a fresh closed business DDL apply must append every fixed migration exactly once and in ledger order'
+      );
+    });
     const ddlTrace = inspectVNextPg17BusinessFoundationDdlTrace(trace).queries;
     assert.strictEqual(ddlTrace[0], 'BEGIN');
     assert.strictEqual(ddlTrace[1], "SET LOCAL TIME ZONE 'UTC'");
@@ -79,14 +93,34 @@ async function runBusinessFoundationCatalogAssertionCases(runtime) {
       "SELECT to_regclass('business.business_schema_migrations') AS ledger, to_regclass('public.business_schema_migrations') AS public_shadow",
       "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind <> 'i' AND c.relname = ANY($1::text[])",
     ]);
-    assert.deepStrictEqual(ddlTrace.slice(7, -2), [
-      BUSINESS_FOUNDATION_MIGRATIONS[0].sql,
+    assert.deepStrictEqual(ddlTrace.slice(7, -2), BUSINESS_FOUNDATION_MIGRATIONS.flatMap(migration => [
+      migration.sql,
       'INSERT INTO business.business_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
-    ]);
+    ]));
     assert.ok(ddlTrace.every(statement => !statement.includes('vnext_control_plane')));
-    assert.ok(ddlTrace.every(statement => !/\b(?:INSERT|UPDATE|DELETE)\s+INTO?\s+business\.(?:tenants|institutions|schools|rooms)\b/i.test(statement)));
+    assert.ok(ddlTrace.every(statement => !/\b(?:INSERT|UPDATE|DELETE)\s+INTO?\s+business\.(?:tenants|institutions|schools|rooms|teachers|students|courses|course_student_pricings|schedules|schedule_student_overrides)\b/i.test(statement)));
     assert.deepStrictEqual(await businessCatalog.assert(handle), Object.freeze({ asserted: true }));
     assert.deepStrictEqual(await businessCatalog.assertZeroSeed(handle), Object.freeze({ zeroSeed: true }));
+    const orphanDetailHandle = await runtime.createIsolatedHandle();
+    try {
+      await controlCatalog.apply(orphanDetailHandle, APPLY_INPUT);
+      await businessCatalog.apply(orphanDetailHandle, APPLY_INPUT);
+      await withVNextPg17SyntheticQuery(orphanDetailHandle, 'fixture-provisioner', async facade => {
+        await facade.query("SET session_replication_role = 'replica'");
+        try {
+          await facade.query("INSERT INTO business.course_student_pricings (tenant_id, course_id, student_id, tuition, teacher_fee) VALUES ('orphan-tenant', 'orphan-course', 'orphan-student', 0, 0)");
+        } finally {
+          await facade.query("SET session_replication_role = 'origin'");
+        }
+      });
+      await assert.rejects(
+        () => businessCatalog.assertZeroSeed(orphanDetailHandle),
+        error => error && error.code === 'VNEXT_PG17_BUSINESS_INITIALIZATION_SEEDED',
+        'zero-seed verification must directly detect orphaned detail rows rather than infer their absence from parent foreign keys',
+      );
+    } finally {
+      await runtime.disposeHandle(orphanDetailHandle);
+    }
     await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
       await assert.rejects(
         () => facade.query("INSERT INTO business.institutions (id, tenant_id, name, legacy_deleted, created_at, updated_at) VALUES ('institution-missing-tenant', 'missing-tenant', 'Fictional institution', false, $1, $1)", [APPLIED_AT]),
@@ -117,6 +151,65 @@ async function runBusinessFoundationCatalogAssertionCases(runtime) {
       await facade.query("INSERT INTO business.schools (id, tenant_id, name, legacy_count, legacy_deleted, created_at, updated_at) VALUES ('school-behavior', 'tenant-behavior', 'Fictional school', 1, false, $1, $1)", [APPLIED_AT]);
       await facade.query("INSERT INTO business.rooms (id, tenant_id, name, legacy_count, legacy_deleted, created_at, updated_at) VALUES ('room-behavior', 'tenant-behavior', 'Fictional room', 1, false, $1, $1)", [APPLIED_AT]);
     });
+
+    const crossTenantHandle = await runtime.createIsolatedHandle();
+    try {
+      await controlCatalog.apply(crossTenantHandle, APPLY_INPUT);
+      await businessCatalog.apply(crossTenantHandle, APPLY_INPUT);
+      await withVNextPg17SyntheticQuery(crossTenantHandle, 'fixture-provisioner', async facade => {
+        for (const tenantId of ['tenant-a', 'tenant-b']) {
+          await facade.query("INSERT INTO business.tenants (id, name, legacy_deleted, created_at, updated_at) VALUES ($1, $1, false, $2, $2)", [tenantId, APPLIED_AT]);
+        }
+        await facade.query("INSERT INTO business.institutions (id, tenant_id, name, legacy_deleted, created_at, updated_at) VALUES ('institution-b', 'tenant-b', 'Fictional institution', false, $1, $1)", [APPLIED_AT]);
+        await facade.query("INSERT INTO business.teachers (id, tenant_id, name, legacy_deleted, created_at, updated_at) VALUES ('teacher-b', 'tenant-b', 'Fictional teacher', false, $1, $1)", [APPLIED_AT]);
+        await assert.rejects(
+          () => facade.query("INSERT INTO business.courses (id, tenant_id, name, display_name, course_type, legacy_source_type, institution_id, billing_unit, teacher_fee_mode, teacher_id, legacy_active, legacy_deleted, created_at, updated_at) VALUES ('course-cross-tenant', 'tenant-a', 'Fictional course', 'Fictional course', 1, 1, 'institution-b', 1, 1, 'teacher-b', true, false, $1, $1)", [APPLIED_AT]),
+          error => error && error.code === '23503',
+          'a course must not cross a tenant boundary through either institution or teacher',
+        );
+      });
+    } finally {
+      await runtime.disposeHandle(crossTenantHandle);
+    }
+
+    const driftedPrefixHandle = await runtime.createIsolatedHandle();
+    try {
+      await controlCatalog.apply(driftedPrefixHandle, APPLY_INPUT);
+      await withVNextPg17SyntheticQuery(driftedPrefixHandle, 'fixture-provisioner', async facade => {
+        const database = await facade.query('SELECT current_database() AS database');
+        await facade.query(`GRANT CREATE ON DATABASE "${database.rows[0].database}" TO vnext_pg17_business_owner`);
+        try {
+          await facade.query('SET ROLE vnext_pg17_business_owner');
+          await facade.query(BUSINESS_FOUNDATION_MIGRATIONS[0].sql);
+          await facade.query(
+            'INSERT INTO business.business_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
+            [BUSINESS_FOUNDATION_MIGRATIONS[0].migrationId, BUSINESS_FOUNDATION_MIGRATIONS[0].semanticVersion, BUSINESS_FOUNDATION_MIGRATIONS[0].manifestSha256, APPLIED_AT, 'prefix-fixture'],
+          );
+        } finally {
+          await facade.query('RESET ROLE');
+          await facade.query(`REVOKE CREATE ON DATABASE "${database.rows[0].database}" FROM vnext_pg17_business_owner`);
+        }
+        await facade.query('ALTER TABLE business.tenants ADD COLUMN forged text');
+      });
+      await assert.rejects(
+        () => businessCatalog.apply(driftedPrefixHandle, APPLY_INPUT),
+        error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+        'a v2 upgrade must reject a drifted v1 prefix before appending the second immutable ledger row',
+      );
+      await withVNextPg17SyntheticQuery(driftedPrefixHandle, 'fixture-provisioner', async facade => {
+        const ledger = await facade.query('SELECT semantic_version FROM business.business_schema_migrations ORDER BY semantic_version');
+        assert.deepStrictEqual(ledger.rows, [{ semantic_version: 1 }]);
+        await facade.query('ALTER TABLE business.tenants DROP COLUMN forged');
+      });
+      assert.deepStrictEqual(
+        await businessCatalog.apply(driftedPrefixHandle, APPLY_INPUT),
+        Object.freeze({ applied: true }),
+        'a clean v1 prefix must receive only the missing v2 ledger entry',
+      );
+      assert.deepStrictEqual(await businessCatalog.assert(driftedPrefixHandle), Object.freeze({ asserted: true }));
+    } finally {
+      await runtime.disposeHandle(driftedPrefixHandle);
+    }
     await assert.rejects(() => businessCatalog.assertZeroSeed(handle), error => error && error.code === 'VNEXT_PG17_BUSINESS_INITIALIZATION_SEEDED');
     assert.deepStrictEqual(await businessCatalog.assert(handle), Object.freeze({ asserted: true }));
     const reapplyTrace = createVNextPg17BusinessFoundationDdlTrace(runtime, handle);
@@ -137,6 +230,22 @@ async function runBusinessFoundationCatalogAssertionCases(runtime) {
       'GRANT SELECT (contact_phone_legacy) ON business.institutions TO vnext_pg17_business_verifier',
     ));
     await assert.rejects(() => businessCatalog.assert(handle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const unlistedPiiPrivilegeHandle = await runtime.createIsolatedHandle();
+    try {
+      await controlCatalog.apply(unlistedPiiPrivilegeHandle, APPLY_INPUT);
+      await businessCatalog.apply(unlistedPiiPrivilegeHandle, APPLY_INPUT);
+      await withVNextPg17SyntheticQuery(unlistedPiiPrivilegeHandle, 'fixture-provisioner', facade => facade.query(
+        'GRANT SELECT (parent_wechat_legacy) ON business.students TO vnext_pg17_business_verifier',
+      ));
+      await assert.rejects(
+        () => businessCatalog.assert(unlistedPiiPrivilegeHandle),
+        error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+        'the verifier must not receive an unapproved student PII column merely because it is not named in the catalog assertion',
+      );
+    } finally {
+      await runtime.disposeHandle(unlistedPiiPrivilegeHandle);
+    }
 
     const functionDriftHandle = await runtime.createIsolatedHandle();
     try {

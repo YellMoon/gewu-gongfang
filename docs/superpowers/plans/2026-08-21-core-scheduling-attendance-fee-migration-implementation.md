@@ -30,11 +30,13 @@
 - Modify: `shared/vnext-pg17/businessFoundationManifest.test.js`
 - Modify: `shared/vnext-pg17/businessFoundationCatalogAssertion.js`
 - Modify: `shared/vnext-pg17/businessFoundationCatalogAssertion.test.js`
+- Modify: `shared/vnext-pg17/disposableRuntime.js`
 
-- [ ] Write failing manifest/catalog tests for `teachers`, `students`, `courses`, `course_student_pricings`, `schedules`, and `schedule_student_overrides`.
-- [ ] Add semantic version 2 with exact constraints, tenant/FK checks, numeric amounts, lifecycle/time checks, restricted PII columns, no application DML grants, and literal manifest SHA locking.
-- [ ] Extend fresh/reapply/drift/ACL/default-ACL/membership assertions without changing the existing foundation migration bytes.
-- [ ] Run the focused manifest/catalog tests and commit.
+- [x] Write failing manifest/catalog tests for `teachers`, `students`, `courses`, `course_student_pricings`, `schedules`, and `schedule_student_overrides`.
+- [x] Add semantic version 2 with exact constraints, tenant/FK checks, numeric amounts, lifecycle/time checks, restricted PII columns, no application DML grants, and literal manifest SHA locking.
+- [x] Extend the closed business DDL executor to apply exactly the next immutable migration by ledger version, and to verify every applied ledger row on reapply; it must not expose a generic DML facade.
+- [x] Extend fresh/reapply/drift/ACL/default-ACL/membership assertions without changing the existing foundation migration bytes.
+- [x] Run the focused manifest/catalog tests and commit.
 
 ### Task 3: Extend closed synthetic shadow admission
 
