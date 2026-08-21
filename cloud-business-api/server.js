@@ -69,6 +69,7 @@ const desktopPairing = desktopRuntime?.registration
     now: () => new Date(),
     randomId: prefix => `${prefix}-${require('crypto').randomUUID()}`,
     beginOnlineVerification: input => desktopRuntime.registration.begin(input),
+    inspectVerificationToken: token => desktopRuntime.registration.inspectVerificationToken(token),
   })
   : null;
 const app = createCloudBusinessApp({

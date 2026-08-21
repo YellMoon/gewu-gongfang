@@ -45,9 +45,9 @@ function constantTimeMatch(expected, supplied) {
 }
 
 function createDesktopPairingService(config) {
-  const settings = exact(config, ['now', 'randomId', 'beginOnlineVerification']);
+  const settings = exact(config, ['now', 'randomId', 'beginOnlineVerification', 'inspectVerificationToken']);
   if (typeof settings.now !== 'function' || typeof settings.randomId !== 'function'
-    || typeof settings.beginOnlineVerification !== 'function') throw pairingError();
+    || typeof settings.beginOnlineVerification !== 'function' || typeof settings.inspectVerificationToken !== 'function') throw pairingError();
   const attempts = new Map();
 
   function authorize(input) {
@@ -82,13 +82,14 @@ function createDesktopPairingService(config) {
         expiresAt,
         registration: Object.freeze({ installationId, installationPublicKey, idempotencyKey }),
         verificationToken: null,
+        deviceChallenge: null,
       }));
       return Object.freeze({ pairingId, pairingSecret, expiresAt: new Date(expiresAt).toISOString() });
     },
     read(input) {
       const { attempt } = authorize(input);
       return attempt.verificationToken
-        ? Object.freeze({ status: 'verified', verificationToken: attempt.verificationToken })
+        ? Object.freeze({ status: 'verified', verificationToken: attempt.verificationToken, deviceChallenge: attempt.deviceChallenge })
         : Object.freeze({ status: 'awaiting_online_verification' });
     },
     async confirm(input) {
@@ -105,7 +106,15 @@ function createDesktopPairingService(config) {
       }
       const verificationToken = text(verification?.verificationToken, 4096);
       if (!verificationToken) throw pairingError();
-      attempts.set(attempt.pairingId, Object.freeze({ ...attempt, verificationToken }));
+      let ticket;
+      try {
+        ticket = settings.inspectVerificationToken(verificationToken);
+      } catch (_) {
+        throw pairingError();
+      }
+      const deviceChallenge = text(ticket?.challenge, 4096);
+      if (!deviceChallenge) throw pairingError();
+      attempts.set(attempt.pairingId, Object.freeze({ ...attempt, verificationToken, deviceChallenge }));
       return Object.freeze({ status: 'verified' });
     },
   });

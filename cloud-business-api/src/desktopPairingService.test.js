@@ -13,6 +13,9 @@ const service = createDesktopPairingService({
     verificationInputs.push(input);
     return { verificationToken: 'verification-token-1' };
   },
+  inspectVerificationToken: token => token === 'verification-token-1'
+    ? { challenge: 'desktop-proof-challenge-1' }
+    : null,
 });
 
 (async () => {
@@ -34,6 +37,7 @@ const service = createDesktopPairingService({
   assert.deepStrictEqual(service.read({ pairingId: started.pairingId, pairingSecret: started.pairingSecret }), {
     status: 'verified',
     verificationToken: 'verification-token-1',
+    deviceChallenge: 'desktop-proof-challenge-1',
   });
 
   await service.confirm({ pairingId: started.pairingId, pairingSecret: started.pairingSecret, phoneCode: 'unused-replay-code' });
