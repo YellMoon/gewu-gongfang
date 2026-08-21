@@ -730,6 +730,89 @@ CREATE TRIGGER vnext_recent_reauthentication_events_session_state_match BEFORE I
 REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_sessions_parent_state_match() FROM PUBLIC; REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_sessions_identity_immutable() FROM PUBLIC; REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_sessions_lifecycle_monotonic() FROM PUBLIC; REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_sessions_no_delete() FROM PUBLIC; REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_recent_reauthentication_events_session_state_match() FROM PUBLIC; REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_recent_reauthentication_events_no_update() FROM PUBLIC; REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_recent_reauthentication_events_no_delete() FROM PUBLIC; GRANT SELECT ON TABLE vnext_control_plane.vnext_sessions, vnext_control_plane.vnext_recent_reauthentication_events TO vnext_pg17_verifier;`;
 const SESSIONS_REAUTHENTICATION_MIGRATION = Object.freeze({ migrationId: 'vnext-pg17-sessions-reauthentication-15', semanticVersion: 15, sql: SESSIONS_REAUTHENTICATION_SQL, manifestSha256: sha256(SESSIONS_REAUTHENTICATION_SQL) });
 
+const UNIFIED_DESKTOP_ONLINE_REGISTRATION_SQL = `CREATE TABLE vnext_control_plane.vnext_online_identity_assertions (
+  assertion_id text COLLATE "C" PRIMARY KEY CHECK (btrim(assertion_id) <> ''),
+  authority_id text COLLATE "C" NOT NULL CHECK (btrim(authority_id) <> ''),
+  account_id text COLLATE "C" NOT NULL CHECK (btrim(account_id) <> ''),
+  account_auth_version bigint NOT NULL CHECK (account_auth_version >= 1),
+  account_access_version bigint NOT NULL CHECK (account_access_version >= 1),
+  account_revocation_version bigint NOT NULL CHECK (account_revocation_version >= 1),
+  device_id text COLLATE "C" NOT NULL CHECK (btrim(device_id) <> ''),
+  installation_id text COLLATE "C" NOT NULL CHECK (btrim(installation_id) <> ''),
+  installation_public_key text COLLATE "C" NOT NULL CHECK (btrim(installation_public_key) <> ''),
+  key_fingerprint text COLLATE "C" NOT NULL CHECK (key_fingerprint ~ '^[0-9a-f]{64}$'),
+  audience text COLLATE "C" NOT NULL CHECK (audience = 'unified-desktop'),
+  nonce_sha256 text COLLATE "C" NOT NULL CHECK (nonce_sha256 ~ '^[0-9a-f]{64}$'),
+  canonical_request_sha256 text COLLATE "C" NOT NULL CHECK (canonical_request_sha256 ~ '^[0-9a-f]{64}$'),
+  evidence_sha256 text COLLATE "C" NOT NULL CHECK (evidence_sha256 ~ '^[0-9a-f]{64}$'),
+  issued_at timestamptz NOT NULL CHECK (issued_at <> 'infinity'::timestamptz AND issued_at <> '-infinity'::timestamptz),
+  expires_at timestamptz NOT NULL CHECK (expires_at <> 'infinity'::timestamptz AND expires_at <> '-infinity'::timestamptz),
+  created_at timestamptz NOT NULL CHECK (created_at <> 'infinity'::timestamptz AND created_at <> '-infinity'::timestamptz),
+  UNIQUE(authority_id, nonce_sha256),
+  FOREIGN KEY(account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  FOREIGN KEY(authority_id) REFERENCES vnext_control_plane.vnext_authorities(authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CHECK(expires_at > issued_at), CHECK(created_at >= issued_at)
+);
+CREATE TABLE vnext_control_plane.vnext_online_identity_assertion_consumptions (
+  assertion_id text COLLATE "C" PRIMARY KEY CHECK (btrim(assertion_id) <> ''),
+  authority_id text COLLATE "C" NOT NULL CHECK (btrim(authority_id) <> ''),
+  receipt_id text COLLATE "C" NOT NULL CHECK (btrim(receipt_id) <> ''),
+  consumed_at timestamptz NOT NULL CHECK (consumed_at <> 'infinity'::timestamptz AND consumed_at <> '-infinity'::timestamptz),
+  FOREIGN KEY(assertion_id) REFERENCES vnext_control_plane.vnext_online_identity_assertions(assertion_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  FOREIGN KEY(receipt_id, authority_id) REFERENCES vnext_control_plane.vnext_authorization_command_receipts(receipt_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+);
+CREATE FUNCTION vnext_control_plane.vnext_online_identity_assertions_no_update() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN RAISE EXCEPTION 'vNext online identity assertion is append-only' USING ERRCODE='P0001'; END; $$;
+CREATE FUNCTION vnext_control_plane.vnext_online_identity_assertions_no_delete() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN RAISE EXCEPTION 'vNext online identity assertion is append-only' USING ERRCODE='P0001'; END; $$;
+CREATE FUNCTION vnext_control_plane.vnext_online_identity_assertion_consumptions_no_update() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN RAISE EXCEPTION 'vNext online identity assertion consumption is append-only' USING ERRCODE='P0001'; END; $$;
+CREATE FUNCTION vnext_control_plane.vnext_online_identity_assertion_consumptions_no_delete() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN RAISE EXCEPTION 'vNext online identity assertion consumption is append-only' USING ERRCODE='P0001'; END; $$;
+CREATE TRIGGER vnext_online_identity_assertions_no_update BEFORE UPDATE ON vnext_control_plane.vnext_online_identity_assertions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_online_identity_assertions_no_update();
+CREATE TRIGGER vnext_online_identity_assertions_no_delete BEFORE DELETE ON vnext_control_plane.vnext_online_identity_assertions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_online_identity_assertions_no_delete();
+CREATE TRIGGER vnext_online_identity_assertion_consumptions_no_update BEFORE UPDATE ON vnext_control_plane.vnext_online_identity_assertion_consumptions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_online_identity_assertion_consumptions_no_update();
+CREATE TRIGGER vnext_online_identity_assertion_consumptions_no_delete BEFORE DELETE ON vnext_control_plane.vnext_online_identity_assertion_consumptions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_online_identity_assertion_consumptions_no_delete();
+CREATE UNIQUE INDEX vnext_account_device_links_one_active_installation ON vnext_control_plane.vnext_account_device_links(authority_id, installation_id) WHERE status='active';
+CREATE FUNCTION vnext_control_plane.vnext_issue_online_identity_assertion(p_assertion_id text, p_authority_id text, p_account_id text, p_device_id text, p_installation_id text, p_installation_public_key text, p_key_fingerprint text, p_audience text, p_nonce_sha256 text, p_canonical_request_sha256 text, p_evidence_sha256 text, p_issued_at timestamptz, p_expires_at timestamptz) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM vnext_control_plane.vnext_authorities au JOIN vnext_control_plane.vnext_accounts a ON a.authority_id=au.authority_id WHERE au.authority_id=p_authority_id AND au.status='active' AND a.account_id=p_account_id AND a.status='active') THEN RAISE EXCEPTION 'VNEXT_ONLINE_IDENTITY_ASSERTION_PARENT_INVALID' USING ERRCODE='P0001'; END IF;
+  INSERT INTO vnext_control_plane.vnext_online_identity_assertions(assertion_id,authority_id,account_id,account_auth_version,account_access_version,account_revocation_version,device_id,installation_id,installation_public_key,key_fingerprint,audience,nonce_sha256,canonical_request_sha256,evidence_sha256,issued_at,expires_at,created_at) SELECT p_assertion_id,p_authority_id,p_account_id,a.auth_version,a.access_version,a.revocation_version,p_device_id,p_installation_id,p_installation_public_key,p_key_fingerprint,p_audience,p_nonce_sha256,p_canonical_request_sha256,p_evidence_sha256,p_issued_at,p_expires_at,p_issued_at FROM vnext_control_plane.vnext_accounts a WHERE a.authority_id=p_authority_id AND a.account_id=p_account_id AND a.status='active';
+END; $$;
+CREATE FUNCTION vnext_control_plane.vnext_register_unified_desktop_online(p_assertion_id text, p_idempotency_key text, p_receipt_id text, p_audit_event_id text, p_outbox_event_id text, p_session_id text, p_link_id text, p_occurred_at timestamptz, p_session_expires_at timestamptz, p_canonical_result_json text, p_result_sha256 text, p_canonical_payload_json text, p_payload_sha256 text) RETURNS TABLE(receipt_id text, session_id text, replayed boolean) LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+DECLARE a vnext_control_plane.vnext_online_identity_assertions%ROWTYPE; existing_receipt vnext_control_plane.vnext_authorization_command_receipts%ROWTYPE; resolved_link vnext_control_plane.vnext_account_device_links%ROWTYPE;
+BEGIN
+  SELECT * INTO a FROM vnext_control_plane.vnext_online_identity_assertions WHERE assertion_id=p_assertion_id FOR UPDATE;
+  IF NOT FOUND OR p_occurred_at < a.issued_at OR p_occurred_at >= a.expires_at OR p_session_expires_at <= p_occurred_at OR p_session_expires_at > p_occurred_at + interval '24 hours' THEN RAISE EXCEPTION 'VNEXT_ONLINE_IDENTITY_ASSERTION_INVALID' USING ERRCODE='P0001'; END IF;
+  IF json_typeof(p_canonical_result_json::json) <> 'object' OR (SELECT count(*) FROM json_object_keys(p_canonical_result_json::json)) <> 1 OR json_typeof(p_canonical_result_json::json->'sessionId') <> 'string' OR p_canonical_result_json::json->>'sessionId' <> p_session_id OR json_typeof(p_canonical_payload_json::json) <> 'object' OR (SELECT count(*) FROM json_object_keys(p_canonical_payload_json::json)) <> 1 OR json_typeof(p_canonical_payload_json::json->'sessionId') <> 'string' OR p_canonical_payload_json::json->>'sessionId' <> p_session_id THEN RAISE EXCEPTION 'VNEXT_ONLINE_IDENTITY_RESULT_INVALID' USING ERRCODE='P0001'; END IF;
+  SELECT * INTO existing_receipt FROM vnext_control_plane.vnext_authorization_command_receipts WHERE authority_id=a.authority_id AND actor_key='online-identity:' || a.key_fingerprint AND idempotency_key=p_idempotency_key;
+  IF FOUND THEN
+    IF existing_receipt.command_type <> 'desktop.online_register' OR existing_receipt.actor_account_id <> a.account_id OR existing_receipt.canonical_request_sha256 <> a.canonical_request_sha256 THEN RAISE EXCEPTION 'VNEXT_ONLINE_IDENTITY_IDEMPOTENCY_CONFLICT' USING ERRCODE='P0001'; END IF;
+    IF NOT EXISTS (SELECT 1 FROM vnext_control_plane.vnext_online_identity_assertion_consumptions c WHERE c.assertion_id=a.assertion_id AND c.receipt_id=existing_receipt.receipt_id) THEN INSERT INTO vnext_control_plane.vnext_online_identity_assertion_consumptions(assertion_id,authority_id,receipt_id,consumed_at) VALUES(a.assertion_id,a.authority_id,existing_receipt.receipt_id,p_occurred_at); END IF;
+    RETURN QUERY SELECT existing_receipt.receipt_id, (existing_receipt.canonical_result_json::json ->> 'sessionId'), true; RETURN;
+  END IF;
+  IF EXISTS (SELECT 1 FROM vnext_control_plane.vnext_online_identity_assertion_consumptions WHERE assertion_id=a.assertion_id) THEN RAISE EXCEPTION 'VNEXT_ONLINE_IDENTITY_ASSERTION_CONSUMED' USING ERRCODE='P0001'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM vnext_control_plane.vnext_authorities au JOIN vnext_control_plane.vnext_accounts ac ON ac.authority_id=au.authority_id WHERE au.authority_id=a.authority_id AND au.status='active' AND ac.account_id=a.account_id AND ac.status='active' AND ac.auth_version=a.account_auth_version AND ac.access_version=a.account_access_version AND ac.revocation_version=a.account_revocation_version) THEN RAISE EXCEPTION 'VNEXT_ONLINE_IDENTITY_PARENT_REVOKED' USING ERRCODE='P0001'; END IF;
+  INSERT INTO vnext_control_plane.vnext_trusted_devices(device_id,authority_id,status,hardware_evidence_hash,risk_code,credential_version,risk_version,row_version,created_at,updated_at,revoked_at) VALUES(a.device_id,a.authority_id,'active',a.evidence_sha256,NULL,1,1,1,p_occurred_at,p_occurred_at,NULL) ON CONFLICT(device_id) DO NOTHING;
+  IF NOT EXISTS (SELECT 1 FROM vnext_control_plane.vnext_trusted_devices WHERE device_id=a.device_id AND authority_id=a.authority_id AND status='active') THEN RAISE EXCEPTION 'VNEXT_ONLINE_IDENTITY_DEVICE_CONFLICT' USING ERRCODE='P0001'; END IF;
+  INSERT INTO vnext_control_plane.vnext_device_installations(installation_id,authority_id,device_id,installation_public_key,key_fingerprint,status,credential_version,row_version,created_at,updated_at,revoked_at) VALUES(a.installation_id,a.authority_id,a.device_id,a.installation_public_key,a.key_fingerprint,'active',1,1,p_occurred_at,p_occurred_at,NULL) ON CONFLICT(installation_id) DO NOTHING;
+  IF NOT EXISTS (SELECT 1 FROM vnext_control_plane.vnext_device_installations WHERE installation_id=a.installation_id AND authority_id=a.authority_id AND device_id=a.device_id AND installation_public_key=a.installation_public_key AND key_fingerprint=a.key_fingerprint AND status='active') THEN RAISE EXCEPTION 'VNEXT_ONLINE_IDENTITY_INSTALLATION_CONFLICT' USING ERRCODE='P0001'; END IF;
+  SELECT * INTO resolved_link FROM vnext_control_plane.vnext_account_device_links WHERE authority_id=a.authority_id AND account_id=a.account_id AND installation_id=a.installation_id AND status='active' FOR UPDATE;
+  IF NOT FOUND THEN INSERT INTO vnext_control_plane.vnext_account_device_links(link_id,authority_id,account_id,device_id,installation_id,status,auth_version,access_version,row_version,created_at,updated_at,revoked_at) VALUES(p_link_id,a.authority_id,a.account_id,a.device_id,a.installation_id,'active',1,1,1,p_occurred_at,p_occurred_at,NULL) RETURNING * INTO resolved_link; END IF;
+  INSERT INTO vnext_control_plane.vnext_sessions(session_id,authority_id,account_id,device_id,installation_id,link_id,session_kind,status,issued_at,expires_at,revoked_at,account_auth_version,account_access_version,account_revocation_version,device_credential_version,device_risk_version,installation_credential_version,link_auth_version,link_access_version,link_row_version,row_version,created_at,updated_at) SELECT p_session_id,a.authority_id,a.account_id,a.device_id,a.installation_id,resolved_link.link_id,'online','active',p_occurred_at,p_session_expires_at,NULL,ac.auth_version,ac.access_version,ac.revocation_version,d.credential_version,d.risk_version,i.credential_version,resolved_link.auth_version,resolved_link.access_version,resolved_link.row_version,1,p_occurred_at,p_occurred_at FROM vnext_control_plane.vnext_accounts ac JOIN vnext_control_plane.vnext_trusted_devices d ON d.authority_id=ac.authority_id AND d.device_id=a.device_id JOIN vnext_control_plane.vnext_device_installations i ON i.authority_id=ac.authority_id AND i.device_id=a.device_id AND i.installation_id=a.installation_id WHERE ac.authority_id=a.authority_id AND ac.account_id=a.account_id;
+  INSERT INTO vnext_control_plane.vnext_authorization_command_receipts(receipt_id,authority_id,actor_key,actor_account_id,idempotency_key,command_type,target_kind,target_id,canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,canonical_result_sha256,committed_auth_version,committed_access_version,committed_revocation_version,committed_target_row_version,created_at) VALUES(p_receipt_id,a.authority_id,'online-identity:' || a.key_fingerprint,a.account_id,p_idempotency_key,'desktop.online_register','desktop_installation',a.installation_id,a.canonical_request_sha256,0,'accepted','DESKTOP_ONLINE_REGISTERED',p_canonical_result_json,p_result_sha256,a.account_auth_version,a.account_access_version,a.account_revocation_version,resolved_link.row_version,p_occurred_at);
+  INSERT INTO vnext_control_plane.vnext_authorization_audit_events(event_id,authority_id,receipt_id,reason_code,context_sha256,created_at) VALUES(p_audit_event_id,a.authority_id,p_receipt_id,'DESKTOP_ONLINE_REGISTERED',a.evidence_sha256,p_occurred_at);
+  INSERT INTO vnext_control_plane.vnext_authorization_outbox_events(event_id,authority_id,receipt_id,event_type,aggregate_kind,aggregate_id,aggregate_version,canonical_payload_json,payload_sha256,occurred_at) VALUES(p_outbox_event_id,a.authority_id,p_receipt_id,'desktop.online_registered','desktop_installation',a.installation_id,1,p_canonical_payload_json,p_payload_sha256,p_occurred_at);
+  INSERT INTO vnext_control_plane.vnext_online_identity_assertion_consumptions(assertion_id,authority_id,receipt_id,consumed_at) VALUES(a.assertion_id,a.authority_id,p_receipt_id,p_occurred_at);
+  RETURN QUERY SELECT p_receipt_id,p_session_id,false;
+END; $$;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_online_identity_assertions_no_update() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_online_identity_assertions_no_delete() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_online_identity_assertion_consumptions_no_update() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_online_identity_assertion_consumptions_no_delete() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_issue_online_identity_assertion(text,text,text,text,text,text,text,text,text,text,text,timestamptz,timestamptz) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_register_unified_desktop_online(text,text,text,text,text,text,text,timestamptz,timestamptz,text,text,text,text) FROM PUBLIC;
+GRANT USAGE ON SCHEMA vnext_control_plane TO vnext_pg17_identity_verifier;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_issue_online_identity_assertion(text,text,text,text,text,text,text,text,text,text,text,timestamptz,timestamptz) TO vnext_pg17_identity_verifier;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_register_unified_desktop_online(text,text,text,text,text,text,text,timestamptz,timestamptz,text,text,text,text) TO vnext_pg17_writer;
+GRANT SELECT ON TABLE vnext_control_plane.vnext_online_identity_assertions, vnext_control_plane.vnext_online_identity_assertion_consumptions TO vnext_pg17_verifier;`;
+const UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION = Object.freeze({ migrationId: 'vnext-pg17-unified-desktop-online-registration-16', semanticVersion: 16, sql: UNIFIED_DESKTOP_ONLINE_REGISTRATION_SQL, manifestSha256: sha256(UNIFIED_DESKTOP_ONLINE_REGISTRATION_SQL) });
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -746,6 +829,7 @@ const MIGRATIONS = Object.freeze([
   AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION,
   TRUST_ROOT_EVIDENCE_MIGRATION,
   SESSIONS_REAUTHENTICATION_MIGRATION,
+  UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -871,6 +955,12 @@ $function$
   vnext_sessions_lifecycle_monotonic: 'd98f01791b5c6e6ab51a3c815334f7055d57c56bd3eb118723dae6be9c7cd7c6',
   vnext_sessions_no_delete: '6b7f632dc9141b0bcc00c44b562d7ee50b8b43dec992fbc80f4a5eca7611070c',
   vnext_sessions_parent_state_match: 'ff2b7ec86eef777566246bd67013efe247706f15b4088ea8dc2025bdc1318cc4',
+  vnext_issue_online_identity_assertion: '44617e80c84d1bcfcee48b732de66b3bfed116bae3b278425ccdc6589e781717',
+  vnext_online_identity_assertion_consumptions_no_delete: '373d46bf6da02b2a62dd659aef8780b155240ce80445e07c1f8ebe8be7acbff8',
+  vnext_online_identity_assertion_consumptions_no_update: '4ce7a8ffabea8a01ed87a1aaac8689cd603420fbf082ded04e6e9079c918fe7a',
+  vnext_online_identity_assertions_no_delete: 'f6eaa89e09943fdc457860c2c890aedd9899acb0cb3d71e40a94a0e066f1c32e',
+  vnext_online_identity_assertions_no_update: 'e80dd5dd122a11ddab36726e19a9fa468d4fcb4d65d7587f9a0ebb5d841b9693',
+  vnext_register_unified_desktop_online: '21dca2a63872cf521dc002f5b091ab1e2aadb035a6c73d06c402cdcff232c0c2',
 });
 
 const expectedCatalog = Object.freeze({
@@ -888,6 +978,8 @@ const expectedCatalog = Object.freeze({
     'vnext_control_plane.vnext_capability_overrides',
     'vnext_control_plane.vnext_data_scope_grants',
     'vnext_control_plane.vnext_device_installations',
+    'vnext_control_plane.vnext_online_identity_assertion_consumptions',
+    'vnext_control_plane.vnext_online_identity_assertions',
     'vnext_control_plane.vnext_profile_bindings',
     'vnext_control_plane.vnext_recent_reauthentication_events',
     'vnext_control_plane.vnext_role_grants',
@@ -945,6 +1037,7 @@ module.exports = {
   AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION,
   TRUST_ROOT_EVIDENCE_MIGRATION,
   SESSIONS_REAUTHENTICATION_MIGRATION,
+  UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

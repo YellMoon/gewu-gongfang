@@ -3,8 +3,7 @@
 const { types } = require('node:util');
 
 const REQUEST_KEYS = Object.freeze([
-  'assertionId', 'idempotencyKey', 'receiptId', 'auditEventId',
-  'outboxEventId', 'sessionId', 'occurredAt',
+  'assertionId', 'idempotencyKey', 'occurredAt',
 ]);
 
 function failure() {

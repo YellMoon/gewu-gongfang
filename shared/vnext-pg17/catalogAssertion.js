@@ -32,9 +32,15 @@ const LEDGER_FUNCTIONS = Object.freeze([
   'vnext_bootstrap_consumptions_insert_guard',
   'vnext_bootstrap_consumptions_no_delete',
   'vnext_bootstrap_consumptions_no_update',
+  'vnext_issue_online_identity_assertion',
+  'vnext_online_identity_assertion_consumptions_no_delete',
+  'vnext_online_identity_assertion_consumptions_no_update',
+  'vnext_online_identity_assertions_no_delete',
+  'vnext_online_identity_assertions_no_update',
   'vnext_recent_reauthentication_events_no_delete',
   'vnext_recent_reauthentication_events_no_update',
   'vnext_recent_reauthentication_events_session_state_match',
+  'vnext_register_unified_desktop_online',
   'vnext_schema_migrations_insert_guard',
   'vnext_schema_migrations_no_delete',
   'vnext_schema_migrations_no_update',
@@ -46,6 +52,10 @@ const LEDGER_FUNCTIONS = Object.freeze([
   'vnext_trust_root_evidence_no_delete',
   'vnext_trust_root_evidence_no_update',
 ]);
+const COMMAND_FUNCTION_ARGUMENTS = Object.freeze({
+  vnext_issue_online_identity_assertion: 'p_assertion_id text, p_authority_id text, p_account_id text, p_device_id text, p_installation_id text, p_installation_public_key text, p_key_fingerprint text, p_audience text, p_nonce_sha256 text, p_canonical_request_sha256 text, p_evidence_sha256 text, p_issued_at timestamp with time zone, p_expires_at timestamp with time zone',
+  vnext_register_unified_desktop_online: 'p_assertion_id text, p_idempotency_key text, p_receipt_id text, p_audit_event_id text, p_outbox_event_id text, p_session_id text, p_link_id text, p_occurred_at timestamp with time zone, p_session_expires_at timestamp with time zone, p_canonical_result_json text, p_result_sha256 text, p_canonical_payload_json text, p_payload_sha256 text',
+});
 const LEDGER_CONSTRAINTS = Object.freeze([
   Object.freeze({ name: 'vnext_schema_migrations_applied_at_check', type: 'c', definition: "CHECK (applied_at <> 'infinity'::timestamp with time zone AND applied_at <> '-infinity'::timestamp with time zone)" }),
   Object.freeze({ name: 'vnext_schema_migrations_applied_by_check', type: 'c', definition: "CHECK (btrim(applied_by) <> ''::text)" }),
@@ -56,6 +66,7 @@ const LEDGER_CONSTRAINTS = Object.freeze([
   Object.freeze({ name: 'vnext_schema_migrations_semantic_version_key', type: 'u', definition: 'UNIQUE (semantic_version)' }),
 ]);
 const SYNTHETIC_ROLES = Object.freeze([
+  Object.freeze({ name: 'vnext_pg17_identity_verifier', canLogin: true, inherit: false, superuser: false, createRole: false, createDb: false, replication: false, bypassRls: false }),
   Object.freeze({ name: 'vnext_pg17_migrator', canLogin: true, inherit: false, superuser: false, createRole: false, createDb: false, replication: false, bypassRls: false }),
   Object.freeze({ name: 'vnext_pg17_owner', canLogin: false, inherit: false, superuser: false, createRole: false, createDb: false, replication: false, bypassRls: false }),
   Object.freeze({ name: 'vnext_pg17_runtime', canLogin: true, inherit: false, superuser: false, createRole: false, createDb: false, replication: false, bypassRls: false }),
@@ -301,6 +312,36 @@ const FOUNDATION_COLUMNS = Object.freeze({
     Object.freeze({ name: 'updated_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
   ]),
 });
+const ONLINE_IDENTITY_COLUMNS = Object.freeze({
+  vnext_online_identity_assertions: Object.freeze([
+    Object.freeze({ name: 'assertion_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }), Object.freeze({ name: 'authority_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }), Object.freeze({ name: 'account_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }), Object.freeze({ name: 'device_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }), Object.freeze({ name: 'installation_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }), Object.freeze({ name: 'installation_public_key', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }), Object.freeze({ name: 'key_fingerprint', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }), Object.freeze({ name: 'audience', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }), Object.freeze({ name: 'nonce_sha256', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }), Object.freeze({ name: 'canonical_request_sha256', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }), Object.freeze({ name: 'evidence_sha256', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }), Object.freeze({ name: 'issued_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }), Object.freeze({ name: 'expires_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }), Object.freeze({ name: 'created_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
+  ]),
+  vnext_online_identity_assertion_consumptions: Object.freeze([
+    Object.freeze({ name: 'assertion_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }), Object.freeze({ name: 'authority_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }), Object.freeze({ name: 'receipt_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }), Object.freeze({ name: 'consumed_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
+  ]),
+});
+const ONLINE_IDENTITY_COLUMNS_WITH_VERSIONS = Object.freeze({
+  vnext_online_identity_assertions: Object.freeze([
+    Object.freeze({ name: 'assertion_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'authority_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'account_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'account_auth_version', dataType: 'bigint', udtName: 'int8', nullable: 'NO', collation: null }),
+    Object.freeze({ name: 'account_access_version', dataType: 'bigint', udtName: 'int8', nullable: 'NO', collation: null }),
+    Object.freeze({ name: 'account_revocation_version', dataType: 'bigint', udtName: 'int8', nullable: 'NO', collation: null }),
+    Object.freeze({ name: 'device_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'installation_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'installation_public_key', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'key_fingerprint', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'audience', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'nonce_sha256', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'canonical_request_sha256', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'evidence_sha256', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+    Object.freeze({ name: 'issued_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
+    Object.freeze({ name: 'expires_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
+    Object.freeze({ name: 'created_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
+  ]),
+  vnext_online_identity_assertion_consumptions: ONLINE_IDENTITY_COLUMNS.vnext_online_identity_assertion_consumptions,
+});
 const FOUNDATION_CONSTRAINTS = Object.freeze({
   vnext_schema_meta: Object.freeze({ count: 4, required: Object.freeze(['vnext_schema_meta_pkey', 'vnext_schema_meta_schema_key_check', 'vnext_schema_meta_schema_version_check', 'vnext_schema_meta_applied_at_check']) }),
   vnext_authorities: Object.freeze({ count: 6, required: Object.freeze(['vnext_authorities_pkey', 'vnext_authorities_status_check', 'vnext_authorities_check']) }),
@@ -368,21 +409,33 @@ const FOUNDATION_CONSTRAINT_DEFINITIONS = Object.freeze({
   vnext_trust_root_evidence_receipt_id_authority_id_fkey: 'FOREIGN KEY (receipt_id, authority_id) REFERENCES vnext_control_plane.vnext_authorization_command_receipts(receipt_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
 });
 const FOUNDATION_CONSTRAINT_CATALOG_SHA256 = '521f02f31b30eb197e29ec9f68f34c3460cccb4a932ed1eabd50df62b4fce5bc';
-const FOUNDATION_INDEX_CATALOG_SHA256 = '7cf4086f089e3469aeee8eb0549ae5ba3a766d1b77a036ae84b9df35e0fbe7c7';
+const FOUNDATION_INDEX_CATALOG_SHA256 = '74480bd89986a0faa30cf5de6f3263925e04835c3fbabddbc21a0e27e75f65b2';
 const FOUNDATION_INDEX_DEFINITIONS = Object.freeze({
   vnext_capability_overrides_one_active_capability: "CREATE UNIQUE INDEX vnext_capability_overrides_one_active_capability ON vnext_control_plane.vnext_capability_overrides USING btree (authority_id, account_id, capability_id) WHERE (status = 'active'::text)",
   vnext_data_scope_grants_one_active_scope: "CREATE UNIQUE INDEX vnext_data_scope_grants_one_active_scope ON vnext_control_plane.vnext_data_scope_grants USING btree (authority_id, account_id, scope_type, scope_value_hash) WHERE (status = 'active'::text)",
   vnext_profile_bindings_one_active_account_type: "CREATE UNIQUE INDEX vnext_profile_bindings_one_active_account_type ON vnext_control_plane.vnext_profile_bindings USING btree (authority_id, account_id, profile_type) WHERE (status = 'active'::text)",
   vnext_profile_bindings_one_active_profile: "CREATE UNIQUE INDEX vnext_profile_bindings_one_active_profile ON vnext_control_plane.vnext_profile_bindings USING btree (authority_id, profile_type, profile_id) WHERE (status = 'active'::text)",
   vnext_role_grants_one_active_role: "CREATE UNIQUE INDEX vnext_role_grants_one_active_role ON vnext_control_plane.vnext_role_grants USING btree (authority_id, account_id, role) WHERE (status = 'active'::text)",
+  vnext_account_device_links_one_active_installation: "CREATE UNIQUE INDEX vnext_account_device_links_one_active_installation ON vnext_control_plane.vnext_account_device_links USING btree (authority_id, installation_id) WHERE (status = 'active'::text)",
 });
 const FOUNDATION_TABLE_NAMES = Object.freeze(Object.keys(FOUNDATION_COLUMNS).sort());
+const ONLINE_IDENTITY_TABLE_NAMES = Object.freeze(Object.keys(ONLINE_IDENTITY_COLUMNS_WITH_VERSIONS).sort());
+const ONLINE_IDENTITY_CONSTRAINTS = Object.freeze({
+  vnext_online_identity_assertions: Object.freeze({ count: 23, required: Object.freeze(['vnext_online_identity_assertions_pkey', 'vnext_online_identity_assertions_authority_id_nonce_sha256_key', 'vnext_online_identity_assertions_account_id_authority_id_fkey', 'vnext_online_identity_assertions_authority_id_fkey', 'vnext_online_identity_assertions_audience_check', 'vnext_online_identity_assertions_account_auth_version_check', 'vnext_online_identity_assertions_account_access_version_check', 'vnext_online_identity_assertio_account_revocation_version_check', 'vnext_online_identity_assertions_check', 'vnext_online_identity_assertions_check1']) }),
+  vnext_online_identity_assertion_consumptions: Object.freeze({ count: 7, required: Object.freeze(['vnext_online_identity_assertion_consumptions_pkey', 'vnext_online_identity_assertion_consumptions_assertion_id_fkey', 'vnext_online_identity_assertion_co_receipt_id_authority_id_fkey']) }),
+});
 const TARGET_RELATION_NAMES = Object.freeze([
   'vnext_schema_migrations',
   ...FOUNDATION_TABLE_NAMES,
+  ...ONLINE_IDENTITY_TABLE_NAMES,
 ]);
 const TARGET_TABLE_NAMES = Object.freeze([...TARGET_RELATION_NAMES].sort());
+const WRITER_TABLE_NAMES = Object.freeze(TARGET_TABLE_NAMES.filter(name => !ONLINE_IDENTITY_TABLE_NAMES.includes(name)));
 const TARGET_TRIGGERS = Object.freeze([
+  Object.freeze({ tableName: 'vnext_online_identity_assertion_consumptions', triggerName: 'vnext_online_identity_assertion_consumptions_no_delete', functionSchema: 'vnext_control_plane', functionName: 'vnext_online_identity_assertion_consumptions_no_delete', enabled: 'O', definition: 'CREATE TRIGGER vnext_online_identity_assertion_consumptions_no_delete BEFORE DELETE ON vnext_control_plane.vnext_online_identity_assertion_consumptions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_online_identity_assertion_consumptions_no_delete()' }),
+  Object.freeze({ tableName: 'vnext_online_identity_assertion_consumptions', triggerName: 'vnext_online_identity_assertion_consumptions_no_update', functionSchema: 'vnext_control_plane', functionName: 'vnext_online_identity_assertion_consumptions_no_update', enabled: 'O', definition: 'CREATE TRIGGER vnext_online_identity_assertion_consumptions_no_update BEFORE UPDATE ON vnext_control_plane.vnext_online_identity_assertion_consumptions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_online_identity_assertion_consumptions_no_update()' }),
+  Object.freeze({ tableName: 'vnext_online_identity_assertions', triggerName: 'vnext_online_identity_assertions_no_delete', functionSchema: 'vnext_control_plane', functionName: 'vnext_online_identity_assertions_no_delete', enabled: 'O', definition: 'CREATE TRIGGER vnext_online_identity_assertions_no_delete BEFORE DELETE ON vnext_control_plane.vnext_online_identity_assertions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_online_identity_assertions_no_delete()' }),
+  Object.freeze({ tableName: 'vnext_online_identity_assertions', triggerName: 'vnext_online_identity_assertions_no_update', functionSchema: 'vnext_control_plane', functionName: 'vnext_online_identity_assertions_no_update', enabled: 'O', definition: 'CREATE TRIGGER vnext_online_identity_assertions_no_update BEFORE UPDATE ON vnext_control_plane.vnext_online_identity_assertions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_online_identity_assertions_no_update()' }),
   Object.freeze({ tableName: 'vnext_authorization_audit_events', triggerName: 'vnext_authorization_audit_events_no_delete', functionSchema: 'vnext_control_plane', functionName: 'vnext_authorization_audit_events_no_delete', enabled: 'O', definition: 'CREATE TRIGGER vnext_authorization_audit_events_no_delete BEFORE DELETE ON vnext_control_plane.vnext_authorization_audit_events FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_delete()' }),
   Object.freeze({ tableName: 'vnext_authorization_audit_events', triggerName: 'vnext_authorization_audit_events_no_update', functionSchema: 'vnext_control_plane', functionName: 'vnext_authorization_audit_events_no_update', enabled: 'O', definition: 'CREATE TRIGGER vnext_authorization_audit_events_no_update BEFORE UPDATE ON vnext_control_plane.vnext_authorization_audit_events FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_audit_events_no_update()' }),
   Object.freeze({ tableName: 'vnext_authorization_command_receipts', triggerName: 'vnext_authorization_command_receipts_no_delete', functionSchema: 'vnext_control_plane', functionName: 'vnext_authorization_command_receipts_no_delete', enabled: 'O', definition: 'CREATE TRIGGER vnext_authorization_command_receipts_no_delete BEFORE DELETE ON vnext_control_plane.vnext_authorization_command_receipts FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_authorization_command_receipts_no_delete()' }),
@@ -488,7 +541,7 @@ function createVNextPg17CatalogBoundary(runtime) {
           );
         }
         await facade.query('GRANT USAGE ON SCHEMA vnext_control_plane TO vnext_pg17_writer');
-        await facade.query(`GRANT SELECT ON ${TARGET_TABLE_NAMES.map(name => `vnext_control_plane.${name}`).join(', ')} TO vnext_pg17_writer`);
+        await facade.query(`GRANT SELECT ON ${WRITER_TABLE_NAMES.map(name => `vnext_control_plane.${name}`).join(', ')} TO vnext_pg17_writer`);
         await facade.query('COMMIT');
         await assertCatalog(handle);
         return Object.freeze({ applied: true });
@@ -555,6 +608,33 @@ function createVNextPg17CatalogBoundary(runtime) {
               || row.column_default !== null)) throw schemaDrift();
         }
         if (foundationOffset !== foundationColumns.rows.length) throw schemaDrift();
+        const onlineColumns = await facade.query(
+          "SELECT table_name, column_name, data_type, udt_name, is_nullable, collation_name, column_default FROM information_schema.columns WHERE table_schema = 'vnext_control_plane' AND table_name = ANY($1::text[]) ORDER BY table_name, ordinal_position",
+          [ONLINE_IDENTITY_TABLE_NAMES],
+        );
+        let onlineOffset = 0;
+        for (const tableName of ONLINE_IDENTITY_TABLE_NAMES) {
+          const expectedColumns = ONLINE_IDENTITY_COLUMNS_WITH_VERSIONS[tableName];
+          const actualColumns = onlineColumns.rows.slice(onlineOffset, onlineOffset + expectedColumns.length);
+          onlineOffset += expectedColumns.length;
+          if (actualColumns.length !== expectedColumns.length
+            || actualColumns.some((row, index) => row.table_name !== tableName
+              || row.column_name !== expectedColumns[index].name
+              || row.data_type !== expectedColumns[index].dataType
+              || row.udt_name !== expectedColumns[index].udtName
+              || row.is_nullable !== expectedColumns[index].nullable
+              || row.collation_name !== expectedColumns[index].collation
+              || row.column_default !== null)) throw schemaDrift();
+        }
+        if (onlineOffset !== onlineColumns.rows.length) throw schemaDrift();
+        const onlineConstraints = await facade.query(
+          "SELECT c.relname AS table_name, con.conname, con.contype, pg_get_constraintdef(con.oid, true) AS definition FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'vnext_control_plane' AND c.relname = ANY($1::text[]) ORDER BY c.relname, con.conname",
+          [ONLINE_IDENTITY_TABLE_NAMES],
+        );
+        for (const [tableName, expected] of Object.entries(ONLINE_IDENTITY_CONSTRAINTS)) {
+          const actual = onlineConstraints.rows.filter(row => row.table_name === tableName);
+          if (actual.length !== expected.count || expected.required.some(name => !actual.some(row => row.conname === name))) throw schemaDrift();
+        }
         const foundationConstraints = await facade.query(
           "SELECT c.relname AS table_name, con.conname, con.contype, pg_get_constraintdef(con.oid, true) AS definition FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'vnext_control_plane' AND c.relname = ANY($1::text[]) ORDER BY c.relname, con.conname",
           [FOUNDATION_TABLE_NAMES],
@@ -606,17 +686,18 @@ function createVNextPg17CatalogBoundary(runtime) {
           "SELECT c.relname AS table_name, t.tgname AS trigger_name, function_namespace.nspname AS function_schema, p.proname AS function_name, t.tgenabled, pg_get_triggerdef(t.oid, true) AS definition FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_proc p ON p.oid = t.tgfoid JOIN pg_namespace function_namespace ON function_namespace.oid = p.pronamespace WHERE n.nspname = 'vnext_control_plane' AND c.relname = ANY($1::text[]) AND NOT t.tgisinternal ORDER BY c.relname, t.tgname",
           [TARGET_TABLE_NAMES],
         );
-        if (triggers.rows.length !== TARGET_TRIGGERS.length
-          || triggers.rows.some((row, index) => row.table_name !== TARGET_TRIGGERS[index].tableName
-            || row.trigger_name !== TARGET_TRIGGERS[index].triggerName
-            || row.function_schema !== TARGET_TRIGGERS[index].functionSchema
-            || row.function_name !== TARGET_TRIGGERS[index].functionName
-            || row.tgenabled !== TARGET_TRIGGERS[index].enabled
-            || row.definition !== TARGET_TRIGGERS[index].definition)) {
+        const expectedTriggers = [...TARGET_TRIGGERS].sort((left, right) => `${left.tableName}:${left.triggerName}`.localeCompare(`${right.tableName}:${right.triggerName}`));
+        if (triggers.rows.length !== expectedTriggers.length
+          || triggers.rows.some((row, index) => row.table_name !== expectedTriggers[index].tableName
+            || row.trigger_name !== expectedTriggers[index].triggerName
+            || row.function_schema !== expectedTriggers[index].functionSchema
+            || row.function_name !== expectedTriggers[index].functionName
+            || row.tgenabled !== expectedTriggers[index].enabled
+            || row.definition !== expectedTriggers[index].definition)) {
           throw schemaDrift();
         }
         const roles = await facade.query(
-          "SELECT rolname, rolcanlogin, rolinherit, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls FROM pg_roles WHERE rolname IN ('vnext_pg17_migrator', 'vnext_pg17_owner', 'vnext_pg17_runtime', 'vnext_pg17_verifier', 'vnext_pg17_writer') ORDER BY rolname",
+          "SELECT rolname, rolcanlogin, rolinherit, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls FROM pg_roles WHERE rolname IN ('vnext_pg17_migrator', 'vnext_pg17_owner', 'vnext_pg17_runtime', 'vnext_pg17_verifier', 'vnext_pg17_writer', 'vnext_pg17_identity_verifier') ORDER BY rolname",
         );
         if (roles.rows.length !== SYNTHETIC_ROLES.length
           || roles.rows.some((row, index) => row.rolname !== SYNTHETIC_ROLES[index].name
@@ -628,7 +709,7 @@ function createVNextPg17CatalogBoundary(runtime) {
             || row.rolreplication !== SYNTHETIC_ROLES[index].replication
             || row.rolbypassrls !== SYNTHETIC_ROLES[index].bypassRls)) throw schemaDrift();
         const memberships = await facade.query(
-          "SELECT member_role.rolname AS member, granted_role.rolname AS role, m.admin_option, m.inherit_option, m.set_option FROM pg_auth_members m JOIN pg_roles member_role ON member_role.oid = m.member JOIN pg_roles granted_role ON granted_role.oid = m.roleid WHERE member_role.rolname IN ('vnext_pg17_migrator', 'vnext_pg17_owner', 'vnext_pg17_runtime', 'vnext_pg17_verifier', 'vnext_pg17_writer') ORDER BY member_role.rolname, granted_role.rolname",
+          "SELECT member_role.rolname AS member, granted_role.rolname AS role, m.admin_option, m.inherit_option, m.set_option FROM pg_auth_members m JOIN pg_roles member_role ON member_role.oid = m.member JOIN pg_roles granted_role ON granted_role.oid = m.roleid WHERE member_role.rolname IN ('vnext_pg17_migrator', 'vnext_pg17_owner', 'vnext_pg17_runtime', 'vnext_pg17_verifier', 'vnext_pg17_writer', 'vnext_pg17_identity_verifier') ORDER BY member_role.rolname, granted_role.rolname",
         );
         if (memberships.rows.length !== SYNTHETIC_MEMBERSHIPS.length
           || memberships.rows.some((row, index) => row.member !== SYNTHETIC_MEMBERSHIPS[index].member
@@ -637,13 +718,15 @@ function createVNextPg17CatalogBoundary(runtime) {
             || row.inherit_option !== SYNTHETIC_MEMBERSHIPS[index].inherit
             || row.set_option !== SYNTHETIC_MEMBERSHIPS[index].set)) throw schemaDrift();
         const privileges = await facade.query(
-          "SELECT has_schema_privilege('vnext_pg17_verifier', 'vnext_control_plane', 'USAGE') AS schema_usage, has_schema_privilege('vnext_pg17_verifier', 'vnext_control_plane', 'CREATE') AS verifier_schema_create, has_schema_privilege('vnext_pg17_verifier', 'public', 'CREATE') AS verifier_public_create, has_database_privilege('vnext_pg17_verifier', current_database(), 'CREATE') AS verifier_database_create, has_database_privilege('vnext_pg17_verifier', current_database(), 'TEMPORARY') AS verifier_temporary, has_schema_privilege('vnext_pg17_runtime', 'vnext_control_plane', 'USAGE') AS runtime_schema_usage, has_schema_privilege('vnext_pg17_runtime', 'vnext_control_plane', 'CREATE') AS runtime_schema_create, has_schema_privilege('vnext_pg17_runtime', 'public', 'CREATE') AS runtime_public_create, has_database_privilege('vnext_pg17_runtime', current_database(), 'CREATE') AS runtime_database_create, has_database_privilege('vnext_pg17_runtime', current_database(), 'TEMPORARY') AS runtime_temporary",
+          "SELECT has_schema_privilege('vnext_pg17_verifier', 'vnext_control_plane', 'USAGE') AS schema_usage, has_schema_privilege('vnext_pg17_verifier', 'vnext_control_plane', 'CREATE') AS verifier_schema_create, has_schema_privilege('vnext_pg17_verifier', 'public', 'CREATE') AS verifier_public_create, has_database_privilege('vnext_pg17_verifier', current_database(), 'CREATE') AS verifier_database_create, has_database_privilege('vnext_pg17_verifier', current_database(), 'TEMPORARY') AS verifier_temporary, has_schema_privilege('vnext_pg17_runtime', 'vnext_control_plane', 'USAGE') AS runtime_schema_usage, has_schema_privilege('vnext_pg17_runtime', 'vnext_control_plane', 'CREATE') AS runtime_schema_create, has_schema_privilege('vnext_pg17_runtime', 'public', 'CREATE') AS runtime_public_create, has_database_privilege('vnext_pg17_runtime', current_database(), 'CREATE') AS runtime_database_create, has_database_privilege('vnext_pg17_runtime', current_database(), 'TEMPORARY') AS runtime_temporary, has_schema_privilege('vnext_pg17_identity_verifier', 'vnext_control_plane', 'USAGE') AS identity_schema_usage, has_schema_privilege('vnext_pg17_identity_verifier', 'vnext_control_plane', 'CREATE') AS identity_schema_create, has_database_privilege('vnext_pg17_identity_verifier', current_database(), 'CREATE') AS identity_database_create, has_database_privilege('vnext_pg17_identity_verifier', current_database(), 'TEMPORARY') AS identity_temporary",
         );
         const privilege = privileges.rows[0];
         if (!privilege.schema_usage || privilege.verifier_schema_create || privilege.verifier_public_create
           || privilege.verifier_database_create || privilege.verifier_temporary || privilege.runtime_schema_usage
           || privilege.runtime_schema_create || privilege.runtime_public_create
-          || privilege.runtime_database_create || privilege.runtime_temporary) {
+          || privilege.runtime_database_create || privilege.runtime_temporary
+          || !privilege.identity_schema_usage || privilege.identity_schema_create
+          || privilege.identity_database_create || privilege.identity_temporary) {
           throw schemaDrift();
         }
         const writerPrivileges = await facade.query(
@@ -657,26 +740,30 @@ function createVNextPg17CatalogBoundary(runtime) {
         );
         if (writerDefaultAcl.rows.length !== 1 || writerDefaultAcl.rows[0].count !== '0') throw schemaDrift();
         const targetPrivileges = await facade.query(
-          "SELECT c.relname AS table_name, has_table_privilege('vnext_pg17_verifier', c.oid, 'SELECT') AS verifier_select, has_table_privilege('vnext_pg17_verifier', c.oid, 'INSERT') AS verifier_insert, has_table_privilege('vnext_pg17_verifier', c.oid, 'UPDATE') AS verifier_update, has_table_privilege('vnext_pg17_verifier', c.oid, 'DELETE') AS verifier_delete, has_table_privilege('vnext_pg17_verifier', c.oid, 'TRUNCATE') AS verifier_truncate, has_table_privilege('vnext_pg17_verifier', c.oid, 'REFERENCES') AS verifier_references, has_table_privilege('vnext_pg17_verifier', c.oid, 'TRIGGER') AS verifier_trigger, has_table_privilege('vnext_pg17_writer', c.oid, 'SELECT') AS writer_select, has_table_privilege('vnext_pg17_writer', c.oid, 'INSERT') AS writer_insert, has_table_privilege('vnext_pg17_writer', c.oid, 'UPDATE') AS writer_update, has_table_privilege('vnext_pg17_writer', c.oid, 'DELETE') AS writer_delete, has_table_privilege('vnext_pg17_writer', c.oid, 'TRUNCATE') AS writer_truncate, has_table_privilege('vnext_pg17_writer', c.oid, 'REFERENCES') AS writer_references, has_table_privilege('vnext_pg17_writer', c.oid, 'TRIGGER') AS writer_trigger, has_table_privilege('vnext_pg17_runtime', c.oid, 'SELECT') AS runtime_select, has_table_privilege('vnext_pg17_runtime', c.oid, 'INSERT') AS runtime_insert, has_table_privilege('vnext_pg17_runtime', c.oid, 'UPDATE') AS runtime_update, has_table_privilege('vnext_pg17_runtime', c.oid, 'DELETE') AS runtime_delete, has_table_privilege('vnext_pg17_runtime', c.oid, 'TRUNCATE') AS runtime_truncate, has_table_privilege('vnext_pg17_runtime', c.oid, 'REFERENCES') AS runtime_references, has_table_privilege('vnext_pg17_runtime', c.oid, 'TRIGGER') AS runtime_trigger FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'vnext_control_plane' AND c.relname = ANY($1::text[]) ORDER BY c.relname",
+          "SELECT c.relname AS table_name, has_table_privilege('vnext_pg17_verifier', c.oid, 'SELECT') AS verifier_select, has_table_privilege('vnext_pg17_verifier', c.oid, 'INSERT') AS verifier_insert, has_table_privilege('vnext_pg17_verifier', c.oid, 'UPDATE') AS verifier_update, has_table_privilege('vnext_pg17_verifier', c.oid, 'DELETE') AS verifier_delete, has_table_privilege('vnext_pg17_verifier', c.oid, 'TRUNCATE') AS verifier_truncate, has_table_privilege('vnext_pg17_verifier', c.oid, 'REFERENCES') AS verifier_references, has_table_privilege('vnext_pg17_verifier', c.oid, 'TRIGGER') AS verifier_trigger, has_table_privilege('vnext_pg17_writer', c.oid, 'SELECT') AS writer_select, has_table_privilege('vnext_pg17_writer', c.oid, 'INSERT') AS writer_insert, has_table_privilege('vnext_pg17_writer', c.oid, 'UPDATE') AS writer_update, has_table_privilege('vnext_pg17_writer', c.oid, 'DELETE') AS writer_delete, has_table_privilege('vnext_pg17_writer', c.oid, 'TRUNCATE') AS writer_truncate, has_table_privilege('vnext_pg17_writer', c.oid, 'REFERENCES') AS writer_references, has_table_privilege('vnext_pg17_writer', c.oid, 'TRIGGER') AS writer_trigger, has_table_privilege('vnext_pg17_identity_verifier', c.oid, 'SELECT') AS identity_select, has_table_privilege('vnext_pg17_identity_verifier', c.oid, 'INSERT') AS identity_insert, has_table_privilege('vnext_pg17_identity_verifier', c.oid, 'UPDATE') AS identity_update, has_table_privilege('vnext_pg17_identity_verifier', c.oid, 'DELETE') AS identity_delete, has_table_privilege('vnext_pg17_runtime', c.oid, 'SELECT') AS runtime_select, has_table_privilege('vnext_pg17_runtime', c.oid, 'INSERT') AS runtime_insert, has_table_privilege('vnext_pg17_runtime', c.oid, 'UPDATE') AS runtime_update, has_table_privilege('vnext_pg17_runtime', c.oid, 'DELETE') AS runtime_delete, has_table_privilege('vnext_pg17_runtime', c.oid, 'TRUNCATE') AS runtime_truncate, has_table_privilege('vnext_pg17_runtime', c.oid, 'REFERENCES') AS runtime_references, has_table_privilege('vnext_pg17_runtime', c.oid, 'TRIGGER') AS runtime_trigger FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'vnext_control_plane' AND c.relname = ANY($1::text[]) ORDER BY c.relname",
           [TARGET_TABLE_NAMES],
         );
         if (targetPrivileges.rows.length !== TARGET_TABLE_NAMES.length
           || targetPrivileges.rows.some((row, index) => row.table_name !== TARGET_TABLE_NAMES[index]
             || !row.verifier_select || row.verifier_insert || row.verifier_update || row.verifier_delete
             || row.verifier_truncate || row.verifier_references || row.verifier_trigger
-            || !row.writer_select || row.writer_insert || row.writer_update || row.writer_delete
+            || row.writer_select !== WRITER_TABLE_NAMES.includes(row.table_name) || row.writer_insert || row.writer_update || row.writer_delete
             || row.writer_truncate || row.writer_references || row.writer_trigger
+            || row.identity_select || row.identity_insert || row.identity_update || row.identity_delete
             || row.runtime_select || row.runtime_insert || row.runtime_update || row.runtime_delete
             || row.runtime_truncate || row.runtime_references || row.runtime_trigger)) throw schemaDrift();
         const functions = await facade.query(
-          "SELECT p.proname, r.rolname AS owner, p.prosecdef, p.proconfig, pg_get_functiondef(p.oid) AS definition, has_function_privilege('vnext_pg17_runtime', p.oid, 'EXECUTE') AS runtime_execute, has_function_privilege('vnext_pg17_verifier', p.oid, 'EXECUTE') AS verifier_execute, has_function_privilege('vnext_pg17_writer', p.oid, 'EXECUTE') AS writer_execute FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_roles r ON r.oid = p.proowner WHERE n.nspname = 'vnext_control_plane' ORDER BY p.proname",
+          "SELECT p.proname, p.prokind, pg_get_function_identity_arguments(p.oid) AS arguments, r.rolname AS owner, p.prosecdef, p.proconfig, pg_get_functiondef(p.oid) AS definition, EXISTS(SELECT 1 FROM aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl WHERE acl.grantee = 0 AND acl.privilege_type = 'EXECUTE') AS public_execute, has_function_privilege('vnext_pg17_runtime', p.oid, 'EXECUTE') AS runtime_execute, has_function_privilege('vnext_pg17_verifier', p.oid, 'EXECUTE') AS verifier_execute, has_function_privilege('vnext_pg17_writer', p.oid, 'EXECUTE') AS writer_execute, has_function_privilege('vnext_pg17_identity_verifier', p.oid, 'EXECUTE') AS identity_verifier_execute FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_roles r ON r.oid = p.proowner WHERE n.nspname = 'vnext_control_plane' ORDER BY p.proname",
         );
         if (functions.rows.length !== LEDGER_FUNCTIONS.length
           || functions.rows.some((row, index) => row.proname !== LEDGER_FUNCTIONS[index]
-            || row.owner !== 'vnext_pg17_owner' || !row.prosecdef
+            || row.prokind !== 'f' || row.owner !== 'vnext_pg17_owner' || !row.prosecdef
             || !Array.isArray(row.proconfig) || row.proconfig.length !== 1
             || row.proconfig[0] !== 'search_path=pg_catalog, pg_temp'
-            || row.runtime_execute || row.verifier_execute || row.writer_execute
+            || row.public_execute || row.runtime_execute || row.verifier_execute
+            || row.writer_execute !== (row.proname === 'vnext_register_unified_desktop_online')
+            || row.identity_verifier_execute !== (row.proname === 'vnext_issue_online_identity_assertion')
+            || row.arguments !== (COMMAND_FUNCTION_ARGUMENTS[row.proname] || '')
             || sha256(row.definition) !== expectedCatalog.functionDefinitionSha256[row.proname])) throw schemaDrift();
         const ledger = await facade.query(
           'SELECT migration_id, semantic_version, manifest_sha256 FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version',

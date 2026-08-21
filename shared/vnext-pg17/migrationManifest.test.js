@@ -17,6 +17,7 @@ const {
   AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION,
   TRUST_ROOT_EVIDENCE_MIGRATION,
   SESSIONS_REAUTHENTICATION_MIGRATION,
+  UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,
@@ -56,7 +57,7 @@ async function runManifestCases() {
     'vnext_recent_reauthentication_events_no_delete',
   ]);
   assert.strictEqual(sha256(FIRST_MIGRATION.sql), FIRST_MIGRATION.manifestSha256);
-  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
   assert.strictEqual(FOUNDATION_IDENTITY_DEVICE_MIGRATION.migrationId, 'vnext-pg17-foundation-identity-device-2');
   assert.match(FOUNDATION_IDENTITY_DEVICE_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
   assert.strictEqual(
@@ -192,6 +193,17 @@ async function runManifestCases() {
   for (const relation of ['vnext_sessions', 'vnext_recent_reauthentication_events']) assert.match(SESSIONS_REAUTHENTICATION_MIGRATION.sql, new RegExp(`CREATE TABLE vnext_control_plane\\.${relation}`));
   for (const column of ['session_id', 'authority_id', 'account_id', 'device_id', 'installation_id', 'link_id', 'account_auth_version', 'account_access_version', 'account_revocation_version', 'device_credential_version', 'device_risk_version', 'installation_credential_version', 'link_auth_version', 'link_access_version', 'link_row_version', 'reauth_event_id', 'factor_class', 'evidence_sha256', 'verified_at']) assert.match(SESSIONS_REAUTHENTICATION_MIGRATION.sql, new RegExp(`\\b${column}\\b`));
   for (const trigger of ['vnext_sessions_parent_state_match', 'vnext_sessions_identity_immutable', 'vnext_sessions_lifecycle_monotonic', 'vnext_sessions_no_delete', 'vnext_recent_reauthentication_events_session_state_match', 'vnext_recent_reauthentication_events_no_update', 'vnext_recent_reauthentication_events_no_delete']) assert.match(SESSIONS_REAUTHENTICATION_MIGRATION.sql, new RegExp(`CREATE TRIGGER ${trigger}`));
+  assert.ok(Object.isFrozen(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION));
+  assert.strictEqual(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.migrationId, 'vnext-pg17-unified-desktop-online-registration-16');
+  assert.strictEqual(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.semanticVersion, 16);
+  assert.strictEqual(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.manifestSha256, '0525fa68b4b7b1ccd8131c15d9571126270a4e7234b088b3054b6f9d3054b24a');
+  assert.strictEqual(sha256(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.sql), UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.manifestSha256);
+  for (const relation of ['vnext_online_identity_assertions', 'vnext_online_identity_assertion_consumptions']) assert.match(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.sql, new RegExp(`CREATE TABLE vnext_control_plane\\.${relation}`));
+  assert.match(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.sql, /CREATE FUNCTION vnext_control_plane\.vnext_issue_online_identity_assertion/);
+  assert.match(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.sql, /CREATE FUNCTION vnext_control_plane\.vnext_register_unified_desktop_online/);
+  assert.match(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.sql, /GRANT EXECUTE ON FUNCTION vnext_control_plane\.vnext_issue_online_identity_assertion[\s\S]*vnext_pg17_identity_verifier/);
+  assert.match(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.sql, /GRANT EXECUTE ON FUNCTION vnext_control_plane\.vnext_register_unified_desktop_online[\s\S]*vnext_pg17_writer/);
+  assert.doesNotMatch(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.sql, /GRANT (?:INSERT|UPDATE|DELETE) ON TABLE[\s\S]*vnext_pg17_writer/);
   assert.deepStrictEqual(expectedCatalog.relations, [
     'vnext_control_plane.vnext_account_device_links',
     'vnext_control_plane.vnext_accounts',
@@ -205,6 +217,8 @@ async function runManifestCases() {
     'vnext_control_plane.vnext_capability_overrides',
     'vnext_control_plane.vnext_data_scope_grants',
     'vnext_control_plane.vnext_device_installations',
+    'vnext_control_plane.vnext_online_identity_assertion_consumptions',
+    'vnext_control_plane.vnext_online_identity_assertions',
     'vnext_control_plane.vnext_profile_bindings',
     'vnext_control_plane.vnext_recent_reauthentication_events',
     'vnext_control_plane.vnext_role_grants',

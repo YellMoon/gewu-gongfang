@@ -37,14 +37,15 @@ Expected: non-zero exit and `MODULE_NOT_FOUND`.
 
 ```js
 function registrationRequestSnapshot(value) {
-  // Accept only assertionId, idempotencyKey, receiptId, auditEventId,
-  // outboxEventId, sessionId and occurredAt. Reject Proxy, accessors,
+  // Accept only assertionId, idempotencyKey and occurredAt. Reject Proxy, accessors,
   // extra keys, blank values and non-UTC finite time.
 }
 
-function createUnifiedDesktopRegistrationCommand({ invoke, now }) {
-  // Do not accept accountId, authorityId, deviceId, installationId,
-  // a verified boolean, token, password, private key or SQL.
+function createUnifiedDesktopRegistrationCommand({ invoke }) {
+// Do not accept accountId, authorityId, deviceId, installationId, receipt,
+// audit/outbox/session IDs, result hashes, a verified boolean, token,
+// password, private key or SQL. The trusted cloud service supplies its
+// internal command capability after it has verified the online assertion.
 }
 ```
 

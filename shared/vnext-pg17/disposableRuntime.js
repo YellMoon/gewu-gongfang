@@ -255,6 +255,7 @@ async function provisionRoles(admin, rolePasswords) {
   await admin.query(`CREATE ROLE vnext_pg17_runtime LOGIN NOINHERIT PASSWORD ${quoteLiteral(rolePasswords.runtime)}`);
   await admin.query(`CREATE ROLE vnext_pg17_verifier LOGIN NOINHERIT PASSWORD ${quoteLiteral(rolePasswords.verifier)}`);
   await admin.query(`CREATE ROLE vnext_pg17_writer LOGIN NOINHERIT PASSWORD ${quoteLiteral(rolePasswords.writer)}`);
+  await admin.query(`CREATE ROLE vnext_pg17_identity_verifier LOGIN NOINHERIT PASSWORD ${quoteLiteral(rolePasswords.identityVerifier)}`);
   await admin.query('CREATE ROLE vnext_pg17_business_owner NOLOGIN NOINHERIT');
   await admin.query(`CREATE ROLE vnext_pg17_business_migrator LOGIN NOINHERIT PASSWORD ${quoteLiteral(rolePasswords.businessMigrator)}`);
   await admin.query(`CREATE ROLE vnext_pg17_business_verifier LOGIN NOINHERIT PASSWORD ${quoteLiteral(rolePasswords.businessVerifier)}`);
@@ -285,6 +286,7 @@ async function startRuntime(runtime) {
     runtime: randomToken(24),
     verifier: randomToken(24),
     writer: randomToken(24),
+    identityVerifier: randomToken(24),
     businessMigrator: randomToken(24),
     businessVerifier: randomToken(24),
     migrationAdmissionMigrator: randomToken(24),
@@ -362,6 +364,7 @@ async function createIsolatedHandle(runtime) {
     clients.runtime = await connectClient({ ...common, user: 'vnext_pg17_runtime', password: state.rolePasswords.runtime });
     clients.verifier = await connectClient({ ...common, user: 'vnext_pg17_verifier', password: state.rolePasswords.verifier });
     clients.writer = await connectClient({ ...common, user: 'vnext_pg17_writer', password: state.rolePasswords.writer });
+    clients['identity-verifier'] = await connectClient({ ...common, user: 'vnext_pg17_identity_verifier', password: state.rolePasswords.identityVerifier });
     clients['business-migrator'] = await connectClient({ ...common, user: 'vnext_pg17_business_migrator', password: state.rolePasswords.businessMigrator });
     clients['business-verifier'] = await connectClient({ ...common, user: 'vnext_pg17_business_verifier', password: state.rolePasswords.businessVerifier });
     clients['migration-admission-migrator'] = await connectClient({ ...common, user: 'vnext_pg17_migration_admission_migrator', password: state.rolePasswords.migrationAdmissionMigrator });
@@ -401,6 +404,11 @@ async function createPeerHandle(runtime, originalHandle) {
       ...common,
       user: 'vnext_pg17_writer',
       password: state.rolePasswords.writer,
+    });
+    clients['identity-verifier'] = await connectClient({
+      ...common,
+      user: 'vnext_pg17_identity_verifier',
+      password: state.rolePasswords.identityVerifier,
     });
     clients['business-migrator'] = await connectClient({
       ...common,
@@ -1080,6 +1088,47 @@ async function reconcileBusinessFoundationShadowAdmission(runtime, handle, batch
   }
 }
 
+function snapshotUnifiedDesktopOnlineInput(value, fields) {
+  if (!value || typeof value !== 'object' || types.isProxy(value) || Object.getPrototypeOf(value) !== Object.prototype) throw migrationInputInvalid();
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== fields.length || fields.some(field => !keys.includes(field))) throw migrationInputInvalid();
+  const snapshot = {};
+  for (const field of fields) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, field);
+    if (!descriptor || !('value' in descriptor) || typeof descriptor.value !== 'string' || descriptor.value.trim() === '') throw migrationInputInvalid();
+    snapshot[field] = descriptor.value;
+  }
+  for (const field of ['issuedAt', 'expiresAt', 'occurredAt', 'sessionExpiresAt']) {
+    if (Object.prototype.hasOwnProperty.call(snapshot, field) && new Date(snapshot[field]).toISOString() !== snapshot[field]) throw migrationInputInvalid();
+  }
+  return Object.freeze(snapshot);
+}
+
+async function issueVNextPg17OnlineIdentityAssertion(runtime, handle, input) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
+  const snapshot = snapshotUnifiedDesktopOnlineInput(input, ['assertionId', 'authorityId', 'accountId', 'deviceId', 'installationId', 'installationPublicKey', 'keyFingerprint', 'audience', 'nonceSha256', 'canonicalRequestSha256', 'evidenceSha256', 'issuedAt', 'expiresAt']);
+  const state = handles.get(handle);
+  const client = state.clients['identity-verifier'];
+  if (!client) throw invalidHandle();
+  try {
+    await client.query('SELECT vnext_control_plane.vnext_issue_online_identity_assertion($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)', [snapshot.assertionId, snapshot.authorityId, snapshot.accountId, snapshot.deviceId, snapshot.installationId, snapshot.installationPublicKey, snapshot.keyFingerprint, snapshot.audience, snapshot.nonceSha256, snapshot.canonicalRequestSha256, snapshot.evidenceSha256, snapshot.issuedAt, snapshot.expiresAt]);
+    return Object.freeze({ issued: true });
+  } catch (_) { throw unavailable(); }
+}
+
+async function registerVNextPg17UnifiedDesktopOnline(runtime, handle, input) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
+  const snapshot = snapshotUnifiedDesktopOnlineInput(input, ['assertionId', 'idempotencyKey', 'receiptId', 'auditEventId', 'outboxEventId', 'sessionId', 'linkId', 'occurredAt', 'sessionExpiresAt', 'canonicalResultJson', 'resultSha256', 'canonicalPayloadJson', 'payloadSha256']);
+  const state = handles.get(handle);
+  const client = state.clients.writer;
+  if (!client) throw invalidHandle();
+  try {
+    const result = await client.query('SELECT receipt_id AS "receiptId", session_id AS "sessionId", replayed FROM vnext_control_plane.vnext_register_unified_desktop_online($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)', [snapshot.assertionId, snapshot.idempotencyKey, snapshot.receiptId, snapshot.auditEventId, snapshot.outboxEventId, snapshot.sessionId, snapshot.linkId, snapshot.occurredAt, snapshot.sessionExpiresAt, snapshot.canonicalResultJson, snapshot.resultSha256, snapshot.canonicalPayloadJson, snapshot.payloadSha256]);
+    if (result.rows.length !== 1 || typeof result.rows[0].receiptId !== 'string' || typeof result.rows[0].sessionId !== 'string' || typeof result.rows[0].replayed !== 'boolean') throw unavailable();
+    return Object.freeze({ receiptId: result.rows[0].receiptId, sessionId: result.rows[0].sessionId, replayed: result.rows[0].replayed });
+  } catch (_) { throw unavailable(); }
+}
+
 function createVNextPg17BusinessFoundationDdlTrace(runtime, handle) {
   if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
   const trace = Object.freeze({});
@@ -1553,6 +1602,8 @@ module.exports = {
   executeBusinessFoundationShadowAdmissionPlan,
   destroyBusinessFoundationShadowAdmissionTarget,
   reconcileBusinessFoundationShadowAdmission,
+  issueVNextPg17OnlineIdentityAssertion,
+  registerVNextPg17UnifiedDesktopOnline,
   createVNextPg17BusinessFoundationDdlTrace,
   armVNextPg17BusinessFoundationDdlTrace,
   inspectVNextPg17BusinessFoundationDdlTrace,
