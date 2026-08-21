@@ -139,6 +139,14 @@ async function main() {
         });
         return { ok: true, json: async () => ({ ok: true, schedule: { id: 'schedule-cloud-1', updatedAt: '2026-08-22T00:00:00.000Z' } }) };
       }
+      if (url === 'https://cloud.test/api/business/schedules/schedule-cloud-1/students/student-cloud-1') {
+        assert.strictEqual(options.method, 'PUT');
+        assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+        assert.deepStrictEqual(JSON.parse(options.body), {
+          expectedUpdatedAt: '2026-08-22T00:00:00.000Z', attendanceStatus: 4, tuition: 80, teacherFee: 40,
+        });
+        return { ok: true, json: async () => ({ ok: true, schedule: { id: 'schedule-cloud-1', updatedAt: '2026-08-22T00:01:00.000Z' } }) };
+      }
       throw new Error(`unexpected unified cloud request ${url}`);
     },
   });
@@ -182,6 +190,12 @@ async function main() {
   });
   assert.deepStrictEqual(updatedCloudSchedule, { id: 'schedule-cloud-1', updatedAt: '2026-08-22T00:00:00.000Z' });
   assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/schedules/schedule-cloud-1');
+  const updatedCloudStudentOverride = await unifiedCloudClient.updateCloudScheduleStudentOverride({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, scheduleId: 'schedule-cloud-1', studentId: 'student-cloud-1',
+    expectedUpdatedAt: '2026-08-22T00:00:00.000Z', attendanceStatus: 4, tuition: 80, teacherFee: 40,
+  });
+  assert.deepStrictEqual(updatedCloudStudentOverride, { id: 'schedule-cloud-1', updatedAt: '2026-08-22T00:01:00.000Z' });
+  assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/schedules/schedule-cloud-1/students/student-cloud-1');
 
   const registrationRequests = [];
   const registrationEvents = [];

@@ -82,6 +82,7 @@ assert.ok(
 assert.ok(gateSource.includes('ensureOnlineSession'));
 assert.ok(gateSource.includes('listCloudSchedules'), 'the authorized desktop runtime must expose the cloud scheduling read path');
 assert.ok(gateSource.includes('updateCloudSchedule'), 'the authorized desktop runtime must expose the cloud scheduling update path');
+assert.ok(gateSource.includes('updateCloudScheduleStudentOverride'), 'the authorized desktop runtime must expose the cloud attendance and fee update path');
 assert.ok(!gateSource.includes('ensureHostSync'));
 assert.ok(!gateSource.includes('ensureHostSyncSession'));
 assert.ok(!gateSource.includes('normalizeDesktopAuthorizationSession'));
