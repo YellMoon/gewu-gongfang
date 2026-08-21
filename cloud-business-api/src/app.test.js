@@ -12,7 +12,13 @@ async function request(app, path, { method = 'GET', body } = {}) {
       headers: body === undefined ? undefined : { 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    return { status: response.status, body: await response.json() };
+    let responseBody;
+    try {
+      responseBody = await response.json();
+    } catch (_) {
+      responseBody = null;
+    }
+    return { status: response.status, body: responseBody };
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
@@ -48,6 +54,28 @@ async function request(app, path, { method = 'GET', body } = {}) {
   const invalid = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: { begin: async () => { throw Object.assign(new Error('bad input'), { code: 'CLOUD_ONLINE_IDENTITY_INVALID' }); }, register: async () => null } }), '/api/desktop/online-verification', { method: 'POST', body: {} });
   assert.strictEqual(invalid.status, 400);
   assert.deepStrictEqual(invalid.body, { ok: false, code: 'CLOUD_ONLINE_IDENTITY_INPUT_INVALID' });
+
+  const pairingCalls = [];
+  const pairing = {
+    start: input => { pairingCalls.push(['start', input]); return { pairingId: 'pair-1', pairingSecret: 'secret-1', expiresAt: '2026-08-21T12:05:00.000Z' }; },
+    confirm: async input => { pairingCalls.push(['confirm', input]); return { status: 'verified' }; },
+    read: input => { pairingCalls.push(['read', input]); return { status: 'verified', verificationToken: 'ticket-1' }; },
+  };
+  const pairedApp = createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity, desktopPairing: pairing });
+  const pairingStart = await request(pairedApp, '/api/desktop/pairing/start', { method: 'POST', body: { installationId: 'install-1', installationPublicKey: 'public-key', idempotencyKey: 'retry-1' } });
+  assert.strictEqual(pairingStart.status, 200);
+  assert.deepStrictEqual(pairingStart.body, { ok: true, pairingId: 'pair-1', pairingSecret: 'secret-1', expiresAt: '2026-08-21T12:05:00.000Z' });
+  const pairingConfirm = await request(pairedApp, '/api/desktop/pairing/confirm', { method: 'POST', body: { pairingId: 'pair-1', pairingSecret: 'secret-1', phoneCode: 'provider-code' } });
+  assert.strictEqual(pairingConfirm.status, 200);
+  assert.deepStrictEqual(pairingConfirm.body, { ok: true, status: 'verified' });
+  const pairingRead = await request(pairedApp, '/api/desktop/pairing/pair-1?secret=secret-1');
+  assert.strictEqual(pairingRead.status, 200);
+  assert.deepStrictEqual(pairingRead.body, { ok: true, status: 'verified', verificationToken: 'ticket-1' });
+  assert.deepStrictEqual(pairingCalls, [
+    ['start', { installationId: 'install-1', installationPublicKey: 'public-key', idempotencyKey: 'retry-1' }],
+    ['confirm', { pairingId: 'pair-1', pairingSecret: 'secret-1', phoneCode: 'provider-code' }],
+    ['read', { pairingId: 'pair-1', pairingSecret: 'secret-1' }],
+  ]);
 
   console.log('cloud business API health checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

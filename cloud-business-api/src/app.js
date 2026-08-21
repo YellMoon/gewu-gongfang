@@ -2,9 +2,10 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, desktopRegistration = null }) {
+function createCloudBusinessApp({ query, desktopRegistration = null, desktopPairing = null }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (desktopRegistration && (typeof desktopRegistration.begin !== 'function' || typeof desktopRegistration.register !== 'function')) throw new TypeError('desktopRegistration is invalid');
+  if (desktopPairing && (typeof desktopPairing.start !== 'function' || typeof desktopPairing.confirm !== 'function' || typeof desktopPairing.read !== 'function')) throw new TypeError('desktopPairing is invalid');
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '16kb' }));
@@ -30,6 +31,9 @@ function createCloudBusinessApp({ query, desktopRegistration = null }) {
     }
     desktopUnavailable(response);
   }
+  function pairingFailure(response) {
+    response.status(403).json({ ok: false, code: 'CLOUD_DESKTOP_PAIRING_REJECTED' });
+  }
   app.post('/api/desktop/online-verification', async (request, response) => {
     if (!desktopRegistration) return desktopUnavailable(response);
     try {
@@ -46,6 +50,33 @@ function createCloudBusinessApp({ query, desktopRegistration = null }) {
       response.json({ ok: true, receiptId: result.receiptId, sessionId: result.sessionId, replayed: result.replayed, sessionToken: result.sessionToken });
     } catch (error) {
       identityFailure(response, error);
+    }
+  });
+  app.post('/api/desktop/pairing/start', (request, response) => {
+    if (!desktopPairing) return desktopUnavailable(response);
+    try {
+      const result = desktopPairing.start(request.body);
+      response.json({ ok: true, pairingId: result.pairingId, pairingSecret: result.pairingSecret, expiresAt: result.expiresAt });
+    } catch (_) {
+      pairingFailure(response);
+    }
+  });
+  app.post('/api/desktop/pairing/confirm', async (request, response) => {
+    if (!desktopPairing) return desktopUnavailable(response);
+    try {
+      const result = await desktopPairing.confirm(request.body);
+      response.json({ ok: true, status: result.status });
+    } catch (_) {
+      pairingFailure(response);
+    }
+  });
+  app.get('/api/desktop/pairing/:pairingId', (request, response) => {
+    if (!desktopPairing) return desktopUnavailable(response);
+    try {
+      const result = desktopPairing.read({ pairingId: request.params.pairingId, pairingSecret: request.query.secret });
+      response.json({ ok: true, ...result });
+    } catch (_) {
+      pairingFailure(response);
     }
   });
   return app;

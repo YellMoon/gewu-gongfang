@@ -3,6 +3,7 @@
 const { Pool } = require('pg');
 const { createCloudBusinessApp } = require('./src/app');
 const { createCloudDesktopRegistrationService, createOperatorPhoneLookup } = require('./src/desktopRegistrationService');
+const { createDesktopPairingService } = require('./src/desktopPairingService');
 const { createWechatPhoneVerifier } = require('./src/wechatPhoneVerifier');
 
 const port = Number(process.env.PORT || 3002);
@@ -63,7 +64,18 @@ function createDesktopRegistrationFromEnvironment() {
 }
 
 const desktopRuntime = createDesktopRegistrationFromEnvironment();
-const app = createCloudBusinessApp({ query: (text, values) => pool.query(text, values), desktopRegistration: desktopRuntime?.registration || null });
+const desktopPairing = desktopRuntime?.registration
+  ? createDesktopPairingService({
+    now: () => new Date(),
+    randomId: prefix => `${prefix}-${require('crypto').randomUUID()}`,
+    beginOnlineVerification: input => desktopRuntime.registration.begin(input),
+  })
+  : null;
+const app = createCloudBusinessApp({
+  query: (text, values) => pool.query(text, values),
+  desktopRegistration: desktopRuntime?.registration || null,
+  desktopPairing,
+});
 const server = app.listen(port, '0.0.0.0', () => console.log(`cloud business API listening on ${port}`));
 
 async function shutdown() {
