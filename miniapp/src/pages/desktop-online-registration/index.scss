@@ -1,0 +1,33 @@
+.desktop-online-registration-page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 56rpx 36rpx;
+  background: #f7f4ee;
+  color: #1f302f;
+}
+
+.pairing-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+  margin: 30rpx 8rpx 52rpx;
+}
+
+.pairing-kicker { color: #1f6f68; font-size: 26rpx; font-weight: 600; }
+.pairing-title { font-size: 48rpx; font-weight: 700; line-height: 1.25; }
+.pairing-copy, .pairing-footer { color: #65726f; font-size: 28rpx; line-height: 1.7; }
+
+.pairing-card {
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+  padding: 40rpx 32rpx;
+  background: #fffdf8;
+  border-radius: 28rpx;
+  box-shadow: 0 12rpx 32rpx rgba(31, 111, 104, 0.09);
+}
+
+.pairing-status { font-size: 30rpx; line-height: 1.65; }
+.scan-button, .verify-button { color: #fff; background: #1f6f68; border-radius: 14rpx; }
+.verify-button { background: #355d91; }
+.pairing-footer { display: block; margin: 42rpx 10rpx 0; }
