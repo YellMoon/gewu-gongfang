@@ -125,7 +125,7 @@ def prepare_node_release_fixture(root):
         "createdAt": "2026-08-01T00:00:00.000Z",
         "targets": {
             target: {"status": "pending"}
-            for target in ("desktop", "local_host", "backend", "gateway", "miniapp")
+            for target in ("desktop", "backend", "gateway", "miniapp")
         },
     }
     manifest_path = root / "output/release-matrix/active.json"

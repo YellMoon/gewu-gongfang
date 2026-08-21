@@ -105,7 +105,7 @@ def read_root_version():
 
 RELEASE_MATRIX_PATH = Path(os.getenv("GEWU_RELEASE_MANIFEST_PATH", PROJECT_ROOT / "output" / "release-matrix" / "active.json"))
 RELEASE_MATRIX_SCHEMA = "gewu.unified-release.v1"
-RELEASE_MATRIX_TARGETS = ("desktop", "local_host", "backend", "gateway", "miniapp")
+RELEASE_MATRIX_TARGETS = ("desktop", "backend", "gateway", "miniapp")
 
 
 def require_release_manifest(target):

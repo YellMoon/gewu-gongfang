@@ -234,12 +234,12 @@ async function publishRelease() {
         target: releaseTarget,
         requestedVersion: packageJson.version,
       })
-      : releaseMatrix.assertHostRuntimeAccepted({
+      : releaseMatrix.assertDesktopReleasePrerequisites({
         rootDir: releaseRoot,
         requestedVersion: packageJson.version,
       });
   if (!dryRun && recordReleaseReceipt) {
-    releaseMatrix.assertHostRuntimeAccepted({
+    releaseMatrix.assertDesktopReleasePrerequisites({
       rootDir: releaseRoot,
       requestedVersion: packageJson.version,
     });

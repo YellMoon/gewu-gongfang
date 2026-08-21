@@ -22,7 +22,7 @@ assert.strictEqual(
   'the verifier must distinguish the child that runs under the packaged Electron runtime'
 );
 
-for (const scriptName of ['dist', 'pack', 'dist:win', 'dist:win:host']) {
+for (const scriptName of ['dist', 'pack', 'dist:win']) {
   const command = packageJson.scripts[scriptName];
   assert.match(
     command,

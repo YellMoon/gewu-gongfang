@@ -12,7 +12,7 @@ assert.ok(packageJson.scripts['release:status'], 'operators must be able to insp
 assert.ok(packageJson.scripts['release:complete'], 'operators must have an exact-receipt completion gate');
 assert.match(packageJson.scripts['dist:win'], /release-matrix\.js assert --target desktop/, 'desktop packaging must require the unified release manifest');
 assert.doesNotMatch(packageJson.scripts['dist:win'], /update-version\.js --bump/, 'desktop packaging must never create a second version');
-assert.match(packageJson.scripts['dist:win:host'], /release-matrix\.js assert --target local_host/, 'data-host packaging must require the unified release manifest');
+assert.ok(!packageJson.scripts['dist:win:host'], 'the unified desktop release must not produce a separate primary-host installer');
 assert.ok(uploadMiniapp.includes('assertReleaseTarget({') && uploadMiniapp.includes("target: 'miniapp'"), 'miniapp upload must require the unified release manifest');
 assert.ok(uploadMiniapp.includes("recordReceipt"), 'a successful miniapp upload must write a version receipt');
 assert.ok(

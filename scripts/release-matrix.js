@@ -2,7 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const childProcess = require('child_process');
 
-const DEFAULT_TARGETS = Object.freeze(['desktop', 'local_host', 'backend', 'gateway', 'miniapp']);
+const DEFAULT_TARGETS = Object.freeze(['desktop', 'backend', 'gateway', 'miniapp']);
+const DESKTOP_PREREQUISITE_TARGETS = Object.freeze(['backend', 'gateway', 'miniapp']);
 const MANIFEST_SCHEMA = 'gewu.unified-release.v1';
 
 function defaultManifestPath(rootDir = path.resolve(__dirname, '..')) {
@@ -121,7 +122,7 @@ function assertReleaseTarget({ rootDir = path.resolve(__dirname, '..'), manifest
   return { manifest, version, manifestPath };
 }
 
-function assertHostRuntimeAccepted({
+function assertDesktopReleasePrerequisites({
   rootDir = path.resolve(__dirname, '..'),
   manifestPath = defaultManifestPath(rootDir),
   manifest: suppliedManifest,
@@ -130,9 +131,11 @@ function assertHostRuntimeAccepted({
   const manifest = suppliedManifest || readManifest(manifestPath);
   const version = resolveManifestVersion({ manifest, requestedVersion });
   assertSourceVersionMatrix(readSourceVersionMatrix({ rootDir }), version);
-  const host = manifest.targets.local_host;
-  if (host?.status !== 'verified' || host.receipt?.version !== version) {
-    throw new Error(`Release ${version} cannot publish OSS updates until local_host has a verified exact-version installed runtime receipt`);
+  for (const target of DESKTOP_PREREQUISITE_TARGETS) {
+    const state = manifest.targets[target];
+    if (state?.status !== 'verified' || state.receipt?.version !== version) {
+      throw new Error(`Release ${version} cannot publish OSS updates until ${target} has a verified exact-version receipt`);
+    }
   }
   return { manifest, version, manifestPath };
 }
@@ -232,8 +235,9 @@ if (require.main === module) {
 
 module.exports = {
   DEFAULT_TARGETS,
+  DESKTOP_PREREQUISITE_TARGETS,
   MANIFEST_SCHEMA,
-  assertHostRuntimeAccepted,
+  assertDesktopReleasePrerequisites,
   assertReleaseTarget,
   assertSourceVersionMatrix,
   createReleaseManifest,

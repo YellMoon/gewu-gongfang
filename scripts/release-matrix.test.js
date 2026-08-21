@@ -72,19 +72,21 @@ try {
     const absolutePath = path.join(fixtureRoot, relativePath);
     fs.writeFileSync(absolutePath, JSON.stringify({ version: '7.2.0' }), 'utf8');
   }
-  const hostAcceptanceManifest = matrix.createReleaseManifest({ version: '7.2.0', commit: 'abc123' });
+  const cloudAcceptanceManifest = matrix.createReleaseManifest({ version: '7.2.0', commit: 'abc123' });
   assert.throws(
-    () => matrix.assertHostRuntimeAccepted({ rootDir: fixtureRoot, manifest: hostAcceptanceManifest }),
-    /local_host.*verified/i,
-    'OSS publication must fail closed before an exact-version installed host acceptance exists'
+    () => matrix.assertDesktopReleasePrerequisites({ rootDir: fixtureRoot, manifest: cloudAcceptanceManifest }),
+    /backend.*verified/i,
+    'OSS publication must fail closed until the cloud API and miniapp pairing endpoints are exact-version ready'
   );
-  matrix.recordReceipt(hostAcceptanceManifest, {
-    target: 'local_host', version: '7.2.0', evidence: 'installed isolated host acceptance',
-  });
+  for (const target of ['backend', 'gateway', 'miniapp']) {
+    matrix.recordReceipt(cloudAcceptanceManifest, {
+      target, version: '7.2.0', evidence: `${target}-ready`,
+    });
+  }
   assert.strictEqual(
-    matrix.assertHostRuntimeAccepted({ rootDir: fixtureRoot, manifest: hostAcceptanceManifest }).version,
+    matrix.assertDesktopReleasePrerequisites({ rootDir: fixtureRoot, manifest: cloudAcceptanceManifest }).version,
     '7.2.0',
-    'an exact-version installed host acceptance should permit publication checks'
+    'one unified desktop update may publish only after its cloud prerequisites are verified'
   );
 } finally {
   fs.rmSync(fixtureRoot, { recursive: true, force: true });
