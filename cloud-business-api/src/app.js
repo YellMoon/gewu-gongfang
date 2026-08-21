@@ -34,6 +34,14 @@ function createCloudBusinessApp({ query, desktopRegistration = null, desktopPair
   function pairingFailure(response) {
     response.status(403).json({ ok: false, code: 'CLOUD_DESKTOP_PAIRING_REJECTED' });
   }
+  function sessionToken(request) {
+    const authorization = String(request.get('authorization') || '');
+    const match = /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/.exec(authorization);
+    if (!match || match[1].length > 4096) {
+      return null;
+    }
+    return match[1];
+  }
   app.post('/api/desktop/online-verification', async (request, response) => {
     if (!desktopRegistration) return desktopUnavailable(response);
     try {
@@ -48,6 +56,17 @@ function createCloudBusinessApp({ query, desktopRegistration = null, desktopPair
     try {
       const result = await desktopRegistration.register(request.body);
       response.json({ ok: true, receiptId: result.receiptId, sessionId: result.sessionId, replayed: result.replayed, sessionToken: result.sessionToken });
+    } catch (error) {
+      identityFailure(response, error);
+    }
+  });
+  app.get('/api/desktop/session-context', async (request, response) => {
+    if (!desktopRegistration || typeof desktopRegistration.sessionContext !== 'function') return desktopUnavailable(response);
+    const token = sessionToken(request);
+    if (!token) return response.status(403).json({ ok: false, code: 'CLOUD_ONLINE_IDENTITY_REJECTED' });
+    try {
+      const context = await desktopRegistration.sessionContext({ sessionToken: token });
+      response.json({ ok: true, ...context });
     } catch (error) {
       identityFailure(response, error);
     }

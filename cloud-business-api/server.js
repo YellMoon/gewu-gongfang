@@ -59,6 +59,27 @@ function createDesktopRegistrationFromEnvironment() {
       );
       return result.rows[0] || null;
     },
+    readSessionContext: async input => {
+      const result = await writerPool.query(
+        `SELECT s.authority_id AS "authorityId", s.account_id AS "accountId", s.device_id AS "deviceId", s.installation_id AS "installationId", s.session_id AS "sessionId", s.expires_at AS "expiresAt",
+          COALESCE(array_agg(DISTINCT g.role ORDER BY g.role) FILTER (WHERE g.status='active' AND g.starts_at <= transaction_timestamp() AND (g.ends_at IS NULL OR g.ends_at > transaction_timestamp())), ARRAY[]::text[]) AS roles
+         FROM vnext_control_plane.vnext_sessions s
+         JOIN vnext_control_plane.vnext_authorities au ON au.authority_id=s.authority_id AND au.status='active'
+         JOIN vnext_control_plane.vnext_accounts ac ON ac.authority_id=s.authority_id AND ac.account_id=s.account_id AND ac.status='active'
+         JOIN vnext_control_plane.vnext_trusted_devices d ON d.authority_id=s.authority_id AND d.device_id=s.device_id AND d.status='active'
+         JOIN vnext_control_plane.vnext_device_installations i ON i.authority_id=s.authority_id AND i.device_id=s.device_id AND i.installation_id=s.installation_id AND i.status='active'
+         JOIN vnext_control_plane.vnext_account_device_links l ON l.authority_id=s.authority_id AND l.account_id=s.account_id AND l.device_id=s.device_id AND l.installation_id=s.installation_id AND l.link_id=s.link_id AND l.status='active'
+         LEFT JOIN vnext_control_plane.vnext_role_grants g ON g.authority_id=s.authority_id AND g.account_id=s.account_id
+         WHERE s.authority_id=$1 AND s.account_id=$2 AND s.device_id=$3 AND s.installation_id=$4 AND s.session_id=$5 AND s.expires_at=$6::timestamptz
+           AND s.status='active' AND s.session_kind='online' AND s.expires_at > transaction_timestamp()
+           AND ROW(s.account_auth_version,s.account_access_version,s.account_revocation_version,s.device_credential_version,s.device_risk_version,s.installation_credential_version,s.link_auth_version,s.link_access_version,s.link_row_version)=ROW(ac.auth_version,ac.access_version,ac.revocation_version,d.credential_version,d.risk_version,i.credential_version,l.auth_version,l.access_version,l.row_version)
+         GROUP BY s.authority_id,s.account_id,s.device_id,s.installation_id,s.session_id,s.expires_at`,
+        [input.authorityId, input.accountId, input.deviceId, input.installationId, input.sessionId, input.expiresAt],
+      );
+      const row = result.rows[0];
+      if (!row || !(row.expiresAt instanceof Date)) return null;
+      return { ...row, expiresAt: row.expiresAt.toISOString() };
+    },
   });
   return { registration, async close() { await Promise.all([identityPool.end(), writerPool.end()]); } };
 }

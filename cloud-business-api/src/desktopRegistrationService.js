@@ -64,7 +64,7 @@ function makeTicket(secret, payload) {
   return `${encoded}.${signPart(secret, encoded)}`;
 }
 
-function inspectTicket(secret, token, now) {
+function signedTicketPayload(secret, token) {
   if (typeof token !== 'string' || token.length > 4096) throw rejected();
   const parts = token.split('.');
   if (parts.length !== 2 || !parts[0] || !parts[1]) throw rejected();
@@ -78,9 +78,34 @@ function inspectTicket(secret, token, now) {
   } catch (_) {
     throw rejected();
   }
+  return payload;
+}
+
+function inspectTicket(secret, token, now) {
+  const payload = signedTicketPayload(secret, token);
   const copy = exact(payload, ['v', 'authorityId', 'accountId', 'challenge', 'proofId', 'expiresAt']);
   if (copy.v !== 1 || !text(copy.authorityId) || !text(copy.accountId) || !text(copy.challenge) || !text(copy.proofId) || !Number.isSafeInteger(copy.expiresAt) || copy.expiresAt <= now.getTime()) throw rejected();
   return Object.freeze(copy);
+}
+
+function inspectSessionTicket(secret, token, now) {
+  const payload = signedTicketPayload(secret, token);
+  const copy = exact(payload, ['v', 'authorityId', 'accountId', 'deviceId', 'installationId', 'sessionId', 'expiresAt']);
+  if (copy.v !== 1 || !text(copy.authorityId) || !text(copy.accountId) || !text(copy.deviceId)
+    || !text(copy.installationId) || !text(copy.sessionId) || !Number.isSafeInteger(copy.expiresAt)
+    || copy.expiresAt <= now.getTime()) throw rejected();
+  return Object.freeze(copy);
+}
+
+function sessionContext(value, ticket) {
+  const copy = exact(value, ['authorityId', 'accountId', 'deviceId', 'installationId', 'sessionId', 'expiresAt', 'roles']);
+  if (copy.authorityId !== ticket.authorityId || copy.accountId !== ticket.accountId
+    || copy.deviceId !== ticket.deviceId || copy.installationId !== ticket.installationId
+    || copy.sessionId !== ticket.sessionId || copy.expiresAt !== new Date(ticket.expiresAt).toISOString()
+    || !Array.isArray(copy.roles) || copy.roles.length === 0 || copy.roles.length > 3
+    || copy.roles.some(role => !['super_admin', 'teacher', 'student'].includes(role))
+    || new Set(copy.roles).size !== copy.roles.length) throw rejected();
+  return Object.freeze({ ...copy, roles: Object.freeze(copy.roles.slice()) });
 }
 
 function verifyProof(publicKey, challenge, proof) {
@@ -97,9 +122,9 @@ function opaqueId(secret, kind, value) {
 }
 
 function createCloudDesktopRegistrationService(config) {
-  const settings = exact(config, ['now', 'randomId', 'phoneVerifier', 'lookupAccount', 'ticketSecret', 'issueAssertion', 'register']);
+  const settings = exact(config, ['now', 'randomId', 'phoneVerifier', 'lookupAccount', 'ticketSecret', 'issueAssertion', 'register', 'readSessionContext']);
   if (typeof settings.now !== 'function' || typeof settings.randomId !== 'function' || typeof settings.phoneVerifier !== 'function'
-    || typeof settings.lookupAccount !== 'function' || typeof settings.issueAssertion !== 'function' || typeof settings.register !== 'function'
+    || typeof settings.lookupAccount !== 'function' || typeof settings.issueAssertion !== 'function' || typeof settings.register !== 'function' || typeof settings.readSessionContext !== 'function'
     || typeof settings.ticketSecret !== 'string' || settings.ticketSecret.length < 24) throw failure();
   const currentNow = () => {
     const value = settings.now();
@@ -107,8 +132,10 @@ function createCloudDesktopRegistrationService(config) {
     return value;
   };
   const inspectVerificationToken = token => inspectTicket(settings.ticketSecret, token, currentNow());
+  const inspectSessionToken = token => inspectSessionTicket(settings.ticketSecret, token, currentNow());
   return Object.freeze({
     inspectVerificationToken,
+    inspectSessionToken,
     async begin(input) {
       const request = exact(input, ['phoneCode']);
       if (!text(request.phoneCode)) throw rejected();
@@ -182,6 +209,24 @@ function createCloudDesktopRegistrationService(config) {
         if (error && error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED') throw error;
         throw rejected();
       }
+    },
+    async sessionContext(input) {
+      const request = exact(input, ['sessionToken']);
+      const ticket = inspectSessionToken(request.sessionToken);
+      let current;
+      try {
+        current = await settings.readSessionContext({
+          authorityId: ticket.authorityId,
+          accountId: ticket.accountId,
+          deviceId: ticket.deviceId,
+          installationId: ticket.installationId,
+          sessionId: ticket.sessionId,
+          expiresAt: new Date(ticket.expiresAt).toISOString(),
+        });
+      } catch (_) {
+        throw rejected();
+      }
+      return sessionContext(current, ticket);
     },
   });
 }

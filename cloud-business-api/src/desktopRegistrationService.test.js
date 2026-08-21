@@ -12,7 +12,7 @@ const now = new Date('2026-08-21T08:00:00.000Z');
 const pepper = 'test-phone-lookup-pepper';
 const ticketSecret = 'test-ticket-secret-material-32-bytes';
 const records = [{ phoneHmac: hmacPhone(pepper, '13700000000'), authorityId: 'tenant-1', accountId: 'account-1' }];
-const calls = { issued: [], registered: [] };
+const calls = { issued: [], registered: [], sessionContexts: [] };
 const privateKey = crypto.generateKeyPairSync('ed25519').privateKey;
 const publicKey = crypto.createPublicKey(privateKey).export({ type: 'spki', format: 'pem' });
 
@@ -24,6 +24,18 @@ const service = createCloudDesktopRegistrationService({
   ticketSecret,
   issueAssertion: async input => { calls.issued.push(input); },
   register: async input => { calls.registered.push(input); return { receiptId: input.receiptId, sessionId: input.sessionId, replayed: false }; },
+  readSessionContext: async input => {
+    calls.sessionContexts.push(input);
+    return {
+      authorityId: input.authorityId,
+      accountId: input.accountId,
+      deviceId: input.deviceId,
+      installationId: input.installationId,
+      sessionId: input.sessionId,
+      expiresAt: input.expiresAt,
+      roles: ['super_admin'],
+    };
+  },
 });
 
 (async () => {
@@ -49,6 +61,24 @@ const service = createCloudDesktopRegistrationService({
   assert.strictEqual(calls.issued[0].deviceId, `desktop-device-${crypto.createHash('sha256').update(publicKey.trim(), 'utf8').digest('hex').slice(0, 32)}`);
   assert.strictEqual(calls.issued[0].canonicalRequestSha256, calls.registered[0].canonicalRequestSha256);
   assert.strictEqual(calls.registered[0].canonicalResultJson, JSON.stringify({ sessionId: calls.registered[0].sessionId }));
+  assert.deepStrictEqual(
+    await service.sessionContext({ sessionToken: registered.sessionToken }),
+    {
+      authorityId: 'tenant-1',
+      accountId: 'account-1',
+      deviceId: calls.issued[0].deviceId,
+      installationId: 'installation-1',
+      sessionId: registered.sessionId,
+      expiresAt: new Date(now.getTime() + 60 * 60 * 1000).toISOString(),
+      roles: ['super_admin'],
+    },
+    'a desktop session context must be derived from the signed current cloud session',
+  );
+  assert.strictEqual(calls.sessionContexts.length, 1);
+  await assert.rejects(
+    () => service.sessionContext({ sessionToken: `${registered.sessionToken}x` }),
+    error => error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED',
+  );
 
   await assert.rejects(() => service.begin({ phoneCode: 'not-verified' }), error => error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED');
   await assert.rejects(() => service.register({ verificationToken: started.verificationToken, installationId: 'installation-1', installationPublicKey: publicKey, deviceProof: 'bad', idempotencyKey: 'registration-1' }), error => error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED');

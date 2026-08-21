@@ -3,13 +3,13 @@
 const assert = require('assert');
 const { createCloudBusinessApp } = require('./app');
 
-async function request(app, path, { method = 'GET', body } = {}) {
+async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const server = app.listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   try {
     const response = await fetch(`http://127.0.0.1:${server.address().port}${path}`, {
       method,
-      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      headers: body === undefined ? headers : { ...headers, 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     let responseBody;
@@ -36,17 +36,28 @@ async function request(app, path, { method = 'GET', body } = {}) {
   const calls = [];
   const identity = {
     begin: async input => { calls.push(['begin', input]); return { verificationToken: 'ticket-1' }; },
-    register: async input => { calls.push(['register', input]); return { receiptId: 'receipt-1', sessionId: 'session-1', replayed: false, sessionToken: 'session-token-1' }; },
+    register: async input => { calls.push(['register', input]); return { receiptId: 'receipt-1', sessionId: 'session-1', replayed: false, sessionToken: 'eyJ2IjoxfQ.signature' }; },
+    sessionContext: async input => {
+      calls.push(['sessionContext', input]);
+      return { authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'] };
+    },
   };
   const verification = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity }), '/api/desktop/online-verification', { method: 'POST', body: { phoneCode: 'provider-code' } });
   assert.strictEqual(verification.status, 200);
   assert.deepStrictEqual(verification.body, { ok: true, verificationToken: 'ticket-1' });
   const registration = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity }), '/api/desktop/online-registration', { method: 'POST', body: { verificationToken: 'ticket-1', installationId: 'install-1', installationPublicKey: 'public-key', deviceProof: 'proof', idempotencyKey: 'retry-1' } });
   assert.strictEqual(registration.status, 200);
-  assert.deepStrictEqual(registration.body, { ok: true, receiptId: 'receipt-1', sessionId: 'session-1', replayed: false, sessionToken: 'session-token-1' });
+  assert.deepStrictEqual(registration.body, { ok: true, receiptId: 'receipt-1', sessionId: 'session-1', replayed: false, sessionToken: 'eyJ2IjoxfQ.signature' });
+  const sessionContext = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity }), '/api/desktop/session-context', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
+  assert.strictEqual(sessionContext.status, 200);
+  assert.deepStrictEqual(sessionContext.body, { ok: true, authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'] });
+  const missingSessionToken = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity }), '/api/desktop/session-context');
+  assert.strictEqual(missingSessionToken.status, 403);
+  assert.deepStrictEqual(missingSessionToken.body, { ok: false, code: 'CLOUD_ONLINE_IDENTITY_REJECTED' });
   assert.deepStrictEqual(calls, [
     ['begin', { phoneCode: 'provider-code' }],
     ['register', { verificationToken: 'ticket-1', installationId: 'install-1', installationPublicKey: 'public-key', deviceProof: 'proof', idempotencyKey: 'retry-1' }],
+    ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
   ]);
   const denied = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: { begin: async () => { throw Object.assign(new Error('no'), { code: 'CLOUD_ONLINE_IDENTITY_REJECTED' }); }, register: async () => null } }), '/api/desktop/online-verification', { method: 'POST', body: { phoneCode: 'bad' } });
   assert.strictEqual(denied.status, 403);
