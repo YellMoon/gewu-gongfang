@@ -26,6 +26,16 @@ async function runUnifiedDesktopRegistrationCommandCases() {
   await expectCode(() => command.execute({ ...input, accountId: 'caller-claimed-account' }), 'VNEXT_UNIFIED_DESKTOP_REGISTRATION_INPUT_INVALID');
   await expectCode(() => command.execute({ ...input, receiptId: 'server-only-receipt' }), 'VNEXT_UNIFIED_DESKTOP_REGISTRATION_INPUT_INVALID');
   await expectCode(() => command.execute({ ...input, occurredAt: '2026-08-21T00:00:00.000Z' }), 'VNEXT_UNIFIED_DESKTOP_REGISTRATION_INPUT_INVALID');
+  for (const code of ['VNEXT_UNIFIED_DESKTOP_REGISTRATION_REJECTED', 'VNEXT_UNIFIED_DESKTOP_REGISTRATION_CONFLICT', 'VNEXT_UNIFIED_DESKTOP_REGISTRATION_UNAVAILABLE']) {
+    const safeCommand = createUnifiedDesktopRegistrationCommand({
+      invoke: async () => { const error = new Error('trusted service detail must not leak'); error.code = code; throw error; },
+    });
+    await expectCode(() => safeCommand.execute(input), code);
+  }
+  const unavailableCommand = createUnifiedDesktopRegistrationCommand({
+    invoke: async () => { throw new Error('database password or SQL detail'); },
+  });
+  await expectCode(() => unavailableCommand.execute(input), 'VNEXT_UNIFIED_DESKTOP_REGISTRATION_UNAVAILABLE');
 }
 
 if (require.main === module) {

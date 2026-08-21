@@ -12,6 +12,18 @@ function failure() {
   return error;
 }
 
+const SAFE_SERVICE_CODES = new Set([
+  'VNEXT_UNIFIED_DESKTOP_REGISTRATION_REJECTED',
+  'VNEXT_UNIFIED_DESKTOP_REGISTRATION_CONFLICT',
+  'VNEXT_UNIFIED_DESKTOP_REGISTRATION_UNAVAILABLE',
+]);
+
+function serviceFailure(code) {
+  const error = new Error('unified desktop registration is unavailable');
+  error.code = SAFE_SERVICE_CODES.has(code) ? code : 'VNEXT_UNIFIED_DESKTOP_REGISTRATION_UNAVAILABLE';
+  return error;
+}
+
 function exactOwnData(value, expectedKeys) {
   if (!value || typeof value !== 'object' || types.isProxy(value)
     || Object.getPrototypeOf(value) !== Object.prototype) return null;
@@ -47,8 +59,8 @@ function createUnifiedDesktopRegistrationCommand(config) {
       const snapshot = registrationRequestSnapshot(request);
       try {
         return await settings.invoke(snapshot);
-      } catch (_) {
-        throw failure();
+      } catch (error) {
+        throw serviceFailure(error && error.code);
       }
     },
   });
