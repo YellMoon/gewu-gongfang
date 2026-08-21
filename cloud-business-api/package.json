@@ -4,7 +4,7 @@
   "version": "8.0.2",
   "scripts": {
     "start": "node server.js",
-    "test": "node src/app.test.js"
+    "test": "node src/app.test.js && node src/desktopRegistrationService.test.js && node src/wechatPhoneVerifier.test.js"
   },
   "dependencies": {
     "express": "5.2.1",

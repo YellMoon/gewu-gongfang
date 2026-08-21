@@ -25,6 +25,8 @@ function buildCloudControlPlaneM16UpgradeSql() {
     migration.sql,
     `INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES (${sqlLiteral(migration.migrationId)}, ${migration.semanticVersion}, ${sqlLiteral(migration.manifestSha256)}, transaction_timestamp(), 'gewu-cloud-control-m16-upgrade');`,
     'RESET ROLE;',
+    'GRANT CONNECT ON DATABASE gewu_cloud TO vnext_pg17_identity_verifier, vnext_pg17_writer;',
+    'GRANT USAGE ON SCHEMA vnext_control_plane TO vnext_pg17_writer;',
     'REVOKE CREATE ON DATABASE gewu_cloud FROM vnext_pg17_owner;',
     'REVOKE vnext_pg17_owner FROM gewu_app;',
     'COMMIT;',
