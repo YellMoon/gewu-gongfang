@@ -19,6 +19,7 @@ async function runUnifiedDesktopRegistrationMutationCases(runtime) {
   const activeRuntime = runtime || createDisposablePg17Runtime();
   if (ownedRuntime) await activeRuntime.start();
   const handle = await activeRuntime.createIsolatedHandle();
+  let peerHandle;
   const catalog = createVNextPg17CatalogBoundary(activeRuntime);
   try {
     await catalog.apply(handle, { appliedAt: AT, appliedBy: 'unified-desktop-test' });
@@ -37,6 +38,17 @@ async function runUnifiedDesktopRegistrationMutationCases(runtime) {
     assert.deepStrictEqual(await registerVNextPg17UnifiedDesktopOnline(activeRuntime, handle, registration), { receiptId: 'receipt-1', sessionId: 'session-1', replayed: true });
     await issueVNextPg17OnlineIdentityAssertion(activeRuntime, handle, { ...assertion, assertionId: 'assertion-2', nonceSha256: hash('9') });
     assert.deepStrictEqual(await registerVNextPg17UnifiedDesktopOnline(activeRuntime, handle, { ...registration, assertionId: 'assertion-2' }), { receiptId: 'receipt-1', sessionId: 'session-1', replayed: true });
+    await issueVNextPg17OnlineIdentityAssertion(activeRuntime, handle, { ...assertion, assertionId: 'assertion-concurrent', nonceSha256: hash('8') });
+    peerHandle = await activeRuntime.createPeerHandle(handle);
+    const concurrentRegistration = { ...registration, assertionId: 'assertion-concurrent', idempotencyKey: 'idempotency-concurrent', receiptId: 'receipt-concurrent', auditEventId: 'audit-concurrent', outboxEventId: 'outbox-concurrent', sessionId: 'session-concurrent', linkId: 'link-concurrent', canonicalResultJson: '{"sessionId":"session-concurrent"}', canonicalPayloadJson: '{"sessionId":"session-concurrent"}' };
+    const concurrentResults = await Promise.all([
+      registerVNextPg17UnifiedDesktopOnline(activeRuntime, handle, concurrentRegistration),
+      registerVNextPg17UnifiedDesktopOnline(activeRuntime, peerHandle, concurrentRegistration),
+    ]);
+    assert.deepStrictEqual(concurrentResults.sort((left, right) => Number(left.replayed) - Number(right.replayed)), [
+      { receiptId: 'receipt-concurrent', sessionId: 'session-concurrent', replayed: false },
+      { receiptId: 'receipt-concurrent', sessionId: 'session-concurrent', replayed: true },
+    ]);
     await issueVNextPg17OnlineIdentityAssertion(activeRuntime, handle, { ...assertion, assertionId: 'assertion-expired', nonceSha256: hash('1') });
     await assert.rejects(() => registerVNextPg17UnifiedDesktopOnline(activeRuntime, handle, { ...registration, assertionId: 'assertion-expired', idempotencyKey: 'idempotency-expired', receiptId: 'receipt-expired', auditEventId: 'audit-expired', outboxEventId: 'outbox-expired', sessionId: 'session-expired', linkId: 'link-expired', occurredAt: '2026-08-21T00:11:00.000Z' }));
     await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
@@ -46,13 +58,13 @@ async function runUnifiedDesktopRegistrationMutationCases(runtime) {
     await assert.rejects(() => registerVNextPg17UnifiedDesktopOnline(activeRuntime, handle, { ...registration, assertionId: 'assertion-cross-account', idempotencyKey: 'idempotency-cross-account', receiptId: 'receipt-cross-account', auditEventId: 'audit-cross-account', outboxEventId: 'outbox-cross-account', sessionId: 'session-cross-account', linkId: 'link-cross-account' }));
     await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
       const counts = await facade.query("SELECT (SELECT count(*)::text FROM vnext_control_plane.vnext_trusted_devices) AS devices, (SELECT count(*)::text FROM vnext_control_plane.vnext_device_installations) AS installations, (SELECT count(*)::text FROM vnext_control_plane.vnext_account_device_links) AS links, (SELECT count(*)::text FROM vnext_control_plane.vnext_sessions) AS sessions, (SELECT count(*)::text FROM vnext_control_plane.vnext_authorization_command_receipts) AS receipts, (SELECT count(*)::text FROM vnext_control_plane.vnext_authorization_audit_events) AS audits, (SELECT count(*)::text FROM vnext_control_plane.vnext_authorization_outbox_events) AS outbox, (SELECT count(*)::text FROM vnext_control_plane.vnext_online_identity_assertion_consumptions) AS consumptions");
-      assert.deepStrictEqual(counts.rows, [{ devices: '1', installations: '1', links: '1', sessions: '1', receipts: '1', audits: '1', outbox: '1', consumptions: '2' }]);
+      assert.deepStrictEqual(counts.rows, [{ devices: '1', installations: '1', links: '1', sessions: '2', receipts: '2', audits: '2', outbox: '2', consumptions: '3' }]);
       const receipt = await facade.query("SELECT committed_auth_version::text AS auth, committed_access_version::text AS access, committed_revocation_version::text AS revocation FROM vnext_control_plane.vnext_authorization_command_receipts WHERE receipt_id = 'receipt-1'");
       assert.deepStrictEqual(receipt.rows, [{ auth: '2', access: '3', revocation: '4' }]);
     });
     await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'writer', facade => facade.query("INSERT INTO vnext_control_plane.vnext_authorities(authority_id,status,created_at,updated_at) VALUES('writer-1','active',now(),now())")));
     await assert.rejects(() => withVNextPg17SyntheticQuery(handle, 'writer', facade => facade.query("INSERT INTO vnext_control_plane.vnext_online_identity_assertions(assertion_id,authority_id,account_id,account_auth_version,account_access_version,account_revocation_version,device_id,installation_id,installation_public_key,key_fingerprint,audience,nonce_sha256,canonical_request_sha256,evidence_sha256,issued_at,expires_at,created_at) VALUES('writer-assertion','authority-1','account-1',1,1,1,'writer-device','writer-installation','writer-key',$1,'unified-desktop',$1,$1,$1,$2,$2,$2)", [hash('0'), AT])));
-  } finally { await activeRuntime.disposeHandle(handle); if (ownedRuntime) await activeRuntime.stop(); }
+  } finally { if (peerHandle) await activeRuntime.disposeHandle(peerHandle); await activeRuntime.disposeHandle(handle); if (ownedRuntime) await activeRuntime.stop(); }
 }
 
 if (require.main === module) {
