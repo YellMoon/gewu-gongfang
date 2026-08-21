@@ -35,12 +35,17 @@ const COPY_ONLY_TERMINAL_STAGES = new Set(['commit', 'rollback']);
 const BUSINESS_FOUNDATION_DDL_FAULT_STAGES = new Set(['commit', 'rollback']);
 const BUSINESS_FOUNDATION_ADMISSION_DDL_FAULT_STAGES = new Set(['commit', 'rollback', 'revoke']);
 const BUSINESS_FOUNDATION_SHADOW_ADMISSION_FAULT_STAGES = new Set(['preflight', 'preflightCommit', 'writeCommit', 'writeFail', 'rollback', 'reconcileCommit', 'reconcileRollback']);
-const BUSINESS_FOUNDATION_SHADOW_ADMISSION_PREFLIGHT_SQL = "SELECT (SELECT COUNT(*)::text FROM business.tenants) AS tenants, (SELECT COUNT(*)::text FROM business.institutions) AS institutions, (SELECT COUNT(*)::text FROM business.schools) AS schools, (SELECT COUNT(*)::text FROM business.rooms) AS rooms, (SELECT COUNT(*)::text FROM migration_admission.migration_batches) AS batches, (SELECT COUNT(*)::text FROM migration_admission.migration_batch_events) AS events, (SELECT COUNT(*)::text FROM migration_admission.migration_quarantine) AS quarantine, (SELECT COUNT(*)::text FROM migration_admission.migration_row_ledger) AS ledger";
+const BUSINESS_FOUNDATION_SHADOW_RELATIONS = Object.freeze(['tenants', 'institutions', 'schools', 'rooms', 'teachers', 'students', 'courses', 'course_student_pricings', 'schedules', 'schedule_student_overrides']);
+const BUSINESS_FOUNDATION_SHADOW_ADMISSION_PREFLIGHT_SQL = "SELECT (SELECT COUNT(*)::text FROM business.tenants) AS tenants, (SELECT COUNT(*)::text FROM business.institutions) AS institutions, (SELECT COUNT(*)::text FROM business.schools) AS schools, (SELECT COUNT(*)::text FROM business.rooms) AS rooms, (SELECT COUNT(*)::text FROM business.teachers) AS teachers, (SELECT COUNT(*)::text FROM business.students) AS students, (SELECT COUNT(*)::text FROM business.courses) AS courses, (SELECT COUNT(*)::text FROM business.course_student_pricings) AS course_student_pricings, (SELECT COUNT(*)::text FROM business.schedules) AS schedules, (SELECT COUNT(*)::text FROM business.schedule_student_overrides) AS schedule_student_overrides, (SELECT COUNT(*)::text FROM migration_admission.migration_batches) AS batches, (SELECT COUNT(*)::text FROM migration_admission.migration_batch_events) AS events, (SELECT COUNT(*)::text FROM migration_admission.migration_quarantine) AS quarantine, (SELECT COUNT(*)::text FROM migration_admission.migration_row_ledger) AS ledger";
 const BUSINESS_FOUNDATION_SHADOW_RECONCILIATION_SQL = Object.freeze({
   tenants: 'SELECT id, name, legacy_status AS "legacyStatus", legacy_plan AS "legacyPlan", to_char(legacy_archive_before AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "legacyArchiveBefore", legacy_deleted AS "legacyDeleted", to_char(created_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "createdAt", to_char(updated_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "updatedAt" FROM business.tenants ORDER BY id',
   institutions: 'SELECT id, tenant_id AS "tenantId", name, contact_person_legacy AS "contactPersonLegacy", contact_phone_legacy AS "contactPhoneLegacy", revenue_share::float8 AS "revenueShare", notes, legacy_deleted AS "legacyDeleted", to_char(created_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "createdAt", to_char(updated_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "updatedAt" FROM business.institutions ORDER BY id',
   schools: 'SELECT id, tenant_id AS "tenantId", name, legacy_count AS "legacyCount", legacy_deleted AS "legacyDeleted", to_char(created_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "createdAt", to_char(updated_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "updatedAt" FROM business.schools ORDER BY id',
   rooms: 'SELECT id, tenant_id AS "tenantId", name, address_legacy AS "addressLegacy", legacy_count AS "legacyCount", legacy_deleted AS "legacyDeleted", to_char(created_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "createdAt", to_char(updated_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "updatedAt" FROM business.rooms ORDER BY id',
+  teachers: 'SELECT id, tenant_id AS "tenantId", name, phone_legacy AS "phoneLegacy", subject, hourly_rate::float8 AS "hourlyRate", notes, legacy_deleted AS "legacyDeleted", to_char(created_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "createdAt", to_char(updated_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "updatedAt" FROM business.teachers ORDER BY id',
+  students: 'SELECT id, tenant_id AS "tenantId", name, phone_legacy AS "phoneLegacy", school_legacy AS "schoolLegacy", grade_year AS "gradeYear", grade_current AS "gradeCurrent", legacy_source_type AS "legacySourceType", institution_id AS "institutionId", parent_name_legacy AS "parentNameLegacy", parent_wechat_legacy AS "parentWechatLegacy", student_source_legacy AS "studentSourceLegacy", legacy_balance_hours::float8 AS "legacyBalanceHours", legacy_balance_money::float8 AS "legacyBalanceMoney", notes, legacy_is_institution_student AS "legacyIsInstitutionStudent", parent_phone_legacy AS "parentPhoneLegacy", parent_phone_normalized_legacy AS "parentPhoneNormalizedLegacy", parent_relation_legacy AS "parentRelationLegacy", legacy_deleted AS "legacyDeleted", to_char(created_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "createdAt", to_char(updated_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "updatedAt" FROM business.students ORDER BY id',
+  courses: 'SELECT c.id, c.tenant_id AS "tenantId", c.name, c.year, c.semester, c.display_name AS "displayName", c.course_type AS "courseType", c.legacy_source_type AS "legacySourceType", c.institution_id AS "institutionId", c.price_tuition::float8 AS "priceTuition", c.price_teacher::float8 AS "priceTeacher", c.billing_unit AS "billingUnit", c.teacher_fee_mode AS "teacherFeeMode", c.legacy_room_id AS "legacyRoomId", c.room_name_snapshot AS "roomNameSnapshot", c.teacher_id AS "teacherId", c.teacher_name_snapshot AS "teacherNameSnapshot", c.legacy_active AS "legacyActive", c.default_duration_minutes AS "defaultDurationMinutes", c.notes, c.legacy_deleted AS "legacyDeleted", to_char(c.created_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "createdAt", to_char(c.updated_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "updatedAt", COALESCE((SELECT json_agg(json_build_object(\'studentId\', p.student_id, \'tuition\', p.tuition::float8, \'teacherFee\', p.teacher_fee::float8, \'attendanceStatus\', 1) ORDER BY p.student_id) FROM business.course_student_pricings p WHERE p.tenant_id = c.tenant_id AND p.course_id = c.id), \'[]\'::json) AS "defaultRoster" FROM business.courses c ORDER BY c.id',
+  schedules: 'SELECT s.id, s.tenant_id AS "tenantId", s.course_id AS "courseId", to_char(s.start_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "startAt", to_char(s.end_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "endAt", s.recurring_rule_json AS "recurringRule", s.status, s.room_display_snapshot AS "roomDisplay", s.service_type AS "serviceType", s.calculated_tuition::float8 AS "calculatedTuition", s.calculated_teacher_fee::float8 AS "calculatedTeacherFee", s.notes, s.legacy_deleted AS "legacyDeleted", to_char(s.created_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "createdAt", to_char(s.updated_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "updatedAt", CASE WHEN EXISTS (SELECT 1 FROM business.schedule_student_overrides o WHERE o.tenant_id = s.tenant_id AND o.schedule_id = s.id) THEN \'schedule_override\' WHEN EXISTS (SELECT 1 FROM business.course_student_pricings p WHERE p.tenant_id = s.tenant_id AND p.course_id = s.course_id) THEN \'course_default\' ELSE \'none\' END AS "effectiveRosterSource", COALESCE((SELECT json_agg(json_build_object(\'studentId\', o.student_id, \'tuition\', o.tuition::float8, \'teacherFee\', o.teacher_fee::float8, \'attendanceStatus\', o.attendance_status) ORDER BY o.student_id) FROM business.schedule_student_overrides o WHERE o.tenant_id = s.tenant_id AND o.schedule_id = s.id), (SELECT json_agg(json_build_object(\'studentId\', p.student_id, \'tuition\', p.tuition::float8, \'teacherFee\', p.teacher_fee::float8, \'attendanceStatus\', 1) ORDER BY p.student_id) FROM business.course_student_pricings p WHERE p.tenant_id = s.tenant_id AND p.course_id = s.course_id), \'[]\'::json) AS "effectiveRoster" FROM business.schedules s ORDER BY s.id',
 });
 const BUSINESS_FOUNDATION_V1_RELATIONS = Object.freeze([
   'business_schema_migrations',
@@ -769,7 +774,7 @@ async function executeBusinessFoundationAdmissionDdlPlan(runtime, handle, input)
   const client = state.clients['migration-admission-migrator'];
   if (!client) throw invalidHandle();
   const { BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS } = require('./businessFoundationAdmissionManifest');
-  const migration = BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[0];
+  const migrations = BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS;
   const trace = state.businessFoundationAdmissionDdlTrace;
   const record = text => {
     const traceState = businessFoundationAdmissionDdlTraces.get(trace);
@@ -813,29 +818,37 @@ async function executeBusinessFoundationAdmissionDdlPlan(runtime, handle, input)
       [['migration_admission_schema_migrations', 'migration_batches', 'migration_batch_events', 'migration_quarantine', 'migration_row_ledger']],
     );
     if (stateCheck.rows.length !== 1 || stateCheck.rows[0].public_shadow !== null || publicShadows.rows.length !== 0) throw businessSchemaDrift();
+    let pendingMigrations;
     if (stateCheck.rows[0].ledger !== null) {
       const ledger = await query('SELECT migration_id, semantic_version, manifest_sha256 FROM migration_admission.migration_admission_schema_migrations ORDER BY semantic_version');
-      if (ledger.rows.length !== 1 || ledger.rows[0].migration_id !== migration.migrationId
-        || String(ledger.rows[0].semantic_version) !== String(migration.semanticVersion)
-        || ledger.rows[0].manifest_sha256 !== migration.manifestSha256) throw businessSchemaDrift();
+      if (ledger.rows.length > migrations.length || ledger.rows.some((row, index) => row.migration_id !== migrations[index].migrationId
+        || String(row.semantic_version) !== String(migrations[index].semanticVersion)
+        || row.manifest_sha256 !== migrations[index].manifestSha256)) throw businessSchemaDrift();
+      if (ledger.rows.length !== migrations.length) throw businessSchemaDrift();
       commitAttempted = true;
       await query('COMMIT');
       return Object.freeze({ applied: false });
+    } else {
+      if (stateCheck.rows[0].schema_name !== null) throw businessSchemaDrift();
+      const grantCreate = `GRANT CREATE ON DATABASE ${quoteIdentifier(state.database)} TO vnext_pg17_migration_admission_owner`;
+      await fixtureQuery(grantCreate);
+      createGranted = true;
+      pendingMigrations = migrations;
     }
-    if (stateCheck.rows[0].schema_name !== null) throw businessSchemaDrift();
-    const grantCreate = `GRANT CREATE ON DATABASE ${quoteIdentifier(state.database)} TO vnext_pg17_migration_admission_owner`;
-    await fixtureQuery(grantCreate);
-    createGranted = true;
-    await query(migration.sql);
-    await query(
-      'INSERT INTO migration_admission.migration_admission_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
-      [migration.migrationId, migration.semanticVersion, migration.manifestSha256, snapshot.appliedAt, snapshot.appliedBy],
-    );
-    const revokeCreate = `REVOKE CREATE ON DATABASE ${quoteIdentifier(state.database)} FROM vnext_pg17_migration_admission_owner`;
-    revokeAttempted = true;
-    await fixtureQuery(revokeCreate);
-    revokeAttempted = false;
-    createGranted = false;
+    for (const migration of pendingMigrations) {
+      await query(migration.sql);
+      await query(
+        'INSERT INTO migration_admission.migration_admission_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
+        [migration.migrationId, migration.semanticVersion, migration.manifestSha256, snapshot.appliedAt, snapshot.appliedBy],
+      );
+    }
+    if (createGranted) {
+      const revokeCreate = `REVOKE CREATE ON DATABASE ${quoteIdentifier(state.database)} FROM vnext_pg17_migration_admission_owner`;
+      revokeAttempted = true;
+      await fixtureQuery(revokeCreate);
+      revokeAttempted = false;
+      createGranted = false;
+    }
     commitAttempted = true;
     await query('COMMIT');
     return Object.freeze({ applied: true });
@@ -867,20 +880,69 @@ function stableSha256(value) {
   return createHash('sha256').update(JSON.stringify(value), 'utf8').digest('hex');
 }
 
+function projectCoreSchedulingRows(core) {
+  const numeric = value => value === null ? null : Number(value);
+  const roster = rows => Object.freeze(rows.map(row => Object.freeze({ studentId: row.studentId, tuition: numeric(row.tuition), teacherFee: numeric(row.teacherFee), attendanceStatus: row.attendanceStatus })));
+  const teachers = core.teachers.map(source => Object.freeze({
+    id: source.id, tenantId: source.tenant_id, name: source.name, phoneLegacy: source.phone, subject: source.subject,
+    hourlyRate: numeric(source.hourly_rate), notes: source.notes, legacyDeleted: source.deleted === 1, createdAt: source.created_at, updatedAt: source.updated_at,
+  }));
+  const students = core.students.map(source => Object.freeze({
+    id: source.id, tenantId: source.tenant_id, name: source.name, phoneLegacy: source.phone, schoolLegacy: source.school,
+    gradeYear: source.grade_year, gradeCurrent: source.grade_current, legacySourceType: source.source_type, institutionId: source.institution_id,
+    parentNameLegacy: source.parent_name, parentWechatLegacy: source.parent_wechat, studentSourceLegacy: source.student_source,
+    legacyBalanceHours: numeric(source.balance_hours), legacyBalanceMoney: numeric(source.balance_money), notes: source.notes,
+    legacyIsInstitutionStudent: source.is_institution_student === 1, parentPhoneLegacy: source.parent_phone,
+    parentPhoneNormalizedLegacy: source.parent_phone_normalized, parentRelationLegacy: source.parent_relation,
+    legacyDeleted: source.deleted === 1, createdAt: source.created_at, updatedAt: source.updated_at,
+  }));
+  const courses = core.courses.map(source => Object.freeze({
+    id: source.id, tenantId: source.tenant_id, name: source.name, year: source.year, semester: source.semester,
+    displayName: source.display_name, courseType: source.type, legacySourceType: source.source_type, institutionId: source.institution_id,
+    priceTuition: numeric(source.price_tuition), priceTeacher: numeric(source.price_teacher), billingUnit: source.billing_unit,
+    teacherFeeMode: source.teacher_fee_mode, legacyRoomId: source.room_id, roomNameSnapshot: source.room_name,
+    teacherId: source.teacher_id, teacherNameSnapshot: source.teacher_name, legacyActive: source.active === 1,
+    defaultDurationMinutes: source.default_duration_minutes, notes: source.notes, legacyDeleted: source.deleted === 1,
+    createdAt: source.created_at, updatedAt: source.updated_at, defaultRoster: roster(source.defaultRoster),
+  }));
+  const schedules = core.schedules.map(source => Object.freeze({ ...source, calculatedTuition: numeric(source.calculatedTuition), calculatedTeacherFee: numeric(source.calculatedTeacherFee), effectiveRoster: roster(source.effectiveRoster) }));
+  return Object.freeze({ teachers: Object.freeze(teachers), students: Object.freeze(students), courses: Object.freeze(courses), schedules: Object.freeze(schedules) });
+}
+
+function expectedShadowRows(snapshot) {
+  const expected = [];
+  for (const relation of ['tenants', 'institutions', 'schools', 'rooms']) {
+    for (const row of snapshot[relation]) expected.push(Object.freeze({ relation, row, targetRow: row, sourcePrimaryKeySha256: stableSha256(`${relation}:${row.id}`), canonicalSourceSha256: stableSha256(row), targetLogicalSha256: stableSha256(row) }));
+  }
+  const core = projectCoreSchedulingRows(snapshot.coreScheduling);
+  for (const relation of ['teachers', 'students', 'courses', 'schedules']) {
+    const sources = snapshot.coreScheduling[relation];
+    const targets = core[relation];
+    for (let index = 0; index < sources.length; index += 1) expected.push(Object.freeze({ relation, row: targets[index], targetRow: targets[index], sourcePrimaryKeySha256: stableSha256(`${relation}:${sources[index].id}`), canonicalSourceSha256: stableSha256(sources[index]), targetLogicalSha256: stableSha256(targets[index]) }));
+  }
+  for (const quarantine of snapshot.coreScheduling.quarantines) expected.push(Object.freeze({
+    relation: 'schedules', row: null, targetRow: null, sourcePrimaryKeySha256: stableSha256(`schedules:${quarantine.scheduleId}`),
+    canonicalSourceSha256: stableSha256(quarantine), targetLogicalSha256: null, outcome: 'quarantined', outcomeCode: quarantine.outcome,
+  }));
+  return Object.freeze(expected);
+}
+
 async function assertBusinessFoundationShadowTargetMatchesLedger(query, ledgerRows) {
   if (ledgerRows.some(row => !Object.prototype.hasOwnProperty.call(BUSINESS_FOUNDATION_SHADOW_RECONCILIATION_SQL, row.source_relation))) throw reconciliationMismatch();
   const relationCounts = {};
-  for (const relation of ['tenants', 'institutions', 'schools', 'rooms']) {
+  for (const relation of ['tenants', 'institutions', 'schools', 'rooms', 'teachers', 'students', 'courses', 'schedules']) {
     const target = await query(BUSINESS_FOUNDATION_SHADOW_RECONCILIATION_SQL[relation]);
-    const expected = ledgerRows.filter(row => row.source_relation === relation);
+    const expected = ledgerRows.filter(row => row.source_relation === relation && row.outcome === 'admitted');
     if (target.rows.length !== expected.length) throw reconciliationMismatch();
     relationCounts[relation] = target.rows.length;
     for (const row of target.rows) {
       const sourceKeyHash = stableSha256(`${relation}:${row.id}`);
       const stored = expected.find(candidate => candidate.source_primary_key_sha256 === sourceKeyHash);
-      const canonical = stableSha256(row);
-      if (!stored || stored.canonical_source_sha256 !== canonical || stored.target_id !== row.id
-        || stored.target_logical_sha256 !== canonical || stored.outcome !== 'admitted' || stored.outcome_code !== 'ADMITTED') throw reconciliationMismatch();
+      const logical = stableSha256(row);
+      if (!stored || stored.target_id !== row.id
+        || stored.target_logical_sha256 !== logical || stored.outcome !== 'admitted' || stored.outcome_code !== 'ADMITTED') {
+        throw reconciliationMismatch();
+      }
     }
   }
   return Object.freeze(relationCounts);
@@ -913,14 +975,16 @@ async function executeBusinessFoundationShadowAdmissionPlan(runtime, handle, sna
     });
   };
   state.businessFoundationShadowAdmissionBusy = true;
-  const relations = ['tenants', 'institutions', 'schools', 'rooms'];
-  const relationCounts = Object.freeze(Object.fromEntries(relations.map(relation => [relation, snapshot[relation].length])));
-  const expectedRows = relations.flatMap(relation => snapshot[relation].map(row => Object.freeze({
-    relation,
-    row,
-    sourcePrimaryKeySha256: stableSha256(`${relation}:${row.id}`),
-    canonicalSourceSha256: stableSha256(row),
-  })));
+  const relations = BUSINESS_FOUNDATION_SHADOW_RELATIONS;
+  const coreRows = projectCoreSchedulingRows(snapshot.coreScheduling);
+  const relationCounts = Object.freeze({
+    tenants: snapshot.tenants.length, institutions: snapshot.institutions.length, schools: snapshot.schools.length, rooms: snapshot.rooms.length,
+    teachers: coreRows.teachers.length, students: coreRows.students.length, courses: coreRows.courses.length,
+    course_student_pricings: coreRows.courses.reduce((count, row) => count + row.defaultRoster.length, 0), schedules: coreRows.schedules.length,
+    schedule_student_overrides: coreRows.schedules.reduce((count, row) => count + (row.effectiveRosterSource === 'schedule_override' ? row.effectiveRoster.length : 0), 0),
+  });
+  const expectedRows = expectedShadowRows(snapshot);
+  const quarantineRows = expectedRows.filter(row => row.outcome === 'quarantined');
   let begun = false;
   let commitAttempted = false;
   try {
@@ -941,7 +1005,7 @@ async function executeBusinessFoundationShadowAdmissionPlan(runtime, handle, sna
         [snapshot.batch.batchId],
       );
       if (existingBatch.rows.length !== 1 || existingBatch.rows[0].batch_request_sha256 !== snapshot.batch.batchRequestSha256
-        || preflightCounts.batches !== '1' || preflightCounts.events !== '2' || preflightCounts.quarantine !== '0'
+        || preflightCounts.batches !== '1' || preflightCounts.events !== '2' || preflightCounts.quarantine !== String(quarantineRows.length)
         || preflightCounts.ledger !== String(expectedRows.length)
         || relations.some(relation => preflightCounts[relation] !== String(relationCounts[relation]))
         || storedLedger.rows.length !== expectedRows.length) throw businessSchemaDrift();
@@ -949,7 +1013,9 @@ async function executeBusinessFoundationShadowAdmissionPlan(runtime, handle, sna
         const stored = storedLedger.rows.find(row => row.source_relation === expected.relation && row.source_primary_key_sha256 === expected.sourcePrimaryKeySha256);
         if (!stored) throw businessSchemaDrift();
         if (stored.canonical_source_sha256 !== expected.canonicalSourceSha256) throw canonicalHashConflict();
-        if (stored.target_id !== expected.row.id || stored.target_logical_sha256 !== expected.canonicalSourceSha256
+        if (expected.outcome === 'quarantined') {
+          if (stored.target_id !== null || stored.target_logical_sha256 !== null || stored.outcome !== 'quarantined' || stored.outcome_code !== expected.outcomeCode) throw businessSchemaDrift();
+        } else if (stored.target_id !== expected.targetRow.id || stored.target_logical_sha256 !== expected.targetLogicalSha256
           || stored.outcome !== 'admitted' || stored.outcome_code !== 'ADMITTED') throw businessSchemaDrift();
       }
       await assertBusinessFoundationShadowTargetMatchesLedger(query, storedLedger.rows);
@@ -978,10 +1044,21 @@ async function executeBusinessFoundationShadowAdmissionPlan(runtime, handle, sna
     for (const row of snapshot.institutions) await query('INSERT INTO business.institutions (id, tenant_id, name, contact_person_legacy, contact_phone_legacy, revenue_share, notes, legacy_deleted, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)', [row.id, row.tenantId, row.name, row.contactPersonLegacy, row.contactPhoneLegacy, row.revenueShare, row.notes, row.legacyDeleted, row.createdAt, row.updatedAt]);
     for (const row of snapshot.schools) await query('INSERT INTO business.schools (id, tenant_id, name, legacy_count, legacy_deleted, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)', [row.id, row.tenantId, row.name, row.legacyCount, row.legacyDeleted, row.createdAt, row.updatedAt]);
     for (const row of snapshot.rooms) await query('INSERT INTO business.rooms (id, tenant_id, name, address_legacy, legacy_count, legacy_deleted, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)', [row.id, row.tenantId, row.name, row.addressLegacy, row.legacyCount, row.legacyDeleted, row.createdAt, row.updatedAt]);
+    for (const row of coreRows.teachers) await query('INSERT INTO business.teachers (id, tenant_id, name, phone_legacy, subject, hourly_rate, notes, legacy_deleted, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)', [row.id, row.tenantId, row.name, row.phoneLegacy, row.subject, row.hourlyRate, row.notes, row.legacyDeleted, row.createdAt, row.updatedAt]);
+    for (const row of coreRows.students) await query('INSERT INTO business.students (id, tenant_id, name, phone_legacy, school_legacy, grade_year, grade_current, legacy_source_type, institution_id, parent_name_legacy, parent_wechat_legacy, student_source_legacy, legacy_balance_hours, legacy_balance_money, notes, legacy_is_institution_student, parent_phone_legacy, parent_phone_normalized_legacy, parent_relation_legacy, legacy_deleted, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)', [row.id, row.tenantId, row.name, row.phoneLegacy, row.schoolLegacy, row.gradeYear, row.gradeCurrent, row.legacySourceType, row.institutionId, row.parentNameLegacy, row.parentWechatLegacy, row.studentSourceLegacy, row.legacyBalanceHours, row.legacyBalanceMoney, row.notes, row.legacyIsInstitutionStudent, row.parentPhoneLegacy, row.parentPhoneNormalizedLegacy, row.parentRelationLegacy, row.legacyDeleted, row.createdAt, row.updatedAt]);
+    for (const row of coreRows.courses) await query('INSERT INTO business.courses (id, tenant_id, name, year, semester, display_name, course_type, legacy_source_type, institution_id, price_tuition, price_teacher, billing_unit, teacher_fee_mode, legacy_room_id, room_name_snapshot, teacher_id, teacher_name_snapshot, legacy_active, default_duration_minutes, notes, legacy_deleted, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)', [row.id, row.tenantId, row.name, row.year, row.semester, row.displayName, row.courseType, row.legacySourceType, row.institutionId, row.priceTuition, row.priceTeacher, row.billingUnit, row.teacherFeeMode, row.legacyRoomId, row.roomNameSnapshot, row.teacherId, row.teacherNameSnapshot, row.legacyActive, row.defaultDurationMinutes, row.notes, row.legacyDeleted, row.createdAt, row.updatedAt]);
+    for (const row of coreRows.courses) for (const pricing of row.defaultRoster) await query('INSERT INTO business.course_student_pricings (tenant_id, course_id, student_id, tuition, teacher_fee) VALUES ($1, $2, $3, $4, $5)', [row.tenantId, row.id, pricing.studentId, pricing.tuition, pricing.teacherFee]);
+    for (const row of coreRows.schedules) await query('INSERT INTO business.schedules (id, tenant_id, course_id, start_at, end_at, recurring_rule_json, status, room_display_snapshot, service_type, calculated_tuition, calculated_teacher_fee, notes, legacy_deleted, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)', [row.id, row.tenantId, row.courseId, row.startAt, row.endAt, row.recurringRule, row.status, row.roomDisplay, row.serviceType, row.calculatedTuition, row.calculatedTeacherFee, row.notes, row.legacyDeleted, row.createdAt, row.updatedAt]);
+    for (const row of coreRows.schedules) if (row.effectiveRosterSource === 'schedule_override') for (const pricing of row.effectiveRoster) await query('INSERT INTO business.schedule_student_overrides (tenant_id, schedule_id, student_id, attendance_status, tuition, teacher_fee) VALUES ($1, $2, $3, $4, $5, $6)', [row.tenantId, row.id, pricing.studentId, pricing.attendanceStatus, pricing.tuition, pricing.teacherFee]);
     await query('SET LOCAL ROLE NONE');
     await query('SET LOCAL ROLE vnext_pg17_migration_admission_owner');
     for (const expected of expectedRows) {
-      await query('INSERT INTO migration_admission.migration_row_ledger (batch_id, source_relation, source_primary_key_sha256, canonical_source_sha256, target_id, target_logical_sha256, outcome, outcome_code, created_at) VALUES ($1, $2, $3, $4, $5, $6, \'admitted\', \'ADMITTED\', $7)', [batch.batchId, expected.relation, expected.sourcePrimaryKeySha256, expected.canonicalSourceSha256, expected.row.id, expected.canonicalSourceSha256, batch.createdAt]);
+      if (expected.outcome === 'quarantined') {
+        await query('INSERT INTO migration_admission.migration_row_ledger (batch_id, source_relation, source_primary_key_sha256, canonical_source_sha256, target_id, target_logical_sha256, outcome, outcome_code, created_at) VALUES ($1, $2, $3, $4, NULL, NULL, \'quarantined\', $5, $6)', [batch.batchId, expected.relation, expected.sourcePrimaryKeySha256, expected.canonicalSourceSha256, expected.outcomeCode, batch.createdAt]);
+        await query('INSERT INTO migration_admission.migration_quarantine (batch_id, source_relation, source_primary_key_sha256, reason_code, sealed_artifact_reference_sha256, created_at) VALUES ($1, $2, $3, $4, NULL, $5)', [batch.batchId, expected.relation, expected.sourcePrimaryKeySha256, expected.outcomeCode, batch.createdAt]);
+      } else {
+        await query('INSERT INTO migration_admission.migration_row_ledger (batch_id, source_relation, source_primary_key_sha256, canonical_source_sha256, target_id, target_logical_sha256, outcome, outcome_code, created_at) VALUES ($1, $2, $3, $4, $5, $6, \'admitted\', \'ADMITTED\', $7)', [batch.batchId, expected.relation, expected.sourcePrimaryKeySha256, expected.canonicalSourceSha256, expected.targetRow.id, expected.targetLogicalSha256, batch.createdAt]);
+      }
     }
     commitAttempted = true;
     await query('COMMIT');

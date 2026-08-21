@@ -99,12 +99,28 @@ REVOKE EXECUTE ON FUNCTION migration_admission.migration_row_ledger_insert_guard
 REVOKE EXECUTE ON FUNCTION migration_admission.migration_row_ledger_quarantine_pair() FROM PUBLIC;`;
 
 const EXPECTED_BUSINESS_FOUNDATION_ADMISSION_MANIFEST_SHA256 = 'b2998b5853cf91d3279b1a865f39e76758eafd7e49fe1e020348fcb1c9beb085';
-const BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS = Object.freeze([Object.freeze({
-  migrationId: 'business-foundation-admission-1',
-  semanticVersion: 1,
-  manifestSha256: sha256(SQL),
-  sql: SQL,
-})]);
+const BUSINESS_CORE_SCHEDULING_ADMISSION_SQL = `ALTER TABLE migration_admission.migration_row_ledger DROP CONSTRAINT migration_row_ledger_source_relation_check;
+ALTER TABLE migration_admission.migration_row_ledger DROP CONSTRAINT migration_row_ledger_outcome_code_check;
+ALTER TABLE migration_admission.migration_quarantine DROP CONSTRAINT migration_quarantine_reason_code_check;
+ALTER TABLE migration_admission.migration_row_ledger ADD CONSTRAINT migration_row_ledger_source_relation_check CHECK (source_relation IN ('tenants','institutions','schools','rooms','teachers','students','courses','schedules'));
+ALTER TABLE migration_admission.migration_row_ledger ADD CONSTRAINT migration_row_ledger_outcome_code_check CHECK (outcome_code IN ('ADMITTED','SOURCE_ROW_INVALID','DEPENDENCY_MISSING','IDENTITY_CONFLICT','CANONICAL_HASH_CONFLICT','USER_DECLARED_OBSOLETE_LEGACY_SCHEDULE','LEGACY_COPY_UNBOUND_PARTICIPANT'));
+ALTER TABLE migration_admission.migration_quarantine ADD CONSTRAINT migration_quarantine_reason_code_check CHECK (reason_code IN ('SOURCE_ROW_INVALID','DEPENDENCY_MISSING','IDENTITY_CONFLICT','CANONICAL_HASH_CONFLICT','USER_DECLARED_OBSOLETE_LEGACY_SCHEDULE','LEGACY_COPY_UNBOUND_PARTICIPANT'));`;
+const EXPECTED_BUSINESS_CORE_SCHEDULING_ADMISSION_MANIFEST_SHA256 = '381f9c1112428763e58fd844c70d5a16b3f3d963acad50777298b4f7fefceade';
+
+const BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS = Object.freeze([
+  Object.freeze({
+    migrationId: 'business-foundation-admission-1',
+    semanticVersion: 1,
+    manifestSha256: sha256(SQL),
+    sql: SQL,
+  }),
+  Object.freeze({
+    migrationId: 'business-core-scheduling-admission-2',
+    semanticVersion: 2,
+    manifestSha256: sha256(BUSINESS_CORE_SCHEDULING_ADMISSION_SQL),
+    sql: BUSINESS_CORE_SCHEDULING_ADMISSION_SQL,
+  }),
+]);
 const expectedBusinessFoundationAdmissionCatalog = Object.freeze({
   relations: Object.freeze([
     'migration_admission.migration_admission_schema_migrations',
@@ -117,6 +133,7 @@ const expectedBusinessFoundationAdmissionCatalog = Object.freeze({
 
 module.exports = {
   BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS,
+  EXPECTED_BUSINESS_CORE_SCHEDULING_ADMISSION_MANIFEST_SHA256,
   EXPECTED_BUSINESS_FOUNDATION_ADMISSION_MANIFEST_SHA256,
   expectedBusinessFoundationAdmissionCatalog,
   sha256,

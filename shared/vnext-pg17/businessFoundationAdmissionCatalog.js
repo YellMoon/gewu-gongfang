@@ -16,7 +16,7 @@ const {
 // manifest at assertion time: coordinated manifest/SQL edits must be drift.
 const EXPECTED_CATALOG_SHA256 = Object.freeze({
   columns: '98034552820076975704993c9afd0fc4228e1679b6157ca1deb442d541ec4fa0',
-  constraints: '988e8617d2e0767558e3400c0aee4852718066d757caa8df3dba534a4ad7f66c',
+  constraints: '919a602129504be3b2d825765628e532431eb509e70aed01b3322ba2bc80f4a2',
   indexes: '49361669b90bbf877ad39b653339f9acc252349b48b454897971fdab91749186',
   triggers: '53d2a76407ceb0af0f148dd03e9093a9b0b8522590f68edd75818b15a77be715',
   functions: '15e219480db734b0ad22bcfc49b15a9af7dbd0e4eb804a9f2464f3cfccecf0f0',
@@ -99,7 +99,6 @@ function createBusinessFoundationAdmissionCatalogBoundary(runtime) {
         const defaultAcl = await facade.query("SELECT owner.rolname AS owner, COUNT(default_acl.oid)::text AS count FROM pg_roles owner LEFT JOIN pg_default_acl default_acl ON default_acl.defaclrole = owner.oid WHERE owner.rolname = ANY($1::name[]) GROUP BY owner.rolname ORDER BY owner.rolname", [ADMISSION_ROLES]);
         await facade.query('COMMIT');
 
-        const migration = BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[0];
         const expectedMemberships = [{ member: 'vnext_pg17_migration_admission_migrator', role: 'vnext_pg17_migration_admission_owner', admin_option: false, inherit_option: false, set_option: true }];
         const catalogHashes = Object.fromEntries(Object.entries(catalog).map(([key, rows]) => [key, sha256(JSON.stringify(rows))]));
         const badRolePrivilege = rolePrivileges.rows.some(row => {
@@ -110,7 +109,10 @@ function createBusinessFoundationAdmissionCatalogBoundary(runtime) {
         });
         if (relations.rows.length !== expectedBusinessFoundationAdmissionCatalog.relations.length
           || relations.rows.some((row, index) => row.relation !== expectedBusinessFoundationAdmissionCatalog.relations[index])
-          || ledger.rows.length !== 1 || ledger.rows[0].migration_id !== migration.migrationId || String(ledger.rows[0].semantic_version) !== String(migration.semanticVersion) || ledger.rows[0].manifest_sha256 !== migration.manifestSha256
+          || ledger.rows.length !== BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS.length
+          || ledger.rows.some((row, index) => row.migration_id !== BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[index].migrationId
+            || String(row.semantic_version) !== String(BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[index].semanticVersion)
+            || row.manifest_sha256 !== BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[index].manifestSha256)
           || ownership.rows.length !== expectedBusinessFoundationAdmissionCatalog.relations.length || ownership.rows.some(row => row.schema_name !== 'migration_admission' || row.schema_owner !== 'vnext_pg17_migration_admission_owner' || row.relation_owner !== 'vnext_pg17_migration_admission_owner')
           || Object.entries(catalogHashes).some(([key, value]) => value !== EXPECTED_CATALOG_SHA256[key])
           || !exactRoleRows(roleRows.rows)

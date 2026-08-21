@@ -2,6 +2,8 @@
 
 const { types } = require('util');
 const { validateBusinessFoundationAdmissionBatchRequest } = require('./businessFoundationAdmissionBatchRequest');
+const { normalizeCoreSchedulingSource } = require('./coreSchedulingSourceContract');
+const { isApprovedObsoleteScheduleSet } = require('./coreSchedulingLegacyExceptionManifest');
 const {
   isVNextPg17DisposableHandleForRuntime,
   executeBusinessFoundationShadowAdmissionPlan,
@@ -92,14 +94,28 @@ function snapshotRows(relation, value) {
 }
 
 function validateBusinessFoundationShadowAdmissionFixture(value) {
-  const fixture = exactDataObject(value, ['batch', 'tenants', 'institutions', 'schools', 'rooms']);
+  const fixture = exactDataObject(value, ['batch', 'tenants', 'institutions', 'schools', 'rooms', 'coreScheduling']);
   const snapshot = { batch: validateBusinessFoundationAdmissionBatchRequest(fixture.batch) };
   for (const relation of Object.keys(TABLES)) snapshot[relation] = snapshotRows(relation, fixture[relation]);
+  try {
+    const coreScheduling = normalizeCoreSchedulingSource(fixture.coreScheduling);
+    const approvedObsoleteSet = isApprovedObsoleteScheduleSet(
+      coreScheduling.sourceInventorySha256,
+      coreScheduling.quarantines.map(row => row.scheduleId),
+    );
+    snapshot.coreScheduling = approvedObsoleteSet
+      ? Object.freeze({ ...coreScheduling, quarantines: Object.freeze(coreScheduling.quarantines.map(row => Object.freeze({ ...row, outcome: 'USER_DECLARED_OBSOLETE_LEGACY_SCHEDULE' }))) })
+      : coreScheduling;
+  } catch (_) { throw inputInvalid(); }
   if (Object.keys(TABLES).every(relation => snapshot[relation].length === 0)) throw inputInvalid();
   const tenantIds = new Set(snapshot.tenants.map(row => row.id));
   for (const relation of ['institutions', 'schools', 'rooms']) {
     if (snapshot[relation].some(row => !tenantIds.has(row.tenantId))) throw inputInvalid();
   }
+  const institutionIds = new Set(snapshot.institutions.map(row => row.id));
+  if (snapshot.coreScheduling.teachers.some(row => !tenantIds.has(row.tenant_id))
+    || snapshot.coreScheduling.students.some(row => !tenantIds.has(row.tenant_id) || (row.institution_id !== null && !institutionIds.has(row.institution_id)))
+    || snapshot.coreScheduling.courses.some(row => !tenantIds.has(row.tenant_id) || (row.institution_id !== null && !institutionIds.has(row.institution_id)))) throw inputInvalid();
   return Object.freeze(snapshot);
 }
 

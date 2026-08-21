@@ -44,22 +44,26 @@ const ADMISSION_LEDGER_CHECK = 'SELECT migration_id, semantic_version, manifest_
 const ADMISSION_LEDGER_INSERT = 'INSERT INTO migration_admission.migration_admission_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)';
 
 function assertAdmissionDdlTrace(queries, { reapply }) {
-  const migration = BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[0];
   const prefix = ['BEGIN', "SET LOCAL TIME ZONE 'UTC'", 'SELECT pg_advisory_xact_lock(73018, 2)', 'SET LOCAL ROLE vnext_pg17_migration_admission_owner', ADMISSION_STATE_CHECK, ADMISSION_PUBLIC_SHADOW_CHECK];
   const expected = reapply
     ? [...prefix, ADMISSION_LEDGER_CHECK, 'COMMIT']
-    : [...prefix, migration.sql, ADMISSION_LEDGER_INSERT, 'COMMIT'];
+    : [...prefix];
+  if (!reapply) {
+    expected.push(...BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS.flatMap((migration, index) => index === 0
+      ? [migration.sql, ADMISSION_LEDGER_INSERT]
+      : [migration.sql, ADMISSION_LEDGER_INSERT]));
+    expected.push('COMMIT');
+  }
   assert.strictEqual(queries.length, reapply ? expected.length : expected.length + 2);
   assert.deepStrictEqual(queries.slice(0, prefix.length), prefix);
   if (reapply) assert.deepStrictEqual(queries, expected);
   else {
     assert.match(queries[6], /^GRANT CREATE ON DATABASE "vnextpg17_[a-z0-9]+" TO vnext_pg17_migration_admission_owner$/);
-    assert.strictEqual(queries[7], migration.sql);
-    assert.strictEqual(queries[8], ADMISSION_LEDGER_INSERT);
-    assert.match(queries[9], /^REVOKE CREATE ON DATABASE "vnextpg17_[a-z0-9]+" FROM vnext_pg17_migration_admission_owner$/);
-    assert.strictEqual(queries[10], 'COMMIT');
+    assert.deepStrictEqual(queries.slice(7, 7 + BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS.length * 2), expected.slice(prefix.length, -1));
+    assert.match(queries[7 + BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS.length * 2], /^REVOKE CREATE ON DATABASE "vnextpg17_[a-z0-9]+" FROM vnext_pg17_migration_admission_owner$/);
+    assert.strictEqual(queries[8 + BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS.length * 2], 'COMMIT');
   }
-  assert.ok(queries.every(query => query === migration.sql || !query.includes(';')));
+  assert.ok(queries.every(query => BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS.some(migration => query === migration.sql) || !query.includes(';')));
   assert.ok(queries.every(query => !/vnext_control_plane|\bbusiness\.|\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+migration_admission\.(?:migration_batches|migration_batch_events|migration_quarantine|migration_row_ledger)/iu.test(query)));
 }
 
@@ -89,6 +93,22 @@ async function runBusinessFoundationAdmissionCatalogCases(runtime) {
     armVNextPg17BusinessFoundationAdmissionDdlTrace(reapplyTrace);
     assert.deepStrictEqual(await admissionCatalog.apply(handle, { appliedAt: APPLIED_AT, appliedBy: APPLIED_BY }), { applied: false });
     assertAdmissionDdlTrace(inspectVNextPg17BusinessFoundationAdmissionDdlTrace(reapplyTrace).queries, { reapply: true });
+    await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+      await facade.query('SET session_replication_role = replica');
+      try {
+        await facade.query('DELETE FROM migration_admission.migration_admission_schema_migrations WHERE semantic_version = 2');
+      } finally {
+        await facade.query('SET session_replication_role = origin');
+      }
+    });
+    await assert.rejects(
+      () => admissionCatalog.apply(handle, { appliedAt: APPLIED_AT, appliedBy: APPLIED_BY }),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+    await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
+      'INSERT INTO migration_admission.migration_admission_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
+      [BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[1].migrationId, BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[1].semanticVersion, BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[1].manifestSha256, APPLIED_AT, APPLIED_BY],
+    ));
     const peer = await runtime.createPeerHandle(handle);
     try {
       const faultPlan = createVNextPg17BusinessFoundationAdmissionDdlFaultPlan(runtime, handle, ['commit']);

@@ -3,6 +3,7 @@
 const assert = require('assert');
 const {
   BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS,
+  EXPECTED_BUSINESS_CORE_SCHEDULING_ADMISSION_MANIFEST_SHA256,
   EXPECTED_BUSINESS_FOUNDATION_ADMISSION_MANIFEST_SHA256,
   expectedBusinessFoundationAdmissionCatalog,
   sha256,
@@ -11,7 +12,7 @@ const {
 async function runBusinessFoundationAdmissionManifestCases() {
   assert.deepStrictEqual(
     BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS.map(migration => [migration.migrationId, migration.semanticVersion]),
-    [['business-foundation-admission-1', 1]],
+    [['business-foundation-admission-1', 1], ['business-core-scheduling-admission-2', 2]],
   );
   assert.strictEqual(
     BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[0].manifestSha256,
@@ -52,6 +53,16 @@ async function runBusinessFoundationAdmissionManifestCases() {
   assert.match(BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[0].sql, /SECURITY DEFINER/);
   assert.match(BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[0].sql, /SET search_path = pg_catalog, pg_temp/);
   assert.doesNotMatch(BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[0].sql, /vnext_control_plane|better-sqlite3|node:fs|node:path|rds/i);
+
+  const schedulingAdmissionMigration = BUSINESS_FOUNDATION_ADMISSION_MIGRATIONS[1];
+  assert.ok(schedulingAdmissionMigration, 'the scheduling admission expansion must be an independent second migration');
+  assert.strictEqual(schedulingAdmissionMigration.manifestSha256, EXPECTED_BUSINESS_CORE_SCHEDULING_ADMISSION_MANIFEST_SHA256);
+  assert.strictEqual(sha256(schedulingAdmissionMigration.sql), EXPECTED_BUSINESS_CORE_SCHEDULING_ADMISSION_MANIFEST_SHA256);
+  assert.match(schedulingAdmissionMigration.sql, /DROP CONSTRAINT migration_row_ledger_source_relation_check/);
+  assert.match(schedulingAdmissionMigration.sql, /'teachers','students','courses','schedules'/);
+  assert.doesNotMatch(schedulingAdmissionMigration.sql, /course_student_pricings|schedule_student_overrides/);
+  assert.match(schedulingAdmissionMigration.sql, /'USER_DECLARED_OBSOLETE_LEGACY_SCHEDULE','LEGACY_COPY_UNBOUND_PARTICIPANT'/);
+  assert.doesNotMatch(schedulingAdmissionMigration.sql, /questions|assets|better-sqlite3|node:fs|node:path|rds/i);
 }
 
 if (require.main === module) {
