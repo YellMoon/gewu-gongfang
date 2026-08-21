@@ -8,6 +8,7 @@ const SOURCE_DICTIONARY = 'docs/vnext-source-data-dictionary.md';
 const SHADOW_IMPORT_PLAN = 'docs/superpowers/plans/2026-08-13-vnext-cloud-schema-shadow-import.md';
 const UNIFIED_DESKTOP_ADMISSION = 'docs/superpowers/specs/2026-08-21-unified-desktop-silent-registration-offline-draft-admission-design.md';
 const CORE_SCHEDULING_ADMISSION = 'docs/superpowers/specs/2026-08-21-core-scheduling-attendance-fee-migration-design.md';
+const CORE_SCHEDULING_REAL_SOURCE_ADMISSION = 'docs/superpowers/specs/2026-08-21-core-scheduling-real-source-value-privacy-admission-design.md';
 const TASK_CARRIER = 'task.md';
 
 assert.strictEqual(
@@ -24,7 +25,7 @@ assert.ok(
   contract.ACTIVE_DOCUMENTS.includes(DATABASE_DECISION),
   'the still-linked production-database decision must be covered by the architecture gate'
 );
-for (const activeMigrationDocument of [SOURCE_DICTIONARY, SHADOW_IMPORT_PLAN, UNIFIED_DESKTOP_ADMISSION, CORE_SCHEDULING_ADMISSION, TASK_CARRIER]) {
+for (const activeMigrationDocument of [SOURCE_DICTIONARY, SHADOW_IMPORT_PLAN, UNIFIED_DESKTOP_ADMISSION, CORE_SCHEDULING_ADMISSION, CORE_SCHEDULING_REAL_SOURCE_ADMISSION, TASK_CARRIER]) {
   assert.ok(
     contract.ACTIVE_DOCUMENTS.includes(activeMigrationDocument),
     `${activeMigrationDocument} must be covered once full-business migration is active`
@@ -81,6 +82,14 @@ const regressedSourceEvidenceTexts = {
 assert.ok(
   contract.checkContractTexts(regressedSourceEvidenceTexts).issues.some(issue => issue.includes(SOURCE_DICTIONARY) && issue.includes('contradiction')),
   'the executable gate must reject treating a user-declared absence as proof that a source relation is absent'
+);
+const regressedRealSourceAdmissionTexts = {
+  ...texts,
+  [CORE_SCHEDULING_REAL_SOURCE_ADMISSION]: `${texts[CORE_SCHEDULING_REAL_SOURCE_ADMISSION]}\nReal SQLite row reads are authorized and student contact details may be written to the migration report.\n`,
+};
+assert.ok(
+  contract.checkContractTexts(regressedRealSourceAdmissionTexts).issues.some(issue => issue.includes(CORE_SCHEDULING_REAL_SOURCE_ADMISSION) && issue.includes('real-source-admission contradiction')),
+  'the executable gate must reject authorizing real-row reads or PII-bearing reports before the reviewed admission gates pass'
 );
 const regressedTaskTexts = {
   ...texts,

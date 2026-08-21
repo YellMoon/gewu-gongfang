@@ -12,6 +12,7 @@ const ACTIVE_DOCUMENTS = Object.freeze([
   'docs/superpowers/specs/2026-08-15-vnext-pg17-production-adapter-design.md',
   'docs/superpowers/specs/2026-08-21-unified-desktop-silent-registration-offline-draft-admission-design.md',
   'docs/superpowers/specs/2026-08-21-core-scheduling-attendance-fee-migration-design.md',
+  'docs/superpowers/specs/2026-08-21-core-scheduling-real-source-value-privacy-admission-design.md',
   'docs/vnext-source-data-dictionary.md',
   'docs/superpowers/plans/2026-08-13-vnext-cloud-schema-shadow-import.md',
   'task.md',
@@ -25,6 +26,12 @@ const REQUIRED_MARKERS = Object.freeze({
     'USER_DECLARED_OBSOLETE_LEGACY_SCHEDULE',
     'never create a fake student',
     'reported 3013 device-local changes',
+  ]),
+  'docs/superpowers/specs/2026-08-21-core-scheduling-real-source-value-privacy-admission-design.md': Object.freeze([
+    'USER_DECLARED_OBSOLETE_LEGACY_SCHEDULE',
+    'Asia/Shanghai',
+    'RECONCILIATION_MISMATCH',
+    'RDS',
   ]),
   'AGENTS.md': Object.freeze([
     '云端数据库保存适用业务数据与题库结构化文字内容，并是其唯一可写权威',
@@ -101,6 +108,13 @@ const ACTIVE_DESKTOP_CONTRADICTIONS = Object.freeze({
   ]),
 });
 
+const ACTIVE_REAL_SOURCE_ADMISSION_CONTRADICTIONS = Object.freeze({
+  'docs/superpowers/specs/2026-08-21-core-scheduling-real-source-value-privacy-admission-design.md': Object.freeze([
+    'Real SQLite row reads are authorized',
+    'student contact details may be written to the migration report',
+  ]),
+});
+
 const ACTIVE_CONTRADICTIONS = Object.freeze({
   'AGENTS.md': Object.freeze([
     '本地数据主机保存全量权威业务数据',
@@ -161,6 +175,9 @@ function checkContractTexts(texts) {
     for (const contradiction of ACTIVE_DESKTOP_CONTRADICTIONS[relativePath] || []) {
       if (architectureText.includes(contradiction)) issues.push(`${relativePath}: desktop-registration contradiction: ${contradiction}`);
     }
+    for (const contradiction of ACTIVE_REAL_SOURCE_ADMISSION_CONTRADICTIONS[relativePath] || []) {
+      if (architectureText.includes(contradiction)) issues.push(`${relativePath}: real-source-admission contradiction: ${contradiction}`);
+    }
   }
   return Object.freeze({ issues: Object.freeze(issues) });
 }
@@ -187,6 +204,7 @@ if (require.main === module) main();
 module.exports = {
   ACTIVE_DOCUMENTS,
   ACTIVE_DESKTOP_CONTRADICTIONS,
+  ACTIVE_REAL_SOURCE_ADMISSION_CONTRADICTIONS,
   activeArchitectureText,
   checkCloudBusinessAuthorityContract,
   checkContractTexts,
