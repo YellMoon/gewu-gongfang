@@ -194,19 +194,27 @@ async function runBusinessFoundationCatalogAssertionCases(runtime) {
       await assert.rejects(
         () => businessCatalog.apply(driftedPrefixHandle, APPLY_INPUT),
         error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
-        'a v2 upgrade must reject a drifted v1 prefix before appending the second immutable ledger row',
+        'a partial ledger must reject a drifted v1 prefix before it can append another immutable ledger row',
       );
       await withVNextPg17SyntheticQuery(driftedPrefixHandle, 'fixture-provisioner', async facade => {
         const ledger = await facade.query('SELECT semantic_version FROM business.business_schema_migrations ORDER BY semantic_version');
         assert.deepStrictEqual(ledger.rows, [{ semantic_version: 1 }]);
         await facade.query('ALTER TABLE business.tenants DROP COLUMN forged');
       });
-      assert.deepStrictEqual(
-        await businessCatalog.apply(driftedPrefixHandle, APPLY_INPUT),
-        Object.freeze({ applied: true }),
-        'a clean v1 prefix must receive only the missing v2 ledger entry',
+      await assert.rejects(
+        () => businessCatalog.apply(driftedPrefixHandle, APPLY_INPUT),
+        error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+        'a clean partial ledger is not an upgrade target: no business deployment exists yet, so foundation creation stays a single immutable transaction',
       );
-      assert.deepStrictEqual(await businessCatalog.assert(driftedPrefixHandle), Object.freeze({ asserted: true }));
+      await withVNextPg17SyntheticQuery(driftedPrefixHandle, 'fixture-provisioner', async facade => {
+        const ledger = await facade.query('SELECT semantic_version FROM business.business_schema_migrations ORDER BY semantic_version');
+        assert.deepStrictEqual(ledger.rows, [{ semantic_version: 1 }]);
+      });
+      await assert.rejects(
+        () => businessCatalog.assert(driftedPrefixHandle),
+        error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+        'a partial ledger is never a complete business catalog',
+      );
     } finally {
       await runtime.disposeHandle(driftedPrefixHandle);
     }
