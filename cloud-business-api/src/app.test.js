@@ -51,12 +51,39 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const sessionContext = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity }), '/api/desktop/session-context', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
   assert.strictEqual(sessionContext.status, 200);
   assert.deepStrictEqual(sessionContext.body, { ok: true, authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'] });
+  const businessQueries = [];
+  const scheduleList = await request(createCloudBusinessApp({
+    query: async (text, values) => {
+      businessQueries.push([text, values]);
+      return { rows: [{ id: 'schedule-1', courseId: 'course-1', courseName: '\\u6570\\u5b66', startAt: '2026-08-22T01:00:00.000Z', endAt: '2026-08-22T02:00:00.000Z', status: 1, roomDisplay: 'A101', tuition: '100', teacherFee: '50' }] };
+    },
+    desktopRegistration: identity,
+    businessTenantId: 'default',
+  }), '/api/business/schedules', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
+  assert.strictEqual(scheduleList.status, 200);
+  assert.deepStrictEqual(scheduleList.body, {
+    ok: true,
+    schedules: [{ id: 'schedule-1', courseId: 'course-1', courseName: '\\u6570\\u5b66', startAt: '2026-08-22T01:00:00.000Z', endAt: '2026-08-22T02:00:00.000Z', status: 1, roomDisplay: 'A101', tuition: '100', teacherFee: '50' }],
+  });
+  assert.strictEqual(businessQueries.length, 1);
+  assert.deepStrictEqual(businessQueries[0][1], ['default']);
+  assert.ok(businessQueries[0][0].startsWith('SELECT s.id AS "id", s.course_id AS "courseId"'));
+  let deniedBusinessQuery = false;
+  const deniedScheduleList = await request(createCloudBusinessApp({
+    query: async () => { deniedBusinessQuery = true; return { rows: [] }; },
+    desktopRegistration: { ...identity, sessionContext: async () => ({ authorityId: 'authority-1', accountId: 'account-2', roles: ['visitor'] }) },
+    businessTenantId: 'default',
+  }), '/api/business/schedules', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
+  assert.strictEqual(deniedScheduleList.status, 403);
+  assert.deepStrictEqual(deniedScheduleList.body, { ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+  assert.strictEqual(deniedBusinessQuery, false);
   const missingSessionToken = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity }), '/api/desktop/session-context');
   assert.strictEqual(missingSessionToken.status, 403);
   assert.deepStrictEqual(missingSessionToken.body, { ok: false, code: 'CLOUD_ONLINE_IDENTITY_REJECTED' });
   assert.deepStrictEqual(calls, [
     ['begin', { phoneCode: 'provider-code' }],
     ['register', { verificationToken: 'ticket-1', installationId: 'install-1', installationPublicKey: 'public-key', deviceProof: 'proof', idempotencyKey: 'retry-1' }],
+    ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
     ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
   ]);
   const denied = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: { begin: async () => { throw Object.assign(new Error('no'), { code: 'CLOUD_ONLINE_IDENTITY_REJECTED' }); }, register: async () => null } }), '/api/desktop/online-verification', { method: 'POST', body: { phoneCode: 'bad' } });

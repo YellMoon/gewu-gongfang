@@ -2,10 +2,11 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, desktopRegistration = null, desktopPairing = null }) {
+function createCloudBusinessApp({ query, desktopRegistration = null, desktopPairing = null, businessTenantId = null }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (desktopRegistration && (typeof desktopRegistration.begin !== 'function' || typeof desktopRegistration.register !== 'function')) throw new TypeError('desktopRegistration is invalid');
   if (desktopPairing && (typeof desktopPairing.start !== 'function' || typeof desktopPairing.confirm !== 'function' || typeof desktopPairing.read !== 'function')) throw new TypeError('desktopPairing is invalid');
+  if (businessTenantId !== null && (typeof businessTenantId !== 'string' || !businessTenantId.trim())) throw new TypeError('businessTenantId is invalid');
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '16kb' }));
@@ -33,6 +34,9 @@ function createCloudBusinessApp({ query, desktopRegistration = null, desktopPair
   }
   function pairingFailure(response) {
     response.status(403).json({ ok: false, code: 'CLOUD_DESKTOP_PAIRING_REJECTED' });
+  }
+  function businessUnavailable(response) {
+    response.status(503).json({ ok: false, code: 'CLOUD_BUSINESS_UNAVAILABLE' });
   }
   function sessionToken(request) {
     const authorization = String(request.get('authorization') || '');
@@ -69,6 +73,28 @@ function createCloudBusinessApp({ query, desktopRegistration = null, desktopPair
       response.json({ ok: true, ...context });
     } catch (error) {
       identityFailure(response, error);
+    }
+  });
+  app.get('/api/business/schedules', async (request, response) => {
+    if (!desktopRegistration || typeof desktopRegistration.sessionContext !== 'function' || !businessTenantId) return businessUnavailable(response);
+    const token = sessionToken(request);
+    if (!token) return response.status(403).json({ ok: false, code: 'CLOUD_ONLINE_IDENTITY_REJECTED' });
+    try {
+      const context = await desktopRegistration.sessionContext({ sessionToken: token });
+      if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
+        return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      }
+      const result = await query(
+        `SELECT s.id AS "id", s.course_id AS "courseId", c.display_name AS "courseName", s.start_at AS "startAt", s.end_at AS "endAt", s.status AS "status", s.room_display_snapshot AS "roomDisplay", s.calculated_tuition AS "tuition", s.calculated_teacher_fee AS "teacherFee"
+         FROM business.schedules s
+         JOIN business.courses c ON c.tenant_id=s.tenant_id AND c.id=s.course_id
+         WHERE s.tenant_id=$1
+         ORDER BY s.start_at ASC, s.id ASC`,
+        [businessTenantId],
+      );
+      response.json({ ok: true, schedules: result.rows });
+    } catch (_) {
+      businessUnavailable(response);
     }
   });
   app.post('/api/desktop/pairing/start', (request, response) => {

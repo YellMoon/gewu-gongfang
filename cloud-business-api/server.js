@@ -97,6 +97,7 @@ const app = createCloudBusinessApp({
   query: (text, values) => pool.query(text, values),
   desktopRegistration: desktopRuntime?.registration || null,
   desktopPairing,
+  businessTenantId: process.env.CLOUD_BUSINESS_TENANT_ID || 'default',
 });
 const server = app.listen(port, '0.0.0.0', () => console.log(`cloud business API listening on ${port}`));
 
