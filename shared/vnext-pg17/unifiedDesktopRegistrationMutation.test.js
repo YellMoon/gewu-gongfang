@@ -85,6 +85,26 @@ async function runUnifiedDesktopRegistrationMutationCases(runtime) {
     await issueVNextPg17OnlineIdentityAssertion(activeRuntime, handle, { ...assertion, assertionId: 'assertion-hardware-conflict', nonceSha256: hash('5'), hardwareEvidenceSha256: hash('6') });
     await assert.rejects(() => registerVNextPg17UnifiedDesktopOnline(activeRuntime, handle, Object.assign({ ...registration, assertionId: 'assertion-hardware-conflict', idempotencyKey: 'idempotency-hardware-conflict', receiptId: 'receipt-hardware-conflict', auditEventId: 'audit-hardware-conflict', outboxEventId: 'outbox-hardware-conflict', sessionId: 'session-hardware-conflict', linkId: 'link-hardware-conflict' }, createUnifiedDesktopRegistrationEvidence({ sessionId: 'session-hardware-conflict' }))));
     await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
+      "INSERT INTO vnext_control_plane.vnext_accounts(account_id,authority_id,status,auth_version,access_version,revocation_version,row_version,created_at,updated_at) VALUES('account-race','authority-1','active',1,1,1,1,$1,$1)", [AT],
+    ));
+    await issueVNextPg17OnlineIdentityAssertion(activeRuntime, handle, { ...assertion, assertionId: 'assertion-revocation-race', accountId: 'account-race', deviceId: 'device-race', installationId: 'installation-race', installationPublicKey: 'public-key-race', keyFingerprint: hash('7'), nonceSha256: hash('a') });
+    let releaseAccountLock;
+    let accountLocked;
+    const accountLockAcquired = new Promise(resolve => { accountLocked = resolve; });
+    const peerRevocation = withVNextPg17SyntheticQuery(peerHandle, 'fixture-provisioner', async facade => {
+      await facade.query('BEGIN');
+      await facade.query("SELECT account_id FROM vnext_control_plane.vnext_accounts WHERE account_id='account-race' FOR UPDATE");
+      accountLocked();
+      await new Promise(resolve => { releaseAccountLock = resolve; });
+      await facade.query('UPDATE vnext_control_plane.vnext_accounts SET status=\'revoked\', revocation_version=2, updated_at=$1 WHERE account_id=\'account-race\'', [AT]);
+      await facade.query('COMMIT');
+    });
+    await accountLockAcquired;
+    const blockedRegistration = registerVNextPg17UnifiedDesktopOnline(activeRuntime, handle, Object.assign({ ...registration, assertionId: 'assertion-revocation-race', idempotencyKey: 'idempotency-revocation-race', receiptId: 'receipt-revocation-race', auditEventId: 'audit-revocation-race', outboxEventId: 'outbox-revocation-race', sessionId: 'session-revocation-race', linkId: 'link-revocation-race' }, createUnifiedDesktopRegistrationEvidence({ sessionId: 'session-revocation-race' })));
+    releaseAccountLock();
+    await peerRevocation;
+    await assert.rejects(() => blockedRegistration);
+    await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
       'UPDATE vnext_control_plane.vnext_accounts SET status = \'revoked\', revocation_version = 6, updated_at = $1 WHERE account_id = \'account-1\'', [AT],
     ));
     await assert.rejects(() => registerVNextPg17UnifiedDesktopOnline(activeRuntime, handle, registration));
