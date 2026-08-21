@@ -22,6 +22,10 @@ const EXPECTED_SOURCE_TABLES = Object.freeze([
   'taxonomy_systems', 'teachers', 'tenants', 'user_role_grants', 'users', 'vector_embeddings',
 ].sort());
 
+const CORE_SCHEDULING_REAL_SOURCE_RELATIONS = Object.freeze([
+  'tenants', 'institutions', 'schools', 'rooms', 'teachers', 'students', 'courses', 'schedules',
+]);
+
 const VALID_DISPOSITIONS = new Set(['canonical', 'archive', 'local_partition', 'rebuildable_cache', 'quarantine_only']);
 const MAPPING_FIELDS = Object.freeze([
   'dependencyOrder',
@@ -351,6 +355,7 @@ function assertShadowImportReady(catalog) {
 }
 
 module.exports = {
+  CORE_SCHEDULING_REAL_SOURCE_RELATIONS,
   EXPECTED_SOURCE_TABLES,
   SOURCE_TABLE_CATALOG,
   assertShadowImportReady,
