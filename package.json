@@ -1,6 +1,6 @@
 {
   "name": "gewu-gongfang",
-  "version": "8.0.2",
+  "version": "8.0.3",
   "desktopBuildFlavor": "desktop-client",
   "description": "格物工坊（综合教育平台）",
   "main": "public/electron.js",
@@ -138,7 +138,6 @@
     "jsdom": "^16.7.0",
     "pg": "8.23.0",
     "playwright": "^1.60.0",
-    "pg": "8.23.0",
     "react": "^18.2.0",
     "react-chartjs-2": "^5.2.0",
     "react-dom": "^18.2.0",
