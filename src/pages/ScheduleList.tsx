@@ -1,8 +1,8 @@
 ﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Table, Button, DatePicker, Tag, Space, message
+  Table, Button, DatePicker, Tag, Space, message, Form, Input, InputNumber, Modal, Select
 } from 'antd';
-import { SearchOutlined, DownloadOutlined } from '@ant-design/icons';
+import { SearchOutlined, DownloadOutlined, EditOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { Schedule, ScheduleStatus, Student, Teacher, Course } from '../types';
@@ -34,6 +34,9 @@ const ScheduleList: React.FC = () => {
   const [filterSemester, setFilterSemester] = useState<string | undefined>();
   const [filterCourseName, setFilterCourseName] = useState<string | undefined>();
   const [filterDateRange, setFilterDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+  const [editingSchedule, setEditingSchedule] = useState<any | null>(null);
+  const [savingCloudSchedule, setSavingCloudSchedule] = useState(false);
+  const [editForm] = Form.useForm();
   const [appliedFilters, setAppliedFilters] = useState<{
     filterTeacher?: string;
     filterStudent?: string;
@@ -306,6 +309,64 @@ const ScheduleList: React.FC = () => {
     };
   };
 
+  const openCloudScheduleEditor = (record: any) => {
+    const cloudRuntime = (window as any).desktopIdentitySessionProvider;
+    if (typeof cloudRuntime?.updateCloudSchedule !== 'function' || !record?.updated_at) {
+      message.error('\u5f53\u524d\u6392\u8bfe\u672a\u8fde\u63a5\u5230\u53ef\u7528\u7684\u4e91\u7aef\u66f4\u65b0\u4f1a\u8bdd');
+      return;
+    }
+    setEditingSchedule(record);
+    editForm.setFieldsValue({
+      startAt: dayjs(record.start_time),
+      endAt: dayjs(record.end_time),
+      status: record.status,
+      roomDisplay: record.room || '',
+      tuition: Number(record.calculated_tuition || 0),
+      teacherFee: Number(record.calculated_teacher_fee || 0),
+      notes: record.notes || '',
+    });
+  };
+
+  const saveCloudSchedule = async (values: any) => {
+    const cloudRuntime = (window as any).desktopIdentitySessionProvider;
+    if (!editingSchedule || typeof cloudRuntime?.updateCloudSchedule !== 'function') return;
+    setSavingCloudSchedule(true);
+    try {
+      const updated = await cloudRuntime.updateCloudSchedule({
+        scheduleId: editingSchedule.id,
+        expectedUpdatedAt: editingSchedule.updated_at,
+        startAt: values.startAt.toISOString(),
+        endAt: values.endAt.toISOString(),
+        status: values.status,
+        roomDisplay: values.roomDisplay?.trim() || null,
+        tuition: values.tuition,
+        teacherFee: values.teacherFee,
+        notes: values.notes?.trim() || null,
+      });
+      setSchedules(previous => previous.map(schedule => schedule.id === editingSchedule.id ? {
+        ...schedule,
+        start_time: values.startAt.toISOString(),
+        end_time: values.endAt.toISOString(),
+        status: values.status,
+        room: values.roomDisplay?.trim() || '',
+        calculated_tuition: String(values.tuition),
+        calculated_teacher_fee: String(values.teacherFee),
+        notes: values.notes?.trim() || '',
+        updated_at: updated.updatedAt,
+      } : schedule));
+      setEditingSchedule(null);
+      message.success('\u4e91\u7aef\u6392\u8bfe\u5df2\u66f4\u65b0');
+    } catch (error: any) {
+      if (String(error?.code || '') === 'CLOUD_BUSINESS_SCHEDULE_CONFLICT') {
+        message.error('\u8be5\u6392\u8bfe\u5df2\u88ab\u5176\u4ed6\u8bbe\u5907\u4fee\u6539\uff0c\u8bf7\u5237\u65b0\u540e\u518d\u7f16\u8f91');
+      } else {
+        message.error('\u4e91\u7aef\u6392\u8bfe\u66f4\u65b0\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u5728\u7ebf\u4f1a\u8bdd\u540e\u91cd\u8bd5');
+      }
+    } finally {
+      setSavingCloudSchedule(false);
+    }
+  };
+
   const columns: ColumnsType<any> = [
     { title: '序号', key: 'index', width: 60, render: (_, __, index) => index + 1 },
     { title: '日期', key: 'date', width: 100, render: (_, record) => dayjs(record.start_time).format('YYYY-MM-DD') },
@@ -329,6 +390,11 @@ const ScheduleList: React.FC = () => {
     { title: '状态', dataIndex: 'status', key: 'status', width: 80, render: (_: any, record) => <Tag color={getScheduleStatusColor(record)}>{getScheduleStatusText(record)}</Tag> },
     { title: '教室', dataIndex: 'room', key: 'room', width: 120 },
     { title: '备注', dataIndex: 'notes', key: 'notes', width: 160, ellipsis: true },
+    { title: '\u64cd\u4f5c', key: 'actions', width: 120, render: (_, record) => {
+      const cloudRuntime = (window as any).desktopIdentitySessionProvider;
+      if (typeof cloudRuntime?.updateCloudSchedule !== 'function' || !record.updated_at) return null;
+      return <Button size="small" icon={<EditOutlined />} onClick={() => openCloudScheduleEditor(record)}>{'\u7f16\u8f91\u4e91\u7aef\u6392\u8bfe'}</Button>;
+    } },
   ];
 
   return (
@@ -428,7 +494,37 @@ const ScheduleList: React.FC = () => {
       drawerTitle=""
       onDrawerClose={() => undefined}
       drawerContent={null}
-    />
+    >
+      <Modal
+        title={'\u7f16\u8f91\u4e91\u7aef\u6392\u8bfe'}
+        open={Boolean(editingSchedule)}
+        onCancel={() => !savingCloudSchedule && setEditingSchedule(null)}
+        onOk={() => editForm.submit()}
+        okText={'\u4fdd\u5b58\u5230\u4e91\u7aef'}
+        cancelText={'\u53d6\u6d88'}
+        confirmLoading={savingCloudSchedule}
+        destroyOnClose
+      >
+        <Form form={editForm} layout="vertical" onFinish={saveCloudSchedule}>
+          <Form.Item name="startAt" label={'\u5f00\u59cb\u65f6\u95f4'} rules={[{ required: true, message: '\u8bf7\u9009\u62e9\u5f00\u59cb\u65f6\u95f4' }]}>
+            <DatePicker showTime style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="endAt" label={'\u7ed3\u675f\u65f6\u95f4'} rules={[{ required: true, message: '\u8bf7\u9009\u62e9\u7ed3\u675f\u65f6\u95f4' }]}>
+            <DatePicker showTime style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="status" label={'\u72b6\u6001'} rules={[{ required: true }]}>
+            <Select options={[
+              { value: 1, label: '\u6b63\u5e38' }, { value: 2, label: '\u5df2\u5b8c\u6210' },
+              { value: 3, label: '\u5df2\u53d6\u6d88' }, { value: 4, label: '\u8bf7\u5047' },
+            ]} />
+          </Form.Item>
+          <Form.Item name="roomDisplay" label={'\u4e0a\u8bfe\u5730\u5740'}><Input maxLength={200} /></Form.Item>
+          <Form.Item name="tuition" label={'\u5b66\u751f\u5b66\u8d39'} rules={[{ required: true }]}><InputNumber min={0} precision={2} style={{ width: '100%' }} /></Form.Item>
+          <Form.Item name="teacherFee" label={'\u8001\u5e08\u8bfe\u65f6\u8d39'} rules={[{ required: true }]}><InputNumber min={0} precision={2} style={{ width: '100%' }} /></Form.Item>
+          <Form.Item name="notes" label={'\u5907\u6ce8'}><Input.TextArea maxLength={2000} rows={3} /></Form.Item>
+        </Form>
+      </Modal>
+    </DataPageLayout>
   );
 };
 

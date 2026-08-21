@@ -55,7 +55,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const scheduleList = await request(createCloudBusinessApp({
     query: async (text, values) => {
       businessQueries.push([text, values]);
-      return { rows: [{ id: 'schedule-1', courseId: 'course-1', courseName: '\\u6570\\u5b66', startAt: '2026-08-22T01:00:00.000Z', endAt: '2026-08-22T02:00:00.000Z', status: 1, roomDisplay: 'A101', tuition: '100', teacherFee: '50' }] };
+      return { rows: [{ id: 'schedule-1', courseId: 'course-1', courseName: '\\u6570\\u5b66', startAt: '2026-08-22T01:00:00.000Z', endAt: '2026-08-22T02:00:00.000Z', updatedAt: '2026-08-22T00:00:00.000Z', status: 1, roomDisplay: 'A101', tuition: '100', teacherFee: '50' }] };
     },
     desktopRegistration: identity,
     businessTenantId: 'default',
@@ -63,7 +63,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(scheduleList.status, 200);
   assert.deepStrictEqual(scheduleList.body, {
     ok: true,
-    schedules: [{ id: 'schedule-1', courseId: 'course-1', courseName: '\\u6570\\u5b66', startAt: '2026-08-22T01:00:00.000Z', endAt: '2026-08-22T02:00:00.000Z', status: 1, roomDisplay: 'A101', tuition: '100', teacherFee: '50' }],
+    schedules: [{ id: 'schedule-1', courseId: 'course-1', courseName: '\\u6570\\u5b66', startAt: '2026-08-22T01:00:00.000Z', endAt: '2026-08-22T02:00:00.000Z', updatedAt: '2026-08-22T00:00:00.000Z', status: 1, roomDisplay: 'A101', tuition: '100', teacherFee: '50' }],
   });
   assert.strictEqual(businessQueries.length, 1);
   assert.deepStrictEqual(businessQueries[0][1], ['default']);

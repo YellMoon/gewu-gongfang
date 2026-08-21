@@ -107,7 +107,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, desktopR
         return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       }
       const result = await query(
-        `SELECT s.id AS "id", s.course_id AS "courseId", c.display_name AS "courseName", s.start_at AS "startAt", s.end_at AS "endAt", s.status AS "status", s.room_display_snapshot AS "roomDisplay", s.calculated_tuition AS "tuition", s.calculated_teacher_fee AS "teacherFee"
+        `SELECT s.id AS "id", s.course_id AS "courseId", c.display_name AS "courseName", s.start_at AS "startAt", s.end_at AS "endAt", s.updated_at AS "updatedAt", s.status AS "status", s.room_display_snapshot AS "roomDisplay", s.calculated_tuition AS "tuition", s.calculated_teacher_fee AS "teacherFee"
          FROM business.schedules s
          JOIN business.courses c ON c.tenant_id=s.tenant_id AND c.id=s.course_id
          WHERE s.tenant_id=$1

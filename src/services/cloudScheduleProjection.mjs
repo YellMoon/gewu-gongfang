@@ -26,6 +26,7 @@ export function projectCloudSchedules(rows) {
       course_name: text(row.courseName),
       start_time: instant(row.startAt),
       end_time: instant(row.endAt),
+      updated_at: instant(row.updatedAt),
       status: Number(row.status),
       room: row.roomDisplay == null ? '' : String(row.roomDisplay),
       calculated_tuition: row.tuition == null ? '0' : String(row.tuition),
