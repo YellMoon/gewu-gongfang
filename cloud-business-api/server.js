@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const { createCloudBusinessApp } = require('./src/app');
 const { createCloudDesktopRegistrationService, createOperatorPhoneLookup } = require('./src/desktopRegistrationService');
 const { createBusinessScheduleUpdate } = require('./src/businessScheduleMutationService');
+const { createBusinessScheduleStudentOverride } = require('./src/businessScheduleStudentOverrideService');
 const { createDesktopPairingService } = require('./src/desktopPairingService');
 const { createWechatPhoneVerifier } = require('./src/wechatPhoneVerifier');
 
@@ -85,7 +86,10 @@ function createDesktopRegistrationFromEnvironment() {
   const businessScheduleUpdate = createBusinessScheduleUpdate({
     query: (text, values) => writerPool.query(text, values),
   });
-  return { registration, businessScheduleUpdate, async close() { await Promise.all([identityPool.end(), writerPool.end()]); } };
+  const businessScheduleStudentOverride = createBusinessScheduleStudentOverride({
+    query: (text, values) => writerPool.query(text, values),
+  });
+  return { registration, businessScheduleUpdate, businessScheduleStudentOverride, async close() { await Promise.all([identityPool.end(), writerPool.end()]); } };
 }
 
 const desktopRuntime = createDesktopRegistrationFromEnvironment();
@@ -100,6 +104,7 @@ const desktopPairing = desktopRuntime?.registration
 const app = createCloudBusinessApp({
   query: (text, values) => pool.query(text, values),
   businessScheduleUpdate: desktopRuntime?.businessScheduleUpdate || null,
+  businessScheduleStudentOverride: desktopRuntime?.businessScheduleStudentOverride || null,
   desktopRegistration: desktopRuntime?.registration || null,
   desktopPairing,
   businessTenantId: process.env.CLOUD_BUSINESS_TENANT_ID || 'default',

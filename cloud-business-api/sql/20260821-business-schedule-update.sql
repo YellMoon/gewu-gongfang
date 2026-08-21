@@ -34,7 +34,7 @@ BEGIN
       calculated_tuition=p_tuition,
       calculated_teacher_fee=p_teacher_fee,
       notes=p_notes,
-      updated_at=transaction_timestamp()
+      updated_at=date_trunc('milliseconds', transaction_timestamp())
   WHERE s.tenant_id=p_tenant_id AND s.id=p_schedule_id AND s.updated_at=p_expected_updated_at
   RETURNING s.id, s.updated_at INTO result_id, result_updated_at;
 

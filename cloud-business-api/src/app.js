@@ -2,9 +2,10 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, businessScheduleUpdate = null, desktopRegistration = null, desktopPairing = null, businessTenantId = null }) {
+function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, desktopRegistration = null, desktopPairing = null, businessTenantId = null }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
+  if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
   if (desktopRegistration && (typeof desktopRegistration.begin !== 'function' || typeof desktopRegistration.register !== 'function')) throw new TypeError('desktopRegistration is invalid');
   if (desktopPairing && (typeof desktopPairing.start !== 'function' || typeof desktopPairing.confirm !== 'function' || typeof desktopPairing.read !== 'function')) throw new TypeError('desktopPairing is invalid');
   if (businessTenantId !== null && (typeof businessTenantId !== 'string' || !businessTenantId.trim())) throw new TypeError('businessTenantId is invalid');
@@ -152,6 +153,41 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, desktopR
         tuition,
         teacherFee,
         notes,
+      });
+      if (!result || typeof result !== 'object' || !result.id || !result.updatedAt) {
+        return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_SCHEDULE_CONFLICT' });
+      }
+      response.json({ ok: true, schedule: result });
+    } catch (_) {
+      businessUnavailable(response);
+    }
+  });
+  app.put('/api/business/schedules/:scheduleId/students/:studentId', async (request, response) => {
+    if (!desktopRegistration || typeof desktopRegistration.sessionContext !== 'function' || !businessTenantId || !businessScheduleStudentOverride) return businessUnavailable(response);
+    const token = sessionToken(request);
+    if (!token) return response.status(403).json({ ok: false, code: 'CLOUD_ONLINE_IDENTITY_REJECTED' });
+    const scheduleId = String(request.params.scheduleId || '').trim();
+    const studentId = String(request.params.studentId || '').trim();
+    const update = exactBody(request.body, ['expectedUpdatedAt', 'attendanceStatus', 'tuition', 'teacherFee']);
+    if (!scheduleId || !studentId || !update) return businessInputInvalid(response);
+    const expectedUpdatedAt = instant(update.expectedUpdatedAt);
+    const tuition = nonNegativeNumber(update.tuition);
+    const teacherFee = nonNegativeNumber(update.teacherFee);
+    if (!expectedUpdatedAt || !Number.isInteger(update.attendanceStatus) || ![1, 3, 4].includes(update.attendanceStatus)
+      || tuition === null || teacherFee === null) return businessInputInvalid(response);
+    try {
+      const context = await desktopRegistration.sessionContext({ sessionToken: token });
+      if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
+        return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      }
+      const result = await businessScheduleStudentOverride({
+        tenantId: businessTenantId,
+        scheduleId,
+        studentId,
+        expectedUpdatedAt,
+        attendanceStatus: update.attendanceStatus,
+        tuition,
+        teacherFee,
       });
       if (!result || typeof result !== 'object' || !result.id || !result.updatedAt) {
         return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_SCHEDULE_CONFLICT' });

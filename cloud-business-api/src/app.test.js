@@ -99,6 +99,31 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     startAt: '2026-08-23T01:00:00.000Z', endAt: '2026-08-23T02:00:00.000Z', status: 1,
     roomDisplay: 'A102', tuition: 120, teacherFee: 60, notes: null,
   });
+  const studentOverrideWrites = [];
+  const studentOverride = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }),
+    businessScheduleStudentOverride: async input => {
+      studentOverrideWrites.push(input);
+      return { id: 'schedule-1', updatedAt: '2026-08-22T01:06:00.000Z' };
+    },
+    desktopRegistration: identity,
+    businessTenantId: 'default',
+  }), '/api/business/schedules/schedule-1/students/student-1', {
+    method: 'PUT',
+    headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' },
+    body: {
+      expectedUpdatedAt: '2026-08-22T01:05:00.000Z',
+      attendanceStatus: 1,
+      tuition: 120,
+      teacherFee: 60,
+    },
+  });
+  assert.strictEqual(studentOverride.status, 200);
+  assert.deepStrictEqual(studentOverride.body, { ok: true, schedule: { id: 'schedule-1', updatedAt: '2026-08-22T01:06:00.000Z' } });
+  assert.deepStrictEqual(studentOverrideWrites, [{
+    tenantId: 'default', scheduleId: 'schedule-1', studentId: 'student-1',
+    expectedUpdatedAt: '2026-08-22T01:05:00.000Z', attendanceStatus: 1, tuition: 120, teacherFee: 60,
+  }]);
   let deniedBusinessQuery = false;
   const deniedScheduleList = await request(createCloudBusinessApp({
     query: async () => { deniedBusinessQuery = true; return { rows: [] }; },
@@ -114,6 +139,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.deepStrictEqual(calls, [
     ['begin', { phoneCode: 'provider-code' }],
     ['register', { verificationToken: 'ticket-1', installationId: 'install-1', installationPublicKey: 'public-key', deviceProof: 'proof', idempotencyKey: 'retry-1' }],
+    ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
     ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
     ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
     ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
