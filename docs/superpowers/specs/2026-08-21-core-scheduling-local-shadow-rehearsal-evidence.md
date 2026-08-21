@@ -17,4 +17,8 @@ The reader opened only `tenants`, `institutions`, `schools`, `rooms`, `teachers`
 
 ## Interpretation
 
-This proves that the current core scheduling contract, local business schema, and disposable shadow executor can represent this approved snapshot without mutating the source. It does not prove a reusable source-reader deployment, RDS readiness, cloud command writing, user authentication, device registration, offline submission, NAS media handling, or a production release.
+This proves that the current core scheduling contract, local business schema, and disposable shadow executor can represent this approved snapshot without mutating the source. It does not prove a production source-reader deployment or scheduler, RDS readiness, cloud command writing, user authentication, device registration, offline submission, NAS media handling, or a production release.
+
+## Reusable read-only reader probe
+
+The checked-in reader added after this rehearsal accepts only an approved root plus its exact `data/scheduling.db` child. It opens only the same eight tables in a `query_only` transaction, rejects any column drift, and returns immutable in-memory rows and hashes. Against this snapshot it reported the same relation counts, 571 admitted schedules, 18 quarantines, source snapshot SHA-256 above, scoped inventory SHA-256 `c6d112afc0f3bb0d49197b4bc1b1ff013e1d535b09df9bb5c76b7d2bfb14b76f`, and source-schema SHA-256 `07401ded40e1584a0786510424b14b5810b8aa326f412d48df6b5cb3a1df7608`.
