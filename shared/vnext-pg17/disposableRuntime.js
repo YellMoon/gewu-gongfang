@@ -1106,24 +1106,24 @@ function snapshotUnifiedDesktopOnlineInput(value, fields) {
 
 async function issueVNextPg17OnlineIdentityAssertion(runtime, handle, input) {
   if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
-  const snapshot = snapshotUnifiedDesktopOnlineInput(input, ['assertionId', 'authorityId', 'accountId', 'deviceId', 'installationId', 'installationPublicKey', 'keyFingerprint', 'audience', 'nonceSha256', 'canonicalRequestSha256', 'evidenceSha256', 'issuedAt', 'expiresAt']);
+  const snapshot = snapshotUnifiedDesktopOnlineInput(input, ['assertionId', 'authorityId', 'accountId', 'deviceId', 'installationId', 'installationPublicKey', 'keyFingerprint', 'audience', 'nonceSha256', 'canonicalRequestSha256', 'identityProofSha256', 'hardwareEvidenceSha256', 'issuedAt', 'expiresAt']);
   const state = handles.get(handle);
   const client = state.clients['identity-verifier'];
   if (!client) throw invalidHandle();
   try {
-    await client.query('SELECT vnext_control_plane.vnext_issue_online_identity_assertion($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)', [snapshot.assertionId, snapshot.authorityId, snapshot.accountId, snapshot.deviceId, snapshot.installationId, snapshot.installationPublicKey, snapshot.keyFingerprint, snapshot.audience, snapshot.nonceSha256, snapshot.canonicalRequestSha256, snapshot.evidenceSha256, snapshot.issuedAt, snapshot.expiresAt]);
+    await client.query('SELECT vnext_control_plane.vnext_issue_online_identity_assertion($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)', [snapshot.assertionId, snapshot.authorityId, snapshot.accountId, snapshot.deviceId, snapshot.installationId, snapshot.installationPublicKey, snapshot.keyFingerprint, snapshot.audience, snapshot.nonceSha256, snapshot.canonicalRequestSha256, snapshot.identityProofSha256, snapshot.hardwareEvidenceSha256, snapshot.issuedAt, snapshot.expiresAt]);
     return Object.freeze({ issued: true });
   } catch (_) { throw unavailable(); }
 }
 
 async function registerVNextPg17UnifiedDesktopOnline(runtime, handle, input) {
   if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
-  const snapshot = snapshotUnifiedDesktopOnlineInput(input, ['assertionId', 'idempotencyKey', 'receiptId', 'auditEventId', 'outboxEventId', 'sessionId', 'linkId', 'occurredAt', 'sessionExpiresAt', 'canonicalResultJson', 'resultSha256', 'canonicalPayloadJson', 'payloadSha256']);
+  const snapshot = snapshotUnifiedDesktopOnlineInput(input, ['assertionId', 'idempotencyKey', 'receiptId', 'auditEventId', 'outboxEventId', 'sessionId', 'linkId', 'sessionExpiresAt', 'canonicalResultJson', 'resultSha256', 'canonicalPayloadJson', 'payloadSha256']);
   const state = handles.get(handle);
   const client = state.clients.writer;
   if (!client) throw invalidHandle();
   try {
-    const result = await client.query('SELECT receipt_id AS "receiptId", session_id AS "sessionId", replayed FROM vnext_control_plane.vnext_register_unified_desktop_online($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)', [snapshot.assertionId, snapshot.idempotencyKey, snapshot.receiptId, snapshot.auditEventId, snapshot.outboxEventId, snapshot.sessionId, snapshot.linkId, snapshot.occurredAt, snapshot.sessionExpiresAt, snapshot.canonicalResultJson, snapshot.resultSha256, snapshot.canonicalPayloadJson, snapshot.payloadSha256]);
+    const result = await client.query('SELECT receipt_id AS "receiptId", session_id AS "sessionId", replayed FROM vnext_control_plane.vnext_register_unified_desktop_online($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)', [snapshot.assertionId, snapshot.idempotencyKey, snapshot.receiptId, snapshot.auditEventId, snapshot.outboxEventId, snapshot.sessionId, snapshot.linkId, snapshot.sessionExpiresAt, snapshot.canonicalResultJson, snapshot.resultSha256, snapshot.canonicalPayloadJson, snapshot.payloadSha256]);
     if (result.rows.length !== 1 || typeof result.rows[0].receiptId !== 'string' || typeof result.rows[0].sessionId !== 'string' || typeof result.rows[0].replayed !== 'boolean') throw unavailable();
     return Object.freeze({ receiptId: result.rows[0].receiptId, sessionId: result.rows[0].sessionId, replayed: result.rows[0].replayed });
   } catch (_) { throw unavailable(); }

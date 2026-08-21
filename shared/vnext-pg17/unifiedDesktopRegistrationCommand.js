@@ -3,7 +3,7 @@
 const { types } = require('node:util');
 
 const REQUEST_KEYS = Object.freeze([
-  'assertionId', 'idempotencyKey', 'occurredAt',
+  'assertionId', 'idempotencyKey',
 ]);
 
 function failure() {
@@ -30,19 +30,12 @@ function text(value) {
   return typeof value === 'string' && value === value.trim() && value !== '' ? value : null;
 }
 
-function utcInstant(value) {
-  if (typeof value !== 'string' || !value.endsWith('Z')) return null;
-  const instant = new Date(value);
-  return Number.isFinite(instant.getTime()) && instant.toISOString() === value ? value : null;
-}
-
 function registrationRequestSnapshot(value) {
   const copy = exactOwnData(value, REQUEST_KEYS);
   if (!copy) throw failure();
-  for (const key of REQUEST_KEYS.slice(0, -1)) {
+  for (const key of REQUEST_KEYS) {
     if (!text(copy[key])) throw failure();
   }
-  if (!utcInstant(copy.occurredAt)) throw failure();
   return Object.freeze(copy);
 }
 

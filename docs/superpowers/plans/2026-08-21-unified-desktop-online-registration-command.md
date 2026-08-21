@@ -37,8 +37,8 @@ Expected: non-zero exit and `MODULE_NOT_FOUND`.
 
 ```js
 function registrationRequestSnapshot(value) {
-  // Accept only assertionId, idempotencyKey and occurredAt. Reject Proxy, accessors,
-  // extra keys, blank values and non-UTC finite time.
+  // Accept only assertionId and idempotencyKey. Reject Proxy, accessors,
+  // extra keys and blank values. The client never supplies an authorization time.
 }
 
 function createUnifiedDesktopRegistrationCommand({ invoke }) {
@@ -90,7 +90,7 @@ GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_issue_online_identity_assert
 GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_register_unified_desktop_online(...) TO vnext_pg17_writer;
 ```
 
-The assertion binds authority/account/device/installation/public-key fingerprint, audience, nonce hash, canonical request hash and issue/expiry time. Consumption is append-only. The registration function derives account and device identifiers only from the assertion; it rejects expiry, wrong audience, previous consumption, revocation and every binding conflict. Success writes one accepted receipt, audit, outbox and online session row in the same transaction; every failure rolls back.
+The assertion binds authority/account/device/installation/public-key fingerprint, audience, nonce hash, canonical request hash, separate identity-proof and hardware-evidence hashes, and issue/expiry time. Consumption is append-only. Database `transaction_timestamp()` is the security clock: the desktop cannot supply or override it. The registration function derives account and device identifiers only from the assertion; it rejects expiry, wrong audience, previous consumption, revocation and every binding conflict. An existing device ID must exactly match its stable hardware evidence. One installation may hold separate account links and sessions for different accounts; each account+installation binding remains isolated. Success writes one accepted receipt, audit, outbox and online session row in the same transaction; every failure rolls back.
 
 - [ ] **Step 4: Re-run the manifest test**
 

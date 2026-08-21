@@ -20,11 +20,12 @@ async function runUnifiedDesktopRegistrationCommandCases() {
   const command = createUnifiedDesktopRegistrationCommand({
     invoke: async request => { received = request; return Object.freeze({ registrationId: 'registration-1', sessionId: 'service-session-1' }); },
   });
-  const input = { assertionId: 'assertion-1', idempotencyKey: 'registration-key-1', occurredAt: '2026-08-21T00:00:00.000Z' };
+  const input = { assertionId: 'assertion-1', idempotencyKey: 'registration-key-1' };
   assert.deepStrictEqual(await command.execute(input), { registrationId: 'registration-1', sessionId: 'service-session-1' });
   assert.deepStrictEqual(received, input);
   await expectCode(() => command.execute({ ...input, accountId: 'caller-claimed-account' }), 'VNEXT_UNIFIED_DESKTOP_REGISTRATION_INPUT_INVALID');
   await expectCode(() => command.execute({ ...input, receiptId: 'server-only-receipt' }), 'VNEXT_UNIFIED_DESKTOP_REGISTRATION_INPUT_INVALID');
+  await expectCode(() => command.execute({ ...input, occurredAt: '2026-08-21T00:00:00.000Z' }), 'VNEXT_UNIFIED_DESKTOP_REGISTRATION_INPUT_INVALID');
 }
 
 if (require.main === module) {

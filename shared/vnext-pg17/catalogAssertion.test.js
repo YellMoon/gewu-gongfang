@@ -2777,7 +2777,7 @@ async function runCatalogAssertionCases(runtime) {
     const onlineIdentityPublicExecuteHandle = await createHandle();
     await catalog.apply(onlineIdentityPublicExecuteHandle, migrationInput);
     await withVNextPg17SyntheticQuery(onlineIdentityPublicExecuteHandle, 'fixture-provisioner', facade => facade.query(
-      'GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_issue_online_identity_assertion(text,text,text,text,text,text,text,text,text,text,text,timestamptz,timestamptz) TO PUBLIC',
+      'GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_issue_online_identity_assertion(text,text,text,text,text,text,text,text,text,text,text,text,timestamptz,timestamptz) TO PUBLIC',
     ));
     await assert.rejects(() => catalog.assert(onlineIdentityPublicExecuteHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
 
@@ -2787,6 +2787,20 @@ async function runCatalogAssertionCases(runtime) {
       'GRANT INSERT ON vnext_control_plane.vnext_online_identity_assertions TO vnext_pg17_writer',
     ));
     await assert.rejects(() => catalog.assert(onlineIdentityWriterDmlHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const onlineIdentityTruncateHandle = await createHandle();
+    await catalog.apply(onlineIdentityTruncateHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(onlineIdentityTruncateHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT TRUNCATE ON vnext_control_plane.vnext_online_identity_assertions TO vnext_pg17_identity_verifier',
+    ));
+    await assert.rejects(() => catalog.assert(onlineIdentityTruncateHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const onlineIdentityPublicCreateHandle = await createHandle();
+    await catalog.apply(onlineIdentityPublicCreateHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(onlineIdentityPublicCreateHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT CREATE ON SCHEMA public TO vnext_pg17_identity_verifier',
+    ));
+    await assert.rejects(() => catalog.assert(onlineIdentityPublicCreateHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
   } finally {
     if (priorHandle) {
       await runtime.disposeHandle(priorHandle);

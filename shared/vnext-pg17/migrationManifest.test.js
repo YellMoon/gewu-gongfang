@@ -196,7 +196,7 @@ async function runManifestCases() {
   assert.ok(Object.isFrozen(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION));
   assert.strictEqual(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.migrationId, 'vnext-pg17-unified-desktop-online-registration-16');
   assert.strictEqual(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.semanticVersion, 16);
-  assert.strictEqual(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.manifestSha256, '0525fa68b4b7b1ccd8131c15d9571126270a4e7234b088b3054b6f9d3054b24a');
+  assert.strictEqual(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.manifestSha256, '9ad6f3db1d3c5136a51e5cf39e385bd9253826d4738f78096bab0e45fd708db0');
   assert.strictEqual(sha256(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.sql), UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.manifestSha256);
   for (const relation of ['vnext_online_identity_assertions', 'vnext_online_identity_assertion_consumptions']) assert.match(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.sql, new RegExp(`CREATE TABLE vnext_control_plane\\.${relation}`));
   assert.match(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.sql, /CREATE FUNCTION vnext_control_plane\.vnext_issue_online_identity_assertion/);
