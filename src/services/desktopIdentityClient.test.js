@@ -126,6 +126,10 @@ async function main() {
           sessionId: 'session-cloud-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'],
         }) };
       }
+      if (url === 'https://cloud.test/api/business/schedules') {
+        assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+        return { ok: true, json: async () => ({ ok: true, schedules: [{ id: 'schedule-cloud-1', courseId: 'course-cloud-1' }] }) };
+      }
       throw new Error(`unexpected unified cloud request ${url}`);
     },
   });
@@ -157,6 +161,11 @@ async function main() {
   assert.deepStrictEqual(unifiedCloudEvents, ['sign:unified-online-registration', 'seal-unified-cloud-vault', 'save-unified-cloud-session']);
   assert.strictEqual(unifiedCloudStored.token, 'session-token-cloud-1');
   assert.strictEqual(unifiedCompleted.gateState.kind, 'online-unlocked');
+  const cloudSchedules = await unifiedCloudClient.listCloudSchedules({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted,
+  });
+  assert.deepStrictEqual(cloudSchedules, [{ id: 'schedule-cloud-1', courseId: 'course-cloud-1' }]);
+  assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/schedules');
 
   const registrationRequests = [];
   const registrationEvents = [];

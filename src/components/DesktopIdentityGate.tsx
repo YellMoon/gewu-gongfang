@@ -82,6 +82,7 @@ const DesktopIdentityGate: React.FC = () => {
   const [runtimeSuspended, setRuntimeSuspended] = useState(false);
   const [error, setError] = useState('');
   const clientRef = useRef<any>(null);
+  const onlineSessionRef = useRef<any>(null);
   const currentPartitionRef = useRef<string | null>(null);
   const pollingRef = useRef(false);
 
@@ -98,6 +99,7 @@ const DesktopIdentityGate: React.FC = () => {
       (window as any).dbService?.prepareIdentityPartitionChange?.();
       clearCurrentDesktopIdentityPartition(window);
       currentPartitionRef.current = null;
+      onlineSessionRef.current = null;
       setOnlineSession(null);
       setGateState(nextState);
       setRuntimeSuspended(false);
@@ -125,12 +127,14 @@ const DesktopIdentityGate: React.FC = () => {
       return;
     }
     installIdentityContext(next);
-    setOnlineSession(result.token ? {
+    const nextOnlineSession = result.token ? {
       token: result.token,
       expiresAt: result.expiresAt,
       session: result.session,
       profile: result.profile,
-    } : null);
+    } : null;
+    onlineSessionRef.current = nextOnlineSession;
+    setOnlineSession(nextOnlineSession);
     setGateState(next);
     setRuntimeSuspended(false);
     setError('');
@@ -160,6 +164,14 @@ const DesktopIdentityGate: React.FC = () => {
             });
             if (!cancelled) acceptRuntime(result);
             return result;
+          },
+          listCloudSchedules: async () => {
+            const currentSession = onlineSessionRef.current;
+            if (!currentSession) throw new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
+            return client.listCloudSchedules({
+              baseUrl: identityBaseUrl,
+              currentSession,
+            });
           },
         };
         (window as any).desktopIdentitySessionProvider = installedProvider;

@@ -16,6 +16,7 @@ import {
 } from '../utils/scheduleExcelExport.mjs';
 import { applyScheduleListFilters, buildScheduleListFilterOptions } from '../utils/scheduleListFilters.mjs';
 import { readSchedulesFromPrimaryStore } from '../utils/scheduleStorage.mjs';
+import { projectCloudSchedules } from '../services/cloudScheduleProjection.mjs';
 
 const { RangePicker } = DatePicker;
 
@@ -52,6 +53,27 @@ const ScheduleList: React.FC = () => {
   const dbService = (window as any).dbService;
 
   const loadData = useCallback(async () => {
+    const cloudRuntime = (window as any).desktopIdentitySessionProvider;
+    if (typeof cloudRuntime?.listCloudSchedules === 'function') {
+      try {
+        const cloudSchedules = projectCloudSchedules(await cloudRuntime.listCloudSchedules());
+        cloudSchedules.sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+        setSchedules(cloudSchedules);
+        setStudents([]);
+        setTeachers([]);
+        setCourses([...new Map(cloudSchedules.map(schedule => [schedule.course_id, {
+          id: schedule.course_id,
+          name: schedule.course_name,
+          display_name: schedule.course_name,
+        }])).values()] as Course[]);
+        return;
+      } catch (_) {
+        setSchedules([]);
+        setFilteredSchedules([]);
+        message.error('\u4e91\u7aef\u6392\u8bfe\u8bfb\u53d6\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u5728\u7ebf\u4f1a\u8bdd\u540e\u91cd\u8bd5');
+        return;
+      }
+    }
     if (!dbService) {
       console.warn('dbService not available yet');
       return;

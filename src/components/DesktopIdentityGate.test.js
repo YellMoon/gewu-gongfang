@@ -80,6 +80,7 @@ assert.ok(
   'pairing completion must obtain an online session when connectivity is available'
 );
 assert.ok(gateSource.includes('ensureOnlineSession'));
+assert.ok(gateSource.includes('listCloudSchedules'), 'the authorized desktop runtime must expose the cloud scheduling read path');
 assert.ok(!gateSource.includes('ensureHostSync'));
 assert.ok(!gateSource.includes('ensureHostSyncSession'));
 assert.ok(!gateSource.includes('normalizeDesktopAuthorizationSession'));

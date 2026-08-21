@@ -777,6 +777,19 @@ export function createDesktopIdentityClient({
     return desktopIdentity.lock();
   }
 
+  async function listCloudSchedules({ baseUrl, currentSession } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) {
+      throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    }
+    const data = await request(fetchImpl, baseUrl, '/api/business/schedules', {
+      token: currentSession.token,
+    });
+    if (!Array.isArray(data?.schedules)) {
+      throw identityError('DESKTOP_CLOUD_SCHEDULE_RESPONSE_INVALID');
+    }
+    return data.schedules;
+  }
+
   async function registerUnifiedDesktopOnline(requestValue) {
     if (!onlineRegistrationCommand
       || typeof onlineRegistrationCommand.execute !== 'function') {
@@ -792,6 +805,7 @@ export function createDesktopIdentityClient({
     completeRegistration,
     completeUnifiedOnlineRegistration,
     ensureOnlineSession,
+    listCloudSchedules,
     lock,
     pollRegistration,
     pollUnifiedOnlineRegistration,
