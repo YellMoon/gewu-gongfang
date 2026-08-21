@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog, screen, shell, safeStorage } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, screen, shell, safeStorage, net } = require('electron');
 const { acquireDesktopSingleInstance } = require('./electronSingleInstance');
 const { createCrossInstallInstanceLock } = require('./electronCrossInstallLock');
 let mainWindow;
@@ -239,6 +239,7 @@ function getDesktopAuthorityRuntime() {
     relayWebSocketBaseUrl: runtimeConfig.cloudBaseUrl,
     durableRelayBaseUrl: runtimeConfig.cloudBaseUrl,
     WebSocketImpl: AUTHORITY_WEBSOCKET_ENABLED ? WebSocket : undefined,
+    isOnline: () => net.isOnline(),
   });
   return desktopAuthorityRuntime;
 }

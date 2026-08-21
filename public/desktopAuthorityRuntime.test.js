@@ -33,6 +33,9 @@ async function withTimeout(promise, timeoutMs, message) {
 }
 
 (async function main() {
+  const electronMainSource = fs.readFileSync('public/electron.js', 'utf8');
+  assert.match(electronMainSource, /isOnline:\s*\(\)\s*=>\s*net\.isOnline\(\)/,
+    'the actual Electron runtime must provide its connectivity state to the draft boundary');
   for (const packagedFile of [
     'public/desktopAuthorityRuntime.js',
     'src/services/desktopCommandOutbox.mjs',
@@ -82,7 +85,25 @@ async function withTimeout(promise, timeoutMs, message) {
     payload: { schedules: [], courses: [], assets: [], questionPreviews: [] },
     privateKey: hostKeyPair.privateKey,
   });
+  const offlineLeaseStatus = Object.freeze({
+    state: 'unlocked',
+    unlocked: true,
+    user: Object.freeze({ id: 'user-1' }),
+    deviceId: 'device-1',
+    authorizationId: 'authorization-1',
+    credentialVersion: 1,
+    offlineLease: Object.freeze({
+      id: 'offline-lease-1',
+      userId: 'user-1',
+      deviceId: 'device-1',
+      authorizationId: 'authorization-1',
+      credentialVersion: 1,
+      issuedAt: '2026-07-27T00:00:00.000Z',
+      expiresAt: '2026-07-29T00:00:00.000Z',
+    }),
+  });
   const vault = {
+    status: () => offlineLeaseStatus,
     createAuthorityCommand: input => {
       assert.strictEqual(input.type, envelope.type);
       return { envelope };
@@ -140,6 +161,74 @@ async function withTimeout(promise, timeoutMs, message) {
     sleep: async () => {},
     now: () => '2026-07-28T00:00:00.000Z',
   });
+
+  let offlineNetworkCalls = 0;
+  const offlineRuntime = createDesktopAuthorityRuntime({
+    filePath: path.join(workspace, 'offline-authority-outbox.bin'),
+    safeStorage: {
+      isEncryptionAvailable: () => true,
+      encryptString: value => Buffer.from(`safe:${Buffer.from(value).toString('base64')}`),
+      decryptString: value => Buffer.from(Buffer.from(value).toString().slice(5), 'base64').toString(),
+    },
+    vault,
+    isOnline: () => false,
+    fetchImpl: async () => {
+      offlineNetworkCalls += 1;
+      throw new Error('offline drafts must not access a transport');
+    },
+    now: () => '2026-07-28T00:00:00.000Z',
+  });
+  const offlineDraft = await offlineRuntime.appendDraft({
+    type: envelope.type,
+    payload: envelope.payload,
+    preview: { title: 'Offline schedule update' },
+  });
+  assert.strictEqual(offlineDraft.status, 'awaiting_confirmation');
+  await assert.rejects(
+    () => offlineRuntime.confirmAndSubmit(offlineDraft.id),
+    error => error?.code === 'DESKTOP_OFFLINE_DRAFT_SUBMISSION_FORBIDDEN',
+  );
+  assert.strictEqual((await offlineRuntime.get(offlineDraft.id)).status, 'awaiting_confirmation',
+    'an offline submit attempt must not confirm or mutate the draft');
+  assert.strictEqual(offlineNetworkCalls, 0);
+
+  const emptyVaultRuntime = createDesktopAuthorityRuntime({
+    filePath: path.join(workspace, 'empty-vault-authority-outbox.bin'),
+    safeStorage: {
+      isEncryptionAvailable: () => true,
+      encryptString: value => Buffer.from(`safe:${Buffer.from(value).toString('base64')}`),
+      decryptString: value => Buffer.from(Buffer.from(value).toString().slice(5), 'base64').toString(),
+    },
+    vault: { ...vault, status: () => ({ state: 'empty', unlocked: false }) },
+    isOnline: () => false,
+    now: () => '2026-07-28T00:00:00.000Z',
+  });
+  await assert.rejects(
+    () => emptyVaultRuntime.appendDraft({ type: envelope.type, payload: envelope.payload }),
+    error => error?.code === 'DESKTOP_OFFLINE_DRAFT_SESSION_REQUIRED',
+  );
+
+  const expiredVaultRuntime = createDesktopAuthorityRuntime({
+    filePath: path.join(workspace, 'expired-vault-authority-outbox.bin'),
+    safeStorage: {
+      isEncryptionAvailable: () => true,
+      encryptString: value => Buffer.from(`safe:${Buffer.from(value).toString('base64')}`),
+      decryptString: value => Buffer.from(Buffer.from(value).toString().slice(5), 'base64').toString(),
+    },
+    vault: {
+      ...vault,
+      status: () => ({
+        ...offlineLeaseStatus,
+        offlineLease: { ...offlineLeaseStatus.offlineLease, expiresAt: '2026-07-28T00:00:00.000Z' },
+      }),
+    },
+    isOnline: () => false,
+    now: () => '2026-07-28T00:00:00.000Z',
+  });
+  await assert.rejects(
+    () => expiredVaultRuntime.appendDraft({ type: envelope.type, payload: envelope.payload }),
+    error => error?.code === 'DESKTOP_OFFLINE_DRAFT_SESSION_EXPIRED',
+  );
 
   const draft = await runtime.appendDraft({
     type: envelope.type,
@@ -239,6 +328,7 @@ async function withTimeout(promise, timeoutMs, message) {
     requestTimeoutMs: 5,
     receiptPollAttempts: 3,
     receiptPollIntervalMs: 0,
+    now: () => '2026-07-28T00:00:00.000Z',
     fetchImpl: async (url, options = {}) => {
       const stalledBody = () => new Promise((_resolve, reject) => {
         options.signal?.addEventListener('abort', () => {

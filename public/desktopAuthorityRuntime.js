@@ -32,11 +32,13 @@ function createDesktopAuthorityRuntime({
   receiptPollIntervalMs = 1000,
   createId,
   now,
+  isOnline = () => true,
   fsImpl = fs,
 } = {}) {
   if (!filePath || !safeStorage || typeof safeStorage.isEncryptionAvailable !== 'function'
     || typeof vault?.createAuthorityCommand !== 'function'
-    || typeof vault?.signAuthorityHttpRequest !== 'function') {
+    || typeof vault?.signAuthorityHttpRequest !== 'function'
+    || typeof isOnline !== 'function') {
     throw runtimeError('DESKTOP_AUTHORITY_RUNTIME_CONFIG_REQUIRED');
   }
   let clientPromise = null;
@@ -92,7 +94,52 @@ function createDesktopAuthorityRuntime({
     }
   }
 
+  function currentTimeMs() {
+    const value = now ? now() : new Date();
+    const milliseconds = value instanceof Date ? value.getTime() : Date.parse(String(value || ''));
+    if (!Number.isFinite(milliseconds)) {
+      throw runtimeError('DESKTOP_OFFLINE_DRAFT_SESSION_CLOCK_INVALID');
+    }
+    return milliseconds;
+  }
+
+  function assertLocalDraftSession() {
+    const status = typeof vault.status === 'function' ? vault.status() : null;
+    const lease = status?.offlineLease;
+    if (status?.state !== 'unlocked' || status?.unlocked !== true
+      || !lease || typeof lease !== 'object') {
+      throw runtimeError('DESKTOP_OFFLINE_DRAFT_SESSION_REQUIRED');
+    }
+    const issuedAt = Date.parse(String(lease.issuedAt || ''));
+    const expiresAt = Date.parse(String(lease.expiresAt || ''));
+    const current = currentTimeMs();
+    if (!Number.isFinite(issuedAt) || !Number.isFinite(expiresAt)
+      || issuedAt > current || expiresAt <= issuedAt) {
+      throw runtimeError('DESKTOP_OFFLINE_DRAFT_SESSION_REQUIRED');
+    }
+    if (expiresAt <= current) {
+      throw runtimeError('DESKTOP_OFFLINE_DRAFT_SESSION_EXPIRED');
+    }
+    if (String(lease.userId || '') !== String(status.user?.id || '')
+      || String(lease.deviceId || '') !== String(status.deviceId || '')
+      || String(lease.authorizationId || '') !== String(status.authorizationId || '')
+      || Number(lease.credentialVersion) !== Number(status.credentialVersion)) {
+      throw runtimeError('DESKTOP_OFFLINE_DRAFT_SESSION_REQUIRED');
+    }
+  }
+
+  function assertOnlineSubmission() {
+    let online = false;
+    try {
+      online = isOnline() === true;
+    } catch (_error) {
+      online = false;
+    }
+    if (!online) throw runtimeError('DESKTOP_OFFLINE_DRAFT_SUBMISSION_FORBIDDEN');
+  }
+
   function appendDraftBatchSync(inputs) {
+    assertLocalDraftSession();
     if (!Array.isArray(inputs) || inputs.length === 0) {
       throw runtimeError('AUTHORITY_DRAFT_BATCH_INVALID');
     }
@@ -357,17 +404,26 @@ function createDesktopAuthorityRuntime({
   }
 
   return Object.freeze({
-    appendDraft: async input => (await getClient()).appendDraft(input),
+    appendDraft: async input => {
+      assertLocalDraftSession();
+      return (await getClient()).appendDraft(input);
+    },
     appendDraftSync,
     appendDraftBatchSync,
     confirmAndExecuteLocal: async (id, executeLocalDraft) => (
       (await getClient()).confirmAndExecuteLocal(id, executeLocalDraft)
     ),
-    confirmAndSubmit: async id => (await getClient()).confirmAndSubmit(id),
+    confirmAndSubmit: async id => {
+      assertOnlineSubmission();
+      return (await getClient()).confirmAndSubmit(id);
+    },
     get: async id => (await getClient()).get(id),
     list: async () => (await getClient()).list(),
     readProjection,
-    submit: async id => (await getClient()).submit(id),
+    submit: async id => {
+      assertOnlineSubmission();
+      return (await getClient()).submit(id);
+    },
     submitLocal: async (id, executeLocalDraft) => (
       (await getClient()).submitLocal(id, executeLocalDraft)
     ),
