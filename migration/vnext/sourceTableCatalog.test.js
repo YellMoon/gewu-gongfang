@@ -14,6 +14,11 @@ assert.match(
   /node migration\/vnext\/sourceTableCatalog\.test\.js/,
   'the full migration gate must run the source-table catalog rather than relying on a manual focused command'
 );
+assert.match(
+  packageJson.scripts['test:vnext-migration'],
+  /node shared\/vnext-pg17\/coreSchedulingSourceContract\.test\.js/,
+  'the full migration gate must run the core scheduling source contract rather than relying on a manual focused command'
+);
 
 const expectedTables = Object.freeze([
   'account_memberships', 'asset_accounts', 'authority_accounts', 'authority_command_ledger', 'authority_command_receipts',
@@ -75,6 +80,50 @@ const expectedFoundationMappings = Object.freeze({
       id: 'id', name: 'name', tenant_id: 'tenant_id', updated_at: 'updated_at',
     }),
   }),
+  teachers: Object.freeze({
+    targetEntity: 'teachers', dependencyOrder: 5, transformerId: 'legacy_teacher_v1',
+    sourceFields: Object.freeze({
+      created_at: 'created_at', deleted: 'legacy_deleted', hourly_rate: 'hourly_rate', id: 'id', name: 'name',
+      notes: 'notes_restricted', phone: 'phone_restricted', subject: 'subject', tenant_id: 'tenant_id',
+      updated_at: 'updated_at',
+    }),
+  }),
+  students: Object.freeze({
+    targetEntity: 'students', dependencyOrder: 6, transformerId: 'legacy_student_v1',
+    sourceFields: Object.freeze({
+      balance_hours: 'legacy_balance_hours', balance_money: 'legacy_balance_money', created_at: 'created_at',
+      deleted: 'legacy_deleted', grade_current: 'grade_current', grade_year: 'grade_year', id: 'id',
+      institution_id: 'institution_id', is_institution_student: 'legacy_is_institution_student', name: 'name',
+      notes: 'notes_restricted', parent_name: 'parent_name_restricted', parent_phone: 'parent_phone_restricted',
+      parent_phone_normalized: 'parent_phone_normalized_restricted', parent_relation: 'parent_relation_restricted',
+      parent_wechat: 'parent_wechat_restricted', phone: 'phone_restricted', school: 'school_legacy',
+      source_type: 'legacy_source_type', student_source: 'student_source_legacy', tenant_id: 'tenant_id',
+      updated_at: 'updated_at',
+    }),
+  }),
+  courses: Object.freeze({
+    targetEntity: 'courses', dependencyOrder: 7, transformerId: 'legacy_course_v1',
+    sourceFields: Object.freeze({
+      active: 'legacy_active', billing_unit: 'billing_unit', created_at: 'created_at',
+      default_duration_minutes: 'default_duration_minutes', deleted: 'legacy_deleted', display_name: 'display_name',
+      id: 'id', institution_id: 'institution_id', name: 'name', notes: 'notes_restricted',
+      price_teacher: 'price_teacher', price_tuition: 'price_tuition', room_id: 'legacy_room_id_snapshot',
+      room_name: 'room_name_snapshot', semester: 'semester', source_type: 'legacy_source_type',
+      student_pricings: 'course_student_pricings', teacher_fee_mode: 'teacher_fee_mode', teacher_id: 'teacher_id',
+      teacher_name: 'teacher_name_snapshot', tenant_id: 'tenant_id', type: 'course_type', updated_at: 'updated_at', year: 'year',
+    }),
+  }),
+  schedules: Object.freeze({
+    targetEntity: 'schedules', dependencyOrder: 8, transformerId: 'legacy_schedule_v1',
+    sourceFields: Object.freeze({
+      calculated_teacher_fee: 'saved_calculated_teacher_fee', calculated_tuition: 'saved_calculated_tuition',
+      course_id: 'course_id', created_at: 'created_at', deleted: 'legacy_deleted', end_time: 'end_time', id: 'id',
+      notes: 'notes_restricted', recurring_rule: 'recurring_rule_json', room: 'room_display_snapshot',
+      service_type: 'service_type', start_time: 'start_time', status: 'schedule_status',
+      student_ids: 'legacy_student_ids_json', student_pricings: 'schedule_student_overrides', tenant_id: 'tenant_id',
+      updated_at: 'updated_at',
+    }),
+  }),
 });
 
 for (const [tableName, expected] of Object.entries(expectedFoundationMappings)) {
@@ -106,7 +155,7 @@ for (const tableName of [
 ]) {
   const entry = SOURCE_TABLE_CATALOG.tables[tableName];
   assert.strictEqual(entry.disposition, 'canonical', `${tableName} is a cloud-business candidate, not a control-plane exclusion`);
-  const foundationMapped = ['tenants', 'institutions', 'schools', 'rooms'].includes(tableName);
+  const foundationMapped = ['tenants', 'institutions', 'schools', 'rooms', 'teachers', 'students', 'courses', 'schedules'].includes(tableName);
   assert.strictEqual(entry.mappingState, foundationMapped ? 'mapped' : 'unmapped', `${tableName} must have the expected field-mapping admission state`);
   assert.ok(entry.targetDomain, `${tableName} must name its eventual target domain`);
   if (foundationMapped) {

@@ -128,6 +128,79 @@ const APPROVED_MAPPED_CONTRACTS = Object.freeze({
       'tenant_id resolves to an admitted tenant or quarantines the row',
     ],
   }),
+  teachers: fieldMapping({
+    targetEntity: 'teachers',
+    dependencyOrder: 5,
+    transformerId: 'legacy_teacher_v1',
+    sourceFields: {
+      created_at: 'created_at', deleted: 'legacy_deleted', hourly_rate: 'hourly_rate', id: 'id', name: 'name',
+      notes: 'notes_restricted', phone: 'phone_restricted', subject: 'subject', tenant_id: 'tenant_id',
+      updated_at: 'updated_at',
+    },
+    invariants: [
+      'id is nonblank and stable',
+      'restricted contact fields are excluded from generic target reads',
+      'timestamps parse as UTC or quarantine the row',
+    ],
+  }),
+  students: fieldMapping({
+    targetEntity: 'students',
+    dependencyOrder: 6,
+    transformerId: 'legacy_student_v1',
+    sourceFields: {
+      balance_hours: 'legacy_balance_hours', balance_money: 'legacy_balance_money', created_at: 'created_at',
+      deleted: 'legacy_deleted', grade_current: 'grade_current', grade_year: 'grade_year', id: 'id',
+      institution_id: 'institution_id', is_institution_student: 'legacy_is_institution_student', name: 'name',
+      notes: 'notes_restricted', parent_name: 'parent_name_restricted', parent_phone: 'parent_phone_restricted',
+      parent_phone_normalized: 'parent_phone_normalized_restricted', parent_relation: 'parent_relation_restricted',
+      parent_wechat: 'parent_wechat_restricted', phone: 'phone_restricted', school: 'school_legacy',
+      source_type: 'legacy_source_type', student_source: 'student_source_legacy', tenant_id: 'tenant_id',
+      updated_at: 'updated_at',
+    },
+    invariants: [
+      'id is nonblank and stable',
+      'institution_id resolves to an admitted institution or quarantines the row',
+      'restricted contact and guardian fields are excluded from generic target reads',
+    ],
+  }),
+  courses: fieldMapping({
+    targetEntity: 'courses',
+    dependencyOrder: 7,
+    transformerId: 'legacy_course_v1',
+    sourceFields: {
+      active: 'legacy_active', billing_unit: 'billing_unit', created_at: 'created_at',
+      default_duration_minutes: 'default_duration_minutes', deleted: 'legacy_deleted', display_name: 'display_name',
+      id: 'id', institution_id: 'institution_id', name: 'name', notes: 'notes_restricted',
+      price_teacher: 'price_teacher', price_tuition: 'price_tuition', room_id: 'legacy_room_id_snapshot',
+      room_name: 'room_name_snapshot', semester: 'semester', source_type: 'legacy_source_type',
+      student_pricings: 'course_student_pricings', teacher_fee_mode: 'teacher_fee_mode', teacher_id: 'teacher_id',
+      teacher_name: 'teacher_name_snapshot', tenant_id: 'tenant_id', type: 'course_type', updated_at: 'updated_at', year: 'year',
+    },
+    invariants: [
+      'course defaults use exact numeric amounts and resolve to admitted students',
+      'id is nonblank and stable',
+      'room_id is retained only as a legacy snapshot and never guessed as a canonical room foreign key',
+      'teacher and tenant references resolve or quarantine the row',
+    ],
+  }),
+  schedules: fieldMapping({
+    targetEntity: 'schedules',
+    dependencyOrder: 8,
+    transformerId: 'legacy_schedule_v1',
+    sourceFields: {
+      calculated_teacher_fee: 'saved_calculated_teacher_fee', calculated_tuition: 'saved_calculated_tuition',
+      course_id: 'course_id', created_at: 'created_at', deleted: 'legacy_deleted', end_time: 'end_time', id: 'id',
+      notes: 'notes_restricted', recurring_rule: 'recurring_rule_json', room: 'room_display_snapshot',
+      service_type: 'service_type', start_time: 'start_time', status: 'schedule_status',
+      student_ids: 'legacy_student_ids_json', student_pricings: 'schedule_student_overrides', tenant_id: 'tenant_id',
+      updated_at: 'updated_at',
+    },
+    invariants: [
+      'explicit schedule overrides take precedence over course defaults',
+      'id is nonblank and stable',
+      'unapproved copied sentinel participants quarantine without creating a fake student',
+    ],
+  }),
 });
 
 function buildCatalogTables() {
