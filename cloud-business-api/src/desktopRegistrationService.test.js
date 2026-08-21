@@ -58,7 +58,7 @@ const service = createCloudDesktopRegistrationService({
   assert.strictEqual(calls.registered.length, 1);
   assert.strictEqual(calls.issued[0].authorityId, 'tenant-1');
   assert.strictEqual(calls.issued[0].accountId, 'account-1');
-  assert.strictEqual(calls.issued[0].deviceId, `desktop-device-${crypto.createHash('sha256').update(publicKey.trim(), 'utf8').digest('hex').slice(0, 32)}`);
+  assert.strictEqual(calls.issued[0].deviceId, `desktop-device-${crypto.createHash('sha256').update(crypto.createPublicKey(publicKey).export({ type: 'spki', format: 'der' })).digest('hex').slice(0, 32)}`);
   assert.strictEqual(calls.issued[0].canonicalRequestSha256, calls.registered[0].canonicalRequestSha256);
   assert.strictEqual(calls.registered[0].canonicalResultJson, JSON.stringify({ sessionId: calls.registered[0].sessionId }));
   assert.deepStrictEqual(

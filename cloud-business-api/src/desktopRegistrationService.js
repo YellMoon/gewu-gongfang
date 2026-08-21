@@ -117,6 +117,16 @@ function verifyProof(publicKey, challenge, proof) {
   }
 }
 
+function installationKeyFingerprint(publicKey) {
+  try {
+    return crypto.createHash('sha256')
+      .update(crypto.createPublicKey(publicKey).export({ type: 'spki', format: 'der' }))
+      .digest('hex');
+  } catch (_) {
+    throw rejected();
+  }
+}
+
 function opaqueId(secret, kind, value) {
   return `${kind}-${crypto.createHmac('sha256', secret).update(`${kind}:${value}`, 'utf8').digest('hex').slice(0, 32)}`;
 }
@@ -170,7 +180,7 @@ function createCloudDesktopRegistrationService(config) {
       const installationPublicKey = request.installationPublicKey.trim();
       if (!verifyProof(installationPublicKey, ticket.challenge, request.deviceProof)) throw rejected();
       const now = currentNow();
-      const keyFingerprint = sha256(installationPublicKey);
+      const keyFingerprint = installationKeyFingerprint(installationPublicKey);
       const deviceId = `desktop-device-${keyFingerprint.slice(0, 32)}`;
       const canonicalRequestSha256 = sha256(JSON.stringify({ authorityId: ticket.authorityId, accountId: ticket.accountId, deviceId, installationId: request.installationId, keyFingerprint, idempotencyKey: request.idempotencyKey }));
       const assertionId = opaqueId(settings.ticketSecret, 'assertion', `${ticket.proofId}:${request.installationId}`);

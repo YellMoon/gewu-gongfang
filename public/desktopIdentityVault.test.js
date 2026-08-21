@@ -195,6 +195,16 @@ async function main() {
     }),
     activationFinalize.signature
   ));
+  const cloudRegistrationProof = vault.signChallenge({
+    purpose: 'unified-online-registration',
+    challenge: 'cloud-once-device-proof-2',
+  });
+  assert.strictEqual(cloudRegistrationProof.purpose, 'unified-online-registration');
+  assert.ok(verifySignature(
+    publicIdentity.publicKey,
+    'cloud-once-device-proof-2',
+    cloudRegistrationProof.signature,
+  ));
   assert.throws(
     () => vault.signChallenge({ purpose: 'raw', payload: 'sign-anything' }),
     /DESKTOP_IDENTITY_SIGNING_PURPOSE_INVALID/

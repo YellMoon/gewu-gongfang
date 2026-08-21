@@ -908,7 +908,7 @@ function createDesktopIdentityVault({
   }
 
   function signingSource(purpose) {
-    if (purpose === 'exchange') {
+    if (purpose === 'exchange' || purpose === 'unified-online-registration') {
       if (!pendingRegistration) throw vaultError('DESKTOP_IDENTITY_REGISTRATION_NOT_PENDING');
       return pendingRegistration;
     }
@@ -923,7 +923,7 @@ function createDesktopIdentityVault({
 
   function signChallenge(input = {}) {
     const purpose = String(input.purpose || '').trim();
-    if (!['exchange', 'activation-finalize', 'session', 'role-elevation', 'primary-host-receipt'].includes(purpose)) {
+    if (!['exchange', 'unified-online-registration', 'activation-finalize', 'session', 'role-elevation', 'primary-host-receipt'].includes(purpose)) {
       throw vaultError('DESKTOP_IDENTITY_SIGNING_PURPOSE_INVALID');
     }
     const source = signingSource(purpose);
@@ -937,6 +937,8 @@ function createDesktopIdentityVault({
         rowVersion: input.rowVersion,
         challengeSecret: input.challengeSecret,
       });
+    } else if (purpose === 'unified-online-registration') {
+      payload = stringField(input.challenge, 'DESKTOP_UNIFIED_ONLINE_REGISTRATION_CHALLENGE_INVALID', 4096);
     } else if (purpose === 'activation-finalize') {
       payload = activationReceiptSigningPayload({
         activationId: input.activationId,
