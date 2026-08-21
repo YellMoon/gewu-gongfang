@@ -173,6 +173,15 @@ const DesktopIdentityGate: React.FC = () => {
               currentSession,
             });
           },
+          updateCloudSchedule: async (input: any) => {
+            const currentSession = onlineSessionRef.current;
+            if (!currentSession) throw new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
+            return client.updateCloudSchedule({
+              ...input,
+              baseUrl: identityBaseUrl,
+              currentSession,
+            });
+          },
         };
         (window as any).desktopIdentitySessionProvider = installedProvider;
         setBaseUrl(identityBaseUrl);

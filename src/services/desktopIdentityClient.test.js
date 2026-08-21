@@ -130,6 +130,15 @@ async function main() {
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
         return { ok: true, json: async () => ({ ok: true, schedules: [{ id: 'schedule-cloud-1', courseId: 'course-cloud-1' }] }) };
       }
+      if (url === 'https://cloud.test/api/business/schedules/schedule-cloud-1') {
+        assert.strictEqual(options.method, 'PUT');
+        assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+        assert.deepStrictEqual(JSON.parse(options.body), {
+          expectedUpdatedAt: '2026-08-21T01:00:00.000Z', startAt: '2026-08-22T01:00:00.000Z', endAt: '2026-08-22T02:00:00.000Z',
+          status: 2, roomDisplay: 'Cloud room', tuition: 120, teacherFee: 60, notes: 'cloud update',
+        });
+        return { ok: true, json: async () => ({ ok: true, schedule: { id: 'schedule-cloud-1', updatedAt: '2026-08-22T00:00:00.000Z' } }) };
+      }
       throw new Error(`unexpected unified cloud request ${url}`);
     },
   });
@@ -166,6 +175,13 @@ async function main() {
   });
   assert.deepStrictEqual(cloudSchedules, [{ id: 'schedule-cloud-1', courseId: 'course-cloud-1' }]);
   assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/schedules');
+  const updatedCloudSchedule = await unifiedCloudClient.updateCloudSchedule({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, scheduleId: 'schedule-cloud-1',
+    expectedUpdatedAt: '2026-08-21T01:00:00.000Z', startAt: '2026-08-22T01:00:00.000Z', endAt: '2026-08-22T02:00:00.000Z',
+    status: 2, roomDisplay: 'Cloud room', tuition: 120, teacherFee: 60, notes: 'cloud update',
+  });
+  assert.deepStrictEqual(updatedCloudSchedule, { id: 'schedule-cloud-1', updatedAt: '2026-08-22T00:00:00.000Z' });
+  assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/schedules/schedule-cloud-1');
 
   const registrationRequests = [];
   const registrationEvents = [];

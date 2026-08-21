@@ -2,8 +2,9 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, desktopRegistration = null, desktopPairing = null, businessTenantId = null }) {
+function createCloudBusinessApp({ query, businessScheduleUpdate = null, desktopRegistration = null, desktopPairing = null, businessTenantId = null }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
+  if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (desktopRegistration && (typeof desktopRegistration.begin !== 'function' || typeof desktopRegistration.register !== 'function')) throw new TypeError('desktopRegistration is invalid');
   if (desktopPairing && (typeof desktopPairing.start !== 'function' || typeof desktopPairing.confirm !== 'function' || typeof desktopPairing.read !== 'function')) throw new TypeError('desktopPairing is invalid');
   if (businessTenantId !== null && (typeof businessTenantId !== 'string' || !businessTenantId.trim())) throw new TypeError('businessTenantId is invalid');
@@ -37,6 +38,27 @@ function createCloudBusinessApp({ query, desktopRegistration = null, desktopPair
   }
   function businessUnavailable(response) {
     response.status(503).json({ ok: false, code: 'CLOUD_BUSINESS_UNAVAILABLE' });
+  }
+  function businessInputInvalid(response) {
+    response.status(400).json({ ok: false, code: 'CLOUD_BUSINESS_INPUT_INVALID' });
+  }
+  function exactBody(value, keys) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)
+      || Object.getPrototypeOf(value) !== Object.prototype
+      || Reflect.ownKeys(value).length !== keys.length
+      || keys.some(key => !Object.hasOwn(value, key))) return null;
+    return value;
+  }
+  function instant(value) {
+    if (typeof value !== 'string' || value.length > 64) return null;
+    const parsed = new Date(value);
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString() === value ? value : null;
+  }
+  function optionalText(value) {
+    return value === null || (typeof value === 'string' && value === value.trim() && value.length <= 4096) ? value : undefined;
+  }
+  function nonNegativeNumber(value) {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100000000 ? value : null;
   }
   function sessionToken(request) {
     const authorization = String(request.get('authorization') || '');
@@ -93,6 +115,48 @@ function createCloudBusinessApp({ query, desktopRegistration = null, desktopPair
         [businessTenantId],
       );
       response.json({ ok: true, schedules: result.rows });
+    } catch (_) {
+      businessUnavailable(response);
+    }
+  });
+  app.put('/api/business/schedules/:scheduleId', async (request, response) => {
+    if (!desktopRegistration || typeof desktopRegistration.sessionContext !== 'function' || !businessTenantId || !businessScheduleUpdate) return businessUnavailable(response);
+    const token = sessionToken(request);
+    if (!token) return response.status(403).json({ ok: false, code: 'CLOUD_ONLINE_IDENTITY_REJECTED' });
+    const scheduleId = String(request.params.scheduleId || '').trim();
+    const update = exactBody(request.body, ['expectedUpdatedAt', 'startAt', 'endAt', 'status', 'roomDisplay', 'tuition', 'teacherFee', 'notes']);
+    if (!scheduleId || !update) return businessInputInvalid(response);
+    const expectedUpdatedAt = instant(update.expectedUpdatedAt);
+    const startAt = instant(update.startAt);
+    const endAt = instant(update.endAt);
+    const roomDisplay = optionalText(update.roomDisplay);
+    const notes = optionalText(update.notes);
+    const tuition = nonNegativeNumber(update.tuition);
+    const teacherFee = nonNegativeNumber(update.teacherFee);
+    if (!expectedUpdatedAt || !startAt || !endAt || new Date(endAt).getTime() <= new Date(startAt).getTime()
+      || !Number.isInteger(update.status) || ![1, 2, 3, 4].includes(update.status)
+      || roomDisplay === undefined || notes === undefined || tuition === null || teacherFee === null) return businessInputInvalid(response);
+    try {
+      const context = await desktopRegistration.sessionContext({ sessionToken: token });
+      if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
+        return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      }
+      const result = await businessScheduleUpdate({
+        tenantId: businessTenantId,
+        scheduleId,
+        expectedUpdatedAt,
+        startAt,
+        endAt,
+        status: update.status,
+        roomDisplay,
+        tuition,
+        teacherFee,
+        notes,
+      });
+      if (!result || typeof result !== 'object' || !result.id || !result.updatedAt) {
+        return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_SCHEDULE_CONFLICT' });
+      }
+      response.json({ ok: true, schedule: result });
     } catch (_) {
       businessUnavailable(response);
     }

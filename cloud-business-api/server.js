@@ -3,6 +3,7 @@
 const { Pool } = require('pg');
 const { createCloudBusinessApp } = require('./src/app');
 const { createCloudDesktopRegistrationService, createOperatorPhoneLookup } = require('./src/desktopRegistrationService');
+const { createBusinessScheduleUpdate } = require('./src/businessScheduleMutationService');
 const { createDesktopPairingService } = require('./src/desktopPairingService');
 const { createWechatPhoneVerifier } = require('./src/wechatPhoneVerifier');
 
@@ -81,7 +82,10 @@ function createDesktopRegistrationFromEnvironment() {
       return { ...row, expiresAt: row.expiresAt.toISOString() };
     },
   });
-  return { registration, async close() { await Promise.all([identityPool.end(), writerPool.end()]); } };
+  const businessScheduleUpdate = createBusinessScheduleUpdate({
+    query: (text, values) => writerPool.query(text, values),
+  });
+  return { registration, businessScheduleUpdate, async close() { await Promise.all([identityPool.end(), writerPool.end()]); } };
 }
 
 const desktopRuntime = createDesktopRegistrationFromEnvironment();
@@ -95,6 +99,7 @@ const desktopPairing = desktopRuntime?.registration
   : null;
 const app = createCloudBusinessApp({
   query: (text, values) => pool.query(text, values),
+  businessScheduleUpdate: desktopRuntime?.businessScheduleUpdate || null,
   desktopRegistration: desktopRuntime?.registration || null,
   desktopPairing,
   businessTenantId: process.env.CLOUD_BUSINESS_TENANT_ID || 'default',

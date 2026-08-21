@@ -790,6 +790,24 @@ export function createDesktopIdentityClient({
     return data.schedules;
   }
 
+  async function updateCloudSchedule({ baseUrl, currentSession, scheduleId, expectedUpdatedAt, startAt, endAt, status, roomDisplay, tuition, teacherFee, notes } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) {
+      throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    }
+    const normalizedScheduleId = String(scheduleId || '').trim();
+    if (!normalizedScheduleId) throw identityError('DESKTOP_CLOUD_SCHEDULE_ID_REQUIRED');
+    const data = await request(fetchImpl, baseUrl, `/api/business/schedules/${encodeURIComponent(normalizedScheduleId)}`, {
+      method: 'PUT',
+      token: currentSession.token,
+      body: { expectedUpdatedAt, startAt, endAt, status, roomDisplay, tuition, teacherFee, notes },
+    });
+    if (!data?.schedule || typeof data.schedule !== 'object'
+      || typeof data.schedule.id !== 'string' || typeof data.schedule.updatedAt !== 'string') {
+      throw identityError('DESKTOP_CLOUD_SCHEDULE_RESPONSE_INVALID');
+    }
+    return data.schedule;
+  }
+
   async function registerUnifiedDesktopOnline(requestValue) {
     if (!onlineRegistrationCommand
       || typeof onlineRegistrationCommand.execute !== 'function') {
@@ -812,6 +830,7 @@ export function createDesktopIdentityClient({
     registerUnifiedDesktopOnline,
     status: () => desktopIdentity.status(),
     switchRole,
+    updateCloudSchedule,
     unlock,
   });
 }
