@@ -49,6 +49,11 @@ async function runUnifiedDesktopRegistrationMutationCases(runtime) {
       { receiptId: 'receipt-concurrent', sessionId: 'session-concurrent', replayed: false },
       { receiptId: 'receipt-concurrent', sessionId: 'session-concurrent', replayed: true },
     ]);
+    await issueVNextPg17OnlineIdentityAssertion(activeRuntime, handle, { ...assertion, assertionId: 'assertion-version-changed', nonceSha256: hash('7') });
+    await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
+      "UPDATE vnext_control_plane.vnext_accounts SET revocation_version = 5, updated_at = '2026-08-21T00:02:00.000Z' WHERE account_id = 'account-1'",
+    ));
+    await assert.rejects(() => registerVNextPg17UnifiedDesktopOnline(activeRuntime, handle, { ...registration, assertionId: 'assertion-version-changed', idempotencyKey: 'idempotency-version-changed', receiptId: 'receipt-version-changed', auditEventId: 'audit-version-changed', outboxEventId: 'outbox-version-changed', sessionId: 'session-version-changed', linkId: 'link-version-changed', canonicalResultJson: '{"sessionId":"session-version-changed"}', canonicalPayloadJson: '{"sessionId":"session-version-changed"}' }));
     await issueVNextPg17OnlineIdentityAssertion(activeRuntime, handle, { ...assertion, assertionId: 'assertion-expired', nonceSha256: hash('1') });
     await assert.rejects(() => registerVNextPg17UnifiedDesktopOnline(activeRuntime, handle, { ...registration, assertionId: 'assertion-expired', idempotencyKey: 'idempotency-expired', receiptId: 'receipt-expired', auditEventId: 'audit-expired', outboxEventId: 'outbox-expired', sessionId: 'session-expired', linkId: 'link-expired', occurredAt: '2026-08-21T00:11:00.000Z' }));
     await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
