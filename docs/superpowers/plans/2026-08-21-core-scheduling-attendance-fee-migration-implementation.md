@@ -55,7 +55,7 @@
 - [x] Write failing integration tests that freeze fixed SQL, parent-before-child order, target re-read hashes, effective-roster counts, exact replay, source conflict, both generic and exact-18 sentinel quarantine cases, terminal poison, and target teardown.
 - [x] Implement only fixed shadow SQL for teachers/students/courses/schedules and their derived pricing/override rows; no real source path, no generic writer facade, no paging/queue/staging/COPY layer, and no control-plane SQL.
 - [x] Reconcile explicit overrides first, course-default schedules second, and no-roster schedules third. Require the immutable, snapshot-bound 18-schedule exception manifest to produce `USER_DECLARED_OBSOLETE_LEGACY_SCHEDULE`; any other sentinel row produces `LEGACY_COPY_UNBOUND_PARTICIPANT` quarantine.
-- [ ] Run the aggregate target test and commit.
+- [x] Run the aggregate target test and commit.
 
 ### Task 4: Gate the separate 3013 local-draft intake
 
@@ -70,5 +70,5 @@
 ### Task 5: Verify and publish the bounded slice
 
 - [x] Run `npm.cmd run test:vnext-control-plane-target && node scripts/check_cloud_business_authority_contract.test.js && git diff --check`.
-- [ ] Stage only this slice; leave `output/locks/` and `output/release-matrix/` unstaged.
-- [ ] Commit with an automatic release message and push `gewu master`. Do not package or deploy because no user-facing runtime changed.
+- [x] Stage only this slice; leave `output/locks/` and `output/release-matrix/` unstaged.
+- [x] Commit with an automatic release message and push `gewu master`. Do not package or deploy because no user-facing runtime changed.
