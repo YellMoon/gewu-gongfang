@@ -27,12 +27,12 @@ function grantRole(value) {
   return typeof value === 'string' && ['admin', 'teacher', 'student'].includes(value) ? value : null;
 }
 
-function createMiniappCloudAccountRepository({ query, randomId }) {
-  if (typeof query !== 'function' || typeof randomId !== 'function') throw invalid();
+function createMiniappCloudAccountRepository({ query }) {
+  if (typeof query !== 'function') throw invalid();
   return Object.freeze({
     async resolveOrCreate(input) {
-      const request = exact(input, ['phoneHmac', 'bootstrapAdmin']);
-      if (!/^[0-9a-f]{64}$/u.test(request.phoneHmac) || typeof request.bootstrapAdmin !== 'boolean') throw invalid();
+      const request = exact(input, ['accountId', 'phoneHmac', 'bootstrapAdmin']);
+      if (typeof request.accountId !== 'string' || !request.accountId || !/^[0-9a-f]{64}$/u.test(request.phoneHmac) || typeof request.bootstrapAdmin !== 'boolean') throw invalid();
       const result = await query(
         `WITH selected AS (
            INSERT INTO business.miniapp_cloud_accounts (account_id, phone_hmac, status)
@@ -49,7 +49,7 @@ function createMiniappCloudAccountRepository({ query, randomId }) {
          FROM selected s
          LEFT JOIN business.miniapp_cloud_role_grants g ON g.account_id=s.account_id
          GROUP BY s.account_id,s.status`,
-        [String(randomId('miniapp-account')), request.phoneHmac, request.bootstrapAdmin],
+        [request.accountId, request.phoneHmac, request.bootstrapAdmin],
       );
       return accountRow(result.rows[0]);
     },

@@ -70,8 +70,10 @@ function role(value) {
 }
 
 function createMiniappCloudAccountService(config) {
-  const settings = exact(config, ['now', 'phoneVerifier', 'phoneHmac', 'bootstrapAdminPhoneHmac', 'accountRepository', 'ticketSecret']);
-  if (typeof settings.now !== 'function' || typeof settings.phoneVerifier !== 'function' || typeof settings.phoneHmac !== 'function' || !/^[0-9a-f]{64}$/u.test(settings.bootstrapAdminPhoneHmac) || !settings.accountRepository || typeof settings.accountRepository.resolveOrCreate !== 'function' || typeof settings.accountRepository.readContext !== 'function' || typeof settings.accountRepository.listPending !== 'function' || typeof settings.accountRepository.assignRole !== 'function' || typeof settings.ticketSecret !== 'string' || settings.ticketSecret.length < 24) throw invalid();
+  const settings = exact(config, ['now', 'phoneVerifier', 'phoneHmac', 'verificationEvidenceHash', 'bootstrapAdminAccountId', 'canonicalAccount', 'accountRepository', 'ticketSecret']);
+  if (typeof settings.now !== 'function' || typeof settings.phoneVerifier !== 'function' || typeof settings.phoneHmac !== 'function' || typeof settings.verificationEvidenceHash !== 'function'
+    || !text(settings.bootstrapAdminAccountId) || !settings.canonicalAccount || typeof settings.canonicalAccount.resolveOrProvision !== 'function'
+    || !settings.accountRepository || typeof settings.accountRepository.resolveOrCreate !== 'function' || typeof settings.accountRepository.readContext !== 'function' || typeof settings.accountRepository.listPending !== 'function' || typeof settings.accountRepository.assignRole !== 'function' || typeof settings.ticketSecret !== 'string' || settings.ticketSecret.length < 24) throw invalid();
   const currentNow = () => {
     const value = settings.now();
     if (!(value instanceof Date) || !Number.isFinite(value.getTime())) throw invalid();
@@ -99,19 +101,29 @@ function createMiniappCloudAccountService(config) {
         throw rejected();
       }
       let phoneHmac;
+      let verificationEvidenceHash;
       try {
         phoneHmac = settings.phoneHmac(phone);
+        verificationEvidenceHash = settings.verificationEvidenceHash(request.phoneCode);
       } catch (_) {
         throw rejected();
       }
-      if (!/^[0-9a-f]{64}$/u.test(phoneHmac)) throw rejected();
+      if (!/^[0-9a-f]{64}$/u.test(phoneHmac) || !/^[0-9a-f]{64}$/u.test(verificationEvidenceHash)) throw rejected();
+      let canonical;
+      try {
+        canonical = await settings.canonicalAccount.resolveOrProvision({ verifiedPhone: phone, verificationEvidenceHash });
+      } catch (_) {
+        throw rejected();
+      }
+      if (!canonical || !text(canonical.authorityId) || !text(canonical.accountId) || typeof canonical.provisioned !== 'boolean') throw rejected();
       let current;
       try {
-        current = identity(await settings.accountRepository.resolveOrCreate({ phoneHmac, bootstrapAdmin: phoneHmac === settings.bootstrapAdminPhoneHmac }));
+        current = identity(await settings.accountRepository.resolveOrCreate({ accountId: canonical.accountId, phoneHmac, bootstrapAdmin: canonical.accountId === settings.bootstrapAdminAccountId }));
       } catch (error) {
         if (error && error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED') throw error;
         throw rejected();
       }
+      if (current.accountId !== canonical.accountId) throw rejected();
       const result = publicIdentity(current);
       const issuedAt = currentNow();
       return Object.freeze({

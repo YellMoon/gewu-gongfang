@@ -6,11 +6,11 @@ const { createMiniappCloudAccountService } = require('./miniappCloudAccountServi
 const now = new Date('2026-08-22T08:00:00.000Z');
 const records = new Map();
 const repository = {
-  async resolveOrCreate({ phoneHmac, bootstrapAdmin }) {
-    let account = records.get(phoneHmac);
+  async resolveOrCreate({ accountId, phoneHmac, bootstrapAdmin }) {
+    let account = records.get(accountId);
     if (!account) {
-      account = { accountId: `miniapp-${phoneHmac}`, status: 'active', roles: bootstrapAdmin ? ['super_admin'] : [] };
-      records.set(phoneHmac, account);
+      account = { accountId, status: 'active', roles: bootstrapAdmin ? ['super_admin'] : [] };
+      records.set(accountId, account);
     }
     return { ...account, roles: account.roles.slice() };
   },
@@ -39,7 +39,15 @@ const service = createMiniappCloudAccountService({
   now: () => now,
   phoneVerifier: async code => ({ 'admin-proof': 'verified-admin', 'new-proof': 'verified-new' })[code] || null,
   phoneHmac: phone => ({ 'verified-admin': 'a'.repeat(64), 'verified-new': 'b'.repeat(64) })[phone] || null,
-  bootstrapAdminPhoneHmac: 'a'.repeat(64),
+  verificationEvidenceHash: code => ({ 'admin-proof': 'c'.repeat(64), 'new-proof': 'd'.repeat(64) })[code] || null,
+  bootstrapAdminAccountId: 'canonical-admin',
+  canonicalAccount: {
+    async resolveOrProvision({ verifiedPhone, verificationEvidenceHash }) {
+      assert.ok(['verified-admin', 'verified-new'].includes(verifiedPhone));
+      assert.ok(/^[0-9a-f]{64}$/u.test(verificationEvidenceHash));
+      return { authorityId: 'authority-1', accountId: verifiedPhone === 'verified-admin' ? 'canonical-admin' : 'canonical-new', provisioned: true };
+    },
+  },
   accountRepository: repository,
   ticketSecret: 'miniapp-cloud-ticket-secret-at-least-32',
 });

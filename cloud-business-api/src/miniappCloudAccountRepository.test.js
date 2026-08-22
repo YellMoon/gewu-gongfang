@@ -7,7 +7,7 @@ const calls = [];
 const query = async (text, values) => {
   calls.push([text, values]);
   if (text.includes('INSERT INTO business.miniapp_cloud_accounts')) {
-    return { rows: [{ accountId: 'account-1', status: 'active', roles: ['super_admin'] }] };
+    return { rows: [{ accountId: 'canonical-account-1', status: 'active', roles: ['super_admin'] }] };
   }
   if (text.includes('ORDER BY a.created_at ASC,a.account_id ASC')) {
     return { rows: [{ accountId: 'account-pending', status: 'active', createdAt: new Date('2026-08-22T08:00:00.000Z') }] };
@@ -22,10 +22,10 @@ const query = async (text, values) => {
 };
 
 (async () => {
-  const repository = createMiniappCloudAccountRepository({ query, randomId: () => 'account-1' });
-  const created = await repository.resolveOrCreate({ phoneHmac: 'a'.repeat(64), bootstrapAdmin: true });
-  assert.deepStrictEqual(created, { accountId: 'account-1', status: 'active', roles: ['super_admin'] });
-  assert.deepStrictEqual(calls[0][1], ['account-1', 'a'.repeat(64), true]);
+  const repository = createMiniappCloudAccountRepository({ query });
+  const created = await repository.resolveOrCreate({ accountId: 'canonical-account-1', phoneHmac: 'a'.repeat(64), bootstrapAdmin: true });
+  assert.deepStrictEqual(created, { accountId: 'canonical-account-1', status: 'active', roles: ['super_admin'] });
+  assert.deepStrictEqual(calls[0][1], ['canonical-account-1', 'a'.repeat(64), true]);
   const context = await repository.readContext({ accountId: 'account-1' });
   assert.deepStrictEqual(context, { accountId: 'account-1', status: 'active', roles: ['super_admin'] });
   assert.deepStrictEqual(await repository.listPending(), [{ accountId: 'account-pending', status: 'pending_authorization', createdAt: '2026-08-22T08:00:00.000Z' }]);
