@@ -66,14 +66,8 @@ assert.ok(
   'business renderer must not own primary-host heartbeat publication'
 );
 assert.ok(
-  electronSource.includes('createHostCommandWorker')
-    && electronSource.includes('createAuthorityProjectionWorker'),
-  'primary-host authority workers must run independently in the Electron main process'
-);
-assert.ok(
-  gateSource.includes('hostBaseUrl: runtimeConfig?.hostBaseUrl')
-    && gateSource.includes('cloudBaseUrl: runtimeConfig?.cloudBaseUrl'),
-  'managed desktop unlock must receive both the direct host and managed cloud relay bases'
+  !gateSource.includes('hostBaseUrl: runtimeConfig?.hostBaseUrl'),
+  'managed desktop unlock must not use a retired local authority endpoint'
 );
 assert.ok(
   gateSource.includes('online: browserOnline()'),

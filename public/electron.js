@@ -1052,13 +1052,6 @@ ipcMain.handle('runtime-config:get', async () => {
   });
   return { ...config, buildFlavor: DESKTOP_BUILD_FLAVOR, primaryHostCapable: PRIMARY_HOST_CAPABLE };
 });
-ipcMain.handle('runtime-config:set', async (_event, config) => {
-  const saved = writeRuntimeConfig(getRuntimeConfigPath(), config, {
-    userDataPath: app.getPath('userData'),
-    primaryHostCapable: PRIMARY_HOST_CAPABLE,
-  });
-  return { ...saved, buildFlavor: DESKTOP_BUILD_FLAVOR, primaryHostCapable: PRIMARY_HOST_CAPABLE };
-});
 ipcMain.handle('desktop-identity:status', async () => getDesktopIdentityVault().status());
 ipcMain.handle('desktop-identity:begin-registration', async (_event, input) => {
   return getDesktopIdentityVault().beginRegistration(configuredDesktopIdentity(input));
@@ -1136,12 +1129,6 @@ ipcMain.handle('desktop-authority:submit', async (_event, id, input) => (
 ipcMain.handle('desktop-authority:confirm-and-submit', async (_event, id, input) => (
   getDesktopAuthorityRuntime().confirmAndSubmit(id, input)
 ));
-ipcMain.handle('dialog:select-folder', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openDirectory', 'createDirectory'],
-  });
-  return result.canceled ? '' : result.filePaths[0];
-});
 ipcMain.handle('open-external', (_event, url) => {
   if (typeof url !== 'string' || !/^https?:\/\//.test(url)) {
     throw new Error('Invalid external URL');

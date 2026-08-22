@@ -361,8 +361,6 @@ const DesktopIdentityGate: React.FC = () => {
     try {
       const result = await clientRef.current.unlock({
         baseUrl,
-        hostBaseUrl: runtimeConfig?.hostBaseUrl,
-        cloudBaseUrl: runtimeConfig?.cloudBaseUrl,
         password,
         online: browserOnline(),
       });

@@ -14,5 +14,9 @@ const electronSource = fs.readFileSync(path.join(root, 'public', 'electron.js'),
 const preloadSource = fs.readFileSync(path.join(root, 'public', 'preload.js'), 'utf8');
 assert.doesNotMatch(electronSource, /ipcMain\.handle\('primary-host:/);
 assert.doesNotMatch(preloadSource, /primaryHostRuntime/);
+assert.doesNotMatch(electronSource, /ipcMain\.handle\('runtime-config:set'/);
+assert.doesNotMatch(electronSource, /ipcMain\.handle\('dialog:select-folder'/);
+assert.doesNotMatch(preloadSource, /'runtime-config:set'/);
+assert.doesNotMatch(preloadSource, /'dialog:select-folder'/);
 
 console.log('unified desktop package boundary checks passed');
