@@ -50,14 +50,85 @@ function canonicalContentHash({ stem, answer, explanation, options, richContent 
   return crypto.createHash('sha256').update(stableJson({ stem, answer, explanation, options, richContent }), 'utf8').digest('hex');
 }
 
+function canonicalHash(value) {
+  return crypto.createHash('sha256').update(stableJson(value), 'utf8').digest('hex');
+}
+
+const LEGACY_QUESTION_FIELDS = new Set([
+  'id', 'subject', 'subject_id', 'chapter_id', 'type', 'difficulty', 'status',
+  'content', 'stem', 'options', 'answer', 'analysis', 'explanation', 'rich_content',
+  'knowledge_point_ids', 'model_point_ids', 'taxonomy_ids', 'source', 'year', 'grade',
+  'semester', 'exam_type', 'region', 'school', 'edit_status', 'has_image', 'has_formula',
+]);
+
+function optionalLegacyText(value, max = 1048576) {
+  if (value === undefined || value === null || value === '') return null;
+  return text(value, { max });
+}
+
+function idList(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > 4096) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  return value.map(item => text(item, { max: 128 }));
+}
+
+function legacyQuestion(record) {
+  if (!plainObject(record) || Reflect.ownKeys(record).some(key => !LEGACY_QUESTION_FIELDS.has(key))) {
+    throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  }
+  const stem = typeof record.content === 'string' && record.content.trim()
+    ? text(record.content) : text(record.stem);
+  const questionType = text(record.type, { max: 128 });
+  const difficulty = record.difficulty === undefined ? 3 : record.difficulty;
+  if (!Number.isSafeInteger(difficulty) || difficulty < 1 || difficulty > 5) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  const options = record.options === undefined ? [] : record.options;
+  if (!Array.isArray(options)) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  const richContent = record.rich_content === undefined || record.rich_content === null ? null : record.rich_content;
+  if (richContent !== null && !plainObject(richContent)) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  return {
+    id: text(record.id, { max: 128 }), subject: text(record.subject, { max: 128 }), questionType,
+    difficulty, stem, answer: optionalLegacyText(record.answer),
+    explanation: optionalLegacyText(record.explanation === undefined ? record.analysis : record.explanation),
+    options, richContent,
+    taxonomy: {
+      knowledgePointIds: idList(record.knowledge_point_ids), modelPointIds: idList(record.model_point_ids),
+      taxonomyIds: idList(record.taxonomy_ids),
+    },
+    hasFormula: Boolean(record.has_formula),
+  };
+}
+
+function desktopCommand(value) {
+  const command = exact(value, ['commandId', 'payloadHash', 'type', 'payload']);
+  const commandId = text(command.commandId, { max: 128 });
+  const type = text(command.type, { max: 128 });
+  if (!['question.create.v1', 'question.update.v1', 'question.delete.v1'].includes(type)
+    || typeof command.payloadHash !== 'string' || !/^[0-9a-f]{64}$/.test(command.payloadHash)) {
+    throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  }
+  const payload = plainObject(command.payload) ? command.payload : null;
+  if (!payload || canonicalHash({ type, payload }) !== command.payloadHash) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  if (type === 'question.create.v1') {
+    const draft = exact(payload, ['record']);
+    return { commandId, payloadHash: command.payloadHash, type, question: legacyQuestion(draft.record) };
+  }
+  if (type === 'question.update.v1') {
+    if (Reflect.ownKeys(payload).some(key => !['id', 'changes', 'expectedVersion'].includes(key))
+      || typeof payload.id !== 'string' || !plainObject(payload.changes)) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+    return { commandId, payloadHash: command.payloadHash, type, question: legacyQuestion({ id: payload.id, ...payload.changes }) };
+  }
+  if (Reflect.ownKeys(payload).some(key => !['id', 'expectedVersion'].includes(key))) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  return { commandId, payloadHash: command.payloadHash, type, id: text(payload.id, { max: 128 }) };
+}
+
 function actor(value) {
   if (!plainObject(value) || !Array.isArray(value.roles) || typeof value.accountId !== 'string' || !value.accountId.trim()) throw failure('CLOUD_QUESTION_ACCESS_DENIED');
   if (!value.roles.includes('super_admin') && !value.roles.includes('admin') && !value.roles.includes('teacher')) throw failure('CLOUD_QUESTION_ACCESS_DENIED');
   return { accountId: value.accountId, roles: value.roles };
 }
 
-function createdRow(row) {
-  if (!plainObject(row) || typeof row.id !== 'string' || !row.id || row.status !== 'draft' || Number(row.version) !== 1
+function questionRow(row) {
+  if (!plainObject(row) || typeof row.id !== 'string' || !row.id || !['draft', 'published', 'archived'].includes(row.status) || !Number.isSafeInteger(Number(row.version)) || Number(row.version) < 1
     || typeof row.contentHash !== 'string' || !/^[0-9a-f]{64}$/.test(row.contentHash)) throw failure('CLOUD_QUESTION_UNAVAILABLE');
   return { id: row.id, status: row.status, version: Number(row.version), contentHash: row.contentHash };
 }
@@ -94,7 +165,75 @@ function createQuestionAuthorityService({ query } = {}) {
         [id, tenantId, subject, questionType, question.difficulty, currentActor.accountId, taxonomy, question.hasFormula, stem, answer, explanation, options, richContent, contentHash],
       );
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_UNAVAILABLE');
-      return createdRow(result.rows[0]);
+      return questionRow(result.rows[0]);
+    },
+    async submitDesktopDraft(input) {
+      const request = exact(input, ['tenantId', 'actor', 'command']);
+      const tenantId = text(request.tenantId, { max: 128 });
+      const currentActor = actor(request.actor);
+      const command = desktopCommand(request.command);
+      const previous = await query(
+        `SELECT payload_hash AS "payloadHash",status,result_json AS result,result_hash AS "resultHash"
+         FROM business.desktop_question_command_receipts WHERE tenant_id=$1 AND command_id=$2`,
+        [tenantId, command.commandId],
+      );
+      if (!previous || !Array.isArray(previous.rows)) throw failure('CLOUD_QUESTION_UNAVAILABLE');
+      if (previous.rows.length > 1) throw failure('CLOUD_QUESTION_RECEIPT_CONFLICT');
+      if (previous.rows.length === 1) {
+        const stored = previous.rows[0];
+        if (!plainObject(stored) || stored.payloadHash !== command.payloadHash || stored.status !== 'committed'
+          || !plainObject(stored.result) || typeof stored.resultHash !== 'string'
+          || canonicalHash(stored.result) !== stored.resultHash) {
+          throw failure('CLOUD_QUESTION_RECEIPT_CONFLICT');
+        }
+        return { commandId: command.commandId, payloadHash: command.payloadHash, status: 'committed', result: stored.result, resultHash: stored.resultHash };
+      }
+      let result;
+      if (command.type === 'question.create.v1') {
+        result = await this.create({ tenantId, actor: currentActor, question: command.question });
+      } else if (command.type === 'question.update.v1') {
+        const question = command.question;
+        const options = json(question.options, { array: true });
+        const richContent = json(question.richContent, { nullable: true });
+        const taxonomy = json(question.taxonomy);
+        const contentHash = canonicalContentHash({ stem: question.stem, answer: question.answer, explanation: question.explanation, options: JSON.parse(options), richContent: richContent === null ? null : JSON.parse(richContent) });
+        const updated = await query(
+          `WITH updated_question AS (
+             UPDATE business.questions SET subject=$3,question_type=$4,difficulty=$5,taxonomy_json=$6::jsonb,has_formula=$7,updated_at=transaction_timestamp()
+             WHERE id=$1 AND tenant_id=$2 AND deleted=false RETURNING id,status
+           ), updated_content AS (
+             UPDATE business.question_contents SET stem=$8,answer=$9,explanation=$10,options_json=$11::jsonb,rich_content_json=$12::jsonb,content_hash=$13,version=version+1,updated_at=transaction_timestamp()
+             WHERE question_id=$1 AND tenant_id=$2 AND deleted=false RETURNING version,content_hash AS "contentHash"
+           ) SELECT q.id,q.status,c.version,c."contentHash" FROM updated_question q CROSS JOIN updated_content c`,
+          [question.id, tenantId, question.subject, question.questionType, question.difficulty, taxonomy, question.hasFormula, question.stem, question.answer, question.explanation, options, richContent, contentHash],
+        );
+        if (!updated || !Array.isArray(updated.rows) || updated.rows.length !== 1) throw failure('CLOUD_QUESTION_UNAVAILABLE');
+        result = questionRow(updated.rows[0]);
+      } else {
+        const deleted = await query(
+          `WITH deleted_question AS (
+             UPDATE business.questions SET deleted=true,deleted_at=transaction_timestamp(),updated_at=transaction_timestamp()
+             WHERE id=$1 AND tenant_id=$2 AND deleted=false RETURNING id,status
+           ), deleted_content AS (
+             UPDATE business.question_contents SET deleted=true,version=version+1,updated_at=transaction_timestamp()
+             WHERE question_id=$1 AND tenant_id=$2 AND deleted=false RETURNING version,content_hash AS "contentHash"
+           ) SELECT q.id,q.status,c.version,c."contentHash" FROM deleted_question q CROSS JOIN deleted_content c`,
+          [command.id, tenantId],
+        );
+        if (!deleted || !Array.isArray(deleted.rows) || deleted.rows.length !== 1) throw failure('CLOUD_QUESTION_UNAVAILABLE');
+        result = questionRow(deleted.rows[0]);
+      }
+      const receipt = {
+        commandId: command.commandId, payloadHash: command.payloadHash, status: 'committed', result,
+        resultHash: canonicalHash(result),
+      };
+      await query(
+        `INSERT INTO business.desktop_question_command_receipts
+           (tenant_id,command_id,payload_hash,status,result_json,result_hash,actor_account_id)
+         VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7)`,
+        [tenantId, receipt.commandId, receipt.payloadHash, receipt.status, stableJson(receipt.result), receipt.resultHash, currentActor.accountId],
+      );
+      return receipt;
     },
   });
 }

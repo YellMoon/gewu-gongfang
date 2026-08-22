@@ -281,6 +281,14 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
       questionCalls.push(input);
       return { id: input.question.id, status: 'draft', version: 1, contentHash: 'a'.repeat(64) };
     },
+    async submitDesktopDraft(input) {
+      questionCalls.push(input);
+      return {
+        commandId: input.command.commandId, payloadHash: input.command.payloadHash, status: 'committed',
+        result: { id: 'question-3', status: 'draft', version: 1, contentHash: 'b'.repeat(64) },
+        resultHash: 'c'.repeat(64),
+      };
+    },
   };
   const questionApp = createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity, questionAuthority, businessTenantId: 'default' });
   const createdQuestion = await request(questionApp, '/api/desktop/question-bank/questions', {
@@ -296,6 +304,29 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     actor: { authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'], teacherId: null, studentId: null },
     question: { id: 'question-1', subject: 'physics', questionType: 'single_choice', difficulty: 3, stem: 'Question text', answer: null, explanation: null, options: [], richContent: null, taxonomy: {}, hasFormula: false },
   }]);
+  const submittedQuestionDraft = await request(questionApp, '/api/desktop/question-bank/commands', {
+    method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' }, body: {
+      commandId: 'question-command-1', payloadHash: 'd'.repeat(64), type: 'question.create.v1',
+      payload: { record: { id: 'question-3', subject: 'physics' } },
+    },
+  });
+  assert.strictEqual(submittedQuestionDraft.status, 200);
+  assert.deepStrictEqual(submittedQuestionDraft.body, {
+    ok: true,
+    receipt: {
+      commandId: 'question-command-1', payloadHash: 'd'.repeat(64), status: 'committed',
+      result: { id: 'question-3', status: 'draft', version: 1, contentHash: 'b'.repeat(64) },
+      resultHash: 'c'.repeat(64),
+    },
+  });
+  assert.deepStrictEqual(questionCalls[1], {
+    tenantId: 'default',
+    actor: { authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'], teacherId: null, studentId: null },
+    command: {
+      commandId: 'question-command-1', payloadHash: 'd'.repeat(64), type: 'question.create.v1',
+      payload: { record: { id: 'question-3', subject: 'physics' } },
+    },
+  });
   const miniappCannotCreateQuestion = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity, questionAuthority, businessTenantId: 'default' }), '/api/desktop/question-bank/questions', {
     method: 'POST', headers: { authorization: 'Bearer miniapp-ticket.signature' }, body: {
       id: 'question-2', subject: 'physics', questionType: 'single_choice', difficulty: 3,
@@ -304,6 +335,14 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   });
   assert.strictEqual(miniappCannotCreateQuestion.status, 403);
   assert.deepStrictEqual(miniappCannotCreateQuestion.body, { ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+  const miniappCannotSubmitQuestionCommand = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity, questionAuthority, businessTenantId: 'default' }), '/api/desktop/question-bank/commands', {
+    method: 'POST', headers: { authorization: 'Bearer miniapp-ticket.signature' }, body: {
+      commandId: 'question-command-denied', payloadHash: 'd'.repeat(64), type: 'question.create.v1',
+      payload: { record: { id: 'question-denied', subject: 'physics' } },
+    },
+  });
+  assert.strictEqual(miniappCannotSubmitQuestionCommand.status, 403);
+  assert.deepStrictEqual(miniappCannotSubmitQuestionCommand.body, { ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
 
   const storageCalls = [];
   const storageAgent = {

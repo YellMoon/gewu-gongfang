@@ -75,8 +75,8 @@ contextBridge.exposeInMainWorld('desktopAuthority', Object.freeze({
   get: id => ipcRenderer.invoke('desktop-authority:get', id),
   list: () => ipcRenderer.invoke('desktop-authority:list'),
   readProjection: input => ipcRenderer.invoke('desktop-authority:read-projection', input),
-  submit: id => ipcRenderer.invoke('desktop-authority:submit', id),
-  confirmAndSubmit: id => ipcRenderer.invoke('desktop-authority:confirm-and-submit', id),
+  submit: (id, input) => ipcRenderer.invoke('desktop-authority:submit', id, input),
+  confirmAndSubmit: (id, input) => ipcRenderer.invoke('desktop-authority:confirm-and-submit', id, input),
 }));
 
 contextBridge.exposeInMainWorld('desktopBuild', Object.freeze({

@@ -184,6 +184,20 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       businessUnavailable(response);
     }
   });
+  app.post('/api/desktop/question-bank/commands', async (request, response) => {
+    if (!questionAuthority || typeof questionAuthority.submitDesktopDraft !== 'function' || businessTenantId === null) return businessUnavailable(response);
+    const command = exactBody(request.body, ['commandId', 'payloadHash', 'type', 'payload']);
+    if (!command) return businessInputInvalid(response);
+    try {
+      const actor = await desktopQuestionContext(request);
+      const receipt = await questionAuthority.submitDesktopDraft({ tenantId: businessTenantId, actor, command });
+      response.json({ ok: true, receipt });
+    } catch (error) {
+      if (error && (error.code === 'CLOUD_BUSINESS_ACCESS_DENIED' || error.code === 'CLOUD_QUESTION_ACCESS_DENIED')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (error && (error.code === 'CLOUD_QUESTION_INPUT_INVALID' || error.code === 'CLOUD_QUESTION_COMMAND_UNSUPPORTED')) return businessInputInvalid(response);
+      businessUnavailable(response);
+    }
+  });
   app.get('/api/desktop/session-context', async (request, response) => {
     if (!desktopRegistration || typeof desktopRegistration.sessionContext !== 'function') return desktopUnavailable(response);
     const token = sessionToken(request);

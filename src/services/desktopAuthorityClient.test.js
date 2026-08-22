@@ -200,6 +200,41 @@ const assert = require('assert');
   assert.strictEqual(rejectedResult.rejected, true);
   assert.strictEqual((await rejectedOutbox.get(rejectedDraft.id)).status, 'conflict');
 
+  let cloudSealed = '';
+  let cloudSubmissions = 0;
+  const cloudOutbox = createDesktopCommandOutbox({
+    store: { read: async () => cloudSealed, write: async value => { cloudSealed = value; } },
+    codec: {
+      seal: async value => Buffer.from(JSON.stringify(value)).toString('base64'),
+      open: async value => JSON.parse(Buffer.from(value, 'base64').toString('utf8')),
+    },
+    createId: () => 'question-draft-1', now: () => '2026-08-23T00:00:00.000Z',
+  });
+  const cloudClient = createDesktopAuthorityClient({
+    outbox: cloudOutbox, createEnvelope: async () => { throw new Error('legacy envelope must not be used for question drafts'); },
+    transports: { submit: async () => { throw new Error('legacy transport must not be used for question drafts'); } },
+    createCloudQuestionCommand: draft => ({
+      commandId: draft.id, payloadHash: 'e'.repeat(64), type: draft.type, payload: draft.payload,
+    }),
+    submitCloudQuestion: async command => {
+      cloudSubmissions += 1;
+      return {
+        commandId: command.commandId, payloadHash: command.payloadHash, status: 'committed',
+        result: { id: 'question-1' }, resultHash: 'f'.repeat(64),
+      };
+    },
+  });
+  const cloudDraft = await cloudClient.appendDraft({
+    type: 'question.create.v1', payload: { record: { id: 'question-1' } },
+  });
+  assert.strictEqual(await cloudClient.submit(cloudDraft.id), undefined);
+  const cloudResult = await cloudClient.confirmAndSubmit(cloudDraft.id);
+  assert.strictEqual(cloudResult.transportUsed, 'cloud-question-authority');
+  assert.strictEqual(cloudSubmissions, 1);
+  assert.strictEqual((await cloudOutbox.get(cloudDraft.id)).status, 'completed');
+  assert.ok(!Buffer.from(cloudSealed, 'base64').toString('utf8').includes('sessionToken'),
+    'the outbox must never serialize a cloud login token');
+
   console.log('desktop authority client tests passed');
 })().catch(error => {
   console.error(error);

@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const {
   verifySignedAuthorityProjection,
 } = require('../shared/authorityProjectionProtocol');
+const { stableJson } = require('../shared/authorityProtocol');
 
 function runtimeError(code) {
   return Object.assign(new Error(code), { code });
@@ -136,6 +137,21 @@ function createDesktopAuthorityRuntime({
       online = false;
     }
     if (!online) throw runtimeError('DESKTOP_OFFLINE_DRAFT_SUBMISSION_FORBIDDEN');
+  }
+
+  function isCloudQuestionDraft(draft) {
+    return /^question\.(create|update|delete)\.v[1-9][0-9]*$/.test(String(draft?.type || ''));
+  }
+
+  function cloudSessionToken(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)
+      || Reflect.ownKeys(value).length !== 1 || !Object.hasOwn(value, 'sessionToken')
+      || typeof value.sessionToken !== 'string' || !value.sessionToken.trim()
+      || value.sessionToken !== value.sessionToken.trim() || value.sessionToken.length > 4096
+      || /[\r\n]/.test(value.sessionToken)) {
+      throw runtimeError('DESKTOP_CLOUD_SESSION_REQUIRED');
+    }
+    return value.sessionToken;
   }
 
   function appendDraftBatchSync(inputs) {
@@ -336,6 +352,30 @@ function createDesktopAuthorityRuntime({
             payload: draft.payload,
           }).envelope,
           transports,
+          createCloudQuestionCommand: draft => Object.freeze({
+            commandId: draft.id,
+            payloadHash: crypto.createHash('sha256')
+              .update(stableJson({ type: draft.type, payload: draft.payload }), 'utf8').digest('hex'),
+            type: draft.type,
+            payload: draft.payload,
+          }),
+          submitCloudQuestion: async (command, input) => {
+            const token = cloudSessionToken(input);
+            const baseUrl = String(durableRelayBaseUrl || '').replace(/\/+$/, '');
+            if (!baseUrl) throw runtimeError('CLOUD_QUESTION_AUTHORITY_UNAVAILABLE');
+            const body = await requestJson(`${baseUrl}/api/desktop/question-bank/commands`, {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify(command),
+            });
+            if (!body?.receipt || typeof body.receipt !== 'object') {
+              throw runtimeError('CLOUD_QUESTION_RECEIPT_INVALID');
+            }
+            return body.receipt;
+          },
         });
       })();
     }
@@ -413,16 +453,22 @@ function createDesktopAuthorityRuntime({
     confirmAndExecuteLocal: async (id, executeLocalDraft) => (
       (await getClient()).confirmAndExecuteLocal(id, executeLocalDraft)
     ),
-    confirmAndSubmit: async id => {
+    confirmAndSubmit: async (id, input) => {
       assertOnlineSubmission();
-      return (await getClient()).confirmAndSubmit(id);
+      const client = await getClient();
+      const draft = await client.get(id);
+      if (isCloudQuestionDraft(draft)) cloudSessionToken(input);
+      return client.confirmAndSubmit(id, input);
     },
     get: async id => (await getClient()).get(id),
     list: async () => (await getClient()).list(),
     readProjection,
-    submit: async id => {
+    submit: async (id, input) => {
       assertOnlineSubmission();
-      return (await getClient()).submit(id);
+      const client = await getClient();
+      const draft = await client.get(id);
+      if (isCloudQuestionDraft(draft)) cloudSessionToken(input);
+      return client.submit(id, input);
     },
     submitLocal: async (id, executeLocalDraft) => (
       (await getClient()).submitLocal(id, executeLocalDraft)

@@ -148,6 +148,20 @@ async function withTimeout(promise, timeoutMs, message) {
           `signature:GET:/api/authority/commands/${envelope.commandId}/receipt`);
         return response(200, { success: true, receipt });
       }
+      if (url === 'https://control.example/api/desktop/question-bank/commands') {
+        assert.strictEqual(options.method, 'POST');
+        assert.strictEqual(options.headers.authorization, 'Bearer desktop-session-token');
+        const command = JSON.parse(options.body);
+        assert.strictEqual(command.type, 'question.create.v1');
+        assert.match(command.payloadHash, /^[0-9a-f]{64}$/);
+        return response(200, {
+          ok: true,
+          receipt: {
+            commandId: command.commandId, payloadHash: command.payloadHash, status: 'committed',
+            result: { id: 'question-runtime-1' }, resultHash: '1'.repeat(64),
+          },
+        });
+      }
       if (url === 'http://host.lan/api/authority/projections/current') {
         return response(503, { error: { code: 'HOST_TEMPORARILY_UNAVAILABLE' } });
       }
@@ -359,6 +373,21 @@ async function withTimeout(promise, timeoutMs, message) {
   assert.deepStrictEqual(durableTimeoutResult.receipt, receipt,
     'an accepted POST timeout and a transient receipt timeout must continue with idempotent receipt polling');
   assert.strictEqual(durableReceiptCalls, 2);
+  const questionDraft = await runtime.appendDraft({
+    type: 'question.create.v1',
+    payload: { record: { id: 'question-runtime-1', subject: 'physics' } },
+    preview: { title: 'Cloud question draft' },
+  });
+  await assert.rejects(
+    () => runtime.confirmAndSubmit(questionDraft.id),
+    error => error?.code === 'DESKTOP_CLOUD_SESSION_REQUIRED',
+  );
+  assert.strictEqual((await runtime.get(questionDraft.id)).status, 'awaiting_confirmation');
+  const questionResult = await runtime.confirmAndSubmit(questionDraft.id, { sessionToken: 'desktop-session-token' });
+  assert.strictEqual(questionResult.transportUsed, 'cloud-question-authority');
+  assert.strictEqual((await runtime.get(questionDraft.id)).status, 'completed');
+  const decryptedOutbox = Buffer.from(fs.readFileSync(outboxPath, 'utf8'), 'base64').toString('utf8');
+  assert.ok(!decryptedOutbox.includes('desktop-session-token'), 'the renderer session token must not be persisted in the encrypted outbox payload');
   const localDraft = await runtime.appendDraft({
     type: 'role-application.review.v1',
     payload: { applicationId: 'application-local-1', decision: 'approve' },

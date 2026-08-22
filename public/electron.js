@@ -1184,15 +1184,11 @@ ipcMain.handle('desktop-authority:read-projection', async (_event, input) => (
     ? primaryHostLocalProjectionReader(input)
     : getDesktopAuthorityRuntime().readProjection(input)
 ));
-ipcMain.handle('desktop-authority:submit', async (_event, id) => (
-  typeof primaryHostLocalDraftExecutor === 'function'
-    ? getDesktopAuthorityRuntime().submitLocal(id, primaryHostLocalDraftExecutor)
-    : getDesktopAuthorityRuntime().submit(id)
+ipcMain.handle('desktop-authority:submit', async (_event, id, input) => (
+  getDesktopAuthorityRuntime().submit(id, input)
 ));
-ipcMain.handle('desktop-authority:confirm-and-submit', async (_event, id) => (
-  typeof primaryHostLocalDraftExecutor === 'function'
-    ? getDesktopAuthorityRuntime().confirmAndExecuteLocal(id, primaryHostLocalDraftExecutor)
-    : getDesktopAuthorityRuntime().confirmAndSubmit(id)
+ipcMain.handle('desktop-authority:confirm-and-submit', async (_event, id, input) => (
+  getDesktopAuthorityRuntime().confirmAndSubmit(id, input)
 ));
 ipcMain.handle('dialog:select-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {

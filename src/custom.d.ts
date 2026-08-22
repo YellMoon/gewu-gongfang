@@ -119,8 +119,8 @@ interface Window {
       payloadHash: string;
       signature: string;
     }>;
-    submit(id: string): Promise<any>;
-    confirmAndSubmit(id: string): Promise<any>;
+    submit(id: string, input?: { sessionToken: string }): Promise<any>;
+    confirmAndSubmit(id: string, input?: { sessionToken: string }): Promise<any>;
   };
   primaryHostRuntime?: {
     restart(): Promise<any>;
