@@ -14,6 +14,7 @@ const { createCanonicalAccountProvisioningService } = require('./src/canonicalAc
 const { createCanonicalWechatIdentityService } = require('./src/canonicalWechatIdentityService');
 const { createDesktopPasswordIdentityService } = require('./src/desktopPasswordIdentityService');
 const { createDesktopPasswordAuthenticationService } = require('./src/desktopPasswordAuthenticationService');
+const { createStorageAgentRuntimeFromEnvironment } = require('./src/storageAgentRuntime');
 const { resolveBootstrapAdminAccountId } = require('./src/bootstrapAdminIdentity');
 const { version } = require('./package.json');
 
@@ -278,6 +279,10 @@ function createMiniappCloudAccountFromEnvironment(desktopRuntime) {
 
 const desktopRuntime = createDesktopRegistrationFromEnvironment();
 const miniappCloudAccount = createMiniappCloudAccountFromEnvironment(desktopRuntime);
+const storageAgent = createStorageAgentRuntimeFromEnvironment({
+  env: process.env,
+  query: (text, values) => pool.query(text, values),
+});
 const desktopPairing = desktopRuntime?.registration
   ? createDesktopPairingService({
     now: () => new Date(),
@@ -294,6 +299,7 @@ const app = createCloudBusinessApp({
   desktopRegistration: desktopRuntime?.registration || null,
   desktopPasswordAuthentication: desktopRuntime?.desktopPasswordAuthentication || null,
   miniappCloudAccount,
+  storageAgent,
   desktopPairing,
   businessTenantId: process.env.CLOUD_BUSINESS_TENANT_ID || 'default',
 });
