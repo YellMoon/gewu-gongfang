@@ -2,6 +2,7 @@ import React from 'react';
 import { Card, Drawer } from 'antd';
 
 interface DataPageLayoutProps {
+  children?: React.ReactNode;
   toolbar: React.ReactNode;
   table: React.ReactNode;
   drawerOpen?: boolean;

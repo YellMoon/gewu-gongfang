@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Card, Descriptions, Empty, Modal, Space, Statistic, Table, Tag, message } from 'antd';
 import { CheckCircleOutlined, ReloadOutlined, SafetyCertificateOutlined, SyncOutlined } from '@ant-design/icons';
-import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession';
+import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 
 type AuthorityOutboxItem = {
   id: string;
