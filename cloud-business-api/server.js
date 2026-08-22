@@ -17,6 +17,10 @@ const { createDesktopPasswordAuthenticationService } = require('./src/desktopPas
 const { createStorageAgentRuntimeFromEnvironment } = require('./src/storageAgentRuntime');
 const { createQuestionAuthorityRuntime } = require('./src/questionAuthorityRuntime');
 const { createPaperExportTaskRepository } = require('./src/paperExportTaskRepository');
+const { createPaperExportArtifactRepository } = require('./src/paperExportArtifactRepository');
+const { createPaperExportTaskProcessor } = require('./src/paperExportTaskProcessor');
+const { createPaperExportWorkerRuntime } = require('./src/paperExportWorkerRuntime');
+const { renderPaperExport } = require('./src/paperExportRenderer');
 const { createEncryptedStorageRelayRepository } = require('./src/encryptedStorageRelayRepository');
 const { resolveBootstrapAdminAccountId } = require('./src/bootstrapAdminIdentity');
 const { version } = require('./package.json');
@@ -302,6 +306,19 @@ const storageAgentKeyFingerprint = configuredStorageAgentKeyFingerprint(process.
 const encryptedStorageRelay = storageAgentKeyFingerprint
   ? createEncryptedStorageRelayRepository({ query: (text, values) => pool.query(text, values) })
   : null;
+const paperExportArtifactRepository = storageAgentKeyFingerprint
+  ? createPaperExportArtifactRepository({ query: (text, values) => pool.query(text, values), agentPublicKey: process.env.CLOUD_STORAGE_AGENT_PUBLIC_KEY })
+  : null;
+const paperExportWorker = process.env.CLOUD_PAPER_EXPORT_WORKER_ENABLED === '1' && paperExportArtifactRepository
+  ? createPaperExportWorkerRuntime({
+    processor: createPaperExportTaskProcessor({
+      tasks: paperExportTasks,
+      render: renderPaperExport,
+      archiveArtifact: input => paperExportArtifactRepository.archive(input),
+    }),
+    log: message => console.error(message),
+  })
+  : null;
 const desktopPairing = desktopRuntime?.registration
   ? createDesktopPairingService({
     now: () => new Date(),
@@ -328,8 +345,10 @@ const app = createCloudBusinessApp({
   businessTenantId: process.env.CLOUD_BUSINESS_TENANT_ID || 'default',
 });
 const server = app.listen(port, '0.0.0.0', () => console.log(`cloud business API listening on ${port}`));
+paperExportWorker?.start();
 
 async function shutdown() {
+  paperExportWorker?.stop();
   server.close(async () => {
     await pool.end();
     if (desktopRuntime) await desktopRuntime.close();
