@@ -41,7 +41,8 @@ const service = createMiniappCloudAccountService({
   bootstrapAdminAccountId: 'canonical-admin',
   canonicalWechatIdentity: {
     async resolveOrBind({ loginCode, phoneCode }) {
-      assert.ok(['admin-login', 'new-login'].includes(loginCode));
+      assert.ok(['admin-login', 'new-login', 'known-login'].includes(loginCode));
+      if (loginCode === 'known-login') return { authorityId: 'authority-1', accountId: 'canonical-admin', phoneHmac: 'a'.repeat(64), provisioned: false, bound: false };
       assert.ok(['admin-proof', 'new-proof'].includes(phoneCode));
       return { authorityId: 'authority-1', accountId: phoneCode === 'admin-proof' ? 'canonical-admin' : 'canonical-new', phoneHmac: phoneCode === 'admin-proof' ? 'a'.repeat(64) : 'b'.repeat(64), provisioned: true, bound: true };
     },
@@ -55,6 +56,8 @@ const service = createMiniappCloudAccountService({
   assert.equal(admin.identity.status, 'active');
   assert.deepStrictEqual(admin.identity.roles, ['super_admin']);
   assert.match(admin.token, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u);
+  const directWechat = await service.login({ loginCode: 'known-login', phoneCode: null });
+  assert.strictEqual(directWechat.identity.accountId, admin.identity.accountId);
 
   const ordinary = await service.login({ loginCode: 'new-login', phoneCode: 'new-proof' });
   assert.equal(ordinary.identity.status, 'pending_authorization');

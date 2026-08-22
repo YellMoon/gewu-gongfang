@@ -1185,11 +1185,11 @@ async function readVNextPg17CanonicalAccountByVerifiedContact(runtime, handle, i
   if (!client) throw invalidHandle();
   try {
     const result = await client.query(
-      'SELECT authority_id AS "authorityId", account_id AS "accountId" FROM vnext_control_plane.vnext_read_canonical_account_by_verified_contact($1,$2)',
+      'SELECT authority_id AS "authorityId", account_id AS "accountId", phone_hash AS "phoneHmac" FROM vnext_control_plane.vnext_read_canonical_account_by_verified_contact($1,$2)',
       [contactType.value, contactHash.value],
     );
     if (result.rows.length === 0) return null;
-    if (result.rows.length !== 1 || Object.keys(result.rows[0]).length !== 2 || Object.values(result.rows[0]).some(value => typeof value !== 'string' || value.trim() === '')) throw unavailable();
+    if (result.rows.length !== 1 || Object.keys(result.rows[0]).length !== 3 || typeof result.rows[0].authorityId !== 'string' || typeof result.rows[0].accountId !== 'string' || typeof result.rows[0].phoneHmac !== 'string' || !/^[0-9a-f]{64}$/u.test(result.rows[0].phoneHmac)) throw unavailable();
     return Object.freeze(result.rows[0]);
   } catch (_) { throw unavailable(); }
 }

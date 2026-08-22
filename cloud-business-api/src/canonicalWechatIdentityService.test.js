@@ -10,7 +10,7 @@ const service = createCanonicalWechatIdentityService({
   contactHash: (type, value) => { calls.push(['hash', type, value]); return type === 'wechat_openid' ? hash('a') : hash('b'); },
   verificationEvidenceHash: loginCode => hash(loginCode === 'first' ? 'c' : 'd'),
   resolveByContact: async input => input.contactType === 'wechat_unionid' && input.contactHash === hash('b') && input.loginCode === 'known'
-    ? { authorityId: 'authority-1', accountId: 'account-known' } : null,
+    ? { authorityId: 'authority-1', accountId: 'account-known', phoneHmac: hash('e') } : null,
   resolveCanonicalPhone: async phoneCode => {
     if (phoneCode === 'known-phone') return { authorityId: 'authority-1', accountId: 'account-known', phoneHmac: hash('e'), provisioned: false };
     assert.strictEqual(phoneCode, 'phone-proof');
@@ -21,7 +21,7 @@ const service = createCanonicalWechatIdentityService({
 });
 
 (async () => {
-  const known = await service.resolveOrBind({ loginCode: 'known', phoneCode: 'known-phone' });
+  const known = await service.resolveOrBind({ loginCode: 'known', phoneCode: null });
   assert.deepStrictEqual(known, { authorityId: 'authority-1', accountId: 'account-known', phoneHmac: hash('e'), provisioned: false, bound: false });
 
   await assert.rejects(

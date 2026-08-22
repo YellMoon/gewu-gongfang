@@ -1086,7 +1086,7 @@ BEGIN
 END;
 $$;
 CREATE FUNCTION vnext_control_plane.vnext_read_canonical_account_by_verified_contact(p_contact_type text, p_contact_hash text)
-RETURNS TABLE(authority_id text, account_id text)
+RETURNS TABLE(authority_id text, account_id text, phone_hash text)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
@@ -1098,12 +1098,15 @@ BEGIN
     RAISE EXCEPTION 'VNEXT_CANONICAL_WECHAT_IDENTITY_INVALID' USING ERRCODE = 'P0001';
   END IF;
   RETURN QUERY
-    SELECT c.authority_id,c.account_id
+    SELECT c.authority_id,c.account_id,p.normalized_value_hash
       FROM vnext_control_plane.vnext_verified_contacts c
       JOIN vnext_control_plane.vnext_accounts a
         ON a.authority_id=c.authority_id AND a.account_id=c.account_id
       JOIN vnext_control_plane.vnext_authorities au
         ON au.authority_id=c.authority_id
+      JOIN vnext_control_plane.vnext_verified_contacts p
+        ON p.authority_id=c.authority_id AND p.account_id=c.account_id
+        AND p.contact_type='phone' AND p.verification_state='verified' AND p.revoked_at IS NULL
       WHERE c.contact_type=p_contact_type
         AND c.normalized_value_hash=p_contact_hash
         AND c.verification_state='verified'
@@ -1274,7 +1277,7 @@ $function$
   vnext_read_desktop_password_by_phone_hash: '1fdff74380576b833bdf22b7c301986da786743f4b3be6fd930b19bae32a72cd',
   vnext_set_desktop_password_credential: '13331367db0aa7f179df18e8c751b2814772c2bc1733706146df5c133e8503ab',
   vnext_bind_canonical_wechat_identity: '1c4eb7ed548e1a5b3547edf1001630507763bc85a923fee4a9d4ec8d9df17db4',
-  vnext_read_canonical_account_by_verified_contact: '16e479b0903d401710386f21cf8f58818a6d1cf083ffd7b9aa34fd9ff9a71c33',
+  vnext_read_canonical_account_by_verified_contact: '19936f7f3f7bb08798ef064b51a321d07e132287a5c254cb2c09b5136b69f872',
 });
 
 const expectedCatalog = Object.freeze({

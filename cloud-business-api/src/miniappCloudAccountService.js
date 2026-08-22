@@ -99,7 +99,7 @@ function createMiniappCloudAccountService(config) {
   return Object.freeze({
     async login(input) {
       const request = exact(input, ['loginCode', 'phoneCode']);
-      if (!text(request.loginCode) || !text(request.phoneCode)) throw rejected();
+      if (!text(request.loginCode) || (request.phoneCode !== null && !text(request.phoneCode))) throw rejected();
       let canonical;
       try {
         canonical = await settings.canonicalWechatIdentity.resolveOrBind(request);

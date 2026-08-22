@@ -35,7 +35,7 @@ function createCanonicalWechatIdentityService(config) {
   return Object.freeze({
     async resolveOrBind(input) {
       const request = exact(input, ['loginCode', 'phoneCode']);
-      if (!text(request.loginCode) || !text(request.phoneCode)) throw rejected();
+      if (!text(request.loginCode) || (request.phoneCode !== null && !text(request.phoneCode))) throw rejected();
       let verified;
       try { verified = exact(await settings.wechatVerifier(request.loginCode), ['openid', 'unionid']); } catch (_) { throw rejected(); }
       if (!text(verified.openid) || (verified.unionid !== null && !text(verified.unionid))) throw rejected();
@@ -50,16 +50,20 @@ function createCanonicalWechatIdentityService(config) {
         byOpenid = await settings.resolveByContact({ contactType: 'wechat_openid', contactHash: openidHash, loginCode: request.loginCode });
         if (unionidHash !== null) byUnionid = await settings.resolveByContact({ contactType: 'wechat_unionid', contactHash: unionidHash, loginCode: request.loginCode });
       } catch (_) { throw rejected(); }
+      const existing = [byOpenid, byUnionid].filter(value => value !== null).map(value => {
+        const copy = exact(value, ['authorityId', 'accountId', 'phoneHmac']);
+        if (!/^[0-9a-f]{64}$/u.test(copy.phoneHmac)) throw rejected();
+        return Object.freeze({ ...canonicalAccount({ authorityId: copy.authorityId, accountId: copy.accountId }), phoneHmac: copy.phoneHmac });
+      });
+      if (existing.length > 0) {
+        if (existing.some(value => value.authorityId !== existing[0].authorityId || value.accountId !== existing[0].accountId || value.phoneHmac !== existing[0].phoneHmac)) throw rejected();
+        return Object.freeze({ ...existing[0], provisioned: false, bound: false });
+      }
+      if (!text(request.phoneCode)) throw rejected();
       let phoneCanonical;
       try { phoneCanonical = exact(await settings.resolveCanonicalPhone(request.phoneCode), ['authorityId', 'accountId', 'phoneHmac', 'provisioned']); } catch (_) { throw rejected(); }
       const phoneAccount = canonicalAccount({ authorityId: phoneCanonical.authorityId, accountId: phoneCanonical.accountId });
       if (!/^[0-9a-f]{64}$/u.test(phoneCanonical.phoneHmac) || typeof phoneCanonical.provisioned !== 'boolean') throw rejected();
-      const existing = [byOpenid, byUnionid].filter(value => value !== null).map(canonicalAccount);
-      if (existing.length > 0) {
-        if (existing.some(value => value.authorityId !== existing[0].authorityId || value.accountId !== existing[0].accountId)) throw rejected();
-        if (existing[0].authorityId !== phoneAccount.authorityId || existing[0].accountId !== phoneAccount.accountId) throw rejected();
-        return Object.freeze({ ...existing[0], phoneHmac: phoneCanonical.phoneHmac, provisioned: phoneCanonical.provisioned, bound: false });
-      }
       let evidence;
       try {
         evidence = settings.verificationEvidenceHash(request.loginCode);

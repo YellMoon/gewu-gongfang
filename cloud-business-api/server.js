@@ -221,7 +221,7 @@ function createDesktopRegistrationFromEnvironment() {
     verificationEvidenceHash: loginCode => verificationEvidenceHash(process.env.CLOUD_MINIAPP_TICKET_SECRET, 'wechat-miniapp-login-code', loginCode),
     resolveByContact: async input => {
       const result = await identityPool.query(
-        'SELECT authority_id AS "authorityId", account_id AS "accountId" FROM vnext_control_plane.vnext_read_canonical_account_by_verified_contact($1,$2)',
+        'SELECT authority_id AS "authorityId", account_id AS "accountId", phone_hash AS "phoneHmac" FROM vnext_control_plane.vnext_read_canonical_account_by_verified_contact($1,$2)',
         [input.contactType, input.contactHash],
       );
       return result.rows[0] || null;
