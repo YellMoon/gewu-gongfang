@@ -21,9 +21,13 @@ import {
 
 const STORAGE_KEY_BASE_URL = 'scheduling_api_base_url';
 declare const __API_BASE_URL__: string | undefined;
+declare const __CLOUD_BUSINESS_API_BASE_URL__: string | undefined;
 const DEFAULT_BASE_URL = (typeof __API_BASE_URL__ !== 'undefined' && __API_BASE_URL__)
   ? __API_BASE_URL__.replace(/\/+$/, '')
   : 'https://physicsedu.xyz/scheduling';
+const DEFAULT_CLOUD_BUSINESS_BASE_URL = (typeof __CLOUD_BUSINESS_API_BASE_URL__ !== 'undefined' && __CLOUD_BUSINESS_API_BASE_URL__)
+  ? __CLOUD_BUSINESS_API_BASE_URL__.replace(/\/+$/, '')
+  : 'https://physicsedu.xyz/cloud-business';
 const RETRY_COUNT = 1;
 const REQUEST_TIMEOUT = 30000;
 const AUTHENTICATION_ENTRY_PATHS = new Set(['/api/auth/login', '/api/auth/wechat-login', '/api/miniapp/cloud-login']);
@@ -57,6 +61,10 @@ export function setBaseUrl(url: string): void {
 
 export const getApiBaseUrl = getBaseUrl;
 export const setApiBaseUrl = setBaseUrl;
+
+function cloudBusinessUrl(path: string): string {
+  return `${DEFAULT_CLOUD_BUSINESS_BASE_URL}${path}`;
+}
 
 interface ApiResponse<T = any> {
   success: boolean;
@@ -230,6 +238,27 @@ class ApiClient {
 }
 
 export const api = new ApiClient();
+
+export const miniappCloudAuthApi = {
+  async login(phoneCode: string): Promise<ApiResponse<{ ok: true; token: string; identity: any }>> {
+    try {
+      const response = await Taro.request({
+        url: cloudBusinessUrl('/api/miniapp/cloud-login'),
+        method: 'POST',
+        header: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+        data: { phoneCode },
+        timeout: REQUEST_TIMEOUT,
+        dataType: 'json',
+      });
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true) {
+        return { success: true, data: response.data as { ok: true; token: string; identity: any } };
+      }
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud login failed' };
+    } catch (error: any) {
+      return { success: false, error: error?.errMsg || error?.message || 'Cloud login unavailable' };
+    }
+  },
+};
 
 // ========== 认证 API ==========
 export const authApi = {

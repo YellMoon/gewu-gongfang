@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { View, Text, Button } from '@tarojs/components';
-import { api } from '../../utils/api';
+import { miniappCloudAuthApi } from '../../utils/api';
 import { authSessionRuntime } from '../../utils/authSession';
 import { accountSessionCleanupStorageKeys } from '../../utils/accountExperience';
 import { clearPermissionCache } from '../../utils/permission';
@@ -72,7 +72,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const loginBoundary = createAuthenticationEntryBoundary(authSessionRuntime);
-      const response = await loginBoundary.run(() => api.post<any>('/api/miniapp/cloud-login', { phoneCode }));
+      const response = await loginBoundary.run(() => miniappCloudAuthApi.login(phoneCode));
       const payload = response.success ? response.data : null;
       const user = cloudSessionUser(payload?.identity);
       if (!payload?.ok || typeof payload.token !== 'string' || !user) {
