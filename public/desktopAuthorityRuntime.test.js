@@ -258,7 +258,7 @@ async function withTimeout(promise, timeoutMs, message) {
   assert.deepStrictEqual(completed.receipt, receipt);
   assert.strictEqual((await runtime.get(draft.id)).status, 'completed');
   assert.deepStrictEqual(await runtime.readProjection(), projection);
-  assert.ok(calls.some(call => call.url === 'http://host.lan/api/authority/projections/current'));
+  assert.ok(!calls.some(call => call.url === 'http://host.lan/api/authority/projections/current'));
   assert.ok(calls.some(call => call.url === 'https://control.example/api/authority/projections/current'));
   assert.deepStrictEqual(
     await runtime.readProjection({ minSourceVersion: receipt.projectionVersion }),
@@ -272,7 +272,6 @@ async function withTimeout(promise, timeoutMs, message) {
       decryptString: value => Buffer.from(Buffer.from(value).toString().slice(5), 'base64').toString(),
     },
     vault,
-    lanBaseUrl: 'http://unreachable-host.lan',
     durableRelayBaseUrl: 'https://control.example',
     requestTimeoutMs: 5,
     fetchImpl: async (url, options = {}) => {
@@ -292,7 +291,7 @@ async function withTimeout(promise, timeoutMs, message) {
   assert.deepStrictEqual(await Promise.race([
     timeoutRuntime.readProjection(),
     new Promise((_resolve, reject) => setTimeout(() => reject(new Error('projection fallback timed out')), 100)),
-  ]), projection, 'an unreachable LAN projection endpoint must time out and fall back to the cloud relay');
+  ]), projection, 'projection reads use the cloud relay only');
   const bodyTimeoutRuntime = createDesktopAuthorityRuntime({
     filePath: path.join(workspace, 'authority-body-timeout-outbox.bin'),
     safeStorage: {
@@ -301,7 +300,6 @@ async function withTimeout(promise, timeoutMs, message) {
       decryptString: value => Buffer.from(Buffer.from(value).toString().slice(5), 'base64').toString(),
     },
     vault,
-    lanBaseUrl: 'http://slow-body-host.lan',
     durableRelayBaseUrl: 'https://control.example',
     requestTimeoutMs: 5,
     fetchImpl: async (url, options = {}) => {
@@ -325,7 +323,7 @@ async function withTimeout(promise, timeoutMs, message) {
   assert.deepStrictEqual(await Promise.race([
     bodyTimeoutRuntime.readProjection(),
     new Promise((_resolve, reject) => setTimeout(() => reject(new Error('projection body fallback timed out')), 100)),
-  ]), projection, 'a stalled LAN response body must time out and fall back to the cloud relay');
+  ]), projection, 'a cloud projection response remains available without a LAN endpoint');
 
   let durableReceiptCalls = 0;
   const durableTimeoutRuntime = createDesktopAuthorityRuntime({
@@ -337,7 +335,6 @@ async function withTimeout(promise, timeoutMs, message) {
     },
     vault,
     durableRelayBaseUrl: 'https://control.example',
-    lanTransport: { name: 'lan', isReady: async () => false },
     relayWebSocketTransport: { name: 'relay-websocket', isReady: async () => false },
     requestTimeoutMs: 5,
     receiptPollAttempts: 3,
@@ -433,13 +430,10 @@ async function withTimeout(promise, timeoutMs, message) {
   assert.ok(runtimeSource.includes('createId: createId || createSecureOutboxId'),
     'Electron main must supply a Node randomUUID fallback when Web Crypto is absent');
   assert.ok(runtimeSource.includes('createAuthorityWebSocketTransport'));
-  assert.ok(runtimeSource.includes("socketTransport('lan-websocket', lanBaseUrl)"),
-    'a LAN WebSocket receipt must identify the concrete LAN WebSocket transport');
   assert.ok(runtimeSource.includes("socketTransport('relay-websocket', relayWebSocketBaseUrl)"));
-  assert.ok(electronSource.includes('lanBaseUrl: runtimeConfig.hostBaseUrl'));
-  assert.ok(electronSource.includes('relayWebSocketBaseUrl: runtimeConfig.cloudBaseUrl'));
-  assert.ok(electronSource.includes('WebSocketImpl: AUTHORITY_WEBSOCKET_ENABLED ? WebSocket : undefined'),
-    'the WebSocket-disabled mode must remove both LAN and relay WebSocket transports before selection');
+  assert.ok(!runtimeSource.includes('lanBaseUrl'));
+  assert.ok(electronSource.includes('relayWebSocketBaseUrl'));
+  assert.ok(electronSource.includes('WebSocketImpl: WebSocket'));
   assert.ok(preloadSource.includes("contextBridge.exposeInMainWorld('desktopAuthority'"));
   for (const channel of [
     'desktop-authority:append-draft',

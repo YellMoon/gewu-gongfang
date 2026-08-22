@@ -76,7 +76,6 @@ contextBridge.exposeInMainWorld('desktopAuthority', Object.freeze({
 
 contextBridge.exposeInMainWorld('desktopBuild', Object.freeze({
   flavor: desktopBuildFlavor,
-  primaryHostCapable: false,
 }));
 
 contextBridge.exposeInMainWorld('env', {

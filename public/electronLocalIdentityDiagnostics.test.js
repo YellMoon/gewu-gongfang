@@ -3,14 +3,8 @@ const fs = require('fs');
 
 const source = fs.readFileSync('public/electron.js', 'utf8');
 
-assert.ok(
-  source.includes("log(`[desktop-identity:complete-registration] ${String(error?.code || 'DESKTOP_IDENTITY_REGISTRATION_FAILED')}`);"),
-  'local vault registration failures must retain only a stable main-process diagnostic code'
-);
-assert.ok(
-  source.includes("log(`[primary-host:prepare-operation] ${String(error?.code || 'PRIMARY_HOST_PREPARE_OPERATION_FAILED')}`);"),
-  'host bootstrap preparation failures must retain a stable main-process diagnostic code'
-);
+assert.ok(!source.includes('primaryHost') && !source.includes('primary-host'),
+  'the unified Electron main must not retain local host diagnostics');
 assert.strictEqual(
   source.includes('Desktop identity local request failed:'),
   false,
@@ -24,9 +18,7 @@ assert.ok(
   source.includes('ensureLocalSessionSigningSecret(process.env, electronLocalBridgeSecret);'),
   'the local session signing fallback must be prepared before backend modules are loaded'
 );
-assert.ok(
-  source.includes('resolveEmbeddedRuntimePort(runtimeConfig)') && source.includes('process.env.PORT = String(embeddedPort);'),
-  'a primary host must bind its embedded backend to the port in its configured host URL instead of the ordinary-desktop default'
-);
+assert.ok(source.includes("listen(port, '127.0.0.1'"),
+  'the local cache helper must bind only to loopback');
 
 console.log('electron local identity diagnostics checks passed');

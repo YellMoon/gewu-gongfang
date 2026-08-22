@@ -52,9 +52,9 @@ const electronSource = fs.readFileSync('public/electron.js', 'utf8');
 const packageJson = require('../package.json');
 assert.ok(electronSource.includes("require('./electronSingleInstance')"));
 assert.ok(electronSource.includes('acquireDesktopSingleInstance({'));
-assert.ok(electronSource.includes('if (DESKTOP_SINGLE_INSTANCE_OWNER) {')
+assert.ok(electronSource.includes('if (singleInstanceOwner) {')
   && electronSource.includes('Promise.all([app.whenReady(), crossInstallInstanceLock.ready])')
-  && electronSource.includes('if (!crossInstallOwner) return;'),
+  && electronSource.includes('if (!owner) return;'),
   'only the built-in and cross-install lock owner may start the backend and window');
 assert.ok(electronSource.indexOf('acquireDesktopSingleInstance({') < electronSource.indexOf("const logDir = path.join(app.getPath('userData')"),
   'single-instance ownership must be resolved before logs, vaults, or the embedded backend use the shared profile');

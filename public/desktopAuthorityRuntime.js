@@ -20,9 +20,7 @@ function createDesktopAuthorityRuntime({
   safeStorage,
   vault,
   durableRelayBaseUrl,
-  lanBaseUrl,
   relayWebSocketBaseUrl,
-  lanTransport,
   relayWebSocketTransport,
   WebSocketImpl,
   fetchImpl = fetch,
@@ -340,7 +338,6 @@ function createDesktopAuthorityRuntime({
           });
         };
         const transports = createAuthorityTransportSelector({
-          lanTransport: lanTransport || socketTransport('lan-websocket', lanBaseUrl),
           relayWebSocketTransport: relayWebSocketTransport
             || socketTransport('relay-websocket', relayWebSocketBaseUrl),
           durableRelayTransport: durableTransport(),
@@ -400,7 +397,7 @@ function createDesktopAuthorityRuntime({
       'x-gewu-authority-grant-version': String(requestAuth.grantVersion),
     };
     const bases = Array.from(new Set(
-      [lanBaseUrl, durableRelayBaseUrl]
+      [durableRelayBaseUrl]
         .map(value => String(value || '').replace(/\/+$/, ''))
         .filter(Boolean)
     ));
