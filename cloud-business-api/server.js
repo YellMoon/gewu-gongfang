@@ -96,6 +96,7 @@ function createDesktopRegistrationFromEnvironment() {
   const writerPool = new Pool({ ...databaseConfig, user: 'vnext_pg17_writer', password: process.env.COMMAND_WRITER_POSTGRES_PASSWORD });
   const accountRepository = createMiniappCloudAccountRepository({
     query: (text, values) => pool.query(text, values),
+    tenantId: process.env.CLOUD_BUSINESS_TENANT_ID || 'default',
   });
   const randomId = prefix => `${prefix}-${require('crypto').randomUUID()}`;
   const canonicalAccount = createCanonicalAccountProvisioning({
