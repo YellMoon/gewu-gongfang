@@ -13,6 +13,7 @@ const { runBusinessFoundationCatalogAssertionCases } = require('./businessFounda
 const { runBusinessFoundationShadowAdmissionCases } = require('./businessFoundationShadowAdmission.test');
 const { runUnifiedDesktopRegistrationMutationCases } = require('./unifiedDesktopRegistrationMutation.test');
 const { runCanonicalPhoneAccountProvisioningCases } = require('./canonicalPhoneAccountProvisioning.test');
+const { runCanonicalWechatContactBindingCases } = require('./canonicalWechatContactBinding.test');
 
 assert.strictEqual(typeof runManifestCases, 'function');
 assert.strictEqual(typeof runCatalogAssertionCases, 'function');
@@ -25,6 +26,7 @@ assert.strictEqual(typeof runBusinessFoundationCatalogAssertionCases, 'function'
 assert.strictEqual(typeof runBusinessFoundationShadowAdmissionCases, 'function');
 assert.strictEqual(typeof runUnifiedDesktopRegistrationMutationCases, 'function');
 assert.strictEqual(typeof runCanonicalPhoneAccountProvisioningCases, 'function');
+assert.strictEqual(typeof runCanonicalWechatContactBindingCases, 'function');
 
 async function main() {
   const calls = [];
@@ -44,6 +46,7 @@ async function main() {
     runBusinessFoundationShadowAdmission: async received => { assert.strictEqual(received, runtime); calls.push('business-shadow-admission'); },
     runUnifiedDesktopRegistration: async received => { assert.strictEqual(received, runtime); calls.push('unified-desktop-registration'); },
     runCanonicalPhoneAccount: async received => { assert.strictEqual(received, runtime); calls.push('canonical-phone-account'); },
+    runCanonicalWechatContactBinding: async received => { assert.strictEqual(received, runtime); calls.push('canonical-wechat-contact'); },
     runProductionVerifierReadiness: async received => { assert.strictEqual(received, runtime); calls.push('production-verifier-readiness'); },
     runBootstrap: async received => { assert.strictEqual(received, runtime); calls.push('bootstrap'); },
     runRecovery: async received => { assert.strictEqual(received, runtime); calls.push('recovery'); },
@@ -56,7 +59,7 @@ async function main() {
     report: message => calls.push(`report:${message.code}`),
   });
   assert.strictEqual(exitCode, 0);
-  assert.deepStrictEqual(calls, ['source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-admission-batch-request', 'business-foundation-admission-catalog', 'business-foundation-catalog', 'business-shadow-admission', 'unified-desktop-registration', 'canonical-phone-account', 'production-verifier-readiness', 'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication', 'role-mutation', 'link-revocation', 'link-revocation-parity', 'stop']);
+  assert.deepStrictEqual(calls, ['source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-admission-batch-request', 'business-foundation-admission-catalog', 'business-foundation-catalog', 'business-shadow-admission', 'unified-desktop-registration', 'canonical-phone-account', 'canonical-wechat-contact', 'production-verifier-readiness', 'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication', 'role-mutation', 'link-revocation', 'link-revocation-parity', 'stop']);
 
   const failedCalls = [];
   const unavailable = Object.assign(new Error('private detail'), { code: 'VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE' });
@@ -168,6 +171,7 @@ async function main() {
     runBusinessFoundationShadowAdmission: async () => cleanupCalls.push('business-shadow-admission'),
     runUnifiedDesktopRegistration: async () => cleanupCalls.push('unified-desktop-registration'),
     runCanonicalPhoneAccount: async () => cleanupCalls.push('canonical-phone-account'),
+    runCanonicalWechatContactBinding: async () => cleanupCalls.push('canonical-wechat-contact'),
     runProductionVerifierReadiness: async () => cleanupCalls.push('production-verifier-readiness'),
     runBootstrap: async () => cleanupCalls.push('bootstrap'),
     runRecovery: async () => cleanupCalls.push('recovery'),
@@ -181,7 +185,7 @@ async function main() {
   });
   assert.strictEqual(cleanupCode, 1);
   assert.deepStrictEqual(cleanupCalls, [
-    'source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-admission-batch-request', 'business-foundation-admission-catalog', 'business-foundation-catalog', 'business-shadow-admission', 'unified-desktop-registration', 'canonical-phone-account', 'production-verifier-readiness',
+    'source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-admission-batch-request', 'business-foundation-admission-catalog', 'business-foundation-catalog', 'business-shadow-admission', 'unified-desktop-registration', 'canonical-phone-account', 'canonical-wechat-contact', 'production-verifier-readiness',
     'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication',
     'role-mutation', 'link-revocation', 'link-revocation-parity', 'stop',
     'report:VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE',

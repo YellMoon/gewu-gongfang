@@ -1132,6 +1132,68 @@ async function provisionVNextPg17CanonicalPhoneAccount(runtime, handle, input) {
   } catch (_) { throw unavailable(); }
 }
 
+function snapshotCanonicalWechatContactInput(value) {
+  const fields = ['authorityId', 'accountId', 'openidContactId', 'openidHash', 'unionidContactId', 'unionidHash', 'verificationEvidenceHash'];
+  if (!value || typeof value !== 'object' || types.isProxy(value) || Object.getPrototypeOf(value) !== Object.prototype) throw migrationInputInvalid();
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== fields.length || fields.some(field => !keys.includes(field))) throw migrationInputInvalid();
+  const snapshot = {};
+  for (const field of fields) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, field);
+    if (!descriptor || !('value' in descriptor)) throw migrationInputInvalid();
+    snapshot[field] = descriptor.value;
+  }
+  for (const field of ['authorityId', 'accountId', 'openidContactId']) {
+    if (typeof snapshot[field] !== 'string' || snapshot[field].trim() === '') throw migrationInputInvalid();
+  }
+  for (const field of ['openidHash', 'verificationEvidenceHash']) {
+    if (typeof snapshot[field] !== 'string' || !/^[0-9a-f]{64}$/u.test(snapshot[field])) throw migrationInputInvalid();
+  }
+  if ((snapshot.unionidContactId === null) !== (snapshot.unionidHash === null)) throw migrationInputInvalid();
+  if (snapshot.unionidContactId !== null && (typeof snapshot.unionidContactId !== 'string' || snapshot.unionidContactId.trim() === '' || typeof snapshot.unionidHash !== 'string' || !/^[0-9a-f]{64}$/u.test(snapshot.unionidHash))) throw migrationInputInvalid();
+  return Object.freeze(snapshot);
+}
+
+async function bindVNextPg17CanonicalWechatIdentity(runtime, handle, input) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
+  const snapshot = snapshotCanonicalWechatContactInput(input);
+  const state = handles.get(handle);
+  const client = state.clients['identity-verifier'];
+  if (!client) throw invalidHandle();
+  try {
+    const result = await client.query(
+      'SELECT authority_id AS "authorityId", account_id AS "accountId", openid_contact_id AS "openidContactId", unionid_contact_id AS "unionidContactId" FROM vnext_control_plane.vnext_bind_canonical_wechat_identity($1,$2,$3,$4,$5,$6,$7)',
+      [snapshot.authorityId, snapshot.accountId, snapshot.openidContactId, snapshot.openidHash, snapshot.unionidContactId, snapshot.unionidHash, snapshot.verificationEvidenceHash],
+    );
+    if (result.rows.length !== 1 || Object.keys(result.rows[0]).length !== 4 || Object.values(result.rows[0]).some(value => value !== null && (typeof value !== 'string' || value.trim() === ''))) throw unavailable();
+    return Object.freeze(result.rows[0]);
+  } catch (_) { throw unavailable(); }
+}
+
+async function readVNextPg17CanonicalAccountByVerifiedContact(runtime, handle, input) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
+  if (!input || typeof input !== 'object' || types.isProxy(input) || Object.getPrototypeOf(input) !== Object.prototype) throw migrationInputInvalid();
+  const keys = Reflect.ownKeys(input);
+  if (keys.length !== 2 || !keys.includes('contactType') || !keys.includes('contactHash')) throw migrationInputInvalid();
+  const contactType = Object.getOwnPropertyDescriptor(input, 'contactType');
+  const contactHash = Object.getOwnPropertyDescriptor(input, 'contactHash');
+  if (!contactType || !contactHash || !('value' in contactType) || !('value' in contactHash)
+    || !['wechat_openid', 'wechat_unionid'].includes(contactType.value)
+    || typeof contactHash.value !== 'string' || !/^[0-9a-f]{64}$/u.test(contactHash.value)) throw migrationInputInvalid();
+  const state = handles.get(handle);
+  const client = state.clients['identity-verifier'];
+  if (!client) throw invalidHandle();
+  try {
+    const result = await client.query(
+      'SELECT authority_id AS "authorityId", account_id AS "accountId" FROM vnext_control_plane.vnext_read_canonical_account_by_verified_contact($1,$2)',
+      [contactType.value, contactHash.value],
+    );
+    if (result.rows.length === 0) return null;
+    if (result.rows.length !== 1 || Object.keys(result.rows[0]).length !== 2 || Object.values(result.rows[0]).some(value => typeof value !== 'string' || value.trim() === '')) throw unavailable();
+    return Object.freeze(result.rows[0]);
+  } catch (_) { throw unavailable(); }
+}
+
 async function registerVNextPg17UnifiedDesktopOnline(runtime, handle, input) {
   if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
   const snapshot = snapshotUnifiedDesktopOnlineInput(input, ['assertionId', 'idempotencyKey', 'receiptId', 'auditEventId', 'outboxEventId', 'sessionId', 'linkId', 'sessionExpiresAt', 'canonicalResultJson', 'resultSha256', 'canonicalPayloadJson', 'payloadSha256']);
@@ -1620,6 +1682,8 @@ module.exports = {
   reconcileBusinessFoundationShadowAdmission,
   issueVNextPg17OnlineIdentityAssertion,
   provisionVNextPg17CanonicalPhoneAccount,
+  bindVNextPg17CanonicalWechatIdentity,
+  readVNextPg17CanonicalAccountByVerifiedContact,
   registerVNextPg17UnifiedDesktopOnline,
   createVNextPg17BusinessFoundationDdlTrace,
   armVNextPg17BusinessFoundationDdlTrace,

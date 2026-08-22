@@ -1006,6 +1006,118 @@ GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_read_desktop_password_by_pho
 GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_read_desktop_password_by_login_name(text) TO vnext_pg17_identity_verifier;`;
 const DESKTOP_PASSWORD_CREDENTIALS_MIGRATION = Object.freeze({ migrationId: 'vnext-pg17-desktop-password-credentials-18', semanticVersion: 18, sql: DESKTOP_PASSWORD_CREDENTIALS_SQL, manifestSha256: sha256(DESKTOP_PASSWORD_CREDENTIALS_SQL) });
 
+const CANONICAL_WECHAT_CONTACT_BINDING_SQL = `CREATE FUNCTION vnext_control_plane.vnext_bind_canonical_wechat_identity(p_authority_id text, p_account_id text, p_openid_contact_id text, p_openid_hash text, p_unionid_contact_id text, p_unionid_hash text, p_verification_evidence_hash text)
+RETURNS TABLE(authority_id text, account_id text, openid_contact_id text, unionid_contact_id text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE current_authority vnext_control_plane.vnext_authorities%ROWTYPE;
+DECLARE current_account vnext_control_plane.vnext_accounts%ROWTYPE;
+DECLARE existing_openid vnext_control_plane.vnext_verified_contacts%ROWTYPE;
+DECLARE existing_unionid vnext_control_plane.vnext_verified_contacts%ROWTYPE;
+DECLARE resolved_openid_contact_id text;
+DECLARE resolved_unionid_contact_id text;
+DECLARE changed boolean := false;
+DECLARE now_at timestamptz := transaction_timestamp();
+BEGIN
+  IF session_user <> 'vnext_pg17_identity_verifier'
+    OR p_authority_id IS NULL OR p_account_id IS NULL OR p_openid_contact_id IS NULL
+    OR btrim(p_authority_id) = '' OR btrim(p_account_id) = '' OR btrim(p_openid_contact_id) = ''
+    OR p_openid_hash IS NULL OR p_openid_hash !~ '^[0-9a-f]{64}$'
+    OR p_verification_evidence_hash IS NULL OR p_verification_evidence_hash !~ '^[0-9a-f]{64}$'
+    OR ((p_unionid_contact_id IS NULL) <> (p_unionid_hash IS NULL))
+    OR (p_unionid_contact_id IS NOT NULL AND (btrim(p_unionid_contact_id) = '' OR p_unionid_hash !~ '^[0-9a-f]{64}$')) THEN
+    RAISE EXCEPTION 'VNEXT_CANONICAL_WECHAT_IDENTITY_INVALID' USING ERRCODE = 'P0001';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended('wechat-openid:' || p_openid_hash, 19));
+  IF p_unionid_hash IS NOT NULL THEN
+    PERFORM pg_advisory_xact_lock(hashtextextended('wechat-unionid:' || p_unionid_hash, 19));
+  END IF;
+
+  SELECT a.* INTO current_authority FROM vnext_control_plane.vnext_authorities a
+    WHERE a.authority_id=p_authority_id FOR UPDATE;
+  IF NOT FOUND OR current_authority.status <> 'active' THEN
+    RAISE EXCEPTION 'VNEXT_CANONICAL_WECHAT_IDENTITY_UNAVAILABLE' USING ERRCODE = 'P0001';
+  END IF;
+  SELECT a.* INTO current_account FROM vnext_control_plane.vnext_accounts a
+    WHERE a.authority_id=p_authority_id AND a.account_id=p_account_id FOR UPDATE;
+  IF NOT FOUND OR current_account.status <> 'active' THEN
+    RAISE EXCEPTION 'VNEXT_CANONICAL_WECHAT_IDENTITY_UNAVAILABLE' USING ERRCODE = 'P0001';
+  END IF;
+
+  SELECT c.* INTO existing_openid FROM vnext_control_plane.vnext_verified_contacts c
+    WHERE c.authority_id=p_authority_id AND c.contact_type='wechat_openid' AND c.normalized_value_hash=p_openid_hash FOR UPDATE;
+  IF FOUND THEN
+    IF existing_openid.account_id <> p_account_id OR existing_openid.verification_state <> 'verified' OR existing_openid.revoked_at IS NOT NULL THEN
+      RAISE EXCEPTION 'VNEXT_CANONICAL_WECHAT_IDENTITY_CONFLICT' USING ERRCODE = 'P0001';
+    END IF;
+    resolved_openid_contact_id := existing_openid.contact_id;
+  ELSE
+    INSERT INTO vnext_control_plane.vnext_verified_contacts(contact_id,authority_id,account_id,contact_type,normalized_value_hash,verification_state,verification_evidence_hash,verified_at,revoked_at,row_version,created_at,updated_at)
+    VALUES(p_openid_contact_id,p_authority_id,p_account_id,'wechat_openid',p_openid_hash,'verified',p_verification_evidence_hash,now_at,NULL,1,now_at,now_at);
+    resolved_openid_contact_id := p_openid_contact_id;
+    changed := true;
+  END IF;
+
+  IF p_unionid_hash IS NOT NULL THEN
+    SELECT c.* INTO existing_unionid FROM vnext_control_plane.vnext_verified_contacts c
+      WHERE c.authority_id=p_authority_id AND c.contact_type='wechat_unionid' AND c.normalized_value_hash=p_unionid_hash FOR UPDATE;
+    IF FOUND THEN
+      IF existing_unionid.account_id <> p_account_id OR existing_unionid.verification_state <> 'verified' OR existing_unionid.revoked_at IS NOT NULL THEN
+        RAISE EXCEPTION 'VNEXT_CANONICAL_WECHAT_IDENTITY_CONFLICT' USING ERRCODE = 'P0001';
+      END IF;
+      resolved_unionid_contact_id := existing_unionid.contact_id;
+    ELSE
+      INSERT INTO vnext_control_plane.vnext_verified_contacts(contact_id,authority_id,account_id,contact_type,normalized_value_hash,verification_state,verification_evidence_hash,verified_at,revoked_at,row_version,created_at,updated_at)
+      VALUES(p_unionid_contact_id,p_authority_id,p_account_id,'wechat_unionid',p_unionid_hash,'verified',p_verification_evidence_hash,now_at,NULL,1,now_at,now_at);
+      resolved_unionid_contact_id := p_unionid_contact_id;
+      changed := true;
+    END IF;
+  END IF;
+
+  IF changed THEN
+    UPDATE vnext_control_plane.vnext_accounts
+      SET auth_version=auth_version+1,row_version=row_version+1,updated_at=now_at
+      WHERE vnext_accounts.authority_id=p_authority_id AND vnext_accounts.account_id=p_account_id;
+  END IF;
+  RETURN QUERY SELECT p_authority_id,p_account_id,resolved_openid_contact_id,resolved_unionid_contact_id;
+END;
+$$;
+CREATE FUNCTION vnext_control_plane.vnext_read_canonical_account_by_verified_contact(p_contact_type text, p_contact_hash text)
+RETURNS TABLE(authority_id text, account_id text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF session_user <> 'vnext_pg17_identity_verifier'
+    OR p_contact_type NOT IN ('wechat_openid','wechat_unionid')
+    OR p_contact_hash IS NULL OR p_contact_hash !~ '^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'VNEXT_CANONICAL_WECHAT_IDENTITY_INVALID' USING ERRCODE = 'P0001';
+  END IF;
+  RETURN QUERY
+    SELECT c.authority_id,c.account_id
+      FROM vnext_control_plane.vnext_verified_contacts c
+      JOIN vnext_control_plane.vnext_accounts a
+        ON a.authority_id=c.authority_id AND a.account_id=c.account_id
+      JOIN vnext_control_plane.vnext_authorities au
+        ON au.authority_id=c.authority_id
+      WHERE c.contact_type=p_contact_type
+        AND c.normalized_value_hash=p_contact_hash
+        AND c.verification_state='verified'
+        AND c.revoked_at IS NULL
+        AND a.status='active'
+        AND au.status='active';
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_bind_canonical_wechat_identity(text,text,text,text,text,text,text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_read_canonical_account_by_verified_contact(text,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_bind_canonical_wechat_identity(text,text,text,text,text,text,text) TO vnext_pg17_identity_verifier;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_read_canonical_account_by_verified_contact(text,text) TO vnext_pg17_identity_verifier;`;
+const CANONICAL_WECHAT_CONTACT_BINDING_MIGRATION = Object.freeze({ migrationId: 'vnext-pg17-canonical-wechat-contact-binding-19', semanticVersion: 19, sql: CANONICAL_WECHAT_CONTACT_BINDING_SQL, manifestSha256: sha256(CANONICAL_WECHAT_CONTACT_BINDING_SQL) });
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -1025,6 +1137,7 @@ const MIGRATIONS = Object.freeze([
   UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION,
   CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION,
   DESKTOP_PASSWORD_CREDENTIALS_MIGRATION,
+  CANONICAL_WECHAT_CONTACT_BINDING_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -1160,6 +1273,8 @@ $function$
   vnext_read_desktop_password_by_login_name: 'c76a34d05eb52d292fa802aefc76965dedcc07afa5fcddb385bff1c6e01d53aa',
   vnext_read_desktop_password_by_phone_hash: '1fdff74380576b833bdf22b7c301986da786743f4b3be6fd930b19bae32a72cd',
   vnext_set_desktop_password_credential: '13331367db0aa7f179df18e8c751b2814772c2bc1733706146df5c133e8503ab',
+  vnext_bind_canonical_wechat_identity: '1c4eb7ed548e1a5b3547edf1001630507763bc85a923fee4a9d4ec8d9df17db4',
+  vnext_read_canonical_account_by_verified_contact: '16e479b0903d401710386f21cf8f58818a6d1cf083ffd7b9aa34fd9ff9a71c33',
 });
 
 const expectedCatalog = Object.freeze({
@@ -1240,6 +1355,7 @@ module.exports = {
   UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION,
   CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION,
   DESKTOP_PASSWORD_CREDENTIALS_MIGRATION,
+  CANONICAL_WECHAT_CONTACT_BINDING_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

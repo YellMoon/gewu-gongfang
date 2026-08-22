@@ -1386,13 +1386,13 @@ async function runCatalogAssertionCases(runtime) {
       }
       await facade.query('GRANT USAGE ON SCHEMA vnext_control_plane TO vnext_pg17_writer');
       await facade.query('GRANT SELECT ON ALL TABLES IN SCHEMA vnext_control_plane TO vnext_pg17_writer');
-      await facade.query('REVOKE SELECT ON TABLE vnext_control_plane.vnext_online_identity_assertions, vnext_control_plane.vnext_online_identity_assertion_consumptions FROM vnext_pg17_writer');
+      await facade.query('REVOKE SELECT ON TABLE vnext_control_plane.vnext_online_identity_assertions, vnext_control_plane.vnext_online_identity_assertion_consumptions, vnext_control_plane.vnext_desktop_password_credentials FROM vnext_pg17_writer');
       await facade.query('COMMIT');
     });
     assert.deepStrictEqual(await catalog.apply(m17PrefixHandle, migrationInput), { applied: true });
     await withVNextPg17SyntheticQuery(m17PrefixHandle, 'verifier', async facade => {
       const ledgerRows = await facade.query('SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint');
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }, { semantic_version: '13' }, { semantic_version: '14' }, { semantic_version: '15' }, { semantic_version: '16' }, { semantic_version: '17' }, { semantic_version: '18' }]);
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }, { semantic_version: '13' }, { semantic_version: '14' }, { semantic_version: '15' }, { semantic_version: '16' }, { semantic_version: '17' }, { semantic_version: '18' }, { semantic_version: '19' }]);
     });
 
     const forgedM17PrefixHandle = await createHandle();
@@ -1409,7 +1409,7 @@ async function runCatalogAssertionCases(runtime) {
       }
       await facade.query('GRANT USAGE ON SCHEMA vnext_control_plane TO vnext_pg17_writer');
       await facade.query('GRANT SELECT ON ALL TABLES IN SCHEMA vnext_control_plane TO vnext_pg17_writer');
-      await facade.query('REVOKE SELECT ON TABLE vnext_control_plane.vnext_online_identity_assertions, vnext_control_plane.vnext_online_identity_assertion_consumptions FROM vnext_pg17_writer');
+      await facade.query('REVOKE SELECT ON TABLE vnext_control_plane.vnext_online_identity_assertions, vnext_control_plane.vnext_online_identity_assertion_consumptions, vnext_control_plane.vnext_desktop_password_credentials FROM vnext_pg17_writer');
       await facade.query('COMMIT');
     });
     await withVNextPg17SyntheticQuery(forgedM17PrefixHandle, 'fixture-provisioner', facade => facade.query(
@@ -1421,9 +1421,9 @@ async function runCatalogAssertionCases(runtime) {
     );
     await withVNextPg17SyntheticQuery(forgedM17PrefixHandle, 'fixture-provisioner', async facade => {
       const ledgerRows = await facade.query('SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint');
-      assert.strictEqual(ledgerRows.rows.length, 17);
+      assert.strictEqual(ledgerRows.rows.length, 18);
       const m18Relation = await facade.query("SELECT to_regclass('vnext_control_plane.vnext_desktop_password_credentials') AS relation");
-      assert.strictEqual(m18Relation.rows[0].relation, null);
+      assert.strictEqual(m18Relation.rows[0].relation, 'vnext_control_plane.vnext_desktop_password_credentials');
     });
 
     const handle = await createHandle();
@@ -1436,7 +1436,7 @@ async function runCatalogAssertionCases(runtime) {
       const ledgerRows = await facade.query(
         'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint',
       );
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }, { semantic_version: '13' }, { semantic_version: '14' }, { semantic_version: '15' }, { semantic_version: '16' }, { semantic_version: '17' }, { semantic_version: '18' }]);
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }, { semantic_version: '13' }, { semantic_version: '14' }, { semantic_version: '15' }, { semantic_version: '16' }, { semantic_version: '17' }, { semantic_version: '18' }, { semantic_version: '19' }]);
       const schemaMetaRows = await facade.query(
         'SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta',
       );
@@ -1498,7 +1498,7 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(
       () => withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
-        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 20, repeat('a', 64), now(), 'fixture')",
+        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 21, repeat('a', 64), now(), 'fixture')",
       )),
     );
     await assert.rejects(

@@ -10,6 +10,7 @@ const { runBusinessFoundationCatalogAssertionCases } = require('./businessFounda
 const { runBusinessFoundationShadowAdmissionCases } = require('./businessFoundationShadowAdmission.test');
 const { runUnifiedDesktopRegistrationMutationCases } = require('./unifiedDesktopRegistrationMutation.test');
 const { runCanonicalPhoneAccountProvisioningCases } = require('./canonicalPhoneAccountProvisioning.test');
+const { runCanonicalWechatContactBindingCases } = require('./canonicalWechatContactBinding.test');
 const { runProductionVerifierReadinessCases } = require('./productionVerifierReadiness.test');
 const { runFirstAuthorityBootstrapMutationCases } = require('./firstAuthorityBootstrapMutation.test');
 const { runEmergencyRecoveryMutationCases } = require('./emergencyRecoveryMutation.test');
@@ -39,6 +40,7 @@ async function run({
   runBusinessFoundationShadowAdmission = runBusinessFoundationShadowAdmissionCases,
   runUnifiedDesktopRegistration = runUnifiedDesktopRegistrationMutationCases,
   runCanonicalPhoneAccount = runCanonicalPhoneAccountProvisioningCases,
+  runCanonicalWechatContactBinding = runCanonicalWechatContactBindingCases,
   runProductionVerifierReadiness = runProductionVerifierReadinessCases,
   runBootstrap = runFirstAuthorityBootstrapMutationCases,
   runRecovery = runEmergencyRecoveryMutationCases,
@@ -65,6 +67,7 @@ async function run({
     await runBusinessFoundationShadowAdmission(runtime);
     await runUnifiedDesktopRegistration(runtime);
     await runCanonicalPhoneAccount(runtime);
+    await runCanonicalWechatContactBinding(runtime);
     await runProductionVerifierReadiness(runtime);
     await runBootstrap(runtime);
     await runRecovery(runtime);
