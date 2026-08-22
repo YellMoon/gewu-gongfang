@@ -13,8 +13,6 @@ import AutoCloseSelect from '../components/AutoCloseSelect';
 import TaxonomyManager from '../components/TaxonomyManager';
 import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType, questionTypeFromParser } from '../constants/questionTypes';
-import { prepareQuestionAssetsForStorage, stripQuestionAssetPayload } from '../services/questionAssetStore';
-import { reconcileQuestionLocalStore } from '../services/questionLocalStore';
 import QuestionStructureEditor from '../components/question-editor/QuestionStructureEditor';
 import { normalizeStructureOrder, validateQuestionStructure } from '../components/question-editor/questionStructureOperations';
 import { createQuestionRichDocument } from '../types/questionRichContent';
@@ -22,6 +20,7 @@ import type { QuestionRichDocument } from '../types/questionRichContent';
 import { migrateLegacyQuestion, projectQuestionRichContent } from '../services/questionRichContent';
 import { createQuestionEditorSaveGate, createRichDocumentDirtyCoordinator, mergeImportedQuestionMetadata, registerEditorSpaExitGuard, shouldProtectEditorExit } from '../components/question-editor/questionEditorSession'; // utf-8
 const { createNativeQuestionDraft } = require('../services/nativeQuestionDraftCreate');
+const { createDesktopQuestionImportClient } = require('../services/desktopQuestionImportClient.mjs');
 import {
   downloadImportValidationReport,
   validateImportQuestions,
@@ -39,7 +38,6 @@ const GRADES = ['高一', '高二', '高三', '复习'];
 const SEMESTERS = ['上学期', '下学期'];
 
 const API_BASE = getApiBase('/api/question-bank');
-const PARSE_WORD_ENDPOINT = `${API_BASE}/parse-word`;
 
 type QuestionBankStorageStatus = {
   configured?: boolean;
@@ -85,6 +83,14 @@ type ImportCommitResult = {
   created_at: string;
   source_type: 'lecture' | 'exam';
   file_name?: string;
+};
+
+type CloudImportTask = {
+  taskId: string;
+  status: string;
+  phase: string;
+  sourceStorageState?: string;
+  items?: any[];
 };
 
 function stripFileExtension(fileName: string): string {
@@ -188,54 +194,6 @@ function normalizeQuestion(row: any): Question {
   } as Question;
 }
 
-function toServerQuestion(q: any, meta: any = {}) {
-  return {
-    subject: q.subject || '物理',
-    subject_id: q.subject_id || null,
-    chapter_id: q.chapter_id || null,
-    type: questionTypeFromParser(q.question_types),
-    difficulty: q.difficulty || 3,
-    stem: q.stem || q.content || '',
-    options: q.options || [],
-    answer: q.answer || '',
-    explanation: q.explanation || q.analysis || '',
-    taxonomy_ids: q.taxonomy_ids || {},
-    source: q.source || '',
-    year: q.year || meta.year || '',
-    grade: q.grade || meta.grade || '',
-    semester: q.semester || meta.semester || '',
-    exam_type: q.exam_type || meta.exam_type || '\u5176\u4ed6',
-    region: q.region || meta.region || '',
-    school: q.school || meta.school || '',
-    alliance: q.alliance || meta.alliance || '',
-    paper_name: q.paper_name || meta.paper_name || '',
-    paper_id: q.paper_id || meta.paper_id || '',
-    question_number: q.question_number || q.number || null,
-    status: q.status || 'draft',
-    has_image: !!q.has_image,
-    has_formula: !!q.has_formula,
-    created_by: q.created_by || '',
-    formulas: q.formulas || [],
-    assets: q.assets || [],
-    allow_tag_name_create: false,
-    knowledge_point_ids: q.knowledge_point_ids || q.knowledge_ids || [],
-    model_point_ids: q.model_point_ids || q.model_ids || [],
-  };
-}
-
-function normalizeImportedKnowledgeIds(db: any, parsedQuestion: any): string[] {
-  const names = parsedQuestion.knowledge_points || (parsedQuestion.knowledge_point ? [parsedQuestion.knowledge_point] : []);
-  const knowledgeTree = db.getKnowledgeTree?.() || [];
-  const ids = new Set<string>((parsedQuestion.knowledge_ids || parsedQuestion.knowledge_point_ids || []).filter(Boolean));
-  for (const name of names || []) {
-    const text = String(name || '').trim();
-    if (!text) continue;
-    const node = knowledgeTree.find((n: any) => n.name === text);
-    if (node?.id) ids.add(node.id);
-  }
-  return [...ids];
-}
-
 function getQuestionStem(q: any): string {
   return q.stem || q.content || '';
 }
@@ -307,6 +265,7 @@ const QuestionBankImport: React.FC = () => {
   const [validationRows, setValidationRows] = useState<ImportValidationRow[]>([]);
   const [validationSummary, setValidationSummary] = useState<ImportValidationSummary>({ success: 0, warning: 0, failed: 0, total: 0 });
   const [commitResult, setCommitResult] = useState<ImportCommitResult | null>(null);
+  const [cloudImportTask, setCloudImportTask] = useState<CloudImportTask | null>(null);
   const [recentImportTasks, setRecentImportTasks] = useState<ImportTask[]>([]);
   const [importTaskDetail, setImportTaskDetail] = useState<(ImportTask & { items: ImportTaskItem[] }) | null>(null);
   const [importTaskDrawerOpen, setImportTaskDrawerOpen] = useState(false);
@@ -848,8 +807,7 @@ const QuestionBankImport: React.FC = () => {
     setModalVisible(true);
   };
 
-  const handleWordFileUpload = async (file: File, examMeta?: ExamMeta) => {
-    // Store examMeta for later use in importWordResults
+  const startCloudImport = async (file: File, examMeta?: ExamMeta) => {
     examMetaRef.current = examMeta || null;
     setWordImporting(true);
     setWordResult(null);
@@ -857,105 +815,82 @@ const QuestionBankImport: React.FC = () => {
     setValidationSummary({ success: 0, warning: 0, failed: 0, total: 0 });
     setCommitResult(null);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('source_type', wordSourceType);
-      if (examMeta) {
-        Object.entries(examMeta).forEach(([key, value]) => {
-          if (value) formData.append(key, String(value));
-        });
-      }
-
-      const res = await fetch(PARSE_WORD_ENDPOINT, {
-        method: 'POST',
-        body: formData,
+      const task = await createDesktopQuestionImportClient().createFromWord({
+        sourceType: wordSourceType,
+        sourceFileName: file.name,
+        sourceMimeType: file.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        bytes: new Uint8Array(await file.arrayBuffer()),
+        metadata: { ...(examMeta || {}), sourceFileName: file.name },
       });
-      const data = await res.json();
-      if (data.error) {
-        message.error(data.error);
-      } else {
-        const taggedQuestions = (data.questions || []).map((q: any) => applyExamMetaToQuestion(q, examMeta || {}, wordSourceType));
-        const nextResult = { ...data, questions: taggedQuestions, count: taggedQuestions.length };
-        const validation = validateImportQuestions(taggedQuestions, questions);
-        setWordResult(nextResult);
-        setValidationRows(validation.rows);
-        setValidationSummary(validation.summary);
-        setImportStep(2);
-        setImportBatch(null);
-        const db = (window as any).dbService;
-        try {
-          const checkRes = await fetch(`${API_BASE}/imports/check`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              source_type: wordSourceType,
-              file_name: file.name,
-              items: taggedQuestions.map((q: any) => toServerQuestion(q, examMeta || {})),
-            }),
-          });
-          const batchData = await checkRes.json();
-          if (batchData.success) {
-            const nextBatch = batchData.data || batchData;
-            setImportBatch(nextBatch);
-            const duplicateCount = Number(nextBatch.duplicate_items || nextBatch.quality_report?.duplicate_items || 0);
-            if (duplicateCount > 0) {
-              message.warning(`检测到 ${duplicateCount} 道完全重复试题，已自动过滤，提交导入时不会写入题库`);
-            }
-            if (db?.createImportTask) {
-              db.createImportTask({
-                id: nextBatch.id,
-                source_type: wordSourceType,
-                file_name: file.name,
-                status: 'checked',
-                total_items: taggedQuestions.length,
-                success_items: validation.summary.success,
-                warning_items: validation.summary.warning,
-                failed_items: validation.summary.failed,
-                duplicate_items: nextBatch.duplicate_items || 0,
-                quality_report: nextBatch.quality_report || null,
-                items: validation.rows.map(row => ({
-                  item_index: row.index - 1,
-                  status: row.status,
-                  quality_score: row.status === 'success' ? 1 : row.status === 'warning' ? 0.7 : 0,
-                  warnings: row.issues.filter(issue => issue.level === 'warning').map(issue => issue.message),
-                  errors: row.issues.filter(issue => issue.level === 'failed').map(issue => issue.message),
-                  payload: stripQuestionAssetPayload(row.question),
-                })),
-              });
-              setRecentImportTasks(db.getRecentImportTasks?.(8) || []);
-            }
-          } else {
-            message.warning(batchData.error || '导入批次校验未完成');
-          }
-        } catch (checkError: any) {
-          message.warning('导入批次校验失败: ' + (checkError.message || 'unknown error'));
-          if (db?.createImportTask) {
-            db.createImportTask({
-              source_type: wordSourceType,
-              file_name: file.name,
-              status: 'checked',
-              total_items: taggedQuestions.length,
-              success_items: validation.summary.success,
-              warning_items: validation.summary.warning,
-              failed_items: validation.summary.failed,
-              duplicate_items: 0,
-              items: validation.rows.map(row => ({
-                item_index: row.index - 1,
-                status: row.status,
-                warnings: row.issues.filter(issue => issue.level === 'warning').map(issue => issue.message),
-                errors: row.issues.filter(issue => issue.level === 'failed').map(issue => issue.message),
-                payload: stripQuestionAssetPayload(row.question),
-              })),
-            });
-            setRecentImportTasks(db.getRecentImportTasks?.(8) || []);
-          }
-        }
-        message.success(`解析完成 ${taggedQuestions.length} 题，失败 ${validation.summary.failed} 题，警告 ${validation.summary.warning} 题`);
+      setCloudImportTask(task);
+      setImportBatch(null);
+      setImportStep(2);
+      message.info('\u539f\u4ef6\u5df2\u52a0\u5bc6\u4ea4\u7ed9 NAS \u4ee3\u7406\uff0c\u6b63\u5728\u4e91\u7aef\u89e3\u6790\u3002');
+    } catch (error: any) {
+      message.error('\u521b\u5efa\u4e91\u7aef\u5bfc\u5165\u4efb\u52a1\u5931\u8d25: ' + (error.message || 'unknown error'));
+    } finally { setWordImporting(false); }
+  };
+
+  const refreshCloudImportTask = async () => {
+    if (!cloudImportTask) return;
+    try {
+      const task = await createDesktopQuestionImportClient().read(cloudImportTask.taskId) as CloudImportTask;
+      setCloudImportTask(task);
+      if (!Array.isArray(task.items) || task.items.length === 0) {
+        message.info('\u4e91\u7aef\u4efb\u52a1\u5f53\u524d\u9636\u6bb5: ' + task.phase);
+        return;
       }
-    } catch (e: any) {
-      message.error('导入失败: ' + (e.message || '网络请求失败'));
+      const candidates = task.items.map((item: any) => applyExamMetaToQuestion(item.candidate || {}, examMetaRef.current || {}, wordSourceType));
+      const validation = validateImportQuestions(candidates, questions);
+      const rows = validation.rows.map((row, index) => {
+        const remote = task.items?.[index];
+        const codes = Array.isArray(remote?.validation?.codes) ? remote.validation.codes : [];
+        const remoteStatus = remote?.validation?.status;
+        const status = remoteStatus === 'rejected' ? 'failed' : remoteStatus === 'warning' ? 'warning' : row.status;
+        return { ...row, status, issues: codes.length ? codes.map((code: string) => ({ level: status, message: code })) : row.issues } as ImportValidationRow;
+      });
+      const summary = rows.reduce<ImportValidationSummary>((acc, row) => {
+        acc[row.status] += 1; acc.total += 1; return acc;
+      }, { success: 0, warning: 0, failed: 0, total: 0 });
+      setWordResult({ questions: candidates, count: candidates.length });
+      setValidationRows(rows);
+      setValidationSummary(summary);
+      message.success('\u4e91\u7aef\u89e3\u6790\u5b8c\u6210\uff0c\u8bf7\u6838\u5bf9\u540e\u751f\u6210\u5f85\u63d0\u4ea4\u8349\u7a3f\u3002');
+    } catch (error: any) {
+      message.error('\u8bfb\u53d6\u4e91\u7aef\u5bfc\u5165\u4efb\u52a1\u5931\u8d25: ' + (error.message || 'unknown error'));
     }
-    setWordImporting(false);
+  };
+
+  const prepareCloudImportDrafts = async () => {
+    if (validationSummary.failed > 0 || !cloudImportTask || cloudImportTask.status !== 'candidates_ready') {
+      message.warning('\u8bf7\u5148\u7b49\u5f85\u5e76\u5237\u65b0\u4e91\u7aef\u89e3\u6790\u7ed3\u679c\u3002');
+      return;
+    }
+    const db = (window as any).dbService;
+    if (!db) { message.error('\u672c\u5730\u8349\u7a3f\u5e93\u672a\u5c31\u7eea'); return; }
+    setCommittingBatch(true);
+    try {
+      const prepared = await createDesktopQuestionImportClient().prepareDrafts(cloudImportTask.taskId) as CloudImportTask;
+      let created = 0;
+      for (const [index, item] of (prepared.items || []).entries()) {
+        const localCandidate = wordResult?.questions?.[index] || item.candidate || {};
+        const mediaByIndex = new Map((item.mediaManifest || []).map((media: any) => [media.assetIndex, media]));
+        const assets = (localCandidate.assets || []).map((asset: any) => ({ ...asset, ...(mediaByIndex.get(asset.assetIndex) || {}) }));
+        await createNativeQuestionDraft(db, {
+          ...localCandidate, subject: localCandidate.subject || '\u7269\u7406', type: questionTypeFromParser(localCandidate.question_types),
+          content: localCandidate.stem || localCandidate.content || '', analysis: localCandidate.analysis || localCandidate.explanation || '',
+          assets, importTaskId: prepared.taskId,
+        });
+        created++;
+      }
+      setCloudImportTask(prepared);
+      setImportStep(3);
+      setCommitResult({ id: prepared.taskId, imported: created, failed: validationSummary.failed, warning: validationSummary.warning, created_at: new Date().toISOString(), source_type: wordSourceType, file_name: selectedWordFile?.name });
+      loadData();
+      message.success('\u5df2\u751f\u6210 ' + created + ' \u6761\u672c\u5730\u5f85\u63d0\u4ea4\u8349\u7a3f\uff1b\u8054\u7f51\u540e\u4ecd\u9700\u4f60\u786e\u8ba4\u63d0\u4ea4\u3002');
+    } catch (error: any) {
+      message.error('\u751f\u6210\u5f85\u63d0\u4ea4\u8349\u7a3f\u5931\u8d25: ' + (error.message || 'unknown error'));
+    } finally { setCommittingBatch(false); }
   };
 
   const handleSelectWordFile = (file: File) => {
@@ -977,7 +912,7 @@ const QuestionBankImport: React.FC = () => {
   };
 
   const openWordFilePicker = () => {
-    if (questionBankStorageUnavailable) {
+    if (false && questionBankStorageUnavailable) {
       message.warning('题库移动硬盘未连接');
       return;
     }
@@ -992,7 +927,7 @@ const QuestionBankImport: React.FC = () => {
   };
 
   const handleStartParse = () => {
-    if (questionBankStorageUnavailable) {
+    if (false && questionBankStorageUnavailable) {
       message.warning('题库移动硬盘未连接');
       return;
     }
@@ -1001,172 +936,7 @@ const QuestionBankImport: React.FC = () => {
       return;
     }
     const meta = wordSourceType === 'exam' ? examForm.getFieldsValue() : undefined;
-    handleWordFileUpload(selectedWordFile, meta);
-  };
-
-  const commitImportBatch = async () => {
-    if (!importBatch) return;
-    setCommittingBatch(true);
-    try {
-      const res = await fetch(`${API_BASE}/imports/${importBatch.id}/commit`, { method: 'POST' });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'commit failed');
-      const nextBatch = data.data || data;
-      const imported = Number(nextBatch.commit_result?.imported_items || nextBatch.accepted_items || 0);
-      if (imported <= 0 && (wordResult?.questions || []).length > 0) {
-        await importWordResults(wordResult, true);
-        message.warning('服务端批次未写入题目，已自动改用本地题库导入');
-        return;
-      }
-      setImportBatch(nextBatch);
-      setWordResult(null);
-      setImportStep(3);
-      setCommitResult({
-        id: nextBatch.id || importBatch.id,
-        imported,
-        failed: validationSummary.failed,
-        warning: validationSummary.warning,
-        created_at: new Date().toISOString(),
-        source_type: wordSourceType,
-        file_name: selectedWordFile?.name,
-      });
-      const db = (window as any).dbService;
-      db?.updateImportTask?.(nextBatch.id || importBatch.id, {
-        status: nextBatch.status || 'imported',
-        result_summary: nextBatch.commit_result || null,
-        success_items: imported,
-        failed_items: nextBatch.commit_result?.failed_items || validationSummary.failed,
-      });
-      if ((wordResult?.questions || []).length > 0) {
-        await importWordResults(wordResult, true);
-      }
-      setRecentImportTasks(db?.getRecentImportTasks?.(8) || []);
-      loadData();
-      message.success(`已入库 ${imported} 道题，索引任务已创建`);
-    } catch (e: any) {
-      message.error('提交导入批次失败: ' + (e.message || 'unknown error'));
-    } finally {
-      setCommittingBatch(false);
-    }
-  };
-
-  const importWordResults = async (result: any, forceLocal = false) => {
-    if (validationSummary.failed > 0) {
-      message.warning('存在失败题目，请先处理或导出报告后再确认导入');
-      return;
-    }
-    if (importBatch && !forceLocal) {
-      commitImportBatch();
-      return;
-    }
-    const db = (window as any).dbService;
-    if (!db) { message.error('数据库未就绪'); return; }
-    // Read stored examMeta for auto-labeling
-    const meta = examMetaRef.current || {};
-    let added = 0;
-    let skippedDuplicates = 0;
-    const exactStem = (value: unknown) => String(value || '')
-      .replace(/<img\b[^>]*>/gi, '[image]')
-      .replace(/&nbsp;/gi, ' ')
-      .replace(/[−－]/g, '-')
-      .replace(/[＋]/g, '+')
-      .replace(/\s+/g, '')
-      .trim();
-    const existingStems = new Set((questions || []).map(q => exactStem(q.content || q.stem)).filter(Boolean));
-    const seenStems = new Set<string>();
-    for (const q of (result.questions || [])) {
-      try {
-        // Handle source_info from parser (lecture format annotations)
-        if (q.source_info && wordSourceType === 'lecture') {
-          const si = q.source_info;
-          if (si.year && !q.year) q.year = si.year;
-          if (si.exam_type && !q.exam_type) q.exam_type = si.exam_type;
-          if (si.paper_name && !q.paper_name) q.paper_name = si.paper_name;
-          if (si.region && !q.region) q.region = si.region;
-          if (si.source && !q.source) q.source = si.source;
-        }
-        const rawStem = getQuestionStem(q);
-        const stemKey = exactStem(rawStem);
-        if (stemKey && (existingStems.has(stemKey) || seenStems.has(stemKey))) {
-          skippedDuplicates++;
-          continue;
-        }
-        if (stemKey) seenStems.add(stemKey);
-        const knowledge_ids = normalizeImportedKnowledgeIds(db, q);
-        const model_ids = [...new Set([...(q.model_ids || []), ...(q.model_point_ids || [])])];
-        const preparedQuestion = await prepareQuestionAssetsForStorage({
-          subject: q.subject || '\u7269\u7406',
-          type: questionTypeFromParser(q.question_types),
-          difficulty: 3,
-          content: rawStem,
-          stem: rawStem,
-          options: (q.options || []).map((o: any) => `${o.label}. ${o.content}`),
-          answer: q.answer || '',
-          analysis: q.analysis || '',
-          source: q.source || '',
-          year: toSchoolYear(q.year || meta.year || ''),
-          grade: q.grade || meta.grade || '',
-          semester: q.semester || meta.semester || '',
-          exam_type: q.exam_type || meta.exam_type || '其他',
-          region: q.region || meta.region || '',
-          school: q.school || meta.school || '',
-          alliance: q.alliance || meta.alliance || '',
-          paper_name: q.paper_name || meta.paper_name || '',
-          paper_id: q.paper_id || meta.paper_id || '',
-          question_number: q.question_number || q.number || null,
-          edit_status: '\u672a\u7f16\u8f91',
-          status: q.status || 'draft',
-          has_image: !!q.has_image,
-          has_formula: !!q.has_formula,
-          created_by: q.created_by || '',
-          tags: [],
-          formulas: q.formulas || [],
-          assets: q.assets || [],
-          knowledge_point: q.knowledge_point || '',
-          knowledge_ids,
-          model_point: q.model_point || '',
-          model_ids,
-        });
-        await createNativeQuestionDraft(db, preparedQuestion);
-        added++;
-      } catch (e: any) { if (e?.code === 'DRAFT_PROVENANCE_UNAVAILABLE') message.error(e.code); }
-    }
-    if (skippedDuplicates > 0) {
-      message.warning(`检测到 ${skippedDuplicates} 道完全重复试题，已自动过滤`);
-    }
-    setWordResult(null);
-    setImportStep(3);
-    setCommitResult({
-      id: `local-${Date.now()}`,
-      imported: added,
-      failed: validationSummary.failed,
-      warning: validationSummary.warning,
-      created_at: new Date().toISOString(),
-      source_type: wordSourceType,
-      file_name: selectedWordFile?.name,
-    });
-    const dbTask = db?.createImportTask?.({
-      source_type: wordSourceType,
-      file_name: selectedWordFile?.name,
-      status: 'imported',
-      total_items: result.count || added,
-      success_items: added,
-      warning_items: validationSummary.warning,
-      failed_items: validationSummary.failed,
-      duplicate_items: skippedDuplicates,
-      result_summary: { imported_items: added, failed_items: validationSummary.failed },
-      items: validationRows.map(row => ({
-        item_index: row.index - 1,
-        status: row.status === 'failed' ? 'failed' : 'imported',
-        warnings: row.issues.filter(issue => issue.level === 'warning').map(issue => issue.message),
-        errors: row.issues.filter(issue => issue.level === 'failed').map(issue => issue.message),
-        payload: stripQuestionAssetPayload(row.question),
-      })),
-    });
-    if (dbTask) setRecentImportTasks(db.getRecentImportTasks?.(8) || []);
-    await reconcileQuestionLocalStore((db.getAllQuestions?.() || []).map(normalizeQuestion));
-    loadData();
-    message.success(`成功导入 ${added}/${result.count} 道题目到本地题库`);
+    startCloudImport(selectedWordFile, meta);
   };
 
   const openImportTaskDetail = async (task: ImportTask) => {
@@ -1376,7 +1146,7 @@ const QuestionBankImport: React.FC = () => {
             ]}
           />
 
-          {questionBankStorageUnavailable && (
+          {false && questionBankStorageUnavailable && (
             <Alert
               showIcon
               type="warning"
@@ -1495,7 +1265,6 @@ const QuestionBankImport: React.FC = () => {
             onDragOver={e => e.preventDefault()}
             onDrop={e => {
               e.preventDefault();
-              if (questionBankStorageUnavailable) return;
               const file = e.dataTransfer.files?.[0];
               if (!file) return;
               handleSelectWordFile(file);
@@ -1505,7 +1274,7 @@ const QuestionBankImport: React.FC = () => {
             <h3 style={{ marginTop: 16 }}>拖拽或选择 Word 文件</h3>
             <p style={{ color: '#999' }}>支持 .doc / .docx，当前模式：{wordSourceType === 'lecture' ? '讲义格式' : '试卷格式'}</p>
             <Space>
-              <Button size="large" icon={<FileWordOutlined />} disabled={questionBankStorageUnavailable} onClick={openWordFilePicker}>
+              <Button size="large" icon={<FileWordOutlined />} onClick={openWordFilePicker}>
                 选择文件
               </Button>
               <Button
@@ -1513,13 +1282,23 @@ const QuestionBankImport: React.FC = () => {
                 size="large"
                 icon={<CheckCircleOutlined />}
                 loading={wordImporting}
-                disabled={!selectedWordFile || !wordSourceType || questionBankStorageUnavailable}
+                disabled={!selectedWordFile || !wordSourceType}
                 onClick={handleStartParse}
               >
                 开始解析
               </Button>
             </Space>
           </div>
+
+          {cloudImportTask && (
+            <Alert
+              showIcon
+              type={cloudImportTask.status === 'candidates_ready' ? 'success' : 'info'}
+              message={'\u4e91\u7aef\u5bfc\u5165\u4efb\u52a1: ' + cloudImportTask.phase}
+              description={<Button size="small" onClick={refreshCloudImportTask}>{'\u5237\u65b0\u89e3\u6790\u7ed3\u679c'}</Button>}
+              style={{ marginTop: 16 }}
+            />
+          )}
 
           {(validationRows.length > 0 || commitResult) && (
             <div style={{ marginTop: 16 }}>
@@ -1573,7 +1352,7 @@ const QuestionBankImport: React.FC = () => {
                   />
                   <Space style={{ marginTop: 12 }}>
                     <Button icon={<DownloadOutlined />} onClick={() => downloadImportValidationReport(validationRows)}>导出错误报告</Button>
-                    <Button type="primary" loading={committingBatch} disabled={!wordResult || validationSummary.failed > 0 || questionBankStorageUnavailable} onClick={() => wordResult && importWordResults(wordResult)}>
+                    <Button type="primary" loading={committingBatch} disabled={!wordResult || validationSummary.failed > 0 || cloudImportTask?.status !== 'candidates_ready'} onClick={prepareCloudImportDrafts}>
                       确认导入
                     </Button>
                   </Space>
