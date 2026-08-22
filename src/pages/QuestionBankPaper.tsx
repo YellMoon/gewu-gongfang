@@ -46,13 +46,12 @@ import './QuestionBankPaper.css';
 const API_BASE = getApiBase('/api/question-bank');
 
 const TASK_TEXT = {
-  submitHost: '\u63d0\u4ea4\u5230\u6570\u636e\u4e3b\u673a',
-  submitPdfHost: '\u63d0\u4ea4 PDF \u5230\u6570\u636e\u4e3b\u673a',
-  submitted: '\u5df2\u63d0\u4ea4\u5230\u6570\u636e\u4e3b\u673a\uff0c\u53ef\u5728\u4efb\u52a1\u8bb0\u5f55\u4e2d\u67e5\u770b\u8fdb\u5ea6',
-  directDone: '\u6570\u636e\u4e3b\u673a\u5df2\u5b8c\u6210\u5bfc\u51fa',
-  localDraft: '\u7f51\u7edc\u672a\u786e\u8ba4\uff0c\u5df2\u4fdd\u5b58\u4e3a\u672c\u5730\u8349\u7a3f\uff0c\u4e0d\u4ee3\u8868\u6570\u636e\u4e3b\u673a\u5df2\u53d7\u7406',
-  noHost: '\u6682\u65e0\u5728\u7ebf\u6570\u636e\u4e3b\u673a\uff0c\u4efb\u52a1\u5df2\u4fdd\u5b58\u4e3a\u672c\u5730\u8349\u7a3f',
-  clientHint: '\u5f53\u524d\u662f\u666e\u901a\u7535\u8111\uff0c\u5bfc\u51fa\u4efb\u52a1\u5c06\u7ecf\u963f\u91cc\u4e91\u4e2d\u7ee7\u63d0\u4ea4\u5230\u6307\u5b9a\u6570\u636e\u4e3b\u673a\u3002',
+  submit: '\u63d0\u4ea4\u4e91\u7aef\u4efb\u52a1',
+  submitPdf: '\u63d0\u4ea4 PDF \u5bfc\u51fa\u4efb\u52a1',
+  submitted: '\u5df2\u63d0\u4ea4\u4e91\u7aef\uff0c\u53ef\u5728\u4efb\u52a1\u8bb0\u5f55\u4e2d\u67e5\u770b\u8fdb\u5ea6',
+  directDone: '\u4e91\u7aef\u5df2\u5b8c\u6210\u5bfc\u51fa',
+  localDraft: '\u7f51\u7edc\u672a\u786e\u8ba4\uff0c\u5df2\u4fdd\u5b58\u4e3a\u672c\u5730\u8349\u7a3f\uff0c\u8054\u7f51\u540e\u8bf7\u786e\u8ba4\u63d0\u4ea4\u4e91\u7aef',
+  noCloud: '\u4e91\u7aef\u4efb\u52a1\u670d\u52a1\u6682\u4e0d\u53ef\u7528\uff0c\u4efb\u52a1\u5df2\u4fdd\u5b58\u4e3a\u672c\u5730\u8349\u7a3f',
   configError: '\u65e0\u6cd5\u8bfb\u53d6\u684c\u9762\u8fd0\u884c\u914d\u7f6e\uff0c\u53ea\u80fd\u7ee7\u7eed\u7f16\u8f91\u8bd5\u5377\u3002',
   historyTitle: '\u5bfc\u51fa\u4efb\u52a1\u8bb0\u5f55', cancel: '\u53d6\u6d88\u4efb\u52a1',
   retry: '\u4f7f\u7528\u65b0\u8bf7\u6c42\u91cd\u8bd5', refreshDownload: '\u5237\u65b0\u5e76\u4e0b\u8f7d', refresh: '\u5237\u65b0\u72b6\u6001',
@@ -271,7 +270,7 @@ const QuestionBankPaper: React.FC = () => {
       setPaperTasks(loadPaperExportTasks());
       window.requestAnimationFrame(() => document.getElementById(`paper-task-${submitted.task.localId}`)?.focus());
       if (!submitted.accepted) {
-        messageApi.warning(submitted.task.errorCode === 'TARGET_HOST_REQUIRED' ? TASK_TEXT.noHost : TASK_TEXT.localDraft);
+        messageApi.warning(submitted.task.errorCode === 'CLOUD_TASK_UNAVAILABLE' ? TASK_TEXT.noCloud : TASK_TEXT.localDraft);
       } else if (submitted.task.status === 'completed') {
         await downloadPaperExportTask(runtimeConfig, submitted.task);
         messageApi.success(TASK_TEXT.directDone);
@@ -294,7 +293,7 @@ const QuestionBankPaper: React.FC = () => {
       if (action === 'cancel') await cancelPaperExportTask(runtimeConfig, task.localId);
       if (action === 'retry') {
         const retried = await retryPaperExportTask(runtimeConfig, task.localId);
-        if (!retried.accepted) messageApi.warning(retried.task.errorCode === 'TARGET_HOST_REQUIRED' ? TASK_TEXT.noHost : TASK_TEXT.localDraft);
+        if (!retried.accepted) messageApi.warning(retried.task.errorCode === 'CLOUD_TASK_UNAVAILABLE' ? TASK_TEXT.noCloud : TASK_TEXT.localDraft);
       }
       if (action === 'refresh') await refreshPaperExportTask(runtimeConfig, task.localId);
       if (action === 'download') {
@@ -344,15 +343,14 @@ const QuestionBankPaper: React.FC = () => {
             <Button icon={<SplitCellsOutlined />} onClick={applyAutoGroup} disabled={items.length === 0}>
               按题型分组
             </Button>
-            <Button onClick={() => exportHostPaper('pdf')} loading={exportingFormat === 'pdf'} disabled={items.length === 0 || !runtimeConfig || !!exportingFormat}>{runtimeConfig?.nodeRole === 'primary-host' ? String.fromCharCode(23548, 20986, 32, 80, 68, 70) : TASK_TEXT.submitPdfHost}</Button>
-            <Button type="primary" icon={<FileWordOutlined />} onClick={() => exportHostPaper('word')} loading={exportingFormat === 'word'} disabled={items.length === 0 || !runtimeConfig || !!exportingFormat} className={runtimeConfig?.nodeRole === 'desktop-client' ? 'submit-to-host-word' : undefined} aria-label={runtimeConfig?.nodeRole === 'desktop-client' ? TASK_TEXT.submitHost : undefined}>
+            <Button onClick={() => exportHostPaper('pdf')} loading={exportingFormat === 'pdf'} disabled={items.length === 0 || !runtimeConfig || !!exportingFormat}>{TASK_TEXT.submitPdf}</Button>
+            <Button type="primary" icon={<FileWordOutlined />} onClick={() => exportHostPaper('word')} loading={exportingFormat === 'word'} disabled={items.length === 0 || !runtimeConfig || !!exportingFormat} className="submit-to-cloud-word" aria-label={TASK_TEXT.submit}>
               导出试卷
             </Button>
           </Space>
         }
       >
         {runtimeConfigError && <Alert type="warning" showIcon message={runtimeConfigError} style={{ marginBottom: 12 }} />}
-        {runtimeConfig?.nodeRole === 'desktop-client' && <Alert type="info" showIcon message={TASK_TEXT.clientHint} style={{ marginBottom: 12 }} />}
         <Space size={16} wrap>
           <Statistic title="题目数" value={items.length} suffix="题" />
           <Statistic title="总分" value={totalScore} suffix="分" />

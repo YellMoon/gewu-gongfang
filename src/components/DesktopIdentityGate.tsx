@@ -194,15 +194,12 @@ const DesktopIdentityGate: React.FC = () => {
         };
         (window as any).desktopIdentitySessionProvider = installedProvider;
         setBaseUrl(identityBaseUrl);
-        setDeviceName(String((config as any).deviceName || (
-          config.buildFlavor === 'primary-host' ? '本地数据主机' : '这台电脑'
-        )));
+        setDeviceName(String((config as any).deviceName || String.fromCharCode(36825, 21488, 30005, 33041)));
         if (vaultStatus.state === 'empty') {
           setGateState({ kind: 'registration-required' });
           return;
         }
-        if ((vaultStatus.legacyUpgradeRequired || vaultStatus.state === 'legacy_upgrade_required')
-          && config.buildFlavor === 'desktop-client') {
+        if (vaultStatus.legacyUpgradeRequired || vaultStatus.state === 'legacy_upgrade_required') {
           setGateState({ kind: 'upgrade-required' });
           return;
         }

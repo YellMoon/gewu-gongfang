@@ -1,6 +1,5 @@
 export type RuntimeConfig = {
-  buildFlavor: string;
-  nodeRole?: string;
+  buildFlavor: 'unified-desktop';
   desktopIdentityMode: 'full';
   deviceId: string;
   cloudBaseUrl: string;
