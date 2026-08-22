@@ -40,11 +40,11 @@ function identity(value) {
 function ticket(value) {
   let row;
   try {
-    row = exact(value, ['verificationToken'], rejected);
+    row = exact(value, ['verificationToken', 'deviceChallenge'], rejected);
   } catch (_) {
     throw rejected();
   }
-  if (!text(row.verificationToken)) throw rejected();
+  if (!text(row.verificationToken) || !text(row.deviceChallenge)) throw rejected();
   return Object.freeze(row);
 }
 

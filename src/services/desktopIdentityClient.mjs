@@ -615,6 +615,72 @@ export function createDesktopIdentityClient({
     });
   }
 
+  async function beginPasswordVerification({ baseUrl, deviceName, idempotencyKey, loginType, login, password } = {}) {
+    if (typeof desktopIdentity.beginUnifiedOnlineRegistration !== 'function') {
+      throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_UNAVAILABLE');
+    }
+    const normalizedUrl = normalizedBaseUrl(baseUrl);
+    const normalizedIdempotencyKey = String(idempotencyKey || '').trim();
+    const normalizedLogin = String(login || '').trim();
+    if (!normalizedIdempotencyKey || normalizedIdempotencyKey.length > 256
+      || !['phone', 'account_name'].includes(loginType) || !normalizedLogin || normalizedLogin.length > 256
+      || typeof password !== 'string' || password.length === 0 || password.length > 1024) {
+      throw identityError('DESKTOP_PASSWORD_VERIFICATION_INPUT_INVALID');
+    }
+    const verified = await request(fetchImpl, normalizedUrl, '/api/desktop/password-verification', {
+      method: 'POST',
+      body: { loginType, login: normalizedLogin, password },
+    });
+    if (!verified?.verificationToken || !verified?.deviceChallenge) {
+      throw identityError('DESKTOP_PASSWORD_VERIFICATION_INVALID');
+    }
+    const publicIdentity = await desktopIdentity.beginUnifiedOnlineRegistration({ deviceName });
+    if (!publicIdentity?.deviceId || !publicIdentity?.publicKey || !publicIdentity?.keyFingerprint) {
+      throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_CONTEXT_INVALID');
+    }
+    return Object.freeze({
+      baseUrl: normalizedUrl,
+      publicIdentity: Object.freeze({ ...publicIdentity }),
+      idempotencyKey: normalizedIdempotencyKey,
+      status: 'verified',
+      verificationToken: String(verified.verificationToken),
+      deviceChallenge: String(verified.deviceChallenge),
+    });
+  }
+
+  async function beginPasswordEnrollment({ baseUrl, deviceName, idempotencyKey, phoneCode, loginName, password } = {}) {
+    if (typeof desktopIdentity.beginUnifiedOnlineRegistration !== 'function') {
+      throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_UNAVAILABLE');
+    }
+    const normalizedUrl = normalizedBaseUrl(baseUrl);
+    const normalizedIdempotencyKey = String(idempotencyKey || '').trim();
+    const normalizedPhoneCode = String(phoneCode || '').trim();
+    if (!normalizedIdempotencyKey || normalizedIdempotencyKey.length > 256 || !normalizedPhoneCode || normalizedPhoneCode.length > 8192
+      || !(loginName === null || (typeof loginName === 'string' && loginName === loginName.trim() && loginName.length > 0 && loginName.length <= 64))
+      || typeof password !== 'string' || password.length === 0 || password.length > 1024) {
+      throw identityError('DESKTOP_PASSWORD_ENROLLMENT_INPUT_INVALID');
+    }
+    const enrolled = await request(fetchImpl, normalizedUrl, '/api/desktop/password-enrollment', {
+      method: 'POST',
+      body: { phoneCode: normalizedPhoneCode, loginName, password },
+    });
+    if (!enrolled?.verificationToken || !enrolled?.deviceChallenge) {
+      throw identityError('DESKTOP_PASSWORD_ENROLLMENT_INVALID');
+    }
+    const publicIdentity = await desktopIdentity.beginUnifiedOnlineRegistration({ deviceName });
+    if (!publicIdentity?.deviceId || !publicIdentity?.publicKey || !publicIdentity?.keyFingerprint) {
+      throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_CONTEXT_INVALID');
+    }
+    return Object.freeze({
+      baseUrl: normalizedUrl,
+      publicIdentity: Object.freeze({ ...publicIdentity }),
+      idempotencyKey: normalizedIdempotencyKey,
+      status: 'verified',
+      verificationToken: String(enrolled.verificationToken),
+      deviceChallenge: String(enrolled.deviceChallenge),
+    });
+  }
+
   async function pollUnifiedOnlineRegistration(pending) {
     if (!pending?.baseUrl || !pending?.pairingId || !pending?.pairingSecret || !pending?.publicIdentity
       || !pending?.idempotencyKey) {
@@ -848,6 +914,8 @@ export function createDesktopIdentityClient({
 
   return Object.freeze({
     beginPasswordReset,
+    beginPasswordEnrollment,
+    beginPasswordVerification,
     beginRegistration,
     beginUnifiedOnlineRegistration,
     completeRegistration,

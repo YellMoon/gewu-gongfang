@@ -24,13 +24,13 @@ const service = createDesktopPasswordAuthenticationService({
   },
   issueRegistrationTicket: input => {
     calls.push(['issueRegistrationTicket', input]);
-    return { verificationToken: 'signed-registration-ticket' };
+    return { verificationToken: 'signed-registration-ticket', deviceChallenge: 'cloud-device-proof-1' };
   },
 });
 
 (async () => {
   const enrolled = await service.enroll({ phoneCode: 'wechat-phone-proof', loginName: 'teacher.a', password: 'correct password' });
-  assert.deepStrictEqual(enrolled, { verificationToken: 'signed-registration-ticket' });
+  assert.deepStrictEqual(enrolled, { verificationToken: 'signed-registration-ticket', deviceChallenge: 'cloud-device-proof-1' });
   assert.deepStrictEqual(calls.slice(0, 3), [
     ['resolveCanonicalAccount', { verifiedPhone: '13800138000', verificationEvidenceHash: 'evidence:wechat-phone-proof' }],
     ['enroll', { verifiedPhone: '13800138000', authorityId: 'authority-1', accountId: 'account-1', loginName: 'teacher.a', password: 'correct password' }],
@@ -38,7 +38,7 @@ const service = createDesktopPasswordAuthenticationService({
   ]);
 
   const verified = await service.verify({ loginType: 'account_name', login: 'teacher.a', password: 'correct password' });
-  assert.deepStrictEqual(verified, { verificationToken: 'signed-registration-ticket' });
+  assert.deepStrictEqual(verified, { verificationToken: 'signed-registration-ticket', deviceChallenge: 'cloud-device-proof-1' });
   assert.deepStrictEqual(calls.slice(3), [
     ['verify', { loginType: 'account_name', login: 'teacher.a', password: 'correct password' }],
     ['issueRegistrationTicket', { authorityId: 'authority-1', accountId: 'account-1' }],

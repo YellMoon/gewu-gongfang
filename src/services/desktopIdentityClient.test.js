@@ -190,6 +190,60 @@ async function main() {
   assert.deepStrictEqual(unifiedCloudEvents, ['sign:unified-online-registration', 'seal-unified-cloud-vault', 'save-unified-cloud-session']);
   assert.strictEqual(unifiedCloudStored.token, 'session-token-cloud-1');
   assert.strictEqual(unifiedCompleted.gateState.kind, 'online-unlocked');
+  let passwordRegistrationPending = false;
+  let passwordClientStored = false;
+  const passwordVerificationRequests = [];
+  const passwordVerificationClient = createDesktopIdentityClient({
+    desktopIdentity: {
+      status: async () => ({ state: passwordRegistrationPending ? 'unified_online_registration_pending' : 'empty' }),
+      beginUnifiedOnlineRegistration: async () => {
+        passwordRegistrationPending = true;
+        return {
+          deviceId: 'desktop-device-password-1', deviceName: 'Password cloud desktop', deviceKind: 'desktop-client',
+          publicKey: 'password-public-key', keyFingerprint: 'b'.repeat(64),
+        };
+      },
+    },
+    sessionStore: { save: async () => { passwordClientStored = true; }, clear: async () => {} },
+    fetchImpl: async (url, options) => {
+      passwordVerificationRequests.push({ url, body: JSON.parse(options.body) });
+      if (url.endsWith('/api/desktop/password-enrollment')) {
+        return { ok: true, json: async () => ({ ok: true, verificationToken: 'password-enrollment-ticket', deviceChallenge: 'cloud-password-enrollment-proof' }) };
+      }
+      return { ok: true, json: async () => ({ ok: true, verificationToken: 'password-verification-ticket', deviceChallenge: 'cloud-password-device-proof' }) };
+    },
+  });
+  const passwordPending = await passwordVerificationClient.beginPasswordVerification({
+    baseUrl: 'https://cloud.test', deviceName: 'Password cloud desktop', idempotencyKey: 'password-registration-1',
+    loginType: 'phone', login: '13800138000', password: 'correct horse battery staple',
+  });
+  assert.strictEqual((await passwordVerificationClient.status()).state, 'unified_online_registration_pending');
+  assert.deepStrictEqual(passwordPending, {
+    baseUrl: 'https://cloud.test',
+    publicIdentity: {
+      deviceId: 'desktop-device-password-1', deviceName: 'Password cloud desktop', deviceKind: 'desktop-client',
+      publicKey: 'password-public-key', keyFingerprint: 'b'.repeat(64),
+    },
+    idempotencyKey: 'password-registration-1', status: 'verified',
+    verificationToken: 'password-verification-ticket', deviceChallenge: 'cloud-password-device-proof',
+  });
+  assert.deepStrictEqual(passwordVerificationRequests, [{
+    url: 'https://cloud.test/api/desktop/password-verification',
+    body: { loginType: 'phone', login: '13800138000', password: 'correct horse battery staple' },
+  }]);
+  assert.strictEqual(passwordClientStored, false, 'password verification must only produce an online registration pending state, never a local session or vault write');
+  const enrollmentPending = await passwordVerificationClient.beginPasswordEnrollment({
+    baseUrl: 'https://cloud.test', deviceName: 'Password enrollment desktop', idempotencyKey: 'password-enrollment-1',
+    phoneCode: 'wechat-phone-proof', loginName: 'teacher.a', password: 'correct horse battery staple',
+  });
+  assert.strictEqual(enrollmentPending.status, 'verified');
+  assert.strictEqual(enrollmentPending.verificationToken, 'password-enrollment-ticket');
+  assert.strictEqual(enrollmentPending.deviceChallenge, 'cloud-password-enrollment-proof');
+  assert.deepStrictEqual(passwordVerificationRequests.at(-1), {
+    url: 'https://cloud.test/api/desktop/password-enrollment',
+    body: { phoneCode: 'wechat-phone-proof', loginName: 'teacher.a', password: 'correct horse battery staple' },
+  });
+  assert.strictEqual(passwordClientStored, false, 'password enrollment must also stop before any local vault or session persistence');
   const cloudSchedules = await unifiedCloudClient.listCloudSchedules({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted,
   });

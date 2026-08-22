@@ -190,15 +190,17 @@ function createCloudDesktopRegistrationService(config) {
     }
     if (!text(identity.authorityId) || !text(identity.accountId)) throw rejected();
     const now = currentNow();
+    const deviceChallenge = String(settings.randomId('desktop-proof-challenge'));
     return Object.freeze({
       verificationToken: makeTicket(settings.ticketSecret, {
         v: 1,
         authorityId: identity.authorityId,
         accountId: identity.accountId,
-        challenge: String(settings.randomId('desktop-proof-challenge')),
+        challenge: deviceChallenge,
         proofId: String(settings.randomId('online-identity-proof')),
         expiresAt: now.getTime() + 5 * 60 * 1000,
       }),
+      deviceChallenge,
     });
   };
   const readCurrentSession = async ticket => {

@@ -126,7 +126,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!desktopPasswordAuthentication) return desktopUnavailable(response);
     try {
       const result = await desktopPasswordAuthentication.enroll(request.body);
-      response.json({ ok: true, verificationToken: result.verificationToken });
+      response.json({ ok: true, verificationToken: result.verificationToken, deviceChallenge: result.deviceChallenge });
     } catch (error) {
       identityFailure(response, error);
     }
@@ -135,7 +135,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!desktopPasswordAuthentication) return desktopUnavailable(response);
     try {
       const result = await desktopPasswordAuthentication.verify(request.body);
-      response.json({ ok: true, verificationToken: result.verificationToken });
+      response.json({ ok: true, verificationToken: result.verificationToken, deviceChallenge: result.deviceChallenge });
     } catch (error) {
       identityFailure(response, error);
     }

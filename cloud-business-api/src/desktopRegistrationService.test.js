@@ -49,6 +49,7 @@ const service = createCloudDesktopRegistrationService({
 
   const passwordVerified = service.issueVerificationForVerifiedAccount({ authorityId: 'tenant-1', accountId: 'account-1' });
   assert.ok(typeof passwordVerified.verificationToken === 'string' && passwordVerified.verificationToken.length > 40);
+  assert.ok(typeof passwordVerified.deviceChallenge === 'string' && passwordVerified.deviceChallenge.length > 0);
   assert.deepStrictEqual(
     ((token => JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString('utf8')))(passwordVerified.verificationToken)).authorityId,
     'tenant-1',
