@@ -33,8 +33,8 @@ function grantRole(value) {
   return typeof value === 'string' && ['admin', 'teacher', 'student'].includes(value) ? value : null;
 }
 
-function createMiniappCloudAccountRepository({ query }) {
-  if (typeof query !== 'function') throw invalid();
+function createMiniappCloudAccountRepository({ query, tenantId }) {
+  if (typeof query !== 'function' || typeof tenantId !== 'string' || !tenantId || tenantId !== tenantId.trim()) throw invalid();
   return Object.freeze({
     async resolveOrCreate(input) {
       const request = exact(input, ['accountId', 'phoneHmac', 'bootstrapAdmin']);
@@ -103,9 +103,9 @@ function createMiniappCloudAccountRepository({ query }) {
            WHERE a.account_id=$1
            FOR UPDATE
          ), profile AS (
-           SELECT id FROM business.teachers WHERE $2='teacher' AND id=$3 AND legacy_deleted=false
+           SELECT id FROM business.teachers WHERE $2='teacher' AND id=$3 AND tenant_id=$4 AND legacy_deleted=false
            UNION ALL
-           SELECT id FROM business.students WHERE $2='student' AND id=$3 AND legacy_deleted=false
+           SELECT id FROM business.students WHERE $2='student' AND id=$3 AND tenant_id=$4 AND legacy_deleted=false
          ), compatible AS (
            SELECT t.account_id
            FROM target t
@@ -135,7 +135,7 @@ function createMiniappCloudAccountRepository({ query }) {
          JOIN granted r ON r.account_id=a.account_id
          LEFT JOIN business.miniapp_cloud_role_grants g ON g.account_id=a.account_id
          GROUP BY a.account_id,a.status`,
-        [request.accountId, role, request.profileId],
+        [request.accountId, role, request.profileId, tenantId],
       );
       return result.rows[0] ? accountRow(result.rows[0]) : null;
     },
