@@ -31,6 +31,12 @@ function parseAgentId(value) {
   return agentId;
 }
 
+function parseToken(value) {
+  const token = required(value);
+  if (token.length < 24 || token.length > 512) throw failure();
+  return token;
+}
+
 function parseNasRoot(value) {
   const configuredRoot = required(value);
   if (!path.isAbsolute(configuredRoot)) throw failure();
@@ -51,6 +57,7 @@ function loadStorageAgentConfig(env = process.env) {
   return Object.freeze({
     cloudBaseUrl: parseCloudBaseUrl(env.CLOUD_BUSINESS_BASE_URL),
     agentId: parseAgentId(env.STORAGE_AGENT_ID),
+    token: parseToken(env.STORAGE_AGENT_TOKEN),
     nasRoot: parseNasRoot(env.NAS_STORAGE_ROOT),
     pollSeconds: parsePollSeconds(env.STORAGE_AGENT_POLL_SECONDS),
   });
