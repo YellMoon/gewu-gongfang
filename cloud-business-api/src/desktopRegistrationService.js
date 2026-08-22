@@ -108,6 +108,38 @@ function sessionContext(value, ticket) {
   return Object.freeze({ ...copy, roles: Object.freeze(copy.roles.slice()) });
 }
 
+function preferredLeaseRole(roles) {
+  if (roles.includes('teacher')) return 'teacher';
+  if (roles.includes('student')) return 'student';
+  return roles[0] || null;
+}
+
+function offlineLease(secret, ticket, context, issuedAt) {
+  const activeRole = preferredLeaseRole(context.roles);
+  if (!activeRole) throw rejected();
+  const scope = { kind: activeRole };
+  if (activeRole === 'teacher') scope.teacherId = null;
+  if (activeRole === 'student') scope.studentId = null;
+  const lease = {
+    id: `offline-lease-${ticket.sessionId}`,
+    userId: ticket.accountId,
+    deviceId: ticket.deviceId,
+    authorizationId: ticket.sessionId,
+    credentialVersion: 1,
+    eligibleRoles: Object.freeze(context.roles.slice()),
+    activeRole,
+    teacherId: null,
+    studentId: null,
+    issuedAt: issuedAt.toISOString(),
+    expiresAt: context.expiresAt,
+    scope: Object.freeze(scope),
+  };
+  return Object.freeze({
+    ...lease,
+    signature: signPart(secret, base64urlJson(lease)),
+  });
+}
+
 function verifyProof(publicKey, challenge, proof) {
   if (!text(publicKey) || !text(proof)) throw rejected();
   try {
@@ -143,6 +175,22 @@ function createCloudDesktopRegistrationService(config) {
   };
   const inspectVerificationToken = token => inspectTicket(settings.ticketSecret, token, currentNow());
   const inspectSessionToken = token => inspectSessionTicket(settings.ticketSecret, token, currentNow());
+  const readCurrentSession = async ticket => {
+    let current;
+    try {
+      current = await settings.readSessionContext({
+        authorityId: ticket.authorityId,
+        accountId: ticket.accountId,
+        deviceId: ticket.deviceId,
+        installationId: ticket.installationId,
+        sessionId: ticket.sessionId,
+        expiresAt: new Date(ticket.expiresAt).toISOString(),
+      });
+    } catch (_) {
+      throw rejected();
+    }
+    return sessionContext(current, ticket);
+  };
   return Object.freeze({
     inspectVerificationToken,
     inspectSessionToken,
@@ -214,7 +262,14 @@ function createCloudDesktopRegistrationService(config) {
           sessionId: result.sessionId,
           expiresAt: new Date(sessionExpiresAt).getTime(),
         });
-        return Object.freeze({ receiptId, sessionId: result.sessionId, replayed: result.replayed, sessionToken });
+        const current = await readCurrentSession(inspectSessionToken(sessionToken));
+        return Object.freeze({
+          receiptId,
+          sessionId: result.sessionId,
+          replayed: result.replayed,
+          sessionToken,
+          offlineLease: offlineLease(settings.ticketSecret, inspectSessionToken(sessionToken), current, now),
+        });
       } catch (error) {
         if (error && error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED') throw error;
         throw rejected();
@@ -223,20 +278,7 @@ function createCloudDesktopRegistrationService(config) {
     async sessionContext(input) {
       const request = exact(input, ['sessionToken']);
       const ticket = inspectSessionToken(request.sessionToken);
-      let current;
-      try {
-        current = await settings.readSessionContext({
-          authorityId: ticket.authorityId,
-          accountId: ticket.accountId,
-          deviceId: ticket.deviceId,
-          installationId: ticket.installationId,
-          sessionId: ticket.sessionId,
-          expiresAt: new Date(ticket.expiresAt).toISOString(),
-        });
-      } catch (_) {
-        throw rejected();
-      }
-      return sessionContext(current, ticket);
+      return readCurrentSession(ticket);
     },
   });
 }

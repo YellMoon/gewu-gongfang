@@ -658,7 +658,7 @@ export function createDesktopIdentityClient({
         idempotencyKey: pending.idempotencyKey,
       },
     });
-    if (!registered?.sessionToken || !registered?.sessionId) {
+    if (!registered?.sessionToken || !registered?.sessionId || !registered?.offlineLease) {
       throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_INVALID');
     }
     const context = await request(fetchImpl, pending.baseUrl, '/api/desktop/session-context', {
@@ -698,7 +698,7 @@ export function createDesktopIdentityClient({
       password,
       authorization,
       profile,
-      offlineLease: null,
+      offlineLease: registered.offlineLease,
     });
     activePassword = password;
     const stored = onlineSessionValue({

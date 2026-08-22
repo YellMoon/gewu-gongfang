@@ -111,7 +111,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!desktopRegistration) return desktopUnavailable(response);
     try {
       const result = await desktopRegistration.register(request.body);
-      response.json({ ok: true, receiptId: result.receiptId, sessionId: result.sessionId, replayed: result.replayed, sessionToken: result.sessionToken });
+      response.json({ ok: true, receiptId: result.receiptId, sessionId: result.sessionId, replayed: result.replayed, sessionToken: result.sessionToken, offlineLease: result.offlineLease });
     } catch (error) {
       identityFailure(response, error);
     }

@@ -54,6 +54,27 @@ const service = createCloudDesktopRegistrationService({
   });
   assert.deepStrictEqual({ receiptId: registered.receiptId, sessionId: registered.sessionId, replayed: registered.replayed }, { receiptId: calls.registered[0].receiptId, sessionId: calls.registered[0].sessionId, replayed: false });
   assert.ok(typeof registered.sessionToken === 'string' && registered.sessionToken.length > 40);
+  const unsignedLease = { ...registered.offlineLease };
+  delete unsignedLease.signature;
+  assert.deepStrictEqual(unsignedLease, {
+    id: `offline-lease-${registered.sessionId}`,
+    userId: 'account-1',
+    deviceId: calls.issued[0].deviceId,
+    authorizationId: registered.sessionId,
+    credentialVersion: 1,
+    eligibleRoles: ['super_admin'],
+    activeRole: 'super_admin',
+    teacherId: null,
+    studentId: null,
+    issuedAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + 60 * 60 * 1000).toISOString(),
+    scope: { kind: 'super_admin' },
+  }, 'the cloud registration result must issue a short-lived lease bound to this session and device');
+  const expectedLeaseSignature = crypto.createHmac('sha256', ticketSecret)
+    .update(Buffer.from(JSON.stringify(unsignedLease), 'utf8').toString('base64url'))
+    .digest('base64url');
+  assert.strictEqual(registered.offlineLease.signature, expectedLeaseSignature,
+    'the lease is signed by the cloud service over every locally persisted binding');
   assert.strictEqual(calls.issued.length, 1);
   assert.strictEqual(calls.registered.length, 1);
   assert.strictEqual(calls.issued[0].authorityId, 'tenant-1');
@@ -74,7 +95,7 @@ const service = createCloudDesktopRegistrationService({
     },
     'a desktop session context must be derived from the signed current cloud session',
   );
-  assert.strictEqual(calls.sessionContexts.length, 1);
+  assert.strictEqual(calls.sessionContexts.length, 2, 'registration re-reads the cloud session before issuing its lease');
   await assert.rejects(
     () => service.sessionContext({ sessionToken: `${registered.sessionToken}x` }),
     error => error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED',

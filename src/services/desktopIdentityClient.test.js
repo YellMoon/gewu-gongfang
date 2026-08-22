@@ -116,7 +116,11 @@ async function main() {
         return { ok: true, json: async () => ({ ok: true, status: 'verified', verificationToken: 'verification-token-1', deviceChallenge: 'cloud-device-proof-1' }) };
       }
       if (url === 'https://cloud.test/api/desktop/online-registration') {
-        return { ok: true, json: async () => ({ ok: true, receiptId: 'receipt-cloud-1', sessionId: 'session-cloud-1', replayed: false, sessionToken: 'session-token-cloud-1' }) };
+        return { ok: true, json: async () => ({ ok: true, receiptId: 'receipt-cloud-1', sessionId: 'session-cloud-1', replayed: false, sessionToken: 'session-token-cloud-1', offlineLease: {
+          id: 'cloud-lease-1', userId: 'account-cloud-1', deviceId: 'desktop-device-a1b2c3d4e5f60708', authorizationId: 'session-cloud-1',
+          credentialVersion: 1, eligibleRoles: ['teacher'], activeRole: 'teacher', teacherId: null, studentId: null,
+          issuedAt: '2026-08-21T12:00:00.000Z', expiresAt: '2026-08-21T13:00:00.000Z', scope: { kind: 'teacher', teacherId: null },
+        } }) };
       }
       if (url === 'https://cloud.test/api/desktop/session-context') {
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
@@ -172,7 +176,11 @@ async function main() {
     verificationToken: 'verification-token-1', installationId: 'desktop-device-a1b2c3d4e5f60708',
     installationPublicKey: 'unified-public-key', deviceProof: 'unified-device-proof', idempotencyKey: 'unified-registration-1',
   });
-  assert.strictEqual(unifiedCloudSealed.offlineLease, null, 'a new unified registration never manufactures an offline lease');
+  assert.deepStrictEqual(unifiedCloudSealed.offlineLease, {
+    id: 'cloud-lease-1', userId: 'account-cloud-1', deviceId: 'desktop-device-a1b2c3d4e5f60708', authorizationId: 'session-cloud-1',
+    credentialVersion: 1, eligibleRoles: ['teacher'], activeRole: 'teacher', teacherId: null, studentId: null,
+    issuedAt: '2026-08-21T12:00:00.000Z', expiresAt: '2026-08-21T13:00:00.000Z', scope: { kind: 'teacher', teacherId: null },
+  }, 'a new unified registration seals only the cloud-issued, device-bound offline lease');
   assert.strictEqual(unifiedCloudSealed.authorization.userId, 'account-cloud-1');
   assert.deepStrictEqual(unifiedCloudSealed.profile.eligibleRoles, ['teacher']);
   assert.strictEqual(unifiedCloudSealed.profile.activeRole, 'teacher',

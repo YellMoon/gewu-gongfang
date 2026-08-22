@@ -43,7 +43,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const calls = [];
   const identity = {
     begin: async input => { calls.push(['begin', input]); return { verificationToken: 'ticket-1' }; },
-    register: async input => { calls.push(['register', input]); return { receiptId: 'receipt-1', sessionId: 'session-1', replayed: false, sessionToken: 'eyJ2IjoxfQ.signature' }; },
+    register: async input => { calls.push(['register', input]); return { receiptId: 'receipt-1', sessionId: 'session-1', replayed: false, sessionToken: 'eyJ2IjoxfQ.signature', offlineLease: { id: 'lease-1' } }; },
     sessionContext: async input => {
       calls.push(['sessionContext', input]);
       return { authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'] };
@@ -54,7 +54,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.deepStrictEqual(verification.body, { ok: true, verificationToken: 'ticket-1' });
   const registration = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity }), '/api/desktop/online-registration', { method: 'POST', body: { verificationToken: 'ticket-1', installationId: 'install-1', installationPublicKey: 'public-key', deviceProof: 'proof', idempotencyKey: 'retry-1' } });
   assert.strictEqual(registration.status, 200);
-  assert.deepStrictEqual(registration.body, { ok: true, receiptId: 'receipt-1', sessionId: 'session-1', replayed: false, sessionToken: 'eyJ2IjoxfQ.signature' });
+  assert.deepStrictEqual(registration.body, { ok: true, receiptId: 'receipt-1', sessionId: 'session-1', replayed: false, sessionToken: 'eyJ2IjoxfQ.signature', offlineLease: { id: 'lease-1' } });
   const sessionContext = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity }), '/api/desktop/session-context', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
   assert.strictEqual(sessionContext.status, 200);
   assert.deepStrictEqual(sessionContext.body, { ok: true, authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'] });
