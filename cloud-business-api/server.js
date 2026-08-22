@@ -318,6 +318,7 @@ const app = createCloudBusinessApp({
   questionAuthority,
   encryptedStorageRelay,
   storageAgentKeyFingerprint,
+  storageAgentPublicKey: storageAgentKeyFingerprint ? process.env.CLOUD_STORAGE_AGENT_PUBLIC_KEY : null,
   desktopPairing,
   businessTenantId: process.env.CLOUD_BUSINESS_TENANT_ID || 'default',
 });

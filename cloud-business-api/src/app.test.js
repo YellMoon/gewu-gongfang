@@ -348,6 +348,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const encryptedRelayApp = createCloudBusinessApp({
     query: async () => ({ rows: [] }), desktopRegistration: identity, businessTenantId: 'default',
     storageAgentKeyFingerprint: 'e'.repeat(64),
+    storageAgentPublicKey: 'agent-public-key-base64url',
     encryptedStorageRelay: {
       async create(input) {
         encryptedRelayCalls.push(input);
@@ -355,6 +356,11 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
       },
     },
   });
+  const encryptedRelayKey = await request(encryptedRelayApp, '/api/desktop/question-bank/assets/relay-key', {
+    method: 'GET', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' },
+  });
+  assert.strictEqual(encryptedRelayKey.status, 200);
+  assert.deepStrictEqual(encryptedRelayKey.body, { ok: true, agentPublicKey: 'agent-public-key-base64url', agentKeyFingerprint: 'e'.repeat(64) });
   const encryptedRelayCreated = await request(encryptedRelayApp, '/api/desktop/question-bank/assets/relay', {
     method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' }, body: {
       questionId: 'question-1', assetId: 'asset_1', taskId: 'task_12345678', objectId: 'obj_1', objectVersion: 1,

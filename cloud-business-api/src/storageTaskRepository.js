@@ -85,7 +85,7 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
             WHERE (task.state='queued' OR (task.state='leased' AND task.lease_expires_at <= transaction_timestamp()))
               AND relay.expires_at > transaction_timestamp()
             ORDER BY task.created_at ASC,task.task_id ASC
-            FOR UPDATE SKIP LOCKED
+            FOR UPDATE OF task SKIP LOCKED
             LIMIT 1
          ), leased AS (
            UPDATE business.storage_object_tasks task
