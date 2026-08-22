@@ -17,9 +17,14 @@ function authHeaders(deps, json = false) {
 }
 
 export function cloudTaskApiBase(config = {}) {
+  const base = cloudBusinessApiBase(config);
+  return base + '/api/desktop/paper-export-tasks';
+}
+
+function cloudBusinessApiBase(config = {}) {
   const base = trimSlash(config.cloudBusinessIdentityBaseUrl || 'https://physicsedu.xyz/cloud-business');
   if (!base) throw Object.assign(new Error('CLOUD_BASE_URL_REQUIRED'), { code: 'CLOUD_BASE_URL_REQUIRED' });
-  return `${base}/api/desktop/paper-export-tasks`;
+  return base;
 }
 
 function cloudUrl(cloudBaseUrl, path) {
@@ -165,12 +170,19 @@ export async function retryPaperExportTask(config, localId, deps = {}) {
 }
 
 async function exchangeAccess(config, result, deps) {
-  const accessPath = result.accessEndpoint || result.accessUrl;
+  const accessPath = String(result?.accessEndpoint || '');
   if (!accessPath) throw Object.assign(new Error('ARTIFACT_ACCESS_ENDPOINT_REQUIRED'), { code: 'ARTIFACT_ACCESS_ENDPOINT_REQUIRED' });
-  const response = await (deps.fetchImpl || globalThis.fetch)(cloudUrl(config.cloudBaseUrl, accessPath), { method: 'GET', headers: authHeaders(deps) });
+  if (!/^\/api\/desktop\/paper-export-artifacts\/[^/?#]+\/access$/.test(accessPath)) {
+    throw Object.assign(new Error('ARTIFACT_ACCESS_ENDPOINT_INVALID'), { code: 'ARTIFACT_ACCESS_ENDPOINT_INVALID' });
+  }
+  const response = await (deps.fetchImpl || globalThis.fetch)(cloudUrl(cloudBusinessApiBase(config), accessPath), { method: 'GET', headers: authHeaders(deps) });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !payload.success || !payload.data?.token) throw responseError(payload, response.status);
-  return { ...payload.data, accessUrl: cloudUrl(config.cloudBaseUrl, accessPath), fileUrl: cloudUrl(config.cloudBaseUrl, payload.data.fileUrl) };
+  const data = payload.data || {};
+  const filePath = String(data.downloadEndpoint || data.fileUrl || '');
+  if (!response.ok || !payload.ok || !data.token || !/^\/api\/desktop\/paper-export-artifacts\/[^/?#]+\/download$/.test(filePath)) {
+    throw responseError(payload, response.status);
+  }
+  return { ...data, accessUrl: cloudUrl(cloudBusinessApiBase(config), accessPath), fileUrl: cloudUrl(cloudBusinessApiBase(config), filePath) };
 }
 
 export async function downloadPaperExportResult(config, result, deps = {}) {

@@ -1,6 +1,5 @@
 import type { RuntimeConfig } from './runtimeConfigClient';
-import type { HostPaperExportInput, HostPaperExportResult } from './hostPaperExport';
-import { downloadHostArtifact } from './hostPaperExport';
+import type { HostPaperExportInput } from './hostPaperExport';
 import {
   cancelPaperExportTask as cancelRuntime,
   downloadPaperExportResult,
@@ -24,7 +23,7 @@ export interface PaperExportTaskRecord {
   accepted: boolean;
   message?: string;
   errorCode?: string;
-  result?: (Partial<HostPaperExportResult> & { accessEndpoint?: string }) | null;
+  result?: { accessEndpoint?: string; fileName?: string } | null;
   createdAt: string;
   updatedAt: string;
   retryOf?: string;
@@ -57,9 +56,5 @@ export async function retryPaperExportTask(config: RuntimeConfig, localId: strin
 export async function downloadPaperExportTask(config: RuntimeConfig, task: PaperExportTaskRecord): Promise<void> {
   const result = task.result;
   if (!result) throw new Error('PAPER_EXPORT_RESULT_REQUIRED');
-  if (result.token && result.fileUrl && result.accessUrl) {
-    await downloadHostArtifact(result as HostPaperExportResult);
-    return;
-  }
   await downloadPaperExportResult(config, result);
 }

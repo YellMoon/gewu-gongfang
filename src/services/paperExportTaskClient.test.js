@@ -90,26 +90,30 @@ function memoryStorage(seed = {}) {
   assert.ok(!String(client.submitPaperExportTask).includes('primary-host'), 'every desktop must submit an export task to cloud');
 
   const downloadCalls = []; let clicked = '';
-  const completed = { fileName: 'paper.pdf', accessEndpoint: '/api/cloud-relay-host/artifacts/a1/access' };
+  const completed = { fileName: 'paper.pdf', accessEndpoint: '/api/desktop/paper-export-artifacts/a1/access' };
   await client.downloadPaperExportResult(config, completed, {
     authStorage,
     fetchImpl: async (url, init = {}) => {
       downloadCalls.push({ url, init });
-      if (downloadCalls.length === 1) return { ok: true, status: 200, json: async () => ({ success: true, data: { token: 'short-1', fileUrl: '/api/cloud-relay-host/artifacts/a1' } }) };
+      if (downloadCalls.length === 1) return { ok: true, status: 200, json: async () => ({ ok: true, data: { token: 'short-1', downloadEndpoint: '/api/desktop/paper-export-artifacts/a1/download' } }) };
       if (downloadCalls.length === 2) return { ok: false, status: 410 };
-      if (downloadCalls.length === 3) return { ok: true, status: 200, json: async () => ({ success: true, data: { token: 'short-2', fileUrl: '/api/cloud-relay-host/artifacts/a1' } }) };
+      if (downloadCalls.length === 3) return { ok: true, status: 200, json: async () => ({ ok: true, data: { token: 'short-2', downloadEndpoint: '/api/desktop/paper-export-artifacts/a1/download' } }) };
       return { ok: true, status: 200, blob: async () => new Blob(['pdf']) };
     },
     createObjectURL: () => 'blob:paper', revokeObjectURL: () => undefined,
     createAnchor: () => ({ click() { clicked = this.href; } }),
   });
-  assert.strictEqual(downloadCalls[0].url, 'https://cloud.example.com/api/api/cloud-relay-host/artifacts/a1/access');
+  assert.strictEqual(downloadCalls[0].url, 'https://cloud-business.example.com/api/desktop/paper-export-artifacts/a1/access');
   assert.strictEqual(downloadCalls[0].init.method, 'GET');
   assert.strictEqual(downloadCalls[1].init.headers['x-gewu-artifact-token'], 'short-1');
   assert.strictEqual(downloadCalls[2].url, downloadCalls[0].url, '410 must refresh access through cloud before retrying');
   assert.strictEqual(downloadCalls[3].init.headers['x-gewu-artifact-token'], 'short-2');
   assert.strictEqual(clicked, 'blob:paper');
-  await assert.rejects(() => client.downloadPaperExportResult({ ...config, cloudBaseUrl: '' }, completed, { authStorage }), /CLOUD_BASE_URL_REQUIRED/);
+  await assert.rejects(
+    () => client.downloadPaperExportResult(config, { fileName: 'legacy.pdf', accessEndpoint: '/api/cloud-relay-host/artifacts/a1/access' }, { authStorage }),
+    error => error.code === 'ARTIFACT_ACCESS_ENDPOINT_INVALID',
+  );
+  assert.ok(downloadCalls.every(call => !String(call.url).startsWith('https://cloud.example.com/')), 'artifact access must not use the retired sync endpoint');
 
   console.log('paper export task client checks passed');
 })().catch(error => { console.error(error); process.exit(1); });
