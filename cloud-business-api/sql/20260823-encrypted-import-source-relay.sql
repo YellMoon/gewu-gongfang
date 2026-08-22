@@ -1,0 +1,23 @@
+BEGIN;
+
+CREATE TABLE business.encrypted_import_source_relays (
+  storage_task_id text COLLATE "C" PRIMARY KEY REFERENCES business.storage_object_tasks(task_id) ON UPDATE RESTRICT ON DELETE CASCADE,
+  import_task_id text COLLATE "C" NOT NULL UNIQUE REFERENCES business.question_import_tasks(task_id) ON UPDATE RESTRICT ON DELETE CASCADE,
+  tenant_id text COLLATE "C" NOT NULL REFERENCES business.tenants(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  actor_account_id text COLLATE "C" NOT NULL CHECK (actor_account_id=btrim(actor_account_id) AND actor_account_id<>''),
+  agent_key_fingerprint text COLLATE "C" NOT NULL CHECK (agent_key_fingerprint ~ '^[0-9a-f]{64}$'),
+  envelope_json jsonb NOT NULL CHECK (jsonb_typeof(envelope_json)='object'),
+  ciphertext bytea NOT NULL CHECK (octet_length(ciphertext) BETWEEN 1 AND 67108864),
+  ciphertext_sha256 text COLLATE "C" NOT NULL CHECK (ciphertext_sha256 ~ '^[0-9a-f]{64}$'),
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+  CONSTRAINT encrypted_import_source_relays_expiry_check CHECK (expires_at > created_at)
+);
+
+CREATE INDEX encrypted_import_source_relays_expiry_idx
+  ON business.encrypted_import_source_relays(expires_at);
+
+REVOKE ALL ON TABLE business.encrypted_import_source_relays FROM PUBLIC;
+GRANT SELECT,INSERT,DELETE ON TABLE business.encrypted_import_source_relays TO gewu_cloud_schedule_reader;
+
+COMMIT;

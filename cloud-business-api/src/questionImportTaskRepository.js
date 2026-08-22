@@ -24,6 +24,13 @@ function text(value, max = 256) {
   return value;
 }
 
+function canonicalBase64url(value, { length = null, max = 4096 } = {}) {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]+$/.test(value) || value.length > max) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+  const bytes = Buffer.from(value, 'base64url');
+  if (!bytes.length || (length !== null && bytes.length !== length) || bytes.toString('base64url') !== value) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+  return bytes;
+}
+
 function stableJson(value) {
   if (value === null || ['boolean', 'number', 'string'].includes(typeof value)) {
     if (typeof value === 'number' && !Number.isFinite(value)) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
@@ -45,8 +52,8 @@ function actor(value) {
   return { accountId, roles: value.roles.slice() };
 }
 
-function sourceRequest(value) {
-  const request = exact(value, ['sourceType', 'sourceFileName', 'sourceMimeType', 'sourceSha256', 'sourceBytes', 'metadata', 'storage']);
+function sourceRequest(value, now) {
+  const request = exact(value, ['sourceType', 'sourceFileName', 'sourceMimeType', 'sourceSha256', 'sourceBytes', 'metadata', 'storage', 'relay']);
   if (!['lecture', 'exam'].includes(request.sourceType)
     || !/^[A-Za-z0-9][A-Za-z0-9._ -]{0,507}\.(doc|docx)$/iu.test(request.sourceFileName)
     || !['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(request.sourceMimeType)
@@ -61,6 +68,35 @@ function sourceRequest(value) {
     || !Number.isSafeInteger(storage.objectVersion) || storage.objectVersion < 1) {
     throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
   }
+  const relay = exact(request.relay, ['agentKeyFingerprint', 'envelope', 'ciphertext', 'expiresAt']);
+  const envelope = exact(relay.envelope, [
+    'version', 'ephemeralPublicKey', 'keyDerivationSalt', 'wrappedKeyNonce', 'wrappedKeyCiphertext', 'wrappedKeyTag',
+    'contentNonce', 'contentTag', 'ciphertextSha256', 'ciphertextBytes', 'plaintextSha256', 'plaintextBytes',
+  ]);
+  if (relay.agentKeyFingerprint.length !== 64 || !/^[0-9a-f]{64}$/.test(relay.agentKeyFingerprint)
+    || envelope.version !== 'x25519-aes-256-gcm-v1' || !/^[0-9a-f]{64}$/.test(envelope.ciphertextSha256)
+    || envelope.plaintextSha256 !== request.sourceSha256 || envelope.plaintextBytes !== request.sourceBytes
+    || !Number.isSafeInteger(envelope.ciphertextBytes) || envelope.ciphertextBytes < 1 || envelope.ciphertextBytes > (64 * 1024 * 1024)) {
+    throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+  }
+  canonicalBase64url(envelope.ephemeralPublicKey, { max: 512 });
+  canonicalBase64url(envelope.keyDerivationSalt, { length: 16 });
+  canonicalBase64url(envelope.wrappedKeyNonce, { length: 12 });
+  canonicalBase64url(envelope.wrappedKeyCiphertext, { length: 32 });
+  canonicalBase64url(envelope.wrappedKeyTag, { length: 16 });
+  canonicalBase64url(envelope.contentNonce, { length: 12 });
+  canonicalBase64url(envelope.contentTag, { length: 16 });
+  const ciphertext = Buffer.isBuffer(relay.ciphertext) ? Buffer.from(relay.ciphertext) : null;
+  if (!ciphertext || ciphertext.length !== envelope.ciphertextBytes
+    || crypto.createHash('sha256').update(ciphertext).digest('hex') !== envelope.ciphertextSha256) {
+    throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+  }
+  const expiresAt = new Date(relay.expiresAt);
+  if (!(now instanceof Date) || !Number.isFinite(now.getTime()) || typeof relay.expiresAt !== 'string'
+    || relay.expiresAt.length > 64 || !Number.isFinite(expiresAt.getTime()) || expiresAt.toISOString() !== relay.expiresAt
+    || expiresAt.getTime() <= now.getTime() || expiresAt.getTime() > now.getTime() + (15 * 60 * 1000)) {
+    throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+  }
   return {
     sourceType: request.sourceType,
     sourceFileName: request.sourceFileName,
@@ -68,7 +104,7 @@ function sourceRequest(value) {
     sourceSha256: request.sourceSha256,
     sourceBytes: request.sourceBytes,
     metadata: JSON.parse(stableJson(request.metadata)),
-    storage,
+    storage, relay: { agentKeyFingerprint: relay.agentKeyFingerprint, envelope, ciphertext, expiresAt: expiresAt.toISOString() },
   };
 }
 
@@ -104,7 +140,11 @@ const insertSql = [
   '(import_task_id,tenant_id,object_id,object_version,storage_task_id,expected_sha256,expected_bytes,mime_type,storage_state)',
   "SELECT $1,$2,$13,$14,$12,$8,$9,$7,'queued' FROM inserted_storage_task",
   'RETURNING import_task_id',
-  ') SELECT task_id AS "taskId",status,phase,"requestHash","createdAt","updatedAt" FROM inserted_task',
+  '), inserted_relay AS (',
+  'INSERT INTO business.encrypted_import_source_relays (storage_task_id,import_task_id,tenant_id,actor_account_id,agent_key_fingerprint,envelope_json,ciphertext,ciphertext_sha256,expires_at)',
+  'SELECT $12,$1,$2,$3,$15,$16::jsonb,$17,$18,$19::timestamptz FROM inserted_source',
+  'RETURNING storage_task_id',
+  ') SELECT task_id AS "taskId",status,phase,"requestHash","createdAt","updatedAt" FROM inserted_task CROSS JOIN inserted_relay',
 ].join(' ');
 
 const markSourceVerifiedSql = [
@@ -188,18 +228,19 @@ function candidateRows(value, randomId) {
   });
 }
 
-function createQuestionImportTaskRepository({ query, randomId = () => crypto.randomUUID() } = {}) {
-  if (typeof query !== 'function' || typeof randomId !== 'function') throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+function createQuestionImportTaskRepository({ query, randomId = () => crypto.randomUUID(), now = () => new Date() } = {}) {
+  if (typeof query !== 'function' || typeof randomId !== 'function' || typeof now !== 'function') throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
   return Object.freeze({
     async create(input) {
       const request = exact(input, ['tenantId', 'actor', 'idempotencyKey', 'request']);
       const tenantId = text(request.tenantId, 128);
       const currentActor = actor(request.actor);
       const idempotencyKey = text(request.idempotencyKey, 256);
-      const source = sourceRequest(request.request);
+      const source = sourceRequest(request.request, now());
       const hash = requestHash({
         sourceType: source.sourceType, sourceFileName: source.sourceFileName, sourceMimeType: source.sourceMimeType,
         sourceSha256: source.sourceSha256, sourceBytes: source.sourceBytes, metadata: source.metadata, storage: source.storage,
+        relay: { agentKeyFingerprint: source.relay.agentKeyFingerprint, envelope: source.relay.envelope, expiresAt: source.relay.expiresAt },
       });
       const existing = await query(existingSql, [tenantId, currentActor.accountId, idempotencyKey]);
       if (!existing || !Array.isArray(existing.rows) || existing.rows.length > 1) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
@@ -214,6 +255,8 @@ function createQuestionImportTaskRepository({ query, randomId = () => crypto.ran
         taskId, tenantId, currentActor.accountId, idempotencyKey, source.sourceType, source.sourceFileName,
         source.sourceMimeType, source.sourceSha256, source.sourceBytes, stableJson(source.metadata), hash,
         source.storage.taskId, source.storage.objectId, source.storage.objectVersion,
+        source.relay.agentKeyFingerprint, stableJson(source.relay.envelope), source.relay.ciphertext,
+        source.relay.envelope.ciphertextSha256, source.relay.expiresAt,
       ]);
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
       return taskRow(result.rows[0], false);

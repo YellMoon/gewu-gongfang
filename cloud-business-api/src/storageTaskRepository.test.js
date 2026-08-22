@@ -47,8 +47,10 @@ async function main() {
     leaseExpiresAt: '2026-08-22T00:05:00.000Z',
   });
   assert.ok(calls[0].text.includes('deleted_expired') && calls[0].text.includes("state='quarantined'"), 'each lease clears expired relay bytes first');
+  assert.ok(calls[0].text.includes('encrypted_import_source_relays'), 'expired import source relay bytes must also be deleted and quarantined');
   assert.ok(calls[1].text.includes('FOR UPDATE OF task SKIP LOCKED'), 'leasing must be concurrency-safe while locking only task rows');
   assert.ok(calls[1].text.includes('encrypted_storage_relays question_relay') && calls[1].text.includes('encrypted_paper_export_artifact_relays artifact_relay'), 'only tasks with an active encrypted relay may be leased');
+  assert.ok(calls[1].text.includes('encrypted_import_source_relays import_relay'), 'import source tasks require a live encrypted relay before leasing');
   assert.ok(calls[1].text.includes('question_relay.expires_at > transaction_timestamp()') && calls[1].text.includes('artifact_relay.expires_at > transaction_timestamp()'), 'leasing must exclude expired relay ciphertext');
   assert.ok(calls[1].values.includes(leaseHash), 'only a SHA-256 lease hash may be stored');
   assert.ok(!calls[1].values.includes(LEASE_TOKEN), 'the raw lease token must never be sent to PostgreSQL');
@@ -61,6 +63,7 @@ async function main() {
   assert.deepStrictEqual(downloaded, { envelope: RELAY_ENVELOPE, ciphertext: RELAY_BYTES });
   assert.ok(calls[3].text.includes('business.encrypted_storage_relays'));
   assert.ok(calls[3].text.includes('business.encrypted_paper_export_artifact_relays'));
+  assert.ok(calls[3].text.includes('business.encrypted_import_source_relays'));
   assert.ok(calls[3].values.includes(leaseHash));
   assert.ok(!calls[3].values.includes(LEASE_TOKEN));
 
@@ -71,6 +74,7 @@ async function main() {
   assert.deepStrictEqual(completed, { taskId: 'task_12345678', state: 'verified', verifiedAt: '2026-08-22T00:00:00.000Z' });
   assert.ok(calls[4].text.includes('storage_task_receipts'), 'completion must create an immutable cloud receipt');
   assert.ok(calls[4].text.includes('DELETE FROM business.encrypted_storage_relays'), 'completion must erase relay bytes before returning a verified receipt');
+  assert.ok(calls[4].text.includes('DELETE FROM business.encrypted_import_source_relays'), 'completion must erase import source ciphertext after its NAS receipt');
   assert.ok(calls[4].text.includes('paper_export_artifacts') && calls[4].text.includes('encrypted_paper_export_artifact_relays'), 'completion must verify the artifact record and erase its relay bytes');
   assert.ok(calls[4].text.includes('business.import_source_objects') && calls[4].text.includes('question_import_tasks'),
     'a verified source receipt must advance only its cloud-owned import task to parsing readiness');

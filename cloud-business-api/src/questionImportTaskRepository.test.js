@@ -1,10 +1,12 @@
 'use strict';
 
 const assert = require('assert');
+const crypto = require('crypto');
 
 const { createQuestionImportTaskRepository } = require('./questionImportTaskRepository');
 
 function baseRequest() {
+  const ciphertext = Buffer.from('encrypted import source');
   return {
     sourceType: 'lecture',
     sourceFileName: 'mechanics.docx',
@@ -13,6 +15,19 @@ function baseRequest() {
     sourceBytes: 1234,
     metadata: { subject: 'physics' },
     storage: { taskId: 'task_12345678', objectId: 'obj_source_1', objectVersion: 1 },
+    relay: {
+      agentKeyFingerprint: 'b'.repeat(64),
+      envelope: {
+        version: 'x25519-aes-256-gcm-v1',
+        ephemeralPublicKey: Buffer.alloc(44, 1).toString('base64url'), keyDerivationSalt: Buffer.alloc(16, 2).toString('base64url'),
+        wrappedKeyNonce: Buffer.alloc(12, 3).toString('base64url'), wrappedKeyCiphertext: Buffer.alloc(32, 4).toString('base64url'),
+        wrappedKeyTag: Buffer.alloc(16, 5).toString('base64url'), contentNonce: Buffer.alloc(12, 6).toString('base64url'),
+        contentTag: Buffer.alloc(16, 7).toString('base64url'), ciphertextSha256: crypto.createHash('sha256').update(ciphertext).digest('hex'),
+        ciphertextBytes: ciphertext.length, plaintextSha256: 'a'.repeat(64), plaintextBytes: 1234,
+      },
+      ciphertext,
+      expiresAt: '2026-08-23T00:05:00.000Z',
+    },
   };
 }
 
@@ -20,6 +35,7 @@ async function main() {
   const calls = [];
   const repository = createQuestionImportTaskRepository({
     randomId: () => 'fixed-import-id',
+    now: () => new Date('2026-08-23T00:00:00.000Z'),
     query: async (text, values) => {
       calls.push([text, values]);
       if (text.includes('SELECT task_id AS "taskId"') && text.includes('idempotency_key=$3')) return { rows: [] };
@@ -61,6 +77,8 @@ async function main() {
     'creating an import task must atomically reserve an immutable NAS storage task');
   assert.ok(calls.some(([text]) => text.includes('INSERT INTO business.import_source_objects')),
     'creating an import task must bind its source object to the cloud task');
+  assert.ok(calls.some(([text]) => text.includes('INSERT INTO business.encrypted_import_source_relays')),
+    'creating an import task must atomically bind its expiring encrypted source relay');
   assert.ok(!calls.some(([text]) => /INSERT INTO business\.questions|INSERT INTO business\.question_contents/u.test(text)),
     'creating an import task must not create a question before explicit confirmation');
 

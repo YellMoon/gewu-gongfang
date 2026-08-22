@@ -56,9 +56,14 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
          DELETE FROM business.encrypted_paper_export_artifact_relays
           WHERE expires_at <= transaction_timestamp()
           RETURNING storage_task_id AS task_id
+       ), deleted_import_source_relays AS (
+         DELETE FROM business.encrypted_import_source_relays
+          WHERE expires_at <= transaction_timestamp()
+          RETURNING storage_task_id AS task_id
        ), deleted_expired AS (
          SELECT task_id FROM deleted_question_relays
          UNION ALL SELECT task_id FROM deleted_artifact_relays
+         UNION ALL SELECT task_id FROM deleted_import_source_relays
        ), quarantined AS (
          UPDATE business.storage_object_tasks task
             SET state='quarantined',last_error_code='ENCRYPTED_RELAY_EXPIRED',updated_at=transaction_timestamp()
@@ -90,8 +95,9 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
              FROM business.storage_object_tasks task
              LEFT JOIN business.encrypted_storage_relays question_relay ON question_relay.task_id=task.task_id
              LEFT JOIN business.encrypted_paper_export_artifact_relays artifact_relay ON artifact_relay.storage_task_id=task.task_id
+             LEFT JOIN business.encrypted_import_source_relays import_relay ON import_relay.storage_task_id=task.task_id
             WHERE (task.state='queued' OR (task.state='leased' AND task.lease_expires_at <= transaction_timestamp()))
-              AND ((question_relay.expires_at > transaction_timestamp()) OR (artifact_relay.expires_at > transaction_timestamp()))
+              AND ((question_relay.expires_at > transaction_timestamp()) OR (artifact_relay.expires_at > transaction_timestamp()) OR (import_relay.expires_at > transaction_timestamp()))
             ORDER BY task.created_at ASC,task.task_id ASC
             FOR UPDATE OF task SKIP LOCKED
             LIMIT 1
@@ -118,6 +124,8 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
            SELECT envelope_json,ciphertext,expires_at FROM business.encrypted_storage_relays WHERE task_id=$1
            UNION ALL
            SELECT envelope_json,ciphertext,expires_at FROM business.encrypted_paper_export_artifact_relays WHERE storage_task_id=$1
+           UNION ALL
+           SELECT envelope_json,ciphertext,expires_at FROM business.encrypted_import_source_relays WHERE storage_task_id=$1
          ) SELECT relay.envelope_json AS envelope,relay.ciphertext AS ciphertext
            FROM business.storage_object_tasks task JOIN relay ON true
           WHERE task.task_id=$1 AND task.state='leased' AND task.lease_agent_id=$2 AND task.lease_token_sha256=$3
@@ -179,6 +187,10 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
             WHERE relay.task_id=completed.task_id
          ), deleted_artifact_relay AS (
            DELETE FROM business.encrypted_paper_export_artifact_relays relay
+            USING completed
+            WHERE relay.storage_task_id=completed.task_id
+         ), deleted_import_source_relay AS (
+           DELETE FROM business.encrypted_import_source_relays relay
             USING completed
             WHERE relay.storage_task_id=completed.task_id
          ) SELECT "taskId",'verified'::text AS state,"verifiedAt" FROM receipt`,
