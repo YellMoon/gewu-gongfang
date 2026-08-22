@@ -122,9 +122,9 @@ function createMiniappCloudAccountRepository({ query, tenantId }) {
            WHERE a.account_id=c.account_id
            RETURNING a.account_id,a.status
          ), granted AS (
-           INSERT INTO business.miniapp_cloud_role_grants (account_id,role,status,profile_type,profile_id)
-           SELECT account_id,$2,'active',$2,$3 FROM activated
-           ON CONFLICT (account_id,role) DO UPDATE SET status='active',profile_type=EXCLUDED.profile_type,profile_id=EXCLUDED.profile_id,updated_at=transaction_timestamp()
+           INSERT INTO business.miniapp_cloud_role_grants (account_id,role,status,profile_type,profile_id,student_relationship)
+           SELECT account_id,$2,'active',$2,$3,CASE WHEN $2='student' THEN 'student' ELSE NULL END FROM activated
+           ON CONFLICT (account_id,role) DO UPDATE SET status='active',profile_type=EXCLUDED.profile_type,profile_id=EXCLUDED.profile_id,student_relationship=EXCLUDED.student_relationship,updated_at=transaction_timestamp()
            RETURNING account_id
          )
          SELECT a.account_id AS "accountId",a.status AS "status",

@@ -4,7 +4,7 @@
 
 **Goal:** Give a student up to three independent verified login accounts: one student account and two guardian accounts, all resolving the same student scope.
 
-**Architecture:** M18 turns a verified desktop password into the existing cloud registration ticket and device challenge, with no second registration protocol. M19 adds an auditable student-access binding rather than sharing accounts, passwords, devices, sessions, receipts, audits, or offline leases. Phone, official WeChat OpenID, and official WeChat UnionID remain verified identity types; a hand-entered WeChat ID is a restricted contact hint and never an authentication credential.
+**Architecture:** M18 turns a verified desktop password into the existing cloud registration ticket and device challenge, with no second registration protocol. The existing `business.miniapp_cloud_role_grants` relation becomes the auditable student-access binding by adding a relationship discriminator and a database-enforced cap, rather than creating another parallel control-plane identity table. Phone, official WeChat OpenID, and official WeChat UnionID remain verified identity types; a hand-entered WeChat ID is a restricted contact hint and never an authentication credential.
 
 **Tech Stack:** Node.js, Express, PostgreSQL 17 migrations and catalog assertions, Electron desktop identity client, disposable PostgreSQL tests.
 
@@ -15,7 +15,7 @@
 - At most one active `student` binding and two active `guardian` bindings exist for each `(authority_id, student_id)`.
 - Each canonical account has at most one active student access binding.
 - Only `phone`, `wechat_openid`, and `wechat_unionid` can resolve an account. Raw contacts, typed WeChat IDs, tokens, passwords, client-selected account IDs, and client-selected roles are never accepted by the binding boundary.
-- M19 appends to the frozen M1-M18 catalog. It does not change old migration bytes or hashes.
+- The student-access migration is additive to the deployed `business` schema. It does not change frozen M1-M18 control-plane bytes or hashes.
 - All candidate registration paths use the same pending-registration object and only normal online registration may persist a device/session/lease.
 
 ### Task 1: Complete the M18 password-to-registration flow
@@ -53,39 +53,32 @@
 
   Commit only Task 1 files and push `gewu master`. Do not deploy before M18 is applied by the controlled server upgrade.
 
-### Task 2: Freeze M19 database behavior with failing disposable tests
+### Task 2: Add a database-enforced student/guardian cap to the existing business grant relation
 
 **Files:**
-- Modify: `shared/vnext-pg17/migrationManifest.js`
-- Modify: `shared/vnext-pg17/migrationManifest.test.js`
-- Modify: `shared/vnext-pg17/catalogAssertion.js`
-- Modify: `shared/vnext-pg17/catalogAssertion.test.js`
-- Create: `scripts/vnext-migration/cloudControlPlaneM19Upgrade.js`
-- Create: `scripts/vnext-migration/cloudControlPlaneM19Upgrade.test.js`
+- Create: `cloud-business-api/sql/20260822-miniapp-student-access.sql`
+- Create: `cloud-business-api/sql/miniapp-student-access.test.js`
+- Modify: `cloud-business-api/package.json`
 
-- [ ] **Step 1: Write failing M19 PostgreSQL assertions.**
+- [ ] **Step 1: Write the failing SQL contract test.**
 
-  Define `vnext_student_access_bindings` with an opaque student ID, relationship, lifecycle, evidence hash, version, and finite timestamps. Test: one student role, two guardian roles, fourth guardian failure, duplicate active account failure, cross-authority failure, bad lifecycle failure, direct DML denial, PUBLIC EXECUTE denial, and exact M18-to-M19 upgrade only.
+  Require a `student_relationship` column on `business.miniapp_cloud_role_grants`. It must allow `student` and `guardian` only for student grants, retain NULL for all other roles, and use a SECURITY DEFINER trigger with a per-profile advisory transaction lock. The test requires one self relationship maximum, two guardian maximum, a stable failure code, and no raw phone or WeChat value.
 
-- [ ] **Step 2: Run focused database tests and observe RED.**
+- [ ] **Step 2: Run the test and observe RED.**
 
-  Run: `node shared/vnext-pg17/migrationManifest.test.js; node shared/vnext-pg17/catalogAssertion.test.js; node scripts/vnext-migration/cloudControlPlaneM19Upgrade.test.js`
+  Run: `node cloud-business-api/sql/miniapp-student-access.test.js`
 
-- [ ] **Step 3: Add the closed identity-verifier command.**
+- [ ] **Step 3: Add the additive business migration.**
 
-  Add M19 after M18 only. The command resolves and locks the verified typed contact itself, enforces the cap in PostgreSQL, and never accepts a caller-selected canonical account. Revoke PUBLIC EXECUTE and grant only `vnext_pg17_identity_verifier`; keep writer/runtime/verifier without row DML.
+  Add the relationship column and exact lifecycle check to the existing role grant table. The trigger counts active student grants for the profile excluding the current account, rejects a second self or third guardian, and is not executable by PUBLIC. It remains a database integrity guard; service-level actor authorization remains separate.
 
-- [ ] **Step 4: Make catalog verification exact.**
+- [ ] **Step 4: Add a disposable PostgreSQL behavior test.**
 
-  Assert exact columns, constraints, indexes, triggers, function signature/owner/security-definer/search path/definition hash, role memberships, relation ACLs, column ACLs, function ACLs, default ACLs, and zero seed. Add mutations for cap-index drift, PUBLIC EXECUTE, unexpected column privilege, and a public shadow relation.
+  Build the current account/profile tables in a temporary schema and prove one student plus two guardians succeeds, a fourth account is rejected, a revoked guardian no longer counts, and an account cannot hold a second active role. Preserve the existing teacher/student profile existence guard.
 
-- [ ] **Step 5: Implement the controlled M18-to-M19 upgrade and verify.**
+- [ ] **Step 5: Register, verify, and commit.**
 
-  Reject every ledger prefix except exact M1-M18. Apply only frozen M19 SQL and its ledger write in one transaction; validate the final catalog before commit.
-
-- [ ] **Step 6: Verify and commit.**
-
-  Run: `npm.cmd run test:vnext-migration; node shared/vnext-pg17/catalogAssertion.test.js; node scripts/vnext-migration/cloudControlPlaneM19Upgrade.test.js; git diff --check`
+  Run: `npm.cmd --prefix cloud-business-api test; git diff --check`
 
 ### Task 3: Extend canonical resolution and add the student-access service
 
@@ -109,7 +102,7 @@
 
 - [ ] **Step 4: Write failing student access service tests.**
 
-  A trusted proof adapter calls the M19 function and returns only canonical account ID, opaque student ID, relationship, and non-secret status. Test two guardian success, third guardian failure, second student failure, replay, revocation, and cross-authority failure.
+  A trusted proof adapter calls the existing canonical resolver and the business grant repository, returning only canonical account ID, opaque student ID, relationship, and non-secret status. Test two guardian success, third guardian failure, second student failure, replay, revocation, and cross-authority failure.
 
 - [ ] **Step 5: Implement the minimal service adapter and verify.**
 
@@ -132,9 +125,9 @@
 
   Both miniapp login and desktop registration resolve the same active opaque student ID and relationship for a canonical account. They do not return other accounts, contact identities, evidence, password data, or hand-entered WeChat IDs.
 
-- [ ] **Step 2: Implement one read-only M19 projection.**
+- [ ] **Step 2: Implement one read-only student-access projection.**
 
-  Add one read-only active-binding projection to `miniappCloudAccountRepository.js`, consume it from `miniappCloudAccountService.js`, and use the same result in `app.js` and the desktop registration context assembled by `server.js`. Revoked binding means no student scope; sessions/devices remain account-specific.
+  Add one read-only active student-grant projection to `miniappCloudAccountRepository.js`, consume it from `miniappCloudAccountService.js`, and use the same result in `app.js` and the desktop registration context assembled by `server.js`. Revoked binding means no student scope; sessions/devices remain account-specific.
 
 - [ ] **Step 3: Add negative route tests and verify.**
 
@@ -150,13 +143,13 @@
 
 - [ ] **Step 1: Add pre-deployment smoke checks.**
 
-  Require exact M18/M19 ledger versions, least-privilege function execution, malformed-request secrecy, and no raw contact/secret response.
+  Require the exact M18 ledger version, applied business student-access migration, least-privilege function execution, malformed-request secrecy, and no raw contact/secret response.
 
 - [ ] **Step 2: Run local verification.**
 
   Run: `npm.cmd run test:vnext-control-plane-target; npm.cmd --prefix cloud-business-api test; node src/services/desktopIdentityClient.test.js; git diff --check`
 
-- [ ] **Step 3: Upgrade production through the exact M17-to-M18-to-M19 procedure.**
+- [ ] **Step 3: Upgrade production through the exact M17-to-M18 procedure and the reviewed business migration.**
 
   Stop on backup, prefix, catalog, or health failure. Do not use manual SQL or release a client on failure.
 
