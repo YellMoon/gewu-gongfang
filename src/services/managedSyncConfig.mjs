@@ -1,4 +1,4 @@
-export const DEFAULT_MANAGED_CLOUD_BASE_URL = 'https://physicsedu.xyz/scheduling';
+export const DEFAULT_MANAGED_CLOUD_BASE_URL = 'https://physicsedu.xyz/cloud-business';
 
 export function resolveManagedSyncConfig(config = {}, env = {}) {
   const isHost = config.nodeRole === 'primary-host';

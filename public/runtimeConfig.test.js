@@ -17,6 +17,11 @@ const {
 } = require('./runtimeConfig');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-runtime-config-'));
+assert.strictEqual(
+  MANAGED_CLOUD_BASE_URL,
+  'https://physicsedu.xyz/cloud-business',
+  'ordinary desktops must use the deployed cloud-business authority by default',
+);
 const configPath = path.join(dir, 'gewugongfang.config.json');
 
 const firstLaunchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-runtime-first-launch-'));

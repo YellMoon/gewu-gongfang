@@ -7,6 +7,11 @@ async function main() {
     syncFailureMessage,
     DEFAULT_MANAGED_CLOUD_BASE_URL,
   } = await import('./managedSyncConfig.mjs');
+  assert.strictEqual(
+    DEFAULT_MANAGED_CLOUD_BASE_URL,
+    'https://physicsedu.xyz/cloud-business',
+    'ordinary desktops must resolve the deployed cloud-business authority',
+  );
   const client = resolveManagedSyncConfig({ nodeRole: 'desktop-client', cloudBaseUrl: '', desktopSyncToken: '' });
   assert.strictEqual(client.cloudBaseUrl, DEFAULT_MANAGED_CLOUD_BASE_URL);
   assert.strictEqual(client.configurationManaged, true);
