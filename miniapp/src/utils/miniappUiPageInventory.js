@@ -1,13 +1,13 @@
 const pageInventory = [
   {
     route: 'pages/login/index',
-    title: '\u624b\u586b\u624b\u673a\u53f7\u767b\u5f55',
+    title: '\u4e91\u7aef\u8d26\u53f7\u767b\u5f55',
     registered: true,
     roleViews: ['guest'],
     surface: 'auth',
     visualStatus: 'optimized',
-    verificationStates: ['wechat-login', 'manual-phone-login', 'formal-login', 'visitor-login', 'identity-conflict', 'manual-phone-invalid', 'loading'],
-    realFeatureBasis: ['api.post(/api/auth/wechat-login)', 'Input(type=number)', 'MANUAL_PHONE_REQUIRED', 'authority_role_bindings canonical permissions', 'visitor identity creation', 'PHONE_WECHAT_BINDING_CONFLICT', 'OPENID_PHONE_BINDING_CONFLICT', 'auth_token storage for authenticated users only'],
+    verificationStates: ['wechat-phone-proof', 'cloud-login', 'pending-authorization', 'active-session', 'identity-rejected', 'loading'],
+    realFeatureBasis: ['Button(openType=getPhoneNumber)', 'POST /api/miniapp/cloud-login', 'cloud miniapp account session', 'auth_token storage for authenticated cloud users only'],
     screenshotRequired: true,
     files: ['src/pages/login/index.tsx', 'src/pages/login/index.scss'],
   },

@@ -26,7 +26,7 @@ const DEFAULT_BASE_URL = (typeof __API_BASE_URL__ !== 'undefined' && __API_BASE_
   : 'https://physicsedu.xyz/scheduling';
 const RETRY_COUNT = 1;
 const REQUEST_TIMEOUT = 30000;
-const AUTHENTICATION_ENTRY_PATHS = new Set(['/api/auth/login', '/api/auth/wechat-login']);
+const AUTHENTICATION_ENTRY_PATHS = new Set(['/api/auth/login', '/api/auth/wechat-login', '/api/miniapp/cloud-login']);
 const DESKTOP_AUTHORIZATION_ENTRY_PATH = /^\/api\/desktop-identity\/challenges\/[A-Za-z0-9_-]{16,128}\/(?:public|confirm)$/;
 
 function isDesktopAuthorizationEntryPath(path: string): boolean {
