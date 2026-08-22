@@ -10,6 +10,7 @@ const { createMiniappCloudAccountService } = require('./src/miniappCloudAccountS
 const { createMiniappCloudAccountRepository } = require('./src/miniappCloudAccountRepository');
 const { createWechatPhoneVerifier } = require('./src/wechatPhoneVerifier');
 const { createCanonicalAccountProvisioningService } = require('./src/canonicalAccountProvisioningService');
+const { resolveBootstrapAdminAccountId } = require('./src/bootstrapAdminIdentity');
 const { version } = require('./package.json');
 
 const port = Number(process.env.PORT || 3002);
@@ -104,6 +105,22 @@ function createDesktopRegistrationFromEnvironment() {
     writerPool.end().catch(() => {});
     return null;
   }
+  let bootstrapAdminAccountId;
+  try {
+    bootstrapAdminAccountId = resolveBootstrapAdminAccountId({
+      records,
+      accountId: process.env.CLOUD_BOOTSTRAP_SUPER_ADMIN_ACCOUNT_ID,
+    });
+  } catch (_) {
+    identityPool.end().catch(() => {});
+    writerPool.end().catch(() => {});
+    return null;
+  }
+  if (!bootstrapAdminAccountId) {
+    identityPool.end().catch(() => {});
+    writerPool.end().catch(() => {});
+    return null;
+  }
   const registration = createCloudDesktopRegistrationService({
     randomId,
     now: () => new Date(),
@@ -156,7 +173,7 @@ function createDesktopRegistrationFromEnvironment() {
   return {
     registration,
     canonicalAccount,
-    bootstrapAdminAccountId: records[0].accountId,
+    bootstrapAdminAccountId,
     businessScheduleUpdate,
     businessScheduleStudentOverride,
     async close() { await Promise.all([identityPool.end(), writerPool.end()]); },
