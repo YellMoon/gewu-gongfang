@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Taro from '@tarojs/taro';
 import { Button, Text, View } from '@tarojs/components';
-import { getApiBaseUrl } from '../../utils/api';
+import { getCloudBusinessApiBaseUrl } from '../../utils/api';
 import './index.scss';
 
 const {
@@ -15,7 +15,7 @@ type Pairing = {
 };
 
 function endpoint(path: string): string {
-  return `${getApiBaseUrl().replace(/\/+$/, '')}${path}`;
+  return `${getCloudBusinessApiBaseUrl().replace(/\/+$/, '')}${path}`;
 }
 
 export default function DesktopOnlineRegistrationPage() {

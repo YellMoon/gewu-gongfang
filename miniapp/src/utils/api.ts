@@ -61,9 +61,10 @@ export function setBaseUrl(url: string): void {
 
 export const getApiBaseUrl = getBaseUrl;
 export const setApiBaseUrl = setBaseUrl;
+export const getCloudBusinessApiBaseUrl = () => DEFAULT_CLOUD_BUSINESS_BASE_URL;
 
 function cloudBusinessUrl(path: string): string {
-  return `${DEFAULT_CLOUD_BUSINESS_BASE_URL}${path}`;
+  return `${getCloudBusinessApiBaseUrl()}${path}`;
 }
 
 interface ApiResponse<T = any> {
