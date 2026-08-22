@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const VALID_ROLES = new Set(['primary-host', 'desktop-client']);
 const MANAGED_CLOUD_BASE_URL = 'https://physicsedu.xyz/scheduling';
 
 function trimTrailingSlash(value) {
@@ -29,12 +28,8 @@ function makeDeviceId() {
 
 function defaultConfig(userDataPath) {
   return {
-    nodeRole: 'desktop-client',
     desktopIdentityMode: 'full',
     deviceId: makeDeviceId(),
-    primaryHostEpochId: '',
-    primaryHostGeneration: null,
-    hostBaseUrl: 'http://127.0.0.1:3001',
     cloudBaseUrl: MANAGED_CLOUD_BASE_URL,
     mainDbPath: path.join(userDataPath, 'data', 'scheduling.db'),
     questionBankPath: '',
@@ -51,26 +46,17 @@ function normalizeRuntimeConfig(input = {}, options = {}) {
   const defaults = defaultConfig(userDataPath);
   const next = { ...defaults, ...(input || {}) };
 
-  next.nodeRole = VALID_ROLES.has(next.nodeRole) ? next.nodeRole : 'desktop-client';
   next.desktopIdentityMode = 'full';
   next.deviceId = next.deviceId || defaults.deviceId;
-  next.primaryHostEpochId = String(next.primaryHostEpochId || '').trim();
-  const primaryHostGeneration = Number(next.primaryHostGeneration);
-  next.primaryHostGeneration = Number.isSafeInteger(primaryHostGeneration) && primaryHostGeneration > 0
-    ? primaryHostGeneration
-    : null;
-  if (next.nodeRole !== 'primary-host' || !next.primaryHostEpochId || !next.primaryHostGeneration) {
-    next.primaryHostEpochId = '';
-    next.primaryHostGeneration = null;
-  }
-  next.hostBaseUrl = trimTrailingSlash(next.hostBaseUrl || defaults.hostBaseUrl);
-  next.cloudBaseUrl = next.nodeRole === 'desktop-client'
-    ? trimTrailingSlash(options.managedCloudBaseUrl || isolatedE2EManagedCloudBaseUrl() || MANAGED_CLOUD_BASE_URL)
-    : trimTrailingSlash(next.cloudBaseUrl || MANAGED_CLOUD_BASE_URL);
+  next.cloudBaseUrl = trimTrailingSlash(options.managedCloudBaseUrl || isolatedE2EManagedCloudBaseUrl() || MANAGED_CLOUD_BASE_URL);
   // The former desktopSyncToken was a shared relay secret.  Managed host
   // credentials live only in the OS protected credential store; never keep a
   // relay secret in the editable runtime configuration.
   delete next.desktopSyncToken;
+  delete next.nodeRole;
+  delete next.primaryHostEpochId;
+  delete next.primaryHostGeneration;
+  delete next.hostBaseUrl;
   next.mainDbPath = next.mainDbPath || defaults.mainDbPath;
   next.questionBankPath = trimTrailingSlash(next.questionBankPath || '');
   next.questionBankCandidatePaths = Array.from(new Set(
@@ -131,17 +117,11 @@ function writeRuntimeConfig(configPath, config, options = {}) {
     ? readRuntimeConfig(configPath, options)
     : normalizeRuntimeConfig({
       ...(config || {}),
-      nodeRole: 'desktop-client',
-      primaryHostEpochId: '',
-      primaryHostGeneration: null,
     }, options);
   const normalized = normalizeRuntimeConfig({
     ...current,
     ...(config || {}),
     deviceId: current.deviceId,
-    nodeRole: current.nodeRole,
-    primaryHostEpochId: current.primaryHostEpochId,
-    primaryHostGeneration: current.primaryHostGeneration,
     desktopIdentityMode: current.desktopIdentityMode,
   }, options);
   return persistRuntimeConfig(configPath, normalized);
@@ -162,14 +142,8 @@ function writeManagedHostBootstrapRuntimeConfig(configPath, identity = {}, optio
   if (!deviceId || current.deviceId !== deviceId) {
     throw runtimeConfigError('PRIMARY_HOST_RUNTIME_DEVICE_MISMATCH');
   }
-  if (current.primaryHostEpochId || current.primaryHostGeneration) {
-    throw runtimeConfigError('PRIMARY_HOST_RUNTIME_BOOTSTRAP_CONFLICT');
-  }
   return persistRuntimeConfig(configPath, normalizeRuntimeConfig({
     ...current,
-    nodeRole: 'primary-host',
-    primaryHostEpochId: '',
-    primaryHostGeneration: null,
   }, options));
 }
 
@@ -178,37 +152,22 @@ function writeManagedHostRuntimeConfig(configPath, identity = {}, options = {}) 
     ? readRuntimeConfig(configPath, options)
     : normalizeRuntimeConfig({ deviceId: identity.deviceId }, options);
   const deviceId = String(identity.deviceId || '').trim();
-  const epochId = String(identity.epochId || '').trim();
-  const generation = Number(identity.generation);
   if (!deviceId || current.deviceId !== deviceId) {
     throw runtimeConfigError('PRIMARY_HOST_RUNTIME_DEVICE_MISMATCH');
   }
-  if (!epochId || epochId.length > 128 || !Number.isSafeInteger(generation) || generation < 1) {
-    throw runtimeConfigError('PRIMARY_HOST_RUNTIME_EPOCH_INVALID');
-  }
   return persistRuntimeConfig(configPath, normalizeRuntimeConfig({
     ...current,
-    nodeRole: 'primary-host',
-    primaryHostEpochId: epochId,
-    primaryHostGeneration: generation,
   }, options));
 }
 
 function writeManagedClientRuntimeConfig(configPath, identity = {}, options = {}) {
   const current = readRuntimeConfig(configPath, options);
   const deviceId = String(identity.deviceId || '').trim();
-  const expectedEpochId = String(identity.expectedEpochId || '').trim();
   if (!deviceId || current.deviceId !== deviceId) {
     throw runtimeConfigError('PRIMARY_HOST_RUNTIME_DEVICE_MISMATCH');
   }
-  if (expectedEpochId && current.primaryHostEpochId !== expectedEpochId) {
-    throw runtimeConfigError('PRIMARY_HOST_RUNTIME_EPOCH_MISMATCH');
-  }
   return persistRuntimeConfig(configPath, normalizeRuntimeConfig({
     ...current,
-    nodeRole: 'desktop-client',
-    primaryHostEpochId: '',
-    primaryHostGeneration: null,
     desktopIdentityMode: 'full',
   }, options));
 }
@@ -227,16 +186,12 @@ function writeManagedDesktopIdentityMode(configPath, mode, options = {}) {
 }
 
 function applyRuntimeConfigToEnv(config, env = process.env) {
-  env.GEWU_NODE_ROLE = config.nodeRole;
+  delete env.GEWU_NODE_ROLE;
   env.GEWU_DESKTOP_IDENTITY_MODE = 'full';
   env.GEWU_DEVICE_ID = config.deviceId;
   delete env.GEWU_PRIMARY_HOST_EPOCH_ID;
   delete env.GEWU_PRIMARY_HOST_GENERATION;
-  if (config.nodeRole === 'primary-host' && config.primaryHostEpochId && config.primaryHostGeneration) {
-    env.GEWU_PRIMARY_HOST_EPOCH_ID = config.primaryHostEpochId;
-    env.GEWU_PRIMARY_HOST_GENERATION = String(config.primaryHostGeneration);
-  }
-  env.GEWU_HOST_BASE_URL = config.hostBaseUrl || '';
+  delete env.GEWU_HOST_BASE_URL;
   env.GEWU_CLOUD_BASE_URL = config.cloudBaseUrl || '';
   delete env.GEWU_DESKTOP_SYNC_TOKEN;
   delete env.GEWU_CLOUD_RELAY_HOST_TOKEN;

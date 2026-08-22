@@ -2,13 +2,12 @@ export const DEFAULT_MANAGED_CLOUD_BASE_URL = 'https://physicsedu.xyz/scheduling
 export const DEFAULT_CLOUD_BUSINESS_IDENTITY_BASE_URL = 'https://physicsedu.xyz/cloud-business';
 
 export function resolveManagedSyncConfig(config = {}, env = {}) {
-  const isHost = config.nodeRole === 'primary-host';
   const managedCloudBaseUrl = String(env.managedCloudBaseUrl || config.managedCloudBaseUrl || DEFAULT_MANAGED_CLOUD_BASE_URL).replace(/\/+$/, '');
   return {
     ...config,
-    cloudBaseUrl: isHost ? String(config.cloudBaseUrl || managedCloudBaseUrl).replace(/\/+$/, '') : managedCloudBaseUrl,
+    cloudBaseUrl: managedCloudBaseUrl,
     managedCloudBaseUrl,
-    configurationManaged: !isHost,
+    configurationManaged: true,
   };
 }
 

@@ -17,7 +17,9 @@ async function main() {
   assert.strictEqual(client.cloudBaseUrl, DEFAULT_MANAGED_CLOUD_BASE_URL);
   assert.strictEqual(client.configurationManaged, true);
   assert.strictEqual(resolveManagedSyncConfig({ nodeRole: 'desktop-client', cloudBaseUrl: 'https://evil.example' }).cloudBaseUrl, DEFAULT_MANAGED_CLOUD_BASE_URL);
-  assert.strictEqual(resolveManagedSyncConfig({ nodeRole: 'primary-host', cloudBaseUrl: 'https://host.example/' }).cloudBaseUrl, 'https://host.example');
+  const legacyHost = resolveManagedSyncConfig({ nodeRole: 'primary-host', cloudBaseUrl: 'https://host.example/' });
+  assert.strictEqual(legacyHost.cloudBaseUrl, DEFAULT_MANAGED_CLOUD_BASE_URL);
+  assert.strictEqual(legacyHost.configurationManaged, true);
   assert.strictEqual(resolveDesktopIdentityBaseUrl({
     buildFlavor: 'primary-host',
     nodeRole: 'primary-host',
