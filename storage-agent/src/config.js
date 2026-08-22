@@ -68,6 +68,21 @@ function parsePollSeconds(value) {
   return pollSeconds;
 }
 
+function parseQuestionImportParserPath(value) {
+  const configured = required(value);
+  if (!path.isAbsolute(configured)) throw failure();
+  const parserPath = path.resolve(configured);
+  if (!fs.existsSync(parserPath) || !fs.statSync(parserPath).isFile() || path.extname(parserPath).toLowerCase() !== '.py') throw failure();
+  return parserPath;
+}
+
+function parseQuestionImportPythonBin(value) {
+  if (value === undefined || value === '') return process.platform === 'win32' ? 'python' : 'python3';
+  const pythonBin = required(value);
+  if (pythonBin.length > 512 || /[\r\n\0]/u.test(pythonBin)) throw failure();
+  return pythonBin;
+}
+
 function loadStorageAgentConfig(env = process.env) {
   return Object.freeze({
     cloudBaseUrl: parseCloudBaseUrl(env.CLOUD_BUSINESS_BASE_URL),
@@ -76,6 +91,8 @@ function loadStorageAgentConfig(env = process.env) {
     agentPrivateKey: parseAgentPrivateKey(env.STORAGE_AGENT_PRIVATE_KEY),
     nasRoot: parseNasRoot(env.NAS_STORAGE_ROOT),
     pollSeconds: parsePollSeconds(env.STORAGE_AGENT_POLL_SECONDS),
+    questionImportParserPath: parseQuestionImportParserPath(env.QUESTION_IMPORT_PARSER_PATH),
+    questionImportPythonBin: parseQuestionImportPythonBin(env.QUESTION_IMPORT_PYTHON_BIN),
   });
 }
 

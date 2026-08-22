@@ -187,6 +187,51 @@ const storeCandidatesSql = [
   'FROM advanced_task',
 ].join(' ');
 
+const completeSourceAndStoreCandidatesSql = [
+  'WITH completed AS (',
+  "UPDATE business.storage_object_tasks storage SET state='verified',updated_at=transaction_timestamp()",
+  'FROM business.import_source_objects source',
+  "WHERE source.import_task_id=$1 AND storage.task_id=source.storage_task_id AND storage.state='leased' AND storage.lease_agent_id=$2 AND storage.lease_token_sha256=$3",
+  'AND storage.lease_expires_at > transaction_timestamp() AND storage.expected_sha256=$4 AND storage.expected_bytes=$5',
+  'RETURNING storage.task_id',
+  '), receipt AS (',
+  'INSERT INTO business.storage_task_receipts (receipt_id,task_id,agent_id,observed_sha256,observed_bytes)',
+  'SELECT $6,task_id,$2,$4,$5 FROM completed',
+  'RETURNING task_id',
+  '), verified_source AS (',
+  "UPDATE business.import_source_objects source SET storage_state='verified',verified_at=transaction_timestamp(),updated_at=transaction_timestamp()",
+  "FROM receipt WHERE source.storage_task_id=receipt.task_id AND source.storage_state='queued'",
+  'RETURNING source.import_task_id',
+  '), advanced_task AS (',
+  "UPDATE business.question_import_tasks task SET status='candidates_ready',phase='candidates_ready',updated_at=transaction_timestamp()",
+  "FROM verified_source source WHERE task.task_id=source.import_task_id AND task.task_id=$1 AND task.status='awaiting_source_storage'",
+  'RETURNING task.task_id,status,phase,request_hash AS "requestHash",created_at AS "createdAt",updated_at AS "updatedAt"',
+  '), input_items AS (',
+  "SELECT value AS item FROM jsonb_array_elements($7::jsonb)",
+  '), inserted_items AS (',
+  'INSERT INTO business.question_import_items (item_id,import_task_id,item_index,content_hash,candidate_json,validation_json,media_manifest_json,status)',
+  "SELECT item->>'itemId',task.task_id,(item->>'itemIndex')::integer,item->>'contentHash',(item->'candidate'),(item->'validation'),(item->'mediaManifest'),item->'validation'->>'status'",
+  'FROM advanced_task task CROSS JOIN input_items',
+  'RETURNING item_id',
+  '), input_media AS (',
+  "SELECT (item->>'itemIndex')::integer AS item_index,media FROM input_items CROSS JOIN LATERAL jsonb_array_elements(item->'mediaManifest') AS media",
+  '), inserted_storage_tasks AS (',
+  'INSERT INTO business.storage_object_tasks (task_id,object_id,object_version,expected_sha256,expected_bytes,media_type,state)',
+  "SELECT media->>'storageTaskId',media->>'objectId',(media->>'objectVersion')::integer,media->>'sha256',(media->>'bytes')::bigint,media->>'mimeType','queued' FROM input_media",
+  'RETURNING task_id',
+  '), inserted_media AS (',
+  'INSERT INTO business.question_import_media_objects (media_id,import_task_id,item_index,asset_index,object_id,object_version,storage_task_id,expected_sha256,expected_bytes,mime_type,storage_state)',
+  "SELECT media->>'mediaId',$1,item_index,(media->>'assetIndex')::integer,media->>'objectId',(media->>'objectVersion')::integer,media->>'storageTaskId',media->>'sha256',(media->>'bytes')::bigint,media->>'mimeType','queued'",
+  "FROM input_media JOIN inserted_storage_tasks storage ON storage.task_id=media->>'storageTaskId'",
+  'RETURNING media_id AS "mediaId",item_index AS "itemIndex",asset_index AS "assetIndex",object_id AS "objectId",object_version AS "objectVersion",storage_task_id AS "storageTaskId",expected_sha256 AS sha256,expected_bytes AS bytes,mime_type AS "mimeType"',
+  '), deleted_import_source_relay AS (',
+  'DELETE FROM business.encrypted_import_source_relays relay USING completed',
+  'WHERE relay.storage_task_id=completed.task_id',
+  ') SELECT task_id AS "taskId",status,phase,"requestHash","createdAt","updatedAt",',
+  "COALESCE((SELECT jsonb_agg(jsonb_build_object('mediaId',media.\"mediaId\",'itemIndex',media.\"itemIndex\",'assetIndex',media.\"assetIndex\",'objectId',media.\"objectId\",'objectVersion',media.\"objectVersion\",'storageTaskId',media.\"storageTaskId\",'sha256',media.sha256,'bytes',media.bytes,'mimeType',media.\"mimeType\") ORDER BY media.\"itemIndex\",media.\"assetIndex\") FROM inserted_media media),'[]'::jsonb) AS \"mediaTargets\"",
+  'FROM advanced_task',
+].join(' ');
+
 const prepareDraftsSql = [
   'WITH eligible_items AS (',
   "SELECT item_id FROM business.question_import_items WHERE import_task_id=$1 AND status IN ('accepted','warning')",
@@ -336,6 +381,27 @@ function createQuestionImportTaskRepository({ query, randomId = () => crypto.ran
       if (!/^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(taskId)) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
       const candidates = candidateRows(request.candidates, randomId);
       const result = await query(storeCandidatesSql, [taskId, stableJson(candidates)]);
+      if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_SOURCE_UNVERIFIED');
+      const task = taskRow(result.rows[0], false);
+      if (!Array.isArray(result.rows[0].mediaTargets)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
+      return { ...task, mediaTargets: result.rows[0].mediaTargets };
+    },
+    async completeSourceAndStoreCandidates(input) {
+      const request = exact(input, ['taskId', 'agentId', 'leaseToken', 'observedSha256', 'observedBytes', 'candidates']);
+      const taskId = text(request.taskId, 160);
+      const currentAgentId = text(request.agentId, 64);
+      if (!/^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(taskId) || !/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(currentAgentId)
+        || typeof request.leaseToken !== 'string' || request.leaseToken.length < 16 || !/^[0-9a-f]{64}$/.test(request.observedSha256)
+        || !Number.isSafeInteger(request.observedBytes) || request.observedBytes < 1) {
+        throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+      }
+      const receiptId = 'storage_receipt_' + String(randomId()).replace(/[^A-Za-z0-9_-]/g, '');
+      if (!/^storage_receipt_[A-Za-z0-9_-]{1,128}$/.test(receiptId)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
+      const candidates = candidateRows(request.candidates, randomId);
+      const leaseHash = crypto.createHash('sha256').update(request.leaseToken, 'utf8').digest('hex');
+      const result = await query(completeSourceAndStoreCandidatesSql, [
+        taskId, currentAgentId, leaseHash, request.observedSha256, request.observedBytes, receiptId, stableJson(candidates),
+      ]);
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_SOURCE_UNVERIFIED');
       const task = taskRow(result.rows[0], false);
       if (!Array.isArray(result.rows[0].mediaTargets)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');

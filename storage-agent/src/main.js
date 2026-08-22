@@ -5,6 +5,7 @@ const { loadStorageAgentConfig } = require('./config');
 const { createStorageCloudClient } = require('./cloudClient');
 const { createObjectStore } = require('./objectStore');
 const { createStorageWorker } = require('./worker');
+const { createQuestionImportParser } = require('./questionImportParser');
 const { createStorageAgentRuntime } = require('./runtime');
 const { runStorageAgentHealthCheck } = require('./health');
 
@@ -15,6 +16,9 @@ async function main() {
     agentPrivateKey: config.agentPrivateKey,
     client: createStorageCloudClient({ cloudBaseUrl: config.cloudBaseUrl, agentId: config.agentId, token: config.token }),
     objectStore: createObjectStore({ nasRoot: config.nasRoot }),
+    questionImportParser: createQuestionImportParser({
+      nasRoot: config.nasRoot, parserPath: config.questionImportParserPath, pythonBin: config.questionImportPythonBin,
+    }),
   });
   const runtime = createStorageAgentRuntime({ worker, pollSeconds: config.pollSeconds });
   let running = true;

@@ -13,7 +13,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   if (storageAgent && (typeof storageAgent.lease !== 'function' || typeof storageAgent.download !== 'function' || typeof storageAgent.complete !== 'function')) throw new TypeError('storageAgent is invalid');
   if (questionAuthority && (typeof questionAuthority.list !== 'function' || typeof questionAuthority.create !== 'function')) throw new TypeError('questionAuthority is invalid');
   if (paperExportTasks && (typeof paperExportTasks.create !== 'function' || typeof paperExportTasks.read !== 'function' || typeof paperExportTasks.cancel !== 'function')) throw new TypeError('paperExportTasks is invalid');
-  if (questionImportTasks && (typeof questionImportTasks.create !== 'function' || typeof questionImportTasks.read !== 'function' || typeof questionImportTasks.prepareDrafts !== 'function' || typeof questionImportTasks.storeCandidates !== 'function')) throw new TypeError('questionImportTasks is invalid');
+  if (questionImportTasks && (typeof questionImportTasks.create !== 'function' || typeof questionImportTasks.read !== 'function' || typeof questionImportTasks.prepareDrafts !== 'function' || typeof questionImportTasks.completeSourceAndStoreCandidates !== 'function')) throw new TypeError('questionImportTasks is invalid');
   if (encryptedStorageRelay && typeof encryptedStorageRelay.create !== 'function') throw new TypeError('encryptedStorageRelay is invalid');
   if (storageAgentKeyFingerprint !== null && (typeof storageAgentKeyFingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(storageAgentKeyFingerprint))) throw new TypeError('storageAgentKeyFingerprint is invalid');
   if (storageAgentPublicKey !== null && (typeof storageAgentPublicKey !== 'string' || !/^[A-Za-z0-9_-]+$/.test(storageAgentPublicKey) || storageAgentPublicKey.length > 4096)) throw new TypeError('storageAgentPublicKey is invalid');
@@ -22,6 +22,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   app.disable('x-powered-by');
   app.use('/api/desktop/question-bank/assets/relay', express.json({ limit: '90mb' }));
   app.use('/api/desktop/question-imports', express.json({ limit: '90mb' }));
+  app.use('/api/storage-agent/question-imports', express.json({ limit: '90mb' }));
   app.use(express.json({ limit: '1mb' }));
   app.get('/api/health', async (_request, response) => {
     try {
@@ -340,12 +341,15 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   });
   app.post('/api/storage-agent/question-imports/:taskId/candidates', async (request, response) => {
     if (!questionImportTasks || !storageAgent || typeof storageAgent.authorize !== 'function' || businessTenantId === null) return businessUnavailable(response);
-    const body = exactBody(request.body, ['agentId', 'candidates']);
+    const body = exactBody(request.body, ['agentId', 'leaseToken', 'observedSha256', 'observedBytes', 'candidates']);
     const token = storageAgentToken(request);
     if (!body || !token) return response.status(400).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_INPUT_INVALID' });
     try {
-      await storageAgent.authorize({ agentId: body.agentId, token });
-      const task = await questionImportTasks.storeCandidates({ taskId: String(request.params.taskId || ''), candidates: body.candidates });
+      const agent = await storageAgent.authorize({ agentId: body.agentId, token });
+      const task = await questionImportTasks.completeSourceAndStoreCandidates({
+        taskId: String(request.params.taskId || ''), agentId: agent.agentId, leaseToken: body.leaseToken,
+        observedSha256: body.observedSha256, observedBytes: body.observedBytes, candidates: body.candidates,
+      });
       response.json({ ok: true, task });
     } catch (error) {
       if (error && error.code === 'STORAGE_AGENT_REJECTED') return storageAgentFailure(response, error);

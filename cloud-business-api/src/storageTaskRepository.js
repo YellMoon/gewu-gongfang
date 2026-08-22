@@ -44,9 +44,10 @@ function outputRow(row, leaseToken = null) {
   };
   if (row.kind === 'question_import_source') {
     if (typeof row.importTaskId !== 'string' || !/^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(row.importTaskId)
-      || !['lecture', 'exam'].includes(row.sourceType)) throw failure('STORAGE_TASK_REPOSITORY_INVALID');
+      || !['lecture', 'exam'].includes(row.sourceType) || typeof row.sourceFileName !== 'string' || !/\.(?:doc|docx)$/iu.test(row.sourceFileName)) throw failure('STORAGE_TASK_REPOSITORY_INVALID');
     value.importTaskId = row.importTaskId;
     value.sourceType = row.sourceType;
+    value.sourceFileName = row.sourceFileName;
   }
   if (row.kind === 'question_import_media') {
     if (!Number.isSafeInteger(Number(row.itemIndex)) || Number(row.itemIndex) < 0 || !Number.isSafeInteger(Number(row.assetIndex)) || Number(row.assetIndex) < 0
@@ -57,12 +58,12 @@ function outputRow(row, leaseToken = null) {
       || typeof source.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(source.sha256)
       || !Number.isSafeInteger(Number(source.bytes)) || Number(source.bytes) < 1
       || typeof source.mimeType !== 'string' || !source.mimeType
-      || !['lecture', 'exam'].includes(source.sourceType)) throw failure('STORAGE_TASK_REPOSITORY_INVALID');
+      || !['lecture', 'exam'].includes(source.sourceType) || typeof source.sourceFileName !== 'string' || !/\.(?:doc|docx)$/iu.test(source.sourceFileName)) throw failure('STORAGE_TASK_REPOSITORY_INVALID');
     value.itemIndex = Number(row.itemIndex);
     value.assetIndex = Number(row.assetIndex);
     value.source = {
       objectId: source.objectId, objectVersion: Number(source.objectVersion), sha256: source.sha256,
-      bytes: Number(source.bytes), mimeType: source.mimeType, sourceType: source.sourceType,
+      bytes: Number(source.bytes), mimeType: source.mimeType, sourceType: source.sourceType, sourceFileName: source.sourceFileName,
     };
   }
   return leaseToken === null ? value : { ...value, leaseToken };
@@ -142,11 +143,11 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
              CASE WHEN import_media.media_id IS NOT NULL THEN 'question_import_media'
                   WHEN import_source.import_task_id IS NOT NULL THEN 'question_import_source'
                   ELSE 'relay' END AS kind,
-             source_import_task.task_id AS "importTaskId",source_import_task.source_type AS "sourceType",
+             source_import_task.task_id AS "importTaskId",source_import_task.source_type AS "sourceType",source_import_task.source_file_name AS "sourceFileName",
              import_media.item_index AS "itemIndex",import_media.asset_index AS "assetIndex",
              CASE WHEN import_media.media_id IS NOT NULL THEN jsonb_build_object(
                'objectId',media_source.object_id,'objectVersion',media_source.object_version,'sha256',media_source.expected_sha256,
-               'bytes',media_source.expected_bytes,'mimeType',media_source.mime_type,'sourceType',media_import_task.source_type
+               'bytes',media_source.expected_bytes,'mimeType',media_source.mime_type,'sourceType',media_import_task.source_type,'sourceFileName',media_import_task.source_file_name
              ) ELSE NULL END AS source
            FROM leased
            LEFT JOIN business.import_source_objects import_source ON import_source.storage_task_id=leased."taskId"

@@ -10,6 +10,8 @@ const { loadStorageAgentConfig } = require('./config');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-storage-agent-config-'));
 try {
+  const parserPath = path.join(root, 'parse_word.py');
+  fs.writeFileSync(parserPath, '# fixture\n');
   const pair = crypto.generateKeyPairSync('x25519');
   const privateKey = pair.privateKey.export({ format: 'der', type: 'pkcs8' }).toString('base64url');
   const validEnv = {
@@ -18,6 +20,7 @@ try {
     STORAGE_AGENT_TOKEN: 'storage-agent-test-token-with-sufficient-length',
     NAS_STORAGE_ROOT: root,
     STORAGE_AGENT_PRIVATE_KEY: privateKey,
+    QUESTION_IMPORT_PARSER_PATH: parserPath,
   };
   assert.deepStrictEqual(loadStorageAgentConfig(validEnv), {
     cloudBaseUrl: 'https://example.invalid/cloud-business',
@@ -26,11 +29,18 @@ try {
     agentPrivateKey: privateKey,
     nasRoot: path.resolve(root),
     pollSeconds: 10,
+    questionImportParserPath: path.resolve(parserPath),
+    questionImportPythonBin: process.platform === 'win32' ? 'python' : 'python3',
   });
   assert.throws(
     () => loadStorageAgentConfig({ ...validEnv, STORAGE_AGENT_PRIVATE_KEY: '' }),
     /STORAGE_AGENT_CONFIG_INVALID/,
     'the agent must require its X25519 private key locally'
+  );
+  assert.throws(
+    () => loadStorageAgentConfig({ ...validEnv, QUESTION_IMPORT_PARSER_PATH: path.join(root, 'missing.py') }),
+    /STORAGE_AGENT_CONFIG_INVALID/,
+    'the agent must require a deployed Word parser before it can accept source imports'
   );
   assert.throws(
     () => loadStorageAgentConfig({ ...validEnv, STORAGE_AGENT_TOKEN: '' }),

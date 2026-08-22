@@ -23,6 +23,12 @@ async function main() {
           envelope: { version: 'x25519-aes-256-gcm-v1' }, ciphertextBase64: Buffer.from('relay-ciphertext').toString('base64url'),
         } }) };
       }
+      if (url.endsWith('/api/storage-agent/question-imports/question_import_task_1/candidates')) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, task: {
+          taskId: 'question_import_task_1', status: 'candidates_ready', phase: 'candidates_ready', requestHash: 'b'.repeat(64),
+          createdAt: '2026-08-22T00:00:00.000Z', updatedAt: '2026-08-22T00:01:00.000Z', mediaTargets: [],
+        } }) };
+      }
       return { ok: true, status: 200, json: async () => ({ ok: true, receipt: { taskId: 'task_12345678', state: 'verified', verifiedAt: '2026-08-22T00:00:00.000Z' } }) };
     },
   });
@@ -34,6 +40,11 @@ async function main() {
   });
   const receipt = await client.complete({ taskId: task.taskId, leaseToken: task.leaseToken, observedSha256: task.expectedSha256, observedBytes: task.expectedBytes });
   assert.deepStrictEqual(receipt, { taskId: 'task_12345678', state: 'verified', verifiedAt: '2026-08-22T00:00:00.000Z' });
+  const importTask = await client.reportSourceCandidates({
+    taskId: 'question_import_task_1', leaseToken: task.leaseToken, observedSha256: task.expectedSha256, observedBytes: task.expectedBytes,
+    candidates: [{ contentHash: 'b'.repeat(64), candidate: { stem: 'Question' }, validation: { status: 'accepted' }, mediaManifest: [] }],
+  });
+  assert.strictEqual(importTask.status, 'candidates_ready');
   assert.strictEqual(calls[0].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/lease');
   assert.strictEqual(calls[0].options.headers['x-gewu-storage-agent-token'], 'storage-agent-client-test-token-with-sufficient-length');
   assert.deepStrictEqual(JSON.parse(calls[0].options.body), { agentId: 'storage-agent-1' });
@@ -42,6 +53,11 @@ async function main() {
   assert.deepStrictEqual(JSON.parse(calls[1].options.body), { agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value' });
   assert.strictEqual(calls[2].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/tasks/task_12345678/complete');
   assert.deepStrictEqual(JSON.parse(calls[2].options.body), { agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3 });
+  assert.strictEqual(calls[3].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/question-imports/question_import_task_1/candidates');
+  assert.deepStrictEqual(JSON.parse(calls[3].options.body), {
+    agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3,
+    candidates: [{ contentHash: 'b'.repeat(64), candidate: { stem: 'Question' }, validation: { status: 'accepted' }, mediaManifest: [] }],
+  });
   await assert.rejects(
     () => client.lease(),
     /STORAGE_CLOUD_RESPONSE_INVALID/,

@@ -48,6 +48,10 @@ async function main() {
         taskId: 'question_import_task_fixed-import-id', status: 'awaiting_source_storage', phase: 'awaiting_source_storage',
         requestHash: values[10], createdAt: new Date('2026-08-23T00:00:00.000Z'), updatedAt: new Date('2026-08-23T00:00:00.000Z'),
       }] };
+      if (text.includes('INSERT INTO business.storage_task_receipts') && text.includes('INSERT INTO business.question_import_items')) return { rows: [{
+        taskId: values[0], status: 'candidates_ready', phase: 'candidates_ready', requestHash: 'b'.repeat(64),
+        createdAt: new Date('2026-08-23T00:00:00.000Z'), updatedAt: new Date('2026-08-23T00:02:00.000Z'), mediaTargets: [],
+      }] };
       if (text.includes('UPDATE business.import_source_objects')) return { rows: [{
         taskId: values[0], status: 'queued_for_parse', phase: 'queued_for_parse', requestHash: 'b'.repeat(64),
         createdAt: new Date('2026-08-23T00:00:00.000Z'), updatedAt: new Date('2026-08-23T00:01:00.000Z'),
@@ -129,6 +133,19 @@ async function main() {
     'candidate persistence must atomically create NAS media object tasks and their cloud references');
   assert.ok(!calls.some(([text]) => /INSERT INTO business\.questions|INSERT INTO business\.question_contents/u.test(text)),
     'candidate storage must not create a cloud question before explicit confirmation');
+
+  const atomicCandidates = await repository.completeSourceAndStoreCandidates({
+    taskId: created.taskId, agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value',
+    observedSha256: 'a'.repeat(64), observedBytes: 3,
+    candidates: [{ contentHash: 'f'.repeat(64), candidate: { stem: 'atomically stored' }, validation: { status: 'accepted' }, mediaManifest: [] }],
+  });
+  assert.strictEqual(atomicCandidates.status, 'candidates_ready');
+  const atomicCall = calls.at(-1);
+  assert.ok(atomicCall[0].includes('storage_task_receipts') && atomicCall[0].includes('encrypted_import_source_relays'),
+    'source receipt, candidate storage, and encrypted relay deletion must occur in one cloud transaction');
+  assert.ok(atomicCall[0].includes("storage.state='leased'") && atomicCall[0].includes('lease_token_sha256=$3'),
+    'an agent may report source candidates only while it owns an unexpired lease');
+  assert.ok(!atomicCall[1].includes('lease-token-test-value'), 'raw source lease tokens must never reach PostgreSQL');
 
   const prepared = await repository.prepareDrafts({
     tenantId: 'default', actor: { accountId: 'teacher-1', roles: ['teacher'] }, taskId: created.taskId,

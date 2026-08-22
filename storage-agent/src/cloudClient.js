@@ -24,7 +24,7 @@ function validTask(task) {
     && typeof task.leaseExpiresAt === 'string' && Number.isFinite(Date.parse(task.leaseExpiresAt))
     && ['relay', 'question_import_source', 'question_import_media'].includes(task.kind)
     && (task.kind !== 'question_import_source' || (typeof task.importTaskId === 'string' && /^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(task.importTaskId)
-      && ['lecture', 'exam'].includes(task.sourceType)))
+      && ['lecture', 'exam'].includes(task.sourceType) && typeof task.sourceFileName === 'string' && /\.(?:doc|docx)$/iu.test(task.sourceFileName)))
     && (task.kind !== 'question_import_media' || (Number.isSafeInteger(task.itemIndex) && task.itemIndex >= 0
       && Number.isSafeInteger(task.assetIndex) && task.assetIndex >= 0 && validSource(task.source)));
 }
@@ -36,7 +36,20 @@ function validSource(source) {
     && typeof source.sha256 === 'string' && /^[0-9a-f]{64}$/.test(source.sha256)
     && Number.isSafeInteger(source.bytes) && source.bytes > 0
     && typeof source.mimeType === 'string' && source.mimeType.length > 0 && source.mimeType.length <= 255
-    && ['lecture', 'exam'].includes(source.sourceType);
+    && ['lecture', 'exam'].includes(source.sourceType) && typeof source.sourceFileName === 'string' && /\.(?:doc|docx)$/iu.test(source.sourceFileName);
+}
+
+function validImportTask(task) {
+  if (!task || typeof task !== 'object' || Array.isArray(task) || Object.getPrototypeOf(task) !== Object.prototype
+    || Reflect.ownKeys(task).length !== 7 || !/^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(task.taskId || '')
+    || task.status !== 'candidates_ready' || task.phase !== 'candidates_ready' || !/^[0-9a-f]{64}$/.test(task.requestHash || '')
+    || !Number.isFinite(Date.parse(task.createdAt)) || !Number.isFinite(Date.parse(task.updatedAt)) || !Array.isArray(task.mediaTargets)) return false;
+  return task.mediaTargets.every(target => target && typeof target === 'object' && !Array.isArray(target) && Object.getPrototypeOf(target) === Object.prototype
+    && Reflect.ownKeys(target).length === 9 && /^question_import_media_[A-Za-z0-9_-]{1,128}$/.test(target.mediaId || '')
+    && Number.isSafeInteger(target.itemIndex) && target.itemIndex >= 0 && Number.isSafeInteger(target.assetIndex) && target.assetIndex >= 0
+    && /^obj_[A-Za-z0-9_-]{1,128}$/.test(target.objectId || '') && Number.isSafeInteger(target.objectVersion) && target.objectVersion > 0
+    && /^task_[A-Za-z0-9_-]{8,128}$/.test(target.storageTaskId || '') && /^[0-9a-f]{64}$/.test(target.sha256 || '')
+    && Number.isSafeInteger(target.bytes) && target.bytes > 0 && typeof target.mimeType === 'string' && target.mimeType.length > 0 && target.mimeType.length <= 255);
 }
 
 function relayBytes(value) {
@@ -101,6 +114,21 @@ function createStorageCloudClient({ cloudBaseUrl, agentId, token, fetch: fetchIm
       if (response.ok !== true || !response.receipt || response.receipt.taskId !== request.taskId || response.receipt.state !== 'verified'
         || typeof response.receipt.verifiedAt !== 'string' || !Number.isFinite(Date.parse(response.receipt.verifiedAt))) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
       return response.receipt;
+    },
+    async reportSourceCandidates(input) {
+      const request = exact(input, ['taskId', 'leaseToken', 'observedSha256', 'observedBytes', 'candidates']);
+      if (!/^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(request.taskId) || typeof request.leaseToken !== 'string' || request.leaseToken.length < 16
+        || !/^[0-9a-f]{64}$/.test(request.observedSha256) || !Number.isSafeInteger(request.observedBytes) || request.observedBytes < 1
+        || !Array.isArray(request.candidates) || request.candidates.length < 1 || request.candidates.length > 500) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+      const serializedCandidates = JSON.stringify(request.candidates);
+      if (serializedCandidates.length > (90 * 1024 * 1024) || /data:[^,]*;base64|"(?:ciphertext|plaintext)"\s*:/iu.test(serializedCandidates)) {
+        throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+      }
+      const response = exact(await post(`/api/storage-agent/question-imports/${encodeURIComponent(request.taskId)}/candidates`, {
+        agentId, leaseToken: request.leaseToken, observedSha256: request.observedSha256, observedBytes: request.observedBytes, candidates: request.candidates,
+      }), ['ok', 'task']);
+      if (response.ok !== true || !validImportTask(response.task)) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+      return response.task;
     },
   });
 }

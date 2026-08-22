@@ -325,7 +325,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
       create: async input => { questionImportCalls.push(['create', input]); return { taskId: 'question_import_task_1', status: 'awaiting_source_storage', phase: 'awaiting_source_storage' }; },
       read: async input => { questionImportCalls.push(['read', input]); return { taskId: input.taskId, status: 'candidates_ready', phase: 'candidates_ready', sourceStorageState: 'verified', items: [] }; },
       prepareDrafts: async input => { questionImportCalls.push(['prepare', input]); return { taskId: input.taskId, status: 'drafts_prepared', phase: 'drafts_prepared', items: [] }; },
-      storeCandidates: async () => ({}),
+      completeSourceAndStoreCandidates: async () => ({}),
     },
   });
   const importRelayKey = await request(questionImportApp, '/api/desktop/question-imports/relay-key', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
@@ -361,17 +361,18 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     },
     questionImportTasks: {
       create: async () => ({}), read: async () => ({}), prepareDrafts: async () => ({}),
-      storeCandidates: async input => { importAgentCalls.push(['storeCandidates', input]); return { taskId: input.taskId, status: 'candidates_ready', phase: 'candidates_ready' }; },
+      completeSourceAndStoreCandidates: async input => { importAgentCalls.push(['completeSourceAndStoreCandidates', input]); return { taskId: input.taskId, status: 'candidates_ready', phase: 'candidates_ready' }; },
     },
   });
   const agentCandidates = await request(importAgentApp, '/api/storage-agent/question-imports/question_import_task_1/candidates', {
     method: 'POST', headers: { 'x-gewu-storage-agent-token': 'storage-agent-test-token' }, body: {
-      agentId: 'storage-agent-1', candidates: [{ contentHash: 'c'.repeat(64), candidate: { stem: 'text' }, validation: { status: 'accepted' }, mediaManifest: [] }],
+      agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3,
+      candidates: [{ contentHash: 'c'.repeat(64), candidate: { stem: 'text' }, validation: { status: 'accepted' }, mediaManifest: [] }],
     },
   });
   assert.strictEqual(agentCandidates.status, 200);
   assert.strictEqual(agentCandidates.body.task.status, 'candidates_ready');
-  assert.deepStrictEqual(importAgentCalls.map(call => call[0]), ['authorize', 'storeCandidates']);
+  assert.deepStrictEqual(importAgentCalls.map(call => call[0]), ['authorize', 'completeSourceAndStoreCandidates']);
   const createdQuestion = await request(questionApp, '/api/desktop/question-bank/questions', {
     method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' }, body: {
       id: 'question-1', subject: 'physics', questionType: 'single_choice', difficulty: 3,
