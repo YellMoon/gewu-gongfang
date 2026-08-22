@@ -2616,6 +2616,23 @@ class BrowserDatabaseService {
     return true;
   }
 
+  deleteCloudCachedQuestion(id: string): boolean {
+    const idx = this.data.questions.findIndex(q => q.id === id);
+    if (idx === -1 || this.data.questions[idx].storage_state !== 'cloud_cached') return false;
+    this.data.questions[idx] = this.normalizeQuestionRecord({
+      ...this.data.questions[idx],
+      deleted: true,
+      deleted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    } as Question);
+    this.data.questionBasketIds = (this.data.questionBasketIds || []).filter(questionId => questionId !== id);
+    this.recordAuthorityDraft('questions', 'delete', id, this.data.questions[idx]);
+    this.syncQuestionLocalRecord(this.data.questions[idx]);
+    this.syncTreeCache();
+    this.saveData();
+    return true;
+  }
+
   restoreQuestion(id: string): boolean {
     const idx = this.data.questions.findIndex(q => q.id === id);
     if (idx === -1) return false;

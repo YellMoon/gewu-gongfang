@@ -1,4 +1,7 @@
 function questionDeletePresentation(question = {}, context = {}) {
+  if (question.storage_state === 'cloud_cached') {
+    return { visible: true, enabled: true, reason: '' };
+  }
   if (question.storage_state === 'host_committed') {
     const allowed = (context.capabilities || []).includes('question-bank:delete-committed');
     return { visible: allowed, enabled: allowed, reason: allowed ? '' : '已入库试题只能在本地数据主机桌面端删除' };

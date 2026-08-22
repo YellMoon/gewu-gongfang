@@ -9,6 +9,7 @@ assert.ok(source.includes('recordAuthorityDraft'), 'browser database should defi
 assert.ok(source.includes('createAuthorityDraftFromLocalMutation'), 'browser database should use the field-whitelisting typed adapter');
 assert.ok(source.includes('listCloudQuestions'), 'cloud question text must join the same authority projection cache as the business projection');
 assert.ok(source.includes("storage_state: 'cloud_cached'"), 'cloud question text must be distinguished from locally authored drafts before an edit is captured');
+assert.ok(source.includes('deleteCloudCachedQuestion'), 'cloud-cached question deletes must be captured as typed encrypted drafts');
 assert.ok(source.includes('window.desktopAuthority.appendDraftSync'), 'typed drafts must be encrypted before a synchronous local edit returns');
 assert.ok(source.includes('window.desktopAuthority.appendDraftBatchSync'), 'multi-command edits must append one atomic encrypted draft batch');
 assert.ok(

@@ -15,7 +15,6 @@ import AutoCloseSelect from '../components/AutoCloseSelect';
 import TaxonomyManager from '../components/TaxonomyManager';
 import { getApiBase } from '../utils/apiBase';
 const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
-const { deleteQuestionViaApi } = require('../services/questionDeleteApi');
 const { normalizeDesktopQuestionDeleteContext, verifyNativeQuestionDraft } = require('../services/desktopQuestionDeleteContext');
 const { createNativeQuestionDraft } = require('../services/nativeQuestionDraftCreate');
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
@@ -29,7 +28,7 @@ import { normalizeStructureOrder, validateQuestionStructure } from '../component
 import type { QuestionRichDocument } from '../types/questionRichContent';
 import { createQuestionRichDocument } from '../types/questionRichContent';
 import { migrateLegacyQuestion, projectQuestionRichContent } from '../services/questionRichContent';
-import { createQuestionEditorSaveGate, createRichDocumentDirtyCoordinator, persistRemoteThenLocal, registerEditorSpaExitGuard, shouldProtectEditorExit } from '../components/question-editor/questionEditorSession'; // utf-8
+import { createQuestionEditorSaveGate, createRichDocumentDirtyCoordinator, registerEditorSpaExitGuard, shouldProtectEditorExit } from '../components/question-editor/questionEditorSession'; // utf-8
 import {
   cacheQuestionTrees,
   ensureQuestionLocalStoreSeeded,
@@ -296,6 +295,7 @@ const QuestionBankPreview: React.FC = () => {
   const loadData = useCallback(async () => {
     try {
       const db = (window as any).dbService;
+      await db?.refreshAuthorityProjection?.();
       const cachedKnowledge = await getCachedQuestionTree('knowledge');
       const cachedModels = await getCachedQuestionTree('model');
       if (cachedKnowledge.length > 0) setKnowledgeNodes(cachedKnowledge);
@@ -663,14 +663,7 @@ const QuestionBankPreview: React.FC = () => {
 
     if (editing) {
       if (!db?.updateQuestion) throw new Error('LOCAL_QUESTION_STORE_UNAVAILABLE');
-      await persistRemoteThenLocal(
-        () => fetch(`${API_BASE}/questions/${editing.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...data, stem: data.content, explanation: data.analysis, knowledge_point_ids: data.knowledge_ids, model_point_ids: data.model_ids }),
-        }),
-        () => db.updateQuestion(editing.id, data),
-      );
+      if (db.updateQuestion(editing.id, data) !== true) throw new Error('LOCAL_QUESTION_UPDATE_FAILED');
     } else {
       try { await createNativeQuestionDraft(db, data); } catch (_error) { message.error('DRAFT_PROVENANCE_UNAVAILABLE'); return; }
     }
@@ -690,9 +683,8 @@ const QuestionBankPreview: React.FC = () => {
     const presentation = questionDeletePresentation(question, deleteContext);
     if (!presentation.enabled) { message.warning(presentation.reason); return; }
     let ok = false;
-    if (question?.storage_state === 'host_committed') {
-      const session = readDesktopAuthorizationSession();
-      ok = (await deleteQuestionViaApi(fetch, `${API_BASE}/questions/${id}`, { token: session.authorization.replace(/^Bearer\s+/i, ''), deviceId: session.authContext.deviceId })).ok;
+    if (question?.storage_state === 'cloud_cached') {
+      ok = Boolean((window as any).dbService.deleteCloudCachedQuestion(id));
     } else { const session = readDesktopAuthorizationSession(); ok = Boolean((window as any).dbService.deleteQuestion(id, await verifyNativeQuestionDraft(id, session))); }
     if (!ok) { message.error('Delete failed'); return; }
     setQuestions(previous => previous.filter(item => item.id !== id));
@@ -712,12 +704,10 @@ const QuestionBankPreview: React.FC = () => {
   const handleBatchDelete = async () => {
     const db = (window as any).dbService;
     const allowed = selectedRowKeys.filter(id => questionDeletePresentation(questions.find(item => item.id === id), deleteContext).enabled);
-    let session: any = {};
-    try { const trusted = readDesktopAuthorizationSession(); session = { token: trusted.authorization.replace(/^Bearer\s+/i, ''), deviceId: trusted.authContext.deviceId }; } catch (_error) {}
     const settled = await Promise.allSettled(allowed.map(async id => {
       const question = questions.find(item => item.id === id);
-      const ok = question?.storage_state === 'host_committed'
-        ? (await deleteQuestionViaApi(fetch, `${API_BASE}/questions/${id}`, session)).ok
+      const ok = question?.storage_state === 'cloud_cached'
+        ? Boolean(db.deleteCloudCachedQuestion(id))
         : Boolean(db.deleteQuestion(id, await verifyNativeQuestionDraft(id, readDesktopAuthorizationSession())));
       if (!ok) throw new Error('DELETE_FAILED'); return id;
     }));
