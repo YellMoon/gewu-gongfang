@@ -9,6 +9,7 @@ const { createDesktopPairingService } = require('./src/desktopPairingService');
 const { createMiniappCloudAccountService } = require('./src/miniappCloudAccountService');
 const { createMiniappCloudAccountRepository } = require('./src/miniappCloudAccountRepository');
 const { createWechatPhoneVerifier } = require('./src/wechatPhoneVerifier');
+const { version } = require('./package.json');
 
 const port = Number(process.env.PORT || 3002);
 const pool = new Pool({
@@ -124,6 +125,7 @@ const desktopPairing = desktopRuntime?.registration
   : null;
 const app = createCloudBusinessApp({
   query: (text, values) => pool.query(text, values),
+  releaseVersion: version,
   businessScheduleUpdate: desktopRuntime?.businessScheduleUpdate || null,
   businessScheduleStudentOverride: desktopRuntime?.businessScheduleStudentOverride || null,
   desktopRegistration: desktopRuntime?.registration || null,

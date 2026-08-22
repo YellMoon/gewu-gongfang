@@ -25,9 +25,16 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
 }
 
 (async () => {
-  const healthy = await request(createCloudBusinessApp({ query: async () => ({ rows: [{ ok: 1 }] }) }), '/api/health');
+  const healthy = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [{ ok: 1 }] }),
+    releaseVersion: '8.0.6-test',
+  }), '/api/health');
   assert.strictEqual(healthy.status, 200);
-  assert.deepStrictEqual(healthy.body, { ok: true, database: 'postgresql', businessAuthority: 'cloud' });
+  assert.strictEqual(healthy.body.ok, true);
+  assert.strictEqual(healthy.body.database, 'postgresql');
+  assert.strictEqual(healthy.body.businessAuthority, 'cloud');
+  assert.strictEqual(healthy.body.version, '8.0.6-test');
+  assert.ok(Number.isFinite(Date.parse(healthy.body.time)), 'health responses must carry an observable server timestamp');
 
   const unavailable = await request(createCloudBusinessApp({ query: async () => { throw new Error('database unavailable'); } }), '/api/health');
   assert.strictEqual(unavailable.status, 503);

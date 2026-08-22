@@ -2,7 +2,7 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, desktopRegistration = null, miniappCloudAccount = null, desktopPairing = null, businessTenantId = null }) {
+function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, desktopRegistration = null, miniappCloudAccount = null, desktopPairing = null, businessTenantId = null, releaseVersion = 'unknown' }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
@@ -16,7 +16,13 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   app.get('/api/health', async (_request, response) => {
     try {
       await query('SELECT 1 AS ok');
-      response.json({ ok: true, database: 'postgresql', businessAuthority: 'cloud' });
+      response.json({
+        ok: true,
+        database: 'postgresql',
+        businessAuthority: 'cloud',
+        version: String(releaseVersion),
+        time: new Date().toISOString(),
+      });
     } catch (_) {
       response.status(503).json({ ok: false, database: 'unavailable' });
     }
