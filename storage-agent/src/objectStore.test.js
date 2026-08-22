@@ -12,6 +12,7 @@ const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 
 async function main() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-storage-agent-object-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-storage-agent-outside-'));
   try {
     const store = createObjectStore({ nasRoot: root });
     const bytes = Buffer.from('abc');
@@ -48,8 +49,18 @@ async function main() {
       [],
       'failed writes must not leave a partial object in the final directory'
     );
+
+    fs.rmSync(path.join(root, 'objects'), { recursive: true, force: true });
+    fs.symlinkSync(outside, path.join(root, 'objects'), process.platform === 'win32' ? 'junction' : 'dir');
+    await assert.rejects(
+      () => store.putVerified(descriptor, bytes),
+      /STORAGE_OBJECT_REPARSE_POINT/,
+      'a directory link beneath the NAS root must not redirect an object write outside the allow-listed root'
+    );
+    assert.deepStrictEqual(fs.readdirSync(outside), [], 'a rejected linked path must not write outside the NAS root');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
   }
   console.log('storage object store checks passed');
 }

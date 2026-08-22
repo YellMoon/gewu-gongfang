@@ -33,13 +33,28 @@ function assertInsideRoot(candidate, nasRoot) {
   return candidate;
 }
 
+function assertNoReparsePoint(candidate, nasRoot) {
+  const safeCandidate = assertInsideRoot(candidate, nasRoot);
+  let current = nasRoot;
+  for (const segment of path.relative(nasRoot, safeCandidate).split(path.sep)) {
+    current = path.join(current, segment);
+    try {
+      if (fs.lstatSync(current).isSymbolicLink()) throw failure('STORAGE_OBJECT_REPARSE_POINT');
+    } catch (error) {
+      if (error?.code === 'ENOENT') break;
+      throw error;
+    }
+  }
+  return safeCandidate;
+}
+
 function createObjectStore({ nasRoot } = {}) {
   if (typeof nasRoot !== 'string' || !path.isAbsolute(nasRoot)) throw failure('STORAGE_OBJECT_INVALID');
   const root = path.resolve(nasRoot);
 
   function objectPath(descriptor) {
     const { objectId, version, sha256 } = validateDescriptor(descriptor);
-    return assertInsideRoot(path.join(root, 'objects', objectId, String(version), sha256), root);
+    return assertNoReparsePoint(path.join(root, 'objects', objectId, String(version), sha256), root);
   }
 
   async function verifyExisting(target, descriptor) {
@@ -63,10 +78,12 @@ function createObjectStore({ nasRoot } = {}) {
       if (error.code !== 'ENOENT') throw error;
     }
 
-    const stagingDirectory = assertInsideRoot(path.join(root, '.gewu-storage-agent', 'staging'), root);
-    const partial = assertInsideRoot(path.join(stagingDirectory, `${descriptor.objectId}-${descriptor.version}-${crypto.randomUUID()}.partial`), root);
+    const stagingDirectory = assertNoReparsePoint(path.join(root, '.gewu-storage-agent', 'staging'), root);
+    const partial = assertNoReparsePoint(path.join(stagingDirectory, `${descriptor.objectId}-${descriptor.version}-${crypto.randomUUID()}.partial`), root);
     await fs.promises.mkdir(path.dirname(target), { recursive: true });
     await fs.promises.mkdir(stagingDirectory, { recursive: true });
+    assertNoReparsePoint(target, root);
+    assertNoReparsePoint(partial, root);
     try {
       await fs.promises.writeFile(partial, bytes, { flag: 'wx' });
       const written = await fs.promises.readFile(partial);
