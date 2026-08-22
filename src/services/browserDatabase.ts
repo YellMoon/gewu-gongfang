@@ -153,8 +153,13 @@ class BrowserDatabaseService {
     minSourceVersion = 0,
   }: { minSourceVersion?: number } = {}): Promise<void> {
     if (typeof window.desktopIdentitySessionProvider?.listCloudBusinessProjection === 'function') {
-      const payload = await window.desktopIdentitySessionProvider.listCloudBusinessProjection();
-      const outbox = window.desktopAuthority?.list ? await window.desktopAuthority.list() : [];
+      const [payload, questions, outbox] = await Promise.all([
+        window.desktopIdentitySessionProvider.listCloudBusinessProjection(),
+        typeof window.desktopIdentitySessionProvider.listCloudQuestions === 'function'
+          ? window.desktopIdentitySessionProvider.listCloudQuestions()
+          : Promise.resolve([]),
+        window.desktopAuthority?.list ? window.desktopAuthority.list() : Promise.resolve([]),
+      ]);
       const next = buildAuthorityBackedBrowserCache({
         projection: {
           protocol: 'gewu.authority-projection.v1',
@@ -163,7 +168,7 @@ class BrowserDatabaseService {
           userId: readCurrentDesktopIdentityContext()?.userId || '',
           role: readCurrentDesktopIdentityContext()?.activeRole || '',
           sourceVersion: Math.max(0, Number(minSourceVersion) || 0),
-          payload,
+          payload: { ...payload, questions },
         },
         outbox,
         localOnly: {

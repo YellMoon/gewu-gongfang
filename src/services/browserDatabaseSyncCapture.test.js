@@ -7,6 +7,7 @@ const { applyQuestionSyncRecords, buildBrowserQuestionSearchText, mergeBrowserQu
 
 assert.ok(source.includes('recordAuthorityDraft'), 'browser database should define typed authority draft capture');
 assert.ok(source.includes('createAuthorityDraftFromLocalMutation'), 'browser database should use the field-whitelisting typed adapter');
+assert.ok(source.includes('listCloudQuestions'), 'cloud question text must join the same authority projection cache as the business projection');
 assert.ok(source.includes('window.desktopAuthority.appendDraftSync'), 'typed drafts must be encrypted before a synchronous local edit returns');
 assert.ok(source.includes('window.desktopAuthority.appendDraftBatchSync'), 'multi-command edits must append one atomic encrypted draft batch');
 assert.ok(

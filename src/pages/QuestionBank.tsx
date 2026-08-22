@@ -114,15 +114,10 @@ const QuestionBank: React.FC = () => {
       const db = (window as any).dbService;
       let localQuestions: Question[] = [];
       if (db) {
+        await db.refreshAuthorityProjection?.();
         localQuestions = (db.getAllQuestions?.() || []).map(normalizeQuestion);
       }
-      try {
-        const cloudQuestions = await (window as any).desktopIdentitySessionProvider?.listCloudQuestions?.();
-        if (!Array.isArray(cloudQuestions)) throw new Error('CLOUD_QUESTION_LIST_UNAVAILABLE');
-        setQuestions(cloudQuestions.map(normalizeQuestion));
-      } catch (_err) {
-        setQuestions(localQuestions);
-      }
+      setQuestions(localQuestions);
       if (!db) return;
       setKnowledgeNodes([...(db.getKnowledgeTree?.() || [])]);
       if (db.getKnowledgeTree?.().length === 0) {
