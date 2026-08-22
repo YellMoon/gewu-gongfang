@@ -16,6 +16,7 @@ const { createDesktopPasswordIdentityService } = require('./src/desktopPasswordI
 const { createDesktopPasswordAuthenticationService } = require('./src/desktopPasswordAuthenticationService');
 const { createStorageAgentRuntimeFromEnvironment } = require('./src/storageAgentRuntime');
 const { createQuestionAuthorityRuntime } = require('./src/questionAuthorityRuntime');
+const { createQuestionImportTaskRepository } = require('./src/questionImportTaskRepository');
 const { createPaperExportTaskRepository } = require('./src/paperExportTaskRepository');
 const { createPaperExportArtifactRepository } = require('./src/paperExportArtifactRepository');
 const { createPaperExportTaskProcessor } = require('./src/paperExportTaskProcessor');
@@ -293,6 +294,9 @@ const storageAgent = createStorageAgentRuntimeFromEnvironment({
 const questionAuthority = createQuestionAuthorityRuntime({
   query: (text, values) => pool.query(text, values),
 });
+const questionImportTasks = createQuestionImportTaskRepository({
+  query: (text, values) => pool.query(text, values),
+});
 const paperExportTasks = createPaperExportTaskRepository({
   query: (text, values) => pool.query(text, values),
 });
@@ -337,6 +341,7 @@ const app = createCloudBusinessApp({
   miniappCloudAccount,
   storageAgent,
   questionAuthority,
+  questionImportTasks,
   paperExportTasks,
   encryptedStorageRelay,
   storageAgentKeyFingerprint,

@@ -39,6 +39,11 @@ async function main() {
     query: async (text, values) => {
       calls.push([text, values]);
       if (text.includes('SELECT task_id AS "taskId"') && text.includes('idempotency_key=$3')) return { rows: [] };
+      if (text.includes('LEFT JOIN business.import_source_objects source')) return { rows: [{
+        taskId: values[2], status: 'candidates_ready', phase: 'candidates_ready', requestHash: 'b'.repeat(64),
+        createdAt: new Date('2026-08-23T00:00:00.000Z'), updatedAt: new Date('2026-08-23T00:02:00.000Z'),
+        sourceStorageState: 'verified', items: [],
+      }] };
       if (text.includes('INSERT INTO business.question_import_tasks')) return { rows: [{
         taskId: 'question_import_task_fixed-import-id', status: 'awaiting_source_storage', phase: 'awaiting_source_storage',
         requestHash: values[10], createdAt: new Date('2026-08-23T00:00:00.000Z'), updatedAt: new Date('2026-08-23T00:00:00.000Z'),
@@ -131,6 +136,18 @@ async function main() {
     tenantId: 'default', actor: { accountId: 'teacher-1', roles: ['teacher'] }, taskId: 'question_import_task_unconfirmed',
   }), /CLOUD_QUESTION_IMPORT_NOT_CONFIRMABLE/,
   'an import task without cloud-ready candidates must not create local submission drafts');
+
+  const read = await repository.read({
+    tenantId: 'default', actor: { accountId: 'teacher-1', roles: ['teacher'] }, taskId: created.taskId,
+  });
+  assert.deepStrictEqual(read, {
+    taskId: created.taskId, status: 'candidates_ready', phase: 'candidates_ready', requestHash: 'b'.repeat(64),
+    createdAt: '2026-08-23T00:00:00.000Z', updatedAt: '2026-08-23T00:02:00.000Z', replayed: false,
+    sourceStorageState: 'verified', items: [],
+  });
+  assert.ok(calls.some(([text, values]) => text.includes('LEFT JOIN business.import_source_objects source')
+    && values[0] === 'default' && values[1] === 'teacher-1' && values[2] === created.taskId),
+  'cloud task reads must remain scoped to the owning account');
 
   console.log('cloud question import task repository checks passed');
 }

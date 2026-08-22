@@ -190,18 +190,38 @@ const prepareDraftsSql = [
   'FROM owned_task task',
 ].join(' ');
 
-function preparedTaskRow(row) {
-  const task = taskRow(row, false);
-  if (!Array.isArray(row.items) || row.items.length < 1 || row.items.some(item => !plainObject(item)
+const readSql = [
+  'SELECT task.task_id AS "taskId",task.status,task.phase,task.request_hash AS "requestHash",task.created_at AS "createdAt",task.updated_at AS "updatedAt",',
+  'source.storage_state AS "sourceStorageState",',
+  "COALESCE((SELECT jsonb_agg(jsonb_build_object('itemId',item.item_id,'itemIndex',item.item_index,'contentHash',item.content_hash,'candidate',item.candidate_json,'validation',item.validation_json,'mediaManifest',item.media_manifest_json,'status',item.status) ORDER BY item.item_index) FROM business.question_import_items item WHERE item.import_task_id=task.task_id),'[]'::jsonb) AS items",
+  'FROM business.question_import_tasks task',
+  'LEFT JOIN business.import_source_objects source ON source.import_task_id=task.task_id',
+  'WHERE task.tenant_id=$1 AND task.account_id=$2 AND task.task_id=$3',
+].join(' ');
+
+function itemRows(value, { allowEmpty = false } = {}) {
+  if (!Array.isArray(value) || (!allowEmpty && value.length < 1) || value.some(item => !plainObject(item)
     || typeof item.itemId !== 'string' || !/^question_import_item_[A-Za-z0-9_-]{1,128}$/.test(item.itemId)
     || !Number.isSafeInteger(item.itemIndex) || item.itemIndex < 0 || !/^[0-9a-f]{64}$/.test(item.contentHash)
     || !plainObject(item.candidate) || !plainObject(item.validation) || !Array.isArray(item.mediaManifest))) {
     throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
   }
-  return { ...task, items: row.items.map(item => ({
+  return value.map(item => ({
     itemId: item.itemId, itemIndex: item.itemIndex, contentHash: item.contentHash,
     candidate: item.candidate, validation: item.validation, mediaManifest: item.mediaManifest,
-  })) };
+    ...(typeof item.status === 'string' ? { status: item.status } : {}),
+  }));
+}
+
+function preparedTaskRow(row) {
+  const task = taskRow(row, false);
+  return { ...task, items: itemRows(row.items) };
+}
+
+function readTaskRow(row) {
+  const task = taskRow(row, false);
+  if (!['queued', 'verified', 'quarantined'].includes(row.sourceStorageState)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
+  return { ...task, sourceStorageState: row.sourceStorageState, items: itemRows(row.items, { allowEmpty: true }) };
 }
 
 function candidateRows(value, randomId) {
@@ -271,6 +291,17 @@ function createQuestionImportTaskRepository({ query, randomId = () => crypto.ran
       const result = await query(markSourceVerifiedSql, [taskId, storageTaskId]);
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_SOURCE_UNVERIFIED');
       return taskRow(result.rows[0], false);
+    },
+    async read(input) {
+      const request = exact(input, ['tenantId', 'actor', 'taskId']);
+      const tenantId = text(request.tenantId, 128);
+      const currentActor = actor(request.actor);
+      const taskId = text(request.taskId, 160);
+      if (!/^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(taskId)) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+      const result = await query(readSql, [tenantId, currentActor.accountId, taskId]);
+      if (!result || !Array.isArray(result.rows)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
+      if (result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_NOT_FOUND');
+      return readTaskRow(result.rows[0]);
     },
     async storeCandidates(input) {
       const request = exact(input, ['taskId', 'candidates']);

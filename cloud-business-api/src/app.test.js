@@ -317,6 +317,40 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.deepStrictEqual(questionCalls, [{
     tenantId: 'default', actor: { authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'], teacherId: null, studentId: null }, limit: 200,
   }]);
+  const questionImportCalls = [];
+  const questionImportApp = createCloudBusinessApp({
+    query: async () => ({ rows: [] }), desktopRegistration: identity, businessTenantId: 'default',
+    storageAgentKeyFingerprint: 'a'.repeat(64), storageAgentPublicKey: Buffer.alloc(44, 1).toString('base64url'),
+    questionImportTasks: {
+      create: async input => { questionImportCalls.push(['create', input]); return { taskId: 'question_import_task_1', status: 'awaiting_source_storage', phase: 'awaiting_source_storage' }; },
+      read: async input => { questionImportCalls.push(['read', input]); return { taskId: input.taskId, status: 'candidates_ready', phase: 'candidates_ready', sourceStorageState: 'verified', items: [] }; },
+      prepareDrafts: async input => { questionImportCalls.push(['prepare', input]); return { taskId: input.taskId, status: 'drafts_prepared', phase: 'drafts_prepared', items: [] }; },
+    },
+  });
+  const importRelayKey = await request(questionImportApp, '/api/desktop/question-imports/relay-key', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
+  assert.strictEqual(importRelayKey.status, 200);
+  assert.deepStrictEqual(importRelayKey.body, { ok: true, agentPublicKey: Buffer.alloc(44, 1).toString('base64url'), agentKeyFingerprint: 'a'.repeat(64) });
+  const importCreated = await request(questionImportApp, '/api/desktop/question-imports', {
+    method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature', 'x-idempotency-key': 'import-request-1' }, body: {
+      sourceType: 'lecture', sourceFileName: 'mechanics.docx', sourceMimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      sourceSha256: 'b'.repeat(64), sourceBytes: 3, metadata: {}, storage: { taskId: 'task_12345678', objectId: 'obj_source_1', objectVersion: 1 },
+      relay: { agentKeyFingerprint: 'a'.repeat(64), envelope: {}, ciphertextBase64: Buffer.from('abc').toString('base64url'), expiresAt: '2026-08-23T00:05:00.000Z' },
+    },
+  });
+  assert.strictEqual(importCreated.status, 202);
+  assert.strictEqual(importCreated.body.task.taskId, 'question_import_task_1');
+  assert.strictEqual(questionImportCalls[0][0], 'create');
+  assert.strictEqual(questionImportCalls[0][1].tenantId, 'default');
+  assert.strictEqual(questionImportCalls[0][1].actor.accountId, 'account-1');
+  assert.ok(Buffer.isBuffer(questionImportCalls[0][1].request.relay.ciphertext), 'desktop source ciphertext must be decoded only for the relay repository');
+  const importRead = await request(questionImportApp, '/api/desktop/question-imports/question_import_task_1', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
+  assert.strictEqual(importRead.status, 200);
+  assert.strictEqual(importRead.body.task.sourceStorageState, 'verified');
+  const importPrepared = await request(questionImportApp, '/api/desktop/question-imports/question_import_task_1/prepare-drafts', {
+    method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' }, body: {},
+  });
+  assert.strictEqual(importPrepared.status, 200);
+  assert.strictEqual(importPrepared.body.task.status, 'drafts_prepared');
   const createdQuestion = await request(questionApp, '/api/desktop/question-bank/questions', {
     method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' }, body: {
       id: 'question-1', subject: 'physics', questionType: 'single_choice', difficulty: 3,
