@@ -31,6 +31,10 @@ async function main() {
         taskId: values[0], status: 'queued_for_parse', phase: 'queued_for_parse', requestHash: 'b'.repeat(64),
         createdAt: new Date('2026-08-23T00:00:00.000Z'), updatedAt: new Date('2026-08-23T00:01:00.000Z'),
       }] };
+      if (text.includes('INSERT INTO business.question_import_items')) return { rows: [{
+        taskId: values[0], status: 'candidates_ready', phase: 'candidates_ready', requestHash: 'b'.repeat(64),
+        createdAt: new Date('2026-08-23T00:00:00.000Z'), updatedAt: new Date('2026-08-23T00:02:00.000Z'),
+      }] };
       throw new Error(`unexpected query: ${text}`);
     },
   });
@@ -69,6 +73,21 @@ async function main() {
   assert.ok(calls.some(([text, values]) => text.includes('UPDATE business.import_source_objects')
     && values[0] === created.taskId && values[1] === 'task_12345678'),
   'only the source object bound to this import task can unlock parsing');
+
+  const candidates = await repository.storeCandidates({
+    taskId: created.taskId,
+    candidates: [{
+      contentHash: 'c'.repeat(64),
+      candidate: { subject: 'physics', stem: 'What is force?', options: [], answer: 'mass times acceleration' },
+      validation: { status: 'accepted' },
+      mediaManifest: [],
+    }],
+  });
+  assert.strictEqual(candidates.status, 'candidates_ready');
+  assert.ok(calls.some(([text]) => text.includes('INSERT INTO business.question_import_items')),
+    'parsed text candidates must be persisted as cloud task items');
+  assert.ok(!calls.some(([text]) => /INSERT INTO business\.questions|INSERT INTO business\.question_contents/u.test(text)),
+    'candidate storage must not create a cloud question before explicit confirmation');
 
   console.log('cloud question import task repository checks passed');
 }

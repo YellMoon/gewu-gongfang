@@ -119,6 +119,45 @@ const markSourceVerifiedSql = [
   ') SELECT * FROM advanced_task',
 ].join(' ');
 
+const storeCandidatesSql = [
+  'WITH advanced_task AS (',
+  "UPDATE business.question_import_tasks SET status='candidates_ready',phase='candidates_ready',updated_at=transaction_timestamp()",
+  "WHERE task_id=$1 AND status IN ('queued_for_parse','parsing')",
+  'RETURNING task_id,status,phase,request_hash AS "requestHash",created_at AS "createdAt",updated_at AS "updatedAt"',
+  '), input_items AS (',
+  "SELECT value AS item FROM jsonb_array_elements($2::jsonb)",
+  '), inserted_items AS (',
+  'INSERT INTO business.question_import_items (item_id,import_task_id,item_index,content_hash,candidate_json,validation_json,media_manifest_json,status)',
+  "SELECT item->>'itemId',task.task_id,(item->>'itemIndex')::integer,item->>'contentHash',(item->'candidate'),(item->'validation'),(item->'mediaManifest'),item->'validation'->>'status'",
+  'FROM advanced_task task CROSS JOIN input_items',
+  'RETURNING item_id',
+  ') SELECT task_id AS "taskId",status,phase,"requestHash","createdAt","updatedAt" FROM advanced_task',
+].join(' ');
+
+function candidateRows(value, randomId) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 500) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+  return value.map((entry, itemIndex) => {
+    const item = exact(entry, ['contentHash', 'candidate', 'validation', 'mediaManifest']);
+    if (!/^[0-9a-f]{64}$/.test(item.contentHash) || !plainObject(item.candidate) || !plainObject(item.validation)
+      || !['accepted', 'warning', 'rejected'].includes(item.validation.status) || !Array.isArray(item.mediaManifest)) {
+      throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+    }
+    const candidateJson = stableJson(item.candidate);
+    const validationJson = stableJson(item.validation);
+    const mediaManifestJson = stableJson(item.mediaManifest);
+    if (candidateJson.length > (1024 * 1024) || validationJson.length > (64 * 1024) || mediaManifestJson.length > (256 * 1024)
+      || /data:[^,]*;base64|"(?:bytes|ciphertext|plaintext)"\s*:/iu.test(candidateJson + validationJson + mediaManifestJson)) {
+      throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+    }
+    const itemId = 'question_import_item_' + String(randomId()).replace(/[^A-Za-z0-9_-]/g, '') + '_' + itemIndex;
+    if (!/^question_import_item_[A-Za-z0-9_-]{1,128}$/.test(itemId)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
+    return {
+      itemId, itemIndex, contentHash: item.contentHash,
+      candidate: JSON.parse(candidateJson), validation: JSON.parse(validationJson), mediaManifest: JSON.parse(mediaManifestJson),
+    };
+  });
+}
+
 function createQuestionImportTaskRepository({ query, randomId = () => crypto.randomUUID() } = {}) {
   if (typeof query !== 'function' || typeof randomId !== 'function') throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
   return Object.freeze({
@@ -157,6 +196,15 @@ function createQuestionImportTaskRepository({ query, randomId = () => crypto.ran
         throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
       }
       const result = await query(markSourceVerifiedSql, [taskId, storageTaskId]);
+      if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_SOURCE_UNVERIFIED');
+      return taskRow(result.rows[0], false);
+    },
+    async storeCandidates(input) {
+      const request = exact(input, ['taskId', 'candidates']);
+      const taskId = text(request.taskId, 160);
+      if (!/^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(taskId)) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+      const candidates = candidateRows(request.candidates, randomId);
+      const result = await query(storeCandidatesSql, [taskId, stableJson(candidates)]);
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_SOURCE_UNVERIFIED');
       return taskRow(result.rows[0], false);
     },
