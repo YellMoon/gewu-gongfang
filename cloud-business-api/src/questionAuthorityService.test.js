@@ -22,6 +22,13 @@ async function main() {
         });
         return { rows: [] };
       }
+      if (text.includes('FROM business.questions q')) {
+        return { rows: [{
+          id: 'question-1', subject: 'physics', type: 'single_choice', difficulty: 3, status: 'draft',
+          content: 'Cloud text', options: ['A'], answer: 'answer', analysis: 'analysis', rich_content: null,
+          taxonomy: { knowledgePointIds: [], modelPointIds: [], taxonomyIds: [] }, has_formula: false, version: 1,
+        }] };
+      }
       return { rows: [{ id: 'question-1', status: 'draft', version: 1, contentHash: 'a'.repeat(64) }] };
     },
   });
@@ -42,6 +49,17 @@ async function main() {
   assert.strictEqual(calls[0][1][1], 'default');
   assert.strictEqual(calls[0][1][5], 'teacher-account-1');
   assert.ok(!calls[0][0].match(/oss_url|file_path|data_url|storage_state/iu), 'the text command must not revive local or object-byte authority fields');
+
+  const listed = await service.list({
+    tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] }, limit: 200,
+  });
+  assert.deepStrictEqual(listed, [{
+    id: 'question-1', subject: 'physics', type: 'single_choice', difficulty: 3, status: 'draft',
+    content: 'Cloud text', options: ['A'], answer: 'answer', analysis: 'analysis', rich_content: null,
+    knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: [], has_formula: false, version: 1,
+  }]);
+  assert.ok(calls.some(call => call[0].includes('FROM business.questions q') && call[0].includes('business.question_contents c')),
+    'the question list must read cloud structured text only from the cloud authority tables');
 
   const commandPayload = {
     record: {

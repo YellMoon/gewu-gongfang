@@ -138,6 +138,10 @@ async function main() {
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
         return { ok: true, json: async () => ({ ok: true, projection: { students: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [] } }) };
       }
+      if (url === 'https://cloud.test/api/desktop/question-bank/questions?limit=200') {
+        assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+        return { ok: true, json: async () => ({ ok: true, questions: [{ id: 'question-cloud-1', content: 'Cloud question text' }] }) };
+      }
       if (url === 'https://cloud.test/api/business/schedules/schedule-cloud-1') {
         assert.strictEqual(options.method, 'PUT');
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
@@ -258,6 +262,11 @@ async function main() {
   });
   assert.deepStrictEqual(cloudProjection, { students: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [] });
   assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/desktop-projection');
+  const cloudQuestions = await unifiedCloudClient.listCloudQuestions({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted,
+  });
+  assert.deepStrictEqual(cloudQuestions, [{ id: 'question-cloud-1', content: 'Cloud question text' }]);
+  assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/desktop/question-bank/questions?limit=200');
   const updatedCloudSchedule = await unifiedCloudClient.updateCloudSchedule({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, scheduleId: 'schedule-cloud-1',
     expectedUpdatedAt: '2026-08-21T01:00:00.000Z', startAt: '2026-08-22T01:00:00.000Z', endAt: '2026-08-22T02:00:00.000Z',

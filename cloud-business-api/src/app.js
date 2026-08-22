@@ -11,7 +11,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   if (miniappCloudAccount && (typeof miniappCloudAccount.login !== 'function' || typeof miniappCloudAccount.context !== 'function' || typeof miniappCloudAccount.pendingAccounts !== 'function' || typeof miniappCloudAccount.assignRole !== 'function')) throw new TypeError('miniappCloudAccount is invalid');
   if (desktopPairing && (typeof desktopPairing.start !== 'function' || typeof desktopPairing.confirm !== 'function' || typeof desktopPairing.read !== 'function')) throw new TypeError('desktopPairing is invalid');
   if (storageAgent && (typeof storageAgent.lease !== 'function' || typeof storageAgent.download !== 'function' || typeof storageAgent.complete !== 'function')) throw new TypeError('storageAgent is invalid');
-  if (questionAuthority && typeof questionAuthority.create !== 'function') throw new TypeError('questionAuthority is invalid');
+  if (questionAuthority && (typeof questionAuthority.list !== 'function' || typeof questionAuthority.create !== 'function')) throw new TypeError('questionAuthority is invalid');
   if (paperExportTasks && (typeof paperExportTasks.create !== 'function' || typeof paperExportTasks.read !== 'function' || typeof paperExportTasks.cancel !== 'function')) throw new TypeError('paperExportTasks is invalid');
   if (encryptedStorageRelay && typeof encryptedStorageRelay.create !== 'function') throw new TypeError('encryptedStorageRelay is invalid');
   if (storageAgentKeyFingerprint !== null && (typeof storageAgentKeyFingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(storageAgentKeyFingerprint))) throw new TypeError('storageAgentKeyFingerprint is invalid');
@@ -194,6 +194,20 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       response.json({ ok: true, receiptId: result.receiptId, sessionId: result.sessionId, replayed: result.replayed, sessionToken: result.sessionToken, offlineLease: result.offlineLease });
     } catch (error) {
       identityFailure(response, error);
+    }
+  });
+  app.get('/api/desktop/question-bank/questions', async (request, response) => {
+    if (!questionAuthority || businessTenantId === null) return businessUnavailable(response);
+    const limit = request.query.limit === undefined ? 200 : Number(request.query.limit);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) return businessInputInvalid(response);
+    try {
+      const actor = await desktopQuestionContext(request);
+      const questions = await questionAuthority.list({ tenantId: businessTenantId, actor, limit });
+      response.json({ ok: true, questions });
+    } catch (error) {
+      if (error && (error.code === 'CLOUD_BUSINESS_ACCESS_DENIED' || error.code === 'CLOUD_QUESTION_ACCESS_DENIED')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (error && error.code === 'CLOUD_QUESTION_INPUT_INVALID') return businessInputInvalid(response);
+      businessUnavailable(response);
     }
   });
   app.post('/api/desktop/question-bank/questions', async (request, response) => {

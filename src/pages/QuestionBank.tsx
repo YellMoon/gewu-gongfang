@@ -28,7 +28,7 @@ const GRADES = ['高一', '高二', '高三', '复习'];
 const SEMESTERS = ['上学期', '下学期'];
 
 const dbService = (): any => (window as any).dbService;
-const API_BASE = getApiBase('/api/question-bank');
+const LEGACY_API_BASE = getApiBase('/api/question-bank');
 
 // Build simple tree data (title is string, not ReactNode)
 function buildTreeData(nodes: KnowledgeNode[], parentId: string | undefined): any[] {
@@ -117,13 +117,9 @@ const QuestionBank: React.FC = () => {
         localQuestions = (db.getAllQuestions?.() || []).map(normalizeQuestion);
       }
       try {
-        const res = await fetch(`${API_BASE}/questions?limit=200`);
-        const data = await res.json();
-        if (data.success && Array.isArray(data.data)) {
-          setQuestions(data.data.map(normalizeQuestion));
-        } else {
-          setQuestions(localQuestions);
-        }
+        const cloudQuestions = await (window as any).desktopIdentitySessionProvider?.listCloudQuestions?.();
+        if (!Array.isArray(cloudQuestions)) throw new Error('CLOUD_QUESTION_LIST_UNAVAILABLE');
+        setQuestions(cloudQuestions.map(normalizeQuestion));
       } catch (_err) {
         setQuestions(localQuestions);
       }
@@ -374,7 +370,7 @@ const QuestionBank: React.FC = () => {
       formData.append('file', file);
       formData.append('source_type', wordSourceType);
 
-      const res = await fetch(`${API_BASE}/parse-word`, {
+      const res = await fetch(`${LEGACY_API_BASE}/parse-word`, {
         method: 'POST',
         body: formData,
       });

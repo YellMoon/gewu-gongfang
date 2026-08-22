@@ -875,6 +875,22 @@ export function createDesktopIdentityClient({
     return projection;
   }
 
+  async function listCloudQuestions({ baseUrl, currentSession, limit = 200 } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) {
+      throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    }
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+      throw identityError('DESKTOP_CLOUD_QUESTION_LIMIT_INVALID');
+    }
+    const data = await request(fetchImpl, baseUrl, `/api/desktop/question-bank/questions?limit=${limit}`, {
+      token: currentSession.token,
+    });
+    if (!Array.isArray(data?.questions)) {
+      throw identityError('DESKTOP_CLOUD_QUESTION_RESPONSE_INVALID');
+    }
+    return data.questions;
+  }
+
   async function updateCloudSchedule({ baseUrl, currentSession, scheduleId, expectedUpdatedAt, startAt, endAt, status, roomDisplay, tuition, teacherFee, notes } = {}) {
     if (!currentSession || currentSession.offline || !currentSession.token) {
       throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
@@ -937,6 +953,7 @@ export function createDesktopIdentityClient({
     completeUnifiedOnlineRegistration,
     ensureOnlineSession,
     listCloudBusinessProjection,
+    listCloudQuestions,
     listCloudSchedules,
     lock,
     pollRegistration,

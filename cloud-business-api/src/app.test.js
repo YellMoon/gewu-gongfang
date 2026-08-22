@@ -293,6 +293,10 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
 
   const questionCalls = [];
   const questionAuthority = {
+    async list(input) {
+      questionCalls.push(input);
+      return [{ id: 'question-list-1', subject: 'physics', type: 'single_choice', difficulty: 3, status: 'draft', content: 'Cloud text', options: [], answer: null, analysis: null, rich_content: null, knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: [], has_formula: false, version: 1 }];
+    },
     async create(input) {
       questionCalls.push(input);
       return { id: input.question.id, status: 'draft', version: 1, contentHash: 'a'.repeat(64) };
@@ -307,6 +311,12 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     },
   };
   const questionApp = createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity, questionAuthority, businessTenantId: 'default' });
+  const listedQuestions = await request(questionApp, '/api/desktop/question-bank/questions?limit=200', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
+  assert.strictEqual(listedQuestions.status, 200);
+  assert.deepStrictEqual(listedQuestions.body, { ok: true, questions: [{ id: 'question-list-1', subject: 'physics', type: 'single_choice', difficulty: 3, status: 'draft', content: 'Cloud text', options: [], answer: null, analysis: null, rich_content: null, knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: [], has_formula: false, version: 1 }] });
+  assert.deepStrictEqual(questionCalls, [{
+    tenantId: 'default', actor: { authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'], teacherId: null, studentId: null }, limit: 200,
+  }]);
   const createdQuestion = await request(questionApp, '/api/desktop/question-bank/questions', {
     method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' }, body: {
       id: 'question-1', subject: 'physics', questionType: 'single_choice', difficulty: 3,
@@ -315,11 +325,11 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   });
   assert.strictEqual(createdQuestion.status, 200);
   assert.deepStrictEqual(createdQuestion.body, { ok: true, question: { id: 'question-1', status: 'draft', version: 1, contentHash: 'a'.repeat(64) } });
-  assert.deepStrictEqual(questionCalls, [{
+  assert.deepStrictEqual(questionCalls[1], {
     tenantId: 'default',
     actor: { authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'], teacherId: null, studentId: null },
     question: { id: 'question-1', subject: 'physics', questionType: 'single_choice', difficulty: 3, stem: 'Question text', answer: null, explanation: null, options: [], richContent: null, taxonomy: {}, hasFormula: false },
-  }]);
+  });
   const submittedQuestionDraft = await request(questionApp, '/api/desktop/question-bank/commands', {
     method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' }, body: {
       commandId: 'question-command-1', payloadHash: 'd'.repeat(64), type: 'question.create.v1',
@@ -335,7 +345,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
       resultHash: 'c'.repeat(64),
     },
   });
-  assert.deepStrictEqual(questionCalls[1], {
+  assert.deepStrictEqual(questionCalls[2], {
     tenantId: 'default',
     actor: { authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'], teacherId: null, studentId: null },
     command: {

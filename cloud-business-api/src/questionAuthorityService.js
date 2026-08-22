@@ -133,9 +133,49 @@ function questionRow(row) {
   return { id: row.id, status: row.status, version: Number(row.version), contentHash: row.contentHash };
 }
 
+function questionListRow(row) {
+  if (!plainObject(row) || typeof row.id !== 'string' || !row.id || typeof row.subject !== 'string' || !row.subject
+    || typeof row.type !== 'string' || !row.type || !Number.isSafeInteger(Number(row.difficulty))
+    || !['draft', 'published', 'archived'].includes(row.status) || typeof row.content !== 'string'
+    || !Array.isArray(row.options) || !Number.isSafeInteger(Number(row.version)) || Number(row.version) < 1) {
+    throw failure('CLOUD_QUESTION_UNAVAILABLE');
+  }
+  const taxonomy = plainObject(row.taxonomy) ? row.taxonomy : {};
+  const knowledgePointIds = idList(taxonomy.knowledgePointIds);
+  const modelPointIds = idList(taxonomy.modelPointIds);
+  const taxonomyIds = idList(taxonomy.taxonomyIds);
+  if (row.answer !== null && row.answer !== undefined && typeof row.answer !== 'string') throw failure('CLOUD_QUESTION_UNAVAILABLE');
+  if (row.analysis !== null && row.analysis !== undefined && typeof row.analysis !== 'string') throw failure('CLOUD_QUESTION_UNAVAILABLE');
+  if (row.rich_content !== null && row.rich_content !== undefined && !plainObject(row.rich_content)) throw failure('CLOUD_QUESTION_UNAVAILABLE');
+  if (typeof row.has_formula !== 'boolean') throw failure('CLOUD_QUESTION_UNAVAILABLE');
+  return {
+    id: row.id, subject: row.subject, type: row.type, difficulty: Number(row.difficulty), status: row.status,
+    content: row.content, options: row.options, answer: row.answer ?? null, analysis: row.analysis ?? null,
+    rich_content: row.rich_content ?? null, knowledge_point_ids: knowledgePointIds, model_point_ids: modelPointIds,
+    taxonomy_ids: taxonomyIds, has_formula: row.has_formula, version: Number(row.version),
+  };
+}
+
 function createQuestionAuthorityService({ query } = {}) {
   if (typeof query !== 'function') throw failure('CLOUD_QUESTION_INPUT_INVALID');
   return Object.freeze({
+    async list(input) {
+      const request = exact(input, ['tenantId', 'actor', 'limit']);
+      const tenantId = text(request.tenantId, { max: 128 });
+      actor(request.actor);
+      if (!Number.isSafeInteger(request.limit) || request.limit < 1 || request.limit > 1000) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+      const result = await query(
+        `SELECT q.id,q.subject,q.question_type AS type,q.difficulty,q.status,c.stem AS content,c.options_json AS options,
+                c.answer,c.explanation AS analysis,c.rich_content_json AS rich_content,q.taxonomy_json AS taxonomy,q.has_formula,c.version
+           FROM business.questions q
+           JOIN business.question_contents c ON c.question_id=q.id AND c.tenant_id=q.tenant_id
+          WHERE q.tenant_id=$1 AND q.deleted=false AND c.deleted=false
+          ORDER BY c.updated_at DESC,q.id ASC LIMIT $2`,
+        [tenantId, request.limit],
+      );
+      if (!result || !Array.isArray(result.rows)) throw failure('CLOUD_QUESTION_UNAVAILABLE');
+      return result.rows.map(questionListRow);
+    },
     async create(input) {
       const request = exact(input, ['tenantId', 'actor', 'question']);
       const tenantId = text(request.tenantId, { max: 128 });

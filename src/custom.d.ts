@@ -91,6 +91,7 @@ interface Window {
       schools: any[];
       rooms: any[];
     }>;
+    listCloudQuestions(): Promise<any[]>;
   };
   desktopAuthority?: {
     appendDraft(input: {
