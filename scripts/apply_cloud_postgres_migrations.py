@@ -13,6 +13,7 @@ import re
 
 MIGRATION_NAME = re.compile(r"^\d{8}-[a-z0-9][a-z0-9-]*\.sql$")
 IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+DOCKER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 
 def read_migrations(sql_root):
@@ -76,7 +77,8 @@ def apply_migrations(executor, migrations):
 
 class DockerPsqlExecutor:
     def __init__(self, ssh, container, database, role):
-        if not all(isinstance(value, str) and IDENTIFIER.fullmatch(value) for value in (container, database, role)):
+        if not isinstance(container, str) or not DOCKER_NAME.fullmatch(container) \
+                or not all(isinstance(value, str) and IDENTIFIER.fullmatch(value) for value in (database, role)):
             raise RuntimeError("CLOUD_MIGRATION_CONFIG_INVALID")
         self.ssh = ssh
         self.command = "docker exec -i " + container + " psql -X -q -t -A -v ON_ERROR_STOP=1 -U " + role + " -d " + database

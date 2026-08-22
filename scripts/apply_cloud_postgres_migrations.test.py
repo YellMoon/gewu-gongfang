@@ -3,7 +3,7 @@ import pathlib
 import tempfile
 import unittest
 
-from apply_cloud_postgres_migrations import apply_migrations, read_migrations
+from apply_cloud_postgres_migrations import DockerPsqlExecutor, apply_migrations, read_migrations
 
 
 class FakeExecutor:
@@ -24,6 +24,10 @@ class FakeExecutor:
 
 
 class CloudPostgresMigrationTests(unittest.TestCase):
+    def test_allows_a_docker_container_name_with_hyphens(self):
+        executor = DockerPsqlExecutor(object(), "gewu-postgres17", "gewu_cloud", "vnext_pg17_migrator")
+        self.assertIn("gewu-postgres17", executor.command)
+
     def test_reads_only_versioned_sql_in_order(self):
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
