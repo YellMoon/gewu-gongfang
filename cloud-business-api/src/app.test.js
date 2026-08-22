@@ -275,6 +275,36 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     ['read', { pairingId: 'pair-1', pairingSecret: 'secret-1' }],
   ]);
 
+  const questionCalls = [];
+  const questionAuthority = {
+    async create(input) {
+      questionCalls.push(input);
+      return { id: input.question.id, status: 'draft', version: 1, contentHash: 'a'.repeat(64) };
+    },
+  };
+  const questionApp = createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity, questionAuthority, businessTenantId: 'default' });
+  const createdQuestion = await request(questionApp, '/api/desktop/question-bank/questions', {
+    method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' }, body: {
+      id: 'question-1', subject: 'physics', questionType: 'single_choice', difficulty: 3,
+      stem: 'Question text', answer: null, explanation: null, options: [], richContent: null, taxonomy: {}, hasFormula: false,
+    },
+  });
+  assert.strictEqual(createdQuestion.status, 200);
+  assert.deepStrictEqual(createdQuestion.body, { ok: true, question: { id: 'question-1', status: 'draft', version: 1, contentHash: 'a'.repeat(64) } });
+  assert.deepStrictEqual(questionCalls, [{
+    tenantId: 'default',
+    actor: { authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'], teacherId: null, studentId: null },
+    question: { id: 'question-1', subject: 'physics', questionType: 'single_choice', difficulty: 3, stem: 'Question text', answer: null, explanation: null, options: [], richContent: null, taxonomy: {}, hasFormula: false },
+  }]);
+  const miniappCannotCreateQuestion = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity, questionAuthority, businessTenantId: 'default' }), '/api/desktop/question-bank/questions', {
+    method: 'POST', headers: { authorization: 'Bearer miniapp-ticket.signature' }, body: {
+      id: 'question-2', subject: 'physics', questionType: 'single_choice', difficulty: 3,
+      stem: 'Denied text', answer: null, explanation: null, options: [], richContent: null, taxonomy: {}, hasFormula: false,
+    },
+  });
+  assert.strictEqual(miniappCannotCreateQuestion.status, 403);
+  assert.deepStrictEqual(miniappCannotCreateQuestion.body, { ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+
   const storageCalls = [];
   const storageAgent = {
     lease: async input => {

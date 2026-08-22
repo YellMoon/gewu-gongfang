@@ -2,7 +2,7 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, storageAgent = null, businessTenantId = null, releaseVersion = 'unknown' }) {
+function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, storageAgent = null, questionAuthority = null, businessTenantId = null, releaseVersion = 'unknown' }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
@@ -11,10 +11,11 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   if (miniappCloudAccount && (typeof miniappCloudAccount.login !== 'function' || typeof miniappCloudAccount.context !== 'function' || typeof miniappCloudAccount.pendingAccounts !== 'function' || typeof miniappCloudAccount.assignRole !== 'function')) throw new TypeError('miniappCloudAccount is invalid');
   if (desktopPairing && (typeof desktopPairing.start !== 'function' || typeof desktopPairing.confirm !== 'function' || typeof desktopPairing.read !== 'function')) throw new TypeError('desktopPairing is invalid');
   if (storageAgent && (typeof storageAgent.lease !== 'function' || typeof storageAgent.complete !== 'function')) throw new TypeError('storageAgent is invalid');
+  if (questionAuthority && typeof questionAuthority.create !== 'function') throw new TypeError('questionAuthority is invalid');
   if (businessTenantId !== null && (typeof businessTenantId !== 'string' || !businessTenantId.trim())) throw new TypeError('businessTenantId is invalid');
   const app = express();
   app.disable('x-powered-by');
-  app.use(express.json({ limit: '16kb' }));
+  app.use(express.json({ limit: '1mb' }));
   app.get('/api/health', async (_request, response) => {
     try {
       await query('SELECT 1 AS ok');
@@ -110,6 +111,15 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
     throw businessAccessDenied();
   }
+  async function desktopQuestionContext(request) {
+    const token = sessionToken(request);
+    if (!token || !desktopRegistration || typeof desktopRegistration.sessionContext !== 'function') throw businessAccessDenied();
+    try {
+      return await desktopRegistration.sessionContext({ sessionToken: token });
+    } catch (_) {
+      throw businessAccessDenied();
+    }
+  }
   function scheduleScope(context) {
     if (!context || !Array.isArray(context.roles)) throw businessAccessDenied();
     if (context.roles.includes('super_admin')) return { role: 'super_admin', profileId: null };
@@ -158,6 +168,20 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       response.json({ ok: true, receiptId: result.receiptId, sessionId: result.sessionId, replayed: result.replayed, sessionToken: result.sessionToken, offlineLease: result.offlineLease });
     } catch (error) {
       identityFailure(response, error);
+    }
+  });
+  app.post('/api/desktop/question-bank/questions', async (request, response) => {
+    if (!questionAuthority || businessTenantId === null) return businessUnavailable(response);
+    const question = exactBody(request.body, ['id', 'subject', 'questionType', 'difficulty', 'stem', 'answer', 'explanation', 'options', 'richContent', 'taxonomy', 'hasFormula']);
+    if (!question) return businessInputInvalid(response);
+    try {
+      const actor = await desktopQuestionContext(request);
+      const created = await questionAuthority.create({ tenantId: businessTenantId, actor, question });
+      response.json({ ok: true, question: created });
+    } catch (error) {
+      if (error && (error.code === 'CLOUD_BUSINESS_ACCESS_DENIED' || error.code === 'CLOUD_QUESTION_ACCESS_DENIED')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (error && error.code === 'CLOUD_QUESTION_INPUT_INVALID') return businessInputInvalid(response);
+      businessUnavailable(response);
     }
   });
   app.get('/api/desktop/session-context', async (request, response) => {
