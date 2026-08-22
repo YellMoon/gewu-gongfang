@@ -450,9 +450,6 @@ function createDesktopAuthorityRuntime({
     },
     appendDraftSync,
     appendDraftBatchSync,
-    confirmAndExecuteLocal: async (id, executeLocalDraft) => (
-      (await getClient()).confirmAndExecuteLocal(id, executeLocalDraft)
-    ),
     confirmAndSubmit: async (id, input) => {
       assertOnlineSubmission();
       const client = await getClient();
@@ -470,9 +467,6 @@ function createDesktopAuthorityRuntime({
       if (isCloudQuestionDraft(draft)) cloudSessionToken(input);
       return client.submit(id, input);
     },
-    submitLocal: async (id, executeLocalDraft) => (
-      (await getClient()).submitLocal(id, executeLocalDraft)
-    ),
   });
 }
 

@@ -224,6 +224,8 @@ const assert = require('assert');
       };
     },
   });
+  assert.strictEqual(cloudClient.confirmAndExecuteLocal, undefined);
+  assert.strictEqual(cloudClient.submitLocal, undefined);
   const cloudDraft = await cloudClient.appendDraft({
     type: 'question.create.v1', payload: { record: { id: 'question-1' } },
   });
