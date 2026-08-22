@@ -912,10 +912,6 @@ const QuestionBankImport: React.FC = () => {
   };
 
   const openWordFilePicker = () => {
-    if (false && questionBankStorageUnavailable) {
-      message.warning('题库移动硬盘未连接');
-      return;
-    }
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.doc,.docx';
@@ -927,10 +923,6 @@ const QuestionBankImport: React.FC = () => {
   };
 
   const handleStartParse = () => {
-    if (false && questionBankStorageUnavailable) {
-      message.warning('题库移动硬盘未连接');
-      return;
-    }
     if (!selectedWordFile) {
       message.warning('请先选择 Word 文件');
       return;
@@ -1146,16 +1138,6 @@ const QuestionBankImport: React.FC = () => {
             ]}
           />
 
-          {false && questionBankStorageUnavailable && (
-            <Alert
-              showIcon
-              type="warning"
-              message="题库移动硬盘未连接"
-              description={questionBankStorageStatus?.reason || questionBankStorageStatus?.detail || '请在系统设置中配置并连接题库移动硬盘。'}
-              style={{ marginBottom: 16 }}
-            />
-          )}
-
           <div style={{ background: '#f7f9fc', border: '1px solid #e8edf3', borderRadius: 8, padding: 20, marginBottom: 16 }}>
             <Row gutter={[20, 16]} align="top">
               <Col xs={24} lg={9}>
@@ -1363,7 +1345,7 @@ const QuestionBankImport: React.FC = () => {
                   style={{ marginTop: 12 }}
                   type="success"
                   showIcon
-                  message={`导入完成：成功 ${commitResult.imported} 题，警告 ${commitResult.warning} 题，失败 ${commitResult.failed} 题`}
+                  message={`\u5f85\u63d0\u4ea4\u8349\u7a3f\u5df2\u751f\u6210\uff1a${commitResult.imported} \u9898\uff0c\u8b66\u544a ${commitResult.warning} \u9898\uff0c\u62d2\u7edd ${commitResult.failed} \u9898`}
                   description={commitResult.file_name ? `文件：${commitResult.file_name}` : undefined}
                 />
               )}
