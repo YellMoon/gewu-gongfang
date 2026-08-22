@@ -21,6 +21,7 @@ assert.deepStrictEqual(
     ['business-foundation-1', 1],
     ['business-core-scheduling-2', 2],
     ['business-miniapp-student-access-3', 3],
+    ['business-storage-agent-tasks-4', 4],
   ],
   'the production receipt must cover every installed business migration in order'
 );
