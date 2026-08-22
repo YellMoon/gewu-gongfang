@@ -51,6 +51,27 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const sessionContext = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity }), '/api/desktop/session-context', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
   assert.strictEqual(sessionContext.status, 200);
   assert.deepStrictEqual(sessionContext.body, { ok: true, authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'] });
+  const miniappIdentity = {
+    login: async input => {
+      assert.deepStrictEqual(input, { phoneCode: 'miniapp-proof' });
+      return { token: 'miniapp-ticket.signature', identity: { accountId: 'miniapp-account-1', status: 'active', roles: ['super_admin'] } };
+    },
+    context: async input => {
+      if (input.token !== 'miniapp-ticket.signature') throw Object.assign(new Error('rejected'), { code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+      return { accountId: 'miniapp-account-1', status: 'active', roles: ['super_admin'] };
+    },
+  };
+  const miniappLogin = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-login', { method: 'POST', body: { phoneCode: 'miniapp-proof' } });
+  assert.strictEqual(miniappLogin.status, 200);
+  assert.deepStrictEqual(miniappLogin.body, { ok: true, token: 'miniapp-ticket.signature', identity: { accountId: 'miniapp-account-1', status: 'active', roles: ['super_admin'] } });
+  const miniappBusiness = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity, businessTenantId: 'default',
+  }), '/api/business/schedules', { headers: { authorization: 'Bearer miniapp-ticket.signature' } });
+  assert.strictEqual(miniappBusiness.status, 200);
+  const legacyBusiness = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity, businessTenantId: 'default',
+  }), '/api/business/schedules', { headers: { authorization: 'Bearer old.jwt.token' } });
+  assert.strictEqual(legacyBusiness.status, 403);
   const businessQueries = [];
   const scheduleList = await request(createCloudBusinessApp({
     query: async (text, values) => {

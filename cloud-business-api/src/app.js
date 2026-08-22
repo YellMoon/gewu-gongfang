@@ -2,11 +2,12 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, desktopRegistration = null, desktopPairing = null, businessTenantId = null }) {
+function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, desktopRegistration = null, miniappCloudAccount = null, desktopPairing = null, businessTenantId = null }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
   if (desktopRegistration && (typeof desktopRegistration.begin !== 'function' || typeof desktopRegistration.register !== 'function')) throw new TypeError('desktopRegistration is invalid');
+  if (miniappCloudAccount && (typeof miniappCloudAccount.login !== 'function' || typeof miniappCloudAccount.context !== 'function')) throw new TypeError('miniappCloudAccount is invalid');
   if (desktopPairing && (typeof desktopPairing.start !== 'function' || typeof desktopPairing.confirm !== 'function' || typeof desktopPairing.read !== 'function')) throw new TypeError('desktopPairing is invalid');
   if (businessTenantId !== null && (typeof businessTenantId !== 'string' || !businessTenantId.trim())) throw new TypeError('businessTenantId is invalid');
   const app = express();
@@ -43,6 +44,9 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   function businessInputInvalid(response) {
     response.status(400).json({ ok: false, code: 'CLOUD_BUSINESS_INPUT_INVALID' });
   }
+  function businessAccessDenied() {
+    return Object.assign(new Error('cloud business access denied'), { code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+  }
   function exactBody(value, keys) {
     if (!value || typeof value !== 'object' || Array.isArray(value)
       || Object.getPrototypeOf(value) !== Object.prototype
@@ -68,6 +72,25 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       return null;
     }
     return match[1];
+  }
+  async function businessContext(request) {
+    const token = sessionToken(request);
+    if (!token) throw businessAccessDenied();
+    if (miniappCloudAccount) {
+      try {
+        return await miniappCloudAccount.context({ token });
+      } catch (_) {
+        // A desktop ticket is intentionally not a miniapp ticket; try its own verifier next.
+      }
+    }
+    if (desktopRegistration && typeof desktopRegistration.sessionContext === 'function') {
+      try {
+        return await desktopRegistration.sessionContext({ sessionToken: token });
+      } catch (_) {
+        // Do not expose ticket-verification internals to callers.
+      }
+    }
+    throw businessAccessDenied();
   }
   app.post('/api/desktop/online-verification', async (request, response) => {
     if (!desktopRegistration) return desktopUnavailable(response);
@@ -98,12 +121,20 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       identityFailure(response, error);
     }
   });
-  app.get('/api/business/schedules', async (request, response) => {
-    if (!desktopRegistration || typeof desktopRegistration.sessionContext !== 'function' || !businessTenantId) return businessUnavailable(response);
-    const token = sessionToken(request);
-    if (!token) return response.status(403).json({ ok: false, code: 'CLOUD_ONLINE_IDENTITY_REJECTED' });
+  app.post('/api/miniapp/cloud-login', async (request, response) => {
+    if (!miniappCloudAccount) return desktopUnavailable(response);
     try {
-      const context = await desktopRegistration.sessionContext({ sessionToken: token });
+      const result = await miniappCloudAccount.login(request.body);
+      response.json({ ok: true, token: result.token, identity: result.identity });
+    } catch (error) {
+      if (error && error.code === 'CLOUD_MINIAPP_IDENTITY_INVALID') return businessInputInvalid(response);
+      response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+    }
+  });
+  app.get('/api/business/schedules', async (request, response) => {
+    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId) return businessUnavailable(response);
+    try {
+      const context = await businessContext(request);
       if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
         return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       }
@@ -116,14 +147,13 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
         [businessTenantId],
       );
       response.json({ ok: true, schedules: result.rows });
-    } catch (_) {
+    } catch (error) {
+      if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
     }
   });
   app.put('/api/business/schedules/:scheduleId', async (request, response) => {
-    if (!desktopRegistration || typeof desktopRegistration.sessionContext !== 'function' || !businessTenantId || !businessScheduleUpdate) return businessUnavailable(response);
-    const token = sessionToken(request);
-    if (!token) return response.status(403).json({ ok: false, code: 'CLOUD_ONLINE_IDENTITY_REJECTED' });
+    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessScheduleUpdate) return businessUnavailable(response);
     const scheduleId = String(request.params.scheduleId || '').trim();
     const update = exactBody(request.body, ['expectedUpdatedAt', 'startAt', 'endAt', 'status', 'roomDisplay', 'tuition', 'teacherFee', 'notes']);
     if (!scheduleId || !update) return businessInputInvalid(response);
@@ -138,7 +168,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       || !Number.isInteger(update.status) || ![1, 2, 3, 4].includes(update.status)
       || roomDisplay === undefined || notes === undefined || tuition === null || teacherFee === null) return businessInputInvalid(response);
     try {
-      const context = await desktopRegistration.sessionContext({ sessionToken: token });
+      const context = await businessContext(request);
       if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
         return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       }
@@ -158,14 +188,13 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
         return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_SCHEDULE_CONFLICT' });
       }
       response.json({ ok: true, schedule: result });
-    } catch (_) {
+    } catch (error) {
+      if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
     }
   });
   app.put('/api/business/schedules/:scheduleId/students/:studentId', async (request, response) => {
-    if (!desktopRegistration || typeof desktopRegistration.sessionContext !== 'function' || !businessTenantId || !businessScheduleStudentOverride) return businessUnavailable(response);
-    const token = sessionToken(request);
-    if (!token) return response.status(403).json({ ok: false, code: 'CLOUD_ONLINE_IDENTITY_REJECTED' });
+    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessScheduleStudentOverride) return businessUnavailable(response);
     const scheduleId = String(request.params.scheduleId || '').trim();
     const studentId = String(request.params.studentId || '').trim();
     const update = exactBody(request.body, ['expectedUpdatedAt', 'attendanceStatus', 'tuition', 'teacherFee']);
@@ -176,7 +205,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!expectedUpdatedAt || !Number.isInteger(update.attendanceStatus) || ![1, 3, 4].includes(update.attendanceStatus)
       || tuition === null || teacherFee === null) return businessInputInvalid(response);
     try {
-      const context = await desktopRegistration.sessionContext({ sessionToken: token });
+      const context = await businessContext(request);
       if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
         return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       }
@@ -193,7 +222,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
         return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_SCHEDULE_CONFLICT' });
       }
       response.json({ ok: true, schedule: result });
-    } catch (_) {
+    } catch (error) {
+      if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
     }
   });

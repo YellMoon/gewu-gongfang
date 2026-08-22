@@ -2,10 +2,12 @@
 
 const { Pool } = require('pg');
 const { createCloudBusinessApp } = require('./src/app');
-const { createCloudDesktopRegistrationService, createOperatorPhoneLookup } = require('./src/desktopRegistrationService');
+const { createCloudDesktopRegistrationService, createOperatorPhoneLookup, hmacPhone } = require('./src/desktopRegistrationService');
 const { createBusinessScheduleUpdate } = require('./src/businessScheduleMutationService');
 const { createBusinessScheduleStudentOverride } = require('./src/businessScheduleStudentOverrideService');
 const { createDesktopPairingService } = require('./src/desktopPairingService');
+const { createMiniappCloudAccountService } = require('./src/miniappCloudAccountService');
+const { createMiniappCloudAccountRepository } = require('./src/miniappCloudAccountRepository');
 const { createWechatPhoneVerifier } = require('./src/wechatPhoneVerifier');
 
 const port = Number(process.env.PORT || 3002);
@@ -92,7 +94,26 @@ function createDesktopRegistrationFromEnvironment() {
   return { registration, businessScheduleUpdate, businessScheduleStudentOverride, async close() { await Promise.all([identityPool.end(), writerPool.end()]); } };
 }
 
+function createMiniappCloudAccountFromEnvironment() {
+  const secrets = [process.env.CLOUD_MINIAPP_PHONE_PEPPER, process.env.CLOUD_MINIAPP_TICKET_SECRET, process.env.WECHAT_APPSECRET];
+  if (typeof process.env.WECHAT_APPID !== 'string' || !process.env.WECHAT_APPID.trim()
+    || !/^[0-9a-f]{64}$/u.test(String(process.env.CLOUD_MINIAPP_BOOTSTRAP_ADMIN_PHONE_HMAC || ''))
+    || secrets.some(value => typeof value !== 'string' || value.length < 24)) return null;
+  return createMiniappCloudAccountService({
+    now: () => new Date(),
+    phoneVerifier: createWechatPhoneVerifier({ appId: process.env.WECHAT_APPID, appSecret: process.env.WECHAT_APPSECRET }),
+    phoneHmac: phone => hmacPhone(process.env.CLOUD_MINIAPP_PHONE_PEPPER, phone),
+    bootstrapAdminPhoneHmac: process.env.CLOUD_MINIAPP_BOOTSTRAP_ADMIN_PHONE_HMAC,
+    accountRepository: createMiniappCloudAccountRepository({
+      query: (text, values) => pool.query(text, values),
+      randomId: prefix => `${prefix}-${require('crypto').randomUUID()}`,
+    }),
+    ticketSecret: process.env.CLOUD_MINIAPP_TICKET_SECRET,
+  });
+}
+
 const desktopRuntime = createDesktopRegistrationFromEnvironment();
+const miniappCloudAccount = createMiniappCloudAccountFromEnvironment();
 const desktopPairing = desktopRuntime?.registration
   ? createDesktopPairingService({
     now: () => new Date(),
@@ -106,6 +127,7 @@ const app = createCloudBusinessApp({
   businessScheduleUpdate: desktopRuntime?.businessScheduleUpdate || null,
   businessScheduleStudentOverride: desktopRuntime?.businessScheduleStudentOverride || null,
   desktopRegistration: desktopRuntime?.registration || null,
+  miniappCloudAccount,
   desktopPairing,
   businessTenantId: process.env.CLOUD_BUSINESS_TENANT_ID || 'default',
 });
