@@ -18,6 +18,7 @@ const {
   TRUST_ROOT_EVIDENCE_MIGRATION,
   SESSIONS_REAUTHENTICATION_MIGRATION,
   UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION,
+  CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,
@@ -57,7 +58,7 @@ async function runManifestCases() {
     'vnext_recent_reauthentication_events_no_delete',
   ]);
   assert.strictEqual(sha256(FIRST_MIGRATION.sql), FIRST_MIGRATION.manifestSha256);
-  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
   assert.strictEqual(FOUNDATION_IDENTITY_DEVICE_MIGRATION.migrationId, 'vnext-pg17-foundation-identity-device-2');
   assert.match(FOUNDATION_IDENTITY_DEVICE_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
   assert.strictEqual(
@@ -205,6 +206,14 @@ async function runManifestCases() {
   assert.match(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.sql, /GRANT EXECUTE ON FUNCTION vnext_control_plane\.vnext_register_unified_desktop_online[\s\S]*vnext_pg17_writer/);
   assert.doesNotMatch(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.sql, /GRANT (?:INSERT|UPDATE|DELETE) ON TABLE[\s\S]*vnext_pg17_writer/);
   assert.doesNotMatch(UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION.sql, /(?:access_token|refresh_token|password|private_key|jwt)/i);
+  assert.ok(Object.isFrozen(CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION));
+  assert.strictEqual(CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION.migrationId, 'vnext-pg17-canonical-phone-account-provisioning-17');
+  assert.strictEqual(CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION.semanticVersion, 17);
+  assert.match(CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
+  assert.strictEqual(sha256(CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION.sql), CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION.manifestSha256);
+  assert.match(CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION.sql, /CREATE FUNCTION vnext_control_plane\.vnext_provision_canonical_phone_account/);
+  assert.match(CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION.sql, /vnext_verified_contacts/);
+  assert.match(CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION.sql, /GRANT EXECUTE ON FUNCTION vnext_control_plane\.vnext_provision_canonical_phone_account[\s\S]*vnext_pg17_identity_verifier/);
   assert.deepStrictEqual(expectedCatalog.relations, [
     'vnext_control_plane.vnext_account_device_links',
     'vnext_control_plane.vnext_accounts',

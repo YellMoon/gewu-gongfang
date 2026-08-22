@@ -12,6 +12,7 @@ const { runBusinessFoundationAdmissionCatalogCases } = require('./businessFounda
 const { runBusinessFoundationCatalogAssertionCases } = require('./businessFoundationCatalogAssertion.test');
 const { runBusinessFoundationShadowAdmissionCases } = require('./businessFoundationShadowAdmission.test');
 const { runUnifiedDesktopRegistrationMutationCases } = require('./unifiedDesktopRegistrationMutation.test');
+const { runCanonicalPhoneAccountProvisioningCases } = require('./canonicalPhoneAccountProvisioning.test');
 
 assert.strictEqual(typeof runManifestCases, 'function');
 assert.strictEqual(typeof runCatalogAssertionCases, 'function');
@@ -23,6 +24,7 @@ assert.strictEqual(typeof runBusinessFoundationAdmissionCatalogCases, 'function'
 assert.strictEqual(typeof runBusinessFoundationCatalogAssertionCases, 'function');
 assert.strictEqual(typeof runBusinessFoundationShadowAdmissionCases, 'function');
 assert.strictEqual(typeof runUnifiedDesktopRegistrationMutationCases, 'function');
+assert.strictEqual(typeof runCanonicalPhoneAccountProvisioningCases, 'function');
 
 async function main() {
   const calls = [];
@@ -41,6 +43,7 @@ async function main() {
     runBusinessFoundationCatalog: async received => { assert.strictEqual(received, runtime); calls.push('business-foundation-catalog'); },
     runBusinessFoundationShadowAdmission: async received => { assert.strictEqual(received, runtime); calls.push('business-shadow-admission'); },
     runUnifiedDesktopRegistration: async received => { assert.strictEqual(received, runtime); calls.push('unified-desktop-registration'); },
+    runCanonicalPhoneAccount: async received => { assert.strictEqual(received, runtime); calls.push('canonical-phone-account'); },
     runProductionVerifierReadiness: async received => { assert.strictEqual(received, runtime); calls.push('production-verifier-readiness'); },
     runBootstrap: async received => { assert.strictEqual(received, runtime); calls.push('bootstrap'); },
     runRecovery: async received => { assert.strictEqual(received, runtime); calls.push('recovery'); },
@@ -53,7 +56,7 @@ async function main() {
     report: message => calls.push(`report:${message.code}`),
   });
   assert.strictEqual(exitCode, 0);
-  assert.deepStrictEqual(calls, ['source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-admission-batch-request', 'business-foundation-admission-catalog', 'business-foundation-catalog', 'business-shadow-admission', 'unified-desktop-registration', 'production-verifier-readiness', 'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication', 'role-mutation', 'link-revocation', 'link-revocation-parity', 'stop']);
+  assert.deepStrictEqual(calls, ['source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-admission-batch-request', 'business-foundation-admission-catalog', 'business-foundation-catalog', 'business-shadow-admission', 'unified-desktop-registration', 'canonical-phone-account', 'production-verifier-readiness', 'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication', 'role-mutation', 'link-revocation', 'link-revocation-parity', 'stop']);
 
   const failedCalls = [];
   const unavailable = Object.assign(new Error('private detail'), { code: 'VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE' });
@@ -164,6 +167,7 @@ async function main() {
     runBusinessFoundationCatalog: async () => cleanupCalls.push('business-foundation-catalog'),
     runBusinessFoundationShadowAdmission: async () => cleanupCalls.push('business-shadow-admission'),
     runUnifiedDesktopRegistration: async () => cleanupCalls.push('unified-desktop-registration'),
+    runCanonicalPhoneAccount: async () => cleanupCalls.push('canonical-phone-account'),
     runProductionVerifierReadiness: async () => cleanupCalls.push('production-verifier-readiness'),
     runBootstrap: async () => cleanupCalls.push('bootstrap'),
     runRecovery: async () => cleanupCalls.push('recovery'),
@@ -177,7 +181,7 @@ async function main() {
   });
   assert.strictEqual(cleanupCode, 1);
   assert.deepStrictEqual(cleanupCalls, [
-    'source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-admission-batch-request', 'business-foundation-admission-catalog', 'business-foundation-catalog', 'business-shadow-admission', 'unified-desktop-registration', 'production-verifier-readiness',
+    'source-isolation', 'start', 'manifest', 'catalog', 'business-foundation-manifest', 'business-foundation-admission-batch-request', 'business-foundation-admission-catalog', 'business-foundation-catalog', 'business-shadow-admission', 'unified-desktop-registration', 'canonical-phone-account', 'production-verifier-readiness',
     'bootstrap', 'recovery', 'trusted-session-boundary', 'access-context', 'policy-publication',
     'role-mutation', 'link-revocation', 'link-revocation-parity', 'stop',
     'report:VNEXT_PG17_TEST_RUNTIME_UNAVAILABLE',

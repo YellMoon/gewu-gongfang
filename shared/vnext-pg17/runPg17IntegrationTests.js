@@ -9,6 +9,7 @@ const { runBusinessFoundationAdmissionCatalogCases } = require('./businessFounda
 const { runBusinessFoundationCatalogAssertionCases } = require('./businessFoundationCatalogAssertion.test');
 const { runBusinessFoundationShadowAdmissionCases } = require('./businessFoundationShadowAdmission.test');
 const { runUnifiedDesktopRegistrationMutationCases } = require('./unifiedDesktopRegistrationMutation.test');
+const { runCanonicalPhoneAccountProvisioningCases } = require('./canonicalPhoneAccountProvisioning.test');
 const { runProductionVerifierReadinessCases } = require('./productionVerifierReadiness.test');
 const { runFirstAuthorityBootstrapMutationCases } = require('./firstAuthorityBootstrapMutation.test');
 const { runEmergencyRecoveryMutationCases } = require('./emergencyRecoveryMutation.test');
@@ -37,6 +38,7 @@ async function run({
   runBusinessFoundationCatalog = runBusinessFoundationCatalogAssertionCases,
   runBusinessFoundationShadowAdmission = runBusinessFoundationShadowAdmissionCases,
   runUnifiedDesktopRegistration = runUnifiedDesktopRegistrationMutationCases,
+  runCanonicalPhoneAccount = runCanonicalPhoneAccountProvisioningCases,
   runProductionVerifierReadiness = runProductionVerifierReadinessCases,
   runBootstrap = runFirstAuthorityBootstrapMutationCases,
   runRecovery = runEmergencyRecoveryMutationCases,
@@ -62,6 +64,7 @@ async function run({
     await runBusinessFoundationCatalog(runtime);
     await runBusinessFoundationShadowAdmission(runtime);
     await runUnifiedDesktopRegistration(runtime);
+    await runCanonicalPhoneAccount(runtime);
     await runProductionVerifierReadiness(runtime);
     await runBootstrap(runtime);
     await runRecovery(runtime);

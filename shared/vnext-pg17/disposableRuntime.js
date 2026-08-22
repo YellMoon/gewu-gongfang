@@ -1116,6 +1116,22 @@ async function issueVNextPg17OnlineIdentityAssertion(runtime, handle, input) {
   } catch (_) { throw unavailable(); }
 }
 
+async function provisionVNextPg17CanonicalPhoneAccount(runtime, handle, input) {
+  if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
+  const snapshot = snapshotUnifiedDesktopOnlineInput(input, ['accountId', 'contactId', 'phoneHash', 'verificationEvidenceHash']);
+  const state = handles.get(handle);
+  const client = state.clients['identity-verifier'];
+  if (!client) throw invalidHandle();
+  try {
+    const result = await client.query(
+      'SELECT authority_id AS "authorityId", account_id AS "accountId" FROM vnext_control_plane.vnext_provision_canonical_phone_account($1,$2,$3,$4)',
+      [snapshot.accountId, snapshot.contactId, snapshot.phoneHash, snapshot.verificationEvidenceHash],
+    );
+    if (result.rows.length !== 1 || typeof result.rows[0].authorityId !== 'string' || typeof result.rows[0].accountId !== 'string') throw unavailable();
+    return Object.freeze({ authorityId: result.rows[0].authorityId, accountId: result.rows[0].accountId, replayed: result.rows[0].accountId !== snapshot.accountId });
+  } catch (_) { throw unavailable(); }
+}
+
 async function registerVNextPg17UnifiedDesktopOnline(runtime, handle, input) {
   if (!isVNextPg17DisposableHandleForRuntime(runtime, handle)) throw invalidHandle();
   const snapshot = snapshotUnifiedDesktopOnlineInput(input, ['assertionId', 'idempotencyKey', 'receiptId', 'auditEventId', 'outboxEventId', 'sessionId', 'linkId', 'sessionExpiresAt', 'canonicalResultJson', 'resultSha256', 'canonicalPayloadJson', 'payloadSha256']);
@@ -1603,6 +1619,7 @@ module.exports = {
   destroyBusinessFoundationShadowAdmissionTarget,
   reconcileBusinessFoundationShadowAdmission,
   issueVNextPg17OnlineIdentityAssertion,
+  provisionVNextPg17CanonicalPhoneAccount,
   registerVNextPg17UnifiedDesktopOnline,
   createVNextPg17BusinessFoundationDdlTrace,
   armVNextPg17BusinessFoundationDdlTrace,

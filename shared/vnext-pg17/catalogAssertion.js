@@ -37,6 +37,7 @@ const LEDGER_FUNCTIONS = Object.freeze([
   'vnext_online_identity_assertion_consumptions_no_update',
   'vnext_online_identity_assertions_no_delete',
   'vnext_online_identity_assertions_no_update',
+  'vnext_provision_canonical_phone_account',
   'vnext_recent_reauthentication_events_no_delete',
   'vnext_recent_reauthentication_events_no_update',
   'vnext_recent_reauthentication_events_session_state_match',
@@ -54,6 +55,7 @@ const LEDGER_FUNCTIONS = Object.freeze([
 ]);
 const COMMAND_FUNCTION_ARGUMENTS = Object.freeze({
   vnext_issue_online_identity_assertion: 'p_assertion_id text, p_authority_id text, p_account_id text, p_device_id text, p_installation_id text, p_installation_public_key text, p_key_fingerprint text, p_audience text, p_nonce_sha256 text, p_canonical_request_sha256 text, p_identity_proof_sha256 text, p_hardware_evidence_sha256 text, p_issued_at timestamp with time zone, p_expires_at timestamp with time zone',
+  vnext_provision_canonical_phone_account: 'p_account_id text, p_contact_id text, p_phone_hash text, p_verification_evidence_hash text',
   vnext_register_unified_desktop_online: 'p_assertion_id text, p_idempotency_key text, p_receipt_id text, p_audit_event_id text, p_outbox_event_id text, p_session_id text, p_link_id text, p_session_expires_at timestamp with time zone, p_canonical_result_json text, p_result_sha256 text, p_canonical_payload_json text, p_payload_sha256 text',
 });
 const LEDGER_CONSTRAINTS = Object.freeze([
@@ -762,7 +764,7 @@ function createVNextPg17CatalogBoundary(runtime) {
             || row.proconfig[0] !== 'search_path=pg_catalog, pg_temp'
             || row.public_execute || row.runtime_execute || row.verifier_execute
             || row.writer_execute !== (row.proname === 'vnext_register_unified_desktop_online')
-            || row.identity_verifier_execute !== (row.proname === 'vnext_issue_online_identity_assertion')
+            || row.identity_verifier_execute !== (row.proname === 'vnext_issue_online_identity_assertion' || row.proname === 'vnext_provision_canonical_phone_account')
             || row.arguments !== (COMMAND_FUNCTION_ARGUMENTS[row.proname] || '')
             || sha256(row.definition) !== expectedCatalog.functionDefinitionSha256[row.proname])) throw schemaDrift();
         const ledger = await facade.query(

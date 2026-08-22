@@ -825,6 +825,73 @@ GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_register_unified_desktop_onl
 GRANT SELECT ON TABLE vnext_control_plane.vnext_online_identity_assertions, vnext_control_plane.vnext_online_identity_assertion_consumptions TO vnext_pg17_verifier;`;
 const UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION = Object.freeze({ migrationId: 'vnext-pg17-unified-desktop-online-registration-16', semanticVersion: 16, sql: UNIFIED_DESKTOP_ONLINE_REGISTRATION_SQL, manifestSha256: sha256(UNIFIED_DESKTOP_ONLINE_REGISTRATION_SQL) });
 
+const CANONICAL_PHONE_ACCOUNT_PROVISIONING_SQL = `CREATE FUNCTION vnext_control_plane.vnext_provision_canonical_phone_account(p_account_id text, p_contact_id text, p_phone_hash text, p_verification_evidence_hash text)
+RETURNS TABLE(authority_id text, account_id text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  current_authority vnext_control_plane.vnext_authorities%ROWTYPE;
+  current_account vnext_control_plane.vnext_accounts%ROWTYPE;
+  current_contact vnext_control_plane.vnext_verified_contacts%ROWTYPE;
+  now_at timestamptz := transaction_timestamp();
+BEGIN
+  IF session_user <> 'vnext_pg17_identity_verifier'
+    OR p_account_id IS NULL OR p_contact_id IS NULL
+    OR p_phone_hash IS NULL OR p_verification_evidence_hash IS NULL
+    OR btrim(p_account_id) = '' OR btrim(p_contact_id) = ''
+    OR p_phone_hash !~ '^[0-9a-f]{64}$'
+    OR p_verification_evidence_hash !~ '^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'VNEXT_CANONICAL_PHONE_ACCOUNT_INVALID' USING ERRCODE = 'P0001';
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_phone_hash, 17));
+  IF (SELECT count(*) FROM vnext_control_plane.vnext_authorities WHERE status = 'active') <> 1 THEN
+    RAISE EXCEPTION 'VNEXT_CANONICAL_PHONE_AUTHORITY_UNAVAILABLE' USING ERRCODE = 'P0001';
+  END IF;
+  SELECT a.* INTO current_authority
+    FROM vnext_control_plane.vnext_authorities AS a
+    WHERE a.status = 'active'
+    FOR UPDATE;
+  SELECT c.* INTO current_contact
+    FROM vnext_control_plane.vnext_verified_contacts AS c
+    WHERE c.authority_id = current_authority.authority_id
+      AND c.contact_type = 'phone'
+      AND c.normalized_value_hash = p_phone_hash
+    FOR UPDATE;
+  IF FOUND THEN
+    SELECT a.* INTO current_account
+      FROM vnext_control_plane.vnext_accounts AS a
+      WHERE a.authority_id = current_contact.authority_id
+        AND a.account_id = current_contact.account_id
+      FOR UPDATE;
+    IF current_contact.verification_state <> 'verified' OR current_contact.revoked_at IS NOT NULL
+      OR NOT FOUND OR current_account.status <> 'active' THEN
+      RAISE EXCEPTION 'VNEXT_CANONICAL_PHONE_ACCOUNT_CONFLICT' USING ERRCODE = 'P0001';
+    END IF;
+    RETURN QUERY SELECT current_authority.authority_id, current_account.account_id;
+    RETURN;
+  END IF;
+  SELECT a.* INTO current_account
+    FROM vnext_control_plane.vnext_accounts AS a
+    WHERE a.account_id = p_account_id
+    FOR UPDATE;
+  IF FOUND AND (current_account.authority_id <> current_authority.authority_id OR current_account.status <> 'active') THEN
+    RAISE EXCEPTION 'VNEXT_CANONICAL_PHONE_ACCOUNT_CONFLICT' USING ERRCODE = 'P0001';
+  END IF;
+  IF NOT FOUND THEN
+    INSERT INTO vnext_control_plane.vnext_accounts(account_id,authority_id,status,auth_version,access_version,revocation_version,row_version,created_at,updated_at)
+    VALUES(p_account_id,current_authority.authority_id,'active',1,1,1,1,now_at,now_at);
+  END IF;
+  INSERT INTO vnext_control_plane.vnext_verified_contacts(contact_id,authority_id,account_id,contact_type,normalized_value_hash,verification_state,verification_evidence_hash,verified_at,revoked_at,row_version,created_at,updated_at)
+  VALUES(p_contact_id,current_authority.authority_id,p_account_id,'phone',p_phone_hash,'verified',p_verification_evidence_hash,now_at,NULL,1,now_at,now_at);
+  RETURN QUERY SELECT current_authority.authority_id, p_account_id;
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_provision_canonical_phone_account(text,text,text,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_provision_canonical_phone_account(text,text,text,text) TO vnext_pg17_identity_verifier;`;
+const CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION = Object.freeze({ migrationId: 'vnext-pg17-canonical-phone-account-provisioning-17', semanticVersion: 17, sql: CANONICAL_PHONE_ACCOUNT_PROVISIONING_SQL, manifestSha256: sha256(CANONICAL_PHONE_ACCOUNT_PROVISIONING_SQL) });
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -842,6 +909,7 @@ const MIGRATIONS = Object.freeze([
   TRUST_ROOT_EVIDENCE_MIGRATION,
   SESSIONS_REAUTHENTICATION_MIGRATION,
   UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION,
+  CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -968,6 +1036,7 @@ $function$
   vnext_sessions_no_delete: '6b7f632dc9141b0bcc00c44b562d7ee50b8b43dec992fbc80f4a5eca7611070c',
   vnext_sessions_parent_state_match: 'ff2b7ec86eef777566246bd67013efe247706f15b4088ea8dc2025bdc1318cc4',
   vnext_issue_online_identity_assertion: 'b25d146e4ad6cb39cec66eb4253147ff6c5c542b4ff4fc14d1c5d594e1c7d6be',
+  vnext_provision_canonical_phone_account: '530a24717e717890f76512424213959aace8249f808eab6a191962d9f2ab6ab6',
   vnext_online_identity_assertion_consumptions_no_delete: '373d46bf6da02b2a62dd659aef8780b155240ce80445e07c1f8ebe8be7acbff8',
   vnext_online_identity_assertion_consumptions_no_update: '4ce7a8ffabea8a01ed87a1aaac8689cd603420fbf082ded04e6e9079c918fe7a',
   vnext_online_identity_assertions_no_delete: 'f6eaa89e09943fdc457860c2c890aedd9899acb0cb3d71e40a94a0e066f1c32e',
@@ -1050,6 +1119,7 @@ module.exports = {
   TRUST_ROOT_EVIDENCE_MIGRATION,
   SESSIONS_REAUTHENTICATION_MIGRATION,
   UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION,
+  CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,
