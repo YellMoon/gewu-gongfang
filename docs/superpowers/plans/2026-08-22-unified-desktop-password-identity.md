@@ -48,6 +48,10 @@ if (!crypto.timingSafeEqual(Buffer.from(row.hash, 'base64'), derived)) throw rej
 - Modify: `shared/vnext-pg17/catalogAssertion.js`
 - Modify: `shared/vnext-pg17/catalogAssertion.test.js`
 
+- [ ] **Step 0: Add the exact control-plane prefix-upgrade contract before adding M18.**
+
+The current `catalog.apply()` accepts only a ledger equal to the complete manifest, while production is exactly M1--M17. First write red tests for an exact M1--M17 ledger and clean catalog that appends only M18, and for a forged M17 catalog that fails before any M18 ledger write. Keep fresh apply and already-M18 reapply behavior. Do not run raw production SQL outside this verified upgrade path.
+
 - [ ] **Step 1: Add failing manifest/catalog tests for version 18 and identity-verifier-only credential functions.**
 
 ```js
