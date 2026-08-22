@@ -21,7 +21,22 @@ function validTask(task) {
     && Number.isSafeInteger(task.expectedBytes) && task.expectedBytes >= 0
     && typeof task.mediaType === 'string' && task.mediaType.length > 0 && task.mediaType.length <= 255
     && typeof task.leaseToken === 'string' && task.leaseToken.length >= 16
-    && typeof task.leaseExpiresAt === 'string' && Number.isFinite(Date.parse(task.leaseExpiresAt));
+    && typeof task.leaseExpiresAt === 'string' && Number.isFinite(Date.parse(task.leaseExpiresAt))
+    && ['relay', 'question_import_source', 'question_import_media'].includes(task.kind)
+    && (task.kind !== 'question_import_source' || (typeof task.importTaskId === 'string' && /^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(task.importTaskId)
+      && ['lecture', 'exam'].includes(task.sourceType)))
+    && (task.kind !== 'question_import_media' || (Number.isSafeInteger(task.itemIndex) && task.itemIndex >= 0
+      && Number.isSafeInteger(task.assetIndex) && task.assetIndex >= 0 && validSource(task.source)));
+}
+
+function validSource(source) {
+  return Boolean(source) && typeof source === 'object' && !Array.isArray(source) && Object.getPrototypeOf(source) === Object.prototype
+    && typeof source.objectId === 'string' && /^obj_[A-Za-z0-9_-]{1,128}$/.test(source.objectId)
+    && Number.isSafeInteger(source.objectVersion) && source.objectVersion > 0
+    && typeof source.sha256 === 'string' && /^[0-9a-f]{64}$/.test(source.sha256)
+    && Number.isSafeInteger(source.bytes) && source.bytes > 0
+    && typeof source.mimeType === 'string' && source.mimeType.length > 0 && source.mimeType.length <= 255
+    && ['lecture', 'exam'].includes(source.sourceType);
 }
 
 function relayBytes(value) {

@@ -16,7 +16,7 @@ async function main() {
         if (calls.filter(call => call.url.endsWith('/api/storage-agent/lease')).length > 1) {
           return { ok: true, status: 200, json: async () => ({ ok: true, task: { taskId: 'invalid' } }) };
         }
-        return { ok: true, status: 200, json: async () => ({ ok: true, task: { taskId: 'task_12345678', objectId: 'obj_1', objectVersion: 1, expectedSha256: 'a'.repeat(64), expectedBytes: 3, mediaType: 'image/png', leaseToken: 'lease-token-test-value', leaseExpiresAt: '2026-08-22T00:05:00.000Z' } }) };
+        return { ok: true, status: 200, json: async () => ({ ok: true, task: { taskId: 'task_12345678', objectId: 'obj_1', objectVersion: 1, expectedSha256: 'a'.repeat(64), expectedBytes: 3, mediaType: 'image/png', kind: 'relay', leaseToken: 'lease-token-test-value', leaseExpiresAt: '2026-08-22T00:05:00.000Z' } }) };
       }
       if (url.endsWith('/api/storage-agent/tasks/task_12345678/download')) {
         return { ok: true, status: 200, json: async () => ({ ok: true, relay: {

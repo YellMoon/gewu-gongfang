@@ -32,7 +32,7 @@ async function main() {
       return {
         rows: [{
           taskId: 'task_12345678', objectId: 'obj_1', objectVersion: 1, expectedSha256: HASH,
-          expectedBytes: 3, mediaType: 'image/png', leaseExpiresAt: new Date('2026-08-22T00:05:00.000Z'),
+          expectedBytes: 3, mediaType: 'image/png', kind: 'relay', leaseExpiresAt: new Date('2026-08-22T00:05:00.000Z'),
         }],
       };
     },
@@ -43,7 +43,7 @@ async function main() {
   const leased = await repository.leaseNext({ agentId: 'storage-agent-1' });
   assert.deepStrictEqual(leased, {
     taskId: 'task_12345678', objectId: 'obj_1', objectVersion: 1, expectedSha256: HASH,
-    expectedBytes: 3, mediaType: 'image/png', leaseToken: LEASE_TOKEN,
+    expectedBytes: 3, mediaType: 'image/png', kind: 'relay', leaseToken: LEASE_TOKEN,
     leaseExpiresAt: '2026-08-22T00:05:00.000Z',
   });
   assert.ok(calls[0].text.includes('deleted_expired') && calls[0].text.includes("state='quarantined'"), 'each lease clears expired relay bytes first');
@@ -51,6 +51,10 @@ async function main() {
   assert.ok(calls[1].text.includes('FOR UPDATE OF task SKIP LOCKED'), 'leasing must be concurrency-safe while locking only task rows');
   assert.ok(calls[1].text.includes('encrypted_storage_relays question_relay') && calls[1].text.includes('encrypted_paper_export_artifact_relays artifact_relay'), 'only tasks with an active encrypted relay may be leased');
   assert.ok(calls[1].text.includes('encrypted_import_source_relays import_relay'), 'import source tasks require a live encrypted relay before leasing');
+  assert.ok(calls[1].text.includes('question_import_media_objects import_media') && calls[1].text.includes("'question_import_media'"),
+    'a derived media task must lease only after the source object is verified and must identify itself to the agent');
+  assert.ok(calls[1].text.includes('media_source.storage_state=\'verified\''),
+    'derived media must be reconstructed only from an immutable, verified NAS source object');
   assert.ok(calls[1].text.includes('question_relay.expires_at > transaction_timestamp()') && calls[1].text.includes('artifact_relay.expires_at > transaction_timestamp()'), 'leasing must exclude expired relay ciphertext');
   assert.ok(calls[1].values.includes(leaseHash), 'only a SHA-256 lease hash may be stored');
   assert.ok(!calls[1].values.includes(LEASE_TOKEN), 'the raw lease token must never be sent to PostgreSQL');

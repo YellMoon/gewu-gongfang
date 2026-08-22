@@ -30,7 +30,8 @@ function hash(value) {
 function outputRow(row, leaseToken = null) {
   if (!row || typeof row.taskId !== 'string' || typeof row.objectId !== 'string' || !Number.isSafeInteger(Number(row.objectVersion))
     || typeof row.expectedSha256 !== 'string' || !/^\d+$/.test(String(row.expectedBytes)) || typeof row.mediaType !== 'string'
-    || !(row.leaseExpiresAt instanceof Date)) throw failure('STORAGE_TASK_REPOSITORY_INVALID');
+    || !(row.leaseExpiresAt instanceof Date)
+    || !['relay', 'question_import_source', 'question_import_media'].includes(row.kind)) throw failure('STORAGE_TASK_REPOSITORY_INVALID');
   const value = {
     taskId: row.taskId,
     objectId: row.objectId,
@@ -38,8 +39,32 @@ function outputRow(row, leaseToken = null) {
     expectedSha256: row.expectedSha256,
     expectedBytes: Number(row.expectedBytes),
     mediaType: row.mediaType,
+    kind: row.kind,
     leaseExpiresAt: row.leaseExpiresAt.toISOString(),
   };
+  if (row.kind === 'question_import_source') {
+    if (typeof row.importTaskId !== 'string' || !/^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(row.importTaskId)
+      || !['lecture', 'exam'].includes(row.sourceType)) throw failure('STORAGE_TASK_REPOSITORY_INVALID');
+    value.importTaskId = row.importTaskId;
+    value.sourceType = row.sourceType;
+  }
+  if (row.kind === 'question_import_media') {
+    if (!Number.isSafeInteger(Number(row.itemIndex)) || Number(row.itemIndex) < 0 || !Number.isSafeInteger(Number(row.assetIndex)) || Number(row.assetIndex) < 0
+      || !row.source || typeof row.source !== 'object' || Array.isArray(row.source)) throw failure('STORAGE_TASK_REPOSITORY_INVALID');
+    const source = row.source;
+    if (typeof source.objectId !== 'string' || !/^obj_[A-Za-z0-9_-]{1,128}$/.test(source.objectId)
+      || !Number.isSafeInteger(Number(source.objectVersion)) || Number(source.objectVersion) < 1
+      || typeof source.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(source.sha256)
+      || !Number.isSafeInteger(Number(source.bytes)) || Number(source.bytes) < 1
+      || typeof source.mimeType !== 'string' || !source.mimeType
+      || !['lecture', 'exam'].includes(source.sourceType)) throw failure('STORAGE_TASK_REPOSITORY_INVALID');
+    value.itemIndex = Number(row.itemIndex);
+    value.assetIndex = Number(row.assetIndex);
+    value.source = {
+      objectId: source.objectId, objectVersion: Number(source.objectVersion), sha256: source.sha256,
+      bytes: Number(source.bytes), mimeType: source.mimeType, sourceType: source.sourceType,
+    };
+  }
   return leaseToken === null ? value : { ...value, leaseToken };
 }
 
@@ -96,8 +121,14 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
              LEFT JOIN business.encrypted_storage_relays question_relay ON question_relay.task_id=task.task_id
              LEFT JOIN business.encrypted_paper_export_artifact_relays artifact_relay ON artifact_relay.storage_task_id=task.task_id
              LEFT JOIN business.encrypted_import_source_relays import_relay ON import_relay.storage_task_id=task.task_id
+             LEFT JOIN business.import_source_objects import_source ON import_source.storage_task_id=task.task_id
+             LEFT JOIN business.question_import_tasks source_import_task ON source_import_task.task_id=import_source.import_task_id
+             LEFT JOIN business.question_import_media_objects import_media ON import_media.storage_task_id=task.task_id AND import_media.storage_state='queued'
+             LEFT JOIN business.import_source_objects media_source ON media_source.import_task_id=import_media.import_task_id AND media_source.storage_state='verified'
+             LEFT JOIN business.question_import_tasks media_import_task ON media_import_task.task_id=import_media.import_task_id
             WHERE (task.state='queued' OR (task.state='leased' AND task.lease_expires_at <= transaction_timestamp()))
-              AND ((question_relay.expires_at > transaction_timestamp()) OR (artifact_relay.expires_at > transaction_timestamp()) OR (import_relay.expires_at > transaction_timestamp()))
+              AND ((question_relay.expires_at > transaction_timestamp()) OR (artifact_relay.expires_at > transaction_timestamp()) OR (import_relay.expires_at > transaction_timestamp())
+                OR (import_media.media_id IS NOT NULL AND media_source.import_task_id IS NOT NULL))
             ORDER BY task.created_at ASC,task.task_id ASC
             FOR UPDATE OF task SKIP LOCKED
             LIMIT 1
@@ -107,7 +138,22 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
              FROM candidate
             WHERE task.task_id=candidate.task_id
            RETURNING task.task_id AS "taskId",task.object_id AS "objectId",task.object_version AS "objectVersion",task.expected_sha256 AS "expectedSha256",task.expected_bytes AS "expectedBytes",task.media_type AS "mediaType",task.lease_expires_at AS "leaseExpiresAt"
-         ) SELECT * FROM leased`,
+         ) SELECT leased.*,
+             CASE WHEN import_media.media_id IS NOT NULL THEN 'question_import_media'
+                  WHEN import_source.import_task_id IS NOT NULL THEN 'question_import_source'
+                  ELSE 'relay' END AS kind,
+             source_import_task.task_id AS "importTaskId",source_import_task.source_type AS "sourceType",
+             import_media.item_index AS "itemIndex",import_media.asset_index AS "assetIndex",
+             CASE WHEN import_media.media_id IS NOT NULL THEN jsonb_build_object(
+               'objectId',media_source.object_id,'objectVersion',media_source.object_version,'sha256',media_source.expected_sha256,
+               'bytes',media_source.expected_bytes,'mimeType',media_source.mime_type,'sourceType',media_import_task.source_type
+             ) ELSE NULL END AS source
+           FROM leased
+           LEFT JOIN business.import_source_objects import_source ON import_source.storage_task_id=leased."taskId"
+           LEFT JOIN business.question_import_tasks source_import_task ON source_import_task.task_id=import_source.import_task_id
+           LEFT JOIN business.question_import_media_objects import_media ON import_media.storage_task_id=leased."taskId"
+           LEFT JOIN business.import_source_objects media_source ON media_source.import_task_id=import_media.import_task_id AND media_source.storage_state='verified'
+           LEFT JOIN business.question_import_tasks media_import_task ON media_import_task.task_id=import_media.import_task_id`,
         [currentAgentId, hash(leaseToken), leaseExpiresAt.toISOString()],
       );
       if (!result || !Array.isArray(result.rows) || result.rows.length === 0) return null;
