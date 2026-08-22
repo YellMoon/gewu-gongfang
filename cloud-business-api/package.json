@@ -7,7 +7,9 @@
     "test": "node src/app.test.js && node src/businessScheduleMutationService.test.js && node src/businessScheduleStudentOverrideService.test.js && node src/bootstrapAdminIdentity.test.js && node src/canonicalAccountRepository.test.js && node src/canonicalAccountService.test.js && node src/canonicalAccountProvisioningService.test.js && node src/canonicalWechatIdentityService.test.js && node src/desktopPasswordIdentityService.test.js && node src/desktopPasswordAuthenticationService.test.js && node src/desktopRegistrationService.test.js && node src/desktopPairingService.test.js && node src/miniappCloudAccountService.test.js && node src/miniappCloudAccountRepository.test.js && node src/questionAuthorityService.test.js && node src/questionAuthorityRuntime.test.js && node src/encryptedStorageRelayRepository.test.js && node src/storageAgentRuntime.test.js && node src/storageAgentService.test.js && node src/storageTaskRepository.test.js && node src/wechatPhoneVerifier.test.js && node src/wechatIdentityVerifier.test.js && node sql/business-schedule-update.test.js && node sql/business-schedule-student-override.test.js && node sql/cloud-question-authority.test.js && node sql/cloud-question-command-receipts.test.js && node sql/encrypted-storage-relay.test.js && node sql/storage-agent-least-privilege.test.js && node sql/miniapp-cloud-accounts.test.js && node sql/miniapp-cloud-role-profiles.test.js && node sql/miniapp-student-access.test.js && node sql/storage-agent-tasks.test.js && node sql/miniapp-student-access.postgres.test.js && node sql/business-schedule-update.postgres.test.js"
   },
   "dependencies": {
+    "docx": "9.6.1",
     "express": "5.2.1",
+    "pdfkit": "^0.17.2",
     "pg": "8.23.0"
   }
 }
