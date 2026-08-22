@@ -28,7 +28,6 @@ import {
   DownloadOutlined,
 } from '@ant-design/icons';
 import type { Question } from '../types';
-import { getApiBase } from '../utils/apiBase';
 import { normalizeQuestionType } from '../constants/questionTypes';
 import { QUESTION_BASKET_SELECTED_STORAGE_KEY, QUESTION_BASKET_STORAGE_KEY } from '../components/QuestionBasket';
 import QuestionRichContent from '../components/QuestionRichContent';
@@ -42,8 +41,6 @@ import {
 import type { PaperExportTaskRecord } from '../services/paperExportTaskService';
 import { getPaperExportTaskPresentation } from '../services/paperExportTaskPresentation.mjs';
 import './QuestionBankPaper.css';
-
-const API_BASE = getApiBase('/api/question-bank');
 
 const TASK_TEXT = {
   submit: '\u63d0\u4ea4\u4e91\u7aef\u4efb\u52a1',
@@ -116,19 +113,9 @@ function normalizeQuestion(row: any): Question {
 
 async function loadBasketQuestions(ids: string[]): Promise<Question[]> {
   const db = (window as any).dbService;
+  await db?.refreshAuthorityProjection?.();
   const localRows = (db?.getAllQuestions?.() || []).map(normalizeQuestion);
   const byId = new Map(localRows.map((q: Question) => [q.id, q]));
-
-  try {
-    const res = await fetch(`${API_BASE}/questions?limit=1000`);
-    const data = await res.json();
-    if (data.success && Array.isArray(data.data)) {
-      data.data.map(normalizeQuestion).forEach((q: Question) => byId.set(q.id, q));
-    }
-  } catch (_err) {
-    // Remote service is optional for the desktop paper editor.
-  }
-
   return ids.map(id => byId.get(id)).filter((q): q is Question => !!q);
 }
 
