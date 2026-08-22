@@ -6,7 +6,6 @@ import { fetchPermissions, getCurrentUser } from '../../../utils/permission';
 import { createLatestRequestCoordinator, createOperationLocks } from './adminReviewCoordinator';
 import './index.scss';
 
-const SUPER_ADMIN_PHONE = '13732250653';
 const roleLabels: Record<string, string> = {
   super_admin: '\u8d85\u7ea7\u7ba1\u7406\u5458', admin: '\u666e\u901a\u7ba1\u7406\u5458',
   teacher: '\u8001\u5e08', student: '\u5b66\u751f', pending: '\u5f85\u5206\u7c7b',
@@ -15,6 +14,10 @@ const statusLabels: Record<string, string> = {
   pending: '\u5f85\u5ba1\u6838', approved: '\u5df2\u901a\u8fc7', rejected: '\u5df2\u62d2\u7edd', disabled: '\u5df2\u505c\u7528',
 };
 const statusFilters = ['', 'pending', 'approved', 'rejected'];
+
+function isSuperAdmin(user: any): boolean {
+  return user?.user_type === 'super_admin' || user?.role === 'super_admin';
+}
 
 function errorMessage(result: any, fallback: string) {
   const code = result?.code;
@@ -84,7 +87,7 @@ export default function AdminUsersPage() {
   useEffect(() => { void load(); }, [load, status, submittedSearch]);
 
   const disableUser = async (user: any) => {
-    if (!canReview || user.phone === SUPER_ADMIN_PHONE) return;
+    if (!canReview || isSuperAdmin(user)) return;
     await runLocked(`user:${user.id}`, async () => {
       const modal = await Taro.showModal({ title: '\u505c\u7528\u7528\u6237', content: `\u786e\u8ba4\u505c\u7528 ${user.name || user.phone}\uff1f\u505c\u7528\u540e\u5c06\u65e0\u6cd5\u767b\u5f55\u3002` });
       if (!modal.confirm) return;
@@ -106,7 +109,7 @@ export default function AdminUsersPage() {
       {!loading && error ? <View className="error"><Text>{error}</Text><Button size="mini" onClick={() => void load()}>{'\u91cd\u8bd5'}</Button></View> : null}
       {!loading && !error && users.length === 0 ? <View className="empty">{'\u6682\u65e0\u7b26\u5408\u6761\u4ef6\u7684\u7528\u6237'}</View> : null}
       {!loading && !error ? users.map(user => {
-        const isFixedSuperAdmin = user.phone === SUPER_ADMIN_PHONE || user.user_type === 'super_admin' || user.role === 'super_admin';
+        const isFixedSuperAdmin = isSuperAdmin(user);
         const userRole = user.user_type || user.role || 'pending';
         const disabled = user.status === 0 || user.login_enabled === 0;
         const userLocked = lockedKeys.includes(`user:${user.id}`);

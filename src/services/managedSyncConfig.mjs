@@ -13,11 +13,7 @@ export function resolveManagedSyncConfig(config = {}, env = {}) {
 }
 
 export function resolveDesktopIdentityBaseUrl(config = {}, env = {}) {
-  if (config.nodeRole !== 'primary-host') {
-    return String(env.cloudBusinessIdentityBaseUrl || config.cloudBusinessIdentityBaseUrl || DEFAULT_CLOUD_BUSINESS_IDENTITY_BASE_URL).replace(/\/+$/, '');
-  }
-  const managed = resolveManagedSyncConfig(config, env);
-  return String(managed.cloudBaseUrl || '').replace(/\/+$/, '');
+  return String(env.cloudBusinessIdentityBaseUrl || config.cloudBusinessIdentityBaseUrl || DEFAULT_CLOUD_BUSINESS_IDENTITY_BASE_URL).replace(/\/+$/, '');
 }
 
 export function syncFailureMessage(code) {

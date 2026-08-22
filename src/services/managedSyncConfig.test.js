@@ -24,7 +24,8 @@ async function main() {
     desktopIdentityMode: 'full',
     hostBaseUrl: 'http://127.0.0.1:3001/',
     cloudBaseUrl: 'https://cloud.example/',
-  }), 'https://cloud.example');
+  }), DEFAULT_CLOUD_BUSINESS_IDENTITY_BASE_URL,
+  'legacy primary-host configuration must not redirect new device identity registration to the retired control plane');
   assert.strictEqual(resolveDesktopIdentityBaseUrl({
     buildFlavor: 'desktop-client',
     nodeRole: 'desktop-client',

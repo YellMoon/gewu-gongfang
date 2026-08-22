@@ -8,6 +8,7 @@ const inventory = fs.readFileSync('miniapp/src/utils/miniappUiPageInventory.js',
 assert.ok(!apiSource.includes('export const wechatBindingApi'), 'miniapp API client must not expose the retired binding-review workflow');
 assert.ok(!adminPage.includes('wechatBindingApi') && !adminPage.includes('reviewBinding'), 'administrator UI must not retain the unreachable binding-review workflow');
 assert.ok(!adminPage.includes('binding-review-section'), 'administrator UI must not render a dead binding-review section');
+assert.doesNotMatch(adminPage, /1\d{10}/, 'administrator UI must never embed an administrator phone number; cloud-side HMAC configuration is the sole bootstrap identity boundary');
 assert.ok(!inventory.includes('wechat-binding-read-only') && !inventory.includes('wechat-binding-review'), 'UI inventory must not claim the retired workflow as a real state');
 
 console.log('miniapp retired WeChat binding review UI checks passed');
