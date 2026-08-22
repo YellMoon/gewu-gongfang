@@ -85,3 +85,6 @@ contextBridge.exposeInMainWorld('questionDraftProvenance', {
   issueDraft: authorization => ipcRenderer.invoke('issue-question-draft', { authorization }),
   verifyDraft: (questionId, authorization) => ipcRenderer.invoke('verify-question-draft-provenance', { questionId, authorization }),
 });
+contextBridge.exposeInMainWorld('questionImportRelay', Object.freeze({
+  sealSource: input => ipcRenderer.invoke('seal-question-import-source', input),
+}));
