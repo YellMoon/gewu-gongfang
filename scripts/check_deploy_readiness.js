@@ -402,13 +402,11 @@ function checkIdentityBuildSafety() {
 function checkDesktopReleaseBoundary() {
   const issues = [];
   const packageJson = readJson('package.json');
-  const hostConfig = require(path.join(process.cwd(), 'electron-builder.host.config.cjs'));
   const runtimeConfig = readText('public/runtimeConfig.js');
   const buildFlavor = readText('public/desktopBuildFlavor.js');
   const directTransport = readText('src/services/authorityTransports.mjs');
   const relayRoute = readText('gateway/src/routes/cloudRelay.js');
   const ordinaryFiles = packageJson.build?.files || [];
-  const hostFiles = hostConfig.files || [];
   const hostOnlyFiles = [
     'public/primaryHostCredentialStore.js',
     'public/primaryHostOperationValidation.js',
@@ -423,7 +421,12 @@ function checkDesktopReleaseBoundary() {
   }
   for (const file of hostOnlyFiles) {
     if (ordinaryFiles.includes(file)) issues.push(`ordinary package contains host-only module: ${file}`);
-    if (!hostFiles.includes(file)) issues.push(`primary-host package is missing host-only module: ${file}`);
+  }
+  if (fs.existsSync(path.join(process.cwd(), 'electron-builder.host.config.cjs'))) {
+    issues.push('a second host-only installer configuration must not exist');
+  }
+  if (packageJson.scripts?.['package:host-runtime-contract']) {
+    issues.push('a second host-only packaging command must not exist');
   }
   if (!runtimeConfig.includes("desktopIdentityMode: 'full'")) {
     issues.push('desktop identity mode must default to full');
@@ -448,8 +451,7 @@ function checkDesktopReleaseBoundary() {
     issues.push('cloud relay must reject pairing-code response fields');
   }
   const clientFeed = /desktop\/['"]/.test(buildFlavor);
-  const hostFeed = /desktop\/host\/['"]/.test(buildFlavor);
-  if (!clientFeed || !hostFeed) issues.push('desktop client and primary-host update feeds must be isolated');
+  if (!clientFeed) issues.push('the unified desktop update feed is missing');
 
   return Object.freeze({
     defaultDesktopFlavor: packageJson.desktopBuildFlavor,
