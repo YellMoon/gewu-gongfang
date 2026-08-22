@@ -21,6 +21,7 @@ export default defineAppConfig({
     'pages/admin/users/index',
     'pages/unrecognized-experience/index',
     'pages/account-application/index',
+    'pages/cloud-account-admin/index',
   ],
   window: {
     backgroundTextStyle: 'light',

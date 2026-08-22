@@ -254,6 +254,14 @@ export default function SchedulePage() {
     <View className="schedule-page">
       <NetworkStatus onRetry={handleRefresh} />
 
+      {isCloudMiniapp && identity?.role === 'super_admin' ? (
+        <View className="view-toggle">
+          <View className="toggle-btn active" onClick={() => Taro.navigateTo({ url: '/pages/cloud-account-admin/index' })}>
+            <Text>{'\u65b0\u8d26\u53f7\u6388\u6743'}</Text>
+          </View>
+        </View>
+      ) : null}
+
       <View className="view-toggle">
         <View className={`toggle-btn ${viewMode === 'week' ? 'active' : ''}`} onClick={() => setViewMode('week')}>
           <Text>周视图</Text>

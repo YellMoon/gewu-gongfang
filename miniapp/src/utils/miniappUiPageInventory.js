@@ -255,6 +255,18 @@ const pageInventory = [
     screenshotRequired: true,
     files: ['src/pages/account-application/index.tsx', 'src/pages/account-application/index.scss'],
   },
+  {
+    route: 'pages/cloud-account-admin/index',
+    title: '新账号授权',
+    registered: true,
+    roleViews: ['super-admin'],
+    surface: 'cloud-business',
+    visualStatus: 'optimized',
+    verificationStates: ['loading', 'empty', 'pending-account', 'role-assigned', 'network-error', 'legacy-denied'],
+    realFeatureBasis: ['GET /api/miniapp/cloud-accounts', 'PUT /api/miniapp/cloud-accounts/:accountId/role', 'miniappCloudBusinessApi.listPendingAccounts', 'miniappCloudBusinessApi.assignAccountRole'],
+    screenshotRequired: true,
+    files: ['src/pages/cloud-account-admin/index.tsx', 'src/pages/cloud-account-admin/index.scss'],
+  },
 ];
 
 module.exports = { pageInventory };

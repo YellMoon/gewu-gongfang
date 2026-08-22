@@ -12,5 +12,6 @@ assert.ok(source.includes('student_ids: []'), 'cloud schedule projection must no
 assert.ok(source.includes("timeZone: 'Asia/Shanghai'"), 'cloud schedule instants must be projected in the product time zone before date filtering');
 assert.ok(source.includes('cloudScheduleDateTime(row.startAt)'), 'cloud schedule start times must be normalized before the legacy calendar filter receives them');
 assert.ok(source.includes('cloudScheduleDateTime(row.endAt)'), 'cloud schedule end times must be normalized before rendering');
+assert.ok(source.includes("'/pages/cloud-account-admin/index'"), 'the bootstrap super administrator must be able to reach the cloud account authorization page');
 assert.ok(packageJson.scripts['test:cloud-schedule'].includes('miniapp/src/pages/schedule/cloudBusinessSchedule.test.js'), 'cloud schedule test runner must include the miniapp cloud schedule boundary');
 console.log('miniapp cloud schedule source checks passed');
