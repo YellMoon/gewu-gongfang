@@ -12,9 +12,9 @@ assert.deepStrictEqual(desktopWindowChrome(), {
   autoHideMenuBar: true,
   menuBarVisible: false,
 });
-assert.strictEqual(updateFeedForFlavor('desktop-client', {}),
+assert.strictEqual(updateFeedForFlavor('unified-desktop', {}),
   'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop/');
 assert.strictEqual(updateFeedForFlavor('primary-host', {}),
-  'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop/host/');
+  'https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop/');
 
 console.log('electron shell policy checks passed');

@@ -39,7 +39,6 @@ const { resolveEmbeddedListenHost } = require('./primaryHostListenPolicy');
 const { createDesktopIdentityVault } = require('./desktopIdentityVault');
 const { createDesktopAuthorityRuntime } = require('./desktopAuthorityRuntime');
 const {
-  PRIMARY_HOST_FLAVOR,
   resolveDesktopBuildFlavor,
   updateFeedForFlavor,
   validateDesktopCapabilityManifest,
@@ -58,7 +57,7 @@ const DESKTOP_BUILD_FLAVOR = resolveDesktopBuildFlavor({
 });
 validateDesktopCapabilityManifest({ metadata: desktopPackage, runtimeFlavor: DESKTOP_BUILD_FLAVOR });
 process.env.GEWU_DESKTOP_BUILD_FLAVOR = DESKTOP_BUILD_FLAVOR;
-const PRIMARY_HOST_CAPABLE = DESKTOP_BUILD_FLAVOR === PRIMARY_HOST_FLAVOR;
+const PRIMARY_HOST_CAPABLE = false;
 const AUTHORITY_WEBSOCKET_ENABLED = process.env.GEWU_AUTHORITY_WEBSOCKET_DISABLED !== '1';
 process.on('unhandledRejection', error => {
   log(`AUTHORITY_RUNTIME_UNHANDLED_REJECTION ${String(error?.code || error?.message || 'UNKNOWN')}`);
