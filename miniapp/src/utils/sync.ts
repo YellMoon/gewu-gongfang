@@ -53,7 +53,7 @@ function applyAuthorityProjection(projection: any): void {
     throw new Error('AUTHORITY_PROJECTION_PAYLOAD_REQUIRED');
   }
   for (const table of projectionCacheTables) setCachedList(table as SyncTable, []);
-  for (const [table, rows] of projectionCacheEntries(payload)) {
+  for (const [table, rows] of projectionCacheEntries(payload) as Array<[SyncTable, any[]]>) {
     setCachedList(table as SyncTable, rows);
   }
   setLastSyncTimestamp(timestamp(projection.generatedAt || projection.generated_at));
