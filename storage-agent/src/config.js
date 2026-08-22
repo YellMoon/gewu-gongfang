@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 function failure() {
   const error = new Error('STORAGE_AGENT_CONFIG_INVALID');
@@ -37,6 +38,20 @@ function parseToken(value) {
   return token;
 }
 
+function parseAgentPrivateKey(value) {
+  const encoded = required(value);
+  if (!/^[A-Za-z0-9_-]+$/.test(encoded) || encoded.length > 4096) throw failure();
+  const bytes = Buffer.from(encoded, 'base64url');
+  if (!bytes.length || bytes.toString('base64url') !== encoded) throw failure();
+  try {
+    const key = crypto.createPrivateKey({ key: bytes, format: 'der', type: 'pkcs8' });
+    if (key.asymmetricKeyType !== 'x25519') throw failure();
+  } catch (_) {
+    throw failure();
+  }
+  return encoded;
+}
+
 function parseNasRoot(value) {
   const configuredRoot = required(value);
   if (!path.isAbsolute(configuredRoot)) throw failure();
@@ -58,6 +73,7 @@ function loadStorageAgentConfig(env = process.env) {
     cloudBaseUrl: parseCloudBaseUrl(env.CLOUD_BUSINESS_BASE_URL),
     agentId: parseAgentId(env.STORAGE_AGENT_ID),
     token: parseToken(env.STORAGE_AGENT_TOKEN),
+    agentPrivateKey: parseAgentPrivateKey(env.STORAGE_AGENT_PRIVATE_KEY),
     nasRoot: parseNasRoot(env.NAS_STORAGE_ROOT),
     pollSeconds: parsePollSeconds(env.STORAGE_AGENT_POLL_SECONDS),
   });

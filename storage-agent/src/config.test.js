@@ -4,24 +4,34 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 
 const { loadStorageAgentConfig } = require('./config');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-storage-agent-config-'));
 try {
+  const pair = crypto.generateKeyPairSync('x25519');
+  const privateKey = pair.privateKey.export({ format: 'der', type: 'pkcs8' }).toString('base64url');
   const validEnv = {
     CLOUD_BUSINESS_BASE_URL: 'https://example.invalid/cloud-business',
     STORAGE_AGENT_ID: 'storage-agent-1',
     STORAGE_AGENT_TOKEN: 'storage-agent-test-token-with-sufficient-length',
     NAS_STORAGE_ROOT: root,
+    STORAGE_AGENT_PRIVATE_KEY: privateKey,
   };
   assert.deepStrictEqual(loadStorageAgentConfig(validEnv), {
     cloudBaseUrl: 'https://example.invalid/cloud-business',
     agentId: 'storage-agent-1',
     token: 'storage-agent-test-token-with-sufficient-length',
+    agentPrivateKey: privateKey,
     nasRoot: path.resolve(root),
     pollSeconds: 10,
   });
+  assert.throws(
+    () => loadStorageAgentConfig({ ...validEnv, STORAGE_AGENT_PRIVATE_KEY: '' }),
+    /STORAGE_AGENT_CONFIG_INVALID/,
+    'the agent must require its X25519 private key locally'
+  );
   assert.throws(
     () => loadStorageAgentConfig({ ...validEnv, STORAGE_AGENT_TOKEN: '' }),
     /STORAGE_AGENT_CONFIG_INVALID/,
