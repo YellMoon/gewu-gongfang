@@ -260,6 +260,27 @@ export const miniappCloudAuthApi = {
   },
 };
 
+export const miniappCloudBusinessApi = {
+  async listSchedules(token: string): Promise<ApiResponse<{ ok: true; schedules: any[] }>> {
+    if (typeof token !== 'string' || !token.trim()) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.request({
+        url: cloudBusinessUrl('/api/business/schedules'),
+        method: 'GET',
+        header: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+        timeout: REQUEST_TIMEOUT,
+        dataType: 'json',
+      });
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && Array.isArray((response.data as any)?.schedules)) {
+        return { success: true, data: response.data as { ok: true; schedules: any[] } };
+      }
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud schedule request failed' };
+    } catch (error: any) {
+      return { success: false, error: error?.errMsg || error?.message || 'Cloud schedule request unavailable' };
+    }
+  },
+};
+
 // ========== 认证 API ==========
 export const authApi = {
   login: (data: { openid: string; name?: string }) =>

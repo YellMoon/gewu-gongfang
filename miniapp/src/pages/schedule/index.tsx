@@ -3,7 +3,8 @@ import { View, Text, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { Schedule, ScheduleStatus, Course, Student } from '../../types';
 import { getCachedList, setCachedList } from '../../utils/storage';
-import { scheduleApi } from '../../utils/api';
+import { miniappCloudBusinessApi, scheduleApi } from '../../utils/api';
+import { authSessionRuntime } from '../../utils/authSession';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
 import AccountStatusBanner from '../../components/AccountStatusBanner';
 import { isUnrecognizedIdentity, isVisitorIdentity } from '../../utils/accountExperience';
@@ -24,7 +25,8 @@ export default function SchedulePage() {
   const identity = Taro.getStorageSync('user_info');
   const isUnrecognized = isUnrecognizedIdentity(identity);
   const isVisitor = isVisitorIdentity(identity);
-  const isLimitedIdentity = isUnrecognized || isVisitor;
+  const isCloudMiniapp = identity?.token_use === 'miniapp-cloud';
+  const isLimitedIdentity = isUnrecognized || isVisitor || identity?.account_state === 'pending';
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [schedules, setSchedules] = useState<ScheduleWithCourse[]>([]);
@@ -39,6 +41,10 @@ export default function SchedulePage() {
   }, [currentDate]);
 
   const loadData = () => {
+    if (isCloudMiniapp) {
+      void loadCloudSchedules();
+      return;
+    }
     if (isLimitedIdentity) {
       setSchedules([]);
       setCourses([]);
@@ -61,7 +67,47 @@ export default function SchedulePage() {
     setLoading(false);
   };
 
+  const loadCloudSchedules = async () => {
+    const token = authSessionRuntime.capture().token;
+    if (!token) {
+      setSchedules([]);
+      setCourses([]);
+      setStudents([]);
+      setLoading(false);
+      return;
+    }
+    const response = await miniappCloudBusinessApi.listSchedules(token);
+    if (!response.success || !response.data?.schedules) {
+      setSchedules([]);
+      setCourses([]);
+      setStudents([]);
+      setLoading(false);
+      return;
+    }
+    setSchedules(response.data.schedules.map((row: any) => ({
+      id: row.id,
+      course_id: row.courseId,
+      start_time: row.startAt,
+      end_time: row.endAt,
+      status: row.status,
+      room: row.roomDisplay,
+      calculated_tuition: row.tuition,
+      calculated_teacher_fee: row.teacherFee,
+      student_ids: [],
+      course_name: row.courseName,
+    } as ScheduleWithCourse)));
+    setCourses([]);
+    setStudents([]);
+    setLoading(false);
+  };
+
   const handleRefresh = useCallback(async () => {
+    if (isCloudMiniapp) {
+      setRefreshing(true);
+      await loadCloudSchedules();
+      setRefreshing(false);
+      return;
+    }
     if (isLimitedIdentity) {
       setSchedules([]);
       setCourses([]);
