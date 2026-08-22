@@ -1,5 +1,4 @@
 import { readDesktopAuthorizationSession } from './desktopAuthorizationSession.mjs';
-import { requestHostPaperExportRuntime } from './hostPaperExportRuntime.mjs';
 
 export const paperExportTaskStorageKey = 'gewu_paper_export_tasks_v1';
 export const paperExportTerminalStatuses = new Set(['completed', 'failed', 'cancelled', 'timed_out']);
@@ -25,9 +24,9 @@ export function cloudTaskApiBase(cloudBaseUrl) {
   return `${base}/api/cloud`;
 }
 
-function hostUrl(hostBaseUrl, path) {
-  const base = trimSlash(hostBaseUrl);
-  if (!base) throw Object.assign(new Error('HOST_BASE_URL_REQUIRED'), { code: 'HOST_BASE_URL_REQUIRED' });
+function cloudUrl(cloudBaseUrl, path) {
+  const base = trimSlash(cloudBaseUrl);
+  if (!base) throw Object.assign(new Error('CLOUD_BASE_URL_REQUIRED'), { code: 'CLOUD_BASE_URL_REQUIRED' });
   if (/^https?:\/\//i.test(String(path || ''))) return String(path);
   return `${base}${String(path || '').startsWith('/') ? path : `/${path}`}`;
 }
@@ -85,19 +84,6 @@ function normalizeRemote(local, row, timestamp) {
 
 async function submitDraft(config, draft, deps) {
   const storage = taskStorage(deps);
-  if (config.nodeRole === 'primary-host') {
-    try {
-      const direct = deps.directExport || requestHostPaperExportRuntime;
-      const base = config.hostBaseUrl ? `${trimSlash(config.hostBaseUrl)}/api/question-bank` : '/api/question-bank';
-      const result = await direct(base, draft.request, deps);
-      const task = { ...draft, status: 'completed', phase: 'completed', progress: 100, accepted: true, result, updatedAt: nowIso(deps) };
-      upsertTask(storage, task);
-      return { accepted: true, task };
-    } catch (error) {
-      const task = { ...draft, status: 'draft', accepted: false, errorCode: String(error?.code || ''), message: String(error?.message || error), updatedAt: nowIso(deps) };
-      upsertTask(storage, task); return { accepted: false, task, error };
-    }
-  }
   try {
     const fetchImpl = deps.fetchImpl || globalThis.fetch;
     const response = await fetchImpl(`${cloudTaskApiBase(config.cloudBaseUrl)}/tasks`, {
@@ -106,7 +92,6 @@ async function submitDraft(config, draft, deps) {
       body: JSON.stringify({
         protocolVersion: 2,
         taskType: `paper-export-${draft.request.format}`,
-        ...(config.primaryHostDeviceId ? { targetHostDeviceId: config.primaryHostDeviceId } : {}),
         payload: {
           questionIds: [...draft.request.questionIds], answerPosition: draft.request.answerPosition,
           formulaMode: draft.request.formulaMode, title: draft.request.title, subject: draft.request.subject || '',
@@ -147,7 +132,7 @@ function requireStoredTask(localId, deps) {
 
 export async function refreshPaperExportTask(config, localId, deps = {}) {
   const local = requireStoredTask(localId, deps);
-  if (!local.serverTaskId || config.nodeRole === 'primary-host') return local;
+  if (!local.serverTaskId) return local;
   const response = await (deps.fetchImpl || globalThis.fetch)(`${cloudTaskApiBase(config.cloudBaseUrl)}/tasks/${encodeURIComponent(local.serverTaskId)}/result`, { headers: authHeaders(deps) });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !payload.success || !payload.task) throw responseError(payload, response.status);
@@ -186,10 +171,10 @@ export async function retryPaperExportTask(config, localId, deps = {}) {
 async function exchangeAccess(config, result, deps) {
   const accessPath = result.accessEndpoint || result.accessUrl;
   if (!accessPath) throw Object.assign(new Error('ARTIFACT_ACCESS_ENDPOINT_REQUIRED'), { code: 'ARTIFACT_ACCESS_ENDPOINT_REQUIRED' });
-  const response = await (deps.fetchImpl || globalThis.fetch)(hostUrl(config.hostBaseUrl, accessPath), { method: 'GET', headers: authHeaders(deps) });
+  const response = await (deps.fetchImpl || globalThis.fetch)(cloudUrl(config.cloudBaseUrl, accessPath), { method: 'GET', headers: authHeaders(deps) });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !payload.success || !payload.data?.token) throw responseError(payload, response.status);
-  return { ...payload.data, accessUrl: hostUrl(config.hostBaseUrl, accessPath), fileUrl: hostUrl(config.hostBaseUrl, payload.data.fileUrl) };
+  return { ...payload.data, accessUrl: cloudUrl(config.cloudBaseUrl, accessPath), fileUrl: cloudUrl(config.cloudBaseUrl, payload.data.fileUrl) };
 }
 
 export async function downloadPaperExportResult(config, result, deps = {}) {

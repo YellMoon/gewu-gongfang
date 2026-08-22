@@ -28,8 +28,7 @@ function memoryStorage(seed = {}) {
     answerPosition: 'after-each', questionIds: ['q3', 'q1', 'q2'],
   };
   const config = {
-    nodeRole: 'desktop-client', cloudBaseUrl: 'https://cloud.example.com/api',
-    hostBaseUrl: 'http://host.lan:3001', deviceId: 'desktop-2',
+    cloudBaseUrl: 'https://cloud.example.com/api', deviceId: 'desktop-2',
   };
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
@@ -89,13 +88,7 @@ function memoryStorage(seed = {}) {
   assert.strictEqual(client.loadPaperExportTasks(noHostStorage)[0].status, 'draft');
   assert.strictEqual(client.loadPaperExportTasks(noHostStorage)[0].errorCode, 'TARGET_HOST_REQUIRED');
 
-  let directInput;
-  const direct = await client.submitPaperExportTask({ ...config, nodeRole: 'primary-host' }, input, {
-    taskStorage: memoryStorage(), idempotencyKeyFactory: () => 'direct-1',
-    directExport: async (_base, value) => { directInput = value; return { artifactId: 'artifact-direct', fileName: 'paper.pdf', fileUrl: '/direct', accessUrl: '/direct/access', token: 'short' }; },
-  });
-  assert.strictEqual(direct.task.status, 'completed');
-  assert.deepStrictEqual(directInput.questionIds, ['q3', 'q1', 'q2'], 'primary host must reuse the direct durable export client');
+  assert.ok(!String(client.submitPaperExportTask).includes('primary-host'), 'every desktop must submit an export task to cloud');
 
   const downloadCalls = []; let clicked = '';
   const completed = { fileName: 'paper.pdf', accessEndpoint: '/api/cloud-relay-host/artifacts/a1/access' };
@@ -111,13 +104,13 @@ function memoryStorage(seed = {}) {
     createObjectURL: () => 'blob:paper', revokeObjectURL: () => undefined,
     createAnchor: () => ({ click() { clicked = this.href; } }),
   });
-  assert.strictEqual(downloadCalls[0].url, 'http://host.lan:3001/api/cloud-relay-host/artifacts/a1/access');
+  assert.strictEqual(downloadCalls[0].url, 'https://cloud.example.com/api/api/cloud-relay-host/artifacts/a1/access');
   assert.strictEqual(downloadCalls[0].init.method, 'GET');
   assert.strictEqual(downloadCalls[1].init.headers['x-gewu-artifact-token'], 'short-1');
-  assert.strictEqual(downloadCalls[2].url, downloadCalls[0].url, '410 must refresh access at the host before retrying');
+  assert.strictEqual(downloadCalls[2].url, downloadCalls[0].url, '410 must refresh access through cloud before retrying');
   assert.strictEqual(downloadCalls[3].init.headers['x-gewu-artifact-token'], 'short-2');
   assert.strictEqual(clicked, 'blob:paper');
-  await assert.rejects(() => client.downloadPaperExportResult({ ...config, hostBaseUrl: '' }, completed, { authStorage }), /HOST_BASE_URL_REQUIRED/);
+  await assert.rejects(() => client.downloadPaperExportResult({ ...config, cloudBaseUrl: '' }, completed, { authStorage }), /CLOUD_BASE_URL_REQUIRED/);
 
   console.log('paper export task client checks passed');
 })().catch(error => { console.error(error); process.exit(1); });
