@@ -161,6 +161,18 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
               SET status='completed',phase='completed',progress=100,updated_at=transaction_timestamp()
              FROM verified_artifact artifact
             WHERE paper.result_artifact_id=artifact.artifact_id AND paper.status='processing'
+         ), verified_import_source AS (
+           UPDATE business.import_source_objects source
+              SET storage_state='verified',verified_at=transaction_timestamp(),updated_at=transaction_timestamp()
+             FROM completed
+            WHERE source.storage_task_id=completed.task_id AND source.storage_state='queued'
+           RETURNING source.import_task_id
+         ), queued_import_task AS (
+           UPDATE business.question_import_tasks import_task
+              SET status='queued_for_parse',phase='queued_for_parse',updated_at=transaction_timestamp()
+             FROM verified_import_source source
+            WHERE import_task.task_id=source.import_task_id AND import_task.status='awaiting_source_storage'
+           RETURNING import_task.task_id
          ), deleted_question_relay AS (
            DELETE FROM business.encrypted_storage_relays relay
             USING completed

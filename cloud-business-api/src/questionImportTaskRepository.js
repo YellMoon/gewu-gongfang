@@ -107,6 +107,18 @@ const insertSql = [
   ') SELECT task_id AS "taskId",status,phase,"requestHash","createdAt","updatedAt" FROM inserted_task',
 ].join(' ');
 
+const markSourceVerifiedSql = [
+  'WITH verified_source AS (',
+  "UPDATE business.import_source_objects SET storage_state='verified',verified_at=transaction_timestamp(),updated_at=transaction_timestamp()",
+  "WHERE import_task_id=$1 AND storage_task_id=$2 AND storage_state='queued'",
+  'RETURNING import_task_id',
+  '), advanced_task AS (',
+  "UPDATE business.question_import_tasks task SET status='queued_for_parse',phase='queued_for_parse',updated_at=transaction_timestamp()",
+  "FROM verified_source source WHERE task.task_id=source.import_task_id AND task.status='awaiting_source_storage'",
+  'RETURNING task.task_id AS "taskId",task.status,task.phase,task.request_hash AS "requestHash",task.created_at AS "createdAt",task.updated_at AS "updatedAt"',
+  ') SELECT * FROM advanced_task',
+].join(' ');
+
 function createQuestionImportTaskRepository({ query, randomId = () => crypto.randomUUID() } = {}) {
   if (typeof query !== 'function' || typeof randomId !== 'function') throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
   return Object.freeze({
@@ -135,6 +147,17 @@ function createQuestionImportTaskRepository({ query, randomId = () => crypto.ran
         source.storage.taskId, source.storage.objectId, source.storage.objectVersion,
       ]);
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
+      return taskRow(result.rows[0], false);
+    },
+    async markSourceVerified(input) {
+      const request = exact(input, ['taskId', 'storageTaskId']);
+      const taskId = text(request.taskId, 160);
+      const storageTaskId = text(request.storageTaskId, 160);
+      if (!/^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(taskId) || !/^task_[A-Za-z0-9_-]{8,128}$/.test(storageTaskId)) {
+        throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+      }
+      const result = await query(markSourceVerifiedSql, [taskId, storageTaskId]);
+      if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_SOURCE_UNVERIFIED');
       return taskRow(result.rows[0], false);
     },
   });
