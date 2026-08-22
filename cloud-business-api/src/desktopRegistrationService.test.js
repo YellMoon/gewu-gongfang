@@ -47,6 +47,18 @@ const service = createCloudDesktopRegistrationService({
   assert.ok(typeof started.verificationToken === 'string' && started.verificationToken.length > 40);
   assert.strictEqual(JSON.stringify(started).includes('13700000000'), false);
 
+  const passwordVerified = service.issueVerificationForVerifiedAccount({ authorityId: 'tenant-1', accountId: 'account-1' });
+  assert.ok(typeof passwordVerified.verificationToken === 'string' && passwordVerified.verificationToken.length > 40);
+  assert.deepStrictEqual(
+    ((token => JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString('utf8')))(passwordVerified.verificationToken)).authorityId,
+    'tenant-1',
+    'an already verified password identity may only obtain the same short-lived registration ticket format',
+  );
+  assert.throws(
+    () => service.issueVerificationForVerifiedAccount({ authorityId: 'tenant-1', accountId: '' }),
+    error => error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED',
+  );
+
   const ticket = service.inspectVerificationToken(started.verificationToken);
   const proof = crypto.sign(null, Buffer.from(ticket.challenge, 'utf8'), privateKey).toString('base64url');
   const registered = await service.register({

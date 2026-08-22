@@ -181,6 +181,26 @@ function createCloudDesktopRegistrationService(config) {
   };
   const inspectVerificationToken = token => inspectTicket(settings.ticketSecret, token, currentNow());
   const inspectSessionToken = token => inspectSessionTicket(settings.ticketSecret, token, currentNow());
+  const issueVerificationForVerifiedAccount = input => {
+    let identity;
+    try {
+      identity = exact(input, ['authorityId', 'accountId']);
+    } catch (_) {
+      throw rejected();
+    }
+    if (!text(identity.authorityId) || !text(identity.accountId)) throw rejected();
+    const now = currentNow();
+    return Object.freeze({
+      verificationToken: makeTicket(settings.ticketSecret, {
+        v: 1,
+        authorityId: identity.authorityId,
+        accountId: identity.accountId,
+        challenge: String(settings.randomId('desktop-proof-challenge')),
+        proofId: String(settings.randomId('online-identity-proof')),
+        expiresAt: now.getTime() + 5 * 60 * 1000,
+      }),
+    });
+  };
   const readCurrentSession = async ticket => {
     let current;
     try {
@@ -200,6 +220,7 @@ function createCloudDesktopRegistrationService(config) {
   return Object.freeze({
     inspectVerificationToken,
     inspectSessionToken,
+    issueVerificationForVerifiedAccount,
     async begin(input) {
       const request = exact(input, ['phoneCode']);
       if (!text(request.phoneCode)) throw rejected();
@@ -215,17 +236,7 @@ function createCloudDesktopRegistrationService(config) {
       } catch (_) {
         throw rejected();
       }
-      if (!identity || !text(identity.authorityId) || !text(identity.accountId)) throw rejected();
-      const now = currentNow();
-      const ticket = makeTicket(settings.ticketSecret, {
-        v: 1,
-        authorityId: identity.authorityId,
-        accountId: identity.accountId,
-        challenge: String(settings.randomId('desktop-proof-challenge')),
-        proofId: String(settings.randomId('online-identity-proof')),
-        expiresAt: now.getTime() + 5 * 60 * 1000,
-      });
-      return Object.freeze({ verificationToken: ticket });
+      return issueVerificationForVerifiedAccount(identity);
     },
     async register(input) {
       const request = exact(input, ['verificationToken', 'installationId', 'installationPublicKey', 'deviceProof', 'idempotencyKey']);

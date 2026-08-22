@@ -2,11 +2,12 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, desktopRegistration = null, miniappCloudAccount = null, desktopPairing = null, businessTenantId = null, releaseVersion = 'unknown' }) {
+function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, businessTenantId = null, releaseVersion = 'unknown' }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
   if (desktopRegistration && (typeof desktopRegistration.begin !== 'function' || typeof desktopRegistration.register !== 'function')) throw new TypeError('desktopRegistration is invalid');
+  if (desktopPasswordAuthentication && (typeof desktopPasswordAuthentication.enroll !== 'function' || typeof desktopPasswordAuthentication.verify !== 'function')) throw new TypeError('desktopPasswordAuthentication is invalid');
   if (miniappCloudAccount && (typeof miniappCloudAccount.login !== 'function' || typeof miniappCloudAccount.context !== 'function' || typeof miniappCloudAccount.pendingAccounts !== 'function' || typeof miniappCloudAccount.assignRole !== 'function')) throw new TypeError('miniappCloudAccount is invalid');
   if (desktopPairing && (typeof desktopPairing.start !== 'function' || typeof desktopPairing.confirm !== 'function' || typeof desktopPairing.read !== 'function')) throw new TypeError('desktopPairing is invalid');
   if (businessTenantId !== null && (typeof businessTenantId !== 'string' || !businessTenantId.trim())) throw new TypeError('businessTenantId is invalid');
@@ -116,6 +117,24 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!desktopRegistration) return desktopUnavailable(response);
     try {
       const result = await desktopRegistration.begin(request.body);
+      response.json({ ok: true, verificationToken: result.verificationToken });
+    } catch (error) {
+      identityFailure(response, error);
+    }
+  });
+  app.post('/api/desktop/password-enrollment', async (request, response) => {
+    if (!desktopPasswordAuthentication) return desktopUnavailable(response);
+    try {
+      const result = await desktopPasswordAuthentication.enroll(request.body);
+      response.json({ ok: true, verificationToken: result.verificationToken });
+    } catch (error) {
+      identityFailure(response, error);
+    }
+  });
+  app.post('/api/desktop/password-verification', async (request, response) => {
+    if (!desktopPasswordAuthentication) return desktopUnavailable(response);
+    try {
+      const result = await desktopPasswordAuthentication.verify(request.body);
       response.json({ ok: true, verificationToken: result.verificationToken });
     } catch (error) {
       identityFailure(response, error);

@@ -10,6 +10,8 @@ const { createMiniappCloudAccountService } = require('./src/miniappCloudAccountS
 const { createMiniappCloudAccountRepository } = require('./src/miniappCloudAccountRepository');
 const { createWechatPhoneVerifier } = require('./src/wechatPhoneVerifier');
 const { createCanonicalAccountProvisioningService } = require('./src/canonicalAccountProvisioningService');
+const { createDesktopPasswordIdentityService } = require('./src/desktopPasswordIdentityService');
+const { createDesktopPasswordAuthenticationService } = require('./src/desktopPasswordAuthenticationService');
 const { resolveBootstrapAdminAccountId } = require('./src/bootstrapAdminIdentity');
 const { version } = require('./package.json');
 
@@ -180,6 +182,37 @@ function createDesktopRegistrationFromEnvironment() {
       };
     },
   });
+  const desktopPasswordIdentity = createDesktopPasswordIdentityService({
+    phoneHash: phone => hmacPhone(process.env.CLOUD_IDENTITY_PHONE_PEPPER, phone),
+    randomBytes: size => require('crypto').randomBytes(size),
+    saveCredential: async input => {
+      await identityPool.query(
+        'SELECT authority_id AS "authorityId", account_id AS "accountId" FROM vnext_control_plane.vnext_set_desktop_password_credential($1,$2,$3,$4,$5,$6)',
+        [input.authorityId, input.accountId, input.loginName, input.algorithm, input.saltB64, input.passwordHashB64],
+      );
+    },
+    lookupByPhoneHash: async phoneHash => {
+      const result = await identityPool.query(
+        'SELECT authority_id AS "authorityId", account_id AS "accountId", login_name AS "loginName", password_algorithm AS "algorithm", password_salt_base64 AS "saltB64", password_hash_base64 AS "passwordHashB64" FROM vnext_control_plane.vnext_read_desktop_password_by_phone_hash($1)',
+        [phoneHash],
+      );
+      return result.rows[0] || null;
+    },
+    lookupByLoginName: async loginName => {
+      const result = await identityPool.query(
+        'SELECT authority_id AS "authorityId", account_id AS "accountId", login_name AS "loginName", password_algorithm AS "algorithm", password_salt_base64 AS "saltB64", password_hash_base64 AS "passwordHashB64" FROM vnext_control_plane.vnext_read_desktop_password_by_login_name($1)',
+        [loginName],
+      );
+      return result.rows[0] || null;
+    },
+  });
+  const desktopPasswordAuthentication = createDesktopPasswordAuthenticationService({
+    phoneVerifier: createWechatPhoneVerifier({ appId: process.env.WECHAT_APPID, appSecret: process.env.WECHAT_APPSECRET }),
+    resolveCanonicalAccount: input => canonicalAccount.resolveOrProvision(input),
+    verificationEvidenceHash: phoneCode => verificationEvidenceHash(process.env.CLOUD_IDENTITY_TICKET_SECRET, 'wechat-desktop-password-enrollment', phoneCode),
+    passwordIdentity: desktopPasswordIdentity,
+    issueRegistrationTicket: input => registration.issueVerificationForVerifiedAccount(input),
+  });
   const businessScheduleUpdate = createBusinessScheduleUpdate({
     query: (text, values) => writerPool.query(text, values),
   });
@@ -188,6 +221,7 @@ function createDesktopRegistrationFromEnvironment() {
   });
   return {
     registration,
+    desktopPasswordAuthentication,
     canonicalAccount,
     accountRepository,
     bootstrapAdminAccountId,
@@ -230,6 +264,7 @@ const app = createCloudBusinessApp({
   businessScheduleUpdate: desktopRuntime?.businessScheduleUpdate || null,
   businessScheduleStudentOverride: desktopRuntime?.businessScheduleStudentOverride || null,
   desktopRegistration: desktopRuntime?.registration || null,
+  desktopPasswordAuthentication: desktopRuntime?.desktopPasswordAuthentication || null,
   miniappCloudAccount,
   desktopPairing,
   businessTenantId: process.env.CLOUD_BUSINESS_TENANT_ID || 'default',
