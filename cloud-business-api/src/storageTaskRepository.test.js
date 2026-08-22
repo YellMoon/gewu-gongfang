@@ -78,6 +78,8 @@ async function main() {
   assert.ok(calls[4].text.includes('paper_export_artifacts') && calls[4].text.includes('encrypted_paper_export_artifact_relays'), 'completion must verify the artifact record and erase its relay bytes');
   assert.ok(calls[4].text.includes('business.import_source_objects') && calls[4].text.includes('question_import_tasks'),
     'a verified source receipt must advance only its cloud-owned import task to parsing readiness');
+  assert.ok(calls[4].text.includes('business.question_import_media_objects'),
+    'a verified media receipt must mark only its corresponding import media object as NAS-verified');
   assert.ok(calls[4].values.includes(leaseHash), 'completion must compare only the lease hash');
   assert.ok(!calls[4].values.includes(LEASE_TOKEN), 'completion must not persist the raw lease token');
 

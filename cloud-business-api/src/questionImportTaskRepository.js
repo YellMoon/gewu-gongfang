@@ -171,7 +171,20 @@ const storeCandidatesSql = [
   "SELECT item->>'itemId',task.task_id,(item->>'itemIndex')::integer,item->>'contentHash',(item->'candidate'),(item->'validation'),(item->'mediaManifest'),item->'validation'->>'status'",
   'FROM advanced_task task CROSS JOIN input_items',
   'RETURNING item_id',
-  ') SELECT task_id AS "taskId",status,phase,"requestHash","createdAt","updatedAt" FROM advanced_task',
+  '), input_media AS (',
+  "SELECT (item->>'itemIndex')::integer AS item_index,media FROM input_items CROSS JOIN LATERAL jsonb_array_elements(item->'mediaManifest') AS media",
+  '), inserted_storage_tasks AS (',
+  'INSERT INTO business.storage_object_tasks (task_id,object_id,object_version,expected_sha256,expected_bytes,media_type,state)',
+  "SELECT media->>'storageTaskId',media->>'objectId',(media->>'objectVersion')::integer,media->>'sha256',(media->>'bytes')::bigint,media->>'mimeType','queued' FROM input_media",
+  'RETURNING task_id',
+  '), inserted_media AS (',
+  'INSERT INTO business.question_import_media_objects (media_id,import_task_id,item_index,asset_index,object_id,object_version,storage_task_id,expected_sha256,expected_bytes,mime_type,storage_state)',
+  "SELECT media->>'mediaId',$1,item_index,(media->>'assetIndex')::integer,media->>'objectId',(media->>'objectVersion')::integer,media->>'storageTaskId',media->>'sha256',(media->>'bytes')::bigint,media->>'mimeType','queued'",
+  "FROM input_media JOIN inserted_storage_tasks storage ON storage.task_id=media->>'storageTaskId'",
+  'RETURNING media_id AS "mediaId",item_index AS "itemIndex",asset_index AS "assetIndex",object_id AS "objectId",object_version AS "objectVersion",storage_task_id AS "storageTaskId",expected_sha256 AS sha256,expected_bytes AS bytes,mime_type AS "mimeType"',
+  ') SELECT task_id AS "taskId",status,phase,"requestHash","createdAt","updatedAt",',
+  "COALESCE((SELECT jsonb_agg(jsonb_build_object('mediaId',media.\"mediaId\",'itemIndex',media.\"itemIndex\",'assetIndex',media.\"assetIndex\",'objectId',media.\"objectId\",'objectVersion',media.\"objectVersion\",'storageTaskId',media.\"storageTaskId\",'sha256',media.sha256,'bytes',media.bytes,'mimeType',media.\"mimeType\") ORDER BY media.\"itemIndex\",media.\"assetIndex\") FROM inserted_media media),'[]'::jsonb) AS \"mediaTargets\"",
+  'FROM advanced_task',
 ].join(' ');
 
 const prepareDraftsSql = [
@@ -234,9 +247,23 @@ function candidateRows(value, randomId) {
     }
     const candidateJson = stableJson(item.candidate);
     const validationJson = stableJson(item.validation);
-    const mediaManifestJson = stableJson(item.mediaManifest);
+    const mediaManifest = item.mediaManifest.map((asset, assetIndex) => {
+      const current = exact(asset, ['sha256', 'bytes', 'mimeType']);
+      if (!/^[0-9a-f]{64}$/.test(current.sha256) || !Number.isSafeInteger(current.bytes) || current.bytes < 1 || current.bytes > (64 * 1024 * 1024)
+        || typeof current.mimeType !== 'string' || current.mimeType !== current.mimeType.trim() || !current.mimeType || current.mimeType.length > 255) {
+        throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+      }
+      const suffix = String(randomId()).replace(/[^A-Za-z0-9_-]/g, '') + '_' + itemIndex + '_' + assetIndex;
+      const mediaId = 'question_import_media_' + suffix;
+      const objectId = 'obj_import_media_' + suffix;
+      const storageTaskId = 'task_import_media_' + suffix;
+      if (!/^question_import_media_[A-Za-z0-9_-]{1,128}$/.test(mediaId) || !/^obj_[A-Za-z0-9_-]{1,128}$/.test(objectId)
+        || !/^task_[A-Za-z0-9_-]{8,128}$/.test(storageTaskId)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
+      return { mediaId, assetIndex, objectId, objectVersion: 1, storageTaskId, sha256: current.sha256, bytes: current.bytes, mimeType: current.mimeType };
+    });
+    const mediaManifestJson = stableJson(mediaManifest);
     if (candidateJson.length > (1024 * 1024) || validationJson.length > (64 * 1024) || mediaManifestJson.length > (256 * 1024)
-      || /data:[^,]*;base64|"(?:bytes|ciphertext|plaintext)"\s*:/iu.test(candidateJson + validationJson + mediaManifestJson)) {
+      || /data:[^,]*;base64|"(?:ciphertext|plaintext)"\s*:/iu.test(candidateJson + validationJson + mediaManifestJson)) {
       throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
     }
     const itemId = 'question_import_item_' + String(randomId()).replace(/[^A-Za-z0-9_-]/g, '') + '_' + itemIndex;
@@ -310,7 +337,9 @@ function createQuestionImportTaskRepository({ query, randomId = () => crypto.ran
       const candidates = candidateRows(request.candidates, randomId);
       const result = await query(storeCandidatesSql, [taskId, stableJson(candidates)]);
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_SOURCE_UNVERIFIED');
-      return taskRow(result.rows[0], false);
+      const task = taskRow(result.rows[0], false);
+      if (!Array.isArray(result.rows[0].mediaTargets)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
+      return { ...task, mediaTargets: result.rows[0].mediaTargets };
     },
     async prepareDrafts(input) {
       const request = exact(input, ['tenantId', 'actor', 'taskId']);

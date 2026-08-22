@@ -55,6 +55,9 @@ async function main() {
       if (text.includes('INSERT INTO business.question_import_items')) return { rows: [{
         taskId: values[0], status: 'candidates_ready', phase: 'candidates_ready', requestHash: 'b'.repeat(64),
         createdAt: new Date('2026-08-23T00:00:00.000Z'), updatedAt: new Date('2026-08-23T00:02:00.000Z'),
+        mediaTargets: [{ mediaId: 'question_import_media_fixed-import-id_0_0', itemIndex: 0, assetIndex: 0,
+          objectId: 'obj_import_media_fixed-import-id_0_0', objectVersion: 1, storageTaskId: 'task_import_media_fixed-import-id_0_0',
+          sha256: 'd'.repeat(64), bytes: 3, mimeType: 'image/png' }],
       }] };
       if (text.includes("SET status='draft_prepared'")) {
         if (values[0] === 'question_import_task_unconfirmed') return { rows: [] };
@@ -113,12 +116,17 @@ async function main() {
       contentHash: 'c'.repeat(64),
       candidate: { subject: 'physics', stem: 'What is force?', options: [], answer: 'mass times acceleration' },
       validation: { status: 'accepted' },
-      mediaManifest: [],
+      mediaManifest: [{ sha256: 'd'.repeat(64), bytes: 3, mimeType: 'image/png' }],
     }],
   });
   assert.strictEqual(candidates.status, 'candidates_ready');
   assert.ok(calls.some(([text]) => text.includes('INSERT INTO business.question_import_items')),
     'parsed text candidates must be persisted as cloud task items');
+  assert.deepStrictEqual(candidates.mediaTargets, [{ mediaId: 'question_import_media_fixed-import-id_0_0', itemIndex: 0, assetIndex: 0,
+    objectId: 'obj_import_media_fixed-import-id_0_0', objectVersion: 1, storageTaskId: 'task_import_media_fixed-import-id_0_0',
+    sha256: 'd'.repeat(64), bytes: 3, mimeType: 'image/png' }]);
+  assert.ok(calls.some(([text]) => text.includes('INSERT INTO business.question_import_media_objects') && text.includes('INSERT INTO business.storage_object_tasks')),
+    'candidate persistence must atomically create NAS media object tasks and their cloud references');
   assert.ok(!calls.some(([text]) => /INSERT INTO business\.questions|INSERT INTO business\.question_contents/u.test(text)),
     'candidate storage must not create a cloud question before explicit confirmation');
 
