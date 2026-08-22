@@ -160,6 +160,13 @@ class BrowserDatabaseService {
           : Promise.resolve([]),
         window.desktopAuthority?.list ? window.desktopAuthority.list() : Promise.resolve([]),
       ]);
+      const cachedAt = new Date().toISOString();
+      const cloudQuestions = questions.map(question => ({
+        ...question,
+        storage_state: 'cloud_cached',
+        created_at: question.created_at || cachedAt,
+        updated_at: question.updated_at || cachedAt,
+      }));
       const next = buildAuthorityBackedBrowserCache({
         projection: {
           protocol: 'gewu.authority-projection.v1',
@@ -168,7 +175,7 @@ class BrowserDatabaseService {
           userId: readCurrentDesktopIdentityContext()?.userId || '',
           role: readCurrentDesktopIdentityContext()?.activeRole || '',
           sourceVersion: Math.max(0, Number(minSourceVersion) || 0),
-          payload: { ...payload, questions },
+          payload: { ...payload, questions: cloudQuestions },
         },
         outbox,
         localOnly: {

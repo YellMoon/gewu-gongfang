@@ -12,7 +12,7 @@ import QuestionPreviewCard from '../components/QuestionPreviewCard';
 import QuestionRichContent from '../components/QuestionRichContent';
 import QuestionStructureEditor from '../components/question-editor/QuestionStructureEditor';
 import { mergeQuestionAssets, normalizeStructureOrder, validateQuestionStructure } from '../components/question-editor/questionStructureOperations';
-import { createQuestionEditorSaveGate, createRichDocumentDirtyCoordinator, persistRemoteThenLocal, registerEditorSpaExitGuard, shouldProtectEditorExit } from '../components/question-editor/questionEditorSession'; // utf-8
+import { createQuestionEditorSaveGate, createRichDocumentDirtyCoordinator, registerEditorSpaExitGuard, shouldProtectEditorExit } from '../components/question-editor/questionEditorSession'; // utf-8
 import { createQuestionRichDocument } from '../types/questionRichContent';
 import type { QuestionRichDocument } from '../types/questionRichContent';
 import { migrateLegacyQuestion, projectQuestionRichContent } from '../services/questionRichContent';
@@ -176,6 +176,7 @@ const QuestionBankEdit: React.FC = () => {
   const loadData = useCallback(async () => {
     setLoading(true);
     const db = (window as any).dbService; // utf-8 atomic save
+    await db?.refreshAuthorityProjection?.();
     const cachedKnowledge = await getCachedQuestionTree('knowledge');
     const cachedModels = await getCachedQuestionTree('model');
     if (cachedKnowledge.length > 0) setKnowledgeNodes(cachedKnowledge);
@@ -189,16 +190,6 @@ const QuestionBankEdit: React.FC = () => {
     setLocalStoreReady(true);
     setRefreshNonce(value => value + 1);
     setLoading(false);
-    try {
-      const res = await fetch(`${API_BASE}/questions?limit=500`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
-        // 服务端同步仅后台预热本地索引，首屏不等待接口结果。
-        setRefreshNonce(value => value + 1);
-      }
-    } catch (_err) {
-      // 本地优先，接口失败不影响编辑页打开。
-    }
   }, []);
 
   const loadTrash = useCallback(async () => {
@@ -318,14 +309,9 @@ const QuestionBankEdit: React.FC = () => {
     };
     const db = (window as any).dbService;
     if (!db?.updateQuestion) throw new Error('LOCAL_QUESTION_STORE_UNAVAILABLE');
-    await persistRemoteThenLocal(
-      () => fetch(`${API_BASE}/questions/${editing.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }),
-      () => db.updateQuestion(editing.id, { ...payload, content: payload.stem, analysis: payload.explanation }),
-    );
+    if (db.updateQuestion(editing.id, { ...payload, content: payload.stem, analysis: payload.explanation }) !== true) {
+      throw new Error('LOCAL_QUESTION_UPDATE_FAILED');
+    }
     message.success('试题已保存');
     richDirtyCoordinator.markSaved(richDocument);
     formDirtyRef.current = false;
