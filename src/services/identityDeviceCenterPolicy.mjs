@@ -98,7 +98,7 @@ function projectDevice(device, access) {
   });
 }
 
-export async function loadIdentityDeviceCenter({ baseUrl, session, fetchImpl = globalThis.fetch } = {}) {
+export async function loadIdentityDeviceCenter({ baseUrl, session, runtimeConfig: _runtimeConfig, fetchImpl = globalThis.fetch } = {}) {
   const access = identityDeviceCenterAccess({ session });
   if (!access.visible) throw policyError('AUTHORIZATION_CONTEXT_REQUIRED');
   const data = await identityRequest({ baseUrl, session, fetchImpl }, '/api/desktop-identity/devices');
@@ -131,7 +131,7 @@ export async function revokeDesktopDevice({ baseUrl, session, request, fetchImpl
   );
 }
 
-export async function loadIdentityDevicePendingCount() {
+export async function loadIdentityDevicePendingCount(_input = {}) {
   return 0;
 }
 
