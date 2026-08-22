@@ -21,6 +21,23 @@ interface ScheduleWithCourse extends Schedule {
   course_type?: number;
 }
 
+function cloudScheduleDateTime(instant: string): string {
+  const date = new Date(instant);
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}:${values.second}`;
+}
+
 export default function SchedulePage() {
   const identity = Taro.getStorageSync('user_info');
   const isUnrecognized = isUnrecognizedIdentity(identity);
@@ -87,8 +104,8 @@ export default function SchedulePage() {
     setSchedules(response.data.schedules.map((row: any) => ({
       id: row.id,
       course_id: row.courseId,
-      start_time: row.startAt,
-      end_time: row.endAt,
+      start_time: cloudScheduleDateTime(row.startAt),
+      end_time: cloudScheduleDateTime(row.endAt),
       status: row.status,
       room: row.roomDisplay,
       calculated_tuition: row.tuition,
