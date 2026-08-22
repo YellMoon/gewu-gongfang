@@ -29,6 +29,10 @@ function createStorageAgentService({ repository, agentId, token } = {}) {
     if (request.agentId !== agentId || !sameToken(token, request.token)) throw rejected();
   }
   return Object.freeze({
+    async authorize(input) {
+      authenticate(input);
+      return { agentId };
+    },
     async lease(input) {
       authenticate(input);
       return repository.leaseNext({ agentId });

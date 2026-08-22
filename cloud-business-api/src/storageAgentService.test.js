@@ -24,6 +24,11 @@ async function main() {
     { taskId: 'task_12345678' },
   );
   assert.deepStrictEqual(
+    await service.authorize({ agentId: 'storage-agent-1', token: 'storage-agent-test-token-with-sufficient-length' }),
+    { agentId: 'storage-agent-1' },
+    'candidate reporting must reuse the storage agent token without leasing or writing a task',
+  );
+  assert.deepStrictEqual(
     await service.complete({ agentId: 'storage-agent-1', token: 'storage-agent-test-token-with-sufficient-length', taskId: 'task_12345678', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3 }),
     { taskId: 'task_12345678', state: 'verified' },
   );
@@ -32,6 +37,11 @@ async function main() {
     ['lease', { agentId: 'storage-agent-1' }],
     ['complete', { agentId: 'storage-agent-1', taskId: 'task_12345678', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3 }],
   ]);
+  await assert.rejects(
+    () => service.authorize({ agentId: 'other-agent', token: 'storage-agent-test-token-with-sufficient-length' }),
+    /STORAGE_AGENT_REJECTED/,
+    'the reporting authorization cannot be replayed by another agent identifier',
+  );
   await assert.rejects(
     () => service.lease({ agentId: 'storage-agent-1', token: 'wrong-token' }),
     /STORAGE_AGENT_REJECTED/,
