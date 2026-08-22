@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const VALID_ROLES = new Set(['primary-host', 'desktop-client']);
-const MANAGED_CLOUD_BASE_URL = 'https://physicsedu.xyz/cloud-business';
+const MANAGED_CLOUD_BASE_URL = 'https://physicsedu.xyz/scheduling';
 
 function trimTrailingSlash(value) {
   return String(value || '').replace(/[\\/]+$/, '');

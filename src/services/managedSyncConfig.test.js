@@ -6,11 +6,12 @@ async function main() {
     resolveManagedSyncConfig,
     syncFailureMessage,
     DEFAULT_MANAGED_CLOUD_BASE_URL,
+    DEFAULT_CLOUD_BUSINESS_IDENTITY_BASE_URL,
   } = await import('./managedSyncConfig.mjs');
   assert.strictEqual(
-    DEFAULT_MANAGED_CLOUD_BASE_URL,
+    DEFAULT_CLOUD_BUSINESS_IDENTITY_BASE_URL,
     'https://physicsedu.xyz/cloud-business',
-    'ordinary desktops must resolve the deployed cloud-business authority',
+    'new desktop registration must resolve the deployed cloud-business authority',
   );
   const client = resolveManagedSyncConfig({ nodeRole: 'desktop-client', cloudBaseUrl: '', desktopSyncToken: '' });
   assert.strictEqual(client.cloudBaseUrl, DEFAULT_MANAGED_CLOUD_BASE_URL);
@@ -28,8 +29,8 @@ async function main() {
     buildFlavor: 'desktop-client',
     nodeRole: 'desktop-client',
     hostBaseUrl: 'http://192.168.1.8:3001/',
-  }), DEFAULT_MANAGED_CLOUD_BASE_URL,
-  'ordinary desktops always use the managed identity plane');
+  }), DEFAULT_CLOUD_BUSINESS_IDENTITY_BASE_URL,
+  'ordinary desktops use cloud-business for new online identity registration');
   assert.ok(!/single-user|SingleUser/i.test(fs.readFileSync('src/services/managedSyncConfig.mjs', 'utf8')),
     'managed identity routing must not retain a legacy single-user bypass');
   assert.ok(syncFailureMessage('CLOUD_UNREACHABLE').includes('无法连接'));
