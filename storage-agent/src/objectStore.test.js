@@ -20,6 +20,11 @@ async function main() {
     const first = await store.putVerified(descriptor, bytes);
     assert.strictEqual(first.status, 'stored');
     assert.strictEqual(await fs.promises.readFile(store.objectPath(descriptor), 'utf8'), 'abc');
+    assert.deepStrictEqual(
+      await store.readVerified(descriptor),
+      bytes,
+      'a stored object can only be read back through its immutable cloud descriptor'
+    );
 
     const replay = await store.putVerified(descriptor, bytes);
     assert.strictEqual(replay.status, 'already_verified', 'an identical immutable replay must not replace the stored object');

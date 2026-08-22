@@ -64,6 +64,20 @@ function createObjectStore({ nasRoot } = {}) {
     return { status: 'already_verified' };
   }
 
+  async function readVerified(descriptorInput) {
+    const descriptor = validateDescriptor(descriptorInput);
+    const target = objectPath(descriptor);
+    let value;
+    try {
+      value = await fs.promises.readFile(target);
+    } catch (error) {
+      if (error?.code === 'ENOENT') throw failure('STORAGE_OBJECT_NOT_FOUND');
+      throw error;
+    }
+    if (value.length !== descriptor.bytes || hashBytes(value) !== descriptor.sha256) throw failure('STORAGE_OBJECT_INTEGRITY_FAILED');
+    return value;
+  }
+
   async function putVerified(descriptorInput, value) {
     const descriptor = validateDescriptor(descriptorInput);
     const bytes = Buffer.isBuffer(value) ? value : Buffer.from(value);
@@ -101,7 +115,7 @@ function createObjectStore({ nasRoot } = {}) {
     }
   }
 
-  return Object.freeze({ objectPath, putVerified });
+  return Object.freeze({ objectPath, putVerified, readVerified });
 }
 
 module.exports = {
