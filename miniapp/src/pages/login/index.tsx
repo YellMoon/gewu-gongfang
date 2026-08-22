@@ -52,13 +52,13 @@ export default function LoginPage() {
       invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance(),
       writeToken: (token: string) => Taro.setStorageSync('auth_token', token),
       activateSession: () => authSessionRuntime.activate(),
-      relaunch: () => Taro.reLaunch({ url: '/pages/index/index' }),
+      relaunch: () => Taro.reLaunch({ url: '/pages/schedule/index' }),
     });
   }
 
   useDidShow(() => {
     const session = authSessionRuntime.capture();
-    if (session.token && session.identity) Taro.reLaunch({ url: '/pages/index/index' });
+    if (session.token && session.identity) Taro.reLaunch({ url: '/pages/schedule/index' });
   });
 
   const handleCloudLogin = async (event: any) => {

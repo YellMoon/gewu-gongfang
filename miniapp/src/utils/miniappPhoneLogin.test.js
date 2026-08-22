@@ -11,7 +11,8 @@ assert.ok(loginPage.includes('miniappCloudAuthApi.login(phoneCode)'), 'login mus
 assert.ok(loginPage.includes('event?.detail?.code'), 'login must pass only the official one-time phone proof');
 assert.ok(!loginPage.includes('/api/auth/wechat-login'), 'login must not call the old account endpoint');
 assert.ok(!loginPage.includes('type="number"') && !loginPage.includes('normalizeManualPhone'), 'login must not collect a manually typed phone number');
-assert.ok(loginPage.includes("'/pages/index/index'"), 'all new cloud identities enter the role-aware home');
+assert.ok(loginPage.includes("'/pages/schedule/index'"), 'new cloud identities must enter the cloud-backed schedule surface instead of the legacy home');
+assert.ok(!loginPage.includes("'/pages/index/index'"), 'new cloud login must not route into the legacy API-backed home');
 assert.ok(loginPage.includes('CLOUD_MINIAPP_ACCOUNT_PENDING'), 'new accounts must receive a clear pending-authorization result');
 assert.ok(!loginPage.includes('WECHAT_BINDING_REVIEW_REQUIRED') && !loginPage.includes('pendingBinding'), 'old manual-review identity state must not be a new login path');
 assert.ok(!loginPage.includes('authApi.reviewDemo'), 'legacy review-code login must be absent');
