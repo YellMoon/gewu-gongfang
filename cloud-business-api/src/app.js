@@ -152,10 +152,10 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!miniappCloudAccount) return businessUnavailable(response);
     const token = sessionToken(request);
     const accountId = String(request.params.accountId || '').trim();
-    const body = exactBody(request.body, ['role']);
-    if (!token || !accountId || accountId.length > 512 || !body || typeof body.role !== 'string') return response.status(400).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_INVALID' });
+    const body = exactBody(request.body, ['role', 'profileId']);
+    if (!token || !accountId || accountId.length > 512 || !body || typeof body.role !== 'string' || typeof body.profileId !== 'string') return response.status(400).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_INVALID' });
     try {
-      const account = await miniappCloudAccount.assignRole({ token, accountId, role: body.role });
+      const account = await miniappCloudAccount.assignRole({ token, accountId, role: body.role, profileId: body.profileId });
       response.json({ ok: true, account });
     } catch (_) {
       response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });

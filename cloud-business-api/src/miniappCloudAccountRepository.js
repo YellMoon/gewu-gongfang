@@ -20,7 +20,13 @@ function exact(value, keys) {
 
 function accountRow(row) {
   if (!row || typeof row.accountId !== 'string' || !row.accountId || !['active', 'disabled'].includes(row.status) || !Array.isArray(row.roles)) throw invalid();
-  return { accountId: row.accountId, status: row.status, roles: row.roles.slice() };
+  const ordinary = row.roles.filter(role => role === 'teacher' || role === 'student');
+  if (ordinary.length > 1 || (ordinary.length === 0 && (row.profileType !== null || row.profileId !== null))) throw invalid();
+  if (ordinary.length === 1) {
+    if (row.profileType !== ordinary[0] || typeof row.profileId !== 'string' || !row.profileId) throw invalid();
+    return { accountId: row.accountId, status: row.status, roles: row.roles.slice(), profile: { type: row.profileType, id: row.profileId } };
+  }
+  return { accountId: row.accountId, status: row.status, roles: row.roles.slice(), profile: null };
 }
 
 function grantRole(value) {
@@ -45,7 +51,9 @@ function createMiniappCloudAccountRepository({ query }) {
            ON CONFLICT (account_id,role) DO NOTHING
          )
          SELECT s.account_id AS "accountId",s.status AS "status",
-           COALESCE(array_agg(g.role ORDER BY g.role) FILTER (WHERE g.status='active'), ARRAY[]::text[]) AS "roles"
+           COALESCE(array_agg(g.role ORDER BY g.role) FILTER (WHERE g.status='active'), ARRAY[]::text[]) AS "roles",
+           MAX(g.profile_type) FILTER (WHERE g.status='active') AS "profileType",
+           MAX(g.profile_id) FILTER (WHERE g.status='active') AS "profileId"
          FROM selected s
          LEFT JOIN business.miniapp_cloud_role_grants g ON g.account_id=s.account_id
          GROUP BY s.account_id,s.status`,
@@ -58,7 +66,9 @@ function createMiniappCloudAccountRepository({ query }) {
       if (typeof request.accountId !== 'string' || !request.accountId) throw invalid();
       const result = await query(
         `SELECT a.account_id AS "accountId",a.status AS "status",
-           COALESCE(array_agg(g.role ORDER BY g.role) FILTER (WHERE g.status='active'), ARRAY[]::text[]) AS "roles"
+           COALESCE(array_agg(g.role ORDER BY g.role) FILTER (WHERE g.status='active'), ARRAY[]::text[]) AS "roles",
+           MAX(g.profile_type) FILTER (WHERE g.status='active') AS "profileType",
+           MAX(g.profile_id) FILTER (WHERE g.status='active') AS "profileId"
          FROM business.miniapp_cloud_accounts a
          LEFT JOIN business.miniapp_cloud_role_grants g ON g.account_id=a.account_id
          WHERE a.account_id=$1
@@ -83,19 +93,24 @@ function createMiniappCloudAccountRepository({ query }) {
       return result.rows.map(row => Object.freeze({ accountId: row.accountId, status: 'pending_authorization', createdAt: row.createdAt.toISOString() }));
     },
     async assignRole(input) {
-      const request = exact(input, ['accountId', 'role']);
+      const request = exact(input, ['accountId', 'role', 'profileId']);
       const role = grantRole(request.role);
-      if (typeof request.accountId !== 'string' || !request.accountId || !role) throw invalid();
+      if (typeof request.accountId !== 'string' || !request.accountId || typeof request.profileId !== 'string' || !request.profileId || !role) throw invalid();
       const result = await query(
         `WITH target AS (
            SELECT a.account_id,a.status
            FROM business.miniapp_cloud_accounts a
            WHERE a.account_id=$1
            FOR UPDATE
+         ), profile AS (
+           SELECT id FROM business.teachers WHERE $2='teacher' AND id=$3 AND legacy_deleted=false
+           UNION ALL
+           SELECT id FROM business.students WHERE $2='student' AND id=$3 AND legacy_deleted=false
          ), compatible AS (
            SELECT t.account_id
            FROM target t
            WHERE t.status='active'
+             AND EXISTS (SELECT 1 FROM profile)
              AND NOT EXISTS (
                SELECT 1 FROM business.miniapp_cloud_role_grants g
                WHERE g.account_id=t.account_id AND g.status='active' AND g.role<>$2
@@ -107,18 +122,20 @@ function createMiniappCloudAccountRepository({ query }) {
            WHERE a.account_id=c.account_id
            RETURNING a.account_id,a.status
          ), granted AS (
-           INSERT INTO business.miniapp_cloud_role_grants (account_id,role,status)
-           SELECT account_id,$2,'active' FROM activated
-           ON CONFLICT (account_id,role) DO UPDATE SET status='active'
+           INSERT INTO business.miniapp_cloud_role_grants (account_id,role,status,profile_type,profile_id)
+           SELECT account_id,$2,'active',$2,$3 FROM activated
+           ON CONFLICT (account_id,role) DO UPDATE SET status='active',profile_type=EXCLUDED.profile_type,profile_id=EXCLUDED.profile_id,updated_at=transaction_timestamp()
            RETURNING account_id
          )
          SELECT a.account_id AS "accountId",a.status AS "status",
-           COALESCE(array_agg(g.role ORDER BY g.role) FILTER (WHERE g.status='active'), ARRAY[]::text[]) AS "roles"
+           COALESCE(array_agg(g.role ORDER BY g.role) FILTER (WHERE g.status='active'), ARRAY[]::text[]) AS "roles",
+           MAX(g.profile_type) FILTER (WHERE g.status='active') AS "profileType",
+           MAX(g.profile_id) FILTER (WHERE g.status='active') AS "profileId"
          FROM business.miniapp_cloud_accounts a
          JOIN granted r ON r.account_id=a.account_id
          LEFT JOIN business.miniapp_cloud_role_grants g ON g.account_id=a.account_id
          GROUP BY a.account_id,a.status`,
-        [request.accountId, role],
+        [request.accountId, role, request.profileId],
       );
       return result.rows[0] ? accountRow(result.rows[0]) : null;
     },

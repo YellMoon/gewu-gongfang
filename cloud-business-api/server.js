@@ -94,6 +94,9 @@ function createDesktopRegistrationFromEnvironment() {
   }
   const identityPool = new Pool({ ...databaseConfig, user: 'vnext_pg17_identity_verifier', password: process.env.IDENTITY_VERIFIER_POSTGRES_PASSWORD });
   const writerPool = new Pool({ ...databaseConfig, user: 'vnext_pg17_writer', password: process.env.COMMAND_WRITER_POSTGRES_PASSWORD });
+  const accountRepository = createMiniappCloudAccountRepository({
+    query: (text, values) => pool.query(text, values),
+  });
   const randomId = prefix => `${prefix}-${require('crypto').randomUUID()}`;
   const canonicalAccount = createCanonicalAccountProvisioning({
     records, identityPool, randomId,
@@ -161,7 +164,19 @@ function createDesktopRegistrationFromEnvironment() {
       );
       const row = result.rows[0];
       if (!row || !(row.expiresAt instanceof Date)) return null;
-      return { ...row, expiresAt: row.expiresAt.toISOString() };
+      const account = await accountRepository.readContext({ accountId: input.accountId });
+      if (!account || account.status !== 'active') return null;
+      return {
+        authorityId: row.authorityId,
+        accountId: row.accountId,
+        deviceId: row.deviceId,
+        installationId: row.installationId,
+        sessionId: row.sessionId,
+        expiresAt: row.expiresAt.toISOString(),
+        roles: account.roles,
+        teacherId: account.profile?.type === 'teacher' ? account.profile.id : null,
+        studentId: account.profile?.type === 'student' ? account.profile.id : null,
+      };
     },
   });
   const businessScheduleUpdate = createBusinessScheduleUpdate({
@@ -173,6 +188,7 @@ function createDesktopRegistrationFromEnvironment() {
   return {
     registration,
     canonicalAccount,
+    accountRepository,
     bootstrapAdminAccountId,
     businessScheduleUpdate,
     businessScheduleStudentOverride,
@@ -192,9 +208,7 @@ function createMiniappCloudAccountFromEnvironment(desktopRuntime) {
     verificationEvidenceHash: code => verificationEvidenceHash(process.env.CLOUD_MINIAPP_TICKET_SECRET, 'wechat-miniapp-phone-code', code),
     bootstrapAdminAccountId: desktopRuntime.bootstrapAdminAccountId,
     canonicalAccount: desktopRuntime.canonicalAccount,
-    accountRepository: createMiniappCloudAccountRepository({
-      query: (text, values) => pool.query(text, values),
-    }),
+    accountRepository: desktopRuntime.accountRepository,
     ticketSecret: process.env.CLOUD_MINIAPP_TICKET_SECRET,
   });
 }

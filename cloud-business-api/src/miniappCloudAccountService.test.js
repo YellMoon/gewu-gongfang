@@ -9,14 +9,14 @@ const repository = {
   async resolveOrCreate({ accountId, phoneHmac, bootstrapAdmin }) {
     let account = records.get(accountId);
     if (!account) {
-      account = { accountId, status: 'active', roles: bootstrapAdmin ? ['super_admin'] : [] };
+      account = { accountId, status: 'active', roles: bootstrapAdmin ? ['super_admin'] : [], profile: null };
       records.set(accountId, account);
     }
-    return { ...account, roles: account.roles.slice() };
+    return { ...account, roles: account.roles.slice(), profile: account.profile };
   },
   async readContext({ accountId }) {
     for (const account of records.values()) {
-      if (account.accountId === accountId) return { ...account, roles: account.roles.slice() };
+      if (account.accountId === accountId) return { ...account, roles: account.roles.slice(), profile: account.profile };
     }
     return null;
   },
@@ -25,11 +25,12 @@ const repository = {
       .filter(account => account.roles.length === 0)
       .map(account => ({ accountId: account.accountId, status: 'pending_authorization', createdAt: '2026-08-22T08:00:00.000Z' }));
   },
-  async assignRole({ accountId, role }) {
+  async assignRole({ accountId, role, profileId }) {
     for (const account of records.values()) {
       if (account.accountId !== accountId || (account.roles.length > 0 && !account.roles.includes(role))) continue;
       account.roles = [role];
-      return { ...account, roles: account.roles.slice() };
+      account.profile = role === 'teacher' || role === 'student' ? { type: role, id: profileId } : null;
+      return { ...account, roles: account.roles.slice(), profile: account.profile };
     }
     return null;
   },
@@ -75,12 +76,12 @@ const service = createMiniappCloudAccountService({
   );
   await assert.rejects(() => service.pendingAccounts({ token: ordinary.token }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');
   assert.deepStrictEqual(
-    await service.assignRole({ token: admin.token, accountId: ordinary.identity.accountId, role: 'teacher' }),
-    { accountId: ordinary.identity.accountId, status: 'active', roles: ['teacher'] },
-    'the bootstrap super administrator can activate a pending account with one ordinary business role',
+    await service.assignRole({ token: admin.token, accountId: ordinary.identity.accountId, role: 'teacher', profileId: 'teacher-1' }),
+    { accountId: ordinary.identity.accountId, status: 'active', roles: ['teacher'], profile: { type: 'teacher', id: 'teacher-1' } },
+    'the bootstrap super administrator must bind an ordinary role to one migrated business profile',
   );
   assert.deepStrictEqual(await service.pendingAccounts({ token: admin.token }), []);
-  await assert.rejects(() => service.assignRole({ token: admin.token, accountId: ordinary.identity.accountId, role: 'super_admin' }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');
+  await assert.rejects(() => service.assignRole({ token: admin.token, accountId: ordinary.identity.accountId, role: 'super_admin', profileId: 'admin-1' }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');
 
   await assert.rejects(() => service.context({ token: 'legacy.jwt.token' }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');
   await assert.rejects(() => service.login({ phoneCode: 'invalid-proof' }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');

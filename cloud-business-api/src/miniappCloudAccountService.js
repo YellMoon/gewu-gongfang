@@ -55,14 +55,21 @@ function inspect(secret, token, now) {
 }
 
 function identity(value) {
-  const copy = exact(value, ['accountId', 'status', 'roles']);
+  const copy = exact(value, ['accountId', 'status', 'roles', 'profile']);
   if (!text(copy.accountId) || !['active', 'disabled'].includes(copy.status) || !Array.isArray(copy.roles) || copy.roles.some(role => !['super_admin', 'admin', 'teacher', 'student'].includes(role)) || new Set(copy.roles).size !== copy.roles.length) throw rejected();
-  return Object.freeze({ accountId: copy.accountId, status: copy.status, roles: Object.freeze(copy.roles.slice()) });
+  const ordinaryRoles = copy.roles.filter(role => role === 'teacher' || role === 'student');
+  if (ordinaryRoles.length > 1 || (ordinaryRoles.length === 0 && copy.profile !== null)) throw rejected();
+  if (ordinaryRoles.length === 1) {
+    const profile = exact(copy.profile, ['type', 'id']);
+    if (profile.type !== ordinaryRoles[0] || !text(profile.id)) throw rejected();
+    return Object.freeze({ accountId: copy.accountId, status: copy.status, roles: Object.freeze(copy.roles.slice()), profile: Object.freeze(profile) });
+  }
+  return Object.freeze({ accountId: copy.accountId, status: copy.status, roles: Object.freeze(copy.roles.slice()), profile: null });
 }
 
 function publicIdentity(context) {
   if (context.status === 'disabled') throw rejected();
-  return Object.freeze({ accountId: context.accountId, status: context.roles.length === 0 ? 'pending_authorization' : 'active', roles: context.roles });
+  return Object.freeze({ accountId: context.accountId, status: context.roles.length === 0 ? 'pending_authorization' : 'active', roles: context.roles, profile: context.profile });
 }
 
 function role(value) {
@@ -153,13 +160,13 @@ function createMiniappCloudAccountService(config) {
       }));
     },
     async assignRole(input) {
-      const request = exact(input, ['token', 'accountId', 'role']);
+      const request = exact(input, ['token', 'accountId', 'role', 'profileId']);
       const actor = await currentContext(request.token);
       const assignedRole = role(request.role);
-      if (!actor.roles.includes('super_admin') || !text(request.accountId) || !assignedRole) throw rejected();
+      if (!actor.roles.includes('super_admin') || !text(request.accountId) || !assignedRole || !text(request.profileId)) throw rejected();
       let assigned;
       try {
-        assigned = await settings.accountRepository.assignRole({ accountId: request.accountId, role: assignedRole });
+        assigned = await settings.accountRepository.assignRole({ accountId: request.accountId, role: assignedRole, profileId: request.profileId });
       } catch (_) {
         throw rejected();
       }
