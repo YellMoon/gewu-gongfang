@@ -24,6 +24,17 @@ function validTask(task) {
     && typeof task.leaseExpiresAt === 'string' && Number.isFinite(Date.parse(task.leaseExpiresAt));
 }
 
+function relayBytes(value) {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]+$/.test(value) || value.length > (90 * 1024 * 1024)) {
+    throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+  }
+  const bytes = Buffer.from(value, 'base64url');
+  if (!bytes.length || bytes.length > (64 * 1024 * 1024) || bytes.toString('base64url') !== value) {
+    throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+  }
+  return bytes;
+}
+
 function createStorageCloudClient({ cloudBaseUrl, agentId, token, fetch: fetchImpl = globalThis.fetch } = {}) {
   if (typeof cloudBaseUrl !== 'string' || !/^https:\/\/[A-Za-z0-9.-]+(?:\/[^?#]*)?$/u.test(cloudBaseUrl)
     || typeof agentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(agentId)
@@ -52,6 +63,16 @@ function createStorageCloudClient({ cloudBaseUrl, agentId, token, fetch: fetchIm
       const response = exact(await post('/api/storage-agent/lease', { agentId }), ['ok', 'task']);
       if (response.ok !== true || (response.task !== null && !validTask(response.task))) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
       return response.task;
+    },
+    async download(task) {
+      if (!validTask(task)) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+      const response = exact(await post(`/api/storage-agent/tasks/${encodeURIComponent(task.taskId)}/download`, {
+        agentId, leaseToken: task.leaseToken,
+      }), ['ok', 'relay']);
+      const relay = exact(response.relay, ['envelope', 'ciphertextBase64']);
+      if (response.ok !== true || !relay.envelope || typeof relay.envelope !== 'object' || Array.isArray(relay.envelope)
+        || Object.getPrototypeOf(relay.envelope) !== Object.prototype) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+      return { envelope: relay.envelope, ciphertext: relayBytes(relay.ciphertextBase64) };
     },
     async complete(input) {
       const request = exact(input, ['taskId', 'leaseToken', 'observedSha256', 'observedBytes']);

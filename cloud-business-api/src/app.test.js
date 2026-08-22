@@ -344,12 +344,42 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(miniappCannotSubmitQuestionCommand.status, 403);
   assert.deepStrictEqual(miniappCannotSubmitQuestionCommand.body, { ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
 
+  const encryptedRelayCalls = [];
+  const encryptedRelayApp = createCloudBusinessApp({
+    query: async () => ({ rows: [] }), desktopRegistration: identity, businessTenantId: 'default',
+    storageAgentKeyFingerprint: 'e'.repeat(64),
+    encryptedStorageRelay: {
+      async create(input) {
+        encryptedRelayCalls.push(input);
+        return { taskId: input.taskId, assetId: input.assetId, expiresAt: input.expiresAt };
+      },
+    },
+  });
+  const encryptedRelayCreated = await request(encryptedRelayApp, '/api/desktop/question-bank/assets/relay', {
+    method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' }, body: {
+      questionId: 'question-1', assetId: 'asset_1', taskId: 'task_12345678', objectId: 'obj_1', objectVersion: 1,
+      assetType: 'image', fileName: 'diagram.png', mimeType: 'image/png', agentKeyFingerprint: 'e'.repeat(64),
+      envelope: { version: 'x25519-aes-256-gcm-v1' }, ciphertextBase64: Buffer.from('ciphertext').toString('base64url'),
+      expiresAt: '2026-08-23T01:05:00.000Z',
+    },
+  });
+  assert.strictEqual(encryptedRelayCreated.status, 200);
+  assert.deepStrictEqual(encryptedRelayCreated.body, { ok: true, relay: { taskId: 'task_12345678', assetId: 'asset_1', expiresAt: '2026-08-23T01:05:00.000Z' } });
+  assert.strictEqual(encryptedRelayCalls.length, 1);
+  assert.strictEqual(encryptedRelayCalls[0].actorAccountId, 'account-1');
+  assert.deepStrictEqual(encryptedRelayCalls[0].ciphertext, Buffer.from('ciphertext'));
+
   const storageCalls = [];
   const storageAgent = {
     lease: async input => {
       storageCalls.push(['lease', input]);
       if (input.token !== 'storage-agent-test-token') throw Object.assign(new Error('rejected'), { code: 'STORAGE_AGENT_REJECTED' });
       return { taskId: 'task_12345678', objectId: 'obj_1', objectVersion: 1, expectedSha256: 'a'.repeat(64), expectedBytes: 3, mediaType: 'image/png', leaseToken: 'lease-token-test-value', leaseExpiresAt: '2026-08-22T00:05:00.000Z' };
+    },
+    download: async input => {
+      storageCalls.push(['download', input]);
+      if (input.token !== 'storage-agent-test-token') throw Object.assign(new Error('rejected'), { code: 'STORAGE_AGENT_REJECTED' });
+      return { envelope: { version: 'x25519-aes-256-gcm-v1' }, ciphertext: Buffer.from('relay-ciphertext') };
     },
     complete: async input => {
       storageCalls.push(['complete', input]);
@@ -363,6 +393,11 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   });
   assert.strictEqual(leasedStorageTask.status, 200);
   assert.deepStrictEqual(leasedStorageTask.body, { ok: true, task: { taskId: 'task_12345678', objectId: 'obj_1', objectVersion: 1, expectedSha256: 'a'.repeat(64), expectedBytes: 3, mediaType: 'image/png', leaseToken: 'lease-token-test-value', leaseExpiresAt: '2026-08-22T00:05:00.000Z' } });
+  const downloadedStorageRelay = await request(storageApp, '/api/storage-agent/tasks/task_12345678/download', {
+    method: 'POST', headers: { 'x-gewu-storage-agent-token': 'storage-agent-test-token' }, body: { agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value' },
+  });
+  assert.strictEqual(downloadedStorageRelay.status, 200);
+  assert.deepStrictEqual(downloadedStorageRelay.body, { ok: true, relay: { envelope: { version: 'x25519-aes-256-gcm-v1' }, ciphertextBase64: Buffer.from('relay-ciphertext').toString('base64url') } });
   const completedStorageTask = await request(storageApp, '/api/storage-agent/tasks/task_12345678/complete', {
     method: 'POST', headers: { 'x-gewu-storage-agent-token': 'storage-agent-test-token' },
     body: { agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3 },
@@ -376,6 +411,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.deepStrictEqual(rejectedStorageTask.body, { ok: false, code: 'CLOUD_STORAGE_AGENT_REJECTED' });
   assert.deepStrictEqual(storageCalls, [
     ['lease', { agentId: 'storage-agent-1', token: 'storage-agent-test-token' }],
+    ['download', { agentId: 'storage-agent-1', token: 'storage-agent-test-token', taskId: 'task_12345678', leaseToken: 'lease-token-test-value' }],
     ['complete', { agentId: 'storage-agent-1', token: 'storage-agent-test-token', taskId: 'task_12345678', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3 }],
     ['lease', { agentId: 'storage-agent-1', token: 'wrong-token' }],
   ]);

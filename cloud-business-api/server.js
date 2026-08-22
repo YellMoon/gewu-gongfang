@@ -16,6 +16,7 @@ const { createDesktopPasswordIdentityService } = require('./src/desktopPasswordI
 const { createDesktopPasswordAuthenticationService } = require('./src/desktopPasswordAuthenticationService');
 const { createStorageAgentRuntimeFromEnvironment } = require('./src/storageAgentRuntime');
 const { createQuestionAuthorityRuntime } = require('./src/questionAuthorityRuntime');
+const { createEncryptedStorageRelayRepository } = require('./src/encryptedStorageRelayRepository');
 const { resolveBootstrapAdminAccountId } = require('./src/bootstrapAdminIdentity');
 const { version } = require('./package.json');
 
@@ -287,6 +288,16 @@ const storageAgent = createStorageAgentRuntimeFromEnvironment({
 const questionAuthority = createQuestionAuthorityRuntime({
   query: (text, values) => pool.query(text, values),
 });
+function configuredStorageAgentKeyFingerprint(value) {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]+$/.test(value) || value.length > 4096) return null;
+  const bytes = Buffer.from(value, 'base64url');
+  if (!bytes.length || bytes.toString('base64url') !== value) return null;
+  return require('crypto').createHash('sha256').update(bytes).digest('hex');
+}
+const storageAgentKeyFingerprint = configuredStorageAgentKeyFingerprint(process.env.CLOUD_STORAGE_AGENT_PUBLIC_KEY);
+const encryptedStorageRelay = storageAgentKeyFingerprint
+  ? createEncryptedStorageRelayRepository({ query: (text, values) => pool.query(text, values) })
+  : null;
 const desktopPairing = desktopRuntime?.registration
   ? createDesktopPairingService({
     now: () => new Date(),
@@ -305,6 +316,8 @@ const app = createCloudBusinessApp({
   miniappCloudAccount,
   storageAgent,
   questionAuthority,
+  encryptedStorageRelay,
+  storageAgentKeyFingerprint,
   desktopPairing,
   businessTenantId: process.env.CLOUD_BUSINESS_TENANT_ID || 'default',
 });

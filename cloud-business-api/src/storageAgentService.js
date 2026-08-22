@@ -21,7 +21,7 @@ function sameToken(expected, actual) {
 }
 
 function createStorageAgentService({ repository, agentId, token } = {}) {
-  if (!repository || typeof repository.leaseNext !== 'function' || typeof repository.complete !== 'function'
+  if (!repository || typeof repository.leaseNext !== 'function' || typeof repository.downloadRelay !== 'function' || typeof repository.complete !== 'function'
     || typeof agentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(agentId)
     || typeof token !== 'string' || token.length < 24) throw rejected();
   function authenticate(input) {
@@ -32,6 +32,11 @@ function createStorageAgentService({ repository, agentId, token } = {}) {
     async lease(input) {
       authenticate(input);
       return repository.leaseNext({ agentId });
+    },
+    async download(input) {
+      const request = exact(input, ['agentId', 'token', 'taskId', 'leaseToken']);
+      if (request.agentId !== agentId || !sameToken(token, request.token)) throw rejected();
+      return repository.downloadRelay({ agentId, taskId: request.taskId, leaseToken: request.leaseToken });
     },
     async complete(input) {
       const request = exact(input, ['agentId', 'token', 'taskId', 'leaseToken', 'observedSha256', 'observedBytes']);

@@ -8,12 +8,22 @@ const { createStorageTaskRepository } = require('./storageTaskRepository');
 const HASH = 'a'.repeat(64);
 const LEASE_TOKEN = 'lease-token-test-value';
 const leaseHash = crypto.createHash('sha256').update(LEASE_TOKEN, 'utf8').digest('hex');
+const RELAY_BYTES = Buffer.from('relay');
+const RELAY_ENVELOPE = {
+  version: 'x25519-aes-256-gcm-v1', ephemeralPublicKey: Buffer.alloc(44, 1).toString('base64url'),
+  keyDerivationSalt: Buffer.alloc(16, 2).toString('base64url'), wrappedKeyNonce: Buffer.alloc(12, 3).toString('base64url'),
+  wrappedKeyCiphertext: Buffer.alloc(32, 4).toString('base64url'), wrappedKeyTag: Buffer.alloc(16, 5).toString('base64url'),
+  contentNonce: Buffer.alloc(12, 6).toString('base64url'), contentTag: Buffer.alloc(16, 7).toString('base64url'),
+  ciphertextSha256: crypto.createHash('sha256').update(RELAY_BYTES).digest('hex'), ciphertextBytes: RELAY_BYTES.length,
+  plaintextSha256: 'b'.repeat(64), plaintextBytes: 3,
+};
 
 async function main() {
   const calls = [];
   const repository = createStorageTaskRepository({
     query: async (text, values) => {
       calls.push({ text, values });
+      if (text.includes('relay.envelope_json')) return { rows: [{ envelope: RELAY_ENVELOPE, ciphertext: RELAY_BYTES }] };
       if (text.includes('storage_task_receipts')) {
         if (values.includes('b'.repeat(64))) return { rows: [] };
         return { rows: [{ taskId: 'task_12345678', state: 'verified', verifiedAt: new Date('2026-08-22T00:00:00.000Z') }] };
@@ -39,14 +49,21 @@ async function main() {
   assert.ok(calls[0].values.includes(leaseHash), 'only a SHA-256 lease hash may be stored');
   assert.ok(!calls[0].values.includes(LEASE_TOKEN), 'the raw lease token must never be sent to PostgreSQL');
 
+  const downloaded = await repository.downloadRelay({ agentId: 'storage-agent-1', taskId: 'task_12345678', leaseToken: LEASE_TOKEN });
+  assert.deepStrictEqual(downloaded, { envelope: RELAY_ENVELOPE, ciphertext: RELAY_BYTES });
+  assert.ok(calls[1].text.includes('business.encrypted_storage_relays'));
+  assert.ok(calls[1].values.includes(leaseHash));
+  assert.ok(!calls[1].values.includes(LEASE_TOKEN));
+
   const completed = await repository.complete({
     agentId: 'storage-agent-1', taskId: 'task_12345678', leaseToken: LEASE_TOKEN,
     observedSha256: HASH, observedBytes: 3,
   });
   assert.deepStrictEqual(completed, { taskId: 'task_12345678', state: 'verified', verifiedAt: '2026-08-22T00:00:00.000Z' });
-  assert.ok(calls[1].text.includes('storage_task_receipts'), 'completion must create an immutable cloud receipt');
-  assert.ok(calls[1].values.includes(leaseHash), 'completion must compare only the lease hash');
-  assert.ok(!calls[1].values.includes(LEASE_TOKEN), 'completion must not persist the raw lease token');
+  assert.ok(calls[2].text.includes('storage_task_receipts'), 'completion must create an immutable cloud receipt');
+  assert.ok(calls[2].text.includes('DELETE FROM business.encrypted_storage_relays'), 'completion must erase relay bytes before returning a verified receipt');
+  assert.ok(calls[2].values.includes(leaseHash), 'completion must compare only the lease hash');
+  assert.ok(!calls[2].values.includes(LEASE_TOKEN), 'completion must not persist the raw lease token');
 
   await assert.rejects(
     () => repository.complete({ agentId: 'storage-agent-1', taskId: 'task_12345678', leaseToken: LEASE_TOKEN, observedSha256: 'b'.repeat(64), observedBytes: 3 }),

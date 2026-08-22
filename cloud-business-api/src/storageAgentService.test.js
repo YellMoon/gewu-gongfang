@@ -11,9 +11,14 @@ async function main() {
     token: 'storage-agent-test-token-with-sufficient-length',
     repository: {
       leaseNext: async input => { calls.push(['lease', input]); return { taskId: 'task_12345678' }; },
+      downloadRelay: async input => { calls.push(['download', input]); return { envelope: { version: 'x25519-aes-256-gcm-v1' }, ciphertext: Buffer.from('relay') }; },
       complete: async input => { calls.push(['complete', input]); return { taskId: input.taskId, state: 'verified' }; },
     },
   });
+  assert.deepStrictEqual(
+    await service.download({ agentId: 'storage-agent-1', token: 'storage-agent-test-token-with-sufficient-length', taskId: 'task_12345678', leaseToken: 'lease-token-test-value' }),
+    { envelope: { version: 'x25519-aes-256-gcm-v1' }, ciphertext: Buffer.from('relay') },
+  );
   assert.deepStrictEqual(
     await service.lease({ agentId: 'storage-agent-1', token: 'storage-agent-test-token-with-sufficient-length' }),
     { taskId: 'task_12345678' },
@@ -23,6 +28,7 @@ async function main() {
     { taskId: 'task_12345678', state: 'verified' },
   );
   assert.deepStrictEqual(calls, [
+    ['download', { agentId: 'storage-agent-1', taskId: 'task_12345678', leaseToken: 'lease-token-test-value' }],
     ['lease', { agentId: 'storage-agent-1' }],
     ['complete', { agentId: 'storage-agent-1', taskId: 'task_12345678', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3 }],
   ]);

@@ -2,7 +2,7 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, storageAgent = null, questionAuthority = null, businessTenantId = null, releaseVersion = 'unknown' }) {
+function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, storageAgent = null, questionAuthority = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, businessTenantId = null, releaseVersion = 'unknown' }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
@@ -10,11 +10,14 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   if (desktopPasswordAuthentication && (typeof desktopPasswordAuthentication.enroll !== 'function' || typeof desktopPasswordAuthentication.verify !== 'function')) throw new TypeError('desktopPasswordAuthentication is invalid');
   if (miniappCloudAccount && (typeof miniappCloudAccount.login !== 'function' || typeof miniappCloudAccount.context !== 'function' || typeof miniappCloudAccount.pendingAccounts !== 'function' || typeof miniappCloudAccount.assignRole !== 'function')) throw new TypeError('miniappCloudAccount is invalid');
   if (desktopPairing && (typeof desktopPairing.start !== 'function' || typeof desktopPairing.confirm !== 'function' || typeof desktopPairing.read !== 'function')) throw new TypeError('desktopPairing is invalid');
-  if (storageAgent && (typeof storageAgent.lease !== 'function' || typeof storageAgent.complete !== 'function')) throw new TypeError('storageAgent is invalid');
+  if (storageAgent && (typeof storageAgent.lease !== 'function' || typeof storageAgent.download !== 'function' || typeof storageAgent.complete !== 'function')) throw new TypeError('storageAgent is invalid');
   if (questionAuthority && typeof questionAuthority.create !== 'function') throw new TypeError('questionAuthority is invalid');
+  if (encryptedStorageRelay && typeof encryptedStorageRelay.create !== 'function') throw new TypeError('encryptedStorageRelay is invalid');
+  if (storageAgentKeyFingerprint !== null && (typeof storageAgentKeyFingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(storageAgentKeyFingerprint))) throw new TypeError('storageAgentKeyFingerprint is invalid');
   if (businessTenantId !== null && (typeof businessTenantId !== 'string' || !businessTenantId.trim())) throw new TypeError('businessTenantId is invalid');
   const app = express();
   app.disable('x-powered-by');
+  app.use('/api/desktop/question-bank/assets/relay', express.json({ limit: '90mb' }));
   app.use(express.json({ limit: '1mb' }));
   app.get('/api/health', async (_request, response) => {
     try {
@@ -91,6 +94,12 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   function storageAgentToken(request) {
     const token = String(request.get('x-gewu-storage-agent-token') || '');
     return token && token.length <= 512 ? token : null;
+  }
+  function encryptedCiphertext(value) {
+    if (typeof value !== 'string' || !/^[A-Za-z0-9_-]+$/.test(value) || value.length > (90 * 1024 * 1024)) return null;
+    const bytes = Buffer.from(value, 'base64url');
+    if (!bytes.length || bytes.length > (64 * 1024 * 1024) || bytes.toString('base64url') !== value) return null;
+    return bytes;
   }
   async function businessContext(request) {
     const token = sessionToken(request);
@@ -195,6 +204,30 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     } catch (error) {
       if (error && (error.code === 'CLOUD_BUSINESS_ACCESS_DENIED' || error.code === 'CLOUD_QUESTION_ACCESS_DENIED')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       if (error && (error.code === 'CLOUD_QUESTION_INPUT_INVALID' || error.code === 'CLOUD_QUESTION_COMMAND_UNSUPPORTED')) return businessInputInvalid(response);
+      businessUnavailable(response);
+    }
+  });
+  app.post('/api/desktop/question-bank/assets/relay', async (request, response) => {
+    if (!encryptedStorageRelay || !storageAgentKeyFingerprint || businessTenantId === null) return businessUnavailable(response);
+    const body = exactBody(request.body, [
+      'questionId', 'assetId', 'taskId', 'objectId', 'objectVersion', 'assetType', 'fileName', 'mimeType',
+      'agentKeyFingerprint', 'envelope', 'ciphertextBase64', 'expiresAt',
+    ]);
+    const ciphertext = body ? encryptedCiphertext(body.ciphertextBase64) : null;
+    if (!body || !ciphertext || body.agentKeyFingerprint !== storageAgentKeyFingerprint) return businessInputInvalid(response);
+    try {
+      const actor = await desktopQuestionContext(request);
+      if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['super_admin', 'admin', 'teacher'].includes(role))) throw businessAccessDenied();
+      const relay = await encryptedStorageRelay.create({
+        tenantId: businessTenantId, actorAccountId: actor.accountId, questionId: body.questionId,
+        assetId: body.assetId, taskId: body.taskId, objectId: body.objectId, objectVersion: body.objectVersion,
+        assetType: body.assetType, fileName: body.fileName, mimeType: body.mimeType,
+        agentKeyFingerprint: body.agentKeyFingerprint, envelope: body.envelope, ciphertext, expiresAt: body.expiresAt,
+      });
+      response.json({ ok: true, relay });
+    } catch (error) {
+      if (error && (error.code === 'CLOUD_BUSINESS_ACCESS_DENIED' || error.code === 'CLOUD_QUESTION_ACCESS_DENIED')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (error && (error.code === 'ENCRYPTED_RELAY_INPUT_INVALID' || error.code === 'CLOUD_QUESTION_INPUT_INVALID')) return businessInputInvalid(response);
       businessUnavailable(response);
     }
   });
@@ -374,6 +407,22 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     try {
       const task = await storageAgent.lease({ agentId: body.agentId, token });
       response.json({ ok: true, task });
+    } catch (error) {
+      storageAgentFailure(response, error);
+    }
+  });
+  app.post('/api/storage-agent/tasks/:taskId/download', async (request, response) => {
+    if (!storageAgent) return response.status(503).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_UNAVAILABLE' });
+    const body = exactBody(request.body, ['agentId', 'leaseToken']);
+    const token = storageAgentToken(request);
+    if (!body || !token) return response.status(400).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_INPUT_INVALID' });
+    try {
+      const relay = await storageAgent.download({ ...body, token, taskId: String(request.params.taskId || '') });
+      if (!relay || typeof relay !== 'object' || !relay.envelope || !Buffer.isBuffer(relay.ciphertext)
+        || relay.ciphertext.length < 1 || relay.ciphertext.length > (64 * 1024 * 1024)) {
+        return response.status(503).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_UNAVAILABLE' });
+      }
+      response.json({ ok: true, relay: { envelope: relay.envelope, ciphertextBase64: relay.ciphertext.toString('base64url') } });
     } catch (error) {
       storageAgentFailure(response, error);
     }

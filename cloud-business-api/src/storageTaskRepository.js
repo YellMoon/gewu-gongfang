@@ -75,6 +75,28 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
       if (result.rows.length !== 1) throw failure('STORAGE_TASK_REPOSITORY_INVALID');
       return outputRow(result.rows[0], leaseToken);
     },
+    async downloadRelay(input) {
+      const request = exact(input, ['agentId', 'taskId', 'leaseToken']);
+      const currentAgentId = agentId(request.agentId);
+      const currentTaskId = taskId(request.taskId);
+      if (typeof request.leaseToken !== 'string' || request.leaseToken.length < 16) throw failure('STORAGE_TASK_INPUT_INVALID');
+      const result = await query(
+        `SELECT relay.envelope_json AS envelope,relay.ciphertext AS ciphertext
+           FROM business.storage_object_tasks task
+           JOIN business.encrypted_storage_relays relay ON relay.task_id=task.task_id
+          WHERE task.task_id=$1 AND task.state='leased' AND task.lease_agent_id=$2 AND task.lease_token_sha256=$3
+            AND task.lease_expires_at > transaction_timestamp() AND relay.expires_at > transaction_timestamp()`,
+        [currentTaskId, currentAgentId, hash(request.leaseToken)],
+      );
+      if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('STORAGE_TASK_RELAY_UNAVAILABLE');
+      const row = result.rows[0];
+      if (!row || typeof row !== 'object' || Array.isArray(row) || types.isProxy(row)
+        || !row.envelope || typeof row.envelope !== 'object' || Array.isArray(row.envelope)
+        || !Buffer.isBuffer(row.ciphertext) || row.ciphertext.length < 1 || row.ciphertext.length > (64 * 1024 * 1024)) {
+        throw failure('STORAGE_TASK_RELAY_UNAVAILABLE');
+      }
+      return { envelope: row.envelope, ciphertext: Buffer.from(row.ciphertext) };
+    },
     async complete(input) {
       const request = exact(input, ['agentId', 'taskId', 'leaseToken', 'observedSha256', 'observedBytes']);
       const currentAgentId = agentId(request.agentId);
@@ -93,6 +115,10 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
            INSERT INTO business.storage_task_receipts (receipt_id,task_id,agent_id,observed_sha256,observed_bytes)
            SELECT $6,task_id,$2,$4,$5 FROM completed
            RETURNING task_id AS "taskId",verified_at AS "verifiedAt"
+         ), deleted_relay AS (
+           DELETE FROM business.encrypted_storage_relays relay
+            USING completed
+            WHERE relay.task_id=completed.task_id
          ) SELECT "taskId",'verified'::text AS state,"verifiedAt" FROM receipt`,
         [currentTaskId, currentAgentId, hash(request.leaseToken), request.observedSha256, request.observedBytes, receiptId],
       );

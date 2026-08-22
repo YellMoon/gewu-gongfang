@@ -18,19 +18,30 @@ async function main() {
         }
         return { ok: true, status: 200, json: async () => ({ ok: true, task: { taskId: 'task_12345678', objectId: 'obj_1', objectVersion: 1, expectedSha256: 'a'.repeat(64), expectedBytes: 3, mediaType: 'image/png', leaseToken: 'lease-token-test-value', leaseExpiresAt: '2026-08-22T00:05:00.000Z' } }) };
       }
+      if (url.endsWith('/api/storage-agent/tasks/task_12345678/download')) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, relay: {
+          envelope: { version: 'x25519-aes-256-gcm-v1' }, ciphertextBase64: Buffer.from('relay-ciphertext').toString('base64url'),
+        } }) };
+      }
       return { ok: true, status: 200, json: async () => ({ ok: true, receipt: { taskId: 'task_12345678', state: 'verified', verifiedAt: '2026-08-22T00:00:00.000Z' } }) };
     },
   });
   const task = await client.lease();
   assert.strictEqual(task.taskId, 'task_12345678');
+  const relay = await client.download(task);
+  assert.deepStrictEqual(relay, {
+    envelope: { version: 'x25519-aes-256-gcm-v1' }, ciphertext: Buffer.from('relay-ciphertext'),
+  });
   const receipt = await client.complete({ taskId: task.taskId, leaseToken: task.leaseToken, observedSha256: task.expectedSha256, observedBytes: task.expectedBytes });
   assert.deepStrictEqual(receipt, { taskId: 'task_12345678', state: 'verified', verifiedAt: '2026-08-22T00:00:00.000Z' });
   assert.strictEqual(calls[0].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/lease');
   assert.strictEqual(calls[0].options.headers['x-gewu-storage-agent-token'], 'storage-agent-client-test-token-with-sufficient-length');
   assert.deepStrictEqual(JSON.parse(calls[0].options.body), { agentId: 'storage-agent-1' });
   assert.ok(!calls[0].options.body.includes('storage-agent-client-test-token-with-sufficient-length'));
-  assert.strictEqual(calls[1].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/tasks/task_12345678/complete');
-  assert.deepStrictEqual(JSON.parse(calls[1].options.body), { agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3 });
+  assert.strictEqual(calls[1].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/tasks/task_12345678/download');
+  assert.deepStrictEqual(JSON.parse(calls[1].options.body), { agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value' });
+  assert.strictEqual(calls[2].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/tasks/task_12345678/complete');
+  assert.deepStrictEqual(JSON.parse(calls[2].options.body), { agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3 });
   await assert.rejects(
     () => client.lease(),
     /STORAGE_CLOUD_RESPONSE_INVALID/,
