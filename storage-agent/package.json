@@ -3,6 +3,6 @@
   "private": true,
   "version": "8.0.6",
   "scripts": {
-    "test": "node src/config.test.js && node src/objectStore.test.js && node src/health.test.js && node src/cloudClient.test.js"
+    "test": "node src/config.test.js && node src/objectStore.test.js && node src/health.test.js && node src/cloudClient.test.js && node src/worker.test.js"
   }
 }

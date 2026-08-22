@@ -4,7 +4,7 @@
 
 **Goal:** Add a non-authoritative storage agent that stores rich-media bytes on the reachable NAS while the cloud remains the sole authority for task state and business data.
 
-**Architecture:** A Windows service on the machine that can reach the NAS polls the cloud for opaque storage tasks. Cloud tasks contain only object ID, immutable version, expected SHA-256, byte count, media type, and a temporary cloud download URL; they never contain a NAS path. The agent writes only a configured, allow-listed NAS root using a content-addressed path, verifies SHA-256, then reports a receipt to the cloud. Desktop and miniapp clients never receive NAS credentials or paths.
+**Architecture:** A Windows service on the machine that can reach the NAS polls the cloud for opaque storage tasks. Cloud tasks contain only object ID, immutable version, expected SHA-256, byte count and media type; they never contain a NAS path or bytes. This plan establishes the NAS boundary, cloud-owned task ledger and authenticated task client only. A later, separately specified source-transfer protocol must provide bytes before a worker may write or submit a receipt; until then a non-empty lease stops safely without a write or receipt. Desktop and miniapp clients never receive NAS credentials or paths.
 
 **Tech Stack:** Node.js 24, PostgreSQL 17, existing cloud-business-api HTTP service, Windows Task Scheduler, NAS SMB share.
 
@@ -144,45 +144,42 @@ git add cloud-business-api
 git commit -m "feat: add cloud-owned storage task ledger"
 ```
 
-### Task 4: Agent polling, receipt verification, and Windows service wrapper
+### Task 4: Safe polling foundation without a media source
 
 **Files:**
 - Create: `storage-agent/src/cloudClient.js`
 - Create: `storage-agent/src/worker.js`
 - Create: `storage-agent/src/worker.test.js`
-- Create: `scripts/install-storage-agent.ps1`
-- Create: `scripts/install-storage-agent.test.js`
 
-- [ ] **Step 1: Write the failing worker and installation tests**
+- [ ] **Step 1: Write the failing worker tests**
 
 ```js
-await worker.runOnce();
-assert.deepStrictEqual(events, ['lease', 'download', 'verify', 'receipt']);
-assert.ok(installScript.includes('schtasks.exe'));
-assert.ok(installScript.includes('NAS_STORAGE_ROOT'));
+assert.deepStrictEqual(await worker.runOnce(), { state: 'idle' });
+assert.deepStrictEqual(await worker.runOnce(), { state: 'blocked_missing_source', taskId: 'task_12345678' });
+assert.deepStrictEqual(events, ['lease', 'lease']);
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `node storage-agent/src/worker.test.js && node scripts/install-storage-agent.test.js`
+Run: `node storage-agent/src/worker.test.js`
 
-Expected: missing worker/service-wrapper failure.
+Expected: missing worker failure.
 
-- [ ] **Step 3: Implement the polling loop and service wrapper**
+- [ ] **Step 3: Implement the non-writing polling guard**
 
-The worker fetches one leased task, downloads to a local temporary directory, uses Task 2 for the NAS write, and submits exactly one hash-bound receipt. The PowerShell installer must create a single named scheduled task with an explicit `.env` file path, never print the token, and refuse to install when the NAS root is absent. It must not start any business or desktop host service.
+The worker fetches one leased task. A null lease returns `{ state: 'idle' }`. Any non-null task returns `{ state: 'blocked_missing_source', taskId }` and must not invoke the object store or completion route. No installation script is added in this plan: an installed poller is deferred until the separately specified source-transfer protocol exists. It must not start any business or desktop host service.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `node storage-agent/src/worker.test.js && node scripts/install-storage-agent.test.js`
+Run: `node storage-agent/src/worker.test.js && npm.cmd --prefix storage-agent test`
 
 Expected: both suites pass.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add storage-agent scripts/install-storage-agent.ps1 scripts/install-storage-agent.test.js
-git commit -m "feat: add controlled NAS storage agent worker"
+git add storage-agent/src/worker.js storage-agent/src/worker.test.js storage-agent/package.json
+git commit -m "feat: add safe storage agent polling guard"
 ```
 
 ### Task 5: Deployment, health evidence, and unified release receipt
