@@ -99,7 +99,7 @@ async function main() {
           user: { id: 'account-cloud-1' },
           deviceId: 'desktop-device-a1b2c3d4e5f60708',
           authorizationId: 'session-cloud-1', credentialVersion: 1,
-          activeRole: 'super_admin', eligibleRoles: ['super_admin'], offlineLease: null,
+          activeRole: 'teacher', eligibleRoles: ['teacher'], offlineLease: null,
         };
       },
     },
@@ -123,7 +123,7 @@ async function main() {
         return { ok: true, json: async () => ({ ok: true,
           authorityId: 'authority-cloud-1', accountId: 'account-cloud-1',
           deviceId: 'desktop-device-a1b2c3d4e5f60708', installationId: 'desktop-device-a1b2c3d4e5f60708',
-          sessionId: 'session-cloud-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'],
+          sessionId: 'session-cloud-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['teacher'],
         }) };
       }
       if (url === 'https://cloud.test/api/business/schedules') {
@@ -174,7 +174,9 @@ async function main() {
   });
   assert.strictEqual(unifiedCloudSealed.offlineLease, null, 'a new unified registration never manufactures an offline lease');
   assert.strictEqual(unifiedCloudSealed.authorization.userId, 'account-cloud-1');
-  assert.deepStrictEqual(unifiedCloudSealed.profile.eligibleRoles, ['super_admin']);
+  assert.deepStrictEqual(unifiedCloudSealed.profile.eligibleRoles, ['teacher']);
+  assert.strictEqual(unifiedCloudSealed.profile.activeRole, 'teacher',
+    'a verified teacher account must register silently without a super-admin role');
   assert.deepStrictEqual(unifiedCloudEvents, ['sign:unified-online-registration', 'seal-unified-cloud-vault', 'save-unified-cloud-session']);
   assert.strictEqual(unifiedCloudStored.token, 'session-token-cloud-1');
   assert.strictEqual(unifiedCompleted.gateState.kind, 'online-unlocked');

@@ -665,10 +665,11 @@ export function createDesktopIdentityClient({
       token: registered.sessionToken,
     });
     const eligibleRoles = uniqueRoles(context?.roles);
+    const activeRole = preferredActiveRole(eligibleRoles);
     if (!context?.authorityId || !context?.accountId || !context?.deviceId || !context?.installationId
       || context.sessionId !== registered.sessionId || context.deviceId !== pending.publicIdentity.deviceId
       || context.installationId !== pending.publicIdentity.deviceId || !context.expiresAt
-      || !eligibleRoles.includes('super_admin')) {
+      || !activeRole) {
       throw identityError('DESKTOP_UNIFIED_ONLINE_CONTEXT_INVALID');
     }
     const lastPhoneVerifiedAt = currentDate().toISOString();
@@ -689,7 +690,7 @@ export function createDesktopIdentityClient({
       userId: context.accountId,
       user: { id: context.accountId, name: 'Cloud account' },
       eligibleRoles,
-      activeRole: 'super_admin',
+      activeRole,
       teacherId: null,
       studentId: null,
     };
@@ -706,7 +707,7 @@ export function createDesktopIdentityClient({
         id: context.sessionId,
         userId: context.accountId,
         deviceId: context.deviceId,
-        activeRole: 'super_admin',
+        activeRole,
         eligibleRoles,
         expiresAt: context.expiresAt,
       },
