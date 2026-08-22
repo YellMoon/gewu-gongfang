@@ -1,52 +1,36 @@
-# 多联系方式学生身份与家长访问设计
+# Multi-contact student identity design
 
-## 决策
+## Decision
 
-一个学生资料可由最多三个独立、可审计的云端账号访问：学生本人和最多两位家长。三个账号共享同一个 `student_id` 的学生数据范围，但不共享账号、密码、会话、设备或审计记录。教师资料也采用独立账号加资料绑定的方式。
+One student profile may be reached by at most three separate canonical accounts: one student account and two guardian accounts. Each account has independent credentials, devices, sessions, receipts, audits, and offline leases. They share only the opaque student data scope.
 
-这是对现有“一个有效资料只能绑定一个有效账号”规则的有意替换；同一学生的三个访问者不是共用一个账号。
+The existing `business.miniapp_cloud_role_grants` relation is the sole student-access relation. It already binds canonical account IDs to student profiles. The additive student-access migration adds a relationship discriminator and database-enforced maximum; it does not create a parallel `vnext_profile_bindings` model.
 
-## 身份与联系方式
+## Identity rules
 
-每个 canonical account 可以拥有下列经过验证的登录身份：
+- Every account must record a verified phone before it becomes active.
+- The only contact identities that can authenticate or resolve an account are verified `phone`, official WeChat `wechat_openid`, and official WeChat `wechat_unionid`.
+- A manually typed WeChat ID is a restricted contact or invitation hint. It can never authenticate, create, resolve, or bind an account.
+- Contact identities are authority-wide unique and cannot silently move to another canonical account.
+- Desktop login name and password are optional per canonical account. A successful password check only returns a short-lived online registration ticket; the normal device-proof registration flow still creates the device/session/lease.
 
-- 手机号：通过受信任的微信手机号授权或后续获批的等价验证流程取得；
-- 微信身份：通过微信登录返回的 `openid` 或跨应用可用的 `unionid` 取得；
-- 桌面账号名与密码：账号名在 authority 内唯一，密码仅保存为受控的 scrypt 凭据。
+## Student access rules
 
-手机号、微信 `openid` 和微信 `unionid` 各自在 authority 内唯一，不能静默转移给另一账号。任一已验证身份从小程序或桌面端进入时，都解析到同一个 canonical account；桌面端密码登录成功后仍只取得短期在线登记票据，随后必须用设备私钥完成新设备静默登记。
+- A student profile has at most one active relationship of type `student` and at most two active relationships of type `guardian`.
+- A canonical account has at most one active role/profile grant, as enforced by the existing business role table.
+- A revoked guardian no longer counts toward the cap and has no student scope. It does not affect the student account or another guardian account.
+- A teacher may create a pending invitation/contact hint for a student. A separate actor-authorization slice must define which teacher may activate which student; no caller can self-select another account, student, role, or relationship.
 
-用户手工填写的“微信号”不能作为登录证明。教师可保存它为受限的联系/邀请提示，但只有该人后续完成微信官方身份验证后，才可以激活到某个 canonical account。原始联系提示不得进入日志、通用投影、审计、outbox 或导出。
+## Delivery boundary
 
-## 学生访问绑定
+The controlled M17-to-M18 control-plane upgrade is required before exposing desktop password routes. The additive business student-access SQL is applied after its backup and schema checks. Official WeChat identity binding needs its own cloud implementation: it must verify a WeChat login code server-side, bind the returned official identity to the already phone-verified canonical account, and reject conflicts atomically.
 
-新增受控的 student-access binding，字段至少包含 authority、student profile、canonical account、关系类型（`student` 或 `guardian`）、状态、创建/撤销时间和不可变审计标识。
+No raw phone number, OpenID, UnionID, password, token, key, or manually entered WeChat ID may appear in API responses, general logs, receipts, audit payloads, outbox payloads, or desktop vault state.
 
-- 每个有效 binding 只连接一个账号和一个学生；
-- 每个学生最多三个有效 binding；
-- 同一账号可关联的学生资料数由后续独立的监护/多子女规则决定，当前不假设或自动授予；
-- 登录后的学生数据查询按 binding 得到的 `student_id` 限定，客户端不能自报；
-- 撤销一个家长 binding 会立即失效该账号的学生范围、在线会话和离线租约，不影响学生本人或另一位家长。
+## Acceptance
 
-教师创建学生账号时，只能创建 pending invitation 或受限联系提示，不能仅凭手机号/微信号文本绑定、登录或提升权限。目标身份在小程序微信验证或桌面在线验证成功后，才可被原子地接受到指定的 student-access binding。
-
-## 数据库与迁移边界
-
-现有第 18 版密码凭据目录保持为单账号凭据机制；多联系方式和 student-access binding 进入后续独立迁移。该迁移必须：
-
-1. 替换 `vnext_profile_bindings` 对 student profile 的单一有效账号限制，同时保留每个账号每种资料的唯一有效绑定；
-2. 创建最多三条有效 student-access binding 的数据库级约束，而非仅前端校验；
-3. 通过仅身份验证角色可执行的 SECURITY DEFINER 命令添加、确认或撤销验证身份与学生访问绑定；
-4. 对手机号、微信身份、桌面密码、学生 binding、会话和离线租约的版本联动实施精确 catalog、ACL、回滚、并发和重放测试；
-5. 不读取旧数据盘、不导入题库或资产数据，也不把 NAS、富媒体或本地草稿作为账号权威。
-
-生产升级只允许由精确版本前缀和冻结 manifest 驱动。当前线上为第 17 版时，必须先经已测试的第 18 版升级，再进入这项后续迁移；不得手工拼接 SQL 或跳过 catalog 校验。
-
-## 验收
-
-- 学生、家长一、家长二以三种不同的已验证身份登录，均只看到同一学生范围；
-- 任一身份重复登录不会新建账号或 duplicate binding；
-- 未验证的手工微信号、已被占用的手机号/微信身份、第四个学生访问者、跨学生或跨 authority 绑定全部失败且无部分写入；
-- 新桌面设备必须在线完成该账号的登录证明和设备证明；
-- 离线仅允许已有未过期、未撤销租约创建待确认草稿，不能登录、不能直接提交；
-- 所有 API、桌面与小程序响应均不返回密码、原始手机号、原始微信标识、密钥或其他人的资料范围。
+- Student, guardian 1, and guardian 2 use independent verified accounts and each gets only the same student scope.
+- A fourth active relationship, second self relationship, cross-student/cross-authority assignment, unverified contact, or manual WeChat ID fails without a partial write.
+- Repeated login resolves the same canonical account and never creates a duplicate account or binding.
+- New desktop devices require online account verification and device proof. Offline operation is limited to an unexpired cloud-signed local lease creating an awaiting-confirmation draft.
+- Cloud, desktop, and miniapp responses never expose secret or raw identity material.
