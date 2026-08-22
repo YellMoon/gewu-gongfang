@@ -1,8 +1,8 @@
 const LABELS = {
   draft: '\u672c\u5730\u8349\u7a3f\uff08\u7f51\u7edc\u672a\u786e\u8ba4\uff09',
   queued: '\u5df2\u6392\u961f',
-  host_unavailable: '\u6570\u636e\u4e3b\u673a\u4e0d\u5728\u7ebf',
-  claimed: '\u6570\u636e\u4e3b\u673a\u5df2\u63a5\u5355',
+  cloud_unavailable: '\u4e91\u7aef\u4efb\u52a1\u670d\u52a1\u4e0d\u53ef\u7528',
+  claimed: '\u4e91\u7aef\u5df2\u63a5\u5355',
   snapshotting: '\u6b63\u5728\u56fa\u5316\u8bd5\u5377\u5feb\u7167',
   rendering: '\u6b63\u5728\u751f\u6210\u6587\u6863',
   validating: '\u6b63\u5728\u6821\u9a8c\u516c\u5f0f\u4e0e\u6392\u7248',
@@ -14,14 +14,13 @@ const LABELS = {
 };
 
 const COLORS = {
-  draft: 'default', queued: 'blue', host_unavailable: 'orange', claimed: 'cyan', snapshotting: 'geekblue',
+  draft: 'default', queued: 'blue', cloud_unavailable: 'orange', claimed: 'cyan', snapshotting: 'geekblue',
   rendering: 'processing', validating: 'purple', publishing: 'gold', completed: 'green', failed: 'red', cancelled: 'default', timed_out: 'volcano',
 };
 
 export function getPaperExportTaskPresentation(task = {}) {
   let key = String(task.phase || task.status || 'draft');
-  if (task.status === 'draft') key = task.errorCode === 'TARGET_HOST_REQUIRED' ? 'host_unavailable' : 'draft';
-  if (task.status === 'pending_host') key = 'queued';
+  if (task.status === 'draft') key = task.errorCode === 'CLOUD_TASK_UNAVAILABLE' ? 'cloud_unavailable' : 'draft';
   if (['completed', 'failed', 'cancelled', 'timed_out'].includes(task.status)) key = task.status;
   if (!LABELS[key]) key = task.status === 'processing' ? 'claimed' : 'queued';
   return { key, label: LABELS[key], color: COLORS[key], accepted: task.status !== 'draft' || task.accepted === true || Boolean(task.serverTaskId) };

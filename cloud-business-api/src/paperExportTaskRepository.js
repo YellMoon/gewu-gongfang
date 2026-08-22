@@ -95,6 +95,15 @@ const insertSql = [
   "VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8::jsonb,'queued','queued',0)",
   'RETURNING task_id AS "taskId",status,phase,progress,request_hash AS "requestHash",created_at AS "createdAt",updated_at AS "updatedAt"',
 ].join(' ');
+const taskSql = [
+  'SELECT task_id AS "taskId",status,phase,progress,request_hash AS "requestHash",created_at AS "createdAt",updated_at AS "updatedAt"',
+  'FROM business.paper_export_tasks WHERE tenant_id=$1 AND account_id=$2 AND task_id=$3',
+].join(' ');
+const cancelSql = [
+  "UPDATE business.paper_export_tasks SET status='cancelled',phase='cancelled',updated_at=transaction_timestamp()",
+  "WHERE tenant_id=$1 AND account_id=$2 AND task_id=$3 AND status='queued'",
+  'RETURNING task_id AS "taskId",status,phase,progress,request_hash AS "requestHash",created_at AS "createdAt",updated_at AS "updatedAt"',
+].join(' ');
 
 function createPaperExportTaskRepository({ query, randomId = () => crypto.randomUUID() } = {}) {
   if (typeof query !== 'function' || typeof randomId !== 'function') throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
@@ -128,6 +137,22 @@ function createPaperExportTaskRepository({ query, randomId = () => crypto.random
         input.taskType, stableJson(currentRequest), hash, stableJson(selected.rows)]);
       if (!inserted || !Array.isArray(inserted.rows) || inserted.rows.length !== 1) throw failure('CLOUD_PAPER_EXPORT_UNAVAILABLE');
       return taskRow(inserted.rows[0], false);
+    },
+    async read(input) {
+      if (!plainObject(input) || Reflect.ownKeys(input).length !== 3
+        || !['tenantId', 'actor', 'taskId'].every(key => Object.hasOwn(input, key))) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
+      const result = await query(taskSql, [text(input.tenantId, 128), actor(input.actor).accountId, text(input.taskId, 160)]);
+      if (!result || !Array.isArray(result.rows)) throw failure('CLOUD_PAPER_EXPORT_UNAVAILABLE');
+      if (result.rows.length !== 1) throw failure('CLOUD_PAPER_EXPORT_NOT_FOUND');
+      return taskRow(result.rows[0]);
+    },
+    async cancel(input) {
+      if (!plainObject(input) || Reflect.ownKeys(input).length !== 3
+        || !['tenantId', 'actor', 'taskId'].every(key => Object.hasOwn(input, key))) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
+      const result = await query(cancelSql, [text(input.tenantId, 128), actor(input.actor).accountId, text(input.taskId, 160)]);
+      if (!result || !Array.isArray(result.rows)) throw failure('CLOUD_PAPER_EXPORT_UNAVAILABLE');
+      if (result.rows.length !== 1) throw failure('CLOUD_PAPER_EXPORT_NOT_CANCELLABLE');
+      return taskRow(result.rows[0]);
     },
   });
 }

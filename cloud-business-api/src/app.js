@@ -12,7 +12,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   if (desktopPairing && (typeof desktopPairing.start !== 'function' || typeof desktopPairing.confirm !== 'function' || typeof desktopPairing.read !== 'function')) throw new TypeError('desktopPairing is invalid');
   if (storageAgent && (typeof storageAgent.lease !== 'function' || typeof storageAgent.download !== 'function' || typeof storageAgent.complete !== 'function')) throw new TypeError('storageAgent is invalid');
   if (questionAuthority && typeof questionAuthority.create !== 'function') throw new TypeError('questionAuthority is invalid');
-  if (paperExportTasks && typeof paperExportTasks.create !== 'function') throw new TypeError('paperExportTasks is invalid');
+  if (paperExportTasks && (typeof paperExportTasks.create !== 'function' || typeof paperExportTasks.read !== 'function' || typeof paperExportTasks.cancel !== 'function')) throw new TypeError('paperExportTasks is invalid');
   if (encryptedStorageRelay && typeof encryptedStorageRelay.create !== 'function') throw new TypeError('encryptedStorageRelay is invalid');
   if (storageAgentKeyFingerprint !== null && (typeof storageAgentKeyFingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(storageAgentKeyFingerprint))) throw new TypeError('storageAgentKeyFingerprint is invalid');
   if (storageAgentPublicKey !== null && (typeof storageAgentPublicKey !== 'string' || !/^[A-Za-z0-9_-]+$/.test(storageAgentPublicKey) || storageAgentPublicKey.length > 4096)) throw new TypeError('storageAgentPublicKey is invalid');
@@ -225,6 +225,28 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       if (error && ['CLOUD_PAPER_EXPORT_INPUT_INVALID', 'CLOUD_PAPER_EXPORT_SELECTION_INVALID', 'CLOUD_PAPER_EXPORT_CONFLICT'].includes(error.code)) {
         return response.status(400).json({ ok: false, code: error.code });
       }
+      businessUnavailable(response);
+    }
+  });
+  app.get('/api/desktop/paper-export-tasks/:taskId', async (request, response) => {
+    if (!paperExportTasks || businessTenantId === null) return businessUnavailable(response);
+    try {
+      const task = await paperExportTasks.read({ tenantId: businessTenantId, actor: await businessContext(request), taskId: request.params.taskId });
+      response.json({ ok: true, task });
+    } catch (error) {
+      if (error && error.code === 'CLOUD_PAPER_EXPORT_ACCESS_DENIED') return response.status(403).json({ ok: false, code: error.code });
+      if (error && error.code === 'CLOUD_PAPER_EXPORT_NOT_FOUND') return response.status(404).json({ ok: false, code: error.code });
+      businessUnavailable(response);
+    }
+  });
+  app.post('/api/desktop/paper-export-tasks/:taskId/cancel', async (request, response) => {
+    if (!paperExportTasks || businessTenantId === null || !exactBody(request.body, [])) return businessUnavailable(response);
+    try {
+      const task = await paperExportTasks.cancel({ tenantId: businessTenantId, actor: await businessContext(request), taskId: request.params.taskId });
+      response.json({ ok: true, task });
+    } catch (error) {
+      if (error && error.code === 'CLOUD_PAPER_EXPORT_ACCESS_DENIED') return response.status(403).json({ ok: false, code: error.code });
+      if (error && error.code === 'CLOUD_PAPER_EXPORT_NOT_CANCELLABLE') return response.status(409).json({ ok: false, code: error.code });
       businessUnavailable(response);
     }
   });

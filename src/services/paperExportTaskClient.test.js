@@ -28,19 +28,19 @@ function memoryStorage(seed = {}) {
     answerPosition: 'after-each', questionIds: ['q3', 'q1', 'q2'],
   };
   const config = {
-    cloudBaseUrl: 'https://cloud.example.com/api', deviceId: 'desktop-2',
+    cloudBaseUrl: 'https://cloud.example.com/api', cloudBusinessIdentityBaseUrl: 'https://cloud-business.example.com', deviceId: 'desktop-2',
   };
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
     calls.push({ url, init });
-    if (url.endsWith('/tasks') && init.method === 'POST') {
-      return { ok: true, status: 200, json: async () => ({ success: true, task: { id: 'task-1', status: 'pending_host', phase: 'queued', progress: 0, target_host_device_id: 'host-1' } }) };
+    if (url.endsWith('/paper-export-tasks') && init.method === 'POST') {
+      return { ok: true, status: 202, json: async () => ({ ok: true, task: { taskId: 'task-1', status: 'queued', phase: 'queued', progress: 0 } }) };
     }
-    if (url.endsWith('/tasks/task-1/result')) {
-      return { ok: true, status: 200, json: async () => ({ success: true, task: { id: 'task-1', status: 'processing', phase: 'rendering', progress: 55, target_host_device_id: 'host-1' } }) };
+    if (url.endsWith('/paper-export-tasks/task-1') && !init.method) {
+      return { ok: true, status: 200, json: async () => ({ ok: true, task: { taskId: 'task-1', status: 'processing', phase: 'rendering', progress: 55 } }) };
     }
-    if (url.endsWith('/tasks/task-1/cancel')) {
-      return { ok: true, status: 200, json: async () => ({ success: true, task: { id: 'task-1', status: 'cancelled', phase: 'cancelled', progress: 55, target_host_device_id: 'host-1' } }) };
+    if (url.endsWith('/paper-export-tasks/task-1/cancel')) {
+      return { ok: true, status: 200, json: async () => ({ ok: true, task: { taskId: 'task-1', status: 'cancelled', phase: 'cancelled', progress: 55 } }) };
     }
     throw new Error(`unexpected fetch ${url}`);
   };
@@ -50,13 +50,12 @@ function memoryStorage(seed = {}) {
   });
   assert.strictEqual(accepted.accepted, true);
   assert.deepStrictEqual(JSON.parse(calls[0].init.body), {
-    protocolVersion: 2, taskType: 'paper-export-pdf',
+    taskType: 'paper-export-pdf',
     payload: { questionIds: ['q3', 'q1', 'q2'], answerPosition: 'after-each', formulaMode: 'word-native', title: 'Midterm', subject: 'Physics' },
-  }, 'cloud submission must preserve editor order and all export choices while cloud selects the authoritative online host');
-  assert.strictEqual(calls[0].url, 'https://cloud.example.com/api/cloud/tasks');
+  }, 'cloud submission must preserve editor order and all export choices while cloud freezes the authoritative question snapshot');
+  assert.strictEqual(calls[0].url, 'https://cloud-business.example.com/api/desktop/paper-export-tasks');
   assert.strictEqual(calls[0].init.headers.Authorization, 'Bearer jwt-token');
   assert.strictEqual(calls[0].init.headers['x-idempotency-key'], 'idem-1');
-  assert.strictEqual(client.loadPaperExportTasks(taskStorage)[0].targetHostDeviceId, 'host-1');
   assert.strictEqual(client.loadPaperExportTasks(taskStorage)[0].serverTaskId, 'task-1', 'accepted tasks must survive a restart');
 
   const polled = await client.refreshPaperExportTask(config, accepted.task.localId, { fetchImpl, authStorage, taskStorage });
@@ -75,18 +74,18 @@ function memoryStorage(seed = {}) {
   const retryCalls = [];
   const retried = await client.retryPaperExportTask(config, offline.task.localId, {
     taskStorage: offlineStorage, authStorage, idempotencyKeyFactory: () => 'idem-retry',
-    fetchImpl: async (url, init) => { retryCalls.push({ url, init }); return { ok: true, status: 200, json: async () => ({ success: true, task: { id: 'task-retry', status: 'pending_host', target_host_device_id: 'host-2' } }) }; },
+    fetchImpl: async (url, init) => { retryCalls.push({ url, init }); return { ok: true, status: 202, json: async () => ({ ok: true, task: { taskId: 'task-retry', status: 'queued', phase: 'queued', progress: 0 } }) }; },
   });
   assert.strictEqual(retried.accepted, true);
   assert.strictEqual(JSON.parse(retryCalls[0].init.body).payload.questionIds.join(','), 'q3,q1,q2');
   assert.strictEqual(retryCalls[0].init.headers['x-idempotency-key'], 'idem-retry', 'manual retry must use a fresh idempotency key');
 
-  const noHostStorage = memoryStorage();
-  const noHost = await client.submitPaperExportTask(config, input, { taskStorage: noHostStorage, authStorage,
-    fetchImpl: async () => ({ ok: false, status: 409, json: async () => ({ success: false, code: 'TARGET_HOST_REQUIRED' }) }) });
-  assert.strictEqual(noHost.accepted, false);
-  assert.strictEqual(client.loadPaperExportTasks(noHostStorage)[0].status, 'draft');
-  assert.strictEqual(client.loadPaperExportTasks(noHostStorage)[0].errorCode, 'TARGET_HOST_REQUIRED');
+  const unavailableStorage = memoryStorage();
+  const unavailable = await client.submitPaperExportTask(config, input, { taskStorage: unavailableStorage, authStorage,
+    fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({ ok: false, code: 'CLOUD_TASK_UNAVAILABLE' }) }) });
+  assert.strictEqual(unavailable.accepted, false);
+  assert.strictEqual(client.loadPaperExportTasks(unavailableStorage)[0].status, 'draft');
+  assert.strictEqual(client.loadPaperExportTasks(unavailableStorage)[0].errorCode, 'CLOUD_TASK_UNAVAILABLE');
 
   assert.ok(!String(client.submitPaperExportTask).includes('primary-host'), 'every desktop must submit an export task to cloud');
 

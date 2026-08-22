@@ -11,12 +11,11 @@ import {
   submitPaperExportTask as submitRuntime,
 } from './paperExportTaskClient.mjs';
 
-export type PaperExportTaskStatus = 'draft' | 'pending_host' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'timed_out';
+export type PaperExportTaskStatus = 'draft' | 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'timed_out';
 
 export interface PaperExportTaskRecord {
   localId: string;
   serverTaskId?: string;
-  targetHostDeviceId?: string;
   idempotencyKey: string;
   request: HostPaperExportInput;
   status: PaperExportTaskStatus;

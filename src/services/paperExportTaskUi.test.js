@@ -3,17 +3,17 @@ const fs = require('fs');
 
 (async () => {
   const { getPaperExportTaskPresentation } = await import('./paperExportTaskPresentation.mjs');
-  const phases = ['queued', 'host_unavailable', 'claimed', 'snapshotting', 'rendering', 'validating', 'publishing', 'completed', 'failed', 'cancelled', 'timed_out'];
+  const phases = ['queued', 'cloud_unavailable', 'claimed', 'snapshotting', 'rendering', 'validating', 'publishing', 'completed', 'failed', 'cancelled', 'timed_out'];
   for (const phase of phases) {
-    const task = phase === 'host_unavailable'
-      ? { status: 'draft', phase: 'draft', errorCode: 'TARGET_HOST_REQUIRED' }
-      : { status: ['completed', 'failed', 'cancelled', 'timed_out'].includes(phase) ? phase : (phase === 'queued' ? 'pending_host' : 'processing'), phase };
+    const task = phase === 'cloud_unavailable'
+      ? { status: 'draft', phase: 'draft', errorCode: 'CLOUD_TASK_UNAVAILABLE' }
+      : { status: ['completed', 'failed', 'cancelled', 'timed_out'].includes(phase) ? phase : (phase === 'queued' ? 'queued' : 'processing'), phase };
     const view = getPaperExportTaskPresentation(task);
     assert.strictEqual(view.key, phase);
     assert.ok(view.label && view.color, `${phase} needs a visible label and tone`);
   }
   assert.strictEqual(getPaperExportTaskPresentation({ status: 'draft', phase: 'draft' }).accepted, false);
-  assert.strictEqual(getPaperExportTaskPresentation({ status: 'pending_host', phase: 'queued' }).accepted, true);
+  assert.strictEqual(getPaperExportTaskPresentation({ status: 'queued', phase: 'queued' }).accepted, true);
 
   const source = fs.readFileSync('src/pages/QuestionBankPaper.tsx', 'utf8');
   const indexSource = fs.readFileSync('src/index.tsx', 'utf8');

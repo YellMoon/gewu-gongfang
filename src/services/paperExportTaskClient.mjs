@@ -16,12 +16,10 @@ function authHeaders(deps, json = false) {
   };
 }
 
-export function cloudTaskApiBase(cloudBaseUrl) {
-  const base = trimSlash(cloudBaseUrl);
+export function cloudTaskApiBase(config = {}) {
+  const base = trimSlash(config.cloudBusinessIdentityBaseUrl || 'https://physicsedu.xyz/cloud-business');
   if (!base) throw Object.assign(new Error('CLOUD_BASE_URL_REQUIRED'), { code: 'CLOUD_BASE_URL_REQUIRED' });
-  if (base.endsWith('/api/cloud')) return base;
-  if (base.endsWith('/api')) return `${base}/cloud`;
-  return `${base}/api/cloud`;
+  return `${base}/api/desktop/paper-export-tasks`;
 }
 
 function cloudUrl(cloudBaseUrl, path) {
@@ -65,14 +63,13 @@ function resultFromServer(row) {
 }
 
 function normalizeRemote(local, row, timestamp) {
-  const rawStatus = String(row?.status || local.status || 'pending_host');
+    const rawStatus = String(row?.status || local.status || 'queued');
   const status = rawStatus === 'failed' && String(row?.error_code || '').includes('DEADLINE') ? 'timed_out' : rawStatus;
   return {
     ...local,
-    serverTaskId: String(row?.id || local.serverTaskId || ''),
-    targetHostDeviceId: String(row?.target_host_device_id || row?.targetHostDeviceId || local.targetHostDeviceId || ''),
+    serverTaskId: String(row?.taskId || row?.id || local.serverTaskId || ''),
     status,
-    phase: String(row?.phase || (status === 'pending_host' ? 'queued' : status)),
+    phase: String(row?.phase || status),
     progress: Math.max(0, Math.min(100, Number(row?.progress || (status === 'completed' ? 100 : 0)))),
     message: String(row?.message || row?.error_code || resultFromServer(row)?.message || ''),
     errorCode: String(row?.error_code || ''),
@@ -86,11 +83,10 @@ async function submitDraft(config, draft, deps) {
   const storage = taskStorage(deps);
   try {
     const fetchImpl = deps.fetchImpl || globalThis.fetch;
-    const response = await fetchImpl(`${cloudTaskApiBase(config.cloudBaseUrl)}/tasks`, {
+    const response = await fetchImpl(cloudTaskApiBase(config), {
       method: 'POST',
       headers: { ...authHeaders(deps, true), 'x-idempotency-key': draft.idempotencyKey },
       body: JSON.stringify({
-        protocolVersion: 2,
         taskType: `paper-export-${draft.request.format}`,
         payload: {
           questionIds: [...draft.request.questionIds], answerPosition: draft.request.answerPosition,
@@ -99,7 +95,7 @@ async function submitDraft(config, draft, deps) {
       }),
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload.success || !payload.task?.id) throw responseError(payload, response.status);
+    if (!response.ok || !payload.ok || !payload.task?.taskId) throw responseError(payload, response.status);
     const task = normalizeRemote(draft, payload.task, nowIso(deps));
     upsertTask(storage, task);
     return { accepted: true, task };
@@ -133,9 +129,9 @@ function requireStoredTask(localId, deps) {
 export async function refreshPaperExportTask(config, localId, deps = {}) {
   const local = requireStoredTask(localId, deps);
   if (!local.serverTaskId) return local;
-  const response = await (deps.fetchImpl || globalThis.fetch)(`${cloudTaskApiBase(config.cloudBaseUrl)}/tasks/${encodeURIComponent(local.serverTaskId)}/result`, { headers: authHeaders(deps) });
+  const response = await (deps.fetchImpl || globalThis.fetch)(`${cloudTaskApiBase(config)}/${encodeURIComponent(local.serverTaskId)}`, { headers: authHeaders(deps) });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !payload.success || !payload.task) throw responseError(payload, response.status);
+  if (!response.ok || !payload.ok || !payload.task) throw responseError(payload, response.status);
   return upsertTask(taskStorage(deps), normalizeRemote(local, payload.task, nowIso(deps)));
 }
 
@@ -148,11 +144,11 @@ export async function refreshPendingPaperExportTasks(config, deps = {}) {
 export async function cancelPaperExportTask(config, localId, deps = {}) {
   const local = requireStoredTask(localId, deps);
   if (!local.serverTaskId) return local;
-  const response = await (deps.fetchImpl || globalThis.fetch)(`${cloudTaskApiBase(config.cloudBaseUrl)}/tasks/${encodeURIComponent(local.serverTaskId)}/cancel`, {
+  const response = await (deps.fetchImpl || globalThis.fetch)(`${cloudTaskApiBase(config)}/${encodeURIComponent(local.serverTaskId)}/cancel`, {
     method: 'POST', headers: authHeaders(deps, true), body: '{}',
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !payload.success || !payload.task) throw responseError(payload, response.status);
+  if (!response.ok || !payload.ok || !payload.task) throw responseError(payload, response.status);
   return upsertTask(taskStorage(deps), normalizeRemote(local, payload.task, nowIso(deps)));
 }
 
@@ -160,7 +156,7 @@ export async function retryPaperExportTask(config, localId, deps = {}) {
   const previous = requireStoredTask(localId, deps);
   const key = randomId(deps);
   const draft = {
-    ...previous, localId: `paper_${key}`, idempotencyKey: key, serverTaskId: '', targetHostDeviceId: '',
+    ...previous, localId: `paper_${key}`, idempotencyKey: key, serverTaskId: '',
     status: 'draft', phase: 'draft', progress: 0, accepted: false, result: null, message: '', errorCode: '',
     createdAt: nowIso(deps), updatedAt: nowIso(deps), retryOf: previous.localId,
   };
