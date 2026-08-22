@@ -104,6 +104,27 @@ const cancelSql = [
   "WHERE tenant_id=$1 AND account_id=$2 AND task_id=$3 AND status='queued'",
   'RETURNING task_id AS "taskId",status,phase,progress,request_hash AS "requestHash",created_at AS "createdAt",updated_at AS "updatedAt"',
 ].join(' ');
+const claimSql = [
+  'WITH candidate AS (',
+  "SELECT task_id FROM business.paper_export_tasks WHERE status='queued' ORDER BY created_at,task_id FOR UPDATE SKIP LOCKED LIMIT 1",
+  '), claimed AS (',
+  "UPDATE business.paper_export_tasks task SET status='processing',phase='rendering',progress=10,updated_at=transaction_timestamp()",
+  "FROM candidate WHERE task.task_id=candidate.task_id AND task.status='queued'",
+  'RETURNING task.task_id AS "taskId",task.tenant_id AS "tenantId",task.account_id AS "accountId",task.task_type AS "taskType",task.request_json AS "request",task.question_snapshot_json AS "snapshot"',
+  ') SELECT * FROM claimed',
+].join(' ');
+const completeSql = [
+  'UPDATE business.paper_export_tasks',
+  "SET status='completed',phase='publishing',progress=100,result_artifact_id=$2,updated_at=transaction_timestamp()",
+  "WHERE task_id=$1 AND status='processing'",
+  'RETURNING task_id AS "taskId"',
+].join(' ');
+const failSql = [
+  'UPDATE business.paper_export_tasks',
+  "SET status='failed',phase='failed',error_code=$2,updated_at=transaction_timestamp()",
+  "WHERE task_id=$1 AND status='processing'",
+  'RETURNING task_id AS "taskId"',
+].join(' ');
 
 function createPaperExportTaskRepository({ query, randomId = () => crypto.randomUUID() } = {}) {
   if (typeof query !== 'function' || typeof randomId !== 'function') throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
@@ -153,6 +174,34 @@ function createPaperExportTaskRepository({ query, randomId = () => crypto.random
       if (!result || !Array.isArray(result.rows)) throw failure('CLOUD_PAPER_EXPORT_UNAVAILABLE');
       if (result.rows.length !== 1) throw failure('CLOUD_PAPER_EXPORT_NOT_CANCELLABLE');
       return taskRow(result.rows[0]);
+    },
+    async claimNext() {
+      const result = await query(claimSql, []);
+      if (!result || !Array.isArray(result.rows)) throw failure('CLOUD_PAPER_EXPORT_UNAVAILABLE');
+      if (result.rows.length === 0) return null;
+      if (result.rows.length !== 1) throw failure('CLOUD_PAPER_EXPORT_UNAVAILABLE');
+      const row = result.rows[0];
+      if (!plainObject(row) || typeof row.taskId !== 'string' || typeof row.tenantId !== 'string' || typeof row.accountId !== 'string'
+        || !['paper-export-word', 'paper-export-pdf'].includes(row.taskType) || !plainObject(row.request) || !Array.isArray(row.snapshot)) {
+        throw failure('CLOUD_PAPER_EXPORT_UNAVAILABLE');
+      }
+      return {
+        taskId: row.taskId, tenantId: row.tenantId, accountId: row.accountId,
+        format: row.taskType === 'paper-export-word' ? 'word' : 'pdf',
+        fileName: 'paper-' + row.taskId + (row.taskType === 'paper-export-word' ? '.docx' : '.pdf'),
+        request: row.request, snapshot: row.snapshot,
+      };
+    },
+    async complete(input) {
+      if (!plainObject(input) || Reflect.ownKeys(input).length !== 2 || typeof input.artifact?.artifactId !== 'string') throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
+      const result = await query(completeSql, [text(input.taskId, 160), input.artifact.artifactId]);
+      if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_PAPER_EXPORT_UNAVAILABLE');
+    },
+    async fail(input) {
+      if (!plainObject(input) || Reflect.ownKeys(input).length !== 2) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
+      const code = text(input.code, 128);
+      const result = await query(failSql, [text(input.taskId, 160), code]);
+      if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_PAPER_EXPORT_UNAVAILABLE');
     },
   });
 }
